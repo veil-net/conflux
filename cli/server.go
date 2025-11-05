@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -133,13 +134,16 @@ func (api *API) register(c echo.Context) error {
 	}
 
 	// Parse the Guardian URL
-	var path string
-	if request.Cidr != "" {
-		path = fmt.Sprintf("%s/conflux/register?tag=%s&cidr=%s", request.Guardian, request.Tag, request.Cidr)
-	} else {
-		path = fmt.Sprintf("%s/conflux/register?tag=%s", request.Guardian, request.Tag)
+	path := fmt.Sprintf("%s/conflux/register", request.Guardian)
+
+	// Marshal the request body
+	body, err := json.Marshal(request)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"details": "Failed to marshal request body"})
 	}
-	req, err := http.NewRequest("POST", path, nil)
+
+	// Create the request
+	req, err := http.NewRequest("POST", path, bytes.NewBuffer(body))
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, echo.Map{"details": "Failed to create register request"})
 	}
@@ -152,12 +156,12 @@ func (api *API) register(c echo.Context) error {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"details": "Failed to make register request"})
+		return c.JSON(http.StatusInternalServerError, echo.Map{"details": fmt.Sprintf("Failed to make register request %v", err)})
 	}
 	defer resp.Body.Close()
 
 	// Read the response body
-	body, err := io.ReadAll(resp.Body)
+	body, err = io.ReadAll(resp.Body)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, echo.Map{"details": "Failed to read register response body"})
 	}
@@ -184,21 +188,30 @@ func (api *API) register(c echo.Context) error {
 				veilnet.Logger.Sugar().Warnf("failed to parse subnet %s: %v", subnet, err)
 				continue
 			}
-			// Add the subnet to the conflux
-			path := fmt.Sprintf("%s/conflux/register/local-network?conflux_id=%s&subnet=%s&tag=%s", request.Guardian, confluxToken.ConfluxID, ipnet.String(), request.Tag)
-			req, err := http.NewRequest("POST", path, nil)
+			// Marshal the request body
+			body, err := json.Marshal(map[string]string{"conflux_id": confluxToken.ConfluxID, "subnet": subnet, "tag": request.Tag})
+			if err != nil {
+				veilnet.Logger.Sugar().Warnf("failed to marshal request body: %v", err)
+				continue
+			}
+			// Create the request
+			path := fmt.Sprintf("%s/conflux/register/local-network", request.Guardian)
+			req, err := http.NewRequest("POST", path, bytes.NewBuffer(body))
 			if err != nil {
 				veilnet.Logger.Sugar().Warnf("failed to create local network request: %v", err)
 				continue
 			}
+			// Set the Authorization header
 			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", request.Token))
 			req.Header.Set("Content-Type", "application/json")
+			// Make the request
 			resp, err := client.Do(req)
 			if err != nil {
 				veilnet.Logger.Sugar().Warnf("failed to add local network: %v", err)
 				continue
 			}
 			defer resp.Body.Close()
+			// Read the response body
 			if resp.StatusCode != http.StatusOK {
 				body, err := io.ReadAll(resp.Body)
 				if err != nil {
@@ -211,7 +224,7 @@ func (api *API) register(c echo.Context) error {
 			veilnet.Logger.Sugar().Infof("added local network %s to conflux %s", ipnet.String(), confluxToken.ConfluxID)
 		}
 	}
-
+	// Write the registration data to file
 	tmpDir, err := os.UserConfigDir()
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, echo.Map{"details": "Failed to get user config directory"})
@@ -264,7 +277,7 @@ func (api *API) unregister(c echo.Context) error {
 	}
 
 	path := fmt.Sprintf("%s/conflux/unregister?conflux_id=%s", register.Guardian, register.ID)
-	req, err := http.NewRequest("POST", path, nil)
+	req, err := http.NewRequest("DELETE", path, nil)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, echo.Map{"details": "Failed to create unregister request"})
 	}

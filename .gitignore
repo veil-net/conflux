@@ -43,3 +43,7 @@ go.work.sum
 
 .cursorignore
 .cursorindexingignore
+
+build/*
+
+veilnet-conflux*

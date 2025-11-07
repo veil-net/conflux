@@ -459,26 +459,7 @@ func (c *conflux) ingress() {
 		}
 	}()
 
-	// Get the TUN MTU
-	mtu, err := c.device.MTU()
-	if err != nil {
-		veilnet.Logger.Sugar().Errorf("failed to get TUN MTU: %v", err)
-		// Use default MTU if we can't get the actual one
-		mtu = 1500
-	}
-
-	// Create buffersfor padding
 	bufs := make([][]byte, c.device.BatchSize())
-	// Pre-allocate buffers
-	for i := range bufs {
-		bufs[i] = make([]byte, 16+mtu)
-	}
-
-	// Create the our straight forward buffers for anchor
-	anchorBufs := make([][]byte, c.device.BatchSize())
-
-	// Pre-allocate WG TUN buffer slice to avoid allocation in hot path
-	wgBufs := make([][]byte, c.device.BatchSize())
 
 	for {
 		select {
@@ -486,16 +467,14 @@ func (c *conflux) ingress() {
 			veilnet.Logger.Sugar().Info("Conflux ingress stopped")
 			return
 		default:
-			n := c.anchor.Read(anchorBufs, c.device.BatchSize())
+			n := c.anchor.Read(bufs, c.device.BatchSize())
 			if n > 0 {
-				// padding the bufs for WG TUN, this is annoying!
 				for i := 0; i < n; i++ {
-					copy(bufs[i][16:], anchorBufs[i])
+					wgBuf := make([]byte, 16+len(bufs[i]))
+					copy(wgBuf[16:], bufs[i])
+					bufs[i] = wgBuf
 				}
-				for i := 0; i < n; i++ {
-					wgBufs[i] = bufs[i][:16+len(anchorBufs[i])]
-				}
-				_, err := c.device.Write(wgBufs[:n], 16)
+				_, err := c.device.Write(bufs[:n], 0)
 				if err != nil {
 					veilnet.Logger.Sugar().Errorf("failed to write to TUN device: %v", err)
 					continue

@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"os"
-
 	"github.com/alecthomas/kong"
 	"github.com/veil-net/veilnet"
 )
@@ -105,28 +103,6 @@ type Docker struct{
 
 func (cmd *Docker) Run() error {
 	conflux := NewConflux()
-	go func() {
-		for {
-			register := Register{
-				Tag:      cmd.Tag,
-				Cidr:     cmd.Cidr,
-				Token:    cmd.Token,
-				Guardian: cmd.Guardian,
-				Portal:   cmd.Portal,
-				Subnets:  cmd.Subnets,
-			}
-			err := register.Run()
-			if err == nil {
-				go func() {
-					conflux.Liveness()
-					os.Exit(1)
-				}()
-				return
-			}
-		}
-	}()
-
-	// Start the service
 	err := conflux.Run()
 	if err != nil {
 		return err

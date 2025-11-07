@@ -30,11 +30,13 @@ type API struct {
 func newAPI(conflux Conflux) *API {
 	return &API{
 		conflux: conflux,
-		server:  echo.New(),
 	}
 }
 
 func (api *API) Run() error {
+
+	// Create the server
+	api.server = echo.New()
 
 	// Register routes
 	api.server.POST("/up", api.up)
@@ -60,10 +62,11 @@ func (api *API) Run() error {
 	confluxFile := filepath.Join(confluxDir, "conflux.json")
 	registrationDataFile, err := os.ReadFile(confluxFile)
 	if err == nil {
+		veilnet.Logger.Sugar().Infof("loading registration data from %s", confluxFile)
 		var register Register
 		err = json.Unmarshal(registrationDataFile, &register)
 		if err != nil {
-			veilnet.Logger.Sugar().Warnf("failed to unmarshal registration data: %v", err)
+			veilnet.Logger.Sugar().Warnf("failed to unmarshal registration data from %s: %v", confluxFile, err)
 		} else {
 			for {
 				err = register.Run()
@@ -74,7 +77,32 @@ func (api *API) Run() error {
 			}
 		}
 	} else {
-		veilnet.Logger.Sugar().Warnf("failed to read registration data: %v", err)
+		veilnet.Logger.Sugar().Infof("loading registration data from environment variable")
+		guardian := os.Getenv("VEILNET_GUARDIAN")
+		token := os.Getenv("VEILNET_REGISTRATION_TOKEN")
+		tag := os.Getenv("VEILNET_CONFLUX_TAG")
+		cidr := os.Getenv("VEILNET_CONFLUX_CIDR")
+		portal := os.Getenv("VEILNET_PORTAL") == "true"
+		subnets := os.Getenv("VEILNET_CONFLUX_SUBNETS")
+		register := Register{
+			Tag:      tag,
+			Cidr:     cidr,
+			Guardian: guardian,
+			Token:    token,
+			Portal:   portal,
+			Subnets:  subnets,
+		}
+		if guardian == "" || token == "" {
+			veilnet.Logger.Sugar().Errorf("VEILNET_GUARDIAN and VEILNET_REGISTRATION_TOKEN are required")
+		} else {
+			for {
+				err = register.Run()
+				if err != nil {
+					continue
+				}
+				break
+			}
+		}
 	}
 	// Wait for interrupt signal to gracefully shut down the server with a timeout of 10 seconds.
 	<-ctx.Done()
@@ -106,6 +134,7 @@ func (api *API) up(c echo.Context) error {
 	}
 
 	if err := api.conflux.StartVeilNet(request.Guardian, request.Token, request.Portal); err != nil {
+		api.conflux.StopVeilNet()
 		return c.JSON(http.StatusInternalServerError, echo.Map{"details": "Failed to start VeilNet"})
 	}
 
@@ -249,6 +278,7 @@ func (api *API) register(c echo.Context) error {
 	// Start the VeilNet
 	err = api.conflux.StartVeilNet(request.Guardian, confluxToken.Token, request.Portal)
 	if err != nil {
+		api.conflux.StopVeilNet()
 		return c.JSON(http.StatusInternalServerError, echo.Map{"details": "Failed to start VeilNet"})
 	}
 

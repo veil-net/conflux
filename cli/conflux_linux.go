@@ -51,6 +51,9 @@ type conflux struct {
 	bypassRoutes     sync.Map
 	ipForwardEnabled bool
 	metricsServer    *http.Server
+
+	anchorMutex sync.Mutex
+	anchorOnce  sync.Once
 }
 
 func newConflux() *conflux {
@@ -197,6 +200,13 @@ func (c *conflux) Metrics(name string) int {
 
 func (c *conflux) StartVeilNet(apiBaseURL, anchorToken string, portal bool) error {
 
+	// Lock the anchor mutex
+	c.anchorMutex.Lock()
+	defer c.anchorMutex.Unlock()
+
+	// initialize the anchor once
+	c.anchorOnce = sync.Once{}
+
 	// Set portal
 	c.portal = portal
 
@@ -209,16 +219,26 @@ func (c *conflux) StartVeilNet(apiBaseURL, anchorToken string, portal bool) erro
 	// Set bypass routes
 	c.AddBypassRoutes()
 
+	// Close existing TUN device if any (defensive cleanup)
+	if c.device != nil {
+		c.CloseTUN()
+		c.device = nil
+	}
+
 	// Create the TUN device
 	err = c.CreateTUN()
 	if err != nil {
 		return err
 	}
 
+	//Close existing anchor if any (defensive cleanup)
+	if c.anchor != nil {
+		c.StopVeilNet()
+		c.anchor = nil
+	}
+
 	// Create the anchor
 	c.anchor = veilnet.NewAnchor()
-
-	// Start the anchor
 	err = c.anchor.Start(apiBaseURL, anchorToken, portal)
 	if err != nil {
 		return err
@@ -248,41 +268,65 @@ func (c *conflux) StartVeilNet(apiBaseURL, anchorToken string, portal bool) erro
 	go c.ingress()
 	go c.egress()
 
+	// Close existing metrics server
+	if c.metricsServer != nil {
+		c.metricsServer.Shutdown(context.Background())
+		c.metricsServer = nil
+	}
+
 	// Start the metrics server
 	c.metricsServer = &http.Server{
 		Addr:    ":9090",
 		Handler: c.anchor.Metrics.GetHandler(),
 	}
-	go c.metricsServer.ListenAndServe()
+	go func() {
+		if err := c.metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			veilnet.Logger.Sugar().Errorf("metrics server error: %v", err)
+		}
+	}()
 
 	return nil
 }
 
 func (c *conflux) StopVeilNet() {
 
-	c.CleanHostConfiguraions()
-	c.RemoveBypassRoutes()
-	// Protect CloseTUN with panic recovery
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				veilnet.Logger.Sugar().Errorf("panic in CloseTUN: %v", r)
+	c.anchorOnce.Do(func() {
+
+		// Lock the anchor mutex
+		c.anchorMutex.Lock()
+		defer c.anchorMutex.Unlock()
+
+		// Stop the metrics server
+		if c.metricsServer != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := c.metricsServer.Shutdown(ctx); err != nil {
+				veilnet.Logger.Sugar().Errorf("failed to stop metrics server: %v", err)
 			}
-		}()
-		c.CloseTUN()
-	}()
-	if c.metricsServer != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := c.metricsServer.Shutdown(ctx); err != nil {
-			veilnet.Logger.Sugar().Errorf("failed to stop metrics server: %v", err)
+			c.metricsServer = nil
 		}
-	}
-	c.metricsServer = nil
-	if c.anchor != nil {
-		c.anchor.Stop()
-	}
-	c.anchor = nil
+
+		// Stop the anchor
+		if c.anchor != nil {
+			c.anchor.Stop()
+			c.anchor = nil
+		}
+
+		// Clean up the host configurations
+		c.CleanHostConfiguraions()
+		c.RemoveBypassRoutes()
+
+		// Protect CloseTUN with panic recovery
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					veilnet.Logger.Sugar().Errorf("panic in CloseTUN: %v", r)
+				}
+			}()
+			c.CloseTUN()
+			c.device = nil
+		}()
+	})
 }
 
 func (c *conflux) Liveness() {
@@ -396,7 +440,35 @@ func (c *conflux) RemoveBypassRoutes() {
 }
 
 func (c *conflux) ingress() {
-	bufs := make([][]byte, c.device.BatchSize())
+
+	defer func() {
+		if r := recover(); r != nil {
+			veilnet.Logger.Sugar().Errorf("panic in ingress: %v", r)
+		}
+	}()
+
+	// Get the TUN MTU
+	mtu, err := c.device.MTU()
+	if err != nil {
+		veilnet.Logger.Sugar().Errorf("failed to get TUN MTU: %v", err)
+		// Use default MTU if we can't get the actual one
+		mtu = 1500
+	}
+
+	// Create the annoying padded buffers for WG TUN
+	wgBufs := make([][]byte, c.device.BatchSize())
+	// Pre-allocate buffers
+	for i := range wgBufs {
+		wgBufs[i] = make([]byte, 16+mtu)
+	}
+
+	// Create the our straight forward buffers for anchor
+	bufs := make([][]byte, len(wgBufs))
+	// Link the WG TUN buffers to the anchor buffers
+	for i := range bufs {
+		bufs[i] = wgBufs[i][16:]
+	}
+
 	for {
 		select {
 		case <-c.anchor.Ctx.Done():
@@ -404,27 +476,32 @@ func (c *conflux) ingress() {
 			return
 		default:
 			n := c.anchor.Read(bufs, c.device.BatchSize())
-			for i := 0; i < n; i++ {
-				newBuf := make([]byte, 16+len(bufs[i]))
-				copy(newBuf[16:], bufs[i])
-				bufs[i] = newBuf
-			}
 			if n > 0 {
-				c.device.Write(bufs[:n], 16)
+				c.device.Write(wgBufs[:n], 16)
 			}
 		}
 	}
 }
 
 func (c *conflux) egress() {
-	bufs := make([][]byte, c.device.BatchSize())
-	sizes := make([]int, c.device.BatchSize())
+
+	defer func() {
+		if r := recover(); r != nil {
+			veilnet.Logger.Sugar().Errorf("panic in egress: %v", r)
+		}
+	}()
+
+	// Get the TUN MTU
 	mtu, err := c.device.MTU()
 	if err != nil {
 		veilnet.Logger.Sugar().Errorf("failed to get TUN MTU: %v", err)
 		// Use default MTU if we can't get the actual one
 		mtu = 1500
 	}
+
+	// Create the buffers
+	bufs := make([][]byte, c.device.BatchSize())
+	sizes := make([]int, c.device.BatchSize())
 	// Pre-allocate buffers
 	for i := range bufs {
 		bufs[i] = make([]byte, mtu)

@@ -50,41 +50,28 @@ func (api *API) Run() error {
 	// Start server
 	go func() {
 		if err := api.server.Start(":1993"); err != nil && err != http.ErrServerClosed {
-			veilnet.Logger.Sugar().Fatalf("shutting down the server: %v", err)
+			api.conflux.StopVeilNet()
+			veilnet.Logger.Sugar().Fatalf("Conflux service encountered an error: %v", err)
 		}
 	}()
 	// Load existing registration data
+	var register Register
 	tmpDir, err := os.UserConfigDir()
-	if err != nil {
-		veilnet.Logger.Sugar().Fatalf("failed to get user config directory: %v", err)
-	}
-	confluxDir := filepath.Join(tmpDir, "conflux")
-	confluxFile := filepath.Join(confluxDir, "conflux.json")
-	registrationDataFile, err := os.ReadFile(confluxFile)
 	if err == nil {
-		veilnet.Logger.Sugar().Infof("loading registration data from %s", confluxFile)
-		var register Register
-		err = json.Unmarshal(registrationDataFile, &register)
-		if err != nil {
-			veilnet.Logger.Sugar().Warnf("failed to unmarshal registration data from %s: %v", confluxFile, err)
-		} else {
-			for {
-				err = register.Run()
-				if err != nil {
-					continue
-				}
-				break
-			}
+		confluxDir := filepath.Join(tmpDir, "conflux")
+		confluxFile := filepath.Join(confluxDir, "conflux.json")
+		registrationDataFile, err := os.ReadFile(confluxFile)
+		if err == nil {
+			json.Unmarshal(registrationDataFile, &register)
 		}
 	} else {
-		veilnet.Logger.Sugar().Infof("loading registration data from environment variable")
 		guardian := os.Getenv("VEILNET_GUARDIAN")
 		token := os.Getenv("VEILNET_REGISTRATION_TOKEN")
 		tag := os.Getenv("VEILNET_CONFLUX_TAG")
 		cidr := os.Getenv("VEILNET_CONFLUX_CIDR")
 		portal := os.Getenv("VEILNET_PORTAL") == "true"
 		subnets := os.Getenv("VEILNET_CONFLUX_SUBNETS")
-		register := Register{
+		register = Register{
 			Tag:      tag,
 			Cidr:     cidr,
 			Guardian: guardian,
@@ -92,17 +79,16 @@ func (api *API) Run() error {
 			Portal:   portal,
 			Subnets:  subnets,
 		}
-		if guardian == "" || token == "" {
-			veilnet.Logger.Sugar().Errorf("VEILNET_GUARDIAN and VEILNET_REGISTRATION_TOKEN are required")
-		} else {
-			for {
-				err = register.Run()
-				if err != nil {
-					continue
-				}
-				break
+	}
+	if register.Guardian != "" || register.Token != "" {
+		go func() {
+			veilnet.Logger.Sugar().Infof("registering conflux from loaded registration data or environment variables")
+			time.Sleep(1 * time.Second)
+			err := register.Run()
+			if err != nil {
+				veilnet.Logger.Sugar().Errorf("failed to register conflux: %v", err)
 			}
-		}
+		}()
 	}
 	// Wait for interrupt signal to gracefully shut down the server with a timeout of 10 seconds.
 	<-ctx.Done()

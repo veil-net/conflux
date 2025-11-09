@@ -105,7 +105,7 @@ func (c *conflux) StartVeilNet(apiBaseURL, anchorToken string, portal bool) erro
 
 	//Close existing anchor if any (defensive cleanup)
 	if c.anchor != nil {
-		c.StopVeilNet()
+		c.anchor.Stop()
 		c.anchor = nil
 	}
 

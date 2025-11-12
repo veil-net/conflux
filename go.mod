@@ -1,6 +1,6 @@
 module github.com/veil-net/conflux
 
-go 1.25.2
+go 1.25.4
 
 require (
 	github.com/labstack/echo/v4 v4.13.4
@@ -42,7 +42,7 @@ require (
 	github.com/pion/sdp/v3 v3.0.16 // indirect
 	github.com/pion/srtp/v3 v3.0.8 // indirect
 	github.com/pion/stun/v3 v3.0.1 // indirect
-	github.com/pion/transport/v3 v3.0.8 // indirect
+	github.com/pion/transport/v3 v3.1.0 // indirect
 	github.com/pion/turn/v4 v4.1.2 // indirect
 	github.com/pion/webrtc/v4 v4.1.6 // indirect
 	github.com/prometheus/client_golang v1.23.2 // indirect
@@ -54,7 +54,7 @@ require (
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/crypto v0.43.0 // indirect
 	golang.org/x/net v0.46.0 // indirect
-	golang.org/x/sys v0.37.0
+	golang.org/x/sys v0.38.0
 	golang.zx2c4.com/wireguard v0.0.0-20250521234502-f333402bd9cb
 	google.golang.org/protobuf v1.36.10 // indirect
 )

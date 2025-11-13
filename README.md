@@ -25,7 +25,8 @@ Before setting up your VeilNet Conflux, ensure you have:
 - **Root/Admin Access**: Required for TUN device creation and network configuration
 - **Network Connectivity**: Stable internet connection
 - **Guardian Account**: Access to the VeilNet Guardian service
-- **Conflux Token**: A valid conflux token from the Guardian service
+- **Registration Token**: A registration token from [https://auth.veilnet.app](https://auth.veilnet.app) (required for primary method using `register` command)
+- **Conflux Token** (for integration only): A conflux token from the Guardian service API. These tokens expire in 30 seconds and should only be used for programmatic integration. See [https://guardian.veilnet.app/docs#/](https://guardian.veilnet.app/docs#/) for API documentation.
 
 > **Note**: macOS (Darwin) support is experimental and may require additional setup or troubleshooting.
 
@@ -33,8 +34,8 @@ Before setting up your VeilNet Conflux, ensure you have:
 
 ### 1. Choose Your Flow
 
-- If you already have a Conflux Token, run with the `up` command (or set `VEILNET_TOKEN`).
-- If you have a Registration Token, use the `register` command to create and start a Conflux.
+- **Primary Method**: Use the `register` command with a Registration Token to create and start a Conflux. Registration tokens can be obtained from [https://auth.veilnet.app](https://auth.veilnet.app). This is the recommended way to connect a machine.
+- **Integration Method**: The `up` command with a Conflux Token is for integration only. Conflux tokens expire in 30 seconds and should only be used for programmatic integration. For integration API documentation, see [https://guardian.veilnet.app/docs#/](https://guardian.veilnet.app/docs#/).
 
 ### 2. Choose Your Deployment Method
 
@@ -83,37 +84,46 @@ docker run -d \
 1. **Download the binary**:
 Download the binary from the releases page.
 
-2. **Run the conflux**:
+2. **Install as a system service (Recommended)**:
 ```bash
-# Basic usage
-sudo ./veilnet-conflux up \
-  -t your-conflux-token
+# Install the conflux as a system service
+sudo ./veilnet-conflux install
+
+# Start the service
+sudo ./veilnet-conflux start
+
+# Check service status
+sudo ./veilnet-conflux status
+```
+
+> **⚠️ Note**: The `install` command is not supported on macOS at the moment. On macOS, use the direct run method below.
+
+3. **Run the conflux directly (Primary method)**:
+```bash
+# Register with a registration token (no CIDR)
+sudo ./veilnet-conflux register \
+  -t your-registration-token
+
+# Register with CIDR, e.g. 10.128.255.254
+sudo ./veilnet-conflux register \
+  -t your-registration-token \
+  --cidr 10.128.255.254/16
 
 # With portal mode enabled
-sudo ./veilnet-conflux up \
-  -t your-conflux-token \
+sudo ./veilnet-conflux register \
+  -t your-registration-token \
   -p
 
 # Or using environment variables
-export VEILNET_TOKEN="your-conflux-token"
+export VEILNET_REGISTRATION_TOKEN="your-registration-token"
 export VEILNET_PORTAL="false"
 
-sudo ./veilnet-conflux up
+sudo ./veilnet-conflux register
 ```
 
-3. **Register the conflux**
-```bash
-# With no CIDR
-sudo ./veilnet-conflux register \
-  -t your-registration-token \
+> **Note**: Registration tokens can be obtained from [https://auth.veilnet.app](https://auth.veilnet.app). This is the primary method to connect a machine. Without a CIDR given, conflux will obtain a random VeilNet IP within the plane subnet. With a CIDR given, the conflux will have that IP address if it is available.
 
-# With CIDR, e.g. 10.128.255.254
-sudo ./veilnet-conflux register \
-  -t your-registration-token \
-  --cidr 10.128.255.254/16 \
-```
-Same as "up" command, "-p" will set the conflux in portal mode. Without a CIDR given, conflux will obtain a random VeilNet IP within the plane subnet.
-With a CIDR given, the conflux will have that IP address if it is available.
+**For integration only**: You can use the `up` command with a conflux token (expires in 30 seconds). See [https://guardian.veilnet.app/docs#/](https://guardian.veilnet.app/docs#/) for API documentation.
 
 ### 3. Verify Your Connection
 
@@ -127,15 +137,19 @@ With a CIDR given, the conflux will have that IP address if it is available.
 
 The VeilNet Conflux supports multiple commands:
 
-#### `up` Command - Start the Conflux
+#### `up` Command - Start the Conflux (Integration Only)
+
+> **⚠️ Important**: This command is for integration only. Conflux tokens expire in 30 seconds and should only be used for programmatic integration. For regular usage, use the `register` command instead. For integration API documentation, see [https://guardian.veilnet.app/docs#/](https://guardian.veilnet.app/docs#/).
 
 | Option | Flag | Description | Required | Default |
 |--------|------|-------------|----------|---------|
-| Token | `-t, --token` | Your conflux authentication token | Yes | - |
+| Token | `-t, --token` | Your conflux authentication token (expires in 30 seconds) | Yes | - |
 | Portal | `-p, --portal` | Enable portal mode | No | `false` |
 | Guardian | `-g, --guardian` | The Guardian URL (Authentication Server) | No | `https://guardian.veilnet.app` |
 
 #### `register` Command - Register and Start a Conflux
+
+> **Note**: This is the primary method to connect a machine. Registration tokens can be obtained from [https://auth.veilnet.app](https://auth.veilnet.app).
 
 | Option | Flag | Description | Required | Default |
 |--------|------|-------------|----------|---------|
@@ -143,6 +157,8 @@ The VeilNet Conflux supports multiple commands:
 | Portal | `-p, --portal` | Enable portal mode | No | `false` |
 | Guardian | `-g, --guardian` | The Guardian URL (Authentication Server) | No | `https://guardian.veilnet.app` |
 | CIDR | `--cidr` | The CIDR to be used by the conflux | No | - |
+| Tag | `--tag` | Optional tag for the conflux | No | - |
+| Subnets | `--subnets` | The subnets to be forwarded by the conflux, separated by comma (e.g. 10.128.0.0/16,10.129.0.0/16) | No | - |
 
 #### `down` Command - Stop the Conflux
 
@@ -152,18 +168,28 @@ Stops the currently running conflux service.
 
 | Command | Description |
 |---------|-------------|
-| `install` | Install the conflux as a system service |
+| `install` | Install the conflux as a system service (not supported on macOS) |
 | `start` | Start the installed conflux service |
 | `stop` | Stop the conflux service |
 | `remove` | Remove the conflux service from the system |
 | `status` | Check the status of the conflux service |
 
-#### `unregister` Command - Unregister the Conflux
+#### `docker` Command - Run the Conflux Service in Docker
 
 | Option | Flag | Description | Required | Default |
 |--------|------|-------------|----------|---------|
 | Token | `-t, --token` | Registration token (Bearer) | Yes | - |
+| Portal | `-p, --portal` | Enable portal mode | No | `false` |
 | Guardian | `-g, --guardian` | The Guardian URL (Authentication Server) | No | `https://guardian.veilnet.app` |
+| Tag | `--tag` | The tag for the conflux | No | - |
+| CIDR | `--cidr` | The CIDR of the conflux | No | - |
+| Subnets | `--subnets` | The subnets to be forwarded by the conflux, separated by comma (e.g. 10.128.0.0/16,10.129.0.0/16) | No | - |
+
+#### `unregister` Command - Unregister the Conflux
+
+Unregisters the conflux and stops the service. This command takes no parameters.
+
+> **Note**: This is the primary method to unregister and disconnect a machine.
 
  
 
@@ -177,6 +203,7 @@ Stops the currently running conflux service.
 | `VEILNET_GUARDIAN` | The Guardian URL (Authentication Server) | No | `https://guardian.veilnet.app` |
 | `VEILNET_CONFLUX_TAG` | Optional tag for the conflux | No | - |
 | `VEILNET_CONFLUX_CIDR` | The CIDR to be used by the conflux (for `register`) | No | - |
+| `VEILNET_CONFLUX_SUBNETS` | The subnets to be forwarded by the conflux, separated by comma (for `register` and `docker`) | No | - |
 
 ### Configuration Priority
 
@@ -188,9 +215,22 @@ Configuration values are loaded in this order (later overrides earlier):
 
 ## Usage Examples
 
-### Basic Connection and Disconnection
+### Basic Connection and Disconnection (Primary Method)
 ```bash
-# Start the conflux
+# Register and start the conflux (primary method)
+# Registration tokens can be obtained from https://auth.veilnet.app
+sudo ./veilnet-conflux register \
+  -t your-registration-token
+
+# Unregister and stop the conflux
+sudo ./veilnet-conflux unregister
+```
+
+### Integration Method (Conflux Token - 30s expiration)
+```bash
+# Start the conflux with a conflux token (for integration only)
+# ⚠️ Warning: Conflux tokens expire in 30 seconds
+# For integration API documentation, see https://guardian.veilnet.app/docs#/
 sudo ./veilnet-conflux up \
   -t eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
@@ -200,21 +240,41 @@ sudo ./veilnet-conflux down
 
 ### Portal Mode
 ```bash
+# Primary method: Register with portal mode enabled
+sudo ./veilnet-conflux register \
+  -t your-registration-token \
+  -p
+
+# Integration method (conflux token expires in 30s)
 sudo ./veilnet-conflux up \
   -t your-conflux-token \
   -p
 ```
 
-### Register and Start a Conflux
+### Register and Start a Conflux (Primary Method)
 ```bash
+# Registration tokens can be obtained from https://auth.veilnet.app
 ./veilnet-conflux register \
   -t your-registration-token \
   -p
+
+# With CIDR and subnets
+./veilnet-conflux register \
+  -t your-registration-token \
+  --cidr 10.128.255.254/16 \
+  --subnets 10.128.0.0/16,10.129.0.0/16
 ```
 
 ### Using Environment Variables
 ```bash
-export VEILNET_TOKEN="your-token"
+# Primary method: Using registration token
+export VEILNET_REGISTRATION_TOKEN="your-registration-token"
+export VEILNET_PORTAL="false"
+
+sudo ./veilnet-conflux register
+
+# Integration method: Using conflux token (expires in 30s)
+export VEILNET_CONFLUX_TOKEN="your-conflux-token"
 export VEILNET_PORTAL="false"
 
 sudo ./veilnet-conflux up
@@ -222,7 +282,8 @@ sudo ./veilnet-conflux up
 
 ### Service Management
 ```bash
-# Install as a system service
+# Install as a system service (recommended for Linux/Windows)
+# Note: Not supported on macOS
 sudo ./veilnet-conflux install
 
 # Start the service
@@ -238,16 +299,26 @@ sudo ./veilnet-conflux stop
 sudo ./veilnet-conflux remove
 ```
 
-### Register and Unregister Commands
+### Register and Unregister Commands (Primary Method)
 ```bash
-# Register a new conflux
+# Register a new conflux (primary method)
+# Registration tokens can be obtained from https://auth.veilnet.app
 ./veilnet-conflux register \
   -t your-registration-token \
   -p
 
-# Unregister the conflux
-./veilnet-conflux unregister \
-  -t your-registration-token
+# Unregister the conflux (takes no parameters)
+./veilnet-conflux unregister
+```
+
+### Integration with Conflux Token (30s expiration)
+```bash
+# For programmatic integration only
+# ⚠️ Warning: Conflux tokens expire in 30 seconds
+# API documentation: https://guardian.veilnet.app/docs#/
+./veilnet-conflux up \
+  -t your-conflux-token \
+  -p
 ```
 
 ### Docker with Custom Configuration
@@ -406,36 +477,6 @@ sudo ip route del default dev veilnet
 # The conflux automatically extracts and uses the embedded driver
 ```
 
-## Support
-
-For help and support:
-
-- **Documentation**: [www.veilnet.org/docs](https://www.veilnet.org/docs)
-- **Community**: Join the VeilNet community discussions
-- **Issues**: Report bugs and issues on GitHub
-- **Console Support**: Contact support through the console interface
-
 ## License
 
 This project is licensed under the CC-BY-NC-ND-4.0 License.
-
-## Changelog
-
-### nats - v0.0.6
-- Added service management commands (install, start, stop, remove, status)
-- Enhanced CLI with comprehensive service management
-- Updated Docker image to nats-0.0.6
-
-### v1.1.0
-- Control plane is upgrade to NATS
-- Updated login process to use Guardian server
-
-### v1.0.0
-- Initial release
-- Support for Linux, macOS, and Windows
-- TUN interface creation and management
-- Portal and client modes
-- Docker support
-- Conflux registration and unregistration commands
-- Supabase authentication integration
-- Enhanced CLI with multiple commands (register, unregister, up)

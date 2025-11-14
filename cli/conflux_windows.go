@@ -626,14 +626,14 @@ func (c *conflux) Execute(args []string, changeRequests <-chan svc.ChangeRequest
 		tag := os.Getenv("VEILNET_CONFLUX_TAG")
 		cidr := os.Getenv("VEILNET_CONFLUX_CIDR")
 		portal := os.Getenv("VEILNET_PORTAL") == "true"
-		subnets := os.Getenv("VEILNET_CONFLUX_SUBNETS")
+		teams := os.Getenv("VEILNET_CONFLUX_TEAMS")
 		register = Register{
 			Tag:      tag,
 			Cidr:     cidr,
 			Guardian: guardian,
 			Token:    token,
 			Portal:   portal,
-			Subnets:  subnets,
+			Teams:    teams,
 		}
 	}
 	if register.Guardian != "" || register.Token != "" {

@@ -68,12 +68,14 @@ func (api *API) Run() error {
 		tag := os.Getenv("VEILNET_CONFLUX_TAG")
 		cidr := os.Getenv("VEILNET_CONFLUX_CIDR")
 		portal := os.Getenv("VEILNET_PORTAL") == "true"
+		teams := os.Getenv("VEILNET_CONFLUX_TEAMS")
 		register = Register{
 			Tag:      tag,
 			Cidr:     cidr,
 			Guardian: guardian,
 			Token:    token,
 			Portal:   portal,
+			Teams:    teams,
 		}
 	}
 	if register.Guardian != "" || register.Token != "" {

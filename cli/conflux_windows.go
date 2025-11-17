@@ -605,7 +605,7 @@ func (c *conflux) Execute(args []string, changeRequests <-chan svc.ChangeRequest
 	c.api.server.GET("/metrics/:name", c.api.metrics)
 	// Start server
 	go func() {
-		if err := c.api.server.Start(":1993"); err != nil && err != http.ErrServerClosed {
+		if err := c.api.server.Start("127.0.0.1:1993"); err != nil && err != http.ErrServerClosed {
 			c.StopVeilNet()
 			veilnet.Logger.Sugar().Fatalf("Conflux service encountered an error: %v", err)
 		}

@@ -47,7 +47,7 @@ func (api *API) Run() error {
 	defer stop()
 	// Start server
 	go func() {
-		if err := api.server.Start(":1993"); err != nil && err != http.ErrServerClosed {
+		if err := api.server.Start("127.0.0.1:1993"); err != nil && err != http.ErrServerClosed {
 			api.conflux.StopVeilNet()
 			veilnet.Logger.Sugar().Fatalf("Conflux service encountered an error: %v", err)
 		}

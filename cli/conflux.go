@@ -22,9 +22,6 @@ type Conflux interface {
 	// Status returns the status of the conflux service
 	Status() (bool, error)
 
-	// Metrics returns the metrics of the conflux service
-	Metrics(name string) int
-
 	// StartVeilNet starts the veilnet service
 	StartVeilNet(apiBaseURL, anchorToken string, portal bool) error
 
@@ -33,21 +30,6 @@ type Conflux interface {
 
 	// GetAnchor returns the anchor of the conflux service
 	GetAnchor() *veilnet.Anchor
-
-	// CreateTUN creates a TUN device
-	CreateTUN() error
-
-	// CloseTUN closes the TUN device
-	CloseTUN()
-
-	// DetectHostGateway detects the host default gateway and interface
-	DetectHostGateway() error
-
-	// AddBypassRoutes adds bypass routes
-	AddBypassRoutes()
-
-	// RemoveBypassRoutes removes bypass routes
-	RemoveBypassRoutes()
 }
 
 func NewConflux() Conflux {

@@ -4,29 +4,46 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"fmt"
-	"net"
+	"html/template"
 	"net/http"
+	"os"
 	"os/exec"
-	"strings"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/veil-net/veilnet"
-	tun "golang.zx2c4.com/wireguard/tun"
 )
 
+const LaunchDaemonPlistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>org.veilnet.conflux</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>{{.ExecPath}}</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>/var/log/veilnet-conflux.log</string>
+	<key>StandardErrorPath</key>
+	<string>/var/log/veilnet-conflux.error.log</string>
+</dict>
+</plist>
+`
+
 type conflux struct {
-	anchor           *veilnet.Anchor
-	api              *API
-	device           tun.Device
-	portal           bool
-	gateway          string
-	iface            string
-	bypassRoutes     sync.Map
-	ipForwardEnabled bool
-	metricsServer    *http.Server
+	anchor        *veilnet.Anchor
+	api           *API
+	metricsServer *http.Server
 
 	anchorMutex sync.Mutex
 	anchorOnce  sync.Once
@@ -44,30 +61,113 @@ func (c *conflux) Run() error {
 }
 
 func (c *conflux) Install() error {
+	// Get current executable path
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get executable path: %v", err)
+	}
+
+	// Resolve symlinks to get real path
+	realPath, err := filepath.EvalSymlinks(exePath)
+	if err != nil {
+		realPath = exePath
+	}
+
+	// Parse and execute template
+	tmpl, err := template.New("launchdaemon").Parse(LaunchDaemonPlistTemplate)
+	if err != nil {
+		return fmt.Errorf("failed to parse template: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, struct{ ExecPath string }{ExecPath: realPath}); err != nil {
+		return fmt.Errorf("failed to execute template: %v", err)
+	}
+
+	// Write plist file
+	plistFile := "/Library/LaunchDaemons/org.veilnet.conflux.plist"
+	if err := os.WriteFile(plistFile, buf.Bytes(), 0644); err != nil {
+		return fmt.Errorf("failed to write plist file: %v", err)
+	}
+
+	// Load the service
+	cmd := exec.Command("launchctl", "load", plistFile)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		veilnet.Logger.Sugar().Errorf("failed to load service: %s", string(out))
+		return fmt.Errorf("failed to load service: %v", err)
+	}
+
+	// Start the service
+	cmd = exec.Command("launchctl", "start", "org.veilnet.conflux")
+	out, err = cmd.CombinedOutput()
+	if err != nil {
+		veilnet.Logger.Sugar().Errorf("failed to start service: %s", string(out))
+		return fmt.Errorf("failed to start service: %v", err)
+	}
+
+	veilnet.Logger.Sugar().Infof("VeilNet Conflux service installed and started")
 	return nil
 }
 
 func (c *conflux) Start() error {
+	cmd := exec.Command("launchctl", "start", "org.veilnet.conflux")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		veilnet.Logger.Sugar().Errorf("failed to start service: %s", string(out))
+		return fmt.Errorf("failed to start service: %v", err)
+	}
+	veilnet.Logger.Sugar().Infof("VeilNet Conflux service started")
 	return nil
 }
 
 func (c *conflux) Stop() error {
+	cmd := exec.Command("launchctl", "stop", "org.veilnet.conflux")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		veilnet.Logger.Sugar().Errorf("failed to stop service: %s", string(out))
+		return fmt.Errorf("failed to stop service: %v", err)
+	}
+	veilnet.Logger.Sugar().Infof("VeilNet Conflux service stopped")
 	return nil
 }
 
 func (c *conflux) Remove() error {
+	cmd := exec.Command("launchctl", "stop", "org.veilnet.conflux")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		veilnet.Logger.Sugar().Errorf("failed to stop service: %s", string(out))
+		return err
+	}
+	veilnet.Logger.Sugar().Infof("VeilNet Conflux service stopped")
+
+	plistFile := "/Library/LaunchDaemons/org.veilnet.conflux.plist"
+	cmd = exec.Command("launchctl", "unload", plistFile)
+	out, err = cmd.CombinedOutput()
+	if err != nil {
+		veilnet.Logger.Sugar().Errorf("failed to unload service: %s", string(out))
+		return fmt.Errorf("failed to unload service: %v", err)
+	}
+	veilnet.Logger.Sugar().Infof("VeilNet Conflux service unloaded")
+
+	err = os.Remove(plistFile)
+	if err != nil {
+		veilnet.Logger.Sugar().Errorf("failed to remove plist file: %v", err)
+		return fmt.Errorf("failed to remove plist file: %v", err)
+	}
+	veilnet.Logger.Sugar().Infof("VeilNet Conflux service removed")
+
 	return nil
 }
 
 func (c *conflux) Status() (bool, error) {
-	return false, nil
-}
-
-func (c *conflux) Metrics(name string) int {
-
-	// Get the metrics
-	metrics := c.anchor.GetAnchorMetrics(name)
-	return metrics
+	// Check if the service is running
+	cmd := exec.Command("launchctl", "list", "org.veilnet.conflux")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return false, fmt.Errorf("VeilNet Conflux service is not running: %v", string(out))
+	}
+	return true, nil
 }
 
 func (c *conflux) StartVeilNet(apiBaseURL, anchorToken string, portal bool) error {
@@ -79,30 +179,6 @@ func (c *conflux) StartVeilNet(apiBaseURL, anchorToken string, portal bool) erro
 	// initialize the anchor once
 	c.anchorOnce = sync.Once{}
 
-	// Set portal
-	c.portal = portal
-
-	// Get the default gateway and interface
-	err := c.DetectHostGateway()
-	if err != nil {
-		return err
-	}
-
-	// Set bypass routes
-	c.AddBypassRoutes()
-
-	// Close existing TUN device if any (defensive cleanup)
-	if c.device != nil {
-		c.CloseTUN()
-		c.device = nil
-	}
-
-	// Create the TUN device
-	err = c.CreateTUN()
-	if err != nil {
-		return err
-	}
-
 	//Close existing anchor if any (defensive cleanup)
 	if c.anchor != nil {
 		c.anchor.Stop()
@@ -111,33 +187,16 @@ func (c *conflux) StartVeilNet(apiBaseURL, anchorToken string, portal bool) erro
 
 	// Create the anchor
 	c.anchor = veilnet.NewAnchor()
-	err = c.anchor.Start(apiBaseURL, anchorToken, false)
-	if err != nil {
-		return err
-	}
-
-	// Get the CIDR
-	cidr, err := c.anchor.GetCIDR()
-	if err != nil {
-		return err
-	}
-
-	// Split CIDR into IP and netmask
-	parts := strings.Split(cidr, "/")
-	if len(parts) != 2 {
-		return fmt.Errorf("invalid CIDR format: %s", cidr)
-	}
-	ip := parts[0]
-	netmask := parts[1]
-
-	// Configure the host
-	err = c.ConfigHost(ip, netmask)
+	err := c.anchor.Start(apiBaseURL, anchorToken, false)
 	if err != nil {
 		return err
 	}
 
 	// Link the anchor to the TUN device
-	c.anchor.LinkWithWgTUN(c.device)
+	err = c.anchor.LinkWithTUN("veilnet", 1500)
+	if err != nil {
+		return err
+	}
 
 	// Close existing metrics server
 	if c.metricsServer != nil {
@@ -182,21 +241,6 @@ func (c *conflux) StopVeilNet() {
 			c.anchor.Stop()
 			c.anchor = nil
 		}
-
-		// Clean up the host configurations
-		c.CleanHostConfiguraions()
-		c.RemoveBypassRoutes()
-
-		// Protect CloseTUN with panic recovery
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					veilnet.Logger.Sugar().Errorf("panic in CloseTUN: %v", r)
-				}
-			}()
-			c.CloseTUN()
-			c.device = nil
-		}()
 	})
 }
 
@@ -205,250 +249,4 @@ func (c *conflux) GetAnchor() *veilnet.Anchor {
 		return nil
 	}
 	return c.anchor
-}
-
-func (c *conflux) CreateTUN() error {
-	var err error
-	c.device, err = tun.CreateTUN("veilnet", 1500)
-	if err != nil {
-		veilnet.Logger.Sugar().Errorf("failed to create TUN device: %v", err)
-		return err
-	}
-	return nil
-}
-
-func (c *conflux) CloseTUN() {
-	if c.device != nil {
-		err := c.device.Close()
-		if err != nil {
-			veilnet.Logger.Sugar().Errorf("failed to close TUN device: %v", err)
-		}
-	}
-}
-
-func (c *conflux) DetectHostGateway() error {
-
-	cmd := exec.Command("route", "-n", "get", "default")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		veilnet.Logger.Sugar().Errorf("failed to get default route: %s", string(out))
-		return err
-	}
-
-	lines := strings.Split(string(out), "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "gateway:") {
-			c.gateway = strings.TrimSpace(strings.TrimPrefix(line, "gateway:"))
-		}
-		if strings.HasPrefix(line, "interface:") {
-			c.iface = strings.TrimSpace(strings.TrimPrefix(line, "interface:"))
-		}
-	}
-
-	if c.gateway == "" || c.iface == "" {
-		err = fmt.Errorf("default gateway or interface not found")
-		veilnet.Logger.Sugar().Errorf("Host default gateway or interface not found")
-		return err
-	}
-
-	veilnet.Logger.Sugar().Infof("Found Host Default gateway: %s via interface %s", c.gateway, c.iface)
-	return nil
-}
-
-func (c *conflux) AddBypassRoutes() {
-	hosts := []string{"stun.cloudflare.com", "turn.cloudflare.com", "guardian.veilnet.app", "nats.veilnet.app"}
-
-	for _, host := range hosts {
-		// Resolve IP addresses
-		ips, err := net.LookupIP(host)
-		if err != nil {
-			veilnet.Logger.Sugar().Errorf("Failed to resolve %s: %v", host, err)
-			continue
-		}
-
-		for _, ip := range ips {
-			// Add route for IPv4 addresses
-			if ip4 := ip.To4(); ip4 != nil {
-				dest := ip4.String()
-				cmd := exec.Command("route", "-n", "add", dest, c.gateway, "-interface", c.iface)
-				out, err := cmd.CombinedOutput()
-				if err != nil {
-					veilnet.Logger.Sugar().Debugf("failed to add bypass route for %s: %s", host, string(out))
-					continue
-				} else {
-					// Store the bypass route
-					c.bypassRoutes.Store(host, dest)
-					veilnet.Logger.Sugar().Infof("Added bypass route for %s: %s", host, dest)
-				}
-			}
-		}
-	}
-}
-
-func (c *conflux) RemoveBypassRoutes() {
-	c.bypassRoutes.Range(func(key, value interface{}) bool {
-		// Remove bypass route
-		cmd := exec.Command("route", "-n", "del", value.(string))
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			veilnet.Logger.Sugar().Debugf("failed to clear bypass route for %s: %s", key, string(out))
-			return true
-		} else {
-			veilnet.Logger.Sugar().Infof("Removed bypass route for %s: %s", key, value.(string))
-			return true
-		}
-	})
-}
-
-// ConfigHost configures the TUN interface with the given IP address and netmask
-// It also sets up iptables FORWARD rules and NAT for the TUN interface
-// It also enables IP forwarding if it is not already enabled
-func (c *conflux) ConfigHost(ip, netmask string) error {
-
-	// Bring the interface up
-	cmd := exec.Command("ifconfig", "veilnet", "up")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		veilnet.Logger.Sugar().Errorf("failed to bring interface veilnet up: %s", string(out))
-		return err
-	}
-	veilnet.Logger.Sugar().Infof("Set VeilNet TUN interface up")
-
-	// Set the IP address and netmask
-	cmd = exec.Command("ifconfig", "veilnet", "inet", ip, "netmask", c.convertNetmask(netmask))
-	out, err = cmd.CombinedOutput()
-	if err != nil {
-		veilnet.Logger.Sugar().Errorf("failed to set IP %s/%s on veilnet: %s", ip, netmask, string(out))
-		return err
-	}
-	veilnet.Logger.Sugar().Infof("Set VeilNet TUN IP to %s/%s", ip, netmask)
-
-	// // Add Plane Local Network Route
-	// c.anchor.PlaneNetworks.Range(func(key, value interface{}) bool {
-	// 	cmd := exec.Command("route", "-n", "add", value.(veilnet.PlaneNetwork).Subnet, "via", c.gateway, "dev", c.iface)
-	// 	out, err := cmd.CombinedOutput()
-	// 	if err != nil {
-	// 		veilnet.Logger.Sugar().Errorf("failed to set plane local network route: %s", string(out))
-	// 		return true
-	// 	}
-	// 	veilnet.Logger.Sugar().Infof("Set plane local network route for %s", value.(veilnet.PlaneNetwork).Subnet)
-	// 	return true
-	// })
-
-	go func() {
-		for {
-			select {
-			case <-c.anchor.Ctx.Done():
-				return
-			case subnet := <-c.anchor.PlaneNetworksAddQueue:
-
-				cmd := exec.Command("route", "-n", "add", subnet, "-interface", "veilnet", "-hopcount", "5")
-				out, err := cmd.CombinedOutput()
-				if err != nil {
-					veilnet.Logger.Sugar().Warnf("failed to set plane local network route: %s", string(out))
-					continue
-				}
-				veilnet.Logger.Sugar().Infof("Set plane local network route for %s", subnet)
-			}
-		}
-	}()
-
-	go func() {
-		for {
-			select {
-			case <-c.anchor.Ctx.Done():
-				return
-			case subnet := <-c.anchor.PlaneNetworksRemoveQueue:
-				cmd := exec.Command("route", "-n", "del", subnet, "-interface", "veilnet")
-				out, err := cmd.CombinedOutput()
-				if err != nil {
-					veilnet.Logger.Sugar().Warnf("failed to remove plane local network route: %s", string(out))
-					continue
-				}
-				veilnet.Logger.Sugar().Infof("Removed plane local network route for %s", subnet)
-			}
-		}
-	}()
-
-	if !c.portal {
-		// Delete the original default route
-		cmd = exec.Command("route", "-n", "delete", "default")
-		out, err = cmd.CombinedOutput()
-		if err != nil {
-			veilnet.Logger.Sugar().Errorf("failed to delete original default route: %s", string(out))
-			return err
-		}
-		veilnet.Logger.Sugar().Infof("Deleted original default route")
-
-		// Recreate the original default route with higher hopcount (lower priority)
-		cmd = exec.Command("route", "-n", "add", "default", c.gateway, "-hopcount", "10")
-		out, err = cmd.CombinedOutput()
-		if err != nil {
-			veilnet.Logger.Sugar().Errorf("failed to recreate default route with higher hopcount: %s", string(out))
-			return err
-		}
-		veilnet.Logger.Sugar().Infof("Recreated default route with hopcount 10")
-
-		// Add a route through the TUN interface with lower hopcount (higher priority)
-		cmd = exec.Command("route", "-n", "add", "default", "-interface", "veilnet", "-hopcount", "5")
-		out, err = cmd.CombinedOutput()
-		if err != nil {
-			veilnet.Logger.Sugar().Errorf("failed to set default route: %s", string(out))
-			return err
-		}
-		veilnet.Logger.Sugar().Infof("Set veilnet as default route with hopcount 5")
-	}
-
-	return nil
-}
-
-// convertNetmask converts CIDR notation to dotted decimal notation
-func (c *conflux) convertNetmask(cidr string) string {
-	switch cidr {
-	case "8":
-		return "255.0.0.0"
-	case "16":
-		return "255.255.0.0"
-	case "24":
-		return "255.255.255.0"
-	case "32":
-		return "255.255.255.255"
-	default:
-		return "255.255.255.0" // Default to /24
-	}
-}
-
-// CleanHostConfiguraions removes the iptables FORWARD rules and NAT rule for the TUN interface
-// It also disables IP forwarding if it was not enabled
-func (c *conflux) CleanHostConfiguraions() {
-
-	if !c.portal {
-		// Delete the route through the TUN interface
-		cmd := exec.Command("route", "-n", "delete", "default", "-interface", "veilnet")
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			veilnet.Logger.Sugar().Debugf("failed to delete TUN default route: %s", string(out))
-		} else {
-			veilnet.Logger.Sugar().Infof("Deleted TUN default route")
-		}
-
-		// Delete the altered default route
-		cmd = exec.Command("route", "-n", "delete", "default")
-		out, err = cmd.CombinedOutput()
-		if err != nil {
-			veilnet.Logger.Sugar().Debugf("failed to delete altered default route: %s", string(out))
-		} else {
-			veilnet.Logger.Sugar().Infof("Deleted altered default route")
-		}
-
-		// Restore the original host default route
-		cmd = exec.Command("route", "-n", "add", "default", c.gateway)
-		out, err = cmd.CombinedOutput()
-		if err != nil {
-			veilnet.Logger.Sugar().Debugf("failed to restore host default route: %s", string(out))
-		} else {
-			veilnet.Logger.Sugar().Infof("Restored host default route")
-		}
-	}
 }

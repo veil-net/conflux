@@ -41,7 +41,6 @@ func (api *API) Run() error {
 	api.server.POST("/down", api.down)
 	api.server.POST("/register", api.register)
 	api.server.POST("/unregister", api.unregister)
-	api.server.GET("/metrics/:name", api.metrics)
 	// Create a context for the server
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -216,7 +215,7 @@ func (api *API) register(c echo.Context) error {
 	err = api.conflux.StartVeilNet(request.Guardian, confluxToken.Token, request.Portal)
 	if err != nil {
 		api.conflux.StopVeilNet()
-		return c.JSON(http.StatusInternalServerError, echo.Map{"details": "Failed to start VeilNet"})
+		return c.JSON(http.StatusInternalServerError, echo.Map{"details": fmt.Sprintf("Failed to start VeilNet: %v", err)})
 	}
 
 	return c.JSON(http.StatusOK, echo.Map{"details": "VeilNet started"})
@@ -229,39 +228,39 @@ func (api *API) unregister(c echo.Context) error {
 	// Load the registration data
 	tmpDir, err := os.UserConfigDir()
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"details": "Failed to get user config directory"})
+		veilnet.Logger.Sugar().Errorf("failed to get user config directory: %v", err)
 	}
 	confluxDir := filepath.Join(tmpDir, "conflux")
 	confluxFile := filepath.Join(confluxDir, "conflux.json")
 	registrationData, err := os.ReadFile(confluxFile)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"details": "Failed to read registration data"})
+		veilnet.Logger.Sugar().Errorf("failed to read registration data: %v", err)
 	}
 	var register Register
 	err = json.Unmarshal(registrationData, &register)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"details": "Failed to unmarshal registration data"})
+		veilnet.Logger.Sugar().Errorf("failed to unmarshal registration data: %v", err)
 	}
 
 	path := fmt.Sprintf("%s/conflux/unregister?conflux_id=%s", register.Guardian, register.ID)
 	req, err := http.NewRequest("DELETE", path, nil)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"details": "Failed to create unregister request"})
+		veilnet.Logger.Sugar().Errorf("failed to create unregister request: %v", err)
 	}
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", register.Token))
 	req.Header.Set("Content-Type", "application/json")
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"details": "Failed to make unregister request"})
+		veilnet.Logger.Sugar().Errorf("failed to make unregister request: %v", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return c.JSON(http.StatusInternalServerError, echo.Map{"details": "Failed to read unregister response body"})
+			veilnet.Logger.Sugar().Errorf("failed to read unregister response body: %v", err)
 		}
-		return c.JSON(http.StatusInternalServerError, echo.Map{"details": fmt.Sprintf("unregister failed with status %d: %s", resp.StatusCode, string(body))})
+		veilnet.Logger.Sugar().Errorf("unregister failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
 	// Stop the current VeilNet
@@ -270,15 +269,7 @@ func (api *API) unregister(c echo.Context) error {
 	// Remove the conflux file
 	err = os.Remove(confluxFile)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"details": "Failed to remove conflux file"})
+		veilnet.Logger.Sugar().Errorf("failed to remove conflux file: %v", err)
 	}
 	return c.JSON(http.StatusOK, echo.Map{"details": "VeilNet unregistered"})
-}
-
-func (api *API) metrics(c echo.Context) error {
-	api.mu.Lock()
-	defer api.mu.Unlock()
-	name := c.Param("name")
-	metrics := api.conflux.Metrics(name)
-	return c.JSON(http.StatusOK, echo.Map{"metrics": metrics})
 }

@@ -7,13 +7,9 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -21,24 +17,13 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/veil-net/veilnet"
-	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
-	tun "golang.zx2c4.com/wireguard/tun"
 )
-
-//go:embed wintun.dll
-var wintunDLL []byte
 
 type conflux struct {
 	anchor           *veilnet.Anchor
 	api              *API
-	device           tun.Device
-	portal           bool
-	gateway          string
-	iface            string
-	bypassRoutes     sync.Map
-	ipForwardEnabled bool
 	metricsServer    *http.Server
 
 	anchorMutex sync.Mutex
@@ -210,13 +195,6 @@ func (c *conflux) Status() (bool, error) {
 	return true, nil
 }
 
-func (c *conflux) Metrics(name string) int {
-
-	// Get the metrics
-	metrics := c.anchor.GetAnchorMetrics(name)
-	return metrics
-}
-
 func (c *conflux) StartVeilNet(apiBaseURL, anchorToken string, portal bool) error {
 
 	// Lock the anchor mutex
@@ -226,30 +204,6 @@ func (c *conflux) StartVeilNet(apiBaseURL, anchorToken string, portal bool) erro
 	// initialize the anchor once
 	c.anchorOnce = sync.Once{}
 
-	// Set portal
-	c.portal = portal
-
-	// Get the default gateway and interface
-	err := c.DetectHostGateway()
-	if err != nil {
-		return err
-	}
-
-	// Set bypass routes
-	c.AddBypassRoutes()
-
-	// Close existing TUN device if any (defensive cleanup)
-	if c.device != nil {
-		c.CloseTUN()
-		c.device = nil
-	}
-
-	// Create the TUN device
-	err = c.CreateTUN()
-	if err != nil {
-		return err
-	}
-
 	//Close existing anchor
 	if c.anchor != nil {
 		c.anchor.Stop()
@@ -258,31 +212,16 @@ func (c *conflux) StartVeilNet(apiBaseURL, anchorToken string, portal bool) erro
 
 	// Start the anchor
 	c.anchor = veilnet.NewAnchor()
-	err = c.anchor.Start(apiBaseURL, anchorToken, false)
-	if err != nil {
-		return err
-	}
-
-	// Get the IP address
-	cidr, err := c.anchor.GetCIDR()
-	if err != nil {
-		return err
-	}
-	ipAddr, ipNet, err := net.ParseCIDR(cidr)
-	if err != nil {
-		return err
-	}
-	ip := ipAddr.String()
-	netmask := fmt.Sprintf("%d.%d.%d.%d", ipNet.Mask[0], ipNet.Mask[1], ipNet.Mask[2], ipNet.Mask[3])
-
-	// Configure the host
-	err = c.ConfigHost(ip, netmask)
+	err := c.anchor.Start(apiBaseURL, anchorToken, false)
 	if err != nil {
 		return err
 	}
 
 	// Link the anchor to the TUN device
-	c.anchor.LinkWithWgTUN(c.device)
+	err = c.anchor.LinkWithTUN("veilnet", 1500)
+	if err != nil {
+		return err
+	}
 
 	// Close existing metrics server
 	if c.metricsServer != nil {
@@ -327,21 +266,6 @@ func (c *conflux) StopVeilNet() {
 			c.anchor.Stop()
 			c.anchor = nil
 		}
-
-		// Clean up the host configurations
-		c.CleanHostConfiguraions()
-		c.RemoveBypassRoutes()
-
-		// Protect CloseTUN with panic recovery
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					veilnet.Logger.Sugar().Errorf("panic in CloseTUN: %v", r)
-				}
-			}()
-			c.CloseTUN()
-			c.device = nil
-		}()
 	})
 }
 
@@ -350,245 +274,6 @@ func (c *conflux) GetAnchor() *veilnet.Anchor {
 		return nil
 	}
 	return c.anchor
-}
-
-func (c *conflux) CreateTUN() error {
-
-	dllPath := filepath.Join(os.TempDir(), "wintun.dll")
-
-	// Always overwrite wintun.dll in temp directory.
-	if err := os.WriteFile(dllPath, wintunDLL, 0644); err != nil {
-		return fmt.Errorf("write wintun.dll: %w", err)
-	}
-
-	// Set the GUID for the TUN device
-	tun.WintunStaticRequestedGUID = &windows.GUID{
-		Data1: 0x564E4554,                                              // "VNET" in ASCII
-		Data2: 0x564E,                                                  // "VN" in ASCII
-		Data3: 0x4554,                                                  // "ET" in ASCII
-		Data4: [8]byte{0x56, 0x45, 0x49, 0x4C, 0x4E, 0x45, 0x54, 0x00}, // "VEILNET" in ASCII
-	}
-
-	// Add the temp directory to the DLL search path for this process.
-	if err := windows.SetDllDirectory(os.TempDir()); err != nil {
-		return fmt.Errorf("failed to set DLL search path: %w", err)
-	}
-
-	// Create a new TUN device
-	tun, err := tun.CreateTUN("veilnet", 1500)
-	if err != nil {
-		return err
-	}
-	c.device = tun
-	return nil
-}
-
-func (c *conflux) CloseTUN() {
-	if c.device != nil {
-		err := c.device.Close()
-		if err != nil {
-			veilnet.Logger.Sugar().Errorf("failed to close TUN device: %v", err)
-		}
-	}
-}
-
-func (c *conflux) DetectHostGateway() error {
-
-	// Get the host default gateway and interface
-	cmd := exec.Command("route", "print", "0.0.0.0")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		veilnet.Logger.Sugar().Errorf("failed to get host default gateway: %s", string(out))
-		return err
-	}
-
-	// Parse the output
-	lines := strings.Split(string(out), "\n")
-	var gateway string
-	var iface string
-	for _, line := range lines {
-		fields := strings.Fields(line)
-		if len(fields) >= 5 && fields[0] == "0.0.0.0" && fields[1] == "0.0.0.0" {
-			gateway = fields[2]
-			iface = fields[3]
-			break
-		}
-	}
-
-	// If the host default gateway or interface is not found, return an error
-	if gateway == "" || iface == "" {
-		veilnet.Logger.Sugar().Errorf("Host default gateway or interface not found")
-		return fmt.Errorf("host default gateway or interface not found")
-	}
-
-	// Store the host default gateway and interface
-	veilnet.Logger.Sugar().Infof("Found Host Default gateway: %s via interface %s", gateway, iface)
-	c.gateway = gateway
-	c.iface = iface
-	return nil
-}
-
-func (c *conflux) AddBypassRoutes() {
-	hosts := []string{"stun.cloudflare.com", "turn.cloudflare.com", "guardian.veilnet.app", "nats.veilnet.app"}
-
-	for _, host := range hosts {
-		// Resolve IP addresses
-		ips, err := net.LookupIP(host)
-		if err != nil {
-			veilnet.Logger.Sugar().Errorf("Failed to resolve %s: %v", host, err)
-			continue
-		}
-
-		for _, ip := range ips {
-			// Add route for IPv4 addresses
-			if ip4 := ip.To4(); ip4 != nil {
-				dest := ip4.String()
-				cmd := exec.Command("route", "add", dest, "mask", "255.255.255.255", c.gateway)
-				out, err := cmd.CombinedOutput()
-				if err != nil {
-					veilnet.Logger.Sugar().Debugf("failed to add bypass route for %s: %s", host, string(out))
-					continue
-				} else {
-					// Store the bypass route
-					c.bypassRoutes.Store(host, dest)
-					veilnet.Logger.Sugar().Infof("Added bypass route for %s: %s", host, dest)
-				}
-			}
-		}
-	}
-}
-
-func (c *conflux) RemoveBypassRoutes() {
-	c.bypassRoutes.Range(func(key, value interface{}) bool {
-		// Remove bypass route
-		cmd := exec.Command("route", "delete", value.(string), "mask", "255.255.255.255", c.gateway)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			veilnet.Logger.Sugar().Debugf("failed to clear bypass route for %s: %s", key, string(out))
-			return true
-		} else {
-			veilnet.Logger.Sugar().Infof("Removed bypass route for %s: %s", key, value.(string))
-			return true
-		}
-	})
-}
-
-// ConfigHost configures the TUN interface with the given IP address and netmask
-// It also sets up iptables FORWARD rules and NAT for the TUN interface
-// It also enables IP forwarding if it is not already enabled
-func (c *conflux) ConfigHost(ip, netmask string) error {
-
-	// Set the IPv4 address and netmask (non-persistent)
-	cmd := exec.Command("netsh", "interface", "ipv4", "set", "address", "name=veilnet", "static", ip, netmask, "store=active")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		veilnet.Logger.Sugar().Errorf("failed to configure VeilNet TUN IP address: %s", string(out))
-		return err
-	}
-	veilnet.Logger.Sugar().Infof("Set VeilNet TUN to %s", ip)
-
-	// Set the DNS server (non-persistent)
-	cmd = exec.Command("netsh", "interface", "ipv4", "add", "dnsserver", "name=veilnet", "address=1.1.1.1", "index=1", "store=active")
-	out, err = cmd.CombinedOutput()
-	if err != nil {
-		veilnet.Logger.Sugar().Errorf("failed to configure VeilNet TUN DNS: %s", string(out))
-		return err
-	}
-	veilnet.Logger.Sugar().Infof("Set VeilNet TUN DNS to 1.1.1.1")
-
-	// Get the interface index
-	iface, err := net.InterfaceByName("veilnet")
-	if err != nil {
-		veilnet.Logger.Sugar().Errorf("failed to get VeilNet TUN interface index: %v", err)
-		return err
-	}
-	veilnet.Logger.Sugar().Infof("Got VeilNet TUN interface index: %d", iface.Index)
-
-	go func() {
-		for {
-			select {
-			case <-c.anchor.Ctx.Done():
-				return
-			case subnet := <-c.anchor.PlaneNetworksAddQueue:
-				_, ipNet, err := net.ParseCIDR(subnet)
-				if err != nil {
-					veilnet.Logger.Sugar().Warnf("failed to parse plane local network subnet %s: %v", subnet, err)
-					continue
-				}
-				ip := strings.Split(subnet, "/")[0]
-				netmask := fmt.Sprintf("%d.%d.%d.%d", ipNet.Mask[0], ipNet.Mask[1], ipNet.Mask[2], ipNet.Mask[3])
-				cmd := exec.Command("route", "add", ip, "mask", netmask, ip, "metric", "5", "if", strconv.Itoa(iface.Index))
-				out, err := cmd.CombinedOutput()
-				if err != nil {
-					veilnet.Logger.Sugar().Warnf("failed to set plane local network route: %s", string(out))
-					continue
-				}
-				veilnet.Logger.Sugar().Infof("Set plane local network route for %s", subnet)
-			}
-		}
-	}()
-
-	go func() {
-		for {
-			select {
-			case <-c.anchor.Ctx.Done():
-				return
-			case subnet := <-c.anchor.PlaneNetworksRemoveQueue:
-
-				_, ipNet, err := net.ParseCIDR(subnet)
-				if err != nil {
-					veilnet.Logger.Sugar().Warnf("failed to parse plane local network subnet %s: %v", subnet, err)
-					continue
-				}
-				ip := strings.Split(subnet, "/")[0]
-				netmask := fmt.Sprintf("%d.%d.%d.%d", ipNet.Mask[0], ipNet.Mask[1], ipNet.Mask[2], ipNet.Mask[3])
-				cmd := exec.Command("route", "delete", ip, "mask", netmask, ip, "if", strconv.Itoa(iface.Index))
-				out, err := cmd.CombinedOutput()
-				if err != nil {
-					veilnet.Logger.Sugar().Warnf("failed to remove plane local network route: %s", string(out))
-					continue
-				}
-				veilnet.Logger.Sugar().Infof("Removed plane local network route for %s", subnet)
-			}
-		}
-	}()
-
-	if !c.portal {
-		// Set the default route
-		cmd = exec.Command("route", "add", "0.0.0.0", "mask", "0.0.0.0", ip, "metric", "5", "if", strconv.Itoa(iface.Index))
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			veilnet.Logger.Sugar().Errorf("failed to set VeilNet TUN as alternate gateway: %s", string(out))
-			return err
-		}
-		veilnet.Logger.Sugar().Infof("Set VeilNet TUN as preferred gateway")
-	}
-
-	return nil
-}
-
-// CleanHostConfiguraions removes the iptables FORWARD rules and NAT rule for the TUN interface
-// It also disables IP forwarding if it was not enabled
-func (c *conflux) CleanHostConfiguraions() {
-
-	if !c.portal {
-		// Get the interface index
-		iface, err := net.InterfaceByName("veilnet")
-		if err != nil {
-			veilnet.Logger.Sugar().Debugf("failed to get VeilNet TUN interface index: %v", err)
-			return
-		}
-
-		// Remove the route
-		cmd := exec.Command("route", "delete", "0.0.0.0", "mask", "0.0.0.0", "if", strconv.Itoa(iface.Index))
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			veilnet.Logger.Sugar().Debugf("failed to remove VeilNet TUN route: %s", string(out))
-		} else {
-			veilnet.Logger.Sugar().Infof("Removed VeilNet TUN as preferred gateway")
-		}
-	}
-
 }
 
 func (c *conflux) Execute(args []string, changeRequests <-chan svc.ChangeRequest, changes chan<- svc.Status) (ssec bool, errno uint32) {
@@ -602,7 +287,6 @@ func (c *conflux) Execute(args []string, changeRequests <-chan svc.ChangeRequest
 	c.api.server.POST("/down", c.api.down)
 	c.api.server.POST("/register", c.api.register)
 	c.api.server.POST("/unregister", c.api.unregister)
-	c.api.server.GET("/metrics/:name", c.api.metrics)
 	// Start server
 	go func() {
 		if err := c.api.server.Start("127.0.0.1:1993"); err != nil && err != http.ErrServerClosed {

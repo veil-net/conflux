@@ -44,7 +44,7 @@ All Conflux instances connect to **VeilNet Master**, the control channel message
 
 ```mermaid
 graph TB
-    subgraph "VeilNet Master (NATS Super Cluster)"
+    subgraph "VeilNet Master"
         Master[Control Channel<br/>Message Broker]
     end
     
@@ -59,8 +59,6 @@ graph TB
     C2 <-->|Control Messages| Master
     C3 <-->|Control Messages| Master
     C4 <-->|Control Messages| Master
-    
-    Master -.->|Relays Messages| Master
     
     style Master fill:#4a90e2,color:#fff
     style C1 fill:#f5a623,color:#fff
@@ -234,7 +232,7 @@ sequenceDiagram
     CF1->>CF1: Find Route (via CF2)
     CF1->>CF1: Create Tether
     CF1->>CF2: Encrypted Data
-    CF2->>CF2: Create Ingresser
+    CF2->>CF2: Create Relay
     CF2->>CF2: Find Route (to CF3)
     CF2->>CF2: Create Tether
     CF2->>CF3: Forward Encrypted Data

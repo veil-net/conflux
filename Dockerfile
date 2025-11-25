@@ -19,4 +19,4 @@ COPY ./veilnet-conflux ./veilnet-conflux
 RUN chmod +x ./veilnet-conflux
 
 # Use exec form for CMD
-CMD ["./veilnet-conflux", "docker"]
+CMD ["./veilnet-conflux"]

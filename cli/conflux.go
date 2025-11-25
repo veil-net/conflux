@@ -1,7 +1,5 @@
 package cli
 
-import "github.com/veil-net/veilnet"
-
 type Conflux interface {
 
 	// Run runs the conflux service
@@ -21,15 +19,6 @@ type Conflux interface {
 
 	// Status returns the status of the conflux service
 	Status() (bool, error)
-
-	// StartVeilNet starts the veilnet service
-	StartVeilNet(apiBaseURL, anchorToken string, portal bool) error
-
-	// StopVeilNet stops the veilnet service
-	StopVeilNet()
-
-	// GetAnchor returns the anchor of the conflux service
-	GetAnchor() *veilnet.Anchor
 }
 
 func NewConflux() Conflux {

@@ -9,30 +9,22 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
-	"sync"
+	"os/signal"
+	"syscall"
 	"time"
 
-	"encoding/json"
-
-	"github.com/labstack/echo/v4"
 	"github.com/veil-net/veilnet"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
 )
 
 type conflux struct {
-	anchor           *veilnet.Anchor
-	api              *API
-	metricsServer    *http.Server
-
-	anchorMutex sync.Mutex
-	anchorOnce  sync.Once
+	anchor        *veilnet.Anchor
+	metricsServer *http.Server
 }
 
 func newConflux() *conflux {
 	c := &conflux{}
-	c.api = newAPI(c)
 	return c
 }
 
@@ -50,7 +42,83 @@ func (c *conflux) Run() error {
 	}
 
 	// If the conflux is not running as a Windows service, run as a HTTP server
-	return c.api.Run()
+	// Load existing registration data
+	register := Register{}
+	register.loadRegistrationData()
+
+	if register.Guardian == "" {
+		veilnet.Logger.Sugar().Errorf("Guardian URL is missing in the registration data")
+		return fmt.Errorf("guardian URL is missing in the registration data")
+	}
+	if register.Token == "" {
+		veilnet.Logger.Sugar().Errorf("Token is missing in the registration data")
+		return fmt.Errorf("token is missing in the registration data")
+	}
+	if register.Portal {
+		veilnet.Logger.Sugar().Errorf("Portal mode is not supported on Windows")
+		return fmt.Errorf("portal mode is not supported on Windows")
+	}
+
+	// Register the conflux
+	confluxToken, err := register.register()
+	if err != nil {
+		veilnet.Logger.Sugar().Errorf("failed to register conflux: %v", err)
+		return err
+	}
+
+	// Save the registration data
+	err = register.saveRegistrationData(confluxToken)
+	if err != nil {
+		veilnet.Logger.Sugar().Errorf("failed to save registration data: %v", err)
+		return err
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	// Start the anchor
+	c.anchor = veilnet.NewAnchor()
+	err = c.anchor.Start(register.Guardian, confluxToken.Token, false)
+	if err != nil {
+		veilnet.Logger.Sugar().Errorf("failed to start VeilNet: %v", err)
+		return err
+	}
+
+	// Link the anchor to the TUN device
+	err = c.anchor.LinkWithTUN("veilnet", 1500)
+	if err != nil {
+		veilnet.Logger.Sugar().Errorf("failed to link anchor to TUN device: %v", err)
+		return err
+	}
+
+	// Start the metrics server
+	c.metricsServer = &http.Server{
+		Addr:    ":9090",
+		Handler: c.anchor.Metrics.GetHandler(),
+	}
+	go func() {
+		if err := c.metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			veilnet.Logger.Sugar().Errorf("metrics server error: %v", err)
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := c.metricsServer.Shutdown(ctx); err != nil {
+			veilnet.Logger.Sugar().Errorf("failed to stop metrics server: %v", err)
+		}
+		c.anchor.Stop()
+		return nil
+	case <-c.anchor.Ctx.Done():
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := c.metricsServer.Shutdown(ctx); err != nil {
+			veilnet.Logger.Sugar().Errorf("failed to stop metrics server: %v", err)
+		}
+		return nil
+	}
 }
 
 func (c *conflux) Install() error {
@@ -85,7 +153,7 @@ func (c *conflux) Install() error {
 
 	err = s.Start()
 	if err != nil {
-		return fmt.Errorf("failed to start VeilNet Conflux service: %v", err)
+		return err
 	}
 	veilnet.Logger.Sugar().Infof("VeilNet Conflux service installed and started")
 	return nil
@@ -95,21 +163,21 @@ func (c *conflux) Start() error {
 	// Connect to the service manager
 	m, err := mgr.Connect()
 	if err != nil {
-		return fmt.Errorf("failed to connect to service manager: %v", err)
+		return err
 	}
 	defer m.Disconnect()
 
 	// Open the service
 	s, err := m.OpenService("VeilNet Conflux")
 	if err != nil {
-		return fmt.Errorf("failed to open VeilNet Conflux service: %v", err)
+		return fmt.Errorf("%v", err)
 	}
 	defer s.Close()
 
 	// Start the service
 	err = s.Start()
 	if err != nil {
-		return fmt.Errorf("failed to start VeilNet Conflux service: %v", err)
+		return err
 	}
 
 	veilnet.Logger.Sugar().Info("VeilNet Conflux service started successfully")
@@ -120,21 +188,21 @@ func (c *conflux) Stop() error {
 	// Connect to the service manager
 	m, err := mgr.Connect()
 	if err != nil {
-		return fmt.Errorf("failed to connect to service manager: %v", err)
+		return err
 	}
 	defer m.Disconnect()
 
 	// Open the service
 	s, err := m.OpenService("VeilNet Conflux")
 	if err != nil {
-		return fmt.Errorf("failed to open VeilNet Conflux service: %v", err)
+		return err
 	}
 	defer s.Close()
 
 	// Stop the service
 	_, err = s.Control(svc.Stop)
 	if err != nil {
-		return fmt.Errorf("failed to stop VeilNet Conflux service: %v", err)
+		return err
 	}
 
 	veilnet.Logger.Sugar().Info("VeilNet Conflux service stopped successfully")
@@ -145,24 +213,27 @@ func (c *conflux) Remove() error {
 	// Connect to the service manager
 	m, err := mgr.Connect()
 	if err != nil {
-		return fmt.Errorf("failed to connect to service manager: %v", err)
+		return err
 	}
 	defer m.Disconnect()
 
 	// Open the service
 	s, err := m.OpenService("VeilNet Conflux")
 	if err != nil {
-		return fmt.Errorf("failed to open VeilNet Conflux service: %v", err)
+		return err
 	}
 	defer s.Close()
 
 	// Stop the service first
-	s.Control(svc.Stop)
+	_, err = s.Control(svc.Stop)
+	if err != nil {
+		return err
+	}
 
 	// Delete the service
 	err = s.Delete()
 	if err != nil {
-		return fmt.Errorf("failed to delete VeilNet Conflux service: %v", err)
+		return err
 	}
 
 	veilnet.Logger.Sugar().Info("VeilNet Conflux service removed successfully")
@@ -173,21 +244,21 @@ func (c *conflux) Status() (bool, error) {
 	// Connect to the service manager
 	m, err := mgr.Connect()
 	if err != nil {
-		return false, fmt.Errorf("failed to connect to service manager: %v", err)
+		return false, err
 	}
 	defer m.Disconnect()
 
 	// Open the service
 	s, err := m.OpenService("VeilNet Conflux")
 	if err != nil {
-		return false, fmt.Errorf("failed to open VeilNet Conflux service: %v", err)
+		return false, err
 	}
 	defer s.Close()
 
 	// Get the service status
 	status, err := s.Query()
 	if err != nil {
-		return false, fmt.Errorf("failed to query VeilNet Conflux service: %v", err)
+		return false, err
 	}
 	if status.State != svc.Running {
 		return false, fmt.Errorf("VeilNet Conflux service is not running")
@@ -195,38 +266,62 @@ func (c *conflux) Status() (bool, error) {
 	return true, nil
 }
 
-func (c *conflux) StartVeilNet(apiBaseURL, anchorToken string, portal bool) error {
+func (c *conflux) Execute(args []string, changeRequests <-chan svc.ChangeRequest, changes chan<- svc.Status) (ssec bool, errno uint32) {
 
-	// Lock the anchor mutex
-	c.anchorMutex.Lock()
-	defer c.anchorMutex.Unlock()
+	// Signal the service is starting
+	changes <- svc.Status{State: svc.StartPending}
 
-	// initialize the anchor once
-	c.anchorOnce = sync.Once{}
+	// Load existing registration data
+	register := Register{}
+	register.loadRegistrationData()
 
-	//Close existing anchor
-	if c.anchor != nil {
-		c.anchor.Stop()
-		c.anchor = nil
+	if register.Guardian == "" {
+		veilnet.Logger.Sugar().Errorf("Guardian URL is missing in the registration data")
+		changes <- svc.Status{State: svc.Stopped}
+		return false, 1
+	}
+	if register.Token == "" {
+		veilnet.Logger.Sugar().Errorf("Token is missing in the registration data")
+		changes <- svc.Status{State: svc.Stopped}
+		return false, 1
+	}
+	if register.Portal {
+		veilnet.Logger.Sugar().Errorf("Portal mode is not supported on Windows")
+		changes <- svc.Status{State: svc.Stopped}
+		return false, 1
+	}
+
+	// Register the conflux
+	confluxToken, err := register.register()
+	if err != nil {
+		veilnet.Logger.Sugar().Errorf("failed to register conflux: %v", err)
+		changes <- svc.Status{State: svc.Stopped}
+		return false, 1
+	}
+
+	// Save the registration data
+	err = register.saveRegistrationData(confluxToken)
+	if err != nil {
+		veilnet.Logger.Sugar().Errorf("failed to save registration data: %v", err)
+		changes <- svc.Status{State: svc.Stopped}
+		return false, 1
 	}
 
 	// Start the anchor
 	c.anchor = veilnet.NewAnchor()
-	err := c.anchor.Start(apiBaseURL, anchorToken, false)
+	err = c.anchor.Start(register.Guardian, confluxToken.Token, false)
 	if err != nil {
-		return err
+		veilnet.Logger.Sugar().Errorf("failed to start VeilNet: %v", err)
+		changes <- svc.Status{State: svc.Stopped}
+		return false, 1
 	}
 
 	// Link the anchor to the TUN device
 	err = c.anchor.LinkWithTUN("veilnet", 1500)
 	if err != nil {
-		return err
-	}
-
-	// Close existing metrics server
-	if c.metricsServer != nil {
-		c.metricsServer.Shutdown(context.Background())
-		c.metricsServer = nil
+		veilnet.Logger.Sugar().Errorf("failed to link anchor to TUN device: %v", err)
+		changes <- svc.Status{State: svc.Stopped}
+		return false, 1
 	}
 
 	// Start the metrics server
@@ -240,96 +335,6 @@ func (c *conflux) StartVeilNet(apiBaseURL, anchorToken string, portal bool) erro
 		}
 	}()
 
-	return nil
-}
-
-func (c *conflux) StopVeilNet() {
-
-	c.anchorOnce.Do(func() {
-
-		// Lock the anchor mutex
-		c.anchorMutex.Lock()
-		defer c.anchorMutex.Unlock()
-
-		// Stop the metrics server
-		if c.metricsServer != nil {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			if err := c.metricsServer.Shutdown(ctx); err != nil {
-				veilnet.Logger.Sugar().Errorf("failed to stop metrics server: %v", err)
-			}
-			c.metricsServer = nil
-		}
-
-		// Stop the anchor
-		if c.anchor != nil {
-			c.anchor.Stop()
-			c.anchor = nil
-		}
-	})
-}
-
-func (c *conflux) GetAnchor() *veilnet.Anchor {
-	if c.anchor == nil {
-		return nil
-	}
-	return c.anchor
-}
-
-func (c *conflux) Execute(args []string, changeRequests <-chan svc.ChangeRequest, changes chan<- svc.Status) (ssec bool, errno uint32) {
-	changes <- svc.Status{State: svc.StartPending}
-
-	// Create the server
-	c.api.server = echo.New()
-
-	// Register routes
-	c.api.server.POST("/up", c.api.up)
-	c.api.server.POST("/down", c.api.down)
-	c.api.server.POST("/register", c.api.register)
-	c.api.server.POST("/unregister", c.api.unregister)
-	// Start server
-	go func() {
-		if err := c.api.server.Start("127.0.0.1:1993"); err != nil && err != http.ErrServerClosed {
-			c.StopVeilNet()
-			veilnet.Logger.Sugar().Fatalf("Conflux service encountered an error: %v", err)
-		}
-	}()
-	// Load existing registration data
-	var register Register
-	tmpDir, err := os.UserConfigDir()
-	if err == nil {
-		confluxDir := filepath.Join(tmpDir, "conflux")
-		confluxFile := filepath.Join(confluxDir, "conflux.json")
-		registrationDataFile, err := os.ReadFile(confluxFile)
-		if err == nil {
-			json.Unmarshal(registrationDataFile, &register)
-		}
-	} else {
-		guardian := os.Getenv("VEILNET_GUARDIAN")
-		token := os.Getenv("VEILNET_REGISTRATION_TOKEN")
-		tag := os.Getenv("VEILNET_CONFLUX_TAG")
-		cidr := os.Getenv("VEILNET_CONFLUX_CIDR")
-		portal := os.Getenv("VEILNET_PORTAL") == "true"
-		teams := os.Getenv("VEILNET_CONFLUX_TEAMS")
-		register = Register{
-			Tag:      tag,
-			Cidr:     cidr,
-			Guardian: guardian,
-			Token:    token,
-			Portal:   portal,
-			Teams:    teams,
-		}
-	}
-	if register.Guardian != "" || register.Token != "" {
-		go func() {
-			veilnet.Logger.Sugar().Infof("registering conflux from loaded registration data or environment variables")
-			time.Sleep(1 * time.Second)
-			err := register.Run()
-			if err != nil {
-				veilnet.Logger.Sugar().Errorf("failed to register conflux: %v", err)
-			}
-		}()
-	}
 	// Set the status to running
 	changes <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}
 	for changeRequest := range changeRequests {
@@ -340,13 +345,10 @@ func (c *conflux) Execute(args []string, changeRequests <-chan svc.ChangeRequest
 			changes <- svc.Status{State: svc.StopPending}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			if err := c.api.server.Shutdown(ctx); err != nil {
-				veilnet.Logger.Sugar().Errorf("shutting down the server: %v", err)
-				changes <- svc.Status{State: svc.Stopped}
-				return false, 0
+			if err := c.metricsServer.Shutdown(ctx); err != nil {
+				veilnet.Logger.Sugar().Errorf("failed to stop metrics server: %v", err)
 			}
-			// Stop the veilnet
-			c.StopVeilNet()
+			c.anchor.Stop()
 			changes <- svc.Status{State: svc.Stopped}
 			return false, 0
 		}

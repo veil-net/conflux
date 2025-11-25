@@ -38,7 +38,7 @@ func (c *conflux) Run() error {
 
 	// If the conflux is running as a Windows service, run as a Windows service
 	if isWindowsService {
-		return svc.Run("veilnet", c)
+		return svc.Run("VeilNet Conflux", c)
 	}
 
 	// If the conflux is not running as a Windows service, run as a HTTP server
@@ -337,22 +337,58 @@ func (c *conflux) Execute(args []string, changeRequests <-chan svc.ChangeRequest
 
 	// Set the status to running
 	changes <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}
-	for changeRequest := range changeRequests {
-		switch changeRequest.Cmd {
-		case svc.Interrogate:
-			changes <- changeRequest.CurrentStatus
-		case svc.Stop, svc.Shutdown:
+
+	// Monitor for service control requests and anchor context
+	for {
+		select {
+		case changeRequest, ok := <-changeRequests:
+			if !ok {
+				// Channel closed, shutdown
+				changes <- svc.Status{State: svc.StopPending}
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				if c.metricsServer != nil {
+					if err := c.metricsServer.Shutdown(ctx); err != nil {
+						veilnet.Logger.Sugar().Errorf("failed to stop metrics server: %v", err)
+					}
+				}
+				if c.anchor != nil {
+					c.anchor.Stop()
+				}
+				changes <- svc.Status{State: svc.Stopped}
+				return false, 0
+			}
+			switch changeRequest.Cmd {
+			case svc.Interrogate:
+				changes <- changeRequest.CurrentStatus
+			case svc.Stop, svc.Shutdown:
+				changes <- svc.Status{State: svc.StopPending}
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				if c.metricsServer != nil {
+					if err := c.metricsServer.Shutdown(ctx); err != nil {
+						veilnet.Logger.Sugar().Errorf("failed to stop metrics server: %v", err)
+					}
+				}
+				if c.anchor != nil {
+					c.anchor.Stop()
+				}
+				changes <- svc.Status{State: svc.Stopped}
+				return false, 0
+			}
+		case <-c.anchor.Ctx.Done():
+			// Anchor stopped unexpectedly, shutdown the service
+			veilnet.Logger.Sugar().Errorf("anchor context done, shutting down service")
 			changes <- svc.Status{State: svc.StopPending}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			if err := c.metricsServer.Shutdown(ctx); err != nil {
-				veilnet.Logger.Sugar().Errorf("failed to stop metrics server: %v", err)
+			if c.metricsServer != nil {
+				if err := c.metricsServer.Shutdown(ctx); err != nil {
+					veilnet.Logger.Sugar().Errorf("failed to stop metrics server: %v", err)
+				}
 			}
-			c.anchor.Stop()
 			changes <- svc.Status{State: svc.Stopped}
-			return false, 0
+			return false, 1
 		}
 	}
-
-	return false, 0
 }

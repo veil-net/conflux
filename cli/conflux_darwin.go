@@ -64,7 +64,10 @@ func (c *conflux) Run() error {
 		veilnet.Logger.Sugar().Errorf("Token is missing in the registration data")
 		return fmt.Errorf("token is missing in the registration data")
 	}
-
+	if register.Portal {
+		veilnet.Logger.Sugar().Errorf("Portal mode is not supported on macOS")
+		return fmt.Errorf("portal mode is not supported on macOS")
+	}
 
 	// Register the conflux
 	confluxToken, err := register.register()
@@ -113,16 +116,22 @@ func (c *conflux) Run() error {
 	case <-ctx.Done():
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := c.metricsServer.Shutdown(ctx); err != nil {
-			veilnet.Logger.Sugar().Errorf("Failed to stop metrics server: %v", err)
+		if c.metricsServer != nil {
+			if err := c.metricsServer.Shutdown(ctx); err != nil {
+				veilnet.Logger.Sugar().Errorf("Failed to stop metrics server: %v", err)
+			}
 		}
-		c.anchor.Stop()
+		if c.anchor != nil {
+			c.anchor.Stop()
+		}
 		return nil
 	case <-c.anchor.Ctx.Done():
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := c.metricsServer.Shutdown(ctx); err != nil {
-			veilnet.Logger.Sugar().Errorf("Failed to stop metrics server: %v", err)
+		if c.metricsServer != nil {
+			if err := c.metricsServer.Shutdown(ctx); err != nil {
+				veilnet.Logger.Sugar().Errorf("Failed to stop metrics server: %v", err)
+			}
 		}
 		return nil
 	}

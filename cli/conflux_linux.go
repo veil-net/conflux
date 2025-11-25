@@ -83,7 +83,7 @@ func (c *conflux) Run() error {
 
 	// Start the anchor
 	c.anchor = veilnet.NewAnchor()
-	err = c.anchor.Start(register.Guardian, confluxToken.Token, false)
+	err = c.anchor.Start(register.Guardian, confluxToken.Token, register.Portal)
 	if err != nil {
 		veilnet.Logger.Sugar().Errorf("failed to start VeilNet: %v", err)
 		return err
@@ -111,16 +111,22 @@ func (c *conflux) Run() error {
 	case <-ctx.Done():
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := c.metricsServer.Shutdown(ctx); err != nil {
-			veilnet.Logger.Sugar().Errorf("failed to stop metrics server: %v", err)
+		if c.metricsServer != nil {
+			if err := c.metricsServer.Shutdown(ctx); err != nil {
+				veilnet.Logger.Sugar().Errorf("failed to stop metrics server: %v", err)
+			}
 		}
-		c.anchor.Stop()
+		if c.anchor != nil {
+			c.anchor.Stop()
+		}
 		return nil
 	case <-c.anchor.Ctx.Done():
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := c.metricsServer.Shutdown(ctx); err != nil {
-			veilnet.Logger.Sugar().Errorf("failed to stop metrics server: %v", err)
+		if c.metricsServer != nil {
+			if err := c.metricsServer.Shutdown(ctx); err != nil {
+				veilnet.Logger.Sugar().Errorf("failed to stop metrics server: %v", err)
+			}
 		}
 		return nil
 	}

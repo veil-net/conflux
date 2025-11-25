@@ -108,7 +108,7 @@ func (c *conflux) Run() error {
 			return nil
 		}
 	} else {
-
+		veilnet.Logger.Sugar().Warnf("Conflux token is not provided, will attempt to register")
 		// If conflux token is not provided, load existing registration data
 		register := Register{}
 		register.loadRegistrationData()
@@ -445,6 +445,7 @@ func (c *conflux) Execute(args []string, changeRequests <-chan svc.ChangeRequest
 		}
 	} else {
 
+		veilnet.Logger.Sugar().Warnf("Conflux token is not provided, will attempt to register")
 		// Load existing registration data
 		register := Register{}
 		register.loadRegistrationData()

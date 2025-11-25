@@ -114,6 +114,7 @@ func (c *conflux) Run() error {
 		}
 	} else {
 
+		veilnet.Logger.Sugar().Warnf("Conflux token is not provided, will attempt to register")
 		// If conflux token is not provided, load existing registration data
 		register := Register{}
 		register.loadRegistrationData()

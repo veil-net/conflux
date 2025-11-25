@@ -278,9 +278,10 @@ func (c *conflux) Remove() error {
 	cmd := exec.Command("systemctl", "stop", "veilnet")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to stop veilnet service: %v: %s", err, string(out))
+		veilnet.Logger.Sugar().Warnf("Failed to stop veilnet service: %v: %s", err, string(out))
+	} else {
+		veilnet.Logger.Sugar().Infof("VeilNet Conflux service stopped")
 	}
-	veilnet.Logger.Sugar().Infof("VeilNet Conflux service stopped")
 
 	cmd = exec.Command("systemctl", "disable", "veilnet")
 	out, err = cmd.CombinedOutput()

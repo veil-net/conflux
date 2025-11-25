@@ -302,10 +302,13 @@ func (c *conflux) Remove() error {
 	defer s.Close()
 
 	// Stop the service first
-	_, err = s.Control(svc.Stop)
+	status, err := s.Control(svc.Stop)
 	if err != nil {
-		return err
+		veilnet.Logger.Sugar().Warnf("Failed to stop veilnet service: %v, status: %v", err, status)
+	} else {
+		veilnet.Logger.Sugar().Infof("VeilNet Conflux service stopped")
 	}
+
 
 	// Delete the service
 	err = s.Delete()
@@ -393,23 +396,7 @@ func (c *conflux) Execute(args []string, changeRequests <-chan svc.ChangeRequest
 		// Monitor for service control requests and anchor context
 		for {
 			select {
-			case changeRequest, ok := <-changeRequests:
-				if !ok {
-					// Channel closed, shutdown
-					changes <- svc.Status{State: svc.StopPending}
-					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-					defer cancel()
-					if c.metricsServer != nil {
-						if err := c.metricsServer.Shutdown(ctx); err != nil {
-							veilnet.Logger.Sugar().Errorf("failed to stop metrics server: %v", err)
-						}
-					}
-					if c.anchor != nil {
-						c.anchor.Stop()
-					}
-					changes <- svc.Status{State: svc.Stopped}
-					return false, 0
-				}
+			case changeRequest := <-changeRequests:
 				switch changeRequest.Cmd {
 				case svc.Interrogate:
 					changes <- changeRequest.CurrentStatus
@@ -427,6 +414,9 @@ func (c *conflux) Execute(args []string, changeRequests <-chan svc.ChangeRequest
 					}
 					changes <- svc.Status{State: svc.Stopped}
 					return false, 0
+				default:
+					veilnet.Logger.Sugar().Warnf("unexpected service control request: %v", changeRequest.Cmd)
+					changes <- changeRequest.CurrentStatus
 				}
 			case <-c.anchor.Ctx.Done():
 				// Anchor stopped unexpectedly, shutdown the service
@@ -516,23 +506,7 @@ func (c *conflux) Execute(args []string, changeRequests <-chan svc.ChangeRequest
 		// Monitor for service control requests and anchor context
 		for {
 			select {
-			case changeRequest, ok := <-changeRequests:
-				if !ok {
-					// Channel closed, shutdown
-					changes <- svc.Status{State: svc.StopPending}
-					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-					defer cancel()
-					if c.metricsServer != nil {
-						if err := c.metricsServer.Shutdown(ctx); err != nil {
-							veilnet.Logger.Sugar().Errorf("failed to stop metrics server: %v", err)
-						}
-					}
-					if c.anchor != nil {
-						c.anchor.Stop()
-					}
-					changes <- svc.Status{State: svc.Stopped}
-					return false, 0
-				}
+			case changeRequest := <-changeRequests:
 				switch changeRequest.Cmd {
 				case svc.Interrogate:
 					changes <- changeRequest.CurrentStatus
@@ -550,6 +524,9 @@ func (c *conflux) Execute(args []string, changeRequests <-chan svc.ChangeRequest
 					}
 					changes <- svc.Status{State: svc.Stopped}
 					return false, 0
+				default:
+					veilnet.Logger.Sugar().Warnf("unexpected service control request: %v", changeRequest.Cmd)
+					changes <- changeRequest.CurrentStatus
 				}
 			case <-c.anchor.Ctx.Done():
 				// Anchor stopped unexpectedly, shutdown the service

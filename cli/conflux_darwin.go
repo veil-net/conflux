@@ -282,9 +282,10 @@ func (c *conflux) Remove() error {
 	cmd := exec.Command("launchctl", "stop", "org.veilnet.conflux")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to stop launchctl service: %v: %s", err, string(out))
+		veilnet.Logger.Sugar().Warnf("Failed to stop launchctl service: %v: %s", err, string(out))
+	} else {
+		veilnet.Logger.Sugar().Infof("VeilNet Conflux service stopped")
 	}
-	veilnet.Logger.Sugar().Infof("VeilNet Conflux service stopped")
 
 	plistFile := "/Library/LaunchDaemons/org.veilnet.conflux.plist"
 	cmd = exec.Command("launchctl", "unload", plistFile)

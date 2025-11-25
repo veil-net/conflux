@@ -7,7 +7,7 @@ import (
 	"github.com/veil-net/conflux/cli"
 )
 
-var version = "0.0.6"
+var version = "beta"
 
 func main() {
 	// Parse the CLI arguments

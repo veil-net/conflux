@@ -19,7 +19,7 @@ func (cmd *Unregister) Run() error {
 	register.loadRegistrationData()
 
 	if register.ID == "" {
-		veilnet.Logger.Sugar().Errorf("Confux ID is missing in the registration data")
+		veilnet.Logger.Sugar().Errorf("Conflux ID is missing in the registration data")
 		return fmt.Errorf("conflux ID is missing in the registration data")
 	}
 

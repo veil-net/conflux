@@ -232,21 +232,21 @@ func (c *conflux) Install() error {
 
 	// Reload systemd and enable service
 	cmd := exec.Command("systemctl", "daemon-reload")
-	_, err = cmd.CombinedOutput()
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to reload systemd daemon: %v: %s", err, string(out))
 	}
 
 	cmd = exec.Command("systemctl", "enable", "veilnet.service")
-	_, err = cmd.CombinedOutput()
+	out, err = cmd.CombinedOutput()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to enable veilnet service: %v: %s", err, string(out))
 	}
 
 	cmd = exec.Command("systemctl", "start", "veilnet.service")
-	_, err = cmd.CombinedOutput()
+	out, err = cmd.CombinedOutput()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to start veilnet service: %v: %s", err, string(out))
 	}
 
 	veilnet.Logger.Sugar().Infof("VeilNet Conflux service installed and started")
@@ -255,9 +255,9 @@ func (c *conflux) Install() error {
 
 func (c *conflux) Start() error {
 	cmd := exec.Command("systemctl", "start", "veilnet")
-	_, err := cmd.CombinedOutput()
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to start veilnet service: %v: %s", err, string(out))
 	}
 	veilnet.Logger.Sugar().Infof("VeilNet Conflux service started")
 	return nil
@@ -265,9 +265,9 @@ func (c *conflux) Start() error {
 
 func (c *conflux) Stop() error {
 	cmd := exec.Command("systemctl", "stop", "veilnet")
-	_, err := cmd.CombinedOutput()
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to stop veilnet service: %v: %s", err, string(out))
 	}
 	veilnet.Logger.Sugar().Infof("VeilNet Conflux service stopped")
 	return nil
@@ -275,16 +275,16 @@ func (c *conflux) Stop() error {
 
 func (c *conflux) Remove() error {
 	cmd := exec.Command("systemctl", "stop", "veilnet")
-	_, err := cmd.CombinedOutput()
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to stop veilnet service: %v: %s", err, string(out))
 	}
 	veilnet.Logger.Sugar().Infof("VeilNet Conflux service stopped")
 
 	cmd = exec.Command("systemctl", "disable", "veilnet")
-	_, err = cmd.CombinedOutput()
+	out, err = cmd.CombinedOutput()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to disable veilnet service: %v: %s", err, string(out))
 	}
 	veilnet.Logger.Sugar().Infof("VeilNet Conflux service disabled")
 
@@ -297,9 +297,9 @@ func (c *conflux) Remove() error {
 
 	// Reload systemd and enable service
 	cmd = exec.Command("systemctl", "daemon-reload")
-	_, err = cmd.CombinedOutput()
+	out, err = cmd.CombinedOutput()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to reload systemd daemon: %v: %s", err, string(out))
 	}
 	veilnet.Logger.Sugar().Infof("VeilNet Conflux service removed")
 
@@ -307,12 +307,11 @@ func (c *conflux) Remove() error {
 }
 
 func (c *conflux) Status() (bool, error) {
-
 	// Check if the service is running
 	cmd := exec.Command("systemctl", "is-active", "veilnet")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return false, fmt.Errorf("VeilNet Conflux service is not running: %v", string(out))
+		return false, fmt.Errorf("VeilNet Conflux service is not running: %v: %s", err, string(out))
 	}
 	return true, nil
 }

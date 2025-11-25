@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/alecthomas/kong"
-	"github.com/veil-net/veilnet"
 )
 
 type CLI struct {
@@ -86,10 +85,10 @@ func (cmd *Status) Run() error {
 		return err
 	}
 	if status {
-		veilnet.Logger.Sugar().Infof("VeilNet service is running.")
+		Logger.Sugar().Infof("VeilNet service is running.")
 		return nil
 	} else {
-		veilnet.Logger.Sugar().Errorf("VeilNet service is not running.")
+		Logger.Sugar().Errorf("VeilNet service is not running.")
 		return fmt.Errorf("VeilNet service is not running")
 	}
 }

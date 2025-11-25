@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-
-	"github.com/veil-net/veilnet"
 )
 
 type Up struct {
@@ -18,12 +16,12 @@ type Up struct {
 func (cmd *Up) Run() error {
 
 	if cmd.Token == "" {
-		veilnet.Logger.Sugar().Errorf("conflux token is required")
+		Logger.Sugar().Errorf("conflux token is required")
 		return fmt.Errorf("conflux token is required")
 	}
 
 	if cmd.Guardian == "" {
-		veilnet.Logger.Sugar().Errorf("guardian URL is required")
+		Logger.Sugar().Errorf("guardian URL is required")
 		return fmt.Errorf("guardian URL is required")
 	}
 
@@ -53,7 +51,7 @@ func (cmd *Up) loadUpData() {
 		if err == nil {
 			err = json.Unmarshal(envDataFile, &cmd)
 			if err != nil {
-				veilnet.Logger.Sugar().Warnf("Failed to unmarshal environment data from file, using environment variables: %v", err)
+				Logger.Sugar().Warnf("Failed to unmarshal environment data from file, using environment variables: %v", err)
 			}
 		}
 	}
@@ -74,25 +72,25 @@ func (cmd *Up) saveUpData() error {
 	// Write the environment data to file
 	tmpDir, err := os.UserConfigDir()
 	if err != nil {
-		veilnet.Logger.Sugar().Errorf("Failed to get user config directory: %v", err)
+		Logger.Sugar().Errorf("Failed to get user config directory: %v", err)
 		return fmt.Errorf("failed to get user config directory: %v", err)
 	}
 	confluxDir := filepath.Join(tmpDir, "conflux")
 	if err := os.MkdirAll(confluxDir, 0755); err != nil {
-		veilnet.Logger.Sugar().Errorf("Failed to create conflux directory: %v", err)
+		Logger.Sugar().Errorf("Failed to create conflux directory: %v", err)
 		return fmt.Errorf("failed to create conflux directory: %v", err)
 	}
 	envFile := filepath.Join(confluxDir, "up.json")
 	envData, err := json.Marshal(cmd)
 	if err != nil {
-		veilnet.Logger.Sugar().Errorf("Failed to marshal environment data: %v", err)
+		Logger.Sugar().Errorf("Failed to marshal environment data: %v", err)
 		return fmt.Errorf("failed to marshal environment data: %v", err)
 	}
 	err = os.WriteFile(envFile, envData, 0644)
 	if err != nil {
-		veilnet.Logger.Sugar().Errorf("Failed to write environment data: %v", err)
+		Logger.Sugar().Errorf("Failed to write environment data: %v", err)
 		return fmt.Errorf("failed to write environment data: %v", err)
 	}
-	veilnet.Logger.Sugar().Infof("Environment data written to %s", envFile)
+	Logger.Sugar().Infof("Environment data written to %s", envFile)
 	return nil
 }

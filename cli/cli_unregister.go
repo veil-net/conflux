@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-
-	"github.com/veil-net/veilnet"
 )
 
 type Unregister struct {
@@ -19,17 +17,17 @@ func (cmd *Unregister) Run() error {
 	register.loadRegistrationData()
 
 	if register.ID == "" {
-		veilnet.Logger.Sugar().Errorf("Conflux ID is missing in the registration data")
+		Logger.Sugar().Errorf("Conflux ID is missing in the registration data")
 		return fmt.Errorf("conflux ID is missing in the registration data")
 	}
 
 	if register.Guardian == "" {
-		veilnet.Logger.Sugar().Errorf("Guardian URL is missing in the registration data")
+		Logger.Sugar().Errorf("Guardian URL is missing in the registration data")
 		return fmt.Errorf("guardian URL is missing in the registration data")
 	}
 
 	if register.Token == "" {
-		veilnet.Logger.Sugar().Errorf("Registration token is missing in the registration data")
+		Logger.Sugar().Errorf("Registration token is missing in the registration data")
 		return fmt.Errorf("registration token is missing in the registration data")
 	}
 
@@ -37,7 +35,7 @@ func (cmd *Unregister) Run() error {
 	url := fmt.Sprintf("%s/conflux/unregister?conflux_id=%s", register.Guardian, register.ID)
 	req, err := http.NewRequest("DELETE", url, nil)
 	if err != nil {
-		veilnet.Logger.Sugar().Errorf("Failed to create unregister request: %v", err)
+		Logger.Sugar().Errorf("Failed to create unregister request: %v", err)
 		return fmt.Errorf("failed to create unregister request: %v", err)
 	}
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", register.Token))
@@ -47,7 +45,7 @@ func (cmd *Unregister) Run() error {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		veilnet.Logger.Sugar().Errorf("Failed to make unregister request: %v", err)
+		Logger.Sugar().Errorf("Failed to make unregister request: %v", err)
 		return fmt.Errorf("failed to make unregister request: %v", err)
 	}
 	defer resp.Body.Close()
@@ -56,7 +54,7 @@ func (cmd *Unregister) Run() error {
 	if resp.StatusCode != http.StatusOK {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			veilnet.Logger.Sugar().Errorf("Failed to read unregister response body: %v", err)
+			Logger.Sugar().Errorf("Failed to read unregister response body: %v", err)
 			return fmt.Errorf("failed to read unregister response body: %v", err)
 		}
 		return fmt.Errorf("failed to unregister conflux: %s: %s", resp.Status, string(body))
@@ -65,14 +63,14 @@ func (cmd *Unregister) Run() error {
 	// Remove the conflux file
 	tmpDir, err := os.UserConfigDir()
 	if err != nil {
-		veilnet.Logger.Sugar().Errorf("Failed to get user config directory: %v", err)
+		Logger.Sugar().Errorf("Failed to get user config directory: %v", err)
 		return fmt.Errorf("failed to get user config directory: %v", err)
 	}
 	confluxDir := filepath.Join(tmpDir, "conflux")
 	confluxFile := filepath.Join(confluxDir, "conflux.json")
 	err = os.Remove(confluxFile)
 	if err != nil {
-		veilnet.Logger.Sugar().Errorf("Failed to remove conflux file: %v", err)
+		Logger.Sugar().Errorf("Failed to remove conflux file: %v", err)
 		return fmt.Errorf("failed to remove conflux file: %v", err)
 	}
 
@@ -80,7 +78,7 @@ func (cmd *Unregister) Run() error {
 	conflux := NewConflux()
 	conflux.Remove()
 
-	veilnet.Logger.Sugar().Infof("Unregistration successful, VeilNet service stopped and conflux file removed")
+	Logger.Sugar().Infof("Unregistration successful, VeilNet service stopped and conflux file removed")
 
 	return nil
 }

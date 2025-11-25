@@ -1,5 +1,9 @@
 package cli
 
+import "github.com/veil-net/veilnet/logger"
+
+var Logger = logger.Logger
+
 type Conflux interface {
 
 	// Run runs the conflux service

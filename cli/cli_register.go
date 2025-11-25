@@ -8,8 +8,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-
-	"github.com/veil-net/veilnet"
 )
 
 type Register struct {
@@ -58,7 +56,7 @@ func (cmd *Register) register() (*ConfluxToken, error) {
 	// Marshal the request body
 	body, err := json.Marshal(cmd)
 	if err != nil {
-		veilnet.Logger.Sugar().Errorf("Failed to marshal register command: %v", err)
+		Logger.Sugar().Errorf("Failed to marshal register command: %v", err)
 		return nil, fmt.Errorf("failed to marshal request: %v", err)
 	}
 
@@ -66,7 +64,7 @@ func (cmd *Register) register() (*ConfluxToken, error) {
 	url := fmt.Sprintf("%s/conflux/register", cmd.Guardian)
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
 	if err != nil {
-		veilnet.Logger.Sugar().Errorf("Failed to create register request to Guardian: %v", err)
+		Logger.Sugar().Errorf("Failed to create register request to Guardian: %v", err)
 		return nil, fmt.Errorf("failed to create request: %v", err)
 	}
 
@@ -78,7 +76,7 @@ func (cmd *Register) register() (*ConfluxToken, error) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		veilnet.Logger.Sugar().Errorf("Failed to make register request to Guardian: %v", err)
+		Logger.Sugar().Errorf("Failed to make register request to Guardian: %v", err)
 		return nil, fmt.Errorf("failed to make request: %v", err)
 	}
 	defer resp.Body.Close()
@@ -87,7 +85,7 @@ func (cmd *Register) register() (*ConfluxToken, error) {
 	if !(resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusOK) {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			veilnet.Logger.Sugar().Errorf("Failed to read register response body: %v", err)
+			Logger.Sugar().Errorf("Failed to read register response body: %v", err)
 			return nil, fmt.Errorf("failed to read response body: %v", err)
 		}
 		return nil, fmt.Errorf("failed to register conflux: %s: %s", resp.Status, string(body))
@@ -96,7 +94,7 @@ func (cmd *Register) register() (*ConfluxToken, error) {
 	// Read the response body
 	body, err = io.ReadAll(resp.Body)
 	if err != nil {
-		veilnet.Logger.Sugar().Errorf("Failed to read register response: %v", err)
+		Logger.Sugar().Errorf("Failed to read register response: %v", err)
 		return nil, fmt.Errorf("failed to read response body: %v", err)
 	}
 
@@ -104,7 +102,7 @@ func (cmd *Register) register() (*ConfluxToken, error) {
 	var confluxToken ConfluxToken
 	err = json.Unmarshal(body, &confluxToken)
 	if err != nil {
-		veilnet.Logger.Sugar().Errorf("Failed to parse register response: %v", err)
+		Logger.Sugar().Errorf("Failed to parse register response: %v", err)
 		return nil, fmt.Errorf("failed to parse response body: %v", err)
 	}
 	return &confluxToken, nil
@@ -120,7 +118,7 @@ func (cmd *Register) loadRegistrationData() {
 		if err == nil {
 			err = json.Unmarshal(registrationDataFile, &cmd)
 			if err != nil {
-				veilnet.Logger.Sugar().Warnf("Failed to unmarshal registration data from file, using environment variables: %v", err)
+				Logger.Sugar().Warnf("Failed to unmarshal registration data from file, using environment variables: %v", err)
 			}
 		}
 	}
@@ -150,26 +148,26 @@ func (cmd *Register) saveRegistrationData(confluxToken *ConfluxToken) error {
 	// Write the registration data to file
 	tmpDir, err := os.UserConfigDir()
 	if err != nil {
-		veilnet.Logger.Sugar().Errorf("Failed to get user config directory: %v", err)
+		Logger.Sugar().Errorf("Failed to get user config directory: %v", err)
 		return fmt.Errorf("failed to get user config directory: %v", err)
 	}
 	confluxDir := filepath.Join(tmpDir, "conflux")
 	if err := os.MkdirAll(confluxDir, 0755); err != nil {
-		veilnet.Logger.Sugar().Errorf("Failed to create conflux directory: %v", err)
+		Logger.Sugar().Errorf("Failed to create conflux directory: %v", err)
 		return fmt.Errorf("failed to create conflux directory: %v", err)
 	}
 	confluxFile := filepath.Join(confluxDir, "conflux.json")
 	cmd.ID = confluxToken.ConfluxID
 	registrationData, err := json.Marshal(cmd)
 	if err != nil {
-		veilnet.Logger.Sugar().Errorf("Failed to marshal registration data: %v", err)
+		Logger.Sugar().Errorf("Failed to marshal registration data: %v", err)
 		return fmt.Errorf("failed to marshal registration data: %v", err)
 	}
 	err = os.WriteFile(confluxFile, registrationData, 0644)
 	if err != nil {
-		veilnet.Logger.Sugar().Errorf("Failed to write registration data: %v", err)
+		Logger.Sugar().Errorf("Failed to write registration data: %v", err)
 		return fmt.Errorf("failed to write registration data: %v", err)
 	}
-	veilnet.Logger.Sugar().Infof("Registration data written to %s", confluxFile)
+	Logger.Sugar().Infof("Registration data written to %s", confluxFile)
 	return nil
 }

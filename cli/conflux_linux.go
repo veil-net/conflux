@@ -53,7 +53,7 @@ func newConflux() *conflux {
 func (c *conflux) Run() error {
 	// Check if conflux token is provided
 	up := Up{}
-	up.loadEnvData()
+	up.loadUpData()
 
 	if up.Token != "" && up.Guardian != "" {
 

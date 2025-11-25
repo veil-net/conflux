@@ -20,7 +20,7 @@ func (cmd *Up) Run() error {
 	conflux.Remove()
 
 	// Save environment variables to file
-	err := cmd.saveEnvData()
+	err := cmd.saveUpData()
 	if err != nil {
 		return err
 	}
@@ -32,34 +32,34 @@ func (cmd *Up) Run() error {
 	return nil
 }
 
-func (cmd *Up) loadEnvData() {
-	// First load the environment data from ENV
-	cmd.Guardian = os.Getenv("VEILNET_GUARDIAN")
-	cmd.Token = os.Getenv("VEILNET_CONFLUX_TOKEN")
-	cmd.Portal = os.Getenv("VEILNET_PORTAL") == "true"
-
-	// Load the environment data from file
+func (cmd *Up) loadUpData() {
+	// First load the environment data from file (if exists)
 	tmpDir, err := os.UserConfigDir()
-	if err != nil {
-		veilnet.Logger.Sugar().Warnf("Failed to get user config directory, using environment variables: %v", err)
-		return
+	if err == nil {
+		confluxDir := filepath.Join(tmpDir, "conflux")
+		envFile := filepath.Join(confluxDir, "up.json")
+		envDataFile, err := os.ReadFile(envFile)
+		if err == nil {
+			err = json.Unmarshal(envDataFile, &cmd)
+			if err != nil {
+				veilnet.Logger.Sugar().Warnf("Failed to unmarshal environment data from file, using environment variables: %v", err)
+			}
+		}
 	}
-	confluxDir := filepath.Join(tmpDir, "conflux")
-	envFile := filepath.Join(confluxDir, "up.json")
-	envDataFile, err := os.ReadFile(envFile)
-	if err != nil {
-		veilnet.Logger.Sugar().Warnf("Failed to read environment data from file, using environment variables: %v", err)
-		return
+
+	// Then override with environment variables (ENV takes precedence)
+	if envGuardian := os.Getenv("VEILNET_GUARDIAN"); envGuardian != "" {
+		cmd.Guardian = envGuardian
 	}
-	var up Up
-	err = json.Unmarshal(envDataFile, &up)
-	if err != nil {
-		veilnet.Logger.Sugar().Warnf("Failed to unmarshal environment data from file, using environment variables: %v", err)
-		return
+	if envToken := os.Getenv("VEILNET_CONFLUX_TOKEN"); envToken != "" {
+		cmd.Token = envToken
+	}
+	if envPortal := os.Getenv("VEILNET_PORTAL"); envPortal != "" {
+		cmd.Portal = envPortal == "true"
 	}
 }
 
-func (cmd *Up) saveEnvData() error {
+func (cmd *Up) saveUpData() error {
 	// Write the environment data to file
 	tmpDir, err := os.UserConfigDir()
 	if err != nil {

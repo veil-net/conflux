@@ -43,7 +43,7 @@ func (c *conflux) Run() error {
 
 	// Check if conflux token is provided
 	up := Up{}
-	up.loadEnvData()
+	up.loadUpData()
 
 	if up.Token != "" && up.Guardian != "" {
 
@@ -350,7 +350,7 @@ func (c *conflux) Execute(args []string, changeRequests <-chan svc.ChangeRequest
 
 	// Check if conflux token is provided
 	up := Up{}
-	up.loadEnvData()
+	up.loadUpData()
 
 	if up.Token != "" && up.Guardian != "" {
 

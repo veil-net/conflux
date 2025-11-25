@@ -111,31 +111,38 @@ func (cmd *Register) register() (*ConfluxToken, error) {
 }
 
 func (cmd *Register) loadRegistrationData() {
-	// Load the registration data from ENV
-	cmd.Guardian = os.Getenv("VEILNET_GUARDIAN")
-	cmd.Token = os.Getenv("VEILNET_REGISTRATION_TOKEN")
-	cmd.Tag = os.Getenv("VEILNET_CONFLUX_TAG")
-	cmd.Cidr = os.Getenv("VEILNET_CONFLUX_CIDR")
-	cmd.Portal = os.Getenv("VEILNET_PORTAL") == "true"
-	cmd.Teams = os.Getenv("VEILNET_CONFLUX_TEAMS")
-
-	// Then load the registration data from file
+	// First load the registration data from file (if exists)
 	tmpDir, err := os.UserConfigDir()
-	if err != nil {
-		veilnet.Logger.Sugar().Warnf("Failed to get user config directory, using environment variables: %v", err)
-		return
+	if err == nil {
+		confluxDir := filepath.Join(tmpDir, "conflux")
+		confluxFile := filepath.Join(confluxDir, "conflux.json")
+		registrationDataFile, err := os.ReadFile(confluxFile)
+		if err == nil {
+			err = json.Unmarshal(registrationDataFile, &cmd)
+			if err != nil {
+				veilnet.Logger.Sugar().Warnf("Failed to unmarshal registration data from file, using environment variables: %v", err)
+			}
+		}
 	}
-	confluxDir := filepath.Join(tmpDir, "conflux")
-	confluxFile := filepath.Join(confluxDir, "conflux.json")
-	registrationDataFile, err := os.ReadFile(confluxFile)
-	if err != nil {
-		veilnet.Logger.Sugar().Warnf("Failed to read registration data from file, using environment variables: %v", err)
-		return
+
+	// Then override with environment variables (ENV takes precedence)
+	if envGuardian := os.Getenv("VEILNET_GUARDIAN"); envGuardian != "" {
+		cmd.Guardian = envGuardian
 	}
-	err = json.Unmarshal(registrationDataFile, cmd)
-	if err != nil {
-		veilnet.Logger.Sugar().Warnf("Failed to unmarshal registration data from file, using environment variables: %v", err)
-		return
+	if envToken := os.Getenv("VEILNET_REGISTRATION_TOKEN"); envToken != "" {
+		cmd.Token = envToken
+	}
+	if envTag := os.Getenv("VEILNET_CONFLUX_TAG"); envTag != "" {
+		cmd.Tag = envTag
+	}
+	if envCidr := os.Getenv("VEILNET_CONFLUX_CIDR"); envCidr != "" {
+		cmd.Cidr = envCidr
+	}
+	if envPortal := os.Getenv("VEILNET_PORTAL"); envPortal != "" {
+		cmd.Portal = envPortal == "true"
+	}
+	if envTeams := os.Getenv("VEILNET_CONFLUX_TEAMS"); envTeams != "" {
+		cmd.Teams = envTeams
 	}
 }
 

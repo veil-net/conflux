@@ -16,6 +16,17 @@ type Up struct {
 }
 
 func (cmd *Up) Run() error {
+
+	if cmd.Token == "" {
+		veilnet.Logger.Sugar().Errorf("conflux token is required")
+		return fmt.Errorf("conflux token is required")
+	}
+
+	if cmd.Guardian == "" {
+		veilnet.Logger.Sugar().Errorf("guardian URL is required")
+		return fmt.Errorf("guardian URL is required")
+	}
+
 	conflux := NewConflux()
 	conflux.Remove()
 

@@ -360,6 +360,8 @@ Download the latest release from [GitHub Releases](https://github.com/veil-net/c
 
 ### macOS
 
+macOS is now supported. 
+
 1. Download the macOS binary from releases
 2. Make it executable:
    ```bash
@@ -629,11 +631,11 @@ docker run -d \
   - Registration data: `/root/.config/conflux/conflux.json`
   - Up data: `/root/.config/conflux/up.json`
 
-- **Windows**: `C:\Windows\System32\config\systemprofile\AppData\Roaming\conflux\`
+- **Windows**: `C:\ProgramData\conflux` (or `%ProgramData%\conflux`)
   - Registration data: `conflux.json`
   - Up data: `up.json`
 
-- **macOS**: `/var/root/Library/Application Support/conflux/`
+- **macOS**: `/var/root/Library/Application Support/conflux`
   - Registration data: `conflux.json`
   - Up data: `up.json`
 

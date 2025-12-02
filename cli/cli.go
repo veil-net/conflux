@@ -38,6 +38,7 @@ func (cmd *Install) Run() error {
 	conflux := NewConflux()
 	err := conflux.Install()
 	if err != nil {
+		Logger.Sugar().Errorf("Failed to install the conflux service: %v", err)
 		return err
 	}
 	return nil
@@ -49,6 +50,7 @@ func (cmd *Start) Run() error {
 	conflux := NewConflux()
 	err := conflux.Start()
 	if err != nil {
+		Logger.Sugar().Errorf("Failed to start the conflux service: %v", err)
 		return err
 	}
 	return nil
@@ -60,6 +62,7 @@ func (cmd *Stop) Run() error {
 	conflux := NewConflux()
 	err := conflux.Stop()
 	if err != nil {
+		Logger.Sugar().Errorf("Failed to stop the conflux service: %v", err)
 		return err
 	}
 	return nil
@@ -71,6 +74,7 @@ func (cmd *Remove) Run() error {
 	conflux := NewConflux()
 	err := conflux.Remove()
 	if err != nil {
+		Logger.Sugar().Errorf("Failed to remove the conflux service: %v", err)
 		return err
 	}
 	return nil
@@ -82,6 +86,7 @@ func (cmd *Status) Run() error {
 	conflux := NewConflux()
 	status, err := conflux.Status()
 	if err != nil {
+		Logger.Sugar().Errorf("Failed to get the status of the conflux service: %v", err)
 		return err
 	}
 	if status {

@@ -38,7 +38,8 @@ func NewConflux() Conflux {
 func getConfigDir() (string, error) {
 	var configDir string
 
-	if runtime.GOOS == "windows" {
+	switch runtime.GOOS {
+case "windows":
 		// On Windows, use ProgramData which is accessible by both user and system service
 		programData := os.Getenv("ProgramData")
 		if programData == "" {
@@ -46,13 +47,12 @@ func getConfigDir() (string, error) {
 			programData = "C:\\ProgramData"
 		}
 		configDir = filepath.Join(programData, "conflux")
-	} else {
-		// On Linux and macOS, use UserConfigDir
-		userConfigDir, err := os.UserConfigDir()
-		if err != nil {
-			return "", err
-		}
-		configDir = filepath.Join(userConfigDir, "conflux")
+	case "darwin":
+		// On macOS, always use root's config directory so the service (running as root) can read it
+		configDir = "/var/root/Library/Application Support/conflux"
+	default:
+		// On Linux, always use root's config directory so the service (running as root) can read it
+		configDir = "/root/.config/conflux"
 	}
 
 	return configDir, nil

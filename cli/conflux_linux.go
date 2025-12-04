@@ -55,14 +55,24 @@ func (c *conflux) Run() error {
 	up := Up{}
 	up.loadUpData()
 
-	if up.Token != "" && up.Guardian != "" {
+	if up.Token != "" {
+
+		if up.Guardian == "" {
+			up.Guardian = "https://guardian.veilnet.app"
+		}
+		if up.Veil == "" {
+			up.Veil = "nats.veilnet.app"
+		}
+		if up.VeilPort == 0 {
+			up.VeilPort = 30422
+		}
 
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
 		// Start the anchor
 		c.anchor = veilnet.NewAnchor()
-		err := c.anchor.Start(up.Guardian, up.Token, up.Portal)
+		err := c.anchor.Start(up.Guardian, up.Veil, up.VeilPort, up.Token, up.Portal)
 		if err != nil {
 			Logger.Sugar().Errorf("failed to start VeilNet: %v", err)
 			return err
@@ -119,15 +129,19 @@ func (c *conflux) Run() error {
 		register := Register{}
 		register.loadRegistrationData()
 
-		if register.Guardian == "" {
-			Logger.Sugar().Errorf("Guardian URL is missing in the registration data")
-			return fmt.Errorf("guardian URL is missing in the registration data")
-		}
 		if register.Token == "" {
 			Logger.Sugar().Errorf("Token is missing in the registration data")
 			return fmt.Errorf("token is missing in the registration data")
 		}
-		// Portal mode is supported on Linux, so we use the value from registration
+		if register.Guardian == "" {
+			register.Guardian = "https://guardian.veilnet.app"
+		}
+		if register.Veil == "" {
+			register.Veil = "nats.veilnet.app"
+		}
+		if register.VeilPort == 0 {
+			register.VeilPort = 30422
+		}
 
 		// Register the conflux
 		confluxToken, err := register.register()
@@ -148,7 +162,7 @@ func (c *conflux) Run() error {
 
 		// Start the anchor
 		c.anchor = veilnet.NewAnchor()
-		err = c.anchor.Start(register.Guardian, confluxToken.Token, register.Portal)
+		err = c.anchor.Start(register.Guardian, register.Veil, register.VeilPort, confluxToken.Token, register.Portal)
 		if err != nil {
 			Logger.Sugar().Errorf("failed to start VeilNet: %v", err)
 			return err

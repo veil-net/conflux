@@ -45,11 +45,20 @@ func (c *conflux) Run() error {
 	up := Up{}
 	up.loadUpData()
 
-	if up.Token != "" && up.Guardian != "" {
+	if up.Token != "" {
 
 		if up.Portal {
-			veilnet.Logger.Sugar().Errorf("Portal mode is not supported on Windows")
-			return fmt.Errorf("portal mode is not supported on Windows")
+			veilnet.Logger.Sugar().Warnf("Portal mode is not supported on Windows")
+			up.Portal = false
+		}
+		if up.Guardian == "" {
+			up.Guardian = "https://guardian.veilnet.app"
+		}
+		if up.Veil == "" {
+			up.Veil = "nats.veilnet.app"
+		}
+		if up.VeilPort == 0 {
+			up.VeilPort = 30422
 		}
 
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -57,7 +66,7 @@ func (c *conflux) Run() error {
 
 		// Start the anchor
 		c.anchor = veilnet.NewAnchor()
-		err = c.anchor.Start(up.Guardian, up.Token, false)
+		err = c.anchor.Start(up.Guardian, up.Veil, up.VeilPort, up.Token, false)
 		if err != nil {
 			veilnet.Logger.Sugar().Errorf("failed to start VeilNet: %v", err)
 			return err
@@ -113,17 +122,22 @@ func (c *conflux) Run() error {
 		register := Register{}
 		register.loadRegistrationData()
 
-		if register.Guardian == "" {
-			veilnet.Logger.Sugar().Errorf("Guardian URL is missing in the registration data")
-			return fmt.Errorf("guardian URL is missing in the registration data")
-		}
 		if register.Token == "" {
 			veilnet.Logger.Sugar().Errorf("Token is missing in the registration data")
 			return fmt.Errorf("token is missing in the registration data")
 		}
 		if register.Portal {
-			veilnet.Logger.Sugar().Errorf("Portal mode is not supported on Windows")
-			return fmt.Errorf("portal mode is not supported on Windows")
+			veilnet.Logger.Sugar().Warnf("Portal mode is not supported on Windows")
+			register.Portal = false
+		}
+		if register.Guardian == "" {
+			register.Guardian = "https://guardian.veilnet.app"
+		}
+		if register.Veil == "" {
+			register.Veil = "nats.veilnet.app"
+		}
+		if register.VeilPort == 0 {
+			register.VeilPort = 30422
 		}
 
 		// Register the conflux
@@ -145,7 +159,7 @@ func (c *conflux) Run() error {
 
 		// Start the anchor
 		c.anchor = veilnet.NewAnchor()
-		err = c.anchor.Start(register.Guardian, confluxToken.Token, false)
+		err = c.anchor.Start(register.Guardian, register.Veil, register.VeilPort, confluxToken.Token, false)
 		if err != nil {
 			veilnet.Logger.Sugar().Errorf("failed to start VeilNet: %v", err)
 			return err
@@ -309,7 +323,6 @@ func (c *conflux) Remove() error {
 		veilnet.Logger.Sugar().Infof("VeilNet Conflux service stopped")
 	}
 
-
 	// Delete the service
 	err = s.Delete()
 	if err != nil {
@@ -355,16 +368,25 @@ func (c *conflux) Execute(args []string, changeRequests <-chan svc.ChangeRequest
 	up := Up{}
 	up.loadUpData()
 
-	if up.Token != "" && up.Guardian != "" {
+	if up.Token != "" {
 
 		if up.Portal {
-			veilnet.Logger.Sugar().Errorf("Portal mode is not supported on Windows")
-			return false, 1
+			veilnet.Logger.Sugar().Warnf("Portal mode is not supported on Windows")
+			up.Portal = false
+		}
+		if up.Guardian == "" {
+			up.Guardian = "https://guardian.veilnet.app"
+		}
+		if up.Veil == "" {
+			up.Veil = "nats.veilnet.app"
+		}
+		if up.VeilPort == 0 {
+			up.VeilPort = 30422
 		}
 
 		// Start the anchor
 		c.anchor = veilnet.NewAnchor()
-		err := c.anchor.Start(up.Guardian, up.Token, false)
+		err := c.anchor.Start(up.Guardian, up.Veil, up.VeilPort, up.Token, false)
 		if err != nil {
 			veilnet.Logger.Sugar().Errorf("failed to start VeilNet: %v", err)
 			changes <- svc.Status{State: svc.Stopped}
@@ -440,20 +462,24 @@ func (c *conflux) Execute(args []string, changeRequests <-chan svc.ChangeRequest
 		register := Register{}
 		register.loadRegistrationData()
 
-		if register.Guardian == "" {
-			veilnet.Logger.Sugar().Errorf("Guardian URL is missing in the registration data")
-			changes <- svc.Status{State: svc.Stopped}
-			return false, 1
-		}
 		if register.Token == "" {
 			veilnet.Logger.Sugar().Errorf("Token is missing in the registration data")
 			changes <- svc.Status{State: svc.Stopped}
 			return false, 1
 		}
 		if register.Portal {
-			veilnet.Logger.Sugar().Errorf("Portal mode is not supported on Windows")
-			changes <- svc.Status{State: svc.Stopped}
-			return false, 1
+			veilnet.Logger.Sugar().Warnf("Portal mode is not supported on Windows")
+			register.Portal = false
+		}
+
+		if register.Guardian == "" {
+			register.Guardian = "https://guardian.veilnet.app"
+		}
+		if register.Veil == "" {
+			register.Veil = "nats.veilnet.app"
+		}
+		if register.VeilPort == 0 {
+			register.VeilPort = 30422
 		}
 
 		// Register the conflux
@@ -474,7 +500,7 @@ func (c *conflux) Execute(args []string, changeRequests <-chan svc.ChangeRequest
 
 		// Start the anchor
 		c.anchor = veilnet.NewAnchor()
-		err = c.anchor.Start(register.Guardian, confluxToken.Token, false)
+		err = c.anchor.Start(register.Guardian, register.Veil, register.VeilPort, confluxToken.Token, false)
 		if err != nil {
 			veilnet.Logger.Sugar().Errorf("failed to start VeilNet: %v", err)
 			changes <- svc.Status{State: svc.Stopped}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 type Up struct {
@@ -66,6 +67,15 @@ func (cmd *Up) loadUpData() {
 	}
 	if envPortal := os.Getenv("VEILNET_PORTAL"); envPortal != "" {
 		cmd.Portal = envPortal == "true"
+	}
+	if envVeil := os.Getenv("VEILNET_VEIL"); envVeil != "" {
+		cmd.Veil = envVeil
+	}
+	if envVeilPort := os.Getenv("VEILNET_VEIL_PORT"); envVeilPort != "" {
+		cmd.VeilPort, err = strconv.Atoi(envVeilPort)
+		if err != nil {
+			Logger.Sugar().Warnf("Failed to convert veil port to int, using default: %v", err)
+		}
 	}
 }
 

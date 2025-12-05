@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 type Register struct {
@@ -142,6 +143,15 @@ func (cmd *Register) loadRegistrationData() {
 	}
 	if envTeams := os.Getenv("VEILNET_CONFLUX_TEAMS"); envTeams != "" {
 		cmd.Teams = envTeams
+	}
+	if envVeil := os.Getenv("VEILNET_VEIL"); envVeil != "" {
+		cmd.Veil = envVeil
+	}
+	if envVeilPort := os.Getenv("VEILNET_VEIL_PORT"); envVeilPort != "" {
+		cmd.VeilPort, err = strconv.Atoi(envVeilPort)
+		if err != nil {
+			Logger.Sugar().Warnf("Failed to convert veil port to int, using default: %v", err)
+		}
 	}
 }
 

@@ -10,6 +10,7 @@ require (
 	github.com/nats-io/nkeys v0.4.12 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
+	golang.org/x/sync v0.19.0 // indirect
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
 )
 
@@ -21,8 +22,8 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/pion/datachannel v1.5.10 // indirect
-	github.com/pion/dtls/v3 v3.0.8 // indirect
-	github.com/pion/ice/v4 v4.0.13 // indirect
+	github.com/pion/dtls/v3 v3.0.9 // indirect
+	github.com/pion/ice/v4 v4.1.0 // indirect
 	github.com/pion/interceptor v0.1.42 // indirect
 	github.com/pion/logging v0.2.4 // indirect
 	github.com/pion/mdns/v2 v2.1.0 // indirect
@@ -46,7 +47,7 @@ require (
 	golang.org/x/crypto v0.46.0 // indirect
 	golang.org/x/net v0.48.0 // indirect
 	golang.org/x/sys v0.39.0
-	google.golang.org/protobuf v1.36.10 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 )
 
 replace github.com/veil-net/veilnet => ../veilnet

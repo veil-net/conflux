@@ -1,0 +1,2496 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "VeilNet Guardian",
+    "description": "VeilNet Guardian is a microservice that serves as the central management service for VeilNet infrastructure. It provides REST APIs for managing Veil servers, realms (planes), confluxes (client connections), user authentication, organization and team management, and subscription handling. The Guardian microservice coordinates between Veil servers via NATS messaging and manages IP address allocation, certificate generation, and access control.",
+    "contact": {
+      "name": "VeilNet",
+      "url": "https://veilnet.net/",
+      "email": "support@veilnet.org"
+    },
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/auth/login": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "Handle Login",
+        "description": "Handle user login with email and password.\n\nArgs:\n    form_data: OAuth2 password request form containing username and password\n    \nReturns:\n    JSONResponse: Authentication response with access token\n    \nRaises:\n    HTTPException: If authentication fails (401) or server error (500)",
+        "operationId": "handle_login_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_handle_login_auth_login_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/profile": {
+      "get": {
+        "tags": ["auth"],
+        "summary": "Handle Get User Profile",
+        "description": "Get the authenticated user's profile.\n\nArgs:\n    user: Authenticated user from dependency injection\n    \nReturns:\n    UserProfile: User profile information\n    \nRaises:\n    HTTPException: If profile not found (404) or server error (500)",
+        "operationId": "handle_get_user_profile_auth_profile_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserProfile" }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/auth/profile/display-name": {
+      "patch": {
+        "tags": ["auth"],
+        "summary": "Handle Update Display Name",
+        "description": "Update the authenticated user's display name.\n\nArgs:\n    request: Request containing the new display name\n    user: Authenticated user from dependency injection\n    \nReturns:\n    JSONResponse: Success message\n    \nRaises:\n    HTTPException: If update fails (500)",
+        "operationId": "handle_update_display_name_auth_profile_display_name_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDisplayNameRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/auth/create/registration-token": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "Handle Create Register Token",
+        "description": "Create a registration token for conflux registration.\n\nArgs:\n    request: Request containing realm_id, expires_after, and optional tag\n    user: Authenticated user from dependency injection\n    \nReturns:\n    RegistrationToken: Created token with token_id and token string\n    \nRaises:\n    HTTPException: If token creation fails (500)",
+        "operationId": "handle_create_register_token_auth_create_registration_token_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRegistrationTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RegistrationToken" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/auth/revoke/registration-token": {
+      "delete": {
+        "tags": ["auth"],
+        "summary": "Handle Revoke Register Token",
+        "description": "Revoke a registration token.\n\nArgs:\n    token_id: ID of the token to revoke\n    user: Authenticated user from dependency injection\n    \nReturns:\n    JSONResponse: Success message\n    \nRaises:\n    HTTPException: If token not found (404) or revocation fails (500)",
+        "operationId": "handle_revoke_register_token_auth_revoke_registration_token_delete",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "token_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Token Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/list/registration-token": {
+      "get": {
+        "tags": ["auth"],
+        "summary": "Handle List Registration Token",
+        "description": "List all registration tokens for the authenticated user.\n\nArgs:\n    user: Authenticated user from dependency injection\n    \nReturns:\n    List[RegistrationTokenInfo]: List of registration token information\n    \nRaises:\n    HTTPException: If listing fails (500)",
+        "operationId": "handle_list_registration_token_auth_list_registration_token_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RegistrationTokenInfo"
+                  },
+                  "type": "array",
+                  "title": "Response Handle List Registration Token Auth List Registration Token Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/realm": {
+      "post": {
+        "tags": ["realm"],
+        "summary": "Handle Create Realm",
+        "description": "Create a new realm.\n\nValidates user permissions (superuser for public realms, subscription\nrequired for private realms) and creates a new realm with the specified\nconfiguration.\n\nArgs:\n    request: Request containing realm configuration\n    user: Authenticated user from dependency injection\n    \nReturns:\n    Realm: Created realm object\n    \nRaises:\n    HTTPException: If user lacks permissions (403), veil not found (400),\n        subscription invalid (403), or creation fails (500)",
+        "operationId": "handle_create_realm_realm_post",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreatePlaneRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Realm" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": ["realm"],
+        "summary": "Handle Get Realm",
+        "description": "Get a specific realm by ID.\n\nVerifies user has access to the realm before returning it.\n\nArgs:\n    realm_id: ID of the realm to retrieve\n    user: Authenticated user from dependency injection\n    \nReturns:\n    Realm: Realm object\n    \nRaises:\n    HTTPException: If realm not found or access denied (404/403)\n        or server error (500)",
+        "operationId": "handle_get_realm_realm_get",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "realm_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Realm Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Realm" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["realm"],
+        "summary": "Handle Delete Realm",
+        "description": "Delete a realm.\n\nOnly the realm owner can delete a realm.\n\nArgs:\n    realm_id: ID of the realm to delete\n    user: Authenticated user from dependency injection\n    \nReturns:\n    Realm: Deleted realm object\n    \nRaises:\n    HTTPException: If realm not found or user not owner (404/403)\n        or deletion fails (500)",
+        "operationId": "handle_delete_realm_realm_delete",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "realm_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Realm Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Realm" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realm/list": {
+      "get": {
+        "tags": ["realm"],
+        "summary": "Handle List Realms",
+        "description": "List all realms accessible to the user.\n\nReturns realms owned by the user, public realms, and realms\nassociated with teams the user is a member of.\n\nArgs:\n    user: Authenticated user from dependency injection\n    \nReturns:\n    List[Realm]: List of accessible realms\n    \nRaises:\n    HTTPException: If listing fails (500)",
+        "operationId": "handle_list_realms_realm_list_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": { "$ref": "#/components/schemas/Realm" },
+                  "type": "array",
+                  "title": "Response Handle List Realms Realm List Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/realm/subscription": {
+      "patch": {
+        "tags": ["realm"],
+        "summary": "Handle Update Plane Subscription",
+        "description": "Update the subscription associated with a realm.\n\nOnly the realm owner can update the subscription.\n\nArgs:\n    request: Request containing realm_id and subscription_id\n    user: Authenticated user from dependency injection\n    \nReturns:\n    JSONResponse: Success message\n    \nRaises:\n    HTTPException: If realm not found or user not owner (404/403)\n        or update fails (500)",
+        "operationId": "handle_update_plane_subscription_realm_subscription_patch",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePlaneSubscriptionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["realm"],
+        "summary": "Handle Delete Plane Subscription",
+        "description": "Remove the subscription from a realm.\n\nOnly the realm owner can remove the subscription.\n\nArgs:\n    realm_id: ID of the realm to remove subscription from\n    user: Authenticated user from dependency injection\n    \nReturns:\n    JSONResponse: Success message\n    \nRaises:\n    HTTPException: If realm not found or user not owner (404/403)\n        or deletion fails (500)",
+        "operationId": "handle_delete_plane_subscription_realm_subscription_delete",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "realm_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Realm Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/conflux": {
+      "post": {
+        "tags": ["conflux"],
+        "summary": "Handle Create Conflux",
+        "description": "Create a new conflux for a realm.\n\nCreates a conflux with certificates and generates an authentication\ntoken. Verifies user has access to the realm.\n\nArgs:\n    request: Request containing realm_id and optional tag\n    user: Authenticated user from dependency injection\n    \nReturns:\n    JSONResponse: Conflux token and ID\n    \nRaises:\n    HTTPException: If CA certs not found (500) or creation fails (500)",
+        "operationId": "handle_create_conflux_conflux_post",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateConfluxRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": ["conflux"],
+        "summary": "Handle Get Conflux",
+        "description": "Get a specific conflux by ID.\n\nVerifies user has access to the conflux before returning it.\n\nArgs:\n    conflux_id: ID of the conflux to retrieve\n    user: Authenticated user from dependency injection\n    \nReturns:\n    Conflux: Conflux object\n    \nRaises:\n    HTTPException: If conflux not found (404), access denied (403),\n        or retrieval fails (500)",
+        "operationId": "handle_get_conflux_conflux_get",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "conflux_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Conflux Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Conflux" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["conflux"],
+        "summary": "Handle Delete Conflux",
+        "description": "Delete a conflux.\n\nVerifies user has access to the conflux before deletion.\n\nArgs:\n    conflux_id: ID of the conflux to delete\n    user: Authenticated user from dependency injection\n    \nReturns:\n    Conflux: Deleted conflux object\n    \nRaises:\n    HTTPException: If conflux not found (404), access denied (403),\n        or deletion fails (500)",
+        "operationId": "handle_delete_conflux_conflux_delete",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "conflux_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Conflux Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Conflux" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/conflux/register": {
+      "post": {
+        "tags": ["conflux"],
+        "summary": "Handle Register Conflux",
+        "description": "Register a conflux using a registration token.\n\nCreates a new conflux or returns an existing one if CIDR matches.\nAssociates teams if specified. Requires a valid registration token.\n\nArgs:\n    credentials: HTTP bearer token containing registration token\n    request: Request containing optional tag, CIDR, and teams\n    \nReturns:\n    JSONResponse: Conflux token and ID\n    \nRaises:\n    HTTPException: If token invalid (401), CIDR invalid (400),\n        IP not available (400), CA certs not found (500),\n        or registration fails (500)",
+        "operationId": "handle_register_conflux_conflux_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterConfluxRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "HTTPBearer": [] }]
+      }
+    },
+    "/conflux/unregister": {
+      "delete": {
+        "tags": ["conflux"],
+        "summary": "Handle Unregister Conflux",
+        "description": "Unregister a conflux.\n\nDeletes a conflux that was registered with a registration token.\nRequires a valid registration token.\n\nArgs:\n    credentials: HTTP bearer token containing registration token\n    conflux_id: ID of the conflux to unregister\n    \nReturns:\n    JSONResponse: Success message\n    \nRaises:\n    HTTPException: If token invalid (401) or unregistration fails (500)",
+        "operationId": "handle_unregister_conflux_conflux_unregister_delete",
+        "security": [{ "HTTPBearer": [] }],
+        "parameters": [
+          {
+            "name": "conflux_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Conflux Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/conflux/list": {
+      "get": {
+        "tags": ["conflux"],
+        "summary": "Handle List Conflux",
+        "description": "List all confluxes accessible to the user.\n\nReturns confluxes owned by the user and confluxes in realms\nowned by the user (if not public).\n\nArgs:\n    user: Authenticated user from dependency injection\n    \nReturns:\n    List[Conflux]: List of accessible confluxes\n    \nRaises:\n    HTTPException: If listing fails (500)",
+        "operationId": "handle_list_conflux_conflux_list_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": { "$ref": "#/components/schemas/Conflux" },
+                  "type": "array",
+                  "title": "Response Handle List Conflux Conflux List Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/conflux/session/login": {
+      "post": {
+        "tags": ["conflux"],
+        "summary": "Handle Conflux Session Login",
+        "description": "Login to a conflux session.\n\nCreates or retrieves an IP lease, verifies access permissions,\nand creates a conflux session. Updates conflux portal status.\n\nArgs:\n    request: FastAPI request object for country code verification\n    loginReq: Request containing signature and portal flag\n    conflux: Authenticated conflux from dependency injection\n    \nReturns:\n    Conflux: Updated conflux object\n    \nRaises:\n    HTTPException: If access denied (403), no IPs available (500),\n        or login fails (500)",
+        "operationId": "handle_conflux_session_login_conflux_session_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfluxSessionLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Conflux" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      }
+    },
+    "/conflux/session/logout": {
+      "post": {
+        "tags": ["conflux"],
+        "summary": "Handle Conflux Session Logout",
+        "description": "Logout from a conflux session.\n\nDeletes the conflux session. For non-portal confluxes, also\ndeletes the conflux itself.\n\nArgs:\n    conflux: Authenticated conflux from dependency injection\n    \nRaises:\n    HTTPException: If logout fails (500)",
+        "operationId": "handle_conflux_session_logout_conflux_session_logout_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      }
+    },
+    "/conflux/webrtc": {
+      "get": {
+        "tags": ["conflux"],
+        "summary": "Handle Get Conflux Webrtc",
+        "description": "Get WebRTC ICE server configuration.\n\nRetrieves Cloudflare TURN server credentials for WebRTC connections.\n\nArgs:\n    request: FastAPI request object\n    conflux: Authenticated conflux from dependency injection\n    \nReturns:\n    WebRTCConfig: WebRTC configuration with ICE servers\n    \nRaises:\n    HTTPException: If credential retrieval fails (500)",
+        "operationId": "handle_get_conflux_webrtc_conflux_webrtc_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      }
+    },
+    "/conflux/team": {
+      "post": {
+        "tags": ["conflux"],
+        "summary": "Handle Add Conflux Team",
+        "description": "Add a team to a conflux.\n\nAssociates a team with a portal conflux. User must be owner or\nmember of the team and have access to the conflux.\n\nArgs:\n    request: Request containing conflux_id and team_id\n    user: Authenticated user from dependency injection\n    \nRaises:\n    HTTPException: If user lacks permissions (403) or addition fails (500)",
+        "operationId": "handle_add_conflux_team_conflux_team_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AddConfluxTeamRequest" }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      },
+      "delete": {
+        "tags": ["conflux"],
+        "summary": "Handle Remove Conflux Team",
+        "operationId": "handle_remove_conflux_team_conflux_team_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoveConfluxTeamRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/conflux/team/list": {
+      "get": {
+        "tags": ["conflux"],
+        "summary": "Handle Get Conflux Teams",
+        "operationId": "handle_get_conflux_teams_conflux_team_list_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          }
+        },
+        "security": [{ "APIKeyHeader": [] }]
+      }
+    },
+    "/conflux/local-network": {
+      "get": {
+        "tags": ["conflux"],
+        "summary": "Handle Get Conflux Local Networks",
+        "description": "Get local networks for a conflux.\n\nQueries the conflux via NATS to retrieve its local network configuration.\n\nArgs:\n    conflux_id: ID of the conflux to query\n    user: Authenticated user from dependency injection\n    \nReturns:\n    List[ConfluxLocalNetwork]: List of local networks\n    \nRaises:\n    HTTPException: If access denied (403) or query fails (500)",
+        "operationId": "handle_get_conflux_local_networks_conflux_local_network_get",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "conflux_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Conflux Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/conflux/remote-network": {
+      "get": {
+        "tags": ["conflux"],
+        "summary": "Handle Get Conflux Remote Networks",
+        "description": "Get remote networks for a conflux.\n\nQueries the conflux via NATS to retrieve its remote network configuration.\n\nArgs:\n    conflux_id: ID of the conflux to query\n    user: Authenticated user from dependency injection\n    \nReturns:\n    List[ConfluxRemoteNetwork]: List of remote networks\n    \nRaises:\n    HTTPException: If access denied (403) or query fails (500)",
+        "operationId": "handle_get_conflux_remote_networks_conflux_remote_network_get",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "conflux_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Conflux Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/veil/": {
+      "post": {
+        "tags": ["veil"],
+        "summary": "Handle Create Veil",
+        "description": "Create a new Veil server.\n\nOnly superusers can create Veil servers. Generates certificates\nfor the Veil and stores the configuration.\n\nArgs:\n    req: Request containing Veil configuration\n    user: Authenticated user from dependency injection\n    \nReturns:\n    Veil: Created Veil object\n    \nRaises:\n    HTTPException: If user is not superuser (403), CA certs not found (500),\n        or creation fails (500)",
+        "operationId": "handle_create_veil_veil__post",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateVeilRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Veil" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": ["veil"],
+        "summary": "Handle Get Veil",
+        "description": "Get a specific Veil server by ID.\n\nReturns the Veil if it's owned by the user or is public.\n\nArgs:\n    veil_id: ID of the Veil to retrieve\n    user: Authenticated user from dependency injection\n    \nReturns:\n    Veil: Veil object\n    \nRaises:\n    HTTPException: If Veil not found (404) or retrieval fails (500)",
+        "operationId": "handle_get_veil_veil__get",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "veil_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Veil Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Veil" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["veil"],
+        "summary": "Handle Delete Veil",
+        "description": "Delete a Veil server.\n\nOnly superusers can delete Veil servers. Only the owner can\ndelete their own Veil.\n\nArgs:\n    veil_id: ID of the Veil to delete\n    user: Authenticated user from dependency injection\n    \nReturns:\n    Veil: Deleted Veil object\n    \nRaises:\n    HTTPException: If user is not superuser (403), Veil not found (404),\n        or deletion fails (500)",
+        "operationId": "handle_delete_veil_veil__delete",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "veil_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Veil Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Veil" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/veil/list": {
+      "get": {
+        "tags": ["veil"],
+        "summary": "Handle List Veils",
+        "description": "List all Veil servers accessible to the user.\n\nReturns Veils owned by the user and public Veils.\n\nArgs:\n    user: Authenticated user from dependency injection\n    \nReturns:\n    List[Veil]: List of accessible Veil servers\n    \nRaises:\n    HTTPException: If listing fails (500)",
+        "operationId": "handle_list_veils_veil_list_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": { "$ref": "#/components/schemas/Veil" },
+                  "type": "array",
+                  "title": "Response Handle List Veils Veil List Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/org": {
+      "post": {
+        "tags": ["Organization"],
+        "summary": "Handle Create Organisation",
+        "description": "Create a new organization.\n\nCreates an organization and automatically creates an \"Owner\" team\nwith the user as a member.\n\nArgs:\n    request: Request containing organization details\n    user: Authenticated user from dependency injection\n    \nReturns:\n    Organisation: Created organization object\n    \nRaises:\n    HTTPException: If creation fails (500)",
+        "operationId": "handle_create_organisation_org_post",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrganisationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Organisation" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": ["Organization"],
+        "summary": "Handle Get Organisation",
+        "description": "Get a specific organization by ID.\n\nOnly members of the organization can retrieve it.\n\nArgs:\n    organisation_id: ID of the organization to retrieve\n    user: Authenticated user from dependency injection\n    \nReturns:\n    Organisation: Organization object\n    \nRaises:\n    HTTPException: If organization not found or user not a member (404)\n        or retrieval fails (500)",
+        "operationId": "handle_get_organisation_org_get",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Organisation Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Organisation" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Organization"],
+        "summary": "Handle Delete Organisation",
+        "description": "Delete an organization.\n\nOnly the organization owner can delete it.\n\nArgs:\n    organisation_id: ID of the organization to delete\n    user: Authenticated user from dependency injection\n    \nReturns:\n    JSONResponse: Success message\n    \nRaises:\n    HTTPException: If organization not found (404), user not owner (403),\n        or deletion fails (500)",
+        "operationId": "handle_delete_organisation_org_delete",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Organisation Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": ["Organization"],
+        "summary": "Handle Update Organisation",
+        "description": "Update organization details.\n\nOnly the organization owner can update it.\n\nArgs:\n    organisation_id: ID of the organization to update\n    request: Request containing fields to update\n    user: Authenticated user from dependency injection\n    \nReturns:\n    JSONResponse: Success message\n    \nRaises:\n    HTTPException: If organization not found (404), user not owner (403),\n        or update fails (500)",
+        "operationId": "handle_update_organisation_org_patch",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Organisation Id" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateOrganisationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/org/list": {
+      "get": {
+        "tags": ["Organization"],
+        "summary": "Handle List Organisations",
+        "description": "List all organizations the user is a member of.\n\nArgs:\n    user: Authenticated user from dependency injection\n    \nReturns:\n    list[Organisation]: List of organizations the user belongs to\n    \nRaises:\n    HTTPException: If listing fails (500)",
+        "operationId": "handle_list_organisations_org_list_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": { "$ref": "#/components/schemas/Organisation" },
+                  "type": "array",
+                  "title": "Response Handle List Organisations Org List Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/org/owner": {
+      "post": {
+        "tags": ["Organization"],
+        "summary": "Handle Add Organisation Owner",
+        "operationId": "handle_add_organisation_owner_org_owner_post",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddOrganisationOwnerRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Organization"],
+        "summary": "Handle Remove Organisation Owner",
+        "operationId": "handle_remove_organisation_owner_org_owner_delete",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Organisation Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/org/team": {
+      "post": {
+        "tags": ["Organization"],
+        "summary": "Handle Create Team",
+        "description": "Create a new team within an organization.\n\nCreates a team and automatically adds the creator as a member.\n\nArgs:\n    organisation_id: ID of the parent organization\n    request: Request containing team details\n    user: Authenticated user from dependency injection\n    \nReturns:\n    Team: Created team object\n    \nRaises:\n    HTTPException: If creation fails (500)",
+        "operationId": "handle_create_team_org_team_post",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "organisation_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Organisation Id" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateTeamRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Team" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": ["Organization"],
+        "summary": "Handle Get Team",
+        "operationId": "handle_get_team_org_team_get",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "team_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Team Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Team" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Organization"],
+        "summary": "Handle Delete Team",
+        "operationId": "handle_delete_team_org_team_delete",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "team_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Team Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": ["Organization"],
+        "summary": "Handle Update Team",
+        "operationId": "handle_update_team_org_team_patch",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "team_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Team Id" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateTeamRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Team" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/org/team/list": {
+      "get": {
+        "tags": ["Organization"],
+        "summary": "Handle List Teams",
+        "operationId": "handle_list_teams_org_team_list_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": { "$ref": "#/components/schemas/Team" },
+                  "type": "array",
+                  "title": "Response Handle List Teams Org Team List Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/org/team/invite": {
+      "post": {
+        "tags": ["Organization"],
+        "summary": "Handle Invite Team Member",
+        "operationId": "handle_invite_team_member_org_team_invite_post",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteTeamMemberRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Organization"],
+        "summary": "Handle Delete Team Invitation",
+        "operationId": "handle_delete_team_invitation_org_team_invite_delete",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "invitation_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Invitation Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/org/team/invite/sent": {
+      "get": {
+        "tags": ["Organization"],
+        "summary": "Handle List Team Invitations",
+        "operationId": "handle_list_team_invitations_org_team_invite_sent_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": { "$ref": "#/components/schemas/TeamInvitation" },
+                  "type": "array",
+                  "title": "Response Handle List Team Invitations Org Team Invite Sent Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/org/team/invite/received": {
+      "get": {
+        "tags": ["Organization"],
+        "summary": "Handle List Team Invitations Received",
+        "operationId": "handle_list_team_invitations_received_org_team_invite_received_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": { "$ref": "#/components/schemas/TeamInvitation" },
+                  "type": "array",
+                  "title": "Response Handle List Team Invitations Received Org Team Invite Received Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/org/team/invite/accept": {
+      "post": {
+        "tags": ["Organization"],
+        "summary": "Handle Accept Team Invitation",
+        "operationId": "handle_accept_team_invitation_org_team_invite_accept_post",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "invitation_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Invitation Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/org/team/invite/reject": {
+      "post": {
+        "tags": ["Organization"],
+        "summary": "Handle Reject Team Invitation",
+        "operationId": "handle_reject_team_invitation_org_team_invite_reject_post",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "invitation_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Invitation Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/org/team/realm": {
+      "patch": {
+        "tags": ["Organization"],
+        "summary": "Handle Update Team Plane",
+        "operationId": "handle_update_team_plane_org_team_realm_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTeamPlaneRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/org/team/member": {
+      "get": {
+        "tags": ["Organization"],
+        "summary": "Handle Get Team Member",
+        "operationId": "handle_get_team_member_org_team_member_get",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "team_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Team Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/TeamMember" },
+                  "title": "Response Handle Get Team Member Org Team Member Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Organization"],
+        "summary": "Handle Remove Team Member",
+        "operationId": "handle_remove_team_member_org_team_member_delete",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "team_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Team Id" }
+          },
+          {
+            "name": "member_user_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Member User Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stripe/subscribe/conflux": {
+      "post": {
+        "tags": ["stripe"],
+        "summary": "Handle Subscribe Conflux",
+        "description": "Create a Stripe checkout session for conflux subscription.\n\nCreates or retrieves the Stripe customer and generates a checkout\nsession for the specified service tier.\n\nArgs:\n    req: Request containing service tier and redirect URLs\n    user: Authenticated user from dependency injection\n    \nReturns:\n    JSONResponse: Checkout session URL\n    \nRaises:\n    HTTPException: If service tier is invalid (400) or checkout\n        creation fails (500)",
+        "operationId": "handle_subscribe_conflux_stripe_subscribe_conflux_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SubscribeRequest" }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/stripe/subscribe/realm": {
+      "post": {
+        "tags": ["stripe"],
+        "summary": "Handle Subscribe Plane",
+        "description": "Create a Stripe checkout session for realm subscription.\n\nCreates or retrieves the Stripe customer and generates a checkout\nsession for a realm subscription.\n\nArgs:\n    req: Request containing redirect URLs\n    user: Authenticated user from dependency injection\n    \nReturns:\n    JSONResponse: Checkout session URL\n    \nRaises:\n    HTTPException: If checkout creation fails (500)",
+        "operationId": "handle_subscribe_plane_stripe_subscribe_realm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PlaneSubscribeRequest" }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/stripe/subscriptions": {
+      "get": {
+        "tags": ["stripe"],
+        "summary": "Handle Get Subscriptions",
+        "description": "Get all subscriptions for the authenticated user.\n\nArgs:\n    user: Authenticated user from dependency injection\n    \nReturns:\n    list[UserSubscription]: List of user subscriptions\n    \nRaises:\n    HTTPException: If retrieval fails (500)",
+        "operationId": "handle_get_subscriptions_stripe_subscriptions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": { "$ref": "#/components/schemas/UserSubscription" },
+                  "type": "array",
+                  "title": "Response Handle Get Subscriptions Stripe Subscriptions Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/stripe/subscription": {
+      "delete": {
+        "tags": ["stripe"],
+        "summary": "Handle Cancel Subscription",
+        "description": "Cancel a subscription at the end of the current period.\n\nVerifies ownership and sets cancel_at_period_end to True.\n\nArgs:\n    subscription_id: ID of the subscription to cancel\n    user: Authenticated user from dependency injection\n    \nRaises:\n    HTTPException: If subscription not found (404), user not owner (403),\n        already canceled (400), or cancellation fails (500)",
+        "operationId": "handle_cancel_subscription_stripe_subscription_delete",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "subscription_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Subscription Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stripe/subscriptions/conflux": {
+      "get": {
+        "tags": ["stripe"],
+        "summary": "Handle Get Conflux Subscriptions",
+        "operationId": "handle_get_conflux_subscriptions_stripe_subscriptions_conflux_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/stripe/subscription/conflux/update": {
+      "post": {
+        "tags": ["stripe"],
+        "summary": "Handle Update Subscription",
+        "description": "Update a conflux subscription to a different service tier.\n\nChanges the subscription price and updates metadata. Creates\nprorations for the billing difference.\n\nArgs:\n    req: Request containing subscription_id and new service_tier\n    user: Authenticated user from dependency injection\n    \nReturns:\n    JSONResponse: Success message with updated subscription details\n    \nRaises:\n    HTTPException: If service tier invalid (400), subscription not found (404),\n        subscription not active (400), not a conflux subscription (400),\n        same tier (400), or update fails (500)",
+        "operationId": "handle_update_subscription_stripe_subscription_conflux_update_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSubscriptionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/stripe/subscriptions/realm": {
+      "get": {
+        "tags": ["stripe"],
+        "summary": "Handle Get Plane Subscriptions",
+        "operationId": "handle_get_plane_subscriptions_stripe_subscriptions_realm_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": { "$ref": "#/components/schemas/UserSubscription" },
+                  "type": "array",
+                  "title": "Response Handle Get Plane Subscriptions Stripe Subscriptions Realm Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/stripe/service-tier": {
+      "get": {
+        "tags": ["stripe"],
+        "summary": "Handle Get Service Tier",
+        "description": "Get the service tier for the authenticated user.\n\nArgs:\n    user: Authenticated user from dependency injection\n    \nReturns:\n    ServiceTier: User's current service tier\n    \nRaises:\n    HTTPException: If retrieval fails (500)",
+        "operationId": "handle_get_service_tier_stripe_service_tier_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": ["health"],
+        "summary": "Handle Health",
+        "description": "Health check endpoint.\n\nReturns a 200 OK status to indicate the service is healthy\nand responding to requests.\n\nReturns:\n    Response: HTTP 200 OK response",
+        "operationId": "handle_health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AddConfluxTeamRequest": {
+        "properties": {
+          "conflux_id": { "type": "string", "title": "Conflux Id" },
+          "team_id": { "type": "string", "title": "Team Id" }
+        },
+        "type": "object",
+        "required": ["conflux_id", "team_id"],
+        "title": "AddConfluxTeamRequest",
+        "description": "Request model for adding a team to a conflux.\n\nAttributes:\n    conflux_id: ID of the conflux\n    team_id: ID of the team to add"
+      },
+      "AddOrganisationOwnerRequest": {
+        "properties": {
+          "organisation_id": { "type": "string", "title": "Organisation Id" },
+          "user_email": { "type": "string", "title": "User Email" }
+        },
+        "type": "object",
+        "required": ["organisation_id", "user_email"],
+        "title": "AddOrganisationOwnerRequest",
+        "description": "Request model for adding an organization owner.\n\nAttributes:\n    organisation_id: ID of the organization\n    user_email: Email of the user to add as owner"
+      },
+      "Body_handle_login_auth_login_post": {
+        "properties": {
+          "grant_type": {
+            "anyOf": [
+              { "type": "string", "pattern": "^password$" },
+              { "type": "null" }
+            ],
+            "title": "Grant Type"
+          },
+          "username": { "type": "string", "title": "Username" },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "title": "Password"
+          },
+          "scope": { "type": "string", "title": "Scope", "default": "" },
+          "client_id": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Client Id"
+          },
+          "client_secret": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "format": "password",
+            "title": "Client Secret"
+          }
+        },
+        "type": "object",
+        "required": ["username", "password"],
+        "title": "Body_handle_login_auth_login_post"
+      },
+      "Conflux": {
+        "properties": {
+          "id": { "type": "string", "title": "Id" },
+          "created_at": {
+            "anyOf": [
+              { "type": "string", "format": "date-time" },
+              { "type": "null" }
+            ],
+            "title": "Created At"
+          },
+          "last_seen": {
+            "anyOf": [
+              { "type": "string", "format": "date-time" },
+              { "type": "null" }
+            ],
+            "title": "Last Seen"
+          },
+          "user_id": { "type": "string", "title": "User Id" },
+          "tag": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Tag"
+          },
+          "signature": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Signature"
+          },
+          "ip_lease_id": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Ip Lease Id"
+          },
+          "cidr": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Cidr"
+          },
+          "subnet": { "type": "string", "title": "Subnet" },
+          "plane": { "type": "string", "title": "Plane" },
+          "plane_id": { "type": "string", "title": "Plane Id" },
+          "portal": { "type": "boolean", "title": "Portal" },
+          "public": { "type": "boolean", "title": "Public" },
+          "ca_pem": { "type": "string", "title": "Ca Pem" },
+          "key_pem": { "type": "string", "title": "Key Pem" },
+          "cert_pem": { "type": "string", "title": "Cert Pem" },
+          "veil_host": { "type": "string", "title": "Veil Host" },
+          "veil_port": { "type": "integer", "title": "Veil Port" },
+          "region": { "type": "string", "title": "Region" }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "user_id",
+          "subnet",
+          "plane",
+          "plane_id",
+          "portal",
+          "public",
+          "ca_pem",
+          "key_pem",
+          "cert_pem",
+          "veil_host",
+          "veil_port",
+          "region"
+        ],
+        "title": "Conflux",
+        "description": "Represents a conflux.\n\nAttributes:\n    last_seen (datetime): Timestamp when the conflux was last seen\n    user_id (str): ID of the user who owns this conflux\n    tag (Optional[str]): Optional tag for categorizing the conflux\n    signature (Optional[str]): Cryptographic signature for conflux validation\n    ip_lease_id (Optional[str]): ID of the associated ip lease\n    cidr (Optional[str]): CIDR notation of the conflux's IP range\n    subnet (str): CIDR notation of the conflux's subnet\n    plane (str): ID of the associated plane\n    plane_id (str): ID of the associated plane\n    portal (bool): Whether the conflux is a portal\n    public (bool): Whether the conflux is public\n    ca_pem (str): CA certificate in PEM format\n    key_pem (str): Private key in PEM format\n    cert_pem (str): Conflux certificate in PEM format\n    veil_host (str): IP address of the associated Veil server\n    veil_port (int): Port number the Veil server listens on\n    region (str): Geographic region where the conflux is located"
+      },
+      "ConfluxSessionLoginRequest": {
+        "properties": {
+          "signature": { "type": "string", "title": "Signature" },
+          "portal": { "type": "boolean", "title": "Portal" }
+        },
+        "type": "object",
+        "required": ["signature", "portal"],
+        "title": "ConfluxSessionLoginRequest",
+        "description": "Request model for conflux session login.\n\nAttributes:\n    signature: Cryptographic signature for validation\n    portal: Whether this is a portal conflux"
+      },
+      "CreateConfluxRequest": {
+        "properties": {
+          "realm_id": { "type": "string", "title": "Realm Id" },
+          "tag": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Tag"
+          }
+        },
+        "type": "object",
+        "required": ["realm_id"],
+        "title": "CreateConfluxRequest",
+        "description": "Request model for creating a new conflux.\n\nAttributes:\n    realm_id: ID of the realm to create conflux for\n    tag: Optional tag for categorizing the conflux"
+      },
+      "CreateOrganisationRequest": {
+        "properties": {
+          "name": { "type": "string", "title": "Name" },
+          "website": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Website"
+          },
+          "email": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "required": ["name"],
+        "title": "CreateOrganisationRequest",
+        "description": "Request model for creating a new organization.\n\nAttributes:\n    name: Name of the organization\n    website: Optional website URL\n    email: Optional email address"
+      },
+      "CreatePlaneRequest": {
+        "properties": {
+          "name": { "type": "string", "title": "Name" },
+          "subnet": { "type": "string", "title": "Subnet" },
+          "public": { "type": "boolean", "title": "Public" },
+          "veil_id": { "type": "string", "title": "Veil Id" },
+          "subscription_id": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Subscription Id"
+          }
+        },
+        "type": "object",
+        "required": ["name", "subnet", "public", "veil_id"],
+        "title": "CreatePlaneRequest",
+        "description": "Request model for creating a new realm.\n\nAttributes:\n    name: Name of the realm\n    subnet: CIDR notation of the realm's subnet (must be private)\n    public: Whether the realm is public\n    veil_id: ID of the associated Veil server\n    subscription_id: Optional subscription ID for private realms"
+      },
+      "CreateRegistrationTokenRequest": {
+        "properties": {
+          "realm_id": { "type": "string", "title": "Realm Id" },
+          "expires_after": { "type": "integer", "title": "Expires After" },
+          "tag": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Tag"
+          }
+        },
+        "type": "object",
+        "required": ["realm_id", "expires_after"],
+        "title": "CreateRegistrationTokenRequest",
+        "description": "Request model for creating a registration token.\n\nAttributes:\n    realm_id: ID of the realm to create token for\n    expires_after: Number of days until token expiration\n    tag: Optional tag for categorizing the token"
+      },
+      "CreateTeamRequest": {
+        "properties": {
+          "name": { "type": "string", "title": "Name" },
+          "email": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Email"
+          },
+          "realm_id": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Realm Id"
+          }
+        },
+        "type": "object",
+        "required": ["name"],
+        "title": "CreateTeamRequest",
+        "description": "Request model for creating a new team.\n\nAttributes:\n    name: Name of the team\n    email: Optional email address\n    realm_id: Optional realm ID to associate with the team"
+      },
+      "CreateVeilRequest": {
+        "properties": {
+          "name": { "type": "string", "title": "Name" },
+          "region": { "type": "string", "title": "Region" },
+          "host": { "type": "string", "title": "Host" },
+          "port": { "type": "integer", "title": "Port" },
+          "public": { "type": "boolean", "title": "Public", "default": true }
+        },
+        "type": "object",
+        "required": ["name", "region", "host", "port"],
+        "title": "CreateVeilRequest",
+        "description": "Request model for creating a new Veil server.\n\nAttributes:\n    name: Name of the Veil server\n    region: Geographic region where the Veil is located\n    host: IP address or hostname of the Veil\n    port: Port number the Veil listens on\n    public: Whether the Veil is publicly accessible (default: True)"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": { "$ref": "#/components/schemas/ValidationError" },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "InviteTeamMemberRequest": {
+        "properties": {
+          "team_id": { "type": "string", "title": "Team Id" },
+          "email": { "type": "string", "title": "Email" }
+        },
+        "type": "object",
+        "required": ["team_id", "email"],
+        "title": "InviteTeamMemberRequest",
+        "description": "Request model for inviting a team member.\n\nAttributes:\n    team_id: ID of the team\n    email: Email of the user to invite"
+      },
+      "Organisation": {
+        "properties": {
+          "id": { "type": "string", "title": "Id" },
+          "created_at": {
+            "anyOf": [
+              { "type": "string", "format": "date-time" },
+              { "type": "null" }
+            ],
+            "title": "Created At"
+          },
+          "user_id": { "type": "string", "title": "User Id" },
+          "name": { "type": "string", "title": "Name" },
+          "website": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Website"
+          },
+          "email": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "required": ["id", "user_id", "name"],
+        "title": "Organisation",
+        "description": "Represents an organisation.\n\nAttributes:\n    user_id (str): ID of the user who owns this organisation\n    name (str): Name of the organisation\n    website (Optional[str]): Website of the organisation\n    email (Optional[str]): Email of the organisation"
+      },
+      "PlaneSubscribeRequest": {
+        "properties": {
+          "success_url": { "type": "string", "title": "Success Url" },
+          "cancel_url": { "type": "string", "title": "Cancel Url" }
+        },
+        "type": "object",
+        "required": ["success_url", "cancel_url"],
+        "title": "PlaneSubscribeRequest",
+        "description": "Request model for creating a realm subscription checkout session.\n\nAttributes:\n    success_url: URL to redirect to after successful payment\n    cancel_url: URL to redirect to if payment is cancelled"
+      },
+      "Realm": {
+        "properties": {
+          "id": { "type": "string", "title": "Id" },
+          "created_at": {
+            "anyOf": [
+              { "type": "string", "format": "date-time" },
+              { "type": "null" }
+            ],
+            "title": "Created At"
+          },
+          "user_id": { "type": "string", "title": "User Id" },
+          "veil_id": { "type": "string", "title": "Veil Id" },
+          "name": { "type": "string", "title": "Name" },
+          "subnet": { "type": "string", "title": "Subnet" },
+          "public": { "type": "boolean", "title": "Public" },
+          "region": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Region"
+          },
+          "veil_host": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Veil Host"
+          },
+          "veil_port": {
+            "anyOf": [{ "type": "integer" }, { "type": "null" }],
+            "title": "Veil Port"
+          },
+          "portals": { "type": "integer", "title": "Portals" },
+          "status": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "user_id",
+          "veil_id",
+          "name",
+          "subnet",
+          "public",
+          "portals",
+          "status"
+        ],
+        "title": "Realm",
+        "description": "Represents a plane.\n\nAttributes:\n    user_id (str): ID of the user who owns this plane\n    veil_id (str): ID of the associated Veil server\n    name (str): Name of the plane\n    subnet (str): CIDR notation of the plane's subnet\n    public (bool): Whether the plane is public\n    region (Optional[str]): Geographic region where the plane is located\n    veil_host (Optional[str]): IP address of the associated Veil server\n    veil_port (Optional[int]): Port number the Veil server listens on\n    portals (int): Number of portals on the plane\n    subscriptions (Optional[str]): ID of the associated subscription"
+      },
+      "RegisterConfluxRequest": {
+        "properties": {
+          "tag": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Tag"
+          },
+          "cidr": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Cidr"
+          },
+          "teams": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Teams"
+          }
+        },
+        "type": "object",
+        "title": "RegisterConfluxRequest",
+        "description": "Request model for registering a conflux.\n\nAttributes:\n    tag: Optional tag for categorizing the conflux\n    cidr: Optional CIDR for static IP assignment\n    teams: Optional comma-separated list of team names to associate"
+      },
+      "RegistrationToken": {
+        "properties": {
+          "token_id": { "type": "string", "title": "Token Id" },
+          "token": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Token"
+          }
+        },
+        "type": "object",
+        "required": ["token_id"],
+        "title": "RegistrationToken",
+        "description": "Represents a register token.\n\nAttributes:\n    token_id (str): ID of the token\n    token (Optional[str]): The token itself"
+      },
+      "RegistrationTokenInfo": {
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "user_id": { "type": "string", "title": "User Id" },
+          "realm_id": { "type": "string", "title": "Realm Id" },
+          "token_hash": { "type": "string", "title": "Token Hash" },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "token_id": { "type": "string", "title": "Token Id" },
+          "tag": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Tag"
+          }
+        },
+        "type": "object",
+        "required": [
+          "created_at",
+          "user_id",
+          "realm_id",
+          "token_hash",
+          "expires_at",
+          "token_id"
+        ],
+        "title": "RegistrationTokenInfo",
+        "description": "Represents a registration token.\n\nAttributes:\n    created_at (datetime): Timestamp when the token was created\n    user_id (str): ID of the user who owns this token\n    realm_id (str): ID of the associated realm\n    token_hash (str): Hash of the token\n    expires_at (datetime): Timestamp when the token expires\n    token_id (str): ID of the token\n    tag (Optional[str]): Optional tag for categorizing the token"
+      },
+      "RemoveConfluxTeamRequest": {
+        "properties": {
+          "conflux_id": { "type": "string", "title": "Conflux Id" },
+          "team_id": { "type": "string", "title": "Team Id" }
+        },
+        "type": "object",
+        "required": ["conflux_id", "team_id"],
+        "title": "RemoveConfluxTeamRequest"
+      },
+      "SubscribeRequest": {
+        "properties": {
+          "service_tier": { "type": "integer", "title": "Service Tier" },
+          "success_url": { "type": "string", "title": "Success Url" },
+          "cancel_url": { "type": "string", "title": "Cancel Url" }
+        },
+        "type": "object",
+        "required": ["service_tier", "success_url", "cancel_url"],
+        "title": "SubscribeRequest",
+        "description": "Request model for creating a subscription checkout session.\n\nAttributes:\n    service_tier: Service tier level (1 for PRO, 2 for MAX)\n    success_url: URL to redirect to after successful payment\n    cancel_url: URL to redirect to if payment is cancelled"
+      },
+      "Team": {
+        "properties": {
+          "id": { "type": "string", "title": "Id" },
+          "created_at": {
+            "anyOf": [
+              { "type": "string", "format": "date-time" },
+              { "type": "null" }
+            ],
+            "title": "Created At"
+          },
+          "user_id": { "type": "string", "title": "User Id" },
+          "organisation_id": { "type": "string", "title": "Organisation Id" },
+          "name": { "type": "string", "title": "Name" },
+          "email": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Email"
+          },
+          "realm_id": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Realm Id"
+          }
+        },
+        "type": "object",
+        "required": ["id", "user_id", "organisation_id", "name"],
+        "title": "Team",
+        "description": "Represents a team.\n\nAttributes:\n    user_id (str): ID of the user who owns this team\n    name (str): Name of the team\n    organisation_id (str): ID of the associated organisation\n    realm_id (Optional[str]): ID of the associated realm"
+      },
+      "TeamInvitation": {
+        "properties": {
+          "id": { "type": "string", "title": "Id" },
+          "created_at": {
+            "anyOf": [
+              { "type": "string", "format": "date-time" },
+              { "type": "null" }
+            ],
+            "title": "Created At"
+          },
+          "user_email": { "type": "string", "title": "User Email" },
+          "organisation_name": {
+            "type": "string",
+            "title": "Organisation Name"
+          },
+          "team_name": { "type": "string", "title": "Team Name" },
+          "invited_user_email": {
+            "type": "string",
+            "title": "Invited User Email"
+          },
+          "status": { "type": "string", "title": "Status" }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "user_email",
+          "organisation_name",
+          "team_name",
+          "invited_user_email",
+          "status"
+        ],
+        "title": "TeamInvitation",
+        "description": "Represents a team invitation.\n\nAttributes:\n    user_email (str): Email of the user who sent the invitation\n    organisation_name (str): Name of the associated organisation\n    team_name (str): Name of the associated team\n    invited_user_email (str): Email of the invited user\n    status (str): Status of the invitation (pending, accepted, rejected)"
+      },
+      "TeamMember": {
+        "properties": {
+          "id": { "type": "string", "title": "Id" },
+          "created_at": {
+            "anyOf": [
+              { "type": "string", "format": "date-time" },
+              { "type": "null" }
+            ],
+            "title": "Created At"
+          },
+          "team_id": { "type": "string", "title": "Team Id" },
+          "user_id": { "type": "string", "title": "User Id" },
+          "email": { "type": "string", "title": "Email" },
+          "display_name": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Display Name"
+          }
+        },
+        "type": "object",
+        "required": ["id", "team_id", "user_id", "email"],
+        "title": "TeamMember",
+        "description": "Represents a team member.\n\nAttributes:\n    team_id (str): ID of the associated team\n    user_id (str): ID of the associated user\n    email (str): Email of the team member\n    display_name (Optional[str]): Display name of the team member"
+      },
+      "UpdateDisplayNameRequest": {
+        "properties": {
+          "display_name": { "type": "string", "title": "Display Name" }
+        },
+        "type": "object",
+        "required": ["display_name"],
+        "title": "UpdateDisplayNameRequest",
+        "description": "Request model for updating user display name.\n\nAttributes:\n    display_name: New display name for the user"
+      },
+      "UpdateOrganisationRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Name"
+          },
+          "website": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Website"
+          },
+          "email": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "title": "UpdateOrganisationRequest",
+        "description": "Request model for updating organization details.\n\nAttributes:\n    name: Optional new name\n    website: Optional new website URL\n    email: Optional new email address"
+      },
+      "UpdatePlaneSubscriptionRequest": {
+        "properties": {
+          "realm_id": { "type": "string", "title": "Realm Id" },
+          "subscription_id": { "type": "string", "title": "Subscription Id" }
+        },
+        "type": "object",
+        "required": ["realm_id", "subscription_id"],
+        "title": "UpdatePlaneSubscriptionRequest",
+        "description": "Request model for updating realm subscription.\n\nAttributes:\n    realm_id: ID of the realm to update\n    subscription_id: ID of the subscription to associate"
+      },
+      "UpdateSubscriptionRequest": {
+        "properties": {
+          "subscription_id": { "type": "string", "title": "Subscription Id" },
+          "service_tier": { "type": "integer", "title": "Service Tier" }
+        },
+        "type": "object",
+        "required": ["subscription_id", "service_tier"],
+        "title": "UpdateSubscriptionRequest",
+        "description": "Request model for updating a subscription service tier.\n\nAttributes:\n    subscription_id: ID of the subscription to update\n    service_tier: New service tier level (1 for PRO, 2 for MAX)"
+      },
+      "UpdateTeamPlaneRequest": {
+        "properties": {
+          "team_id": { "type": "string", "title": "Team Id" },
+          "realm_id": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Realm Id"
+          }
+        },
+        "type": "object",
+        "required": ["team_id"],
+        "title": "UpdateTeamPlaneRequest",
+        "description": "Request model for updating team realm association.\n\nAttributes:\n    team_id: ID of the team\n    realm_id: Optional realm ID to associate (None to clear)"
+      },
+      "UpdateTeamRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Name"
+          },
+          "email": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "title": "UpdateTeamRequest",
+        "description": "Request model for updating team details.\n\nAttributes:\n    name: Optional new name\n    email: Optional new email address"
+      },
+      "UserProfile": {
+        "properties": {
+          "id": { "type": "string", "title": "Id" },
+          "created_at": {
+            "anyOf": [
+              { "type": "string", "format": "date-time" },
+              { "type": "null" }
+            ],
+            "title": "Created At"
+          },
+          "email": { "type": "string", "title": "Email" },
+          "is_superuser": { "type": "boolean", "title": "Is Superuser" },
+          "mp": { "type": "integer", "title": "Mp" },
+          "display_name": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Display Name"
+          }
+        },
+        "type": "object",
+        "required": ["id", "email", "is_superuser", "mp"],
+        "title": "UserProfile",
+        "description": "Represents a user profile.\n\nAttributes:\n    email (str): Email address of the user\n    is_superuser (bool): Whether the user is a superuser\n    mp (int): MP of the user\n    username (str): Username of the user"
+      },
+      "UserSubscription": {
+        "properties": {
+          "id": { "type": "string", "title": "Id" },
+          "cancel_at_period_end": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Cancel At Period End"
+          },
+          "current_period_start": {
+            "anyOf": [
+              { "type": "string", "format": "date-time" },
+              { "type": "null" }
+            ],
+            "title": "Current Period Start"
+          },
+          "current_period_end": {
+            "anyOf": [
+              { "type": "string", "format": "date-time" },
+              { "type": "null" }
+            ],
+            "title": "Current Period End"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/UserSubscriptionMetadata"
+          },
+          "status": { "type": "string", "title": "Status" },
+          "application_fee_percent": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Application Fee Percent"
+          },
+          "cancel_at": {
+            "anyOf": [
+              { "type": "string", "format": "date-time" },
+              { "type": "null" }
+            ],
+            "title": "Cancel At"
+          },
+          "canceled_at": {
+            "anyOf": [
+              { "type": "string", "format": "date-time" },
+              { "type": "null" }
+            ],
+            "title": "Canceled At"
+          },
+          "created": {
+            "anyOf": [
+              { "type": "string", "format": "date-time" },
+              { "type": "null" }
+            ],
+            "title": "Created"
+          },
+          "ended_at": {
+            "anyOf": [
+              { "type": "string", "format": "date-time" },
+              { "type": "null" }
+            ],
+            "title": "Ended At"
+          },
+          "livemode": { "type": "boolean", "title": "Livemode" },
+          "start_date": {
+            "anyOf": [
+              { "type": "string", "format": "date-time" },
+              { "type": "null" }
+            ],
+            "title": "Start Date"
+          },
+          "customer": { "type": "string", "title": "Customer" },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "metadata",
+          "status",
+          "livemode",
+          "customer",
+          "updated_at"
+        ],
+        "title": "UserSubscription",
+        "description": "Represents a user's subscription.\n\nAttributes:\n    id (str): ID of the subscription\n    cancel_at_period_end (Optional[bool]): Whether the subscription will be canceled at the end of the current period\n    current_period_start (Optional[datetime]): Timestamp when the current period started\n    current_period_end (Optional[datetime]): Timestamp when the current period ends\n    metadata (UserSubscriptionMetadata): Metadata of the subscription\n    status (str): Status of the subscription\n    application_fee_percent (Optional[float]): Percentage of the subscription fee to be applied as an application fee\n    cancel_at (Optional[datetime]): Timestamp when the subscription will be canceled\n    canceled_at (Optional[datetime]): Timestamp when the subscription was canceled\n    created (Optional[datetime]): Timestamp when the subscription was created\n    ended_at (Optional[datetime]): Timestamp when the subscription ended\n    livemode (bool): Whether the subscription is live\n    start_date (Optional[datetime]): Timestamp when the subscription started\n    customer (str): Customer ID of the subscription\n    updated_at (datetime): Timestamp when the subscription was last updated"
+      },
+      "UserSubscriptionMetadata": {
+        "properties": {
+          "user_id": { "type": "string", "title": "User Id" },
+          "service_tier": { "type": "integer", "title": "Service Tier" },
+          "type": {
+            "anyOf": [
+              { "type": "string", "enum": ["plane", "conflux"] },
+              { "type": "null" }
+            ],
+            "title": "Type"
+          }
+        },
+        "type": "object",
+        "required": ["user_id", "service_tier"],
+        "title": "UserSubscriptionMetadata",
+        "description": "Represents a user's subscription metadata.\n\nAttributes:\n    user_id (str): ID of the user who owns this subscription\n    service_tier (int): Service tier of the subscription"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": { "anyOf": [{ "type": "string" }, { "type": "integer" }] },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": { "type": "string", "title": "Message" },
+          "type": { "type": "string", "title": "Error Type" }
+        },
+        "type": "object",
+        "required": ["loc", "msg", "type"],
+        "title": "ValidationError"
+      },
+      "Veil": {
+        "properties": {
+          "id": { "type": "string", "title": "Id" },
+          "created_at": {
+            "anyOf": [
+              { "type": "string", "format": "date-time" },
+              { "type": "null" }
+            ],
+            "title": "Created At"
+          },
+          "name": { "type": "string", "title": "Name" },
+          "region": { "type": "string", "title": "Region" },
+          "host": { "type": "string", "title": "Host" },
+          "port": { "type": "integer", "title": "Port" }
+        },
+        "type": "object",
+        "required": ["id", "name", "region", "host", "port"],
+        "title": "Veil",
+        "description": "Represents a Veil instance with its network configuration and certificates.\n\nAttributes:\n    name (str): Name of the Veil\n    region (str): Geographic region where the Veil is located\n    host (str): IP address of the Veil\n    port (int): Port number the Veil listens on (1-65535)\n    ca_pem (str): CA certificate in PEM format\n    key_pem (str): Private key in PEM format\n    cert_pem (str): Server certificate in PEM format"
+      }
+    },
+    "securitySchemes": {
+      "OAuth2PasswordBearer": {
+        "type": "oauth2",
+        "flows": { "password": { "scopes": {}, "tokenUrl": "/auth/login" } }
+      },
+      "HTTPBearer": { "type": "http", "scheme": "bearer" },
+      "APIKeyHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-conflux-token"
+      }
+    }
+  }
+}

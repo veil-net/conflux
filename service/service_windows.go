@@ -10,7 +10,6 @@ import (
 	"syscall"
 
 	"github.com/veil-net/conflux/api"
-	"github.com/veil-net/veilnet"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
 )
@@ -244,7 +243,7 @@ func (s *service) Execute(args []string, changeRequests <-chan svc.ChangeRequest
 			changes <- svc.Status{State: svc.Stopped}
 			return false, 0
 		default:
-			veilnet.Logger.Sugar().Warnf("unexpected service control request: %v", changeRequest.Cmd)
+			Logger.Sugar().Warnf("unexpected service control request: %v", changeRequest.Cmd)
 			changes <- changeRequest.CurrentStatus
 		}
 	}

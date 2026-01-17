@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/veil-net/veilnet/logger"
+	"github.com/veil-net/conflux/logger"
 )
 
 var Logger = logger.Logger

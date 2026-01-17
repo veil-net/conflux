@@ -6,15 +6,25 @@ import (
 	"sync"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/veil-net/veilnet"
-	"github.com/veil-net/veilnet/tun"
+	hcplugin "github.com/hashicorp/go-plugin"
+	"github.com/veil-net/conflux/anchor"
 )
 
+var handshakeConfig = hcplugin.HandshakeConfig{
+	ProtocolVersion:  1,
+	MagicCookieKey:   "ANCHOR_PLUGIN",
+	MagicCookieValue: "anchor",
+}
+
+var pluginMap = map[string]hcplugin.Plugin{
+	"anchor": &anchor.AnchorPlugin{},
+}
+
 type API struct {
-	anchor *veilnet.Anchor
-	tun    tun.Tun
-	config *Config
-	app    *fiber.App
+	config          *Config
+	app             *fiber.App
+	plugin          *hcplugin.Client
+	anchorInterface anchor.Anchor
 
 	mu   sync.Mutex
 	once sync.Once
@@ -27,7 +37,35 @@ func NewAPI() *API {
 	}
 }
 
+func (a *API) initializePlugin() error {
+	if a.plugin != nil {
+		a.plugin.Kill()
+		a.anchorInterface = nil
+		a.plugin = nil
+	}
+	// Create the plugin
+	err := a.anchor()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (a *API) resetPlugin() error {
+	if a.plugin != nil {
+		a.plugin.Kill()
+		a.anchorInterface = nil
+		a.plugin = nil
+	}
+	return nil
+}
+
 func (a *API) Run() {
+	// Create the anchor interface
+	err := a.initializePlugin()
+	if err != nil {
+		Logger.Sugar().Fatalf("failed to create anchor interface: %v", err)
+	}
 
 	// Load existing configuration
 	existingConfig, err := loadConfig()
@@ -36,28 +74,30 @@ func (a *API) Run() {
 		// Register the conflux
 		registrationResponse, err := registerConflux(existingConfig)
 		if err == nil {
+			// Create the anchor
+			err = a.anchorInterface.CreateAnchor()
+			if err != nil {
+				Logger.Sugar().Fatalf("failed to create anchor: %v", err)
+			}
 			// Start the anchor
-			anchor := veilnet.NewAnchor()
-			err = anchor.Start(existingConfig.Guardian, existingConfig.Veil, existingConfig.VeilPort, registrationResponse.Token, existingConfig.Portal)
+			err = a.anchorInterface.StartAnchor(existingConfig.Guardian, existingConfig.Veil, existingConfig.VeilPort, registrationResponse.Token, existingConfig.Portal)
 			if err == nil {
 				// Create the TUN device
-				tun, err := tun.CreateTun("veilnet", 1500)
+				err = a.anchorInterface.CreateTUN("veilnet", 1500)
 				if err == nil {
-					a.tun = tun
-					err = anchor.LinkWithTUN(a.tun)
+					err = a.anchorInterface.LinkWithTUN()
 					if err == nil {
-						a.anchor = anchor
 						a.config = existingConfig
 					} else {
-						anchor.Stop()
+						a.resetPlugin()
 						Logger.Sugar().Warnf("failed to link anchor with TUN device: %v", err)
 					}
 				} else {
-					anchor.Stop()
+					a.resetPlugin()
 					Logger.Sugar().Warnf("failed to create TUN device: %v", err)
 				}
 			} else {
-				anchor.Stop()
+				a.resetPlugin()
 				Logger.Sugar().Warnf("failed to start anchor: %v", err)
 			}
 		} else {
@@ -88,8 +128,10 @@ func (a *API) Stop() {
 	a.once.Do(func() {
 		a.mu.Lock()
 		defer a.mu.Unlock()
-		if a.anchor != nil {
-			a.anchor.Stop()
+		if a.anchorInterface != nil {
+			a.anchorInterface.StopAnchor()
+			a.anchorInterface.DestroyAnchor()
+			a.anchorInterface.DestroyTUN()
 		}
 		if a.app != nil {
 			a.app.Shutdown()
@@ -124,42 +166,45 @@ func (a *API) handleRegister(c *fiber.Ctx) error {
 			"detail": fmt.Sprintf("failed to register conflux: %v", err),
 		})
 	}
-	// Stop the existing anchor
-	if a.anchor != nil {
-		a.anchor.Stop()
+	// Initialize the plugin
+	err = a.initializePlugin()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"detail": fmt.Sprintf("failed to initialize plugin: %v", err),
+		})
 	}
-	// Close the existing TUN device
-	if a.tun != nil {
-		a.tun.Close()
+	// Create the anchor
+	err = a.anchorInterface.CreateAnchor()
+	if err != nil {
+		a.resetPlugin()
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"detail": fmt.Sprintf("failed to create anchor: %v", err),
+		})
 	}
 	// Start the anchor
-	anchor := veilnet.NewAnchor()
-	err = anchor.Start(config.Guardian, config.Veil, config.VeilPort, registrationResponse.Token, config.Portal)
+	err = a.anchorInterface.StartAnchor(config.Guardian, config.Veil, config.VeilPort, registrationResponse.Token, config.Portal)
 	if err != nil {
+		a.resetPlugin()
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"detail": fmt.Sprintf("failed to start anchor: %v", err),
 		})
 	}
 	// Create the TUN device
-	tun, err := tun.CreateTun("veilnet", 1500)
-	if err == nil {
-		a.tun = tun
-	} else {
-		anchor.Stop()
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"detail": fmt.Sprintf("failed to create TUN device: %v", err),
-		})
-	}
-	// Create the TUN device
-	err = anchor.LinkWithTUN(a.tun)
+	err = a.anchorInterface.CreateTUN("veilnet", 1500)
 	if err != nil {
-		anchor.Stop()
+		a.resetPlugin()
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"detail": fmt.Sprintf("failed to create TUN device: %v", err),
 		})
 	}
-	// Set current anchor and config
-	a.anchor = anchor
+	// Attach the anchor to the TUN device
+	err = a.anchorInterface.LinkWithTUN()
+	if err != nil {
+		a.resetPlugin()
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"detail": fmt.Sprintf("failed to attach anchor to TUN device: %v", err),
+		})
+	}
 	a.config = config
 	// Save the configuration
 	err = saveConfig(config)
@@ -187,7 +232,7 @@ func (a *API) handleUnregister(c *fiber.Ctx) error {
 
 	if a.anchor != nil {
 		// Get the conflux ID
-		confluxID, err := a.anchor.GetID()
+		confluxID, err := a.anchorInterface.GetID()
 		if err != nil {
 			Logger.Sugar().Errorf("failed to get conflux ID: %v", err)
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -202,16 +247,11 @@ func (a *API) handleUnregister(c *fiber.Ctx) error {
 				"detail": fmt.Sprintf("failed to unregister conflux: %v", err),
 			})
 		}
-		// Stop the anchor
-		a.anchor.Stop()
-		// Close the TUN device
-		if a.tun != nil {
-			a.tun.Close()
-		}
+		// Stop the anchor plugin
+		a.resetPlugin()
 	}
 	// Clear the config
 	a.config = nil
-	a.anchor = nil
 	return c.SendStatus(fiber.StatusOK)
 }
 
@@ -227,58 +267,56 @@ func (a *API) handleUP(c *fiber.Ctx) error {
 			"detail": "failed to parse request body",
 		})
 	}
-	// Stop the existing anchor
-	if a.anchor != nil {
-		a.anchor.Stop()
+	// Initialize the plugin
+	err = a.initializePlugin()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"detail": fmt.Sprintf("failed to initialize plugin: %v", err),
+		})
 	}
-	// Close the existing TUN device
-	if a.tun != nil {
-		a.tun.Close()
+	// Create the anchor
+	err = a.anchorInterface.CreateAnchor()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"detail": fmt.Sprintf("failed to create anchor: %v", err),
+		})
 	}
 	// Start the anchor
-	anchor := veilnet.NewAnchor()
-	err = anchor.Start(config.Guardian, config.Veil, config.VeilPort, config.Token, config.Portal)
+	err = a.anchorInterface.StartAnchor(config.Guardian, config.Veil, config.VeilPort, config.Token, config.Portal)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"detail": fmt.Sprintf("failed to start anchor: %v", err),
 		})
 	}
 	// Create the TUN device
-	tun, err := tun.CreateTun("veilnet", 1500)
-	if err == nil {
-		a.tun = tun
-	} else {
-		anchor.Stop()
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"detail": fmt.Sprintf("failed to create TUN device: %v", err),
-		})
-	}
-	// Create the TUN device
-	err = anchor.LinkWithTUN(a.tun)
+	err = a.anchorInterface.CreateTUN("veilnet", 1500)
 	if err != nil {
-		anchor.Stop()
+		a.resetPlugin()
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"detail": fmt.Sprintf("failed to create TUN device: %v", err),
 		})
 	}
-	// Set current anchor and config
-	a.anchor = anchor
+	// Attach the anchor to the TUN device
+	err = a.anchorInterface.LinkWithTUN()
+	if err != nil {
+		a.resetPlugin()
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"detail": fmt.Sprintf("failed to link anchor with TUN device: %v", err),
+		})
+	}
 	return c.SendStatus(fiber.StatusOK)
 }
 
 func (a *API) handleDown(c *fiber.Ctx) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	// Stop the anchor
-	if a.anchor != nil {
-		a.anchor.Stop()
+	// Reset the plugin
+	err := a.resetPlugin()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"detail": fmt.Sprintf("failed to reset plugin: %v", err),
+		})
 	}
-	// Close the TUN device
-	if a.tun != nil {
-		a.tun.Close()
-	}
-	// Clear the anchor
-	a.anchor = nil
 	return c.SendStatus(fiber.StatusOK)
 }
 

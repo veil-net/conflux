@@ -1,6 +1,6 @@
 package service
 
-import	"github.com/veil-net/veilnet/logger"
+import "github.com/veil-net/conflux/logger"
 
 var Logger = logger.Logger
 

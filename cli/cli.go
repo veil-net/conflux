@@ -3,7 +3,7 @@ package cli
 import (
 	"github.com/alecthomas/kong"
 	"github.com/veil-net/conflux/service"
-	"github.com/veil-net/veilnet/logger"
+	"github.com/veil-net/conflux/logger"
 )
 
 var Logger = logger.Logger

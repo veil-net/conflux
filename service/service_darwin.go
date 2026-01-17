@@ -14,7 +14,6 @@ import (
 	"text/template"
 
 	"github.com/veil-net/conflux/api"
-	"github.com/veil-net/veilnet"
 )
 
 const LaunchDaemonPlistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
@@ -109,7 +108,7 @@ func (s *service) Install() error {
 		return err
 	}
 
-	veilnet.Logger.Sugar().Infof("VeilNet Conflux service installed and started")
+	Logger.Sugar().Infof("VeilNet Conflux service installed and started")
 	return nil
 }
 
@@ -121,7 +120,7 @@ func (s *service) Start() error {
 		Logger.Sugar().Errorf("failed to start launchctl service: %v: %s", err, string(out))
 		return err
 	}
-	veilnet.Logger.Sugar().Infof("VeilNet Conflux service started")
+	Logger.Sugar().Infof("VeilNet Conflux service started")
 	return nil
 }
 
@@ -133,7 +132,7 @@ func (s *service) Stop() error {
 		Logger.Sugar().Errorf("failed to stop launchctl service: %v: %s", err, string(out))
 		return err
 	}
-	veilnet.Logger.Sugar().Infof("VeilNet Conflux service stopped")
+	Logger.Sugar().Infof("VeilNet Conflux service stopped")
 	return nil
 }
 
@@ -142,9 +141,9 @@ func (s *service) Remove() error {
 	cmd := exec.Command("launchctl", "bootout", "system", plistFile)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		veilnet.Logger.Sugar().Warnf("Failed to stop launchctl service: %v: %s", err, string(out))
+		Logger.Sugar().Warnf("Failed to stop launchctl service: %v: %s", err, string(out))
 	} else {
-		veilnet.Logger.Sugar().Infof("VeilNet Conflux service stopped")
+		Logger.Sugar().Infof("VeilNet Conflux service stopped")
 	}
 
 	err = os.Remove(plistFile)

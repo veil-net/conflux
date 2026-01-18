@@ -17,6 +17,8 @@ var anchorPlugin []byte
 func NewAnchor() (Anchor, *plugin.Client, error) {
 	// Extract the embedded file to a temporary directory
 	pluginPath := filepath.Join(os.TempDir(), "anchor.exe")
+	// Remove existing file if it exists to avoid "text file busy" error
+	os.Remove(pluginPath)
 	if err := os.WriteFile(pluginPath, anchorPlugin, 0755); err != nil {
 		return nil, nil, err
 	}
@@ -32,12 +34,14 @@ func NewAnchor() (Anchor, *plugin.Client, error) {
 	// Connect via RPC
 	rpcClient, err := client.Client()
 	if err != nil {
+		client.Kill()
 		return nil, nil, err
 	}
 
 	// Request the plugin
 	raw, err := rpcClient.Dispense("anchor")
 	if err != nil {
+		client.Kill()
 		return nil, nil, err
 	}
 

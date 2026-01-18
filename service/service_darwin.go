@@ -5,15 +5,10 @@ package service
 
 import (
 	"bytes"
-	"context"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
-	"syscall"
 	"text/template"
-
-	"github.com/veil-net/conflux/api"
 )
 
 const LaunchDaemonPlistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
@@ -39,29 +34,20 @@ const LaunchDaemonPlistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 `
 
 type service struct {
-	api *api.API
+	serviceImpl *ServiceImpl
 }
 
 func newService() *service {
-	api := api.NewAPI()
+	serviceImpl := NewServiceImpl()
 	return &service{
-		api: api,
+		serviceImpl: serviceImpl,
 	}
 }
 
 func (s *service) Run() error {
-	// Create the context
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	// Run the API
-	s.api.Run()
-
-	// Wait for the context to be done
-	<-ctx.Done()
-
-	// Stop the API
-	s.api.Stop()
+	s.serviceImpl.Run()
 
 	return nil
 }

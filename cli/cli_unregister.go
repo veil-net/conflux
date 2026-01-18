@@ -1,65 +1,44 @@
 package cli
 
 import (
-	"fmt"
-	"io"
-	"net/http"
-
 	"github.com/veil-net/conflux/service"
+	"github.com/veil-net/conflux/anchor"
 )
 
 type Unregister struct {
+	RegistrationToken string `short:"t" help:"The registration token" env:"VEILNET_REGISTRATION_TOKEN" json:"registration_token"`
 }
 
 func (cmd *Unregister) Run() error {
 
-	// Check if the service is running
+	// Load the configuration
+	config, err := anchor.LoadConfig()
+	if err != nil {
+		Logger.Sugar().Errorf("failed to load configuration, this instance may not registered: %v", err)
+		return err
+	}
+
+	// Unregister the conflux
+	err = anchor.UnregisterConflux(cmd.RegistrationToken, config)
+	if err != nil {
+		Logger.Sugar().Errorf("failed to unregister conflux: %v", err)
+		return err
+	}
+
+	// Delete the configuration
+	err = anchor.DeleteConfig()
+	if err != nil {
+		Logger.Sugar().Errorf("failed to delete configuration: %v", err)
+		return err
+	}
+
+	// Remove the service
 	conflux := service.NewService()
-	err := conflux.Status()
+	err = conflux.Remove()
 	if err != nil {
-		Logger.Sugar().Warnf("VeilNet Conflux service is not installed, installing...")
-		err = conflux.Install()
-		if err != nil {
-			Logger.Sugar().Errorf("Failed to install VeilNet Conflux service: %v", err)
-			return err
-		} else {
-			Logger.Sugar().Warnf("Waiting for VeilNet Conflux service to be ready...")
-			for {
-				resp, err := http.Get("http://127.0.0.1:1993/health")
-				if err == nil && resp.StatusCode == http.StatusOK {
-					break
-				}
-			}
-		}
-	}
-
-	// Create the request to API
-	req, err := http.NewRequest("DELETE", "http://127.0.0.1:1993/unregister", nil)
-	if err != nil {
-		Logger.Sugar().Errorf("Failed to create request to API: %v", err)
+		Logger.Sugar().Errorf("failed to remove service: %v", err)
 		return err
 	}
-
-	// Make the request
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		Logger.Sugar().Errorf("Failed to make request to API: %v", err)
-		return err
-	}
-	defer resp.Body.Close()
-
-	// if the response is not 200, return an error
-	if resp.StatusCode != http.StatusOK {
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			Logger.Sugar().Errorf("Failed to read response body: %v", err)
-			return err
-		}
-		Logger.Sugar().Errorf("Failed to unregister conflux: %s: %s", resp.Status, string(body))
-		return fmt.Errorf("failed to unregister conflux: %s: %s", resp.Status, string(body))
-	}
-
-	Logger.Sugar().Infof("VeilNet Conflux unregistered successfully")
 
 	return nil
 }

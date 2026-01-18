@@ -4,24 +4,21 @@
 package service
 
 import (
-	"context"
 	"os"
-	"os/signal"
-	"syscall"
 
-	"github.com/veil-net/conflux/api"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
+	"github.com/veil-net/conflux/anchor"
 )
 
 type service struct {
-	api *api.API
+	serviceImpl *ServiceImpl
 }
 
 func newService() *service {
-	api := api.NewAPI()
+	serviceImpl := NewServiceImpl()
 	return &service{
-		api: api,
+		serviceImpl: serviceImpl,
 	}
 }
 
@@ -39,18 +36,8 @@ func (s *service) Run() error {
 		return nil
 	}
 
-	// Create the context
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	// Run the API
-	s.api.Run()
-
-	// Wait for the context to be done
-	<-ctx.Done()
-
-	// Stop the API
-	s.api.Stop()
+	s.serviceImpl.Run()
 
 	return nil
 }
@@ -226,8 +213,48 @@ func (s *service) Execute(args []string, changeRequests <-chan svc.ChangeRequest
 	// Signal the service is starting
 	changes <- svc.Status{State: svc.StartPending}
 
-	// Run the API
-	s.api.Run()
+	// Load the configuration
+	config, err := anchor.LoadConfig()
+	if err != nil {
+		Logger.Sugar().Fatalf("failed to load configuration: %v", err)
+		return
+	}
+
+	// Initialize the anchor plugin
+	anchor, client, err := anchor.NewAnchor()
+	if err != nil {
+		Logger.Sugar().Fatalf("failed to initialize anchor plugin: %v", err)
+		return
+	}
+	defer client.Kill()
+
+	// Initialize the anchor instance
+	err = anchor.CreateAnchor()
+	if err != nil {
+		Logger.Sugar().Fatalf("failed to create anchor instance: %v", err)
+		return
+	}
+
+	// Start the anchor
+	err = anchor.StartAnchor(config.Guardian, config.Veil, config.VeilPort, config.Token, config.Portal)
+	if err != nil {
+		Logger.Sugar().Fatalf("failed to start anchor: %v", err)
+		return
+	}
+
+	// Create the TUN device
+	err = anchor.CreateTUN("veilnet", 1500)
+	if err != nil {
+		Logger.Sugar().Fatalf("failed to create TUN device: %v", err)
+		return
+	}
+
+	// Attach the anchor with the TUN device
+	err = anchor.AttachWithTUN()
+	if err != nil {
+		Logger.Sugar().Fatalf("failed to attach anchor with TUN device: %v", err)
+		return
+	}
 
 	// Set the status to running
 	changes <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}
@@ -238,8 +265,6 @@ func (s *service) Execute(args []string, changeRequests <-chan svc.ChangeRequest
 		case svc.Interrogate:
 			changes <- changeRequest.CurrentStatus
 		case svc.Stop, svc.Shutdown:
-			changes <- svc.Status{State: svc.StopPending}
-			s.api.Stop()
 			changes <- svc.Status{State: svc.Stopped}
 			return false, 0
 		default:

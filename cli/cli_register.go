@@ -1,13 +1,7 @@
 package cli
 
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
-
-	"github.com/veil-net/conflux/api"
+	"github.com/veil-net/conflux/anchor"
 	"github.com/veil-net/conflux/service"
 )
 
@@ -30,7 +24,7 @@ type ConfluxToken struct {
 func (cmd *Register) Run() error {
 
 	// Parse the command
-	config := &Config{
+	registrationRequest := &anchor.ResgitrationRequest{
 		RegistrationToken: cmd.RegistrationToken,
 		Guardian:          cmd.Guardian,
 		Veil:              cmd.Veil,
@@ -42,14 +36,24 @@ func (cmd *Register) Run() error {
 	}
 
 	// Register the conflux
-	registrationResponse, err := RegisterConflux(config)
+	registrationResponse, err := anchor.RegisterConflux(registrationRequest)
 	if err != nil {
 		Logger.Sugar().Errorf("failed to register conflux: %v", err)
 		return err
 	}
 
 	// Save the configuration
-	err = SaveConfig(config)
+	config := &anchor.ConfluxConfig{
+		ConfluxID: registrationResponse.ConfluxID,
+		Token:     registrationResponse.Token,
+		Guardian:  cmd.Guardian,
+		Veil:      cmd.Veil,
+		VeilPort:  cmd.VeilPort,
+		Portal:    cmd.Portal,
+	}
+
+	// Save the configuration
+	err = anchor.SaveConfig(config)
 	if err != nil {
 		Logger.Sugar().Errorf("failed to save configuration: %v", err)
 		return err
@@ -57,6 +61,7 @@ func (cmd *Register) Run() error {
 
 	// Install the service
 	conflux := service.NewService()
+	conflux.Remove()
 	err = conflux.Install()
 	if err != nil {
 		Logger.Sugar().Errorf("failed to install service: %v", err)

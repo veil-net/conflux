@@ -36,4 +36,5 @@ var HCLogger = hclog.New(&hclog.LoggerOptions{
 	Output:     os.Stderr,
 	JSONFormat: false,
 	Color:      hclog.ForceColor,
+	DisableTime: true,
 })

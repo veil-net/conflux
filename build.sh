@@ -35,7 +35,7 @@ GOOS=windows GOARCH=arm64 go build -ldflags "-s -w" -o $BUILD_DIR/veilnet-conflu
 echo "Build completed! Files in $BUILD_DIR/"
 ls -lh $BUILD_DIR/
 
-echo "Building container image..."
-go build -ldflags "-s -w" -o veilnet-conflux
-docker compose down
-docker compose build
+# echo "Building container image..."
+# go build -ldflags "-s -w" -o veilnet-conflux
+# docker compose down
+# docker compose build

@@ -19,6 +19,8 @@ func init() {
 	config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 	// Disable caller information (file:line)
 	config.DisableCaller = true
+	// Disable stacktrace
+	config.DisableStacktrace = true
 
 	var err error
 	Logger, err = config.Build()

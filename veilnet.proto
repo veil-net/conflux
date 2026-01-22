@@ -1,0 +1,255 @@
+syntax = "proto3";
+
+package veilnet;
+
+option go_package = "github.com/veil-net/conflux/proto";
+
+import "google/protobuf/empty.proto";
+
+enum MessageType {
+    RTC_OFFER = 0;
+    RTC_ANSWER = 1;
+    CANDIDATE_OFFER = 2;
+
+    ICE_CANDIDATE = 3;
+    ICE_OFFER = 4;
+    ICE_ANSWER = 5;
+
+    DNS_QUERY = 6;
+    DNS_ANSWER = 7;
+    DNS_OFFER = 8;
+
+    ARP_REQUEST = 9;
+    ARP_RESPONSE = 10;
+    ARP_UPDATE = 11;
+
+    STREAM_DISCOVERY = 12;
+    STREAM_DISCOVERY_RESPONSE = 13;
+    STREAM_REQUEST = 14;
+    STREAM_RESPONSE = 15;
+    STREAM_UPDATE = 16;
+
+    ECHO = 17;
+
+    DATA = 18;
+
+    ADD_REMOTE_NETWORK = 19;
+    REMOVE_REMOTE_NETWORK = 20;
+
+    CMD = 21;
+    CMD_RESPONSE = 22;
+}
+
+enum CmdType {
+    SHUTDOWN = 0;
+    QUERY_LOCAL_NETWORK=1;
+    QUERY_REMOTE_NETWORK=2;
+    IDENTITY_INSERT = 3;
+    IDENTITY_DELETE = 4;
+    IDENTITY_UPDATE = 5;
+}
+
+enum Role {
+    GUARDIAN = 0;
+    CONFLUX = 1;
+}
+
+message Header {
+    MessageType type = 1;
+    string signature = 2;
+    Role role = 3;
+    uint32 length = 4;
+    bytes mldsa_public_key = 5;
+    bytes mldsa_signature = 6;
+    repeated bytes identities = 7;
+    int64 timestamp = 8;
+}
+
+enum IdentityType {
+    USER = 0;
+    TEAM = 1;
+}
+
+message Policy{
+    string cidr = 1;
+    string action = 2;
+}
+
+message RTC_Offer{
+    string tether_id = 1;
+    string signature = 2;
+    bytes offer = 3;
+}
+
+message RTC_Answer{
+    string tether_id = 1;
+    string signature = 2;
+    bytes answer = 3;
+}
+
+message CandidateOffer{
+    string tether_id = 1;
+    string candidate = 2;
+}
+
+message CandidateAccept{
+}
+
+message ICE{
+    string tether_id = 1;
+    string signature = 2;
+    string ufrag = 3;
+    string pwd = 4;
+}
+
+message ArpRequest {
+    string signature = 1;
+}
+
+message ArpResponse{
+    string signature = 1;
+    string dst = 2;
+    int64 weight = 3;
+    int64 hops = 4;
+    repeated string path = 5;
+    string id = 6;
+}
+
+message ArpUpdate {
+    string id = 1;
+    int64 hops = 2;
+}
+
+message DNSOffer {
+    string ip = 1;
+}
+
+message DNSQuery {
+    string domain = 1;
+}
+
+message DNSResponse {
+    string ip = 1;
+}
+
+message StreamDiscovery {
+    string ip = 1;
+}
+
+message StreamDiscoveryResponse {
+}
+
+message StreamRequest {
+    string ip = 1;
+    bytes public_key = 3;
+}
+
+message StreamResponse {
+    bytes cipher = 2;
+    bytes encrypted_stream_id =3;
+}
+
+message StreamUpdate {
+    string stream_id = 2;
+}
+
+message Echo {
+}
+
+message Frame {
+    bytes data = 1;
+}
+
+message Frames {
+    repeated Frame frames = 1;
+}
+
+message Data {
+    string dst = 1;
+    string stream_id = 2;
+    string route_id = 3;
+    bytes payload = 4;
+}
+
+message LocalNetwork {
+    string subnet = 1;
+}
+
+message LocalNetworks {
+    repeated LocalNetwork local_networks = 1;
+}
+
+message RemoteNetwork {
+    string peerSignature = 1;
+    string subnet = 2;
+}
+
+message RemoteNetworks {
+    repeated RemoteNetwork remote_networks = 1;
+}
+
+message Cmd {
+    CmdType type = 1;
+    bytes payload = 2;
+}
+
+message CmdResponse {
+    bool success = 1;
+    string response = 2;
+}
+
+message Shutdown{
+    string reason = 1;
+}
+
+message QueryLocalNetwork {
+
+}
+
+message QueryRemoteNetwork {
+    
+}
+
+message IdentityUpdate {
+    IdentityType type = 1;
+    string id = 2;
+}
+
+// gRPC messages
+
+message StartAnchorRequest {
+    string guardian_url = 1;
+    string veil_url = 2;
+    int32 veil_port = 3;
+    string anchor_token = 4;
+    bool portal = 5;
+}
+
+message CreateTUNRequest {
+    string ifname = 1;
+    int32 mtu = 2;
+}
+
+message AttachWithFileDescriptorRequest {
+    int32 file_descriptor = 1;
+}
+
+message GetIDResponse {
+    string id = 1;
+}
+
+message GetIPResponse {
+    string ip = 1;
+}
+
+service Anchor {
+    rpc CreateAnchor(google.protobuf.Empty) returns (google.protobuf.Empty);
+    rpc DestroyAnchor(google.protobuf.Empty) returns (google.protobuf.Empty);
+    rpc StartAnchor(StartAnchorRequest) returns (google.protobuf.Empty);
+    rpc StopAnchor(google.protobuf.Empty) returns (google.protobuf.Empty);
+    rpc CreateTUN(CreateTUNRequest) returns (google.protobuf.Empty);
+    rpc DestroyTUN(google.protobuf.Empty) returns (google.protobuf.Empty);
+    rpc AttachWithTUN(google.protobuf.Empty) returns (google.protobuf.Empty);
+    rpc AttachWithFileDescriptor(AttachWithFileDescriptorRequest) returns (google.protobuf.Empty);
+    rpc GetID(google.protobuf.Empty) returns (GetIDResponse);
+}

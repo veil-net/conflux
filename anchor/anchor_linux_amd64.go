@@ -7,14 +7,17 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 
-	"github.com/hashicorp/go-plugin"
+	pb "github.com/veil-net/conflux/proto"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 //go:embed bin/anchor-linux-amd64
 var anchorPlugin []byte
 
-func NewAnchor() (Anchor, *plugin.Client, error) {
+func NewAnchor() (pb.AnchorClient, *exec.Cmd, error) {
 	// Extract the embedded file to a temporary directory
 	pluginPath := filepath.Join(os.TempDir(), "anchor")
 	// Remove existing file if it exists to avoid "text file busy" error
@@ -23,29 +26,30 @@ func NewAnchor() (Anchor, *plugin.Client, error) {
 		return nil, nil, err
 	}
 
-	// Load the plugin
-	client := plugin.NewClient(&plugin.ClientConfig{
-		HandshakeConfig: handshakeConfig,
-		Plugins:         pluginMap,
-		Cmd:             exec.Command(pluginPath),
-		Logger:          HCLogger,
-	})
+	// Start the anchor binary as a manageable subprocess (runs the gRPC server)
+	cmd := exec.Command(pluginPath)
+	// Link stdout and stderr to see logs from the subprocess
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 
-	// Connect via RPC
-	rpcClient, err := client.Client()
-	if err != nil {
-		client.Kill()
+	if err := cmd.Start(); err != nil {
 		return nil, nil, err
 	}
 
-	// Request the plugin
-	raw, err := rpcClient.Dispense("anchor")
+	// Verify the process started successfully
+	if cmd.Process == nil {
+		return nil, nil, exec.ErrNotFound
+	}
+
+	// Wait for the process to start
+	time.Sleep(1 * time.Second)
+
+	// Create a gRPC client connection
+	conn, err := grpc.NewClient("127.0.0.1:1993", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		client.Kill()
 		return nil, nil, err
 	}
 
-	// Cast the raw interface to the anchor interface
-	anchor := raw.(Anchor)
-	return anchor, client, nil
+	client := pb.NewAnchorClient(conn)
+	return client, cmd, nil
 }

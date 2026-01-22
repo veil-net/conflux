@@ -61,7 +61,12 @@ func (cmd *Register) Run() error {
 
 	// Install the service
 	conflux := service.NewService()
-	conflux.Remove()
+	if err := conflux.Status(); err == nil {
+		Logger.Sugar().Infof("reinstalling veilnet conflux service...")
+		conflux.Remove()
+	} else {
+		Logger.Sugar().Infof("installing veilnet conflux service...")
+	}
 	err = conflux.Install()
 	if err != nil {
 		Logger.Sugar().Errorf("failed to install service: %v", err)

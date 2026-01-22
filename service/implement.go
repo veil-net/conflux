@@ -1,11 +1,14 @@
 package service
 
 import (
+	"context"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/veil-net/conflux/anchor"
+	pb "github.com/veil-net/conflux/proto"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 
@@ -26,36 +29,45 @@ func (s *ServiceImpl) Run() {
 	}
 
 	// Initialize the anchor plugin
-	anchor, client, err := anchor.NewAnchor()
+	anchor, cmd, err := anchor.NewAnchor()
 	if err != nil {
 		Logger.Sugar().Errorf("failed to initialize anchor plugin: %v", err)
 		return
 	}
-	defer client.Kill()
+	defer cmd.Process.Kill()
 
 	// Initialize the anchor instance
-	err = anchor.CreateAnchor()
+	_, err = anchor.CreateAnchor(context.Background(), &emptypb.Empty{})
 	if err != nil {
 		Logger.Sugar().Errorf("failed to create anchor instance: %v", err)
 		return
 	}
 
 	// Start the anchor
-	err = anchor.StartAnchor(config.Guardian, config.Veil, config.VeilPort, config.Token, config.Portal)
+	_, err = anchor.StartAnchor(context.Background(), &pb.StartAnchorRequest{
+		GuardianUrl:  config.Guardian,
+		VeilUrl:       config.Veil,
+		VeilPort:      int32(config.VeilPort),
+		AnchorToken:   config.Token,
+		Portal:        config.Portal,
+	})
 	if err != nil {
 		Logger.Sugar().Errorf("failed to start anchor: %v", err)
 		return
 	}
 
 	// Create the TUN device
-	err = anchor.CreateTUN("veilnet", 1500)
+	_, err = anchor.CreateTUN(context.Background(), &pb.CreateTUNRequest{
+		Ifname: "veilnet",
+		Mtu:    1500,
+	})
 	if err != nil {
 		Logger.Sugar().Errorf("failed to create TUN device: %v", err)
 		return
 	}
 
 	// Attach the anchor with the TUN device
-	err = anchor.AttachWithTUN()
+	_, err = anchor.AttachWithTUN(context.Background(), &emptypb.Empty{})
 	if err != nil {
 		Logger.Sugar().Errorf("failed to attach anchor with TUN device: %v", err)
 		return
@@ -69,11 +81,11 @@ func (s *ServiceImpl) Run() {
 	<-interrupt
 
 	// Stop the anchor
-	anchor.StopAnchor()
+	_, err = anchor.StopAnchor(context.Background(), &emptypb.Empty{})
 
 	// Destroy the anchor
-	anchor.DestroyAnchor()
+	_, err = anchor.DestroyAnchor(context.Background(), &emptypb.Empty{})
 
 	// Destroy the TUN device
-	anchor.DestroyTUN()
+	_, err = anchor.DestroyTUN(context.Background(), &emptypb.Empty{})
 }

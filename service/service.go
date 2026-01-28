@@ -25,7 +25,6 @@ func NewService() Service {
 
 func ExecuteCmd(cmd ...string) error {
 	command := exec.Command(cmd[0], cmd[1:]...)
-	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
 	err := command.Run()
 	if err != nil {

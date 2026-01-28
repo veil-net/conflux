@@ -210,8 +210,9 @@ message ScopeUpdate {
 
 message StartAnchorRequest {
     string guardian_url = 1;
-    string anchor_token = 4;
-    bool portal = 5;
+    string anchor_token = 2;
+    string ip = 3;
+    bool portal = 4;
 }
 
 message CreateTUNRequest {
@@ -223,20 +224,33 @@ message AttachWithFileDescriptorRequest {
     int32 file_descriptor = 1;
 }
 
-message GetIDResponse {
-    string id = 1;
-}
-
-message GetCIDRResponse {
-    string cidr = 1;
-}
-
 message AddTaintRequest {
-    bytes signature = 1;
+    string taint = 1;
 }
 
 message RemoveTaintRequest {
-    bytes signature = 1;
+    string taint = 1;
+}
+
+message GetInfoResponse {
+    string id = 1;
+    string tag = 2;
+    string uid = 3;
+    string cidr = 4;
+    bool portal = 5;
+    bool public = 6;
+}
+
+message GetRealmInfoResponse {
+    string realm = 1;
+    string realm_id = 2;
+    string subnet = 3;
+}
+
+message GetVeilInfoResponse {
+    string veil_host = 1;
+    int32 veil_port = 2;
+    string region = 3;
 }
 
 service Anchor {
@@ -246,8 +260,9 @@ service Anchor {
     rpc DestroyTUN(google.protobuf.Empty) returns (google.protobuf.Empty);
     rpc AttachWithTUN(google.protobuf.Empty) returns (google.protobuf.Empty);
     rpc AttachWithFileDescriptor(AttachWithFileDescriptorRequest) returns (google.protobuf.Empty);
-    rpc GetID(google.protobuf.Empty) returns (GetIDResponse);
-    rpc GetCIDR(google.protobuf.Empty) returns (GetCIDRResponse);
     rpc AddTaint(AddTaintRequest) returns (google.protobuf.Empty);
     rpc RemoveTaint(RemoveTaintRequest) returns (google.protobuf.Empty);
+    rpc GetInfo(google.protobuf.Empty) returns (GetInfoResponse);
+    rpc GetRealmInfo(google.protobuf.Empty) returns (GetRealmInfoResponse);
+    rpc GetVeilInfo(google.protobuf.Empty) returns (GetVeilInfoResponse);
 }

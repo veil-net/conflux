@@ -1,11 +1,16 @@
 package cli
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
+	"context"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/veil-net/conflux/anchor"
+	pb "github.com/veil-net/conflux/proto"
 	"github.com/veil-net/conflux/service"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type Register struct {
@@ -13,13 +18,13 @@ type Register struct {
 	Rift              bool     `short:"r" help:"Enable rift mode, default: false" default:"false" env:"VEILNET_RIFT" json:"rift"`
 	Guardian          string   `help:"The Guardian URL (Authentication Server), default: https://guardian.veilnet.app" default:"https://guardian.veilnet.app" env:"VEILNET_GUARDIAN" json:"guardian"`
 	Tag               string   `help:"The tag for the conflux" env:"VEILNET_CONFLUX_TAG" json:"tag"`
-	Cidr              string   `help:"The CIDR of the conflux" env:"VEILNET_CONFLUX_CIDR" json:"cidr"`
+	IP                string   `help:"The IP of the conflux" env:"VEILNET_CONFLUX_IP" json:"ip"`
 	JWT               string   `help:"The JWT for the conflux" env:"VEILNET_CONFLUX_JWT" json:"jwt"`
 	JWKS_url          string   `help:"The JWKS URL for the conflux" env:"VEILNET_CONFLUX_JWKS_URL" json:"jwks_url"`
 	Audience          string   `help:"The audience for the conflux" env:"VEILNET_CONFLUX_AUDIENCE" json:"audience"`
 	Issuer            string   `help:"The issuer for the conflux" env:"VEILNET_CONFLUX_ISSUER" json:"issuer"`
-	Taints            []string `help:"Create taints for the conflux and return a token for each taint for other conflux to join" env:"VEILNET_CONFLUX_TAINTS" json:"taints"`
-	JoinTaints       []string `help:"Conflux will use these taints to form a cluster with other conflux" env:"VEILNET_CONFLUX_JOIN_TAINTS" json:"join_taints"`
+	Taints            []string `help:"Taints for the conflux, conflux can only communicate with other conflux with taints that are either a super set or a subset" env:"VEILNET_CONFLUX_TAINTS" json:"taints"`
+	Debug             bool     `short:"d" help:"Enable debug mode, this will not install the service but run conflux directly" env:"VEILNET_DEBUG" json:"debug"`
 }
 
 type ConfluxToken struct {
@@ -47,51 +52,118 @@ func (cmd *Register) Run() error {
 		return err
 	}
 
-	// Create taints
-	taints := make([]string, 0)
-	if len(cmd.Taints) > 0 {
-		for _, taint := range cmd.Taints {
-			signature := sha256.Sum256([]byte(taint + registrationResponse.ConfluxID))
-			encodedSignature := hex.EncodeToString(signature[:])
-			taints = append(taints, encodedSignature)
-			Logger.Sugar().Infof("created taint: %s, use this signature %s with --joint-taints to form a cluster with other conflux", taint, encodedSignature)
-		}
-	}
-	if len(cmd.JoinTaints) > 0 {
-		for _, taint := range cmd.JoinTaints {
-			taints = append(taints, taint)
-		}
-	}
-
 	// Save the configuration
 	config := &anchor.ConfluxConfig{
 		ConfluxID: registrationResponse.ConfluxID,
 		Token:     registrationResponse.Token,
 		Guardian:  cmd.Guardian,
 		Rift:      cmd.Rift,
-		Taints:    taints,
+		IP:        cmd.IP,
+		Taints:    cmd.Taints,
 	}
 
-	// Save the configuration
-	err = anchor.SaveConfig(config)
+	if !cmd.Debug {
+		// Save the configuration
+		err = anchor.SaveConfig(config)
+		if err != nil {
+			Logger.Sugar().Errorf("failed to save configuration: %v", err)
+			return err
+		}
+
+		// Install the service
+		conflux := service.NewService()
+		if err := conflux.Status(); err == nil {
+			Logger.Sugar().Infof("reinstalling veilnet conflux service...")
+			conflux.Remove()
+		} else {
+			Logger.Sugar().Infof("installing veilnet conflux service...")
+		}
+		err = conflux.Install()
+		if err != nil {
+			Logger.Sugar().Errorf("failed to install service: %v", err)
+			return err
+		}
+		return nil
+	}
+
+	// Initialize the anchor plugin
+	subprocess, err := anchor.NewAnchor()
 	if err != nil {
-		Logger.Sugar().Errorf("failed to save configuration: %v", err)
+		Logger.Sugar().Errorf("failed to initialize anchor subprocess: %v", err)
 		return err
 	}
 
-	// Install the service
-	conflux := service.NewService()
-	if err := conflux.Status(); err == nil {
-		Logger.Sugar().Infof("reinstalling veilnet conflux service...")
-		conflux.Remove()
-	} else {
-		Logger.Sugar().Infof("installing veilnet conflux service...")
-	}
-	err = conflux.Install()
+	// Wait for the subprocess to start
+	time.Sleep(1 * time.Second)
+
+	// Create a gRPC client connection
+	anchor, err := anchor.NewAnchorClient()
 	if err != nil {
-		Logger.Sugar().Errorf("failed to install service: %v", err)
+		Logger.Sugar().Errorf("failed to create anchor gRPC client: %v", err)
 		return err
 	}
+
+	// Start the anchor
+	_, err = anchor.StartAnchor(context.Background(), &pb.StartAnchorRequest{
+		GuardianUrl: config.Guardian,
+		AnchorToken: config.Token,
+		Ip:          config.IP,
+		Portal:      !config.Rift,
+	})
+	if err != nil {
+		Logger.Sugar().Errorf("failed to start anchor: %v", err)
+		return err
+	}
+
+	// Add taints
+	for _, taint := range config.Taints {
+		_, err = anchor.AddTaint(context.Background(), &pb.AddTaintRequest{
+			Taint: taint,
+		})
+		if err != nil {
+			Logger.Sugar().Warnf("failed to add taint: %v", err)
+			continue
+		}
+	}
+
+	// Create the TUN device
+	_, err = anchor.CreateTUN(context.Background(), &pb.CreateTUNRequest{
+		Ifname: "veilnet",
+		Mtu:    1500,
+	})
+	if err != nil {
+		Logger.Sugar().Errorf("failed to create TUN device: %v", err)
+		return err
+	}
+
+	// Attach the anchor with the TUN device
+	_, err = anchor.AttachWithTUN(context.Background(), &emptypb.Empty{})
+	if err != nil {
+		Logger.Sugar().Errorf("failed to attach anchor with TUN device: %v", err)
+		return err
+	}
+
+	// Wait for interrupt signal
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
+
+	// Wait for interrupt signal
+	<-interrupt
+
+	// Stop the anchor
+	_, err = anchor.StopAnchor(context.Background(), &emptypb.Empty{})
+	if err != nil {
+		Logger.Sugar().Errorf("failed to stop anchor: %v", err)
+	}
+
+	// Destroy the TUN device
+	_, err = anchor.DestroyTUN(context.Background(), &emptypb.Empty{})
+	if err != nil {
+		Logger.Sugar().Errorf("failed to destroy TUN device: %v", err)
+	}
+
+	// Kill the anchor subprocess
+	subprocess.Process.Kill()
 
 	return nil
 }

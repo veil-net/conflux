@@ -1837,8 +1837,9 @@ func (x *ScopeUpdate) GetScopes() []*Scope {
 type StartAnchorRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	GuardianUrl   string                 `protobuf:"bytes,1,opt,name=guardian_url,json=guardianUrl,proto3" json:"guardian_url,omitempty"`
-	AnchorToken   string                 `protobuf:"bytes,4,opt,name=anchor_token,json=anchorToken,proto3" json:"anchor_token,omitempty"`
-	Portal        bool                   `protobuf:"varint,5,opt,name=portal,proto3" json:"portal,omitempty"`
+	AnchorToken   string                 `protobuf:"bytes,2,opt,name=anchor_token,json=anchorToken,proto3" json:"anchor_token,omitempty"`
+	Ip            string                 `protobuf:"bytes,3,opt,name=ip,proto3" json:"ip,omitempty"`
+	Portal        bool                   `protobuf:"varint,4,opt,name=portal,proto3" json:"portal,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1883,6 +1884,13 @@ func (x *StartAnchorRequest) GetGuardianUrl() string {
 func (x *StartAnchorRequest) GetAnchorToken() string {
 	if x != nil {
 		return x.AnchorToken
+	}
+	return ""
+}
+
+func (x *StartAnchorRequest) GetIp() string {
+	if x != nil {
+		return x.Ip
 	}
 	return ""
 }
@@ -1990,104 +1998,16 @@ func (x *AttachWithFileDescriptorRequest) GetFileDescriptor() int32 {
 	return 0
 }
 
-type GetIDResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *GetIDResponse) Reset() {
-	*x = GetIDResponse{}
-	mi := &file_veilnet_proto_msgTypes[35]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *GetIDResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*GetIDResponse) ProtoMessage() {}
-
-func (x *GetIDResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_veilnet_proto_msgTypes[35]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use GetIDResponse.ProtoReflect.Descriptor instead.
-func (*GetIDResponse) Descriptor() ([]byte, []int) {
-	return file_veilnet_proto_rawDescGZIP(), []int{35}
-}
-
-func (x *GetIDResponse) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-type GetCIDRResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Cidr          string                 `protobuf:"bytes,1,opt,name=cidr,proto3" json:"cidr,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *GetCIDRResponse) Reset() {
-	*x = GetCIDRResponse{}
-	mi := &file_veilnet_proto_msgTypes[36]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *GetCIDRResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*GetCIDRResponse) ProtoMessage() {}
-
-func (x *GetCIDRResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_veilnet_proto_msgTypes[36]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use GetCIDRResponse.ProtoReflect.Descriptor instead.
-func (*GetCIDRResponse) Descriptor() ([]byte, []int) {
-	return file_veilnet_proto_rawDescGZIP(), []int{36}
-}
-
-func (x *GetCIDRResponse) GetCidr() string {
-	if x != nil {
-		return x.Cidr
-	}
-	return ""
-}
-
 type AddTaintRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Signature     []byte                 `protobuf:"bytes,1,opt,name=signature,proto3" json:"signature,omitempty"`
+	Taint         string                 `protobuf:"bytes,1,opt,name=taint,proto3" json:"taint,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AddTaintRequest) Reset() {
 	*x = AddTaintRequest{}
-	mi := &file_veilnet_proto_msgTypes[37]
+	mi := &file_veilnet_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2099,7 +2019,7 @@ func (x *AddTaintRequest) String() string {
 func (*AddTaintRequest) ProtoMessage() {}
 
 func (x *AddTaintRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_veilnet_proto_msgTypes[37]
+	mi := &file_veilnet_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2112,26 +2032,26 @@ func (x *AddTaintRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddTaintRequest.ProtoReflect.Descriptor instead.
 func (*AddTaintRequest) Descriptor() ([]byte, []int) {
-	return file_veilnet_proto_rawDescGZIP(), []int{37}
+	return file_veilnet_proto_rawDescGZIP(), []int{35}
 }
 
-func (x *AddTaintRequest) GetSignature() []byte {
+func (x *AddTaintRequest) GetTaint() string {
 	if x != nil {
-		return x.Signature
+		return x.Taint
 	}
-	return nil
+	return ""
 }
 
 type RemoveTaintRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Signature     []byte                 `protobuf:"bytes,1,opt,name=signature,proto3" json:"signature,omitempty"`
+	Taint         string                 `protobuf:"bytes,1,opt,name=taint,proto3" json:"taint,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RemoveTaintRequest) Reset() {
 	*x = RemoveTaintRequest{}
-	mi := &file_veilnet_proto_msgTypes[38]
+	mi := &file_veilnet_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2143,7 +2063,7 @@ func (x *RemoveTaintRequest) String() string {
 func (*RemoveTaintRequest) ProtoMessage() {}
 
 func (x *RemoveTaintRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_veilnet_proto_msgTypes[38]
+	mi := &file_veilnet_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2156,14 +2076,218 @@ func (x *RemoveTaintRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveTaintRequest.ProtoReflect.Descriptor instead.
 func (*RemoveTaintRequest) Descriptor() ([]byte, []int) {
+	return file_veilnet_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *RemoveTaintRequest) GetTaint() string {
+	if x != nil {
+		return x.Taint
+	}
+	return ""
+}
+
+type GetInfoResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Tag           string                 `protobuf:"bytes,2,opt,name=tag,proto3" json:"tag,omitempty"`
+	Uid           string                 `protobuf:"bytes,3,opt,name=uid,proto3" json:"uid,omitempty"`
+	Cidr          string                 `protobuf:"bytes,4,opt,name=cidr,proto3" json:"cidr,omitempty"`
+	Portal        bool                   `protobuf:"varint,5,opt,name=portal,proto3" json:"portal,omitempty"`
+	Public        bool                   `protobuf:"varint,6,opt,name=public,proto3" json:"public,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetInfoResponse) Reset() {
+	*x = GetInfoResponse{}
+	mi := &file_veilnet_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetInfoResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetInfoResponse) ProtoMessage() {}
+
+func (x *GetInfoResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_veilnet_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetInfoResponse.ProtoReflect.Descriptor instead.
+func (*GetInfoResponse) Descriptor() ([]byte, []int) {
+	return file_veilnet_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *GetInfoResponse) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *GetInfoResponse) GetTag() string {
+	if x != nil {
+		return x.Tag
+	}
+	return ""
+}
+
+func (x *GetInfoResponse) GetUid() string {
+	if x != nil {
+		return x.Uid
+	}
+	return ""
+}
+
+func (x *GetInfoResponse) GetCidr() string {
+	if x != nil {
+		return x.Cidr
+	}
+	return ""
+}
+
+func (x *GetInfoResponse) GetPortal() bool {
+	if x != nil {
+		return x.Portal
+	}
+	return false
+}
+
+func (x *GetInfoResponse) GetPublic() bool {
+	if x != nil {
+		return x.Public
+	}
+	return false
+}
+
+type GetRealmInfoResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Realm         string                 `protobuf:"bytes,1,opt,name=realm,proto3" json:"realm,omitempty"`
+	RealmId       string                 `protobuf:"bytes,2,opt,name=realm_id,json=realmId,proto3" json:"realm_id,omitempty"`
+	Subnet        string                 `protobuf:"bytes,3,opt,name=subnet,proto3" json:"subnet,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRealmInfoResponse) Reset() {
+	*x = GetRealmInfoResponse{}
+	mi := &file_veilnet_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRealmInfoResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRealmInfoResponse) ProtoMessage() {}
+
+func (x *GetRealmInfoResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_veilnet_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRealmInfoResponse.ProtoReflect.Descriptor instead.
+func (*GetRealmInfoResponse) Descriptor() ([]byte, []int) {
 	return file_veilnet_proto_rawDescGZIP(), []int{38}
 }
 
-func (x *RemoveTaintRequest) GetSignature() []byte {
+func (x *GetRealmInfoResponse) GetRealm() string {
 	if x != nil {
-		return x.Signature
+		return x.Realm
 	}
-	return nil
+	return ""
+}
+
+func (x *GetRealmInfoResponse) GetRealmId() string {
+	if x != nil {
+		return x.RealmId
+	}
+	return ""
+}
+
+func (x *GetRealmInfoResponse) GetSubnet() string {
+	if x != nil {
+		return x.Subnet
+	}
+	return ""
+}
+
+type GetVeilInfoResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	VeilHost      string                 `protobuf:"bytes,1,opt,name=veil_host,json=veilHost,proto3" json:"veil_host,omitempty"`
+	VeilPort      int32                  `protobuf:"varint,2,opt,name=veil_port,json=veilPort,proto3" json:"veil_port,omitempty"`
+	Region        string                 `protobuf:"bytes,3,opt,name=region,proto3" json:"region,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetVeilInfoResponse) Reset() {
+	*x = GetVeilInfoResponse{}
+	mi := &file_veilnet_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetVeilInfoResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetVeilInfoResponse) ProtoMessage() {}
+
+func (x *GetVeilInfoResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_veilnet_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetVeilInfoResponse.ProtoReflect.Descriptor instead.
+func (*GetVeilInfoResponse) Descriptor() ([]byte, []int) {
+	return file_veilnet_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *GetVeilInfoResponse) GetVeilHost() string {
+	if x != nil {
+		return x.VeilHost
+	}
+	return ""
+}
+
+func (x *GetVeilInfoResponse) GetVeilPort() int32 {
+	if x != nil {
+		return x.VeilPort
+	}
+	return 0
+}
+
+func (x *GetVeilInfoResponse) GetRegion() string {
+	if x != nil {
+		return x.Region
+	}
+	return ""
 }
 
 var File_veilnet_proto protoreflect.FileDescriptor
@@ -2262,24 +2386,36 @@ const file_veilnet_proto_rawDesc = "" +
 	"\x05Scope\x12\x1c\n" +
 	"\tsignature\x18\x01 \x01(\fR\tsignature\"5\n" +
 	"\vScopeUpdate\x12&\n" +
-	"\x06scopes\x18\x01 \x03(\v2\x0e.veilnet.ScopeR\x06scopes\"r\n" +
+	"\x06scopes\x18\x01 \x03(\v2\x0e.veilnet.ScopeR\x06scopes\"\x82\x01\n" +
 	"\x12StartAnchorRequest\x12!\n" +
 	"\fguardian_url\x18\x01 \x01(\tR\vguardianUrl\x12!\n" +
-	"\fanchor_token\x18\x04 \x01(\tR\vanchorToken\x12\x16\n" +
-	"\x06portal\x18\x05 \x01(\bR\x06portal\"<\n" +
+	"\fanchor_token\x18\x02 \x01(\tR\vanchorToken\x12\x0e\n" +
+	"\x02ip\x18\x03 \x01(\tR\x02ip\x12\x16\n" +
+	"\x06portal\x18\x04 \x01(\bR\x06portal\"<\n" +
 	"\x10CreateTUNRequest\x12\x16\n" +
 	"\x06ifname\x18\x01 \x01(\tR\x06ifname\x12\x10\n" +
 	"\x03mtu\x18\x02 \x01(\x05R\x03mtu\"J\n" +
 	"\x1fAttachWithFileDescriptorRequest\x12'\n" +
-	"\x0ffile_descriptor\x18\x01 \x01(\x05R\x0efileDescriptor\"\x1f\n" +
-	"\rGetIDResponse\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"%\n" +
-	"\x0fGetCIDRResponse\x12\x12\n" +
-	"\x04cidr\x18\x01 \x01(\tR\x04cidr\"/\n" +
-	"\x0fAddTaintRequest\x12\x1c\n" +
-	"\tsignature\x18\x01 \x01(\fR\tsignature\"2\n" +
-	"\x12RemoveTaintRequest\x12\x1c\n" +
-	"\tsignature\x18\x01 \x01(\fR\tsignature*\x98\x03\n" +
+	"\x0ffile_descriptor\x18\x01 \x01(\x05R\x0efileDescriptor\"'\n" +
+	"\x0fAddTaintRequest\x12\x14\n" +
+	"\x05taint\x18\x01 \x01(\tR\x05taint\"*\n" +
+	"\x12RemoveTaintRequest\x12\x14\n" +
+	"\x05taint\x18\x01 \x01(\tR\x05taint\"\x89\x01\n" +
+	"\x0fGetInfoResponse\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
+	"\x03tag\x18\x02 \x01(\tR\x03tag\x12\x10\n" +
+	"\x03uid\x18\x03 \x01(\tR\x03uid\x12\x12\n" +
+	"\x04cidr\x18\x04 \x01(\tR\x04cidr\x12\x16\n" +
+	"\x06portal\x18\x05 \x01(\bR\x06portal\x12\x16\n" +
+	"\x06public\x18\x06 \x01(\bR\x06public\"_\n" +
+	"\x14GetRealmInfoResponse\x12\x14\n" +
+	"\x05realm\x18\x01 \x01(\tR\x05realm\x12\x19\n" +
+	"\brealm_id\x18\x02 \x01(\tR\arealmId\x12\x16\n" +
+	"\x06subnet\x18\x03 \x01(\tR\x06subnet\"g\n" +
+	"\x13GetVeilInfoResponse\x12\x1b\n" +
+	"\tveil_host\x18\x01 \x01(\tR\bveilHost\x12\x1b\n" +
+	"\tveil_port\x18\x02 \x01(\x05R\bveilPort\x12\x16\n" +
+	"\x06region\x18\x03 \x01(\tR\x06region*\x98\x03\n" +
 	"\vMessageType\x12\r\n" +
 	"\tRTC_OFFER\x10\x00\x12\x0e\n" +
 	"\n" +
@@ -2315,7 +2451,7 @@ const file_veilnet_proto_rawDesc = "" +
 	"\fSCOPE_UPDATE\x10\x03*!\n" +
 	"\x04Role\x12\f\n" +
 	"\bGUARDIAN\x10\x00\x12\v\n" +
-	"\aCONFLUX\x10\x012\x9f\x05\n" +
+	"\aCONFLUX\x10\x012\xf2\x05\n" +
 	"\x06Anchor\x12B\n" +
 	"\vStartAnchor\x12\x1b.veilnet.StartAnchorRequest\x1a\x16.google.protobuf.Empty\x12<\n" +
 	"\n" +
@@ -2324,11 +2460,12 @@ const file_veilnet_proto_rawDesc = "" +
 	"\n" +
 	"DestroyTUN\x12\x16.google.protobuf.Empty\x1a\x16.google.protobuf.Empty\x12?\n" +
 	"\rAttachWithTUN\x12\x16.google.protobuf.Empty\x1a\x16.google.protobuf.Empty\x12\\\n" +
-	"\x18AttachWithFileDescriptor\x12(.veilnet.AttachWithFileDescriptorRequest\x1a\x16.google.protobuf.Empty\x127\n" +
-	"\x05GetID\x12\x16.google.protobuf.Empty\x1a\x16.veilnet.GetIDResponse\x12;\n" +
-	"\aGetCIDR\x12\x16.google.protobuf.Empty\x1a\x18.veilnet.GetCIDRResponse\x12<\n" +
+	"\x18AttachWithFileDescriptor\x12(.veilnet.AttachWithFileDescriptorRequest\x1a\x16.google.protobuf.Empty\x12<\n" +
 	"\bAddTaint\x12\x18.veilnet.AddTaintRequest\x1a\x16.google.protobuf.Empty\x12B\n" +
-	"\vRemoveTaint\x12\x1b.veilnet.RemoveTaintRequest\x1a\x16.google.protobuf.EmptyB#Z!github.com/veil-net/conflux/protob\x06proto3"
+	"\vRemoveTaint\x12\x1b.veilnet.RemoveTaintRequest\x1a\x16.google.protobuf.Empty\x12;\n" +
+	"\aGetInfo\x12\x16.google.protobuf.Empty\x1a\x18.veilnet.GetInfoResponse\x12E\n" +
+	"\fGetRealmInfo\x12\x16.google.protobuf.Empty\x1a\x1d.veilnet.GetRealmInfoResponse\x12C\n" +
+	"\vGetVeilInfo\x12\x16.google.protobuf.Empty\x1a\x1c.veilnet.GetVeilInfoResponseB#Z!github.com/veil-net/conflux/protob\x06proto3"
 
 var (
 	file_veilnet_proto_rawDescOnce sync.Once
@@ -2343,7 +2480,7 @@ func file_veilnet_proto_rawDescGZIP() []byte {
 }
 
 var file_veilnet_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_veilnet_proto_msgTypes = make([]protoimpl.MessageInfo, 39)
+var file_veilnet_proto_msgTypes = make([]protoimpl.MessageInfo, 40)
 var file_veilnet_proto_goTypes = []any{
 	(MessageType)(0),                        // 0: veilnet.MessageType
 	(CmdType)(0),                            // 1: veilnet.CmdType
@@ -2383,11 +2520,12 @@ var file_veilnet_proto_goTypes = []any{
 	(*StartAnchorRequest)(nil),              // 35: veilnet.StartAnchorRequest
 	(*CreateTUNRequest)(nil),                // 36: veilnet.CreateTUNRequest
 	(*AttachWithFileDescriptorRequest)(nil), // 37: veilnet.AttachWithFileDescriptorRequest
-	(*GetIDResponse)(nil),                   // 38: veilnet.GetIDResponse
-	(*GetCIDRResponse)(nil),                 // 39: veilnet.GetCIDRResponse
-	(*AddTaintRequest)(nil),                 // 40: veilnet.AddTaintRequest
-	(*RemoveTaintRequest)(nil),              // 41: veilnet.RemoveTaintRequest
-	(*emptypb.Empty)(nil),                   // 42: google.protobuf.Empty
+	(*AddTaintRequest)(nil),                 // 38: veilnet.AddTaintRequest
+	(*RemoveTaintRequest)(nil),              // 39: veilnet.RemoveTaintRequest
+	(*GetInfoResponse)(nil),                 // 40: veilnet.GetInfoResponse
+	(*GetRealmInfoResponse)(nil),            // 41: veilnet.GetRealmInfoResponse
+	(*GetVeilInfoResponse)(nil),             // 42: veilnet.GetVeilInfoResponse
+	(*emptypb.Empty)(nil),                   // 43: google.protobuf.Empty
 }
 var file_veilnet_proto_depIdxs = []int32{
 	0,  // 0: veilnet.Header.type:type_name -> veilnet.MessageType
@@ -2398,27 +2536,29 @@ var file_veilnet_proto_depIdxs = []int32{
 	1,  // 5: veilnet.Cmd.type:type_name -> veilnet.CmdType
 	33, // 6: veilnet.ScopeUpdate.scopes:type_name -> veilnet.Scope
 	35, // 7: veilnet.Anchor.StartAnchor:input_type -> veilnet.StartAnchorRequest
-	42, // 8: veilnet.Anchor.StopAnchor:input_type -> google.protobuf.Empty
+	43, // 8: veilnet.Anchor.StopAnchor:input_type -> google.protobuf.Empty
 	36, // 9: veilnet.Anchor.CreateTUN:input_type -> veilnet.CreateTUNRequest
-	42, // 10: veilnet.Anchor.DestroyTUN:input_type -> google.protobuf.Empty
-	42, // 11: veilnet.Anchor.AttachWithTUN:input_type -> google.protobuf.Empty
+	43, // 10: veilnet.Anchor.DestroyTUN:input_type -> google.protobuf.Empty
+	43, // 11: veilnet.Anchor.AttachWithTUN:input_type -> google.protobuf.Empty
 	37, // 12: veilnet.Anchor.AttachWithFileDescriptor:input_type -> veilnet.AttachWithFileDescriptorRequest
-	42, // 13: veilnet.Anchor.GetID:input_type -> google.protobuf.Empty
-	42, // 14: veilnet.Anchor.GetCIDR:input_type -> google.protobuf.Empty
-	40, // 15: veilnet.Anchor.AddTaint:input_type -> veilnet.AddTaintRequest
-	41, // 16: veilnet.Anchor.RemoveTaint:input_type -> veilnet.RemoveTaintRequest
-	42, // 17: veilnet.Anchor.StartAnchor:output_type -> google.protobuf.Empty
-	42, // 18: veilnet.Anchor.StopAnchor:output_type -> google.protobuf.Empty
-	42, // 19: veilnet.Anchor.CreateTUN:output_type -> google.protobuf.Empty
-	42, // 20: veilnet.Anchor.DestroyTUN:output_type -> google.protobuf.Empty
-	42, // 21: veilnet.Anchor.AttachWithTUN:output_type -> google.protobuf.Empty
-	42, // 22: veilnet.Anchor.AttachWithFileDescriptor:output_type -> google.protobuf.Empty
-	38, // 23: veilnet.Anchor.GetID:output_type -> veilnet.GetIDResponse
-	39, // 24: veilnet.Anchor.GetCIDR:output_type -> veilnet.GetCIDRResponse
-	42, // 25: veilnet.Anchor.AddTaint:output_type -> google.protobuf.Empty
-	42, // 26: veilnet.Anchor.RemoveTaint:output_type -> google.protobuf.Empty
-	17, // [17:27] is the sub-list for method output_type
-	7,  // [7:17] is the sub-list for method input_type
+	38, // 13: veilnet.Anchor.AddTaint:input_type -> veilnet.AddTaintRequest
+	39, // 14: veilnet.Anchor.RemoveTaint:input_type -> veilnet.RemoveTaintRequest
+	43, // 15: veilnet.Anchor.GetInfo:input_type -> google.protobuf.Empty
+	43, // 16: veilnet.Anchor.GetRealmInfo:input_type -> google.protobuf.Empty
+	43, // 17: veilnet.Anchor.GetVeilInfo:input_type -> google.protobuf.Empty
+	43, // 18: veilnet.Anchor.StartAnchor:output_type -> google.protobuf.Empty
+	43, // 19: veilnet.Anchor.StopAnchor:output_type -> google.protobuf.Empty
+	43, // 20: veilnet.Anchor.CreateTUN:output_type -> google.protobuf.Empty
+	43, // 21: veilnet.Anchor.DestroyTUN:output_type -> google.protobuf.Empty
+	43, // 22: veilnet.Anchor.AttachWithTUN:output_type -> google.protobuf.Empty
+	43, // 23: veilnet.Anchor.AttachWithFileDescriptor:output_type -> google.protobuf.Empty
+	43, // 24: veilnet.Anchor.AddTaint:output_type -> google.protobuf.Empty
+	43, // 25: veilnet.Anchor.RemoveTaint:output_type -> google.protobuf.Empty
+	40, // 26: veilnet.Anchor.GetInfo:output_type -> veilnet.GetInfoResponse
+	41, // 27: veilnet.Anchor.GetRealmInfo:output_type -> veilnet.GetRealmInfoResponse
+	42, // 28: veilnet.Anchor.GetVeilInfo:output_type -> veilnet.GetVeilInfoResponse
+	18, // [18:29] is the sub-list for method output_type
+	7,  // [7:18] is the sub-list for method input_type
 	7,  // [7:7] is the sub-list for extension type_name
 	7,  // [7:7] is the sub-list for extension extendee
 	0,  // [0:7] is the sub-list for field type_name
@@ -2435,7 +2575,7 @@ func file_veilnet_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_veilnet_proto_rawDesc), len(file_veilnet_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   39,
+			NumMessages:   40,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

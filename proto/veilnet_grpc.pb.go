@@ -26,10 +26,11 @@ const (
 	Anchor_DestroyTUN_FullMethodName               = "/veilnet.Anchor/DestroyTUN"
 	Anchor_AttachWithTUN_FullMethodName            = "/veilnet.Anchor/AttachWithTUN"
 	Anchor_AttachWithFileDescriptor_FullMethodName = "/veilnet.Anchor/AttachWithFileDescriptor"
-	Anchor_GetID_FullMethodName                    = "/veilnet.Anchor/GetID"
-	Anchor_GetCIDR_FullMethodName                  = "/veilnet.Anchor/GetCIDR"
 	Anchor_AddTaint_FullMethodName                 = "/veilnet.Anchor/AddTaint"
 	Anchor_RemoveTaint_FullMethodName              = "/veilnet.Anchor/RemoveTaint"
+	Anchor_GetInfo_FullMethodName                  = "/veilnet.Anchor/GetInfo"
+	Anchor_GetRealmInfo_FullMethodName             = "/veilnet.Anchor/GetRealmInfo"
+	Anchor_GetVeilInfo_FullMethodName              = "/veilnet.Anchor/GetVeilInfo"
 )
 
 // AnchorClient is the client API for Anchor service.
@@ -42,10 +43,11 @@ type AnchorClient interface {
 	DestroyTUN(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	AttachWithTUN(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	AttachWithFileDescriptor(ctx context.Context, in *AttachWithFileDescriptorRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
-	GetID(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*GetIDResponse, error)
-	GetCIDR(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*GetCIDRResponse, error)
 	AddTaint(ctx context.Context, in *AddTaintRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	RemoveTaint(ctx context.Context, in *RemoveTaintRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	GetInfo(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*GetInfoResponse, error)
+	GetRealmInfo(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*GetRealmInfoResponse, error)
+	GetVeilInfo(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*GetVeilInfoResponse, error)
 }
 
 type anchorClient struct {
@@ -116,26 +118,6 @@ func (c *anchorClient) AttachWithFileDescriptor(ctx context.Context, in *AttachW
 	return out, nil
 }
 
-func (c *anchorClient) GetID(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*GetIDResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetIDResponse)
-	err := c.cc.Invoke(ctx, Anchor_GetID_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *anchorClient) GetCIDR(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*GetCIDRResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetCIDRResponse)
-	err := c.cc.Invoke(ctx, Anchor_GetCIDR_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *anchorClient) AddTaint(ctx context.Context, in *AddTaintRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(emptypb.Empty)
@@ -156,6 +138,36 @@ func (c *anchorClient) RemoveTaint(ctx context.Context, in *RemoveTaintRequest, 
 	return out, nil
 }
 
+func (c *anchorClient) GetInfo(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*GetInfoResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetInfoResponse)
+	err := c.cc.Invoke(ctx, Anchor_GetInfo_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *anchorClient) GetRealmInfo(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*GetRealmInfoResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetRealmInfoResponse)
+	err := c.cc.Invoke(ctx, Anchor_GetRealmInfo_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *anchorClient) GetVeilInfo(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*GetVeilInfoResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetVeilInfoResponse)
+	err := c.cc.Invoke(ctx, Anchor_GetVeilInfo_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AnchorServer is the server API for Anchor service.
 // All implementations must embed UnimplementedAnchorServer
 // for forward compatibility.
@@ -166,10 +178,11 @@ type AnchorServer interface {
 	DestroyTUN(context.Context, *emptypb.Empty) (*emptypb.Empty, error)
 	AttachWithTUN(context.Context, *emptypb.Empty) (*emptypb.Empty, error)
 	AttachWithFileDescriptor(context.Context, *AttachWithFileDescriptorRequest) (*emptypb.Empty, error)
-	GetID(context.Context, *emptypb.Empty) (*GetIDResponse, error)
-	GetCIDR(context.Context, *emptypb.Empty) (*GetCIDRResponse, error)
 	AddTaint(context.Context, *AddTaintRequest) (*emptypb.Empty, error)
 	RemoveTaint(context.Context, *RemoveTaintRequest) (*emptypb.Empty, error)
+	GetInfo(context.Context, *emptypb.Empty) (*GetInfoResponse, error)
+	GetRealmInfo(context.Context, *emptypb.Empty) (*GetRealmInfoResponse, error)
+	GetVeilInfo(context.Context, *emptypb.Empty) (*GetVeilInfoResponse, error)
 	mustEmbedUnimplementedAnchorServer()
 }
 
@@ -198,17 +211,20 @@ func (UnimplementedAnchorServer) AttachWithTUN(context.Context, *emptypb.Empty) 
 func (UnimplementedAnchorServer) AttachWithFileDescriptor(context.Context, *AttachWithFileDescriptorRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AttachWithFileDescriptor not implemented")
 }
-func (UnimplementedAnchorServer) GetID(context.Context, *emptypb.Empty) (*GetIDResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetID not implemented")
-}
-func (UnimplementedAnchorServer) GetCIDR(context.Context, *emptypb.Empty) (*GetCIDRResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetCIDR not implemented")
-}
 func (UnimplementedAnchorServer) AddTaint(context.Context, *AddTaintRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AddTaint not implemented")
 }
 func (UnimplementedAnchorServer) RemoveTaint(context.Context, *RemoveTaintRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RemoveTaint not implemented")
+}
+func (UnimplementedAnchorServer) GetInfo(context.Context, *emptypb.Empty) (*GetInfoResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetInfo not implemented")
+}
+func (UnimplementedAnchorServer) GetRealmInfo(context.Context, *emptypb.Empty) (*GetRealmInfoResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetRealmInfo not implemented")
+}
+func (UnimplementedAnchorServer) GetVeilInfo(context.Context, *emptypb.Empty) (*GetVeilInfoResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetVeilInfo not implemented")
 }
 func (UnimplementedAnchorServer) mustEmbedUnimplementedAnchorServer() {}
 func (UnimplementedAnchorServer) testEmbeddedByValue()                {}
@@ -339,42 +355,6 @@ func _Anchor_AttachWithFileDescriptor_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Anchor_GetID_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(emptypb.Empty)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AnchorServer).GetID(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Anchor_GetID_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AnchorServer).GetID(ctx, req.(*emptypb.Empty))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Anchor_GetCIDR_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(emptypb.Empty)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AnchorServer).GetCIDR(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Anchor_GetCIDR_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AnchorServer).GetCIDR(ctx, req.(*emptypb.Empty))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _Anchor_AddTaint_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(AddTaintRequest)
 	if err := dec(in); err != nil {
@@ -411,6 +391,60 @@ func _Anchor_RemoveTaint_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Anchor_GetInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AnchorServer).GetInfo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Anchor_GetInfo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AnchorServer).GetInfo(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Anchor_GetRealmInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AnchorServer).GetRealmInfo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Anchor_GetRealmInfo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AnchorServer).GetRealmInfo(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Anchor_GetVeilInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AnchorServer).GetVeilInfo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Anchor_GetVeilInfo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AnchorServer).GetVeilInfo(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Anchor_ServiceDesc is the grpc.ServiceDesc for Anchor service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -443,20 +477,24 @@ var Anchor_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Anchor_AttachWithFileDescriptor_Handler,
 		},
 		{
-			MethodName: "GetID",
-			Handler:    _Anchor_GetID_Handler,
-		},
-		{
-			MethodName: "GetCIDR",
-			Handler:    _Anchor_GetCIDR_Handler,
-		},
-		{
 			MethodName: "AddTaint",
 			Handler:    _Anchor_AddTaint_Handler,
 		},
 		{
 			MethodName: "RemoveTaint",
 			Handler:    _Anchor_RemoveTaint_Handler,
+		},
+		{
+			MethodName: "GetInfo",
+			Handler:    _Anchor_GetInfo_Handler,
+		},
+		{
+			MethodName: "GetRealmInfo",
+			Handler:    _Anchor_GetRealmInfo_Handler,
+		},
+		{
+			MethodName: "GetVeilInfo",
+			Handler:    _Anchor_GetVeilInfo_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

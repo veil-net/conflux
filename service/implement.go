@@ -42,7 +42,7 @@ func (s *ServiceImpl) Run() {
 	// Create a gRPC client connection
 	anchor, err := anchor.NewAnchorClient()
 	if err != nil {
-		Logger.Sugar().Errorf("failed to create anchor client: %v", err)
+		Logger.Sugar().Errorf("failed to create anchor gRPC client: %v", err)
 		return
 	}
 
@@ -50,6 +50,7 @@ func (s *ServiceImpl) Run() {
 	_, err = anchor.StartAnchor(context.Background(), &pb.StartAnchorRequest{
 		GuardianUrl: config.Guardian,
 		AnchorToken: config.Token,
+		Ip:          config.IP,
 		Portal:      !config.Rift,
 	})
 	if err != nil {
@@ -60,7 +61,7 @@ func (s *ServiceImpl) Run() {
 	// Add taints
 	for _, taint := range config.Taints {
 		_, err = anchor.AddTaint(context.Background(), &pb.AddTaintRequest{
-			Signature: []byte(taint),
+			Taint: taint,
 		})
 		if err != nil {
 			Logger.Sugar().Errorf("failed to add taint: %v", err)

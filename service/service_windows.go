@@ -6,6 +6,7 @@ package service
 import (
 	"context"
 	"os"
+	"time"
 
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
@@ -219,27 +220,29 @@ func (s *service) Execute(args []string, changeRequests <-chan svc.ChangeRequest
 	}
 
 	// Initialize the anchor plugin
-	anchor, cmd, err := anchor.NewAnchor()
+	subprocess, err := anchor.NewAnchor()
 	if err != nil {
 		Logger.Sugar().Fatalf("failed to initialize anchor plugin: %v", err)
 		return
 	}
-	defer cmd.Process.Kill()
+	defer subprocess.Process.Kill()
 
-	// Initialize the anchor instance
-	_, err = anchor.CreateAnchor(context.Background(), &emptypb.Empty{})
+	// Wait for the subprocess to start
+	time.Sleep(1 * time.Second)
+
+	// Create a gRPC client connection
+	anchor, err := anchor.NewAnchorClient()
 	if err != nil {
-		Logger.Sugar().Fatalf("failed to create anchor instance: %v", err)
+		Logger.Sugar().Fatalf("failed to create anchor gRPC client: %v", err)
 		return
 	}
 
 	// Start the anchor
 	_, err = anchor.StartAnchor(context.Background(), &pb.StartAnchorRequest{
 		GuardianUrl:  config.Guardian,
-		VeilUrl:       config.Veil,
-		VeilPort:      int32(config.VeilPort),
 		AnchorToken:   config.Token,
-		Portal:        config.Portal,
+		Ip:            config.IP,
+		Portal:        !config.Rift,
 	})
 	if err != nil {
 		Logger.Sugar().Fatalf("failed to start anchor: %v", err)
@@ -274,7 +277,6 @@ func (s *service) Execute(args []string, changeRequests <-chan svc.ChangeRequest
 		case svc.Stop, svc.Shutdown:
 			changes <- svc.Status{State: svc.StopPending}
 			anchor.StopAnchor(context.Background(), &emptypb.Empty{})
-			anchor.DestroyAnchor(context.Background(), &emptypb.Empty{})
 			anchor.DestroyTUN(context.Background(), &emptypb.Empty{})
 			changes <- svc.Status{State: svc.Stopped}
 			return false, 0

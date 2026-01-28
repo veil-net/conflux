@@ -16,6 +16,7 @@ type ConfluxConfig struct {
 	Token     string   `json:"conflux_token" validate:"required"`
 	Guardian  string   `json:"guardian" validate:"required"`
 	Rift      bool     `json:"rift" validate:"required"`
+	IP        string   `json:"ip" validate:"required"`
 	Taints    []string `json:"taints"`
 }
 

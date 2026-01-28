@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 
 	pb "github.com/veil-net/conflux/proto"
 	"google.golang.org/grpc"
@@ -27,6 +28,9 @@ func NewAnchor() (*exec.Cmd, error) {
 
 	// Start the anchor binary as a manageable subprocess (runs the gRPC server)
 	cmd := exec.Command(pluginPath)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setsid: true,
+	}
 	// Link stdout and stderr to see logs from the subprocess
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

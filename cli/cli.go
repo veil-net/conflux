@@ -2,8 +2,8 @@ package cli
 
 import (
 	"github.com/alecthomas/kong"
-	"github.com/veil-net/conflux/service"
 	"github.com/veil-net/conflux/logger"
+	"github.com/veil-net/conflux/service"
 )
 
 var Logger = logger.Logger
@@ -21,6 +21,8 @@ type CLI struct {
 	Down       Down       `cmd:"down" help:"Stop the veilnet service and remove the conflux token"`
 	Register   Register   `cmd:"register" help:"Register a new conflux with a registration token, and reinstall the service"`
 	Unregister Unregister `cmd:"unregister" help:"Unregister the conflux and remove the service"`
+	Info       Info       `cmd:"info" help:"Get the info of the conflux"`
+	Taint      Taint      `cmd:"taint" help:"Add or remove taints"`
 }
 
 type Run struct{}

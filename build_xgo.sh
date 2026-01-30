@@ -34,7 +34,7 @@ for target in "${TARGETS[@]}"; do
     echo "Building for $GOOS/$GOARCH..."
     
     if ! xgo \
-        -out anchor \
+        -out conflux \
         -dest bin \
         -go latest \
         -ldflags "-s -w" \

@@ -22,9 +22,6 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	Anchor_StartAnchor_FullMethodName              = "/veilnet.Anchor/StartAnchor"
 	Anchor_StopAnchor_FullMethodName               = "/veilnet.Anchor/StopAnchor"
-	Anchor_CreateTUN_FullMethodName                = "/veilnet.Anchor/CreateTUN"
-	Anchor_DestroyTUN_FullMethodName               = "/veilnet.Anchor/DestroyTUN"
-	Anchor_AttachWithTUN_FullMethodName            = "/veilnet.Anchor/AttachWithTUN"
 	Anchor_AttachWithFileDescriptor_FullMethodName = "/veilnet.Anchor/AttachWithFileDescriptor"
 	Anchor_AddTaint_FullMethodName                 = "/veilnet.Anchor/AddTaint"
 	Anchor_RemoveTaint_FullMethodName              = "/veilnet.Anchor/RemoveTaint"
@@ -40,9 +37,6 @@ const (
 type AnchorClient interface {
 	StartAnchor(ctx context.Context, in *StartAnchorRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	StopAnchor(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*emptypb.Empty, error)
-	CreateTUN(ctx context.Context, in *CreateTUNRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
-	DestroyTUN(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*emptypb.Empty, error)
-	AttachWithTUN(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	AttachWithFileDescriptor(ctx context.Context, in *AttachWithFileDescriptorRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	AddTaint(ctx context.Context, in *AddTaintRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	RemoveTaint(ctx context.Context, in *RemoveTaintRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
@@ -74,36 +68,6 @@ func (c *anchorClient) StopAnchor(ctx context.Context, in *emptypb.Empty, opts .
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(emptypb.Empty)
 	err := c.cc.Invoke(ctx, Anchor_StopAnchor_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *anchorClient) CreateTUN(ctx context.Context, in *CreateTUNRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(emptypb.Empty)
-	err := c.cc.Invoke(ctx, Anchor_CreateTUN_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *anchorClient) DestroyTUN(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*emptypb.Empty, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(emptypb.Empty)
-	err := c.cc.Invoke(ctx, Anchor_DestroyTUN_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *anchorClient) AttachWithTUN(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*emptypb.Empty, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(emptypb.Empty)
-	err := c.cc.Invoke(ctx, Anchor_AttachWithTUN_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -186,9 +150,6 @@ func (c *anchorClient) GetTracerConfig(ctx context.Context, in *emptypb.Empty, o
 type AnchorServer interface {
 	StartAnchor(context.Context, *StartAnchorRequest) (*emptypb.Empty, error)
 	StopAnchor(context.Context, *emptypb.Empty) (*emptypb.Empty, error)
-	CreateTUN(context.Context, *CreateTUNRequest) (*emptypb.Empty, error)
-	DestroyTUN(context.Context, *emptypb.Empty) (*emptypb.Empty, error)
-	AttachWithTUN(context.Context, *emptypb.Empty) (*emptypb.Empty, error)
 	AttachWithFileDescriptor(context.Context, *AttachWithFileDescriptorRequest) (*emptypb.Empty, error)
 	AddTaint(context.Context, *AddTaintRequest) (*emptypb.Empty, error)
 	RemoveTaint(context.Context, *RemoveTaintRequest) (*emptypb.Empty, error)
@@ -211,15 +172,6 @@ func (UnimplementedAnchorServer) StartAnchor(context.Context, *StartAnchorReques
 }
 func (UnimplementedAnchorServer) StopAnchor(context.Context, *emptypb.Empty) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StopAnchor not implemented")
-}
-func (UnimplementedAnchorServer) CreateTUN(context.Context, *CreateTUNRequest) (*emptypb.Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method CreateTUN not implemented")
-}
-func (UnimplementedAnchorServer) DestroyTUN(context.Context, *emptypb.Empty) (*emptypb.Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method DestroyTUN not implemented")
-}
-func (UnimplementedAnchorServer) AttachWithTUN(context.Context, *emptypb.Empty) (*emptypb.Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method AttachWithTUN not implemented")
 }
 func (UnimplementedAnchorServer) AttachWithFileDescriptor(context.Context, *AttachWithFileDescriptorRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AttachWithFileDescriptor not implemented")
@@ -295,60 +247,6 @@ func _Anchor_StopAnchor_Handler(srv interface{}, ctx context.Context, dec func(i
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(AnchorServer).StopAnchor(ctx, req.(*emptypb.Empty))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Anchor_CreateTUN_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CreateTUNRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AnchorServer).CreateTUN(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Anchor_CreateTUN_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AnchorServer).CreateTUN(ctx, req.(*CreateTUNRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Anchor_DestroyTUN_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(emptypb.Empty)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AnchorServer).DestroyTUN(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Anchor_DestroyTUN_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AnchorServer).DestroyTUN(ctx, req.(*emptypb.Empty))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Anchor_AttachWithTUN_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(emptypb.Empty)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AnchorServer).AttachWithTUN(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Anchor_AttachWithTUN_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AnchorServer).AttachWithTUN(ctx, req.(*emptypb.Empty))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -493,18 +391,6 @@ var Anchor_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "StopAnchor",
 			Handler:    _Anchor_StopAnchor_Handler,
-		},
-		{
-			MethodName: "CreateTUN",
-			Handler:    _Anchor_CreateTUN_Handler,
-		},
-		{
-			MethodName: "DestroyTUN",
-			Handler:    _Anchor_DestroyTUN_Handler,
-		},
-		{
-			MethodName: "AttachWithTUN",
-			Handler:    _Anchor_AttachWithTUN_Handler,
 		},
 		{
 			MethodName: "AttachWithFileDescriptor",

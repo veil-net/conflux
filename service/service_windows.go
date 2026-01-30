@@ -249,23 +249,6 @@ func (s *service) Execute(args []string, changeRequests <-chan svc.ChangeRequest
 		return
 	}
 
-	// Create the TUN device
-	_, err = anchor.CreateTUN(context.Background(), &pb.CreateTUNRequest{
-		Ifname: "veilnet",
-		Mtu:    1500,
-	})
-	if err != nil {
-		Logger.Sugar().Fatalf("failed to create TUN device: %v", err)
-		return
-	}
-
-	// Attach the anchor with the TUN device
-	_, err = anchor.AttachWithTUN(context.Background(), &emptypb.Empty{})
-	if err != nil {
-		Logger.Sugar().Fatalf("failed to attach anchor with TUN device: %v", err)
-		return
-	}
-
 	// Set the status to running
 	changes <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}
 
@@ -277,7 +260,6 @@ func (s *service) Execute(args []string, changeRequests <-chan svc.ChangeRequest
 		case svc.Stop, svc.Shutdown:
 			changes <- svc.Status{State: svc.StopPending}
 			anchor.StopAnchor(context.Background(), &emptypb.Empty{})
-			anchor.DestroyTUN(context.Background(), &emptypb.Empty{})
 			changes <- svc.Status{State: svc.Stopped}
 			return false, 0
 		default:

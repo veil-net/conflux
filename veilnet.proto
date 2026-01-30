@@ -267,9 +267,6 @@ message GetVeilInfoResponse {
 service Anchor {
     rpc StartAnchor(StartAnchorRequest) returns (google.protobuf.Empty);
     rpc StopAnchor(google.protobuf.Empty) returns (google.protobuf.Empty);
-    rpc CreateTUN(CreateTUNRequest) returns (google.protobuf.Empty);
-    rpc DestroyTUN(google.protobuf.Empty) returns (google.protobuf.Empty);
-    rpc AttachWithTUN(google.protobuf.Empty) returns (google.protobuf.Empty);
     rpc AttachWithFileDescriptor(AttachWithFileDescriptorRequest) returns (google.protobuf.Empty);
     rpc AddTaint(AddTaintRequest) returns (google.protobuf.Empty);
     rpc RemoveTaint(RemoveTaintRequest) returns (google.protobuf.Empty);

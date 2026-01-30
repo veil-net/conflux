@@ -78,23 +78,6 @@ func (s *ServiceImpl) Run() {
 		}
 	}
 
-	// Create the TUN device
-	_, err = anchor.CreateTUN(context.Background(), &pb.CreateTUNRequest{
-		Ifname: "veilnet",
-		Mtu:    1500,
-	})
-	if err != nil {
-		Logger.Sugar().Errorf("failed to create TUN device: %v", err)
-		return
-	}
-
-	// Attach the anchor with the TUN device
-	_, err = anchor.AttachWithTUN(context.Background(), &emptypb.Empty{})
-	if err != nil {
-		Logger.Sugar().Errorf("failed to attach anchor with TUN device: %v", err)
-		return
-	}
-
 	// Wait for interrupt signal
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
@@ -105,6 +88,4 @@ func (s *ServiceImpl) Run() {
 	// Stop the anchor
 	_, err = anchor.StopAnchor(context.Background(), &emptypb.Empty{})
 
-	// Destroy the TUN device
-	_, err = anchor.DestroyTUN(context.Background(), &emptypb.Empty{})
 }

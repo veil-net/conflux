@@ -1,8 +1,16 @@
 package cli
 
 import (
+	"context"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
 	"github.com/veil-net/conflux/anchor"
+	pb "github.com/veil-net/conflux/proto"
 	"github.com/veil-net/conflux/service"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type Up struct {
@@ -45,8 +53,62 @@ func (cmd *Up) Run() error {
 		return nil
 	}
 
-	conflux := service.NewService()
-	conflux.Run()
+
+	// Initialize the anchor plugin
+	subprocess, err := anchor.NewAnchor()
+	if err != nil {
+		Logger.Sugar().Errorf("failed to initialize anchor subprocess: %v", err)
+		return err
+	}
+
+	// Wait for the subprocess to start
+	time.Sleep(1 * time.Second)
+
+	// Create a gRPC client connection
+	anchor, err := anchor.NewAnchorClient()
+	if err != nil {
+		Logger.Sugar().Errorf("failed to create anchor gRPC client: %v", err)
+		return err
+	}
+
+	// Start the anchor
+	_, err = anchor.StartAnchor(context.Background(), &pb.StartAnchorRequest{
+		GuardianUrl: config.Guardian,
+		AnchorToken: config.Token,
+		Ip:          config.IP,
+		Portal:      !config.Rift,
+	})
+	if err != nil {
+		Logger.Sugar().Errorf("failed to start anchor: %v", err)
+		return err
+	}
+
+	// Add taints
+	for _, taint := range config.Taints {
+		_, err = anchor.AddTaint(context.Background(), &pb.AddTaintRequest{
+			Taint: taint,
+		})
+		if err != nil {
+			Logger.Sugar().Warnf("failed to add taint: %v", err)
+			continue
+		}
+	}
+
+	// Wait for interrupt signal
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
+
+	// Wait for interrupt signal
+	<-interrupt
+
+	// Stop the anchor
+	_, err = anchor.StopAnchor(context.Background(), &emptypb.Empty{})
+	if err != nil {
+		Logger.Sugar().Errorf("failed to stop anchor: %v", err)
+	}
+
+	// Kill the anchor subprocess
+	subprocess.Process.Kill()
 
 	return nil
 }

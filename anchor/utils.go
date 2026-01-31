@@ -2,13 +2,18 @@ package anchor
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"time"
+
+	pb "github.com/veil-net/conflux/proto"
 )
 
 type TracerConfig struct {
@@ -186,4 +191,74 @@ func UnregisterConflux(registrationToken string, config *ConfluxConfig) error {
 		return fmt.Errorf("failed to unregister conflux: %s: %s", resp.Status, string(body))
 	}
 	return nil
+}
+
+func StartConflux(token string, ip string, tag string, jwt string, jwks_url string, audience string, issuer string, tracer *TracerConfig) (subprocess *exec.Cmd, anchor pb.AnchorClient, err error) {
+
+
+	guardian := "https://guardian.veilnet.app"
+
+	// Parse the command
+	registrationRequest := &ResgitrationRequest{
+		RegistrationToken: token,
+		Guardian:          guardian,
+		Tag:               tag,
+		JWT:               jwt,
+		JWKS_url:          jwks_url,
+		Audience:          audience,
+		Issuer:            issuer,
+	}
+
+	// Register the conflux
+	registrationResponse, err := RegisterConflux(registrationRequest)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Initialize the anchor plugin
+	subprocess, err = NewAnchor()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Wait for the subprocess to start
+	time.Sleep(1 * time.Second)
+
+	// Create a gRPC client connection
+	anchor, err = NewAnchorClient()
+	if err != nil {
+		subprocess.Process.Kill()
+		return nil, nil, err
+	}
+
+	var tracerConfig *pb.TracerConfig
+	if tracer == nil {
+		tracerConfig = &pb.TracerConfig{
+			Enabled: false,
+		}
+	} else {
+		tracerConfig = &pb.TracerConfig{
+			Enabled:  tracer.Enabled,
+			Endpoint: tracer.Endpoint,
+			UseTls:   tracer.UseTLS,
+			Insecure: tracer.Insecure,
+			Ca:       tracer.CAFile,
+			Cert:     tracer.CertFile,
+			Key:      tracer.KeyFile,
+		}
+	}
+
+	// Start the anchor
+	_, err = anchor.StartAnchor(context.Background(), &pb.StartAnchorRequest{
+		GuardianUrl: guardian,
+		AnchorToken: registrationResponse.Token,
+		Ip:          ip,
+		Portal:      true,
+		Tracer:      tracerConfig,
+	})
+	if err != nil {
+		subprocess.Process.Kill()
+		return nil, nil, err
+	}
+	return subprocess, anchor, nil
 }

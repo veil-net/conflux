@@ -15,7 +15,8 @@ import (
 
 type Register struct {
 	RegistrationToken string   `short:"t" help:"The registration token" env:"VEILNET_REGISTRATION_TOKEN" json:"registration_token"`
-	Rift              bool     `short:"r" help:"Enable rift mode, default: false" default:"false" env:"VEILNET_RIFT" json:"rift"`
+	Rift              bool     `short:"r" help:"Enable rift mode, default: false" default:"false" env:"VEILNET_CONFLUX_RIFT" json:"rift"`
+	Portal            bool     `short:"p" help:"Enable portal mode, default: false" default:"false" env:"VEILNET_CONFLUX_PORTAL" json:"portal"`
 	Guardian          string   `help:"The Guardian URL (Authentication Server), default: https://guardian.veilnet.app" default:"https://guardian.veilnet.app" env:"VEILNET_GUARDIAN" json:"guardian"`
 	Tag               string   `help:"The tag for the conflux" env:"VEILNET_CONFLUX_TAG" json:"tag"`
 	IP                string   `help:"The IP of the conflux" env:"VEILNET_CONFLUX_IP" json:"ip"`
@@ -24,7 +25,7 @@ type Register struct {
 	Audience          string   `help:"The audience for the conflux" env:"VEILNET_CONFLUX_AUDIENCE" json:"audience"`
 	Issuer            string   `help:"The issuer for the conflux" env:"VEILNET_CONFLUX_ISSUER" json:"issuer"`
 	Taints            []string `help:"Taints for the conflux, conflux can only communicate with other conflux with taints that are either a super set or a subset" env:"VEILNET_CONFLUX_TAINTS" json:"taints"`
-	Debug             bool     `short:"d" help:"Enable debug mode, this will not install the service but run conflux directly" env:"VEILNET_DEBUG" json:"debug"`
+	Debug             bool     `short:"d" help:"Enable debug mode, this will not install the service but run conflux directly" env:"VEILNET_CONFLUX_DEBUG" json:"debug"`
 	Tracer            bool     `help:"Enable tracer, default: false" default:"false" env:"VEILNET_TRACER" json:"tracer"`
 	OTLPEndpoint      string   `help:"The OTLP endpoint for the metrics" env:"VEILNET_OTLP_ENDPOINT" json:"otlp_endpoint"`
 	OTLPUseTLS        bool     `help:"Enable TLS for the metrics" default:"false" env:"VEILNET_OTLP_USE_TLS" json:"otlp_use_tls"`
@@ -74,6 +75,7 @@ func (cmd *Register) Run() error {
 		Token:     registrationResponse.Token,
 		Guardian:  cmd.Guardian,
 		Rift:      cmd.Rift,
+		Portal:    cmd.Portal,
 		IP:        cmd.IP,
 		Taints:    cmd.Taints,
 		Tracer:    tracerConfig,
@@ -125,7 +127,8 @@ func (cmd *Register) Run() error {
 		GuardianUrl: config.Guardian,
 		AnchorToken: config.Token,
 		Ip:          config.IP,
-		Portal:      !config.Rift,
+		Portal:      config.Portal,
+		Rift:        config.Rift,
 		Tracer: &pb.TracerConfig{
 			Enabled:  config.Tracer.Enabled,
 			Endpoint: config.Tracer.Endpoint,

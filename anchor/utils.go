@@ -31,6 +31,7 @@ type ConfluxConfig struct {
 	Token     string        `json:"conflux_token" validate:"required"`
 	Guardian  string        `json:"guardian" validate:"required"`
 	Rift      bool          `json:"rift" validate:"required"`
+	Portal    bool          `json:"portal" validate:"required"`
 	IP        string        `json:"ip" validate:"required"`
 	Taints    []string      `json:"taints"`
 	Tracer    *TracerConfig `json:"tracer"`
@@ -253,7 +254,6 @@ func StartConflux(token string, ip string, tag string, jwt string, jwks_url stri
 		GuardianUrl: guardian,
 		AnchorToken: registrationResponse.Token,
 		Ip:          ip,
-		Portal:      true,
 		Tracer:      tracerConfig,
 	})
 	if err != nil {

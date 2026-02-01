@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package veilnet;
 
-option go_package = "github.com/veil-net/veilnet/proto";
+option go_package = "github.com/veil-net/conflux/proto";
 
 import "google/protobuf/empty.proto";
 
@@ -239,8 +239,9 @@ message StartAnchorRequest {
     string guardian_url = 1;
     string anchor_token = 2;
     string ip = 3;
-    bool portal = 4;
-    TracerConfig tracer = 5;
+    bool rift = 4;
+    bool portal = 5;
+    TracerConfig tracer = 6;
 }
 
 message CreateTUNRequest {
@@ -265,8 +266,9 @@ message GetInfoResponse {
     string tag = 2;
     string uid = 3;
     string cidr = 4;
-    bool portal = 5;
-    bool public = 6;
+    bool rift = 5;
+    bool portal = 6;
+    bool public = 7;
 }
 
 message GetRealmInfoResponse {

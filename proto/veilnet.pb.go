@@ -2096,8 +2096,9 @@ type StartAnchorRequest struct {
 	GuardianUrl   string                 `protobuf:"bytes,1,opt,name=guardian_url,json=guardianUrl,proto3" json:"guardian_url,omitempty"`
 	AnchorToken   string                 `protobuf:"bytes,2,opt,name=anchor_token,json=anchorToken,proto3" json:"anchor_token,omitempty"`
 	Ip            string                 `protobuf:"bytes,3,opt,name=ip,proto3" json:"ip,omitempty"`
-	Portal        bool                   `protobuf:"varint,4,opt,name=portal,proto3" json:"portal,omitempty"`
-	Tracer        *TracerConfig          `protobuf:"bytes,5,opt,name=tracer,proto3" json:"tracer,omitempty"`
+	Rift          bool                   `protobuf:"varint,4,opt,name=rift,proto3" json:"rift,omitempty"`
+	Portal        bool                   `protobuf:"varint,5,opt,name=portal,proto3" json:"portal,omitempty"`
+	Tracer        *TracerConfig          `protobuf:"bytes,6,opt,name=tracer,proto3" json:"tracer,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2151,6 +2152,13 @@ func (x *StartAnchorRequest) GetIp() string {
 		return x.Ip
 	}
 	return ""
+}
+
+func (x *StartAnchorRequest) GetRift() bool {
+	if x != nil {
+		return x.Rift
+	}
+	return false
 }
 
 func (x *StartAnchorRequest) GetPortal() bool {
@@ -2357,8 +2365,9 @@ type GetInfoResponse struct {
 	Tag           string                 `protobuf:"bytes,2,opt,name=tag,proto3" json:"tag,omitempty"`
 	Uid           string                 `protobuf:"bytes,3,opt,name=uid,proto3" json:"uid,omitempty"`
 	Cidr          string                 `protobuf:"bytes,4,opt,name=cidr,proto3" json:"cidr,omitempty"`
-	Portal        bool                   `protobuf:"varint,5,opt,name=portal,proto3" json:"portal,omitempty"`
-	Public        bool                   `protobuf:"varint,6,opt,name=public,proto3" json:"public,omitempty"`
+	Rift          bool                   `protobuf:"varint,5,opt,name=rift,proto3" json:"rift,omitempty"`
+	Portal        bool                   `protobuf:"varint,6,opt,name=portal,proto3" json:"portal,omitempty"`
+	Public        bool                   `protobuf:"varint,7,opt,name=public,proto3" json:"public,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2419,6 +2428,13 @@ func (x *GetInfoResponse) GetCidr() string {
 		return x.Cidr
 	}
 	return ""
+}
+
+func (x *GetInfoResponse) GetRift() bool {
+	if x != nil {
+		return x.Rift
+	}
+	return false
 }
 
 func (x *GetInfoResponse) GetPortal() bool {
@@ -2668,13 +2684,14 @@ const file_veilnet_proto_rawDesc = "" +
 	"\binsecure\x18\x04 \x01(\bR\binsecure\x12\x0e\n" +
 	"\x02ca\x18\x05 \x01(\tR\x02ca\x12\x12\n" +
 	"\x04cert\x18\x06 \x01(\tR\x04cert\x12\x10\n" +
-	"\x03key\x18\a \x01(\tR\x03key\"\xb1\x01\n" +
+	"\x03key\x18\a \x01(\tR\x03key\"\xc5\x01\n" +
 	"\x12StartAnchorRequest\x12!\n" +
 	"\fguardian_url\x18\x01 \x01(\tR\vguardianUrl\x12!\n" +
 	"\fanchor_token\x18\x02 \x01(\tR\vanchorToken\x12\x0e\n" +
-	"\x02ip\x18\x03 \x01(\tR\x02ip\x12\x16\n" +
-	"\x06portal\x18\x04 \x01(\bR\x06portal\x12-\n" +
-	"\x06tracer\x18\x05 \x01(\v2\x15.veilnet.TracerConfigR\x06tracer\"<\n" +
+	"\x02ip\x18\x03 \x01(\tR\x02ip\x12\x12\n" +
+	"\x04rift\x18\x04 \x01(\bR\x04rift\x12\x16\n" +
+	"\x06portal\x18\x05 \x01(\bR\x06portal\x12-\n" +
+	"\x06tracer\x18\x06 \x01(\v2\x15.veilnet.TracerConfigR\x06tracer\"<\n" +
 	"\x10CreateTUNRequest\x12\x16\n" +
 	"\x06ifname\x18\x01 \x01(\tR\x06ifname\x12\x10\n" +
 	"\x03mtu\x18\x02 \x01(\x05R\x03mtu\"J\n" +
@@ -2683,14 +2700,15 @@ const file_veilnet_proto_rawDesc = "" +
 	"\x0fAddTaintRequest\x12\x14\n" +
 	"\x05taint\x18\x01 \x01(\tR\x05taint\"*\n" +
 	"\x12RemoveTaintRequest\x12\x14\n" +
-	"\x05taint\x18\x01 \x01(\tR\x05taint\"\x89\x01\n" +
+	"\x05taint\x18\x01 \x01(\tR\x05taint\"\x9d\x01\n" +
 	"\x0fGetInfoResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
 	"\x03tag\x18\x02 \x01(\tR\x03tag\x12\x10\n" +
 	"\x03uid\x18\x03 \x01(\tR\x03uid\x12\x12\n" +
-	"\x04cidr\x18\x04 \x01(\tR\x04cidr\x12\x16\n" +
-	"\x06portal\x18\x05 \x01(\bR\x06portal\x12\x16\n" +
-	"\x06public\x18\x06 \x01(\bR\x06public\"_\n" +
+	"\x04cidr\x18\x04 \x01(\tR\x04cidr\x12\x12\n" +
+	"\x04rift\x18\x05 \x01(\bR\x04rift\x12\x16\n" +
+	"\x06portal\x18\x06 \x01(\bR\x06portal\x12\x16\n" +
+	"\x06public\x18\a \x01(\bR\x06public\"_\n" +
 	"\x14GetRealmInfoResponse\x12\x14\n" +
 	"\x05realm\x18\x01 \x01(\tR\x05realm\x12\x19\n" +
 	"\brealm_id\x18\x02 \x01(\tR\arealmId\x12\x16\n" +
@@ -2748,7 +2766,7 @@ const file_veilnet_proto_rawDesc = "" +
 	"\aGetInfo\x12\x16.google.protobuf.Empty\x1a\x18.veilnet.GetInfoResponse\x12E\n" +
 	"\fGetRealmInfo\x12\x16.google.protobuf.Empty\x1a\x1d.veilnet.GetRealmInfoResponse\x12C\n" +
 	"\vGetVeilInfo\x12\x16.google.protobuf.Empty\x1a\x1c.veilnet.GetVeilInfoResponse\x12@\n" +
-	"\x0fGetTracerConfig\x12\x16.google.protobuf.Empty\x1a\x15.veilnet.TracerConfigB#Z!github.com/veil-net/veilnet/protob\x06proto3"
+	"\x0fGetTracerConfig\x12\x16.google.protobuf.Empty\x1a\x15.veilnet.TracerConfigB#Z!github.com/veil-net/conflux/protob\x06proto3"
 
 var (
 	file_veilnet_proto_rawDescOnce sync.Once

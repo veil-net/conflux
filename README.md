@@ -1,6 +1,6 @@
 # VeilNet Conflux
 
-VeilNet Conflux is a networking service that connects to VeilNet, a decentralized post-quantum secure network. This guide covers installation and deployment options.
+VeilNet Conflux is a networking service that connects to VeilNet, a decentralized post-quantum secure network. For installation, configuration, and usage, see the [official documentation](https://docs.veilnet.app).
 
 ## Announcement
 
@@ -25,7 +25,7 @@ The Guardian server API schema is now available in this repository. You can also
 
 ## How It Works
 
-VeilNet is an ephemeral secure network that differs fundamentally from traditional Peer-to-Peer mesh overlay VPN networks. For detailed information, see the [official documentation](https://veilnet.net/docs).
+VeilNet is an ephemeral secure network that differs fundamentally from traditional Peer-to-Peer mesh overlay VPN networks. For detailed information, see the [official documentation](https://docs.veilnet.app).
 
 ### Key Components
 
@@ -79,7 +79,7 @@ For more details, visit the [VeilNet homepage](https://veilnet.net/).
 
 ## How Connectivity is Established
 
-VeilNet establishes connectivity through a decentralized, ephemeral architecture that differs fundamentally from traditional overlay VPNs. For a comparison with other overlay VPN solutions, see the [official comparison documentation](https://veilnet.net/docs/veilnet-vs-overlay-vpns/).
+VeilNet establishes connectivity through a decentralized, ephemeral architecture that differs fundamentally from traditional overlay VPNs. For a comparison with other overlay VPN solutions, see the [official comparison documentation](https://docs.veilnet.app/veilnet-vs-overlay-vpns/).
 
 ### Control Channel (VeilNet Master)
 
@@ -306,363 +306,33 @@ This architecture enables VeilNet to operate seamlessly across physical machines
 
 ## Access Control
 
-VeilNet uses identity-based access control through **Teams**, which is fundamentally different from traditional network policies based on subnets or IP addresses. For detailed information, see the [official access control documentation](https://veilnet.net/docs/access-control/).
+VeilNet uses **Realms** for logical networks and identity, **Taints** to control which Conflux nodes can communicate, and **OAuth/JWT** for identity-based registration and packet-level authentication. This is fundamentally different from traditional network policies based on subnets or IP addresses. For detailed information, see the [official access control documentation](https://docs.veilnet.app/devop/access-control/taint), [Realms](https://docs.veilnet.app/veilnet/realm), and [OAuth](https://docs.veilnet.app/devop/access-control/oauth).
 
-### What is a Team?
+### Realms
 
-A **Team** in VeilNet is an identity that can be associated with Realms, Users, and VeilNet Conflux instances. It's similar to "Taint" for a node in a Kubernetes cluster, which defines affinities.
+A **Realm** is a logically defined VeilNet network, scoped at the management, identity, and authorization layers. A Conflux node belongs to exactly one Realm. Realm membership is evaluated at join time and enforced for the node’s lifecycle. Realms define which authority governs membership, which identities are recognized, and which Conflux nodes may participate together.
 
-Each Team has its own cryptographic hash signature that is used by VeilNet Conflux, along with Dilithium Digital Signature for authentication in a decentralized manner. This means VeilNet Conflux maintains access control even if the VeilNet Guardian server is offline.
+### Taints
 
-### How Access Control Works
+**Taints** are labels you attach to a Conflux node. They control which nodes can talk to each other: two Conflux nodes can communicate only if they share the same registration context (Realm) and their taints are **compatible**—one node’s taints are a superset or subset of the other’s.
 
-VeilNet's identity-based access control is possible because VeilNet Conflux is capable of **packet-level user authentication**, which is impossible for other overlay networks based on IP networks and WireGuard.
+Taints are simple labels. Typical uses include region or mesh groupings, role-based alignment, and environment-based restriction (e.g. only nodes in the same environment can communicate).
 
-1. **Team Association**: After a VeilNet Conflux instance authenticates with the VeilNet Guardian server and joins VeilNet, it pulls down its associated Teams (identities) granted by the owner.
+### OAuth / JWT
 
-2. **Packet Authentication**: 
-   - When a packet is sent, a cryptographic hash is created from each identity based on the VeilNet Conflux instance's Dilithium public key
-   - When a packet is received, the VeilNet Conflux calculates the cryptographic hash of its own identities based on the sender's Dilithium public key
-   - Access is granted only if at least one hash matches (affinity exists)
+VeilNet Conflux can use **OAuth-issued JWTs** for identity-based access control. When you register a Conflux, you can pass a JWT plus JWKS URL, issuer, and audience so Guardian can verify the token. Guardian validates the JWT via JWKS and uses it for packet-level authentication; it does not store the JWT. Any OAuth/OIDC identity provider is supported. For details, see the [official OAuth documentation](https://docs.veilnet.app/devop/access-control/oauth).
 
-3. **Security**: The identities are never shared on the network, are globally verifiable, and are unique to each VeilNet Conflux instance. Impersonation is impossible because:
-   - **Impersonating Dilithium Public Key is impossible**: The pair of Dilithium public key and instance signature is immutable and announced when an instance joins the network
-   - **Impersonating Identity Hashes is impossible**: Without the private key (stored only in memory), a malicious instance cannot produce valid packet Dilithium DSA signatures
+### How Access Control by Taint Works
 
-### Associating Teams with Conflux
+VeilNet access control is based on **affinity**. For two Conflux instances to communicate, they must be in the same Realm and have compatible taints (subset/superset relationship).
 
-There are two ways to associate Team identities with a Conflux instance:
+**Examples**:
+- A staging server with taints `dev,stage` can talk to a dev server with taints `dev` (subset), or to another staging server with `dev,stage`.
+- A production server with taint `prod` only talks to nodes that also have `prod` in their taint set.
 
-1. **Via CLI during registration**: Use the `--teams` flag (or `VEILNET_CONFLUX_TEAMS` environment variable) followed by a comma-separated list of teams:
-   ```bash
-   ./veilnet-conflux register -t "your-registration-token" --teams "team1,team2"
-   ```
-   The Conflux instance will acquire those identities if the user is a member or owner of the team. Otherwise, the team will be ignored.
-
-2. **Via UI**: Head to the Conflux management page on the [Auth Portal](https://console.veilnet.app). Expand the Conflux card under any Realm. If the Conflux instance is operating in Portal Mode, click on team chips to add or remove team identities. Changes take effect immediately without requiring a reboot.
-
-### How Access Control by Team Works
-
-VeilNet access control is based on **affinity**. For two Conflux instances to communicate, they must share at least one common Team identity.
-
-**Example**: 
-- By default, following the Zero-Trust principle, Conflux instances only have the user identity
-- If James wants to access Ben's local network, Ben's Conflux instance will silently drop all messages because they don't share any common identities
-- To allow access, Ben must create a Team, invite James as a member, and associate the Team with both Conflux instances
-- Now James and Ben can access each other's networks
-
-A VeilNet Conflux instance can be associated with multiple teams to enable complex access control scenarios:
-- A staging server associated with both "Dev" and "Stage" teams
-- A development server associated with only the "Dev" team
-- A production server associated with only the "Prod" team
-
-The key principle: implement access control **based on your business logic, rather than IP address or subnet**.
-
-## Installation
-
-Download the latest release from [GitHub Releases](https://github.com/veil-net/conflux/releases) for your platform.
-
-### Linux
-
-1. Download the binary for your architecture
-2. Make it executable:
-   ```bash
-   chmod +x veilnet-conflux
-   ```
-3. Move it to a system path (optional):
-   ```bash
-   sudo mv veilnet-conflux /usr/local/bin/
-   ```
-
-### Windows
-
-1. Download the Windows binary from releases
-2. Extract and place the executable in your desired location
-
-### macOS
-
-macOS is now supported. 
-
-1. Download the macOS binary from releases
-2. Make it executable:
-   ```bash
-   chmod +x veilnet-conflux
-   ```
-
-## System Service Installation (Primary Method)
-
-The primary method for installing and managing VeilNet Conflux is using the `register` and `unregister` commands. These commands handle registration with VeilNet and automatic service installation.
-
-### Registering a Conflux
-
-The `register` command registers your conflux with VeilNet, saves the configuration, and automatically installs and starts the system service.
-
-#### Required Parameters
-
-- **Registration Token**: Obtained from [https://console.veilnet.app](https://console.veilnet.app)
-  - Environment variable: `VEILNET_REGISTRATION_TOKEN`
-  - Command flag: `-t` or `--token`
-
-#### Optional Parameters
-
-- **Guardian URL**: The Guardian authentication server URL (default: `https://guardian.veilnet.app`)
-  - Environment variable: `VEILNET_GUARDIAN`
-  - Command flag: `-g` or `--guardian`
-
-- **Tag**: A tag for identifying the conflux
-  - Environment variable: `VEILNET_CONFLUX_TAG`
-
-- **CIDR**: The CIDR block for the conflux network
-  - Environment variable: `VEILNET_CONFLUX_CIDR`
-
-- **Portal Mode**: Enable portal mode (default: `false`)
-  - Environment variable: `VEILNET_PORTAL` (set to `true` to enable)
-  - Command flag: `-p` or `--portal`
-
-- **Teams**: Comma-separated list of teams to forward (e.g., `team1,team2`)
-  - Environment variable: `VEILNET_CONFLUX_TEAMS`
-
-#### Examples
-
-**Using environment variables (Linux/macOS):**
-```bash
-export VEILNET_REGISTRATION_TOKEN="your-registration-token"
-export VEILNET_CONFLUX_TAG="my-conflux"
-export VEILNET_GUARDIAN="https://guardian.veilnet.app"
-./veilnet-conflux register
-```
-
-**Using command flags:**
-```bash
-./veilnet-conflux register -t "your-registration-token" --tag "my-conflux" -g "https://guardian.veilnet.app"
-```
-
-**Windows (PowerShell):**
-```powershell
-$env:VEILNET_REGISTRATION_TOKEN="your-registration-token"
-$env:VEILNET_CONFLUX_TAG="my-conflux"
-.\veilnet-conflux.exe register
-```
-
-The `register` command will:
-1. Remove any existing service
-2. Register the conflux with VeilNet
-3. Save the registration data to the configuration directory
-4. Install and start the system service
-
-### Unregistering a Conflux
-
-To remove the service and unregister from VeilNet:
-
-```bash
-./veilnet-conflux unregister
-```
-
-This command will:
-1. Unregister the conflux from VeilNet
-2. Stop and remove the system service
-3. Remove the registration configuration file
-
-### Service Management
-
-Once registered, you can manage the service using standard system commands:
-
-**Linux (systemd):**
-```bash
-# Check status
-sudo systemctl status veilnet
-
-# Start service
-sudo systemctl start veilnet
-
-# Stop service
-sudo systemctl stop veilnet
-
-# Restart service
-sudo systemctl restart veilnet
-
-# View logs
-sudo journalctl -u veilnet -f
-```
-
-**Windows:**
-```powershell
-# Check status
-Get-Service "VeilNet Conflux"
-
-# Start service
-Start-Service "VeilNet Conflux"
-
-# Stop service
-Stop-Service "VeilNet Conflux"
-```
-
-**macOS:**
-```bash
-# Check status
-sudo launchctl list | grep org.veilnet.conflux
-
-# Start service
-sudo launchctl start org.veilnet.conflux
-
-# Stop service
-sudo launchctl stop org.veilnet.conflux
-```
-
-You can also use the conflux CLI commands:
-```bash
-./veilnet-conflux start    # Start the service
-./veilnet-conflux stop     # Stop the service
-./veilnet-conflux status   # Check service status
-./veilnet-conflux remove   # Remove the service (without unregistering)
-```
-
-## Alternative Method for Integration (Secondary)
-
-The `up` and `down` commands are designed for integration into other applications or programs. They use a conflux token directly (rather than a registration token) and are suitable for programmatic use.
-
-### Using the `up` Command
-
-The `up` command starts the service with a conflux token directly, without registering with VeilNet.
-
-#### Required Parameters
-
-- **Conflux Token**: The conflux token (not a registration token)
-  - Environment variable: `VEILNET_CONFLUX_TOKEN`
-  - Command flag: `-t` or `--token`
-
-#### Optional Parameters
-
-- **Guardian URL**: The Guardian authentication server URL (default: `https://guardian.veilnet.app`)
-  - Environment variable: `VEILNET_GUARDIAN`
-  - Command flag: `-g` or `--guardian`
-
-- **Portal Mode**: Enable portal mode (default: `false`)
-  - Environment variable: `VEILNET_PORTAL` (set to `true` to enable)
-  - Command flag: `-p` or `--portal`
-
-#### Example
-
-```bash
-export VEILNET_CONFLUX_TOKEN="your-conflux-token"
-./veilnet-conflux up
-```
-
-Or using command flags:
-```bash
-./veilnet-conflux up -t "your-conflux-token" -g "https://guardian.veilnet.app"
-```
-
-The `up` command will:
-1. Remove any existing service
-2. Save the configuration to `up.json` (separate from registration data)
-3. Install and start the system service
-
-### Using the `down` Command
-
-To stop and remove the service started with `up`:
-
-```bash
-./veilnet-conflux down
-```
-
-This command will:
-1. Stop and remove the system service
-2. Remove the `up.json` configuration file
-
-**Note**: The `up`/`down` method saves configuration to `up.json`, which is separate from the registration data used by `register`/`unregister`. Use this method when integrating conflux into other applications or when you already have a conflux token.
-
-## Docker Container Deployment
-
-VeilNet Conflux can be deployed as a Docker container using the pre-built image.
-
-### Prerequisites
-
-- Docker and Docker Compose installed
-- A `.env` file with required environment variables
-
-### Environment Variables
-
-Create a `.env` file in the same directory as your `docker-compose.yml`:
-
-```env
-VEILNET_CONFLUX_TOKEN=your-conflux-token
-VEILNET_GUARDIAN=https://guardian.veilnet.app
-VEILNET_PORTAL=false
-```
-
-### Docker Compose
-
-Use the provided `docker-compose.yml`:
-
-```yaml
-services:
-  veilnet-conflux:
-    image: veilnet/conflux:beta
-    container_name: veilnet-conflux
-    pull_policy: always
-    restart: unless-stopped
-    privileged: true
-    network_mode: host
-    env_file:
-      - .env
-```
-
-**Important Notes:**
-- The container requires `privileged: true` for network operations
-- The container uses `network_mode: host` for direct network access
-- The image is pulled from the registry: `veilnet/conflux:beta`
-
-### Running the Container
-
-1. Create your `.env` file with the required environment variables
-2. Start the container:
-   ```bash
-   docker-compose up -d
-   ```
-
-3. View logs:
-   ```bash
-   docker-compose logs -f
-   ```
-
-4. Stop the container:
-   ```bash
-   docker-compose down
-   ```
-
-### Using Docker Run
-
-Alternatively, you can run the container directly:
-
-```bash
-docker run -d \
-  --name veilnet-conflux \
-  --privileged \
-  --network host \
-  --restart unless-stopped \
-  -e VEILNET_CONFLUX_TOKEN="your-conflux-token" \
-  -e VEILNET_GUARDIAN="https://guardian.veilnet.app" \
-  veilnet/conflux:beta
-```
-
-## Configuration Storage
-
-- **Linux**: `/root/.config/conflux/`
-  - Registration data: `/root/.config/conflux/conflux.json`
-  - Up data: `/root/.config/conflux/up.json`
-
-- **Windows**: `C:\ProgramData\conflux` (or `%ProgramData%\conflux`)
-  - Registration data: `conflux.json`
-  - Up data: `up.json`
-
-- **macOS**: `/var/root/Library/Application Support/conflux`
-  - Registration data: `conflux.json`
-  - Up data: `up.json`
-
-Environment variables take precedence over saved configuration files.
+Taints can be set at registration or managed at runtime via the CLI. The key principle: implement access control **based on your business logic, rather than IP address or subnet**. For setup and usage, see the [official documentation](https://docs.veilnet.app).
 
 ## Support
 
-For issues, questions, or contributions, please visit the [GitHub repository](https://github.com/veil-net/conflux).
+For installation and usage, see the [official documentation](https://docs.veilnet.app). For issues, questions, or contributions, please visit the [GitHub repository](https://github.com/veil-net/conflux).
 

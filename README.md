@@ -2,26 +2,7 @@
 
 VeilNet Conflux is a networking service that connects to VeilNet, a decentralized post-quantum secure network. For installation, configuration, and usage, see the [official documentation](https://docs.veilnet.app).
 
-## Announcement
-
-### Upcoming Update
-
-Later this month, we will release a major update that is not compatible with the current version. This new update will bring:
-- **Identity DNS**: A unique decentralized DNS system that performs DNS queries via Anchor control. You will be able to access Conflux instances using **non-unique** DNS names with built-in automatic load balancing. More details will be shared upon release.
-- **Architecture Overhaul**: Currently, VeilNet Conflux runs as a background service. Once started, the only way to stop it is to disable or remove the service. In the next release, it will run a mini local-only API server that allows you to start or stop it without needing to remove or reinstall the system service.
-- **EXP3**: Currently, the Anchor protocol utilizes a gossip protocol inspired by the Ant Colony algorithm to terminate sub-optimal paths and a Q-learning algorithm for path discovery. We will replace both with a single MAB EXP3 algorithm.
-
-### Android Library
-
-You can now build your own VPN app using our pre-compiled AAR library for Android. It will be available in the releases section.
-
-You will still need a VeilNet account, but you can inject the registration token into your app as an API key, so your app users do not need to have a VeilNet account.
-
-Code examples have been added to example/android, and you are welcome to ask for help at: https://discord.gg/yKCZCZutDR
-
-### Guardian Server API
-
-The Guardian server API schema is now available in this repository. You can also access it at https://guardian.veilnet.app/docs#/
+> **Warning — Stable Beta v1.0.0:** At the moment, the stable beta v1.0.0 must use `--guardian https://dev-guardian.veilnet.app` (or set `VEILNET_GUARDIAN` to that URL). Full rollout will be soon.
 
 ## How It Works
 

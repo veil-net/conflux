@@ -1,22 +1,27 @@
-FROM ubuntu:latest
+FROM golang:latest AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY ./anchor ./anchor
+COPY ./cli ./cli
+COPY ./logger ./logger
+COPY ./proto ./proto
+COPY ./service ./service
+COPY main.go ./
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o veilnet-conflux .
 
-# Update package list and install dependencies in a single layer
+
+FROM ubuntu:latest
+# systemd-resolved provides resolvectl (anchor uses it to set DNS for TUN)
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     iptables \
     iproute2 \
-    ca-certificates \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* \
-    && rm -rf /tmp/* /var/tmp/*
+    systemd-resolved \
+    && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
 WORKDIR /veilnet
-
-# Copy the binary
-COPY ./veilnet-conflux ./veilnet-conflux
-
-# Set proper permissions
+COPY --from=builder /src/veilnet-conflux ./veilnet-conflux
 RUN chmod +x ./veilnet-conflux
 
-# Use exec form for CMD
-CMD ["./veilnet-conflux"]
+CMD ["./veilnet-conflux", "register", "-d"]

@@ -1,183 +1,184 @@
 package cli
 
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
+	"context"
 	"os"
-	"path/filepath"
-	"strconv"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/veil-net/conflux/anchor"
+	pb "github.com/veil-net/conflux/proto"
+	"github.com/veil-net/conflux/service"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
+// Register registers a new conflux with a registration token and options (rift, portal, guardian, tag, IP, JWT/JWKS, taints, tracer, debug).
 type Register struct {
-	Tag      string `help:"The tag for the conflux" env:"VEILNET_CONFLUX_TAG" json:"tag"`
-	Cidr     string `help:"The CIDR of the conflux" env:"VEILNET_CONFLUX_CIDR" json:"cidr"`
-	Token    string `short:"t" help:"The registration token" env:"VEILNET_REGISTRATION_TOKEN" json:"registration_token"`
-	Guardian string `help:"The Guardian URL (Authentication Server), default: https://guardian.veilnet.app" default:"https://guardian.veilnet.app" env:"VEILNET_GUARDIAN" json:"guardian"`
-	Portal   bool   `short:"p" help:"Enable portal mode, default: false" default:"false" env:"VEILNET_PORTAL" json:"portal"`
-	Teams    string `help:"The teams to be forwarded by the conflux, separated by comma, e.g. team1,team2" env:"VEILNET_CONFLUX_TEAMS" json:"teams"`
-	Veil     string `help:"The veil URL, default: nats.veilnet.app" default:"nats.veilnet.app" env:"VEILNET_VEIL" json:"veil"`
-	VeilPort int    `help:"The veil port, default: 30422" default:"30422" env:"VEILNET_VEIL_PORT" json:"veil_port"`
-	ID       string `kong:"-" json:"id"`
+	RegistrationToken string   `short:"t" help:"The registration token" env:"VEILNET_REGISTRATION_TOKEN" json:"registration_token"`
+	Rift              bool     `short:"r" help:"Enable rift mode, default: false" default:"false" env:"VEILNET_CONFLUX_RIFT" json:"rift"`
+	Portal            bool     `short:"p" help:"Enable portal mode, default: false" default:"false" env:"VEILNET_CONFLUX_PORTAL" json:"portal"`
+	Guardian          string   `help:"The Guardian URL (Authentication Server), default: https://guardian.veilnet.app" default:"https://guardian.veilnet.app" env:"VEILNET_GUARDIAN" json:"guardian"`
+	Tag               string   `help:"The tag for the conflux" env:"VEILNET_CONFLUX_TAG" json:"tag"`
+	IP                string   `help:"The IP of the conflux" env:"VEILNET_CONFLUX_IP" json:"ip"`
+	JWT               string   `help:"The JWT for the conflux" env:"VEILNET_CONFLUX_JWT" json:"jwt"`
+	JWKS_url          string   `help:"The JWKS URL for the conflux" env:"VEILNET_CONFLUX_JWKS_URL" json:"jwks_url"`
+	Audience          string   `help:"The audience for the conflux" env:"VEILNET_CONFLUX_AUDIENCE" json:"audience"`
+	Issuer            string   `help:"The issuer for the conflux" env:"VEILNET_CONFLUX_ISSUER" json:"issuer"`
+	Taints            []string `help:"Taints for the conflux, conflux can only communicate with other conflux with taints that are either a super set or a subset" env:"VEILNET_CONFLUX_TAINTS" json:"taints"`
+	Debug             bool     `short:"d" help:"Enable debug mode, this will not install the service but run conflux directly" env:"VEILNET_CONFLUX_DEBUG" json:"debug"`
+	Tracer            bool     `help:"Enable tracer, default: false" default:"false" env:"VEILNET_TRACER" json:"tracer"`
+	OTLPEndpoint      string   `help:"The OTLP endpoint for the metrics" env:"VEILNET_OTLP_ENDPOINT" json:"otlp_endpoint"`
+	OTLPUseTLS        bool     `help:"Enable TLS for the metrics" default:"false" env:"VEILNET_OTLP_USE_TLS" json:"otlp_use_tls"`
+	OTLPInsecure      bool     `help:"Enable insecure mode for the metrics" default:"false" env:"VEILNET_OTLP_INSECURE" json:"otlp_insecure"`
+	OTLPCACert        string   `help:"The OTLP CA certificate for the metrics" env:"VEILNET_OTLP_CA_CERT" json:"otlp_ca_cert"`
+	OTLPClientCert    string   `help:"The OTLP client certificate for the metrics" env:"VEILNET_OTLP_CLIENT_CERT" json:"otlp_client_cert"`
+	OTLPClientKey     string   `help:"The OTLP client key for the metrics" env:"VEILNET_OTLP_CLIENT_KEY" json:"otlp_client_key"`
 }
 
+// ConfluxToken holds conflux ID and token (e.g. from registration response).
 type ConfluxToken struct {
 	ConfluxID string `json:"conflux_id"`
 	Token     string `json:"token"`
 }
 
+// Run registers the conflux, saves config, and either installs the service or runs the anchor in debug mode.
+//
+// Inputs:
+//   - cmd: *Register. Registration token, guardian, tag, IP, JWT/JWKS, taints, tracer options, debug.
+//
+// Outputs:
+//   - err: error. Non-nil if registration, config save, service install, or anchor start fails.
 func (cmd *Register) Run() error {
 
-	// Check if the veilnet service is running
-	conflux := NewConflux()
-	conflux.Remove()
+	// Parse the command
+	registrationRequest := &anchor.ResgitrationRequest{
+		RegistrationToken: cmd.RegistrationToken,
+		Guardian:          cmd.Guardian,
+		Tag:               cmd.Tag,
+		JWT:               cmd.JWT,
+		JWKS_url:          cmd.JWKS_url,
+		Audience:          cmd.Audience,
+		Issuer:            cmd.Issuer,
+	}
 
 	// Register the conflux
-	confluxToken, err := cmd.register()
+	registrationResponse, err := anchor.RegisterConflux(registrationRequest)
 	if err != nil {
+		Logger.Sugar().Errorf("failed to register conflux: %v", err)
 		return err
 	}
 
-	// Save the registration data
-	err = cmd.saveRegistrationData(confluxToken)
-	if err != nil {
-		return err
+	// Save the configuration
+	tracerConfig := &anchor.TracerConfig{
+		Enabled:  cmd.Tracer,
+		UseTLS:   cmd.OTLPUseTLS,
+		Endpoint: cmd.OTLPEndpoint,
+		Insecure: cmd.OTLPInsecure,
+		CAFile:   cmd.OTLPCACert,
+		CertFile: cmd.OTLPClientCert,
+		KeyFile:  cmd.OTLPClientKey,
+	}
+	config := &anchor.ConfluxConfig{
+		ConfluxID: registrationResponse.ConfluxID,
+		Token:     registrationResponse.Token,
+		Guardian:  cmd.Guardian,
+		Rift:      cmd.Rift,
+		Portal:    cmd.Portal,
+		IP:        cmd.IP,
+		Taints:    cmd.Taints,
+		Tracer:    tracerConfig,
 	}
 
-	// Restart the conflux service
-	err = conflux.Install()
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (cmd *Register) register() (*ConfluxToken, error) {
-	// Marshal the request body
-	body, err := json.Marshal(cmd)
-	if err != nil {
-		Logger.Sugar().Errorf("Failed to marshal register command: %v", err)
-		return nil, fmt.Errorf("failed to marshal request: %v", err)
-	}
-
-	// Create the request
-	url := fmt.Sprintf("%s/conflux/register", cmd.Guardian)
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
-	if err != nil {
-		Logger.Sugar().Errorf("Failed to create register request to Guardian: %v", err)
-		return nil, fmt.Errorf("failed to create request: %v", err)
-	}
-
-	// Set the Authorization header
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", cmd.Token))
-	req.Header.Set("Content-Type", "application/json")
-
-	// Make the request
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		Logger.Sugar().Errorf("Failed to make register request to Guardian: %v", err)
-		return nil, fmt.Errorf("failed to make request: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// if the response is not 200, return an error
-	if !(resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusOK) {
-		body, err := io.ReadAll(resp.Body)
+	if !cmd.Debug {
+		// Save the configuration
+		err = anchor.SaveConfig(config)
 		if err != nil {
-			Logger.Sugar().Errorf("Failed to read register response body: %v", err)
-			return nil, fmt.Errorf("failed to read response body: %v", err)
+			Logger.Sugar().Errorf("failed to save configuration: %v", err)
+			return err
 		}
-		return nil, fmt.Errorf("failed to register conflux: %s: %s", resp.Status, string(body))
-	}
 
-	// Read the response body
-	body, err = io.ReadAll(resp.Body)
-	if err != nil {
-		Logger.Sugar().Errorf("Failed to read register response: %v", err)
-		return nil, fmt.Errorf("failed to read response body: %v", err)
-	}
-
-	// Parse the response body
-	var confluxToken ConfluxToken
-	err = json.Unmarshal(body, &confluxToken)
-	if err != nil {
-		Logger.Sugar().Errorf("Failed to parse register response: %v", err)
-		return nil, fmt.Errorf("failed to parse response body: %v", err)
-	}
-	return &confluxToken, nil
-}
-
-func (cmd *Register) loadRegistrationData() {
-	// First load the registration data from file (if exists)
-	confluxDir, err := getConfigDir()
-	if err == nil {
-		confluxFile := filepath.Join(confluxDir, "conflux.json")
-		registrationDataFile, err := os.ReadFile(confluxFile)
-		if err == nil {
-			err = json.Unmarshal(registrationDataFile, &cmd)
-			if err != nil {
-				Logger.Sugar().Warnf("Failed to unmarshal registration data from file, using environment variables: %v", err)
-			}
+		// Install the service
+		conflux := service.NewService()
+		if err := conflux.Status(); err == nil {
+			Logger.Sugar().Infof("reinstalling veilnet conflux service...")
+			conflux.Remove()
+		} else {
+			Logger.Sugar().Infof("installing veilnet conflux service...")
 		}
-	}
-
-	// Then override with environment variables (ENV takes precedence)
-	if envGuardian := os.Getenv("VEILNET_GUARDIAN"); envGuardian != "" {
-		cmd.Guardian = envGuardian
-	}
-	if envToken := os.Getenv("VEILNET_REGISTRATION_TOKEN"); envToken != "" {
-		cmd.Token = envToken
-	}
-	if envTag := os.Getenv("VEILNET_CONFLUX_TAG"); envTag != "" {
-		cmd.Tag = envTag
-	}
-	if envCidr := os.Getenv("VEILNET_CONFLUX_CIDR"); envCidr != "" {
-		cmd.Cidr = envCidr
-	}
-	if envPortal := os.Getenv("VEILNET_PORTAL"); envPortal != "" {
-		cmd.Portal = envPortal == "true"
-	}
-	if envTeams := os.Getenv("VEILNET_CONFLUX_TEAMS"); envTeams != "" {
-		cmd.Teams = envTeams
-	}
-	if envVeil := os.Getenv("VEILNET_VEIL"); envVeil != "" {
-		cmd.Veil = envVeil
-	}
-	if envVeilPort := os.Getenv("VEILNET_VEIL_PORT"); envVeilPort != "" {
-		cmd.VeilPort, err = strconv.Atoi(envVeilPort)
+		err = conflux.Install()
 		if err != nil {
-			Logger.Sugar().Warnf("Failed to convert veil port to int, using default: %v", err)
+			Logger.Sugar().Errorf("failed to install service: %v", err)
+			return err
+		}
+		return nil
+	}
+
+	// Initialize the anchor plugin
+	subprocess, err := anchor.NewAnchor()
+	if err != nil {
+		Logger.Sugar().Errorf("failed to initialize anchor subprocess: %v", err)
+		return err
+	}
+
+	// Wait for the subprocess to start
+	time.Sleep(1 * time.Second)
+
+	// Create a gRPC client connection
+	anchor, err := anchor.NewAnchorClient()
+	if err != nil {
+		Logger.Sugar().Errorf("failed to create anchor gRPC client: %v", err)
+		return err
+	}
+
+	// Start the anchor
+	_, err = anchor.StartAnchor(context.Background(), &pb.StartAnchorRequest{
+		GuardianUrl: config.Guardian,
+		AnchorToken: config.Token,
+		Ip:          config.IP,
+		Portal:      config.Portal,
+		Rift:        config.Rift,
+		Tracer: &pb.TracerConfig{
+			Enabled:  config.Tracer.Enabled,
+			Endpoint: config.Tracer.Endpoint,
+			UseTls:   config.Tracer.UseTLS,
+			Insecure: config.Tracer.Insecure,
+			Ca:       config.Tracer.CAFile,
+			Cert:     config.Tracer.CertFile,
+			Key:      config.Tracer.KeyFile,
+		},
+	})
+	if err != nil {
+		Logger.Sugar().Errorf("failed to start anchor: %v", err)
+		return err
+	}
+
+	// Add taints
+	for _, taint := range config.Taints {
+		_, err = anchor.AddTaint(context.Background(), &pb.AddTaintRequest{
+			Taint: taint,
+		})
+		if err != nil {
+			Logger.Sugar().Warnf("failed to add taint: %v", err)
+			continue
 		}
 	}
-}
 
-func (cmd *Register) saveRegistrationData(confluxToken *ConfluxToken) error {
-	// Write the registration data to file
-	confluxDir, err := getConfigDir()
+	// Wait for interrupt signal
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
+
+	// Wait for interrupt signal
+	<-interrupt
+
+	// Stop the anchor
+	_, err = anchor.StopAnchor(context.Background(), &emptypb.Empty{})
 	if err != nil {
-		Logger.Sugar().Errorf("Failed to get config directory: %v", err)
-		return fmt.Errorf("failed to get config directory: %v", err)
+		Logger.Sugar().Errorf("failed to stop anchor: %v", err)
 	}
-	if err := os.MkdirAll(confluxDir, 0755); err != nil {
-		Logger.Sugar().Errorf("Failed to create conflux directory: %v", err)
-		return fmt.Errorf("failed to create conflux directory: %v", err)
-	}
-	confluxFile := filepath.Join(confluxDir, "conflux.json")
-	cmd.ID = confluxToken.ConfluxID
-	registrationData, err := json.Marshal(cmd)
-	if err != nil {
-		Logger.Sugar().Errorf("Failed to marshal registration data: %v", err)
-		return fmt.Errorf("failed to marshal registration data: %v", err)
-	}
-	err = os.WriteFile(confluxFile, registrationData, 0644)
-	if err != nil {
-		Logger.Sugar().Errorf("Failed to write registration data: %v", err)
-		return fmt.Errorf("failed to write registration data: %v", err)
-	}
-	Logger.Sugar().Infof("Registration data written to %s", confluxFile)
+
+	// Kill the anchor subprocess
+	subprocess.Process.Kill()
+
 	return nil
 }

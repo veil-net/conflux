@@ -1,3 +1,4 @@
+// Package main is the entry point for the VeilNet Conflux CLI.
 package main
 
 import (
@@ -7,8 +8,14 @@ import (
 	"github.com/veil-net/conflux/cli"
 )
 
+// version is the internal version string used by kong for the CLI.
 var version = "beta"
 
+// main parses the CLI with kong, runs the selected command, and exits with 1 on error.
+//
+// Inputs: none.
+//
+// Outputs: none. Exits with code 0 on success or 1 if the selected command returns an error.
 func main() {
 	// Parse the CLI arguments
 	var cli cli.CLI

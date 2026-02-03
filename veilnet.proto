@@ -1,0 +1,296 @@
+syntax = "proto3";
+
+package veilnet;
+
+option go_package = "github.com/veil-net/conflux/proto";
+
+import "google/protobuf/empty.proto";
+
+enum MessageType {
+    RTC_OFFER = 0;
+    RTC_ANSWER = 1;
+    CANDIDATE_OFFER = 2;
+
+    ICE_CANDIDATE = 3;
+    ICE_OFFER = 4;
+    ICE_ANSWER = 5;
+
+    DNS_QUERY = 6;
+    DNS_ANSWER = 7;
+
+    ARP_REQUEST = 8;
+    ARP_RESPONSE = 9;
+    ARP_UPDATE = 10;
+
+    STREAM_DISCOVERY = 11;
+    STREAM_DISCOVERY_RESPONSE = 12;
+    STREAM_REQUEST = 13;
+    STREAM_RESPONSE = 14;
+    STREAM_UPDATE = 15;
+
+    ECHO = 16;
+    
+    DATA = 17;
+
+    ADD_REMOTE_NETWORK = 18;
+    REMOVE_REMOTE_NETWORK = 19;
+
+    CMD = 20;
+    CMD_RESPONSE = 21;
+}
+
+enum CmdType {
+    SHUTDOWN = 0;
+    QUERY_LOCAL_NETWORK=1;
+    QUERY_REMOTE_NETWORK=2;
+    SCOPE_UPDATE = 3;
+    ADD_TAINT = 4;
+    REMOVE_TAINT = 5;
+    QUERY_TAINTS = 6;
+}
+
+enum Role {
+    GUARDIAN = 0;
+    CONFLUX = 1;
+}
+
+message Header {
+    MessageType type = 1;
+    string signature = 2;
+    Role role = 3;
+    uint32 length = 4;
+    bytes mldsa_public_key = 5;
+    bytes mldsa_signature = 6;
+    repeated bytes scopes = 7;
+    repeated bytes taints = 8;
+    int64 timestamp = 9;
+}
+
+message RTC_Offer{
+    string tether_id = 1;
+    string signature = 2;
+    bytes offer = 3;
+}
+
+message RTC_Answer{
+    string tether_id = 1;
+    string signature = 2;
+    bytes answer = 3;
+}
+
+message CandidateOffer{
+    string tether_id = 1;
+    string candidate = 2;
+}
+
+message CandidateAccept{
+}
+
+message ICE{
+    string tether_id = 1;
+    string signature = 2;
+    string ufrag = 3;
+    string pwd = 4;
+}
+
+message ArpRequest {
+    string signature = 1;
+}
+
+message ArpResponse{
+    string signature = 1;
+    string dst = 2;
+    int64 weight = 3;
+    int64 hops = 4;
+    repeated string path = 5;
+    string id = 6;
+}
+
+message ArpUpdate {
+    string id = 1;
+    int64 hops = 2;
+}
+
+message DNSOffer {
+    string ip = 1;
+}
+
+message DNSQuery {
+    string domain = 1;
+}
+
+message DNSResponse {
+    string ip = 1;
+}
+
+message StreamDiscovery {
+    string ip = 1;
+}
+
+message StreamDiscoveryResponse {
+}
+
+message StreamRequest {
+    string ip = 1;
+    bytes public_key = 3;
+}
+
+message StreamResponse {
+    bytes cipher = 2;
+    bytes encrypted_stream_id =3;
+}
+
+message StreamUpdate {
+    string stream_id = 2;
+}
+
+message Echo {
+}
+
+message Frame {
+    bytes data = 1;
+}
+
+message Frames {
+    repeated Frame frames = 1;
+}
+
+message Data {
+    string dst = 1;
+    string stream_id = 2;
+    string route_id = 3;
+    bytes payload = 4;
+}
+
+message LocalNetwork {
+    string subnet = 1;
+}
+
+message LocalNetworks {
+    repeated LocalNetwork local_networks = 1;
+}
+
+message RemoteNetwork {
+    string peerSignature = 1;
+    string subnet = 2;
+}
+
+message RemoteNetworks {
+    repeated RemoteNetwork remote_networks = 1;
+}
+
+message Cmd {
+    CmdType type = 1;
+    bytes payload = 2;
+}
+
+message CmdResponse {
+    bool success = 1;
+    string response = 2;
+}
+
+message Shutdown{
+    string reason = 1;
+}
+
+message QueryLocalNetwork {
+    string signature = 1;
+
+}
+
+message QueryRemoteNetwork {
+    string signature = 1;
+}
+
+message Scope{
+    bytes signature = 1;
+}
+
+message ScopeUpdate {
+    repeated Scope scopes = 1;
+}
+
+message Taint {
+    string taint = 1;
+    bytes signature = 2;
+}
+
+message Taints {
+    repeated Taint taints = 1;
+}
+
+message QueryTaints {
+    string signature = 1;
+}
+
+// gRPC messages
+
+message TracerConfig {
+    bool enabled = 1;
+    string endpoint = 2;
+    bool use_tls = 3;
+    bool insecure = 4;
+    string ca = 5;
+    string cert = 6;
+    string key = 7;
+}
+
+message StartAnchorRequest {
+    string guardian_url = 1;
+    string anchor_token = 2;
+    string ip = 3;
+    bool rift = 4;
+    bool portal = 5;
+    TracerConfig tracer = 6;
+}
+
+message CreateTUNRequest {
+    string ifname = 1;
+    int32 mtu = 2;
+}
+
+message AttachWithFileDescriptorRequest {
+    int32 file_descriptor = 1;
+}
+
+message AddTaintRequest {
+    string taint = 1;
+}
+
+message RemoveTaintRequest {
+    string taint = 1;
+}
+
+message GetInfoResponse {
+    string id = 1;
+    string tag = 2;
+    string uid = 3;
+    string cidr = 4;
+    bool rift = 5;
+    bool portal = 6;
+    bool public = 7;
+}
+
+message GetRealmInfoResponse {
+    string realm = 1;
+    string realm_id = 2;
+    string subnet = 3;
+}
+
+message GetVeilInfoResponse {
+    string veil_host = 1;
+    int32 veil_port = 2;
+    string region = 3;
+}
+
+service Anchor {
+    rpc StartAnchor(StartAnchorRequest) returns (google.protobuf.Empty);
+    rpc StopAnchor(google.protobuf.Empty) returns (google.protobuf.Empty);
+    rpc AttachWithFileDescriptor(AttachWithFileDescriptorRequest) returns (google.protobuf.Empty);
+    rpc AddTaint(AddTaintRequest) returns (google.protobuf.Empty);
+    rpc RemoveTaint(RemoveTaintRequest) returns (google.protobuf.Empty);
+    rpc GetInfo(google.protobuf.Empty) returns (GetInfoResponse);
+    rpc GetRealmInfo(google.protobuf.Empty) returns (GetRealmInfoResponse);
+    rpc GetVeilInfo(google.protobuf.Empty) returns (GetVeilInfoResponse);
+    rpc GetTracerConfig(google.protobuf.Empty) returns (TracerConfig);
+}

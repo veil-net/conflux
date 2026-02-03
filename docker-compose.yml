@@ -2,8 +2,7 @@ services:
   veilnet-conflux:
     build: .
     container_name: veilnet-conflux
-    image: veilnet/conflux:beta
-    pull_policy: always
+    image: veilnet/conflux:dev
     restart: unless-stopped
     cap_add:
       - NET_ADMIN

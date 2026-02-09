@@ -2,7 +2,11 @@
 
 VeilNet Conflux is a networking service that connects to VeilNet, a decentralized post-quantum secure network. For installation, configuration, and usage, see the [official documentation](https://docs.veilnet.app).
 
-> **Beta v1.0.2+:** The guardian server is now updated to support Beta v1.0.2 and above. An explicit `--guardian` URL is no longer needed. Old registration tokens no longer work; all public realms except **Terra** have been removed. If you deployed Conflux previously, you must re-deploy with Beta v1.0.2 (use Docker image tag `Beta-v1.0.2`). There should be no more breaking changes.
+> **Beta v1.0.2+:** The guardian server is now updated to support Beta v1.0.2 and above. An explicit `--guardian` URL is no longer needed. Old registration tokens no longer work; all public realms except **Terra** (realm ID: `5b398d11-a795-4c5b-aa4a-e2d4d93e825a`) have been removed. If you deployed Conflux previously, you must re-deploy with Beta v1.0.2 (use Docker image tag `Beta-v1.0.2`). There should be no more breaking changes.
+
+> **Console:** The Console is under update and will not work properly. A new registration token can be obtained via the [Guardian API](https://dev-guardian.veilnet.app/docs#/auth/handle_create_register_token_auth_create_registration_token_post).
+
+> **Warning — Access control:** Due to the change of access control, Conflux nodes by default will not be able to connect with each other. You must give at least one common taint via `--taints`.
 
 ## How It Works
 

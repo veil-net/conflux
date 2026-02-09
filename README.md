@@ -4,6 +4,8 @@ VeilNet Conflux is a networking service that connects to VeilNet, a decentralize
 
 > **Warning — Stable Beta v1.0.0:** At the moment, the stable beta v1.0.0 must use `--guardian https://dev-guardian.veilnet.app` (or set `VEILNET_GUARDIAN` to that URL). Full rollout will be soon.
 
+> **Warning:** VeilNet may not be available during this week while the guardian server is being updated.
+
 ## How It Works
 
 VeilNet is an ephemeral secure network that differs fundamentally from traditional Peer-to-Peer mesh overlay VPN networks. For detailed information, see the [official documentation](https://docs.veilnet.app).

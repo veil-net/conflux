@@ -15,6 +15,10 @@ VeilNet Conflux is a networking service that connects to VeilNet, a decentralize
 > [!NOTE]
 > **Code generation:** A guide for protobuf code generation in Python, JavaScript, C#, Rust, Java, and other languages is available at [docs.veilnet.app/developer/code-generation](https://docs.veilnet.app/developer/code-generation).
 
+> [!NOTE]
+> **Android Application:** You can make your own app with the veilnet.aar in the releases. The example of a VPN service is at /example/android/VeilNetVPNService.kt
+> Our app could be found at [Google Play Store](https://play.google.com/store/apps/details?id=app.veilnet.conflux&pcampaignid=web_share)
+
 ---
 
 ## How It Works

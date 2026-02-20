@@ -146,14 +146,15 @@ message StreamUpdate {
 }
 
 message Echo {
+    string cidr = 1;
 }
 
-message Frame {
+message Packet {
     bytes data = 1;
 }
 
-message Frames {
-    repeated Frame frames = 1;
+message Packets {
+    repeated Packet packets = 1;
 }
 
 message Data {

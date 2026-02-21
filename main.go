@@ -9,7 +9,7 @@ import (
 )
 
 // version is the internal version string used by kong for the CLI.
-var version = "Beta-v1.0.4"
+var version = "Beta-v1.0.5"
 
 // main parses the CLI with kong, runs the selected command, and exits with 1 on error.
 //

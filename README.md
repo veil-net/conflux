@@ -6,11 +6,8 @@ VeilNet Conflux is a networking service that connects to VeilNet, a decentralize
 
 ## Important notices
 
-> [!IMPORTANT]
-> **Beta v1.0.5 — Security update required:** A leftover configuration related to the old credit system could cause Conflux in portal mode to forward traffic from other users towards the internet. This may route traffic through regions with internet restrictions (e.g. China). **Beta-v1.0.5** fixes this: your Conflux portal will no longer act as an exit point to the internet for other users. If you run a portal node, you **must** update to Beta-v1.0.5 (use Docker image tag `Beta-v1.0.5`). Note: if you want internet access for a Conflux rift node, you must run your own self-hosted Conflux portal node.
-
-> [!IMPORTANT]
-> **Beta v1.0.2+:** The guardian server is now updated to support Beta v1.0.2 and above. An explicit `--guardian` URL is no longer needed. Old registration tokens no longer work; all public realms except **Terra** (realm ID: `5b398d11-a795-4c5b-aa4a-e2d4d93e825a`) have been removed. If you deployed Conflux previously, you must re-deploy with Beta v1.0.2 or later (use Docker image tag `Beta-v1.0.5` for the latest).
+> [!NOTE]
+> **Beta v1.0.6:** Optimises the Exp3 routing algorithm with a cap on exploration so that large deployments with many similarly performing peers do not over-explore. This reduces latency from Exp exploration. **Not a breaking change**—upgrade when convenient.
 
 > [!WARNING]
 > **Access control:** Due to the change of access control, Conflux nodes by default will not be able to connect with each other. You must give at least one common taint via `--taints`.
@@ -21,6 +18,9 @@ VeilNet Conflux is a networking service that connects to VeilNet, a decentralize
 > [!NOTE]
 > **Android Application:** You can make your own app with the veilnet.aar in the releases. The example of a VPN service is at /example/android/VeilNetVPNService.kt
 > Our app could be found at [Google Play Store](https://play.google.com/store/apps/details?id=app.veilnet.conflux&pcampaignid=web_share)
+
+> [!IMPORTANT]
+> **Beta v1.0.5 — Security update required:** A leftover configuration related to the old credit system could cause Conflux in portal mode to forward traffic from other users towards the internet. This may route traffic through regions with internet restrictions (e.g. China). **Beta-v1.0.5** fixes this: your Conflux portal will no longer act as an exit point to the internet for other users. If you run a portal node, you **must** update to Beta-v1.0.5 or later (use Docker image tag `Beta-v1.0.6` for the current release). Note: if you want internet access for a Conflux rift node, you must run your own self-hosted Conflux portal node.
 
 ---
 

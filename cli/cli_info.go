@@ -8,9 +8,10 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-// Info shows conflux, realm, veil, or tracer info via subcommands.
+// Info shows conflux, realm, veil, tracer info, or raw ID via subcommands.
 type Info struct {
 	Conflux InfoConflux `cmd:"conflux" default:"1" help:"Show conflux info (ID, tag, UID, CIDR, portal, public)"`
+	ID      InfoID      `cmd:"id" help:"Print conflux ID only (single line, for scripts)"`
 	Realm   InfoRealm   `cmd:"realm" help:"Show realm info (realm, realm ID, subnet)"`
 	Veil    InfoVeil    `cmd:"veil" help:"Show veil connection info (host, port, region)"`
 	Tracer  InfoTracer  `cmd:"tracer" help:"Show tracer config (enabled, endpoint, use TLS, insecure, CA, cert, key)"`
@@ -46,6 +47,25 @@ func (cmd *InfoConflux) Run() error {
 	fmt.Printf("  %-8s %v\n", "Rift:", info.GetRift())
 	fmt.Printf("  %-8s %v\n", "Portal:", info.GetPortal())
 	fmt.Printf("  %-8s %v\n", "Public:", info.GetPublic())
+	return nil
+}
+
+// InfoID prints only the conflux node ID.
+type InfoID struct{}
+
+// Run prints the conflux ID as a single line of stdout (no labels or headers).
+func (cmd *InfoID) Run() error {
+	client, err := anchor.NewAnchorClient()
+	if err != nil {
+		Logger.Sugar().Errorf("failed to create anchor gRPC client: %v", err)
+		return err
+	}
+	info, err := client.GetInfo(context.Background(), &emptypb.Empty{})
+	if err != nil {
+		Logger.Sugar().Errorf("failed to get conflux info: %v", err)
+		return err
+	}
+	fmt.Println(info.GetId())
 	return nil
 }
 

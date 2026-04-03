@@ -7,6 +7,9 @@ VeilNet Conflux is a networking service that connects to VeilNet, a decentralize
 ## Important notices
 
 > [!NOTE]
+> **Beta v1.0.8:** Optimises WebRTC settings. Trusted peers pre-establish tethers to cut cold-start time; streams are still created on demand. **Not a breaking change**—upgrade when convenient.
+
+> [!NOTE]
 > **Beta v1.0.7:** Fixes a bug that could invalidate an IP claim under a race condition. Adds the `info id` subcommand (`conflux info id`) to print the Conflux node ID on a single line for scripts and GUI client integration. **Not a breaking change**—upgrade when convenient.
 
 > [!NOTE]
@@ -23,7 +26,7 @@ VeilNet Conflux is a networking service that connects to VeilNet, a decentralize
 > Our app could be found at [Google Play Store](https://play.google.com/store/apps/details?id=app.veilnet.conflux&pcampaignid=web_share)
 
 > [!IMPORTANT]
-> **Beta v1.0.5 — Security update required:** A leftover configuration related to the old credit system could cause Conflux in portal mode to forward traffic from other users towards the internet. This may route traffic through regions with internet restrictions (e.g. China). **Beta-v1.0.5** fixes this: your Conflux portal will no longer act as an exit point to the internet for other users. If you run a portal node, you **must** update to Beta-v1.0.5 or later (use Docker image tag `Beta-v1.0.7` for the current release). Note: if you want internet access for a Conflux rift node, you must run your own self-hosted Conflux portal node.
+> **Beta v1.0.5 — Security update required:** A leftover configuration related to the old credit system could cause Conflux in portal mode to forward traffic from other users towards the internet. This may route traffic through regions with internet restrictions (e.g. China). **Beta-v1.0.5** fixes this: your Conflux portal will no longer act as an exit point to the internet for other users. If you run a portal node, you **must** update to Beta-v1.0.5 or later (use Docker image tag `Beta-v1.0.8` for the current release). Note: if you want internet access for a Conflux rift node, you must run your own self-hosted Conflux portal node.
 
 ---
 

@@ -24,4 +24,9 @@ WORKDIR /veilnet
 COPY --from=builder /src/veilnet-conflux ./veilnet-conflux
 RUN chmod +x ./veilnet-conflux
 
+# Ready when netdev "veilnet" exists and is admin-up (IFF_UP), not merely LOWER_UP.
+# start-period allows register + anchor + TUN setup before the first check counts as failure.
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
+  CMD ip link show veilnet 2>/dev/null | grep -qE '([,<])UP([,>])' || exit 1
+
 CMD ["./veilnet-conflux", "register", "-d"]

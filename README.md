@@ -6,6 +6,9 @@ VeilNet Conflux is a networking service that connects to VeilNet, a decentralize
 
 ## Important notices
 
+> [!IMPORTANT]
+> **Beta-v1.0.9 — Conduit mode (internet sharing in the same Realm):** Conduit mode returns controlled internet sharing for peers in the same Realm. When Conduit mode is enabled, your Conflux can relay internet-bound traffic for other Realm peers even if those peers are not trusted. This only enables internet relay: untrusted peers still cannot access your Conflux IP or any of your local network IP ranges. **Compatibility requirement:** all participating Conflux nodes must run **Beta-v1.0.9** for Conduit mode to work.
+
 > [!NOTE]
 > **Beta v1.0.8:** Optimises WebRTC settings. Trusted peers pre-establish tethers to cut cold-start time; streams are still created on demand. **Not a breaking change**—upgrade when convenient.
 

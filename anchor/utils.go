@@ -42,6 +42,7 @@ type ConfluxConfig struct {
 	Guardian  string        `json:"guardian" validate:"required"`
 	Rift      bool          `json:"rift" validate:"required"`
 	Portal    bool          `json:"portal" validate:"required"`
+	Conduit   bool          `json:"conduit" validate:"required"`
 	IP        string        `json:"ip" validate:"required"`
 	Taints    []string      `json:"taints"`
 	Tracer    *TracerConfig `json:"tracer"`

@@ -14,11 +14,12 @@ import (
 
 // Up starts the veilnet service with a conflux token; flags include conflux ID, token, guardian, rift/portal, IP, taints, and debug.
 type Up struct {
-	ConfluxID string   `short:"c" help:"The conflux ID, please keep it secret" env:"VEILNET_CONFLUX_ID" json:"conflux_id"`
+	ConfluxID string   `short:"i" help:"The conflux ID, please keep it secret" env:"VEILNET_CONFLUX_ID" json:"conflux_id"`
 	Token     string   `short:"t" help:"The conflux token, please keep it secret" env:"VEILNET_CONFLUX_TOKEN" json:"conflux_token"`
 	Guardian  string   `help:"The Guardian URL (Authentication Server), default: https://guardian.veilnet.app" default:"https://guardian.veilnet.app" env:"VEILNET_GUARDIAN" json:"guardian"`
 	Rift      bool     `short:"r" help:"Enable rift mode, default: false" default:"false" env:"VEILNET_CONFLUX_RIFT" json:"rift"`
 	Portal    bool     `short:"p" help:"Enable portal mode, default: false" default:"false" env:"VEILNET_CONFLUX_PORTAL" json:"portal"`
+	Conduit   bool     `short:"c" help:"Enable conduit mode, default: false" default:"false" env:"VEILNET_CONFLUX_CONDUIT" json:"conduit"`
 	IP        string   `help:"The IP of the conflux" env:"VEILNET_CONFLUX_IP" json:"ip"`
 	Taints    []string `help:"Taints for the conflux, conflux can only communicate with other conflux with taints that are either a super set or a subset" env:"VEILNET_CONFLUX_TAINTS" json:"taints"`
 	Debug     bool     `short:"d" help:"Enable debug mode, this will not install the service but run conflux directly" env:"VEILNET_CONFLUX_DEBUG" json:"debug"`
@@ -38,6 +39,8 @@ func (cmd *Up) Run() error {
 		Token:     cmd.Token,
 		Guardian:  cmd.Guardian,
 		Rift:      cmd.Rift,
+		Portal:    cmd.Portal,
+		Conduit:   cmd.Conduit,
 		IP:        cmd.IP,
 		Taints:    cmd.Taints,
 	}
@@ -87,6 +90,7 @@ func (cmd *Up) Run() error {
 		Ip:          config.IP,
 		Rift:        config.Rift,
 		Portal:      config.Portal,
+		Conduit:     config.Conduit,
 	})
 	if err != nil {
 		subprocess.Process.Kill()

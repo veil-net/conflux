@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package veilnet;
 
-option go_package = "github.com/veil-net/conflux/proto";
+option go_package = "github.com/veil-net/veilnet/proto";
 
 import "google/protobuf/empty.proto";
 
@@ -247,7 +247,8 @@ message StartAnchorRequest {
     string ip = 3;
     bool rift = 4;
     bool portal = 5;
-    TracerConfig tracer = 6;
+    bool conduit = 6;
+    TracerConfig tracer = 7;
 }
 
 message StartAnchorWithFDRequest {
@@ -256,8 +257,9 @@ message StartAnchorWithFDRequest {
     string ip = 3;
     bool rift = 4;
     bool portal = 5;
-    TracerConfig tracer = 6;
-    int32 file_descriptor = 7;
+    bool conduit = 6;
+    TracerConfig tracer = 7;
+    int32 file_descriptor = 8;
 }
 
 message AddTaintRequest {
@@ -275,7 +277,11 @@ message GetInfoResponse {
     string cidr = 4;
     bool rift = 5;
     bool portal = 6;
-    bool public = 7;
+    bool conduit = 7;
+    bool public = 8;
+    int32 number_of_tethers = 9;
+    int32 number_of_routes = 10;
+    int32 number_of_streams = 11;
 }
 
 message GetRealmInfoResponse {

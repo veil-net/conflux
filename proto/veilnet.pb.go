@@ -1164,6 +1164,7 @@ func (x *StreamUpdate) GetStreamId() string {
 
 type Echo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	Cidr          string                 `protobuf:"bytes,1,opt,name=cidr,proto3" json:"cidr,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1198,27 +1199,34 @@ func (*Echo) Descriptor() ([]byte, []int) {
 	return file_veilnet_proto_rawDescGZIP(), []int{17}
 }
 
-type Frame struct {
+func (x *Echo) GetCidr() string {
+	if x != nil {
+		return x.Cidr
+	}
+	return ""
+}
+
+type Packet struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Data          []byte                 `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *Frame) Reset() {
-	*x = Frame{}
+func (x *Packet) Reset() {
+	*x = Packet{}
 	mi := &file_veilnet_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *Frame) String() string {
+func (x *Packet) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*Frame) ProtoMessage() {}
+func (*Packet) ProtoMessage() {}
 
-func (x *Frame) ProtoReflect() protoreflect.Message {
+func (x *Packet) ProtoReflect() protoreflect.Message {
 	mi := &file_veilnet_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -1230,39 +1238,39 @@ func (x *Frame) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use Frame.ProtoReflect.Descriptor instead.
-func (*Frame) Descriptor() ([]byte, []int) {
+// Deprecated: Use Packet.ProtoReflect.Descriptor instead.
+func (*Packet) Descriptor() ([]byte, []int) {
 	return file_veilnet_proto_rawDescGZIP(), []int{18}
 }
 
-func (x *Frame) GetData() []byte {
+func (x *Packet) GetData() []byte {
 	if x != nil {
 		return x.Data
 	}
 	return nil
 }
 
-type Frames struct {
+type Packets struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Frames        []*Frame               `protobuf:"bytes,1,rep,name=frames,proto3" json:"frames,omitempty"`
+	Packets       []*Packet              `protobuf:"bytes,1,rep,name=packets,proto3" json:"packets,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *Frames) Reset() {
-	*x = Frames{}
+func (x *Packets) Reset() {
+	*x = Packets{}
 	mi := &file_veilnet_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *Frames) String() string {
+func (x *Packets) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*Frames) ProtoMessage() {}
+func (*Packets) ProtoMessage() {}
 
-func (x *Frames) ProtoReflect() protoreflect.Message {
+func (x *Packets) ProtoReflect() protoreflect.Message {
 	mi := &file_veilnet_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -1274,14 +1282,14 @@ func (x *Frames) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use Frames.ProtoReflect.Descriptor instead.
-func (*Frames) Descriptor() ([]byte, []int) {
+// Deprecated: Use Packets.ProtoReflect.Descriptor instead.
+func (*Packets) Descriptor() ([]byte, []int) {
 	return file_veilnet_proto_rawDescGZIP(), []int{19}
 }
 
-func (x *Frames) GetFrames() []*Frame {
+func (x *Packets) GetPackets() []*Packet {
 	if x != nil {
-		return x.Frames
+		return x.Packets
 	}
 	return nil
 }
@@ -2145,7 +2153,8 @@ type StartAnchorRequest struct {
 	Ip            string                 `protobuf:"bytes,3,opt,name=ip,proto3" json:"ip,omitempty"`
 	Rift          bool                   `protobuf:"varint,4,opt,name=rift,proto3" json:"rift,omitempty"`
 	Portal        bool                   `protobuf:"varint,5,opt,name=portal,proto3" json:"portal,omitempty"`
-	Tracer        *TracerConfig          `protobuf:"bytes,6,opt,name=tracer,proto3" json:"tracer,omitempty"`
+	Conduit       bool                   `protobuf:"varint,6,opt,name=conduit,proto3" json:"conduit,omitempty"`
+	Tracer        *TracerConfig          `protobuf:"bytes,7,opt,name=tracer,proto3" json:"tracer,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2215,6 +2224,13 @@ func (x *StartAnchorRequest) GetPortal() bool {
 	return false
 }
 
+func (x *StartAnchorRequest) GetConduit() bool {
+	if x != nil {
+		return x.Conduit
+	}
+	return false
+}
+
 func (x *StartAnchorRequest) GetTracer() *TracerConfig {
 	if x != nil {
 		return x.Tracer
@@ -2229,8 +2245,9 @@ type StartAnchorWithFDRequest struct {
 	Ip             string                 `protobuf:"bytes,3,opt,name=ip,proto3" json:"ip,omitempty"`
 	Rift           bool                   `protobuf:"varint,4,opt,name=rift,proto3" json:"rift,omitempty"`
 	Portal         bool                   `protobuf:"varint,5,opt,name=portal,proto3" json:"portal,omitempty"`
-	Tracer         *TracerConfig          `protobuf:"bytes,6,opt,name=tracer,proto3" json:"tracer,omitempty"`
-	FileDescriptor int32                  `protobuf:"varint,7,opt,name=file_descriptor,json=fileDescriptor,proto3" json:"file_descriptor,omitempty"`
+	Conduit        bool                   `protobuf:"varint,6,opt,name=conduit,proto3" json:"conduit,omitempty"`
+	Tracer         *TracerConfig          `protobuf:"bytes,7,opt,name=tracer,proto3" json:"tracer,omitempty"`
+	FileDescriptor int32                  `protobuf:"varint,8,opt,name=file_descriptor,json=fileDescriptor,proto3" json:"file_descriptor,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -2296,6 +2313,13 @@ func (x *StartAnchorWithFDRequest) GetRift() bool {
 func (x *StartAnchorWithFDRequest) GetPortal() bool {
 	if x != nil {
 		return x.Portal
+	}
+	return false
+}
+
+func (x *StartAnchorWithFDRequest) GetConduit() bool {
+	if x != nil {
+		return x.Conduit
 	}
 	return false
 }
@@ -2403,16 +2427,20 @@ func (x *RemoveTaintRequest) GetTaint() string {
 }
 
 type GetInfoResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Tag           string                 `protobuf:"bytes,2,opt,name=tag,proto3" json:"tag,omitempty"`
-	Uid           string                 `protobuf:"bytes,3,opt,name=uid,proto3" json:"uid,omitempty"`
-	Cidr          string                 `protobuf:"bytes,4,opt,name=cidr,proto3" json:"cidr,omitempty"`
-	Rift          bool                   `protobuf:"varint,5,opt,name=rift,proto3" json:"rift,omitempty"`
-	Portal        bool                   `protobuf:"varint,6,opt,name=portal,proto3" json:"portal,omitempty"`
-	Public        bool                   `protobuf:"varint,7,opt,name=public,proto3" json:"public,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Tag             string                 `protobuf:"bytes,2,opt,name=tag,proto3" json:"tag,omitempty"`
+	Uid             string                 `protobuf:"bytes,3,opt,name=uid,proto3" json:"uid,omitempty"`
+	Cidr            string                 `protobuf:"bytes,4,opt,name=cidr,proto3" json:"cidr,omitempty"`
+	Rift            bool                   `protobuf:"varint,5,opt,name=rift,proto3" json:"rift,omitempty"`
+	Portal          bool                   `protobuf:"varint,6,opt,name=portal,proto3" json:"portal,omitempty"`
+	Conduit         bool                   `protobuf:"varint,7,opt,name=conduit,proto3" json:"conduit,omitempty"`
+	Public          bool                   `protobuf:"varint,8,opt,name=public,proto3" json:"public,omitempty"`
+	NumberOfTethers int32                  `protobuf:"varint,9,opt,name=number_of_tethers,json=numberOfTethers,proto3" json:"number_of_tethers,omitempty"`
+	NumberOfRoutes  int32                  `protobuf:"varint,10,opt,name=number_of_routes,json=numberOfRoutes,proto3" json:"number_of_routes,omitempty"`
+	NumberOfStreams int32                  `protobuf:"varint,11,opt,name=number_of_streams,json=numberOfStreams,proto3" json:"number_of_streams,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *GetInfoResponse) Reset() {
@@ -2487,11 +2515,39 @@ func (x *GetInfoResponse) GetPortal() bool {
 	return false
 }
 
+func (x *GetInfoResponse) GetConduit() bool {
+	if x != nil {
+		return x.Conduit
+	}
+	return false
+}
+
 func (x *GetInfoResponse) GetPublic() bool {
 	if x != nil {
 		return x.Public
 	}
 	return false
+}
+
+func (x *GetInfoResponse) GetNumberOfTethers() int32 {
+	if x != nil {
+		return x.NumberOfTethers
+	}
+	return 0
+}
+
+func (x *GetInfoResponse) GetNumberOfRoutes() int32 {
+	if x != nil {
+		return x.NumberOfRoutes
+	}
+	return 0
+}
+
+func (x *GetInfoResponse) GetNumberOfStreams() int32 {
+	if x != nil {
+		return x.NumberOfStreams
+	}
+	return 0
 }
 
 type GetRealmInfoResponse struct {
@@ -2677,12 +2733,13 @@ const file_veilnet_proto_rawDesc = "" +
 	"\x06cipher\x18\x02 \x01(\fR\x06cipher\x12.\n" +
 	"\x13encrypted_stream_id\x18\x03 \x01(\fR\x11encryptedStreamId\"+\n" +
 	"\fStreamUpdate\x12\x1b\n" +
-	"\tstream_id\x18\x02 \x01(\tR\bstreamId\"\x06\n" +
-	"\x04Echo\"\x1b\n" +
-	"\x05Frame\x12\x12\n" +
-	"\x04data\x18\x01 \x01(\fR\x04data\"0\n" +
-	"\x06Frames\x12&\n" +
-	"\x06frames\x18\x01 \x03(\v2\x0e.veilnet.FrameR\x06frames\"j\n" +
+	"\tstream_id\x18\x02 \x01(\tR\bstreamId\"\x1a\n" +
+	"\x04Echo\x12\x12\n" +
+	"\x04cidr\x18\x01 \x01(\tR\x04cidr\"\x1c\n" +
+	"\x06Packet\x12\x12\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data\"4\n" +
+	"\aPackets\x12)\n" +
+	"\apackets\x18\x01 \x03(\v2\x0f.veilnet.PacketR\apackets\"j\n" +
 	"\x04Data\x12\x10\n" +
 	"\x03dst\x18\x01 \x01(\tR\x03dst\x12\x1b\n" +
 	"\tstream_id\x18\x02 \x01(\tR\bstreamId\x12\x19\n" +
@@ -2729,34 +2786,41 @@ const file_veilnet_proto_rawDesc = "" +
 	"\binsecure\x18\x04 \x01(\bR\binsecure\x12\x0e\n" +
 	"\x02ca\x18\x05 \x01(\tR\x02ca\x12\x12\n" +
 	"\x04cert\x18\x06 \x01(\tR\x04cert\x12\x10\n" +
-	"\x03key\x18\a \x01(\tR\x03key\"\xc5\x01\n" +
+	"\x03key\x18\a \x01(\tR\x03key\"\xdf\x01\n" +
 	"\x12StartAnchorRequest\x12!\n" +
 	"\fguardian_url\x18\x01 \x01(\tR\vguardianUrl\x12!\n" +
 	"\fanchor_token\x18\x02 \x01(\tR\vanchorToken\x12\x0e\n" +
 	"\x02ip\x18\x03 \x01(\tR\x02ip\x12\x12\n" +
 	"\x04rift\x18\x04 \x01(\bR\x04rift\x12\x16\n" +
-	"\x06portal\x18\x05 \x01(\bR\x06portal\x12-\n" +
-	"\x06tracer\x18\x06 \x01(\v2\x15.veilnet.TracerConfigR\x06tracer\"\xf4\x01\n" +
+	"\x06portal\x18\x05 \x01(\bR\x06portal\x12\x18\n" +
+	"\aconduit\x18\x06 \x01(\bR\aconduit\x12-\n" +
+	"\x06tracer\x18\a \x01(\v2\x15.veilnet.TracerConfigR\x06tracer\"\x8e\x02\n" +
 	"\x18StartAnchorWithFDRequest\x12!\n" +
 	"\fguardian_url\x18\x01 \x01(\tR\vguardianUrl\x12!\n" +
 	"\fanchor_token\x18\x02 \x01(\tR\vanchorToken\x12\x0e\n" +
 	"\x02ip\x18\x03 \x01(\tR\x02ip\x12\x12\n" +
 	"\x04rift\x18\x04 \x01(\bR\x04rift\x12\x16\n" +
-	"\x06portal\x18\x05 \x01(\bR\x06portal\x12-\n" +
-	"\x06tracer\x18\x06 \x01(\v2\x15.veilnet.TracerConfigR\x06tracer\x12'\n" +
-	"\x0ffile_descriptor\x18\a \x01(\x05R\x0efileDescriptor\"'\n" +
+	"\x06portal\x18\x05 \x01(\bR\x06portal\x12\x18\n" +
+	"\aconduit\x18\x06 \x01(\bR\aconduit\x12-\n" +
+	"\x06tracer\x18\a \x01(\v2\x15.veilnet.TracerConfigR\x06tracer\x12'\n" +
+	"\x0ffile_descriptor\x18\b \x01(\x05R\x0efileDescriptor\"'\n" +
 	"\x0fAddTaintRequest\x12\x14\n" +
 	"\x05taint\x18\x01 \x01(\tR\x05taint\"*\n" +
 	"\x12RemoveTaintRequest\x12\x14\n" +
-	"\x05taint\x18\x01 \x01(\tR\x05taint\"\x9d\x01\n" +
+	"\x05taint\x18\x01 \x01(\tR\x05taint\"\xb9\x02\n" +
 	"\x0fGetInfoResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
 	"\x03tag\x18\x02 \x01(\tR\x03tag\x12\x10\n" +
 	"\x03uid\x18\x03 \x01(\tR\x03uid\x12\x12\n" +
 	"\x04cidr\x18\x04 \x01(\tR\x04cidr\x12\x12\n" +
 	"\x04rift\x18\x05 \x01(\bR\x04rift\x12\x16\n" +
-	"\x06portal\x18\x06 \x01(\bR\x06portal\x12\x16\n" +
-	"\x06public\x18\a \x01(\bR\x06public\"_\n" +
+	"\x06portal\x18\x06 \x01(\bR\x06portal\x12\x18\n" +
+	"\aconduit\x18\a \x01(\bR\aconduit\x12\x16\n" +
+	"\x06public\x18\b \x01(\bR\x06public\x12*\n" +
+	"\x11number_of_tethers\x18\t \x01(\x05R\x0fnumberOfTethers\x12(\n" +
+	"\x10number_of_routes\x18\n" +
+	" \x01(\x05R\x0enumberOfRoutes\x12*\n" +
+	"\x11number_of_streams\x18\v \x01(\x05R\x0fnumberOfStreams\"_\n" +
 	"\x14GetRealmInfoResponse\x12\x14\n" +
 	"\x05realm\x18\x01 \x01(\tR\x05realm\x12\x19\n" +
 	"\brealm_id\x18\x02 \x01(\tR\arealmId\x12\x16\n" +
@@ -2816,7 +2880,7 @@ const file_veilnet_proto_rawDesc = "" +
 	"\aGetInfo\x12\x16.google.protobuf.Empty\x1a\x18.veilnet.GetInfoResponse\x12E\n" +
 	"\fGetRealmInfo\x12\x16.google.protobuf.Empty\x1a\x1d.veilnet.GetRealmInfoResponse\x12C\n" +
 	"\vGetVeilInfo\x12\x16.google.protobuf.Empty\x1a\x1c.veilnet.GetVeilInfoResponse\x12@\n" +
-	"\x0fGetTracerConfig\x12\x16.google.protobuf.Empty\x1a\x15.veilnet.TracerConfigB#Z!github.com/veil-net/conflux/protob\x06proto3"
+	"\x0fGetTracerConfig\x12\x16.google.protobuf.Empty\x1a\x15.veilnet.TracerConfigB#Z!github.com/veil-net/veilnet/protob\x06proto3"
 
 var (
 	file_veilnet_proto_rawDescOnce sync.Once
@@ -2854,8 +2918,8 @@ var file_veilnet_proto_goTypes = []any{
 	(*StreamResponse)(nil),           // 18: veilnet.StreamResponse
 	(*StreamUpdate)(nil),             // 19: veilnet.StreamUpdate
 	(*Echo)(nil),                     // 20: veilnet.Echo
-	(*Frame)(nil),                    // 21: veilnet.Frame
-	(*Frames)(nil),                   // 22: veilnet.Frames
+	(*Packet)(nil),                   // 21: veilnet.Packet
+	(*Packets)(nil),                  // 22: veilnet.Packets
 	(*Data)(nil),                     // 23: veilnet.Data
 	(*LocalNetwork)(nil),             // 24: veilnet.LocalNetwork
 	(*LocalNetworks)(nil),            // 25: veilnet.LocalNetworks
@@ -2885,7 +2949,7 @@ var file_veilnet_proto_goTypes = []any{
 var file_veilnet_proto_depIdxs = []int32{
 	0,  // 0: veilnet.Header.type:type_name -> veilnet.MessageType
 	2,  // 1: veilnet.Header.role:type_name -> veilnet.Role
-	21, // 2: veilnet.Frames.frames:type_name -> veilnet.Frame
+	21, // 2: veilnet.Packets.packets:type_name -> veilnet.Packet
 	24, // 3: veilnet.LocalNetworks.local_networks:type_name -> veilnet.LocalNetwork
 	26, // 4: veilnet.RemoteNetworks.remote_networks:type_name -> veilnet.RemoteNetwork
 	1,  // 5: veilnet.Cmd.type:type_name -> veilnet.CmdType

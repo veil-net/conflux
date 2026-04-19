@@ -63,7 +63,9 @@ func (s *ServiceImpl) Run() {
 		GuardianUrl: config.Guardian,
 		AnchorToken: config.Token,
 		Ip:          config.IP,
-		Portal:      !config.Rift,
+		Rift:        config.Rift,
+		Portal:      config.Portal,
+		Conduit:     config.Conduit,
 		Tracer: &pb.TracerConfig{
 			Enabled:  config.Tracer.Enabled,
 			Endpoint: config.Tracer.Endpoint,

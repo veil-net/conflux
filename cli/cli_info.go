@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/veil-net/conflux/anchor"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -38,15 +39,16 @@ func (cmd *InfoConflux) Run() error {
 		Logger.Sugar().Errorf("failed to get conflux info: %v", err)
 		return err
 	}
-	fmt.Println("Conflux Info")
-	fmt.Println("------------")
-	fmt.Printf("  %-8s %s\n", "ID:", info.GetId())
-	fmt.Printf("  %-8s %s\n", "Tag:", info.GetTag())
-	fmt.Printf("  %-8s %s\n", "UID:", info.GetUid())
-	fmt.Printf("  %-8s %s\n", "CIDR:", info.GetCidr())
-	fmt.Printf("  %-8s %v\n", "Rift:", info.GetRift())
-	fmt.Printf("  %-8s %v\n", "Portal:", info.GetPortal())
-	fmt.Printf("  %-8s %v\n", "Public:", info.GetPublic())
+	out, err := protojson.MarshalOptions{
+		Multiline:       true,
+		Indent:          "  ",
+		UseProtoNames:   true,
+		EmitUnpopulated: true,
+	}.Marshal(info)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(out))
 	return nil
 }
 
@@ -90,11 +92,16 @@ func (cmd *InfoRealm) Run() error {
 		Logger.Sugar().Errorf("failed to get realm info: %v", err)
 		return err
 	}
-	fmt.Println("Realm Info")
-	fmt.Println("----------")
-	fmt.Printf("  %-10s %s\n", "Realm:", info.GetRealm())
-	fmt.Printf("  %-10s %s\n", "Realm ID:", info.GetRealmId())
-	fmt.Printf("  %-10s %s\n", "Subnet:", info.GetSubnet())
+	out, err := protojson.MarshalOptions{
+		Multiline:       true,
+		Indent:          "  ",
+		UseProtoNames:   true,
+		EmitUnpopulated: true,
+	}.Marshal(info)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(out))
 	return nil
 }
 
@@ -119,11 +126,16 @@ func (cmd *InfoVeil) Run() error {
 		Logger.Sugar().Errorf("failed to get veil info: %v", err)
 		return err
 	}
-	fmt.Println("Veil Info")
-	fmt.Println("---------")
-	fmt.Printf("  %-10s %s\n", "Host:", info.GetVeilHost())
-	fmt.Printf("  %-10s %d\n", "Port:", info.GetVeilPort())
-	fmt.Printf("  %-10s %s\n", "Region:", info.GetRegion())
+	out, err := protojson.MarshalOptions{
+		Multiline:       true,
+		Indent:          "  ",
+		UseProtoNames:   true,
+		EmitUnpopulated: true,
+	}.Marshal(info)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(out))
 	return nil
 }
 
@@ -148,14 +160,15 @@ func (cmd *InfoTracer) Run() error {
 		Logger.Sugar().Errorf("failed to get tracer config: %v", err)
 		return err
 	}
-	fmt.Println("Tracer Info")
-	fmt.Println("-------------")
-	fmt.Printf("  %-10s %v\n", "Enabled:", info.GetEnabled())
-	fmt.Printf("  %-10s %s\n", "Endpoint:", info.GetEndpoint())
-	fmt.Printf("  %-10s %v\n", "Use TLS:", info.GetUseTls())
-	fmt.Printf("  %-10s %v\n", "Insecure:", info.GetInsecure())
-	fmt.Printf("  %-10s %s\n", "CA:", info.GetCa())
-	fmt.Printf("  %-10s %s\n", "Cert:", info.GetCert())
-	fmt.Printf("  %-10s %s\n", "Key:", info.GetKey())
+	out, err := protojson.MarshalOptions{
+		Multiline:       true,
+		Indent:          "  ",
+		UseProtoNames:   true,
+		EmitUnpopulated: true,
+	}.Marshal(info)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(out))
 	return nil
 }

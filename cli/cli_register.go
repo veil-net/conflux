@@ -17,6 +17,7 @@ type Register struct {
 	RegistrationToken string   `short:"t" help:"The registration token" env:"VEILNET_REGISTRATION_TOKEN" json:"registration_token"`
 	Rift              bool     `short:"r" help:"Enable rift mode, default: false" default:"false" env:"VEILNET_CONFLUX_RIFT" json:"rift"`
 	Portal            bool     `short:"p" help:"Enable portal mode, default: false" default:"false" env:"VEILNET_CONFLUX_PORTAL" json:"portal"`
+	Conduit           bool     `short:"c" help:"Enable conduit mode, default: false" default:"false" env:"VEILNET_CONFLUX_CONDUIT" json:"conduit"`
 	Guardian          string   `help:"The Guardian URL (Authentication Server), default: https://guardian.veilnet.app" default:"https://guardian.veilnet.app" env:"VEILNET_GUARDIAN" json:"guardian"`
 	Tag               string   `help:"The tag for the conflux" env:"VEILNET_CONFLUX_TAG" json:"tag"`
 	IP                string   `help:"The IP of the conflux" env:"VEILNET_CONFLUX_IP" json:"ip"`
@@ -84,6 +85,7 @@ func (cmd *Register) Run() error {
 		Guardian:  cmd.Guardian,
 		Rift:      cmd.Rift,
 		Portal:    cmd.Portal,
+		Conduit:   cmd.Conduit,
 		IP:        cmd.IP,
 		Taints:    cmd.Taints,
 		Tracer:    tracerConfig,
@@ -138,6 +140,7 @@ func (cmd *Register) Run() error {
 		Ip:          config.IP,
 		Portal:      config.Portal,
 		Rift:        config.Rift,
+		Conduit:     config.Conduit,
 		Tracer: &pb.TracerConfig{
 			Enabled:  config.Tracer.Enabled,
 			Endpoint: config.Tracer.Endpoint,

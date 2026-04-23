@@ -1,6 +1,9 @@
 package cli
 
 import (
+	"errors"
+	"os"
+
 	"github.com/veil-net/conflux/anchor"
 	"github.com/veil-net/conflux/service"
 )
@@ -19,8 +22,10 @@ func (cmd *Down) Run() error {
 	// Delete the configuration
 	err := anchor.DeleteConfig()
 	if err != nil {
-		Logger.Sugar().Errorf("failed to delete configuration: %v", err)
-		return err
+		if !errors.Is(err, os.ErrNotExist) {
+			Logger.Sugar().Errorf("failed to delete configuration: %v", err)
+			return err
+		}
 	}
 
 	// Remove the service

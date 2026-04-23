@@ -58,6 +58,19 @@ func (s *ServiceImpl) Run() {
 		return
 	}
 
+	var tracerConfig *pb.TracerConfig
+	if config.Tracer != nil {
+		tracerConfig = &pb.TracerConfig{
+			Enabled:  config.Tracer.Enabled,
+			Endpoint: config.Tracer.Endpoint,
+			UseTls:   config.Tracer.UseTLS,
+			Insecure: config.Tracer.Insecure,
+			Ca:       config.Tracer.CAFile,
+			Cert:     config.Tracer.CertFile,
+			Key:      config.Tracer.KeyFile,
+		}
+	}
+
 	// Start the anchor
 	_, err = anchor.StartAnchor(context.Background(), &pb.StartAnchorRequest{
 		GuardianUrl: config.Guardian,
@@ -66,15 +79,7 @@ func (s *ServiceImpl) Run() {
 		Rift:        config.Rift,
 		Portal:      config.Portal,
 		Conduit:     config.Conduit,
-		Tracer: &pb.TracerConfig{
-			Enabled:  config.Tracer.Enabled,
-			Endpoint: config.Tracer.Endpoint,
-			UseTls:   config.Tracer.UseTLS,
-			Insecure: config.Tracer.Insecure,
-			Ca:       config.Tracer.CAFile,
-			Cert:     config.Tracer.CertFile,
-			Key:      config.Tracer.KeyFile,
-		},
+		Tracer:     tracerConfig,
 	})
 	if err != nil {
 		Logger.Sugar().Errorf("failed to start anchor: %v", err)

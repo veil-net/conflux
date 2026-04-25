@@ -1,6 +1,25 @@
 # VeilNet Conflux
 
-VeilNet Conflux is a networking service that connects to VeilNet, a decentralized post-quantum secure network. For installation, configuration, and usage, see the [official documentation](https://docs.veilnet.app).
+VeilNet Conflux is a networking service that connects to VeilNet, a decentralized post-quantum secure network. For installation, configuration, and usage, see the [official documentation](https://veilnet.net/docs/conflux/devop/quick-start).
+
+## Quick Start Summary
+
+Use this as a fast checklist before deeper configuration:
+
+1. Install the Conflux binary and place it in your PATH (for example as `veilnet-conflux`).
+2. Open the [VeilNet Console](https://console.veilnet.app/) and sign in.
+   - Then create a registration token from the console.
+   - **Terra Realm is regionless and free to use.**
+   - **Other region specific realm requires a active conflux subscription**
+   - **Contact us to get Private Realm coupon for free early access**
+3. Register the node with your registration token **and set taints during registration**:
+   - `sudo veilnet-conflux register -t <registration-token> --taints <taint>`
+4. **Required: every node that should communicate must share at least one common taint.**
+   - If nodes do not share a taint, they cannot connect, even in the same Realm.
+   - You can also manage taints later with `veilnet-conflux taint add <taint>`.
+5. Validate connectivity by registering another node with the same token and taint, then test with `ping <veilnet-ip>`.
+
+For operational workflows, you can also run in debug mode (`register -d`) or remove a node (`unregister -t <registration-token>`). See the full quick start for details: [VeilNet DevOps Quick Start](https://veilnet.net/docs/conflux/devop/quick-start).
 
 ---
 
@@ -38,7 +57,7 @@ VeilNet Conflux is a networking service that connects to VeilNet, a decentralize
 
 ## How It Works
 
-VeilNet is an ephemeral secure network that differs fundamentally from traditional Peer-to-Peer mesh overlay VPN networks. For detailed information, see the [official documentation](https://docs.veilnet.app).
+VeilNet is an ephemeral secure network that differs fundamentally from traditional Peer-to-Peer mesh overlay VPN networks. For detailed information, see the [official documentation](https://veilnet.net/docs/conflux/devop/quick-start).
 
 ### Key Components
 
@@ -343,11 +362,11 @@ VeilNet access control is based on **affinity**. For two Conflux instances to co
 - A staging server with taints `dev,stage` can talk to a dev server with taints `dev` (subset), or to another staging server with `dev,stage`.
 - A production server with taint `prod` only talks to nodes that also have `prod` in their taint set.
 
-Taints can be set at registration or managed at runtime via the CLI. The key principle: implement access control **based on your business logic, rather than IP address or subnet**. For setup and usage, see the [official documentation](https://docs.veilnet.app).
+Taints can be set at registration or managed at runtime via the CLI. The key principle: implement access control **based on your business logic, rather than IP address or subnet**. For setup and usage, see the [official documentation](https://veilnet.net/docs/conflux/devop/quick-start).
 
 ## Support
 
-For installation and usage, see the [official documentation](https://docs.veilnet.app). For issues, questions, or contributions, please visit the [GitHub repository](https://github.com/veil-net/conflux).
+For installation and usage, see the [official documentation](https://veilnet.net/docs/conflux/devop/quick-start). For issues, questions, or contributions, please visit the [GitHub repository](https://github.com/veil-net/conflux).
 
 ## License
 

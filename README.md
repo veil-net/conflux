@@ -47,8 +47,9 @@ For operational workflows, you can also run in debug mode (`register -d`) or rem
 > **Code generation:** A guide for protobuf code generation in Python, JavaScript, C#, Rust, Java, and other languages is available at [docs.veilnet.app/developer/code-generation](https://docs.veilnet.app/developer/code-generation).
 
 > [!NOTE]
-> **Android Application:** You can make your own app with the veilnet.aar in the releases. The example of a VPN service is at /example/android/VeilNetVPNService.kt
-> Our app could be found at [Google Play Store](https://play.google.com/store/apps/details?id=app.veilnet.conflux&pcampaignid=web_share)
+> **Android Application:** The beta APK is available at [download.veilnet.org/veilnet-conflux-beta.apk](https://download.veilnet.org/veilnet-conflux-beta.apk).
+> You can also build your own Android client using the `veilnet.aar` package from releases and our example at `/example/android/VeilNetVPNService.kt`.
+> Our app is also available on the [Google Play Store](https://play.google.com/store/apps/details?id=app.veilnet.conflux&pcampaignid=web_share).
 
 > [!IMPORTANT]
 > **Beta v1.0.5 — Security update required:** A leftover configuration related to the old credit system could cause Conflux in portal mode to forward traffic from other users towards the internet. This may route traffic through regions with internet restrictions (e.g. China). **Beta-v1.0.5** fixes this: your Conflux portal will no longer act as an exit point to the internet for other users. If you run a portal node, you **must** update to Beta-v1.0.5 or later (use Docker image tag `Beta-v1.0.8` for the current release). Note: if you want internet access for a Conflux rift node, you must run your own self-hosted Conflux portal node.

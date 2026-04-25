@@ -70,45 +70,46 @@ class VeilNetVPNService : VpnService() {
                     return START_NOT_STICKY
                 }
 
-                anchor = Anchor_()
-                try {
-                    anchor!!.start(guardian, token, "", true, false)
-                } catch (e: Exception) {
-                    resultReceiver?.send(RESULT_FAILURE, Bundle().apply {
-                        putString("error", e.message ?: "Failed to start anchor")
-                    })
-                    stopSelf()
-                    return START_NOT_STICKY
-                }
-
-                try {
-                    val cidr = anchor!!.cidr
-                    val (ip, mask) = cidr.split("/")
-                    val gatewayCIDR = anchor!!.gatewayCIDR
-                    val (gatewayIP, gatewayMask) = gatewayCIDR.split("/")
-                    val builder = Builder()
-                        .setSession("VeilNet")
-                        .addAddress(ip, mask.toInt())
-                        .addDnsServer(gatewayIP)
-                        .addRoute("0.0.0.0", 0)
-                        .setMtu(1500)
-                        .addDisallowedApplication(applicationContext.packageName)
-                    tunInterface = builder.establish()
-                    serviceScope.launch {
-                        anchor!!.attachWithFileDescriptor(tunInterface!!.detachFd().toLong())
-                    }
-                } catch (e: Exception) {
-                    resultReceiver?.send(RESULT_FAILURE, Bundle().apply {
-                        putString("error", e.message)
-                    })
-                    stopSelf()
-                    return START_NOT_STICKY
-                }
-
                 val notification = buildNotification()
                 startForeground(1, notification)
 
-                resultReceiver?.send(RESULT_SUCCESS, null)
+                anchor = Anchor_()
+                serviceScope.launch {
+                    try {
+                        anchor!!.start(guardian, token, "", true, false, false)
+                    } catch (e: Exception) {
+                        resultReceiver?.send(RESULT_FAILURE, Bundle().apply {
+                            putString("error", e.message ?: "Failed to start anchor")
+                        })
+                        stopSelf()
+                        return@launch
+                    }
+
+                    try {
+                        val cidr = anchor!!.cidr
+                        val (ip, mask) = cidr.split("/")
+                        val gatewayCIDR = anchor!!.gatewayCIDR
+                        val (gatewayIP, _) = gatewayCIDR.split("/")
+                        val builder = Builder()
+                            .setSession("VeilNet")
+                            .addAddress(ip, mask.toInt())
+                            .addDnsServer(gatewayIP)
+                            .setMtu(1500)
+                            .addRoute("0.0.0.0", 0)
+                            .addDisallowedApplication(applicationContext.packageName)
+                        tunInterface = builder.establish()
+                            ?: throw IllegalStateException("Failed to establish VPN interface")
+
+                        resultReceiver?.send(RESULT_SUCCESS, null)
+                        anchor!!.attachWithFileDescriptor(tunInterface!!.detachFd().toLong())
+                    } catch (e: Exception) {
+                        resultReceiver?.send(RESULT_FAILURE, Bundle().apply {
+                            putString("error", e.message)
+                        })
+                        stopSelf()
+                        return@launch
+                    }
+                }
 
                 return START_STICKY
             }

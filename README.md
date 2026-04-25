@@ -6,7 +6,7 @@ VeilNet Conflux is a networking service that connects to VeilNet, a decentralize
 
 Use this as a fast checklist before deeper configuration:
 
-1. Install the Conflux binary and place it in your PATH (for example as `veilnet-conflux`).
+1. Download the Conflux binary from releases.
 2. Open the [VeilNet Console](https://console.veilnet.app/) and sign in.
    - Then create a registration token from the console.
    - **Terra Realm is regionless and free to use.**

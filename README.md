@@ -26,6 +26,9 @@ For operational workflows, you can also run in debug mode (`register -d`) or rem
 ## Important notices
 
 > [!IMPORTANT]
+> **Beta-v1.0.12 — Performance update (breaking change):** Switches to a modified WebRTC stack that automatically selects and switches to optimal connecting pairs. Optimises Anchor protocol data frames for lower overhead and better throughput. **Breaking change:** all participating Conflux nodes must run **Beta-v1.0.13** (or later) to communicate. **Recommended:** update all nodes for better performance and compatibility.
+
+> [!IMPORTANT]
 > **Beta-v1.0.11 — Performance update:** Significantly improves stream route and tether exploration, while reducing coroutine overhead. Expect noticeably better performance on low-end devices with fewer CPU cores.
 
 > [!IMPORTANT]

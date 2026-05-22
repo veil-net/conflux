@@ -4,6 +4,8 @@
 # Usage: ./build_xgo.sh [targets]
 # If no targets specified, builds for common platforms
 
+go install github.com/crazy-max/xgo@latest
+
 # Create bin directory if it doesn't exist
 mkdir -p bin
 
@@ -19,12 +21,6 @@ if [ $# -eq 0 ]; then
     )
 else
     TARGETS=("$@")
-fi
-
-# Check if xgo is installed
-if ! command -v xgo &> /dev/null; then
-    echo "xgo is not installed. Installing..."
-    go install github.com/crazy-max/xgo@latest
 fi
 
 # Build for each target

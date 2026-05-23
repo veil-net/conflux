@@ -26,22 +26,10 @@ For operational workflows, you can also run in debug mode (`register -d`) or rem
 ## Important notices
 
 > [!IMPORTANT]
-> **Beta-v1.0.12 — Performance update (breaking change):** Switches to a modified WebRTC stack that automatically selects and switches to optimal connecting pairs. Optimises Anchor protocol data frames for lower overhead and better throughput. **Breaking change:** all participating Conflux nodes must run **Beta-v1.0.13** (or later) to communicate. **Recommended:** update all nodes for better performance and compatibility.
+> **Beta-v1.0.13 — Performance update (breaking change):** Fixed a issue that may prevent DNS working properly on Windows in Rift mode. Implemented a fallback stream for reducing cold start waiting time when destination is public internet.
 
 > [!IMPORTANT]
-> **Beta-v1.0.11 — Performance update:** Significantly improves stream route and tether exploration, while reducing coroutine overhead. Expect noticeably better performance on low-end devices with fewer CPU cores.
-
-> [!IMPORTANT]
-> **Beta-v1.0.9 — Conduit mode (internet sharing in the same Realm):** Conduit mode returns controlled internet sharing for peers in the same Realm. When Conduit mode is enabled, your Conflux can relay internet-bound traffic for other Realm peers even if those peers are not trusted. This only enables internet relay: untrusted peers still cannot access your Conflux IP or any of your local network IP ranges. **Compatibility requirement:** all participating Conflux nodes must run **Beta-v1.0.9** for Conduit mode to work.
-
-> [!NOTE]
-> **Beta v1.0.8:** Optimises WebRTC settings. Trusted peers pre-establish tethers to cut cold-start time; streams are still created on demand. **Not a breaking change**—upgrade when convenient.
-
-> [!NOTE]
-> **Beta v1.0.7:** Fixes a bug that could invalidate an IP claim under a race condition. Adds the `info id` subcommand (`conflux info id`) to print the Conflux node ID on a single line for scripts and GUI client integration. **Not a breaking change**—upgrade when convenient.
-
-> [!NOTE]
-> **Beta v1.0.6:** Optimises the Exp3 routing algorithm with a cap on exploration so that large deployments with many similarly performing peers do not over-explore. This reduces latency from Exp exploration. **Not a breaking change**—upgrade when convenient.
+> **Beta-v1.0.12 — Performance update (breaking change):** Switches to a modified WebRTC stack that automatically selects and switches to optimal connecting pairs. Optimises Anchor protocol data frames for lower overhead and better throughput. **Breaking change:** all participating Conflux nodes must run **Beta-v1.0.12** (or later) to communicate. **Recommended:** update all nodes for better performance and compatibility.
 
 > [!WARNING]
 > **Access control:** Due to the change of access control, Conflux nodes by default will not be able to connect with each other. You must give at least one common taint via `--taints`.

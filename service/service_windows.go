@@ -387,6 +387,17 @@ func (s *service) Execute(args []string, changeRequests <-chan svc.ChangeRequest
 		return
 	}
 
+	// Add taints
+	for _, taint := range config.Taints {
+		_, err = anchor.AddTaint(context.Background(), &pb.AddTaintRequest{
+			Taint: taint,
+		})
+		if err != nil {
+			Logger.Sugar().Warnf("failed to add taint: %v", err)
+			continue
+		}
+	}
+
 	// Set the status to running
 	changes <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}
 	if elog != nil {

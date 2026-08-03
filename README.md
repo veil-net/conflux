@@ -17,22 +17,26 @@ Use this as a fast checklist before deeper configuration:
 4. **Required: every node that should communicate must share at least one common taint.**
    - If nodes do not share a taint, they cannot connect, even in the same Realm.
    - You can also manage taints later with `veilnet-conflux taint add <taint>`.
-5. Validate connectivity by registering another node with the same token and taint, then test with `ping <veilnet-ip>`.
+5. Optionally enable routing modes at register time (or via env vars). Modes can be combined:
+   - **`--rift` / `-r`** (`VEILNET_CONFLUX_RIFT`): full-tunnel. Replaces the default route in that network namespace with the VeilNet TUN, so all traffic goes through VeilNet. Prefer a dedicated namespace (container/VM), not the host’s main namespace, unless you intend to route the whole machine.
+   - **`--portal` / `-p`** (`VEILNET_CONFLUX_PORTAL`): mini SD-WAN. Scans locally reachable networks (LAN/VPC) and advertises them to trusted nodes, which can use this node as a gateway. Also NATs public destinations for known peers.
+   - **`--conduit` / `-c`** (`VEILNET_CONFLUX_CONDUIT`): internet exit. NATs and relays traffic from peers toward the public internet, including untrusted peers. Use only when you intentionally want this node to be an egress gateway.
+6. Validate connectivity by registering another node with the same token and taint, then test with `ping <veilnet-ip>`.
 
-For operational workflows, you can also run in debug mode (`register -d`) or remove a node (`unregister -t <registration-token>`). See the full quick start for details: [VeilNet DevOps Quick Start](https://veilnet.net/docs/conflux/devop/quick-start).
+Example with modes:
+
+```bash
+sudo veilnet-conflux register -t <registration-token> --taints <taint> --rift --portal
+```
+
+For operational workflows, you can also run in debug mode (`register -d`) or remove a node (`unregister -t <registration-token>`). See the full quick start for details: [VeilNet DevOps Quick Start](https://veilnet.net/docs/conflux/devop/quick-start). For rift and portal deep-dives, see [Rift and Portal](https://veilnet.net/docs/conflux/devop/access-control/rift-and-portal).
 
 ---
 
 ## Important notices
 
 > [!IMPORTANT]
-> **Beta-v1.0.13 — Performance update (breaking change):** Fixed a issue that may prevent DNS working properly on Windows in Rift mode. Implemented a fallback stream for reducing cold start waiting time when destination is public internet.
-
-> [!IMPORTANT]
-> **Beta-v1.0.12 — Performance update (breaking change):** Switches to a modified WebRTC stack that automatically selects and switches to optimal connecting pairs. Optimises Anchor protocol data frames for lower overhead and better throughput. **Breaking change:** all participating Conflux nodes must run **Beta-v1.0.12** (or later) to communicate. **Recommended:** update all nodes for better performance and compatibility.
-
-> [!WARNING]
-> **Access control:** Due to the change of access control, Conflux nodes by default will not be able to connect with each other. You must give at least one common taint via `--taints`.
+> **Beta-v1.0.15:** Tightens the data path so all traffic now goes through the gVisor virtual SD-WAN stack. **Backward compatible** with previous beta nodes. This is planned as the **last beta** release; a full release is expected later this year, along with a fully self-hosted control plane (Guardian and management UI, all local).
 
 > [!NOTE]
 > **Code generation:** A guide for protobuf code generation in Python, JavaScript, C#, Rust, Java, and other languages is available at [docs.veilnet.app/developer/code-generation](https://docs.veilnet.app/developer/code-generation).
@@ -41,9 +45,6 @@ For operational workflows, you can also run in debug mode (`register -d`) or rem
 > **Android Application:** The beta APK is available at [download.veilnet.org/veilnet-conflux-beta.apk](https://download.veilnet.org/veilnet-conflux-beta.apk).
 > You can also build your own Android client using the `veilnet.aar` package from releases and our example at `/example/android/VeilNetVPNService.kt`.
 > Our app is also available on the [Google Play Store](https://play.google.com/store/apps/details?id=app.veilnet.conflux&pcampaignid=web_share).
-
-> [!IMPORTANT]
-> **Beta v1.0.5 — Security update required:** A leftover configuration related to the old credit system could cause Conflux in portal mode to forward traffic from other users towards the internet. This may route traffic through regions with internet restrictions (e.g. China). **Beta-v1.0.5** fixes this: your Conflux portal will no longer act as an exit point to the internet for other users. If you run a portal node, you **must** update to Beta-v1.0.5 or later (use Docker image tag `Beta-v1.0.8` for the current release). Note: if you want internet access for a Conflux rift node, you must run your own self-hosted Conflux portal node.
 
 ---
 

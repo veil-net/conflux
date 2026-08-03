@@ -8,7 +8,8 @@ COPY ./logger ./logger
 COPY ./proto ./proto
 COPY ./service ./service
 COPY main.go ./
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o veilnet-conflux .
+RUN go install mvdan.cc/garble@latest
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 garble -literals -tiny build -ldflags="-s -w" -trimpath -o veilnet-conflux .
 
 
 FROM ubuntu:latest

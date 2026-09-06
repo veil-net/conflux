@@ -1,21 +1,21 @@
 # conflux
 
-conflux puts one machine on a VeilNet overlay with one command. It carries `anchord`
-and `anchorctl` inside itself, enrols against the public realm with no account and no
-key to manage, and comes back at the same overlay address after a reboot — so joining
-is one command and rejoining is none.
+conflux puts one machine on a VeilNet overlay with a single command. It bundles
+`anchord` and `anchorctl`, enrols against the public realm with no account and no key
+to manage, and comes back at the same overlay address after a reboot. Joining takes
+one command; rejoining takes none.
 
-Everything `anchorctl` can do, conflux can do: an argument vector conflux does not
-recognise is handed to it unchanged. What conflux adds on top is enrolment, credential
-renewal, a configuration file, and a boot service.
+Everything `anchorctl` can do, conflux can do too — any command conflux doesn't
+recognise is passed straight through to it unchanged. What conflux adds on top is
+enrolment, credential renewal, a configuration file, and a boot service.
 
-> **Status: in development.** The credential lasts seven days and renews itself; the
-> wire format underneath is not yet stable. See [docs/](docs/).
+> **Status: in development.** The credential lasts seven days and renews itself
+> automatically; the wire format underneath is not yet stable. See [docs/](docs/).
 
 ## Quick start
 
-Install the binary, run `conflux up` on one machine, run it on the next with the taint
-the first one printed. That is the whole of it.
+Install the binary, run `conflux up` on one machine, then run it on every other
+machine with the taint it printed. That's the whole setup.
 
 ### 1. Install the binary
 
@@ -29,10 +29,10 @@ $ sudo install -m 0755 conflux-linux-amd64 /usr/local/bin/conflux
 $ conflux version
 ```
 
-Install it *before* the next step. The boot service records the path it was started
-from, so a service pointed at `~/Downloads/conflux` breaks the day that file is tidied
-away. Building from source is `make anchor-bins && make build` — see
-[build.md](docs/build.md); every platform's particulars are in
+Do this before the next step: the boot service records the path it was installed
+from, so a service pointed at `~/Downloads/conflux` breaks the first time that file
+gets cleaned up. To build from source instead, see [build.md](docs/build.md)
+(`make anchor-bins && make build`); platform-specific notes are in
 [install.md](docs/install.md).
 
 ### 2. Bring up the first machine
@@ -66,7 +66,7 @@ Starting.
   service      active (systemd: conflux.service, enabled at boot)
 ```
 
-There is no account to create and no key to manage: `up` enrols this machine against
+There's no account to create and no key to manage — `up` enrols this machine against
 the public realm, starts an anchor, writes the configuration, and registers the boot
 service.
 
@@ -90,29 +90,30 @@ $ conflux peers
 ```
 
 `status` prints conflux's state — mode, taint, address, credential expiry, service —
-and `anchorctl status` beneath it. `peers` is not conflux's at all; it is one of the
+and `anchorctl status` beneath it. `peers` isn't conflux's at all; it's one of the
 commands handed straight to `anchorctl`.
 
-**That is the end of the setup.** A reboot needs nothing typed: the service is
-registered and enabled, the credential renews itself, and the machine comes back at
-the same overlay address. `conflux down` stops the anchor now and leaves both the
-service and the configuration in place; `conflux uninstall` removes them.
+**That's the whole setup.** A reboot needs nothing typed: the service is registered
+and enabled, the credential renews itself, and the machine comes back at the same
+overlay address. `conflux down` stops the anchor now and leaves the service and
+configuration in place; `conflux uninstall` removes them.
 
-### Publishing a service instead: the reverse proxy
+### Reverse proxy: publish a service without an interface
 
-On a machine where you cannot get `CAP_NET_ADMIN` — a container, a locked-down host,
-a CI runner — take no interface and publish the ports you want reachable instead:
+On a machine where you can't get `CAP_NET_ADMIN` — a container, a locked-down host, a
+CI runner — skip the interface and publish the ports you want reachable instead:
 
 ```console
 $ sudo conflux proxy 8080=127.0.0.1:3000 53/udp=127.0.0.1:53
 ```
 
 A peer that connects to this machine's overlay port 8080 gets a fresh connection to
-`127.0.0.1:3000`. Same enrolment, same `--taint`, same boot service; nothing appears
-on the host, and the anchor itself needs no privilege at all — the `sudo` is for
-registering the service, so that the proxy is still there after a reboot.
+`127.0.0.1:3000`. Enrolment, `--taint`, and the boot service all work the same as
+`up`; nothing appears on the host, and the anchor itself needs no privilege at all —
+`sudo` is only for registering the boot service, so the proxy survives a reboot.
 
-The grammar is `OVERLAYPORT[/NETWORK]=BACKEND`, repeated:
+Each spec is `OVERLAYPORT[/NETWORK]=BACKEND`; give more than one to publish more than
+one port:
 
 | Spec | Means |
 |---|---|
@@ -120,24 +121,26 @@ The grammar is `OVERLAYPORT[/NETWORK]=BACKEND`, repeated:
 | `53/udp=127.0.0.1:53` | UDP on overlay port 53 → `127.0.0.1:53` |
 | `5432=[::1]:5432` | an IPv6 backend, bracketed |
 
-The network defaults to `tcp`. The backend is dialled per connection and is not
-resolved in advance, so a name that does not resolve yet is fine. To change the set
-on an anchor that is already running, without a restart, that one is `anchorctl`'s:
+The network defaults to `tcp`. The backend is dialled fresh per connection rather than
+resolved up front, so a name that doesn't resolve yet is fine.
+
+To add or remove a proxy on an anchor that's already running, without a restart, use
+`anchorctl`'s own proxy command — it's a different thing from `conflux proxy`, which
+decides the mode the machine boots into:
 
 ```console
 $ conflux anchorctl proxy                            # what it is serving
 $ conflux anchorctl proxy -add 9000=127.0.0.1:9000   # one more, now
 ```
 
-Those two are not the same command as `conflux proxy`, which decides the mode this
-machine boots into. Both are listed under [Commands](#commands).
+Both are listed under [Commands](#commands).
 
-### Joining over a cable: the generic uplink
+### Generic uplink: join over a cable
 
-An anchor normally binds a UDP socket, so it needs a host IP network under it. An
-uplink replaces that: a file descriptor becomes the medium, and no socket is bound at
-all. Give each end of the cable the device, and the machines are in one realm with no
-IP network anywhere between them:
+An anchor normally binds a UDP socket, so it needs a host IP network underneath it. An
+uplink replaces that: a file descriptor becomes the medium instead, and no socket is
+bound at all. Point each end of a cable at its device, and the two machines share a
+realm with no IP network between them:
 
 ```console
 $ sudo conflux up --uplink /dev/ttyUSB0:115200 --taint brhk-2mq9-tzva-6pjs --no-ipv4
@@ -148,9 +151,8 @@ $ sudo conflux up --uplink /dev/ttyUSB0:115200 --taint brhk-2mq9-tzva-6pjs --no-
   service      active (systemd: conflux.service, enabled at boot)
 ```
 
-`--uplink` decides the *medium*, and the command it is written on decides what this
-machine gets out of it — so it goes on either verb, and the two are independent
-questions:
+`--uplink` decides the *medium*; the verb you put it on decides what the machine gets
+out of it. The two questions are independent, so it works on either command:
 
 ```console
 $ sudo conflux up --uplink /dev/ttyUSB0:115200               # a cable, and an interface
@@ -158,45 +160,44 @@ $ sudo conflux proxy 8080=127.0.0.1:3000 --uplink /dev/ttyS1  # a cable, and no 
 $ sudo conflux up --no-uplink                                 # back to the host's network
 ```
 
-Two things to know before the cable is the only thing plugged in:
+Two things worth knowing before you rely on the cable alone:
 
-**Enrol while the machine still has the internet.** Enrolment is an HTTPS call to the
-realm's API and the link cannot carry it — the credential is what admits this machine
-to the realm, so it has to exist before the realm is reachable. Run the command once
-where there is a network, then move the machine; a second `conflux up` re-uses the
-identity and enrols nothing. Renewal has the same requirement, which is what makes a
-permanently offline uplink machine a seven-day deployment rather than an indefinite
-one.
+**Enrol while the machine still has internet access.** Enrolment is an HTTPS call to
+the realm's API, and the cable can't carry it — the credential that admits this
+machine to the realm has to exist before the realm is reachable at all. Run the
+command once on a network, then move the machine; a second `conflux up` reuses the
+identity and enrols nothing. Renewal needs the same connectivity, so a machine that
+never sees the internet again only stays enrolled for seven days.
 
-**The line has to be fast enough for a realm handshake.** That is a full TLS 1.3
-exchange with ML-DSA certificates in both directions, twenty to thirty kilobytes:
+**The line needs to be fast enough for a realm handshake.** That's a full TLS 1.3
+exchange with ML-DSA certificates in both directions — twenty to thirty kilobytes,
 comfortable at 115200 baud, usable at 19200, and marginal at 9600 against a
-sixty-second idle timeout. conflux says so when the speed you give is under 19200.
-The floor is the identity model's rather than the link's, which is why LoRa and the
-other duty-cycled radios are out of reach rather than merely slow.
+sixty-second idle timeout. conflux warns when the speed you give is under 19200. The
+limit comes from the identity model, not the link, which is why LoRa and other
+duty-cycled radios can't reach it at all rather than just being slow.
 
 See [uplink.md](docs/uplink.md) for the device forms, what an uplink refuses beside
-it, and the two limits it still has.
+it, and the limits it still has.
 
 ### Three things worth knowing
 
 **The prompt appears once.** conflux asks for an overlay IPv4 because thirty-two bits
-is too small to derive collision-free; the IPv6 address comes from this machine's
-identity and needs no answer. Blank is a valid answer and a common one. A second
-`conflux up` reads the configuration and prompts for nothing — changing a machine's
-address because somebody re-ran a command is not something conflux will do.
+are too few to derive without collisions; the IPv6 address comes from the machine's
+identity and needs no answer. Blank is a valid answer, and a common one. A second
+`conflux up` reads the existing configuration and prompts for nothing — conflux will
+never change a machine's address just because a command got run again.
 
-**The taint is the whole of who can reach you.** conflux generates one because the
-alternative is not "no restriction": an anchor with no taints carries the realm's
-default compartment, which every other unconfigured anchor in the realm also carries.
-Machines that share a taint can exchange data; machines that do not are not merely
-unreachable, they have no address for each other. See
+**The taint decides who can reach you.** conflux always generates one, because the
+alternative isn't "no restriction" — an anchor with no taints sits in the realm's
+default compartment, the same one every other unconfigured anchor sits in. Machines
+that share a taint can exchange data; machines that don't share one aren't merely
+unreachable, they have no address for each other at all. See
 [concepts.md](docs/concepts.md).
 
 **`up` and `proxy` are exclusive.** One daemon holds one anchor, and an anchor with a
-host interface cannot also serve a reverse proxy — the kernel owns the overlay address
-in that mode, so a service binds it directly and needs nothing from conflux. Running
-either replaces the other, and says so.
+host interface can't also serve a reverse proxy — the kernel owns the overlay address
+in that mode, so a service just binds it directly. Running either command replaces
+the other, and conflux says so when it does.
 
 ## The two modes
 
@@ -210,11 +211,11 @@ either replaces the other, and says so.
 | Can run over an uplink | yes, `--uplink` | yes, `--uplink` |
 | Boot service | yes | yes |
 
-**The mode and the medium are different questions.** The mode is what this machine
-gets out of the realm, and the two are exclusive. The medium is what the anchor
-reaches the realm over — the host's IP network, or a link named by `--uplink` — and
-either mode runs on either one. See [modes.md](docs/modes.md) and
-[uplink.md](docs/uplink.md).
+**Mode and medium are different questions.** The mode is what this machine gets out
+of the realm, and `up` and `proxy` are exclusive. The medium is what the anchor
+reaches the realm over — the host's IP network by default, or a link named by
+`--uplink` — and either mode works over either medium. See
+[modes.md](docs/modes.md) and [uplink.md](docs/uplink.md).
 
 ## Commands
 
@@ -230,14 +231,15 @@ either mode runs on either one. See [modes.md](docs/modes.md) and
 | `conflux anchorctl ARGS...` | run the embedded `anchorctl`, uninterpreted |
 | *anything else* | passed to `anchorctl` unchanged: `peers`, `routes`, `events`, `metrics`, `send`, `inspect`, … |
 
-**Eight names are conflux's and the rest are anchorctl's.** Two of them shadow a
-command anchorctl has, and each collision is resolved rather than guessed: bare
-`conflux status` is conflux's and prints anchorctl's underneath, while
-`conflux status -watch 5s` forwards; `conflux proxy 8080=127.0.0.1:3000` starts
-userspace mode, while `conflux anchorctl proxy -add 8080=127.0.0.1:3000` adds one to an
-anchor already running. `start`, `stop` and `restart` are refused rather than passed
-through, because running them directly would leave conflux's configuration describing
-an anchor that is not the one running.
+**Eight names are conflux's; everything else is anchorctl's.** Two of them shadow a
+command anchorctl already has, and each collision is resolved rather than guessed:
+bare `conflux status` is conflux's, and prints anchorctl's status beneath it, while
+`conflux status -watch 5s` forwards to anchorctl because it was given arguments.
+`conflux proxy 8080=127.0.0.1:3000` starts userspace mode; `conflux anchorctl proxy
+-add 8080=127.0.0.1:3000` adds a proxy to an anchor that's already running. `start`,
+`stop`, and `restart` are refused outright rather than passed through — running them
+directly would leave conflux's configuration describing an anchor that isn't the one
+actually running.
 
 ## Where things live
 
@@ -247,8 +249,8 @@ an anchor that is not the one running.
 | identity and state | `/var/lib/conflux/` | `/Library/Application Support/conflux/` | `%ProgramData%\conflux\` |
 | socket and token | `/run/conflux/` | `/var/run/conflux/` | `%ProgramData%\conflux\run\` |
 
-One directory per machine, root-owned, with no home directory anywhere in it — the
-boot service runs as root, and a path under `$HOME` is a path it cannot read. See
+One directory per machine, root-owned, with no home directory involved anywhere — the
+boot service runs as root, and a path under `$HOME` is a path it can't read. See
 [config.md](docs/config.md).
 
 ## Documentation
@@ -271,14 +273,15 @@ boot service runs as root, and a path under `$HOME` is a path it cannot read. Se
 
 ## What conflux is not
 
-It is not a second implementation of anything. Every packet decision, every credential
-check and every route belongs to [anchor](https://github.com/veil-net/anchor); conflux
-chooses the arguments and keeps the files. When something goes wrong on the wire,
-anchor's documentation is what describes it.
+It's not a second implementation of anything. Every packet decision, every credential
+check, and every route belongs to [anchor](https://github.com/veil-net/anchor);
+conflux just chooses the arguments and keeps the files. If something goes wrong on the
+wire, anchor's documentation is where to look.
 
-It does not change anchor's credential format or its protocol, and it does not
-reimplement a single thing `anchorctl` already does.
+It doesn't change anchor's credential format or protocol, and it doesn't reimplement
+anything `anchorctl` already does.
 
 ## License
 
-TBD.
+[CC BY-NC-SA 4.0](LICENSE) — free to share and adapt, with attribution, for
+non-commercial purposes, as long as anything built on it carries the same license.

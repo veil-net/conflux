@@ -119,6 +119,13 @@ func report(d paths.Dirs, cfg *config.Config, st anchorctl.Status, verb string) 
 		ui.Field("overlay", a)
 	}
 
+	// Before the mode, because it is what the mode is running over, and because on
+	// a link the absence of an underlay address is the surprising part: an anchor
+	// here advertises no way to be reached, which is the truth about a cable.
+	if cfg.Uplink != "" {
+		ui.Field("uplink", cfg.Uplink+" — no socket bound, no address advertised")
+	}
+
 	if cfg.Mode == config.ModeTUN {
 		ui.Field("interface", cfg.TUNInterface())
 	} else {

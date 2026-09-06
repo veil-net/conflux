@@ -146,3 +146,96 @@ func TestValidateTaint(t *testing.T) {
 		}
 	}
 }
+
+func TestParseUplinkSpec(t *testing.T) {
+	ok := []struct {
+		in   string
+		want UplinkSpec
+	}{
+		{"fd:3", UplinkSpec{FD: 3}},
+		{"fd:0", UplinkSpec{FD: 0}},
+		{"/dev/ttyUSB0", UplinkSpec{FD: -1, Path: "/dev/ttyUSB0"}},
+		{"/dev/ttyUSB0:115200", UplinkSpec{FD: -1, Path: "/dev/ttyUSB0", Baud: 115200}},
+		{" /dev/ttyS1:9600 ", UplinkSpec{FD: -1, Path: "/dev/ttyS1", Baud: 9600}},
+		// A path holding a colon is a path: only the last one can be a speed, and
+		// only when what follows it is a number.
+		{"/dev/serial/by-id/usb-FTDI:x", UplinkSpec{FD: -1, Path: "/dev/serial/by-id/usb-FTDI:x"}},
+	}
+
+	for _, tc := range ok {
+		got, err := ParseUplinkSpec(tc.in)
+		if err != nil {
+			t.Errorf("ParseUplinkSpec(%q) = error %v", tc.in, err)
+
+			continue
+		}
+
+		if got != tc.want {
+			t.Errorf("ParseUplinkSpec(%q) = %+v, want %+v", tc.in, got, tc.want)
+		}
+	}
+
+	bad := []string{
+		"",
+		"   ",
+		"fd:",
+		"fd:-1",
+		"fd:abc",
+		"/dev/ttyUSB0:0",  // a speed of zero is not a speed
+		"/dev/ttyUSB0:-1", // nor a negative one
+		":115200",         // a speed and no device
+	}
+
+	for _, in := range bad {
+		if got, err := ParseUplinkSpec(in); err == nil {
+			t.Errorf("ParseUplinkSpec(%q) = %+v, want an error", in, got)
+		}
+	}
+}
+
+// TestUplinkSpecRoundTrip is what keeps conflux.json and the -uplink flag the same
+// language: the config file stores what ParseUplinkSpec normalised, and it has to
+// parse back to the same link.
+func TestUplinkSpecRoundTrip(t *testing.T) {
+	for _, in := range []string{"fd:3", "/dev/ttyUSB0", "/dev/ttyUSB0:115200"} {
+		spec, err := ParseUplinkSpec(in)
+		if err != nil {
+			t.Fatalf("ParseUplinkSpec(%q) = error %v", in, err)
+		}
+
+		if spec.String() != in {
+			t.Errorf("ParseUplinkSpec(%q).String() = %q", in, spec.String())
+		}
+
+		again, err := ParseUplinkSpec(spec.String())
+		if err != nil || again != spec {
+			t.Errorf("round trip of %q gave %+v, %v", in, again, err)
+		}
+	}
+}
+
+// TestUplinkIsOrthogonalToMode pins the one thing about an uplink that is easy to
+// get wrong by analogy with the subnets and the proxies: it is the medium, not the
+// mode, so neither mode refuses it.
+func TestUplinkIsOrthogonalToMode(t *testing.T) {
+	tun := &Config{
+		Mode: ModeTUN, Taints: []string{"office"},
+		IPv4: "10.128.0.7/24", Uplink: "/dev/ttyUSB0:115200",
+	}
+	if err := tun.Validate(); err != nil {
+		t.Errorf("tun mode with an uplink: %v", err)
+	}
+
+	proxy := &Config{
+		Mode: ModeProxy, Taints: []string{"office"},
+		Proxies: []string{"8080=127.0.0.1:3000"}, Uplink: "fd:3",
+	}
+	if err := proxy.Validate(); err != nil {
+		t.Errorf("proxy mode with an uplink: %v", err)
+	}
+
+	bad := &Config{Mode: ModeTUN, Taints: []string{"office"}, Uplink: ":115200"}
+	if err := bad.Validate(); err == nil {
+		t.Error("a malformed uplink spec passed Validate")
+	}
+}

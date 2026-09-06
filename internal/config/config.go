@@ -79,6 +79,17 @@ type Config struct {
 	// TUN the kernel owns the overlay address, so a service binds it directly.
 	Proxies []string `json:"proxies,omitempty"`
 
+	// Uplink carries layer 1 over a link instead of the host's IP network:
+	// "fd:3" adopts a descriptor the supervisor was handed, "/dev/ttyUSB0" opens
+	// a device, "/dev/ttyUSB0:115200" opens it and sets the line speed. With one
+	// set no UDP socket is bound, no host interface is enumerated, and the anchor
+	// advertises no address, because a cable has none.
+	//
+	// Orthogonal to Mode, which is the other question: the uplink is what the
+	// anchor talks to the realm over, and the mode is what this machine gets out
+	// of it. Either mode runs on either medium.
+	Uplink string `json:"uplink,omitempty"`
+
 	TUNName    string `json:"tunName,omitempty"`
 	APIBaseURL string `json:"apiBaseUrl,omitempty"`
 
@@ -151,6 +162,12 @@ func (c *Config) Validate() error {
 
 	for _, s := range c.Proxies {
 		if _, err := ParseProxySpec(s); err != nil {
+			return err
+		}
+	}
+
+	if c.Uplink != "" {
+		if _, err := ParseUplinkSpec(c.Uplink); err != nil {
 			return err
 		}
 	}

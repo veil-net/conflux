@@ -40,7 +40,8 @@ disagree. The refusal names `up` and `down` and the escape hatch.
 ## `conflux up`
 
 ```
-conflux up [--taint T]... [--ipv4 PREFIX | --no-ipv4] [--subnet CIDR]... [--interface NAME] [--api URL]
+conflux up [--taint T]... [--ipv4 PREFIX | --no-ipv4] [--subnet CIDR]... [--interface NAME]
+           [--uplink DEV | --no-uplink] [--api URL]
 ```
 
 Enrols this machine if it has never been, starts an anchor in TUN mode, writes the
@@ -54,7 +55,14 @@ configuration, and registers the boot service.
 | `--no-ipv4` | IPv6-only, without prompting. |
 | `--subnet CIDR` | a private network this machine forwards for the realm; repeat for more. See [modes.md](modes.md). |
 | `--interface NAME` | the network interface name. Default `anchor0`. |
+| `--uplink DEV` | reach the realm over a link rather than the host's network: `/dev/ttyUSB0`, or `/dev/ttyUSB0:115200` with a line speed. See [uplink.md](uplink.md). |
+| `--no-uplink` | go back to the host's network on a machine configured for a link. |
 | `--api URL` | the enrolment API base. Default `https://api.veilnet.com.au`. |
+
+`--uplink` is the medium and the verb is the mode, so the flag means the same thing
+on `proxy`, and neither answer constrains the other. A malformed spec, and the `fd:N`
+form anchor takes but conflux's supervisor cannot hand over, are both refused here
+rather than by a daemon at the next boot.
 
 With neither `--ipv4` nor `--no-ipv4`, conflux prompts — once. Re-running it on a
 machine that already has a configuration keeps the existing address and asks nothing.
@@ -66,11 +74,16 @@ Needs root.
 ## `conflux proxy`
 
 ```
-conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T]... [--api URL]
+conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T]... [--uplink DEV | --no-uplink] [--api URL]
 ```
 
-Starts in userspace mode serving those backends. Same taint and API flags as `up`.
-Specs and flags may be written in either order.
+Starts in userspace mode serving those backends. Same taint, uplink and API flags as
+`up`. Specs and flags may be written in either order.
+
+The grammar is `OVERLAYPORT[/NETWORK]=BACKEND`: the network defaults to `tcp` and must
+be `tcp` or `udp`, the port is 1–65535, and a duplicate overlay port is refused rather
+than silently keeping the last. See [modes.md](modes.md) for the spec table, and
+`conflux anchorctl proxy` for adding and removing them on an anchor already running.
 
 Needs root, only to register the boot service.
 

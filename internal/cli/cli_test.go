@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/veil-net/conflux/anchor"
+	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/ui"
@@ -217,5 +218,80 @@ func TestStatusWithNoConfigExits78(t *testing.T) {
 	_, _, code := capture(t, "status")
 	if code != ExitNoConfig {
 		t.Errorf("status with no configuration exited %d, want %d", code, ExitNoConfig)
+	}
+}
+
+// TestProxyKeepsItsOwnUplinkFlag: --uplink is conflux proxy's, so the gate that
+// hands anchorctl's flags back must not catch it, and the splitter has to know it
+// takes a value -- otherwise the device path lands in the positional list and is
+// read as a port spec.
+func TestProxyKeepsItsOwnUplinkFlag(t *testing.T) {
+	for _, args := range [][]string{
+		{"--uplink", "/dev/ttyUSB0", "8080=127.0.0.1:3000"},
+		{"8080=127.0.0.1:3000", "--uplink=/dev/ttyUSB0:115200"},
+		{"--no-uplink", "8080=127.0.0.1:3000"},
+	} {
+		if hint := unknownProxyFlag(args); hint != "" {
+			t.Errorf("%v: unknownProxyFlag said %q", args, hint)
+		}
+
+		specs, _ := splitPositional(args)
+
+		if len(specs) != 1 || specs[0] != "8080=127.0.0.1:3000" {
+			t.Errorf("%v: positional args are %v, want just the port spec", args, specs)
+		}
+	}
+}
+
+// TestUplinkFDIsExplainedRatherThanPassed: a descriptor is adopted from whatever
+// started the daemon, and conflux's supervisor starts anchord with none, so the
+// form has to be refused here rather than fail as "bad file descriptor" from a
+// child process.
+func TestUplinkFDIsExplainedRatherThanPassed(t *testing.T) {
+	var cfg config.Config
+
+	err := chooseUplink(&cfg, "fd:3", false)
+	if err == nil {
+		t.Fatal("chooseUplink accepted fd:3")
+	}
+
+	for _, want := range []string{"/dev/ttyUSB0", "conflux anchorctl start -uplink fd:3"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal should mention %q; it said:\n%s", want, err)
+		}
+	}
+
+	if cfg.Uplink != "" {
+		t.Errorf("a refused uplink was still stored: %q", cfg.Uplink)
+	}
+}
+
+// TestUplinkFlagsContradict, and TestNoUplinkClears: a machine on a cable has to be
+// able to go back to the host's network, and the two flags cannot both be meant.
+func TestUplinkFlagsContradict(t *testing.T) {
+	var cfg config.Config
+
+	if err := chooseUplink(&cfg, "/dev/ttyUSB0", true); err == nil {
+		t.Error("--uplink and --no-uplink were both accepted")
+	}
+}
+
+func TestNoUplinkClears(t *testing.T) {
+	cfg := config.Config{Uplink: "/dev/ttyUSB0:115200"}
+
+	if err := chooseUplink(&cfg, "", true); err != nil {
+		t.Fatalf("--no-uplink: %v", err)
+	}
+
+	if cfg.Uplink != "" {
+		t.Errorf("uplink is still %q", cfg.Uplink)
+	}
+
+	// And no flag at all keeps what is configured, the same rule the overlay
+	// address follows.
+	cfg.Uplink = "/dev/ttyUSB0:115200"
+
+	if err := chooseUplink(&cfg, "", false); err != nil || cfg.Uplink != "/dev/ttyUSB0:115200" {
+		t.Errorf("a second up without --uplink changed it to %q (%v)", cfg.Uplink, err)
 	}
 }

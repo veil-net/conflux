@@ -28,6 +28,7 @@ Every directory is `0700` and every file `0600`.
   "taints": ["brhk-2mq9-tzva-6pjs"],
   "ipv4": "10.128.0.1/24",
   "subnets": ["192.168.1.0/24"],
+  "uplink": "/dev/ttyUSB0:115200",
   "tunName": "anchor0",
   "apiBaseUrl": "https://api.veilnet.com.au",
   "createdAt": "2026-09-06T06:35:41Z",
@@ -42,6 +43,7 @@ Every directory is `0700` and every file `0600`.
 | `ipv4` | a prefix, or absent for IPv6-only. `tun` only. |
 | `subnets` | interface names or private prefixes. `tun` only. |
 | `proxies` | `PORT[/NETWORK]=BACKEND` specs. `proxy` only. |
+| `uplink` | a device, with an optional line speed. Absent means the host's IP network, which is the usual case. Either mode. See [uplink.md](uplink.md). |
 | `apiBaseUrl` | absent means the default. |
 
 This file is the whole of what a reboot needs. Every `up` and every `proxy` rewrites

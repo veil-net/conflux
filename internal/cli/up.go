@@ -27,13 +27,15 @@ func runUp(ctx context.Context, args []string) int {
 	fs.SetOutput(ui.Errw)
 
 	var (
-		taints  repeated
-		subnets repeated
-		ipv4    = fs.String("ipv4", "", "overlay IPv4 as a prefix, e.g. 10.128.0.7/24")
-		noIPv4  = fs.Bool("no-ipv4", false, "do not assign an overlay IPv4; the v6 address is derived anyway")
-		noTaint = fs.Bool("no-taint", false, "join the realm's shared compartment instead of a private one")
-		tunName = fs.String("interface", "", "name for the network interface (default anchor0)")
-		apiBase = fs.String("api", "", "enrolment API base URL")
+		taints   repeated
+		subnets  repeated
+		ipv4     = fs.String("ipv4", "", "overlay IPv4 as a prefix, e.g. 10.128.0.7/24")
+		noIPv4   = fs.Bool("no-ipv4", false, "do not assign an overlay IPv4; the v6 address is derived anyway")
+		noTaint  = fs.Bool("no-taint", false, "join the realm's shared compartment instead of a private one")
+		tunName  = fs.String("interface", "", "name for the network interface (default anchor0)")
+		uplink   = fs.String("uplink", "", "carry the mesh over a link rather than the host network, e.g. /dev/ttyUSB0:115200")
+		noUplink = fs.Bool("no-uplink", false, "go back to the host's network on a machine configured for a link")
+		apiBase  = fs.String("api", "", "enrolment API base URL")
 	)
 
 	fs.Var(&taints, "taint", "compartment label; repeat to carry more than one")
@@ -41,9 +43,13 @@ func runUp(ctx context.Context, args []string) int {
 
 	fs.Usage = func() {
 		ui.Printf("conflux up — join the overlay with a network interface\n\n" +
-			"  conflux up [--taint T] [--ipv4 PREFIX | --no-ipv4] [--subnet CIDR]...\n\n" +
+			"  conflux up [--taint T] [--ipv4 PREFIX | --no-ipv4] [--subnet CIDR]...\n" +
+			"             [--uplink DEV | --no-uplink]\n\n" +
 			"Enrols this machine if it has never been, starts an anchor in TUN mode, writes\n" +
-			"the configuration, and registers the boot service so a reboot needs nothing.\n\n")
+			"the configuration, and registers the boot service so a reboot needs nothing.\n\n" +
+			"With --uplink the realm is reached over a link rather than the host's network:\n" +
+			"no socket is bound and no address is advertised. Enrolment still goes over the\n" +
+			"internet, so enrol this machine while it has one.\n\n")
 		fs.PrintDefaults()
 	}
 
@@ -79,6 +85,10 @@ func runUp(ctx context.Context, args []string) int {
 
 	if *tunName != "" {
 		cfg.TUNName = *tunName
+	}
+
+	if err := chooseUplink(cfg, *uplink, *noUplink); err != nil {
+		return fail(err)
 	}
 
 	if *apiBase != "" {
@@ -182,6 +192,67 @@ func promptIPv4() (string, error) {
 
 		return answer, nil
 	}
+}
+
+// chooseUplink decides what layer 1 runs over.
+//
+// The same rule the overlay address follows: a flag decides, and no flag keeps
+// whatever the configuration already says. A machine on a cable that is re-brought
+// up without --uplink stays on the cable, because the alternative is a command that
+// silently moves a machine onto a network it may not have.
+func chooseUplink(cfg *config.Config, flagValue string, none bool) error {
+	switch {
+	case none && flagValue != "":
+		return errors.New("--uplink and --no-uplink contradict each other")
+
+	case none:
+		cfg.Uplink = ""
+
+		return nil
+
+	case flagValue == "":
+		return nil
+	}
+
+	spec, err := config.ParseUplinkSpec(flagValue)
+	if err != nil {
+		return err
+	}
+
+	// A descriptor is adopted from whatever started the daemon, and what starts
+	// anchord here is conflux's own supervisor, which passes it none. Rather than
+	// let that arrive as "bad file descriptor" from a child process, say where the
+	// form does work.
+	if spec.FD >= 0 {
+		return fmt.Errorf(
+			"%s adopts a descriptor from whatever started the daemon, and conflux's supervisor starts anchord\n"+
+				"  with none to adopt. Name the device instead, which conflux's anchor opens itself:\n\n"+
+				"    conflux up --uplink /dev/ttyUSB0:115200\n\n"+
+				"  To drive an anchor you hand a descriptor to yourself, that is anchorctl's own start:\n\n"+
+				"    conflux anchorctl start -uplink %s",
+			flagValue, flagValue)
+	}
+
+	// anchor opens a link on unix only (internal/uplink/open_other.go), so refuse
+	// here rather than at the first start, where it would be a daemon exiting with
+	// a message about a field nobody typed.
+	if runtimeOS() == "windows" {
+		return fmt.Errorf(
+			"anchor has no way to open a link on Windows, so --uplink cannot be used here.\n" +
+				"  The overlay over the host's network needs no flag:  conflux up")
+	}
+
+	if spec.Baud > 0 && spec.Baud < config.SlowUplinkBaud {
+		ui.Warnf("%d baud carries a realm handshake in about %ds, against a 60s idle timeout.\n"+
+			"  It is a full TLS 1.3 exchange with ML-DSA certificates both ways, so the floor is\n"+
+			"  the identity model's rather than the link's: slower lines run out of time rather\n"+
+			"  than merely take longer.",
+			spec.Baud, 25*9600/spec.Baud)
+	}
+
+	cfg.Uplink = spec.String()
+
+	return nil
 }
 
 // chooseTaints decides which compartment this machine is in.

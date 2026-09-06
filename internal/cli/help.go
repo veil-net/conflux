@@ -16,10 +16,13 @@ const overview = `conflux — put this machine on a VeilNet overlay
 
   conflux up                          join, with a network interface
   conflux proxy 8080=127.0.0.1:3000   publish a service, without one
+  conflux up --uplink /dev/ttyUSB0    join over a cable, with no host network at all
 
 The first command enrols this machine, starts it, and registers a boot service, so
 a reboot brings it back with nothing typed. The second does the same without asking
 the kernel for anything, which is what to use where you cannot get CAP_NET_ADMIN.
+The third is either of those over a link instead of the host's IP network: --uplink
+decides the medium, and the command it is written on decides what this machine gets.
 `
 
 const collisions = `Two of conflux's names are also anchorctl's, and each is resolved rather than guessed:

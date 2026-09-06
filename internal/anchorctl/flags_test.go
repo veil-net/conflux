@@ -52,6 +52,12 @@ func TestEveryFlagWeUseExists(t *testing.T) {
 		{"start-proxy", anchorctl.StartMode{
 			Proxies: []string{"8080=127.0.0.1:1"}, Taints: []string{"t"}, Dir: "/tmp/x",
 		}.Args()},
+		// A failure here means the embedded pair predates the generic uplink, not
+		// that conflux is wrong: refresh anchor/bin from an anchor that has it.
+		{"start-uplink", anchorctl.StartMode{
+			TUN: true, TUNName: "anchor0", Taints: []string{"t"},
+			Uplink: "/dev/ttyUSB0:115200", Dir: "/tmp/x",
+		}.Args()},
 		{"renew", anchorctl.RenewArgs("/tmp/c")},
 		{"stop", anchorctl.StopArgs()},
 		{"status", anchorctl.StatusArgs()},

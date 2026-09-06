@@ -50,16 +50,20 @@ func runProxy(ctx context.Context, args []string) int {
 	var taints repeated
 
 	noTaint := fs.Bool("no-taint", false, "join the realm's shared compartment instead of a private one")
+	uplink := fs.String("uplink", "", "carry the mesh over a link rather than the host network, e.g. /dev/ttyUSB0:115200")
+	noUplink := fs.Bool("no-uplink", false, "go back to the host's network on a machine configured for a link")
 	apiBase := fs.String("api", "", "enrolment API base URL")
 
 	fs.Var(&taints, "taint", "compartment label; repeat to carry more than one")
 
 	fs.Usage = func() {
 		ui.Printf("conflux proxy — publish a local service on the overlay, without an interface\n\n" +
-			"  conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T]\n\n" +
+			"  conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T] [--uplink DEV | --no-uplink]\n\n" +
 			"Runs the anchor entirely in userspace, so it needs no TUN device and no\n" +
 			"CAP_NET_ADMIN. Nothing on this host can see the overlay; the only way in is a\n" +
-			"service named here.\n\n")
+			"service named here.\n\n" +
+			"With --uplink the realm is reached over a link rather than the host's network,\n" +
+			"which is the pair a machine with neither privilege nor an IP network needs.\n\n")
 		fs.PrintDefaults()
 	}
 
@@ -132,6 +136,10 @@ func runProxy(ctx context.Context, args []string) int {
 		cfg.APIBaseURL = *apiBase
 	}
 
+	if err := chooseUplink(cfg, *uplink, *noUplink); err != nil {
+		return fail(err)
+	}
+
 	if err := chooseTaints(cfg, taints, *noTaint); err != nil {
 		return fail(err)
 	}
@@ -146,6 +154,8 @@ func unknownProxyFlag(args []string) string {
 		"-taint": true, "--taint": true,
 		"-no-taint": true, "--no-taint": true,
 		"-api": true, "--api": true,
+		"-uplink": true, "--uplink": true,
+		"-no-uplink": true, "--no-uplink": true,
 		"-h": true, "--help": true, "-help": true,
 	}
 
@@ -182,7 +192,7 @@ func splitPositional(args []string) (positional, flags []string) {
 			flags = append(flags, a)
 			// A flag written as -taint value, rather than -taint=value, takes the
 			// next argument with it.
-			if !strings.Contains(a, "=") && (strings.HasSuffix(a, "taint") || strings.HasSuffix(a, "api")) {
+			if !strings.Contains(a, "=") && takesValue(a) {
 				expectValue = true
 			}
 		default:
@@ -191,4 +201,13 @@ func splitPositional(args []string) (positional, flags []string) {
 	}
 
 	return positional, flags
+}
+
+// takesValue reports whether a flag written as `-flag value` swallows the argument
+// after it. Only conflux proxy's own value-taking flags are here; --no-taint and
+// --no-uplink are booleans and take nothing.
+func takesValue(arg string) bool {
+	name := strings.TrimLeft(arg, "-")
+
+	return name == "taint" || name == "api" || name == "uplink"
 }

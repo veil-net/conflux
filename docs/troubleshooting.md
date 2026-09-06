@@ -22,6 +22,36 @@ beneath it, and most of what follows is a way of reading that output.
 | two machines up, cannot reach each other | almost always taints | see below |
 | `subnet … is not a private network` | a public prefix | anchor forwards private networks only |
 | `the control socket path is N bytes` | `CONFLUX_DIR` is too deep | use a shorter one; the kernel's limit is 104–108 bytes |
+| `fd:3 adopts a descriptor …` | `--uplink fd:N` | conflux's supervisor hands anchord no descriptors; name the device, or use `conflux anchorctl start` |
+| `anchor has no way to open a link on Windows` | `--uplink` on Windows | anchor opens a link on unix only; see [uplink.md](uplink.md) |
+| an uplink machine is up and reaches nothing | usually the far end, the line speed, or an enrolment that never happened | see below |
+
+## An uplink machine is up and reaches nothing
+
+`conflux status` on a machine with an uplink shows the link and no underlay address,
+which is correct and not the fault: an anchor on a cable advertises no way to be
+reached, because a cable has none.
+
+**Check that both ends are on the link.** One link carries one peer, and both ends
+have to have been brought up with `--uplink`. An anchor on a socket and an anchor on
+a cable have no medium in common.
+
+**Check the line speed on both ends, and that they match.** A link opened without a
+speed is left exactly as it is, so a device configured elsewhere at 9600 stays there.
+A realm handshake is twenty to thirty kilobytes: comfortable at 115200, marginal at
+9600 against a 60-second idle timeout. `/dev/ttyUSB0:115200` sets it.
+
+**Check that this machine was ever enrolled.** Enrolment is an HTTPS call, and the
+link cannot carry it. A machine that has only ever seen the cable has no credential
+and is not a member of anything — `conflux status` says `credential none — nothing
+enrolled yet`. Bring it up once where it has the internet.
+
+**Check that the credential has not lapsed.** Renewal needs the same API. A machine
+permanently on a cable stops being admitted after seven days; `conflux status` says
+`credential EXPIRED`.
+
+**An unplugged adapter needs a restart.** A device is not reopened, so a link that
+ended stays ended: `sudo conflux up` restarts it from the configuration.
 
 ## Two machines are up and cannot reach each other
 

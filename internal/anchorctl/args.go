@@ -25,6 +25,11 @@ type StartMode struct {
 	Proxies []string
 	Taints  []string
 	Dir     string
+
+	// Uplink is the link layer 1 runs over instead of a UDP socket, or empty for
+	// the host's IP network. Orthogonal to every other field here: it decides the
+	// medium, and the rest decide what this machine does with the realm on it.
+	Uplink string
 }
 
 // ModeFromConfig reads the operator's intent into the shape Args needs.
@@ -36,6 +41,7 @@ func ModeFromConfig(c *config.Config, anchorDir string) StartMode {
 		Subnets: c.Subnets,
 		Proxies: c.Proxies,
 		IPv4:    c.IPv4,
+		Uplink:  c.Uplink,
 	}
 
 	if m.TUN {
@@ -67,6 +73,14 @@ func (m StartMode) Args() []string {
 
 	if len(m.Taints) > 0 {
 		args = append(args, "-taints", strings.Join(m.Taints, ","))
+	}
+
+	// Before -tun, because it is the medium the rest of this runs over. anchorctl
+	// leaves -punch and -map-port off beside it as long as conflux does not type
+	// them, and conflux never has: both mean nothing on a cable, and anchor refuses
+	// the pair rather than ignoring it.
+	if m.Uplink != "" {
+		args = append(args, "-uplink", m.Uplink)
 	}
 
 	args = append(args, "-tun="+boolText(m.TUN))
@@ -116,6 +130,12 @@ func (m StartMode) Validate() error {
 
 	if len(m.Taints) == 0 {
 		return fmt.Errorf("no taints")
+	}
+
+	if m.Uplink != "" {
+		if _, err := config.ParseUplinkSpec(m.Uplink); err != nil {
+			return err
+		}
 	}
 
 	return nil

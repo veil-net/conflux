@@ -12,9 +12,30 @@ renewal, a configuration file, and a boot service.
 > **Status: in development.** The credential lasts seven days and renews itself; the
 > wire format underneath is not yet stable. See [docs/](docs/).
 
-## Quickstart
+## Quick start
 
-The first machine:
+Install the binary, run `conflux up` on one machine, run it on the next with the taint
+the first one printed. That is the whole of it.
+
+### 1. Install the binary
+
+Download the artifact for your platform from the releases page, verify it, and put it
+somewhere that survives a reboot:
+
+```console
+$ sha256sum -c SHA256SUMS --ignore-missing
+conflux-linux-amd64: OK
+$ sudo install -m 0755 conflux-linux-amd64 /usr/local/bin/conflux
+$ conflux version
+```
+
+Install it *before* the next step. The boot service records the path it was started
+from, so a service pointed at `~/Downloads/conflux` breaks the day that file is tidied
+away. Building from source is `make anchor-bins && make build` — see
+[build.md](docs/build.md); every platform's particulars are in
+[install.md](docs/install.md).
+
+### 2. Bring up the first machine
 
 ```console
 $ sudo conflux up
@@ -45,19 +66,119 @@ Starting.
   service      active (systemd: conflux.service, enabled at boot)
 ```
 
-The second:
+There is no account to create and no key to manage: `up` enrols this machine against
+the public realm, starts an anchor, writes the configuration, and registers the boot
+service.
+
+### 3. Bring up every other machine
+
+Give each one the taint from step 2 and its own host part:
 
 ```console
 $ sudo conflux up --taint brhk-2mq9-tzva-6pjs --ipv4 10.128.0.2/24
-$ ping 10.128.0.1
 ```
 
-Or, on a machine where you cannot get `CAP_NET_ADMIN`, publish a service instead of
-taking an interface:
+Passing `--taint` and `--ipv4` on the command line answers the prompt in advance, so
+this is safe to run from a provisioning script.
+
+### 4. Check that it worked
+
+```console
+$ ping 10.128.0.1
+$ conflux status
+$ conflux peers
+```
+
+`status` prints conflux's state — mode, taint, address, credential expiry, service —
+and `anchorctl status` beneath it. `peers` is not conflux's at all; it is one of the
+commands handed straight to `anchorctl`.
+
+**That is the end of the setup.** A reboot needs nothing typed: the service is
+registered and enabled, the credential renews itself, and the machine comes back at
+the same overlay address. `conflux down` stops the anchor now and leaves both the
+service and the configuration in place; `conflux uninstall` removes them.
+
+### Publishing a service instead: the reverse proxy
+
+On a machine where you cannot get `CAP_NET_ADMIN` — a container, a locked-down host,
+a CI runner — take no interface and publish the ports you want reachable instead:
 
 ```console
 $ sudo conflux proxy 8080=127.0.0.1:3000 53/udp=127.0.0.1:53
 ```
+
+A peer that connects to this machine's overlay port 8080 gets a fresh connection to
+`127.0.0.1:3000`. Same enrolment, same `--taint`, same boot service; nothing appears
+on the host, and the anchor itself needs no privilege at all — the `sudo` is for
+registering the service, so that the proxy is still there after a reboot.
+
+The grammar is `OVERLAYPORT[/NETWORK]=BACKEND`, repeated:
+
+| Spec | Means |
+|---|---|
+| `8080=127.0.0.1:3000` | TCP on overlay port 8080 → `127.0.0.1:3000` |
+| `53/udp=127.0.0.1:53` | UDP on overlay port 53 → `127.0.0.1:53` |
+| `5432=[::1]:5432` | an IPv6 backend, bracketed |
+
+The network defaults to `tcp`. The backend is dialled per connection and is not
+resolved in advance, so a name that does not resolve yet is fine. To change the set
+on an anchor that is already running, without a restart, that one is `anchorctl`'s:
+
+```console
+$ conflux anchorctl proxy                            # what it is serving
+$ conflux anchorctl proxy -add 9000=127.0.0.1:9000   # one more, now
+```
+
+Those two are not the same command as `conflux proxy`, which decides the mode this
+machine boots into. Both are listed under [Commands](#commands).
+
+### Joining over a cable: the generic uplink
+
+An anchor normally binds a UDP socket, so it needs a host IP network under it. An
+uplink replaces that: a file descriptor becomes the medium, and no socket is bound at
+all. Give each end of the cable the device, and the machines are in one realm with no
+IP network anywhere between them:
+
+```console
+$ sudo conflux up --uplink /dev/ttyUSB0:115200 --taint brhk-2mq9-tzva-6pjs --no-ipv4
+  anchor       anchor6btpa3gn6w4stipba4hekzho7caw6srfyy5puvbz7mfanaiept5a
+  uplink       /dev/ttyUSB0:115200 — no socket bound, no address advertised
+  interface    anchor0
+  taint        brhk-2mq9-tzva-6pjs
+  service      active (systemd: conflux.service, enabled at boot)
+```
+
+`--uplink` decides the *medium*, and the command it is written on decides what this
+machine gets out of it — so it goes on either verb, and the two are independent
+questions:
+
+```console
+$ sudo conflux up --uplink /dev/ttyUSB0:115200               # a cable, and an interface
+$ sudo conflux proxy 8080=127.0.0.1:3000 --uplink /dev/ttyS1  # a cable, and no interface
+$ sudo conflux up --no-uplink                                 # back to the host's network
+```
+
+Two things to know before the cable is the only thing plugged in:
+
+**Enrol while the machine still has the internet.** Enrolment is an HTTPS call to the
+realm's API and the link cannot carry it — the credential is what admits this machine
+to the realm, so it has to exist before the realm is reachable. Run the command once
+where there is a network, then move the machine; a second `conflux up` re-uses the
+identity and enrols nothing. Renewal has the same requirement, which is what makes a
+permanently offline uplink machine a seven-day deployment rather than an indefinite
+one.
+
+**The line has to be fast enough for a realm handshake.** That is a full TLS 1.3
+exchange with ML-DSA certificates in both directions, twenty to thirty kilobytes:
+comfortable at 115200 baud, usable at 19200, and marginal at 9600 against a
+sixty-second idle timeout. conflux says so when the speed you give is under 19200.
+The floor is the identity model's rather than the link's, which is why LoRa and the
+other duty-cycled radios are out of reach rather than merely slow.
+
+See [uplink.md](docs/uplink.md) for the device forms, what an uplink refuses beside
+it, and the two limits it still has.
+
+### Three things worth knowing
 
 **The prompt appears once.** conflux asks for an overlay IPv4 because thirty-two bits
 is too small to derive collision-free; the IPv6 address comes from this machine's
@@ -86,14 +207,21 @@ either replaces the other, and says so.
 | Privilege to run | root / `CAP_NET_ADMIN` / Administrator | root, only to register the boot service |
 | Needs `wintun.dll` on Windows | yes | no |
 | Can forward a subnet | yes, `--subnet` | no |
+| Can run over an uplink | yes, `--uplink` | yes, `--uplink` |
 | Boot service | yes | yes |
+
+**The mode and the medium are different questions.** The mode is what this machine
+gets out of the realm, and the two are exclusive. The medium is what the anchor
+reaches the realm over — the host's IP network, or a link named by `--uplink` — and
+either mode runs on either one. See [modes.md](docs/modes.md) and
+[uplink.md](docs/uplink.md).
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `conflux up [--taint T] [--ipv4 PREFIX \| --no-ipv4] [--subnet CIDR]...` | enrol if needed, start in TUN mode, register the boot service |
-| `conflux proxy PORT[/NETWORK]=BACKEND ...` | enrol if needed, start in userspace mode serving those backends |
+| `conflux up [--taint T] [--ipv4 PREFIX \| --no-ipv4] [--subnet CIDR]... [--uplink DEV \| --no-uplink]` | enrol if needed, start in TUN mode, register the boot service |
+| `conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T] [--uplink DEV]` | enrol if needed, start in userspace mode serving those backends |
 | `conflux down` | stop the anchor now; the boot service and the configuration stay |
 | `conflux status` | conflux's state, and `anchorctl status` beneath it |
 | `conflux install` | register the boot service; start it if a configuration exists |
@@ -130,6 +258,7 @@ boot service runs as root, and a path under `$HOME` is a path it cannot read. Se
 | [install.md](docs/install.md) | Getting a binary onto each platform, and verifying it. |
 | [concepts.md](docs/concepts.md) | Realm, anchor, overlay address, and taints — including the arithmetic people get wrong. |
 | [modes.md](docs/modes.md) | TUN and userspace, why they cannot be combined, subnets and their prerequisites. |
+| [uplink.md](docs/uplink.md) | Running over a link instead of a host IP network: the device forms, the line speeds, the limits. |
 | [commands.md](docs/commands.md) | Every command, every flag, what reaches anchorctl, and the exit codes. |
 | [config.md](docs/config.md) | The configuration file, the manifest, file modes, and the layout on each OS. |
 | [service.md](docs/service.md) | The boot service: systemd, launchd, the Windows service, and the two BSDs that get none. |

@@ -140,3 +140,89 @@ func ParseOverlayIPv4(s string) (netip.Prefix, error) {
 
 	return p, nil
 }
+
+// UplinkSpec names the link layer 1 runs over instead of a UDP socket.
+//
+// Two forms, and the split is exactly "is the device already open": a descriptor
+// this machine's supervisor was handed, or a device conflux's anchor opens itself.
+type UplinkSpec struct {
+	// FD is the descriptor to adopt, or -1 when Path names the device instead.
+	FD int
+
+	// Path is the device to open. Empty when FD is set.
+	Path string
+
+	// Baud is the line speed to set, or zero to leave the line as it is.
+	Baud int
+}
+
+// String renders the spec in the form anchorctl's -uplink takes, so a round trip
+// through conflux.json gives back the same link.
+func (s UplinkSpec) String() string {
+	switch {
+	case s.FD >= 0:
+		return "fd:" + strconv.Itoa(s.FD)
+	case s.Baud > 0:
+		return s.Path + ":" + strconv.Itoa(s.Baud)
+	default:
+		return s.Path
+	}
+}
+
+// ParseUplinkSpec reads fd:N, a device path, or a device path and a line speed.
+//
+// The grammar is anchor's (internal/uplink/spec.go) and is checked here as well for
+// the same reason the proxy grammar is: a speed written where a device belongs
+// should be refused at the shell that typed it, not by a daemon three layers down
+// reporting on a field the operator never saw.
+func ParseUplinkSpec(spec string) (UplinkSpec, error) {
+	out := UplinkSpec{FD: -1}
+
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return out, fmt.Errorf("an uplink needs a descriptor or a device, for example /dev/ttyUSB0:115200 or fd:3")
+	}
+
+	if rest, ok := strings.CutPrefix(spec, "fd:"); ok {
+		fd, err := strconv.Atoi(rest)
+		if err != nil || fd < 0 {
+			return out, fmt.Errorf("%q: %q is not a descriptor", spec, rest)
+		}
+
+		out.FD = fd
+
+		return out, nil
+	}
+
+	// A trailing ":digits" is a line speed. Split from the right, so a device whose
+	// own path holds a colon still parses.
+	if at := strings.LastIndex(spec, ":"); at >= 0 {
+		if baud, err := strconv.Atoi(spec[at+1:]); err == nil {
+			if baud <= 0 {
+				return out, fmt.Errorf("%q: %d is not a line speed", spec, baud)
+			}
+
+			out.Path, out.Baud = spec[:at], baud
+
+			if out.Path == "" {
+				return out, fmt.Errorf("%q names a speed and no device", spec)
+			}
+
+			return out, nil
+		}
+	}
+
+	out.Path = spec
+
+	return out, nil
+}
+
+// SlowUplinkBaud is the line speed below which a realm handshake stops fitting
+// inside anchor's sixty-second idle timeout.
+//
+// A full TLS 1.3 exchange with ML-DSA certificates in both directions, plus the
+// post-handshake proof and the credential chain, is twenty to thirty kilobytes --
+// about twenty-five seconds at 9600 baud, and longer than the timeout below it.
+// Refusing would be wrong, since the number is a rate and not a limit, so this only
+// decides whether conflux says something first.
+const SlowUplinkBaud = 19200

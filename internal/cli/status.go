@@ -62,6 +62,11 @@ func runStatus(ctx context.Context, args []string) int {
 }
 
 func reportConfig(cfg *config.Config) {
+	// Before the mode, because it is the medium the mode runs over.
+	if cfg.Uplink != "" {
+		ui.Field("uplink", cfg.Uplink+" — no host network under it")
+	}
+
 	switch cfg.Mode {
 	case config.ModeTUN:
 		ui.Field("mode", "tun — interface "+cfg.TUNInterface())

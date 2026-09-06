@@ -91,6 +91,11 @@ once the taints have been compared.
 - **macOS TUN under a LaunchDaemon.** CI can build and test on macOS, but not open a
   utun from a system daemon.
 - **The Windows service's recovery actions.**
+- **A real uplink.** What is covered here is the spec parser, the argv, and the
+  refusals — the `fd:N` form conflux's supervisor cannot hand over, and Windows, where
+  anchor has no way to open a link. Nothing in this tree opens a device or a
+  pseudo-terminal: the link itself is anchor's to test, and it does, over a real pty.
+  Two machines on a cable have no runner.
 - **The boot service and the two-node integration test, in CI.** Both need the real
   anchor binaries, which are not in git and which a runner has no way to fetch, so
   both are `workflow_dispatch` only. They are run locally: `./test/integration.sh`.

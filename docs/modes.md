@@ -4,6 +4,11 @@ conflux runs an anchor one of two ways, and they are mutually exclusive. Not by
 conflux's choice — anchor refuses a configuration that asks for both, before anything
 starts.
 
+This page is about what the machine gets out of the realm. What the anchor reaches
+the realm *over* is a separate question with its own page — the host's IP network by
+default, or a link named by `--uplink`, which works with either mode below. See
+[uplink.md](uplink.md).
+
 ## TUN — `conflux up`
 
 The daemon creates a real network interface, `anchor0`, and the host kernel owns the
@@ -43,7 +48,8 @@ path to the same port. anchor refuses the combination rather than pick one.
 to forward out of, and no interface to assign an address to, in userspace.
 
 **And one daemon holds one anchor.** So even setting the rules aside, a machine is in
-one mode at a time.
+one mode at a time. The same sentence is why an anchor has one uplink or one socket
+and never both, though that is the medium and not the mode.
 
 conflux checks all of this locally, before it starts anything, so the error names the
 flag you typed rather than arriving from a child process as a gRPC status.

@@ -45,6 +45,20 @@ var scenarios = map[string]StartMode{
 		Proxies: []string{"8080=127.0.0.1:3000", "53/udp=127.0.0.1:53", "5432=[::1]:5432"},
 		Dir:     "/var/lib/conflux/anchor",
 	},
+	"up-uplink": {
+		TUN: true, TUNName: "anchor0", Taints: []string{"brhk-2mq9-tzva-6pjs"},
+		Uplink: "/dev/ttyUSB0:115200", Dir: "/var/lib/conflux/anchor",
+	},
+	"up-uplink-ipv4": {
+		TUN: true, TUNName: "anchor0", Taints: []string{"brhk-2mq9-tzva-6pjs"},
+		IPv4: "10.128.0.7/24", Uplink: "/dev/ttyUSB0", Dir: "/var/lib/conflux/anchor",
+	},
+	"proxy-uplink": {
+		Taints:  []string{"brhk-2mq9-tzva-6pjs"},
+		Proxies: []string{"8080=127.0.0.1:3000"},
+		Uplink:  "/dev/ttyS1:57600",
+		Dir:     "/var/lib/conflux/anchor",
+	},
 	"proxy-windows": {
 		Taints:  []string{"brhk-2mq9-tzva-6pjs"},
 		Proxies: []string{"8080=127.0.0.1:3000"},

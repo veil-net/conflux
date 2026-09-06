@@ -1,0 +1,205 @@
+name: ci
+
+on:
+  push:
+    branches: [main, version3]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+
+      # anchor/bin is not in git. With no anchor checkout this writes placeholders,
+      # which compile -- enough for everything in this job, and not enough to
+      # produce a shippable binary, which `make dist` refuses separately.
+      - run: make anchor-bins
+
+      - run: make fmtcheck
+      - run: make vet
+      - run: make tidycheck
+
+      - name: staticcheck
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@latest
+          staticcheck ./...
+
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+      - run: make race
+
+      # The argv fixtures must match what the code produces. A change to what
+      # conflux passes anchorctl is a reviewable text diff or it is a bug.
+      - name: golden argv fixtures are current
+        run: |
+          make golden
+          git diff --exit-code internal/anchorctl/testdata/ \
+            || { echo "::error::argv changed; run 'make golden' and commit the fixtures"; exit 1; }
+
+  cross:
+    # Vets and compiles all eight targets. Artifacts and the size gate are `make
+    # dist`, which needs the real anchor binaries -- see the note on `service` below.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: make anchor-bins
+
+      # cross vets all eight targets. The size gate in dist needs real binaries, so
+      # with placeholders this checks compilation and stops short of the artifacts.
+      - run: make cross
+
+  platforms:
+    # Where the path handling, the file modes and the Windows DACL logic are actually
+    # exercised on the operating system that has them.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, macos-13, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: make anchor-bins
+      - run: go build ./...
+      - run: go test ./...
+
+  windows-tun:
+    # With placeholders the extraction tests skip, so this checks the wintun pin is
+    # readable and that the build works on Windows. The extraction itself is covered
+    # locally, where real binaries exist.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: make anchor-bins
+        shell: bash
+
+      # The version and digest come from the product code, not from a second copy
+      # typed here: a workflow that pinned a different version would test nothing.
+      - name: install wintun
+        shell: pwsh
+        run: |
+          $src  = Get-Content internal/wintun/pinned.go -Raw
+          $ver  = [regex]::Match($src, 'Version\s*=\s*"([^"]+)"').Groups[1].Value
+          $want = [regex]::Match($src, 'ZipSHA256\s*=\s*"([^"]+)"').Groups[1].Value
+          if (-not $ver -or -not $want) { throw "could not read the wintun pin from pinned.go" }
+          Write-Host "wintun $ver, sha256 $want"
+
+          Invoke-WebRequest "https://www.wintun.net/builds/wintun-$ver.zip" -OutFile wintun.zip
+          $got = (Get-FileHash wintun.zip -Algorithm SHA256).Hash.ToLower()
+          if ($got -ne $want) { throw "wintun-$ver.zip digest $got, expected $want" }
+
+          Expand-Archive wintun.zip -DestinationPath wintun
+          Copy-Item "wintun/wintun/bin/amd64/wintun.dll" "$env:WINDIR/System32/wintun.dll"
+
+      - name: extraction and readiness
+        run: go test -v -run 'TestEnsure|TestPairIsRealExecutables' ./internal/libexec/ ./anchor/
+
+  service:
+    # The boot service, in a container that actually boots systemd. Restarting the
+    # container is the reboot, and this is the only way to check the property that
+    # matters most: a machine that was up before is up again with nothing typed.
+    #
+    # Manual only. It needs the real anchor binaries, and they are not in git and not
+    # fetchable from here -- so a runner has no way to get them. Run it locally with
+    # `make anchor-bins && make dist` first, or enable it once anchor/bin has a
+    # source CI can reach. See docs/build.md.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+
+      - run: make dist
+      - run: cp dist/conflux-linux-amd64 test/systemd/conflux
+      - run: docker build -t conflux-systemd-test test/systemd
+
+      - name: install registers without inventing a configuration
+        run: |
+          docker run -d --name cfx --privileged --cgroupns=host \
+            -v /sys/fs/cgroup:/sys/fs/cgroup:rw --device /dev/net/tun conflux-systemd-test
+          for i in $(seq 30); do
+            [ "$(docker exec cfx systemctl is-system-running 2>/dev/null)" = running ] && break
+            sleep 1
+          done
+
+          docker exec cfx conflux install
+          [ "$(docker exec cfx systemctl is-enabled conflux.service)" = enabled ] \
+            || { echo "::error::install did not enable the unit"; exit 1; }
+          [ "$(docker exec cfx systemctl is-active conflux.service)" = inactive ] \
+            || { echo "::error::install started the service; it must only register"; exit 1; }
+
+      - name: uninstall leaves nothing
+        run: |
+          docker exec cfx conflux uninstall --yes
+          docker exec cfx sh -c 'test ! -f /etc/systemd/system/conflux.service' \
+            || { echo "::error::the unit file survived uninstall"; exit 1; }
+          docker exec cfx sh -c 'test ! -d /var/lib/conflux' \
+            || { echo "::error::the state directory survived uninstall"; exit 1; }
+
+      - if: always()
+        run: docker rm -f cfx || true
+
+  integration:
+    # The real thing, against the live API: two nodes, one taint, pinging each other.
+    #
+    # Manual only, for the same reason as `service` -- it needs the real anchor
+    # binaries. Locally this is `./test/integration.sh`, which is what it runs.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+
+      - run: make dist
+      - run: cp dist/conflux-linux-amd64 test/systemd/conflux
+      - run: docker build -t conflux-systemd-test test/systemd
+
+      - name: two nodes, one taint, reachable both ways
+        run: ./test/integration.sh
+
+      - if: always()
+        run: docker rm -f cfx-a cfx-b || true
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: every docs page is linked from the README, and exists
+        run: |
+          fail=0
+          for f in docs/*.md; do
+            grep -q "$(basename "$f")" README.md \
+              || { echo "::error file=$f::not linked from README.md"; fail=1; }
+          done
+          # And every link the README makes to docs/ resolves.
+          grep -o 'docs/[a-z-]*\.md' README.md | sort -u | while read -r p; do
+            [ -f "$p" ] || { echo "::error::README links to $p, which does not exist"; exit 1; }
+          done
+          exit $fail
+
+      - name: internal links resolve
+        run: |
+          fail=0
+          for f in docs/*.md; do
+            grep -o '](\([a-z-]*\.md\)' "$f" | sed 's/](//' | sort -u | while read -r p; do
+              [ -f "docs/$p" ] || { echo "::error file=$f::links to $p, which does not exist"; exit 1; }
+            done || fail=1
+          done
+          exit $fail

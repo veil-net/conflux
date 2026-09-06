@@ -1,0 +1,7 @@
+# The anchor binaries are bytes, and every byte matters.
+#
+# They are not tracked -- see .gitignore and docs/build.md -- but this rule stands so
+# that a `git add -f` by someone who decides otherwise cannot silently corrupt them.
+# Without it, a checkout on Windows with core.autocrlf=true rewrites CRLF inside each
+# executable, and nothing catches that until it fails at exec on a user's machine.
+anchor/bin/** binary -text -diff -merge

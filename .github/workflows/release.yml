@@ -1,0 +1,98 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # anchoradmin can mint realm roots. Shipping it inside conflux would hand that
+      # to every user, so its absence is checked rather than assumed.
+      - name: no anchoradmin is ever shipped
+        run: |
+          if ls anchor/bin/anchoradmin* >/dev/null 2>&1; then
+            echo "::error::anchor/bin contains anchoradmin, which must never be embedded"
+            exit 1
+          fi
+
+      - name: the anchor binaries are present and real
+        run: |
+          if [ ! -d anchor/bin ] || [ -z "$(ls -A anchor/bin 2>/dev/null)" ]; then
+            echo "::error::anchor/bin is empty. The binaries are not in git; a release"
+            echo "::error::runner needs a source for them. See docs/build.md."
+            exit 1
+          fi
+          for f in anchor/bin/*; do
+            sz=$(stat -c%s "$f")
+            if [ "$sz" -lt 5000000 ]; then
+              echo "::error::$f is $sz bytes -- a placeholder, not a binary"
+              exit 1
+            fi
+          done
+
+      - name: the embedded pair is complete
+        run: |
+          missing=0
+          for t in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 freebsd-amd64 openbsd-amd64; do
+            for p in anchord anchorctl; do
+              [ -f "anchor/bin/$p-$t" ] || { echo "::error::missing anchor/bin/$p-$t"; missing=1; }
+            done
+          done
+          for t in windows-amd64 windows-arm64; do
+            for p in anchord anchorctl; do
+              [ -f "anchor/bin/$p-$t.exe" ] || { echo "::error::missing anchor/bin/$p-$t.exe"; missing=1; }
+            done
+          done
+          exit $missing
+
+  build:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+
+      - run: make dist VERSION=${{ github.ref_name }}
+
+      - uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: dist/conflux-*
+
+      - name: release notes footer
+        run: |
+          {
+            echo
+            echo '## What is inside'
+            echo
+            echo 'Each binary carries the anchor pair for its own platform. Verify what you have with `conflux version`:'
+            echo
+            echo '```'
+            go run . version
+            echo '```'
+            echo
+            echo "Windows TUN mode additionally needs wintun.dll, which conflux downloads and verifies on first use:"
+            grep -E 'Version|ZipSHA256' internal/wintun/pinned.go | sed 's/^\s*/  /'
+          } > notes.md
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/conflux-*
+            dist/SHA256SUMS
+          body_path: notes.md
+          generate_release_notes: true
+          fail_on_unmatched_files: true

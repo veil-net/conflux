@@ -1,0 +1,12 @@
+start
+-manifest
+-
+-dir
+/var/lib/conflux/anchor
+-taints
+office,laptop
+-tun=true
+-tun-name
+anchor0
+-serve-exit=false
+-use-exit=false

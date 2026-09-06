@@ -1,0 +1,221 @@
+package cli
+
+import (
+	"bytes"
+	"os/exec"
+	"regexp"
+	"strings"
+	"testing"
+
+	"github.com/veil-net/conflux/anchor"
+	"github.com/veil-net/conflux/internal/libexec"
+	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/ui"
+)
+
+func capture(t *testing.T, argv ...string) (stdout, stderr string, code int) {
+	t.Helper()
+
+	var out, errBuf bytes.Buffer
+
+	oldOut, oldErr := ui.Out, ui.Errw
+	ui.Out, ui.Errw = &out, &errBuf
+
+	t.Cleanup(func() { ui.Out, ui.Errw = oldOut, oldErr })
+
+	code = Main(append([]string{"conflux"}, argv...))
+
+	return out.String(), errBuf.String(), code
+}
+
+// TestNoUnintendedShadowing is the guard on the whole two-surface design.
+//
+// conflux keeps a closed set of names and passes everything else through. If a
+// future anchor adds a command called "up", it would silently become unreachable --
+// conflux would answer it and the user would never learn that anchorctl had one.
+// This fails CI on that day instead.
+func TestNoUnintendedShadowing(t *testing.T) {
+	if !anchor.Supported {
+		t.Skip("no anchor pair for this platform")
+	}
+
+	t.Setenv("CONFLUX_DIR", t.TempDir())
+
+	d := paths.Default()
+	if err := d.EnsureAll(); err != nil {
+		t.Fatalf("EnsureAll: %v", err)
+	}
+
+	tools, err := libexec.Ensure(d)
+	if err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+
+	theirs := anchorctlCommands(t, tools.Anchorctl)
+
+	// The names conflux is knowingly taking. Every one is documented in help, and
+	// every one that shadows an anchorctl command explains the collision in its own
+	// error text.
+	known := map[string]bool{
+		"proxy": true, "status": true, "help": true,
+		"start": true, "stop": true, "restart": true,
+	}
+
+	for name := range verbs() {
+		if theirs[name] && !known[name] {
+			t.Errorf("conflux's %q now shadows an anchorctl command that this build did not know about.\n"+
+				"  Either rename conflux's, or add it to the known set and resolve the collision\n"+
+				"  the way proxy and status do.", name)
+		}
+	}
+
+	for name := range anchorLifecycleVerbs {
+		if !theirs[name] {
+			t.Errorf("conflux refuses to pass %q through, but anchorctl has no such command any more", name)
+		}
+	}
+
+	// The two conflux resolves by shape and arity really are anchorctl's, or the
+	// elaborate handling in runProxy and runStatus is dead code.
+	for _, name := range []string{"proxy", "status"} {
+		if !theirs[name] {
+			t.Errorf("conflux resolves a collision on %q that no longer exists", name)
+		}
+	}
+}
+
+var usageCommand = regexp.MustCompile(`(?m)^\s{4}([a-z][a-z-]+)\s`)
+
+func anchorctlCommands(t *testing.T, bin string) map[string]bool {
+	t.Helper()
+
+	out, _ := exec.Command(bin, "help").CombinedOutput()
+
+	found := map[string]bool{}
+	for _, m := range usageCommand.FindAllStringSubmatch(string(out), -1) {
+		found[m[1]] = true
+	}
+
+	if len(found) < 10 {
+		t.Fatalf("scraped only %d commands from anchorctl help; the format changed:\n%s", len(found), out)
+	}
+
+	return found
+}
+
+func TestLifecycleVerbsAreRefusedWithTheAlternative(t *testing.T) {
+	for name, want := range map[string]string{
+		"start": "conflux up", "stop": "conflux down", "restart": "conflux up",
+	} {
+		_, errOut, code := capture(t, name)
+
+		if code != ExitUsage {
+			t.Errorf("conflux %s exited %d, want %d", name, code, ExitUsage)
+		}
+
+		if !strings.Contains(errOut, want) {
+			t.Errorf("conflux %s should name %q; it said:\n%s", name, want, errOut)
+		}
+
+		if !strings.Contains(errOut, "conflux anchorctl "+name) {
+			t.Errorf("conflux %s should name the escape hatch; it said:\n%s", name, errOut)
+		}
+	}
+}
+
+// TestProxyRefusesAnchorctlFlags: the ambiguous case is explained, never guessed.
+func TestProxyRefusesAnchorctlFlags(t *testing.T) {
+	for _, args := range [][]string{
+		{"proxy", "-add", "8080=127.0.0.1:3000"},
+		{"proxy", "-rm", "8080"},
+		{"proxy", "-add=8080=127.0.0.1:3000"},
+	} {
+		_, errOut, code := capture(t, args...)
+
+		if code != ExitUsage {
+			t.Errorf("%v exited %d, want %d", args, code, ExitUsage)
+		}
+
+		if !strings.Contains(errOut, "conflux anchorctl proxy") {
+			t.Errorf("%v should point at the escape hatch; it said:\n%s", args, errOut)
+		}
+	}
+}
+
+func TestBareProxyExplainsBothMeanings(t *testing.T) {
+	_, errOut, code := capture(t, "proxy")
+
+	if code != ExitUsage {
+		t.Errorf("bare proxy exited %d, want %d", code, ExitUsage)
+	}
+
+	for _, want := range []string{"8080=127.0.0.1:3000", "conflux anchorctl proxy"} {
+		if !strings.Contains(errOut, want) {
+			t.Errorf("bare proxy should mention %q; it said:\n%s", want, errOut)
+		}
+	}
+}
+
+// TestTopLevelFlagIsNotForwarded: "conflux -socket X status" would be ambiguous
+// with conflux's own status, so nothing is forwarded from the first position.
+func TestTopLevelFlagIsNotForwarded(t *testing.T) {
+	_, errOut, code := capture(t, "-socket", "/tmp/x", "status")
+
+	if code != ExitUsage {
+		t.Errorf("exited %d, want %d", code, ExitUsage)
+	}
+
+	if !strings.Contains(errOut, "conflux anchorctl") {
+		t.Errorf("should point at the escape hatch; it said:\n%s", errOut)
+	}
+}
+
+func TestHelpListsEveryVisibleVerb(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", t.TempDir())
+
+	out, _, code := capture(t, "help")
+	if code != ExitOK {
+		t.Fatalf("help exited %d", code)
+	}
+
+	for name, v := range verbs() {
+		if v.hidden {
+			if strings.Contains(out, "  "+name+" ") {
+				t.Errorf("help lists the hidden verb %q", name)
+			}
+
+			continue
+		}
+
+		if !strings.Contains(out, name) {
+			t.Errorf("help does not mention %q", name)
+		}
+	}
+}
+
+func TestVersionNamesTheAnchorBuild(t *testing.T) {
+	out, _, code := capture(t, "version")
+	if code != ExitOK {
+		t.Fatalf("version exited %d", code)
+	}
+
+	if !strings.Contains(out, "conflux") {
+		t.Errorf("version does not name conflux:\n%s", out)
+	}
+
+	if anchor.Supported && !strings.Contains(out, anchor.SetID()) {
+		t.Errorf("version does not name the anchor set, which a bug report needs:\n%s", out)
+	}
+}
+
+// TestStatusWithNoConfigExits78: the code the systemd unit keys
+// RestartPreventExitStatus on, so a registered service with no configuration stops
+// rather than restarting forever.
+func TestStatusWithNoConfigExits78(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", t.TempDir())
+
+	_, _, code := capture(t, "status")
+	if code != ExitNoConfig {
+		t.Errorf("status with no configuration exited %d, want %d", code, ExitNoConfig)
+	}
+}

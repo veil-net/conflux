@@ -1,0 +1,12 @@
+start
+-manifest
+-
+-dir
+C:\ProgramData\conflux\anchor
+-taints
+brhk-2mq9-tzva-6pjs
+-tun=false
+-serve-exit=false
+-use-exit=false
+-serve-proxy
+8080=127.0.0.1:3000

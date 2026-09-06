@@ -31,5 +31,17 @@ go.work.sum
 # .idea/
 # .vscode/
 
-# ignore anchor binary files
-anchor/bin
+# The anchor binaries conflux embeds.
+#
+# Never committed: sixteen release builds are about 324 MB, and putting that in
+# history costs it permanently, on every clone, for every refresh. //go:embed still
+# needs them present at build time, so they are put there by `make anchor-bins`
+# instead -- see docs/build.md.
+anchor/bin/
+
+# Build output
+/bin/
+/dist/
+
+# The conflux copied into the systemd test image by `make dist && cp`.
+/test/systemd/conflux

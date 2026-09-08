@@ -1,4 +1,4 @@
-//go:build !(linux && amd64) && !(linux && arm64) && !(darwin && amd64) && !(darwin && arm64) && !(freebsd && amd64) && !(openbsd && amd64) && !(windows && amd64) && !(windows && arm64)
+//go:build !(linux && amd64) && !(linux && arm64) && !(darwin && arm64) && !(freebsd && amd64) && !(openbsd && amd64) && !(windows && amd64) && !(windows && arm64)
 
 package anchor
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Put the anchor binaries where //go:embed can find them.
 #
-# They are not in git: sixteen release builds are about 324 MB, and committing that
+# They are not in git: fourteen release builds are about 284 MB, and committing that
 # costs it permanently, on every clone, for every refresh. So a build populates
 # anchor/bin/ from a local anchor checkout instead.
 #
@@ -18,9 +18,32 @@ set -euo pipefail
 ANCHOR_SRC=${ANCHOR_SRC:-../anchor}
 DEST=${DEST:-anchor/bin}
 
-TARGETS="linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64 windows-arm64 freebsd-amd64 openbsd-amd64"
+TARGETS="linux-amd64 linux-arm64 darwin-arm64 windows-amd64 windows-arm64 freebsd-amd64 openbsd-amd64"
+
+# Two binaries per target. Counted rather than typed, so dropping a target from the
+# line above does not leave three messages below claiming a number that is now wrong.
+TOTAL=$(( $(echo $TARGETS | wc -w) * 2 ))
 
 mkdir -p "$DEST"
+
+# Clear anything that is not one of the $TOTAL before writing. Dropping a target
+# otherwise leaves its binaries behind in a directory every file of which is a
+# candidate for being embedded -- and a stale one is a real binary of the right size,
+# so neither the size gate nor the header check would say a word about it.
+want=""
+for t in $TARGETS; do
+  ext=""; case "$t" in windows-*) ext=".exe" ;; esac
+  for p in anchord anchorctl; do
+    want="$want $p-$t$ext"
+  done
+done
+for f in "$DEST"/*; do
+  [ -e "$f" ] || continue
+  case " $want " in
+    *" $(basename "$f") "*) ;;
+    *) echo "anchor-bins: removing $(basename "$f") -- not a target" >&2; rm -f "$f" ;;
+  esac
+done
 
 # release/ is the pinned, garbled build users get. dist/ is the unpinned development
 # cross-build, which joins any tree and is wrong for anything shipped -- so it is
@@ -51,7 +74,7 @@ if [ -z "$src" ]; then
       placeholder > "$DEST/$p-$t$ext"
     done
   done
-  echo "anchor-bins: 16 placeholders written to $DEST"
+  echo "anchor-bins: $TOTAL placeholders written to $DEST"
   exit 0
 fi
 
@@ -84,9 +107,9 @@ done
 rm -f "$DEST"/anchoradmin-* 2>/dev/null || true
 
 if [ "$missing" != 0 ]; then
-  echo "anchor-bins: $copied of 16 copied; the rest are missing from $src" >&2
+  echo "anchor-bins: $copied of $TOTAL copied; the rest are missing from $src" >&2
   echo "anchor-bins: build them with 'make release' (pinned) or 'make dist' in the anchor repo" >&2
   exit 1
 fi
 
-echo "anchor-bins: $copied/16 copied from $src ($kind)"
+echo "anchor-bins: $copied/$TOTAL copied from $src ($kind)"

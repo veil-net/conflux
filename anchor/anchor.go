@@ -1,10 +1,10 @@
 // Package anchor carries the anchor programs conflux drives.
 //
-// Exactly one pair is compiled into any given build. The eight bin_GOOS_GOARCH.go
+// Exactly one pair is compiled into any given build. The seven bin_GOOS_GOARCH.go
 // files are build-tagged so that a file whose tag is false is never compiled and
 // its //go:embed never runs — a linux/amd64 conflux carries the ~43 MB it needs and
-// not the ~324 MB in bin/. Each file names its two files explicitly for the same
-// reason: //go:embed bin, or a glob, would pull in all sixteen.
+// not the ~284 MB in bin/. Each file names its two files explicitly for the same
+// reason: //go:embed bin, or a glob, would pull in all fourteen.
 //
 // The binaries in bin/ are release builds: pinned to the production genesis and
 // garbled. anchorctl among them is the -tags lockdown build, which cannot mint a

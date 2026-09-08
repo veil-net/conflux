@@ -15,14 +15,14 @@ build fails.
 
 ## Where the anchor binaries come from
 
-**They are not in git.** Sixteen release builds are about 324 MB, and committing that
+**They are not in git.** Fourteen release builds are about 284 MB, and committing that
 costs it permanently — on every clone, for every contributor, every time they are
 refreshed. So `anchor/bin/` is ignored, and a build populates it:
 
 ```console
 $ make anchor-bins                              # from ../anchor
 $ make anchor-bins ANCHOR_SRC=/path/to/anchor   # from somewhere else
-anchor-bins: 16/16 copied from ../anchor/release (release)
+anchor-bins: 14/14 copied from ../anchor/release (release)
 ```
 
 The script looks for `release/` first and falls back to `dist/`. Those are not
@@ -37,7 +37,7 @@ embedded into every conflux a user runs. The release workflow fails on its prese
 
 ### A clone with no anchor checkout
 
-`make anchor-bins` writes sixteen placeholder files instead, and says what it did.
+`make anchor-bins` writes fourteen placeholder files instead, and says what it did.
 This is not a working conflux — it is what lets a machine with no access to the real
 binaries still run `gofmt`, `go vet`, `staticcheck` and the unit tests, which is
 exactly what CI needs.
@@ -71,8 +71,8 @@ an `anchord` that is not one — failing at exec on a user's machine rather than
 time here.
 
 **Fetching at build time** from `GET /anchor/release` is the obvious next step and is
-not wired up: that shelf currently serves 2 of the 16 files (linux/amd64 only). If it
-is widened to all eight platforms, or its per-binary `url` is pointed at object
+not wired up: that shelf currently serves 2 of the 14 it needs (linux/amd64 only). If
+it is widened to all seven platforms, or its per-binary `url` is pointed at object
 storage, a lockfile-driven fetcher replaces `make anchor-bins` and a fresh clone
 becomes self-sufficient. The manifest already carries what such a fetcher needs —
 `sha256` per binary, `ETag` as the digest, and the genesis `pin`.
@@ -83,7 +83,7 @@ artifacts.
 
 ## Embedding, and the size gate
 
-Eight build-tagged files in `anchor/`, one per platform, each naming exactly two files:
+Seven build-tagged files in `anchor/`, one per platform, each naming exactly two files:
 
 ```go
 //go:build linux && amd64
@@ -96,13 +96,13 @@ var anchorctl []byte
 ```
 
 A file whose build tag is false is never compiled, so its `//go:embed` never runs — a
-linux/amd64 conflux carries the ~43 MB it needs and not the 324 MB in `bin/`.
+linux/amd64 conflux carries the ~43 MB it needs and not the 284 MB in `bin/`.
 
-**Never `//go:embed bin`, and never a glob.** That would pull in all sixteen and
-produce a 340 MB binary per platform. `make dist` gates every artifact between 30 and
+**Never `//go:embed bin`, and never a glob.** That would pull in all fourteen and
+produce a 300 MB binary per platform. `make dist` gates every artifact between 30 and
 75 MB precisely so that mistake fails the build rather than reaching a release.
 
-There is also a ninth file with the negation of all eight tags, so that
+There is also an eighth file with the negation of all seven tags, so that
 `GOOS=linux GOARCH=riscv64 go build ./...` still succeeds — it produces a conflux that
 reports it carries no anchor binaries, rather than failing at an embed of a file that
 was never built.
@@ -133,8 +133,8 @@ stack trace a user sends back useless.
 |---|---|
 | `make build` | this machine |
 | `make test` / `make race` | the tests |
-| `make cross` | vet and build all eight, with the size gate |
-| `make dist` | build all eight into `dist/`, with `SHA256SUMS` |
+| `make cross` | vet and build all seven, with the size gate |
+| `make dist` | build all seven into `dist/`, with `SHA256SUMS` |
 | `make golden` | rewrite the argv fixtures after an intended change |
 | `make fmtcheck` `make vet` `make lint` `make tidycheck` | what CI checks |
 | `make all` | everything CI runs |

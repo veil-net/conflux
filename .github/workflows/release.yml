@@ -47,7 +47,7 @@ jobs:
       - name: the embedded pair is complete
         run: |
           missing=0
-          for t in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 freebsd-amd64 openbsd-amd64; do
+          for t in linux-amd64 linux-arm64 darwin-arm64 freebsd-amd64 openbsd-amd64; do
             for p in anchord anchorctl; do
               [ -f "anchor/bin/$p-$t" ] || { echo "::error::missing anchor/bin/$p-$t"; missing=1; }
             done

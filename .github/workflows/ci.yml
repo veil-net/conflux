@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -50,7 +50,7 @@ jobs:
             || { echo "::error::argv changed; run 'make golden' and commit the fixtures"; exit 1; }
 
   cross:
-    # Vets and compiles all eight targets. Artifacts and the size gate are `make
+    # Vets and compiles all seven targets. Artifacts and the size gate are `make
     # dist`, which needs the real anchor binaries -- see the note on `service` below.
     runs-on: ubuntu-latest
     steps:
@@ -58,17 +58,22 @@ jobs:
       - uses: ./.github/actions/setup
       - run: make anchor-bins
 
-      # cross vets all eight targets. The size gate in dist needs real binaries, so
+      # cross vets all seven targets. The size gate in dist needs real binaries, so
       # with placeholders this checks compilation and stops short of the artifacts.
       - run: make cross
 
   platforms:
-    # Where the path handling, the file modes and the Windows DACL logic are actually
-    # exercised on the operating system that has them.
+    # macOS and Windows, on the operating system that has the path handling, the file
+    # modes and the DACL logic. Linux is not a leg here: the `linux` job already runs
+    # the same suite under -race, and `cross` vets every target.
+    #
+    # One image per operating system, and the floating labels deliberately: a pinned
+    # macOS goes stale into being the old macOS nobody supports, which is what the
+    # retired macos-13 leg had become.
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, macos-13, windows-latest]
+        os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

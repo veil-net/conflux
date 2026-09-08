@@ -16,13 +16,15 @@ LDFLAGS := -s -w \
 	-X github.com/veil-net/conflux/internal/version.Version=$(VERSION) \
 	-X github.com/veil-net/conflux/internal/version.Commit=$(COMMIT)
 
-# The eight platforms anchor/bin carries binaries for. A target absent from here is
-# a target conflux cannot embed an anchor pair for.
-TARGETS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 \
+# The seven platforms anchor/bin carries binaries for. A target absent from here is
+# a target conflux cannot embed an anchor pair for. darwin/amd64 is absent
+# deliberately: no runner executes Intel macOS, so shipping it would ship a target
+# nothing ever runs.
+TARGETS := linux/amd64 linux/arm64 darwin/arm64 \
            windows/amd64 windows/arm64 freebsd/amd64 openbsd/amd64
 
 # The size gate. One anchor pair is about 43 MB, so a conflux outside this range is
-# either missing its binaries or -- far more likely -- embedded all sixteen because
+# either missing its binaries or -- far more likely -- embedded all fourteen because
 # somebody wrote //go:embed bin instead of naming the two files.
 MIN_MB := 30
 MAX_MB := 75
@@ -34,7 +36,7 @@ ANCHOR_SRC ?= ../anchor
 all: fmtcheck vet lint tidycheck test cross dist
 
 # anchor-bins puts the anchor binaries where //go:embed can find them. They are not in
-# git -- sixteen release builds are about 324 MB -- so a fresh clone runs this once
+# git -- fourteen release builds are about 284 MB -- so a fresh clone runs this once
 # before its first build. With no anchor checkout it writes placeholders, which
 # compile and are caught by the size gate in dist.
 anchor-bins:
@@ -99,6 +101,10 @@ cross:
 
 dist:
 	@mkdir -p $(DIST)
+	@# Clear the previous run first. release.yml uploads dist/conflux-*, so an
+	@# artifact left over from a target that has since been dropped would be
+	@# checksummed and published alongside the real ones.
+	@rm -f $(DIST)/conflux-* $(DIST)/SHA256SUMS
 	@for t in $(TARGETS); do \
 		os=$${t%/*}; arch=$${t#*/}; ext=""; \
 		[ "$$os" = windows ] && ext=.exe; \
@@ -118,7 +124,7 @@ dist:
 		fi; \
 		echo "  ok   $$out  $${mb} MB"; \
 	done
-	@cd $(DIST) && (sha256sum * > SHA256SUMS 2>/dev/null || shasum -a 256 * > SHA256SUMS)
+	@cd $(DIST) && (sha256sum conflux-* > SHA256SUMS 2>/dev/null || shasum -a 256 conflux-* > SHA256SUMS)
 	@echo "  wrote $(DIST)/SHA256SUMS"
 
 clean:

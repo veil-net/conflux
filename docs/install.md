@@ -17,9 +17,9 @@ installed from, so a boot service pointed at `~/Downloads/conflux` breaks the da
 file is cleaned up or the home directory is not mounted at boot. conflux warns when it
 notices this, but the fix is to move the binary first.
 
-Eight platforms are built: linux/amd64, linux/arm64, darwin/amd64, darwin/arm64,
-windows/amd64, windows/arm64, freebsd/amd64, openbsd/amd64. Each is about 45–50 MB,
-because each carries the `anchord` and `anchorctl` for its own platform inside it.
+Seven platforms are built: linux/amd64, linux/arm64, darwin/arm64, windows/amd64,
+windows/arm64, freebsd/amd64, openbsd/amd64. Each is about 45–50 MB, because each
+carries the `anchord` and `anchorctl` for its own platform inside it.
 
 ## Linux
 
@@ -31,6 +31,11 @@ may be labelled `var_lib_t` and refused execution. conflux detects this and prin
 `semanage`/`restorecon` commands; see [troubleshooting.md](troubleshooting.md).
 
 ## macOS
+
+**Apple Silicon only.** `darwin/arm64` is the one Mac artifact; there is no Intel
+build, because no runner executes Intel macOS code and an untested artifact is worse
+than an absent one. CI tests against the current macOS release, so that is the version
+the build is known to work on.
 
 `utun` is in the kernel and a root LaunchDaemon can open it, so there is no driver to
 install.

@@ -84,6 +84,33 @@ test. Allow up to a minute after the second node starts for gossip to find it �
 observed range is 15 to 60 seconds — and `conflux peers` shows `DATA yes` on the peer
 once the taints have been compared.
 
+## The genesis test node
+
+`genesis.veilnet.com.au:4700` is a bootstrap node kept up for our own testing. It is
+not a default and must never become one: end users get their bootstrap list from the
+enrolment manifest, which is what lets the API move a node without touching a single
+machine. Point a dev build at it explicitly:
+
+```console
+$ sudo CONFLUX_DIR=/tmp/cfx-test conflux up --peers genesis.veilnet.com.au:4700
+$ sudo CONFLUX_DIR=/tmp/cfx-test conflux status     # peers > 0, up=yes
+```
+
+`CONFLUX_DIR` keeps the whole run — config, identity, socket — out of `/etc/conflux`
+and `/var/lib/conflux`, so it cannot disturb a real machine. Port 4700 is UDP; a TCP
+probe of it is refused, and that is expected rather than a fault.
+
+Two things worth checking deliberately, because neither is obvious from a passing run:
+
+- **The no-flag path still works.** `conflux up` with no `--peers` must bootstrap from
+  the manifest's own list. If `--peers` ever became load-bearing, every machine that
+  never names one would stop finding the realm, and the test that names one would not
+  notice.
+- **The realm matches.** The embedded binaries are pinned to a genesis realm ID at
+  build time (`-X anchor.pinnedGenesis`, see [build.md](build.md)). A test node minted
+  from a different root will enrol fine and then never handshake, because the pin is
+  what refuses it. That failure is on the anchor side, not conflux's.
+
 ## What has no coverage, and why
 
 - **FreeBSD and OpenBSD** beyond `go vet` and `go build`. No runner exists, which is

@@ -8,6 +8,8 @@ import (
 
 	"github.com/veil-net/conflux/anchor"
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/daemon"
+	"github.com/veil-net/conflux/internal/enrol"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
@@ -76,6 +78,12 @@ func reportConfig(cfg *config.Config) {
 
 	ui.Field("taint", joinTaints(cfg.Taints))
 
+	// Only when overridden. Silence here means the manifest's own list, which is
+	// the normal case and not a missing setting.
+	if len(cfg.Peers) > 0 {
+		ui.Field("peers", strings.Join(cfg.Peers, ", ")+" — overriding the enrolled list")
+	}
+
 	if cfg.IPv4 != "" {
 		ui.Field("ipv4", cfg.IPv4)
 	}
@@ -119,6 +127,17 @@ func reportCredential(d paths.Dirs) {
 	// A renewal that is failing is reported rather than hidden. An anchor can be
 	// running perfectly while every handshake it attempts is refused, and status
 	// that says "running" and nothing else would be describing the wrong thing.
+	// Zero until something has called the API in this process, so silence here
+	// means "not measured", not "measured and fine".
+	if enrol.Skew > time.Second {
+		note := ""
+		if enrol.Skew > daemon.MaxSkew {
+			note = " — past the hour the handshake tolerates; fix the clock (timedatectl set-ntp true)"
+		}
+
+		ui.Field("clock", "off by "+enrol.Skew.Round(time.Second).String()+note)
+	}
+
 	if st.LastRenewalError != "" {
 		ui.Field("renewal", "failing since "+st.LastRenewalTry.Format(time.RFC3339)+": "+st.LastRenewalError)
 	}

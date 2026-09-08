@@ -221,9 +221,10 @@ reaches the realm over — the host's IP network by default, or a link named by
 
 | Command | What it does |
 |---|---|
-| `conflux up [--taint T] [--ipv4 PREFIX \| --no-ipv4] [--subnet CIDR]... [--uplink DEV \| --no-uplink]` | enrol if needed, start in TUN mode, register the boot service |
-| `conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T] [--uplink DEV]` | enrol if needed, start in userspace mode serving those backends |
+| `conflux up [--taint T] [--ipv4 PREFIX \| --no-ipv4] [--subnet CIDR]... [--uplink DEV \| --no-uplink] [--peers HOST:PORT]` | enrol if needed, start in TUN mode, register the boot service |
+| `conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T] [--uplink DEV] [--peers HOST:PORT]` | enrol if needed, start in userspace mode serving those backends |
 | `conflux down` | stop the anchor now; the boot service and the configuration stay |
+| `conflux renew` | fetch a fresh credential and install it on the running anchor, hot |
 | `conflux status` | conflux's state, and `anchorctl status` beneath it |
 | `conflux install` | register the boot service; start it if a configuration exists |
 | `conflux uninstall` | remove the boot service, the configuration and the identity |
@@ -231,12 +232,14 @@ reaches the realm over — the host's IP network by default, or a link named by
 | `conflux anchorctl ARGS...` | run the embedded `anchorctl`, uninterpreted |
 | *anything else* | passed to `anchorctl` unchanged: `peers`, `routes`, `events`, `metrics`, `send`, `inspect`, … |
 
-**Eight names are conflux's; everything else is anchorctl's.** Two of them shadow a
+**Nine names are conflux's; everything else is anchorctl's.** Three of them shadow a
 command anchorctl already has, and each collision is resolved rather than guessed:
 bare `conflux status` is conflux's, and prints anchorctl's status beneath it, while
 `conflux status -watch 5s` forwards to anchorctl because it was given arguments.
 `conflux proxy 8080=127.0.0.1:3000` starts userspace mode; `conflux anchorctl proxy
--add 8080=127.0.0.1:3000` adds a proxy to an anchor that's already running. `start`,
+-add 8080=127.0.0.1:3000` adds a proxy to an anchor that's already running. Bare
+`conflux renew` fetches a credential and installs it, while `conflux anchorctl renew
+-cred FILE` installs one you already hold. `start`,
 `stop`, and `restart` are refused outright rather than passed through — running them
 directly would leave conflux's configuration describing an anchor that isn't the one
 actually running.

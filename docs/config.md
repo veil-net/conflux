@@ -29,6 +29,7 @@ Every directory is `0700` and every file `0600`.
   "ipv4": "10.128.0.1/24",
   "subnets": ["192.168.1.0/24"],
   "uplink": "/dev/ttyUSB0:115200",
+  "peers": ["genesis.veilnet.com.au:4700"],
   "tunName": "anchor0",
   "apiBaseUrl": "https://api.veilnet.com.au",
   "createdAt": "2026-09-06T06:35:41Z",
@@ -44,6 +45,7 @@ Every directory is `0700` and every file `0600`.
 | `subnets` | interface names or private prefixes. `tun` only. |
 | `proxies` | `PORT[/NETWORK]=BACKEND` specs. `proxy` only. |
 | `uplink` | a device, with an optional line speed. Absent means the host's IP network, which is the usual case. Either mode. See [uplink.md](uplink.md). |
+| `peers` | bootstrap entries, `host:port` or `anchorxxx@host:port`. **Absent is the usual case and not a missing setting:** anchorctl takes the list from the enrolment manifest for exactly the fields no flag named, so an empty `peers` is what keeps the issuer's own nodes in play. Present, it overrides them. |
 | `apiBaseUrl` | absent means the default. |
 
 This file is the whole of what a reboot needs. Every `up` and every `proxy` rewrites

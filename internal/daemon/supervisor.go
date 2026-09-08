@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
@@ -63,7 +64,16 @@ type Supervisor struct {
 	ctl   *anchorctl.Ctl
 	tail  *ring
 	once  sync.Once
+
+	// links counts how many times a dead uplink has been reopened, so that a
+	// machine quietly restarting its anchor every few minutes says so in
+	// conflux status rather than looking like it has simply been up all along.
+	links atomic.Int64
 }
+
+// LinkReopens is how many times the uplink has been found dead and the anchor
+// rebuilt on it.
+func (s *Supervisor) LinkReopens() int64 { return s.links.Load() }
 
 func (s *Supervisor) report() Reporter {
 	if s.Reporter == nil {
@@ -206,6 +216,12 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 	defer stopRenewals()
 
 	go s.renewLoop(renewCtx)
+
+	// Only for an anchor on a link. On the host's network a change is anchor's own
+	// business, and it recovers in-process without conflux knowing.
+	if cfg, err := config.Load(s.Dirs); err == nil && cfg.Uplink != "" {
+		go s.linkLoop(renewCtx, cfg.Uplink)
+	}
 
 	select {
 	case <-ctx.Done():

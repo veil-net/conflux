@@ -116,6 +116,17 @@ func (c *Ctl) Start(ctx context.Context, env config.Envelope, mode StartMode) (S
 	return s, nil
 }
 
+// Metrics reads the daemon's counters and gauges. An anchor that has not published
+// any yet is not an error; the map is simply empty.
+func (c *Ctl) Metrics(ctx context.Context) (map[string]float64, error) {
+	out, err := c.run(ctx, nil, MetricsArgs()...)
+	if err != nil {
+		return nil, err
+	}
+
+	return ParseMetrics(out), nil
+}
+
 // Status asks what is running. A daemon that is up with no anchor in it is not an
 // error -- it is the state conflux down leaves behind.
 func (c *Ctl) Status(ctx context.Context) (Status, error) {

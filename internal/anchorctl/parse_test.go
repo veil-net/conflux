@@ -153,3 +153,53 @@ func TestParseStartedIsResilient(t *testing.T) {
 		}
 	}
 }
+
+// metricsOutput is `anchorctl metrics` as a tabwriter pads it: the name, then two or
+// more spaces, then the value. The observation summary is there because it has no
+// single value and must be skipped rather than half-read.
+const metricsOutput = `anchor_connections            1
+anchor_peers_known            4
+anchor_peers_isolated         0
+anchor_connections_refused_total  0
+anchor_rtt{peer=anchorabc}    n=3 mean=12.5 min=9 max=18
+anchor_relay_bytes_total      918273
+`
+
+func TestParseMetrics(t *testing.T) {
+	got := ParseMetrics(metricsOutput)
+
+	for name, want := range map[string]float64{
+		MetricConnections:                  1,
+		"anchor_peers_known":               4,
+		"anchor_peers_isolated":            0,
+		"anchor_relay_bytes_total":         918273,
+		"anchor_connections_refused_total": 0,
+	} {
+		v, ok := got[name]
+		if !ok {
+			t.Errorf("%s missing from %v", name, got)
+
+			continue
+		}
+
+		if v != want {
+			t.Errorf("%s = %v, want %v", name, v, want)
+		}
+	}
+
+	// An observation summary has no single value, so it is skipped outright rather
+	// than parsed down to its first number.
+	if v, ok := got["anchor_rtt{peer=anchorabc}"]; ok {
+		t.Errorf("an observation summary should be skipped, got %v", v)
+	}
+}
+
+// TestParseMetricsIsResilient: no anchor, no metrics yet, and junk all give an empty
+// map rather than a panic. The supervisor reads this on a timer and must not die of it.
+func TestParseMetricsIsResilient(t *testing.T) {
+	for _, in := range []string{"", "no metrics yet\n", "garbage\n", "no anchor is running\n"} {
+		if got := ParseMetrics(in); len(got) != 0 {
+			t.Errorf("ParseMetrics(%q) = %v, want empty", in, got)
+		}
+	}
+}

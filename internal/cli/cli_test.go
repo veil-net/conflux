@@ -58,7 +58,7 @@ func TestNoUnintendedShadowing(t *testing.T) {
 	// every one that shadows an anchorctl command explains the collision in its own
 	// error text.
 	known := map[string]bool{
-		"proxy": true, "status": true, "help": true,
+		"proxy": true, "status": true, "help": true, "renew": true,
 		"start": true, "stop": true, "restart": true,
 	}
 
@@ -293,5 +293,85 @@ func TestNoUplinkClears(t *testing.T) {
 
 	if err := chooseUplink(&cfg, "", false); err != nil || cfg.Uplink != "/dev/ttyUSB0:115200" {
 		t.Errorf("a second up without --uplink changed it to %q (%v)", cfg.Uplink, err)
+	}
+}
+
+// TestRenewRefusesAnchorctlFlags: conflux renew takes no arguments, and anchorctl's
+// takes -cred. The overlap is resolved by shape, like proxy's, rather than by
+// shadowing anchorctl's renew out of reach.
+func TestRenewRefusesAnchorctlFlags(t *testing.T) {
+	for _, args := range [][]string{
+		{"renew", "-cred", "/tmp/c"},
+		{"renew", "-cred=/tmp/c"},
+		{"renew", "-inline"},
+	} {
+		_, errOut, code := capture(t, args...)
+
+		if code != ExitUsage {
+			t.Errorf("%v exited %d, want %d", args, code, ExitUsage)
+		}
+
+		if !strings.Contains(errOut, "conflux anchorctl renew") {
+			t.Errorf("%v should point at the escape hatch; it said:\n%s", args, errOut)
+		}
+	}
+}
+
+// TestRenewTakesNoPositional keeps the no-argument contract honest: a stray word is
+// a typo, and guessing what it meant is how a credential gets installed from a file
+// nobody named.
+func TestRenewTakesNoPositional(t *testing.T) {
+	_, errOut, code := capture(t, "renew", "somefile")
+
+	if code != ExitUsage {
+		t.Errorf("renew with a positional exited %d, want %d", code, ExitUsage)
+	}
+
+	if !strings.Contains(errOut, "takes no arguments") {
+		t.Errorf("renew should say it takes none; it said:\n%s", errOut)
+	}
+}
+
+func TestPeersFlagsContradict(t *testing.T) {
+	var cfg config.Config
+
+	if err := choosePeers(&cfg, []string{"genesis.veilnet.com.au:4700"}, true); err == nil {
+		t.Error("--peers and --no-peers were both accepted")
+	}
+}
+
+// TestNoPeersClears and, more importantly, that no flag at all leaves the list
+// empty: empty is what makes anchorctl take bootstrap from the manifest, so an
+// invented default here would quietly override the issuer's own nodes.
+func TestNoPeersClears(t *testing.T) {
+	cfg := config.Config{Peers: []string{"genesis.veilnet.com.au:4700"}}
+
+	if err := choosePeers(&cfg, nil, true); err != nil {
+		t.Fatalf("--no-peers: %v", err)
+	}
+
+	if len(cfg.Peers) != 0 {
+		t.Errorf("peers are still %v", cfg.Peers)
+	}
+
+	var fresh config.Config
+
+	if err := choosePeers(&fresh, nil, false); err != nil || len(fresh.Peers) != 0 {
+		t.Errorf("up with no --peers invented %v (%v)", fresh.Peers, err)
+	}
+}
+
+func TestPeersAreValidatedBeforeTheyReachAnchor(t *testing.T) {
+	var cfg config.Config
+
+	for _, bad := range []string{"genesis.veilnet.com.au", "a,b:4700", ":4700", "host:0", "host:notaport"} {
+		if err := choosePeers(&cfg, []string{bad}, false); err == nil {
+			t.Errorf("peer %q was accepted", bad)
+		}
+	}
+
+	good := []string{"genesis.veilnet.com.au:4700", "anchorabc@203.0.113.9:4700", "[::1]:4700"}
+	if err := choosePeers(&cfg, good, false); err != nil {
+		t.Errorf("peers %v were refused: %v", good, err)
 	}
 }

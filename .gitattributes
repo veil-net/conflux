@@ -5,3 +5,13 @@
 # Without it, a checkout on Windows with core.autocrlf=true rewrites CRLF inside each
 # executable, and nothing catches that until it fails at exec on a user's machine.
 anchor/bin/** binary -text -diff -merge
+
+# The argv goldens are compared byte for byte.
+#
+# TestArgvGoldens joins the arguments with "\n" and compares the result against the
+# file, so a checkout that rewrote those bytes fails every scenario at once -- which
+# is what the Windows runner has been doing, with core.autocrlf=true turning each \n
+# into \r\n. The failure names the test and not the cause, and the diff it prints
+# looks identical on both sides, so it reads as "argv changed" on a platform where
+# nothing about the argv is different.
+*.golden -text

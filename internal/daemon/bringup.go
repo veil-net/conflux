@@ -132,12 +132,31 @@ func credential(
 	}
 
 	if !DueAt(m.IssuedAt(), m.NotAfter(), time.Now()) {
-		return env, m, nil
+		return env, m, checkSkew()
 	}
 
 	env, m = renewInPlace(ctx, d, st, client, m, env, r)
 
-	return env, m, nil
+	return env, m, checkSkew()
+}
+
+// MaxSkew is how far this machine's clock may be from the enrolment API's before
+// conflux stops rather than starting an anchor that cannot connect.
+//
+// anchor's ALPN tag rotates hourly and a peer accepts one epoch either side, so an
+// hour of skew presents as a TLS alert indistinguishable from a wrong realm. The
+// anchor would come up, report itself healthy, and reach nobody.
+const MaxSkew = time.Hour
+
+// checkSkew refuses a bring-up the clock has already decided against.
+//
+// Only meaningful after a call to the API, which is what measures it; a machine
+// whose credential is current makes none, and enrol.Skew is then zero, which is the
+// honest answer rather than a stale one. So this gates the two paths that did talk
+// to the server, which are also the only two that could have been about to enrol a
+// machine into a realm it cannot handshake with.
+func checkSkew() error {
+	return enrol.CheckSkew(MaxSkew)
 }
 
 // renewInPlace replaces the chain, or explains why it could not and carries on.

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/veil-net/conflux/internal/config"
@@ -35,16 +36,19 @@ func runUp(ctx context.Context, args []string) int {
 		tunName  = fs.String("interface", "", "name for the network interface (default anchor0)")
 		uplink   = fs.String("uplink", "", "carry the mesh over a link rather than the host network, e.g. /dev/ttyUSB0:115200")
 		noUplink = fs.Bool("no-uplink", false, "go back to the host's network on a machine configured for a link")
+		noPeers  = fs.Bool("no-peers", false, "forget the bootstrap list and go back to the one enrolment supplies")
 		apiBase  = fs.String("api", "", "enrolment API base URL")
+		peers    repeated
 	)
 
 	fs.Var(&taints, "taint", "compartment label; repeat to carry more than one")
 	fs.Var(&subnets, "subnet", "a network this machine forwards for the realm; repeat for more")
+	fs.Var(&peers, "peers", "bootstrap entry as host:port; repeat for more. Enrolment supplies these, so this is an override")
 
 	fs.Usage = func() {
 		ui.Printf("conflux up — join the overlay with a network interface\n\n" +
 			"  conflux up [--taint T] [--ipv4 PREFIX | --no-ipv4] [--subnet CIDR]...\n" +
-			"             [--uplink DEV | --no-uplink]\n\n" +
+			"             [--uplink DEV | --no-uplink] [--peers HOST:PORT | --no-peers]\n\n" +
 			"Enrols this machine if it has never been, starts an anchor in TUN mode, writes\n" +
 			"the configuration, and registers the boot service so a reboot needs nothing.\n\n" +
 			"With --uplink the realm is reached over a link rather than the host's network:\n" +
@@ -88,6 +92,10 @@ func runUp(ctx context.Context, args []string) int {
 	}
 
 	if err := chooseUplink(cfg, *uplink, *noUplink); err != nil {
+		return fail(err)
+	}
+
+	if err := choosePeers(cfg, peers, *noPeers); err != nil {
 		return fail(err)
 	}
 
@@ -251,6 +259,44 @@ func chooseUplink(cfg *config.Config, flagValue string, none bool) error {
 	}
 
 	cfg.Uplink = spec.String()
+
+	return nil
+}
+
+// choosePeers decides where this machine starts looking for the realm.
+//
+// The default is to name nothing, and that is a decision rather than an omission.
+// anchorctl fills bootstrap from the manifest only for fields no flag named, so the
+// way to keep the issuer's own list -- and to let the API move a bootstrap node
+// without every machine needing an edit -- is to pass no -peers at all.
+//
+// So --peers is an override for a realm the manifest does not describe, which in
+// practice means a test node. It persists, like every other setting here, because a
+// machine brought up against one has to come back to it after a reboot.
+func choosePeers(cfg *config.Config, values []string, none bool) error {
+	switch {
+	case none && len(values) > 0:
+		return errors.New("--peers and --no-peers contradict each other")
+
+	case none:
+		cfg.Peers = nil
+
+		return nil
+
+	case len(values) == 0:
+		return nil
+	}
+
+	if err := config.ValidatePeers(values); err != nil {
+		return err
+	}
+
+	if len(cfg.Peers) > 0 && !slices.Equal(cfg.Peers, values) {
+		ui.Warnf("this machine was bootstrapping from %s and will now use %s.",
+			strings.Join(cfg.Peers, ", "), strings.Join(values, ", "))
+	}
+
+	cfg.Peers = values
 
 	return nil
 }

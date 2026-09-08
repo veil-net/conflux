@@ -25,13 +25,16 @@ The third is either of those over a link instead of the host's IP network: --upl
 decides the medium, and the command it is written on decides what this machine gets.
 `
 
-const collisions = `Two of conflux's names are also anchorctl's, and each is resolved rather than guessed:
+const collisions = `Three of conflux's names are also anchorctl's, and each is resolved rather than guessed:
 
   conflux status              conflux's, plus anchorctl's beneath it
   conflux status -watch 5s    anchorctl's, because it was given arguments
   conflux proxy PORT=BACKEND  conflux's: start in userspace mode, serving this
   conflux anchorctl proxy -add PORT=BACKEND
                               anchorctl's: add one to an anchor already running
+  conflux renew               conflux's: fetch a fresh credential and install it
+  conflux anchorctl renew -cred FILE
+                              anchorctl's: install a credential you already hold
 
 start, stop and restart are anchorctl's and conflux refuses to pass them through
 while it owns the configuration; use up and down, or the escape hatch above.

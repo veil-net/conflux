@@ -79,6 +79,22 @@ Three states, three behaviours:
 | credential expired, renewal failed | starts, retries forever, and `conflux status` says `EXPIRED` and names the last error — the anchor is up but every handshake is refused, and reporting "running" would be describing the wrong thing |
 | credential expired, renewal succeeded | nothing special; this is the ordinary long-offline case |
 
+## Renewing by hand
+
+`conflux renew` forces one now: it fetches a fresh chain and installs it on the
+running anchor with `anchorctl renew`, the same hot swap the timer uses. Nothing is
+restarted and no session is dropped.
+
+It is not part of normal operation — the two automatic paths above cover every machine
+that is working. It is for the one that is not, where `renewal: failing since ...` has
+been showing in `conflux status` and the only other lever was restarting the service.
+
+It refuses, with exit 69, on a machine that has never enrolled (there is nothing to
+renew, and drawing an identity would replace the one a reboot expects) and on one
+where nothing is running (a credential is installed into a running anchor, and the
+next start renews on its own). It takes no arguments; `anchorctl renew -cred FILE`,
+which installs a credential you already hold, is reached through the escape hatch.
+
 ## Clock skew
 
 Three separate things break on a bad clock and only one of them says so.
@@ -90,7 +106,13 @@ credential look nearly expired, and one a year slow makes an expired one look fi
 
 conflux compares the API's `Date` header to the local clock on every call, records the
 skew, and refuses to bring a machine up when it exceeds an hour — naming NTP, because
-the failure is otherwise unrecognisable. `conflux status` prints the measured skew.
+the failure is otherwise unrecognisable. Better to stop than to start an anchor that
+reports itself healthy and reaches nobody.
+
+The measurement comes from talking to the API, so it exists on the two paths that do:
+enrolling, and renewing. A start that needs neither makes no call and measures
+nothing, which is why `conflux status` prints the clock line only when there is a
+figure to print — silence there means "not measured", not "measured and fine".
 
 ## Moving a machine
 

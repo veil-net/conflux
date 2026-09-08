@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/veil-net/conflux/anchor"
+	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
 )
 
@@ -74,7 +75,7 @@ func Ensure(d paths.Dirs) (*Tools, error) {
 		return nil, fmt.Errorf("create %s: %w", root, err)
 	}
 
-	unlock, err := lock(filepath.Join(root, ".lock"))
+	unlock, err := flock.Acquire(filepath.Join(root, ".lock"))
 	if err != nil {
 		return nil, err
 	}

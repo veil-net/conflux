@@ -36,7 +36,7 @@ func runProxy(ctx context.Context, args []string) int {
 
 	if hint := unknownProxyFlag(args); hint != "" {
 		ui.Errf("%q is not one of conflux proxy's flags.\n\n"+
-			"  conflux proxy takes port specs and --taint:\n\n"+
+			"  conflux proxy takes port specs, --taint and --peers:\n\n"+
 			"    conflux proxy 8080=127.0.0.1:3000 --taint mynet\n\n"+
 			"  anchorctl's proxy, which adds and removes proxies on a running anchor, is here:\n\n"+
 			"    conflux anchorctl proxy %s", hint, strings.Join(args, " "))
@@ -47,18 +47,24 @@ func runProxy(ctx context.Context, args []string) int {
 	fs := flag.NewFlagSet("proxy", flag.ContinueOnError)
 	fs.SetOutput(ui.Errw)
 
-	var taints repeated
+	var (
+		taints repeated
+		peers  repeated
+	)
 
 	noTaint := fs.Bool("no-taint", false, "join the realm's shared compartment instead of a private one")
 	uplink := fs.String("uplink", "", "carry the mesh over a link rather than the host network, e.g. /dev/ttyUSB0:115200")
 	noUplink := fs.Bool("no-uplink", false, "go back to the host's network on a machine configured for a link")
+	noPeers := fs.Bool("no-peers", false, "forget the bootstrap list and go back to the one enrolment supplies")
 	apiBase := fs.String("api", "", "enrolment API base URL")
 
 	fs.Var(&taints, "taint", "compartment label; repeat to carry more than one")
+	fs.Var(&peers, "peers", "bootstrap entry as host:port; repeat for more. Enrolment supplies these, so this is an override")
 
 	fs.Usage = func() {
 		ui.Printf("conflux proxy — publish a local service on the overlay, without an interface\n\n" +
-			"  conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T] [--uplink DEV | --no-uplink]\n\n" +
+			"  conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T] [--uplink DEV | --no-uplink]\n" +
+			"                [--peers HOST:PORT | --no-peers]\n\n" +
 			"Runs the anchor entirely in userspace, so it needs no TUN device and no\n" +
 			"CAP_NET_ADMIN. Nothing on this host can see the overlay; the only way in is a\n" +
 			"service named here.\n\n" +
@@ -140,6 +146,10 @@ func runProxy(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
+	if err := choosePeers(cfg, peers, *noPeers); err != nil {
+		return fail(err)
+	}
+
 	if err := chooseTaints(cfg, taints, *noTaint); err != nil {
 		return fail(err)
 	}
@@ -156,6 +166,8 @@ func unknownProxyFlag(args []string) string {
 		"-api": true, "--api": true,
 		"-uplink": true, "--uplink": true,
 		"-no-uplink": true, "--no-uplink": true,
+		"-peers": true, "--peers": true,
+		"-no-peers": true, "--no-peers": true,
 		"-h": true, "--help": true, "-help": true,
 	}
 

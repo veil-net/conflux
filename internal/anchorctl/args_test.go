@@ -45,6 +45,22 @@ var scenarios = map[string]StartMode{
 		Proxies: []string{"8080=127.0.0.1:3000", "53/udp=127.0.0.1:53", "5432=[::1]:5432"},
 		Dir:     "/var/lib/conflux/anchor",
 	},
+	"up-peers": {
+		TUN: true, TUNName: "anchor0", Taints: []string{"brhk-2mq9-tzva-6pjs"},
+		Peers: []string{"genesis.veilnet.com.au:4700"},
+		Dir:   "/var/lib/conflux/anchor",
+	},
+	"up-peers-many": {
+		TUN: true, TUNName: "anchor0", Taints: []string{"brhk-2mq9-tzva-6pjs"},
+		Peers: []string{"genesis.veilnet.com.au:4700", "anchorabc@203.0.113.9:4700"},
+		Dir:   "/var/lib/conflux/anchor",
+	},
+	"proxy-peers": {
+		Taints:  []string{"brhk-2mq9-tzva-6pjs"},
+		Proxies: []string{"8080=127.0.0.1:3000"},
+		Peers:   []string{"genesis.veilnet.com.au:4700"},
+		Dir:     "/var/lib/conflux/anchor",
+	},
 	"up-uplink": {
 		TUN: true, TUNName: "anchor0", Taints: []string{"brhk-2mq9-tzva-6pjs"},
 		Uplink: "/dev/ttyUSB0:115200", Dir: "/var/lib/conflux/anchor",

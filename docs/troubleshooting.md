@@ -5,7 +5,7 @@ beneath it, and most of what follows is a way of reading that output.
 
 | Symptom | Cause | What to do |
 |---|---|---|
-| `nothing is running here` | no daemon on the socket | `conflux up`, `conflux proxy`, or `conflux install` if a configuration already exists |
+| `nothing is running here` | no daemon on the socket | `conflux start` if a configuration already exists, otherwise `conflux up` or `conflux proxy` |
 | `this needs root` | every state-changing verb needs it | `sudo conflux …` |
 | `status` exits 78 | never configured | `conflux up` or `conflux proxy` |
 | `up` exits 2 with "needs `--ipv4` or `--no-ipv4`" | no terminal to prompt at | pass one of them; that is what they are for |
@@ -50,8 +50,23 @@ enrolled yet`. Bring it up once where it has the internet.
 permanently on a cable stops being admitted after seven days; `conflux status` says
 `credential EXPIRED`.
 
-**An unplugged adapter needs a restart.** A device is not reopened, so a link that
-ended stays ended: `sudo conflux up` restarts it from the configuration.
+**A link that ended is reopened for you.** A device is not reopened by anchor, so
+conflux watches it: a device that leaves the filesystem is acted on at once, and a
+link carrying nothing for 90 seconds is treated as ended. Either way the anchor is
+rebuilt on it. `conflux status` shows the tally, which is the thing to look at when a
+machine seems fine but keeps losing peers:
+
+```console
+$ conflux status
+  uplink    7 reopens, last 2026-09-08T11:04:12Z
+```
+
+Seven reopens is a cable, a connector or a far end at fault — conflux is papering over
+it, not fixing it. If it is reopening and never staying up, check the far end is
+running at all: an idle link whose far end is switched off is indistinguishable from a
+dead one, and gets restarted on the same 90-second grace.
+
+To force one by hand: `sudo conflux start`.
 
 ## Two machines are up and cannot reach each other
 

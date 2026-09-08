@@ -1,21 +1,22 @@
 # Commands
 
-conflux keeps eight names for itself. Every other argument vector is handed to the
+conflux keeps nine names for itself. Every other argument vector is handed to the
 embedded `anchorctl` unchanged — not parsed, not rewritten, not validated.
 
 ## The split
 
-conflux's: `up`, `proxy`, `down`, `install`, `uninstall`, `status`, `version`, `help`,
-plus `anchorctl` as an escape hatch and a hidden `serve` the boot service runs.
+conflux's: `up`, `proxy`, `start`, `down`, `install`, `uninstall`, `renew`, `status`,
+`version`, `help`, plus `anchorctl` as an escape hatch and a hidden `serve` the boot
+service runs.
 
 anchorctl's, reached by typing them: `peers`, `route`, `routes`, `connect`, `punch`,
 `events`, `metrics`, `export`, `children`, `telemetry`, `send`, `subscribe`, `keygen`,
 `issue`, `delegate`, `renew-link`, `install-link`, `id`, `inspect`, `config`, `renew`,
 `mint-realm`, `mint-anchor`.
 
-### The four collisions
+### The five collisions
 
-`proxy`, `renew`, `status` and `help` exist on both sides. Each is resolved
+`start`, `proxy`, `renew`, `status` and `help` exist on both sides. Each is resolved
 explicitly.
 
 **`help`** is conflux's, always. It prints conflux's usage and then anchorctl's whole
@@ -39,16 +40,22 @@ takes `-cred FILE` and installs one the caller already holds. So any flag reachi
 `conflux renew` other than `-h` names anchorctl's, and is answered with the escape
 hatch rather than guessed at.
 
-**`start`, `stop` and `restart`** are anchorctl's and conflux refuses to pass them
-through. Running them directly would build an anchor conflux's configuration does not
-describe, or stop one conflux believes is running, and the next reboot would silently
-disagree. The refusal names `up` and `down` and the escape hatch.
+**`start`** is resolved by shape, like `renew`. conflux's takes no arguments at all:
+it starts the anchor this machine is already configured for. anchorctl's builds one
+from arguments the caller supplies. So any flag reaching `conflux start` other than
+`-h` names anchorctl's, and is answered with the escape hatch rather than guessed at.
+
+**`stop` and `restart`** are anchorctl's and conflux refuses to pass them through.
+Running them directly would stop an anchor conflux believes is running, or build one
+its configuration does not describe, and the next reboot would silently disagree. The
+refusal names `down` and `start` and the escape hatch.
 
 ## `conflux up`
 
 ```
 conflux up [--taint T]... [--ipv4 PREFIX | --no-ipv4] [--subnet CIDR]... [--interface NAME]
            [--uplink DEV | --no-uplink] [--peers HOST:PORT]... [--no-peers] [--api URL]
+           [--port N | --no-port] [--low-latency] [--serve-exit] [--use-exit]
 ```
 
 Enrols this machine if it has never been, starts an anchor in TUN mode, writes the
@@ -67,6 +74,24 @@ configuration, and registers the boot service.
 | `--peers HOST:PORT` | where to start looking for the realm; repeat for more. `anchorxxx@host:port` also works. Enrolment supplies this, so it is an override — see below. |
 | `--no-peers` | forget an override and go back to the list enrolment supplies. |
 | `--api URL` | the enrolment API base. Default `https://api.veilnet.com.au`. |
+| `--port N` | the UDP port to bind, 1–65535. Omit it and the kernel picks one. |
+| `--no-port` | go back to letting the kernel pick. |
+| `--low-latency` | carry frames on QUIC datagrams: no head-of-line blocking between flows to one peer, and a lost frame stays lost rather than holding up the ones behind it. |
+| `--no-low-latency` | go back to carrying frames on streams. |
+| `--serve-exit` | offer this machine as a way out to the public internet. |
+| `--use-exit` | send this machine's own internet traffic over the overlay. |
+| `--no-serve-exit`, `--no-use-exit` | the way back from either. |
+
+An anchor listens on **every** interface, so `--port` is a port and not an address:
+the host's addresses change underneath it, and pinning one is a promise the host
+cannot keep. Name a port to write a firewall rule or a port-forward against; leave it
+alone otherwise. It is refused beside `--uplink`, which binds no socket at all.
+
+Both exits need a host interface, so both are `up`'s and not `proxy`'s. Neither is
+ever inherited from the enrolment manifest: conflux passes both in whichever
+direction they were set, because an anchor that became an internet exit because a
+document said so is the worst kind of surprise. Switching a machine to `proxy` clears
+them.
 
 `--uplink` is the medium and the verb is the mode, so the flag means the same thing
 on `proxy`, and neither answer constrains the other. A malformed spec, and the `fd:N`
@@ -93,10 +118,15 @@ Needs root.
 ```
 conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T]... [--uplink DEV | --no-uplink]
               [--peers HOST:PORT]... [--no-peers] [--api URL]
+              [--port N | --no-port] [--low-latency]
 ```
 
-Starts in userspace mode serving those backends. Same taint, uplink and API flags as
-`up`. Specs and flags may be written in either order.
+Starts in userspace mode serving those backends. Same taint, uplink, peers, API,
+`--port` and `--low-latency` flags as `up`. Specs and flags may be written in either
+order.
+
+`--serve-exit` and `--use-exit` are not here: routing the public internet either way
+needs a host interface, which userspace mode has none of.
 
 The grammar is `OVERLAYPORT[/NETWORK]=BACKEND`: the network defaults to `tcp` and must
 be `tcp` or `udp`, the port is 1–65535, and a duplicate overlay port is refused rather
@@ -105,12 +135,42 @@ than silently keeping the last. See [modes.md](modes.md) for the spec table, and
 
 Needs root, only to register the boot service.
 
+## `conflux start`
+
+```
+conflux start
+```
+
+Starts the anchor now, from the configuration already on disk, in whichever mode it
+names. Takes no arguments: it decides nothing, enrols nothing, and invents no
+configuration.
+
+The counterpart to `down`, and the reason it exists. `down` deliberately leaves the
+boot registration and the configuration in place, so there has to be a word for
+"bring that back now" that is not a reboot. That word used to be `conflux install`,
+whose name and usage line both say *register the boot service* — it started one as a
+side effect, and pointing an operator at it was papering over a missing verb.
+
+It is mode-agnostic on purpose. `up` would do for a TUN machine, but `up` is not a
+resume: it re-decides the configuration, and on a userspace machine it changes the
+mode and drops the proxies. A machine serving eight ports cannot be brought back by
+retyping eight specs correctly from memory.
+
+| Situation | |
+|---|---|
+| not installed | exit 69, naming `install`, `up` and `proxy` — there is no service to start |
+| installed, no configuration | exit 78, naming `up` and `proxy` — there is nothing to start |
+| already running | restarts it. A `start` that refused would be answering a question nobody asked |
+
+Needs root.
+
 ## `conflux down`
 
 Stops the anchor now. The boot service stays registered and the configuration and
-identity stay on disk, so the next reboot brings the machine back exactly as it was.
-Refuses with exit 69 if conflux is not installed, because there would be nothing for a
-reboot to bring back and the word would be a lie.
+identity stay on disk, so the next reboot brings the machine back exactly as it was,
+and `conflux start` brings it back before then. Refuses with exit 69 if conflux is not
+installed, because there would be nothing for a reboot to bring back and the word
+would be a lie.
 
 ## `conflux install`
 
@@ -120,6 +180,10 @@ configuration is invented.
 
 `up` and `proxy` call it internally after writing their configuration, so there is one
 path for "register and run" and one for "configure, persist, then register and run".
+
+Registration is the point here. To start a machine that is already registered, that is
+`conflux start` — the two share the starting, so neither can drift into starting a
+different anchor from the other.
 
 ## `conflux renew`
 

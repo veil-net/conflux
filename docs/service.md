@@ -10,6 +10,7 @@ systemd / launchd / SCM
   └── conflux serve
         ├── anchord -socket … -token-file …
         ├── the renewal timer
+        ├── the link watcher, on a machine configured for an uplink
         └── the restart loop
 ```
 
@@ -33,6 +34,23 @@ Shutdown runs in one order everywhere: stop the renewal timer, `anchorctl stop` 
 anchor says goodbye, then signal the process, then kill it. The second step is the
 important one — an announced departure saves every peer from working it out by
 timeout — and killing is only safe because it has already happened.
+
+## The four verbs, and which pair is which
+
+Two pairs that are easy to confuse, because both look like they turn something off:
+
+| | Pair | What it touches |
+|---|---|---|
+| now | `conflux start` / `conflux down` | the running anchor. The registration and the configuration are untouched, so a reboot behaves the same either way. |
+| permanently | `conflux install` / `conflux uninstall` | the boot registration. `uninstall` also deletes the configuration and the identity. |
+
+`down` then `start` is the restart. `install` happens to start a configured machine as
+well, which is why it used to be what `down` pointed at, but registration is its
+subject and starting is a side effect — `start` is the verb whose subject is starting.
+
+Neither `up` nor `proxy` belongs in that table: they decide the configuration and then
+do both. `start` decides nothing, which is exactly what makes it the way back from
+`down` on a userspace machine, where `up` would change the mode and drop the proxies.
 
 ## systemd
 

@@ -1,0 +1,14 @@
+start
+-manifest
+-
+-dir
+/var/lib/conflux/anchor
+-taints
+brhk-2mq9-tzva-6pjs
+-peers
+genesis.veilnet.com.au:4700,anchorabc@203.0.113.9:4700
+-tun=true
+-tun-name
+anchor0
+-serve-exit=false
+-use-exit=false

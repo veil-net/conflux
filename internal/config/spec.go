@@ -226,3 +226,79 @@ func ParseUplinkSpec(spec string) (UplinkSpec, error) {
 // Refusing would be wrong, since the number is a rate and not a limit, so this only
 // decides whether conflux says something first.
 const SlowUplinkBaud = 19200
+
+// ValidatePeer applies anchor's bootstrap grammar, minus the resolving.
+//
+// Anchor's is discovery.ParseEntry: "host:port", or "anchorxxx@host:port" when the
+// anchor expected to answer is known. Naming it is optional -- the realm gate and
+// the certificate establish who answered regardless -- so it only buys an earlier
+// error.
+//
+// What this deliberately does not do is resolve the name. Anchor resolves once,
+// when it reads its configuration, and never again; doing it here as well would
+// make `conflux up` fail on a machine whose resolver is not up yet, for a peer the
+// anchor would have resolved perfectly well a second later. The shape is conflux's
+// to check, the address is anchor's.
+//
+// The comma is refused for the same reason ValidateTaint refuses it: -peers is a
+// comma-separated flag, so a comma inside one entry silently becomes two.
+func ValidatePeer(entry string) error {
+	if entry == "" {
+		return fmt.Errorf("peer is empty")
+	}
+
+	if strings.Contains(entry, ",") {
+		return fmt.Errorf(
+			"peer %q contains a comma, which would split it into two entries; use --peers twice instead", entry)
+	}
+
+	rest := entry
+
+	if at := strings.LastIndex(rest, "@"); at >= 0 {
+		anchorID := rest[:at]
+		if !strings.HasPrefix(anchorID, "anchor") {
+			return fmt.Errorf(
+				"peer %q names %q before the @, and an AnchorID starts with \"anchor\"", entry, anchorID)
+		}
+
+		rest = rest[at+1:]
+	}
+
+	host, port, err := net.SplitHostPort(rest)
+	if err != nil {
+		return fmt.Errorf("peer %q is not host:port, for example genesis.veilnet.com.au:4700", entry)
+	}
+
+	if host == "" {
+		return fmt.Errorf("peer %q names a port and no host", entry)
+	}
+
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1 || n > 65535 {
+		return fmt.Errorf("peer %q: %q is not a port", entry, port)
+	}
+
+	return nil
+}
+
+// ValidatePeers checks a whole bootstrap list and refuses a duplicate.
+//
+// A repeated entry is not harmful to anchor, which dedupes on the address it
+// resolves to, but it is always a mistake in something an operator typed.
+func ValidatePeers(peers []string) error {
+	seen := make(map[string]bool, len(peers))
+
+	for _, p := range peers {
+		if err := ValidatePeer(p); err != nil {
+			return err
+		}
+
+		if seen[p] {
+			return fmt.Errorf("peer %q is named twice", p)
+		}
+
+		seen[p] = true
+	}
+
+	return nil
+}

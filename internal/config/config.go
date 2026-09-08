@@ -90,6 +90,17 @@ type Config struct {
 	// of it. Either mode runs on either medium.
 	Uplink string `json:"uplink,omitempty"`
 
+	// Peers is where to start looking for the realm: "host:port", or
+	// "anchorxxx@host:port" when the anchor expected to answer is known.
+	//
+	// Empty is the normal case and not a missing setting. The enrolment manifest
+	// carries its issuer's own bootstrap list, and anchorctl uses it for exactly
+	// the fields no flag named -- so passing nothing here is what lets the API
+	// move its bootstrap nodes without every machine needing reconfiguring. This
+	// is the override for pointing a machine at a realm the manifest does not
+	// know about, which in practice means testing.
+	Peers []string `json:"peers,omitempty"`
+
 	TUNName    string `json:"tunName,omitempty"`
 	APIBaseURL string `json:"apiBaseUrl,omitempty"`
 
@@ -170,6 +181,10 @@ func (c *Config) Validate() error {
 		if _, err := ParseUplinkSpec(c.Uplink); err != nil {
 			return err
 		}
+	}
+
+	if err := ValidatePeers(c.Peers); err != nil {
+		return err
 	}
 
 	if err := c.validateSubnets(); err != nil {

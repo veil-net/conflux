@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
@@ -139,6 +140,10 @@ func report(d paths.Dirs, cfg *config.Config, st anchorctl.Status, verb string) 
 	}
 
 	ui.Field("taint", joinTaints(cfg.Taints))
+
+	if len(cfg.Peers) > 0 {
+		ui.Field("peers", strings.Join(cfg.Peers, ", ")+" — overriding the enrolled list")
+	}
 
 	if !st.WorksUntil.IsZero() {
 		ui.Field("credential", fmt.Sprintf("valid until %s (%s)",

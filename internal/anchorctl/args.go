@@ -26,6 +26,14 @@ type StartMode struct {
 	Taints  []string
 	Dir     string
 
+	// Peers is the bootstrap list, or empty to let the manifest supply it.
+	//
+	// Empty means the flag is not passed at all, which is the whole point: anchorctl
+	// takes bootstrap from the manifest only for fields no flag named, so omitting
+	// -peers is what keeps the issuer's own list in play. Passing an empty -peers
+	// would override it with nothing.
+	Peers []string
+
 	// Uplink is the link layer 1 runs over instead of a UDP socket, or empty for
 	// the host's IP network. Orthogonal to every other field here: it decides the
 	// medium, and the rest decide what this machine does with the realm on it.
@@ -42,6 +50,7 @@ func ModeFromConfig(c *config.Config, anchorDir string) StartMode {
 		Proxies: c.Proxies,
 		IPv4:    c.IPv4,
 		Uplink:  c.Uplink,
+		Peers:   c.Peers,
 	}
 
 	if m.TUN {
@@ -73,6 +82,14 @@ func (m StartMode) Args() []string {
 
 	if len(m.Taints) > 0 {
 		args = append(args, "-taints", strings.Join(m.Taints, ","))
+	}
+
+	// Only when set, unlike the mode flags above. This is the one field conflux
+	// deliberately leaves to the manifest when the operator named nothing: the
+	// issuer knows where its own realm answers, and a machine that hardcoded that
+	// list would stop bootstrapping the day the API moved a node.
+	if len(m.Peers) > 0 {
+		args = append(args, "-peers", strings.Join(m.Peers, ","))
 	}
 
 	// Before -tun, because it is the medium the rest of this runs over. anchorctl

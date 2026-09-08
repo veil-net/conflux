@@ -58,6 +58,12 @@ func TestEveryFlagWeUseExists(t *testing.T) {
 			TUN: true, TUNName: "anchor0", Taints: []string{"t"},
 			Uplink: "/dev/ttyUSB0:115200", Dir: "/tmp/x",
 		}.Args()},
+		// Named separately because -peers is the one flag conflux omits when the
+		// operator names nothing, so the cases above never carry it.
+		{"start-peers", anchorctl.StartMode{
+			TUN: true, TUNName: "anchor0", Taints: []string{"t"}, Dir: "/tmp/x",
+			Peers: []string{"genesis.veilnet.com.au:4700"},
+		}.Args()},
 		{"renew", anchorctl.RenewArgs("/tmp/c")},
 		{"stop", anchorctl.StopArgs()},
 		{"status", anchorctl.StatusArgs()},

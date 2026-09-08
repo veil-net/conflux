@@ -259,7 +259,7 @@ explanations of every other refusal — passes through untouched.
 
 | Variable | Effect |
 |---|---|
-| `CONFLUX_DIR` | roots every conflux path in one directory. What the tests use. |
+| `CONFLUX_DIR` | roots a whole separate conflux installation in one directory — config, identity, socket and the boot service, which is named after the root so it cannot replace the machine's own. What the tests use. See [testing.md](testing.md). |
 | `CONFLUX_DEBUG=1` | pass `-v` to anchord. |
 | `CONFLUX_ALLOW_INSECURE_API=1` | permit a plain-http API base. For tests only. |
 | `ANCHOR_SOCKET`, `ANCHORD_TOKEN` | if already set, conflux leaves them alone and pass-through uses yours. |

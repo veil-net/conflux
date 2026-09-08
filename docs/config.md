@@ -15,7 +15,7 @@ under a systemd unit with `User=` or `ProtectHome=`.
 | state, identity, binaries | `/var/lib/conflux/` | `/Library/Application Support/conflux/` | `%ProgramData%\conflux\` | `/var/db/conflux/` |
 | socket and token | `/run/conflux/` | `/var/run/conflux/` | `%ProgramData%\conflux\run\` | `/var/run/conflux/` |
 
-`CONFLUX_DIR` roots all of them in one directory.
+`CONFLUX_DIR` roots all of them in one directory, and the boot service with them — it is named after the root, so a run under it is a separate installation rather than a replacement for the machine's own. See [testing.md](testing.md).
 
 Every directory is `0700` and every file `0600`.
 

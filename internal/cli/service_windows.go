@@ -22,7 +22,7 @@ func serveAsService(sup *daemon.Supervisor) (bool, int) {
 
 	h := &handler{sup: sup}
 
-	if err := svc.Run(service.ServiceName, h); err != nil {
+	if err := svc.Run(service.ServiceName(), h); err != nil {
 		return true, ExitChildFailed
 	}
 

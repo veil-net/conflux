@@ -65,7 +65,16 @@ func install(ctx context.Context, d paths.Dirs, standalone bool) int {
 		ui.Warnf("%s", warning)
 	}
 
-	if err := mgr.Install(exe, "serve"); err != nil {
+	// A CONFLUX_DIR run registers a service that has to come back to that same
+	// directory. Passed as an argument rather than an environment variable because
+	// none of the three service managers carries the operator's environment into
+	// what it starts.
+	serveArgs := []string{"serve"}
+	if root := paths.Root(); root != "" {
+		serveArgs = append(serveArgs, "--dir", root)
+	}
+
+	if err := mgr.Install(exe, serveArgs...); err != nil {
 		if errors.Is(err, service.ErrUnsupported) {
 			ui.Errf("%v", err)
 

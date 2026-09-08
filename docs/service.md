@@ -35,6 +35,18 @@ anchor says goodbye, then signal the process, then kill it. The second step is t
 important one — an announced departure saves every peer from working it out by
 timeout — and killing is only safe because it has already happened.
 
+## One machine, one service — unless CONFLUX_DIR says otherwise
+
+The unit, the launchd label and the SCM entry are all named `conflux`, one per
+machine, which is what "one configuration per machine" means in practice.
+
+A run under `CONFLUX_DIR` is the exception, because it is a separate installation and
+not the machine's own: the service takes a suffix derived from the root
+(`conflux-44a6e4f4.service`), and the root is written into the argv it is registered
+with, so the supervisor comes back to the same directory at boot. Neither happens
+without `CONFLUX_DIR`, so an ordinary install is byte-for-byte what it always was.
+See [testing.md](testing.md).
+
 ## The four verbs, and which pair is which
 
 Two pairs that are easy to confuse, because both look like they turn something off:

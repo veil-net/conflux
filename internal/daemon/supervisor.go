@@ -464,6 +464,15 @@ func isPermanent(err error) bool {
 			"invalid argument",
 			"taints",
 			"matches nothing",
+
+			// An interface name another interface already holds. Not permanent in
+			// the strictest sense -- the holder could go away -- but it will not
+			// free itself inside thirty seconds of backoff, and two conflux
+			// installations on one machine hit this every time, because both
+			// default to anchor0. Retrying to the 90-second unit timeout buries the
+			// reason in the journal; failing in three seconds puts it in front of
+			// somebody who can pass --interface.
+			"device or resource busy",
 		} {
 			if strings.Contains(s, phrase) {
 				return true

@@ -92,33 +92,45 @@ enrolment manifest, which is what lets the API move a node without touching a si
 machine. Point a dev build at it explicitly:
 
 ```console
-$ sudo CONFLUX_DIR=/tmp/cfx-test conflux up --peers genesis.veilnet.com.au:4700
-$ sudo CONFLUX_DIR=/tmp/cfx-test conflux status     # peers > 0, up=yes
+$ sudo CONFLUX_DIR=/var/lib/cfx-dev conflux up --peers genesis.veilnet.com.au:4700 \
+      --interface anchor1
+$ sudo CONFLUX_DIR=/var/lib/cfx-dev conflux status  # peers > 0, up=yes
 ```
 
-`CONFLUX_DIR` keeps the config, the identity, the state and the socket out of
-`/etc/conflux` and `/var/lib/conflux`. Port 4700 is UDP; a TCP probe of it is refused,
-and that is expected rather than a fault.
+`CONFLUX_DIR` roots the whole installation somewhere else — the config, the identity,
+the state, the socket, **and the boot service**. Port 4700 is UDP; a TCP probe of it is
+refused, and that is expected rather than a fault.
 
-> **`CONFLUX_DIR` does not isolate the boot service.** `unitPath` is a constant —
-> `/etc/systemd/system/conflux.service`, and the launchd and SCM equivalents are
-> constants too — and the service package never reads `CONFLUX_DIR`. So `up` and
-> `proxy` under it still rewrite that one unit and restart it, because both call
-> `install` on their way through.
->
-> On a machine that is already a conflux node, that replaces the running node with the
-> dev build. Do this in the systemd container above, or on a machine that is not one,
-> or `conflux down` and note the `ExecStart` first so it can be put back. There is no
-> flag that makes the registration temporary, and inventing one to make a test tidier
-> would be a boot-time behaviour nobody asked for.
+The service is included because it has to be. A run rooted elsewhere is a separate
+installation of conflux, not the machine's own, so:
 
-To check reachability *without* touching the service, drive the embedded anchorctl
-directly against a daemon you start yourself — that is what the escape hatch is for,
-and it registers nothing:
+- the service is named after the root — `conflux-e7616592.service`,
+  `org.veilnet.conflux-e7616592`, or the same SCM entry — and cannot be registered
+  over a real node's;
+- the root is written into the argv the service is registered with, because none of
+  the three service managers carries the operator's environment into what it starts.
+  Without that the unit came back at boot reading `/etc/conflux`, and the CLI waited
+  out its ninety seconds for a socket that was never going to appear.
+
+So a dev run and a real node coexist on one machine:
 
 ```console
-$ conflux anchorctl start -peers genesis.veilnet.com.au:4700 -identity … -root … -cred …
+$ conflux status                                    # the machine's own
+  service      active (systemd: conflux.service, enabled at boot)
+$ CONFLUX_DIR=/var/lib/cfx-dev conflux status       # the dev one
+  service      active (systemd: conflux-e7616592.service, enabled at boot)
 ```
+
+**They still share the interface name.** Both default to `anchor0`, and the second to
+start gets `device or resource busy` — pass `--interface anchor1` to the dev one, as
+above. That is the one thing `CONFLUX_DIR` does not name, because an interface belongs
+to the host and not to a conflux installation. The failure is treated as permanent
+rather than retried to the unit's ninety-second timeout, so it arrives in a few
+seconds and says what it is.
+
+**Not `/tmp`.** systemd clears it on boot, so a dev root there is gone by the time the
+service starts and the unit exits 78 — correctly, but it makes the reboot test
+meaningless. Anywhere persistent will do.
 
 Two things worth checking deliberately, because neither is obvious from a passing run:
 

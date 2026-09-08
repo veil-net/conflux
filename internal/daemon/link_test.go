@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/veil-net/conflux/internal/anchorctl"
 )
 
 func TestDevicePath(t *testing.T) {
@@ -62,5 +64,21 @@ func TestLinkIsDeadWhenTheDeviceGoes(t *testing.T) {
 
 	if reason == "" {
 		t.Error("a dead link should say why")
+	}
+}
+
+// TestBusyInterfaceIsPermanent: two conflux installations on one machine both default
+// to anchor0, so this is the failure a second one hits every time. Retrying it to the
+// unit's 90-second timeout leaves the reason in the journal and nothing but "job
+// failed" in front of the operator.
+func TestBusyInterfaceIsPermanent(t *testing.T) {
+	err := &anchorctl.Error{
+		Args:   []string{"start", "-tun=true", "-tun-name", "anchor0"},
+		Code:   1,
+		Stderr: `anchorctl: starting: anchor: opening anchor0: tundev: creating "anchor0": device or resource busy`,
+	}
+
+	if !isPermanent(err) {
+		t.Error("a TUN name another interface holds should not be retried to the unit timeout")
 	}
 }

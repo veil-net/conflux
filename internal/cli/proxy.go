@@ -57,6 +57,14 @@ func runProxy(ctx context.Context, args []string) int {
 	noUplink := fs.Bool("no-uplink", false, "go back to the host's network on a machine configured for a link")
 	noPeers := fs.Bool("no-peers", false, "forget the bootstrap list and go back to the one enrolment supplies")
 	apiBase := fs.String("api", "", "enrolment API base URL")
+	port := fs.Uint("port", 0, "UDP port to bind on every interface; omit to let the kernel pick one")
+
+	// Read through typedFlags rather than by value; see the same block in up.go. The
+	// two exit flags are absent on purpose: both need a host interface, which
+	// userspace mode does not have.
+	fs.Bool("no-port", false, "go back to letting the kernel pick the port")
+	fs.Bool("low-latency", false, "carry frames on datagrams: no head-of-line blocking, and a lost frame stays lost")
+	fs.Bool("no-low-latency", false, "go back to carrying frames on streams")
 
 	fs.Var(&taints, "taint", "compartment label; repeat to carry more than one")
 	fs.Var(&peers, "peers", "bootstrap entry as host:port; repeat for more. Enrolment supplies these, so this is an override")
@@ -133,6 +141,11 @@ func runProxy(ctx context.Context, args []string) int {
 
 		cfg.Subnets = nil
 		cfg.IPv4 = ""
+
+		// Both exits need a host interface. Left set they would strand Validate on a
+		// setting the operator cannot see and did not type on this run.
+		cfg.ServeExit = false
+		cfg.UseExit = false
 	}
 
 	cfg.Mode = config.ModeProxy
@@ -154,6 +167,10 @@ func runProxy(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
+	if err := chooseTuning(cfg, typedFlags(fs), *port, false); err != nil {
+		return fail(err)
+	}
+
 	return bring(ctx, d, cfg, "proxy")
 }
 
@@ -168,6 +185,10 @@ func unknownProxyFlag(args []string) string {
 		"-no-uplink": true, "--no-uplink": true,
 		"-peers": true, "--peers": true,
 		"-no-peers": true, "--no-peers": true,
+		"-port": true, "--port": true,
+		"-no-port": true, "--no-port": true,
+		"-low-latency": true, "--low-latency": true,
+		"-no-low-latency": true, "--no-low-latency": true,
 		"-h": true, "--help": true, "-help": true,
 	}
 
@@ -216,10 +237,13 @@ func splitPositional(args []string) (positional, flags []string) {
 }
 
 // takesValue reports whether a flag written as `-flag value` swallows the argument
-// after it. Only conflux proxy's own value-taking flags are here; --no-taint and
-// --no-uplink are booleans and take nothing.
+// after it. Only conflux proxy's own value-taking flags are here; --no-taint,
+// --no-uplink and --low-latency are booleans and take nothing.
 func takesValue(arg string) bool {
-	name := strings.TrimLeft(arg, "-")
-
-	return name == "taint" || name == "api" || name == "uplink"
+	switch strings.TrimLeft(arg, "-") {
+	case "taint", "api", "uplink", "peers", "port":
+		return true
+	default:
+		return false
+	}
 }

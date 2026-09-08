@@ -19,6 +19,25 @@ and the BSDs, Administrator and `wintun.dll` on Windows.
 Because the kernel owns the address, a service published on the overlay is an ordinary
 `bind` — there is no proxy to configure and conflux offers none.
 
+### Exits
+
+An interface is also what makes an exit possible, so both exit flags are `up`'s:
+
+```console
+$ sudo conflux up --serve-exit      # be a way out to the public internet for the realm
+$ sudo conflux up --use-exit        # send this machine's own internet over the overlay
+```
+
+They are independent — a machine can do either, both or neither — and both are off
+unless asked for. conflux passes them explicitly in whichever direction they were set
+rather than letting the enrolment manifest supply them, because an anchor that became
+an internet exit because a document said so is the worst kind of surprise. `--no-serve-exit`
+and `--no-use-exit` are the way back.
+
+Routing traffic out needs the host to be willing to forward it; see
+[`--subnet`, and what the host has to be](#--subnet-and-what-the-host-has-to-be),
+which has the same requirement for the same reason.
+
 ## Userspace — `conflux proxy`
 
 The overlay lives entirely inside the daemon, in a userspace network stack. Nothing on
@@ -35,6 +54,10 @@ does not resolve yet is legitimate.
 
 conflux still needs root to *register the boot service* — a proxy that vanishes on the
 next reboot is not what anyone asked for — but the anchor itself needs nothing.
+
+Neither exit is available here: routing the public internet either way needs a host
+interface, and userspace mode has none. `conflux proxy` does not register the flags at
+all, rather than accepting them and refusing later.
 
 ## Why they cannot be combined
 
@@ -65,7 +88,11 @@ conflux: this machine was running in TUN mode with interface anchor0.
   a host interface cannot also serve a reverse proxy …
 ```
 
-The identity does not change. Only the mode does.
+The identity does not change. Only the mode does — along with the settings that
+cannot survive it. Switching to userspace clears the overlay IPv4, the subnets and
+both exits, because each needs a host interface; switching to TUN clears the proxy
+specs. Everything that is orthogonal to the mode — the taints, the uplink, the peers,
+the port, low latency — is kept.
 
 ## Proxy specs
 

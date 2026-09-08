@@ -38,8 +38,19 @@ func runUp(ctx context.Context, args []string) int {
 		noUplink = fs.Bool("no-uplink", false, "go back to the host's network on a machine configured for a link")
 		noPeers  = fs.Bool("no-peers", false, "forget the bootstrap list and go back to the one enrolment supplies")
 		apiBase  = fs.String("api", "", "enrolment API base URL")
+		port     = fs.Uint("port", 0, "UDP port to bind on every interface; omit to let the kernel pick one")
 		peers    repeated
 	)
+
+	// Registered for the flag package and read through typedFlags, not through these
+	// values: what matters is whether they were written, not what they default to.
+	fs.Bool("no-port", false, "go back to letting the kernel pick the port")
+	fs.Bool("low-latency", false, "carry frames on datagrams: no head-of-line blocking, and a lost frame stays lost")
+	fs.Bool("no-low-latency", false, "go back to carrying frames on streams")
+	fs.Bool("serve-exit", false, "offer this machine as a way out to the public internet")
+	fs.Bool("no-serve-exit", false, "stop offering a way out")
+	fs.Bool("use-exit", false, "send this machine's own internet traffic over the overlay")
+	fs.Bool("no-use-exit", false, "send this machine's internet traffic the ordinary way")
 
 	fs.Var(&taints, "taint", "compartment label; repeat to carry more than one")
 	fs.Var(&subnets, "subnet", "a network this machine forwards for the realm; repeat for more")
@@ -118,7 +129,102 @@ func runUp(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
+	if err := chooseTuning(cfg, typedFlags(fs), *port, true); err != nil {
+		return fail(err)
+	}
+
 	return bring(ctx, d, cfg, "up")
+}
+
+// typedFlags records which flags were actually written, rather than which have a
+// non-zero value.
+//
+// The distinction is the whole of how a persisted setting is kept: `--port 0` and no
+// --port at all are the same value and opposite instructions, and a boolean that
+// defaults false cannot say "leave it alone" by its value either. anchorctl draws the
+// same line with fs.Visit, for the same reason.
+func typedFlags(fs *flag.FlagSet) map[string]bool {
+	typed := map[string]bool{}
+
+	fs.Visit(func(f *flag.Flag) { typed[f.Name] = true })
+
+	return typed
+}
+
+// chooseToggle resolves a --x / --no-x pair against what is already configured.
+//
+// Every persisted answer needs a way back, which is what the negation is for: a
+// machine configured once with --low-latency cannot be talked out of it by omitting
+// the flag, because omitting it is how every other re-run keeps its settings.
+func chooseToggle(name string, typed map[string]bool, current bool) (bool, error) {
+	on, off := typed[name], typed["no-"+name]
+
+	switch {
+	case on && off:
+		return false, fmt.Errorf("--%s and --no-%s contradict each other", name, name)
+	case on:
+		return true, nil
+	case off:
+		return false, nil
+	default:
+		return current, nil
+	}
+}
+
+// choosePort decides the UDP port, keeping a persisted one when no flag names one.
+func choosePort(cfg *config.Config, typed map[string]bool, value uint) error {
+	on, off := typed["port"], typed["no-port"]
+
+	switch {
+	case on && off:
+		return fmt.Errorf("--port and --no-port contradict each other")
+	case off:
+		cfg.Port = 0
+	case on:
+		// Zero is the kernel's choice rather than a port, so it cannot be asked for
+		// by number without the request being ambiguous with not asking at all.
+		if value == 0 || value > 65535 {
+			return fmt.Errorf(
+				"--port %d is not a port: it must be 1-65535, and --no-port is how to go back to letting the kernel pick one",
+				value)
+		}
+
+		cfg.Port = uint16(value)
+	}
+
+	return nil
+}
+
+// chooseTuning applies the settings that are neither the mode nor the medium.
+//
+// exits is false on proxy, where the two exit flags are not registered at all: both
+// need a host interface, so offering them on the verb that has none would be offering
+// a setting whose only outcome is a refusal.
+func chooseTuning(cfg *config.Config, typed map[string]bool, port uint, exits bool) error {
+	if err := choosePort(cfg, typed, port); err != nil {
+		return err
+	}
+
+	lowLatency, err := chooseToggle("low-latency", typed, cfg.LowLatency)
+	if err != nil {
+		return err
+	}
+
+	cfg.LowLatency = lowLatency
+
+	if !exits {
+		return nil
+	}
+
+	if cfg.ServeExit, err = chooseToggle("serve-exit", typed, cfg.ServeExit); err != nil {
+		return err
+	}
+
+	if cfg.UseExit, err = chooseToggle("use-exit", typed, cfg.UseExit); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // loadOrNew reads the existing configuration, or starts a fresh one.

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -141,6 +142,22 @@ func reportCredential(d paths.Dirs) {
 	if st.LastRenewalError != "" {
 		ui.Field("renewal", "failing since "+st.LastRenewalTry.Format(time.RFC3339)+": "+st.LastRenewalError)
 	}
+
+	// A link that keeps ending is a failing cable, and the anchor's own uptime
+	// cannot say so: it resets on every reopen, so a machine losing its link hourly
+	// looks like one that has been up for fifty minutes.
+	if st.LinkReopens > 0 {
+		ui.Field("uplink", plural(st.LinkReopens, "reopen")+", last "+st.LastLinkReopen.Format(time.RFC3339))
+	}
+}
+
+// plural renders a count with its noun, so "1 reopen" does not read as a typo.
+func plural(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+
+	return strconv.Itoa(n) + " " + noun + "s"
 }
 
 func reportBinaries(d paths.Dirs) {
@@ -150,7 +167,7 @@ func reportBinaries(d paths.Dirs) {
 	}
 
 	if st.BinSetID != anchor.SetID() {
-		ui.Field("binaries", "stale — conflux was upgraded; run \"conflux install\" to restart onto the new anchor")
+		ui.Field("binaries", "stale — conflux was upgraded; run \"conflux start\" to restart onto the new anchor")
 	}
 }
 

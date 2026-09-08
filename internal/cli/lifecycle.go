@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
@@ -92,6 +93,16 @@ func install(ctx context.Context, d paths.Dirs, standalone bool) int {
 		return ExitOK
 	}
 
+	return startFromConfig(ctx, d, mgr, "install")
+}
+
+// startFromConfig starts the anchor this machine is already configured for.
+//
+// Shared by `install` and `start` so the two cannot drift into starting differently,
+// the same argument daemon.BringUp makes for `up`, `proxy` and every boot. The caller
+// has already established that a configuration exists and that the service is
+// registered; this is only the starting.
+func startFromConfig(ctx context.Context, d paths.Dirs, mgr service.Manager, verb string) int {
 	ui.Printf("Starting from the configuration in %s.\n", d.ConfigFile())
 
 	if err := mgr.Restart(); err != nil {
@@ -108,9 +119,105 @@ func install(ctx context.Context, d paths.Dirs, standalone bool) int {
 		return fail(err)
 	}
 
-	report(d, cfg, st, "install")
+	report(d, cfg, st, verb)
 
 	return ExitOK
+}
+
+// runStart starts the anchor now, from the configuration already on disk.
+//
+// The counterpart to down, and the reason it exists: down leaves the boot
+// registration and the configuration in place, so there has to be a word for "bring
+// that back now" that is not a reboot. That word used to be `conflux install`, whose
+// name and usage line both say "register the boot service" -- it started one as a
+// side effect, and pointing an operator at it was papering over a missing verb.
+//
+// Mode-agnostic on purpose. `up` would do for a TUN machine, but it is not a resume:
+// it re-decides the configuration, and on a userspace machine it changes the mode and
+// drops the proxies. A machine serving eight ports cannot be brought back by retyping
+// eight specs correctly from memory.
+func runStart(ctx context.Context, args []string) int {
+	fs := flag.NewFlagSet("start", flag.ContinueOnError)
+	fs.SetOutput(ui.Errw)
+	fs.Usage = func() {
+		ui.Printf("conflux start — start the anchor now, from the saved configuration\n\n" +
+			"  conflux start\n\n" +
+			"The counterpart to conflux down. Starts whatever this machine is already\n" +
+			"configured for, in whichever mode it names, and asks nothing. Nothing is\n" +
+			"enrolled and no configuration is invented.\n")
+	}
+
+	// anchorctl has a start of its own, and it is the one that takes flags: it
+	// builds an anchor from arguments the caller supplies. conflux's starts the one
+	// its configuration already describes, which is the whole difference and the
+	// reason it takes none. Resolve by shape, the way renew does.
+	if hint := anchorctlFlag(args); hint != "" {
+		ui.Errf("%q is anchorctl's start, not conflux's.\n\n"+
+			"  conflux start starts the anchor this machine is already configured for:\n\n"+
+			"    conflux start\n\n"+
+			"  To build an anchor from arguments of your own, that is anchorctl's, one word away:\n\n"+
+			"    conflux anchorctl start %s", hint, strings.Join(args, " "))
+
+		return ExitUsage
+	}
+
+	if err := fs.Parse(args); err != nil {
+		return ExitUsage
+	}
+
+	if fs.NArg() > 0 {
+		ui.Errf("conflux start takes no arguments, and got %q.\n\n"+
+			"  conflux start", fs.Arg(0))
+
+		return ExitUsage
+	}
+
+	if err := privcheck.Require("starting the service", "conflux start"); err != nil {
+		return fail(fmt.Errorf("%w: %w", errNeedsRoot, err))
+	}
+
+	d := paths.Default()
+
+	mgr, err := service.New()
+	if err != nil {
+		return fail(err)
+	}
+
+	installed, err := mgr.Installed()
+	if err != nil {
+		return fail(err)
+	}
+
+	// Like down, start is defined against an installed service. Registering one here
+	// would be install's job done quietly, and a machine that gained a boot service
+	// because somebody typed "start" is a surprise at the next reboot rather than now.
+	if !installed {
+		ui.Errf("conflux is not installed here, so there is no service to start.\n\n" +
+			"  conflux install    register the boot service, and start it if configured\n" +
+			"  conflux up         join with a network interface\n" +
+			"  conflux proxy 8080=127.0.0.1:3000   publish a port, no interface needed")
+
+		return ExitUnavailable
+	}
+
+	// The same 78 the supervisor exits with, and for the same reason: there is a
+	// service here and nothing for it to run.
+	if _, err := config.Load(d); err != nil {
+		if !os.IsNotExist(err) {
+			return fail(err)
+		}
+
+		ui.Errf("There is no configuration on this machine, so there is nothing to start.\n\n" +
+			"  conflux up                          join with a network interface\n" +
+			"  conflux proxy 8080=127.0.0.1:3000   publish a port, no interface needed")
+
+		return ExitNoConfig
+	}
+
+	// No check for "already running". mgr.Restart covers both, and a start that
+	// refused a running anchor would be answering a question nobody asked -- the
+	// caller wants it up, and it ends up up.
+	return startFromConfig(ctx, d, mgr, "start")
 }
 
 // runDown stops the anchor now and leaves everything else alone.
@@ -163,7 +270,7 @@ func runDown(_ context.Context, args []string) int {
 
 	ui.Printf("Stopped. The boot service is still registered and the configuration is intact,\n" +
 		"so the next reboot brings this machine back exactly as it was.\n\n" +
-		"  conflux install    start it again now\n" +
+		"  conflux start      start it again now\n" +
 		"  conflux uninstall  remove it permanently\n")
 
 	return ExitOK

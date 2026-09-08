@@ -67,17 +67,17 @@ Replace the binary and re-register:
 
 ```console
 $ sudo install -m 0755 conflux-linux-amd64 /usr/local/bin/conflux
-$ sudo conflux install
+$ sudo conflux start
 ```
 
 The new binary carries a different anchor pair, which extracts into its own directory
-rather than over the one the running daemon has open, and `conflux install` restarts
-the service onto it. Nothing is re-enrolled and the identity is untouched.
+rather than over the one the running daemon has open, and `conflux start` restarts the
+service onto it. Nothing is re-enrolled and the identity is untouched.
 
-Until you run `conflux install`, `conflux status` reports:
+Until you run `conflux start`, `conflux status` reports:
 
 ```
-  binaries     stale — conflux was upgraded; run "conflux install" to restart onto the new anchor
+  binaries     stale — conflux was upgraded; run "conflux start" to restart onto the new anchor
 ```
 
 ## Removing

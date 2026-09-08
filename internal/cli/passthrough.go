@@ -68,9 +68,9 @@ func connectionDetails(d paths.Dirs, args []string) (string, bool) {
 
 	if _, err := os.Stat(d.Socket()); errors.Is(err, fs.ErrNotExist) {
 		ui.Errf("nothing is running here.\n\n"+
+			"  conflux start                       start from a configuration that already exists\n"+
 			"  conflux up                          join with a network interface\n"+
-			"  conflux proxy 8080=127.0.0.1:3000   publish a port, no interface needed\n"+
-			"  conflux install                     start from a configuration that already exists\n\n"+
+			"  conflux proxy 8080=127.0.0.1:3000   publish a port, no interface needed\n\n"+
 			"  (the control socket would be %s)", d.Socket())
 
 		return "", false

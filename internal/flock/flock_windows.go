@@ -1,6 +1,6 @@
 //go:build windows
 
-package libexec
+package flock
 
 import (
 	"fmt"
@@ -9,11 +9,13 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// lock takes an exclusive lock on the whole file, blocking until it is ours.
-func lock(path string) (func(), error) {
+// Acquire takes an exclusive lock on the whole file, blocking until it is ours.
+//
+// The returned function releases it and closes the file.
+func Acquire(path string) (func(), error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
-		return nil, fmt.Errorf("open the extraction lock %s: %w", path, err)
+		return nil, fmt.Errorf("open the lock %s: %w", path, err)
 	}
 
 	h := windows.Handle(f.Fd())

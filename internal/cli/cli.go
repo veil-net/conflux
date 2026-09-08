@@ -33,13 +33,14 @@ type verb struct {
 // verbs is the closed set of names conflux keeps for itself. Everything else
 // reaches anchorctl.
 //
-// Three of these shadow an anchorctl command -- proxy, status and help -- and each
-// resolves its own collision rather than guessing. See the comment on each.
+// Four of these shadow an anchorctl command -- proxy, renew, status and help -- and
+// each resolves its own collision rather than guessing. See the comment on each.
 func verbs() map[string]verb {
 	return map[string]verb{
 		"up":        {run: runUp, summary: "join the overlay with a network interface", usage: "conflux up [--taint T] [--ipv4 PREFIX | --no-ipv4] [--subnet CIDR]... [--uplink DEV | --no-uplink]"},
 		"proxy":     {run: runProxy, summary: "publish a local service on the overlay, without an interface", usage: "conflux proxy PORT[/NETWORK]=BACKEND ... [--uplink DEV | --no-uplink]"},
 		"down":      {run: runDown, summary: "stop the anchor now; a reboot brings it back", usage: "conflux down"},
+		"renew":     {run: runRenew, summary: "install a fresh credential on the running anchor, now", usage: "conflux renew"},
 		"install":   {run: runInstall, summary: "register the boot service", usage: "conflux install"},
 		"uninstall": {run: runUninstall, summary: "remove the boot service, the configuration and the identity", usage: "conflux uninstall [--yes]"},
 		"status":    {run: runStatus, summary: "what conflux and the anchor are doing", usage: "conflux status"},

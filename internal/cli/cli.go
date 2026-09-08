@@ -33,12 +33,13 @@ type verb struct {
 // verbs is the closed set of names conflux keeps for itself. Everything else
 // reaches anchorctl.
 //
-// Four of these shadow an anchorctl command -- proxy, renew, status and help -- and
+// Five of these shadow an anchorctl command -- start, proxy, renew, status and help -- and
 // each resolves its own collision rather than guessing. See the comment on each.
 func verbs() map[string]verb {
 	return map[string]verb{
 		"up":        {run: runUp, summary: "join the overlay with a network interface", usage: "conflux up [--taint T] [--ipv4 PREFIX | --no-ipv4] [--subnet CIDR]... [--uplink DEV | --no-uplink]"},
 		"proxy":     {run: runProxy, summary: "publish a local service on the overlay, without an interface", usage: "conflux proxy PORT[/NETWORK]=BACKEND ... [--uplink DEV | --no-uplink]"},
+		"start":     {run: runStart, summary: "start the anchor now, from the saved configuration", usage: "conflux start"},
 		"down":      {run: runDown, summary: "stop the anchor now; a reboot brings it back", usage: "conflux down"},
 		"renew":     {run: runRenew, summary: "install a fresh credential on the running anchor, now", usage: "conflux renew"},
 		"install":   {run: runInstall, summary: "register the boot service", usage: "conflux install"},
@@ -54,14 +55,18 @@ func verbs() map[string]verb {
 // anchorLifecycleVerbs are anchorctl commands conflux refuses to pass through
 // while it owns the configuration.
 //
-// Passing `start` through would build an anchor conflux does not know about, from
-// arguments its config file does not describe, which the next reboot would silently
-// replace. Passing `stop` through would stop one conflux believes is running. Both
-// are reachable through the escape hatch by anyone who means it.
+// Passing `stop` through would stop an anchor conflux believes is running, and
+// `restart` would rebuild one from arguments its config file does not describe, which
+// the next reboot would silently replace. Both are reachable through the escape hatch
+// by anyone who means it.
+//
+// `start` is absent because conflux has its own now. It used to be refused here and
+// answered with "up", which was wrong on a userspace machine: `up` re-decides the
+// configuration, changes the mode and drops the proxies. `restart` pointed at "up"
+// for the same reason and was wrong the same way, so it names `start`.
 var anchorLifecycleVerbs = map[string]string{
-	"start":   "up",
 	"stop":    "down",
-	"restart": "up",
+	"restart": "start",
 }
 
 // Main dispatches. It returns an exit code rather than calling os.Exit so that the

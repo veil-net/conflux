@@ -49,7 +49,7 @@ func runRenew(ctx context.Context, args []string) int {
 	// installs a credential the caller already holds. conflux's fetches one first,
 	// which is the whole difference and the reason it takes no arguments. Resolve
 	// by shape, the way proxy does, rather than shadowing anchorctl's outright.
-	if hint := anchorctlRenewFlag(args); hint != "" {
+	if hint := anchorctlFlag(args); hint != "" {
 		ui.Errf("%q is anchorctl's renew, not conflux's.\n\n"+
 			"  conflux renew fetches a fresh credential from the enrolment API and installs it:\n\n"+
 			"    conflux renew\n\n"+
@@ -96,7 +96,7 @@ func renewNow(ctx context.Context, d paths.Dirs) int {
 	// likely failure and deserves conflux's own answer rather than a dial error.
 	if _, err := os.Stat(d.Socket()); errors.Is(err, fs.ErrNotExist) {
 		ui.Errf("nothing is running here, and a credential is installed into a running anchor.\n\n"+
-			"  conflux install   start from the configuration this machine already has\n\n"+
+			"  conflux start     start from the configuration this machine already has\n\n"+
 			"  The next start renews on its own, so a machine that is meant to be down needs\n"+
 			"  nothing done here.\n\n"+
 			"  (the control socket would be %s)", d.Socket())
@@ -135,9 +135,13 @@ func renewNow(ctx context.Context, d paths.Dirs) int {
 	return ExitOK
 }
 
-// anchorctlRenewFlag reports the first flag that belongs to anchorctl's renew and
-// not to conflux's, which takes none.
-func anchorctlRenewFlag(args []string) string {
+// anchorctlFlag reports the first flag that must belong to anchorctl's version of a
+// shadowed verb rather than conflux's, which takes none.
+//
+// Shared by renew and start, which resolve their collisions the same way and for the
+// same reason: conflux's takes no arguments at all, so a flag is the signal, and -h
+// is the one that means the caller wants conflux's own usage.
+func anchorctlFlag(args []string) string {
 	for _, a := range args {
 		if !strings.HasPrefix(a, "-") {
 			continue

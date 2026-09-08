@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"os"
 
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
@@ -20,9 +21,25 @@ func runServe(ctx context.Context, args []string) int {
 	fs.SetOutput(ui.Errw)
 
 	foreground := fs.Bool("foreground", false, "stay in the foreground even where a service manager is available")
+	dir := fs.String("dir", "", "root every conflux path here, as CONFLUX_DIR does; the service registration passes it back")
 
 	if err := fs.Parse(args); err != nil {
 		return ExitUsage
+	}
+
+	// A service registered from a CONFLUX_DIR run has to come back to the same
+	// directory, and an environment variable does not survive the trip: systemd
+	// gives a unit a clean environment, launchd the same, and an SCM service
+	// inherits the system environment rather than the operator's. So install writes
+	// the root into the argv it registers, and this is where it is picked back up.
+	//
+	// Through the environment rather than by threading a Dirs everywhere, so that
+	// every paths.Default in this process agrees with this one. Before anything
+	// starts, so there is no goroutine to race.
+	if *dir != "" {
+		if err := os.Setenv("CONFLUX_DIR", *dir); err != nil {
+			return fail(err)
+		}
 	}
 
 	d := paths.Default()

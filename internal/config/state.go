@@ -48,6 +48,16 @@ type State struct {
 	// health it cannot vouch for.
 	LastRenewalError string    `json:"lastRenewalError,omitempty"`
 	LastRenewalTry   time.Time `json:"lastRenewalTry,omitzero"`
+
+	// LinkReopens and LastLinkReopen record an uplink found dead and rebuilt.
+	//
+	// Persisted rather than counted in memory because the supervisor that does the
+	// reopening and the `conflux status` that reports it are different processes. A
+	// machine quietly restarting its anchor every few minutes is a failing cable,
+	// and it should be legible as one rather than as an anchor that has been up all
+	// along -- the uptime resets, so nothing else would say.
+	LinkReopens    int       `json:"linkReopens,omitempty"`
+	LastLinkReopen time.Time `json:"lastLinkReopen,omitzero"`
 }
 
 // LoadState reads it. A missing file is an empty State and not an error: every

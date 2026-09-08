@@ -15,7 +15,7 @@ under a systemd unit with `User=` or `ProtectHome=`.
 | state, identity, binaries | `/var/lib/conflux/` | `/Library/Application Support/conflux/` | `%ProgramData%\conflux\` | `/var/db/conflux/` |
 | socket and token | `/run/conflux/` | `/var/run/conflux/` | `%ProgramData%\conflux\run\` | `/var/run/conflux/` |
 
-`CONFLUX_DIR` roots all of them in one directory.
+`CONFLUX_DIR` roots all of them in one directory, and the boot service with them — it is named after the root, so a run under it is a separate installation rather than a replacement for the machine's own. See [testing.md](testing.md).
 
 Every directory is `0700` and every file `0600`.
 
@@ -30,6 +30,10 @@ Every directory is `0700` and every file `0600`.
   "subnets": ["192.168.1.0/24"],
   "uplink": "/dev/ttyUSB0:115200",
   "peers": ["genesis.veilnet.com.au:4700"],
+  "port": 4711,
+  "lowLatency": false,
+  "serveExit": false,
+  "useExit": false,
   "tunName": "anchor0",
   "apiBaseUrl": "https://api.veilnet.com.au",
   "createdAt": "2026-09-06T06:35:41Z",
@@ -46,12 +50,15 @@ Every directory is `0700` and every file `0600`.
 | `proxies` | `PORT[/NETWORK]=BACKEND` specs. `proxy` only. |
 | `uplink` | a device, with an optional line speed. Absent means the host's IP network, which is the usual case. Either mode. See [uplink.md](uplink.md). |
 | `peers` | bootstrap entries, `host:port` or `anchorxxx@host:port`. **Absent is the usual case and not a missing setting:** anchorctl takes the list from the enrolment manifest for exactly the fields no flag named, so an empty `peers` is what keeps the issuer's own nodes in play. Present, it overrides them. |
+| `port` | the UDP port to bind on every interface. Absent means the kernel picks one, which is the usual case. A port and not an address: an anchor listens everywhere, and the host's addresses change under it. Refused beside `uplink`, which binds no socket. |
+| `lowLatency` | carry layer-2 frames on QUIC datagrams instead of streams. Absent is false. Either mode. |
+| `serveExit`, `useExit` | route the public internet out of and into the overlay. Absent is false, and both are `tun` only — switching a machine to `proxy` clears them. |
 | `apiBaseUrl` | absent means the default. |
 
 This file is the whole of what a reboot needs. Every `up` and every `proxy` rewrites
 it, so it is always the current desired state.
 
-Editing it by hand is supported; `conflux install` restarts from whatever it says, and
+Editing it by hand is supported; `conflux start` restarts from whatever it says, and
 anything anchor would refuse is refused by conflux first, naming the field.
 
 ## `manifest.b64` — the identity
@@ -82,9 +89,15 @@ nothing on the server, and the response was the only one. See
   "notAfter": "2026-09-13T06:35:43.871Z",
   "renewalUrl": "https://api.veilnet.com.au/ghosts/alpha/renew",
   "enrolledAt": "2026-09-06T06:35:43.559Z",
-  "binSetId": "998ece52739a7c74"
+  "binSetId": "998ece52739a7c74",
+  "linkReopens": 2,
+  "lastLinkReopen": "2026-09-08T11:04:12Z"
 }
 ```
+
+`linkReopens` and `lastLinkReopen` count an uplink found dead and rebuilt, and are
+here rather than in memory because the supervisor that does the reopening and the
+`conflux status` that reports it are different processes. See [uplink.md](uplink.md).
 
 Everything here is derived. Delete it and the next start re-learns the AnchorID and
 the credential window at the cost of one extra call. That is why it is a separate file
@@ -133,11 +146,11 @@ control, inheritance off — before writing anything into them.
 
 ## What survives what
 
-| | `conflux down` | `conflux install` | `conflux uninstall` |
-|---|---|---|---|
-| running anchor | stopped | (re)started | stopped |
-| boot service | kept | registered | removed |
-| `conflux.json` | kept | kept | deleted |
-| `manifest.b64` | kept | kept | **deleted, permanently** |
-| `state.json` | kept | kept | deleted |
+| | `conflux down` | `conflux start` | `conflux install` | `conflux uninstall` |
+|---|---|---|---|---|
+| running anchor | stopped | (re)started | (re)started | stopped |
+| boot service | kept | kept | registered | removed |
+| `conflux.json` | kept | kept | kept | deleted |
+| `manifest.b64` | kept | kept | kept | **deleted, permanently** |
+| `state.json` | kept | kept | kept | deleted |
 | extracted binaries | kept | kept | deleted |

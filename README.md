@@ -96,7 +96,8 @@ commands handed straight to `anchorctl`.
 **That's the whole setup.** A reboot needs nothing typed: the service is registered
 and enabled, the credential renews itself, and the machine comes back at the same
 overlay address. `conflux down` stops the anchor now and leaves the service and
-configuration in place; `conflux uninstall` removes them.
+configuration in place, `conflux start` brings it back before the next reboot, and
+`conflux uninstall` removes them.
 
 ### Reverse proxy: publish a service without an interface
 
@@ -224,6 +225,7 @@ reaches the realm over — the host's IP network by default, or a link named by
 | `conflux up [--taint T] [--ipv4 PREFIX \| --no-ipv4] [--subnet CIDR]... [--uplink DEV \| --no-uplink] [--peers HOST:PORT]` | enrol if needed, start in TUN mode, register the boot service |
 | `conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T] [--uplink DEV] [--peers HOST:PORT]` | enrol if needed, start in userspace mode serving those backends |
 | `conflux down` | stop the anchor now; the boot service and the configuration stay |
+| `conflux start` | start it again now, from the configuration already on disk |
 | `conflux renew` | fetch a fresh credential and install it on the running anchor, hot |
 | `conflux status` | conflux's state, and `anchorctl status` beneath it |
 | `conflux install` | register the boot service; start it if a configuration exists |

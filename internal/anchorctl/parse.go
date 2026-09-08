@@ -139,6 +139,40 @@ func ParseStatus(stdout string) Status {
 	return st
 }
 
+// MetricConnections is the gauge conflux watches: how many QUIC connections the
+// anchor is holding right now.
+//
+// On an uplink it is the whole story. A link is point-to-point and carries exactly
+// one peer, so a sustained zero is a link that has ended rather than a realm that is
+// quiet -- and anchor does not reopen a link that ends.
+const MetricConnections = "anchor_connections"
+
+// ParseMetrics reads the output of `anchorctl metrics`.
+//
+// One sample per line, name then value, padded by a tabwriter. Samples that are
+// neither a counter nor a gauge -- the observation summaries, "n=3 mean=..." -- have
+// no single value and are skipped rather than half-read. A labelled sample carries
+// its labels in the name, which is what keeps them distinct here.
+func ParseMetrics(stdout string) map[string]float64 {
+	out := map[string]float64{}
+
+	for line := range strings.Lines(stdout) {
+		name, value, ok := strings.Cut(strings.TrimSpace(line), "  ")
+		if !ok {
+			continue
+		}
+
+		v, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+		if err != nil {
+			continue
+		}
+
+		out[strings.TrimSpace(name)] = v
+	}
+
+	return out
+}
+
 // Cut reports whether this anchor's realm has been severed from the tree above it.
 // Its own peers still work; ours stop being reachable.
 func (s Status) Cut() bool { return s.CutDepth > 0 }

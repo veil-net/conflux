@@ -10,6 +10,7 @@ systemd / launchd / SCM
   └── conflux serve
         ├── anchord -socket … -token-file …
         ├── the renewal timer
+        ├── the link watcher, on a machine configured for an uplink
         └── the restart loop
 ```
 
@@ -33,6 +34,35 @@ Shutdown runs in one order everywhere: stop the renewal timer, `anchorctl stop` 
 anchor says goodbye, then signal the process, then kill it. The second step is the
 important one — an announced departure saves every peer from working it out by
 timeout — and killing is only safe because it has already happened.
+
+## One machine, one service — unless CONFLUX_DIR says otherwise
+
+The unit, the launchd label and the SCM entry are all named `conflux`, one per
+machine, which is what "one configuration per machine" means in practice.
+
+A run under `CONFLUX_DIR` is the exception, because it is a separate installation and
+not the machine's own: the service takes a suffix derived from the root
+(`conflux-44a6e4f4.service`), and the root is written into the argv it is registered
+with, so the supervisor comes back to the same directory at boot. Neither happens
+without `CONFLUX_DIR`, so an ordinary install is byte-for-byte what it always was.
+See [testing.md](testing.md).
+
+## The four verbs, and which pair is which
+
+Two pairs that are easy to confuse, because both look like they turn something off:
+
+| | Pair | What it touches |
+|---|---|---|
+| now | `conflux start` / `conflux down` | the running anchor. The registration and the configuration are untouched, so a reboot behaves the same either way. |
+| permanently | `conflux install` / `conflux uninstall` | the boot registration. `uninstall` also deletes the configuration and the identity. |
+
+`down` then `start` is the restart. `install` happens to start a configured machine as
+well, which is why it used to be what `down` pointed at, but registration is its
+subject and starting is a side effect — `start` is the verb whose subject is starting.
+
+Neither `up` nor `proxy` belongs in that table: they decide the configuration and then
+do both. `start` decides nothing, which is exactly what makes it the way back from
+`down` on a userspace machine, where `up` would change the mode and drop the proxies.
 
 ## systemd
 

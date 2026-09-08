@@ -8,11 +8,11 @@ import (
 	"strings"
 )
 
-const (
-	label     = "org.veilnet.conflux"
-	plistPath = "/Library/LaunchDaemons/" + label + ".plist"
-	target    = "system/" + label
-)
+// Functions and not constants because a run rooted in a CONFLUX_DIR is a separate
+// installation and must not be registered over the machine's own; see scope.
+func label() string     { return "org.veilnet.conflux" + scope() }
+func plistPath() string { return "/Library/LaunchDaemons/" + label() + ".plist" }
+func target() string    { return "system/" + label() }
 
 // plistTemplate is the job conflux writes.
 //
@@ -47,7 +47,7 @@ type launchd struct{}
 
 func newManager() (Manager, error) { return launchd{}, nil }
 
-func (launchd) Name() string { return label }
+func (launchd) Name() string { return label() }
 
 func (l launchd) Install(exe string, args ...string) error {
 	var argv strings.Builder
@@ -56,38 +56,38 @@ func (l launchd) Install(exe string, args ...string) error {
 		fmt.Fprintf(&argv, "    <string>%s</string>\n", escapeXML(a))
 	}
 
-	plist := fmt.Sprintf(plistTemplate, label, argv.String())
+	plist := fmt.Sprintf(plistTemplate, label(), argv.String())
 
-	if err := os.WriteFile(plistPath, []byte(plist), 0o644); err != nil { //nolint:gosec // a plist is world-readable by design
-		return fmt.Errorf("write %s: %w", plistPath, err)
+	if err := os.WriteFile(plistPath(), []byte(plist), 0o644); err != nil { //nolint:gosec // a plist is world-readable by design
+		return fmt.Errorf("write %s: %w", plistPath(), err)
 	}
 
 	// Bootstrapping a job that is already loaded fails with "Operation already in
 	// progress", so unload first and ignore whatever that says.
-	_ = run("launchctl", "bootout", target)
+	_ = run("launchctl", "bootout", target())
 
-	if err := run("launchctl", "bootstrap", "system", plistPath); err != nil {
+	if err := run("launchctl", "bootstrap", "system", plistPath()); err != nil {
 		return err
 	}
 
 	// Bootstrapping loads it and RunAtLoad starts it, which Install is not meant to
 	// do. Stop it again, so that a machine with no configuration gets registration
 	// and nothing else -- the caller starts it when there is something to start.
-	_ = run("launchctl", "kill", "SIGTERM", target)
+	_ = run("launchctl", "kill", "SIGTERM", target())
 
-	return run("launchctl", "enable", target)
+	return run("launchctl", "enable", target())
 }
 
 func (l launchd) Remove() error {
 	var first error
 
-	if err := run("launchctl", "bootout", target); err != nil && first == nil {
+	if err := run("launchctl", "bootout", target()); err != nil && first == nil {
 		first = err
 	}
 
-	_ = run("launchctl", "disable", target)
+	_ = run("launchctl", "disable", target())
 
-	if err := os.Remove(plistPath); err != nil && !os.IsNotExist(err) && first == nil {
+	if err := os.Remove(plistPath()); err != nil && !os.IsNotExist(err) && first == nil {
 		first = err
 	}
 
@@ -100,15 +100,15 @@ func (l launchd) Remove() error {
 
 // Start uses kickstart, which starts or restarts. The previous conflux re-ran
 // bootstrap, which fails with "37: Operation already in progress" on a loaded job.
-func (launchd) Start() error   { return run("launchctl", "kickstart", target) }
-func (launchd) Restart() error { return run("launchctl", "kickstart", "-k", target) }
+func (launchd) Start() error   { return run("launchctl", "kickstart", target()) }
+func (launchd) Restart() error { return run("launchctl", "kickstart", "-k", target()) }
 
 // Stop kills the process and leaves the job loaded, which is exactly the semantics
 // `conflux down` needs: stopped now, back at the next boot.
-func (launchd) Stop() error { return run("launchctl", "kill", "SIGTERM", target) }
+func (launchd) Stop() error { return run("launchctl", "kill", "SIGTERM", target()) }
 
 func (launchd) Installed() (bool, error) {
-	_, err := os.Stat(plistPath)
+	_, err := os.Stat(plistPath())
 	if err == nil {
 		return true, nil
 	}
@@ -121,7 +121,7 @@ func (launchd) Installed() (bool, error) {
 }
 
 func (launchd) Running() (bool, error) {
-	out, ok := query("launchctl", "print", target)
+	out, ok := query("launchctl", "print", target())
 	if !ok {
 		return false, nil
 	}
@@ -137,10 +137,10 @@ func (l launchd) Describe() string {
 
 	running, _ := l.Running()
 	if running {
-		return fmt.Sprintf("running (launchd: %s, at boot)", label)
+		return fmt.Sprintf("running (launchd: %s, at boot)", label())
 	}
 
-	return fmt.Sprintf("installed, not running (launchd: %s, at boot)", label)
+	return fmt.Sprintf("installed, not running (launchd: %s, at boot)", label())
 }
 
 func escapeXML(s string) string {

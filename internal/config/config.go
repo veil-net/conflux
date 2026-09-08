@@ -101,6 +101,32 @@ type Config struct {
 	// know about, which in practice means testing.
 	Peers []string `json:"peers,omitempty"`
 
+	// Port is the UDP port to bind on every interface, or zero to let the kernel
+	// pick one. An anchor listens on every interface and only the port is
+	// configurable, so this is a port and not an address: the host's addresses
+	// change underneath it, and pinning one is a promise the host cannot keep.
+	//
+	// Zero is not passed to anchorctl at all, which is what leaves the manifest's
+	// own listenPort in play -- the same rule Peers follows, for the same reason.
+	// Meaningless beside an Uplink, where no socket is bound, and refused there.
+	Port uint16 `json:"port,omitempty"`
+
+	// LowLatency carries layer-2 frames on QUIC datagrams: no head-of-line
+	// blocking between flows to one peer, and a lost frame stays lost rather than
+	// holding up the ones behind it. A real trade rather than a better setting, so
+	// it is off unless asked for.
+	LowLatency bool `json:"lowLatency,omitempty"`
+
+	// ServeExit offers this anchor as a way out to the public internet, and
+	// UseExit sends this machine's own internet traffic over the overlay. Both
+	// need a host interface, so both are TUN only.
+	//
+	// Off by default and always passed explicitly, because an anchor that became
+	// an internet exit on its own -- because a manifest said so -- is the worst
+	// kind of surprise.
+	ServeExit bool `json:"serveExit,omitempty"`
+	UseExit   bool `json:"useExit,omitempty"`
+
 	TUNName    string `json:"tunName,omitempty"`
 	APIBaseURL string `json:"apiBaseUrl,omitempty"`
 
@@ -151,6 +177,13 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("mode is %q and an overlay IPv4 is set: there is no host interface to assign it to", c.Mode)
 		}
 
+		if c.ServeExit || c.UseExit {
+			return fmt.Errorf(
+				"mode is %q and an exit is set: routing the public internet either way needs a host interface, "+
+					"which userspace mode does not have",
+				c.Mode)
+		}
+
 	default:
 		return fmt.Errorf("mode is %q, want %q or %q", c.Mode, ModeTUN, ModeProxy)
 	}
@@ -180,6 +213,16 @@ func (c *Config) Validate() error {
 	if c.Uplink != "" {
 		if _, err := ParseUplinkSpec(c.Uplink); err != nil {
 			return err
+		}
+
+		// anchor refuses the pair rather than ignoring the port, and it is right to:
+		// a link binds no socket, so a port names nothing. Caught here so the message
+		// can name both conflux flags instead of arriving from a child process.
+		if c.Port != 0 {
+			return fmt.Errorf(
+				"a port and an uplink are set together: an uplink carries layer 1 over %s and binds no socket, "+
+					"so there is no port to choose",
+				c.Uplink)
 		}
 	}
 

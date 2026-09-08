@@ -121,13 +121,15 @@ leaves a deployment behaving unlike its own configuration file:
 | Setting | Refused because |
 |---|---|
 | a listen address | the link is the medium; no socket is bound, so an address names nothing |
+| a port | the same reason: `conflux up --uplink … --port 4711` is refused here, naming both flags, rather than by a daemon at the next boot |
 | port mapping | there is no gateway on a cable and no port to forward |
 | hole punching | a point-to-point link has no translator to punch through |
 
-None of the three is a conflux flag, so none of them can collide with one: conflux
-does not pass a listen address, and it does not ask for port mapping or hole punching
-either, which is exactly what lets `conflux up --uplink /dev/ttyUSB0` work without
-also passing two flags to turn off.
+conflux does not pass a listen address, and it does not ask for port mapping or hole
+punching either, which is exactly what lets `conflux up --uplink /dev/ttyUSB0` work
+without also passing two flags to turn off. `--port` is the one of these that *is* a
+conflux flag, so it is the one that can collide — and conflux refuses the pair itself,
+naming both flags, rather than letting anchor refuse it at the next boot.
 
 Everything conflux *does* offer works over a link, including `--subnet` and both
 modes: the uplink is beneath all of it.
@@ -142,6 +144,47 @@ also bridge that cable into an IP-reachable realm — the wider realm learns an 
 anchor's record through gossip, since a record with no addresses still travels, but
 nothing in that realm can reach it.
 
-And one thing that reads like a limit and is one for now: **a link that ends, ends.**
-A device is not reopened, so an unplugged adapter needs the anchor restarted —
-`conflux up` with no flags does it, and reads the configuration for the rest.
+**A link that ends, ends — but conflux notices.** anchor does not reopen a device, so
+an unplugged adapter leaves the anchor holding a medium that carries nothing. Nothing
+else here would spot it: the supervisor watches the anchord *process*, and anchord
+does not exit — the daemon is fine, and only the anchor inside it is stranded. So a
+machine on a desk waits for somebody to type something, and an unattended one waits
+forever.
+
+On a machine configured for a link, conflux therefore watches it and rebuilds the
+anchor when it has ended:
+
+| Signal | |
+|---|---|
+| the device is gone from the filesystem | immediate — an unplugged adapter is not ambiguous |
+| `anchor_connections` has been zero for 90 seconds | the general case, and the one that catches a device still present whose line has died |
+
+A link is point-to-point and carries exactly one peer, which is what makes a
+connection count of zero mean something here and nothing on the host's network. The
+recovery is `anchorctl stop` and the same bring-up every boot performs, so the daemon
+is untouched, the identity is unchanged, nothing re-enrols, and the credential is
+renewed on the way through if it was due. Repeated failures back off from one second
+to thirty.
+
+The 90 seconds is not arbitrary: anchor redials an uplink on a two-second tick with a
+45-second dial timeout, and a realm handshake on the slowest line conflux accepts
+takes about 25. A shorter grace would restart anchors that were about to come up on
+their own.
+
+`conflux status` reports the count, because the anchor's own uptime cannot — it resets
+on every reopen, so a machine losing its cable hourly otherwise looks like one that
+has been up for fifty minutes:
+
+```console
+$ conflux status
+  uplink    3 reopens, last 2026-09-08T11:04:12Z
+```
+
+**The one case it gets wrong:** an idle link whose far end is legitimately switched
+off looks exactly like a dead one, and gets restarted. That is harmless — the restart
+re-dials, and a far end that comes back is found either way — but it is a restart
+nobody asked for, which is what the grace period and the backoff are there to keep
+rare. Distinguishing the two would need anchor to report the link's own state, and it
+does not.
+
+This is Unix-only, like `--uplink` itself.

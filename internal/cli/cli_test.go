@@ -105,8 +105,11 @@ func anchorctlCommands(t *testing.T, bin string) map[string]bool {
 }
 
 func TestLifecycleVerbsAreRefusedWithTheAlternative(t *testing.T) {
+	// start is absent: conflux has its own now. restart names it rather than "up",
+	// which was wrong on a userspace machine -- up changes the mode and drops the
+	// proxies, so it is not the way back to what was running.
 	for name, want := range map[string]string{
-		"start": "conflux up", "stop": "conflux down", "restart": "conflux up",
+		"stop": "conflux down", "restart": "conflux start",
 	} {
 		_, errOut, code := capture(t, name)
 
@@ -121,6 +124,39 @@ func TestLifecycleVerbsAreRefusedWithTheAlternative(t *testing.T) {
 		if !strings.Contains(errOut, "conflux anchorctl "+name) {
 			t.Errorf("conflux %s should name the escape hatch; it said:\n%s", name, errOut)
 		}
+	}
+}
+
+// TestStartRefusesAnchorctlFlags: conflux's start takes no arguments, so a flag names
+// anchorctl's and is answered with both meanings rather than guessed at.
+func TestStartRefusesAnchorctlFlags(t *testing.T) {
+	for _, args := range [][]string{
+		{"start", "-cred", "x.cred"},
+		{"start", "-identity=k.key"},
+		{"start", "--root", "genesis.pub"},
+	} {
+		_, errOut, code := capture(t, args...)
+
+		if code != ExitUsage {
+			t.Errorf("conflux %v exited %d, want %d", args, code, ExitUsage)
+		}
+
+		if !strings.Contains(errOut, "conflux anchorctl start") {
+			t.Errorf("conflux %v should name the escape hatch; it said:\n%s", args, errOut)
+		}
+	}
+}
+
+// TestStartRefusesArguments: a positional is not conflux's start either.
+func TestStartRefusesArguments(t *testing.T) {
+	_, errOut, code := capture(t, "start", "somewhere")
+
+	if code != ExitUsage {
+		t.Errorf("conflux start somewhere exited %d, want %d", code, ExitUsage)
+	}
+
+	if !strings.Contains(errOut, "takes no arguments") {
+		t.Errorf("should say it takes no arguments; it said:\n%s", errOut)
 	}
 }
 

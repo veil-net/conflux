@@ -1,0 +1,12 @@
+start
+-manifest
+-
+-dir
+/var/lib/conflux/anchor
+-taints
+brhk-2mq9-tzva-6pjs
+-tun=true
+-tun-name
+anchor0
+-serve-exit=false
+-use-exit=true

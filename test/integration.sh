@@ -87,7 +87,20 @@ docker exec cfx-b sh -c 'test -f /var/lib/conflux/manifest.b64' \
 docker exec cfx-b sh -c '! ip link show anchor0' >/dev/null 2>&1 \
   || { echo "down left the interface up" >&2; exit 1; }
 
-say "and a reboot brings B back"
+say "start brings B back without a reboot, and without retyping anything"
+B_BEFORE=$(anchor_id cfx-b)
+docker exec cfx-b conflux start
+for _ in $(seq 40); do
+  docker exec cfx-b sh -c 'ip link show anchor0' >/dev/null 2>&1 && break
+  sleep 1
+done
+docker exec cfx-b sh -c 'ip link show anchor0' >/dev/null 2>&1 \
+  || { echo "start did not bring the interface back" >&2; exit 1; }
+[ "$(anchor_id cfx-b)" = "$B_BEFORE" ] \
+  || { echo "B's identity changed across down and start" >&2; exit 1; }
+
+say "down again, and a reboot brings B back"
+docker exec cfx-b conflux down
 B_ID=$(anchor_id cfx-b)
 docker restart cfx-b >/dev/null
 for _ in $(seq 40); do

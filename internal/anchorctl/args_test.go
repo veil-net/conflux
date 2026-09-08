@@ -80,6 +80,29 @@ var scenarios = map[string]StartMode{
 		Proxies: []string{"8080=127.0.0.1:3000"},
 		Dir:     `C:\ProgramData\conflux\anchor`,
 	},
+	"up-port": {
+		TUN: true, TUNName: "anchor0", Taints: []string{"brhk-2mq9-tzva-6pjs"},
+		Port: 4711, Dir: "/var/lib/conflux/anchor",
+	},
+	"up-low-latency": {
+		TUN: true, TUNName: "anchor0", Taints: []string{"brhk-2mq9-tzva-6pjs"},
+		LowLatency: true, Dir: "/var/lib/conflux/anchor",
+	},
+	"up-exit": {
+		TUN: true, TUNName: "anchor0", Taints: []string{"brhk-2mq9-tzva-6pjs"},
+		ServeExit: true, UseExit: true, Dir: "/var/lib/conflux/anchor",
+	},
+	"up-use-exit-only": {
+		TUN: true, TUNName: "anchor0", Taints: []string{"brhk-2mq9-tzva-6pjs"},
+		UseExit: true, Dir: "/var/lib/conflux/anchor",
+	},
+	"proxy-low-latency": {
+		Taints:     []string{"brhk-2mq9-tzva-6pjs"},
+		Proxies:    []string{"8080=127.0.0.1:3000"},
+		Port:       4711,
+		LowLatency: true,
+		Dir:        "/var/lib/conflux/anchor",
+	},
 }
 
 func TestArgvGoldens(t *testing.T) {
@@ -115,7 +138,10 @@ func TestModeIsAlwaysExplicit(t *testing.T) {
 	for name, mode := range scenarios {
 		args := strings.Join(mode.Args(), " ")
 
-		for _, must := range []string{"-tun=", "-serve-exit=false", "-use-exit=false"} {
+		// The value is the operator's; being written at all is conflux's. An omitted
+		// flag is a field anchorctl takes from the manifest, so each of these must
+		// appear with an explicit =true or =false whichever way it was set.
+		for _, must := range []string{"-tun=", "-serve-exit=", "-use-exit="} {
 			if !strings.Contains(args, must) {
 				t.Errorf("%s: argv omits %s, which lets the manifest decide it", name, must)
 			}

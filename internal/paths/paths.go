@@ -36,7 +36,7 @@ type Dirs struct {
 // with the standing caveat that a boot service registered against a directory only
 // one user can read is a boot service that will not start.
 func Default() Dirs {
-	if root := os.Getenv("CONFLUX_DIR"); root != "" {
+	if root := Root(); root != "" {
 		return Dirs{
 			Config: root,
 			State:  root,
@@ -47,6 +47,15 @@ func Default() Dirs {
 
 	return platformDirs()
 }
+
+// Root is the CONFLUX_DIR override, or "" when this is an ordinary system install.
+//
+// Exported because the boot service has to know. A run rooted somewhere else is a
+// separate installation of conflux, not the machine's own, and registering it under
+// the machine's own service name would replace a real node with a test one -- so the
+// service package names itself after this, and passes it on to the supervisor it
+// registers, which would otherwise come back at boot reading /etc/conflux.
+func Root() string { return os.Getenv("CONFLUX_DIR") }
 
 // ConfigFile holds the operator's intent: mode, taints, addresses, proxies.
 func (d Dirs) ConfigFile() string { return filepath.Join(d.Config, "conflux.json") }

@@ -19,14 +19,14 @@ a daemon or a network. Most of conflux can be.
 | Package | What is asserted |
 |---|---|
 | `anchor` | the embedded binaries are real executables of the right architecture, and `SetID` is stable |
-| `internal/config` | JSON round-trips; the mode rule matches anchor's; proxy specs, IPv4 prefixes and taint names parse and refuse exactly as anchor does; atomic writes leave old-or-new and never a truncated file, and narrow a file that was `0644` |
+| `internal/config` | JSON round-trips, the tuning fields included; the mode rule matches anchor's; an exit needs a host interface and a port is refused beside an uplink; proxy specs, IPv4 prefixes and taint names parse and refuse exactly as anchor does; atomic writes leave old-or-new and never a truncated file, and narrow a file that was `0644` |
 | `internal/enrol` | the manifest decodes, refuses a realm manifest and a future format version, and **survives a renewal losslessly** |
 | `internal/enrol` (client) | against `httptest`: the happy path, malformed base64, 4xx and 5xx, an oversized body, a cross-host renewal URL, a plain-http base, cancellation, and clock skew |
 | `internal/taint` | generated names satisfy anchor's rule, avoid ambiguous glyphs, and do not repeat |
-| `internal/daemon` | the renewal arithmetic: two thirds of the *observed* window, expiry, absent timestamps, and the clamp |
-| `internal/anchorctl` | the argv goldens, that every flag they use exists, and the output parsers |
+| `internal/daemon` | the renewal arithmetic: two thirds of the *observed* window, expiry, absent timestamps, and the clamp; and the link watcher's device parsing and its grace against anchor's own dial timeout |
+| `internal/anchorctl` | the argv goldens, that every flag they use exists, and the output parsers, including the metrics gauge the link watcher reads |
 | `internal/libexec` | extraction, idempotence, eight concurrent callers, and repair of a truncated set |
-| `internal/cli` | the collision rules, and that nothing shadows anchorctl unintentionally |
+| `internal/cli` | the collision rules — `start` and `renew` by shape, `proxy` and `status` by arity — and that nothing shadows anchorctl unintentionally |
 
 ## The three tests worth knowing about
 
@@ -92,13 +92,45 @@ enrolment manifest, which is what lets the API move a node without touching a si
 machine. Point a dev build at it explicitly:
 
 ```console
-$ sudo CONFLUX_DIR=/tmp/cfx-test conflux up --peers genesis.veilnet.com.au:4700
-$ sudo CONFLUX_DIR=/tmp/cfx-test conflux status     # peers > 0, up=yes
+$ sudo CONFLUX_DIR=/var/lib/cfx-dev conflux up --peers genesis.veilnet.com.au:4700 \
+      --interface anchor1
+$ sudo CONFLUX_DIR=/var/lib/cfx-dev conflux status  # peers > 0, up=yes
 ```
 
-`CONFLUX_DIR` keeps the whole run — config, identity, socket — out of `/etc/conflux`
-and `/var/lib/conflux`, so it cannot disturb a real machine. Port 4700 is UDP; a TCP
-probe of it is refused, and that is expected rather than a fault.
+`CONFLUX_DIR` roots the whole installation somewhere else — the config, the identity,
+the state, the socket, **and the boot service**. Port 4700 is UDP; a TCP probe of it is
+refused, and that is expected rather than a fault.
+
+The service is included because it has to be. A run rooted elsewhere is a separate
+installation of conflux, not the machine's own, so:
+
+- the service is named after the root — `conflux-e7616592.service`,
+  `org.veilnet.conflux-e7616592`, or the same SCM entry — and cannot be registered
+  over a real node's;
+- the root is written into the argv the service is registered with, because none of
+  the three service managers carries the operator's environment into what it starts.
+  Without that the unit came back at boot reading `/etc/conflux`, and the CLI waited
+  out its ninety seconds for a socket that was never going to appear.
+
+So a dev run and a real node coexist on one machine:
+
+```console
+$ conflux status                                    # the machine's own
+  service      active (systemd: conflux.service, enabled at boot)
+$ CONFLUX_DIR=/var/lib/cfx-dev conflux status       # the dev one
+  service      active (systemd: conflux-e7616592.service, enabled at boot)
+```
+
+**They still share the interface name.** Both default to `anchor0`, and the second to
+start gets `device or resource busy` — pass `--interface anchor1` to the dev one, as
+above. That is the one thing `CONFLUX_DIR` does not name, because an interface belongs
+to the host and not to a conflux installation. The failure is treated as permanent
+rather than retried to the unit's ninety-second timeout, so it arrives in a few
+seconds and says what it is.
+
+**Not `/tmp`.** systemd clears it on boot, so a dev root there is gone by the time the
+service starts and the unit exits 78 — correctly, but it makes the reboot test
+meaningless. Anywhere persistent will do.
 
 Two things worth checking deliberately, because neither is obvious from a passing run:
 
@@ -118,11 +150,12 @@ Two things worth checking deliberately, because neither is obvious from a passin
 - **macOS TUN under a LaunchDaemon.** CI can build and test on macOS, but not open a
   utun from a system daemon.
 - **The Windows service's recovery actions.**
-- **A real uplink.** What is covered here is the spec parser, the argv, and the
-  refusals — the `fd:N` form conflux's supervisor cannot hand over, and Windows, where
-  anchor has no way to open a link. Nothing in this tree opens a device or a
-  pseudo-terminal: the link itself is anchor's to test, and it does, over a real pty.
-  Two machines on a cable have no runner.
+- **A real uplink.** What is covered here is the spec parser, the argv, the refusals
+  — the `fd:N` form conflux's supervisor cannot hand over, and Windows, where anchor
+  has no way to open a link — and the link watcher's decision function against
+  synthetic inputs. Nothing in this tree opens a device or a pseudo-terminal: the link
+  itself is anchor's to test, and it does, over a real pty. Two machines on a cable
+  have no runner, so the watcher's *reopen* path is reasoned about rather than run.
 - **The boot service and the two-node integration test, in CI.** Both need the real
   anchor binaries, which are not in git and which a runner has no way to fetch, so
   both are `workflow_dispatch` only. They are run locally: `./test/integration.sh`.

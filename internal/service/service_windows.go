@@ -15,8 +15,6 @@ const (
 	// ServiceName has no space in it, deliberately. The previous conflux used
 	// "VeilNet Conflux" as the service name as well as the display name, which
 	// makes every sc.exe invocation quoting-sensitive for no benefit.
-	ServiceName = "conflux"
-
 	displayName = "VeilNet Conflux"
 	description = "Joins this machine to a VeilNet overlay."
 )
@@ -25,7 +23,13 @@ type scm struct{}
 
 func newManager() (Manager, error) { return scm{}, nil }
 
-func (scm) Name() string { return ServiceName }
+// ServiceName is the SCM entry conflux registers.
+//
+// A function and not a constant because a run rooted in a CONFLUX_DIR is a separate
+// installation and must not be registered over the machine's own; see scope.
+func ServiceName() string { return "conflux" + scope() }
+
+func (scm) Name() string { return ServiceName() }
 
 func (scm) Install(exe string, args ...string) error {
 	m, err := mgr.Connect()
@@ -43,7 +47,7 @@ func (scm) Install(exe string, args ...string) error {
 	}
 
 	// Already there is not a failure; it is an upgrade.
-	if existing, err := m.OpenService(ServiceName); err == nil {
+	if existing, err := m.OpenService(ServiceName()); err == nil {
 		defer existing.Close()
 
 		cfg.BinaryPathName = quoteCommand(exe, args)
@@ -58,7 +62,7 @@ func (scm) Install(exe string, args ...string) error {
 	// CreateService appends the arguments. The previous conflux omitted them
 	// entirely, so the registered service ran conflux with an empty argv tail and
 	// fell into the help text at every boot.
-	s, err := m.CreateService(ServiceName, exe, cfg, args...)
+	s, err := m.CreateService(ServiceName(), exe, cfg, args...)
 	if err != nil {
 		return fmt.Errorf("create the service: %w", err)
 	}
@@ -84,7 +88,7 @@ func (c scm) Remove() error {
 	}
 	defer m.Disconnect()
 
-	s, err := m.OpenService(ServiceName)
+	s, err := m.OpenService(ServiceName())
 	if err != nil {
 		return nil // already gone, which is what was asked for
 	}
@@ -104,7 +108,7 @@ func (scm) control(cmd svc.Cmd, want svc.State) error {
 	}
 	defer m.Disconnect()
 
-	s, err := m.OpenService(ServiceName)
+	s, err := m.OpenService(ServiceName())
 	if err != nil {
 		return fmt.Errorf("the conflux service is not registered: %w", err)
 	}
@@ -138,7 +142,7 @@ func (scm) Start() error {
 	}
 	defer m.Disconnect()
 
-	s, err := m.OpenService(ServiceName)
+	s, err := m.OpenService(ServiceName())
 	if err != nil {
 		return fmt.Errorf("the conflux service is not registered: %w", err)
 	}
@@ -162,7 +166,7 @@ func (scm) Installed() (bool, error) {
 	}
 	defer m.Disconnect()
 
-	s, err := m.OpenService(ServiceName)
+	s, err := m.OpenService(ServiceName())
 	if err != nil {
 		return false, nil
 	}
@@ -179,7 +183,7 @@ func (scm) Running() (bool, error) {
 	}
 	defer m.Disconnect()
 
-	s, err := m.OpenService(ServiceName)
+	s, err := m.OpenService(ServiceName())
 	if err != nil {
 		return false, nil
 	}
@@ -201,10 +205,10 @@ func (c scm) Describe() string {
 
 	running, _ := c.Running()
 	if running {
-		return fmt.Sprintf("running (service: %s, automatic at boot)", ServiceName)
+		return fmt.Sprintf("running (service: %s, automatic at boot)", ServiceName())
 	}
 
-	return fmt.Sprintf("installed, not running (service: %s, automatic at boot)", ServiceName)
+	return fmt.Sprintf("installed, not running (service: %s, automatic at boot)", ServiceName())
 }
 
 // quoteCommand renders a BinaryPathName the SCM will parse back correctly.

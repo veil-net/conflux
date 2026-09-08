@@ -13,9 +13,12 @@ import (
 // The previous conflux wrote veilnet.service and then started, stopped and removed
 // "veilnet". That worked only because systemd appends .service to a bare name, and
 // would have broken silently the day anyone added a veilnet.socket beside it.
-const unitName = "conflux.service"
+//
+// A function and not a constant because a run rooted in a CONFLUX_DIR is a separate
+// installation and must not be registered over the machine's own; see scope.
+func unitName() string { return "conflux" + scope() + ".service" }
 
-const unitPath = "/etc/systemd/system/" + unitName
+func unitPath() string { return "/etc/systemd/system/" + unitName() }
 
 // unitTemplate is the unit conflux writes.
 //
@@ -72,7 +75,7 @@ type systemd struct{}
 
 func newManager() (Manager, error) { return systemd{}, nil }
 
-func (systemd) Name() string { return unitName }
+func (systemd) Name() string { return unitName() }
 
 func (s systemd) Install(exe string, args ...string) error {
 	execStart := exe
@@ -82,8 +85,8 @@ func (s systemd) Install(exe string, args ...string) error {
 
 	unit := fmt.Sprintf(unitTemplate, execStart)
 
-	if err := os.WriteFile(unitPath, []byte(unit), 0o644); err != nil { //nolint:gosec // a unit file is world-readable by design
-		return fmt.Errorf("write %s: %w", unitPath, err)
+	if err := os.WriteFile(unitPath(), []byte(unit), 0o644); err != nil { //nolint:gosec // a unit file is world-readable by design
+		return fmt.Errorf("write %s: %w", unitPath(), err)
 	}
 
 	if err := run("systemctl", "daemon-reload"); err != nil {
@@ -93,7 +96,7 @@ func (s systemd) Install(exe string, args ...string) error {
 	// Enable, and deliberately not start. Starting is the caller's decision, and
 	// `conflux install` on a machine with no configuration must register without
 	// starting anything.
-	return run("systemctl", "enable", unitName)
+	return run("systemctl", "enable", unitName())
 }
 
 func (s systemd) Remove() error {
@@ -108,14 +111,14 @@ func (s systemd) Remove() error {
 		}
 	}
 
-	note(run("systemctl", "disable", "--now", unitName))
+	note(run("systemctl", "disable", "--now", unitName()))
 
-	if err := os.Remove(unitPath); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(unitPath()); err != nil && !os.IsNotExist(err) {
 		note(err)
 	}
 
 	note(run("systemctl", "daemon-reload"))
-	_ = run("systemctl", "reset-failed", unitName)
+	_ = run("systemctl", "reset-failed", unitName())
 
 	if installed, _ := s.Installed(); installed {
 		return first
@@ -125,14 +128,14 @@ func (s systemd) Remove() error {
 	return nil
 }
 
-func (systemd) Start() error   { return run("systemctl", "start", unitName) }
-func (systemd) Stop() error    { return run("systemctl", "stop", unitName) }
-func (systemd) Restart() error { return run("systemctl", "restart", unitName) }
+func (systemd) Start() error   { return run("systemctl", "start", unitName()) }
+func (systemd) Stop() error    { return run("systemctl", "stop", unitName()) }
+func (systemd) Restart() error { return run("systemctl", "restart", unitName()) }
 
 // Installed is a stat rather than `systemctl list-unit-files`: cheaper, and it
 // answers correctly on a machine where systemd is not currently running.
 func (systemd) Installed() (bool, error) {
-	_, err := os.Stat(unitPath)
+	_, err := os.Stat(unitPath())
 	if err == nil {
 		return true, nil
 	}
@@ -145,7 +148,7 @@ func (systemd) Installed() (bool, error) {
 }
 
 func (systemd) Running() (bool, error) {
-	_, ok := query("systemctl", "is-active", "--quiet", unitName)
+	_, ok := query("systemctl", "is-active", "--quiet", unitName())
 
 	return ok, nil
 }
@@ -156,8 +159,8 @@ func (s systemd) Describe() string {
 		return "not installed"
 	}
 
-	state, _ := query("systemctl", "is-active", unitName)
-	enabled, _ := query("systemctl", "is-enabled", unitName)
+	state, _ := query("systemctl", "is-active", unitName())
+	enabled, _ := query("systemctl", "is-enabled", unitName())
 
 	if state == "" {
 		state = "unknown"
@@ -167,5 +170,5 @@ func (s systemd) Describe() string {
 		enabled = "unknown"
 	}
 
-	return fmt.Sprintf("%s (systemd: %s, %s at boot)", state, unitName, enabled)
+	return fmt.Sprintf("%s (systemd: %s, %s at boot)", state, unitName(), enabled)
 }

@@ -6,7 +6,10 @@
 GO      ?= go
 BIN     ?= bin
 DIST    ?= dist
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+# VERSION is the file, not the tag. A tag is a claim about a commit; the file is a
+# claim about the tree, and it is the tree that gets built. release.yml still wins by
+# passing VERSION=<tag> on the command line, which ?= leaves it free to do.
+VERSION ?= $(shell cat $(CURDIR)/VERSION 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 
 LDFLAGS := -s -w \

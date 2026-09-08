@@ -86,6 +86,14 @@ func runUp(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
+	// Before the warning below, because a flag that is going to be refused should be
+	// refused before this machine is told its proxies are being replaced. The
+	// announcement is not a lie -- nothing is saved until bring -- but reading
+	// "replaces that" and then an error is a worse way to learn you typo'd a port.
+	if err := chooseTuning(cfg, typedFlags(fs), *port, true); err != nil {
+		return fail(err)
+	}
+
 	// Switching a proxy machine to TUN is a real change of shape, not an edit.
 	if cfg.Mode == config.ModeProxy && len(cfg.Proxies) > 0 {
 		ui.Warnf("this machine was serving %d proxied service(s) in userspace mode.\n"+
@@ -126,10 +134,6 @@ func runUp(ctx context.Context, args []string) int {
 	cfg.IPv4 = address
 
 	if err := chooseTaints(cfg, taints, *noTaint); err != nil {
-		return fail(err)
-	}
-
-	if err := chooseTuning(cfg, typedFlags(fs), *port, true); err != nil {
 		return fail(err)
 	}
 

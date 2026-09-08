@@ -77,6 +77,10 @@ func reportConfig(cfg *config.Config) {
 		ui.Field("mode", "proxy — userspace, no host interface")
 	}
 
+	if note := exitNote(cfg); note != "" {
+		ui.Field("exit", note)
+	}
+
 	ui.Field("taint", joinTaints(cfg.Taints))
 
 	// Only when overridden. Silence here means the manifest's own list, which is

@@ -110,6 +110,20 @@ func waitForAnchor(ctx context.Context, d paths.Dirs) (anchorctl.Status, error) 
 }
 
 // report is what a person sees when it worked.
+// exitNote describes this machine's exit settings, or "" when it has neither.
+func exitNote(cfg *config.Config) string {
+	switch {
+	case cfg.ServeExit && cfg.UseExit:
+		return "serving a way out, and sending its own traffic over the overlay"
+	case cfg.ServeExit:
+		return "serving a way out to the public internet for the realm"
+	case cfg.UseExit:
+		return "sending this machine's internet traffic over the overlay"
+	default:
+		return ""
+	}
+}
+
 func report(d paths.Dirs, cfg *config.Config, st anchorctl.Status, verb string) {
 	mgr, _ := service.New()
 
@@ -137,6 +151,13 @@ func report(d paths.Dirs, cfg *config.Config, st anchorctl.Status, verb string) 
 
 	for _, s := range cfg.Subnets {
 		ui.Field("forwarding", s)
+	}
+
+	// Said whenever it is true, never when it is false. conflux goes to some trouble
+	// not to become an internet exit by accident, and a machine that is one should
+	// not need a config file read to find out.
+	if note := exitNote(cfg); note != "" {
+		ui.Field("exit", note)
 	}
 
 	ui.Field("taint", joinTaints(cfg.Taints))

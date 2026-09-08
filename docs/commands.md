@@ -219,8 +219,13 @@ non-interactive run without `--yes` refuses rather than destroy an identity sile
 
 ## `conflux status`
 
-conflux's state — service, mode, taint, AnchorID, credential expiry, API — and then
-`anchorctl status` beneath it. Exits 78 when the machine has no configuration.
+conflux's state — service, mode, exit, taint, AnchorID, credential expiry, API, and
+the uplink reopen tally if there is one — and then `anchorctl status` beneath it.
+Exits 78 when the machine has no configuration.
+
+The `exit` line appears only when this machine is an exit one way or the other.
+conflux goes to some trouble not to become one by accident, so a machine that *is*
+one should not need a config file read to find out.
 
 ## `conflux version`
 

@@ -132,6 +132,11 @@ func runProxy(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
+	// Before the warning below; see the same move in up.go.
+	if err := chooseTuning(cfg, typedFlags(fs), *port, false); err != nil {
+		return fail(err)
+	}
+
 	if cfg.Mode == config.ModeTUN {
 		ui.Warnf("this machine was running in TUN mode with interface %s.\n"+
 			"  Userspace mode replaces that: one daemon holds one anchor, and an anchor with\n"+
@@ -164,10 +169,6 @@ func runProxy(ctx context.Context, args []string) int {
 	}
 
 	if err := chooseTaints(cfg, taints, *noTaint); err != nil {
-		return fail(err)
-	}
-
-	if err := chooseTuning(cfg, typedFlags(fs), *port, false); err != nil {
 		return fail(err)
 	}
 

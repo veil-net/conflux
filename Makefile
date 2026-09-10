@@ -42,9 +42,19 @@ all: fmtcheck vet lint tidycheck test cross dist
 anchor-bins:
 	@ANCHOR_SRC=$(ANCHOR_SRC) ./scripts/anchor-bins.sh
 
+# CGO_ENABLED=0 here for the same reason cross and dist set it: so that the binary a
+# developer builds and installs is the same *kind* of binary as the one that ships.
+# Without it `make build` inherits the host default, which on any machine with a C
+# toolchain is cgo — and cgo pulls in the host's dynamic loader. Measured on the anchor
+# deployment: `make build` produced a dynamically linked conflux against a `make dist`
+# artifact that was static, and the dynamic one is what got installed to
+# /usr/local/bin. That build carries a glibc dependency the release artifact does not,
+# so it is a binary the release pipeline never tests and cannot be copied to a host with
+# an older libc. The two paths should differ in which target they build, and in nothing
+# else.
 build:
 	@mkdir -p $(BIN)
-	$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN)/conflux .
+	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN)/conflux .
 	@ls -l $(BIN)/conflux | awk '{printf "  %.1f MB  $(BIN)/conflux\n", $$5/1048576}'
 
 test:

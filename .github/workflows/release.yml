@@ -16,26 +16,27 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Read by default; `build` raises its own. Nothing else here, including the whole of
+# ci.yml called below, can create a release or sign anything.
 permissions:
-  contents: write
-  id-token: write
-  attestations: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  # Is there a release to make? Asked first, because the answer is usually no.
+  # Is there a release to make? Asked cheaply, because the answer is usually no.
   #
-  # Every merge to main runs this workflow, and most merges do not change VERSION. Without
-  # this job each of them would pay the full suite and seven cross-builds before
-  # discovering there was nothing to publish -- on the one runner everything else queues
-  # behind.
+  # Every merge to main runs this workflow and most merges do not change VERSION, so
+  # without this each of them would cross-build seven targets, attest them and publish
+  # before anything noticed there was nothing new to ship.
+  #
+  # It gates `verify` and `build` and deliberately not `tests` -- the suite has to run on
+  # every merge either way.
   #
   # The branch is named here as well as in the trigger, because `workflow_dispatch` above
-  # is not restricted to main and nothing else in this file would stop it. Every job below
-  # needs this one, directly or through another, so a skip here skips all of them.
+  # is not restricted to main and nothing else in this file would stop it.
   gate:
     if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, linux]
@@ -85,20 +86,15 @@ jobs:
             echo "Bump VERSION and merge to main to cut the next one."
           fi
 
-  # Everything ci.yml checks, before anything here ships.
+  # Everything ci.yml checks, on the merged commit, before anything here ships.
   #
-  # A tag push runs none of ci.yml's own triggers, so until this a release was gated on
-  # nothing: `verify` below asks whether the binaries about to be embedded are real, and
-  # nothing asked whether the code around them still worked. The tag is usually cut from
-  # a commit that was green on main, which is a convention rather than a check -- and the
-  # one release where it is not true is the one nobody wants to find out about from a
-  # user.
+  # Not gated on the version. ci.yml no longer triggers on main itself, so this is the
+  # only thing that tests a merge there, and a merge that does not bump VERSION still has
+  # to be correct.
   #
   # Calling ci.yml rather than repeating its steps: a second copy of the gate is a copy
   # that drifts, and the half that drifts is always the one nobody is watching.
   tests:
-    needs: gate
-    if: needs.gate.outputs.release == 'true'
     uses: ./.github/workflows/ci.yml
 
     # Without this the called workflow gets no secrets at all -- they are not inherited
@@ -109,6 +105,10 @@ jobs:
 
   verify:
     needs: [gate, tests]
+
+    # Here rather than on `tests`: the suite runs on every merge, and only publishing is
+    # conditional on the tree claiming a version nobody has released.
+    if: needs.gate.outputs.release == 'true'
     runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v7
@@ -173,6 +173,13 @@ jobs:
   build:
     needs: [gate, verify]
     runs-on: [self-hosted, linux]
+
+    # The only job that writes. contents to create the release, the other two for the
+    # build-provenance attestation.
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup

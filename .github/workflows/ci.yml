@@ -1,8 +1,16 @@
 name: ci
 
+# No push trigger on main, deliberately.
+#
+# main is covered by release.yml, which calls this workflow and then publishes. If both
+# ran on a push to main the whole suite would run twice on one commit, serialised on the
+# one runner everything else queues behind.
+#
+# version3 stays, because nothing else covers it: it is the integration branch, and a
+# merge there is not a release.
 on:
   push:
-    branches: [main, version3]
+    branches: [version3]
   pull_request:
   workflow_dispatch:
 

@@ -146,11 +146,21 @@ is new: a release used to be gated on nothing but a check that the binaries it w
 to embed were real. Whether the code around them still worked was a convention — the tag
 is cut from a commit that was green on main — and a convention is not a check.
 
-It runs on a **merge to `main`**, not on a tag. A `gate` job reads the `VERSION` file and
-stops the run immediately unless that version has no release yet, so most merges cost one
-cheap job rather than an hour. Two things that were previously possible are now not: a
-release built from a commit nobody had tested, and a `workflow_dispatch` on a feature
-branch publishing `make dist VERSION=<branch-name>` to the public.
+It runs on a **merge to `main`**, not on a tag — and `ci.yml` no longer triggers on `main`
+at all, so the suite runs once per merge rather than twice. A `gate` job reads the
+`VERSION` file; the tests run either way, and only `verify` and `build` are skipped when
+that version already has a release. So an ordinary merge costs the suite, and a release
+merge costs the suite plus seven cross-builds.
+
+Two things that were previously possible are now not: a release built from a commit nobody
+had tested, and a `workflow_dispatch` on a feature branch publishing
+`make dist VERSION=<branch-name>` to the public.
+
+The PR run and the merge run are both wanted, and they are not the same thing. GitHub
+tests `refs/pull/N/merge` — the branch already merged into its base — so as a *test* the
+second is redundant whenever the base has not moved. But the merge run is the release
+build: it produces the seven binaries and publishes them, and artifacts cannot come from a
+run of a different commit.
 
 It also fetches those binaries now, which is what made a release from CI possible at all.
 `anchor/bin` is not in git, so a release runner had no source for it and the workflow

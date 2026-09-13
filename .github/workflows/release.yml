@@ -1,6 +1,9 @@
 name: release
 
-# A merge to main, and nothing else.
+# A merge to version3, and nothing else.
+#
+# version3 is where conflux is developed; main carries no workflows at all. So this is the
+# branch a merge reaches, and the branch a release comes from.
 #
 # It was a tag push, which made cutting a release a separate manual act performed on a
 # commit nobody had necessarily released from -- and a `workflow_dispatch` with no branch
@@ -8,16 +11,18 @@ name: release
 # VERSION=<branch-name>` and published it to the public as a GitHub release.
 #
 # Now the tree decides. VERSION is a file, the gate below reads it, and a release happens
-# exactly when somebody bumps that file and the change reaches main. The tag becomes a
-# consequence of the merge rather than a second thing to remember, and there is no branch
-# from which a release can be produced at all.
+# exactly when somebody bumps that file and the change is merged.
+#
+# It does not re-run the suite. ci.yml tests the branch, and by the time a merge lands the
+# question has been answered. That rests on branch protection on version3 -- a required
+# pull request, required checks, and required up-to-date -- and is unsafe without it.
 on:
   push:
-    branches: [main]
+    branches: [version3]
   workflow_dispatch:
 
-# Read by default; `build` raises its own. Nothing else here, including the whole of
-# ci.yml called below, can create a release or sign anything.
+# Read by default; `build` raises its own. Neither `gate` nor `verify` can create a
+# release or sign anything.
 permissions:
   contents: read
 
@@ -28,17 +33,14 @@ concurrency:
 jobs:
   # Is there a release to make? Asked cheaply, because the answer is usually no.
   #
-  # Every merge to main runs this workflow and most merges do not change VERSION, so
+  # Every merge to version3 runs this workflow and most merges do not change VERSION, so
   # without this each of them would cross-build seven targets, attest them and publish
   # before anything noticed there was nothing new to ship.
   #
-  # It gates `verify` and `build` and deliberately not `tests` -- the suite has to run on
-  # every merge either way.
-  #
   # The branch is named here as well as in the trigger, because `workflow_dispatch` above
-  # is not restricted to main and nothing else in this file would stop it.
+  # is not restricted to a branch and nothing else in this file would stop it.
   gate:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/version3'
     runs-on: [self-hosted, linux]
     outputs:
       release: ${{ steps.decide.outputs.release }}
@@ -56,8 +58,12 @@ jobs:
 
           [ -s VERSION ] || { echo "::error::VERSION is missing or empty" >&2; exit 1; }
 
+          # The tag is the file, verbatim. Nothing is prepended: the tags this repository
+          # has published are Beta-v1.0.13, Beta-v1.0.14, Beta-v1.0.15 -- so a "v" bolted
+          # on here would invent a scheme that matches none of them. Whatever VERSION
+          # says is both the tag and the string stamped into the binary.
           version=$(tr -d '[:space:]' < VERSION)
-          tag="v$version"
+          tag="$version"
 
           # A 404 means no release at that tag, which is the case worth acting on. Any
           # other code is asked about rather than assumed: treating a 500 as "not
@@ -83,31 +89,11 @@ jobs:
             echo "$tag is not published yet -- building it"
           else
             echo "$tag is already published; nothing to do"
-            echo "Bump VERSION and merge to main to cut the next one."
+            echo "Bump VERSION and merge to version3 to cut the next one."
           fi
 
-  # Everything ci.yml checks, on the merged commit, before anything here ships.
-  #
-  # Not gated on the version. ci.yml no longer triggers on main itself, so this is the
-  # only thing that tests a merge there, and a merge that does not bump VERSION still has
-  # to be correct.
-  #
-  # Calling ci.yml rather than repeating its steps: a second copy of the gate is a copy
-  # that drifts, and the half that drifts is always the one nobody is watching.
-  tests:
-    uses: ./.github/workflows/ci.yml
-
-    # Without this the called workflow gets no secrets at all -- they are not inherited
-    # by default -- and every anchor-bins step inside it would fail on a token that is
-    # set here and empty there. A called workflow is a different workflow, and the only
-    # sign of the difference is that nothing works.
-    secrets: inherit
-
   verify:
-    needs: [gate, tests]
-
-    # Here rather than on `tests`: the suite runs on every merge, and only publishing is
-    # conditional on the tree claiming a version nobody has released.
+    needs: gate
     if: needs.gate.outputs.release == 'true'
     runs-on: [self-hosted, linux]
     steps:

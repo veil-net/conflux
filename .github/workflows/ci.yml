@@ -1,24 +1,19 @@
 name: ci
 
-# No push trigger on main, deliberately.
+# Pull requests, and a hand-run. Nothing else.
 #
-# main is covered by release.yml, which calls this workflow and then publishes. If both
-# ran on a push to main the whole suite would run twice on one commit, serialised on the
-# one runner everything else queues behind.
+# This is where a change is tested: on the branch, before it is merged. A merge to
+# version3 does not re-run it -- GitHub tests refs/pull/N/merge, which is the branch
+# already merged into its base, so a green pull request is a green merge result, and
+# asking again costs an hour to reprove an identical tree.
 #
-# version3 stays, because nothing else covers it: it is the integration branch, and a
-# merge there is not a release.
+# What makes that a guarantee rather than a hope is branch protection on version3: require
+# a pull request, require these checks, and require the branch to be up to date before
+# merging. The third is the one that matters -- without it a pull request can be green
+# against a base that has since moved, and what merges is a tree nothing tested.
 on:
-  push:
-    branches: [version3]
   pull_request:
   workflow_dispatch:
-
-  # Callable, so release.yml can wait on the whole of this rather than on a copy of it.
-  # A tag push does not run the triggers above, so before this a release was gated on
-  # nothing at all -- the artifact check in release.yml is about the binaries it is
-  # about to embed, not about whether the code works.
-  workflow_call:
 
 permissions:
   contents: read

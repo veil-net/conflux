@@ -146,21 +146,24 @@ is new: a release used to be gated on nothing but a check that the binaries it w
 to embed were real. Whether the code around them still worked was a convention — the tag
 is cut from a commit that was green on main — and a convention is not a check.
 
-It runs on a **merge to `main`**, not on a tag — and `ci.yml` no longer triggers on `main`
-at all, so the suite runs once per merge rather than twice. A `gate` job reads the
-`VERSION` file; the tests run either way, and only `verify` and `build` are skipped when
-that version already has a release. So an ordinary merge costs the suite, and a release
-merge costs the suite plus seven cross-builds.
+It runs on a **merge to `version3`**, not on a tag, and it does **not** re-run this
+workflow. Testing happens on the branch: GitHub tests `refs/pull/N/merge`, which is the
+change already merged into its base, so a green pull request is a green merge result and
+asking again would cost an hour to reprove an identical tree.
+
+That rests on branch protection, and is unsafe without it. `version3` must require a pull
+request, require these checks, and require the branch to be up to date before merging. The
+third is the one that matters: without it a pull request can be green against a base that
+has since moved, and what merges is a tree nothing tested.
+
+A `gate` job reads the `VERSION` file and stops unless that version has no release yet, so
+an ordinary merge costs one cheap job. The tag is whatever `VERSION` says, verbatim —
+nothing is prepended, because the tags this repository has published are `Beta-v1.0.13`,
+`Beta-v1.0.14`, `Beta-v1.0.15`, and a scheme invented here would match none of them.
 
 Two things that were previously possible are now not: a release built from a commit nobody
 had tested, and a `workflow_dispatch` on a feature branch publishing
 `make dist VERSION=<branch-name>` to the public.
-
-The PR run and the merge run are both wanted, and they are not the same thing. GitHub
-tests `refs/pull/N/merge` — the branch already merged into its base — so as a *test* the
-second is redundant whenever the base has not moved. But the merge run is the release
-build: it produces the seven binaries and publishes them, and artifacts cannot come from a
-run of a different commit.
 
 It also fetches those binaries now, which is what made a release from CI possible at all.
 `anchor/bin` is not in git, so a release runner had no source for it and the workflow

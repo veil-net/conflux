@@ -144,6 +144,13 @@ gated on nothing but a check that the binaries it was about to embed were real. 
 the code around them still worked was a convention — the tag is cut from a commit that
 was green on main — and a convention is not a check.
 
+It also fetches those binaries now, which is what made a release from CI possible at all.
+`anchor/bin` is not in git, so a release runner had no source for it and the workflow
+failed on its own error message saying so. Both release jobs fetch from the shelf, and
+neither pins anything: a release carries whatever anchor published most recently, which
+is the intent — conflux ships the newest anchor, not a remembered one. All seven targets
+are cross-built from the one Linux machine, `CGO_ENABLED=0` throughout.
+
 **The binaries CI uses are the pinned ones.** That is what the shelf serves, and it is
 the property a locally-built `make dist` cannot have: an anchor pinned to the genesis
 realm refuses to handshake with any other tree. So `integration` now exercises the

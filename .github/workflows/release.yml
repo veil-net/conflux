@@ -31,10 +31,25 @@ jobs:
 
   verify:
     needs: tests
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
 
+      # The binaries this release is about to embed, fetched from the shelf.
+      #
+      # Without this the job could not run at all: anchor/bin is not in git, so a fresh
+      # checkout has none and the very next step failed on its own message -- "a release
+      # runner needs a source for them". That source exists now, which is the whole of
+      # what made a conflux release possible from CI rather than from a laptop.
+      - uses: ./.github/actions/anchor-bins
+
+      # A second opinion on what the fetcher just wrote. It already refuses anchoradmin,
+      # verifies every digest, and fails rather than falling back -- so these three now
+      # assert what should already be true. Kept because this is the last gate before
+      # bytes go to the public, and a check that costs a second is worth more here than
+      # the argument for removing it.
+      #
       # anchoradmin can mint realm roots. Shipping it inside conflux would hand that
       # to every user, so its absence is checked rather than assumed.
       - name: no anchoradmin is ever shipped
@@ -76,11 +91,20 @@ jobs:
 
   build:
     needs: verify
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
 
+      # Again, because a job is a fresh checkout and anchor/bin is not in git. The
+      # fetcher pins nothing of its own -- it takes what the shelf serves now -- so a
+      # release carries whatever anchor published most recently, which is the intent:
+      # conflux ships the newest anchor, not a remembered one.
+      - uses: ./.github/actions/anchor-bins
+
+      # All seven targets, not just this runner's: linux amd64 and arm64, darwin arm64,
+      # windows amd64 and arm64, freebsd and openbsd. CGO_ENABLED=0 throughout, so one
+      # Linux machine cross-builds every one of them.
       - run: make dist VERSION=${{ github.ref_name }}
 
       - uses: actions/attest-build-provenance@v1

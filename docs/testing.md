@@ -136,7 +136,7 @@ checkout and no credential. See [build.md](build.md).
 | `windows-tun` | GitHub Windows | the wintun pin, fetched the way an operator would |
 | `service` | veilnet-dev | `make service-test` — install registers, uninstall leaves nothing |
 | `integration` | veilnet-dev | `make integration` — three nodes against the live API |
-| `docs` | GitHub Linux | two greps; it needs nothing the runner has |
+| `docs` | veilnet-dev | two greps |
 
 A release runs all of it first. `release.yml` calls this workflow and waits on it, which
 is new: a tag push runs none of `ci.yml`'s own triggers, so before that a release was
@@ -163,18 +163,17 @@ a reason: `pull_request` runs the workflow from the *head* of the pull request, 
 without a guard a fork could propose a workflow that runs its own code on a machine that
 survives the job, beside a Docker socket and a token that reads a private repository.
 
-So the four Linux jobs handle a fork two different ways. `service` and `integration`
-refuse it: they want Docker and a privileged container on a machine that is not thrown
-away, and there is no substitute for that. `linux` and `cross` name their runner with an
-expression instead of a label, so a fork's pull request falls back to a GitHub image and
-still gets the gate.
+Every Linux job refuses a fork's pull request, and nothing stands in for them. Since the
+platform legs need the gate, a fork's pull request runs nothing at all.
 
-The fallback costs a fork nothing, which is new. The anchor binaries come from a public
-shelf now rather than a checkout of a private repository, so a hosted runner fetches
-exactly what veilnet-dev does — the duplicate job that used to cover forks could not, and
-handed them placeholders. A fork's change is formatted, vetted, linted, raced,
-cross-compiled and checked against the argv fixtures with the real pinned binaries, on
-both platform legs. What it does not get is the two container suites.
+That is the deliberate position rather than an oversight. A machine that survives the job
+does not run a stranger's code, and the alternative — a hosted copy of the gate, for
+forks only — was tried here and is worse than the gap. Two near-identical jobs with
+complementary conditions means one is always skipped, and the one that rots is the one
+nobody is watching.
+
+A fork's change is therefore reviewed rather than gated. If that becomes the wrong trade,
+the honest fix is a second machine, not a second copy of the gate.
 
 **One runner process, deliberately.** The four Linux jobs queue rather than run beside
 each other, so a push costs their sum. Do not register a second process to win that

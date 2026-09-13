@@ -24,16 +24,19 @@ permissions:
 # macOS and Windows stay on GitHub's images, because there is no other machine here that
 # can run them.
 #
-# Anything that can run on veilnet-dev does. `linux`, `cross`, `service` and `integration`
-# are all Linux work and all go there; macOS and Windows stay on GitHub's images because
-# there is no other machine here that can run them, and `docs` is two greps that would
-# spend a queue slot to save nothing.
+# Anything that can run on veilnet-dev does. It is Linux with Docker, Go, Python and Node,
+# so every Linux job here goes there -- `linux`, `cross`, `service`, `integration` and
+# `docs`. macOS and Windows stay on GitHub's images because nothing else here can run
+# them, and they are the whole reason `platforms` and `windows-tun` exist.
 #
-# `linux` and `cross` name their runner with an expression rather than a label, so that a
-# fork's pull request falls back to a hosted image instead of being refused the gate
-# altogether. `service` and `integration` cannot fall back -- they want Docker and a
-# privileged container on a machine that is not thrown away -- so a fork simply does not
-# get them.
+# Every one of them refuses a fork's pull request outright, and nothing stands in for
+# them. Since the platform jobs need the gate, a fork's pull request runs nothing at all.
+#
+# Deliberate rather than an oversight. A machine that survives the job does not run a
+# stranger's code, and the alternative -- a hosted copy of the gate for forks -- is a
+# second definition of the same thing, which is the arrangement this file had briefly and
+# is worse than the gap: one of the two is always skipped, so the one that rots is the one
+# nobody watches.
 #
 # **This repository is public.** A self-hosted runner is a machine that survives the job,
 # and conflux has forks; `pull_request` runs the workflow from the *head* of the PR, so
@@ -47,13 +50,9 @@ permissions:
 # secrets to reach for -- but the guard stays, because running a stranger's code on a
 # persistent machine is worth refusing on its own.
 #
-# Either way nothing a fork writes executes on veilnet-dev: the two container jobs refuse
-# it outright, and the two build jobs send it to a hosted image. It still gets the full
-# Linux gate with the real pinned binaries, cross, both platform legs, windows-tun and
-# docs -- everything but the container suites.
-#
-# This lives here rather than in a setting because a setting cannot express it — "Allow
-# public repositories" is all-or-nothing for the whole organisation.
+# So nothing a fork writes executes on veilnet-dev at all. This lives here rather than in
+# a setting because a setting cannot express it — "Allow public repositories" is
+# all-or-nothing for the whole organisation.
 #
 # What the machine changes, beyond the label. It is not a fresh VM destroyed at the end
 # of the job, so the Docker jobs reap the container names before themselves as well as
@@ -79,19 +78,13 @@ concurrency:
 
 jobs:
   linux:
-    # veilnet-dev, except for a fork's pull request, which falls back to a GitHub image.
-    #
-    # The expression is doing what a second job used to. A fork cannot be allowed onto a
-    # machine that survives the job, but it still needs this gate -- so the choice is
-    # between two near-identical jobs with complementary conditions, or one job that
-    # picks its runner. anchor's `tun` matrix already carries a runner for the same
-    # reason, and one definition cannot drift from itself.
-    #
-    # The fallback costs a fork nothing now: the anchor binaries come from a public
-    # shelf rather than a checkout of a private repository, so a hosted runner fetches
-    # exactly what this one does. The duplicate job that preceded this could not, and
-    # gave forks placeholders.
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "linux"]') || 'ubuntu-latest' }}
+    # Not for a fork's pull request, and with nothing standing in for it. A fork does not
+    # get the Linux gate, which means -- since everything below needs this job -- that a
+    # fork's pull request runs `docs` and stops. That is the deliberate position: a
+    # machine that survives the job does not run a stranger's code, and a gate worth
+    # having on a hosted image would be a second definition of this one.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
@@ -165,8 +158,9 @@ jobs:
     # that for the price of fourteen two-line files. The size gate is `make dist`, which
     # the two container jobs run with the real thing.
     #
-    # Same runner rule as `linux` above, and the same reason for the fallback.
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "linux"]') || 'ubuntu-latest' }}
+    # Same rule as `linux` above.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
@@ -305,7 +299,12 @@ jobs:
         run: docker rm -f cfx-a cfx-b cfx-c || true
 
   docs:
-    runs-on: ubuntu-latest
+    # On the runner like everything else that can be. Two greps, so this is the one job
+    # where the queue slot costs more than the work -- and consistency is worth more than
+    # three seconds, because "everything Linux runs on our machine" is a rule somebody can
+    # check, and "everything except the cheap ones" is a judgement call that drifts.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v7
 

@@ -7,13 +7,17 @@
 #
 #   make anchor-bins                      from ../anchor
 #   make anchor-bins ANCHOR_SRC=/path     from somewhere else
-#   make anchor-bins FETCH=1              from the published shelf, no checkout needed
+#   make anchor-bins FETCH=1              from anchor's release, needs ANCHOR_RELEASE_TOKEN
 #
 # Three sources, in that order of preference. A local release/ is the pinned build and
 # wins outright. A local dist/ is the unpinned development cross-build and is taken
-# loudly. With neither, FETCH=1 downloads the pinned binaries from the shelf and
-# verifies every digest -- which is what lets CI, and a fresh clone, have the real ones
-# without a checkout and without a credential.
+# loudly. With neither, FETCH=1 downloads the pinned binaries from anchor's `shelf`
+# release and verifies every digest -- which is what lets CI, and a fresh clone, have the
+# real ones without a checkout of anchor.
+#
+# That last one needs a credential, because anchor is private and GitHub has no
+# releases-only read scope. See internal/shelf for why holding that token in a public
+# repository is nonetheless contained.
 #
 # With no source at all it writes placeholders, which is what lets gofmt, vet,
 # staticcheck and the unit tests run on a machine with no access to any of the above. A
@@ -30,7 +34,14 @@ DEST=${DEST:-anchor/bin}
 # would move 284 MB to compile 43. Once the shelf serves every target and the per-target
 # narrowing exists, this default is one line to flip.
 FETCH=${FETCH:-0}
-SHELF_URL=${SHELF_URL:-}
+
+# Where the release lives. Empty means the fetcher's own defaults, so the values are
+# stated once in internal/shelf rather than twice. ANCHOR_API exists so this path can be
+# pointed at a stand-in and actually exercised -- a fetch that is only ever run against
+# the real thing is one nobody can test before shipping it.
+ANCHOR_API=${ANCHOR_API:-}
+ANCHOR_REPO=${ANCHOR_REPO:-}
+ANCHOR_TAG=${ANCHOR_TAG:-}
 
 TARGETS="linux-amd64 linux-arm64 darwin-arm64 windows-amd64 windows-arm64 freebsd-amd64 openbsd-amd64"
 
@@ -84,15 +95,28 @@ EOF
 # a JSON parser to become buildable. The fetcher imports nothing that embeds anything,
 # so it still runs when anchor/bin is empty -- which is the only moment it is wanted.
 if [ -z "$src" ] && [ "$FETCH" = 1 ]; then
-  echo "anchor-bins: no local anchor build; fetching the pinned binaries from the shelf" >&2
+  echo "anchor-bins: no local anchor build; fetching the pinned binaries from anchor's release" >&2
+
+  # Said here rather than left to the fetcher, because this is the one failure whose
+  # remedy is a person setting something up rather than a thing being retried, and it
+  # should not arrive looking like a network error.
+  if [ -z "${ANCHOR_RELEASE_TOKEN:-}" ]; then
+    echo "anchor-bins: ANCHOR_RELEASE_TOKEN is not set, and anchor is a private repository." >&2
+    echo "anchor-bins: it needs a GitHub token with Contents: read on veil-net/anchor." >&2
+    echo "anchor-bins: in CI that is the repository secret of the same name; locally, export it." >&2
+    echo "anchor-bins: see docs/build.md." >&2
+    exit 1
+  fi
 
   args=""
-  [ -n "$SHELF_URL" ] && args="-url $SHELF_URL"
+  [ -n "$ANCHOR_API" ] && args="$args -api $ANCHOR_API"
+  [ -n "$ANCHOR_REPO" ] && args="$args -repo $ANCHOR_REPO"
+  [ -n "$ANCHOR_TAG" ] && args="$args -tag $ANCHOR_TAG"
 
   # $want is the same list the prune above is built from, so there is one definition of
   # what belongs here rather than two that can disagree.
   if go run ./cmd/anchor-fetch $args -dest "$DEST" -want "$(echo $want | tr ' ' ',')"; then
-    echo "anchor-bins: $TOTAL/$TOTAL fetched from the shelf (pinned release build)"
+    echo "anchor-bins: $TOTAL/$TOTAL fetched from anchor's release (pinned build)"
     exit 0
   fi
 

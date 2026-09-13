@@ -29,6 +29,12 @@ jobs:
   tests:
     uses: ./.github/workflows/ci.yml
 
+    # Without this the called workflow gets no secrets at all -- they are not inherited
+    # by default -- and every anchor-bins step inside it would fail on a token that is
+    # set here and empty there. A called workflow is a different workflow, and the only
+    # sign of the difference is that nothing works.
+    secrets: inherit
+
   verify:
     needs: tests
     runs-on: [self-hosted, linux]
@@ -43,6 +49,8 @@ jobs:
       # runner needs a source for them". That source exists now, which is the whole of
       # what made a conflux release possible from CI rather than from a laptop.
       - uses: ./.github/actions/anchor-bins
+        with:
+          token: ${{ secrets.ANCHOR_RELEASE_TOKEN }}
 
       # A second opinion on what the fetcher just wrote. It already refuses anchoradmin,
       # verifies every digest, and fails rather than falling back -- so these three now
@@ -101,6 +109,8 @@ jobs:
       # release carries whatever anchor published most recently, which is the intent:
       # conflux ships the newest anchor, not a remembered one.
       - uses: ./.github/actions/anchor-bins
+        with:
+          token: ${{ secrets.ANCHOR_RELEASE_TOKEN }}
 
       # All seven targets, not just this runner's: linux amd64 and arm64, darwin arm64,
       # windows amd64 and arm64, freebsd and openbsd. CGO_ENABLED=0 throughout, so one

@@ -22,12 +22,12 @@ refreshed. So `anchor/bin/` is ignored, and a build populates it:
 ```console
 $ make anchor-bins                              # from ../anchor
 $ make anchor-bins ANCHOR_SRC=/path/to/anchor   # from somewhere else
-$ make anchor-bins FETCH=1                      # from the shelf; no checkout needed
+$ make anchor-bins FETCH=1                      # from anchor's release; needs a token
 anchor-bins: 14/14 copied from ../anchor/release (release)
 ```
 
 The script looks for `release/` first, falls back to `dist/`, and with `FETCH=1` falls
-back again to the published shelf. Those are not
+back again to anchor's published release. Those are not
 interchangeable: `release/` is the pinned, garbled build users get, and `dist/` is the
 unpinned development cross-build, which will join **any** realm tree. A conflux built
 from `dist/` is fine for development and wrong for anything shipped, and the script
@@ -39,22 +39,46 @@ embedded into every conflux a user runs. The release workflow fails on its prese
 
 ### The shelf
 
-`make anchor-bins FETCH=1` fetches the **pinned** build from
-`https://api.veilnet.com.au/anchor/release`, with no anchor checkout and no credential:
+`make anchor-bins FETCH=1` fetches the **pinned** build from the `shelf` release of
+`veil-net/anchor`, with no anchor checkout:
 
 ```console
+$ export ANCHOR_RELEASE_TOKEN=github_pat_…
 $ make anchor-bins FETCH=1
-anchor-fetch: shelf:   https://api.veilnet.com.au/anchor/release
+anchor-fetch: shelf:   veil-net/anchor @ shelf
+anchor-fetch: commit:  0aea0f77bb77f8bbaa23c5055d9fe245d3a9bee2
 anchor-fetch: realm:   realmtglwuedqqa33e364nv73p46jk3kwi67lxjmnntz2mv3mb3mklasq
 anchor-fetch:   ok   anchord-linux-amd64           28.0 MB  95ca77b697e5
   …
 anchor-fetch: 14/14 fetched, digests verified
 ```
 
-`SHELF_URL=` points it elsewhere. The fetcher is `cmd/anchor-fetch` over
-`internal/shelf` — Go rather than curl and a JSON parser, because the promise at the top
-of this page is "Go 1.27.1 or newer, and nothing else", and a fresh clone should not have
-to acquire anything else to become buildable.
+The tag is fixed and moves: `shelf` always names anchor's newest release build, which is
+the intent — conflux ships the newest anchor, not a remembered one. Fetched by tag rather
+than by "latest", because latest is a heuristic over publication dates that a real product
+release cut in anchor would win.
+
+`ANCHOR_REPO=`, `ANCHOR_TAG=` and `ANCHOR_API=` point it elsewhere. The fetcher is
+`cmd/anchor-fetch` over `internal/shelf` — Go rather than curl and a JSON parser, because
+the promise at the top of this page is "Go 1.27.1 or newer, and nothing else", and a fresh
+clone should not have to acquire anything else to become buildable.
+
+#### The token
+
+`ANCHOR_RELEASE_TOKEN` is a GitHub token with **Contents: read** on `veil-net/anchor`. In
+CI it is the repository secret of the same name; locally, export it.
+
+It is needed because anchor is private, and GitHub has no releases-only read scope —
+releases live under Contents, the same permission that grants the source. So the token
+that reads two binaries could also clone the repository. That is the trade, made knowingly:
+
+- GitHub never passes secrets to workflows triggered by **fork** pull requests, and
+  conflux's Linux jobs refuse fork pull requests outright. The token is not reachable by
+  anyone who does not already have write access to conflux.
+- It is scoped to one repository and one permission, which is the narrowest grant GitHub
+  will cut for this.
+- Fine-grained tokens expire. When this one does, every `FETCH=1` fails with
+  `GitHub refused the token (401)`, which is the failure saying exactly what it is.
 
 What it refuses, and why each is worth a refusal:
 
@@ -62,7 +86,8 @@ What it refuses, and why each is worth a refusal:
 |---|---|
 | a digest that does not match | the failure no later gate catches — a real binary of the right size passes the size gate, and one of the right architecture passes `TestPairIsRealExecutables` |
 | `anchoradmin` on the shelf | it mints realm roots, and every file in `anchor/bin` is a candidate for being embedded into every conflux a user runs |
-| a per-binary `url` on another host | the digest catches substituted content; this catches being sent somewhere conflux was never told about |
+| `anchoradmin` attached to the release | refused on sight, before anything is downloaded — if it is being published, that is worth stopping over rather than quietly not selecting |
+| an asset still uploading | a half-finished release is not yet what its manifest claims |
 | a manifest with no `pin` | nothing then says which realm these binaries are for |
 | an unknown `formatVersion` | a future shape may mean anything, so it is refused rather than guessed at |
 | a short body, or plain http | a truncated download, and an unencrypted one |
@@ -79,8 +104,16 @@ machine with no anchor and no network run `gofmt` and the unit tests.
 
 **`FETCH=1` is opt-in for now.** The macOS and Windows CI jobs run `anchor-bins` too and
 need only the two files their own build tag names, so fetching all fourteen there would
-move 284 MB to compile 43. Once the shelf serves every target and per-target narrowing
-exists, the default is one line to flip.
+move 284 MB to compile 43. Once per-target narrowing exists, the default is one line to
+flip.
+
+**There is no URL anywhere.** An earlier version of this fetched a manifest that named a
+download URL per binary, and refused any whose host differed from the manifest's — because
+a document conflux had just downloaded was deciding where conflux would fetch from next.
+Nothing reads a URL out of a document now: every request is built from `internal/shelf`'s
+own constants, and binaries are resolved by asset **name** within one release. The set of
+places a fetch can reach is fixed by conflux's configuration rather than by anything on
+the wire, which is the stronger form of the same property.
 
 ### A clone with no anchor checkout
 
@@ -90,10 +123,9 @@ binaries still run `gofmt`, `go vet`, `staticcheck` and the unit tests, which is
 exactly what CI needs.
 
 CI is no longer in that state for the jobs that matter. `linux`, `service` and
-`integration` check anchor out beside conflux on the self-hosted runner and build
-`make dist`, so the eight tests that gate on `anchor.Supported` actually run; `cross`
-stays on placeholders deliberately, because what it asks is whether every target still
-compiles. See [testing.md](testing.md).
+`integration` fetch the pinned binaries from anchor's release, so the eight tests that
+gate on `anchor.Supported` actually run; `cross` stays on placeholders deliberately,
+because what it asks is whether every target still compiles. See [testing.md](testing.md).
 
 A placeholder build is not able to masquerade as a real one:
 

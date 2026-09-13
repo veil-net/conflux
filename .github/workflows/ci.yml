@@ -96,6 +96,8 @@ jobs:
       # cross-check, and the shadowing check in internal/cli. A skip is green, which is
       # why this was easy not to notice.
       - uses: ./.github/actions/anchor-bins
+        with:
+          token: ${{ secrets.ANCHOR_RELEASE_TOKEN }}
 
       - run: make fmtcheck
       - run: make vet
@@ -258,6 +260,8 @@ jobs:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
       - uses: ./.github/actions/anchor-bins
+        with:
+          token: ${{ secrets.ANCHOR_RELEASE_TOKEN }}
 
       - name: what this runner gives the suite
         run: ./test/preflight.sh
@@ -288,6 +292,8 @@ jobs:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
       - uses: ./.github/actions/anchor-bins
+        with:
+          token: ${{ secrets.ANCHOR_RELEASE_TOKEN }}
 
       - name: what this runner gives the suite
         run: ./test/preflight.sh

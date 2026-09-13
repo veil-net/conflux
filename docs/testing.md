@@ -125,8 +125,10 @@ never who is let in. Loopback is not probed, so two anchors on one machine still
 Every Linux job that needs Docker is on **veilnet-dev**, a self-hosted runner. What
 makes the two container suites possible, though, is not the machine — it is that
 `anchor/bin` finally has a source CI can reach. `make anchor-bins FETCH=1` fetches the
-**pinned** release build from the shelf and verifies every digest, with no anchor
-checkout and no credential. See [build.md](build.md).
+**pinned** release build from the `shelf` release of `veil-net/anchor` and verifies every
+digest, with no anchor checkout. It needs `ANCHOR_RELEASE_TOKEN`, a repository secret
+carrying Contents: read on anchor — see [build.md](build.md) for why that grant is wider
+than it wants to be and why it is nonetheless contained.
 
 | job | machine | what it adds |
 |---|---|---|
@@ -146,12 +148,17 @@ was green on main — and a convention is not a check.
 
 It also fetches those binaries now, which is what made a release from CI possible at all.
 `anchor/bin` is not in git, so a release runner had no source for it and the workflow
-failed on its own error message saying so. Both release jobs fetch from the shelf, and
-neither pins anything: a release carries whatever anchor published most recently, which
-is the intent — conflux ships the newest anchor, not a remembered one. All seven targets
-are cross-built from the one Linux machine, `CGO_ENABLED=0` throughout.
+failed on its own error message saying so. Both release jobs fetch the `shelf` release,
+and neither pins a version of it: the tag moves, so a conflux release carries whatever
+anchor published most recently, which is the intent — conflux ships the newest anchor,
+not a remembered one. All seven targets are cross-built from the one Linux machine,
+`CGO_ENABLED=0` throughout.
 
-**The binaries CI uses are the pinned ones.** That is what the shelf serves, and it is
+`release.yml` calls `ci.yml` with `secrets: inherit`. Without that the called workflow
+gets no secrets at all — they are not inherited by default — and every `anchor-bins` step
+inside it would fail on a token that is set in one file and empty in the other.
+
+**The binaries CI uses are the pinned ones.** That is what the release serves, and it is
 the property a locally-built `make dist` cannot have: an anchor pinned to the genesis
 realm refuses to handshake with any other tree. So `integration` now exercises the
 binaries that actually ship, rather than a development cross-build that would join

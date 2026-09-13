@@ -1,31 +1,42 @@
 name: anchor-bins
 description: >
-  Populate anchor/bin with the pinned anchor binaries, fetched from the published
-  release shelf. No checkout of anchor, and no credential.
+  Populate anchor/bin with the pinned anchor binaries, fetched from the `shelf` release
+  of veil-net/anchor.
 
 inputs:
-  url:
+  token:
     description: >
-      The release manifest. Defaults to the one internal/shelf names, so the value is
-      stated once in the product code rather than twice.
+      A GitHub token with Contents: read on veil-net/anchor. Required: anchor is private,
+      and GitHub has no releases-only read scope, so reading two binaries and reading the
+      source are the same grant. Pass secrets.ANCHOR_RELEASE_TOKEN.
+    required: true
+  repo:
+    description: >
+      The owner/name holding the release. Defaults to what internal/shelf names, so the
+      value is stated once in the product code rather than twice.
+    required: false
+    default: ""
+  tag:
+    description: The release tag. Defaults to what internal/shelf names.
     required: false
     default: ""
 
 runs:
   using: composite
   steps:
-    # What this fetches is what conflux already ships: //go:embed puts these bytes
-    # inside every published conflux, so a public shelf discloses nothing a release
-    # download does not. That is why this needs no token for a private repository --
-    # conflux wants anchor's *output*, and the output is not the secret.
+    # What this fetches is the *pinned* build, which a local `make dist` cannot be: an
+    # anchor pinned to the genesis realm refuses to handshake with any other tree. So the
+    # container suites exercise the binaries that actually ship.
     #
-    # And what it fetches is the *pinned* build, which a local `make dist` cannot be:
-    # an anchor pinned to the genesis realm refuses to handshake with any other tree.
-    # So the container suites below now exercise the binaries that actually ship.
+    # The token reaches the fetcher as an environment variable and never as an argument:
+    # an argument is visible in `ps` to every other user on the machine, and this runs on
+    # a machine that is not destroyed at the end of the job.
     - name: fetch the pinned anchor binaries
       shell: bash
       env:
-        SHELF_URL: ${{ inputs.url }}
+        ANCHOR_RELEASE_TOKEN: ${{ inputs.token }}
+        ANCHOR_REPO: ${{ inputs.repo }}
+        ANCHOR_TAG: ${{ inputs.tag }}
       run: make anchor-bins FETCH=1
 
     # Say what arrived, because a green tick on fourteen files nobody looked at is worth

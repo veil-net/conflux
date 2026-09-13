@@ -130,7 +130,8 @@ beside conflux and runs `make dist`, so the binaries are real on every push.
 | job | machine | what it adds |
 |---|---|---|
 | `linux` | veilnet-dev | the suite under `-race`, with real binaries — eight tests that had only ever skipped |
-| `cross` | veilnet-dev | vet and compile all seven targets, on placeholders |
+| `linux-fork` | GitHub Linux | the same gate on placeholders, for a pull request from a fork |
+| `cross` | GitHub Linux | vet and compile all seven targets, on placeholders |
 | `platforms` | GitHub macOS, Windows | path handling, file modes, the DACL |
 | `windows-tun` | GitHub Windows | the wintun pin, fetched the way an operator would |
 | `service` | veilnet-dev | `make service-test` — install registers, uninstall leaves nothing |
@@ -144,6 +145,20 @@ conflux built from that enrols against the live API perfectly and then never han
 with anything. So the composite action refuses to run anywhere near a `genesis/`
 directory, builds `dist`, and prints which of the two it used. `release.yml` is
 unchanged and still refuses anything but the real thing.
+
+**conflux is public and anchor is not**, which is the one thing that shaped this more
+than the runner itself. Using a self-hosted runner from a public repository is a
+separate organisation setting from repository access, and GitHub keeps it separate for
+a reason: `pull_request` runs the workflow from the *head* of the pull request, so
+without a guard a fork could propose a workflow that runs its own code on a machine that
+survives the job, beside a Docker socket and a token that reads a private repository.
+
+So every self-hosted job is conditioned on the pull request not coming from a fork, and
+a fork gets `linux-fork` instead — the same gate on placeholders, which is what `linux`
+was for everybody before there was a machine to run it on. The two conditions are exact
+complements, so precisely one of them runs. A fork's change is still formatted, vetted,
+linted, raced and checked against the argv fixtures; what it does not get is the eight
+binary-dependent tests and the two container suites.
 
 **One runner process, deliberately.** The four Linux jobs queue rather than run beside
 each other, so a push costs their sum. Do not register a second process to win that

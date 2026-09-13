@@ -18,9 +18,24 @@ permissions:
 # macOS and Windows stay on GitHub's images, because there is no other machine here that
 # can run them.
 #
-# `docs` is the one Linux job that does not move. It is two greps, it needs neither Go
-# nor Docker nor anything else the runner has, and everything on the runner queues — so
-# putting it there would cost the machine's time to buy nothing.
+# `docs` and `cross` stay on GitHub's Linux images. `docs` is two greps and `cross` is a
+# compile check that runs on placeholders by design, so neither needs anything the runner
+# has — and everything on the runner queues behind everything else, so moving them there
+# would cost the machine's time to buy nothing.
+#
+# **This repository is public, and anchor is not.** That asymmetry is the whole of the
+# fork rule below. A self-hosted runner is a machine that survives the job, and conflux
+# has forks; `pull_request` runs the workflow from the *head* of the PR, so a fork could
+# otherwise propose a workflow that runs its own code on veilnet-dev, beside a Docker
+# socket and a token that reads a private repository. That is what GitHub's warning on
+# the "Allow public repositories" checkbox is about, and why that checkbox exists
+# separately from repository access at all.
+#
+# So every self-hosted job carries a fork guard, and a fork keeps exactly the coverage it
+# has today: the hosted `linux-fork` leg on placeholders, plus platforms, windows-tun,
+# cross and docs. Nothing a fork can write reaches this machine. The guard lives here
+# rather than in a setting because a setting cannot express it — "Allow public
+# repositories" is all-or-nothing for the whole organisation.
 #
 # What the machine changes, beyond the label. It is not a fresh VM destroyed at the end
 # of the job, and two things follow. The Docker jobs reap the container names before
@@ -43,6 +58,9 @@ concurrency:
 
 jobs:
   linux:
+    # Not for a pull request from a fork; see the header. `linux-fork` below covers those
+    # on placeholders, which is what this job did for everyone before it had a machine.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux]
 
     # Two checkouts side by side, so `anchor-bins` finds ../anchor where it already
@@ -125,12 +143,54 @@ jobs:
           git diff --exit-code internal/anchorctl/testdata/ \
             || { echo "::error::argv changed; run 'make golden' and commit the fixtures"; exit 1; }
 
+  linux-fork:
+    # What `linux` was for everyone until this repository had a machine, kept for the one
+    # case that still cannot use it: a pull request from a fork.
+    #
+    # Placeholders, so the eight tests that need real binaries skip here and the assertion
+    # that they did not is absent -- there is nothing dishonest in that as long as the two
+    # jobs never both run, which the complementary conditions guarantee. A fork's change
+    # is still formatted, vetted, linted, tested under -race and checked against the argv
+    # fixtures, which is every gate that does not need an anchor.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - run: make anchor-bins
+
+      - run: make fmtcheck
+      - run: make vet
+      - run: make tidycheck
+
+      - name: staticcheck
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@v0.8.1
+          staticcheck ./...
+
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+          govulncheck ./...
+
+      - run: make race
+
+      - name: golden argv fixtures are current
+        run: |
+          make golden
+          git diff --exit-code internal/anchorctl/testdata/ \
+            || { echo "::error::argv changed; run 'make golden' and commit the fixtures"; exit 1; }
+
   cross:
     # Vets and compiles all seven targets. Deliberately on placeholders: this job asks
     # whether every target still builds, and `make anchor-bins` with no checkout answers
     # that for the price of fourteen two-line files. The size gate is `make dist`, which
-    # the two jobs below run with the real thing.
-    runs-on: [self-hosted, linux]
+    # the two container jobs run with the real thing.
+    #
+    # Hosted, therefore, and for every event including a fork's: it wants a Go toolchain
+    # and nothing else, so putting it on the one runner would lengthen that queue to buy
+    # nothing and would cost forks the check entirely.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
@@ -200,6 +260,10 @@ jobs:
     # them. It also could not have worked on a dispatch: it went straight to `make dist`
     # with no `anchor-bins` step before it, so //go:embed had nothing to embed and the
     # build failed before the size gate could say why.
+    #
+    # Never for a fork's pull request: it wants the runner, the Docker socket and a token
+    # for a private repository, which is the combination the header refuses a fork.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux]
     timeout-minutes: 20
     defaults:
@@ -232,6 +296,10 @@ jobs:
     #
     # Manual-only for the same reason as `service`, and no longer. Locally this is
     # `make integration`, which is what it runs.
+    #
+    # Never for a fork's pull request, for the reason `service` gives. This one also
+    # enrols three times against the live API, which is not a thing to hand a stranger.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux]
     timeout-minutes: 30
     defaults:

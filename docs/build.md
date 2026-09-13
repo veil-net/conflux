@@ -65,20 +65,41 @@ clone should not have to acquire anything else to become buildable.
 
 #### The token
 
-`ANCHOR_RELEASE_TOKEN` is a GitHub token with **Contents: read** on `veil-net/anchor`. In
-CI it is the repository secret of the same name; locally, export it.
+`ANCHOR_RELEASE_TOKEN` is any GitHub token with **Contents: read** on `veil-net/anchor`.
+The fetcher takes a bearer token and does not care where it came from, so locally you can
+export a personal access token and it works.
 
-It is needed because anchor is private, and GitHub has no releases-only read scope —
-releases live under Contents, the same permission that grants the source. So the token
-that reads two binaries could also clone the repository. That is the trade, made knowingly:
+**CI does not store one.** It stores the private key of a GitHub App and mints a token per
+job — see `.github/actions/anchor-bins`, which passes the result through this same
+variable. The two repository secrets are:
 
+| secret | what it is |
+|---|---|
+| `ANCHOR_APP_ID` | the App's numeric ID |
+| `ANCHOR_APP_PRIVATE_KEY` | its private key, whole, including the BEGIN and END lines |
+
+A credential is needed at all because anchor is private, and GitHub has no releases-only
+read scope — releases live under Contents, the same permission that grants the source. So
+whatever reads two binaries could also clone the repository. There is no narrower grant to
+ask for, in any credential type, and it is worth saying plainly rather than glossing.
+
+What the App changes is not what can be read but what is *kept here*:
+
+- **The stored secret is not a credential.** A personal access token in a repository secret
+  *is* the key. A private key has to be exchanged for one first, so the secret on its own
+  opens nothing.
+- **The minted token lasts an hour** and is revoked when the job ends, rather than being
+  valid until somebody notices.
+- **It does not expire and belongs to no person**, so CI does not go red a year from now
+  for a reason unrelated to any code change, and the credential does not die when somebody
+  leaves the org.
 - GitHub never passes secrets to workflows triggered by **fork** pull requests, and
-  conflux's Linux jobs refuse fork pull requests outright. The token is not reachable by
+  conflux's Linux jobs refuse fork pull requests outright, so none of this is reachable by
   anyone who does not already have write access to conflux.
-- It is scoped to one repository and one permission, which is the narrowest grant GitHub
-  will cut for this.
-- Fine-grained tokens expire. When this one does, every `FETCH=1` fails with
-  `GitHub refused the token (401)`, which is the failure saying exactly what it is.
+
+A deploy key cannot do this job. Deploy keys authenticate git transport only — `clone`,
+`fetch`, `push` over SSH — and release assets are API objects, not git objects. The REST
+API does not accept SSH keys at all.
 
 What it refuses, and why each is worth a refusal:
 

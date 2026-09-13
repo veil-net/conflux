@@ -126,8 +126,9 @@ Every Linux job that needs Docker is on **veilnet-dev**, a self-hosted runner. W
 makes the two container suites possible, though, is not the machine — it is that
 `anchor/bin` finally has a source CI can reach. `make anchor-bins FETCH=1` fetches the
 **pinned** release build from the `shelf` release of `veil-net/anchor` and verifies every
-digest, with no anchor checkout. It needs `ANCHOR_RELEASE_TOKEN`, a repository secret
-carrying Contents: read on anchor — see [build.md](build.md) for why that grant is wider
+digest, with no anchor checkout. It needs a credential, since anchor is private: CI stores
+a GitHub App's ID and private key and mints an hour-long token per job, so the secret held
+here is not itself a key to anything — see [build.md](build.md) for why the grant is wider
 than it wants to be and why it is nonetheless contained.
 
 | job | machine | what it adds |

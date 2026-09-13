@@ -50,7 +50,8 @@ jobs:
       # what made a conflux release possible from CI rather than from a laptop.
       - uses: ./.github/actions/anchor-bins
         with:
-          token: ${{ secrets.ANCHOR_RELEASE_TOKEN }}
+          app-id: ${{ secrets.ANCHOR_APP_ID }}
+          private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
 
       # A second opinion on what the fetcher just wrote. It already refuses anchoradmin,
       # verifies every digest, and fails rather than falling back -- so these three now
@@ -110,7 +111,8 @@ jobs:
       # conflux ships the newest anchor, not a remembered one.
       - uses: ./.github/actions/anchor-bins
         with:
-          token: ${{ secrets.ANCHOR_RELEASE_TOKEN }}
+          app-id: ${{ secrets.ANCHOR_APP_ID }}
+          private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
 
       # All seven targets, not just this runner's: linux amd64 and arm64, darwin arm64,
       # windows amd64 and arm64, freebsd and openbsd. CGO_ENABLED=0 throughout, so one

@@ -103,7 +103,7 @@ if [ -z "$src" ] && [ "$FETCH" = 1 ]; then
   if [ -z "${ANCHOR_RELEASE_TOKEN:-}" ]; then
     echo "anchor-bins: ANCHOR_RELEASE_TOKEN is not set, and anchor is a private repository." >&2
     echo "anchor-bins: it needs a GitHub token with Contents: read on veil-net/anchor." >&2
-    echo "anchor-bins: in CI that is the repository secret of the same name; locally, export it." >&2
+    echo "anchor-bins: CI mints one per job from a GitHub App; locally, export your own." >&2
     echo "anchor-bins: see docs/build.md." >&2
     exit 1
   fi

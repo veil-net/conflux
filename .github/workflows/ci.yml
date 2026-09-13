@@ -45,10 +45,12 @@ permissions:
 # warning on the "Allow public repositories" checkbox is about, and why that checkbox
 # exists separately from repository access at all.
 #
-# Fetching from the shelf rather than checking anchor out removes the sharpest version
-# of that -- there is no private source on the machine and no token in this repository's
-# secrets to reach for -- but the guard stays, because running a stranger's code on a
-# persistent machine is worth refusing on its own.
+# Fetching the release rather than checking anchor out removes the sharpest version of
+# that -- there is no private source tree on the machine -- but there *is* now a
+# credential here, so the guard matters more than it did, not less. GitHub does not pass
+# secrets to a fork's pull request, which is the mechanism; this refusal is the belt
+# beside it, because running a stranger's code on a machine that survives the job is
+# worth refusing on its own.
 #
 # So nothing a fork writes executes on veilnet-dev at all. This lives here rather than in
 # a setting because a setting cannot express it — "Allow public repositories" is
@@ -59,12 +61,17 @@ permissions:
 # after: a cancelled run fires neither an EXIT trap nor an `if: always()` step.
 #
 # What makes `service` and `integration` runnable at all, though, is not the machine --
-# it is the shelf. docs/testing.md said those two needed the real anchor binaries, which
-# "a runner has no way to fetch", and that was true only while the binaries had no
-# published source. They have one now: `make anchor-bins FETCH=1` downloads the pinned
-# release build from api.veilnet.com.au and verifies every digest, with no anchor
-# checkout and no credential. So both jobs lose their `workflow_dispatch` gate, and the
-# `linux` gate gets the real binaries too.
+# it is that the binaries have a published source. docs/testing.md said those two needed
+# the real anchor binaries, which "a runner has no way to fetch", and that was true only
+# while no such source existed. One does now: `make anchor-bins FETCH=1` downloads the
+# pinned build from anchor's `shelf` release and verifies every digest, with no anchor
+# checkout. So both jobs lose their `workflow_dispatch` gate, and the `linux` gate gets
+# the real binaries too.
+#
+# It does need a credential, since anchor is private. A GitHub App rather than a personal
+# access token: what is stored in this repository is a private key that has to be
+# exchanged for a token, so the secret alone opens nothing, and the token it mints lasts
+# an hour. See .github/actions/anchor-bins.
 #
 # And it is one machine. With a single runner process these four Linux jobs queue rather
 # than run side by side, so a push costs the sum of them instead of the longest — which
@@ -97,7 +104,8 @@ jobs:
       # why this was easy not to notice.
       - uses: ./.github/actions/anchor-bins
         with:
-          token: ${{ secrets.ANCHOR_RELEASE_TOKEN }}
+          app-id: ${{ secrets.ANCHOR_APP_ID }}
+          private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
 
       - run: make fmtcheck
       - run: make vet
@@ -261,7 +269,8 @@ jobs:
       - uses: ./.github/actions/setup
       - uses: ./.github/actions/anchor-bins
         with:
-          token: ${{ secrets.ANCHOR_RELEASE_TOKEN }}
+          app-id: ${{ secrets.ANCHOR_APP_ID }}
+          private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
 
       - name: what this runner gives the suite
         run: ./test/preflight.sh
@@ -293,7 +302,8 @@ jobs:
       - uses: ./.github/actions/setup
       - uses: ./.github/actions/anchor-bins
         with:
-          token: ${{ secrets.ANCHOR_RELEASE_TOKEN }}
+          app-id: ${{ secrets.ANCHOR_APP_ID }}
+          private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
 
       - name: what this runner gives the suite
         run: ./test/preflight.sh

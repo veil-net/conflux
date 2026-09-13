@@ -15,10 +15,25 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Everything ci.yml checks, before anything here ships.
+  #
+  # A tag push runs none of ci.yml's own triggers, so until this a release was gated on
+  # nothing: `verify` below asks whether the binaries about to be embedded are real, and
+  # nothing asked whether the code around them still worked. The tag is usually cut from
+  # a commit that was green on main, which is a convention rather than a check -- and the
+  # one release where it is not true is the one nobody wants to find out about from a
+  # user.
+  #
+  # Calling ci.yml rather than repeating its steps: a second copy of the gate is a copy
+  # that drifts, and the half that drifts is always the one nobody is watching.
+  tests:
+    uses: ./.github/workflows/ci.yml
+
   verify:
+    needs: tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # anchoradmin can mint realm roots. Shipping it inside conflux would hand that
       # to every user, so its absence is checked rather than assumed.
@@ -63,7 +78,7 @@ jobs:
     needs: verify
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
 
       - run: make dist VERSION=${{ github.ref_name }}

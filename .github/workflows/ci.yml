@@ -6,6 +6,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+  # Callable, so release.yml can wait on the whole of this rather than on a copy of it.
+  # A tag push does not run the triggers above, so before this a release was gated on
+  # nothing at all -- the artifact check in release.yml is about the binaries it is
+  # about to embed, not about whether the code works.
+  workflow_call:
+
 permissions:
   contents: read
 
@@ -18,10 +24,11 @@ permissions:
 # macOS and Windows stay on GitHub's images, because there is no other machine here that
 # can run them.
 #
-# `docs` and `cross` stay on GitHub's Linux images. `docs` is two greps and `cross` is a
-# compile check that runs on placeholders by design, so neither needs anything the runner
-# has — and everything on the runner queues behind everything else, so moving them there
-# would cost the machine's time to buy nothing.
+# Only `service` and `integration` are on veilnet-dev, because only they need it: Docker,
+# a privileged container, a TUN device and a machine quiet enough that gossip timings mean
+# something. Everything else is hosted. `linux` in particular does not belong there — it
+# wants a Go toolchain and the anchor binaries, and since the binaries come from a public
+# shelf rather than a checkout of a private repository, any runner can have them.
 #
 # **This repository is public.** A self-hosted runner is a machine that survives the job,
 # and conflux has forks; `pull_request` runs the workflow from the *head* of the PR, so
@@ -35,11 +42,13 @@ permissions:
 # secrets to reach for -- but the guard stays, because running a stranger's code on a
 # persistent machine is worth refusing on its own.
 #
-# So every self-hosted job carries a fork guard, and a fork keeps exactly the coverage it
-# has today: the hosted `linux-fork` leg on placeholders, plus platforms, windows-tun,
-# cross and docs. Nothing a fork can write reaches this machine. The guard lives here
-# rather than in a setting because a setting cannot express it — "Allow public
-# repositories" is all-or-nothing for the whole organisation.
+# So the two jobs that do need the machine carry a fork guard. Everything else is hosted,
+# which is most of the suite: a fork's pull request gets the full Linux gate with the real
+# pinned binaries, cross, both platform legs, windows-tun and docs. What it does not get
+# is the two container suites, and nothing it can write reaches veilnet-dev.
+#
+# The guard lives here rather than in a setting because a setting cannot express it —
+# "Allow public repositories" is all-or-nothing for the whole organisation.
 #
 # What the machine changes, beyond the label. It is not a fresh VM destroyed at the end
 # of the job, so the Docker jobs reap the container names before themselves as well as
@@ -65,10 +74,14 @@ concurrency:
 
 jobs:
   linux:
-    # Not for a pull request from a fork; see the header. `linux-fork` below covers those
-    # on placeholders, which is what this job did for everyone before it had a machine.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, linux]
+    # Hosted, and no fork guard, because this job wants nothing veilnet-dev has: no
+    # Docker, no TUN, no privileges -- a Go toolchain and the anchor binaries. It was on
+    # the runner only because the binaries used to need a checkout of a private
+    # repository, and the shelf is a public URL that any runner can fetch from.
+    #
+    # So a fork's pull request gets this gate in full, with the real pinned binaries,
+    # rather than the placeholder fallback it used to get from a second copy of the job.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
@@ -136,44 +149,6 @@ jobs:
           git diff --exit-code internal/anchorctl/testdata/ \
             || { echo "::error::argv changed; run 'make golden' and commit the fixtures"; exit 1; }
 
-  linux-fork:
-    # What `linux` was for everyone until this repository had a machine, kept for the one
-    # case that still cannot use it: a pull request from a fork.
-    #
-    # Placeholders, so the eight tests that need real binaries skip here and the assertion
-    # that they did not is absent -- there is nothing dishonest in that as long as the two
-    # jobs never both run, which the complementary conditions guarantee. A fork's change
-    # is still formatted, vetted, linted, tested under -race and checked against the argv
-    # fixtures, which is every gate that does not need an anchor.
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/setup
-      - run: make anchor-bins
-
-      - run: make fmtcheck
-      - run: make vet
-      - run: make tidycheck
-
-      - name: staticcheck
-        run: |
-          go install honnef.co/go/tools/cmd/staticcheck@v0.8.1
-          staticcheck ./...
-
-      - name: govulncheck
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
-          govulncheck ./...
-
-      - run: make race
-
-      - name: golden argv fixtures are current
-        run: |
-          make golden
-          git diff --exit-code internal/anchorctl/testdata/ \
-            || { echo "::error::argv changed; run 'make golden' and commit the fixtures"; exit 1; }
-
   cross:
     # Vets and compiles all seven targets. Deliberately on placeholders: this job asks
     # whether every target still builds, and `make anchor-bins` with no checkout answers
@@ -191,6 +166,13 @@ jobs:
       - run: make cross
 
   platforms:
+    # Nothing here runs until the gate has. If the code does not compile, does not
+    # pass vet, or fails its unit tests, the answer is the same on every platform and in
+    # every container -- so spending a macOS runner, a Windows runner and two privileged
+    # container suites to be told again is time bought for nothing.
+    #
+    needs: [linux, cross]
+    
     # macOS and Windows, on the operating system that has the path handling, the file
     # modes and the DACL logic. Linux is not a leg here: the `linux` job already runs
     # the same suite under -race, and `cross` vets every target.
@@ -211,6 +193,13 @@ jobs:
       - run: go test ./...
 
   windows-tun:
+    # Nothing here runs until the gate has. If the code does not compile, does not
+    # pass vet, or fails its unit tests, the answer is the same on every platform and in
+    # every container -- so spending a macOS runner, a Windows runner and two privileged
+    # container suites to be told again is time bought for nothing.
+    #
+    needs: [linux, cross]
+    
     # With placeholders the extraction tests skip, so this checks the wintun pin is
     # readable and that the build works on Windows. The extraction itself is covered on
     # Linux by the `linux` job above, which now has real binaries; there is no
@@ -256,6 +245,10 @@ jobs:
     #
     # Never for a fork's pull request: it wants the runner and the Docker socket, which
     # is a machine that survives the job running a stranger's code.
+    # Same gate as the platform jobs above, and the argument is stronger here: these
+    # two boot privileged containers, enrol against the live API and wait on gossip.
+    # Minutes, and three enrolments, to re-discover that a unit test was already red.
+    needs: [linux, cross]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux]
     timeout-minutes: 20
@@ -282,6 +275,10 @@ jobs:
     #
     # Never for a fork's pull request, for the reason `service` gives. This one also
     # enrols three times against the live API, which is not a thing to hand a stranger.
+    # Same gate as the platform jobs above, and the argument is stronger here: these
+    # two boot privileged containers, enrol against the live API and wait on gossip.
+    # Minutes, and three enrolments, to re-discover that a unit test was already red.
+    needs: [linux, cross]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux]
     timeout-minutes: 30

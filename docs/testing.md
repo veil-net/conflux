@@ -130,14 +130,19 @@ checkout and no credential. See [build.md](build.md).
 
 | job | machine | what it adds |
 |---|---|---|
-| `linux` | veilnet-dev | the suite under `-race`, with real pinned binaries — eight tests that had only ever skipped |
-| `linux-fork` | GitHub Linux | the same gate on placeholders, for a pull request from a fork |
+| `linux` | GitHub Linux | the suite under `-race`, with real pinned binaries — eight tests that had only ever skipped |
 | `cross` | GitHub Linux | vet and compile all seven targets, on placeholders |
 | `platforms` | GitHub macOS, Windows | path handling, file modes, the DACL |
 | `windows-tun` | GitHub Windows | the wintun pin, fetched the way an operator would |
 | `service` | veilnet-dev | `make service-test` — install registers, uninstall leaves nothing |
 | `integration` | veilnet-dev | `make integration` — three nodes against the live API |
 | `docs` | GitHub Linux | two greps; it needs nothing the runner has |
+
+A release runs all of it first. `release.yml` calls this workflow and waits on it, which
+is new: a tag push runs none of `ci.yml`'s own triggers, so before that a release was
+gated on nothing but a check that the binaries it was about to embed were real. Whether
+the code around them still worked was a convention — the tag is cut from a commit that
+was green on main — and a convention is not a check.
 
 **The binaries CI uses are the pinned ones.** That is what the shelf serves, and it is
 the property a locally-built `make dist` cannot have: an anchor pinned to the genesis
@@ -158,12 +163,17 @@ a reason: `pull_request` runs the workflow from the *head* of the pull request, 
 without a guard a fork could propose a workflow that runs its own code on a machine that
 survives the job, beside a Docker socket and a token that reads a private repository.
 
-So every self-hosted job is conditioned on the pull request not coming from a fork, and
-a fork gets `linux-fork` instead — the same gate on placeholders, which is what `linux`
-was for everybody before there was a machine to run it on. The two conditions are exact
-complements, so precisely one of them runs. A fork's change is still formatted, vetted,
-linted, raced and checked against the argv fixtures; what it does not get is the eight
-binary-dependent tests and the two container suites.
+So the two jobs that need the machine — `service` and `integration` — are conditioned on
+the pull request not coming from a fork. Everything else is hosted, which is most of the
+suite: a fork's change is formatted, vetted, linted, raced, cross-compiled and checked
+against the argv fixtures, with the real pinned binaries, on both platform legs. What it
+does not get is the two container suites.
+
+`linux` is hosted for a reason worth stating, since it was not before: it wants a Go
+toolchain and the anchor binaries and nothing else, and the binaries now come from a
+public shelf rather than a checkout of a private repository. A second copy of that job
+existed to give forks a placeholder-based fallback; it is gone, and forks get the real
+thing instead.
 
 **One runner process, deliberately.** The four Linux jobs queue rather than run beside
 each other, so a push costs their sum. Do not register a second process to win that

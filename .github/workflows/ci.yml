@@ -93,16 +93,29 @@ jobs:
       # Now that the binaries are real, say so if they stop being. A skip is green, and
       # the eight tests above would go back to skipping silently the day this job lost
       # its anchor checkout — which is exactly the state it was in before this change.
+      # Any skip at all, and not a grep for the reason. `go test -v` prints the reason
+      # on the line *before* `--- SKIP:`, so a pattern wanting both on one line matches
+      # nothing and the gate passes on exactly the state it exists to catch. Checked in
+      # both directions before this was committed: it fails with placeholders in
+      # anchor/bin and passes with real ones.
+      #
+      # Nothing in these four packages skips for any other reason on Linux, so zero is
+      # the right number and a new legitimate skip should have to come and argue here.
       - name: the tests that need real binaries actually ran
         run: |
           set -euo pipefail
           out=$(go test -v -count=1 ./anchor/ ./internal/libexec/ ./internal/anchorctl/ ./internal/cli/)
-          if printf '%s\n' "$out" | grep -E 'SKIP.*no anchor pair'; then
-            echo "::error::a test skipped for want of anchor binaries in the job that provides them" >&2
+          if printf '%s\n' "$out" | grep -q -- '--- SKIP'; then
+            echo "::error::a test skipped in the job that provides the anchor binaries" >&2
+            printf '%s\n' "$out" | grep -B1 -- '--- SKIP' >&2
             exit 1
           fi
-          printf '%s\n' "$out" | grep -cE '^(=== RUN|--- PASS)' >/dev/null
-          echo "the binary-dependent tests ran"
+          ran=$(printf '%s\n' "$out" | grep -c -- '--- PASS')
+          [ "$ran" -ge 30 ] || {
+            echo "::error::only $ran tests ran here; this gate is meant to cover four packages" >&2
+            exit 1
+          }
+          echo "$ran tests ran, none skipped"
 
       # The argv fixtures must match what the code produces. A change to what conflux
       # passes anchorctl is a reviewable text diff or it is a bug.

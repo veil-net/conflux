@@ -23,13 +23,17 @@ permissions:
 # has — and everything on the runner queues behind everything else, so moving them there
 # would cost the machine's time to buy nothing.
 #
-# **This repository is public, and anchor is not.** That asymmetry is the whole of the
-# fork rule below. A self-hosted runner is a machine that survives the job, and conflux
-# has forks; `pull_request` runs the workflow from the *head* of the PR, so a fork could
-# otherwise propose a workflow that runs its own code on veilnet-dev, beside a Docker
-# socket and a token that reads a private repository. That is what GitHub's warning on
-# the "Allow public repositories" checkbox is about, and why that checkbox exists
-# separately from repository access at all.
+# **This repository is public.** A self-hosted runner is a machine that survives the job,
+# and conflux has forks; `pull_request` runs the workflow from the *head* of the PR, so
+# without a guard a fork could propose a workflow that runs its own code on veilnet-dev,
+# beside a Docker socket and whatever the last job left on disk. That is what GitHub's
+# warning on the "Allow public repositories" checkbox is about, and why that checkbox
+# exists separately from repository access at all.
+#
+# Fetching from the shelf rather than checking anchor out removes the sharpest version
+# of that -- there is no private source on the machine and no token in this repository's
+# secrets to reach for -- but the guard stays, because running a stranger's code on a
+# persistent machine is worth refusing on its own.
 #
 # So every self-hosted job carries a fork guard, and a fork keeps exactly the coverage it
 # has today: the hosted `linux-fork` leg on placeholders, plus platforms, windows-tun,
@@ -38,13 +42,16 @@ permissions:
 # repositories" is all-or-nothing for the whole organisation.
 #
 # What the machine changes, beyond the label. It is not a fresh VM destroyed at the end
-# of the job, and two things follow. The Docker jobs reap the container names before
-# themselves as well as after, because a cancelled run fires neither an EXIT trap nor an
-# `if: always()` step. And `anchor/bin` can finally be real: a runner that keeps a Go
-# toolchain and a module cache can check out anchor beside this and build it, which is
-# the thing docs/testing.md said "a runner has no way to fetch" for as long as CI ran on
-# machines that were thrown away. `service` and `integration` were `workflow_dispatch`
-# only for that reason alone, and they are not any more.
+# of the job, so the Docker jobs reap the container names before themselves as well as
+# after: a cancelled run fires neither an EXIT trap nor an `if: always()` step.
+#
+# What makes `service` and `integration` runnable at all, though, is not the machine --
+# it is the shelf. docs/testing.md said those two needed the real anchor binaries, which
+# "a runner has no way to fetch", and that was true only while the binaries had no
+# published source. They have one now: `make anchor-bins FETCH=1` downloads the pinned
+# release build from api.veilnet.com.au and verifies every digest, with no anchor
+# checkout and no credential. So both jobs lose their `workflow_dispatch` gate, and the
+# `linux` gate gets the real binaries too.
 #
 # And it is one machine. With a single runner process these four Linux jobs queue rather
 # than run side by side, so a push costs the sum of them instead of the longest — which
@@ -62,21 +69,9 @@ jobs:
     # on placeholders, which is what this job did for everyone before it had a machine.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux]
-
-    # Two checkouts side by side, so `anchor-bins` finds ../anchor where it already
-    # looks by default — the same layout docs/build.md documents for a developer. Every
-    # step below runs in the conflux one.
-    defaults:
-      run:
-        working-directory: conflux
-
     steps:
       - uses: actions/checkout@v7
-        with:
-          path: conflux
-      - uses: ./conflux/.github/actions/setup
-        with:
-          path: conflux
+      - uses: ./.github/actions/setup
 
       # The real binaries, which this job has never had. Eight tests gate on
       # anchor.Supported — a size check, so placeholders do not fool it — and every one
@@ -84,9 +79,7 @@ jobs:
       # checks in anchor/, the four libexec extraction tests, the anchorctl flag
       # cross-check, and the shadowing check in internal/cli. A skip is green, which is
       # why this was easy not to notice.
-      - uses: ./conflux/.github/actions/anchor-bins
-        with:
-          token: ${{ secrets.ANCHOR_READ_TOKEN }}
+      - uses: ./.github/actions/anchor-bins
 
       - run: make fmtcheck
       - run: make vet
@@ -261,25 +254,15 @@ jobs:
     # with no `anchor-bins` step before it, so //go:embed had nothing to embed and the
     # build failed before the size gate could say why.
     #
-    # Never for a fork's pull request: it wants the runner, the Docker socket and a token
-    # for a private repository, which is the combination the header refuses a fork.
+    # Never for a fork's pull request: it wants the runner and the Docker socket, which
+    # is a machine that survives the job running a stranger's code.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux]
     timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: conflux
-
     steps:
       - uses: actions/checkout@v7
-        with:
-          path: conflux
-      - uses: ./conflux/.github/actions/setup
-        with:
-          path: conflux
-      - uses: ./conflux/.github/actions/anchor-bins
-        with:
-          token: ${{ secrets.ANCHOR_READ_TOKEN }}
+      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/anchor-bins
 
       - name: what this runner gives the suite
         run: ./test/preflight.sh
@@ -302,20 +285,10 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux]
     timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: conflux
-
     steps:
       - uses: actions/checkout@v7
-        with:
-          path: conflux
-      - uses: ./conflux/.github/actions/setup
-        with:
-          path: conflux
-      - uses: ./conflux/.github/actions/anchor-bins
-        with:
-          token: ${{ secrets.ANCHOR_READ_TOKEN }}
+      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/anchor-bins
 
       - name: what this runner gives the suite
         run: ./test/preflight.sh

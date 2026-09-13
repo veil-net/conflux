@@ -22,10 +22,12 @@ refreshed. So `anchor/bin/` is ignored, and a build populates it:
 ```console
 $ make anchor-bins                              # from ../anchor
 $ make anchor-bins ANCHOR_SRC=/path/to/anchor   # from somewhere else
+$ make anchor-bins FETCH=1                      # from the shelf; no checkout needed
 anchor-bins: 14/14 copied from ../anchor/release (release)
 ```
 
-The script looks for `release/` first and falls back to `dist/`. Those are not
+The script looks for `release/` first, falls back to `dist/`, and with `FETCH=1` falls
+back again to the published shelf. Those are not
 interchangeable: `release/` is the pinned, garbled build users get, and `dist/` is the
 unpinned development cross-build, which will join **any** realm tree. A conflux built
 from `dist/` is fine for development and wrong for anything shipped, and the script
@@ -34,6 +36,44 @@ says so loudly when it uses one.
 `anchoradmin` sits beside the other two in `release/` and is deliberately never
 copied. It can mint realm roots, and anything in `anchor/bin` is a candidate for being
 embedded into every conflux a user runs. The release workflow fails on its presence.
+
+### The shelf
+
+`make anchor-bins FETCH=1` fetches the **pinned** build from
+`https://api.veilnet.com.au/anchor/release`, with no anchor checkout and no credential:
+
+```console
+$ make anchor-bins FETCH=1
+anchor-fetch: shelf:   https://api.veilnet.com.au/anchor/release
+anchor-fetch: realm:   realmtglwuedqqa33e364nv73p46jk3kwi67lxjmnntz2mv3mb3mklasq
+anchor-fetch:   ok   anchord-linux-amd64           28.0 MB  95ca77b697e5
+  …
+anchor-fetch: 14/14 fetched, digests verified
+```
+
+`SHELF_URL=` points it elsewhere. The fetcher is `cmd/anchor-fetch` over
+`internal/shelf` — Go rather than curl and a JSON parser, because the promise at the top
+of this page is "Go 1.27.1 or newer, and nothing else", and a fresh clone should not have
+to acquire anything else to become buildable.
+
+What it refuses, and why each is worth a refusal:
+
+| | |
+|---|---|
+| a digest that does not match | the failure no later gate catches — a real binary of the right size passes the size gate, and one of the right architecture passes `TestPairIsRealExecutables` |
+| `anchoradmin` on the shelf | it mints realm roots, and every file in `anchor/bin` is a candidate for being embedded into every conflux a user runs |
+| a per-binary `url` on another host | the digest catches substituted content; this catches being sent somewhere conflux was never told about |
+| a manifest with no `pin` | nothing then says which realm these binaries are for |
+| an unknown `formatVersion` | a future shape may mean anything, so it is refused rather than guessed at |
+| a short body, or plain http | a truncated download, and an unencrypted one |
+
+A rejected download is never renamed into place, so a failed fetch leaves what was there
+before rather than a half-written binary.
+
+**`FETCH=1` is opt-in for now.** The macOS and Windows CI jobs run `anchor-bins` too and
+need only the two files their own build tag names, so fetching all fourteen there would
+move 284 MB to compile 43. Once the shelf serves every target and per-target narrowing
+exists, the default is one line to flip.
 
 ### A clone with no anchor checkout
 
@@ -76,21 +116,23 @@ reached 840 MB from a single commit.
 an `anchord` that is not one — failing at exec on a user's machine rather than at build
 time here.
 
-**Building it in CI** is what the runner does, and it is not a substitute for either.
-`make dist` needs only Go, so a machine that keeps a checkout can produce the fourteen
-on every push — but they are unpinned, which is fine for testing against a live realm
-and wrong for anything shipped. Note the trap if you automate this anywhere else:
-anchor's `make release` depends on `genesis/genesis.pin`, and with no `genesis/`
-directory its rule **mints a new genesis root** instead of failing. The resulting
-binaries enrol perfectly and never handshake. The CI action refuses to run in a
-checkout that has a `genesis/` at all.
+**Building them in CI** was tried and replaced by the fetch below. `make dist` needs
+only Go, so a machine keeping a checkout can produce the fourteen on every push — but
+they are unpinned, which is fine for testing and wrong for anything shipped, and it puts
+anchor's source on a machine that only wanted its output. Note the trap if you automate
+it anywhere else: anchor's `make release` depends on `genesis/genesis.pin`, and with no
+`genesis/` directory its rule **mints a new genesis root** instead of failing. Binaries
+pinned to a realm nobody else has ever seen enrol perfectly and then never handshake.
 
-**Fetching at build time** from `GET /anchor/release` is the obvious next step and is
-not wired up: that shelf currently serves 2 of the 14 it needs (linux/amd64 only). If
-it is widened to all seven platforms, or its per-binary `url` is pointed at object
-storage, a lockfile-driven fetcher replaces `make anchor-bins` and a fresh clone
-becomes self-sufficient. The manifest already carries what such a fetcher needs —
-`sha256` per binary, `ETag` as the digest, and the genesis `pin`.
+**Fetching at build time** is what `FETCH=1` does, and it is the answer the three above
+were circling. `GET /anchor/release` serves a manifest — `sha256` and a `url` per
+binary, plus the genesis `pin` — and what it names is the pinned release build. No
+credential: what the shelf serves is what conflux already ships, since `//go:embed` puts
+these exact bytes inside every published conflux, so a public shelf discloses nothing a
+release download does not.
+
+That is also why it can be public while anchor stays private. conflux needs anchor's
+*output*, and the output is not the secret.
 
 Note that `go install` cannot work under any of these, fetch included: the module zip
 the proxy serves will not contain the binaries. conflux is distributed as release

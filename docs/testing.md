@@ -122,14 +122,15 @@ never who is let in. Loopback is not probed, so two anchors on one machine still
 
 ## What CI runs, and on what
 
-Every Linux job is on **veilnet-dev**, a self-hosted runner, which is what makes the
-two container suites possible at all: `anchor/bin` is not in git, and a hosted runner
-that is destroyed after every job has no way to get it. veilnet-dev checks anchor out
-beside conflux and runs `make dist`, so the binaries are real on every push.
+Every Linux job that needs Docker is on **veilnet-dev**, a self-hosted runner. What
+makes the two container suites possible, though, is not the machine — it is that
+`anchor/bin` finally has a source CI can reach. `make anchor-bins FETCH=1` fetches the
+**pinned** release build from the shelf and verifies every digest, with no anchor
+checkout and no credential. See [build.md](build.md).
 
 | job | machine | what it adds |
 |---|---|---|
-| `linux` | veilnet-dev | the suite under `-race`, with real binaries — eight tests that had only ever skipped |
+| `linux` | veilnet-dev | the suite under `-race`, with real pinned binaries — eight tests that had only ever skipped |
 | `linux-fork` | GitHub Linux | the same gate on placeholders, for a pull request from a fork |
 | `cross` | GitHub Linux | vet and compile all seven targets, on placeholders |
 | `platforms` | GitHub macOS, Windows | path handling, file modes, the DACL |
@@ -138,13 +139,17 @@ beside conflux and runs `make dist`, so the binaries are real on every push.
 | `integration` | veilnet-dev | `make integration` — three nodes against the live API |
 | `docs` | GitHub Linux | two greps; it needs nothing the runner has |
 
-**The binaries CI builds are unpinned.** `make dist` in the anchor repo needs only Go;
-`make release` needs a genesis key that is not on any runner, and — the part worth
-knowing — if `genesis/` is absent its rule *mints a new root* rather than failing. A
-conflux built from that enrols against the live API perfectly and then never handshakes
-with anything. So the composite action refuses to run anywhere near a `genesis/`
-directory, builds `dist`, and prints which of the two it used. `release.yml` is
-unchanged and still refuses anything but the real thing.
+**The binaries CI uses are the pinned ones.** That is what the shelf serves, and it is
+the property a locally-built `make dist` cannot have: an anchor pinned to the genesis
+realm refuses to handshake with any other tree. So `integration` now exercises the
+binaries that actually ship, rather than a development cross-build that would join
+anything.
+
+It follows that CI tests against the **production realm** and nothing else, which is the
+right answer here and a thing to keep true. `genesis.veilnet.com.au:4700` carries the
+same pin, so the dev procedure below still works from a fetched build; a test node
+minted from its own root would not, and the failure would be the one the next section
+describes — enrols fine, never handshakes.
 
 **conflux is public and anchor is not**, which is the one thing that shaped this more
 than the runner itself. Using a self-hosted runner from a public repository is a
@@ -236,6 +241,11 @@ Two things worth checking deliberately, because neither is obvious from a passin
   build time (`-X anchor.pinnedGenesis`, see [build.md](build.md)). A test node minted
   from a different root will enrol fine and then never handshake, because the pin is
   what refuses it. That failure is on the anchor side, not conflux's.
+
+  This node carries **the same pin as production**, which is what makes it usable from
+  an ordinary fetched build at all. Worth checking rather than assuming after the node
+  is ever rebuilt: `make anchor-bins FETCH=1` prints the realm it fetched, and it has to
+  be the one the test node answers for.
 
 ## What has no coverage, and why
 

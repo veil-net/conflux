@@ -32,6 +32,7 @@ Every directory is `0700` and every file `0600`.
   "peers": ["genesis.veilnet.com.au:4700"],
   "port": 4711,
   "lowLatency": false,
+  "lanDiscovery": false,
   "serveExit": false,
   "useExit": false,
   "tunName": "anchor0",
@@ -52,6 +53,7 @@ Every directory is `0700` and every file `0600`.
 | `peers` | bootstrap entries, `host:port` or `anchorxxx@host:port`. **Absent is the usual case and not a missing setting:** anchorctl takes the list from the enrolment manifest for exactly the fields no flag named, so an empty `peers` is what keeps the issuer's own nodes in play. Present, it overrides them. |
 | `port` | the UDP port to bind on every interface. Absent means the kernel picks one, which is the usual case. A port and not an address: an anchor listens everywhere, and the host's addresses change under it. Refused beside `uplink`, which binds no socket. |
 | `lowLatency` | carry layer-2 frames on QUIC datagrams instead of streams. Absent is false. Either mode. |
+| `lanDiscovery` | probe the host's own networks for anchors of this realm tree. Either mode. The one field here where **absent is not false**: it is `auto`, and it passes no flag at all, which is what leaves enrolment's own `lanDiscovery` in play. `false` and absent are different documents and `--lan-discovery no` writes the first of them. |
 | `serveExit`, `useExit` | route the public internet out of and into the overlay. Absent is false, and both are `tun` only — switching a machine to `proxy` clears them. |
 | `apiBaseUrl` | absent means the default. |
 

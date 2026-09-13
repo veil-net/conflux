@@ -222,8 +222,8 @@ reaches the realm over — the host's IP network by default, or a link named by
 
 | Command | What it does |
 |---|---|
-| `conflux up [--taint T] [--ipv4 PREFIX \| --no-ipv4] [--subnet CIDR]... [--uplink DEV \| --no-uplink] [--peers HOST:PORT]` | enrol if needed, start in TUN mode, register the boot service |
-| `conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T] [--uplink DEV] [--peers HOST:PORT]` | enrol if needed, start in userspace mode serving those backends |
+| `conflux up [--taint T] [--ipv4 PREFIX \| --no-ipv4] [--subnet CIDR]... [--uplink DEV \| --no-uplink] [--peers HOST:PORT] [--lan-discovery yes\|no\|auto]` | enrol if needed, start in TUN mode, register the boot service |
+| `conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T] [--uplink DEV] [--peers HOST:PORT] [--lan-discovery yes\|no\|auto]` | enrol if needed, start in userspace mode serving those backends |
 | `conflux down` | stop the anchor now; the boot service and the configuration stay |
 | `conflux start` | start it again now, from the configuration already on disk |
 | `conflux renew` | fetch a fresh credential and install it on the running anchor, hot |

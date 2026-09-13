@@ -50,6 +50,13 @@ type StartMode struct {
 	// the same instruction, and omitting keeps the argv shorter.
 	LowLatency bool
 
+	// LANDiscovery probes the host's own networks for anchors of this realm tree.
+	// Nil passes no flag, which is what leaves the manifest's lanDiscovery in play --
+	// the rule Peers and Port follow, and unlike LowLatency, which no manifest field
+	// describes. Non-nil is passed in whichever direction, because an explicit flag
+	// is the only thing that beats a document here.
+	LANDiscovery *bool
+
 	// ServeExit and UseExit route the public internet out of and into the overlay.
 	// Always passed, in both directions: the manifest does carry these two, and an
 	// anchor that became an exit because a document said so is a surprise conflux
@@ -70,10 +77,11 @@ func ModeFromConfig(c *config.Config, anchorDir string) StartMode {
 		Uplink:  c.Uplink,
 		Peers:   c.Peers,
 
-		Port:       c.Port,
-		LowLatency: c.LowLatency,
-		ServeExit:  c.ServeExit,
-		UseExit:    c.UseExit,
+		Port:         c.Port,
+		LowLatency:   c.LowLatency,
+		LANDiscovery: c.LANDiscovery,
+		ServeExit:    c.ServeExit,
+		UseExit:      c.UseExit,
 	}
 
 	if m.TUN {
@@ -134,6 +142,14 @@ func (m StartMode) Args() []string {
 	// default applies to an omitted flag and an explicit false says the same thing.
 	if m.LowLatency {
 		args = append(args, "-low-latency=true")
+	}
+
+	// Only when the operator said so, and then in whichever direction. Unlike
+	// -low-latency above, the manifest does carry lanDiscovery, so an omitted flag
+	// is the issuer's answer rather than anchorctl's default -- and an explicit
+	// false has to be passed to mean anything at all.
+	if m.LANDiscovery != nil {
+		args = append(args, "-lan-discovery="+yesNo(*m.LANDiscovery))
 	}
 
 	args = append(args, "-tun="+boolText(m.TUN))
@@ -231,4 +247,18 @@ func boolText(v bool) string {
 	}
 
 	return "false"
+}
+
+// yesNo renders a tristate's two decided values the way anchorctl spells them.
+//
+// Not boolText: -lan-discovery is a string flag over yes/no/auto, not a bool, so
+// "true" would be accepted today only because anchorctl's parser happens to take it
+// as a synonym. The canonical spelling is the one its own help text uses, and a
+// golden file that reads -lan-discovery=no says what it does without a lookup.
+func yesNo(v bool) string {
+	if v {
+		return "yes"
+	}
+
+	return "no"
 }

@@ -411,3 +411,75 @@ func TestPeersAreValidatedBeforeTheyReachAnchor(t *testing.T) {
 		t.Errorf("peers %v were refused: %v", good, err)
 	}
 }
+
+// TestProxyKeepsItsOwnLANDiscoveryFlag: the tristate is a value flag, and proxy's
+// positional parser is the one place that has to be told so. `--lan-discovery no
+// 8080=...` reads as two positionals to a parser that thinks the flag is a boolean,
+// and the second of them is a proxy spec called "no".
+func TestProxyKeepsItsOwnLANDiscoveryFlag(t *testing.T) {
+	for _, args := range [][]string{
+		{"--lan-discovery", "no", "8080=127.0.0.1:3000"},
+		{"8080=127.0.0.1:3000", "--lan-discovery=yes"},
+		{"--lan-discovery", "auto", "8080=127.0.0.1:3000"},
+	} {
+		if hint := unknownProxyFlag(args); hint != "" {
+			t.Errorf("%v: unknownProxyFlag said %q", args, hint)
+		}
+
+		specs, _ := splitPositional(args)
+
+		if len(specs) != 1 || specs[0] != "8080=127.0.0.1:3000" {
+			t.Errorf("%v: positional args are %v, want just the port spec", args, specs)
+		}
+	}
+}
+
+// TestLANDiscoveryTristate covers the three answers and the two rules that are not
+// obvious from them: an absent flag keeps what is configured, because that is how
+// every other re-run of up keeps its settings, and typing auto is the way back from
+// a persisted yes or no -- the job the --no-x negations do for the toggles.
+func TestLANDiscoveryTristate(t *testing.T) {
+	yes, no := true, false
+
+	for _, tc := range []struct {
+		name    string
+		typed   bool
+		value   string
+		current *bool
+		want    *bool
+	}{
+		{"absent keeps a persisted yes", false, "auto", &yes, &yes},
+		{"absent keeps a persisted no", false, "auto", &no, &no},
+		{"absent keeps auto", false, "auto", nil, nil},
+		{"yes sets yes", true, "yes", nil, &yes},
+		{"no sets no", true, "no", &yes, &no},
+		{"auto is the way back", true, "auto", &yes, nil},
+		{"case and space are forgiven", true, " YES ", nil, &yes},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			typed := map[string]bool{}
+			if tc.typed {
+				typed["lan-discovery"] = true
+			}
+
+			got, err := chooseTristate("lan-discovery", typed, tc.value, tc.current)
+			if err != nil {
+				t.Fatalf("chooseTristate: %v", err)
+			}
+
+			switch {
+			case tc.want == nil && got != nil:
+				t.Errorf("got %v, want auto", *got)
+			case tc.want != nil && got == nil:
+				t.Errorf("got auto, want %v", *tc.want)
+			case tc.want != nil && *got != *tc.want:
+				t.Errorf("got %v, want %v", *got, *tc.want)
+			}
+		})
+	}
+
+	if _, err := chooseTristate("lan-discovery",
+		map[string]bool{"lan-discovery": true}, "maybe", nil); err == nil {
+		t.Error("a value that is not yes, no or auto should be refused")
+	}
+}

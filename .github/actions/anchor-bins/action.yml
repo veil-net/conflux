@@ -1,0 +1,47 @@
+name: anchor-bins
+description: >
+  Populate anchor/bin with the pinned anchor binaries, fetched from the published
+  release shelf. No checkout of anchor, and no credential.
+
+inputs:
+  url:
+    description: >
+      The release manifest. Defaults to the one internal/shelf names, so the value is
+      stated once in the product code rather than twice.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    # What this fetches is what conflux already ships: //go:embed puts these bytes
+    # inside every published conflux, so a public shelf discloses nothing a release
+    # download does not. That is why this needs no token for a private repository --
+    # conflux wants anchor's *output*, and the output is not the secret.
+    #
+    # And what it fetches is the *pinned* build, which a local `make dist` cannot be:
+    # an anchor pinned to the genesis realm refuses to handshake with any other tree.
+    # So the container suites below now exercise the binaries that actually ship.
+    - name: fetch the pinned anchor binaries
+      shell: bash
+      env:
+        SHELF_URL: ${{ inputs.url }}
+      run: make anchor-bins FETCH=1
+
+    # Say what arrived, because a green tick on fourteen files nobody looked at is worth
+    # less than it appears. The fetcher has already verified every digest against the
+    # manifest and a failed fetch is fatal, so this floor should never fire -- it is here
+    # for the case those two claims stop being true together, which is exactly the case
+    # nothing else would notice.
+    - name: they are binaries, not placeholders
+      shell: bash
+      run: |
+        set -euo pipefail
+        ls -lh anchor/bin
+        smallest=$(find anchor/bin -type f -printf '%s\n' | sort -n | head -1)
+        [ "${smallest:-0}" -ge 5000000 ] || {
+          echo "::error::anchor/bin holds placeholders, not binaries: smallest file is ${smallest:-0} bytes" >&2
+          echo "the fetch reported success and left placeholders behind, which should" >&2
+          echo "not be possible. Scroll up for what it actually did." >&2
+          exit 1
+        }

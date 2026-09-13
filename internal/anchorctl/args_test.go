@@ -88,6 +88,24 @@ var scenarios = map[string]StartMode{
 		TUN: true, TUNName: "anchor0", Taints: []string{"brhk-2mq9-tzva-6pjs"},
 		LowLatency: true, Dir: "/var/lib/conflux/anchor",
 	},
+	// The three lan-discovery answers. "auto" is the absence of a golden of its own:
+	// up-minimal above is it, and the assertion that matters is that no
+	// -lan-discovery appears there -- an auto that emitted a flag would override the
+	// manifest with anchorctl's default on every machine that never asked.
+	"up-lan-discovery-yes": {
+		TUN: true, TUNName: "anchor0", Taints: []string{"brhk-2mq9-tzva-6pjs"},
+		LANDiscovery: boolp(true), Dir: "/var/lib/conflux/anchor",
+	},
+	"up-lan-discovery-no": {
+		TUN: true, TUNName: "anchor0", Taints: []string{"brhk-2mq9-tzva-6pjs"},
+		LANDiscovery: boolp(false), Dir: "/var/lib/conflux/anchor",
+	},
+	"proxy-lan-discovery-no": {
+		Taints:       []string{"brhk-2mq9-tzva-6pjs"},
+		Proxies:      []string{"8080=127.0.0.1:3000"},
+		LANDiscovery: boolp(false),
+		Dir:          "/var/lib/conflux/anchor",
+	},
 	"up-exit": {
 		TUN: true, TUNName: "anchor0", Taints: []string{"brhk-2mq9-tzva-6pjs"},
 		ServeExit: true, UseExit: true, Dir: "/var/lib/conflux/anchor",
@@ -196,6 +214,29 @@ func TestValidateMirrorsAnchorsRule(t *testing.T) {
 	for why, m := range ok {
 		if err := m.Validate(); err != nil {
 			t.Errorf("Validate refused %s: %v", why, err)
+		}
+	}
+}
+
+func boolp(v bool) *bool { return &v }
+
+// TestAutoEmitsNoLANDiscoveryFlag is the assertion the goldens cannot make.
+//
+// A golden says what an argv contains; this says what it must not. Nil means auto
+// means "the manifest decides", and the only way that holds is if no flag is written
+// at all -- anchorctl takes a manifest field only for a flag nobody typed. An auto
+// that emitted -lan-discovery=yes would look identical in every test here and would
+// quietly override the issuer on every machine that never asked.
+func TestAutoEmitsNoLANDiscoveryFlag(t *testing.T) {
+	for name, mode := range scenarios {
+		if mode.LANDiscovery != nil {
+			continue
+		}
+
+		for _, a := range mode.Args() {
+			if strings.HasPrefix(a, "-lan-discovery") {
+				t.Errorf("%s: LANDiscovery is nil but the argv carries %q", name, a)
+			}
 		}
 	}
 }

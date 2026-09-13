@@ -45,3 +45,6 @@ anchor/bin/
 
 # The conflux copied into the systemd test image by `make dist && cp`.
 /test/systemd/conflux
+
+# `go build ./cmd/...` drops this at the repo root.
+/anchor-fetch

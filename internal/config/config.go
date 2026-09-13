@@ -117,6 +117,27 @@ type Config struct {
 	// it is off unless asked for.
 	LowLatency bool `json:"lowLatency,omitempty"`
 
+	// LANDiscovery probes the networks this host is attached to for anchors of the
+	// same realm tree -- a third bootstrap source, tried with the configured and
+	// remembered ones rather than as a fallback for when they are empty.
+	//
+	// A pointer because there are three answers and not two. Nil is "auto", which
+	// passes no flag and so leaves the manifest's own lanDiscovery in play, the same
+	// rule Port and Peers follow; anchor's default under that is on. True and false
+	// are the operator saying so, and an explicit flag beats the manifest.
+	//
+	// Worth the operator's hand rather than the issuer's alone: a probe tells every
+	// host on the link that an anchor is here and which tree it belongs to, and a
+	// laptop repeats that on every network it attaches to. Nothing identifies the
+	// anchor in it, but the disclosure is real and is not the issuer's to make
+	// quietly -- the argument the two exit settings above make for themselves.
+	//
+	// Refused as an explicit yes beside an Uplink, where there is no host network to
+	// probe. Nil and false are accepted there: anchor turns it off for an uplink
+	// regardless, and refusing a default nobody chose would fail every uplink anchor
+	// for a setting its operator never made.
+	LANDiscovery *bool `json:"lanDiscovery,omitempty"`
+
 	// ServeExit offers this anchor as a way out to the public internet, and
 	// UseExit sends this machine's own internet traffic over the overlay. Both
 	// need a host interface, so both are TUN only.
@@ -222,6 +243,17 @@ func (c *Config) Validate() error {
 			return fmt.Errorf(
 				"a port and an uplink are set together: an uplink carries layer 1 over %s and binds no socket, "+
 					"so there is no port to choose",
+				c.Uplink)
+		}
+
+		// Only an explicit yes, which is anchor's own rule and its reason: a machine
+		// configured once and later moved onto a cable would otherwise stop starting
+		// for a default nobody chose. --lan-discovery no and the unset auto are both
+		// accepted here, and anchor turns the probe off beside an uplink either way.
+		if c.LANDiscovery != nil && *c.LANDiscovery {
+			return fmt.Errorf(
+				"--lan-discovery yes and an uplink are set together: an uplink carries layer 1 over %s, "+
+					"so there is no host network to probe and nothing on a cable to answer",
 				c.Uplink)
 		}
 	}

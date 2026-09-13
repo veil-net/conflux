@@ -7,16 +7,30 @@
 #
 #   make anchor-bins                      from ../anchor
 #   make anchor-bins ANCHOR_SRC=/path     from somewhere else
+#   make anchor-bins FETCH=1              from the published shelf, no checkout needed
 #
-# With no anchor checkout available it writes placeholders instead, which is what
-# lets CI run gofmt, vet, staticcheck and the unit tests on a machine that has no
-# access to the real ones. A conflux built from placeholders compiles, reports that
-# it carries no anchor binaries, and is caught by the size gate in `make dist` --
-# it cannot be mistaken for a shippable build.
+# Three sources, in that order of preference. A local release/ is the pinned build and
+# wins outright. A local dist/ is the unpinned development cross-build and is taken
+# loudly. With neither, FETCH=1 downloads the pinned binaries from the shelf and
+# verifies every digest -- which is what lets CI, and a fresh clone, have the real ones
+# without a checkout and without a credential.
+#
+# With no source at all it writes placeholders, which is what lets gofmt, vet,
+# staticcheck and the unit tests run on a machine with no access to any of the above. A
+# conflux built from placeholders compiles, reports that it carries no anchor binaries,
+# and is caught by the size gate in `make dist` -- it cannot be mistaken for a
+# shippable build.
 set -euo pipefail
 
 ANCHOR_SRC=${ANCHOR_SRC:-../anchor}
 DEST=${DEST:-anchor/bin}
+
+# Opt-in rather than automatic, for now. Every macOS and Windows CI job runs this and
+# needs only the two files its own build tag names, so fetching all fourteen there
+# would move 284 MB to compile 43. Once the shelf serves every target and the per-target
+# narrowing exists, this default is one line to flip.
+FETCH=${FETCH:-0}
+SHELF_URL=${SHELF_URL:-}
 
 TARGETS="linux-amd64 linux-arm64 darwin-arm64 windows-amd64 windows-arm64 freebsd-amd64 openbsd-amd64"
 
@@ -64,6 +78,36 @@ conflux: no anchor binaries, and this file is a placeholder so the module compil
 Run `make anchor-bins ANCHOR_SRC=/path/to/anchor` with a real checkout to replace it.
 EOF
 }
+
+# No local build, so try the shelf before giving up. `go run` rather than curl: this
+# repository's one stated dependency is Go, and a fresh clone should not have to acquire
+# a JSON parser to become buildable. The fetcher imports nothing that embeds anything,
+# so it still runs when anchor/bin is empty -- which is the only moment it is wanted.
+if [ -z "$src" ] && [ "$FETCH" = 1 ]; then
+  echo "anchor-bins: no local anchor build; fetching the pinned binaries from the shelf" >&2
+
+  args=""
+  [ -n "$SHELF_URL" ] && args="-url $SHELF_URL"
+
+  # $want is the same list the prune above is built from, so there is one definition of
+  # what belongs here rather than two that can disagree.
+  if go run ./cmd/anchor-fetch $args -dest "$DEST" -want "$(echo $want | tr ' ' ',')"; then
+    echo "anchor-bins: $TOTAL/$TOTAL fetched from the shelf (pinned release build)"
+    exit 0
+  fi
+
+  # No fallback. FETCH=1 is somebody asking for the real binaries, so quietly writing
+  # placeholders instead would answer a different question -- and it buries the useful
+  # error: the fetcher has just printed which binaries the shelf is missing, and a
+  # fallback puts "anchor/bin holds placeholders" underneath it as the last word. The
+  # message somebody acts on should be the one they end up reading.
+  #
+  # Leave the placeholder path for when nothing was asked for, which is what lets a
+  # machine with no anchor and no network still run gofmt and the unit tests.
+  echo "anchor-bins: the fetch failed and FETCH=1 asked for real binaries, so this is fatal" >&2
+  echo "anchor-bins: drop FETCH=1 to build against placeholders instead" >&2
+  exit 1
+fi
 
 if [ -z "$src" ]; then
   echo "anchor-bins: no anchor build found under $ANCHOR_SRC (looked for release/ and dist/)" >&2

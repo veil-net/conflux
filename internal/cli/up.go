@@ -39,7 +39,9 @@ func runUp(ctx context.Context, args []string) int {
 		noPeers  = fs.Bool("no-peers", false, "forget the bootstrap list and go back to the one enrolment supplies")
 		apiBase  = fs.String("api", "", "enrolment API base URL")
 		port     = fs.Uint("port", 0, "UDP port to bind on every interface; omit to let the kernel pick one")
-		peers    repeated
+		lanDisco = fs.String("lan-discovery", "auto",
+			"find peers on the networks this host is attached to: yes, no, or auto to let enrolment decide")
+		peers repeated
 	)
 
 	// Registered for the flag package and read through typedFlags, not through these
@@ -90,7 +92,7 @@ func runUp(ctx context.Context, args []string) int {
 	// refused before this machine is told its proxies are being replaced. The
 	// announcement is not a lie -- nothing is saved until bring -- but reading
 	// "replaces that" and then an error is a worse way to learn you typo'd a port.
-	if err := chooseTuning(cfg, typedFlags(fs), *port, true); err != nil {
+	if err := chooseTuning(cfg, typedFlags(fs), *port, *lanDisco, true); err != nil {
 		return fail(err)
 	}
 
@@ -175,6 +177,37 @@ func chooseToggle(name string, typed map[string]bool, current bool) (bool, error
 	}
 }
 
+// chooseTristate resolves a yes/no/auto flag against what is already configured.
+//
+// Three answers rather than two, so this is a value flag and not a --x/--no-x pair:
+// auto is the one that passes nothing to anchorctl and so leaves the manifest's own
+// answer in play, and a boolean has nowhere to put it. Typing --lan-discovery auto
+// is the way back from a persisted yes or no, which is the job the negations do for
+// the toggles above.
+//
+// An absent flag keeps what is configured, because that is how every other re-run of
+// up keeps its settings.
+func chooseTristate(name string, typed map[string]bool, value string, current *bool) (*bool, error) {
+	if !typed[name] {
+		return current, nil
+	}
+
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "auto":
+		return nil, nil
+	case "yes":
+		yes := true
+
+		return &yes, nil
+	case "no":
+		no := false
+
+		return &no, nil
+	default:
+		return nil, fmt.Errorf("--%s %s: want yes, no or auto", name, value)
+	}
+}
+
 // choosePort decides the UDP port, keeping a persisted one when no flag names one.
 func choosePort(cfg *config.Config, typed map[string]bool, value uint) error {
 	on, off := typed["port"], typed["no-port"]
@@ -204,7 +237,7 @@ func choosePort(cfg *config.Config, typed map[string]bool, value uint) error {
 // exits is false on proxy, where the two exit flags are not registered at all: both
 // need a host interface, so offering them on the verb that has none would be offering
 // a setting whose only outcome is a refusal.
-func chooseTuning(cfg *config.Config, typed map[string]bool, port uint, exits bool) error {
+func chooseTuning(cfg *config.Config, typed map[string]bool, port uint, lanDisco string, exits bool) error {
 	if err := choosePort(cfg, typed, port); err != nil {
 		return err
 	}
@@ -215,6 +248,13 @@ func chooseTuning(cfg *config.Config, typed map[string]bool, port uint, exits bo
 	}
 
 	cfg.LowLatency = lowLatency
+
+	lan, err := chooseTristate("lan-discovery", typed, lanDisco, cfg.LANDiscovery)
+	if err != nil {
+		return err
+	}
+
+	cfg.LANDiscovery = lan
 
 	if !exits {
 		return nil

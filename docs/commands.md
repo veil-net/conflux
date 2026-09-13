@@ -10,9 +10,17 @@ conflux's: `up`, `proxy`, `start`, `down`, `install`, `uninstall`, `renew`, `sta
 service runs.
 
 anchorctl's, reached by typing them: `peers`, `route`, `routes`, `connect`, `punch`,
-`events`, `metrics`, `export`, `children`, `telemetry`, `send`, `subscribe`, `keygen`,
-`issue`, `delegate`, `renew-link`, `install-link`, `id`, `inspect`, `config`, `renew`,
-`mint-realm`, `mint-anchor`.
+`kill`, `events`, `metrics`, `export`, `children`, `telemetry`, `send`, `subscribe`,
+`keygen`, `issue`, `delegate`, `renew-link`, `install-link`, `id`, `inspect`, `config`,
+`root`, `mint-realm`, `mint-anchor`. The last three are absent from the binary conflux
+embeds: `root` mints a realm and is not in the lockdown build, and the two `mint-*`
+verbs exist only in it.
+
+`kill` is worth naming separately, because it is not what the word suggests and is not
+related to `down`. It makes another anchor **a realm-wide target** — `-target ANCHORID
+-days N` — needs a credential issued with `-admin`, travels by gossip, and nothing can
+end one early. Stopping the anchor on *this* machine is `conflux down`, which closes it
+gracefully and leaves the registration; see [service.md](service.md).
 
 ### The five collisions
 
@@ -55,7 +63,8 @@ refusal names `down` and `start` and the escape hatch.
 ```
 conflux up [--taint T]... [--ipv4 PREFIX | --no-ipv4] [--subnet CIDR]... [--interface NAME]
            [--uplink DEV | --no-uplink] [--peers HOST:PORT]... [--no-peers] [--api URL]
-           [--port N | --no-port] [--low-latency] [--serve-exit] [--use-exit]
+           [--port N | --no-port] [--low-latency] [--lan-discovery yes|no|auto]
+           [--serve-exit] [--use-exit]
 ```
 
 Enrols this machine if it has never been, starts an anchor in TUN mode, writes the
@@ -78,6 +87,7 @@ configuration, and registers the boot service.
 | `--no-port` | go back to letting the kernel pick. |
 | `--low-latency` | carry frames on QUIC datagrams: no head-of-line blocking between flows to one peer, and a lost frame stays lost rather than holding up the ones behind it. |
 | `--no-low-latency` | go back to carrying frames on streams. |
+| `--lan-discovery` | `yes`, `no`, or `auto`. Probe the networks this host is attached to for anchors of the same realm tree — a third bootstrap source, tried *with* the configured and remembered ones rather than as a fallback when they are empty. `auto` is the default and passes nothing, which leaves the answer to enrolment's own `lanDiscovery` and, failing that, to anchor, where it is on. Typing `auto` is the way back from a persisted `yes` or `no`. Refused as an explicit `yes` beside `--uplink`: there is no host network to probe and nothing on a cable to answer. It never replaces enrolment — the probe is sealed under the realm's root public key, which a machine only holds once it has enrolled. |
 | `--serve-exit` | offer this machine as a way out to the public internet. |
 | `--use-exit` | send this machine's own internet traffic over the overlay. |
 | `--no-serve-exit`, `--no-use-exit` | the way back from either. |
@@ -118,11 +128,11 @@ Needs root.
 ```
 conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T]... [--uplink DEV | --no-uplink]
               [--peers HOST:PORT]... [--no-peers] [--api URL]
-              [--port N | --no-port] [--low-latency]
+              [--port N | --no-port] [--low-latency] [--lan-discovery yes|no|auto]
 ```
 
 Starts in userspace mode serving those backends. Same taint, uplink, peers, API,
-`--port` and `--low-latency` flags as `up`. Specs and flags may be written in either
+`--port`, `--low-latency` and `--lan-discovery` flags as `up`. Specs and flags may be written in either
 order.
 
 `--serve-exit` and `--use-exit` are not here: routing the public internet either way

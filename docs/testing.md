@@ -36,9 +36,14 @@ header and checks the machine field against `GOARCH`. It exists because a wrong 
 one — builds and links perfectly and fails at exec on somebody else's machine.
 
 It skips when `anchor/bin` holds the placeholders `make anchor-bins` writes with no
-anchor checkout available, which is the state CI is in. `anchor.Supported` is a size
-check for the same reason, so a placeholder build reports that it carries no anchor
-binaries rather than pretending.
+anchor checkout available. `anchor.Supported` is a size check for the same reason, so
+a placeholder build reports that it carries no anchor binaries rather than pretending.
+
+That used to be the state CI was in, and a skip is green — so this test and seven
+others had never run on any machine but a developer's. The `linux` job builds anchor
+beside conflux now, and asserts afterwards that none of the eight skipped: a job that
+provides the binaries and then reports "no anchor pair" has lost them, and saying so is
+the difference between a gate and a decoration.
 
 **The argv goldens**, in `internal/anchorctl/testdata/argv/`, hold one file per
 scenario, one argument per line. Argv construction is where a wrapper's bugs live and
@@ -69,9 +74,14 @@ and restarting it is the reboot.
 built `conflux` in beside it, then:
 
 ```console
-$ make anchor-bins && make dist
-$ cp dist/conflux-linux-amd64 test/systemd/conflux
-$ docker build -t conflux-systemd-test test/systemd
+$ make anchor-bins && make integration   # the whole suite, three nodes
+$ make service-test                      # or just the unit, which enrols nothing
+```
+
+By hand, which is what those run:
+
+```console
+$ make anchor-bins && make image
 $ docker run -d --name cfx-a --privileged --cgroupns=host \
     -v /sys/fs/cgroup:/sys/fs/cgroup:rw --device /dev/net/tun conflux-systemd-test
 $ docker exec cfx-a conflux up --taint mynet --ipv4 10.128.0.1/24
@@ -83,6 +93,112 @@ A second container joining with the same taint gives a real two-node reachabilit
 test. Allow up to a minute after the second node starts for gossip to find it — the
 observed range is 15 to 60 seconds — and `conflux peers` shows `DATA yes` on the peer
 once the taints have been compared.
+
+All of that is `make integration`, and the two assertions above on their own are
+`make service-test`. Both build the image first. They were a recipe here and a copy of
+the same three lines in `ci.yml` until the targets existed, which is two places for one
+sequence to drift; CI runs the same command a developer does.
+
+### Local network discovery, and the control for it
+
+Two containers on one Docker bridge are on the same link, which is the one thing no Go
+test in this tree can arrange: a real kernel, real multicast, a real answer. So
+`make integration` asserts `anchor_lan_peers_found_total` is **non-zero** on a node —
+non-zero and not merely present, because the series is created the first time it is
+written and a grep for the name alone passes on an anchor that never found anything.
+
+The third node is the control, and it is why the suite enrols three times. It joins
+with `--lan-discovery no` and names no `--peers` at all, and it must *still* reach the
+realm: the manifest's own bootstrap list is what carries it, which is what proves
+discovery is a third source rather than a load-bearing one. Its own counter staying at
+zero is what proves the flag reached anchor rather than being accepted by conflux and
+dropped.
+
+Note what discovery cannot do, and anchor's own `docs/discovery.md` is the reference:
+the probe is sealed under the realm's **root public key**, which a node only holds after
+it has enrolled. So it never replaces enrolment — it decides who is worth dialling,
+never who is let in. Loopback is not probed, so two anchors on one machine still need
+`--peers`.
+
+## What CI runs, and on what
+
+Every Linux job that needs Docker is on **veilnet-dev**, a self-hosted runner. What
+makes the two container suites possible, though, is not the machine — it is that
+`anchor/bin` finally has a source CI can reach. `make anchor-bins FETCH=1` fetches the
+**pinned** release build from the shelf and verifies every digest, with no anchor
+checkout and no credential. See [build.md](build.md).
+
+| job | machine | what it adds |
+|---|---|---|
+| `linux` | veilnet-dev | the suite under `-race`, with real pinned binaries — eight tests that had only ever skipped |
+| `cross` | veilnet-dev | vet and compile all seven targets, on placeholders |
+| `platforms` | GitHub macOS, Windows | path handling, file modes, the DACL |
+| `windows-tun` | GitHub Windows | the wintun pin, fetched the way an operator would |
+| `service` | veilnet-dev | `make service-test` — install registers, uninstall leaves nothing |
+| `integration` | veilnet-dev | `make integration` — three nodes against the live API |
+| `docs` | veilnet-dev | two greps |
+
+A release runs all of it first. `release.yml` calls this workflow and waits on it, which
+is new: a tag push runs none of `ci.yml`'s own triggers, so before that a release was
+gated on nothing but a check that the binaries it was about to embed were real. Whether
+the code around them still worked was a convention — the tag is cut from a commit that
+was green on main — and a convention is not a check.
+
+It also fetches those binaries now, which is what made a release from CI possible at all.
+`anchor/bin` is not in git, so a release runner had no source for it and the workflow
+failed on its own error message saying so. Both release jobs fetch from the shelf, and
+neither pins anything: a release carries whatever anchor published most recently, which
+is the intent — conflux ships the newest anchor, not a remembered one. All seven targets
+are cross-built from the one Linux machine, `CGO_ENABLED=0` throughout.
+
+**The binaries CI uses are the pinned ones.** That is what the shelf serves, and it is
+the property a locally-built `make dist` cannot have: an anchor pinned to the genesis
+realm refuses to handshake with any other tree. So `integration` now exercises the
+binaries that actually ship, rather than a development cross-build that would join
+anything.
+
+It follows that CI tests against the **production realm** and nothing else, which is the
+right answer here and a thing to keep true. `genesis.veilnet.com.au:4700` carries the
+same pin, so the dev procedure below still works from a fetched build; a test node
+minted from its own root would not, and the failure would be the one the next section
+describes — enrols fine, never handshakes.
+
+**conflux is public and anchor is not**, which is the one thing that shaped this more
+than the runner itself. Using a self-hosted runner from a public repository is a
+separate organisation setting from repository access, and GitHub keeps it separate for
+a reason: `pull_request` runs the workflow from the *head* of the pull request, so
+without a guard a fork could propose a workflow that runs its own code on a machine that
+survives the job, beside a Docker socket and a token that reads a private repository.
+
+Every Linux job refuses a fork's pull request, and nothing stands in for them. Since the
+platform legs need the gate, a fork's pull request runs nothing at all.
+
+That is the deliberate position rather than an oversight. A machine that survives the job
+does not run a stranger's code, and the alternative — a hosted copy of the gate, for
+forks only — was tried here and is worse than the gap. Two near-identical jobs with
+complementary conditions means one is always skipped, and the one that rots is the one
+nobody is watching.
+
+A fork's change is therefore reviewed rather than gated. If that becomes the wrong trade,
+the honest fix is a second machine, not a second copy of the gate.
+
+**One runner process, deliberately.** The four Linux jobs queue rather than run beside
+each other, so a push costs their sum. Do not register a second process to win that
+back — anchor's `docs/ci.md` records the measurement that argues against it. More
+parallelism wants a second machine.
+
+**A machine that is not thrown away.** Both container suites reap their fixed container
+names before themselves as well as after, because a cancelled run fires neither an
+`EXIT` trap nor an `if: always()` step, and the leftover name fails the *next* run for a
+reason that has nothing to do with the commit under test. `test/preflight.sh` says what
+the machine gives them — Docker, `/dev/net/tun`, cgroup v2, IPv6 — before anything is
+built, because each of those otherwise fails much later and names something else.
+
+One consequence of leaving hosted VMs: their runner user is unprivileged and a
+self-hosted one may not be. `TestWriteFileAtomicPreservesOnFailure` makes a directory
+read-only and expects the write to fail, which is not true for root — it now probes
+whether the chmod took and says so rather than failing. Nothing else in the suite
+depends on not being root.
 
 ## The genesis test node
 
@@ -143,6 +259,11 @@ Two things worth checking deliberately, because neither is obvious from a passin
   from a different root will enrol fine and then never handshake, because the pin is
   what refuses it. That failure is on the anchor side, not conflux's.
 
+  This node carries **the same pin as production**, which is what makes it usable from
+  an ordinary fetched build at all. Worth checking rather than assuming after the node
+  is ever rebuilt: `make anchor-bins FETCH=1` prints the realm it fetched, and it has to
+  be the one the test node answers for.
+
 ## What has no coverage, and why
 
 - **FreeBSD and OpenBSD** beyond `go vet` and `go build`. No runner exists, which is
@@ -156,10 +277,13 @@ Two things worth checking deliberately, because neither is obvious from a passin
   synthetic inputs. Nothing in this tree opens a device or a pseudo-terminal: the link
   itself is anchor's to test, and it does, over a real pty. Two machines on a cable
   have no runner, so the watcher's *reopen* path is reasoned about rather than run.
-- **The boot service and the two-node integration test, in CI.** Both need the real
-  anchor binaries, which are not in git and which a runner has no way to fetch, so
-  both are `workflow_dispatch` only. They are run locally: `./test/integration.sh`.
-  When `anchor/bin` gains a source CI can reach, remove the `if:` on those two jobs.
+- **A conflux built from pinned binaries, in CI.** This is the one that replaced
+  "the boot service and the integration test, in CI", which are now run on every push
+  — see [the CI section](#what-ci-runs-and-on-what) below. What CI cannot do is build
+  what ships: `make release` needs a genesis key that never leaves the maintainer's
+  machine, so CI builds `make dist` and the realm-pin path is exercised by hand.
+  A green `integration` says conflux drives anchor correctly; it does not say the
+  shipped artifact carries the right pin.
 
 A local fake for the enrolment API is used for the client's error paths, but it cannot
 stand in for a full end-to-end test: the shipped `anchord` is pinned to the production

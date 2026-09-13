@@ -77,6 +77,26 @@ and never both, though that is the medium and not the mode.
 conflux checks all of this locally, before it starts anything, so the error names the
 flag you typed rather than arriving from a child process as a gRPC status.
 
+## Finding the realm, in either mode
+
+Neither mode changes how an anchor finds its realm, and `--lan-discovery` is available
+on both because of it. Three sources are tried together: the bootstrap list enrolment
+supplied (or `--peers`), the addresses that have worked before, and a link-scoped probe
+of the networks this host is attached to. The third is the one that setting names.
+
+It is additive and cannot be anything else. The probe is sealed under the realm's root
+public key, which a machine holds only after it has enrolled — so discovery decides who
+is worth dialling, never who is let in, and a node with discovery off still finds the
+realm through the list it was given. Turning it off is a privacy choice, not a
+connectivity one: a probe tells every host on the link that an anchor is here and which
+tree it belongs to, and a laptop repeats that on every network it joins. Nothing in it
+identifies the anchor.
+
+With `--uplink` it is off regardless — there is no host network to probe and nothing on
+a cable to answer — and anchor decides that for itself, which is why only an explicit
+`--lan-discovery yes` is refused there. A machine configured once and later moved onto a
+link keeps starting.
+
 ## Switching
 
 Running one replaces the other, and conflux says so:

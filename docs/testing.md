@@ -130,8 +130,8 @@ checkout and no credential. See [build.md](build.md).
 
 | job | machine | what it adds |
 |---|---|---|
-| `linux` | GitHub Linux | the suite under `-race`, with real pinned binaries — eight tests that had only ever skipped |
-| `cross` | GitHub Linux | vet and compile all seven targets, on placeholders |
+| `linux` | veilnet-dev | the suite under `-race`, with real pinned binaries — eight tests that had only ever skipped |
+| `cross` | veilnet-dev | vet and compile all seven targets, on placeholders |
 | `platforms` | GitHub macOS, Windows | path handling, file modes, the DACL |
 | `windows-tun` | GitHub Windows | the wintun pin, fetched the way an operator would |
 | `service` | veilnet-dev | `make service-test` — install registers, uninstall leaves nothing |
@@ -163,17 +163,18 @@ a reason: `pull_request` runs the workflow from the *head* of the pull request, 
 without a guard a fork could propose a workflow that runs its own code on a machine that
 survives the job, beside a Docker socket and a token that reads a private repository.
 
-So the two jobs that need the machine — `service` and `integration` — are conditioned on
-the pull request not coming from a fork. Everything else is hosted, which is most of the
-suite: a fork's change is formatted, vetted, linted, raced, cross-compiled and checked
-against the argv fixtures, with the real pinned binaries, on both platform legs. What it
-does not get is the two container suites.
+So the four Linux jobs handle a fork two different ways. `service` and `integration`
+refuse it: they want Docker and a privileged container on a machine that is not thrown
+away, and there is no substitute for that. `linux` and `cross` name their runner with an
+expression instead of a label, so a fork's pull request falls back to a GitHub image and
+still gets the gate.
 
-`linux` is hosted for a reason worth stating, since it was not before: it wants a Go
-toolchain and the anchor binaries and nothing else, and the binaries now come from a
-public shelf rather than a checkout of a private repository. A second copy of that job
-existed to give forks a placeholder-based fallback; it is gone, and forks get the real
-thing instead.
+The fallback costs a fork nothing, which is new. The anchor binaries come from a public
+shelf now rather than a checkout of a private repository, so a hosted runner fetches
+exactly what veilnet-dev does — the duplicate job that used to cover forks could not, and
+handed them placeholders. A fork's change is formatted, vetted, linted, raced,
+cross-compiled and checked against the argv fixtures with the real pinned binaries, on
+both platform legs. What it does not get is the two container suites.
 
 **One runner process, deliberately.** The four Linux jobs queue rather than run beside
 each other, so a push costs their sum. Do not register a second process to win that

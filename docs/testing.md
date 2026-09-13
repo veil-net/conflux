@@ -107,12 +107,25 @@ test in this tree can arrange: a real kernel, real multicast, a real answer. So
 non-zero and not merely present, because the series is created the first time it is
 written and a grep for the name alone passes on an anchor that never found anything.
 
-The third node is the control, and it is why the suite enrols three times. It joins
-with `--lan-discovery no` and names no `--peers` at all, and it must *still* reach the
-realm: the manifest's own bootstrap list is what carries it, which is what proves
-discovery is a third source rather than a load-bearing one. Its own counter staying at
-zero is what proves the flag reached anchor rather than being accepted by conflux and
-dropped.
+The third node is the control, and it is why the suite enrols three times. It joins with
+`--lan-discovery no` and names no `--peers` at all, and **its counter must stay at zero**
+on the same link where A's moved. That is what proves the flag reached anchor rather than
+being accepted by conflux and dropped, and it is the only claim here this repository can
+be held to.
+
+Zero is asserted only after the node is shown to be answering — at least one `anchor_`
+metric. `lan_found` sends stderr to `/dev/null` and its `awk` prints `0` for no input, so
+a node that had died would pass by saying nothing at all, which is the shape of gate this
+repository has been caught by before.
+
+It used to assert something else alongside: that C, naming no `--peers`, **still reaches
+the realm** from the manifest's own bootstrap list — which would prove discovery is a
+third source rather than a load-bearing one. That is a real property, and it is reported
+rather than asserted now, because it asks whether the machine running the suite has
+outbound UDP to the realm's bootstrap nodes. On veilnet-dev it does not: A and B found
+each other over the Docker bridge, C had turned that off and had nothing to fall back on,
+and the suite failed for a reason no change to this repository could fix. The run says
+which of the two happened, so the day the answer changes somebody sees it.
 
 Note what discovery cannot do, and anchor's own `docs/discovery.md` is the reference:
 the probe is sealed under the realm's **root public key**, which a node only holds after

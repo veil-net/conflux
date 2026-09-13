@@ -271,10 +271,9 @@ nobody released.
 
 The file rather than a tag, deliberately: a tag is a claim about a commit, and the file is
 a claim about the tree — and it is the tree that gets built. It is also what decides
-whether a release happens at all. `release.yml` runs on every merge to `main`, reads this
-file, and stops immediately if a release already exists for it. So cutting a release is
-bumping `VERSION` and merging; the tag is created afterwards, at the commit that has
-already passed the whole suite, rather than being a promise made before any of it ran.
+whether a release happens at all. `release.yml` runs on every merge to `version3`, reads
+this file, and stops immediately if a release already exists for it. So cutting a release
+is bumping `VERSION` and merging, and the tag is whatever this file says, verbatim.
 
 ## Reproducibility
 

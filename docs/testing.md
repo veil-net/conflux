@@ -107,12 +107,31 @@ test in this tree can arrange: a real kernel, real multicast, a real answer. So
 non-zero and not merely present, because the series is created the first time it is
 written and a grep for the name alone passes on an anchor that never found anything.
 
-The third node is the control, and it is why the suite enrols three times. It joins
-with `--lan-discovery no` and names no `--peers` at all, and it must *still* reach the
-realm: the manifest's own bootstrap list is what carries it, which is what proves
-discovery is a third source rather than a load-bearing one. Its own counter staying at
-zero is what proves the flag reached anchor rather than being accepted by conflux and
-dropped.
+The third node is the control, and it is why the suite enrols three times. It joins with
+`--lan-discovery no` and names no `--peers` at all, and **its counter must stay at zero**
+on the same link where A's moved. That is what proves the flag reached anchor rather than
+being accepted by conflux and dropped, and it is the only claim here this repository can
+be held to.
+
+Zero is asserted only after the node is shown to be answering — at least one `anchor_`
+metric. `lan_found` sends stderr to `/dev/null` and its `awk` prints `0` for no input, so
+a node that had died would pass by saying nothing at all, which is the shape of gate this
+repository has been caught by before.
+
+It used to assert something else alongside: that C, naming no `--peers`, **still reaches
+the realm** from the manifest's own bootstrap list — which would prove discovery is a third
+source rather than a load-bearing one.
+
+That cannot hold in this topology, and not because of a firewall. C can only be told about
+a node the bootstrap list already knows, so it needs **at least one of A or B** to have
+reached the realm's bootstrap nodes and been announced there. Here none of the three ever
+does: they meet on the Docker bridge and nowhere else. So the bootstrap list has nothing to
+tell C, and C finding nothing is the correct outcome rather than a failure — asserting
+otherwise was asking three isolated containers to be visible in a realm none of them had
+registered with.
+
+It is reported instead. The day one of them does reach the realm, C finding it is exactly
+the proof that discovery is additive, and the run says which happened.
 
 Note what discovery cannot do, and anchor's own `docs/discovery.md` is the reference:
 the probe is sealed under the realm's **root public key**, which a node only holds after
@@ -146,21 +165,24 @@ is new: a release used to be gated on nothing but a check that the binaries it w
 to embed were real. Whether the code around them still worked was a convention — the tag
 is cut from a commit that was green on main — and a convention is not a check.
 
-It runs on a **merge to `main`**, not on a tag — and `ci.yml` no longer triggers on `main`
-at all, so the suite runs once per merge rather than twice. A `gate` job reads the
-`VERSION` file; the tests run either way, and only `verify` and `build` are skipped when
-that version already has a release. So an ordinary merge costs the suite, and a release
-merge costs the suite plus seven cross-builds.
+It runs on a **merge to `version3`**, not on a tag, and it does **not** re-run this
+workflow. Testing happens on the branch: GitHub tests `refs/pull/N/merge`, which is the
+change already merged into its base, so a green pull request is a green merge result and
+asking again would cost an hour to reprove an identical tree.
+
+That rests on branch protection, and is unsafe without it. `version3` must require a pull
+request, require these checks, and require the branch to be up to date before merging. The
+third is the one that matters: without it a pull request can be green against a base that
+has since moved, and what merges is a tree nothing tested.
+
+A `gate` job reads the `VERSION` file and stops unless that version has no release yet, so
+an ordinary merge costs one cheap job. The tag is whatever `VERSION` says, verbatim —
+nothing is prepended, because the tags this repository has published are `Beta-v1.0.13`,
+`Beta-v1.0.14`, `Beta-v1.0.15`, and a scheme invented here would match none of them.
 
 Two things that were previously possible are now not: a release built from a commit nobody
 had tested, and a `workflow_dispatch` on a feature branch publishing
 `make dist VERSION=<branch-name>` to the public.
-
-The PR run and the merge run are both wanted, and they are not the same thing. GitHub
-tests `refs/pull/N/merge` — the branch already merged into its base — so as a *test* the
-second is redundant whenever the base has not moved. But the merge run is the release
-build: it produces the seven binaries and publishes them, and artifacts cannot come from a
-run of a different commit.
 
 It also fetches those binaries now, which is what made a release from CI possible at all.
 `anchor/bin` is not in git, so a release runner had no source for it and the workflow

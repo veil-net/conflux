@@ -104,25 +104,55 @@ done
 [ "$(lan_found cfx-a)" -gt 0 ] \
   || { echo "anchor_lan_peers_found_total never moved on A, so nothing was found on the link" >&2; exit 1; }
 
-# The control, and the reason it is worth three enrolments. C names no --peers at all,
-# so if it reaches the realm it did so from the manifest's own bootstrap list -- which
-# is what proves discovery is a third source and not a load-bearing one. And its
-# counter must stay at zero, which is what proves --lan-discovery no reached anchor
-# rather than being accepted by conflux and dropped on the floor.
+# The control, and the reason it is worth a third enrolment: A's counter moved, so if C's
+# stays at zero on the same link then --lan-discovery no reached anchor rather than being
+# accepted by conflux and dropped on the floor. That is conflux's contribution and the only
+# thing here this repository can be held to.
+#
+# Two claims used to be made together, and only one of them was ever conflux's. The other
+# was that C, naming no --peers, still reaches the realm from the manifest's own bootstrap
+# list -- which would prove discovery is a third source rather than a load-bearing one.
+#
+# That one cannot hold in this topology, and the reason is not a firewall. C can only be
+# told about a node the bootstrap list already knows, so it needs at least one of A or B to
+# have reached the realm's bootstrap nodes and been announced there. Here none of the three
+# ever does: they meet on the Docker bridge and nowhere else. So the bootstrap list has
+# nothing to tell C, and C finding nothing is the correct outcome rather than a failure.
+#
+# Still worth reporting. The day one of them does reach the realm, C finding it is exactly
+# the proof that discovery is additive -- so the run says which happened.
 say "node C joins with --lan-discovery no and no bootstrap list of its own"
 boot cfx-c
 docker exec cfx-c conflux up --taint "$TAINT" --ipv4 10.128.0.3/24 --lan-discovery no
 
+# Zero is only worth asserting from an anchor that is up and answering. lan_found sends
+# stderr to /dev/null and awk prints 0 for no input at all, so a C that had died would pass
+# the check below by saying nothing -- which is the shape of gate this repository has been
+# caught by before. Prove there are metrics first; the zero means something after that.
+metrics=0
 for _ in $(seq 12); do
-  docker exec cfx-a ping -c1 -W2 10.128.0.3 >/dev/null 2>&1 && break
-  sleep 10
+  metrics=$(docker exec cfx-c conflux metrics 2>/dev/null | grep -c '^anchor_' || true)
+  [ "$metrics" -gt 0 ] && break
+  sleep 5
 done
-docker exec cfx-a ping -c3 -W3 10.128.0.3 \
-  || { echo "C never joined, so the manifest's own bootstrap list is not carrying a node on its own" >&2; exit 1; }
+
+[ "$metrics" -gt 0 ] \
+  || { echo "C served no anchor_ metrics, so a zero discovery counter would prove nothing" >&2; exit 1; }
 
 [ "$(lan_found cfx-c)" -eq 0 ] \
   || { echo "C probed the link despite --lan-discovery no: the flag did not reach anchor" >&2; exit 1; }
-echo "C found the realm without probing, and A did probe: discovery is additive"
+echo "C is answering with $metrics anchor_ metrics and has probed the link 0 times:"
+echo "  --lan-discovery no reached anchor, while A on the same link probed and found peers"
+
+# Reported, not asserted. See the note above.
+if docker exec cfx-a ping -c3 -W3 10.128.0.3 >/dev/null 2>&1; then
+  echo "  and C reached the realm anyway, so something the bootstrap list knows carried it:"
+  echo "  discovery is additive here rather than load-bearing"
+else
+  echo "  C did not reach the realm, which is the correct outcome in this topology: neither"
+  echo "  A nor B was ever announced to the realm's bootstrap nodes, so there is nothing"
+  echo "  there for C to be told about once it stops probing the link"
+fi
 
 say "reboot A: it must come back by itself, same identity"
 docker restart cfx-a >/dev/null

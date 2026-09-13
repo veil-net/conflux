@@ -58,6 +58,8 @@ func runProxy(ctx context.Context, args []string) int {
 	noPeers := fs.Bool("no-peers", false, "forget the bootstrap list and go back to the one enrolment supplies")
 	apiBase := fs.String("api", "", "enrolment API base URL")
 	port := fs.Uint("port", 0, "UDP port to bind on every interface; omit to let the kernel pick one")
+	lanDisco := fs.String("lan-discovery", "auto",
+		"find peers on the networks this host is attached to: yes, no, or auto to let enrolment decide")
 
 	// Read through typedFlags rather than by value; see the same block in up.go. The
 	// two exit flags are absent on purpose: both need a host interface, which
@@ -133,7 +135,7 @@ func runProxy(ctx context.Context, args []string) int {
 	}
 
 	// Before the warning below; see the same move in up.go.
-	if err := chooseTuning(cfg, typedFlags(fs), *port, false); err != nil {
+	if err := chooseTuning(cfg, typedFlags(fs), *port, *lanDisco, false); err != nil {
 		return fail(err)
 	}
 
@@ -190,6 +192,7 @@ func unknownProxyFlag(args []string) string {
 		"-no-port": true, "--no-port": true,
 		"-low-latency": true, "--low-latency": true,
 		"-no-low-latency": true, "--no-low-latency": true,
+		"-lan-discovery": true, "--lan-discovery": true,
 		"-h": true, "--help": true, "-help": true,
 	}
 
@@ -240,9 +243,13 @@ func splitPositional(args []string) (positional, flags []string) {
 // takesValue reports whether a flag written as `-flag value` swallows the argument
 // after it. Only conflux proxy's own value-taking flags are here; --no-taint,
 // --no-uplink and --low-latency are booleans and take nothing.
+//
+// --lan-discovery is here rather than with the booleans because it is a tristate
+// written as a value: missing it would read `conflux proxy --lan-discovery no
+// 8080=127.0.0.1:3000` as a proxy spec called "no".
 func takesValue(arg string) bool {
 	switch strings.TrimLeft(arg, "-") {
-	case "taint", "api", "uplink", "peers", "port":
+	case "taint", "api", "uplink", "peers", "port", "lan-discovery":
 		return true
 	default:
 		return false

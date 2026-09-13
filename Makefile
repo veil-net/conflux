@@ -31,7 +31,11 @@ MAX_MB := 75
 
 ANCHOR_SRC ?= ../anchor
 
-.PHONY: all anchor-bins build test race vet fmt fmtcheck lint vulncheck tidycheck golden cross dist clean help
+# The tag `make image` builds and the two suites run. Overridable so a second checkout
+# on one machine does not race the first for the name.
+IMAGE ?= conflux-systemd-test
+
+.PHONY: all anchor-bins build test race vet fmt fmtcheck lint vulncheck tidycheck golden cross dist image service-test integration clean help
 
 all: fmtcheck vet lint tidycheck test cross dist
 
@@ -137,8 +141,31 @@ dist:
 	@cd $(DIST) && (sha256sum conflux-* > SHA256SUMS 2>/dev/null || shasum -a 256 conflux-* > SHA256SUMS)
 	@echo "  wrote $(DIST)/SHA256SUMS"
 
+# The systemd test image, and the two suites that run in it.
+#
+# Both existed only as a recipe in docs/testing.md and a copy of the same three lines
+# in ci.yml, which is two places for one sequence to drift. They are targets now so
+# CI runs what a developer runs -- `make integration` on a laptop and on veilnet-dev
+# are the same command.
+#
+# Docker, /dev/net/tun, cgroup v2 and real anchor binaries, so this is deliberately
+# not in `make all`.
+image: dist
+	@cp $(DIST)/conflux-linux-amd64 test/systemd/conflux
+	@docker build -q -t $(IMAGE) test/systemd >/dev/null
+	@echo "  built $(IMAGE) from $(DIST)/conflux-linux-amd64"
+
+# The boot service on its own: install registers without starting, uninstall leaves
+# nothing. Cheaper than `integration` and it enrols nothing, so it is the one to run
+# when the question is only about the unit.
+service-test: image
+	@IMAGE=$(IMAGE) ./test/service.sh
+
+integration: image
+	@IMAGE=$(IMAGE) ./test/integration.sh
+
 clean:
-	rm -rf $(BIN) $(DIST)
+	rm -rf $(BIN) $(DIST) test/systemd/conflux
 
 help:
 	@echo "conflux"
@@ -151,4 +178,7 @@ help:
 	@echo "  make dist        build all 8 into $(DIST)/ with SHA256SUMS and the size gate"
 	@echo "                   (needs real binaries: make anchor-bins first)"
 	@echo "  make golden      rewrite the argv fixtures after an intended change"
+	@echo "  make image       build the systemd test image from $(DIST)/conflux-linux-amd64"
+	@echo "  make service-test  install and uninstall in a container that boots systemd"
+	@echo "  make integration   three nodes, one taint, over the real API (needs Docker)"
 	@echo "  make all         everything CI runs"

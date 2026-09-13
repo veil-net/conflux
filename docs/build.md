@@ -42,6 +42,12 @@ This is not a working conflux — it is what lets a machine with no access to th
 binaries still run `gofmt`, `go vet`, `staticcheck` and the unit tests, which is
 exactly what CI needs.
 
+CI is no longer in that state for the jobs that matter. `linux`, `service` and
+`integration` check anchor out beside conflux on the self-hosted runner and build
+`make dist`, so the eight tests that gate on `anchor.Supported` actually run; `cross`
+stays on placeholders deliberately, because what it asks is whether every target still
+compiles. See [testing.md](testing.md).
+
 A placeholder build is not able to masquerade as a real one:
 
 ```console
@@ -69,6 +75,15 @@ reached 840 MB from a single commit.
 `go install github.com/veil-net/conflux@latest` would embed 130 bytes of text and ship
 an `anchord` that is not one — failing at exec on a user's machine rather than at build
 time here.
+
+**Building it in CI** is what the runner does, and it is not a substitute for either.
+`make dist` needs only Go, so a machine that keeps a checkout can produce the fourteen
+on every push — but they are unpinned, which is fine for testing against a live realm
+and wrong for anything shipped. Note the trap if you automate this anywhere else:
+anchor's `make release` depends on `genesis/genesis.pin`, and with no `genesis/`
+directory its rule **mints a new genesis root** instead of failing. The resulting
+binaries enrol perfectly and never handshake. The CI action refuses to run in a
+checkout that has a `genesis/` at all.
 
 **Fetching at build time** from `GET /anchor/release` is the obvious next step and is
 not wired up: that shelf currently serves 2 of the 14 it needs (linux/amd64 only). If
@@ -136,6 +151,9 @@ stack trace a user sends back useless.
 | `make cross` | vet and build all seven, with the size gate |
 | `make dist` | build all seven into `dist/`, with `SHA256SUMS` |
 | `make golden` | rewrite the argv fixtures after an intended change |
+| `make image` | the systemd test image, from `dist/conflux-linux-amd64` |
+| `make service-test` | install and uninstall, in a container that boots systemd |
+| `make integration` | three nodes, one taint, over the real API (needs Docker) |
 | `make fmtcheck` `make vet` `make lint` `make tidycheck` | what CI checks |
 | `make all` | everything CI runs |
 

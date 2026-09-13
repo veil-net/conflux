@@ -9,40 +9,103 @@ on:
 permissions:
   contents: read
 
+# Where these run.
+#
+# Every Linux job is on `[self-hosted, linux]` — veilnet-dev, which has Docker, Go, Node
+# and Python, and which anchor's CI has been running on since its PR #15. Two labels and
+# not a third: the runner's *name* is not a label unless somebody registered it as one,
+# and a `runs-on` naming a label that does not exist does not fail, it queues for ever.
+# macOS and Windows stay on GitHub's images, because there is no other machine here that
+# can run them.
+#
+# `docs` is the one Linux job that does not move. It is two greps, it needs neither Go
+# nor Docker nor anything else the runner has, and everything on the runner queues — so
+# putting it there would cost the machine's time to buy nothing.
+#
+# What the machine changes, beyond the label. It is not a fresh VM destroyed at the end
+# of the job, and two things follow. The Docker jobs reap the container names before
+# themselves as well as after, because a cancelled run fires neither an EXIT trap nor an
+# `if: always()` step. And `anchor/bin` can finally be real: a runner that keeps a Go
+# toolchain and a module cache can check out anchor beside this and build it, which is
+# the thing docs/testing.md said "a runner has no way to fetch" for as long as CI ran on
+# machines that were thrown away. `service` and `integration` were `workflow_dispatch`
+# only for that reason alone, and they are not any more.
+#
+# And it is one machine. With a single runner process these four Linux jobs queue rather
+# than run side by side, so a push costs the sum of them instead of the longest — which
+# makes the cancellation below matter more than it did, not less: a superseded run holds
+# the machine the run that replaced it is waiting for. Do not register a second runner
+# process to win that back; anchor/docs/ci.md records the measurement that argues against
+# it. More parallelism wants a second machine, not a second process.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   linux:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup
+    runs-on: [self-hosted, linux]
 
-      # anchor/bin is not in git. With no anchor checkout this writes placeholders,
-      # which compile -- enough for everything in this job, and not enough to
-      # produce a shippable binary, which `make dist` refuses separately.
-      - run: make anchor-bins
+    # Two checkouts side by side, so `anchor-bins` finds ../anchor where it already
+    # looks by default — the same layout docs/build.md documents for a developer. Every
+    # step below runs in the conflux one.
+    defaults:
+      run:
+        working-directory: conflux
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: conflux
+      - uses: ./conflux/.github/actions/setup
+        with:
+          path: conflux
+
+      # The real binaries, which this job has never had. Eight tests gate on
+      # anchor.Supported — a size check, so placeholders do not fool it — and every one
+      # of them has been skipping on every run since the suite was written: both header
+      # checks in anchor/, the four libexec extraction tests, the anchorctl flag
+      # cross-check, and the shadowing check in internal/cli. A skip is green, which is
+      # why this was easy not to notice.
+      - uses: ./conflux/.github/actions/anchor-bins
+        with:
+          token: ${{ secrets.ANCHOR_READ_TOKEN }}
 
       - run: make fmtcheck
       - run: make vet
       - run: make tidycheck
 
+      # Pinned rather than @latest. On a machine that is thrown away, @latest costs a
+      # download; on one that is not, it also means the version that gates this repo
+      # changes underneath it without a commit, and a new check arrives as a red build
+      # on somebody else's unrelated pull request.
       - name: staticcheck
         run: |
-          go install honnef.co/go/tools/cmd/staticcheck@latest
+          go install honnef.co/go/tools/cmd/staticcheck@v0.8.1
           staticcheck ./...
 
       - name: govulncheck
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
           govulncheck ./...
 
       - run: make race
 
-      # The argv fixtures must match what the code produces. A change to what
-      # conflux passes anchorctl is a reviewable text diff or it is a bug.
+      # Now that the binaries are real, say so if they stop being. A skip is green, and
+      # the eight tests above would go back to skipping silently the day this job lost
+      # its anchor checkout — which is exactly the state it was in before this change.
+      - name: the tests that need real binaries actually ran
+        run: |
+          set -euo pipefail
+          out=$(go test -v -count=1 ./anchor/ ./internal/libexec/ ./internal/anchorctl/ ./internal/cli/)
+          if printf '%s\n' "$out" | grep -E 'SKIP.*no anchor pair'; then
+            echo "::error::a test skipped for want of anchor binaries in the job that provides them" >&2
+            exit 1
+          fi
+          printf '%s\n' "$out" | grep -cE '^(=== RUN|--- PASS)' >/dev/null
+          echo "the binary-dependent tests ran"
+
+      # The argv fixtures must match what the code produces. A change to what conflux
+      # passes anchorctl is a reviewable text diff or it is a bug.
       - name: golden argv fixtures are current
         run: |
           make golden
@@ -50,16 +113,15 @@ jobs:
             || { echo "::error::argv changed; run 'make golden' and commit the fixtures"; exit 1; }
 
   cross:
-    # Vets and compiles all seven targets. Artifacts and the size gate are `make
-    # dist`, which needs the real anchor binaries -- see the note on `service` below.
-    runs-on: ubuntu-latest
+    # Vets and compiles all seven targets. Deliberately on placeholders: this job asks
+    # whether every target still builds, and `make anchor-bins` with no checkout answers
+    # that for the price of fourteen two-line files. The size gate is `make dist`, which
+    # the two jobs below run with the real thing.
+    runs-on: [self-hosted, linux]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
       - run: make anchor-bins
-
-      # cross vets all seven targets. The size gate in dist needs real binaries, so
-      # with placeholders this checks compilation and stops short of the artifacts.
       - run: make cross
 
   platforms:
@@ -76,7 +138,7 @@ jobs:
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
       - run: make anchor-bins
       - run: go build ./...
@@ -84,11 +146,12 @@ jobs:
 
   windows-tun:
     # With placeholders the extraction tests skip, so this checks the wintun pin is
-    # readable and that the build works on Windows. The extraction itself is covered
-    # locally, where real binaries exist.
+    # readable and that the build works on Windows. The extraction itself is covered on
+    # Linux by the `linux` job above, which now has real binaries; there is no
+    # self-hosted Windows machine to give this one the same.
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
       - run: make anchor-bins
         shell: bash
@@ -119,72 +182,73 @@ jobs:
     # container is the reboot, and this is the only way to check the property that
     # matters most: a machine that was up before is up again with nothing typed.
     #
-    # Manual only. It needs the real anchor binaries, and they are not in git and not
-    # fetchable from here -- so a runner has no way to get them. Run it locally with
-    # `make anchor-bins && make dist` first, or enable it once anchor/bin has a
-    # source CI can reach. See docs/build.md.
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    # It ran on no push and no pull request until now — `workflow_dispatch` only,
+    # because it needs the real anchor binaries and a hosted runner had no way to get
+    # them. It also could not have worked on a dispatch: it went straight to `make dist`
+    # with no `anchor-bins` step before it, so //go:embed had nothing to embed and the
+    # build failed before the size gate could say why.
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: conflux
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup
+      - uses: actions/checkout@v7
+        with:
+          path: conflux
+      - uses: ./conflux/.github/actions/setup
+        with:
+          path: conflux
+      - uses: ./conflux/.github/actions/anchor-bins
+        with:
+          token: ${{ secrets.ANCHOR_READ_TOKEN }}
 
-      - run: make dist
-      - run: cp dist/conflux-linux-amd64 test/systemd/conflux
-      - run: docker build -t conflux-systemd-test test/systemd
+      - name: what this runner gives the suite
+        run: ./test/preflight.sh
 
-      - name: install registers without inventing a configuration
-        run: |
-          docker run -d --name cfx --privileged --cgroupns=host \
-            -v /sys/fs/cgroup:/sys/fs/cgroup:rw --device /dev/net/tun conflux-systemd-test
-          for i in $(seq 30); do
-            [ "$(docker exec cfx systemctl is-system-running 2>/dev/null)" = running ] && break
-            sleep 1
-          done
-
-          docker exec cfx conflux install
-          [ "$(docker exec cfx systemctl is-enabled conflux.service)" = enabled ] \
-            || { echo "::error::install did not enable the unit"; exit 1; }
-          [ "$(docker exec cfx systemctl is-active conflux.service)" = inactive ] \
-            || { echo "::error::install started the service; it must only register"; exit 1; }
-
-      - name: uninstall leaves nothing
-        run: |
-          docker exec cfx conflux uninstall --yes
-          docker exec cfx sh -c 'test ! -f /etc/systemd/system/conflux.service' \
-            || { echo "::error::the unit file survived uninstall"; exit 1; }
-          docker exec cfx sh -c 'test ! -d /var/lib/conflux' \
-            || { echo "::error::the state directory survived uninstall"; exit 1; }
+      - name: install registers, uninstall leaves nothing
+        run: make service-test
 
       - if: always()
         run: docker rm -f cfx || true
 
   integration:
-    # The real thing, against the live API: two nodes, one taint, pinging each other.
+    # The real thing, against the live API: three nodes, one taint, reaching each other
+    # over the overlay, surviving a reboot, and the LAN-discovery control.
     #
-    # Manual only, for the same reason as `service` -- it needs the real anchor
-    # binaries. Locally this is `./test/integration.sh`, which is what it runs.
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Manual-only for the same reason as `service`, and no longer. Locally this is
+    # `make integration`, which is what it runs.
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: conflux
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup
+      - uses: actions/checkout@v7
+        with:
+          path: conflux
+      - uses: ./conflux/.github/actions/setup
+        with:
+          path: conflux
+      - uses: ./conflux/.github/actions/anchor-bins
+        with:
+          token: ${{ secrets.ANCHOR_READ_TOKEN }}
 
-      - run: make dist
-      - run: cp dist/conflux-linux-amd64 test/systemd/conflux
-      - run: docker build -t conflux-systemd-test test/systemd
+      - name: what this runner gives the suite
+        run: ./test/preflight.sh
 
-      - name: two nodes, one taint, reachable both ways
-        run: ./test/integration.sh
+      - name: three nodes, one taint, reachable both ways
+        run: make integration
 
       - if: always()
-        run: docker rm -f cfx-a cfx-b || true
+        run: docker rm -f cfx-a cfx-b cfx-c || true
 
   docs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: every docs page is linked from the README, and exists
         run: |

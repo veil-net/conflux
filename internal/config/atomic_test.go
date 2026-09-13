@@ -104,13 +104,7 @@ func TestWriteFileAtomicPreservesOnFailure(t *testing.T) {
 
 	// A directory that cannot be written to is the reachable way to fail between
 	// "the old file exists" and "the new one is in place".
-	if runtime.GOOS != "windows" {
-		if err := os.Chmod(dir, 0o500); err != nil {
-			t.Fatalf("chmod dir: %v", err)
-		}
-
-		t.Cleanup(func() { os.Chmod(dir, 0o700) })
-
+	if runtime.GOOS != "windows" && unwritable(t, dir) {
 		if err := WriteFileAtomic(path, []byte("bad"), 0o600); err == nil {
 			t.Fatal("WriteFileAtomic succeeded into a read-only directory")
 		}
@@ -124,4 +118,36 @@ func TestWriteFileAtomicPreservesOnFailure(t *testing.T) {
 	if string(b) != "good" {
 		t.Errorf("content = %q after a failed write, want the previous %q", b, "good")
 	}
+}
+
+// unwritable makes dir read-only and reports whether that actually took.
+//
+// The premise, checked rather than assumed. chmod succeeds for root and root writes
+// anyway, so as root this half of the test was asserting nothing -- and it did not
+// skip, it failed, which is a worse way to assert nothing. That cost nothing while CI
+// was hosted VMs whose runner user is unprivileged; it is a red build the moment the
+// suite runs somewhere the runner process is root, which is what a self-hosted machine
+// may well be.
+//
+// The rest of the test is unaffected and still runs: whatever happened to the write,
+// the previous content must still be there afterwards.
+func unwritable(t *testing.T, dir string) bool {
+	t.Helper()
+
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Skipf("cannot make the directory read-only here: %v", err)
+	}
+
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	probe := filepath.Join(dir, ".writable-probe")
+	if err := os.WriteFile(probe, nil, 0o600); err == nil {
+		_ = os.Remove(probe)
+		t.Log("this directory is still writable after chmod 0500 -- running as root, " +
+			"so there is no unwritable case here to exercise")
+
+		return false
+	}
+
+	return true
 }

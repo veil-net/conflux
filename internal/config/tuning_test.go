@@ -92,6 +92,83 @@ func TestPortAndUplinkAreRefusedTogether(t *testing.T) {
 	}
 }
 
+func TestLANDiscoveryYesAndUplinkAreRefusedTogether(t *testing.T) {
+	yes, no := true, false
+
+	c := base(ModeTUN)
+	c.Uplink = "/dev/ttyUSB0"
+	c.LANDiscovery = &yes
+
+	err := c.Validate()
+	if err == nil {
+		t.Fatal("--lan-discovery yes beside an uplink should be refused: there is no host network to probe")
+	}
+
+	if !strings.Contains(err.Error(), "no host network to probe") {
+		t.Errorf("the error should say why; it said: %v", err)
+	}
+
+	// The two that are not an explicit ask are accepted, and this is the half worth
+	// asserting: anchor turns the probe off beside an uplink regardless, so refusing
+	// them would fail every machine that was configured once and later moved onto a
+	// cable -- for a setting its operator never made.
+	c.LANDiscovery = &no
+	if err := c.Validate(); err != nil {
+		t.Errorf("--lan-discovery no beside an uplink should validate: %v", err)
+	}
+
+	c.LANDiscovery = nil
+	if err := c.Validate(); err != nil {
+		t.Errorf("an unset lan-discovery beside an uplink should validate: %v", err)
+	}
+
+	// And yes is fine without the uplink.
+	c.Uplink, c.LANDiscovery = "", &yes
+	if err := c.Validate(); err != nil {
+		t.Errorf("--lan-discovery yes alone should validate: %v", err)
+	}
+}
+
+// TestLANDiscoveryRoundTripsAllThree: a *bool, so the document must tell "off" from
+// "not set". omitempty drops a nil and keeps a pointer to false, which is the whole
+// reason the field is a pointer -- a plain bool would read a persisted no back as an
+// auto on the next start and hand the answer to the manifest.
+func TestLANDiscoveryRoundTripsAllThree(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		set  *bool
+	}{
+		{"auto", nil},
+		{"yes", func() *bool { v := true; return &v }()},
+		{"no", func() *bool { v := false; return &v }()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := dirsForTest(t)
+
+			want := base(ModeTUN)
+			want.LANDiscovery = tc.set
+
+			if err := Save(d, want); err != nil {
+				t.Fatalf("Save: %v", err)
+			}
+
+			got, err := Load(d)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+
+			switch {
+			case tc.set == nil && got.LANDiscovery != nil:
+				t.Errorf("auto came back as %v; it must stay absent", *got.LANDiscovery)
+			case tc.set != nil && got.LANDiscovery == nil:
+				t.Errorf("%v came back as auto; the setting was dropped", *tc.set)
+			case tc.set != nil && *got.LANDiscovery != *tc.set:
+				t.Errorf("lanDiscovery is %v, want %v", *got.LANDiscovery, *tc.set)
+			}
+		})
+	}
+}
+
 // TestTuningSurvivesTheRoundTrip: the four new fields are omitempty, so a zero value
 // is absent from the document. What must not happen is a set one being dropped.
 func TestTuningSurvivesTheRoundTrip(t *testing.T) {

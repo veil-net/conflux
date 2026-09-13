@@ -1,0 +1,110 @@
+name: anchor-bins
+description: >
+  Populate anchor/bin with real anchor binaries, built from a checkout of veil-net/anchor
+  beside this one. The one thing a runner could never do before.
+
+inputs:
+  token:
+    description: >
+      A token that can read veil-net/anchor. The repository is private, so the job's own
+      GITHUB_TOKEN cannot: it is scoped to conflux. Required.
+    required: true
+  ref:
+    description: Which anchor to build. Defaults to its default branch.
+    required: false
+    default: main
+
+runs:
+  using: composite
+  steps:
+    # Said first and on its own, because the alternative is discovering it from the
+    # middle of a checkout error that names a 404 rather than a permission.
+    - name: a token that can read anchor
+      shell: bash
+      run: |
+        set -eu
+        [ -n "${{ inputs.token }}" ] || {
+          echo "::error::this job needs a token that can read veil-net/anchor, which is private" >&2
+          echo "the job's GITHUB_TOKEN is scoped to conflux and cannot read it. Add a" >&2
+          echo "fine-grained PAT or GitHub App token with Contents: read on veil-net/anchor" >&2
+          echo "as the repository or organisation secret ANCHOR_READ_TOKEN." >&2
+          exit 1
+        }
+
+    - uses: actions/checkout@v7
+      with:
+        repository: veil-net/anchor
+        ref: ${{ inputs.ref }}
+        token: ${{ inputs.token }}
+        path: anchor
+
+    # anchor/dist is 16 binaries across 8 targets and dominates this job otherwise.
+    # Keyed on the anchor commit rather than on a lockfile: the binaries are a pure
+    # function of that tree and the toolchain, and the toolchain is in the key too.
+    - name: what anchor we are building
+      id: anchor
+      shell: bash
+      working-directory: anchor
+      run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/cache@v4
+      id: cache
+      with:
+        path: anchor/dist
+        key: anchor-dist-${{ runner.os }}-${{ runner.arch }}-${{ steps.anchor.outputs.sha }}
+
+    # `make dist` and never `make release`, and this is the guard rather than a comment
+    # because the failure it prevents is invisible.
+    #
+    # release is the pinned, shippable build and it depends on genesis/genesis.pin. If
+    # genesis/ is absent -- and on a fresh checkout it always is -- the rule mints a
+    # brand new genesis root instead of failing. Binaries pinned to a realm nobody else
+    # has ever seen enrol against the live API perfectly and then never handshake, so
+    # the suite goes red somewhere in the overlay with nothing pointing back here.
+    - name: dist, never release
+      shell: bash
+      working-directory: anchor
+      run: |
+        set -eu
+        if [ -d genesis ]; then
+          echo "::error::anchor/genesis exists in a CI checkout, which it never should" >&2
+          echo "this job builds \`make dist\` and must not be near a genesis key." >&2
+          exit 1
+        fi
+        echo "no genesis/: \`make release\` cannot mint a root from here"
+
+    - name: build the anchor binaries
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      working-directory: anchor
+      run: make dist
+
+    - name: put them where //go:embed can find them
+      shell: bash
+      working-directory: conflux
+      run: make anchor-bins
+
+    # Say what this run is actually carrying, because a green tick on an unpinned build
+    # means less than a green tick on a pinned one and the difference is invisible in
+    # the log otherwise.
+    #
+    # dist is unpinned: it will join any realm tree, which is exactly why it works
+    # against the live API's production realm here, and exactly why nothing built from
+    # it may ship. release.yml still refuses anything else.
+    - name: what these binaries are
+      shell: bash
+      working-directory: conflux
+      run: |
+        set -eu
+        echo "anchor: ${{ steps.anchor.outputs.sha }} (${{ inputs.ref }})"
+        echo "cache:  ${{ steps.cache.outputs.cache-hit == 'true' && 'hit' || 'miss, built here' }}"
+        echo
+        ls -lh anchor/bin
+        echo
+        smallest=$(find anchor/bin -type f -printf '%s\n' | sort -n | head -1)
+        [ "$smallest" -ge 5000000 ] || {
+          echo "::error::anchor/bin holds placeholders, not binaries: smallest file is $smallest bytes" >&2
+          exit 1
+        }
+        echo "PROVENANCE: unpinned \`make dist\`. Good for testing against the live realm,"
+        echo "and never shippable -- a conflux built from this joins any realm tree."

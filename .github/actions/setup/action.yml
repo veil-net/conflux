@@ -1,10 +1,24 @@
 name: setup
 description: Go, from go.mod, with the module cache.
+
+inputs:
+  path:
+    description: >
+      Where the conflux checkout is, relative to the workspace. Defaults to the
+      workspace root; the jobs that check anchor out beside conflux pass "conflux".
+    required: false
+    default: .
+
 runs:
   using: composite
   steps:
-    - uses: actions/setup-go@v5
+    - uses: actions/setup-go@v7
       with:
         # From go.mod rather than pinned here, so the toolchain is stated once.
-        go-version-file: go.mod
-        cache-dependency-path: go.sum
+        #
+        # Both paths are resolved against the workspace root and not against this
+        # action, so a job that checked conflux out into a subdirectory would send
+        # setup-go looking for a go.mod that is not there -- and it fails with
+        # "Unable to find file" rather than with anything about the layout.
+        go-version-file: ${{ inputs.path }}/go.mod
+        cache-dependency-path: ${{ inputs.path }}/go.sum

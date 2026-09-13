@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -82,6 +83,16 @@ func TestFetchWritesVerifiedBinaries(t *testing.T) {
 		}
 
 		// Executable, because the whole point is that libexec extracts and runs it.
+		//
+		// Not on Windows: Go maps a file mode to the read-only attribute there, so
+		// Perm() never reports an executable bit and this would fail on every run for
+		// a reason that has nothing to do with the fetch. internal/config's atomic
+		// tests skip for the same reason and say the same thing -- mode bits are not
+		// meaningful on windows, the DACL is.
+		if runtime.GOOS == "windows" {
+			continue
+		}
+
 		info, err := os.Stat(filepath.Join(dir, name))
 		if err != nil {
 			t.Fatal(err)

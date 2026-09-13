@@ -7,8 +7,11 @@ GO      ?= go
 BIN     ?= bin
 DIST    ?= dist
 # VERSION is the file, not the tag. A tag is a claim about a commit; the file is a
-# claim about the tree, and it is the tree that gets built. release.yml still wins by
-# passing VERSION=<tag> on the command line, which ?= leaves it free to do.
+# claim about the tree, and it is the tree that gets built. release.yml used to override
+# it with the tag name and no longer does: it reads this same file to decide whether
+# there is a release to make, and creates the tag from it afterwards, so the number in
+# the binary and the number on the release cannot disagree. ?= still leaves it free to
+# be overridden by hand.
 VERSION ?= $(shell cat $(CURDIR)/VERSION 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 
@@ -31,12 +34,17 @@ MAX_MB := 75
 
 ANCHOR_SRC ?= ../anchor
 
-# FETCH=1 downloads the pinned binaries from the shelf when no local anchor build is
-# available. Opt-in for now: the macOS and Windows jobs run anchor-bins too and need
-# only the two files their own build tag names, so fetching all fourteen there would
-# move 284 MB to compile 43.
+# FETCH=1 downloads the pinned binaries from anchor's `shelf` release when no local
+# anchor build is available. Opt-in for now: the macOS and Windows jobs run anchor-bins
+# too and need only the two files their own build tag names, so fetching all fourteen
+# there would move 284 MB to compile 43.
+#
+# It needs ANCHOR_RELEASE_TOKEN, because anchor is private. The three below are empty by
+# default so the values live in internal/shelf rather than being repeated here.
 FETCH ?= 0
-SHELF_URL ?=
+ANCHOR_API ?=
+ANCHOR_REPO ?=
+ANCHOR_TAG ?=
 
 # The tag `make image` builds and the two suites run. Overridable so a second checkout
 # on one machine does not race the first for the name.
@@ -51,11 +59,13 @@ all: fmtcheck vet lint tidycheck test cross dist
 # before its first build.
 #
 # Three sources in order: a local release/ (pinned), a local dist/ (unpinned, taken
-# loudly), then with FETCH=1 the published shelf, which serves the pinned build and
-# needs no checkout and no credential. With none of them it writes placeholders, which
-# compile and are caught by the size gate in dist.
+# loudly), then with FETCH=1 anchor's `shelf` release, which serves the pinned build and
+# needs no checkout -- but does need a token, since anchor is private. With none of them
+# it writes placeholders, which compile and are caught by the size gate in dist.
 anchor-bins:
-	@ANCHOR_SRC=$(ANCHOR_SRC) FETCH=$(FETCH) SHELF_URL=$(SHELF_URL) ./scripts/anchor-bins.sh
+	@ANCHOR_SRC=$(ANCHOR_SRC) FETCH=$(FETCH) \
+		ANCHOR_API=$(ANCHOR_API) ANCHOR_REPO=$(ANCHOR_REPO) ANCHOR_TAG=$(ANCHOR_TAG) \
+		./scripts/anchor-bins.sh
 
 # CGO_ENABLED=0 here for the same reason cross and dist set it: so that the binary a
 # developer builds and installs is the same *kind* of binary as the one that ships.
@@ -182,7 +192,8 @@ help:
 	@echo "conflux"
 	@echo "  make anchor-bins populate anchor/bin (do this first)"
 	@echo "                   ANCHOR_SRC=/path/to/anchor, default ../anchor"
-	@echo "                   FETCH=1 to download the pinned binaries instead, no checkout needed"
+	@echo "                   FETCH=1 to fetch the pinned binaries from anchor's release"
+	@echo "                   (needs ANCHOR_RELEASE_TOKEN; anchor is private)"
 	@echo "  make build       build for this machine"
 	@echo "  make test        run the tests"
 	@echo "  make race        run them under the race detector"

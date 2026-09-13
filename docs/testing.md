@@ -125,8 +125,11 @@ never who is let in. Loopback is not probed, so two anchors on one machine still
 Every Linux job that needs Docker is on **veilnet-dev**, a self-hosted runner. What
 makes the two container suites possible, though, is not the machine — it is that
 `anchor/bin` finally has a source CI can reach. `make anchor-bins FETCH=1` fetches the
-**pinned** release build from the shelf and verifies every digest, with no anchor
-checkout and no credential. See [build.md](build.md).
+**pinned** release build from the `shelf` release of `veil-net/anchor` and verifies every
+digest, with no anchor checkout. It needs a credential, since anchor is private: CI stores
+a GitHub App's ID and private key and mints an hour-long token per job, so the secret held
+here is not itself a key to anything — see [build.md](build.md) for why the grant is wider
+than it wants to be and why it is nonetheless contained.
 
 | job | machine | what it adds |
 |---|---|---|
@@ -139,19 +142,39 @@ checkout and no credential. See [build.md](build.md).
 | `docs` | veilnet-dev | two greps |
 
 A release runs all of it first. `release.yml` calls this workflow and waits on it, which
-is new: a tag push runs none of `ci.yml`'s own triggers, so before that a release was
-gated on nothing but a check that the binaries it was about to embed were real. Whether
-the code around them still worked was a convention — the tag is cut from a commit that
-was green on main — and a convention is not a check.
+is new: a release used to be gated on nothing but a check that the binaries it was about
+to embed were real. Whether the code around them still worked was a convention — the tag
+is cut from a commit that was green on main — and a convention is not a check.
+
+It runs on a **merge to `main`**, not on a tag — and `ci.yml` no longer triggers on `main`
+at all, so the suite runs once per merge rather than twice. A `gate` job reads the
+`VERSION` file; the tests run either way, and only `verify` and `build` are skipped when
+that version already has a release. So an ordinary merge costs the suite, and a release
+merge costs the suite plus seven cross-builds.
+
+Two things that were previously possible are now not: a release built from a commit nobody
+had tested, and a `workflow_dispatch` on a feature branch publishing
+`make dist VERSION=<branch-name>` to the public.
+
+The PR run and the merge run are both wanted, and they are not the same thing. GitHub
+tests `refs/pull/N/merge` — the branch already merged into its base — so as a *test* the
+second is redundant whenever the base has not moved. But the merge run is the release
+build: it produces the seven binaries and publishes them, and artifacts cannot come from a
+run of a different commit.
 
 It also fetches those binaries now, which is what made a release from CI possible at all.
 `anchor/bin` is not in git, so a release runner had no source for it and the workflow
-failed on its own error message saying so. Both release jobs fetch from the shelf, and
-neither pins anything: a release carries whatever anchor published most recently, which
-is the intent — conflux ships the newest anchor, not a remembered one. All seven targets
-are cross-built from the one Linux machine, `CGO_ENABLED=0` throughout.
+failed on its own error message saying so. Both release jobs fetch the `shelf` release,
+and neither pins a version of it: the tag moves, so a conflux release carries whatever
+anchor published most recently, which is the intent — conflux ships the newest anchor,
+not a remembered one. All seven targets are cross-built from the one Linux machine,
+`CGO_ENABLED=0` throughout.
 
-**The binaries CI uses are the pinned ones.** That is what the shelf serves, and it is
+`release.yml` calls `ci.yml` with `secrets: inherit`. Without that the called workflow
+gets no secrets at all — they are not inherited by default — and every `anchor-bins` step
+inside it would fail on a token that is set in one file and empty in the other.
+
+**The binaries CI uses are the pinned ones.** That is what the release serves, and it is
 the property a locally-built `make dist` cannot have: an anchor pinned to the genesis
 realm refuses to handshake with any other tree. So `integration` now exercises the
 binaries that actually ship, rather than a development cross-build that would join

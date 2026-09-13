@@ -1,31 +1,71 @@
 name: anchor-bins
 description: >
-  Populate anchor/bin with the pinned anchor binaries, fetched from the published
-  release shelf. No checkout of anchor, and no credential.
+  Populate anchor/bin with the pinned anchor binaries, fetched from the `shelf` release
+  of veil-net/anchor.
 
 inputs:
-  url:
+  app-id:
     description: >
-      The release manifest. Defaults to the one internal/shelf names, so the value is
-      stated once in the product code rather than twice.
+      The App ID of the GitHub App that can read anchor. Pass secrets.ANCHOR_APP_ID.
+    required: true
+  private-key:
+    description: >
+      That App's private key, whole, including its BEGIN and END lines. Pass
+      secrets.ANCHOR_APP_PRIVATE_KEY.
+    required: true
+  repo:
+    description: >
+      The owner/name holding the release. Defaults to what internal/shelf names, so the
+      value is stated once in the product code rather than twice.
+    required: false
+    default: ""
+  tag:
+    description: The release tag. Defaults to what internal/shelf names.
     required: false
     default: ""
 
 runs:
   using: composite
   steps:
-    # What this fetches is what conflux already ships: //go:embed puts these bytes
-    # inside every published conflux, so a public shelf discloses nothing a release
-    # download does not. That is why this needs no token for a private repository --
-    # conflux wants anchor's *output*, and the output is not the secret.
+    # A GitHub App rather than a personal access token, for three reasons that are all
+    # about the credential rather than about what it can read -- the data is the same
+    # either way, because GitHub has no releases-only scope and Contents: read grants
+    # anchor's source too.
     #
-    # And what it fetches is the *pinned* build, which a local `make dist` cannot be:
-    # an anchor pinned to the genesis realm refuses to handshake with any other tree.
-    # So the container suites below now exercise the binaries that actually ship.
+    #   1. What is stored here is not a credential. A PAT in a repository secret *is* the
+    #      key; this is a private key that has to be exchanged for one, so the secret on
+    #      its own opens nothing.
+    #   2. The token it mints lasts an hour and is revoked when the job ends, rather than
+    #      being valid until somebody notices.
+    #   3. It does not expire and belongs to no person, so it does not break a year from
+    #      now, and it does not die when somebody leaves.
+    #
+    # owner and repositories are both required to be correct rather than merely present.
+    # Without them the action mints a token for the *calling* repository -- conflux --
+    # which can read conflux perfectly and anchor not at all, and the failure arrives as a
+    # 404 on the release, which reads like a missing tag.
+    - name: mint a token that can read anchor
+      id: app
+      uses: actions/create-github-app-token@v2
+      with:
+        app-id: ${{ inputs.app-id }}
+        private-key: ${{ inputs.private-key }}
+        owner: veil-net
+        repositories: anchor
+
+    # What this fetches is the *pinned* build, which a local `make dist` cannot be: an
+    # anchor pinned to the genesis realm refuses to handshake with any other tree. So the
+    # container suites exercise the binaries that actually ship.
+    #
+    # The token reaches the fetcher as an environment variable and never as an argument:
+    # an argument is visible in `ps` to every other user on the machine, and this runs on
+    # a machine that is not destroyed at the end of the job.
     - name: fetch the pinned anchor binaries
       shell: bash
       env:
-        SHELF_URL: ${{ inputs.url }}
+        ANCHOR_RELEASE_TOKEN: ${{ steps.app.outputs.token }}
+        ANCHOR_REPO: ${{ inputs.repo }}
+        ANCHOR_TAG: ${{ inputs.tag }}
       run: make anchor-bins FETCH=1
 
     # Say what arrived, because a green tick on fourteen files nobody looked at is worth

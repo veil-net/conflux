@@ -119,13 +119,19 @@ a node that had died would pass by saying nothing at all, which is the shape of 
 repository has been caught by before.
 
 It used to assert something else alongside: that C, naming no `--peers`, **still reaches
-the realm** from the manifest's own bootstrap list — which would prove discovery is a
-third source rather than a load-bearing one. That is a real property, and it is reported
-rather than asserted now, because it asks whether the machine running the suite has
-outbound UDP to the realm's bootstrap nodes. On veilnet-dev it does not: A and B found
-each other over the Docker bridge, C had turned that off and had nothing to fall back on,
-and the suite failed for a reason no change to this repository could fix. The run says
-which of the two happened, so the day the answer changes somebody sees it.
+the realm** from the manifest's own bootstrap list — which would prove discovery is a third
+source rather than a load-bearing one.
+
+That cannot hold in this topology, and not because of a firewall. C can only be told about
+a node the bootstrap list already knows, so it needs **at least one of A or B** to have
+reached the realm's bootstrap nodes and been announced there. Here none of the three ever
+does: they meet on the Docker bridge and nowhere else. So the bootstrap list has nothing to
+tell C, and C finding nothing is the correct outcome rather than a failure — asserting
+otherwise was asking three isolated containers to be visible in a realm none of them had
+registered with.
+
+It is reported instead. The day one of them does reach the realm, C finding it is exactly
+the proof that discovery is additive, and the run says which happened.
 
 Note what discovery cannot do, and anchor's own `docs/discovery.md` is the reference:
 the probe is sealed under the realm's **root public key**, which a node only holds after

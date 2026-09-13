@@ -111,12 +111,16 @@ done
 #
 # Two claims used to be made together, and only one of them was ever conflux's. The other
 # was that C, naming no --peers, still reaches the realm from the manifest's own bootstrap
-# list -- which would prove discovery is a third source rather than a load-bearing one. It
-# is a real property and it is not tested here any more, because it asks whether this
-# machine has outbound UDP to the realm's bootstrap nodes. On veilnet-dev it does not: A and
-# B found each other over the Docker bridge, C had no bridge to fall back on, and the suite
-# failed for a reason no change to this repository could fix. It is reported below instead,
-# so the day the answer changes somebody sees it.
+# list -- which would prove discovery is a third source rather than a load-bearing one.
+#
+# That one cannot hold in this topology, and the reason is not a firewall. C can only be
+# told about a node the bootstrap list already knows, so it needs at least one of A or B to
+# have reached the realm's bootstrap nodes and been announced there. Here none of the three
+# ever does: they meet on the Docker bridge and nowhere else. So the bootstrap list has
+# nothing to tell C, and C finding nothing is the correct outcome rather than a failure.
+#
+# Still worth reporting. The day one of them does reach the realm, C finding it is exactly
+# the proof that discovery is additive -- so the run says which happened.
 say "node C joins with --lan-discovery no and no bootstrap list of its own"
 boot cfx-c
 docker exec cfx-c conflux up --taint "$TAINT" --ipv4 10.128.0.3/24 --lan-discovery no
@@ -142,11 +146,12 @@ echo "  --lan-discovery no reached anchor, while A on the same link probed and f
 
 # Reported, not asserted. See the note above.
 if docker exec cfx-a ping -c3 -W3 10.128.0.3 >/dev/null 2>&1; then
-  echo "  and C reached the realm anyway: the manifest's bootstrap list carried it,"
-  echo "  so discovery is additive rather than load-bearing"
+  echo "  and C reached the realm anyway, so something the bootstrap list knows carried it:"
+  echo "  discovery is additive here rather than load-bearing"
 else
-  echo "  C did not reach the realm, which on this machine is expected: it turned discovery"
-  echo "  off and nothing here has outbound UDP to the realm's bootstrap nodes"
+  echo "  C did not reach the realm, which is the correct outcome in this topology: neither"
+  echo "  A nor B was ever announced to the realm's bootstrap nodes, so there is nothing"
+  echo "  there for C to be told about once it stops probing the link"
 fi
 
 say "reboot A: it must come back by itself, same identity"

@@ -28,10 +28,11 @@ runs:
         SHELF_URL: ${{ inputs.url }}
       run: make anchor-bins FETCH=1
 
-    # Say what arrived, because a green tick on fourteen files nobody looked at is
-    # worth less than it appears. The fetcher has already verified every digest against
-    # the manifest; this is the size floor that catches a placeholder fallback, which
-    # is the one way `make anchor-bins` can succeed while leaving nothing usable.
+    # Say what arrived, because a green tick on fourteen files nobody looked at is worth
+    # less than it appears. The fetcher has already verified every digest against the
+    # manifest and a failed fetch is fatal, so this floor should never fire -- it is here
+    # for the case those two claims stop being true together, which is exactly the case
+    # nothing else would notice.
     - name: they are binaries, not placeholders
       shell: bash
       run: |
@@ -40,6 +41,7 @@ runs:
         smallest=$(find anchor/bin -type f -printf '%s\n' | sort -n | head -1)
         [ "${smallest:-0}" -ge 5000000 ] || {
           echo "::error::anchor/bin holds placeholders, not binaries: smallest file is ${smallest:-0} bytes" >&2
-          echo "the shelf fetch fell back. Scroll up for why it failed." >&2
+          echo "the fetch reported success and left placeholders behind, which should" >&2
+          echo "not be possible. Scroll up for what it actually did." >&2
           exit 1
         }

@@ -96,7 +96,17 @@ if [ -z "$src" ] && [ "$FETCH" = 1 ]; then
     exit 0
   fi
 
-  echo "anchor-bins: the fetch failed; falling back to placeholders" >&2
+  # No fallback. FETCH=1 is somebody asking for the real binaries, so quietly writing
+  # placeholders instead would answer a different question -- and it buries the useful
+  # error: the fetcher has just printed which binaries the shelf is missing, and a
+  # fallback puts "anchor/bin holds placeholders" underneath it as the last word. The
+  # message somebody acts on should be the one they end up reading.
+  #
+  # Leave the placeholder path for when nothing was asked for, which is what lets a
+  # machine with no anchor and no network still run gofmt and the unit tests.
+  echo "anchor-bins: the fetch failed and FETCH=1 asked for real binaries, so this is fatal" >&2
+  echo "anchor-bins: drop FETCH=1 to build against placeholders instead" >&2
+  exit 1
 fi
 
 if [ -z "$src" ]; then

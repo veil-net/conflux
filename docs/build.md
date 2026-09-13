@@ -70,6 +70,13 @@ What it refuses, and why each is worth a refusal:
 A rejected download is never renamed into place, so a failed fetch leaves what was there
 before rather than a half-written binary.
 
+A failed fetch under `FETCH=1` is fatal rather than falling back to placeholders: asking
+for the real binaries and silently getting two-line text files answers a different
+question, and it buries the useful error — the fetcher has just printed which binaries
+are missing, and a fallback puts "holds placeholders" underneath it as the last word.
+The placeholder path is still there for when nothing was asked for, which is what lets a
+machine with no anchor and no network run `gofmt` and the unit tests.
+
 **`FETCH=1` is opt-in for now.** The macOS and Windows CI jobs run `anchor-bins` too and
 need only the two files their own build tag names, so fetching all fourteen there would
 move 284 MB to compile 43. Once the shelf serves every target and per-target narrowing

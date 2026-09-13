@@ -7,8 +7,11 @@ GO      ?= go
 BIN     ?= bin
 DIST    ?= dist
 # VERSION is the file, not the tag. A tag is a claim about a commit; the file is a
-# claim about the tree, and it is the tree that gets built. release.yml still wins by
-# passing VERSION=<tag> on the command line, which ?= leaves it free to do.
+# claim about the tree, and it is the tree that gets built. release.yml used to override
+# it with the tag name and no longer does: it reads this same file to decide whether
+# there is a release to make, and creates the tag from it afterwards, so the number in
+# the binary and the number on the release cannot disagree. ?= still leaves it free to
+# be overridden by hand.
 VERSION ?= $(shell cat $(CURDIR)/VERSION 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 

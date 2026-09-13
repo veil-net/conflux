@@ -265,8 +265,16 @@ stack trace a user sends back useless.
 $ make build VERSION=v0.2.0
 ```
 
-`VERSION` and `COMMIT` default to `git describe` and `git rev-parse`. An unstamped
-build says `dev`, which is the honest answer rather than a number nobody released.
+`VERSION` defaults to the contents of the `VERSION` file, and `COMMIT` to `git rev-parse`.
+A tree with no `VERSION` file says `dev`, which is the honest answer rather than a number
+nobody released.
+
+The file rather than a tag, deliberately: a tag is a claim about a commit, and the file is
+a claim about the tree — and it is the tree that gets built. It is also what decides
+whether a release happens at all. `release.yml` runs on every merge to `main`, reads this
+file, and stops immediately if a release already exists for it. So cutting a release is
+bumping `VERSION` and merging; the tag is created afterwards, at the commit that has
+already passed the whole suite, rather than being a promise made before any of it ran.
 
 ## Reproducibility
 

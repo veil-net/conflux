@@ -1,8 +1,19 @@
 name: release
 
+# A merge to main, and nothing else.
+#
+# It was a tag push, which made cutting a release a separate manual act performed on a
+# commit nobody had necessarily released from -- and a `workflow_dispatch` with no branch
+# condition meant running this by hand on a feature branch built `make dist
+# VERSION=<branch-name>` and published it to the public as a GitHub release.
+#
+# Now the tree decides. VERSION is a file, the gate below reads it, and a release happens
+# exactly when somebody bumps that file and the change reaches main. The tag becomes a
+# consequence of the merge rather than a second thing to remember, and there is no branch
+# from which a release can be produced at all.
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -15,6 +26,65 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Is there a release to make? Asked first, because the answer is usually no.
+  #
+  # Every merge to main runs this workflow, and most merges do not change VERSION. Without
+  # this job each of them would pay the full suite and seven cross-builds before
+  # discovering there was nothing to publish -- on the one runner everything else queues
+  # behind.
+  #
+  # The branch is named here as well as in the trigger, because `workflow_dispatch` above
+  # is not restricted to main and nothing else in this file would stop it. Every job below
+  # needs this one, directly or through another, so a skip here skips all of them.
+  gate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, linux]
+    outputs:
+      release: ${{ steps.decide.outputs.release }}
+      version: ${{ steps.decide.outputs.version }}
+      tag: ${{ steps.decide.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: does this tree claim a version that is not published?
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          [ -s VERSION ] || { echo "::error::VERSION is missing or empty" >&2; exit 1; }
+
+          version=$(tr -d '[:space:]' < VERSION)
+          tag="v$version"
+
+          # A 404 means no release at that tag, which is the case worth acting on. Any
+          # other code is asked about rather than assumed: treating a 500 as "not
+          # published" would republish a version that already exists.
+          code=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/releases/tags/$tag")
+
+          case "$code" in
+            404) release=true ;;
+            200) release=false ;;
+            *)   echo "::error::GitHub answered $code asking about $tag; refusing to guess" >&2; exit 1 ;;
+          esac
+
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "release=$release"
+          } >> "$GITHUB_OUTPUT"
+
+          if [ "$release" = true ]; then
+            echo "$tag is not published yet -- building it"
+          else
+            echo "$tag is already published; nothing to do"
+            echo "Bump VERSION and merge to main to cut the next one."
+          fi
+
   # Everything ci.yml checks, before anything here ships.
   #
   # A tag push runs none of ci.yml's own triggers, so until this a release was gated on
@@ -27,6 +97,8 @@ jobs:
   # Calling ci.yml rather than repeating its steps: a second copy of the gate is a copy
   # that drifts, and the half that drifts is always the one nobody is watching.
   tests:
+    needs: gate
+    if: needs.gate.outputs.release == 'true'
     uses: ./.github/workflows/ci.yml
 
     # Without this the called workflow gets no secrets at all -- they are not inherited
@@ -36,7 +108,7 @@ jobs:
     secrets: inherit
 
   verify:
-    needs: tests
+    needs: [gate, tests]
     runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v7
@@ -99,7 +171,7 @@ jobs:
           exit $missing
 
   build:
-    needs: verify
+    needs: [gate, verify]
     runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v7
@@ -117,7 +189,11 @@ jobs:
       # All seven targets, not just this runner's: linux amd64 and arm64, darwin arm64,
       # windows amd64 and arm64, freebsd and openbsd. CGO_ENABLED=0 throughout, so one
       # Linux machine cross-builds every one of them.
-      - run: make dist VERSION=${{ github.ref_name }}
+      # No VERSION= override. The Makefile reads the VERSION file, which is what the gate
+      # above read to decide there was anything to build -- so the number in the binary and
+      # the number on the release cannot disagree. Passing github.ref_name here would set
+      # it to the branch name now that this runs on a merge rather than a tag.
+      - run: make dist
 
       - uses: actions/attest-build-provenance@v1
         with:
@@ -139,8 +215,15 @@ jobs:
             grep -E 'Version|ZipSHA256' internal/wintun/pinned.go | sed 's/^\s*/  /'
           } > notes.md
 
+      # The tag is created here, at this commit, from the version the tree claims. That
+      # ordering is the point: the tag marks a commit that has already passed the whole of
+      # ci.yml and produced these seven binaries, rather than being a promise made before
+      # any of it ran.
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.gate.outputs.tag }}
+          name: ${{ needs.gate.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           files: |
             dist/conflux-*
             dist/SHA256SUMS

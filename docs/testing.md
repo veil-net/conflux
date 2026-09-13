@@ -142,10 +142,15 @@ than it wants to be and why it is nonetheless contained.
 | `docs` | veilnet-dev | two greps |
 
 A release runs all of it first. `release.yml` calls this workflow and waits on it, which
-is new: a tag push runs none of `ci.yml`'s own triggers, so before that a release was
-gated on nothing but a check that the binaries it was about to embed were real. Whether
-the code around them still worked was a convention — the tag is cut from a commit that
-was green on main — and a convention is not a check.
+is new: a release used to be gated on nothing but a check that the binaries it was about
+to embed were real. Whether the code around them still worked was a convention — the tag
+is cut from a commit that was green on main — and a convention is not a check.
+
+It runs on a **merge to `main`**, not on a tag. A `gate` job reads the `VERSION` file and
+stops the run immediately unless that version has no release yet, so most merges cost one
+cheap job rather than an hour. Two things that were previously possible are now not: a
+release built from a commit nobody had tested, and a `workflow_dispatch` on a feature
+branch publishing `make dist VERSION=<branch-name>` to the public.
 
 It also fetches those binaries now, which is what made a release from CI possible at all.
 `anchor/bin` is not in git, so a release runner had no source for it and the workflow

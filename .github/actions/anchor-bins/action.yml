@@ -21,9 +21,15 @@ runs:
     # middle of a checkout error that names a 404 rather than a permission.
     - name: a token that can read anchor
       shell: bash
+      # Through the environment rather than interpolated into the command line. Actions
+      # masks a secret in the log either way, but an expression is substituted into the
+      # script text itself, where a value containing a quote would end the string and
+      # what followed it would run.
+      env:
+        TOKEN: ${{ inputs.token }}
       run: |
         set -eu
-        [ -n "${{ inputs.token }}" ] || {
+        [ -n "${TOKEN:-}" ] || {
           echo "::error::this job needs a token that can read veil-net/anchor, which is private" >&2
           echo "the job's GITHUB_TOKEN is scoped to conflux and cannot read it. Add a" >&2
           echo "fine-grained PAT or GitHub App token with Contents: read on veil-net/anchor" >&2

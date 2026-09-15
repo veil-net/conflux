@@ -33,6 +33,30 @@ unpinned development cross-build, which will join **any** realm tree. A conflux 
 from `dist/` is fine for development and wrong for anything shipped, and the script
 says so loudly when it uses one.
 
+**`FETCH=1` is the last of the three and not an override**, which is the one thing about
+that order worth saying out loud. On a machine that has an anchor checkout, a local
+`release/` wins outright and the fetch never runs — so a developer who has just watched
+anchor merge something and types `make anchor-bins FETCH=1` gets whatever `../anchor/release`
+was last built from, which is usually older than the branch they are trying to test against.
+The line it prints is the only thing that distinguishes the two:
+
+```console
+anchor-bins: 14/14 copied from ../anchor/release (release)   # a local build, whatever age
+anchor-bins: 14/14 fetched from anchor's release (pinned build)   # the shelf
+```
+
+To take the shelf while a local checkout exists, point the script at a path that has
+neither directory:
+
+```console
+$ make anchor-bins FETCH=1 ANCHOR_SRC=/nonexistent
+```
+
+Blunt rather than elegant, and deliberately not a fourth environment variable: the
+precedence is right for the case it was written for — CI, and a fresh clone with no
+checkout at all — and a flag that inverted it would be one more thing to get wrong on the
+path that matters.
+
 `anchoradmin` sits beside the other two in `release/` and is deliberately never
 copied. It can mint realm roots, and anything in `anchor/bin` is a candidate for being
 embedded into every conflux a user runs. The release workflow fails on its presence.
@@ -46,12 +70,17 @@ embedded into every conflux a user runs. The release workflow fails on its prese
 $ export ANCHOR_RELEASE_TOKEN=github_pat_…
 $ make anchor-bins FETCH=1
 anchor-fetch: shelf:   veil-net/anchor @ shelf
-anchor-fetch: commit:  0aea0f77bb77f8bbaa23c5055d9fe245d3a9bee2
+anchor-fetch: commit:  844c80579f6b390fb552f8258a0477f97959cf0a
 anchor-fetch: realm:   realmtglwuedqqa33e364nv73p46jk3kwi67lxjmnntz2mv3mb3mklasq
-anchor-fetch:   ok   anchord-linux-amd64           28.0 MB  95ca77b697e5
+anchor-fetch:   ok   anchord-linux-amd64           28.6 MB  3552c4c1d573
   …
 anchor-fetch: 14/14 fetched, digests verified
 ```
+
+The `commit:` line is the whole of what "which anchor is this" means here. There is no
+anchor version string anywhere — `conflux version` names the pair by SHA-256 and nothing
+else — so that line, and the digests the fetcher prints beside each file, are the only
+way to say which anchor a given conflux carries.
 
 The tag is fixed and moves: `shelf` always names anchor's newest release build, which is
 the intent — conflux ships the newest anchor, not a remembered one. Fetched by tag rather

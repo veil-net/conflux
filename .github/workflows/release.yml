@@ -20,6 +20,11 @@ on:
   push:
     branches: [version3]
   workflow_dispatch:
+    inputs:
+      overwrite:
+        description: Rebuild the version this tree already claims, replacing its release
+        type: boolean
+        default: false
 
 # Read by default; `build` raises its own. Neither `gate` nor `verify` can create a
 # release or sign anything.
@@ -53,6 +58,9 @@ jobs:
         id: decide
         env:
           GH_TOKEN: ${{ github.token }}
+          # Empty on a push -- `inputs` is an empty object on anything but a dispatch --
+          # so the test below is false and a merge cannot republish by accident.
+          overwrite: ${{ inputs.overwrite }}
         run: |
           set -euo pipefail
 
@@ -74,10 +82,35 @@ jobs:
             "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/releases/tags/$tag")
 
           case "$code" in
-            404) release=true ;;
-            200) release=false ;;
+            404) release=true;  reason="$tag is not published yet -- building it" ;;
+            200) release=false; reason= ;;
             *)   echo "::error::GitHub answered $code asking about $tag; refusing to guess" >&2; exit 1 ;;
           esac
+
+          # The one case where a published version is built again: this tree has not
+          # moved, but something it embeds has. The `shelf` tag moves, and a conflux
+          # release carries whatever anchor published most recently rather than a
+          # remembered one -- so a fix cut in anchor reaches users only when conflux is
+          # built again. Bumping VERSION for that spends a version number on a tree whose
+          # own source is unchanged.
+          #
+          # The release is updated in place: `action-gh-release` replaces the assets of
+          # the release it finds at this tag. Nothing is deleted first, so the artifacts
+          # are only ever replaced by artifacts -- there is no window where the version
+          # exists and its downloads do not.
+          if [ "$release" = false ] && [ "$overwrite" = true ]; then
+            release=true
+            reason="$tag is published; this run replaces its artifacts"
+
+            # GitHub leaves an existing tag where it was cut. So if this tree is not that
+            # commit, the tag stops describing what hangs off it -- said here rather than
+            # discovered later from a `conflux version` naming a commit the tag does not
+            # point at.
+            at=$(git ls-remote origin "refs/tags/$tag" | cut -f1)
+            if [ -n "$at" ] && [ "$at" != "$GITHUB_SHA" ]; then
+              echo "::warning::$tag stays at ${at:0:12}; these artifacts are built from ${GITHUB_SHA:0:12}"
+            fi
+          fi
 
           {
             echo "version=$version"
@@ -86,10 +119,11 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
           if [ "$release" = true ]; then
-            echo "$tag is not published yet -- building it"
+            echo "$reason"
           else
             echo "$tag is already published; nothing to do"
-            echo "Bump VERSION and merge to version3 to cut the next one."
+            echo "Bump VERSION and merge to version3 to cut the next one, or run this"
+            echo "workflow by hand with overwrite to rebuild this one."
           fi
 
   verify:

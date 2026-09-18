@@ -95,6 +95,19 @@ func (d Dirs) TokenFile() string { return filepath.Join(d.Run, "token") }
 // operator -- is the realistic case.
 func (d Dirs) LockFile() string { return filepath.Join(d.Run, "conflux.lock") }
 
+// ReadyFile is written by the supervisor once an anchor is up, and removed when it goes.
+//
+// In Run rather than State, because a marker must not outlive the thing it describes.
+// systemd's RuntimeDirectory= clears it on stop and macOS clears /var/run at boot --
+// %ProgramData%\conflux\run on Windows survives both, which is why the supervisor also
+// clears it on the way up rather than relying on the directory's lifetime alone.
+//
+// It is what lets `conflux up` learn the anchor is up the moment it happens instead of
+// forking anchorctl once a second until one of the answers is yes -- which is what
+// systemd's Type=notify already gave Linux, and what launchd and the Windows SCM have no
+// protocol for.
+func (d Dirs) ReadyFile() string { return filepath.Join(d.Run, "ready") }
+
 // EnsureAll creates the four roots at the modes they need.
 //
 // 0700 throughout, including Config: it sits beside nothing that another user has

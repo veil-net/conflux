@@ -96,6 +96,39 @@ with the other machine's.
 both have `peers` greater than zero — if one has none, it has not reached the
 bootstrap node, which is a network problem rather than a conflux one.
 
+## A peer is connected, has a round-trip time, and every ping times out
+
+`conflux peers` says `connected` and `DATA yes`, an RTT is reported, and `ping` gets
+nothing back. That combination is not a peering problem at all — the control plane runs
+over UDP on the host's own interface and is in perfect health. It is the host's routing
+table: nothing sends overlay addresses to the overlay interface.
+
+**On macOS and the BSDs, on conflux builds before this fix, that is the expected
+behaviour for an overlay IPv4.** A `utun` is a point-to-point interface, and assigning an
+address to one installs a *host* route rather than a route for the prefix — so
+`10.128.0.1/24` routes `10.128.0.1` to the machine itself and routes `10.128.0.0/24`
+nowhere. Packets to `10.128.0.2` match the default route and leave by Wi-Fi. Linux and
+Windows create the route on assignment, which is why this shows up on one platform.
+
+Check it:
+
+```console
+$ netstat -rn -f inet | grep utun
+$ netstat -rn -f inet6 | grep utun
+```
+
+If the only `utun` line is a `/32` of this machine's own overlay address, and there is no
+line for the overlay network, that is the fault. Add it by hand — substitute your own
+prefix and the `utun` number `conflux status` reports:
+
+```console
+$ sudo route -n add -inet 10.128.0.0/24 -interface utun4
+```
+
+The anchor installs this itself now, on every BSD and for both families. IPv6 was never
+affected on macOS, which routes an on-link prefix shorter than `/128` regardless of the
+interface being point-to-point.
+
 ## The extracted binaries will not run
 
 A "permission denied" on a `0700` file you own is the most confusing failure in this
@@ -116,6 +149,35 @@ or
 
 On macOS, `killed: 9` instead means the signature was rejected — an Apple Silicon Mac
 refuses a Mach-O with no code signature at all.
+
+## macOS: "Bootstrap failed: 5: Input/output error"
+
+Seen on `conflux up` or `conflux install` after a `conflux uninstall`:
+
+```
+conflux: launchctl bootstrap system /Library/LaunchDaemons/org.veilnet.conflux.plist:
+Bootstrap failed: 5: Input/output error
+```
+
+Error 5 is launchd's answer for most refusals and names none of them. This one was
+conflux's own doing: `uninstall` ran `launchctl disable`, and a disabled label
+[persists across boots](https://keith.github.io/xcode-man-pages/launchctl.1.html) — so a
+machine that had ever been uninstalled could not install again. `uninstall` no longer
+disables anything, and `install` now enables before it bootstraps, which clears the state
+on a machine that already carries it.
+
+To clear it by hand on a build that predates the fix:
+
+```console
+$ sudo launchctl enable system/org.veilnet.conflux
+$ sudo conflux up
+```
+
+If it still fails, the other three causes of error 5 are: the plist is not root-owned or
+is group- or world-writable; the job is already loaded (`sudo launchctl bootout
+system/org.veilnet.conflux`); or the executable the plist names is gone or sits on a
+volume that is not mounted yet — which is what the ephemeral-path warning during
+`install` is about.
 
 ## The service starts and the anchor does not
 

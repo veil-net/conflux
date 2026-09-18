@@ -83,13 +83,30 @@ func (s *Supervisor) report() Reporter {
 	return s.Reporter
 }
 
-func (s *Supervisor) signalReady() {
+// signalReady records that an anchor is up, for the two things that need to know.
+//
+// The channel is closed once, because that is what the service integrations want: launchd
+// and the Windows SCM are told the unit started, and telling them twice means nothing. The
+// marker file is written on every cycle, because a crash-and-restart clears it on the way
+// down and the next `conflux status` or `conflux up` would otherwise wait out its fallback
+// for an anchor that is already running.
+func (s *Supervisor) signalReady(id string) {
+	if err := MarkReady(s.Dirs, id); err != nil {
+		// Never fatal. The marker is an optimisation over a status call that still
+		// works, so losing it costs a second of polling and not a start.
+		s.report().Warn("could not record readiness: %v", err)
+	}
+
 	s.once.Do(func() {
 		if s.Ready != nil {
 			close(s.Ready)
 		}
 	})
 }
+
+// clearReady withdraws the marker. Best effort: a stale marker costs one status call,
+// which is what the fallback is for.
+func (s *Supervisor) clearReady() { _ = ClearReady(s.Dirs) }
 
 // Run starts anchord, brings the anchor up, and keeps both going until the context
 // is cancelled.
@@ -101,6 +118,14 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	if err := s.Dirs.CheckSocketLen(); err != nil {
 		return err
 	}
+
+	// Before anything else can be asked about, because nothing is up yet and a marker
+	// saying otherwise is a lie the whole mechanism rests on not telling. Two of the
+	// three platforms clear the run directory for us -- systemd's RuntimeDirectory= on
+	// stop, and /var/run at boot on macOS -- and Windows does not: %ProgramData%\conflux
+	// \run survives a reboot, so a marker written before a power cut would still be
+	// there when this starts.
+	s.clearReady()
 
 	// Nothing to supervise. Distinguished from a failure so the unit can stop
 	// instead of restarting into the same emptiness every five seconds.
@@ -210,7 +235,7 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 	}
 
 	s.report().Step("anchor %s is up", started.ID)
-	s.signalReady()
+	s.signalReady(started.ID)
 
 	renewCtx, stopRenewals := context.WithCancel(ctx)
 	defer stopRenewals()
@@ -380,19 +405,31 @@ func (s *Supervisor) shutdown(cmd *exec.Cmd, done <-chan error) {
 		s.report().Warn("could not close the anchor cleanly: %v", err)
 	}
 
+	s.clearReady()
+
 	if cmd.Process == nil {
 		return
 	}
 
-	terminate(cmd)
+	// Only wait for an answer to a question that was asked. On Windows inside a service
+	// there is no console to deliver a control event to, so terminate reports false every
+	// time -- and waiting out killTimeout there was ten seconds of nothing on every stop,
+	// every restart and every service shutdown.
+	if terminate(cmd) {
+		select {
+		case <-done:
+			_ = os.Remove(s.Dirs.Socket())
 
-	select {
-	case <-done:
-	case <-time.After(killTimeout):
-		s.report().Warn("anchord did not exit in %s; killing it", killTimeout)
-		_ = cmd.Process.Kill()
-		<-done
+			return
+		case <-time.After(killTimeout):
+			s.report().Warn("anchord did not exit in %s; killing it", killTimeout)
+		}
 	}
+
+	// Safe because of the ordering above: the anchor has already been closed and has
+	// already said goodbye, so this kills a daemon that is holding nothing.
+	_ = cmd.Process.Kill()
+	<-done
 
 	_ = os.Remove(s.Dirs.Socket())
 }

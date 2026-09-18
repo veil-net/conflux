@@ -114,7 +114,10 @@ func install(ctx context.Context, d paths.Dirs, standalone bool) int {
 func startFromConfig(ctx context.Context, d paths.Dirs, mgr service.Manager, verb string) int {
 	ui.Printf("Starting from the configuration in %s.\n", d.ConfigFile())
 
-	if err := mgr.Restart(); err != nil {
+	// Through restartWith rather than mgr.Restart, so this path clears the readiness
+	// marker like every other one does. Calling Restart directly here is exactly how a
+	// marker comes to be trustworthy on one path and stale on another.
+	if err := restartWith(d, mgr); err != nil {
 		return fail(err)
 	}
 

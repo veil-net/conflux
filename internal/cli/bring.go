@@ -8,6 +8,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
@@ -45,7 +46,7 @@ func bring(ctx context.Context, d paths.Dirs, cfg *config.Config, verb string) i
 
 	ui.Printf("\nStarting.\n")
 
-	if err := restartService(); err != nil {
+	if err := restartService(d); err != nil {
 		return fail(err)
 	}
 
@@ -65,34 +66,92 @@ func bring(ctx context.Context, d paths.Dirs, cfg *config.Config, verb string) i
 // One supervisor, whatever started it. A `conflux up` that ran its own daemon would
 // leave two ideas of what is running -- the service manager's and ours -- and they
 // would disagree the moment either changed.
-func restartService() error {
+func restartService(d paths.Dirs) error {
 	mgr, err := service.New()
 	if err != nil {
 		return err
 	}
 
+	return restartWith(d, mgr)
+}
+
+// restartWith withdraws the readiness marker and then restarts, in that order.
+//
+// The order is the whole of what makes the marker worth reading. A marker left by the
+// supervisor that is about to be replaced would let waitForAnchor return a status for
+// an anchor on its way out -- reporting success for one that is seconds from being torn
+// down. Removing it first means the marker that appears afterwards can only have been
+// written by the instance this restart started.
+//
+// One function so the two callers cannot drift: every path that restarts the service and
+// then waits for an anchor goes through here.
+func restartWith(d paths.Dirs, mgr service.Manager) error {
+	if err := daemon.ClearReady(d); err != nil {
+		// Not fatal. A marker that will not go costs waitForAnchor one status call it
+		// was going to make anyway, which is exactly what the fallback is for.
+		ui.Warnf("could not clear the readiness marker: %v", err)
+	}
+
 	return mgr.Restart()
 }
 
-// waitForAnchor polls until the supervisor has an anchor up, or says why not.
+// waitForAnchor waits until the supervisor has an anchor up, or says why not.
+//
+// Two signals, and having both is the point. The supervisor writes a readiness marker the
+// instant the anchor is up, which a stat notices within a tick; the status call is the
+// fallback, kept at one a second because it forks a 43 MB binary and because it is the
+// only thing that still works if a marker never arrives at all.
+//
+// Linux already had this and the other two did not. systemd's Type=notify makes
+// `systemctl restart` return once the supervisor has sent READY=1 -- systemd.service(5):
+// "systemd will proceed with starting follow-up units after this notification message has
+// been sent" -- so the first status call here already succeeded and the polling never
+// showed. launchd infers readiness from the process staying alive and the Windows SCM
+// tells only itself, so on a Mac and on Windows this was a second of waiting per attempt
+// for news that had already happened, on top of a fork per attempt that Defender and
+// Gatekeeper each want to think about.
 func waitForAnchor(ctx context.Context, d paths.Dirs) (anchorctl.Status, error) {
 	ctl, err := runCtl(d)
 	if err != nil {
 		return anchorctl.Status{}, err
 	}
 
+	// tick is how often the marker is looked for; fallback is how often anchorctl is
+	// asked when it is not there.
+	const (
+		tick     = 100 * time.Millisecond
+		fallback = time.Second
+	)
+
 	deadline := time.Now().Add(90 * time.Second)
 
+	var (
+		marked   bool
+		nextPoll = time.Now()
+	)
+
 	for {
-		// The token is rewritten by the supervisor on every start, so re-read it
-		// rather than trusting the one runCtl picked up a moment ago.
-		if fresh, err := runCtl(d); err == nil {
-			ctl = fresh
+		// The marker only ever pulls the next status call forward, and only once. If it
+		// appears and the call behind it fails anyway, the cadence stays at one a second
+		// rather than becoming ten.
+		if !marked && daemon.IsReady(d) {
+			marked = true
+			nextPoll = time.Now()
 		}
 
-		st, err := ctl.Status(ctx)
-		if err == nil && st.Running {
-			return st, nil
+		if !time.Now().Before(nextPoll) {
+			nextPoll = time.Now().Add(fallback)
+
+			// The token is rewritten by the supervisor on every start, so re-read it
+			// rather than trusting the one runCtl picked up a moment ago.
+			if fresh, err := runCtl(d); err == nil {
+				ctl = fresh
+			}
+
+			st, err := ctl.Status(ctx)
+			if err == nil && st.Running {
+				return st, nil
+			}
 		}
 
 		if time.Now().After(deadline) {
@@ -104,7 +163,7 @@ func waitForAnchor(ctx context.Context, d paths.Dirs) (anchorctl.Status, error) 
 		select {
 		case <-ctx.Done():
 			return anchorctl.Status{}, ctx.Err()
-		case <-time.After(time.Second):
+		case <-time.After(tick):
 		}
 	}
 }

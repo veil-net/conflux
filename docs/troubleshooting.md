@@ -8,8 +8,12 @@ beneath it, and most of what follows is a way of reading that output.
 | `nothing is running here` | no daemon on the socket | `conflux start` if a configuration already exists, otherwise `conflux up` or `conflux proxy` |
 | `this needs root` | every state-changing verb needs it | `sudo conflux …` |
 | `status` exits 78 | never configured | `conflux up` or `conflux proxy` |
-| `up` exits 2 with "needs `--ipv4` or `--no-ipv4`" | no terminal to prompt at | pass one of them; that is what they are for |
-| `is not an address and a prefix` | a bare IPv4 was given | write it as `10.128.0.7/24` |
+| `up` refuses with "needs `--ipv4` or `--no-ipv4`" | no terminal to prompt at: a service, a cron job, `ssh host 'conflux up'`, or stdin redirected from `/dev/null` | pass one of them; that is what they are for. A machine that has been up with an interface before is unaffected — it keeps what it has, address or none |
+| `up` came up with no `ipv4` in `status`, and never asked | an older conflux read `/dev/null` as a terminal, asked into it, and took the end-of-file for a blank answer | upgrade; then `conflux up --ipv4 PREFIX` to give the machine the address it should have had |
+| `the overlay address went unanswered` | the terminal ended mid-prompt — a closed session, or Ctrl-D | answer with a blank line for IPv6-only, or pass either flag |
+| `--ipv4 and --no-ipv4 contradict each other` | both were given, usually by a script that appends a default | drop one; conflux will not pick |
+| `is an address without a prefix length` | a bare IPv4 was given | write it as `10.128.0.7/24` |
+| `is not an IPv4 address and prefix` | not an address at all: a typo, or a hostname | write it as `10.128.0.7/24` |
 | `is the network address of its own prefix` | `10.128.0.0/24` | pick a host address, `10.128.0.1/24` |
 | `a reverse proxy needs userspace mode` | `--subnet` or `--ipv4` given to `proxy`, or a proxy spec to `up` | the modes are exclusive; see [modes.md](modes.md) |
 | `"-add" is not one of conflux proxy's flags` | anchorctl's proxy was meant | `conflux anchorctl proxy -add …` |

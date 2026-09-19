@@ -96,6 +96,12 @@ func runUp(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
+	// Whether this machine was already a TUN machine, read before the line below
+	// overwrites it. chooseIPv4 needs it to tell a machine that answered the
+	// address question with "none" from one that has never been asked: both carry
+	// an empty IPv4, and only one of them should be asked again.
+	configuredTUN := cfg.Mode == config.ModeTUN
+
 	// Switching a proxy machine to TUN is a real change of shape, not an edit.
 	if cfg.Mode == config.ModeProxy && len(cfg.Proxies) > 0 {
 		ui.Warnf("this machine was serving %d proxied service(s) in userspace mode.\n"+
@@ -128,7 +134,7 @@ func runUp(ctx context.Context, args []string) int {
 		cfg.Subnets = subnets
 	}
 
-	address, err := chooseIPv4(cfg, *ipv4, *noIPv4)
+	address, err := chooseIPv4(cfg, *ipv4, *noIPv4, configuredTUN)
 	if err != nil {
 		return fail(err)
 	}
@@ -290,9 +296,21 @@ func loadOrNew(d paths.Dirs) (*config.Config, error) {
 // The prompt appears at most once in a machine's life. Re-running `conflux up` with
 // an existing configuration and no flag keeps what is there and asks nothing:
 // changing a machine's overlay address because somebody re-ran a command is not an
-// acceptable thing to do to them.
-func chooseIPv4(cfg *config.Config, flagValue string, none bool) (string, error) {
+// acceptable thing to do to them. "What is there" includes no address at all, which
+// is a decision a machine can have made and not only a field nobody has filled in.
+//
+// There are four answers -- an address, --no-ipv4, a blank line from somebody who
+// read what blank means, and whichever of those this machine gave last time -- and
+// conflux invents none of its own. Every path that reaches none of them ends in a
+// refusal naming the two flags, because a question nobody was there to hear is not
+// an answer to it.
+func chooseIPv4(cfg *config.Config, flagValue string, none bool, configuredTUN bool) (string, error) {
 	switch {
+	// Every other flag pair here refuses this rather than picking a winner, and
+	// this one is the pair where the loser is an address somebody typed.
+	case none && flagValue != "":
+		return "", errors.New("--ipv4 and --no-ipv4 contradict each other")
+
 	case none:
 		return "", nil
 
@@ -305,15 +323,40 @@ func chooseIPv4(cfg *config.Config, flagValue string, none bool) (string, error)
 
 	case cfg.IPv4 != "":
 		return cfg.IPv4, nil
+
+	// A machine that has been up with an interface before and carries no address
+	// said so: --no-ipv4, or a blank line at this prompt, both of which mean
+	// IPv6-only. That is a setting, and settings are kept when no flag names them,
+	// exactly as the uplink, the peers and the port are. It is also what makes the
+	// paragraph above true -- asked once in a machine's life, and not once per
+	// re-run -- and what keeps a provisioning script that re-runs `conflux up` on
+	// an IPv6-only machine working without having to repeat --no-ipv4.
+	//
+	// A machine coming from proxy mode is not one of these: userspace has no
+	// interface to assign an address to, so its empty IPv4 is not an answer to
+	// this question and it gets asked.
+	case configuredTUN:
+		return "", nil
 	}
 
 	if !ui.IsTerminal() {
-		return "", errors.New(
-			"conflux up needs --ipv4 PREFIX or --no-ipv4 when there is no terminal to ask at")
+		return "", errNoOneToAsk
 	}
 
 	return promptIPv4()
 }
+
+// The two ways `conflux up` reaches the overlay address with nobody to answer for
+// it. Neither is IPv6-only: that is a blank line, typed on purpose, by someone who
+// was shown what blank means.
+var (
+	errNoOneToAsk = errors.New(
+		"conflux up needs --ipv4 PREFIX or --no-ipv4 when there is no terminal to ask at")
+
+	errUnanswered = errors.New(
+		"the overlay address went unanswered, and it is not one conflux picks on a machine's behalf.\n" +
+			"  Answer with a blank line for IPv6-only, or pass --ipv4 PREFIX or --no-ipv4")
+)
 
 func promptIPv4() (string, error) {
 	ui.Println("An overlay IPv4 lets other machines reach this one by a v4 address.")
@@ -324,10 +367,13 @@ func promptIPv4() (string, error) {
 	for {
 		answer, err := ui.Ask("  Overlay IPv4 [e.g. 10.128.0.7/24, blank for IPv6-only]: ")
 		if err != nil {
+			// End of input, not an answer to the question. Taking it for the blank
+			// line below is what let a machine with no terminal -- a service, a
+			// cron job, an `ssh host cmd` -- come up addressless and say nothing.
 			if errors.Is(err, io.EOF) {
 				ui.Println()
 
-				return "", nil
+				return "", errUnanswered
 			}
 
 			return "", err

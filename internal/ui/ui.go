@@ -13,8 +13,25 @@ import (
 var (
 	Out  io.Writer = os.Stdout
 	Errw io.Writer = os.Stderr
-	In   io.Reader = os.Stdin
 )
+
+// in is where answers come from, and inBuf is the one buffered reader over it.
+//
+// One reader for the life of the process rather than one per question. bufio fills
+// with whatever is available and not with the line it was asked for, so a reader
+// made per Ask drops everything that arrived behind the answer it returned -- which
+// is the correction a prompt loop is waiting for when somebody types it before the
+// question comes back around.
+var (
+	in    io.Reader = os.Stdin
+	inBuf           = bufio.NewReader(os.Stdin)
+)
+
+// SetIn points the questions at another reader. For tests.
+//
+// Both move together: a reader that disagreed with the buffer over it would answer
+// from the input nobody is typing at.
+func SetIn(r io.Reader) { in, inBuf = r, bufio.NewReader(r) }
 
 // Printf writes to stdout.
 func Printf(format string, a ...any) { fmt.Fprintf(Out, format, a...) }
@@ -38,18 +55,20 @@ func Field(key, value string) { fmt.Fprintf(Out, "  %-12s %s\n", key, value) }
 // IsTerminal reports whether stdin is something a person is typing at. Used to
 // decide between prompting and refusing: a prompt with no terminal to answer it is
 // a boot service hung forever.
+//
+// It asks the terminal driver rather than stat(2), because a character device is
+// not a terminal. /dev/null is a character device, NUL is one on Windows, and that
+// is the stdin a service, a cron job, a cloud-init run and `ssh host cmd` all get
+// by default. Reading those as a person printed the question where nobody could see
+// it and took the end-of-file that came straight back for the answer, so a machine
+// came up addressless with nobody having been asked.
 func IsTerminal() bool {
-	f, ok := In.(*os.File)
+	f, ok := in.(*os.File)
 	if !ok {
 		return false
 	}
 
-	fi, err := f.Stat()
-	if err != nil {
-		return false
-	}
-
-	return fi.Mode()&os.ModeCharDevice != 0
+	return isTerminal(f.Fd())
 }
 
 // Ask prints a prompt and reads one line. Returns io.EOF when input ends, which is
@@ -57,9 +76,7 @@ func IsTerminal() bool {
 func Ask(prompt string) (string, error) {
 	fmt.Fprint(Out, prompt)
 
-	r := bufio.NewReader(In)
-
-	line, err := r.ReadString('\n')
+	line, err := inBuf.ReadString('\n')
 	if err != nil && line == "" {
 		return "", err
 	}

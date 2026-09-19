@@ -75,7 +75,7 @@ configuration, and registers the boot service.
 | `--taint T` | a compartment label; repeat to carry more than one. Omit it and conflux mints one and prints it. |
 | `--no-taint` | join the realm's shared compartment instead. A deliberate choice; see [concepts.md](concepts.md). |
 | `--ipv4 PREFIX` | the overlay IPv4, as a prefix: `10.128.0.7/24`. |
-| `--no-ipv4` | IPv6-only, without prompting. |
+| `--no-ipv4` | IPv6-only, without prompting. It persists like every other setting, so a re-run without it stays IPv6-only. Refused beside `--ipv4`. |
 | `--subnet CIDR` | a private network this machine forwards for the realm; repeat for more. See [modes.md](modes.md). |
 | `--interface NAME` | the network interface name. Default `anchor0`. |
 | `--uplink DEV` | reach the realm over a link rather than the host's network: `/dev/ttyUSB0`, or `/dev/ttyUSB0:115200` with a line speed. See [uplink.md](uplink.md). |
@@ -116,10 +116,27 @@ edit. Name one only to reach a realm the manifest does not describe, which in pr
 means a test node. It persists like every other setting, so a machine brought up
 against one comes back to it after a reboot.
 
-With neither `--ipv4` nor `--no-ipv4`, conflux prompts — once. Re-running it on a
-machine that already has a configuration keeps the existing address and asks nothing.
-With no terminal to prompt at and neither flag given, it exits 2 rather than hang,
-which is what makes it safe in a script.
+With neither `--ipv4` nor `--no-ipv4`, conflux prompts — once in a machine's life.
+Re-running it on a machine that has been up with an interface before keeps what that
+machine has and asks nothing, and *what it has* includes no address at all: a blank
+answer is an answer — IPv6-only, from somebody who was shown what blank means — and
+so is `--no-ipv4`, so neither is asked about again. A machine converted from `proxy`
+is asked, because userspace has no interface to put an address on and the question
+has therefore never been put to it.
+
+Whether there is anybody to ask is a question for the terminal driver and not for
+`stat`. A character device is not a terminal: `/dev/null` is one, `NUL` on Windows
+is one, and `/dev/null` is the stdin of a service, a cron job, a cloud-init run and
+`ssh host 'conflux up'`. conflux used to read those as a person. It printed the
+question into the void, took the end-of-file that came back for the answer, and
+brought up a machine with no address that nobody had asked it to leave off. It now
+refuses and names both flags, which is also what it does when a terminal goes away
+mid-question. Nothing hangs, and nothing is decided by default, which is what makes
+both safe in a script.
+
+`--ipv4` and `--no-ipv4` contradict each other and are refused together, the way
+`--uplink`/`--no-uplink`, `--peers`/`--no-peers`, `--taint`/`--no-taint` and
+`--port`/`--no-port` are: the alternative is dropping an address somebody typed.
 
 Needs root.
 

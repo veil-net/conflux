@@ -19,12 +19,9 @@ name: release
 on:
   push:
     branches: [version3]
+  # Every manual run rebuilds the version this tree claims and replaces its artifacts.
+  # There is no checkbox: running this by hand is itself the request to republish.
   workflow_dispatch:
-    inputs:
-      overwrite:
-        description: Rebuild the version this tree already claims, replacing its release
-        type: boolean
-        default: false
 
 # Read by default; `build` raises its own. Neither `gate` nor `verify` can create a
 # release or sign anything.
@@ -58,9 +55,10 @@ jobs:
         id: decide
         env:
           GH_TOKEN: ${{ github.token }}
-          # Empty on a push -- `inputs` is an empty object on anything but a dispatch --
-          # so the test below is false and a merge cannot republish by accident.
-          overwrite: ${{ inputs.overwrite }}
+          # `push` on a merge, `workflow_dispatch` when somebody ran this by hand. Only
+          # the latter republishes, so a merge that leaves VERSION alone still cannot
+          # rebuild a published version by accident.
+          dispatched: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
           set -euo pipefail
 
@@ -87,9 +85,9 @@ jobs:
             *)   echo "::error::GitHub answered $code asking about $tag; refusing to guess" >&2; exit 1 ;;
           esac
 
-          # The one case where a published version is built again: this tree has not
-          # moved, but something it embeds has. The `shelf` tag moves, and a conflux
-          # release carries whatever anchor published most recently rather than a
+          # A hand-run always builds, published or not. The case it exists for: this tree
+          # has not moved, but something it embeds has. The `shelf` tag moves, and a
+          # conflux release carries whatever anchor published most recently rather than a
           # remembered one -- so a fix cut in anchor reaches users only when conflux is
           # built again. Bumping VERSION for that spends a version number on a tree whose
           # own source is unchanged.
@@ -98,7 +96,7 @@ jobs:
           # the release it finds at this tag. Nothing is deleted first, so the artifacts
           # are only ever replaced by artifacts -- there is no window where the version
           # exists and its downloads do not.
-          if [ "$release" = false ] && [ "$overwrite" = true ]; then
+          if [ "$release" = false ] && [ "$dispatched" = true ]; then
             release=true
             reason="$tag is published; this run replaces its artifacts"
 
@@ -123,7 +121,7 @@ jobs:
           else
             echo "$tag is already published; nothing to do"
             echo "Bump VERSION and merge to version3 to cut the next one, or run this"
-            echo "workflow by hand with overwrite to rebuild this one."
+            echo "workflow by hand to rebuild this one."
           fi
 
   verify:

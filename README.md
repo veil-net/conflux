@@ -9,9 +9,6 @@ Everything `anchorctl` can do, conflux can do too — any command conflux doesn'
 recognise is passed straight through to it unchanged. What conflux adds on top is
 enrolment, credential renewal, a configuration file, and a boot service.
 
-> **Status: in development.** The credential lasts seven days and renews itself
-> automatically; the wire format underneath is not yet stable. See [docs/](docs/).
-
 ## Quick start
 
 Install the binary, run `conflux up` on one machine, then run it on every other

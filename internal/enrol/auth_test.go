@@ -158,6 +158,13 @@ func TestDecodeAcceptsAnUnknownRenewalAuth(t *testing.T) {
 
 // TestTheSecretIsNotPrinted. The document already redacts itself, and the secret
 // arriving inside it is exactly why that has to keep holding.
+//
+// All four spellings, and the two Sprintf ones are not redundant with String()
+// even though fmt reaches String() to satisfy them today. What is being pinned is
+// the spelling an operator or a future maintainer actually writes -- `log.Printf("%s", m)`
+// -- and that is a different assertion from calling String() by hand: a Format
+// method, or a String promoted from a pointer receiver onto a value, would change
+// what the verb produces while String() went on being safe.
 func TestTheSecretIsNotPrinted(t *testing.T) {
 	m := manifest(t, guardianDocument)
 
@@ -165,7 +172,10 @@ func TestTheSecretIsNotPrinted(t *testing.T) {
 		"String":   m.String(),
 		"LogValue": m.LogValue(),
 		"%v":       fmt.Sprintf("%v", m),
-		"%s":       fmt.Sprintf("%s", m),
+		// staticcheck is right that String() would produce this value; it is wrong
+		// that this call should be it. The verb is the thing under test.
+		//lint:ignore S1025 the %s path is the assertion, not a way to reach String()
+		"%s": fmt.Sprintf("%s", m),
 	} {
 		if strings.Contains(s, theBearer) {
 			t.Errorf("%s printed the renewal secret", name)

@@ -149,6 +149,13 @@ new machine is the whole procedure.
 
 ## A guardian-issued credential
 
+> **The contract is written down once, in the other repository.**
+> [`guardian/docs/contracts/guardian-node.md`](https://github.com/veil-net/guardian/blob/main/docs/contracts/guardian-node.md)
+> defines the `renewalAuth` value, the name and shape of the secret beside it, the
+> renewal request and response bodies, the `export` block and the ship order. Two
+> repositories implement it and neither owns it; this page is conflux's side, and
+> anything here that disagrees with that document is a bug here.
+
 A self-hosted guardian is an operator running their own control plane and their own
 subtree of the realm tree. It serves **no enrolment route at all**, which is the whole
 shape of the difference: machines are commissioned in advance, in the operator's own

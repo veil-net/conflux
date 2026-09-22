@@ -144,10 +144,13 @@ conflux never writes it to a second file and never puts it in an argv. It goes t
 never named as a path in the request at all.
 
 **This file is the machine.** On the alpha realm there is no other copy in existence:
-enrolment stores nothing on the server, and the response was the only one. A
-guardian-issued manifest can be downloaded again from the guardian that minted it,
-which is a real difference and the only one — it is still the identity, and anyone
-holding it still *is* that anchor. See
+enrolment stores nothing on the server, and the response was the only one.
+
+A guardian-issued one is the single exception: the guardian that minted it holds the
+same material sealed, and an operator with an admin role can download it again for a
+machine they are rebuilding. That is a real difference and the only one — it is still
+the identity, anyone holding it still *is* that anchor, and a copy that leaves the
+machine has left. See
 [credentials.md](credentials.md) and [security.md](security.md).
 
 ## `state.json` — what conflux worked out

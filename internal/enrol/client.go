@@ -370,15 +370,28 @@ func checkScheme(raw string) error {
 	}
 }
 
-func (c *Client) sameHostAsBase(raw string) error {
-	target, err := url.Parse(raw)
+func (c *Client) sameHostAsBase(raw string) error { return SameHost(raw, c.base()) }
+
+// SameHost is the check that a stored field cannot redirect a POST.
+//
+// Exported because two callers need the same answer and the second one is the
+// import verb, which runs *before* anything is written. A credential whose renewal
+// URL names a host the configuration does not is one whose first renewal would be
+// refused, months later, by a message about a document the operator did not write
+// -- so the import path asks the question while a person is present to fix it.
+//
+// One implementation rather than two, and this is the whole reason it moved: the
+// import verb comparing hosts its own way, and the renewal comparing them this way,
+// is two answers to one question, and the more permissive of them is the way in.
+func SameHost(renewalURL, apiBase string) error {
+	target, err := url.Parse(renewalURL)
 	if err != nil {
-		return fmt.Errorf("%q is not a URL: %w", raw, err)
+		return fmt.Errorf("%q is not a URL: %w", renewalURL, err)
 	}
 
-	base, err := url.Parse(c.base())
+	base, err := url.Parse(apiBase)
 	if err != nil {
-		return fmt.Errorf("the API base %q is not a URL: %w", c.base(), err)
+		return fmt.Errorf("the API base %q is not a URL: %w", apiBase, err)
 	}
 
 	if !strings.EqualFold(target.Host, base.Host) {

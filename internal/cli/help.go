@@ -25,7 +25,7 @@ The third is either of those over a link instead of the host's IP network: --upl
 decides the medium, and the command it is written on decides what this machine gets.
 `
 
-const collisions = `Three of conflux's names are also anchorctl's, and each is resolved rather than guessed:
+const collisions = `Four of conflux's names are also anchorctl's, and each is resolved rather than guessed:
 
   conflux status              conflux's, plus anchorctl's beneath it
   conflux status -watch 5s    anchorctl's, because it was given arguments
@@ -36,8 +36,12 @@ const collisions = `Three of conflux's names are also anchorctl's, and each is r
   conflux anchorctl renew -cred FILE
                               anchorctl's: install a credential you already hold
 
-start, stop and restart are anchorctl's and conflux refuses to pass them through
-while it owns the configuration; use up and down, or the escape hatch above.
+  conflux start               conflux's: start from the saved configuration
+  conflux anchorctl start -identity FILE ...
+                              anchorctl's: build one from arguments
+
+stop and restart are anchorctl's and conflux refuses to pass them through while it
+owns the configuration; use down and start, or the escape hatch above.
 `
 
 // runHelp prints conflux's own usage and then anchorctl's, so one page covers both

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"os/exec"
 	"regexp"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -481,5 +483,58 @@ func TestLANDiscoveryTristate(t *testing.T) {
 	if _, err := chooseTristate("lan-discovery",
 		map[string]bool{"lan-discovery": true}, "maybe", nil); err == nil {
 		t.Error("a value that is not yes, no or auto should be refused")
+	}
+}
+
+// TestTheCollisionsAreTheDocumentedOnes reads the number off the binary.
+//
+// Four files used to carry a count of conflux's names and of the collisions among
+// them, and between them they said nine, ten, three and five -- none of which was
+// right, and one of which counted `help` as anchorctl's when anchorctl has no such
+// command. Prose that nothing checks drifts; this checks it.
+//
+// The set, rather than only the count, because adding a verb that happens to
+// collide should fail here with the name in the message rather than as an
+// off-by-one.
+func TestTheCollisionsAreTheDocumentedOnes(t *testing.T) {
+	if !anchor.Supported {
+		t.Skip("no anchor pair for this platform")
+	}
+
+	t.Setenv("CONFLUX_DIR", t.TempDir())
+
+	d := paths.Default()
+	if err := d.EnsureAll(); err != nil {
+		t.Fatalf("EnsureAll: %v", err)
+	}
+
+	tools, err := libexec.Ensure(d)
+	if err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+
+	theirs := anchorctlCommands(t, tools.Anchorctl)
+
+	var shared []string
+
+	for name := range verbs() {
+		if theirs[name] {
+			shared = append(shared, name)
+		}
+	}
+
+	sort.Strings(shared)
+
+	want := []string{"proxy", "renew", "start", "status"}
+	if !slices.Equal(shared, want) {
+		t.Errorf("conflux and anchorctl share %v, and the docs describe %v.\n"+
+			"  Resolve the new collision the way the others are, then update the count in\n"+
+			"  internal/cli/help.go, internal/cli/cli.go, docs/commands.md and README.md.",
+			shared, want)
+	}
+
+	// The help text an operator reads says the same number, spelled out.
+	if !strings.HasPrefix(collisions, "Four of conflux's names") {
+		t.Errorf("the help text disagrees with the %d collisions that exist", len(want))
 	}
 }

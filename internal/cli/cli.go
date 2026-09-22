@@ -33,11 +33,23 @@ type verb struct {
 // verbs is the closed set of names conflux keeps for itself. Everything else
 // reaches anchorctl.
 //
-// Five of these shadow an anchorctl command -- start, proxy, renew, status and help -- and
-// each resolves its own collision rather than guessing. See the comment on each.
+// Four of them shadow an anchorctl command -- start, proxy, renew and status --
+// and each resolves its own collision rather than guessing. See the comment on
+// each, and TestTheCollisionsAreTheDocumentedOnes, which reads the number off the
+// embedded binary rather than leaving it to be counted by hand here and in two
+// docs.
+//
+// It was five here, three in the help text and three in the README, and none of
+// them was right: `help` was counted as a collision and anchorctl has no such
+// command -- it forwards unrecognised names and anchorctl prints its general
+// usage. A number nothing checks is a number that rots.
+//
+// There is deliberately no total for the set itself. Four places carried one and
+// they said nine, ten, three and five between them; the map below is the answer.
 func verbs() map[string]verb {
 	return map[string]verb{
 		"up":        {run: runUp, summary: "join the overlay with a network interface", usage: "conflux up [--taint T] [--ipv4 PREFIX | --no-ipv4] [--subnet CIDR]... [--uplink DEV | --no-uplink]"},
+		"enrol":     {run: runEnrol, summary: "install a credential this machine was given, rather than drawing one", usage: "conflux enrol --manifest FILE --api URL [--ipv4 PREFIX]"},
 		"proxy":     {run: runProxy, summary: "publish a local service on the overlay, without an interface", usage: "conflux proxy PORT[/NETWORK]=BACKEND ... [--uplink DEV | --no-uplink]"},
 		"start":     {run: runStart, summary: "start the anchor now, from the saved configuration", usage: "conflux start"},
 		"down":      {run: runDown, summary: "stop the anchor now; a reboot brings it back", usage: "conflux down"},

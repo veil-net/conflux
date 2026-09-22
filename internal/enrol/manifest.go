@@ -127,6 +127,30 @@ func (m *Manifest) Taints() []string {
 	return out
 }
 
+// IPv4 is an overlay address the issuer allocated, as a prefix.
+//
+// **Read once, by the import verb, and never on a start.** Guardian allocates
+// addresses out of a range it keeps in a database, so the number has to travel
+// somehow, and a field the operator can see in `conflux config` afterwards beats a
+// number retyped from a web page.
+//
+// The reason it is seeded rather than obeyed is the same one that makes conflux
+// pass both exit flags explicitly instead of letting the manifest supply them: a
+// document must not decide, on every start, what this machine does. The difference
+// is what the two settings are. An exit flag makes a machine a route to the public
+// internet for everybody else, so inheriting one silently is a change of role. An
+// address grants nothing and reaches nobody -- and unlike an exit, an operator who
+// disagrees with it can see it in the config file and change it, because conflux
+// wrote it there once rather than re-reading it behind them.
+//
+// Empty when the issuer allocated none, which is every alpha document and is not an
+// error: the v6 address is derived from the identity and needs no decision.
+func (m *Manifest) IPv4() string {
+	s, _ := m.string("ipv4")
+
+	return s
+}
+
 // Bootstrap is the peer list the issuer supplied.
 func (m *Manifest) Bootstrap() []string {
 	var out []string

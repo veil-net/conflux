@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"os"
+	"runtime"
 	"slices"
 	"testing"
 
@@ -129,7 +130,24 @@ func TestTheConfigSurvivesARestart(t *testing.T) {
 
 // TestTheConfigIsNotReadableByAnyoneElse. It carries the export headers, which
 // authenticate this machine to a collector. anchord warns about exactly this.
+//
+// The protection is real on both platforms and only one of them can be asserted
+// this way. writeDaemonConfig goes through config.WriteFileAtomic, which chmods
+// the descriptor before the content and -- for any perm with no group or other
+// bits -- replaces the DACL with SYSTEM and Administrators on Windows, because a
+// Chmod(0600) there moves the read-only bit and nothing else. So the file is
+// restricted on Windows too; `Mode().Perm()` just reports 0666 for it, which is
+// what this used to fail on.
+//
+// Skipped rather than rewritten into something that passes everywhere: the same
+// split is already made for the same reason at config/atomic_test.go, and one
+// weaker assertion running on two platforms would be worse than one real
+// assertion running on the platform that can carry it.
 func TestTheConfigIsNotReadableByAnyoneElse(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("mode bits are not meaningful on windows; the DACL is")
+	}
+
 	d := dirs(t)
 
 	if err := writeDaemonConfig(d, &config.Config{}); err != nil {

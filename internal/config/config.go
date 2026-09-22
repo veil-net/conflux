@@ -151,6 +151,20 @@ type Config struct {
 	TUNName    string `json:"tunName,omitempty"`
 	APIBaseURL string `json:"apiBaseUrl,omitempty"`
 
+	// Export is where this machine's telemetry goes, and nil is the normal case:
+	// an anchor exports nothing until its operator says where.
+	//
+	// It lives here rather than being set over the socket because an RPC-set
+	// export dies with the daemon. `anchorctl export -endpoint ...` configures a
+	// running process and nothing else, so the next restart -- a reboot, a crash,
+	// a credential renewal that needed one -- comes back silent, and the only
+	// symptom is a machine missing from a dashboard. A field in this file is
+	// rendered to the daemon's own config on every start, which is the mechanism
+	// anchor documents for exactly this.
+	//
+	// See export.go for why it mirrors anchor.v1.ExportConfig name for name.
+	Export *Export `json:"export,omitempty"`
+
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -217,6 +231,10 @@ func (c *Config) Validate() error {
 		if err := ValidateTaint(t); err != nil {
 			return err
 		}
+	}
+
+	if err := c.Export.Validate(); err != nil {
+		return err
 	}
 
 	if c.IPv4 != "" {

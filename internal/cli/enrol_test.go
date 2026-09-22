@@ -241,3 +241,107 @@ func TestEnrolAcceptsAnAlphaManifest(t *testing.T) {
 		t.Errorf("ipv4 = %q, want none: the alpha realm allocates no address", cfg.IPv4)
 	}
 }
+
+// exportDoc is a guardian manifest that also tells the node where to report.
+const exportDoc = `{
+  "formatVersion": 1,
+  "kind": "anchor",
+  "identity": "99887766554433221100ffeeddccbbaa",
+  "chain": "Z3VhcmRpYW4tY2hhaW4=",
+  "notAfter": "2026-10-13T04:12:00.000Z",
+  "renewalUrl": "https://guardian.example.gov/nodes/abc/credential",
+  "renewalAuth": "node-secret",
+  "renewalSecret": "abc.c2VjcmV0",
+  "export": {
+    "enabled": true,
+    "endpoint": "guardian.example.gov:4317",
+    "metrics": true,
+    "headers": {"authorization": "Basic YWJjOnNlY3JldA=="}
+  },
+  "issuedAt": "2026-09-13T04:12:00.000Z"
+}`
+
+// TestEnrolSeedsTheExportBlock. An operator who commissioned fifty nodes in a web
+// UI should not then type the same endpoint and fifty different credentials into
+// fifty config files by hand.
+func TestEnrolSeedsTheExportBlock(t *testing.T) {
+	d, path := site(t, exportDoc)
+
+	if err := importCredential(d, path, guardianAPI, ""); err != nil {
+		t.Fatalf("importCredential: %v", err)
+	}
+
+	cfg, err := config.Load(d)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if cfg.Export == nil || !cfg.Export.Enabled {
+		t.Fatal("the export block did not reach conflux.json")
+	}
+
+	if cfg.Export.Endpoint != "guardian.example.gov:4317" {
+		t.Errorf("endpoint = %q", cfg.Export.Endpoint)
+	}
+
+	if cfg.Export.Headers["authorization"] == "" {
+		t.Error("the collector credential did not survive; this node would be refused")
+	}
+}
+
+// TestEnrolRefusesAnExportBlockThatWouldDoNothing. A block naming no endpoint is a
+// machine that starts cleanly and exports nothing, and the symptom arrives weeks
+// later as an absence on a dashboard.
+func TestEnrolRefusesAnExportBlockThatWouldDoNothing(t *testing.T) {
+	for name, broken := range map[string]string{
+		"no endpoint": `"enabled": true, "metrics": true`,
+		"no signal":   `"enabled": true, "endpoint": "collector:4317"`,
+		"a URL":       `"enabled": true, "endpoint": "https://collector:4317", "metrics": true`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc := strings.Replace(exportDoc,
+				`"enabled": true,
+    "endpoint": "guardian.example.gov:4317",
+    "metrics": true,
+    "headers": {"authorization": "Basic YWJjOnNlY3JldA=="}`, broken, 1)
+
+			d, path := site(t, doc)
+
+			if err := importCredential(d, path, guardianAPI, ""); err == nil {
+				t.Errorf("importCredential accepted an export block with %s", name)
+			} else if !strings.Contains(err.Error(), "export") {
+				t.Errorf("the refusal does not say it is about export: %v", err)
+			}
+
+			if config.HasManifest(d) {
+				t.Error("a refused import wrote the manifest anyway")
+			}
+		})
+	}
+}
+
+// TestEnrolDoesNotOverwriteAnExportBlockTheOperatorWrote. Re-import is refused
+// anyway, so the only way to arrive here with one set is somebody having written
+// it, and a document must not replace that.
+func TestEnrolDoesNotOverwriteAnExportBlockTheOperatorWrote(t *testing.T) {
+	d, path := site(t, exportDoc)
+
+	mine := &config.Config{Mode: config.ModeTUN, Taints: []string{"site"},
+		Export: &config.Export{Enabled: true, Endpoint: "mine:4317", Metrics: true}}
+	if err := config.Save(d, mine); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	if err := importCredential(d, path, guardianAPI, ""); err != nil {
+		t.Fatalf("importCredential: %v", err)
+	}
+
+	cfg, err := config.Load(d)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if cfg.Export.Endpoint != "mine:4317" {
+		t.Errorf("endpoint = %q, want the one the operator wrote", cfg.Export.Endpoint)
+	}
+}

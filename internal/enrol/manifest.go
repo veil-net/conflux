@@ -151,6 +151,45 @@ func (m *Manifest) IPv4() string {
 	return s
 }
 
+// Export is the telemetry configuration the issuer suggested, as raw JSON.
+//
+// **Seeded at import and never obeyed at run time**, exactly like IPv4, and this
+// is the field where that distinction was hardest to settle. The precedent cuts
+// both ways and both halves of it are real.
+//
+// For carrying it: telemetrySecret already travels in this document, so the
+// principle that a manifest may configure how a machine is observed is not new.
+// And the alternative is worse in practice -- an operator who commissioned fifty
+// nodes in a web UI would then have to type the same collector endpoint and a
+// different per-node credential into fifty config files by hand, which is a
+// procedure with a typo in it.
+//
+// Against: anchor's own proto calls Observability "the one interface here that
+// tells the daemon to dial an arbitrary network address and ship it this realm's
+// operational detail", and conflux refuses to inherit the exit flags for a reason
+// that rhymes -- an anchor that became an internet exit because a document said so
+// is the worst kind of surprise.
+//
+// What resolves it is *when* rather than *whether*. The exit flags are refused
+// because they would be re-read on every start, so a document could keep deciding
+// what this machine does for other people, indefinitely, behind an operator who
+// never agreed. This is read once, by a person running a command, and written into
+// conflux.json where that person can see it in `conflux config` and change it --
+// and from then on the document is not consulted again. A suggestion at
+// commissioning time is a different thing from a standing instruction, and the
+// difference is the whole of why one is refused and this is not.
+//
+// Raw rather than parsed, because enrol knows nothing about the shape -- config
+// owns it, and a second decoder here would be a second schema.
+func (m *Manifest) Export() json.RawMessage {
+	v, ok := m.raw["export"]
+	if !ok {
+		return nil
+	}
+
+	return v
+}
+
 // Bootstrap is the peer list the issuer supplied.
 func (m *Manifest) Bootstrap() []string {
 	var out []string

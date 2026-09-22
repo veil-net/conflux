@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -141,6 +142,10 @@ func importCredential(d paths.Dirs, manifestPath, apiBase, ipv4Flag string) erro
 	cfg.APIBaseURL = apiBase
 	cfg.IPv4 = address
 
+	if err := seedExport(cfg, m); err != nil {
+		return err
+	}
+
 	// **The configuration first, then the manifest, and the order is the recovery
 	// story rather than a preference.**
 	//
@@ -249,6 +254,35 @@ func chooseImportedIPv4(m *enrol.Manifest, flagValue string) (string, error) {
 	}
 
 	return value, nil
+}
+
+// seedExport copies the issuer's telemetry block into the configuration, once.
+//
+// Validated here rather than written and discovered later: a block naming no
+// endpoint, or no signal, is a machine that starts cleanly and exports nothing, and
+// the symptom of that arrives weeks afterwards as an absence on a dashboard.
+//
+// An existing block wins. Re-importing is refused anyway, so the only way to reach
+// this with one already set is an operator who wrote it themselves -- and a
+// document must not overwrite that.
+func seedExport(cfg *config.Config, m *enrol.Manifest) error {
+	raw := m.Export()
+	if len(raw) == 0 || cfg.Export != nil {
+		return nil
+	}
+
+	var export config.Export
+	if err := json.Unmarshal(raw, &export); err != nil {
+		return fmt.Errorf("the manifest's export block is not one conflux understands: %w", err)
+	}
+
+	if err := export.Validate(); err != nil {
+		return fmt.Errorf("the manifest's export block: %w", err)
+	}
+
+	cfg.Export = &export
+
+	return nil
 }
 
 func saveImported(d paths.Dirs, cfg *config.Config, env config.Envelope) error {

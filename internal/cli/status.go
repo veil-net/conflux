@@ -57,6 +57,7 @@ func runStatus(ctx context.Context, args []string) int {
 	reportBinaries(d)
 
 	ui.Field("api", cfg.APIBase())
+	reportExport(ctx, d, cfg)
 	ui.Println()
 
 	appendAnchorStatus(ctx, d)
@@ -173,6 +174,73 @@ func reportBinaries(d paths.Dirs) {
 	if st.BinSetID != anchor.SetID() {
 		ui.Field("binaries", "stale — conflux was upgraded; run \"conflux start\" to restart onto the new anchor")
 	}
+}
+
+// reportExport says where telemetry goes, and -- when the two disagree -- which
+// surface the running daemon is actually obeying.
+//
+// The disagreement is real and is the reason this reads the daemon at all rather
+// than printing the config file. Three surfaces can set export: conflux.json,
+// rendered to anchord's -config on every spawn; a SetExport call, which
+// `conflux anchorctl export -endpoint ...` makes; and a SIGHUP, which re-reads the
+// file and discards the call. So a machine can be exporting somewhere its own
+// configuration does not name, until the next restart puts it back.
+//
+// That is a supportable arrangement and an unsupportable surprise, so the fix is to
+// show it. anchor made it showable on purpose -- ExportSource exists, in its own
+// words, because "an operator looking at a daemon that is not exporting what they
+// asked for has no way to find out who asked otherwise".
+func reportExport(ctx context.Context, d paths.Dirs, cfg *config.Config) {
+	want := "none — nothing is exported until an endpoint is set"
+	if cfg.Export != nil && cfg.Export.Enabled {
+		want = cfg.Export.Endpoint + " — " + strings.Join(exportSignals(cfg.Export), ", ")
+	}
+
+	ui.Field("telemetry", want)
+
+	// What the daemon believes, and only when it can be asked. A machine that is
+	// not running has nothing to disagree with.
+	ctl, err := runCtl(d)
+	if err != nil || ctl.Token == "" {
+		return
+	}
+
+	out, err := runQuiet(ctx, ctl.Bin, ctl.Env(), []string{"export"})
+	if err != nil {
+		return
+	}
+
+	for line := range strings.SplitSeq(strings.TrimSpace(out), "\n") {
+		key, value, ok := strings.Cut(strings.TrimSpace(line), "set by")
+		if ok && key == "" {
+			source := strings.TrimSpace(value)
+
+			// Named rather than merely printed. "the config file" is conflux.json
+			// having been applied and needs no explanation; anything else is a
+			// live override with an end date.
+			if source != "the config file" {
+				source += " — an override, discarded at the next restart"
+			}
+
+			ui.Field("", "set by "+source)
+		}
+	}
+}
+
+// exportSignals names what is being sent, for a status line.
+func exportSignals(e *config.Export) []string {
+	var out []string
+
+	for _, s := range []struct {
+		on   bool
+		name string
+	}{{e.Metrics, "metrics"}, {e.Traces, "traces"}, {e.Logs, "logs"}} {
+		if s.on {
+			out = append(out, s.name)
+		}
+	}
+
+	return out
 }
 
 // appendAnchorStatus prints anchorctl's own answer beneath conflux's, indented.

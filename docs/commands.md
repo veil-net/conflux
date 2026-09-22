@@ -212,7 +212,7 @@ different anchor from the other.
 ## `conflux enrol`
 
 ```
-conflux enrol --manifest FILE --api URL [--ipv4 PREFIX]
+conflux enrol --manifest FILE [--api URL] [--ipv4 PREFIX] [--taint T]...
 ```
 
 Installs a credential this machine was **given** rather than one it drew.
@@ -226,11 +226,31 @@ deployment it is the only way a node is provisioned.
 `--manifest -` reads the document from stdin, so it need never land on disk at whatever
 mode the shell's umask chose. anchorctl spells the same thing the same way.
 
-**`--api` is required and is deliberately not read out of the manifest.** conflux checks
-that the document's `renewalUrl` names the same host, and that check exists so a stored
-field cannot decide where a credential is POSTed — deriving one operand from the other
-would make them agree by construction and check nothing. A mismatch is refused, naming
-both hosts, rather than discovered at the first renewal weeks later.
+**The file is enough on its own, and the three flags are overrides.** A guardian
+document carries an absolute `renewalUrl`, the overlay address the guardian allocated
+out of its realm's range, and the compartment it put the machine in — because a guardian
+knows all three and the operator would only be retyping them. That is the difference
+between this and the public alpha realm, whose document carries an identity and little
+else.
+
+| | overrides | when you would |
+|---|---|---|
+| `--api URL` | the API base read out of `renewalUrl` | the guardian is reached at a different name from here — a split-horizon DNS, a bastion |
+| `--ipv4 PREFIX` | the address the issuer allocated | you are rebuilding a machine onto an address something else already hardcodes |
+| `--taint T` | the compartment the issuer chose; repeat for more | this machine belongs in a different compartment from the one it was commissioned into |
+
+`--api` is also an assertion when given: the document must renew against the same host,
+and a mismatch is refused naming both rather than discovered at the first renewal weeks
+later. It stopped being *required* because the argument for requiring it does not hold —
+the same document carries the identity seed and the renewal bearer, so anybody able to
+rewrite its `renewalUrl` already holds everything a redirect would steal.
+
+**Taints are validated, not copied through.** A label conflux cannot carry — a comma, a
+space, over 64 bytes, more than 32 of them — is refused here rather than at the next
+start, where the complaint would come from anchor instead of from the document that
+caused it. A document carrying none leaves the configuration with none, and `up` then
+mints one and says so; choosing a compartment quietly is the one thing conflux will not
+do.
 
 **It refuses to replace an existing manifest.** `up` enrols only when there is none,
 because a second enrolment is a second AnchorID and a second overlay address with every

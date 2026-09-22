@@ -58,7 +58,7 @@ func site(t *testing.T, doc string) (paths.Dirs, string) {
 func TestEnrolInstallsWhatItWasGiven(t *testing.T) {
 	d, path := site(t, guardianDoc)
 
-	if err := importCredential(d, path, guardianAPI, ""); err != nil {
+	if err := importCredential(d, path, guardianAPI, "", nil); err != nil {
 		t.Fatalf("importCredential: %v", err)
 	}
 
@@ -101,7 +101,7 @@ func TestEnrolInstallsWhatItWasGiven(t *testing.T) {
 func TestEnrolWillNotReplaceAnIdentity(t *testing.T) {
 	d, path := site(t, guardianDoc)
 
-	if err := importCredential(d, path, guardianAPI, ""); err != nil {
+	if err := importCredential(d, path, guardianAPI, "", nil); err != nil {
 		t.Fatalf("the first import: %v", err)
 	}
 
@@ -110,7 +110,7 @@ func TestEnrolWillNotReplaceAnIdentity(t *testing.T) {
 		t.Fatalf("LoadManifest: %v", err)
 	}
 
-	err = importCredential(d, path, guardianAPI, "")
+	err = importCredential(d, path, guardianAPI, "", nil)
 	if err == nil {
 		t.Fatal("importCredential replaced an existing identity")
 	}
@@ -155,7 +155,7 @@ func TestEnrolRefusesBeforeWriting(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			d, path := site(t, tc.doc)
 
-			err := importCredential(d, path, tc.api, "")
+			err := importCredential(d, path, tc.api, "", nil)
 			if err == nil {
 				t.Fatalf("importCredential accepted %s", name)
 			}
@@ -175,15 +175,41 @@ func TestEnrolRefusesBeforeWriting(t *testing.T) {
 	}
 }
 
-// TestEnrolDoesNotDeriveTheAPIFromTheManifest. The host check exists because a
-// stored field must not decide where a credential is POSTed; reading --api out of
-// the document's own renewalUrl would make the two agree by construction and check
-// nothing. The verb requires --api, so the mismatch above is reachable at all.
-func TestEnrolDoesNotDeriveTheAPIFromTheManifest(t *testing.T) {
+// TestEnrolDerivesTheAPIFromTheManifest. The document names an absolute renewal
+// URL because a self-hosted API is wherever its operator put it, so the base is
+// already there and making somebody retype it buys a typo rather than a check.
+//
+// This replaces a test that pinned the opposite. The argument then was that a
+// stored field must not decide where a credential is POSTed -- but the same
+// document carries the identity seed and the renewal bearer, so anyone able to
+// rewrite its renewalUrl already holds everything the redirect would steal. The
+// check was defending a boundary that is not there, at the cost of a required flag
+// on every enrolment.
+func TestEnrolDerivesTheAPIFromTheManifest(t *testing.T) {
 	d, path := site(t, guardianDoc)
 
-	if err := importCredential(d, path, "", ""); err == nil {
-		t.Fatal("importCredential accepted an empty --api and took the manifest's word for it")
+	if err := importCredential(d, path, "", "", nil); err != nil {
+		t.Fatalf("importCredential with no --api: %v", err)
+	}
+
+	cfg, err := config.Load(d)
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+
+	if got, want := cfg.APIBaseURL, guardianAPI; got != want {
+		t.Errorf("APIBaseURL = %q, want %q read out of the manifest's renewalUrl", got, want)
+	}
+}
+
+// TestEnrolStillChecksAnApiThatWasGiven. The flag is an override and an assertion
+// at once: pass it and the document must agree, so an operator who wants the old
+// belt-and-braces check can still have it by naming the host they expect.
+func TestEnrolStillChecksAnApiThatWasGiven(t *testing.T) {
+	d, path := site(t, guardianDoc)
+
+	if err := importCredential(d, path, "https://elsewhere.example", "", nil); err == nil {
+		t.Fatal("importCredential accepted an --api the manifest does not renew against")
 	}
 
 	if config.HasManifest(d) {
@@ -196,7 +222,7 @@ func TestEnrolDoesNotDeriveTheAPIFromTheManifest(t *testing.T) {
 func TestEnrolLetsTheFlagWin(t *testing.T) {
 	d, path := site(t, guardianDoc)
 
-	if err := importCredential(d, path, guardianAPI, "10.99.0.3/24"); err != nil {
+	if err := importCredential(d, path, guardianAPI, "10.99.0.3/24", nil); err != nil {
 		t.Fatalf("importCredential: %v", err)
 	}
 
@@ -207,6 +233,87 @@ func TestEnrolLetsTheFlagWin(t *testing.T) {
 
 	if cfg.IPv4 != "10.99.0.3/24" {
 		t.Errorf("ipv4 = %q, want the flag", cfg.IPv4)
+	}
+}
+
+// TestEnrolTakesTheTaintsTheGuardianChose. The compartment is the guardian's
+// decision because it is the one thing in the document that says which machines
+// may reach this one, and a fleet whose members each mint their own taint is a
+// fleet of one-machine networks. `up` mints when the configuration has none, so
+// enrol writing them is what stops that happening per node.
+func TestEnrolTakesTheTaintsTheGuardianChose(t *testing.T) {
+	doc := strings.Replace(guardianDoc, `"taints": []`, `"taints": ["site-alpha", "tier-2"]`, 1)
+	d, path := site(t, doc)
+
+	if err := importCredential(d, path, "", "", nil); err != nil {
+		t.Fatalf("importCredential: %v", err)
+	}
+
+	cfg, err := config.Load(d)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if got, want := strings.Join(cfg.Taints, ","), "site-alpha,tier-2"; got != want {
+		t.Errorf("taints = %q, want %q", got, want)
+	}
+}
+
+// TestEnrolLetsTheTaintFlagWin, for the same reason --ipv4 wins: a person at the
+// terminal is deciding now and the document was written earlier.
+func TestEnrolLetsTheTaintFlagWin(t *testing.T) {
+	doc := strings.Replace(guardianDoc, `"taints": []`, `"taints": ["site-alpha"]`, 1)
+	d, path := site(t, doc)
+
+	if err := importCredential(d, path, "", "", []string{"site-beta"}); err != nil {
+		t.Fatalf("importCredential: %v", err)
+	}
+
+	cfg, err := config.Load(d)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if got, want := strings.Join(cfg.Taints, ","), "site-beta"; got != want {
+		t.Errorf("taints = %q, want the flag %q", got, want)
+	}
+}
+
+// TestEnrolRefusesATaintItCannotRepresent. Validated at import rather than copied
+// through, because the alternative is a machine that enrols cleanly and then fails
+// to come up, reporting the problem from anchor instead of from the document that
+// caused it.
+func TestEnrolRefusesATaintItCannotRepresent(t *testing.T) {
+	doc := strings.Replace(guardianDoc, `"taints": []`, `"taints": ["has a space"]`, 1)
+	d, path := site(t, doc)
+
+	if err := importCredential(d, path, "", "", nil); err == nil {
+		t.Fatal("importCredential accepted a taint conflux cannot carry")
+	}
+
+	if config.HasManifest(d) {
+		t.Error("it wrote the manifest anyway")
+	}
+}
+
+// TestEnrolLeavesTaintsAloneWhenNobodySaid. An empty list in the document is the
+// alpha shape and means "not my decision", so the configuration keeps none and `up`
+// mints one loudly. Choosing a compartment quietly here would be the one thing
+// conflux refuses to do anywhere else.
+func TestEnrolLeavesTaintsAloneWhenNobodySaid(t *testing.T) {
+	d, path := site(t, guardianDoc)
+
+	if err := importCredential(d, path, "", "", nil); err != nil {
+		t.Fatalf("importCredential: %v", err)
+	}
+
+	cfg, err := config.Load(d)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if len(cfg.Taints) != 0 {
+		t.Errorf("taints = %v, want none so that up mints and says so", cfg.Taints)
 	}
 }
 
@@ -228,7 +335,7 @@ func TestEnrolAcceptsAnAlphaManifest(t *testing.T) {
 
 	d, path := site(t, alpha)
 
-	if err := importCredential(d, path, "https://api.veilnet.com.au", ""); err != nil {
+	if err := importCredential(d, path, "https://api.veilnet.com.au", "", nil); err != nil {
 		t.Fatalf("importCredential: %v", err)
 	}
 
@@ -267,7 +374,7 @@ const exportDoc = `{
 func TestEnrolSeedsTheExportBlock(t *testing.T) {
 	d, path := site(t, exportDoc)
 
-	if err := importCredential(d, path, guardianAPI, ""); err != nil {
+	if err := importCredential(d, path, guardianAPI, "", nil); err != nil {
 		t.Fatalf("importCredential: %v", err)
 	}
 
@@ -307,7 +414,7 @@ func TestEnrolRefusesAnExportBlockThatWouldDoNothing(t *testing.T) {
 
 			d, path := site(t, doc)
 
-			if err := importCredential(d, path, guardianAPI, ""); err == nil {
+			if err := importCredential(d, path, guardianAPI, "", nil); err == nil {
 				t.Errorf("importCredential accepted an export block with %s", name)
 			} else if !strings.Contains(err.Error(), "export") {
 				t.Errorf("the refusal does not say it is about export: %v", err)
@@ -332,7 +439,7 @@ func TestEnrolDoesNotOverwriteAnExportBlockTheOperatorWrote(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	if err := importCredential(d, path, guardianAPI, ""); err != nil {
+	if err := importCredential(d, path, guardianAPI, "", nil); err != nil {
 		t.Fatalf("importCredential: %v", err)
 	}
 

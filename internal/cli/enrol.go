@@ -14,6 +14,7 @@ import (
 	"github.com/veil-net/conflux/internal/enrol"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/privcheck"
+	"github.com/veil-net/conflux/internal/taint"
 	"github.com/veil-net/conflux/internal/ui"
 )
 
@@ -38,26 +39,42 @@ import (
 //     truncated download fails here rather than at the next boot;
 //   - its renewalAuth is resolved, so a scheme this build does not implement is
 //     read by the person holding the terminal rather than by a timer months later;
-//   - its renewal URL is checked against --api, because a credential whose renewal
-//     host the configuration does not name is one that cannot renew;
+//   - its renewal URL is read, because that is where the API base comes from and a
+//     document that cannot say where it renews is one that never will;
 //   - an existing manifest is refused outright.
+//
+// **The three flags are overrides, and the manifest is the source.** A guardian
+// document carries the renewal URL, the overlay address and the taints, because a
+// guardian knows all three -- it allocated the address out of a range it keeps and
+// it decided which compartment the machine belongs in. That is the difference
+// between this and the public alpha realm, whose document carries an identity and
+// little else. So the ordinary invocation is `conflux enrol --manifest FILE` and
+// nothing more, and each flag exists for the case where a person at the terminal
+// knows something the issuer did not.
 func runEnrol(_ context.Context, args []string) int {
 	fs := flag.NewFlagSet("enrol", flag.ContinueOnError)
 	fs.SetOutput(ui.Errw)
 
+	var taints repeated
+
 	manifest := fs.String("manifest", "", "the manifest file to install, or - for stdin")
-	apiBase := fs.String("api", "", "the API that issued it, as a base URL")
+	apiBase := fs.String("api", "",
+		"the API that issued it, as a base URL, overriding the one its renewal URL names")
 	ipv4 := fs.String("ipv4", "", "overlay IPv4 as a prefix, overriding whatever the manifest allocated")
+	fs.Var(&taints, "taint",
+		"a compartment label, overriding whatever the manifest carries; repeat for more")
 
 	fs.Usage = func() {
 		ui.Printf("conflux enrol — install a credential this machine was given\n\n" +
-			"  conflux enrol --manifest FILE --api URL [--ipv4 PREFIX]\n\n" +
+			"  conflux enrol --manifest FILE [--api URL] [--ipv4 PREFIX] [--taint T]...\n\n" +
 			"For a machine commissioned somewhere else: a self-hosted guardian mints the\n" +
 			"identity, signs the credential and hands you one file. This installs it, and\n" +
 			"then `conflux up` starts from it without enrolling.\n\n" +
-			"--api is required and is not read out of the manifest. The renewal URL inside\n" +
-			"the document is checked against it, and the point of that check is that a\n" +
-			"stored field cannot decide where a credential is sent.\n\n" +
+			"The file is enough on its own. A guardian document names its own renewal URL,\n" +
+			"the overlay address the guardian allocated and the compartment it put this\n" +
+			"machine in, so the three flags exist only to overrule one of those from the\n" +
+			"terminal. --api is also checked when given: the document must renew against\n" +
+			"the same host.\n\n" +
 			"It refuses to replace a manifest that already exists. Replacing one is a new\n" +
 			"identity and a new overlay address, which orphans every peer this machine has.\n")
 	}
@@ -66,7 +83,7 @@ func runEnrol(_ context.Context, args []string) int {
 		return ExitUsage
 	}
 
-	if *manifest == "" || *apiBase == "" {
+	if *manifest == "" {
 		fs.Usage()
 
 		return ExitUsage
@@ -81,7 +98,7 @@ func runEnrol(_ context.Context, args []string) int {
 		return fail(err)
 	}
 
-	if err := importCredential(d, *manifest, *apiBase, *ipv4); err != nil {
+	if err := importCredential(d, *manifest, *apiBase, *ipv4, taints); err != nil {
 		return fail(err)
 	}
 
@@ -94,7 +111,7 @@ func runEnrol(_ context.Context, args []string) int {
 // owns the terminal -- flags, privilege, exit codes -- and this owns the decision,
 // so the refusals below are reachable from a test rather than only from a root
 // shell. Every one of them is a refusal somebody will eventually hit.
-func importCredential(d paths.Dirs, manifestPath, apiBase, ipv4Flag string) error {
+func importCredential(d paths.Dirs, manifestPath, apiBase, ipv4Flag string, taintFlag []string) error {
 	// First, and before the file is even read. The check is about an identity that
 	// already exists, so it must not depend on the new document being any good --
 	// otherwise a malformed file reports its own problem and hides this one.
@@ -125,11 +142,17 @@ func importCredential(d paths.Dirs, manifestPath, apiBase, ipv4Flag string) erro
 		return err
 	}
 
-	if err := checkRenewalTarget(m, apiBase); err != nil {
+	base, err := chooseAPIBase(m, apiBase)
+	if err != nil {
 		return err
 	}
 
 	address, err := chooseImportedIPv4(m, ipv4Flag)
+	if err != nil {
+		return err
+	}
+
+	compartments, err := chooseImportedTaints(m, taintFlag)
 	if err != nil {
 		return err
 	}
@@ -139,8 +162,17 @@ func importCredential(d paths.Dirs, manifestPath, apiBase, ipv4Flag string) erro
 		return err
 	}
 
-	cfg.APIBaseURL = apiBase
+	cfg.APIBaseURL = base
 	cfg.IPv4 = address
+
+	// Left alone when the document says nothing, rather than defaulted here. `up`
+	// mints a taint for a machine whose configuration has none, and it explains
+	// itself while doing it -- so a guardian that ships no taints lands the
+	// operator in the one place conflux is loud about instead of in a compartment
+	// this verb chose quietly.
+	if len(compartments) > 0 {
+		cfg.Taints = compartments
+	}
 
 	if err := seedExport(cfg, m); err != nil {
 		return err
@@ -164,12 +196,16 @@ func importCredential(d paths.Dirs, manifestPath, apiBase, ipv4Flag string) erro
 
 	ui.Printf("credential installed\n")
 	ui.Field("from", manifestPath)
-	ui.Field("api", apiBase)
+	ui.Field("api", base)
 	ui.Field("renewal", m.RenewalURL())
 	ui.Field("expires", m.NotAfter().Format("2006-01-02 15:04 MST"))
 
 	if address != "" {
 		ui.Field("ipv4", address)
+	}
+
+	if len(compartments) > 0 {
+		ui.Field("taint", strings.Join(compartments, ", "))
 	}
 
 	if len(m.Bootstrap()) > 0 {
@@ -218,22 +254,51 @@ func readEnvelope(path string) (config.Envelope, error) {
 // construction, which is exactly the check being removed: SameHost exists so that a
 // field conflux stores and re-reads cannot decide where a credential is POSTed, and
 // a check whose other operand comes from the same document checks nothing at all.
-func checkRenewalTarget(m *enrol.Manifest, apiBase string) error {
+func chooseAPIBase(m *enrol.Manifest, flagValue string) (string, error) {
 	url := m.RenewalURL()
 	if url == "" {
-		return errors.New(
+		return "", errors.New(
 			"the manifest carries no renewalUrl.\n" +
-				"  conflux would fall back to the public alpha realm's renewal route on this\n" +
-				"  host, which a self-hosted API does not serve. The issuer has to set it")
+				"  conflux would fall back to the public alpha realm's renewal route, which a\n" +
+				"  self-hosted API does not serve, and there is nothing here to read an API\n" +
+				"  base out of. The issuer has to set it")
 	}
 
-	if err := enrol.SameHost(url, apiBase); err != nil {
-		return fmt.Errorf("%w.\n"+
-			"  Pass --api naming the same host the manifest renews against, or get a\n"+
-			"  manifest issued for the API you meant", err)
+	if flagValue == "" {
+		return enrol.BaseOf(url)
 	}
 
-	return nil
+	if err := enrol.SameHost(url, flagValue); err != nil {
+		return "", fmt.Errorf("%w.\n"+
+			"  --api and the document disagree. Drop the flag to use the host the manifest\n"+
+			"  names, or get a manifest issued for the API you meant", err)
+	}
+
+	return flagValue, nil
+}
+
+// chooseImportedTaints takes the flags if there are any, otherwise whatever the
+// issuer put in the document.
+//
+// Validated either way, and that is the point of not just copying the list
+// through: a taint conflux cannot represent is a machine that enrols cleanly and
+// then fails to come up, with the reason arriving from anchor rather than from the
+// document that caused it.
+func chooseImportedTaints(m *enrol.Manifest, flagValues []string) ([]string, error) {
+	values := flagValues
+	if len(values) == 0 {
+		values = m.Taints()
+	}
+
+	if len(values) == 0 {
+		return nil, nil
+	}
+
+	if err := taint.ValidateSet(values); err != nil {
+		return nil, fmt.Errorf("the taints for this machine: %w", err)
+	}
+
+	return values, nil
 }
 
 // chooseImportedIPv4 takes the flag if there is one, otherwise whatever the issuer

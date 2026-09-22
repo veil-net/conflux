@@ -162,13 +162,14 @@ shape of the difference: machines are commissioned in advance, in the operator's
 interface, and each gets one file.
 
 ```console
-$ sudo conflux enrol --manifest node-14.b64 --api https://guardian.example.gov
+$ sudo conflux enrol --manifest node-14.b64
 credential installed
   from          node-14.b64
   api           https://guardian.example.gov
   renewal       https://guardian.example.gov/nodes/e3b0c442-…/credential
   expires       2026-10-13 04:12 UTC
   ipv4          10.20.0.7/24
+  taint         site-alpha
   bootstrap     genesis-1.example.gov:4700, genesis-2.example.gov:4700
 
 Next: sudo conflux up
@@ -231,9 +232,10 @@ never consulted again.
 ### Renewal, and what a lapse costs
 
 Renewal is the same exchange with a header on it: `POST` the renewal URL with
-`{"anchorId": "anchor…"}`, get back `{"chain": "…", "notAfter": "…"}`. The URL must
-name the same host as `--api`, for the reason [commands.md](commands.md#conflux-enrol)
-gives.
+`{"anchorId": "anchor…"}`, get back `{"chain": "…", "notAfter": "…"}`. That URL is
+where the configured API base came from in the first place — enrol reads it out of the
+document — so the two agree unless `--api` was passed to say otherwise, in which case
+they are checked against each other. See [commands.md](commands.md#conflux-enrol).
 
 A guardian signs from its own realm root, which it holds. So its ability to renew your
 machine does not depend on it being able to reach anything upstream — if its own

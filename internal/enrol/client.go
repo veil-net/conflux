@@ -403,6 +403,35 @@ func SameHost(renewalURL, apiBase string) error {
 	return nil
 }
 
+// BaseOf is the API base a renewal URL implies: scheme, host and port, nothing
+// else.
+//
+// **This is what makes --api an override rather than a requirement.** A guardian
+// manifest carries an absolute renewalUrl -- it has to, because a self-hosted API
+// is wherever its operator put it -- so the base is already in the document and
+// asking an operator to retype it buys a typo rather than a check. The alpha
+// realm's document may omit the field entirely and fall back to the public
+// default, which is why this returns an error rather than an empty string: a
+// caller reaching here without a URL has a document that cannot say where it
+// renews, and that is worth saying out loud.
+//
+// Only the origin is kept. A renewal URL is a path on an API, and treating the
+// whole of it as a base would make every later request a child of one node's
+// credential route.
+func BaseOf(renewalURL string) (string, error) {
+	u, err := url.Parse(renewalURL)
+	if err != nil {
+		return "", fmt.Errorf("%q is not a URL: %w", renewalURL, err)
+	}
+
+	if u.Scheme == "" || u.Host == "" {
+		return "", fmt.Errorf(
+			"%q is not an absolute URL, so the API it renews against cannot be read out of it", renewalURL)
+	}
+
+	return u.Scheme + "://" + u.Host, nil
+}
+
 func parseTime(s string) (time.Time, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {

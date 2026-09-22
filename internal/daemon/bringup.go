@@ -190,6 +190,22 @@ func renewInPlace(
 		url = st.RenewalURL
 	}
 
+	// A scheme this build does not implement is a warning on this path and not a
+	// refusal, for the same reason every other renewal failure is: the anchor is
+	// about to start either way, and one that starts with a credential it cannot
+	// yet renew is strictly better than one that does not start. The message names
+	// the value, so the operator reads a fix rather than a symptom.
+	auth, err := m.Auth()
+	if err != nil {
+		st.LastRenewalError = err.Error()
+		st.LastRenewalTry = time.Now().UTC()
+		r.Warn("cannot renew this credential: %v", err)
+
+		return env, m
+	}
+
+	client.Auth = auth
+
 	renewal, err := client.Renew(ctx, url, anchorID)
 	if err != nil {
 		st.LastRenewalError = err.Error()

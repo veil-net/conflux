@@ -48,6 +48,19 @@ type Client struct {
 
 	// Now is the clock, injectable so the skew check is testable.
 	Now func() time.Time
+
+	// Auth is how a renewal identifies itself, resolved from the stored
+	// manifest by Manifest.Auth.
+	//
+	// The zero value sends nothing, which is the alpha realm and every machine
+	// already in the field. A field here rather than a parameter on Renew
+	// because the caller builds one client per renewal anyway, and because a
+	// signature that does not move is a signature the pinning tests in
+	// alpha_test.go go on checking.
+	//
+	// Enrol ignores it, and passes the zero value explicitly rather than by
+	// omission: enrolment is what draws a credential, so it cannot hold one.
+	Auth Auth
 }
 
 // Renewal is what the renew route hands back.
@@ -141,7 +154,10 @@ func (c *Client) Enrol(ctx context.Context) (config.Envelope, error) {
 		Credentials string `json:"credentials"`
 	}
 
-	if err := c.do(ctx, http.MethodPost, u, nil, &out); err != nil {
+	// Auth{}, named rather than omitted. Enrolment is what draws a credential, so
+	// there is nothing to present, and a client configured for a renewal must not
+	// leak that configuration into the one call that happens before it exists.
+	if err := c.do(ctx, http.MethodPost, u, nil, Auth{}, &out); err != nil {
 		return nil, fmt.Errorf("enrol: %w", err)
 	}
 
@@ -198,7 +214,7 @@ func (c *Client) Renew(ctx context.Context, renewalURL, anchorID string) (Renewa
 		NotAfter string `json:"notAfter"`
 	}
 
-	if err := c.do(ctx, http.MethodPost, u, body, &out); err != nil {
+	if err := c.do(ctx, http.MethodPost, u, body, c.Auth, &out); err != nil {
 		return Renewal{}, fmt.Errorf("renew: %w", err)
 	}
 
@@ -219,7 +235,7 @@ func (c *Client) Renew(ctx context.Context, renewalURL, anchorID string) (Renewa
 	return Renewal{Chain: chain, NotAfter: notAfter}, nil
 }
 
-func (c *Client) do(ctx context.Context, method, u string, body []byte, out any) error {
+func (c *Client) do(ctx context.Context, method, u string, body []byte, auth Auth, out any) error {
 	var rdr io.Reader
 	if body != nil {
 		rdr = bytes.NewReader(body)
@@ -236,6 +252,8 @@ func (c *Client) do(ctx context.Context, method, u string, body []byte, out any)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+
+	auth.apply(req)
 
 	resp, err := c.http().Do(req)
 	if err != nil {

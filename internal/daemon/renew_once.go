@@ -77,7 +77,16 @@ func RenewNow(ctx context.Context, dirs paths.Dirs, ctl *anchorctl.Ctl, rep Repo
 		url = st.RenewalURL
 	}
 
-	client := &enrol.Client{BaseURL: cfg.APIBase()}
+	// A refusal here rather than a request. `conflux renew` is the path a person
+	// runs, so a document naming a scheme this build does not implement should say
+	// so to that person instead of sending an unauthenticated request and handing
+	// back whatever status the far end chose.
+	auth, err := m.Auth()
+	if err != nil {
+		return err
+	}
+
+	client := &enrol.Client{BaseURL: cfg.APIBase(), Auth: auth}
 
 	renewal, err := client.Renew(ctx, url, st.AnchorID)
 	if err != nil {

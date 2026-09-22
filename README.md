@@ -9,6 +9,13 @@ Everything `anchorctl` can do, conflux can do too — any command conflux doesn'
 recognise is passed straight through to it unchanged. What conflux adds on top is
 enrolment, credential renewal, a configuration file, and a boot service.
 
+It also runs against a **self-hosted guardian**: an operator running their own control
+plane and their own subtree of the realm tree. That deployment is the opposite shape —
+machines are commissioned in advance and there is no enrolment route at all, so
+`conflux enrol --manifest FILE --api URL` installs the credential and `conflux up`
+starts from it. Renewal then authenticates, and revocation exists, because there is
+somebody keeping a record. See [credentials.md](docs/credentials.md).
+
 ## Quick start
 
 Install the binary, run `conflux up` on one machine, then run it on every other
@@ -221,6 +228,7 @@ reaches the realm over — the host's IP network by default, or a link named by
 |---|---|
 | `conflux up [--taint T] [--ipv4 PREFIX \| --no-ipv4] [--subnet CIDR]... [--uplink DEV \| --no-uplink] [--peers HOST:PORT] [--lan-discovery yes\|no\|auto]` | enrol if needed, start in TUN mode, register the boot service |
 | `conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T] [--uplink DEV] [--peers HOST:PORT] [--lan-discovery yes\|no\|auto]` | enrol if needed, start in userspace mode serving those backends |
+| `conflux enrol --manifest FILE --api URL [--ipv4 PREFIX]` | install a credential this machine was given, instead of drawing one |
 | `conflux down` | stop the anchor now; the boot service and the configuration stay |
 | `conflux start` | start it again now, from the configuration already on disk |
 | `conflux renew` | fetch a fresh credential and install it on the running anchor, hot |
@@ -231,17 +239,20 @@ reaches the realm over — the host's IP network by default, or a link named by
 | `conflux anchorctl ARGS...` | run the embedded `anchorctl`, uninterpreted |
 | *anything else* | passed to `anchorctl` unchanged: `peers`, `routes`, `events`, `metrics`, `send`, `inspect`, … |
 
-**Nine names are conflux's; everything else is anchorctl's.** Three of them shadow a
-command anchorctl already has, and each collision is resolved rather than guessed:
-bare `conflux status` is conflux's, and prints anchorctl's status beneath it, while
-`conflux status -watch 5s` forwards to anchorctl because it was given arguments.
+**A closed set of names is conflux's; everything else is anchorctl's.** Four of them
+shadow a command anchorctl already has, and each collision is resolved rather than
+guessed: bare `conflux status` is conflux's, and prints anchorctl's status beneath it,
+while `conflux status -watch 5s` forwards to anchorctl because it was given arguments.
 `conflux proxy 8080=127.0.0.1:3000` starts userspace mode; `conflux anchorctl proxy
 -add 8080=127.0.0.1:3000` adds a proxy to an anchor that's already running. Bare
 `conflux renew` fetches a credential and installs it, while `conflux anchorctl renew
--cred FILE` installs one you already hold. `start`,
-`stop`, and `restart` are refused outright rather than passed through — running them
-directly would leave conflux's configuration describing an anchor that isn't the one
-actually running.
+-cred FILE` installs one you already hold, and `conflux start` starts from the saved
+configuration where `conflux anchorctl start -identity FILE …` builds one from
+arguments. `stop` and `restart` are refused outright rather than passed through —
+running them directly would leave conflux's configuration describing an anchor that
+isn't the one actually running. The set and the count are checked against the embedded
+binary by a test, because four files used to carry a number here and between them they
+said nine, ten, three and five.
 
 ## Where things live
 
@@ -266,7 +277,7 @@ boot service runs as root, and a path under `$HOME` is a path it can't read. See
 | [commands.md](docs/commands.md) | Every command, every flag, what reaches anchorctl, and the exit codes. |
 | [config.md](docs/config.md) | The configuration file, the manifest, file modes, and the layout on each OS. |
 | [service.md](docs/service.md) | The boot service: systemd, launchd, the Windows service, and the two BSDs that get none. |
-| [credentials.md](docs/credentials.md) | Enrolment, the seven-day window, renewal, and what "the only copy" means. |
+| [credentials.md](docs/credentials.md) | The two issuers, enrolment, the window, renewal, and what "the only copy" means. |
 | [windows.md](docs/windows.md) | `wintun.dll`, why it is not embedded, the pinned digest, and Defender. |
 | [security.md](docs/security.md) | What conflux adds to anchor's threat model: an executable on disk and a key in a file. |
 | [troubleshooting.md](docs/troubleshooting.md) | Symptom, cause, and what to do about it. |

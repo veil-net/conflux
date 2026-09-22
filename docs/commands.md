@@ -1,13 +1,13 @@
 # Commands
 
-conflux keeps nine names for itself. Every other argument vector is handed to the
-embedded `anchorctl` unchanged — not parsed, not rewritten, not validated.
+conflux keeps a closed set of names for itself. Every other argument vector is handed
+to the embedded `anchorctl` unchanged — not parsed, not rewritten, not validated.
 
 ## The split
 
-conflux's: `up`, `proxy`, `start`, `down`, `install`, `uninstall`, `renew`, `status`,
-`version`, `help`, plus `anchorctl` as an escape hatch and a hidden `serve` the boot
-service runs.
+conflux's: `up`, `proxy`, `enrol`, `start`, `down`, `install`, `uninstall`, `renew`,
+`status`, `version`, `help`, plus `anchorctl` as an escape hatch and a hidden `serve`
+the boot service runs.
 
 anchorctl's, reached by typing them: `peers`, `route`, `routes`, `connect`, `punch`,
 `kill`, `events`, `metrics`, `export`, `children`, `telemetry`, `send`, `subscribe`,
@@ -16,19 +16,33 @@ anchorctl's, reached by typing them: `peers`, `route`, `routes`, `connect`, `pun
 embeds: `root` mints a realm and is not in the lockdown build, and the two `mint-*`
 verbs exist only in it.
 
+`export` is worth naming separately now, because there are two ways to set it and they
+do not last equally long. `conflux anchorctl export -endpoint …` configures the running
+daemon and is discarded at the next restart or SIGHUP; the `export` block in
+`conflux.json` is rendered to anchord's config file on every start and is the durable
+one. `conflux status` says which the daemon is currently obeying. See
+[config.md](config.md#export).
+
 `kill` is worth naming separately, because it is not what the word suggests and is not
 related to `down`. It makes another anchor **a realm-wide target** — `-target ANCHORID
 -days N` — needs a credential issued with `-admin`, travels by gossip, and nothing can
 end one early. Stopping the anchor on *this* machine is `conflux down`, which closes it
 gracefully and leaves the registration; see [service.md](service.md).
 
-### The five collisions
+### The four collisions
 
-`start`, `proxy`, `renew`, `status` and `help` exist on both sides. Each is resolved
+`start`, `proxy`, `renew` and `status` exist on both sides. Each is resolved
 explicitly.
 
-**`help`** is conflux's, always. It prints conflux's usage and then anchorctl's whole
-usage beneath a rule, so one page covers both surfaces.
+This page, the README and two comments in the source used to disagree about the
+number — they said nine, ten, three and five between them, and one of them counted
+`help` as anchorctl's, which it is not: anchorctl has no `help` command and forwarding
+an unrecognised name to it prints its general usage. `TestTheCollisionsAreTheDocumentedOnes`
+now reads the set off the embedded binary, so a future anchor adding a colliding name
+fails CI here rather than shadowing something silently.
+
+**`help`** is conflux's, always, and is not one of the four. It prints conflux's usage
+and then anchorctl's whole usage beneath a rule, so one page covers both surfaces.
 
 **`status`** is resolved by arity. Bare `conflux status` is conflux's, and it prints
 `anchorctl status` underneath — additive, so nothing is lost by conflux owning that
@@ -194,6 +208,52 @@ path for "register and run" and one for "configure, persist, then register and r
 Registration is the point here. To start a machine that is already registered, that is
 `conflux start` — the two share the starting, so neither can drift into starting a
 different anchor from the other.
+
+## `conflux enrol`
+
+```
+conflux enrol --manifest FILE --api URL [--ipv4 PREFIX]
+```
+
+Installs a credential this machine was **given** rather than one it drew.
+
+The public alpha realm hands out identities to anyone who asks and records none of
+them, which is why `up` can enrol by itself. A self-hosted guardian does the opposite:
+it serves no enrolment route at all, commissions each machine in advance, and hands its
+operator one file per machine. This is how that file gets in, and on a guardian
+deployment it is the only way a node is provisioned.
+
+`--manifest -` reads the document from stdin, so it need never land on disk at whatever
+mode the shell's umask chose. anchorctl spells the same thing the same way.
+
+**`--api` is required and is deliberately not read out of the manifest.** conflux checks
+that the document's `renewalUrl` names the same host, and that check exists so a stored
+field cannot decide where a credential is POSTed — deriving one operand from the other
+would make them agree by construction and check nothing. A mismatch is refused, naming
+both hosts, rather than discovered at the first renewal weeks later.
+
+**It refuses to replace an existing manifest.** `up` enrols only when there is none,
+because a second enrolment is a second AnchorID and a second overlay address with every
+peer orphaned and nothing said; a verb that writes manifests must not be the way around
+that rule. `conflux uninstall` first if replacing the identity is genuinely what you
+mean.
+
+Everything is checked before a byte is written — the format version, the `kind` (a
+`realm` manifest mints anchors and does not start one), the `renewalAuth`, the renewal
+host, the address and the export block. A refused import leaves the machine exactly as
+it found it.
+
+Two fields are copied out of the document **once** and into `conflux.json`, where
+`conflux config` shows them and you can change them: `ipv4`, the overlay address the
+issuer allocated, and `export`, where it suggests telemetry goes. Neither is re-read on
+a later start. That is the difference from the two exit flags, which conflux refuses to
+inherit at all — an exit flag would go on deciding what this machine does for other
+people, and these are a suggestion made once at commissioning time. `--ipv4` overrides
+the document.
+
+Then `sudo conflux up`, which finds the manifest and starts from it without enrolling.
+
+Needs root.
 
 ## `conflux renew`
 

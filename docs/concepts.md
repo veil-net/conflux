@@ -22,7 +22,21 @@ it descends from the root, and the chain is checked during the TLS handshake —
 any data. Membership is not a list on a server; it is a signature.
 
 conflux enrols into VeilNet's public realm. The credential is issued for seven days
-and renewed automatically. See [credentials.md](credentials.md).
+and renewed automatically.
+
+**Or into somebody else's.** A realm can delegate: one root hands a realm to another
+key, which may hand one on again. So an operator running a self-hosted guardian holds
+their own realm root, admits their own machines, and carves sub-realms beneath it — and
+a machine in one of those is provisioned by `conflux enrol` rather than by enrolling
+itself, because their control plane serves no enrolment route.
+
+Two consequences of the tree are worth carrying around. **Data never leaves one realm**:
+an anchor in a realm above yours can carry your traffic and cannot read it or send you
+any, which is also what lets two realms reuse one address range. And **a lapsed
+delegation cuts rather than revokes**: a realm separated from the tree above it goes on
+connecting, relaying and exchanging data within itself, admitted by its own root. See
+anchor's [hierarchy](https://github.com/veil-net/anchor/blob/main/docs/hierarchy.md) and
+[credentials.md](credentials.md).
 
 ## Overlay addresses are derived, not assigned
 

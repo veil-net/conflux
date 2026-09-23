@@ -5,13 +5,27 @@ name: release
 # version3 is where conflux is developed; main carries no workflows at all. So this is the
 # branch a merge reaches, and the branch a release comes from.
 #
-# It was a tag push, which made cutting a release a separate manual act performed on a
-# commit nobody had necessarily released from -- and a `workflow_dispatch` with no branch
-# condition meant running this by hand on a feature branch built `make dist
-# VERSION=<branch-name>` and published it to the public as a GitHub release.
+# **Every merge builds and publishes.** VERSION names the release; the merge decides that
+# there is one. The artifacts at that tag are replaced with the ones built from the commit
+# that just landed. The tag itself is not moved -- GitHub leaves it where it was cut, and
+# the gate warns on every run where it has fallen behind.
 #
-# Now the tree decides. VERSION is a file, the gate below reads it, and a release happens
-# exactly when somebody bumps that file and the change is merged.
+# This replaced a gate that only fired when VERSION named a tag GitHub did not have yet,
+# and the reason it had to go is what it did the rest of the time: nothing, in twenty
+# seconds, and green. VERSION had read 1.0.0-pre since it was published, so every merge
+# after it -- including one that rewrote how enrolment works -- ended at "1.0.0-pre is
+# already published; nothing to do" and shipped no binaries. A release workflow whose
+# ordinary outcome is a successful no-op is one nobody checks, which is exactly how a
+# fortnight of merges went unreleased without a red run anywhere.
+#
+# The cost is accepted rather than unnoticed: `make dist` cross-builds seven targets and
+# takes around a quarter of an hour, and a docs-only merge now pays it too. Deciding which
+# paths deserve a build is a second definition of what a release contains, and the one
+# that matters is `make dist` itself.
+#
+# Runs are serialised rather than cancelled (see `concurrency` below): a burst of merges
+# queues, each publishes in turn, and the last one wins. Cancelling would be faster and
+# could interrupt a publish half way through replacing a release's assets.
 #
 # It does not re-run the suite. ci.yml tests the branch, and by the time a merge lands the
 # question has been answered. That rests on branch protection on version3 -- a required
@@ -19,8 +33,8 @@ name: release
 on:
   push:
     branches: [version3]
-  # Every manual run rebuilds the version this tree claims and replaces its artifacts.
-  # There is no checkbox: running this by hand is itself the request to republish.
+  # Rebuilds and republishes whatever VERSION currently says, exactly as a merge does.
+  # There is no checkbox: running this by hand is itself the request.
   workflow_dispatch:
 
 # Read by default; `build` raises its own. Neither `gate` nor `verify` can create a
@@ -33,14 +47,17 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Is there a release to make? Asked cheaply, because the answer is usually no.
+  # What is being released, and may this branch release at all.
   #
-  # Every merge to version3 runs this workflow and most merges do not change VERSION, so
-  # without this each of them would cross-build seven targets, attest them and publish
-  # before anything noticed there was nothing new to ship.
+  # It no longer asks whether there is anything to do -- a merge to version3 is the
+  # answer. What is left is reading the version the tree claims and refusing to run
+  # anywhere but version3, which matters because `workflow_dispatch` above is not
+  # restricted to a branch and nothing else in this file would stop a hand-run on a
+  # feature branch from publishing to the public under that branch's name.
   #
-  # The branch is named here as well as in the trigger, because `workflow_dispatch` above
-  # is not restricted to a branch and nothing else in this file would stop it.
+  # Kept as a separate job rather than folded into `build` so that refusal happens
+  # before a runner picks up seven cross-builds, and so `verify` and `build` inherit
+  # one branch condition instead of repeating it.
   gate:
     if: github.ref == 'refs/heads/version3'
     runs-on: [self-hosted, linux]
@@ -51,14 +68,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: does this tree claim a version that is not published?
+      - name: what version does this tree claim?
         id: decide
-        env:
-          GH_TOKEN: ${{ github.token }}
-          # `push` on a merge, `workflow_dispatch` when somebody ran this by hand. Only
-          # the latter republishes, so a merge that leaves VERSION alone still cannot
-          # rebuild a published version by accident.
-          dispatched: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
           set -euo pipefail
 
@@ -69,59 +80,41 @@ jobs:
           # on here would invent a scheme that matches none of them. Whatever VERSION
           # says is both the tag and the string stamped into the binary.
           version=$(tr -d '[:space:]' < VERSION)
-          tag="$version"
-
-          # A 404 means no release at that tag, which is the case worth acting on. Any
-          # other code is asked about rather than assumed: treating a 500 as "not
-          # published" would republish a version that already exists.
-          code=$(curl -sS -o /dev/null -w '%{http_code}' \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/releases/tags/$tag")
-
-          case "$code" in
-            404) release=true;  reason="$tag is not published yet -- building it" ;;
-            200) release=false; reason= ;;
-            *)   echo "::error::GitHub answered $code asking about $tag; refusing to guess" >&2; exit 1 ;;
-          esac
-
-          # A hand-run always builds, published or not. The case it exists for: this tree
-          # has not moved, but something it embeds has. The `shelf` tag moves, and a
-          # conflux release carries whatever anchor published most recently rather than a
-          # remembered one -- so a fix cut in anchor reaches users only when conflux is
-          # built again. Bumping VERSION for that spends a version number on a tree whose
-          # own source is unchanged.
-          #
-          # The release is updated in place: `action-gh-release` replaces the assets of
-          # the release it finds at this tag. Nothing is deleted first, so the artifacts
-          # are only ever replaced by artifacts -- there is no window where the version
-          # exists and its downloads do not.
-          if [ "$release" = false ] && [ "$dispatched" = true ]; then
-            release=true
-            reason="$tag is published; this run replaces its artifacts"
-
-            # GitHub leaves an existing tag where it was cut. So if this tree is not that
-            # commit, the tag stops describing what hangs off it -- said here rather than
-            # discovered later from a `conflux version` naming a commit the tag does not
-            # point at.
-            at=$(git ls-remote origin "refs/tags/$tag" | cut -f1)
-            if [ -n "$at" ] && [ "$at" != "$GITHUB_SHA" ]; then
-              echo "::warning::$tag stays at ${at:0:12}; these artifacts are built from ${GITHUB_SHA:0:12}"
-            fi
-          fi
 
           {
             echo "version=$version"
-            echo "tag=$tag"
-            echo "release=$release"
+            echo "tag=$version"
+            echo "release=true"
           } >> "$GITHUB_OUTPUT"
 
-          if [ "$release" = true ]; then
-            echo "$reason"
+          echo "building $version from ${GITHUB_SHA:0:12}"
+          echo "If a release already exists at this tag, its artifacts are replaced."
+          echo "Bump VERSION when this should be a new release rather than a rebuild"
+          echo "of the current one."
+
+      # GitHub leaves an existing tag where it was cut, and nothing here moves it. That
+      # was a corner case while a version published once; now that every merge replaces
+      # this version's artifacts it is the ordinary state, so it is reported on every run
+      # rather than left to be discovered from a `conflux version` naming a commit the tag
+      # does not reach.
+      #
+      # A warning and not an error: the artifacts are correct and the release is the thing
+      # people download. What is stale is the tag, and deciding to rewrite a published ref
+      # is not a decision this workflow should make quietly on every merge.
+      - name: does the tag still describe what is being built?
+        env:
+          tag: ${{ steps.decide.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          at=$(git ls-remote origin "refs/tags/$tag" | cut -f1)
+
+          if [ -z "$at" ]; then
+            echo "$tag does not exist yet; it will be created at ${GITHUB_SHA:0:12}"
+          elif [ "$at" != "$GITHUB_SHA" ]; then
+            echo "::warning::$tag stays at ${at:0:12}; these artifacts are built from ${GITHUB_SHA:0:12}"
           else
-            echo "$tag is already published; nothing to do"
-            echo "Bump VERSION and merge to version3 to cut the next one, or run this"
-            echo "workflow by hand to rebuild this one."
+            echo "$tag already points at ${GITHUB_SHA:0:12}"
           fi
 
   verify:

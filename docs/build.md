@@ -299,10 +299,19 @@ A tree with no `VERSION` file says `dev`, which is the honest answer rather than
 nobody released.
 
 The file rather than a tag, deliberately: a tag is a claim about a commit, and the file is
-a claim about the tree — and it is the tree that gets built. It is also what decides
-whether a release happens at all. `release.yml` runs on every merge to `version3`, reads
-this file, and stops immediately if a release already exists for it. So cutting a release
-is bumping `VERSION` and merging, and the tag is whatever this file says, verbatim.
+a claim about the tree — and it is the tree that gets built. It names the release; it does
+not decide whether one happens. `release.yml` runs on every merge to `version3` and
+**every merge builds and publishes**, replacing the artifacts on the release this file
+names. The tag is whatever it says, verbatim.
+
+So bumping `VERSION` is how a merge becomes a *new* release rather than a rebuild of the
+current one. Leaving it alone is not "do not release" — it is "release this again, with
+what just landed".
+
+The tag is not moved. GitHub leaves it at the commit it was first cut from, so after the
+first rebuild it names an older commit than the binaries hanging off the release; the
+`gate` job warns on every run where that has happened. `conflux version` reports the
+commit it was actually built from, which is the one to trust.
 
 ## Reproducibility
 

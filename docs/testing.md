@@ -175,10 +175,16 @@ request, require these checks, and require the branch to be up to date before me
 third is the one that matters: without it a pull request can be green against a base that
 has since moved, and what merges is a tree nothing tested.
 
-A `gate` job reads the `VERSION` file and stops unless that version has no release yet, so
-an ordinary merge costs one cheap job. The tag is whatever `VERSION` says, verbatim —
+A `gate` job reads the `VERSION` file and refuses to run anywhere but `version3`; every
+merge that reaches it builds and publishes. The tag is whatever `VERSION` says, verbatim —
 nothing is prepended, because the tags this repository has published are `Beta-v1.0.13`,
 `Beta-v1.0.14`, `Beta-v1.0.15`, and a scheme invented here would match none of them.
+
+The gate used to stop unless that version had no release yet, which made an ordinary merge
+cost one cheap job. It also meant a merge shipped nothing whenever `VERSION` had not
+moved — silently, in twenty seconds, and green — which is how a fortnight of merges went
+unreleased with no red run anywhere. A merge now costs the full cross-build, which is the
+price of the workflow's ordinary outcome being a release rather than a no-op.
 
 Two things that were previously possible are now not: a release built from a commit nobody
 had tested, and a `workflow_dispatch` on a feature branch publishing

@@ -309,6 +309,34 @@ Two things worth checking deliberately, because neither is obvious from a passin
   is ever rebuilt: `make anchor-bins FETCH=1` prints the realm it fetched, and it has to
   be the one the test node answers for.
 
+## The other half of the contract is tested in the other repository
+
+`renewalAuth`, the import verb and the `export` block are half of an exchange
+whose other half is guardian. Everything here asserts what conflux *sends* and
+what it *accepts*; nothing here can assert that a document guardian writes is one
+conflux installs, because no guardian is running.
+
+That test lives in guardian, at `api/test/conflux.e2e-spec.ts`. It builds a
+machine image from **this checkout's** `bin/conflux` — so what runs is what this
+repository currently produces, not a release that may predate the change — puts
+it on the deployment's own network, and drives the whole life of a node:
+
+```
+commission → conflux enrol → conflux up → conflux renew → reboot → same anchor
+```
+
+The reboot is the one that matters most and is hardest to fake. An overlay
+address is derived from an identity, so a machine that comes back as a different
+anchor has silently orphaned every peer that knew it — which is what a renewal
+falling back to enrolment would do. Restarting the container is the reboot.
+
+It needs `make build` here first, and refuses rather than skipping when the
+checkout is missing: a suite that quietly covers nothing is one that covers
+nothing on CI the day somebody moves a directory.
+
+The shape of the exchange is written down once, in
+[guardian's contract document](https://github.com/veil-net/guardian/blob/main/docs/contracts/guardian-node.md).
+
 ## What has no coverage, and why
 
 - **FreeBSD and OpenBSD** beyond `go vet` and `go build`. No runner exists, which is

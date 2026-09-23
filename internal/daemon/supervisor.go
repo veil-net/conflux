@@ -260,6 +260,26 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 	}
 }
 
+// anchordArgs is everything anchord is started with.
+//
+// A function rather than three lines inside spawn, so the argument vector can be
+// asserted without starting a process. -config used to be absent, which meant an
+// export set over the socket died with the daemon and never came back -- the kind
+// of thing that is invisible until somebody goes looking for a graph.
+func anchordArgs(d paths.Dirs) []string {
+	args := []string{
+		"-socket", d.Socket(),
+		"-token-file", d.TokenFile(),
+		"-config", d.DaemonConfigFile(),
+	}
+
+	if os.Getenv("CONFLUX_DEBUG") == "1" {
+		args = append(args, "-v")
+	}
+
+	return args
+}
+
 // spawn starts anchord.
 //
 // Its output goes to pipes and never to os.Stdout. The previous conflux wired them
@@ -268,10 +288,22 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 // give us the last few lines to attach to a startup failure, which an exit code
 // alone cannot explain.
 func (s *Supervisor) spawn(ctx context.Context) (*exec.Cmd, <-chan error, error) {
-	args := []string{"-socket", s.Dirs.Socket(), "-token-file", s.Dirs.TokenFile()}
-	if os.Getenv("CONFLUX_DEBUG") == "1" {
-		args = append(args, "-v")
+	// The daemon's own configuration, rendered from conflux.json on every spawn.
+	//
+	// Passed on every start rather than only when something is configured, so that
+	// the file is what the daemon believes in both directions -- see
+	// writeDaemonConfig, which explains why an absent export block is written as an
+	// explicit `enabled: false` rather than left out.
+	cfg, err := config.Load(s.Dirs)
+	if err != nil {
+		return nil, nil, err
 	}
+
+	if err := writeDaemonConfig(s.Dirs, cfg); err != nil {
+		return nil, nil, err
+	}
+
+	args := anchordArgs(s.Dirs)
 
 	// A socket left by a crashed daemon would otherwise make readiness think a
 	// dead process is alive.

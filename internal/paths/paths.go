@@ -71,6 +71,19 @@ func (d Dirs) StateFile() string { return filepath.Join(d.State, "state.json") }
 // and its overlay address for good. 0600, and the directory around it 0700.
 func (d Dirs) ManifestFile() string { return filepath.Join(d.State, "manifest.b64") }
 
+// DaemonConfigFile is anchord's own -config, rendered from conflux.json on every
+// start so the daemon comes back believing what this machine's configuration says.
+//
+// Under State rather than Config, and derived rather than edited: it is written by
+// the supervisor, overwritten on every spawn, and nothing reads it back. An
+// operator who edits it has their edit discarded at the next restart, which is the
+// right way round -- conflux.json is the file with the operator's intent in it.
+//
+// It carries the export headers, which are credentials, so it is 0600 in the same
+// 0700 directory as the manifest rather than anywhere a config file would normally
+// live. anchord warns about exactly this.
+func (d Dirs) DaemonConfigFile() string { return filepath.Join(d.State, "anchord.json") }
+
 // AnchorDir is anchord's own -dir: the bootstrap cache and the realm-link cache.
 //
 // Not optional. An anchor without it that adopts a renewed delegation and then

@@ -48,6 +48,19 @@ type Client struct {
 
 	// Now is the clock, injectable so the skew check is testable.
 	Now func() time.Time
+
+	// Auth is how a renewal identifies itself, resolved from the stored
+	// manifest by Manifest.Auth.
+	//
+	// The zero value sends nothing, which is the alpha realm and every machine
+	// already in the field. A field here rather than a parameter on Renew
+	// because the caller builds one client per renewal anyway, and because a
+	// signature that does not move is a signature the pinning tests in
+	// alpha_test.go go on checking.
+	//
+	// Enrol ignores it, and passes the zero value explicitly rather than by
+	// omission: enrolment is what draws a credential, so it cannot hold one.
+	Auth Auth
 }
 
 // Renewal is what the renew route hands back.
@@ -141,7 +154,10 @@ func (c *Client) Enrol(ctx context.Context) (config.Envelope, error) {
 		Credentials string `json:"credentials"`
 	}
 
-	if err := c.do(ctx, http.MethodPost, u, nil, &out); err != nil {
+	// Auth{}, named rather than omitted. Enrolment is what draws a credential, so
+	// there is nothing to present, and a client configured for a renewal must not
+	// leak that configuration into the one call that happens before it exists.
+	if err := c.do(ctx, http.MethodPost, u, nil, Auth{}, &out); err != nil {
 		return nil, fmt.Errorf("enrol: %w", err)
 	}
 
@@ -198,7 +214,7 @@ func (c *Client) Renew(ctx context.Context, renewalURL, anchorID string) (Renewa
 		NotAfter string `json:"notAfter"`
 	}
 
-	if err := c.do(ctx, http.MethodPost, u, body, &out); err != nil {
+	if err := c.do(ctx, http.MethodPost, u, body, c.Auth, &out); err != nil {
 		return Renewal{}, fmt.Errorf("renew: %w", err)
 	}
 
@@ -219,7 +235,7 @@ func (c *Client) Renew(ctx context.Context, renewalURL, anchorID string) (Renewa
 	return Renewal{Chain: chain, NotAfter: notAfter}, nil
 }
 
-func (c *Client) do(ctx context.Context, method, u string, body []byte, out any) error {
+func (c *Client) do(ctx context.Context, method, u string, body []byte, auth Auth, out any) error {
 	var rdr io.Reader
 	if body != nil {
 		rdr = bytes.NewReader(body)
@@ -236,6 +252,8 @@ func (c *Client) do(ctx context.Context, method, u string, body []byte, out any)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+
+	auth.apply(req)
 
 	resp, err := c.http().Do(req)
 	if err != nil {
@@ -352,15 +370,28 @@ func checkScheme(raw string) error {
 	}
 }
 
-func (c *Client) sameHostAsBase(raw string) error {
-	target, err := url.Parse(raw)
+func (c *Client) sameHostAsBase(raw string) error { return SameHost(raw, c.base()) }
+
+// SameHost is the check that a stored field cannot redirect a POST.
+//
+// Exported because two callers need the same answer and the second one is the
+// import verb, which runs *before* anything is written. A credential whose renewal
+// URL names a host the configuration does not is one whose first renewal would be
+// refused, months later, by a message about a document the operator did not write
+// -- so the import path asks the question while a person is present to fix it.
+//
+// One implementation rather than two, and this is the whole reason it moved: the
+// import verb comparing hosts its own way, and the renewal comparing them this way,
+// is two answers to one question, and the more permissive of them is the way in.
+func SameHost(renewalURL, apiBase string) error {
+	target, err := url.Parse(renewalURL)
 	if err != nil {
-		return fmt.Errorf("%q is not a URL: %w", raw, err)
+		return fmt.Errorf("%q is not a URL: %w", renewalURL, err)
 	}
 
-	base, err := url.Parse(c.base())
+	base, err := url.Parse(apiBase)
 	if err != nil {
-		return fmt.Errorf("the API base %q is not a URL: %w", c.base(), err)
+		return fmt.Errorf("the API base %q is not a URL: %w", apiBase, err)
 	}
 
 	if !strings.EqualFold(target.Host, base.Host) {
@@ -370,6 +401,35 @@ func (c *Client) sameHostAsBase(raw string) error {
 	}
 
 	return nil
+}
+
+// BaseOf is the API base a renewal URL implies: scheme, host and port, nothing
+// else.
+//
+// **This is what makes --api an override rather than a requirement.** A guardian
+// manifest carries an absolute renewalUrl -- it has to, because a self-hosted API
+// is wherever its operator put it -- so the base is already in the document and
+// asking an operator to retype it buys a typo rather than a check. The alpha
+// realm's document may omit the field entirely and fall back to the public
+// default, which is why this returns an error rather than an empty string: a
+// caller reaching here without a URL has a document that cannot say where it
+// renews, and that is worth saying out loud.
+//
+// Only the origin is kept. A renewal URL is a path on an API, and treating the
+// whole of it as a base would make every later request a child of one node's
+// credential route.
+func BaseOf(renewalURL string) (string, error) {
+	u, err := url.Parse(renewalURL)
+	if err != nil {
+		return "", fmt.Errorf("%q is not a URL: %w", renewalURL, err)
+	}
+
+	if u.Scheme == "" || u.Host == "" {
+		return "", fmt.Errorf(
+			"%q is not an absolute URL, so the API it renews against cannot be read out of it", renewalURL)
+	}
+
+	return u.Scheme + "://" + u.Host, nil
 }
 
 func parseTime(s string) (time.Time, error) {

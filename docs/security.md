@@ -8,7 +8,10 @@ private key in a file**.
 
 ## A stolen `manifest.b64` is permanent
 
-The manifest holds the 32-byte identity seed. Anyone who has it *is* that anchor.
+The manifest holds the 32-byte identity seed. Anyone who has it *is* that anchor. A
+guardian-issued one holds a renewal bearer as well, so whoever has it can also keep
+that identity's credential current indefinitely — the same statement, one step
+stronger.
 
 And there is no revocation, and there cannot be. Cutting somebody off would mean
 refusing to renew, and refusing requires knowing who to refuse — but enrolment stores
@@ -20,6 +23,14 @@ that identity.** `conflux uninstall` and `conflux up` draws a new one, and every
 that knew the old address has to be told the new taint or address.
 
 This is the cost of an anonymous, accountless design, and it is a real one.
+
+**On a self-hosted guardian the last paragraph is different, and only the last one.**
+There the machine was commissioned by an operator who recorded it, so there is somebody
+to tell and something they can do: revocation is that guardian refusing to renew, and
+the credential lapses on its own schedule with nothing pushed and no list distributed.
+Everything above still holds — the file is still the identity, a thief is still that
+anchor, and they remain one until the credential lapses. What changes is that the
+lapse now happens, and that the window is the operator's to choose.
 
 ## The file, and the directory around it
 

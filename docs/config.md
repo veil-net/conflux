@@ -1,6 +1,7 @@
 # Configuration and on-disk layout
 
-Three files, three lifetimes, deliberately not one.
+Three files, three lifetimes, deliberately not one — plus one the supervisor renders
+for the daemon and nothing reads back.
 
 ## Where
 
@@ -63,11 +64,76 @@ it, so it is always the current desired state.
 Editing it by hand is supported; `conflux start` restarts from whatever it says, and
 anything anchor would refuse is refused by conflux first, naming the field.
 
+### `export` — where telemetry goes
+
+```json
+{
+  "export": {
+    "enabled": true,
+    "endpoint": "guardian.example.gov:4317",
+    "metrics": true,
+    "logs": true,
+    "headers": { "authorization": "Basic bm9kZS0xMjM6c2VjcmV0" },
+    "metricIntervalNanos": 60000000000,
+    "resourceAttributes": { "site": "field-2" }
+  }
+}
+```
+
+Absent is the normal case: an anchor exports nothing until its operator says where.
+
+**The field names are anchor's, not conflux's** — this block is
+`anchor.v1.ExportConfig`, field for field, including `metricIntervalNanos` and the other
+nanosecond durations that nobody would choose for a file people edit. That is deliberate.
+conflux renders this straight into anchord's own `-config` file, anchord parses it as
+protojson, and **an unknown field there is an error** — so any friendlier spelling
+conflux invented would be a second schema able to drift from the one anchord enforces,
+and it would present as a daemon refusing to start over a field name you never typed.
+One set of names means anchor's own documentation describes what you are looking at, and
+that a block can be moved between the two files unchanged.
+
+The full field list is `enabled`, `endpoint` (host:port, not a URL — the scheme follows
+`insecure`), `insecure`, `headers`, `metrics`, `traces`, `logs`, `metricIntervalNanos`,
+`traceSampleRatio`, `serviceName`, `resourceAttributes`, `exportTimeoutNanos`,
+`shutdownTimeoutNanos`, `caCert`, `clientCert`, `clientKey`, `logLevel` and
+`cardinalityLimit`. The three TLS fields take `{"path": "…"}` or `{"inline": "<base64
+PEM>"}`.
+
+**`headers` are credentials.** Anything in them authenticates this machine to a
+collector, which is why this file is `0600` and why the rendered
+`anchord.json` beside the manifest is too.
+
+Enabled with no `endpoint`, or with no signal selected, is refused rather than written:
+both start cleanly and export nothing, and the symptom arrives weeks later as an absence
+on a dashboard.
+
+#### Which surface wins
+
+Three things can configure export and they disagree by design:
+
+| | Lasts |
+|---|---|
+| this block, rendered to `anchord.json` on every spawn | until you change it |
+| `conflux anchorctl export -endpoint …` | until the next restart or SIGHUP |
+| a SIGHUP | re-reads the file, discarding the call above |
+
+conflux writes the rendered file on **every** start, carrying an explicit
+`"enabled": false` when there is no block here. So a restart always lands on what this
+file says, in both directions: a machine configured to export comes back exporting, and
+a machine configured not to comes back quiet even if somebody turned it on by hand an
+hour ago.
+
+`conflux status` prints the endpoint this file names and, beneath it, which surface the
+daemon is actually obeying — so an override is visible rather than inferred.
+
 ## `manifest.b64` — the identity
 
-One base64 line: the anchor manifest the enrolment API returned, holding the identity
+One base64 line: the anchor manifest the issuing API returned, holding the identity
 seed, the realm root, the credential chain, the bootstrap list, the expiry and the
-renewal endpoint.
+renewal endpoint. A guardian-issued one also carries the bearer that renewal
+authenticates with, and may carry an `ipv4` and an `export` block that
+`conflux enrol` copies into `conflux.json` once. See
+[credentials.md](credentials.md).
 
 **Store it exactly as it arrived.** Do not decompose it — anchorctl reads an inline
 identity as raw bytes and a path as an encrypted container, so writing the hex out to a
@@ -77,8 +143,14 @@ conflux never writes it to a second file and never puts it in an argv. It goes t
 `anchorctl start -manifest -` on stdin, becomes an inline secret on the wire, and is
 never named as a path in the request at all.
 
-**This file is the machine.** There is no other copy in existence: enrolment stores
-nothing on the server, and the response was the only one. See
+**This file is the machine.** On the alpha realm there is no other copy in existence:
+enrolment stores nothing on the server, and the response was the only one.
+
+A guardian-issued one is the single exception: the guardian that minted it holds the
+same material sealed, and an operator with an admin role can download it again for a
+machine they are rebuilding. That is a real difference and the only one — it is still
+the identity, anyone holding it still *is* that anchor, and a copy that leaves the
+machine has left. See
 [credentials.md](credentials.md) and [security.md](security.md).
 
 ## `state.json` — what conflux worked out
@@ -108,6 +180,18 @@ from the manifest, which is recoverable from nowhere.
 It is separate from `conflux.json` for a second reason: the renewal timer rewrites
 `notAfter` every few days from the supervisor while a CLI may be rewriting `taints`
 from a terminal, and one file would make that a lost update.
+
+## `anchord.json` — rendered, not edited
+
+The daemon's own configuration, written beside the manifest on **every** start from
+whatever `conflux.json` says. `anchor.v1.DaemonConfig`: one field, `export`, and
+nothing about the anchor — an anchor's configuration arrives with the `Start` call,
+which is what lets conflux own the lifecycle.
+
+Editing it does nothing lasting: the next start overwrites it. `conflux.json` is the
+file with your intent in it, and this is derived from it. It is `0600` in the `0700`
+state directory rather than beside `conflux.json`, because it carries the export
+headers, which are credentials.
 
 ## `bin/<setID>/` — the extracted anchor pair
 
@@ -155,4 +239,5 @@ control, inheritance off — before writing anything into them.
 | `conflux.json` | kept | kept | kept | deleted |
 | `manifest.b64` | kept | kept | kept | **deleted, permanently** |
 | `state.json` | kept | kept | kept | deleted |
+| `anchord.json` | kept | rewritten | rewritten | deleted |
 | extracted binaries | kept | kept | deleted |

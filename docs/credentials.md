@@ -1,5 +1,24 @@
 # Credentials
 
+## Two issuers, and everything below depends on which
+
+conflux runs against either of two things, and they are opposite products rather than
+the same one configured differently. Almost every page of this documentation was
+written about the first; the differences are collected here, and each section below
+says which it is about.
+
+| | **the public alpha realm** | **a self-hosted guardian** |
+|---|---|---|
+| getting a credential | `conflux up` enrols itself | an operator commissions the machine and hands you a file; `conflux enrol` installs it |
+| who is recorded | nobody. There is no account and no record | the machine, by the operator who commissioned it |
+| renewal | unauthenticated; the route is gated on nothing | a bearer minted for that one machine, carried in the manifest |
+| revocation | **none, and none is possible** | the guardian refusing to renew |
+| the window | seven days | whatever the operator chose, inside anchor's ninety-day cap |
+| addresses | derived from the identity | derived, plus an IPv4 the operator may allocate |
+
+The rest of this page is the alpha realm unless it says otherwise, and the section on
+guardian-issued credentials is at the end.
+
 ## Enrolment is one unauthenticated POST
 
 `POST https://api.veilnet.com.au/ghosts/alpha` takes no body, needs no account, and
@@ -33,6 +52,10 @@ conflux enrols only when `manifest.b64` does not exist. In particular:
 - **Switching modes does not enrol.** `up` after `proxy` keeps the identity.
 
 ## The seven-day window, and renewal
+
+*(The alpha realm. A guardian chooses its own window; the arithmetic below is the
+same either way, because it is computed from the document's own `issuedAt` and
+`notAfter` rather than from a constant.)*
 
 A credential is issued for seven days. conflux renews at **two thirds of the window** —
 day 4.67 — which is what the API's own documentation specifies, and which leaves
@@ -123,3 +146,100 @@ conflict rather than redundancy.
 
 If you do not need the address preserved, `conflux uninstall` and `conflux up` on the
 new machine is the whole procedure.
+
+## A guardian-issued credential
+
+> **The contract is written down once, in the other repository.**
+> [`guardian/docs/contracts/guardian-node.md`](https://github.com/veil-net/guardian/blob/main/docs/contracts/guardian-node.md)
+> defines the `renewalAuth` value, the name and shape of the secret beside it, the
+> renewal request and response bodies, the `export` block and the ship order. Two
+> repositories implement it and neither owns it; this page is conflux's side, and
+> anything here that disagrees with that document is a bug here.
+
+A self-hosted guardian is an operator running their own control plane and their own
+subtree of the realm tree. It serves **no enrolment route at all**, which is the whole
+shape of the difference: machines are commissioned in advance, in the operator's own
+interface, and each gets one file.
+
+```console
+$ sudo conflux enrol --manifest node-14.b64
+credential installed
+  from          node-14.b64
+  api           https://guardian.example.gov
+  renewal       https://guardian.example.gov/nodes/e3b0c442-…/credential
+  expires       2026-10-13 04:12 UTC
+  ipv4          10.20.0.7/24
+  taint         site-alpha
+  bootstrap     genesis-1.example.gov:4700, genesis-2.example.gov:4700
+
+Next: sudo conflux up
+```
+
+The document is the same format — `formatVersion: 1`, `kind: "anchor"` — and three
+fields that the alpha realm does not use carry the difference.
+
+### `renewalAuth: "node-secret"`
+
+The field has always been in the document and conflux never read it, because with one
+issuer whose route was gated on nothing there was nothing to read it for. It is read
+now, and there are exactly three answers:
+
+- **absent, or `"anchor-id"`** — no header. The alpha realm, byte for byte as before.
+- **`"node-secret"`** — `Authorization: Bearer <renewalSecret>`, where `renewalSecret`
+  is a value in the same document, minted for this one machine.
+- **anything else** — refused, naming the value.
+
+The refusal is deliberate and is worth stating, because the tempting alternative is to
+send nothing and hope. There is no case where that succeeds: the far end is expecting
+proof, so what you get is a 401 and a failure message about a status code instead of
+one that says which scheme this build does not implement. A node that quietly
+downgrades is worse than one that stops.
+
+`conflux enrol` refuses an unknown scheme at import, when a person is present to read
+it. The running renewal path warns and carries on instead — an anchor that cannot yet
+renew is strictly better than one that will not start.
+
+### `renewalSecret` is the machine, a second time
+
+Everything [the section on a stolen manifest](#a-stolen-manifestb64-is-permanent) says
+applies to this field as well, and it is the reason that section did not get any
+gentler on this path. Whoever holds the document holds the identity seed **and** the
+bearer that keeps its credential current, so they are that anchor and can stay that
+anchor.
+
+What is different is that there is now somewhere to report it to. Revocation on a
+guardian is the guardian refusing to renew, which is the entire mechanism — nothing is
+pushed, no list is distributed, and the credential simply lapses on its own schedule.
+On the alpha realm there is nobody to tell and nothing that could be done.
+
+The secret never reaches an argv, never gets its own file, and is covered by the same
+redaction that keeps the rest of the document out of logs.
+
+### `ipv4` and `export`, copied once
+
+A guardian allocates overlay IPv4 addresses out of a range it keeps, and may say where
+telemetry should go. Both travel in the document, and `conflux enrol` copies them into
+`conflux.json` **once** — after that they are ordinary configuration, visible in
+`conflux config` and editable.
+
+Read once rather than obeyed on every start, and that is the same distinction that
+makes conflux refuse to inherit the two exit flags at all. An exit flag would go on
+deciding, at every boot, whether this machine is a route to the public internet for
+other people. These are a suggestion made at commissioning time by the operator who is
+about to run the collector anyway, recorded where they can see it and change it, and
+never consulted again.
+
+### Renewal, and what a lapse costs
+
+Renewal is the same exchange with a header on it: `POST` the renewal URL with
+`{"anchorId": "anchor…"}`, get back `{"chain": "…", "notAfter": "…"}`. That URL is
+where the configured API base came from in the first place — enrol reads it out of the
+document — so the two agree unless `--api` was passed to say otherwise, in which case
+they are checked against each other. See [commands.md](commands.md#conflux-enrol).
+
+A guardian signs from its own realm root, which it holds. So its ability to renew your
+machine does not depend on it being able to reach anything upstream — if its own
+delegation lapses, its realm is cut off from the tree above and **keeps running within
+itself**, and it goes on renewing the machines beneath it indefinitely. That is the
+point of a self-hosted deployment, and it is why a guardian node's renewal URL names
+the guardian and never us.

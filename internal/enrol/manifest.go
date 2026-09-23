@@ -127,6 +127,69 @@ func (m *Manifest) Taints() []string {
 	return out
 }
 
+// IPv4 is an overlay address the issuer allocated, as a prefix.
+//
+// **Read once, by the import verb, and never on a start.** Guardian allocates
+// addresses out of a range it keeps in a database, so the number has to travel
+// somehow, and a field the operator can see in `conflux config` afterwards beats a
+// number retyped from a web page.
+//
+// The reason it is seeded rather than obeyed is the same one that makes conflux
+// pass both exit flags explicitly instead of letting the manifest supply them: a
+// document must not decide, on every start, what this machine does. The difference
+// is what the two settings are. An exit flag makes a machine a route to the public
+// internet for everybody else, so inheriting one silently is a change of role. An
+// address grants nothing and reaches nobody -- and unlike an exit, an operator who
+// disagrees with it can see it in the config file and change it, because conflux
+// wrote it there once rather than re-reading it behind them.
+//
+// Empty when the issuer allocated none, which is every alpha document and is not an
+// error: the v6 address is derived from the identity and needs no decision.
+func (m *Manifest) IPv4() string {
+	s, _ := m.string("ipv4")
+
+	return s
+}
+
+// Export is the telemetry configuration the issuer suggested, as raw JSON.
+//
+// **Seeded at import and never obeyed at run time**, exactly like IPv4, and this
+// is the field where that distinction was hardest to settle. The precedent cuts
+// both ways and both halves of it are real.
+//
+// For carrying it: telemetrySecret already travels in this document, so the
+// principle that a manifest may configure how a machine is observed is not new.
+// And the alternative is worse in practice -- an operator who commissioned fifty
+// nodes in a web UI would then have to type the same collector endpoint and a
+// different per-node credential into fifty config files by hand, which is a
+// procedure with a typo in it.
+//
+// Against: anchor's own proto calls Observability "the one interface here that
+// tells the daemon to dial an arbitrary network address and ship it this realm's
+// operational detail", and conflux refuses to inherit the exit flags for a reason
+// that rhymes -- an anchor that became an internet exit because a document said so
+// is the worst kind of surprise.
+//
+// What resolves it is *when* rather than *whether*. The exit flags are refused
+// because they would be re-read on every start, so a document could keep deciding
+// what this machine does for other people, indefinitely, behind an operator who
+// never agreed. This is read once, by a person running a command, and written into
+// conflux.json where that person can see it in `conflux config` and change it --
+// and from then on the document is not consulted again. A suggestion at
+// commissioning time is a different thing from a standing instruction, and the
+// difference is the whole of why one is refused and this is not.
+//
+// Raw rather than parsed, because enrol knows nothing about the shape -- config
+// owns it, and a second decoder here would be a second schema.
+func (m *Manifest) Export() json.RawMessage {
+	v, ok := m.raw["export"]
+	if !ok {
+		return nil
+	}
+
+	return v
+}
+
 // Bootstrap is the peer list the issuer supplied.
 func (m *Manifest) Bootstrap() []string {
 	var out []string

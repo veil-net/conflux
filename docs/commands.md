@@ -83,8 +83,7 @@ configuration, and registers the boot service.
 
 | Flag | Meaning |
 |---|---|
-| `--taint T` | a compartment label; repeat to carry more than one. Omit it and conflux mints one and prints it. |
-| `--no-taint` | join the realm's shared compartment instead. A deliberate choice; see [concepts.md](concepts.md). |
+| `--taint T` | a compartment label; repeat to carry more than one. Omit it on a machine that has none and conflux mints one and prints it. See [concepts.md](concepts.md). |
 | `--ipv4 ADDRESS` | this machine's IPv4: an address, or an address and the length of the range routed to peers, `10.128.0.7/24`. Any unicast address; see below. |
 | `--no-ipv4` | no IPv4 of its own, without prompting. It still reaches IPv4 peers. |
 | `--subnet CIDR` | an interface, or a private network with no host bits set, that this machine forwards for the realm; repeat for more. See [modes.md](modes.md). |
@@ -178,9 +177,7 @@ configuration.
 
 The counterpart to `down`, and the reason it exists. `down` deliberately leaves the
 boot registration and the configuration in place, so there has to be a word for
-"bring that back now" that is not a reboot. That word used to be `conflux install`,
-whose name and usage line both say *register the boot service* — it started one as a
-side effect, and pointing an operator at it was papering over a missing verb.
+"bring that back now" that is not a reboot.
 
 It is mode-agnostic on purpose. `up` would do for a TUN machine, but `up` is not a
 resume: it re-decides the configuration, and on a userspace machine it changes the

@@ -52,7 +52,6 @@ func runProxy(ctx context.Context, args []string) int {
 		peers  repeated
 	)
 
-	noTaint := fs.Bool("no-taint", false, "join the realm's shared compartment instead of a private one")
 	ipv4 := fs.String("ipv4", "", ipv4Usage)
 	noIPv4 := fs.Bool("no-ipv4", false, noIPv4Usage)
 	uplink := fs.String("uplink", "", "carry the mesh over a link rather than the host network, e.g. /dev/ttyUSB0:115200")
@@ -164,7 +163,7 @@ func runProxy(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	if err := chooseTaints(cfg, taints, *noTaint); err != nil {
+	if err := chooseTaints(cfg, taints); err != nil {
 		return fail(err)
 	}
 
@@ -176,7 +175,6 @@ func runProxy(ctx context.Context, args []string) int {
 func unknownProxyFlag(args []string) string {
 	ours := map[string]bool{
 		"-taint": true, "--taint": true,
-		"-no-taint": true, "--no-taint": true,
 		"-api": true, "--api": true,
 		"-ipv4": true, "--ipv4": true,
 		"-no-ipv4": true, "--no-ipv4": true,
@@ -237,7 +235,7 @@ func splitPositional(args []string) (positional, flags []string) {
 }
 
 // takesValue reports whether a flag written as `-flag value` swallows the argument
-// after it. Only conflux proxy's own value-taking flags are here; --no-taint,
+// after it. Only conflux proxy's own value-taking flags are here; --no-ipv4,
 // --no-uplink and --low-latency are booleans and take nothing.
 //
 // --lan-discovery is here rather than with the booleans because it is a tristate

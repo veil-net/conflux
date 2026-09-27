@@ -67,7 +67,7 @@ because "they share a taint" is not the rule and the difference matters:
 | `{x}` | `{x, y}` | yes | A's set is contained in B's |
 | `{x, y}` | `{x, z}` | **no** | neither contains the other, despite sharing `x` |
 | `{x}` | `{y}` | no | neither contains the other |
-| `{}` | anything | yes | the empty set is contained in every set |
+| none | `{x}` | no | an anchor with none carries the default compartment's tag, which `{x}` does not contain |
 
 Everything else still works across a taint boundary: two separated anchors still
 connect, still bootstrap from each other, still relay for each other. What they cannot
@@ -107,8 +107,8 @@ Taint names are not secret from the realm: the tag is derived from a public root
 so any member can compute the tag for a name it can guess. A generated one is
 unguessable, which is the whole of the protection it provides. `prod` is not.
 
-`conflux up --no-taint` opts back into the commons. It is a deliberate choice, and
-conflux says so when you make it.
+conflux never leaves a machine there. A group that wants to share one compartment
+without a generated name agrees on a name and passes it: `--taint office`.
 
 ## What conflux decides, and what anchor decides
 

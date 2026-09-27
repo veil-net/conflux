@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 )
 
 // Out and Errw are indirected so tests can capture them.
@@ -34,6 +35,22 @@ func Warnf(format string, a ...any) {
 
 // Field prints one aligned "key  value" row, the shape anchorctl's own status uses.
 func Field(key, value string) { fmt.Fprintf(Out, "  %-12s %s\n", key, value) }
+
+// Until says how long is left before t, the way every expiry conflux prints does:
+// "6d 23h", "5h", or "expired".
+func Until(t time.Time) string {
+	d := time.Until(t)
+	if d < 0 {
+		return "expired"
+	}
+
+	days, hours := int(d.Hours())/24, int(d.Hours())%24
+	if days > 0 {
+		return fmt.Sprintf("%dd %dh", days, hours)
+	}
+
+	return fmt.Sprintf("%dh", hours)
+}
 
 // IsTerminal reports whether stdin is something a person is typing at. Used to
 // decide between prompting and refusing: a prompt with no terminal to answer it is

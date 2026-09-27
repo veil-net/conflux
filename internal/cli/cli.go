@@ -3,9 +3,8 @@
 // Two surfaces in one binary. Conflux owns a short list of verbs, and every other
 // argument vector is handed to the embedded anchorctl untouched -- not parsed, not
 // rewritten, not validated. That is the whole design, and it is why there is no CLI
-// framework here: the previous conflux used one, and a framework owns the entire
-// argv and errors on flags it does not know, which is precisely what makes
-// pass-through impossible.
+// framework here: a framework owns the entire argv and errors on flags it does not
+// know, which is precisely what makes pass-through impossible.
 package cli
 
 import (

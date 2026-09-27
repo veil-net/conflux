@@ -131,7 +131,7 @@ func startFromConfig(ctx context.Context, d paths.Dirs, mgr service.Manager, ver
 		return fail(err)
 	}
 
-	report(d, cfg, st, verb)
+	report(cfg, st, verb)
 
 	return ExitOK
 }
@@ -140,9 +140,7 @@ func startFromConfig(ctx context.Context, d paths.Dirs, mgr service.Manager, ver
 //
 // The counterpart to down, and the reason it exists: down leaves the boot
 // registration and the configuration in place, so there has to be a word for "bring
-// that back now" that is not a reboot. That word used to be `conflux install`, whose
-// name and usage line both say "register the boot service" -- it started one as a
-// side effect, and pointing an operator at it was papering over a missing verb.
+// that back now" that is not a reboot.
 //
 // Mode-agnostic on purpose. `up` would do for a TUN machine, but it is not a resume:
 // it re-decides the configuration, and on a userspace machine it changes the mode and
@@ -321,8 +319,7 @@ func runUninstall(_ context.Context, args []string) int {
 	}
 
 	// Each step tolerates its own failure: a half-removed installation must always
-	// be finishable, and stopping at the first complaint is what made that
-	// impossible in the previous conflux.
+	// be finishable, so nothing stops at the first complaint.
 	_ = mgr.Stop()
 
 	var first error
@@ -353,13 +350,7 @@ func runUninstall(_ context.Context, args []string) int {
 
 // confirmUninstall makes the irreversible part explicit before it happens.
 func confirmUninstall(d paths.Dirs, yes bool) bool {
-	if !config.HasManifest(d) {
-		return true
-	}
-
-	st, _ := config.LoadState(d)
-
-	if yes {
+	if yes || !config.HasManifest(d) {
 		return true
 	}
 
@@ -372,7 +363,7 @@ func confirmUninstall(d paths.Dirs, yes bool) bool {
 
 	ui.Printf("\nThis deletes this machine's credential, and there is no other copy.\n\n")
 
-	if st.AnchorID != "" {
+	if st, _ := config.LoadState(d); st.AnchorID != "" {
 		ui.Field("anchor", st.AnchorID)
 	}
 

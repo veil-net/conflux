@@ -13,6 +13,7 @@ import (
 	"github.com/veil-net/conflux/internal/enrol"
 	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/ui"
 )
 
 // renewOnce is the timer's renewal. See RenewNow, which is all of it.
@@ -127,8 +128,8 @@ func RenewNow(ctx context.Context, dirs paths.Dirs, ctl *anchorctl.Ctl, rep Repo
 		rep.Warn("could not record the renewal: %v", err)
 	}
 
-	rep.Step("credential renewed, valid until %s (in %s)",
-		renewal.NotAfter.Format(time.RFC3339), time.Until(renewal.NotAfter).Round(time.Hour))
+	rep.Step("credential renewed, valid until %s (%s)",
+		renewal.NotAfter.Format(time.RFC3339), ui.Until(renewal.NotAfter))
 
 	return nil
 }

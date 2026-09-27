@@ -56,7 +56,7 @@ func bring(ctx context.Context, d paths.Dirs, cfg *config.Config, verb string) i
 		return fail(err)
 	}
 
-	report(d, cfg, started, verb)
+	report(cfg, started, verb)
 
 	return ExitOK
 }
@@ -100,17 +100,10 @@ func restartWith(d paths.Dirs, mgr service.Manager) error {
 //
 // Two signals, and having both is the point. The supervisor writes a readiness marker the
 // instant the anchor is up, which a stat notices within a tick; the status call is the
-// fallback, kept at one a second because it forks a 43 MB binary and because it is the
-// only thing that still works if a marker never arrives at all.
-//
-// Linux already had this and the other two did not. systemd's Type=notify makes
-// `systemctl restart` return once the supervisor has sent READY=1 -- systemd.service(5):
-// "systemd will proceed with starting follow-up units after this notification message has
-// been sent" -- so the first status call here already succeeded and the polling never
-// showed. launchd infers readiness from the process staying alive and the Windows SCM
-// tells only itself, so on a Mac and on Windows this was a second of waiting per attempt
-// for news that had already happened, on top of a fork per attempt that Defender and
-// Gatekeeper each want to think about.
+// fallback, kept at one a second because it forks anchorctl and because it is the only
+// thing that still works if a marker never arrives at all. systemd's Type=notify makes
+// `systemctl restart` return only once the anchor is up, so on Linux the first call
+// already succeeds; launchd, rc and the Windows SCM give no such signal.
 func waitForAnchor(ctx context.Context, d paths.Dirs) (anchorctl.Status, error) {
 	ctl, err := runCtl(d)
 	if err != nil {
@@ -145,9 +138,7 @@ func waitForAnchor(ctx context.Context, d paths.Dirs) (anchorctl.Status, error) 
 
 			// The token is rewritten by the supervisor on every start, so re-read it
 			// rather than trusting the one runCtl picked up a moment ago.
-			if fresh, err := runCtl(d); err == nil {
-				ctl = fresh
-			}
+			ctl.Token = readToken(d)
 
 			st, err := ctl.Status(ctx)
 			if err == nil && st.Running {
@@ -169,7 +160,6 @@ func waitForAnchor(ctx context.Context, d paths.Dirs) (anchorctl.Status, error) 
 	}
 }
 
-// report is what a person sees when it worked.
 // exitNote describes this machine's exit settings, or "" when it has neither.
 func exitNote(cfg *config.Config) string {
 	switch {
@@ -184,7 +174,8 @@ func exitNote(cfg *config.Config) string {
 	}
 }
 
-func report(d paths.Dirs, cfg *config.Config, st anchorctl.Status, verb string) {
+// report is what a person sees when it worked.
+func report(cfg *config.Config, st anchorctl.Status, verb string) {
 	mgr, _ := service.New()
 
 	ui.Println()
@@ -234,7 +225,7 @@ func report(d paths.Dirs, cfg *config.Config, st anchorctl.Status, verb string) 
 
 	if !st.WorksUntil.IsZero() {
 		ui.Field("credential", fmt.Sprintf("valid until %s (%s)",
-			st.WorksUntil.Format(time.RFC3339), until(st.WorksUntil)))
+			st.WorksUntil.Format(time.RFC3339), ui.Until(st.WorksUntil)))
 	}
 
 	if mgr != nil {
@@ -245,39 +236,21 @@ func report(d paths.Dirs, cfg *config.Config, st anchorctl.Status, verb string) 
 
 	// Only after a command that just decided the taint. `install` is a restart of
 	// something already configured, and telling somebody how to join a network they
-	// are already on is noise.
+	// are already on is noise. One --taint per name: the flag takes one, and a comma
+	// inside one is refused.
 	if verb == "up" || verb == "proxy" {
-		ui.Printf("Reachable from any machine that runs:  conflux up --taint %s\n", joinTaints(cfg.Taints))
+		ui.Printf("Reachable from any machine that runs:  conflux up --taint %s\n",
+			strings.Join(cfg.Taints, " --taint "))
 	}
 }
 
+// joinTaints is the taint set for a status line.
 func joinTaints(t []string) string {
 	if len(t) == 0 {
 		return "(none)"
 	}
 
-	out := t[0]
-	for _, v := range t[1:] {
-		out += "," + v
-	}
-
-	return out
-}
-
-func until(t time.Time) string {
-	d := time.Until(t)
-	if d < 0 {
-		return "expired"
-	}
-
-	days := int(d.Hours()) / 24
-	hours := int(d.Hours()) % 24
-
-	if days > 0 {
-		return fmt.Sprintf("%dd %dh", days, hours)
-	}
-
-	return fmt.Sprintf("%dh", hours)
+	return strings.Join(t, ",")
 }
 
 // journalHint names where this platform keeps the supervisor's output.

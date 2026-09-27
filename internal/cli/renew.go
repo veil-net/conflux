@@ -10,10 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
-	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/ui"
@@ -104,21 +102,13 @@ func renewNow(ctx context.Context, d paths.Dirs) int {
 		return ExitUnavailable
 	}
 
-	tools, err := libexec.Ensure(d)
+	ctl, err := runCtl(d)
 	if err != nil {
 		return fail(err)
 	}
 
-	token, err := os.ReadFile(d.TokenFile())
-	if err != nil {
-		return fail(fmt.Errorf("read %s, which anchorctl authenticates with: %w", d.TokenFile(), err))
-	}
-
-	ctl := &anchorctl.Ctl{
-		Bin:    tools.Anchorctl,
-		Socket: d.Socket(),
-		Token:  strings.TrimSpace(string(token)),
-		SetID:  tools.SetID,
+	if ctl.Token == "" {
+		return fail(fmt.Errorf("could not read %s, which anchorctl authenticates with", d.TokenFile()))
 	}
 
 	before, _ := config.LoadState(d)
@@ -129,7 +119,7 @@ func renewNow(ctx context.Context, d paths.Dirs) int {
 
 	if !before.NotAfter.IsZero() {
 		ui.Field("was", fmt.Sprintf("valid until %s (%s)",
-			before.NotAfter.Format(time.RFC3339), until(before.NotAfter)))
+			before.NotAfter.Format(time.RFC3339), ui.Until(before.NotAfter)))
 	}
 
 	return ExitOK

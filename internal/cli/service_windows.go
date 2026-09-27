@@ -36,10 +36,9 @@ type handler struct {
 
 // Execute is the SCM's view of conflux.
 //
-// The previous conflux had the anchor's stop call commented out here and went
-// straight to svc.Stopped, so every service stop left peers to discover the
-// departure by timeout. Cancelling the supervisor's context runs its full shutdown
-// -- close the anchor, then signal, then kill -- which is the whole point.
+// A stop cancels the supervisor's context, which runs its full shutdown -- close the
+// anchor so it says goodbye, then signal, then kill -- rather than reporting Stopped
+// and leaving peers to discover the departure by timeout.
 func (h *handler) Execute(_ []string, r <-chan svc.ChangeRequest, s chan<- svc.Status) (bool, uint32) {
 	const accepted = svc.AcceptStop | svc.AcceptShutdown
 

@@ -33,7 +33,6 @@ func runUp(ctx context.Context, args []string) int {
 		subnets  repeated
 		ipv4     = fs.String("ipv4", "", ipv4Usage)
 		noIPv4   = fs.Bool("no-ipv4", false, noIPv4Usage)
-		noTaint  = fs.Bool("no-taint", false, "join the realm's shared compartment instead of a private one")
 		tunName  = fs.String("interface", "", "name for the network interface (default anchor0)")
 		uplink   = fs.String("uplink", "", "carry the mesh over a link rather than the host network, e.g. /dev/ttyUSB0:115200")
 		noUplink = fs.Bool("no-uplink", false, "go back to the host's network on a machine configured for a link")
@@ -133,7 +132,7 @@ func runUp(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	if err := chooseTaints(cfg, taints, *noTaint); err != nil {
+	if err := chooseTaints(cfg, taints); err != nil {
 		return fail(err)
 	}
 
@@ -477,22 +476,7 @@ func choosePeers(cfg *config.Config, values []string, none bool) error {
 // anchor with no taints carries the realm's default compartment, which every other
 // unconfigured anchor in the realm also carries. Leaving a machine there silently is
 // the one thing conflux will not do.
-func chooseTaints(cfg *config.Config, given []string, none bool) error {
-	if none {
-		if len(given) > 0 {
-			return errors.New("--taint and --no-taint contradict each other")
-		}
-
-		ui.Warnf("--no-taint puts this machine in the realm's shared compartment,\n" +
-			"  where it can exchange data with every other anchor that has no taint either.")
-
-		// anchor treats an empty list as the default compartment, and conflux's
-		// config validation insists on a non-empty one -- so name it explicitly.
-		cfg.Taints = []string{defaultCompartment}
-
-		return nil
-	}
-
+func chooseTaints(cfg *config.Config, given []string) error {
 	if len(given) > 0 {
 		given = unique(given)
 
@@ -540,11 +524,6 @@ func chooseTaints(cfg *config.Config, given []string, none bool) error {
 
 	return nil
 }
-
-// defaultCompartment is the name conflux gives the shared compartment when somebody
-// asks for it explicitly. Any single agreed string works: what matters is that every
-// machine choosing --no-taint chooses the same one.
-const defaultCompartment = "conflux-commons"
 
 // unique drops repeated values and keeps the first of each, in order. Every list a
 // flag can repeat means a set, and anchor collapses a repeat anyway.

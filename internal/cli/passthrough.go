@@ -136,24 +136,30 @@ func runEscapeHatch(ctx context.Context, args []string) int {
 	return passthrough(ctx, args)
 }
 
-// runCtl builds a Ctl for conflux's own use, against conflux's own daemon.
+// runCtl builds a Ctl for conflux's own use, against conflux's own daemon. Its token
+// is empty when there is none to read, which is a daemon that is not running.
 func runCtl(d paths.Dirs) (*anchorctl.Ctl, error) {
 	tools, err := libexec.Ensure(d)
 	if err != nil {
 		return nil, err
 	}
 
-	token, err := os.ReadFile(d.TokenFile())
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, err
-	}
-
 	return &anchorctl.Ctl{
 		Bin:    tools.Anchorctl,
 		Socket: d.Socket(),
-		Token:  strings.TrimSpace(string(token)),
+		Token:  readToken(d),
 		SetID:  tools.SetID,
 	}, nil
+}
+
+// readToken is the daemon's bearer token, or "" when it cannot be read.
+func readToken(d paths.Dirs) string {
+	b, err := os.ReadFile(d.TokenFile())
+	if err != nil {
+		return ""
+	}
+
+	return strings.TrimSpace(string(b))
 }
 
 // runQuiet runs anchorctl and returns its output, for the places conflux embeds it

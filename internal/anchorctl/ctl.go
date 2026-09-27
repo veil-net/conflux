@@ -99,10 +99,6 @@ func (c *Ctl) run(ctx context.Context, stdin []byte, args ...string) (string, er
 // request at all, which is why anchord's -credentials-dir confinement is a question
 // conflux never has to answer.
 func (c *Ctl) Start(ctx context.Context, env config.Envelope, mode StartMode) (Started, error) {
-	if err := mode.Validate(); err != nil {
-		return Started{}, err
-	}
-
 	out, err := c.run(ctx, env, mode.Args()...)
 	if err != nil {
 		return Started{}, err
@@ -116,15 +112,17 @@ func (c *Ctl) Start(ctx context.Context, env config.Envelope, mode StartMode) (S
 	return s, nil
 }
 
-// Metrics reads the daemon's counters and gauges. An anchor that has not published
-// any yet is not an error; the map is simply empty.
-func (c *Ctl) Metrics(ctx context.Context) (map[string]float64, error) {
+// Metric reads one of the daemon's counters or gauges. One that has not been
+// published yet is not an error; it is reported absent.
+func (c *Ctl) Metric(ctx context.Context, name string) (float64, bool, error) {
 	out, err := c.run(ctx, nil, MetricsArgs()...)
 	if err != nil {
-		return nil, err
+		return 0, false, err
 	}
 
-	return ParseMetrics(out), nil
+	v, ok := ParseMetric(out, name)
+
+	return v, ok, nil
 }
 
 // Status asks what is running. A daemon that is up with no anchor in it is not an

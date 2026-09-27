@@ -55,9 +55,12 @@ does not resolve yet is legitimate.
 conflux still needs root to *register the boot service* — a proxy that vanishes on the
 next reboot is not what anyone asked for — but the anchor itself needs nothing.
 
-Neither exit is available here: routing the public internet either way needs a host
-interface, and userspace mode has none. `conflux proxy` does not register the flags at
-all, rather than accepting them and refusing later.
+Neither exit is available here: an exit is traffic forwarded out of a host interface,
+and this mode has none. `conflux proxy` does not register the flags at all, rather
+than accepting them and refusing later.
+
+An IPv4 works in both modes. Here the anchor's own stack holds it, so a peer reaches
+the published ports at it as well as at the overlay IPv6 address.
 
 ## Why they cannot be combined
 
@@ -67,8 +70,8 @@ Two separate rules, both anchor's:
 address, so binding it is an ordinary `bind` and a proxy would be a second, redundant
 path to the same port. anchor refuses the combination rather than pick one.
 
-**A subnet, an exit and an overlay IPv4 all need a host interface.** There is nothing
-to forward out of, and no interface to assign an address to, in userspace.
+**A subnet and a served exit need a host interface.** There is nothing to forward
+out of in userspace.
 
 **And one daemon holds one anchor.** So even setting the rules aside, a machine is in
 one mode at a time. The same sentence is why an anchor has one uplink or one socket
@@ -108,11 +111,10 @@ conflux: this machine was running in TUN mode with interface anchor0.
   a host interface cannot also serve a reverse proxy …
 ```
 
-The identity does not change. Only the mode does — along with the settings that
-cannot survive it. Switching to userspace clears the overlay IPv4, the subnets and
-both exits, because each needs a host interface; switching to TUN clears the proxy
-specs. Everything that is orthogonal to the mode — the taints, the uplink, the peers,
-the port, low latency — is kept.
+The identity does not change. Only the mode does — along with what belonged to the
+other one. Switching to userspace clears the subnets and both exits; switching to TUN
+clears the proxy specs. Everything that is orthogonal to the mode — the IPv4, the
+taints, the uplink, the peers, the port, low latency — is kept.
 
 ## Proxy specs
 
@@ -124,17 +126,20 @@ The grammar is `OVERLAYPORT[/NETWORK]=BACKEND`.
 | `53/udp=127.0.0.1:53` | UDP on overlay port 53 → `127.0.0.1:53` |
 | `5432=[::1]:5432` | an IPv6 backend, bracketed |
 
-The network defaults to `tcp` and must be `tcp` or `udp`. The port is 1–65535. Repeat
-the argument for more than one; conflux refuses a duplicate overlay port rather than
-silently keeping the last.
+The network defaults to `tcp` and must be `tcp` or `udp`. The port is 1–65535. The
+backend is `host:port`, dialled per connection, so a named port is as good as a number.
+Repeat the argument for more than one; conflux refuses a duplicate overlay port rather
+than silently keeping the last.
 
 ## `--subnet`, and what the host has to be
 
 `conflux up --subnet 192.168.1.0/24` offers to forward that network to the rest of the
 realm. An entry is an interface name or a prefix; an interface name expands to every
-private network on it, so `eth1` follows DHCP. Private networks only — reaching the
-public internet through an anchor is what an exit is for, and conflux does not offer
-one.
+private network on it, so `eth1` follows DHCP. Private networks only — RFC 1918,
+carrier-grade NAT `100.64.0.0/10` and unique local IPv6, each wholly inside one of
+those — because reaching the public internet through an anchor is what an exit is
+for. A prefix is the network, so `192.168.1.7/24` is refused with the `192.168.1.0/24`
+it meant.
 
 **anchor deliberately does not configure the host for this, and neither does conflux.**
 Forwarding a subnet also needs, on the host:

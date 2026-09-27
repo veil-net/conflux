@@ -43,11 +43,12 @@ gets cleaned up. To build from source instead, see [build.md](docs/build.md)
 
 ```console
 $ sudo conflux up
-An overlay IPv4 lets other machines reach this one by a v4 address.
-Everyone on your network picks the same prefix and a different host part.
-The IPv6 address is derived from this machine's identity and needs no answer.
+An IPv4 lets the other machines on this network reach this one by a v4 address.
+A private address is advertised to them; give each machine that should be
+reachable on its own a different one. The IPv6 address is derived from this
+machine's identity and needs no answer.
 
-  Overlay IPv4 [e.g. 10.128.0.7/24, blank for IPv6-only]: 10.128.0.1/24
+  IPv4 [e.g. 10.128.0.7/24, blank for none]: 10.128.0.1/24
 
 Minted a taint for this network:
 
@@ -63,7 +64,7 @@ Starting.
 
   anchor       anchor6btpa3gn6w4stipba4hekzho7caw6srfyy5puvbz7mfanaiept5a
   overlay      fd80:c4b9:99ae:4411:c531:fd4f:754f:f08a/48
-  overlay      10.128.0.1/24
+  ipv4         10.128.0.1/24
   interface    anchor0
   taint        brhk-2mq9-tzva-6pjs
   credential   valid until 2026-09-13T06:35:43Z (6d 23h)
@@ -76,7 +77,7 @@ service.
 
 ### 3. Bring up every other machine
 
-Give each one the taint from step 2 and its own host part:
+Give each one the taint from step 2 and its own address:
 
 ```console
 $ sudo conflux up --taint brhk-2mq9-tzva-6pjs --ipv4 10.128.0.2/24
@@ -186,11 +187,12 @@ it, and the limits it still has.
 
 ### Three things worth knowing
 
-**The prompt appears once.** conflux asks for an overlay IPv4 because thirty-two bits
-are too few to derive without collisions; the IPv6 address comes from the machine's
-identity and needs no answer. Blank is a valid answer, and a common one. A second
-`conflux up` reads the existing configuration and prompts for nothing — conflux will
-never change a machine's address just because a command got run again.
+**The prompt appears once.** conflux asks for an IPv4 because thirty-two bits are
+too few to derive without collisions; the IPv6 address comes from the machine's
+identity and needs no answer. Blank is a valid answer, and a common one, and conflux
+remembers it. A second `conflux up` reads the existing configuration and prompts for
+nothing — conflux will never change a machine's address just because a command got
+run again.
 
 **The taint decides who can reach you.** conflux always generates one, because the
 alternative isn't "no restriction" — an anchor with no taints sits in the realm's
@@ -226,9 +228,9 @@ reaches the realm over — the host's IP network by default, or a link named by
 
 | Command | What it does |
 |---|---|
-| `conflux up [--taint T] [--ipv4 PREFIX \| --no-ipv4] [--subnet CIDR]... [--uplink DEV \| --no-uplink] [--peers HOST:PORT] [--lan-discovery yes\|no\|auto]` | enrol if needed, start in TUN mode, register the boot service |
-| `conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T] [--uplink DEV] [--peers HOST:PORT] [--lan-discovery yes\|no\|auto]` | enrol if needed, start in userspace mode serving those backends |
-| `conflux enrol --manifest FILE --api URL [--ipv4 PREFIX]` | install a credential this machine was given, instead of drawing one |
+| `conflux up [--taint T] [--ipv4 ADDRESS \| --no-ipv4] [--subnet CIDR]... [--uplink DEV \| --no-uplink] [--peers HOST:PORT] [--lan-discovery yes\|no\|auto]` | enrol if needed, start in TUN mode, register the boot service |
+| `conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T] [--ipv4 ADDRESS \| --no-ipv4] [--uplink DEV] [--peers HOST:PORT] [--lan-discovery yes\|no\|auto]` | enrol if needed, start in userspace mode serving those backends |
+| `conflux enrol --manifest FILE [--api URL] [--ipv4 ADDRESS]` | install a credential this machine was given, instead of drawing one |
 | `conflux down` | stop the anchor now; the boot service and the configuration stay |
 | `conflux start` | start it again now, from the configuration already on disk |
 | `conflux renew` | fetch a fresh credential and install it on the running anchor, hot |

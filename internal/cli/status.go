@@ -90,8 +90,8 @@ func reportConfig(cfg *config.Config) {
 		ui.Field("peers", strings.Join(cfg.Peers, ", ")+" — overriding the enrolled list")
 	}
 
-	if cfg.IPv4 != "" {
-		ui.Field("ipv4", cfg.IPv4)
+	if ip := cfg.OverlayIPv4(); ip != "" {
+		ui.Field("ipv4", ip)
 	}
 
 	for _, s := range cfg.Subnets {

@@ -122,7 +122,7 @@ func (s *Supervisor) linkIsDead(ctx context.Context, device string, zeroSince *t
 	probe, cancel := context.WithTimeout(ctx, stopTimeout)
 	defer cancel()
 
-	metrics, err := s.ctl.Metrics(probe)
+	conns, _, err := s.ctl.Metric(probe, anchorctl.MetricConnections)
 	if err != nil {
 		// The daemon not answering is the restart loop's business, not this one's.
 		// Treating it as a dead link would restart an anchor over a problem that
@@ -130,7 +130,7 @@ func (s *Supervisor) linkIsDead(ctx context.Context, device string, zeroSince *t
 		return false, ""
 	}
 
-	if metrics[anchorctl.MetricConnections] > 0 {
+	if conns > 0 {
 		*zeroSince = time.Time{}
 
 		return false, ""

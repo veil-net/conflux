@@ -48,9 +48,9 @@ type verb struct {
 // they said nine, ten, three and five between them; the map below is the answer.
 func verbs() map[string]verb {
 	return map[string]verb{
-		"up":        {run: runUp, summary: "join the overlay with a network interface", usage: "conflux up [--taint T] [--ipv4 PREFIX | --no-ipv4] [--subnet CIDR]... [--uplink DEV | --no-uplink]"},
-		"enrol":     {run: runEnrol, summary: "install a credential this machine was given, rather than drawing one", usage: "conflux enrol --manifest FILE [--api URL] [--ipv4 PREFIX] [--taint T]..."},
-		"proxy":     {run: runProxy, summary: "publish a local service on the overlay, without an interface", usage: "conflux proxy PORT[/NETWORK]=BACKEND ... [--uplink DEV | --no-uplink]"},
+		"up":        {run: runUp, summary: "join the overlay with a network interface", usage: "conflux up [--taint T] [--ipv4 ADDRESS | --no-ipv4] [--subnet CIDR]... [--uplink DEV | --no-uplink]"},
+		"enrol":     {run: runEnrol, summary: "install a credential this machine was given, rather than drawing one", usage: "conflux enrol --manifest FILE [--api URL] [--ipv4 ADDRESS] [--taint T]..."},
+		"proxy":     {run: runProxy, summary: "publish a local service on the overlay, without an interface", usage: "conflux proxy PORT[/NETWORK]=BACKEND ... [--ipv4 ADDRESS | --no-ipv4] [--uplink DEV | --no-uplink]"},
 		"start":     {run: runStart, summary: "start the anchor now, from the saved configuration", usage: "conflux start"},
 		"down":      {run: runDown, summary: "stop the anchor now; a reboot brings it back", usage: "conflux down"},
 		"renew":     {run: runRenew, summary: "install a fresh credential on the running anchor, now", usage: "conflux renew"},

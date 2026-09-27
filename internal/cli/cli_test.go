@@ -402,15 +402,66 @@ func TestNoPeersClears(t *testing.T) {
 func TestPeersAreValidatedBeforeTheyReachAnchor(t *testing.T) {
 	var cfg config.Config
 
-	for _, bad := range []string{"genesis.veilnet.com.au", "a,b:4700", ":4700", "host:0", "host:notaport"} {
+	for _, bad := range []string{
+		"genesis.veilnet.com.au", "a,b:4700", ":4700", "host:notaport", "host:65536",
+		"anchorabc@203.0.113.9:4700", // not an AnchorID anchor could parse
+	} {
 		if err := choosePeers(&cfg, []string{bad}, false); err == nil {
 			t.Errorf("peer %q was accepted", bad)
 		}
 	}
 
-	good := []string{"genesis.veilnet.com.au:4700", "anchorabc@203.0.113.9:4700", "[::1]:4700"}
+	good := []string{
+		"genesis.veilnet.com.au:4700", "[::1]:4700",
+		"anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq@203.0.113.9:4700",
+		"ANCHORAAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ@203.0.113.9:4700",
+	}
 	if err := choosePeers(&cfg, good, false); err != nil {
 		t.Errorf("peers %v were refused: %v", good, err)
+	}
+}
+
+// TestIPv4IsAskedOnce: a machine that has answered, including "none", is not asked
+// again, and one that has not is asked -- or refused where nobody can answer.
+func TestIPv4IsAskedOnce(t *testing.T) {
+	in := ui.In
+	ui.In = strings.NewReader("")
+
+	t.Cleanup(func() { ui.In = in })
+
+	none, addr := "", "10.128.0.7/24"
+
+	for name, tc := range map[string]struct {
+		have    *string
+		flag    string
+		noFlag  bool
+		want    *string
+		refused bool
+	}{
+		"declined stays declined": {have: &none, want: &none},
+		"an address stays":        {have: &addr, want: &addr},
+		"the flag replaces it":    {have: &none, flag: addr, want: &addr},
+		"--no-ipv4 declines":      {have: &addr, noFlag: true, want: &none},
+		"both flags":              {flag: addr, noFlag: true, refused: true},
+		"never asked, no tty":     {refused: true},
+		"a bare address is a /32": {flag: "10.128.0.7", want: func() *string { v := "10.128.0.7"; return &v }()},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := config.Config{IPv4: tc.have}
+
+			err := chooseIPv4(&cfg, tc.flag, tc.noFlag)
+
+			switch {
+			case tc.refused:
+				if err == nil {
+					t.Errorf("accepted, ipv4 = %v", cfg.IPv4)
+				}
+			case err != nil:
+				t.Errorf("refused: %v", err)
+			case cfg.IPv4 == nil || *cfg.IPv4 != *tc.want:
+				t.Errorf("ipv4 = %v, want %q", cfg.IPv4, *tc.want)
+			}
+		})
 	}
 }
 

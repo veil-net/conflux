@@ -8,19 +8,19 @@ beneath it, and most of what follows is a way of reading that output.
 | `nothing is running here` | no daemon on the socket | `conflux start` if a configuration already exists, otherwise `conflux up` or `conflux proxy` |
 | `this needs root` | every state-changing verb needs it | `sudo conflux …` |
 | `status` exits 78 | never configured | `conflux up` or `conflux proxy` |
-| `up` exits 2 with "needs `--ipv4` or `--no-ipv4`" | no terminal to prompt at | pass one of them; that is what they are for |
-| `is not an address and a prefix` | a bare IPv4 was given | write it as `10.128.0.7/24` |
-| `is the network address of its own prefix` | `10.128.0.0/24` | pick a host address, `10.128.0.1/24` |
-| `a reverse proxy needs userspace mode` | `--subnet` or `--ipv4` given to `proxy`, or a proxy spec to `up` | the modes are exclusive; see [modes.md](modes.md) |
+| `has not been given an IPv4 yet and there is no terminal to ask at` | `up` or `proxy` in a script, on a machine never asked | pass `--ipv4 ADDRESS` or `--no-ipv4`; that is what they are for |
+| `is not a unicast address a host sends from` | a loopback, link-local, multicast or broadcast IPv4 | pick an address a host could send from; any other is accepted |
+| `a reverse proxy needs userspace mode` | a proxy spec in a `tun` configuration | the modes are exclusive; see [modes.md](modes.md) |
 | `"-add" is not one of conflux proxy's flags` | anchorctl's proxy was meant | `conflux anchorctl proxy -add …` |
-| `"start" is anchorctl's` | `conflux start` | `conflux up`, or the escape hatch |
+| `"-identity" is anchorctl's start` | anchorctl's flags given to `conflux start`, which takes none | `conflux anchorctl start …` |
 | `the anchor binaries … will not run` | `noexec`, or SELinux | see below |
-| `wintun.dll … could not be downloaded` | Windows, offline | see [windows.md](windows.md) |
+| `wintun.dll, and it could not be fetched` | Windows, offline | see [windows.md](windows.md) |
 | `taint … contains a comma` | a comma-separated list was passed to `--taint` | use `--taint` twice |
 | `credential EXPIRED` in status | renewal has been failing | the next line names the error; see below |
 | `clock is … away from the server's` | bad clock | fix NTP first; nothing will connect until you do |
 | two machines up, cannot reach each other | almost always taints | see below |
 | `subnet … is not a private network` | a public prefix | anchor forwards private networks only |
+| `subnet … has host bits set` | `192.168.1.7/24` | write the network, `192.168.1.0/24` |
 | `the control socket path is N bytes` | `CONFLUX_DIR` is too deep | use a shorter one; the kernel's limit is 104–108 bytes |
 | `fd:3 adopts a descriptor …` | `--uplink fd:N` | conflux's supervisor hands anchord no descriptors; name the device, or use `conflux anchorctl start` |
 | `anchor has no way to open a link on Windows` | `--uplink` on Windows | anchor opens a link on unix only; see [uplink.md](uplink.md) |

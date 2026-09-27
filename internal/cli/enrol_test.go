@@ -88,8 +88,8 @@ func TestEnrolInstallsWhatItWasGiven(t *testing.T) {
 		t.Errorf("apiBaseUrl = %q, want %q", cfg.APIBaseURL, guardianAPI)
 	}
 
-	if cfg.IPv4 != "10.20.0.7/24" {
-		t.Errorf("ipv4 = %q, want the address the issuer allocated", cfg.IPv4)
+	if cfg.OverlayIPv4() != "10.20.0.7/24" {
+		t.Errorf("ipv4 = %q, want the address the issuer allocated", cfg.OverlayIPv4())
 	}
 }
 
@@ -138,7 +138,7 @@ func TestEnrolRefusesBeforeWriting(t *testing.T) {
 	unknownAuth := strings.Replace(guardianDoc, `"renewalAuth": "node-secret"`, `"renewalAuth": "mtls"`, 1)
 	noRenewal := strings.Replace(guardianDoc,
 		`  "renewalUrl": "https://guardian.example.gov/nodes/abc/credential",`+"\n", "", 1)
-	badAddress := strings.Replace(guardianDoc, `"ipv4": "10.20.0.7/24"`, `"ipv4": "10.20.0.7"`, 1)
+	badAddress := strings.Replace(guardianDoc, `"ipv4": "10.20.0.7/24"`, `"ipv4": "127.0.0.7/8"`, 1)
 
 	for name, tc := range map[string]struct {
 		doc  string
@@ -149,7 +149,7 @@ func TestEnrolRefusesBeforeWriting(t *testing.T) {
 		"a format version from later": {futureDoc, guardianAPI, "upgrade conflux"},
 		"a renewalAuth we do not do":  {unknownAuth, guardianAPI, "mtls"},
 		"no renewalUrl at all":        {noRenewal, guardianAPI, "renewalUrl"},
-		"an address that is not one":  {badAddress, guardianAPI, "prefix"},
+		"an address anchor refuses":   {badAddress, guardianAPI, "unicast"},
 		"an api naming another host":  {guardianDoc, "https://somewhere.else", "somewhere.else"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -231,8 +231,8 @@ func TestEnrolLetsTheFlagWin(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	if cfg.IPv4 != "10.99.0.3/24" {
-		t.Errorf("ipv4 = %q, want the flag", cfg.IPv4)
+	if cfg.OverlayIPv4() != "10.99.0.3/24" {
+		t.Errorf("ipv4 = %q, want the flag", cfg.OverlayIPv4())
 	}
 }
 
@@ -344,8 +344,9 @@ func TestEnrolAcceptsAnAlphaManifest(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	if cfg.IPv4 != "" {
-		t.Errorf("ipv4 = %q, want none: the alpha realm allocates no address", cfg.IPv4)
+	// Not even "none": nobody has been asked yet, and the up that follows asks.
+	if cfg.IPv4 != nil {
+		t.Errorf("ipv4 = %q, want it undecided: the alpha realm allocates no address", *cfg.IPv4)
 	}
 }
 

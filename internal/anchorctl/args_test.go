@@ -75,6 +75,12 @@ var scenarios = map[string]StartMode{
 		Uplink:  "/dev/ttyS1:57600",
 		Dir:     "/var/lib/conflux/anchor",
 	},
+	"proxy-ipv4": {
+		Taints:  []string{"brhk-2mq9-tzva-6pjs"},
+		Proxies: []string{"8080=127.0.0.1:3000"},
+		IPv4:    "10.128.0.7/24",
+		Dir:     "/var/lib/conflux/anchor",
+	},
 	"proxy-windows": {
 		Taints:  []string{"brhk-2mq9-tzva-6pjs"},
 		Proxies: []string{"8080=127.0.0.1:3000"},
@@ -188,33 +194,6 @@ func TestArgsUsesTaintsPlural(t *testing.T) {
 
 	if !found {
 		t.Error("argv has no -taints")
-	}
-}
-
-func TestValidateMirrorsAnchorsRule(t *testing.T) {
-	bad := map[string]StartMode{
-		"a proxy with a TUN":     {TUN: true, Proxies: []string{"8080=127.0.0.1:1"}, Taints: []string{"a"}},
-		"a subnet without a TUN": {Subnets: []string{"10.0.0.0/24"}, Taints: []string{"a"}},
-		"an IPv4 without a TUN":  {IPv4: "10.0.0.1/24", Taints: []string{"a"}},
-		"no taints":              {TUN: true},
-	}
-
-	for why, m := range bad {
-		if err := m.Validate(); err == nil {
-			t.Errorf("Validate accepted %s", why)
-		}
-	}
-
-	ok := map[string]StartMode{
-		"a plain TUN":        {TUN: true, Taints: []string{"a"}},
-		"a TUN with subnets": {TUN: true, Subnets: []string{"10.0.0.0/24"}, IPv4: "10.0.0.1/24", Taints: []string{"a"}},
-		"a userspace proxy":  {Proxies: []string{"8080=127.0.0.1:1"}, Taints: []string{"a"}},
-	}
-
-	for why, m := range ok {
-		if err := m.Validate(); err != nil {
-			t.Errorf("Validate refused %s: %v", why, err)
-		}
 	}
 }
 

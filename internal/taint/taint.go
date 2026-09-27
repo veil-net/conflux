@@ -16,10 +16,7 @@ package taint
 
 import (
 	"crypto/rand"
-	"fmt"
 	"strings"
-
-	"github.com/veil-net/conflux/internal/config"
 )
 
 // alphabet has no i, l, o, 0 or 1, because a taint gets read off one screen and
@@ -59,37 +56,4 @@ func New() string {
 	}
 
 	return sb.String()
-}
-
-// Validate applies anchor's rule to a taint the operator supplied, so that a
-// mistyped one is refused here rather than becoming a compartment of one that
-// nothing can reach -- a failure that presents as "the network does not work",
-// days later, with nothing pointing at the typo.
-func Validate(v string) error { return config.ValidateTaint(v) }
-
-// ValidateSet checks a whole list, including anchor's ceiling on how many.
-func ValidateSet(vs []string) error {
-	if len(vs) == 0 {
-		return fmt.Errorf("no taints")
-	}
-
-	if len(vs) > config.MaxTaints {
-		return fmt.Errorf("%d taints, and anchor allows %d", len(vs), config.MaxTaints)
-	}
-
-	seen := make(map[string]bool, len(vs))
-
-	for _, v := range vs {
-		if err := Validate(v); err != nil {
-			return err
-		}
-
-		if seen[v] {
-			return fmt.Errorf("taint %q is listed twice", v)
-		}
-
-		seen[v] = true
-	}
-
-	return nil
 }

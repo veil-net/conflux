@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -80,5 +81,32 @@ func TestBusyInterfaceIsPermanent(t *testing.T) {
 
 	if !isPermanent(err) {
 		t.Error("a TUN name another interface holds should not be retried to the unit timeout")
+	}
+}
+
+// TestWhatIsPermanent: the refusals no retry changes stop the supervisor in three
+// attempts, and the ones a moment fixes do not.
+func TestWhatIsPermanent(t *testing.T) {
+	anchorctlSaid := func(stderr string) error { return &anchorctl.Error{Code: 1, Stderr: stderr} }
+
+	for name, err := range map[string]error{
+		"a configuration conflux refuses": &invalidConfigError{path: "conflux.json", err: errors.New("no taints")},
+		"another tree's credential":       anchorctlSaid("anchorctl: anchor: realm root is not the pinned genesis: have x, want y"),
+		"no TUN for this daemon": anchorctlSaid("anchorctl: opening the TUN device: operation not permitted\n" +
+			"  a TUN needs CAP_NET_ADMIN on Linux, root on macOS and the BSDs, Administrator and wintun.dll on Windows"),
+	} {
+		if !isPermanent(err) {
+			t.Errorf("%s was not treated as permanent", name)
+		}
+	}
+
+	for name, err := range map[string]error{
+		"a subnet not attached yet": anchorctlSaid("anchorctl: hostnet: not attached to that network: eth1 has no private network"),
+		"the daemon went away":      anchorctlSaid("anchorctl: connection refused\n  is anchord running on that socket, and can it reach the peer?"),
+		"a network failure":         errors.New("renew: dial tcp: i/o timeout"),
+	} {
+		if isPermanent(err) {
+			t.Errorf("%s was treated as permanent; a retry can fix it", name)
+		}
 	}
 }

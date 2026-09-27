@@ -14,7 +14,6 @@ import (
 	"github.com/veil-net/conflux/internal/enrol"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/privcheck"
-	"github.com/veil-net/conflux/internal/taint"
 	"github.com/veil-net/conflux/internal/ui"
 )
 
@@ -60,13 +59,13 @@ func runEnrol(_ context.Context, args []string) int {
 	manifest := fs.String("manifest", "", "the manifest file to install, or - for stdin")
 	apiBase := fs.String("api", "",
 		"the API that issued it, as a base URL, overriding the one its renewal URL names")
-	ipv4 := fs.String("ipv4", "", "overlay IPv4 as a prefix, overriding whatever the manifest allocated")
+	ipv4 := fs.String("ipv4", "", "this machine's IPv4, overriding whatever the manifest allocated")
 	fs.Var(&taints, "taint",
 		"a compartment label, overriding whatever the manifest carries; repeat for more")
 
 	fs.Usage = func() {
 		ui.Printf("conflux enrol — install a credential this machine was given\n\n" +
-			"  conflux enrol --manifest FILE [--api URL] [--ipv4 PREFIX] [--taint T]...\n\n" +
+			"  conflux enrol --manifest FILE [--api URL] [--ipv4 ADDRESS] [--taint T]...\n\n" +
 			"For a machine commissioned somewhere else: a self-hosted guardian mints the\n" +
 			"identity, signs the credential and hands you one file. This installs it, and\n" +
 			"then `conflux up` starts from it without enrolling.\n\n" +
@@ -163,7 +162,12 @@ func importCredential(d paths.Dirs, manifestPath, apiBase, ipv4Flag string, tain
 	}
 
 	cfg.APIBaseURL = base
-	cfg.IPv4 = address
+
+	// Only when there is one. With none, the machine has not been asked, and the
+	// `up` or `proxy` that follows asks.
+	if address != "" {
+		cfg.IPv4 = &address
+	}
 
 	// Left alone when the document says nothing, rather than defaulted here. `up`
 	// mints a taint for a machine whose configuration has none, and it explains
@@ -294,7 +298,9 @@ func chooseImportedTaints(m *enrol.Manifest, flagValues []string) ([]string, err
 		return nil, nil
 	}
 
-	if err := taint.ValidateSet(values); err != nil {
+	values = unique(values)
+
+	if err := config.ValidateTaints(values); err != nil {
 		return nil, fmt.Errorf("the taints for this machine: %w", err)
 	}
 

@@ -3,6 +3,8 @@ package taint
 import (
 	"strings"
 	"testing"
+
+	"github.com/veil-net/conflux/internal/config"
 )
 
 func TestNewIsValidAndUnambiguous(t *testing.T) {
@@ -11,7 +13,7 @@ func TestNewIsValidAndUnambiguous(t *testing.T) {
 	for range 512 {
 		v := New()
 
-		if err := Validate(v); err != nil {
+		if err := config.ValidateTaint(v); err != nil {
 			t.Fatalf("New() produced %q, which anchor would refuse: %v", v, err)
 		}
 
@@ -36,23 +38,5 @@ func TestNewShape(t *testing.T) {
 
 	if strings.Count(v, "-") != length/group-1 {
 		t.Errorf("New() = %q, want it grouped for reading", v)
-	}
-}
-
-func TestValidateSet(t *testing.T) {
-	if err := ValidateSet([]string{"prod"}); err != nil {
-		t.Errorf("ValidateSet: %v", err)
-	}
-
-	for name, in := range map[string][]string{
-		"empty":     {},
-		"duplicate": {"prod", "prod"},
-		"invalid":   {"has space"},
-		"comma":     {"a,b"},
-		"too many":  make([]string, 33),
-	} {
-		if err := ValidateSet(in); err == nil {
-			t.Errorf("ValidateSet accepted the %s case", name)
-		}
 	}
 }

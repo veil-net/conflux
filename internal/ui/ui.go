@@ -40,16 +40,8 @@ func Field(key, value string) { fmt.Fprintf(Out, "  %-12s %s\n", key, value) }
 // a boot service hung forever.
 func IsTerminal() bool {
 	f, ok := In.(*os.File)
-	if !ok {
-		return false
-	}
 
-	fi, err := f.Stat()
-	if err != nil {
-		return false
-	}
-
-	return fi.Mode()&os.ModeCharDevice != 0
+	return ok && isTerminal(f.Fd())
 }
 
 // Ask prints a prompt and reads one line. Returns io.EOF when input ends, which is

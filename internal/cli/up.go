@@ -30,8 +30,8 @@ func runUp(ctx context.Context, args []string) int {
 	var (
 		taints   repeated
 		subnets  repeated
-		ipv4     = fs.String("ipv4", "", "overlay IPv4 as a prefix, e.g. 10.128.0.7/24")
-		noIPv4   = fs.Bool("no-ipv4", false, "do not assign an overlay IPv4; the v6 address is derived anyway")
+		ipv4     = fs.String("ipv4", "", ipv4Usage)
+		noIPv4   = fs.Bool("no-ipv4", false, noIPv4Usage)
 		noTaint  = fs.Bool("no-taint", false, "join the realm's shared compartment instead of a private one")
 		tunName  = fs.String("interface", "", "name for the network interface (default anchor0)")
 		uplink   = fs.String("uplink", "", "carry the mesh over a link rather than the host network, e.g. /dev/ttyUSB0:115200")
@@ -60,7 +60,7 @@ func runUp(ctx context.Context, args []string) int {
 
 	fs.Usage = func() {
 		ui.Printf("conflux up — join the overlay with a network interface\n\n" +
-			"  conflux up [--taint T] [--ipv4 PREFIX | --no-ipv4] [--subnet CIDR]...\n" +
+			"  conflux up [--taint T] [--ipv4 ADDRESS | --no-ipv4] [--subnet CIDR]...\n" +
 			"             [--uplink DEV | --no-uplink] [--peers HOST:PORT | --no-peers]\n\n" +
 			"Enrols this machine if it has never been, starts an anchor in TUN mode, writes\n" +
 			"the configuration, and registers the boot service so a reboot needs nothing.\n\n" +
@@ -125,15 +125,12 @@ func runUp(ctx context.Context, args []string) int {
 	}
 
 	if len(subnets) > 0 {
-		cfg.Subnets = subnets
+		cfg.Subnets = unique(subnets)
 	}
 
-	address, err := chooseIPv4(cfg, *ipv4, *noIPv4)
-	if err != nil {
+	if err := chooseIPv4(cfg, *ipv4, *noIPv4); err != nil {
 		return fail(err)
 	}
-
-	cfg.IPv4 = address
 
 	if err := chooseTaints(cfg, taints, *noTaint); err != nil {
 		return fail(err)
@@ -285,44 +282,64 @@ func loadOrNew(d paths.Dirs) (*config.Config, error) {
 	return nil, err
 }
 
-// chooseIPv4 decides the overlay address, prompting only when it has to.
+// ipv4Usage and noIPv4Usage are the IPv4 flags' help, shared by up and proxy.
+const (
+	ipv4Usage   = "this machine's IPv4: an address, or address/length to route the rest of that range to peers, e.g. 10.128.0.7/24"
+	noIPv4Usage = "give this machine no IPv4 of its own; it still reaches IPv4 peers, and is reached by IPv6"
+)
+
+// chooseIPv4 decides this machine's IPv4, prompting only when it has to.
 //
-// The prompt appears at most once in a machine's life. Re-running `conflux up` with
-// an existing configuration and no flag keeps what is there and asks nothing:
-// changing a machine's overlay address because somebody re-ran a command is not an
-// acceptable thing to do to them.
-func chooseIPv4(cfg *config.Config, flagValue string, none bool) (string, error) {
+// The question is asked at most once in a machine's life. A flag decides; otherwise a
+// configuration that has been asked keeps its answer -- an address, or none -- and
+// nothing is asked: changing a machine's address because somebody re-ran a command is
+// not an acceptable thing to do to them.
+func chooseIPv4(cfg *config.Config, flagValue string, none bool) error {
+	var answer string
+
 	switch {
+	case none && flagValue != "":
+		return errors.New("--ipv4 and --no-ipv4 contradict each other")
+
 	case none:
-		return "", nil
 
 	case flagValue != "":
 		if _, err := config.ParseOverlayIPv4(flagValue); err != nil {
-			return "", err
+			return err
 		}
 
-		return flagValue, nil
+		answer = flagValue
 
-	case cfg.IPv4 != "":
-		return cfg.IPv4, nil
+	case cfg.IPv4 != nil:
+		return nil
+
+	case !ui.IsTerminal():
+		return errors.New(
+			"this machine has not been given an IPv4 yet and there is no terminal to ask at: pass --ipv4 ADDRESS or --no-ipv4")
+
+	default:
+		a, err := promptIPv4()
+		if err != nil {
+			return err
+		}
+
+		answer = a
 	}
 
-	if !ui.IsTerminal() {
-		return "", errors.New(
-			"conflux up needs --ipv4 PREFIX or --no-ipv4 when there is no terminal to ask at")
-	}
+	cfg.IPv4 = &answer
 
-	return promptIPv4()
+	return nil
 }
 
 func promptIPv4() (string, error) {
-	ui.Println("An overlay IPv4 lets other machines reach this one by a v4 address.")
-	ui.Println("Everyone on your network picks the same prefix and a different host part.")
-	ui.Println("The IPv6 address is derived from this machine's identity and needs no answer.")
+	ui.Println("An IPv4 lets the other machines on this network reach this one by a v4 address.")
+	ui.Println("A private address is advertised to them; give each machine that should be")
+	ui.Println("reachable on its own a different one. The IPv6 address is derived from this")
+	ui.Println("machine's identity and needs no answer.")
 	ui.Println()
 
 	for {
-		answer, err := ui.Ask("  Overlay IPv4 [e.g. 10.128.0.7/24, blank for IPv6-only]: ")
+		answer, err := ui.Ask("  IPv4 [e.g. 10.128.0.7/24, blank for none]: ")
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				ui.Println()
@@ -334,7 +351,7 @@ func promptIPv4() (string, error) {
 		}
 
 		if answer == "" {
-			ui.Println("  IPv6-only. Peers reach this machine by its overlay IPv6 address.")
+			ui.Println("  No IPv4. Peers reach this machine by its IPv6 address.")
 			ui.Println()
 
 			return "", nil
@@ -437,6 +454,8 @@ func choosePeers(cfg *config.Config, values []string, none bool) error {
 		return nil
 	}
 
+	values = unique(values)
+
 	if err := config.ValidatePeers(values); err != nil {
 		return err
 	}
@@ -474,7 +493,9 @@ func chooseTaints(cfg *config.Config, given []string, none bool) error {
 	}
 
 	if len(given) > 0 {
-		if err := taint.ValidateSet(given); err != nil {
+		given = unique(given)
+
+		if err := config.ValidateTaints(given); err != nil {
 			return err
 		}
 
@@ -523,6 +544,20 @@ func chooseTaints(cfg *config.Config, given []string, none bool) error {
 // asks for it explicitly. Any single agreed string works: what matters is that every
 // machine choosing --no-taint chooses the same one.
 const defaultCompartment = "conflux-commons"
+
+// unique drops repeated values and keeps the first of each, in order. Every list a
+// flag can repeat means a set, and anchor collapses a repeat anyway.
+func unique(values []string) []string {
+	out := make([]string, 0, len(values))
+
+	for _, v := range values {
+		if !slices.Contains(out, v) {
+			out = append(out, v)
+		}
+	}
+
+	return out
+}
 
 func sameSet(a, b []string) bool {
 	if len(a) != len(b) {

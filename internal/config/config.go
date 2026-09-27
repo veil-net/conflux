@@ -16,7 +16,6 @@ package config
 import (
 	"encoding/json"
 	"fmt"
-	"net/netip"
 	"os"
 	"slices"
 	"time"
@@ -66,10 +65,15 @@ type Config struct {
 	// there by default.
 	Taints []string `json:"taints"`
 
-	// IPv4 is an operator-assigned overlay address carried as a prefix, e.g.
-	// "10.128.0.7/24". Empty means IPv6-only, which is the common case: the v6
-	// address is derived from the identity and needs no decision.
-	IPv4 string `json:"ipv4,omitempty"`
+	// IPv4 is this machine's IPv4 -- an address, or an address and the length of the
+	// range routed into the tunnel -- as the operator gave it. Either mode: with an
+	// interface the host holds it, in userspace the anchor's own stack does.
+	//
+	// A pointer because the question is asked once in a machine's life and the
+	// answer has to be remembered, including the answer "none". Nil is never asked;
+	// an empty string is declined, and anchor then sends from its shared default and
+	// cannot be reached by IPv4. See OverlayIPv4.
+	IPv4 *string `json:"ipv4,omitempty"`
 
 	// Subnets are interface names or prefixes this anchor forwards for its realm.
 	// TUN only -- there is no host interface to forward out of in userspace.
@@ -139,8 +143,10 @@ type Config struct {
 	LANDiscovery *bool `json:"lanDiscovery,omitempty"`
 
 	// ServeExit offers this anchor as a way out to the public internet, and
-	// UseExit sends this machine's own internet traffic over the overlay. Both
-	// need a host interface, so both are TUN only.
+	// UseExit sends this machine's own internet traffic over the overlay. Both are
+	// `conflux up`'s: an exit forwards out of a host interface, and anchor refuses
+	// ServeExit without one. UseExit it accepts in userspace, where it covers only the
+	// anchor's own traffic, so `conflux proxy` offers neither and clears both.
 	//
 	// Off by default and always passed explicitly, because an anchor that became
 	// an internet exit on its own -- because a manifest said so -- is the worst
@@ -169,6 +175,15 @@ type Config struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+// OverlayIPv4 is the configured IPv4, or "" when there is none.
+func (c *Config) OverlayIPv4() string {
+	if c.IPv4 == nil {
+		return ""
+	}
+
+	return *c.IPv4
+}
+
 // TUNInterface is the interface name to ask for, defaulted.
 func (c *Config) TUNInterface() string {
 	if c.TUNName == "" {
@@ -189,7 +204,8 @@ func (c *Config) APIBase() string {
 
 // Validate applies anchor's rules here, where the error can name the flag the user
 // typed, rather than letting them surface as an InvalidArgument from a child
-// process three layers down.
+// process three layers down. It accepts and refuses what anchor does, and adds one
+// rule of conflux's own: a machine always carries a taint.
 func (c *Config) Validate() error {
 	switch c.Mode {
 	case ModeTUN:
@@ -208,13 +224,9 @@ func (c *Config) Validate() error {
 				c.Mode, len(c.Subnets))
 		}
 
-		if c.IPv4 != "" {
-			return fmt.Errorf("mode is %q and an overlay IPv4 is set: there is no host interface to assign it to", c.Mode)
-		}
-
-		if c.ServeExit || c.UseExit {
+		if c.ServeExit {
 			return fmt.Errorf(
-				"mode is %q and an exit is set: routing the public internet either way needs a host interface, "+
+				"mode is %q and serveExit is set: an exit forwards the public internet out of a host interface, "+
 					"which userspace mode does not have",
 				c.Mode)
 		}
@@ -227,26 +239,22 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("no taints: an anchor with none sits in the realm's shared compartment, which conflux never chooses silently")
 	}
 
-	for _, t := range c.Taints {
-		if err := ValidateTaint(t); err != nil {
-			return err
-		}
+	if err := ValidateTaints(c.Taints); err != nil {
+		return err
 	}
 
 	if err := c.Export.Validate(); err != nil {
 		return err
 	}
 
-	if c.IPv4 != "" {
-		if _, err := ParseOverlayIPv4(c.IPv4); err != nil {
+	if ip := c.OverlayIPv4(); ip != "" {
+		if _, err := ParseOverlayIPv4(ip); err != nil {
 			return err
 		}
 	}
 
-	for _, s := range c.Proxies {
-		if _, err := ParseProxySpec(s); err != nil {
-			return err
-		}
+	if _, err := ValidateProxies(c.Proxies); err != nil {
+		return err
 	}
 
 	if c.Uplink != "" {
@@ -280,34 +288,9 @@ func (c *Config) Validate() error {
 		return err
 	}
 
-	if err := c.validateSubnets(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (c *Config) validateSubnets() error {
-	seen := make(map[string]bool, len(c.Subnets))
-
 	for _, s := range c.Subnets {
-		if s == "" {
-			return fmt.Errorf("empty subnet entry")
-		}
-
-		if seen[s] {
-			return fmt.Errorf("subnet %q is listed twice", s)
-		}
-
-		seen[s] = true
-
-		// An entry is either an interface name, which anchor expands to every
-		// private network on it, or a prefix. Only the prefix form is checkable
-		// without touching the host, and it is the form people get wrong.
-		if p, err := netip.ParsePrefix(s); err == nil && !p.Addr().IsPrivate() && !p.Addr().IsLinkLocalUnicast() {
-			return fmt.Errorf(
-				"subnet %s is not a private network: anchor forwards private networks only, and reaching the public internet through an anchor is what an exit is for",
-				s)
+		if err := ValidateSubnet(s); err != nil {
+			return err
 		}
 	}
 

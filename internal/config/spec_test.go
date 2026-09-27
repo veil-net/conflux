@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseProxySpec(t *testing.T) {
 	ok := []struct {
@@ -15,6 +18,9 @@ func TestParseProxySpec(t *testing.T) {
 		{" 80 / tcp = 127.0.0.1:80 ", ProxySpec{80, "tcp", "127.0.0.1:80"}},
 		{"1=127.0.0.1:1", ProxySpec{1, "tcp", "127.0.0.1:1"}},
 		{"65535=127.0.0.1:1", ProxySpec{65535, "tcp", "127.0.0.1:1"}},
+		// The backend is dialled per connection and only split here, as anchor does:
+		// a named port resolves when it is dialled.
+		{"8080=localhost:http", ProxySpec{8080, "tcp", "localhost:http"}},
 	}
 
 	for _, tc := range ok {
@@ -39,9 +45,8 @@ func TestParseProxySpec(t *testing.T) {
 		"-1=127.0.0.1:3000",     // negative
 		"8080/tpc=127.0.0.1:80", // the typo anchor's own comment calls out
 		"8080/sctp=127.0.0.1:80",
-		"8080=127.0.0.1",   // backend without a port
-		"8080=::1:5432",    // ambiguous v6, must be bracketed
-		"8080=127.0.0.1:0", // backend port 0
+		"8080=127.0.0.1", // backend without a port
+		"8080=::1:5432",  // ambiguous v6, must be bracketed
 		"abc=127.0.0.1:80",
 	}
 
@@ -72,54 +77,48 @@ func TestProxySpecRoundTrip(t *testing.T) {
 	}
 }
 
+// TestParseOverlayIPv4 is anchord's rule (control/config.go and Config.validate): an
+// address or a prefix, IPv4, unicast, and not a /0.
 func TestParseOverlayIPv4(t *testing.T) {
-	for _, in := range []string{"10.128.0.7/24", "192.168.1.50/24", "10.0.0.1/8", "172.16.5.5/12", "10.1.2.3/32"} {
-		if _, err := ParseOverlayIPv4(in); err != nil {
+	for in, bits := range map[string]int{
+		"10.128.0.7/24":   24,
+		"10.128.0.7":      32, // an address is a /32
+		"10.128.0.0/24":   24, // anybody's address, the network's included
+		"192.168.1.50/16": 16,
+		"198.51.100.7/1":  1, // public, and sent from rather than advertised
+	} {
+		p, err := ParseOverlayIPv4(in)
+		if err != nil {
 			t.Errorf("ParseOverlayIPv4(%q) = error %v", in, err)
+
+			continue
+		}
+
+		if p.Bits() != bits {
+			t.Errorf("ParseOverlayIPv4(%q) = %s, want a /%d", in, p, bits)
 		}
 	}
 
-	bad := []string{
-		"",
-		"10.128.0",       // three octets
-		"10.128.0.7",     // no prefix length -- the commonest mistake
-		"10.128.0/24",    // three octets with a length
-		"fd00::1/64",     // v6
-		"10.128.0.0/24",  // the network address, not a host
-		"10.128.0.7/40",  // impossible length
-		"10.128.0.7/4",   // below the floor
-		"not an address", //
-	}
-
-	for _, in := range bad {
+	for in, why := range map[string]string{
+		"":                   "empty",
+		"10.128.0":           "three octets",
+		"10.128.0/24":        "three octets with a length",
+		"fd00::1/64":         "IPv6",
+		"fd00::1":            "IPv6, bare",
+		"10.128.0.7/40":      "an impossible length",
+		"10.128.0.7/0":       "a /0",
+		"127.0.0.7/8":        "loopback",
+		"169.254.1.1/16":     "link-local",
+		"224.0.0.1":          "multicast",
+		"255.255.255.255/32": "broadcast",
+		"0.0.0.0/8":          "unspecified",
+		" 10.128.0.7/24":     "surrounding space, which anchord does not trim",
+		"not an address":     "not an address",
+	} {
 		if got, err := ParseOverlayIPv4(in); err == nil {
-			t.Errorf("ParseOverlayIPv4(%q) = %v, want an error", in, got)
+			t.Errorf("ParseOverlayIPv4(%q) = %v, want an error: %s", in, got, why)
 		}
 	}
-}
-
-// TestParseOverlayIPv4NamesTheFix checks the two messages a user actually reads,
-// because "invalid input" here costs a support round trip.
-func TestParseOverlayIPv4NamesTheFix(t *testing.T) {
-	_, err := ParseOverlayIPv4("10.128.0.7")
-	if err == nil || !contains(err.Error(), "10.128.0.7/24") {
-		t.Errorf("a bare address should suggest the /24 form, got %v", err)
-	}
-
-	_, err = ParseOverlayIPv4("10.128.0.0/24")
-	if err == nil || !contains(err.Error(), "10.128.0.1/24") {
-		t.Errorf("a network address should suggest a host address, got %v", err)
-	}
-}
-
-func contains(s, sub string) bool {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-
-	return false
 }
 
 func TestValidateTaint(t *testing.T) {
@@ -143,6 +142,74 @@ func TestValidateTaint(t *testing.T) {
 	for in, why := range bad {
 		if err := ValidateTaint(in); err == nil {
 			t.Errorf("ValidateTaint(%q) succeeded; it has %s", in, why)
+		}
+	}
+}
+
+func TestValidateTaints(t *testing.T) {
+	// A repeat names one compartment, as it does to anchor.
+	if err := ValidateTaints([]string{"prod", "prod"}); err != nil {
+		t.Errorf("ValidateTaints refused a repeat: %v", err)
+	}
+
+	for name, in := range map[string][]string{
+		"invalid":  {"has space"},
+		"comma":    {"a,b"},
+		"too many": make([]string, MaxTaints+1),
+	} {
+		if err := ValidateTaints(in); err == nil {
+			t.Errorf("ValidateTaints accepted the %s case", name)
+		}
+	}
+}
+
+// TestValidateSubnet is what anchor refuses without looking at the host
+// (internal/hostnet.Select and IsPrivateNetwork).
+func TestValidateSubnet(t *testing.T) {
+	for _, in := range []string{"eth1", "192.168.1.0/24", "10.0.0.0/8", "172.20.0.0/16", "100.64.0.0/10", "fd12:3456::/64"} {
+		if err := ValidateSubnet(in); err != nil {
+			t.Errorf("ValidateSubnet(%q) = %v", in, err)
+		}
+	}
+
+	for in, why := range map[string]string{
+		"192.168.1.7/24":   "host bits set",
+		"10.0.0.0/7":       "a private first address and public space after it",
+		"203.0.113.0/24":   "public",
+		"169.254.0.0/16":   "link-local, which nobody routes to",
+		"fe80::/64":        "link-local IPv6",
+		"::ffff:0.0.0.0/8": "an IPv4-mapped prefix wider than the mapped space",
+	} {
+		if err := ValidateSubnet(in); err == nil {
+			t.Errorf("ValidateSubnet(%q) succeeded; it is %s", in, why)
+		}
+	}
+
+	if err := ValidateSubnet("192.168.1.7/24"); err == nil || !strings.Contains(err.Error(), "192.168.1.0/24") {
+		t.Errorf("a prefix with host bits should name the network it meant, got %v", err)
+	}
+}
+
+func TestValidateAnchorID(t *testing.T) {
+	for _, in := range []string{
+		"anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq",
+		"ANCHORAAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ",
+	} {
+		if err := ValidateAnchorID(in); err != nil {
+			t.Errorf("ValidateAnchorID(%q) = %v", in, err)
+		}
+	}
+
+	for _, in := range []string{
+		"",
+		"anchor",
+		"anchorabc",
+		"realmaaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq",
+		"anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dyp1",  // 1 is not base32
+		"anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypqa", // one too long
+	} {
+		if err := ValidateAnchorID(in); err == nil {
+			t.Errorf("ValidateAnchorID(%q) succeeded", in)
 		}
 	}
 }
@@ -218,9 +285,10 @@ func TestUplinkSpecRoundTrip(t *testing.T) {
 // get wrong by analogy with the subnets and the proxies: it is the medium, not the
 // mode, so neither mode refuses it.
 func TestUplinkIsOrthogonalToMode(t *testing.T) {
+	ip := "10.128.0.7/24"
 	tun := &Config{
 		Mode: ModeTUN, Taints: []string{"office"},
-		IPv4: "10.128.0.7/24", Uplink: "/dev/ttyUSB0:115200",
+		IPv4: &ip, Uplink: "/dev/ttyUSB0:115200",
 	}
 	if err := tun.Validate(); err != nil {
 		t.Errorf("tun mode with an uplink: %v", err)

@@ -1,8 +1,10 @@
 package anchorctl_test
 
 import (
+	"maps"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -40,6 +42,8 @@ func TestEveryFlagWeUseExists(t *testing.T) {
 		t.Fatalf("Ensure: %v", err)
 	}
 
+	yes := true
+
 	for _, sub := range []struct {
 		name string
 		argv []string
@@ -64,9 +68,15 @@ func TestEveryFlagWeUseExists(t *testing.T) {
 			TUN: true, TUNName: "anchor0", Taints: []string{"t"}, Dir: "/tmp/x",
 			Peers: []string{"genesis.veilnet.com.au:4700"},
 		}.Args()},
+		// The flags conflux passes only when set, so the cases above never carry them.
+		{"start-tuning", anchorctl.StartMode{
+			Taints: []string{"t"}, Proxies: []string{"8080=127.0.0.1:1"}, Dir: "/tmp/x",
+			IPv4: "10.0.0.1", Port: 4711, LowLatency: true, LANDiscovery: &yes,
+		}.Args()},
 		{"renew", anchorctl.RenewArgs("/tmp/c")},
 		{"stop", anchorctl.StopArgs()},
 		{"status", anchorctl.StatusArgs()},
+		{"metrics", anchorctl.MetricsArgs()},
 	} {
 		t.Run(sub.name, func(t *testing.T) {
 			have := supportedFlags(t, tools.Anchorctl, sub.argv[0])
@@ -112,17 +122,9 @@ func supportedFlags(t *testing.T, bin, sub string) map[string]bool {
 }
 
 func sorted(m map[string]bool) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, "-"+k)
-	}
-
+	out := slices.Sorted(maps.Keys(m))
 	for i := range out {
-		for j := i + 1; j < len(out); j++ {
-			if out[j] < out[i] {
-				out[i], out[j] = out[j], out[i]
-			}
-		}
+		out[i] = "-" + out[i]
 	}
 
 	return out

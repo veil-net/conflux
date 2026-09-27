@@ -43,13 +43,15 @@ anchor's [hierarchy](https://github.com/veil-net/anchor/blob/main/docs/hierarchy
 Every anchor has an IPv6 address computed from its identity and its realm. It needs no
 coordination and cannot collide.
 
-IPv4 is different, and that is why `conflux up` asks. Thirty-two bits is too small to
-derive collision-free, so an overlay IPv4 is *operator-assigned*: you pick it, and
-nothing checks that two machines did not pick the same one. It is written as a prefix
-(`10.128.0.7/24`) rather than a bare address, because the prefix length is what tells
-the stack which addresses are on-link.
+IPv4 is different, and that is why conflux asks. Thirty-two bits is too small to
+derive collision-free, so a machine's IPv4 is *operator-assigned*, and it never reaches
+the overlay: anchor translates everything sent from it into IPv6 from the derived
+address. So nothing needs to arbitrate it — two machines may share one, and each gets
+its own replies. A private address is advertised and peers reach the machine at it; a
+length (`10.128.0.7/24`) routes the rest of that range to the peers answering there.
+See anchor's [ipv4.md](https://github.com/veil-net/anchor/blob/main/docs/ipv4.md).
 
-Blank is a valid answer. The realm works without IPv4 at all.
+Blank is a valid answer, and conflux remembers it. The realm works without IPv4 at all.
 
 ## Taints
 

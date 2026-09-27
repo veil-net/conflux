@@ -514,12 +514,24 @@ func (s *Supervisor) freshToken() (string, error) {
 }
 
 // isPermanent reports whether an error will still be an error after a wait.
+//
+// Three kinds. A configuration conflux itself refuses. And two that anchor refuses and
+// conflux cannot check beforehand: a credential under a root other than the one these
+// binaries are pinned to, and a TUN the host will not give -- no capability or device,
+// or the name held by another interface, which two conflux installations both
+// defaulting to anchor0 hit every time. None frees itself inside thirty seconds of
+// backoff, and failing in three puts the reason in front of somebody rather than
+// burying it in the journal under a unit timeout.
+//
+// A served subnet the host is not attached to is deliberately absent. At boot that is
+// usually an interface that has not come up yet, which a retry does fix.
 func isPermanent(err error) bool {
 	if err == nil {
 		return false
 	}
 
-	if errors.Is(err, ErrNotConfigured) {
+	var invalid *invalidConfigError
+	if errors.Is(err, ErrNotConfigured) || errors.As(err, &invalid) {
 		return true
 	}
 
@@ -527,20 +539,8 @@ func isPermanent(err error) bool {
 	if errors.As(err, &e) {
 		s := strings.ToLower(e.Stderr)
 		for _, phrase := range []string{
-			"needs userspace mode",
-			"needs enabletun",
-			"is not an overlay port",
-			"invalid argument",
-			"taints",
-			"matches nothing",
-
-			// An interface name another interface already holds. Not permanent in
-			// the strictest sense -- the holder could go away -- but it will not
-			// free itself inside thirty seconds of backoff, and two conflux
-			// installations on one machine hit this every time, because both
-			// default to anchor0. Retrying to the 90-second unit timeout buries the
-			// reason in the journal; failing in three seconds puts it in front of
-			// somebody who can pass --interface.
+			"is not the pinned genesis",
+			"a tun needs cap_net_admin",
 			"device or resource busy",
 		} {
 			if strings.Contains(s, phrase) {

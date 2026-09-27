@@ -24,6 +24,15 @@ type Reporter interface {
 	Warn(format string, a ...any)
 }
 
+// invalidConfigError is a configuration conflux refuses, which no retry changes.
+type invalidConfigError struct {
+	path string
+	err  error
+}
+
+func (e *invalidConfigError) Error() string { return e.path + ": " + e.err.Error() }
+func (e *invalidConfigError) Unwrap() error { return e.err }
+
 type nopReporter struct{}
 
 func (nopReporter) Step(string, ...any) {}
@@ -50,7 +59,7 @@ func BringUp(ctx context.Context, d paths.Dirs, ctl *anchorctl.Ctl, r Reporter) 
 	}
 
 	if err := cfg.Validate(); err != nil {
-		return anchorctl.Started{}, fmt.Errorf("%s: %w", d.ConfigFile(), err)
+		return anchorctl.Started{}, &invalidConfigError{path: d.ConfigFile(), err: err}
 	}
 
 	st, err := config.LoadState(d)

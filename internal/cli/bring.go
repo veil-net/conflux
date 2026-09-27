@@ -193,6 +193,12 @@ func report(d paths.Dirs, cfg *config.Config, st anchorctl.Status, verb string) 
 		ui.Field("overlay", a)
 	}
 
+	// anchor lists the IPv4 apart from the overlay addresses: it never reaches the
+	// overlay, which carries it translated.
+	if ip := cfg.OverlayIPv4(); ip != "" {
+		ui.Field("ipv4", ip)
+	}
+
 	// Before the mode, because it is what the mode is running over, and because on
 	// a link the absence of an underlay address is the surprising part: an anchor
 	// here advertises no way to be reached, which is the truth about a cable.

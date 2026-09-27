@@ -21,10 +21,6 @@ func procAttr() *syscall.SysProcAttr {
 // is very nearly always true, and false is worth reporting for the same reason: a signal
 // that did not arrive is not one worth waiting on.
 func terminate(cmd *exec.Cmd) bool {
-	if cmd.Process == nil {
-		return false
-	}
-
 	if pgid, err := syscall.Getpgid(cmd.Process.Pid); err == nil {
 		if err := syscall.Kill(-pgid, syscall.SIGTERM); err == nil {
 			return true

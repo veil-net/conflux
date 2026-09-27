@@ -189,10 +189,12 @@ $ sudo conflux serve --foreground
 ```
 
 anchord's own output is prefixed `anchord:`, so the daemon's explanation of its own
-refusal is visible directly. The common causes are a `--subnet` that matches no
-attached network (which stops the anchor rather than being advertised on faith), and a
-configuration anchor refuses — in which case the supervisor gives up after three
-attempts rather than looping, and the unit shows as failed.
+refusal is visible directly. The supervisor retries a failed start with a backoff up
+to thirty seconds — a `--subnet` whose interface is not up yet does come right — and
+gives up after three attempts on what no retry changes, so the unit shows as failed
+rather than looping: a configuration or a manifest conflux refuses, a credential for a
+realm tree other than the one these binaries are pinned to, and a TUN the host will
+not give (no capability or device, or the name held by another interface).
 
 Where the logs are: `journalctl -u conflux -n 50` on Linux,
 `/var/log/conflux.log` on macOS, Event Viewer → Windows Logs → Application on Windows.

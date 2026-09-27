@@ -12,8 +12,9 @@ with it.
 hijack.** It is exactly what a dropper does, and building it into a program that runs
 as LocalSystem is a bad habit to normalise even when the bytes are the right ones.
 
-So conflux fetches it on the first `conflux up`, verifies it, and places it beside the
-extracted `anchord.exe` — which is the first path anchor's loader searches, before the
+So conflux fetches it when a TUN machine needs it — on `conflux up`, and again at any
+start that finds it missing — verifies it, and places it beside the extracted
+`anchord.exe`, which is the first path anchor's loader searches, before the
 *safe* system search (`LOAD_LIBRARY_SEARCH_SYSTEM32` and friends, never the legacy
 order that includes the working directory).
 
@@ -38,8 +39,10 @@ The same constant is read by CI, rather than typed a second time — a workflow 
 pinned a different version from the product code would be a test of nothing.
 
 Because the DLL lands in the content-addressed set directory, upgrading conflux to a
-build with a different anchor pair fetches it again into the new directory. That is
-correct: the driver belongs beside the executable that loads it.
+build with a different anchor pair needs it again in the new directory, and the
+supervisor fetches it there before it starts the anchor — a reboot after an upgrade
+needs nothing typed. That is correct: the driver belongs beside the executable that
+loads it. A start that cannot fetch it is retried with the supervisor's backoff.
 
 ## If it cannot be downloaded
 

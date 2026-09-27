@@ -11,16 +11,10 @@ import (
 
 // The readiness marker, and why a file.
 //
-// systemd asks for one and gets it: Type=notify means `systemctl restart conflux` returns
-// when READY=1 arrives, so by the time the CLI looks, the anchor is up and its first
-// status call succeeds. systemd.service(5) is explicit -- "systemd will proceed with
-// starting follow-up units after this notification message has been sent".
-//
-// launchd and the Windows SCM have no equivalent. launchd infers readiness from the
-// process staying alive, and the SCM is told by the service handler but tells nobody else.
-// So on those two `conflux up` had nothing to wait on and polled `anchorctl status` once a
-// second, forking a 43 MB binary each time, on a path where Defender and Gatekeeper both
-// have opinions about a freshly written executable.
+// systemd asks for readiness and gets it: Type=notify means `systemctl restart conflux`
+// returns when READY=1 arrives, so by the time the CLI looks, the anchor is up. launchd,
+// rc and the Windows SCM have no equivalent, so without this `conflux up` would poll
+// `anchorctl status` -- a fork -- once a second for news that had already happened.
 //
 // A file rather than a socket or a pipe: the two processes already share a directory and
 // already agree about it, both are root, and a stat is the cheapest question either can
@@ -45,24 +39,11 @@ func ClearReady(d paths.Dirs) error {
 	return nil
 }
 
-// ReadyAnchor is the AnchorID the marker names, or "" when there is no usable marker.
-//
-// Deliberately not an error return. Every caller treats "no marker" and "a marker I cannot
-// read" the same way -- fall back to asking anchorctl -- so distinguishing them would be a
-// distinction none of them could act on.
-func ReadyAnchor(d paths.Dirs) string {
+// IsReady reports whether an anchor is up according to the marker: one that names a
+// time and an anchor. Every caller treats "no marker" and "a marker it cannot read"
+// alike -- fall back to asking anchorctl -- so there is no error to return.
+func IsReady(d paths.Dirs) bool {
 	b, err := os.ReadFile(d.ReadyFile())
-	if err != nil {
-		return ""
-	}
 
-	fields := strings.Fields(string(b))
-	if len(fields) < 2 {
-		return ""
-	}
-
-	return fields[1]
+	return err == nil && len(strings.Fields(string(b))) >= 2
 }
-
-// IsReady reports whether an anchor is up according to the marker.
-func IsReady(d paths.Dirs) bool { return ReadyAnchor(d) != "" }

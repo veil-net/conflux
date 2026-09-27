@@ -4,10 +4,8 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"runtime"
 	"testing"
 	"time"
@@ -18,56 +16,6 @@ import (
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
 )
-
-// fakeAnchorctlEnv turns this test binary into a stand-in anchorctl, so the paths that
-// fork one are measured with the fork in them and without a daemon behind it.
-const fakeAnchorctlEnv = "CONFLUX_TEST_FAKE_ANCHORCTL"
-
-func TestMain(m *testing.M) {
-	if os.Getenv(fakeAnchorctlEnv) == "1" {
-		os.Exit(fakeAnchorctl(os.Args[1:]))
-	}
-
-	os.Exit(m.Run())
-}
-
-// fakeMetrics is the head of what `anchorctl metrics` printed on a live alpha node.
-const fakeMetrics = `anchor_connections                                    1
-anchor_frames_flooded_total                           0
-anchor_gate_dropped_total{reason=not_quic}            0
-anchor_handshakes_total                               1
-anchor_lan_groups_joined_total                        1
-anchor_lan_probes_refused_total{reason=credential}    0
-anchor_overlay_mtu_bytes                              65521
-anchor_peers_known                                    1
-anchor_resource_held{kind=conns}                      1
-anchor_rtt_seconds                                    n=3 mean=0.0011 min=0.0010 max=0.0012
-anchor_translated_to_ipv6                             0
-`
-
-func fakeAnchorctl(args []string) int {
-	if len(args) == 0 {
-		return 2
-	}
-
-	switch args[0] {
-	case "metrics":
-		fmt.Print(fakeMetrics)
-	case "renew", "stop":
-		fmt.Println("ok")
-	default:
-		return 2
-	}
-
-	return 0
-}
-
-func fakeCtl(b *testing.B) *anchorctl.Ctl {
-	b.Helper()
-	b.Setenv(fakeAnchorctlEnv, "1")
-
-	return &anchorctl.Ctl{Bin: os.Args[0], Socket: "unused", Token: "unused"}
-}
 
 // settledGoroutines waits out whatever setup left running -- libexec sweeps old sets in
 // the background -- so the count a loop is measured against is a floor.
@@ -210,7 +158,7 @@ func BenchmarkDaemonLifecycle(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		cmd, done, err := s.spawn(ctx)
+		_, cmd, done, err := s.spawn(ctx)
 		if err != nil {
 			b.Fatal(err)
 		}

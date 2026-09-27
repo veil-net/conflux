@@ -2,11 +2,17 @@ package daemon
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
+	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/libexec"
+	"github.com/veil-net/conflux/internal/paths"
 )
 
 func TestDevicePath(t *testing.T) {
@@ -109,5 +115,63 @@ func TestWhatIsPermanent(t *testing.T) {
 		if isPermanent(err) {
 			t.Errorf("%s was treated as permanent; a retry can fix it", name)
 		}
+	}
+}
+
+// TestTheTailHoldsTheLastWords: the output of a daemon that dies straight after
+// writing is still in the tail by the time its exit is reported. Draining the pipes
+// beside Wait, rather than through it, lost exactly this line.
+func TestTheTailHoldsTheLastWords(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", t.TempDir())
+	t.Setenv(fakeAnchordEnv, "1")
+
+	d := paths.Default()
+	if err := d.EnsureAll(); err != nil {
+		t.Fatalf("EnsureAll: %v", err)
+	}
+
+	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	s := &Supervisor{Dirs: d, tools: &libexec.Tools{Anchord: os.Args[0]}, tail: newRing(tailLines)}
+
+	_, _, done, err := s.spawn(t.Context())
+	if err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+
+	if err := <-done; err == nil {
+		t.Fatal("the stand-in anchord exited 0")
+	}
+
+	if tail := s.tail.String(); !strings.Contains(tail, fakeAnchordLastWords) || !strings.Contains(tail, "anchord starting") {
+		t.Errorf("the tail lost anchord's output:\n%s", tail)
+	}
+}
+
+func TestLineWriter(t *testing.T) {
+	var got []string
+
+	w := &lineWriter{emit: func(l string) { got = append(got, l) }}
+
+	for _, chunk := range []string{"one\ntw", "o\r\nthr", "ee"} {
+		if _, err := w.Write([]byte(chunk)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	w.flush()
+
+	if want := []string{"one", "two", "three"}; !slices.Equal(got, want) {
+		t.Errorf("lines = %q, want %q", got, want)
+	}
+
+	got = nil
+
+	_, _ = w.Write([]byte(strings.Repeat("x", maxLine+1)))
+
+	if len(got) != 1 || len(got[0]) != maxLine+1 {
+		t.Errorf("a line with no end was held rather than read out: %d lines", len(got))
 	}
 }

@@ -1,25 +1,24 @@
 package daemon
 
 import (
-	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/wintun"
 )
 
 // The supervisor is what the service manager actually runs.
@@ -64,16 +63,7 @@ type Supervisor struct {
 	ctl   *anchorctl.Ctl
 	tail  *ring
 	once  sync.Once
-
-	// links counts how many times a dead uplink has been reopened, so that a
-	// machine quietly restarting its anchor every few minutes says so in
-	// conflux status rather than looking like it has simply been up all along.
-	links atomic.Int64
 }
-
-// LinkReopens is how many times the uplink has been found dead and the anchor
-// rebuilt on it.
-func (s *Supervisor) LinkReopens() int64 { return s.links.Load() }
 
 func (s *Supervisor) report() Reporter {
 	if s.Reporter == nil {
@@ -218,7 +208,7 @@ func (s *Supervisor) loop(ctx context.Context) error {
 
 // cycle is one daemon lifetime.
 func (s *Supervisor) cycle(ctx context.Context) error {
-	cmd, done, err := s.spawn(ctx)
+	cfg, cmd, done, err := s.spawn(ctx)
 	if err != nil {
 		return err
 	}
@@ -229,6 +219,15 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 		return err
 	}
 
+	// Windows needs the driver beside anchord before an interface can exist, and it
+	// lives in the content-addressed set directory: an upgraded conflux extracts a new
+	// set with no wintun.dll in it, and a boot must not need somebody to run `up`.
+	if cfg.Mode == config.ModeTUN {
+		if err := wintun.Ensure(ctx, s.Dirs); err != nil {
+			return err
+		}
+	}
+
 	started, err := BringUp(ctx, s.Dirs, s.ctl, s.report())
 	if err != nil {
 		return err
@@ -237,15 +236,23 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 	s.report().Step("anchor %s is up", started.ID)
 	s.signalReady(started.ID)
 
-	renewCtx, stopRenewals := context.WithCancel(ctx)
-	defer stopRenewals()
+	// The timer, and the link watcher for an anchor on a link. Both are finished
+	// before the daemon is shut down, so neither writes state or talks to a daemon
+	// that the next cycle has already replaced. On the host's network a change is
+	// anchor's own business, and it recovers in-process without conflux knowing.
+	loops, stopLoops := context.WithCancel(ctx)
 
-	go s.renewLoop(renewCtx)
+	var wg sync.WaitGroup
 
-	// Only for an anchor on a link. On the host's network a change is anchor's own
-	// business, and it recovers in-process without conflux knowing.
-	if cfg, err := config.Load(s.Dirs); err == nil && cfg.Uplink != "" {
-		go s.linkLoop(renewCtx, cfg.Uplink)
+	defer func() {
+		stopLoops()
+		wg.Wait()
+	}()
+
+	wg.Go(func() { s.renewLoop(loops) })
+
+	if cfg.Uplink != "" {
+		wg.Go(func() { s.linkLoop(loops, cfg.Uplink) })
 	}
 
 	select {
@@ -263,9 +270,8 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 // anchordArgs is everything anchord is started with.
 //
 // A function rather than three lines inside spawn, so the argument vector can be
-// asserted without starting a process. -config used to be absent, which meant an
-// export set over the socket died with the daemon and never came back -- the kind
-// of thing that is invisible until somebody goes looking for a graph.
+// asserted without starting a process. -config is what carries conflux.json's export
+// block into the daemon on every start; see writeDaemonConfig.
 func anchordArgs(d paths.Dirs) []string {
 	args := []string{
 		"-socket", d.Socket(),
@@ -280,14 +286,13 @@ func anchordArgs(d paths.Dirs) []string {
 	return args
 }
 
-// spawn starts anchord.
+// spawn starts anchord, and returns the configuration it was started for.
 //
-// Its output goes to pipes and never to os.Stdout. The previous conflux wired them
-// straight through, and the Windows service then had to grow a whole fallback path
-// because a LocalSystem service has no valid stdout handle to inherit. Pipes also
-// give us the last few lines to attach to a startup failure, which an exit code
-// alone cannot explain.
-func (s *Supervisor) spawn(ctx context.Context) (*exec.Cmd, <-chan error, error) {
+// Its output goes to the supervisor's reporter and to the tail kept for failure
+// messages, never straight to os.Stdout: a Windows service has no valid stdout handle
+// to inherit, and the last few lines are what explains a startup failure an exit
+// code alone cannot.
+func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *exec.Cmd, <-chan error, error) {
 	// The daemon's own configuration, rendered from conflux.json on every spawn.
 	//
 	// Passed on every start rather than only when something is configured, so that
@@ -296,60 +301,87 @@ func (s *Supervisor) spawn(ctx context.Context) (*exec.Cmd, <-chan error, error)
 	// explicit `enabled: false` rather than left out.
 	cfg, err := config.Load(s.Dirs)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	if err := writeDaemonConfig(s.Dirs, cfg); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	args := anchordArgs(s.Dirs)
+	stdout, stderr := s.lines(), s.lines()
 
-	// A socket left by a crashed daemon would otherwise make readiness think a
-	// dead process is alive.
-	_ = os.Remove(s.Dirs.Socket())
-
-	cmd := exec.Command(s.tools.Anchord, args...) //nolint:gosec // our own extracted binary
+	cmd := exec.Command(s.tools.Anchord, anchordArgs(s.Dirs)...) //nolint:gosec // our own extracted binary
 	cmd.SysProcAttr = procAttr()
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return nil, nil, err
-	}
+	cmd.Stdout, cmd.Stderr = stdout, stderr
 
 	if err := cmd.Start(); err != nil {
-		return nil, nil, fmt.Errorf("start anchord: %w", err)
+		return nil, nil, nil, fmt.Errorf("start anchord: %w", err)
 	}
-
-	go s.drain(stdout)
-	go s.drain(stderr)
 
 	done := make(chan error, 1)
 
-	go func() { done <- cmd.Wait() }()
+	// Wait returns once both streams are drained, so the tail holds anchord's last
+	// words by the time anybody reads it.
+	go func() {
+		err := cmd.Wait()
+		stdout.flush()
+		stderr.flush()
+		done <- err
+	}()
 
-	return cmd, done, nil
+	return cfg, cmd, done, nil
 }
 
-func (s *Supervisor) drain(r io.Reader) {
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-
-	for sc.Scan() {
-		line := sc.Text()
+// lines is a writer for one of anchord's output streams, delivering it a line at a
+// time to the tail and the reporter.
+func (s *Supervisor) lines() *lineWriter {
+	return &lineWriter{emit: func(line string) {
 		s.tail.add(line)
 		s.report().Step("anchord: %s", line)
-	}
+	}}
 }
 
-// waitReady replaces the fixed one-second sleep the previous conflux used in three
-// places, which was too long on a fast machine, too short on a slow one, and never
-// noticed that the daemon had died.
+// lineWriter splits what is written to it into lines. os/exec copies each stream from
+// its own goroutine, so one writer is only ever written from one at a time.
+type lineWriter struct {
+	emit func(string)
+	buf  []byte
+}
+
+// maxLine bounds a line that never ends, so a stream without newlines is still read
+// out rather than held.
+const maxLine = 64 << 10
+
+func (w *lineWriter) Write(p []byte) (int, error) {
+	w.buf = append(w.buf, p...)
+
+	for {
+		i := bytes.IndexByte(w.buf, '\n')
+		if i < 0 {
+			break
+		}
+
+		w.emit(strings.TrimRight(string(w.buf[:i]), "\r"))
+		w.buf = w.buf[i+1:]
+	}
+
+	if len(w.buf) >= maxLine {
+		w.flush()
+	}
+
+	return len(p), nil
+}
+
+// flush emits whatever is left of a line that ended without a newline.
+func (w *lineWriter) flush() {
+	if len(w.buf) > 0 {
+		w.emit(string(w.buf))
+	}
+
+	w.buf = w.buf[:0]
+}
+
+// waitReady waits for the daemon to answer, and notices when it dies instead.
 func (s *Supervisor) waitReady(ctx context.Context, done <-chan error) error {
 	deadline := time.Now().Add(readyTimeout)
 	wait := 50 * time.Millisecond
@@ -439,19 +471,13 @@ func (s *Supervisor) shutdown(cmd *exec.Cmd, done <-chan error) {
 
 	s.clearReady()
 
-	if cmd.Process == nil {
-		return
-	}
-
 	// Only wait for an answer to a question that was asked. On Windows inside a service
 	// there is no console to deliver a control event to, so terminate reports false every
-	// time -- and waiting out killTimeout there was ten seconds of nothing on every stop,
-	// every restart and every service shutdown.
+	// time -- and waiting out killTimeout there would be ten seconds of nothing on every
+	// stop, every restart and every service shutdown.
 	if terminate(cmd) {
 		select {
 		case <-done:
-			_ = os.Remove(s.Dirs.Socket())
-
 			return
 		case <-time.After(killTimeout):
 			s.report().Warn("anchord did not exit in %s; killing it", killTimeout)
@@ -463,31 +489,38 @@ func (s *Supervisor) shutdown(cmd *exec.Cmd, done <-chan error) {
 	_ = cmd.Process.Kill()
 	<-done
 
+	// A daemon that exits closes its socket and the file goes with it; one that was
+	// killed leaves the file, and `conflux status` and pass-through read a socket file
+	// as a daemon that is running.
 	_ = os.Remove(s.Dirs.Socket())
 }
 
 // renewLoop keeps the credential current while the anchor runs.
+//
+// It re-reads the state every round rather than trusting what it read before
+// sleeping, so a renewal somebody ran by hand in between moves the next one along.
+// A failed renewal is retried after MinSleep.
 func (s *Supervisor) renewLoop(ctx context.Context) {
 	for {
-		st, err := config.LoadState(s.Dirs)
-		if err != nil {
-			return
-		}
+		wait := MinSleep
 
-		wait := SleepUntilRenewal(st.IssuedAt, st.NotAfter, time.Now())
+		switch st, err := config.LoadState(s.Dirs); {
+		case err != nil:
+			s.report().Warn("could not read %s: %v", s.Dirs.StateFile(), err)
+		case DueAt(st.IssuedAt, st.NotAfter, time.Now()):
+			if err := s.renewOnce(ctx); err != nil {
+				s.report().Warn("renewal failed: %v", err)
+			} else {
+				continue
+			}
+		default:
+			wait = SleepUntilRenewal(st.IssuedAt, st.NotAfter, time.Now())
+		}
 
 		select {
 		case <-ctx.Done():
 			return
 		case <-time.After(wait):
-		}
-
-		if !DueAt(st.IssuedAt, st.NotAfter, time.Now()) {
-			continue
-		}
-
-		if err := s.renewOnce(ctx); err != nil {
-			s.report().Warn("renewal failed: %v", err)
 		}
 	}
 }

@@ -5,11 +5,11 @@ import (
 	"errors"
 	"io/fs"
 	"os"
-	"runtime"
 	"time"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/flock"
 )
 
 // The link watcher, and why it has to exist.
@@ -47,16 +47,10 @@ const (
 
 // linkLoop watches an uplink and restarts the anchor when the link has ended.
 //
-// Only runs for an anchor configured with one. On the host's IP network this whole
+// Only runs for an anchor that started on one. On the host's IP network this whole
 // question belongs to anchor, which handles a network change in-process by rebinding
 // and migrating its connections, and needs nothing from conflux.
 func (s *Supervisor) linkLoop(ctx context.Context, spec string) {
-	// Windows has no uplink at all: anchor cannot open a link there, and `conflux up`
-	// refuses --uplink rather than letting a service fail at boot on it.
-	if runtime.GOOS == "windows" || spec == "" {
-		return
-	}
-
 	device := devicePath(spec)
 	backoff := linkBackoffMin
 
@@ -96,7 +90,6 @@ func (s *Supervisor) linkLoop(ctx context.Context, spec string) {
 			continue
 		}
 
-		s.links.Add(1)
 		s.recordReopen()
 		s.report().Step("the anchor is back on %s", spec)
 
@@ -173,8 +166,15 @@ func (s *Supervisor) reopenLink(ctx context.Context) error {
 //
 // Best effort throughout: the anchor is back, which is the part that mattered, and
 // losing the count is not worth failing that. BringUp has just rewritten the state
-// file, so this reads it back rather than holding a stale copy across the restart.
+// file, so this reads it back rather than holding a stale copy across the restart,
+// under the lock every other writer of it holds.
 func (s *Supervisor) recordReopen() {
+	unlock, err := flock.Acquire(s.Dirs.LockFile())
+	if err != nil {
+		return
+	}
+	defer unlock()
+
 	st, err := config.LoadState(s.Dirs)
 	if err != nil {
 		return

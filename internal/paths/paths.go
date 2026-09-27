@@ -3,9 +3,8 @@
 // conflux is system-scoped: one configuration per machine, root-owned, with no
 // home directory anywhere in it. That is a decision rather than an oversight. The
 // boot service runs as root or LocalSystem, so a path under $HOME is a path the
-// service cannot read -- and the previous conflux hard-coded /root/.config/conflux,
-// which is wrong under a unit with User=, wrong under ProtectHome=, and wrong for
-// anyone who ran it with sudo -H.
+// service cannot read, and a home directory is wrong under a unit with User=, wrong
+// under ProtectHome=, and wrong for anyone who ran conflux with sudo -H.
 //
 // Four roots, because they have four lifetimes:
 //
@@ -105,9 +104,8 @@ func (d Dirs) Socket() string { return filepath.Join(d.Run, socketName) }
 // every supervisor start, so a token left by a crashed run authenticates nothing.
 func (d Dirs) TokenFile() string { return filepath.Join(d.Run, "token") }
 
-// LockFile serialises the state-changing commands against each other and against
-// the supervisor. Two conflux up runs at boot -- the unit and an impatient
-// operator -- is the realistic case.
+// LockFile serialises everything that rewrites the manifest or the state: a bring-up,
+// the renewal timer, `conflux renew`, and the uplink watcher's count.
 func (d Dirs) LockFile() string { return filepath.Join(d.Run, "conflux.lock") }
 
 // LogFile is the boot service's output, or "" where the service manager keeps it.
@@ -120,16 +118,14 @@ func (d Dirs) LogFile() string {
 }
 
 // ReadyFile is written by the supervisor once an anchor is up, and removed when it goes.
+// It is what lets `conflux up` learn the anchor is up the moment it happens; see
+// internal/daemon/ready.go.
 //
 // In Run rather than State, because a marker must not outlive the thing it describes.
-// systemd's RuntimeDirectory= clears it on stop and macOS clears /var/run at boot --
-// %ProgramData%\conflux\run on Windows survives both, which is why the supervisor also
-// clears it on the way up rather than relying on the directory's lifetime alone.
-//
-// It is what lets `conflux up` learn the anchor is up the moment it happens instead of
-// forking anchorctl once a second until one of the answers is yes -- which is what
-// systemd's Type=notify already gave Linux, and what launchd and the Windows SCM have no
-// protocol for.
+// systemd's RuntimeDirectory= clears it on stop and the BSDs and macOS clear /var/run at
+// boot -- %ProgramData%\conflux\run on Windows survives both, which is why the
+// supervisor also clears it on the way up rather than relying on the directory's
+// lifetime alone.
 func (d Dirs) ReadyFile() string { return filepath.Join(d.Run, "ready") }
 
 // EnsureAll creates the four roots at the modes they need.

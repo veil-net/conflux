@@ -16,14 +16,7 @@ func Elevated() bool {
 	return windows.GetCurrentProcessToken().IsElevated()
 }
 
-func Describe() string {
-	if Elevated() {
-		return "elevated"
-	}
-
-	return "not elevated"
-}
-
+// Require refuses, with how to get the elevation that would work.
 func Require(what, retry string) error {
 	if Elevated() {
 		return nil

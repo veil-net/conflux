@@ -530,8 +530,8 @@ func isPermanent(err error) bool {
 		return false
 	}
 
-	var invalid *invalidConfigError
-	if errors.Is(err, ErrNotConfigured) || errors.As(err, &invalid) {
+	var refused *permanentError
+	if errors.Is(err, ErrNotConfigured) || errors.As(err, &refused) {
 		return true
 	}
 

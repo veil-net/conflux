@@ -90,7 +90,8 @@ func TestWhatIsPermanent(t *testing.T) {
 	anchorctlSaid := func(stderr string) error { return &anchorctl.Error{Code: 1, Stderr: stderr} }
 
 	for name, err := range map[string]error{
-		"a configuration conflux refuses": &invalidConfigError{path: "conflux.json", err: errors.New("no taints")},
+		"a configuration conflux refuses": &permanentError{path: "conflux.json", err: errors.New("no taints")},
+		"a manifest conflux cannot read":  &permanentError{path: "manifest.b64", err: errors.New("format version 2")},
 		"another tree's credential":       anchorctlSaid("anchorctl: anchor: realm root is not the pinned genesis: have x, want y"),
 		"no TUN for this daemon": anchorctlSaid("anchorctl: opening the TUN device: operation not permitted\n" +
 			"  a TUN needs CAP_NET_ADMIN on Linux, root on macOS and the BSDs, Administrator and wintun.dll on Windows"),

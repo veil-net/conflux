@@ -161,7 +161,7 @@ machine has left. See
   "anchorId": "anchor6btpa3gn6w4stipba4hekzho7caw6srfyy5puvbz7mfanaiept5a",
   "issuedAt": "2026-09-06T06:35:43.5Z",
   "notAfter": "2026-09-13T06:35:43.871Z",
-  "renewalUrl": "https://api.veilnet.com.au/ghosts/alpha/renew",
+  "clockSkew": 412000000,
   "enrolledAt": "2026-09-06T06:35:43.559Z",
   "binSetId": "998ece52739a7c74",
   "linkReopens": 2,
@@ -169,9 +169,12 @@ machine has left. See
 }
 ```
 
-`linkReopens` and `lastLinkReopen` count an uplink found dead and rebuilt, and are
-here rather than in memory because the supervisor that does the reopening and the
-`conflux status` that reports it are different processes. See [uplink.md](uplink.md).
+`issuedAt` and `notAfter` mirror the manifest's: `issuedAt` is when the chain now
+held was received, so the renewal timer divides the credential's own window.
+`clockSkew` is how far the clock was from the API's at the last call, in nanoseconds.
+It, `linkReopens` and `lastLinkReopen` are here rather than in memory because the
+supervisor that measures them and the `conflux status` that reports them are different
+processes. See [credentials.md](credentials.md#clock-skew) and [uplink.md](uplink.md).
 
 Everything here is derived. Delete it and the next start re-learns the AnchorID and
 the credential window at the cost of one extra call. That is why it is a separate file

@@ -32,9 +32,11 @@ type State struct {
 	IssuedAt time.Time `json:"issuedAt,omitzero"`
 	NotAfter time.Time `json:"notAfter,omitzero"`
 
-	// RenewalURL is read out of the manifest rather than composed from a constant,
-	// so the endpoint that issued a credential is the endpoint asked to renew it.
-	RenewalURL string `json:"renewalUrl,omitempty"`
+	// ClockSkew is how far this machine's clock was from the API's at the last call
+	// that measured it, which every enrolment and renewal does. Here rather than in
+	// memory because the supervisor that measures it and the `conflux status` that
+	// reports it are different processes.
+	ClockSkew time.Duration `json:"clockSkew,omitempty"`
 
 	EnrolledAt time.Time `json:"enrolledAt,omitzero"`
 

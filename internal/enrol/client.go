@@ -3,7 +3,6 @@ package enrol
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -28,39 +27,65 @@ const (
 	// a path a user is watching, so it fails rather than hangs.
 	requestTimeout = 30 * time.Second
 
-	// enrolPath and the default renewal path. The renewal endpoint is normally read
-	// out of the manifest instead; this is the fallback for a document that omits it.
+	// enrolPath is the alpha realm's enrolment route. Renewal has no constant: the
+	// route is whatever the manifest names, so the issuer of a credential is what is
+	// asked to renew it.
 	enrolPath = "/ghosts/alpha"
-	renewPath = "/ghosts/alpha/renew"
+
+	// maxRedirects bounds a chain of same-host redirects.
+	maxRedirects = 3
 )
 
 // insecureEnv permits a plain-http base URL. Set only by tests, which point the
 // client at an httptest server.
 const insecureEnv = "CONFLUX_ALLOW_INSECURE_API"
 
+// defaultHTTP is the transport every Client shares unless given its own: Go's
+// default, which keeps idle connections for a bounded time and honours a proxy in
+// the environment, and redirects that stay on one host and on https.
+var defaultHTTP = &http.Client{
+	Timeout:   requestTimeout,
+	Transport: http.DefaultTransport.(*http.Transport).Clone(),
+
+	// A credential request that follows a redirect to another host is a credential
+	// request aimed somewhere conflux did not choose, and one that follows it to
+	// plain http hands a renewal bearer to the path. Go keeps an Authorization
+	// header across a same-host redirect, so the scheme is checked as well.
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if req.URL.Host != via[0].URL.Host {
+			return fmt.Errorf("refusing a redirect from %s to %s", via[0].URL.Host, req.URL.Host)
+		}
+
+		if err := checkScheme(req.URL.String()); err != nil {
+			return err
+		}
+
+		if len(via) >= maxRedirects {
+			return errors.New("too many redirects")
+		}
+
+		return nil
+	},
+}
+
 // Client talks to the enrolment API.
 type Client struct {
 	// BaseURL is where enrolment happens. Empty means the production API.
 	BaseURL string
 
-	// HTTP is the transport. Nil means a sensible default.
+	// HTTP is the transport. Nil means defaultHTTP.
 	HTTP *http.Client
 
 	// Now is the clock, injectable so the skew check is testable.
 	Now func() time.Time
 
-	// Auth is how a renewal identifies itself, resolved from the stored
-	// manifest by Manifest.Auth.
-	//
-	// The zero value sends nothing, which is the alpha realm and every machine
-	// already in the field. A field here rather than a parameter on Renew
-	// because the caller builds one client per renewal anyway, and because a
-	// signature that does not move is a signature the pinning tests in
-	// alpha_test.go go on checking.
-	//
-	// Enrol ignores it, and passes the zero value explicitly rather than by
-	// omission: enrolment is what draws a credential, so it cannot hold one.
+	// Auth is how a renewal identifies itself, resolved from the stored manifest
+	// by Manifest.Auth. The zero value sends nothing, which is the alpha realm.
+	// Enrol ignores it: enrolment is what draws a credential, so it cannot hold one.
 	Auth Auth
+
+	skew     time.Duration
+	measured bool
 }
 
 // Renewal is what the renew route hands back.
@@ -89,8 +114,18 @@ func (e *SkewError) Error() string {
 		e.By.Round(time.Second))
 }
 
-// Skew is how far the clock was off on the last call, or zero.
-var Skew time.Duration
+// CheckSkew refuses a measured skew past the limit.
+func CheckSkew(skew, limit time.Duration) error {
+	if skew > limit {
+		return &SkewError{By: skew}
+	}
+
+	return nil
+}
+
+// Skew is how far this machine's clock was from the server's on this client's last
+// call, and whether that call measured it at all.
+func (c *Client) Skew() (time.Duration, bool) { return c.skew, c.measured }
 
 func (c *Client) base() string {
 	if c.BaseURL == "" {
@@ -113,27 +148,7 @@ func (c *Client) http() *http.Client {
 		return c.HTTP
 	}
 
-	return &http.Client{
-		Timeout: requestTimeout,
-		Transport: &http.Transport{
-			TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12},
-			ForceAttemptHTTP2:   true,
-			MaxIdleConnsPerHost: 2,
-		},
-		// A credential request that follows a redirect to another host is a
-		// credential request aimed somewhere conflux did not choose.
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) > 0 && req.URL.Host != via[0].URL.Host {
-				return fmt.Errorf("refusing a redirect from %s to %s", via[0].URL.Host, req.URL.Host)
-			}
-
-			if len(via) >= 3 {
-				return errors.New("too many redirects")
-			}
-
-			return nil
-		},
-	}
+	return defaultHTTP
 }
 
 // Enrol draws a new identity and the credential that admits it.
@@ -141,8 +156,12 @@ func (c *Client) http() *http.Client {
 // Called in exactly one place, when there is no manifest on disk. It must never be
 // a fallback for a failed renewal: a new enrolment is a new identity, a new
 // AnchorID and a new overlay address, and every peer that had the old one is
-// orphaned with nothing said. The renewal route needs no fallback anyway -- it is
-// checked against nothing and works after expiry.
+// orphaned with nothing said.
+//
+// The envelope is returned as it arrived and not decoded here. It is the only copy of
+// the identity in existence, so the caller writes it to disk before anything else is
+// done with it -- a document this build cannot read is one a later conflux can, and
+// discarding it would lose the identity for good.
 func (c *Client) Enrol(ctx context.Context) (config.Envelope, error) {
 	u := c.base() + enrolPath
 
@@ -161,16 +180,9 @@ func (c *Client) Enrol(ctx context.Context) (config.Envelope, error) {
 		return nil, fmt.Errorf("enrol: %w", err)
 	}
 
-	if strings.TrimSpace(out.Credentials) == "" {
-		return nil, errors.New("enrol: the server returned no credentials")
-	}
-
 	env := config.Envelope(strings.TrimSpace(out.Credentials))
-
-	// Parse before the caller writes it, so a malformed document fails here rather
-	// than at the next boot.
-	if _, err := Decode(env); err != nil {
-		return nil, fmt.Errorf("enrol: %w", err)
+	if len(env) == 0 {
+		return nil, errors.New("enrol: the server returned no credentials")
 	}
 
 	return env, nil
@@ -180,8 +192,7 @@ func (c *Client) Enrol(ctx context.Context) (config.Envelope, error) {
 //
 // renewalURL comes out of the stored manifest. It is checked against the base URL's
 // host: the document is one conflux stores and re-reads, and a POST sent wherever a
-// stored field points is a hole worth closing on the way in, even while the only
-// thing writing that field is our own API.
+// stored field points is a hole worth closing on the way in.
 func (c *Client) Renew(ctx context.Context, renewalURL, anchorID string) (Renewal, error) {
 	if anchorID == "" {
 		return Renewal{}, errors.New("renew: no AnchorID; the anchor has to have started at least once")
@@ -191,16 +202,15 @@ func (c *Client) Renew(ctx context.Context, renewalURL, anchorID string) (Renewa
 		return Renewal{}, fmt.Errorf("renew: %q is not an AnchorID", anchorID)
 	}
 
-	u := renewalURL
-	if u == "" {
-		u = c.base() + renewPath
+	if renewalURL == "" {
+		return Renewal{}, errors.New("renew: the credential names no renewal URL, so there is nowhere to renew it")
 	}
 
-	if err := checkScheme(u); err != nil {
+	if err := checkScheme(renewalURL); err != nil {
 		return Renewal{}, err
 	}
 
-	if err := c.sameHostAsBase(u); err != nil {
+	if err := SameHost(renewalURL, c.base()); err != nil {
 		return Renewal{}, err
 	}
 
@@ -214,7 +224,7 @@ func (c *Client) Renew(ctx context.Context, renewalURL, anchorID string) (Renewa
 		NotAfter string `json:"notAfter"`
 	}
 
-	if err := c.do(ctx, http.MethodPost, u, body, c.Auth, &out); err != nil {
+	if err := c.do(ctx, http.MethodPost, renewalURL, body, c.Auth, &out); err != nil {
 		return Renewal{}, fmt.Errorf("renew: %w", err)
 	}
 
@@ -227,12 +237,12 @@ func (c *Client) Renew(ctx context.Context, renewalURL, anchorID string) (Renewa
 		return Renewal{}, errors.New("renew: the returned chain is empty")
 	}
 
-	notAfter, err := parseTime(out.NotAfter)
+	notAfter, err := time.Parse(time.RFC3339, strings.TrimSpace(out.NotAfter))
 	if err != nil {
-		return Renewal{}, fmt.Errorf("renew: %w", err)
+		return Renewal{}, fmt.Errorf("renew: the returned expiry %q is not a timestamp", out.NotAfter)
 	}
 
-	return Renewal{Chain: chain, NotAfter: notAfter}, nil
+	return Renewal{Chain: chain, NotAfter: notAfter.UTC()}, nil
 }
 
 func (c *Client) do(ctx context.Context, method, u string, body []byte, auth Auth, out any) error {
@@ -272,7 +282,7 @@ func (c *Client) do(ctx context.Context, method, u string, body []byte, auth Aut
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return &HTTPError{Status: resp.StatusCode, Body: string(trim(b, 4096)), RetryAfter: retryAfter(resp)}
+		return &HTTPError{Status: resp.StatusCode, Body: string(b[:min(len(b), 4096)])}
 	}
 
 	if err := json.Unmarshal(b, out); err != nil {
@@ -282,38 +292,22 @@ func (c *Client) do(ctx context.Context, method, u string, body []byte, auth Aut
 	return nil
 }
 
-// recordSkew notes how far off the local clock is. It does not fail the call --
-// the call already worked -- but it gives `conflux status` and the up path
-// something to refuse on.
+// recordSkew notes how far off the local clock is. It does not fail the call -- the
+// call already worked -- but it gives the caller something to refuse on.
 func (c *Client) recordSkew(resp *http.Response) {
 	served, err := http.ParseTime(resp.Header.Get("Date"))
 	if err != nil {
 		return
 	}
 
-	d := c.now().Sub(served)
-	if d < 0 {
-		d = -d
-	}
-
-	Skew = d
-}
-
-// CheckSkew is what the up path calls before doing anything expensive.
-func CheckSkew(limit time.Duration) error {
-	if Skew > limit {
-		return &SkewError{By: Skew}
-	}
-
-	return nil
+	c.skew, c.measured = c.now().Sub(served).Abs(), true
 }
 
 // HTTPError is a non-2xx, with enough of the body to be diagnosable and not so much
 // that a hostile server can fill a terminal.
 type HTTPError struct {
-	Status     int
-	Body       string
-	RetryAfter time.Duration
+	Status int
+	Body   string
 }
 
 func (e *HTTPError) Error() string {
@@ -322,31 +316,6 @@ func (e *HTTPError) Error() string {
 	}
 
 	return fmt.Sprintf("the server answered %d %s: %s", e.Status, http.StatusText(e.Status), e.Body)
-}
-
-// Temporary reports whether retrying could plausibly help. A 4xx that is not 408 or
-// 429 will answer the same way forever.
-func (e *HTTPError) Temporary() bool {
-	return e.Status >= 500 || e.Status == http.StatusTooManyRequests || e.Status == http.StatusRequestTimeout
-}
-
-func retryAfter(resp *http.Response) time.Duration {
-	v := resp.Header.Get("Retry-After")
-	if v == "" {
-		return 0
-	}
-
-	if secs, err := time.ParseDuration(v + "s"); err == nil && secs > 0 {
-		return secs
-	}
-
-	if when, err := http.ParseTime(v); err == nil {
-		if d := time.Until(when); d > 0 {
-			return d
-		}
-	}
-
-	return 0
 }
 
 func checkScheme(raw string) error {
@@ -370,19 +339,13 @@ func checkScheme(raw string) error {
 	}
 }
 
-func (c *Client) sameHostAsBase(raw string) error { return SameHost(raw, c.base()) }
-
 // SameHost is the check that a stored field cannot redirect a POST.
 //
-// Exported because two callers need the same answer and the second one is the
-// import verb, which runs *before* anything is written. A credential whose renewal
-// URL names a host the configuration does not is one whose first renewal would be
-// refused, months later, by a message about a document the operator did not write
-// -- so the import path asks the question while a person is present to fix it.
-//
-// One implementation rather than two, and this is the whole reason it moved: the
-// import verb comparing hosts its own way, and the renewal comparing them this way,
-// is two answers to one question, and the more permissive of them is the way in.
+// Exported because `conflux enrol` asks it too, before anything is written: a
+// credential whose renewal URL names a host the configuration does not is one whose
+// first renewal would be refused, months later -- so the question is asked while a
+// person is present to fix it. One implementation, because two answers to one
+// question means the more permissive of them is the way in.
 func SameHost(renewalURL, apiBase string) error {
 	target, err := url.Parse(renewalURL)
 	if err != nil {
@@ -406,18 +369,12 @@ func SameHost(renewalURL, apiBase string) error {
 // BaseOf is the API base a renewal URL implies: scheme, host and port, nothing
 // else.
 //
-// **This is what makes --api an override rather than a requirement.** A guardian
-// manifest carries an absolute renewalUrl -- it has to, because a self-hosted API
-// is wherever its operator put it -- so the base is already in the document and
-// asking an operator to retype it buys a typo rather than a check. The alpha
-// realm's document may omit the field entirely and fall back to the public
-// default, which is why this returns an error rather than an empty string: a
-// caller reaching here without a URL has a document that cannot say where it
-// renews, and that is worth saying out loud.
-//
-// Only the origin is kept. A renewal URL is a path on an API, and treating the
-// whole of it as a base would make every later request a child of one node's
-// credential route.
+// This is what makes --api an override on `conflux enrol` rather than a requirement.
+// A manifest carries an absolute renewalUrl -- a self-hosted API is wherever its
+// operator put it -- so the base is already in the document, and asking an operator
+// to retype it buys a typo rather than a check. Only the origin is kept: a renewal URL
+// is a path on an API, and treating the whole of it as a base would make every later
+// request a child of one node's credential route.
 func BaseOf(renewalURL string) (string, error) {
 	u, err := url.Parse(renewalURL)
 	if err != nil {
@@ -430,33 +387,4 @@ func BaseOf(renewalURL string) (string, error) {
 	}
 
 	return u.Scheme + "://" + u.Host, nil
-}
-
-func parseTime(s string) (time.Time, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return time.Time{}, errors.New("the response has no expiry")
-	}
-
-	for _, layout := range []string{ManifestTime, time.RFC3339Nano, time.RFC3339} {
-		if t, err := time.Parse(layout, s); err == nil {
-			return t.UTC(), nil
-		}
-	}
-
-	return time.Time{}, fmt.Errorf("%q is not a timestamp this build recognises", s)
-}
-
-func trim(b []byte, n int) []byte {
-	if len(b) <= n {
-		return b
-	}
-
-	return b[:n]
-}
-
-// decodeJSON is a small helper the tests share with nothing; it exists so the test
-// file needs no import of encoding/json for one call.
-func decodeJSON(r io.Reader, v any) error {
-	return json.NewDecoder(io.LimitReader(r, maxBody)).Decode(v)
 }

@@ -3,6 +3,7 @@ package enrol
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -61,15 +62,38 @@ func TestEnrol(t *testing.T) {
 	}
 }
 
-// TestEnrolRefusesGarbage: a malformed document must fail at enrolment, while
-// there is a user watching, not at the next boot.
+// TestEnrolHandsOverWhatArrived: the response is the only copy of an identity, so a
+// document this build cannot read is still handed back to be written -- a later
+// conflux may read it -- and refused afterwards, by Decode, rather than discarded.
+func TestEnrolHandsOverWhatArrived(t *testing.T) {
+	realm := base64.StdEncoding.EncodeToString([]byte(`{"formatVersion":1,"kind":"realm","key":"aa"}`))
+
+	c, _ := server(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		fmt.Fprintf(w, `{"credentials":%q}`, realm)
+	})
+
+	env, err := c.Enrol(t.Context())
+	if err != nil {
+		t.Fatalf("Enrol refused a document before it could be written: %v", err)
+	}
+
+	if string(env) != realm {
+		t.Errorf("Enrol returned %q, want the credentials exactly as they arrived", env)
+	}
+
+	if _, err := Decode(env); err == nil {
+		t.Error("Decode accepted a realm manifest")
+	}
+}
+
+// TestEnrolRefusesGarbage: a response with nothing in it to write is an enrolment
+// that did not happen.
 func TestEnrolRefusesGarbage(t *testing.T) {
 	for name, body := range map[string]string{
-		"empty credentials": `{"credentials":""}`,
-		"not base64":        `{"credentials":"!!!!"}`,
-		"a realm manifest": fmt.Sprintf(`{"credentials":%q}`,
-			base64.StdEncoding.EncodeToString([]byte(`{"formatVersion":1,"kind":"realm","key":"aa"}`))),
+		"empty credentials":    `{"credentials":""}`,
 		"no credentials field": `{}`,
+		"not json":             `credentials`,
 	} {
 		c, _ := server(t, func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusCreated)
@@ -102,11 +126,6 @@ func TestEnrolHTTPErrors(t *testing.T) {
 		if he.Status != code {
 			t.Errorf("Status = %d, want %d", he.Status, code)
 		}
-
-		wantTemp := code >= 500 || code == 429
-		if he.Temporary() != wantTemp {
-			t.Errorf("%d: Temporary() = %v, want %v", code, he.Temporary(), wantTemp)
-		}
 	}
 }
 
@@ -132,8 +151,8 @@ func TestRenew(t *testing.T) {
 	expiry := time.Date(2026, 9, 20, 4, 12, 0, 0, time.UTC)
 
 	c, s := server(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != renewPath {
-			t.Errorf("path = %s, want %s", r.URL.Path, renewPath)
+		if r.URL.Path != alphaRenewPath {
+			t.Errorf("path = %s, want %s", r.URL.Path, alphaRenewPath)
 		}
 
 		var in struct {
@@ -152,7 +171,7 @@ func TestRenew(t *testing.T) {
 			base64.StdEncoding.EncodeToString(chain), expiry.Format(ManifestTime))
 	})
 
-	got, err := c.Renew(t.Context(), s.URL+renewPath, "anchor1qxy")
+	got, err := c.Renew(t.Context(), s.URL+alphaRenewPath, "anchor1qxy")
 	if err != nil {
 		t.Fatalf("Renew: %v", err)
 	}
@@ -192,7 +211,7 @@ func TestRenewRefusesBadInput(t *testing.T) {
 		"an empty AnchorID": "",
 		"not an AnchorID":   "definitely-not-one",
 	} {
-		if _, err := c.Renew(t.Context(), s.URL+renewPath, id); err == nil {
+		if _, err := c.Renew(t.Context(), s.URL+alphaRenewPath, id); err == nil {
 			t.Errorf("Renew accepted %s", name)
 		}
 	}
@@ -207,7 +226,7 @@ func TestRenewRefusesBadInput(t *testing.T) {
 	} {
 		bad, bs := server(t, func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, body) })
 
-		if _, err := bad.Renew(t.Context(), bs.URL+renewPath, "anchor1qxy"); err == nil {
+		if _, err := bad.Renew(t.Context(), bs.URL+alphaRenewPath, "anchor1qxy"); err == nil {
 			t.Errorf("Renew accepted %s", name)
 		}
 	}
@@ -254,22 +273,55 @@ func TestSkewIsMeasured(t *testing.T) {
 		t.Fatalf("Enrol: %v", err)
 	}
 
-	if Skew < 90*time.Minute {
-		t.Errorf("Skew = %v, want about two hours", Skew)
-	}
-
-	if err := CheckSkew(time.Hour); err == nil {
-		t.Error("CheckSkew passed a two-hour skew")
+	skew, measured := c.Skew()
+	if !measured || skew < 90*time.Minute {
+		t.Errorf("Skew() = %v, %v, want about two hours, measured", skew, measured)
 	}
 
 	var se *SkewError
-	if err := CheckSkew(time.Hour); !errors.As(err, &se) {
-		t.Errorf("CheckSkew returned %T, want *SkewError", err)
+	if err := CheckSkew(skew, time.Hour); !errors.As(err, &se) {
+		t.Errorf("CheckSkew passed a two-hour skew, or returned %T rather than *SkewError", err)
+	}
+
+	if err := CheckSkew(skew, 3*time.Hour); err != nil {
+		t.Errorf("CheckSkew refused a skew inside its limit: %v", err)
+	}
+}
+
+// TestRenewNeedsAURL: a credential that names nowhere to renew is refused rather
+// than sent to a route of conflux's choosing.
+func TestRenewNeedsAURL(t *testing.T) {
+	c, _ := server(t, func(http.ResponseWriter, *http.Request) {
+		t.Error("Renew made a request with no renewal URL to make it to")
+	})
+
+	if _, err := c.Renew(t.Context(), "", "anchor1qxy"); err == nil {
+		t.Error("Renew accepted an empty renewal URL")
+	}
+}
+
+// TestRedirectsStayOnOneHostAndOnHTTPS: Go keeps an Authorization header across a
+// same-host redirect, so a downgrade to plain http would hand a renewal bearer to
+// the path.
+func TestRedirectsStayOnOneHostAndOnHTTPS(t *testing.T) {
+	t.Setenv(insecureEnv, "")
+
+	via := []*http.Request{httptest.NewRequest(http.MethodPost, "https://api.example/ghosts/alpha/renew", nil)}
+
+	for target, ok := range map[string]bool{
+		"https://api.example/ghosts/alpha/renew2": true,
+		"http://api.example/ghosts/alpha/renew":   false,
+		"https://elsewhere.example/renew":         false,
+	} {
+		err := defaultHTTP.CheckRedirect(httptest.NewRequest(http.MethodPost, target, nil), via)
+		if (err == nil) != ok {
+			t.Errorf("a redirect to %s: err = %v, want allowed = %v", target, err, ok)
+		}
 	}
 }
 
 func jsonDecode(r *http.Request, v any) error {
 	defer r.Body.Close()
 
-	return decodeJSON(r.Body, v)
+	return json.NewDecoder(r.Body).Decode(v)
 }

@@ -11,7 +11,6 @@ import (
 	"github.com/veil-net/conflux/anchor"
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
-	"github.com/veil-net/conflux/internal/enrol"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
@@ -171,18 +170,17 @@ func reportCredential(d paths.Dirs, st *config.State) {
 		ui.Field("credential", "valid until "+st.NotAfter.Format(time.RFC3339)+" ("+ui.Until(st.NotAfter)+")")
 	}
 
-	// A renewal that is failing is reported rather than hidden. An anchor can be
-	// running perfectly while every handshake it attempts is refused, and status
-	// that says "running" and nothing else would be describing the wrong thing.
-	// Zero until something has called the API in this process, so silence here
-	// means "not measured", not "measured and fine".
-	if enrol.Skew > time.Second {
+	// A bad clock and a failing renewal are reported rather than hidden. An anchor can
+	// be running perfectly while every handshake it attempts is refused, and status
+	// that says "running" and nothing else would be describing the wrong thing. The
+	// skew is as of the last call to the API, which every renewal makes.
+	if st.ClockSkew > time.Second {
 		note := ""
-		if enrol.Skew > daemon.MaxSkew {
+		if st.ClockSkew > daemon.MaxSkew {
 			note = " — past the hour the handshake tolerates; fix the clock (timedatectl set-ntp true)"
 		}
 
-		ui.Field("clock", "off by "+enrol.Skew.Round(time.Second).String()+note)
+		ui.Field("clock", "off by "+st.ClockSkew.Round(time.Second).String()+note)
 	}
 
 	if st.LastRenewalError != "" {

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/base64"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,11 +10,12 @@ import (
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/ui"
 )
 
-// guardianDoc is a manifest a self-hosted guardian issues. Kept in step with
-// enrol's own fixture and with guardian's docs/contracts/guardian-node.md; the
-// fields this package cares about are renewalUrl, renewalAuth and ipv4.
+// guardianDoc is a manifest a self-hosted guardian issues: anchor's format, plus the
+// renewal fields and an ipv4. Kept in step with enrol's own fixture; the fields this
+// package cares about are renewalUrl, renewalAuth and ipv4.
 const guardianDoc = `{
   "formatVersion": 1,
   "kind": "anchor",
@@ -35,10 +37,16 @@ const guardianDoc = `{
 
 const guardianAPI = "https://guardian.example.gov"
 
-// site sets up an isolated conflux directory and writes a manifest file into it.
+// site sets up an isolated conflux directory and writes a manifest file into it. What
+// importCredential tells a person goes nowhere.
 func site(t *testing.T, doc string) (paths.Dirs, string) {
 	t.Helper()
 	t.Setenv("CONFLUX_DIR", t.TempDir())
+
+	out := ui.Out
+	ui.Out = io.Discard
+
+	t.Cleanup(func() { ui.Out = out })
 
 	d := paths.Default()
 	if err := d.EnsureAll(); err != nil {
@@ -325,6 +333,7 @@ func TestEnrolAcceptsAnAlphaManifest(t *testing.T) {
   "formatVersion": 1,
   "kind": "anchor",
   "realm": "8f3a1c04be77d2e5aa",
+  "genesis": "0011223344556677",
   "identity": "aabbccddeeff00112233445566778899",
   "chain": "Y2hhaW4=",
   "notAfter": "2026-09-13T04:12:00.000Z",
@@ -354,6 +363,7 @@ func TestEnrolAcceptsAnAlphaManifest(t *testing.T) {
 const exportDoc = `{
   "formatVersion": 1,
   "kind": "anchor",
+  "genesis": "0011223344556677",
   "identity": "99887766554433221100ffeeddccbbaa",
   "chain": "Z3VhcmRpYW4tY2hhaW4=",
   "notAfter": "2026-10-13T04:12:00.000Z",

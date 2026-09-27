@@ -11,37 +11,21 @@ import (
 	"time"
 )
 
-// This file pins what the public alpha realm already gets, so that adding a second
-// issuer cannot quietly change it.
+// This file pins what the public alpha realm gets, so that the guardian issuer cannot
+// quietly change it.
 //
-// conflux is deployed in the field against one issuer, and every machine out there
-// renews unauthenticated because the alpha route is gated on nothing. The tests
-// below assert that exchange byte for byte -- the header set, the absence of an
-// Authorization header, and the request body -- rather than asserting that a
+// The alpha route (POST /ghosts/alpha/renew) takes the AnchorID and nothing else.
+// The tests below assert that exchange byte for byte -- the header set, the absence
+// of an Authorization header, and the request body -- rather than asserting that a
 // renewal "works", which it would go on doing while sending something new.
-//
-// They were written before any of the guardian work landed, deliberately: a test
-// added afterwards pins whatever the change produced, which is not the same thing
-// as pinning what the field already runs.
 
-// alphaWithoutRenewalAuth is the older shape, still on machines enrolled before the
-// field was added. conflux has never read it, so a document lacking it and a
-// document carrying "anchor-id" have to behave identically.
-const alphaWithoutRenewalAuth = `{
-  "formatVersion": 1,
-  "kind": "anchor",
-  "realm": "8f3a1c04be77d2e5aa",
-  "genesis": "0011223344556677",
-  "identity": "aabbccddeeff00112233445566778899",
-  "chain": "Y2hhaW4tdmVyc2lvbi1vbmU=",
-  "notAfter": "2026-09-13T04:12:00.000Z",
-  "taints": [],
-  "useExit": false,
-  "telemetrySecret": "deadbeefcafe",
-  "bootstrap": ["genesis.veilnet.com.au:4700"],
-  "renewalUrl": "https://api.veilnet.com.au/ghosts/alpha/renew",
-  "issuedAt": "2026-09-06T04:12:00.000Z"
-}`
+// alphaRenewPath is the live alpha renewal route, which alphaDocument names.
+const alphaRenewPath = "/ghosts/alpha/renew"
+
+// withoutRenewalAuth is the same document with no renewalAuth, which is anchor's own
+// manifest format -- it has no renewal fields at all -- and has to behave exactly as
+// "anchor-id" does.
+var withoutRenewalAuth = strings.Replace(alphaDocument, `  "renewalAuth": "anchor-id",`+"\n", "", 1)
 
 // seen is what the server actually received, so an assertion can be about the
 // request rather than about whether the call returned an error.
@@ -87,7 +71,7 @@ func TestAlphaRenewIsUnauthenticated(t *testing.T) {
 
 	for name, doc := range map[string]string{
 		`renewalAuth "anchor-id"`: alphaDocument,
-		"no renewalAuth at all":   alphaWithoutRenewalAuth,
+		"no renewalAuth at all":   withoutRenewalAuth,
 	} {
 		t.Run(name, func(t *testing.T) {
 			// Decoded so the test fails if the document itself stops being one
@@ -98,7 +82,7 @@ func TestAlphaRenewIsUnauthenticated(t *testing.T) {
 
 			c, s, got := record(t, reply)
 
-			if _, err := c.Renew(t.Context(), s.URL+renewPath, "anchor1qxy"); err != nil {
+			if _, err := c.Renew(t.Context(), s.URL+alphaRenewPath, "anchor1qxy"); err != nil {
 				t.Fatalf("Renew: %v", err)
 			}
 

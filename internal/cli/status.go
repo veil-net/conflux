@@ -5,12 +5,12 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/veil-net/conflux/anchor"
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
-	"github.com/veil-net/conflux/internal/enrol"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
@@ -34,35 +34,76 @@ func runStatus(ctx context.Context, args []string) int {
 	ui.Println(version.String())
 	ui.Println()
 
+	cfg, err := config.Load(d)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return fail(err)
+		}
+
+		reportService()
+		ui.Field("config", "none — this machine has never been configured")
+		ui.Println()
+		ui.Printf("  conflux up                          join with a network interface\n" +
+			"  conflux proxy 8080=127.0.0.1:3000   publish a port, no interface needed\n")
+
+		return ExitNoConfig
+	}
+
+	// The daemon's two answers are forks, so they are asked for first and read last,
+	// and the wait for them overlaps everything conflux prints of its own.
+	daemon := askDaemon(ctx, d)
+
+	st, _ := config.LoadState(d)
+
+	reportService()
+	reportConfig(cfg)
+	reportCredential(d, st)
+	reportBinaries(st)
+
+	ui.Field("api", cfg.APIBase())
+
+	daemon.wg.Wait()
+
+	reportExport(cfg, daemon)
+	ui.Println()
+	reportAnchor(daemon)
+
+	return ExitOK
+}
+
+// daemonAnswers is what the running daemon said, asked for in parallel.
+type daemonAnswers struct {
+	wg      sync.WaitGroup
+	asked   bool
+	status  string
+	statErr error
+	export  string
+	expErr  error
+}
+
+// askDaemon starts `anchorctl status` and `anchorctl export`, or asks nothing when
+// there is no daemon to ask.
+func askDaemon(ctx context.Context, d paths.Dirs) *daemonAnswers {
+	a := &daemonAnswers{}
+
+	ctl, err := runCtl(d)
+	if err != nil || ctl.Token == "" {
+		return a
+	}
+
+	a.asked = true
+	env := ctl.Env()
+
+	a.wg.Go(func() { a.status, a.statErr = runQuiet(ctx, ctl.Bin, env, []string{"status"}) })
+	a.wg.Go(func() { a.export, a.expErr = runQuiet(ctx, ctl.Bin, env, []string{"export"}) })
+
+	return a
+}
+
+func reportService() {
 	if mgr, err := service.New(); err == nil {
 		ui.Field("service", mgr.Describe())
 	}
-
-	cfg, err := config.Load(d)
-	if err != nil {
-		if os.IsNotExist(err) {
-			ui.Field("config", "none — this machine has never been configured")
-			ui.Println()
-			ui.Printf("  conflux up                          join with a network interface\n" +
-				"  conflux proxy 8080=127.0.0.1:3000   publish a port, no interface needed\n")
-
-			return ExitNoConfig
-		}
-
-		return fail(err)
-	}
-
-	reportConfig(cfg)
-	reportCredential(d)
-	reportBinaries(d)
-
-	ui.Field("api", cfg.APIBase())
-	reportExport(ctx, d, cfg)
-	ui.Println()
-
-	appendAnchorStatus(ctx, d)
-
-	return ExitOK
 }
 
 func reportConfig(cfg *config.Config) {
@@ -90,8 +131,8 @@ func reportConfig(cfg *config.Config) {
 		ui.Field("peers", strings.Join(cfg.Peers, ", ")+" — overriding the enrolled list")
 	}
 
-	if cfg.IPv4 != "" {
-		ui.Field("ipv4", cfg.IPv4)
+	if ip := cfg.OverlayIPv4(); ip != "" {
+		ui.Field("ipv4", ip)
 	}
 
 	for _, s := range cfg.Subnets {
@@ -103,15 +144,14 @@ func reportConfig(cfg *config.Config) {
 	}
 }
 
-func reportCredential(d paths.Dirs) {
+func reportCredential(d paths.Dirs, st *config.State) {
 	if !config.HasManifest(d) {
 		ui.Field("credential", "none — nothing enrolled yet")
 
 		return
 	}
 
-	st, err := config.LoadState(d)
-	if err != nil || st.NotAfter.IsZero() {
+	if st == nil || st.NotAfter.IsZero() {
 		ui.Field("credential", "held, expiry unknown")
 
 		return
@@ -127,21 +167,20 @@ func reportCredential(d paths.Dirs) {
 	case left <= 0:
 		ui.Field("credential", "EXPIRED "+st.NotAfter.Format(time.RFC3339))
 	default:
-		ui.Field("credential", "valid until "+st.NotAfter.Format(time.RFC3339)+" ("+until(st.NotAfter)+")")
+		ui.Field("credential", "valid until "+st.NotAfter.Format(time.RFC3339)+" ("+ui.Until(st.NotAfter)+")")
 	}
 
-	// A renewal that is failing is reported rather than hidden. An anchor can be
-	// running perfectly while every handshake it attempts is refused, and status
-	// that says "running" and nothing else would be describing the wrong thing.
-	// Zero until something has called the API in this process, so silence here
-	// means "not measured", not "measured and fine".
-	if enrol.Skew > time.Second {
+	// A bad clock and a failing renewal are reported rather than hidden. An anchor can
+	// be running perfectly while every handshake it attempts is refused, and status
+	// that says "running" and nothing else would be describing the wrong thing. The
+	// skew is as of the last call to the API, which every renewal makes.
+	if st.ClockSkew > time.Second {
 		note := ""
-		if enrol.Skew > daemon.MaxSkew {
+		if st.ClockSkew > daemon.MaxSkew {
 			note = " — past the hour the handshake tolerates; fix the clock (timedatectl set-ntp true)"
 		}
 
-		ui.Field("clock", "off by "+enrol.Skew.Round(time.Second).String()+note)
+		ui.Field("clock", "off by "+st.ClockSkew.Round(time.Second).String()+note)
 	}
 
 	if st.LastRenewalError != "" {
@@ -165,9 +204,8 @@ func plural(n int, noun string) string {
 	return strconv.Itoa(n) + " " + noun + "s"
 }
 
-func reportBinaries(d paths.Dirs) {
-	st, err := config.LoadState(d)
-	if err != nil || st.BinSetID == "" || !anchor.Supported {
+func reportBinaries(st *config.State) {
+	if st == nil || st.BinSetID == "" || !anchor.Supported {
 		return
 	}
 
@@ -184,13 +222,9 @@ func reportBinaries(d paths.Dirs) {
 // rendered to anchord's -config on every spawn; a SetExport call, which
 // `conflux anchorctl export -endpoint ...` makes; and a SIGHUP, which re-reads the
 // file and discards the call. So a machine can be exporting somewhere its own
-// configuration does not name, until the next restart puts it back.
-//
-// That is a supportable arrangement and an unsupportable surprise, so the fix is to
-// show it. anchor made it showable on purpose -- ExportSource exists, in its own
-// words, because "an operator looking at a daemon that is not exporting what they
-// asked for has no way to find out who asked otherwise".
-func reportExport(ctx context.Context, d paths.Dirs, cfg *config.Config) {
+// configuration does not name, until the next restart puts it back. anchor reports
+// which surface set it -- ExportSource -- for exactly this.
+func reportExport(cfg *config.Config, a *daemonAnswers) {
 	want := "none — nothing is exported until an endpoint is set"
 	if cfg.Export != nil && cfg.Export.Enabled {
 		want = cfg.Export.Endpoint + " — " + strings.Join(exportSignals(cfg.Export), ", ")
@@ -198,19 +232,13 @@ func reportExport(ctx context.Context, d paths.Dirs, cfg *config.Config) {
 
 	ui.Field("telemetry", want)
 
-	// What the daemon believes, and only when it can be asked. A machine that is
+	// What the daemon believes, and only when it could be asked. A machine that is
 	// not running has nothing to disagree with.
-	ctl, err := runCtl(d)
-	if err != nil || ctl.Token == "" {
+	if !a.asked || a.expErr != nil {
 		return
 	}
 
-	out, err := runQuiet(ctx, ctl.Bin, ctl.Env(), []string{"export"})
-	if err != nil {
-		return
-	}
-
-	for line := range strings.SplitSeq(strings.TrimSpace(out), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(a.export), "\n") {
 		key, value, ok := strings.Cut(strings.TrimSpace(line), "set by")
 		if ok && key == "" {
 			source := strings.TrimSpace(value)
@@ -243,27 +271,19 @@ func exportSignals(e *config.Export) []string {
 	return out
 }
 
-// appendAnchorStatus prints anchorctl's own answer beneath conflux's, indented.
-func appendAnchorStatus(ctx context.Context, d paths.Dirs) {
-	ctl, err := runCtl(d)
-	if err != nil || ctl.Token == "" {
-		ui.Println("anchor:")
-		ui.Println("  not running")
-
-		return
-	}
-
-	out, err := runQuiet(ctx, ctl.Bin, ctl.Env(), []string{"status"})
-
+// reportAnchor prints anchorctl's own answer beneath conflux's, indented.
+func reportAnchor(a *daemonAnswers) {
 	ui.Println("anchor:")
 
-	text := strings.TrimSpace(out)
-	if text == "" {
-		if err != nil {
-			text = err.Error()
-		} else {
-			text = "not running"
-		}
+	text := strings.TrimSpace(a.status)
+
+	switch {
+	case !a.asked:
+		text = "not running"
+	case text == "" && a.statErr != nil:
+		text = a.statErr.Error()
+	case text == "":
+		text = "not running"
 	}
 
 	for line := range strings.SplitSeq(text, "\n") {

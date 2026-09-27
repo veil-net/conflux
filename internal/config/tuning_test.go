@@ -32,35 +32,44 @@ func base(mode Mode) *Config {
 	return c
 }
 
-func TestExitNeedsAHostInterface(t *testing.T) {
-	for _, tc := range []struct {
-		name string
+// TestModeRules are anchor's, and only anchor's: a proxy needs userspace, a subnet and
+// a served exit need an interface, and an IPv4 and UseExit need neither.
+func TestModeRules(t *testing.T) {
+	ip := "10.128.0.7/24"
+
+	for name, tc := range map[string]struct {
+		mode Mode
 		set  func(*Config)
+		ok   bool
+		says string
 	}{
-		{"serve", func(c *Config) { c.ServeExit = true }},
-		{"use", func(c *Config) { c.UseExit = true }},
-		{"both", func(c *Config) { c.ServeExit, c.UseExit = true, true }},
+		"a proxy with an interface":   {ModeTUN, func(c *Config) { c.Proxies = []string{"8080=127.0.0.1:1"} }, false, "userspace"},
+		"a subnet without one":        {ModeProxy, func(c *Config) { c.Subnets = []string{"10.0.0.0/24"} }, false, "host interface"},
+		"a served exit without one":   {ModeProxy, func(c *Config) { c.ServeExit = true }, false, "host interface"},
+		"a served exit with one":      {ModeTUN, func(c *Config) { c.ServeExit = true }, true, ""},
+		"UseExit with an interface":   {ModeTUN, func(c *Config) { c.UseExit = true }, true, ""},
+		"UseExit in userspace":        {ModeProxy, func(c *Config) { c.UseExit = true }, true, ""},
+		"an IPv4 with an interface":   {ModeTUN, func(c *Config) { c.IPv4 = &ip }, true, ""},
+		"an IPv4 in userspace":        {ModeProxy, func(c *Config) { c.IPv4 = &ip }, true, ""},
+		"a declined IPv4":             {ModeProxy, func(c *Config) { c.IPv4 = new(string) }, true, ""},
+		"one overlay port twice":      {ModeProxy, func(c *Config) { c.Proxies = append(c.Proxies, "8080=127.0.0.1:9") }, false, "twice"},
+		"one port, two networks":      {ModeProxy, func(c *Config) { c.Proxies = append(c.Proxies, "8080/udp=127.0.0.1:9") }, true, ""},
+		"no taints":                   {ModeTUN, func(c *Config) { c.Taints = nil }, false, "no taints"},
+		"a subnet with host bits set": {ModeTUN, func(c *Config) { c.Subnets = []string{"192.168.1.7/24"} }, false, "host bits"},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			// TUN is where an exit belongs, and it must keep working.
-			tun := base(ModeTUN)
-			tc.set(tun)
+		t.Run(name, func(t *testing.T) {
+			c := base(tc.mode)
+			tc.set(c)
 
-			if err := tun.Validate(); err != nil {
-				t.Errorf("TUN mode should allow an exit: %v", err)
-			}
+			err := c.Validate()
 
-			// Userspace has no interface to route out of, and anchor refuses it.
-			proxy := base(ModeProxy)
-			tc.set(proxy)
-
-			err := proxy.Validate()
-			if err == nil {
-				t.Fatal("userspace mode should refuse an exit")
-			}
-
-			if !strings.Contains(err.Error(), "host interface") {
-				t.Errorf("the error should say why; it said: %v", err)
+			switch {
+			case tc.ok && err != nil:
+				t.Errorf("refused: %v", err)
+			case !tc.ok && err == nil:
+				t.Error("accepted")
+			case !tc.ok && !strings.Contains(err.Error(), tc.says):
+				t.Errorf("the error should say %q; it said: %v", tc.says, err)
 			}
 		})
 	}

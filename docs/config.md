@@ -47,7 +47,7 @@ Every directory is `0700` and every file `0600`.
 |---|---|
 | `mode` | `tun` or `proxy`. See [modes.md](modes.md). |
 | `taints` | never empty after `up` or `proxy`. |
-| `ipv4` | a prefix, or absent for IPv6-only. `tun` only. |
+| `ipv4` | this machine's IPv4, an address or `address/length`. Either mode. `""` records that the operator declined one, and absent that nobody has been asked yet — the difference is what keeps the question to once. |
 | `subnets` | interface names or private prefixes. `tun` only. |
 | `proxies` | `PORT[/NETWORK]=BACKEND` specs. `proxy` only. |
 | `uplink` | a device, with an optional line speed. Absent means the host's IP network, which is the usual case. Either mode. See [uplink.md](uplink.md). |
@@ -55,7 +55,7 @@ Every directory is `0700` and every file `0600`.
 | `port` | the UDP port to bind on every interface. Absent means the kernel picks one, which is the usual case. A port and not an address: an anchor listens everywhere, and the host's addresses change under it. Refused beside `uplink`, which binds no socket. |
 | `lowLatency` | carry layer-2 frames on QUIC datagrams instead of streams. Absent is false. Either mode. |
 | `lanDiscovery` | probe the host's own networks for anchors of this realm tree. Either mode. The one field here where **absent is not false**: it is `auto`, and it passes no flag at all, which is what leaves enrolment's own `lanDiscovery` in play. `false` and absent are different documents and `--lan-discovery no` writes the first of them. |
-| `serveExit`, `useExit` | route the public internet out of and into the overlay. Absent is false, and both are `tun` only — switching a machine to `proxy` clears them. |
+| `serveExit`, `useExit` | route the public internet out of and into the overlay. Absent is false. Both are `up`'s, and switching a machine to `proxy` clears them; anchor refuses `serveExit` in `proxy` mode. |
 | `apiBaseUrl` | absent means the default. |
 
 This file is the whole of what a reboot needs. Every `up` and every `proxy` rewrites
@@ -161,7 +161,7 @@ machine has left. See
   "anchorId": "anchor6btpa3gn6w4stipba4hekzho7caw6srfyy5puvbz7mfanaiept5a",
   "issuedAt": "2026-09-06T06:35:43.5Z",
   "notAfter": "2026-09-13T06:35:43.871Z",
-  "renewalUrl": "https://api.veilnet.com.au/ghosts/alpha/renew",
+  "clockSkew": 412000000,
   "enrolledAt": "2026-09-06T06:35:43.559Z",
   "binSetId": "998ece52739a7c74",
   "linkReopens": 2,
@@ -169,9 +169,12 @@ machine has left. See
 }
 ```
 
-`linkReopens` and `lastLinkReopen` count an uplink found dead and rebuilt, and are
-here rather than in memory because the supervisor that does the reopening and the
-`conflux status` that reports it are different processes. See [uplink.md](uplink.md).
+`issuedAt` and `notAfter` mirror the manifest's: `issuedAt` is when the chain now
+held was received, so the renewal timer divides the credential's own window.
+`clockSkew` is how far the clock was from the API's at the last call, in nanoseconds.
+It, `linkReopens` and `lastLinkReopen` are here rather than in memory because the
+supervisor that measures them and the `conflux status` that reports them are different
+processes. See [credentials.md](credentials.md#clock-skew) and [uplink.md](uplink.md).
 
 Everything here is derived. Delete it and the next start re-learns the AnchorID and
 the credential window at the cost of one extra call. That is why it is a separate file
@@ -196,14 +199,16 @@ headers, which are credentials.
 ## `bin/<setID>/` — the extracted anchor pair
 
 `anchord` and `anchorctl`, extracted from the conflux binary, in a directory named for
-the SHA-256 of their contents.
+their contents: a CRC-32C and the length of each, which tells one build's pair from
+another's without spending a quarter of a second on SHA-256 at every invocation.
+`conflux version` prints the SHA-256s.
 
 Content-addressed rather than a fixed path, and that one decision removes four
 problems at once. An upgraded conflux writes a *new* directory instead of over the file
 a running anchord has open, so there is no `ETXTBSY` on Unix and no sharing violation
 on Windows. Two conflux processes racing agree on the path. A stale set is
-identifiable and sweepable. And "is it already extracted" is a stat rather than a hash
-of forty megabytes on every invocation.
+identifiable and sweepable. And "is it already extracted" is three stats rather than a
+read of forty-odd megabytes.
 
 Old sets are swept after 24 hours. `conflux uninstall` removes the tree.
 
@@ -226,9 +231,10 @@ then chmod'ing leaves a window at the umask's mode, and on a shared machine that
 window is the whole vulnerability.
 
 **On Windows, `0600` is a no-op.** A Go program that calls `Chmod(0600)` there has
-changed only the read-only bit, and `%ProgramData%` grants `Users` read by default. So
-conflux replaces the DACL outright on secret files — SYSTEM and Administrators, full
-control, inheritance off — before writing anything into them.
+changed only the read-only bit, and `%ProgramData%` lets `Users` read and create beneath
+it. So conflux gives `%ProgramData%\conflux` to SYSTEM and Administrators — owner and a
+protected DACL, inherited below — and does the same to each secret file before writing
+into it. See [windows.md](windows.md#file-permissions).
 
 ## What survives what
 
@@ -240,4 +246,5 @@ control, inheritance off — before writing anything into them.
 | `manifest.b64` | kept | kept | kept | **deleted, permanently** |
 | `state.json` | kept | kept | kept | deleted |
 | `anchord.json` | kept | rewritten | rewritten | deleted |
+| the service's log file (macOS, FreeBSD, Windows) | kept | appended | appended | deleted |
 | extracted binaries | kept | kept | deleted |

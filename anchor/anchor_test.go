@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// minSize is well under the smallest real binary (anchorctl-linux-arm64, ~12.8 MB)
+// minSize is well under the smallest real binary (anchorctl-linux-arm64, ~13 MB)
 // and far above anything that is not one.
 const minSize = 5 << 20
 

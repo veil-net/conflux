@@ -17,14 +17,12 @@ type fakeManager struct {
 	markedAtCall bool
 }
 
-func (m *fakeManager) Name() string                    { return "fake" }
 func (m *fakeManager) Install(string, ...string) error { return nil }
 func (m *fakeManager) Remove() error                   { return nil }
-func (m *fakeManager) Start() error                    { return nil }
 func (m *fakeManager) Stop() error                     { return nil }
 func (m *fakeManager) Installed() (bool, error)        { return true, nil }
-func (m *fakeManager) Running() (bool, error)          { return true, nil }
 func (m *fakeManager) Describe() string                { return "fake" }
+func (m *fakeManager) LogHint() string                 { return "fake" }
 
 func (m *fakeManager) Restart() error {
 	m.restarts++

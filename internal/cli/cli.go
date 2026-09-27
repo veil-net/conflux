@@ -3,9 +3,8 @@
 // Two surfaces in one binary. Conflux owns a short list of verbs, and every other
 // argument vector is handed to the embedded anchorctl untouched -- not parsed, not
 // rewritten, not validated. That is the whole design, and it is why there is no CLI
-// framework here: the previous conflux used one, and a framework owns the entire
-// argv and errors on flags it does not know, which is precisely what makes
-// pass-through impossible.
+// framework here: a framework owns the entire argv and errors on flags it does not
+// know, which is precisely what makes pass-through impossible.
 package cli
 
 import (
@@ -23,7 +22,6 @@ import (
 type verb struct {
 	run     func(ctx context.Context, args []string) int
 	summary string
-	usage   string
 
 	// hidden keeps a verb out of the help listing. Only `serve` is hidden: it is
 	// the service manager's entry point and not something to run by hand.
@@ -35,47 +33,34 @@ type verb struct {
 //
 // Four of them shadow an anchorctl command -- start, proxy, renew and status --
 // and each resolves its own collision rather than guessing. See the comment on
-// each, and TestTheCollisionsAreTheDocumentedOnes, which reads the number off the
-// embedded binary rather than leaving it to be counted by hand here and in two
-// docs.
-//
-// It was five here, three in the help text and three in the README, and none of
-// them was right: `help` was counted as a collision and anchorctl has no such
-// command -- it forwards unrecognised names and anchorctl prints its general
-// usage. A number nothing checks is a number that rots.
-//
-// There is deliberately no total for the set itself. Four places carried one and
-// they said nine, ten, three and five between them; the map below is the answer.
+// each, and TestTheCollisionsAreTheDocumentedOnes, which reads the set off the
+// embedded binary rather than leaving it to be counted by hand.
 func verbs() map[string]verb {
 	return map[string]verb{
-		"up":        {run: runUp, summary: "join the overlay with a network interface", usage: "conflux up [--taint T] [--ipv4 PREFIX | --no-ipv4] [--subnet CIDR]... [--uplink DEV | --no-uplink]"},
-		"enrol":     {run: runEnrol, summary: "install a credential this machine was given, rather than drawing one", usage: "conflux enrol --manifest FILE [--api URL] [--ipv4 PREFIX] [--taint T]..."},
-		"proxy":     {run: runProxy, summary: "publish a local service on the overlay, without an interface", usage: "conflux proxy PORT[/NETWORK]=BACKEND ... [--uplink DEV | --no-uplink]"},
-		"start":     {run: runStart, summary: "start the anchor now, from the saved configuration", usage: "conflux start"},
-		"down":      {run: runDown, summary: "stop the anchor now; a reboot brings it back", usage: "conflux down"},
-		"renew":     {run: runRenew, summary: "install a fresh credential on the running anchor, now", usage: "conflux renew"},
-		"install":   {run: runInstall, summary: "register the boot service", usage: "conflux install"},
-		"uninstall": {run: runUninstall, summary: "remove the boot service, the configuration and the identity", usage: "conflux uninstall [--yes]"},
-		"status":    {run: runStatus, summary: "what conflux and the anchor are doing", usage: "conflux status"},
-		"version":   {run: runVersion, summary: "conflux's version, and the anchor build it carries", usage: "conflux version"},
-		"help":      {run: runHelp, summary: "this, and anchorctl's usage beneath it", usage: "conflux help"},
-		"anchorctl": {run: runEscapeHatch, summary: "run the embedded anchorctl with these arguments, uninterpreted", usage: "conflux anchorctl ARGS..."},
-		"serve":     {runServe, "run the supervisor in the foreground", "conflux serve", true},
+		"up":        {run: runUp, summary: "join the overlay with a network interface"},
+		"enrol":     {run: runEnrol, summary: "install a credential this machine was given, rather than drawing one"},
+		"proxy":     {run: runProxy, summary: "publish a local service on the overlay, without an interface"},
+		"start":     {run: runStart, summary: "start the anchor now, from the saved configuration"},
+		"down":      {run: runDown, summary: "stop the anchor now; a reboot brings it back"},
+		"renew":     {run: runRenew, summary: "install a fresh credential on the running anchor, now"},
+		"install":   {run: runInstall, summary: "register the boot service"},
+		"uninstall": {run: runUninstall, summary: "remove the boot service, the configuration and the identity"},
+		"status":    {run: runStatus, summary: "what conflux and the anchor are doing"},
+		"version":   {run: runVersion, summary: "conflux's version, and the anchor build it carries"},
+		"help":      {run: runHelp, summary: "this, and anchorctl's usage beneath it"},
+		"anchorctl": {run: runEscapeHatch, summary: "run the embedded anchorctl with these arguments, uninterpreted"},
+		"serve":     {run: runServe, summary: "run the supervisor in the foreground", hidden: true},
 	}
 }
 
 // anchorLifecycleVerbs are anchorctl commands conflux refuses to pass through
-// while it owns the configuration.
+// while it owns the configuration, each mapped to the conflux verb that does it.
 //
 // Passing `stop` through would stop an anchor conflux believes is running, and
 // `restart` would rebuild one from arguments its config file does not describe, which
-// the next reboot would silently replace. Both are reachable through the escape hatch
-// by anyone who means it.
-//
-// `start` is absent because conflux has its own now. It used to be refused here and
-// answered with "up", which was wrong on a userspace machine: `up` re-decides the
-// configuration, changes the mode and drops the proxies. `restart` pointed at "up"
-// for the same reason and was wrong the same way, so it names `start`.
+// the next reboot would silently replace. `restart` names `start` rather than `up`,
+// which re-decides the configuration and on a userspace machine drops the proxies.
+// Both are reachable through the escape hatch by anyone who means it.
 var anchorLifecycleVerbs = map[string]string{
 	"stop":    "down",
 	"restart": "start",
@@ -143,20 +128,11 @@ func fail(err error) int {
 
 	ui.Errf("%v", err)
 
-	switch {
-	case errors.Is(err, errNotConfigured):
-		return ExitNoConfig
-	case errors.Is(err, errNotRunning):
-		return ExitUnavailable
-	case errors.Is(err, errNeedsRoot):
+	if errors.Is(err, errNeedsRoot) {
 		return ExitDenied
-	default:
-		return ExitError
 	}
+
+	return ExitError
 }
 
-var (
-	errNotConfigured = errors.New("this machine has no conflux configuration")
-	errNotRunning    = errors.New("nothing is running here")
-	errNeedsRoot     = errors.New("this needs root")
-)
+var errNeedsRoot = errors.New("this needs root")

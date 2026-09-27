@@ -46,11 +46,20 @@ owns the configuration; use down and start, or the escape hatch above.
 
 // runHelp prints conflux's own usage and then anchorctl's, so one page covers both
 // surfaces and nobody has to know which binary a command belongs to.
+//
+// `conflux help COMMAND` is that command's own usage instead, whichever side it is
+// on. Three of conflux's take no flags to print, and get the whole page.
 func runHelp(ctx context.Context, args []string) int {
-	// `conflux help <something>` most likely means a command's own help.
 	if len(args) > 0 {
-		if _, ours := verbs()[args[0]]; !ours {
-			return passthrough(ctx, append([]string{"help"}, args...))
+		v, ours := verbs()[args[0]]
+
+		switch {
+		case !ours:
+			return passthrough(ctx, []string{args[0], "-h"})
+		case args[0] != "help" && args[0] != "status" && args[0] != "version":
+			v.run(ctx, []string{"-h"})
+
+			return ExitOK
 		}
 	}
 

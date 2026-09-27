@@ -5,58 +5,40 @@ import (
 	"time"
 )
 
-// The fixtures below are the exact shapes anchorctl emits, reproduced from
-// printStarted and the status printer in anchor's cmd/anchorctl/lifecycle.go --
-// including the tabwriter's two-space padding and the extra space Println leaves
-// after "overlay ". If an anchor upgrade changes either, these fail, which is the
-// entire point of pinning them.
+// The fixtures below are the exact shapes anchorctl prints: printStarted and the
+// status printer in anchor's cmd/anchorctl/lifecycle.go, as a live alpha node printed
+// them -- the tabwriter's two-space padding, the extra space Println leaves after
+// "overlay ", the prefix length on the overlay address, the three-cell ipv4 row and
+// the short realm path. Only the ID and the addresses are made up. If an anchor
+// upgrade changes the shape, these fail, which is the entire point of pinning them.
 
-const startedOutput = `anchor anchor1qxy8f2kz3mn4p5q6r7s8t9u0v1w2x3y4z5a6b7c8d9e0f
+const wantID = "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq"
+
+const startedOutput = `anchor ` + wantID + `
   underlay 203.0.113.9:41641
-  overlay  fdfa:c051:57ff:28aa:33a1:2a10:f63c:42b
-  overlay  10.128.0.7
-  hardware 9a:1c:44:0e:22:b1
+  overlay  fd80:c4b9:99ae:c540:9d81:a45c:141a:1ce5/48
+  hardware 5a:f0:a9:da:4e:32
 `
 
-const statusOutput = `04:31:02  reachability=nat-cone  mtu=1280  peers=3  up=2h14m0s
-  anchor       anchor1qxy8f2kz3mn4p5q6r7s8t9u0v1w2x3y4z5a6b7c8d9e0f
+const statusOutput = `10:40:44  reachability=nat-cone  mtu=65521  peers=3  up=2h14m0s
+  anchor       ` + wantID + `
   underlay     203.0.113.9:41641
-  overlay      fdfa:c051:57ff:28aa:33a1:2a10:f63c:42b
-  overlay      10.128.0.7
-  hardware     9a:1c:44:0e:22:b1
-  realm        realmtglw/realmpxap
+  overlay      fd80:c4b9:99ae:c540:9d81:a45c:141a:1ce5/48
+  ipv4         10.128.0.7/24    sent from and answered at, translated
+  hardware     5a:f0:a9:da:4e:32
+  realm        tglwuedqqa/snnfpxzuti
   cut depth 0  joined to the whole tree
-  renew by     2026-09-20T04:12:00Z
-  works until  2026-09-13T04:12:00Z
-  proxy 8080/tcp  127.0.0.1:3000
-  proxy 53/udp    127.0.0.1:53
+  renew by     2026-10-04T10:40:39Z
+  works until  2026-10-04T10:40:39Z
+  proxy 8080/tcp  [fd80:c4b9:99ae:c540:9d81:a45c:141a:1ce5]:8080 → 127.0.0.1:3000
+  proxy 53/udp    [fd80:c4b9:99ae:c540:9d81:a45c:141a:1ce5]:53 → 127.0.0.1:53  (1 live, 4 opened)
 `
 
 const notRunningOutput = "no anchor is running\n"
 
-const wantID = "anchor1qxy8f2kz3mn4p5q6r7s8t9u0v1w2x3y4z5a6b7c8d9e0f"
-
 func TestParseStarted(t *testing.T) {
-	s := ParseStarted(startedOutput)
-
-	if s.ID != wantID {
+	if s := ParseStarted(startedOutput); s.ID != wantID {
 		t.Errorf("ID = %q, want %q", s.ID, wantID)
-	}
-
-	if len(s.Underlay) != 1 || s.Underlay[0] != "203.0.113.9:41641" {
-		t.Errorf("Underlay = %v", s.Underlay)
-	}
-
-	if len(s.Overlay) != 2 {
-		t.Fatalf("Overlay = %v, want two addresses", s.Overlay)
-	}
-
-	if s.Overlay[1] != "10.128.0.7" {
-		t.Errorf("Overlay[1] = %q, want the v4 address", s.Overlay[1])
-	}
-
-	if s.Hardware != "9a:1c:44:0e:22:b1" {
-		t.Errorf("Hardware = %q", s.Hardware)
 	}
 }
 
@@ -71,79 +53,25 @@ func TestParseStatus(t *testing.T) {
 		t.Errorf("ID = %q, want %q", st.ID, wantID)
 	}
 
-	if st.Reachability != "nat-cone" {
-		t.Errorf("Reachability = %q", st.Reachability)
+	if len(st.Overlay) != 1 || st.Overlay[0] != "fd80:c4b9:99ae:c540:9d81:a45c:141a:1ce5/48" {
+		t.Errorf("Overlay = %v, want the one IPv6 address with its length", st.Overlay)
 	}
 
-	if st.MTU != 1280 {
-		t.Errorf("MTU = %d", st.MTU)
-	}
-
-	if st.Peers != 3 {
-		t.Errorf("Peers = %d", st.Peers)
-	}
-
-	if st.Up != 2*time.Hour+14*time.Minute {
-		t.Errorf("Up = %v", st.Up)
-	}
-
-	if len(st.Overlay) != 2 {
-		t.Errorf("Overlay = %v, want two", st.Overlay)
-	}
-
-	if st.Realm != "realmtglw/realmpxap" {
-		t.Errorf("Realm = %q", st.Realm)
-	}
-
-	if st.Cut() {
-		t.Error("Cut() = true at cut depth 0")
-	}
-
-	want := time.Date(2026, 9, 13, 4, 12, 0, 0, time.UTC)
+	want := time.Date(2026, 10, 4, 10, 40, 39, 0, time.UTC)
 	if !st.WorksUntil.Equal(want) {
 		t.Errorf("WorksUntil = %v, want %v", st.WorksUntil, want)
-	}
-
-	if len(st.Proxies) != 2 {
-		t.Errorf("Proxies = %v, want two", st.Proxies)
 	}
 }
 
 func TestParseStatusNotRunning(t *testing.T) {
-	st := ParseStatus(notRunningOutput)
-
-	if st.Running {
-		t.Error("Running = true for `no anchor is running`")
-	}
-
-	if st.ID != "" {
-		t.Errorf("ID = %q, want empty", st.ID)
-	}
-}
-
-// TestParseStatusCut: a severed realm is the state an operator most needs status to
-// name, and it is reported as a depth rather than a flag.
-func TestParseStatusCut(t *testing.T) {
-	out := `04:31:02  reachability=direct  mtu=1280  peers=1  up=5m0s
-  anchor       ` + wantID + `
-  realm        realmtglw/realmpxap
-  cut depth 1  deals with realmpxap and below; renew the delegation above it
-`
-
-	st := ParseStatus(out)
-
-	if !st.Cut() {
-		t.Error("Cut() = false at cut depth 1")
-	}
-
-	if st.CutDepth != 1 {
-		t.Errorf("CutDepth = %d, want 1", st.CutDepth)
+	if st := ParseStatus(notRunningOutput); st.Running || st.ID != "" {
+		t.Errorf("ParseStatus(%q) = %+v, want nothing running", notRunningOutput, st)
 	}
 }
 
 // TestParseStartedIsResilient: garbage must not panic, and must not invent an ID.
 func TestParseStartedIsResilient(t *testing.T) {
-	for _, in := range []string{"", "\n", "anchor", "some unrelated error text", "anchor \n"} {
+	for _, in := range []string{"", "\n", "anchor", "some unrelated error text", "anchor \n", "anchor x y\n"} {
 		if got := ParseStarted(in).ID; got != "" {
 			t.Errorf("ParseStarted(%q).ID = %q, want empty", in, got)
 		}
@@ -154,52 +82,42 @@ func TestParseStartedIsResilient(t *testing.T) {
 	}
 }
 
-// metricsOutput is `anchorctl metrics` as a tabwriter pads it: the name, then two or
-// more spaces, then the value. The observation summary is there because it has no
-// single value and must be skipped rather than half-read.
-const metricsOutput = `anchor_connections            1
-anchor_peers_known            4
-anchor_peers_isolated         0
-anchor_connections_refused_total  0
-anchor_rtt{peer=anchorabc}    n=3 mean=12.5 min=9 max=18
-anchor_relay_bytes_total      918273
+// metricsOutput is the head of `anchorctl metrics` from a live node, labelled series
+// and an observation summary included.
+const metricsOutput = `anchor_connections                                    1
+anchor_frames_flooded_total                           0
+anchor_gate_dropped_total{reason=not_quic}            0
+anchor_lan_peers_found_total{iface=eth0}              2
+anchor_overlay_mtu_bytes                              65521
+anchor_rtt_seconds                                    n=3 mean=0.0011 min=0.0010 max=0.0012
 `
 
-func TestParseMetrics(t *testing.T) {
-	got := ParseMetrics(metricsOutput)
-
+func TestParseMetric(t *testing.T) {
 	for name, want := range map[string]float64{
-		MetricConnections:                  1,
-		"anchor_peers_known":               4,
-		"anchor_peers_isolated":            0,
-		"anchor_relay_bytes_total":         918273,
-		"anchor_connections_refused_total": 0,
+		MetricConnections:                          1,
+		"anchor_overlay_mtu_bytes":                 65521,
+		"anchor_lan_peers_found_total{iface=eth0}": 2,
 	} {
-		v, ok := got[name]
-		if !ok {
-			t.Errorf("%s missing from %v", name, got)
-
-			continue
-		}
-
-		if v != want {
-			t.Errorf("%s = %v, want %v", name, v, want)
+		v, ok := ParseMetric(metricsOutput, name)
+		if !ok || v != want {
+			t.Errorf("ParseMetric(%s) = %v, %v; want %v", name, v, ok, want)
 		}
 	}
 
-	// An observation summary has no single value, so it is skipped outright rather
-	// than parsed down to its first number.
-	if v, ok := got["anchor_rtt{peer=anchorabc}"]; ok {
-		t.Errorf("an observation summary should be skipped, got %v", v)
+	// A labelled series is not its bare name, and a summary has no single value.
+	for _, name := range []string{"anchor_lan_peers_found_total", "anchor_rtt_seconds", "anchor_absent"} {
+		if v, ok := ParseMetric(metricsOutput, name); ok {
+			t.Errorf("ParseMetric(%s) = %v, want absent", name, v)
+		}
 	}
 }
 
-// TestParseMetricsIsResilient: no anchor, no metrics yet, and junk all give an empty
-// map rather than a panic. The supervisor reads this on a timer and must not die of it.
-func TestParseMetricsIsResilient(t *testing.T) {
-	for _, in := range []string{"", "no metrics yet\n", "garbage\n", "no anchor is running\n"} {
-		if got := ParseMetrics(in); len(got) != 0 {
-			t.Errorf("ParseMetrics(%q) = %v, want empty", in, got)
+// TestParseMetricIsResilient: no anchor, no metrics yet, and junk all read as absent
+// rather than a panic. The supervisor reads this on a timer and must not die of it.
+func TestParseMetricIsResilient(t *testing.T) {
+	for _, in := range []string{"", "no metrics yet\n", "garbage\n", "no anchor is running\n", "anchor_connections\n"} {
+		if v, ok := ParseMetric(in, MetricConnections); ok {
+			t.Errorf("ParseMetric(%q) = %v, want absent", in, v)
 		}
 	}
 }

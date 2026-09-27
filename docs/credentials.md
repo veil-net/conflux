@@ -74,10 +74,13 @@ Renewal is hot. `anchorctl renew` calls `SetRealmCred` on the running anchor: th
 identity does not change and not one session is lost. A restart would cost every
 connection the anchor is holding, for a swap that needs none of that.
 
-**The renewed chain is written to disk as well as installed.** If it were only
-installed, the next reboot would start from the stale chain — and if the machine had
-been off longer than the original window, from an expired one, at a moment when
-nothing is watching.
+**The renewed chain is written to disk as well as installed**, before it is installed,
+along with its expiry and the moment it arrived. If it were only installed, the next
+reboot would start from the stale chain — and if the machine had been off longer than
+the original window, from an expired one, at a moment when nothing is watching. The
+arrival time is the start of the window the next two-thirds is taken of, so a machine
+that renews and reboots renews on the renewed credential's schedule, not the first
+one's.
 
 ## Being offline past the expiry costs nothing but a call
 
@@ -128,14 +131,15 @@ that looks exactly like a wrong realm. Separately, a clock an hour fast makes a 
 credential look nearly expired, and one a year slow makes an expired one look fine.
 
 conflux compares the API's `Date` header to the local clock on every call, records the
-skew, and refuses to bring a machine up when it exceeds an hour — naming NTP, because
-the failure is otherwise unrecognisable. Better to stop than to start an anchor that
-reports itself healthy and reaches nobody.
+skew in `state.json`, and refuses to bring a machine up when it exceeds an hour —
+naming NTP, because the failure is otherwise unrecognisable. Better to stop than to
+start an anchor that reports itself healthy and reaches nobody.
 
-The measurement comes from talking to the API, so it exists on the two paths that do:
-enrolling, and renewing. A start that needs neither makes no call and measures
-nothing, which is why `conflux status` prints the clock line only when there is a
-figure to print — silence there means "not measured", not "measured and fine".
+The measurement comes from talking to the API, so it is taken on the paths that do:
+enrolling, and renewing. A start whose credential is current makes no call — unless the
+last measurement was over the hour, in which case it renews to measure again rather
+than trusting a figure from before the clock was fixed. `conflux status` prints the
+skew the last call measured, when it is more than a second.
 
 ## Moving a machine
 
@@ -175,16 +179,15 @@ credential installed
 Next: sudo conflux up
 ```
 
-The document is the same format — `formatVersion: 1`, `kind: "anchor"` — and three
-fields that the alpha realm does not use carry the difference.
+The document is the same format — anchor's, `formatVersion: 1`, `kind: "anchor"` — and
+the fields an issuer adds carry the difference.
 
 ### `renewalAuth: "node-secret"`
 
-The field has always been in the document and conflux never read it, because with one
-issuer whose route was gated on nothing there was nothing to read it for. It is read
-now, and there are exactly three answers:
+There are exactly three answers:
 
-- **absent, or `"anchor-id"`** — no header. The alpha realm, byte for byte as before.
+- **absent, or `"anchor-id"`** — no header. The alpha realm sends `"anchor-id"`, and
+  anchor's own format has no renewal fields at all.
 - **`"node-secret"`** — `Authorization: Bearer <renewalSecret>`, where `renewalSecret`
   is a value in the same document, minted for this one machine.
 - **anything else** — refused, naming the value.
@@ -220,7 +223,7 @@ redaction that keeps the rest of the document out of logs.
 A guardian allocates overlay IPv4 addresses out of a range it keeps, and may say where
 telemetry should go. Both travel in the document, and `conflux enrol` copies them into
 `conflux.json` **once** — after that they are ordinary configuration, visible in
-`conflux config` and editable.
+`conflux status` and editable.
 
 Read once rather than obeyed on every start, and that is the same distinction that
 makes conflux refuse to inherit the two exit flags at all. An exit flag would go on

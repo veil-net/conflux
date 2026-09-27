@@ -56,9 +56,9 @@ func TestAuthResolvesTheThreeStates(t *testing.T) {
 		scheme string
 		secret string
 	}{
-		"the alpha realm says anchor-id": {alphaDocument, "", ""},
-		"an older document says nothing": {alphaWithoutRenewalAuth, "", ""},
-		"a guardian says node-secret":    {guardianDocument, AuthNodeSecret, theBearer},
+		"the alpha realm says anchor-id":   {alphaDocument, "", ""},
+		"anchor's own format says nothing": {withoutRenewalAuth, "", ""},
+		"a guardian says node-secret":      {guardianDocument, AuthNodeSecret, theBearer},
 	} {
 		t.Run(name, func(t *testing.T) {
 			auth, err := manifest(t, tc.doc).Auth()
@@ -183,17 +183,16 @@ func TestTheSecretIsNotPrinted(t *testing.T) {
 	}
 }
 
-// TestRenewalSecretSurvivesARenewal. SetChain rewrites two fields; everything else
-// in the document has to come back, and losing this one would cost the machine
+// TestRenewalSecretSurvivesARenewal. WithChain rewrites three fields; everything
+// else in the document has to come back, and losing this one would cost the machine
 // every renewal after the first.
 func TestRenewalSecretSurvivesARenewal(t *testing.T) {
-	m := manifest(t, guardianDocument)
-
-	if err := m.SetChain([]byte("fresh"), time.Now()); err != nil {
-		t.Fatalf("SetChain: %v", err)
+	next, err := manifest(t, guardianDocument).WithChain([]byte("fresh"), time.Now(), time.Now())
+	if err != nil {
+		t.Fatalf("WithChain: %v", err)
 	}
 
-	env, err := m.Encode()
+	env, err := next.Encode()
 	if err != nil {
 		t.Fatalf("Encode: %v", err)
 	}

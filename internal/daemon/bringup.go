@@ -11,6 +11,7 @@ import (
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/enrol"
+	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
 )
 
@@ -24,10 +25,27 @@ type Reporter interface {
 	Warn(format string, a ...any)
 }
 
+// permanentError is a file conflux refuses to start from, which no retry changes.
+type permanentError struct {
+	path string
+	err  error
+}
+
+func (e *permanentError) Error() string { return e.path + ": " + e.err.Error() }
+func (e *permanentError) Unwrap() error { return e.err }
+
 type nopReporter struct{}
 
 func (nopReporter) Step(string, ...any) {}
 func (nopReporter) Warn(string, ...any) {}
+
+// MaxSkew is how far this machine's clock may be from the enrolment API's before
+// conflux stops rather than starting an anchor that cannot connect.
+//
+// anchor's ALPN tag rotates hourly and a peer accepts one epoch either side, so an
+// hour of skew presents as a TLS alert indistinguishable from a wrong realm. The
+// anchor would come up, report itself healthy, and reach nobody.
+const MaxSkew = time.Hour
 
 // BringUp takes a daemon that is up and answering, and leaves it hosting the anchor
 // this machine is configured for.
@@ -40,6 +58,14 @@ func BringUp(ctx context.Context, d paths.Dirs, ctl *anchorctl.Ctl, r Reporter) 
 		r = nopReporter{}
 	}
 
+	// Against `conflux renew` and the renewal timer, which read and rewrite the same
+	// manifest and state this does.
+	unlock, err := flock.Acquire(d.LockFile())
+	if err != nil {
+		return anchorctl.Started{}, err
+	}
+	defer unlock()
+
 	cfg, err := config.Load(d)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -50,7 +76,7 @@ func BringUp(ctx context.Context, d paths.Dirs, ctl *anchorctl.Ctl, r Reporter) 
 	}
 
 	if err := cfg.Validate(); err != nil {
-		return anchorctl.Started{}, fmt.Errorf("%s: %w", d.ConfigFile(), err)
+		return anchorctl.Started{}, &permanentError{path: d.ConfigFile(), err: err}
 	}
 
 	st, err := config.LoadState(d)
@@ -58,9 +84,16 @@ func BringUp(ctx context.Context, d paths.Dirs, ctl *anchorctl.Ctl, r Reporter) 
 		return anchorctl.Started{}, err
 	}
 
-	client := &enrol.Client{BaseURL: cfg.APIBase()}
+	// Whatever happens below -- an enrolment, a renewal, a measured clock -- is worth
+	// keeping even if the start then fails. The next start re-learns all of it, but
+	// status reads it in between.
+	defer func() {
+		if err := config.SaveState(d, st); err != nil {
+			r.Warn("could not write %s: %v", d.StateFile(), err)
+		}
+	}()
 
-	env, m, err := credential(ctx, d, st, client, r)
+	env, m, err := credential(ctx, d, st, cfg.APIBase(), r)
 	if err != nil {
 		return anchorctl.Started{}, err
 	}
@@ -69,24 +102,14 @@ func BringUp(ctx context.Context, d paths.Dirs, ctl *anchorctl.Ctl, r Reporter) 
 		return anchorctl.Started{}, fmt.Errorf("create %s: %w", d.AnchorDir(), err)
 	}
 
-	mode := anchorctl.ModeFromConfig(cfg, d.AnchorDir())
-
-	started, err := ctl.Start(ctx, env, mode)
+	started, err := ctl.Start(ctx, env, anchorctl.ModeFromConfig(cfg, d.AnchorDir()))
 	if err != nil {
 		return anchorctl.Started{}, err
 	}
 
 	st.AnchorID = started.ID
-	st.NotAfter = m.NotAfter()
-	st.IssuedAt = m.IssuedAt()
-	st.RenewalURL = m.RenewalURL()
+	st.IssuedAt, st.NotAfter = m.IssuedAt(), m.NotAfter()
 	st.BinSetID = ctl.SetID
-
-	if err := config.SaveState(d, st); err != nil {
-		// The anchor is up. Failing to record that is worth a warning and not a
-		// rollback, because the next start re-learns all of it.
-		r.Warn("could not write %s: %v", d.StateFile(), err)
-	}
 
 	return started, nil
 }
@@ -97,8 +120,10 @@ func BringUp(ctx context.Context, d paths.Dirs, ctl *anchorctl.Ctl, r Reporter) 
 // always receives a chain that is current -- which is why the boot path needs no
 // separate `anchorctl renew` call at all.
 func credential(
-	ctx context.Context, d paths.Dirs, st *config.State, client *enrol.Client, r Reporter,
+	ctx context.Context, d paths.Dirs, st *config.State, apiBase string, r Reporter,
 ) (config.Envelope, *enrol.Manifest, error) {
+	client := &enrol.Client{BaseURL: apiBase}
+
 	env, err := config.LoadManifest(d)
 
 	switch {
@@ -112,10 +137,11 @@ func credential(
 			return nil, nil, err
 		}
 
-		// Written before anything else touches it. Enrolment stores nothing on the
-		// server and the response is the only copy that will ever exist, so an
-		// enrolment that succeeds and then loses the bytes to a crash costs this
-		// machine its identity permanently.
+		// Written before anything else touches it, decoding included. Enrolment stores
+		// nothing on the server and the response is the only copy that will ever
+		// exist, so an enrolment that succeeds and then loses the bytes -- to a crash,
+		// or to a document this build cannot read -- costs this machine its identity
+		// permanently.
 		if err := config.SaveManifest(d, env); err != nil {
 			return nil, nil, fmt.Errorf(
 				"enrolled, but could not save the credential -- it is now lost and a new one must be drawn: %w", err)
@@ -128,46 +154,36 @@ func credential(
 
 	m, err := enrol.Decode(env)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, &permanentError{path: d.ManifestFile(), err: err}
 	}
 
-	if !DueAt(m.IssuedAt(), m.NotAfter(), time.Now()) {
-		return env, m, checkSkew()
+	// Renewed when due, and also when the clock was last measured wrong: that
+	// measurement is the only thing that refuses a start below, so it is taken again
+	// rather than trusted from however long ago it was taken.
+	if st.AnchorID != "" && (DueAt(m.IssuedAt(), m.NotAfter(), time.Now()) || st.ClockSkew > MaxSkew) {
+		env = renewBeforeStart(ctx, d, st, client, m, env, r)
 	}
 
-	env, m = renewInPlace(ctx, d, st, client, m, env, r)
+	if skew, measured := client.Skew(); measured {
+		st.ClockSkew = skew
 
-	return env, m, checkSkew()
+		if err := enrol.CheckSkew(skew, MaxSkew); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	return env, m, nil
 }
 
-// MaxSkew is how far this machine's clock may be from the enrolment API's before
-// conflux stops rather than starting an anchor that cannot connect.
-//
-// anchor's ALPN tag rotates hourly and a peer accepts one epoch either side, so an
-// hour of skew presents as a TLS alert indistinguishable from a wrong realm. The
-// anchor would come up, report itself healthy, and reach nobody.
-const MaxSkew = time.Hour
-
-// checkSkew refuses a bring-up the clock has already decided against.
-//
-// Only meaningful after a call to the API, which is what measures it; a machine
-// whose credential is current makes none, and enrol.Skew is then zero, which is the
-// honest answer rather than a stale one. So this gates the two paths that did talk
-// to the server, which are also the only two that could have been about to enrol a
-// machine into a realm it cannot handshake with.
-func checkSkew() error {
-	return enrol.CheckSkew(MaxSkew)
-}
-
-// renewInPlace replaces the chain, or explains why it could not and carries on.
+// renewBeforeStart replaces the chain, or explains why it could not and carries on.
 //
 // A failed renewal is never fatal here and never falls back to enrolling. Enrolling
 // again draws a different identity, a different AnchorID and a different overlay
-// address, and orphans every peer that had the old one -- and it is not even
-// necessary, because the renewal route is gated on nothing and works after expiry.
-// A machine that has been off for a month renews on its next launch and keeps its
-// address. So: try, say what happened, and start with what we have.
-func renewInPlace(
+// address, and orphans every peer that had the old one -- and it is not needed,
+// because a renewal works after expiry: the alpha route asks only for the AnchorID,
+// and a guardian's for the bearer the manifest carries. So: try, say what happened,
+// and start with what we have.
+func renewBeforeStart(
 	ctx context.Context,
 	d paths.Dirs,
 	st *config.State,
@@ -175,76 +191,24 @@ func renewInPlace(
 	m *enrol.Manifest,
 	env config.Envelope,
 	r Reporter,
-) (config.Envelope, *enrol.Manifest) {
-	anchorID := st.AnchorID
-	if anchorID == "" {
-		// Nothing has started yet, so there is no id to renew against. The stored
-		// credential is whatever enrolment handed over, which is current.
-		return env, m
-	}
-
+) config.Envelope {
 	r.Step("renewing the credential")
 
-	url := m.RenewalURL()
-	if url == "" {
-		url = st.RenewalURL
+	got, err := renewStored(ctx, d, st, client, m)
+	if err == nil {
+		*m = *got.m
+
+		return got.env
 	}
 
-	// A scheme this build does not implement is a warning on this path and not a
-	// refusal, for the same reason every other renewal failure is: the anchor is
-	// about to start either way, and one that starts with a credential it cannot
-	// yet renew is strictly better than one that does not start. The message names
-	// the value, so the operator reads a fix rather than a symptom.
-	auth, err := m.Auth()
-	if err != nil {
-		st.LastRenewalError = err.Error()
-		st.LastRenewalTry = time.Now().UTC()
-		r.Warn("cannot renew this credential: %v", err)
-
-		return env, m
+	if left := time.Until(m.NotAfter()); left > 0 {
+		r.Warn("could not renew: %v\n  the credential is still valid for %s; conflux will keep trying",
+			err, left.Round(time.Minute))
+	} else {
+		r.Warn("could not renew, and the credential expired %s ago: %v\n"+
+			"  the anchor will start but no peer will accept it until this succeeds",
+			time.Since(m.NotAfter()).Round(time.Minute), err)
 	}
 
-	client.Auth = auth
-
-	renewal, err := client.Renew(ctx, url, anchorID)
-	if err != nil {
-		st.LastRenewalError = err.Error()
-		st.LastRenewalTry = time.Now().UTC()
-
-		if left := time.Until(m.NotAfter()); left > 0 {
-			r.Warn("could not renew: %v\n  the credential is still valid for %s; conflux will keep trying",
-				err, left.Round(time.Minute))
-		} else {
-			r.Warn("could not renew, and the credential expired %s ago: %v\n"+
-				"  the anchor will start but no peer will accept it until this succeeds",
-				time.Since(m.NotAfter()).Round(time.Minute), err)
-		}
-
-		return env, m
-	}
-
-	if err := m.SetChain(renewal.Chain, renewal.NotAfter); err != nil {
-		r.Warn("could not apply the renewed credential: %v", err)
-
-		return env, m
-	}
-
-	next, err := m.Encode()
-	if err != nil {
-		r.Warn("could not encode the renewed credential: %v", err)
-
-		return env, m
-	}
-
-	if err := config.SaveManifest(d, next); err != nil {
-		r.Warn("could not save the renewed credential: %v", err)
-
-		return env, m
-	}
-
-	st.LastRenewalError = ""
-	st.NotAfter = renewal.NotAfter
-	st.IssuedAt = time.Now().UTC()
-
-	return next, m
+	return env
 }

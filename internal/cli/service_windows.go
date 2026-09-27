@@ -4,20 +4,35 @@ package cli
 
 import (
 	"context"
+	"os"
 	"time"
 
 	"golang.org/x/sys/windows/svc"
 
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/service"
+	"github.com/veil-net/conflux/internal/ui"
 )
 
 // serveAsService hands over to the service control manager when conflux was started
 // by it, and reports false when it was started from a console.
+//
+// A service has no console to write to, so what the supervisor and anchord say goes
+// to the log file instead, where `conflux up` points when a start fails.
 func serveAsService(sup *daemon.Supervisor) (bool, int) {
 	isService, err := svc.IsWindowsService()
 	if err != nil || !isService {
 		return false, 0
+	}
+
+	if err := sup.Dirs.EnsureAll(); err != nil {
+		return true, ExitChildFailed
+	}
+
+	if f, err := os.OpenFile(sup.Dirs.LogFile(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
+		defer f.Close()
+
+		ui.Out, ui.Errw = f, f
 	}
 
 	h := &handler{sup: sup}
@@ -36,10 +51,9 @@ type handler struct {
 
 // Execute is the SCM's view of conflux.
 //
-// The previous conflux had the anchor's stop call commented out here and went
-// straight to svc.Stopped, so every service stop left peers to discover the
-// departure by timeout. Cancelling the supervisor's context runs its full shutdown
-// -- close the anchor, then signal, then kill -- which is the whole point.
+// A stop cancels the supervisor's context, which runs its full shutdown -- close the
+// anchor so it says goodbye, then signal, then kill -- rather than reporting Stopped
+// and leaving peers to discover the departure by timeout.
 func (h *handler) Execute(_ []string, r <-chan svc.ChangeRequest, s chan<- svc.Status) (bool, uint32) {
 	const accepted = svc.AcceptStop | svc.AcceptShutdown
 

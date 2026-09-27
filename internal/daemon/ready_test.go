@@ -3,6 +3,7 @@ package daemon
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/veil-net/conflux/internal/paths"
@@ -38,8 +39,8 @@ func TestMarkReadyRoundTrips(t *testing.T) {
 		t.Error("a marker was written and IsReady says no")
 	}
 
-	if got := ReadyAnchor(d); got != "anchor6btpa3gn6w4stipba4hekzho7caw6srfyy5puvbz7mfanaiept5a" {
-		t.Errorf("ReadyAnchor = %q, want the id that was marked", got)
+	if b, _ := os.ReadFile(d.ReadyFile()); !strings.Contains(string(b), "anchor6btpa3gn6w4stipba4hekzho7caw6srfyy5puvbz7mfanaiept5a") {
+		t.Errorf("the marker reads %q and does not name the anchor that was marked", b)
 	}
 }
 

@@ -1,0 +1,14 @@
+start
+-manifest
+-
+-dir
+/var/lib/conflux/anchor
+-taints
+brhk-2mq9-tzva-6pjs
+-tun=false
+-serve-exit=false
+-use-exit=false
+-ipv4
+10.128.0.7/24
+-serve-proxy
+8080=127.0.0.1:3000

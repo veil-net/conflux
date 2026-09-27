@@ -32,18 +32,34 @@ anchor_id() { docker exec "$1" sh -c "sed -n 's/.*\"anchorId\": \"\([^\"]*\)\".*
 
 # lan_found sums anchor_lan_peers_found_total across whatever labels it carries -- the
 # counter is per-interface, and a container with two bridges would otherwise be read
-# as only the first of them. `conflux metrics` is the anchorctl pass-through, and its
-# format is "name<two spaces>value"; see internal/anchorctl.ParseMetrics.
+# as only the first of them. connections is the anchor_connections gauge. `conflux
+# metrics` is the anchorctl pass-through, "name<padding>value" per line.
+#
+# Every reader of a pipe in this file reads to the end. One that stops early -- awk's
+# exit, grep -q -- leaves the writer to die of SIGPIPE whenever it has more to say, and
+# under pipefail that is a 141 which fails an assignment and falsifies an if.
 lan_found() {
   docker exec "$1" conflux metrics 2>/dev/null |
     awk '$1 ~ /^anchor_lan_peers_found_total/ { s += $2 } END { print s + 0 }'
 }
 
-# Reaped before as well as after. The trap does not fire when a CI run is cancelled
-# -- the runner's SIGTERM ends bash without it, and SIGKILL is not catchable at all --
-# and the runner is no longer a machine that is thrown away afterwards, so a cancelled
-# run leaves three fixed names for the next run to collide with. `docker rm -f` shrugs
-# at a name that is not there, so this is a no-op on a clean machine.
+connections() {
+  docker exec "$1" conflux metrics 2>/dev/null | awk '$1 == "anchor_connections" { v = $2 } END { print v + 0 }'
+}
+
+# A and B are given a bootstrap entry that cannot answer -- 192.0.2.1 is RFC 5737's
+# documentation range -- in place of the realm's own. anchor probes the local link only
+# until its first connection, so with the live realm answering, both would be introduced
+# through it within a second and the link would prove nothing. Without it, the only way
+# the two can meet is LAN discovery on the Docker bridge, which is the one thing no Go
+# test in this tree can arrange: a real kernel, real multicast, a real answer.
+NOWHERE=192.0.2.1:4700
+
+# Reaped before as well as after. The trap does not fire when a run is cancelled -- a
+# SIGTERM ends bash without it, and SIGKILL is not catchable at all -- and on a machine
+# that is not thrown away afterwards a cancelled run leaves three fixed names for the
+# next run to collide with. `docker rm -f` shrugs at a name that is not there, so this
+# is a no-op on a clean machine.
 before=$(docker ps -aq | wc -l)
 docker rm -f cfx-a cfx-b cfx-c >/dev/null 2>&1 || true
 echo "containers on this machine: $before before this run"
@@ -54,7 +70,7 @@ say "taint for this run: $TAINT"
 
 say "node A joins"
 boot cfx-a
-docker exec cfx-a conflux up --taint "$TAINT" --ipv4 10.128.0.1/24
+docker exec cfx-a conflux up --taint "$TAINT" --ipv4 10.128.0.1/24 --peers "$NOWHERE"
 A_ID=$(anchor_id cfx-a)
 [ -n "$A_ID" ] || { echo "node A recorded no AnchorID" >&2; exit 1; }
 
@@ -71,15 +87,20 @@ docker exec cfx-a conflux up >/dev/null
 
 say "node B joins with the same taint"
 boot cfx-b
-docker exec cfx-b conflux up --taint "$TAINT" --ipv4 10.128.0.2/24
+docker exec cfx-b conflux up --taint "$TAINT" --ipv4 10.128.0.2/24 --peers "$NOWHERE"
 
+# Both directions, because each learns the other's IPv4 from a signed advertisement and
+# the two need not arrive together. Polled every second, so the figure printed is how
+# long it took rather than the next multiple of a sleep.
 say "waiting for the two to find each other"
-for i in $(seq 12); do
-  if docker exec cfx-a ping -c1 -W2 10.128.0.2 >/dev/null 2>&1; then
-    echo "reachable after ~$((i * 10))s"
+SECONDS=0
+while [ "$SECONDS" -lt 120 ]; do
+  if docker exec cfx-a ping -c1 -W1 10.128.0.2 >/dev/null 2>&1 &&
+    docker exec cfx-b ping -c1 -W1 10.128.0.1 >/dev/null 2>&1; then
+    echo "reachable both ways after ${SECONDS}s"
     break
   fi
-  sleep 10
+  sleep 1
 done
 
 say "reachable both ways, v4 and v6"
@@ -96,63 +117,65 @@ docker exec cfx-a ping -c2 -W3 "$B6"
 # the first time it is written, delta included, so the name appears at zero as soon as
 # an anchor polls -- a grep for the name alone passes on an anchor that never found a
 # thing. anchor's own suite records being caught by exactly that.
-say "the realm was found on the link, not only through the bootstrap list"
-for i in $(seq 12); do
-  [ "$(lan_found cfx-a)" -gt 0 ] && { echo "discovery counter moved after ~$((i * 5))s"; break; }
-  sleep 5
+# They met, and nothing but the link could have introduced them; the counter says the
+# probe is what found them. Either end may be the one that counts: whichever probe the
+# other answers first, the connection it makes stops the other's.
+say "the two found each other on the link"
+SECONDS=0
+while [ "$SECONDS" -lt 60 ]; do
+  found=$(( $(lan_found cfx-a) + $(lan_found cfx-b) ))
+  [ "$found" -gt 0 ] && { echo "discovery counter moved after ${SECONDS}s"; break; }
+  sleep 1
 done
-[ "$(lan_found cfx-a)" -gt 0 ] \
-  || { echo "anchor_lan_peers_found_total never moved on A, so nothing was found on the link" >&2; exit 1; }
+[ "$found" -gt 0 ] \
+  || { echo "anchor_lan_peers_found_total never moved on A or B, so they did not meet on the link" >&2; exit 1; }
 
-# The control, and the reason it is worth a third enrolment: A's counter moved, so if C's
-# stays at zero on the same link then --lan-discovery no reached anchor rather than being
-# accepted by conflux and dropped on the floor. That is conflux's contribution and the only
-# thing here this repository can be held to.
-#
-# Two claims used to be made together, and only one of them was ever conflux's. The other
-# was that C, naming no --peers, still reaches the realm from the manifest's own bootstrap
-# list -- which would prove discovery is a third source rather than a load-bearing one.
-#
-# That one cannot hold in this topology, and the reason is not a firewall. C can only be
-# told about a node the bootstrap list already knows, so it needs at least one of A or B to
-# have reached the realm's bootstrap nodes and been announced there. Here none of the three
-# ever does: they meet on the Docker bridge and nowhere else. So the bootstrap list has
-# nothing to tell C, and C finding nothing is the correct outcome rather than a failure.
-#
-# Still worth reporting. The day one of them does reach the realm, C finding it is exactly
-# the proof that discovery is additive -- so the run says which happened.
-say "node C joins with --lan-discovery no and no bootstrap list of its own"
+# C is enrolled the other way: from an alpha manifest fetched here and handed to
+# `conflux enrol` on stdin, which is the path a commissioned machine takes and the one
+# that would otherwise only ever see hand-written fixtures. `up` must then start from
+# it without enrolling again.
+say "node C is enrolled from a live alpha manifest, then joins with --lan-discovery no and no bootstrap list of its own"
 boot cfx-c
+manifest=$(curl -fsS -X POST -H 'Accept: application/json' --max-time 30 https://api.veilnet.com.au/ghosts/alpha |
+  sed -n 's/^{"credentials":"\([A-Za-z0-9+/=]*\)"}$/\1/p')
+[ -n "$manifest" ] || { echo "POST /ghosts/alpha did not answer with {\"credentials\": ...}" >&2; exit 1; }
+printf '%s' "$manifest" | docker exec -i cfx-c conflux enrol --manifest -
+unset manifest
 docker exec cfx-c conflux up --taint "$TAINT" --ipv4 10.128.0.3/24 --lan-discovery no
+if docker exec cfx-c journalctl -u conflux --no-pager | awk '/enrolling/ { n++ } END { exit n == 0 }'; then
+  echo "C enrolled again instead of starting from the manifest it was given" >&2
+  exit 1
+fi
+[ -n "$(anchor_id cfx-c)" ] || { echo "node C recorded no AnchorID" >&2; exit 1; }
 
-# Zero is only worth asserting from an anchor that is up and answering. lan_found sends
-# stderr to /dev/null and awk prints 0 for no input at all, so a C that had died would pass
-# the check below by saying nothing -- which is the shape of gate this repository has been
-# caught by before. Prove there are metrics first; the zero means something after that.
-metrics=0
-for _ in $(seq 12); do
-  metrics=$(docker exec cfx-c conflux metrics 2>/dev/null | grep -c '^anchor_' || true)
-  [ "$metrics" -gt 0 ] && break
-  sleep 5
+# The no-flag path: with discovery off and no --peers, the only way C reaches anything is
+# the bootstrap list in the manifest it was given -- A and B cannot carry it, since they
+# reach no realm node themselves. A connection proves the issuer's list works as shipped.
+say "C reaches the realm through the manifest's own bootstrap list"
+SECONDS=0
+conns=0
+while [ "$SECONDS" -lt 60 ]; do
+  conns=$(connections cfx-c)
+  [ "${conns:-0}" -gt 0 ] && { echo "C holds $conns connection(s) after ${SECONDS}s"; break; }
+  sleep 1
 done
+# On failure, what C resolved and what anchord said while trying: the containers are
+# reaped on exit, so this is the only record of why.
+if [ "${conns:-0}" -eq 0 ]; then
+  echo "C reached nothing through the manifest's bootstrap list" >&2
+  docker exec cfx-c getent ahosts genesis.veilnet.com.au >&2 || echo "C cannot resolve genesis.veilnet.com.au" >&2
+  docker exec cfx-c conflux status >&2 || true
+  docker exec cfx-c journalctl -u conflux --no-pager -n 60 >&2 || true
+  exit 1
+fi
 
-[ "$metrics" -gt 0 ] \
-  || { echo "C served no anchor_ metrics, so a zero discovery counter would prove nothing" >&2; exit 1; }
-
+# The control, and the reason it is worth a third enrolment: C is up and answering on the
+# same link where A and B found each other, so if its counter stays at zero then
+# --lan-discovery no reached anchor rather than being accepted by conflux and dropped on
+# the floor.
 [ "$(lan_found cfx-c)" -eq 0 ] \
   || { echo "C probed the link despite --lan-discovery no: the flag did not reach anchor" >&2; exit 1; }
-echo "C is answering with $metrics anchor_ metrics and has probed the link 0 times:"
-echo "  --lan-discovery no reached anchor, while A on the same link probed and found peers"
-
-# Reported, not asserted. See the note above.
-if docker exec cfx-a ping -c3 -W3 10.128.0.3 >/dev/null 2>&1; then
-  echo "  and C reached the realm anyway, so something the bootstrap list knows carried it:"
-  echo "  discovery is additive here rather than load-bearing"
-else
-  echo "  C did not reach the realm, which is the correct outcome in this topology: neither"
-  echo "  A nor B was ever announced to the realm's bootstrap nodes, so there is nothing"
-  echo "  there for C to be told about once it stops probing the link"
-fi
+echo "C has probed the link 0 times: --lan-discovery no reached anchor"
 
 say "reboot A: it must come back by itself, same identity"
 docker restart cfx-a >/dev/null

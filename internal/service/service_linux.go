@@ -8,11 +8,8 @@ import (
 	"strings"
 )
 
-// unitName is used everywhere, once.
-//
-// The previous conflux wrote veilnet.service and then started, stopped and removed
-// "veilnet". That worked only because systemd appends .service to a bare name, and
-// would have broken silently the day anyone added a veilnet.socket beside it.
+// unitName is used everywhere, suffix included: systemd appends .service to a bare
+// name, and relying on that breaks the day a conflux.socket appears beside it.
 //
 // A function and not a constant because a run rooted in a CONFLUX_DIR is a separate
 // installation and must not be registered over the machine's own; see scope.
@@ -25,9 +22,10 @@ func unitPath() string { return "/etc/systemd/system/" + unitName() }
 // Type=notify, with sd_notify from the supervisor, is what makes `systemctl start`
 // return only once the anchor is actually up rather than once fork succeeded.
 //
-// RestartPreventExitStatus=78 is the no-configuration case. `conflux serve` exits 78
-// when there is nothing to start, and without this the unit would restart into the
-// same emptiness every five seconds forever.
+// RestartPreventExitStatus=78 70 is the two answers a restart would only repeat.
+// `conflux serve` exits 78 when there is nothing to start, and 70 when it has given up
+// on a configuration or a host that no retry changes; without this the unit would
+// restart into the same answer every five seconds forever, instead of showing failed.
 //
 // Restart=on-failure rather than always, so a deliberate clean exit stays exited.
 //
@@ -51,7 +49,7 @@ NotifyAccess=main
 ExecStart=%s
 Restart=on-failure
 RestartSec=5
-RestartPreventExitStatus=78
+RestartPreventExitStatus=78 70
 TimeoutStartSec=90
 TimeoutStopSec=30
 KillMode=mixed
@@ -74,8 +72,6 @@ WantedBy=multi-user.target
 type systemd struct{}
 
 func newManager() (Manager, error) { return systemd{}, nil }
-
-func (systemd) Name() string { return unitName() }
 
 func (s systemd) Install(exe string, args ...string) error {
 	execStart := exe
@@ -100,9 +96,8 @@ func (s systemd) Install(exe string, args ...string) error {
 }
 
 func (s systemd) Remove() error {
-	// Every step tolerates its own failure. The previous conflux returned on the
-	// first error, so a unit file that had already been deleted made uninstall
-	// impossible to complete.
+	// Every step tolerates its own failure, so a unit file already deleted does not
+	// stop the rest from being undone.
 	var first error
 
 	note := func(err error) {
@@ -128,7 +123,6 @@ func (s systemd) Remove() error {
 	return nil
 }
 
-func (systemd) Start() error   { return run("systemctl", "start", unitName()) }
 func (systemd) Stop() error    { return run("systemctl", "stop", unitName()) }
 func (systemd) Restart() error { return run("systemctl", "restart", unitName()) }
 
@@ -147,28 +141,30 @@ func (systemd) Installed() (bool, error) {
 	return false, err
 }
 
-func (systemd) Running() (bool, error) {
-	_, ok := query("systemctl", "is-active", "--quiet", unitName())
-
-	return ok, nil
-}
-
+// Describe asks systemd once for both answers it gives.
 func (s systemd) Describe() string {
 	installed, _ := s.Installed()
 	if !installed {
 		return "not installed"
 	}
 
-	state, _ := query("systemctl", "is-active", unitName())
-	enabled, _ := query("systemctl", "is-enabled", unitName())
+	out, _ := query("systemctl", "show", unitName(), "--property=ActiveState,UnitFileState")
 
-	if state == "" {
-		state = "unknown"
-	}
+	state, enabled := "unknown", "unknown"
 
-	if enabled == "" {
-		enabled = "unknown"
+	for line := range strings.Lines(out) {
+		key, value, _ := strings.Cut(strings.TrimSpace(line), "=")
+
+		switch {
+		case value == "":
+		case key == "ActiveState":
+			state = value
+		case key == "UnitFileState":
+			enabled = value
+		}
 	}
 
 	return fmt.Sprintf("%s (systemd: %s, %s at boot)", state, unitName(), enabled)
 }
+
+func (systemd) LogHint() string { return "journalctl -u " + unitName() + " -n 50" }

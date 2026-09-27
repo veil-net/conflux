@@ -1,11 +1,12 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/veil-net/conflux/internal/paths"
 )
 
 // WriteFileAtomic replaces path with data, or leaves what was there.
@@ -42,10 +43,10 @@ func WriteFileAtomic(path string, data []byte, perm fs.FileMode) (err error) {
 		return fmt.Errorf("chmod %s: %w", tmpName, err)
 	}
 
-	// On Windows the chmod above is a no-op. Restrict by DACL instead, and do it
-	// while the file is still empty and unnamed.
+	// On Windows the chmod above is a no-op. Restrict by ownership and DACL instead,
+	// and do it while the file is still empty and unnamed.
 	if perm&0o077 == 0 {
-		if err = restrictToAdmins(tmpName); err != nil {
+		if err = paths.Restrict(tmpName, false); err != nil {
 			return fmt.Errorf("restrict %s: %w", tmpName, err)
 		}
 	}
@@ -66,28 +67,17 @@ func WriteFileAtomic(path string, data []byte, perm fs.FileMode) (err error) {
 		return fmt.Errorf("rename %s to %s: %w", tmpName, path, err)
 	}
 
-	// The rename is atomic but not yet durable. Failing to fsync the directory is
-	// not worth losing the write over -- the data is in the page cache and the
-	// common case is fine -- so this is best-effort everywhere it is unsupported.
-	return syncDir(dir)
-}
-
-// syncDir makes a rename durable. Directories cannot be opened for read on
-// Windows, and NTFS orders metadata itself, so there it does nothing.
-func syncDir(dir string) error {
-	f, err := os.Open(dir)
-	if err != nil {
-		if errors.Is(err, fs.ErrPermission) || errors.Is(err, errUnsupportedDirSync) {
-			return nil
-		}
-
-		return nil //nolint:nilerr // durability is best-effort; the write succeeded
-	}
-	defer f.Close()
-
-	if err := f.Sync(); err != nil {
-		return nil //nolint:nilerr // EINVAL on some filesystems; harmless
-	}
+	syncDir(dir)
 
 	return nil
+}
+
+// syncDir makes the rename durable, as far as the platform lets it. Best effort: the
+// rename already happened, and a directory some filesystems refuse to fsync -- and
+// NTFS, which orders its metadata itself -- is not worth losing the write over.
+func syncDir(dir string) {
+	if f, err := os.Open(dir); err == nil {
+		_ = f.Sync()
+		f.Close()
+	}
 }

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base32"
 	"fmt"
 	"net"
 	"net/netip"
@@ -37,6 +38,24 @@ func ValidateTaint(name string) error {
 				"taint %q contains a comma, which would split it into two compartments; use --taint twice instead", name)
 		case name[i] <= 0x20 || name[i] == 0x7f:
 			return fmt.Errorf("taint %q contains a space or control character", name)
+		}
+	}
+
+	return nil
+}
+
+// ValidateTaints checks a whole set against anchor's ceiling as well as each name.
+//
+// A repeated name is not refused: anchor derives one tag per name and collapses
+// duplicates, so a set that names one compartment twice names it once.
+func ValidateTaints(names []string) error {
+	if len(names) > MaxTaints {
+		return fmt.Errorf("%d taints, and anchor allows %d", len(names), MaxTaints)
+	}
+
+	for _, t := range names {
+		if err := ValidateTaint(t); err != nil {
+			return err
 		}
 	}
 
@@ -95,47 +114,68 @@ func ParseProxySpec(spec string) (ProxySpec, error) {
 	}
 
 	// SplitHostPort rather than a colon count, so "[::1]:5432" is one address and
-	// not a parse accident. The backend is not resolved -- anchor dials it fresh
-	// per connection, so a name that does not resolve yet is legitimate.
-	if _, p, err := net.SplitHostPort(backend); err != nil {
+	// not a parse accident, and nothing further: anchor dials the backend fresh per
+	// connection, so a name that does not resolve yet, or a named port, is legitimate.
+	if _, _, err := net.SplitHostPort(backend); err != nil {
 		return ProxySpec{}, fmt.Errorf("%q: backend %q is not host:port: %w", spec, backend, err)
-	} else if n, err := strconv.Atoi(p); err != nil || n < 1 || n > 65535 {
-		return ProxySpec{}, fmt.Errorf("%q: backend %q has no usable port", spec, backend)
 	}
 
 	return ProxySpec{Port: port, Network: network, Backend: backend}, nil
 }
 
-// ParseOverlayIPv4 reads the operator-assigned overlay address.
-//
-// Anchor takes it as a prefix rather than a bare address, because the prefix length
-// is what tells the stack which addresses are on-link. A bare "10.128.0.7" is the
-// commonest mistake and gets its own message: it is not wrong so much as incomplete.
-func ParseOverlayIPv4(s string) (netip.Prefix, error) {
-	s = strings.TrimSpace(s)
+// ValidateProxies parses every spec and refuses a repeated overlay port and network,
+// which anchor refuses at start when the second listener finds the port taken.
+func ValidateProxies(specs []string) ([]ProxySpec, error) {
+	out := make([]ProxySpec, 0, len(specs))
+	seen := make(map[string]bool, len(specs))
 
-	p, err := netip.ParsePrefix(s)
-	if err != nil {
-		if addr, aerr := netip.ParseAddr(s); aerr == nil && addr.Is4() {
-			return netip.Prefix{}, fmt.Errorf(
-				"%s is an address without a prefix length: write it as %s/24", s, s)
+	for _, s := range specs {
+		spec, err := ParseProxySpec(s)
+		if err != nil {
+			return nil, err
 		}
 
-		return netip.Prefix{}, fmt.Errorf("%q is not an IPv4 address and prefix, for example 10.128.0.7/24", s)
+		key := strconv.Itoa(spec.Port) + "/" + spec.Network
+		if seen[key] {
+			return nil, fmt.Errorf("overlay port %s is given twice", key)
+		}
+
+		seen[key] = true
+
+		out = append(out, spec)
 	}
 
-	if !p.Addr().Is4() {
-		return netip.Prefix{}, fmt.Errorf("%s is IPv6: the overlay assigns its own v6 address, and this flag is for v4", s)
+	return out, nil
+}
+
+// ParseOverlayIPv4 reads this machine's IPv4 the way anchord does: an address, which
+// is a /32, or an address and the length of the range routed into the tunnel.
+//
+// Any unicast address a host could send from, another anchor's included: it never
+// reaches the overlay, which carries everything translated into IPv6 from the
+// identity's own address (anchor's docs/ipv4.md). Refused are the ones anchor refuses
+// -- not IPv4, not unicast, or a /0 that would route the whole IPv4 internet into
+// the tunnel.
+func ParseOverlayIPv4(s string) (netip.Prefix, error) {
+	p, err := netip.ParsePrefix(s)
+	if err != nil {
+		addr, aerr := netip.ParseAddr(s)
+		if aerr != nil || !addr.Is4() {
+			return netip.Prefix{}, fmt.Errorf(
+				"%q is not an IPv4 address or prefix, for example 10.128.0.7 or 10.128.0.7/24", s)
+		}
+
+		p = netip.PrefixFrom(addr, 32)
 	}
 
-	if p.Bits() < 8 || p.Bits() > 32 {
-		return netip.Prefix{}, fmt.Errorf("%s has a prefix length of %d, which is outside 8-32", s, p.Bits())
-	}
-
-	if p.Addr() == p.Masked().Addr() && p.Bits() < 31 {
+	switch {
+	case !p.Addr().Is4():
+		return netip.Prefix{}, fmt.Errorf("%s is IPv6: the overlay derives this machine's IPv6 from its identity, and this is for IPv4", s)
+	case !p.Addr().IsGlobalUnicast():
 		return netip.Prefix{}, fmt.Errorf(
-			"%s is the network address of its own prefix, not a host address: pick a host, for example %s/%d",
-			s, p.Addr().Next(), p.Bits())
+			"%s is not a unicast address a host sends from: loopback, link-local, multicast and broadcast are refused", s)
+	case p.Bits() == 0:
+		return netip.Prefix{}, fmt.Errorf("%s would route the whole IPv4 internet into the tunnel, which is what --use-exit is for", s)
 	}
 
 	return p, nil
@@ -255,10 +295,8 @@ func ValidatePeer(entry string) error {
 	rest := entry
 
 	if at := strings.LastIndex(rest, "@"); at >= 0 {
-		anchorID := rest[:at]
-		if !strings.HasPrefix(anchorID, "anchor") {
-			return fmt.Errorf(
-				"peer %q names %q before the @, and an AnchorID starts with \"anchor\"", entry, anchorID)
+		if err := ValidateAnchorID(rest[:at]); err != nil {
+			return fmt.Errorf("peer %q: %w", entry, err)
 		}
 
 		rest = rest[at+1:]
@@ -273,32 +311,89 @@ func ValidatePeer(entry string) error {
 		return fmt.Errorf("peer %q names a port and no host", entry)
 	}
 
-	n, err := strconv.Atoi(port)
-	if err != nil || n < 1 || n > 65535 {
+	// The way netip reads a port once anchor has resolved the host: decimal, 16 bits.
+	if _, err := strconv.ParseUint(port, 10, 16); err != nil {
 		return fmt.Errorf("peer %q: %q is not a port", entry, port)
 	}
 
 	return nil
 }
 
-// ValidatePeers checks a whole bootstrap list and refuses a duplicate.
-//
-// A repeated entry is not harmful to anchor, which dedupes on the address it
-// resolves to, but it is always a mistake in something an operator typed.
+// ValidatePeers checks a whole bootstrap list. A repeated entry is not refused:
+// anchor dials each address once however many times it is named.
 func ValidatePeers(peers []string) error {
-	seen := make(map[string]bool, len(peers))
-
 	for _, p := range peers {
 		if err := ValidatePeer(p); err != nil {
 			return err
 		}
-
-		if seen[p] {
-			return fmt.Errorf("peer %q is named twice", p)
-		}
-
-		seen[p] = true
 	}
 
 	return nil
+}
+
+// anchorIDPrefix and anchorIDEncoding are how anchor spells an AnchorID
+// (internal/id): the prefix, then 32 bytes in unpadded lower-case base32.
+const anchorIDPrefix = "anchor"
+
+var anchorIDEncoding = base32.NewEncoding("abcdefghijklmnopqrstuvwxyz234567").WithPadding(base32.NoPadding)
+
+// ValidateAnchorID accepts exactly what anchor's id.Parse does, case included.
+func ValidateAnchorID(s string) error {
+	if len(s) != len(anchorIDPrefix)+anchorIDEncoding.EncodedLen(32) ||
+		!strings.EqualFold(s[:len(anchorIDPrefix)], anchorIDPrefix) {
+		return fmt.Errorf("%q is not an AnchorID, which is \"anchor\" and 52 base32 characters", s)
+	}
+
+	if b, err := anchorIDEncoding.DecodeString(strings.ToLower(s[len(anchorIDPrefix):])); err != nil || len(b) != 32 {
+		return fmt.Errorf("%q is not an AnchorID, which is \"anchor\" and 52 base32 characters", s)
+	}
+
+	return nil
+}
+
+// privateNetworks is anchor's list of what a subnet router may offer
+// (internal/hostnet): RFC 1918, carrier-grade NAT, and unique local IPv6.
+var privateNetworks = []netip.Prefix{
+	netip.MustParsePrefix("10.0.0.0/8"),
+	netip.MustParsePrefix("172.16.0.0/12"),
+	netip.MustParsePrefix("192.168.0.0/16"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("fc00::/7"),
+}
+
+// ValidateSubnet refuses the entries anchor refuses without looking at the host.
+//
+// An entry is an interface name, which anchor expands to every private network on
+// it, or a prefix, which must match an attached private network exactly. Whether it
+// is attached is the host's to answer and anchor's to check at start; what can be
+// answered here is a prefix with host bits set, which anchor refuses as the
+// off-by-one it is, and one that is not wholly inside a private range, which it can
+// never be attached as.
+func ValidateSubnet(entry string) error {
+	p, err := netip.ParsePrefix(strings.TrimSpace(entry))
+	if err != nil {
+		return nil // an interface name
+	}
+
+	if masked := p.Masked(); masked != p {
+		return fmt.Errorf("subnet %s has host bits set; did you mean %s", entry, masked)
+	}
+
+	if a := p.Addr(); a.Is4In6() {
+		if p.Bits() < 96 {
+			return fmt.Errorf("subnet %s is not a private network", entry)
+		}
+
+		p = netip.PrefixFrom(a.Unmap(), p.Bits()-96)
+	}
+
+	for _, r := range privateNetworks {
+		if r.Bits() <= p.Bits() && r.Contains(p.Addr()) {
+			return nil
+		}
+	}
+
+	return fmt.Errorf(
+		"subnet %s is not a private network: anchor forwards private networks only, and reaching the public internet through an anchor is what an exit is for",
+		entry)
 }

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/base64"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,11 +10,12 @@ import (
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/ui"
 )
 
-// guardianDoc is a manifest a self-hosted guardian issues. Kept in step with
-// enrol's own fixture and with guardian's docs/contracts/guardian-node.md; the
-// fields this package cares about are renewalUrl, renewalAuth and ipv4.
+// guardianDoc is a manifest a self-hosted guardian issues: anchor's format, plus the
+// renewal fields and an ipv4. Kept in step with enrol's own fixture; the fields this
+// package cares about are renewalUrl, renewalAuth and ipv4.
 const guardianDoc = `{
   "formatVersion": 1,
   "kind": "anchor",
@@ -35,10 +37,16 @@ const guardianDoc = `{
 
 const guardianAPI = "https://guardian.example.gov"
 
-// site sets up an isolated conflux directory and writes a manifest file into it.
+// site sets up an isolated conflux directory and writes a manifest file into it. What
+// importCredential tells a person goes nowhere.
 func site(t *testing.T, doc string) (paths.Dirs, string) {
 	t.Helper()
 	t.Setenv("CONFLUX_DIR", t.TempDir())
+
+	out := ui.Out
+	ui.Out = io.Discard
+
+	t.Cleanup(func() { ui.Out = out })
 
 	d := paths.Default()
 	if err := d.EnsureAll(); err != nil {
@@ -88,8 +96,8 @@ func TestEnrolInstallsWhatItWasGiven(t *testing.T) {
 		t.Errorf("apiBaseUrl = %q, want %q", cfg.APIBaseURL, guardianAPI)
 	}
 
-	if cfg.IPv4 != "10.20.0.7/24" {
-		t.Errorf("ipv4 = %q, want the address the issuer allocated", cfg.IPv4)
+	if cfg.OverlayIPv4() != "10.20.0.7/24" {
+		t.Errorf("ipv4 = %q, want the address the issuer allocated", cfg.OverlayIPv4())
 	}
 }
 
@@ -138,7 +146,7 @@ func TestEnrolRefusesBeforeWriting(t *testing.T) {
 	unknownAuth := strings.Replace(guardianDoc, `"renewalAuth": "node-secret"`, `"renewalAuth": "mtls"`, 1)
 	noRenewal := strings.Replace(guardianDoc,
 		`  "renewalUrl": "https://guardian.example.gov/nodes/abc/credential",`+"\n", "", 1)
-	badAddress := strings.Replace(guardianDoc, `"ipv4": "10.20.0.7/24"`, `"ipv4": "10.20.0.7"`, 1)
+	badAddress := strings.Replace(guardianDoc, `"ipv4": "10.20.0.7/24"`, `"ipv4": "127.0.0.7/8"`, 1)
 
 	for name, tc := range map[string]struct {
 		doc  string
@@ -149,7 +157,7 @@ func TestEnrolRefusesBeforeWriting(t *testing.T) {
 		"a format version from later": {futureDoc, guardianAPI, "upgrade conflux"},
 		"a renewalAuth we do not do":  {unknownAuth, guardianAPI, "mtls"},
 		"no renewalUrl at all":        {noRenewal, guardianAPI, "renewalUrl"},
-		"an address that is not one":  {badAddress, guardianAPI, "prefix"},
+		"an address anchor refuses":   {badAddress, guardianAPI, "unicast"},
 		"an api naming another host":  {guardianDoc, "https://somewhere.else", "somewhere.else"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -231,8 +239,8 @@ func TestEnrolLetsTheFlagWin(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	if cfg.IPv4 != "10.99.0.3/24" {
-		t.Errorf("ipv4 = %q, want the flag", cfg.IPv4)
+	if cfg.OverlayIPv4() != "10.99.0.3/24" {
+		t.Errorf("ipv4 = %q, want the flag", cfg.OverlayIPv4())
 	}
 }
 
@@ -325,6 +333,7 @@ func TestEnrolAcceptsAnAlphaManifest(t *testing.T) {
   "formatVersion": 1,
   "kind": "anchor",
   "realm": "8f3a1c04be77d2e5aa",
+  "genesis": "0011223344556677",
   "identity": "aabbccddeeff00112233445566778899",
   "chain": "Y2hhaW4=",
   "notAfter": "2026-09-13T04:12:00.000Z",
@@ -344,8 +353,9 @@ func TestEnrolAcceptsAnAlphaManifest(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	if cfg.IPv4 != "" {
-		t.Errorf("ipv4 = %q, want none: the alpha realm allocates no address", cfg.IPv4)
+	// Not even "none": nobody has been asked yet, and the up that follows asks.
+	if cfg.IPv4 != nil {
+		t.Errorf("ipv4 = %q, want it undecided: the alpha realm allocates no address", *cfg.IPv4)
 	}
 }
 
@@ -353,6 +363,7 @@ func TestEnrolAcceptsAnAlphaManifest(t *testing.T) {
 const exportDoc = `{
   "formatVersion": 1,
   "kind": "anchor",
+  "genesis": "0011223344556677",
   "identity": "99887766554433221100ffeeddccbbaa",
   "chain": "Z3VhcmRpYW4tY2hhaW4=",
   "notAfter": "2026-10-13T04:12:00.000Z",

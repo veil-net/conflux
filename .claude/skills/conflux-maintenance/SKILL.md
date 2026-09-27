@@ -104,7 +104,7 @@ The checks that need the real binaries (flag cross-check, shadowing, collisions)
    Then bring up the probe node ([reference.md § Probe node](reference.md#probe-node)): `conflux up` against the live realm with `--taint "$T"`, then `conflux status`, then the one `conflux renew`. A pinned `anchord` refuses at start any realm whose root isn't its pin, so a successful `up` proves the pin. The join between peers is proven by `make integration` in step 7.
 4. **Fallback.** Use this only when the pin or `make release` is unavailable. Fetch the pinned shelf into scratch first, so `anchor/bin/` stays untouched unless the shelf qualifies:
    `DEST="$S/shelf" make anchor-bins FETCH=1 ANCHOR_SRC=/nonexistent` (`ANCHOR_RELEASE_TOKEN` in the environment, never argv). Accept it only if the `commit:` line equals the synced-to commit. Then copy the 14 files into `anchor/bin/` and run the same verification, except: `"$AS/scripts/client-is-locked.sh" anchor/bin` (no admin directory to compare against), and no `cmp`, since the fetcher already checked every digest. If the shelf is at a different commit, stop the binary step, leave `anchor/bin/` untouched, and flag it. Never test or ship against placeholders or stale binaries without saying so.
-5. `git check-ignore -q anchor/bin/x dist/x test/systemd/conflux` must succeed. Binaries are never committed.
+5. `for p in anchor/bin/x dist/x test/systemd/conflux; do git check-ignore -q "$p" || echo "NOT IGNORED $p"; done` must print nothing (`-q` takes one path). Binaries are never committed.
 
 ### 4. Update dependencies
 
@@ -114,7 +114,7 @@ The checks that need the real binaries (flag cross-check, shadowing, collisions)
 
 ### 5. Baseline
 
-Record the before numbers with the commands in [reference.md § Baseline](reference.md#baseline): `dist` sizes per target, extraction time, `conflux up` → ready overlay against the live API, enrolment and renewal round-trips, `conflux status` latency, goroutines and allocations in the supervisor, renewal and link-watcher paths, and unit and integration suite durations. If benchmarks for those paths are missing, add them first.
+Record the before numbers with the commands in [reference.md § Baseline](reference.md#baseline): `dist` sizes per target, extraction time, `conflux up` → ready overlay against the live API, enrolment and renewal round-trips, `conflux status` latency, goroutines and allocations in the supervisor, renewal and link-watcher paths, and unit and integration suite durations. The benchmarks are `internal/daemon/bench_test.go`; add one first for any of those paths that lacks it.
 
 ### 6. Audit and fix, area by area
 
@@ -127,7 +127,7 @@ make test race cross                                   # each once, in full
 ./test/preflight.sh
 make service-test integration                          # one invocation: `dist` (size gate, fresh binaries) and `image` build once
 make fmtcheck lint tidycheck vulncheck docscheck       # local utility checks (see reference.md § Local checks)
-actionlint                                             # workflows and composite actions
+actionlint && shellcheck scripts/*.sh test/*.sh        # workflows, the actions they use, and the scripts
 ```
 
 Re-measure the baseline. A check that prints `not installed; skipping`, a test skipped for missing binaries, or a suite skipped for missing Docker counts as a failure. Confirm `service-test` and `integration` really booted systemd containers and that `integration` enrolled against the live API. State which CI changes couldn't be validated locally.

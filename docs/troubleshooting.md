@@ -8,19 +8,19 @@ beneath it, and most of what follows is a way of reading that output.
 | `nothing is running here` | no daemon on the socket | `conflux start` if a configuration already exists, otherwise `conflux up` or `conflux proxy` |
 | `this needs root` | every state-changing verb needs it | `sudo conflux …` |
 | `status` exits 78 | never configured | `conflux up` or `conflux proxy` |
-| `up` exits 2 with "needs `--ipv4` or `--no-ipv4`" | no terminal to prompt at | pass one of them; that is what they are for |
-| `is not an address and a prefix` | a bare IPv4 was given | write it as `10.128.0.7/24` |
-| `is the network address of its own prefix` | `10.128.0.0/24` | pick a host address, `10.128.0.1/24` |
-| `a reverse proxy needs userspace mode` | `--subnet` or `--ipv4` given to `proxy`, or a proxy spec to `up` | the modes are exclusive; see [modes.md](modes.md) |
+| `has not been given an IPv4 yet and there is no terminal to ask at` | `up` or `proxy` in a script, on a machine never asked | pass `--ipv4 ADDRESS` or `--no-ipv4`; that is what they are for |
+| `is not a unicast address a host sends from` | a loopback, link-local, multicast or broadcast IPv4 | pick an address a host could send from; any other is accepted |
+| `a reverse proxy needs userspace mode` | a proxy spec in a `tun` configuration | the modes are exclusive; see [modes.md](modes.md) |
 | `"-add" is not one of conflux proxy's flags` | anchorctl's proxy was meant | `conflux anchorctl proxy -add …` |
-| `"start" is anchorctl's` | `conflux start` | `conflux up`, or the escape hatch |
+| `"-identity" is anchorctl's start` | anchorctl's flags given to `conflux start`, which takes none | `conflux anchorctl start …` |
 | `the anchor binaries … will not run` | `noexec`, or SELinux | see below |
-| `wintun.dll … could not be downloaded` | Windows, offline | see [windows.md](windows.md) |
+| `wintun.dll, and it could not be fetched` | Windows, offline | see [windows.md](windows.md) |
 | `taint … contains a comma` | a comma-separated list was passed to `--taint` | use `--taint` twice |
 | `credential EXPIRED` in status | renewal has been failing | the next line names the error; see below |
 | `clock is … away from the server's` | bad clock | fix NTP first; nothing will connect until you do |
 | two machines up, cannot reach each other | almost always taints | see below |
 | `subnet … is not a private network` | a public prefix | anchor forwards private networks only |
+| `subnet … has host bits set` | `192.168.1.7/24` | write the network, `192.168.1.0/24` |
 | `the control socket path is N bytes` | `CONFLUX_DIR` is too deep | use a shorter one; the kernel's limit is 104–108 bytes |
 | `fd:3 adopts a descriptor …` | `--uplink fd:N` | conflux's supervisor hands anchord no descriptors; name the device, or use `conflux anchorctl start` |
 | `anchor has no way to open a link on Windows` | `--uplink` on Windows | anchor opens a link on unix only; see [uplink.md](uplink.md) |
@@ -103,31 +103,16 @@ nothing back. That combination is not a peering problem at all — the control p
 over UDP on the host's own interface and is in perfect health. It is the host's routing
 table: nothing sends overlay addresses to the overlay interface.
 
-**On macOS and the BSDs, on conflux builds before this fix, that is the expected
-behaviour for an overlay IPv4.** A `utun` is a point-to-point interface, and assigning an
-address to one installs a *host* route rather than a route for the prefix — so
-`10.128.0.1/24` routes `10.128.0.1` to the machine itself and routes `10.128.0.0/24`
-nowhere. Packets to `10.128.0.2` match the default route and leave by Wi-Fi. Linux and
-Windows create the route on assignment, which is why this shows up on one platform.
-
-Check it:
+Check that the overlay networks route to the anchor's interface:
 
 ```console
-$ netstat -rn -f inet | grep utun
+$ netstat -rn -f inet | grep utun      # macOS; ip route on Linux, route print on Windows
 $ netstat -rn -f inet6 | grep utun
 ```
 
-If the only `utun` line is a `/32` of this machine's own overlay address, and there is no
-line for the overlay network, that is the fault. Add it by hand — substitute your own
-prefix and the `utun` number `conflux status` reports:
-
-```console
-$ sudo route -n add -inet 10.128.0.0/24 -interface utun4
-```
-
-The anchor installs this itself now, on every BSD and for both families. IPv6 was never
-affected on macOS, which routes an on-link prefix shorter than `/128` regardless of the
-interface being point-to-point.
+anchor installs a route for each network it reaches, on every platform and for both
+families, so an overlay network routed anywhere else — out of Wi-Fi by the default
+route — is anchor's to fix, and worth reporting there with that output attached.
 
 ## The extracted binaries will not run
 
@@ -159,19 +144,12 @@ conflux: launchctl bootstrap system /Library/LaunchDaemons/org.veilnet.conflux.p
 Bootstrap failed: 5: Input/output error
 ```
 
-Error 5 is launchd's answer for most refusals and names none of them. This one was
-conflux's own doing: `uninstall` ran `launchctl disable`, and a disabled label
-[persists across boots](https://keith.github.io/xcode-man-pages/launchctl.1.html) — so a
-machine that had ever been uninstalled could not install again. `uninstall` no longer
-disables anything, and `install` now enables before it bootstraps, which clears the state
-on a machine that already carries it.
-
-To clear it by hand on a build that predates the fix:
-
-```console
-$ sudo launchctl enable system/org.veilnet.conflux
-$ sudo conflux up
-```
+Error 5 is launchd's answer for most refusals and names none of them. conflux enables
+the label before every bootstrap — a disabled label
+[persists across boots](https://keith.github.io/xcode-man-pages/launchctl.1.html) and
+blocks loading until it is enabled again — so when it still fails, the message lists the
+other causes: the plist not root-owned or writable by anybody else, the job already
+loaded, or the executable it names gone or on a volume not mounted yet.
 
 If it still fails, the other three causes of error 5 are: the plist is not root-owned or
 is group- or world-writable; the job is already loaded (`sudo launchctl bootout
@@ -189,13 +167,17 @@ $ sudo conflux serve --foreground
 ```
 
 anchord's own output is prefixed `anchord:`, so the daemon's explanation of its own
-refusal is visible directly. The common causes are a `--subnet` that matches no
-attached network (which stops the anchor rather than being advertised on faith), and a
-configuration anchor refuses — in which case the supervisor gives up after three
-attempts rather than looping, and the unit shows as failed.
+refusal is visible directly. The supervisor retries a failed start with a backoff up
+to thirty seconds — a `--subnet` whose interface is not up yet does come right — and
+gives up after three attempts on what no retry changes, so the unit shows as failed
+rather than looping: a configuration or a manifest conflux refuses, a credential for a
+realm tree other than the one these binaries are pinned to, and a TUN the host will
+not give (no capability or device, or the name held by another interface).
 
-Where the logs are: `journalctl -u conflux -n 50` on Linux,
-`/var/log/conflux.log` on macOS, Event Viewer → Windows Logs → Application on Windows.
+Where the logs are: `journalctl -u conflux -n 50` on Linux, `/var/log/conflux.log` on
+macOS and FreeBSD, `/var/log/daemon` on OpenBSD, and
+`%ProgramData%\conflux\logs\conflux.log` on Windows. A start that times out names the
+right one for the machine.
 
 ## Renewal is failing
 

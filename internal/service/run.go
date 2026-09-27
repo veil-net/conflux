@@ -1,3 +1,5 @@
+//go:build !windows
+
 package service
 
 import (
@@ -7,11 +9,9 @@ import (
 	"strings"
 )
 
-// run executes a service-manager command and puts its stderr in the error.
-//
-// The previous conflux logged stderr and returned a bare exit code, which meant
-// every systemctl failure reached the user as "exit status 1" with the actual
-// explanation somewhere else entirely.
+// run executes a service-manager command and puts its stderr in the error, so a
+// failure reaches the user as the service manager's explanation rather than as
+// "exit status 1".
 func run(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 

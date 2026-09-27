@@ -19,14 +19,16 @@ a daemon or a network. Most of conflux can be.
 | Package | What is asserted |
 |---|---|
 | `anchor` | the embedded binaries are real executables of the right architecture, and `SetID` is stable |
-| `internal/config` | JSON round-trips, the tuning fields included; the mode rule matches anchor's; an exit needs a host interface and a port is refused beside an uplink; proxy specs, IPv4 prefixes and taint names parse and refuse exactly as anchor does; atomic writes leave old-or-new and never a truncated file, and narrow a file that was `0644` |
-| `internal/enrol` | the manifest decodes, refuses a realm manifest and a future format version, and **survives a renewal losslessly** |
-| `internal/enrol` (client) | against `httptest`: the happy path, malformed base64, 4xx and 5xx, an oversized body, a cross-host renewal URL, a plain-http base, cancellation, and clock skew |
+| `internal/config` | JSON round-trips, the tuning fields included; the mode rules match anchor's — a subnet and a served exit need an interface, an IPv4 and `useExit` do not, a port is refused beside an uplink; proxy specs, IPv4 addresses, subnets, bootstrap entries, AnchorIDs and taint names parse and refuse exactly as anchor does; atomic writes leave old-or-new and never a truncated file, and narrow a file that was `0644` |
+| `internal/enrol` | the manifest decodes exactly as anchorctl reads it, refuses a realm manifest and a future format version, and **survives a renewal losslessly** |
+| `internal/enrol` (client) | against `httptest`: the alpha exchange byte for byte, the guardian bearer, 4xx and 5xx, an oversized body, a cross-host renewal URL and a downgrading redirect, a plain-http base, cancellation, and clock skew; and that an enrolment is handed back as it arrived, to be written before it is read |
 | `internal/taint` | generated names satisfy anchor's rule, avoid ambiguous glyphs, and do not repeat |
-| `internal/daemon` | the renewal arithmetic: two thirds of the *observed* window, expiry, absent timestamps, and the clamp; and the link watcher's device parsing and its grace against anchor's own dial timeout |
-| `internal/anchorctl` | the argv goldens, that every flag they use exists, and the output parsers, including the metrics gauge the link watcher reads |
+| `internal/daemon` | the renewal arithmetic: two thirds of the *observed* window, expiry, absent timestamps, and the clamp; a renewal against a stand-in issuer, spliced into the manifest and mirrored into the state, and a failed one recorded; an enrolment kept before it is read; a bad clock measured again rather than trusted; anchord's last words kept when it dies; the link watcher's device parsing and its grace against anchor's own dial timeout; and which failures stop the supervisor rather than being retried |
+| `internal/anchorctl` | the argv goldens, that every flag they use exists, and the output parsers against anchor's current `start`, `status` and `metrics` shapes |
 | `internal/libexec` | extraction, idempotence, eight concurrent callers, and repair of a truncated set |
-| `internal/cli` | the collision rules — `start` and `renew` by shape, `proxy` and `status` by arity — and that nothing shadows anchorctl unintentionally |
+| `internal/cli` | the collision rules — `start` and `renew` by shape, `proxy` and `status` by arity — and that nothing shadows anchorctl unintentionally; the IPv4 asked once; `enrol` refusing before it writes |
+| `internal/service` | the rc scripts the BSDs get, rendered and parsed by `sh`, quoting included; the service's scope |
+| `internal/paths` (Windows) | the root made Administrators', and files restricted to them trusted |
 
 ## The three tests worth knowing about
 
@@ -39,30 +41,30 @@ It skips when `anchor/bin` holds the placeholders `make anchor-bins` writes with
 anchor checkout available. `anchor.Supported` is a size check for the same reason, so
 a placeholder build reports that it carries no anchor binaries rather than pretending.
 
-That used to be the state CI was in, and a skip is green — so this test and seven
-others had never run on any machine but a developer's. The `linux` job builds anchor
-beside conflux now, and asserts afterwards that none of the eight skipped: a job that
-provides the binaries and then reports "no anchor pair" has lost them, and saying so is
-the difference between a gate and a decoration.
+A skip is green, so the job that fetches the real binaries asserts that none of the
+tests needing them skipped: a job that provides the binaries and then reports "no
+anchor pair" has lost them, and saying so is the difference between a gate and a
+decoration.
 
 **The argv goldens**, in `internal/anchorctl/testdata/argv/`, hold one file per
 scenario, one argument per line. Argv construction is where a wrapper's bugs live and
 it is invisible in a review diff — anchor's flag is `-taints`, plural — so a change to
 what conflux passes anchorctl shows up as a reviewable text diff instead. `make golden`
-rewrites them; CI runs `git diff --exit-code`.
+rewrites them after an intended change, and `TestArgvGoldens` fails on any other.
 
 Paired with them is `TestEveryFlagWeUseExists`, which runs the **embedded** anchorctl,
-scrapes `start -h`, and fails if a golden names a flag that no longer exists. Go's flag
+scrapes each command's `-h`, and fails if conflux's argv names a flag that no longer
+exists — every flag conflux can pass, including the ones it passes only when set. Go's flag
 package refuses an unknown flag rather than ignoring it, so that would otherwise be a
 daemon that will not start — discovered after the binaries were dropped into
 `anchor/bin` and shipped.
 
-**`enrol.TestSetChainIsLossless`** renews a manifest and compares every field. The
-document carries `telemetrySecret`, `bootstrap`, `genesis` and `renewalAuth`, which
-conflux has no opinion about and anchor reads. Round-tripping through a struct with
-only the known fields would delete them on the first renewal, and the anchor would come
-back after the next reboot with no peers to bootstrap from — days later, with nothing
-pointing at the renewal that caused it.
+**`enrol.TestWithChainIsLossless`** renews a manifest and compares every field. The
+document carries `bootstrap`, `genesis`, `realm` and `renewalAuth`, which conflux has no
+opinion about and anchor reads. Round-tripping through a struct with only the known
+fields would delete them on the first renewal, and the anchor would come back after the
+next reboot with no peers to bootstrap from — days later, with nothing pointing at the
+renewal that caused it.
 
 ## Testing the boot service
 
@@ -70,7 +72,7 @@ The part that matters most is the hardest to check: that a machine which was up 
 is up again afterwards with nothing typed. A container that boots systemd is the way,
 and restarting it is the reboot.
 
-`test/systemd/Dockerfile` builds a Debian image running `systemd` as PID 1. Copy a
+`test/systemd/Dockerfile` builds a Debian 13 image running `systemd` as PID 1. Copy a
 built `conflux` in beside it, then:
 
 ```console
@@ -90,48 +92,39 @@ $ docker exec cfx-a conflux status      # same AnchorID, nothing typed
 ```
 
 A second container joining with the same taint gives a real two-node reachability
-test. Allow up to a minute after the second node starts for gossip to find it — the
-observed range is 15 to 60 seconds — and `conflux peers` shows `DATA yes` on the peer
-once the taints have been compared.
+test. The suite polls every second for up to two minutes and prints how long it took —
+around twenty seconds on the Docker bridge — and `conflux peers` shows `DATA yes` on
+the peer once the taints have been compared.
 
 All of that is `make integration`, and the two assertions above on their own are
-`make service-test`. Both build the image first. They were a recipe here and a copy of
-the same three lines in `ci.yml` until the targets existed, which is two places for one
-sequence to drift; CI runs the same command a developer does.
+`make service-test`. Both build the image first, and CI runs the same command a
+developer does.
 
-### Local network discovery, and the control for it
+### Local network discovery, the bootstrap list, and `conflux enrol`
 
 Two containers on one Docker bridge are on the same link, which is the one thing no Go
-test in this tree can arrange: a real kernel, real multicast, a real answer. So
-`make integration` asserts `anchor_lan_peers_found_total` is **non-zero** on a node —
-non-zero and not merely present, because the series is created the first time it is
-written and a grep for the name alone passes on an anchor that never found anything.
+test in this tree can arrange: a real kernel, real multicast, a real answer. anchor
+probes the link only until its first connection, though, and the live realm answers
+within a second — so A and B are started with `--peers 192.0.2.1:4700`, an RFC 5737
+documentation address that never answers, in place of the realm's own list. The only way
+they can meet is then discovery on the bridge: their reachability proves it, and
+`make integration` asserts `anchor_lan_peers_found_total` is **non-zero** on one of them
+— non-zero and not merely present, because the series is created the first time it is
+written. Reachability is waited for in both directions, since each learns the other's
+IPv4 from a signed advertisement and the two need not arrive together.
 
-The third node is the control, and it is why the suite enrols three times. It joins with
-`--lan-discovery no` and names no `--peers` at all, and **its counter must stay at zero**
-on the same link where A's moved. That is what proves the flag reached anchor rather than
-being accepted by conflux and dropped, and it is the only claim here this repository can
-be held to.
+The third node takes the other paths, and it is why the suite enrols three times:
 
-Zero is asserted only after the node is shown to be answering — at least one `anchor_`
-metric. `lan_found` sends stderr to `/dev/null` and its `awk` prints `0` for no input, so
-a node that had died would pass by saying nothing at all, which is the shape of gate this
-repository has been caught by before.
-
-It used to assert something else alongside: that C, naming no `--peers`, **still reaches
-the realm** from the manifest's own bootstrap list — which would prove discovery is a third
-source rather than a load-bearing one.
-
-That cannot hold in this topology, and not because of a firewall. C can only be told about
-a node the bootstrap list already knows, so it needs **at least one of A or B** to have
-reached the realm's bootstrap nodes and been announced there. Here none of the three ever
-does: they meet on the Docker bridge and nowhere else. So the bootstrap list has nothing to
-tell C, and C finding nothing is the correct outcome rather than a failure — asserting
-otherwise was asking three isolated containers to be visible in a realm none of them had
-registered with.
-
-It is reported instead. The day one of them does reach the realm, C finding it is exactly
-the proof that discovery is additive, and the run says which happened.
+- **It is enrolled from a live alpha manifest** — fetched on the host and handed to
+  `conflux enrol --manifest -` on stdin — and `up` must start from it without enrolling
+  again. That is the path a commissioned machine takes, and otherwise it would only ever
+  see hand-written fixtures.
+- **It reaches the realm through the manifest's own bootstrap list.** It names no
+  `--peers` and runs `--lan-discovery no`, and A and B reach no realm node themselves,
+  so a connection can only have come from the list the issuer shipped.
+- **Its discovery counter stays at zero** on the link where A and B found each other,
+  which proves `--lan-discovery no` reached anchor rather than being accepted by conflux
+  and dropped.
 
 Note what discovery cannot do, and anchor's own `docs/discovery.md` is the reference:
 the probe is sealed under the realm's **root public key**, which a node only holds after
@@ -141,115 +134,56 @@ never who is let in. Loopback is not probed, so two anchors on one machine still
 
 ## What CI runs, and on what
 
-Every Linux job that needs Docker is on **veilnet-dev**, a self-hosted runner. What
-makes the two container suites possible, though, is not the machine — it is that
-`anchor/bin` finally has a source CI can reach. `make anchor-bins FETCH=1` fetches the
-**pinned** release build from the `shelf` release of `veil-net/anchor` and verifies every
-digest, with no anchor checkout. It needs a credential, since anchor is private: CI stores
-a GitHub App's ID and private key and mints an hour-long token per job, so the secret held
-here is not itself a key to anything — see [build.md](build.md) for why the grant is wider
-than it wants to be and why it is nonetheless contained.
+CI verifies that the code builds and runs. The utility checks — `gofmt`, `staticcheck`,
+`go mod tidy`, `govulncheck`, the docs links — are `make all` on a developer's machine
+and not CI's.
 
-| job | machine | what it adds |
+Every job fetches the **pinned** release build from the `shelf` release of
+`veil-net/anchor` and verifies every digest, with no anchor checkout. It needs a
+credential, since anchor is private: CI stores a GitHub App's ID and private key and
+mints an hour-long token per job, so the secret held here is not itself a key to
+anything — see [build.md](build.md) for why the grant is wider than it wants to be and
+why it is nonetheless contained.
+
+| job | machine | what it runs |
 |---|---|---|
-| `linux` | veilnet-dev | the suite under `-race`, with real pinned binaries — eight tests that had only ever skipped |
-| `cross` | veilnet-dev | vet and compile all seven targets, on placeholders |
-| `platforms` | GitHub macOS, Windows | path handling, file modes, the DACL |
-| `windows-tun` | GitHub Windows | the wintun pin, fetched the way an operator would |
-| `service` | veilnet-dev | `make service-test` — install registers, uninstall leaves nothing |
-| `integration` | veilnet-dev | `make integration` — three nodes against the live API |
-| `docs` | veilnet-dev | two greps |
+| `linux` | veilnet-dev | the whole suite under `-race` with the real binaries and nothing skipped; `make cross` |
+| `integration` | GitHub Ubuntu | `test/preflight.sh`, then `make service-test integration` — `dist` with the size gate for every target, the image, the boot service, and three nodes against the live API |
+| `platforms` | GitHub macOS and Windows | the suite with that platform's own pair, the tests that need it included; on Windows, that the pinned wintun digest is the published one |
 
-A release runs all of it first. `release.yml` calls this workflow and waits on it, which
-is new: a release used to be gated on nothing but a check that the binaries it was about
-to embed were real. Whether the code around them still worked was a convention — the tag
-is cut from a commit that was green on main — and a convention is not a check.
+`linux` is one job because veilnet-dev is one machine with one runner process: separate
+jobs would queue anyway, each paying a checkout and a fetch. Its fetch goes through the
+runner's tool cache, which survives between runs, so an unchanged shelf costs a read of
+the files the fetcher already holds rather than three hundred megabytes. The container
+suites run on a hosted runner instead, because the third integration node reaches the
+realm through its manifest's bootstrap node over UDP, and from veilnet-dev no handshake
+gets through to it. Every job that runs on veilnet-dev refuses a fork's pull request —
+a machine that survives the job does not run a stranger's code — and the hosted jobs
+need the anchor credential a fork is not given, so a fork's pull request runs nothing.
 
-It runs on a **merge to `version3`**, not on a tag, and it does **not** re-run this
-workflow. Testing happens on the branch: GitHub tests `refs/pull/N/merge`, which is the
-change already merged into its base, so a green pull request is a green merge result and
-asking again would cost an hour to reprove an identical tree.
+**The release** runs on a merge to `version3`, and it only releases: it does not re-run
+any of the above. A merge lands only when CI is green, which rests on branch protection
+on `version3` — require a pull request, require these checks, and require the branch to
+be up to date before merging — and is unsafe without it. It refuses to run anywhere but
+`version3`, fetches the shelf, runs `make dist`, attests the artifacts and publishes
+them at the tag the `VERSION` file names, verbatim, replacing the artifacts already
+there. The shelf moves, so a release carries whatever anchor published most recently,
+which is the intent — conflux ships the newest anchor, not a remembered one. All seven
+targets are cross-built from the one Linux machine, `CGO_ENABLED=0` throughout.
 
-That rests on branch protection, and is unsafe without it. `version3` must require a pull
-request, require these checks, and require the branch to be up to date before merging. The
-third is the one that matters: without it a pull request can be green against a base that
-has since moved, and what merges is a tree nothing tested.
-
-A `gate` job reads the `VERSION` file and refuses to run anywhere but `version3`; every
-merge that reaches it builds and publishes. The tag is whatever `VERSION` says, verbatim —
-nothing is prepended, because the tags this repository has published are `Beta-v1.0.13`,
-`Beta-v1.0.14`, `Beta-v1.0.15`, and a scheme invented here would match none of them.
-
-The gate used to stop unless that version had no release yet, which made an ordinary merge
-cost one cheap job. It also meant a merge shipped nothing whenever `VERSION` had not
-moved — silently, in twenty seconds, and green — which is how a fortnight of merges went
-unreleased with no red run anywhere. A merge now costs the full cross-build, which is the
-price of the workflow's ordinary outcome being a release rather than a no-op.
-
-Two things that were previously possible are now not: a release built from a commit nobody
-had tested, and a `workflow_dispatch` on a feature branch publishing
-`make dist VERSION=<branch-name>` to the public.
-
-It also fetches those binaries now, which is what made a release from CI possible at all.
-`anchor/bin` is not in git, so a release runner had no source for it and the workflow
-failed on its own error message saying so. Both release jobs fetch the `shelf` release,
-and neither pins a version of it: the tag moves, so a conflux release carries whatever
-anchor published most recently, which is the intent — conflux ships the newest anchor,
-not a remembered one. All seven targets are cross-built from the one Linux machine,
-`CGO_ENABLED=0` throughout.
-
-`release.yml` calls `ci.yml` with `secrets: inherit`. Without that the called workflow
-gets no secrets at all — they are not inherited by default — and every `anchor-bins` step
-inside it would fail on a token that is set in one file and empty in the other.
-
-**The binaries CI uses are the pinned ones.** That is what the release serves, and it is
-the property a locally-built `make dist` cannot have: an anchor pinned to the genesis
-realm refuses to handshake with any other tree. So `integration` now exercises the
-binaries that actually ship, rather than a development cross-build that would join
-anything.
-
-It follows that CI tests against the **production realm** and nothing else, which is the
-right answer here and a thing to keep true. `genesis.veilnet.com.au:4700` carries the
-same pin, so the dev procedure below still works from a fetched build; a test node
-minted from its own root would not, and the failure would be the one the next section
-describes — enrols fine, never handshakes.
-
-**conflux is public and anchor is not**, which is the one thing that shaped this more
-than the runner itself. Using a self-hosted runner from a public repository is a
-separate organisation setting from repository access, and GitHub keeps it separate for
-a reason: `pull_request` runs the workflow from the *head* of the pull request, so
-without a guard a fork could propose a workflow that runs its own code on a machine that
-survives the job, beside a Docker socket and a token that reads a private repository.
-
-Every Linux job refuses a fork's pull request, and nothing stands in for them. Since the
-platform legs need the gate, a fork's pull request runs nothing at all.
-
-That is the deliberate position rather than an oversight. A machine that survives the job
-does not run a stranger's code, and the alternative — a hosted copy of the gate, for
-forks only — was tried here and is worse than the gap. Two near-identical jobs with
-complementary conditions means one is always skipped, and the one that rots is the one
-nobody is watching.
-
-A fork's change is therefore reviewed rather than gated. If that becomes the wrong trade,
-the honest fix is a second machine, not a second copy of the gate.
-
-**One runner process, deliberately.** The four Linux jobs queue rather than run beside
-each other, so a push costs their sum. Do not register a second process to win that
-back — anchor's `docs/ci.md` records the measurement that argues against it. More
-parallelism wants a second machine.
+**The binaries CI uses are the pinned ones**, which a locally-built `make dist` cannot
+be: an anchor pinned to the genesis realm refuses to handshake with any other tree. So
+`integration` exercises the binaries that ship, against the **production realm** and
+nothing else, and a join there proves the pin as well as conflux.
 
 **A machine that is not thrown away.** Both container suites reap their fixed container
-names before themselves as well as after, because a cancelled run fires neither an
-`EXIT` trap nor an `if: always()` step, and the leftover name fails the *next* run for a
-reason that has nothing to do with the commit under test. `test/preflight.sh` says what
+names before themselves as well as after, because a cancelled run fires no `EXIT` trap,
+and on a developer's machine the leftover name fails the *next* run for a reason that
+has nothing to do with the commit under test. `test/preflight.sh` says what
 the machine gives them — Docker, `/dev/net/tun`, cgroup v2, IPv6 — before anything is
-built, because each of those otherwise fails much later and names something else.
-
-One consequence of leaving hosted VMs: their runner user is unprivileged and a
-self-hosted one may not be. `TestWriteFileAtomicPreservesOnFailure` makes a directory
-read-only and expects the write to fail, which is not true for root — it now probes
-whether the chmod took and says so rather than failing. Nothing else in the suite
-depends on not being root.
+built, because each of those otherwise fails much later and names something else. The
+runner may be root, so `TestWriteFileAtomicPreservesOnFailure` probes whether making a
+directory read-only took rather than assuming it did.
 
 ## The genesis test node
 
@@ -274,10 +208,9 @@ installation of conflux, not the machine's own, so:
 - the service is named after the root — `conflux-e7616592.service`,
   `org.veilnet.conflux-e7616592`, or the same SCM entry — and cannot be registered
   over a real node's;
-- the root is written into the argv the service is registered with, because none of
-  the three service managers carries the operator's environment into what it starts.
-  Without that the unit came back at boot reading `/etc/conflux`, and the CLI waited
-  out its ninety seconds for a socket that was never going to appear.
+- the root is written into the argv the service is registered with, because no
+  service manager carries the operator's environment into what it starts; without it
+  the service would come back at boot reading `/etc/conflux`.
 
 So a dev run and a real node coexist on one machine:
 
@@ -302,9 +235,8 @@ meaningless. Anywhere persistent will do.
 Two things worth checking deliberately, because neither is obvious from a passing run:
 
 - **The no-flag path still works.** `conflux up` with no `--peers` must bootstrap from
-  the manifest's own list. If `--peers` ever became load-bearing, every machine that
-  never names one would stop finding the realm, and the test that names one would not
-  notice.
+  the manifest's own list — `make integration` asserts it for its third node, and a dev
+  node named `--peers` is exactly the case that would not notice it breaking.
 - **The realm matches.** The embedded binaries are pinned to a genesis realm ID at
   build time (`-X anchor.pinnedGenesis`, see [build.md](build.md)). A test node minted
   from a different root will enrol fine and then never handshake, because the pin is
@@ -317,7 +249,7 @@ Two things worth checking deliberately, because neither is obvious from a passin
 
 ## The other half of the contract is tested in the other repository
 
-`renewalAuth`, the import verb and the `export` block are half of an exchange
+`renewalAuth`, `conflux enrol` and the `export` block are half of an exchange
 whose other half is guardian. Everything here asserts what conflux *sends* and
 what it *accepts*; nothing here can assert that a document guardian writes is one
 conflux installs, because no guardian is running.
@@ -345,7 +277,8 @@ The shape of the exchange is written down once, in
 
 ## What has no coverage, and why
 
-- **FreeBSD and OpenBSD** beyond `go vet` and `go build`. No runner exists, which is
+- **FreeBSD and OpenBSD** beyond `make cross` and the rc scripts, which are rendered and
+  parsed by `sh` on Linux but have not run under `rc.subr`. No runner exists, which is
   the same position anchor is in.
 - **macOS TUN under a LaunchDaemon.** CI can build and test on macOS, but not open a
   utun from a system daemon.
@@ -356,13 +289,9 @@ The shape of the exchange is written down once, in
   synthetic inputs. Nothing in this tree opens a device or a pseudo-terminal: the link
   itself is anchor's to test, and it does, over a real pty. Two machines on a cable
   have no runner, so the watcher's *reopen* path is reasoned about rather than run.
-- **A conflux built from pinned binaries, in CI.** This is the one that replaced
-  "the boot service and the integration test, in CI", which are now run on every push
-  — see [the CI section](#what-ci-runs-and-on-what) below. What CI cannot do is build
-  what ships: `make release` needs a genesis key that never leaves the maintainer's
-  machine, so CI builds `make dist` and the realm-pin path is exercised by hand.
-  A green `integration` says conflux drives anchor correctly; it does not say the
-  shipped artifact carries the right pin.
+- **A Windows TUN, and the Windows service.** The `platforms` job runs the suite on
+  Windows, extraction and ownership included, but no job opens a wintun interface or
+  runs conflux under the SCM.
 
 A local fake for the enrolment API is used for the client's error paths, but it cannot
 stand in for a full end-to-end test: the shipped `anchord` is pinned to the production

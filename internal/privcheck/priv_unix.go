@@ -12,15 +12,6 @@ import (
 // /var/lib, talk to the service manager, and open a TUN device.
 func Elevated() bool { return os.Geteuid() == 0 }
 
-// Describe names the current identity, for a status line.
-func Describe() string {
-	if Elevated() {
-		return "root"
-	}
-
-	return fmt.Sprintf("uid %d", os.Geteuid())
-}
-
 // Require refuses, with the command that would work.
 //
 // Every state-changing conflux verb needs root, including proxy -- userspace mode

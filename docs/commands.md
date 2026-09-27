@@ -32,17 +32,14 @@ gracefully and leaves the registration; see [service.md](service.md).
 ### The four collisions
 
 `start`, `proxy`, `renew` and `status` exist on both sides. Each is resolved
-explicitly.
+explicitly. `TestTheCollisionsAreTheDocumentedOnes` reads the set off the embedded
+binary, so a future anchor adding a colliding name fails CI here rather than shadowing
+something silently.
 
-This page, the README and two comments in the source used to disagree about the
-number — they said nine, ten, three and five between them, and one of them counted
-`help` as anchorctl's, which it is not: anchorctl has no `help` command and forwarding
-an unrecognised name to it prints its general usage. `TestTheCollisionsAreTheDocumentedOnes`
-now reads the set off the embedded binary, so a future anchor adding a colliding name
-fails CI here rather than shadowing something silently.
-
-**`help`** is conflux's, always, and is not one of the four. It prints conflux's usage
-and then anchorctl's whole usage beneath a rule, so one page covers both surfaces.
+**`help`** is conflux's, always, and is not one of the four: anchorctl has no `help`
+command. Bare, it prints conflux's usage and then anchorctl's whole usage beneath a
+rule, so one page covers both surfaces. `conflux help COMMAND` prints that command's
+own usage instead, whichever binary it belongs to.
 
 **`status`** is resolved by arity. Bare `conflux status` is conflux's, and it prints
 `anchorctl status` underneath — additive, so nothing is lost by conflux owning that
@@ -75,7 +72,7 @@ refusal names `down` and `start` and the escape hatch.
 ## `conflux up`
 
 ```
-conflux up [--taint T]... [--ipv4 PREFIX | --no-ipv4] [--subnet CIDR]... [--interface NAME]
+conflux up [--taint T]... [--ipv4 ADDRESS | --no-ipv4] [--subnet CIDR]... [--interface NAME]
            [--uplink DEV | --no-uplink] [--peers HOST:PORT]... [--no-peers] [--api URL]
            [--port N | --no-port] [--low-latency] [--lan-discovery yes|no|auto]
            [--serve-exit] [--use-exit]
@@ -86,15 +83,14 @@ configuration, and registers the boot service.
 
 | Flag | Meaning |
 |---|---|
-| `--taint T` | a compartment label; repeat to carry more than one. Omit it and conflux mints one and prints it. |
-| `--no-taint` | join the realm's shared compartment instead. A deliberate choice; see [concepts.md](concepts.md). |
-| `--ipv4 PREFIX` | the overlay IPv4, as a prefix: `10.128.0.7/24`. |
-| `--no-ipv4` | IPv6-only, without prompting. |
-| `--subnet CIDR` | a private network this machine forwards for the realm; repeat for more. See [modes.md](modes.md). |
+| `--taint T` | a compartment label; repeat to carry more than one. Omit it on a machine that has none and conflux mints one and prints it. See [concepts.md](concepts.md). |
+| `--ipv4 ADDRESS` | this machine's IPv4: an address, or an address and the length of the range routed to peers, `10.128.0.7/24`. Any unicast address; see below. |
+| `--no-ipv4` | no IPv4 of its own, without prompting. It still reaches IPv4 peers. |
+| `--subnet CIDR` | an interface, or a private network with no host bits set, that this machine forwards for the realm; repeat for more. See [modes.md](modes.md). |
 | `--interface NAME` | the network interface name. Default `anchor0`. |
 | `--uplink DEV` | reach the realm over a link rather than the host's network: `/dev/ttyUSB0`, or `/dev/ttyUSB0:115200` with a line speed. See [uplink.md](uplink.md). |
 | `--no-uplink` | go back to the host's network on a machine configured for a link. |
-| `--peers HOST:PORT` | where to start looking for the realm; repeat for more. `anchorxxx@host:port` also works. Enrolment supplies this, so it is an override — see below. |
+| `--peers HOST:PORT` | where to start looking for the realm; repeat for more. `ANCHORID@host:port` also names the anchor expected there. Enrolment supplies this, so it is an override — see below. |
 | `--no-peers` | forget an override and go back to the list enrolment supplies. |
 | `--api URL` | the enrolment API base. Default `https://api.veilnet.com.au`. |
 | `--port N` | the UDP port to bind, 1–65535. Omit it and the kernel picks one. |
@@ -111,11 +107,11 @@ the host's addresses change underneath it, and pinning one is a promise the host
 cannot keep. Name a port to write a firewall rule or a port-forward against; leave it
 alone otherwise. It is refused beside `--uplink`, which binds no socket at all.
 
-Both exits need a host interface, so both are `up`'s and not `proxy`'s. Neither is
-ever inherited from the enrolment manifest: conflux passes both in whichever
-direction they were set, because an anchor that became an internet exit because a
-document said so is the worst kind of surprise. Switching a machine to `proxy` clears
-them.
+Both exits are `up`'s and not `proxy`'s: an exit is traffic forwarded out of a host
+interface, and anchor refuses to serve one without. Neither is ever inherited from the
+enrolment manifest: conflux passes both in whichever direction they were set, because
+an anchor that became an internet exit because a document said so is the worst kind
+of surprise. Switching a machine to `proxy` clears them.
 
 `--uplink` is the medium and the verb is the mode, so the flag means the same thing
 on `proxy`, and neither answer constrains the other. A malformed spec, and the `fd:N`
@@ -130,31 +126,41 @@ edit. Name one only to reach a realm the manifest does not describe, which in pr
 means a test node. It persists like every other setting, so a machine brought up
 against one comes back to it after a reboot.
 
-With neither `--ipv4` nor `--no-ipv4`, conflux prompts — once. Re-running it on a
-machine that already has a configuration keeps the existing address and asks nothing.
-With no terminal to prompt at and neither flag given, it exits 2 rather than hang,
-which is what makes it safe in a script.
+With neither `--ipv4` nor `--no-ipv4`, conflux asks — once in the machine's life. The
+answer is kept, "none" included, so re-running `up` or `proxy` asks nothing and never
+changes the address. With nobody at a terminal to answer and neither flag given, it
+exits 1 rather than hang, which is what makes it safe in a script.
+
+The address is anchor's to interpret ([ipv4.md](https://github.com/veil-net/anchor/blob/main/docs/ipv4.md)):
+it never reaches the overlay, which carries it translated, so any unicast address
+works and two machines may share one. A private one is advertised, and peers reach
+this machine at it; a public one is sent from and not advertised. Without one, the
+machine still reaches IPv4 peers from anchor's shared default and is reached by its
+IPv6 address.
 
 Needs root.
 
 ## `conflux proxy`
 
 ```
-conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T]... [--uplink DEV | --no-uplink]
-              [--peers HOST:PORT]... [--no-peers] [--api URL]
+conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T]... [--ipv4 ADDRESS | --no-ipv4]
+              [--uplink DEV | --no-uplink] [--peers HOST:PORT]... [--no-peers] [--api URL]
               [--port N | --no-port] [--low-latency] [--lan-discovery yes|no|auto]
 ```
 
-Starts in userspace mode serving those backends. Same taint, uplink, peers, API,
-`--port`, `--low-latency` and `--lan-discovery` flags as `up`. Specs and flags may be written in either
-order.
+Starts in userspace mode serving those backends. Same taint, IPv4, uplink, peers, API,
+`--port`, `--low-latency` and `--lan-discovery` flags as `up`, and the IPv4 is asked the
+same once. Specs and flags may be written in either order.
 
-`--serve-exit` and `--use-exit` are not here: routing the public internet either way
-needs a host interface, which userspace mode has none of.
+With an IPv4 the anchor's own stack holds it, so a peer reaches these ports at it as
+well as at the IPv6 address.
+
+`--serve-exit` and `--use-exit` are not here: an exit is what a host interface is for,
+and this is the mode without one.
 
 The grammar is `OVERLAYPORT[/NETWORK]=BACKEND`: the network defaults to `tcp` and must
-be `tcp` or `udp`, the port is 1–65535, and a duplicate overlay port is refused rather
-than silently keeping the last. See [modes.md](modes.md) for the spec table, and
+be `tcp` or `udp`, the port is 1–65535, the backend is `host:port`, and a duplicate
+overlay port is refused rather than silently keeping the last. See [modes.md](modes.md) for the spec table, and
 `conflux anchorctl proxy` for adding and removing them on an anchor already running.
 
 Needs root, only to register the boot service.
@@ -171,9 +177,7 @@ configuration.
 
 The counterpart to `down`, and the reason it exists. `down` deliberately leaves the
 boot registration and the configuration in place, so there has to be a word for
-"bring that back now" that is not a reboot. That word used to be `conflux install`,
-whose name and usage line both say *register the boot service* — it started one as a
-side effect, and pointing an operator at it was papering over a missing verb.
+"bring that back now" that is not a reboot.
 
 It is mode-agnostic on purpose. `up` would do for a TUN machine, but `up` is not a
 resume: it re-decides the configuration, and on a userspace machine it changes the
@@ -212,7 +216,7 @@ different anchor from the other.
 ## `conflux enrol`
 
 ```
-conflux enrol --manifest FILE [--api URL] [--ipv4 PREFIX] [--taint T]...
+conflux enrol --manifest FILE [--api URL] [--ipv4 ADDRESS] [--taint T]...
 ```
 
 Installs a credential this machine was **given** rather than one it drew.
@@ -236,7 +240,7 @@ else.
 | | overrides | when you would |
 |---|---|---|
 | `--api URL` | the API base read out of `renewalUrl` | the guardian is reached at a different name from here — a split-horizon DNS, a bastion |
-| `--ipv4 PREFIX` | the address the issuer allocated | you are rebuilding a machine onto an address something else already hardcodes |
+| `--ipv4 ADDRESS` | the address the issuer allocated | you are rebuilding a machine onto an address something else already hardcodes |
 | `--taint T` | the compartment the issuer chose; repeat for more | this machine belongs in a different compartment from the one it was commissioned into |
 
 `--api` is also an assertion when given: the document must renew against the same host,
@@ -264,7 +268,7 @@ host, the address and the export block. A refused import leaves the machine exac
 it found it.
 
 Two fields are copied out of the document **once** and into `conflux.json`, where
-`conflux config` shows them and you can change them: `ipv4`, the overlay address the
+`conflux status` shows them and you can change them: `ipv4`, the overlay address the
 issuer allocated, and `export`, where it suggests telemetry goes. Neither is re-read on
 a later start. That is the difference from the two exit flags, which conflux refuses to
 inherit at all — an exit flag would go on deciding what this machine does for other

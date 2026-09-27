@@ -227,6 +227,47 @@ func TestFetchWritesVerifiedBinaries(t *testing.T) {
 	}
 }
 
+// TestFetchKeepsAVerifiedCopy: a binary already in place with the manifest's digest is
+// not downloaded again, and one that differs from it -- a stale or a poisoned cache --
+// is replaced by the verified download.
+func TestFetchKeepsAVerifiedCopy(t *testing.T) {
+	files := pair()
+	f := newRelease(files)
+	_, src := f.serve(t, testPin, 1)
+
+	dir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(dir, "anchord-linux-amd64"), files["anchord-linux-amd64"], 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	stale := []byte(strings.Repeat("x", len(files["anchorctl-linux-amd64"])))
+	if err := os.WriteFile(filepath.Join(dir, "anchorctl-linux-amd64"), stale, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Fetch(context.Background(), src, []string{"anchord-linux-amd64", "anchorctl-linux-amd64"}, dir, quiet); err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+
+	var downloads []string
+
+	for _, p := range f.requests {
+		if strings.Contains(p, "/releases/assets/") {
+			downloads = append(downloads, p)
+		}
+	}
+
+	// The manifest, and the one binary that did not match.
+	if len(downloads) != 2 {
+		t.Errorf("downloaded %d assets, want the manifest and the stale binary: %v", len(downloads), downloads)
+	}
+
+	if got, _ := os.ReadFile(filepath.Join(dir, "anchorctl-linux-amd64")); string(got) != string(files["anchorctl-linux-amd64"]) {
+		t.Error("a binary that did not match the manifest was kept")
+	}
+}
+
 // The token must reach the API and it must be a Bearer. A fetch that silently sent no
 // credential would pass every other test here against a server that does not check one,
 // and fail only against the private repository it exists for.

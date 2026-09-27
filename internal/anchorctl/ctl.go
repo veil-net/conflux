@@ -36,12 +36,10 @@ type Ctl struct {
 func (c *Ctl) Env() []string {
 	env := os.Environ()
 
-	for k, v := range map[string]string{SocketEnv: c.Socket, TokenEnv: c.Token} {
-		if v == "" || os.Getenv(k) != "" {
-			continue
+	for _, kv := range [...][2]string{{SocketEnv, c.Socket}, {TokenEnv, c.Token}} {
+		if kv[1] != "" && os.Getenv(kv[0]) == "" {
+			env = append(env, kv[0]+"="+kv[1])
 		}
-
-		env = append(env, k+"="+v)
 	}
 
 	return env
@@ -99,10 +97,6 @@ func (c *Ctl) run(ctx context.Context, stdin []byte, args ...string) (string, er
 // request at all, which is why anchord's -credentials-dir confinement is a question
 // conflux never has to answer.
 func (c *Ctl) Start(ctx context.Context, env config.Envelope, mode StartMode) (Started, error) {
-	if err := mode.Validate(); err != nil {
-		return Started{}, err
-	}
-
 	out, err := c.run(ctx, env, mode.Args()...)
 	if err != nil {
 		return Started{}, err
@@ -116,15 +110,17 @@ func (c *Ctl) Start(ctx context.Context, env config.Envelope, mode StartMode) (S
 	return s, nil
 }
 
-// Metrics reads the daemon's counters and gauges. An anchor that has not published
-// any yet is not an error; the map is simply empty.
-func (c *Ctl) Metrics(ctx context.Context) (map[string]float64, error) {
+// Metric reads one of the daemon's counters or gauges. One that has not been
+// published yet is not an error; it is reported absent.
+func (c *Ctl) Metric(ctx context.Context, name string) (float64, bool, error) {
 	out, err := c.run(ctx, nil, MetricsArgs()...)
 	if err != nil {
-		return nil, err
+		return 0, false, err
 	}
 
-	return ParseMetrics(out), nil
+	v, ok := ParseMetric(out, name)
+
+	return v, ok, nil
 }
 
 // Status asks what is running. A daemon that is up with no anchor in it is not an
@@ -147,22 +143,13 @@ func (c *Ctl) Ping(ctx context.Context) error {
 	return err
 }
 
-// Stop closes the anchor. The daemon stays up.
+// Stop closes the anchor. The daemon stays up, and nothing running is not an error.
 //
 // Worth doing even when the process is about to be killed anyway: a closed anchor
 // says goodbye, and a departure that is announced saves every peer from working it
 // out by timeout.
 func (c *Ctl) Stop(ctx context.Context) error {
 	_, err := c.run(ctx, nil, StopArgs()...)
-	if err == nil {
-		return nil
-	}
-
-	// Nothing running is what we wanted.
-	var e *Error
-	if ok := asError(err, &e); ok && strings.Contains(strings.ToLower(e.Stderr), "no anchor") {
-		return nil
-	}
 
 	return err
 }
@@ -173,13 +160,4 @@ func (c *Ctl) Renew(ctx context.Context, credPath string) error {
 	_, err := c.run(ctx, nil, RenewArgs(credPath)...)
 
 	return err
-}
-
-func asError(err error, target **Error) bool {
-	e, ok := err.(*Error) //nolint:errorlint // run only ever returns this type unwrapped
-	if ok {
-		*target = e
-	}
-
-	return ok
 }

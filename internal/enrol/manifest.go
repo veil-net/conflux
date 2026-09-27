@@ -6,12 +6,17 @@
 // server -- the response is the only copy in existence -- so the single most
 // important property of this package is that it enrols exactly once, when there is
 // no manifest on disk, and never as a fallback for anything.
+//
+// The manifest format is anchor's (cmd/anchorctl/manifest.go, anchorManifest). An
+// issuer adds where to renew -- renewalUrl, and for a guardian renewalAuth and
+// renewalSecret -- which anchor carries and ignores.
 package enrol
 
 import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/veil-net/conflux/internal/config"
@@ -30,24 +35,22 @@ const FormatVersion = 1
 // Manifest is a parsed envelope that has not forgotten anything.
 //
 // Held as raw JSON rather than a struct, and that is the load-bearing decision. The
-// document carries fields conflux has no opinion about -- telemetrySecret,
-// bootstrap, genesis, renewalAuth, and whatever the API adds next -- and anchor
-// reads them even though conflux does not. Round-tripping through a struct with
-// only the known fields would delete the rest on the first renewal, and the anchor
-// would come back after the next reboot with no bootstrap list and no telemetry.
+// document carries fields conflux has no opinion about -- genesis, realm,
+// telemetrySecret, relay, and whatever an issuer adds next -- and anchor reads them
+// even though conflux does not. Round-tripping through a struct with only the known
+// fields would delete the rest on the first renewal, and the anchor would come back
+// after the next reboot without them.
 type Manifest struct {
 	raw map[string]json.RawMessage
 }
 
-// Decode parses an envelope and checks it is the kind of document conflux can use.
+// Decode parses an envelope and checks it is a document anchor will start from: the
+// encoding, the version, the kind and the three fields anchorctl requires, refused
+// here with conflux's words rather than a child process's.
 func Decode(env config.Envelope) (*Manifest, error) {
 	b, err := base64.StdEncoding.DecodeString(string(env))
 	if err != nil {
-		// Tolerate a padding-free encoding rather than fail on a detail.
-		b, err = base64.RawStdEncoding.DecodeString(string(env))
-		if err != nil {
-			return nil, fmt.Errorf("the stored credential is not base64: %w", err)
-		}
+		return nil, fmt.Errorf("the stored credential is not base64: %w", err)
 	}
 
 	var raw map[string]json.RawMessage
@@ -79,8 +82,10 @@ func Decode(env config.Envelope) (*Manifest, error) {
 			kind)
 	}
 
-	if id, _ := m.string("identity"); id == "" {
-		return nil, fmt.Errorf("the credential carries no identity")
+	for _, field := range []string{"identity", "genesis", "chain"} {
+		if v, _ := m.string(field); v == "" {
+			return nil, fmt.Errorf("the credential carries no %s, so an anchor cannot be built from it", field)
+		}
 	}
 
 	return m, nil
@@ -101,8 +106,8 @@ func (m *Manifest) Encode() (config.Envelope, error) {
 // say, which callers treat as "renew now" rather than "never expires".
 func (m *Manifest) NotAfter() time.Time { return m.time("notAfter") }
 
-// IssuedAt is when it was signed, and the other end of the window the renewal
-// timer divides.
+// IssuedAt is when the chain the document holds was issued, as far as conflux
+// observed it, and the other end of the window the renewal timer divides.
 func (m *Manifest) IssuedAt() time.Time { return m.time("issuedAt") }
 
 // RenewalURL is where to ask for the next chain. Taken from the document rather
@@ -201,8 +206,8 @@ func (m *Manifest) Bootstrap() []string {
 	return out
 }
 
-// SetChain splices a renewed credential into the document, changing those two
-// fields and nothing else.
+// WithChain splices a renewed credential into the document: the chain, when it
+// expires, and when it was received, and nothing else.
 //
 // This has to happen on every successful renewal, not just the hot install into the
 // running anchor. `anchorctl renew` swaps the chain in memory; if the document on
@@ -210,24 +215,33 @@ func (m *Manifest) Bootstrap() []string {
 // the machine was off for longer than the original window, from an expired one, at
 // a moment when nobody is watching.
 //
+// issuedAt moves with the chain because the window is measured from it. Left at the
+// enrolment, every renewal would widen the window the next start divides, and the
+// credential would read as due ever earlier in its life.
+//
 // chain is the raw credential bytes. The API sends base64 and this stores base64,
 // but the file anchorctl -cred reads wants the raw bytes, so exactly one of the two
 // call sites decodes and it is not this one.
-func (m *Manifest) SetChain(chain []byte, notAfter time.Time) error {
-	encoded, err := json.Marshal(base64.StdEncoding.EncodeToString(chain))
-	if err != nil {
-		return err
+//
+// The result is a copy, so a caller whose write of it fails still holds the
+// document the running anchor was started from.
+func (m *Manifest) WithChain(chain []byte, notAfter, issuedAt time.Time) (*Manifest, error) {
+	next := &Manifest{raw: maps.Clone(m.raw)}
+
+	for field, v := range map[string]string{
+		"chain":    base64.StdEncoding.EncodeToString(chain),
+		"notAfter": notAfter.UTC().Format(ManifestTime),
+		"issuedAt": issuedAt.UTC().Format(ManifestTime),
+	} {
+		b, err := json.Marshal(v)
+		if err != nil {
+			return nil, err
+		}
+
+		next.raw[field] = b
 	}
 
-	when, err := json.Marshal(notAfter.UTC().Format(ManifestTime))
-	if err != nil {
-		return err
-	}
-
-	m.raw["chain"] = encoded
-	m.raw["notAfter"] = when
-
-	return nil
+	return next, nil
 }
 
 func (m *Manifest) string(key string) (string, error) {
@@ -258,24 +272,21 @@ func (m *Manifest) int(key string) (int, error) {
 	return n, nil
 }
 
-// time parses one of the document's timestamps, accepting the exact layout anchor
-// writes and plain RFC3339 as well, since a second issuer might not add the
-// milliseconds. An unparseable or absent value is the zero time.
+// time parses one of the document's timestamps: RFC3339, which covers the
+// milliseconds anchor writes and an issuer that leaves them out. An unparseable or
+// absent value is the zero time.
 func (m *Manifest) time(key string) time.Time {
 	s, err := m.string(key)
-	if err != nil || s == "" {
+	if err != nil {
 		return time.Time{}
 	}
 
-	if t, err := time.Parse(ManifestTime, s); err == nil {
-		return t.UTC()
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return time.Time{}
 	}
 
-	if t, err := time.Parse(time.RFC3339, s); err == nil {
-		return t.UTC()
-	}
-
-	return time.Time{}
+	return t.UTC()
 }
 
 // LogValue keeps the identity out of structured logs, the way Envelope keeps it out

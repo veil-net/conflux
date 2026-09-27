@@ -14,7 +14,6 @@ import (
 	"github.com/veil-net/conflux/internal/enrol"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/privcheck"
-	"github.com/veil-net/conflux/internal/taint"
 	"github.com/veil-net/conflux/internal/ui"
 )
 
@@ -60,13 +59,13 @@ func runEnrol(_ context.Context, args []string) int {
 	manifest := fs.String("manifest", "", "the manifest file to install, or - for stdin")
 	apiBase := fs.String("api", "",
 		"the API that issued it, as a base URL, overriding the one its renewal URL names")
-	ipv4 := fs.String("ipv4", "", "overlay IPv4 as a prefix, overriding whatever the manifest allocated")
+	ipv4 := fs.String("ipv4", "", "this machine's IPv4, overriding whatever the manifest allocated")
 	fs.Var(&taints, "taint",
 		"a compartment label, overriding whatever the manifest carries; repeat for more")
 
 	fs.Usage = func() {
 		ui.Printf("conflux enrol — install a credential this machine was given\n\n" +
-			"  conflux enrol --manifest FILE [--api URL] [--ipv4 PREFIX] [--taint T]...\n\n" +
+			"  conflux enrol --manifest FILE [--api URL] [--ipv4 ADDRESS] [--taint T]...\n\n" +
 			"For a machine commissioned somewhere else: a self-hosted guardian mints the\n" +
 			"identity, signs the credential and hands you one file. This installs it, and\n" +
 			"then `conflux up` starts from it without enrolling.\n\n" +
@@ -163,7 +162,12 @@ func importCredential(d paths.Dirs, manifestPath, apiBase, ipv4Flag string, tain
 	}
 
 	cfg.APIBaseURL = base
-	cfg.IPv4 = address
+
+	// Only when there is one. With none, the machine has not been asked, and the
+	// `up` or `proxy` that follows asks.
+	if address != "" {
+		cfg.IPv4 = &address
+	}
 
 	// Left alone when the document says nothing, rather than defaulted here. `up`
 	// mints a taint for a machine whose configuration has none, and it explains
@@ -247,13 +251,14 @@ func readEnvelope(path string) (config.Envelope, error) {
 	return env, nil
 }
 
-// checkRenewalTarget refuses a document that renews somewhere --api does not name.
+// chooseAPIBase is the API this machine renews against: --api when it was given, and
+// the origin of the document's renewalUrl otherwise.
 //
-// **--api is required and is deliberately not derived from the manifest.** Reading
-// the base URL out of the document's own renewalUrl would make the two agree by
-// construction, which is exactly the check being removed: SameHost exists so that a
-// field conflux stores and re-reads cannot decide where a credential is POSTed, and
-// a check whose other operand comes from the same document checks nothing at all.
+// --api is an override rather than a requirement. The document carries the identity
+// seed and the renewal bearer, so whoever could rewrite its renewalUrl already holds
+// everything a redirect would steal, and retyping the host buys a typo rather than a
+// check. Given, it is also an assertion: the document must renew against the same
+// host, refused now naming both rather than at the first renewal months later.
 func chooseAPIBase(m *enrol.Manifest, flagValue string) (string, error) {
 	url := m.RenewalURL()
 	if url == "" {
@@ -294,7 +299,9 @@ func chooseImportedTaints(m *enrol.Manifest, flagValues []string) ([]string, err
 		return nil, nil
 	}
 
-	if err := taint.ValidateSet(values); err != nil {
+	values = unique(values)
+
+	if err := config.ValidateTaints(values); err != nil {
 		return nil, fmt.Errorf("the taints for this machine: %w", err)
 	}
 

@@ -13,6 +13,12 @@ inputs:
       That App's private key, whole, including its BEGIN and END lines. Pass
       secrets.ANCHOR_APP_PRIVATE_KEY.
     required: true
+  targets:
+    description: >
+      The pairs to fetch, space-separated -- darwin-arm64, windows-amd64 -- for a job
+      that builds for one platform. Empty fetches every target.
+    required: false
+    default: ""
   repo:
     description: >
       The owner/name holding the release. Defaults to what internal/shelf names, so the
@@ -35,53 +41,45 @@ runs:
     #   1. What is stored here is not a credential. A PAT in a repository secret *is* the
     #      key; this is a private key that has to be exchanged for one, so the secret on
     #      its own opens nothing.
-    #   2. The token it mints lasts an hour and is revoked when the job ends, rather than
-    #      being valid until somebody notices.
-    #   3. It does not expire and belongs to no person, so it does not break a year from
-    #      now, and it does not die when somebody leaves.
+    #   2. The token it mints lasts an hour and is revoked when the job ends.
+    #   3. It belongs to no person, so it does not die when somebody leaves.
     #
     # owner and repositories are both required to be correct rather than merely present.
-    # Without them the action mints a token for the *calling* repository -- conflux --
-    # which can read conflux perfectly and anchor not at all, and the failure arrives as a
-    # 404 on the release, which reads like a missing tag.
+    # Without them the action mints a token for the calling repository, which can read
+    # conflux and not anchor, and the failure arrives as a 404 that reads like a
+    # missing tag.
     - name: mint a token that can read anchor
       id: app
-      uses: actions/create-github-app-token@v2
+      uses: actions/create-github-app-token@v3
       with:
         app-id: ${{ inputs.app-id }}
         private-key: ${{ inputs.private-key }}
         owner: veil-net
         repositories: anchor
 
-    # What this fetches is the *pinned* build, which a local `make dist` cannot be: an
-    # anchor pinned to the genesis realm refuses to handshake with any other tree. So the
-    # container suites exercise the binaries that actually ship.
+    # The pinned build, which a local `make dist` cannot be: an anchor pinned to the
+    # genesis realm refuses to handshake with any other tree.
+    #
+    # On veilnet-dev, fetched into the runner's tool cache and copied from there: that
+    # directory survives between runs, and the fetcher keeps a file whose SHA-256 is the
+    # one the shelf's manifest gives -- so an unchanged shelf costs a read rather than
+    # three hundred megabytes, and nothing the manifest does not describe survives. A
+    # hosted runner starts empty every time, so it fetches straight into anchor/bin.
     #
     # The token reaches the fetcher as an environment variable and never as an argument:
-    # an argument is visible in `ps` to every other user on the machine, and this runs on
-    # a machine that is not destroyed at the end of the job.
+    # an argument is visible in `ps` to every other user on the machine.
     - name: fetch the pinned anchor binaries
       shell: bash
       env:
         ANCHOR_RELEASE_TOKEN: ${{ steps.app.outputs.token }}
         ANCHOR_REPO: ${{ inputs.repo }}
         ANCHOR_TAG: ${{ inputs.tag }}
-      run: make anchor-bins FETCH=1
-
-    # Say what arrived, because a green tick on fourteen files nobody looked at is worth
-    # less than it appears. The fetcher has already verified every digest against the
-    # manifest and a failed fetch is fatal, so this floor should never fire -- it is here
-    # for the case those two claims stop being true together, which is exactly the case
-    # nothing else would notice.
-    - name: they are binaries, not placeholders
-      shell: bash
+        ONLY: ${{ inputs.targets }}
+        DEST: ${{ runner.environment == 'self-hosted' && format('{0}/conflux-anchor-bin', runner.tool_cache) || 'anchor/bin' }}
       run: |
         set -euo pipefail
-        ls -lh anchor/bin
-        smallest=$(find anchor/bin -type f -printf '%s\n' | sort -n | head -1)
-        [ "${smallest:-0}" -ge 5000000 ] || {
-          echo "::error::anchor/bin holds placeholders, not binaries: smallest file is ${smallest:-0} bytes" >&2
-          echo "the fetch reported success and left placeholders behind, which should" >&2
-          echo "not be possible. Scroll up for what it actually did." >&2
-          exit 1
-        }
+        make anchor-bins FETCH=1
+        if [ "$DEST" != anchor/bin ]; then
+          mkdir -p anchor/bin
+          cp -f "$DEST"/anchor* anchor/bin/
+        fi

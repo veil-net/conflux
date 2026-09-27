@@ -36,7 +36,7 @@ func runProxy(ctx context.Context, args []string) int {
 
 	if hint := unknownProxyFlag(args); hint != "" {
 		ui.Errf("%q is not one of conflux proxy's flags.\n\n"+
-			"  conflux proxy takes port specs, --taint and --peers:\n\n"+
+			"  conflux proxy takes port specs and the flags in conflux proxy -h:\n\n"+
 			"    conflux proxy 8080=127.0.0.1:3000 --taint mynet\n\n"+
 			"  anchorctl's proxy, which adds and removes proxies on a running anchor, is here:\n\n"+
 			"    conflux anchorctl proxy %s", hint, strings.Join(args, " "))
@@ -52,7 +52,8 @@ func runProxy(ctx context.Context, args []string) int {
 		peers  repeated
 	)
 
-	noTaint := fs.Bool("no-taint", false, "join the realm's shared compartment instead of a private one")
+	ipv4 := fs.String("ipv4", "", ipv4Usage)
+	noIPv4 := fs.Bool("no-ipv4", false, noIPv4Usage)
 	uplink := fs.String("uplink", "", "carry the mesh over a link rather than the host network, e.g. /dev/ttyUSB0:115200")
 	noUplink := fs.Bool("no-uplink", false, "go back to the host's network on a machine configured for a link")
 	noPeers := fs.Bool("no-peers", false, "forget the bootstrap list and go back to the one enrolment supplies")
@@ -62,8 +63,8 @@ func runProxy(ctx context.Context, args []string) int {
 		"find peers on the networks this host is attached to: yes, no, or auto to let enrolment decide")
 
 	// Read through typedFlags rather than by value; see the same block in up.go. The
-	// two exit flags are absent on purpose: both need a host interface, which
-	// userspace mode does not have.
+	// two exit flags are absent on purpose: exits are what an interface is for, and
+	// this verb is the one without.
 	fs.Bool("no-port", false, "go back to letting the kernel pick the port")
 	fs.Bool("low-latency", false, "carry frames on datagrams: no head-of-line blocking, and a lost frame stays lost")
 	fs.Bool("no-low-latency", false, "go back to carrying frames on streams")
@@ -73,8 +74,8 @@ func runProxy(ctx context.Context, args []string) int {
 
 	fs.Usage = func() {
 		ui.Printf("conflux proxy — publish a local service on the overlay, without an interface\n\n" +
-			"  conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T] [--uplink DEV | --no-uplink]\n" +
-			"                [--peers HOST:PORT | --no-peers]\n\n" +
+			"  conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T] [--ipv4 ADDRESS | --no-ipv4]\n" +
+			"                [--uplink DEV | --no-uplink] [--peers HOST:PORT | --no-peers]\n\n" +
 			"Runs the anchor entirely in userspace, so it needs no TUN device and no\n" +
 			"CAP_NET_ADMIN. Nothing on this host can see the overlay; the only way in is a\n" +
 			"service named here.\n\n" +
@@ -97,24 +98,14 @@ func runProxy(ctx context.Context, args []string) int {
 		return ExitUsage
 	}
 
-	parsed := make([]string, 0, len(specs))
+	specsParsed, err := config.ValidateProxies(specs)
+	if err != nil {
+		return fail(err)
+	}
 
-	seen := map[string]bool{}
-
-	for _, s := range specs {
-		spec, err := config.ParseProxySpec(s)
-		if err != nil {
-			return fail(err)
-		}
-
-		key := fmt.Sprintf("%d/%s", spec.Port, spec.Network)
-		if seen[key] {
-			return fail(fmt.Errorf("overlay port %s is given twice", key))
-		}
-
-		seen[key] = true
-
-		parsed = append(parsed, spec.String())
+	parsed := make([]string, len(specsParsed))
+	for i, spec := range specsParsed {
+		parsed[i] = spec.String()
 	}
 
 	// Registering the boot service needs root even though userspace mode itself
@@ -146,11 +137,9 @@ func runProxy(ctx context.Context, args []string) int {
 			"  the overlay address, so a service binds it directly and needs no proxy.",
 			cfg.TUNInterface())
 
+		// What the interface was for goes with it: subnets and a served exit need one,
+		// and anchor refuses them without. The IPv4 is the machine's and stays.
 		cfg.Subnets = nil
-		cfg.IPv4 = ""
-
-		// Both exits need a host interface. Left set they would strand Validate on a
-		// setting the operator cannot see and did not type on this run.
 		cfg.ServeExit = false
 		cfg.UseExit = false
 	}
@@ -166,11 +155,15 @@ func runProxy(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
+	if err := chooseIPv4(cfg, *ipv4, *noIPv4); err != nil {
+		return fail(err)
+	}
+
 	if err := choosePeers(cfg, peers, *noPeers); err != nil {
 		return fail(err)
 	}
 
-	if err := chooseTaints(cfg, taints, *noTaint); err != nil {
+	if err := chooseTaints(cfg, taints); err != nil {
 		return fail(err)
 	}
 
@@ -182,8 +175,9 @@ func runProxy(ctx context.Context, args []string) int {
 func unknownProxyFlag(args []string) string {
 	ours := map[string]bool{
 		"-taint": true, "--taint": true,
-		"-no-taint": true, "--no-taint": true,
 		"-api": true, "--api": true,
+		"-ipv4": true, "--ipv4": true,
+		"-no-ipv4": true, "--no-ipv4": true,
 		"-uplink": true, "--uplink": true,
 		"-no-uplink": true, "--no-uplink": true,
 		"-peers": true, "--peers": true,
@@ -241,7 +235,7 @@ func splitPositional(args []string) (positional, flags []string) {
 }
 
 // takesValue reports whether a flag written as `-flag value` swallows the argument
-// after it. Only conflux proxy's own value-taking flags are here; --no-taint,
+// after it. Only conflux proxy's own value-taking flags are here; --no-ipv4,
 // --no-uplink and --low-latency are booleans and take nothing.
 //
 // --lan-discovery is here rather than with the booleans because it is a tristate
@@ -249,7 +243,7 @@ func splitPositional(args []string) (positional, flags []string) {
 // 8080=127.0.0.1:3000` as a proxy spec called "no".
 func takesValue(arg string) bool {
 	switch strings.TrimLeft(arg, "-") {
-	case "taint", "api", "uplink", "peers", "port", "lan-discovery":
+	case "taint", "api", "ipv4", "uplink", "peers", "port", "lan-discovery":
 		return true
 	default:
 		return false

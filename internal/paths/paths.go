@@ -3,22 +3,23 @@
 // conflux is system-scoped: one configuration per machine, root-owned, with no
 // home directory anywhere in it. That is a decision rather than an oversight. The
 // boot service runs as root or LocalSystem, so a path under $HOME is a path the
-// service cannot read -- and the previous conflux hard-coded /root/.config/conflux,
-// which is wrong under a unit with User=, wrong under ProtectHome=, and wrong for
-// anyone who ran it with sudo -H.
+// service cannot read, and a home directory is wrong under a unit with User=, wrong
+// under ProtectHome=, and wrong for anyone who ran conflux with sudo -H.
 //
 // Four roots, because they have four lifetimes:
 //
 //   - Config  what the operator asked for. Survives everything but uninstall.
 //   - State   what conflux derived, plus the identity. Survives a reboot.
 //   - Run     the socket and the token. Recreated on every daemon start.
-//   - Log     where the platform wants logs, on the platforms that want a file.
+//   - Log     where the boot service's output goes, on the platforms where it goes to a
+//     file: empty where the service manager keeps it (journald, syslog).
 package paths
 
 import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Dirs are the four roots. Get one from Default.
@@ -103,31 +104,41 @@ func (d Dirs) Socket() string { return filepath.Join(d.Run, socketName) }
 // every supervisor start, so a token left by a crashed run authenticates nothing.
 func (d Dirs) TokenFile() string { return filepath.Join(d.Run, "token") }
 
-// LockFile serialises the state-changing commands against each other and against
-// the supervisor. Two conflux up runs at boot -- the unit and an impatient
-// operator -- is the realistic case.
+// LockFile serialises everything that rewrites the manifest or the state: a bring-up,
+// the renewal timer, `conflux renew`, and the uplink watcher's count.
 func (d Dirs) LockFile() string { return filepath.Join(d.Run, "conflux.lock") }
 
+// LogFile is the boot service's output, or "" where the service manager keeps it.
+func (d Dirs) LogFile() string {
+	if d.Log == "" {
+		return ""
+	}
+
+	return filepath.Join(d.Log, "conflux.log")
+}
+
 // ReadyFile is written by the supervisor once an anchor is up, and removed when it goes.
+// It is what lets `conflux up` learn the anchor is up the moment it happens; see
+// internal/daemon/ready.go.
 //
 // In Run rather than State, because a marker must not outlive the thing it describes.
-// systemd's RuntimeDirectory= clears it on stop and macOS clears /var/run at boot --
-// %ProgramData%\conflux\run on Windows survives both, which is why the supervisor also
-// clears it on the way up rather than relying on the directory's lifetime alone.
-//
-// It is what lets `conflux up` learn the anchor is up the moment it happens instead of
-// forking anchorctl once a second until one of the answers is yes -- which is what
-// systemd's Type=notify already gave Linux, and what launchd and the Windows SCM have no
-// protocol for.
+// systemd's RuntimeDirectory= clears it on stop and the BSDs and macOS clear /var/run at
+// boot -- %ProgramData%\conflux\run on Windows survives both, which is why the
+// supervisor also clears it on the way up rather than relying on the directory's
+// lifetime alone.
 func (d Dirs) ReadyFile() string { return filepath.Join(d.Run, "ready") }
 
 // EnsureAll creates the four roots at the modes they need.
 //
 // 0700 throughout, including Config: it sits beside nothing that another user has
 // any business reading, and a 0600 file in a traversable directory is one rename
-// away from being replaced.
+// away from being replaced. On Windows, where a mode means nothing, each root that is
+// not inside another is made SYSTEM's and Administrators' instead, and what is created
+// beneath it inherits that.
 func (d Dirs) EnsureAll() error {
-	for _, dir := range []string{d.Config, d.State, d.Run, d.Log} {
+	dirs := []string{d.Config, d.State, d.Run, d.Log}
+
+	for _, dir := range dirs {
 		if dir == "" {
 			continue
 		}
@@ -135,9 +146,30 @@ func (d Dirs) EnsureAll() error {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return fmt.Errorf("create %s: %w", dir, err)
 		}
+
+		if !within(dir, dirs) {
+			if err := secure(dir); err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil
+}
+
+// within reports whether dir sits strictly inside another of dirs.
+func within(dir string, dirs []string) bool {
+	for _, other := range dirs {
+		if other == "" || other == dir {
+			continue
+		}
+
+		if rel, err := filepath.Rel(other, dir); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+			return true
+		}
+	}
+
+	return false
 }
 
 // CheckSocketLen refuses a run directory that would produce a socket path the

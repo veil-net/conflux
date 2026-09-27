@@ -12,8 +12,9 @@ with it.
 hijack.** It is exactly what a dropper does, and building it into a program that runs
 as LocalSystem is a bad habit to normalise even when the bytes are the right ones.
 
-So conflux fetches it on the first `conflux up`, verifies it, and places it beside the
-extracted `anchord.exe` — which is the first path anchor's loader searches, before the
+So conflux fetches it when a TUN machine needs it — on `conflux up`, and again at any
+start that finds it missing — verifies it, and places it beside the extracted
+`anchord.exe`, which is the first path anchor's loader searches, before the
 *safe* system search (`LOAD_LIBRARY_SEARCH_SYSTEM32` and friends, never the legacy
 order that includes the working directory).
 
@@ -38,8 +39,10 @@ The same constant is read by CI, rather than typed a second time — a workflow 
 pinned a different version from the product code would be a test of nothing.
 
 Because the DLL lands in the content-addressed set directory, upgrading conflux to a
-build with a different anchor pair fetches it again into the new directory. That is
-correct: the driver belongs beside the executable that loads it.
+build with a different anchor pair needs it again in the new directory, and the
+supervisor fetches it there before it starts the anchor — a reboot after an upgrade
+needs nothing typed. That is correct: the driver belongs beside the executable that
+loads it. A start that cannot fetch it is retried with the supervisor's backoff.
 
 ## If it cannot be downloaded
 
@@ -52,7 +55,7 @@ conflux: a network interface on Windows needs wintun.dll, and it could not be fe
   bin\amd64\wintun.dll at:
     C:\ProgramData\conflux\bin\998ece52739a7c74\wintun.dll
 
-  Or run "conflux proxy PORT=BACKEND", which needs no interface at all.
+  Or run "conflux proxy PORT=BACKEND", which needs no interface at all
 ```
 
 That last line is the real fallback. On a machine where the driver cannot be installed
@@ -77,10 +80,18 @@ protection as the likely cause rather than reporting a bare permission error.
 ## File permissions
 
 Mode bits do not exist on Windows in the sense Go's `Chmod` implies — a call to
-`Chmod(0600)` sets the read-only attribute and nothing else — and `%ProgramData%`
-grants `Users` read by default. conflux therefore replaces the DACL outright on the
-identity file: SYSTEM and Administrators, full control, inheritance off, so the
-parent's grant cannot come back.
+`Chmod(0600)` sets the read-only attribute and nothing else — and `%ProgramData%` lets
+`Users` read everything below it and create files and folders in it. So conflux makes
+`%ProgramData%\conflux` belong to SYSTEM and Administrators instead: Administrators own
+it, and a protected DACL grants the two of them full control and nobody else anything,
+inherited by everything beneath. Every secret file gets the same, explicitly, before
+anything is written into it.
+
+A root some other account created is refused rather than taken over: whoever made it
+could have filled it first. And the two binaries the service runs as SYSTEM, and
+`wintun.dll` beside them, are run only if Administrators, SYSTEM or the account running
+conflux owns them — a set directory is named for content anybody can compute, so one
+made by somebody else is extracted again rather than trusted.
 
 ## The service
 

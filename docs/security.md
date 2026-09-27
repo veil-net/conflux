@@ -38,8 +38,10 @@ lapse now happens, and that the window is the operator's to choose.
   and then chmod'ing leaves a window at the umask's mode.
 - `0700` on the directory. A `0600` file in a traversable directory is one `rename`
   away from being replaced.
-- On Windows, mode bits mean nothing and `%ProgramData%` grants `Users` read, so
-  conflux replaces the DACL outright: SYSTEM and Administrators, inheritance off.
+- On Windows, mode bits mean nothing and `%ProgramData%` lets `Users` read and create
+  beneath it, so conflux gives its root to SYSTEM and Administrators — owner, and a
+  protected DACL everything beneath inherits — and refuses a root another account made.
+  See [windows.md](windows.md#file-permissions).
 - Never in an argv. It travels on stdin to `anchorctl start -manifest -`, becomes an
   inline secret on the wire, and is never named as a path in the request — so it never
   appears in `ps` or `/proc/*/cmdline`.
@@ -61,7 +63,10 @@ shape, and it is worth being honest about how it is bounded:
 
 - The path is content-addressed under the state directory — `0700`, root-owned, on a
   filesystem the administrator chose. Not `/tmp`, which is world-writable and, under
-  `PrivateTmp=`, is not even the same directory the service sees.
+  `PrivateTmp=`, is not even the same directory the service sees. On Windows, where the
+  name of a set directory is computable and `%ProgramData%` would let anybody create it,
+  a set is run only if Administrators, SYSTEM or the account running conflux owns it,
+  and extracted again otherwise.
 - The bytes come from inside the conflux binary. There is no download and no network
   path into them; verifying conflux verifies them.
 - `conflux version` prints both SHA-256s, so what is on disk can be checked against a

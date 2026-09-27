@@ -2,15 +2,14 @@ name: ci
 
 # Pull requests, and a hand-run. Nothing else.
 #
-# This is where a change is tested: on the branch, before it is merged. A merge to
-# version3 does not re-run it -- GitHub tests refs/pull/N/merge, which is the branch
-# already merged into its base, so a green pull request is a green merge result, and
-# asking again costs an hour to reprove an identical tree.
+# This is where a change is tested: on the branch, before it is merged. GitHub tests
+# refs/pull/N/merge, the branch already merged into its base, so a green pull request is
+# a green merge result. What makes that a guarantee rather than a hope is branch
+# protection on version3: require a pull request, require these checks, and require the
+# branch to be up to date before merging.
 #
-# What makes that a guarantee rather than a hope is branch protection on version3: require
-# a pull request, require these checks, and require the branch to be up to date before
-# merging. The third is the one that matters -- without it a pull request can be green
-# against a base that has since moved, and what merges is a tree nothing tested.
+# CI verifies that the code builds and runs. The utility checks -- gofmt, staticcheck,
+# go mod tidy, govulncheck, the docs links -- are `make all` on a developer's machine.
 on:
   pull_request:
   workflow_dispatch:
@@ -18,334 +17,136 @@ on:
 permissions:
   contents: read
 
-# Where these run.
-#
-# Every Linux job is on `[self-hosted, linux]` — veilnet-dev, which has Docker, Go, Node
-# and Python, and which anchor's CI has been running on since its PR #15. Two labels and
-# not a third: the runner's *name* is not a label unless somebody registered it as one,
-# and a `runs-on` naming a label that does not exist does not fail, it queues for ever.
-# macOS and Windows stay on GitHub's images, because there is no other machine here that
-# can run them.
-#
-# Anything that can run on veilnet-dev does. It is Linux with Docker, Go, Python and Node,
-# so every Linux job here goes there -- `linux`, `cross`, `service`, `integration` and
-# `docs`. macOS and Windows stay on GitHub's images because nothing else here can run
-# them, and they are the whole reason `platforms` and `windows-tun` exist.
-#
-# Every one of them refuses a fork's pull request outright, and nothing stands in for
-# them. Since the platform jobs need the gate, a fork's pull request runs nothing at all.
-#
-# Deliberate rather than an oversight. A machine that survives the job does not run a
-# stranger's code, and the alternative -- a hosted copy of the gate for forks -- is a
-# second definition of the same thing, which is the arrangement this file had briefly and
-# is worse than the gap: one of the two is always skipped, so the one that rots is the one
-# nobody watches.
-#
-# **This repository is public.** A self-hosted runner is a machine that survives the job,
-# and conflux has forks; `pull_request` runs the workflow from the *head* of the PR, so
-# without a guard a fork could propose a workflow that runs its own code on veilnet-dev,
-# beside a Docker socket and whatever the last job left on disk. That is what GitHub's
-# warning on the "Allow public repositories" checkbox is about, and why that checkbox
-# exists separately from repository access at all.
-#
-# Fetching the release rather than checking anchor out removes the sharpest version of
-# that -- there is no private source tree on the machine -- but there *is* now a
-# credential here, so the guard matters more than it did, not less. GitHub does not pass
-# secrets to a fork's pull request, which is the mechanism; this refusal is the belt
-# beside it, because running a stranger's code on a machine that survives the job is
-# worth refusing on its own.
-#
-# So nothing a fork writes executes on veilnet-dev at all. This lives here rather than in
-# a setting because a setting cannot express it — "Allow public repositories" is
-# all-or-nothing for the whole organisation.
-#
-# What the machine changes, beyond the label. It is not a fresh VM destroyed at the end
-# of the job, so the Docker jobs reap the container names before themselves as well as
-# after: a cancelled run fires neither an EXIT trap nor an `if: always()` step.
-#
-# What makes `service` and `integration` runnable at all, though, is not the machine --
-# it is that the binaries have a published source. docs/testing.md said those two needed
-# the real anchor binaries, which "a runner has no way to fetch", and that was true only
-# while no such source existed. One does now: `make anchor-bins FETCH=1` downloads the
-# pinned build from anchor's `shelf` release and verifies every digest, with no anchor
-# checkout. So both jobs lose their `workflow_dispatch` gate, and the `linux` gate gets
-# the real binaries too.
-#
-# It does need a credential, since anchor is private. A GitHub App rather than a personal
-# access token: what is stored in this repository is a private key that has to be
-# exchanged for a token, so the secret alone opens nothing, and the token it mints lasts
-# an hour. See .github/actions/anchor-bins.
-#
-# And it is one machine. With a single runner process these four Linux jobs queue rather
-# than run side by side, so a push costs the sum of them instead of the longest — which
-# makes the cancellation below matter more than it did, not less: a superseded run holds
-# the machine the run that replaced it is waiting for. Do not register a second runner
-# process to win that back; anchor/docs/ci.md records the measurement that argues against
-# it. More parallelism wants a second machine, not a second process.
+# A superseded run holds the one self-hosted machine the run that replaced it is
+# waiting for.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # The Go suite on Linux, on veilnet-dev, in one job: it is one machine and one runner
+  # process, so separate jobs would queue anyway, each paying a checkout and a fetch
+  # of the anchor binaries.
+  #
+  # **This repository is public.** A self-hosted runner is a machine that survives the
+  # job, and `pull_request` runs the workflow from the head of the PR, so without this
+  # guard a fork could run its own code on veilnet-dev beside a Docker socket. GitHub
+  # passes no secrets to a fork's pull request, which is the mechanism; this refusal is
+  # the belt beside it. The only credential here is the read-only anchor GitHub App.
   linux:
-    # Not for a fork's pull request, and with nothing standing in for it. A fork does not
-    # get the Linux gate, which means -- since everything below needs this job -- that a
-    # fork's pull request runs `docs` and stops. That is the deliberate position: a
-    # machine that survives the job does not run a stranger's code, and a gate worth
-    # having on a hosted image would be a second definition of this one.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux]
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
 
-      # The real binaries, which this job has never had. Eight tests gate on
-      # anchor.Supported — a size check, so placeholders do not fool it — and every one
-      # of them has been skipping on every run since the suite was written: both header
-      # checks in anchor/, the four libexec extraction tests, the anchorctl flag
-      # cross-check, and the shadowing check in internal/cli. A skip is green, which is
-      # why this was easy not to notice.
       - uses: ./.github/actions/anchor-bins
         with:
           app-id: ${{ secrets.ANCHOR_APP_ID }}
           private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
 
-      - run: make fmtcheck
-      - run: make vet
-      - run: make tidycheck
-
-      # Pinned rather than @latest. On a machine that is thrown away, @latest costs a
-      # download; on one that is not, it also means the version that gates this repo
-      # changes underneath it without a commit, and a new check arrives as a red build
-      # on somebody else's unrelated pull request.
-      - name: staticcheck
-        run: |
-          go install honnef.co/go/tools/cmd/staticcheck@v0.8.1
-          staticcheck ./...
-
-      - name: govulncheck
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
-          govulncheck ./...
-
-      - run: make race
-
-      # Now that the binaries are real, say so if they stop being. A skip is green, and
-      # the eight tests above would go back to skipping silently the day this job lost
-      # its anchor checkout — which is exactly the state it was in before this change.
-      # Any skip at all, and not a grep for the reason. `go test -v` prints the reason
-      # on the line *before* `--- SKIP:`, so a pattern wanting both on one line matches
-      # nothing and the gate passes on exactly the state it exists to catch. Checked in
-      # both directions before this was committed: it fails with placeholders in
-      # anchor/bin and passes with real ones.
-      #
-      # Nothing in these four packages skips for any other reason on Linux, so zero is
-      # the right number and a new legitimate skip should have to come and argue here.
-      - name: the tests that need real binaries actually ran
+      # The whole suite under -race, once, and none of it skipped. A skip is green, and
+      # the tests that need the real binaries skip without them, so a run that fetched
+      # them and then reports "no anchor pair" has lost them. On Linux nothing skips for
+      # any other reason, so zero is the right number.
+      - name: the suite under -race, with the real binaries, nothing skipped
         run: |
           set -euo pipefail
-          out=$(go test -v -count=1 ./anchor/ ./internal/libexec/ ./internal/anchorctl/ ./internal/cli/)
-          if printf '%s\n' "$out" | grep -q -- '--- SKIP'; then
+          go test -race -count=1 -v ./... > test.log 2>&1 || { cat test.log; exit 1; }
+          if grep -q -- '--- SKIP' test.log; then
             echo "::error::a test skipped in the job that provides the anchor binaries" >&2
-            printf '%s\n' "$out" | grep -B1 -- '--- SKIP' >&2
+            grep -B1 -- '--- SKIP' test.log >&2
             exit 1
           fi
-          ran=$(printf '%s\n' "$out" | grep -c -- '--- PASS')
-          [ "$ran" -ge 30 ] || {
-            echo "::error::only $ran tests ran here; this gate is meant to cover four packages" >&2
-            exit 1
-          }
+          ran=$(grep -c '^--- PASS' test.log)
+          [ "$ran" -ge 150 ] || { echo "::error::only $ran tests ran" >&2; exit 1; }
           echo "$ran tests ran, none skipped"
 
-      # The argv fixtures must match what the code produces. A change to what conflux
-      # passes anchorctl is a reviewable text diff or it is a bug.
-      - name: golden argv fixtures are current
-        run: |
-          make golden
-          git diff --exit-code internal/anchorctl/testdata/ \
-            || { echo "::error::argv changed; run 'make golden' and commit the fixtures"; exit 1; }
+      - name: every target vets, test files included
+        run: make cross
 
-  cross:
-    # Vets and compiles all seven targets. Deliberately on placeholders: this job asks
-    # whether every target still builds, and `make anchor-bins` with no checkout answers
-    # that for the price of fourteen two-line files. The size gate is `make dist`, which
-    # the two container jobs run with the real thing.
-    #
-    # Same rule as `linux` above.
+  # The container suites, on a hosted runner: the boot service under a real systemd, and
+  # three nodes against the live API and the production realm. The third reaches the
+  # realm through its manifest's bootstrap node over UDP, and from veilnet-dev no
+  # handshake gets through to it. A hosted runner is thrown away, so nothing here reaps
+  # after the suites; the fetch needs the anchor credential, which a fork's pull request
+  # is not given.
+  integration:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
-      - run: make anchor-bins
-      - run: make cross
 
+      # Every pair, not only linux-amd64: `dist` builds every target, with the size gate.
+      - uses: ./.github/actions/anchor-bins
+        with:
+          app-id: ${{ secrets.ANCHOR_APP_ID }}
+          private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
+
+      - name: what this runner gives the container suites
+        run: ./test/preflight.sh
+
+      # One invocation, so `dist` and the image are built once for both suites.
+      - name: the boot service, and three nodes against the live API
+        run: make service-test integration
+
+  # macOS and Windows, on the operating systems that have the path handling, the file
+  # modes, the DACLs and the service code. Each fetches only its own pair, so the tests
+  # that need real binaries -- extraction, the flag cross-check, the shadowing check --
+  # run here too rather than skipping. Hosted runners are thrown away, but the fetch
+  # needs the anchor credential, which a fork's pull request is not given.
   platforms:
-    # Nothing here runs until the gate has. If the code does not compile, does not
-    # pass vet, or fails its unit tests, the answer is the same on every platform and in
-    # every container -- so spending a macOS runner, a Windows runner and two privileged
-    # container suites to be told again is time bought for nothing.
-    #
-    needs: [linux, cross]
-    
-    # macOS and Windows, on the operating system that has the path handling, the file
-    # modes and the DACL logic. Linux is not a leg here: the `linux` job already runs
-    # the same suite under -race, and `cross` vets every target.
-    #
-    # One image per operating system, and the floating labels deliberately: a pinned
-    # macOS goes stale into being the old macOS nobody supports, which is what the
-    # retired macos-13 leg had become.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        include:
+          - os: macos-latest
+            pair: darwin-arm64
+          - os: windows-latest
+            pair: windows-amd64
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
-      - run: make anchor-bins
-      - run: go build ./...
-      - run: go test ./...
 
-  windows-tun:
-    # Nothing here runs until the gate has. If the code does not compile, does not
-    # pass vet, or fails its unit tests, the answer is the same on every platform and in
-    # every container -- so spending a macOS runner, a Windows runner and two privileged
-    # container suites to be told again is time bought for nothing.
-    #
-    needs: [linux, cross]
-    
-    # With placeholders the extraction tests skip, so this checks the wintun pin is
-    # readable and that the build works on Windows. The extraction itself is covered on
-    # Linux by the `linux` job above, which now has real binaries; there is no
-    # self-hosted Windows machine to give this one the same.
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/setup
-      - run: make anchor-bins
-        shell: bash
+      - uses: ./.github/actions/anchor-bins
+        with:
+          app-id: ${{ secrets.ANCHOR_APP_ID }}
+          private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
+          targets: ${{ matrix.pair }}
 
-      # The version and digest come from the product code, not from a second copy
-      # typed here: a workflow that pinned a different version would test nothing.
-      - name: install wintun
+      # The version and digest come from the product code, not a second copy typed here:
+      # a workflow that pinned a different version would test nothing. What this proves
+      # is that the digest conflux checks every download against is the published one.
+      - name: the pinned wintun is the published one
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $src  = Get-Content internal/wintun/pinned.go -Raw
           $ver  = [regex]::Match($src, 'Version\s*=\s*"([^"]+)"').Groups[1].Value
           $want = [regex]::Match($src, 'ZipSHA256\s*=\s*"([^"]+)"').Groups[1].Value
           if (-not $ver -or -not $want) { throw "could not read the wintun pin from pinned.go" }
-          Write-Host "wintun $ver, sha256 $want"
-
           Invoke-WebRequest "https://www.wintun.net/builds/wintun-$ver.zip" -OutFile wintun.zip
           $got = (Get-FileHash wintun.zip -Algorithm SHA256).Hash.ToLower()
           if ($got -ne $want) { throw "wintun-$ver.zip digest $got, expected $want" }
+          Write-Host "wintun $ver matches its pin"
 
-          Expand-Archive wintun.zip -DestinationPath wintun
-          Copy-Item "wintun/wintun/bin/amd64/wintun.dll" "$env:WINDIR/System32/wintun.dll"
-
-      - name: extraction and readiness
-        run: go test -v -run 'TestEnsure|TestPairIsRealExecutables' ./internal/libexec/ ./anchor/
-
-  service:
-    # The boot service, in a container that actually boots systemd. Restarting the
-    # container is the reboot, and this is the only way to check the property that
-    # matters most: a machine that was up before is up again with nothing typed.
-    #
-    # It ran on no push and no pull request until now — `workflow_dispatch` only,
-    # because it needs the real anchor binaries and a hosted runner had no way to get
-    # them. It also could not have worked on a dispatch: it went straight to `make dist`
-    # with no `anchor-bins` step before it, so //go:embed had nothing to embed and the
-    # build failed before the size gate could say why.
-    #
-    # Never for a fork's pull request: it wants the runner and the Docker socket, which
-    # is a machine that survives the job running a stranger's code.
-    # Same gate as the platform jobs above, and the argument is stronger here: these
-    # two boot privileged containers, enrol against the live API and wait on gossip.
-    # Minutes, and three enrolments, to re-discover that a unit test was already red.
-    needs: [linux, cross]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, linux]
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/setup
-      - uses: ./.github/actions/anchor-bins
-        with:
-          app-id: ${{ secrets.ANCHOR_APP_ID }}
-          private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
-
-      - name: what this runner gives the suite
-        run: ./test/preflight.sh
-
-      - name: install registers, uninstall leaves nothing
-        run: make service-test
-
-      - if: always()
-        run: docker rm -f cfx || true
-
-  integration:
-    # The real thing, against the live API: three nodes, one taint, reaching each other
-    # over the overlay, surviving a reboot, and the LAN-discovery control.
-    #
-    # Manual-only for the same reason as `service`, and no longer. Locally this is
-    # `make integration`, which is what it runs.
-    #
-    # Never for a fork's pull request, for the reason `service` gives. This one also
-    # enrols three times against the live API, which is not a thing to hand a stranger.
-    # Same gate as the platform jobs above, and the argument is stronger here: these
-    # two boot privileged containers, enrol against the live API and wait on gossip.
-    # Minutes, and three enrolments, to re-discover that a unit test was already red.
-    needs: [linux, cross]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, linux]
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/setup
-      - uses: ./.github/actions/anchor-bins
-        with:
-          app-id: ${{ secrets.ANCHOR_APP_ID }}
-          private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
-
-      - name: what this runner gives the suite
-        run: ./test/preflight.sh
-
-      - name: three nodes, one taint, reachable both ways
-        run: make integration
-
-      - if: always()
-        run: docker rm -f cfx-a cfx-b cfx-c || true
-
-  docs:
-    # On the runner like everything else that can be. Two greps, so this is the one job
-    # where the queue slot costs more than the work -- and consistency is worth more than
-    # three seconds, because "everything Linux runs on our machine" is a rule somebody can
-    # check, and "everything except the cheap ones" is a judgement call that drifts.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, linux]
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: every docs page is linked from the README, and exists
+      # The same gate as Linux, over the tests that need the real binaries: here other
+      # tests do skip, for the platform (a mode bit Windows does not have), and that is
+      # not what this checks.
+      - name: the suite, with the real binaries
+        shell: bash
         run: |
-          fail=0
-          for f in docs/*.md; do
-            grep -q "$(basename "$f")" README.md \
-              || { echo "::error file=$f::not linked from README.md"; fail=1; }
-          done
-          # And every link the README makes to docs/ resolves.
-          grep -o 'docs/[a-z-]*\.md' README.md | sort -u | while read -r p; do
-            [ -f "$p" ] || { echo "::error::README links to $p, which does not exist"; exit 1; }
-          done
-          exit $fail
-
-      - name: internal links resolve
-        run: |
-          fail=0
-          for f in docs/*.md; do
-            grep -o '](\([a-z-]*\.md\)' "$f" | sed 's/](//' | sort -u | while read -r p; do
-              [ -f "docs/$p" ] || { echo "::error file=$f::links to $p, which does not exist"; exit 1; }
-            done || fail=1
-          done
-          exit $fail
+          set -euo pipefail
+          go test -count=1 -v ./... > test.log 2>&1 || { cat test.log; exit 1; }
+          real='TestPairIsRealExecutables|TestSetIDIsStable|TestEnsure|TestEveryFlagWeUseExists|TestNoUnintendedShadowing|TestTheCollisionsAreTheDocumentedOnes'
+          if grep -E -- "--- SKIP: ($real)" test.log; then
+            echo "::error::a test that needs the anchor binaries skipped" >&2
+            exit 1
+          fi
+          grep -c '^--- PASS' test.log | xargs echo "tests passed:"

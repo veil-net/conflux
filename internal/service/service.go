@@ -1,45 +1,40 @@
-// Package service registers conflux with the platform's boot manager.
+// Package service registers conflux with the platform's boot manager: systemd,
+// launchd, rc on the BSDs, or the Windows service control manager.
 //
-// One rule shapes the whole interface: Install registers and does not start. The
-// previous conflux conflated the two, which is why it had no way to express what
-// `conflux install` is actually for -- putting the unit in place on a machine that
-// has no configuration yet, so that a later `up` has somewhere to land.
+// One rule shapes the whole interface: Install registers and does not start. That is
+// what lets `conflux install` put the service in place on a machine that has no
+// configuration yet, so that a later `up` has somewhere to land.
 package service
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
-// ErrUnsupported means this platform has no integration yet. The BSDs return it,
-// and the message names the command an operator should wire up by hand.
-var ErrUnsupported = errors.New("conflux has no boot-service integration for this platform")
-
 // Manager is one platform's boot manager.
 type Manager interface {
-	// Name is the unit, job or service name, for a status line.
-	Name() string
-
 	// Install registers the service to start at boot. Idempotent, and it does not
 	// start anything.
 	Install(exe string, args ...string) error
 
-	// Remove deregisters it. Each step tolerates its own failure, so a half-removed
-	// service can always be finished off.
+	// Remove deregisters it and deletes what registering it wrote, its log included.
+	// Each step tolerates its own failure, so a half-removed service can always be
+	// finished off.
 	Remove() error
 
-	Start() error
 	Stop() error
 	Restart() error
 
 	Installed() (bool, error)
-	Running() (bool, error)
 
 	// Describe is one line for `conflux status`.
 	Describe() string
+
+	// LogHint says where the service's output is, as something to run or open.
+	LogHint() string
 }
 
 // New returns this platform's manager.
@@ -75,10 +70,19 @@ func WarnIfEphemeral(exe string) string {
 			return fmt.Sprintf(
 				"the boot service will run %s\n"+
 					"  that path may not survive a reboot or a cleanup. Consider installing it first:\n"+
-					"    sudo install -m 0755 %s /usr/local/bin/conflux && sudo /usr/local/bin/conflux install",
-				exe, exe)
+					"    %s", exe, installHint(exe))
 		}
 	}
 
 	return ""
+}
+
+// installHint is the command that puts a downloaded binary somewhere permanent.
+func installHint(exe string) string {
+	if runtime.GOOS == "windows" {
+		return `mkdir "$env:ProgramFiles\conflux"; copy ` + exe + ` "$env:ProgramFiles\conflux\conflux.exe"; ` +
+			`& "$env:ProgramFiles\conflux\conflux.exe" install`
+	}
+
+	return "sudo install -m 0755 " + exe + " /usr/local/bin/conflux && sudo /usr/local/bin/conflux install"
 }

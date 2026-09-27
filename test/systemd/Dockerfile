@@ -3,7 +3,7 @@
 # This is the only way to exercise the part of conflux that matters most and is
 # hardest to check: that a machine which was up before is up again afterwards, with
 # nothing typed. Restarting the container is the reboot.
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         systemd systemd-sysv ca-certificates iproute2 iputils-ping dbus \
@@ -13,7 +13,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && find /etc/systemd/system /lib/systemd/system \
         -path '*.wants/*' \
         \( -name '*getty*' -o -name '*udev*' -o -name '*console*' \
-           -o -name 'systemd-timesyncd*' -o -name 'systemd-logind*' \) \
+           -o -name 'systemd-timesyncd*' -o -name 'systemd-logind*' \
+           -o -name 'systemd-modules-load*' \) \
         -exec rm -f {} \; \
     && rm -f /lib/systemd/system/multi-user.target.wants/* \
     && ln -sf /lib/systemd/system/dbus.service /etc/systemd/system/multi-user.target.wants/dbus.service

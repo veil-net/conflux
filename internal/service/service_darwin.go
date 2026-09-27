@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/veil-net/conflux/internal/paths"
 )
 
 // Functions and not constants because a run rooted in a CONFLUX_DIR is a separate
@@ -16,9 +18,10 @@ func target() string    { return "system/" + label() }
 
 // plistTemplate is the job conflux writes.
 //
-// KeepAlive is {SuccessfulExit: false} rather than true. The previous conflux used
-// true, which restarts the job even after a deliberate clean exit -- the launchd
-// analogue of restarting forever on the no-configuration case.
+// KeepAlive is {SuccessfulExit: false} rather than true, so a deliberate clean exit
+// stays exited. launchd has no way to name the exit codes that should not restart,
+// so unlike the systemd unit a supervisor that exits 78 or 70 is started again after
+// ThrottleInterval.
 //
 // ProcessType is Interactive rather than the Background that daemons default to,
 // because Background imposes a low-priority I/O class and App Nap eligibility, and a
@@ -27,17 +30,17 @@ const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key>            <string>%s</string>
+  <key>Label</key>            <string>%[1]s</string>
   <key>ProgramArguments</key>
   <array>
-%s  </array>
+%[2]s  </array>
   <key>RunAtLoad</key>        <true/>
   <key>KeepAlive</key>
   <dict><key>SuccessfulExit</key> <false/></dict>
   <key>ThrottleInterval</key>  <integer>5</integer>
   <key>ProcessType</key>       <string>Interactive</string>
-  <key>StandardOutPath</key>   <string>/var/log/conflux.log</string>
-  <key>StandardErrorPath</key> <string>/var/log/conflux.log</string>
+  <key>StandardOutPath</key>   <string>%[3]s</string>
+  <key>StandardErrorPath</key> <string>%[3]s</string>
   <key>ExitTimeOut</key>       <integer>30</integer>
 </dict>
 </plist>
@@ -47,19 +50,12 @@ type launchd struct{}
 
 func newManager() (Manager, error) { return launchd{}, nil }
 
-func (launchd) Name() string { return label() }
+// logFile is where the job's output goes.
+func logFile() string { return paths.Default().LogFile() }
 
 // Install writes the job and loads nothing, which is the whole of what registration
-// means here.
-//
-// It used to bootstrap and then SIGTERM what bootstrapping started, because bootstrap
-// honours RunAtLoad and Install is not meant to start anything. The kill was correct and
-// the cost was not: the supervisor launchd started got as far as enrolling, opening a
-// utun, assigning addresses and dialling the realm before the signal reached it, and
-// then the caller started a second one for real. Every `conflux up` on a Mac brought an
-// anchor up twice and threw the first away, with a ThrottleInterval wait between them --
-// which is most of why a Mac took so much longer to come up than a Linux box, where
-// Install writes a unit, reloads and enables, and deliberately starts nothing.
+// means here. Loading it would start it -- bootstrap honours RunAtLoad -- and Install
+// starts nothing, so the caller's Restart is the one start.
 //
 // Nothing about a reboot depends on loading it here. launchd bootstraps everything in
 // /Library/LaunchDaemons at boot, so the plist on disk *is* the registration, and
@@ -71,7 +67,7 @@ func (l launchd) Install(exe string, args ...string) error {
 		fmt.Fprintf(&argv, "    <string>%s</string>\n", escapeXML(a))
 	}
 
-	plist := fmt.Sprintf(plistTemplate, label(), argv.String())
+	plist := fmt.Sprintf(plistTemplate, label(), argv.String(), escapeXML(logFile()))
 
 	if err := os.WriteFile(plistPath(), []byte(plist), 0o644); err != nil { //nolint:gosec // a plist is world-readable by design
 		return fmt.Errorf("write %s: %w", plistPath(), err)
@@ -121,14 +117,10 @@ func (l launchd) loaded() bool {
 // loaded whatever the RunAtLoad key says. Start and Restart are built on that rather than
 // trying to work around it.
 //
-// **enable comes first, and that ordering is a bug fix.** launchctl(1): "Once a service is
-// disabled, it cannot be loaded in the specified domain until it is once again enabled.
-// This state persists across boots of the device." A disabled label makes bootstrap fail
-// with "Bootstrap failed: 5: Input/output error", which names nothing and is the error an
-// uninstall-then-up cycle produced every time: Remove disabled the label, Install
-// bootstrapped before enabling, and returned the failure before the enable on the line
-// below it could ever run. Remove no longer disables anything, and this is what clears the
-// landmine on a machine that already has one.
+// enable comes first. launchctl(1): "Once a service is disabled, it cannot be loaded in
+// the specified domain until it is once again enabled. This state persists across boots
+// of the device." A disabled label makes bootstrap fail with "Bootstrap failed: 5:
+// Input/output error", which names nothing, so the label is enabled before every load.
 func (l launchd) load() error {
 	// Not checked: a label that was never disabled has nothing to enable, and the
 	// bootstrap below is the call whose answer matters either way.
@@ -153,15 +145,10 @@ func bootstrapHint() string {
 		"    - the executable it names is gone, or is on a volume that is not mounted yet"
 }
 
-// Remove deregisters the job, and deliberately leaves nothing in the disabled database.
-//
-// It used to `launchctl disable` on the way out, which is persistent state outliving the
-// thing it refers to: launchctl(1) says a disabled label "cannot be loaded in the specified
-// domain until it is once again enabled. This state persists across boots of the device."
-// The plist is deleted here, so nothing could load the job anyway and the disable bought
-// nothing -- but it stayed on the machine, and the next `conflux up` hit "Bootstrap failed:
-// 5: Input/output error" with no way to tell why. An uninstall must not leave a machine
-// unable to install again.
+// Remove deregisters the job and deletes its plist and its log, and deliberately
+// leaves nothing in launchd's disabled database: a disabled label outlives the plist and
+// stops the next install from loading, which is persistent state for a thing that no
+// longer exists.
 //
 // Each step tolerates its own failure, so a half-removed service can always be finished off.
 func (l launchd) Remove() error {
@@ -175,6 +162,10 @@ func (l launchd) Remove() error {
 		first = err
 	}
 
+	if err := removeLog(logFile()); err != nil && first == nil {
+		first = err
+	}
+
 	if installed, _ := l.Installed(); installed {
 		return first
 	}
@@ -182,22 +173,14 @@ func (l launchd) Remove() error {
 	return nil
 }
 
-// Start and Restart both ask the same question first, and it is the question that keeps
-// a Mac from starting twice.
+// Restart asks first whether the job is loaded, and that is the question that keeps a
+// Mac from starting twice.
 //
 // A job that is not loaded is started by loading it: bootstrap plus RunAtLoad is a start,
 // and a kickstart on top of it would kill the instance launchd had just made. A job that
 // is already loaded cannot be bootstrapped again -- that fails with "37: Operation already
-// in progress", which is what the previous conflux did -- so it is kickstarted, which
-// starts a stopped job and restarts a running one.
-func (l launchd) Start() error {
-	if !l.loaded() {
-		return l.load()
-	}
-
-	return run("launchctl", "kickstart", target())
-}
-
+// in progress" -- so it is kickstarted with -k, which starts a stopped job and restarts a
+// running one.
 func (l launchd) Restart() error {
 	if !l.loaded() {
 		return l.load()
@@ -234,17 +217,16 @@ func (launchd) Installed() (bool, error) {
 	return false, err
 }
 
-// Running asks launchd rather than inferring it from Installed. A job that is not loaded
-// -- registered but never started in this boot -- prints nothing and is not running,
-// which is the honest answer and the one Describe needs.
-func (launchd) Running() (bool, error) {
+// running asks launchd rather than inferring it from Installed. A job that is not
+// loaded -- registered but never started in this boot -- prints nothing and is not
+// running, which is the honest answer and the one Describe needs.
+func running() bool {
 	out, ok := printJob()
-	if !ok {
-		return false, nil
-	}
 
-	return strings.Contains(out, "state = running"), nil
+	return ok && strings.Contains(out, "state = running")
 }
+
+func (launchd) LogHint() string { return "tail -n 50 " + logFile() }
 
 func (l launchd) Describe() string {
 	installed, _ := l.Installed()
@@ -252,8 +234,7 @@ func (l launchd) Describe() string {
 		return "not installed"
 	}
 
-	running, _ := l.Running()
-	if running {
+	if running() {
 		return fmt.Sprintf("running (launchd: %s, at boot)", label())
 	}
 

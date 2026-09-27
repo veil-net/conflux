@@ -62,5 +62,5 @@ func main() {
 		os.Exit(1)
 	}
 
-	log("%d/%d fetched, digests verified", len(names), len(names))
+	log("%d/%d in place, digests verified", len(names), len(names))
 }

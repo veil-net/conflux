@@ -8,7 +8,6 @@
 package anchorctl
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -73,7 +72,7 @@ func ModeFromConfig(c *config.Config, anchorDir string) StartMode {
 		Dir:     anchorDir,
 		Subnets: c.Subnets,
 		Proxies: c.Proxies,
-		IPv4:    c.IPv4,
+		IPv4:    c.OverlayIPv4(),
 		Uplink:  c.Uplink,
 		Peers:   c.Peers,
 
@@ -133,7 +132,6 @@ func (m StartMode) Args() []string {
 
 	// Only when set, like -peers and for the same reason: the manifest carries a
 	// listenPort, and a zero here means "no opinion" rather than "port zero".
-	// Refused beside an uplink, which binds no socket -- Validate catches that.
 	if m.Port != 0 {
 		args = append(args, "-port", strconv.FormatUint(uint64(m.Port), 10))
 	}
@@ -160,8 +158,7 @@ func (m StartMode) Args() []string {
 
 	// Always both, in whichever direction, rather than leaving either to the
 	// manifest: an anchor that silently became an internet exit because a document
-	// said so would be a surprise of the worst kind. Off unless conflux was asked,
-	// and TUN-only -- Validate refuses the pair with userspace mode.
+	// said so would be a surprise of the worst kind. Off unless conflux was asked.
 	args = append(args, "-serve-exit="+boolText(m.ServeExit), "-use-exit="+boolText(m.UseExit))
 
 	if m.IPv4 != "" {
@@ -178,45 +175,6 @@ func (m StartMode) Args() []string {
 	}
 
 	return args
-}
-
-// Validate catches the combinations anchor's own validate would refuse, here,
-// where the message can name the conflux flag rather than the anchor field.
-func (m StartMode) Validate() error {
-	if m.TUN && len(m.Proxies) > 0 {
-		return fmt.Errorf(
-			"a reverse proxy needs userspace mode: with a host interface the kernel owns the overlay address, so bind it directly")
-	}
-
-	if !m.TUN {
-		if len(m.Subnets) > 0 {
-			return fmt.Errorf("forwarding a subnet needs a host interface to forward out of, which userspace mode has none of")
-		}
-
-		if m.IPv4 != "" {
-			return fmt.Errorf("an overlay IPv4 needs a host interface to assign it to")
-		}
-
-		if m.ServeExit || m.UseExit {
-			return fmt.Errorf("routing the public internet either way needs a host interface, which userspace mode has none of")
-		}
-	}
-
-	if len(m.Taints) == 0 {
-		return fmt.Errorf("no taints")
-	}
-
-	if m.Uplink != "" {
-		if _, err := config.ParseUplinkSpec(m.Uplink); err != nil {
-			return err
-		}
-
-		if m.Port != 0 {
-			return fmt.Errorf("an uplink binds no socket, so there is no port to choose")
-		}
-	}
-
-	return nil
 }
 
 // RenewArgs installs a renewed chain on the running anchor, without a restart.

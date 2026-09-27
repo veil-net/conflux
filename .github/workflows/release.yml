@@ -3,189 +3,38 @@ name: release
 # A merge to version3, and nothing else.
 #
 # version3 is where conflux is developed; main carries no workflows at all. So this is the
-# branch a merge reaches, and the branch a release comes from.
+# branch a merge reaches, and the branch a release comes from. Every merge builds and
+# publishes: VERSION names the release, and the merge decides that there is one. The
+# artifacts at that tag are replaced with the ones built from the commit that just landed.
 #
-# **Every merge builds and publishes.** VERSION names the release; the merge decides that
-# there is one. The artifacts at that tag are replaced with the ones built from the commit
-# that just landed. The tag itself is not moved -- GitHub leaves it where it was cut, and
-# the gate warns on every run where it has fallen behind.
-#
-# This replaced a gate that only fired when VERSION named a tag GitHub did not have yet,
-# and the reason it had to go is what it did the rest of the time: nothing, in twenty
-# seconds, and green. VERSION had read 1.0.0-pre since it was published, so every merge
-# after it -- including one that rewrote how enrolment works -- ended at "1.0.0-pre is
-# already published; nothing to do" and shipped no binaries. A release workflow whose
-# ordinary outcome is a successful no-op is one nobody checks, which is exactly how a
-# fortnight of merges went unreleased without a red run anywhere.
-#
-# The cost is accepted rather than unnoticed: `make dist` cross-builds seven targets and
-# takes around a quarter of an hour, and a docs-only merge now pays it too. Deciding which
-# paths deserve a build is a second definition of what a release contains, and the one
-# that matters is `make dist` itself.
-#
-# Runs are serialised rather than cancelled (see `concurrency` below): a burst of merges
-# queues, each publishes in turn, and the last one wins. Cancelling would be faster and
-# could interrupt a publish half way through replacing a release's assets.
-#
-# It does not re-run the suite. ci.yml tests the branch, and by the time a merge lands the
-# question has been answered. That rests on branch protection on version3 -- a required
-# pull request, required checks, and required up-to-date -- and is unsafe without it.
+# It only releases. CI tested the branch, and a merge lands only when CI is green -- which
+# rests on branch protection on version3, and is unsafe without it -- so nothing here
+# re-verifies. It fetches the pinned binaries, runs `make dist` (the size gate comes with
+# it), attests, and publishes.
 on:
   push:
     branches: [version3]
   # Rebuilds and republishes whatever VERSION currently says, exactly as a merge does.
-  # There is no checkbox: running this by hand is itself the request.
   workflow_dispatch:
 
-# Read by default; `build` raises its own. Neither `gate` nor `verify` can create a
-# release or sign anything.
 permissions:
   contents: read
 
+# Serialised rather than cancelled: a burst of merges queues, each publishes in turn, and
+# the last one wins. Cancelling could interrupt a publish half way through replacing a
+# release's assets.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  # What is being released, and may this branch release at all.
-  #
-  # It no longer asks whether there is anything to do -- a merge to version3 is the
-  # answer. What is left is reading the version the tree claims and refusing to run
-  # anywhere but version3, which matters because `workflow_dispatch` above is not
-  # restricted to a branch and nothing else in this file would stop a hand-run on a
-  # feature branch from publishing to the public under that branch's name.
-  #
-  # Kept as a separate job rather than folded into `build` so that refusal happens
-  # before a runner picks up seven cross-builds, and so `verify` and `build` inherit
-  # one branch condition instead of repeating it.
-  gate:
+  build:
+    # The one guard this keeps. `workflow_dispatch` is not restricted to a branch, and
+    # nothing else would stop a hand-run on a feature branch publishing to the public.
     if: github.ref == 'refs/heads/version3'
     runs-on: [self-hosted, linux]
-    outputs:
-      release: ${{ steps.decide.outputs.release }}
-      version: ${{ steps.decide.outputs.version }}
-      tag: ${{ steps.decide.outputs.tag }}
-    steps:
-      - uses: actions/checkout@v7
 
-      - name: what version does this tree claim?
-        id: decide
-        run: |
-          set -euo pipefail
-
-          [ -s VERSION ] || { echo "::error::VERSION is missing or empty" >&2; exit 1; }
-
-          # The tag is the file, verbatim. Nothing is prepended: the tags this repository
-          # has published are Beta-v1.0.13, Beta-v1.0.14, Beta-v1.0.15 -- so a "v" bolted
-          # on here would invent a scheme that matches none of them. Whatever VERSION
-          # says is both the tag and the string stamped into the binary.
-          version=$(tr -d '[:space:]' < VERSION)
-
-          {
-            echo "version=$version"
-            echo "tag=$version"
-            echo "release=true"
-          } >> "$GITHUB_OUTPUT"
-
-          echo "building $version from ${GITHUB_SHA:0:12}"
-          echo "If a release already exists at this tag, its artifacts are replaced."
-          echo "Bump VERSION when this should be a new release rather than a rebuild"
-          echo "of the current one."
-
-      # GitHub leaves an existing tag where it was cut, and nothing here moves it. That
-      # was a corner case while a version published once; now that every merge replaces
-      # this version's artifacts it is the ordinary state, so it is reported on every run
-      # rather than left to be discovered from a `conflux version` naming a commit the tag
-      # does not reach.
-      #
-      # A warning and not an error: the artifacts are correct and the release is the thing
-      # people download. What is stale is the tag, and deciding to rewrite a published ref
-      # is not a decision this workflow should make quietly on every merge.
-      - name: does the tag still describe what is being built?
-        env:
-          tag: ${{ steps.decide.outputs.tag }}
-        run: |
-          set -euo pipefail
-
-          at=$(git ls-remote origin "refs/tags/$tag" | cut -f1)
-
-          if [ -z "$at" ]; then
-            echo "$tag does not exist yet; it will be created at ${GITHUB_SHA:0:12}"
-          elif [ "$at" != "$GITHUB_SHA" ]; then
-            echo "::warning::$tag stays at ${at:0:12}; these artifacts are built from ${GITHUB_SHA:0:12}"
-          else
-            echo "$tag already points at ${GITHUB_SHA:0:12}"
-          fi
-
-  verify:
-    needs: gate
-    if: needs.gate.outputs.release == 'true'
-    runs-on: [self-hosted, linux]
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/setup
-
-      # The binaries this release is about to embed, fetched from the shelf.
-      #
-      # Without this the job could not run at all: anchor/bin is not in git, so a fresh
-      # checkout has none and the very next step failed on its own message -- "a release
-      # runner needs a source for them". That source exists now, which is the whole of
-      # what made a conflux release possible from CI rather than from a laptop.
-      - uses: ./.github/actions/anchor-bins
-        with:
-          app-id: ${{ secrets.ANCHOR_APP_ID }}
-          private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
-
-      # A second opinion on what the fetcher just wrote. It already refuses anchoradmin,
-      # verifies every digest, and fails rather than falling back -- so these three now
-      # assert what should already be true. Kept because this is the last gate before
-      # bytes go to the public, and a check that costs a second is worth more here than
-      # the argument for removing it.
-      #
-      # anchoradmin can mint realm roots. Shipping it inside conflux would hand that
-      # to every user, so its absence is checked rather than assumed.
-      - name: no anchoradmin is ever shipped
-        run: |
-          if ls anchor/bin/anchoradmin* >/dev/null 2>&1; then
-            echo "::error::anchor/bin contains anchoradmin, which must never be embedded"
-            exit 1
-          fi
-
-      - name: the anchor binaries are present and real
-        run: |
-          if [ ! -d anchor/bin ] || [ -z "$(ls -A anchor/bin 2>/dev/null)" ]; then
-            echo "::error::anchor/bin is empty. The binaries are not in git; a release"
-            echo "::error::runner needs a source for them. See docs/build.md."
-            exit 1
-          fi
-          for f in anchor/bin/*; do
-            sz=$(stat -c%s "$f")
-            if [ "$sz" -lt 5000000 ]; then
-              echo "::error::$f is $sz bytes -- a placeholder, not a binary"
-              exit 1
-            fi
-          done
-
-      - name: the embedded pair is complete
-        run: |
-          missing=0
-          for t in linux-amd64 linux-arm64 darwin-arm64 freebsd-amd64 openbsd-amd64; do
-            for p in anchord anchorctl; do
-              [ -f "anchor/bin/$p-$t" ] || { echo "::error::missing anchor/bin/$p-$t"; missing=1; }
-            done
-          done
-          for t in windows-amd64 windows-arm64; do
-            for p in anchord anchorctl; do
-              [ -f "anchor/bin/$p-$t.exe" ] || { echo "::error::missing anchor/bin/$p-$t.exe"; missing=1; }
-            done
-          done
-          exit $missing
-
-  build:
-    needs: [gate, verify]
-    runs-on: [self-hosted, linux]
-
-    # The only job that writes. contents to create the release, the other two for the
+    # The only job that writes: contents to create the release, the other two for the
     # build-provenance attestation.
     permissions:
       contents: write
@@ -195,25 +44,36 @@ jobs:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
 
-      # Again, because a job is a fresh checkout and anchor/bin is not in git. The
-      # fetcher pins nothing of its own -- it takes what the shelf serves now -- so a
-      # release carries whatever anchor published most recently, which is the intent:
-      # conflux ships the newest anchor, not a remembered one.
+      # The shelf moves, so a release carries whatever anchor published most recently,
+      # which is the intent: conflux ships the newest anchor, not a remembered one.
       - uses: ./.github/actions/anchor-bins
         with:
           app-id: ${{ secrets.ANCHOR_APP_ID }}
           private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
 
-      # All seven targets, not just this runner's: linux amd64 and arm64, darwin arm64,
-      # windows amd64 and arm64, freebsd and openbsd. CGO_ENABLED=0 throughout, so one
-      # Linux machine cross-builds every one of them.
-      # No VERSION= override. The Makefile reads the VERSION file, which is what the gate
-      # above read to decide there was anything to build -- so the number in the binary and
-      # the number on the release cannot disagree. Passing github.ref_name here would set
-      # it to the branch name now that this runs on a merge rather than a tag.
+      # The tag is the VERSION file, verbatim: nothing is prepended, and the same string
+      # is stamped into the binary. GitHub leaves an existing tag where it was cut, so a
+      # tag behind the commit being built is said on every run rather than left to be
+      # discovered from a `conflux version` naming a commit the tag does not reach.
+      - name: what version does this tree claim?
+        id: version
+        run: |
+          set -euo pipefail
+          [ -s VERSION ] || { echo "::error::VERSION is missing or empty" >&2; exit 1; }
+          tag=$(tr -d '[:space:]' < VERSION)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          at=$(git ls-remote origin "refs/tags/$tag" | cut -f1)
+          if [ -z "$at" ]; then
+            echo "$tag does not exist yet; it will be created at ${GITHUB_SHA:0:12}"
+          elif [ "$at" != "$GITHUB_SHA" ]; then
+            echo "::warning::$tag stays at ${at:0:12}; these artifacts are built from ${GITHUB_SHA:0:12}"
+          fi
+
+      # All seven targets, CGO_ENABLED=0 throughout, so one Linux machine cross-builds
+      # every one of them. The Makefile reads the VERSION file itself.
       - run: make dist
 
-      - uses: actions/attest-build-provenance@v1
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/conflux-*
 
@@ -223,24 +83,21 @@ jobs:
             echo
             echo '## What is inside'
             echo
+            # shellcheck disable=SC2016 # Markdown backticks, not a command substitution
             echo 'Each binary carries the anchor pair for its own platform. Verify what you have with `conflux version`:'
             echo
             echo '```'
-            go run . version
+            ./dist/conflux-linux-amd64 version
             echo '```'
             echo
-            echo "Windows TUN mode additionally needs wintun.dll, which conflux downloads and verifies on first use:"
+            echo "Windows TUN mode additionally needs wintun.dll, which conflux downloads and verifies when it is first needed:"
             grep -E 'Version|ZipSHA256' internal/wintun/pinned.go | sed 's/^\s*/  /'
           } > notes.md
 
-      # The tag is created here, at this commit, from the version the tree claims. That
-      # ordering is the point: the tag marks a commit that has already passed the whole of
-      # ci.yml and produced these seven binaries, rather than being a promise made before
-      # any of it ran.
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ needs.gate.outputs.tag }}
-          name: ${{ needs.gate.outputs.tag }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
           target_commitish: ${{ github.sha }}
           files: |
             dist/conflux-*

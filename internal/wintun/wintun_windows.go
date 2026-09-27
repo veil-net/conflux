@@ -40,7 +40,7 @@ func Ensure(ctx context.Context, d paths.Dirs) error {
 	dir := filepath.Join(d.Libexec(), anchor.SetID())
 	target := filepath.Join(dir, DLLName)
 
-	if ok, _ := present(target); ok {
+	if present(target) {
 		return nil
 	}
 
@@ -69,15 +69,13 @@ func Ensure(ctx context.Context, d paths.Dirs) error {
 	return nil
 }
 
-func present(path string) (bool, error) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return false, err
-	}
+// present reports whether the DLL conflux placed is there. Not re-hashed on the hot
+// path -- the archive digest is what was verified -- but it must be conflux's: a
+// library another account put here first would be loaded by anchord as SYSTEM.
+func present(path string) bool {
+	fi, err := os.Stat(path)
 
-	// Only a length check on the hot path: the archive digest is what was verified,
-	// and re-hashing the DLL on every start buys nothing once it is in place.
-	return len(b) > 0, nil
+	return err == nil && fi.Size() > 0 && paths.Trusted(path)
 }
 
 func download(ctx context.Context) ([]byte, error) {
@@ -156,6 +154,6 @@ func offline(target string, cause error) error {
 			"  Download wintun-%s.zip from https://www.wintun.net and put\n"+
 			"  bin\\%s\\wintun.dll at:\n"+
 			"    %s\n\n"+
-			"  Or run \"conflux proxy PORT=BACKEND\", which needs no interface at all.",
+			"  Or run \"conflux proxy PORT=BACKEND\", which needs no interface at all",
 		cause, Version, runtime.GOARCH, target)
 }

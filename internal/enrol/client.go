@@ -310,12 +310,34 @@ type HTTPError struct {
 	Body   string
 }
 
+// Error names the status and what the server said. The API answers a refusal as
+// {"message": ..., "error": ..., "statusCode": ...} -- the message a string, or a list
+// of them when a request fails validation -- so the message is what is shown when there
+// is one, and the body as it came otherwise.
 func (e *HTTPError) Error() string {
-	if e.Body == "" {
-		return fmt.Sprintf("the server answered %d %s", e.Status, http.StatusText(e.Status))
+	status := fmt.Sprintf("the server answered %d %s", e.Status, http.StatusText(e.Status))
+
+	var refusal struct {
+		Message json.RawMessage `json:"message"`
 	}
 
-	return fmt.Sprintf("the server answered %d %s: %s", e.Status, http.StatusText(e.Status), e.Body)
+	if json.Unmarshal([]byte(e.Body), &refusal) == nil {
+		var one string
+		var many []string
+
+		switch {
+		case json.Unmarshal(refusal.Message, &one) == nil && one != "":
+			return status + ": " + one
+		case json.Unmarshal(refusal.Message, &many) == nil && len(many) > 0:
+			return status + ": " + strings.Join(many, "; ")
+		}
+	}
+
+	if e.Body == "" {
+		return status
+	}
+
+	return status + ": " + e.Body
 }
 
 func checkScheme(raw string) error {

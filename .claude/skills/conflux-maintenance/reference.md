@@ -75,11 +75,11 @@ The concrete facts the workflow relies on. Step 8 of every run keeps this file t
   - `conflux install` leaves the unit `enabled` and `inactive`
   - `conflux uninstall --yes` leaves no unit file and no `/var/lib/conflux`
   It enrols nothing.
-- **`test/integration.sh`:** random taint `cfx-ci-<12 hex>`. Makes three live enrolments. Waits poll each second and print how long they took. Stages:
+- **`test/integration.sh`:** random taint `cfx-ci-<12 hex>`. Makes three live enrolments. Waits poll each second and print how long they took. A and B get `--peers 192.0.2.1:4700` (RFC 5737; never answers): anchor probes the link only until its first connection and the live realm answers at once, so without it they would meet through the realm and the link would prove nothing. Stages:
   1. `cfx-a up --ipv4 10.128.0.1/24`: `anchorId` in `state.json`, `manifest.b64` is `0600`, `/run/conflux` is `0700`, and a second `up` keeps the identity.
-  2. `cfx-b` (`10.128.0.2/24`): v4 pings both ways, plus a v6 ping.
-  3. `anchor_lan_peers_found_total` (labelled per interface; summed) is above 0 on A.
-  4. `cfx-c --lan-discovery no`: the counter stays 0 while C serves `anchor_` metrics. This is the control; whether C reaches the realm is reported, not asserted.
+  2. `cfx-b` (`10.128.0.2/24`): reachable both ways (waited for), v4 pings both ways, plus a v6 ping.
+  3. `anchor_lan_peers_found_total` (labelled per interface; summed) is above 0 on A or B.
+  4. `cfx-c`: enrolled from `POST /ghosts/alpha` fetched on the host and piped to `conflux enrol --manifest -`; `up --lan-discovery no` with no `--peers` must not enrol again, must reach the realm through the manifest's bootstrap list (`anchor_connections` > 0), and its discovery counter stays 0.
   5. Reboot A: same identity.
   6. B `down`: keeps the registration, config and identity, and drops `anchor0`. `start` restores it. `down` then reboot restores it.
   7. `uninstall` removes everything.
@@ -191,7 +191,7 @@ EOF
 - `POST /ghosts/alpha`: no body, no auth. Returns `201 {"credentials": "<base64 anchor manifest>"}` (`GhostCredentialsResponseDto`). The credential lasts seven days, nothing is stored server-side, and the response is the only copy.
 - `POST /ghosts/alpha/renew`: body `{"anchorId": "anchor…"}` (`RenewGhostCredentialDto`, pattern `^anchor.*`, max 128). Returns `200 {"chain": "<base64>", "notAfter": "<date-time>"}` (`GhostRenewalResponseDto`, no other properties). Unauthenticated; renew on launch and at two thirds of `notAfter`.
 
-The schema documents only success responses. Error shapes come from real behaviour and conflux's `HTTPError` handling.
+The schema documents only success responses. A refusal is NestJS's `{"message": …, "error": …, "statusCode": …}` — the renewal route answers a malformed AnchorID with `400 {"message":"member: id: wrong length: want 58 characters, got 28",…}` — and `enrol.HTTPError` shows the message.
 
 **Enrolment check** (step 2; one call):
 

@@ -100,31 +100,31 @@ All of that is `make integration`, and the two assertions above on their own are
 `make service-test`. Both build the image first, and CI runs the same command a
 developer does.
 
-### Local network discovery, and the control for it
+### Local network discovery, the bootstrap list, and `conflux enrol`
 
 Two containers on one Docker bridge are on the same link, which is the one thing no Go
-test in this tree can arrange: a real kernel, real multicast, a real answer. So
-`make integration` asserts `anchor_lan_peers_found_total` is **non-zero** on a node —
-non-zero and not merely present, because the series is created the first time it is
-written and a grep for the name alone passes on an anchor that never found anything.
+test in this tree can arrange: a real kernel, real multicast, a real answer. anchor
+probes the link only until its first connection, though, and the live realm answers
+within a second — so A and B are started with `--peers 192.0.2.1:4700`, an RFC 5737
+documentation address that never answers, in place of the realm's own list. The only way
+they can meet is then discovery on the bridge: their reachability proves it, and
+`make integration` asserts `anchor_lan_peers_found_total` is **non-zero** on one of them
+— non-zero and not merely present, because the series is created the first time it is
+written. Reachability is waited for in both directions, since each learns the other's
+IPv4 from a signed advertisement and the two need not arrive together.
 
-The third node is the control, and it is why the suite enrols three times. It joins with
-`--lan-discovery no` and names no `--peers` at all, and **its counter must stay at zero**
-on the same link where A's moved. That is what proves the flag reached anchor rather than
-being accepted by conflux and dropped, and it is the only claim here this repository can
-be held to.
+The third node takes the other paths, and it is why the suite enrols three times:
 
-Zero is asserted only after the node is shown to be answering — at least one `anchor_`
-metric. `lan_found` sends stderr to `/dev/null` and its `awk` prints `0` for no input, so
-a node that had died would pass by saying nothing at all, which is the shape of gate this
-repository has been caught by before.
-
-Whether C, naming no `--peers`, still reaches the realm through the manifest's bootstrap
-list is reported and not asserted. C can only be told about a node the bootstrap list
-knows, so it needs A or B to have been announced there, and here the three meet on the
-Docker bridge and nowhere else — C finding nothing is the correct outcome. The day one
-of them does reach the realm, C finding it is the proof that discovery is additive, and
-the run says which happened.
+- **It is enrolled from a live alpha manifest** — fetched on the host and handed to
+  `conflux enrol --manifest -` on stdin — and `up` must start from it without enrolling
+  again. That is the path a commissioned machine takes, and otherwise it would only ever
+  see hand-written fixtures.
+- **It reaches the realm through the manifest's own bootstrap list.** It names no
+  `--peers` and runs `--lan-discovery no`, and A and B reach no realm node themselves,
+  so a connection can only have come from the list the issuer shipped.
+- **Its discovery counter stays at zero** on the link where A and B found each other,
+  which proves `--lan-discovery no` reached anchor rather than being accepted by conflux
+  and dropped.
 
 Note what discovery cannot do, and anchor's own `docs/discovery.md` is the reference:
 the probe is sealed under the realm's **root public key**, which a node only holds after
@@ -232,9 +232,8 @@ meaningless. Anywhere persistent will do.
 Two things worth checking deliberately, because neither is obvious from a passing run:
 
 - **The no-flag path still works.** `conflux up` with no `--peers` must bootstrap from
-  the manifest's own list. If `--peers` ever became load-bearing, every machine that
-  never names one would stop finding the realm, and the test that names one would not
-  notice.
+  the manifest's own list — `make integration` asserts it for its third node, and a dev
+  node named `--peers` is exactly the case that would not notice it breaking.
 - **The realm matches.** The embedded binaries are pinned to a genesis realm ID at
   build time (`-X anchor.pinnedGenesis`, see [build.md](build.md)). A test node minted
   from a different root will enrol fine and then never handshake, because the pin is

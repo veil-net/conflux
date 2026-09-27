@@ -129,6 +129,21 @@ func TestEnrolHTTPErrors(t *testing.T) {
 	}
 }
 
+// TestHTTPErrorSaysWhatTheServerSaid: the API's refusals, as the live renewal route
+// sends them, read as the message rather than as JSON.
+func TestHTTPErrorSaysWhatTheServerSaid(t *testing.T) {
+	for body, want := range map[string]string{
+		`{"message":"member: id: wrong length: want 58 characters, got 28","error":"Bad Request","statusCode":400}`: "the server answered 400 Bad Request: member: id: wrong length: want 58 characters, got 28",
+		`{"message":["anchorId must start with \"anchor\""],"error":"Bad Request","statusCode":400}`:                `the server answered 400 Bad Request: anchorId must start with "anchor"`,
+		`upstream timed out`: "the server answered 400 Bad Request: upstream timed out",
+		``:                   "the server answered 400 Bad Request",
+	} {
+		if got := (&HTTPError{Status: 400, Body: body}).Error(); got != want {
+			t.Errorf("HTTPError{%q}.Error() = %q, want %q", body, got, want)
+		}
+	}
+}
+
 // TestBodyIsBounded: a server that answers with a gigabyte must not be able to
 // make conflux hold it.
 func TestBodyIsBounded(t *testing.T) {

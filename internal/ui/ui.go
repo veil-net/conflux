@@ -28,10 +28,9 @@ func Errf(format string, a ...any) {
 	fmt.Fprintf(Errw, "conflux: "+strings.TrimSuffix(format, "\n")+"\n", a...)
 }
 
-// Warnf is for something that is worth saying and is not fatal.
-func Warnf(format string, a ...any) {
-	fmt.Fprintf(Errw, "conflux: "+strings.TrimSuffix(format, "\n")+"\n", a...)
-}
+// Warnf is for something that is worth saying and is not fatal. It reads the same as
+// an error, and says so in its words rather than its prefix.
+func Warnf(format string, a ...any) { Errf(format, a...) }
 
 // Field prints one aligned "key  value" row, the shape anchorctl's own status uses.
 func Field(key, value string) { fmt.Fprintf(Out, "  %-12s %s\n", key, value) }
@@ -61,14 +60,23 @@ func IsTerminal() bool {
 	return ok && isTerminal(f.Fd())
 }
 
+// reader buffers In, one reader per source: a reader made per question would buffer
+// past the line it wanted, and the next question would lose what it read ahead.
+var reader struct {
+	src io.Reader
+	buf *bufio.Reader
+}
+
 // Ask prints a prompt and reads one line. Returns io.EOF when input ends, which is
 // what a caller uses to stop re-prompting rather than looping forever.
 func Ask(prompt string) (string, error) {
 	fmt.Fprint(Out, prompt)
 
-	r := bufio.NewReader(In)
+	if reader.src != In {
+		reader.src, reader.buf = In, bufio.NewReader(In)
+	}
 
-	line, err := r.ReadString('\n')
+	line, err := reader.buf.ReadString('\n')
 	if err != nil && line == "" {
 		return "", err
 	}

@@ -72,15 +72,20 @@ $ make anchor-bins FETCH=1
 anchor-fetch: shelf:   veil-net/anchor @ shelf
 anchor-fetch: commit:  844c80579f6b390fb552f8258a0477f97959cf0a
 anchor-fetch: realm:   realmtglwuedqqa33e364nv73p46jk3kwi67lxjmnntz2mv3mb3mklasq
-anchor-fetch:   ok   anchord-linux-amd64           28.6 MB  3552c4c1d573
+anchor-fetch:   ok   anchord-linux-amd64           29.5 MB  3552c4c1d573  fetched
   …
-anchor-fetch: 14/14 fetched, digests verified
+anchor-fetch: 14/14 in place, digests verified
 ```
 
 The `commit:` line is the whole of what "which anchor is this" means here. There is no
 anchor version string anywhere — `conflux version` names the pair by SHA-256 and nothing
 else — so that line, and the digests the fetcher prints beside each file, are the only
 way to say which anchor a given conflux carries.
+
+A file already in place whose SHA-256 is the one the manifest gives is kept and marked
+`cached` rather than downloaded again; one that differs is replaced. So a directory that
+survives between fetches costs a read instead of a download, and cannot hand back
+anything the manifest does not describe.
 
 The tag is fixed and moves: `shelf` always names anchor's newest release build, which is
 the intent — conflux ships the newest anchor, not a remembered one. Fetched by tag rather
@@ -157,13 +162,10 @@ need only the two files their own build tag names, so fetching all fourteen ther
 move 284 MB to compile 43. Once per-target narrowing exists, the default is one line to
 flip.
 
-**There is no URL anywhere.** An earlier version of this fetched a manifest that named a
-download URL per binary, and refused any whose host differed from the manifest's — because
-a document conflux had just downloaded was deciding where conflux would fetch from next.
-Nothing reads a URL out of a document now: every request is built from `internal/shelf`'s
-own constants, and binaries are resolved by asset **name** within one release. The set of
-places a fetch can reach is fixed by conflux's configuration rather than by anything on
-the wire, which is the stronger form of the same property.
+**There is no URL anywhere.** Nothing reads a URL out of a document: every request is
+built from `internal/shelf`'s own constants, and binaries are resolved by asset **name**
+within one release. The set of places a fetch can reach is fixed by conflux's
+configuration rather than by anything on the wire.
 
 ### A clone with no anchor checkout
 

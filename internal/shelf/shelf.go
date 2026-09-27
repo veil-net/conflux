@@ -1,8 +1,7 @@
 // Package shelf fetches the anchor binaries from a release of the anchor repository.
 //
-// The binaries are not in git -- fourteen release builds are about 284 MB -- and without
-// a source for them CI ran on placeholders and eight tests skipped on every machine but
-// a developer's.
+// The binaries are not in git -- fourteen release builds are about 300 MB -- so a machine
+// with no anchor checkout, which is every CI runner, fetches them from here.
 //
 // What is fetched is the *pinned* build. An anchor pinned to the genesis realm refuses to
 // handshake with any other tree, which is the property worth having and the one a local
@@ -20,17 +19,12 @@
 // fork pull requests outright, so the token is not reachable by anyone who does not
 // already have write access to conflux.
 //
-// # What replaced the same-host rule
-//
-// An earlier version of this fetched a manifest that named a download URL per binary, and
-// refused any URL whose host differed from the manifest's. That rule existed because a
-// document conflux had just downloaded was deciding where conflux would fetch from next.
+// # Where a fetch can reach
 //
 // Nothing here reads a URL out of a document. Every request is built from this package's
 // own constants -- one API host, one repository, one tag -- and binaries are resolved by
-// *asset name* within that single release. The set of places a fetch can reach is fixed by
-// conflux's configuration rather than by anything on the wire, which is the stronger form
-// of the same property.
+// *asset name* within that single release, so the set of places a fetch can reach is fixed
+// by conflux's configuration rather than by anything on the wire.
 package shelf
 
 import (
@@ -115,8 +109,8 @@ func (s Source) withDefaults() Source {
 
 // Binary is one entry in the manifest.
 //
-// No URL. The name is what locates the file, as an asset of the release being read --
-// see the package comment on what that replaced and why it is the stronger rule.
+// No URL. The name is what locates the file, as an asset of the release being read; see
+// the package comment.
 type Binary struct {
 	Name    string `json:"name"`
 	Program string `json:"program"`
@@ -244,15 +238,44 @@ func Fetch(ctx context.Context, src Source, want []string, dir string, log func(
 
 	for _, name := range want {
 		b := byName[name]
+		dest := filepath.Join(dir, name)
 
-		if err := download(ctx, src, assets[name], b, filepath.Join(dir, name)); err != nil {
-			return fmt.Errorf("%s: %w", name, err)
+		// A file already there with the digest the manifest gives is this binary, and
+		// is kept: a directory that survives between fetches -- a persistent runner's
+		// cache -- then costs a read rather than a download. Anything else is fetched.
+		how := "cached"
+		if !matches(dest, b) {
+			how = "fetched"
+
+			if err := download(ctx, src, assets[name], b, dest); err != nil {
+				return fmt.Errorf("%s: %w", name, err)
+			}
 		}
 
-		log("  ok   %-28s %5.1f MB  %s", name, float64(b.Bytes)/(1<<20), b.SHA256[:12])
+		log("  ok   %-28s %5.1f MB  %s  %s", name, float64(b.Bytes)/(1<<20), b.SHA256[:12], how)
 	}
 
 	return nil
+}
+
+// matches reports whether path already holds exactly the binary b describes.
+func matches(path string, b Binary) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	if fi, err := f.Stat(); err != nil || (b.Bytes != 0 && fi.Size() != b.Bytes) {
+		return false
+	}
+
+	sum := sha256.New()
+	if _, err := io.Copy(sum, f); err != nil {
+		return false
+	}
+
+	return strings.EqualFold(hex.EncodeToString(sum.Sum(nil)), b.SHA256)
 }
 
 // lookup reads the release at the configured tag.
@@ -389,7 +412,7 @@ func do(ctx context.Context, src Source, u, accept string) (*http.Response, erro
 	req.Header.Set("Accept", accept)
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
-	return client().Do(req)
+	return httpClient.Do(req)
 }
 
 // statusErr turns the codes this actually meets into the sentence somebody can act on.
@@ -422,31 +445,26 @@ func statusErr(resp *http.Response, src Source) error {
 	}
 }
 
-func client() *http.Client {
-	return &http.Client{
-		// An asset download answers with a redirect to storage on another host, so
-		// unlike the manifest-and-URL scheme this replaced, a cross-host hop is
-		// expected and cannot be refused outright.
-		//
-		// Two things make that safe. Go drops the Authorization header on a redirect
-		// to a different host, so the token never reaches the storage host. And the
-		// digest is checked against a manifest fetched from the API, so content
-		// substituted anywhere along the way fails the compare.
-		//
-		// What is still refused is a downgrade: a redirect to plain http, which would
-		// hand the bytes to anyone on the path.
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if err := checkScheme(req.URL.String()); err != nil {
-				return err
-			}
+// httpClient is every request's. An asset download answers with a redirect to storage
+// on another host, so a cross-host hop is expected and cannot be refused outright.
+//
+// Two things make that safe. Go drops the Authorization header on a redirect to a
+// different host, so the token never reaches the storage host. And the digest is checked
+// against a manifest fetched from the API, so content substituted anywhere along the way
+// fails the compare. What is still refused is a downgrade: a redirect to plain http,
+// which would hand the bytes to anyone on the path.
+var httpClient = &http.Client{
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if err := checkScheme(req.URL.String()); err != nil {
+			return err
+		}
 
-			if len(via) >= 5 {
-				return errors.New("too many redirects")
-			}
+		if len(via) >= 5 {
+			return errors.New("too many redirects")
+		}
 
-			return nil
-		},
-	}
+		return nil
+	},
 }
 
 func checkScheme(raw string) error {

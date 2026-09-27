@@ -5,6 +5,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/veil-net/conflux/internal/paths"
 )
 
 // WriteFileAtomic replaces path with data, or leaves what was there.
@@ -41,10 +43,10 @@ func WriteFileAtomic(path string, data []byte, perm fs.FileMode) (err error) {
 		return fmt.Errorf("chmod %s: %w", tmpName, err)
 	}
 
-	// On Windows the chmod above is a no-op. Restrict by DACL instead, and do it
-	// while the file is still empty and unnamed.
+	// On Windows the chmod above is a no-op. Restrict by ownership and DACL instead,
+	// and do it while the file is still empty and unnamed.
 	if perm&0o077 == 0 {
-		if err = restrictToAdmins(tmpName); err != nil {
+		if err = paths.Restrict(tmpName, false); err != nil {
 			return fmt.Errorf("restrict %s: %w", tmpName, err)
 		}
 	}

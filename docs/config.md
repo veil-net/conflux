@@ -231,9 +231,10 @@ then chmod'ing leaves a window at the umask's mode, and on a shared machine that
 window is the whole vulnerability.
 
 **On Windows, `0600` is a no-op.** A Go program that calls `Chmod(0600)` there has
-changed only the read-only bit, and `%ProgramData%` grants `Users` read by default. So
-conflux replaces the DACL outright on secret files — SYSTEM and Administrators, full
-control, inheritance off — before writing anything into them.
+changed only the read-only bit, and `%ProgramData%` lets `Users` read and create beneath
+it. So conflux gives `%ProgramData%\conflux` to SYSTEM and Administrators — owner and a
+protected DACL, inherited below — and does the same to each secret file before writing
+into it. See [windows.md](windows.md#file-permissions).
 
 ## What survives what
 

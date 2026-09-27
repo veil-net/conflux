@@ -102,18 +102,22 @@ func Ensure(d paths.Dirs) (*Tools, error) {
 // complete reports whether the directory holds a finished extraction of exactly
 // this pair. The sizes are checked as well as the marker, because a truncated write
 // that still managed to place the marker is the one failure a marker alone misses.
+//
+// And on Windows, that conflux wrote them: a set directory is named for content
+// anybody can compute, and one another account made first, marker and sizes and all,
+// would otherwise be run as SYSTEM. One that fails any of this is extracted again.
 func (t *Tools) complete() bool {
 	if _, err := os.Stat(filepath.Join(t.Dir, completeMarker)); err != nil {
 		return false
 	}
 
-	return hasSize(t.Anchord, len(anchor.Anchord())) && hasSize(t.Anchorctl, len(anchor.Anchorctl()))
+	return ours(t.Anchord, len(anchor.Anchord())) && ours(t.Anchorctl, len(anchor.Anchorctl()))
 }
 
-func hasSize(path string, want int) bool {
+func ours(path string, size int) bool {
 	fi, err := os.Stat(path)
 
-	return err == nil && fi.Size() == int64(want)
+	return err == nil && fi.Size() == int64(size) && paths.Trusted(path)
 }
 
 func extract(root, target string, t *Tools) error {
@@ -123,6 +127,10 @@ func extract(root, target string, t *Tools) error {
 	}
 
 	defer os.RemoveAll(staging) // no-op once the rename has moved it
+
+	if err := paths.Restrict(staging, true); err != nil {
+		return fmt.Errorf("restrict %s: %w", staging, err)
+	}
 
 	for name, content := range map[string][]byte{
 		exeName("anchord"):   anchor.Anchord(),
@@ -192,6 +200,10 @@ func writeExecutable(path string, content []byte) error {
 
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("close %s: %w", path, err)
+	}
+
+	if err := paths.Restrict(path, false); err != nil {
+		return fmt.Errorf("restrict %s: %w", path, err)
 	}
 
 	// macOS marks files written by a quarantined process, and an inherited

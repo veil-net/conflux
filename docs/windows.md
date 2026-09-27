@@ -80,10 +80,18 @@ protection as the likely cause rather than reporting a bare permission error.
 ## File permissions
 
 Mode bits do not exist on Windows in the sense Go's `Chmod` implies — a call to
-`Chmod(0600)` sets the read-only attribute and nothing else — and `%ProgramData%`
-grants `Users` read by default. conflux therefore replaces the DACL outright on the
-identity file: SYSTEM and Administrators, full control, inheritance off, so the
-parent's grant cannot come back.
+`Chmod(0600)` sets the read-only attribute and nothing else — and `%ProgramData%` lets
+`Users` read everything below it and create files and folders in it. So conflux makes
+`%ProgramData%\conflux` belong to SYSTEM and Administrators instead: Administrators own
+it, and a protected DACL grants the two of them full control and nobody else anything,
+inherited by everything beneath. Every secret file gets the same, explicitly, before
+anything is written into it.
+
+A root some other account created is refused rather than taken over: whoever made it
+could have filled it first. And the two binaries the service runs as SYSTEM, and
+`wintun.dll` beside them, are run only if Administrators, SYSTEM or the account running
+conflux owns them — a set directory is named for content anybody can compute, so one
+made by somebody else is extracted again rather than trusted.
 
 ## The service
 

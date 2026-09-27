@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Dirs are the four roots. Get one from Default.
@@ -135,9 +136,13 @@ func (d Dirs) ReadyFile() string { return filepath.Join(d.Run, "ready") }
 //
 // 0700 throughout, including Config: it sits beside nothing that another user has
 // any business reading, and a 0600 file in a traversable directory is one rename
-// away from being replaced.
+// away from being replaced. On Windows, where a mode means nothing, each root that is
+// not inside another is made SYSTEM's and Administrators' instead, and what is created
+// beneath it inherits that.
 func (d Dirs) EnsureAll() error {
-	for _, dir := range []string{d.Config, d.State, d.Run, d.Log} {
+	dirs := []string{d.Config, d.State, d.Run, d.Log}
+
+	for _, dir := range dirs {
 		if dir == "" {
 			continue
 		}
@@ -145,9 +150,30 @@ func (d Dirs) EnsureAll() error {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return fmt.Errorf("create %s: %w", dir, err)
 		}
+
+		if !within(dir, dirs) {
+			if err := secure(dir); err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil
+}
+
+// within reports whether dir sits strictly inside another of dirs.
+func within(dir string, dirs []string) bool {
+	for _, other := range dirs {
+		if other == "" || other == dir {
+			continue
+		}
+
+		if rel, err := filepath.Rel(other, dir); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+			return true
+		}
+	}
+
+	return false
 }
 
 // CheckSocketLen refuses a run directory that would produce a socket path the

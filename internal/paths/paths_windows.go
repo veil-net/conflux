@@ -8,20 +8,18 @@ import (
 )
 
 const (
-	// A named pipe, not a Unix socket: Windows has AF_UNIX but anchord's control
-	// listener uses a pipe there, and a pipe name is not a filesystem path.
+	// An AF_UNIX socket, as everywhere else: anchord listens on one on Windows too.
 	socketName = "anchord.sock"
 
-	// Not a real limit on Windows; kept so CheckSocketLen compiles and stays
-	// harmlessly true. MAX_PATH is the practical bound and 260 is generous here.
-	sockPathMax = 260
+	// sizeof(sockaddr_un.sun_path) on Windows, and the limit anchord refuses past.
+	sockPathMax = 108
 )
 
 // platformDirs uses %ProgramData%, the machine-wide counterpart to %AppData%.
 //
-// Note that mode bits mean nothing here: %ProgramData% grants Users read by
-// default, so the 0700 and 0600 elsewhere in conflux are no-ops on Windows and the
-// protection comes from an explicit DACL set when the secret is written.
+// Mode bits mean nothing here -- %ProgramData% grants Users read and create by default
+// -- so the protection comes from the ownership and DACL EnsureAll gives the root and
+// everything beneath it inherits; see acl_windows.go.
 func platformDirs() Dirs {
 	root := os.Getenv("ProgramData")
 	if root == "" {

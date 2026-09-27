@@ -69,7 +69,7 @@ func TestEnsureExtractsAndRuns(t *testing.T) {
 
 // TestEnsureIsIdempotent asserts the hot path does no work. Every conflux
 // invocation calls Ensure, including a bare pass-through, so a second call that
-// rewrote 43 MB would make the CLI feel broken.
+// rewrote the pair would make the CLI feel broken.
 func TestEnsureIsIdempotent(t *testing.T) {
 	if !anchor.Supported {
 		t.Skip("no anchor pair for this platform")
@@ -112,10 +112,6 @@ func TestEnsureIsIdempotent(t *testing.T) {
 func TestEnsureIsConcurrencySafe(t *testing.T) {
 	if !anchor.Supported {
 		t.Skip("no anchor pair for this platform")
-	}
-
-	if testing.Short() {
-		t.Skip("extracts 43 MB")
 	}
 
 	d := dirs(t)

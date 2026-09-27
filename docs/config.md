@@ -199,14 +199,16 @@ headers, which are credentials.
 ## `bin/<setID>/` — the extracted anchor pair
 
 `anchord` and `anchorctl`, extracted from the conflux binary, in a directory named for
-the SHA-256 of their contents.
+their contents: a CRC-32C and the length of each, which tells one build's pair from
+another's without spending a quarter of a second on SHA-256 at every invocation.
+`conflux version` prints the SHA-256s.
 
 Content-addressed rather than a fixed path, and that one decision removes four
 problems at once. An upgraded conflux writes a *new* directory instead of over the file
 a running anchord has open, so there is no `ETXTBSY` on Unix and no sharing violation
 on Windows. Two conflux processes racing agree on the path. A stale set is
-identifiable and sweepable. And "is it already extracted" is a stat rather than a hash
-of forty megabytes on every invocation.
+identifiable and sweepable. And "is it already extracted" is three stats rather than a
+read of forty-odd megabytes.
 
 Old sets are swept after 24 hours. `conflux uninstall` removes the tree.
 

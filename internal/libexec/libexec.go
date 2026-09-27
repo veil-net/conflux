@@ -1,18 +1,18 @@
 // Package libexec puts the embedded anchor pair on disk so it can be run.
 //
-// The directory is content-addressed: <state>/bin/<setID>/, where setID hashes both
+// The directory is content-addressed: <state>/bin/<setID>/, where setID names both
 // binaries and the platform. That one decision removes four separate problems at
 // once. An upgraded conflux writes a new directory instead of over the file a
 // running anchord has open, so there is no ETXTBSY on Unix and no sharing violation
 // on Windows. Two conflux processes racing produce the same path. A stale set is
 // identifiable and sweepable. And "is it already extracted" is a stat rather than a
-// hash of forty megabytes on every invocation.
+// read of forty megabytes on every invocation.
 //
-// It is emphatically not os.TempDir(). The previous conflux wrote /tmp/anchor, which
-// fails four ways for a service: systemd's PrivateTmp= gives the service a different
-// /tmp than the CLI, so each extracts a copy the other cannot see; /tmp is noexec on
-// hardened hosts; systemd-tmpfiles deletes it under a running daemon; and a
-// LocalSystem service's %TEMP% is C:\Windows\Temp.
+// It is emphatically not os.TempDir(), which fails four ways for a service: systemd's
+// PrivateTmp= gives the service a different /tmp than the CLI, so each extracts a
+// copy the other cannot see; /tmp is noexec on hardened hosts; systemd-tmpfiles
+// deletes it under a running daemon; and a LocalSystem service's %TEMP% is
+// C:\Windows\Temp.
 package libexec
 
 import (
@@ -66,7 +66,7 @@ func Ensure(d paths.Dirs) (*Tools, error) {
 	}
 
 	// The hot path: every conflux invocation reaches here, including a bare
-	// pass-through, so it must not hash 43 MB.
+	// pass-through, so it is three stats and nothing more.
 	if t.complete() {
 		return t, nil
 	}
@@ -107,17 +107,13 @@ func (t *Tools) complete() bool {
 		return false
 	}
 
-	for path, want := range map[string]int{
-		t.Anchord:   len(anchor.Anchord()),
-		t.Anchorctl: len(anchor.Anchorctl()),
-	} {
-		fi, err := os.Stat(path)
-		if err != nil || fi.Size() != int64(want) {
-			return false
-		}
-	}
+	return hasSize(t.Anchord, len(anchor.Anchord())) && hasSize(t.Anchorctl, len(anchor.Anchorctl()))
+}
 
-	return true
+func hasSize(path string, want int) bool {
+	fi, err := os.Stat(path)
+
+	return err == nil && fi.Size() == int64(want)
 }
 
 func extract(root, target string, t *Tools) error {
@@ -127,10 +123,6 @@ func extract(root, target string, t *Tools) error {
 	}
 
 	defer os.RemoveAll(staging) // no-op once the rename has moved it
-
-	if err := os.Chmod(staging, 0o700); err != nil {
-		return fmt.Errorf("chmod %s: %w", staging, err)
-	}
 
 	for name, content := range map[string][]byte{
 		exeName("anchord"):   anchor.Anchord(),

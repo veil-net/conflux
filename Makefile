@@ -26,7 +26,7 @@ LDFLAGS := -s -w \
 TARGETS := linux/amd64 linux/arm64 darwin/arm64 \
            windows/amd64 windows/arm64 freebsd/amd64 openbsd/amd64
 
-# The size gate. One anchor pair is about 43 MB, so a conflux outside this range is
+# The size gate. One anchor pair is about 45 MB, so a conflux outside this range is
 # either missing its binaries or -- far more likely -- embedded all fourteen because
 # somebody wrote //go:embed bin instead of naming the two files.
 MIN_MB := 30
@@ -154,7 +154,7 @@ dist:
 		fi; \
 		if [ $$mb -gt $(MAX_MB) ]; then \
 			echo "  FAIL $$out is $${mb} MB, over $(MAX_MB) MB"; \
-			echo "       one anchor pair is ~43 MB; check that anchor/*.go names two files and not the directory"; \
+			echo "       one anchor pair is ~45 MB; check that anchor/*.go names two files and not the directory"; \
 			exit 1; \
 		fi; \
 		echo "  ok   $$out  $${mb} MB"; \

@@ -52,14 +52,13 @@ unsigned one needs the line above.
 ## Windows
 
 Run PowerShell as Administrator. TUN mode additionally needs `wintun.dll`, which
-conflux downloads and verifies on the first `conflux up` — see
+conflux downloads and verifies when it is first needed — see
 [windows.md](windows.md). `conflux proxy` needs no driver at all.
 
 ## FreeBSD and OpenBSD
 
-`up`, `proxy`, `down`, `status` and pass-through all work. There is no boot-service
-integration; `conflux install` says so and names `conflux serve` as the command to
-register with your init system. See [service.md](service.md).
+Everything works as on Linux, and the boot service is an rc script: `sysrc`-enabled
+under `daemon(8)` on FreeBSD, `rcctl`-enabled on OpenBSD. See [service.md](service.md).
 
 ## Upgrading in place
 

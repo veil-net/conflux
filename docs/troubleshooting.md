@@ -103,31 +103,16 @@ nothing back. That combination is not a peering problem at all — the control p
 over UDP on the host's own interface and is in perfect health. It is the host's routing
 table: nothing sends overlay addresses to the overlay interface.
 
-**On macOS and the BSDs, on conflux builds before this fix, that is the expected
-behaviour for an overlay IPv4.** A `utun` is a point-to-point interface, and assigning an
-address to one installs a *host* route rather than a route for the prefix — so
-`10.128.0.1/24` routes `10.128.0.1` to the machine itself and routes `10.128.0.0/24`
-nowhere. Packets to `10.128.0.2` match the default route and leave by Wi-Fi. Linux and
-Windows create the route on assignment, which is why this shows up on one platform.
-
-Check it:
+Check that the overlay networks route to the anchor's interface:
 
 ```console
-$ netstat -rn -f inet | grep utun
+$ netstat -rn -f inet | grep utun      # macOS; ip route on Linux, route print on Windows
 $ netstat -rn -f inet6 | grep utun
 ```
 
-If the only `utun` line is a `/32` of this machine's own overlay address, and there is no
-line for the overlay network, that is the fault. Add it by hand — substitute your own
-prefix and the `utun` number `conflux status` reports:
-
-```console
-$ sudo route -n add -inet 10.128.0.0/24 -interface utun4
-```
-
-The anchor installs this itself now, on every BSD and for both families. IPv6 was never
-affected on macOS, which routes an on-link prefix shorter than `/128` regardless of the
-interface being point-to-point.
+anchor installs a route for each network it reaches, on every platform and for both
+families, so an overlay network routed anywhere else — out of Wi-Fi by the default
+route — is anchor's to fix, and worth reporting there with that output attached.
 
 ## The extracted binaries will not run
 
@@ -196,8 +181,10 @@ rather than looping: a configuration or a manifest conflux refuses, a credential
 realm tree other than the one these binaries are pinned to, and a TUN the host will
 not give (no capability or device, or the name held by another interface).
 
-Where the logs are: `journalctl -u conflux -n 50` on Linux,
-`/var/log/conflux.log` on macOS, Event Viewer → Windows Logs → Application on Windows.
+Where the logs are: `journalctl -u conflux -n 50` on Linux, `/var/log/conflux.log` on
+macOS and FreeBSD, `/var/log/daemon` on OpenBSD, and
+`%ProgramData%\conflux\logs\conflux.log` on Windows. A start that times out names the
+right one for the machine.
 
 ## Renewal is failing
 

@@ -277,7 +277,7 @@ boot service runs as root, and a path under `$HOME` is a path it can't read. See
 | [uplink.md](docs/uplink.md) | Running over a link instead of a host IP network: the device forms, the line speeds, the limits. |
 | [commands.md](docs/commands.md) | Every command, every flag, what reaches anchorctl, and the exit codes. |
 | [config.md](docs/config.md) | The configuration file, the manifest, file modes, and the layout on each OS. |
-| [service.md](docs/service.md) | The boot service: systemd, launchd, the Windows service, and the two BSDs that get none. |
+| [service.md](docs/service.md) | The boot service: systemd, launchd, rc on the BSDs, and the Windows service. |
 | [credentials.md](docs/credentials.md) | The two issuers, enrolment, the window, renewal, and what "the only copy" means. |
 | [windows.md](docs/windows.md) | `wintun.dll`, why it is not embedded, the pinned digest, and Defender. |
 | [security.md](docs/security.md) | What conflux adds to anchor's threat model: an executable on disk and a key in a file. |

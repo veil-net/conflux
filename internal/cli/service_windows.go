@@ -4,20 +4,35 @@ package cli
 
 import (
 	"context"
+	"os"
 	"time"
 
 	"golang.org/x/sys/windows/svc"
 
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/service"
+	"github.com/veil-net/conflux/internal/ui"
 )
 
 // serveAsService hands over to the service control manager when conflux was started
 // by it, and reports false when it was started from a console.
+//
+// A service has no console to write to, so what the supervisor and anchord say goes
+// to the log file instead, where `conflux up` points when a start fails.
 func serveAsService(sup *daemon.Supervisor) (bool, int) {
 	isService, err := svc.IsWindowsService()
 	if err != nil || !isService {
 		return false, 0
+	}
+
+	if err := sup.Dirs.EnsureAll(); err != nil {
+		return true, ExitChildFailed
+	}
+
+	if f, err := os.OpenFile(sup.Dirs.LogFile(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
+		defer f.Close()
+
+		ui.Out, ui.Errw = f, f
 	}
 
 	h := &handler{sup: sup}

@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"runtime"
 	"strings"
 	"time"
 
@@ -253,16 +252,11 @@ func joinTaints(t []string) string {
 	return strings.Join(t, ",")
 }
 
-// journalHint names where this platform keeps the supervisor's output.
+// journalHint names where the supervisor's output is.
 func journalHint() string {
-	switch runtime.GOOS {
-	case "linux":
-		return "journalctl -u conflux -n 50"
-	case "darwin":
-		return "tail -n 50 /var/log/conflux.log"
-	case "windows":
-		return "Event Viewer, under Windows Logs > Application, source conflux"
-	default:
-		return "conflux serve --foreground"
+	if mgr, err := service.New(); err == nil {
+		return mgr.LogHint()
 	}
+
+	return "sudo conflux serve --foreground"
 }

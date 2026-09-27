@@ -12,7 +12,8 @@
 //   - Config  what the operator asked for. Survives everything but uninstall.
 //   - State   what conflux derived, plus the identity. Survives a reboot.
 //   - Run     the socket and the token. Recreated on every daemon start.
-//   - Log     where the platform wants logs, on the platforms that want a file.
+//   - Log     where the boot service's output goes, on the platforms where it goes to a
+//     file: empty where the service manager keeps it (journald, syslog).
 package paths
 
 import (
@@ -107,6 +108,15 @@ func (d Dirs) TokenFile() string { return filepath.Join(d.Run, "token") }
 // the supervisor. Two conflux up runs at boot -- the unit and an impatient
 // operator -- is the realistic case.
 func (d Dirs) LockFile() string { return filepath.Join(d.Run, "conflux.lock") }
+
+// LogFile is the boot service's output, or "" where the service manager keeps it.
+func (d Dirs) LogFile() string {
+	if d.Log == "" {
+		return ""
+	}
+
+	return filepath.Join(d.Log, "conflux.log")
+}
 
 // ReadyFile is written by the supervisor once an anchor is up, and removed when it goes.
 //

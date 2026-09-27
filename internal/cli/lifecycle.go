@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -75,12 +74,6 @@ func install(ctx context.Context, d paths.Dirs, standalone bool) int {
 	}
 
 	if err := mgr.Install(exe, serveArgs...); err != nil {
-		if errors.Is(err, service.ErrUnsupported) {
-			ui.Errf("%v", err)
-
-			return ExitError
-		}
-
 		return fail(err)
 	}
 
@@ -324,7 +317,7 @@ func runUninstall(_ context.Context, args []string) int {
 
 	var first error
 
-	if err := mgr.Remove(); err != nil && !errors.Is(err, service.ErrUnsupported) {
+	if err := mgr.Remove(); err != nil {
 		first = err
 	}
 

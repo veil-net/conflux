@@ -9,12 +9,13 @@ import (
 
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
+
+	"github.com/veil-net/conflux/internal/paths"
 )
 
+// The display name has a space in it and the service name does not, deliberately: a
+// name with one makes every sc.exe invocation quoting-sensitive for no benefit.
 const (
-	// ServiceName has no space in it, deliberately. The previous conflux used
-	// "VeilNet Conflux" as the service name as well as the display name, which
-	// makes every sc.exe invocation quoting-sensitive for no benefit.
 	displayName = "VeilNet Conflux"
 	description = "Joins this machine to a VeilNet overlay."
 )
@@ -28,8 +29,6 @@ func newManager() (Manager, error) { return scm{}, nil }
 // A function and not a constant because a run rooted in a CONFLUX_DIR is a separate
 // installation and must not be registered over the machine's own; see scope.
 func ServiceName() string { return "conflux" + scope() }
-
-func (scm) Name() string { return ServiceName() }
 
 func (scm) Install(exe string, args ...string) error {
 	m, err := mgr.Connect()
@@ -59,9 +58,7 @@ func (scm) Install(exe string, args ...string) error {
 		return recovery(existing)
 	}
 
-	// CreateService appends the arguments. The previous conflux omitted them
-	// entirely, so the registered service ran conflux with an empty argv tail and
-	// fell into the help text at every boot.
+	// CreateService appends the arguments -- `serve`, and the root of a CONFLUX_DIR run.
 	s, err := m.CreateService(ServiceName(), exe, cfg, args...)
 	if err != nil {
 		return fmt.Errorf("create the service: %w", err)
@@ -71,8 +68,9 @@ func (scm) Install(exe string, args ...string) error {
 	return recovery(s)
 }
 
-// recovery tells the SCM to restart conflux if it dies, which the previous conflux
-// never configured at all.
+// recovery tells the SCM to restart conflux if it dies. A supervisor that stops
+// itself -- nothing to start, or given up -- reports Stopped, which is not a failure
+// to the SCM, so it is not restarted into the same answer.
 func recovery(s *mgr.Service) error {
 	return s.SetRecoveryActions([]mgr.RecoveryAction{
 		{Type: mgr.ServiceRestart, Delay: 5 * time.Second},
@@ -135,7 +133,7 @@ func (scm) control(cmd svc.Cmd, want svc.State) error {
 	return fmt.Errorf("the service did not reach the requested state within 30s")
 }
 
-func (scm) Start() error {
+func (scm) start() error {
 	m, err := mgr.Connect()
 	if err != nil {
 		return err
@@ -156,7 +154,7 @@ func (c scm) Stop() error { return c.control(svc.Stop, svc.Stopped) }
 func (c scm) Restart() error {
 	_ = c.Stop()
 
-	return c.Start()
+	return c.start()
 }
 
 func (scm) Installed() (bool, error) {
@@ -176,39 +174,31 @@ func (scm) Installed() (bool, error) {
 	return true, nil
 }
 
-func (scm) Running() (bool, error) {
+// Describe asks the SCM once whether the service exists and whether it runs.
+func (scm) Describe() string {
 	m, err := mgr.Connect()
 	if err != nil {
-		return false, err
+		return "unknown: " + err.Error()
 	}
 	defer m.Disconnect()
 
 	s, err := m.OpenService(ServiceName())
 	if err != nil {
-		return false, nil
+		return "not installed"
 	}
 	defer s.Close()
 
-	status, err := s.Query()
-	if err != nil {
-		return false, err
-	}
-
-	return status.State == svc.Running || status.State == svc.StartPending, nil
-}
-
-func (c scm) Describe() string {
-	installed, _ := c.Installed()
-	if !installed {
-		return "not installed"
-	}
-
-	running, _ := c.Running()
-	if running {
+	if status, err := s.Query(); err == nil && (status.State == svc.Running || status.State == svc.StartPending) {
 		return fmt.Sprintf("running (service: %s, automatic at boot)", ServiceName())
 	}
 
 	return fmt.Sprintf("installed, not running (service: %s, automatic at boot)", ServiceName())
+}
+
+// LogHint is the file the service writes its output to. It lives under the conflux
+// root, so uninstall removes it with the rest and Remove has nothing of its own to.
+func (scm) LogHint() string {
+	return `Get-Content -Tail 50 "` + paths.Default().LogFile() + `"`
 }
 
 // quoteCommand renders a BinaryPathName the SCM will parse back correctly.

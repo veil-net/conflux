@@ -2,13 +2,7 @@
 
 package config
 
-import (
-	"errors"
-
-	"golang.org/x/sys/windows"
-)
-
-var errUnsupportedDirSync = errors.New("directories cannot be synced on windows")
+import "golang.org/x/sys/windows"
 
 // restrictToAdmins is what 0600 means on Windows, which is nothing.
 //

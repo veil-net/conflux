@@ -94,12 +94,3 @@ func SaveState(d paths.Dirs, s *State) error {
 
 	return WriteFileAtomic(d.StateFile(), append(b, '\n'), 0o600)
 }
-
-// DeleteState removes it.
-func DeleteState(d paths.Dirs) error {
-	if err := os.Remove(d.StateFile()); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-
-	return nil
-}

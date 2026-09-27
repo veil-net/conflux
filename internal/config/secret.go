@@ -63,13 +63,3 @@ func HasManifest(d paths.Dirs) bool {
 
 	return err == nil && fi.Size() > 0
 }
-
-// DeleteManifest destroys the identity. There is no other copy anywhere, so every
-// caller of this must have asked the operator first.
-func DeleteManifest(d paths.Dirs) error {
-	if err := os.Remove(d.ManifestFile()); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-
-	return nil
-}

@@ -17,7 +17,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"slices"
 	"time"
 
 	"github.com/veil-net/conflux/internal/paths"
@@ -329,21 +328,10 @@ func Save(d paths.Dirs, c *Config) error {
 		c.CreatedAt = c.UpdatedAt
 	}
 
-	c.Taints = slices.Clone(c.Taints)
-
 	b, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode config: %w", err)
 	}
 
 	return WriteFileAtomic(d.ConfigFile(), append(b, '\n'), 0o600)
-}
-
-// Delete removes it. A file that is already gone is success.
-func Delete(d paths.Dirs) error {
-	if err := os.Remove(d.ConfigFile()); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-
-	return nil
 }

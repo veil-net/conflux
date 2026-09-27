@@ -4,7 +4,7 @@
 $ git clone https://github.com/veil-net/conflux && cd conflux
 $ make anchor-bins            # populate anchor/bin -- see below; a bare clone has none
 $ make build
-  48.2 MB  bin/conflux
+  50.1 MB  bin/conflux
 ```
 
 Go 1.27.1 or newer, and nothing else. The only dependency is `golang.org/x/sys`.
@@ -15,7 +15,7 @@ build fails.
 
 ## Where the anchor binaries come from
 
-**They are not in git.** Fourteen release builds are about 284 MB, and committing that
+**They are not in git.** Fourteen release builds are about 300 MB, and committing that
 costs it permanently — on every clone, for every contributor, every time they are
 refreshed. So `anchor/bin/` is ignored, and a build populates it:
 
@@ -59,7 +59,8 @@ path that matters.
 
 `anchoradmin` sits beside the other two in `release/` and is deliberately never
 copied. It can mint realm roots, and anything in `anchor/bin` is a candidate for being
-embedded into every conflux a user runs. The release workflow fails on its presence.
+embedded into every conflux a user runs. The shelf fetcher refuses a release that carries
+it, before downloading anything.
 
 ### The shelf
 
@@ -157,10 +158,11 @@ are missing, and a fallback puts "holds placeholders" underneath it as the last 
 The placeholder path is still there for when nothing was asked for, which is what lets a
 machine with no anchor and no network run `gofmt` and the unit tests.
 
-**`FETCH=1` is opt-in for now.** The macOS and Windows CI jobs run `anchor-bins` too and
-need only the two files their own build tag names, so fetching all fourteen there would
-move 284 MB to compile 43. Once per-target narrowing exists, the default is one line to
-flip.
+**`FETCH=1` is opt-in**, because it needs the token and a clone with neither a checkout
+nor a token should still build against placeholders. `ONLY=darwin-arm64` (space-separated,
+any of the targets) narrows any of the three sources to the pairs one platform's build
+needs — the macOS and Windows CI jobs fetch their own two files and no others — and
+`DEST=` puts them somewhere other than `anchor/bin`.
 
 **There is no URL anywhere.** Nothing reads a URL out of a document: every request is
 built from `internal/shelf`'s own constants, and binaries are resolved by asset **name**
@@ -171,13 +173,9 @@ configuration rather than by anything on the wire.
 
 `make anchor-bins` writes fourteen placeholder files instead, and says what it did.
 This is not a working conflux — it is what lets a machine with no access to the real
-binaries still run `gofmt`, `go vet`, `staticcheck` and the unit tests, which is
-exactly what CI needs.
-
-CI is no longer in that state for the jobs that matter. `linux`, `service` and
-`integration` fetch the pinned binaries from anchor's release, so the eight tests that
-gate on `anchor.Supported` actually run; `cross` stays on placeholders deliberately,
-because what it asks is whether every target still compiles. See [testing.md](testing.md).
+binaries still run `gofmt`, `make cross`, `staticcheck` and the unit tests. Every CI job
+fetches the real ones, so the tests that gate on `anchor.Supported` run there on Linux,
+macOS and Windows. See [testing.md](testing.md).
 
 A placeholder build is not able to masquerade as a real one:
 
@@ -197,37 +195,24 @@ skip, and `make dist` refuses:
          make anchor-bins ANCHOR_SRC=/path/to/anchor
 ```
 
-### Why not committed, fetched, or LFS
+### Why not committed, or LFS
 
-**Committed** was tried and reverted: 324 MB per refresh, permanently, and `.git`
-reached 840 MB from a single commit.
+**Committed**, the fourteen cost about 300 MB per refresh, permanently, on every clone.
 
 **Git LFS** is worse than it looks. The Go module proxy serves LFS *pointer files*, so
 `go install github.com/veil-net/conflux@latest` would embed 130 bytes of text and ship
 an `anchord` that is not one — failing at exec on a user's machine rather than at build
 time here.
 
-**Building them in CI** was tried and replaced by the fetch below. `make dist` needs
-only Go, so a machine keeping a checkout can produce the fourteen on every push — but
-they are unpinned, which is fine for testing and wrong for anything shipped, and it puts
-anchor's source on a machine that only wanted its output. Note the trap if you automate
-it anywhere else: anchor's `make release` depends on `genesis/genesis.pin`, and with no
-`genesis/` directory its rule **mints a new genesis root** instead of failing. Binaries
-pinned to a realm nobody else has ever seen enrol perfectly and then never handshake.
+**Building them in CI** from an anchor checkout puts anchor's source on a machine that
+only wanted its output, and anchor's `make release` depends on `genesis/genesis.pin`:
+with no `genesis/` directory its rule **mints a new genesis root** instead of failing,
+and binaries pinned to a realm nobody else has ever seen enrol perfectly and then never
+handshake. The shelf is anchor's own CI doing that build once, with the real pin, and
+publishing the output.
 
-**Fetching at build time** is what `FETCH=1` does, and it is the answer the three above
-were circling. `GET /anchor/release` serves a manifest — `sha256` and a `url` per
-binary, plus the genesis `pin` — and what it names is the pinned release build. No
-credential: what the shelf serves is what conflux already ships, since `//go:embed` puts
-these exact bytes inside every published conflux, so a public shelf discloses nothing a
-release download does not.
-
-That is also why it can be public while anchor stays private. conflux needs anchor's
-*output*, and the output is not the secret.
-
-Note that `go install` cannot work under any of these, fetch included: the module zip
-the proxy serves will not contain the binaries. conflux is distributed as release
-artifacts.
+Note that `go install` cannot work under any of these: the module zip the proxy serves
+will not contain the binaries. conflux is distributed as release artifacts.
 
 ## Embedding, and the size gate
 
@@ -244,7 +229,7 @@ var anchorctl []byte
 ```
 
 A file whose build tag is false is never compiled, so its `//go:embed` never runs — a
-linux/amd64 conflux carries the ~43 MB it needs and not the 284 MB in `bin/`.
+linux/amd64 conflux carries the ~45 MB pair it needs and not the ~300 MB in `bin/`.
 
 **Never `//go:embed bin`, and never a glob.** That would pull in all fourteen and
 produce a 300 MB binary per platform. `make dist` gates every artifact between 30 and
@@ -259,17 +244,19 @@ was never built.
 
 ```console
 $ make cross
-  vet  linux/amd64
+  ok   linux/amd64
   …
-  ok   dist/conflux-linux-amd64  48 MB
-  ok   dist/conflux-darwin-arm64  46 MB
+$ make dist
+  ok   dist/conflux-linux-amd64  50 MB
+  ok   dist/conflux-darwin-arm64  48 MB
   …
   wrote dist/SHA256SUMS
 ```
 
-`cross` vets every target as well as building it, because `go build ./...` does not
-compile test files and a platform-specific test that no longer builds would otherwise
-go unnoticed until CI.
+`cross` vets every target, which compiles each one's packages and test files: `go build
+./...` compiles no test files, and a platform-specific test that no longer builds would
+otherwise go unnoticed. It works on placeholders. `dist` builds every target with the
+real binaries and the size gate.
 
 `CGO_ENABLED=0` throughout. No garble: anchor garbles its own release build to hide
 the genesis pin inside it, and conflux hides nothing — garbling would only make every
@@ -281,14 +268,14 @@ stack trace a user sends back useless.
 |---|---|
 | `make build` | this machine |
 | `make test` / `make race` | the tests |
-| `make cross` | vet and build all seven, with the size gate |
-| `make dist` | build all seven into `dist/`, with `SHA256SUMS` |
+| `make cross` | vet all seven, test files included |
+| `make dist` | build all seven into `dist/`, with `SHA256SUMS` and the size gate |
 | `make golden` | rewrite the argv fixtures after an intended change |
 | `make image` | the systemd test image, from `dist/conflux-linux-amd64` |
 | `make service-test` | install and uninstall, in a container that boots systemd |
 | `make integration` | three nodes, one taint, over the real API (needs Docker) |
-| `make fmtcheck` `make vet` `make lint` `make tidycheck` | what CI checks |
-| `make all` | everything CI runs |
+| `make fmtcheck` `make lint` `make tidycheck` `make vulncheck` `make docscheck` | the utility checks, which run here rather than in CI |
+| `make all` | every check that needs neither Docker nor the network |
 
 ## Version stamping
 
@@ -312,14 +299,14 @@ what just landed".
 
 The tag is not moved. GitHub leaves it at the commit it was first cut from, so after the
 first rebuild it names an older commit than the binaries hanging off the release; the
-`gate` job warns on every run where that has happened. `conflux version` reports the
+release job warns on every run where that has happened. `conflux version` reports the
 commit it was actually built from, which is the one to trust.
 
 ## Reproducibility
 
 `-trimpath` is set, so paths do not leak into the binary. Builds are otherwise
-reproducible for a given Go toolchain version and a given `anchor/bin`: the embedded
-bytes are in git, so two people on the same toolchain produce the same artifact.
+reproducible for a given Go toolchain version and a given `anchor/bin`: two people on
+the same toolchain with the same shelf produce the same artifact.
 
 What is *not* reproducible from this repository is anchor itself. Those binaries are
 built elsewhere, pinned to a genesis key that never leaves the maintainer's machine.

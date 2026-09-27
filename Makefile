@@ -7,11 +7,9 @@ GO      ?= go
 BIN     ?= bin
 DIST    ?= dist
 # VERSION is the file, not the tag. A tag is a claim about a commit; the file is a
-# claim about the tree, and it is the tree that gets built. release.yml used to override
-# it with the tag name and no longer does: it reads this same file to decide whether
-# there is a release to make, and creates the tag from it afterwards, so the number in
-# the binary and the number on the release cannot disagree. ?= still leaves it free to
-# be overridden by hand.
+# claim about the tree, and it is the tree that gets built. release.yml tags the release
+# with this same file, so the number in the binary and the number on the release cannot
+# disagree. ?= still leaves it free to be overridden by hand.
 VERSION ?= $(shell cat $(CURDIR)/VERSION 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 
@@ -35,12 +33,11 @@ MAX_MB := 75
 ANCHOR_SRC ?= ../anchor
 
 # FETCH=1 downloads the pinned binaries from anchor's `shelf` release when no local
-# anchor build is available. Opt-in for now: the macOS and Windows jobs run anchor-bins
-# too and need only the two files their own build tag names, so fetching all fourteen
-# there would move 284 MB to compile 43.
-#
-# It needs ANCHOR_RELEASE_TOKEN, because anchor is private. The three below are empty by
-# default so the values live in internal/shelf rather than being repeated here.
+# anchor build is available. Opt-in, because it needs ANCHOR_RELEASE_TOKEN -- anchor is
+# private -- and a clone with neither a checkout nor a token should still build against
+# placeholders. The three below are empty by default so the values live in
+# internal/shelf rather than being repeated here. ONLY=darwin-arm64 (and so on)
+# narrows a fetch to the pairs one platform needs; DEST moves where it lands.
 FETCH ?= 0
 ANCHOR_API ?=
 ANCHOR_REPO ?=
@@ -50,12 +47,15 @@ ANCHOR_TAG ?=
 # on one machine does not race the first for the name.
 IMAGE ?= conflux-systemd-test
 
-.PHONY: all anchor-bins build test race vet fmt fmtcheck lint vulncheck tidycheck golden cross dist image service-test integration clean help
+.PHONY: all anchor-bins build test race vet fmt fmtcheck lint vulncheck tidycheck docscheck golden cross dist image service-test integration clean help
 
-all: fmtcheck vet lint tidycheck test cross dist
+# Every check that needs neither Docker nor the network. The utility checks --
+# fmtcheck, lint, tidycheck, docscheck -- run here and not in CI, which verifies that
+# the code builds and runs; vet is part of cross, once per target.
+all: fmtcheck lint tidycheck docscheck test cross dist
 
 # anchor-bins puts the anchor binaries where //go:embed can find them. They are not in
-# git -- fourteen release builds are about 284 MB -- so a fresh clone runs this once
+# git -- fourteen release builds are about 300 MB -- so a fresh clone runs this once
 # before its first build.
 #
 # Three sources in order: a local release/ (pinned), a local dist/ (unpinned, taken
@@ -67,16 +67,11 @@ anchor-bins:
 		ANCHOR_API=$(ANCHOR_API) ANCHOR_REPO=$(ANCHOR_REPO) ANCHOR_TAG=$(ANCHOR_TAG) \
 		./scripts/anchor-bins.sh
 
-# CGO_ENABLED=0 here for the same reason cross and dist set it: so that the binary a
-# developer builds and installs is the same *kind* of binary as the one that ships.
-# Without it `make build` inherits the host default, which on any machine with a C
-# toolchain is cgo — and cgo pulls in the host's dynamic loader. Measured on the anchor
-# deployment: `make build` produced a dynamically linked conflux against a `make dist`
-# artifact that was static, and the dynamic one is what got installed to
-# /usr/local/bin. That build carries a glibc dependency the release artifact does not,
-# so it is a binary the release pipeline never tests and cannot be copied to a host with
-# an older libc. The two paths should differ in which target they build, and in nothing
-# else.
+# CGO_ENABLED=0 here for the same reason dist sets it: so that the binary a developer
+# builds and installs is the same *kind* of binary as the one that ships. Without it
+# `make build` inherits the host default, which on any machine with a C toolchain is cgo
+# -- a dynamically linked conflux with a libc dependency the release artifact does not
+# have, that the release pipeline never tests.
 build:
 	@mkdir -p $(BIN)
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN)/conflux .
@@ -107,30 +102,45 @@ vulncheck:
 	govulncheck ./...
 
 tidycheck:
-	@cp go.mod go.mod.bak && cp go.sum go.sum.bak 2>/dev/null || true
+	@cp go.mod go.mod.bak && cp go.sum go.sum.bak
 	@$(GO) mod tidy
-	@if ! diff -q go.mod go.mod.bak >/dev/null; then \
-		mv go.mod.bak go.mod; mv go.sum.bak go.sum 2>/dev/null || true; \
-		echo "go.mod is not tidy; run: go mod tidy"; exit 1; fi
+	@if ! diff -q go.mod go.mod.bak >/dev/null || ! diff -q go.sum go.sum.bak >/dev/null; then \
+		mv go.mod.bak go.mod; mv go.sum.bak go.sum; \
+		echo "go.mod or go.sum is not tidy; run: go mod tidy"; exit 1; fi
 	@rm -f go.mod.bak go.sum.bak
 
-# golden rewrites the argv fixtures. CI runs `git diff --exit-code testdata/`
-# afterwards, so a change to what conflux passes anchorctl shows up as a reviewable
-# text diff rather than as a runtime failure on somebody else's machine.
+# docscheck holds README.md and docs/ to each other: every page linked from the
+# README, every page the README links to present, and every link between pages
+# resolving.
+docscheck:
+	@fail=0; \
+	for f in docs/*.md; do \
+		grep -q "$$(basename $$f)" README.md || { echo "$$f is not linked from README.md"; fail=1; }; \
+	done; \
+	for p in $$(grep -o 'docs/[a-z-]*\.md' README.md | sort -u); do \
+		[ -f "$$p" ] || { echo "README.md links to $$p, which does not exist"; fail=1; }; \
+	done; \
+	for f in docs/*.md; do \
+		for p in $$(grep -o '](\([a-z-]*\.md\)' $$f | sed 's/](//' | sort -u); do \
+			[ -f "docs/$$p" ] || { echo "$$f links to $$p, which does not exist"; fail=1; }; \
+		done; \
+	done; \
+	exit $$fail
+
+# golden rewrites the argv fixtures after an intended change, so a change to what
+# conflux passes anchorctl shows up as a reviewable text diff; TestArgvGoldens fails on
+# any other.
 golden:
 	$(GO) test ./internal/anchorctl -update
 
-# cross vets and compiles every target. `go build ./...` does not compile test files,
-# so vet is what catches a platform-specific test that no longer builds.
-#
-# Deliberately does not produce artifacts or run the size gate: that is `dist`, which
-# needs the real anchor binaries. This target is useful with placeholders, which is
-# what CI has.
+# cross vets every target, which compiles each one's packages and test files -- `go
+# build ./...` compiles no test files, so vet is what catches a platform-specific test
+# that no longer builds. It works with placeholders. Linking each target, with the real
+# binaries and the size gate, is dist's.
 cross:
 	@for t in $(TARGETS); do \
 		os=$${t%/*}; arch=$${t#*/}; \
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) vet ./... 2>&1 | grep -v '^#' && exit 1; \
-		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -o /dev/null . || exit 1; \
 		echo "  ok   $$t"; \
 	done
 
@@ -162,15 +172,9 @@ dist:
 	@cd $(DIST) && (sha256sum conflux-* > SHA256SUMS 2>/dev/null || shasum -a 256 conflux-* > SHA256SUMS)
 	@echo "  wrote $(DIST)/SHA256SUMS"
 
-# The systemd test image, and the two suites that run in it.
-#
-# Both existed only as a recipe in docs/testing.md and a copy of the same three lines
-# in ci.yml, which is two places for one sequence to drift. They are targets now so
-# CI runs what a developer runs -- `make integration` on a laptop and on veilnet-dev
-# are the same command.
-#
-# Docker, /dev/net/tun, cgroup v2 and real anchor binaries, so this is deliberately
-# not in `make all`.
+# The systemd test image, and the two suites that run in it. Docker, /dev/net/tun, a
+# cgroup mount and real anchor binaries, so deliberately not in `make all`. CI runs the
+# same targets a developer does.
 image: dist
 	@cp $(DIST)/conflux-linux-amd64 test/systemd/conflux
 	@docker build -q -t $(IMAGE) test/systemd >/dev/null
@@ -197,11 +201,12 @@ help:
 	@echo "  make build       build for this machine"
 	@echo "  make test        run the tests"
 	@echo "  make race        run them under the race detector"
-	@echo "  make cross       vet and compile all 8 targets (works with placeholders)"
-	@echo "  make dist        build all 8 into $(DIST)/ with SHA256SUMS and the size gate"
+	@echo "  make cross       vet all 7 targets, test files included (works with placeholders)"
+	@echo "  make dist        build all 7 into $(DIST)/ with SHA256SUMS and the size gate"
 	@echo "                   (needs real binaries: make anchor-bins first)"
 	@echo "  make golden      rewrite the argv fixtures after an intended change"
 	@echo "  make image       build the systemd test image from $(DIST)/conflux-linux-amd64"
 	@echo "  make service-test  install and uninstall in a container that boots systemd"
 	@echo "  make integration   three nodes, one taint, over the real API (needs Docker)"
-	@echo "  make all         everything CI runs"
+	@echo "  make docscheck   README.md and docs/ link to each other and to what exists"
+	@echo "  make all         every check that needs neither Docker nor the network"

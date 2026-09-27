@@ -123,13 +123,9 @@ func namesSocket(args []string) bool {
 // runEscapeHatch is `conflux anchorctl ...`: the always-unambiguous way to reach a
 // command conflux shadows, or one it refuses to pass through.
 func runEscapeHatch(ctx context.Context, args []string) int {
-	if len(args) == 0 {
-		args = []string{"help"}
-	}
-
 	// "conflux anchorctl -- proxy -add ..." is a spelling people will try, and the
 	// separator is noise once it has done its job at the shell.
-	if args[0] == "--" {
+	if len(args) > 0 && args[0] == "--" {
 		args = args[1:]
 	}
 

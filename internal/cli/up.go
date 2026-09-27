@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -411,7 +412,7 @@ func chooseUplink(cfg *config.Config, flagValue string, none bool) error {
 	// anchor opens a link on unix only (internal/uplink/open_other.go), so refuse
 	// here rather than at the first start, where it would be a daemon exiting with
 	// a message about a field nobody typed.
-	if runtimeOS() == "windows" {
+	if runtime.GOOS == "windows" {
 		return fmt.Errorf(
 			"anchor has no way to open a link on Windows, so --uplink cannot be used here.\n" +
 				"  The overlay over the host's network needs no flag:  conflux up")

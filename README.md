@@ -252,9 +252,8 @@ while `conflux status -watch 5s` forwards to anchorctl because it was given argu
 configuration where `conflux anchorctl start -identity FILE …` builds one from
 arguments. `stop` and `restart` are refused outright rather than passed through —
 running them directly would leave conflux's configuration describing an anchor that
-isn't the one actually running. The set and the count are checked against the embedded
-binary by a test, because four files used to carry a number here and between them they
-said nine, ten, three and five.
+isn't the one actually running. The set is checked against the embedded binary by a
+test.
 
 ## Where things live
 

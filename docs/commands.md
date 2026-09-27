@@ -32,17 +32,14 @@ gracefully and leaves the registration; see [service.md](service.md).
 ### The four collisions
 
 `start`, `proxy`, `renew` and `status` exist on both sides. Each is resolved
-explicitly.
+explicitly. `TestTheCollisionsAreTheDocumentedOnes` reads the set off the embedded
+binary, so a future anchor adding a colliding name fails CI here rather than shadowing
+something silently.
 
-This page, the README and two comments in the source used to disagree about the
-number — they said nine, ten, three and five between them, and one of them counted
-`help` as anchorctl's, which it is not: anchorctl has no `help` command and forwarding
-an unrecognised name to it prints its general usage. `TestTheCollisionsAreTheDocumentedOnes`
-now reads the set off the embedded binary, so a future anchor adding a colliding name
-fails CI here rather than shadowing something silently.
-
-**`help`** is conflux's, always, and is not one of the four. It prints conflux's usage
-and then anchorctl's whole usage beneath a rule, so one page covers both surfaces.
+**`help`** is conflux's, always, and is not one of the four: anchorctl has no `help`
+command. Bare, it prints conflux's usage and then anchorctl's whole usage beneath a
+rule, so one page covers both surfaces. `conflux help COMMAND` prints that command's
+own usage instead, whichever binary it belongs to.
 
 **`status`** is resolved by arity. Bare `conflux status` is conflux's, and it prints
 `anchorctl status` underneath — additive, so nothing is lost by conflux owning that

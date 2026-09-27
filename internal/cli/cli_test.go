@@ -107,9 +107,6 @@ func anchorctlCommands(t *testing.T, bin string) map[string]bool {
 }
 
 func TestLifecycleVerbsAreRefusedWithTheAlternative(t *testing.T) {
-	// start is absent: conflux has its own now. restart names it rather than "up",
-	// which was wrong on a userspace machine -- up changes the mode and drops the
-	// proxies, so it is not the way back to what was running.
 	for name, want := range map[string]string{
 		"stop": "conflux down", "restart": "conflux start",
 	} {
@@ -229,6 +226,15 @@ func TestHelpListsEveryVisibleVerb(t *testing.T) {
 		if !strings.Contains(out, name) {
 			t.Errorf("help does not mention %q", name)
 		}
+	}
+}
+
+// TestHelpForACommandIsThatCommands: `conflux help X` is X's own usage, whichever
+// binary X belongs to.
+func TestHelpForACommandIsThatCommands(t *testing.T) {
+	out, _, code := capture(t, "help", "up")
+	if code != ExitOK || !strings.Contains(out, "conflux up —") || strings.Contains(out, "Commands") {
+		t.Errorf("help up exited %d and printed:\n%s", code, out)
 	}
 }
 
@@ -537,12 +543,8 @@ func TestLANDiscoveryTristate(t *testing.T) {
 	}
 }
 
-// TestTheCollisionsAreTheDocumentedOnes reads the number off the binary.
-//
-// Four files used to carry a count of conflux's names and of the collisions among
-// them, and between them they said nine, ten, three and five -- none of which was
-// right, and one of which counted `help` as anchorctl's when anchorctl has no such
-// command. Prose that nothing checks drifts; this checks it.
+// TestTheCollisionsAreTheDocumentedOnes reads the set off the binary, because prose
+// that nothing checks drifts.
 //
 // The set, rather than only the count, because adding a verb that happens to
 // collide should fail here with the name in the message rather than as an

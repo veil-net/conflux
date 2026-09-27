@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 
@@ -281,7 +282,7 @@ func until(t time.Time) string {
 
 // journalHint names where this platform keeps the supervisor's output.
 func journalHint() string {
-	switch runtimeOS() {
+	switch runtime.GOOS {
 	case "linux":
 		return "journalctl -u conflux -n 50"
 	case "darwin":

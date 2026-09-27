@@ -26,7 +26,7 @@ Work through them in this order:
 7. libexec extraction
 8. The embedded binary set and the shelf fetcher
 9. The boot service, per OS
-10. Platform code: Windows DACL, wintun, the BSDs, macOS
+10. Platform code: Windows ownership and DACLs, wintun, the BSDs, macOS
 11. flock, privcheck, paths
 12. UI and reporter
 13. Tests and harness
@@ -77,7 +77,8 @@ Anchor is the reference for overlay behaviour, and the live API at `api.veilnet.
 
 - Unit tests, argv goldens, `httptest` API fixtures, `test/*.sh`, the `test/systemd` image, and the CI Windows TUN test are code under maintenance, held to the same standard as production code.
 - Assertions or fixtures that encode outdated behaviour, including outdated anchor behaviour or API contracts, are updated in the same change.
-- Tests that need the real anchor binaries skip without them. Confirm they actually ran against the freshly built binaries (no `--- SKIP` in `go test -v` output for `./anchor/ ./internal/libexec/ ./internal/anchorctl/ ./internal/cli/`). A skip caused by missing binaries or a missing tool (staticcheck, govulncheck, Docker) counts as a failure.
+- Tests that need the real anchor binaries skip without them. Confirm they actually ran against the freshly built binaries (no `--- SKIP` in `go test -v` output for `./anchor/ ./internal/libexec/ ./internal/anchorctl/ ./internal/cli/`). A skip caused by missing binaries or a missing tool (staticcheck, govulncheck, shellcheck, Docker) counts as a failure.
+- Code behind a build tag is checked where the tag is true: `make cross` vets and `make lint` runs staticcheck per target OS. Windows-only tests (`internal/paths/acl_windows_test.go`) run only in CI's `platforms` job.
 - Confirm `service-test` and `integration` really booted systemd containers, and that `integration` enrolled against the live API.
 - Per area, run only the affected tests. Run the full suite once at the end.
 
@@ -94,7 +95,7 @@ Anchor is the reference for overlay behaviour, and the live API at `api.veilnet.
 - Every command and flag conflux emits exists in current anchor with the same meaning (argv goldens plus the flag cross-check against the real binary).
 - Every parsed output and metric name matches current anchor.
 
-**Config rules** (mode exclusivity; an exit needs an interface; no port beside an uplink; taint, IPv4 and proxy-spec parsing) accept and refuse exactly what current anchor does.
+**Config rules** (a proxy needs userspace; a subnet and a served exit need an interface, an IPv4 and `useExit` do not; no port or explicit LAN discovery beside an uplink; taint, IPv4, subnet, bootstrap-entry and proxy-spec parsing) accept and refuse exactly what current anchor does, plus conflux's one rule of its own: a machine always carries a taint.
 
 **Manifest decoding** handles anchor's current format, refuses a realm manifest and a future version, and survives renewal losslessly.
 
@@ -105,13 +106,13 @@ Anchor is the reference for overlay behaviour, and the live API at `api.veilnet.
 - The guardian flows match the live schema.
 
 **The manifest**
-- It is written before any other processing.
+- It is written before any other processing, decoding included.
 - It is `0600` from creation, in a `0700` directory (a replaced DACL on Windows).
 - It never appears in argv, `ps`, or logs.
 
 **Writes and state**
-- Config and state writes are atomic.
-- A re-run of `up` never changes an existing machine's address or identity.
+- Config and state writes are atomic, and every writer of the manifest or state holds the lock.
+- A re-run of `up` or `proxy` never changes an existing machine's address or identity, and the IPv4 question is asked once, a declined answer included.
 - `up` and `proxy` replace each other cleanly.
 - `uninstall` leaves nothing behind.
 

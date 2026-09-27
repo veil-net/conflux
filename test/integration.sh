@@ -159,8 +159,15 @@ while [ "$SECONDS" -lt 60 ]; do
   [ "${conns:-0}" -gt 0 ] && { echo "C holds $conns connection(s) after ${SECONDS}s"; break; }
   sleep 1
 done
-[ "${conns:-0}" -gt 0 ] \
-  || { echo "C reached nothing through the manifest's bootstrap list" >&2; exit 1; }
+# On failure, what C resolved and what anchord said while trying: the containers are
+# reaped on exit, so this is the only record of why.
+if [ "${conns:-0}" -eq 0 ]; then
+  echo "C reached nothing through the manifest's bootstrap list" >&2
+  docker exec cfx-c getent ahosts genesis.veilnet.com.au >&2 || echo "C cannot resolve genesis.veilnet.com.au" >&2
+  docker exec cfx-c conflux status >&2 || true
+  docker exec cfx-c journalctl -u conflux --no-pager -n 60 >&2 || true
+  exit 1
+fi
 
 # The control, and the reason it is worth a third enrolment: C is up and answering on the
 # same link where A and B found each other, so if its counter stays at zero then

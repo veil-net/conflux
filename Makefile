@@ -93,9 +93,13 @@ fmtcheck:
 	@out=$$(gofmt -l .); \
 	if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
 
+# lint runs staticcheck once per operating system conflux targets: code behind a
+# build tag is only checked where the tag is true.
 lint:
 	@command -v staticcheck >/dev/null 2>&1 || { echo "staticcheck not installed; skipping"; exit 0; }
-	staticcheck ./...
+	@for os in $(sort $(foreach t,$(TARGETS),$(firstword $(subst /, ,$(t))))); do \
+		echo "staticcheck ($$os)"; GOOS=$$os staticcheck ./... || exit 1; \
+	done
 
 vulncheck:
 	@command -v govulncheck >/dev/null 2>&1 || { echo "govulncheck not installed; skipping"; exit 0; }

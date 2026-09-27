@@ -154,6 +154,6 @@ func offline(target string, cause error) error {
 			"  Download wintun-%s.zip from https://www.wintun.net and put\n"+
 			"  bin\\%s\\wintun.dll at:\n"+
 			"    %s\n\n"+
-			"  Or run \"conflux proxy PORT=BACKEND\", which needs no interface at all.",
+			"  Or run \"conflux proxy PORT=BACKEND\", which needs no interface at all",
 		cause, Version, runtime.GOARCH, target)
 }

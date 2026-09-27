@@ -86,16 +86,3 @@ func installHint(exe string) string {
 
 	return "sudo install -m 0755 " + exe + " /usr/local/bin/conflux && sudo /usr/local/bin/conflux install"
 }
-
-// removeLog deletes the service's log file, where there is one to delete.
-func removeLog(path string) error {
-	if path == "" {
-		return nil
-	}
-
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-
-	return nil
-}

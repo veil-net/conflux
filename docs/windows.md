@@ -55,7 +55,7 @@ conflux: a network interface on Windows needs wintun.dll, and it could not be fe
   bin\amd64\wintun.dll at:
     C:\ProgramData\conflux\bin\998ece52739a7c74\wintun.dll
 
-  Or run "conflux proxy PORT=BACKEND", which needs no interface at all.
+  Or run "conflux proxy PORT=BACKEND", which needs no interface at all
 ```
 
 That last line is the real fallback. On a machine where the driver cannot be installed

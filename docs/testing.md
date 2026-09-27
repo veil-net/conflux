@@ -20,13 +20,15 @@ a daemon or a network. Most of conflux can be.
 |---|---|
 | `anchor` | the embedded binaries are real executables of the right architecture, and `SetID` is stable |
 | `internal/config` | JSON round-trips, the tuning fields included; the mode rules match anchor's — a subnet and a served exit need an interface, an IPv4 and `useExit` do not, a port is refused beside an uplink; proxy specs, IPv4 addresses, subnets, bootstrap entries, AnchorIDs and taint names parse and refuse exactly as anchor does; atomic writes leave old-or-new and never a truncated file, and narrow a file that was `0644` |
-| `internal/enrol` | the manifest decodes, refuses a realm manifest and a future format version, and **survives a renewal losslessly** |
-| `internal/enrol` (client) | against `httptest`: the happy path, malformed base64, 4xx and 5xx, an oversized body, a cross-host renewal URL, a plain-http base, cancellation, and clock skew |
+| `internal/enrol` | the manifest decodes exactly as anchorctl reads it, refuses a realm manifest and a future format version, and **survives a renewal losslessly** |
+| `internal/enrol` (client) | against `httptest`: the alpha exchange byte for byte, the guardian bearer, 4xx and 5xx, an oversized body, a cross-host renewal URL and a downgrading redirect, a plain-http base, cancellation, and clock skew; and that an enrolment is handed back as it arrived, to be written before it is read |
 | `internal/taint` | generated names satisfy anchor's rule, avoid ambiguous glyphs, and do not repeat |
-| `internal/daemon` | the renewal arithmetic: two thirds of the *observed* window, expiry, absent timestamps, and the clamp; the link watcher's device parsing and its grace against anchor's own dial timeout; and which failures stop the supervisor rather than being retried |
+| `internal/daemon` | the renewal arithmetic: two thirds of the *observed* window, expiry, absent timestamps, and the clamp; a renewal against a stand-in issuer, spliced into the manifest and mirrored into the state, and a failed one recorded; an enrolment kept before it is read; a bad clock measured again rather than trusted; anchord's last words kept when it dies; the link watcher's device parsing and its grace against anchor's own dial timeout; and which failures stop the supervisor rather than being retried |
 | `internal/anchorctl` | the argv goldens, that every flag they use exists, and the output parsers against anchor's current `start`, `status` and `metrics` shapes |
 | `internal/libexec` | extraction, idempotence, eight concurrent callers, and repair of a truncated set |
-| `internal/cli` | the collision rules — `start` and `renew` by shape, `proxy` and `status` by arity — and that nothing shadows anchorctl unintentionally |
+| `internal/cli` | the collision rules — `start` and `renew` by shape, `proxy` and `status` by arity — and that nothing shadows anchorctl unintentionally; the IPv4 asked once; `enrol` refusing before it writes |
+| `internal/service` | the rc scripts the BSDs get, rendered and parsed by `sh`, quoting included; the service's scope |
+| `internal/paths` (Windows) | the root made Administrators', and files restricted to them trusted |
 
 ## The three tests worth knowing about
 
@@ -39,30 +41,30 @@ It skips when `anchor/bin` holds the placeholders `make anchor-bins` writes with
 anchor checkout available. `anchor.Supported` is a size check for the same reason, so
 a placeholder build reports that it carries no anchor binaries rather than pretending.
 
-That used to be the state CI was in, and a skip is green — so this test and seven
-others had never run on any machine but a developer's. The `linux` job builds anchor
-beside conflux now, and asserts afterwards that none of the eight skipped: a job that
-provides the binaries and then reports "no anchor pair" has lost them, and saying so is
-the difference between a gate and a decoration.
+A skip is green, so the job that fetches the real binaries asserts that none of the
+tests needing them skipped: a job that provides the binaries and then reports "no
+anchor pair" has lost them, and saying so is the difference between a gate and a
+decoration.
 
 **The argv goldens**, in `internal/anchorctl/testdata/argv/`, hold one file per
 scenario, one argument per line. Argv construction is where a wrapper's bugs live and
 it is invisible in a review diff — anchor's flag is `-taints`, plural — so a change to
 what conflux passes anchorctl shows up as a reviewable text diff instead. `make golden`
-rewrites them; CI runs `git diff --exit-code`.
+rewrites them after an intended change, and `TestArgvGoldens` fails on any other.
 
 Paired with them is `TestEveryFlagWeUseExists`, which runs the **embedded** anchorctl,
-scrapes `start -h`, and fails if a golden names a flag that no longer exists. Go's flag
+scrapes each command's `-h`, and fails if conflux's argv names a flag that no longer
+exists — every flag conflux can pass, including the ones it passes only when set. Go's flag
 package refuses an unknown flag rather than ignoring it, so that would otherwise be a
 daemon that will not start — discovered after the binaries were dropped into
 `anchor/bin` and shipped.
 
-**`enrol.TestSetChainIsLossless`** renews a manifest and compares every field. The
-document carries `telemetrySecret`, `bootstrap`, `genesis` and `renewalAuth`, which
-conflux has no opinion about and anchor reads. Round-tripping through a struct with
-only the known fields would delete them on the first renewal, and the anchor would come
-back after the next reboot with no peers to bootstrap from — days later, with nothing
-pointing at the renewal that caused it.
+**`enrol.TestWithChainIsLossless`** renews a manifest and compares every field. The
+document carries `bootstrap`, `genesis`, `realm` and `renewalAuth`, which conflux has no
+opinion about and anchor reads. Round-tripping through a struct with only the known
+fields would delete them on the first renewal, and the anchor would come back after the
+next reboot with no peers to bootstrap from — days later, with nothing pointing at the
+renewal that caused it.
 
 ## Testing the boot service
 
@@ -70,7 +72,7 @@ The part that matters most is the hardest to check: that a machine which was up 
 is up again afterwards with nothing typed. A container that boots systemd is the way,
 and restarting it is the reboot.
 
-`test/systemd/Dockerfile` builds a Debian image running `systemd` as PID 1. Copy a
+`test/systemd/Dockerfile` builds a Debian 13 image running `systemd` as PID 1. Copy a
 built `conflux` in beside it, then:
 
 ```console
@@ -90,14 +92,13 @@ $ docker exec cfx-a conflux status      # same AnchorID, nothing typed
 ```
 
 A second container joining with the same taint gives a real two-node reachability
-test. Allow up to a minute after the second node starts for gossip to find it — the
-observed range is 15 to 60 seconds — and `conflux peers` shows `DATA yes` on the peer
-once the taints have been compared.
+test. The suite polls every second for up to two minutes and prints how long it took —
+around twenty seconds on the Docker bridge — and `conflux peers` shows `DATA yes` on
+the peer once the taints have been compared.
 
 All of that is `make integration`, and the two assertions above on their own are
-`make service-test`. Both build the image first. They were a recipe here and a copy of
-the same three lines in `ci.yml` until the targets existed, which is two places for one
-sequence to drift; CI runs the same command a developer does.
+`make service-test`. Both build the image first, and CI runs the same command a
+developer does.
 
 ### Local network discovery, and the control for it
 
@@ -118,20 +119,12 @@ metric. `lan_found` sends stderr to `/dev/null` and its `awk` prints `0` for no 
 a node that had died would pass by saying nothing at all, which is the shape of gate this
 repository has been caught by before.
 
-It used to assert something else alongside: that C, naming no `--peers`, **still reaches
-the realm** from the manifest's own bootstrap list — which would prove discovery is a third
-source rather than a load-bearing one.
-
-That cannot hold in this topology, and not because of a firewall. C can only be told about
-a node the bootstrap list already knows, so it needs **at least one of A or B** to have
-reached the realm's bootstrap nodes and been announced there. Here none of the three ever
-does: they meet on the Docker bridge and nowhere else. So the bootstrap list has nothing to
-tell C, and C finding nothing is the correct outcome rather than a failure — asserting
-otherwise was asking three isolated containers to be visible in a realm none of them had
-registered with.
-
-It is reported instead. The day one of them does reach the realm, C finding it is exactly
-the proof that discovery is additive, and the run says which happened.
+Whether C, naming no `--peers`, still reaches the realm through the manifest's bootstrap
+list is reported and not asserted. C can only be told about a node the bootstrap list
+knows, so it needs A or B to have been announced there, and here the three meet on the
+Docker bridge and nowhere else — C finding nothing is the correct outcome. The day one
+of them does reach the realm, C finding it is the proof that discovery is additive, and
+the run says which happened.
 
 Note what discovery cannot do, and anchor's own `docs/discovery.md` is the reference:
 the probe is sealed under the realm's **root public key**, which a node only holds after

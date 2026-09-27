@@ -73,13 +73,16 @@ say "node B joins with the same taint"
 boot cfx-b
 docker exec cfx-b conflux up --taint "$TAINT" --ipv4 10.128.0.2/24
 
+# Polled every second, so the figure printed is how long it took rather than the next
+# multiple of a sleep.
 say "waiting for the two to find each other"
-for i in $(seq 12); do
-  if docker exec cfx-a ping -c1 -W2 10.128.0.2 >/dev/null 2>&1; then
-    echo "reachable after ~$((i * 10))s"
+SECONDS=0
+while [ "$SECONDS" -lt 120 ]; do
+  if docker exec cfx-a ping -c1 -W1 10.128.0.2 >/dev/null 2>&1; then
+    echo "reachable after ${SECONDS}s"
     break
   fi
-  sleep 10
+  sleep 1
 done
 
 say "reachable both ways, v4 and v6"
@@ -97,9 +100,10 @@ docker exec cfx-a ping -c2 -W3 "$B6"
 # an anchor polls -- a grep for the name alone passes on an anchor that never found a
 # thing. anchor's own suite records being caught by exactly that.
 say "the realm was found on the link, not only through the bootstrap list"
-for i in $(seq 12); do
-  [ "$(lan_found cfx-a)" -gt 0 ] && { echo "discovery counter moved after ~$((i * 5))s"; break; }
-  sleep 5
+SECONDS=0
+while [ "$SECONDS" -lt 60 ]; do
+  [ "$(lan_found cfx-a)" -gt 0 ] && { echo "discovery counter moved after ${SECONDS}s"; break; }
+  sleep 1
 done
 [ "$(lan_found cfx-a)" -gt 0 ] \
   || { echo "anchor_lan_peers_found_total never moved on A, so nothing was found on the link" >&2; exit 1; }
@@ -109,18 +113,10 @@ done
 # accepted by conflux and dropped on the floor. That is conflux's contribution and the only
 # thing here this repository can be held to.
 #
-# Two claims used to be made together, and only one of them was ever conflux's. The other
-# was that C, naming no --peers, still reaches the realm from the manifest's own bootstrap
-# list -- which would prove discovery is a third source rather than a load-bearing one.
-#
-# That one cannot hold in this topology, and the reason is not a firewall. C can only be
-# told about a node the bootstrap list already knows, so it needs at least one of A or B to
-# have reached the realm's bootstrap nodes and been announced there. Here none of the three
-# ever does: they meet on the Docker bridge and nowhere else. So the bootstrap list has
-# nothing to tell C, and C finding nothing is the correct outcome rather than a failure.
-#
-# Still worth reporting. The day one of them does reach the realm, C finding it is exactly
-# the proof that discovery is additive -- so the run says which happened.
+# Whether C, naming no --peers, still reaches the realm through the manifest's bootstrap
+# list is reported and not asserted. It can only be told about a node the bootstrap list
+# knows, so it needs A or B to have been announced there, and in this topology they meet
+# on the Docker bridge and nowhere else -- C finding nothing is the correct outcome.
 say "node C joins with --lan-discovery no and no bootstrap list of its own"
 boot cfx-c
 docker exec cfx-c conflux up --taint "$TAINT" --ipv4 10.128.0.3/24 --lan-discovery no
@@ -130,10 +126,11 @@ docker exec cfx-c conflux up --taint "$TAINT" --ipv4 10.128.0.3/24 --lan-discove
 # the check below by saying nothing -- which is the shape of gate this repository has been
 # caught by before. Prove there are metrics first; the zero means something after that.
 metrics=0
-for _ in $(seq 12); do
+SECONDS=0
+while [ "$SECONDS" -lt 60 ]; do
   metrics=$(docker exec cfx-c conflux metrics 2>/dev/null | grep -c '^anchor_' || true)
   [ "$metrics" -gt 0 ] && break
-  sleep 5
+  sleep 1
 done
 
 [ "$metrics" -gt 0 ] \

@@ -46,7 +46,7 @@ runs:
     # 404 on the release, which reads like a missing tag.
     - name: mint a token that can read anchor
       id: app
-      uses: actions/create-github-app-token@v2
+      uses: actions/create-github-app-token@v3
       with:
         app-id: ${{ inputs.app-id }}
         private-key: ${{ inputs.private-key }}

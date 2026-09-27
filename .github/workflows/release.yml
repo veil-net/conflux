@@ -213,7 +213,7 @@ jobs:
       # it to the branch name now that this runs on a merge rather than a tag.
       - run: make dist
 
-      - uses: actions/attest-build-provenance@v1
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/conflux-*
 
@@ -237,7 +237,7 @@ jobs:
       # ordering is the point: the tag marks a commit that has already passed the whole of
       # ci.yml and produced these seven binaries, rather than being a promise made before
       # any of it ran.
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.gate.outputs.tag }}
           name: ${{ needs.gate.outputs.tag }}

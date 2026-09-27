@@ -96,12 +96,13 @@ The concrete facts the workflow relies on. Step 8 of every run keeps this file t
 
 **`.github/workflows/ci.yml`**
 - Triggers: `pull_request` and `workflow_dispatch`. `permissions: contents: read`. Concurrency group `ci-${{ github.ref }}`, cancel-in-progress.
-- Fork guard on both jobs: `if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository`.
+- Fork guard on every job: `if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository`.
 - The utility checks (gofmt, staticcheck, tidy, govulncheck, docs links, golden diff) are not in CI; they are `make all` locally.
 
 | Job | Runner | Steps |
 |---|---|---|
-| `linux` | `[self-hosted, linux]` | setup, anchor-bins (all 14, via the tool cache), `go test -race -count=1 -v ./...` with the gate (no `--- SKIP` anywhere, ≥ 150 PASS), `make cross`, `./test/preflight.sh`, `make service-test integration`, `docker rm -f cfx cfx-a cfx-b cfx-c` (always) |
+| `linux` | `[self-hosted, linux]` | setup, anchor-bins (all 14, via the tool cache), `go test -race -count=1 -v ./...` with the gate (no `--- SKIP` anywhere, ≥ 150 PASS), `make cross` |
+| `integration` | `ubuntu-latest` | setup, anchor-bins (all 14; `dist` builds every target), `./test/preflight.sh`, `make service-test integration`. Hosted because node C's QUIC handshake to the manifest's bootstrap node gets no answer from veilnet-dev |
 | `platforms` | `macos-latest` (pair `darwin-arm64`), `windows-latest` (pair `windows-amd64`) | setup, anchor-bins (that pair only), on Windows the wintun pin check (digest of the published zip against `internal/wintun/pinned.go`), `go test -count=1 -v ./...` failing if any real-binary test skipped |
 
 **`.github/workflows/release.yml`**

@@ -53,7 +53,7 @@ Work through them in this order:
   - removing duplicated builds and steps
   - reusing the `dist` artifact for the image jobs
   - cancelling superseded runs
-  - job ordering suited to the runners: self-hosted `veilnet-dev` for Linux, hosted runners for macOS and Windows
+  - job ordering suited to the runners: self-hosted `veilnet-dev` for the Linux Go suite, hosted runners for the container suites (they need the live realm's bootstrap node over UDP) and for macOS and Windows
 - Keep the fork guard on every self-hosted job. The only credential stays the read-only anchor GitHub App. Release stays gated to `version3`.
 - **Release only releases.** The user merges to `version3` only when CI is all green, so `release.yml` doesn't re-verify anything. On a merge it fetches the pinned binaries, runs `make dist` (the size gate comes with it), attests, and publishes at the `VERSION` tag. Jobs or steps that repeat CI's checks are removed; the `version3` gate is the one guard it keeps.
 - CI can't run without pushing. Validate workflow and composite-action changes locally (`actionlint`; `act` if available), and name in the summary the CI changes that couldn't be verified locally.

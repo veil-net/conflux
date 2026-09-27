@@ -147,16 +147,19 @@ why it is nonetheless contained.
 
 | job | machine | what it runs |
 |---|---|---|
-| `linux` | veilnet-dev | the whole suite under `-race` with the real binaries and nothing skipped; `make cross`; then `make service-test integration` — `dist` with the size gate for every target, the image, the boot service, and three nodes against the live API |
+| `linux` | veilnet-dev | the whole suite under `-race` with the real binaries and nothing skipped; `make cross` |
+| `integration` | GitHub Ubuntu | `test/preflight.sh`, then `make service-test integration` — `dist` with the size gate for every target, the image, the boot service, and three nodes against the live API |
 | `platforms` | GitHub macOS and Windows | the suite with that platform's own pair, the tests that need it included; on Windows, that the pinned wintun digest is the published one |
 
 `linux` is one job because veilnet-dev is one machine with one runner process: separate
 jobs would queue anyway, each paying a checkout and a fetch. Its fetch goes through the
 runner's tool cache, which survives between runs, so an unchanged shelf costs a read of
-the files the fetcher already holds rather than three hundred megabytes. Every job that
-runs on it refuses a fork's pull request — a machine that survives the job does not run
-a stranger's code — and the hosted `platforms` need the anchor credential a fork is not
-given, so a fork's pull request runs nothing.
+the files the fetcher already holds rather than three hundred megabytes. The container
+suites run on a hosted runner instead, because the third integration node reaches the
+realm through its manifest's bootstrap node over UDP, and from veilnet-dev no handshake
+gets through to it. Every job that runs on veilnet-dev refuses a fork's pull request —
+a machine that survives the job does not run a stranger's code — and the hosted jobs
+need the anchor credential a fork is not given, so a fork's pull request runs nothing.
 
 **The release** runs on a merge to `version3`, and it only releases: it does not re-run
 any of the above. A merge lands only when CI is green, which rests on branch protection
@@ -174,9 +177,9 @@ be: an anchor pinned to the genesis realm refuses to handshake with any other tr
 nothing else, and a join there proves the pin as well as conflux.
 
 **A machine that is not thrown away.** Both container suites reap their fixed container
-names before themselves as well as after, because a cancelled run fires neither an
-`EXIT` trap nor an `if: always()` step, and the leftover name fails the *next* run for a
-reason that has nothing to do with the commit under test. `test/preflight.sh` says what
+names before themselves as well as after, because a cancelled run fires no `EXIT` trap,
+and on a developer's machine the leftover name fails the *next* run for a reason that
+has nothing to do with the commit under test. `test/preflight.sh` says what
 the machine gives them — Docker, `/dev/net/tun`, cgroup v2, IPv6 — before anything is
 built, because each of those otherwise fails much later and names something else. The
 runner may be root, so `TestWriteFileAtomicPreservesOnFailure` probes whether making a

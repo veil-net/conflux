@@ -55,11 +55,11 @@ connections() {
 # test in this tree can arrange: a real kernel, real multicast, a real answer.
 NOWHERE=192.0.2.1:4700
 
-# Reaped before as well as after. The trap does not fire when a CI run is cancelled
-# -- the runner's SIGTERM ends bash without it, and SIGKILL is not catchable at all --
-# and the runner is no longer a machine that is thrown away afterwards, so a cancelled
-# run leaves three fixed names for the next run to collide with. `docker rm -f` shrugs
-# at a name that is not there, so this is a no-op on a clean machine.
+# Reaped before as well as after. The trap does not fire when a run is cancelled -- a
+# SIGTERM ends bash without it, and SIGKILL is not catchable at all -- and on a machine
+# that is not thrown away afterwards a cancelled run leaves three fixed names for the
+# next run to collide with. `docker rm -f` shrugs at a name that is not there, so this
+# is a no-op on a clean machine.
 before=$(docker ps -aq | wc -l)
 docker rm -f cfx-a cfx-b cfx-c >/dev/null 2>&1 || true
 echo "containers on this machine: $before before this run"

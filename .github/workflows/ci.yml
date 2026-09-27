@@ -24,7 +24,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Everything Linux, on veilnet-dev, in one job: it is one machine and one runner
+  # The Go suite on Linux, on veilnet-dev, in one job: it is one machine and one runner
   # process, so separate jobs would queue anyway, each paying a checkout and a fetch
   # of the anchor binaries.
   #
@@ -66,18 +66,32 @@ jobs:
       - name: every target vets, test files included
         run: make cross
 
+  # The container suites, on a hosted runner: the boot service under a real systemd, and
+  # three nodes against the live API and the production realm. The third reaches the
+  # realm through its manifest's bootstrap node over UDP, and from veilnet-dev no
+  # handshake gets through to it. A hosted runner is thrown away, so nothing here reaps
+  # after the suites; the fetch needs the anchor credential, which a fork's pull request
+  # is not given.
+  integration:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+
+      # Every pair, not only linux-amd64: `dist` builds every target, with the size gate.
+      - uses: ./.github/actions/anchor-bins
+        with:
+          app-id: ${{ secrets.ANCHOR_APP_ID }}
+          private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
+
       - name: what this runner gives the container suites
         run: ./test/preflight.sh
 
-      # One invocation, so `dist` -- every target, with the size gate -- and the image
-      # are built once for both suites.
+      # One invocation, so `dist` and the image are built once for both suites.
       - name: the boot service, and three nodes against the live API
         run: make service-test integration
-
-      # The scripts reap these on the way out, but a cancelled run fires no EXIT trap,
-      # and the machine is not thrown away afterwards.
-      - if: always()
-        run: docker rm -f cfx cfx-a cfx-b cfx-c || true
 
   # macOS and Windows, on the operating systems that have the path handling, the file
   # modes, the DACLs and the service code. Each fetches only its own pair, so the tests

@@ -246,4 +246,5 @@ into it. See [windows.md](windows.md#file-permissions).
 | `manifest.b64` | kept | kept | kept | **deleted, permanently** |
 | `state.json` | kept | kept | kept | deleted |
 | `anchord.json` | kept | rewritten | rewritten | deleted |
+| the service's log file (macOS, FreeBSD, Windows) | kept | appended | appended | deleted |
 | extracted binaries | kept | kept | deleted |

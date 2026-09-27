@@ -251,13 +251,14 @@ func readEnvelope(path string) (config.Envelope, error) {
 	return env, nil
 }
 
-// checkRenewalTarget refuses a document that renews somewhere --api does not name.
+// chooseAPIBase is the API this machine renews against: --api when it was given, and
+// the origin of the document's renewalUrl otherwise.
 //
-// **--api is required and is deliberately not derived from the manifest.** Reading
-// the base URL out of the document's own renewalUrl would make the two agree by
-// construction, which is exactly the check being removed: SameHost exists so that a
-// field conflux stores and re-reads cannot decide where a credential is POSTed, and
-// a check whose other operand comes from the same document checks nothing at all.
+// --api is an override rather than a requirement. The document carries the identity
+// seed and the renewal bearer, so whoever could rewrite its renewalUrl already holds
+// everything a redirect would steal, and retyping the host buys a typo rather than a
+// check. Given, it is also an assertion: the document must renew against the same
+// host, refused now naming both rather than at the first renewal months later.
 func chooseAPIBase(m *enrol.Manifest, flagValue string) (string, error) {
 	url := m.RenewalURL()
 	if url == "" {

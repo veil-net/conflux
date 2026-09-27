@@ -144,19 +144,12 @@ conflux: launchctl bootstrap system /Library/LaunchDaemons/org.veilnet.conflux.p
 Bootstrap failed: 5: Input/output error
 ```
 
-Error 5 is launchd's answer for most refusals and names none of them. This one was
-conflux's own doing: `uninstall` ran `launchctl disable`, and a disabled label
-[persists across boots](https://keith.github.io/xcode-man-pages/launchctl.1.html) — so a
-machine that had ever been uninstalled could not install again. `uninstall` no longer
-disables anything, and `install` now enables before it bootstraps, which clears the state
-on a machine that already carries it.
-
-To clear it by hand on a build that predates the fix:
-
-```console
-$ sudo launchctl enable system/org.veilnet.conflux
-$ sudo conflux up
-```
+Error 5 is launchd's answer for most refusals and names none of them. conflux enables
+the label before every bootstrap — a disabled label
+[persists across boots](https://keith.github.io/xcode-man-pages/launchctl.1.html) and
+blocks loading until it is enabled again — so when it still fails, the message lists the
+other causes: the plist not root-owned or writable by anybody else, the job already
+loaded, or the executable it names gone or on a volume not mounted yet.
 
 If it still fails, the other three causes of error 5 are: the plist is not root-owned or
 is group- or world-writable; the job is already loaded (`sudo launchctl bootout

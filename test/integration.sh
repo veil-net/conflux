@@ -34,13 +34,17 @@ anchor_id() { docker exec "$1" sh -c "sed -n 's/.*\"anchorId\": \"\([^\"]*\)\".*
 # counter is per-interface, and a container with two bridges would otherwise be read
 # as only the first of them. connections is the anchor_connections gauge. `conflux
 # metrics` is the anchorctl pass-through, "name<padding>value" per line.
+#
+# Every reader of a pipe in this file reads to the end. One that stops early -- awk's
+# exit, grep -q -- leaves the writer to die of SIGPIPE whenever it has more to say, and
+# under pipefail that is a 141 which fails an assignment and falsifies an if.
 lan_found() {
   docker exec "$1" conflux metrics 2>/dev/null |
     awk '$1 ~ /^anchor_lan_peers_found_total/ { s += $2 } END { print s + 0 }'
 }
 
 connections() {
-  docker exec "$1" conflux metrics 2>/dev/null | awk '$1 == "anchor_connections" { print $2 + 0; exit }'
+  docker exec "$1" conflux metrics 2>/dev/null | awk '$1 == "anchor_connections" { v = $2 } END { print v + 0 }'
 }
 
 # A and B are given a bootstrap entry that cannot answer -- 192.0.2.1 is RFC 5737's
@@ -138,7 +142,7 @@ manifest=$(curl -fsS -X POST -H 'Accept: application/json' --max-time 30 https:/
 printf '%s' "$manifest" | docker exec -i cfx-c conflux enrol --manifest -
 unset manifest
 docker exec cfx-c conflux up --taint "$TAINT" --ipv4 10.128.0.3/24 --lan-discovery no
-if docker exec cfx-c journalctl -u conflux --no-pager | grep -q enrolling; then
+if docker exec cfx-c journalctl -u conflux --no-pager | awk '/enrolling/ { n++ } END { exit n == 0 }'; then
   echo "C enrolled again instead of starting from the manifest it was given" >&2
   exit 1
 fi

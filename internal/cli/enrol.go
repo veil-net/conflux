@@ -13,7 +13,6 @@ import (
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/enrol"
 	"github.com/veil-net/conflux/internal/paths"
-	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/ui"
 )
 
@@ -88,8 +87,8 @@ func runEnrol(_ context.Context, args []string) int {
 		return ExitUsage
 	}
 
-	if err := privcheck.Require("installing a credential", "conflux enrol"); err != nil {
-		return fail(fmt.Errorf("%w: %w", errNeedsRoot, err))
+	if err := needsRoot("installing a credential", "enrol", args); err != nil {
+		return fail(err)
 	}
 
 	d := paths.Default()

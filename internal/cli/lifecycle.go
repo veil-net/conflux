@@ -3,13 +3,11 @@ package cli
 import (
 	"context"
 	"flag"
-	"fmt"
 	"os"
 	"strings"
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
-	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
 )
@@ -35,8 +33,8 @@ func runInstall(ctx context.Context, args []string) int {
 		return ExitUsage
 	}
 
-	if err := privcheck.Require("registering the boot service", "conflux install"); err != nil {
-		return fail(fmt.Errorf("%w: %w", errNeedsRoot, err))
+	if err := needsRoot("registering the boot service", "install", args); err != nil {
+		return fail(err)
 	}
 
 	return install(ctx, paths.Default(), true)
@@ -175,8 +173,8 @@ func runStart(ctx context.Context, args []string) int {
 		return ExitUsage
 	}
 
-	if err := privcheck.Require("starting the service", "conflux start"); err != nil {
-		return fail(fmt.Errorf("%w: %w", errNeedsRoot, err))
+	if err := needsRoot("starting the service", "start", args); err != nil {
+		return fail(err)
 	}
 
 	d := paths.Default()
@@ -242,8 +240,8 @@ func runDown(_ context.Context, args []string) int {
 		return ExitUsage
 	}
 
-	if err := privcheck.Require("stopping the service", "conflux down"); err != nil {
-		return fail(fmt.Errorf("%w: %w", errNeedsRoot, err))
+	if err := needsRoot("stopping the service", "down", args); err != nil {
+		return fail(err)
 	}
 
 	mgr, err := service.New()
@@ -296,8 +294,8 @@ func runUninstall(_ context.Context, args []string) int {
 		return ExitUsage
 	}
 
-	if err := privcheck.Require("removing the boot service", "conflux uninstall"); err != nil {
-		return fail(fmt.Errorf("%w: %w", errNeedsRoot, err))
+	if err := needsRoot("removing the boot service", "uninstall", args); err != nil {
+		return fail(err)
 	}
 
 	d := paths.Default()
@@ -356,7 +354,7 @@ func confirmUninstall(d paths.Dirs, yes bool) bool {
 
 	ui.Printf("\nThis deletes this machine's credential, and there is no other copy.\n\n")
 
-	if st, _ := config.LoadState(d); st.AnchorID != "" {
+	if st, err := config.LoadState(d); err == nil && st.AnchorID != "" {
 		ui.Field("anchor", st.AnchorID)
 	}
 

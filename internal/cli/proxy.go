@@ -3,12 +3,10 @@ package cli
 import (
 	"context"
 	"flag"
-	"fmt"
 	"strings"
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
-	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/ui"
 )
 
@@ -111,8 +109,8 @@ func runProxy(ctx context.Context, args []string) int {
 	// Registering the boot service needs root even though userspace mode itself
 	// needs nothing, and a proxy that vanishes at the next reboot is not what
 	// anyone asked for.
-	if err := privcheck.Require("registering the boot service", "conflux proxy "+strings.Join(specs, " ")); err != nil {
-		return fail(fmt.Errorf("%w: %w", errNeedsRoot, err))
+	if err := needsRoot("registering the boot service", "proxy", args); err != nil {
+		return fail(err)
 	}
 
 	d := paths.Default()

@@ -13,7 +13,6 @@ import (
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
-	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/ui"
 )
 
@@ -68,8 +67,8 @@ func runRenew(ctx context.Context, args []string) int {
 		return ExitUsage
 	}
 
-	if err := privcheck.Require("renewing this machine's credential", "conflux renew"); err != nil {
-		return fail(fmt.Errorf("%w: %w", errNeedsRoot, err))
+	if err := needsRoot("renewing this machine's credential", "renew", args); err != nil {
+		return fail(err)
 	}
 
 	return renewNow(ctx, paths.Default())
@@ -111,7 +110,11 @@ func renewNow(ctx context.Context, d paths.Dirs) int {
 		return fail(fmt.Errorf("could not read %s, which anchorctl authenticates with", d.TokenFile()))
 	}
 
-	before, _ := config.LoadState(d)
+	// Only for the line it prints: RenewNow reads the state again, under the lock.
+	before, err := config.LoadState(d)
+	if err != nil {
+		return fail(err)
+	}
 
 	if err := daemon.RenewNow(ctx, d, ctl, reporter{}); err != nil {
 		return fail(err)

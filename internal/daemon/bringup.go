@@ -42,10 +42,13 @@ func (nopReporter) Warn(string, ...any) {}
 // MaxSkew is how far this machine's clock may be from the enrolment API's before
 // conflux stops rather than starting an anchor that cannot connect.
 //
-// anchor's ALPN tag rotates hourly and a peer accepts one epoch either side, so an
-// hour of skew presents as a TLS alert indistinguishable from a wrong realm. The
-// anchor would come up, report itself healthy, and reach nobody.
-const MaxSkew = time.Hour
+// anchor's realm.CredSkew, the tightest of the clock checks anchor makes. A credential
+// starts when the issuer signs it, and anchor refuses one that starts more than ten
+// minutes ahead of its own clock -- so a machine that far slow cannot start on a
+// freshly enrolled or renewed chain, and the refusal names the credential rather than
+// the clock. Further out, the hourly ALPN tag makes it a TLS alert indistinguishable
+// from a wrong realm. Refused here, either way, naming the clock.
+const MaxSkew = 10 * time.Minute
 
 // BringUp takes a daemon that is up and answering, and leaves it hosting the anchor
 // this machine is configured for.

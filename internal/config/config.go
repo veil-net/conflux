@@ -7,8 +7,8 @@
 //   - manifest.b64  the identity. Written once, at enrolment, and never replaced
 //     except to splice in a renewed chain.
 //
-// Splitting Config from State is not tidiness. The renewer rewrites NotAfter every
-// few days from the supervisor, and a CLI rewrites Taints from a terminal; one file
+// Splitting Config from State is not tidiness. The renewer rewrites NotAfter at
+// every renewal from the supervisor, and a CLI rewrites Taints from a terminal; one file
 // would make those a lost update. Splitting the manifest out again is because it is
 // the only file with no second copy anywhere in the world.
 package config

@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"errors"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -10,9 +9,6 @@ import (
 	"time"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
-	"github.com/veil-net/conflux/internal/config"
-	"github.com/veil-net/conflux/internal/libexec"
-	"github.com/veil-net/conflux/internal/paths"
 )
 
 func TestDevicePath(t *testing.T) {
@@ -122,26 +118,14 @@ func TestWhatIsPermanent(t *testing.T) {
 // writing is still in the tail by the time its exit is reported. Draining the pipes
 // beside Wait, rather than through it, lost exactly this line.
 func TestTheTailHoldsTheLastWords(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", t.TempDir())
-	t.Setenv(fakeAnchordEnv, "1")
+	s, _ := supervised(t, "1")
 
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll: %v", err)
-	}
-
-	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}}); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
-
-	s := &Supervisor{Dirs: d, tools: &libexec.Tools{Anchord: os.Args[0]}, tail: newRing(tailLines)}
-
-	_, _, done, err := s.spawn(t.Context())
+	_, c, err := s.spawn(t.Context())
 	if err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 
-	if err := <-done; err == nil {
+	if <-c.exited; c.err == nil {
 		t.Fatal("the stand-in anchord exited 0")
 	}
 

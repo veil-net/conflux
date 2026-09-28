@@ -125,7 +125,7 @@ Work through the areas in [standards.md § Audit areas](standards.md#audit-areas
 ```bash
 make test race cross                                   # each once, in full
 ./test/preflight.sh
-make service-test integration                          # one invocation: `dist` (size gate, fresh binaries) and `image` build once
+make -j2 -O service-test integration                   # as CI runs it: `dist` (size gate, fresh binaries) and `image` once, then both suites
 make fmtcheck lint tidycheck vulncheck docscheck       # local utility checks (see reference.md § Local checks)
 actionlint && shellcheck scripts/*.sh test/*.sh        # workflows, the actions they use, and the scripts
 ```

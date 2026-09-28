@@ -16,7 +16,7 @@ stronger.
 And there is no revocation, and there cannot be. Cutting somebody off would mean
 refusing to renew, and refusing requires knowing who to refuse — but enrolment stores
 nothing and renewal is unauthenticated, so a thief renews the stolen credential
-themselves, indefinitely. The seven-day window bounds nothing in that case.
+themselves, indefinitely. The thirty-day window bounds nothing in that case.
 
 Stated plainly: **if the file leaves the machine, the only remedy is to stop using
 that identity.** `conflux uninstall` and `conflux up` draws a new one, and every peer

@@ -45,7 +45,7 @@ func newIssuer(t *testing.T) *issuer {
 
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"chain":    base64.StdEncoding.EncodeToString(is.chain),
-			"notAfter": time.Now().Add(7 * 24 * time.Hour).UTC().Format(time.RFC3339),
+			"notAfter": time.Now().Add(30 * 24 * time.Hour).UTC().Format(time.RFC3339),
 		})
 	}))
 	t.Cleanup(is.srv.Close)
@@ -118,7 +118,7 @@ func TestRenewNowSplicesAndInstalls(t *testing.T) {
 	}
 
 	m := stored(t, d)
-	if m.IssuedAt().Before(before.Add(-time.Second)) || m.NotAfter().Before(time.Now().Add(6*24*time.Hour)) {
+	if m.IssuedAt().Before(before.Add(-time.Second)) || m.NotAfter().Before(time.Now().Add(29*24*time.Hour)) {
 		t.Errorf("the manifest holds a window of %v to %v, want the renewed one", m.IssuedAt(), m.NotAfter())
 	}
 
@@ -202,15 +202,16 @@ func TestAStaleClockIsMeasuredAgain(t *testing.T) {
 		skew    time.Duration
 		refused bool
 	}{
-		"the clock was fixed": {0, false},
-		"it is still wrong":   {2 * time.Hour, true},
+		"the clock was fixed":             {0, false},
+		"within anchor's allowance":       {5 * time.Minute, false},
+		"past a fresh credential's start": {20 * time.Minute, true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			is := newIssuer(t)
 			is.skew = tc.skew
 
-			d := machine(t, is, time.Now(), time.Now().Add(7*24*time.Hour))
-			st := &config.State{AnchorID: renewTestAnchor, ClockSkew: 3 * time.Hour}
+			d := machine(t, is, time.Now(), time.Now().Add(30*24*time.Hour))
+			st := &config.State{AnchorID: renewTestAnchor, ClockSkew: 30 * time.Minute}
 
 			_, _, err := credential(t.Context(), d, st, is.srv.URL, nopReporter{})
 

@@ -4,7 +4,10 @@ package service
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -37,4 +40,15 @@ func query(name string, args ...string) (string, bool) {
 	out, err := exec.Command(name, args...).Output()
 
 	return strings.TrimSpace(string(out)), err == nil
+}
+
+// exists is Installed for the managers whose registration is a file: a stat, which is
+// cheaper than asking the manager and answers where it is not running.
+func exists(path string) (bool, error) {
+	_, err := os.Stat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+
+	return err == nil, err
 }

@@ -160,7 +160,7 @@ machine has left. See
   "version": 1,
   "anchorId": "anchor6btpa3gn6w4stipba4hekzho7caw6srfyy5puvbz7mfanaiept5a",
   "issuedAt": "2026-09-06T06:35:43.5Z",
-  "notAfter": "2026-09-13T06:35:43.871Z",
+  "notAfter": "2026-10-06T06:35:43.871Z",
   "clockSkew": 412000000,
   "enrolledAt": "2026-09-06T06:35:43.559Z",
   "binSetId": "998ece52739a7c74",
@@ -181,7 +181,7 @@ the credential window at the cost of one extra call. That is why it is a separat
 from the manifest, which is recoverable from nowhere.
 
 It is separate from `conflux.json` for a second reason: the renewal timer rewrites
-`notAfter` every few days from the supervisor while a CLI may be rewriting `taints`
+`notAfter` at every renewal from the supervisor while a CLI may be rewriting `taints`
 from a terminal, and one file would make that a lost update.
 
 ## `anchord.json` — rendered, not edited
@@ -247,4 +247,4 @@ into it. See [windows.md](windows.md#file-permissions).
 | `state.json` | kept | kept | kept | deleted |
 | `anchord.json` | kept | rewritten | rewritten | deleted |
 | the service's log file (macOS, FreeBSD, Windows) | kept | appended | appended | deleted |
-| extracted binaries | kept | kept | deleted |
+| extracted binaries | kept | kept | kept | deleted |

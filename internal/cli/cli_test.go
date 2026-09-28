@@ -13,6 +13,7 @@ import (
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/ui"
 )
 
@@ -589,5 +590,24 @@ func TestTheCollisionsAreTheDocumentedOnes(t *testing.T) {
 	// The help text an operator reads says the same number, spelled out.
 	if !strings.HasPrefix(collisions, "Four of conflux's names") {
 		t.Errorf("the help text disagrees with the %d collisions that exist", len(want))
+	}
+}
+
+// TestARefusalForPrivilegeRepeatsTheCommand: what somebody copies out of the refusal
+// is what they typed, flags and all. `sudo conflux up` without the --taint mints a
+// different network, and without the --ipv4 asks a question the flag had answered.
+func TestARefusalForPrivilegeRepeatsTheCommand(t *testing.T) {
+	if privcheck.Elevated() {
+		t.Skip("running elevated, so nothing is refused")
+	}
+
+	_, errOut, code := capture(t, "up", "--taint", "my net", "--ipv4", "10.128.0.7/24")
+
+	if code != ExitDenied {
+		t.Errorf("exited %d, want %d", code, ExitDenied)
+	}
+
+	if want := "conflux up --taint 'my net' --ipv4 10.128.0.7/24"; !strings.Contains(errOut, want) {
+		t.Errorf("the refusal should say %q; it said:\n%s", want, errOut)
 	}
 }

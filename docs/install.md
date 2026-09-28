@@ -18,7 +18,7 @@ file is cleaned up or the home directory is not mounted at boot. conflux warns w
 notices this, but the fix is to move the binary first.
 
 Seven platforms are built: linux/amd64, linux/arm64, darwin/arm64, windows/amd64,
-windows/arm64, freebsd/amd64, openbsd/amd64. Each is about 45–50 MB, because each
+windows/arm64, freebsd/amd64, openbsd/amd64. Each is about 50 MB, because each
 carries the `anchord` and `anchorctl` for its own platform inside it.
 
 ## Linux
@@ -40,14 +40,12 @@ the build is known to work on.
 `utun` is in the kernel and a root LaunchDaemon can open it, so there is no driver to
 install.
 
-If macOS refuses to run a downloaded binary, clear the quarantine attribute:
+Releases are not notarised, so macOS refuses to run a downloaded binary until the
+quarantine attribute is cleared:
 
 ```console
 $ xattr -d com.apple.quarantine conflux-darwin-arm64
 ```
-
-Signed and notarised builds are published where the signing secrets are configured; an
-unsigned one needs the line above.
 
 ## Windows
 
@@ -62,7 +60,7 @@ under `daemon(8)` on FreeBSD, `rcctl`-enabled on OpenBSD. See [service.md](servi
 
 ## Upgrading in place
 
-Replace the binary and re-register:
+Replace the binary and restart onto it:
 
 ```console
 $ sudo install -m 0755 conflux-linux-amd64 /usr/local/bin/conflux

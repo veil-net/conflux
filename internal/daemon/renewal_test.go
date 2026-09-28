@@ -7,19 +7,19 @@ import (
 
 var (
 	issued  = time.Date(2026, 9, 6, 0, 0, 0, 0, time.UTC)
-	expires = issued.Add(7 * 24 * time.Hour) // the alpha realm's window
+	expires = issued.Add(30 * 24 * time.Hour) // the alpha realm's window
 )
 
 func TestRenewAtIsTwoThirdsOfTheObservedWindow(t *testing.T) {
 	at := RenewAt(issued, expires)
 
-	// Two thirds of seven days is four days and sixteen hours.
-	want := issued.Add(4*24*time.Hour + 16*time.Hour)
+	// Two thirds of thirty days is twenty.
+	want := issued.Add(20 * 24 * time.Hour)
 	if !at.Equal(want) {
 		t.Errorf("RenewAt = %v, want %v", at, want)
 	}
 
-	// And the point of computing it rather than hardcoding seven days: a window of
+	// And the point of computing it rather than hardcoding thirty days: a window of
 	// another length divides the same way.
 	short := issued.Add(3 * time.Hour)
 	if got, want := RenewAt(issued, short), issued.Add(2*time.Hour); !got.Equal(want) {
@@ -34,9 +34,9 @@ func TestDueAt(t *testing.T) {
 		want bool
 	}{
 		{"just issued", issued.Add(time.Minute), false},
-		{"halfway", issued.Add(84 * time.Hour), false},
-		{"a minute before two thirds", issued.Add(4*24*time.Hour + 16*time.Hour - time.Minute), false},
-		{"at two thirds", issued.Add(4*24*time.Hour + 16*time.Hour), true},
+		{"halfway", issued.Add(15 * 24 * time.Hour), false},
+		{"a minute before two thirds", issued.Add(20*24*time.Hour - time.Minute), false},
+		{"at two thirds", issued.Add(20 * 24 * time.Hour), true},
 		{"past expiry", expires.Add(time.Hour), true},
 		{"a month past expiry", expires.Add(30 * 24 * time.Hour), true},
 	}

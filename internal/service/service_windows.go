@@ -4,9 +4,9 @@ package service
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
 
@@ -49,7 +49,9 @@ func (scm) Install(exe string, args ...string) error {
 	if existing, err := m.OpenService(ServiceName()); err == nil {
 		defer existing.Close()
 
-		cfg.BinaryPathName = quoteCommand(exe, args)
+		// Composed the way CreateService composes it below, so an upgrade registers the
+		// same command line a fresh install would.
+		cfg.BinaryPathName = windows.ComposeCommandLine(append([]string{exe}, args...))
 
 		if err := existing.UpdateConfig(cfg); err != nil {
 			return fmt.Errorf("update the service: %w", err)
@@ -199,20 +201,4 @@ func (scm) Describe() string {
 // root, so uninstall removes it with the rest and Remove has nothing of its own to.
 func (scm) LogHint() string {
 	return `Get-Content -Tail 50 "` + paths.Default().LogFile() + `"`
-}
-
-// quoteCommand renders a BinaryPathName the SCM will parse back correctly.
-func quoteCommand(exe string, args []string) string {
-	parts := make([]string, 0, len(args)+1)
-	parts = append(parts, `"`+exe+`"`)
-
-	for _, a := range args {
-		if strings.ContainsAny(a, ` "`) {
-			a = `"` + strings.ReplaceAll(a, `"`, `\"`) + `"`
-		}
-
-		parts = append(parts, a)
-	}
-
-	return strings.Join(parts, " ")
 }

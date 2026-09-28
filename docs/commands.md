@@ -12,9 +12,9 @@ the boot service runs.
 anchorctl's, reached by typing them: `peers`, `route`, `routes`, `connect`, `punch`,
 `kill`, `events`, `metrics`, `export`, `children`, `telemetry`, `send`, `subscribe`,
 `keygen`, `issue`, `delegate`, `renew-link`, `install-link`, `id`, `inspect`, `config`,
-`root`, `mint-realm`, `mint-anchor`. The last three are absent from the binary conflux
-embeds: `root` mints a realm and is not in the lockdown build, and the two `mint-*`
-verbs exist only in it.
+`mint-realm`, `mint-anchor`. The two `mint-*` verbs exist only in the lockdown build,
+which is the one conflux embeds; `root`, which mints a realm root, is the one that build
+refuses.
 
 `export` is worth naming separately now, because there are two ways to set it and they
 do not last equally long. `conflux anchorctl export -endpoint …` configures the running
@@ -36,9 +36,10 @@ explicitly. `TestTheCollisionsAreTheDocumentedOnes` reads the set off the embedd
 binary, so a future anchor adding a colliding name fails CI here rather than shadowing
 something silently.
 
-**`help`** is conflux's, always, and is not one of the four: anchorctl has no `help`
-command. Bare, it prints conflux's usage and then anchorctl's whole usage beneath a
-rule, so one page covers both surfaces. `conflux help COMMAND` prints that command's
+**`help`** is conflux's, always, and is not counted among the four: anchorctl's `help`
+only prints its usage, and conflux's prints that same usage in full, so owning the word
+loses nothing. Bare, it prints conflux's usage and then anchorctl's whole usage beneath
+a rule, so one page covers both surfaces. `conflux help COMMAND` prints that command's
 own usage instead, whichever binary it belongs to.
 
 **`status`** is resolved by arity. Bare `conflux status` is conflux's, and it prints

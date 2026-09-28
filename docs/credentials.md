@@ -13,7 +13,7 @@ says which it is about.
 | who is recorded | nobody. There is no account and no record | the machine, by the operator who commissioned it |
 | renewal | unauthenticated; the route is gated on nothing | a bearer minted for that one machine, carried in the manifest |
 | revocation | **none, and none is possible** | the guardian refusing to renew |
-| the window | seven days | whatever the operator chose, inside anchor's ninety-day cap |
+| the window | thirty days | whatever the operator chose; anchor sets no ceiling |
 | addresses | derived from the identity | derived, plus an IPv4 the operator may allocate |
 
 The rest of this page is the alpha realm unless it says otherwise, and the section on
@@ -51,15 +51,15 @@ conflux enrols only when `manifest.b64` does not exist. In particular:
 - **Re-running `conflux up` does not enrol.** It reads the identity that is there.
 - **Switching modes does not enrol.** `up` after `proxy` keeps the identity.
 
-## The seven-day window, and renewal
+## The thirty-day window, and renewal
 
 *(The alpha realm. A guardian chooses its own window; the arithmetic below is the
 same either way, because it is computed from the document's own `issuedAt` and
 `notAfter` rather than from a constant.)*
 
-A credential is issued for seven days. conflux renews at **two thirds of the window** —
-day 4.67 — which is what the API's own documentation specifies, and which leaves
-fifty-six hours of retry budget for a machine that is having a bad week.
+A credential is issued for thirty days. conflux renews at **two thirds of the window** —
+day twenty — which is what the API's own documentation specifies, and which leaves ten
+days of retry budget for a machine that is having a bad week.
 
 Renewal happens in two places, and both go through the same arithmetic:
 
@@ -125,19 +125,24 @@ which installs a credential you already hold, is reached through the escape hatc
 
 Three separate things break on a bad clock and only one of them says so.
 
-anchor's handshake tag rotates hourly and a peer accepts one epoch either side, so two
-machines two hours apart **cannot connect at all** — and the symptom is a TLS alert
-that looks exactly like a wrong realm. Separately, a clock an hour fast makes a fresh
-credential look nearly expired, and one a year slow makes an expired one look fine.
+A credential starts at the moment the issuer signs it, and anchor refuses one that
+starts more than ten minutes after its own clock says now. So a machine ten minutes
+slow cannot start on a credential it has just been issued, enrolled or renewed, and the
+refusal names the credential rather than the clock. Further out, anchor's handshake
+tag rotates hourly and a peer accepts one epoch either side, so two machines two hours
+apart **cannot connect at all** — and the symptom is a TLS alert that looks exactly
+like a wrong realm. And a clock weeks fast makes a current credential look expired,
+while one a year slow makes an expired one look fine.
 
 conflux compares the API's `Date` header to the local clock on every call, records the
-skew in `state.json`, and refuses to bring a machine up when it exceeds an hour —
-naming NTP, because the failure is otherwise unrecognisable. Better to stop than to
-start an anchor that reports itself healthy and reaches nobody.
+skew in `state.json`, and refuses to bring a machine up when it exceeds ten minutes —
+anchor's own allowance, and the tightest of the three — naming NTP, because the failure
+is otherwise unrecognisable. Better to stop than to start an anchor that reports itself
+healthy and reaches nobody.
 
 The measurement comes from talking to the API, so it is taken on the paths that do:
 enrolling, and renewing. A start whose credential is current makes no call — unless the
-last measurement was over the hour, in which case it renews to measure again rather
+last measurement was over the limit, in which case it renews to measure again rather
 than trusting a figure from before the clock was fixed. `conflux status` prints the
 skew the last call measured, when it is more than a second.
 
@@ -204,7 +209,7 @@ renew is strictly better than one that will not start.
 
 ### `renewalSecret` is the machine, a second time
 
-Everything [the section on a stolen manifest](#a-stolen-manifestb64-is-permanent) says
+Everything [the section on a stolen manifest](security.md#a-stolen-manifestb64-is-permanent) says
 applies to this field as well, and it is the reason that section did not get any
 gentler on this path. Whoever holds the document holds the identity seed **and** the
 bearer that keeps its credential current, so they are that anchor and can stay that

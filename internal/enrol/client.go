@@ -101,15 +101,15 @@ type Renewal struct {
 }
 
 // SkewError means the local clock disagrees with the server's badly enough that
-// nothing else will work. anchor's ALPN tag rotates hourly and a peer accepts one
-// epoch either side, so an hour of skew is a TLS alert that looks exactly like a
-// wrong realm -- worth its own error so the message can say "NTP" rather than
-// leaving somebody to work it out from a handshake failure.
+// nothing else will work: anchor refuses a credential that starts in its future, and
+// further out the handshake itself fails, as a TLS alert that looks exactly like a
+// wrong realm. Worth its own error so the message can say "NTP" rather than leaving
+// somebody to work it out from a refused credential or a handshake failure.
 type SkewError struct{ By time.Duration }
 
 func (e *SkewError) Error() string {
 	return fmt.Sprintf(
-		"this machine's clock is %s away from the server's; the overlay's handshake rotates hourly and will not connect.\n"+
+		"this machine's clock is %s away from the server's, and the overlay will not start or connect on it.\n"+
 			"  fix the clock first (timedatectl set-ntp true, or the equivalent), then try again",
 		e.By.Round(time.Second))
 }

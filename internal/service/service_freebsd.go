@@ -59,18 +59,7 @@ func (f freebsd) Remove() error {
 func (freebsd) Stop() error    { return run("service", rcName(), "stop") }
 func (freebsd) Restart() error { return run("service", rcName(), "restart") }
 
-func (freebsd) Installed() (bool, error) {
-	_, err := os.Stat(scriptPath())
-	if err == nil {
-		return true, nil
-	}
-
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-
-	return false, err
-}
+func (freebsd) Installed() (bool, error) { return exists(scriptPath()) }
 
 func (f freebsd) Describe() string {
 	if installed, _ := f.Installed(); !installed {

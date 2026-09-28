@@ -21,7 +21,7 @@ A realm is a root key and a credential per member. An anchor presents a chain pr
 it descends from the root, and the chain is checked during the TLS handshake — before
 any data. Membership is not a list on a server; it is a signature.
 
-conflux enrols into VeilNet's public realm. The credential is issued for seven days
+conflux enrols into VeilNet's public realm. The credential is issued for thirty days
 and renewed automatically.
 
 **Or into somebody else's.** A realm can delegate: one root hands a realm to another
@@ -112,9 +112,11 @@ without a generated name agrees on a name and passes it: `--taint office`.
 
 ## What conflux decides, and what anchor decides
 
-conflux decides: which mode, which taints, which overlay IPv4, which subnets, which
-proxies, where the files live, and when to renew. That is the whole list, and it is
-what the configuration file holds.
+conflux decides: which mode, which taints, which IPv4, which subnets or proxies,
+whether the machine is an exit, what it reaches the realm over and how (an uplink, a
+port, low latency, LAN discovery, a bootstrap override), where telemetry goes, where the
+files live, and when to renew. That is the whole list, and it is what the configuration
+file holds.
 
 anchor decides everything else — every packet, every route, every credential check,
 every peer. When something goes wrong on the wire it is anchor's documentation that

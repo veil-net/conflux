@@ -41,6 +41,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -236,26 +237,51 @@ func Fetch(ctx context.Context, src Source, want []string, dir string, log func(
 			len(want)-len(missing), len(want), strings.Join(missing, "\n  "))
 	}
 
+	// Every binary at once. Each is its own file, its own download and its own digest,
+	// and taken one after another the fetch waits for the slowest part of the path
+	// fourteen times over. The first failure stops the rest, and is the one reported.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	var (
+		wg    sync.WaitGroup
+		mu    sync.Mutex
+		first error
+	)
+
 	for _, name := range want {
-		b := byName[name]
-		dest := filepath.Join(dir, name)
+		wg.Go(func() {
+			b := byName[name]
+			dest := filepath.Join(dir, name)
 
-		// A file already there with the digest the manifest gives is this binary, and
-		// is kept: a directory that survives between fetches -- a persistent runner's
-		// cache -- then costs a read rather than a download. Anything else is fetched.
-		how := "cached"
-		if !matches(dest, b) {
-			how = "fetched"
+			// A file already there with the digest the manifest gives is this binary,
+			// and is kept: a directory that survives between fetches -- a persistent
+			// runner's cache -- then costs a read rather than a download. Anything
+			// else is fetched.
+			how := "cached"
 
-			if err := download(ctx, src, assets[name], b, dest); err != nil {
-				return fmt.Errorf("%s: %w", name, err)
+			var err error
+			if !matches(dest, b) {
+				how = "fetched"
+				err = download(ctx, src, assets[name], b, dest)
 			}
-		}
 
-		log("  ok   %-28s %5.1f MB  %s  %s", name, float64(b.Bytes)/(1<<20), b.SHA256[:12], how)
+			mu.Lock()
+			defer mu.Unlock()
+
+			switch {
+			case err != nil && first == nil:
+				first = fmt.Errorf("%s: %w", name, err)
+				cancel()
+			case err == nil:
+				log("  ok   %-28s %5.1f MB  %s  %s", name, float64(b.Bytes)/(1<<20), b.SHA256[:12], how)
+			}
+		})
 	}
 
-	return nil
+	wg.Wait()
+
+	return first
 }
 
 // matches reports whether path already holds exactly the binary b describes.

@@ -9,12 +9,12 @@ The concrete facts the workflow relies on. Step 8 of every run keeps this file t
 - `cmd/anchor-fetch/`: the shelf fetcher CLI.
 - `internal/`
   - `anchorctl`: `args.go` (`StartMode`, `ModeFromConfig`, the argv builders), `ctl.go` (runs `start`, `stop`, `status`, `metrics`, `renew`; `Ping`; `Env`), `parse.go` (`ParseStarted`, `ParseStatus`, `ParseMetric`, `MetricConnections`), `testdata/argv/*.golden`, `flags_test.go` (flag cross-check)
-  - `cli`: verbs, pass-through, refusal of `stop`/`restart`, `up`/`proxy`/`enrol`/`renew`/`status`/`serve`, `chooseIPv4` (asked once), per-OS glue (`service_windows.go` logs the service to `LogFile`)
+  - `cli`: verbs, pass-through, refusal of `stop`/`restart`, `up`/`proxy`/`enrol`/`renew`/`status`/`serve`, `chooseIPv4` (asked once), `needsRoot` (a privilege refusal that repeats the command typed, quoted), per-OS glue (`service_windows.go` logs the service to `LogFile`)
   - `config`: `Config` (`IPv4 *string`: nil never asked, `""` declined), `Validate`, `DefaultAPIBaseURL`, `DefaultTUNName`; `spec.go` (taint, proxy, IPv4, uplink, peer, AnchorID and subnet grammar, each anchor's); `atomic.go`; `secret.go` (redacting `Envelope`); `export.go`; `state.go` (`ClockSkew`, link reopens)
-  - `daemon`: `supervisor.go` (spawn with line writers, readiness, shutdown, `renewLoop`, `isPermanent`), `bringup.go` (`BringUp` under the lock, `credential`, `MaxSkew`, `permanentError`), `renew.go` (`renewStored`, the one renewal body; `RenewNow`), `renewal.go` (the two-thirds arithmetic), `ready.go`, `link.go` (link watcher), `export.go` (anchord's `-config`), `proc_*.go`; `bench_test.go`, `main_test.go` (the test binary as a stand-in anchorctl/anchord)
+  - `daemon`: `supervisor.go` (spawn into a `child` whose exit is a closed channel, line writers, a fixed-size tail ring, readiness, shutdown — SIGTERM where a signal reaches, `anchorctl stop` then kill where none does, nothing for a daemon already gone — `renewLoop`, `isPermanent`), `bringup.go` (`BringUp` under the lock, `credential`, `MaxSkew` = anchor's `realm.CredSkew`, 10 min, `permanentError`), `renew.go` (`renewStored`, the one renewal body; `RenewNow`), `renewal.go` (the two-thirds arithmetic), `ready.go`, `link.go` (link watcher), `export.go` (anchord's `-config`), `proc_*.go`; `bench_test.go`, `main_test.go` (the test binary as a stand-in anchorctl/anchord, told apart by argv: anchord is started `-socket` first), `supervisor_test.go` (shutdown of a dead and a live daemon, the tail's order)
   - `enrol`: `client.go` (`Enrol` returns the envelope undecoded; `Renew` needs the manifest's `renewalUrl`; per-client `Skew`; shared transport), `manifest.go` (`Decode`, `WithChain`), `auth.go`
   - `paths`: `Dirs`, `EnsureAll`, `LogFile`, `acl_windows.go` (`Restrict`, `Trusted`, the root's ownership and DACL), `acl_other.go`
-  - the rest: `flock`, `libexec` (extraction; Windows trusts only Administrators-owned binaries), `privcheck`, `service` (systemd, launchd, rc for FreeBSD and OpenBSD via `service_rc.go`, the SCM; scope), `shelf`, `taint` (minting), `ui` (`term_*.go`: a real isatty), `version`, `wintun` (`pinned.go`: `Version`, `ZipSHA256`)
+  - the rest: `flock`, `libexec` (extraction; Windows trusts only Administrators-owned binaries), `privcheck`, `service` (systemd, whose unit and `ExecStart=` quoting render in the untagged `service_systemd.go`, launchd, rc for FreeBSD and OpenBSD via `service_rc.go`, the SCM; scope; `exists` for the file-registered managers), `shelf`, `taint` (minting, uniform by rejection sampling), `ui` (`term_*.go`: a real isatty), `version`, `wintun` (`pinned.go`: `Version`, `ZipSHA256`)
 - `scripts/anchor-bins.sh`, `test/`, `.github/`, `docs/`, `VERSION`.
 
 ## Make targets
@@ -33,8 +33,8 @@ The concrete facts the workflow relies on. Step 8 of every run keeps this file t
 | `tidycheck` | `go mod tidy`, then compare `go.mod` and `go.sum` (both restored on failure) |
 | `docscheck` | every `docs/*.md` named in `README.md`, every `docs/<name>.md` the README links exists, every `](<name>.md)` link in `docs/` resolves |
 | `golden` | `go test ./internal/anchorctl -update` |
-| `cross` | for each `TARGETS` entry: `go vet ./...` (compiles packages and test files), CGO off; works with placeholders |
-| `dist` | for each `TARGETS` entry: `dist/conflux-<os>-<arch>[.exe]`, size gate `MIN_MB=30`..`MAX_MB=75`, `dist/SHA256SUMS`; clears old artifacts first |
+| `cross` | every `TARGETS` entry at once: `go vet ./...` (compiles packages and test files), CGO off, each target's output held and printed in `TARGETS` order; works with placeholders |
+| `dist` | every `TARGETS` entry built at once into `dist/conflux-<os>-<arch>[.exe]`, then the size gate `MIN_MB=30`..`MAX_MB=75` read in `TARGETS` order, `dist/SHA256SUMS`; clears old artifacts first, leaves no build logs |
 | `image` | `dist`, then copies `dist/conflux-linux-amd64` to `test/systemd/conflux` and runs `docker build -t $(IMAGE)` (default `conflux-systemd-test`) |
 | `service-test` / `integration` | `image`, then `test/service.sh` / `test/integration.sh` |
 | `clean`, `help` | |
@@ -64,6 +64,7 @@ The concrete facts the workflow relies on. Step 8 of every run keeps this file t
   - It refuses any `anchoradmin*` asset and any asset not in state `uploaded`.
   - It reads `manifest.json`: `{"formatVersion":1,"pin":"realm…","binaries":[{"name","program","os","arch","bytes","sha256"}]}`. There are no URLs; assets are resolved by name within the one release.
   - A file already at the destination with the manifest's size and SHA-256 is kept (`cached`); anything else is downloaded to a temp file, checked for size and SHA-256, and renamed into place.
+  - Every file at once; the first failure cancels the rest and is the one reported. `ok` lines arrive in completion order. All 14 fresh: ~6 s (37 s one at a time); cached: ~1 s.
   - HTTPS only; `CONFLUX_ALLOW_INSECURE_API=1` allows plain HTTP for tests. Redirects must stay HTTPS, at most 5.
   - Bounds: manifest 1 MiB, binary 200 MiB.
 
@@ -81,8 +82,9 @@ The concrete facts the workflow relies on. Step 8 of every run keeps this file t
   3. `anchor_lan_peers_found_total` (labelled per interface; summed) is above 0 on A or B.
   4. `cfx-c`: enrolled from `POST /ghosts/alpha` fetched on the host and piped to `conflux enrol --manifest -`; `up --lan-discovery no` with no `--peers` must not enrol again, must reach the realm through the manifest's bootstrap list (`anchor_connections` > 0), and its discovery counter stays 0.
   5. Reboot A: same identity.
-  6. B `down`: keeps the registration, config and identity, and drops `anchor0`. `start` restores it. `down` then reboot restores it.
-  7. `uninstall` removes everything.
+  6. `anchord` SIGKILLed on A (`docker exec cfx-a sh -c "kill -9 …"`; `kill` is a builtin): the supervisor brings it back without a reboot — a new pid, `/run/conflux/ready` rewritten, same identity, B reachable at its IPv6.
+  7. B `down`: keeps the registration, config and identity, and drops `anchor0`. `start` restores it. `down` then reboot restores it.
+  8. `uninstall` removes everything.
 - **`test/systemd/Dockerfile`:** `debian:trixie-slim` plus systemd, iproute2, iputils-ping and dbus, with getty, udev, console, timesyncd, logind and modules-load units stripped (a container cannot load modules, and the failed unit leaves systemd `degraded`); `COPY conflux`; boots systemd. Containers run with `--privileged --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw --device /dev/net/tun`.
 - **Tests that skip without real binaries (`anchor.Supported`):**
   - `anchor`: `TestPairIsRealExecutables`, `TestSetIDIsStable`
@@ -90,7 +92,8 @@ The concrete facts the workflow relies on. Step 8 of every run keeps this file t
   - `anchorctl`: `TestEveryFlagWeUseExists`
   - `cli`: `TestNoUnintendedShadowing`, `TestTheCollisionsAreTheDocumentedOnes`
   - `daemon`: `BenchmarkDaemonLifecycle` (a benchmark; not part of the no-skip gate)
-- On Linux with real binaries nothing in the module skips; CI's gate requires at least 150 top-level passes.
+- Platform skips, outside the real-binary gate: `daemon.TestShutdownSignalsARunningDaemon` on Windows, and the mode-bit tests on Windows.
+- On Linux with real binaries nothing in the module skips (167 top-level passes); CI's gate requires at least 150.
 
 ## CI/CD
 
@@ -102,7 +105,7 @@ The concrete facts the workflow relies on. Step 8 of every run keeps this file t
 | Job | Runner | Steps |
 |---|---|---|
 | `linux` | `[self-hosted, linux]` | setup, anchor-bins (all 14, via the tool cache), `go test -race -count=1 -v ./...` with the gate (no `--- SKIP` anywhere, ≥ 150 PASS), `make cross` |
-| `integration` | `ubuntu-latest` | setup, anchor-bins (all 14; `dist` builds every target), `./test/preflight.sh`, `make service-test integration`. Hosted because node C's QUIC handshake to the manifest's bootstrap node gets no answer from veilnet-dev |
+| `integration` | `ubuntu-latest` | setup, anchor-bins (all 14; `dist` builds every target), `./test/preflight.sh`, `make -j2 -O service-test integration` (`dist` and the image once, then both suites side by side, output grouped per suite). Hosted because node C's QUIC handshake to the manifest's bootstrap node gets no answer from veilnet-dev |
 | `platforms` | `macos-latest` (pair `darwin-arm64`), `windows-latest` (pair `windows-amd64`) | setup, anchor-bins (that pair only), on Windows the wintun pin check (digest of the published zip against `internal/wintun/pinned.go`), `go test -count=1 -v ./...` failing if any real-binary test skipped |
 
 **`.github/workflows/release.yml`**
@@ -163,7 +166,7 @@ When a rule is unclear, anchor's docs cover it: `docs/control.md`, `reverse-prox
     - `anchord`, garbled, with `-ldflags -X github.com/veil-net/anchor.pinnedGenesis=<pin>`
     - `anchorctl`, garbled, `-tags lockdown`
     - `anchoradmin`, plain and unrestricted, **always**
-  - Output: `release/{anchord,anchorctl,anchoradmin}-<os>-<arch>[.exe]`, 24 files, then `release: 24 binaries in release/, pinned to realm…`. About 20 s with a warm build cache.
+  - Output: `release/{anchord,anchorctl,anchoradmin}-<os>-<arch>[.exe]`, 24 files, then `release: 24 binaries in release/, pinned to realm…`. About 25 s with a warm build cache.
   - Garbled builds are not byte-reproducible, so a local release and the shelf built from the same commit have different digests.
   - darwin/amd64 is not in conflux's `TARGETS`, and `anchor-bins.sh` ignores it.
 - **`make dist`:** the unpinned, unobfuscated cross-build for the same 8 targets. Only `anchord` and the `-tags lockdown` `anchorctl` go into `dist/` (16 files). It joins any realm tree: development only, never shippable.
@@ -189,7 +192,7 @@ EOF
 
 **Routes conflux calls** (the only ones this skill may call):
 
-- `POST /ghosts/alpha`: no body, no auth. Returns `201 {"credentials": "<base64 anchor manifest>"}` (`GhostCredentialsResponseDto`). The credential lasts seven days, nothing is stored server-side, and the response is the only copy.
+- `POST /ghosts/alpha`: no body, no auth. Returns `201 {"credentials": "<base64 anchor manifest>"}` (`GhostCredentialsResponseDto`). The credential lasts thirty days, nothing is stored server-side, and the response is the only copy.
 - `POST /ghosts/alpha/renew`: body `{"anchorId": "anchor…"}` (`RenewGhostCredentialDto`, pattern `^anchor.*`, max 128). Returns `200 {"chain": "<base64>", "notAfter": "<date-time>"}` (`GhostRenewalResponseDto`, no other properties). Unauthenticated; renew on launch and at two thirds of `notAfter`.
 
 The schema documents only success responses. A refusal is NestJS's `{"message": …, "error": …, "statusCode": …}` — the renewal route answers a malformed AnchorID with `400 {"message":"member: id: wrong length: want 58 characters, got 28",…}` — and `enrol.HTTPError` shows the message.
@@ -209,7 +212,7 @@ EOF
 Expected fields, in the order the API sends them:
 - `formatVersion: 1`, `kind: "anchor"`
 - `realm` (hex), `genesis`, `identity` and `chain` present
-- `notAfter` and `issuedAt` in `2006-01-02T15:04:05.000Z` form, about seven days apart (`issuedAt` is written just after the chain is signed, so the window is a fraction of a second short of seven days)
+- `notAfter` and `issuedAt` in `2006-01-02T15:04:05.000Z` form, about thirty days apart (`issuedAt` is written just after the chain is signed, so the window is a fraction of a second short of thirty days)
 - `taints: []`, `useExit: false`, `bootstrap: ["genesis.veilnet.com.au:4700"]`
 - `renewalUrl` = `https://api.veilnet.com.au/ghosts/alpha/renew` (same host)
 - `renewalAuth: "anchor-id"`
@@ -225,7 +228,7 @@ Check every field against `internal/enrol` and anchor's `anchorManifest`. Never 
 
 Schema quirks: only a `firebase` oauth2 security scheme is declared, `guardian-token` is referenced without being declared, and most authenticated routes carry no `security` field. Decide what is authenticated from each route's description, not from `security`.
 
-**Never call** anything else, including `/`, `/health`, `/genesis*`, `/ghosts/realms*`, `/ghosts/me*` (including `/ghosts/me/beta*` and `/ghosts/me/backups*`), `/auth*`, `/orgs*`, `/guardians*`, `/anchor/release*`, `/billing*` and `/users*`. (`GET /anchor/release` serves a shelf-shaped manifest with `pin` and per-binary `url`. It is not conflux's binary source.)
+**Never call** anything else, including `/`, `/health`, `/genesis*`, `/ghosts/realms*`, `/ghosts/me*` (including `/ghosts/me/beta*` and `/ghosts/me/backups*`), `/auth*`, `/orgs*`, `/guardians*`, `/anchor/release*`, `/billing*` and `/users*`. (`GET /anchor/release` serves a shelf-shaped manifest whose `pin` is an array and whose binaries carry a `url`. It is not conflux's binary source.)
 
 ## Probe node
 
@@ -251,7 +254,7 @@ Record each number before (step 5) and after (step 7):
 - **`status` latency**, measured inside the container so `docker exec` overhead is excluded:
   `docker exec cfx-probe sh -c 'for i in $(seq 10); do s=$(date +%s%N); conflux status >/dev/null; echo $(( ($(date +%s%N)-s)/1000000 )); done'`
 - **Goroutines and allocations:** `go test -run '^$' -bench . -benchmem -count 6 ./internal/daemon/ ./internal/libexec/` — `BenchmarkLinkCheck`, `BenchmarkRenewal`, `BenchmarkDaemonLifecycle` (real anchord) in `internal/daemon/bench_test.go`, each reporting allocations and `goroutines-left`, which must be 0. Compare runs with `benchstat` (six samples each for a confidence interval).
-- **Suite durations:** `time make test`, `time make race`, and, after `make image`, `time IMAGE=conflux-systemd-test ./test/integration.sh`.
+- **Suite durations:** `time make test`, `time make race`, and `time make -j2 -O service-test integration` (which includes `dist` and the image).
 
 ## Tools
 

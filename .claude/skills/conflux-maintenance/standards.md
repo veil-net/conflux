@@ -43,13 +43,14 @@ Work through them in this order:
 
 - **CI verifies that the code builds and runs.** That means:
   - builds: `cross` for every target, including a per-target vet compile of test files; `dist` with the size gate; platform builds on macOS and Windows
-  - tests: `test`, `race`, `windows-tun`, `service-test`, and `integration` against the live API
+  - tests: `test`, `race`, the macOS and Windows suites, `service-test`, and `integration` against the live API
   - the release pipeline
 - **Utility checks run locally, not in CI.** gofmt, staticcheck, tidycheck, govulncheck, docs and link checks, commit checks and the like leave CI and run in steps 4 and 7 (see reference.md § Local checks).
 - **Faster, with the same verification power.** Never drop, skip or weaken a build or test that verifies the code. Speed comes from:
   - caching: the Go module and build cache, fetched anchor binaries keyed by shelf digest, Docker layers
   - fetching or building anchor binaries once and sharing them across jobs as artifacts
   - fetching only the binaries a platform job needs
+  - building, vetting and fetching every target at once, and running independent suites side by side
   - removing duplicated builds and steps
   - reusing the `dist` artifact for the image jobs
   - cancelling superseded runs
@@ -75,7 +76,7 @@ Anchor is the reference for overlay behaviour, and the live API at `api.veilnet.
 
 ## Test rules
 
-- Unit tests, argv goldens, `httptest` API fixtures, `test/*.sh`, the `test/systemd` image, and the CI Windows TUN test are code under maintenance, held to the same standard as production code.
+- Unit tests, argv goldens, `httptest` API fixtures, `test/*.sh`, and the `test/systemd` image are code under maintenance, held to the same standard as production code.
 - Assertions or fixtures that encode outdated behaviour, including outdated anchor behaviour or API contracts, are updated in the same change.
 - Tests that need the real anchor binaries skip without them. Confirm they actually ran against the freshly built binaries (no `--- SKIP` in `go test -v` output for `./anchor/ ./internal/libexec/ ./internal/anchorctl/ ./internal/cli/`). A skip caused by missing binaries or a missing tool (staticcheck, govulncheck, shellcheck, Docker) counts as a failure.
 - Code behind a build tag is checked where the tag is true: `make cross` vets and `make lint` runs staticcheck per target OS. Windows-only tests (`internal/paths/acl_windows_test.go`) run only in CI's `platforms` job.

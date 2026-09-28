@@ -89,9 +89,11 @@ jobs:
       - name: what this runner gives the container suites
         run: ./test/preflight.sh
 
-      # One invocation, so `dist` and the image are built once for both suites.
+      # One invocation, so `dist` and the image are built once for both suites, which
+      # then run side by side: they boot containers of different names, and only one of
+      # them enrols. -O keeps each suite's output together, in one block per suite.
       - name: the boot service, and three nodes against the live API
-        run: make service-test integration
+        run: make -j2 -O service-test integration
 
   # macOS and Windows, on the operating systems that have the path handling, the file
   # modes, the DACLs and the service code. Each fetches only its own pair, so the tests

@@ -204,18 +204,7 @@ func (l launchd) Stop() error {
 	return run("launchctl", "kill", "SIGTERM", target())
 }
 
-func (launchd) Installed() (bool, error) {
-	_, err := os.Stat(plistPath())
-	if err == nil {
-		return true, nil
-	}
-
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-
-	return false, err
-}
+func (launchd) Installed() (bool, error) { return exists(plistPath()) }
 
 // running asks launchd rather than inferring it from Installed. A job that is not
 // loaded -- registered but never started in this boot -- prints nothing and is not

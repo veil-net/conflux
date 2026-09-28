@@ -37,22 +37,38 @@ const (
 
 // New mints a label for a network that does not exist yet.
 func New() string {
-	b := make([]byte, length)
+	// A byte at or past the last whole multiple of the alphabet is drawn again, so every
+	// symbol is equally likely: taken modulo 31 as it stands, a byte favours the first
+	// eight, and unguessability is the whole of what a generated name offers.
+	const limit = 256 - 256%len(alphabet)
 
-	// rand.Read from crypto/rand cannot fail; it panics internally if the system
-	// source is broken, which is the correct outcome for this.
-	_, _ = rand.Read(b)
+	var (
+		sb  strings.Builder
+		buf [2 * length]byte
+	)
 
-	var sb strings.Builder
+	sb.Grow(length + length/group - 1)
 
-	sb.Grow(length + length/group)
+	for n := 0; n < length; {
+		// rand.Read from crypto/rand cannot fail; it panics internally if the system
+		// source is broken, which is the correct outcome for this.
+		_, _ = rand.Read(buf[:])
 
-	for i, v := range b {
-		if i > 0 && i%group == 0 {
-			sb.WriteByte('-')
+		for _, v := range buf {
+			if int(v) >= limit {
+				continue
+			}
+
+			if n > 0 && n%group == 0 {
+				sb.WriteByte('-')
+			}
+
+			sb.WriteByte(alphabet[int(v)%len(alphabet)])
+
+			if n++; n == length {
+				break
+			}
 		}
-
-		sb.WriteByte(alphabet[int(v)%len(alphabet)])
 	}
 
 	return sb.String()

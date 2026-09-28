@@ -1,7 +1,7 @@
 # conflux — a thin CLI over anchor.
 #
 # Target names mirror anchor's Makefile so muscle memory transfers between the two
-# repositories: build, test, race, vet, lint, cross, dist, release, clean.
+# repositories: build, test, race, vet, lint, cross, dist, clean.
 
 GO      ?= go
 BIN     ?= bin
@@ -141,12 +141,28 @@ golden:
 # build ./...` compiles no test files, so vet is what catches a platform-specific test
 # that no longer builds. It works with placeholders. Linking each target, with the real
 # binaries and the size gate, is dist's.
+#
+# Every target at once, like dist, each one's output held in $(XLOG) and printed in
+# TARGETS order once all have finished, so a failure reads as it would have alone.
+XLOG := $(DIST)/.cross
 cross:
-	@for t in $(TARGETS); do \
+	@rm -rf $(XLOG) && mkdir -p $(XLOG)
+	@trap 'rm -rf $(XLOG)' EXIT; \
+	for t in $(TARGETS); do \
 		os=$${t%/*}; arch=$${t#*/}; \
-		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) vet ./... 2>&1 | grep -v '^#' && exit 1; \
-		echo "  ok   $$t"; \
-	done
+		( CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) vet ./... > $(XLOG)/$$os-$$arch 2>&1; \
+		  echo $$? > $(XLOG)/$$os-$$arch.rc ) & \
+	done; wait; \
+	fail=0; \
+	for t in $(TARGETS); do \
+		os=$${t%/*}; arch=$${t#*/}; log=$(XLOG)/$$os-$$arch; \
+		if [ "$$(cat $$log.rc)" != 0 ] || grep -qv '^#' $$log; then \
+			grep -v '^#' $$log; echo "  FAIL $$t"; fail=1; \
+		else \
+			echo "  ok   $$t"; \
+		fi; \
+	done; \
+	exit $$fail
 
 dist:
 	@mkdir -p $(DIST)
@@ -154,11 +170,25 @@ dist:
 	@# artifact left over from a target that has since been dropped would be
 	@# checksummed and published alongside the real ones.
 	@rm -f $(DIST)/conflux-* $(DIST)/SHA256SUMS
-	@for t in $(TARGETS); do \
+	@# Every target at once: each is its own link of a 50 MB binary, and one after another
+	@# they take seven times as long for nothing. Each build's output waits in a log and the
+	@# gate reads them in TARGETS order, so a failure reads as it would have alone.
+	@rm -rf $(DIST)/.build && mkdir -p $(DIST)/.build
+	@trap 'rm -rf $(DIST)/.build' EXIT; \
+	for t in $(TARGETS); do \
+		os=$${t%/*}; arch=$${t#*/}; ext=""; \
+		[ "$$os" = windows ] && ext=.exe; \
+		( CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath -ldflags "$(LDFLAGS)" \
+			-o $(DIST)/conflux-$$os-$$arch$$ext . > $(DIST)/.build/$$os-$$arch 2>&1; \
+		  echo $$? > $(DIST)/.build/$$os-$$arch.rc ) & \
+	done; wait; \
+	for t in $(TARGETS); do \
 		os=$${t%/*}; arch=$${t#*/}; ext=""; \
 		[ "$$os" = windows ] && ext=.exe; \
 		out=$(DIST)/conflux-$$os-$$arch$$ext; \
-		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $$out . || exit 1; \
+		if [ "$$(cat $(DIST)/.build/$$os-$$arch.rc)" != 0 ]; then \
+			cat $(DIST)/.build/$$os-$$arch; echo "  FAIL $$t did not build"; exit 1; \
+		fi; \
 		mb=$$(( $$(stat -c%s $$out 2>/dev/null || stat -f%z $$out) / 1048576 )); \
 		if [ $$mb -lt $(MIN_MB) ]; then \
 			echo "  FAIL $$out is $${mb} MB, under $(MIN_MB) MB"; \

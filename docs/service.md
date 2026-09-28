@@ -46,15 +46,17 @@ clears it *before* restarting, so the marker that appears afterwards can only ha
 written by the instance that restart started — otherwise `up` could report success for an
 anchor that was seconds from being torn down.
 
-Shutdown runs in one order everywhere: stop the renewal timer, `anchorctl stop` so the
-anchor says goodbye, then signal the process, then kill it. The second step is the
-important one — an announced departure saves every peer from working it out by
-timeout — and killing is only safe because it has already happened.
+Shutdown runs in one order everywhere: stop the renewal timer, withdraw the readiness
+marker, close the anchor so it says goodbye, and only then let the daemon go. The close
+is the important step — an announced departure saves every peer from working it out by
+timeout — and nothing is killed before it has happened.
 
-The signal step reports whether it delivered anything, and the kill waits only if it
-did. On Unix a `SIGTERM` to the process group is delivered and the ten-second grace
-before `SIGKILL` is a real grace. Inside a Windows service nothing can be delivered at
-all, so there it goes straight to the kill; see the Windows section.
+On Unix the close is a `SIGTERM` to anchord's process group: anchord closes its anchor
+on it, flushes its telemetry and exits, and the twenty-second grace before `SIGKILL` is
+a real grace. Inside a Windows service no signal can be delivered at all, so there the
+anchor is closed over the socket with `anchorctl stop` and the daemon, holding nothing
+by then, is killed; see the Windows section. A daemon that has already died is asked
+nothing: there is no anchor left to close, and its pid may belong to something else.
 
 A start that fails is retried with a backoff up to thirty seconds. One that no retry
 changes — a configuration conflux refuses, a credential for another realm tree, a TUN
@@ -102,6 +104,7 @@ has no configuration yet.
 ```ini
 [Unit]
 Description=Conflux — VeilNet anchor
+Documentation=https://github.com/veil-net/conflux
 After=network-online.target
 Wants=network-online.target
 
@@ -117,6 +120,7 @@ TimeoutStopSec=30
 KillMode=mixed
 KillSignal=SIGTERM
 User=root
+Group=root
 AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
 RuntimeDirectory=conflux
 RuntimeDirectoryMode=0700
@@ -207,17 +211,15 @@ it after 5, 10 and 30 seconds.
 The service name has no space in it deliberately: a name with one makes every `sc.exe`
 invocation quoting-sensitive for no benefit.
 
-The stop handler cancels the supervisor's context, which runs the full shutdown —
-close the anchor, then signal, then kill.
+The stop handler cancels the supervisor's context, which runs the full shutdown.
 
-The signal cannot work here. `GenerateConsoleCtrlEvent` needs a console shared with the
-target process and a service has none, so `CTRL_BREAK` is refused every time conflux
-runs the way conflux actually runs on Windows. Shutdown knows it was never delivered and
-goes straight to the kill rather than waiting out the grace. Killing is safe for the
-reason the ordering exists at all: `anchorctl stop` has already closed the anchor and
-said goodbye, so what is killed is a daemon holding nothing. The graceful alternatives —
-a named event `anchord` waits on, or a daemon-shutdown RPC — are `anchord`'s to offer
-and it offers neither.
+The signal it would send cannot work here. `GenerateConsoleCtrlEvent` needs a console
+shared with the target process and a service has none, so `CTRL_BREAK` is refused every
+time conflux runs the way conflux actually runs on Windows. Shutdown knows it was never
+delivered, closes the anchor over the socket with `anchorctl stop` instead, and kills a
+daemon that is holding nothing rather than waiting out a grace for a signal nobody
+sent. The graceful alternatives — a named event `anchord` waits on, or a
+daemon-shutdown RPC — are `anchord`'s to offer and it offers neither.
 
 A supervisor that stops itself — exit 78 or 70 — reports the service stopped, which the
 SCM does not count as a failure, so the recovery actions do not restart it into the

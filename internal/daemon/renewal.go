@@ -6,9 +6,9 @@ import "time"
 //
 // Two thirds, which is what the enrolment API's own documentation specifies: renew
 // on launch and on a timer at two thirds of notAfter. For the alpha realm's
-// seven-day window that is day 4.67, leaving fifty-six hours of retry budget --
-// early enough to survive a long outage, late enough that a machine which is always
-// on renews twice a fortnight rather than twice a day.
+// thirty-day window that is day twenty, leaving ten days of retry budget -- early
+// enough to survive a long outage, late enough that a machine which is always on
+// renews about once every three weeks rather than every day.
 const RenewFraction = 2.0 / 3.0
 
 // FallbackLead is used when issuedAt is missing or nonsensical, so that a document

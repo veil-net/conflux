@@ -23,11 +23,11 @@ a daemon or a network. Most of conflux can be.
 | `internal/enrol` | the manifest decodes exactly as anchorctl reads it, refuses a realm manifest and a future format version, and **survives a renewal losslessly** |
 | `internal/enrol` (client) | against `httptest`: the alpha exchange byte for byte, the guardian bearer, 4xx and 5xx, an oversized body, a cross-host renewal URL and a downgrading redirect, a plain-http base, cancellation, and clock skew; and that an enrolment is handed back as it arrived, to be written before it is read |
 | `internal/taint` | generated names satisfy anchor's rule, avoid ambiguous glyphs, and do not repeat |
-| `internal/daemon` | the renewal arithmetic: two thirds of the *observed* window, expiry, absent timestamps, and the clamp; a renewal against a stand-in issuer, spliced into the manifest and mirrored into the state, and a failed one recorded; an enrolment kept before it is read; a bad clock measured again rather than trusted; anchord's last words kept when it dies; the link watcher's device parsing and its grace against anchor's own dial timeout; and which failures stop the supervisor rather than being retried |
+| `internal/daemon` | the renewal arithmetic: two thirds of the *observed* window, expiry, absent timestamps, and the clamp; a renewal against a stand-in issuer, spliced into the manifest and mirrored into the state, and a failed one recorded; an enrolment kept before it is read; a bad clock measured again rather than trusted; anchord's last words kept when it dies, in order; shutdown returning once anchord has gone, and closing a running one with its signal alone; the link watcher's device parsing and its grace against anchor's own dial timeout; and which failures stop the supervisor rather than being retried |
 | `internal/anchorctl` | the argv goldens, that every flag they use exists, and the output parsers against anchor's current `start`, `status` and `metrics` shapes |
 | `internal/libexec` | extraction, idempotence, eight concurrent callers, and repair of a truncated set |
 | `internal/cli` | the collision rules — `start` and `renew` by shape, `proxy` and `status` by arity — and that nothing shadows anchorctl unintentionally; the IPv4 asked once; `enrol` refusing before it writes |
-| `internal/service` | the rc scripts the BSDs get, rendered and parsed by `sh`, quoting included; the service's scope |
+| `internal/service` | the systemd unit, its `ExecStart=` quoted against splitting and expansion; the rc scripts the BSDs get, rendered and parsed by `sh`, quoting included; the service's scope |
 | `internal/paths` (Windows) | the root made Administrators', and files restricted to them trusted |
 
 ## The three tests worth knowing about
@@ -93,8 +93,13 @@ $ docker exec cfx-a conflux status      # same AnchorID, nothing typed
 
 A second container joining with the same taint gives a real two-node reachability
 test. The suite polls every second for up to two minutes and prints how long it took —
-around twenty seconds on the Docker bridge — and `conflux peers` shows `DATA yes` on
+around five seconds on the Docker bridge — and `conflux peers` shows `DATA yes` on
 the peer once the taints have been compared.
+
+A reboot proves a machine comes back; the suite also kills `anchord` on a running one,
+with `SIGKILL` so nothing is said on the way out, and requires the supervisor to bring
+it back — a new process, the readiness marker rewritten, the same identity, and the
+peer reachable again at its IPv6 address — without a reboot or anything typed.
 
 All of that is `make integration`, and the two assertions above on their own are
 `make service-test`. Both build the image first, and CI runs the same command a
@@ -148,7 +153,7 @@ why it is nonetheless contained.
 | job | machine | what it runs |
 |---|---|---|
 | `linux` | veilnet-dev | the whole suite under `-race` with the real binaries and nothing skipped; `make cross` |
-| `integration` | GitHub Ubuntu | `test/preflight.sh`, then `make service-test integration` — `dist` with the size gate for every target, the image, the boot service, and three nodes against the live API |
+| `integration` | GitHub Ubuntu | `test/preflight.sh`, then `make -j2 -O service-test integration` — `dist` with the size gate for every target and the image, once, then the boot service and three nodes against the live API side by side |
 | `platforms` | GitHub macOS and Windows | the suite with that platform's own pair, the tests that need it included; on Windows, that the pinned wintun digest is the published one |
 
 `linux` is one job because veilnet-dev is one machine with one runner process: separate
@@ -185,12 +190,12 @@ built, because each of those otherwise fails much later and names something else
 runner may be root, so `TestWriteFileAtomicPreservesOnFailure` probes whether making a
 directory read-only took rather than assuming it did.
 
-## The genesis test node
+## The genesis node
 
-`genesis.veilnet.com.au:4700` is a bootstrap node kept up for our own testing. It is
-not a default and must never become one: end users get their bootstrap list from the
-enrolment manifest, which is what lets the API move a node without touching a single
-machine. Point a dev build at it explicitly:
+`genesis.veilnet.com.au:4700` is the bootstrap node the alpha realm's manifest names
+today. conflux never names it itself and must never: end users get their bootstrap list
+from the enrolment manifest, which is what lets the API move a node without touching a
+single machine. To exercise `--peers`, point a dev build at it explicitly:
 
 ```console
 $ sudo CONFLUX_DIR=/var/lib/cfx-dev conflux up --peers genesis.veilnet.com.au:4700 \
@@ -242,10 +247,9 @@ Two things worth checking deliberately, because neither is obvious from a passin
   from a different root will enrol fine and then never handshake, because the pin is
   what refuses it. That failure is on the anchor side, not conflux's.
 
-  This node carries **the same pin as production**, which is what makes it usable from
-  an ordinary fetched build at all. Worth checking rather than assuming after the node
-  is ever rebuilt: `make anchor-bins FETCH=1` prints the realm it fetched, and it has to
-  be the one the test node answers for.
+  This node is the production realm's own, so it answers only a build carrying the
+  production pin: `make anchor-bins FETCH=1` prints the realm the binaries it fetched
+  are pinned to, and a local `make release` pins whatever `genesis/genesis.pin` says.
 
 ## The other half of the contract is tested in the other repository
 

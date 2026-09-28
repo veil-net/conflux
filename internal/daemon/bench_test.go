@@ -81,7 +81,7 @@ func BenchmarkRenewal(b *testing.B) {
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"chain":    chain,
-			"notAfter": time.Now().Add(7 * 24 * time.Hour).UTC().Format(time.RFC3339),
+			"notAfter": time.Now().Add(30 * 24 * time.Hour).UTC().Format(time.RFC3339),
 		})
 	}))
 	b.Cleanup(api.Close)
@@ -158,16 +158,16 @@ func BenchmarkDaemonLifecycle(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		_, cmd, done, err := s.spawn(ctx)
+		_, c, err := s.spawn(ctx)
 		if err != nil {
 			b.Fatal(err)
 		}
 
-		if err := s.waitReady(ctx, done); err != nil {
+		if err := s.waitReady(ctx, c); err != nil {
 			b.Fatal(err)
 		}
 
-		s.shutdown(cmd, done)
+		s.shutdown(c)
 	}
 
 	reportGoroutines(b, before)

@@ -6,7 +6,7 @@ beneath it, and most of what follows is a way of reading that output.
 | Symptom | Cause | What to do |
 |---|---|---|
 | `nothing is running here` | no daemon on the socket | `conflux start` if a configuration already exists, otherwise `conflux up` or `conflux proxy` |
-| `this needs root` | every state-changing verb needs it | `sudo conflux …` |
+| `… needs root` (`… needs Administrator` on Windows) | every state-changing verb needs it | run the command it names — yours, flags and all — with `sudo`, or from an elevated PowerShell |
 | `status` exits 78 | never configured | `conflux up` or `conflux proxy` |
 | `has not been given an IPv4 yet and there is no terminal to ask at` | `up` or `proxy` in a script, on a machine never asked | pass `--ipv4 ADDRESS` or `--no-ipv4`; that is what they are for |
 | `is not a unicast address a host sends from` | a loopback, link-local, multicast or broadcast IPv4 | pick an address a host could send from; any other is accepted |
@@ -47,7 +47,7 @@ and is not a member of anything — `conflux status` says `credential none — n
 enrolled yet`. Bring it up once where it has the internet.
 
 **Check that the credential has not lapsed.** Renewal needs the same API. A machine
-permanently on a cable stops being admitted after seven days; `conflux status` says
+permanently on a cable stops being admitted after thirty days; `conflux status` says
 `credential EXPIRED`.
 
 **A link that ended is reopened for you.** A device is not reopened by anchor, so
@@ -58,7 +58,7 @@ machine seems fine but keeps losing peers:
 
 ```console
 $ conflux status
-  uplink    7 reopens, last 2026-09-08T11:04:12Z
+  uplink       7 reopens, last 2026-09-08T11:04:12Z
 ```
 
 Seven reopens is a cable, a connector or a far end at fault — conflux is papering over
@@ -148,14 +148,10 @@ Error 5 is launchd's answer for most refusals and names none of them. conflux en
 the label before every bootstrap — a disabled label
 [persists across boots](https://keith.github.io/xcode-man-pages/launchctl.1.html) and
 blocks loading until it is enabled again — so when it still fails, the message lists the
-other causes: the plist not root-owned or writable by anybody else, the job already
-loaded, or the executable it names gone or on a volume not mounted yet.
-
-If it still fails, the other three causes of error 5 are: the plist is not root-owned or
-is group- or world-writable; the job is already loaded (`sudo launchctl bootout
-system/org.veilnet.conflux`); or the executable the plist names is gone or sits on a
-volume that is not mounted yet — which is what the ephemeral-path warning during
-`install` is about.
+other causes: the plist is not root-owned, or is group- or world-writable; the job is
+already loaded (`sudo launchctl bootout system/org.veilnet.conflux`); or the executable
+the plist names is gone or sits on a volume that is not mounted yet — which is what the
+ephemeral-path warning during `install` is about.
 
 ## The service starts and the anchor does not
 
@@ -184,8 +180,8 @@ right one for the machine.
 `conflux status` says so and names the last error:
 
 ```
-  credential   valid until 2026-09-13T06:35:43Z (2d 4h)
-  renewal      failing since 2026-09-11T02:10:00Z: dial tcp: no route to host
+  credential   valid until 2026-10-06T06:35:43Z (8d 4h)
+  renewal      failing since 2026-09-26T08:10:00Z: dial tcp: no route to host
 ```
 
 While the credential is still valid this is a warning: conflux retries on a backoff

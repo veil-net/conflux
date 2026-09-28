@@ -13,7 +13,6 @@ import (
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
-	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/taint"
 	"github.com/veil-net/conflux/internal/ui"
 )
@@ -74,8 +73,8 @@ func runUp(ctx context.Context, args []string) int {
 		return ExitUsage
 	}
 
-	if err := privcheck.Require("bringing up a network interface", "conflux up"); err != nil {
-		return fail(fmt.Errorf("%w: %w", errNeedsRoot, err))
+	if err := needsRoot("bringing up a network interface", "up", args); err != nil {
+		return fail(err)
 	}
 
 	d := paths.Default()
@@ -492,9 +491,9 @@ func chooseTaints(cfg *config.Config, given []string) error {
 		cfg.Taints = given
 
 		if len(given) > 1 {
-			ui.Warnf("a set of %d taints is reachable only from a machine carrying all of them.\n"+
-				"  anchor's rule is containment, not overlap: two machines exchange data only if\n"+
-				"  one carries every taint the other does.", len(given))
+			ui.Warnf("a set of %d taints is compared by containment, not overlap: this machine exchanges\n"+
+				"  data only with one whose taints include all of these, or are all among them.\n"+
+				"  Sharing one of them is not enough.", len(given))
 		}
 
 		return nil

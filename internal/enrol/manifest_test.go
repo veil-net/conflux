@@ -19,7 +19,7 @@ const alphaDocument = `{
   "genesis": "0011223344556677",
   "identity": "aabbccddeeff00112233445566778899",
   "chain": "Y2hhaW4tdmVyc2lvbi1vbmU=",
-  "notAfter": "2026-09-13T04:12:00.000Z",
+  "notAfter": "2026-10-06T04:12:00.000Z",
   "taints": [],
   "useExit": false,
   "bootstrap": ["genesis.veilnet.com.au:4700"],
@@ -40,7 +40,7 @@ func TestDecodeAlpha(t *testing.T) {
 		t.Fatalf("Decode: %v", err)
 	}
 
-	if got, want := m.NotAfter(), time.Date(2026, 9, 13, 4, 12, 0, 0, time.UTC); !got.Equal(want) {
+	if got, want := m.NotAfter(), time.Date(2026, 10, 6, 4, 12, 0, 0, time.UTC); !got.Equal(want) {
 		t.Errorf("NotAfter() = %v, want %v", got, want)
 	}
 
@@ -75,8 +75,8 @@ func TestWithChainIsLossless(t *testing.T) {
 	}
 
 	newChain := []byte("a freshly signed credential chain")
-	newExpiry := time.Date(2026, 9, 20, 4, 12, 0, 0, time.UTC)
-	received := time.Date(2026, 9, 13, 4, 12, 0, 0, time.UTC)
+	newExpiry := time.Date(2026, 10, 26, 4, 12, 0, 0, time.UTC)
+	received := time.Date(2026, 9, 26, 4, 12, 0, 0, time.UTC)
 
 	next, err := m.WithChain(newChain, newExpiry, received)
 	if err != nil {
@@ -84,7 +84,7 @@ func TestWithChainIsLossless(t *testing.T) {
 	}
 
 	// The original is untouched: a caller whose write fails still holds it.
-	if !m.NotAfter().Equal(time.Date(2026, 9, 13, 4, 12, 0, 0, time.UTC)) {
+	if !m.NotAfter().Equal(time.Date(2026, 10, 6, 4, 12, 0, 0, time.UTC)) {
 		t.Errorf("WithChain changed the manifest it was called on: NotAfter() = %v", m.NotAfter())
 	}
 

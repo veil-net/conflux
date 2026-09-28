@@ -187,6 +187,39 @@ docker exec cfx-a conflux status
 [ "$(anchor_id cfx-a)" = "$A_ID" ] \
   || { echo "the identity changed across a reboot" >&2; exit 1; }
 
+# A daemon that dies is the supervisor's to restart, with no reboot and nothing typed.
+# The Go tests hold shutdown to returning once anchord has gone; this is the whole path,
+# a real anchord killed under a real systemd, until the anchor is back on the overlay.
+# The readiness marker is withdrawn on the way down and written once the anchor is up,
+# so a new pid with a marker beside it is the new anchor, not the old one's leftovers.
+say "anchord dies on A: the supervisor brings it back, same identity, without a reboot"
+A_PID=$(docker exec cfx-a pidof anchord)
+docker exec cfx-a sh -c "kill -9 $A_PID"
+SECONDS=0
+while [ "$SECONDS" -lt 60 ]; do
+  pid=$(docker exec cfx-a pidof anchord || true)
+  if [ -n "$pid" ] && [ "$pid" != "$A_PID" ] && docker exec cfx-a test -f /run/conflux/ready; then
+    echo "anchord $pid replaced $A_PID after ${SECONDS}s"
+    break
+  fi
+  sleep 1
+done
+if [ -z "${pid:-}" ] || [ "$pid" = "$A_PID" ] || ! docker exec cfx-a test -f /run/conflux/ready; then
+  echo "the supervisor did not bring anchord back after it died" >&2
+  docker exec cfx-a journalctl -u conflux --no-pager -n 30 >&2 || true
+  exit 1
+fi
+[ "$(anchor_id cfx-a)" = "$A_ID" ] \
+  || { echo "the identity changed across a restart of anchord" >&2; exit 1; }
+# Over B's IPv6, which is derived from its identity: back on the overlay is what this
+# stage asks, and that address needs nothing from B but its record.
+SECONDS=0
+until docker exec cfx-a ping -c1 -W1 "$B6" >/dev/null 2>&1; do
+  [ "$SECONDS" -lt 60 ] || { echo "A did not reach B again after anchord came back" >&2; exit 1; }
+  sleep 1
+done
+echo "A reaches B again after ${SECONDS}s"
+
 say "down leaves the registration and the configuration"
 docker exec cfx-b conflux down
 [ "$(docker exec cfx-b systemctl is-enabled conflux.service)" = enabled ] \

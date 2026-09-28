@@ -67,7 +67,7 @@ Starting.
   ipv4         10.128.0.1/24
   interface    anchor0
   taint        brhk-2mq9-tzva-6pjs
-  credential   valid until 2026-09-13T06:35:43Z (6d 23h)
+  credential   valid until 2026-10-06T06:35:43Z (29d 23h)
   service      active (systemd: conflux.service, enabled at boot)
 ```
 
@@ -173,7 +173,7 @@ the realm's API, and the cable can't carry it — the credential that admits thi
 machine to the realm has to exist before the realm is reachable at all. Run the
 command once on a network, then move the machine; a second `conflux up` reuses the
 identity and enrols nothing. Renewal needs the same connectivity, so a machine that
-never sees the internet again only stays enrolled for seven days.
+never sees the internet again only stays enrolled for thirty days.
 
 **The line needs to be fast enough for a realm handshake.** That's a full TLS 1.3
 exchange with ML-DSA certificates in both directions — twenty to thirty kilobytes,
@@ -197,9 +197,9 @@ run again.
 **The taint decides who can reach you.** conflux always generates one, because the
 alternative isn't "no restriction" — an anchor with no taints sits in the realm's
 default compartment, the same one every other unconfigured anchor sits in. Machines
-that share a taint can exchange data; machines that don't share one aren't merely
-unreachable, they have no address for each other at all. See
-[concepts.md](docs/concepts.md).
+with the same taint can exchange data; machines with different ones aren't merely
+unreachable, they have no address for each other at all. With more than one taint
+the rule is containment, not overlap — see [concepts.md](docs/concepts.md).
 
 **`up` and `proxy` are exclusive.** One daemon holds one anchor, and an anchor with a
 host interface can't also serve a reverse proxy — the kernel owns the overlay address
@@ -230,7 +230,7 @@ reaches the realm over — the host's IP network by default, or a link named by
 |---|---|
 | `conflux up [--taint T] [--ipv4 ADDRESS \| --no-ipv4] [--subnet CIDR]... [--uplink DEV \| --no-uplink] [--peers HOST:PORT] [--lan-discovery yes\|no\|auto]` | enrol if needed, start in TUN mode, register the boot service |
 | `conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T] [--ipv4 ADDRESS \| --no-ipv4] [--uplink DEV] [--peers HOST:PORT] [--lan-discovery yes\|no\|auto]` | enrol if needed, start in userspace mode serving those backends |
-| `conflux enrol --manifest FILE [--api URL] [--ipv4 ADDRESS]` | install a credential this machine was given, instead of drawing one |
+| `conflux enrol --manifest FILE [--api URL] [--ipv4 ADDRESS] [--taint T]...` | install a credential this machine was given, instead of drawing one |
 | `conflux down` | stop the anchor now; the boot service and the configuration stay |
 | `conflux start` | start it again now, from the configuration already on disk |
 | `conflux renew` | fetch a fresh credential and install it on the running anchor, hot |

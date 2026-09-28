@@ -149,9 +149,10 @@ Forwarding a subnet also needs, on the host:
 - MSS clamping, written `--tcp-flags SYN,RST SYN` and **not** `--syn`, which clamps one
   direction and fails identically to no clamping at all
 
-conflux warns when forwarding is off and prints what to change. It will not change it
-for you: a wrapper that quietly enables IP forwarding on somebody's laptop is a worse
-program than one that prints two lines.
+Neither conflux nor anchor checks or changes any of it: a wrapper that quietly enables
+IP forwarding on somebody's laptop is a worse program than one that leaves the host's
+routing to whoever owns the host. A subnet offered from a host that does not forward is
+advertised and carries nothing, so set these before `--subnet` or `--serve-exit`.
 
 One thing to know before you type it: an entry that matches no private network the
 machine is actually attached to **stops the anchor** rather than being advertised on

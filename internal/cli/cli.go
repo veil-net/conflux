@@ -12,9 +12,11 @@ import (
 	"errors"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 
+	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/ui"
 )
 
@@ -128,11 +130,44 @@ func fail(err error) int {
 
 	ui.Errf("%v", err)
 
-	if errors.Is(err, errNeedsRoot) {
+	if errors.As(err, new(denied)) {
 		return ExitDenied
 	}
 
 	return ExitError
 }
 
-var errNeedsRoot = errors.New("this needs root")
+// denied is a verb refused for want of root or Administrator, which exits 13.
+type denied struct{ error }
+
+// needsRoot refuses a verb that needs privilege, naming the command to run again: this
+// invocation, flags and all. What somebody copies out of the refusal is then what they
+// typed, and not `conflux up` without the --taint that decided which network it joins.
+func needsRoot(what, verb string, args []string) error {
+	words := append([]string{"conflux", verb}, args...)
+	for i, w := range words {
+		words[i] = shellWord(w)
+	}
+
+	if err := privcheck.Require(what, strings.Join(words, " ")); err != nil {
+		return denied{err}
+	}
+
+	return nil
+}
+
+// shellWord quotes a word for the shell the refusal will be pasted into, when it holds
+// anything but the characters every shell reads literally.
+func shellWord(w string) string {
+	if w != "" && strings.Trim(w, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_%+=:./-") == "" {
+		return w
+	}
+
+	// PowerShell, where an Administrator retries, doubles a quote; a POSIX shell closes
+	// the quoting around one.
+	if runtime.GOOS == "windows" {
+		return "'" + strings.ReplaceAll(w, "'", "''") + "'"
+	}
+
+	return "'" + strings.ReplaceAll(w, "'", `'\''`) + "'"
+}

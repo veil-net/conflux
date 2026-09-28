@@ -63,11 +63,12 @@ at all, userspace mode is a complete way to use the overlay.
 
 ## Defender and SmartScreen
 
-A 48 MB binary that writes a 30 MB executable to disk and immediately runs it with
+A 50 MB binary that writes a 30 MB executable to disk and immediately runs it with
 elevated privileges is, structurally, a textbook dropper. Expect the first releases to
 be flagged, and know the mitigations:
 
-- Released binaries are Authenticode-signed where signing secrets are configured.
+- Released binaries are not Authenticode-signed, so SmartScreen has no publisher
+  reputation to go on; each release carries a build-provenance attestation instead.
 - Extraction goes to a stable path under `%ProgramData%\conflux\bin`, not a random
   temporary one — reputation attaches to paths and publishers.
 - `conflux version` prints both anchor digests, so what was written can be checked

@@ -71,9 +71,9 @@ it, before downloading anything.
 $ export ANCHOR_RELEASE_TOKEN=github_pat_…
 $ make anchor-bins FETCH=1
 anchor-fetch: shelf:   veil-net/anchor @ shelf
-anchor-fetch: commit:  844c80579f6b390fb552f8258a0477f97959cf0a
+anchor-fetch: commit:  0e68ba25f3019fdfc331cd8763f40fbdd641538a
 anchor-fetch: realm:   realmtglwuedqqa33e364nv73p46jk3kwi67lxjmnntz2mv3mb3mklasq
-anchor-fetch:   ok   anchord-linux-amd64           29.5 MB  3552c4c1d573  fetched
+anchor-fetch:   ok   anchord-linux-amd64           29.7 MB  06cc7917c8fc  fetched
   …
 anchor-fetch: 14/14 in place, digests verified
 ```
@@ -87,6 +87,11 @@ A file already in place whose SHA-256 is the one the manifest gives is kept and 
 `cached` rather than downloaded again; one that differs is replaced. So a directory that
 survives between fetches costs a read instead of a download, and cannot hand back
 anything the manifest does not describe.
+
+Every file is fetched at once, each checked against its own digest as it lands, and the
+first failure stops the rest. A fresh fetch then waits for the slowest file rather than
+for all fourteen in turn — about six seconds rather than forty — and the `ok` lines
+arrive in the order the files finish.
 
 The tag is fixed and moves: `shelf` always names anchor's newest release build, which is
 the intent — conflux ships the newest anchor, not a remembered one. Fetched by tag rather
@@ -181,7 +186,7 @@ A placeholder build is not able to masquerade as a real one:
 
 ```console
 $ go build -o conflux . && ./conflux version
-conflux dev (55a5810) linux/amd64
+conflux 1.0.0-pre (f47de0fac83d24489664ca15fc6a317ac9c9f683) linux/amd64
 no anchor binaries for linux/amd64
 ```
 

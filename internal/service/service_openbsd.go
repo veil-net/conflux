@@ -44,18 +44,7 @@ func (openbsd) Remove() error {
 func (openbsd) Stop() error    { return run("rcctl", "stop", rcName()) }
 func (openbsd) Restart() error { return run("rcctl", "restart", rcName()) }
 
-func (openbsd) Installed() (bool, error) {
-	_, err := os.Stat(scriptPath())
-	if err == nil {
-		return true, nil
-	}
-
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-
-	return false, err
-}
+func (openbsd) Installed() (bool, error) { return exists(scriptPath()) }
 
 func (o openbsd) Describe() string {
 	if installed, _ := o.Installed(); !installed {

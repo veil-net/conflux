@@ -36,7 +36,7 @@ func Warnf(format string, a ...any) { Errf(format, a...) }
 func Field(key, value string) { fmt.Fprintf(Out, "  %-12s %s\n", key, value) }
 
 // Until says how long is left before t, the way every expiry conflux prints does:
-// "6d 23h", "5h", or "expired".
+// "29d 23h", "5h", "40m", or "expired".
 func Until(t time.Time) string {
 	d := time.Until(t)
 	if d < 0 {
@@ -44,11 +44,15 @@ func Until(t time.Time) string {
 	}
 
 	days, hours := int(d.Hours())/24, int(d.Hours())%24
-	if days > 0 {
-		return fmt.Sprintf("%dd %dh", days, hours)
-	}
 
-	return fmt.Sprintf("%dh", hours)
+	switch {
+	case days > 0:
+		return fmt.Sprintf("%dd %dh", days, hours)
+	case hours > 0:
+		return fmt.Sprintf("%dh", hours)
+	default:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
 }
 
 // IsTerminal reports whether stdin is something a person is typing at. Used to

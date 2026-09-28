@@ -177,7 +177,7 @@ func reportCredential(d paths.Dirs, st *config.State) {
 	if st.ClockSkew > time.Second {
 		note := ""
 		if st.ClockSkew > daemon.MaxSkew {
-			note = " — past the hour the handshake tolerates; fix the clock (timedatectl set-ntp true)"
+			note = " — past the " + strings.TrimSuffix(daemon.MaxSkew.String(), "0s") + " anchor allows; fix the clock (timedatectl set-ntp true)"
 		}
 
 		ui.Field("clock", "off by "+st.ClockSkew.Round(time.Second).String()+note)
@@ -243,10 +243,11 @@ func reportExport(cfg *config.Config, a *daemonAnswers) {
 		if ok && key == "" {
 			source := strings.TrimSpace(value)
 
-			// Named rather than merely printed. "the config file" is conflux.json
-			// having been applied and needs no explanation; anything else is a
-			// live override with an end date.
-			if source != "the config file" {
+			// Named rather than merely printed. The config file, read at start or
+			// re-read on a SIGHUP, is conflux.json having been applied and needs no
+			// explanation; a call to anchorctl export is a live override with an end
+			// date.
+			if source == "anchorctl export" {
 				source += " — an override, discarded at the next restart"
 			}
 

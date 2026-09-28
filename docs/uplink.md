@@ -62,9 +62,9 @@ conflux: fd:3 adopts a descriptor from whatever started the daemon, and conflux'
 
     conflux up --uplink /dev/ttyUSB0:115200
 
-  To drive an anchor you hand a descriptor to yourself, that is anchorctl's:
+  To drive an anchor you hand a descriptor to yourself, that is anchorctl's own start:
 
-    conflux anchorctl start -uplink fd:3 ...
+    conflux anchorctl start -uplink fd:3
 ```
 
 **Unix only.** anchor has no way to open a link on Windows, so conflux refuses
@@ -85,9 +85,9 @@ $ sudo conflux up --uplink /dev/ttyUSB0:115200 --taint mynet   # while it still 
 A second `conflux up` re-uses the identity and enrols nothing, so the machine may be
 brought up again on the cable as often as you like.
 
-**Renewal has the same requirement.** The credential lasts seven days and the renewer
+**Renewal has the same requirement.** The credential lasts thirty days and the renewer
 needs the same API. A machine that is permanently on a cable and never sees the
-internet again is therefore a seven-day deployment, not an indefinite one — the anchor
+internet again is therefore a thirty-day deployment, not an indefinite one — the anchor
 stops being admitted when the credential lapses. See [credentials.md](credentials.md).
 
 ## What the line has to be able to do
@@ -177,7 +177,7 @@ has been up for fifty minutes:
 
 ```console
 $ conflux status
-  uplink    3 reopens, last 2026-09-08T11:04:12Z
+  uplink       3 reopens, last 2026-09-08T11:04:12Z
 ```
 
 **The one case it gets wrong:** an idle link whose far end is legitimately switched

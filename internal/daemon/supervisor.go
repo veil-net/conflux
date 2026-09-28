@@ -39,11 +39,15 @@ const (
 	// on it. Generous, because a loaded Raspberry Pi is slower than it looks.
 	readyTimeout = 30 * time.Second
 
-	// stopTimeout bounds the polite half of shutdown.
+	// stopTimeout bounds closing the anchor over the socket, where that is how it is
+	// closed: a daemon no signal reaches, and an uplink being reopened.
 	stopTimeout = 20 * time.Second
 
-	// killTimeout is how long after SIGTERM before SIGKILL.
-	killTimeout = 10 * time.Second
+	// killTimeout is how long after SIGTERM before SIGKILL. The same budget as the
+	// socket's close, because on a signal anchord does that close itself -- the anchor,
+	// then its control plane's 5s grace, then 5s to flush telemetry -- and it stays
+	// inside the unit's 30s TimeoutStopSec.
+	killTimeout = 20 * time.Second
 
 	// tailLines is how much of the daemon's own output to keep, so a failure can be
 	// reported in its words rather than as an exit code.
@@ -208,14 +212,14 @@ func (s *Supervisor) loop(ctx context.Context) error {
 
 // cycle is one daemon lifetime.
 func (s *Supervisor) cycle(ctx context.Context) error {
-	cfg, cmd, done, err := s.spawn(ctx)
+	cfg, c, err := s.spawn(ctx)
 	if err != nil {
 		return err
 	}
 
-	defer s.shutdown(cmd, done)
+	defer s.shutdown(c)
 
-	if err := s.waitReady(ctx, done); err != nil {
+	if err := s.waitReady(ctx, c); err != nil {
 		return err
 	}
 
@@ -258,12 +262,8 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		return nil
-	case err := <-done:
-		if err != nil {
-			return fmt.Errorf("anchord exited: %w\n%s", err, s.tail.String())
-		}
-
-		return errors.New("anchord exited unexpectedly\n" + s.tail.String())
+	case <-c.exited:
+		return c.gone("unexpectedly", s.tail)
 	}
 }
 
@@ -286,13 +286,35 @@ func anchordArgs(d paths.Dirs) []string {
 	return args
 }
 
+// child is one anchord process, and whether it has gone.
+//
+// exited is closed rather than sent on, so every wait on the process -- for
+// readiness, for the rest of the cycle, in shutdown -- sees the exit, however many
+// of them look and in whatever order. A value sent once is taken by the first; the
+// shutdown that came after it then waited forever for an exit already consumed, and
+// a daemon that died was never restarted.
+type child struct {
+	cmd    *exec.Cmd
+	exited chan struct{}
+	err    error // Wait's answer, read only once exited is closed
+}
+
+// gone reports an exit nobody asked for, in anchord's own last words.
+func (c *child) gone(when string, tail *ring) error {
+	if c.err != nil {
+		return fmt.Errorf("anchord exited %s: %w\n%s", when, c.err, tail)
+	}
+
+	return fmt.Errorf("anchord exited %s\n%s", when, tail)
+}
+
 // spawn starts anchord, and returns the configuration it was started for.
 //
 // Its output goes to the supervisor's reporter and to the tail kept for failure
 // messages, never straight to os.Stdout: a Windows service has no valid stdout handle
 // to inherit, and the last few lines are what explains a startup failure an exit
 // code alone cannot.
-func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *exec.Cmd, <-chan error, error) {
+func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *child, error) {
 	// The daemon's own configuration, rendered from conflux.json on every spawn.
 	//
 	// Passed on every start rather than only when something is configured, so that
@@ -301,11 +323,11 @@ func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *exec.Cmd, <-ch
 	// explicit `enabled: false` rather than left out.
 	cfg, err := config.Load(s.Dirs)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	if err := writeDaemonConfig(s.Dirs, cfg); err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	stdout, stderr := s.lines(), s.lines()
@@ -315,21 +337,21 @@ func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *exec.Cmd, <-ch
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 
 	if err := cmd.Start(); err != nil {
-		return nil, nil, nil, fmt.Errorf("start anchord: %w", err)
+		return nil, nil, fmt.Errorf("start anchord: %w", err)
 	}
 
-	done := make(chan error, 1)
+	c := &child{cmd: cmd, exited: make(chan struct{})}
 
 	// Wait returns once both streams are drained, so the tail holds anchord's last
 	// words by the time anybody reads it.
 	go func() {
-		err := cmd.Wait()
+		c.err = cmd.Wait()
 		stdout.flush()
 		stderr.flush()
-		done <- err
+		close(c.exited)
 	}()
 
-	return cfg, cmd, done, nil
+	return cfg, c, nil
 }
 
 // lines is a writer for one of anchord's output streams, delivering it a line at a
@@ -355,15 +377,21 @@ const maxLine = 64 << 10
 func (w *lineWriter) Write(p []byte) (int, error) {
 	w.buf = append(w.buf, p...)
 
+	start := 0
+
 	for {
-		i := bytes.IndexByte(w.buf, '\n')
+		i := bytes.IndexByte(w.buf[start:], '\n')
 		if i < 0 {
 			break
 		}
 
-		w.emit(strings.TrimRight(string(w.buf[:i]), "\r"))
-		w.buf = w.buf[i+1:]
+		w.emit(string(bytes.TrimRight(w.buf[start:start+i], "\r")))
+		start += i + 1
 	}
+
+	// What is left of an unfinished line goes back to the front, so the buffer is
+	// reused rather than walked off the end of and reallocated.
+	w.buf = w.buf[:copy(w.buf, w.buf[start:])]
 
 	if len(w.buf) >= maxLine {
 		w.flush()
@@ -382,15 +410,15 @@ func (w *lineWriter) flush() {
 }
 
 // waitReady waits for the daemon to answer, and notices when it dies instead.
-func (s *Supervisor) waitReady(ctx context.Context, done <-chan error) error {
+func (s *Supervisor) waitReady(ctx context.Context, c *child) error {
 	deadline := time.Now().Add(readyTimeout)
 	wait := 50 * time.Millisecond
 
 	for {
 		// The case a sleep can never catch: the child is already gone.
 		select {
-		case err := <-done:
-			return fmt.Errorf("anchord exited before it was ready: %w\n%s", err, s.tail.String())
+		case <-c.exited:
+			return c.gone("before it was ready", s.tail)
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
@@ -456,43 +484,53 @@ func probeIsFatal(err error) error {
 	return nil
 }
 
-// shutdown closes the anchor and then the daemon, in that order.
+// shutdown takes the daemon down with its anchor, and returns once it has gone.
 //
-// The order is the point. `anchorctl stop` closes the anchor so it says goodbye, and
-// an announced departure saves every peer from working it out by timeout. Killing
-// the process is only safe because that has already happened.
-func (s *Supervisor) shutdown(cmd *exec.Cmd, done <-chan error) {
-	stopCtx, cancel := context.WithTimeout(context.Background(), stopTimeout)
-	defer cancel()
-
-	if err := s.ctl.Stop(stopCtx); err != nil {
-		s.report().Warn("could not close the anchor cleanly: %v", err)
-	}
-
+// The anchor is closed first either way, so it says goodbye: an announced departure
+// saves every peer from working it out by timeout. Where a signal can be delivered it
+// is all that is sent, because anchord closes its anchor on SIGTERM, flushes its
+// telemetry and exits -- the same close `anchorctl stop` asks for, without a process
+// forked to ask it. Where none can (a Windows service has no console to deliver a
+// control event to), the anchor is closed over the socket instead, and the daemon,
+// holding nothing by then, is killed.
+//
+// Nothing is asked of a daemon that has already gone. There is no anchor left to close,
+// and its pid has been reaped and may belong to something else by now.
+func (s *Supervisor) shutdown(c *child) {
 	s.clearReady()
 
-	// Only wait for an answer to a question that was asked. On Windows inside a service
-	// there is no console to deliver a control event to, so terminate reports false every
-	// time -- and waiting out killTimeout there would be ten seconds of nothing on every
-	// stop, every restart and every service shutdown.
-	if terminate(cmd) {
-		select {
-		case <-done:
-			return
-		case <-time.After(killTimeout):
-			s.report().Warn("anchord did not exit in %s; killing it", killTimeout)
-		}
+	select {
+	case <-c.exited:
+	default:
+		s.stop(c)
 	}
-
-	// Safe because of the ordering above: the anchor has already been closed and has
-	// already said goodbye, so this kills a daemon that is holding nothing.
-	_ = cmd.Process.Kill()
-	<-done
 
 	// A daemon that exits closes its socket and the file goes with it; one that was
 	// killed leaves the file, and `conflux status` and pass-through read a socket file
 	// as a daemon that is running.
 	_ = os.Remove(s.Dirs.Socket())
+}
+
+// stop is shutdown for a daemon that is still running.
+func (s *Supervisor) stop(c *child) {
+	if terminate(c.cmd) {
+		select {
+		case <-c.exited:
+			return
+		case <-time.After(killTimeout):
+			s.report().Warn("anchord did not exit in %s; killing it", killTimeout)
+		}
+	} else {
+		ctx, cancel := context.WithTimeout(context.Background(), stopTimeout)
+		if err := s.ctl.Stop(ctx); err != nil {
+			s.report().Warn("could not close the anchor cleanly: %v", err)
+		}
+
+		cancel()
+	}
+
+	_ = c.cmd.Process.Kill()
+	<-c.exited
 }
 
 // renewLoop keeps the credential current while the anchor runs.
@@ -585,22 +623,25 @@ func isPermanent(err error) bool {
 	return false
 }
 
-// ring keeps the last n lines of the daemon's output.
+// ring keeps the last n lines of the daemon's output, in n slots allocated once:
+// every line anchord writes passes through here, and almost none is ever read.
 type ring struct {
 	mu    sync.Mutex
 	lines []string
-	n     int
+	next  int  // the slot the next line goes in, which holds the oldest once full
+	full  bool // whether every slot has been written
 }
 
-func newRing(n int) *ring { return &ring{n: n} }
+func newRing(n int) *ring { return &ring{lines: make([]string, n)} }
 
 func (r *ring) add(line string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.lines = append(r.lines, line)
-	if len(r.lines) > r.n {
-		r.lines = r.lines[len(r.lines)-r.n:]
+	r.lines[r.next] = line
+
+	if r.next++; r.next == len(r.lines) {
+		r.next, r.full = 0, true
 	}
 }
 
@@ -608,16 +649,24 @@ func (r *ring) String() string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if len(r.lines) == 0 {
+	held := r.lines[:r.next]
+	if r.full {
+		held = append(r.lines[r.next:len(r.lines):len(r.lines)], r.lines[:r.next]...)
+	}
+
+	if len(held) == 0 {
 		return "  (anchord said nothing)"
 	}
 
 	var b strings.Builder
-	for _, l := range r.lines {
+	for i, l := range held {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+
 		b.WriteString("  anchord: ")
 		b.WriteString(l)
-		b.WriteByte('\n')
 	}
 
-	return strings.TrimRight(b.String(), "\n")
+	return b.String()
 }

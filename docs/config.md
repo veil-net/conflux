@@ -62,7 +62,10 @@ This file is the whole of what a reboot needs. Every `up` and every `proxy` rewr
 it, so it is always the current desired state.
 
 Editing it by hand is supported; `conflux start` restarts from whatever it says, and
-anything anchor would refuse is refused by conflux first, naming the field.
+anything anchor would refuse on the file's face is refused by conflux first, naming the
+field, before anchord is started on it — and not retried, since no retry changes a file.
+What depends on the host is anchor's to find at start: a subnet whose interface is not up
+yet, which is retried, and TLS material under `export` that will not load.
 
 ### `export` — where telemetry goes
 

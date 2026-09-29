@@ -615,3 +615,29 @@ func TestARefusalForPrivilegeRepeatsTheCommand(t *testing.T) {
 		t.Errorf("the refusal should say %q; it said:\n%s", want, errOut)
 	}
 }
+
+// TestTheInterfaceIsNamedOnlyWhereItIsHonoured: Linux and Windows make the interface
+// they are asked for, and macOS and the BSDs number their own unless asked for one of
+// theirs. A status line naming anchor0 on a Mac names nothing ifconfig can find.
+func TestTheInterfaceIsNamedOnlyWhereItIsHonoured(t *testing.T) {
+	for _, tc := range []struct {
+		goos, name string
+		named      bool
+	}{
+		{"linux", "anchor0", true},
+		{"windows", "anchor0", true},
+		{"darwin", "anchor0", false},
+		{"darwin", "utun7", true},
+		{"darwin", "utun", false},
+		{"freebsd", "anchor0", false},
+		{"freebsd", "tun3", true},
+		{"openbsd", "tun0", true},
+		{"openbsd", "utun1", false},
+	} {
+		got := interfaceLine(tc.goos, tc.name)
+
+		if named := got == tc.name; named != tc.named {
+			t.Errorf("%s, %q: %q", tc.goos, tc.name, got)
+		}
+	}
+}

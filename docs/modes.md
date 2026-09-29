@@ -11,7 +11,8 @@ default, or a link named by `--uplink`, which works with either mode below. See
 
 ## TUN — `conflux up`
 
-The daemon creates a real network interface, `anchor0`, and the host kernel owns the
+The daemon creates a real network interface — `anchor0` on Linux and Windows; macOS
+numbers its own `utunN` and the BSDs their own `tunN` — and the host kernel owns the
 overlay addresses. `ping`, `ssh`, a browser, anything on the machine can use the
 overlay without knowing it exists. This needs `CAP_NET_ADMIN` on Linux, root on macOS
 and the BSDs, Administrator and `wintun.dll` on Windows.

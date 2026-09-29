@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"flag"
+	"runtime"
 	"strings"
 
 	"github.com/veil-net/conflux/internal/config"
@@ -95,7 +96,7 @@ func runProxy(ctx context.Context, args []string) int {
 			"  Userspace mode replaces that: one daemon holds one anchor, and an anchor with\n"+
 			"  a host interface cannot also serve a reverse proxy -- with a TUN the kernel owns\n"+
 			"  the overlay address, so a service binds it directly and needs no proxy.",
-			cfg.TUNInterface())
+			interfaceLine(runtime.GOOS, cfg.TUNInterface()))
 
 		// What the interface was for goes with it: subnets and a served exit need one,
 		// and anchor refuses them without. The IPv4 is the machine's and stays.

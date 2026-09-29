@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -114,7 +115,7 @@ func reportConfig(cfg *config.Config) {
 
 	switch cfg.Mode {
 	case config.ModeTUN:
-		ui.Field("mode", "tun — interface "+cfg.TUNInterface())
+		ui.Field("mode", "tun — interface "+interfaceLine(runtime.GOOS, cfg.TUNInterface()))
 	case config.ModeProxy:
 		ui.Field("mode", "proxy — userspace, no host interface")
 	}

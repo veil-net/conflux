@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 
@@ -196,7 +197,7 @@ func report(cfg *config.Config, st anchorctl.Status, verb string) {
 	}
 
 	if cfg.Mode == config.ModeTUN {
-		ui.Field("interface", cfg.TUNInterface())
+		ui.Field("interface", interfaceLine(runtime.GOOS, cfg.TUNInterface()))
 	} else {
 		for _, p := range cfg.Proxies {
 			ui.Field("serving", p)
@@ -239,6 +240,31 @@ func report(cfg *config.Config, st anchorctl.Status, verb string) {
 		ui.Printf("Reachable from any machine that runs:  conflux up --taint %s\n",
 			strings.Join(cfg.Taints, " --taint "))
 	}
+}
+
+// interfaceLine is the interface a TUN machine gets, as far as conflux can say.
+//
+// The name is a request, which Linux and Windows honour. macOS only ever makes utunN
+// and the BSDs tunN: a name of that form asks for that unit, anything else takes the
+// first free one, and anchor does not report which it got. So off Linux and Windows,
+// anchor0 is not a name to go looking for.
+func interfaceLine(goos, name string) string {
+	var family string
+
+	switch goos {
+	case "darwin":
+		family = "utun"
+	case "freebsd", "openbsd":
+		family = "tun"
+	default:
+		return name
+	}
+
+	if unit, ok := strings.CutPrefix(name, family); ok && unit != "" && strings.Trim(unit, "0123456789") == "" {
+		return name
+	}
+
+	return "the first free " + family + "N, which " + goos + " numbers itself; ifconfig names it"
 }
 
 // joinTaints is the taint set for a status line.

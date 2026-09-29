@@ -69,7 +69,7 @@ func (m *Manifest) RenewalAuth() string {
 // Read from the document and never from anywhere else. It is manifest material in
 // exactly the sense the identity seed is: whoever holds it can keep this node's
 // credential current indefinitely, which is why it does not get its own file, does
-// not reach an argv, and is covered by the same redaction on String and LogValue
+// not reach an argv, and is covered by the same redaction on String and GoString
 // that hides the rest of the document.
 func (m *Manifest) RenewalSecret() string {
 	s, _ := m.string("renewalSecret")

@@ -46,7 +46,7 @@ lapse now happens, and that the window is the operator's to choose.
   inline secret on the wire, and is never named as a path in the request — so it never
   appears in `ps` or `/proc/*/cmdline`.
 - Never in a log. The types that carry it have `String` and `GoString` methods that
-  return `<anchor manifest, redacted>`, so no `%v` anywhere can print it.
+  return `<anchor manifest, redacted>`, so no `%v` or `%#v` anywhere can print it.
 
 ## A backup of the state directory is the machine
 

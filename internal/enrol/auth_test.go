@@ -38,6 +38,9 @@ const guardianDocument = `{
 
 const theBearer = "e3b0c442-98fc-1c14-9afb-f4c8996fb924.Zm91cnRlZW4tYnl0ZXM"
 
+// redacted is what every way of printing a manifest has to produce.
+const redacted = "<anchor manifest, redacted>"
+
 func manifest(t *testing.T, doc string) *Manifest {
 	t.Helper()
 
@@ -91,7 +94,7 @@ func TestNodeSecretSendsABearer(t *testing.T) {
 
 	c.Auth = auth
 
-	if _, err := c.Renew(t.Context(), s.URL+"/nodes/x/credential", "anchor1qxy"); err != nil {
+	if _, err := c.Renew(t.Context(), s.URL+"/nodes/x/credential", "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq"); err != nil {
 		t.Fatalf("Renew: %v", err)
 	}
 
@@ -101,7 +104,7 @@ func TestNodeSecretSendsABearer(t *testing.T) {
 
 	// The body is unchanged from the alpha exchange. One request shape, two ways
 	// of proving who is asking -- a second body would be a second protocol.
-	if got.body != `{"anchorId":"anchor1qxy"}` {
+	if got.body != `{"anchorId":"anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq"}` {
 		t.Errorf("body = %s", got.body)
 	}
 }
@@ -159,26 +162,31 @@ func TestDecodeAcceptsAnUnknownRenewalAuth(t *testing.T) {
 // TestTheSecretIsNotPrinted. The document already redacts itself, and the secret
 // arriving inside it is exactly why that has to keep holding.
 //
-// All four spellings, and the two Sprintf ones are not redundant with String()
-// even though fmt reaches String() to satisfy them today. What is being pinned is
-// the spelling an operator or a future maintainer actually writes -- `log.Printf("%s", m)`
-// -- and that is a different assertion from calling String() by hand: a Format
-// method, or a String promoted from a pointer receiver onto a value, would change
-// what the verb produces while String() went on being safe.
+// Every spelling, and the Sprintf ones are not redundant with String() and
+// GoString() even though fmt reaches them to satisfy the verbs today. What is being
+// pinned is the spelling an operator or a future maintainer actually writes --
+// `log.Printf("%s", m)` -- and that is a different assertion from calling String() by
+// hand: a Format method, or a String promoted from a pointer receiver onto a value,
+// would change what the verb produces while String() went on being safe.
+//
+// Each must be the redaction itself rather than merely lack the bearer: %#v of the raw
+// document prints its bytes in hex, which no substring search for the secret finds.
 func TestTheSecretIsNotPrinted(t *testing.T) {
 	m := manifest(t, guardianDocument)
 
 	for name, s := range map[string]string{
 		"String":   m.String(),
-		"LogValue": m.LogValue(),
+		"GoString": m.GoString(),
 		"%v":       fmt.Sprintf("%v", m),
+		"%+v":      fmt.Sprintf("%+v", m),
+		"%#v":      fmt.Sprintf("%#v", m),
 		// staticcheck is right that String() would produce this value; it is wrong
 		// that this call should be it. The verb is the thing under test.
 		//lint:ignore S1025 the %s path is the assertion, not a way to reach String()
 		"%s": fmt.Sprintf("%s", m),
 	} {
-		if strings.Contains(s, theBearer) {
-			t.Errorf("%s printed the renewal secret", name)
+		if s != redacted {
+			t.Errorf("%s printed %.60q, not the redaction", name, s)
 		}
 	}
 }

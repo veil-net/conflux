@@ -198,8 +198,8 @@ func (c *Client) Renew(ctx context.Context, renewalURL, anchorID string) (Renewa
 		return Renewal{}, errors.New("renew: no AnchorID; the anchor has to have started at least once")
 	}
 
-	if !strings.HasPrefix(anchorID, "anchor") {
-		return Renewal{}, fmt.Errorf("renew: %q is not an AnchorID", anchorID)
+	if err := config.ValidateAnchorID(anchorID); err != nil {
+		return Renewal{}, fmt.Errorf("renew: %w", err)
 	}
 
 	if renewalURL == "" {

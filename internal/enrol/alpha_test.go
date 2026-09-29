@@ -82,7 +82,7 @@ func TestAlphaRenewIsUnauthenticated(t *testing.T) {
 
 			c, s, got := record(t, reply)
 
-			if _, err := c.Renew(t.Context(), s.URL+alphaRenewPath, "anchor1qxy"); err != nil {
+			if _, err := c.Renew(t.Context(), s.URL+alphaRenewPath, "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq"); err != nil {
 				t.Fatalf("Renew: %v", err)
 			}
 
@@ -92,8 +92,8 @@ func TestAlphaRenewIsUnauthenticated(t *testing.T) {
 					got.authorization)
 			}
 
-			if got.body != `{"anchorId":"anchor1qxy"}` {
-				t.Errorf("body = %s, want {\"anchorId\":\"anchor1qxy\"}", got.body)
+			if got.body != `{"anchorId":"anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq"}` {
+				t.Errorf("body = %s, want {\"anchorId\":\"anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq\"}", got.body)
 			}
 
 			if got.contentType != "application/json" {

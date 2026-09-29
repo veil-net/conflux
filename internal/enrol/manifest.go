@@ -121,7 +121,8 @@ func (m *Manifest) RenewalURL() string {
 
 // Taints are whatever the issuer put in the document. The alpha realm always sends
 // an empty list, and anchor's merge skips an empty list, so conflux's own -taints
-// flag decides in practice. Read here only so status can say what was shipped.
+// flag decides in practice. Read only by `conflux enrol`, which seeds the
+// configuration from a guardian's.
 func (m *Manifest) Taints() []string {
 	var out []string
 
@@ -289,9 +290,9 @@ func (m *Manifest) time(key string) time.Time {
 	return t.UTC()
 }
 
-// LogValue keeps the identity out of structured logs, the way Envelope keeps it out
-// of fmt.
-func (m *Manifest) LogValue() string { return "<anchor manifest, redacted>" }
-
-// String does the same for fmt.
+// String keeps the identity out of fmt, the way Envelope's does.
 func (m *Manifest) String() string { return "<anchor manifest, redacted>" }
+
+// GoString covers %#v, which String does not and which would otherwise print the raw
+// document, seed and bearer included.
+func (m *Manifest) GoString() string { return "<anchor manifest, redacted>" }

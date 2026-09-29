@@ -53,7 +53,9 @@ This context is authoritative. Docs describe the design but may be wrong: where 
 
 **Plan mode:** change nothing (no checkout, pull, branch, build, enrolment, or edit). Read conflux, anchor's current tree as it is, and the live schema, then produce the plan for steps 2–9.
 
-**Local vs CI:** nothing CI runs is run locally as well. The suites (`test`, `race`, `cross`, `dist` and its size gate, `service-test`, `integration`, the macOS and Windows suites, and their no-skip gates) run once, on the PR, in step 9. Locally, run only the utility checks, a package's tests while that package is being changed, and what no CI job covers: the probe node, the benchmarks and other baseline numbers, the golden review, and the bash 3.2 check.
+**Local vs CI:** the two never overlap.
+- **Locally, before every push:** the utility checks — formatting, lint, tidy, vulnerability scan, docs links, `actionlint`, `shellcheck` — which CI never runs. Besides them, only a package's tests while that package is being changed, and what no CI job covers: the probe node, the benchmarks and other baseline numbers, the golden review, and the bash 3.2 check.
+- **In CI, on the PR (step 9):** the actual code testing — `test`, `race`, `cross`, `dist` and its size gate, `service-test`, `integration`, the macOS and Windows suites, and their no-skip gates. None of it is run locally as well.
 
 Shell variables used below (set them in each shell):
 

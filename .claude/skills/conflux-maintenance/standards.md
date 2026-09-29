@@ -45,7 +45,7 @@ Work through them in this order:
   - builds: `cross` for every target, including a per-target vet compile of test files; `dist` with the size gate; platform builds on macOS and Windows
   - tests: `test`, `race`, the macOS and Windows suites, `service-test`, and `integration` against the live API
   - the release pipeline
-- **Utility checks run locally, not in CI; everything CI runs runs only in CI.** gofmt, staticcheck, tidycheck, govulncheck, docs and link checks, commit checks and the like leave CI and run in steps 4 and 7 (see reference.md § Local checks). The suites CI runs are not repeated locally before a push: the PR's run is the verification.
+- **Utility checks run locally before every push, never in CI; CI does the code testing, and only CI does it.** gofmt, staticcheck, tidycheck, govulncheck, docs and link checks, actionlint, shellcheck, commit checks and the like stay out of CI and run in steps 4 and 7 and before each fix is pushed (see reference.md § Local checks). The suites CI runs are not repeated locally: the PR's run is the verification.
 - **Faster, with the same verification power.** Never drop, skip or weaken a build or test that verifies the code. Speed comes from:
   - caching: the Go module and build cache, fetched anchor binaries keyed by shelf digest, Docker layers
   - fetching or building anchor binaries once and sharing them across jobs as artifacts

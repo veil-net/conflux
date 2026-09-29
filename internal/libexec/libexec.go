@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/veil-net/conflux/anchor"
@@ -132,13 +133,23 @@ func extract(root, target string, t *Tools) error {
 		return fmt.Errorf("restrict %s: %w", staging, err)
 	}
 
-	for name, content := range map[string][]byte{
-		exeName("anchord"):   anchor.Anchord(),
-		exeName("anchorctl"): anchor.Anchorctl(),
-	} {
-		if err := writeExecutable(filepath.Join(staging, name), content); err != nil {
-			return err
-		}
+	// Side by side: each is its own file and its own fsync, and on a real disk the
+	// fsync is most of what an extraction costs.
+	var (
+		wg     sync.WaitGroup
+		ctlErr error
+	)
+
+	wg.Go(func() {
+		ctlErr = writeExecutable(filepath.Join(staging, exeName("anchorctl")), anchor.Anchorctl())
+	})
+
+	err = writeExecutable(filepath.Join(staging, exeName("anchord")), anchor.Anchord())
+
+	wg.Wait()
+
+	if err := errors.Join(err, ctlErr); err != nil {
+		return err
 	}
 
 	marker := fmt.Sprintf("setID %s\nplatform %s/%s\n", t.SetID, runtime.GOOS, runtime.GOARCH)

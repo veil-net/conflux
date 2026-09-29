@@ -101,9 +101,10 @@ with `SIGKILL` so nothing is said on the way out, and requires the supervisor to
 it back — a new process, the readiness marker rewritten, the same identity, and the
 peer reachable again at its IPv6 address — without a reboot or anything typed.
 
-All of that is `make integration`, and the two assertions above on their own are
-`make service-test`. Both build the image first, and CI runs the same command a
-developer does.
+All of that is `make integration`. `make service-test` is the unit on its own and enrols
+nothing: `install` registers it without starting anything, and `uninstall` leaves no
+unit file and none of `/etc/conflux`, `/var/lib/conflux` or `/run/conflux`. Both build the
+image first, and CI runs the same command a developer does.
 
 ### Local network discovery, the bootstrap list, and `conflux enrol`
 
@@ -159,7 +160,10 @@ why it is nonetheless contained.
 `linux` is one job because veilnet-dev is one machine with one runner process: separate
 jobs would queue anyway, each paying a checkout and a fetch. Its fetch goes through the
 runner's tool cache, which survives between runs, so an unchanged shelf costs a read of
-the files the fetcher already holds rather than three hundred megabytes. The container
+the files the fetcher already holds rather than three hundred megabytes. For the same
+reason the Go build and module caches are not restored or saved there: the machine keeps
+its own on disk, and round-tripping them through the Actions cache cost ten minutes a
+run where the suite itself takes seconds. The hosted jobs start empty and do use it. The container
 suites run on a hosted runner instead, because the third integration node reaches the
 realm through its manifest's bootstrap node over UDP, and from veilnet-dev no handshake
 gets through to it. Every job that runs on veilnet-dev refuses a fork's pull request —

@@ -1,5 +1,5 @@
 name: setup
-description: Go, from go.mod, with the module cache.
+description: Go, from go.mod, with the module and build caches.
 runs:
   using: composite
   steps:
@@ -8,3 +8,8 @@ runs:
         # From go.mod rather than pinned here, so the toolchain is stated once.
         go-version-file: go.mod
         cache-dependency-path: go.sum
+        # A hosted runner starts empty, so its caches are restored and saved. The
+        # self-hosted machine survives the job and keeps GOCACHE and GOMODCACHE on disk,
+        # shared with every other repository it builds: restoring that directory over
+        # itself and uploading it again cost ten minutes a run and bought nothing.
+        cache: ${{ runner.environment != 'self-hosted' }}

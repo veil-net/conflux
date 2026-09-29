@@ -463,7 +463,7 @@ func statusErr(resp *http.Response, src Source) error {
 	case http.StatusNotFound:
 		return fmt.Errorf(
 			"no release tagged %q in %s (404) -- or the token cannot see that repository at all, which GitHub reports the same way.\n"+
-				"  Check: anchor's ci.yml has published the %q tag, and %s grants Contents: read on %s",
+				"  Check: anchor's release.yml has published the %q tag, and %s grants Contents: read on %s",
 			src.Tag, src.Repo, src.Tag, TokenEnv, src.Repo)
 
 	default:

@@ -8,11 +8,11 @@ The concrete facts the workflow relies on. Step 8 of every run keeps this file t
 - `anchor/`: `anchor.go` (`Supported` = build tag plus a ≥ 5 MiB size check on both binaries; `SetID`, the extraction directory's name, from a CRC-32C and the length of each binary; `Digests`, the SHA-256s `conflux version` prints), seven build-tagged `bin_<os>_<arch>.go` files (each `//go:embed`s `bin/anchord-<os>-<arch>[.exe]` and `bin/anchorctl-<os>-<arch>[.exe]` by name), `bin_unsupported.go` (every other platform: no pair), `bin/` (gitignored).
 - `cmd/anchor-fetch/`: the shelf fetcher CLI.
 - `internal/`
-  - `anchorctl`: `args.go` (`StartMode`, `ModeFromConfig`, the argv builders), `ctl.go` (runs `start`, `stop`, `status`, `metrics`, `renew`; `Ping`; `Env`), `parse.go` (`ParseStarted`, `ParseStatus`, `ParseMetric`, `MetricConnections`), `testdata/argv/*.golden`, `flags_test.go` (flag cross-check)
-  - `cli`: verbs, pass-through, refusal of `stop`/`restart`, `up`/`proxy`/`enrol`/`renew`/`status`/`serve`, `chooseIPv4` (asked once), `needsRoot` (a privilege refusal that repeats the command typed, quoted), per-OS glue (`service_windows.go` logs the service to `LogFile`)
-  - `config`: `Config` (`IPv4 *string`: nil never asked, `""` declined), `Validate`, `DefaultAPIBaseURL`, `DefaultTUNName`; `spec.go` (taint, proxy, IPv4, uplink, peer, AnchorID and subnet grammar, each anchor's); `atomic.go`; `secret.go` (redacting `Envelope`); `export.go`; `state.go` (`ClockSkew`, link reopens)
-  - `daemon`: `supervisor.go` (spawn into a `child` whose exit is a closed channel, line writers, a fixed-size tail ring, readiness, shutdown — SIGTERM where a signal reaches, `anchorctl stop` then kill where none does, nothing for a daemon already gone — `renewLoop`, `isPermanent`), `bringup.go` (`BringUp` under the lock, `credential`, `MaxSkew` = anchor's `realm.CredSkew`, 10 min, `permanentError`), `renew.go` (`renewStored`, the one renewal body; `RenewNow`), `renewal.go` (the two-thirds arithmetic), `ready.go`, `link.go` (link watcher), `export.go` (anchord's `-config`), `proc_*.go`; `bench_test.go`, `main_test.go` (the test binary as a stand-in anchorctl/anchord, told apart by argv: anchord is started `-socket` first), `supervisor_test.go` (shutdown of a dead and a live daemon, the tail's order)
-  - `enrol`: `client.go` (`Enrol` returns the envelope undecoded; `Renew` needs the manifest's `renewalUrl`; per-client `Skew`; shared transport), `manifest.go` (`Decode`, `WithChain`), `auth.go`
+  - `anchorctl`: `args.go` (`StartMode`, `ModeFromConfig`, the argv builders), `ctl.go` (runs `start`, `stop`, `status`, `metrics`, `renew`; `Ping`, the readiness probe; `Env`; `Error` carries stderr and the run's own error), `parse.go` (`ParseStarted`, `ParseStatus`, `ParseMetric`, `MetricConnections`), `testdata/argv/*.golden`, `flags_test.go` (flag cross-check)
+  - `cli`: verbs, pass-through, refusal of `stop`/`restart`, `up`/`proxy`/`enrol`/`renew`/`status`/`serve`, `proxyFlags` (the one flag set proxy's unknown-flag check and spec splitter read), `chooseIPv4` (asked once), `interfaceLine` (the TUN name only where the kernel honours it), `needsRoot` (a privilege refusal that repeats the command typed, quoted), per-OS glue (`service_windows.go` logs the service to `LogFile`)
+  - `config`: `Config` (`IPv4 *string`: nil never asked, `""` declined), `Validate` (anchor's mode, exit and uplink rules, and `Export.Validate`), `DefaultAPIBaseURL`, `DefaultTUNName`; `spec.go` (taint, proxy, IPv4, uplink, peer, AnchorID and subnet grammar, each anchor's); `atomic.go`; `secret.go` (redacting `Envelope`); `export.go`; `state.go` (`ClockSkew`, link reopens)
+  - `daemon`: `supervisor.go` (spawn, which validates `conflux.json` before rendering anchord's `-config` and refuses permanently, into a `child` whose exit is a closed channel, line writers, a fixed-size tail ring, readiness, shutdown — SIGTERM where a signal reaches, `anchorctl stop` then kill where none does, nothing for a daemon already gone — `renewLoop`, `isPermanent`), `bringup.go` (`BringUp` under the lock, `credential`, `MaxSkew` = anchor's `realm.CredSkew`, 10 min, `permanentError`), `renew.go` (`renewStored`, the one renewal body; `RenewNow`), `renewal.go` (the two-thirds arithmetic), `ready.go`, `link.go` (link watcher), `export.go` (anchord's `-config`), `proc_*.go`; `bench_test.go`, `main_test.go` (the test binary as a stand-in anchorctl/anchord, told apart by argv: anchord is started `-socket` first), `supervisor_test.go` (shutdown of a dead and a live daemon, the tail's order)
+  - `enrol`: `client.go` (`Enrol` returns the envelope undecoded; `Renew` needs the manifest's `renewalUrl` and an AnchorID `config.ValidateAnchorID` accepts; per-client `Skew`; shared transport), `manifest.go` (`Decode`, `WithChain`, redacting `String`/`GoString`), `auth.go`
   - `paths`: `Dirs`, `EnsureAll`, `LogFile`, `acl_windows.go` (`Restrict`, `Trusted`, the root's ownership and DACL), `acl_other.go`
   - the rest: `flock`, `libexec` (extraction; Windows trusts only Administrators-owned binaries), `privcheck`, `service` (systemd, whose unit and `ExecStart=` quoting render in the untagged `service_systemd.go`, launchd, rc for FreeBSD and OpenBSD via `service_rc.go`, the SCM; scope; `exists` for the file-registered managers), `shelf`, `taint` (minting, uniform by rejection sampling), `ui` (`term_*.go`: a real isatty), `version`, `wintun` (`pinned.go`: `Version`, `ZipSHA256`)
 - `scripts/anchor-bins.sh`, `test/`, `.github/`, `docs/`, `VERSION`.
@@ -52,7 +52,7 @@ The concrete facts the workflow relies on. Step 8 of every run keeps this file t
     2. `$ANCHOR_SRC/dist` (unpinned; warns loudly)
     3. with `FETCH=1`, the shelf (needs `ANCHOR_RELEASE_TOKEN`; failure is fatal)
     4. placeholders
-  - It copies, sets `chmod 0755`, and deletes any `anchoradmin-*`.
+  - It copies and sets `chmod 0755`. The prune is what keeps `anchoradmin-*` out: nothing copies a name that is not one of the 14.
   - Final line: `N/N copied from <src> (release|dist)`, `N/N fetched from anchor's release (pinned build)`, or `N placeholders written to <dest>`, N being 14 without `ONLY`.
   - A local `release/` always beats `FETCH=1`. `ANCHOR_SRC=/nonexistent` forces the shelf.
 - **`cmd/anchor-fetch`**
@@ -74,7 +74,7 @@ The concrete facts the workflow relies on. Step 8 of every run keeps this file t
 - **`test/service.sh`:** container `$NAME` (default `cfx`) from `$IMAGE`. Asserts:
   - systemd reaches `running`
   - `conflux install` leaves the unit `enabled` and `inactive`
-  - `conflux uninstall --yes` leaves no unit file and no `/var/lib/conflux`
+  - `conflux uninstall --yes` leaves no unit file and none of `/etc/conflux`, `/var/lib/conflux`, `/run/conflux`
   It enrols nothing.
 - **`test/integration.sh`:** random taint `cfx-ci-<12 hex>`. Makes three live enrolments. Waits poll each second and print how long they took. A and B get `--peers 192.0.2.1:4700` (RFC 5737; never answers): anchor probes the link only until its first connection and the live realm answers at once, so without it they would meet through the realm and the link would prove nothing. Stages:
   1. `cfx-a up --ipv4 10.128.0.1/24`: `anchorId` in `state.json`, `manifest.b64` is `0600`, `/run/conflux` is `0700`, and a second `up` keeps the identity.
@@ -84,7 +84,7 @@ The concrete facts the workflow relies on. Step 8 of every run keeps this file t
   5. Reboot A: same identity.
   6. `anchord` SIGKILLed on A (`docker exec cfx-a sh -c "kill -9 …"`; `kill` is a builtin): the supervisor brings it back without a reboot — a new pid, `/run/conflux/ready` rewritten, same identity, B reachable at its IPv6.
   7. B `down`: keeps the registration, config and identity, and drops `anchor0`. `start` restores it. `down` then reboot restores it.
-  8. `uninstall` removes everything.
+  8. `uninstall` removes the unit, `/etc/conflux`, `/var/lib/conflux`, `/run/conflux` and `anchor0`.
 - **`test/systemd/Dockerfile`:** `debian:trixie-slim` plus systemd, iproute2, iputils-ping and dbus, with getty, udev, console, timesyncd, logind and modules-load units stripped (a container cannot load modules, and the failed unit leaves systemd `degraded`); `COPY conflux`; boots systemd. Containers run with `--privileged --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw --device /dev/net/tun`.
 - **Tests that skip without real binaries (`anchor.Supported`):**
   - `anchor`: `TestPairIsRealExecutables`, `TestSetIDIsStable`
@@ -113,7 +113,7 @@ The concrete facts the workflow relies on. Step 8 of every run keeps this file t
 - One job, `build`, self-hosted, `if: github.ref == 'refs/heads/version3'`; permissions `contents`/`id-token`/`attestations: write`. Steps: setup, anchor-bins, version and tag = `VERSION` verbatim (warns when the tag is behind the commit), `make dist`, `actions/attest-build-provenance@v4`, notes from `./dist/conflux-linux-amd64 version` plus the wintun pin, `softprops/action-gh-release@v3` with files `dist/conflux-*` plus `dist/SHA256SUMS`. Nothing re-verifies what CI checked.
 
 **Composite actions (`.github/actions/`)**
-- `setup`: `actions/setup-go@v7` with `go-version-file: go.mod` and `cache-dependency-path: go.sum`.
+- `setup`: `actions/setup-go@v7` with `go-version-file: go.mod` and `cache-dependency-path: go.sum`; `cache` is off on a self-hosted runner, which keeps `GOCACHE`/`GOMODCACHE` on disk (shared with other repositories, about 6 GB: restoring and re-saving it cost ~630 s a run).
 - `anchor-bins`: inputs `app-id`, `private-key`, `targets` (space-separated pairs; empty = all), `repo`, `tag`. Runs `actions/create-github-app-token@v3` (owner `veil-net`, repositories `anchor`), then `make anchor-bins FETCH=1` with the token as `ANCHOR_RELEASE_TOKEN` and `ONLY` from `targets`. On a self-hosted runner `DEST` is `$RUNNER_TOOL_CACHE/conflux-anchor-bin` (persistent; the fetcher reuses files whose digest matches) and the files are copied into `anchor/bin`; a hosted runner fetches straight into `anchor/bin`.
 - Secrets: `ANCHOR_APP_ID` and `ANCHOR_APP_PRIVATE_KEY`, the read-only anchor GitHub App and the only credential. `create-github-app-token@v3` deprecates `app-id` in favour of `client-id`, which needs a new secret holding the App's client ID.
 
@@ -135,24 +135,25 @@ Paths are relative to the anchor checkout.
 
 | Surface | Anchor source of truth | Conflux consumer |
 |---|---|---|
-| anchorctl commands | `cmd/anchorctl/main.go` dispatch; the lockdown build drops `root` and adds `mint-realm`/`mint-anchor` (`cmd/anchorctl/locked.go`, `manifest.go`) | `internal/cli` `verbs()`, `anchorLifecycleVerbs`, shadowing and collision tests, `docs/commands.md` |
+| anchorctl commands | `cmd/anchorctl/main.go` dispatch (and its error hints: `Unavailable` for a socket with no daemon, `REASON_NOT_RUNNING` for a daemon holding no anchor); `root` is built only without `lockdown` (`priv.go`), and the lockdown build adds `mint-realm`/`mint-anchor` (`manifest.go` `buildCommand`; constants in `locked.go`) | `internal/cli` `verbs()`, `anchorLifecycleVerbs`, shadowing and collision tests, `docs/commands.md` |
 | start flags | `configFlags` in `cmd/anchorctl/lifecycle.go` (`describedByFile`) | `internal/anchorctl/args.go`, argv goldens, `flags_test.go` |
-| output formats | `printStarted` and `statusCmd` in `cmd/anchorctl/lifecycle.go` (tabwriter rows; the `ipv4` row has three cells; realm paths are short IDs; overlay addresses carry a length) | `internal/anchorctl/parse.go`, `parse_test.go` fixtures |
+| output formats | `printStarted` and `statusCmd` in `cmd/anchorctl/lifecycle.go` (one tabwriter block, every row padded to the widest key; the `ipv4` row is a bare address and a note, printed on every running anchor; realm paths are short IDs; overlay addresses carry a length; proxy rows name the IPv4 listener too), `peers` in `node.go`, metric samples in `format.go` (`%g`) | `internal/anchorctl/parse.go`, `parse_test.go` fixtures (take them from a live anchor), `docs/troubleshooting.md` samples |
 | metric names | `metrics.go` (`Metric*` constants; labelled series such as `anchor_lan_peers_found_total{iface=…}`) | `parse.go` (`MetricConnections`), `test/integration.sh`, docs |
-| daemon flags | `cmd/anchord/main.go` (`-socket`, `-token-file`, `-config`, `-v`, `-credentials-dir`, …) | `daemon.anchordArgs` |
-| daemon config | `proto/anchor/v1/daemon.proto` (`DaemonConfig`), `observability.proto` (`ExportConfig`) | `internal/config/export.go`, `daemon/export.go` |
-| control socket | `cmd/anchord/internal/control/server.go` (`Listen`: AF_UNIX on every OS, clears a stale socket itself), `sockpath_*.go` (limit: `sun_path`, 108 on Windows) | `paths` (`socketName`, `sockPathMax`, `CheckSocketLen`), the supervisor's probe |
+| daemon flags | `cmd/anchord/main.go` (`-socket`, `-token-file`, `-config`, `-v`, `-credentials-dir`, `-allow-credentials`, `-allow-observability`) | `daemon.anchordArgs` |
+| daemon config | `proto/anchor/v1/daemon.proto` (`DaemonConfig`), `observability.proto` (`ExportConfig`; `Secret` is a oneof, `common.proto`); what anchord refuses, fatally at startup with `-config`: `cmd/anchord/otelbridge/bridge.go` (`check`), `cmd/anchord/internal/export/controller.go` (`configFrom`) | `internal/config/export.go` (`Export.Validate`), `daemon/export.go`, `spawn` (validates before rendering) |
+| control socket | `cmd/anchord/internal/control/server.go` (`Listen`: AF_UNIX on every OS, clears a stale socket itself), `sockpath_unix.go`, `sockpath_other.go` (limit: `sun_path`, 108 on Windows) | `paths` (`socketName`, `sockPathMax`, `CheckSocketLen`), the supervisor's probe |
 | lifecycle RPC semantics | `cmd/anchord/internal/control/lifecycle.go` (`Stop` with nothing running succeeds) | `anchorctl.Ctl.Stop` |
-| mode, exit and IPv4 rules | `config.go` (`Config.validate`, `validateUplink`, `StaticIPv4`), `cmd/anchord/internal/control/config.go` (bare address → /32), `docs/ipv4.md` | `internal/config` (`Validate`, `ParseOverlayIPv4`) |
-| manifest/credential format | `cmd/anchorctl/manifest.go` (`anchorManifest`, `manifestVersion`, `kind`, `checkEnvelope`, `loadAnchorManifest`) | `internal/enrol/manifest.go`, `auth.go` |
+| mode, exit and IPv4 rules | `config.go` (`Config.check` behind `validate`: ServeExit and UseExit are alternatives; `validateUplink`; `StaticIPv4`), `cmd/anchord/internal/control/config.go` (bare address → /32), `docs/ipv4.md` | `internal/config` (`Validate`, `ParseOverlayIPv4`) |
+| manifest/credential format | `cmd/anchorctl/manifest.go` (`anchorManifest`, `manifestVersion`, `kind`, `checkEnvelope`, `loadAnchorManifest`; `mergeManifest` fills every field no flag named, `listenPort` and `lanDiscovery` included) | `internal/enrol/manifest.go`, `auth.go`; `anchorctl.StartMode.Args` (types `-port 0` and `-lan-discovery=no` beside an uplink) |
 | taints | `internal/realm/taint.go` | `internal/taint`, `config.ValidateTaint(s)` |
-| subnets | `internal/hostnet/local.go` (`Select`, `matchOffer`), `classify.go` (`privateNetworks`, `IsPrivateNetwork`) | `config.ValidateSubnet` |
-| bootstrap entries | `internal/discovery/bootstrap.go` (`ParseEntry`), `internal/id/id.go` (`Parse`) | `config.ValidatePeer`, `ValidateAnchorID` |
+| subnets | `internal/hostnet/local.go` (`Select`, `matchOffer`: compares the entry as written against unmapped host prefixes), `classify.go` (`privateNetworks`, `IsPrivateNetwork`) | `config.ValidateSubnet` |
+| bootstrap entries | `internal/discovery/bootstrap.go` (`ParseEntry`), `internal/id/id.go` (`Parse`); `api.go` skips a bad entry with a warning | `config.ValidatePeer`, `ValidateAnchorID` (also `enrol.Client.Renew`) |
 | proxy spec | `reverseproxy.go` (`parseProxySpec`, `canonicalProxyNetwork`, `StartReverseProxy`) | `config.ParseProxySpec`, `ValidateProxies`, `internal/cli/proxy.go` |
 | uplink spec | `internal/uplink/spec.go` | `config.ParseUplinkSpec` |
-| permanent refusals | the messages behind `ErrRealmRootPinned` (`config.go`), the TUN-unavailable hint (`cmd/anchorctl/main.go`), and the kernel's `device or resource busy` | `daemon.isPermanent` |
+| permanent refusals | the messages behind `ErrRealmRootPinned` (`config.go`), the TUN-unavailable hint (`cmd/anchorctl/main.go`), and the kernel's `device or resource busy`; reasons are mapped in `cmd/anchord/internal/control/lifecycle.go` (`hostRefused`) and `credentials.go` (`refuseInvalid`) | `daemon.isPermanent` |
 | release names and targets | `Makefile` (`release`, `dist`, `DIST_TARGETS`) | `Makefile` `TARGETS`, `anchor-bins.sh`, `anchor/bin_*.go` |
 | shelf | `scripts/shelf-manifest.sh`, `scripts/publish-shelf.sh`, `.github/workflows/release.yml` | `internal/shelf`, `cmd/anchor-fetch`, `.github/actions/anchor-bins` |
+| TUN name | `internal/tundev/name.go` and `tun_*.go` (a request: honoured on Linux and Windows; `utunN` on macOS, `tunN` on the BSDs), reported back by nothing | `cli.interfaceLine` |
 | Go version | the `go` line in each `go.mod` | `go.mod`, the `setup` action |
 
 When a rule is unclear, anchor's docs cover it: `docs/control.md`, `reverse-proxy.md`, `uplink.md`, `ipv4.md`, `identity.md`, `realm.md`, `observability.md`, `tun.md`, `build.md`.
@@ -249,10 +250,11 @@ time docker exec cfx-probe conflux renew                        # the renewal ro
 Record each number before (step 5) and after (step 7; the CI suite durations once the PR is green, in step 9):
 
 - **Artifact sizes:** `ls -l dist/conflux-*` (bytes, per target).
-- **Extraction:** after `make build`, run `D=$(mktemp -d "$S/x.XXXX"); time CONFLUX_DIR=$D bin/conflux anchorctl help >/dev/null` (the first run in a fresh `$D` extracts into `$D/bin/<SetID>/`), then the same command again for the warm figure. Take the median of 5 fresh directories. Single runs are noisy. `bin/conflux version` (the SHA-256s) is worth recording beside it.
+- **Extraction:** after `make build`, run `D=$(mktemp -d "$HOME/.cache/cfx-x.XXXX"); time CONFLUX_DIR=$D bin/conflux anchorctl help >/dev/null 2>&1` (the first run in a fresh `$D` extracts into `$D/bin/<SetID>/`), then the same command again for the warm figure. On a real disk, not `$S`: a scratchpad under `/tmp` is usually tmpfs, where the fsyncs that dominate a cold extraction are free. Take the median of 5 fresh directories, and delete them. Single runs are noisy. `bin/conflux version` (the SHA-256s) is worth recording beside it.
 - **`up` → ready, and renewal:** the `time` lines from the probe node. The enrolment round trip itself is the `time_total` of the step 2 `curl`.
 - **`status` latency**, measured inside the container so `docker exec` overhead is excluded:
   `docker exec cfx-probe sh -c 'for i in $(seq 10); do s=$(date +%s%N); conflux status >/dev/null; echo $(( ($(date +%s%N)-s)/1000000 )); done'`
+- **A shared host drifts** between the before and after numbers. For the after figures, keep the before binary (`cp bin/conflux "$S/conflux-old"` at step 5) and compare the two interleaved: in the probe, `docker cp` both in (the same overlay layer; the image's own copy reads differently) and alternate them, and locally alternate them over fresh directories.
 - **Goroutines and allocations:** `go test -run '^$' -bench . -benchmem -count 6 ./internal/daemon/ ./internal/libexec/` — `BenchmarkLinkCheck`, `BenchmarkRenewal`, `BenchmarkDaemonLifecycle` (real anchord) in `internal/daemon/bench_test.go`, each reporting allocations and `goroutines-left`, which must be 0. Compare runs with `benchstat` (six samples each for a confidence interval).
 - **Suite durations**, from CI rather than run locally: each job's time in the last successful `ci` run before the branch (`gh run list --workflow ci.yml --status success --limit 1`, then `gh run view <run> --json jobs --jq '.jobs[] | [.name, .startedAt, .completedAt]'`) and in the PR's final green run.
 

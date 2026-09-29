@@ -53,6 +53,8 @@ This context is authoritative. Docs describe the design but may be wrong: where 
 
 **Plan mode:** change nothing (no checkout, pull, branch, build, enrolment, or edit). Read conflux, anchor's current tree as it is, and the live schema, then produce the plan for steps 2–9.
 
+**Local vs CI:** nothing CI runs is run locally as well. The suites (`test`, `race`, `cross`, `dist` and its size gate, `service-test`, `integration`, the macOS and Windows suites, and their no-skip gates) run once, on the PR, in step 9. Locally, run only the utility checks, a package's tests while that package is being changed, and what no CI job covers: the probe node, the benchmarks and other baseline numbers, the golden review, and the bash 3.2 check.
+
 Shell variables used below (set them in each shell):
 
 ```bash
@@ -80,7 +82,7 @@ T=cfx-maint-$(head -c6 /dev/urandom | od -An -tx1 | tr -d ' \n')   # random tain
 4. Adapt code, tests, `httptest` fixtures, scripts, CI and docs to match. Adopt breaking changes directly. Regenerate argv goldens with `make golden`, then review `git diff internal/anchorctl/testdata/` so every change is intended.
 5. If anchor or the live API looks wrong, or contradicts the context above, don't work around it in conflux. Flag it.
 
-The checks that need the real binaries (flag cross-check, shadowing, collisions) run after step 3.
+The checks that need the real binaries (flag cross-check, shadowing, collisions) are tests CI runs on the PR, with the shelf's binaries.
 
 ### 3. Build and copy the binaries from anchor
 
@@ -98,8 +100,7 @@ The checks that need the real binaries (flag cross-check, shadowing, collisions)
    ! ls anchor/bin/anchoradmin* 2>/dev/null                         # none
    "$AS/scripts/client-is-locked.sh" anchor/bin "$AS/release"       # anchorctl is the lockdown build
    for f in anchor/bin/*; do cmp "$f" "$AS/release/${f##*/}" || echo "DIFFERS $f"; done   # from the synced build
-   go test -v -count=1 ./anchor/ ./internal/libexec/ ./internal/anchorctl/ ./internal/cli/ 2>&1 | grep -B1 -- '--- SKIP'   # must print nothing
-   make image                                                       # runs `dist` (size gate, every target), then builds the test image
+   make image                                                       # the probe node's image (it builds `dist` on the way; CI owns that gate)
    ```
    Then bring up the probe node ([reference.md § Probe node](reference.md#probe-node)): `conflux up` against the live realm with `--taint "$T"`, then `conflux status`, then the one `conflux renew`. A pinned `anchord` refuses at start any realm whose root isn't its pin, so a successful `up` proves the pin. The join between peers is proven by CI's `integration` job on the PR (step 9).
 4. **Fallback.** Use this only when the pin or `make release` is unavailable. Fetch the pinned shelf into scratch first, so `anchor/bin/` stays untouched unless the shelf qualifies:
@@ -109,7 +110,7 @@ The checks that need the real binaries (flag cross-check, shadowing, collisions)
 ### 4. Update dependencies
 
 1. Update the `go` line to the latest stable Go (`go mod edit -go=<version>`, never older than anchor's `go.mod`), then run `go get -u ./... && go mod tidy`. Update every `uses:` in `.github/` to its latest stable release (`gh api repos/<owner>/<repo>/releases/latest --jq .tag_name`). Install the latest `staticcheck` and `govulncheck` ([reference.md § Tools](reference.md#tools)).
-2. `make build cross`, then `make vulncheck`. If the newest version of a dependency fails, revert it to the most recent stable version that passes, and repeat until clean or until only findings with no passing stable version remain. Flag those.
+2. `make build vulncheck`. If the newest version of a dependency fails, revert it to the most recent stable version that passes, and repeat until clean or until only findings with no passing stable version remain. Flag those.
 3. If an update breaks the build or tests, adapt conflux to the new API. Don't patch or work around defects inside dependencies unless critical (security, crash, or data corruption on a main path).
 
 ### 5. Baseline
@@ -129,7 +130,7 @@ make fmtcheck lint tidycheck vulncheck docscheck       # the utility checks (see
 actionlint && shellcheck scripts/*.sh test/*.sh        # workflows, the actions they use, and the scripts
 ```
 
-plus the affected-package tests of whatever was last touched, and anything no CI job runs: the `make golden` diff review, `docker run bash:3.2` over `anchor-bins.sh` if it changed, and the after numbers (sizes, extraction, benchmarks, the probe node). A check that prints `not installed; skipping` counts as a failure.
+plus what no CI job runs: the `make golden` diff review, `docker run bash:3.2` over `anchor-bins.sh` if it changed, and the after numbers (sizes, extraction, benchmarks, the probe node). A check that prints `not installed; skipping` counts as a failure.
 
 ### 8. Maintain this skill
 
@@ -139,7 +140,7 @@ Check every file in `.claude/skills/conflux-maintenance/` against conflux, ancho
 
 Commit on the branch, push it, and open a PR with `--base version3`. Then watch its CI (`gh pr checks <n> --watch`) until every check is green:
 
-- A failure is read from the job's log (`gh run view <run> --log-failed`), fixed on the branch, re-checked locally as in step 7 (the affected tests plus the utility checks), pushed, and watched again. Never weaken a test, a gate or the fork guard to get green.
+- A failure is read from the job's log (`gh run view <run> --log-failed`), fixed on the branch, re-checked locally with the fixed package's tests and the utility checks, pushed, and watched again. Never weaken a test, a gate or the fork guard to get green.
 - A run that failed for the Actions budget, a runner outage or an unreachable API rather than the code is not a failure to fix: say so and do not merge.
 - With every check green, confirm from the `integration` log that `service-test` and `integration` booted systemd containers and that `integration` enrolled against the live API, then `gh pr merge <n> --merge`. A merge to `version3` publishes a release (`release.yml`); don't bump `VERSION` or trigger one by hand.
 

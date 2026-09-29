@@ -78,7 +78,7 @@ Anchor is the reference for overlay behaviour, and the live API at `api.veilnet.
 
 - Unit tests, argv goldens, `httptest` API fixtures, `test/*.sh`, and the `test/systemd` image are code under maintenance, held to the same standard as production code.
 - Assertions or fixtures that encode outdated behaviour, including outdated anchor behaviour or API contracts, are updated in the same change.
-- Tests that need the real anchor binaries skip without them. Confirm they actually ran against the freshly built binaries (no `--- SKIP` in `go test -v` output for `./anchor/ ./internal/libexec/ ./internal/anchorctl/ ./internal/cli/`). A skip caused by missing binaries or a missing tool (staticcheck, govulncheck, shellcheck, Docker) counts as a failure.
+- Tests that need the real anchor binaries skip without them. CI's gates confirm they ran — the `linux` job fails on any `--- SKIP` and the `platforms` jobs on a skipped real-binary test — so they are not run locally to check. A local check skipped for a missing tool (staticcheck, govulncheck, shellcheck, Docker) counts as a failure.
 - Code behind a build tag is checked where the tag is true: `make cross` vets and `make lint` runs staticcheck per target OS. Windows-only tests (`internal/paths/acl_windows_test.go`) run only in CI's `platforms` job.
 - Confirm from the PR's `integration` job log that `service-test` and `integration` really booted systemd containers, and that `integration` enrolled against the live API.
 - Per area, run only the affected tests locally. The full suites run once, in CI on the PR.

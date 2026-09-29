@@ -28,8 +28,9 @@ $ sudo conflux up --serve-exit      # be a way out to the public internet for th
 $ sudo conflux up --use-exit        # send this machine's own internet over the overlay
 ```
 
-They are independent — a machine can do either, both or neither — and both are off
-unless asked for. conflux passes them explicitly in whichever direction they were set
+They are alternatives — a machine can do either or neither, and anchor refuses both,
+since an exit sends the internet out of this host and `--use-exit` sends this host's
+internet to an exit — and both are off unless asked for. conflux passes them explicitly in whichever direction they were set
 rather than letting the enrolment manifest supply them, because an anchor that became
 an internet exit because a document said so is the worst kind of surprise. `--no-serve-exit`
 and `--no-use-exit` are the way back.

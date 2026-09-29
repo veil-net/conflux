@@ -112,9 +112,9 @@ var scenarios = map[string]StartMode{
 		LANDiscovery: boolp(false),
 		Dir:          "/var/lib/conflux/anchor",
 	},
-	"up-exit": {
+	"up-serve-exit-only": {
 		TUN: true, TUNName: "anchor0", Taints: []string{"brhk-2mq9-tzva-6pjs"},
-		ServeExit: true, UseExit: true, Dir: "/var/lib/conflux/anchor",
+		ServeExit: true, Dir: "/var/lib/conflux/anchor",
 	},
 	"up-use-exit-only": {
 		TUN: true, TUNName: "anchor0", Taints: []string{"brhk-2mq9-tzva-6pjs"},

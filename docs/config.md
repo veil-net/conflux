@@ -55,7 +55,7 @@ Every directory is `0700` and every file `0600`.
 | `port` | the UDP port to bind on every interface. Absent means the kernel picks one, which is the usual case. A port and not an address: an anchor listens everywhere, and the host's addresses change under it. Refused beside `uplink`, which binds no socket. |
 | `lowLatency` | carry layer-2 frames on QUIC datagrams instead of streams. Absent is false. Either mode. |
 | `lanDiscovery` | probe the host's own networks for anchors of this realm tree. Either mode. The one field here where **absent is not false**: it is `auto`, and it passes no flag at all, which is what leaves enrolment's own `lanDiscovery` in play. `false` and absent are different documents and `--lan-discovery no` writes the first of them. |
-| `serveExit`, `useExit` | route the public internet out of and into the overlay. Absent is false. Both are `up`'s, and switching a machine to `proxy` clears them; anchor refuses `serveExit` in `proxy` mode. |
+| `serveExit`, `useExit` | route the public internet out of and into the overlay. Absent is false. Both are `up`'s, and switching a machine to `proxy` clears them; anchor refuses `serveExit` in `proxy` mode, and the two together in either. |
 | `apiBaseUrl` | absent means the default. |
 
 This file is the whole of what a reboot needs. Every `up` and every `proxy` rewrites

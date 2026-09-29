@@ -15,6 +15,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -145,7 +146,8 @@ type Config struct {
 	// UseExit sends this machine's own internet traffic over the overlay. Both are
 	// `conflux up`'s: an exit forwards out of a host interface, and anchor refuses
 	// ServeExit without one. UseExit it accepts in userspace, where it covers only the
-	// anchor's own traffic, so `conflux proxy` offers neither and clears both.
+	// anchor's own traffic, so `conflux proxy` offers neither and clears both. They
+	// are alternatives, and anchor refuses the pair.
 	//
 	// Off by default and always passed explicitly, because an anchor that became
 	// an internet exit on its own -- because a manifest said so -- is the worst
@@ -232,6 +234,15 @@ func (c *Config) Validate() error {
 
 	default:
 		return fmt.Errorf("mode is %q, want %q or %q", c.Mode, ModeTUN, ModeProxy)
+	}
+
+	// anchor's rule: an exit sends the internet out of this host, and UseExit sends this
+	// host's internet to an exit, so the forwarding table and the host's default route
+	// would each disagree with themselves.
+	if c.ServeExit && c.UseExit {
+		return errors.New(
+			"serveExit and useExit are both set, and anchor refuses the pair: an exit sends the internet out of this host, " +
+				"and useExit sends this host's internet to an exit. Keep one, with --no-use-exit or --no-serve-exit")
 	}
 
 	if len(c.Taints) == 0 {

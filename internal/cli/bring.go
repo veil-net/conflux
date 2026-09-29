@@ -162,8 +162,6 @@ func waitForAnchor(ctx context.Context, d paths.Dirs) (anchorctl.Status, error) 
 // exitNote describes this machine's exit settings, or "" when it has neither.
 func exitNote(cfg *config.Config) string {
 	switch {
-	case cfg.ServeExit && cfg.UseExit:
-		return "serving a way out, and sending its own traffic over the overlay"
 	case cfg.ServeExit:
 		return "serving a way out to the public internet for the realm"
 	case cfg.UseExit:

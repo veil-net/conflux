@@ -75,8 +75,8 @@ refusal names `down` and `start` and the escape hatch.
 ```
 conflux up [--taint T]... [--ipv4 ADDRESS | --no-ipv4] [--subnet CIDR]... [--interface NAME]
            [--uplink DEV | --no-uplink] [--peers HOST:PORT]... [--no-peers] [--api URL]
-           [--port N | --no-port] [--low-latency] [--lan-discovery yes|no|auto]
-           [--serve-exit] [--use-exit]
+           [--port N | --no-port] [--low-latency | --no-low-latency] [--lan-discovery yes|no|auto]
+           [--serve-exit | --no-serve-exit] [--use-exit | --no-use-exit]
 ```
 
 Enrols this machine if it has never been, starts an anchor in TUN mode, writes the
@@ -146,7 +146,7 @@ Needs root.
 ```
 conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T]... [--ipv4 ADDRESS | --no-ipv4]
               [--uplink DEV | --no-uplink] [--peers HOST:PORT]... [--no-peers] [--api URL]
-              [--port N | --no-port] [--low-latency] [--lan-discovery yes|no|auto]
+              [--port N | --no-port] [--low-latency | --no-low-latency] [--lan-discovery yes|no|auto]
 ```
 
 Starts in userspace mode serving those backends. Same taint, IPv4, uplink, peers, API,

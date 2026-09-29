@@ -5,7 +5,7 @@ description: Full audit, optimization and consolidation pass over the whole conf
 
 # Conflux maintenance
 
-A run starts from a freshly pulled `version3`, works on a new branch, and ends with commits on that branch plus a summary message. Supporting files:
+A run starts from a freshly pulled `version3`, works on a new branch, and ends with that branch merged into `version3` through a PR whose CI is green, plus a summary message. Supporting files:
 
 - [reference.md](reference.md): repo map, Make targets, binary pipeline, harness, CI/CD, anchor surface map, anchor's release build, live API contract, baseline commands, tools.
 - [standards.md](standards.md): audit goals, performance, CI/CD and test rules, threat model, design references, audit areas, invariants.
@@ -101,7 +101,7 @@ The checks that need the real binaries (flag cross-check, shadowing, collisions)
    go test -v -count=1 ./anchor/ ./internal/libexec/ ./internal/anchorctl/ ./internal/cli/ 2>&1 | grep -B1 -- '--- SKIP'   # must print nothing
    make image                                                       # runs `dist` (size gate, every target), then builds the test image
    ```
-   Then bring up the probe node ([reference.md § Probe node](reference.md#probe-node)): `conflux up` against the live realm with `--taint "$T"`, then `conflux status`, then the one `conflux renew`. A pinned `anchord` refuses at start any realm whose root isn't its pin, so a successful `up` proves the pin. The join between peers is proven by `make integration` in step 7.
+   Then bring up the probe node ([reference.md § Probe node](reference.md#probe-node)): `conflux up` against the live realm with `--taint "$T"`, then `conflux status`, then the one `conflux renew`. A pinned `anchord` refuses at start any realm whose root isn't its pin, so a successful `up` proves the pin. The join between peers is proven by CI's `integration` job on the PR (step 9).
 4. **Fallback.** Use this only when the pin or `make release` is unavailable. Fetch the pinned shelf into scratch first, so `anchor/bin/` stays untouched unless the shelf qualifies:
    `DEST="$S/shelf" make anchor-bins FETCH=1 ANCHOR_SRC=/nonexistent` (`ANCHOR_RELEASE_TOKEN` in the environment, never argv). Accept it only if the `commit:` line equals the synced-to commit. Then copy the 14 files into `anchor/bin/` and run the same verification, except: `"$AS/scripts/client-is-locked.sh" anchor/bin` (no admin directory to compare against), and no `cmp`, since the fetcher already checked every digest. If the shelf is at a different commit, stop the binary step, leave `anchor/bin/` untouched, and flag it. Never test or ship against placeholders or stale binaries without saying so.
 5. `for p in anchor/bin/x dist/x test/systemd/conflux; do git check-ignore -q "$p" || echo "NOT IGNORED $p"; done` must print nothing (`-q` takes one path). Binaries are never committed.
@@ -114,23 +114,22 @@ The checks that need the real binaries (flag cross-check, shadowing, collisions)
 
 ### 5. Baseline
 
-Record the before numbers with the commands in [reference.md § Baseline](reference.md#baseline): `dist` sizes per target, extraction time, `conflux up` → ready overlay against the live API, enrolment and renewal round-trips, `conflux status` latency, goroutines and allocations in the supervisor, renewal and link-watcher paths, and unit and integration suite durations. The benchmarks are `internal/daemon/bench_test.go`; add one first for any of those paths that lacks it.
+Record the before numbers with the commands in [reference.md § Baseline](reference.md#baseline): `dist` sizes per target, extraction time, `conflux up` → ready overlay against the live API, enrolment and renewal round-trips, `conflux status` latency, goroutines and allocations in the supervisor, renewal and link-watcher paths, and the CI suite durations (taken from CI, not run locally). The benchmarks are `internal/daemon/bench_test.go`; add one first for any of those paths that lacks it.
 
 ### 6. Audit and fix, area by area
 
-Work through the areas in [standards.md § Audit areas](standards.md#audit-areas) against the audit goals, performance rules, threat model, CI/CD rules and test rules in the same file. For each area, fix issues and apply optimizations and consolidation. Update docs, comments and affected tests in the same change, then run only the affected tests (`go test [-race] ./internal/<pkg>/…`). A change touching goroutine lifecycle, child-process supervision, renewal timing or the link watcher must pass its tests under `-race` now and `make integration` in step 7, with no leaked processes or goroutines.
+Work through the areas in [standards.md § Audit areas](standards.md#audit-areas) against the audit goals, performance rules, threat model, CI/CD rules and test rules in the same file. For each area, fix issues and apply optimizations and consolidation. Update docs, comments and affected tests in the same change, then run only the affected tests (`go test [-race] ./internal/<pkg>/…`). A change touching goroutine lifecycle, child-process supervision, renewal timing or the link watcher must pass its tests under `-race` now and CI's `integration` on the PR, with no leaked processes or goroutines.
 
-### 7. Final verification
+### 7. Final local checks
+
+Nothing CI runs is run locally here: `test`, `race`, `cross`, `dist`, `service-test`, `integration` and the macOS and Windows suites are verified by the PR in step 9. Locally, before pushing, only what CI does not run:
 
 ```bash
-make test race cross                                   # each once, in full
-./test/preflight.sh
-make -j2 -O service-test integration                   # as CI runs it: `dist` (size gate, fresh binaries) and `image` once, then both suites
-make fmtcheck lint tidycheck vulncheck docscheck       # local utility checks (see reference.md § Local checks)
+make fmtcheck lint tidycheck vulncheck docscheck       # the utility checks (see reference.md § Local checks)
 actionlint && shellcheck scripts/*.sh test/*.sh        # workflows, the actions they use, and the scripts
 ```
 
-Re-measure the baseline. A check that prints `not installed; skipping`, a test skipped for missing binaries, or a suite skipped for missing Docker counts as a failure. Confirm `service-test` and `integration` really booted systemd containers and that `integration` enrolled against the live API. State which CI changes couldn't be validated locally.
+plus the affected-package tests of whatever was last touched, and anything no CI job runs: the `make golden` diff review, `docker run bash:3.2` over `anchor-bins.sh` if it changed, and the after numbers (sizes, extraction, benchmarks, the probe node). A check that prints `not installed; skipping` counts as a failure.
 
 ### 8. Maintain this skill
 
@@ -138,13 +137,20 @@ Check every file in `.claude/skills/conflux-maintenance/` against conflux, ancho
 
 ### 9. Finish
 
-Commit on the branch. Don't push, open a PR, bump `VERSION` or trigger a release unless told; a PR, if told, targets `--base version3`. Clean up: `docker rm -f cfx-probe`, `git -C "$A" worktree remove --force "$S/anchor"` if one was made, and delete the enrolment output under `$S`. `git -C "$A" status --porcelain` must match the step 1 snapshot. Don't write a report file. End with a brief summary covering:
+Commit on the branch, push it, and open a PR with `--base version3`. Then watch its CI (`gh pr checks <n> --watch`) until every check is green:
+
+- A failure is read from the job's log (`gh run view <run> --log-failed`), fixed on the branch, re-checked locally as in step 7 (the affected tests plus the utility checks), pushed, and watched again. Never weaken a test, a gate or the fork guard to get green.
+- A run that failed for the Actions budget, a runner outage or an unreachable API rather than the code is not a failure to fix: say so and do not merge.
+- With every check green, confirm from the `integration` log that `service-test` and `integration` booted systemd containers and that `integration` enrolled against the live API, then `gh pr merge <n> --merge`. A merge to `version3` publishes a release (`release.yml`); don't bump `VERSION` or trigger one by hand.
+
+Clean up: `docker rm -f cfx-probe`, `git -C "$A" worktree remove --force "$S/anchor"` if one was made, and delete the enrolment output under `$S`. `git -C "$A" status --porcelain` must match the step 1 snapshot. Don't write a report file. End with a brief summary covering:
 
 - the anchor commit synced from and to, and what changed as a result
 - live API contract changes found, and what changed as a result
 - binaries built and copied, from which source (release or shelf), and anything skipped, with the reason
 - before/after numbers, including artifact sizes
-- CI/CD changes, and which couldn't be validated locally
+- the PR, what its CI caught and how it was fixed, and the merge
+- CI/CD changes, and any (such as `release.yml`) a PR run cannot exercise
 - breaking changes (CLI, config file, state layout, service)
 - dependencies held back for vulnerabilities, and non-critical dependency defects found
 - anchor and live API issues flagged, including whether the API was reachable

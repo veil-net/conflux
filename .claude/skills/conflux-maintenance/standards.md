@@ -36,7 +36,7 @@ Work through them in this order:
 ## Performance rules
 
 - **Performance over resource usage.** Never add caps, limits or throttling that trade performance for resources, and remove existing ones that do. The `dist` size gate is a correctness check, not a resource cap, and stays.
-- Copy and GC reductions are wanted only with no lifecycle errors or races. Any change touching goroutine lifecycle, child-process supervision, renewal timing or the link watcher must pass its affected tests under `-race`, plus `make integration`, with no leaked processes or goroutines at teardown.
+- Copy and GC reductions are wanted only with no lifecycle errors or races. Any change touching goroutine lifecycle, child-process supervision, renewal timing or the link watcher must pass its affected tests under `-race`, plus CI's `integration` on the PR, with no leaked processes or goroutines at teardown.
 - Anchor's own tuning (stream vs datagram and so on) belongs to anchor. Conflux passes it through faithfully and never overrides it.
 
 ## CI/CD rules
@@ -45,7 +45,7 @@ Work through them in this order:
   - builds: `cross` for every target, including a per-target vet compile of test files; `dist` with the size gate; platform builds on macOS and Windows
   - tests: `test`, `race`, the macOS and Windows suites, `service-test`, and `integration` against the live API
   - the release pipeline
-- **Utility checks run locally, not in CI.** gofmt, staticcheck, tidycheck, govulncheck, docs and link checks, commit checks and the like leave CI and run in steps 4 and 7 (see reference.md § Local checks).
+- **Utility checks run locally, not in CI; everything CI runs runs only in CI.** gofmt, staticcheck, tidycheck, govulncheck, docs and link checks, commit checks and the like leave CI and run in steps 4 and 7 (see reference.md § Local checks). The suites CI runs are not repeated locally before a push: the PR's run is the verification.
 - **Faster, with the same verification power.** Never drop, skip or weaken a build or test that verifies the code. Speed comes from:
   - caching: the Go module and build cache, fetched anchor binaries keyed by shelf digest, Docker layers
   - fetching or building anchor binaries once and sharing them across jobs as artifacts
@@ -57,7 +57,7 @@ Work through them in this order:
   - job ordering suited to the runners: self-hosted `veilnet-dev` for the Linux Go suite, hosted runners for the container suites (they need the live realm's bootstrap node over UDP) and for macOS and Windows
 - Keep the fork guard on every self-hosted job. The only credential stays the read-only anchor GitHub App. Release stays gated to `version3`.
 - **Release only releases.** The user merges to `version3` only when CI is all green, so `release.yml` doesn't re-verify anything. On a merge it fetches the pinned binaries, runs `make dist` (the size gate comes with it), attests, and publishes at the `VERSION` tag. Jobs or steps that repeat CI's checks are removed; the `version3` gate is the one guard it keeps.
-- CI can't run without pushing. Validate workflow and composite-action changes locally (`actionlint`; `act` if available), and name in the summary the CI changes that couldn't be verified locally.
+- Validate workflow and composite-action changes with `actionlint` (and `act` if available) before pushing; the PR's own run is what proves them. Name in the summary any change a PR run cannot exercise, such as `release.yml`.
 
 ## Threat model
 
@@ -80,8 +80,8 @@ Anchor is the reference for overlay behaviour, and the live API at `api.veilnet.
 - Assertions or fixtures that encode outdated behaviour, including outdated anchor behaviour or API contracts, are updated in the same change.
 - Tests that need the real anchor binaries skip without them. Confirm they actually ran against the freshly built binaries (no `--- SKIP` in `go test -v` output for `./anchor/ ./internal/libexec/ ./internal/anchorctl/ ./internal/cli/`). A skip caused by missing binaries or a missing tool (staticcheck, govulncheck, shellcheck, Docker) counts as a failure.
 - Code behind a build tag is checked where the tag is true: `make cross` vets and `make lint` runs staticcheck per target OS. Windows-only tests (`internal/paths/acl_windows_test.go`) run only in CI's `platforms` job.
-- Confirm `service-test` and `integration` really booted systemd containers, and that `integration` enrolled against the live API.
-- Per area, run only the affected tests. Run the full suite once at the end.
+- Confirm from the PR's `integration` job log that `service-test` and `integration` really booted systemd containers, and that `integration` enrolled against the live API.
+- Per area, run only the affected tests locally. The full suites run once, in CI on the PR.
 
 ## Invariants (verify every run)
 

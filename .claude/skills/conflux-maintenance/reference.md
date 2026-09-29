@@ -246,7 +246,7 @@ time docker exec cfx-probe conflux renew                        # the renewal ro
 
 ## Baseline
 
-Record each number before (step 5) and after (step 7):
+Record each number before (step 5) and after (step 7; the CI suite durations once the PR is green, in step 9):
 
 - **Artifact sizes:** `ls -l dist/conflux-*` (bytes, per target).
 - **Extraction:** after `make build`, run `D=$(mktemp -d "$S/x.XXXX"); time CONFLUX_DIR=$D bin/conflux anchorctl help >/dev/null` (the first run in a fresh `$D` extracts into `$D/bin/<SetID>/`), then the same command again for the warm figure. Take the median of 5 fresh directories. Single runs are noisy. `bin/conflux version` (the SHA-256s) is worth recording beside it.
@@ -254,7 +254,7 @@ Record each number before (step 5) and after (step 7):
 - **`status` latency**, measured inside the container so `docker exec` overhead is excluded:
   `docker exec cfx-probe sh -c 'for i in $(seq 10); do s=$(date +%s%N); conflux status >/dev/null; echo $(( ($(date +%s%N)-s)/1000000 )); done'`
 - **Goroutines and allocations:** `go test -run '^$' -bench . -benchmem -count 6 ./internal/daemon/ ./internal/libexec/` — `BenchmarkLinkCheck`, `BenchmarkRenewal`, `BenchmarkDaemonLifecycle` (real anchord) in `internal/daemon/bench_test.go`, each reporting allocations and `goroutines-left`, which must be 0. Compare runs with `benchstat` (six samples each for a confidence interval).
-- **Suite durations:** `time make test`, `time make race`, and `time make -j2 -O service-test integration` (which includes `dist` and the image).
+- **Suite durations**, from CI rather than run locally: each job's time in the last successful `ci` run before the branch (`gh run list --workflow ci.yml --status success --limit 1`, then `gh run view <run> --json jobs --jq '.jobs[] | [.name, .startedAt, .completedAt]'`) and in the PR's final green run.
 
 ## Tools
 

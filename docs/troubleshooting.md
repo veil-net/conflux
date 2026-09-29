@@ -184,7 +184,7 @@ right one for the machine.
   renewal      failing since 2026-09-26T08:10:00Z: dial tcp: no route to host
 ```
 
-While the credential is still valid this is a warning: conflux retries on a backoff
+While the credential is still valid this is a warning: conflux retries every minute
 and there are days of budget. Once it says `EXPIRED`, the anchor is running but every
 handshake it attempts is refused.
 

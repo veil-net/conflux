@@ -101,8 +101,8 @@ Three states, three behaviours:
 
 | State | What conflux does |
 |---|---|
-| credential valid, renewal failed | warns with the time remaining, starts normally, retries on a backoff |
-| credential expired, renewal failed | starts, retries forever, and `conflux status` says `EXPIRED` and names the last error — the anchor is up but every handshake is refused, and reporting "running" would be describing the wrong thing |
+| credential valid, renewal failed | warns with the time remaining, starts normally, retries every minute |
+| credential expired, renewal failed | starts, retries every minute for as long as it takes, and `conflux status` says `EXPIRED` and names the last error — the anchor is up but every handshake is refused, and reporting "running" would be describing the wrong thing |
 | credential expired, renewal succeeded | nothing special; this is the ordinary long-offline case |
 
 ## Renewing by hand

@@ -171,8 +171,8 @@ is untouched, the identity is unchanged, nothing re-enrols, and the credential i
 renewed on the way through if it was due. Repeated failures back off from one second
 to thirty.
 
-The 90 seconds is not arbitrary: anchor redials an uplink on a two-second tick with a
-45-second dial timeout, and a realm handshake on the slowest line conflux accepts
+The 90 seconds is not arbitrary: anchor redials an uplink at once and then on a
+backoff from two seconds, each attempt with a 45-second dial timeout, and a realm handshake on the slowest line conflux accepts
 takes about 25. A shorter grace would restart anchors that were about to come up on
 their own.
 

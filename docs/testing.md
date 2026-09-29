@@ -60,10 +60,11 @@ daemon that will not start — discovered after the binaries were dropped into
 `anchor/bin` and shipped.
 
 **`enrol.TestWithChainIsLossless`** renews a manifest and compares every field. The
-document carries `bootstrap`, `genesis`, `realm` and `renewalAuth`, which conflux has no
-opinion about and anchor reads. Round-tripping through a struct with only the known
-fields would delete them on the first renewal, and the anchor would come back after the
-next reboot with no peers to bootstrap from — days later, with nothing pointing at the
+document carries fields conflux never reads — `bootstrap` and `genesis`, which anchor
+does, and `realm`, which anchor carries — beside `renewalAuth`, which only conflux reads
+and a renewal must keep. Round-tripping through a struct with only the known fields
+would delete them on the first renewal, and the anchor would come back after the next
+reboot with no peers to bootstrap from — days later, with nothing pointing at the
 renewal that caused it.
 
 ## Testing the boot service

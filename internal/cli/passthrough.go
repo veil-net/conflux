@@ -45,11 +45,10 @@ func passthrough(ctx context.Context, args []string) int {
 // connectionDetails reads the token, and intercepts the one failure anchorctl
 // cannot advise on.
 //
-// Its own hint for an unreachable daemon reads "anchorctl start -identity FILE
-// -root FILE -cred FILE", which is right for anchor and useless to somebody holding
-// conflux -- they have no such files and are not meant to. Everything else,
-// including anchorctl's genuinely good explanations of every other refusal, passes
-// through untouched.
+// Its own answer to a socket with no daemon behind it asks whether anchord is running
+// there, which is right for anchor and no help to somebody holding conflux, who never
+// started anchord and is not meant to. Everything else, including anchorctl's
+// genuinely good explanations of every other refusal, passes through untouched.
 func connectionDetails(d paths.Dirs, args []string) (string, bool) {
 	// A user who named a socket themselves is talking to a daemon conflux does not
 	// manage, so none of the checks below apply to them.

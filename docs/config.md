@@ -138,9 +138,10 @@ authenticates with, and may carry an `ipv4` and an `export` block that
 `conflux enrol` copies into `conflux.json` once. See
 [credentials.md](credentials.md).
 
-**Store it exactly as it arrived.** Do not decompose it — anchorctl reads an inline
-identity as raw bytes and a path as an encrypted container, so writing the hex out to a
-file and passing `-identity` fails as `identity: file is corrupt`.
+**Store it exactly as it arrived.** Do not decompose it. It is the identity, the chain
+and the bootstrap list together, conflux hands it to anchorctl whole, and a renewal
+rewrites the chain inside it: a seed copied out into a file of its own is one more
+copy of the key to keep at `0600`, and one the next renewal does not update.
 
 conflux never writes it to a second file and never puts it in an argv. It goes to
 `anchorctl start -manifest -` on stdin, becomes an inline secret on the wire, and is

@@ -79,9 +79,9 @@ machine started — it varies, so do not read the first failed ping as a fault.
 **Then check the taints.** `conflux peers` has a `DATA` column:
 
 ```
-ANCHOR      OVERLAY                                  IPV4           STATE      DATA
-i46dpakhug  fd80:c4b9:99ae:df9b:5261:d178:18f1:783c  10.128.0.2/24  connected  yes
-s5g3oefl2s  fd80:c4b9:99ae:a015:58f1:5b6e:b140:5e8e  -              connected  no
+ANCHOR      OVERLAY                                  IPV4        HARDWARE           STATE      CONN     DATA  REACH     RTT
+i46dpakhug  fd80:c4b9:99ae:df9b:5261:d178:18f1:783c  10.128.0.2  ae:70:60:82:85:68  connected  out*,in  yes   nat-cone  990µs
+s5g3oefl2s  fd80:c4b9:99ae:a015:58f1:5b6e:b140:5e8e  -           5a:f0:a9:da:4e:32  connected  out      no    unknown   1.2ms
 ```
 
 `DATA no` on a peer you expected to reach means taint separation, and it is working as

@@ -45,21 +45,26 @@ func (c *Ctl) Env() []string {
 	return env
 }
 
-// Error is a non-zero exit, carrying what the child said.
+// Error is a failed run, carrying what the child said.
 type Error struct {
 	Args   []string
-	Code   int
 	Stderr string
+
+	// Err is how the run failed: an exit status, a signal, or a binary that never
+	// started -- which says nothing on stderr and would otherwise read as a bare code.
+	Err error
 }
 
 func (e *Error) Error() string {
 	msg := strings.TrimSpace(e.Stderr)
-	if msg == "" {
-		msg = fmt.Sprintf("exit status %d", e.Code)
+	if msg == "" && e.Err != nil {
+		msg = e.Err.Error()
 	}
 
 	return fmt.Sprintf("anchorctl %s: %s", strings.Join(e.Args, " "), msg)
 }
+
+func (e *Error) Unwrap() error { return e.Err }
 
 // run invokes anchorctl and returns its stdout.
 func (c *Ctl) run(ctx context.Context, stdin []byte, args ...string) (string, error) {
@@ -76,12 +81,7 @@ func (c *Ctl) run(ctx context.Context, stdin []byte, args ...string) (string, er
 	cmd.Stderr = &errBuf
 
 	if err := cmd.Run(); err != nil {
-		code := -1
-		if cmd.ProcessState != nil {
-			code = cmd.ProcessState.ExitCode()
-		}
-
-		return out.String(), &Error{Args: args, Code: code, Stderr: errBuf.String()}
+		return out.String(), &Error{Args: args, Stderr: errBuf.String(), Err: err}
 	}
 
 	return out.String(), nil
@@ -134,15 +134,6 @@ func (c *Ctl) Status(ctx context.Context) (Status, error) {
 	return ParseStatus(out), nil
 }
 
-// Ping reports whether the daemon is up and the token is accepted. It is the
-// readiness probe: a socket file proves nothing, because a crashed daemon leaves
-// one behind.
-func (c *Ctl) Ping(ctx context.Context) error {
-	_, err := c.run(ctx, nil, StatusArgs()...)
-
-	return err
-}
-
 // Stop closes the anchor. The daemon stays up, and nothing running is not an error.
 //
 // Worth doing even when the process is about to be killed anyway: a closed anchor
@@ -150,6 +141,15 @@ func (c *Ctl) Ping(ctx context.Context) error {
 // out by timeout.
 func (c *Ctl) Stop(ctx context.Context) error {
 	_, err := c.run(ctx, nil, StopArgs()...)
+
+	return err
+}
+
+// Ping reports whether the daemon is up and the token is accepted. It is the
+// readiness probe, and Status without the parse: a socket file proves nothing,
+// because a crashed daemon leaves one behind.
+func (c *Ctl) Ping(ctx context.Context) error {
+	_, err := c.run(ctx, nil, StatusArgs()...)
 
 	return err
 }

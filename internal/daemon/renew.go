@@ -157,7 +157,8 @@ func RenewNow(ctx context.Context, dirs paths.Dirs, ctl *anchorctl.Ctl, rep Repo
 //
 // The bytes are raw here, not base64: the API sends base64 and the client decoded
 // it on the way in, because the file `-cred` reads wants the credential itself.
-// Getting that backwards produces a credential the daemon silently refuses.
+// Getting that backwards produces a credential the daemon refuses, with nothing
+// saying the encoding is why.
 //
 // Through a file because that is what anchorctl reads, with -inline so that anchorctl
 // sends the contents and the daemon never opens a path a caller named. The chain is

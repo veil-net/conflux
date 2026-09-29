@@ -178,7 +178,7 @@ func TestRenew(t *testing.T) {
 			t.Fatalf("decode request: %v", err)
 		}
 
-		if in.AnchorID != "anchor1qxy" {
+		if in.AnchorID != "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq" {
 			t.Errorf("anchorId = %q", in.AnchorID)
 		}
 
@@ -186,7 +186,7 @@ func TestRenew(t *testing.T) {
 			base64.StdEncoding.EncodeToString(chain), expiry.Format(ManifestTime))
 	})
 
-	got, err := c.Renew(t.Context(), s.URL+alphaRenewPath, "anchor1qxy")
+	got, err := c.Renew(t.Context(), s.URL+alphaRenewPath, "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq")
 	if err != nil {
 		t.Fatalf("Renew: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestRenewRefusesAForeignHost(t *testing.T) {
 		fmt.Fprint(w, `{"chain":"YQ==","notAfter":"2026-09-20T04:12:00.000Z"}`)
 	})
 
-	_, err := c.Renew(t.Context(), "https://attacker.example/ghosts/alpha/renew", "anchor1qxy")
+	_, err := c.Renew(t.Context(), "https://attacker.example/ghosts/alpha/renew", "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq")
 	if err == nil {
 		t.Fatal("Renew sent the request to a host the config does not name")
 	}
@@ -241,7 +241,7 @@ func TestRenewRefusesBadInput(t *testing.T) {
 	} {
 		bad, bs := server(t, func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, body) })
 
-		if _, err := bad.Renew(t.Context(), bs.URL+alphaRenewPath, "anchor1qxy"); err == nil {
+		if _, err := bad.Renew(t.Context(), bs.URL+alphaRenewPath, "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq"); err == nil {
 			t.Errorf("Renew accepted %s", name)
 		}
 	}
@@ -310,7 +310,7 @@ func TestRenewNeedsAURL(t *testing.T) {
 		t.Error("Renew made a request with no renewal URL to make it to")
 	})
 
-	if _, err := c.Renew(t.Context(), "", "anchor1qxy"); err == nil {
+	if _, err := c.Renew(t.Context(), "", "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq"); err == nil {
 		t.Error("Renew accepted an empty renewal URL")
 	}
 }

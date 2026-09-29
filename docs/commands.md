@@ -13,8 +13,8 @@ anchorctl's, reached by typing them: `peers`, `route`, `routes`, `connect`, `pun
 `kill`, `events`, `metrics`, `export`, `children`, `telemetry`, `send`, `subscribe`,
 `keygen`, `issue`, `delegate`, `renew-link`, `install-link`, `id`, `inspect`, `config`,
 `mint-realm`, `mint-anchor`. The two `mint-*` verbs exist only in the lockdown build,
-which is the one conflux embeds; `root`, which mints a realm root, is the one that build
-refuses.
+which is the one conflux embeds; `root`, which mints a realm root, is not in that build
+at all, and answers as an unknown command.
 
 `export` is worth naming separately now, because there are two ways to set it and they
 do not last equally long. `conflux anchorctl export -endpoint …` configures the running
@@ -75,8 +75,8 @@ refusal names `down` and `start` and the escape hatch.
 ```
 conflux up [--taint T]... [--ipv4 ADDRESS | --no-ipv4] [--subnet CIDR]... [--interface NAME]
            [--uplink DEV | --no-uplink] [--peers HOST:PORT]... [--no-peers] [--api URL]
-           [--port N | --no-port] [--low-latency] [--lan-discovery yes|no|auto]
-           [--serve-exit] [--use-exit]
+           [--port N | --no-port] [--low-latency | --no-low-latency] [--lan-discovery yes|no|auto]
+           [--serve-exit | --no-serve-exit] [--use-exit | --no-use-exit]
 ```
 
 Enrols this machine if it has never been, starts an anchor in TUN mode, writes the
@@ -88,7 +88,7 @@ configuration, and registers the boot service.
 | `--ipv4 ADDRESS` | this machine's IPv4: an address, or an address and the length of the range routed to peers, `10.128.0.7/24`. Any unicast address; see below. |
 | `--no-ipv4` | no IPv4 of its own, without prompting. It still reaches IPv4 peers. |
 | `--subnet CIDR` | an interface, or a private network with no host bits set, that this machine forwards for the realm; repeat for more. See [modes.md](modes.md). |
-| `--interface NAME` | the network interface name. Default `anchor0`. |
+| `--interface NAME` | the network interface name. Default `anchor0`. Linux and Windows honour it; macOS numbers its own `utunN` and the BSDs their own `tunN`, taking a name of that form as the unit to ask for, and `conflux status` says so rather than naming one that is not there. |
 | `--uplink DEV` | reach the realm over a link rather than the host's network: `/dev/ttyUSB0`, or `/dev/ttyUSB0:115200` with a line speed. See [uplink.md](uplink.md). |
 | `--no-uplink` | go back to the host's network on a machine configured for a link. |
 | `--peers HOST:PORT` | where to start looking for the realm; repeat for more. `ANCHORID@host:port` also names the anchor expected there. Enrolment supplies this, so it is an override — see below. |
@@ -146,7 +146,7 @@ Needs root.
 ```
 conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T]... [--ipv4 ADDRESS | --no-ipv4]
               [--uplink DEV | --no-uplink] [--peers HOST:PORT]... [--no-peers] [--api URL]
-              [--port N | --no-port] [--low-latency] [--lan-discovery yes|no|auto]
+              [--port N | --no-port] [--low-latency | --no-low-latency] [--lan-discovery yes|no|auto]
 ```
 
 Starts in userspace mode serving those backends. Same taint, IPv4, uplink, peers, API,
@@ -344,11 +344,11 @@ conflux supplies the connection details through the environment (`ANCHOR_SOCKET`
 anchorctl resolves the socket as `firstNonEmpty(-socket, global -socket,
 ANCHOR_SOCKET)`, so a flag you typed still wins and conflux never rewrites an argv.
 
-One case is intercepted: when no daemon is running, conflux says so and names `up`,
-`proxy` and `install`. anchorctl's own hint at that point reads `anchorctl start
--identity FILE -root FILE -cred FILE`, which is correct for anchor and useless to
-somebody holding conflux. Everything else — including anchorctl's genuinely good
-explanations of every other refusal — passes through untouched.
+One case is intercepted: when no daemon is running, conflux says so and names `start`,
+`up` and `proxy`. anchorctl's own answer at that point asks whether anchord is running on
+that socket, which is true and no help to somebody holding conflux, who never started
+anchord. Everything else — including anchorctl's genuinely good explanations of every
+other refusal — passes through untouched.
 
 ## Environment
 

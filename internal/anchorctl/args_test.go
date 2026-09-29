@@ -112,9 +112,9 @@ var scenarios = map[string]StartMode{
 		LANDiscovery: boolp(false),
 		Dir:          "/var/lib/conflux/anchor",
 	},
-	"up-exit": {
+	"up-serve-exit-only": {
 		TUN: true, TUNName: "anchor0", Taints: []string{"brhk-2mq9-tzva-6pjs"},
-		ServeExit: true, UseExit: true, Dir: "/var/lib/conflux/anchor",
+		ServeExit: true, Dir: "/var/lib/conflux/anchor",
 	},
 	"up-use-exit-only": {
 		TUN: true, TUNName: "anchor0", Taints: []string{"brhk-2mq9-tzva-6pjs"},
@@ -206,9 +206,12 @@ func boolp(v bool) *bool { return &v }
 // at all -- anchorctl takes a manifest field only for a flag nobody typed. An auto
 // that emitted -lan-discovery=yes would look identical in every test here and would
 // quietly override the issuer on every machine that never asked.
+//
+// On the host's network, that is. Beside an uplink the manifest must not decide; see
+// TestAnUplinkLeavesTheManifestNothingAnchorRefuses.
 func TestAutoEmitsNoLANDiscoveryFlag(t *testing.T) {
 	for name, mode := range scenarios {
-		if mode.LANDiscovery != nil {
+		if mode.LANDiscovery != nil || mode.Uplink != "" {
 			continue
 		}
 
@@ -216,6 +219,27 @@ func TestAutoEmitsNoLANDiscoveryFlag(t *testing.T) {
 			if strings.HasPrefix(a, "-lan-discovery") {
 				t.Errorf("%s: LANDiscovery is nil but the argv carries %q", name, a)
 			}
+		}
+	}
+}
+
+// TestAnUplinkLeavesTheManifestNothingAnchorRefuses: anchorctl fills every field no flag
+// named from the manifest, and beside an uplink anchor refuses a port and a lan-discovery
+// yes. A guardian may ship either, so on a link both are typed, whatever else is set.
+func TestAnUplinkLeavesTheManifestNothingAnchorRefuses(t *testing.T) {
+	for name, mode := range scenarios {
+		if mode.Uplink == "" {
+			continue
+		}
+
+		argv := strings.Join(mode.Args(), " ")
+
+		if !strings.Contains(argv, "-port 0") {
+			t.Errorf("%s: an uplink argv leaves the port to the manifest: %s", name, argv)
+		}
+
+		if mode.LANDiscovery == nil && !strings.Contains(argv, "-lan-discovery=no") {
+			t.Errorf("%s: an uplink argv leaves lan-discovery to the manifest: %s", name, argv)
 		}
 	}
 }

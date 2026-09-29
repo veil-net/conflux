@@ -91,7 +91,7 @@ jobs:
             echo '```'
             echo
             echo "Windows TUN mode additionally needs wintun.dll, which conflux downloads and verifies when it is first needed:"
-            grep -E 'Version|ZipSHA256' internal/wintun/pinned.go | sed 's/^\s*/  /'
+            grep -E '^\s*(Version|ZipSHA256)\s*=' internal/wintun/pinned.go | sed 's/^\s*/  /'
           } > notes.md
 
       - uses: softprops/action-gh-release@v3

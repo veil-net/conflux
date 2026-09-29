@@ -93,7 +93,8 @@ type Renewal struct {
 	// Chain is the raw credential bytes, already base64-decoded. The API sends
 	// base64 and the file `anchorctl renew -cred` reads wants raw bytes, so the
 	// decoding happens here, once, rather than being got backwards at the call
-	// site -- where it presents as a credential the daemon silently refuses.
+	// site -- where it presents as a credential the daemon refuses, with nothing
+	// saying the encoding is why.
 	Chain []byte
 
 	// NotAfter is when the new chain stops verifying.
@@ -198,8 +199,8 @@ func (c *Client) Renew(ctx context.Context, renewalURL, anchorID string) (Renewa
 		return Renewal{}, errors.New("renew: no AnchorID; the anchor has to have started at least once")
 	}
 
-	if !strings.HasPrefix(anchorID, "anchor") {
-		return Renewal{}, fmt.Errorf("renew: %q is not an AnchorID", anchorID)
+	if err := config.ValidateAnchorID(anchorID); err != nil {
+		return Renewal{}, fmt.Errorf("renew: %w", err)
 	}
 
 	if renewalURL == "" {

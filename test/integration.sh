@@ -258,7 +258,10 @@ say "uninstall removes everything"
 docker exec cfx-b conflux uninstall --yes
 docker exec cfx-b sh -c 'test ! -f /etc/systemd/system/conflux.service' \
   || { echo "the unit survived uninstall" >&2; exit 1; }
-docker exec cfx-b sh -c 'test ! -d /var/lib/conflux' \
-  || { echo "the state directory survived uninstall" >&2; exit 1; }
+for dir in /etc/conflux /var/lib/conflux /run/conflux; do
+  docker exec cfx-b test ! -e "$dir" || { echo "$dir survived uninstall" >&2; exit 1; }
+done
+docker exec cfx-b sh -c '! ip link show anchor0' >/dev/null 2>&1 \
+  || { echo "uninstall left the interface up" >&2; exit 1; }
 
 say "all assertions passed"

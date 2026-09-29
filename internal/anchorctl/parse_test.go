@@ -7,10 +7,12 @@ import (
 
 // The fixtures below are the exact shapes anchorctl prints: printStarted and the
 // status printer in anchor's cmd/anchorctl/lifecycle.go, as a live alpha node printed
-// them -- the tabwriter's two-space padding, the extra space Println leaves after
-// "overlay ", the prefix length on the overlay address, the three-cell ipv4 row and
-// the short realm path. Only the ID and the addresses are made up. If an anchor
-// upgrade changes the shape, these fail, which is the entire point of pinning them.
+// them -- the tabwriter padding every row to the widest key, the extra space Println
+// leaves after "overlay ", the prefix length on the overlay address, the three-cell
+// ipv4 row with a bare address, the short realm path, and proxy rows naming the IPv4
+// listener beside the overlay one. Only the ID and the addresses are made up. If an
+// anchor upgrade changes the shape, these fail, which is the entire point of pinning
+// them.
 
 const wantID = "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq"
 
@@ -21,17 +23,17 @@ const startedOutput = `anchor ` + wantID + `
 `
 
 const statusOutput = `10:40:44  reachability=nat-cone  mtu=65521  peers=3  up=2h14m0s
-  anchor       ` + wantID + `
-  underlay     203.0.113.9:41641
-  overlay      fd80:c4b9:99ae:c540:9d81:a45c:141a:1ce5/48
-  ipv4         10.128.0.7/24    sent from and answered at, translated
-  hardware     5a:f0:a9:da:4e:32
-  realm        tglwuedqqa/snnfpxzuti
-  cut depth 0  joined to the whole tree
-  renew by     2026-10-04T10:40:39Z
-  works until  2026-10-04T10:40:39Z
-  proxy 8080/tcp  [fd80:c4b9:99ae:c540:9d81:a45c:141a:1ce5]:8080 → 127.0.0.1:3000
-  proxy 53/udp    [fd80:c4b9:99ae:c540:9d81:a45c:141a:1ce5]:53 → 127.0.0.1:53  (1 live, 4 opened)
+  anchor          ` + wantID + `
+  underlay        203.0.113.9:41641
+  overlay         fd80:c4b9:99ae:c540:9d81:a45c:141a:1ce5/48
+  ipv4            10.128.0.7  sent from and answered at, translated
+  hardware        5a:f0:a9:da:4e:32
+  realm           tglwuedqqa/snnfpxzuti
+  cut depth 0     joined to the whole tree
+  renew by        2026-10-04T10:40:39Z
+  works until     2026-10-04T10:40:39Z
+  proxy 53/udp    [fd80:c4b9:99ae:c540:9d81:a45c:141a:1ce5]:53, 10.128.0.7:53 → 127.0.0.1:53  (1 live, 4 opened)
+  proxy 8080/tcp  [fd80:c4b9:99ae:c540:9d81:a45c:141a:1ce5]:8080, 10.128.0.7:8080 → 127.0.0.1:3000
 `
 
 const notRunningOutput = "no anchor is running\n"
@@ -89,7 +91,7 @@ anchor_frames_flooded_total                           0
 anchor_gate_dropped_total{reason=not_quic}            0
 anchor_lan_peers_found_total{iface=eth0}              2
 anchor_overlay_mtu_bytes                              65521
-anchor_rtt_seconds                                    n=3 mean=0.0011 min=0.0010 max=0.0012
+anchor_rtt_seconds                                    n=4 mean=0.00214123575 min=0.001294105 max=0.002989687
 `
 
 func TestParseMetric(t *testing.T) {

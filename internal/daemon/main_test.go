@@ -47,7 +47,7 @@ anchor_lan_probes_refused_total{reason=credential}    0
 anchor_overlay_mtu_bytes                              65521
 anchor_peers_known                                    1
 anchor_resource_held{kind=conns}                      1
-anchor_rtt_seconds                                    n=3 mean=0.0011 min=0.0010 max=0.0012
+anchor_rtt_seconds                                    n=4 mean=0.00214123575 min=0.001294105 max=0.002989687
 anchor_translated_to_ipv6                             0
 `
 

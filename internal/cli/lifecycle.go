@@ -37,17 +37,19 @@ func runInstall(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	return install(ctx, paths.Default(), true)
-}
-
-// install registers the service. standalone distinguishes `conflux install` typed by
-// a person, which reports and may start, from the internal call `up` and `proxy`
-// make, which is silent and leaves starting to the caller.
-func install(ctx context.Context, d paths.Dirs, standalone bool) int {
+	d := paths.Default()
 	if err := d.EnsureAll(); err != nil {
 		return fail(err)
 	}
 
+	return install(ctx, d, true)
+}
+
+// install registers the service. standalone distinguishes `conflux install` typed by
+// a person, which reports and may start, from the internal call `up` and `proxy`
+// make, which is silent and leaves starting to the caller. Either has created the
+// directories already.
+func install(ctx context.Context, d paths.Dirs, standalone bool) int {
 	mgr, err := service.New()
 	if err != nil {
 		return fail(err)
@@ -320,10 +322,6 @@ func runUninstall(_ context.Context, args []string) int {
 	}
 
 	for _, dir := range []string{d.Run, d.State, d.Config} {
-		if dir == "" {
-			continue
-		}
-
 		if err := os.RemoveAll(dir); err != nil && first == nil {
 			first = err
 		}

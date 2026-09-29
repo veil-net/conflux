@@ -367,8 +367,9 @@ var privateNetworks = []netip.Prefix{
 // it, or a prefix, which must match an attached private network exactly. Whether it
 // is attached is the host's to answer and anchor's to check at start; what can be
 // answered here is a prefix with host bits set, which anchor refuses as the
-// off-by-one it is, and one that is not wholly inside a private range, which it can
-// never be attached as.
+// off-by-one it is, and one that can never be attached as written: outside every
+// private range, or an IPv4 network spelled as IPv6, since anchor finds the host's
+// IPv4 networks as IPv4 and compares the entry as it is.
 func ValidateSubnet(entry string) error {
 	p, err := netip.ParsePrefix(strings.TrimSpace(entry))
 	if err != nil {
@@ -384,7 +385,8 @@ func ValidateSubnet(entry string) error {
 			return fmt.Errorf("subnet %s is not a private network", entry)
 		}
 
-		p = netip.PrefixFrom(a.Unmap(), p.Bits()-96)
+		return fmt.Errorf("subnet %s is an IPv4 network written as IPv6, which anchor never finds attached; write %s",
+			entry, netip.PrefixFrom(a.Unmap(), p.Bits()-96))
 	}
 
 	for _, r := range privateNetworks {

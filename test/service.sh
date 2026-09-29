@@ -43,11 +43,13 @@ docker exec "$NAME" conflux install
 [ "$(docker exec "$NAME" systemctl is-active conflux.service)" = inactive ] \
   || { echo "install started the service; it must only register" >&2; exit 1; }
 
+# install made all three directories, so all three have to go.
 say "uninstall leaves nothing"
 docker exec "$NAME" conflux uninstall --yes
 docker exec "$NAME" sh -c 'test ! -f /etc/systemd/system/conflux.service' \
   || { echo "the unit file survived uninstall" >&2; exit 1; }
-docker exec "$NAME" sh -c 'test ! -d /var/lib/conflux' \
-  || { echo "the state directory survived uninstall" >&2; exit 1; }
+for dir in /etc/conflux /var/lib/conflux /run/conflux; do
+  docker exec "$NAME" test ! -e "$dir" || { echo "$dir survived uninstall" >&2; exit 1; }
+done
 
 say "all assertions passed"

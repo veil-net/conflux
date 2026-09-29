@@ -96,7 +96,7 @@ Anchor is the reference for overlay behaviour, and the live API at `api.veilnet.
 - Every command and flag conflux emits exists in current anchor with the same meaning (argv goldens plus the flag cross-check against the real binary).
 - Every parsed output and metric name matches current anchor.
 
-**Config rules** (a proxy needs userspace; a subnet and a served exit need an interface, an IPv4 and `useExit` do not; no port or explicit LAN discovery beside an uplink; taint, IPv4, subnet, bootstrap-entry and proxy-spec parsing) accept and refuse exactly what current anchor does, plus conflux's one rule of its own: a machine always carries a taint.
+**Config rules** (a proxy needs userspace; a subnet and a served exit need an interface, an IPv4 and `useExit` do not; the two exits are alternatives; no port or explicit LAN discovery beside an uplink, and there both are typed off so a manifest cannot supply them; taint, IPv4, subnet, bootstrap-entry and proxy-spec parsing; the export block anchord reads at startup) accept and refuse exactly what current anchor does, plus conflux's one rule of its own: a machine always carries a taint. A file conflux refuses is refused before anchord starts on it, and is permanent.
 
 **Manifest decoding** handles anchor's current format, refuses a realm manifest and a future version, and survives renewal losslessly.
 

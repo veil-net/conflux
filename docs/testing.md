@@ -19,7 +19,7 @@ a daemon or a network. Most of conflux can be.
 | Package | What is asserted |
 |---|---|
 | `anchor` | the embedded binaries are real executables of the right architecture, and `SetID` is stable |
-| `internal/config` | JSON round-trips, the tuning fields included; the mode rules match anchor's — a subnet and a served exit need an interface, an IPv4 and `useExit` do not, a port is refused beside an uplink; proxy specs, IPv4 addresses, subnets, bootstrap entries, AnchorIDs and taint names parse and refuse exactly as anchor does; atomic writes leave old-or-new and never a truncated file, and narrow a file that was `0644` |
+| `internal/config` | JSON round-trips, the tuning fields included; the mode rules match anchor's — a subnet and a served exit need an interface, an IPv4 and `useExit` do not, the two exits are alternatives, a port is refused beside an uplink; proxy specs, IPv4 addresses, subnets, AnchorIDs and taint names parse and refuse exactly as anchor does, and bootstrap entries by anchor's grammar (anchor skips a bad one with a warning, conflux refuses it); the export block refuses what anchord refuses at startup; atomic writes leave old-or-new and never a truncated file, and narrow a file that was `0644` |
 | `internal/enrol` | the manifest decodes exactly as anchorctl reads it, refuses a realm manifest and a future format version, and **survives a renewal losslessly** |
 | `internal/enrol` (client) | against `httptest`: the alpha exchange byte for byte, the guardian bearer, 4xx and 5xx, an oversized body, a cross-host renewal URL and a downgrading redirect, a plain-http base, cancellation, and clock skew; and that an enrolment is handed back as it arrived, to be written before it is read |
 | `internal/taint` | generated names satisfy anchor's rule, avoid ambiguous glyphs, and do not repeat |
@@ -60,10 +60,11 @@ daemon that will not start — discovered after the binaries were dropped into
 `anchor/bin` and shipped.
 
 **`enrol.TestWithChainIsLossless`** renews a manifest and compares every field. The
-document carries `bootstrap`, `genesis`, `realm` and `renewalAuth`, which conflux has no
-opinion about and anchor reads. Round-tripping through a struct with only the known
-fields would delete them on the first renewal, and the anchor would come back after the
-next reboot with no peers to bootstrap from — days later, with nothing pointing at the
+document carries fields conflux never reads — `bootstrap` and `genesis`, which anchor
+does, and `realm`, which anchor carries — beside `renewalAuth`, which only conflux reads
+and a renewal must keep. Round-tripping through a struct with only the known fields
+would delete them on the first renewal, and the anchor would come back after the next
+reboot with no peers to bootstrap from — days later, with nothing pointing at the
 renewal that caused it.
 
 ## Testing the boot service
@@ -101,9 +102,10 @@ with `SIGKILL` so nothing is said on the way out, and requires the supervisor to
 it back — a new process, the readiness marker rewritten, the same identity, and the
 peer reachable again at its IPv6 address — without a reboot or anything typed.
 
-All of that is `make integration`, and the two assertions above on their own are
-`make service-test`. Both build the image first, and CI runs the same command a
-developer does.
+All of that is `make integration`. `make service-test` is the unit on its own and enrols
+nothing: `install` registers it without starting anything, and `uninstall` leaves no
+unit file and none of `/etc/conflux`, `/var/lib/conflux` or `/run/conflux`. Both build the
+image first, and CI runs the same command a developer does.
 
 ### Local network discovery, the bootstrap list, and `conflux enrol`
 
@@ -159,7 +161,10 @@ why it is nonetheless contained.
 `linux` is one job because veilnet-dev is one machine with one runner process: separate
 jobs would queue anyway, each paying a checkout and a fetch. Its fetch goes through the
 runner's tool cache, which survives between runs, so an unchanged shelf costs a read of
-the files the fetcher already holds rather than three hundred megabytes. The container
+the files the fetcher already holds rather than three hundred megabytes. For the same
+reason the Go build and module caches are not restored or saved there: the machine keeps
+its own on disk, and round-tripping them through the Actions cache cost ten minutes a
+run where the suite itself takes seconds. The hosted jobs start empty and do use it. The container
 suites run on a hosted runner instead, because the third integration node reaches the
 realm through its manifest's bootstrap node over UDP, and from veilnet-dev no handshake
 gets through to it. Every job that runs on veilnet-dev refuses a fork's pull request —

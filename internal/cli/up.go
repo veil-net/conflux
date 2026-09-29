@@ -32,7 +32,7 @@ func runUp(ctx context.Context, args []string) int {
 		subnets  repeated
 		ipv4     = fs.String("ipv4", "", ipv4Usage)
 		noIPv4   = fs.Bool("no-ipv4", false, noIPv4Usage)
-		tunName  = fs.String("interface", "", "name for the network interface (default anchor0)")
+		tunName  = fs.String("interface", "", "name for the network interface (default anchor0); macOS and the BSDs number their own")
 		uplink   = fs.String("uplink", "", "carry the mesh over a link rather than the host network, e.g. /dev/ttyUSB0:115200")
 		noUplink = fs.Bool("no-uplink", false, "go back to the host's network on a machine configured for a link")
 		noPeers  = fs.Bool("no-peers", false, "forget the bootstrap list and go back to the one enrolment supplies")

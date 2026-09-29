@@ -31,8 +31,9 @@ const (
 	// linkGrace is how long the connection count must stay at zero before the link
 	// is called dead.
 	//
-	// Above anchor's own UplinkDialTimeout (45s) plus its two-second keeper tick, so
-	// a link still dialling is never mistaken for one that has ended, and above the
+	// Above anchor's own uplink dial timeout (45s) plus the two seconds its backoff
+	// waits before a second attempt, so a link still dialling is never mistaken for
+	// one that has ended, and above the
 	// ~25s a realm handshake needs on a 9600-baud line -- the slowest speed conflux
 	// accepts. The cost of being wrong is one restart; the cost of being hasty is a
 	// restart that interrupts a handshake that was about to succeed.

@@ -80,7 +80,9 @@ mkdir -p "$DEST"
 # Clear anything that is not one of the fourteen before writing. Dropping a target
 # otherwise leaves its binaries behind in a directory every file of which is a
 # candidate for being embedded -- and a stale one is a real binary of the right size,
-# so neither the size gate nor the header check would say a word about it.
+# so neither the size gate nor the header check would say a word about it. This is
+# also what keeps anchoradmin out: it can mint realm roots, it lives beside the other
+# two in release/, and nothing below copies a name that is not one of the fourteen.
 for f in "$DEST"/*; do
   [ -e "$f" ] || continue
   case " ${every[*]} " in
@@ -176,11 +178,6 @@ for n in "${want[@]}"; do
   chmod 0755 "$DEST/$n"
   copied=$((copied + 1))
 done
-
-# anchoradmin can mint realm roots. It lives beside the other two in release/ and
-# must never be copied here, because anything in this directory is a candidate for
-# being embedded into every conflux a user runs.
-rm -f "$DEST"/anchoradmin-* 2>/dev/null || true
 
 if [ "$missing" != 0 ]; then
   echo "anchor-bins: $copied of $TOTAL copied; the rest are missing from $src" >&2

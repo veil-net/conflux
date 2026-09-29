@@ -11,7 +11,8 @@ default, or a link named by `--uplink`, which works with either mode below. See
 
 ## TUN — `conflux up`
 
-The daemon creates a real network interface, `anchor0`, and the host kernel owns the
+The daemon creates a real network interface — `anchor0` on Linux and Windows; macOS
+numbers its own `utunN` and the BSDs their own `tunN` — and the host kernel owns the
 overlay addresses. `ping`, `ssh`, a browser, anything on the machine can use the
 overlay without knowing it exists. This needs `CAP_NET_ADMIN` on Linux, root on macOS
 and the BSDs, Administrator and `wintun.dll` on Windows.
@@ -28,8 +29,9 @@ $ sudo conflux up --serve-exit      # be a way out to the public internet for th
 $ sudo conflux up --use-exit        # send this machine's own internet over the overlay
 ```
 
-They are independent — a machine can do either, both or neither — and both are off
-unless asked for. conflux passes them explicitly in whichever direction they were set
+They are alternatives — a machine can do either or neither, and anchor refuses both,
+since an exit sends the internet out of this host and `--use-exit` sends this host's
+internet to an exit — and both are off unless asked for. conflux passes them explicitly in whichever direction they were set
 rather than letting the enrolment manifest supply them, because an anchor that became
 an internet exit because a document said so is the worst kind of surprise. `--no-serve-exit`
 and `--no-use-exit` are the way back.
@@ -95,10 +97,10 @@ connectivity one: a probe tells every host on the link that an anchor is here an
 tree it belongs to, and a laptop repeats that on every network it joins. Nothing in it
 identifies the anchor.
 
-With `--uplink` it is off regardless — there is no host network to probe and nothing on
-a cable to answer — and anchor decides that for itself, which is why only an explicit
-`--lan-discovery yes` is refused there. A machine configured once and later moved onto a
-link keeps starting.
+With `--uplink` it is off — there is no host network to probe and nothing on a cable to
+answer — and only an explicit `--lan-discovery yes` is refused there. `auto` is passed to
+anchor as `no` on a link, because anchor refuses a yes there and would otherwise take one
+from the manifest. A machine configured once and later moved onto a link keeps starting.
 
 ## Switching
 

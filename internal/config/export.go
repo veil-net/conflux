@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 )
 
@@ -94,13 +95,28 @@ type Secret struct {
 	Path string `json:"path,omitempty"`
 }
 
-// Validate refuses a block that would be accepted and then do nothing.
+// Validate refuses a block anchord would refuse, or accept and then do nothing.
 //
-// Every refusal here is a configuration that starts cleanly and exports nothing,
-// which is the failure this whole feature exists to stop somebody discovering
-// three weeks later when they go looking for a graph.
+// The first kind is fatal to anchord at startup -- it reads this file with -config and
+// will not come up on one it refuses -- so it is refused here, where the message can
+// name the field, rather than as a daemon that exits before it answers. The second is a
+// configuration that starts cleanly and exports nothing, which is the failure this whole
+// feature exists to stop somebody discovering three weeks later when they go looking for
+// a graph.
 func (e *Export) Validate() error {
-	if e == nil || !e.Enabled {
+	if e == nil {
+		return nil
+	}
+
+	// Before the enabled check: a Secret is a oneof in anchor's schema, so a file giving
+	// both halves fails to parse whether or not anything is exported.
+	for name, s := range map[string]*Secret{"caCert": e.CACert, "clientCert": e.ClientCert, "clientKey": e.ClientKey} {
+		if s != nil && len(s.Inline) > 0 && s.Path != "" {
+			return fmt.Errorf("export.%s gives both inline and path, and is one or the other", name)
+		}
+	}
+
+	if !e.Enabled {
 		return nil
 	}
 
@@ -112,6 +128,18 @@ func (e *Export) Validate() error {
 		return fmt.Errorf(
 			"export.endpoint is %q and wants a host:port rather than a URL: the scheme is "+
 				"decided by export.insecure", e.Endpoint)
+	}
+
+	if _, _, err := net.SplitHostPort(e.Endpoint); err != nil {
+		return fmt.Errorf("export.endpoint is %q and wants a host:port, such as collector:4317", e.Endpoint)
+	}
+
+	if e.MetricIntervalNanos < 0 || e.ExportTimeoutNanos < 0 || e.ShutdownTimeoutNanos < 0 {
+		return errors.New("export has a negative metricIntervalNanos, exportTimeoutNanos or shutdownTimeoutNanos")
+	}
+
+	if _, ok := e.Headers[""]; ok {
+		return errors.New("export.headers has a header with no name")
 	}
 
 	// All three off is the same as not exporting, and anchor reports it as such.

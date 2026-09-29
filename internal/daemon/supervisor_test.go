@@ -142,3 +142,32 @@ func TestTheTailKeepsTheLastLinesInOrder(t *testing.T) {
 		}
 	}
 }
+
+// TestAConfigAnchordWouldRefuseIsNotStarted: anchord reads its -config at startup and
+// will not come up on a block it refuses. Started anyway, that is a daemon dying before
+// it answers, which the restart loop retries for ever; refused here, it is permanent,
+// and the supervisor stops in three.
+func TestAConfigAnchordWouldRefuseIsNotStarted(t *testing.T) {
+	s, _ := supervised(t, "serve")
+
+	if err := config.Save(s.Dirs, &config.Config{
+		Mode: config.ModeProxy, Taints: []string{"t"},
+		Export: &config.Export{Enabled: true, Endpoint: "collector", Metrics: true},
+	}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	_, c, err := s.spawn(t.Context())
+	if c != nil {
+		s.shutdown(c)
+		t.Fatal("anchord was started on a configuration it refuses")
+	}
+
+	if !isPermanent(err) {
+		t.Errorf("the refusal is not permanent, so it would be retried for ever: %v", err)
+	}
+
+	if _, statErr := os.Stat(s.Dirs.DaemonConfigFile()); statErr == nil {
+		t.Error("the refused block was rendered for anchord anyway")
+	}
+}

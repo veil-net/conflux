@@ -41,7 +41,9 @@ type StartMode struct {
 
 	// Port is the UDP port to bind on every interface, or zero for the kernel's
 	// choice. Zero is not passed at all, for the reason -peers is not: the manifest
-	// carries a listenPort and anchorctl takes it for any field no flag named.
+	// carries a listenPort and anchorctl takes it for any field no flag named. Beside
+	// an uplink it is typed as zero instead, because there the manifest's port would
+	// reach anchor, and anchor refuses a port on a link.
 	Port uint16
 
 	// LowLatency carries layer-2 frames on QUIC datagrams. Passed only when true --
@@ -53,7 +55,8 @@ type StartMode struct {
 	// Nil passes no flag, which is what leaves the manifest's lanDiscovery in play --
 	// the rule Peers and Port follow, and unlike LowLatency, which no manifest field
 	// describes. Non-nil is passed in whichever direction, because an explicit flag
-	// is the only thing that beats a document here.
+	// is the only thing that beats a document here. Beside an uplink nil is passed as
+	// no, for Port's reason: a manifest's yes would reach anchor, which refuses it there.
 	LANDiscovery *bool
 
 	// ServeExit and UseExit route the public internet out of and into the overlay.
@@ -131,9 +134,14 @@ func (m StartMode) Args() []string {
 	}
 
 	// Only when set, like -peers and for the same reason: the manifest carries a
-	// listenPort, and a zero here means "no opinion" rather than "port zero".
-	if m.Port != 0 {
+	// listenPort, and a zero here means "no opinion" rather than "port zero". Except
+	// beside an uplink, where no socket is bound and anchor refuses any port it is
+	// given -- the manifest's included, which only a typed zero keeps out.
+	switch {
+	case m.Port != 0:
 		args = append(args, "-port", strconv.FormatUint(uint64(m.Port), 10))
+	case m.Uplink != "":
+		args = append(args, "-port", "0")
 	}
 
 	// Only when true. No manifest field describes low latency, so anchorctl's own
@@ -146,8 +154,15 @@ func (m StartMode) Args() []string {
 	// -low-latency above, the manifest does carry lanDiscovery, so an omitted flag
 	// is the issuer's answer rather than anchorctl's default -- and an explicit
 	// false has to be passed to mean anything at all.
-	if m.LANDiscovery != nil {
+	//
+	// Beside an uplink an unset one is typed as no, for the port's reason: anchor
+	// refuses a yes on a link, and a manifest's yes reaches it unless a flag says
+	// otherwise. conflux refuses an explicit yes there before it gets this far.
+	switch {
+	case m.LANDiscovery != nil:
 		args = append(args, "-lan-discovery="+yesNo(*m.LANDiscovery))
+	case m.Uplink != "":
+		args = append(args, "-lan-discovery=no")
 	}
 
 	args = append(args, "-tun="+boolText(m.TUN))

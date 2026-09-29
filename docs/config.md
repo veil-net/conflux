@@ -55,14 +55,17 @@ Every directory is `0700` and every file `0600`.
 | `port` | the UDP port to bind on every interface. Absent means the kernel picks one, which is the usual case. A port and not an address: an anchor listens everywhere, and the host's addresses change under it. Refused beside `uplink`, which binds no socket. |
 | `lowLatency` | carry layer-2 frames on QUIC datagrams instead of streams. Absent is false. Either mode. |
 | `lanDiscovery` | probe the host's own networks for anchors of this realm tree. Either mode. The one field here where **absent is not false**: it is `auto`, and it passes no flag at all, which is what leaves enrolment's own `lanDiscovery` in play. `false` and absent are different documents and `--lan-discovery no` writes the first of them. |
-| `serveExit`, `useExit` | route the public internet out of and into the overlay. Absent is false. Both are `up`'s, and switching a machine to `proxy` clears them; anchor refuses `serveExit` in `proxy` mode. |
+| `serveExit`, `useExit` | route the public internet out of and into the overlay. Absent is false. Both are `up`'s, and switching a machine to `proxy` clears them; anchor refuses `serveExit` in `proxy` mode, and the two together in either. |
 | `apiBaseUrl` | absent means the default. |
 
 This file is the whole of what a reboot needs. Every `up` and every `proxy` rewrites
 it, so it is always the current desired state.
 
 Editing it by hand is supported; `conflux start` restarts from whatever it says, and
-anything anchor would refuse is refused by conflux first, naming the field.
+anything anchor would refuse on the file's face is refused by conflux first, naming the
+field, before anchord is started on it — and not retried, since no retry changes a file.
+What depends on the host is anchor's to find at start: a subnet whose interface is not up
+yet, which is retried, and TLS material under `export` that will not load.
 
 ### `export` — where telemetry goes
 
@@ -135,9 +138,10 @@ authenticates with, and may carry an `ipv4` and an `export` block that
 `conflux enrol` copies into `conflux.json` once. See
 [credentials.md](credentials.md).
 
-**Store it exactly as it arrived.** Do not decompose it — anchorctl reads an inline
-identity as raw bytes and a path as an encrypted container, so writing the hex out to a
-file and passing `-identity` fails as `identity: file is corrupt`.
+**Store it exactly as it arrived.** Do not decompose it. It is the identity, the chain
+and the bootstrap list together, conflux hands it to anchorctl whole, and a renewal
+rewrites the chain inside it: a seed copied out into a file of its own is one more
+copy of the key to keep at `0600`, and one the next renewal does not update.
 
 conflux never writes it to a second file and never puts it in an argv. It goes to
 `anchorctl start -manifest -` on stdin, becomes an inline secret on the wire, and is

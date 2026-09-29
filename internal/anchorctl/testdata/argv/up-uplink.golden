@@ -7,6 +7,9 @@ start
 brhk-2mq9-tzva-6pjs
 -uplink
 /dev/ttyUSB0:115200
+-port
+0
+-lan-discovery=no
 -tun=true
 -tun-name
 anchor0

@@ -173,12 +173,13 @@ func TestValidateSubnet(t *testing.T) {
 	}
 
 	for in, why := range map[string]string{
-		"192.168.1.7/24":   "host bits set",
-		"10.0.0.0/7":       "a private first address and public space after it",
-		"203.0.113.0/24":   "public",
-		"169.254.0.0/16":   "link-local, which nobody routes to",
-		"fe80::/64":        "link-local IPv6",
-		"::ffff:0.0.0.0/8": "an IPv4-mapped prefix wider than the mapped space",
+		"192.168.1.7/24":      "host bits set",
+		"10.0.0.0/7":          "a private first address and public space after it",
+		"203.0.113.0/24":      "public",
+		"169.254.0.0/16":      "link-local, which nobody routes to",
+		"fe80::/64":           "link-local IPv6",
+		"::ffff:0.0.0.0/8":    "an IPv4-mapped prefix wider than the mapped space",
+		"::ffff:10.0.0.0/104": "an IPv4 network written as IPv6, which anchor never finds attached",
 	} {
 		if err := ValidateSubnet(in); err == nil {
 			t.Errorf("ValidateSubnet(%q) succeeded; it is %s", in, why)
@@ -187,6 +188,10 @@ func TestValidateSubnet(t *testing.T) {
 
 	if err := ValidateSubnet("192.168.1.7/24"); err == nil || !strings.Contains(err.Error(), "192.168.1.0/24") {
 		t.Errorf("a prefix with host bits should name the network it meant, got %v", err)
+	}
+
+	if err := ValidateSubnet("::ffff:10.0.0.0/104"); err == nil || !strings.Contains(err.Error(), "10.0.0.0/8") {
+		t.Errorf("a mapped IPv4 network should name how to write it, got %v", err)
 	}
 }
 

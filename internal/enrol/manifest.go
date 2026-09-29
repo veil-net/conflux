@@ -23,8 +23,9 @@ import (
 )
 
 // ManifestTime is the timestamp layout the envelope uses on both sides of the
-// wire: RFC3339 in UTC with the milliseconds always present. anchor parses with a
-// fixed layout, so writing a variable one back would be refused.
+// wire: RFC3339 in UTC with the milliseconds always present, which is how anchor and
+// the API write one. anchor never reads them back; conflux does, and writes what it
+// renews in the same form so the document stays one shape.
 const ManifestTime = "2006-01-02T15:04:05.000Z"
 
 // FormatVersion is the only envelope version this build understands. anchor
@@ -35,9 +36,9 @@ const FormatVersion = 1
 // Manifest is a parsed envelope that has not forgotten anything.
 //
 // Held as raw JSON rather than a struct, and that is the load-bearing decision. The
-// document carries fields conflux has no opinion about -- genesis, realm,
-// telemetrySecret, relay, and whatever an issuer adds next -- and anchor reads them
-// even though conflux does not. Round-tripping through a struct with only the known
+// document carries fields conflux has no opinion about -- genesis, telemetrySecret,
+// relay, realm, and whatever an issuer adds next -- and anchor reads most of them even
+// though conflux does not. Round-tripping through a struct with only the known
 // fields would delete the rest on the first renewal, and the anchor would come back
 // after the next reboot without them.
 type Manifest struct {
@@ -121,7 +122,8 @@ func (m *Manifest) RenewalURL() string {
 
 // Taints are whatever the issuer put in the document. The alpha realm always sends
 // an empty list, and anchor's merge skips an empty list, so conflux's own -taints
-// flag decides in practice. Read here only so status can say what was shipped.
+// flag decides in practice. Read only by `conflux enrol`, which seeds the
+// configuration from a guardian's.
 func (m *Manifest) Taints() []string {
 	var out []string
 
@@ -289,9 +291,9 @@ func (m *Manifest) time(key string) time.Time {
 	return t.UTC()
 }
 
-// LogValue keeps the identity out of structured logs, the way Envelope keeps it out
-// of fmt.
-func (m *Manifest) LogValue() string { return "<anchor manifest, redacted>" }
-
-// String does the same for fmt.
+// String keeps the identity out of fmt, the way Envelope's does.
 func (m *Manifest) String() string { return "<anchor manifest, redacted>" }
+
+// GoString covers %#v, which String does not and which would otherwise print the raw
+// document, seed and bearer included.
+func (m *Manifest) GoString() string { return "<anchor manifest, redacted>" }

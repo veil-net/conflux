@@ -7,6 +7,9 @@ start
 brhk-2mq9-tzva-6pjs
 -uplink
 /dev/ttyS1:57600
+-port
+0
+-lan-discovery=no
 -tun=false
 -serve-exit=false
 -use-exit=false

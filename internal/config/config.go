@@ -15,6 +15,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -136,16 +137,18 @@ type Config struct {
 	// quietly -- the argument the two exit settings above make for themselves.
 	//
 	// Refused as an explicit yes beside an Uplink, where there is no host network to
-	// probe. Nil and false are accepted there: anchor turns it off for an uplink
-	// regardless, and refusing a default nobody chose would fail every uplink anchor
-	// for a setting its operator never made.
+	// probe. Nil and false are accepted there, and nil is passed to anchor as no: anchor
+	// refuses only a yes on a link, and a manifest's yes would otherwise reach it.
+	// Refusing a default nobody chose would fail every uplink anchor for a setting its
+	// operator never made.
 	LANDiscovery *bool `json:"lanDiscovery,omitempty"`
 
 	// ServeExit offers this anchor as a way out to the public internet, and
 	// UseExit sends this machine's own internet traffic over the overlay. Both are
 	// `conflux up`'s: an exit forwards out of a host interface, and anchor refuses
 	// ServeExit without one. UseExit it accepts in userspace, where it covers only the
-	// anchor's own traffic, so `conflux proxy` offers neither and clears both.
+	// anchor's own traffic, so `conflux proxy` offers neither and clears both. They
+	// are alternatives, and anchor refuses the pair.
 	//
 	// Off by default and always passed explicitly, because an anchor that became
 	// an internet exit on its own -- because a manifest said so -- is the worst
@@ -232,6 +235,15 @@ func (c *Config) Validate() error {
 
 	default:
 		return fmt.Errorf("mode is %q, want %q or %q", c.Mode, ModeTUN, ModeProxy)
+	}
+
+	// anchor's rule: an exit sends the internet out of this host, and UseExit sends this
+	// host's internet to an exit, so the forwarding table and the host's default route
+	// would each disagree with themselves.
+	if c.ServeExit && c.UseExit {
+		return errors.New(
+			"serveExit and useExit are both set, and anchor refuses the pair: an exit sends the internet out of this host, " +
+				"and useExit sends this host's internet to an exit. Keep one, with --no-use-exit or --no-serve-exit")
 	}
 
 	if len(c.Taints) == 0 {

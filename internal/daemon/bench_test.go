@@ -93,7 +93,7 @@ func BenchmarkRenewal(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	if err := config.SaveState(d, &config.State{AnchorID: "anchorbench"}); err != nil {
+	if err := config.SaveState(d, &config.State{AnchorID: "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq"}); err != nil {
 		b.Fatal(err)
 	}
 

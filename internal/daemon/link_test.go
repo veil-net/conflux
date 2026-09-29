@@ -77,7 +77,6 @@ func TestLinkIsDeadWhenTheDeviceGoes(t *testing.T) {
 func TestBusyInterfaceIsPermanent(t *testing.T) {
 	err := &anchorctl.Error{
 		Args:   []string{"start", "-tun=true", "-tun-name", "anchor0"},
-		Code:   1,
 		Stderr: `anchorctl: starting: anchor: opening anchor0: tundev: creating "anchor0": device or resource busy`,
 	}
 
@@ -89,7 +88,7 @@ func TestBusyInterfaceIsPermanent(t *testing.T) {
 // TestWhatIsPermanent: the refusals no retry changes stop the supervisor in three
 // attempts, and the ones a moment fixes do not.
 func TestWhatIsPermanent(t *testing.T) {
-	anchorctlSaid := func(stderr string) error { return &anchorctl.Error{Code: 1, Stderr: stderr} }
+	anchorctlSaid := func(stderr string) error { return &anchorctl.Error{Stderr: stderr} }
 
 	for name, err := range map[string]error{
 		"a configuration conflux refuses": &permanentError{path: "conflux.json", err: errors.New("no taints")},

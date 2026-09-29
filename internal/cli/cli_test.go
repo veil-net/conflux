@@ -276,11 +276,13 @@ func TestProxyKeepsItsOwnUplinkFlag(t *testing.T) {
 		{"8080=127.0.0.1:3000", "--uplink=/dev/ttyUSB0:115200"},
 		{"--no-uplink", "8080=127.0.0.1:3000"},
 	} {
-		if hint := unknownProxyFlag(args); hint != "" {
-			t.Errorf("%v: unknownProxyFlag said %q", args, hint)
+		f := newProxyFlags()
+
+		if hint := f.unknown(args); hint != "" {
+			t.Errorf("%v: unknown said %q", args, hint)
 		}
 
-		specs, _ := splitPositional(args)
+		specs, _ := f.split(args)
 
 		if len(specs) != 1 || specs[0] != "8080=127.0.0.1:3000" {
 			t.Errorf("%v: positional args are %v, want just the port spec", args, specs)
@@ -482,11 +484,13 @@ func TestProxyKeepsItsOwnLANDiscoveryFlag(t *testing.T) {
 		{"8080=127.0.0.1:3000", "--lan-discovery=yes"},
 		{"--lan-discovery", "auto", "8080=127.0.0.1:3000"},
 	} {
-		if hint := unknownProxyFlag(args); hint != "" {
-			t.Errorf("%v: unknownProxyFlag said %q", args, hint)
+		f := newProxyFlags()
+
+		if hint := f.unknown(args); hint != "" {
+			t.Errorf("%v: unknown said %q", args, hint)
 		}
 
-		specs, _ := splitPositional(args)
+		specs, _ := f.split(args)
 
 		if len(specs) != 1 || specs[0] != "8080=127.0.0.1:3000" {
 			t.Errorf("%v: positional args are %v, want just the port spec", args, specs)
@@ -609,5 +613,31 @@ func TestARefusalForPrivilegeRepeatsTheCommand(t *testing.T) {
 
 	if want := "conflux up --taint 'my net' --ipv4 10.128.0.7/24"; !strings.Contains(errOut, want) {
 		t.Errorf("the refusal should say %q; it said:\n%s", want, errOut)
+	}
+}
+
+// TestTheInterfaceIsNamedOnlyWhereItIsHonoured: Linux and Windows make the interface
+// they are asked for, and macOS and the BSDs number their own unless asked for one of
+// theirs. A status line naming anchor0 on a Mac names nothing ifconfig can find.
+func TestTheInterfaceIsNamedOnlyWhereItIsHonoured(t *testing.T) {
+	for _, tc := range []struct {
+		goos, name string
+		named      bool
+	}{
+		{"linux", "anchor0", true},
+		{"windows", "anchor0", true},
+		{"darwin", "anchor0", false},
+		{"darwin", "utun7", true},
+		{"darwin", "utun", false},
+		{"freebsd", "anchor0", false},
+		{"freebsd", "tun3", true},
+		{"openbsd", "tun0", true},
+		{"openbsd", "utun1", false},
+	} {
+		got := interfaceLine(tc.goos, tc.name)
+
+		if named := got == tc.name; named != tc.named {
+			t.Errorf("%s, %q: %q", tc.goos, tc.name, got)
+		}
 	}
 }

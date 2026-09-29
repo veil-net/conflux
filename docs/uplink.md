@@ -131,6 +131,11 @@ without also passing two flags to turn off. `--port` is the one of these that *i
 conflux flag, so it is the one that can collide — and conflux refuses the pair itself,
 naming both flags, rather than letting anchor refuse it at the next boot.
 
+A manifest can carry a port and a `lanDiscovery` too, and anchorctl takes either for a
+flag nobody typed. So beside an uplink conflux always types both, `-port 0` and, unless
+`--lan-discovery` was given, `-lan-discovery=no`: a guardian document that names a port
+or turns discovery on still starts on a cable.
+
 Everything conflux *does* offer works over a link, including `--subnet` and both
 modes: the uplink is beneath all of it.
 
@@ -166,8 +171,8 @@ is untouched, the identity is unchanged, nothing re-enrols, and the credential i
 renewed on the way through if it was due. Repeated failures back off from one second
 to thirty.
 
-The 90 seconds is not arbitrary: anchor redials an uplink on a two-second tick with a
-45-second dial timeout, and a realm handshake on the slowest line conflux accepts
+The 90 seconds is not arbitrary: anchor redials an uplink at once and then on a
+backoff from two seconds, each attempt with a 45-second dial timeout, and a realm handshake on the slowest line conflux accepts
 takes about 25. A shorter grace would restart anchors that were about to come up on
 their own.
 

@@ -326,6 +326,13 @@ func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *child, error) 
 		return nil, nil, err
 	}
 
+	// Before anchord reads any of it. A block anchord refuses is fatal to it at startup,
+	// which would otherwise read as a daemon dying before it answered and be retried for
+	// ever, where this is a file no retry changes.
+	if err := cfg.Validate(); err != nil {
+		return nil, nil, &permanentError{path: s.Dirs.ConfigFile(), err: err}
+	}
+
 	if err := writeDaemonConfig(s.Dirs, cfg); err != nil {
 		return nil, nil, err
 	}

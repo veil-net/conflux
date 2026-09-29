@@ -96,10 +96,10 @@ connectivity one: a probe tells every host on the link that an anchor is here an
 tree it belongs to, and a laptop repeats that on every network it joins. Nothing in it
 identifies the anchor.
 
-With `--uplink` it is off regardless — there is no host network to probe and nothing on
-a cable to answer — and anchor decides that for itself, which is why only an explicit
-`--lan-discovery yes` is refused there. A machine configured once and later moved onto a
-link keeps starting.
+With `--uplink` it is off — there is no host network to probe and nothing on a cable to
+answer — and only an explicit `--lan-discovery yes` is refused there. `auto` is passed to
+anchor as `no` on a link, because anchor refuses a yes there and would otherwise take one
+from the manifest. A machine configured once and later moved onto a link keeps starting.
 
 ## Switching
 

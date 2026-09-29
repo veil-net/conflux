@@ -131,6 +131,11 @@ without also passing two flags to turn off. `--port` is the one of these that *i
 conflux flag, so it is the one that can collide — and conflux refuses the pair itself,
 naming both flags, rather than letting anchor refuse it at the next boot.
 
+A manifest can carry a port and a `lanDiscovery` too, and anchorctl takes either for a
+flag nobody typed. So beside an uplink conflux always types both, `-port 0` and, unless
+`--lan-discovery` was given, `-lan-discovery=no`: a guardian document that names a port
+or turns discovery on still starts on a cable.
+
 Everything conflux *does* offer works over a link, including `--subnet` and both
 modes: the uplink is beneath all of it.
 

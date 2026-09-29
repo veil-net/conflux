@@ -137,9 +137,10 @@ type Config struct {
 	// quietly -- the argument the two exit settings above make for themselves.
 	//
 	// Refused as an explicit yes beside an Uplink, where there is no host network to
-	// probe. Nil and false are accepted there: anchor turns it off for an uplink
-	// regardless, and refusing a default nobody chose would fail every uplink anchor
-	// for a setting its operator never made.
+	// probe. Nil and false are accepted there, and nil is passed to anchor as no: anchor
+	// refuses only a yes on a link, and a manifest's yes would otherwise reach it.
+	// Refusing a default nobody chose would fail every uplink anchor for a setting its
+	// operator never made.
 	LANDiscovery *bool `json:"lanDiscovery,omitempty"`
 
 	// ServeExit offers this anchor as a way out to the public internet, and

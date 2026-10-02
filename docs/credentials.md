@@ -16,8 +16,9 @@ says which it is about.
 | the window | thirty days | whatever the operator chose; anchor sets no ceiling |
 | addresses | derived from the identity | derived, plus an IPv4 the operator may allocate |
 
-The rest of this page is the alpha realm unless it says otherwise, and the section on
-guardian-issued credentials is at the end.
+The rest of this page is the alpha realm unless it says otherwise. The section on
+guardian-issued credentials is near the end, followed by the one on credentials that
+do not renew at all, which is what VeilNet's own ghost realm nodes carry.
 
 ## Enrolment is one unauthenticated POST
 
@@ -251,3 +252,52 @@ delegation lapses, its realm is cut off from the tree above and **keeps running 
 itself**, and it goes on renewing the machines beneath it indefinitely. That is the
 point of a self-hosted deployment, and it is why a guardian node's renewal URL names
 the guardian and never us.
+
+## A credential that does not renew
+
+A document carrying no renewal fields at all, no `renewalUrl` and no `renewalAuth`, is
+**fixed-term**. It runs to its `notAfter` and is then replaced, not renewed.
+
+That is not a third issuer so much as a third answer to "who renews this", and the one
+case that produces it today is VeilNet's own fleet. traveller commissions the nodes it
+runs in its two ghost realms (beta exits, alpha bootstraps) from its admin routes under
+`/ghosts/realms/:realm/nodes`. It mints their credentials for **a century**, as long as
+the realm's delegation above them, and serves **no node renewal route**. Taking one of
+those nodes out of its realm means going to the host, which is the trade traveller makes
+so that an outage in a renewal path cannot take the fleet down. anchor's own manifest
+format has no renewal fields either, so a document anchorctl wrote reads the same way.
+
+```console
+$ sudo conflux enrol --manifest node-au.b64
+credential installed
+  from          node-au.b64
+  renewal       none: it runs to its expiry and is then replaced
+  expires       2126-10-03 11:25 UTC
+  taint         au
+  bootstrap     anchor…@203.0.113.10:4701, genesis.veilnet.com.au:4700
+  exit          commissioned as one; conflux serves an exit only when told to
+
+Next: sudo conflux up --serve-exit
+```
+
+What conflux does differently:
+
+- **`conflux enrol` installs it with no `--api`.** There is no renewal URL to read a base
+  out of. `--api` is taken as given if passed, and nothing is checked against it.
+- **An expired one is refused at enrol.** A credential that renews comes back from
+  expiry on its first renewal. One that does not renew never comes back, and installing
+  it would also make it the identity `enrol` refuses to replace.
+- **Nothing asks to renew it.** A start does not call the API, the timer stops instead
+  of retrying every minute, and `conflux renew` exits 69 naming the reason. None of this
+  is recorded as a failing renewal, because nothing failed.
+- **`exit: true` is reported, not obeyed.** A beta node is commissioned as an exit.
+  conflux passes `-serve-exit` itself on every start, so the machine serves one only
+  after `conflux up --serve-exit`. The host also needs what anchor deliberately does not
+  install: CAP_NET_ADMIN and /dev/net/tun, `net.ipv4.ip_forward=1`, a MASQUERADE limited
+  to the overlay range, and MSS clamping written `--tcp-flags SYN,RST SYN`.
+- **`listenPort` applies** unless `--port` says otherwise. traveller lists the node in
+  every bootstrap list at that port, so leave it alone.
+
+A document that names a `renewalAuth` and no `renewalUrl` is **not** fixed-term. It says
+how to authenticate a renewal but not where to send one, so it is refused at enrol as a
+mistake by its issuer.

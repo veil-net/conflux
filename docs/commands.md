@@ -268,6 +268,15 @@ Everything is checked before a byte is written — the format version, the `kind
 host, the address and the export block. A refused import leaves the machine exactly as
 it found it.
 
+**A document with no renewal fields at all is fixed-term, not broken.** That is what
+traveller hands out for a node in one of VeilNet's own ghost realms: a century-long
+credential and no renewal route. It installs with no `--api`, prints `renewal: none`,
+and is refused only if it has already expired, because nothing will ever bring it back.
+A document that names a `renewalAuth` but no `renewalUrl` is still refused: it says how
+to authenticate a renewal but not where to send it. If the document says `exit: true`,
+the closing hint is `conflux up --serve-exit`. conflux still serves an exit only when
+it is told to. See [credentials.md](credentials.md#a-credential-that-does-not-renew).
+
 Two fields are copied out of the document **once** and into `conflux.json`, where
 `conflux status` shows them and you can change them: `ipv4`, the overlay address the
 issuer allocated, and `export`, where it suggests telemetry goes. Neither is re-read on
@@ -302,7 +311,9 @@ restarting the service and paying every session for a swap that needs none of th
 It does not enrol. A machine with no manifest has nothing to renew, and drawing an
 identity here would replace the one a reboot expects; it says so and exits 69. It also
 exits 69 when nothing is running, because a credential is installed *into* a running
-anchor, and a machine that is meant to be down renews on its next start anyway.
+anchor, and a machine that is meant to be down renews on its next start anyway. And it
+exits 69 on a [fixed-term credential](credentials.md#a-credential-that-does-not-renew),
+which names nowhere to renew it.
 
 Needs root.
 

@@ -225,3 +225,67 @@ func decoded(t *testing.T, env config.Envelope) string {
 
 	return string(b)
 }
+
+// ghostNodeDocument is what traveller issues for one of its own ghost realm nodes, here
+// a beta exit: anchor's format and the run flags, and no renewal fields at all, because
+// the credential is minted for a century and there is no node renewal route. Field for
+// field from traveller's GhostRealmNodeService.credentials.
+const ghostNodeDocument = `{
+  "formatVersion": 1,
+  "kind": "anchor",
+  "realm": "34aa8de090970a18",
+  "genesis": "0011223344556677",
+  "identity": "b73928c5968473d0112233445566778899aabbccddeeff00112233445566778899",
+  "chain": "bm9kZS1jaGFpbg==",
+  "notAfter": "2126-10-03T11:25:49.000Z",
+  "taints": ["au"],
+  "listenPort": 4701,
+  "exit": true,
+  "telemetrySecret": "ddeafdc272de9e4",
+  "bootstrap": ["genesis.veilnet.com.au:4700"],
+  "issuedAt": "2026-10-02T11:25:57.587Z"
+}`
+
+// TestWhetherACredentialRenews is read off the document, and a renewalAuth with no URL
+// is neither: it renews against nothing, and it is not what an issuer that does not
+// renew writes either, so enrol can refuse it as a mistake.
+func TestWhetherACredentialRenews(t *testing.T) {
+	authWithoutURL := strings.Replace(guardianDocument,
+		`  "renewalUrl": "https://guardian.example.gov/nodes/e3b0c442-98fc-1c14-9afb-f4c8996fb924/credential",`+"\n", "", 1)
+
+	for name, tc := range map[string]struct {
+		doc                   string
+		renews, fixed, isExit bool
+	}{
+		"the alpha realm":              {alphaDocument, true, false, false},
+		"a guardian":                   {guardianDocument, true, false, false},
+		"a ghost realm node":           {ghostNodeDocument, false, true, true},
+		"a renewalAuth with no URL":    {authWithoutURL, false, false, false},
+		"anchor's own, with no fields": {withoutRenewalFields(t, alphaDocument), false, true, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := manifest(t, tc.doc)
+
+			if m.Renews() != tc.renews || m.FixedTerm() != tc.fixed || m.Exit() != tc.isExit {
+				t.Errorf("Renews, FixedTerm, Exit = %v, %v, %v, want %v, %v, %v",
+					m.Renews(), m.FixedTerm(), m.Exit(), tc.renews, tc.fixed, tc.isExit)
+			}
+		})
+	}
+}
+
+// withoutRenewalFields drops renewalUrl and renewalAuth from a document, leaving what
+// anchorctl itself writes.
+func withoutRenewalFields(t *testing.T, doc string) string {
+	t.Helper()
+
+	var out []string
+
+	for line := range strings.SplitSeq(doc, "\n") {
+		if !strings.Contains(line, `"renewal`) {
+			out = append(out, line)
+		}
+	}
+
+	return strings.Join(out, "\n")
+}

@@ -147,18 +147,20 @@ func TestEnrolRefusesBeforeWriting(t *testing.T) {
 	noRenewal := strings.Replace(guardianDoc,
 		`  "renewalUrl": "https://guardian.example.gov/nodes/abc/credential",`+"\n", "", 1)
 	badAddress := strings.Replace(guardianDoc, `"ipv4": "10.20.0.7/24"`, `"ipv4": "127.0.0.7/8"`, 1)
+	lapsedNode := strings.Replace(ghostNodeDoc, `"notAfter": "2126-10-03T11:25:49.000Z"`, `"notAfter": "2026-01-01T00:00:00.000Z"`, 1)
 
 	for name, tc := range map[string]struct {
 		doc  string
 		api  string
 		says string
 	}{
-		"a realm manifest":            {realmDoc, guardianAPI, "realm"},
-		"a format version from later": {futureDoc, guardianAPI, "upgrade conflux"},
-		"a renewalAuth we do not do":  {unknownAuth, guardianAPI, "mtls"},
-		"no renewalUrl at all":        {noRenewal, guardianAPI, "renewalUrl"},
-		"an address anchor refuses":   {badAddress, guardianAPI, "unicast"},
-		"an api naming another host":  {guardianDoc, "https://somewhere.else", "somewhere.else"},
+		"a realm manifest":                {realmDoc, guardianAPI, "realm"},
+		"a format version from later":     {futureDoc, guardianAPI, "upgrade conflux"},
+		"a renewalAuth we do not do":      {unknownAuth, guardianAPI, "mtls"},
+		"a renewalAuth and no renewalUrl": {noRenewal, guardianAPI, "renewalUrl"},
+		"a fixed term already over":       {lapsedNode, "", "expired"},
+		"an address anchor refuses":       {badAddress, guardianAPI, "unicast"},
+		"an api naming another host":      {guardianDoc, "https://somewhere.else", "somewhere.else"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			d, path := site(t, tc.doc)
@@ -461,5 +463,57 @@ func TestEnrolDoesNotOverwriteAnExportBlockTheOperatorWrote(t *testing.T) {
 
 	if cfg.Export.Endpoint != "mine:4317" {
 		t.Errorf("endpoint = %q, want the one the operator wrote", cfg.Export.Endpoint)
+	}
+}
+
+// ghostNodeDoc is a node traveller commissions in its own beta ghost realm: an exit,
+// minted for a century, with no renewal fields at all. Kept in step with enrol's own
+// fixture.
+const ghostNodeDoc = `{
+  "formatVersion": 1,
+  "kind": "anchor",
+  "realm": "34aa8de090970a18",
+  "genesis": "0011223344556677",
+  "identity": "b73928c5968473d0112233445566778899aabbccddeeff00112233445566778899",
+  "chain": "bm9kZS1jaGFpbg==",
+  "notAfter": "2126-10-03T11:25:49.000Z",
+  "taints": ["au"],
+  "listenPort": 4701,
+  "exit": true,
+  "telemetrySecret": "ddeafdc272de9e4",
+  "bootstrap": ["genesis.veilnet.com.au:4700"],
+  "issuedAt": "2026-10-02T11:25:57.587Z"
+}`
+
+// TestEnrolInstallsAGhostRealmNode. A credential that names nowhere to renew it is
+// fixed-term rather than broken: traveller mints its own nodes for a century and serves
+// no node renewal route. It installs with no --api, leaves the configured API alone, and
+// takes the issuer's taint -- and not its exit, which conflux serves only when told to.
+func TestEnrolInstallsAGhostRealmNode(t *testing.T) {
+	d, path := site(t, ghostNodeDoc)
+
+	if err := importCredential(d, path, "", "", nil); err != nil {
+		t.Fatalf("importCredential: %v", err)
+	}
+
+	if !config.HasManifest(d) {
+		t.Fatal("the credential was not installed")
+	}
+
+	cfg, err := config.Load(d)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if cfg.APIBaseURL != "" {
+		t.Errorf("apiBaseUrl = %q, want it left alone: nothing renews this credential", cfg.APIBaseURL)
+	}
+
+	if len(cfg.Taints) != 1 || cfg.Taints[0] != "au" {
+		t.Errorf("taints = %q, want the issuer's [au]", cfg.Taints)
+	}
+
+	if cfg.ServeExit {
+		t.Error("serveExit was inherited from the document; an exit is conflux's to decide")
 	}
 }

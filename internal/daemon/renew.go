@@ -134,6 +134,14 @@ func RenewNow(ctx context.Context, dirs paths.Dirs, ctl *anchorctl.Ctl, rep Repo
 		return err
 	}
 
+	// Refused before renewStored, so it is not recorded as a renewal that failed:
+	// nothing failed, and status saying "failing since" would send somebody looking
+	// for an outage.
+	if !m.Renews() {
+		return fmt.Errorf("%w; it is valid until %s, and is replaced rather than renewed",
+			enrol.ErrDoesNotRenew, m.NotAfter().Format(time.RFC3339))
+	}
+
 	got, err := renewStored(ctx, dirs, st, &enrol.Client{BaseURL: cfg.APIBase()}, m)
 	if err == nil {
 		err = install(ctx, dirs, ctl, got.chain)

@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/enrol"
@@ -37,8 +38,10 @@ import (
 //     truncated download fails here rather than at the next boot;
 //   - its renewalAuth is resolved, so a scheme this build does not implement is
 //     read by the person holding the terminal rather than by a timer months later;
-//   - its renewal URL is read, because that is where the API base comes from and a
-//     document that cannot say where it renews is one that never will;
+//   - its renewal URL is read, because that is where the API base comes from -- or,
+//     for a document carrying no renewal fields at all, the credential is taken as
+//     fixed-term and refused only if it has already expired, since nothing will
+//     bring it back;
 //   - an existing manifest is refused outright.
 //
 // **The three flags are overrides, and the manifest is the source.** A guardian
@@ -73,6 +76,8 @@ func runEnrol(_ context.Context, args []string) int {
 			"machine in, so the three flags exist only to overrule one of those from the\n" +
 			"terminal. --api is also checked when given: the document must renew against\n" +
 			"the same host.\n\n" +
+			"A document with no renewal fields at all -- a node in one of VeilNet's own ghost\n" +
+			"realms, minted for a century -- is installed as it is and never renewed.\n\n" +
 			"It refuses to replace a manifest that already exists. Replacing one is a new\n" +
 			"identity and a new overlay address, which orphans every peer this machine has.\n")
 	}
@@ -145,6 +150,15 @@ func importCredential(d paths.Dirs, manifestPath, apiBase, ipv4Flag string, tain
 		return err
 	}
 
+	// A credential that renews comes back from expiry on its first renewal. One that
+	// does not never comes back, and installing it would also make it the identity this
+	// verb refuses to replace -- so it is refused here, while a person is present.
+	if !m.Renews() && !m.NotAfter().After(time.Now()) {
+		return fmt.Errorf(
+			"the credential expired %s and names nowhere to renew it, so no peer would accept it.\n"+
+				"  Download a fresh one from its issuer", describeExpiry(m.NotAfter()))
+	}
+
 	address, err := chooseImportedIPv4(m, ipv4Flag)
 	if err != nil {
 		return err
@@ -160,7 +174,11 @@ func importCredential(d paths.Dirs, manifestPath, apiBase, ipv4Flag string, tain
 		return err
 	}
 
-	cfg.APIBaseURL = base
+	// Empty only for a fixed-term credential with no --api, which renews against
+	// nothing, so whatever the configuration already says is left to say it.
+	if base != "" {
+		cfg.APIBaseURL = base
+	}
 
 	// Only when there is one. With none, the machine has not been asked, and the
 	// `up` or `proxy` that follows asks.
@@ -199,8 +217,17 @@ func importCredential(d paths.Dirs, manifestPath, apiBase, ipv4Flag string, tain
 
 	ui.Printf("credential installed\n")
 	ui.Field("from", manifestPath)
-	ui.Field("api", base)
-	ui.Field("renewal", m.RenewalURL())
+
+	if base != "" {
+		ui.Field("api", base)
+	}
+
+	if m.Renews() {
+		ui.Field("renewal", m.RenewalURL())
+	} else {
+		ui.Field("renewal", "none: it runs to its expiry and is then replaced")
+	}
+
 	ui.Field("expires", m.NotAfter().Format("2006-01-02 15:04 MST"))
 
 	if address != "" {
@@ -215,9 +242,27 @@ func importCredential(d paths.Dirs, manifestPath, apiBase, ipv4Flag string, tain
 		ui.Field("bootstrap", strings.Join(m.Bootstrap(), ", "))
 	}
 
+	// Said rather than obeyed: conflux passes -serve-exit itself on every start, so
+	// the issuer's word is only worth repeating to the person who decides.
+	if m.Exit() && !cfg.ServeExit {
+		ui.Field("exit", "commissioned as one; conflux serves an exit only when told to")
+		ui.Printf("\nNext: sudo conflux up --serve-exit\n")
+
+		return nil
+	}
+
 	ui.Printf("\nNext: sudo conflux up\n")
 
 	return nil
+}
+
+// describeExpiry says when a credential lapsed, or that it never said.
+func describeExpiry(notAfter time.Time) string {
+	if notAfter.IsZero() {
+		return "at a moment it does not state"
+	}
+
+	return notAfter.Format(time.RFC3339)
 }
 
 // readEnvelope reads the document, from a file or from stdin.
@@ -258,14 +303,21 @@ func readEnvelope(path string) (config.Envelope, error) {
 // everything a redirect would steal, and retyping the host buys a typo rather than a
 // check. Given, it is also an assertion: the document must renew against the same
 // host, refused now naming both rather than at the first renewal months later.
+//
+// A fixed-term credential names no renewal URL, so there is nothing to read a base out
+// of and nothing to check --api against: the flag is taken as given, and empty leaves
+// the configuration's API as it was. Nothing asks it for this credential anyway.
 func chooseAPIBase(m *enrol.Manifest, flagValue string) (string, error) {
 	url := m.RenewalURL()
-	if url == "" {
-		return "", errors.New(
-			"the manifest carries no renewalUrl.\n" +
-				"  conflux would fall back to the public alpha realm's renewal route, which a\n" +
-				"  self-hosted API does not serve, and there is nothing here to read an API\n" +
-				"  base out of. The issuer has to set it")
+
+	switch {
+	case url == "" && m.FixedTerm():
+		return flagValue, nil
+	case url == "":
+		return "", fmt.Errorf(
+			"the manifest says renewalAuth %q and carries no renewalUrl.\n"+
+				"  It says how to authenticate a renewal and not where to send one, so nothing\n"+
+				"  would ever renew it. The issuer has to set it", m.RenewalAuth())
 	}
 
 	if flagValue == "" {

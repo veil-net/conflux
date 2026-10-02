@@ -226,3 +226,40 @@ func TestAStaleClockIsMeasuredAgain(t *testing.T) {
 		})
 	}
 }
+
+// TestAFixedTermCredentialIsNotRenewed: a manifest naming nowhere to renew it -- a node
+// traveller minted for a century -- is asked nothing, at a start or by hand, even with
+// its window two thirds gone and a clock last measured wrong. RenewNow says why, and
+// records no failure, because nothing failed.
+func TestAFixedTermCredentialIsNotRenewed(t *testing.T) {
+	is := newIssuer(t)
+	d := machine(t, is, time.Now().Add(-5*24*time.Hour), time.Now().Add(2*24*time.Hour))
+
+	doc, _ := json.Marshal(map[string]any{
+		"formatVersion": 1, "kind": "anchor", "identity": "aa", "genesis": "bb",
+		"chain":    base64.StdEncoding.EncodeToString([]byte("a node's chain")),
+		"issuedAt": time.Now().Add(-5 * 24 * time.Hour).UTC().Format(enrol.ManifestTime),
+		"notAfter": time.Now().Add(2 * 24 * time.Hour).UTC().Format(enrol.ManifestTime),
+	})
+
+	if err := config.SaveManifest(d, config.Envelope(base64.StdEncoding.EncodeToString(doc))); err != nil {
+		t.Fatal(err)
+	}
+
+	st := &config.State{AnchorID: renewTestAnchor, ClockSkew: 30 * time.Minute}
+	if _, _, err := credential(t.Context(), d, st, is.srv.URL, nopReporter{}); err != nil {
+		t.Errorf("credential() = %v, want a start from the credential as it is", err)
+	}
+
+	if err := RenewNow(t.Context(), d, fakeCtl(t), nil); !errors.Is(err, enrol.ErrDoesNotRenew) {
+		t.Errorf("RenewNow = %v, want ErrDoesNotRenew", err)
+	}
+
+	if is.calls.Load() != 0 {
+		t.Errorf("made %d calls to the issuer, want none", is.calls.Load())
+	}
+
+	if st, _ := config.LoadState(d); st.LastRenewalError != "" {
+		t.Errorf("recorded a renewal failure for a credential that does not renew: %q", st.LastRenewalError)
+	}
+}

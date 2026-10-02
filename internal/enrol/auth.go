@@ -1,6 +1,7 @@
 package enrol
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 )
@@ -54,6 +55,34 @@ func (a Auth) apply(req *http.Request) {
 	if a.Scheme == AuthNodeSecret {
 		req.Header.Set("Authorization", "Bearer "+a.Secret)
 	}
+}
+
+// ErrDoesNotRenew is a credential whose issuer named nowhere to renew it. See
+// Manifest.Renews.
+var ErrDoesNotRenew = errors.New("this credential does not renew: its issuer named nowhere to renew it")
+
+// Renews reports whether anything will ever renew this credential: whether the issuer
+// named somewhere to ask.
+//
+// Not every credential does, and the ones that do not are not broken. A node traveller
+// commissions in one of its own ghost realms -- a beta exit, an alpha bootstrap -- is
+// minted for a century, as long as the realm's delegation above it, and carries no
+// renewal fields at all: there is no node renewal route, and taking such a node out of
+// the realm means going to the host. anchor's own manifest format has no renewal fields
+// either. Such a credential runs to its notAfter and is replaced rather than renewed.
+//
+// The URL alone decides, and FixedTerm is the stricter question `conflux enrol` asks.
+func (m *Manifest) Renews() bool { return m.RenewalURL() != "" }
+
+// FixedTerm reports whether the document carries no renewal fields at all, which is
+// what an issuer that does not renew writes.
+//
+// Stricter than !Renews on purpose. A document that names a renewalAuth and no
+// renewalUrl says how to authenticate a renewal and not where to send it, which is an
+// issuer that forgot a field rather than one that does not renew -- and installing it as
+// fixed-term would turn that mistake into a machine that quietly expires.
+func (m *Manifest) FixedTerm() bool {
+	return !m.Renews() && m.RenewalAuth() == "" && m.RenewalSecret() == ""
 }
 
 // RenewalAuth is how the document says a renewal identifies itself. Empty when it

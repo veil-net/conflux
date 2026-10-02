@@ -9,7 +9,8 @@
 //
 // The manifest format is anchor's (cmd/anchorctl/manifest.go, anchorManifest). An
 // issuer adds where to renew -- renewalUrl, and for a guardian renewalAuth and
-// renewalSecret -- which anchor carries and ignores.
+// renewalSecret -- which anchor carries and ignores. An issuer that does not renew,
+// like traveller for its own ghost realm nodes, adds none of them; see Renews.
 package enrol
 
 import (
@@ -195,6 +196,22 @@ func (m *Manifest) Export() json.RawMessage {
 	}
 
 	return v
+}
+
+// Exit is whether the issuer commissioned this anchor as an internet exit.
+//
+// **Read to say so, and never obeyed.** conflux passes -serve-exit itself on every
+// start, so no document can make this machine a route to the public internet for other
+// people. `conflux enrol` reads it only to tell the person at the terminal that the
+// `up` which follows needs --serve-exit to be what the issuer commissioned.
+func (m *Manifest) Exit() bool {
+	var exit bool
+
+	if v, ok := m.raw["exit"]; ok {
+		_ = json.Unmarshal(v, &exit)
+	}
+
+	return exit
 }
 
 // Bootstrap is the peer list the issuer supplied.

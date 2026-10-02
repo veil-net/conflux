@@ -16,6 +16,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/enrol"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/wintun"
@@ -544,7 +545,9 @@ func (s *Supervisor) stop(c *child) {
 //
 // It re-reads the state every round rather than trusting what it read before
 // sleeping, so a renewal somebody ran by hand in between moves the next one along.
-// A failed renewal is retried after MinSleep.
+// A failed renewal is retried after MinSleep. A credential that does not renew ends
+// the loop: the manifest cannot change while this process holds it, so asking again
+// would only say the same thing every minute.
 func (s *Supervisor) renewLoop(ctx context.Context) {
 	for {
 		wait := MinSleep
@@ -553,7 +556,11 @@ func (s *Supervisor) renewLoop(ctx context.Context) {
 		case err != nil:
 			s.report().Warn("could not read %s: %v", s.Dirs.StateFile(), err)
 		case DueAt(st.IssuedAt, st.NotAfter, time.Now()):
-			if err := s.renewOnce(ctx); err != nil {
+			if err := s.renewOnce(ctx); errors.Is(err, enrol.ErrDoesNotRenew) {
+				s.report().Warn("%v", err)
+
+				return
+			} else if err != nil {
 				s.report().Warn("renewal failed: %v", err)
 			} else {
 				continue

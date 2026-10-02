@@ -163,7 +163,17 @@ func credential(
 	// Renewed when due, and also when the clock was last measured wrong: that
 	// measurement is the only thing that refuses a start below, so it is taken again
 	// rather than trusted from however long ago it was taken.
-	if st.AnchorID != "" && (DueAt(m.IssuedAt(), m.NotAfter(), time.Now()) || st.ClockSkew > MaxSkew) {
+	//
+	// Except a credential that names nowhere to renew it, which is asked nothing: it
+	// runs to its notAfter, and past that it is said once rather than retried.
+	switch {
+	case !m.Renews():
+		if lapsed := time.Since(m.NotAfter()); lapsed > 0 {
+			r.Warn("the credential expired %s ago and names nowhere to renew it: %v\n"+
+				"  the anchor will start but no peer will accept it until it is replaced",
+				lapsed.Round(time.Minute), enrol.ErrDoesNotRenew)
+		}
+	case st.AnchorID != "" && (DueAt(m.IssuedAt(), m.NotAfter(), time.Now()) || st.ClockSkew > MaxSkew):
 		env = renewBeforeStart(ctx, d, st, client, m, env, r)
 	}
 

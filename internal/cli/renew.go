@@ -12,6 +12,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
+	"github.com/veil-net/conflux/internal/enrol"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/ui"
 )
@@ -116,7 +117,13 @@ func renewNow(ctx context.Context, d paths.Dirs) int {
 		return fail(err)
 	}
 
-	if err := daemon.RenewNow(ctx, d, ctl, reporter{}); err != nil {
+	// Unavailable rather than an error, like a machine that never enrolled: nothing went
+	// wrong, there is just nothing here this verb can do.
+	if err := daemon.RenewNow(ctx, d, ctl, reporter{}); errors.Is(err, enrol.ErrDoesNotRenew) {
+		ui.Errf("%v", err)
+
+		return ExitUnavailable
+	} else if err != nil {
 		return fail(err)
 	}
 

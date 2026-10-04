@@ -48,14 +48,14 @@ Every directory is `0700` and every file `0600`.
 | `mode` | `tun` or `proxy`. See [modes.md](modes.md). |
 | `taints` | never empty after `up` or `proxy`. |
 | `ipv4` | this machine's IPv4, an address or `address/length`. Either mode. `""` records that the operator declined one, and absent that nobody has been asked yet — the difference is what keeps the question to once. |
-| `subnets` | interface names or private prefixes. `tun` only. |
+| `subnets` | interface names or private prefixes. Either mode: with an interface the host forwards, in userspace the anchor does from its own process. |
 | `proxies` | `PORT[/NETWORK]=BACKEND` specs. `proxy` only. |
 | `uplink` | a device, with an optional line speed. Absent means the host's IP network, which is the usual case. Either mode. See [uplink.md](uplink.md). |
 | `peers` | bootstrap entries, `host:port` or `anchorxxx@host:port`. **Absent is the usual case and not a missing setting:** anchorctl takes the list from the enrolment manifest for exactly the fields no flag named, so an empty `peers` is what keeps the issuer's own nodes in play. Present, it overrides them. |
 | `port` | the UDP port to bind on every interface. Absent means the kernel picks one, which is the usual case. A port and not an address: an anchor listens everywhere, and the host's addresses change under it. Refused beside `uplink`, which binds no socket. |
 | `lowLatency` | carry layer-2 frames on QUIC datagrams instead of streams. Absent is false. Either mode. |
 | `lanDiscovery` | probe the host's own networks for anchors of this realm tree. Either mode. The one field here where **absent is not false**: it is `auto`, and it passes no flag at all, which is what leaves enrolment's own `lanDiscovery` in play. `false` and absent are different documents and `--lan-discovery no` writes the first of them. |
-| `serveExit`, `useExit` | route the public internet out of and into the overlay. Absent is false. Both are `up`'s, and switching a machine to `proxy` clears them; anchor refuses `serveExit` in `proxy` mode, and the two together in either. |
+| `serveExit`, `useExit` | route the public internet out of and into the overlay. Absent is false. Either mode, as `subnets`; anchor refuses the two together. |
 | `apiBaseUrl` | absent means the default. |
 
 This file is the whole of what a reboot needs. Every `up` and every `proxy` rewrites
@@ -93,7 +93,11 @@ protojson, and **an unknown field there is an error** — so any friendlier spel
 conflux invented would be a second schema able to drift from the one anchord enforces,
 and it would present as a daemon refusing to start over a field name you never typed.
 One set of names means anchor's own documentation describes what you are looking at, and
-that a block can be moved between the two files unchanged.
+that a block can be moved between the two files unchanged: conflux reads it as protojson
+does, so either spelling of a name (`metricIntervalNanos` or `metric_interval_nanos`), an
+int64 as a number or a string (`"60000000000"`, as protojson writes one), and bytes in
+either base64 alphabet are all taken, and an unknown or repeated field is refused naming
+it rather than dropped. What conflux writes back is the camelCase form with numbers.
 
 The full field list is `enabled`, `endpoint` (host:port, not a URL — the scheme follows
 `insecure`), `insecure`, `headers`, `metrics`, `traces`, `logs`, `metricIntervalNanos`,

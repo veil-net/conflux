@@ -114,10 +114,11 @@ func TestParseMetric(t *testing.T) {
 	}
 }
 
-// TestParseMetricIsResilient: no anchor, no metrics yet, and junk all read as absent
-// rather than a panic. The supervisor reads this on a timer and must not die of it.
+// TestParseMetricIsResilient: no metrics yet, and junk, read as absent rather than a
+// panic. The supervisor reads this on a timer and must not die of it. (No anchor at all
+// is not output: anchorctl metrics fails, and the watcher asks status instead.)
 func TestParseMetricIsResilient(t *testing.T) {
-	for _, in := range []string{"", "no metrics yet\n", "garbage\n", "no anchor is running\n", "anchor_connections\n"} {
+	for _, in := range []string{"", "no metrics yet\n", "garbage\n", "anchor_connections\n"} {
 		if v, ok := ParseMetric(in, MetricConnections); ok {
 			t.Errorf("ParseMetric(%q) = %v, want absent", in, v)
 		}

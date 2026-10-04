@@ -111,11 +111,11 @@ export a personal access token and it works.
 
 **CI does not store one.** It stores the private key of a GitHub App and mints a token per
 job — see `.github/actions/anchor-bins`, which passes the result through this same
-variable. The two repository secrets are:
+variable. The two secrets are:
 
 | secret | what it is |
 |---|---|
-| `ANCHOR_APP_ID` | the App's numeric ID |
+| `ANCHOR_APP_CLIENT_ID` | the App's Client ID, which is public; a secret so the workflows read it from one place |
 | `ANCHOR_APP_PRIVATE_KEY` | its private key, whole, including the BEGIN and END lines |
 
 A credential is needed at all because anchor is private, and GitHub has no releases-only

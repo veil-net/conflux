@@ -36,6 +36,7 @@ func runUp(ctx context.Context, args []string) int {
 		uplink   = fs.String("uplink", "", "carry the mesh over a link rather than the host network, e.g. /dev/ttyUSB0:115200")
 		noUplink = fs.Bool("no-uplink", false, "go back to the host's network on a machine configured for a link")
 		noPeers  = fs.Bool("no-peers", false, "forget the bootstrap list and go back to the one enrolment supplies")
+		noSubnet = fs.Bool("no-subnet", false, subnetOffUsage)
 		apiBase  = fs.String("api", "", "enrolment API base URL")
 		port     = fs.Uint("port", 0, "UDP port to bind on every interface; omit to let the kernel pick one")
 		lanDisco = fs.String("lan-discovery", "auto",
@@ -48,18 +49,15 @@ func runUp(ctx context.Context, args []string) int {
 	fs.Bool("no-port", false, "go back to letting the kernel pick the port")
 	fs.Bool("low-latency", false, "carry frames on datagrams: no head-of-line blocking, and a lost frame stays lost")
 	fs.Bool("no-low-latency", false, "go back to carrying frames on streams")
-	fs.Bool("serve-exit", false, "offer this machine as a way out to the public internet")
-	fs.Bool("no-serve-exit", false, "stop offering a way out")
-	fs.Bool("use-exit", false, "send this machine's own internet traffic over the overlay")
-	fs.Bool("no-use-exit", false, "send this machine's internet traffic the ordinary way")
+	registerExits(fs)
 
 	fs.Var(&taints, "taint", "compartment label; repeat to carry more than one")
-	fs.Var(&subnets, "subnet", "a network this machine forwards for the realm; repeat for more")
+	fs.Var(&subnets, "subnet", subnetUsage)
 	fs.Var(&peers, "peers", "bootstrap entry as host:port; repeat for more. Enrolment supplies these, so this is an override")
 
 	fs.Usage = func() {
 		ui.Printf("conflux up — join the overlay with a network interface\n\n" +
-			"  conflux up [--taint T] [--ipv4 ADDRESS | --no-ipv4] [--subnet CIDR]...\n" +
+			"  conflux up [--taint T] [--ipv4 ADDRESS | --no-ipv4] [--subnet CIDR... | --no-subnet]\n" +
 			"             [--uplink DEV | --no-uplink] [--peers HOST:PORT | --no-peers]\n\n" +
 			"Enrols this machine if it has never been, starts an anchor in TUN mode, writes\n" +
 			"the configuration, and registers the boot service so a reboot needs nothing.\n\n" +
@@ -91,7 +89,7 @@ func runUp(ctx context.Context, args []string) int {
 	// refused before this machine is told its proxies are being replaced. The
 	// announcement is not a lie -- nothing is saved until bring -- but reading
 	// "replaces that" and then an error is a worse way to learn you typo'd a port.
-	if err := chooseTuning(cfg, typedFlags(fs), *port, *lanDisco, true); err != nil {
+	if err := chooseTuning(cfg, typedFlags(fs), *port, *lanDisco); err != nil {
 		return fail(err)
 	}
 
@@ -123,8 +121,8 @@ func runUp(ctx context.Context, args []string) int {
 		cfg.APIBaseURL = *apiBase
 	}
 
-	if len(subnets) > 0 {
-		cfg.Subnets = unique(subnets)
+	if err := chooseSubnets(cfg, subnets, *noSubnet); err != nil {
+		return fail(err)
 	}
 
 	if err := chooseIPv4(cfg, *ipv4, *noIPv4); err != nil {
@@ -228,12 +226,24 @@ func choosePort(cfg *config.Config, typed map[string]bool, value uint) error {
 	return nil
 }
 
+// Flag help shared by up and proxy, which take the same routing settings: with an
+// interface the host forwards, and in userspace the anchor does from its own process.
+const (
+	subnetUsage    = "a network this machine forwards for the realm, by prefix or interface; repeat for more"
+	subnetOffUsage = "forward no networks for the realm; the way back from --subnet"
+)
+
+// registerExits adds the two exit settings and their negations, read through
+// typedFlags rather than by value.
+func registerExits(fs *flag.FlagSet) {
+	fs.Bool("serve-exit", false, "offer this machine as a way out to the public internet")
+	fs.Bool("no-serve-exit", false, "stop offering a way out")
+	fs.Bool("use-exit", false, "send this machine's own internet traffic over the overlay")
+	fs.Bool("no-use-exit", false, "send this machine's internet traffic the ordinary way")
+}
+
 // chooseTuning applies the settings that are neither the mode nor the medium.
-//
-// exits is false on proxy, where the two exit flags are not registered at all: both
-// need a host interface, so offering them on the verb that has none would be offering
-// a setting whose only outcome is a refusal.
-func chooseTuning(cfg *config.Config, typed map[string]bool, port uint, lanDisco string, exits bool) error {
+func chooseTuning(cfg *config.Config, typed map[string]bool, port uint, lanDisco string) error {
 	if err := choosePort(cfg, typed, port); err != nil {
 		return err
 	}
@@ -251,10 +261,6 @@ func chooseTuning(cfg *config.Config, typed map[string]bool, port uint, lanDisco
 	}
 
 	cfg.LANDiscovery = lan
-
-	if !exits {
-		return nil
-	}
 
 	if cfg.ServeExit, err = chooseToggle("serve-exit", typed, cfg.ServeExit); err != nil {
 		return err
@@ -465,6 +471,22 @@ func choosePeers(cfg *config.Config, values []string, none bool) error {
 	}
 
 	cfg.Peers = values
+
+	return nil
+}
+
+// chooseSubnets decides what this machine forwards for the realm: the --subnet flags
+// when there are any, nothing with --no-subnet, and otherwise what is configured, like
+// every other setting a re-run keeps. Validate checks each entry.
+func chooseSubnets(cfg *config.Config, values []string, none bool) error {
+	switch {
+	case none && len(values) > 0:
+		return errors.New("--subnet and --no-subnet contradict each other")
+	case none:
+		cfg.Subnets = nil
+	case len(values) > 0:
+		cfg.Subnets = unique(values)
+	}
 
 	return nil
 }

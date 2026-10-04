@@ -36,7 +36,9 @@ type verb struct {
 // Four of them shadow an anchorctl command -- start, proxy, renew and status --
 // and each resolves its own collision rather than guessing. See the comment on
 // each, and TestTheCollisionsAreTheDocumentedOnes, which reads the set off the
-// embedded binary rather than leaving it to be counted by hand.
+// embedded binary rather than leaving it to be counted by hand. help is anchorctl's
+// too, and is not counted: anchorctl's only prints its usage, which conflux's prints
+// whole beneath its own.
 func verbs() map[string]verb {
 	return map[string]verb{
 		"up":        {run: runUp, summary: "join the overlay with a network interface"},

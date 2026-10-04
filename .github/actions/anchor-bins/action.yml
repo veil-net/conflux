@@ -4,9 +4,10 @@ description: >
   of veil-net/anchor.
 
 inputs:
-  app-id:
+  client-id:
     description: >
-      The App ID of the GitHub App that can read anchor. Pass secrets.ANCHOR_APP_ID.
+      The Client ID of the GitHub App that can read anchor. Pass
+      secrets.ANCHOR_APP_CLIENT_ID.
     required: true
   private-key:
     description: >
@@ -52,7 +53,7 @@ runs:
       id: app
       uses: actions/create-github-app-token@v3
       with:
-        app-id: ${{ inputs.app-id }}
+        client-id: ${{ inputs.client-id }}
         private-key: ${{ inputs.private-key }}
         owner: veil-net
         repositories: anchor

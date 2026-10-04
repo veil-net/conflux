@@ -1,0 +1,12 @@
+start
+-manifest
+-
+-dir
+/var/lib/conflux/anchor
+-taints
+brhk-2mq9-tzva-6pjs
+-tun=false
+-serve-exit=true
+-use-exit=false
+-serve-subnets
+192.168.1.0/24,eth1

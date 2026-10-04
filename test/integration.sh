@@ -113,10 +113,9 @@ docker exec cfx-a ping -c2 -W3 "$B6"
 # multicast-capable kernel -- the one thing no Go test in this tree can arrange. So
 # the probe is live here whether or not anything was configured to use it.
 #
-# Non-zero rather than present, and that is the whole assertion. The series is created
-# the first time it is written, delta included, so the name appears at zero as soon as
-# an anchor polls -- a grep for the name alone passes on an anchor that never found a
-# thing. anchor's own suite records being caught by exactly that.
+# Non-zero rather than present, and that is the whole assertion: anchor writes the
+# counter only when a probe finds a peer, so a sum above zero is a find, where a grep
+# for the name would hold only as long as nothing else ever wrote it.
 # They met, and nothing but the link could have introduced them; the counter says the
 # probe is what found them. Either end may be the one that counts: whichever probe the
 # other answers first, the connection it makes stops the other's.

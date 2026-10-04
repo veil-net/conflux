@@ -139,7 +139,7 @@ func (m *Manifest) Taints() []string {
 //
 // **Read once, by the import verb, and never on a start.** Guardian allocates
 // addresses out of a range it keeps in a database, so the number has to travel
-// somehow, and a field the operator can see in `conflux config` afterwards beats a
+// somehow, and a field the operator can see in conflux.json afterwards beats a
 // number retyped from a web page.
 //
 // The reason it is seeded rather than obeyed is the same one that makes conflux
@@ -182,8 +182,8 @@ func (m *Manifest) IPv4() string {
 // because they would be re-read on every start, so a document could keep deciding
 // what this machine does for other people, indefinitely, behind an operator who
 // never agreed. This is read once, by a person running a command, and written into
-// conflux.json where that person can see it in `conflux config` and change it --
-// and from then on the document is not consulted again. A suggestion at
+// conflux.json where that person can see it and change it -- and from then on the
+// document is not consulted again. A suggestion at
 // commissioning time is a different thing from a standing instruction, and the
 // difference is the whole of why one is refused and this is not.
 //

@@ -93,9 +93,10 @@ func (c *Ctl) run(ctx context.Context, stdin []byte, args ...string) (string, er
 // -manifest takes "-" for stdin and turns everything the document carries into an
 // inline secret on the wire, so the identity seed travels from conflux's 0600 file
 // through memory and an anonymous pipe to the daemon's socket, and is never written
-// anywhere a crash could leave it. It also means no path is named in the Start
-// request at all, which is why anchord's -credentials-dir confinement is a question
-// conflux never has to answer.
+// anywhere a crash could leave it. It also means no credential is named by path in
+// the Start request: what does name a path is -dir, and an uplink's device, which
+// anchord's -credentials-dir would confine as well -- a fence conflux does not set,
+// since the socket it would guard is conflux's alone.
 func (c *Ctl) Start(ctx context.Context, env config.Envelope, mode StartMode) (Started, error) {
 	out, err := c.run(ctx, env, mode.Args()...)
 	if err != nil {
@@ -124,7 +125,8 @@ func (c *Ctl) Metric(ctx context.Context, name string) (float64, bool, error) {
 }
 
 // Status asks what is running. A daemon that is up with no anchor in it is not an
-// error -- it is the state conflux down leaves behind.
+// error: it is a daemon between starts, or one whose anchor an admin's kill order or
+// its own end took away, which the supervisor's watcher asks this to find out.
 func (c *Ctl) Status(ctx context.Context) (Status, error) {
 	out, err := c.run(ctx, nil, StatusArgs()...)
 	if err != nil {
@@ -141,15 +143,6 @@ func (c *Ctl) Status(ctx context.Context) (Status, error) {
 // out by timeout.
 func (c *Ctl) Stop(ctx context.Context) error {
 	_, err := c.run(ctx, nil, StopArgs()...)
-
-	return err
-}
-
-// Ping reports whether the daemon is up and the token is accepted. It is the
-// readiness probe, and Status without the parse: a socket file proves nothing,
-// because a crashed daemon leaves one behind.
-func (c *Ctl) Ping(ctx context.Context) error {
-	_, err := c.run(ctx, nil, StatusArgs()...)
 
 	return err
 }

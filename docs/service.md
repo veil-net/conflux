@@ -59,9 +59,16 @@ by then, is killed; see the Windows section. A daemon that has already died is a
 nothing: there is no anchor left to close, and its pid may belong to something else.
 
 A start that fails is retried with a backoff up to thirty seconds. One that no retry
-changes — a configuration conflux refuses, a credential for another realm tree, a TUN
-the host will not give — stops the supervisor after three attempts with exit 70, and
-nothing to start at all is exit 78. What each service manager does with those two is
+changes — a configuration conflux refuses, an expired credential with nowhere to renew
+it, a credential for another realm tree, a TUN the host will not give, a host that will
+not be set up to forward, an argument vector anchorctl refuses — stops the supervisor
+after three attempts with exit 70, and nothing to start at all is exit 78.
+
+anchord can also lose its anchor without exiting, so the supervisor asks it every thirty
+seconds whether it still holds one (every ten, through the link watcher's gauge, on an
+uplink) and rebuilds it through the same bring-up when it does not — unless anchord said
+a realm admin's kill order stopped it. That one is left stopped, `conflux status` says
+`stopped  by an admin credential at …`, and `conflux start` or a reboot builds it again. What each service manager does with those two is
 below.
 
 ## One machine, one service — unless CONFLUX_DIR says otherwise
@@ -97,9 +104,10 @@ do both. `start` decides nothing, which is exactly what makes it the way back fr
 ## systemd
 
 Unit at `/etc/systemd/system/conflux.service`, and `conflux install` writes it,
-`daemon-reload`s and `enable`s it. **It does not start it**; that is the caller's
-decision, and it is what lets `conflux install` register a service on a machine that
-has no configuration yet.
+`daemon-reload`s and `enable`s it — or, finding that exact unit already there and
+enabled, as every re-run of `up` and `proxy` does, leaves it be. **It does not start
+it**; that is the caller's decision, and it is what lets `conflux install` register a
+service on a machine that has no configuration yet.
 
 ```ini
 [Unit]

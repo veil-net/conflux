@@ -102,8 +102,9 @@ func TestEveryFlagWeUseExists(t *testing.T) {
 	}
 }
 
-// supportedFlags scrapes `anchorctl <sub> -h`. The usage goes to stderr and the
-// call exits non-zero, both of which are normal for -h with Go's flag package.
+// supportedFlags scrapes `anchorctl <sub> -h`. The usage goes to stderr, and the exit
+// status is not read: anchorctl answers -h with zero, and a stray failure shows up as
+// a flag the scrape did not find.
 func supportedFlags(t *testing.T, bin, sub string) map[string]bool {
 	t.Helper()
 

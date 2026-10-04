@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -164,6 +165,35 @@ func TestAFailedRenewalIsRecorded(t *testing.T) {
 	}
 }
 
+// TestAFailedInstallIsDueAgain: a renewed chain the running anchor would not take is
+// kept on disk for the next start, but the state goes on describing the chain the anchor
+// holds -- so the timer asks again rather than sleeping until the renewed one is due,
+// and status says what failed.
+func TestAFailedInstallIsDueAgain(t *testing.T) {
+	is := newIssuer(t)
+
+	d := machine(t, is, time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour))
+	t.Setenv(fakeAnchorctlFailEnv, "renew")
+
+	if err := RenewNow(t.Context(), d, fakeCtl(t), nil); err == nil {
+		t.Fatal("RenewNow succeeded with an install the anchor refused")
+	}
+
+	if !stored(t, d).NotAfter().After(time.Now().Add(29 * 24 * time.Hour)) {
+		t.Error("the renewed chain was not kept for the next start")
+	}
+
+	st, _ := config.LoadState(d)
+	if !DueAt(st.IssuedAt, st.NotAfter, time.Now()) {
+		t.Errorf("the state reads %v to %v, which is not due, so the timer would sleep past the running chain",
+			st.IssuedAt, st.NotAfter)
+	}
+
+	if !strings.Contains(st.LastRenewalError, "refused") {
+		t.Errorf("LastRenewalError = %q, want the install's refusal", st.LastRenewalError)
+	}
+}
+
 // TestAnEnrolmentIsKeptBeforeItIsRead: a document this build cannot read is still
 // written -- it is the only copy of an identity -- and then refused, permanently.
 func TestAnEnrolmentIsKeptBeforeItIsRead(t *testing.T) {
@@ -261,5 +291,33 @@ func TestAFixedTermCredentialIsNotRenewed(t *testing.T) {
 
 	if st, _ := config.LoadState(d); st.LastRenewalError != "" {
 		t.Errorf("recorded a renewal failure for a credential that does not renew: %q", st.LastRenewalError)
+	}
+}
+
+// TestAnExpiredFixedTermCredentialIsPermanent: anchor will not build an anchor on an
+// expired chain, and nothing will renew this one, so a start is refused for good rather
+// than retried for ever.
+func TestAnExpiredFixedTermCredentialIsPermanent(t *testing.T) {
+	is := newIssuer(t)
+	d := machine(t, is, time.Now().Add(-40*24*time.Hour), time.Now().Add(-time.Hour))
+
+	doc, _ := json.Marshal(map[string]any{
+		"formatVersion": 1, "kind": "anchor", "identity": "aa", "genesis": "bb",
+		"chain":    base64.StdEncoding.EncodeToString([]byte("a node's chain")),
+		"issuedAt": time.Now().Add(-40 * 24 * time.Hour).UTC().Format(enrol.ManifestTime),
+		"notAfter": time.Now().Add(-time.Hour).UTC().Format(enrol.ManifestTime),
+	})
+
+	if err := config.SaveManifest(d, config.Envelope(base64.StdEncoding.EncodeToString(doc))); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err := credential(t.Context(), d, &config.State{AnchorID: renewTestAnchor}, is.srv.URL, nopReporter{})
+	if !isPermanent(err) || !errors.Is(err, enrol.ErrDoesNotRenew) {
+		t.Errorf("credential() = %v, want a permanent refusal naming a credential that does not renew", err)
+	}
+
+	if is.calls.Load() != 0 {
+		t.Errorf("made %d calls to the issuer, want none", is.calls.Load())
 	}
 }

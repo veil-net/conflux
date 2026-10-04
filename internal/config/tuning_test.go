@@ -32,9 +32,9 @@ func base(mode Mode) *Config {
 	return c
 }
 
-// TestModeRules are anchor's, and only anchor's: a proxy needs userspace, a subnet and
-// a served exit need an interface, an IPv4 and UseExit need neither, and the two exits
-// are alternatives.
+// TestModeRules are anchor's, and only anchor's: a proxy needs userspace, a subnet, an
+// exit and an IPv4 work in either mode -- in userspace the anchor forwards from its own
+// process -- and the two exits are alternatives.
 func TestModeRules(t *testing.T) {
 	ip := "10.128.0.7/24"
 
@@ -45,8 +45,8 @@ func TestModeRules(t *testing.T) {
 		says string
 	}{
 		"a proxy with an interface":   {ModeTUN, func(c *Config) { c.Proxies = []string{"8080=127.0.0.1:1"} }, false, "userspace"},
-		"a subnet without one":        {ModeProxy, func(c *Config) { c.Subnets = []string{"10.0.0.0/24"} }, false, "host interface"},
-		"a served exit without one":   {ModeProxy, func(c *Config) { c.ServeExit = true }, false, "host interface"},
+		"a subnet in userspace":       {ModeProxy, func(c *Config) { c.Subnets = []string{"10.0.0.0/24"} }, true, ""},
+		"a served exit in userspace":  {ModeProxy, func(c *Config) { c.ServeExit = true }, true, ""},
 		"a served exit with one":      {ModeTUN, func(c *Config) { c.ServeExit = true }, true, ""},
 		"UseExit with an interface":   {ModeTUN, func(c *Config) { c.UseExit = true }, true, ""},
 		"UseExit in userspace":        {ModeProxy, func(c *Config) { c.UseExit = true }, true, ""},

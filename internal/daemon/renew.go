@@ -142,9 +142,19 @@ func RenewNow(ctx context.Context, dirs paths.Dirs, ctl *anchorctl.Ctl, rep Repo
 			enrol.ErrDoesNotRenew, m.NotAfter().Format(time.RFC3339))
 	}
 
+	held, heldUntil := st.IssuedAt, st.NotAfter
+
 	got, err := renewStored(ctx, dirs, st, &enrol.Client{BaseURL: cfg.APIBase()}, m)
 	if err == nil {
-		err = install(ctx, dirs, ctl, got.chain)
+		if err = install(ctx, dirs, ctl, got.chain); err != nil {
+			// The renewed chain is on disk, so the next start runs on it, but the running
+			// anchor still holds the old one. The state keeps describing that one, so a
+			// renewal that was due is due again in a minute rather than three weeks after
+			// the running chain has lapsed, and status says why.
+			err = fmt.Errorf("install the renewed credential: %w", err)
+			st.IssuedAt, st.NotAfter = held, heldUntil
+			st.LastRenewalError = err.Error()
+		}
 	}
 
 	if serr := config.SaveState(dirs, st); serr != nil {

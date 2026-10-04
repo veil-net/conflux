@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
@@ -68,6 +69,10 @@ type Supervisor struct {
 	ctl   *anchorctl.Ctl
 	tail  *ring
 	once  sync.Once
+
+	// adminStopped is whether this daemon has said an admin credential stopped its
+	// anchor, which the watcher reads before rebuilding one; see watch.
+	adminStopped atomic.Bool
 }
 
 func (s *Supervisor) report() Reporter {
@@ -241,10 +246,11 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 	s.report().Step("anchor %s is up", started.ID)
 	s.signalReady(started.ID)
 
-	// The timer, and the link watcher for an anchor on a link. Both are finished
-	// before the daemon is shut down, so neither writes state or talks to a daemon
-	// that the next cycle has already replaced. On the host's network a change is
-	// anchor's own business, and it recovers in-process without conflux knowing.
+	// The timer, and the watcher that keeps an anchor in the daemon -- and on a link,
+	// keeps the link carrying something. Both are finished before the daemon is shut
+	// down, so neither writes state or talks to a daemon that the next cycle has already
+	// replaced. An admin's kill order ends both: there is no anchor left to keep, or to
+	// renew a credential for, until the service is started again.
 	loops, stopLoops := context.WithCancel(ctx)
 
 	var wg sync.WaitGroup
@@ -255,10 +261,11 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 	}()
 
 	wg.Go(func() { s.renewLoop(loops) })
-
-	if cfg.Uplink != "" {
-		wg.Go(func() { s.linkLoop(loops, cfg.Uplink) })
-	}
+	wg.Go(func() {
+		if s.watch(loops, cfg.Uplink) {
+			stopLoops()
+		}
+	})
 
 	select {
 	case <-ctx.Done():
@@ -315,13 +322,15 @@ func (c *child) gone(when string, tail *ring) error {
 // messages, never straight to os.Stdout: a Windows service has no valid stdout handle
 // to inherit, and the last few lines are what explains a startup failure an exit
 // code alone cannot.
+//
+// Both streams go to one writer, which os/exec gives one descriptor and one copying
+// goroutine rather than a pipe and a goroutine each -- and which keeps anchord's lines
+// in the order it wrote them, so the tail reads as one account rather than two.
 func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *child, error) {
 	// The daemon's own configuration, rendered from conflux.json on every spawn.
 	//
 	// Passed on every start rather than only when something is configured, so that
-	// the file is what the daemon believes in both directions -- see
-	// writeDaemonConfig, which explains why an absent export block is written as an
-	// explicit `enabled: false` rather than left out.
+	// the file is what the daemon believes in both directions; see writeDaemonConfig.
 	cfg, err := config.Load(s.Dirs)
 	if err != nil {
 		return nil, nil, err
@@ -338,11 +347,13 @@ func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *child, error) 
 		return nil, nil, err
 	}
 
-	stdout, stderr := s.lines(), s.lines()
+	s.adminStopped.Store(false)
+
+	out := s.lines()
 
 	cmd := exec.Command(s.tools.Anchord, anchordArgs(s.Dirs)...) //nolint:gosec // our own extracted binary
 	cmd.SysProcAttr = procAttr()
-	cmd.Stdout, cmd.Stderr = stdout, stderr
+	cmd.Stdout, cmd.Stderr = out, out
 
 	if err := cmd.Start(); err != nil {
 		return nil, nil, fmt.Errorf("start anchord: %w", err)
@@ -350,29 +361,36 @@ func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *child, error) 
 
 	c := &child{cmd: cmd, exited: make(chan struct{})}
 
-	// Wait returns once both streams are drained, so the tail holds anchord's last
-	// words by the time anybody reads it.
+	// Wait returns once the output is drained, so the tail holds anchord's last words
+	// by the time anybody reads it.
 	go func() {
 		c.err = cmd.Wait()
-		stdout.flush()
-		stderr.flush()
+		out.flush()
 		close(c.exited)
 	}()
 
 	return cfg, c, nil
 }
 
-// lines is a writer for one of anchord's output streams, delivering it a line at a
-// time to the tail and the reporter.
+// adminStopLine is what anchord logs when an admin credential's kill order stops the
+// anchor it holds. Nothing else says why an anchor left the daemon.
+const adminStopLine = "this anchor was stopped by an admin credential"
+
+// lines is a writer for anchord's output, delivering it a line at a time to the tail
+// and the reporter, and noting the one line the watcher acts on.
 func (s *Supervisor) lines() *lineWriter {
 	return &lineWriter{emit: func(line string) {
+		if strings.Contains(line, adminStopLine) {
+			s.adminStopped.Store(true)
+		}
+
 		s.tail.add(line)
 		s.report().Step("anchord: %s", line)
 	}}
 }
 
-// lineWriter splits what is written to it into lines. os/exec copies each stream from
-// its own goroutine, so one writer is only ever written from one at a time.
+// lineWriter splits what is written to it into lines. os/exec copies a writer named for
+// both streams from one goroutine, so it is only ever written from one at a time.
 type lineWriter struct {
 	emit func(string)
 	buf  []byte
@@ -475,7 +493,9 @@ func (s *Supervisor) probe(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	return s.ctl.Ping(ctx)
+	_, err = s.ctl.Status(ctx)
+
+	return err
 }
 
 // probeIsFatal picks out the failures that retrying cannot fix.
@@ -600,11 +620,12 @@ func (s *Supervisor) freshToken() (string, error) {
 
 // isPermanent reports whether an error will still be an error after a wait.
 //
-// Three kinds. A configuration conflux itself refuses. And two that anchor refuses and
-// conflux cannot check beforehand: a credential under a root other than the one these
-// binaries are pinned to, and a TUN the host will not give -- no capability or device,
-// or the name held by another interface, which two conflux installations both
-// defaulting to anchor0 hit every time. None frees itself inside thirty seconds of
+// A file conflux itself refuses, an argument vector anchorctl refuses as a usage error,
+// and what anchor refuses that conflux cannot check beforehand: a credential under a
+// root other than the one these binaries are pinned to; a TUN the host will not give --
+// no capability, no device or no IPv6, or the name held by another interface, which two
+// conflux installations both defaulting to anchor0 hit every time; and a host that will
+// not be set up to forward for the realm. None frees itself inside thirty seconds of
 // backoff, and failing in three puts the reason in front of somebody rather than
 // burying it in the journal under a unit timeout.
 //
@@ -621,20 +642,29 @@ func isPermanent(err error) bool {
 	}
 
 	var e *anchorctl.Error
-	if errors.As(err, &e) {
-		s := strings.ToLower(e.Stderr)
-		for _, phrase := range []string{
-			"is not the pinned genesis",
-			"a tun needs cap_net_admin",
-			"device or resource busy",
-		} {
-			if strings.Contains(s, phrase) {
-				return true
-			}
+	if !errors.As(err, &e) {
+		return false
+	}
+
+	if exit := (*exec.ExitError)(nil); errors.As(e.Err, &exit) && exit.ExitCode() == 2 {
+		return true
+	}
+
+	s := strings.ToLower(e.Stderr)
+
+	for _, phrase := range []string{
+		"is not the pinned genesis",
+		"will not give this process a tun device",
+		"could not be set up to forward for the realm",
+	} {
+		if strings.Contains(s, phrase) {
+			return true
 		}
 	}
 
-	return false
+	// The kernel's answer to a TUN name another interface holds. Only a TUN's: a serial
+	// line held by another process is as often a prober that lets go.
+	return strings.Contains(s, "tundev: creating") && strings.Contains(s, "device or resource busy")
 }
 
 // ring keeps the last n lines of the daemon's output, in n slots allocated once:

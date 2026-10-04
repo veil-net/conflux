@@ -32,12 +32,13 @@ type Mode string
 const (
 	// ModeTUN gives the host a network interface. The kernel owns the overlay
 	// address, so ordinary programs bind it and ordinary tools see it. Needs
-	// CAP_NET_ADMIN, and is the only mode that can forward subnets.
+	// CAP_NET_ADMIN.
 	ModeTUN Mode = "tun"
 
 	// ModeProxy keeps the overlay entirely in userspace. Nothing on the host can
-	// see it, and the only way in is a reverse proxy conflux publishes. Needs no
-	// privileges at all, which is the whole reason it exists.
+	// see it: the way in is a reverse proxy conflux publishes, and the way out a
+	// subnet or an exit the anchor serves from its own process. Needs no privileges
+	// at all, which is the whole reason it exists.
 	ModeProxy Mode = "proxy"
 )
 
@@ -76,7 +77,8 @@ type Config struct {
 	IPv4 *string `json:"ipv4,omitempty"`
 
 	// Subnets are interface names or prefixes this anchor forwards for its realm.
-	// TUN only -- there is no host interface to forward out of in userspace.
+	// Either mode: with an interface the host forwards, and in userspace the anchor
+	// ends each connection and dials its destination from a socket of its own.
 	Subnets []string `json:"subnets,omitempty"`
 
 	// Proxies are OVERLAYPORT[/NETWORK]=BACKEND specs. Userspace only -- with a
@@ -144,11 +146,10 @@ type Config struct {
 	LANDiscovery *bool `json:"lanDiscovery,omitempty"`
 
 	// ServeExit offers this anchor as a way out to the public internet, and
-	// UseExit sends this machine's own internet traffic over the overlay. Both are
-	// `conflux up`'s: an exit forwards out of a host interface, and anchor refuses
-	// ServeExit without one. UseExit it accepts in userspace, where it covers only the
-	// anchor's own traffic, so `conflux proxy` offers neither and clears both. They
-	// are alternatives, and anchor refuses the pair.
+	// UseExit sends this machine's own internet traffic over the overlay. Either
+	// mode, as Subnets: in userspace an exit is served from the anchor's own process,
+	// and UseExit covers only the anchor's own traffic. They are alternatives, and
+	// anchor refuses the pair.
 	//
 	// Off by default and always passed explicitly, because an anchor that became
 	// an internet exit on its own -- because a manifest said so -- is the worst
@@ -206,8 +207,10 @@ func (c *Config) APIBase() string {
 
 // Validate applies anchor's rules here, where the error can name the flag the user
 // typed, rather than letting them surface as an InvalidArgument from a child
-// process three layers down. It accepts and refuses what anchor does, and adds one
-// rule of conflux's own: a machine always carries a taint.
+// process three layers down. It accepts and refuses what anchor does, and adds rules
+// of conflux's own, each where it is checked: a machine always carries a taint, no
+// list entry holds the comma anchorctl splits its flags on, and an uplink names a
+// device rather than a descriptor the supervisor never hands over.
 func (c *Config) Validate() error {
 	switch c.Mode {
 	case ModeTUN:
@@ -219,19 +222,6 @@ func (c *Config) Validate() error {
 		}
 
 	case ModeProxy:
-		if len(c.Subnets) > 0 {
-			return fmt.Errorf(
-				"mode is %q and %d subnet(s) are set: forwarding a subnet needs a host interface to forward out of, "+
-					"which userspace mode does not have",
-				c.Mode, len(c.Subnets))
-		}
-
-		if c.ServeExit {
-			return fmt.Errorf(
-				"mode is %q and serveExit is set: an exit forwards the public internet out of a host interface, "+
-					"which userspace mode does not have",
-				c.Mode)
-		}
 
 	default:
 		return fmt.Errorf("mode is %q, want %q or %q", c.Mode, ModeTUN, ModeProxy)
@@ -269,8 +259,18 @@ func (c *Config) Validate() error {
 	}
 
 	if c.Uplink != "" {
-		if _, err := ParseUplinkSpec(c.Uplink); err != nil {
+		spec, err := ParseUplinkSpec(c.Uplink)
+		if err != nil {
 			return err
+		}
+
+		// conflux's rule rather than anchor's: a descriptor is adopted from whatever
+		// started the daemon, and what starts anchord here is conflux's supervisor, which
+		// hands it none.
+		if spec.FD >= 0 {
+			return fmt.Errorf(
+				"uplink %q adopts a descriptor, and conflux's supervisor starts anchord with none to adopt; "+
+					"name the device instead, such as /dev/ttyUSB0:115200", c.Uplink)
 		}
 
 		// anchor refuses the pair rather than ignoring the port, and it is right to:

@@ -75,6 +75,14 @@ var scenarios = map[string]StartMode{
 		Uplink:  "/dev/ttyS1:57600",
 		Dir:     "/var/lib/conflux/anchor",
 	},
+	// A userspace router: anchor forwards the subnet and serves the exit from its own
+	// process, with -tun=false and nothing on the host.
+	"proxy-routes": {
+		Taints:    []string{"brhk-2mq9-tzva-6pjs"},
+		Subnets:   []string{"192.168.1.0/24", "eth1"},
+		ServeExit: true,
+		Dir:       "/var/lib/conflux/anchor",
+	},
 	"proxy-ipv4": {
 		Taints:  []string{"brhk-2mq9-tzva-6pjs"},
 		Proxies: []string{"8080=127.0.0.1:3000"},

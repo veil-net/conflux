@@ -1,6 +1,8 @@
 package config
 
 import (
+	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -31,6 +33,8 @@ func TestExportRefusesWhatAnchordRefuses(t *testing.T) {
 			e.Enabled = false
 			e.ClientKey = &Secret{Inline: []byte("pem"), Path: "key.pem"}
 		}, "clientKey"},
+		"a certificate without its key": {func(e *Export) { e.ClientCert = &Secret{Path: "client.pem"} }, "go together"},
+		"a key without its certificate": {func(e *Export) { e.ClientKey = &Secret{Inline: []byte("pem")} }, "go together"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			e := good()
@@ -50,5 +54,66 @@ func TestExportRefusesWhatAnchordRefuses(t *testing.T) {
 	// Off is off: nothing but the file's own shape is checked.
 	if err := (&Export{Endpoint: "collector"}).Validate(); err != nil {
 		t.Errorf("a disabled block was refused for its endpoint: %v", err)
+	}
+
+	// anchord loads the client pair only over TLS.
+	half := good()
+	half.Insecure, half.ClientCert = true, &Secret{Path: "client.pem"}
+
+	if err := half.Validate(); err != nil {
+		t.Errorf("half a client pair was refused on a plaintext export, which never loads it: %v", err)
+	}
+}
+
+// TestExportReadsAsAnchordDoes: the block is read as protojson reads an ExportConfig,
+// so one pasted from an anchord config -- in either of its names, with its int64s as
+// strings -- means the same here, and a field anchord would refuse is refused rather
+// than dropped.
+func TestExportReadsAsAnchordDoes(t *testing.T) {
+	var e Export
+
+	err := json.Unmarshal([]byte(`{
+		"enabled": true, "endpoint": "collector:4317", "metrics": true,
+		"metricIntervalNanos": "60000000000", "export_timeout_nanos": 6e10,
+		"trace_sample_ratio": "0.25", "log_level": -4, "serviceName": null,
+		"ca_cert": {"inline": "-_8"}, "clientCert": {"path": "client.pem"}
+	}`), &e)
+	if err != nil {
+		t.Fatalf("anchord's own form was refused: %v", err)
+	}
+
+	want := Export{
+		Enabled: true, Endpoint: "collector:4317", Metrics: true,
+		MetricIntervalNanos: 60e9, ExportTimeoutNanos: 60e9, TraceSampleRatio: 0.25, LogLevel: -4,
+		CACert: &Secret{Inline: []byte{0xfb, 0xff}}, ClientCert: &Secret{Path: "client.pem"},
+	}
+
+	if !reflect.DeepEqual(e, want) {
+		t.Errorf("read %+v\nwant %+v", e, want)
+	}
+
+	// What conflux writes reads back the same.
+	b, _ := json.Marshal(want)
+
+	var again Export
+	if err := json.Unmarshal(b, &again); err != nil || !reflect.DeepEqual(again, want) {
+		t.Errorf("conflux's own rendering read back as %+v, %v", again, err)
+	}
+
+	for name, in := range map[string]string{
+		"an unknown field":            `{"endpiont": "collector:4317"}`,
+		"one field by both names":     `{"serviceName": "a", "service_name": "b"}`,
+		"one field twice":             `{"logs": true, "logs": false}`,
+		"a fraction for an int64":     `{"metricIntervalNanos": "1.5"}`,
+		"a padded number string":      `{"metricIntervalNanos": " 5"}`,
+		"a boolean for an int64":      `{"logLevel": true}`,
+		"an int64 past 64 bits":       `{"cardinalityLimit": "9223372036854775808"}`,
+		"a secret given two ways":     `{"caCert": {"inline": "cGVt", "path": "ca.pem"}}`,
+		"an unknown field in secret":  `{"caCert": {"file": "ca.pem"}}`,
+		"a ratio that is not a ratio": `{"traceSampleRatio": "NaN"}`,
+	} {
+		if err := json.Unmarshal([]byte(in), new(Export)); err == nil {
+			t.Errorf("%s was accepted: %s", name, in)
+		}
 	}
 }

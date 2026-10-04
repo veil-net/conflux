@@ -113,6 +113,7 @@ func BringUp(ctx context.Context, d paths.Dirs, ctl *anchorctl.Ctl, r Reporter) 
 	st.AnchorID = started.ID
 	st.IssuedAt, st.NotAfter = m.IssuedAt(), m.NotAfter()
 	st.BinSetID = ctl.SetID
+	st.AdminStoppedAt = time.Time{}
 
 	return started, nil
 }
@@ -165,13 +166,14 @@ func credential(
 	// rather than trusted from however long ago it was taken.
 	//
 	// Except a credential that names nowhere to renew it, which is asked nothing: it
-	// runs to its notAfter, and past that it is said once rather than retried.
+	// runs to its notAfter, and past that anchor will not build an anchor on it, so it is
+	// refused here for good rather than retried.
 	switch {
 	case !m.Renews():
 		if lapsed := time.Since(m.NotAfter()); lapsed > 0 {
-			r.Warn("the credential expired %s ago and names nowhere to renew it: %v\n"+
-				"  the anchor will start but no peer will accept it until it is replaced",
-				lapsed.Round(time.Minute), enrol.ErrDoesNotRenew)
+			return nil, nil, &permanentError{path: d.ManifestFile(), err: fmt.Errorf(
+				"the credential expired %s ago, and anchor will not start on an expired one: %w; "+
+					"it has to be replaced", lapsed.Round(time.Minute), enrol.ErrDoesNotRenew)}
 		}
 	case st.AnchorID != "" && (DueAt(m.IssuedAt(), m.NotAfter(), time.Now()) || st.ClockSkew > MaxSkew):
 		env = renewBeforeStart(ctx, d, st, client, m, env, r)
@@ -195,7 +197,8 @@ func credential(
 // address, and orphans every peer that had the old one -- and it is not needed,
 // because a renewal works after expiry: the alpha route asks only for the AnchorID,
 // and a guardian's for the bearer the manifest carries. So: try, say what happened,
-// and start with what we have.
+// and start with what we have -- which anchor refuses once it has expired, and the
+// restart loop brings this round again.
 func renewBeforeStart(
 	ctx context.Context,
 	d paths.Dirs,
@@ -219,7 +222,7 @@ func renewBeforeStart(
 			err, left.Round(time.Minute))
 	} else {
 		r.Warn("could not renew, and the credential expired %s ago: %v\n"+
-			"  the anchor will start but no peer will accept it until this succeeds",
+			"  anchor will not start on it, so conflux tries again until this succeeds",
 			time.Since(m.NotAfter()).Round(time.Minute), err)
 	}
 

@@ -62,8 +62,31 @@ func BenchmarkLinkCheck(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		if dead, _ := s.linkIsDead(ctx, "", &zeroSince); dead {
+		if dead, _, _ := s.linkIsDead(ctx, "", &zeroSince); dead {
 			b.Fatal("a link carrying a connection read as dead")
+		}
+	}
+
+	reportGoroutines(b, before)
+}
+
+// BenchmarkAnchorCheck is one tick of the watcher on the host's network: an anchorctl
+// status round trip and the parse that decides whether the daemon still holds an anchor.
+func BenchmarkAnchorCheck(b *testing.B) {
+	b.Setenv(fakeAnchorctlStatusEnv, "running")
+
+	s := &Supervisor{ctl: fakeCtl(b)}
+	ctx := context.Background()
+
+	var zeroSince time.Time
+
+	before := settledGoroutines()
+
+	b.ReportAllocs()
+
+	for b.Loop() {
+		if why, _ := s.lost(ctx, "", "", &zeroSince); why != "" {
+			b.Fatalf("an anchor that is running read as lost: %s", why)
 		}
 	}
 

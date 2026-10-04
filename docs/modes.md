@@ -22,7 +22,7 @@ Because the kernel owns the address, a service published on the overlay is an or
 
 ### Exits
 
-An interface is also what makes an exit possible, so both exit flags are `up`'s:
+Both exit flags work in either mode, on `up` and on `proxy`:
 
 ```console
 $ sudo conflux up --serve-exit      # be a way out to the public internet for the realm
@@ -36,15 +36,16 @@ rather than letting the enrolment manifest supply them, because an anchor that b
 an internet exit because a document said so is the worst kind of surprise. `--no-serve-exit`
 and `--no-use-exit` are the way back.
 
-Routing traffic out needs the host to be willing to forward it; see
+An exit with an interface forwards out of the host, which anchor sets up on Linux; see
 [`--subnet`, and what the host has to be](#--subnet-and-what-the-host-has-to-be),
-which has the same requirement for the same reason.
+which has the same requirement for the same reason. In userspace `--use-exit` covers only
+the anchor's own traffic, since nothing else on the host sees the overlay.
 
 ## Userspace — `conflux proxy`
 
 The overlay lives entirely inside the daemon, in a userspace network stack. Nothing on
 the host can see it, there is no interface, and no privilege is required to run it.
-The only way in is a reverse proxy you name:
+The way in is a reverse proxy you name:
 
 ```console
 $ sudo conflux proxy 8080=127.0.0.1:3000
@@ -57,25 +58,29 @@ does not resolve yet is legitimate.
 conflux still needs root to *register the boot service* — a proxy that vanishes on the
 next reboot is not what anyone asked for — but the anchor itself needs nothing.
 
-Neither exit is available here: an exit is traffic forwarded out of a host interface,
-and this mode has none. `conflux proxy` does not register the flags at all, rather
-than accepting them and refusing later.
+The way out is a subnet or an exit, which this mode serves too: a **userspace router**.
+Every connection a peer sends through it ends inside the anchor's own process, which
+dials the destination from an ordinary socket of its own, TCP and UDP, so the far end
+sees this host's address, as it would behind a translating router. Nothing on the host
+is set up and no privilege is needed for that either. With `--subnet` or `--serve-exit`
+the port specs may be left out:
+
+```console
+$ sudo conflux proxy --subnet 192.168.1.0/24 --serve-exit
+```
 
 An IPv4 works in both modes. Here the anchor's own stack holds it, so a peer reaches
 the published ports at it as well as at the overlay IPv6 address.
 
 ## Why they cannot be combined
 
-Two separate rules, both anchor's:
+A rule of anchor's, and a fact about it:
 
 **A reverse proxy needs userspace.** With a host interface the kernel owns the overlay
 address, so binding it is an ordinary `bind` and a proxy would be a second, redundant
 path to the same port. anchor refuses the combination rather than pick one.
 
-**A subnet and a served exit need a host interface.** There is nothing to forward
-out of in userspace.
-
-**And one daemon holds one anchor.** So even setting the rules aside, a machine is in
+**And one daemon holds one anchor.** So even setting the rule aside, a machine is in
 one mode at a time. The same sentence is why an anchor has one uplink or one socket
 and never both, though that is the medium and not the mode.
 
@@ -114,9 +119,10 @@ conflux: this machine was running in TUN mode with interface anchor0.
 ```
 
 The identity does not change. Only the mode does — along with what belonged to the
-other one. Switching to userspace clears the subnets and both exits; switching to TUN
-clears the proxy specs. Everything that is orthogonal to the mode — the IPv4, the
-taints, the uplink, the peers, the port, low latency — is kept.
+other one: switching to TUN clears the proxy specs, which only userspace serves.
+Everything else is kept — the subnets and exits, which either mode routes, and the IPv4,
+the taints, the uplink, the peers, the port and low latency. `--no-subnet`,
+`--no-serve-exit` and `--no-use-exit` are the way back from routing on either verb.
 
 ## Proxy specs
 
@@ -135,26 +141,27 @@ than silently keeping the last.
 
 ## `--subnet`, and what the host has to be
 
-`conflux up --subnet 192.168.1.0/24` offers to forward that network to the rest of the
-realm. An entry is an interface name or a prefix; an interface name expands to every
+`conflux up --subnet 192.168.1.0/24` — or the same on `conflux proxy` — offers to
+forward that network to the rest of the realm. An entry is an interface name or a prefix; an interface name expands to every
 private network on it, so `eth1` follows DHCP. Private networks only — RFC 1918,
 carrier-grade NAT `100.64.0.0/10` and unique local IPv6, each wholly inside one of
 those — because reaching the public internet through an anchor is what an exit is
 for. A prefix is the network, so `192.168.1.7/24` is refused with the `192.168.1.0/24`
 it meant.
 
-**anchor deliberately does not configure the host for this, and neither does conflux.**
-Forwarding a subnet also needs, on the host:
+**In userspace there is nothing to set up**: the anchor forwards from its own process.
 
-- `net.ipv4.ip_forward=1` (and the v6 equivalent, if you are forwarding v6)
-- a MASQUERADE rule narrowed to the overlay range
-- MSS clamping, written `--tcp-flags SYN,RST SYN` and **not** `--syn`, which clamps one
-  direction and fails identically to no clamping at all
-
-Neither conflux nor anchor checks or changes any of it: a wrapper that quietly enables
-IP forwarding on somebody's laptop is a worse program than one that leaves the host's
-routing to whoever owns the host. A subnet offered from a host that does not forward is
-advertised and carries nothing, so set these before `--subnet` or `--serve-exit`.
+**With an interface the host forwards, and on Linux anchor sets it up.** As the anchor
+starts it turns forwarding on, translates the realm's sources, clamps TCP's MSS and lets
+its interface past a firewall that drops forwarded traffic; as it stops it puts each back.
+That needs `nft` (on a kernel with NAT in the inet family, 5.2 or later) or `iptables`
+with `ipset` and `ip6tables`, and a writable `/proc/sys` — a container cannot write one, so
+start it with forwarding already on (`--sysctl net.ipv4.ip_forward=1 --sysctl
+net.ipv6.conf.all.forwarding=1`). A host that will not be set up stops the anchor with the
+reason, before anything is offered, and conflux gives up on it rather than retrying. On
+macOS, the BSDs and Windows anchor sets nothing up and names the commands for that host
+as it starts: forwarding, a NAT rule, and on macOS and the BSDs MSS clamping in
+`pf.conf`. conflux adds nothing to either.
 
 One thing to know before you type it: an entry that matches no private network the
 machine is actually attached to **stops the anchor** rather than being advertised on

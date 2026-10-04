@@ -48,7 +48,7 @@ jobs:
       # which is the intent: conflux ships the newest anchor, not a remembered one.
       - uses: ./.github/actions/anchor-bins
         with:
-          app-id: ${{ secrets.ANCHOR_APP_ID }}
+          client-id: ${{ secrets.ANCHOR_APP_CLIENT_ID }}
           private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
 
       # The tag is the VERSION file, verbatim: nothing is prepended, and the same string

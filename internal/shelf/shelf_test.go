@@ -11,7 +11,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -31,8 +33,28 @@ type fakeRelease struct {
 	// manifestJSON overrides the generated manifest, for the malformed cases.
 	manifestJSON string
 
+	// mu guards what the server records: Fetch downloads every binary at once, so the
+	// handlers that append run side by side.
+	mu       sync.Mutex
 	requests []string
 	tokens   []string
+}
+
+// record notes a request, from whichever handler goroutine served it.
+func (f *fakeRelease) record(r *http.Request) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.requests = append(f.requests, r.URL.Path)
+	f.tokens = append(f.tokens, r.Header.Get("Authorization"))
+}
+
+// seen is what the server recorded, copied under the lock.
+func (f *fakeRelease) seen() (requests, tokens []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return slices.Clone(f.requests), slices.Clone(f.tokens)
 }
 
 func newRelease(files map[string][]byte) *fakeRelease {
@@ -115,8 +137,7 @@ func (f *fakeRelease) serve(t *testing.T, pin string, version int) (*httptest.Se
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/repos/veil-net/anchor/releases/tags/", func(w http.ResponseWriter, r *http.Request) {
-		f.requests = append(f.requests, r.URL.Path)
-		f.tokens = append(f.tokens, r.Header.Get("Authorization"))
+		f.record(r)
 
 		tag := strings.TrimPrefix(r.URL.Path, "/repos/veil-net/anchor/releases/tags/")
 		if tag != f.tag {
@@ -153,8 +174,7 @@ func (f *fakeRelease) serve(t *testing.T, pin string, version int) (*httptest.Se
 	})
 
 	mux.HandleFunc("/repos/veil-net/anchor/releases/assets/", func(w http.ResponseWriter, r *http.Request) {
-		f.requests = append(f.requests, r.URL.Path)
-		f.tokens = append(f.tokens, r.Header.Get("Authorization"))
+		f.record(r)
 
 		var got int64
 		fmt.Sscanf(strings.TrimPrefix(r.URL.Path, "/repos/veil-net/anchor/releases/assets/"), "%d", &got)
@@ -252,7 +272,9 @@ func TestFetchKeepsAVerifiedCopy(t *testing.T) {
 
 	var downloads []string
 
-	for _, p := range f.requests {
+	requests, _ := f.seen()
+
+	for _, p := range requests {
 		if strings.Contains(p, "/releases/assets/") {
 			downloads = append(downloads, p)
 		}
@@ -279,13 +301,14 @@ func TestFetchSendsTheToken(t *testing.T) {
 		t.Fatalf("Fetch: %v", err)
 	}
 
-	if len(f.tokens) == 0 {
+	requests, tokens := f.seen()
+	if len(tokens) == 0 {
 		t.Fatal("no requests were made")
 	}
 
-	for i, got := range f.tokens {
+	for i, got := range tokens {
 		if got != "Bearer t0ken" {
-			t.Errorf("request %d (%s) carried Authorization %q", i, f.requests[i], got)
+			t.Errorf("request %d (%s) carried Authorization %q", i, requests[i], got)
 		}
 	}
 }

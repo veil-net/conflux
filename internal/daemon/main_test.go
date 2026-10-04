@@ -122,5 +122,9 @@ func fakeCtl(tb testing.TB) *anchorctl.Ctl {
 	tb.Helper()
 	tb.Setenv(fakeAnchorctlEnv, "1")
 
+	// A race-built binary waits a second at exit for other goroutines to report, and
+	// every stand-in is this binary: a second a fork, for a process with one goroutine.
+	tb.Setenv("GORACE", "atexit_sleep_ms=0")
+
 	return &anchorctl.Ctl{Bin: os.Args[0], Socket: "unused", Token: "unused"}
 }

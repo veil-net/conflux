@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -140,27 +141,36 @@ func TestWhatIsPermanent(t *testing.T) {
 // only when the gauge cannot be read.
 func TestALostAnchorIsSeen(t *testing.T) {
 	for name, tc := range map[string]struct {
-		uplink, status, failing string
-		admin                   bool
-		want                    string
+		status, failing string
+		uplink, admin   bool
+		want            string
 	}{
 		"an anchor running":                {status: "running"},
 		"no anchor":                        {status: "none", want: "anchord holds no anchor any more"},
 		"no anchor, after an admin's stop": {status: "none", admin: true, want: adminStopLine},
 		"a daemon that does not answer":    {},
-		"a link carrying something":        {uplink: "/dev/null", status: "none"},
-		"a link with no anchor behind it":  {uplink: "/dev/null", status: "none", failing: "metrics", want: "anchord holds no anchor any more"},
+		"a link carrying something":        {uplink: true, status: "none"},
+		"a link with no anchor behind it":  {uplink: true, status: "none", failing: "metrics", want: "anchord holds no anchor any more"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv(fakeAnchorctlStatusEnv, tc.status)
 			t.Setenv(fakeAnchorctlFailEnv, tc.failing)
+
+			// A device that is there: a file stands in for one on every platform.
+			var uplink string
+			if tc.uplink {
+				uplink = filepath.Join(t.TempDir(), "ttyUSB0")
+				if err := os.WriteFile(uplink, nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
 
 			s := &Supervisor{ctl: fakeCtl(t)}
 			s.adminStopped.Store(tc.admin)
 
 			var zeroSince time.Time
 
-			if got, link := s.lost(t.Context(), tc.uplink, devicePath(tc.uplink), &zeroSince); got != tc.want || link {
+			if got, link := s.lost(t.Context(), uplink, devicePath(uplink), &zeroSince); got != tc.want || link {
 				t.Errorf("lost() = %q, %v; want %q, false", got, link, tc.want)
 			}
 		})

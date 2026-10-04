@@ -114,6 +114,8 @@ func TestParseOverlayIPv4(t *testing.T) {
 		"0.0.0.0/8":          "unspecified",
 		" 10.128.0.7/24":     "surrounding space, which anchord does not trim",
 		"not an address":     "not an address",
+		"198.18.0.7/24":      "inside the translation pool, which anchor will not send from",
+		"198.19.255.1":       "inside the translation pool, bare",
 	} {
 		if got, err := ParseOverlayIPv4(in); err == nil {
 			t.Errorf("ParseOverlayIPv4(%q) = %v, want an error: %s", in, got, why)
@@ -122,7 +124,7 @@ func TestParseOverlayIPv4(t *testing.T) {
 }
 
 func TestValidateTaint(t *testing.T) {
-	for _, in := range []string{"prod", "t-9f3a1c04be77d2e5", "brhk-2mq9-tzva-6pjs", "a", "eu-west-1"} {
+	for _, in := range []string{"prod", "t-9f3a1c04be77d2e5", "brhk-2mq9-tzva-6pjs", "a", "eu-west-1", "zürich", "東京"} {
 		if err := ValidateTaint(in); err != nil {
 			t.Errorf("ValidateTaint(%q) = %v", in, err)
 		}
@@ -137,6 +139,10 @@ func TestValidateTaint(t *testing.T) {
 		"nul\x00":                "a NUL",
 		"del\x7f":                "a DEL",
 		string(make([]byte, 65)): "too long",
+		"prod\u00a0":             "a no-break space, which anchorctl would trim off",
+		"zero\u200bwidth":        "a zero-width space",
+		"c1\u0085":               "a C1 control character",
+		"bad\xff":                "a byte that is not UTF-8",
 	}
 
 	for in, why := range bad {
@@ -180,6 +186,8 @@ func TestValidateSubnet(t *testing.T) {
 		"fe80::/64":           "link-local IPv6",
 		"::ffff:0.0.0.0/8":    "an IPv4-mapped prefix wider than the mapped space",
 		"::ffff:10.0.0.0/104": "an IPv4 network written as IPv6, which anchor never finds attached",
+		"10.0.0.0/8,eth1":     "a comma, which -serve-subnets would split into two entries",
+		"10.0.0.0/33":         "a slash outside a prefix, which no interface name holds",
 	} {
 		if err := ValidateSubnet(in); err == nil {
 			t.Errorf("ValidateSubnet(%q) succeeded; it is %s", in, why)
@@ -212,6 +220,7 @@ func TestValidateAnchorID(t *testing.T) {
 		"realmaaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq",
 		"anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dyp1",  // 1 is not base32
 		"anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypqa", // one too long
+		"anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypr",  // q's bytes, with a padding bit set
 	} {
 		if err := ValidateAnchorID(in); err == nil {
 			t.Errorf("ValidateAnchorID(%q) succeeded", in)
@@ -301,10 +310,17 @@ func TestUplinkIsOrthogonalToMode(t *testing.T) {
 
 	proxy := &Config{
 		Mode: ModeProxy, Taints: []string{"office"},
-		Proxies: []string{"8080=127.0.0.1:3000"}, Uplink: "fd:3",
+		Proxies: []string{"8080=127.0.0.1:3000"}, Uplink: "/dev/ttyACM0",
 	}
 	if err := proxy.Validate(); err != nil {
 		t.Errorf("proxy mode with an uplink: %v", err)
+	}
+
+	// A descriptor is adopted from whatever starts anchord, and conflux's supervisor
+	// hands it none: refused before a daemon fails on it.
+	fd := &Config{Mode: ModeProxy, Taints: []string{"office"}, Proxies: proxy.Proxies, Uplink: "fd:3"}
+	if err := fd.Validate(); err == nil || !strings.Contains(err.Error(), "descriptor") {
+		t.Errorf("an uplink naming a descriptor: %v, want a refusal", err)
 	}
 
 	bad := &Config{Mode: ModeTUN, Taints: []string{"office"}, Uplink: ":115200"}

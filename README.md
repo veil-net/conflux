@@ -214,7 +214,7 @@ the other, and conflux says so when it does.
 | What the realm gets | this machine, at an overlay address | the named services, at overlay ports |
 | Privilege to run | root / `CAP_NET_ADMIN` / Administrator | root, only to register the boot service |
 | Needs `wintun.dll` on Windows | yes | no |
-| Can forward a subnet | yes, `--subnet` | no |
+| Can forward a subnet or serve an exit | yes, the host forwards | yes, from the anchor's own process |
 | Can run over an uplink | yes, `--uplink` | yes, `--uplink` |
 | Boot service | yes | yes |
 

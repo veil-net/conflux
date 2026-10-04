@@ -166,9 +166,11 @@ anchord's own output is prefixed `anchord:`, so the daemon's explanation of its 
 refusal is visible directly. The supervisor retries a failed start with a backoff up
 to thirty seconds — a `--subnet` whose interface is not up yet does come right — and
 gives up after three attempts on what no retry changes, so the unit shows as failed
-rather than looping: a configuration or a manifest conflux refuses, a credential for a
-realm tree other than the one these binaries are pinned to, and a TUN the host will
-not give (no capability or device, or the name held by another interface).
+rather than looping: a configuration or a manifest conflux refuses, a credential that
+has expired with nowhere to renew it, a credential for a realm tree other than the one
+these binaries are pinned to, a TUN the host will not give (no capability, device or
+IPv6, or the name held by another interface), a host that will not be set up to forward
+for the realm, and an argument vector anchorctl refuses outright.
 
 Where the logs are: `journalctl -u conflux -n 50` on Linux, `/var/log/conflux.log` on
 macOS and FreeBSD, `/var/log/daemon` on OpenBSD, and
@@ -185,8 +187,10 @@ right one for the machine.
 ```
 
 While the credential is still valid this is a warning: conflux retries every minute
-and there are days of budget. Once it says `EXPIRED`, the anchor is running but every
-handshake it attempts is refused.
+and there are days of budget. Once it says `EXPIRED`, a running anchor stays up but every
+handshake it attempts is refused, and a restarted one does not start at all — anchor
+will not build an anchor on an expired credential — so the supervisor keeps retrying,
+renewing first each time, until a renewal gets through.
 
 **It will recover on its own.** The renewal route works after expiry, so a machine that
 has been off for a month renews on its next launch and keeps its address. conflux will

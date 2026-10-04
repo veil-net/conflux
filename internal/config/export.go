@@ -1,9 +1,14 @@
 package config
 
 import (
+	"bytes"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"net"
+	"strconv"
 	"strings"
 )
 
@@ -18,6 +23,12 @@ import (
 // be pasted into an anchord config and back out again, and means anchor's own
 // documentation describes what an operator is looking at.
 //
+// **And it is read the way anchord reads it**: either of protojson's two names for a
+// field, an int64 as a number or as a string, bytes in either base64 alphabet, and an
+// unknown or repeated field refused rather than dropped -- see UnmarshalJSON. What
+// conflux writes back is the canonical form, camelCase with numbers, which protojson
+// reads as well.
+//
 // The cost is the nanosecond fields, which are anchor's names for durations and
 // are not what anyone would choose for a hand-edited file. That is the price of not
 // having two vocabularies for one thing, and it is worth saying out loud rather
@@ -29,9 +40,8 @@ import (
 // rendered anchord config beside it is too.
 type Export struct {
 	// Enabled false turns export off and ignores every other field. Always
-	// written, never omitted: the rendered file is what the daemon believes on
-	// every start, so "off" has to be something the file says rather than
-	// something it fails to mention.
+	// written, so a block that is off says so rather than leaving it to be
+	// inferred from a missing key.
 	Enabled bool `json:"enabled"`
 
 	// Endpoint is host:port of an OTLP/gRPC collector. Required when enabled.
@@ -155,5 +165,252 @@ func (e *Export) Validate() error {
 		return fmt.Errorf("export.traceSampleRatio is %v and is a fraction from 0 to 1", e.TraceSampleRatio)
 	}
 
+	// Only over TLS, which is the only place anchord loads the pair: half of one is mTLS
+	// half-written, and it refuses to start on it rather than connect without.
+	if !e.Insecure && e.ClientCert.given() != e.ClientKey.given() {
+		return errors.New("export.clientCert and export.clientKey go together: a certificate needs its key, and a key its certificate")
+	}
+
 	return nil
+}
+
+// given reports whether a Secret names any material at all.
+func (s *Secret) given() bool { return s != nil && (len(s.Inline) > 0 || s.Path != "") }
+
+// exportNames maps both of protojson's names for each ExportConfig field -- the JSON
+// name and the proto field name -- to the one conflux writes.
+var exportNames = protoNames(
+	"enabled", "endpoint", "insecure", "headers", "metrics", "traces", "logs",
+	"metricIntervalNanos", "traceSampleRatio", "serviceName", "resourceAttributes",
+	"exportTimeoutNanos", "shutdownTimeoutNanos", "caCert", "clientCert", "clientKey",
+	"logLevel", "cardinalityLimit")
+
+var secretNames = protoNames("inline", "path")
+
+// protoNames indexes each camelCase JSON name under itself and under the snake_case
+// proto field name it was derived from.
+func protoNames(jsonNames ...string) map[string]string {
+	out := make(map[string]string, 2*len(jsonNames))
+
+	for _, n := range jsonNames {
+		var snake strings.Builder
+
+		for _, r := range n {
+			if r >= 'A' && r <= 'Z' {
+				snake.WriteByte('_')
+				r += 'a' - 'A'
+			}
+
+			snake.WriteRune(r)
+		}
+
+		out[n], out[snake.String()] = n, n
+	}
+
+	return out
+}
+
+// UnmarshalJSON reads the block as protojson reads an ExportConfig, so a block anchord
+// takes conflux takes, and one anchord refuses conflux refuses here, naming the field,
+// rather than dropping what it does not recognise and rendering the rest.
+func (e *Export) UnmarshalJSON(b []byte) error {
+	fields, err := protoFields(b, exportNames)
+	if err != nil {
+		return fmt.Errorf("export: %w", err)
+	}
+
+	*e = Export{}
+
+	for name, raw := range fields {
+		var err error
+
+		switch name {
+		case "enabled":
+			err = json.Unmarshal(raw, &e.Enabled)
+		case "endpoint":
+			err = json.Unmarshal(raw, &e.Endpoint)
+		case "insecure":
+			err = json.Unmarshal(raw, &e.Insecure)
+		case "headers":
+			err = json.Unmarshal(raw, &e.Headers)
+		case "metrics":
+			err = json.Unmarshal(raw, &e.Metrics)
+		case "traces":
+			err = json.Unmarshal(raw, &e.Traces)
+		case "logs":
+			err = json.Unmarshal(raw, &e.Logs)
+		case "metricIntervalNanos":
+			e.MetricIntervalNanos, err = protoInt64(raw)
+		case "traceSampleRatio":
+			e.TraceSampleRatio, err = protoFloat(raw)
+		case "serviceName":
+			err = json.Unmarshal(raw, &e.ServiceName)
+		case "resourceAttributes":
+			err = json.Unmarshal(raw, &e.ResourceAttributes)
+		case "exportTimeoutNanos":
+			e.ExportTimeoutNanos, err = protoInt64(raw)
+		case "shutdownTimeoutNanos":
+			e.ShutdownTimeoutNanos, err = protoInt64(raw)
+		case "caCert":
+			err = json.Unmarshal(raw, &e.CACert)
+		case "clientCert":
+			err = json.Unmarshal(raw, &e.ClientCert)
+		case "clientKey":
+			err = json.Unmarshal(raw, &e.ClientKey)
+		case "logLevel":
+			e.LogLevel, err = protoInt64(raw)
+		case "cardinalityLimit":
+			e.CardinalityLimit, err = protoInt64(raw)
+		}
+
+		if err != nil {
+			return fmt.Errorf("export.%s: %w", name, err)
+		}
+	}
+
+	return nil
+}
+
+// UnmarshalJSON reads a Secret as protojson reads the oneof: one of its two fields, by
+// either name, with inline material in either base64 alphabet.
+func (s *Secret) UnmarshalJSON(b []byte) error {
+	fields, err := protoFields(b, secretNames)
+	if err != nil {
+		return err
+	}
+
+	if len(fields) > 1 {
+		return errors.New("gives both inline and path, and is one or the other")
+	}
+
+	*s = Secret{}
+
+	if raw, ok := fields["inline"]; ok {
+		s.Inline, err = protoBytes(raw)
+	}
+
+	if raw, ok := fields["path"]; ok {
+		err = json.Unmarshal(raw, &s.Path)
+	}
+
+	return err
+}
+
+// protoFields reads a JSON object's fields under the names given, refusing one that is
+// not among them and one given twice, under either name. A null field is left out, as
+// protojson leaves it unset.
+func protoFields(b []byte, names map[string]string) (map[string]json.RawMessage, error) {
+	dec := json.NewDecoder(bytes.NewReader(b))
+
+	tok, err := dec.Token()
+	if err != nil {
+		return nil, err
+	}
+
+	fields := map[string]json.RawMessage{}
+
+	if tok == nil {
+		return fields, nil
+	}
+
+	if tok != json.Delim('{') {
+		return nil, fmt.Errorf("want an object, got %s", b)
+	}
+
+	seen := map[string]bool{}
+
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return nil, err
+		}
+
+		key, _ := tok.(string)
+
+		var raw json.RawMessage
+		if err := dec.Decode(&raw); err != nil {
+			return nil, err
+		}
+
+		name, ok := names[key]
+
+		switch {
+		case !ok:
+			return nil, fmt.Errorf("%q is not a field anchord knows", key)
+		case seen[name]:
+			return nil, fmt.Errorf("%q is given twice", name)
+		}
+
+		seen[name] = true
+
+		if string(raw) != "null" {
+			fields[name] = raw
+		}
+	}
+
+	return fields, nil
+}
+
+// protoInt64 reads an int64 as protojson does: a number, or a string holding exactly
+// one, written with an exponent or without as long as the value is whole.
+func protoInt64(raw json.RawMessage) (int64, error) {
+	text, err := protoNumber(raw)
+	if err != nil {
+		return 0, err
+	}
+
+	r, ok := new(big.Rat).SetString(text)
+	if !ok || !r.IsInt() || !r.Num().IsInt64() {
+		return 0, fmt.Errorf("%s is not a whole number that fits in 64 bits", raw)
+	}
+
+	return r.Num().Int64(), nil
+}
+
+// protoFloat reads a double the same way. protojson also takes "NaN" and the
+// infinities, which no fraction is.
+func protoFloat(raw json.RawMessage) (float64, error) {
+	text, err := protoNumber(raw)
+	if err != nil {
+		return 0, err
+	}
+
+	return strconv.ParseFloat(text, 64)
+}
+
+// protoNumber is the JSON number a value holds, unquoted once if it came as a string,
+// and refused if what is left is anything but a number.
+func protoNumber(raw json.RawMessage) (string, error) {
+	text := string(raw)
+
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		text = s
+	}
+
+	var n json.Number
+	if text == strings.TrimSpace(text) && !strings.HasPrefix(text, `"`) && json.Unmarshal([]byte(text), &n) == nil {
+		return n.String(), nil
+	}
+
+	return "", fmt.Errorf("%s is not a number", raw)
+}
+
+// protoBytes reads bytes as protojson does: standard or URL-safe base64, padded or not.
+func protoBytes(raw json.RawMessage) ([]byte, error) {
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return nil, err
+	}
+
+	enc := base64.StdEncoding
+	if strings.ContainsAny(s, "-_") {
+		enc = base64.URLEncoding
+	}
+
+	if len(s)%4 != 0 {
+		enc = enc.WithPadding(base64.NoPadding)
+	}
+
+	return enc.DecodeString(s)
 }

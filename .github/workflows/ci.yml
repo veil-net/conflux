@@ -43,7 +43,7 @@ jobs:
 
       - uses: ./.github/actions/anchor-bins
         with:
-          app-id: ${{ secrets.ANCHOR_APP_ID }}
+          client-id: ${{ secrets.ANCHOR_APP_CLIENT_ID }}
           private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
 
       # The whole suite under -race, once, and none of it skipped. A skip is green, and
@@ -83,7 +83,7 @@ jobs:
       # Every pair, not only linux-amd64: `dist` builds every target, with the size gate.
       - uses: ./.github/actions/anchor-bins
         with:
-          app-id: ${{ secrets.ANCHOR_APP_ID }}
+          client-id: ${{ secrets.ANCHOR_APP_CLIENT_ID }}
           private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
 
       - name: what this runner gives the container suites
@@ -118,7 +118,7 @@ jobs:
 
       - uses: ./.github/actions/anchor-bins
         with:
-          app-id: ${{ secrets.ANCHOR_APP_ID }}
+          client-id: ${{ secrets.ANCHOR_APP_CLIENT_ID }}
           private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
           targets: ${{ matrix.pair }}
 

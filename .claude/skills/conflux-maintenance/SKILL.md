@@ -17,12 +17,12 @@ A run starts from a freshly pulled `version3`, works on a new branch, and ends w
 - **Pass-through:** everything `anchorctl` can do, conflux can do. Any command conflux doesn't recognise goes to `anchorctl` unchanged. Conflux commands never shadow an `anchorctl` command unintentionally.
 - **Embedded binaries:** exactly one pinned, garbled anchor pair (`anchord` + lockdown `anchorctl`) per build, selected by the build-tagged `anchor/bin_GOOS_GOARCH.go` files, each naming its two files explicitly. The binaries are not in git; `anchor/bin/` is populated by `make anchor-bins`. `anchoradmin` is never embedded, copied, or shipped. A placeholder build compiles, reports it carries no anchor pair, and is refused by the `dist` size gate.
 - **Targets:** exactly the Makefile's `TARGETS` (linux amd64/arm64, darwin arm64, windows amd64/arm64, freebsd amd64, openbsd amd64). `anchor-bins.sh` agrees with them.
-- **Two modes, mutually exclusive:** `conflux up` is TUN mode (host interface `anchor0`, exits via `--serve-exit`/`--use-exit`, subnets). `conflux proxy` is userspace reverse-proxy mode (no interface, no privilege; specs `OVERLAYPORT[/NETWORK]=BACKEND`, backend dialled fresh per connection). Running either replaces the other. Exits are passed explicitly, never taken from the manifest.
+- **Two modes, mutually exclusive:** `conflux up` is TUN mode (host interface `anchor0`). `conflux proxy` is userspace mode (no interface, no privilege; reverse-proxy specs `OVERLAYPORT[/NETWORK]=BACKEND`, backend dialled fresh per connection). Both take subnets and exits (`--serve-exit`/`--use-exit`): with an interface the host forwards, in userspace anchor's own process does. Running either replaces the other. Exits are passed explicitly, never taken from the manifest.
 - **Uplink:** `--uplink` picks the medium (e.g. a serial line) independently of the mode.
 - **Addresses:** IPv6 is derived from identity. IPv4 is asked once; a re-run never changes a machine's address.
 - **Taints:** always generated or given. Machines sharing a taint reach each other; others have no address for them.
 - **Two issuers:**
-  - Public alpha realm, served by traveller at `https://api.veilnet.com.au` (conflux's default API): anonymous stateless enrolment (`POST /ghosts/alpha`), unauthenticated renewal, seven-day window, no revocation.
+  - Public alpha realm, served by traveller at `https://api.veilnet.com.au` (conflux's default API): anonymous stateless enrolment (`POST /ghosts/alpha`), unauthenticated renewal, thirty-day window, no revocation.
   - Self-hosted guardian: operator-commissioned manifest installed by `conflux enrol --manifest FILE --api URL`, bearer-authenticated renewal against that guardian's own API, revocation by refusing to renew.
   - Renewal happens at two thirds of the observed window and never changes identity.
 - **Secrets on disk:** the manifest is the identity. It is written before anything else is done with an enrolment response, `0600` with the mode set on the descriptor, in a `0700` directory (a replaced DACL on Windows). Never in argv (stdin to `anchorctl start -manifest -`), never in a log (redacting `String`/`GoString`). Config writes are atomic.
@@ -31,7 +31,7 @@ A run starts from a freshly pulled `version3`, works on a new branch, and ends w
 - **Anchor relationship:** anchor is the source of truth for `anchorctl` commands and flags, daemon config and mode rules, manifest/credential format, taint and address rules, proxy spec rules, uplink rules, metrics names, release names, and the `shelf` release format. Conflux consumes it through the embedded binaries, `internal/anchorctl` (argv builders, output and metrics parsers, argv goldens, flag cross-check), `internal/config` (rules matching anchor's), `internal/enrol` (manifest decoding), `internal/shelf` and `anchor-fetch`, `anchor-bins.sh`, and the CI actions.
 - **Traveller relationship:** traveller is live in production at `https://api.veilnet.com.au`; that deployment is the source of truth for the enrolment, renewal, and guardian manifest/bearer HTTP contracts. The live OpenAPI schema (served at `/docs`) plus real calls to the anonymous alpha routes are the reference. No traveller checkout is needed.
 
-This context is authoritative. Docs describe the design but may be wrong: where code or docs disagree with it, fix them to match. If the right answer is unclear, flag it in the summary.
+This context is authoritative. Docs describe the design but may be wrong: where code or docs disagree with it, fix them to match. If the right answer is unclear, it is a design question (see Workflow).
 
 ## Rules (fixed; change only on the user's explicit instruction)
 
@@ -56,6 +56,8 @@ This context is authoritative. Docs describe the design but may be wrong: where 
 **Local vs CI:** the two never overlap.
 - **Locally, before every push:** the utility checks — formatting, lint, tidy, vulnerability scan, docs links, `actionlint`, `shellcheck` — which CI never runs. Besides them, only a package's tests while that package is being changed, and what no CI job covers: the probe node, the benchmarks and other baseline numbers, the golden review, and the bash 3.2 check.
 - **In CI, on the PR (step 9):** the actual code testing — `test`, `race`, `cross`, `dist` and its size gate, `service-test`, `integration`, the macOS and Windows suites, and their no-skip gates. None of it is run locally as well.
+
+**Design questions are asked when they arise, never saved for the summary.** Anything the Project Context, Rules, code and docs don't settle — a contradiction between them, a fix or breaking change with more than one reasonable shape, a change the Context or Rules would need — goes to the user with `AskUserQuestion` at that point, in plan mode too. Carry on with the work that doesn't depend on the answer, and fold it in before the PR. Defects in anchor or the live API are reports rather than questions: flag them in the summary.
 
 Shell variables used below (set them in each shell):
 
@@ -82,7 +84,7 @@ T=cfx-maint-$(head -c6 /dev/urandom | od -An -tx1 | tr -d ' \n')   # random tain
 2. Diff the live schema's alpha enrolment, alpha renewal and guardian manifest/bearer contracts (routes, methods, payloads, status codes, error shapes, window lengths) against `internal/enrol`, its `httptest` fixtures, `config.DefaultAPIBaseURL`, and `docs/credentials.md`, `docs/config.md`, `docs/commands.md`.
 3. Confirm the alpha flow for real with **one** anonymous enrolment. The checks are in [reference.md § Live API](reference.md#live-traveller-api). The enrolment response is a live identity: keep it only under `$S` and delete it at the end. The one renewal needs an AnchorID, which only a started anchor reports, so it happens as `conflux renew` on the step 3 probe node.
 4. Adapt code, tests, `httptest` fixtures, scripts, CI and docs to match. Adopt breaking changes directly. Regenerate argv goldens with `make golden`, then review `git diff internal/anchorctl/testdata/` so every change is intended.
-5. If anchor or the live API looks wrong, or contradicts the context above, don't work around it in conflux. Flag it.
+5. If anchor or the live API looks wrong, don't work around it in conflux; flag it. If either contradicts the context above, that is a design question.
 
 The checks that need the real binaries (flag cross-check, shadowing, collisions) are tests CI runs on the PR, with the shelf's binaries.
 
@@ -121,7 +123,7 @@ Record the before numbers with the commands in [reference.md § Baseline](refere
 
 ### 6. Audit and fix, area by area
 
-Work through the areas in [standards.md § Audit areas](standards.md#audit-areas) against the audit goals, performance rules, threat model, CI/CD rules and test rules in the same file. For each area, fix issues and apply optimizations and consolidation. Update docs, comments and affected tests in the same change, then run only the affected tests (`go test [-race] ./internal/<pkg>/…`). A change touching goroutine lifecycle, child-process supervision, renewal timing or the link watcher must pass its tests under `-race` now and CI's `integration` on the PR, with no leaked processes or goroutines.
+Work through the areas in [standards.md § Audit areas](standards.md#audit-areas) against the audit goals, performance rules, threat model, CI/CD rules and test rules in the same file. For each area, fix issues and apply optimizations and consolidation. Update docs, comments and affected tests in the same change, then run only the affected tests (`go test [-race] ./internal/<pkg>/…`). A change touching goroutine lifecycle, child-process supervision, renewal timing or the watcher must pass its tests under `-race` now and CI's `integration` on the PR, with no leaked processes or goroutines.
 
 ### 7. Final local checks
 
@@ -136,7 +138,7 @@ plus what no CI job runs: the `make golden` diff review, `docker run bash:3.2` o
 
 ### 8. Maintain this skill
 
-Check every file in `.claude/skills/conflux-maintenance/` against conflux, anchor and the live API as they now stand: Make targets, scripts and paths, the target list and binary names, CI job and action names, the anchor surface map and API routes, the invariants and audit areas, and the trigger description. Fix whatever is stale, missing or dead, including what this run changed. Keep SKILL.md concise. Don't edit the Project Context or Rules; propose changes to them in the summary. Commit skill updates on the same branch.
+Check every file in `.claude/skills/conflux-maintenance/` against conflux, anchor and the live API as they now stand: Make targets, scripts and paths, the target list and binary names, CI job and action names, the anchor surface map and API routes, the invariants and audit areas, and the trigger description. Fix whatever is stale, missing or dead, including what this run changed. Keep SKILL.md concise. The Project Context and Rules change only on the user's answer to a design question. Commit skill updates on the same branch.
 
 ### 9. Finish
 
@@ -158,5 +160,5 @@ Clean up: `docker rm -f cfx-probe`, `git -C "$A" worktree remove --force "$S/anc
 - dependencies held back for vulnerabilities, and non-critical dependency defects found
 - anchor and live API issues flagged, including whether the API was reachable
 - guardian flows that couldn't be exercised live
-- changes to this skill, and proposed changes to its Project Context or Rules
-- anything else that was unclear
+- changes to this skill, including any to its Project Context or Rules and the answer that allowed them
+- the design questions asked during the run, and how each was answered

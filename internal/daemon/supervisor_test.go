@@ -68,6 +68,11 @@ func TestShutdownAfterTheDaemonHasGone(t *testing.T) {
 
 	returns(t, "shutdown after the daemon exited", func() { s.shutdown(c) })
 
+	// Both streams, in the order anchord wrote them, the unfinished last line included.
+	if got, want := s.tail.String(), "  anchord: anchord starting\n  anchord: "+fakeAnchordLastWords; got != want {
+		t.Errorf("the tail reads\n%s\nwant\n%s", got, want)
+	}
+
 	// Nothing is asked of a daemon that is not there.
 	if b, _ := os.ReadFile(log); len(b) > 0 {
 		t.Errorf("shutdown ran anchorctl %q against a daemon that had exited", b)

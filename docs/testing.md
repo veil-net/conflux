@@ -19,7 +19,7 @@ a daemon or a network. Most of conflux can be.
 | Package | What is asserted |
 |---|---|
 | `anchor` | the embedded binaries are real executables of the right architecture, and `SetID` is stable |
-| `internal/config` | JSON round-trips, the tuning fields included; the mode rules match anchor's — a subnet and a served exit need an interface, an IPv4 and `useExit` do not, the two exits are alternatives, a port is refused beside an uplink; proxy specs, IPv4 addresses, subnets, AnchorIDs and taint names parse and refuse exactly as anchor does, and bootstrap entries by anchor's grammar (anchor skips a bad one with a warning, conflux refuses it); the export block refuses what anchord refuses at startup; atomic writes leave old-or-new and never a truncated file, and narrow a file that was `0644` |
+| `internal/config` | JSON round-trips, the tuning fields included; the mode rules match anchor's — a proxy needs userspace, a subnet, an exit and an IPv4 work in either mode, the two exits are alternatives, a port is refused beside an uplink; proxy specs, IPv4 addresses, subnets, AnchorIDs and taint names parse and refuse exactly as anchor does, and bootstrap entries by anchor's grammar (anchor skips a bad one with a warning, conflux refuses it), with conflux's own refusals of a comma in a list entry and of a descriptor uplink; the export block is read as protojson reads it and refuses what anchord refuses at startup; atomic writes leave old-or-new and never a truncated file, and narrow a file that was `0644` |
 | `internal/enrol` | the manifest decodes exactly as anchorctl reads it, refuses a realm manifest and a future format version, and **survives a renewal losslessly** |
 | `internal/enrol` (client) | against `httptest`: the alpha exchange byte for byte, the guardian bearer, 4xx and 5xx, an oversized body, a cross-host renewal URL and a downgrading redirect, a plain-http base, cancellation, and clock skew; and that an enrolment is handed back as it arrived, to be written before it is read |
 | `internal/taint` | generated names satisfy anchor's rule, avoid ambiguous glyphs, and do not repeat |
@@ -116,8 +116,8 @@ within a second — so A and B are started with `--peers 192.0.2.1:4700`, an RFC
 documentation address that never answers, in place of the realm's own list. The only way
 they can meet is then discovery on the bridge: their reachability proves it, and
 `make integration` asserts `anchor_lan_peers_found_total` is **non-zero** on one of them
-— non-zero and not merely present, because the series is created the first time it is
-written. Reachability is waited for in both directions, since each learns the other's
+— non-zero rather than present, because the assertion is that the probe found a peer,
+and a check for the name alone would pass on whatever else writes it. Reachability is waited for in both directions, since each learns the other's
 IPv4 from a signed advertisement and the two need not arrive together.
 
 The third node takes the other paths, and it is why the suite enrols three times:

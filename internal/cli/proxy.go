@@ -53,12 +53,6 @@ func runProxy(ctx context.Context, args []string) int {
 
 	specs = append(specs, f.fs.Args()...)
 
-	if len(specs) == 0 {
-		ui.Errf("no port specs given; conflux proxy needs at least one, like 8080=127.0.0.1:3000")
-
-		return ExitUsage
-	}
-
 	specsParsed, err := config.ValidateProxies(specs)
 	if err != nil {
 		return fail(err)
@@ -87,7 +81,7 @@ func runProxy(ctx context.Context, args []string) int {
 	}
 
 	// Before the warning below; see the same move in up.go.
-	if err := chooseTuning(cfg, typedFlags(f.fs), *f.port, *f.lanDisco, false); err != nil {
+	if err := chooseTuning(cfg, typedFlags(f.fs), *f.port, *f.lanDisco); err != nil {
 		return fail(err)
 	}
 
@@ -98,15 +92,25 @@ func runProxy(ctx context.Context, args []string) int {
 			"  the overlay address, so a service binds it directly and needs no proxy.",
 			interfaceLine(runtime.GOOS, cfg.TUNInterface()))
 
-		// What the interface was for goes with it: subnets and a served exit need one,
-		// and anchor refuses them without. The IPv4 is the machine's and stays.
-		cfg.Subnets = nil
-		cfg.ServeExit = false
-		cfg.UseExit = false
+		// What it routes stays, and so does the IPv4: in userspace the anchor forwards
+		// subnets and serves an exit from its own process.
 	}
 
 	cfg.Mode = config.ModeProxy
 	cfg.Proxies = parsed
+
+	if err := chooseSubnets(cfg, f.subnets, *f.noSubnet); err != nil {
+		return fail(err)
+	}
+
+	// Something to serve: a port, or a network or an exit to route for the realm. A
+	// machine offering none of them is an anchor with nothing to offer the realm.
+	if len(cfg.Proxies) == 0 && len(cfg.Subnets) == 0 && !cfg.ServeExit {
+		ui.Errf("no port specs given, and nothing else to serve: conflux proxy needs at least one,\n" +
+			"  like 8080=127.0.0.1:3000, or a --subnet or --serve-exit to route for the realm")
+
+		return ExitUsage
+	}
 
 	if *f.apiBase != "" {
 		cfg.APIBaseURL = *f.apiBase
@@ -137,10 +141,10 @@ func runProxy(ctx context.Context, args []string) int {
 type proxyFlags struct {
 	fs *flag.FlagSet
 
-	taints, peers                   repeated
-	ipv4, uplink, apiBase, lanDisco *string
-	noIPv4, noUplink, noPeers       *bool
-	port                            *uint
+	taints, peers, subnets              repeated
+	ipv4, uplink, apiBase, lanDisco     *string
+	noIPv4, noUplink, noPeers, noSubnet *bool
+	port                                *uint
 }
 
 func newProxyFlags() *proxyFlags {
@@ -154,28 +158,32 @@ func newProxyFlags() *proxyFlags {
 	f.uplink = fs.String("uplink", "", "carry the mesh over a link rather than the host network, e.g. /dev/ttyUSB0:115200")
 	f.noUplink = fs.Bool("no-uplink", false, "go back to the host's network on a machine configured for a link")
 	f.noPeers = fs.Bool("no-peers", false, "forget the bootstrap list and go back to the one enrolment supplies")
+	f.noSubnet = fs.Bool("no-subnet", false, subnetOffUsage)
 	f.apiBase = fs.String("api", "", "enrolment API base URL")
 	f.port = fs.Uint("port", 0, "UDP port to bind on every interface; omit to let the kernel pick one")
 	f.lanDisco = fs.String("lan-discovery", "auto",
 		"find peers on the networks this host is attached to: yes, no, or auto to let enrolment decide")
 
-	// Read through typedFlags rather than by value; see the same block in up.go. The
-	// two exit flags are absent on purpose: exits are what an interface is for, and
-	// this verb is the one without.
+	// Read through typedFlags rather than by value; see the same block in up.go.
 	fs.Bool("no-port", false, "go back to letting the kernel pick the port")
 	fs.Bool("low-latency", false, "carry frames on datagrams: no head-of-line blocking, and a lost frame stays lost")
 	fs.Bool("no-low-latency", false, "go back to carrying frames on streams")
+	registerExits(fs)
 
 	fs.Var(&f.taints, "taint", "compartment label; repeat to carry more than one")
+	fs.Var(&f.subnets, "subnet", subnetUsage)
 	fs.Var(&f.peers, "peers", "bootstrap entry as host:port; repeat for more. Enrolment supplies these, so this is an override")
 
 	fs.Usage = func() {
 		ui.Printf("conflux proxy — publish a local service on the overlay, without an interface\n\n" +
 			"  conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T] [--ipv4 ADDRESS | --no-ipv4]\n" +
+			"                [--subnet CIDR... | --no-subnet] [--serve-exit | --use-exit]\n" +
 			"                [--uplink DEV | --no-uplink] [--peers HOST:PORT | --no-peers]\n\n" +
 			"Runs the anchor entirely in userspace, so it needs no TUN device and no\n" +
-			"CAP_NET_ADMIN. Nothing on this host can see the overlay; the only way in is a\n" +
-			"service named here.\n\n" +
+			"CAP_NET_ADMIN. Nothing on this host can see the overlay: the way in is a\n" +
+			"service named here, and the way out a --subnet or --serve-exit, which the\n" +
+			"anchor forwards from its own process. With one of those, the port specs may\n" +
+			"be left out.\n\n" +
 			"With --uplink the realm is reached over a link rather than the host's network,\n" +
 			"which is the pair a machine with neither privilege nor an IP network needs.\n\n")
 		fs.PrintDefaults()

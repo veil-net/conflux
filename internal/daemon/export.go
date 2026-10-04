@@ -14,40 +14,20 @@ import (
 // conflux own the lifecycle. This file is the daemon's, and today it holds exactly
 // one thing.
 type daemonConfig struct {
-	Export *config.Export `json:"export"`
+	Export *config.Export `json:"export,omitempty"`
 }
 
-// writeDaemonConfig renders the export block for anchord, on every spawn.
+// writeDaemonConfig renders anchord's -config from conflux.json, on every spawn.
 //
-// **Written every time, including when there is nothing to export**, and that is
-// the precedence decision rather than an implementation detail. Three surfaces can
-// configure export and they disagree by design: this file, a SetExport call, and a
-// SIGHUP that re-reads the file and discards whatever the call did. Writing an
-// explicit `enabled: false` when conflux.json has no export block means a restart
-// always lands on what conflux.json says, so:
-//
-//   - a machine configured to export comes back exporting, which is the whole
-//     point -- an RPC-set export dies with the daemon and the only symptom is a
-//     machine quietly missing from a dashboard;
-//   - a machine configured not to export comes back not exporting, even if
-//     somebody turned it on by hand over the socket an hour ago.
-//
-// The second half is the part worth stating out loud, because it makes
-// `conflux anchorctl export -endpoint ...` a temporary override rather than a
-// setting. It lasts until the next restart or the next SIGHUP. `conflux status`
+// Every spawn, so the daemon starts on what conflux.json says -- and with no export
+// block when conflux.json names none, which anchord reads as export nothing, at start
+// and on the SIGHUP that re-reads the file. That makes `conflux anchorctl export
+// -endpoint ...`, a SetExport call held in the daemon's memory, a temporary override
+// rather than a setting: it lasts until the next restart or SIGHUP. `conflux status`
 // reports which surface the daemon is actually obeying, so an operator who is
-// surprised can see it rather than infer it. The durable way is this file.
-//
-// Leaving the field absent instead would have been quieter and wrong: anchord would
-// then apply nothing, and a daemon restarting after an RPC-set export would keep
-// exporting to an endpoint no file on this machine records.
+// surprised can see it rather than infer it. The durable way is conflux.json.
 func writeDaemonConfig(d paths.Dirs, cfg *config.Config) error {
-	export := cfg.Export
-	if export == nil {
-		export = &config.Export{Enabled: false}
-	}
-
-	b, err := json.MarshalIndent(daemonConfig{Export: export}, "", "  ")
+	b, err := json.MarshalIndent(daemonConfig{Export: cfg.Export}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("render the daemon config: %w", err)
 	}

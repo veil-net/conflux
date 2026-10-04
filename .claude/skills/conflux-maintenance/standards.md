@@ -21,7 +21,7 @@ Work through them in this order:
 2. `up`, `proxy`, `enrol`, `renew`, `status` and the lifecycle commands (`start`, `down`, `install`, `uninstall`, `serve`)
 3. Config, atomic writes, and secrets
 4. The enrolment and renewal client
-5. The daemon supervisor: bring-up, readiness, renewal, link watcher
+5. The daemon supervisor: bring-up, readiness, renewal, the watcher (a lost anchor, an ended link)
 6. anchorctl argv and parsers
 7. libexec extraction
 8. The embedded binary set and the shelf fetcher
@@ -36,7 +36,7 @@ Work through them in this order:
 ## Performance rules
 
 - **Performance over resource usage.** Never add caps, limits or throttling that trade performance for resources, and remove existing ones that do. The `dist` size gate is a correctness check, not a resource cap, and stays.
-- Copy and GC reductions are wanted only with no lifecycle errors or races. Any change touching goroutine lifecycle, child-process supervision, renewal timing or the link watcher must pass its affected tests under `-race`, plus CI's `integration` on the PR, with no leaked processes or goroutines at teardown.
+- Copy and GC reductions are wanted only with no lifecycle errors or races. Any change touching goroutine lifecycle, child-process supervision, renewal timing or the watcher must pass its affected tests under `-race`, plus CI's `integration` on the PR, with no leaked processes or goroutines at teardown.
 - Anchor's own tuning (stream vs datagram and so on) belongs to anchor. Conflux passes it through faithfully and never overrides it.
 
 ## CI/CD rules
@@ -96,7 +96,7 @@ Anchor is the reference for overlay behaviour, and the live API at `api.veilnet.
 - Every command and flag conflux emits exists in current anchor with the same meaning (argv goldens plus the flag cross-check against the real binary).
 - Every parsed output and metric name matches current anchor.
 
-**Config rules** (a proxy needs userspace; a subnet and a served exit need an interface, an IPv4 and `useExit` do not; the two exits are alternatives; no port or explicit LAN discovery beside an uplink, and there both are typed off so a manifest cannot supply them; taint, IPv4, subnet, bootstrap-entry and proxy-spec parsing; the export block anchord reads at startup) accept and refuse exactly what current anchor does, plus conflux's one rule of its own: a machine always carries a taint. A file conflux refuses is refused before anchord starts on it, and is permanent.
+**Config rules** (a proxy needs userspace; a subnet, an exit and an IPv4 work in either mode; the two exits are alternatives; no port or explicit LAN discovery beside an uplink, and there both are typed off so a manifest cannot supply them; taint, IPv4 (translation pool included), subnet, AnchorID, bootstrap-entry and proxy-spec parsing; the export block anchord reads at startup, read as protojson reads it) accept and refuse exactly what current anchor does, plus conflux's own rules: a machine always carries a taint, no list entry holds a comma, and an uplink is a device rather than a descriptor. A file conflux refuses is refused before anchord starts on it, and is permanent.
 
 **Manifest decoding** handles anchor's current format, refuses a realm manifest and a future version, and survives renewal losslessly.
 

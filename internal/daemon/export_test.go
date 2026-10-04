@@ -41,13 +41,11 @@ func TestAnchordIsStartedWithAConfig(t *testing.T) {
 	}
 }
 
-// TestTheConfigIsWrittenEvenWithNothingToExport pins the precedence decision.
-//
-// An absent export block is written as an explicit `enabled: false` rather than
-// left out, so that a restart lands on what conflux.json says in both directions.
-// Leaving it out would let a daemon restarting after an `anchorctl export` keep
-// exporting to an endpoint no file on this machine records.
-func TestTheConfigIsWrittenEvenWithNothingToExport(t *testing.T) {
+// TestTheConfigIsWrittenWithNothingToExport: the file is rendered on every start, and
+// with no export block when conflux.json names none, which anchord reads as export
+// nothing -- so a restart lands on conflux.json rather than on an export somebody set
+// over the socket.
+func TestTheConfigIsWrittenWithNothingToExport(t *testing.T) {
 	d := dirs(t)
 
 	if err := writeDaemonConfig(d, &config.Config{}); err != nil {
@@ -59,12 +57,8 @@ func TestTheConfigIsWrittenEvenWithNothingToExport(t *testing.T) {
 		t.Fatalf("the rendered config is not JSON: %v", err)
 	}
 
-	if got.Export == nil {
-		t.Fatal("the export block was left out; anchord would then apply nothing")
-	}
-
-	if got.Export.Enabled {
-		t.Error("enabled is true for a machine configured to export nothing")
+	if got.Export != nil {
+		t.Errorf("an export block was rendered for a machine configured to export nothing: %+v", got.Export)
 	}
 }
 

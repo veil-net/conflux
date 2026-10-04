@@ -83,6 +83,11 @@ arrival time is the start of the window the next two-thirds is taken of, so a ma
 that renews and reboots renews on the renewed credential's schedule, not the first
 one's.
 
+A renewed chain the running anchor will not take is a failed renewal, even though it
+is on disk: the next start runs on it, and until then the timer keeps to the schedule
+of the chain the anchor holds, so a renewal that was due is retried every minute, and
+`conflux status` names the install as what failed.
+
 ## Being offline past the expiry costs nothing but a call
 
 The renewal route is checked against nothing and gated on nothing: it takes an
@@ -103,7 +108,7 @@ Three states, three behaviours:
 | State | What conflux does |
 |---|---|
 | credential valid, renewal failed | warns with the time remaining, starts normally, retries every minute |
-| credential expired, renewal failed | starts, retries every minute for as long as it takes, and `conflux status` says `EXPIRED` and names the last error — the anchor is up but every handshake is refused, and reporting "running" would be describing the wrong thing |
+| credential expired, renewal failed | a running anchor stays up, with every handshake refused, and the timer retries every minute; a start is refused by anchor, which will not build an anchor on an expired credential, so the supervisor retries with a backoff up to thirty seconds, renewing first each time. Either way `conflux status` says `EXPIRED` and names the last error, because reporting "running" would be describing the wrong thing |
 | credential expired, renewal succeeded | nothing special; this is the ordinary long-offline case |
 
 ## Renewing by hand
@@ -286,15 +291,17 @@ What conflux does differently:
   out of. `--api` is taken as given if passed, and nothing is checked against it.
 - **An expired one is refused at enrol.** A credential that renews comes back from
   expiry on its first renewal. One that does not renew never comes back, and installing
-  it would also make it the identity `enrol` refuses to replace.
+  it would also make it the identity `enrol` refuses to replace. Past its expiry on a
+  machine already running, the next start is refused for good — anchor will not build an
+  anchor on it — and the unit shows as failed until it is replaced.
 - **Nothing asks to renew it.** A start does not call the API, the timer stops instead
   of retrying every minute, and `conflux renew` exits 69 naming the reason. None of this
   is recorded as a failing renewal, because nothing failed.
 - **`exit: true` is reported, not obeyed.** A beta node is commissioned as an exit.
   conflux passes `-serve-exit` itself on every start, so the machine serves one only
-  after `conflux up --serve-exit`. The host also needs what anchor deliberately does not
-  install: CAP_NET_ADMIN and /dev/net/tun, `net.ipv4.ip_forward=1`, a MASQUERADE limited
-  to the overlay range, and MSS clamping written `--tcp-flags SYN,RST SYN`.
+  after `conflux up --serve-exit` (or `conflux proxy --serve-exit`, which serves it from
+  the anchor's own process with nothing on the host). With an interface on Linux, anchor
+  sets the host up to forward as it starts; see [modes.md](modes.md).
 - **`listenPort` applies** unless `--port` says otherwise. traveller lists the node in
   every bootstrap list at that port, so leave it alone.
 

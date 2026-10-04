@@ -3,6 +3,7 @@
 package service
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"strings"
@@ -17,12 +18,27 @@ func unitName() string { return "conflux" + scope() + ".service" }
 
 func unitPath() string { return "/etc/systemd/system/" + unitName() }
 
+// wantsPath is the link `systemctl enable` makes for the unit's WantedBy=, and what
+// enabled means on disk.
+func wantsPath() string { return "/etc/systemd/system/multi-user.target.wants/" + unitName() }
+
 type systemd struct{}
 
 func newManager() (Manager, error) { return systemd{}, nil }
 
 func (s systemd) Install(exe string, args ...string) error {
-	if err := os.WriteFile(unitPath(), []byte(systemdUnit(exe, args)), 0o644); err != nil { //nolint:gosec // a unit file is world-readable by design
+	unit := []byte(systemdUnit(exe, args))
+
+	// Registered exactly so already, which is every re-run of up and proxy: a read and a
+	// stat, rather than a daemon-reload and an enable that would change nothing and cost
+	// most of what the restart that follows does.
+	if cur, err := os.ReadFile(unitPath()); err == nil && bytes.Equal(cur, unit) {
+		if _, err := os.Lstat(wantsPath()); err == nil {
+			return nil
+		}
+	}
+
+	if err := os.WriteFile(unitPath(), unit, 0o644); err != nil { //nolint:gosec // a unit file is world-readable by design
 		return fmt.Errorf("write %s: %w", unitPath(), err)
 	}
 

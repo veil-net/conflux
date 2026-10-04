@@ -59,6 +59,14 @@ func runStatus(ctx context.Context, args []string) int {
 	reportService()
 	reportConfig(cfg)
 	reportCredential(d, st)
+
+	// Why a running service holds no anchor, when the reason is somebody else's order:
+	// the supervisor leaves a killed anchor stopped, and only a start builds it again.
+	if st != nil && !st.AdminStoppedAt.IsZero() {
+		ui.Field("stopped", "by an admin credential at "+st.AdminStoppedAt.Format(time.RFC3339)+
+			"; conflux start builds it again")
+	}
+
 	reportBinaries(st)
 
 	ui.Field("api", cfg.APIBase())

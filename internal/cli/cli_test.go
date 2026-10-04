@@ -57,13 +57,10 @@ func TestNoUnintendedShadowing(t *testing.T) {
 
 	theirs := anchorctlCommands(t, tools.Anchorctl)
 
-	// The names conflux is knowingly taking. Every one is documented in help, and
-	// every one that shadows an anchorctl command explains the collision in its own
-	// error text.
-	known := map[string]bool{
-		"proxy": true, "status": true, "help": true, "renew": true,
-		"start": true, "stop": true, "restart": true,
-	}
+	// The verbs conflux is knowingly taking from anchorctl. Every one is documented in
+	// help and explains the collision in its own error text; help, which anchorctl's
+	// usage does not list, prints anchorctl's usage whole.
+	known := map[string]bool{"proxy": true, "status": true, "help": true, "renew": true, "start": true}
 
 	for name := range verbs() {
 		if theirs[name] && !known[name] {
@@ -287,6 +284,49 @@ func TestProxyKeepsItsOwnUplinkFlag(t *testing.T) {
 		if len(specs) != 1 || specs[0] != "8080=127.0.0.1:3000" {
 			t.Errorf("%v: positional args are %v, want just the port spec", args, specs)
 		}
+	}
+}
+
+// TestProxyRoutesInUserspace: proxy takes the routing settings up does -- in userspace
+// the anchor forwards a subnet and serves an exit from its own process -- and the
+// splitter knows which of them take a value, so a prefix is not read as a port spec.
+func TestProxyRoutesInUserspace(t *testing.T) {
+	for _, args := range [][]string{
+		{"--subnet", "10.0.0.0/24", "8080=127.0.0.1:3000"},
+		{"8080=127.0.0.1:3000", "--serve-exit", "--no-subnet"},
+		{"--use-exit", "--no-serve-exit", "8080=127.0.0.1:3000"},
+	} {
+		f := newProxyFlags()
+
+		if hint := f.unknown(args); hint != "" {
+			t.Errorf("%v: unknown said %q", args, hint)
+		}
+
+		if specs, _ := f.split(args); len(specs) != 1 || specs[0] != "8080=127.0.0.1:3000" {
+			t.Errorf("%v: positional args are %v, want just the port spec", args, specs)
+		}
+	}
+}
+
+// TestSubnetsAreKeptOrCleared: no flag keeps what is configured, as every re-run of
+// up and proxy does; --no-subnet is the way back, and the two together contradict.
+func TestSubnetsAreKeptOrCleared(t *testing.T) {
+	cfg := config.Config{Subnets: []string{"10.0.0.0/24"}}
+
+	if err := chooseSubnets(&cfg, nil, false); err != nil || len(cfg.Subnets) != 1 {
+		t.Errorf("no flag: subnets are %v (%v), want the configured one kept", cfg.Subnets, err)
+	}
+
+	if err := chooseSubnets(&cfg, []string{"eth1", "eth1"}, false); err != nil || len(cfg.Subnets) != 1 || cfg.Subnets[0] != "eth1" {
+		t.Errorf("--subnet eth1 twice: subnets are %v (%v)", cfg.Subnets, err)
+	}
+
+	if err := chooseSubnets(&cfg, nil, true); err != nil || len(cfg.Subnets) != 0 {
+		t.Errorf("--no-subnet: subnets are %v (%v)", cfg.Subnets, err)
+	}
+
+	if err := chooseSubnets(&cfg, []string{"eth1"}, true); err == nil {
+		t.Error("--subnet and --no-subnet were both accepted")
 	}
 }
 

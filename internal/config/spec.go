@@ -7,6 +7,8 @@ import (
 	"net/netip"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // MaxTaints and MaxTaintName mirror anchor's own limits (internal/realm/taint.go).
@@ -17,11 +19,12 @@ const (
 
 // ValidateTaint applies anchor's rule and one of conflux's own.
 //
-// Anchor's: 1..64 bytes, and no byte at or below 0x20 or equal to 0x7f -- so no
-// space and no control character. Conflux's addition is the comma, because the
-// anchorctl flag is a comma-separated list and a taint containing one would
-// silently become two compartments, which is the kind of mistake that presents as
-// "nothing can reach me" a week later.
+// Anchor's: 1..64 bytes of UTF-8 in which every character prints and none is a space,
+// in any script -- a no-break or zero-width space hides as well as an ASCII one, and
+// anchorctl would trim one off either end without saying so. Conflux's addition is the
+// comma, because the anchorctl flag is a comma-separated list and a taint containing
+// one would silently become two compartments, which is the kind of mistake that
+// presents as "nothing can reach me" a week later.
 func ValidateTaint(name string) error {
 	if name == "" {
 		return fmt.Errorf("taint is empty")
@@ -31,13 +34,17 @@ func ValidateTaint(name string) error {
 		return fmt.Errorf("taint %q is %d bytes and the limit is %d", name, len(name), MaxTaintName)
 	}
 
-	for i := range len(name) {
+	if !utf8.ValidString(name) {
+		return fmt.Errorf("taint %q is not UTF-8", name)
+	}
+
+	for _, r := range name {
 		switch {
-		case name[i] == ',':
+		case r == ',':
 			return fmt.Errorf(
 				"taint %q contains a comma, which would split it into two compartments; use --taint twice instead", name)
-		case name[i] <= 0x20 || name[i] == 0x7f:
-			return fmt.Errorf("taint %q contains a space or control character", name)
+		case unicode.IsSpace(r) || !unicode.IsGraphic(r):
+			return fmt.Errorf("taint %q has a space or a character that does not print, %U", name, r)
 		}
 	}
 
@@ -148,14 +155,19 @@ func ValidateProxies(specs []string) ([]ProxySpec, error) {
 	return out, nil
 }
 
+// translatePool is anchor's DefaultTranslatePool, where it answers the IPv4 peers it
+// translates for. An anchor refuses to send from inside it, which anchor's own Validate
+// does not catch and its New does, at every start.
+var translatePool = netip.MustParsePrefix("198.18.0.0/15")
+
 // ParseOverlayIPv4 reads this machine's IPv4 the way anchord does: an address, which
 // is a /32, or an address and the length of the range routed into the tunnel.
 //
 // Any unicast address a host could send from, another anchor's included: it never
 // reaches the overlay, which carries everything translated into IPv6 from the
 // identity's own address (anchor's docs/ipv4.md). Refused are the ones anchor refuses
-// -- not IPv4, not unicast, or a /0 that would route the whole IPv4 internet into
-// the tunnel.
+// -- not IPv4, not unicast, a /0 that would route the whole IPv4 internet into the
+// tunnel, or an address inside the translation pool.
 func ParseOverlayIPv4(s string) (netip.Prefix, error) {
 	p, err := netip.ParsePrefix(s)
 	if err != nil {
@@ -176,6 +188,9 @@ func ParseOverlayIPv4(s string) (netip.Prefix, error) {
 			"%s is not a unicast address a host sends from: loopback, link-local, multicast and broadcast are refused", s)
 	case p.Bits() == 0:
 		return netip.Prefix{}, fmt.Errorf("%s would route the whole IPv4 internet into the tunnel, which is what --use-exit is for", s)
+	case translatePool.Contains(p.Addr()):
+		return netip.Prefix{}, fmt.Errorf(
+			"%s is inside %s, where anchor answers the IPv4 peers it translates for, and it will not send from there", s, translatePool)
 	}
 
 	return p, nil
@@ -270,15 +285,19 @@ const SlowUplinkBaud = 19200
 // ValidatePeer applies anchor's bootstrap grammar, minus the resolving.
 //
 // Anchor's is discovery.ParseEntry: "host:port", or "anchorxxx@host:port" when the
-// anchor expected to answer is known. Naming it is optional -- the realm gate and
-// the certificate establish who answered regardless -- so it only buys an earlier
-// error.
+// anchor expected to answer is known. Naming it is optional -- the handshake
+// establishes who answered regardless -- and what it buys is that some other anchor
+// listening at that address says nothing.
 //
-// What this deliberately does not do is resolve the name. Anchor resolves once,
-// when it reads its configuration, and never again; doing it here as well would
-// make `conflux up` fail on a machine whose resolver is not up yet, for a peer the
-// anchor would have resolved perfectly well a second later. The shape is conflux's
-// to check, the address is anchor's.
+// Anchor skips an entry it cannot parse, with a warning nobody at the terminal sees;
+// refusing it here is conflux's choice, because a bootstrap list that silently lost an
+// entry is a machine that silently fails to join.
+//
+// What this deliberately does not do is resolve the name. Anchor resolves it again at
+// the start of every bootstrap round; doing it here as well would make `conflux up`
+// fail on a machine whose resolver is not up yet, for a peer the anchor would resolve
+// perfectly well a round later. The shape is conflux's to check, the address is
+// anchor's.
 //
 // The comma is refused for the same reason ValidateTaint refuses it: -peers is a
 // comma-separated flag, so a comma inside one entry silently becomes two.
@@ -337,14 +356,18 @@ const anchorIDPrefix = "anchor"
 
 var anchorIDEncoding = base32.NewEncoding("abcdefghijklmnopqrstuvwxyz234567").WithPadding(base32.NoPadding)
 
-// ValidateAnchorID accepts exactly what anchor's id.Parse does, case included.
+// ValidateAnchorID accepts exactly what anchor's id.Parse does, case included: one
+// spelling per identifier, so a last character setting bits past the 256 the payload
+// holds -- which the decoder alone ignores -- is refused.
 func ValidateAnchorID(s string) error {
 	if len(s) != len(anchorIDPrefix)+anchorIDEncoding.EncodedLen(32) ||
 		!strings.EqualFold(s[:len(anchorIDPrefix)], anchorIDPrefix) {
 		return fmt.Errorf("%q is not an AnchorID, which is \"anchor\" and 52 base32 characters", s)
 	}
 
-	if b, err := anchorIDEncoding.DecodeString(strings.ToLower(s[len(anchorIDPrefix):])); err != nil || len(b) != 32 {
+	payload := strings.ToLower(s[len(anchorIDPrefix):])
+
+	if b, err := anchorIDEncoding.DecodeString(payload); err != nil || len(b) != 32 || anchorIDEncoding.EncodeToString(b) != payload {
 		return fmt.Errorf("%q is not an AnchorID, which is \"anchor\" and 52 base32 characters", s)
 	}
 
@@ -370,9 +393,21 @@ var privateNetworks = []netip.Prefix{
 // off-by-one it is, and one that can never be attached as written: outside every
 // private range, or an IPv4 network spelled as IPv6, since anchor finds the host's
 // IPv4 networks as IPv4 and compares the entry as it is.
+//
+// A comma is refused as it is in a taint, since -serve-subnets is a comma-separated
+// flag, and so is a slash outside a prefix, since no interface name holds one.
 func ValidateSubnet(entry string) error {
+	if strings.Contains(entry, ",") {
+		return fmt.Errorf(
+			"subnet %q contains a comma, which would split it into two entries; use --subnet twice instead", entry)
+	}
+
 	p, err := netip.ParsePrefix(strings.TrimSpace(entry))
 	if err != nil {
+		if strings.Contains(entry, "/") {
+			return fmt.Errorf("subnet %q is neither a prefix nor an interface name: %v", entry, err)
+		}
+
 		return nil // an interface name
 	}
 

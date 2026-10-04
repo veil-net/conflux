@@ -14,11 +14,15 @@ import (
 // or anchord, so the paths that fork one are exercised with the fork in them and
 // without a real daemon behind it. fakeAnchordEnv is "1" for a daemon that dies at
 // once, and "serve" for one that runs until it is signalled. fakeAnchorctlLogEnv,
-// when set, names a file the stand-in anchorctl appends each command it ran to.
+// when set, names a file the stand-in anchorctl appends each command it ran to,
+// fakeAnchorctlFailEnv a command it refuses, and fakeAnchorctlStatusEnv what its
+// status says: "running", or "none" for a daemon holding no anchor.
 const (
-	fakeAnchorctlEnv    = "CONFLUX_TEST_FAKE_ANCHORCTL"
-	fakeAnchorctlLogEnv = "CONFLUX_TEST_FAKE_ANCHORCTL_LOG"
-	fakeAnchordEnv      = "CONFLUX_TEST_FAKE_ANCHORD"
+	fakeAnchorctlEnv       = "CONFLUX_TEST_FAKE_ANCHORCTL"
+	fakeAnchorctlLogEnv    = "CONFLUX_TEST_FAKE_ANCHORCTL_LOG"
+	fakeAnchorctlFailEnv   = "CONFLUX_TEST_FAKE_ANCHORCTL_FAIL"
+	fakeAnchorctlStatusEnv = "CONFLUX_TEST_FAKE_ANCHORCTL_STATUS"
+	fakeAnchordEnv         = "CONFLUX_TEST_FAKE_ANCHORD"
 )
 
 func TestMain(m *testing.M) {
@@ -64,16 +68,32 @@ func fakeAnchorctl(args []string) int {
 	}
 
 	switch args[0] {
+	case os.Getenv(fakeAnchorctlFailEnv):
+		fmt.Fprintln(os.Stderr, "refused")
+
+		return 1
 	case "metrics":
 		fmt.Print(fakeMetrics)
 	case "renew", "stop":
 		fmt.Println("ok")
+	case "status":
+		switch os.Getenv(fakeAnchorctlStatusEnv) {
+		case "running":
+			fmt.Println("anchor       " + fakeAnchorID)
+		case "none":
+			fmt.Println("no anchor is running")
+		default:
+			return 2
+		}
 	default:
 		return 2
 	}
 
 	return 0
 }
+
+// fakeAnchorID is the anchor the stand-in anchorctl reports running.
+const fakeAnchorID = "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq"
 
 // fakeAnchordLastWords is what the stand-in anchord says on its way out, with no
 // newline after the last of it: the line a failure report most needs is the one most
@@ -101,6 +121,10 @@ func fakeServingAnchord() int {
 func fakeCtl(tb testing.TB) *anchorctl.Ctl {
 	tb.Helper()
 	tb.Setenv(fakeAnchorctlEnv, "1")
+
+	// A race-built binary waits a second at exit for other goroutines to report, and
+	// every stand-in is this binary: a second a fork, for a process with one goroutine.
+	tb.Setenv("GORACE", "atexit_sleep_ms=0")
 
 	return &anchorctl.Ctl{Bin: os.Args[0], Socket: "unused", Token: "unused"}
 }

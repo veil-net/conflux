@@ -120,13 +120,11 @@ leaves a deployment behaving unlike its own configuration file:
 
 | Setting | Refused because |
 |---|---|
-| a listen address | the link is the medium; no socket is bound, so an address names nothing |
-| a port | the same reason: `conflux up --uplink … --port 4711` is refused here, naming both flags, rather than by a daemon at the next boot |
+| a port | the link is the medium and no socket is bound, so a port names nothing: `conflux up --uplink … --port 4711` is refused here, naming both flags, rather than by a daemon at the next boot |
 | port mapping | there is no gateway on a cable and no port to forward |
 | hole punching | a point-to-point link has no translator to punch through |
 
-conflux does not pass a listen address, and it does not ask for port mapping or hole
-punching either, which is exactly what lets `conflux up --uplink /dev/ttyUSB0` work
+conflux does not ask for port mapping or hole punching, which is exactly what lets `conflux up --uplink /dev/ttyUSB0` work
 without also passing two flags to turn off. `--port` is the one of these that *is* a
 conflux flag, so it is the one that can collide — and conflux refuses the pair itself,
 naming both flags, rather than letting anchor refuse it at the next boot.
@@ -171,10 +169,11 @@ is untouched, the identity is unchanged, nothing re-enrols, and the credential i
 renewed on the way through if it was due. Repeated failures back off from one second
 to thirty.
 
-The 90 seconds is not arbitrary: anchor redials an uplink at once and then on a
-backoff from two seconds, each attempt with a 45-second dial timeout, and a realm handshake on the slowest line conflux accepts
-takes about 25. A shorter grace would restart anchors that were about to come up on
-their own.
+The 90 seconds is not arbitrary: an anchor holding no connection redials its uplink at
+once and then every five seconds plus up to a second of jitter, each attempt with a
+45-second dial timeout, and a realm handshake on the slowest line conflux accepts takes
+about 25. A shorter grace would restart anchors that were about to come up on their
+own.
 
 `conflux status` reports the count, because the anchor's own uptime cannot — it resets
 on every reopen, so a machine losing its cable hourly otherwise looks like one that

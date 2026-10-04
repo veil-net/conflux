@@ -33,9 +33,9 @@ type Dirs struct {
 // Default is where this platform keeps them.
 //
 // CONFLUX_DIR overrides all four at once, rooting them in one directory. That is
-// what the tests use, and what lets someone run conflux without root at all --
-// with the standing caveat that a boot service registered against a directory only
-// one user can read is a boot service that will not start.
+// what the tests use, and what a second installation beside the machine's own is
+// rooted in, its boot service included; see Root. It changes where conflux keeps
+// things and not what it needs: the verbs that change anything still need root.
 func Default() Dirs {
 	if root := Root(); root != "" {
 		return Dirs{

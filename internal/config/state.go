@@ -26,9 +26,9 @@ type State struct {
 	// it is the half that does not change.
 	AnchorID string `json:"anchorId,omitempty"`
 
-	// IssuedAt and NotAfter bound the credential currently held. Both are mirrored
-	// from the manifest so the renewal timer needs no other state, and both are
-	// rewritten on every successful renewal.
+	// IssuedAt and NotAfter bound the credential the running anchor holds. Both are
+	// mirrored from the manifest so the renewal timer needs no other state, and both
+	// are rewritten at every start and every renewal the anchor installs.
 	IssuedAt time.Time `json:"issuedAt,omitzero"`
 	NotAfter time.Time `json:"notAfter,omitzero"`
 
@@ -60,6 +60,11 @@ type State struct {
 	// along -- the uptime resets, so nothing else would say.
 	LinkReopens    int       `json:"linkReopens,omitempty"`
 	LastLinkReopen time.Time `json:"lastLinkReopen,omitzero"`
+
+	// AdminStoppedAt is when a realm admin's kill order stopped the anchor, which the
+	// supervisor then leaves stopped; zero once an anchor has started since. Here so
+	// `conflux status` can say why a running service holds no anchor.
+	AdminStoppedAt time.Time `json:"adminStoppedAt,omitzero"`
 }
 
 // LoadState reads it. A missing file is an empty State and not an error: every

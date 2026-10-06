@@ -102,9 +102,10 @@ func BenchmarkRenewal(b *testing.B) {
 	chain := base64.StdEncoding.EncodeToString(make([]byte, 6<<10))
 
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]string{
-			"chain":    chain,
-			"notAfter": time.Now().Add(30 * 24 * time.Hour).UTC().Format(time.RFC3339),
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"chain":     chain,
+			"notAfter":  time.Now().Add(30 * 24 * time.Hour).UTC().Format(time.RFC3339),
+			"bootstrap": []string{"anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq@genesis.veilnet.com.au:4700", "api.veilnet.com.au:4700"},
 		})
 	}))
 	b.Cleanup(api.Close)
@@ -123,6 +124,7 @@ func BenchmarkRenewal(b *testing.B) {
 	doc, _ := json.Marshal(map[string]any{
 		"formatVersion": 1, "kind": "anchor", "identity": "00", "genesis": "00", "chain": chain,
 		"issuedAt": time.Now().UTC().Format(time.RFC3339), "notAfter": time.Now().UTC().Format(time.RFC3339),
+		"taints": []string{"bench"}, "bootstrap": []string{"genesis.veilnet.com.au:4700"},
 		"renewalUrl": api.URL + "/ghosts/alpha/renew", "renewalAuth": "anchor-id",
 	})
 

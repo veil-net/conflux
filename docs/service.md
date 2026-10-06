@@ -59,17 +59,20 @@ by then, is killed; see the Windows section. A daemon that has already died is a
 nothing: there is no anchor left to close, and its pid may belong to something else.
 
 A start that fails is retried with a backoff up to thirty seconds. One that no retry
-changes — a configuration conflux refuses, an expired credential with nowhere to renew
-it, a credential for another realm tree, a TUN the host will not give, a host that will
-not be set up to forward, an argument vector anchorctl refuses — stops the supervisor
-after three attempts with exit 70, and nothing to start at all is exit 78.
+changes — a configuration conflux refuses, taints the credential does not grant, an
+expired credential with nowhere to renew it, a credential for another realm tree, a TUN
+the host will not give, a host that will not be set up to forward, an argument vector
+anchorctl refuses — stops the supervisor after three attempts with exit 70, and nothing
+to start at all is exit 78. What each service manager does with those two is below.
 
 anchord can also lose its anchor without exiting, so the supervisor asks it every thirty
 seconds whether it still holds one (every ten, through the link watcher's gauge, on an
-uplink) and rebuilds it through the same bring-up when it does not — unless anchord said
-a realm admin's kill order stopped it. That one is left stopped, `conflux status` says
-`stopped  by an admin credential at …`, and `conflux start` or a reboot builds it again. What each service manager does with those two is
-below.
+uplink) and rebuilds it through the same bring-up when it does not. A blocked anchor is
+not one of these: a realm's block leaves it running, outside the realm, and rebuilding
+it would change nothing. A rebuild refused for good three times in a row — a
+`conflux.json` edited under a running service into one that will not build an anchor,
+say — makes the watcher give up and say so in the log: the service stays up holding no
+anchor, and renews nothing, until it is started again with `conflux start` or a reboot.
 
 ## One machine, one service — unless CONFLUX_DIR says otherwise
 

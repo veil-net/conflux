@@ -3,8 +3,6 @@ start
 -
 -dir
 /var/lib/conflux/anchor
--taints
-brhk-2mq9-tzva-6pjs
 -peers
 genesis.veilnet.com.au:4700
 -tun=true

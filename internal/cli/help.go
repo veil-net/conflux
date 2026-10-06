@@ -83,7 +83,10 @@ func runHelp(ctx context.Context, args []string) int {
 
 	ui.Printf("\n%s", collisions)
 	ui.Printf("\nAnything conflux does not recognise is passed to anchorctl unchanged:\n" +
-		"peers, routes, events, metrics, send, inspect, keygen and the rest.\n")
+		"peers, routes, events, metrics, send, inspect, keygen and the rest -- and the realm's\n" +
+		"control over its members: block, unblock, blocks, taints, subnets and telemetry,\n" +
+		"which act on another member and need a credential granting that power. An alpha\n" +
+		"credential grants none; a guardian may.\n")
 
 	printAnchorctlUsage(ctx)
 

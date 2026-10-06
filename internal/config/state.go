@@ -60,11 +60,6 @@ type State struct {
 	// along -- the uptime resets, so nothing else would say.
 	LinkReopens    int       `json:"linkReopens,omitempty"`
 	LastLinkReopen time.Time `json:"lastLinkReopen,omitzero"`
-
-	// AdminStoppedAt is when a realm admin's kill order stopped the anchor, which the
-	// supervisor then leaves stopped; zero once an anchor has started since. Here so
-	// `conflux status` can say why a running service holds no anchor.
-	AdminStoppedAt time.Time `json:"adminStoppedAt,omitzero"`
 }
 
 // LoadState reads it. A missing file is an empty State and not an error: every

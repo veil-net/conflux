@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -124,7 +125,9 @@ func TestParseOverlayIPv4(t *testing.T) {
 }
 
 func TestValidateTaint(t *testing.T) {
-	for _, in := range []string{"prod", "t-9f3a1c04be77d2e5", "brhk-2mq9-tzva-6pjs", "a", "eu-west-1", "zürich", "東京"} {
+	for _, in := range []string{
+		"prod", "t-9f3a1c04be77d2e5", "brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf", "a", "eu-west-1", "zürich", "東京",
+	} {
 		if err := ValidateTaint(in); err != nil {
 			t.Errorf("ValidateTaint(%q) = %v", in, err)
 		}
@@ -134,7 +137,10 @@ func TestValidateTaint(t *testing.T) {
 		"":                       "empty",
 		"has space":              "space",
 		"prod ":                  "trailing space, which would be a second compartment",
-		"a,b":                    "a comma, which the -taints list would split",
+		"a,b":                    "a comma, which reads as two compartments",
+		"a@b":                    "an '@', which binds a served network",
+		"a+b":                    "a '+', which joins a binding's compartments",
+		"@":                      "only an '@'",
 		"tab\there":              "a tab",
 		"nul\x00":                "a NUL",
 		"del\x7f":                "a DEL",
@@ -172,22 +178,32 @@ func TestValidateTaints(t *testing.T) {
 // TestValidateSubnet is what anchor refuses without looking at the host
 // (internal/hostnet.Select and IsPrivateNetwork).
 func TestValidateSubnet(t *testing.T) {
-	for _, in := range []string{"eth1", "192.168.1.0/24", "10.0.0.0/8", "172.20.0.0/16", "100.64.0.0/10", "fd12:3456::/64"} {
+	for _, in := range []string{
+		"eth1", "192.168.1.0/24", "10.0.0.0/8", "172.20.0.0/16", "100.64.0.0/10", "fd12:3456::/64",
+		"*", "eth1@office", "192.168.1.0/24@office+lab", "*@office", "eth@1@office",
+	} {
 		if err := ValidateSubnet(in); err != nil {
 			t.Errorf("ValidateSubnet(%q) = %v", in, err)
 		}
 	}
 
 	for in, why := range map[string]string{
-		"192.168.1.7/24":      "host bits set",
-		"10.0.0.0/7":          "a private first address and public space after it",
-		"203.0.113.0/24":      "public",
-		"169.254.0.0/16":      "link-local, which nobody routes to",
-		"fe80::/64":           "link-local IPv6",
-		"::ffff:0.0.0.0/8":    "an IPv4-mapped prefix wider than the mapped space",
-		"::ffff:10.0.0.0/104": "an IPv4 network written as IPv6, which anchor never finds attached",
-		"10.0.0.0/8,eth1":     "a comma, which -serve-subnets would split into two entries",
-		"10.0.0.0/33":         "a slash outside a prefix, which no interface name holds",
+		"192.168.1.7/24":                      "host bits set",
+		"10.0.0.0/7":                          "a private first address and public space after it",
+		"203.0.113.0/24":                      "public",
+		"169.254.0.0/16":                      "link-local, which nobody routes to",
+		"fe80::/64":                           "link-local IPv6",
+		"::ffff:0.0.0.0/8":                    "an IPv4-mapped prefix wider than the mapped space",
+		"::ffff:10.0.0.0/104":                 "an IPv4 network written as IPv6, which anchor never finds attached",
+		"10.0.0.0/8,eth1":                     "a comma, which -serve-subnets would split into two entries",
+		"10.0.0.0/33":                         "a slash outside a prefix, which no interface name holds",
+		"eth1@":                               "a binding to an empty compartment",
+		"@office":                             "a binding of nothing",
+		"eth1@a b":                            "a bound compartment with a space",
+		"eth1@a++b":                           "an empty compartment between two '+'",
+		"192.168.1.7/24@x":                    "host bits set, bound or not",
+		"*@":                                  "a binding to an empty compartment",
+		strings.Repeat("e", MaxSubnetEntry+1): "longer than anchor's entry",
 	} {
 		if err := ValidateSubnet(in); err == nil {
 			t.Errorf("ValidateSubnet(%q) succeeded; it is %s", in, why)
@@ -200,6 +216,43 @@ func TestValidateSubnet(t *testing.T) {
 
 	if err := ValidateSubnet("::ffff:10.0.0.0/104"); err == nil || !strings.Contains(err.Error(), "10.0.0.0/8") {
 		t.Errorf("a mapped IPv4 network should name how to write it, got %v", err)
+	}
+}
+
+// TestValidateSubnets is what anchor refuses of a whole list (served.go checkSubnetList
+// and checkBindings): its bounds, and a binding to a compartment the machine is not in.
+func TestValidateSubnets(t *testing.T) {
+	own := []string{"office", "lab"}
+
+	if err := ValidateSubnets([]string{"eth1@office", "*@office+lab", "10.0.0.0/8", "eth1@office"}, own); err != nil {
+		t.Errorf("a list bound to its own compartments was refused: %v", err)
+	}
+
+	many := make([]string, MaxSubnetEntries+1)
+	for i := range many {
+		many[i] = "eth1"
+	}
+
+	wide := make([]string, MaxBoundTaints+1)
+	for i := range wide {
+		wide[i] = fmt.Sprintf("t%d", i)
+	}
+
+	for name, tc := range map[string]struct {
+		entries, taints []string
+		says            string
+	}{
+		"too many entries":    {many, own, "at most"},
+		"bound elsewhere":     {[]string{"eth1@prod"}, own, "not in"},
+		"one of two missing":  {[]string{"eth1@office+prod"}, own, "not in"},
+		"bound with no taint": {[]string{"eth1@office"}, nil, "default compartment"},
+		"bound too widely":    {[]string{"*@" + strings.Join(wide, "+")}, wide, "compartments"},
+		"a bad entry":         {[]string{"eth1", "203.0.113.0/24"}, own, "private"},
+	} {
+		err := ValidateSubnets(tc.entries, tc.taints)
+		if err == nil || !strings.Contains(err.Error(), tc.says) {
+			t.Errorf("%s: got %v, want it to say %q", name, err, tc.says)
+		}
 	}
 }
 

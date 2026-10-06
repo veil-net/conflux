@@ -93,6 +93,11 @@ func (d Dirs) DaemonConfigFile() string { return filepath.Join(d.State, "anchord
 // that is exactly the case anchor's warning is about.
 func (d Dirs) AnchorDir() string { return filepath.Join(d.State, "anchor") }
 
+// SubnetsOrderFile is where the anchor keeps a list a member's Subnets order set, which it
+// serves in place of the configured one from every start until the file is removed
+// (anchor's served.go, subnetsFile).
+func (d Dirs) SubnetsOrderFile() string { return filepath.Join(d.AnchorDir(), "subnets.json") }
+
 // Libexec is where the embedded pair is extracted, one directory per content hash.
 func (d Dirs) Libexec() string { return filepath.Join(d.State, "bin") }
 

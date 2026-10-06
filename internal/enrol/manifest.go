@@ -1,11 +1,11 @@
 // Package enrol gets a credential and keeps it current.
 //
-// One call gets everything: POST /ghosts/alpha takes no body, needs no account,
-// and answers with a base64 anchor manifest carrying an identity, a realm root, a
-// credential chain, a bootstrap list and where to renew. Nothing is stored on the
-// server -- the response is the only copy in existence -- so the single most
-// important property of this package is that it enrols exactly once, when there is
-// no manifest on disk, and never as a fallback for anything.
+// One call gets everything: POST /ghosts/alpha takes the taints to put the anchor in,
+// needs no account, and answers with a base64 anchor manifest carrying an identity, a
+// realm root, a credential chain committing to those taints, a bootstrap list and
+// where to renew. Nothing is stored on the server -- the response is the only copy in
+// existence -- so the single most important property of this package is that it enrols
+// exactly once, when there is no manifest on disk, and never as a fallback for anything.
 //
 // The manifest format is anchor's (cmd/anchorctl/manifest.go, anchorManifest). An
 // issuer adds where to renew -- renewalUrl, and for a guardian renewalAuth and
@@ -18,6 +18,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/veil-net/conflux/internal/config"
@@ -37,8 +39,8 @@ const FormatVersion = 1
 // Manifest is a parsed envelope that has not forgotten anything.
 //
 // Held as raw JSON rather than a struct, and that is the load-bearing decision. The
-// document carries fields conflux has no opinion about -- genesis, telemetrySecret,
-// relay, realm, and whatever an issuer adds next -- and anchor reads most of them even
+// document carries fields conflux has no opinion about -- genesis, relay, realm, and
+// whatever an issuer adds next -- and anchor reads most of them even
 // though conflux does not. Round-tripping through a struct with only the known
 // fields would delete the rest on the first renewal, and the anchor would come back
 // after the next reboot without them.
@@ -121,10 +123,10 @@ func (m *Manifest) RenewalURL() string {
 	return s
 }
 
-// Taints are whatever the issuer put in the document. The alpha realm always sends
-// an empty list, and anchor's merge skips an empty list, so conflux's own -taints
-// flag decides in practice. Read only by `conflux enrol`, which seeds the
-// configuration from a guardian's.
+// Taints are the compartments the credential grants, as the issuer wrote them beside
+// it. The chain commits only to a digest of the set, so this is the one place the names
+// can be read; anchorctl starts the anchor under them (conflux types no -taints), and
+// every renewal restates them.
 func (m *Manifest) Taints() []string {
 	var out []string
 
@@ -133,6 +135,116 @@ func (m *Manifest) Taints() []string {
 	}
 
 	return out
+}
+
+// Alpha reports whether the document is a public alpha credential: one that renews,
+// with no bearer to renew it -- renewalAuth absent or "anchor-id", the rule Auth reads.
+// A guardian's carries "node-secret", and anchor's own format and a fixed-term node's
+// carry no renewal fields at all.
+func (m *Manifest) Alpha() bool {
+	scheme := m.RenewalAuth()
+
+	return m.Renews() && (scheme == "" || scheme == AuthAnchorID)
+}
+
+// CheckTaints refuses a machine whose configured taints are not the ones its
+// credential grants, which anchor would refuse to start anyway, with less to say.
+//
+// want empty means nothing was asked for, and adopts the grant. Sets are compared as
+// sets: anchor sorts and collapses the names before it derives anything from them.
+//
+// An alpha credential granting none is refused whatever is wanted. It is the realm's
+// shared compartment, which conflux never puts a machine in -- in practice an identity
+// enrolled before alpha granted taints, which no renewal can move.
+func (m *Manifest) CheckTaints(want []string) error {
+	granted := m.Taints()
+	commons := len(granted) == 0 && m.Alpha()
+
+	if !commons && (len(want) == 0 || sameSet(granted, want)) {
+		return nil
+	}
+
+	return &TaintsError{Granted: granted, Wanted: want, Alpha: m.Alpha()}
+}
+
+// TaintsError is a machine configured for compartments its credential does not grant.
+//
+// Permanent: a credential's taints never change, renewal restates them, and anchor
+// refuses a start under any others. The message says what does change them -- a new
+// identity, in the compartments wanted.
+type TaintsError struct {
+	Granted, Wanted []string
+
+	// Alpha is whether the credential came from the public alpha realm, which decides
+	// how a new one is drawn.
+	Alpha bool
+}
+
+func (e *TaintsError) Error() string {
+	var b strings.Builder
+
+	if len(e.Granted) == 0 {
+		b.WriteString("this machine's credential grants no taints")
+	} else {
+		fmt.Fprintf(&b, "this machine's credential grants %s", quoteTaints(e.Granted))
+	}
+
+	if len(e.Wanted) > 0 && !sameSet(e.Granted, e.Wanted) {
+		fmt.Fprintf(&b, ", and it is configured for %s", quoteTaints(e.Wanted))
+	}
+
+	b.WriteString(".\n")
+
+	if e.Alpha && len(e.Granted) == 0 {
+		b.WriteString("  It was enrolled before the alpha realm granted taints, so it sits in the realm's shared compartment.\n")
+	}
+
+	b.WriteString("  A credential's taints are its issuer's to grant and never change, so a different one is a new\n" +
+		"  identity -- a new AnchorID and a new overlay address:\n\n" +
+		"    conflux uninstall --yes\n")
+
+	if !e.Alpha {
+		b.WriteString("    conflux enrol --manifest FILE    (a credential its issuer granted in the taints you want)")
+
+		return b.String()
+	}
+
+	taints := "TAINT"
+	if len(e.Wanted) > 0 {
+		taints = strings.Join(e.Wanted, " --taint ")
+	}
+
+	fmt.Fprintf(&b, "    conflux up --taint %s        (or conflux proxy ... --taint %s)", taints, taints)
+
+	return b.String()
+}
+
+// quoteTaints renders a set for a message.
+func quoteTaints(names []string) string {
+	q := make([]string, len(names))
+	for i, n := range names {
+		q[i] = strconv.Quote(n)
+	}
+
+	if len(q) == 1 {
+		return "the taint " + q[0]
+	}
+
+	return "the taints " + strings.Join(q, ", ")
+}
+
+// sameSet reports whether two lists name the same set, repeats and order aside.
+func sameSet(a, b []string) bool {
+	in := func(set []string) map[string]bool {
+		m := make(map[string]bool, len(set))
+		for _, v := range set {
+			m[v] = true
+		}
+
+		return m
+	}
+
+	return maps.Equal(in(a), in(b))
 }
 
 // IPv4 is an overlay address the issuer allocated, as a prefix.
@@ -225,33 +337,41 @@ func (m *Manifest) Bootstrap() []string {
 	return out
 }
 
-// WithChain splices a renewed credential into the document: the chain, when it
-// expires, and when it was received, and nothing else.
+// WithRenewal splices a renewal into the document: the chain, when it expires, when it
+// was received, and the issuer's bootstrap list when the answer carried one -- and
+// nothing else. The taints stay: the renewal restated them.
 //
 // This has to happen on every successful renewal, not just the hot install into the
 // running anchor. `anchorctl renew` swaps the chain in memory; if the document on
 // disk still holds the old one, the next reboot starts from a stale chain -- and if
 // the machine was off for longer than the original window, from an expired one, at
-// a moment when nobody is watching.
+// a moment when nobody is watching. The bootstrap list reaches the anchor only this
+// way: renew carries a chain and nothing else, so the list is the next start's.
 //
 // issuedAt moves with the chain because the window is measured from it. Left at the
 // enrolment, every renewal would widen the window the next start divides, and the
 // credential would read as due ever earlier in its life.
 //
-// chain is the raw credential bytes. The API sends base64 and this stores base64,
+// r.Chain is the raw credential bytes. The API sends base64 and this stores base64,
 // but the file anchorctl -cred reads wants the raw bytes, so exactly one of the two
 // call sites decodes and it is not this one.
 //
 // The result is a copy, so a caller whose write of it fails still holds the
 // document the running anchor was started from.
-func (m *Manifest) WithChain(chain []byte, notAfter, issuedAt time.Time) (*Manifest, error) {
+func (m *Manifest) WithRenewal(r Renewal, issuedAt time.Time) (*Manifest, error) {
 	next := &Manifest{raw: maps.Clone(m.raw)}
 
-	for field, v := range map[string]string{
-		"chain":    base64.StdEncoding.EncodeToString(chain),
-		"notAfter": notAfter.UTC().Format(ManifestTime),
+	fields := map[string]any{
+		"chain":    base64.StdEncoding.EncodeToString(r.Chain),
+		"notAfter": r.NotAfter.UTC().Format(ManifestTime),
 		"issuedAt": issuedAt.UTC().Format(ManifestTime),
-	} {
+	}
+
+	if len(r.Bootstrap) > 0 {
+		fields["bootstrap"] = r.Bootstrap
+	}
+
+	for field, v := range fields {
 		b, err := json.Marshal(v)
 		if err != nil {
 			return nil, err

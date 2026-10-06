@@ -16,6 +16,9 @@ beneath it, and most of what follows is a way of reading that output.
 | `the anchor binaries … will not run` | `noexec`, or SELinux | see below |
 | `wintun.dll, and it could not be fetched` | Windows, offline | see [windows.md](windows.md) |
 | `taint … contains a comma` | a comma-separated list was passed to `--taint` | use `--taint` twice |
+| `taint … has '@'` (or `'+'`) | those bind a served network to compartments, `SUBNET@a+b`, so no taint may hold them | pick a name without them |
+| `this machine's credential grants …`, naming `conflux uninstall --yes` | `--taint` or `conflux.json` names a set the credential does not grant — or an alpha machine enrolled before the realm granted taints, whose credential grants none | a credential's taints never change: keep the ones it grants, or draw a new identity as the message says; see [credentials.md](credentials.md#taints-are-the-credentials) |
+| `… does not grant this anchor's taints`, from anchord | the manifest names taints its chain does not commit to: the issuer's mistake, which no retry changes, so the supervisor gives up | ask the issuer for a new credential |
 | `credential EXPIRED` in status | renewal has been failing | the next line names the error; see below |
 | `clock is … away from the server's` | bad clock | fix NTP first; nothing will connect until you do |
 | two machines up, cannot reach each other | almost always taints | see below |
@@ -87,10 +90,17 @@ s5g3oefl2s  fd80:c4b9:99ae:a015:58f1:5b6e:b140:5e8e  -           5a:f0:a9:da:4e:
 `DATA no` on a peer you expected to reach means taint separation, and it is working as
 designed. Two anchors exchange data only if one carries every taint the other does —
 so `{office,laptop}` and `{office,desktop}` cannot talk despite sharing `office`. Read
-the table in [concepts.md](concepts.md) and make the sets identical.
+the table in [concepts.md](concepts.md).
 
-`conflux status` prints this machine's taint. Compare it, character for character,
-with the other machine's.
+`conflux status` prints the taints this machine's credential grants. Compare them,
+character for character, with the other machine's. A credential's taints cannot be
+changed, so a machine enrolled in the wrong one needs a new identity:
+`conflux uninstall --yes`, then `conflux up --taint` with the right one. A member's
+Taints order may also have moved one of them, which `status` does not show.
+
+**`DATA no` on every peer** can also mean this machine is blocked: a block leaves the
+anchor running, outside the realm, and every member treats it as an outsider. `conflux blocks` on
+another member lists the blocks in force; see [commands.md](commands.md#realm-control).
 
 **If the peer is not listed at all**, the two are not seeing each other yet. Check that
 both have `peers` greater than zero — if one has none, it has not reached the
@@ -166,8 +176,9 @@ anchord's own output is prefixed `anchord:`, so the daemon's explanation of its 
 refusal is visible directly. The supervisor retries a failed start with a backoff up
 to thirty seconds — a `--subnet` whose interface is not up yet does come right — and
 gives up after three attempts on what no retry changes, so the unit shows as failed
-rather than looping: a configuration or a manifest conflux refuses, a credential that
-has expired with nowhere to renew it, a credential for a realm tree other than the one
+rather than looping: a configuration or a manifest conflux refuses — taints the
+credential does not grant among them — a credential that has expired with nowhere to
+renew it, a credential for a realm tree other than the one
 these binaries are pinned to, a TUN the host will not give (no capability, device or
 IPv6, or the name held by another interface), a host that will not be set up to forward
 for the realm, and an argument vector anchorctl refuses outright.
@@ -192,8 +203,10 @@ handshake it attempts is refused, and a restarted one does not start at all — 
 will not build an anchor on an expired credential — so the supervisor keeps retrying,
 renewing first each time, until a renewal gets through.
 
-**It will recover on its own.** The renewal route works after expiry, so a machine that
-has been off for a month renews on its next launch and keeps its address. conflux will
+**It will recover on its own.** The renewal route works after expiry — it asks for
+the AnchorID and the taints the manifest names, and a guardian's for the bearer the
+manifest carries as well — so a machine that has been off for a month renews on its next
+launch and keeps its address. conflux will
 never re-enrol to work around a failed renewal, because that would draw a new identity
 and orphan every peer — see [credentials.md](credentials.md).
 

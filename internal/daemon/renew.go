@@ -47,7 +47,9 @@ func renewStored(
 
 	client.Auth = auth
 
-	got, err := client.Renew(ctx, m.RenewalURL(), st.AnchorID)
+	// The manifest's taints and never conflux.json's: they are what the credential
+	// grants, and the running anchor refuses a chain granting any other set.
+	got, err := client.Renew(ctx, m.RenewalURL(), st.AnchorID, m.Taints())
 
 	if skew, measured := client.Skew(); measured {
 		st.ClockSkew = skew
@@ -57,7 +59,7 @@ func renewStored(
 		return fail(err)
 	}
 
-	next, err := m.WithChain(got.Chain, got.NotAfter, time.Now())
+	next, err := m.WithRenewal(got, time.Now())
 	if err != nil {
 		return fail(err)
 	}

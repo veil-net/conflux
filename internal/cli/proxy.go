@@ -128,11 +128,16 @@ func runProxy(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	if err := chooseTaints(cfg, f.taints); err != nil {
+	held, err := heldCredential(d)
+	if err != nil {
 		return fail(err)
 	}
 
-	return bring(ctx, d, cfg, "proxy")
+	if err := chooseTaints(cfg, f.taints, held); err != nil {
+		return fail(err)
+	}
+
+	return bring(ctx, d, cfg, "proxy", len(f.subnets) > 0 || *f.noSubnet)
 }
 
 // proxyFlags is conflux proxy's flag set, and the one list of what it takes: the
@@ -170,7 +175,7 @@ func newProxyFlags() *proxyFlags {
 	fs.Bool("no-low-latency", false, "go back to carrying frames on streams")
 	registerExits(fs)
 
-	fs.Var(&f.taints, "taint", "compartment label; repeat to carry more than one")
+	fs.Var(&f.taints, "taint", taintUsage)
 	fs.Var(&f.subnets, "subnet", subnetUsage)
 	fs.Var(&f.peers, "peers", "bootstrap entry as host:port; repeat for more. Enrolment supplies these, so this is an override")
 

@@ -8,7 +8,7 @@
 //     except to splice in a renewed chain.
 //
 // Splitting Config from State is not tidiness. The renewer rewrites NotAfter at
-// every renewal from the supervisor, and a CLI rewrites Taints from a terminal; one file
+// every renewal from the supervisor, and a CLI rewrites Subnets from a terminal; one file
 // would make those a lost update. Splitting the manifest out again is because it is
 // the only file with no second copy anywhere in the world.
 package config
@@ -60,10 +60,15 @@ type Config struct {
 	Version int  `json:"version"`
 	Mode    Mode `json:"mode"`
 
-	// Taints are the compartment labels this anchor carries. Never empty after up
-	// or proxy: an empty set is the realm's shared compartment, which every
-	// unconfigured anchor is in, so conflux mints one rather than leave a machine
-	// there by default.
+	// Taints are the compartments this machine is in, which its credential grants.
+	//
+	// Before enrolment they are the request: the alpha enrolment asks for exactly
+	// these, and conflux never asks for none, which is the realm's shared compartment.
+	// After it they mirror the grant, and every start checks them against the
+	// manifest's, refusing a machine whose two disagree: a credential's taints never
+	// change. Empty only for an issued credential that grants none, which is its own
+	// realm's default compartment. Never written from the running anchor, which a
+	// member's Taints order may have moved.
 	Taints []string `json:"taints"`
 
 	// IPv4 is this machine's IPv4 -- an address, or an address and the length of the
@@ -76,9 +81,13 @@ type Config struct {
 	// cannot be reached by IPv4. See OverlayIPv4.
 	IPv4 *string `json:"ipv4,omitempty"`
 
-	// Subnets are interface names or prefixes this anchor forwards for its realm.
-	// Either mode: with an interface the host forwards, and in userspace the anchor
-	// ends each connection and dials its destination from a socket of its own.
+	// Subnets are interface names, prefixes or * this anchor forwards for its realm,
+	// each optionally bound to some of its compartments as SPEC@a+b. Either mode: with
+	// an interface the host forwards, and in userspace the anchor ends each connection
+	// and dials its destination from a socket of its own.
+	//
+	// The list it starts with. A member's Subnets order replaces it until the next
+	// `up` or `proxy` that sets one: the last set is what is served.
 	Subnets []string `json:"subnets,omitempty"`
 
 	// Proxies are OVERLAYPORT[/NETWORK]=BACKEND specs. Userspace only -- with a
@@ -99,10 +108,10 @@ type Config struct {
 	// Peers is where to start looking for the realm: "host:port", or
 	// "anchorxxx@host:port" when the anchor expected to answer is known.
 	//
-	// Empty is the normal case and not a missing setting. The enrolment manifest
-	// carries its issuer's own bootstrap list, and anchorctl uses it for exactly
-	// the fields no flag named -- so passing nothing here is what lets the API
-	// move its bootstrap nodes without every machine needing reconfiguring. This
+	// Empty is the normal case and not a missing setting. The manifest carries its
+	// issuer's own bootstrap list, refreshed at every renewal, and anchorctl uses it
+	// for exactly the fields no flag named -- so passing nothing here is what lets the
+	// API move its bootstrap nodes without every machine needing reconfiguring. This
 	// is the override for pointing a machine at a realm the manifest does not
 	// know about, which in practice means testing.
 	Peers []string `json:"peers,omitempty"`
@@ -208,9 +217,10 @@ func (c *Config) APIBase() string {
 // Validate applies anchor's rules here, where the error can name the flag the user
 // typed, rather than letting them surface as an InvalidArgument from a child
 // process three layers down. It accepts and refuses what anchor does, and adds rules
-// of conflux's own, each where it is checked: a machine always carries a taint, no
-// list entry holds the comma anchorctl splits its flags on, and an uplink names a
-// device rather than a descriptor the supervisor never hands over.
+// of conflux's own, each where it is checked: no list entry holds the comma anchorctl
+// splits its flags on, and an uplink names a device rather than a descriptor the
+// supervisor never hands over. An empty taint set is not refused here: it is an issued
+// credential's grant, and asking alpha for it is refused where enrolment happens.
 func (c *Config) Validate() error {
 	switch c.Mode {
 	case ModeTUN:
@@ -234,10 +244,6 @@ func (c *Config) Validate() error {
 		return errors.New(
 			"serveExit and useExit are both set, and anchor refuses the pair: an exit sends the internet out of this host, " +
 				"and useExit sends this host's internet to an exit. Keep one, with --no-use-exit or --no-serve-exit")
-	}
-
-	if len(c.Taints) == 0 {
-		return fmt.Errorf("no taints: an anchor with none sits in the realm's shared compartment, which conflux never chooses silently")
 	}
 
 	if err := ValidateTaints(c.Taints); err != nil {
@@ -299,13 +305,7 @@ func (c *Config) Validate() error {
 		return err
 	}
 
-	for _, s := range c.Subnets {
-		if err := ValidateSubnet(s); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return ValidateSubnets(c.Subnets, c.Taints)
 }
 
 // Load reads the operator's intent. A missing file is fs.ErrNotExist and means

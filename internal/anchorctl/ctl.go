@@ -125,8 +125,8 @@ func (c *Ctl) Metric(ctx context.Context, name string) (float64, bool, error) {
 }
 
 // Status asks what is running. A daemon that is up with no anchor in it is not an
-// error: it is a daemon between starts, or one whose anchor an admin's kill order or
-// its own end took away, which the supervisor's watcher asks this to find out.
+// error: it is a daemon between starts, or one whose anchor closed on its own, which
+// the supervisor's watcher asks this to find out.
 func (c *Ctl) Status(ctx context.Context) (Status, error) {
 	out, err := c.run(ctx, nil, StatusArgs()...)
 	if err != nil {

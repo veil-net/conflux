@@ -52,13 +52,16 @@ machine's identity and needs no answer.
 
 Minted a taint for this network:
 
-    brhk-2mq9-tzva-6pjs
+    brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf
 
-Share it. Any machine that runs
+This machine's credential is issued in it, for the life of its identity. Share it:
+any machine that runs
 
-    conflux up --taint brhk-2mq9-tzva-6pjs
+    conflux up --taint brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf
 
-joins this network and nothing else.
+is issued a credential in it too, and joins this network and nothing else. Anybody
+may ask for any name, so a taint is as private as it is hard to guess: keep it to
+the machines meant to join.
 
 Starting.
 
@@ -66,25 +69,27 @@ Starting.
   overlay      fd80:c4b9:99ae:4411:c531:fd4f:754f:f08a/48
   ipv4         10.128.0.1/24
   interface    anchor0
-  taint        brhk-2mq9-tzva-6pjs
+  taint        brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf
   credential   valid until 2026-10-06T06:35:43Z (29d 23h)
   service      active (systemd: conflux.service, enabled at boot)
 ```
 
 There's no account to create and no key to manage — `up` enrols this machine against
-the public realm, starts an anchor, writes the configuration, and registers the boot
-service.
+the public realm in the taint it minted, starts an anchor, writes the configuration,
+and registers the boot service.
 
 ### 3. Bring up every other machine
 
 Give each one the taint from step 2 and its own address:
 
 ```console
-$ sudo conflux up --taint brhk-2mq9-tzva-6pjs --ipv4 10.128.0.2/24
+$ sudo conflux up --taint brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf --ipv4 10.128.0.2/24
 ```
 
 Passing `--taint` and `--ipv4` on the command line answers the prompt in advance, so
-this is safe to run from a provisioning script.
+this is safe to run from a provisioning script. The taint is what the machine's
+enrolment asks for, so it counts the first time: once a machine holds a credential its
+taints are fixed, and a later `--taint` may only repeat them.
 
 ### 4. Check that it worked
 
@@ -149,11 +154,11 @@ bound at all. Point each end of a cable at its device, and the two machines shar
 realm with no IP network between them:
 
 ```console
-$ sudo conflux up --uplink /dev/ttyUSB0:115200 --taint brhk-2mq9-tzva-6pjs --no-ipv4
+$ sudo conflux up --uplink /dev/ttyUSB0:115200 --taint brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf --no-ipv4
   anchor       anchor6btpa3gn6w4stipba4hekzho7caw6srfyy5puvbz7mfanaiept5a
   uplink       /dev/ttyUSB0:115200 — no socket bound, no address advertised
   interface    anchor0
-  taint        brhk-2mq9-tzva-6pjs
+  taint        brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf
   service      active (systemd: conflux.service, enabled at boot)
 ```
 
@@ -185,7 +190,7 @@ duty-cycled radios can't reach it at all rather than just being slow.
 See [uplink.md](docs/uplink.md) for the device forms, what an uplink refuses beside
 it, and the limits it still has.
 
-### Three things worth knowing
+### Four things worth knowing
 
 **The prompt appears once.** conflux asks for an IPv4 because thirty-two bits are
 too few to derive without collisions; the IPv6 address comes from the machine's
@@ -194,12 +199,19 @@ remembers it. A second `conflux up` reads the existing configuration and prompts
 nothing — conflux will never change a machine's address just because a command got
 run again.
 
-**The taint decides who can reach you.** conflux always generates one, because the
-alternative isn't "no restriction" — an anchor with no taints sits in the realm's
-default compartment, the same one every other unconfigured anchor sits in. Machines
-with the same taint can exchange data; machines with different ones aren't merely
-unreachable, they have no address for each other at all. With more than one taint
-the rule is containment, not overlap — see [concepts.md](docs/concepts.md).
+**The taint decides who can reach you.** conflux generates one for the first machine
+of a network, because the alternative isn't "no restriction" — an anchor with no
+taints sits in the realm's default compartment, the same one every other unconfigured
+anchor sits in. Machines with the same taint can exchange data; machines with
+different ones aren't merely unreachable, they have no address for each other at all.
+With more than one taint the rule is containment, not overlap — see
+[concepts.md](docs/concepts.md).
+
+**The taint is granted, and fixed for the life of the identity.** The enrolment asks
+for it, the credential that comes back commits to it, and a renewal restates it. A
+different taint is a different identity — `conflux uninstall --yes`, then
+`conflux up --taint` — with a new AnchorID and a new overlay address. See
+[credentials.md](docs/credentials.md#taints-are-the-credentials).
 
 **`up` and `proxy` are exclusive.** One daemon holds one anchor, and an anchor with a
 host interface can't also serve a reverse proxy — the kernel owns the overlay address
@@ -230,7 +242,7 @@ reaches the realm over — the host's IP network by default, or a link named by
 |---|---|
 | `conflux up [--taint T] [--ipv4 ADDRESS \| --no-ipv4] [--subnet CIDR]... [--uplink DEV \| --no-uplink] [--peers HOST:PORT] [--lan-discovery yes\|no\|auto]` | enrol if needed, start in TUN mode, register the boot service |
 | `conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T] [--ipv4 ADDRESS \| --no-ipv4] [--uplink DEV] [--peers HOST:PORT] [--lan-discovery yes\|no\|auto]` | enrol if needed, start in userspace mode serving those backends |
-| `conflux enrol --manifest FILE [--api URL] [--ipv4 ADDRESS] [--taint T]...` | install a credential this machine was given, instead of drawing one |
+| `conflux enrol --manifest FILE [--api URL] [--ipv4 ADDRESS]` | install a credential this machine was given, instead of drawing one |
 | `conflux down` | stop the anchor now; the boot service and the configuration stay |
 | `conflux start` | start it again now, from the configuration already on disk |
 | `conflux renew` | fetch a fresh credential and install it on the running anchor, hot |
@@ -239,7 +251,7 @@ reaches the realm over — the host's IP network by default, or a link named by
 | `conflux uninstall` | remove the boot service, the configuration and the identity |
 | `conflux version` | conflux's version, and the anchor build it carries |
 | `conflux anchorctl ARGS...` | run the embedded `anchorctl`, uninterpreted |
-| *anything else* | passed to `anchorctl` unchanged: `peers`, `routes`, `events`, `metrics`, `send`, `inspect`, … |
+| *anything else* | passed to `anchorctl` unchanged: `peers`, `routes`, `events`, `metrics`, `send`, `inspect`, … and the realm's control over its members, `block`, `taints`, `subnets`, `telemetry` |
 
 **A closed set of names is conflux's; everything else is anchorctl's.** Four of them
 shadow a command anchorctl already has, and each collision is resolved rather than

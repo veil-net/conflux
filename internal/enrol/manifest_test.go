@@ -4,14 +4,19 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/veil-net/conflux/internal/config"
 )
 
-// alphaDocument is the shape POST /ghosts/alpha returns, field for field and in the
-// order the live API sends them. The key material is made up.
+// alphaTaint is the taint alphaDocument was enrolled in.
+const alphaTaint = "brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf"
+
+// alphaDocument is the shape POST /ghosts/alpha returns for {"taints": [alphaTaint]},
+// field for field and in the order the live API sends them. The key material is made up.
 const alphaDocument = `{
   "formatVersion": 1,
   "kind": "anchor",
@@ -20,7 +25,7 @@ const alphaDocument = `{
   "identity": "aabbccddeeff00112233445566778899",
   "chain": "Y2hhaW4tdmVyc2lvbi1vbmU=",
   "notAfter": "2026-10-06T04:12:00.000Z",
-  "taints": [],
+  "taints": ["brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf"],
   "useExit": false,
   "bootstrap": ["genesis.veilnet.com.au:4700"],
   "renewalUrl": "https://api.veilnet.com.au/ghosts/alpha/renew",
@@ -52,8 +57,12 @@ func TestDecodeAlpha(t *testing.T) {
 		t.Errorf("RenewalURL() = %q, want %q", got, want)
 	}
 
-	if got := m.Taints(); len(got) != 0 {
-		t.Errorf("Taints() = %v, want empty -- alpha ships the shared compartment", got)
+	if got := m.Taints(); len(got) != 1 || got[0] != alphaTaint {
+		t.Errorf("Taints() = %v, want the one asked for, %q", got, alphaTaint)
+	}
+
+	if !m.Alpha() {
+		t.Error("Alpha() = false for the alpha realm's document")
 	}
 
 	if got := m.Bootstrap(); len(got) != 1 {
@@ -61,31 +70,33 @@ func TestDecodeAlpha(t *testing.T) {
 	}
 }
 
-// TestWithChainIsLossless is the most important test here.
+// TestWithRenewalIsLossless is the most important test here.
 //
 // A renewal rewrites the document on disk. If the rewrite went through a struct
-// holding only the fields conflux models, it would silently drop bootstrap, genesis,
-// realm and renewalAuth -- and the anchor would come back after the next reboot with
-// no peers to bootstrap from, days later, with nothing pointing at the renewal that
-// caused it.
-func TestWithChainIsLossless(t *testing.T) {
+// holding only the fields conflux models, it would silently drop genesis, realm,
+// taints and renewalAuth -- and the anchor would come back after the next reboot
+// unable to start, days later, with nothing pointing at the renewal that caused it.
+func TestWithRenewalIsLossless(t *testing.T) {
 	m, err := Decode(envelope(t, alphaDocument))
 	if err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
 
-	newChain := []byte("a freshly signed credential chain")
-	newExpiry := time.Date(2026, 10, 26, 4, 12, 0, 0, time.UTC)
+	r := Renewal{
+		Chain:     []byte("a freshly signed credential chain"),
+		NotAfter:  time.Date(2026, 10, 26, 4, 12, 0, 0, time.UTC),
+		Bootstrap: []string{bootNode, bootAPI},
+	}
 	received := time.Date(2026, 9, 26, 4, 12, 0, 0, time.UTC)
 
-	next, err := m.WithChain(newChain, newExpiry, received)
+	next, err := m.WithRenewal(r, received)
 	if err != nil {
-		t.Fatalf("WithChain: %v", err)
+		t.Fatalf("WithRenewal: %v", err)
 	}
 
 	// The original is untouched: a caller whose write fails still holds it.
-	if !m.NotAfter().Equal(time.Date(2026, 10, 6, 4, 12, 0, 0, time.UTC)) {
-		t.Errorf("WithChain changed the manifest it was called on: NotAfter() = %v", m.NotAfter())
+	if !m.NotAfter().Equal(time.Date(2026, 10, 6, 4, 12, 0, 0, time.UTC)) || len(m.Bootstrap()) != 1 {
+		t.Errorf("WithRenewal changed the manifest it was called on: NotAfter() = %v", m.NotAfter())
 	}
 
 	env, err := next.Encode()
@@ -108,8 +119,9 @@ func TestWithChainIsLossless(t *testing.T) {
 			continue
 		}
 
-		if k == "chain" || k == "notAfter" || k == "issuedAt" {
-			continue // the three that are meant to change
+		switch k {
+		case "chain", "notAfter", "issuedAt", "bootstrap":
+			continue // the four that are meant to change
 		}
 
 		if string(got) != string(want) {
@@ -117,19 +129,23 @@ func TestWithChainIsLossless(t *testing.T) {
 		}
 	}
 
-	// And the three that were meant to change did. issuedAt moves with the chain, so
+	// And the four that were meant to change did. issuedAt moves with the chain, so
 	// the window the next start divides is the renewed credential's own.
 	again, err := Decode(env)
 	if err != nil {
 		t.Fatalf("Decode after renewal: %v", err)
 	}
 
-	if got := again.NotAfter(); !got.Equal(newExpiry) {
-		t.Errorf("NotAfter() = %v after renewal, want %v", got, newExpiry)
+	if got := again.NotAfter(); !got.Equal(r.NotAfter) {
+		t.Errorf("NotAfter() = %v after renewal, want %v", got, r.NotAfter)
 	}
 
 	if got := again.IssuedAt(); !got.Equal(received) {
 		t.Errorf("IssuedAt() = %v after renewal, want %v", got, received)
+	}
+
+	if got := again.Bootstrap(); len(got) != 2 || got[0] != bootNode || got[1] != bootAPI {
+		t.Errorf("Bootstrap() = %v after renewal, want the issuer's fresh list", got)
 	}
 
 	var chain string
@@ -142,8 +158,93 @@ func TestWithChainIsLossless(t *testing.T) {
 		t.Fatalf("chain is not base64: %v", err)
 	}
 
-	if string(raw) != string(newChain) {
-		t.Errorf("chain = %q, want %q", raw, newChain)
+	if string(raw) != string(r.Chain) {
+		t.Errorf("chain = %q, want %q", raw, r.Chain)
+	}
+}
+
+// TestWithRenewalKeepsTheBootstrapWhenNoneCame: an answer with no list conflux can use
+// leaves the one the document has, rather than a machine with nowhere to start from.
+func TestWithRenewalKeepsTheBootstrapWhenNoneCame(t *testing.T) {
+	next, err := manifest(t, alphaDocument).WithRenewal(Renewal{Chain: []byte("c"), NotAfter: time.Now()}, time.Now())
+	if err != nil {
+		t.Fatalf("WithRenewal: %v", err)
+	}
+
+	if got := next.Bootstrap(); len(got) != 1 || got[0] != "genesis.veilnet.com.au:4700" {
+		t.Errorf("Bootstrap() = %v, want the document's own list kept", got)
+	}
+}
+
+// TestAlpha is read off the document: a credential that renews with no bearer.
+func TestAlpha(t *testing.T) {
+	for name, tc := range map[string]struct {
+		doc   string
+		alpha bool
+	}{
+		"the alpha realm":          {alphaDocument, true},
+		"alpha, no renewalAuth":    {withoutRenewalAuth, true},
+		"a guardian":               {guardianDocument, false},
+		"a ghost realm node":       {ghostNodeDocument, false},
+		"anchor's own, no renewal": {withoutRenewalFields(t, alphaDocument), false},
+	} {
+		if got := manifest(t, tc.doc).Alpha(); got != tc.alpha {
+			t.Errorf("%s: Alpha() = %v, want %v", name, got, tc.alpha)
+		}
+	}
+}
+
+// TestCheckTaints is the rule every start and every `up` holds a machine to: the
+// taints it is configured for are the ones its credential grants, or it is refused --
+// with a way out that fits who issued the credential.
+func TestCheckTaints(t *testing.T) {
+	commons := strings.Replace(alphaDocument, `["`+alphaTaint+`"]`, "[]", 1)
+	two := strings.Replace(alphaDocument, `["`+alphaTaint+`"]`, `["office","lab"]`, 1)
+
+	for name, tc := range map[string]struct {
+		doc  string
+		want []string
+		ok   bool
+		says []string
+	}{
+		"the granted set":              {alphaDocument, []string{alphaTaint}, true, nil},
+		"the granted set, repeated":    {alphaDocument, []string{alphaTaint, alphaTaint}, true, nil},
+		"a set in another order":       {two, []string{"lab", "office"}, true, nil},
+		"nothing asked: adopt":         {alphaDocument, nil, true, nil},
+		"another taint":                {alphaDocument, []string{"other"}, false, []string{`"other"`, "uninstall", "conflux up --taint other"}},
+		"one of two":                   {two, []string{"office"}, false, []string{"uninstall"}},
+		"alpha granting none":          {commons, []string{"office"}, false, []string{"before the alpha realm granted", "conflux up --taint office"}},
+		"alpha granting none, unasked": {commons, nil, false, []string{"shared compartment", "--taint TAINT"}},
+		"issued granting none":         {guardianDocument, nil, true, nil},
+		"issued, another taint":        {guardianDocument, []string{"office"}, false, []string{"enrol --manifest"}},
+		"a ghost node's own":           {ghostNodeDocument, []string{"au"}, true, nil},
+	} {
+		err := manifest(t, tc.doc).CheckTaints(tc.want)
+
+		if tc.ok {
+			if err != nil {
+				t.Errorf("%s: refused: %v", name, err)
+			}
+
+			continue
+		}
+
+		var te *TaintsError
+		if !errors.As(err, &te) {
+			t.Errorf("%s: got %v, want a *TaintsError", name, err)
+
+			continue
+		}
+
+		for _, s := range tc.says {
+			if !strings.Contains(err.Error(), s) {
+				t.Errorf("%s: the refusal should say %q:\n%v", name, s, err)
+			}
+		}
+
+		if te.Alpha && strings.Contains(err.Error(), "enrol --manifest") {
+			t.Errorf("%s: an alpha machine was told to import a manifest:\n%v", name, err)
+		}
 	}
 }
 
@@ -159,9 +260,9 @@ func TestUnknownFieldsSurvive(t *testing.T) {
 		t.Fatalf("Decode: %v", err)
 	}
 
-	next, err := m.WithChain([]byte("new"), time.Now(), time.Now())
+	next, err := m.WithRenewal(Renewal{Chain: []byte("new"), NotAfter: time.Now()}, time.Now())
 	if err != nil {
-		t.Fatalf("WithChain: %v", err)
+		t.Fatalf("WithRenewal: %v", err)
 	}
 
 	env, err := next.Encode()

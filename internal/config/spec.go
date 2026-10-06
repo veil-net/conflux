@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -20,11 +21,11 @@ const (
 // ValidateTaint applies anchor's rule and one of conflux's own.
 //
 // Anchor's: 1..64 bytes of UTF-8 in which every character prints and none is a space,
-// in any script -- a no-break or zero-width space hides as well as an ASCII one, and
-// anchorctl would trim one off either end without saying so. Conflux's addition is the
-// comma, because the anchorctl flag is a comma-separated list and a taint containing
-// one would silently become two compartments, which is the kind of mistake that
-// presents as "nothing can reach me" a week later.
+// in any script -- a no-break or zero-width space hides as well as an ASCII one -- and
+// neither '@' nor '+', which bind a served network to compartments (SPEC@a+b). The API
+// refuses the same names. Conflux's addition is the comma: `--taint a,b` reads as two
+// compartments and would be asked for as one named "a,b", and a subnet binding naming
+// it could not be written inside the comma-separated -serve-subnets.
 func ValidateTaint(name string) error {
 	if name == "" {
 		return fmt.Errorf("taint is empty")
@@ -42,7 +43,9 @@ func ValidateTaint(name string) error {
 		switch {
 		case r == ',':
 			return fmt.Errorf(
-				"taint %q contains a comma, which would split it into two compartments; use --taint twice instead", name)
+				"taint %q contains a comma; for two compartments, use --taint twice", name)
+		case r == '@' || r == '+':
+			return fmt.Errorf("taint %q has %q, which binds a served network to compartments (SUBNET@a+b)", name, r)
 		case unicode.IsSpace(r) || !unicode.IsGraphic(r):
 			return fmt.Errorf("taint %q has a space or a character that does not print, %U", name, r)
 		}
@@ -299,8 +302,8 @@ const SlowUplinkBaud = 19200
 // perfectly well a round later. The shape is conflux's to check, the address is
 // anchor's.
 //
-// The comma is refused for the same reason ValidateTaint refuses it: -peers is a
-// comma-separated flag, so a comma inside one entry silently becomes two.
+// The comma is refused because -peers is a comma-separated flag, so a comma inside
+// one entry silently becomes two.
 func ValidatePeer(entry string) error {
 	if entry == "" {
 		return fmt.Errorf("peer is empty")
@@ -384,25 +387,76 @@ var privateNetworks = []netip.Prefix{
 	netip.MustParsePrefix("fc00::/7"),
 }
 
+// Anchor's bounds on a served list (internal/proto): as many entries as one route
+// advertisement holds networks, an entry no longer than any name, and no more
+// compartments bound across the list than one advertisement names.
+const (
+	MaxSubnetEntries = 64
+	MaxSubnetEntry   = 255
+	MaxBoundTaints   = 16
+)
+
+// AllSubnets is the entry that serves every private network the host is attached to,
+// on every interface (anchor's hostnet.AllNetworks).
+const AllSubnets = "*"
+
+// splitBinding reads an entry as what it serves and the compartments it is bound to:
+// SPEC, or SPEC@a+b. names is nil for an entry bound to none. The last '@' is the one,
+// as in anchor, since a taint holds neither '@' nor '+'.
+func splitBinding(entry string) (spec string, names []string) {
+	i := strings.LastIndexByte(entry, '@')
+	if i < 0 {
+		return entry, nil
+	}
+
+	return entry[:i], strings.Split(entry[i+1:], "+")
+}
+
 // ValidateSubnet refuses the entries anchor refuses without looking at the host.
 //
 // An entry is an interface name, which anchor expands to every private network on
-// it, or a prefix, which must match an attached private network exactly. Whether it
-// is attached is the host's to answer and anchor's to check at start; what can be
-// answered here is a prefix with host bits set, which anchor refuses as the
-// off-by-one it is, and one that can never be attached as written: outside every
-// private range, or an IPv4 network spelled as IPv6, since anchor finds the host's
-// IPv4 networks as IPv4 and compares the entry as it is.
+// it; a prefix, which must match an attached private network exactly; or *, every
+// private network on every interface. Any of them may be bound to some of this
+// machine's compartments as SPEC@a+b, so that only peers in those compartments reach
+// it. Whether a network is attached is the host's to answer and anchor's to check at
+// start; what can be answered here is a prefix with host bits set, which anchor
+// refuses as the off-by-one it is, and one that can never be attached as written:
+// outside every private range, or an IPv4 network spelled as IPv6, since anchor finds
+// the host's IPv4 networks as IPv4 and compares the entry as it is.
 //
-// A comma is refused as it is in a taint, since -serve-subnets is a comma-separated
-// flag, and so is a slash outside a prefix, since no interface name holds one.
+// A comma is refused, since -serve-subnets is a comma-separated flag, and so is a
+// slash outside a prefix, since no interface name holds one. Whether a binding names
+// this machine's own compartments is ValidateSubnets', which knows them.
 func ValidateSubnet(entry string) error {
 	if strings.Contains(entry, ",") {
 		return fmt.Errorf(
 			"subnet %q contains a comma, which would split it into two entries; use --subnet twice instead", entry)
 	}
 
-	p, err := netip.ParsePrefix(strings.TrimSpace(entry))
+	if len(entry) > MaxSubnetEntry {
+		return fmt.Errorf("subnet %q is %d bytes and anchor allows %d", entry, len(entry), MaxSubnetEntry)
+	}
+
+	spec, names := splitBinding(entry)
+
+	if names != nil {
+		if strings.TrimSpace(spec) == "" {
+			return fmt.Errorf("subnet %q binds nothing: write the network or interface before the @", entry)
+		}
+
+		for _, n := range names {
+			if err := ValidateTaint(n); err != nil {
+				return fmt.Errorf("subnet %q: %w", entry, err)
+			}
+		}
+	}
+
+	spec = strings.TrimSpace(spec)
+	if spec == AllSubnets {
+		return nil
+	}
+
+	p, err := netip.ParsePrefix(spec)
 	if err != nil {
 		if strings.Contains(entry, "/") {
 			return fmt.Errorf("subnet %q is neither a prefix nor an interface name: %v", entry, err)
@@ -433,4 +487,49 @@ func ValidateSubnet(entry string) error {
 	return fmt.Errorf(
 		"subnet %s is not a private network: anchor forwards private networks only, and reaching the public internet through an anchor is what an exit is for",
 		entry)
+}
+
+// ValidateSubnets checks a whole served list: each entry, anchor's bounds on the
+// list, and that every binding names compartments this machine is in -- anchor
+// refuses a network bound to a compartment the anchor is not configured in
+// (ErrSubnetTaints) before anything is built. A machine in its realm's default
+// compartment has no name to bind to, so it binds nothing.
+func ValidateSubnets(entries, taints []string) error {
+	if len(entries) > MaxSubnetEntries {
+		return fmt.Errorf("%d subnets, and anchor serves at most %d", len(entries), MaxSubnetEntries)
+	}
+
+	bound := map[string]bool{}
+
+	for _, e := range entries {
+		if err := ValidateSubnet(e); err != nil {
+			return err
+		}
+
+		_, names := splitBinding(e)
+
+		for _, n := range names {
+			if !slices.Contains(taints, n) {
+				return fmt.Errorf(
+					"subnet %q is bound to %q, which this machine is not in; its taints are %s",
+					e, n, describeTaints(taints))
+			}
+
+			bound[n] = true
+		}
+	}
+
+	if len(bound) > MaxBoundTaints {
+		return fmt.Errorf("subnets are bound to %d compartments, and anchor allows %d", len(bound), MaxBoundTaints)
+	}
+
+	return nil
+}
+
+func describeTaints(taints []string) string {
+	if len(taints) == 0 {
+		return "none (the realm's default compartment)"
+	}
+
+	return strings.Join(taints, ", ")
 }

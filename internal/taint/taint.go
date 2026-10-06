@@ -11,7 +11,11 @@
 // "no taint" means "in the commons with every stranger in the realm". That is the
 // right default for the messaging realm this credential comes from and the wrong
 // one for a machine somebody is joining to their own network, which is why conflux
-// mints one rather than leaving the field empty.
+// mints one rather than asking for none.
+//
+// A taint is the issuer's to grant, not the anchor's to claim: the alpha enrolment
+// asks for this name, and the credential that comes back commits to it for the life
+// of the identity.
 package taint
 
 import (
@@ -24,12 +28,12 @@ import (
 const alphabet = "abcdefghjkmnpqrstuvwxyz23456789"
 
 const (
-	// length is 16 symbols from a 31-symbol alphabet: a little over 79 bits, which
-	// is far past guessing. Taint names are not secret from the realm -- the tag is
-	// derived from a public root id, so any member can compute the tag for a name
-	// it can guess -- so unguessability is the whole of the protection a generated
-	// one provides.
-	length = 16
+	// length is 26 symbols from a 31-symbol alphabet: a little over 128 bits, the
+	// size the API advises. Taint names are not secret from the realm -- anybody may
+	// ask the API for a credential in any name, and the tag is derived from a public
+	// root id, so any member can compute the tag for a name it can guess offline --
+	// so unguessability is the whole of the protection a generated one provides.
+	length = 26
 
 	// group inserts a hyphen every four symbols. Purely for reading aloud.
 	group = 4
@@ -47,7 +51,7 @@ func New() string {
 		buf [2 * length]byte
 	)
 
-	sb.Grow(length + length/group - 1)
+	sb.Grow(length + (length-1)/group)
 
 	for n := 0; n < length; {
 		// rand.Read from crypto/rand cannot fail; it panics internally if the system

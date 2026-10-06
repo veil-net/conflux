@@ -15,9 +15,10 @@ import (
 // The watcher, and why it has to exist.
 //
 // The supervisor watches the anchord *process*, and two things strand an anchor without
-// that process exiting. anchord can lose the anchor it holds -- a realm admin's kill
-// order empties the slot, and so does an anchor that closes for any other reason -- and
-// carry on serving a socket with nothing behind it. And an anchor on an uplink reaches
+// that process exiting. anchord can lose the anchor it holds -- an anchor that closes on
+// its own empties the slot -- and carry on serving a socket with nothing behind it.
+// (A realm's block is not one of them: a blocked anchor keeps running, outside the
+// realm, and rebuilding it would change nothing.) And an anchor on an uplink reaches
 // the realm over a link rather than a socket, and anchor does not reopen a link that
 // ends: an unplugged adapter, a cable pulled, a far end power-cycled, and the anchor
 // stays up holding a medium that carries nothing. Restarting it is the documented
@@ -38,9 +39,10 @@ const (
 	// linkGrace is how long the connection count must stay at zero before the link
 	// is called dead.
 	//
-	// Above anchor's own uplink dial timeout (45s) plus the five seconds and up to one of
-	// jitter it waits between dials while it holds no connection, so a link still
-	// dialling is never mistaken for one that has ended, and above the ~25s a realm
+	// Above anchor's own uplink dial timeout (45s) -- it starts a dial at most every five
+	// seconds and up to one of jitter while it holds no connection, timed from the start
+	// of the one before, so one that never answers is followed at once by the next -- so
+	// a link still dialling is never mistaken for one that has ended, and above the ~25s a realm
 	// handshake needs on a 9600-baud line -- the slowest speed conflux accepts. The cost
 	// of being wrong is one restart; the cost of being hasty is a restart that
 	// interrupts a handshake that was about to succeed.
@@ -51,22 +53,26 @@ const (
 	// 90 seconds forever.
 	rebuildBackoffMin = 1 * time.Second
 	rebuildBackoffMax = 30 * time.Second
+
+	// rebuildRefusals is how many rebuilds in a row may be refused for good before the
+	// watcher stops: the supervisor's own allowance for a start, for the same reason.
+	rebuildRefusals = 3
 )
 
 // watch keeps an anchor in the daemon, rebuilding it when it has gone or its link has
-// ended, and reports true once an admin's kill order has stopped it.
+// ended, and reports true once it has given up.
 //
-// A killed anchor is left stopped, because rebuilding it would undo the order within the
-// minute, and the watch ends there. The service is still up and the kill is recorded for
-// `conflux status`; a restart of the service -- `conflux start`, a reboot -- builds it
-// again, as it always would.
-func (s *Supervisor) watch(ctx context.Context, uplink string) bool {
-	interval, device := anchorCheckInterval, ""
-	if uplink != "" {
-		interval, device = linkCheckInterval, devicePath(uplink)
-	}
+// It gives up on a configuration that will not build an anchor, which a rebuild refused
+// for good rebuildRefusals times in a row is -- a conflux.json edited under a running
+// service, a credential that no longer grants its taints. Retrying that every thirty
+// seconds for ever would fill the journal and change nothing; a restart of the service --
+// `conflux start`, a reboot -- tries again, as it always would.
+//
+// every is how often it looks: checkInterval(uplink), which only a test shortens.
+func (s *Supervisor) watch(ctx context.Context, uplink string, every time.Duration) bool {
+	device := devicePath(uplink)
 
-	backoff := rebuildBackoffMin
+	backoff, refusals := rebuildBackoffMin, 0
 
 	// zeroSince is when the connection count was first seen at zero, or the zero
 	// time when the link is carrying something.
@@ -76,28 +82,33 @@ func (s *Supervisor) watch(ctx context.Context, uplink string) bool {
 		select {
 		case <-ctx.Done():
 			return false
-		case <-time.After(interval):
+		case <-time.After(every):
 		}
 
 		why, link := s.lost(ctx, uplink, device, &zeroSince)
-
-		switch {
-		case why == "":
+		if why == "" {
 			backoff = rebuildBackoffMin
 
 			continue
-		case why == adminStopLine:
-			s.clearReady()
-			s.recordAdminStop()
-			s.report().Warn("an admin credential stopped this anchor; conflux leaves it stopped until the service is started again")
-
-			return true
 		}
 
 		s.clearReady()
 		s.report().Warn("%s; rebuilding the anchor", why)
 
 		if err := s.rebuild(ctx); err != nil {
+			if isPermanent(err) {
+				refusals++
+			} else {
+				refusals = 0
+			}
+
+			if refusals >= rebuildRefusals {
+				s.report().Warn("this configuration will not build an anchor: %v\n"+
+					"  conflux stops rebuilding it until the service is started again", err)
+
+				return true
+			}
+
 			s.report().Warn("could not rebuild the anchor: %v", err)
 
 			select {
@@ -119,12 +130,21 @@ func (s *Supervisor) watch(ctx context.Context, uplink string) bool {
 
 		// Whatever the state was, it is a fresh anchor now.
 		zeroSince = time.Time{}
-		backoff = rebuildBackoffMin
+		backoff, refusals = rebuildBackoffMin, 0
 	}
 }
 
+// checkInterval is how often the watcher looks: the gauge on a link, status otherwise.
+func checkInterval(uplink string) time.Duration {
+	if uplink != "" {
+		return linkCheckInterval
+	}
+
+	return anchorCheckInterval
+}
+
 // lost says why the anchor needs rebuilding, and whether its link is the reason; "" while
-// it does not. adminStopLine means it must not be rebuilt at all.
+// it does not.
 //
 // A daemon that does not answer is the restart loop's business rather than this one's:
 // rebuilding an anchor over a problem with the process would fix nothing.
@@ -145,14 +165,11 @@ func (s *Supervisor) lost(ctx context.Context, uplink, device string, zeroSince 
 	probe, cancel := context.WithTimeout(ctx, stopTimeout)
 	defer cancel()
 
-	switch st, err := s.ctl.Status(probe); {
-	case err != nil, st.Running:
+	if st, err := s.ctl.Status(probe); err != nil || st.Running {
 		return "", false
-	case s.adminStopped.Load():
-		return adminStopLine, false
-	default:
-		return "anchord holds no anchor any more", false
 	}
+
+	return "anchord holds no anchor any more", false
 }
 
 // linkIsDead decides whether the link has ended, and says why. Its error is the gauge
@@ -233,13 +250,6 @@ func (s *Supervisor) recordReopen() {
 		st.LinkReopens++
 		st.LastLinkReopen = time.Now().UTC()
 	})
-}
-
-// recordAdminStop notes the kill order for `conflux status`, which is the only way
-// somebody looking at the machine learns why it holds no anchor. The next BringUp
-// clears it.
-func (s *Supervisor) recordAdminStop() {
-	s.updateState("the admin's stop", func(st *config.State) { st.AdminStoppedAt = time.Now().UTC() })
 }
 
 // updateState changes the state file under the lock, best effort.

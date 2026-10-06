@@ -56,8 +56,13 @@ func TestModeRules(t *testing.T) {
 		"a declined IPv4":             {ModeProxy, func(c *Config) { c.IPv4 = new(string) }, true, ""},
 		"one overlay port twice":      {ModeProxy, func(c *Config) { c.Proxies = append(c.Proxies, "8080=127.0.0.1:9") }, false, "twice"},
 		"one port, two networks":      {ModeProxy, func(c *Config) { c.Proxies = append(c.Proxies, "8080/udp=127.0.0.1:9") }, true, ""},
-		"no taints":                   {ModeTUN, func(c *Config) { c.Taints = nil }, false, "no taints"},
+		"no taints":                   {ModeTUN, func(c *Config) { c.Taints = nil }, true, ""},
 		"a subnet with host bits set": {ModeTUN, func(c *Config) { c.Subnets = []string{"192.168.1.7/24"} }, false, "host bits"},
+		"a subnet bound to its taint": {ModeTUN, func(c *Config) { c.Subnets = []string{"eth1@office"} }, true, ""},
+		"a subnet bound elsewhere":    {ModeTUN, func(c *Config) { c.Subnets = []string{"eth1@lab"} }, false, "not in"},
+		"a binding with no taints": {ModeTUN, func(c *Config) {
+			c.Taints, c.Subnets = nil, []string{"*@office"}
+		}, false, "default compartment"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			c := base(tc.mode)

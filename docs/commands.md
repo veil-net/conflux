@@ -10,24 +10,53 @@ conflux's: `up`, `proxy`, `enrol`, `start`, `down`, `install`, `uninstall`, `ren
 the boot service runs.
 
 anchorctl's, reached by typing them: `peers`, `route`, `routes`, `connect`, `punch`,
-`kill`, `events`, `metrics`, `export`, `children`, `telemetry`, `send`, `subscribe`,
-`keygen`, `issue`, `delegate`, `renew-link`, `install-link`, `id`, `inspect`, `config`,
-`mint-realm`, `mint-anchor`. The two `mint-*` verbs exist only in the lockdown build,
-which is the one conflux embeds; `root`, which mints a realm root, is not in that build
-at all, and answers as an unknown command.
+`events`, `metrics`, `export`, `telemetry`, `block`, `unblock`, `blocks`, `taints`,
+`subnets`, `send`, `subscribe`, `keygen`, `issue`, `delegate`, `renew-link`,
+`install-link`, `id`, `inspect`, `config`, `mint-realm`, `mint-anchor`. The two `mint-*`
+verbs exist only in the lockdown build, which is the one conflux embeds; `root`, which
+mints a realm root, is not in that build at all, and answers as an unknown command.
 
 `export` is worth naming separately now, because there are two ways to set it and they
 do not last equally long. `conflux anchorctl export -endpoint …` configures the running
 daemon and is discarded at the next restart or SIGHUP; the `export` block in
 `conflux.json` is rendered to anchord's config file on every start and is the durable
 one. `conflux status` says which the daemon is currently obeying. See
-[config.md](config.md#export).
+[config.md](config.md#export--where-telemetry-goes).
 
-`kill` is worth naming separately, because it is not what the word suggests and is not
-related to `down`. It makes another anchor **a realm-wide target** — `-target ANCHORID
--days N` — needs a credential issued with `-admin`, travels by gossip, and nothing can
-end one early. Stopping the anchor on *this* machine is `conflux down`, which closes it
+### Realm control
+
+Six of anchorctl's commands are the realm's control over its members. They pass
+through unchanged, none of them is a conflux verb, and `conflux help` names them:
+
+| Command | What it does | Needs the capability |
+|---|---|---|
+| `block -target ID [-days N] [-reason TEXT]` | shuts another member out of the realm, on every member, until the block ends or is lifted | `block` |
+| `unblock -target ID` | lifts a block | `block` |
+| `blocks` | lists the blocks in force | none |
+| `taints -peer ID [-set A,B] [-timeout D]` | reads another member's compartments, or moves it to others | `taint` |
+| `subnets -peer ID [-set A,B \| -clear] [-timeout D]` | reads what another member forwards for the realm, or replaces its list | `subnets` |
+| `telemetry -from ID [-timeout D]` | asks another member how it is | `telemetry` |
+
+Every one but `blocks` acts on **another** member of the same realm, never on this
+machine, and needs its capability in this machine's credential. Capabilities are the
+issuer's to grant, as taints are: an alpha credential grants none, so on an alpha
+machine these orders are refused with anchor's explanation, and a guardian may grant
+them. They take a full 58-character AnchorID, `anchor…`, as `conflux status` prints it —
+not the ten-character short form in the tables `peers` and `blocks` print. For every
+private network on the member, use `subnets -set '*'`: anchorctl's help says `all`,
+which anchor does not accept.
+
+A block does not stop anything. A blocked anchor keeps running, outside the realm, and
+shows `DATA no` on every peer; nothing on the blocked machine needs to be done when the
+block is lifted. Stopping the anchor on *this* machine is `conflux down`, which closes it
 gracefully and leaves the registration; see [service.md](service.md).
+
+conflux starts every anchor with a directory, so a conflux machine can be the one an
+order moves. A Taints order's grant is kept there and reapplied over the credential's
+set at every start; conflux still starts from the credential's set, and `conflux status`
+shows the credential's taints, since anchor reports no live set locally. A Subnets
+order's list is served in place of `conflux.json`'s until `up` or `proxy` sets the list
+again; see [modes.md](modes.md#the-last-set-wins).
 
 ### The four collisions
 
@@ -48,8 +77,9 @@ spelling. Given any argument it forwards, so `conflux status -watch 5s` and
 `conflux status -h` do what an anchor user expects.
 
 **`proxy`** is resolved by shape, and the ambiguous case is refused rather than
-guessed. Positional `PORT=BACKEND` specs and `--taint` are conflux's; any other
-dash-prefixed argument prints both meanings and exits 2. A "leading dash means
+guessed. Positional `PORT=BACKEND` specs and the flags `conflux proxy -h` lists —
+`--taint`, `--subnet` and the rest — are conflux's; any other dash-prefixed argument
+prints both meanings and exits 2. A "leading dash means
 anchorctl" heuristic was considered and rejected: `--taint` leads with a dash too, and
 Go's flag package treats `-x` and `--x` identically, so the double dash carries no
 signal.
@@ -84,11 +114,11 @@ configuration, and registers the boot service.
 
 | Flag | Meaning |
 |---|---|
-| `--taint T` | a compartment label; repeat to carry more than one. Omit it on a machine that has none and conflux mints one and prints it. See [concepts.md](concepts.md). |
+| `--taint T` | the taint to enrol in; repeat for more than one. On a machine with no credential yet it is the enrolment's request: the first machine of a network omits it, and conflux mints one and prints it; every other machine passes that one to join. Once a machine holds a credential its taints are fixed: the same set is accepted, and any other is refused, naming `conflux uninstall --yes` and then `conflux up --taint`, which is a new identity. See [concepts.md](concepts.md#taints) and [credentials.md](credentials.md#taints-are-the-credentials). |
 | `--ipv4 ADDRESS` | this machine's IPv4: an address, or an address and the length of the range routed to peers, `10.128.0.7/24`. Any unicast address outside `198.18.0.0/15`; see below. |
 | `--no-ipv4` | no IPv4 of its own, without prompting. It still reaches IPv4 peers. |
-| `--subnet CIDR` | an interface, or a private network with no host bits set, that this machine forwards for the realm; repeat for more. See [modes.md](modes.md). |
-| `--no-subnet` | forward nothing for the realm; the way back from `--subnet`. |
+| `--subnet CIDR` | a network this machine forwards for the realm: an interface, a private network with no host bits set, or `'*'` for every private network on every interface, each optionally bound to some of this machine's taints as `SPEC@a+b`; repeat for more. It replaces a list a member's Subnets order set. See [modes.md](modes.md#--subnet-and-what-the-host-has-to-be). |
+| `--no-subnet` | forward nothing for the realm; the way back from `--subnet`, and from a member's Subnets order. |
 | `--interface NAME` | the network interface name. Default `anchor0`. Linux and Windows honour it; macOS numbers its own `utunN` and the BSDs their own `tunN`, taking a name of that form as the unit to ask for, and `conflux status` says so rather than naming one that is not there. |
 | `--uplink DEV` | reach the realm over a link rather than the host's network: `/dev/ttyUSB0`, or `/dev/ttyUSB0:115200` with a line speed. See [uplink.md](uplink.md). |
 | `--no-uplink` | go back to the host's network on a machine configured for a link. |
@@ -222,7 +252,7 @@ different anchor from the other.
 ## `conflux enrol`
 
 ```
-conflux enrol --manifest FILE [--api URL] [--ipv4 ADDRESS] [--taint T]...
+conflux enrol --manifest FILE [--api URL] [--ipv4 ADDRESS]
 ```
 
 Installs a credential this machine was **given** rather than one it drew.
@@ -236,18 +266,17 @@ deployment it is the only way a node is provisioned.
 `--manifest -` reads the document from stdin, so it need never land on disk at whatever
 mode the shell's umask chose. anchorctl spells the same thing the same way.
 
-**The file is enough on its own, and the three flags are overrides.** A guardian
+**The file is enough on its own, and the two flags are overrides.** A guardian
 document carries an absolute `renewalUrl`, the overlay address the guardian allocated
-out of its realm's range, and the compartment it put the machine in — because a guardian
+out of its realm's range, and the taints it granted the machine — because a guardian
 knows all three and the operator would only be retyping them. That is the difference
-between this and the public alpha realm, whose document carries an identity and little
-else.
+between this and the public alpha realm, whose document carries an identity, the taints
+its enrolment asked for, and little else.
 
 | | overrides | when you would |
 |---|---|---|
 | `--api URL` | the API base read out of `renewalUrl` | the guardian is reached at a different name from here — a split-horizon DNS, a bastion |
 | `--ipv4 ADDRESS` | the address the issuer allocated | you are rebuilding a machine onto an address something else already hardcodes |
-| `--taint T` | the compartment the issuer chose; repeat for more | this machine belongs in a different compartment from the one it was commissioned into |
 
 `--api` is also an assertion when given: the document must renew against the same host,
 and a mismatch is refused naming both rather than discovered at the first renewal weeks
@@ -255,13 +284,17 @@ later. It stopped being *required* because the argument for requiring it does no
 the same document carries the identity seed and the renewal bearer, so anybody able to
 rewrite its `renewalUrl` already holds everything a redirect would steal.
 
-**Taints are validated, not copied through.** A label conflux cannot carry — a comma, a
-space of any kind or a character that does not print, bytes that are not UTF-8, over 64
-bytes, more than 32 of them — is refused here rather than at the next
-start, where the complaint would come from anchor instead of from the document that
-caused it. A document carrying none leaves the configuration with none, and `up` then
-mints one and says so; choosing a compartment quietly is the one thing conflux will not
-do.
+**Taints are the credential's, and are validated rather than copied through.** The
+credential commits to the set its issuer granted, anchor starts the identity under no
+other, and a renewal restates it — so there is no flag to overrule it, and `conflux.json`
+is written with the manifest's set, which every start then checks it against. An issued
+credential granting none — a guardian's, or a node's in one of VeilNet's own ghost realms —
+is taken as it is, and puts the machine in its issuer realm's default compartment. An
+alpha manifest granting none is refused: that is the public realm's shared compartment,
+which conflux never puts a machine in. A label conflux cannot carry — a comma, an `@` or
+a `+`, a space of any kind or a character that does not print, bytes that are not UTF-8,
+over 64 bytes, more than 32 of them — is refused here rather than at the next start,
+where the complaint would come from anchor instead of from the document that caused it.
 
 **It refuses to replace an existing manifest.** `up` enrols only when there is none,
 because a second enrolment is a second AnchorID and a second overlay address with every
@@ -306,7 +339,10 @@ is already running. Takes no arguments.
 
 The swap is hot — `anchorctl renew`, which calls `SetRealmCred` — so the identity does
 not change and not one session is dropped. It is not a restart and does not need to be
-treated as one.
+treated as one. The request restates the taints the manifest names, which a renewal
+cannot change. The fresh chain is written into the stored manifest, and so is the
+bootstrap list the answer carries, when it carries a usable one; `anchorctl renew`
+installs only the chain, so the list is the next start's.
 
 Renewal is automatic in two places already: once at every start, before the anchor is
 built, and again on a timer at two thirds of the credential's life. So this command is
@@ -335,14 +371,30 @@ conflux's state — service, mode, exit, taint, AnchorID, credential expiry, API
 the uplink reopen tally if there is one — and then `anchorctl status` beneath it.
 Exits 78 when the machine has no configuration.
 
+The `taint` line is the set `conflux.json` names, which after enrolment mirrors the one
+the credential grants — `none: the realm's default compartment` for an issued
+credential granting none. A member's Taints order may have moved the running anchor
+since, and that does not show here: anchor reports no live set locally.
+
 The `exit` line appears only when this machine is an exit one way or the other.
 conflux goes to some trouble not to become one by accident, so a machine that *is*
 one should not need a config file read to find out.
 
-A `stopped` line appears when a realm admin's kill order stopped the anchor. The
-supervisor rebuilds an anchor that leaves the daemon any other way, but leaves that one
-stopped, so the service runs with no anchor until `conflux start` or a reboot; see
-[service.md](service.md).
+A `refused` line appears when the machine is configured for taints its credential does
+not grant, which every start refuses for good. It names the set granted and the set
+configured, and the way out: `conflux uninstall --yes`, then `conflux up --taint` (or,
+for an issued credential, `conflux enrol` with one granted in the taints wanted) — a new
+identity, since a credential's taints never change. The usual cause is an alpha machine
+enrolled before the realm granted taints, whose credential grants none; nothing
+re-enrols it automatically. See
+[credentials.md](credentials.md#taints-are-the-credentials).
+
+The `forwarding` lines are the networks this machine forwards for the realm. When a
+member's Subnets order replaced `conflux.json`'s list there is one line, saying whose:
+
+```
+  forwarding   10.9.0.0/24@lab — set by an order from anchor… at 2026-10-06T09:00:00Z, in place of conflux.json's; --subnet or --no-subnet sets it again
+```
 
 ## `conflux version`
 

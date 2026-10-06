@@ -96,7 +96,7 @@ func BringUp(ctx context.Context, d paths.Dirs, ctl *anchorctl.Ctl, r Reporter) 
 		}
 	}()
 
-	env, m, err := credential(ctx, d, st, cfg.APIBase(), r)
+	env, m, err := credential(ctx, d, st, cfg, r)
 	if err != nil {
 		return anchorctl.Started{}, err
 	}
@@ -113,7 +113,6 @@ func BringUp(ctx context.Context, d paths.Dirs, ctl *anchorctl.Ctl, r Reporter) 
 	st.AnchorID = started.ID
 	st.IssuedAt, st.NotAfter = m.IssuedAt(), m.NotAfter()
 	st.BinSetID = ctl.SetID
-	st.AdminStoppedAt = time.Time{}
 
 	return started, nil
 }
@@ -123,10 +122,15 @@ func BringUp(ctx context.Context, d paths.Dirs, ctl *anchorctl.Ctl, r Reporter) 
 // The order matters. Renewal happens before start rather than after, so `start`
 // always receives a chain that is current -- which is why the boot path needs no
 // separate `anchorctl renew` call at all.
+//
+// The taints are checked before either: the credential grants them, anchorctl starts
+// the anchor under the manifest's, and a machine configured for others -- one enrolled
+// before alpha granted taints, a hand-edited conflux.json, an issuer that answered with
+// another set -- is refused for good here, naming the way out, before it costs a call.
 func credential(
-	ctx context.Context, d paths.Dirs, st *config.State, apiBase string, r Reporter,
+	ctx context.Context, d paths.Dirs, st *config.State, cfg *config.Config, r Reporter,
 ) (config.Envelope, *enrol.Manifest, error) {
-	client := &enrol.Client{BaseURL: apiBase}
+	client := &enrol.Client{BaseURL: cfg.APIBase()}
 
 	env, err := config.LoadManifest(d)
 
@@ -134,9 +138,16 @@ func credential(
 	case err == nil:
 		// Have one.
 	case errors.Is(err, fs.ErrNotExist):
+		// Never the shared compartment. `up` and `proxy` mint a taint for a machine with
+		// none, so this is a conflux.json somebody emptied; no retry changes it.
+		if len(cfg.Taints) == 0 {
+			return nil, nil, &permanentError{path: d.ConfigFile(), err: fmt.Errorf(
+				"%w; run conflux up or conflux proxy, which mint one", enrol.ErrNoTaints)}
+		}
+
 		r.Step("enrolling")
 
-		env, err = client.Enrol(ctx)
+		env, err = client.Enrol(ctx, cfg.Taints)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -158,6 +169,10 @@ func credential(
 
 	m, err := enrol.Decode(env)
 	if err != nil {
+		return nil, nil, &permanentError{path: d.ManifestFile(), err: err}
+	}
+
+	if err := m.CheckTaints(cfg.Taints); err != nil {
 		return nil, nil, &permanentError{path: d.ManifestFile(), err: err}
 	}
 
@@ -195,8 +210,9 @@ func credential(
 // A failed renewal is never fatal here and never falls back to enrolling. Enrolling
 // again draws a different identity, a different AnchorID and a different overlay
 // address, and orphans every peer that had the old one -- and it is not needed,
-// because a renewal works after expiry: the alpha route asks only for the AnchorID,
-// and a guardian's for the bearer the manifest carries. So: try, say what happened,
+// because a renewal works after expiry: the alpha route asks only for the AnchorID and
+// the taints the manifest names, and a guardian's for the bearer the manifest carries
+// as well. So: try, say what happened,
 // and start with what we have -- which anchor refuses once it has expired, and the
 // restart loop brings this round again.
 func renewBeforeStart(

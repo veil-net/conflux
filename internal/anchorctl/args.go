@@ -2,9 +2,9 @@
 //
 // Everything conflux asks of an anchor goes through here, and the argv these
 // functions build is the whole of conflux's contribution to how an anchor runs.
-// That makes this the place a wrapper's bugs live -- a "-taint" for a "-taints", a
-// boolean passed bare when it needed a value -- and none of them are visible in a
-// diff. Hence the golden files beside the tests.
+// That makes this the place a wrapper's bugs live -- a "-serve-subnet" for a
+// "-serve-subnets", a boolean passed bare when it needed a value -- and none of them
+// are visible in a diff. Hence the golden files beside the tests.
 package anchorctl
 
 import (
@@ -15,15 +15,19 @@ import (
 )
 
 // StartMode is everything conflux decides about an anchor. What it does not decide
-// -- the identity, the realm root, the credential, the bootstrap list -- arrives
-// separately, in a manifest on stdin.
+// -- the identity, the realm root, the credential, the bootstrap list, and the taints
+// the credential grants -- arrives separately, in a manifest on stdin.
+//
+// No taints here, deliberately. The credential commits to its set and anchor starts
+// the anchor under no other, and the issuer writes the names beside it; anchorctl takes
+// them from the manifest for exactly that reason when no -taints is typed. A second copy
+// typed from conflux.json would add nothing but a way to disagree.
 type StartMode struct {
 	TUN     bool
 	TUNName string
 	IPv4    string
 	Subnets []string
 	Proxies []string
-	Taints  []string
 	Dir     string
 
 	// Peers is the bootstrap list, or empty to let the manifest supply it.
@@ -71,7 +75,6 @@ type StartMode struct {
 func ModeFromConfig(c *config.Config, anchorDir string) StartMode {
 	m := StartMode{
 		TUN:     c.Mode == config.ModeTUN,
-		Taints:  c.Taints,
 		Dir:     anchorDir,
 		Subnets: c.Subnets,
 		Proxies: c.Proxies,
@@ -111,10 +114,6 @@ func (m StartMode) Args() []string {
 
 	if m.Dir != "" {
 		args = append(args, "-dir", m.Dir)
-	}
-
-	if len(m.Taints) > 0 {
-		args = append(args, "-taints", strings.Join(m.Taints, ","))
 	}
 
 	// Only when set, unlike the mode flags above. This is the one field conflux

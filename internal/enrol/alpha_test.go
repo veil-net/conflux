@@ -14,10 +14,11 @@ import (
 // This file pins what the public alpha realm gets, so that the guardian issuer cannot
 // quietly change it.
 //
-// The alpha route (POST /ghosts/alpha/renew) takes the AnchorID and nothing else.
-// The tests below assert that exchange byte for byte -- the header set, the absence
-// of an Authorization header, and the request body -- rather than asserting that a
-// renewal "works", which it would go on doing while sending something new.
+// The alpha routes take the taints and nothing else to enrol (POST /ghosts/alpha),
+// and the AnchorID and the same taints to renew (POST /ghosts/alpha/renew). The tests
+// below assert those exchanges byte for byte -- the header set, the absence of an
+// Authorization header, and the request body -- rather than asserting that a renewal
+// "works", which it would go on doing while sending something new.
 
 // alphaRenewPath is the live alpha renewal route, which alphaDocument names.
 const alphaRenewPath = "/ghosts/alpha/renew"
@@ -82,7 +83,7 @@ func TestAlphaRenewIsUnauthenticated(t *testing.T) {
 
 			c, s, got := record(t, reply)
 
-			if _, err := c.Renew(t.Context(), s.URL+alphaRenewPath, "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq"); err != nil {
+			if _, err := c.Renew(t.Context(), s.URL+alphaRenewPath, "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq", asked); err != nil {
 				t.Fatalf("Renew: %v", err)
 			}
 
@@ -92,8 +93,8 @@ func TestAlphaRenewIsUnauthenticated(t *testing.T) {
 					got.authorization)
 			}
 
-			if got.body != `{"anchorId":"anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq"}` {
-				t.Errorf("body = %s, want {\"anchorId\":\"anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq\"}", got.body)
+			if want := `{"anchorId":"anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq","taints":["` + alphaTaint + `"]}`; got.body != want {
+				t.Errorf("body = %s, want %s", got.body, want)
 			}
 
 			if got.contentType != "application/json" {
@@ -118,7 +119,7 @@ func TestAlphaEnrolIsUnauthenticated(t *testing.T) {
 	c, _, got := record(t, fmt.Sprintf(`{"credentials":%q}`,
 		base64.StdEncoding.EncodeToString([]byte(alphaDocument))))
 
-	if _, err := c.Enrol(t.Context()); err != nil {
+	if _, err := c.Enrol(t.Context(), asked); err != nil {
 		t.Fatalf("Enrol: %v", err)
 	}
 
@@ -126,7 +127,11 @@ func TestAlphaEnrolIsUnauthenticated(t *testing.T) {
 		t.Errorf("Enrol sent Authorization: %q", got.authorization)
 	}
 
-	if got.body != "" {
-		t.Errorf("Enrol sent a body: %q -- the route takes none", got.body)
+	if want := `{"taints":["` + alphaTaint + `"]}`; got.body != want {
+		t.Errorf("body = %s, want %s", got.body, want)
+	}
+
+	if got.contentType != "application/json" {
+		t.Errorf("Content-Type = %q", got.contentType)
 	}
 }

@@ -44,38 +44,35 @@ import (
 //     bring it back;
 //   - an existing manifest is refused outright.
 //
-// **The three flags are overrides, and the manifest is the source.** A guardian
+// **The manifest is the source, and the two flags are overrides.** A guardian
 // document carries the renewal URL, the overlay address and the taints, because a
 // guardian knows all three -- it allocated the address out of a range it keeps and
-// it decided which compartment the machine belongs in. That is the difference
-// between this and the public alpha realm, whose document carries an identity and
-// little else. So the ordinary invocation is `conflux enrol --manifest FILE` and
-// nothing more, and each flag exists for the case where a person at the terminal
-// knows something the issuer did not.
+// it decided which compartment the machine belongs in. So the ordinary invocation is
+// `conflux enrol --manifest FILE` and nothing more, and --api and --ipv4 exist for the
+// case where a person at the terminal knows something the issuer did not. The taints
+// have no flag: the credential commits to them, anchor starts the identity under no
+// others, and a renewal restates them, so they are the issuer's and are taken as they
+// are -- none included, which is the issuer's own realm's default compartment.
 func runEnrol(_ context.Context, args []string) int {
 	fs := flag.NewFlagSet("enrol", flag.ContinueOnError)
 	fs.SetOutput(ui.Errw)
-
-	var taints repeated
 
 	manifest := fs.String("manifest", "", "the manifest file to install, or - for stdin")
 	apiBase := fs.String("api", "",
 		"the API that issued it, as a base URL, overriding the one its renewal URL names")
 	ipv4 := fs.String("ipv4", "", "this machine's IPv4, overriding whatever the manifest allocated")
-	fs.Var(&taints, "taint",
-		"a compartment label, overriding whatever the manifest carries; repeat for more")
 
 	fs.Usage = func() {
 		ui.Printf("conflux enrol — install a credential this machine was given\n\n" +
-			"  conflux enrol --manifest FILE [--api URL] [--ipv4 ADDRESS] [--taint T]...\n\n" +
+			"  conflux enrol --manifest FILE [--api URL] [--ipv4 ADDRESS]\n\n" +
 			"For a machine commissioned somewhere else: a self-hosted guardian mints the\n" +
 			"identity, signs the credential and hands you one file. This installs it, and\n" +
 			"then `conflux up` starts from it without enrolling.\n\n" +
 			"The file is enough on its own. A guardian document names its own renewal URL,\n" +
-			"the overlay address the guardian allocated and the compartment it put this\n" +
-			"machine in, so the three flags exist only to overrule one of those from the\n" +
-			"terminal. --api is also checked when given: the document must renew against\n" +
-			"the same host.\n\n" +
+			"the overlay address the guardian allocated and the taints it granted this\n" +
+			"machine. The taints are the credential's and are taken as they are; the two\n" +
+			"flags exist only to overrule the others from the terminal. --api is also\n" +
+			"checked when given: the document must renew against the same host.\n\n" +
 			"A document with no renewal fields at all -- a node in one of VeilNet's own ghost\n" +
 			"realms, minted for a century -- is installed as it is and never renewed.\n\n" +
 			"It refuses to replace a manifest that already exists. Replacing one is a new\n" +
@@ -101,7 +98,7 @@ func runEnrol(_ context.Context, args []string) int {
 		return fail(err)
 	}
 
-	if err := importCredential(d, *manifest, *apiBase, *ipv4, taints); err != nil {
+	if err := importCredential(d, *manifest, *apiBase, *ipv4); err != nil {
 		return fail(err)
 	}
 
@@ -114,7 +111,7 @@ func runEnrol(_ context.Context, args []string) int {
 // owns the terminal -- flags, privilege, exit codes -- and this owns the decision,
 // so the refusals below are reachable from a test rather than only from a root
 // shell. Every one of them is a refusal somebody will eventually hit.
-func importCredential(d paths.Dirs, manifestPath, apiBase, ipv4Flag string, taintFlag []string) error {
+func importCredential(d paths.Dirs, manifestPath, apiBase, ipv4Flag string) error {
 	// First, and before the file is even read. The check is about an identity that
 	// already exists, so it must not depend on the new document being any good --
 	// otherwise a malformed file reports its own problem and hides this one.
@@ -164,7 +161,7 @@ func importCredential(d paths.Dirs, manifestPath, apiBase, ipv4Flag string, tain
 		return err
 	}
 
-	compartments, err := chooseImportedTaints(m, taintFlag)
+	compartments, err := importedTaints(m)
 	if err != nil {
 		return err
 	}
@@ -186,14 +183,9 @@ func importCredential(d paths.Dirs, manifestPath, apiBase, ipv4Flag string, tain
 		cfg.IPv4 = &address
 	}
 
-	// Left alone when the document says nothing, rather than defaulted here. `up`
-	// mints a taint for a machine whose configuration has none, and it explains
-	// itself while doing it -- so a guardian that ships no taints lands the
-	// operator in the one place conflux is loud about instead of in a compartment
-	// this verb chose quietly.
-	if len(compartments) > 0 {
-		cfg.Taints = compartments
-	}
+	// Always, none included: conflux.json mirrors what the credential grants, which every
+	// start checks it against.
+	cfg.Taints = compartments
 
 	if err := seedExport(cfg, m); err != nil {
 		return err
@@ -234,9 +226,7 @@ func importCredential(d paths.Dirs, manifestPath, apiBase, ipv4Flag string, tain
 		ui.Field("ipv4", address)
 	}
 
-	if len(compartments) > 0 {
-		ui.Field("taint", strings.Join(compartments, ", "))
-	}
+	ui.Field("taint", joinTaints(compartments))
 
 	if len(m.Bootstrap()) > 0 {
 		ui.Field("bootstrap", strings.Join(m.Bootstrap(), ", "))
@@ -333,27 +323,25 @@ func chooseAPIBase(m *enrol.Manifest, flagValue string) (string, error) {
 	return flagValue, nil
 }
 
-// chooseImportedTaints takes the flags if there are any, otherwise whatever the
-// issuer put in the document.
+// importedTaints are the ones the credential grants, checked.
 //
-// Validated either way, and that is the point of not just copying the list
-// through: a taint conflux cannot represent is a machine that enrols cleanly and
-// then fails to come up, with the reason arriving from anchor rather than from the
-// document that caused it.
-func chooseImportedTaints(m *enrol.Manifest, flagValues []string) ([]string, error) {
-	values := flagValues
-	if len(values) == 0 {
-		values = m.Taints()
-	}
+// Validated rather than copied through: a taint conflux cannot represent is a machine
+// that installs cleanly and then fails to come up, with the reason arriving from anchor
+// rather than from the document that caused it. An alpha credential granting none is
+// the realm's shared compartment, which conflux never puts a machine in; an issued one
+// granting none is its issuer's own realm's default compartment, and is taken.
+func importedTaints(m *enrol.Manifest) ([]string, error) {
+	values := unique(m.Taints())
 
-	if len(values) == 0 {
-		return nil, nil
+	if len(values) == 0 && m.Alpha() {
+		return nil, errors.New(
+			"this is an alpha credential granting no taints, which is the realm's shared compartment:\n" +
+				"  every untainted device in it can reach this machine. conflux never puts a machine there;\n" +
+				"  draw one in a network of its own with  conflux up --taint T")
 	}
-
-	values = unique(values)
 
 	if err := config.ValidateTaints(values); err != nil {
-		return nil, fmt.Errorf("the taints for this machine: %w", err)
+		return nil, fmt.Errorf("the taints this credential grants: %w", err)
 	}
 
 	return values, nil
@@ -417,11 +405,9 @@ func saveImported(d paths.Dirs, cfg *config.Config, env config.Envelope) error {
 		cfg.Mode = config.ModeTUN
 	}
 
-	// config.Save and not Validate. Validate refuses an empty taint set, and
-	// minting one here would put this machine in a compartment its operator never
-	// chose; `up` and `proxy` mint it, along with the mode and everything else they
-	// own. What lands here is half a configuration on purpose, and the half that
-	// matters is apiBaseUrl.
+	// config.Save and not Validate: what lands here is half a configuration on purpose.
+	// `up` and `proxy` own the mode and everything else a machine does, and the half
+	// that matters here is apiBaseUrl and the taints the credential grants.
 	if err := config.Save(d, cfg); err != nil {
 		return err
 	}

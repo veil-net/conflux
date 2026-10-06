@@ -1,10 +1,19 @@
 package config
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
+	"math/big"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestExportRefusesWhatAnchordRefuses: anchord reads the rendered block with -config
@@ -35,6 +44,7 @@ func TestExportRefusesWhatAnchordRefuses(t *testing.T) {
 		}, "clientKey"},
 		"a certificate without its key": {func(e *Export) { e.ClientCert = &Secret{Path: "client.pem"} }, "go together"},
 		"a key without its certificate": {func(e *Export) { e.ClientKey = &Secret{Inline: []byte("pem")} }, "go together"},
+		"no signal":                     {func(e *Export) { e.Metrics = false }, "export.flows"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			e := good()
@@ -49,6 +59,14 @@ func TestExportRefusesWhatAnchordRefuses(t *testing.T) {
 				t.Errorf("the refusal should say %q; it said: %v", tc.says, err)
 			}
 		})
+	}
+
+	// Flows alone is a signal: anchord exports them as logs of their own.
+	flows := good()
+	flows.Metrics, flows.Flows = false, true
+
+	if err := flows.Validate(); err != nil {
+		t.Errorf("a flows-only export was refused: %v", err)
 	}
 
 	// Off is off: nothing but the file's own shape is checked.
@@ -73,7 +91,7 @@ func TestExportReadsAsAnchordDoes(t *testing.T) {
 	var e Export
 
 	err := json.Unmarshal([]byte(`{
-		"enabled": true, "endpoint": "collector:4317", "metrics": true,
+		"enabled": true, "endpoint": "collector:4317", "metrics": true, "flows": true,
 		"metricIntervalNanos": "60000000000", "export_timeout_nanos": 6e10,
 		"trace_sample_ratio": "0.25", "log_level": -4, "serviceName": null,
 		"ca_cert": {"inline": "-_8"}, "clientCert": {"path": "client.pem"}
@@ -83,7 +101,7 @@ func TestExportReadsAsAnchordDoes(t *testing.T) {
 	}
 
 	want := Export{
-		Enabled: true, Endpoint: "collector:4317", Metrics: true,
+		Enabled: true, Endpoint: "collector:4317", Metrics: true, Flows: true,
 		MetricIntervalNanos: 60e9, ExportTimeoutNanos: 60e9, TraceSampleRatio: 0.25, LogLevel: -4,
 		CACert: &Secret{Inline: []byte{0xfb, 0xff}}, ClientCert: &Secret{Path: "client.pem"},
 	}
@@ -116,4 +134,72 @@ func TestExportReadsAsAnchordDoes(t *testing.T) {
 			t.Errorf("%s was accepted: %s", name, in)
 		}
 	}
+}
+
+// TestExportRefusesTLSMaterialAnchordCannotLoad: anchord builds its TLS configuration
+// at startup and exits on material it cannot read or parse, which the supervisor would
+// retry for ever. Inline material and absolute paths are read here as anchord reads them;
+// a relative path resolves against the daemon's working directory, so it is left alone.
+func TestExportRefusesTLSMaterialAnchordCannotLoad(t *testing.T) {
+	certPEM, keyPEM := selfSigned(t)
+	_, otherKey := selfSigned(t)
+
+	dir := t.TempDir()
+	caPath := filepath.Join(dir, "ca.pem")
+
+	if err := os.WriteFile(caPath, certPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	tlsBlock := func(set func(*Export)) *Export {
+		e := &Export{Enabled: true, Endpoint: "collector:4317", Metrics: true}
+		set(e)
+
+		return e
+	}
+
+	for name, tc := range map[string]struct {
+		e  *Export
+		ok bool
+	}{
+		"an inline CA":          {tlsBlock(func(e *Export) { e.CACert = &Secret{Inline: certPEM} }), true},
+		"a CA file":             {tlsBlock(func(e *Export) { e.CACert = &Secret{Path: caPath} }), true},
+		"a client pair":         {tlsBlock(func(e *Export) { e.ClientCert, e.ClientKey = &Secret{Inline: certPEM}, &Secret{Inline: keyPEM} }), true},
+		"a relative path":       {tlsBlock(func(e *Export) { e.CACert = &Secret{Path: "ca.pem"} }), true},
+		"an inline CA, not PEM": {tlsBlock(func(e *Export) { e.CACert = &Secret{Inline: []byte("pem")} }), false},
+		"a CA file not there":   {tlsBlock(func(e *Export) { e.CACert = &Secret{Path: filepath.Join(dir, "gone.pem")} }), false},
+		"a pair that is not":    {tlsBlock(func(e *Export) { e.ClientCert, e.ClientKey = &Secret{Inline: certPEM}, &Secret{Inline: otherKey} }), false},
+		"bad material, plaintext": {tlsBlock(func(e *Export) {
+			e.Insecure, e.CACert = true, &Secret{Inline: []byte("pem")}
+		}), true},
+	} {
+		if err := tc.e.Validate(); (err == nil) != tc.ok {
+			t.Errorf("%s: Validate() = %v, want ok = %v", name, err, tc.ok)
+		}
+	}
+}
+
+// selfSigned is a certificate and its key, as PEM.
+func selfSigned(t *testing.T) (certPEM, keyPEM []byte) {
+	t.Helper()
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tmpl := &x509.Certificate{SerialNumber: big.NewInt(1), NotAfter: time.Now().Add(time.Hour)}
+
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	k, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}),
+		pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: k})
 }

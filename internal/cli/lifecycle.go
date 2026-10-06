@@ -124,7 +124,7 @@ func startFromConfig(ctx context.Context, d paths.Dirs, mgr service.Manager, ver
 		return fail(err)
 	}
 
-	report(cfg, st, verb)
+	report(d, cfg, st, verb)
 
 	return ExitOK
 }

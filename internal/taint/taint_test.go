@@ -33,12 +33,24 @@ func TestNewIsValidAndUnambiguous(t *testing.T) {
 func TestNewShape(t *testing.T) {
 	v := New()
 
-	if got, want := len(v), length+length/group-1; got != want {
+	if got, want := len(v), length+(length-1)/group; got != want {
 		t.Errorf("len(New()) = %d, want %d (%q)", got, want, v)
 	}
 
-	if strings.Count(v, "-") != length/group-1 {
-		t.Errorf("New() = %q, want it grouped for reading", v)
+	groups := strings.Split(v, "-")
+	if len(groups) != (length+group-1)/group {
+		t.Fatalf("New() = %q, want it grouped for reading", v)
+	}
+
+	for i, g := range groups {
+		want := group
+		if i == len(groups)-1 {
+			want = length - group*(len(groups)-1)
+		}
+
+		if len(g) != want {
+			t.Errorf("New() = %q: group %d is %q, want %d symbols", v, i, g, want)
+		}
 	}
 }
 

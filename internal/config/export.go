@@ -2,12 +2,16 @@ package config
 
 import (
 	"bytes"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -58,6 +62,11 @@ type Export struct {
 	Metrics bool `json:"metrics,omitempty"`
 	Traces  bool `json:"traces,omitempty"`
 	Logs    bool `json:"logs,omitempty"`
+
+	// Flows exports a log record for each interval of each IP flow the anchor carries
+	// between its own side and a peer, and of each circuit it relays. The anchor counts
+	// flows only while this is on.
+	Flows bool `json:"flows,omitempty"`
 
 	// MetricIntervalNanos is how often accumulated metrics are sent. Zero is 60s.
 	MetricIntervalNanos int64 `json:"metricIntervalNanos,omitempty"`
@@ -152,13 +161,13 @@ func (e *Export) Validate() error {
 		return errors.New("export.headers has a header with no name")
 	}
 
-	// All three off is the same as not exporting, and anchor reports it as such.
-	// Refusing it here means an operator who meant to pick signals finds out now
-	// rather than from a collector that never hears from this machine.
-	if !e.Metrics && !e.Traces && !e.Logs {
+	// All four off is refused by anchord at startup (REASON_EXPORT_NO_SIGNAL). Refusing it
+	// here means an operator who meant to pick signals finds out now rather than from a
+	// daemon that will not start.
+	if !e.Metrics && !e.Traces && !e.Logs && !e.Flows {
 		return errors.New(
 			"export is enabled and no signal is selected: set at least one of " +
-				"export.metrics, export.traces, export.logs")
+				"export.metrics, export.traces, export.logs, export.flows")
 	}
 
 	if e.TraceSampleRatio < 0 || e.TraceSampleRatio > 1 {
@@ -167,8 +176,46 @@ func (e *Export) Validate() error {
 
 	// Only over TLS, which is the only place anchord loads the pair: half of one is mTLS
 	// half-written, and it refuses to start on it rather than connect without.
-	if !e.Insecure && e.ClientCert.given() != e.ClientKey.given() {
+	if e.Insecure {
+		return nil
+	}
+
+	if e.ClientCert.given() != e.ClientKey.given() {
 		return errors.New("export.clientCert and export.clientKey go together: a certificate needs its key, and a key its certificate")
+	}
+
+	return e.checkTLS()
+}
+
+// checkTLS refuses the material anchord cannot build a TLS configuration from at startup
+// (otelbridge's tlsConfig): a CA that is not PEM it understands, and a client certificate
+// and key that do not load as a pair. Read as anchord reads it -- inline, or the file a
+// path names -- except a relative path, which resolves against the daemon's working
+// directory and so cannot be read from here as the daemon would read it.
+func (e *Export) checkTLS() error {
+	ca, err := e.CACert.material("caCert")
+	if err != nil {
+		return err
+	}
+
+	if len(ca) > 0 && !x509.NewCertPool().AppendCertsFromPEM(ca) {
+		return errors.New("export.caCert is not a PEM certificate anchord understands, and it would not start on it")
+	}
+
+	cert, err := e.ClientCert.material("clientCert")
+	if err != nil {
+		return err
+	}
+
+	key, err := e.ClientKey.material("clientKey")
+	if err != nil {
+		return err
+	}
+
+	if len(cert) > 0 && len(key) > 0 {
+		if _, err := tls.X509KeyPair(cert, key); err != nil {
+			return fmt.Errorf("export.clientCert and export.clientKey do not load as a pair, and anchord would not start on them: %w", err)
+		}
 	}
 
 	return nil
@@ -177,10 +224,30 @@ func (e *Export) Validate() error {
 // given reports whether a Secret names any material at all.
 func (s *Secret) given() bool { return s != nil && (len(s.Inline) > 0 || s.Path != "") }
 
+// material is what the Secret holds, read from its path when it names an absolute one;
+// nil when it names nothing, or a relative path checkTLS cannot read as the daemon would.
+func (s *Secret) material(field string) ([]byte, error) {
+	switch {
+	case s == nil:
+		return nil, nil
+	case len(s.Inline) > 0:
+		return s.Inline, nil
+	case !filepath.IsAbs(s.Path):
+		return nil, nil
+	}
+
+	b, err := os.ReadFile(s.Path)
+	if err != nil {
+		return nil, fmt.Errorf("export.%s: anchord reads it at startup and would not start without it: %w", field, err)
+	}
+
+	return b, nil
+}
+
 // exportNames maps both of protojson's names for each ExportConfig field -- the JSON
 // name and the proto field name -- to the one conflux writes.
 var exportNames = protoNames(
-	"enabled", "endpoint", "insecure", "headers", "metrics", "traces", "logs",
+	"enabled", "endpoint", "insecure", "headers", "metrics", "traces", "logs", "flows",
 	"metricIntervalNanos", "traceSampleRatio", "serviceName", "resourceAttributes",
 	"exportTimeoutNanos", "shutdownTimeoutNanos", "caCert", "clientCert", "clientKey",
 	"logLevel", "cardinalityLimit")
@@ -239,6 +306,8 @@ func (e *Export) UnmarshalJSON(b []byte) error {
 			err = json.Unmarshal(raw, &e.Traces)
 		case "logs":
 			err = json.Unmarshal(raw, &e.Logs)
+		case "flows":
+			err = json.Unmarshal(raw, &e.Flows)
 		case "metricIntervalNanos":
 			e.MetricIntervalNanos, err = protoInt64(raw)
 		case "traceSampleRatio":

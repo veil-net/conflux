@@ -14,19 +14,25 @@ A run starts from a freshly pulled `version3`, works on a new branch, and ends w
 
 `conflux` puts one machine on a VeilNet overlay with a single command. It is a thin CLI over anchor: it embeds `anchord` and `anchorctl`, extracts and drives them, and adds only enrolment, credential renewal, a configuration file, and a boot service.
 
-- **Pass-through:** everything `anchorctl` can do, conflux can do. Any command conflux doesn't recognise goes to `anchorctl` unchanged. Conflux commands never shadow an `anchorctl` command unintentionally.
+- **Pass-through:** everything `anchorctl` can do, conflux can do. Any command conflux doesn't recognise goes to `anchorctl` unchanged. That includes the realm control commands (`block`, `unblock`, `blocks`, `taints`, `subnets`, `telemetry`), whose power comes from the capabilities in the machine's credential. Conflux commands never shadow an `anchorctl` command unintentionally.
 - **Embedded binaries:** exactly one pinned, garbled anchor pair (`anchord` + lockdown `anchorctl`) per build, selected by the build-tagged `anchor/bin_GOOS_GOARCH.go` files, each naming its two files explicitly. The binaries are not in git; `anchor/bin/` is populated by `make anchor-bins`. `anchoradmin` is never embedded, copied, or shipped. A placeholder build compiles, reports it carries no anchor pair, and is refused by the `dist` size gate.
 - **Targets:** exactly the Makefile's `TARGETS` (linux amd64/arm64, darwin arm64, windows amd64/arm64, freebsd amd64, openbsd amd64). `anchor-bins.sh` agrees with them.
 - **Two modes, mutually exclusive:** `conflux up` is TUN mode (host interface `anchor0`). `conflux proxy` is userspace mode (no interface, no privilege; reverse-proxy specs `OVERLAYPORT[/NETWORK]=BACKEND`, backend dialled fresh per connection). Both take subnets and exits (`--serve-exit`/`--use-exit`): with an interface the host forwards, in userspace anchor's own process does. Running either replaces the other. Exits are passed explicitly, never taken from the manifest.
+- **Served subnets:** the last set is what is served. Conflux sets the list at start. A member's Subnets order can replace it. An explicit `--subnet`/`--no-subnet` on `up` or `proxy` replaces the order again.
 - **Uplink:** `--uplink` picks the medium (e.g. a serial line) independently of the mode.
 - **Addresses:** IPv6 is derived from identity. IPv4 is asked once; a re-run never changes a machine's address.
-- **Taints:** always generated or given. Machines sharing a taint reach each other; others have no address for them.
+- **Taints:** granted by the issuer, and fixed for the life of the identity.
+  - An alpha enrolment asks for them: minted for a network's first machine (about 128 bits), or given with `--taint` by the machines joining it. Conflux never asks alpha for none.
+  - The credential commits to them, anchor starts under no others, and every renewal restates them.
+  - A different taint is a new identity, never drawn automatically.
+  - An imported credential carries what its issuer granted, none included.
+  - Machines sharing a taint reach each other; others have no address for them.
 - **Two issuers:**
-  - Public alpha realm, served by traveller at `https://api.veilnet.com.au` (conflux's default API): anonymous stateless enrolment (`POST /ghosts/alpha`), unauthenticated renewal, thirty-day window, no revocation.
-  - Self-hosted guardian: operator-commissioned manifest installed by `conflux enrol --manifest FILE --api URL`, bearer-authenticated renewal against that guardian's own API, revocation by refusing to renew.
+  - Public alpha realm, served by traveller at `https://api.veilnet.com.au` (conflux's default API): anonymous stateless enrolment in the requested taints (`POST /ghosts/alpha`), unauthenticated renewal restating them (`{anchorId, taints}`), thirty-day window, no revocation.
+  - Self-hosted guardian: operator-commissioned manifest installed by `conflux enrol --manifest FILE --api URL`, renewal with the same body plus a bearer against that guardian's own API, revocation by refusing to renew.
   - Renewal happens at two thirds of the observed window and never changes identity.
 - **Secrets on disk:** the manifest is the identity. It is written before anything else is done with an enrolment response, `0600` with the mode set on the descriptor, in a `0700` directory (a replaced DACL on Windows). Never in argv (stdin to `anchorctl start -manifest -`), never in a log (redacting `String`/`GoString`). Config writes are atomic.
-- **Boot service:** systemd, launchd, rc, or a Windows service. `down` and `start` leave it registered; `uninstall` leaves nothing behind.
+- **Boot service:** systemd, launchd, rc, or a Windows service. It runs a copy of conflux kept in the root-only state directory, which `up`, `proxy`, `install` and `start` refresh, never the file conflux was run from. `down` and `start` leave it registered; `uninstall` leaves nothing behind.
 - **Public repository:** conflux is public, anchor is private. Nothing from anchor's source, no token, no private material is ever committed. CI refuses fork PRs on self-hosted runners.
 - **Anchor relationship:** anchor is the source of truth for `anchorctl` commands and flags, daemon config and mode rules, manifest/credential format, taint and address rules, proxy spec rules, uplink rules, metrics names, release names, and the `shelf` release format. Conflux consumes it through the embedded binaries, `internal/anchorctl` (argv builders, output and metrics parsers, argv goldens, flag cross-check), `internal/config` (rules matching anchor's), `internal/enrol` (manifest decoding), `internal/shelf` and `anchor-fetch`, `anchor-bins.sh`, and the CI actions.
 - **Traveller relationship:** traveller is live in production at `https://api.veilnet.com.au`; that deployment is the source of truth for the enrolment, renewal, and guardian manifest/bearer HTTP contracts. The live OpenAPI schema (served at `/docs`) plus real calls to the anonymous alpha routes are the reference. No traveller checkout is needed.
@@ -90,7 +96,11 @@ The checks that need the real binaries (flag cross-check, shadowing, collisions)
 
 ### 3. Build and copy the binaries from anchor
 
-1. **Pin.** `make release` reads `$(GENESIS_DIR)/genesis.pin` (default `genesis/`) and **mints a brand-new genesis if that file is missing**, so it must never run without the pin in place. The production pin comes from `$A/genesis/genesis.pin` (read only that file, never `genesis.key`) or anchor's public repository variable (`gh variable get GENESIS_PIN --repo veil-net/anchor`). It must start with `realm`, and the two must match if both exist. With neither available, go to the fallback. Never mint or invent a pin.
+1. **Pin.** `make release` reads `$(GENESIS_DIR)/genesis.pin` (default `genesis/`) and **mints a brand-new genesis if that file is missing**, so it must never run without the pin in place.
+   - The production pin is anchor's public repository variable: `gh variable get GENESIS_PIN --repo veil-net/anchor`. It must start with `realm`.
+   - It must equal the realm the live API's genesis derives to, computed from the step 2 enrolment's `genesis` (snippet in [reference.md § Live API](reference.md#live-traveller-api)).
+   - `$A/genesis/` may hold a locally minted development root (a `genesis.key` beside the pin). Never build from it.
+   - Without the variable, go to the fallback. Never mint or invent a pin.
    ```bash
    mkdir -p "$S/genesis" && printf '%s' "$PIN" > "$S/genesis/genesis.pin"
    make -C "$AS" release GENESIS_DIR="$S/genesis"

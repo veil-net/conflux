@@ -96,13 +96,19 @@ Anchor is the reference for overlay behaviour, and the live API at `api.veilnet.
 - Every command and flag conflux emits exists in current anchor with the same meaning (argv goldens plus the flag cross-check against the real binary).
 - Every parsed output and metric name matches current anchor.
 
-**Config rules** (a proxy needs userspace; a subnet, an exit and an IPv4 work in either mode; the two exits are alternatives; no port or explicit LAN discovery beside an uplink, and there both are typed off so a manifest cannot supply them; taint, IPv4 (translation pool included), subnet, AnchorID, bootstrap-entry and proxy-spec parsing; the export block anchord reads at startup, read as protojson reads it) accept and refuse exactly what current anchor does, plus conflux's own rules: a machine always carries a taint, no list entry holds a comma, and an uplink is a device rather than a descriptor. A file conflux refuses is refused before anchord starts on it, and is permanent.
+**Config rules** (a proxy needs userspace; a subnet, an exit and an IPv4 work in either mode; the two exits are alternatives; no port or explicit LAN discovery beside an uplink, and there both are typed off so a manifest cannot supply them; taint, IPv4 (translation pool included), subnet (`*`, `SPEC@a+b` bindings to the machine's own taints, the list bounds), AnchorID, bootstrap-entry and proxy-spec parsing; the export block anchord reads at startup, read as protojson reads it, TLS material included) accept and refuse exactly what current anchor does, plus conflux's own rules: no list entry holds a comma, and an uplink is a device rather than a descriptor. A file conflux refuses is refused before anchord starts on it, and is permanent.
+
+**Taints**
+- An alpha enrolment always asks for a taint, minted or given; conflux never asks for none.
+- The credential's taints are the machine's for the life of its identity. Starts take them from the manifest, renewals restate them, and a configuration that disagrees is refused for good, naming the way out (a new identity).
+- An imported credential's taints are taken as granted, none included.
+- Served subnets are the last set: conflux's at start, or after an explicit `--subnet`/`--no-subnet`, otherwise a member's Subnets order.
 
 **Manifest decoding** handles anchor's current format, refuses a realm manifest and a future version, and survives renewal losslessly.
 
 **Live API**
 - `config.DefaultAPIBaseURL` is `https://api.veilnet.com.au`.
-- An anonymous enrolment and a renewal against it succeed and match `internal/enrol`'s expectations (payload, window, error handling).
+- An anonymous enrolment in a random taint and a renewal against it succeed and match `internal/enrol`'s expectations (request bodies, the taints echoed, window, bootstrap, error handling).
 - The client's `httptest` contract tests mirror the live schema.
 - The guardian flows match the live schema.
 
@@ -112,7 +118,8 @@ Anchor is the reference for overlay behaviour, and the live API at `api.veilnet.
 - It never appears in argv, `ps`, or logs.
 
 **Writes and state**
-- Config and state writes are atomic, and every writer of the manifest or state holds the lock.
+- Config and state writes are atomic, and every writer of the manifest or state holds the lock, `conflux enrol` included.
+- The boot service runs the copy of conflux in the root-only state directory, never the file conflux was run from.
 - A re-run of `up` or `proxy` never changes an existing machine's address or identity, and the IPv4 question is asked once, a declined answer included.
 - `up` and `proxy` replace each other cleanly.
 - `uninstall` leaves nothing behind.

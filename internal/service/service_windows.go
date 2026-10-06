@@ -37,7 +37,11 @@ func (scm) Install(exe string, args ...string) error {
 	}
 	defer m.Disconnect()
 
+	// ServiceType named, not left zero: CreateService fills it in, but UpdateConfig hands
+	// it to ChangeServiceConfig as it is, which refuses a zero type, so every re-run of
+	// up would fail to re-register an existing service.
 	cfg := mgr.Config{
+		ServiceType:      windows.SERVICE_WIN32_OWN_PROCESS,
 		DisplayName:      displayName,
 		Description:      description,
 		StartType:        mgr.StartAutomatic,

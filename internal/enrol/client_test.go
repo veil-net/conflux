@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -26,6 +27,9 @@ func server(t *testing.T, h http.HandlerFunc) (*Client, *httptest.Server) {
 	return &Client{BaseURL: s.URL, HTTP: s.Client()}, s
 }
 
+// asked is the set every enrolment and renewal below asks for.
+var asked = []string{alphaTaint}
+
 func TestEnrol(t *testing.T) {
 	var calls int
 
@@ -40,6 +44,14 @@ func TestEnrol(t *testing.T) {
 			t.Errorf("path = %s, want %s", r.URL.Path, enrolPath)
 		}
 
+		var in struct {
+			Taints []string `json:"taints"`
+		}
+
+		if err := jsonDecode(r, &in); err != nil || len(in.Taints) != 1 || in.Taints[0] != alphaTaint {
+			t.Errorf("the request asked for taints %v (%v), want %v", in.Taints, err, asked)
+		}
+
 		if ua := r.Header.Get("User-Agent"); !strings.HasPrefix(ua, "conflux/") {
 			t.Errorf("User-Agent = %q, want it to name conflux", ua)
 		}
@@ -48,7 +60,7 @@ func TestEnrol(t *testing.T) {
 		fmt.Fprintf(w, `{"credentials":%q}`, base64.StdEncoding.EncodeToString([]byte(alphaDocument)))
 	})
 
-	env, err := c.Enrol(t.Context())
+	env, err := c.Enrol(t.Context(), asked)
 	if err != nil {
 		t.Fatalf("Enrol: %v", err)
 	}
@@ -59,6 +71,25 @@ func TestEnrol(t *testing.T) {
 
 	if _, err := Decode(env); err != nil {
 		t.Errorf("the envelope does not decode: %v", err)
+	}
+}
+
+// TestEnrolAsksForATaint: the alpha realm's default compartment is every untainted
+// device's, so an enrolment asking for none -- or for a name anchor would refuse to
+// start under -- is refused before anything is sent.
+func TestEnrolAsksForATaint(t *testing.T) {
+	c, _ := server(t, func(http.ResponseWriter, *http.Request) {
+		t.Error("Enrol made a request it should have refused")
+	})
+
+	if _, err := c.Enrol(t.Context(), nil); !errors.Is(err, ErrNoTaints) {
+		t.Errorf("Enrol with no taints = %v, want ErrNoTaints", err)
+	}
+
+	for _, bad := range [][]string{{"a@b"}, {"has space"}, {""}} {
+		if _, err := c.Enrol(t.Context(), bad); err == nil {
+			t.Errorf("Enrol asked for %q", bad)
+		}
 	}
 }
 
@@ -73,7 +104,7 @@ func TestEnrolHandsOverWhatArrived(t *testing.T) {
 		fmt.Fprintf(w, `{"credentials":%q}`, realm)
 	})
 
-	env, err := c.Enrol(t.Context())
+	env, err := c.Enrol(t.Context(), asked)
 	if err != nil {
 		t.Fatalf("Enrol refused a document before it could be written: %v", err)
 	}
@@ -100,7 +131,7 @@ func TestEnrolRefusesGarbage(t *testing.T) {
 			fmt.Fprint(w, body)
 		})
 
-		if _, err := c.Enrol(t.Context()); err == nil {
+		if _, err := c.Enrol(t.Context(), asked); err == nil {
 			t.Errorf("Enrol accepted %s", name)
 		}
 	}
@@ -113,7 +144,7 @@ func TestEnrolHTTPErrors(t *testing.T) {
 			fmt.Fprint(w, `{"message":"nope"}`)
 		})
 
-		_, err := c.Enrol(t.Context())
+		_, err := c.Enrol(t.Context(), asked)
 		if err == nil {
 			t.Fatalf("Enrol succeeded against a %d", code)
 		}
@@ -156,7 +187,7 @@ func TestBodyIsBounded(t *testing.T) {
 		}
 	})
 
-	if _, err := c.Enrol(t.Context()); err == nil {
+	if _, err := c.Enrol(t.Context(), asked); err == nil {
 		t.Fatal("Enrol accepted an oversized body")
 	}
 }
@@ -171,7 +202,8 @@ func TestRenew(t *testing.T) {
 		}
 
 		var in struct {
-			AnchorID string `json:"anchorId"`
+			AnchorID string   `json:"anchorId"`
+			Taints   []string `json:"taints"`
 		}
 
 		if err := jsonDecode(r, &in); err != nil {
@@ -182,11 +214,15 @@ func TestRenew(t *testing.T) {
 			t.Errorf("anchorId = %q", in.AnchorID)
 		}
 
-		fmt.Fprintf(w, `{"chain":%q,"notAfter":%q}`,
-			base64.StdEncoding.EncodeToString(chain), expiry.Format(ManifestTime))
+		if len(in.Taints) != 1 || in.Taints[0] != alphaTaint {
+			t.Errorf("taints = %v, want the granted set restated, %v", in.Taints, asked)
+		}
+
+		fmt.Fprintf(w, `{"chain":%q,"notAfter":%q,"bootstrap":[%q,%q]}`,
+			base64.StdEncoding.EncodeToString(chain), expiry.Format(ManifestTime), bootNode, bootAPI)
 	})
 
-	got, err := c.Renew(t.Context(), s.URL+alphaRenewPath, "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq")
+	got, err := c.Renew(t.Context(), s.URL+alphaRenewPath, "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq", asked)
 	if err != nil {
 		t.Fatalf("Renew: %v", err)
 	}
@@ -199,6 +235,41 @@ func TestRenew(t *testing.T) {
 	if !got.NotAfter.Equal(expiry) {
 		t.Errorf("NotAfter = %v, want %v", got.NotAfter, expiry)
 	}
+
+	if len(got.Bootstrap) != 2 || got.Bootstrap[0] != bootNode || got.Bootstrap[1] != bootAPI {
+		t.Errorf("Bootstrap = %v, want the issuer's list as it came", got.Bootstrap)
+	}
+}
+
+// The renewal route's bootstrap list: its nodes as AnchorID@host:port, then every
+// instance of the API as host:port.
+const (
+	bootNode = "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq@genesis.veilnet.com.au:4700"
+	bootAPI  = "api.veilnet.com.au:4700"
+)
+
+// TestRenewToleratesABootstrapItCannotUse: a bootstrap list is worth refreshing and not
+// worth failing a renewal over, so one conflux cannot use is dropped whole -- the
+// manifest keeps its own -- rather than refusing the chain or keeping part of it.
+func TestRenewToleratesABootstrapItCannotUse(t *testing.T) {
+	for name, list := range map[string]string{
+		"absent":                ``,
+		"empty":                 `,"bootstrap":[]`,
+		"an entry anchor skips": `,"bootstrap":["genesis.veilnet.com.au:4700","not an entry"]`,
+	} {
+		c, s := server(t, func(w http.ResponseWriter, _ *http.Request) {
+			fmt.Fprintf(w, `{"chain":"YQ==","notAfter":"2026-09-20T04:12:00.000Z"%s}`, list)
+		})
+
+		got, err := c.Renew(t.Context(), s.URL+alphaRenewPath, "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq", asked)
+		if err != nil {
+			t.Errorf("%s: Renew failed over the bootstrap list: %v", name, err)
+		}
+
+		if got.Bootstrap != nil {
+			t.Errorf("%s: Bootstrap = %v, want nil so the manifest keeps its own", name, got.Bootstrap)
+		}
+	}
 }
 
 // TestRenewRefusesAForeignHost is the check on a field conflux stores and re-reads.
@@ -207,7 +278,7 @@ func TestRenewRefusesAForeignHost(t *testing.T) {
 		fmt.Fprint(w, `{"chain":"YQ==","notAfter":"2026-09-20T04:12:00.000Z"}`)
 	})
 
-	_, err := c.Renew(t.Context(), "https://attacker.example/ghosts/alpha/renew", "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq")
+	_, err := c.Renew(t.Context(), "https://attacker.example/ghosts/alpha/renew", "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq", asked)
 	if err == nil {
 		t.Fatal("Renew sent the request to a host the config does not name")
 	}
@@ -226,7 +297,7 @@ func TestRenewRefusesBadInput(t *testing.T) {
 		"an empty AnchorID": "",
 		"not an AnchorID":   "definitely-not-one",
 	} {
-		if _, err := c.Renew(t.Context(), s.URL+alphaRenewPath, id); err == nil {
+		if _, err := c.Renew(t.Context(), s.URL+alphaRenewPath, id, asked); err == nil {
 			t.Errorf("Renew accepted %s", name)
 		}
 	}
@@ -241,7 +312,7 @@ func TestRenewRefusesBadInput(t *testing.T) {
 	} {
 		bad, bs := server(t, func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, body) })
 
-		if _, err := bad.Renew(t.Context(), bs.URL+alphaRenewPath, "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq"); err == nil {
+		if _, err := bad.Renew(t.Context(), bs.URL+alphaRenewPath, "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq", asked); err == nil {
 			t.Errorf("Renew accepted %s", name)
 		}
 	}
@@ -254,20 +325,23 @@ func TestPlainHTTPIsRefused(t *testing.T) {
 
 	c := &Client{BaseURL: "http://api.example"}
 
-	if _, err := c.Enrol(t.Context()); err == nil || !strings.Contains(err.Error(), "https") {
+	if _, err := c.Enrol(t.Context(), asked); err == nil || !strings.Contains(err.Error(), "https") {
 		t.Fatalf("Enrol over plain http should be refused, got %v", err)
 	}
 }
 
 func TestContextCancellation(t *testing.T) {
 	c, _ := server(t, func(w http.ResponseWriter, r *http.Request) {
+		// Read first: a server notices a client that went away only once it has the
+		// body, which an enrolment now carries.
+		_, _ = io.Copy(io.Discard, r.Body)
 		<-r.Context().Done()
 	})
 
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
 
-	if _, err := c.Enrol(ctx); err == nil {
+	if _, err := c.Enrol(ctx, asked); err == nil {
 		t.Fatal("Enrol ignored a cancelled context")
 	}
 }
@@ -284,7 +358,7 @@ func TestSkewIsMeasured(t *testing.T) {
 	// realm mismatch.
 	c.Now = func() time.Time { return time.Now().Add(2 * time.Hour) }
 
-	if _, err := c.Enrol(t.Context()); err != nil {
+	if _, err := c.Enrol(t.Context(), asked); err != nil {
 		t.Fatalf("Enrol: %v", err)
 	}
 
@@ -310,7 +384,7 @@ func TestRenewNeedsAURL(t *testing.T) {
 		t.Error("Renew made a request with no renewal URL to make it to")
 	})
 
-	if _, err := c.Renew(t.Context(), "", "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq"); err == nil {
+	if _, err := c.Renew(t.Context(), "", "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq", asked); err == nil {
 		t.Error("Renew accepted an empty renewal URL")
 	}
 }

@@ -88,6 +88,15 @@ type Client struct {
 	measured bool
 }
 
+// ErrNoTaints is an enrolment asked to request no compartment at all.
+//
+// The alpha realm's default compartment is the one every untainted device shares,
+// which is what lets any user there reach any other; a machine somebody is joining to
+// their own network is never put there, so the request is refused before it is sent.
+var ErrNoTaints = errors.New(
+	"enrol: no taint to ask for: the alpha realm's default compartment is shared with every untainted device, " +
+		"and conflux never asks for it")
+
 // Renewal is what the renew route hands back.
 type Renewal struct {
 	// Chain is the raw credential bytes, already base64-decoded. The API sends
@@ -99,6 +108,12 @@ type Renewal struct {
 
 	// NotAfter is when the new chain stops verifying.
 	NotAfter time.Time
+
+	// Bootstrap is the issuer's bootstrap list as of this renewal, or nil when the
+	// answer carried none conflux can use -- absent, empty, or with an entry anchor
+	// would skip. Nil keeps the manifest's own: a list is worth refreshing, never
+	// worth failing a renewal over, and never worth replacing with part of one.
+	Bootstrap []string
 }
 
 // SkewError means the local clock disagrees with the server's badly enough that
@@ -152,7 +167,13 @@ func (c *Client) http() *http.Client {
 	return defaultHTTP
 }
 
-// Enrol draws a new identity and the credential that admits it.
+// Enrol draws a new identity and the credential that admits it, in the compartments
+// taints names.
+//
+// The credential commits to those taints, and anchor starts the identity under no
+// others, so they are asked for here rather than chosen later: the first machine of a
+// network asks for one conflux minted, and every machine joining it asks for the same.
+// An empty set is ErrNoTaints, refused before anything is sent.
 //
 // Called in exactly one place, when there is no manifest on disk. It must never be
 // a fallback for a failed renewal: a new enrolment is a new identity, a new
@@ -163,10 +184,25 @@ func (c *Client) http() *http.Client {
 // the identity in existence, so the caller writes it to disk before anything else is
 // done with it -- a document this build cannot read is one a later conflux can, and
 // discarding it would lose the identity for good.
-func (c *Client) Enrol(ctx context.Context) (config.Envelope, error) {
+func (c *Client) Enrol(ctx context.Context, taints []string) (config.Envelope, error) {
+	if len(taints) == 0 {
+		return nil, ErrNoTaints
+	}
+
+	if err := config.ValidateTaints(taints); err != nil {
+		return nil, fmt.Errorf("enrol: %w", err)
+	}
+
 	u := c.base() + enrolPath
 
 	if err := checkScheme(u); err != nil {
+		return nil, err
+	}
+
+	body, err := json.Marshal(struct {
+		Taints []string `json:"taints"`
+	}{taints})
+	if err != nil {
 		return nil, err
 	}
 
@@ -177,7 +213,7 @@ func (c *Client) Enrol(ctx context.Context) (config.Envelope, error) {
 	// Auth{}, named rather than omitted. Enrolment is what draws a credential, so
 	// there is nothing to present, and a client configured for a renewal must not
 	// leak that configuration into the one call that happens before it exists.
-	if err := c.do(ctx, http.MethodPost, u, nil, Auth{}, &out); err != nil {
+	if err := c.do(ctx, http.MethodPost, u, body, Auth{}, &out); err != nil {
 		return nil, fmt.Errorf("enrol: %w", err)
 	}
 
@@ -189,12 +225,18 @@ func (c *Client) Enrol(ctx context.Context) (config.Envelope, error) {
 	return env, nil
 }
 
-// Renew asks for a fresh chain for an anchor that already exists.
+// Renew asks for a fresh chain for an anchor that already exists, in the compartments
+// taints names -- the ones its credential grants, read from the stored manifest.
+//
+// The issuer keeps no record of them to read back, and the running anchor refuses a
+// chain granting any other set, so a renewal restates them; changing compartments is
+// enrolling again. One body for every issuer: the alpha route reads it as it is, and a
+// guardian reads the same with its bearer beside it.
 //
 // renewalURL comes out of the stored manifest. It is checked against the base URL's
 // host: the document is one conflux stores and re-reads, and a POST sent wherever a
 // stored field points is a hole worth closing on the way in.
-func (c *Client) Renew(ctx context.Context, renewalURL, anchorID string) (Renewal, error) {
+func (c *Client) Renew(ctx context.Context, renewalURL, anchorID string, taints []string) (Renewal, error) {
 	if anchorID == "" {
 		return Renewal{}, errors.New("renew: no AnchorID; the anchor has to have started at least once")
 	}
@@ -215,14 +257,24 @@ func (c *Client) Renew(ctx context.Context, renewalURL, anchorID string) (Renewa
 		return Renewal{}, err
 	}
 
-	body, err := json.Marshal(map[string]string{"anchorId": anchorID})
+	// [] rather than null for a credential that grants none: the route defaults a missing
+	// list, not a null one.
+	if taints == nil {
+		taints = []string{}
+	}
+
+	body, err := json.Marshal(struct {
+		AnchorID string   `json:"anchorId"`
+		Taints   []string `json:"taints"`
+	}{anchorID, taints})
 	if err != nil {
 		return Renewal{}, err
 	}
 
 	var out struct {
-		Chain    string `json:"chain"`
-		NotAfter string `json:"notAfter"`
+		Chain     string   `json:"chain"`
+		NotAfter  string   `json:"notAfter"`
+		Bootstrap []string `json:"bootstrap"`
 	}
 
 	if err := c.do(ctx, http.MethodPost, renewalURL, body, c.Auth, &out); err != nil {
@@ -243,7 +295,17 @@ func (c *Client) Renew(ctx context.Context, renewalURL, anchorID string) (Renewa
 		return Renewal{}, fmt.Errorf("renew: the returned expiry %q is not a timestamp", out.NotAfter)
 	}
 
-	return Renewal{Chain: chain, NotAfter: notAfter.UTC()}, nil
+	return Renewal{Chain: chain, NotAfter: notAfter.UTC(), Bootstrap: usableBootstrap(out.Bootstrap)}, nil
+}
+
+// usableBootstrap is the list when every entry is one anchor would dial, and nil
+// otherwise. See Renewal.Bootstrap.
+func usableBootstrap(list []string) []string {
+	if len(list) == 0 || config.ValidatePeers(list) != nil {
+		return nil
+	}
+
+	return list
 }
 
 func (c *Client) do(ctx context.Context, method, u string, body []byte, auth Auth, out any) error {

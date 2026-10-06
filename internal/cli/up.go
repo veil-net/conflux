@@ -2,16 +2,20 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"runtime"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/enrol"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/taint"
 	"github.com/veil-net/conflux/internal/ui"
@@ -51,7 +55,7 @@ func runUp(ctx context.Context, args []string) int {
 	fs.Bool("no-low-latency", false, "go back to carrying frames on streams")
 	registerExits(fs)
 
-	fs.Var(&taints, "taint", "compartment label; repeat to carry more than one")
+	fs.Var(&taints, "taint", taintUsage)
 	fs.Var(&subnets, "subnet", subnetUsage)
 	fs.Var(&peers, "peers", "bootstrap entry as host:port; repeat for more. Enrolment supplies these, so this is an override")
 
@@ -129,11 +133,16 @@ func runUp(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	if err := chooseTaints(cfg, taints); err != nil {
+	held, err := heldCredential(d)
+	if err != nil {
 		return fail(err)
 	}
 
-	return bring(ctx, d, cfg, "up")
+	if err := chooseTaints(cfg, taints, held); err != nil {
+		return fail(err)
+	}
+
+	return bring(ctx, d, cfg, "up", len(subnets) > 0 || *noSubnet)
 }
 
 // typedFlags records which flags were actually written, rather than which have a
@@ -229,8 +238,11 @@ func choosePort(cfg *config.Config, typed map[string]bool, value uint) error {
 // Flag help shared by up and proxy, which take the same routing settings: with an
 // interface the host forwards, and in userspace the anchor does from its own process.
 const (
-	subnetUsage    = "a network this machine forwards for the realm, by prefix or interface; repeat for more"
-	subnetOffUsage = "forward no networks for the realm; the way back from --subnet"
+	subnetUsage = "a network this machine forwards for the realm: a prefix, an interface, or '*' for every private one, " +
+		"optionally bound to some of its taints as SPEC@a+b; repeat for more. Replaces a list a Subnets order set"
+	subnetOffUsage = "forward no networks for the realm; the way back from --subnet, and from a Subnets order"
+	taintUsage     = "the taint to enrol in: the one the first machine of a network printed, to join it; " +
+		"omit it there and one is minted. Repeat for more than one. Fixed by the credential once enrolled"
 )
 
 // registerExits adds the two exit settings and their negations, read through
@@ -477,7 +489,11 @@ func choosePeers(cfg *config.Config, values []string, none bool) error {
 
 // chooseSubnets decides what this machine forwards for the realm: the --subnet flags
 // when there are any, nothing with --no-subnet, and otherwise what is configured, like
-// every other setting a re-run keeps. Validate checks each entry.
+// every other setting a re-run keeps. Validate checks each entry, and the bindings
+// against the taints.
+//
+// Either flag is a new set of the list, which replaces one a member's Subnets order set
+// since; see dropSubnetsOrder. A re-run with neither keeps whatever is served.
 func chooseSubnets(cfg *config.Config, values []string, none bool) error {
 	switch {
 	case none && len(values) > 0:
@@ -491,57 +507,144 @@ func chooseSubnets(cfg *config.Config, values []string, none bool) error {
 	return nil
 }
 
-// chooseTaints decides which compartment this machine is in.
+// chooseTaints decides which compartments this machine asks to be enrolled in, or
+// checks the ones its credential already grants.
 //
-// Omitting --taint mints one, because the alternative is not "no restriction": an
-// anchor with no taints carries the realm's default compartment, which every other
-// unconfigured anchor in the realm also carries. Leaving a machine there silently is
-// the one thing conflux will not do.
-func chooseTaints(cfg *config.Config, given []string) error {
-	if len(given) > 0 {
-		given = unique(given)
+// The credential commits to its taints for the life of the identity -- anchor starts it
+// under no others, and a renewal restates them -- so with a credential held, --taint can
+// only say the same thing again, and anything else is refused with the way out: a new
+// identity. Without one, --taint is the request: the taint the first machine of a
+// network printed, which a machine joining it asks for. Omitted there, conflux mints one,
+// because the alternative is not "no restriction": an anchor with no taints is in the
+// realm's shared compartment with every other untainted device, and conflux never asks
+// the alpha realm for that.
+func chooseTaints(cfg *config.Config, given []string, held *enrol.Manifest) error {
+	given = unique(given)
 
-		if err := config.ValidateTaints(given); err != nil {
+	if err := config.ValidateTaints(given); err != nil {
+		return err
+	}
+
+	if held != nil {
+		want := given
+		if len(want) == 0 {
+			want = cfg.Taints
+		}
+
+		if err := held.CheckTaints(want); err != nil {
 			return err
 		}
 
-		if len(cfg.Taints) > 0 && !sameSet(cfg.Taints, given) {
-			ui.Warnf("this changes the taint from %s to %s, which changes which machines can reach this one.",
-				strings.Join(cfg.Taints, ","), strings.Join(given, ","))
-		}
+		// The grant, whatever conflux.json said: it is the one place the names are, and a
+		// configuration that lost them gets them back.
+		cfg.Taints = unique(held.Taints())
 
+		return nil
+	}
+
+	switch {
+	case len(given) > 0:
 		cfg.Taints = given
+	case len(cfg.Taints) > 0:
+		return nil // asked for by an earlier run that has not enrolled yet
+	default:
+		minted := taint.New()
+		cfg.Taints = []string{minted}
 
-		if len(given) > 1 {
-			ui.Warnf("a set of %d taints is compared by containment, not overlap: this machine exchanges\n"+
-				"  data only with one whose taints include all of these, or are all among them.\n"+
-				"  Sharing one of them is not enough.", len(given))
+		// Said only for a configuration that will be saved: a run refused after this has
+		// minted a name nothing kept, and the next one mints another.
+		if err := cfg.Validate(); err != nil {
+			return err
 		}
 
+		ui.Println()
+		ui.Println("Minted a taint for this network:")
+		ui.Println()
+		ui.Printf("    %s\n", minted)
+		ui.Println()
+		ui.Println("This machine's credential is issued in it, for the life of its identity. Share it:")
+		ui.Println("any machine that runs")
+		ui.Println()
+		ui.Printf("    conflux up --taint %s\n", minted)
+		ui.Println()
+		ui.Println("is issued a credential in it too, and joins this network and nothing else. Anybody")
+		ui.Println("may ask for any name, so a taint is as private as it is hard to guess: keep it to")
+		ui.Println("the machines meant to join.")
+		ui.Println()
+
 		return nil
 	}
 
-	// Already has one. Never mint a second.
-	if len(cfg.Taints) > 0 {
-		return nil
+	if len(given) > 1 {
+		ui.Warnf("a set of %d taints is compared by containment, not overlap: this machine exchanges\n"+
+			"  data only with one whose taints include all of these, or are all among them.\n"+
+			"  Sharing one of them is not enough.", len(given))
 	}
 
-	minted := taint.New()
-	cfg.Taints = []string{minted}
+	return nil
+}
 
-	ui.Println()
-	ui.Println("Minted a taint for this network:")
-	ui.Println()
-	ui.Printf("    %s\n", minted)
-	ui.Println()
-	ui.Println("Share it. Any machine that runs")
-	ui.Println()
-	ui.Printf("    conflux up --taint %s\n", minted)
-	ui.Println()
-	ui.Println("joins this network and nothing else. Without a taint a machine sits in the")
-	ui.Println("realm's shared compartment with every other unconfigured anchor, which is why")
-	ui.Println("conflux makes one.")
-	ui.Println()
+// heldCredential is this machine's credential, or nil before it has one.
+func heldCredential(d paths.Dirs) (*enrol.Manifest, error) {
+	env, err := config.LoadManifest(d)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return enrol.Decode(env)
+}
+
+// subnetsOrder is the list a member's Subnets order set on this machine, which anchor
+// keeps in its directory and serves in place of the configured one from every start.
+type subnetsOrder struct {
+	Subnets []string  `json:"subnets"`
+	By      string    `json:"by"`
+	At      time.Time `json:"at"`
+}
+
+// readSubnetsOrder is the order in force, or nil when none is.
+func readSubnetsOrder(d paths.Dirs) (*subnetsOrder, error) {
+	b, err := os.ReadFile(d.SubnetsOrderFile())
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	var o subnetsOrder
+	if err := json.Unmarshal(b, &o); err != nil {
+		return nil, fmt.Errorf("%s: %w", d.SubnetsOrderFile(), err)
+	}
+
+	return &o, nil
+}
+
+// dropSubnetsOrder lets the list conflux starts with be served again: the operator just
+// set it, and the last set is the one served. The order's file is anchor's documented way
+// back, removed before the restart that reads it -- whatever is in it, since one anchor
+// cannot read is one it refuses to start on, and this is the command that clears it.
+func dropSubnetsOrder(d paths.Dirs) error {
+	o, readErr := readSubnetsOrder(d)
+
+	if err := os.Remove(d.SubnetsOrderFile()); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+
+		return fmt.Errorf("could not replace the subnet list an order set: %w", err)
+	}
+
+	if readErr != nil {
+		ui.Printf("Replacing a subnet list an order set, which could not be read: %v.\n", readErr)
+	} else {
+		ui.Printf("Replacing the subnet list an order from %s set at %s.\n", o.By, o.At.Format(time.RFC3339))
+	}
 
 	return nil
 }
@@ -558,23 +661,4 @@ func unique(values []string) []string {
 	}
 
 	return out
-}
-
-func sameSet(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-
-	seen := make(map[string]bool, len(a))
-	for _, v := range a {
-		seen[v] = true
-	}
-
-	for _, v := range b {
-		if !seen[v] {
-			return false
-		}
-	}
-
-	return true
 }

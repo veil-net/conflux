@@ -19,14 +19,14 @@ a daemon or a network. Most of conflux can be.
 | Package | What is asserted |
 |---|---|
 | `anchor` | the embedded binaries are real executables of the right architecture, and `SetID` is stable |
-| `internal/config` | JSON round-trips, the tuning fields included; the mode rules match anchor's — a proxy needs userspace, a subnet, an exit and an IPv4 work in either mode, the two exits are alternatives, a port is refused beside an uplink; proxy specs, IPv4 addresses, subnets, AnchorIDs and taint names parse and refuse exactly as anchor does, and bootstrap entries by anchor's grammar (anchor skips a bad one with a warning, conflux refuses it), with conflux's own refusals of a comma in a list entry and of a descriptor uplink; the export block is read as protojson reads it and refuses what anchord refuses at startup; atomic writes leave old-or-new and never a truncated file, and narrow a file that was `0644` |
-| `internal/enrol` | the manifest decodes exactly as anchorctl reads it, refuses a realm manifest and a future format version, and **survives a renewal losslessly** |
-| `internal/enrol` (client) | against `httptest`: the alpha exchange byte for byte, the guardian bearer, 4xx and 5xx, an oversized body, a cross-host renewal URL and a downgrading redirect, a plain-http base, cancellation, and clock skew; and that an enrolment is handed back as it arrived, to be written before it is read |
-| `internal/taint` | generated names satisfy anchor's rule, avoid ambiguous glyphs, and do not repeat |
-| `internal/daemon` | the renewal arithmetic: two thirds of the *observed* window, expiry, absent timestamps, and the clamp; a renewal against a stand-in issuer, spliced into the manifest and mirrored into the state, and a failed one recorded; an enrolment kept before it is read; a bad clock measured again rather than trusted; anchord's last words kept when it dies, in order; shutdown returning once anchord has gone, and closing a running one with its signal alone; the link watcher's device parsing and its grace against anchor's own dial timeout; and which failures stop the supervisor rather than being retried |
+| `internal/config` | JSON round-trips, the tuning fields included; the mode rules match anchor's — a proxy needs userspace, a subnet, an exit and an IPv4 work in either mode, the two exits are alternatives, a port is refused beside an uplink, an empty taint set is accepted; proxy specs, IPv4 addresses, subnets — `*`, bindings to the machine's own taints and anchor's limits on a list included — AnchorIDs and taint names parse and refuse exactly as anchor does, and bootstrap entries by anchor's grammar (anchor skips a bad one with a warning, conflux refuses it), with conflux's own refusals of a comma in a list entry and of a descriptor uplink; the export block is read as protojson reads it and refuses what anchord refuses at startup; atomic writes leave old-or-new and never a truncated file, and narrow a file that was `0644` |
+| `internal/enrol` | the manifest decodes exactly as anchorctl reads it, refuses a realm manifest and a future format version, and **survives a renewal losslessly**; which documents are alpha's, and the taints check every start holds a machine to, with a way out that fits who issued the credential |
+| `internal/enrol` (client) | against `httptest`: the alpha exchange byte for byte, taints in the enrolment's body and restated in the renewal's, none refused before anything is sent; the guardian bearer, 4xx and 5xx, an oversized body, a cross-host renewal URL and a downgrading redirect, a plain-http base, cancellation, and clock skew; a renewal's bootstrap list taken only when anchor would dial all of it; and that an enrolment is handed back as it arrived, to be written before it is read |
+| `internal/taint` | generated names — 26 symbols, a little over 128 bits — satisfy anchor's rule, avoid ambiguous glyphs, are grouped for reading, and do not repeat |
+| `internal/daemon` | the renewal arithmetic: two thirds of the *observed* window, expiry, absent timestamps, and the clamp; a renewal against a stand-in issuer, restating the manifest's taints whatever `conflux.json` says, spliced into the manifest with the issuer's bootstrap list and mirrored into the state, and a failed one recorded; an enrolment asking for the configured taints, never for none, and kept before it is read even when it grants others; a machine whose credential grants other taints, or an alpha one granting none, refused for good with no call, and an issued one granting none started; a bad clock measured again rather than trusted; anchord's last words kept when it dies, in order; shutdown returning once anchord has gone, and closing a running one with its signal alone; the link watcher's device parsing, its grace against anchor's own dial timeout, and its giving up after three rebuilds refused for good; and which failures stop the supervisor rather than being retried |
 | `internal/anchorctl` | the argv goldens, that every flag they use exists, and the output parsers against anchor's current `start`, `status` and `metrics` shapes |
 | `internal/libexec` | extraction, idempotence, eight concurrent callers, and repair of a truncated set |
-| `internal/cli` | the collision rules — `start` and `renew` by shape, `proxy` and `status` by arity — and that nothing shadows anchorctl unintentionally; the IPv4 asked once; `enrol` refusing before it writes |
+| `internal/cli` | the collision rules — `start` and `renew` by shape, `proxy` and `status` by arity — and that nothing shadows anchorctl unintentionally, the realm-control commands included; the IPv4 asked once; `--taint` as the enrolment's request before a credential is held, and checked against it after; `enrol` taking the credential's taints, refusing an alpha one granting none, and refusing before it writes; a subnet list set from the terminal replacing a member's order |
 | `internal/service` | the systemd unit, its `ExecStart=` quoted against splitting and expansion; the rc scripts the BSDs get, rendered and parsed by `sh`, quoting included; the service's scope |
 | `internal/paths` (Windows) | the root made Administrators', and files restricted to them trusted |
 
@@ -44,13 +44,15 @@ a placeholder build reports that it carries no anchor binaries rather than prete
 A skip is green, so the job that fetches the real binaries asserts that none of the
 tests needing them skipped: a job that provides the binaries and then reports "no
 anchor pair" has lost them, and saying so is the difference between a gate and a
-decoration.
+decoration. On macOS and Windows, where other tests skip for the platform, the gate
+looks for that reason rather than a list of names a new test would be missing from.
 
 **The argv goldens**, in `internal/anchorctl/testdata/argv/`, hold one file per
 scenario, one argument per line. Argv construction is where a wrapper's bugs live and
-it is invisible in a review diff — anchor's flag is `-taints`, plural — so a change to
-what conflux passes anchorctl shows up as a reviewable text diff instead. `make golden`
-rewrites them after an intended change, and `TestArgvGoldens` fails on any other.
+it is invisible in a review diff — anchor's flag is `-serve-subnets`, plural — so a
+change to what conflux passes anchorctl shows up as a reviewable text diff instead.
+`make golden` rewrites them after an intended change, and `TestArgvGoldens` fails on
+any other.
 
 Paired with them is `TestEveryFlagWeUseExists`, which runs the **embedded** anchorctl,
 scrapes each command's `-h`, and fails if conflux's argv names a flag that no longer
@@ -59,12 +61,14 @@ package refuses an unknown flag rather than ignoring it, so that would otherwise
 daemon that will not start — discovered after the binaries were dropped into
 `anchor/bin` and shipped.
 
-**`enrol.TestWithChainIsLossless`** renews a manifest and compares every field. The
-document carries fields conflux never reads — `bootstrap` and `genesis`, which anchor
-does, and `realm`, which anchor carries — beside `renewalAuth`, which only conflux reads
-and a renewal must keep. Round-tripping through a struct with only the known fields
-would delete them on the first renewal, and the anchor would come back after the next
-reboot with no peers to bootstrap from — days later, with nothing pointing at the
+**`enrol.TestWithRenewalIsLossless`** renews a manifest and compares every field.
+Four are meant to change — `chain`, `notAfter`, `issuedAt` and `bootstrap`, which the
+issuer's answer refreshes — and every other must not, `taints` above all. The document
+carries fields conflux never reads — `genesis`, which anchor does, and `realm`, which
+anchor carries — beside `renewalAuth`, which only conflux reads and a renewal must keep,
+and `taints`, which the chain commits to. Round-tripping through a struct with only the
+known fields would delete them on the first renewal, and the anchor would come back
+after the next reboot unable to start — days later, with nothing pointing at the
 renewal that caused it.
 
 ## Testing the boot service
@@ -97,6 +101,15 @@ test. The suite polls every second for up to two minutes and prints how long it 
 around five seconds on the Docker bridge — and `conflux peers` shows `DATA yes` on
 the peer once the taints have been compared.
 
+Before B joins, A is held to its credential. The credential must grant the run's taint;
+an `up --taint` naming another is refused, naming `conflux uninstall`, with the identity
+and the credential left as they were; and `conflux renew` against the live API must
+install a fresh chain hot with the identity and the taint unchanged — the running anchor
+refuses a chain granting any other set, so a hot install that succeeds is the proof the
+renewal restated it. Once B is up, the realm's control is shown to pass through:
+`conflux blocks` prints anchorctl's table, and `conflux telemetry -from` B's AnchorID is
+refused for want of the capability, since an alpha credential grants none.
+
 A reboot proves a machine comes back; the suite also kills `anchord` on a running one,
 with `SIGKILL` so nothing is said on the way out, and requires the supervisor to bring
 it back — a new process, the readiness marker rewritten, the same identity, and the
@@ -122,10 +135,12 @@ IPv4 from a signed advertisement and the two need not arrive together.
 
 The third node takes the other paths, and it is why the suite enrols three times:
 
-- **It is enrolled from a live alpha manifest** — fetched on the host and handed to
-  `conflux enrol --manifest -` on stdin — and `up` must start from it without enrolling
-  again. That is the path a commissioned machine takes, and otherwise it would only ever
-  see hand-written fixtures.
+- **It is enrolled from a live alpha manifest** — fetched on the host with
+  `POST /ghosts/alpha` carrying `{"taints": ["$TAINT"]}`, and handed to
+  `conflux enrol --manifest -` on stdin. Its credential must grant the run's taint;
+  `up --taint "$TAINT"`, restating it, is accepted; and `up` must start from the
+  manifest without enrolling again. That is the path a commissioned machine takes, and otherwise
+  it would only ever see hand-written fixtures.
 - **It reaches the realm through the manifest's own bootstrap list.** It names no
   `--peers` and runs `--lan-discovery no`, and A and B reach no realm node themselves,
   so a connection can only have come from the list the issuer shipped.

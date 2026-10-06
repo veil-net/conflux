@@ -16,8 +16,8 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/veil-net/conflux/anchor"
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/ui"
 )
@@ -36,16 +36,20 @@ const (
 // includes the working directory. It lives inside the content-addressed set
 // directory, so an upgraded anchor pair fetches it again into its own directory,
 // which is correct: the driver belongs next to the binary that loads it.
+//
+// The pair is extracted first. A set directory holding anything but a finished
+// extraction is debris to libexec, which clears it before extracting into it -- the DLL
+// with it, had it been put there first.
 func Ensure(ctx context.Context, d paths.Dirs) error {
-	dir := filepath.Join(d.Libexec(), anchor.SetID())
-	target := filepath.Join(dir, DLLName)
+	tools, err := libexec.Ensure(d)
+	if err != nil {
+		return err
+	}
+
+	target := filepath.Join(tools.Dir, DLLName)
 
 	if present(target) {
 		return nil
-	}
-
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
 	}
 
 	ui.Printf("  fetching wintun %s from wintun.net\n", Version)

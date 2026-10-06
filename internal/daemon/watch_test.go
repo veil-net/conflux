@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
+	"github.com/veil-net/conflux/internal/enrol"
 )
 
 func TestDevicePath(t *testing.T) {
@@ -32,8 +33,8 @@ func TestDevicePath(t *testing.T) {
 }
 
 // TestGraceIsLongerThanAnchorsOwnDialling is the arithmetic the link watcher rests
-// on. anchor redials an uplink every five seconds plus up to one of jitter, each dial
-// with a 45s timeout, and the slowest line conflux accepts needs ~25s for a realm
+// on. anchor starts an uplink dial at most every five seconds plus up to one of jitter,
+// each with a 45s timeout, and the slowest line conflux accepts needs ~25s for a realm
 // handshake. A grace shorter than that would restart anchors that were about to come
 // up on their own.
 func TestGraceIsLongerThanAnchorsOwnDialling(t *testing.T) {
@@ -103,6 +104,9 @@ func TestWhatIsPermanent(t *testing.T) {
 			"Administrator and wintun.dll on Windows; give the daemon that, or start it in userspace mode"),
 		"a host that will not forward": anchorctlSaid("anchorctl: starting: anchor: this host could not be set up to " +
 			"forward for the realm: nft: command not found"),
+		"taints the credential does not grant": anchorctlSaid("anchorctl: config: anchor: the realm credential does not " +
+			"grant this anchor's taints: Taints names [\"dev\"]: realm: the credential does not grant these taints"),
+		"conflux's own taints refusal": &permanentError{path: "manifest.b64", err: &enrol.TaintsError{Alpha: true}},
 		"a usage error": func() error {
 			// The stand-in answers exit 2, anchorctl's usage error, to a status it was
 			// not told how to give.
@@ -135,22 +139,20 @@ func TestWhatIsPermanent(t *testing.T) {
 	}
 }
 
-// TestALostAnchorIsSeen: a daemon still answering with no anchor in it is rebuilt,
-// unless it said an admin's kill order emptied it, and a daemon that does not answer
-// is left to the restart loop. On a link the gauge is the poll, and status is asked
-// only when the gauge cannot be read.
+// TestALostAnchorIsSeen: a daemon still answering with no anchor in it is rebuilt, and a
+// daemon that does not answer is left to the restart loop. On a link the gauge is the
+// poll, and status is asked only when the gauge cannot be read.
 func TestALostAnchorIsSeen(t *testing.T) {
 	for name, tc := range map[string]struct {
 		status, failing string
-		uplink, admin   bool
+		uplink          bool
 		want            string
 	}{
-		"an anchor running":                {status: "running"},
-		"no anchor":                        {status: "none", want: "anchord holds no anchor any more"},
-		"no anchor, after an admin's stop": {status: "none", admin: true, want: adminStopLine},
-		"a daemon that does not answer":    {},
-		"a link carrying something":        {uplink: true, status: "none"},
-		"a link with no anchor behind it":  {uplink: true, status: "none", failing: "metrics", want: "anchord holds no anchor any more"},
+		"an anchor running":               {status: "running"},
+		"no anchor":                       {status: "none", want: "anchord holds no anchor any more"},
+		"a daemon that does not answer":   {},
+		"a link carrying something":       {uplink: true, status: "none"},
+		"a link with no anchor behind it": {uplink: true, status: "none", failing: "metrics", want: "anchord holds no anchor any more"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv(fakeAnchorctlStatusEnv, tc.status)
@@ -166,7 +168,6 @@ func TestALostAnchorIsSeen(t *testing.T) {
 			}
 
 			s := &Supervisor{ctl: fakeCtl(t)}
-			s.adminStopped.Store(tc.admin)
 
 			var zeroSince time.Time
 
@@ -177,26 +178,34 @@ func TestALostAnchorIsSeen(t *testing.T) {
 	}
 }
 
-// TestTheAdminsStopIsHeard: the line anchord logs for a kill order is what tells the
-// watcher to leave the anchor stopped, and a new daemon starts without it.
-func TestTheAdminsStopIsHeard(t *testing.T) {
-	s, _ := supervised(t, "1")
+// TestTheWatcherGivesUpOnARefusedConfiguration: an anchor lost under a configuration
+// that will not build another is rebuilt rebuildRefusals times and then left, rather than
+// retried every thirty seconds for ever; the watch says so, which ends the cycle's loops.
+func TestTheWatcherGivesUpOnARefusedConfiguration(t *testing.T) {
+	t.Setenv(fakeAnchorctlStatusEnv, "none")
 
-	s.lines().emit(`time=2026-10-04T09:00:00Z level=WARN msg="this anchor was stopped by an admin credential" by=anchorx reason=retired`)
+	s, log := supervised(t, "1")
 
-	if !s.adminStopped.Load() {
-		t.Fatal("the kill order's line was not noticed")
+	// A configuration conflux refuses, written under the running service.
+	if err := os.WriteFile(s.Dirs.ConfigFile(), []byte(`{"version":1,"mode":"neither"}`), 0o600); err != nil {
+		t.Fatal(err)
 	}
 
-	_, c, err := s.spawn(t.Context())
-	if err != nil {
-		t.Fatalf("spawn: %v", err)
+	gaveUp := make(chan bool, 1)
+	go func() { gaveUp <- s.watch(t.Context(), "", time.Millisecond) }()
+
+	select {
+	case got := <-gaveUp:
+		if !got {
+			t.Fatal("the watch ended without giving up")
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("the watcher went on rebuilding an anchor its configuration refuses")
 	}
 
-	<-c.exited
-
-	if s.adminStopped.Load() {
-		t.Error("a new daemon inherited the last one's kill order")
+	b, _ := os.ReadFile(log)
+	if stops := strings.Count(string(b), "stop\n"); stops != rebuildRefusals {
+		t.Errorf("rebuilt %d times before giving up, want %d", stops, rebuildRefusals)
 	}
 }
 

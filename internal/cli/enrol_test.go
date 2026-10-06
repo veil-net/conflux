@@ -23,7 +23,7 @@ const guardianDoc = `{
   "genesis": "0011223344556677",
   "identity": "99887766554433221100ffeeddccbbaa",
   "chain": "Z3VhcmRpYW4tY2hhaW4=",
-  "notAfter": "2026-10-13T04:12:00.000Z",
+  "notAfter": "2126-10-13T04:12:00.000Z",
   "taints": [],
   "useExit": false,
   "telemetrySecret": "cafebabe0123",
@@ -66,7 +66,7 @@ func site(t *testing.T, doc string) (paths.Dirs, string) {
 func TestEnrolInstallsWhatItWasGiven(t *testing.T) {
 	d, path := site(t, guardianDoc)
 
-	if err := importCredential(d, path, guardianAPI, "", nil); err != nil {
+	if err := importCredential(d, path, guardianAPI, ""); err != nil {
 		t.Fatalf("importCredential: %v", err)
 	}
 
@@ -109,7 +109,7 @@ func TestEnrolInstallsWhatItWasGiven(t *testing.T) {
 func TestEnrolWillNotReplaceAnIdentity(t *testing.T) {
 	d, path := site(t, guardianDoc)
 
-	if err := importCredential(d, path, guardianAPI, "", nil); err != nil {
+	if err := importCredential(d, path, guardianAPI, ""); err != nil {
 		t.Fatalf("the first import: %v", err)
 	}
 
@@ -118,7 +118,7 @@ func TestEnrolWillNotReplaceAnIdentity(t *testing.T) {
 		t.Fatalf("LoadManifest: %v", err)
 	}
 
-	err = importCredential(d, path, guardianAPI, "", nil)
+	err = importCredential(d, path, guardianAPI, "")
 	if err == nil {
 		t.Fatal("importCredential replaced an existing identity")
 	}
@@ -148,6 +148,7 @@ func TestEnrolRefusesBeforeWriting(t *testing.T) {
 		`  "renewalUrl": "https://guardian.example.gov/nodes/abc/credential",`+"\n", "", 1)
 	badAddress := strings.Replace(guardianDoc, `"ipv4": "10.20.0.7/24"`, `"ipv4": "127.0.0.7/8"`, 1)
 	lapsedNode := strings.Replace(ghostNodeDoc, `"notAfter": "2126-10-03T11:25:49.000Z"`, `"notAfter": "2026-01-01T00:00:00.000Z"`, 1)
+	lapsedGuardian := strings.Replace(guardianDoc, `"notAfter": "2126-10-13T04:12:00.000Z"`, `"notAfter": "2026-01-01T00:00:00.000Z"`, 1)
 
 	for name, tc := range map[string]struct {
 		doc  string
@@ -159,13 +160,14 @@ func TestEnrolRefusesBeforeWriting(t *testing.T) {
 		"a renewalAuth we do not do":      {unknownAuth, guardianAPI, "mtls"},
 		"a renewalAuth and no renewalUrl": {noRenewal, guardianAPI, "renewalUrl"},
 		"a fixed term already over":       {lapsedNode, "", "expired"},
+		"a renewing one already over":     {lapsedGuardian, guardianAPI, "expired"},
 		"an address anchor refuses":       {badAddress, guardianAPI, "unicast"},
 		"an api naming another host":      {guardianDoc, "https://somewhere.else", "somewhere.else"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			d, path := site(t, tc.doc)
 
-			err := importCredential(d, path, tc.api, "", nil)
+			err := importCredential(d, path, tc.api, "")
 			if err == nil {
 				t.Fatalf("importCredential accepted %s", name)
 			}
@@ -198,7 +200,7 @@ func TestEnrolRefusesBeforeWriting(t *testing.T) {
 func TestEnrolDerivesTheAPIFromTheManifest(t *testing.T) {
 	d, path := site(t, guardianDoc)
 
-	if err := importCredential(d, path, "", "", nil); err != nil {
+	if err := importCredential(d, path, "", ""); err != nil {
 		t.Fatalf("importCredential with no --api: %v", err)
 	}
 
@@ -218,7 +220,7 @@ func TestEnrolDerivesTheAPIFromTheManifest(t *testing.T) {
 func TestEnrolStillChecksAnApiThatWasGiven(t *testing.T) {
 	d, path := site(t, guardianDoc)
 
-	if err := importCredential(d, path, "https://elsewhere.example", "", nil); err == nil {
+	if err := importCredential(d, path, "https://elsewhere.example", ""); err == nil {
 		t.Fatal("importCredential accepted an --api the manifest does not renew against")
 	}
 
@@ -232,7 +234,7 @@ func TestEnrolStillChecksAnApiThatWasGiven(t *testing.T) {
 func TestEnrolLetsTheFlagWin(t *testing.T) {
 	d, path := site(t, guardianDoc)
 
-	if err := importCredential(d, path, guardianAPI, "10.99.0.3/24", nil); err != nil {
+	if err := importCredential(d, path, guardianAPI, "10.99.0.3/24"); err != nil {
 		t.Fatalf("importCredential: %v", err)
 	}
 
@@ -246,16 +248,15 @@ func TestEnrolLetsTheFlagWin(t *testing.T) {
 	}
 }
 
-// TestEnrolTakesTheTaintsTheGuardianChose. The compartment is the guardian's
-// decision because it is the one thing in the document that says which machines
-// may reach this one, and a fleet whose members each mint their own taint is a
-// fleet of one-machine networks. `up` mints when the configuration has none, so
-// enrol writing them is what stops that happening per node.
+// TestEnrolTakesTheTaintsTheGuardianChose. The compartments are the guardian's to
+// grant: the credential commits to them, and anchor starts the identity under no
+// others. So they are written as the document names them, and every start checks
+// conflux.json against it.
 func TestEnrolTakesTheTaintsTheGuardianChose(t *testing.T) {
 	doc := strings.Replace(guardianDoc, `"taints": []`, `"taints": ["site-alpha", "tier-2"]`, 1)
 	d, path := site(t, doc)
 
-	if err := importCredential(d, path, "", "", nil); err != nil {
+	if err := importCredential(d, path, "", ""); err != nil {
 		t.Fatalf("importCredential: %v", err)
 	}
 
@@ -269,23 +270,14 @@ func TestEnrolTakesTheTaintsTheGuardianChose(t *testing.T) {
 	}
 }
 
-// TestEnrolLetsTheTaintFlagWin, for the same reason --ipv4 wins: a person at the
-// terminal is deciding now and the document was written earlier.
-func TestEnrolLetsTheTaintFlagWin(t *testing.T) {
-	doc := strings.Replace(guardianDoc, `"taints": []`, `"taints": ["site-alpha"]`, 1)
-	d, path := site(t, doc)
+// TestEnrolHasNoTaintFlag: the taints are the credential's, so there is nothing for a
+// flag to overrule, and one that looked like it could would be a machine refused at
+// its first start.
+func TestEnrolHasNoTaintFlag(t *testing.T) {
+	_, path := site(t, guardianDoc)
 
-	if err := importCredential(d, path, "", "", []string{"site-beta"}); err != nil {
-		t.Fatalf("importCredential: %v", err)
-	}
-
-	cfg, err := config.Load(d)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-
-	if got, want := strings.Join(cfg.Taints, ","), "site-beta"; got != want {
-		t.Errorf("taints = %q, want the flag %q", got, want)
+	if _, errOut, code := capture(t, "enrol", "--manifest", path, "--taint", "site-beta"); code != ExitUsage {
+		t.Errorf("exited %d, want %d for a flag enrol does not take:\n%s", code, ExitUsage, errOut)
 	}
 }
 
@@ -294,26 +286,31 @@ func TestEnrolLetsTheTaintFlagWin(t *testing.T) {
 // to come up, reporting the problem from anchor instead of from the document that
 // caused it.
 func TestEnrolRefusesATaintItCannotRepresent(t *testing.T) {
-	doc := strings.Replace(guardianDoc, `"taints": []`, `"taints": ["has a space"]`, 1)
-	d, path := site(t, doc)
+	for _, bad := range []string{`"has a space"`, `"a@b"`, `"a,b"`} {
+		doc := strings.Replace(guardianDoc, `"taints": []`, `"taints": [`+bad+`]`, 1)
+		d, path := site(t, doc)
 
-	if err := importCredential(d, path, "", "", nil); err == nil {
-		t.Fatal("importCredential accepted a taint conflux cannot carry")
-	}
+		if err := importCredential(d, path, "", ""); err == nil {
+			t.Errorf("importCredential accepted the taint %s", bad)
+		}
 
-	if config.HasManifest(d) {
-		t.Error("it wrote the manifest anyway")
+		if config.HasManifest(d) {
+			t.Errorf("it wrote the manifest anyway, for %s", bad)
+		}
 	}
 }
 
-// TestEnrolLeavesTaintsAloneWhenNobodySaid. An empty list in the document is the
-// alpha shape and means "not my decision", so the configuration keeps none and `up`
-// mints one loudly. Choosing a compartment quietly here would be the one thing
-// conflux refuses to do anywhere else.
-func TestEnrolLeavesTaintsAloneWhenNobodySaid(t *testing.T) {
+// TestEnrolTakesTheIssuersEmptySet. A guardian that grants no taints puts the machine in
+// its own realm's default compartment, and conflux.json says so -- whatever an earlier
+// `up` asked for, which this credential does not grant.
+func TestEnrolTakesTheIssuersEmptySet(t *testing.T) {
 	d, path := site(t, guardianDoc)
 
-	if err := importCredential(d, path, "", "", nil); err != nil {
+	if err := config.Save(d, &config.Config{Mode: config.ModeTUN, Taints: []string{"stale"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := importCredential(d, path, "", ""); err != nil {
 		t.Fatalf("importCredential: %v", err)
 	}
 
@@ -323,7 +320,23 @@ func TestEnrolLeavesTaintsAloneWhenNobodySaid(t *testing.T) {
 	}
 
 	if len(cfg.Taints) != 0 {
-		t.Errorf("taints = %v, want none so that up mints and says so", cfg.Taints)
+		t.Errorf("taints = %v, want none, as the credential grants", cfg.Taints)
+	}
+}
+
+// TestEnrolRefusesAnAlphaCredentialInTheCommons. An alpha credential granting no taints
+// is the realm's shared compartment, which conflux never puts a machine in -- typically
+// one enrolled before alpha granted taints. Nothing is written.
+func TestEnrolRefusesAnAlphaCredentialInTheCommons(t *testing.T) {
+	d, path := site(t, strings.Replace(alphaDoc, `["brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf"]`, "[]", 1))
+
+	err := importCredential(d, path, "https://api.veilnet.com.au", "")
+	if err == nil || !strings.Contains(err.Error(), "shared compartment") {
+		t.Fatalf("importCredential = %v, want a refusal naming the shared compartment", err)
+	}
+
+	if config.HasManifest(d) {
+		t.Error("it wrote the manifest anyway")
 	}
 }
 
@@ -331,22 +344,9 @@ func TestEnrolLeavesTaintsAloneWhenNobodySaid(t *testing.T) {
 // document from the public realm carries no renewalAuth and no ipv4, and installing
 // one by hand -- restoring a machine from a saved manifest, say -- has to work.
 func TestEnrolAcceptsAnAlphaManifest(t *testing.T) {
-	alpha := `{
-  "formatVersion": 1,
-  "kind": "anchor",
-  "realm": "8f3a1c04be77d2e5aa",
-  "genesis": "0011223344556677",
-  "identity": "aabbccddeeff00112233445566778899",
-  "chain": "Y2hhaW4=",
-  "notAfter": "2026-09-13T04:12:00.000Z",
-  "renewalUrl": "https://api.veilnet.com.au/ghosts/alpha/renew",
-  "renewalAuth": "anchor-id",
-  "issuedAt": "2026-09-06T04:12:00.000Z"
-}`
+	d, path := site(t, alphaDoc)
 
-	d, path := site(t, alpha)
-
-	if err := importCredential(d, path, "https://api.veilnet.com.au", "", nil); err != nil {
+	if err := importCredential(d, path, "https://api.veilnet.com.au", ""); err != nil {
 		t.Fatalf("importCredential: %v", err)
 	}
 
@@ -359,7 +359,29 @@ func TestEnrolAcceptsAnAlphaManifest(t *testing.T) {
 	if cfg.IPv4 != nil {
 		t.Errorf("ipv4 = %q, want it undecided: the alpha realm allocates no address", *cfg.IPv4)
 	}
+
+	if len(cfg.Taints) != 1 || cfg.Taints[0] != "brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf" {
+		t.Errorf("taints = %v, want the one the credential grants", cfg.Taints)
+	}
 }
+
+// alphaDoc is a manifest from the public alpha realm, enrolled in one taint: no
+// renewalAuth bearer and no ipv4.
+const alphaDoc = `{
+  "formatVersion": 1,
+  "kind": "anchor",
+  "realm": "8f3a1c04be77d2e5aa",
+  "genesis": "0011223344556677",
+  "identity": "aabbccddeeff00112233445566778899",
+  "chain": "Y2hhaW4=",
+  "notAfter": "2126-09-13T04:12:00.000Z",
+  "taints": ["brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf"],
+  "useExit": false,
+  "bootstrap": ["genesis.veilnet.com.au:4700"],
+  "renewalUrl": "https://api.veilnet.com.au/ghosts/alpha/renew",
+  "renewalAuth": "anchor-id",
+  "issuedAt": "2026-09-06T04:12:00.000Z"
+}`
 
 // exportDoc is a guardian manifest that also tells the node where to report.
 const exportDoc = `{
@@ -368,7 +390,7 @@ const exportDoc = `{
   "genesis": "0011223344556677",
   "identity": "99887766554433221100ffeeddccbbaa",
   "chain": "Z3VhcmRpYW4tY2hhaW4=",
-  "notAfter": "2026-10-13T04:12:00.000Z",
+  "notAfter": "2126-10-13T04:12:00.000Z",
   "renewalUrl": "https://guardian.example.gov/nodes/abc/credential",
   "renewalAuth": "node-secret",
   "renewalSecret": "abc.c2VjcmV0",
@@ -387,7 +409,7 @@ const exportDoc = `{
 func TestEnrolSeedsTheExportBlock(t *testing.T) {
 	d, path := site(t, exportDoc)
 
-	if err := importCredential(d, path, guardianAPI, "", nil); err != nil {
+	if err := importCredential(d, path, guardianAPI, ""); err != nil {
 		t.Fatalf("importCredential: %v", err)
 	}
 
@@ -427,7 +449,7 @@ func TestEnrolRefusesAnExportBlockThatWouldDoNothing(t *testing.T) {
 
 			d, path := site(t, doc)
 
-			if err := importCredential(d, path, guardianAPI, "", nil); err == nil {
+			if err := importCredential(d, path, guardianAPI, ""); err == nil {
 				t.Errorf("importCredential accepted an export block with %s", name)
 			} else if !strings.Contains(err.Error(), "export") {
 				t.Errorf("the refusal does not say it is about export: %v", err)
@@ -452,7 +474,7 @@ func TestEnrolDoesNotOverwriteAnExportBlockTheOperatorWrote(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	if err := importCredential(d, path, guardianAPI, "", nil); err != nil {
+	if err := importCredential(d, path, guardianAPI, ""); err != nil {
 		t.Fatalf("importCredential: %v", err)
 	}
 
@@ -492,7 +514,7 @@ const ghostNodeDoc = `{
 func TestEnrolInstallsAGhostRealmNode(t *testing.T) {
 	d, path := site(t, ghostNodeDoc)
 
-	if err := importCredential(d, path, "", "", nil); err != nil {
+	if err := importCredential(d, path, "", ""); err != nil {
 		t.Fatalf("importCredential: %v", err)
 	}
 

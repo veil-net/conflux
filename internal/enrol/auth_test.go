@@ -94,7 +94,7 @@ func TestNodeSecretSendsABearer(t *testing.T) {
 
 	c.Auth = auth
 
-	if _, err := c.Renew(t.Context(), s.URL+"/nodes/x/credential", "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq"); err != nil {
+	if _, err := c.Renew(t.Context(), s.URL+"/nodes/x/credential", "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq", manifest(t, guardianDocument).Taints()); err != nil {
 		t.Fatalf("Renew: %v", err)
 	}
 
@@ -102,10 +102,11 @@ func TestNodeSecretSendsABearer(t *testing.T) {
 		t.Errorf("Authorization = %q, want %q", got.authorization, want)
 	}
 
-	// The body is unchanged from the alpha exchange. One request shape, two ways
-	// of proving who is asking -- a second body would be a second protocol.
-	if got.body != `{"anchorId":"anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq"}` {
-		t.Errorf("body = %s", got.body)
+	// The body is the alpha exchange's. One request shape, two ways of proving who is
+	// asking -- a second body would be a second protocol. A credential granting no taints
+	// restates none as [], which the route defaults, and never as null, which it refuses.
+	if want := `{"anchorId":"anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq","taints":[]}`; got.body != want {
+		t.Errorf("body = %s, want %s", got.body, want)
 	}
 }
 
@@ -191,13 +192,13 @@ func TestTheSecretIsNotPrinted(t *testing.T) {
 	}
 }
 
-// TestRenewalSecretSurvivesARenewal. WithChain rewrites three fields; everything
-// else in the document has to come back, and losing this one would cost the machine
-// every renewal after the first.
+// TestRenewalSecretSurvivesARenewal. WithRenewal rewrites the chain and its dates;
+// everything else in the document has to come back, and losing this one would cost the
+// machine every renewal after the first.
 func TestRenewalSecretSurvivesARenewal(t *testing.T) {
-	next, err := manifest(t, guardianDocument).WithChain([]byte("fresh"), time.Now(), time.Now())
+	next, err := manifest(t, guardianDocument).WithRenewal(Renewal{Chain: []byte("fresh"), NotAfter: time.Now()}, time.Now())
 	if err != nil {
-		t.Fatalf("WithChain: %v", err)
+		t.Fatalf("WithRenewal: %v", err)
 	}
 
 	env, err := next.Encode()

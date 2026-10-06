@@ -19,8 +19,11 @@ nothing and renewal is unauthenticated, so a thief renews the stolen credential
 themselves, indefinitely. The thirty-day window bounds nothing in that case.
 
 Stated plainly: **if the file leaves the machine, the only remedy is to stop using
-that identity.** `conflux uninstall` and `conflux up` draws a new one, and every peer
-that knew the old address has to be told the new taint or address.
+that identity.** `conflux uninstall --yes` and `conflux up --taint` draw a new one, and
+every peer that knew the old address has to be told the new one. The stolen credential
+is still granted the old taint, and renews in it, so if the thief must not reach the
+other machines either, they move too: each draws a new identity in a new taint, since
+a credential's taints never change.
 
 This is the cost of an anonymous, accountless design, and it is a real one.
 
@@ -72,6 +75,15 @@ shape, and it is worth being honest about how it is bounded:
 - `conflux version` prints both SHA-256s, so what is on disk can be checked against a
   release note.
 
+The boot service is held to the same rule. It runs as root (SYSTEM on Windows) and
+starts whatever file it names at every boot, so it names a copy of conflux in the same
+state directory, which `up`, `proxy`, `install` and `start` refresh, and never the file
+conflux was run from — a home directory or a download that another account could swap
+for a program of its own, to be run as root at the next start. On Windows the root's
+DACL is set by the first conflux command that creates it, extraction included, and a
+root that holds anything another account made before then is refused rather than
+repaired around it.
+
 `CONFLUX_DIR` can point the extraction somewhere else, which is a knob worth knowing
 about: it lets a caller choose the directory a root daemon executes from. It exists
 for tests and for hosts where the default filesystem is `noexec`.
@@ -86,10 +98,13 @@ for tests and for hosts where the default filesystem is `noexec`.
   security documentation.
 - **Anything a taint appears to promise.** Taints are a blast-radius control inside a
   realm that has already decided everyone in it is a member — not a tenant boundary.
-  Taint names are not secret from the realm: the tag derives from a public root id, so
-  any member can compute the tag for a name it can guess. A *generated* taint is
-  unguessable and that is the whole of its protection. `prod` is not. See
-  [concepts.md](concepts.md).
+  Taint names are not secret: anybody may ask the alpha API for a credential in any
+  name, and the tag derives from a public root id, so any member can compute the tag for
+  a name it can guess. A taint is as private as it is hard to guess: a *generated* one,
+  about 128 bits, is unguessable and that is the whole of its protection. `prod` is not.
+  And a member whose credential grants the `taint` capability can move a machine to
+  other compartments while it runs; an alpha credential grants that to nobody, a
+  guardian may. See [concepts.md](concepts.md).
 
 ## Reporting
 

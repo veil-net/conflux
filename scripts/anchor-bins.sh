@@ -91,6 +91,10 @@ for f in "$DEST"/*; do
   esac
 done
 
+# And what a fetch that was killed part way left: its temporary files are dotfiles,
+# which the glob above does not see, and on the persistent runner nothing else would.
+rm -f "$DEST"/.anchor-fetch-*
+
 # release/ is the pinned, garbled build users get. dist/ is the unpinned development
 # cross-build, which joins any tree and is wrong for anything shipped -- so it is
 # accepted, and loudly.

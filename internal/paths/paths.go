@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -85,13 +86,31 @@ func (d Dirs) ManifestFile() string { return filepath.Join(d.State, "manifest.b6
 // live. anchord warns about exactly this.
 func (d Dirs) DaemonConfigFile() string { return filepath.Join(d.State, "anchord.json") }
 
-// AnchorDir is anchord's own -dir: the bootstrap cache and the realm-link cache.
+// AnchorDir is the anchor's -dir, which `anchorctl start` names: the bootstrap cache, the
+// realm-link cache, and what the realm's orders leave there (a Subnets order's list, a
+// Taints order's grant, the blocks in force).
 //
 // Not optional. An anchor without it that adopts a renewed delegation and then
 // restarts falls back to a chain whose delegation has since lapsed -- cut off, and
 // unable to recover in band. Every conflux anchor sits under a delegated realm, so
 // that is exactly the case anchor's warning is about.
 func (d Dirs) AnchorDir() string { return filepath.Join(d.State, "anchor") }
+
+// SubnetsOrderFile is where the anchor keeps a list a member's Subnets order set, which it
+// serves in place of the configured one from every start until the file is removed
+// (anchor's served.go, subnetsFile).
+func (d Dirs) SubnetsOrderFile() string { return filepath.Join(d.AnchorDir(), "subnets.json") }
+
+// ServiceExecutable is the copy of conflux the boot service runs: inside the state
+// directory, which only root (Administrators and SYSTEM on Windows) can write, rather
+// than wherever conflux happened to be run from. See service.Place.
+func (d Dirs) ServiceExecutable() string {
+	if runtime.GOOS == "windows" {
+		return filepath.Join(d.State, "conflux.exe")
+	}
+
+	return filepath.Join(d.State, "conflux")
+}
 
 // Libexec is where the embedded pair is extracted, one directory per content hash.
 func (d Dirs) Libexec() string { return filepath.Join(d.State, "bin") }
@@ -105,8 +124,12 @@ func (d Dirs) Socket() string { return filepath.Join(d.Run, socketName) }
 func (d Dirs) TokenFile() string { return filepath.Join(d.Run, "token") }
 
 // LockFile serialises everything that rewrites the manifest or the state: a bring-up,
-// the renewal timer, `conflux renew`, and the uplink watcher's count.
-func (d Dirs) LockFile() string { return filepath.Join(d.Run, "conflux.lock") }
+// the renewal timer, `conflux renew`, `conflux enrol`, and the uplink watcher's count.
+//
+// Beside the state rather than in Run, which systemd removes and makes again whenever the
+// service stops and starts: a `conflux renew` that spanned a restart would hold the old
+// file's lock while the new supervisor took the new one's, and the two would renew at once.
+func (d Dirs) LockFile() string { return filepath.Join(d.State, "conflux.lock") }
 
 // LogFile is the boot service's output, or "" where the service manager keeps it.
 func (d Dirs) LogFile() string {

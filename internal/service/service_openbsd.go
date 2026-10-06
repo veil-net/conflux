@@ -16,7 +16,12 @@ func scriptPath() string { return "/etc/rc.d/" + rcName() }
 
 // Install writes the script and enables it, and starts nothing.
 func (openbsd) Install(exe string, args ...string) error {
-	if err := os.WriteFile(scriptPath(), []byte(openbsdScript(exe, args)), 0o555); err != nil { //nolint:gosec // an rc script is executable by design
+	script, err := openbsdScript(exe, args)
+	if err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(scriptPath(), []byte(script), 0o555); err != nil { //nolint:gosec // an rc script is executable by design
 		return fmt.Errorf("write %s: %w", scriptPath(), err)
 	}
 

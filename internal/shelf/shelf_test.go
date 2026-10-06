@@ -32,6 +32,11 @@ type fakeRelease struct {
 
 	// manifestJSON overrides the generated manifest, for the malformed cases.
 	manifestJSON string
+	// served, when set, is what the asset endpoint answers for the manifest in place of
+	// the file the release document lists and digests: a substitution past the API.
+	served string
+	// noDigest leaves the release document's digests out.
+	noDigest bool
 
 	// mu guards what the server records: Fetch downloads every binary at once, so the
 	// handlers that append run side by side.
@@ -94,6 +99,10 @@ func (f *fakeRelease) manifest(pin string, version int) string {
 		})
 	}
 
+	// In one order, as a file is: the release document's digest of it and the bytes the
+	// asset endpoint serves are two renderings that must agree.
+	slices.SortFunc(entries, func(a, b entry) int { return strings.Compare(a.Name, b.Name) })
+
 	out, _ := json.Marshal(map[string]any{
 		"formatVersion": version,
 		"pin":           pin,
@@ -148,10 +157,11 @@ func (f *fakeRelease) serve(t *testing.T, pin string, version int) (*httptest.Se
 		}
 
 		type a struct {
-			ID    int64  `json:"id"`
-			Name  string `json:"name"`
-			Size  int64  `json:"size"`
-			State string `json:"state"`
+			ID     int64  `json:"id"`
+			Name   string `json:"name"`
+			Size   int64  `json:"size"`
+			State  string `json:"state"`
+			Digest string `json:"digest,omitempty"`
 		}
 
 		var assets []a
@@ -162,7 +172,14 @@ func (f *fakeRelease) serve(t *testing.T, pin string, version int) (*httptest.Se
 				state = s
 			}
 
-			assets = append(assets, a{ID: ids[name], Name: name, Size: int64(len(bodies(name))), State: state})
+			sum := sha256.Sum256(bodies(name))
+
+			digest := "sha256:" + hex.EncodeToString(sum[:])
+			if f.noDigest {
+				digest = ""
+			}
+
+			assets = append(assets, a{ID: ids[name], Name: name, Size: int64(len(bodies(name))), State: state, Digest: digest})
 		}
 
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -182,6 +199,12 @@ func (f *fakeRelease) serve(t *testing.T, pin string, version int) (*httptest.Se
 		name, ok := byID[got]
 		if !ok {
 			w.WriteHeader(http.StatusNotFound)
+
+			return
+		}
+
+		if name == manifestName && f.served != "" {
+			_, _ = w.Write([]byte(f.served))
 
 			return
 		}
@@ -584,4 +607,31 @@ func sha256Of(b []byte) []byte {
 	sum := sha256.Sum256(b)
 
 	return sum[:]
+}
+
+// TestFetchHoldsTheManifestToTheRelease: manifest.json arrives through the same redirect
+// as the binaries, so a manifest substituted there -- with digests to match substituted
+// binaries -- would vouch for anything. It is held to the digest the release document,
+// answered by the API itself, gives for it; and a release giving none is refused.
+func TestFetchHoldsTheManifestToTheRelease(t *testing.T) {
+	files := pair()
+	evil := newRelease(map[string][]byte{"anchord-linux-amd64": []byte("not anchord")})
+
+	f := newRelease(files)
+	f.served = evil.manifest(testPin, 1)
+	_, src := f.serve(t, testPin, 1)
+
+	err := Fetch(context.Background(), src, []string{"anchord-linux-amd64"}, t.TempDir(), quiet)
+	if err == nil || !strings.Contains(err.Error(), "differs") {
+		t.Fatalf("want a refusal of the substituted manifest, got %v", err)
+	}
+
+	bare := newRelease(files)
+	bare.noDigest = true
+	_, src = bare.serve(t, testPin, 1)
+
+	err = Fetch(context.Background(), src, []string{"anchord-linux-amd64"}, t.TempDir(), quiet)
+	if err == nil || !strings.Contains(err.Error(), "vouches") {
+		t.Fatalf("want a refusal of a release giving no digest, got %v", err)
+	}
 }

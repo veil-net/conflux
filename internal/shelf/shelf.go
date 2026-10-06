@@ -1,6 +1,6 @@
 // Package shelf fetches the anchor binaries from a release of the anchor repository.
 //
-// The binaries are not in git -- fourteen release builds are about 300 MB -- so a machine
+// The binaries are not in git -- fourteen release builds are about 330 MB -- so a machine
 // with no anchor checkout, which is every CI runner, fetches them from here.
 //
 // What is fetched is the *pinned* build. An anchor pinned to the genesis realm refuses to
@@ -15,16 +15,19 @@
 // made knowingly rather than by accident.
 //
 // It is acceptable for a reason worth stating rather than re-deriving: GitHub never passes
-// secrets to workflows triggered by fork pull requests, and conflux's Linux jobs refuse
-// fork pull requests outright, so the token is not reachable by anyone who does not
-// already have write access to conflux.
+// secrets to workflows triggered by fork pull requests, and every conflux job refuses fork
+// pull requests outright, so the token is not reachable by anyone who does not already
+// have write access to conflux.
 //
-// # Where a fetch can reach
+// # Where a fetch can reach, and what vouches for what arrives
 //
 // Nothing here reads a URL out of a document. Every request is built from this package's
 // own constants -- one API host, one repository, one tag -- and binaries are resolved by
-// *asset name* within that single release, so the set of places a fetch can reach is fixed
-// by conflux's configuration rather than by anything on the wire.
+// *asset name* within that single release. An asset download is answered with a redirect
+// to GitHub's storage, which is followed; what makes that safe is that nothing fetched
+// that way vouches for itself. The release document, which the API answers directly,
+// gives each asset's SHA-256: manifest.json is held to it, and each binary to the digest
+// manifest.json gives -- so substituted bytes anywhere past the API fail a compare.
 package shelf
 
 import (
@@ -115,8 +118,6 @@ func (s Source) withDefaults() Source {
 type Binary struct {
 	Name    string `json:"name"`
 	Program string `json:"program"`
-	OS      string `json:"os"`
-	Arch    string `json:"arch"`
 	Bytes   int64  `json:"bytes"`
 	SHA256  string `json:"sha256"`
 }
@@ -131,13 +132,13 @@ type Manifest struct {
 type asset struct {
 	ID    int64  `json:"id"`
 	Name  string `json:"name"`
-	Size  int64  `json:"size"`
 	State string `json:"state"`
+
+	// Digest is GitHub's "sha256:<hex>" of the asset, from the release document itself.
+	Digest string `json:"digest"`
 }
 
 type release struct {
-	ID              int64   `json:"id"`
-	TagName         string  `json:"tag_name"`
 	TargetCommitish string  `json:"target_commitish"`
 	Assets          []asset `json:"assets"`
 }
@@ -360,8 +361,25 @@ func manifest(ctx context.Context, src Source, assets map[string]asset) (*Manife
 		return nil, err
 	}
 
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxManifest))
+	if err != nil {
+		return nil, fmt.Errorf("fetching %s: %w", manifestName, err)
+	}
+
+	// The digests every binary is checked against are only as good as this one: it came
+	// through the same redirect as the binaries, so it is held to the digest the release
+	// document gives, which did not.
+	want, ok := strings.CutPrefix(a.Digest, "sha256:")
+	if !ok {
+		return nil, fmt.Errorf("the release gives no SHA-256 for %s, so nothing vouches for the digests in it", manifestName)
+	}
+
+	if sum := sha256.Sum256(body); !strings.EqualFold(hex.EncodeToString(sum[:]), want) {
+		return nil, fmt.Errorf("%s is not the file the release lists: its SHA-256 differs from %s", manifestName, want)
+	}
+
 	var m Manifest
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxManifest)).Decode(&m); err != nil {
+	if err := json.Unmarshal(body, &m); err != nil {
 		return nil, fmt.Errorf("the manifest is not the JSON this expects: %w", err)
 	}
 
@@ -475,9 +493,10 @@ func statusErr(resp *http.Response, src Source) error {
 // on another host, so a cross-host hop is expected and cannot be refused outright.
 //
 // Two things make that safe. Go drops the Authorization header on a redirect to a
-// different host, so the token never reaches the storage host. And the digest is checked
-// against a manifest fetched from the API, so content substituted anywhere along the way
-// fails the compare. What is still refused is a downgrade: a redirect to plain http,
+// different host, so the token never reaches the storage host. And everything that comes
+// back is checked: manifest.json against the digest the release document gives, and each
+// binary against manifest.json's, so content substituted anywhere along the way fails a
+// compare. What is still refused is a downgrade: a redirect to plain http,
 // which would hand the bytes to anyone on the path.
 var httpClient = &http.Client{
 	CheckRedirect: func(req *http.Request, via []*http.Request) error {

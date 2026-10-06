@@ -9,5 +9,3 @@ var anchord []byte
 
 //go:embed bin/anchorctl-darwin-arm64
 var anchorctl []byte
-
-const supported = true

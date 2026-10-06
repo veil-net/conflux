@@ -26,7 +26,7 @@ Every directory is `0700` and every file `0600`.
 {
   "version": 1,
   "mode": "tun",
-  "taints": ["brhk-2mq9-tzva-6pjs"],
+  "taints": ["brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf"],
   "ipv4": "10.128.0.1/24",
   "subnets": ["192.168.1.0/24"],
   "uplink": "/dev/ttyUSB0:115200",
@@ -46,12 +46,12 @@ Every directory is `0700` and every file `0600`.
 | Field | Meaning |
 |---|---|
 | `mode` | `tun` or `proxy`. See [modes.md](modes.md). |
-| `taints` | never empty after `up` or `proxy`. |
+| `taints` | the compartments this machine's credential grants. Before enrolment they are the request: the one `--taint` named or `up` or `proxy` minted, which the enrolment asks for exactly. After it they mirror the grant, and every start checks them against the manifest, refusing for good when the two disagree: a credential's taints never change. Empty only for an issued credential that grants none, which is its issuer realm's default compartment. Never written from the running anchor, which a member's Taints order may have moved. See [credentials.md](credentials.md#taints-are-the-credentials). |
 | `ipv4` | this machine's IPv4, an address or `address/length`. Either mode. `""` records that the operator declined one, and absent that nobody has been asked yet — the difference is what keeps the question to once. |
-| `subnets` | interface names or private prefixes. Either mode: with an interface the host forwards, in userspace the anchor does from its own process. |
+| `subnets` | interface names, private prefixes, or `*` for every private network on every interface, each optionally bound to some of this machine's taints as `SPEC@a+b`; at most 64 entries. Either mode: with an interface the host forwards, in userspace the anchor does from its own process. The list the anchor starts with: a member's Subnets order replaces it, kept by anchor in `anchor/subnets.json` under the state directory, until an `up` or `proxy` with `--subnet` or `--no-subnet` sets it again. See [modes.md](modes.md#the-last-set-wins). |
 | `proxies` | `PORT[/NETWORK]=BACKEND` specs. `proxy` only. |
 | `uplink` | a device, with an optional line speed. Absent means the host's IP network, which is the usual case. Either mode. See [uplink.md](uplink.md). |
-| `peers` | bootstrap entries, `host:port` or `anchorxxx@host:port`. **Absent is the usual case and not a missing setting:** anchorctl takes the list from the enrolment manifest for exactly the fields no flag named, so an empty `peers` is what keeps the issuer's own nodes in play. Present, it overrides them. |
+| `peers` | bootstrap entries, `host:port` or `anchorxxx@host:port`. **Absent is the usual case and not a missing setting:** anchorctl takes the list from the manifest, which a renewal refreshes, for exactly the fields no flag named, so an empty `peers` is what keeps the issuer's own nodes in play. Present, it overrides them. |
 | `port` | the UDP port to bind on every interface. Absent means the kernel picks one, which is the usual case. A port and not an address: an anchor listens everywhere, and the host's addresses change under it. Refused beside `uplink`, which binds no socket. |
 | `lowLatency` | carry layer-2 frames on QUIC datagrams instead of streams. Absent is false. Either mode. |
 | `lanDiscovery` | probe the host's own networks for anchors of this realm tree. Either mode. The one field here where **absent is not false**: it is `auto`, and it passes no flag at all, which is what leaves enrolment's own `lanDiscovery` in play. `false` and absent are different documents and `--lan-discovery no` writes the first of them. |
@@ -65,7 +65,9 @@ Editing it by hand is supported; `conflux start` restarts from whatever it says,
 anything anchor would refuse on the file's face is refused by conflux first, naming the
 field, before anchord is started on it — and not retried, since no retry changes a file.
 What depends on the host is anchor's to find at start: a subnet whose interface is not up
-yet, which is retried, and TLS material under `export` that will not load.
+yet, which is retried, and TLS material under `export` that will not load. `taints` is the
+one field an edit cannot change once the machine has enrolled: a set the credential does
+not grant is refused at every start.
 
 ### `export` — where telemetry goes
 
@@ -100,19 +102,21 @@ either base64 alphabet are all taken, and an unknown or repeated field is refuse
 it rather than dropped. What conflux writes back is the camelCase form with numbers.
 
 The full field list is `enabled`, `endpoint` (host:port, not a URL — the scheme follows
-`insecure`), `insecure`, `headers`, `metrics`, `traces`, `logs`, `metricIntervalNanos`,
-`traceSampleRatio`, `serviceName`, `resourceAttributes`, `exportTimeoutNanos`,
-`shutdownTimeoutNanos`, `caCert`, `clientCert`, `clientKey`, `logLevel` and
-`cardinalityLimit`. The three TLS fields take `{"path": "…"}` or `{"inline": "<base64
-PEM>"}`.
+`insecure`), `insecure`, `headers`, `metrics`, `traces`, `logs`, `flows`,
+`metricIntervalNanos`, `traceSampleRatio`, `serviceName`, `resourceAttributes`,
+`exportTimeoutNanos`, `shutdownTimeoutNanos`, `caCert`, `clientCert`, `clientKey`,
+`logLevel` and `cardinalityLimit`. `flows` exports a log record per interval of each IP
+flow the anchor carries and each circuit it relays. The three TLS fields take
+`{"path": "…"}` or `{"inline": "<base64 PEM>"}`.
 
 **`headers` are credentials.** Anything in them authenticates this machine to a
 collector, which is why this file is `0600` and why the rendered
 `anchord.json` beside the manifest is too.
 
-Enabled with no `endpoint`, or with no signal selected, is refused rather than written:
-both start cleanly and export nothing, and the symptom arrives weeks later as an absence
-on a dashboard.
+Enabled with no `endpoint` is refused rather than written: it would start cleanly and
+export nothing, and the symptom arrives weeks later as an absence on a dashboard.
+Enabled with none of `metrics`, `traces`, `logs` and `flows` on is refused too, naming
+them, rather than as a daemon that will not start: anchord refuses it at startup.
 
 #### Which surface wins
 
@@ -124,11 +128,11 @@ Three things can configure export and they disagree by design:
 | `conflux anchorctl export -endpoint …` | until the next restart or SIGHUP |
 | a SIGHUP | re-reads the file, discarding the call above |
 
-conflux writes the rendered file on **every** start, carrying an explicit
-`"enabled": false` when there is no block here. So a restart always lands on what this
-file says, in both directions: a machine configured to export comes back exporting, and
-a machine configured not to comes back quiet even if somebody turned it on by hand an
-hour ago.
+conflux writes the rendered file on **every** start, with no export block in it at all
+when there is none here, which anchord reads as export nothing. So a restart always
+lands on what this file says, in both directions: a machine configured to export comes
+back exporting, and a machine configured not to comes back quiet even if somebody
+turned it on by hand an hour ago.
 
 `conflux status` prints the endpoint this file names and, beneath it, which surface the
 daemon is actually obeying — so an override is visible rather than inferred.
@@ -136,16 +140,17 @@ daemon is actually obeying — so an override is visible rather than inferred.
 ## `manifest.b64` — the identity
 
 One base64 line: the anchor manifest the issuing API returned, holding the identity
-seed, the realm root, the credential chain, the bootstrap list, the expiry and the
-renewal endpoint. A guardian-issued one also carries the bearer that renewal
-authenticates with, and may carry an `ipv4` and an `export` block that
+seed, the realm root, the credential chain, the taints it grants, the bootstrap list,
+the expiry and the renewal endpoint. A guardian-issued one also carries the bearer that
+renewal authenticates with, and may carry an `ipv4` and an `export` block that
 `conflux enrol` copies into `conflux.json` once. See
 [credentials.md](credentials.md).
 
 **Store it exactly as it arrived.** Do not decompose it. It is the identity, the chain
 and the bootstrap list together, conflux hands it to anchorctl whole, and a renewal
-rewrites the chain inside it: a seed copied out into a file of its own is one more
-copy of the key to keep at `0600`, and one the next renewal does not update.
+rewrites the chain and the bootstrap list inside it: a seed copied out into a file of
+its own is one more copy of the key to keep at `0600`, and one the next renewal does
+not update.
 
 conflux never writes it to a second file and never puts it in an argv. It goes to
 `anchorctl start -manifest -` on stdin, becomes an inline secret on the wire, and is
@@ -189,8 +194,8 @@ the credential window at the cost of one extra call. That is why it is a separat
 from the manifest, which is recoverable from nowhere.
 
 It is separate from `conflux.json` for a second reason: the renewal timer rewrites
-`notAfter` at every renewal from the supervisor while a CLI may be rewriting `taints`
-from a terminal, and one file would make that a lost update.
+`notAfter` at every renewal from the supervisor while `up` or `proxy` may be rewriting
+`conflux.json` from a terminal, and one file would make that a lost update.
 
 ## `anchord.json` — rendered, not edited
 
@@ -218,7 +223,9 @@ on Windows. Two conflux processes racing agree on the path. A stale set is
 identifiable and sweepable. And "is it already extracted" is three stats rather than a
 read of forty-odd megabytes.
 
-Old sets are swept after 24 hours. `conflux uninstall` removes the tree.
+Old sets are swept after 24 hours, by the supervisor once it has started on its own
+set — never by another conflux command, which might be standing beside a supervisor
+still running an older set. `conflux uninstall` removes the tree.
 
 Emphatically **not** `/tmp`: systemd's `PrivateTmp=` would give the service a
 different `/tmp` than your shell, `/tmp` is `noexec` on hardened hosts,

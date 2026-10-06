@@ -67,7 +67,20 @@ func inDoubleQuotes(s string) string {
 
 // openbsdScript is /etc/rc.d/<name>. rc.subr backgrounds it and sends its output to
 // syslog, and rcctl matches the running process by its command line.
-func openbsdScript(exe string, args []string) string {
+//
+// rc.subr runs "${daemon} ${daemon_flags}" through a shell, and rcctl finds the process
+// again by matching that same string against its command line, so no quoting survives
+// both: a word with a space or a shell character in it -- a CONFLUX_DIR root, say -- is
+// refused rather than split, or run as something else.
+func openbsdScript(exe string, args []string) (string, error) {
+	for _, w := range append([]string{exe}, args...) {
+		if w == "" || strings.Trim(w, plainWord) != "" {
+			return "", fmt.Errorf(
+				"%q cannot be carried by an OpenBSD rc.d script, which runs its command through a shell "+
+					"without quoting; use a path of letters, digits and . _ - / only", w)
+		}
+	}
+
 	return fmt.Sprintf(`#!/bin/ksh
 #
 # Written by conflux install; conflux uninstall removes it.
@@ -82,5 +95,9 @@ rc_bg=YES
 rc_reload=NO
 
 rc_cmd $1
-`, shQuote(exe), shQuote(strings.Join(args, " ")))
+`, shQuote(exe), shQuote(strings.Join(args, " "))), nil
 }
+
+// plainWord is every character a word may hold and mean the same to a shell and to a
+// pattern match.
+const plainWord = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-/"

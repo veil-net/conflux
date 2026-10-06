@@ -23,13 +23,22 @@ import (
 // registered and before anything starts, so that a machine which fails halfway
 // through still comes back to the right state at its next boot rather than to
 // nothing.
-func bring(ctx context.Context, d paths.Dirs, cfg *config.Config, verb string) int {
+//
+// subnetsSet is whether the command set the served list. If it did, a list a member's
+// Subnets order set since is dropped before the restart, so the one just set is served.
+func bring(ctx context.Context, d paths.Dirs, cfg *config.Config, verb string, subnetsSet bool) int {
 	if err := cfg.Validate(); err != nil {
 		return fail(err)
 	}
 
 	if err := config.Save(d, cfg); err != nil {
 		return fail(err)
+	}
+
+	if subnetsSet {
+		if err := dropSubnetsOrder(d); err != nil {
+			return fail(err)
+		}
 	}
 
 	// Windows needs the driver before an interface can exist. Downloaded rather
@@ -56,7 +65,7 @@ func bring(ctx context.Context, d paths.Dirs, cfg *config.Config, verb string) i
 		return fail(err)
 	}
 
-	report(cfg, started, verb)
+	report(d, cfg, started, verb)
 
 	return ExitOK
 }
@@ -124,6 +133,9 @@ func waitForAnchor(ctx context.Context, d paths.Dirs) (anchorctl.Status, error) 
 		nextPoll = time.Now()
 	)
 
+	ticker := time.NewTicker(tick)
+	defer ticker.Stop()
+
 	for {
 		// The marker only ever pulls the next status call forward, and only once. If it
 		// appears and the call behind it fails anyway, the cadence stays at one a second
@@ -155,7 +167,7 @@ func waitForAnchor(ctx context.Context, d paths.Dirs) (anchorctl.Status, error) 
 		select {
 		case <-ctx.Done():
 			return anchorctl.Status{}, ctx.Err()
-		case <-time.After(tick):
+		case <-ticker.C:
 		}
 	}
 }
@@ -173,7 +185,7 @@ func exitNote(cfg *config.Config) string {
 }
 
 // report is what a person sees when it worked.
-func report(cfg *config.Config, st anchorctl.Status, verb string) {
+func report(d paths.Dirs, cfg *config.Config, st anchorctl.Status, verb string) {
 	mgr, _ := service.New()
 
 	ui.Println()
@@ -204,9 +216,7 @@ func report(cfg *config.Config, st anchorctl.Status, verb string) {
 		}
 	}
 
-	for _, s := range cfg.Subnets {
-		ui.Field("forwarding", s)
-	}
+	reportSubnets(d, cfg)
 
 	// Said whenever it is true, never when it is false. conflux goes to some trouble
 	// not to become an internet exit by accident, and a machine that is one should
@@ -232,13 +242,35 @@ func report(cfg *config.Config, st anchorctl.Status, verb string) {
 
 	ui.Println()
 
-	// Only after a command that just decided the taint. `install` is a restart of
-	// something already configured, and telling somebody how to join a network they
-	// are already on is noise. One --taint per name: the flag takes one, and a comma
-	// inside one is refused.
-	if verb == "up" || verb == "proxy" {
-		ui.Printf("Reachable from any machine that runs:  conflux up --taint %s\n",
-			strings.Join(cfg.Taints, " --taint "))
+	// Only after a command that just decided the taint, and only for the alpha realm,
+	// where --taint is how a machine joins: an issued credential's taints are its
+	// issuer's to grant. One --taint per name: the flag takes one, and a comma inside
+	// one is refused.
+	if (verb == "up" || verb == "proxy") && len(cfg.Taints) > 0 {
+		if held, _ := heldCredential(d); held == nil || held.Alpha() {
+			ui.Printf("Reachable from any machine that runs:  conflux up --taint %s\n",
+				strings.Join(cfg.Taints, " --taint "))
+		}
+	}
+}
+
+// reportSubnets says what this machine forwards: the configured list, or the one a
+// member's Subnets order set in its place.
+func reportSubnets(d paths.Dirs, cfg *config.Config) {
+	if o, err := readSubnetsOrder(d); err == nil && o != nil {
+		served := strings.Join(o.Subnets, ", ")
+		if served == "" {
+			served = "nothing"
+		}
+
+		ui.Field("forwarding", served+" — set by an order from "+o.By+" at "+o.At.Format(time.RFC3339)+
+			", in place of conflux.json's; --subnet or --no-subnet sets it again")
+
+		return
+	}
+
+	for _, s := range cfg.Subnets {
+		ui.Field("forwarding", s)
 	}
 }
 
@@ -270,7 +302,7 @@ func interfaceLine(goos, name string) string {
 // joinTaints is the taint set for a status line.
 func joinTaints(t []string) string {
 	if len(t) == 0 {
-		return "(none)"
+		return "none: the realm's default compartment"
 	}
 
 	return strings.Join(t, ",")

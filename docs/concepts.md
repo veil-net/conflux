@@ -78,7 +78,9 @@ realm.
 Three practical corollaries:
 
 - **Three machines with three generated taints are three disconnected machines.** The
-  taint has to be shared deliberately; nothing propagates it.
+  taint has to be shared deliberately; nothing propagates it. And since a credential's
+  taints are fixed when it is issued, putting them together afterwards means drawing new
+  identities for all but one.
 - **A hub with `{a}` and spokes with `{a,b}` and `{a,c}` works as a hub.** The hub
   reaches both spokes and the spokes cannot reach each other. That is the arrangement
   containment exists to express, and it is a feature.
@@ -86,37 +88,56 @@ Three practical corollaries:
   surprises people. If you want both reachable from each other, give them the same
   set.
 
-`conflux status` prints the taint, and `conflux peers` has a `DATA` column that says
-`yes` or `no` per peer. That column is the only signal you will get, and it is the
-first thing to look at when two machines are up and cannot see each other.
+`conflux status` prints the taints this machine's credential grants, and `conflux peers`
+has a `DATA` column that says `yes` or `no` per peer. That column is the only signal you
+will get, and it is the first thing to look at when two machines are up and cannot see
+each other.
+
+### Granted at enrolment
+
+An anchor does not claim its taints; its issuer grants them. The enrolment asks for a
+set, the credential that comes back commits to it, and anchor starts the identity under
+no other. A renewal restates the set and cannot change it, so a machine's taints are
+decided once, at enrolment, for the life of its identity: a different set is a new
+identity, with a new AnchorID and a new overlay address — `conflux uninstall --yes`, then
+`conflux up --taint`. See [credentials.md](credentials.md#taints-are-the-credentials).
+
+The realm can still move a running machine. A member whose credential grants the
+`taint` capability can send another a Taints order, which anchor keeps and reapplies at
+each start; an alpha credential grants that capability to nobody. See
+[commands.md](commands.md#realm-control).
 
 ### Why conflux generates one
 
-An anchor with no configured taints is not exempt from the rule. It carries the
-realm's **default compartment**, a real derived tag that every other unconfigured
-anchor in the realm also carries. So "no taint" does not mean "no restriction"; it
-means "in the commons, with every stranger who also left it blank".
+An anchor with no taints is not exempt from the rule. It carries the realm's **default
+compartment**, a real derived tag that every other unconfigured anchor in the realm also
+carries. So "no taint" does not mean "no restriction"; it means "in the commons, with
+every stranger who also left it blank".
 
 That is the right default for the realm conflux enrols into, which exists to let any
 device reach any other, and the wrong default for somebody joining two of their own
-machines. So `conflux up` mints `brhk-2mq9-tzva-6pjs` — sixteen characters from an
+machines. So the first `conflux up` of a network mints a taint,
+`brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf` — twenty-six symbols, about 128 bits, from an
 alphabet with no `i`, `l`, `o`, `0` or `1`, because it gets read off one screen and
-typed into another — and prints it.
+typed into another — enrols in it, and prints it. Every other machine passes it with
+`--taint` and is issued a credential in it too.
 
-Taint names are not secret from the realm: the tag is derived from a public root id,
-so any member can compute the tag for a name it can guess. A generated one is
+Taint names are not secret: anybody may ask the API for a credential in any name, and
+the tag is derived from a public root id, so any member can compute the tag for a name
+it can guess. A taint is as private as it is hard to guess. A generated one is
 unguessable, which is the whole of the protection it provides. `prod` is not.
 
-conflux never leaves a machine there. A group that wants to share one compartment
-without a generated name agrees on a name and passes it: `--taint office`.
+conflux never asks the alpha realm for no taint. A group that wants to share one
+compartment without a generated name agrees on a name and passes it, `--taint office`,
+knowing that anybody who guesses it can be issued a credential in it too.
 
 ## What conflux decides, and what anchor decides
 
-conflux decides: which mode, which taints, which IPv4, which subnets or proxies,
-whether the machine is an exit, what it reaches the realm over and how (an uplink, a
-port, low latency, LAN discovery, a bootstrap override), where telemetry goes, where the
-files live, and when to renew. That is the whole list, and it is what the configuration
-file holds.
+conflux decides: which mode, which taints to ask for at enrolment, which IPv4, which
+subnets or proxies, whether the machine is an exit, what it reaches the realm over and
+how (an uplink, a port, low latency, LAN discovery, a bootstrap override), where
+telemetry goes, where the files live, and when to renew. That is the whole list, and it
+is what the configuration file holds.
 
 anchor decides everything else — every packet, every route, every credential check,
 every peer. When something goes wrong on the wire it is anchor's documentation that

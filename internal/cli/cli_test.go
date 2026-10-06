@@ -2,6 +2,11 @@ package cli
 
 import (
 	"bytes"
+	"encoding/base64"
+	"errors"
+	"io"
+	"io/fs"
+	"os"
 	"os/exec"
 	"regexp"
 	"slices"
@@ -11,6 +16,7 @@ import (
 
 	"github.com/veil-net/conflux/anchor"
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/enrol"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/privcheck"
@@ -679,5 +685,183 @@ func TestTheInterfaceIsNamedOnlyWhereItIsHonoured(t *testing.T) {
 		if named := got == tc.name; named != tc.named {
 			t.Errorf("%s, %q: %q", tc.goos, tc.name, got)
 		}
+	}
+}
+
+// TestRealmControlPassesThrough: anchor's realm control -- blocking a member, moving its
+// compartments or its served networks, asking how it is -- is anchorctl's, and reaches the
+// embedded one through conflux unchanged, with conflux's socket and token. None of it may
+// be shadowed by a conflux verb or refused as a lifecycle command.
+func TestRealmControlPassesThrough(t *testing.T) {
+	if !anchor.Supported {
+		t.Skip("no anchor pair for this platform")
+	}
+
+	t.Setenv("CONFLUX_DIR", t.TempDir())
+
+	d := paths.Default()
+	if err := d.EnsureAll(); err != nil {
+		t.Fatalf("EnsureAll: %v", err)
+	}
+
+	tools, err := libexec.Ensure(d)
+	if err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+
+	theirs := anchorctlCommands(t, tools.Anchorctl)
+
+	for _, name := range []string{"block", "unblock", "blocks", "taints", "subnets", "telemetry"} {
+		if !theirs[name] {
+			t.Errorf("anchorctl has no %q command; docs/commands.md and conflux help name it", name)
+		}
+
+		if _, ours := verbs()[name]; ours {
+			t.Errorf("conflux's %q shadows anchorctl's realm control", name)
+		}
+
+		if _, refused := anchorLifecycleVerbs[name]; refused {
+			t.Errorf("conflux refuses to pass %q through", name)
+		}
+
+		// Its usage answers with nothing running, which is where pass-through sends a
+		// -h. Asked of the binary rather than through Main: on Unix pass-through
+		// replaces the process, which here is the test binary.
+		if out, err := exec.Command(tools.Anchorctl, name, "-h").CombinedOutput(); err != nil {
+			t.Errorf("anchorctl %s -h: %v\n%s", name, err, out)
+		}
+	}
+}
+
+// credentialFrom decodes a manifest document for the taint tests below.
+func credentialFrom(t *testing.T, doc string) *enrol.Manifest {
+	t.Helper()
+
+	m, err := enrol.Decode(config.Envelope(base64.StdEncoding.EncodeToString([]byte(doc))))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+
+	return m
+}
+
+// TestTaintsAreAskedForOrChecked: before enrolment --taint is the request, and conflux
+// mints one rather than ask for none; once a credential is held its taints are the
+// machine's for good, so --taint may only restate them, and conflux.json follows them.
+func TestTaintsAreAskedForOrChecked(t *testing.T) {
+	out := ui.Out
+	ui.Out = io.Discard
+
+	t.Cleanup(func() { ui.Out = out })
+
+	const granted = "brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf"
+
+	alpha := credentialFrom(t, alphaDoc)
+	commons := credentialFrom(t, strings.Replace(alphaDoc, `["`+granted+`"]`, "[]", 1))
+	guardian := credentialFrom(t, guardianDoc)
+
+	for name, tc := range map[string]struct {
+		configured, given []string
+		held              *enrol.Manifest
+		want              []string // nil with mint: a fresh one
+		mint, refused     bool
+	}{
+		"first machine: minted":         {mint: true},
+		"joining: the taint given":      {given: []string{"office", "office"}, want: []string{"office"}},
+		"not enrolled yet: kept":        {configured: []string{"office"}, want: []string{"office"}},
+		"not enrolled yet: replaced":    {configured: []string{"office"}, given: []string{"lab"}, want: []string{"lab"}},
+		"enrolled: restated":            {configured: []string{granted}, given: []string{granted}, held: alpha, want: []string{granted}},
+		"enrolled: nothing said":        {configured: []string{granted}, held: alpha, want: []string{granted}},
+		"enrolled: config lost":         {held: alpha, want: []string{granted}},
+		"enrolled: another taint":       {configured: []string{granted}, given: []string{"other"}, held: alpha, refused: true},
+		"enrolled before taints":        {configured: []string{"office"}, held: commons, refused: true},
+		"enrolled before taints, asked": {given: []string{"office"}, held: commons, refused: true},
+		"issued none, configured else":  {configured: []string{"stale"}, held: guardian, refused: true},
+		"issued none, nothing asked":    {held: guardian, want: nil},
+		"a name anchor refuses":         {given: []string{"a@b"}, refused: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := &config.Config{Mode: config.ModeTUN, Taints: tc.configured}
+
+			err := chooseTaints(cfg, tc.given, tc.held)
+
+			switch {
+			case tc.refused:
+				if err == nil {
+					t.Fatalf("accepted; taints are %v", cfg.Taints)
+				}
+
+				return
+			case err != nil:
+				t.Fatalf("refused: %v", err)
+			case tc.mint:
+				if len(cfg.Taints) != 1 || config.ValidateTaint(cfg.Taints[0]) != nil {
+					t.Errorf("taints = %v, want one freshly minted", cfg.Taints)
+				}
+			case !slices.Equal(cfg.Taints, tc.want):
+				t.Errorf("taints = %v, want %v", cfg.Taints, tc.want)
+			}
+		})
+	}
+}
+
+// TestASetListReplacesASubnetOrder: a member's Subnets order is served in place of the
+// configured list from every start, until the operator sets the list again -- the last
+// set wins -- and status says whose list is being served.
+func TestASetListReplacesASubnetOrder(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", t.TempDir())
+
+	d := paths.Default()
+	if err := d.EnsureAll(); err != nil {
+		t.Fatalf("EnsureAll: %v", err)
+	}
+
+	if err := os.MkdirAll(d.AnchorDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	order := `{"subnets": ["10.9.0.0/24@lab"], "by": "anchorordererexample", "at": "2026-10-06T09:00:00Z"}`
+	if err := os.WriteFile(d.SubnetsOrderFile(), []byte(order), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var shown bytes.Buffer
+
+	old := ui.Out
+	ui.Out = &shown
+
+	t.Cleanup(func() { ui.Out = old })
+
+	reportSubnets(d, &config.Config{Subnets: []string{"eth1"}})
+
+	if s := shown.String(); !strings.Contains(s, "10.9.0.0/24@lab") || !strings.Contains(s, "anchorordererexample") ||
+		strings.Contains(s, "eth1") {
+		t.Errorf("status should show the order's list and who set it, not conflux.json's:\n%s", s)
+	}
+
+	if err := dropSubnetsOrder(d); err != nil {
+		t.Fatalf("dropSubnetsOrder: %v", err)
+	}
+
+	if _, err := os.Stat(d.SubnetsOrderFile()); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the order is still in force after the list was set: %v", err)
+	}
+
+	// One anchor cannot read is one it will not start on, and setting the list clears it.
+	if err := os.WriteFile(d.SubnetsOrderFile(), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := dropSubnetsOrder(d); err != nil {
+		t.Errorf("dropSubnetsOrder refused an order it could not read: %v", err)
+	}
+
+	if _, err := os.Stat(d.SubnetsOrderFile()); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("an unreadable order is still in force after the list was set: %v", err)
+	}
+
+	// Nothing to replace is not an error.
+	if err := dropSubnetsOrder(d); err != nil {
+		t.Errorf("dropSubnetsOrder with no order: %v", err)
 	}
 }

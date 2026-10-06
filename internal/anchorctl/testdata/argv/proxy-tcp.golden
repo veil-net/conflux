@@ -3,8 +3,6 @@ start
 -
 -dir
 /var/lib/conflux/anchor
--taints
-brhk-2mq9-tzva-6pjs
 -tun=false
 -serve-exit=false
 -use-exit=false

@@ -59,6 +59,11 @@ type Export struct {
 	Traces  bool `json:"traces,omitempty"`
 	Logs    bool `json:"logs,omitempty"`
 
+	// Flows exports a log record for each interval of each IP flow the anchor carries
+	// between its own side and a peer, and of each circuit it relays. The anchor counts
+	// flows only while this is on.
+	Flows bool `json:"flows,omitempty"`
+
 	// MetricIntervalNanos is how often accumulated metrics are sent. Zero is 60s.
 	MetricIntervalNanos int64 `json:"metricIntervalNanos,omitempty"`
 
@@ -152,13 +157,13 @@ func (e *Export) Validate() error {
 		return errors.New("export.headers has a header with no name")
 	}
 
-	// All three off is the same as not exporting, and anchor reports it as such.
-	// Refusing it here means an operator who meant to pick signals finds out now
-	// rather than from a collector that never hears from this machine.
-	if !e.Metrics && !e.Traces && !e.Logs {
+	// All four off is refused by anchord at startup (REASON_EXPORT_NO_SIGNAL). Refusing it
+	// here means an operator who meant to pick signals finds out now rather than from a
+	// daemon that will not start.
+	if !e.Metrics && !e.Traces && !e.Logs && !e.Flows {
 		return errors.New(
 			"export is enabled and no signal is selected: set at least one of " +
-				"export.metrics, export.traces, export.logs")
+				"export.metrics, export.traces, export.logs, export.flows")
 	}
 
 	if e.TraceSampleRatio < 0 || e.TraceSampleRatio > 1 {
@@ -167,6 +172,10 @@ func (e *Export) Validate() error {
 
 	// Only over TLS, which is the only place anchord loads the pair: half of one is mTLS
 	// half-written, and it refuses to start on it rather than connect without.
+	//
+	// Whether the material parses is left to anchord, which says so at startup. Asking
+	// here would link in the whole of Go's private-key parsing -- some 370 KB in every
+	// conflux -- to catch a misconfiguration anchord already names.
 	if !e.Insecure && e.ClientCert.given() != e.ClientKey.given() {
 		return errors.New("export.clientCert and export.clientKey go together: a certificate needs its key, and a key its certificate")
 	}
@@ -180,7 +189,7 @@ func (s *Secret) given() bool { return s != nil && (len(s.Inline) > 0 || s.Path 
 // exportNames maps both of protojson's names for each ExportConfig field -- the JSON
 // name and the proto field name -- to the one conflux writes.
 var exportNames = protoNames(
-	"enabled", "endpoint", "insecure", "headers", "metrics", "traces", "logs",
+	"enabled", "endpoint", "insecure", "headers", "metrics", "traces", "logs", "flows",
 	"metricIntervalNanos", "traceSampleRatio", "serviceName", "resourceAttributes",
 	"exportTimeoutNanos", "shutdownTimeoutNanos", "caCert", "clientCert", "clientKey",
 	"logLevel", "cardinalityLimit")
@@ -239,6 +248,8 @@ func (e *Export) UnmarshalJSON(b []byte) error {
 			err = json.Unmarshal(raw, &e.Traces)
 		case "logs":
 			err = json.Unmarshal(raw, &e.Logs)
+		case "flows":
+			err = json.Unmarshal(raw, &e.Flows)
 		case "metricIntervalNanos":
 			e.MetricIntervalNanos, err = protoInt64(raw)
 		case "traceSampleRatio":

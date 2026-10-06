@@ -7,5 +7,3 @@ package anchor
 // at the //go:embed of a file that was never built for it.
 
 var anchord, anchorctl []byte
-
-const supported = false

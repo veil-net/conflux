@@ -25,9 +25,11 @@ TARGETS := linux/amd64 linux/arm64 darwin/arm64 \
            windows/amd64 windows/arm64 freebsd/amd64 openbsd/amd64
 
 # The size gate. One anchor pair is about 45 MB, so a conflux outside this range is
-# either missing its binaries or -- far more likely -- embedded all fourteen because
-# somebody wrote //go:embed bin instead of naming the two files.
-MIN_MB := 30
+# either missing its binaries -- one of the two is enough to fall under the floor, since
+# a real anchord beside a placeholder anchorctl still comes to about 40 -- or, far more
+# likely, embedded all fourteen because somebody wrote //go:embed bin instead of naming
+# the two files.
+MIN_MB := 45
 MAX_MB := 75
 
 ANCHOR_SRC ?= ../anchor
@@ -63,8 +65,8 @@ all: fmtcheck lint tidycheck docscheck test cross dist
 # needs no checkout -- but does need a token, since anchor is private. With none of them
 # it writes placeholders, which compile and are caught by the size gate in dist.
 anchor-bins:
-	@ANCHOR_SRC=$(ANCHOR_SRC) FETCH=$(FETCH) \
-		ANCHOR_API=$(ANCHOR_API) ANCHOR_REPO=$(ANCHOR_REPO) ANCHOR_TAG=$(ANCHOR_TAG) \
+	@ANCHOR_SRC='$(ANCHOR_SRC)' FETCH='$(FETCH)' \
+		ANCHOR_API='$(ANCHOR_API)' ANCHOR_REPO='$(ANCHOR_REPO)' ANCHOR_TAG='$(ANCHOR_TAG)' \
 		./scripts/anchor-bins.sh
 
 # CGO_ENABLED=0 here for the same reason dist sets it: so that the binary a developer

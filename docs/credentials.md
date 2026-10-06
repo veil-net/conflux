@@ -22,9 +22,13 @@ do not renew at all, which is what VeilNet's own ghost realm nodes carry.
 
 ## Enrolment is one unauthenticated POST
 
-`POST https://api.veilnet.com.au/ghosts/alpha` takes no body, needs no account, and
-returns a base64 anchor manifest. The API mints an identity inline, signs a credential
-for it, puts both in the document, and forgets them.
+`POST https://api.veilnet.com.au/ghosts/alpha` takes the taints to put the anchor in,
+`{"taints": ["brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf"]}`, needs no account, and returns a
+base64 anchor manifest. The API mints an identity inline, signs a credential for it in
+those taints, puts both in the document, and forgets them. The manifest's `taints` field
+echoes the set, and the credential commits to it. At most 32 names, none containing a
+space, a character that does not print, an `@` or a `+`; conflux checks the same before
+it asks, and never asks for none.
 
 There is no sign-up, no session and no record. That is the product rather than an
 omission — the free tier is free *of* us, not merely free of charge.
@@ -51,6 +55,41 @@ conflux enrols only when `manifest.b64` does not exist. In particular:
   address and orphan every peer that had it.
 - **Re-running `conflux up` does not enrol.** It reads the identity that is there.
 - **Switching modes does not enrol.** `up` after `proxy` keeps the identity.
+
+## Taints are the credential's
+
+An anchor does not claim its taints; its issuer grants them. The credential commits to a
+digest of the set, `anchorctl start` refuses any other, and the names are written beside
+it in the manifest, which is where anchorctl takes them from — conflux passes no
+`-taints`. So:
+
+- **They are requested at enrolment.** The first machine of a network asks for the one
+  conflux mints, and every machine joining it passes that one with `--taint` and asks for
+  the same. conflux never asks the alpha realm for none, which is its shared compartment.
+- **They are fixed for the life of the identity.** A renewal restates them — the API
+  keeps no record to read them back from — and cannot change them. On a machine that
+  already holds a credential, `conflux up --taint` with the same set is accepted, and
+  any other is refused.
+- **Changing them is a new identity**, with a new AnchorID and a new overlay address:
+  `conflux uninstall --yes`, then `conflux up --taint NEW`.
+- **`conflux.json` mirrors them.** After enrolment its `taints` are the grant, and every
+  start checks them against the manifest, refusing for good when the two disagree — a
+  hand-edited file, say — rather than retrying something no retry changes.
+- **A machine enrolled before the alpha realm granted taints is refused.** Its credential
+  grants none, which puts it in the shared compartment whatever `conflux.json` names, so
+  every start refuses it with the same advice, and `conflux status` shows a `refused`
+  line saying why. Nothing re-enrols it automatically: that would be a new identity
+  drawn behind the operator's back.
+- **An imported credential takes what its issuer granted.** `conflux enrol` has no
+  `--taint`; it writes the manifest's set into `conflux.json`. A guardian's or a ghost
+  realm node's credential granting none puts the machine in its issuer realm's default
+  compartment. An alpha one granting none is refused at import. See
+  [commands.md](commands.md#conflux-enrol).
+
+The realm can still move a running machine: a member whose credential grants the `taint`
+capability can send it a Taints order, and anchor keeps that grant in its directory and
+reapplies it over the credential's set at every start. An alpha credential grants that
+capability to nobody. See [commands.md](commands.md#realm-control).
 
 ## The thirty-day window, and renewal
 
@@ -83,6 +122,13 @@ arrival time is the start of the window the next two-thirds is taken of, so a ma
 that renews and reboots renews on the renewed credential's schedule, not the first
 one's.
 
+**So is the issuer's bootstrap list**, when the answer carries a usable, non-empty one:
+conflux writes it into the stored manifest in place of the old. `anchorctl renew`
+installs the chain and nothing else, so the running anchor keeps the list it started
+with and the next start uses the fresh one. An answer with no list, or one anchor would
+not dial, leaves the manifest's own. The taints are never rewritten: the renewal
+restated them.
+
 A renewed chain the running anchor will not take is a failed renewal, even though it
 is on disk: the next start runs on it, and until then the timer keeps to the schedule
 of the chain the anchor holds, so a renewal that was due is retried every minute, and
@@ -90,9 +136,11 @@ of the chain the anchor holds, so a renewal that was due is retried every minute
 
 ## Being offline past the expiry costs nothing but a call
 
-The renewal route is checked against nothing and gated on nothing: it takes an
-AnchorID, which is the public half, and signs a fresh chain for it. It works after
-expiry.
+The renewal route is checked against nothing and gated on nothing:
+`POST /ghosts/alpha/renew` takes an AnchorID, which is the public half, and the taints
+the manifest names, `{"anchorId": "anchor…", "taints": ["…"]}` — the API keeps no record
+of them — and signs a fresh chain for it in those taints, answering
+`{"chain": "…", "notAfter": "…", "bootstrap": ["…"]}`. It works after expiry.
 
 So a machine that was switched off for a month renews on its next launch and **keeps
 its AnchorID and its overlay address**. There is no window to miss. The address is
@@ -245,8 +293,10 @@ never consulted again.
 
 ### Renewal, and what a lapse costs
 
-Renewal is the same exchange with a header on it: `POST` the renewal URL with
-`{"anchorId": "anchor…"}`, get back `{"chain": "…", "notAfter": "…"}`. That URL is
+Renewal is the same exchange with a header on it: `POST` the renewal URL with the same
+body, `{"anchorId": "anchor…", "taints": [...]}` — the taints the manifest names, `[]`
+for a credential granting none — and `Authorization: Bearer <renewalSecret>`, and get
+back the same shape, `{"chain": "…", "notAfter": "…", "bootstrap": [...]}`. That URL is
 where the configured API base came from in the first place — enrol reads it out of the
 document — so the two agree unless `--api` was passed to say otherwise, in which case
 they are checked against each other. See [commands.md](commands.md#conflux-enrol).
@@ -289,9 +339,10 @@ What conflux does differently:
 
 - **`conflux enrol` installs it with no `--api`.** There is no renewal URL to read a base
   out of. `--api` is taken as given if passed, and nothing is checked against it.
-- **An expired one is refused at enrol.** A credential that renews comes back from
-  expiry on its first renewal. One that does not renew never comes back, and installing
-  it would also make it the identity `enrol` refuses to replace. Past its expiry on a
+- **An expired one is refused at enrol**, as any expired credential is. One that does
+  not renew never comes back; one that does renews by the AnchorID a started anchor
+  reports, and anchor will not start one on an expired chain. Installing either would
+  also make it the identity `enrol` refuses to replace. Past its expiry on a
   machine already running, the next start is refused for good — anchor will not build an
   anchor on it — and the unit shows as failed until it is replaced.
 - **Nothing asks to renew it.** A start does not call the API, the timer stops instead

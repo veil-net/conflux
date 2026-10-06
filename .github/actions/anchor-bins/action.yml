@@ -20,16 +20,6 @@ inputs:
       that builds for one platform. Empty fetches every target.
     required: false
     default: ""
-  repo:
-    description: >
-      The owner/name holding the release. Defaults to what internal/shelf names, so the
-      value is stated once in the product code rather than twice.
-    required: false
-    default: ""
-  tag:
-    description: The release tag. Defaults to what internal/shelf names.
-    required: false
-    default: ""
 
 runs:
   using: composite
@@ -69,12 +59,17 @@ runs:
     #
     # The token reaches the fetcher as an environment variable and never as an argument:
     # an argument is visible in `ps` to every other user on the machine.
+    #
+    # ANCHOR_SRC names nothing, so the shelf is the only source: anchor-bins.sh prefers a
+    # local anchor checkout's release/ or dist/, and on the persistent self-hosted machine
+    # a stray unpinned build there would otherwise be what CI tests and a release ships.
+    # Relative, because Git Bash on Windows rewrites an absolute /path it hands to make
+    # into C:/Program Files/Git/path.
     - name: fetch the pinned anchor binaries
       shell: bash
       env:
         ANCHOR_RELEASE_TOKEN: ${{ steps.app.outputs.token }}
-        ANCHOR_REPO: ${{ inputs.repo }}
-        ANCHOR_TAG: ${{ inputs.tag }}
+        ANCHOR_SRC: no-anchor-checkout
         ONLY: ${{ inputs.targets }}
         DEST: ${{ runner.environment == 'self-hosted' && format('{0}/conflux-anchor-bin', runner.tool_cache) || 'anchor/bin' }}
       run: |

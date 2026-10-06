@@ -62,8 +62,13 @@ func runServe(ctx context.Context, args []string) int {
 func runSupervisor(ctx context.Context, sup *daemon.Supervisor) int {
 	notifyReadyWhen(sup.Ready)
 
-	err := sup.Run(ctx)
+	return supervisorExit(sup.Run(ctx))
+}
 
+// supervisorExit says why the supervisor ended, and picks the exit status that tells the
+// service manager whether to start it again. Shared by the foreground run and the
+// Windows service, whose output is the log file.
+func supervisorExit(err error) int {
 	switch {
 	case err == nil:
 		return ExitOK
@@ -77,9 +82,15 @@ func runSupervisor(ctx context.Context, sup *daemon.Supervisor) int {
 			"  conflux proxy   publish a port, no interface needed")
 
 		return ExitNoConfig
-	default:
+	case daemon.Permanent(err):
 		ui.Errf("%v", err)
 
 		return ExitChildFailed
+	default:
+		// Not 70: a failure the next start may not meet -- extraction on a full disk, a
+		// token that could not be written -- so the service manager is left to restart it.
+		ui.Errf("%v", err)
+
+		return ExitError
 	}
 }

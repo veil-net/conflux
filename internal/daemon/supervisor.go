@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
@@ -69,10 +68,6 @@ type Supervisor struct {
 	ctl   *anchorctl.Ctl
 	tail  *ring
 	once  sync.Once
-
-	// adminStopped is whether this daemon has said an admin credential stopped its
-	// anchor, which the watcher reads before rebuilding one; see watch.
-	adminStopped atomic.Bool
 }
 
 func (s *Supervisor) report() Reporter {
@@ -134,13 +129,16 @@ func (s *Supervisor) Run(ctx context.Context) error {
 			return ErrNotConfigured
 		}
 
-		return err
+		return &permanentError{err: err} // names the file already
 	}
 
 	tools, err := libexec.Ensure(s.Dirs)
 	if err != nil {
 		return err
 	}
+
+	// This supervisor is the one running the service now, so no other set is in use by it.
+	go libexec.Sweep(tools)
 
 	s.tools = tools
 	s.tail = newRing(tailLines)
@@ -249,8 +247,9 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 	// The timer, and the watcher that keeps an anchor in the daemon -- and on a link,
 	// keeps the link carrying something. Both are finished before the daemon is shut
 	// down, so neither writes state or talks to a daemon that the next cycle has already
-	// replaced. An admin's kill order ends both: there is no anchor left to keep, or to
-	// renew a credential for, until the service is started again.
+	// replaced. A watcher that gives up on an anchor this configuration will not build
+	// ends both: there is nothing left to keep, or to renew a credential for, until the
+	// service is started again.
 	loops, stopLoops := context.WithCancel(ctx)
 
 	var wg sync.WaitGroup
@@ -262,7 +261,7 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 
 	wg.Go(func() { s.renewLoop(loops) })
 	wg.Go(func() {
-		if s.watch(loops, cfg.Uplink) {
+		if s.watch(loops, cfg.Uplink, checkInterval(cfg.Uplink)) {
 			stopLoops()
 		}
 	})
@@ -347,8 +346,6 @@ func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *child, error) 
 		return nil, nil, err
 	}
 
-	s.adminStopped.Store(false)
-
 	out := s.lines()
 
 	cmd := exec.Command(s.tools.Anchord, anchordArgs(s.Dirs)...) //nolint:gosec // our own extracted binary
@@ -372,18 +369,10 @@ func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *child, error) 
 	return cfg, c, nil
 }
 
-// adminStopLine is what anchord logs when an admin credential's kill order stops the
-// anchor it holds. Nothing else says why an anchor left the daemon.
-const adminStopLine = "this anchor was stopped by an admin credential"
-
 // lines is a writer for anchord's output, delivering it a line at a time to the tail
-// and the reporter, and noting the one line the watcher acts on.
+// and the reporter.
 func (s *Supervisor) lines() *lineWriter {
 	return &lineWriter{emit: func(line string) {
-		if strings.Contains(line, adminStopLine) {
-			s.adminStopped.Store(true)
-		}
-
 		s.tail.add(line)
 		s.report().Step("anchord: %s", line)
 	}}
@@ -576,7 +565,7 @@ func (s *Supervisor) renewLoop(ctx context.Context) {
 		case err != nil:
 			s.report().Warn("could not read %s: %v", s.Dirs.StateFile(), err)
 		case DueAt(st.IssuedAt, st.NotAfter, time.Now()):
-			if err := s.renewOnce(ctx); errors.Is(err, enrol.ErrDoesNotRenew) {
+			if err := RenewNow(ctx, s.Dirs, s.ctl, s.report()); errors.Is(err, enrol.ErrDoesNotRenew) {
 				s.report().Warn("%v", err)
 
 				return
@@ -631,6 +620,11 @@ func (s *Supervisor) freshToken() (string, error) {
 //
 // A served subnet the host is not attached to is deliberately absent. At boot that is
 // usually an interface that has not come up yet, which a retry does fix.
+// Permanent reports whether err is a refusal no restart changes -- a configuration conflux
+// or anchor will not start on -- as distinct from a failure the next start may not meet.
+// `conflux serve` exits on it with the status the service manager does not restart.
+func Permanent(err error) bool { return isPermanent(err) }
+
 func isPermanent(err error) bool {
 	if err == nil {
 		return false
@@ -656,6 +650,10 @@ func isPermanent(err error) bool {
 		"is not the pinned genesis",
 		"will not give this process a tun device",
 		"could not be set up to forward for the realm",
+		// A manifest whose taints are not the ones its chain grants: conflux starts on
+		// the issuer's names and checks them first, so this is the issuer's mistake, and
+		// a credential's taints never change.
+		"does not grant this anchor's taints",
 	} {
 		if strings.Contains(s, phrase) {
 			return true

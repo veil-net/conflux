@@ -83,6 +83,11 @@ anchor version string anywhere — `conflux version` names the pair by SHA-256 a
 else — so that line, and the digests the fetcher prints beside each file, are the only
 way to say which anchor a given conflux carries.
 
+`manifest.json`, which gives the digests, is itself held to the SHA-256 the release
+document lists for it. The binaries and the manifest both arrive through GitHub's
+redirect to its storage, and the release document, which the API answers directly, is
+what vouches for the manifest — so nothing past the API can substitute both.
+
 A file already in place whose SHA-256 is the one the manifest gives is kept and marked
 `cached` rather than downloaded again; one that differs is replaced. So a directory that
 survives between fetches costs a read instead of a download, and cannot hand back
@@ -195,7 +200,7 @@ empty `anchor/bin` is now an ordinary state to be in. Tests that need real binar
 skip, and `make dist` refuses:
 
 ```
-  FAIL dist/conflux-linux-amd64 is 7 MB, under 30 MB
+  FAIL dist/conflux-linux-amd64 is 7 MB, under 45 MB
        anchor/bin holds placeholders, not binaries. Run:
          make anchor-bins ANCHOR_SRC=/path/to/anchor
 ```

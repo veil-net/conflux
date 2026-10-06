@@ -57,15 +57,8 @@ func runStatus(ctx context.Context, args []string) int {
 	st, _ := config.LoadState(d)
 
 	reportService()
-	reportConfig(cfg)
-	reportCredential(d, st)
-
-	// Why a running service holds no anchor, when the reason is somebody else's order:
-	// the supervisor leaves a killed anchor stopped, and only a start builds it again.
-	if st != nil && !st.AdminStoppedAt.IsZero() {
-		ui.Field("stopped", "by an admin credential at "+st.AdminStoppedAt.Format(time.RFC3339)+
-			"; conflux start builds it again")
-	}
+	reportConfig(d, cfg)
+	reportCredential(d, cfg, st)
 
 	reportBinaries(st)
 
@@ -115,7 +108,7 @@ func reportService() {
 	}
 }
 
-func reportConfig(cfg *config.Config) {
+func reportConfig(d paths.Dirs, cfg *config.Config) {
 	// Before the mode, because it is the medium the mode runs over.
 	if cfg.Uplink != "" {
 		ui.Field("uplink", cfg.Uplink+" — no host network under it")
@@ -144,20 +137,32 @@ func reportConfig(cfg *config.Config) {
 		ui.Field("ipv4", ip)
 	}
 
-	for _, s := range cfg.Subnets {
-		ui.Field("forwarding", s)
-	}
+	reportSubnets(d, cfg)
 
 	for _, p := range cfg.Proxies {
 		ui.Field("serving", p)
 	}
 }
 
-func reportCredential(d paths.Dirs, st *config.State) {
-	if !config.HasManifest(d) {
+func reportCredential(d paths.Dirs, cfg *config.Config, st *config.State) {
+	held, err := heldCredential(d)
+
+	switch {
+	case err != nil:
+		ui.Field("credential", "unreadable: "+err.Error())
+
+		return
+	case held == nil:
 		ui.Field("credential", "none — nothing enrolled yet")
 
 		return
+	}
+
+	// What stops a machine starting before anything else about the credential: one
+	// configured for taints it does not grant, such as one enrolled before alpha granted
+	// any. The supervisor refuses it for good, and this says why, and what to do.
+	if err := held.CheckTaints(cfg.Taints); err != nil {
+		ui.Field("refused", err.Error())
 	}
 
 	if st == nil || st.NotAfter.IsZero() {
@@ -272,7 +277,7 @@ func exportSignals(e *config.Export) []string {
 	for _, s := range []struct {
 		on   bool
 		name string
-	}{{e.Metrics, "metrics"}, {e.Traces, "traces"}, {e.Logs, "logs"}} {
+	}{{e.Metrics, "metrics"}, {e.Traces, "traces"}, {e.Logs, "logs"}, {e.Flows, "flows"}} {
 		if s.on {
 			out = append(out, s.name)
 		}

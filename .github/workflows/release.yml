@@ -40,8 +40,13 @@ jobs:
       contents: write
       id-token: write
       attestations: write
+    timeout-minutes: 30
     steps:
+      # Not persisted: the token that can write a release has no business staying in
+      # .git/config on a machine that outlives the job.
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup
 
       # The shelf moves, so a release carries whatever anchor published most recently,

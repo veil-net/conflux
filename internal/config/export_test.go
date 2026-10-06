@@ -35,6 +35,7 @@ func TestExportRefusesWhatAnchordRefuses(t *testing.T) {
 		}, "clientKey"},
 		"a certificate without its key": {func(e *Export) { e.ClientCert = &Secret{Path: "client.pem"} }, "go together"},
 		"a key without its certificate": {func(e *Export) { e.ClientKey = &Secret{Inline: []byte("pem")} }, "go together"},
+		"no signal":                     {func(e *Export) { e.Metrics = false }, "export.flows"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			e := good()
@@ -49,6 +50,14 @@ func TestExportRefusesWhatAnchordRefuses(t *testing.T) {
 				t.Errorf("the refusal should say %q; it said: %v", tc.says, err)
 			}
 		})
+	}
+
+	// Flows alone is a signal: anchord exports them as logs of their own.
+	flows := good()
+	flows.Metrics, flows.Flows = false, true
+
+	if err := flows.Validate(); err != nil {
+		t.Errorf("a flows-only export was refused: %v", err)
 	}
 
 	// Off is off: nothing but the file's own shape is checked.
@@ -73,7 +82,7 @@ func TestExportReadsAsAnchordDoes(t *testing.T) {
 	var e Export
 
 	err := json.Unmarshal([]byte(`{
-		"enabled": true, "endpoint": "collector:4317", "metrics": true,
+		"enabled": true, "endpoint": "collector:4317", "metrics": true, "flows": true,
 		"metricIntervalNanos": "60000000000", "export_timeout_nanos": 6e10,
 		"trace_sample_ratio": "0.25", "log_level": -4, "serviceName": null,
 		"ca_cert": {"inline": "-_8"}, "clientCert": {"path": "client.pem"}
@@ -83,7 +92,7 @@ func TestExportReadsAsAnchordDoes(t *testing.T) {
 	}
 
 	want := Export{
-		Enabled: true, Endpoint: "collector:4317", Metrics: true,
+		Enabled: true, Endpoint: "collector:4317", Metrics: true, Flows: true,
 		MetricIntervalNanos: 60e9, ExportTimeoutNanos: 60e9, TraceSampleRatio: 0.25, LogLevel: -4,
 		CACert: &Secret{Inline: []byte{0xfb, 0xff}}, ClientCert: &Secret{Path: "client.pem"},
 	}

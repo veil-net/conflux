@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Three conflux nodes, one taint, reaching each other over the overlay.
 #
-# This enrols three times against the live API. That is deliberate and cheap: the
-# route is anonymous, stores nothing, and the taint below is random -- so the nodes
-# sit in a compartment of their own and can exchange data with nobody else in the
-# realm.
+# This enrols three times against the live API, and renews once. That is deliberate
+# and cheap: the routes are anonymous, store nothing, and the taint below is random --
+# every credential is issued in it, so the nodes sit in a compartment of their own and
+# can exchange data with nobody else in the realm.
 #
 # The third node is the LAN-discovery control and joins late; everything before it is
 # the two-node test this file has always been.
@@ -28,7 +28,25 @@ boot() {
   return 1
 }
 
+# wait_active waits for the service to say the anchor is up -- Type=notify, so active is
+# that and not merely a started process -- and fails the run if it never does.
+wait_active() {
+  for _ in $(seq 40); do
+    [ "$(docker exec "$1" systemctl is-active conflux.service 2>/dev/null)" = active ] && return 0
+    sleep 1
+  done
+  echo "$1: the service did not come back after the reboot" >&2
+  docker exec "$1" journalctl -u conflux --no-pager -n 30 >&2 || true
+  return 1
+}
+
 anchor_id() { docker exec "$1" sh -c "sed -n 's/.*\"anchorId\": \"\([^\"]*\)\".*/\1/p' /var/lib/conflux/state.json"; }
+
+# grants is 1 when a node's credential grants exactly [$2], and 0 otherwise: the
+# manifest is compact JSON on one line, from the API and as conflux rewrites it.
+grants() {
+  docker exec "$1" sh -c 'base64 -d /var/lib/conflux/manifest.b64' | grep -c "\"taints\":\[\"$2\"\]" || true
+}
 
 # lan_found sums anchor_lan_peers_found_total across whatever labels it carries -- the
 # counter is per-interface, and a container with two bridges would otherwise be read
@@ -80,14 +98,52 @@ say "the identity is 0600 and the state directory 0700"
 [ "$(docker exec cfx-a stat -c%a /run/conflux)" = 700 ] \
   || { echo "the run directory is not 0700" >&2; exit 1; }
 
+say "the credential grants the taint A asked for"
+[ "$(grants cfx-a "$TAINT")" = 1 ] || { echo "A's credential does not grant $TAINT" >&2; exit 1; }
+
 say "a second up must not enrol again"
 docker exec cfx-a conflux up >/dev/null
 [ "$(anchor_id cfx-a)" = "$A_ID" ] \
   || { echo "the identity changed on a second up -- conflux re-enrolled" >&2; exit 1; }
 
+# A credential's taints never change, so another one is a new identity, which conflux
+# will not draw behind a re-run: it refuses, naming the way out, and nothing is replaced.
+say "an up asking for another taint is refused, and the identity stays"
+if refusal=$(docker exec cfx-a conflux up --taint cfx-ci-elsewhere 2>&1); then
+  echo "A accepted a taint its credential does not grant" >&2
+  exit 1
+fi
+case $refusal in
+  *"conflux uninstall"*) ;;
+  *) printf 'the refusal did not name the way out:\n%s\n' "$refusal" >&2; exit 1 ;;
+esac
+[ "$(anchor_id cfx-a)" = "$A_ID" ] && [ "$(grants cfx-a "$TAINT")" = 1 ] \
+  || { echo "the refused up replaced A's identity or credential" >&2; exit 1; }
+
+# The renewal restates the taint, and the running anchor refuses a chain granting any
+# other set: a hot install that succeeds is the proof the two agree.
+say "A renews against the live API and installs the chain hot"
+docker exec cfx-a conflux renew
+[ "$(anchor_id cfx-a)" = "$A_ID" ] || { echo "a renewal changed A's identity" >&2; exit 1; }
+
 say "node B joins with the same taint"
 boot cfx-b
 docker exec cfx-b conflux up --taint "$TAINT" --ipv4 10.128.0.2/24 --peers "$NOWHERE"
+
+# The realm's control over its members is anchorctl's, reached through conflux unchanged.
+# Listing blocks needs no power; an order does, and an alpha credential grants none, so
+# A asking B how it is must be refused for that -- on A's side, before anything is sent.
+say "realm control passes through: blocks lists, and an order is refused for want of the power"
+docker exec cfx-a conflux blocks | awk 'NR == 1 && $1 == "ANCHOR" { ok = 1 } END { exit !ok }' \
+  || { echo "conflux blocks did not print anchorctl's table" >&2; exit 1; }
+if refusal=$(docker exec cfx-a conflux telemetry -from "$(anchor_id cfx-b)" -timeout 10s 2>&1); then
+  echo "an alpha credential ordered telemetry from another member" >&2
+  exit 1
+fi
+case $refusal in
+  *capability*) echo "refused: ${refusal%%$'\n'*}" ;;
+  *) printf 'the order was refused for another reason:\n%s\n' "$refusal" >&2; exit 1 ;;
+esac
 
 # Both directions, because each learns the other's IPv4 from a signed advertisement and
 # the two need not arrive together. Polled every second, so the figure printed is how
@@ -129,17 +185,20 @@ done
 [ "$found" -gt 0 ] \
   || { echo "anchor_lan_peers_found_total never moved on A or B, so they did not meet on the link" >&2; exit 1; }
 
-# C is enrolled the other way: from an alpha manifest fetched here and handed to
-# `conflux enrol` on stdin, which is the path a commissioned machine takes and the one
-# that would otherwise only ever see hand-written fixtures. `up` must then start from
-# it without enrolling again.
+# C is enrolled the other way: from an alpha manifest fetched here, in the run's taint,
+# and handed to `conflux enrol` on stdin, which is the path a commissioned machine takes
+# and the one that would otherwise only ever see hand-written fixtures. The taint comes
+# from the credential; `up` restating it is accepted, and must start from the manifest
+# without enrolling again.
 say "node C is enrolled from a live alpha manifest, then joins with --lan-discovery no and no bootstrap list of its own"
 boot cfx-c
-manifest=$(curl -fsS -X POST -H 'Accept: application/json' --max-time 30 https://api.veilnet.com.au/ghosts/alpha |
+manifest=$(curl -fsS -X POST -H 'Accept: application/json' -H 'Content-Type: application/json' \
+  -d "{\"taints\":[\"$TAINT\"]}" --max-time 30 https://api.veilnet.com.au/ghosts/alpha |
   sed -n 's/^{"credentials":"\([A-Za-z0-9+/=]*\)"}$/\1/p')
 [ -n "$manifest" ] || { echo "POST /ghosts/alpha did not answer with {\"credentials\": ...}" >&2; exit 1; }
 printf '%s' "$manifest" | docker exec -i cfx-c conflux enrol --manifest -
 unset manifest
+[ "$(grants cfx-c "$TAINT")" = 1 ] || { echo "C's credential does not grant $TAINT" >&2; exit 1; }
 docker exec cfx-c conflux up --taint "$TAINT" --ipv4 10.128.0.3/24 --lan-discovery no
 if docker exec cfx-c journalctl -u conflux --no-pager | awk '/enrolling/ { n++ } END { exit n == 0 }'; then
   echo "C enrolled again instead of starting from the manifest it was given" >&2
@@ -178,10 +237,7 @@ echo "C has probed the link 0 times: --lan-discovery no reached anchor"
 
 say "reboot A: it must come back by itself, same identity"
 docker restart cfx-a >/dev/null
-for _ in $(seq 40); do
-  [ "$(docker exec cfx-a systemctl is-active conflux.service 2>/dev/null)" = active ] && break
-  sleep 1
-done
+wait_active cfx-a
 docker exec cfx-a conflux status
 [ "$(anchor_id cfx-a)" = "$A_ID" ] \
   || { echo "the identity changed across a reboot" >&2; exit 1; }
@@ -246,10 +302,7 @@ say "down again, and a reboot brings B back"
 docker exec cfx-b conflux down
 B_ID=$(anchor_id cfx-b)
 docker restart cfx-b >/dev/null
-for _ in $(seq 40); do
-  [ "$(docker exec cfx-b systemctl is-active conflux.service 2>/dev/null)" = active ] && break
-  sleep 1
-done
+wait_active cfx-b
 [ "$(anchor_id cfx-b)" = "$B_ID" ] \
   || { echo "B's identity changed across down and a reboot" >&2; exit 1; }
 

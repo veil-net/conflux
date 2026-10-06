@@ -78,12 +78,14 @@ realm is reachable at all. There is no way around this ordering and conflux does
 pretend otherwise.
 
 ```console
-$ sudo conflux up --uplink /dev/ttyUSB0:115200 --taint mynet   # while it still has the internet
-                                                               # then move the machine
+$ # while it still has the internet, and then move the machine:
+$ sudo conflux up --uplink /dev/ttyUSB0:115200 --taint brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf
 ```
 
-A second `conflux up` re-uses the identity and enrols nothing, so the machine may be
-brought up again on the cable as often as you like.
+The taint is decided here too: it is what the enrolment asks for, and the credential
+keeps it for the life of the identity. A second `conflux up` re-uses the identity and
+enrols nothing, so the machine may be brought up again on the cable as often as you
+like.
 
 **Renewal has the same requirement.** The credential lasts thirty days and the renewer
 needs the same API. A machine that is permanently on a cable and never sees the
@@ -121,13 +123,15 @@ leaves a deployment behaving unlike its own configuration file:
 | Setting | Refused because |
 |---|---|
 | a port | the link is the medium and no socket is bound, so a port names nothing: `conflux up --uplink … --port 4711` is refused here, naming both flags, rather than by a daemon at the next boot |
+| `--lan-discovery yes` | there is no host network to probe and nothing on a cable to answer: refused here, naming both flags, like the port |
 | port mapping | there is no gateway on a cable and no port to forward |
 | hole punching | a point-to-point link has no translator to punch through |
 
 conflux does not ask for port mapping or hole punching, which is exactly what lets `conflux up --uplink /dev/ttyUSB0` work
-without also passing two flags to turn off. `--port` is the one of these that *is* a
-conflux flag, so it is the one that can collide — and conflux refuses the pair itself,
-naming both flags, rather than letting anchor refuse it at the next boot.
+without also passing two flags to turn off. `--port` and `--lan-discovery` are the ones
+of these that *are* conflux flags, so they are the ones that can collide — and conflux
+refuses either pair itself, naming both flags, rather than letting anchor refuse it at
+the next boot.
 
 A manifest can carry a port and a `lanDiscovery` too, and anchorctl takes either for a
 flag nobody typed. So beside an uplink conflux always types both, `-port 0` and, unless
@@ -170,10 +174,11 @@ renewed on the way through if it was due. Repeated failures back off from one se
 to thirty.
 
 The 90 seconds is not arbitrary: an anchor holding no connection redials its uplink at
-once and then every five seconds plus up to a second of jitter, each attempt with a
-45-second dial timeout, and a realm handshake on the slowest line conflux accepts takes
-about 25. A shorter grace would restart anchors that were about to come up on their
-own.
+once, then starts a dial at most every five seconds plus up to a second of jitter, timed
+from the start of the one before — so a dial that never answers, which takes its whole
+45-second timeout, is followed at once by the next — and a realm handshake on the
+slowest line conflux accepts takes about 25. A shorter grace would restart anchors that
+were about to come up on their own.
 
 `conflux status` reports the count, because the anchor's own uptime cannot — it resets
 on every reopen, so a machine losing its cable hourly otherwise looks like one that

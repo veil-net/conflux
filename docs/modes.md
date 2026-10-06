@@ -121,8 +121,9 @@ conflux: this machine was running in TUN mode with interface anchor0.
 The identity does not change. Only the mode does — along with what belonged to the
 other one: switching to TUN clears the proxy specs, which only userspace serves.
 Everything else is kept — the subnets and exits, which either mode routes, and the IPv4,
-the taints, the uplink, the peers, the port and low latency. `--no-subnet`,
-`--no-serve-exit` and `--no-use-exit` are the way back from routing on either verb.
+the taints, which are the credential's, the uplink, the peers, the port and low latency.
+`--no-subnet`, `--no-serve-exit` and `--no-use-exit` are the way back from routing on
+either verb.
 
 ## Proxy specs
 
@@ -142,12 +143,21 @@ than silently keeping the last.
 ## `--subnet`, and what the host has to be
 
 `conflux up --subnet 192.168.1.0/24` — or the same on `conflux proxy` — offers to
-forward that network to the rest of the realm. An entry is an interface name or a prefix; an interface name expands to every
-private network on it, so `eth1` follows DHCP. Private networks only — RFC 1918,
-carrier-grade NAT `100.64.0.0/10` and unique local IPv6, each wholly inside one of
-those — because reaching the public internet through an anchor is what an exit is
-for. A prefix is the network, so `192.168.1.7/24` is refused with the `192.168.1.0/24`
-it meant.
+forward that network to the rest of the realm. An entry is an interface name, a prefix,
+or `*`. An interface name expands to every private network on it, so `eth1` follows
+DHCP, and `*` is every private network on every interface — quote it, `--subnet '*'`,
+or the shell expands it. Private networks only — RFC 1918, carrier-grade NAT
+`100.64.0.0/10` and unique local IPv6, each wholly inside one of those — because
+reaching the public internet through an anchor is what an exit is for. A prefix is the
+network, so `192.168.1.7/24` is refused with the `192.168.1.0/24` it meant.
+
+**An entry can be bound to some of this machine's own taints**, as `SPEC@a+b`:
+`--subnet 192.168.1.0/24@office` offers that network only to peers whose taints pass the
+containment rule in [concepts.md](concepts.md#taints) against `{office}` as well, rather
+than to every peer this machine exchanges data with; `eth1@office+lab` binds `eth1` to
+`{office, lab}`. A binding must name taints this machine is in, so a machine with no
+taints can bind nothing. anchor's limits are checked here first: at most 64 entries,
+each at most 255 bytes, and at most 16 distinct compartments bound across the list.
 
 **In userspace there is nothing to set up**: the anchor forwards from its own process.
 
@@ -167,3 +177,24 @@ One thing to know before you type it: an entry that matches no private network t
 machine is actually attached to **stops the anchor** rather than being advertised on
 faith. conflux checks what it can locally first, so the refusal arrives from conflux
 and not as a daemon that will not start.
+
+### The last set wins
+
+conflux starts the anchor with the list in `conflux.json`, as `-serve-subnets`. A member
+whose credential grants the `subnets` capability can replace it while it runs, with a
+Subnets order (`conflux subnets -peer ID -set …`; see
+[commands.md](commands.md#realm-control)). anchor keeps that list in its directory —
+`/var/lib/conflux/anchor/subnets.json` on Linux, as `{"subnets", "by", "at"}` — and serves
+it in place of the configured one from every start, a reboot included. Unlike the
+configured list, an entry in it that matches nothing on the host is withheld until it
+does rather than stopping the anchor.
+
+A plain re-run of `up` or `proxy`, `conflux start` and a reboot all keep the order's
+list. An `up` or `proxy` with `--subnet` or `--no-subnet` sets the list again: conflux
+removes the order's file before it restarts the anchor, and says whose order it
+replaced. While an order's list is served, `conflux status` and the report after `up`
+or `proxy` say so:
+
+```
+  forwarding   10.9.0.0/24@lab — set by an order from anchor… at 2026-10-06T09:00:00Z, in place of conflux.json's; --subnet or --no-subnet sets it again
+```

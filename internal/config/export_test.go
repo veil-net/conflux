@@ -1,19 +1,10 @@
 package config
 
 import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
-	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
-	"math/big"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 )
 
 // TestExportRefusesWhatAnchordRefuses: anchord reads the rendered block with -config
@@ -134,72 +125,4 @@ func TestExportReadsAsAnchordDoes(t *testing.T) {
 			t.Errorf("%s was accepted: %s", name, in)
 		}
 	}
-}
-
-// TestExportRefusesTLSMaterialAnchordCannotLoad: anchord builds its TLS configuration at
-// startup and exits on material it cannot parse, which the supervisor would retry for
-// ever. Inline material is in the file for good, so it is refused here; a path is left to
-// anchord, since the file it names may simply not be there yet.
-func TestExportRefusesTLSMaterialAnchordCannotLoad(t *testing.T) {
-	certPEM, keyPEM := selfSigned(t)
-	_, otherKey := selfSigned(t)
-
-	dir := t.TempDir()
-	caPath := filepath.Join(dir, "ca.pem")
-
-	if err := os.WriteFile(caPath, certPEM, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	tlsBlock := func(set func(*Export)) *Export {
-		e := &Export{Enabled: true, Endpoint: "collector:4317", Metrics: true}
-		set(e)
-
-		return e
-	}
-
-	for name, tc := range map[string]struct {
-		e  *Export
-		ok bool
-	}{
-		"an inline CA":            {tlsBlock(func(e *Export) { e.CACert = &Secret{Inline: certPEM} }), true},
-		"a CA file":               {tlsBlock(func(e *Export) { e.CACert = &Secret{Path: caPath} }), true},
-		"a CA file not there yet": {tlsBlock(func(e *Export) { e.CACert = &Secret{Path: filepath.Join(dir, "later.pem")} }), true},
-		"a client pair":           {tlsBlock(func(e *Export) { e.ClientCert, e.ClientKey = &Secret{Inline: certPEM}, &Secret{Inline: keyPEM} }), true},
-		"a relative path":         {tlsBlock(func(e *Export) { e.CACert = &Secret{Path: "ca.pem"} }), true},
-		"an inline CA, not PEM":   {tlsBlock(func(e *Export) { e.CACert = &Secret{Inline: []byte("pem")} }), false},
-		"a pair that is not":      {tlsBlock(func(e *Export) { e.ClientCert, e.ClientKey = &Secret{Inline: certPEM}, &Secret{Inline: otherKey} }), false},
-		"bad material, plaintext": {tlsBlock(func(e *Export) {
-			e.Insecure, e.CACert = true, &Secret{Inline: []byte("pem")}
-		}), true},
-	} {
-		if err := tc.e.Validate(); (err == nil) != tc.ok {
-			t.Errorf("%s: Validate() = %v, want ok = %v", name, err, tc.ok)
-		}
-	}
-}
-
-// selfSigned is a certificate and its key, as PEM.
-func selfSigned(t *testing.T) (certPEM, keyPEM []byte) {
-	t.Helper()
-
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	tmpl := &x509.Certificate{SerialNumber: big.NewInt(1), NotAfter: time.Now().Add(time.Hour)}
-
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	k, err := x509.MarshalECPrivateKey(key)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}),
-		pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: k})
 }

@@ -2,8 +2,6 @@ package config
 
 import (
 	"bytes"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -174,34 +172,12 @@ func (e *Export) Validate() error {
 
 	// Only over TLS, which is the only place anchord loads the pair: half of one is mTLS
 	// half-written, and it refuses to start on it rather than connect without.
-	if e.Insecure {
-		return nil
-	}
-
-	if e.ClientCert.given() != e.ClientKey.given() {
+	//
+	// Whether the material parses is left to anchord, which says so at startup. Asking
+	// here would link in the whole of Go's private-key parsing -- some 370 KB in every
+	// conflux -- to catch a misconfiguration anchord already names.
+	if !e.Insecure && e.ClientCert.given() != e.ClientKey.given() {
 		return errors.New("export.clientCert and export.clientKey go together: a certificate needs its key, and a key its certificate")
-	}
-
-	return e.checkTLS()
-}
-
-// checkTLS refuses inline material anchord cannot build a TLS configuration from at
-// startup (otelbridge's tlsConfig): a CA that is not PEM it understands, and a client
-// certificate and key that do not load as a pair. Inline only: material is in this file
-// for good, so a refusal is permanent and right, where a path names a file the host may
-// not have yet -- a late mount, a certificate an ACME agent writes after boot -- which
-// anchord is retried on until it is there.
-func (e *Export) checkTLS() error {
-	ca, cert, key := e.CACert.inline(), e.ClientCert.inline(), e.ClientKey.inline()
-
-	if len(ca) > 0 && !x509.NewCertPool().AppendCertsFromPEM(ca) {
-		return errors.New("export.caCert is not a PEM certificate anchord understands, and it would not start on it")
-	}
-
-	if len(cert) > 0 && len(key) > 0 {
-		if _, err := tls.X509KeyPair(cert, key); err != nil {
-			return fmt.Errorf("export.clientCert and export.clientKey do not load as a pair, and anchord would not start on them: %w", err)
-		}
 	}
 
 	return nil
@@ -209,15 +185,6 @@ func (e *Export) checkTLS() error {
 
 // given reports whether a Secret names any material at all.
 func (s *Secret) given() bool { return s != nil && (len(s.Inline) > 0 || s.Path != "") }
-
-// inline is the material the Secret carries in this file, nil for a path or nothing.
-func (s *Secret) inline() []byte {
-	if s == nil {
-		return nil
-	}
-
-	return s.Inline
-}
 
 // exportNames maps both of protojson's names for each ExportConfig field -- the JSON
 // name and the proto field name -- to the one conflux writes.

@@ -93,7 +93,7 @@ The concrete facts the workflow relies on. Step 8 of every run keeps this file t
   - `cli`: `TestNoUnintendedShadowing`, `TestTheCollisionsAreTheDocumentedOnes`, `TestRealmControlPassesThrough`
   - `daemon`: `BenchmarkDaemonLifecycle` (a benchmark; not part of the no-skip gate)
 - Platform skips, outside the real-binary gate: `daemon.TestShutdownSignalsARunningDaemon` on Windows, and the mode-bit tests on Windows.
-- On Linux with real binaries nothing in the module skips (182 top-level passes); CI's gate requires at least 150.
+- On Linux with real binaries nothing in the module skips (203 top-level passes); CI's gate requires at least 150.
 
 ## CI/CD
 

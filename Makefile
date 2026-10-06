@@ -65,8 +65,8 @@ all: fmtcheck lint tidycheck docscheck test cross dist
 # needs no checkout -- but does need a token, since anchor is private. With none of them
 # it writes placeholders, which compile and are caught by the size gate in dist.
 anchor-bins:
-	@ANCHOR_SRC=$(ANCHOR_SRC) FETCH=$(FETCH) \
-		ANCHOR_API=$(ANCHOR_API) ANCHOR_REPO=$(ANCHOR_REPO) ANCHOR_TAG=$(ANCHOR_TAG) \
+	@ANCHOR_SRC='$(ANCHOR_SRC)' FETCH='$(FETCH)' \
+		ANCHOR_API='$(ANCHOR_API)' ANCHOR_REPO='$(ANCHOR_REPO)' ANCHOR_TAG='$(ANCHOR_TAG)' \
 		./scripts/anchor-bins.sh
 
 # CGO_ENABLED=0 here for the same reason dist sets it: so that the binary a developer

@@ -55,13 +55,9 @@ func install(ctx context.Context, d paths.Dirs, standalone bool) int {
 		return fail(err)
 	}
 
-	exe, err := service.Executable()
+	exe, err := service.Place(d)
 	if err != nil {
 		return fail(err)
-	}
-
-	if warning := service.WarnIfEphemeral(exe); warning != "" {
-		ui.Warnf("%s", warning)
 	}
 
 	// A CONFLUX_DIR run registers a service that has to come back to that same
@@ -215,6 +211,13 @@ func runStart(ctx context.Context, args []string) int {
 			"  conflux proxy 8080=127.0.0.1:3000   publish a port, no interface needed")
 
 		return ExitNoConfig
+	}
+
+	// The service runs its own copy of conflux, and this one may be newer: replacing the
+	// binary and typing start is how an upgrade reaches the service. Nothing is
+	// registered -- the unit names the same path whatever is in it.
+	if _, err := service.Place(d); err != nil {
+		return fail(err)
 	}
 
 	// No check for "already running". mgr.Restart covers both, and a start that

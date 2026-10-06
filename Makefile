@@ -25,9 +25,11 @@ TARGETS := linux/amd64 linux/arm64 darwin/arm64 \
            windows/amd64 windows/arm64 freebsd/amd64 openbsd/amd64
 
 # The size gate. One anchor pair is about 45 MB, so a conflux outside this range is
-# either missing its binaries or -- far more likely -- embedded all fourteen because
-# somebody wrote //go:embed bin instead of naming the two files.
-MIN_MB := 30
+# either missing its binaries -- one of the two is enough to fall under the floor, since
+# a real anchord beside a placeholder anchorctl still comes to about 40 -- or, far more
+# likely, embedded all fourteen because somebody wrote //go:embed bin instead of naming
+# the two files.
+MIN_MB := 45
 MAX_MB := 75
 
 ANCHOR_SRC ?= ../anchor

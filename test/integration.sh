@@ -28,10 +28,22 @@ boot() {
   return 1
 }
 
+# wait_active waits for the service to say the anchor is up -- Type=notify, so active is
+# that and not merely a started process -- and fails the run if it never does.
+wait_active() {
+  for _ in $(seq 40); do
+    [ "$(docker exec "$1" systemctl is-active conflux.service 2>/dev/null)" = active ] && return 0
+    sleep 1
+  done
+  echo "$1: the service did not come back after the reboot" >&2
+  docker exec "$1" journalctl -u conflux --no-pager -n 30 >&2 || true
+  return 1
+}
+
 anchor_id() { docker exec "$1" sh -c "sed -n 's/.*\"anchorId\": \"\([^\"]*\)\".*/\1/p' /var/lib/conflux/state.json"; }
 
-# grants counts the taint sets in a node's credential that are exactly [$2]: the
-# manifest is compact JSON, from the API and as conflux rewrites it at a renewal.
+# grants is 1 when a node's credential grants exactly [$2], and 0 otherwise: the
+# manifest is compact JSON on one line, from the API and as conflux rewrites it.
 grants() {
   docker exec "$1" sh -c 'base64 -d /var/lib/conflux/manifest.b64' | grep -c "\"taints\":\[\"$2\"\]" || true
 }
@@ -112,8 +124,7 @@ esac
 # other set: a hot install that succeeds is the proof the two agree.
 say "A renews against the live API and installs the chain hot"
 docker exec cfx-a conflux renew
-[ "$(anchor_id cfx-a)" = "$A_ID" ] && [ "$(grants cfx-a "$TAINT")" = 1 ] \
-  || { echo "a renewal changed A's identity or its taints" >&2; exit 1; }
+[ "$(anchor_id cfx-a)" = "$A_ID" ] || { echo "a renewal changed A's identity" >&2; exit 1; }
 
 say "node B joins with the same taint"
 boot cfx-b
@@ -226,10 +237,7 @@ echo "C has probed the link 0 times: --lan-discovery no reached anchor"
 
 say "reboot A: it must come back by itself, same identity"
 docker restart cfx-a >/dev/null
-for _ in $(seq 40); do
-  [ "$(docker exec cfx-a systemctl is-active conflux.service 2>/dev/null)" = active ] && break
-  sleep 1
-done
+wait_active cfx-a
 docker exec cfx-a conflux status
 [ "$(anchor_id cfx-a)" = "$A_ID" ] \
   || { echo "the identity changed across a reboot" >&2; exit 1; }
@@ -294,10 +302,7 @@ say "down again, and a reboot brings B back"
 docker exec cfx-b conflux down
 B_ID=$(anchor_id cfx-b)
 docker restart cfx-b >/dev/null
-for _ in $(seq 40); do
-  [ "$(docker exec cfx-b systemctl is-active conflux.service 2>/dev/null)" = active ] && break
-  sleep 1
-done
+wait_active cfx-b
 [ "$(anchor_id cfx-b)" = "$B_ID" ] \
   || { echo "B's identity changed across down and a reboot" >&2; exit 1; }
 

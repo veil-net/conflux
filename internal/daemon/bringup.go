@@ -31,7 +31,13 @@ type permanentError struct {
 	err  error
 }
 
-func (e *permanentError) Error() string { return e.path + ": " + e.err.Error() }
+func (e *permanentError) Error() string {
+	if e.path == "" {
+		return e.err.Error()
+	}
+
+	return e.path + ": " + e.err.Error()
+}
 func (e *permanentError) Unwrap() error { return e.err }
 
 type nopReporter struct{}
@@ -190,6 +196,14 @@ func credential(
 				"the credential expired %s ago, and anchor will not start on an expired one: %w; "+
 					"it has to be replaced", lapsed.Round(time.Minute), enrol.ErrDoesNotRenew)}
 		}
+	case st.AnchorID == "" && !m.NotAfter().IsZero() && time.Now().After(m.NotAfter()):
+		// A renewal names the anchor by the AnchorID it reported when it started, and anchor
+		// will not start one on an expired credential: with none recorded, nothing here can
+		// bring this one back, however often it is tried.
+		return nil, nil, &permanentError{path: d.ManifestFile(), err: fmt.Errorf(
+			"the credential expired %s ago, and no AnchorID is recorded to renew it with -- "+
+				"the anchor never started on it, or %s was lost -- so it has to be replaced",
+			time.Since(m.NotAfter()).Round(time.Minute), d.StateFile())}
 	case st.AnchorID != "" && (DueAt(m.IssuedAt(), m.NotAfter(), time.Now()) || st.ClockSkew > MaxSkew):
 		env = renewBeforeStart(ctx, d, st, client, m, env, r)
 	}

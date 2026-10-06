@@ -83,11 +83,6 @@ func renewStored(
 	return renewal{m: next, env: env, chain: got.Chain}, nil
 }
 
-// renewOnce is the timer's renewal. See RenewNow, which is all of it.
-func (s *Supervisor) renewOnce(ctx context.Context) error {
-	return RenewNow(ctx, s.Dirs, s.ctl, s.report())
-}
-
 // RenewNow fetches a fresh chain and installs it on the running anchor.
 //
 // Hot, via anchorctl renew, which calls SetRealmCred: the identity does not change

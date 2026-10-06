@@ -458,7 +458,7 @@ func ValidateSubnet(entry string) error {
 
 	p, err := netip.ParsePrefix(spec)
 	if err != nil {
-		if strings.Contains(entry, "/") {
+		if strings.Contains(spec, "/") {
 			return fmt.Errorf("subnet %q is neither a prefix nor an interface name: %v", entry, err)
 		}
 

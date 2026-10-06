@@ -573,3 +573,21 @@ func TestAnExpiredFixedTermCredentialIsPermanent(t *testing.T) {
 		t.Errorf("made %d calls to the issuer, want none", is.calls.Load())
 	}
 }
+
+// TestAnExpiredCredentialWithNoAnchorIDIsPermanent: a renewal names the anchor by the
+// AnchorID a start reported, and anchor will not start on an expired chain, so a lapsed
+// credential with none recorded -- never started, or its state lost -- cannot come back.
+// Refused for good, with no call, rather than retried for ever.
+func TestAnExpiredCredentialWithNoAnchorIDIsPermanent(t *testing.T) {
+	is := newIssuer(t)
+	d := machine(t, is, time.Now().Add(-40*24*time.Hour), time.Now().Add(-time.Hour))
+
+	_, _, err := credential(t.Context(), d, &config.State{}, configOf(t, d), nopReporter{})
+	if !isPermanent(err) || !strings.Contains(err.Error(), "no AnchorID") {
+		t.Errorf("credential() = %v, want a permanent refusal naming the missing AnchorID", err)
+	}
+
+	if is.calls.Load() != 0 {
+		t.Errorf("made %d calls to the issuer, want none", is.calls.Load())
+	}
+}

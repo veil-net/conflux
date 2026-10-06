@@ -180,7 +180,7 @@ func TestValidateTaints(t *testing.T) {
 func TestValidateSubnet(t *testing.T) {
 	for _, in := range []string{
 		"eth1", "192.168.1.0/24", "10.0.0.0/8", "172.20.0.0/16", "100.64.0.0/10", "fd12:3456::/64",
-		"*", "eth1@office", "192.168.1.0/24@office+lab", "*@office", "eth@1@office",
+		"*", "eth1@office", "192.168.1.0/24@office+lab", "*@office", "eth@1@office", "eth1@team/a",
 	} {
 		if err := ValidateSubnet(in); err != nil {
 			t.Errorf("ValidateSubnet(%q) = %v", in, err)

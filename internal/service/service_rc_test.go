@@ -75,11 +75,14 @@ func TestFreeBSDScriptQuotesAnything(t *testing.T) {
 }
 
 func TestOpenBSDScript(t *testing.T) {
-	script := openbsdScript("/usr/local/bin/conflux", []string{"serve"})
+	script, err := openbsdScript("/var/db/conflux/conflux", []string{"serve", "--dir", "/srv/conflux-dev"})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for _, want := range []string{
-		"daemon='/usr/local/bin/conflux'",
-		"daemon_flags='serve'",
+		"daemon='/var/db/conflux/conflux'",
+		"daemon_flags='serve --dir /srv/conflux-dev'",
 		"daemon_logger=daemon.info",
 		". /etc/rc.d/rc.subr",
 		"rc_bg=YES",
@@ -91,6 +94,14 @@ func TestOpenBSDScript(t *testing.T) {
 	}
 
 	shParses(t, script)
+
+	// rc.subr runs the command through a shell and rcctl matches it as a pattern, so a
+	// word either would read differently is refused rather than written.
+	for _, root := range []string{"/srv/my dir", "/srv/$HOME", "/srv/a;b", "/srv/it's", "/srv/[x]"} {
+		if _, err := openbsdScript("/var/db/conflux/conflux", []string{"serve", "--dir", root}); err == nil {
+			t.Errorf("a script was written for the root %q", root)
+		}
+	}
 }
 
 func TestRCNameIsAShellWord(t *testing.T) {

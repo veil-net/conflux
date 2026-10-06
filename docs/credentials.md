@@ -339,9 +339,10 @@ What conflux does differently:
 
 - **`conflux enrol` installs it with no `--api`.** There is no renewal URL to read a base
   out of. `--api` is taken as given if passed, and nothing is checked against it.
-- **An expired one is refused at enrol.** A credential that renews comes back from
-  expiry on its first renewal. One that does not renew never comes back, and installing
-  it would also make it the identity `enrol` refuses to replace. Past its expiry on a
+- **An expired one is refused at enrol**, as any expired credential is. One that does
+  not renew never comes back; one that does renews by the AnchorID a started anchor
+  reports, and anchor will not start one on an expired chain. Installing either would
+  also make it the identity `enrol` refuses to replace. Past its expiry on a
   machine already running, the next start is refused for good — anchor will not build an
   anchor on it — and the unit shows as failed until it is replaced.
 - **Nothing asks to renew it.** A start does not call the API, the timer stops instead

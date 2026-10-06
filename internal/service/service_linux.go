@@ -27,7 +27,7 @@ type systemd struct{}
 func newManager() (Manager, error) { return systemd{}, nil }
 
 func (s systemd) Install(exe string, args ...string) error {
-	unit := []byte(systemdUnit(exe, args))
+	unit := []byte(systemdUnit(exe, args, scope() != ""))
 
 	// Registered exactly so already, which is every re-run of up and proxy: a read and a
 	// stat, rather than a daemon-reload and an enable that would change nothing and cost

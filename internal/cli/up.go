@@ -551,6 +551,12 @@ func chooseTaints(cfg *config.Config, given []string, held *enrol.Manifest) erro
 		minted := taint.New()
 		cfg.Taints = []string{minted}
 
+		// Said only for a configuration that will be saved: a run refused after this has
+		// minted a name nothing kept, and the next one mints another.
+		if err := cfg.Validate(); err != nil {
+			return err
+		}
+
 		ui.Println()
 		ui.Println("Minted a taint for this network:")
 		ui.Println()
@@ -621,18 +627,24 @@ func readSubnetsOrder(d paths.Dirs) (*subnetsOrder, error) {
 
 // dropSubnetsOrder lets the list conflux starts with be served again: the operator just
 // set it, and the last set is the one served. The order's file is anchor's documented way
-// back, removed before the restart that reads it.
+// back, removed before the restart that reads it -- whatever is in it, since one anchor
+// cannot read is one it refuses to start on, and this is the command that clears it.
 func dropSubnetsOrder(d paths.Dirs) error {
-	o, err := readSubnetsOrder(d)
-	if o == nil {
-		return err
-	}
+	o, readErr := readSubnetsOrder(d)
 
-	if err := os.Remove(d.SubnetsOrderFile()); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := os.Remove(d.SubnetsOrderFile()); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+
 		return fmt.Errorf("could not replace the subnet list an order set: %w", err)
 	}
 
-	ui.Printf("Replacing the subnet list an order from %s set at %s.\n", o.By, o.At.Format(time.RFC3339))
+	if readErr != nil {
+		ui.Printf("Replacing a subnet list an order set, which could not be read: %v.\n", readErr)
+	} else {
+		ui.Printf("Replacing the subnet list an order from %s set at %s.\n", o.By, o.At.Format(time.RFC3339))
+	}
 
 	return nil
 }

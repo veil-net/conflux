@@ -42,8 +42,9 @@ func LoadManifest(d paths.Dirs) (Envelope, error) {
 // SaveManifest writes the identity, atomically, 0600, and DACL-restricted on
 // Windows.
 //
-// Called in exactly two places: immediately after enrolment, before anything else
-// touches the response, and after a renewal splices a fresh chain into it.
+// Called in exactly three places: immediately after enrolment, before anything else
+// touches the response; after a renewal splices a fresh chain into it; and by `conflux
+// enrol`, installing one a machine was given.
 // Enrolment stores nothing on the server -- the response is the only copy -- so an
 // enrolment that succeeds and then loses the bytes to a crash costs the machine its
 // identity permanently. That is why it is written first and everything else second.

@@ -13,6 +13,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/enrol"
+	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/ui"
 )
@@ -112,6 +113,15 @@ func runEnrol(_ context.Context, args []string) int {
 // so the refusals below are reachable from a test rather than only from a root
 // shell. Every one of them is a refusal somebody will eventually hit.
 func importCredential(d paths.Dirs, manifestPath, apiBase, ipv4Flag string) error {
+	// Held from the check that no manifest exists to the write of this one, like every
+	// other writer of it: a supervisor enrolling under the lock at the same moment would
+	// otherwise leave one identity running and another on disk.
+	unlock, err := flock.Acquire(d.LockFile())
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	// First, and before the file is even read. The check is about an identity that
 	// already exists, so it must not depend on the new document being any good --
 	// otherwise a malformed file reports its own problem and hides this one.
@@ -147,13 +157,14 @@ func importCredential(d paths.Dirs, manifestPath, apiBase, ipv4Flag string) erro
 		return err
 	}
 
-	// A credential that renews comes back from expiry on its first renewal. One that
-	// does not never comes back, and installing it would also make it the identity this
-	// verb refuses to replace -- so it is refused here, while a person is present.
-	if !m.Renews() && !m.NotAfter().After(time.Now()) {
+	// An expired credential never comes back here. One that does not renew never does
+	// anywhere; one that does renews by the AnchorID a started anchor reports, and anchor
+	// will not start one on an expired chain. Installing it would also make it the identity
+	// this verb refuses to replace -- so it is refused here, while a person is present.
+	if !m.NotAfter().After(time.Now()) {
 		return fmt.Errorf(
-			"the credential expired %s and names nowhere to renew it, so no peer would accept it.\n"+
-				"  Download a fresh one from its issuer", describeExpiry(m.NotAfter()))
+			"the credential expired %s, and anchor will not start on an expired one.\n"+
+				"  Get a fresh one from its issuer", describeExpiry(m.NotAfter()))
 	}
 
 	address, err := chooseImportedIPv4(m, ipv4Flag)

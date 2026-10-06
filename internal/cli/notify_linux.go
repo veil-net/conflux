@@ -14,7 +14,7 @@ import (
 // A dependent unit ordered After=conflux.service gets the same guarantee for free.
 func notifyReadyWhen(ready <-chan struct{}) {
 	socket := os.Getenv("NOTIFY_SOCKET")
-	if socket == "" || ready == nil {
+	if socket == "" {
 		return
 	}
 

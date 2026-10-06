@@ -442,6 +442,6 @@ other refusal — passes through untouched.
 | 2 | usage |
 | 13 | needs root or Administrator |
 | 69 | nothing is running here |
-| 70 | anchord itself would not start |
+| 70 | a configuration conflux or anchor refuses for good; the systemd unit does not restart on it |
 | 78 | no configuration — the code the systemd unit keys `RestartPreventExitStatus` on |
 | other | for pass-through, anchorctl's own code, verbatim |

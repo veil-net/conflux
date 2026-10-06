@@ -140,14 +140,15 @@ jobs:
 
       # The same gate as Linux, over the tests that need the real binaries: here other
       # tests do skip, for the platform (a mode bit Windows does not have), and that is
-      # not what this checks.
+      # not what this checks. Every test that needs the pair skips saying "no anchor
+      # pair", so the reason is what is looked for, rather than a list of names that a
+      # new test would be missing from.
       - name: the suite, with the real binaries
         shell: bash
         run: |
           set -euo pipefail
           go test -count=1 -v ./... > test.log 2>&1 || { cat test.log; exit 1; }
-          real='TestPairIsRealExecutables|TestSetIDIsStable|TestEnsure|TestEveryFlagWeUseExists|TestNoUnintendedShadowing|TestTheCollisionsAreTheDocumentedOnes'
-          if grep -E -- "--- SKIP: ($real)" test.log; then
+          if grep -B1 -- 'no anchor pair' test.log; then
             echo "::error::a test that needs the anchor binaries skipped" >&2
             exit 1
           fi

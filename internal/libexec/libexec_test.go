@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/veil-net/conflux/anchor"
 	"github.com/veil-net/conflux/internal/paths"
@@ -202,5 +203,42 @@ func TestEnsureRepairsATruncatedExtraction(t *testing.T) {
 
 	if fi.Size() != int64(len(anchor.Anchord())) {
 		t.Errorf("anchord is %d bytes after repair, want %d", fi.Size(), len(anchor.Anchord()))
+	}
+}
+
+// TestSweepLeavesWhatMayBeInUse: Sweep keeps its own set and any set touched in the last
+// day, which a supervisor still running an older conflux may be execing, and removes the
+// rest, and a staging directory a crash left more than an hour ago.
+func TestSweepLeavesWhatMayBeInUse(t *testing.T) {
+	root := t.TempDir()
+
+	age := map[string]time.Duration{
+		"own":            48 * time.Hour,
+		"recent":         time.Hour,
+		"old":            48 * time.Hour,
+		".staging-fresh": time.Minute,
+		".staging-stale": 2 * time.Hour,
+	}
+
+	for name, a := range age {
+		dir := filepath.Join(root, name)
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		then := time.Now().Add(-a)
+		if err := os.Chtimes(dir, then, then); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	Sweep(&Tools{Dir: filepath.Join(root, "own"), SetID: "own"})
+
+	for name, kept := range map[string]bool{
+		"own": true, "recent": true, ".staging-fresh": true, "old": false, ".staging-stale": false,
+	} {
+		if _, err := os.Stat(filepath.Join(root, name)); (err == nil) != kept {
+			t.Errorf("%s: kept = %v, want %v", name, err == nil, kept)
+		}
 	}
 }

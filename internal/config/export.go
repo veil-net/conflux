@@ -10,8 +10,6 @@ import (
 	"fmt"
 	"math/big"
 	"net"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -187,29 +185,17 @@ func (e *Export) Validate() error {
 	return e.checkTLS()
 }
 
-// checkTLS refuses the material anchord cannot build a TLS configuration from at startup
-// (otelbridge's tlsConfig): a CA that is not PEM it understands, and a client certificate
-// and key that do not load as a pair. Read as anchord reads it -- inline, or the file a
-// path names -- except a relative path, which resolves against the daemon's working
-// directory and so cannot be read from here as the daemon would read it.
+// checkTLS refuses inline material anchord cannot build a TLS configuration from at
+// startup (otelbridge's tlsConfig): a CA that is not PEM it understands, and a client
+// certificate and key that do not load as a pair. Inline only: material is in this file
+// for good, so a refusal is permanent and right, where a path names a file the host may
+// not have yet -- a late mount, a certificate an ACME agent writes after boot -- which
+// anchord is retried on until it is there.
 func (e *Export) checkTLS() error {
-	ca, err := e.CACert.material("caCert")
-	if err != nil {
-		return err
-	}
+	ca, cert, key := e.CACert.inline(), e.ClientCert.inline(), e.ClientKey.inline()
 
 	if len(ca) > 0 && !x509.NewCertPool().AppendCertsFromPEM(ca) {
 		return errors.New("export.caCert is not a PEM certificate anchord understands, and it would not start on it")
-	}
-
-	cert, err := e.ClientCert.material("clientCert")
-	if err != nil {
-		return err
-	}
-
-	key, err := e.ClientKey.material("clientKey")
-	if err != nil {
-		return err
 	}
 
 	if len(cert) > 0 && len(key) > 0 {
@@ -224,24 +210,13 @@ func (e *Export) checkTLS() error {
 // given reports whether a Secret names any material at all.
 func (s *Secret) given() bool { return s != nil && (len(s.Inline) > 0 || s.Path != "") }
 
-// material is what the Secret holds, read from its path when it names an absolute one;
-// nil when it names nothing, or a relative path checkTLS cannot read as the daemon would.
-func (s *Secret) material(field string) ([]byte, error) {
-	switch {
-	case s == nil:
-		return nil, nil
-	case len(s.Inline) > 0:
-		return s.Inline, nil
-	case !filepath.IsAbs(s.Path):
-		return nil, nil
+// inline is the material the Secret carries in this file, nil for a path or nothing.
+func (s *Secret) inline() []byte {
+	if s == nil {
+		return nil
 	}
 
-	b, err := os.ReadFile(s.Path)
-	if err != nil {
-		return nil, fmt.Errorf("export.%s: anchord reads it at startup and would not start without it: %w", field, err)
-	}
-
-	return b, nil
+	return s.Inline
 }
 
 // exportNames maps both of protojson's names for each ExportConfig field -- the JSON

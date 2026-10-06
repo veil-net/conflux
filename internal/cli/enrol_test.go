@@ -23,7 +23,7 @@ const guardianDoc = `{
   "genesis": "0011223344556677",
   "identity": "99887766554433221100ffeeddccbbaa",
   "chain": "Z3VhcmRpYW4tY2hhaW4=",
-  "notAfter": "2026-10-13T04:12:00.000Z",
+  "notAfter": "2126-10-13T04:12:00.000Z",
   "taints": [],
   "useExit": false,
   "telemetrySecret": "cafebabe0123",
@@ -148,6 +148,7 @@ func TestEnrolRefusesBeforeWriting(t *testing.T) {
 		`  "renewalUrl": "https://guardian.example.gov/nodes/abc/credential",`+"\n", "", 1)
 	badAddress := strings.Replace(guardianDoc, `"ipv4": "10.20.0.7/24"`, `"ipv4": "127.0.0.7/8"`, 1)
 	lapsedNode := strings.Replace(ghostNodeDoc, `"notAfter": "2126-10-03T11:25:49.000Z"`, `"notAfter": "2026-01-01T00:00:00.000Z"`, 1)
+	lapsedGuardian := strings.Replace(guardianDoc, `"notAfter": "2126-10-13T04:12:00.000Z"`, `"notAfter": "2026-01-01T00:00:00.000Z"`, 1)
 
 	for name, tc := range map[string]struct {
 		doc  string
@@ -159,6 +160,7 @@ func TestEnrolRefusesBeforeWriting(t *testing.T) {
 		"a renewalAuth we do not do":      {unknownAuth, guardianAPI, "mtls"},
 		"a renewalAuth and no renewalUrl": {noRenewal, guardianAPI, "renewalUrl"},
 		"a fixed term already over":       {lapsedNode, "", "expired"},
+		"a renewing one already over":     {lapsedGuardian, guardianAPI, "expired"},
 		"an address anchor refuses":       {badAddress, guardianAPI, "unicast"},
 		"an api naming another host":      {guardianDoc, "https://somewhere.else", "somewhere.else"},
 	} {
@@ -372,7 +374,7 @@ const alphaDoc = `{
   "genesis": "0011223344556677",
   "identity": "aabbccddeeff00112233445566778899",
   "chain": "Y2hhaW4=",
-  "notAfter": "2026-09-13T04:12:00.000Z",
+  "notAfter": "2126-09-13T04:12:00.000Z",
   "taints": ["brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf"],
   "useExit": false,
   "bootstrap": ["genesis.veilnet.com.au:4700"],
@@ -388,7 +390,7 @@ const exportDoc = `{
   "genesis": "0011223344556677",
   "identity": "99887766554433221100ffeeddccbbaa",
   "chain": "Z3VhcmRpYW4tY2hhaW4=",
-  "notAfter": "2026-10-13T04:12:00.000Z",
+  "notAfter": "2126-10-13T04:12:00.000Z",
   "renewalUrl": "https://guardian.example.gov/nodes/abc/credential",
   "renewalAuth": "node-secret",
   "renewalSecret": "abc.c2VjcmV0",

@@ -9,5 +9,3 @@ var anchord []byte
 
 //go:embed bin/anchorctl-openbsd-amd64
 var anchorctl []byte
-
-const supported = true

@@ -781,7 +781,7 @@ func TestTaintsAreAskedForOrChecked(t *testing.T) {
 		"a name anchor refuses":         {given: []string{"a@b"}, refused: true},
 	} {
 		t.Run(name, func(t *testing.T) {
-			cfg := &config.Config{Taints: tc.configured}
+			cfg := &config.Config{Mode: config.ModeTUN, Taints: tc.configured}
 
 			err := chooseTaints(cfg, tc.given, tc.held)
 
@@ -845,6 +845,19 @@ func TestASetListReplacesASubnetOrder(t *testing.T) {
 
 	if _, err := os.Stat(d.SubnetsOrderFile()); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("the order is still in force after the list was set: %v", err)
+	}
+
+	// One anchor cannot read is one it will not start on, and setting the list clears it.
+	if err := os.WriteFile(d.SubnetsOrderFile(), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := dropSubnetsOrder(d); err != nil {
+		t.Errorf("dropSubnetsOrder refused an order it could not read: %v", err)
+	}
+
+	if _, err := os.Stat(d.SubnetsOrderFile()); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("an unreadable order is still in force after the list was set: %v", err)
 	}
 
 	// Nothing to replace is not an error.

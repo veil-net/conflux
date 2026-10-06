@@ -75,6 +75,15 @@ shape, and it is worth being honest about how it is bounded:
 - `conflux version` prints both SHA-256s, so what is on disk can be checked against a
   release note.
 
+The boot service is held to the same rule. It runs as root (SYSTEM on Windows) and
+starts whatever file it names at every boot, so it names a copy of conflux in the same
+state directory, which `up`, `proxy`, `install` and `start` refresh, and never the file
+conflux was run from — a home directory or a download that another account could swap
+for a program of its own, to be run as root at the next start. On Windows the root's
+DACL is set by the first conflux command that creates it, extraction included, and a
+root that holds anything another account made before then is refused rather than
+repaired around it.
+
 `CONFLUX_DIR` can point the extraction somewhere else, which is a knob worth knowing
 about: it lets a caller choose the directory a root daemon executes from. It exists
 for tests and for hosts where the default filesystem is `noexec`.

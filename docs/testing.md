@@ -44,7 +44,8 @@ a placeholder build reports that it carries no anchor binaries rather than prete
 A skip is green, so the job that fetches the real binaries asserts that none of the
 tests needing them skipped: a job that provides the binaries and then reports "no
 anchor pair" has lost them, and saying so is the difference between a gate and a
-decoration.
+decoration. On macOS and Windows, where other tests skip for the platform, the gate
+looks for that reason rather than a list of names a new test would be missing from.
 
 **The argv goldens**, in `internal/anchorctl/testdata/argv/`, hold one file per
 scenario, one argument per line. Argv construction is where a wrapper's bugs live and

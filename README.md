@@ -33,9 +33,10 @@ $ sudo install -m 0755 conflux-linux-amd64 /usr/local/bin/conflux
 $ conflux version
 ```
 
-Do this before the next step: the boot service records the path it was installed
-from, so a service pointed at `~/Downloads/conflux` breaks the first time that file
-gets cleaned up. To build from source instead, see [build.md](docs/build.md)
+Where you keep it is up to you: the boot service runs a copy conflux places in its
+own state directory (`/var/lib/conflux/conflux` on Linux), which only root can
+change, and `up`, `proxy`, `install` and `start` keep that copy current. To build from
+source instead, see [build.md](docs/build.md)
 (`make anchor-bins && make build`); platform-specific notes are in
 [install.md](docs/install.md).
 

@@ -12,10 +12,14 @@ $ sudo install -m 0755 conflux-linux-amd64 /usr/local/bin/conflux
 $ conflux version
 ```
 
-**Install it before registering the service.** The unit records the path it was
-installed from, so a boot service pointed at `~/Downloads/conflux` breaks the day that
-file is cleaned up or the home directory is not mounted at boot. conflux warns when it
-notices this, but the fix is to move the binary first.
+**The boot service runs its own copy.** It runs as root, so the file it starts has to
+be one only root can change: a service pointed at `~/Downloads/conflux` or
+`C:\tools\conflux.exe` is one any program running as that user could swap for its own.
+So `up`, `proxy`, `install` and `start` copy the conflux they were run as into the state
+directory — `/var/lib/conflux/conflux` on Linux, `/var/db/conflux/conflux` on the BSDs,
+`/Library/Application Support/conflux/conflux` on macOS,
+`%ProgramData%\conflux\conflux.exe` on Windows — and register that. Where you keep the
+binary you type is up to you; `uninstall` removes the copy with the rest.
 
 Seven platforms are built: linux/amd64, linux/arm64, darwin/arm64, windows/amd64,
 windows/arm64, freebsd/amd64, openbsd/amd64. Each is about 50 MB, because each
@@ -68,8 +72,8 @@ $ sudo conflux start
 ```
 
 The new binary carries a different anchor pair, which extracts into its own directory
-rather than over the one the running daemon has open, and `conflux start` restarts the
-service onto it. Nothing is re-enrolled and the identity is untouched.
+rather than over the one the running daemon has open, and `conflux start` copies it to
+where the service runs it from and restarts the service onto it. Nothing is re-enrolled and the identity is untouched.
 
 Until you run `conflux start`, `conflux status` reports:
 

@@ -223,7 +223,9 @@ on Windows. Two conflux processes racing agree on the path. A stale set is
 identifiable and sweepable. And "is it already extracted" is three stats rather than a
 read of forty-odd megabytes.
 
-Old sets are swept after 24 hours. `conflux uninstall` removes the tree.
+Old sets are swept after 24 hours, by the supervisor once it has started on its own
+set — never by another conflux command, which might be standing beside a supervisor
+still running an older set. `conflux uninstall` removes the tree.
 
 Emphatically **not** `/tmp`: systemd's `PrivateTmp=` would give the service a
 different `/tmp` than your shell, `/tmp` is `noexec` on hardened hosts,

@@ -133,6 +133,9 @@ func waitForAnchor(ctx context.Context, d paths.Dirs) (anchorctl.Status, error) 
 		nextPoll = time.Now()
 	)
 
+	ticker := time.NewTicker(tick)
+	defer ticker.Stop()
+
 	for {
 		// The marker only ever pulls the next status call forward, and only once. If it
 		// appears and the call behind it fails anyway, the cadence stays at one a second
@@ -164,7 +167,7 @@ func waitForAnchor(ctx context.Context, d paths.Dirs) (anchorctl.Status, error) 
 		select {
 		case <-ctx.Done():
 			return anchorctl.Status{}, ctx.Err()
-		case <-time.After(tick):
+		case <-ticker.C:
 		}
 	}
 }

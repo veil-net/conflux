@@ -72,6 +72,14 @@ func Ensure(d paths.Dirs) (*Tools, error) {
 		return t, nil
 	}
 
+	// The directories every other conflux command makes, secured as they are made: on
+	// Windows the root takes %ProgramData%'s DACL, which lets Users create folders in it,
+	// until something gives it its own, and a pass-through or a status may be the first
+	// conflux to run here.
+	if err := d.EnsureAll(); err != nil {
+		return nil, err
+	}
+
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, fmt.Errorf("create %s: %w", root, err)
 	}
@@ -94,8 +102,6 @@ func Ensure(d paths.Dirs) (*Tools, error) {
 	if err := smoke(t); err != nil {
 		return nil, err
 	}
-
-	go gc(root, setID)
 
 	return t, nil
 }
@@ -245,9 +251,16 @@ func smoke(t *Tools) error {
 		t.Dir, err, strings.TrimSpace(string(out)))
 }
 
-// gc removes sets this conflux no longer uses. Best-effort throughout: a directory
-// that will not go is a directory that is probably in use.
-func gc(root, keep string) {
+// Sweep removes the sets other than t, and the debris of an extraction that crashed.
+//
+// Only the supervisor calls it, once it holds its own set. Any other conflux extracting
+// a set of its own -- the first `status` after an upgrade -- may be standing beside a
+// supervisor that still runs an older conflux and execs that one's anchorctl for every
+// renewal and every check; the service restarting onto the new set is what ends its use
+// of the old. Best-effort throughout: a directory that will not go is probably in use.
+func Sweep(t *Tools) {
+	root, keep := filepath.Dir(t.Dir), t.SetID
+
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return

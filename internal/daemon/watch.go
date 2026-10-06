@@ -246,14 +246,6 @@ func (s *Supervisor) rebuild(ctx context.Context) error {
 // file, so this reads it back rather than holding a stale copy across the restart,
 // under the lock every other writer of it holds.
 func (s *Supervisor) recordReopen() {
-	s.updateState("the uplink reopen", func(st *config.State) {
-		st.LinkReopens++
-		st.LastLinkReopen = time.Now().UTC()
-	})
-}
-
-// updateState changes the state file under the lock, best effort.
-func (s *Supervisor) updateState(what string, change func(*config.State)) {
 	unlock, err := flock.Acquire(s.Dirs.LockFile())
 	if err != nil {
 		return
@@ -265,10 +257,11 @@ func (s *Supervisor) updateState(what string, change func(*config.State)) {
 		return
 	}
 
-	change(st)
+	st.LinkReopens++
+	st.LastLinkReopen = time.Now().UTC()
 
 	if err := config.SaveState(s.Dirs, st); err != nil {
-		s.report().Warn("could not record %s: %v", what, err)
+		s.report().Warn("could not record the uplink reopen: %v", err)
 	}
 }
 

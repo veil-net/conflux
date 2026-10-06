@@ -31,8 +31,8 @@ const minReal = 5 << 20
 // second case is why this is a size check and not just the build tag: the binaries
 // are not in git, so a build with nothing real in anchor/bin is an ordinary thing to
 // end up with, and it has to say so rather than ship a conflux that cannot start a
-// daemon.
-var Supported = supported && len(anchord) >= minReal && len(anchorctl) >= minReal
+// daemon. An unshipped platform embeds nothing, which the same check answers.
+var Supported = len(anchord) >= minReal && len(anchorctl) >= minReal
 
 // Anchord is the daemon: it holds at most one anchor and outlives it.
 func Anchord() []byte { return anchord }
@@ -69,8 +69,8 @@ var SetID = sync.OnceValue(func() string {
 
 // Digests are the two SHA-256s, hex, for `conflux version` to print. A user
 // comparing them against the release notes learns which anchor build they hold
-// without running it. Computed side by side, since each is most of a second of CPU
-// on a core without SHA extensions.
+// without running it. Computed side by side: the pair is about a quarter of a second of
+// SHA-256 on a core without SHA extensions, most of it anchord's.
 var Digests = sync.OnceValues(func() (anchordSHA, anchorctlSHA string) {
 	var wg sync.WaitGroup
 

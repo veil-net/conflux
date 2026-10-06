@@ -60,10 +60,12 @@ nothing: there is no anchor left to close, and its pid may belong to something e
 
 A start that fails is retried with a backoff up to thirty seconds. One that no retry
 changes — a configuration conflux refuses, taints the credential does not grant, an
-expired credential with nowhere to renew it, a credential for another realm tree, a TUN
-the host will not give, a host that will not be set up to forward, an argument vector
-anchorctl refuses — stops the supervisor after three attempts with exit 70, and nothing
-to start at all is exit 78. What each service manager does with those two is below.
+expired credential with nowhere to renew it or no AnchorID recorded to renew it with, a
+credential for another realm tree, a TUN the host will not give, a host that will not
+be set up to forward, an argument vector anchorctl refuses — stops the supervisor after
+three attempts with exit 70, and nothing to start at all is exit 78. Anything else the
+supervisor stops on — an extraction onto a full disk, say — exits 1, which a service
+manager restarts. What each does with 78 and 70 is below.
 
 anchord can also lose its anchor without exiting, so the supervisor asks it every thirty
 seconds whether it still holds one (every ten, through the link watcher's gauge, on an
@@ -83,8 +85,12 @@ A run under `CONFLUX_DIR` is the exception, because it is a separate installatio
 not the machine's own: the service takes a suffix derived from the root
 (`conflux-44a6e4f4.service`, or `conflux_44a6e4f4` for rc, whose names become shell
 variables), and the root is written into the argv it is registered with, so the
-supervisor comes back to the same directory at boot. Neither happens
-without `CONFLUX_DIR`, so an ordinary install is byte-for-byte what it always was.
+supervisor comes back to the same directory at boot. Its systemd unit also leaves out
+the `RuntimeDirectory=`, `StateDirectory=` and `ConfigurationDirectory=` lines: they name
+the machine's own directories, and systemd empties a unit's runtime directory whenever it
+stops, so stopping the scoped unit would otherwise clear the real installation's
+`/run/conflux`. None of this happens without `CONFLUX_DIR`, so an ordinary install is
+byte-for-byte what it always was.
 See [testing.md](testing.md).
 
 ## The four verbs, and which pair is which
@@ -110,7 +116,9 @@ Unit at `/etc/systemd/system/conflux.service`, and `conflux install` writes it,
 `daemon-reload`s and `enable`s it — or, finding that exact unit already there and
 enabled, as every re-run of `up` and `proxy` does, leaves it be. **It does not start
 it**; that is the caller's decision, and it is what lets `conflux install` register a
-service on a machine that has no configuration yet.
+service on a machine that has no configuration yet. `ExecStart=` names the copy of conflux
+kept in the state directory, which only root can change, never the file conflux was run
+from; see [install.md](install.md).
 
 ```ini
 [Unit]
@@ -122,7 +130,7 @@ Wants=network-online.target
 [Service]
 Type=notify
 NotifyAccess=main
-ExecStart=/usr/local/bin/conflux serve
+ExecStart=/var/lib/conflux/conflux serve
 Restart=on-failure
 RestartSec=5
 RestartPreventExitStatus=78 70
@@ -234,7 +242,12 @@ daemon-shutdown RPC — are `anchord`'s to offer and it offers neither.
 
 A supervisor that stops itself — exit 78 or 70 — reports the service stopped, which the
 SCM does not count as a failure, so the recovery actions do not restart it into the
-same answer.
+same answer, and writes why to the log. The service accepts Stop from the moment it
+starts, so `conflux down`, a restart and `uninstall` need not wait out a bring-up that is
+slow or keeps failing.
+
+`install` on an existing service re-registers it with the same type it was created with;
+`up` and `proxy` do that on every run.
 
 Windows also needs `wintun.dll` for TUN mode; see [windows.md](windows.md).
 
@@ -253,7 +266,10 @@ removes the `rc.conf` line, the script and the log.
 
 **OpenBSD.** Script at `/etc/rc.d/conflux`, enabled with `rcctl enable conflux`.
 `rc.subr` backgrounds it and sends its output to syslog, so the logs are in
-`/var/log/daemon`. `uninstall` stops and disables it and removes the script.
+`/var/log/daemon`. `uninstall` stops and disables it and removes the script. `rc.subr`
+runs the command through a shell and `rcctl` finds it again by matching the same text,
+so no quoting survives both: a `CONFLUX_DIR` root holding a space or a shell character is
+refused at `install` rather than split.
 
 On both, `install` enables and starts nothing, and `restart` starts a service that was
 not running. One platform note: OpenBSD's `tunN` device persists after close, so

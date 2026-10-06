@@ -129,13 +129,16 @@ func (s *Supervisor) Run(ctx context.Context) error {
 			return ErrNotConfigured
 		}
 
-		return err
+		return &permanentError{err: err} // names the file already
 	}
 
 	tools, err := libexec.Ensure(s.Dirs)
 	if err != nil {
 		return err
 	}
+
+	// This supervisor is the one running the service now, so no other set is in use by it.
+	go libexec.Sweep(tools)
 
 	s.tools = tools
 	s.tail = newRing(tailLines)
@@ -562,7 +565,7 @@ func (s *Supervisor) renewLoop(ctx context.Context) {
 		case err != nil:
 			s.report().Warn("could not read %s: %v", s.Dirs.StateFile(), err)
 		case DueAt(st.IssuedAt, st.NotAfter, time.Now()):
-			if err := s.renewOnce(ctx); errors.Is(err, enrol.ErrDoesNotRenew) {
+			if err := RenewNow(ctx, s.Dirs, s.ctl, s.report()); errors.Is(err, enrol.ErrDoesNotRenew) {
 				s.report().Warn("%v", err)
 
 				return
@@ -617,6 +620,11 @@ func (s *Supervisor) freshToken() (string, error) {
 //
 // A served subnet the host is not attached to is deliberately absent. At boot that is
 // usually an interface that has not come up yet, which a retry does fix.
+// Permanent reports whether err is a refusal no restart changes -- a configuration conflux
+// or anchor will not start on -- as distinct from a failure the next start may not meet.
+// `conflux serve` exits on it with the status the service manager does not restart.
+func Permanent(err error) bool { return isPermanent(err) }
+
 func isPermanent(err error) bool {
 	if err == nil {
 		return false

@@ -136,10 +136,10 @@ func TestExportReadsAsAnchordDoes(t *testing.T) {
 	}
 }
 
-// TestExportRefusesTLSMaterialAnchordCannotLoad: anchord builds its TLS configuration
-// at startup and exits on material it cannot read or parse, which the supervisor would
-// retry for ever. Inline material and absolute paths are read here as anchord reads them;
-// a relative path resolves against the daemon's working directory, so it is left alone.
+// TestExportRefusesTLSMaterialAnchordCannotLoad: anchord builds its TLS configuration at
+// startup and exits on material it cannot parse, which the supervisor would retry for
+// ever. Inline material is in the file for good, so it is refused here; a path is left to
+// anchord, since the file it names may simply not be there yet.
 func TestExportRefusesTLSMaterialAnchordCannotLoad(t *testing.T) {
 	certPEM, keyPEM := selfSigned(t)
 	_, otherKey := selfSigned(t)
@@ -162,13 +162,13 @@ func TestExportRefusesTLSMaterialAnchordCannotLoad(t *testing.T) {
 		e  *Export
 		ok bool
 	}{
-		"an inline CA":          {tlsBlock(func(e *Export) { e.CACert = &Secret{Inline: certPEM} }), true},
-		"a CA file":             {tlsBlock(func(e *Export) { e.CACert = &Secret{Path: caPath} }), true},
-		"a client pair":         {tlsBlock(func(e *Export) { e.ClientCert, e.ClientKey = &Secret{Inline: certPEM}, &Secret{Inline: keyPEM} }), true},
-		"a relative path":       {tlsBlock(func(e *Export) { e.CACert = &Secret{Path: "ca.pem"} }), true},
-		"an inline CA, not PEM": {tlsBlock(func(e *Export) { e.CACert = &Secret{Inline: []byte("pem")} }), false},
-		"a CA file not there":   {tlsBlock(func(e *Export) { e.CACert = &Secret{Path: filepath.Join(dir, "gone.pem")} }), false},
-		"a pair that is not":    {tlsBlock(func(e *Export) { e.ClientCert, e.ClientKey = &Secret{Inline: certPEM}, &Secret{Inline: otherKey} }), false},
+		"an inline CA":            {tlsBlock(func(e *Export) { e.CACert = &Secret{Inline: certPEM} }), true},
+		"a CA file":               {tlsBlock(func(e *Export) { e.CACert = &Secret{Path: caPath} }), true},
+		"a CA file not there yet": {tlsBlock(func(e *Export) { e.CACert = &Secret{Path: filepath.Join(dir, "later.pem")} }), true},
+		"a client pair":           {tlsBlock(func(e *Export) { e.ClientCert, e.ClientKey = &Secret{Inline: certPEM}, &Secret{Inline: keyPEM} }), true},
+		"a relative path":         {tlsBlock(func(e *Export) { e.CACert = &Secret{Path: "ca.pem"} }), true},
+		"an inline CA, not PEM":   {tlsBlock(func(e *Export) { e.CACert = &Secret{Inline: []byte("pem")} }), false},
+		"a pair that is not":      {tlsBlock(func(e *Export) { e.ClientCert, e.ClientKey = &Secret{Inline: certPEM}, &Secret{Inline: otherKey} }), false},
 		"bad material, plaintext": {tlsBlock(func(e *Export) {
 			e.Insecure, e.CACert = true, &Secret{Inline: []byte("pem")}
 		}), true},

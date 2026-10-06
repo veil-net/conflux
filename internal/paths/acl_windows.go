@@ -3,6 +3,8 @@ package paths
 import (
 	"errors"
 	"fmt"
+	"io/fs"
+	"path/filepath"
 
 	"golang.org/x/sys/windows"
 )
@@ -109,6 +111,12 @@ func ownership(path string) (*windows.SID, windows.SECURITY_DESCRIPTOR_CONTROL, 
 // and taking it over would adopt whatever is inside. The account running conflux is
 // accepted as well as SYSTEM and Administrators: an administrator's own directory,
 // under a policy that makes the creator its owner, is repaired rather than refused.
+//
+// What it holds is held to the same rule before it is repaired. Until the root has its
+// own DACL it has %ProgramData%'s, under which Users may create folders in it, and a
+// folder another account made there keeps that owner through the new DACL -- an owner
+// can always grant itself the rest -- so the service would go on writing its log or its
+// token into a place that account controls.
 func secure(dir string) error {
 	owner, control, err := ownership(dir)
 	if err != nil {
@@ -128,6 +136,18 @@ func secure(dir string) error {
 				"use what is in it.\n  Remove it, then run this again as Administrator. If it is left over from "+
 				"conflux itself, running any conflux command as that account once repairs it",
 			dir, domain, account, owner)
+	}
+
+	if err := filepath.WalkDir(dir, func(path string, _ fs.DirEntry, err error) error {
+		if err != nil || path == dir || Trusted(path) {
+			return err
+		}
+
+		return fmt.Errorf(
+			"%s was made by another account before conflux secured %s, so conflux will not use it.\n"+
+				"  Remove it, then run this again as Administrator", path, dir)
+	}); err != nil {
+		return err
 	}
 
 	return Restrict(dir, true)

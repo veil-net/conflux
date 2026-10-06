@@ -12,7 +12,9 @@ const (
 	// ExitUnavailable means nothing is running here. EX_UNAVAILABLE.
 	ExitUnavailable = 69
 
-	// ExitChildFailed means anchord itself would not start.
+	// ExitChildFailed means a configuration conflux or anchor refuses for good: no
+	// restart would start it, and the systemd unit names this number in
+	// RestartPreventExitStatus beside 78.
 	ExitChildFailed = 70
 
 	// ExitNoConfig means this machine has never been configured. EX_CONFIG.

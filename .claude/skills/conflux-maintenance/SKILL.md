@@ -25,7 +25,7 @@ A run starts from a freshly pulled `version3`, works on a new branch, and ends w
   - An alpha enrolment asks for them: minted for a network's first machine (about 128 bits), or given with `--taint` by the machines joining it. Conflux never asks alpha for none.
   - The credential commits to them, anchor starts under no others, and every renewal restates them.
   - A different taint is a new identity, never drawn automatically.
-  - An imported credential carries what its issuer granted, none included.
+  - An imported credential carries what its issuer granted: none included for a guardian's; an alpha credential always carries the taints conflux asked for, so one granting none is refused.
   - Machines sharing a taint reach each other; others have no address for them.
 - **Two issuers:**
   - Public alpha realm, served by traveller at `https://api.veilnet.com.au` (conflux's default API): anonymous stateless enrolment in the requested taints (`POST /ghosts/alpha`), unauthenticated renewal restating them (`{anchorId, taints}`), thirty-day window, no revocation.
@@ -61,7 +61,7 @@ This context is authoritative. Docs describe the design but may be wrong: where 
 
 **Local vs CI:** the two never overlap.
 - **Locally, before every push:** the utility checks — formatting, lint, tidy, vulnerability scan, docs links, `actionlint`, `shellcheck` — which CI never runs. Besides them, only a package's tests while that package is being changed, and what no CI job covers: the probe node, the benchmarks and other baseline numbers, the golden review, and the bash 3.2 check.
-- **In CI, on the PR (step 9):** the actual code testing — `test`, `race`, `cross`, `dist` and its size gate, `service-test`, `integration`, the macOS and Windows suites, and their no-skip gates. None of it is run locally as well.
+- **In CI, on the PR (step 9):** the actual code testing — `test`, `race`, `cross`, `dist` and its size gate, `service-test`, `integration`, the macOS, Windows and Linux arm64 suites, the launchd and SCM lifecycle, and the no-skip gates. None of it is run locally as well.
 
 **Design questions are asked when they arise, never saved for the summary.** Anything the Project Context, Rules, code and docs don't settle — a contradiction between them, a fix or breaking change with more than one reasonable shape, a change the Context or Rules would need — goes to the user with `AskUserQuestion` at that point, in plan mode too. Carry on with the work that doesn't depend on the answer, and fold it in before the PR. Defects in anchor or the live API are reports rather than questions: flag them in the summary.
 
@@ -77,7 +77,7 @@ T=cfx-maint-$(head -c6 /dev/urandom | od -An -tx1 | tr -d ' \n')   # random tain
 ### 1. Sync
 
 1. **Conflux.** `git status --porcelain` must be empty; if not, stop and ask (never stash or discard someone's work). Then:
-   `git fetch origin && git switch version3 && git pull --ff-only origin version3 && git switch -c maintenance/$(date +%F)` (add `-2`, `-3` if the name is taken). Don't use `main`; it exists on the remote but is not the development branch.
+   `git fetch origin && git switch version3 && git pull --ff-only origin version3 && git switch -c maintenance/$(date +%F)` (add `-2`, `-3` if the name is taken), or the branch the session assigns, started from that same commit. Don't use `main`; it exists on the remote but is not the development branch.
 2. **Anchor.** No `$A/.git` means stop and say so. Record `git -C "$A" status --porcelain` (compared again at the end) and `git -C "$A" rev-parse origin/main` (the synced-from commit). Then `git -C "$A" fetch origin main`.
    - Clean and on `main`: `git -C "$A" pull --ff-only origin main`, and set `AS=$A`.
    - Dirty or on another branch (someone's work in progress): leave that checkout alone. Build from a detached worktree with `git -C "$A" worktree add --detach "$S/anchor" origin/main`, and set `AS=$S/anchor`.
@@ -97,10 +97,10 @@ The checks that need the real binaries (flag cross-check, shadowing, collisions)
 ### 3. Build and copy the binaries from anchor
 
 1. **Pin.** `make release` reads `$(GENESIS_DIR)/genesis.pin` (default `genesis/`) and **mints a brand-new genesis if that file is missing**, so it must never run without the pin in place.
-   - The production pin is anchor's public repository variable: `gh variable get GENESIS_PIN --repo veil-net/anchor`. It must start with `realm`.
-   - It must equal the realm the live API's genesis derives to, computed from the step 2 enrolment's `genesis` (snippet in [reference.md § Live API](reference.md#live-traveller-api)).
+   - The production pin is the realm the live API's genesis derives to, computed from the step 2 enrolment's `genesis` (snippet in [reference.md § Live API](reference.md#live-traveller-api)). It starts with `realm`.
+   - It must equal what anchor publishes from its `GENESIS_PIN` variable: the shelf manifest's `pin` (the `realm:` line of `anchor-fetch`, [reference.md § Live API](reference.md#live-traveller-api)), or `gh variable get GENESIS_PIN --repo veil-net/anchor` where that is readable. A mismatch means the live realm moved past anchor's pin: stop the binary step, leave `anchor/bin/` alone, and ask.
    - `$A/genesis/` may hold a locally minted development root (a `genesis.key` beside the pin). Never build from it.
-   - Without the variable, go to the fallback. Never mint or invent a pin.
+   - Without the enrolment, go to the fallback. Never mint or invent a pin.
    ```bash
    mkdir -p "$S/genesis" && printf '%s' "$PIN" > "$S/genesis/genesis.pin"
    make -C "$AS" release GENESIS_DIR="$S/genesis"
@@ -116,14 +116,14 @@ The checks that need the real binaries (flag cross-check, shadowing, collisions)
    for f in anchor/bin/*; do cmp "$f" "$AS/release/${f##*/}" || echo "DIFFERS $f"; done   # from the synced build
    make image                                                       # the probe node's image (it builds `dist` on the way; CI owns that gate)
    ```
-   Then bring up the probe node ([reference.md § Probe node](reference.md#probe-node)): `conflux up` against the live realm with `--taint "$T"`, then `conflux status`, then the one `conflux renew`. A pinned `anchord` refuses at start any realm whose root isn't its pin, so a successful `up` proves the pin. The join between peers is proven by CI's `integration` job on the PR (step 9).
+   Then bring up the probe node ([reference.md § Probe node](reference.md#probe-node)): `conflux up` (or `conflux proxy` where Docker has no IPv6) against the live realm with `--taint "$T"`, then `conflux status`, then the one `conflux renew`. A pinned `anchord` refuses at start any realm whose root isn't its pin, so a successful `up` proves the pin. The join between peers is proven by CI's `integration` job on the PR (step 9).
 4. **Fallback.** Use this only when the pin or `make release` is unavailable. Fetch the pinned shelf into scratch first, so `anchor/bin/` stays untouched unless the shelf qualifies:
    `DEST="$S/shelf" make anchor-bins FETCH=1 ANCHOR_SRC=/nonexistent` (`ANCHOR_RELEASE_TOKEN` in the environment, never argv). Accept it only if the `commit:` line equals the synced-to commit. Then copy the 14 files into `anchor/bin/` and run the same verification, except: `"$AS/scripts/client-is-locked.sh" anchor/bin` (no admin directory to compare against), and no `cmp`, since the fetcher already checked every digest. If the shelf is at a different commit, stop the binary step, leave `anchor/bin/` untouched, and flag it. Never test or ship against placeholders or stale binaries without saying so.
 5. `for p in anchor/bin/x dist/x test/systemd/conflux; do git check-ignore -q "$p" || echo "NOT IGNORED $p"; done` must print nothing (`-q` takes one path). Binaries are never committed.
 
 ### 4. Update dependencies
 
-1. Update the `go` line to the latest stable Go (`go mod edit -go=<version>`, never older than anchor's `go.mod`), then run `go get -u ./... && go mod tidy`. Update every `uses:` in `.github/` to its latest stable release (`gh api repos/<owner>/<repo>/releases/latest --jq .tag_name`). Install the latest `staticcheck` and `govulncheck` ([reference.md § Tools](reference.md#tools)).
+1. Update the `go` line to the latest stable Go (`go mod edit -go=<version>`, never older than anchor's `go.mod`), then run `go get -u ./... && go mod tidy`. Update every external `uses:` in `.github/` to its latest stable release, pinned to that release's commit with the tag in a trailing comment (`uses: owner/repo@<40-hex> # vX.Y.Z`; commands in [reference.md § Tools](reference.md#tools)). Install the latest `staticcheck` and `govulncheck` ([reference.md § Tools](reference.md#tools)).
 2. `make build vulncheck`. If the newest version of a dependency fails, revert it to the most recent stable version that passes, and repeat until clean or until only findings with no passing stable version remain. Flag those.
 3. If an update breaks the build or tests, adapt conflux to the new API. Don't patch or work around defects inside dependencies unless critical (security, crash, or data corruption on a main path).
 
@@ -137,14 +137,14 @@ Work through the areas in [standards.md § Audit areas](standards.md#audit-areas
 
 ### 7. Final local checks
 
-Nothing CI runs is run locally here: `test`, `race`, `cross`, `dist`, `service-test`, `integration` and the macOS and Windows suites are verified by the PR in step 9. Locally, before pushing, only what CI does not run:
+Nothing CI runs is run locally here: `test`, `race`, `cross`, `dist`, `service-test`, `integration` and the platform suites are verified by the PR in step 9. Locally, before pushing, only what CI does not run:
 
 ```bash
 make fmtcheck lint tidycheck vulncheck docscheck       # the utility checks (see reference.md § Local checks)
 actionlint && shellcheck scripts/*.sh test/*.sh        # workflows, the actions they use, and the scripts
 ```
 
-plus what no CI job runs: the `make golden` diff review, `docker run bash:3.2` over `anchor-bins.sh` if it changed, and the after numbers (sizes, extraction, benchmarks, the probe node). A check that prints `not installed; skipping` counts as a failure.
+plus what no CI job runs: the `make golden` diff review, `docker run bash:3.2` over `anchor-bins.sh` and `test/service-host.sh` if either changed, and the after numbers (sizes, extraction, benchmarks, the probe node). A check that prints `not installed; skipping` counts as a failure.
 
 ### 8. Maintain this skill
 
@@ -152,7 +152,7 @@ Check every file in `.claude/skills/conflux-maintenance/` against conflux, ancho
 
 ### 9. Finish
 
-Commit on the branch, push it, and open a PR with `--base version3`. Then watch its CI (`gh pr checks <n> --watch`) until every check is green:
+Commit on the branch, push it, and open a PR with `--base version3`. Then watch its CI (`gh pr checks <n> --watch`) until every check is green. Where `gh` is not authenticated, the GitHub MCP tools do the same: `create_pull_request`, `actions_list`/`get_job_logs`, `merge_pull_request`.
 
 - A failure is read from the job's log (`gh run view <run> --log-failed`), fixed on the branch, re-checked locally with the fixed package's tests and the utility checks, pushed, and watched again. Never weaken a test, a gate or the fork guard to get green.
 - A run that failed for the Actions budget, a runner outage or an unreachable API rather than the code is not a failure to fix: say so and do not merge.

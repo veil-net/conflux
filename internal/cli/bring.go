@@ -94,7 +94,7 @@ func restartWith(d paths.Dirs, mgr service.Manager) error {
 	if err := daemon.ClearReady(d); err != nil {
 		// Not fatal. A marker that will not go costs waitForAnchor one status call it
 		// was going to make anyway, which is exactly what the fallback is for.
-		ui.Warnf("could not clear the readiness marker: %v", err)
+		ui.Errf("could not clear the readiness marker: %v", err)
 	}
 
 	return mgr.Restart()

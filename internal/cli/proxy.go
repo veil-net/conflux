@@ -86,7 +86,7 @@ func runProxy(ctx context.Context, args []string) int {
 	}
 
 	if cfg.Mode == config.ModeTUN {
-		ui.Warnf("this machine was running in TUN mode with interface %s.\n"+
+		ui.Errf("this machine was running in TUN mode with interface %s.\n"+
 			"  Userspace mode replaces that: one daemon holds one anchor, and an anchor with\n"+
 			"  a host interface cannot also serve a reverse proxy -- with a TUN the kernel owns\n"+
 			"  the overlay address, so a service binds it directly and needs no proxy.",

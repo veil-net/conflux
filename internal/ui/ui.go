@@ -23,14 +23,11 @@ func Printf(format string, a ...any) { fmt.Fprintf(Out, format, a...) }
 // Println writes a line to stdout.
 func Println(a ...any) { fmt.Fprintln(Out, a...) }
 
-// Errf writes to stderr, prefixed, which is where every failure goes.
+// Errf writes to stderr, prefixed, which is where every failure goes, and every warning:
+// one that is not fatal reads the same, and says so in its words rather than its prefix.
 func Errf(format string, a ...any) {
 	fmt.Fprintf(Errw, "conflux: "+strings.TrimSuffix(format, "\n")+"\n", a...)
 }
-
-// Warnf is for something that is worth saying and is not fatal. It reads the same as
-// an error, and says so in its words rather than its prefix.
-func Warnf(format string, a ...any) { Errf(format, a...) }
 
 // Field prints one aligned "key  value" row, the shape anchorctl's own status uses.
 func Field(key, value string) { fmt.Fprintf(Out, "  %-12s %s\n", key, value) }

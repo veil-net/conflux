@@ -166,6 +166,18 @@ func (d Dirs) TokenFile() string { return filepath.Join(d.Run, "token") }
 // file's lock while the new supervisor took the new one's, and the two would renew at once.
 func (d Dirs) LockFile() string { return filepath.Join(d.State, "conflux.lock") }
 
+// ServeLockFile is held by the one supervisor serving this root for as long as it runs.
+//
+// One per root, because the supervisor stops whatever anchord the last one left
+// running, and two supervisors would each take the other's for an orphan. Beside the
+// state for the reason LockFile is.
+func (d Dirs) ServeLockFile() string { return filepath.Join(d.State, "serve.lock") }
+
+// DaemonPIDFile names the anchord the supervisor started -- its pid and its executable --
+// for as long as it runs, so a supervisor that died without stopping it can be followed
+// by one that does. In Run, which no anchord outlives except by that kind of death.
+func (d Dirs) DaemonPIDFile() string { return filepath.Join(d.Run, "anchord.pid") }
+
 // LogFile is the boot service's output, or "" where the service manager keeps it.
 func (d Dirs) LogFile() string {
 	if d.Log == "" {

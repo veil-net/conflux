@@ -10,7 +10,7 @@ systemd / launchd / rc / SCM
   └── conflux serve
         ├── anchord -socket … -token-file …
         ├── the renewal timer
-        ├── the link watcher, on a machine configured for an uplink
+        ├── the watcher: a lost anchor, and on an uplink an ended link
         └── the restart loop
 ```
 
@@ -19,8 +19,10 @@ is configured with nothing and holds no anchor until something calls `start` ove
 socket. Something has to make that call, and it may as well be the thing the service
 manager watches.
 
-At every boot the supervisor reads `conflux.json`, extracts the anchor pair if it is
-not already on disk, writes a fresh bearer token, starts `anchord`, waits until it
+At every boot the supervisor takes the root's `serve.lock` — one supervisor per root —
+stops any `anchord` a supervisor that died left running (below), reads `conflux.json`,
+extracts the anchor pair if it is not already on disk, writes a fresh bearer token, starts
+`anchord`, waits until it
 answers an authenticated `status` call, renews the credential if it is past two thirds
 of its window, and starts the anchor. No prompts, and nothing typed.
 
@@ -40,8 +42,9 @@ would be a status call, and a fork, once a second.
 The marker is advisory. Every reader falls back to the status call it replaced, so a
 marker that is missing, stale or half-written costs a second and never a start. It lives
 in the run directory rather than the state directory, which is what stops it outliving
-the anchor it describes: the run directory is recreated on every daemon start, and
-systemd's `RuntimeDirectory=` cleans it on stop. Every path that restarts the service
+the anchor it describes: most systems empty the run directory at boot, systemd's
+`RuntimeDirectory=` empties it whenever the service stops, and the supervisor clears the
+marker as it starts, for Windows, where neither happens. Every path that restarts the service
 clears it *before* restarting, so the marker that appears afterwards can only have been
 written by the instance that restart started — otherwise `up` could report success for an
 anchor that was seconds from being torn down.
@@ -57,6 +60,27 @@ a real grace. Inside a Windows service no signal can be delivered at all, so the
 anchor is closed over the socket with `anchorctl stop` and the daemon, holding nothing
 by then, is killed; see the Windows section. A daemon that has already died is asked
 nothing: there is no anchor left to close, and its pid may belong to something else.
+
+### When the supervisor itself dies
+
+A supervisor that is killed, rather than stopped, does not stop its `anchord`. systemd
+ends the unit's whole cgroup, and the job object every `anchord` is put in on Windows ends
+with the process that made it; but launchd ends the job's process group, which `anchord`
+has its own of, and rc ends only the process it started. The `anchord` left behind keeps
+the control socket and anchor's lock on it, so every `anchord` the next supervisor starts
+is refused as "already served by a running daemon", and a node nobody can reach goes on
+running beside a service retrying for ever.
+
+So the supervisor writes down the `anchord` it starts — its pid and its executable, in
+`<run>/anchord.pid` — and removes the record once it has waited for it. A supervisor that
+finds a record stops what it names before it starts its own: `SIGTERM` to its group, then
+`SIGKILL` past the same twenty seconds, or on Windows `TerminateProcess`. A pid is only a
+number, so it is taken for `anchord` only when the process runs the recorded executable
+or, on OpenBSD, which reports none, when something holds the socket's lock — which only a
+daemon serving it does. That is safe only with one supervisor per root, which
+`serve.lock` makes so: a second `conflux serve` beside the service is refused rather than
+left to stop the first one's daemon. `conflux uninstall` does the same once the service is
+removed, so nothing is left running out of the directory it deletes.
 
 A start that fails is retried with a backoff up to thirty seconds. One that no retry
 changes — a configuration conflux refuses, taints the credential does not grant, an
@@ -284,4 +308,5 @@ $ sudo conflux serve --foreground
 
 Runs the supervisor attached to the terminal, with anchord's own output prefixed. This
 is the first thing to try when the service starts and the anchor does not — see
-[troubleshooting.md](troubleshooting.md).
+[troubleshooting.md](troubleshooting.md). Stop the service first: a second supervisor for
+the same root is refused, since each stops the `anchord` the last one left.

@@ -3,8 +3,14 @@
 package daemon
 
 import (
+	"errors"
+	"fmt"
+	"os"
 	"os/exec"
 	"syscall"
+	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // procAttr puts anchord in its own process group, so that a hung daemon and
@@ -26,4 +32,54 @@ func terminate(cmd *exec.Cmd) bool {
 	}
 
 	return cmd.Process.Signal(syscall.SIGTERM) == nil
+}
+
+// kill ends the group outright, as terminate asked it to end: anything anchord started
+// would otherwise keep its output pipe open and the wait for anchord with it.
+func kill(cmd *exec.Cmd) {
+	if syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) != nil {
+		_ = cmd.Process.Kill()
+	}
+}
+
+// bind is Windows's; a Unix supervisor's anchord is reached through its pid and group.
+func bind(*os.Process) error { return nil }
+
+// alive reports whether a process with this pid exists. EPERM is one that does and is
+// not ours to signal.
+func alive(pid int) bool {
+	err := unix.Kill(pid, 0)
+
+	return err == nil || errors.Is(err, unix.EPERM)
+}
+
+// stopOrphan stops an anchord this process did not start and so cannot wait for: SIGTERM,
+// which closes its anchor, then SIGKILL once killTimeout has passed, each to its group
+// where it leads one, as every anchord a supervisor started does.
+func stopOrphan(pid int) error {
+	target := pid
+	if pgid, err := unix.Getpgid(pid); err == nil && pgid == pid {
+		target = -pid
+	}
+
+	for _, step := range []struct {
+		sig    unix.Signal
+		within time.Duration
+	}{{unix.SIGTERM, killTimeout}, {unix.SIGKILL, 5 * time.Second}} {
+		if err := unix.Kill(target, step.sig); err != nil && !errors.Is(err, unix.ESRCH) {
+			return err
+		}
+
+		for deadline := time.Now().Add(step.within); alive(pid); time.Sleep(50 * time.Millisecond) {
+			if time.Now().After(deadline) {
+				break
+			}
+		}
+
+		if !alive(pid) {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("pid %d is still running", pid)
 }

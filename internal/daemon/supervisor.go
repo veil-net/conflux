@@ -17,6 +17,7 @@ import (
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/enrol"
+	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/wintun"
@@ -111,7 +112,27 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	}
 
 	if err := s.Dirs.CheckSocketLen(); err != nil {
+		return &permanentError{err: err}
+	}
+
+	// One supervisor per root, held for as long as this one runs: what it does next is stop
+	// the anchord the last one left, and two would each take the other's for that.
+	unlock, ok, err := flock.TryAcquire(s.Dirs.ServeLockFile())
+	if err != nil {
 		return err
+	}
+
+	if !ok {
+		return fmt.Errorf("another conflux supervisor is already serving %s; "+
+			"stop it first (conflux down)", s.Dirs.State)
+	}
+	defer unlock()
+
+	switch pid, err := ReapOrphan(s.Dirs); {
+	case err != nil:
+		s.report().Warn("%v", err)
+	case pid != 0:
+		s.report().Warn("stopped anchord (pid %d), left running by a supervisor that ended without stopping it", pid)
 	}
 
 	// Before anything else can be asked about, because nothing is up yet and a marker
@@ -352,8 +373,20 @@ func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *child, error) 
 	cmd.SysProcAttr = procAttr()
 	cmd.Stdout, cmd.Stderr = out, out
 
+	// What anchord started can hold its output open after it has gone; Wait gives up on
+	// the pipe this long after the exit rather than waiting with it.
+	cmd.WaitDelay = 5 * time.Second
+
 	if err := cmd.Start(); err != nil {
 		return nil, nil, fmt.Errorf("start anchord: %w", err)
+	}
+
+	if err := bind(cmd.Process); err != nil {
+		s.report().Warn("anchord will not end with this process if it is killed: %v", err)
+	}
+
+	if err := recordDaemon(s.Dirs, cmd.Process.Pid, s.tools.Anchord); err != nil {
+		s.report().Warn("could not record anchord's pid: %v", err)
 	}
 
 	c := &child{cmd: cmd, exited: make(chan struct{})}
@@ -522,6 +555,9 @@ func (s *Supervisor) shutdown(c *child) {
 		s.stop(c)
 	}
 
+	// Waited for, so the record no longer names a process of ours.
+	forgetDaemon(s.Dirs)
+
 	// A daemon that exits closes its socket and the file goes with it; one that was
 	// killed leaves the file, and `conflux status` and pass-through read a socket file
 	// as a daemon that is running.
@@ -546,7 +582,7 @@ func (s *Supervisor) stop(c *child) {
 		cancel()
 	}
 
-	_ = c.cmd.Process.Kill()
+	kill(c.cmd)
 	<-c.exited
 }
 

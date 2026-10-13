@@ -172,6 +172,7 @@ $ sudo systemctl stop conflux
 $ sudo conflux serve --foreground
 ```
 
+The service has to be stopped first — a second supervisor for the same root is refused.
 anchord's own output is prefixed `anchord:`, so the daemon's explanation of its own
 refusal is visible directly. The supervisor retries a failed start with a backoff up
 to thirty seconds — a `--subnet` whose interface is not up yet does come right — and

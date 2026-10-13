@@ -5,8 +5,10 @@ import (
 	"flag"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
@@ -323,6 +325,10 @@ func runUninstall(_ context.Context, args []string) int {
 	if err := mgr.Remove(); err != nil {
 		first = err
 	}
+
+	// Whatever anchord a supervisor that died left running out of the state directory,
+	// once the service's own supervisor has let go of it.
+	daemon.Reap(d, 35*time.Second)
 
 	for _, dir := range []string{d.Run, d.State, d.Config} {
 		if err := os.RemoveAll(dir); err != nil && first == nil {

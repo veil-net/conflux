@@ -191,9 +191,7 @@ runner's tool cache, which survives between runs, so an unchanged shelf costs a 
 the files the fetcher already holds rather than three hundred megabytes. For the same
 reason the Go build and module caches are not restored or saved there: the machine keeps
 its own on disk, and round-tripping them through the Actions cache cost ten minutes a
-run where the suite itself takes seconds. The hosted jobs start empty and do use it, and `integration` also builds the image
-through a BuildKit builder with the Actions cache, so the systemd layers are not
-installed again every run. The container
+run where the suite itself takes seconds. The hosted jobs start empty and do use it. The container
 suites run on a hosted runner instead, because the third integration node reaches the
 realm through its manifest's bootstrap node over UDP, and from veilnet-dev no handshake
 gets through to it. Every job refuses a fork's pull request — a machine that survives the job does not run

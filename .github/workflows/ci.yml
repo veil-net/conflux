@@ -107,30 +107,10 @@ jobs:
       - name: what this runner gives the container suites
         run: ./test/preflight.sh
 
-      # The image's systemd layers from the Actions cache rather than apt on every run.
-      # The default docker driver cannot export a cache, so a BuildKit builder of its own,
-      # and the runtime token it needs -- which GitHub gives actions and not run steps --
-      # handed on by a first-party one, to this job's last step only.
-      - name: a BuildKit builder that can use the Actions cache
-        run: docker buildx create --name cfx --driver docker-container --bootstrap
-
-      - name: the Actions cache, for that builder
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        with:
-          script: |
-            for (const [k, v] of Object.entries(process.env)) {
-              if (k.startsWith('ACTIONS_')) core.exportVariable(k, v)
-            }
-
       # One invocation, so `dist` and the image are built once for both suites, which
       # then run side by side: they boot containers of different names, and only one of
       # them enrols. -O keeps each suite's output together, in one block per suite.
       - name: the boot service, and three nodes against the live API
-        env:
-          DOCKER_BUILD: >-
-            docker buildx build --builder cfx --load -q
-            --cache-from type=gha,scope=conflux-systemd
-            --cache-to type=gha,mode=max,scope=conflux-systemd,ignore-error=true
         run: make -j2 -O service-test integration
 
   # macOS and Windows, on the operating systems that have the path handling, the file

@@ -60,10 +60,6 @@ ANCHOR_TAG ?=
 # on one machine does not race the first for the name.
 IMAGE ?= conflux-systemd-test
 
-# How the image is built. CI points it at a BuildKit builder with the Actions cache, so
-# the systemd layers are not installed again on every run; make is still the one entry.
-DOCKER_BUILD ?= docker build -q
-
 .PHONY: all anchor-bins build test race vet fmt fmtcheck lint vulncheck tidycheck docscheck golden cross dist image service-test integration clean help
 
 # Every check that needs neither Docker nor the network. The utility checks --
@@ -228,7 +224,7 @@ dist:
 # same targets a developer does.
 image: dist
 	@cp $(DIST)/conflux-linux-amd64 test/systemd/conflux
-	@$(DOCKER_BUILD) -t $(IMAGE) test/systemd >/dev/null
+	@docker build -q -t $(IMAGE) test/systemd >/dev/null
 	@echo "  built $(IMAGE) from $(DIST)/conflux-linux-amd64"
 
 # The boot service on its own: install registers without starting, uninstall leaves

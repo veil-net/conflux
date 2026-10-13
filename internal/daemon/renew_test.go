@@ -188,7 +188,7 @@ func TestRenewNowSplicesAndInstalls(t *testing.T) {
 	}
 
 	// What conflux does next depends on the window, and it is the renewed one: not due.
-	if DueAt(st.IssuedAt, st.NotAfter, time.Now()) {
+	if dueAt(st.IssuedAt, st.NotAfter, time.Now()) {
 		t.Error("a credential renewed a moment ago reads as due again")
 	}
 
@@ -284,7 +284,7 @@ func TestAFailedInstallIsDueAgain(t *testing.T) {
 	}
 
 	st, _ := config.LoadState(d)
-	if !DueAt(st.IssuedAt, st.NotAfter, time.Now()) {
+	if !dueAt(st.IssuedAt, st.NotAfter, time.Now()) {
 		t.Errorf("the state reads %v to %v, which is not due, so the timer would sleep past the running chain",
 			st.IssuedAt, st.NotAfter)
 	}
@@ -316,7 +316,7 @@ func TestAnEnrolmentIsKeptBeforeItIsRead(t *testing.T) {
 	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, APIBaseURL: api.URL}
 
 	_, _, err := credential(t.Context(), d, &config.State{}, cfg, nopReporter{})
-	if err == nil || !isPermanent(err) {
+	if err == nil || !Permanent(err) {
 		t.Fatalf("credential() = %v, want a permanent refusal", err)
 	}
 
@@ -391,7 +391,7 @@ func TestAnEnrolmentWithNoTaintsIsRefused(t *testing.T) {
 	cfg := &config.Config{Mode: config.ModeProxy, APIBaseURL: api.URL}
 
 	_, _, err := credential(t.Context(), d, &config.State{}, cfg, nopReporter{})
-	if !isPermanent(err) || !errors.Is(err, enrol.ErrNoTaints) {
+	if !Permanent(err) || !errors.Is(err, enrol.ErrNoTaints) {
 		t.Errorf("credential() = %v, want a permanent ErrNoTaints", err)
 	}
 
@@ -412,7 +412,7 @@ func TestAnEnrolmentGrantingOtherTaintsIsKeptAndRefused(t *testing.T) {
 	_, _, err := credential(t.Context(), d, &config.State{}, cfg, nopReporter{})
 
 	var te *enrol.TaintsError
-	if !isPermanent(err) || !errors.As(err, &te) {
+	if !Permanent(err) || !errors.As(err, &te) {
 		t.Errorf("credential() = %v, want a permanent TaintsError", err)
 	}
 
@@ -448,7 +448,7 @@ func TestAPreTaintEnrolmentIsRefusedForGood(t *testing.T) {
 			cfg.Taints = configured
 
 			_, _, err := credential(t.Context(), d, &config.State{AnchorID: renewTestAnchor}, cfg, nopReporter{})
-			if !isPermanent(err) || !strings.Contains(err.Error(), "conflux uninstall") {
+			if !Permanent(err) || !strings.Contains(err.Error(), "conflux uninstall") {
 				t.Errorf("credential() = %v, want a permanent refusal naming the way out", err)
 			}
 
@@ -565,7 +565,7 @@ func TestAnExpiredFixedTermCredentialIsPermanent(t *testing.T) {
 	})
 
 	_, _, err := credential(t.Context(), d, &config.State{AnchorID: renewTestAnchor}, configOf(t, d), nopReporter{})
-	if !isPermanent(err) || !errors.Is(err, enrol.ErrDoesNotRenew) {
+	if !Permanent(err) || !errors.Is(err, enrol.ErrDoesNotRenew) {
 		t.Errorf("credential() = %v, want a permanent refusal naming a credential that does not renew", err)
 	}
 
@@ -583,7 +583,7 @@ func TestAnExpiredCredentialWithNoAnchorIDIsPermanent(t *testing.T) {
 	d := machine(t, is, time.Now().Add(-40*24*time.Hour), time.Now().Add(-time.Hour))
 
 	_, _, err := credential(t.Context(), d, &config.State{}, configOf(t, d), nopReporter{})
-	if !isPermanent(err) || !strings.Contains(err.Error(), "no AnchorID") {
+	if !Permanent(err) || !strings.Contains(err.Error(), "no AnchorID") {
 		t.Errorf("credential() = %v, want a permanent refusal naming the missing AnchorID", err)
 	}
 

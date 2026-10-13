@@ -25,10 +25,11 @@ import (
 
 // The supervisor is what the service manager actually runs.
 //
-//	systemd / launchd / SCM
+//	systemd / launchd / rc / SCM
 //	  └── conflux serve
-//	        ├── anchord -socket … -token-file …
+//	        ├── anchord -socket … -token-file … -config …
 //	        ├── the renewal timer
+//	        ├── the watcher: a lost anchor, and on an uplink an ended link
 //	        └── the restart loop
 //
 // Registering anchord itself as the service was the obvious alternative and does not
@@ -143,14 +144,11 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	// there when this starts.
 	s.clearReady()
 
-	// Nothing to supervise. Distinguished from a failure so the unit can stop
-	// instead of restarting into the same emptiness every five seconds.
-	if _, err := config.Load(s.Dirs); err != nil {
-		if os.IsNotExist(err) {
-			return ErrNotConfigured
-		}
-
-		return &permanentError{err: err} // names the file already
+	// Nothing to supervise, or nothing it will start on, before anything is extracted.
+	// Distinguished from a failure so the unit can stop instead of restarting into the
+	// same answer every five seconds.
+	if _, err := loadConfig(s.Dirs); err != nil {
+		return err
 	}
 
 	tools, err := libexec.Ensure(s.Dirs)
@@ -199,7 +197,7 @@ func (s *Supervisor) loop(ctx context.Context) error {
 		// A configuration anchor itself refuses will be refused again in five
 		// seconds and in five hours. Give up after a few so the service manager
 		// shows a failed unit rather than a hot loop nobody is watching.
-		if isPermanent(err) {
+		if Permanent(err) {
 			permanentFailures++
 			if permanentFailures >= 3 {
 				return fmt.Errorf("anchord will not start with this configuration: %w", err)
@@ -257,7 +255,7 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 		}
 	}
 
-	started, err := BringUp(ctx, s.Dirs, s.ctl, s.report())
+	started, err := bringUp(ctx, s.Dirs, s.ctl, s.report(), false)
 	if err != nil {
 		return err
 	}
@@ -351,16 +349,13 @@ func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *child, error) 
 	//
 	// Passed on every start rather than only when something is configured, so that
 	// the file is what the daemon believes in both directions; see writeDaemonConfig.
-	cfg, err := config.Load(s.Dirs)
+	//
+	// Validated before anchord reads any of it. A block anchord refuses is fatal to it at
+	// startup, which would otherwise read as a daemon dying before it answered and be
+	// retried for ever, where this is a file no retry changes.
+	cfg, err := loadConfig(s.Dirs)
 	if err != nil {
 		return nil, nil, err
-	}
-
-	// Before anchord reads any of it. A block anchord refuses is fatal to it at startup,
-	// which would otherwise read as a daemon dying before it answered and be retried for
-	// ever, where this is a file no retry changes.
-	if err := cfg.Validate(); err != nil {
-		return nil, nil, &permanentError{path: s.Dirs.ConfigFile(), err: err}
 	}
 
 	if err := writeDaemonConfig(s.Dirs, cfg); err != nil {
@@ -501,10 +496,6 @@ func (s *Supervisor) waitReady(ctx context.Context, c *child) error {
 // proves something is listening. Only an authenticated status call proves that the
 // socket is bound, that gRPC is serving, and that the token both sides hold agree.
 func (s *Supervisor) probe(ctx context.Context) error {
-	if _, err := os.Stat(s.Dirs.Socket()); err != nil {
-		return err
-	}
-
 	conn, err := net.DialTimeout("unix", s.Dirs.Socket(), 500*time.Millisecond)
 	if err != nil {
 		return err
@@ -590,17 +581,17 @@ func (s *Supervisor) stop(c *child) {
 //
 // It re-reads the state every round rather than trusting what it read before
 // sleeping, so a renewal somebody ran by hand in between moves the next one along.
-// A failed renewal is retried after MinSleep. A credential that does not renew ends
+// A failed renewal is retried after minSleep. A credential that does not renew ends
 // the loop: the manifest cannot change while this process holds it, so asking again
 // would only say the same thing every minute.
 func (s *Supervisor) renewLoop(ctx context.Context) {
 	for {
-		wait := MinSleep
+		wait := minSleep
 
 		switch st, err := config.LoadState(s.Dirs); {
 		case err != nil:
 			s.report().Warn("could not read %s: %v", s.Dirs.StateFile(), err)
-		case DueAt(st.IssuedAt, st.NotAfter, time.Now()):
+		case dueAt(st.IssuedAt, st.NotAfter, time.Now()):
 			if err := RenewNow(ctx, s.Dirs, s.ctl, s.report()); errors.Is(err, enrol.ErrDoesNotRenew) {
 				s.report().Warn("%v", err)
 
@@ -611,7 +602,7 @@ func (s *Supervisor) renewLoop(ctx context.Context) {
 				continue
 			}
 		default:
-			wait = SleepUntilRenewal(st.IssuedAt, st.NotAfter, time.Now())
+			wait = sleepUntilRenewal(st.IssuedAt, st.NotAfter, time.Now())
 		}
 
 		select {
@@ -643,7 +634,10 @@ func (s *Supervisor) freshToken() (string, error) {
 	return token, nil
 }
 
-// isPermanent reports whether an error will still be an error after a wait.
+// Permanent reports whether err is a refusal no restart changes -- a configuration
+// conflux or anchor will not start on -- as distinct from a failure the next start may
+// not meet. `conflux serve` exits on it with the status the service manager does not
+// restart.
 //
 // A file conflux itself refuses, an argument vector anchorctl refuses as a usage error,
 // and what anchor refuses that conflux cannot check beforehand: a credential under a
@@ -656,12 +650,7 @@ func (s *Supervisor) freshToken() (string, error) {
 //
 // A served subnet the host is not attached to is deliberately absent. At boot that is
 // usually an interface that has not come up yet, which a retry does fix.
-// Permanent reports whether err is a refusal no restart changes -- a configuration conflux
-// or anchor will not start on -- as distinct from a failure the next start may not meet.
-// `conflux serve` exits on it with the status the service manager does not restart.
-func Permanent(err error) bool { return isPermanent(err) }
-
-func isPermanent(err error) bool {
+func Permanent(err error) bool {
 	if err == nil {
 		return false
 	}

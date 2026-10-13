@@ -119,31 +119,7 @@ func BenchmarkAnchordOutput(b *testing.B) {
 // in hand: the lock, the stored files, the taints check, anchorctl start and the state
 // written back.
 func BenchmarkBringUp(b *testing.B) {
-	b.Setenv("CONFLUX_DIR", b.TempDir())
-
-	d := benchDirs(b)
-
-	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Taints: []string{"bench"}}); err != nil {
-		b.Fatal(err)
-	}
-
-	if err := config.SaveState(d, &config.State{AnchorID: fakeAnchorID}); err != nil {
-		b.Fatal(err)
-	}
-
-	now := time.Now().UTC()
-
-	doc, _ := json.Marshal(map[string]any{
-		"formatVersion": 1, "kind": "anchor", "identity": "00", "genesis": "00",
-		"chain":    base64.StdEncoding.EncodeToString(make([]byte, 6<<10)),
-		"issuedAt": now.Format(time.RFC3339), "notAfter": now.Add(30 * 24 * time.Hour).Format(time.RFC3339),
-		"taints": []string{"bench"}, "bootstrap": []string{"genesis.veilnet.com.au:4700"},
-		"renewalUrl": "https://api.veilnet.com.au/ghosts/alpha/renew", "renewalAuth": "anchor-id",
-	})
-
-	if err := config.SaveManifest(d, config.Envelope(base64.StdEncoding.EncodeToString(doc))); err != nil {
-		b.Fatal(err)
-	}
+	d := benchSite(b)
 
 	ctl := fakeCtl(b)
 	ctx := context.Background()
@@ -152,7 +128,7 @@ func BenchmarkBringUp(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		if _, err := BringUp(ctx, d, ctl, nil); err != nil {
+		if _, err := bringUp(ctx, d, ctl, nopReporter{}, false); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -200,7 +176,7 @@ func BenchmarkRenewal(b *testing.B) {
 	}))
 	b.Cleanup(api.Close)
 
-	d := benchDirs(b)
+	d := dirs(b)
 	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"bench"}, APIBaseURL: api.URL}
 
 	if err := config.Save(d, cfg); err != nil {
@@ -247,7 +223,7 @@ func BenchmarkDaemonLifecycle(b *testing.B) {
 
 	b.Setenv("CONFLUX_DIR", b.TempDir())
 
-	d := benchDirs(b)
+	d := dirs(b)
 
 	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Taints: []string{"bench"}}); err != nil {
 		b.Fatal(err)
@@ -288,12 +264,33 @@ func BenchmarkDaemonLifecycle(b *testing.B) {
 	reportGoroutines(b, before)
 }
 
-func benchDirs(b *testing.B) paths.Dirs {
-	b.Helper()
+// benchSite is a machine with a configuration, a state that names its anchor and a
+// credential nowhere near due: what a start with a credential in hand reads.
+func benchSite(tb testing.TB) paths.Dirs {
+	tb.Helper()
 
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		b.Fatal(err)
+	d := dirs(tb)
+
+	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Taints: []string{"bench"}}); err != nil {
+		tb.Fatal(err)
+	}
+
+	if err := config.SaveState(d, &config.State{AnchorID: fakeAnchorID}); err != nil {
+		tb.Fatal(err)
+	}
+
+	now := time.Now().UTC()
+
+	doc, _ := json.Marshal(map[string]any{
+		"formatVersion": 1, "kind": "anchor", "identity": "00", "genesis": "00",
+		"chain":    base64.StdEncoding.EncodeToString(make([]byte, 6<<10)),
+		"issuedAt": now.Format(time.RFC3339), "notAfter": now.Add(30 * 24 * time.Hour).Format(time.RFC3339),
+		"taints": []string{"bench"}, "bootstrap": []string{"genesis.veilnet.com.au:4700"},
+		"renewalUrl": "https://api.veilnet.com.au/ghosts/alpha/renew", "renewalAuth": "anchor-id",
+	})
+
+	if err := config.SaveManifest(d, config.Envelope(base64.StdEncoding.EncodeToString(doc))); err != nil {
+		tb.Fatal(err)
 	}
 
 	return d

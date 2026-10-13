@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
+	"github.com/veil-net/conflux/internal/paths"
 )
 
 // fakeAnchorctlEnv and fakeAnchordEnv turn this test binary into a stand-in anchorctl
@@ -141,4 +142,17 @@ func fakeCtl(tb testing.TB) *anchorctl.Ctl {
 	tb.Setenv("GORACE", "atexit_sleep_ms=0")
 
 	return &anchorctl.Ctl{Bin: os.Args[0], Socket: "unused", Token: "unused"}
+}
+
+// dirs roots a test's every path in a directory of its own, and makes the roots.
+func dirs(tb testing.TB) paths.Dirs {
+	tb.Helper()
+	tb.Setenv("CONFLUX_DIR", tb.TempDir())
+
+	d := paths.Default()
+	if err := d.EnsureAll(); err != nil {
+		tb.Fatalf("EnsureAll: %v", err)
+	}
+
+	return d
 }

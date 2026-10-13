@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -168,11 +169,45 @@ func TestAConfigAnchordWouldRefuseIsNotStarted(t *testing.T) {
 		t.Fatal("anchord was started on a configuration it refuses")
 	}
 
-	if !isPermanent(err) {
+	if !Permanent(err) {
 		t.Errorf("the refusal is not permanent, so it would be retried for ever: %v", err)
 	}
 
 	if _, statErr := os.Stat(s.Dirs.DaemonConfigFile()); statErr == nil {
 		t.Error("the refused block was rendered for anchord anyway")
+	}
+}
+
+// TestAConfigurationIsReadOneWayEverywhere: the supervisor's start, every spawn and every
+// bring-up decide alike what a conflux.json they cannot use means -- none is nothing to
+// start, one that will not parse is refused for good, and one that could not be read is
+// tried again -- so a file broken under a running service is not retried for ever by one
+// reader and refused by another.
+func TestAConfigurationIsReadOneWayEverywhere(t *testing.T) {
+	d := dirs(t)
+
+	if _, err := loadConfig(d); !errors.Is(err, ErrNotConfigured) {
+		t.Errorf("no conflux.json: %v, want ErrNotConfigured", err)
+	}
+
+	if err := os.WriteFile(d.ConfigFile(), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := loadConfig(d); !Permanent(err) {
+		t.Errorf("a conflux.json that does not parse: %v, want it refused for good", err)
+	}
+
+	if err := os.Remove(d.ConfigFile()); err != nil {
+		t.Fatal(err)
+	}
+
+	// A read that fails, which a directory in its place makes on every platform.
+	if err := os.Mkdir(d.ConfigFile(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := loadConfig(d); err == nil || Permanent(err) {
+		t.Errorf("a conflux.json that could not be read: %v, want it tried again", err)
 	}
 }

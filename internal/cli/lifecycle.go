@@ -98,7 +98,7 @@ func install(ctx context.Context, d paths.Dirs, standalone bool) int {
 // startFromConfig starts the anchor this machine is already configured for.
 //
 // Shared by `install` and `start` so the two cannot drift into starting differently,
-// the same argument daemon.BringUp makes for `up`, `proxy` and every boot. The caller
+// the same argument the daemon's one bring-up makes for `up`, `proxy` and every boot. The caller
 // has already established that a configuration exists and that the service is
 // registered; this is only the starting.
 func startFromConfig(ctx context.Context, d paths.Dirs, mgr service.Manager, cfg *config.Config, verb string) int {

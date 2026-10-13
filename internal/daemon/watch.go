@@ -9,7 +9,6 @@ import (
 
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/config"
-	"github.com/veil-net/conflux/internal/flock"
 )
 
 // The watcher, and why it has to exist.
@@ -95,8 +94,8 @@ func (s *Supervisor) watch(ctx context.Context, uplink string, every time.Durati
 		s.clearReady()
 		s.report().Warn("%s; rebuilding the anchor", why)
 
-		if err := s.rebuild(ctx); err != nil {
-			if isPermanent(err) {
+		if err := s.rebuild(ctx, link); err != nil {
+			if Permanent(err) {
 				refusals++
 			} else {
 				refusals = 0
@@ -120,10 +119,6 @@ func (s *Supervisor) watch(ctx context.Context, uplink string, every time.Durati
 			backoff = min(2*backoff, rebuildBackoffMax)
 
 			continue
-		}
-
-		if link {
-			s.recordReopen()
 		}
 
 		s.report().Step("the anchor is back")
@@ -216,11 +211,11 @@ func (s *Supervisor) linkIsDead(ctx context.Context, device string, zeroSince *t
 
 // rebuild stops whatever anchor is left and builds it again from the configuration.
 //
-// BringUp rather than anything of its own: it is the path `up`, `proxy` and every
+// bringUp rather than anything of its own: it is the path `up`, `proxy` and every
 // boot already take, so a rebuilt anchor cannot be a subtly different one from the one
 // a reboot would start. The daemon is untouched, so this costs one anchor's sessions
 // and not the process.
-func (s *Supervisor) rebuild(ctx context.Context) error {
+func (s *Supervisor) rebuild(ctx context.Context, link bool) error {
 	stopCtx, cancel := context.WithTimeout(ctx, stopTimeout)
 	defer cancel()
 
@@ -229,7 +224,9 @@ func (s *Supervisor) rebuild(ctx context.Context) error {
 	// delivered.
 	_ = s.ctl.Stop(stopCtx)
 
-	started, err := BringUp(ctx, s.Dirs, s.ctl, s.report())
+	// An ended link's rebuild is counted in the state bringUp writes anyway, where status
+	// reads it: a machine reopening its anchor every few minutes has a failing cable.
+	started, err := bringUp(ctx, s.Dirs, s.ctl, s.report(), link)
 	if err != nil {
 		return err
 	}
@@ -237,32 +234,6 @@ func (s *Supervisor) rebuild(ctx context.Context) error {
 	s.signalReady(started.ID)
 
 	return nil
-}
-
-// recordReopen notes an uplink reopen where another process can see it.
-//
-// Best effort throughout: the anchor is back, which is the part that mattered, and
-// losing the count is not worth failing that. BringUp has just rewritten the state
-// file, so this reads it back rather than holding a stale copy across the restart,
-// under the lock every other writer of it holds.
-func (s *Supervisor) recordReopen() {
-	unlock, err := flock.Acquire(s.Dirs.LockFile())
-	if err != nil {
-		return
-	}
-	defer unlock()
-
-	st, err := config.LoadState(s.Dirs)
-	if err != nil {
-		return
-	}
-
-	st.LinkReopens++
-	st.LastLinkReopen = time.Now().UTC()
-
-	if err := config.SaveState(s.Dirs, st); err != nil {
-		s.report().Warn("could not record the uplink reopen: %v", err)
-	}
 }
 
 // devicePath is the device an uplink spec names, or "" for a spec that names none.

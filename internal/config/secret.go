@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"slices"
 
 	"github.com/veil-net/conflux/internal/paths"
 )
@@ -55,9 +54,10 @@ func SaveManifest(d paths.Dirs, env Envelope) error {
 		return fmt.Errorf("refusing to write an empty manifest")
 	}
 
-	// A copy with its newline, not an append to the caller's slice, which can write into
-	// the envelope the caller still holds.
-	return WriteFileAtomic(d.ManifestFile(), append(slices.Clip(b), '\n'), 0o600)
+	// The newline is written after it rather than appended to it: an append to the
+	// caller's slice can write into the envelope the caller still holds, and a copy to
+	// avoid that is the whole manifest again.
+	return writeAtomic(d.ManifestFile(), 0o600, b, []byte{'\n'})
 }
 
 // HasManifest reports whether this machine has an identity already. The answer

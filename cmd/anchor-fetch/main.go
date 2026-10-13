@@ -4,7 +4,7 @@
 // the state CI is in and the state a fresh clone starts in.
 //
 // Go rather than shell, and a program rather than curl piped into a JSON parser, because
-// docs/build.md promises "Go 1.27.1 or newer, and nothing else" and a fresh clone should
+// docs/build.md promises "Go 1.27.2 or newer, and nothing else" and a fresh clone should
 // not need python or jq to become buildable. It also puts the digest check, the redirect
 // rules and the atomic write somewhere they can be tested.
 //

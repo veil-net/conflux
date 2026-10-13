@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
@@ -55,6 +56,13 @@ anchor_rtt_seconds                                    n=4 mean=0.00214123575 min
 anchor_translated_to_ipv6                             0
 `
 
+// fakeStarted is what `anchorctl start` prints for the anchor it started.
+const fakeStarted = `anchor ` + fakeAnchorID + `
+  underlay 203.0.113.9:41641
+  overlay  fd80:c4b9:99ae:c540:9d81:a45c:141a:1ce5/48
+  hardware 5a:f0:a9:da:4e:32
+`
+
 func fakeAnchorctl(args []string) int {
 	if len(args) == 0 {
 		return 2
@@ -74,6 +82,12 @@ func fakeAnchorctl(args []string) int {
 		return 1
 	case "metrics":
 		fmt.Print(fakeMetrics)
+	case "start":
+		// The manifest arrives on stdin, as it does for the real one, and is read to the end
+		// so the writer never meets a closed pipe.
+		_, _ = io.Copy(io.Discard, os.Stdin)
+
+		fmt.Print(fakeStarted)
 	case "renew", "stop":
 		fmt.Println("ok")
 	case "status":

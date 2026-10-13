@@ -10,7 +10,8 @@
 //
 //   - Config  what the operator asked for. Survives everything but uninstall.
 //   - State   what conflux derived, plus the identity. Survives a reboot.
-//   - Run     the socket and the token. Recreated on every daemon start.
+//   - Run     the socket, the token and the readiness marker. Emptied by the system at
+//     boot on most platforms, and by systemd whenever the service stops.
 //   - Log     where the boot service's output goes, on the platforms where it goes to a
 //     file: empty where the service manager keeps it (journald, syslog).
 package paths
@@ -20,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 )
 
@@ -38,17 +40,34 @@ type Dirs struct {
 // rooted in, its boot service included; see Root. It changes where conflux keeps
 // things and not what it needs: the verbs that change anything still need root.
 func Default() Dirs {
+	d := platformDirs()
+
 	if root := Root(); root != "" {
+		// A log directory of its own only where the platform writes the service's output
+		// to a file at all: where journald or syslog keeps it, nothing would write there.
+		log := ""
+		if d.Log != "" {
+			log = filepath.Join(root, "logs")
+		}
+
 		return Dirs{
 			Config: root,
 			State:  root,
 			Run:    filepath.Join(root, "run"),
-			Log:    filepath.Join(root, "logs"),
+			Log:    log,
 		}
 	}
 
-	return platformDirs()
+	return d
 }
+
+// sharedLog is the system's own log directory, which macOS and FreeBSD put the service's
+// log file in. conflux writes a file there and never creates, narrows or claims the
+// directory itself. A variable so a test can stand one in.
+var sharedLog = "/var/log"
+
+// socketName is anchord's control socket, an AF_UNIX socket on every platform.
+const socketName = "anchord.sock"
 
 // Root is the CONFLUX_DIR override, or "" when this is an ordinary system install.
 //
@@ -57,7 +76,23 @@ func Default() Dirs {
 // the machine's own service name would replace a real node with a test one -- so the
 // service package names itself after this, and passes it on to the supervisor it
 // registers, which would otherwise come back at boot reading /etc/conflux.
-func Root() string { return os.Getenv("CONFLUX_DIR") }
+//
+// Absolute and clean, whatever was typed: it is written into the service definition as
+// the --dir the supervisor comes back with, and hashed into the service's name, so
+// "run/x" or a trailing slash would otherwise register a service that runs from / and
+// that the same root, spelled differently, could not find to remove.
+func Root() string {
+	root := os.Getenv("CONFLUX_DIR")
+	if root == "" {
+		return ""
+	}
+
+	if abs, err := filepath.Abs(root); err == nil {
+		return abs
+	}
+
+	return filepath.Clean(root)
+}
 
 // ConfigFile holds the operator's intent: mode, taints, addresses, proxies.
 func (d Dirs) ConfigFile() string { return filepath.Join(d.Config, "conflux.json") }
@@ -155,14 +190,17 @@ func (d Dirs) ReadyFile() string { return filepath.Join(d.Run, "ready") }
 //
 // 0700 throughout, including Config: it sits beside nothing that another user has
 // any business reading, and a 0600 file in a traversable directory is one rename
-// away from being replaced. On Windows, where a mode means nothing, each root that is
-// not inside another is made SYSTEM's and Administrators' instead, and what is created
-// beneath it inherits that.
+// away from being replaced. A root that already exists is held to the same: one another
+// account owns is refused, and one of conflux's own that is wider is narrowed. On
+// Windows, where a mode means nothing, each root that is not inside another is made
+// SYSTEM's and Administrators' instead, and what is created beneath it inherits that.
+// The system's shared log directory is not conflux's, and is left alone.
 func (d Dirs) EnsureAll() error {
 	dirs := []string{d.Config, d.State, d.Run, d.Log}
 
-	for _, dir := range dirs {
-		if dir == "" {
+	for i, dir := range dirs {
+		// Config and State are one directory on macOS, Windows and under CONFLUX_DIR.
+		if dir == "" || dir == sharedLog || slices.Contains(dirs[:i], dir) {
 			continue
 		}
 

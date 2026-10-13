@@ -7,13 +7,8 @@ import (
 	"path/filepath"
 )
 
-const (
-	// An AF_UNIX socket, as everywhere else: anchord listens on one on Windows too.
-	socketName = "anchord.sock"
-
-	// sizeof(sockaddr_un.sun_path) on Windows, and the limit anchord refuses past.
-	sockPathMax = 108
-)
+// sizeof(sockaddr_un.sun_path) on Windows, and the limit anchord refuses past.
+const sockPathMax = 108
 
 // platformDirs uses %ProgramData%, the machine-wide counterpart to %AppData%.
 //

@@ -2,10 +2,7 @@
 
 package paths
 
-const (
-	socketName  = "anchord.sock"
-	sockPathMax = 108 // sizeof(sockaddr_un.sun_path) on Linux
-)
+const sockPathMax = 108 // sizeof(sockaddr_un.sun_path) on Linux
 
 // platformDirs follows the FHS: configuration in /etc, variable state a program
 // maintains in /var/lib, runtime files that do not survive a reboot in /run.

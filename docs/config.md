@@ -18,7 +18,11 @@ under a systemd unit with `User=` or `ProtectHome=`.
 
 `CONFLUX_DIR` roots all of them in one directory, and the boot service with them — it is named after the root, so a run under it is a separate installation rather than a replacement for the machine's own. See [testing.md](testing.md).
 
-Every directory is `0700` and every file `0600`.
+Every directory is `0700` — one found wider is narrowed, and one another account owns is refused —
+and every file conflux writes there is `0600`, apart from the programs it runs (the extracted pair
+and the service's own copy of conflux, `0700`). The service definitions live where the service
+manager reads them, at the modes it expects, and on macOS and FreeBSD the log file goes in the
+system's `/var/log`.
 
 ## `conflux.json` — what you asked for
 

@@ -57,3 +57,18 @@ func TestScopeIsNameSafe(t *testing.T) {
 		}
 	}
 }
+
+// TestScopeIsTheSameForEverySpellingOfARoot: uninstall finds what install registered only
+// if a trailing slash or a "." in the path names the same service.
+func TestScopeIsTheSameForEverySpellingOfARoot(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", "/tmp/cfx-a")
+	want := scope()
+
+	for _, spelling := range []string{"/tmp/cfx-a/", "/tmp/./cfx-a", "/tmp//cfx-a"} {
+		t.Setenv("CONFLUX_DIR", spelling)
+
+		if got := scope(); got != want {
+			t.Errorf("CONFLUX_DIR=%q scoped to %q, but /tmp/cfx-a to %q", spelling, got, want)
+		}
+	}
+}

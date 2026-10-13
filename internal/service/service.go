@@ -30,6 +30,9 @@ type Manager interface {
 	Remove() error
 
 	Stop() error
+
+	// Restart is an operator's start -- `up`, `proxy`, `start` -- and nothing else calls it,
+	// so it starts a service the manager had given up on as well.
 	Restart() error
 
 	Installed() (bool, error)

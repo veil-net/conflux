@@ -193,6 +193,11 @@ every five seconds forever, where it now shows as failed.
 
 `Restart=on-failure`, not `always`, so a deliberate clean exit stays exited.
 
+`up`, `proxy` and `start` clear a failed unit before they restart it. systemd refuses
+every start of a unit started more than five times in ten seconds until the ten seconds
+are up, and a few quick attempts at a configuration that does not work are enough to get
+there; the operator's next start, with it fixed, is not one more of them.
+
 `AmbientCapabilities=CAP_NET_ADMIN` is stated even though the unit runs as root,
 because it documents the requirement and survives somebody adding `User=` later.
 

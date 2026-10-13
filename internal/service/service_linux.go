@@ -93,8 +93,15 @@ func (s systemd) Remove() error {
 	return nil
 }
 
-func (systemd) Stop() error    { return run("systemctl", "stop", unitName()) }
-func (systemd) Restart() error { return run("systemctl", "restart", unitName()) }
+func (systemd) Stop() error { return run("systemctl", "stop", unitName()) }
+
+// Restart clears a failed unit first: one started too often in a row refuses every
+// start until its interval has passed, and an operator's start is not one of a loop.
+func (systemd) Restart() error {
+	_ = run("systemctl", "reset-failed", unitName())
+
+	return run("systemctl", "restart", unitName())
+}
 
 // Installed is a stat rather than `systemctl list-unit-files`: cheaper, and it
 // answers correctly on a machine where systemd is not currently running.

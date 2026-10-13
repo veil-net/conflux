@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"slices"
 
 	"github.com/veil-net/conflux/internal/paths"
 )
@@ -49,11 +50,14 @@ func LoadManifest(d paths.Dirs) (Envelope, error) {
 // enrolment that succeeds and then loses the bytes to a crash costs the machine its
 // identity permanently. That is why it is written first and everything else second.
 func SaveManifest(d paths.Dirs, env Envelope) error {
-	if len(bytes.TrimSpace(env)) == 0 {
+	b := bytes.TrimSpace(env)
+	if len(b) == 0 {
 		return fmt.Errorf("refusing to write an empty manifest")
 	}
 
-	return WriteFileAtomic(d.ManifestFile(), append(bytes.TrimSpace(env), '\n'), 0o600)
+	// A copy with its newline, not an append to the caller's slice, which can write into
+	// the envelope the caller still holds.
+	return WriteFileAtomic(d.ManifestFile(), append(slices.Clip(b), '\n'), 0o600)
 }
 
 // HasManifest reports whether this machine has an identity already. The answer

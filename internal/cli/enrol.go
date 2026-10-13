@@ -438,5 +438,19 @@ func saveImported(d paths.Dirs, cfg *config.Config, env config.Envelope) error {
 		return err
 	}
 
+	// A state.json left from an identity removed by hand would have the next start renew
+	// this one under the old AnchorID. Before the manifest: with none on disk it describes
+	// no identity there is, so clearing it first loses nothing whichever write fails.
+	st, err := config.LoadState(d)
+	if err != nil {
+		return err
+	}
+
+	st.NewIdentity()
+
+	if err := config.SaveState(d, st); err != nil {
+		return err
+	}
+
 	return config.SaveManifest(d, env)
 }

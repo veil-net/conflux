@@ -168,7 +168,8 @@ func credential(
 				"enrolled, but could not save the credential -- it is now lost and a new one must be drawn: %w", err)
 		}
 
-		st.EnrolledAt = time.Now().UTC()
+		// Nothing this state said about an identity holds for the new one; see NewIdentity.
+		st.NewIdentity()
 	default:
 		return nil, nil, err
 	}

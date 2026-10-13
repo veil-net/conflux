@@ -179,7 +179,6 @@ machine has left. See
   "issuedAt": "2026-09-06T06:35:43.5Z",
   "notAfter": "2026-10-06T06:35:43.871Z",
   "clockSkew": 412000000,
-  "enrolledAt": "2026-09-06T06:35:43.559Z",
   "binSetId": "998ece52739a7c74",
   "linkReopens": 2,
   "lastLinkReopen": "2026-09-08T11:04:12Z"
@@ -193,9 +192,13 @@ It, `linkReopens` and `lastLinkReopen` are here rather than in memory because th
 supervisor that measures them and the `conflux status` that reports them are different
 processes. See [credentials.md](credentials.md#clock-skew) and [uplink.md](uplink.md).
 
-Everything here is derived. Delete it and the next start re-learns the AnchorID and
-the credential window at the cost of one extra call. That is why it is a separate file
-from the manifest, which is recoverable from nowhere.
+Everything here is derived, and most of it is re-learned by the next start: the window
+from the manifest, the AnchorID from what `anchorctl start` reports. Not on a machine
+whose credential has expired: a renewal names the anchor by its AnchorID, anchor will not
+start on an expired credential to report one, so with `state.json` gone that machine is
+refused for good and needs a new identity. A new identity — an enrolment, or `conflux
+enrol` — clears everything here that described the old one. The manifest, recoverable from
+nowhere, is a file of its own.
 
 It is separate from `conflux.json` for a second reason: the renewal timer rewrites
 `notAfter` at every renewal from the supervisor while `up` or `proxy` may be rewriting

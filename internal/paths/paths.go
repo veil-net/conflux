@@ -98,7 +98,8 @@ func Root() string {
 func (d Dirs) ConfigFile() string { return filepath.Join(d.Config, "conflux.json") }
 
 // StateFile holds what conflux derived: the AnchorID, the credential window, which
-// extracted binary set is live. Deleting it costs a status line and a lookup.
+// extracted binary set is live. Most of it is re-learned at the next start; see
+// config.State for the one case that is not.
 func (d Dirs) StateFile() string { return filepath.Join(d.State, "state.json") }
 
 // ManifestFile holds the base64 anchor manifest, which contains the identity seed.

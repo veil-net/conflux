@@ -192,6 +192,29 @@ func TestTheSecretIsNotPrinted(t *testing.T) {
 	}
 }
 
+// TestTheBearerIsNotPrinted: the resolved Auth carries the guardian's bearer, which keeps
+// the node's credential current for whoever holds it, and is held to the manifest's rule.
+func TestTheBearerIsNotPrinted(t *testing.T) {
+	auth, err := manifest(t, guardianDocument).Auth()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	secret := auth.Secret
+	if secret == "" {
+		t.Fatal("the guardian document resolved to no bearer")
+	}
+
+	for verb, s := range map[string]string{
+		"%v": fmt.Sprintf("%v", auth), "%+v": fmt.Sprintf("%+v", auth), "%#v": fmt.Sprintf("%#v", auth),
+		"%s": fmt.Sprint(auth),
+	} {
+		if strings.Contains(s, secret) {
+			t.Errorf("%s printed the bearer: %s", verb, s)
+		}
+	}
+}
+
 // TestRenewalSecretSurvivesARenewal. WithRenewal rewrites the chain and its dates;
 // everything else in the document has to come back, and losing this one would cost the
 // machine every renewal after the first.

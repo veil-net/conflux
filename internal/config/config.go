@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
 	"time"
 
 	"github.com/veil-net/conflux/internal/paths"
@@ -248,6 +249,12 @@ func (c *Config) Validate() error {
 
 	if err := ValidateTaints(c.Taints); err != nil {
 		return err
+	}
+
+	if c.Mode == ModeTUN {
+		if err := ValidateTUNName(c.TUNInterface(), runtime.GOOS); err != nil {
+			return err
+		}
 	}
 
 	if err := c.Export.Validate(); err != nil {

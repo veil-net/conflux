@@ -14,10 +14,12 @@ const StateVersion = 1
 
 // State is what conflux worked out, as against what the operator asked for.
 //
-// Everything here is recoverable. Delete it and the next start re-learns the
-// AnchorID from `anchorctl status` and the credential window from the manifest, at
-// the cost of one extra call. That is the whole reason it is a separate file from
-// the manifest, which is recoverable from nowhere at all.
+// Most of it is re-learned by the next start: the credential window from the manifest,
+// and the AnchorID from what `anchorctl start` reports. Not all of it. A renewal names
+// the anchor by its AnchorID and anchor will not start on an expired credential, so a
+// machine whose credential has expired and whose state.json is gone has no way to learn
+// its AnchorID again, and is refused for good until it is given a new identity. The
+// manifest, the one thing recoverable from nowhere at all, is a file of its own.
 type State struct {
 	Version int `json:"version"`
 
@@ -37,8 +39,6 @@ type State struct {
 	// memory because the supervisor that measures it and the `conflux status` that
 	// reports it are different processes.
 	ClockSkew time.Duration `json:"clockSkew,omitempty"`
-
-	EnrolledAt time.Time `json:"enrolledAt,omitzero"`
 
 	// BinSetID names the extracted anchor pair that is live. When it disagrees
 	// with the pair this conflux carries, the binary was upgraded under a running
@@ -95,4 +95,14 @@ func SaveState(d paths.Dirs, s *State) error {
 	}
 
 	return WriteFileAtomic(d.StateFile(), append(b, '\n'), 0o600)
+}
+
+// NewIdentity forgets everything this state held about the identity before: what a
+// machine given a new manifest -- enrolled, or imported -- must not carry over. The
+// AnchorID above all, which a renewal would otherwise send for the old anchor and splice
+// the chain it got back into the new one's manifest.
+func (s *State) NewIdentity() {
+	s.AnchorID, s.IssuedAt, s.NotAfter, s.ClockSkew = "", time.Time{}, time.Time{}, 0
+	s.LastRenewalError, s.LastRenewalTry = "", time.Time{}
+	s.LinkReopens, s.LastLinkReopen = 0, time.Time{}
 }

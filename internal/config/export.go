@@ -123,14 +123,6 @@ func (e *Export) Validate() error {
 		return nil
 	}
 
-	// Before the enabled check: a Secret is a oneof in anchor's schema, so a file giving
-	// both halves fails to parse whether or not anything is exported.
-	for name, s := range map[string]*Secret{"caCert": e.CACert, "clientCert": e.ClientCert, "clientKey": e.ClientKey} {
-		if s != nil && len(s.Inline) > 0 && s.Path != "" {
-			return fmt.Errorf("export.%s gives both inline and path, and is one or the other", name)
-		}
-	}
-
 	if !e.Enabled {
 		return nil
 	}
@@ -182,6 +174,25 @@ func (e *Export) Validate() error {
 
 	return nil
 }
+
+// String and GoString keep what an export block carries out of anything printed: its
+// headers are credentials, and a client key may be inline in it.
+func (e Export) String() string {
+	return fmt.Sprintf("<export to %s, headers and key material redacted>", e.Endpoint)
+}
+
+func (e Export) GoString() string { return e.String() }
+
+// String and GoString print a path and never inline material, which is key material.
+func (s Secret) String() string {
+	if len(s.Inline) > 0 {
+		return "<inline, redacted>"
+	}
+
+	return s.Path
+}
+
+func (s Secret) GoString() string { return s.String() }
 
 // given reports whether a Secret names any material at all.
 func (s *Secret) given() bool { return s != nil && (len(s.Inline) > 0 || s.Path != "") }

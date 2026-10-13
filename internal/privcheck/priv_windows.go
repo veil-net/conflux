@@ -12,7 +12,8 @@ import (
 // Elevated reports whether the process token is elevated. A member of
 // Administrators running without elevation is not enough: the checks conflux makes
 // are about what it can actually do, not what the account could do if asked.
-func Elevated() bool {
+// A variable so a test can be the account that is refused.
+var Elevated = func() bool {
 	return windows.GetCurrentProcessToken().IsElevated()
 }
 
@@ -22,7 +23,10 @@ func Require(what, retry string) error {
 		return nil
 	}
 
-	return fmt.Errorf(
-		"%s needs Administrator.\n"+
-			"  open PowerShell with \"Run as administrator\", then:  %s", what, strings.TrimSpace(retry))
+	return fmt.Errorf("%s needs Administrator.\n  %s", what, Retry(retry))
+}
+
+// Retry is a command as an Administrator would run it.
+func Retry(cmd string) string {
+	return "open PowerShell with \"Run as administrator\", then:  " + strings.TrimSpace(cmd)
 }

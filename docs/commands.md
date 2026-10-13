@@ -440,8 +440,8 @@ other refusal — passes through untouched.
 | 0 | success |
 | 1 | failure |
 | 2 | usage |
-| 13 | needs root or Administrator |
-| 69 | nothing is running here |
+| 13 | needs root or Administrator, or a pass-through that cannot read the daemon's token |
+| 69 | nothing here to act on: nothing running, or no credential to renew |
 | 70 | a configuration conflux or anchor refuses for good; the systemd unit does not restart on it |
 | 78 | no configuration — the code the systemd unit keys `RestartPreventExitStatus` on |
 | other | for pass-through, anchorctl's own code, verbatim |

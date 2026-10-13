@@ -120,10 +120,6 @@ func runProxy(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	if err := chooseIPv4(cfg, *f.ipv4, *f.noIPv4); err != nil {
-		return fail(err)
-	}
-
 	if err := choosePeers(cfg, f.peers, *f.noPeers); err != nil {
 		return fail(err)
 	}
@@ -134,6 +130,15 @@ func runProxy(ctx context.Context, args []string) int {
 	}
 
 	if err := chooseTaints(cfg, f.taints, held); err != nil {
+		return fail(err)
+	}
+
+	// Last, as in up: the one step that may ask a question.
+	if err := config.ValidateSubnets(cfg.Subnets, cfg.Taints); err != nil {
+		return fail(err)
+	}
+
+	if err := chooseIPv4(cfg, *f.ipv4, *f.noIPv4); err != nil {
 		return fail(err)
 	}
 

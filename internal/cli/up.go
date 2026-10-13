@@ -129,16 +129,22 @@ func runUp(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	if err := chooseIPv4(cfg, *ipv4, *noIPv4); err != nil {
-		return fail(err)
-	}
-
 	held, err := heldCredential(d)
 	if err != nil {
 		return fail(err)
 	}
 
 	if err := chooseTaints(cfg, taints, held); err != nil {
+		return fail(err)
+	}
+
+	// Last, after everything typed has been checked: it may ask a question, and an answer
+	// given only to be told a flag was wrong is an answer given twice.
+	if err := config.ValidateSubnets(cfg.Subnets, cfg.Taints); err != nil {
+		return fail(err)
+	}
+
+	if err := chooseIPv4(cfg, *ipv4, *noIPv4); err != nil {
 		return fail(err)
 	}
 

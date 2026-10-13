@@ -22,7 +22,7 @@ func execAnchorctl(_ context.Context, bin string, args []string, env []string) i
 	if err := unix.Exec(bin, argv, env); err != nil {
 		ui.Errf("could not run %s: %v", bin, err)
 
-		return ExitChildFailed
+		return ExitError
 	}
 
 	return ExitOK // unreachable: Exec does not return on success

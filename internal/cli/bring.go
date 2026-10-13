@@ -145,7 +145,7 @@ func waitForAnchor(ctx context.Context, d paths.Dirs) (anchorctl.Status, error) 
 
 			// The token is rewritten by the supervisor on every start, so re-read it
 			// rather than trusting the one runCtl picked up a moment ago.
-			ctl.Token = readToken(d)
+			ctl.Token, _ = readToken(d)
 
 			st, err := ctl.Status(ctx)
 			if err == nil && st.Running {

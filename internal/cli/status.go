@@ -88,6 +88,13 @@ type daemonAnswers struct {
 func askDaemon(ctx context.Context, d paths.Dirs) *daemonAnswers {
 	a := &daemonAnswers{}
 
+	// No socket, no daemon. The token outlives one where nothing clears the run directory
+	// on stop -- launchd, rc, Windows -- and asking would cost two forks for anchorctl's
+	// "is anchord running on that socket", which reads as a fault rather than a stop.
+	if _, err := os.Stat(d.Socket()); err != nil {
+		return a
+	}
+
 	ctl, err := runCtl(d)
 	if err != nil || ctl.Token == "" {
 		return a
@@ -187,7 +194,7 @@ func reportCredential(d paths.Dirs, cfg *config.Config, st *config.State) {
 	if st.ClockSkew > time.Second {
 		note := ""
 		if st.ClockSkew > daemon.MaxSkew {
-			note = " — past the " + strings.TrimSuffix(daemon.MaxSkew.String(), "0s") + " anchor allows; fix the clock (timedatectl set-ntp true)"
+			note = " — past the " + strings.TrimSuffix(daemon.MaxSkew.String(), "0s") + " anchor allows; fix the clock" + clockHint()
 		}
 
 		ui.Field("clock", "off by "+st.ClockSkew.Round(time.Second).String()+note)
@@ -300,4 +307,13 @@ func reportAnchor(a *daemonAnswers) {
 	for line := range strings.SplitSeq(text, "\n") {
 		ui.Printf("  %s\n", line)
 	}
+}
+
+// clockHint is how to put this machine's clock right, where there is one command for it.
+func clockHint() string {
+	if runtime.GOOS == "linux" {
+		return " (timedatectl set-ntp true)"
+	}
+
+	return ""
 }

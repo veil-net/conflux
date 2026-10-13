@@ -90,6 +90,10 @@ func renewNow(ctx context.Context, d paths.Dirs) int {
 		return fail(err)
 	}
 
+	if !config.HasManifest(d) {
+		return neverEnrolled()
+	}
+
 	// Renewal is a hot swap into a running anchor, so "nothing is running" is the
 	// likely failure and deserves conflux's own answer rather than a dial error.
 	if _, err := os.Stat(d.Socket()); errors.Is(err, fs.ErrNotExist) {
@@ -111,10 +115,16 @@ func renewNow(ctx context.Context, d paths.Dirs) int {
 		return fail(fmt.Errorf("could not read %s, which anchorctl authenticates with", d.TokenFile()))
 	}
 
-	// Only for the line it prints: RenewNow reads the state again, under the lock.
+	// For the line it prints, and to say plainly what RenewNow would refuse: it reads the
+	// state again, under the lock.
 	before, err := config.LoadState(d)
 	if err != nil {
 		return fail(err)
+	}
+
+	// A renewal names the anchor, and an anchor that has never started has reported no name.
+	if before.AnchorID == "" {
+		return neverEnrolled()
 	}
 
 	// Unavailable rather than an error, like a machine that never enrolled: nothing went
@@ -133,6 +143,15 @@ func renewNow(ctx context.Context, d paths.Dirs) int {
 	}
 
 	return ExitOK
+}
+
+// neverEnrolled is renew's answer for a machine with nothing to renew: unavailable, like
+// one that was never configured, since nothing went wrong.
+func neverEnrolled() int {
+	ui.Errf("there is nothing to renew yet: a renewal names the anchor, and none has started here.\n\n" +
+		"  conflux start     start from the configuration this machine already has")
+
+	return ExitUnavailable
 }
 
 // anchorctlFlag reports the first flag that must belong to anchorctl's version of a

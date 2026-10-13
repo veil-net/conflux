@@ -77,7 +77,8 @@ func install(ctx context.Context, d paths.Dirs, standalone bool) int {
 		return ExitOK
 	}
 
-	if _, err := config.Load(d); err != nil {
+	cfg, err := config.Load(d)
+	if err != nil {
 		if !os.IsNotExist(err) {
 			return fail(err)
 		}
@@ -91,7 +92,7 @@ func install(ctx context.Context, d paths.Dirs, standalone bool) int {
 		return ExitOK
 	}
 
-	return startFromConfig(ctx, d, mgr, "install")
+	return startFromConfig(ctx, d, mgr, cfg, "install")
 }
 
 // startFromConfig starts the anchor this machine is already configured for.
@@ -100,7 +101,7 @@ func install(ctx context.Context, d paths.Dirs, standalone bool) int {
 // the same argument daemon.BringUp makes for `up`, `proxy` and every boot. The caller
 // has already established that a configuration exists and that the service is
 // registered; this is only the starting.
-func startFromConfig(ctx context.Context, d paths.Dirs, mgr service.Manager, verb string) int {
+func startFromConfig(ctx context.Context, d paths.Dirs, mgr service.Manager, cfg *config.Config, verb string) int {
 	ui.Printf("Starting from the configuration in %s.\n", d.ConfigFile())
 
 	// Through restartWith rather than mgr.Restart, so this path clears the readiness
@@ -111,11 +112,6 @@ func startFromConfig(ctx context.Context, d paths.Dirs, mgr service.Manager, ver
 	}
 
 	st, err := waitForAnchor(ctx, d)
-	if err != nil {
-		return fail(err)
-	}
-
-	cfg, err := config.Load(d)
 	if err != nil {
 		return fail(err)
 	}
@@ -198,7 +194,8 @@ func runStart(ctx context.Context, args []string) int {
 
 	// The same 78 the supervisor exits with, and for the same reason: there is a
 	// service here and nothing for it to run.
-	if _, err := config.Load(d); err != nil {
+	cfg, err := config.Load(d)
+	if err != nil {
 		if !os.IsNotExist(err) {
 			return fail(err)
 		}
@@ -220,7 +217,7 @@ func runStart(ctx context.Context, args []string) int {
 	// No check for "already running". mgr.Restart covers both, and a start that
 	// refused a running anchor would be answering a question nobody asked -- the
 	// caller wants it up, and it ends up up.
-	return startFromConfig(ctx, d, mgr, "start")
+	return startFromConfig(ctx, d, mgr, cfg, "start")
 }
 
 // runDown stops the anchor now and leaves everything else alone.

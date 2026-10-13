@@ -146,16 +146,21 @@ type denied struct{ error }
 // invocation, flags and all. What somebody copies out of the refusal is then what they
 // typed, and not `conflux up` without the --taint that decided which network it joins.
 func needsRoot(what, verb string, args []string) error {
-	words := append([]string{"conflux", verb}, args...)
-	for i, w := range words {
-		words[i] = shellWord(w)
-	}
-
-	if err := privcheck.Require(what, strings.Join(words, " ")); err != nil {
+	if err := privcheck.Require(what, typed("conflux", append([]string{verb}, args...)...)); err != nil {
 		return denied{err}
 	}
 
 	return nil
+}
+
+// typed is a command as it would be typed again, each word quoted where it has to be.
+func typed(name string, args ...string) string {
+	words := []string{shellWord(name)}
+	for _, a := range args {
+		words = append(words, shellWord(a))
+	}
+
+	return strings.Join(words, " ")
 }
 
 // shellWord quotes a word for the shell the refusal will be pasted into, when it holds

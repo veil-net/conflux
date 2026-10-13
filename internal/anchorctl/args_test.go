@@ -46,7 +46,7 @@ var scenarios = map[string]StartMode{
 	},
 	"up-peers-many": {
 		TUN: true, TUNName: "anchor0",
-		Peers: []string{"genesis.veilnet.com.au:4700", "anchorabc@203.0.113.9:4700"},
+		Peers: []string{"genesis.veilnet.com.au:4700", "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq@203.0.113.9:4700"},
 		Dir:   "/var/lib/conflux/anchor",
 	},
 	"proxy-peers": {

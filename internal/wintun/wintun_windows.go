@@ -92,9 +92,15 @@ func download(ctx context.Context) ([]byte, error) {
 	}
 
 	client := &http.Client{
+		// Replacing net/http's own policy replaces its limit too, which a same-host loop
+		// would otherwise run into only at the download's timeout.
 		CheckRedirect: func(r *http.Request, via []*http.Request) error {
 			if r.URL.Host != via[0].URL.Host {
 				return fmt.Errorf("refusing a redirect from %s to %s", via[0].URL.Host, r.URL.Host)
+			}
+
+			if len(via) >= 10 {
+				return fmt.Errorf("stopped after %d redirects", len(via))
 			}
 
 			return nil

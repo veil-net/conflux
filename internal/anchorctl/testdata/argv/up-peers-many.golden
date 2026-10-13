@@ -4,7 +4,7 @@ start
 -dir
 /var/lib/conflux/anchor
 -peers
-genesis.veilnet.com.au:4700,anchorabc@203.0.113.9:4700
+genesis.veilnet.com.au:4700,anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq@203.0.113.9:4700
 -tun=true
 -tun-name
 anchor0

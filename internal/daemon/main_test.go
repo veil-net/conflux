@@ -113,7 +113,7 @@ const fakeAnchorID = "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq
 // fakeAnchordLastWords is what the stand-in anchord says on its way out, with no
 // newline after the last of it: the line a failure report most needs is the one most
 // easily lost.
-const fakeAnchordLastWords = "control: the socket is held by another daemon"
+const fakeAnchordLastWords = "control: /run/conflux/anchord.sock is already served by a running daemon"
 
 func fakeAnchord() int {
 	fmt.Println("anchord starting")

@@ -42,7 +42,7 @@ type Manager interface {
 }
 
 // New returns this platform's manager.
-func New() (Manager, error) { return newManager() }
+func New() Manager { return newManager() }
 
 // Place copies this conflux to where the boot service runs it from, and returns that
 // path.
@@ -52,8 +52,8 @@ func New() (Manager, error) { return newManager() }
 // a home directory, a download, C:\tools -- may be writable by somebody else, who could
 // then swap it for their own program and have it run as root at the next start. So the
 // service runs a copy in the state directory, which only root can write and `uninstall`
-// removes, and each `up`, `proxy` and `install` refreshes it: an upgraded conflux reaches
-// the service the next time one of them runs.
+// removes, and each `up`, `proxy`, `install` and `start` refreshes it: an upgraded conflux
+// reaches the service the next time one of them runs.
 //
 // The copy is written beside its destination and renamed over it, so a service running
 // the old one keeps it. Windows will not replace the image of a running process but will
@@ -186,5 +186,12 @@ func copyExecutable(src, dst, aside string) error {
 		return err
 	}
 
-	return os.Rename(tmp.Name(), dst)
+	if err := os.Rename(tmp.Name(), dst); err != nil {
+		// The service is left its old copy rather than none at all.
+		_ = os.Rename(aside, dst)
+
+		return err
+	}
+
+	return nil
 }

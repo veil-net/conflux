@@ -2,14 +2,17 @@
 
 package service
 
-import "os"
+import (
+	"os"
 
-// removeLog deletes the log file launchd or daemon(8) writes the service's output to.
+	"github.com/veil-net/conflux/internal/paths"
+)
+
+// logFile is where launchd or daemon(8) writes the service's output.
+func logFile() string { return paths.Default().LogFile() }
+
+// removeLog deletes it.
 func removeLog(path string) error {
-	if path == "" {
-		return nil
-	}
-
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return err
 	}

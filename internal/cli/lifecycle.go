@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"os"
 	"strings"
@@ -52,10 +53,7 @@ func runInstall(ctx context.Context, args []string) int {
 // make, which is silent and leaves starting to the caller. Either has created the
 // directories already.
 func install(ctx context.Context, d paths.Dirs, standalone bool) int {
-	mgr, err := service.New()
-	if err != nil {
-		return fail(err)
-	}
+	mgr := service.New()
 
 	exe, err := service.Place(d)
 	if err != nil {
@@ -179,10 +177,7 @@ func runStart(ctx context.Context, args []string) int {
 
 	d := paths.Default()
 
-	mgr, err := service.New()
-	if err != nil {
-		return fail(err)
-	}
+	mgr := service.New()
 
 	installed, err := mgr.Installed()
 	if err != nil {
@@ -251,10 +246,7 @@ func runDown(_ context.Context, args []string) int {
 		return fail(err)
 	}
 
-	mgr, err := service.New()
-	if err != nil {
-		return fail(err)
-	}
+	mgr := service.New()
 
 	installed, err := mgr.Installed()
 	if err != nil {
@@ -311,33 +303,21 @@ func runUninstall(_ context.Context, args []string) int {
 		return ExitUsage
 	}
 
-	mgr, err := service.New()
-	if err != nil {
-		return fail(err)
-	}
-
 	// Each step tolerates its own failure: a half-removed installation must always
-	// be finishable, so nothing stops at the first complaint.
-	_ = mgr.Stop()
-
-	var first error
-
-	if err := mgr.Remove(); err != nil {
-		first = err
-	}
+	// be finishable, so nothing stops at the first complaint. Remove stops the service
+	// on every platform before it deregisters it.
+	errs := []error{service.New().Remove()}
 
 	// Whatever anchord a supervisor that died left running out of the state directory,
 	// once the service's own supervisor has let go of it.
 	daemon.Reap(d, 35*time.Second)
 
 	for _, dir := range []string{d.Run, d.State, d.Config} {
-		if err := os.RemoveAll(dir); err != nil && first == nil {
-			first = err
-		}
+		errs = append(errs, os.RemoveAll(dir))
 	}
 
-	if first != nil {
-		return fail(first)
+	if err := errors.Join(errs...); err != nil {
+		return fail(err)
 	}
 
 	ui.Printf("Removed. The boot service, the configuration and the identity are gone.\n" +

@@ -88,8 +88,11 @@ expired credential with nowhere to renew it or no AnchorID recorded to renew it 
 credential for another realm tree, a TUN the host will not give, a host that will not
 be set up to forward, an argument vector anchorctl refuses — stops the supervisor after
 three attempts with exit 70, and nothing to start at all is exit 78. Anything else the
-supervisor stops on — an extraction onto a full disk, say — exits 1, which a service
-manager restarts. What each does with 78 and 70 is below.
+supervisor stops on — an extraction onto a full disk, say — exits 1, which systemd,
+launchd and the Windows SCM restart. On the BSDs nothing does: FreeBSD's `daemon(8)` runs
+without `-r`, which would restart 78 and 70 as well, and OpenBSD's `rc.subr` does not
+supervise, so there a supervisor that exits 1 waits for `conflux start` or the next boot.
+What each does with 78 and 70 is below.
 
 anchord can also lose its anchor without exiting, so the supervisor asks it every thirty
 seconds whether it still holds one (every ten, through the link watcher's gauge, on an
@@ -229,17 +232,20 @@ Re-running `bootstrap` on a loaded job fails with `Bootstrap failed: 37: Operati
 already in progress`, and a `kickstart -k` on a job that was *just* bootstrapped kills the
 instance launchd had only now made. Asking which state it is in is what avoids both.
 
-**`enable` comes before every `bootstrap`, and `uninstall` disables nothing.**
+**A disabled label is enabled before `bootstrap`, and `uninstall` disables nothing.**
 `launchctl(1)`: *"Once a service is disabled, it cannot be loaded in the specified domain
 until it is once again enabled. This state persists across boots of the device."* A
 disabled label makes `bootstrap` fail with `Bootstrap failed: 5: Input/output error`,
 which names nothing; a `bootstrap` that still fails is answered with the four things
-that actually cause error 5.
+that actually cause error 5. `enable` is run only for a label `launchctl print-disabled`
+shows disabled, because an enable is itself an entry in that database, outliving the plist
+where `uninstall` cannot reach it.
 
 `conflux down` uses `launchctl kill SIGTERM`, which stops the process and leaves the job
-loaded — stopped now, back at the next boot, which is exactly the semantics `down` needs.
-A job that is not loaded at all is already in the state `down` asks for, and says so
-rather than passing on launchd's "Could not find service".
+loaded — stopped now, back at the next boot, which is exactly the semantics `down` needs —
+and waits for it to go, as `systemctl stop` does. A job that is not running, loaded or not,
+is already in the state `down` asks for, and says so rather than passing on launchd's
+"Could not find service" or its refusal to signal a job with no process.
 
 macOS needs no driver: `utun` is in the kernel and a root LaunchDaemon can open it.
 
@@ -294,15 +300,20 @@ Logs: a service has no console, so the supervisor writes what it and `anchord` s
 it, appends its output to `/var/log/conflux.log`, and records conflux's own pid — so
 `service conflux stop` signals the supervisor, which closes the anchor before anything
 is killed. `daemon(8)` is not told to restart it: conflux restarts `anchord` itself, and a
-supervisor that exits 78 or 70 would only repeat the answer. `uninstall` stops it,
-removes the `rc.conf` line, the script and the log.
+supervisor that exits 78 or 70 would only repeat the answer. `conflux down` on a service
+that is not running succeeds rather than passing on `rc.subr`'s "not running?".
+`uninstall` stops it, removes the `rc.conf` line, the script and the log.
 
 **OpenBSD.** Script at `/etc/rc.d/conflux`, enabled with `rcctl enable conflux`.
 `rc.subr` backgrounds it and sends its output to syslog, so the logs are in
-`/var/log/daemon`. `uninstall` stops and disables it and removes the script. `rc.subr`
-runs the command through a shell and `rcctl` finds it again by matching the same text,
-so no quoting survives both: a `CONFLUX_DIR` root holding a space or a shell character is
-refused at `install` rather than split.
+`/var/log/daemon`. `uninstall` stops and disables it and removes the script.
+
+Both find the running service again by matching its command line, unquoted — FreeBSD's
+`rc.subr` the first word `ps` prints against `procname`, OpenBSD's `rcctl` the whole of it
+as a pattern — and OpenBSD's runs it through a shell as well, so no quoting survives: a
+`CONFLUX_DIR` root holding a space, or a shell or pattern character, is refused at
+`install` rather than registered as a service that starts and can then be neither stopped
+nor asked about.
 
 On both, `install` enables and starts nothing, and `restart` starts a service that was
 not running. One platform note: OpenBSD's `tunN` device persists after close, so

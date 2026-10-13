@@ -3,11 +3,13 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
-	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/config"
 )
 
 // Functions and not constants because a run rooted in a CONFLUX_DIR is a separate
@@ -16,42 +18,9 @@ func label() string     { return "org.veilnet.conflux" + scope() }
 func plistPath() string { return "/Library/LaunchDaemons/" + label() + ".plist" }
 func target() string    { return "system/" + label() }
 
-// plistTemplate is the job conflux writes.
-//
-// KeepAlive is {SuccessfulExit: false} rather than true, so a deliberate clean exit
-// stays exited. launchd has no way to name the exit codes that should not restart,
-// so unlike the systemd unit a supervisor that exits 78 or 70 is started again after
-// ThrottleInterval.
-//
-// ProcessType is Interactive rather than the Background that daemons default to,
-// because Background imposes a low-priority I/O class and App Nap eligibility, and a
-// networking daemon the scheduler throttles is a support ticket nobody can diagnose.
-const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>            <string>%[1]s</string>
-  <key>ProgramArguments</key>
-  <array>
-%[2]s  </array>
-  <key>RunAtLoad</key>        <true/>
-  <key>KeepAlive</key>
-  <dict><key>SuccessfulExit</key> <false/></dict>
-  <key>ThrottleInterval</key>  <integer>5</integer>
-  <key>ProcessType</key>       <string>Interactive</string>
-  <key>StandardOutPath</key>   <string>%[3]s</string>
-  <key>StandardErrorPath</key> <string>%[3]s</string>
-  <key>ExitTimeOut</key>       <integer>30</integer>
-</dict>
-</plist>
-`
-
 type launchd struct{}
 
-func newManager() (Manager, error) { return launchd{}, nil }
-
-// logFile is where the job's output goes.
-func logFile() string { return paths.Default().LogFile() }
+func newManager() Manager { return launchd{} }
 
 // Install writes the job and loads nothing, which is the whole of what registration
 // means here. Loading it would start it -- bootstrap honours RunAtLoad -- and Install
@@ -61,24 +30,12 @@ func logFile() string { return paths.Default().LogFile() }
 // /Library/LaunchDaemons at boot, so the plist on disk *is* the registration, and
 // Start and Restart load it when there is something to run.
 func (l launchd) Install(exe string, args ...string) error {
-	var argv strings.Builder
+	plist := launchdPlist(label(), append([]string{exe}, args...), logFile())
 
-	for _, a := range append([]string{exe}, args...) {
-		fmt.Fprintf(&argv, "    <string>%s</string>\n", escapeXML(a))
-	}
-
-	plist := fmt.Sprintf(plistTemplate, label(), argv.String(), escapeXML(logFile()))
-
-	if err := os.WriteFile(plistPath(), []byte(plist), 0o644); err != nil { //nolint:gosec // a plist is world-readable by design
-		return fmt.Errorf("write %s: %w", plistPath(), err)
-	}
-
-	// WriteFile does not change the mode of a file that already exists, and launchd
-	// refuses a job whose plist is group- or world-writable. A conflux upgraded over one
-	// that wrote it differently would otherwise fail to bootstrap for a reason nothing
-	// in the error names.
-	if err := os.Chmod(plistPath(), 0o644); err != nil {
-		return fmt.Errorf("chmod %s: %w", plistPath(), err)
+	// 0644 whatever was there before: launchd refuses a job whose plist is group- or
+	// world-writable, for a reason nothing in its error names.
+	if err := config.WriteFileAtomic(plistPath(), []byte(plist), 0o644); err != nil {
+		return err
 	}
 
 	// A job already loaded is loaded from the plist it was bootstrapped with, not from
@@ -87,10 +44,34 @@ func (l launchd) Install(exe string, args ...string) error {
 	// next Restart take the bootstrap branch, which is the single start.
 	_ = run("launchctl", "bootout", target())
 
-	// Best effort here and asked again in load(), which is where it has to succeed.
-	_ = run("launchctl", "enable", target())
+	enableIfDisabled()
 
 	return nil
+}
+
+// enableIfDisabled lifts a disable on the label, and does nothing to one that has none.
+//
+// launchctl(1): "Once a service is disabled, it cannot be loaded in the specified domain
+// until it is once again enabled. This state persists across boots of the device." A
+// disabled label makes bootstrap fail with "Bootstrap failed: 5: Input/output error",
+// which names nothing. But an enable is itself an entry in that database, which outlives
+// the plist and which uninstall cannot remove, so it is written only where a disable is
+// there to lift.
+func enableIfDisabled() {
+	out, _ := query("launchctl", "print-disabled", "system")
+
+	for line := range strings.Lines(out) {
+		key, value, _ := strings.Cut(strings.TrimSpace(line), "=>")
+		if strings.TrimSpace(key) != `"`+label()+`"` {
+			continue
+		}
+
+		if v := strings.TrimSpace(value); v == "disabled" || v == "true" {
+			_ = run("launchctl", "enable", target())
+		}
+
+		return
+	}
 }
 
 // printJob is launchd's view of the job, and whether there is one in the domain at all.
@@ -117,14 +98,9 @@ func (l launchd) loaded() bool {
 // loaded whatever the RunAtLoad key says. Start and Restart are built on that rather than
 // trying to work around it.
 //
-// enable comes first. launchctl(1): "Once a service is disabled, it cannot be loaded in
-// the specified domain until it is once again enabled. This state persists across boots
-// of the device." A disabled label makes bootstrap fail with "Bootstrap failed: 5:
-// Input/output error", which names nothing, so the label is enabled before every load.
+// A disabled label is enabled first; see enableIfDisabled.
 func (l launchd) load() error {
-	// Not checked: a label that was never disabled has nothing to enable, and the
-	// bootstrap below is the call whose answer matters either way.
-	_ = run("launchctl", "enable", target())
+	enableIfDisabled()
 
 	if err := run("launchctl", "bootstrap", "system", plistPath()); err != nil {
 		return fmt.Errorf("%w\n%s", err, bootstrapHint())
@@ -152,22 +128,16 @@ func bootstrapHint() string {
 //
 // Each step tolerates its own failure, so a half-removed service can always be finished off.
 func (l launchd) Remove() error {
-	var first error
+	errs := []error{run("launchctl", "bootout", target())}
 
-	if err := run("launchctl", "bootout", target()); err != nil && first == nil {
-		first = err
+	if err := os.Remove(plistPath()); err != nil && !os.IsNotExist(err) {
+		errs = append(errs, err)
 	}
 
-	if err := os.Remove(plistPath()); err != nil && !os.IsNotExist(err) && first == nil {
-		first = err
-	}
-
-	if err := removeLog(logFile()); err != nil && first == nil {
-		first = err
-	}
+	errs = append(errs, removeLog(logFile()))
 
 	if installed, _ := l.Installed(); installed {
-		return first
+		return errors.Join(errs...)
 	}
 
 	return nil
@@ -192,16 +162,29 @@ func (l launchd) Restart() error {
 // Stop kills the process and leaves the job loaded, which is exactly the semantics
 // `conflux down` needs: stopped now, back at the next boot.
 //
-// A job that is not loaded at all is already in the state Stop is asked for, and saying
-// so beats "Could not find service" from a launchctl that is right and unhelpful. The
-// case is real: `conflux install` now registers without loading, so a machine can have a
-// service it has never started in this boot.
+// A job that is not running -- not loaded at all, or loaded and stopped already -- is in
+// the state Stop is asked for, and saying so beats the refusal launchctl would give: "Could
+// not find service" for one, and no process to signal for the other. Both are real:
+// `conflux install` registers without loading, and `conflux down` twice is a stopped job.
+//
+// launchctl kill returns at once, so Stop waits for the job to go, as systemctl stop does,
+// within the plist's ExitTimeOut and a little more.
 func (l launchd) Stop() error {
-	if !l.loaded() {
+	if !running() {
 		return nil
 	}
 
-	return run("launchctl", "kill", "SIGTERM", target())
+	if err := run("launchctl", "kill", "SIGTERM", target()); err != nil {
+		return err
+	}
+
+	for deadline := time.Now().Add(35 * time.Second); running(); time.Sleep(200 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			return errors.New("the job did not stop within 35s")
+		}
+	}
+
+	return nil
 }
 
 func (launchd) Installed() (bool, error) { return exists(plistPath()) }
@@ -228,8 +211,4 @@ func (l launchd) Describe() string {
 	}
 
 	return fmt.Sprintf("installed, not running (launchd: %s, at boot)", label())
-}
-
-func escapeXML(s string) string {
-	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(s)
 }

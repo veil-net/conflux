@@ -188,10 +188,16 @@ func TestReapWithoutAnExePathNeedsTheSocketLock(t *testing.T) {
 	exeOf = func(int) (string, error) { return "", errNoExePath }
 
 	d := dirs(t)
-	_, exited := orphan(t, d, "serve", os.Args[0])
+	_, spared := orphan(t, d, "serve", os.Args[0])
 
 	if pid, err := ReapOrphan(d); pid != 0 || err != nil {
 		t.Fatalf("ReapOrphan = %d, %v with the socket's lock free; want nothing stopped", pid, err)
+	}
+
+	select {
+	case <-spared:
+		t.Fatal("a process nothing showed to be anchord was stopped")
+	case <-time.After(200 * time.Millisecond):
 	}
 
 	cmd, exited := orphan(t, d, "serve", os.Args[0])

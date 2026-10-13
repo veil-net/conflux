@@ -130,7 +130,7 @@ A "permission denied" on a `0700` file you own is the most confusing failure in 
 design, and there are only two causes. conflux detects both and names them:
 
 ```
-conflux: the anchor binaries were extracted to /var/lib/conflux/bin/998ece52 but will not run from there.
+conflux: the anchor binaries were extracted to /var/lib/conflux/bin/998ece52739a7c74 but will not run from there.
   that filesystem is mounted noexec.
   set CONFLUX_DIR to a directory on a filesystem that allows execution.
 ```
@@ -155,13 +155,12 @@ Bootstrap failed: 5: Input/output error
 ```
 
 Error 5 is launchd's answer for most refusals and names none of them. conflux enables
-the label before every bootstrap — a disabled label
+a disabled label before every bootstrap — a disabled label
 [persists across boots](https://keith.github.io/xcode-man-pages/launchctl.1.html) and
 blocks loading until it is enabled again — so when it still fails, the message lists the
 other causes: the plist is not root-owned, or is group- or world-writable; the job is
 already loaded (`sudo launchctl bootout system/org.veilnet.conflux`); or the executable
-the plist names is gone or sits on a volume that is not mounted yet — which is what the
-ephemeral-path warning during `install` is about.
+the plist names is gone or sits on a volume that is not mounted yet.
 
 ## The service starts and the anchor does not
 

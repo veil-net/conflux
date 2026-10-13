@@ -23,7 +23,7 @@ const (
 
 type scm struct{}
 
-func newManager() (Manager, error) { return scm{}, nil }
+func newManager() Manager { return scm{} }
 
 // ServiceName is the SCM entry conflux registers.
 //

@@ -77,12 +77,7 @@ func bring(ctx context.Context, d paths.Dirs, cfg *config.Config, verb string, s
 // leave two ideas of what is running -- the service manager's and ours -- and they
 // would disagree the moment either changed.
 func restartService(d paths.Dirs) error {
-	mgr, err := service.New()
-	if err != nil {
-		return err
-	}
-
-	return restartWith(d, mgr)
+	return restartWith(d, service.New())
 }
 
 // restartWith withdraws the readiness marker and then restarts, in that order.
@@ -186,7 +181,7 @@ func exitNote(cfg *config.Config) string {
 
 // report is what a person sees when it worked.
 func report(d paths.Dirs, cfg *config.Config, st anchorctl.Status, verb string) {
-	mgr, _ := service.New()
+	mgr := service.New()
 
 	ui.Println()
 	ui.Field("anchor", st.ID)
@@ -310,9 +305,5 @@ func joinTaints(t []string) string {
 
 // journalHint names where the supervisor's output is.
 func journalHint() string {
-	if mgr, err := service.New(); err == nil {
-		return mgr.LogHint()
-	}
-
-	return "sudo conflux serve --foreground"
+	return service.New().LogHint()
 }

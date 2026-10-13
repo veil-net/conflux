@@ -102,11 +102,7 @@ func askDaemon(ctx context.Context, d paths.Dirs) *daemonAnswers {
 	return a
 }
 
-func reportService() {
-	if mgr, err := service.New(); err == nil {
-		ui.Field("service", mgr.Describe())
-	}
-}
+func reportService() { ui.Field("service", service.New().Describe()) }
 
 func reportConfig(d paths.Dirs, cfg *config.Config) {
 	// Before the mode, because it is the medium the mode runs over.

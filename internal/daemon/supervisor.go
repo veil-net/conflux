@@ -112,12 +112,9 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		return err
 	}
 
-	if err := s.Dirs.CheckSocketLen(); err != nil {
-		return &permanentError{err: err}
-	}
-
 	// One supervisor per root, held for as long as this one runs: what it does next is stop
-	// the anchord the last one left, and two would each take the other's for that.
+	// the anchord the last one left, and two would each take the other's for that. First,
+	// so a second is told that whatever else about the root it would refuse.
 	unlock, ok, err := flock.TryAcquire(s.Dirs.ServeLockFile())
 	if err != nil {
 		return err
@@ -128,6 +125,10 @@ func (s *Supervisor) Run(ctx context.Context) error {
 			"stop it first (conflux down)", s.Dirs.State)
 	}
 	defer unlock()
+
+	if err := s.Dirs.CheckSocketLen(); err != nil {
+		return &permanentError{err: err}
+	}
 
 	switch pid, err := ReapOrphan(s.Dirs); {
 	case err != nil:

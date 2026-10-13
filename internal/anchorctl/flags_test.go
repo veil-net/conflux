@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/veil-net/conflux/anchor"
 	"github.com/veil-net/conflux/internal/anchorctl"
+	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
 )
@@ -26,9 +26,7 @@ var flagLine = regexp.MustCompile(`(?m)^\s+-([a-z0-9-]+)`)
 // otherwise be a daemon that will not start -- discovered after the binaries were
 // dropped into anchor/bin and shipped, not before.
 func TestEveryFlagWeUseExists(t *testing.T) {
-	if !anchor.Supported {
-		t.Skip("no anchor pair for this platform")
-	}
+	anchortest.Require(t)
 
 	t.Setenv("CONFLUX_DIR", t.TempDir())
 

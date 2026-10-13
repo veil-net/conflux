@@ -55,14 +55,17 @@ grants() {
 #
 # Every reader of a pipe in this file reads to the end. One that stops early -- awk's
 # exit, grep -q -- leaves the writer to die of SIGPIPE whenever it has more to say, and
-# under pipefail that is a 141 which fails an assignment and falsifies an if.
+# under pipefail that is a 141 which fails an assignment and falsifies an if. And a
+# `conflux metrics` that fails -- the anchor between restarts -- reads as 0, so the wait
+# that asked goes round again and the diagnostics after it still print, rather than
+# pipefail ending the run on the spot.
 lan_found() {
-  docker exec "$1" conflux metrics 2>/dev/null |
+  { docker exec "$1" conflux metrics 2>/dev/null || true; } |
     awk '$1 ~ /^anchor_lan_peers_found_total/ { s += $2 } END { print s + 0 }'
 }
 
 connections() {
-  docker exec "$1" conflux metrics 2>/dev/null | awk '$1 == "anchor_connections" { v = $2 } END { print v + 0 }'
+  { docker exec "$1" conflux metrics 2>/dev/null || true; } | awk '$1 == "anchor_connections" { v = $2 } END { print v + 0 }'
 }
 
 # A and B are given a bootstrap entry that cannot answer -- 192.0.2.1 is RFC 5737's
@@ -310,6 +313,8 @@ say "uninstall removes everything"
 docker exec cfx-b conflux uninstall --yes
 docker exec cfx-b sh -c 'test ! -f /etc/systemd/system/conflux.service' \
   || { echo "the unit survived uninstall" >&2; exit 1; }
+docker exec cfx-b sh -c 'test ! -L /etc/systemd/system/multi-user.target.wants/conflux.service' \
+  || { echo "the unit's wants link survived uninstall" >&2; exit 1; }
 for dir in /etc/conflux /var/lib/conflux /run/conflux; do
   docker exec cfx-b test ! -e "$dir" || { echo "$dir survived uninstall" >&2; exit 1; }
 done

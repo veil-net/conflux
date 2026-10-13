@@ -43,11 +43,24 @@ docker exec "$NAME" conflux install
 [ "$(docker exec "$NAME" systemctl is-active conflux.service)" = inactive ] \
   || { echo "install started the service; it must only register" >&2; exit 1; }
 
+# The unit runs the copy in the state directory, which only root can change, and never
+# the file conflux was run from -- here /usr/local/bin, elsewhere a download anybody
+# might be able to swap.
+say "the unit runs the root-only copy of conflux"
+docker exec "$NAME" systemctl show -p ExecStart --value conflux.service | grep 'path=/var/lib/conflux/conflux ' >/dev/null \
+  || { echo "the unit does not run /var/lib/conflux/conflux:" >&2
+       docker exec "$NAME" systemctl show -p ExecStart --value conflux.service >&2; exit 1; }
+[ "$(docker exec "$NAME" stat -c '%a %U' /var/lib/conflux/conflux)" = "700 root" ] \
+  || { echo "the service's copy is not root's alone:" >&2
+       docker exec "$NAME" stat -c '%a %U' /var/lib/conflux/conflux >&2; exit 1; }
+
 # install made all three directories, so all three have to go.
 say "uninstall leaves nothing"
 docker exec "$NAME" conflux uninstall --yes
 docker exec "$NAME" sh -c 'test ! -f /etc/systemd/system/conflux.service' \
   || { echo "the unit file survived uninstall" >&2; exit 1; }
+docker exec "$NAME" sh -c 'test ! -L /etc/systemd/system/multi-user.target.wants/conflux.service' \
+  || { echo "the unit's wants link survived uninstall" >&2; exit 1; }
 for dir in /etc/conflux /var/lib/conflux /run/conflux; do
   docker exec "$NAME" test ! -e "$dir" || { echo "$dir survived uninstall" >&2; exit 1; }
 done

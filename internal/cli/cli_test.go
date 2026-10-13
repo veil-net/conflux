@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/veil-net/conflux/anchor"
+	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/enrol"
 	"github.com/veil-net/conflux/internal/libexec"
@@ -45,9 +46,7 @@ func capture(t *testing.T, argv ...string) (stdout, stderr string, code int) {
 // conflux would answer it and the user would never learn that anchorctl had one.
 // This fails CI on that day instead.
 func TestNoUnintendedShadowing(t *testing.T) {
-	if !anchor.Supported {
-		t.Skip("no anchor pair for this platform")
-	}
+	anchortest.Require(t)
 
 	t.Setenv("CONFLUX_DIR", t.TempDir())
 
@@ -601,9 +600,7 @@ func TestLANDiscoveryTristate(t *testing.T) {
 // collide should fail here with the name in the message rather than as an
 // off-by-one.
 func TestTheCollisionsAreTheDocumentedOnes(t *testing.T) {
-	if !anchor.Supported {
-		t.Skip("no anchor pair for this platform")
-	}
+	anchortest.Require(t)
 
 	t.Setenv("CONFLUX_DIR", t.TempDir())
 
@@ -694,9 +691,7 @@ func TestTheInterfaceIsNamedOnlyWhereItIsHonoured(t *testing.T) {
 // embedded one through conflux unchanged, with conflux's socket and token. None of it may
 // be shadowed by a conflux verb or refused as a lifecycle command.
 func TestRealmControlPassesThrough(t *testing.T) {
-	if !anchor.Supported {
-		t.Skip("no anchor pair for this platform")
-	}
+	anchortest.Require(t)
 
 	t.Setenv("CONFLUX_DIR", t.TempDir())
 

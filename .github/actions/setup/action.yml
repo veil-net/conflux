@@ -3,7 +3,7 @@ description: Go, from go.mod, with the module and build caches.
 runs:
   using: composite
   steps:
-    - uses: actions/setup-go@v7
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
       with:
         # From go.mod rather than pinned here, so the toolchain is stated once.
         go-version-file: go.mod

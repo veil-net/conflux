@@ -44,7 +44,7 @@ jobs:
     steps:
       # Not persisted: the token that can write a release has no business staying in
       # .git/config on a machine that outlives the job.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
@@ -78,7 +78,7 @@ jobs:
       # every one of them. The Makefile reads the VERSION file itself.
       - run: make dist
 
-      - uses: actions/attest-build-provenance@v4
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: dist/conflux-*
 
@@ -99,7 +99,7 @@ jobs:
             grep -E '^\s*(Version|ZipSHA256)\s*=' internal/wintun/pinned.go | sed 's/^\s*/  /'
           } > notes.md
 
-      - uses: softprops/action-gh-release@v3
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}

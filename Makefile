@@ -9,9 +9,10 @@ DIST    ?= dist
 # VERSION is the file, not the tag. A tag is a claim about a commit; the file is a
 # claim about the tree, and it is the tree that gets built. release.yml tags the release
 # with this same file, so the number in the binary and the number on the release cannot
-# disagree. ?= still leaves it free to be overridden by hand.
-VERSION ?= $(shell cat $(CURDIR)/VERSION 2>/dev/null || echo dev)
-COMMIT  ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
+# disagree. := and not ?=, so a VERSION or COMMIT that happens to be exported cannot
+# stamp the binary differently from the tag; `make VERSION=x` still sets it by hand.
+VERSION := $(shell cat $(CURDIR)/VERSION 2>/dev/null || echo dev)
+COMMIT  := $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 
 LDFLAGS := -s -w \
 	-X github.com/veil-net/conflux/internal/version.Version=$(VERSION) \
@@ -58,6 +59,10 @@ ANCHOR_TAG ?=
 # The tag `make image` builds and the two suites run. Overridable so a second checkout
 # on one machine does not race the first for the name.
 IMAGE ?= conflux-systemd-test
+
+# How the image is built. CI points it at a BuildKit builder with the Actions cache, so
+# the systemd layers are not installed again on every run; make is still the one entry.
+DOCKER_BUILD ?= docker build -q
 
 .PHONY: all anchor-bins build test race vet fmt fmtcheck lint vulncheck tidycheck docscheck golden cross dist image service-test integration clean help
 
@@ -121,13 +126,9 @@ vulncheck:
 	@command -v govulncheck >/dev/null 2>&1 || { echo "govulncheck not installed; skipping"; exit 0; }
 	govulncheck ./...
 
+# -diff changes nothing, so a failure leaves no copies behind to clean up.
 tidycheck:
-	@cp go.mod go.mod.bak && cp go.sum go.sum.bak
-	@$(GO) mod tidy
-	@if ! diff -q go.mod go.mod.bak >/dev/null || ! diff -q go.sum go.sum.bak >/dev/null; then \
-		mv go.mod.bak go.mod; mv go.sum.bak go.sum; \
-		echo "go.mod or go.sum is not tidy; run: go mod tidy"; exit 1; fi
-	@rm -f go.mod.bak go.sum.bak
+	@$(GO) mod tidy -diff || { echo "go.mod or go.sum is not tidy; run: go mod tidy"; exit 1; }
 
 # docscheck holds README.md and docs/ to each other: every page linked from the
 # README, every page the README links to present, and every link between pages
@@ -227,7 +228,7 @@ dist:
 # same targets a developer does.
 image: dist
 	@cp $(DIST)/conflux-linux-amd64 test/systemd/conflux
-	@docker build -q -t $(IMAGE) test/systemd >/dev/null
+	@$(DOCKER_BUILD) -t $(IMAGE) test/systemd >/dev/null
 	@echo "  built $(IMAGE) from $(DIST)/conflux-linux-amd64"
 
 # The boot service on its own: install registers without starting, uninstall leaves
@@ -248,9 +249,10 @@ help:
 	@echo "                   ANCHOR_SRC=/path/to/anchor, default ../anchor"
 	@echo "                   FETCH=1 to fetch the pinned binaries from anchor's release"
 	@echo "                   (needs ANCHOR_RELEASE_TOKEN; anchor is private)"
-	@echo "  make build       build for this machine"
+	@echo "  make build       build for this machine, stamped, into $(BIN)/"
 	@echo "  make test        run the tests"
 	@echo "  make race        run them under the race detector"
+	@echo "  make vet         go vet for this machine"
 	@echo "  make cross       vet all 7 targets, test files included (works with placeholders)"
 	@echo "  make dist        build all 7 into $(DIST)/ with SHA256SUMS and the size gate"
 	@echo "                   (needs real binaries: make anchor-bins first)"
@@ -258,5 +260,11 @@ help:
 	@echo "  make image       build the systemd test image from $(DIST)/conflux-linux-amd64"
 	@echo "  make service-test  install and uninstall in a container that boots systemd"
 	@echo "  make integration   three nodes, one taint, over the real API (needs Docker)"
+	@echo "  the checks run before a push, which CI does not run:"
+	@echo "  make fmtcheck    gofmt, checking (make fmt rewrites)"
+	@echo "  make lint        staticcheck, once per target OS"
+	@echo "  make tidycheck   go.mod and go.sum are tidy"
+	@echo "  make vulncheck   govulncheck"
 	@echo "  make docscheck   README.md and docs/ link to each other and to what exists"
 	@echo "  make all         every check that needs neither Docker nor the network"
+	@echo "  make clean       remove $(BIN)/, $(DIST)/ and the image's copy of conflux"

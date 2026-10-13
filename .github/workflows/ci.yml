@@ -9,7 +9,8 @@ name: ci
 # branch to be up to date before merging.
 #
 # CI verifies that the code builds and runs. The utility checks -- gofmt, staticcheck,
-# go mod tidy, govulncheck, the docs links -- are `make all` on a developer's machine.
+# go mod tidy, govulncheck, the docs links, actionlint, shellcheck -- run on the machine
+# that pushes, before it does, and never here.
 on:
   pull_request:
   workflow_dispatch:
@@ -38,7 +39,11 @@ jobs:
     runs-on: [self-hosted, linux]
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
+      # Nothing here pushes or fetches again, so the token is not left in .git/config --
+      # on veilnet-dev, a machine that outlives the job.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup
 
       - uses: ./.github/actions/anchor-bins
@@ -66,6 +71,15 @@ jobs:
       - name: every target vets, test files included
         run: make cross
 
+      # The digests make build stamps are the pair's own: a stamp describing other bytes
+      # would name the extraction directory for a pair this conflux does not carry. The
+      # first line, the version and commit, is stamped only by make.
+      - name: the stamped digests are the pair's own
+        run: |
+          set -euo pipefail
+          make build >/dev/null
+          diff <(bin/conflux version | sed 1d) <(go run . version | sed 1d)
+
   # The container suites, on a hosted runner: the boot service under a real systemd, and
   # three nodes against the live API and the production realm. The third reaches the
   # realm through its manifest's bootstrap node over UDP, and from veilnet-dev no
@@ -77,7 +91,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      # Nothing here pushes or fetches again, so the token has no reason to stay in
+      # .git/config, where every later step could read it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup
 
       # Every pair, not only linux-amd64: `dist` builds every target, with the size gate.
@@ -89,17 +107,40 @@ jobs:
       - name: what this runner gives the container suites
         run: ./test/preflight.sh
 
+      # The image's systemd layers from the Actions cache rather than apt on every run.
+      # The default docker driver cannot export a cache, so a BuildKit builder of its own,
+      # and the runtime token it needs -- which GitHub gives actions and not run steps --
+      # handed on by a first-party one, to this job's last step only.
+      - name: a BuildKit builder that can use the Actions cache
+        run: docker buildx create --name cfx --driver docker-container --bootstrap
+
+      - name: the Actions cache, for that builder
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            for (const [k, v] of Object.entries(process.env)) {
+              if (k.startsWith('ACTIONS_')) core.exportVariable(k, v)
+            }
+
       # One invocation, so `dist` and the image are built once for both suites, which
       # then run side by side: they boot containers of different names, and only one of
       # them enrols. -O keeps each suite's output together, in one block per suite.
       - name: the boot service, and three nodes against the live API
+        env:
+          DOCKER_BUILD: >-
+            docker buildx build --builder cfx --load -q
+            --cache-from type=gha,scope=conflux-systemd
+            --cache-to type=gha,mode=max,scope=conflux-systemd,ignore-error=true
         run: make -j2 -O service-test integration
 
   # macOS and Windows, on the operating systems that have the path handling, the file
-  # modes, the DACLs and the service code. Each fetches only its own pair, so the tests
-  # that need real binaries -- extraction, the flag cross-check, the shadowing check --
-  # run here too rather than skipping. Hosted runners are thrown away, but the fetch
-  # needs the anchor credential, which a fork's pull request is not given.
+  # modes, the DACLs and the service code, and Linux on arm64. Each fetches only its own
+  # pair, so the tests that need real binaries -- extraction, the flag cross-check, the
+  # shadowing check -- run here too rather than skipping. Hosted runners are thrown away,
+  # but the fetch needs the anchor credential, which a fork's pull request is not given.
+  #
+  # As a release builds: CGO off and paths trimmed, so the suite tests the kind of binary
+  # that ships, and the make build after it reuses what the suite compiled.
   platforms:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     strategy:
@@ -110,10 +151,19 @@ jobs:
             pair: darwin-arm64
           - os: windows-latest
             pair: windows-amd64
+          - os: ubuntu-24.04-arm
+            pair: linux-arm64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    env:
+      CGO_ENABLED: "0"
+      GOFLAGS: -trimpath
     steps:
-      - uses: actions/checkout@v7
+      # Nothing here pushes or fetches again, so the token has no reason to stay in
+      # .git/config, where every later step could read it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup
 
       - uses: ./.github/actions/anchor-bins
@@ -153,3 +203,18 @@ jobs:
             exit 1
           fi
           grep -c '^--- PASS' test.log | xargs echo "tests passed:"
+
+      # launchd and the SCM for real, which the suite only compiles: install registers and
+      # starts nothing, status and down answer, uninstall leaves nothing behind. Nothing is
+      # enrolled or started. As root on macOS; a Windows runner is an Administrator.
+      - name: the boot service, against the real service manager
+        if: runner.os != 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          make build >/dev/null
+          if [ "$RUNNER_OS" = macOS ]; then
+            sudo ./test/service-host.sh bin/conflux
+          else
+            ./test/service-host.sh bin/conflux.exe
+          fi

@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veil-net/conflux/anchor"
 	"github.com/veil-net/conflux/internal/anchorctl"
+	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
@@ -217,9 +217,7 @@ func BenchmarkRenewal(b *testing.B) {
 // BenchmarkDaemonLifecycle is one supervised anchord lifetime without an anchor in it:
 // spawn, the readiness probe, and the shutdown that closes and reaps it.
 func BenchmarkDaemonLifecycle(b *testing.B) {
-	if !anchor.Supported {
-		b.Skip("no anchor pair for this platform")
-	}
+	anchortest.Require(b)
 
 	b.Setenv("CONFLUX_DIR", b.TempDir())
 

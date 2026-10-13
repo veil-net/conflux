@@ -8,8 +8,9 @@ $ make golden      # rewrite the argv fixtures after an intended change
 ```
 
 Most of the suite runs without the real anchor binaries — the tests that need them
-skip, and say so. The ones that do need them are the extraction tests, the flag
-cross-check, and everything under `test/`.
+skip, each saying `no anchor pair` (`internal/anchortest`). The ones that need them are
+the pair's own header check, the extraction tests, the flag cross-check, the shadowing
+and collision checks, the supervised-lifetime benchmark, and everything under `test/`.
 
 ## The split
 
@@ -25,10 +26,11 @@ a daemon or a network. Most of conflux can be.
 | `internal/taint` | generated names — 26 symbols, a little over 128 bits — satisfy anchor's rule, avoid ambiguous glyphs, are grouped for reading, and do not repeat |
 | `internal/daemon` | the renewal arithmetic: two thirds of the *observed* window, expiry, absent timestamps, and the clamp; a renewal against a stand-in issuer, restating the manifest's taints whatever `conflux.json` says, spliced into the manifest with the issuer's bootstrap list and mirrored into the state, and a failed one recorded; an enrolment asking for the configured taints, never for none, and kept before it is read even when it grants others; a machine whose credential grants other taints, or an alpha one granting none, refused for good with no call, and an issued one granting none started; a bad clock measured again rather than trusted; anchord's last words kept when it dies, in order; shutdown returning once anchord has gone, and closing a running one with its signal alone; the anchord a dead supervisor left recorded, stopped by the next one only when it runs the recorded executable or, with none reported, holds the socket's lock, a record of one that has gone cleared, and a second supervisor for one root refused; on Windows, anchord ended with its job; a conflux.json read one way by every reader -- none is nothing to start, unparsable is permanent, unreadable is retried; an uplink reopen counted in the bring-up's own state write; the link watcher's device parsing, its grace against anchor's own dial timeout, and its giving up after three rebuilds refused for good; and which failures stop the supervisor rather than being retried |
 | `internal/anchorctl` | the argv goldens, that every flag they use exists, and the output parsers against anchor's current `start`, `status` and `metrics` shapes |
-| `internal/libexec` | extraction, idempotence, eight concurrent callers, and repair of a truncated set |
-| `internal/cli` | the collision rules — `start`, `renew` and `proxy` by shape, `status` by arity — and that nothing shadows anchorctl unintentionally, the realm-control commands included; the IPv4 asked once; `--taint` as the enrolment's request before a credential is held, and checked against it after; `enrol` taking the credential's taints, refusing an alpha one granting none, and refusing before it writes; a subnet list set from the terminal replacing a member's order |
-| `internal/service` | the systemd unit, its `ExecStart=` quoted against splitting and expansion; the rc scripts the BSDs get, rendered and parsed by `sh`, quoting included; the service's scope |
-| `internal/paths` (Windows) | the root made Administrators', and files restricted to them trusted |
+| `internal/libexec` | extraction, idempotence, eight concurrent callers, repair of a truncated set, and a sweep that leaves alone any set that may be in use |
+| `internal/cli` | a pass-through with nothing running makes nothing — no directory, no extraction; `help` a command only first and a flag only as a flag; `renew` with no credential unavailable; a refusal for privilege repeating the command, with the privilege check stubbed so a root runner tests it too; an oversized manifest refused; on Windows, only the supervisor's transient exit asking the SCM for a restart, and `Stopped` reported once; the collision rules — `start`, `renew` and `proxy` by shape, `status` by arity — and that nothing shadows anchorctl unintentionally, the realm-control commands included; the IPv4 asked once; `--taint` as the enrolment's request before a credential is held, and checked against it after; `enrol` taking the credential's taints, refusing an alpha one granting none, and refusing before it writes; a subnet list set from the terminal replacing a member's order |
+| `internal/service` | the systemd unit, its `ExecStart=` quoted against splitting and expansion; the launchd plist carrying any path; the rc scripts the BSDs get, rendered and parsed by `sh`, and a root they could not match refused; the copy the service runs; the service's scope, the same for every spelling of a root |
+| `internal/paths` | the root absolute and clean, and a log directory only where the platform has one; on Unix, a root another account owns refused before anything is changed, a symlinked one followed only to its owner's directory, our own narrowed to `0700`, and the shared `/var/log` left alone; on Windows, the root made Administrators', and files restricted to them trusted |
+| `internal/flock` | a held lock reported as held, not waited for |
 
 ## The three tests worth knowing about
 
@@ -38,7 +40,8 @@ header and checks the machine field against `GOARCH`. It exists because a wrong 
 one — builds and links perfectly and fails at exec on somebody else's machine.
 
 It skips when `anchor/bin` holds the placeholders `make anchor-bins` writes with no
-anchor checkout available. `anchor.Supported` is a size check for the same reason, so
+anchor checkout available, with the same words as the rest; it keeps a copy of them
+because `anchortest` imports `anchor`. `anchor.Supported` is a size check for the same reason, so
 a placeholder build reports that it carries no anchor binaries rather than pretending.
 
 A skip is green, so the job that fetches the real binaries asserts that none of the
@@ -116,9 +119,17 @@ it back — a new process, the readiness marker rewritten, the same identity, an
 peer reachable again at its IPv6 address — without a reboot or anything typed.
 
 All of that is `make integration`. `make service-test` is the unit on its own and enrols
-nothing: `install` registers it without starting anything, and `uninstall` leaves no
-unit file and none of `/etc/conflux`, `/var/lib/conflux` or `/run/conflux`. Both build the
-image first, and CI runs the same command a developer does.
+nothing: `install` registers it without starting anything, the unit runs the root-only
+copy in `/var/lib/conflux` rather than the file conflux was run from, and `uninstall`
+leaves no unit file, no `wants` link and none of `/etc/conflux`, `/var/lib/conflux` or
+`/run/conflux`. Both build the image first, and CI runs the same command a developer does.
+
+`test/service-host.sh` is the same lifecycle against launchd and the SCM, on the machine
+itself, which is why only a CI runner that is thrown away afterwards runs it: `install`
+registers and starts nothing — on Windows with the three restarts and recovery that
+covers a service stopping with an error — `status` exits 78 and says the service is
+installed and not running, `down` succeeds on it, and `uninstall` leaves no plist, no
+entry in launchd's disabled database, no SCM service and no directory.
 
 ### Local network discovery, the bootstrap list, and `conflux enrol`
 
@@ -157,21 +168,22 @@ never who is let in. Loopback is not probed, so two anchors on one machine still
 ## What CI runs, and on what
 
 CI verifies that the code builds and runs. The utility checks — `gofmt`, `staticcheck`,
-`go mod tidy`, `govulncheck`, the docs links — are `make all` on a developer's machine
-and not CI's.
+`go mod tidy`, the docs links, which `make all` runs, and `govulncheck`, `actionlint` and
+`shellcheck`, which it does not since they need the network or tools of their own — run
+on a developer's machine before a push, and not in CI.
 
 Every job fetches the **pinned** release build from the `shelf` release of
 `veil-net/anchor` and verifies every digest, with no anchor checkout. It needs a
-credential, since anchor is private: CI stores a GitHub App's ID and private key and
+credential, since anchor is private: CI stores a GitHub App's Client ID and private key and
 mints an hour-long token per job, so the secret held here is not itself a key to
 anything — see [build.md](build.md) for why the grant is wider than it wants to be and
 why it is nonetheless contained.
 
 | job | machine | what it runs |
 |---|---|---|
-| `linux` | veilnet-dev | the whole suite under `-race` with the real binaries and nothing skipped; `make cross` |
+| `linux` | veilnet-dev | the whole suite under `-race` with the real binaries and nothing skipped; `make cross`; the digests `make build` stamps are the pair's own |
 | `integration` | GitHub Ubuntu | `test/preflight.sh`, then `make -j2 -O service-test integration` — `dist` with the size gate for every target and the image, once, then the boot service and three nodes against the live API side by side |
-| `platforms` | GitHub macOS and Windows | the suite with that platform's own pair, the tests that need it included; on Windows, that the pinned wintun digest is the published one |
+| `platforms` | GitHub macOS, Windows and Linux arm64 | the suite with that platform's own pair, built as a release is (`CGO_ENABLED=0`, `-trimpath`), the tests that need the pair included; on macOS and Windows, `test/service-host.sh` against the real service manager; on Windows, that the pinned wintun digest is the published one |
 
 `linux` is one job because veilnet-dev is one machine with one runner process: separate
 jobs would queue anyway, each paying a checkout and a fetch. Its fetch goes through the
@@ -179,12 +191,16 @@ runner's tool cache, which survives between runs, so an unchanged shelf costs a 
 the files the fetcher already holds rather than three hundred megabytes. For the same
 reason the Go build and module caches are not restored or saved there: the machine keeps
 its own on disk, and round-tripping them through the Actions cache cost ten minutes a
-run where the suite itself takes seconds. The hosted jobs start empty and do use it. The container
+run where the suite itself takes seconds. The hosted jobs start empty and do use it, and `integration` also builds the image
+through a BuildKit builder with the Actions cache, so the systemd layers are not
+installed again every run. The container
 suites run on a hosted runner instead, because the third integration node reaches the
 realm through its manifest's bootstrap node over UDP, and from veilnet-dev no handshake
-gets through to it. Every job that runs on veilnet-dev refuses a fork's pull request —
-a machine that survives the job does not run a stranger's code — and the hosted jobs
-need the anchor credential a fork is not given, so a fork's pull request runs nothing.
+gets through to it. Every job refuses a fork's pull request — a machine that survives the job does not run
+a stranger's code, and the hosted jobs need the anchor credential a fork is not given —
+so a fork's pull request runs nothing. No checkout leaves its token in `.git/config`,
+and every action outside this repository is pinned to its release's commit, with the
+tag beside it in a comment.
 
 **The release** runs on a merge to `version3`, and it only releases: it does not re-run
 any of the above. A merge lands only when CI is green, which rests on branch protection
@@ -205,10 +221,12 @@ nothing else, and a join there proves the pin as well as conflux.
 names before themselves as well as after, because a cancelled run fires no `EXIT` trap,
 and on a developer's machine the leftover name fails the *next* run for a reason that
 has nothing to do with the commit under test. `test/preflight.sh` says what
-the machine gives them — Docker, `/dev/net/tun`, cgroup v2, IPv6 — before anything is
-built, because each of those otherwise fails much later and names something else. The
-runner may be root, so `TestWriteFileAtomicPreservesOnFailure` probes whether making a
-directory read-only took rather than assuming it did.
+the machine gives them — Docker, `/dev/net/tun`, the cgroup mount (v2, or v1, which
+works), IPv6 — before anything is built, because each of those otherwise fails much
+later and names something else. The runner may be root, so
+`TestWriteFileAtomicPreservesOnFailure` probes whether making a directory read-only took
+rather than assuming it did, and the privilege refusal's test stubs the check rather
+than skipping.
 
 ## The genesis node
 
@@ -306,16 +324,18 @@ The shape of the exchange is written down once, in
   the same position anchor is in.
 - **macOS TUN under a LaunchDaemon.** CI can build and test on macOS, but not open a
   utun from a system daemon.
-- **The Windows service's recovery actions.**
+- **The Windows service's recovery in action.** `test/service-host.sh` checks the
+  actions and the flag are registered; nothing makes a supervisor fail under the SCM
+  to watch it come back.
 - **A real uplink.** What is covered here is the spec parser, the argv, the refusals
   — the `fd:N` form conflux's supervisor cannot hand over, and Windows, where anchor
   has no way to open a link — and the link watcher's decision function against
   synthetic inputs. Nothing in this tree opens a device or a pseudo-terminal: the link
   itself is anchor's to test, and it does, over a real pty. Two machines on a cable
   have no runner, so the watcher's *reopen* path is reasoned about rather than run.
-- **A Windows TUN, and the Windows service.** The `platforms` job runs the suite on
-  Windows, extraction and ownership included, but no job opens a wintun interface or
-  runs conflux under the SCM.
+- **A Windows TUN, and a service that runs.** The `platforms` job runs the suite on
+  Windows, extraction and ownership included, and registers the service with the SCM
+  and launchd, but no job opens a wintun interface or starts a supervisor under either.
 
 A local fake for the enrolment API is used for the client's error paths, but it cannot
 stand in for a full end-to-end test: the shipped `anchord` is pinned to the production

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/veil-net/conflux/anchor"
+	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/paths"
 )
 
@@ -27,9 +28,7 @@ func dirs(t *testing.T) paths.Dirs {
 }
 
 func TestEnsureExtractsAndRuns(t *testing.T) {
-	if !anchor.Supported {
-		t.Skip("no anchor pair for this platform")
-	}
+	anchortest.Require(t)
 
 	d := dirs(t)
 
@@ -72,9 +71,7 @@ func TestEnsureExtractsAndRuns(t *testing.T) {
 // invocation calls Ensure, including a bare pass-through, so a second call that
 // rewrote the pair would make the CLI feel broken.
 func TestEnsureIsIdempotent(t *testing.T) {
-	if !anchor.Supported {
-		t.Skip("no anchor pair for this platform")
-	}
+	anchortest.Require(t)
 
 	d := dirs(t)
 
@@ -111,9 +108,7 @@ func TestEnsureIsIdempotent(t *testing.T) {
 // starting conflux at once. All of them must agree on one directory, and none must
 // see a half-written binary.
 func TestEnsureIsConcurrencySafe(t *testing.T) {
-	if !anchor.Supported {
-		t.Skip("no anchor pair for this platform")
-	}
+	anchortest.Require(t)
 
 	d := dirs(t)
 
@@ -176,9 +171,7 @@ func TestEnsureIsConcurrencySafe(t *testing.T) {
 // mid-write can leave a short binary, and re-running must fix it rather than trust
 // the marker and hand back a corpse.
 func TestEnsureRepairsATruncatedExtraction(t *testing.T) {
-	if !anchor.Supported {
-		t.Skip("no anchor pair for this platform")
-	}
+	anchortest.Require(t)
 
 	d := dirs(t)
 

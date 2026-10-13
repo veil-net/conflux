@@ -17,6 +17,16 @@ LDFLAGS := -s -w \
 	-X github.com/veil-net/conflux/internal/version.Version=$(VERSION) \
 	-X github.com/veil-net/conflux/internal/version.Commit=$(COMMIT)
 
+# STAMP defines `stamp os-arch[.exe]`, which prints the -X flags that hand a build the
+# SHA-256s of the two files that target's //go:embed names, so a released conflux
+# never reads forty-odd megabytes to learn which pair it carries (anchor/anchor.go,
+# Digests). Hashed in the recipe that links them, from the same paths, so a stamp
+# cannot describe other bytes than the ones embedded; a plain `go build` stamps nothing
+# and computes them instead. sha256sum, or shasum on macOS.
+STAMP = sum() { { sha256sum "$$1" 2>/dev/null || shasum -a 256 "$$1"; } | cut -d' ' -f1; }; \
+	stamp() { echo "-X github.com/veil-net/conflux/anchor.anchordSHA256=$$(sum anchor/bin/anchord-$$1)" \
+		"-X github.com/veil-net/conflux/anchor.anchorctlSHA256=$$(sum anchor/bin/anchorctl-$$1)"; }
+
 # The seven platforms anchor/bin carries binaries for. A target absent from here is
 # a target conflux cannot embed an anchor pair for. darwin/amd64 is absent
 # deliberately: no runner executes Intel macOS, so shipping it would ship a target
@@ -74,10 +84,14 @@ anchor-bins:
 # `make build` inherits the host default, which on any machine with a C toolchain is cgo
 # -- a dynamically linked conflux with a libc dependency the release artifact does not
 # have, that the release pipeline never tests.
+#
+# For this machine's GOOS and GOARCH, or whatever they are set to, and named with its
+# executable suffix: bin/conflux.exe on Windows.
 build:
 	@mkdir -p $(BIN)
-	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN)/conflux .
-	@ls -l $(BIN)/conflux | awk '{printf "  %.1f MB  $(BIN)/conflux\n", $$5/1048576}'
+	@$(STAMP); set -- $$($(GO) env GOOS GOARCH GOEXE); \
+	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS) $$(stamp $$1-$$2$$3)" -o $(BIN)/conflux$$3 . && \
+	ls -l $(BIN)/conflux$$3 | awk '{printf "  %.1f MB  %s\n", $$5/1048576, $$NF}'
 
 test:
 	$(GO) test ./...
@@ -176,11 +190,11 @@ dist:
 	@# they take seven times as long for nothing. Each build's output waits in a log and the
 	@# gate reads them in TARGETS order, so a failure reads as it would have alone.
 	@rm -rf $(DIST)/.build && mkdir -p $(DIST)/.build
-	@trap 'rm -rf $(DIST)/.build' EXIT; \
+	@$(STAMP); trap 'rm -rf $(DIST)/.build' EXIT; \
 	for t in $(TARGETS); do \
 		os=$${t%/*}; arch=$${t#*/}; ext=""; \
 		[ "$$os" = windows ] && ext=.exe; \
-		( CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath -ldflags "$(LDFLAGS)" \
+		( CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath -ldflags "$(LDFLAGS) $$(stamp $$os-$$arch$$ext)" \
 			-o $(DIST)/conflux-$$os-$$arch$$ext . > $(DIST)/.build/$$os-$$arch 2>&1; \
 		  echo $$? > $(DIST)/.build/$$os-$$arch.rc ) & \
 	done; wait; \

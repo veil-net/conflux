@@ -242,7 +242,7 @@ A file whose build tag is false is never compiled, so its `//go:embed` never run
 linux/amd64 conflux carries the ~45 MB pair it needs and not the ~300 MB in `bin/`.
 
 **Never `//go:embed bin`, and never a glob.** That would pull in all fourteen and
-produce a 300 MB binary per platform. `make dist` gates every artifact between 30 and
+produce a 300 MB binary per platform. `make dist` gates every artifact between 45 and
 75 MB precisely so that mistake fails the build rather than reaching a release.
 
 There is also an eighth file with the negation of all seven tags, so that
@@ -296,6 +296,12 @@ $ make build VERSION=v0.2.0
 `VERSION` defaults to the contents of the `VERSION` file, and `COMMIT` to `git rev-parse`.
 A tree with no `VERSION` file says `dev`, which is the honest answer rather than a number
 nobody released.
+
+`make build` and `make dist` also stamp the SHA-256s of the two anchor binaries each
+target embeds, hashed in the same recipe that links them. `conflux version` prints them and
+the extraction directory is named for them, so a stamped conflux never reads its own pair
+to know which one it carries. A plain `go build` stamps nothing and computes the same values
+on first use, at the cost of reading the pair once per process.
 
 The file rather than a tag, deliberately: a tag is a claim about a commit, and the file is
 a claim about the tree — and it is the tree that gets built. It names the release; it does

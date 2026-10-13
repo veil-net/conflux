@@ -216,9 +216,10 @@ headers, which are credentials.
 ## `bin/<setID>/` — the extracted anchor pair
 
 `anchord` and `anchorctl`, extracted from the conflux binary, in a directory named for
-their contents: a CRC-32C and the length of each, which tells one build's pair from
-another's without spending a quarter of a second on SHA-256 at every invocation.
-`conflux version` prints the SHA-256s.
+their contents: a hash of the two SHA-256s `conflux version` prints, and the platform.
+`make build` and `make dist` stamp those digests into the binary from the very files it
+embeds, so a released conflux knows its set without reading forty-odd megabytes at every
+invocation; a plain `go build` stamps nothing and computes them once per process instead.
 
 Content-addressed rather than a fixed path, and that one decision removes four
 problems at once. An upgraded conflux writes a *new* directory instead of over the file

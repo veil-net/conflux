@@ -3,7 +3,9 @@
 package anchor
 
 // This build carries no anchor pair. It exists so that `go build ./...` and
-// `go vet ./...` succeed for a GOOS/GOARCH we do not ship, rather than failing
-// at the //go:embed of a file that was never built for it.
+// `go vet ./...` succeed for an architecture we do not ship on an operating system we
+// do -- darwin/amd64, say -- rather than failing at the //go:embed of a file that was
+// never built for it. An operating system conflux does not support at all does not
+// build: the platform packages have nothing for it.
 
 var anchord, anchorctl []byte

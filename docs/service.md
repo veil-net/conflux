@@ -249,7 +249,8 @@ Logs: `/var/log/conflux.log`, which `uninstall` removes with the plist.
 
 Service name `conflux`, display name `VeilNet Conflux`, running as `LocalSystem`,
 automatic at boot, depending on `Tcpip`, `Dnscache` and `NSI`. Recovery actions restart
-it after 5, 10 and 30 seconds.
+it after 5, 10 and 30 seconds, the last repeating, and apply to a service that stops with
+an error as well as to one that dies.
 
 The service name has no space in it deliberately: a name with one makes every `sc.exe`
 invocation quoting-sensitive for no benefit.
@@ -264,11 +265,19 @@ daemon that is holding nothing rather than waiting out a grace for a signal nobo
 sent. The graceful alternatives — a named event `anchord` waits on, or a
 daemon-shutdown RPC — are `anchord`'s to offer and it offers neither.
 
-A supervisor that stops itself — exit 78 or 70 — reports the service stopped, which the
-SCM does not count as a failure, so the recovery actions do not restart it into the
-same answer, and writes why to the log. The service accepts Stop from the moment it
+A supervisor that stops on what the next start may not meet — exit 1 — reports a
+service-specific error, which the recovery actions restart. One that stops on nothing to
+start, or on a configuration no restart changes — 78 or 70 — reports a clean stop, so they
+do not restart it into the same answer, and writes why to the log. The SCM is told once,
+with that exit, when the handler returns. The service accepts Stop from the moment it
 starts, so `conflux down`, a restart and `uninstall` need not wait out a bring-up that is
 slow or keeps failing.
+
+`conflux down`, a restart and `uninstall` return once the service's process has exited, not
+when the SCM first reports it stopped — which it does from inside the process, while
+`conflux.exe`, `anchord.exe` and the log are still open. `down` on a service that is already
+stopped succeeds. Reading the service's state, as `conflux status` does, needs no more
+access than any account has.
 
 `install` on an existing service re-registers it with the same type it was created with;
 `up` and `proxy` do that on every run.

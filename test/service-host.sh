@@ -74,7 +74,8 @@ else
   if sc.exe query conflux >/dev/null 2>&1; then
     fail "the service survived uninstall"
   fi
-  root="$(cygpath -u "$PROGRAMDATA")/conflux"
+  # Git Bash imports Windows's variables upper-cased; the fallback is Windows's default.
+  root="$(cygpath -u "${PROGRAMDATA:-C:\\ProgramData}")/conflux"
   [ ! -e "$root" ] || fail "$root survived uninstall"
 fi
 

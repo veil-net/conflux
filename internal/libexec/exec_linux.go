@@ -5,12 +5,10 @@ package libexec
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"golang.org/x/sys/unix"
 )
-
-// clearQuarantine is a macOS concern; Linux has no such attribute.
-func clearQuarantine(string) {}
 
 // cannotExecute names the two things that stop a 0700 file owned by the caller from
 // running, because the kernel's message for both is "permission denied" and neither
@@ -24,9 +22,13 @@ func cannotExecute(dir string) string {
 			"  set CONFLUX_DIR to a directory on a filesystem that allows execution."
 	}
 
+	// The rule is for the bin directory every set is extracted beneath, not this set alone,
+	// so the next upgrade's set is not refused again.
 	if b, err := os.ReadFile("/sys/fs/selinux/enforce"); err == nil && len(b) > 0 && b[0] == '1' {
+		bin := filepath.Dir(dir)
+
 		return msg + "\n  SELinux is enforcing, and a binary under this path is probably labelled var_lib_t.\n" +
-			"  try:  sudo semanage fcontext -a -t bin_t '" + dir + "(/.*)?' && sudo restorecon -R " + dir + "\n" +
+			"  try:  sudo semanage fcontext -a -t bin_t '" + bin + "(/.*)?' && sudo restorecon -R " + bin + "\n" +
 			"  or set CONFLUX_DIR to a directory execution is permitted from."
 	}
 

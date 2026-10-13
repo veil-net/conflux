@@ -25,17 +25,21 @@ func serveAsService(sup *daemon.Supervisor) (bool, int) {
 		return false, 0
 	}
 
-	if err := sup.Dirs.EnsureAll(); err != nil {
-		return true, ExitError
+	// Without the directories there is no log to write to, and the SCM still has to be
+	// answered: returning without svc.Run leaves it to time the start out with nothing
+	// recorded anywhere. So the failure goes to the SCM as the service's exit instead, which
+	// the System event log records and the recovery actions retry.
+	setup := sup.Dirs.EnsureAll()
+
+	if setup == nil {
+		if f, err := os.OpenFile(sup.Dirs.LogFile(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
+			defer f.Close()
+
+			ui.Out, ui.Errw = f, f
+		}
 	}
 
-	if f, err := os.OpenFile(sup.Dirs.LogFile(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
-		defer f.Close()
-
-		ui.Out, ui.Errw = f, f
-	}
-
-	h := &handler{sup: sup}
+	h := &handler{sup: sup, setup: setup}
 
 	if err := svc.Run(service.ServiceName(), h); err != nil {
 		return true, ExitError
@@ -45,8 +49,22 @@ func serveAsService(sup *daemon.Supervisor) (bool, int) {
 }
 
 type handler struct {
-	sup  *daemon.Supervisor
-	code int
+	sup   *daemon.Supervisor
+	setup error
+	code  int
+}
+
+// scmExit is what the SCM is told when the supervisor ends on its own. Only exit 1, a
+// failure the next start may not meet, is a failure to the SCM, and so what its recovery
+// actions restart. 78 and 70 -- nothing to start, or a configuration no restart changes --
+// end as cleanly as a stop does, or recovery would restart them into the same answer every
+// few seconds; the log says why.
+func scmExit(code int) (svcSpecific bool, exitCode uint32) {
+	if code == ExitError {
+		return true, ExitError
+	}
+
+	return false, 0
 }
 
 // Execute is the SCM's view of conflux.
@@ -56,8 +74,18 @@ type handler struct {
 // and leaving peers to discover the departure by timeout. Stop is accepted from the
 // start: a bring-up can take ninety seconds, or keep failing, and `conflux down`, a
 // restart and `uninstall` must not wait it out.
+//
+// svc.Run reports Stopped itself once this returns, carrying what it returns: reporting
+// it here as well would tell the SCM the service stopped cleanly before the exit code
+// that says otherwise could arrive.
 func (h *handler) Execute(_ []string, r <-chan svc.ChangeRequest, s chan<- svc.Status) (bool, uint32) {
 	const accepted = svc.AcceptStop | svc.AcceptShutdown
+
+	if h.setup != nil {
+		h.code = ExitError
+
+		return scmExit(h.code)
+	}
 
 	s <- svc.Status{State: svc.StartPending, WaitHint: 90_000, Accepts: accepted}
 
@@ -96,15 +124,12 @@ func (h *handler) Execute(_ []string, r <-chan svc.ChangeRequest, s chan<- svc.S
 				case <-time.After(30 * time.Second):
 				}
 
-				s <- svc.Status{State: svc.Stopped}
-
 				return false, 0
 			}
 		case err := <-errc:
 			h.code = supervisorExit(err)
-			s <- svc.Status{State: svc.Stopped}
 
-			return false, 1
+			return scmExit(h.code)
 		}
 	}
 }

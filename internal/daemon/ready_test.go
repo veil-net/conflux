@@ -5,27 +5,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/veil-net/conflux/internal/paths"
 )
-
-func testDirs(t *testing.T) paths.Dirs {
-	t.Helper()
-
-	root := t.TempDir()
-	d := paths.Dirs{Config: root, State: root, Run: filepath.Join(root, "run"), Log: filepath.Join(root, "logs")}
-
-	if err := d.EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll: %v", err)
-	}
-
-	return d
-}
 
 // The marker exists so that `conflux up` on a Mac or on Windows learns the anchor is up
 // when it happens, instead of forking anchorctl once a second until one answer is yes.
 func TestMarkReadyRoundTrips(t *testing.T) {
-	d := testDirs(t)
+	d := dirs(t)
 
 	if IsReady(d) {
 		t.Fatal("a directory with no marker reports ready")
@@ -48,7 +33,7 @@ func TestMarkReadyRoundTrips(t *testing.T) {
 // machine that has never written one -- and every shutdown path calls it, including those
 // that never got as far as an anchor.
 func TestClearReadyIsIdempotent(t *testing.T) {
-	d := testDirs(t)
+	d := dirs(t)
 
 	if err := ClearReady(d); err != nil {
 		t.Errorf("ClearReady with no marker = %v, want nil", err)
@@ -72,9 +57,9 @@ func TestClearReadyIsIdempotent(t *testing.T) {
 }
 
 // Every reader falls back to asking anchorctl, so a marker that is truncated, empty or
-// half-written must read as "no marker" rather than as a ready anchor with no name. The
-// case is real: the file is written by one process and read by another, and a crash
-// between create and write is the shape that produces an empty one.
+// half-written must read as "no marker" rather than as a ready anchor with no name.
+// MarkReady writes atomically and never leaves one like these; something else, in a
+// directory root shares, might.
 func TestUnusableMarkersReadAsNotReady(t *testing.T) {
 	for name, content := range map[string]string{
 		"empty":          "",
@@ -82,7 +67,7 @@ func TestUnusableMarkersReadAsNotReady(t *testing.T) {
 		"timestamp only": "2026-09-18T04:31:02Z\n",
 		"no id":          "2026-09-18T04:31:02Z \n",
 	} {
-		d := testDirs(t)
+		d := dirs(t)
 
 		if err := os.WriteFile(d.ReadyFile(), []byte(content), 0o600); err != nil {
 			t.Fatalf("%s: write: %v", name, err)
@@ -95,10 +80,10 @@ func TestUnusableMarkersReadAsNotReady(t *testing.T) {
 }
 
 // The marker lives in Run and not State, which is what stops it outliving the anchor it
-// describes: Run is recreated on every daemon start, and systemd's RuntimeDirectory=
-// cleans it on stop.
+// describes: most systems empty Run at boot, systemd's RuntimeDirectory= empties it on
+// stop, and the supervisor clears the marker as it starts.
 func TestReadyFileIsInTheRunDirectory(t *testing.T) {
-	d := testDirs(t)
+	d := dirs(t)
 
 	if filepath.Dir(d.ReadyFile()) != d.Run {
 		t.Errorf("ReadyFile is %s, which is not under Run (%s) -- a marker that survives a "+

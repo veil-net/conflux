@@ -32,7 +32,7 @@ func execAnchorctl(_ context.Context, bin string, args []string, env []string) i
 
 		ui.Errf("could not run %s: %v", bin, err)
 
-		return ExitChildFailed
+		return ExitError
 	}
 
 	return ExitOK

@@ -2,12 +2,14 @@ package daemon
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
 	"testing"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
+	"github.com/veil-net/conflux/internal/paths"
 )
 
 // fakeAnchorctlEnv and fakeAnchordEnv turn this test binary into a stand-in anchorctl
@@ -55,6 +57,13 @@ anchor_rtt_seconds                                    n=4 mean=0.00214123575 min
 anchor_translated_to_ipv6                             0
 `
 
+// fakeStarted is what `anchorctl start` prints for the anchor it started.
+const fakeStarted = `anchor ` + fakeAnchorID + `
+  underlay 203.0.113.9:41641
+  overlay  fd80:c4b9:99ae:c540:9d81:a45c:141a:1ce5/48
+  hardware 5a:f0:a9:da:4e:32
+`
+
 func fakeAnchorctl(args []string) int {
 	if len(args) == 0 {
 		return 2
@@ -74,6 +83,12 @@ func fakeAnchorctl(args []string) int {
 		return 1
 	case "metrics":
 		fmt.Print(fakeMetrics)
+	case "start":
+		// The manifest arrives on stdin, as it does for the real one, and is read to the end
+		// so the writer never meets a closed pipe.
+		_, _ = io.Copy(io.Discard, os.Stdin)
+
+		fmt.Print(fakeStarted)
 	case "renew", "stop":
 		fmt.Println("ok")
 	case "status":
@@ -98,7 +113,7 @@ const fakeAnchorID = "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq
 // fakeAnchordLastWords is what the stand-in anchord says on its way out, with no
 // newline after the last of it: the line a failure report most needs is the one most
 // easily lost.
-const fakeAnchordLastWords = "control: the socket is held by another daemon"
+const fakeAnchordLastWords = "control: /run/conflux/anchord.sock is already served by a running daemon"
 
 func fakeAnchord() int {
 	fmt.Println("anchord starting")
@@ -127,4 +142,17 @@ func fakeCtl(tb testing.TB) *anchorctl.Ctl {
 	tb.Setenv("GORACE", "atexit_sleep_ms=0")
 
 	return &anchorctl.Ctl{Bin: os.Args[0], Socket: "unused", Token: "unused"}
+}
+
+// dirs roots a test's every path in a directory of its own, and makes the roots.
+func dirs(tb testing.TB) paths.Dirs {
+	tb.Helper()
+	tb.Setenv("CONFLUX_DIR", tb.TempDir())
+
+	d := paths.Default()
+	if err := d.EnsureAll(); err != nil {
+		tb.Fatalf("EnsureAll: %v", err)
+	}
+
+	return d
 }

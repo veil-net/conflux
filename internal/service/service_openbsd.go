@@ -5,12 +5,14 @@ package service
 import (
 	"fmt"
 	"os"
+
+	"github.com/veil-net/conflux/internal/config"
 )
 
 // openbsd is rc.d(8): a script in /etc/rc.d, enabled and driven with rcctl.
 type openbsd struct{}
 
-func newManager() (Manager, error) { return openbsd{}, nil }
+func newManager() Manager { return openbsd{} }
 
 func scriptPath() string { return "/etc/rc.d/" + rcName() }
 
@@ -21,13 +23,10 @@ func (openbsd) Install(exe string, args ...string) error {
 		return err
 	}
 
-	if err := os.WriteFile(scriptPath(), []byte(script), 0o555); err != nil { //nolint:gosec // an rc script is executable by design
-		return fmt.Errorf("write %s: %w", scriptPath(), err)
-	}
-
-	// WriteFile keeps the mode of a file that already exists.
-	if err := os.Chmod(scriptPath(), 0o555); err != nil {
-		return fmt.Errorf("chmod %s: %w", scriptPath(), err)
+	// The mode base's own rc.d scripts have, whatever was there before; written whole or
+	// not at all.
+	if err := config.WriteFileAtomic(scriptPath(), []byte(script), 0o555); err != nil {
+		return err
 	}
 
 	return run("rcctl", "enable", rcName())

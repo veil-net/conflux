@@ -42,8 +42,8 @@ Work through them in this order:
 ## CI/CD rules
 
 - **CI verifies that the code builds and runs.** That means:
-  - builds: `cross` for every target, including a per-target vet compile of test files; `dist` with the size gate; platform builds on macOS and Windows
-  - tests: `test`, `race`, the macOS and Windows suites, `service-test`, and `integration` against the live API
+  - builds: `cross` for every target, including a per-target vet compile of test files; `dist` with the size gate; platform builds on macOS, Windows and Linux arm64, as a release builds them
+  - tests: `test`, `race`, the macOS, Windows and Linux arm64 suites, `service-test`, the launchd and SCM lifecycle (`test/service-host.sh`), and `integration` against the live API
   - the release pipeline
 - **Utility checks run locally before every push, never in CI; CI does the code testing, and only CI does it.** gofmt, staticcheck, tidycheck, govulncheck, docs and link checks, actionlint, shellcheck, commit checks and the like stay out of CI and run in steps 4 and 7 and before each fix is pushed (see reference.md § Local checks). The suites CI runs are not repeated locally: the PR's run is the verification.
 - **Faster, with the same verification power.** Never drop, skip or weaken a build or test that verifies the code. Speed comes from:
@@ -56,6 +56,7 @@ Work through them in this order:
   - cancelling superseded runs
   - job ordering suited to the runners: self-hosted `veilnet-dev` for the Linux Go suite, hosted runners for the container suites (they need the live realm's bootstrap node over UDP) and for macOS and Windows
 - Keep the fork guard on every self-hosted job. The only credential stays the read-only anchor GitHub App. Release stays gated to `version3`.
+- Every external action is pinned to its release's commit, with the tag in a comment, and bumped by moving both. No checkout persists its token.
 - **Release only releases.** The user merges to `version3` only when CI is all green, so `release.yml` doesn't re-verify anything. On a merge it fetches the pinned binaries, runs `make dist` (the size gate comes with it), attests, and publishes at the `VERSION` tag. Jobs or steps that repeat CI's checks are removed; the `version3` gate is the one guard it keeps.
 - Validate workflow and composite-action changes with `actionlint` (and `act` if available) before pushing; the PR's own run is what proves them. Name in the summary any change a PR run cannot exercise, such as `release.yml`.
 
@@ -79,7 +80,7 @@ Anchor is the reference for overlay behaviour, and the live API at `api.veilnet.
 - Unit tests, argv goldens, `httptest` API fixtures, `test/*.sh`, and the `test/systemd` image are code under maintenance, held to the same standard as production code.
 - Assertions or fixtures that encode outdated behaviour, including outdated anchor behaviour or API contracts, are updated in the same change.
 - Tests that need the real anchor binaries skip without them. CI's gates confirm they ran — the `linux` job fails on any `--- SKIP` and the `platforms` jobs on a skipped real-binary test — so they are not run locally to check. A local check skipped for a missing tool (staticcheck, govulncheck, shellcheck, Docker) counts as a failure.
-- Code behind a build tag is checked where the tag is true: `make cross` vets and `make lint` runs staticcheck per target OS. Windows-only tests (`internal/paths/acl_windows_test.go`) run only in CI's `platforms` job.
+- Code behind a build tag is checked where the tag is true: `make cross` vets and `make lint` runs staticcheck per target OS. Windows-only tests (`internal/paths/acl_windows_test.go`, `internal/daemon/proc_windows_test.go`, `internal/cli/service_windows_test.go`) run only in CI's `platforms` job.
 - Confirm from the PR's `integration` job log that `service-test` and `integration` really booted systemd containers, and that `integration` enrolled against the live API.
 - Per area, run only the affected tests locally. The full suites run once, in CI on the PR.
 
@@ -119,10 +120,20 @@ Anchor is the reference for overlay behaviour, and the live API at `api.veilnet.
 
 **Writes and state**
 - Config and state writes are atomic, and every writer of the manifest or state holds the lock, `conflux enrol` included.
+- A new manifest, enrolled or imported, starts with no state carried over from the identity before it.
+- A Unix root owned by another account is refused before anything in it changes; one of ours is `0700` (the shared `/var/log` aside).
 - The boot service runs the copy of conflux in the root-only state directory, never the file conflux was run from.
 - A re-run of `up` or `proxy` never changes an existing machine's address or identity, and the IPv4 question is asked once, a declined answer included.
 - `up` and `proxy` replace each other cleanly.
-- `uninstall` leaves nothing behind.
+- `uninstall` leaves nothing behind: no definition, no `wants` link, no launchd disabled-database entry, no SCM entry, no directory.
+
+**Supervision**
+- One supervisor per root: `serve` holds `<state>/serve.lock`, and a second is refused.
+- The anchord a dead supervisor left is stopped by the next one only when it is the recorded process (its executable, or anchor's socket lock where none is reported), and `uninstall` reaps it too. On Windows anchord dies with its supervisor's job.
+- A supervisor that exits 1 is restarted by systemd, launchd and the SCM; on the BSDs nothing does, and the docs say so.
+
+**Extraction**
+- `SetID` is the same function of the two SHA-256s whether stamped at build or computed; CI's `linux` job checks a stamped build against an unstamped one.
 
 **Pass-through**
 - Unknown commands pass through to `anchorctl` unchanged.

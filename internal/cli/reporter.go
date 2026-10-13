@@ -8,4 +8,4 @@ type reporter struct{}
 
 func (reporter) Step(format string, a ...any) { ui.Printf("  "+format+"\n", a...) }
 
-func (reporter) Warn(format string, a ...any) { ui.Warnf(format, a...) }
+func (reporter) Warn(format string, a ...any) { ui.Errf(format, a...) }

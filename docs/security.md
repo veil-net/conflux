@@ -40,7 +40,9 @@ lapse now happens, and that the window is the operator's to choose.
 - `0600`, with the mode set on the descriptor before any content is written. Writing
   and then chmod'ing leaves a window at the umask's mode.
 - `0700` on the directory. A `0600` file in a traversable directory is one `rename`
-  away from being replaced.
+  away from being replaced. A directory that already exists is held to the same: one of
+  conflux's own left wider is narrowed to `0700`, and one another account owns is refused
+  rather than used, since whatever that account put in it is not conflux's.
 - On Windows, mode bits mean nothing and `%ProgramData%` lets `Users` read and create
   beneath it, so conflux gives its root to SYSTEM and Administrators — owner, and a
   protected DACL everything beneath inherits — and refuses a root another account made.
@@ -86,7 +88,10 @@ repaired around it.
 
 `CONFLUX_DIR` can point the extraction somewhere else, which is a knob worth knowing
 about: it lets a caller choose the directory a root daemon executes from. It exists
-for tests and for hosts where the default filesystem is `noexec`.
+for tests and for hosts where the default filesystem is `noexec`. The directory it names
+must belong to the account running conflux — on every platform, a root another account
+owns is refused — and it is used as an absolute path, so the service registered under it
+runs from where it was installed whatever the working directory was.
 
 ## What conflux does not defend against
 

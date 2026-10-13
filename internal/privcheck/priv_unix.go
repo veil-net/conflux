@@ -5,12 +5,14 @@ package privcheck
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 )
 
 // Elevated reports whether this process can do what conflux needs: write /etc and
-// /var/lib, talk to the service manager, and open a TUN device.
-func Elevated() bool { return os.Geteuid() == 0 }
+// /var/lib, talk to the service manager, and open a TUN device. A variable so a test
+// can be the account that is refused.
+var Elevated = func() bool { return os.Geteuid() == 0 }
 
 // Require refuses, with the command that would work.
 //
@@ -22,5 +24,15 @@ func Require(what, retry string) error {
 		return nil
 	}
 
-	return fmt.Errorf("%s needs root.\n  try:  sudo %s", what, strings.TrimSpace(retry))
+	return fmt.Errorf("%s needs root.\n  try:  %s", what, Retry(retry))
+}
+
+// Retry is a command as root would run it: through doas on OpenBSD, whose base system
+// has it and not sudo, and sudo everywhere else.
+func Retry(cmd string) string {
+	if runtime.GOOS == "openbsd" {
+		return "doas " + strings.TrimSpace(cmd)
+	}
+
+	return "sudo " + strings.TrimSpace(cmd)
 }

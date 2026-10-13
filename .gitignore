@@ -33,7 +33,7 @@ go.work.sum
 
 # The anchor binaries conflux embeds.
 #
-# Never committed: fourteen release builds are about 284 MB, and putting that in
+# Never committed: fourteen release builds are about 300 MB, and putting that in
 # history costs it permanently, on every clone, for every refresh. //go:embed still
 # needs them present at build time, so they are put there by `make anchor-bins`
 # instead -- see docs/build.md.
@@ -43,7 +43,7 @@ anchor/bin/
 /bin/
 /dist/
 
-# The conflux copied into the systemd test image by `make dist && cp`.
+# The conflux copied into the systemd test image by `make image`.
 /test/systemd/conflux
 
 # `go build ./cmd/...` drops this at the repo root.

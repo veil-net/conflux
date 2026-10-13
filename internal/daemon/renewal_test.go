@@ -11,19 +11,19 @@ var (
 )
 
 func TestRenewAtIsTwoThirdsOfTheObservedWindow(t *testing.T) {
-	at := RenewAt(issued, expires)
+	at := renewAt(issued, expires)
 
 	// Two thirds of thirty days is twenty.
 	want := issued.Add(20 * 24 * time.Hour)
 	if !at.Equal(want) {
-		t.Errorf("RenewAt = %v, want %v", at, want)
+		t.Errorf("renewAt = %v, want %v", at, want)
 	}
 
 	// And the point of computing it rather than hardcoding thirty days: a window of
 	// another length divides the same way.
 	short := issued.Add(3 * time.Hour)
-	if got, want := RenewAt(issued, short), issued.Add(2*time.Hour); !got.Equal(want) {
-		t.Errorf("RenewAt for a 3h window = %v, want %v", got, want)
+	if got, want := renewAt(issued, short), issued.Add(2*time.Hour); !got.Equal(want) {
+		t.Errorf("renewAt for a 3h window = %v, want %v", got, want)
 	}
 }
 
@@ -42,8 +42,8 @@ func TestDueAt(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		if got := DueAt(issued, expires, tc.now); got != tc.want {
-			t.Errorf("%s: DueAt = %v, want %v", tc.when, got, tc.want)
+		if got := dueAt(issued, expires, tc.now); got != tc.want {
+			t.Errorf("%s: dueAt = %v, want %v", tc.when, got, tc.want)
 		}
 	}
 }
@@ -51,18 +51,18 @@ func TestDueAt(t *testing.T) {
 // TestDueAtWithoutIssuedAt: a document that does not say when it was signed still
 // has to renew before it lapses, not after.
 func TestDueAtWithoutIssuedAt(t *testing.T) {
-	if DueAt(time.Time{}, expires, expires.Add(-72*time.Hour)) {
+	if dueAt(time.Time{}, expires, expires.Add(-72*time.Hour)) {
 		t.Error("renewed three days out with a 48h fallback lead")
 	}
 
-	if !DueAt(time.Time{}, expires, expires.Add(-24*time.Hour)) {
+	if !dueAt(time.Time{}, expires, expires.Add(-24*time.Hour)) {
 		t.Error("did not renew one day out with a 48h fallback lead")
 	}
 }
 
 // TestDueAtWithNoExpiry: an unreadable expiry means renew, never "forever".
 func TestDueAtWithNoExpiry(t *testing.T) {
-	if !DueAt(issued, time.Time{}, issued) {
+	if !dueAt(issued, time.Time{}, issued) {
 		t.Error("a credential with no stated expiry should be renewed, not trusted")
 	}
 }
@@ -75,20 +75,20 @@ func TestSleepIsClamped(t *testing.T) {
 		now  time.Time
 		want time.Duration
 	}{
-		{"long before renewal", issued, MaxSleep},
-		{"well past expiry", expires.Add(365 * 24 * time.Hour), MinSleep},
-		{"just before renewal", RenewAt(issued, expires).Add(-30 * time.Second), MinSleep},
-		{"an hour before renewal", RenewAt(issued, expires).Add(-time.Hour), time.Hour},
+		{"long before renewal", issued, maxSleep},
+		{"well past expiry", expires.Add(365 * 24 * time.Hour), minSleep},
+		{"just before renewal", renewAt(issued, expires).Add(-30 * time.Second), minSleep},
+		{"an hour before renewal", renewAt(issued, expires).Add(-time.Hour), time.Hour},
 	}
 
 	for _, tc := range cases {
-		got := SleepUntilRenewal(issued, expires, tc.now)
+		got := sleepUntilRenewal(issued, expires, tc.now)
 		if got != tc.want {
 			t.Errorf("%s: sleep = %v, want %v", tc.when, got, tc.want)
 		}
 
-		if got < MinSleep || got > MaxSleep {
-			t.Errorf("%s: sleep = %v, outside [%v, %v]", tc.when, got, MinSleep, MaxSleep)
+		if got < minSleep || got > maxSleep {
+			t.Errorf("%s: sleep = %v, outside [%v, %v]", tc.when, got, minSleep, maxSleep)
 		}
 	}
 }
@@ -102,7 +102,7 @@ func TestSleepIsNeverNegative(t *testing.T) {
 		issued.Add(-100 * 24 * time.Hour),
 		time.Time{},
 	} {
-		if got := SleepUntilRenewal(issued, expires, now); got <= 0 {
+		if got := sleepUntilRenewal(issued, expires, now); got <= 0 {
 			t.Errorf("sleep at %v = %v", now, got)
 		}
 	}

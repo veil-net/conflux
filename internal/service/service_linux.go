@@ -4,9 +4,12 @@ package service
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/veil-net/conflux/internal/config"
 )
 
 // unitName is used everywhere, suffix included: systemd appends .service to a bare
@@ -24,9 +27,23 @@ func wantsPath() string { return "/etc/systemd/system/multi-user.target.wants/" 
 
 type systemd struct{}
 
-func newManager() (Manager, error) { return systemd{}, nil }
+func newManager() Manager { return systemd{} }
+
+// running reports whether systemd is this machine's init, as sd_booted(3) decides it.
+func running() bool {
+	fi, err := os.Stat("/run/systemd/system")
+
+	return err == nil && fi.IsDir()
+}
 
 func (s systemd) Install(exe string, args ...string) error {
+	// Before anything is written: without systemd the unit would be written and then
+	// refused at daemon-reload, leaving a registration nothing will ever run.
+	if !running() {
+		return errors.New("this machine is not running systemd, which is the only service manager " +
+			"conflux registers with on Linux")
+	}
+
 	unit := []byte(systemdUnit(exe, args, scope() != ""))
 
 	// Registered exactly so already, which is every re-run of up and proxy: a read and a
@@ -38,8 +55,9 @@ func (s systemd) Install(exe string, args ...string) error {
 		}
 	}
 
-	if err := os.WriteFile(unitPath(), unit, 0o644); err != nil { //nolint:gosec // a unit file is world-readable by design
-		return fmt.Errorf("write %s: %w", unitPath(), err)
+	// Readable by all, as systemd expects a unit to be; written whole or not at all.
+	if err := config.WriteFileAtomic(unitPath(), unit, 0o644); err != nil {
+		return err
 	}
 
 	if err := run("systemctl", "daemon-reload"); err != nil {
@@ -55,33 +73,35 @@ func (s systemd) Install(exe string, args ...string) error {
 func (s systemd) Remove() error {
 	// Every step tolerates its own failure, so a unit file already deleted does not
 	// stop the rest from being undone.
-	var first error
+	errs := []error{run("systemctl", "disable", "--now", unitName())}
 
-	note := func(err error) {
-		if err != nil && first == nil {
-			first = err
+	// Gone with a disable that worked, and left dangling by one that did not.
+	for _, path := range []string{wantsPath(), unitPath()} {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			errs = append(errs, err)
 		}
 	}
 
-	note(run("systemctl", "disable", "--now", unitName()))
-
-	if err := os.Remove(unitPath()); err != nil && !os.IsNotExist(err) {
-		note(err)
-	}
-
-	note(run("systemctl", "daemon-reload"))
+	errs = append(errs, run("systemctl", "daemon-reload"))
 	_ = run("systemctl", "reset-failed", unitName())
 
 	if installed, _ := s.Installed(); installed {
-		return first
+		return errors.Join(errs...)
 	}
 
 	// It is gone, which is what was asked for, whatever complained on the way.
 	return nil
 }
 
-func (systemd) Stop() error    { return run("systemctl", "stop", unitName()) }
-func (systemd) Restart() error { return run("systemctl", "restart", unitName()) }
+func (systemd) Stop() error { return run("systemctl", "stop", unitName()) }
+
+// Restart clears a failed unit first: one started too often in a row refuses every
+// start until its interval has passed, and an operator's start is not one of a loop.
+func (systemd) Restart() error {
+	_ = run("systemctl", "reset-failed", unitName())
+
+	return run("systemctl", "restart", unitName())
+}
 
 // Installed is a stat rather than `systemctl list-unit-files`: cheaper, and it
 // answers correctly on a machine where systemd is not currently running.

@@ -46,6 +46,18 @@ type Auth struct {
 	Secret string
 }
 
+// String and GoString keep the bearer out of anything printed: whoever holds it can keep
+// this node's credential current indefinitely, as the manifest that carries it can.
+func (a Auth) String() string {
+	if a.Secret == "" {
+		return a.Scheme
+	}
+
+	return a.Scheme + " <bearer, redacted>"
+}
+
+func (a Auth) GoString() string { return a.String() }
+
 // apply puts the scheme's header on a request, or leaves it alone.
 //
 // Nothing is set for the alpha path, and the distinction between "no header" and

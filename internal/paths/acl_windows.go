@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"sync"
 
 	"golang.org/x/sys/windows"
 )
@@ -154,7 +155,18 @@ func secure(dir string) error {
 }
 
 func isCurrentUser(sid *windows.SID) bool {
-	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	user := currentUser()
 
-	return err == nil && user.User.Sid.Equals(sid)
+	return user != nil && user.Equals(sid)
 }
+
+// currentUser is the account this process runs as, read from its token once: Trusted asks
+// for every file it checks, and the answer cannot change while the process runs.
+var currentUser = sync.OnceValue(func() *windows.SID {
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		return nil
+	}
+
+	return user.User.Sid
+})

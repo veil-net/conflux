@@ -4,10 +4,7 @@ package paths
 
 import "runtime"
 
-const (
-	socketName  = "anchord.sock"
-	sockPathMax = 104 // sizeof(sockaddr_un.sun_path) on the BSDs
-)
+const sockPathMax = 104 // sizeof(sockaddr_un.sun_path) on the BSDs
 
 // platformDirs uses /var/db for state, which is where the BSDs keep it, and
 // /var/run rather than /run. FreeBSD's daemon(8) writes the service's output to a file

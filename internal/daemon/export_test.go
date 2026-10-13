@@ -11,18 +11,6 @@ import (
 	"github.com/veil-net/conflux/internal/paths"
 )
 
-func dirs(t *testing.T) paths.Dirs {
-	t.Helper()
-	t.Setenv("CONFLUX_DIR", t.TempDir())
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll: %v", err)
-	}
-
-	return d
-}
-
 // TestAnchordIsStartedWithAConfig is the one-line regression this whole file is
 // about. Without -config an export configured anywhere but over the live socket is
 // never applied, and one configured over the socket dies with the daemon.

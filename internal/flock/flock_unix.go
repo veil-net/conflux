@@ -3,6 +3,7 @@
 package flock
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -17,19 +18,39 @@ import (
 // -- the unit and an impatient operator -- and the right behaviour there is for the
 // second to wait a moment and then find the work already done.
 func Acquire(path string) (func(), error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		return nil, fmt.Errorf("open the lock %s: %w", path, err)
+	unlock, _, err := lock(path, unix.LOCK_EX)
+
+	return unlock, err
+}
+
+// TryAcquire takes the lock if nobody holds it. ok is false when somebody does, and
+// then nothing is held and there is nothing to release.
+//
+// The same flock anchord takes on its control socket's .lock, so it answers for that
+// file too: whether a daemon is serving there.
+func TryAcquire(path string) (unlock func(), ok bool, err error) {
+	unlock, ok, err = lock(path, unix.LOCK_EX|unix.LOCK_NB)
+	if errors.Is(err, unix.EWOULDBLOCK) {
+		return nil, false, nil
 	}
 
-	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX); err != nil {
+	return unlock, ok, err
+}
+
+func lock(path string, how int) (func(), bool, error) {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, false, fmt.Errorf("open the lock %s: %w", path, err)
+	}
+
+	if err := unix.Flock(int(f.Fd()), how); err != nil {
 		f.Close()
 
-		return nil, fmt.Errorf("lock %s: %w", path, err)
+		return nil, false, fmt.Errorf("lock %s: %w", path, err)
 	}
 
 	return func() {
 		_ = unix.Flock(int(f.Fd()), unix.LOCK_UN)
 		f.Close()
-	}, nil
+	}, true, nil
 }

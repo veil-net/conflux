@@ -19,7 +19,7 @@ import (
 // so that systemd stops rather than restarting every five seconds forever.
 var ErrNotConfigured = errors.New("this machine has no conflux configuration")
 
-// Reporter is how BringUp says what it is doing. Nil is silence.
+// Reporter is how bringUp says what it is doing.
 type Reporter interface {
 	Step(format string, a ...any)
 	Warn(format string, a ...any)
@@ -40,6 +40,32 @@ func (e *permanentError) Error() string {
 }
 func (e *permanentError) Unwrap() error { return e.err }
 
+// loadConfig reads conflux.json for the supervisor, and decides what a failure means, the
+// same way for every reader of it: none at all is nothing to start (ErrNotConfigured); one
+// that will not parse, that this build cannot read, or that Validate refuses is refused
+// for good, since no restart changes a file; and one that could not be read at all is the
+// next attempt's to try again.
+func loadConfig(d paths.Dirs) (*config.Config, error) {
+	cfg, err := config.Load(d)
+
+	var read *fs.PathError
+
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return nil, ErrNotConfigured
+	case errors.As(err, &read):
+		return nil, err
+	case err != nil:
+		return nil, &permanentError{err: err} // names the file already
+	}
+
+	if err := cfg.Validate(); err != nil {
+		return nil, &permanentError{path: d.ConfigFile(), err: err}
+	}
+
+	return cfg, nil
+}
+
 type nopReporter struct{}
 
 func (nopReporter) Step(string, ...any) {}
@@ -56,17 +82,18 @@ func (nopReporter) Warn(string, ...any) {}
 // from a wrong realm. Refused here, either way, naming the clock.
 const MaxSkew = 10 * time.Minute
 
-// BringUp takes a daemon that is up and answering, and leaves it hosting the anchor
+// bringUp takes a daemon that is up and answering, and leaves it hosting the anchor
 // this machine is configured for.
 //
 // One function, shared verbatim by `conflux up`, `conflux proxy` and every boot, so
 // that the three cannot drift into starting subtly different anchors. Everything
 // that differs between them is in the config file by the time this runs.
-func BringUp(ctx context.Context, d paths.Dirs, ctl *anchorctl.Ctl, r Reporter) (anchorctl.Started, error) {
-	if r == nil {
-		r = nopReporter{}
-	}
-
+//
+// reopened counts the start as an uplink rebuilt, in the same state write as the rest,
+// once it has succeeded.
+func bringUp(
+	ctx context.Context, d paths.Dirs, ctl *anchorctl.Ctl, r Reporter, reopened bool,
+) (started anchorctl.Started, err error) {
 	// Against `conflux renew` and the renewal timer, which read and rewrite the same
 	// manifest and state this does.
 	unlock, err := flock.Acquire(d.LockFile())
@@ -75,17 +102,9 @@ func BringUp(ctx context.Context, d paths.Dirs, ctl *anchorctl.Ctl, r Reporter) 
 	}
 	defer unlock()
 
-	cfg, err := config.Load(d)
+	cfg, err := loadConfig(d)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return anchorctl.Started{}, ErrNotConfigured
-		}
-
 		return anchorctl.Started{}, err
-	}
-
-	if err := cfg.Validate(); err != nil {
-		return anchorctl.Started{}, &permanentError{path: d.ConfigFile(), err: err}
 	}
 
 	st, err := config.LoadState(d)
@@ -97,6 +116,11 @@ func BringUp(ctx context.Context, d paths.Dirs, ctl *anchorctl.Ctl, r Reporter) 
 	// keeping even if the start then fails. The next start re-learns all of it, but
 	// status reads it in between.
 	defer func() {
+		if reopened && err == nil {
+			st.LinkReopens++
+			st.LastLinkReopen = time.Now().UTC()
+		}
+
 		if err := config.SaveState(d, st); err != nil {
 			r.Warn("could not write %s: %v", d.StateFile(), err)
 		}
@@ -111,7 +135,7 @@ func BringUp(ctx context.Context, d paths.Dirs, ctl *anchorctl.Ctl, r Reporter) 
 		return anchorctl.Started{}, fmt.Errorf("create %s: %w", d.AnchorDir(), err)
 	}
 
-	started, err := ctl.Start(ctx, env, anchorctl.ModeFromConfig(cfg, d.AnchorDir()))
+	started, err = ctl.Start(ctx, env, anchorctl.ModeFromConfig(cfg, d.AnchorDir()))
 	if err != nil {
 		return anchorctl.Started{}, err
 	}
@@ -168,7 +192,8 @@ func credential(
 				"enrolled, but could not save the credential -- it is now lost and a new one must be drawn: %w", err)
 		}
 
-		st.EnrolledAt = time.Now().UTC()
+		// Nothing this state said about an identity holds for the new one; see NewIdentity.
+		st.NewIdentity()
 	default:
 		return nil, nil, err
 	}
@@ -204,7 +229,7 @@ func credential(
 			"the credential expired %s ago, and no AnchorID is recorded to renew it with -- "+
 				"the anchor never started on it, or %s was lost -- so it has to be replaced",
 			time.Since(m.NotAfter()).Round(time.Minute), d.StateFile())}
-	case st.AnchorID != "" && (DueAt(m.IssuedAt(), m.NotAfter(), time.Now()) || st.ClockSkew > MaxSkew):
+	case st.AnchorID != "" && (dueAt(m.IssuedAt(), m.NotAfter(), time.Now()) || st.ClockSkew > MaxSkew):
 		env = renewBeforeStart(ctx, d, st, client, m, env, r)
 	}
 

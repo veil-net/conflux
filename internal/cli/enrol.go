@@ -113,6 +113,11 @@ func runEnrol(_ context.Context, args []string) int {
 // so the refusals below are reachable from a test rather than only from a root
 // shell. Every one of them is a refusal somebody will eventually hit.
 func importCredential(d paths.Dirs, manifestPath, apiBase, ipv4Flag string) error {
+	// Read before the lock is taken, not under it: stdin may be a person, or a pipe from a
+	// slow fetch, and the supervisor's bring-up, renewals and shutdown all wait on this
+	// lock. Its verdict waits for the check below.
+	env, readErr := readEnvelope(manifestPath)
+
 	// Held from the check that no manifest exists to the write of this one, like every
 	// other writer of it: a supervisor enrolling under the lock at the same moment would
 	// otherwise leave one identity running and another on disk.
@@ -122,8 +127,8 @@ func importCredential(d paths.Dirs, manifestPath, apiBase, ipv4Flag string) erro
 	}
 	defer unlock()
 
-	// First, and before the file is even read. The check is about an identity that
-	// already exists, so it must not depend on the new document being any good --
+	// First, whatever the new document turned out to be. The check is about an identity
+	// that already exists, so it must not depend on the new document being any good --
 	// otherwise a malformed file reports its own problem and hides this one.
 	if config.HasManifest(d) {
 		return fmt.Errorf(
@@ -135,9 +140,8 @@ func importCredential(d paths.Dirs, manifestPath, apiBase, ipv4Flag string) erro
 			d.ManifestFile())
 	}
 
-	env, err := readEnvelope(manifestPath)
-	if err != nil {
-		return err
+	if readErr != nil {
+		return readErr
 	}
 
 	m, err := enrol.Decode(env)
@@ -273,19 +277,27 @@ func describeExpiry(notAfter time.Time) string {
 // same thing the same way -- `-manifest -` -- so the two tools do not disagree
 // about a convention an operator has already learned.
 func readEnvelope(path string) (config.Envelope, error) {
-	var (
-		b   []byte
-		err error
-	)
+	in := os.Stdin
 
-	if path == "-" {
-		b, err = io.ReadAll(io.LimitReader(os.Stdin, 1<<20))
-	} else {
-		b, err = os.ReadFile(path)
+	if path != "-" {
+		f, err := os.Open(path)
+		if err != nil {
+			return nil, fmt.Errorf("read the manifest: %w", err)
+		}
+		defer f.Close()
+
+		in = f
 	}
 
+	// One bound for both, and refused rather than cut: a document cut short is a decode
+	// error that names everything but the size.
+	b, err := io.ReadAll(io.LimitReader(in, maxManifest+1))
 	if err != nil {
 		return nil, fmt.Errorf("read the manifest: %w", err)
+	}
+
+	if len(b) > maxManifest {
+		return nil, fmt.Errorf("the manifest is over %d KiB, and no manifest is that large", maxManifest>>10)
 	}
 
 	env := config.Envelope(strings.TrimSpace(string(b)))
@@ -295,6 +307,9 @@ func readEnvelope(path string) (config.Envelope, error) {
 
 	return env, nil
 }
+
+// maxManifest bounds what is read as a manifest. A real one is a few kilobytes.
+const maxManifest = 1 << 20
 
 // chooseAPIBase is the API this machine renews against: --api when it was given, and
 // the origin of the document's renewalUrl otherwise.
@@ -420,6 +435,20 @@ func saveImported(d paths.Dirs, cfg *config.Config, env config.Envelope) error {
 	// `up` and `proxy` own the mode and everything else a machine does, and the half
 	// that matters here is apiBaseUrl and the taints the credential grants.
 	if err := config.Save(d, cfg); err != nil {
+		return err
+	}
+
+	// A state.json left from an identity removed by hand would have the next start renew
+	// this one under the old AnchorID. Before the manifest: with none on disk it describes
+	// no identity there is, so clearing it first loses nothing whichever write fails.
+	st, err := config.LoadState(d)
+	if err != nil {
+		return err
+	}
+
+	st.NewIdentity()
+
+	if err := config.SaveState(d, st); err != nil {
 		return err
 	}
 

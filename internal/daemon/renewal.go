@@ -2,18 +2,18 @@ package daemon
 
 import "time"
 
-// RenewFraction is where in a credential's window conflux asks for the next one.
+// renewFraction is where in a credential's window conflux asks for the next one.
 //
 // Two thirds, which is what the enrolment API's own documentation specifies: renew
 // on launch and on a timer at two thirds of notAfter. For the alpha realm's
 // thirty-day window that is day twenty, leaving ten days of retry budget -- early
 // enough to survive a long outage, late enough that a machine which is always on
 // renews about once every three weeks rather than every day.
-const RenewFraction = 2.0 / 3.0
+const renewFraction = 2.0 / 3.0
 
-// FallbackLead is used when issuedAt is missing or nonsensical, so that a document
+// fallbackLead is used when issuedAt is missing or nonsensical, so that a document
 // conflux cannot reason about still renews before it lapses rather than after.
-const FallbackLead = 48 * time.Hour
+const fallbackLead = 48 * time.Hour
 
 // Sleep bounds. A computed wait is clamped into these on every cycle rather than
 // trusted once.
@@ -23,30 +23,30 @@ const FallbackLead = 48 * time.Hour
 // least every six hours to recompute means it renews within six hours of resuming
 // instead of never. The floor stops a pathological window becoming a busy loop.
 const (
-	MinSleep = time.Minute
-	MaxSleep = 6 * time.Hour
+	minSleep = time.Minute
+	maxSleep = 6 * time.Hour
 )
 
-// RenewAt is the moment a credential should be replaced.
-func RenewAt(issuedAt, notAfter time.Time) time.Time {
+// renewAt is the moment a credential should be replaced.
+func renewAt(issuedAt, notAfter time.Time) time.Time {
 	if notAfter.IsZero() {
 		// Nothing to reason about: renew at once rather than assume forever.
 		return time.Time{}
 	}
 
 	if issuedAt.IsZero() || !issuedAt.Before(notAfter) {
-		return notAfter.Add(-FallbackLead)
+		return notAfter.Add(-fallbackLead)
 	}
 
 	window := notAfter.Sub(issuedAt)
 
-	return issuedAt.Add(time.Duration(float64(window) * RenewFraction))
+	return issuedAt.Add(time.Duration(float64(window) * renewFraction))
 }
 
-// DueAt reports whether a credential issued and expiring at these times should be
+// dueAt reports whether a credential issued and expiring at these times should be
 // renewed as of now.
-func DueAt(issuedAt, notAfter, now time.Time) bool {
-	at := RenewAt(issuedAt, notAfter)
+func dueAt(issuedAt, notAfter, now time.Time) bool {
+	at := renewAt(issuedAt, notAfter)
 	if at.IsZero() {
 		return true
 	}
@@ -54,20 +54,20 @@ func DueAt(issuedAt, notAfter, now time.Time) bool {
 	return !now.Before(at)
 }
 
-// SleepUntilRenewal is how long to wait before the next check, clamped.
-func SleepUntilRenewal(issuedAt, notAfter, now time.Time) time.Duration {
-	at := RenewAt(issuedAt, notAfter)
+// sleepUntilRenewal is how long to wait before the next check, clamped.
+func sleepUntilRenewal(issuedAt, notAfter, now time.Time) time.Duration {
+	at := renewAt(issuedAt, notAfter)
 	if at.IsZero() {
-		return MinSleep
+		return minSleep
 	}
 
 	d := at.Sub(now)
 
 	switch {
-	case d < MinSleep:
-		return MinSleep
-	case d > MaxSleep:
-		return MaxSleep
+	case d < minSleep:
+		return minSleep
+	case d > maxSleep:
+		return maxSleep
 	default:
 		return d
 	}

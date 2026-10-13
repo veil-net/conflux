@@ -10,7 +10,7 @@ systemd / launchd / rc / SCM
   └── conflux serve
         ├── anchord -socket … -token-file …
         ├── the renewal timer
-        ├── the link watcher, on a machine configured for an uplink
+        ├── the watcher: a lost anchor, and on an uplink an ended link
         └── the restart loop
 ```
 
@@ -19,8 +19,10 @@ is configured with nothing and holds no anchor until something calls `start` ove
 socket. Something has to make that call, and it may as well be the thing the service
 manager watches.
 
-At every boot the supervisor reads `conflux.json`, extracts the anchor pair if it is
-not already on disk, writes a fresh bearer token, starts `anchord`, waits until it
+At every boot the supervisor takes the root's `serve.lock` — one supervisor per root —
+stops any `anchord` a supervisor that died left running (below), reads `conflux.json`,
+extracts the anchor pair if it is not already on disk, writes a fresh bearer token, starts
+`anchord`, waits until it
 answers an authenticated `status` call, renews the credential if it is past two thirds
 of its window, and starts the anchor. No prompts, and nothing typed.
 
@@ -40,8 +42,9 @@ would be a status call, and a fork, once a second.
 The marker is advisory. Every reader falls back to the status call it replaced, so a
 marker that is missing, stale or half-written costs a second and never a start. It lives
 in the run directory rather than the state directory, which is what stops it outliving
-the anchor it describes: the run directory is recreated on every daemon start, and
-systemd's `RuntimeDirectory=` cleans it on stop. Every path that restarts the service
+the anchor it describes: most systems empty the run directory at boot, systemd's
+`RuntimeDirectory=` empties it whenever the service stops, and the supervisor clears the
+marker as it starts, for Windows, where neither happens. Every path that restarts the service
 clears it *before* restarting, so the marker that appears afterwards can only have been
 written by the instance that restart started — otherwise `up` could report success for an
 anchor that was seconds from being torn down.
@@ -58,14 +61,38 @@ anchor is closed over the socket with `anchorctl stop` and the daemon, holding n
 by then, is killed; see the Windows section. A daemon that has already died is asked
 nothing: there is no anchor left to close, and its pid may belong to something else.
 
+### When the supervisor itself dies
+
+A supervisor that is killed, rather than stopped, does not stop its `anchord`. systemd
+ends the unit's whole cgroup, and the job object every `anchord` is put in on Windows ends
+with the process that made it; but launchd ends the job's process group, which `anchord`
+has its own of, and rc ends only the process it started. The `anchord` left behind keeps
+the control socket and anchor's lock on it, so every `anchord` the next supervisor starts
+is refused as "already served by a running daemon", and a node nobody can reach goes on
+running beside a service retrying for ever.
+
+So the supervisor writes down the `anchord` it starts — its pid and its executable, in
+`<run>/anchord.pid` — and removes the record once it has waited for it. A supervisor that
+finds a record stops what it names before it starts its own: `SIGTERM` to its group, then
+`SIGKILL` past the same twenty seconds, or on Windows `TerminateProcess`. A pid is only a
+number, so it is taken for `anchord` only when the process runs the recorded executable
+or, on OpenBSD, which reports none, when something holds the socket's lock — which only a
+daemon serving it does. That is safe only with one supervisor per root, which
+`serve.lock` makes so: a second `conflux serve` beside the service is refused rather than
+left to stop the first one's daemon. `conflux uninstall` does the same once the service is
+removed, so nothing is left running out of the directory it deletes.
+
 A start that fails is retried with a backoff up to thirty seconds. One that no retry
 changes — a configuration conflux refuses, taints the credential does not grant, an
 expired credential with nowhere to renew it or no AnchorID recorded to renew it with, a
 credential for another realm tree, a TUN the host will not give, a host that will not
 be set up to forward, an argument vector anchorctl refuses — stops the supervisor after
 three attempts with exit 70, and nothing to start at all is exit 78. Anything else the
-supervisor stops on — an extraction onto a full disk, say — exits 1, which a service
-manager restarts. What each does with 78 and 70 is below.
+supervisor stops on — an extraction onto a full disk, say — exits 1, which systemd,
+launchd and the Windows SCM restart. On the BSDs nothing does: FreeBSD's `daemon(8)` runs
+without `-r`, which would restart 78 and 70 as well, and OpenBSD's `rc.subr` does not
+supervise, so there a supervisor that exits 1 waits for `conflux start` or the next boot.
+What each does with 78 and 70 is below.
 
 anchord can also lose its anchor without exiting, so the supervisor asks it every thirty
 seconds whether it still holds one (every ten, through the link watcher's gauge, on an
@@ -166,6 +193,11 @@ every five seconds forever, where it now shows as failed.
 
 `Restart=on-failure`, not `always`, so a deliberate clean exit stays exited.
 
+`up`, `proxy` and `start` clear a failed unit before they restart it. systemd refuses
+every start of a unit started more than five times in ten seconds until the ten seconds
+are up, and a few quick attempts at a configuration that does not work are enough to get
+there; the operator's next start, with it fixed, is not one more of them.
+
 `AmbientCapabilities=CAP_NET_ADMIN` is stated even though the unit runs as root,
 because it documents the requirement and survives somebody adding `User=` later.
 
@@ -205,17 +237,20 @@ Re-running `bootstrap` on a loaded job fails with `Bootstrap failed: 37: Operati
 already in progress`, and a `kickstart -k` on a job that was *just* bootstrapped kills the
 instance launchd had only now made. Asking which state it is in is what avoids both.
 
-**`enable` comes before every `bootstrap`, and `uninstall` disables nothing.**
+**A disabled label is enabled before `bootstrap`, and `uninstall` disables nothing.**
 `launchctl(1)`: *"Once a service is disabled, it cannot be loaded in the specified domain
 until it is once again enabled. This state persists across boots of the device."* A
 disabled label makes `bootstrap` fail with `Bootstrap failed: 5: Input/output error`,
 which names nothing; a `bootstrap` that still fails is answered with the four things
-that actually cause error 5.
+that actually cause error 5. `enable` is run only for a label `launchctl print-disabled`
+shows disabled, because an enable is itself an entry in that database, outliving the plist
+where `uninstall` cannot reach it.
 
 `conflux down` uses `launchctl kill SIGTERM`, which stops the process and leaves the job
-loaded — stopped now, back at the next boot, which is exactly the semantics `down` needs.
-A job that is not loaded at all is already in the state `down` asks for, and says so
-rather than passing on launchd's "Could not find service".
+loaded — stopped now, back at the next boot, which is exactly the semantics `down` needs —
+and waits for it to go, as `systemctl stop` does. A job that is not running, loaded or not,
+is already in the state `down` asks for, and says so rather than passing on launchd's
+"Could not find service" or its refusal to signal a job with no process.
 
 macOS needs no driver: `utun` is in the kernel and a root LaunchDaemon can open it.
 
@@ -225,7 +260,8 @@ Logs: `/var/log/conflux.log`, which `uninstall` removes with the plist.
 
 Service name `conflux`, display name `VeilNet Conflux`, running as `LocalSystem`,
 automatic at boot, depending on `Tcpip`, `Dnscache` and `NSI`. Recovery actions restart
-it after 5, 10 and 30 seconds.
+it after 5, 10 and 30 seconds, the last repeating, and apply to a service that stops with
+an error as well as to one that dies.
 
 The service name has no space in it deliberately: a name with one makes every `sc.exe`
 invocation quoting-sensitive for no benefit.
@@ -240,11 +276,19 @@ daemon that is holding nothing rather than waiting out a grace for a signal nobo
 sent. The graceful alternatives — a named event `anchord` waits on, or a
 daemon-shutdown RPC — are `anchord`'s to offer and it offers neither.
 
-A supervisor that stops itself — exit 78 or 70 — reports the service stopped, which the
-SCM does not count as a failure, so the recovery actions do not restart it into the
-same answer, and writes why to the log. The service accepts Stop from the moment it
+A supervisor that stops on what the next start may not meet — exit 1 — reports a
+service-specific error, which the recovery actions restart. One that stops on nothing to
+start, or on a configuration no restart changes — 78 or 70 — reports a clean stop, so they
+do not restart it into the same answer, and writes why to the log. The SCM is told once,
+with that exit, when the handler returns. The service accepts Stop from the moment it
 starts, so `conflux down`, a restart and `uninstall` need not wait out a bring-up that is
 slow or keeps failing.
+
+`conflux down`, a restart and `uninstall` return once the service's process has exited, not
+when the SCM first reports it stopped — which it does from inside the process, while
+`conflux.exe`, `anchord.exe` and the log are still open. `down` on a service that is already
+stopped succeeds. Reading the service's state, as `conflux status` does, needs no more
+access than any account has.
 
 `install` on an existing service re-registers it with the same type it was created with;
 `up` and `proxy` do that on every run.
@@ -261,15 +305,20 @@ Logs: a service has no console, so the supervisor writes what it and `anchord` s
 it, appends its output to `/var/log/conflux.log`, and records conflux's own pid — so
 `service conflux stop` signals the supervisor, which closes the anchor before anything
 is killed. `daemon(8)` is not told to restart it: conflux restarts `anchord` itself, and a
-supervisor that exits 78 or 70 would only repeat the answer. `uninstall` stops it,
-removes the `rc.conf` line, the script and the log.
+supervisor that exits 78 or 70 would only repeat the answer. `conflux down` on a service
+that is not running succeeds rather than passing on `rc.subr`'s "not running?".
+`uninstall` stops it, removes the `rc.conf` line, the script and the log.
 
 **OpenBSD.** Script at `/etc/rc.d/conflux`, enabled with `rcctl enable conflux`.
 `rc.subr` backgrounds it and sends its output to syslog, so the logs are in
-`/var/log/daemon`. `uninstall` stops and disables it and removes the script. `rc.subr`
-runs the command through a shell and `rcctl` finds it again by matching the same text,
-so no quoting survives both: a `CONFLUX_DIR` root holding a space or a shell character is
-refused at `install` rather than split.
+`/var/log/daemon`. `uninstall` stops and disables it and removes the script.
+
+Both find the running service again by matching its command line, unquoted — FreeBSD's
+`rc.subr` the first word `ps` prints against `procname`, OpenBSD's `rcctl` the whole of it
+as a pattern — and OpenBSD's runs it through a shell as well, so no quoting survives: a
+`CONFLUX_DIR` root holding a space, or a shell or pattern character, is refused at
+`install` rather than registered as a service that starts and can then be neither stopped
+nor asked about.
 
 On both, `install` enables and starts nothing, and `restart` starts a service that was
 not running. One platform note: OpenBSD's `tunN` device persists after close, so
@@ -284,4 +333,5 @@ $ sudo conflux serve --foreground
 
 Runs the supervisor attached to the terminal, with anchord's own output prefixed. This
 is the first thing to try when the service starts and the anchor does not — see
-[troubleshooting.md](troubleshooting.md).
+[troubleshooting.md](troubleshooting.md). Stop the service first: a second supervisor for
+the same root is refused, since each stops the `anchord` the last one left.

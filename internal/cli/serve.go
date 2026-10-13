@@ -88,7 +88,8 @@ func supervisorExit(err error) int {
 		return ExitChildFailed
 	default:
 		// Not 70: a failure the next start may not meet -- extraction on a full disk, a
-		// token that could not be written -- so the service manager is left to restart it.
+		// token that could not be written -- so systemd, launchd and the Windows SCM are
+		// left to restart it. The BSDs' rc does not; see docs/service.md.
 		ui.Errf("%v", err)
 
 		return ExitError

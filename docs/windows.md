@@ -98,3 +98,7 @@ made by somebody else is extracted again rather than trusted.
 
 Registered as `conflux`, displayed as `VeilNet Conflux`, running as `LocalSystem`. See
 [service.md](service.md).
+
+`anchord` runs in a job object that ends it when the supervisor's process ends, however
+it ends: the SCM terminating a service that overran its stop, or a crash, takes the daemon
+with it rather than leaving one holding the control socket.

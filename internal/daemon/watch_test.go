@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"errors"
+	"github.com/veil-net/conflux/internal/config"
 	"os"
 	"path/filepath"
 	"slices"
@@ -84,7 +85,7 @@ func TestBusyInterfaceIsPermanent(t *testing.T) {
 		Stderr: `anchorctl: starting: anchor: opening anchor0: tundev: creating "anchor0": device or resource busy`,
 	}
 
-	if !isPermanent(err) {
+	if !Permanent(err) {
 		t.Error("a TUN name another interface holds should not be retried to the unit timeout")
 	}
 }
@@ -116,7 +117,7 @@ func TestWhatIsPermanent(t *testing.T) {
 			return err
 		}(),
 	} {
-		if !isPermanent(err) {
+		if !Permanent(err) {
 			t.Errorf("%s was not treated as permanent: %v", name, err)
 		}
 	}
@@ -133,7 +134,7 @@ func TestWhatIsPermanent(t *testing.T) {
 			return err
 		}(),
 	} {
-		if isPermanent(err) {
+		if Permanent(err) {
 			t.Errorf("%s was treated as permanent; a retry can fix it", name)
 		}
 	}
@@ -252,5 +253,27 @@ func TestLineWriter(t *testing.T) {
 
 	if len(got) != 1 || len(got[0]) != maxLine+1 {
 		t.Errorf("a line with no end was held rather than read out: %d lines", len(got))
+	}
+}
+
+// TestAReopenedLinkIsCounted: an uplink found dead and rebuilt is counted, in the state the
+// bring-up writes, for status to show; a rebuild that is not one is not.
+func TestAReopenedLinkIsCounted(t *testing.T) {
+	d := benchSite(t)
+	ctl := fakeCtl(t)
+
+	for _, reopened := range []bool{false, true, true} {
+		if _, err := bringUp(t.Context(), d, ctl, nopReporter{}, reopened); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	st, err := config.LoadState(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if st.LinkReopens != 2 || st.LastLinkReopen.IsZero() {
+		t.Errorf("after two reopens the state says %d, last %v", st.LinkReopens, st.LastLinkReopen)
 	}
 }

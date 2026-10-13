@@ -4,10 +4,6 @@ package libexec
 
 import "fmt"
 
-// clearQuarantine has no Windows equivalent. The analogous problem there is
-// SmartScreen and Defender, and neither is an attribute a process can clear.
-func clearQuarantine(string) {}
-
 func cannotExecute(dir string) string {
 	return fmt.Sprintf(
 		"the anchor binaries were extracted to %s but will not run from there.\n"+

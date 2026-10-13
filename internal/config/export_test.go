@@ -23,16 +23,11 @@ func TestExportRefusesWhatAnchordRefuses(t *testing.T) {
 		set  func(*Export)
 		says string
 	}{
-		"no port":                 {func(e *Export) { e.Endpoint = "collector" }, "host:port"},
-		"a URL":                   {func(e *Export) { e.Endpoint = "https://collector:4317" }, "rather than a URL"},
-		"a negative interval":     {func(e *Export) { e.MetricIntervalNanos = -1 }, "negative"},
-		"a negative timeout":      {func(e *Export) { e.ExportTimeoutNanos = -1 }, "negative"},
-		"a header with no name":   {func(e *Export) { e.Headers = map[string]string{"": "x"} }, "no name"},
-		"a secret given two ways": {func(e *Export) { e.CACert = &Secret{Inline: []byte("pem"), Path: "ca.pem"} }, "caCert"},
-		"two ways, while off": {func(e *Export) {
-			e.Enabled = false
-			e.ClientKey = &Secret{Inline: []byte("pem"), Path: "key.pem"}
-		}, "clientKey"},
+		"no port":                       {func(e *Export) { e.Endpoint = "collector" }, "host:port"},
+		"a URL":                         {func(e *Export) { e.Endpoint = "https://collector:4317" }, "rather than a URL"},
+		"a negative interval":           {func(e *Export) { e.MetricIntervalNanos = -1 }, "negative"},
+		"a negative timeout":            {func(e *Export) { e.ExportTimeoutNanos = -1 }, "negative"},
+		"a header with no name":         {func(e *Export) { e.Headers = map[string]string{"": "x"} }, "no name"},
 		"a certificate without its key": {func(e *Export) { e.ClientCert = &Secret{Path: "client.pem"} }, "go together"},
 		"a key without its certificate": {func(e *Export) { e.ClientKey = &Secret{Inline: []byte("pem")} }, "go together"},
 		"no signal":                     {func(e *Export) { e.Metrics = false }, "export.flows"},

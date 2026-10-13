@@ -5,8 +5,9 @@
 // once. An upgraded conflux writes a new directory instead of over the file a
 // running anchord has open, so there is no ETXTBSY on Unix and no sharing violation
 // on Windows. Two conflux processes racing produce the same path. A stale set is
-// identifiable and sweepable. And "is it already extracted" is a stat rather than a
-// read of forty megabytes on every invocation.
+// identifiable and sweepable. And "is it already extracted" is three stats rather
+// than a read of forty megabytes on every invocation: setID is stamped at build time
+// (anchor.Digests).
 //
 // It is emphatically not os.TempDir(), which fails four ways for a service: systemd's
 // PrivateTmp= gives the service a different /tmp than the CLI, so each extracts a
@@ -25,6 +26,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/veil-net/conflux/anchor"
@@ -198,6 +200,8 @@ func extract(root, target string, t *Tools) error {
 // anywhere in the system fails with ETXTBSY, and a deferred Close inside a loop is
 // exactly how that bug is usually written.
 func writeExecutable(path string, content []byte) error {
+	prefault(content)
+
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o700)
 	if err != nil {
 		return fmt.Errorf("create %s: %w", path, err)
@@ -229,6 +233,28 @@ func writeExecutable(path string, content []byte) error {
 
 	return nil
 }
+
+// prefault reads one byte of every page of b, so the embedded binary is mapped in before
+// the write that copies it out.
+//
+// The pair is part of this executable and is paged in on first touch. Touched here, in a
+// pass of reads, the kernel maps the pages in batches around each fault; touched by the
+// write instead, it takes them one at a time inside the copy, which made a cold extraction
+// about half as slow again once nothing read the pair beforehand.
+func prefault(b []byte) {
+	var x byte
+
+	for i := 0; i < len(b); i += pageSize {
+		x ^= b[i]
+	}
+
+	touched.Store(uint32(x)) // kept, so the reads cannot be compiled away
+}
+
+var (
+	pageSize = os.Getpagesize()
+	touched  atomic.Uint32
+)
 
 // smoke runs the extracted anchorctl once, so that a filesystem which will not
 // execute it says so here rather than at the point a daemon fails to start.

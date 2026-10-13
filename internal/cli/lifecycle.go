@@ -2,11 +2,14 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
@@ -50,10 +53,7 @@ func runInstall(ctx context.Context, args []string) int {
 // make, which is silent and leaves starting to the caller. Either has created the
 // directories already.
 func install(ctx context.Context, d paths.Dirs, standalone bool) int {
-	mgr, err := service.New()
-	if err != nil {
-		return fail(err)
-	}
+	mgr := service.New()
 
 	exe, err := service.Place(d)
 	if err != nil {
@@ -77,7 +77,8 @@ func install(ctx context.Context, d paths.Dirs, standalone bool) int {
 		return ExitOK
 	}
 
-	if _, err := config.Load(d); err != nil {
+	cfg, err := config.Load(d)
+	if err != nil {
 		if !os.IsNotExist(err) {
 			return fail(err)
 		}
@@ -91,16 +92,16 @@ func install(ctx context.Context, d paths.Dirs, standalone bool) int {
 		return ExitOK
 	}
 
-	return startFromConfig(ctx, d, mgr, "install")
+	return startFromConfig(ctx, d, mgr, cfg, "install")
 }
 
 // startFromConfig starts the anchor this machine is already configured for.
 //
 // Shared by `install` and `start` so the two cannot drift into starting differently,
-// the same argument daemon.BringUp makes for `up`, `proxy` and every boot. The caller
+// the same argument the daemon's one bring-up makes for `up`, `proxy` and every boot. The caller
 // has already established that a configuration exists and that the service is
 // registered; this is only the starting.
-func startFromConfig(ctx context.Context, d paths.Dirs, mgr service.Manager, verb string) int {
+func startFromConfig(ctx context.Context, d paths.Dirs, mgr service.Manager, cfg *config.Config, verb string) int {
 	ui.Printf("Starting from the configuration in %s.\n", d.ConfigFile())
 
 	// Through restartWith rather than mgr.Restart, so this path clears the readiness
@@ -111,11 +112,6 @@ func startFromConfig(ctx context.Context, d paths.Dirs, mgr service.Manager, ver
 	}
 
 	st, err := waitForAnchor(ctx, d)
-	if err != nil {
-		return fail(err)
-	}
-
-	cfg, err := config.Load(d)
 	if err != nil {
 		return fail(err)
 	}
@@ -177,10 +173,7 @@ func runStart(ctx context.Context, args []string) int {
 
 	d := paths.Default()
 
-	mgr, err := service.New()
-	if err != nil {
-		return fail(err)
-	}
+	mgr := service.New()
 
 	installed, err := mgr.Installed()
 	if err != nil {
@@ -201,7 +194,8 @@ func runStart(ctx context.Context, args []string) int {
 
 	// The same 78 the supervisor exits with, and for the same reason: there is a
 	// service here and nothing for it to run.
-	if _, err := config.Load(d); err != nil {
+	cfg, err := config.Load(d)
+	if err != nil {
 		if !os.IsNotExist(err) {
 			return fail(err)
 		}
@@ -223,7 +217,7 @@ func runStart(ctx context.Context, args []string) int {
 	// No check for "already running". mgr.Restart covers both, and a start that
 	// refused a running anchor would be answering a question nobody asked -- the
 	// caller wants it up, and it ends up up.
-	return startFromConfig(ctx, d, mgr, "start")
+	return startFromConfig(ctx, d, mgr, cfg, "start")
 }
 
 // runDown stops the anchor now and leaves everything else alone.
@@ -249,10 +243,7 @@ func runDown(_ context.Context, args []string) int {
 		return fail(err)
 	}
 
-	mgr, err := service.New()
-	if err != nil {
-		return fail(err)
-	}
+	mgr := service.New()
 
 	installed, err := mgr.Installed()
 	if err != nil {
@@ -309,29 +300,21 @@ func runUninstall(_ context.Context, args []string) int {
 		return ExitUsage
 	}
 
-	mgr, err := service.New()
-	if err != nil {
-		return fail(err)
-	}
-
 	// Each step tolerates its own failure: a half-removed installation must always
-	// be finishable, so nothing stops at the first complaint.
-	_ = mgr.Stop()
+	// be finishable, so nothing stops at the first complaint. Remove stops the service
+	// on every platform before it deregisters it.
+	errs := []error{service.New().Remove()}
 
-	var first error
-
-	if err := mgr.Remove(); err != nil {
-		first = err
-	}
+	// Whatever anchord a supervisor that died left running out of the state directory,
+	// once the service's own supervisor has let go of it.
+	daemon.Reap(d, 35*time.Second)
 
 	for _, dir := range []string{d.Run, d.State, d.Config} {
-		if err := os.RemoveAll(dir); err != nil && first == nil {
-			first = err
-		}
+		errs = append(errs, os.RemoveAll(dir))
 	}
 
-	if first != nil {
-		return fail(first)
+	if err := errors.Join(errs...); err != nil {
+		return fail(err)
 	}
 
 	ui.Printf("Removed. The boot service, the configuration and the identity are gone.\n" +

@@ -428,63 +428,71 @@ func splitBinding(entry string) (spec string, names []string) {
 // slash outside a prefix, since no interface name holds one. Whether a binding names
 // this machine's own compartments is ValidateSubnets', which knows them.
 func ValidateSubnet(entry string) error {
+	_, err := validateSubnet(entry)
+
+	return err
+}
+
+// validateSubnet is ValidateSubnet, returning the compartments the entry binds to as well,
+// so a list is split once.
+func validateSubnet(entry string) ([]string, error) {
 	if strings.Contains(entry, ",") {
-		return fmt.Errorf(
+		return nil, fmt.Errorf(
 			"subnet %q contains a comma, which would split it into two entries; use --subnet twice instead", entry)
 	}
 
 	if len(entry) > MaxSubnetEntry {
-		return fmt.Errorf("subnet %q is %d bytes and anchor allows %d", entry, len(entry), MaxSubnetEntry)
+		return nil, fmt.Errorf("subnet %q is %d bytes and anchor allows %d", entry, len(entry), MaxSubnetEntry)
 	}
 
 	spec, names := splitBinding(entry)
 
 	if names != nil {
 		if strings.TrimSpace(spec) == "" {
-			return fmt.Errorf("subnet %q binds nothing: write the network or interface before the @", entry)
+			return nil, fmt.Errorf("subnet %q binds nothing: write the network or interface before the @", entry)
 		}
 
 		for _, n := range names {
 			if err := ValidateTaint(n); err != nil {
-				return fmt.Errorf("subnet %q: %w", entry, err)
+				return nil, fmt.Errorf("subnet %q: %w", entry, err)
 			}
 		}
 	}
 
 	spec = strings.TrimSpace(spec)
 	if spec == AllSubnets {
-		return nil
+		return names, nil
 	}
 
 	p, err := netip.ParsePrefix(spec)
 	if err != nil {
 		if strings.Contains(spec, "/") {
-			return fmt.Errorf("subnet %q is neither a prefix nor an interface name: %v", entry, err)
+			return nil, fmt.Errorf("subnet %q is neither a prefix nor an interface name: %v", entry, err)
 		}
 
-		return nil // an interface name
+		return names, nil // an interface name
 	}
 
 	if masked := p.Masked(); masked != p {
-		return fmt.Errorf("subnet %s has host bits set; did you mean %s", entry, masked)
+		return nil, fmt.Errorf("subnet %s has host bits set; did you mean %s", entry, masked)
 	}
 
 	if a := p.Addr(); a.Is4In6() {
 		if p.Bits() < 96 {
-			return fmt.Errorf("subnet %s is not a private network", entry)
+			return nil, fmt.Errorf("subnet %s is not a private network", entry)
 		}
 
-		return fmt.Errorf("subnet %s is an IPv4 network written as IPv6, which anchor never finds attached; write %s",
+		return nil, fmt.Errorf("subnet %s is an IPv4 network written as IPv6, which anchor never finds attached; write %s",
 			entry, netip.PrefixFrom(a.Unmap(), p.Bits()-96))
 	}
 
 	for _, r := range privateNetworks {
 		if r.Bits() <= p.Bits() && r.Contains(p.Addr()) {
-			return nil
+			return names, nil
 		}
 	}
 
-	return fmt.Errorf(
+	return nil, fmt.Errorf(
 		"subnet %s is not a private network: anchor forwards private networks only, and reaching the public internet through an anchor is what an exit is for",
 		entry)
 }
@@ -502,11 +510,10 @@ func ValidateSubnets(entries, taints []string) error {
 	bound := map[string]bool{}
 
 	for _, e := range entries {
-		if err := ValidateSubnet(e); err != nil {
+		names, err := validateSubnet(e)
+		if err != nil {
 			return err
 		}
-
-		_, names := splitBinding(e)
 
 		for _, n := range names {
 			if !slices.Contains(taints, n) {
@@ -532,4 +539,29 @@ func describeTaints(taints []string) string {
 	}
 
 	return strings.Join(taints, ", ")
+}
+
+// ValidateTUNName refuses an interface name the platform will not give anchor, which it
+// would otherwise find only when the TUN is made, once a second.
+//
+// A name is a request: macOS numbers its own utun and the BSDs their own tun, and anchor
+// takes what it is given rather than refusing a name it cannot have. What it does refuse
+// is a name that cannot be one on Linux -- IFNAMSIZ, and what the kernel will not name an
+// interface -- and on macOS a utun whose number is not one.
+func ValidateTUNName(name, goos string) error {
+	switch goos {
+	case "linux":
+		if name == "" || name == "." || name == ".." || len(name) >= 16 || strings.ContainsAny(name, "/: \t\n\r\v\f") {
+			return fmt.Errorf("%q cannot name a Linux interface: it must be 1 to 15 bytes, not . or .., "+
+				"with no / or : or space", name)
+		}
+	case "darwin":
+		if rest, ok := strings.CutPrefix(name, "utun"); ok && rest != "" {
+			if n, err := strconv.Atoi(rest); err != nil || n < 0 {
+				return fmt.Errorf("%q is not a utun interface name: macOS names its own, utun with a number", name)
+			}
+		}
+	}
+
+	return nil
 }

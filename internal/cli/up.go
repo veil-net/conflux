@@ -99,7 +99,7 @@ func runUp(ctx context.Context, args []string) int {
 
 	// Switching a proxy machine to TUN is a real change of shape, not an edit.
 	if cfg.Mode == config.ModeProxy && len(cfg.Proxies) > 0 {
-		ui.Warnf("this machine was serving %d proxied service(s) in userspace mode.\n"+
+		ui.Errf("this machine was serving %d proxied service(s) in userspace mode.\n"+
 			"  Bringing up a network interface replaces that: one daemon holds one anchor,\n"+
 			"  and an anchor with an interface cannot also serve a reverse proxy.",
 			len(cfg.Proxies))
@@ -129,16 +129,22 @@ func runUp(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	if err := chooseIPv4(cfg, *ipv4, *noIPv4); err != nil {
-		return fail(err)
-	}
-
 	held, err := heldCredential(d)
 	if err != nil {
 		return fail(err)
 	}
 
 	if err := chooseTaints(cfg, taints, held); err != nil {
+		return fail(err)
+	}
+
+	// Last, after everything typed has been checked: it may ask a question, and an answer
+	// given only to be told a flag was wrong is an answer given twice.
+	if err := config.ValidateSubnets(cfg.Subnets, cfg.Taints); err != nil {
+		return fail(err)
+	}
+
+	if err := chooseIPv4(cfg, *ipv4, *noIPv4); err != nil {
 		return fail(err)
 	}
 
@@ -435,7 +441,7 @@ func chooseUplink(cfg *config.Config, flagValue string, none bool) error {
 	}
 
 	if spec.Baud > 0 && spec.Baud < config.SlowUplinkBaud {
-		ui.Warnf("%d baud carries a realm handshake in about %ds, against a 60s idle timeout.\n"+
+		ui.Errf("%d baud carries a realm handshake in about %ds, against a 60s idle timeout.\n"+
 			"  It is a full TLS 1.3 exchange with ML-DSA certificates both ways, so the floor is\n"+
 			"  the identity model's rather than the link's: slower lines run out of time rather\n"+
 			"  than merely take longer.",
@@ -478,7 +484,7 @@ func choosePeers(cfg *config.Config, values []string, none bool) error {
 	}
 
 	if len(cfg.Peers) > 0 && !slices.Equal(cfg.Peers, values) {
-		ui.Warnf("this machine was bootstrapping from %s and will now use %s.",
+		ui.Errf("this machine was bootstrapping from %s and will now use %s.",
 			strings.Join(cfg.Peers, ", "), strings.Join(values, ", "))
 	}
 
@@ -576,7 +582,7 @@ func chooseTaints(cfg *config.Config, given []string, held *enrol.Manifest) erro
 	}
 
 	if len(given) > 1 {
-		ui.Warnf("a set of %d taints is compared by containment, not overlap: this machine exchanges\n"+
+		ui.Errf("a set of %d taints is compared by containment, not overlap: this machine exchanges\n"+
 			"  data only with one whose taints include all of these, or are all among them.\n"+
 			"  Sharing one of them is not enough.", len(given))
 	}

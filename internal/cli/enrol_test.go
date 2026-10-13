@@ -539,3 +539,23 @@ func TestEnrolInstallsAGhostRealmNode(t *testing.T) {
 		t.Error("serveExit was inherited from the document; an exit is conflux's to decide")
 	}
 }
+
+// TestEnrolRefusesAnOversizedManifest: one bound for a file and for stdin, and refused
+// rather than cut short into a decode error that names everything but the size.
+func TestEnrolRefusesAnOversizedManifest(t *testing.T) {
+	d, _ := site(t, guardianDoc)
+
+	path := filepath.Join(t.TempDir(), "big.b64")
+	if err := os.WriteFile(path, []byte(strings.Repeat("A", maxManifest+1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := importCredential(d, path, guardianAPI, "")
+	if err == nil || !strings.Contains(err.Error(), "KiB") {
+		t.Fatalf("an oversized manifest gave %v, want a refusal naming its size", err)
+	}
+
+	if config.HasManifest(d) {
+		t.Error("the refused manifest was installed")
+	}
+}

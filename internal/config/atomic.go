@@ -20,7 +20,13 @@ import (
 // The mode is set on the file descriptor before any content reaches it. Writing
 // and then chmod'ing leaves a window in which the secret exists at the umask's
 // mode, and on a shared machine that window is the whole vulnerability.
-func WriteFileAtomic(path string, data []byte, perm fs.FileMode) (err error) {
+func WriteFileAtomic(path string, data []byte, perm fs.FileMode) error {
+	return writeAtomic(path, perm, data)
+}
+
+// writeAtomic is WriteFileAtomic for content in pieces, written one after another, so a
+// caller adding a newline need not copy what it was given to add it.
+func writeAtomic(path string, perm fs.FileMode, chunks ...[]byte) (err error) {
 	dir := filepath.Dir(path)
 
 	tmp, err := os.CreateTemp(dir, ".tmp-*")
@@ -51,8 +57,10 @@ func WriteFileAtomic(path string, data []byte, perm fs.FileMode) (err error) {
 		}
 	}
 
-	if _, err = tmp.Write(data); err != nil {
-		return fmt.Errorf("write %s: %w", tmpName, err)
+	for _, c := range chunks {
+		if _, err = tmp.Write(c); err != nil {
+			return fmt.Errorf("write %s: %w", tmpName, err)
+		}
 	}
 
 	if err = tmp.Sync(); err != nil {

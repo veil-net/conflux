@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 	"time"
 
-	"github.com/veil-net/conflux/anchor"
 	"github.com/veil-net/conflux/internal/anchorctl"
+	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
@@ -70,6 +72,70 @@ func BenchmarkLinkCheck(b *testing.B) {
 	reportGoroutines(b, before)
 }
 
+// BenchmarkLinkCheckWithDevice is the same tick on a device uplink, which looks for the
+// device on the filesystem before it asks the daemon.
+func BenchmarkLinkCheckWithDevice(b *testing.B) {
+	device := filepath.Join(b.TempDir(), "ttyUSB0")
+	if err := os.WriteFile(device, nil, 0o600); err != nil {
+		b.Fatal(err)
+	}
+
+	s := &Supervisor{ctl: fakeCtl(b)}
+	ctx := context.Background()
+
+	var zeroSince time.Time
+
+	before := settledGoroutines()
+
+	b.ReportAllocs()
+
+	for b.Loop() {
+		if dead, _, _ := s.linkIsDead(ctx, device, &zeroSince); dead {
+			b.Fatal("a device that is present, carrying a connection, read as dead")
+		}
+	}
+
+	reportGoroutines(b, before)
+}
+
+// BenchmarkAnchordOutput is anchord's output on its way to the tail and the reporter: what
+// every line the daemon writes costs the supervisor.
+func BenchmarkAnchordOutput(b *testing.B) {
+	s := &Supervisor{tail: newRing(tailLines)}
+	w := s.lines()
+
+	line := []byte(`time=2026-10-13T16:22:15.338Z level=INFO msg="anchor listening" component=anchor ` +
+		`id=anchorpecpoflwfnftrb6mc2nbp356zmrmx5uogmvtuomfdxigkxzq647a addr=0.0.0.0:33759` + "\n")
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(line)))
+
+	for b.Loop() {
+		_, _ = w.Write(line)
+	}
+}
+
+// BenchmarkBringUp is the start every boot and every `conflux up` makes with a credential
+// in hand: the lock, the stored files, the taints check, anchorctl start and the state
+// written back.
+func BenchmarkBringUp(b *testing.B) {
+	d := benchSite(b)
+
+	ctl := fakeCtl(b)
+	ctx := context.Background()
+	before := settledGoroutines()
+
+	b.ReportAllocs()
+
+	for b.Loop() {
+		if _, err := bringUp(ctx, d, ctl, nopReporter{}, false); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	reportGoroutines(b, before)
+}
+
 // BenchmarkAnchorCheck is one tick of the watcher on the host's network: an anchorctl
 // status round trip and the parse that decides whether the daemon still holds an anchor.
 func BenchmarkAnchorCheck(b *testing.B) {
@@ -110,7 +176,7 @@ func BenchmarkRenewal(b *testing.B) {
 	}))
 	b.Cleanup(api.Close)
 
-	d := benchDirs(b)
+	d := dirs(b)
 	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"bench"}, APIBaseURL: api.URL}
 
 	if err := config.Save(d, cfg); err != nil {
@@ -151,13 +217,11 @@ func BenchmarkRenewal(b *testing.B) {
 // BenchmarkDaemonLifecycle is one supervised anchord lifetime without an anchor in it:
 // spawn, the readiness probe, and the shutdown that closes and reaps it.
 func BenchmarkDaemonLifecycle(b *testing.B) {
-	if !anchor.Supported {
-		b.Skip("no anchor pair for this platform")
-	}
+	anchortest.Require(b)
 
 	b.Setenv("CONFLUX_DIR", b.TempDir())
 
-	d := benchDirs(b)
+	d := dirs(b)
 
 	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Taints: []string{"bench"}}); err != nil {
 		b.Fatal(err)
@@ -198,12 +262,33 @@ func BenchmarkDaemonLifecycle(b *testing.B) {
 	reportGoroutines(b, before)
 }
 
-func benchDirs(b *testing.B) paths.Dirs {
-	b.Helper()
+// benchSite is a machine with a configuration, a state that names its anchor and a
+// credential nowhere near due: what a start with a credential in hand reads.
+func benchSite(tb testing.TB) paths.Dirs {
+	tb.Helper()
 
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		b.Fatal(err)
+	d := dirs(tb)
+
+	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Taints: []string{"bench"}}); err != nil {
+		tb.Fatal(err)
+	}
+
+	if err := config.SaveState(d, &config.State{AnchorID: fakeAnchorID}); err != nil {
+		tb.Fatal(err)
+	}
+
+	now := time.Now().UTC()
+
+	doc, _ := json.Marshal(map[string]any{
+		"formatVersion": 1, "kind": "anchor", "identity": "00", "genesis": "00",
+		"chain":    base64.StdEncoding.EncodeToString(make([]byte, 6<<10)),
+		"issuedAt": now.Format(time.RFC3339), "notAfter": now.Add(30 * 24 * time.Hour).Format(time.RFC3339),
+		"taints": []string{"bench"}, "bootstrap": []string{"genesis.veilnet.com.au:4700"},
+		"renewalUrl": "https://api.veilnet.com.au/ghosts/alpha/renew", "renewalAuth": "anchor-id",
+	})
+
+	if err := config.SaveManifest(d, config.Envelope(base64.StdEncoding.EncodeToString(doc))); err != nil {
+		tb.Fatal(err)
 	}
 
 	return d

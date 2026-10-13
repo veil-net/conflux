@@ -11,6 +11,7 @@ import (
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/ui"
 )
 
@@ -27,14 +28,17 @@ import (
 func passthrough(ctx context.Context, args []string) int {
 	d := paths.Default()
 
+	token, code := connectionDetails(d, args)
+	if code != ExitOK {
+		return code
+	}
+
+	// Only once there is something to talk to. Extracting first made the directories
+	// uninstall had removed, and 45 MB in them, on a machine with nothing running, and
+	// failed for an account that cannot write them before saying what was wrong.
 	tools, err := libexec.Ensure(d)
 	if err != nil {
 		return fail(err)
-	}
-
-	token, ok := connectionDetails(d, args)
-	if !ok {
-		return ExitUnavailable
 	}
 
 	env := (&anchorctl.Ctl{Socket: d.Socket(), Token: token}).Env()
@@ -49,11 +53,11 @@ func passthrough(ctx context.Context, args []string) int {
 // there, which is right for anchor and no help to somebody holding conflux, who never
 // started anchord and is not meant to. Everything else, including anchorctl's
 // genuinely good explanations of every other refusal, passes through untouched.
-func connectionDetails(d paths.Dirs, args []string) (string, bool) {
+func connectionDetails(d paths.Dirs, args []string) (string, int) {
 	// A user who named a socket themselves is talking to a daemon conflux does not
 	// manage, so none of the checks below apply to them.
 	if namesSocket(args) || os.Getenv(anchorctl.SocketEnv) != "" {
-		return "", true
+		return "", ExitOK
 	}
 
 	// Usage needs nothing running. anchorctl groups keygen, issue and inspect
@@ -62,7 +66,7 @@ func connectionDetails(d paths.Dirs, args []string) (string, bool) {
 	// the only thing that genuinely reaches no socket, because Go's flag package
 	// answers before anything dials.
 	if wantsUsage(args) {
-		return "", true
+		return "", ExitOK
 	}
 
 	if _, err := os.Stat(d.Socket()); errors.Is(err, fs.ErrNotExist) {
@@ -72,31 +76,33 @@ func connectionDetails(d paths.Dirs, args []string) (string, bool) {
 			"  conflux proxy 8080=127.0.0.1:3000   publish a port, no interface needed\n\n"+
 			"  (the control socket would be %s)", d.Socket())
 
-		return "", false
+		return "", ExitUnavailable
 	}
 
-	b, err := os.ReadFile(d.TokenFile())
-	if err != nil {
-		if errors.Is(err, fs.ErrPermission) {
-			ui.Errf("%s is not readable, and anchorctl needs it to authenticate.\n"+
-				"  try:  sudo conflux %s", d.TokenFile(), strings.Join(args, " "))
+	token, err := readToken(d)
+	if errors.Is(err, fs.ErrPermission) {
+		ui.Errf("%s is not readable, and anchorctl needs it to authenticate.\n  try:  %s",
+			d.TokenFile(), privcheck.Retry(typed("conflux", args...)))
 
-			return "", false
-		}
-
-		// The daemon is up but the token is gone. Let anchorctl produce the error;
-		// it may still work from the user's own environment.
-		return "", true
+		return "", ExitDenied
 	}
 
-	return strings.TrimSpace(string(b)), true
+	// Any other failure is a daemon that is up with its token gone. Let anchorctl
+	// produce the error; it may still work from the user's own environment.
+	return token, ExitOK
 }
 
-// wantsUsage reports whether this invocation is only asking what a command takes.
+// wantsUsage reports whether this invocation is only asking what a command takes: help
+// as the command, or a help flag anywhere. Not help anywhere at all, which is as likely a
+// flag's value -- `block -target X -reason help` -- as a request.
 func wantsUsage(args []string) bool {
+	if len(args) > 0 && args[0] == "help" {
+		return true
+	}
+
 	for _, a := range args {
 		switch a {
-		case "help", "-h", "--help", "-help":
+		case "-h", "--help", "-help":
 			return true
 		}
 	}
@@ -143,22 +149,21 @@ func runCtl(d paths.Dirs) (*anchorctl.Ctl, error) {
 		return nil, err
 	}
 
+	token, _ := readToken(d)
+
 	return &anchorctl.Ctl{
 		Bin:    tools.Anchorctl,
 		Socket: d.Socket(),
-		Token:  readToken(d),
+		Token:  token,
 		SetID:  tools.SetID,
 	}, nil
 }
 
-// readToken is the daemon's bearer token, or "" when it cannot be read.
-func readToken(d paths.Dirs) string {
+// readToken is the daemon's bearer token; "" with the error when it cannot be read.
+func readToken(d paths.Dirs) (string, error) {
 	b, err := os.ReadFile(d.TokenFile())
-	if err != nil {
-		return ""
-	}
 
-	return strings.TrimSpace(string(b))
+	return strings.TrimSpace(string(b)), err
 }
 
 // runQuiet runs anchorctl and returns its output, for the places conflux embeds it

@@ -14,11 +14,15 @@ under a systemd unit with `User=` or `ProtectHome=`.
 |---|---|---|---|---|
 | configuration | `/etc/conflux/` | `/Library/Application Support/conflux/` | `%ProgramData%\conflux\` | `/usr/local/etc/conflux/` |
 | state, identity, binaries | `/var/lib/conflux/` | `/Library/Application Support/conflux/` | `%ProgramData%\conflux\` | `/var/db/conflux/` |
-| socket and token | `/run/conflux/` | `/var/run/conflux/` | `%ProgramData%\conflux\run\` | `/var/run/conflux/` |
+| socket, token, anchord's pid | `/run/conflux/` | `/var/run/conflux/` | `%ProgramData%\conflux\run\` | `/var/run/conflux/` |
 
 `CONFLUX_DIR` roots all of them in one directory, and the boot service with them — it is named after the root, so a run under it is a separate installation rather than a replacement for the machine's own. See [testing.md](testing.md).
 
-Every directory is `0700` and every file `0600`.
+Every directory is `0700` — one found wider is narrowed, and one another account owns is refused —
+and every file conflux writes there is `0600`, apart from the programs it runs (the extracted pair
+and the service's own copy of conflux, `0700`). The service definitions live where the service
+manager reads them, at the modes it expects, and on macOS and FreeBSD the log file goes in the
+system's `/var/log`.
 
 ## `conflux.json` — what you asked for
 
@@ -175,7 +179,6 @@ machine has left. See
   "issuedAt": "2026-09-06T06:35:43.5Z",
   "notAfter": "2026-10-06T06:35:43.871Z",
   "clockSkew": 412000000,
-  "enrolledAt": "2026-09-06T06:35:43.559Z",
   "binSetId": "998ece52739a7c74",
   "linkReopens": 2,
   "lastLinkReopen": "2026-09-08T11:04:12Z"
@@ -189,9 +192,13 @@ It, `linkReopens` and `lastLinkReopen` are here rather than in memory because th
 supervisor that measures them and the `conflux status` that reports them are different
 processes. See [credentials.md](credentials.md#clock-skew) and [uplink.md](uplink.md).
 
-Everything here is derived. Delete it and the next start re-learns the AnchorID and
-the credential window at the cost of one extra call. That is why it is a separate file
-from the manifest, which is recoverable from nowhere.
+Everything here is derived, and most of it is re-learned by the next start: the window
+from the manifest, the AnchorID from what `anchorctl start` reports. Not on a machine
+whose credential has expired: a renewal names the anchor by its AnchorID, anchor will not
+start on an expired credential to report one, so with `state.json` gone that machine is
+refused for good and needs a new identity. A new identity — an enrolment, or `conflux
+enrol` — clears everything here that described the old one. The manifest, recoverable from
+nowhere, is a file of its own.
 
 It is separate from `conflux.json` for a second reason: the renewal timer rewrites
 `notAfter` at every renewal from the supervisor while `up` or `proxy` may be rewriting
@@ -212,9 +219,10 @@ headers, which are credentials.
 ## `bin/<setID>/` — the extracted anchor pair
 
 `anchord` and `anchorctl`, extracted from the conflux binary, in a directory named for
-their contents: a CRC-32C and the length of each, which tells one build's pair from
-another's without spending a quarter of a second on SHA-256 at every invocation.
-`conflux version` prints the SHA-256s.
+their contents: a hash of the two SHA-256s `conflux version` prints, and the platform.
+`make build` and `make dist` stamp those digests into the binary from the very files it
+embeds, so a released conflux knows its set without reading forty-odd megabytes at every
+invocation; a plain `go build` stamps nothing and computes them once per process instead.
 
 Content-addressed rather than a fixed path, and that one decision removes four
 problems at once. An upgraded conflux writes a *new* directory instead of over the file

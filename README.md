@@ -251,6 +251,7 @@ reaches the realm over — the host's IP network by default, or a link named by
 | `conflux install` | register the boot service; start it if a configuration exists |
 | `conflux uninstall` | remove the boot service, the configuration and the identity |
 | `conflux version` | conflux's version, and the anchor build it carries |
+| `conflux update [--check]` | replace this conflux with the latest release, verified, and restart the anchor on it |
 | `conflux anchorctl ARGS...` | run the embedded `anchorctl`, uninterpreted |
 | *anything else* | passed to `anchorctl` unchanged: `peers`, `routes`, `events`, `metrics`, `send`, `inspect`, … and the realm's control over its members, `block`, `taints`, `subnets`, `telemetry` |
 

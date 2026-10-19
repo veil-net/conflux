@@ -55,8 +55,8 @@ func New() Manager { return newManager() }
 // a home directory, a download, C:\tools -- may be writable by somebody else, who could
 // then swap it for their own program and have it run as root at the next start. So the
 // service runs a copy in the state directory, which only root can write and `uninstall`
-// removes, and each `up`, `proxy`, `install` and `start` refreshes it: an upgraded conflux
-// reaches the service the next time one of them runs.
+// removes, and each `up`, `proxy`, `install`, `start` and `update` refreshes it: an
+// upgraded conflux reaches the service the next time one of them runs.
 //
 // The copy is written beside its destination and renamed over it, so a service running
 // the old one keeps it. Windows will not replace the image of a running process but will
@@ -67,6 +67,13 @@ func Place(d paths.Dirs) (string, error) {
 		return "", err
 	}
 
+	return PlaceFrom(d, src)
+}
+
+// PlaceFrom is Place with the file to copy named, rather than this process's own. `conflux
+// update` uses it once it has replaced the file it was started from: what this process
+// reports as its executable after that is not something every platform agrees on.
+func PlaceFrom(d paths.Dirs, src string) (string, error) {
 	dst := d.ServiceExecutable()
 	aside := dst + ".old"
 

@@ -42,10 +42,10 @@ The line it prints is the only thing that distinguishes the two:
 
 ```console
 anchor-bins: 14/14 copied from ../anchor/release (release)   # a local build, whatever age
-anchor-bins: 14/14 fetched from anchor's release (pinned build)   # the shelf
+anchor-bins: 14/14 fetched from anchor's release (pinned build)   # anchor's latest release
 ```
 
-To take the shelf while a local checkout exists, point the script at a path that has
+To take anchor's release while a local checkout exists, point the script at a path that has
 neither directory:
 
 ```console
@@ -59,18 +59,18 @@ path that matters.
 
 `anchoradmin` sits beside the other two in `release/` and is deliberately never
 copied. It can mint realm roots, and anything in `anchor/bin` is a candidate for being
-embedded into every conflux a user runs. The shelf fetcher refuses a release that carries
-it, before downloading anything.
+embedded into every conflux a user runs. The fetcher refuses a release that carries it,
+before downloading anything.
 
-### The shelf
+### anchor's release
 
-`make anchor-bins FETCH=1` fetches the **pinned** build from the `shelf` release of
+`make anchor-bins FETCH=1` fetches the **pinned** build from the `latest` release of
 `veil-net/anchor`, with no anchor checkout:
 
 ```console
 $ export ANCHOR_RELEASE_TOKEN=github_pat_…
 $ make anchor-bins FETCH=1
-anchor-fetch: shelf:   veil-net/anchor @ shelf
+anchor-fetch: release: veil-net/anchor @ latest
 anchor-fetch: commit:  0e68ba25f3019fdfc331cd8763f40fbdd641538a
 anchor-fetch: realm:   realmtglwuedqqa33e364nv73p46jk3kwi67lxjmnntz2mv3mb3mklasq
 anchor-fetch:   ok   anchord-linux-amd64           29.7 MB  06cc7917c8fc  fetched
@@ -98,13 +98,14 @@ first failure stops the rest. A fresh fetch then waits for the slowest file rath
 for all fourteen in turn — about six seconds rather than forty — and the `ok` lines
 arrive in the order the files finish.
 
-The tag is fixed and moves: `shelf` always names anchor's newest release build, which is
-the intent — conflux ships the newest anchor, not a remembered one. Fetched by tag rather
-than by "latest", because latest is a heuristic over publication dates that a real product
-release cut in anchor would win.
+The tag is fixed and moves: `latest` always names anchor's newest release build, which is
+the intent — conflux ships the newest anchor, not a remembered one. anchor releases every
+build twice, with the same assets: at `latest`, and at a dated tag, `YYYYMMDD-HHMMSS`, which
+stays, and whose notes say what changed since the build before. `ANCHOR_TAG=<dated tag>`
+fetches one of those instead.
 
 `ANCHOR_REPO=`, `ANCHOR_TAG=` and `ANCHOR_API=` point it elsewhere. The fetcher is
-`cmd/anchor-fetch` over `internal/shelf` — Go rather than curl and a JSON parser, because
+`cmd/anchor-fetch` over `internal/anchorrelease` — Go rather than curl and a JSON parser, because
 the promise at the top of this page is "Go 1.27.2 or newer, and nothing else", and a fresh
 clone should not have to acquire anything else to become buildable.
 
@@ -151,7 +152,7 @@ What it refuses, and why each is worth a refusal:
 | | |
 |---|---|
 | a digest that does not match | the failure no later gate catches — a real binary of the right size passes the size gate, and one of the right architecture passes `TestPairIsRealExecutables` |
-| `anchoradmin` on the shelf | it mints realm roots, and every file in `anchor/bin` is a candidate for being embedded into every conflux a user runs |
+| `anchoradmin` among the fetched files | it mints realm roots, and every file in `anchor/bin` is a candidate for being embedded into every conflux a user runs |
 | `anchoradmin` attached to the release | refused on sight, before anything is downloaded — if it is being published, that is worth stopping over rather than quietly not selecting |
 | an asset still uploading | a half-finished release is not yet what its manifest claims |
 | a manifest with no `pin` | nothing then says which realm these binaries are for |
@@ -175,7 +176,7 @@ needs — the macOS and Windows CI jobs fetch their own two files and no others 
 `DEST=` puts them somewhere other than `anchor/bin`.
 
 **There is no URL anywhere.** Nothing reads a URL out of a document: every request is
-built from `internal/shelf`'s own constants, and binaries are resolved by asset **name**
+built from `internal/anchorrelease`'s own constants, and binaries are resolved by asset **name**
 within one release. The set of places a fetch can reach is fixed by conflux's
 configuration rather than by anything on the wire.
 
@@ -191,7 +192,7 @@ A placeholder build is not able to masquerade as a real one:
 
 ```console
 $ go build -o conflux . && ./conflux version
-conflux 1.0.0-pre (f47de0fac83d24489664ca15fc6a317ac9c9f683) linux/amd64
+conflux 1.0.0 (f47de0fac83d24489664ca15fc6a317ac9c9f683) linux/amd64
 no anchor binaries for linux/amd64
 ```
 
@@ -218,7 +219,7 @@ time here.
 only wanted its output, and anchor's `make release` depends on `genesis/genesis.pin`:
 with no `genesis/` directory its rule **mints a new genesis root** instead of failing,
 and binaries pinned to a realm nobody else has ever seen enrol perfectly and then never
-handshake. The shelf is anchor's own CI doing that build once, with the real pin, and
+handshake. anchor's release is its own CI doing that build once, with the real pin, and
 publishing the output.
 
 Note that `go install` cannot work under any of these: the module zip the proxy serves
@@ -305,24 +306,27 @@ on first use, at the cost of reading the pair once per process.
 
 The file rather than a tag, deliberately: a tag is a claim about a commit, and the file is
 a claim about the tree — and it is the tree that gets built. It names the release; it does
-not decide whether one happens. `release.yml` runs on every merge to `version3` and
-**every merge builds and publishes**, replacing the artifacts on the release this file
-names. The tag is whatever it says, verbatim.
+not decide whether one happens. `release.yml` runs on every push to `version3`, a merge
+included, and **every push builds and publishes twice**, with the same artifacts and the
+same notes: at the tag this file names, verbatim, and at `latest`, which moves to every newer
+build and is the repository's Latest release.
 
-So bumping `VERSION` is how a merge becomes a *new* release rather than a rebuild of the
-current one. Leaving it alone is not "do not release" — it is "release this again, with
-what just landed".
+**Each maintenance pass moves the version on.** A major new feature from anchor, which the
+pass finds when it diffs anchor's surface against what conflux uses, makes a new major:
+`1.4.0` becomes `2.0.0`. Any other pass makes a new minor: `1.4.0` becomes `1.5.0`. So bumping `VERSION` is
+how a merge becomes a *new* release rather than a rebuild of the current one.
 
-The tag is not moved. GitHub leaves it at the commit it was first cut from, so after the
-first rebuild it names an older commit than the binaries hanging off the release; the
-release job warns on every run where that has happened. `conflux version` reports the
-commit it was actually built from, which is the one to trust.
+Leaving it alone is not "do not release" — it is "release this again, with what just
+landed". Both releases are deleted, tags included, and released again from the merged
+commit, so a version's tag always names the commit its artifacts were built from, and
+`conflux version` agrees with it. The notes list the changes since the previous version,
+so a rebuild's notes carry everything that version has gathered so far.
 
 ## Reproducibility
 
 `-trimpath` is set, so paths do not leak into the binary. Builds are otherwise
 reproducible for a given Go toolchain version and a given `anchor/bin`: two people on
-the same toolchain with the same shelf produce the same artifact.
+the same toolchain with the same anchor release produce the same artifact.
 
 What is *not* reproducible from this repository is anchor itself. Those binaries are
 built elsewhere, pinned to a genesis key that never leaves the maintainer's machine.

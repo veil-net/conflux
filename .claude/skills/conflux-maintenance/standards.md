@@ -18,13 +18,13 @@ What the audit aims for, the rules it works under, and what must hold at the end
 Work through them in this order:
 
 1. CLI, and the pass-through and collision rules
-2. `up`, `proxy`, `enrol`, `renew`, `status` and the lifecycle commands (`start`, `down`, `install`, `uninstall`, `serve`)
+2. `up`, `proxy`, `enrol`, `renew`, `status`, `update` and the lifecycle commands (`start`, `down`, `install`, `uninstall`, `serve`)
 3. Config, atomic writes, and secrets
 4. The enrolment and renewal client
 5. The daemon supervisor: bring-up, readiness, renewal, the watcher (a lost anchor, an ended link)
 6. anchorctl argv and parsers
 7. libexec extraction
-8. The embedded binary set and the shelf fetcher
+8. The embedded binary set and the fetcher for anchor's release
 9. The boot service, per OS
 10. Platform code: Windows ownership and DACLs, wintun, the BSDs, macOS
 11. flock, privcheck, paths
@@ -47,7 +47,7 @@ Work through them in this order:
   - the release pipeline
 - **Utility checks run locally before every push, never in CI; CI does the code testing, and only CI does it.** gofmt, staticcheck, tidycheck, govulncheck, docs and link checks, actionlint, shellcheck, commit checks and the like stay out of CI and run in steps 4 and 7 and before each fix is pushed (see reference.md § Local checks). The suites CI runs are not repeated locally: the PR's run is the verification.
 - **Faster, with the same verification power.** Never drop, skip or weaken a build or test that verifies the code. Speed comes from:
-  - caching: the Go module and build cache, fetched anchor binaries keyed by shelf digest, Docker layers
+  - caching: the Go module and build cache, fetched anchor binaries keyed by the release manifest's digest, Docker layers
   - fetching or building anchor binaries once and sharing them across jobs as artifacts
   - fetching only the binaries a platform job needs
   - building, vetting and fetching every target at once, and running independent suites side by side
@@ -57,7 +57,7 @@ Work through them in this order:
   - job ordering suited to the runners: self-hosted `veilnet-dev` for the Linux Go suite, hosted runners for the container suites (they need the live realm's bootstrap node over UDP) and for macOS and Windows
 - Keep the fork guard on every self-hosted job. The only credential stays the read-only anchor GitHub App. Release stays gated to `version3`.
 - Every external action is pinned to its release's commit, with the tag in a comment, and bumped by moving both. No checkout persists its token.
-- **Release only releases.** The user merges to `version3` only when CI is all green, so `release.yml` doesn't re-verify anything. On a merge it fetches the pinned binaries, runs `make dist` (the size gate comes with it), attests, and publishes at the `VERSION` tag. Jobs or steps that repeat CI's checks are removed; the `version3` gate is the one guard it keeps.
+- **Release only releases.** The user merges to `version3` only when CI is all green, so `release.yml` doesn't re-verify anything. On a push it fetches the pinned binaries, runs `make dist` (the size gate comes with it), attests, and publishes twice: at the `VERSION` tag and at `latest`, each deleted and released again. Jobs or steps that repeat CI's checks are removed; the `version3` gate is the one guard it keeps.
 - Validate workflow and composite-action changes with `actionlint` (and `act` if available) before pushing; the PR's own run is what proves them. Name in the summary any change a PR run cannot exercise, such as `release.yml`.
 
 ## Threat model
@@ -68,7 +68,7 @@ Work through them in this order:
   - the executable it writes to disk and runs (a dropper shape)
   - the private key in a file
   - local privilege boundaries: other local users, file modes, DACLs, service definitions, PATH, and the extraction location
-  - responses from the shelf fetcher: redirects, bad digests
+  - responses to the release fetcher: redirects, bad digests
   - CI running on a persistent self-hosted machine in a public repository
 
 ## Design references

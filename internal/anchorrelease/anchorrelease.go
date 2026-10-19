@@ -1,4 +1,4 @@
-// Package shelf fetches the anchor binaries from a release of the anchor repository.
+// Package anchorrelease fetches the anchor binaries from a release of the anchor repository.
 //
 // The binaries are not in git -- fourteen release builds are about 330 MB -- so a machine
 // with no anchor checkout, which is every CI runner, fetches them from here.
@@ -28,7 +28,7 @@
 // that way vouches for itself. The release document, which the API answers directly,
 // gives each asset's SHA-256: manifest.json is held to it, and each binary to the digest
 // manifest.json gives -- so substituted bytes anywhere past the API fail a compare.
-package shelf
+package anchorrelease
 
 import (
 	"context"
@@ -51,10 +51,11 @@ import (
 const (
 	// DefaultAPI, DefaultRepo and DefaultTag are the whole of the contract with anchor.
 	// The tag moves: it always names anchor's newest release build, which is the intent
-	// -- conflux ships the newest anchor, not a remembered one.
+	// -- conflux ships the newest anchor, not a remembered one. anchor also releases each
+	// build at a dated tag, YYYYMMDD-HHMMSS, which stays; -tag fetches one of those.
 	DefaultAPI  = "https://api.github.com"
 	DefaultRepo = "veil-net/anchor"
-	DefaultTag  = "shelf"
+	DefaultTag  = "latest"
 
 	// TokenEnv carries the credential. An environment variable and never a flag: a flag
 	// is visible in `ps` to every other user on the machine, and lands in any CI log
@@ -172,7 +173,7 @@ func Fetch(ctx context.Context, src Source, want []string, dir string, log func(
 	assets := map[string]asset{}
 
 	for _, a := range rel.Assets {
-		// anchoradmin can mint realm roots. It has no business on the shelf and
+		// anchoradmin can mint realm roots. It has no business in a release and
 		// certainly none in anchor/bin, every file of which is a candidate for being
 		// embedded into every conflux a user runs. Refused on sight of it in the
 		// release, before anything is downloaded -- if it is being published, that is
@@ -194,7 +195,7 @@ func Fetch(ctx context.Context, src Source, want []string, dir string, log func(
 	}
 
 	if m.FormatVersion != formatVersion {
-		return fmt.Errorf("the shelf speaks manifest format %d and this conflux understands %d",
+		return fmt.Errorf("the release speaks manifest format %d and this conflux understands %d",
 			m.FormatVersion, formatVersion)
 	}
 
@@ -212,7 +213,7 @@ func Fetch(ctx context.Context, src Source, want []string, dir string, log func(
 		byName[b.Name] = b
 	}
 
-	log("shelf:   %s @ %s", src.Repo, src.Tag)
+	log("release: %s @ %s", src.Repo, src.Tag)
 	log("commit:  %s", rel.TargetCommitish)
 	log("realm:   %s", m.Pin)
 
@@ -234,7 +235,7 @@ func Fetch(ctx context.Context, src Source, want []string, dir string, log func(
 	if len(missing) > 0 {
 		sort.Strings(missing)
 
-		return fmt.Errorf("the shelf serves %d of the %d binaries conflux embeds; missing:\n  %s",
+		return fmt.Errorf("the release serves %d of the %d binaries conflux embeds; missing:\n  %s",
 			len(want)-len(missing), len(want), strings.Join(missing, "\n  "))
 	}
 

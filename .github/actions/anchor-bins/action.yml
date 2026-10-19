@@ -1,6 +1,6 @@
 name: anchor-bins
 description: >
-  Populate anchor/bin with the pinned anchor binaries, fetched from the `shelf` release
+  Populate anchor/bin with the pinned anchor binaries, fetched from the `latest` release
   of veil-net/anchor.
 
 inputs:
@@ -53,14 +53,14 @@ runs:
     #
     # On veilnet-dev, fetched into the runner's tool cache and copied from there: that
     # directory survives between runs, and the fetcher keeps a file whose SHA-256 is the
-    # one the shelf's manifest gives -- so an unchanged shelf costs a read rather than
+    # one the release's manifest gives -- so an unchanged release costs a read rather than
     # three hundred megabytes, and nothing the manifest does not describe survives. A
     # hosted runner starts empty every time, so it fetches straight into anchor/bin.
     #
     # The token reaches the fetcher as an environment variable and never as an argument:
     # an argument is visible in `ps` to every other user on the machine.
     #
-    # ANCHOR_SRC names nothing, so the shelf is the only source: anchor-bins.sh prefers a
+    # ANCHOR_SRC names nothing, so anchor's release is the only source: anchor-bins.sh prefers a
     # local anchor checkout's release/ or dist/, and on the persistent self-hosted machine
     # a stray unpinned build there would otherwise be what CI tests and a release ships.
     # Relative, because Git Bash on Windows rewrites an absolute /path it hands to make

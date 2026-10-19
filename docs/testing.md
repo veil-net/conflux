@@ -172,7 +172,7 @@ CI verifies that the code builds and runs. The utility checks — `gofmt`, `stat
 `shellcheck`, which it does not since they need the network or tools of their own — run
 on a developer's machine before a push, and not in CI.
 
-Every job fetches the **pinned** release build from the `shelf` release of
+Every job fetches the **pinned** release build from the `latest` release of
 `veil-net/anchor` and verifies every digest, with no anchor checkout. It needs a
 credential, since anchor is private: CI stores a GitHub App's Client ID and private key and
 mints an hour-long token per job, so the secret held here is not itself a key to
@@ -187,7 +187,7 @@ why it is nonetheless contained.
 
 `linux` is one job because veilnet-dev is one machine with one runner process: separate
 jobs would queue anyway, each paying a checkout and a fetch. Its fetch goes through the
-runner's tool cache, which survives between runs, so an unchanged shelf costs a read of
+runner's tool cache, which survives between runs, so an unchanged release costs a read of
 the files the fetcher already holds rather than three hundred megabytes. For the same
 reason the Go build and module caches are not restored or saved there: the machine keeps
 its own on disk, and round-tripping them through the Actions cache cost ten minutes a
@@ -200,15 +200,21 @@ so a fork's pull request runs nothing. No checkout leaves its token in `.git/con
 and every action outside this repository is pinned to its release's commit, with the
 tag beside it in a comment.
 
-**The release** runs on a merge to `version3`, and it only releases: it does not re-run
-any of the above. A merge lands only when CI is green, which rests on branch protection
-on `version3` — require a pull request, require these checks, and require the branch to
-be up to date before merging — and is unsafe without it. It refuses to run anywhere but
-`version3`, fetches the shelf, runs `make dist`, attests the artifacts and publishes
-them at the tag the `VERSION` file names, verbatim, replacing the artifacts already
-there. The shelf moves, so a release carries whatever anchor published most recently,
-which is the intent — conflux ships the newest anchor, not a remembered one. All seven
-targets are cross-built from the one Linux machine, `CGO_ENABLED=0` throughout.
+**The release** runs on every push to `version3`, a merge included, and it only releases:
+it does not re-run any of the above. A merge lands only when CI is green, which rests on
+branch protection on `version3` — require a pull request, require these checks, and
+require the branch to be up to date before merging — and is unsafe without it. It refuses
+to run anywhere but `version3`, fetches anchor's `latest`, runs `make dist`, attests the
+artifacts and writes one set of notes: the changes since the previous version, and what is
+inside. Then it publishes twice, with the same artifacts and notes: at the tag the
+`VERSION` file names, verbatim, and at `latest`, which is the repository's Latest release.
+Each is deleted, with its tag, just before it is released again, so a push that leaves
+`VERSION` alone replaces that version's release with one built from the commit that
+landed, tag and all. anchor's `latest` moves, so a release carries whatever anchor
+published most recently, which is the intent — conflux ships the newest anchor, not a
+remembered one. All seven targets are cross-built from the one Linux machine,
+`CGO_ENABLED=0` throughout. See [build.md](build.md#version-stamping) for how `VERSION`
+moves.
 
 **The binaries CI uses are the pinned ones**, which a locally-built `make dist` cannot
 be: an anchor pinned to the genesis realm refuses to handshake with any other tree. So

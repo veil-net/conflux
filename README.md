@@ -23,22 +23,28 @@ machine with the taint it printed. That's the whole setup.
 
 ### 1. Install the binary
 
-Download the artifact for your platform from the releases page, verify it, and put it
-somewhere that survives a reboot:
-
 ```console
-$ sha256sum -c SHA256SUMS --ignore-missing
-conflux-linux-amd64: OK
-$ sudo install -m 0755 conflux-linux-amd64 /usr/local/bin/conflux
-$ conflux version
+$ curl -fsSL https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.sh | sh
 ```
+
+On Windows, in PowerShell as Administrator:
+
+```powershell
+irm https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.ps1 | iex
+```
+
+The script takes this machine's build from the `latest` release, checks it against the
+release's `SHA256SUMS`, and installs it as `/usr/local/bin/conflux`, or on Windows as
+`C:\Program Files\conflux\conflux.exe`, on the PATH. It starts nothing and enrols
+nothing: that is the next step, and yours to run. To pin a version, install somewhere
+else, or download by hand, see [install.md](docs/install.md), which also has the
+platform-specific notes.
 
 Where you keep it is up to you: the boot service runs a copy conflux places in its
 own state directory (`/var/lib/conflux/conflux` on Linux), which only root can
-change, and `up`, `proxy`, `install` and `start` keep that copy current. To build from
-source instead, see [build.md](docs/build.md)
-(`make anchor-bins && make build`); platform-specific notes are in
-[install.md](docs/install.md).
+change, and `up`, `proxy`, `install`, `start` and `update` keep that copy current. To
+build from source instead, see [build.md](docs/build.md)
+(`make anchor-bins && make build`).
 
 ### 2. Bring up the first machine
 

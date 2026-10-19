@@ -183,7 +183,7 @@ why it is nonetheless contained.
 |---|---|---|
 | `linux` | veilnet-dev | the whole suite under `-race` with the real binaries and nothing skipped; `make cross`; the digests `make build` stamps are the pair's own |
 | `integration` | GitHub Ubuntu | `test/preflight.sh`, then `make -j2 -O service-test integration` — `dist` with the size gate for every target and the image, once, then the boot service and three nodes against the live API side by side |
-| `platforms` | GitHub macOS, Windows and Linux arm64 | the suite with that platform's own pair, built as a release is (`CGO_ENABLED=0`, `-trimpath`), the tests that need the pair included; on macOS and Windows, `test/service-host.sh` against the real service manager; on Windows, that the pinned wintun digest is the published one |
+| `platforms` | GitHub macOS, Windows and Linux arm64 | the suite with that platform's own pair, built as a release is (`CGO_ENABLED=0`, `-trimpath`), the tests that need the pair included; on macOS and Windows, `test/service-host.sh` against the real service manager; on Windows, that the pinned wintun digest is the published one; then the install scripts against the published `latest`, run as a person runs them and then again: `install.sh` on macOS and Linux arm64, `install.ps1` under Windows PowerShell 5.1 and then PowerShell 7 |
 
 `linux` is one job because veilnet-dev is one machine with one runner process: separate
 jobs would queue anyway, each paying a checkout and a fetch. Its fetch goes through the

@@ -33,6 +33,7 @@ A run starts from a freshly pulled `version3`, works on a new branch, and ends w
   - Renewal happens at two thirds of the observed window and never changes identity.
 - **Secrets on disk:** the manifest is the identity. It is written before anything else is done with an enrolment response, `0600` with the mode set on the descriptor, in a `0700` directory (a replaced DACL on Windows). Never in argv (stdin to `anchorctl start -manifest -`), never in a log (redacting `String`/`GoString`). Config writes are atomic.
 - **Boot service:** systemd, launchd, rc, or a Windows service. It runs a copy of conflux kept in the root-only state directory, which `up`, `proxy`, `install` and `start` refresh, never the file conflux was run from. `down` and `start` leave it registered; `uninstall` leaves nothing behind.
+- **Installing:** `install.sh` (POSIX sh: Linux, macOS, the BSDs) and `install.ps1` (Windows) install the platform's binary from the `latest` release, checked against its `SHA256SUMS` and run once before it goes in place, and do nothing else: `conflux up` is the user's to run, never the script's.
 - **Updates:** `conflux update` replaces conflux with its own `latest` release for the platform, held to the SHA-256 the release document lists, run once for its `version` before it replaces anything, and then moves the boot service onto it (a running anchor restarts; a stopped one stays stopped). Only when typed; nothing checks on a schedule. `--check` changes nothing.
 - **Public repository:** conflux is public, anchor is private. Nothing from anchor's source, no token, no private material is ever committed. CI refuses fork PRs on self-hosted runners.
 - **Anchor relationship:** anchor is the source of truth for `anchorctl` commands and flags, daemon config and mode rules, manifest/credential format, taint and address rules, proxy spec rules, uplink rules, metrics names, release names, and the format of its `latest` release. Conflux consumes it through the embedded binaries, `internal/anchorctl` (argv builders, output and metrics parsers, argv goldens, flag cross-check), `internal/config` (rules matching anchor's), `internal/enrol` (manifest decoding), `internal/anchorrelease` and `anchor-fetch`, `anchor-bins.sh`, and the CI actions.
@@ -142,7 +143,7 @@ Nothing CI runs is run locally here: `test`, `race`, `cross`, `dist`, `service-t
 
 ```bash
 make fmtcheck lint tidycheck vulncheck docscheck       # the utility checks (see reference.md § Local checks)
-actionlint && shellcheck scripts/*.sh test/*.sh        # workflows, the actions they use, and the scripts
+actionlint && shellcheck install.sh scripts/*.sh test/*.sh   # workflows, the actions they use, and the scripts
 ```
 
 plus what no CI job runs: the `make golden` diff review, `docker run bash:3.2` over `anchor-bins.sh` and `test/service-host.sh` if either changed, and the after numbers (sizes, extraction, benchmarks, the probe node). A check that prints `not installed; skipping` counts as a failure.

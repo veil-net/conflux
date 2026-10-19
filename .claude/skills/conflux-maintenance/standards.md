@@ -31,7 +31,7 @@ Work through them in this order:
 12. UI and reporter
 13. Tests and harness
 14. CI/CD
-15. Release
+15. Release, and the install scripts
 
 ## Performance rules
 
@@ -43,7 +43,7 @@ Work through them in this order:
 
 - **CI verifies that the code builds and runs.** That means:
   - builds: `cross` for every target, including a per-target vet compile of test files; `dist` with the size gate; platform builds on macOS, Windows and Linux arm64, as a release builds them
-  - tests: `test`, `race`, the macOS, Windows and Linux arm64 suites, `service-test`, the launchd and SCM lifecycle (`test/service-host.sh`), and `integration` against the live API
+  - tests: `test`, `race`, the macOS, Windows and Linux arm64 suites, `service-test`, the launchd and SCM lifecycle (`test/service-host.sh`), the install scripts against the published `latest`, and `integration` against the live API
   - the release pipeline
 - **Utility checks run locally before every push, never in CI; CI does the code testing, and only CI does it.** gofmt, staticcheck, tidycheck, govulncheck, docs and link checks, actionlint, shellcheck, commit checks and the like stay out of CI and run in steps 4 and 7 and before each fix is pushed (see reference.md § Local checks). The suites CI runs are not repeated locally: the PR's run is the verification.
 - **Faster, with the same verification power.** Never drop, skip or weaken a build or test that verifies the code. Speed comes from:

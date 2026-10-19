@@ -2,6 +2,48 @@
 
 ## Get a binary
 
+### With the install script
+
+```console
+$ curl -fsSL https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.sh | sh
+```
+
+On Windows, in PowerShell as Administrator:
+
+```powershell
+irm https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.ps1 | iex
+```
+
+`install.sh` picks the build for this machine from the `latest` release (`uname`, and on
+a Mac the processor rather than the shell, so a shell under Rosetta still gets the
+Apple-silicon build). It checks the download against the release's `SHA256SUMS`, runs it
+once for its `version`, and only then renames it into place as `/usr/local/bin/conflux`,
+asking `sudo` (or `doas`) where that directory is root's. `install.ps1` does the same into
+`C:\Program Files\conflux` and adds that to the machine's PATH. Each installs the binary
+and nothing else: no boot service, no enrolment, no network joined, until you run
+`conflux up`. Run again, each replaces an older conflux and leaves the release's own alone.
+
+Two settings, given to `sh` rather than `curl`:
+
+```console
+$ curl -fsSL https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.sh | CONFLUX_VERSION=1.0.0 sh
+$ curl -fsSL https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.sh | CONFLUX_INSTALL_DIR=~/.local/bin sh
+```
+
+`CONFLUX_VERSION` names a release tag rather than `latest`. `CONFLUX_INSTALL_DIR` puts
+conflux somewhere else, and a directory you can write to needs no root. On Windows they are
+`$env:CONFLUX_VERSION` and `$env:CONFLUX_INSTALL_DIR`, set before the `irm`.
+
+The BSDs have no `curl` in the base system, and the script uses whatever downloader it
+finds, so it can be fetched with theirs:
+
+```console
+$ fetch -qo - https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.sh | sh      # FreeBSD
+$ ftp -MVo - https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.sh | sh      # OpenBSD
+```
+
+### By hand
+
 Download the artifact for your platform from the releases page, verify it against
 `SHA256SUMS`, and put it somewhere that survives a reboot.
 
@@ -15,8 +57,8 @@ $ conflux version
 **The boot service runs its own copy.** It runs as root, so the file it starts has to
 be one only root can change: a service pointed at `~/Downloads/conflux` or
 `C:\tools\conflux.exe` is one any program running as that user could swap for its own.
-So `up`, `proxy`, `install` and `start` copy the conflux they were run as into the state
-directory — `/var/lib/conflux/conflux` on Linux, `/var/db/conflux/conflux` on the BSDs,
+So `up`, `proxy`, `install`, `start` and `update` copy the conflux they were run as into
+the state directory — `/var/lib/conflux/conflux` on Linux, `/var/db/conflux/conflux` on the BSDs,
 `/Library/Application Support/conflux/conflux` on macOS,
 `%ProgramData%\conflux\conflux.exe` on Windows — and register that. Where you keep the
 binary you type is up to you; `uninstall` removes the copy with the rest.
@@ -44,8 +86,9 @@ the build is known to work on.
 `utun` is in the kernel and a root LaunchDaemon can open it, so there is no driver to
 install.
 
-Releases are not notarised, so macOS refuses to run a downloaded binary until the
-quarantine attribute is cleared:
+Releases are not notarised, so macOS refuses to run one a browser downloaded until the
+quarantine attribute is cleared. The install script downloads with `curl`, which sets no
+such attribute, so this is only for a download by hand:
 
 ```console
 $ xattr -d com.apple.quarantine conflux-darwin-arm64
@@ -53,9 +96,9 @@ $ xattr -d com.apple.quarantine conflux-darwin-arm64
 
 ## Windows
 
-Run PowerShell as Administrator. TUN mode additionally needs `wintun.dll`, which
-conflux downloads and verifies when it is first needed — see
-[windows.md](windows.md). `conflux proxy` needs no driver at all.
+Run PowerShell as Administrator, for `install.ps1` and for conflux itself. TUN mode
+additionally needs `wintun.dll`, which conflux downloads and verifies when it is first
+needed — see [windows.md](windows.md). `conflux proxy` needs no driver at all.
 
 ## FreeBSD and OpenBSD
 
@@ -64,7 +107,15 @@ under `daemon(8)` on FreeBSD, `rcctl`-enabled on OpenBSD. See [service.md](servi
 
 ## Upgrading in place
 
-Replace the binary and restart onto it:
+```console
+$ sudo conflux update
+```
+
+`update` replaces this conflux with the `latest` release's, verified the same way, and
+moves the boot service onto it: a running anchor is restarted on the new conflux, and a
+stopped one starts on it next time. See [commands.md](commands.md#conflux-update).
+Running the install script again, or replacing the binary by hand, replaces the binary
+and leaves the service on the old one; restart it onto the new one:
 
 ```console
 $ sudo install -m 0755 conflux-linux-amd64 /usr/local/bin/conflux

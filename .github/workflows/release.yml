@@ -39,11 +39,12 @@ jobs:
     runs-on: [self-hosted, linux]
 
     # The only job that writes: contents to delete and create the releases, the other two
-    # for the build-provenance attestation.
+    # for the build-provenance attestation. Pull requests are read, for the notes.
     permissions:
       contents: write
       id-token: write
       attestations: write
+      pull-requests: read
     timeout-minutes: 30
     steps:
       # Not persisted: the token that can write a release has no business staying in
@@ -85,15 +86,33 @@ jobs:
         with:
           subject-path: dist/conflux-*
 
-      # One text for both releases: what was built, the changes since the previous version,
-      # and what is inside. Printed, so the run's log says what the releases will.
+      # One text for both releases: what was built, a summary of the changes since the
+      # previous version (each pull request by its title and the opening of its description),
+      # how to install it, and what is inside. Printed, so the run's log says what the
+      # releases will.
       - name: the release notes
         env:
+          GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
           {
             ./scripts/release-notes.sh "$TAG"
+            echo
+            echo '## Install'
+            echo
+            echo '```sh'
+            echo 'curl -fsSL https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.sh | sh'
+            echo '```'
+            echo
+            echo 'On Windows, in PowerShell as Administrator:'
+            echo
+            echo '```powershell'
+            echo 'irm https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.ps1 | iex'
+            echo '```'
+            echo
+            # shellcheck disable=SC2016 # Markdown backticks, not a command substitution
+            echo 'Then `sudo conflux up`. Already installed? `sudo conflux update`.'
             echo
             echo '## What is inside'
             echo

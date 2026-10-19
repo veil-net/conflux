@@ -18,7 +18,7 @@ What the audit aims for, the rules it works under, and what must hold at the end
 Work through them in this order:
 
 1. CLI, and the pass-through and collision rules
-2. `up`, `proxy`, `enrol`, `renew`, `status` and the lifecycle commands (`start`, `down`, `install`, `uninstall`, `serve`)
+2. `up`, `proxy`, `enrol`, `renew`, `status`, `update` and the lifecycle commands (`start`, `down`, `install`, `uninstall`, `serve`)
 3. Config, atomic writes, and secrets
 4. The enrolment and renewal client
 5. The daemon supervisor: bring-up, readiness, renewal, the watcher (a lost anchor, an ended link)

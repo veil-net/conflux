@@ -6,7 +6,7 @@ to the embedded `anchorctl` unchanged — not parsed, not rewritten, not validat
 ## The split
 
 conflux's: `up`, `proxy`, `enrol`, `start`, `down`, `install`, `uninstall`, `renew`,
-`status`, `version`, `help`, plus `anchorctl` as an escape hatch and a hidden `serve`
+`status`, `version`, `update`, `help`, plus `anchorctl` as an escape hatch and a hidden `serve`
 the boot service runs.
 
 anchorctl's, reached by typing them: `peers`, `route`, `routes`, `connect`, `punch`,
@@ -400,6 +400,41 @@ member's Subnets order replaced `conflux.json`'s list there is one line, saying 
 
 conflux's version and commit, and the SHA-256 of both embedded anchor binaries. Put
 this in a bug report; it names the exact anchor build without running it.
+
+## `conflux update`
+
+```
+conflux update
+conflux update --check
+```
+
+Replaces this conflux with the one the `latest` release of
+[veil-net/conflux](https://github.com/veil-net/conflux/releases/latest) holds for this
+platform, and moves the boot service onto it. Only when typed: nothing checks on a
+schedule, so a machine changes version when somebody decides it should.
+
+"Up to date" is a digest rather than a version string. This file is the release's
+binary, byte for byte, or it is not, so a rebuild of the same version (which a merge
+that leaves `VERSION` alone publishes) is an update too. `--check` says which, names
+the release and the commit it was built from, and changes nothing.
+
+An update is held to the SHA-256 the release document lists for the asset, which the
+API answers directly; the binary comes through GitHub's redirect to its storage and is
+compared before it is put anywhere it could run from. Then the new conflux is run once,
+for its `version`, and only a conflux that answers replaces this one. It is renamed over
+the file conflux was started from, symlinks followed, so whatever is running keeps the
+file it has; on Windows the running image is moved aside to `conflux.exe.old` first,
+and the next update removes it. No token is needed or sent: the repository is public.
+
+| Situation | |
+|---|---|
+| this is the latest release | says so, exit 0, nothing changed |
+| the anchor is running | the new conflux's `start` restarts it on the new version, and its exit code is `update`'s |
+| installed, not running | left stopped, as `down` left it; the boot service's copy is refreshed, so it starts on the new version next time |
+| not installed | the file is replaced, and that is all |
+| the release has no build for this platform, lists no digest, or is still uploading | refused, nothing changed |
+
+Needs root, except `--check`.
 
 ## `conflux anchorctl ARGS...`
 

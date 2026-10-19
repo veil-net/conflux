@@ -22,13 +22,13 @@ import (
 	"os/signal"
 	"strings"
 
-	"github.com/veil-net/conflux/internal/shelf"
+	"github.com/veil-net/conflux/internal/anchorrelease"
 )
 
 func main() {
-	api := flag.String("api", shelf.DefaultAPI, "the GitHub API to read the release from")
-	repo := flag.String("repo", shelf.DefaultRepo, "the owner/name holding the release")
-	tag := flag.String("tag", shelf.DefaultTag, "the release tag to fetch")
+	api := flag.String("api", anchorrelease.DefaultAPI, "the GitHub API to read the release from")
+	repo := flag.String("repo", anchorrelease.DefaultRepo, "the owner/name holding the release")
+	tag := flag.String("tag", anchorrelease.DefaultTag, "the release tag to fetch")
 	dest := flag.String("dest", "anchor/bin", "where to write the binaries")
 	want := flag.String("want", "", "comma-separated file names to fetch (required)")
 
@@ -43,11 +43,11 @@ func main() {
 	// The token is read from the environment and has no flag, deliberately: a flag is
 	// visible in `ps` to every other user on the machine, and lands in any CI log that
 	// echoes the command it ran.
-	src := shelf.Source{
+	src := anchorrelease.Source{
 		API:   *api,
 		Repo:  *repo,
 		Tag:   *tag,
-		Token: os.Getenv(shelf.TokenEnv),
+		Token: os.Getenv(anchorrelease.TokenEnv),
 	}
 
 	// Interruptible, because this moves a couple of hundred megabytes and the first
@@ -57,7 +57,7 @@ func main() {
 
 	log := func(format string, a ...any) { fmt.Fprintf(os.Stderr, "anchor-fetch: "+format+"\n", a...) }
 
-	if err := shelf.Fetch(ctx, src, names, *dest, log); err != nil {
+	if err := anchorrelease.Fetch(ctx, src, names, *dest, log); err != nil {
 		fmt.Fprintf(os.Stderr, "anchor-fetch: %v\n", err)
 		os.Exit(1)
 	}

@@ -48,15 +48,13 @@ ANCHOR_SRC ?= ../anchor
 # FETCH=1 downloads the pinned binaries from anchor's `latest` release when no local
 # anchor build is available. Opt-in, because it needs ANCHOR_RELEASE_TOKEN -- anchor is
 # private -- and a clone with neither a checkout nor a token should still build against
-# placeholders. ANCHOR_API and ANCHOR_REPO are empty by default so the values live in
-# internal/shelf rather than being repeated here. ANCHOR_TAG is `latest`, the release
-# anchor moves to every newer build, and is set here because internal/shelf's own
-# default names `shelf`, a tag anchor does not publish. ONLY=darwin-arm64 (and so on)
+# placeholders. The three below are empty by default so the values live in
+# internal/anchorrelease rather than being repeated here. ONLY=darwin-arm64 (and so on)
 # narrows a fetch to the pairs one platform needs; DEST moves where it lands.
 FETCH ?= 0
 ANCHOR_API ?=
 ANCHOR_REPO ?=
-ANCHOR_TAG ?= latest
+ANCHOR_TAG ?=
 
 # The tag `make image` builds and the two suites run. Overridable so a second checkout
 # on one machine does not race the first for the name.

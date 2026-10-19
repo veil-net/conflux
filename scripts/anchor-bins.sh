@@ -11,12 +11,12 @@
 #
 # Three sources, in that order of preference. A local release/ is the pinned build and
 # wins outright. A local dist/ is the unpinned development cross-build and is taken
-# loudly. With neither, FETCH=1 downloads the pinned binaries from anchor's release (the
-# Makefile names `latest`) and verifies every digest -- which is what lets CI, and a fresh
+# loudly. With neither, FETCH=1 downloads the pinned binaries from anchor's `latest`
+# release and verifies every digest -- which is what lets CI, and a fresh
 # clone, have the real ones without a checkout of anchor.
 #
 # That last one needs a credential, because anchor is private and GitHub has no
-# releases-only read scope. See internal/shelf for why holding that token in a public
+# releases-only read scope. See internal/anchorrelease for why holding that token in a public
 # repository is nonetheless contained.
 #
 # With no source at all it writes placeholders, which is what lets gofmt, vet,
@@ -36,9 +36,9 @@ DEST=${DEST:-anchor/bin}
 # anchor access does not have.
 FETCH=${FETCH:-0}
 
-# Where the release lives. Empty means the fetcher's own defaults in internal/shelf; the
-# Makefile passes ANCHOR_TAG=latest. ANCHOR_API exists so this path can be pointed at a
-# stand-in and actually exercised.
+# Where the release lives. Empty means the fetcher's own defaults, so the values are
+# stated once in internal/anchorrelease rather than twice. ANCHOR_API exists so this path
+# can be pointed at a stand-in and actually exercised.
 ANCHOR_API=${ANCHOR_API:-}
 ANCHOR_REPO=${ANCHOR_REPO:-}
 ANCHOR_TAG=${ANCHOR_TAG:-}

@@ -70,7 +70,7 @@ before downloading anything.
 ```console
 $ export ANCHOR_RELEASE_TOKEN=github_pat_…
 $ make anchor-bins FETCH=1
-anchor-fetch: shelf:   veil-net/anchor @ latest
+anchor-fetch: release: veil-net/anchor @ latest
 anchor-fetch: commit:  0e68ba25f3019fdfc331cd8763f40fbdd641538a
 anchor-fetch: realm:   realmtglwuedqqa33e364nv73p46jk3kwi67lxjmnntz2mv3mb3mklasq
 anchor-fetch:   ok   anchord-linux-amd64           29.7 MB  06cc7917c8fc  fetched
@@ -102,12 +102,10 @@ The tag is fixed and moves: `latest` always names anchor's newest release build,
 the intent — conflux ships the newest anchor, not a remembered one. anchor releases every
 build twice, with the same assets: at `latest`, and at a dated tag, `YYYYMMDD-HHMMSS`, which
 stays, and whose notes say what changed since the build before. `ANCHOR_TAG=<dated tag>`
-fetches one of those instead. Fetched by tag, and the tag is named in the Makefile
-(`ANCHOR_TAG ?= latest`): `internal/shelf`'s own default names `shelf`, a tag anchor does
-not publish.
+fetches one of those instead.
 
 `ANCHOR_REPO=`, `ANCHOR_TAG=` and `ANCHOR_API=` point it elsewhere. The fetcher is
-`cmd/anchor-fetch` over `internal/shelf` — Go rather than curl and a JSON parser, because
+`cmd/anchor-fetch` over `internal/anchorrelease` — Go rather than curl and a JSON parser, because
 the promise at the top of this page is "Go 1.27.2 or newer, and nothing else", and a fresh
 clone should not have to acquire anything else to become buildable.
 
@@ -178,8 +176,7 @@ needs — the macOS and Windows CI jobs fetch their own two files and no others 
 `DEST=` puts them somewhere other than `anchor/bin`.
 
 **There is no URL anywhere.** Nothing reads a URL out of a document: every request is
-built from conflux's own configuration — `internal/shelf`'s constants and the Makefile's
-`ANCHOR_TAG` — and binaries are resolved by asset **name**
+built from `internal/anchorrelease`'s own constants, and binaries are resolved by asset **name**
 within one release. The set of places a fetch can reach is fixed by conflux's
 configuration rather than by anything on the wire.
 

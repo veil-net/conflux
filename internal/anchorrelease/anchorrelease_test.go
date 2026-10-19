@@ -1,4 +1,4 @@
-package shelf
+package anchorrelease
 
 import (
 	"context"
@@ -64,7 +64,7 @@ func (f *fakeRelease) seen() (requests, tokens []string) {
 
 func newRelease(files map[string][]byte) *fakeRelease {
 	return &fakeRelease{
-		tag:    "shelf",
+		tag:    "latest",
 		commit: "0aea0f77bb77f8bbaa23c5055d9fe245d3a9bee2",
 		files:  files,
 		states: map[string]string{},
@@ -217,7 +217,7 @@ func (f *fakeRelease) serve(t *testing.T, pin string, version int) (*httptest.Se
 
 	t.Setenv(insecureEnv, "1")
 
-	return srv, Source{API: srv.URL, Repo: "veil-net/anchor", Tag: "shelf", Token: "t0ken"}
+	return srv, Source{API: srv.URL, Repo: "veil-net/anchor", Tag: "latest", Token: "t0ken"}
 }
 
 func quiet(string, ...any) {}
@@ -465,7 +465,7 @@ func TestFetchRefusesAManifestWithNoPin(t *testing.T) {
 func TestFetchRefusesAReleaseWithNoManifest(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"id": 1, "tag_name": "shelf", "target_commitish": "abc",
+			"id": 1, "tag_name": "latest", "target_commitish": "abc",
 			"assets": []map[string]any{
 				{"id": 1, "name": "anchord-linux-amd64", "size": 4096, "state": "uploaded"},
 			},
@@ -475,7 +475,7 @@ func TestFetchRefusesAReleaseWithNoManifest(t *testing.T) {
 
 	t.Setenv(insecureEnv, "1")
 
-	src := Source{API: srv.URL, Repo: "veil-net/anchor", Tag: "shelf", Token: "t0ken"}
+	src := Source{API: srv.URL, Repo: "veil-net/anchor", Tag: "latest", Token: "t0ken"}
 
 	err := Fetch(context.Background(), src, []string{"anchord-linux-amd64"}, t.TempDir(), quiet)
 	if err == nil || !strings.Contains(err.Error(), manifestName) {
@@ -537,7 +537,7 @@ func TestARefusedTokenSaysSo(t *testing.T) {
 
 	t.Setenv(insecureEnv, "1")
 
-	src := Source{API: srv.URL, Repo: "veil-net/anchor", Tag: "shelf", Token: "expired"}
+	src := Source{API: srv.URL, Repo: "veil-net/anchor", Tag: "latest", Token: "expired"}
 
 	err := Fetch(context.Background(), src, []string{"anchord-linux-amd64"}, t.TempDir(), quiet)
 	if err == nil || !strings.Contains(err.Error(), "401") {
@@ -596,7 +596,7 @@ func TestFetchReportsTheRealmAndCommit(t *testing.T) {
 		t.Fatalf("Fetch: %v", err)
 	}
 
-	for _, s := range []string{testPin, f.commit, "veil-net/anchor", "shelf"} {
+	for _, s := range []string{testPin, f.commit, "veil-net/anchor", "latest"} {
 		if !strings.Contains(out.String(), s) {
 			t.Errorf("the log does not mention %q:\n%s", s, out.String())
 		}

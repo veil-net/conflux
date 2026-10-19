@@ -124,7 +124,7 @@ Actions in use, each pinned to its release's commit with the tag in a comment: `
 
 ## Docs and config
 
-- `VERSION`: `1.0.0`. It is both the release tag and the stamped version, verbatim, `MAJOR.MINOR.PATCH`. Every run moves it on in step 9: a new major for a major new feature from anchor, otherwise a new minor.
+- `VERSION`: `1.0.0`. It is both the release tag and the stamped version, verbatim, `MAJOR.MINOR.PATCH`. Every run moves it on in step 9: a new major for a major new feature from anchor, otherwise a new minor. `internal/version.Version` defaults to the same string, held there by `TestVersionMatchesFile`.
 - `docs/`: `build`, `commands`, `concepts`, `config`, `credentials`, `install`, `modes`, `security`, `service`, `testing`, `troubleshooting`, `uplink`, `windows` (`.md`). Each is linked from `README.md`.
 - `config.DefaultAPIBaseURL` = `https://api.veilnet.com.au` (`internal/config/config.go`). `enrol.Client` falls back to it. The renewal URL comes from the manifest and must be on the same host as the configured API (`enrol.SameHost`); `conflux enrol` derives the API from it unless `--api` is given.
 

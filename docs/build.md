@@ -192,7 +192,7 @@ A placeholder build is not able to masquerade as a real one:
 
 ```console
 $ go build -o conflux . && ./conflux version
-conflux 1.0.0-pre (f47de0fac83d24489664ca15fc6a317ac9c9f683) linux/amd64
+conflux 1.0.0 (f47de0fac83d24489664ca15fc6a317ac9c9f683) linux/amd64
 no anchor binaries for linux/amd64
 ```
 

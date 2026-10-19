@@ -18,7 +18,7 @@ import (
 // tree claims to be, the Makefile stamps that same string, and a plain `go build`
 // that stamps nothing should not disagree with `make build` about what it just
 // compiled. TestVersionMatchesFile holds the two together.
-var Version = "1.0.0-pre"
+var Version = "1.0.0"
 
 // Commit is the git revision, injected the same way. Left empty, it is recovered
 // from the build info Go embeds, so `go build` alone still says something useful.

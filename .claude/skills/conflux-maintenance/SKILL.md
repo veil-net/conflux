@@ -152,7 +152,7 @@ Check every file in `.claude/skills/conflux-maintenance/` against conflux, ancho
 
 ### 9. Finish
 
-Move `VERSION` on, in its own commit: a new major (`1.4.0` → `2.0.0`) if step 2 found a major new feature in anchor that conflux now carries, otherwise a new minor (`1.4.0` → `1.5.0`). It is `MAJOR.MINOR.PATCH`, with no suffix.
+Move `VERSION` on, in its own commit: a new major (`1.4.0` → `2.0.0`) if step 2 found a major new feature in anchor that conflux now carries, otherwise a new minor (`1.4.0` → `1.5.0`). It is `MAJOR.MINOR.PATCH`, with no suffix, and `internal/version`'s default `Version` changes with it (`TestVersionMatchesFile`).
 
 Commit on the branch, push it, and open a PR with `--base version3`. Then watch its CI (`gh pr checks <n> --watch`) until every check is green. Where `gh` is not authenticated, the GitHub MCP tools do the same: `create_pull_request`, `actions_list`/`get_job_logs`, `merge_pull_request`.
 

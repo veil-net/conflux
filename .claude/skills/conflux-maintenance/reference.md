@@ -6,7 +6,7 @@ The concrete facts the workflow relies on. Step 8 of every run keeps this file t
 
 - `main.go` → `internal/cli.Main`.
 - `anchor/`: `anchor.go` (`Supported` = build tag plus a ≥ 5 MiB size check on both binaries; `Digests`, the two SHA-256s `conflux version` prints, stamped by make through `-X …/anchor.anchordSHA256`/`anchorctlSHA256` and computed when a stamp is absent or malformed; `SetID`, the extraction directory's name, 16 hex of `sha256("anchord <d>\nanchorctl <c>\n<GOOS>/<GOARCH>")`), seven build-tagged `bin_<os>_<arch>.go` files (each `//go:embed`s `bin/anchord-<os>-<arch>[.exe]` and `bin/anchorctl-<os>-<arch>[.exe]` by name), `bin_unsupported.go` (every other platform: no pair), `bin/` (gitignored).
-- `cmd/anchor-fetch/`: the shelf fetcher CLI.
+- `cmd/anchor-fetch/`: the CLI that fetches anchor's release.
 - `internal/`
   - `anchorctl`: `args.go` (`StartMode`, `ModeFromConfig`, the argv builders; no `-taints`: anchorctl takes them from the manifest), `ctl.go` (runs `start`, `stop`, `status` (also the readiness probe and the watcher's question), `metrics`, `renew`; `Env`; `Error` carries stderr and the run's own error), `parse.go` (`ParseStarted`, `ParseStatus`, `ParseMetric`, `MetricConnections`), `testdata/argv/*.golden`, `flags_test.go` (flag cross-check)
   - `cli`: verbs, pass-through (`passthrough.go`: the socket and token are checked before anything is extracted; `wantsUsage`), refusal of `stop`/`restart`, `up`/`proxy`/`enrol`/`renew`/`status`/`serve`, `proxyFlags` (the one flag set proxy's unknown-flag check and spec splitter read), `registerExits`/`chooseSubnets` (the routing flags both verbs take), `chooseTaints` (the enrolment request before a credential, checked against it after; `heldCredential`), `dropSubnetsOrder`/`reportSubnets` (a member's Subnets order, replaced by an explicit `--subnet`/`--no-subnet`), `chooseIPv4` (asked once), `interfaceLine` (the TUN name only where the kernel honours it), `needsRoot` and `typed` (a privilege refusal that repeats the command typed, quoted, through `privcheck.Retry`), per-OS glue (`service_windows.go` logs the service to `LogFile`; `scmExit` maps the supervisor's exit to the SCM's)
@@ -24,7 +24,7 @@ The concrete facts the workflow relies on. Step 8 of every run keeps this file t
 | Target | Does |
 |---|---|
 | `all` | `fmtcheck lint tidycheck docscheck test cross dist`: what needs no Docker (no `vulncheck`; `tidycheck` can fetch modules). A maintenance run uses § Local checks instead, since `test`, `cross` and `dist` are CI's |
-| `anchor-bins` | `scripts/anchor-bins.sh` with `ANCHOR_SRC` (default `../anchor`), `FETCH` (default `0`), `ANCHOR_API`/`ANCHOR_REPO`/`ANCHOR_TAG` (empty means the `internal/shelf` defaults); `ONLY` and `DEST` pass through the environment |
+| `anchor-bins` | `scripts/anchor-bins.sh` with `ANCHOR_SRC` (default `../anchor`), `FETCH` (default `0`), `ANCHOR_API`/`ANCHOR_REPO` (empty means the `internal/shelf` defaults), `ANCHOR_TAG` (default `latest`, since `internal/shelf`'s own `DefaultTag` is `shelf`, which anchor does not publish); `ONLY` and `DEST` pass through the environment |
 | `build` | `CGO_ENABLED=0 go build -trimpath`, stamped, → `bin/conflux$GOEXE` |
 | `test` / `race` / `vet` | `go test ./...` / `go test -race ./...` / `go vet ./...` |
 | `fmt` / `fmtcheck` | `gofmt -w .` / fail if `gofmt -l .` lists anything |
@@ -50,17 +50,17 @@ The concrete facts the workflow relies on. Step 8 of every run keeps this file t
   - Sources, in order:
     1. `$ANCHOR_SRC/release` (pinned)
     2. `$ANCHOR_SRC/dist` (unpinned; warns loudly)
-    3. with `FETCH=1`, the shelf (needs `ANCHOR_RELEASE_TOKEN`; failure is fatal)
+    3. with `FETCH=1`, anchor's `latest` release (needs `ANCHOR_RELEASE_TOKEN`; failure is fatal)
     4. placeholders
   - It copies and sets `chmod 0755`. The prune is what keeps `anchoradmin-*` out: nothing copies a name that is not one of the 14.
   - Final line: `N/N copied from <src> (release|dist)`, `N/N fetched from anchor's release (pinned build)`, or `N placeholders written to <dest>`, N being 14 without `ONLY`.
-  - A local `release/` always beats `FETCH=1`. `ANCHOR_SRC=/nonexistent` forces the shelf.
+  - A local `release/` always beats `FETCH=1`. `ANCHOR_SRC=/nonexistent` forces the fetch.
 - **`cmd/anchor-fetch`**
   - Usage: `go run ./cmd/anchor-fetch [-api URL] [-repo owner/name] [-tag T] [-dest DIR] -want a,b,…` (`-dest` defaults to `anchor/bin`).
   - The token comes only from `ANCHOR_RELEASE_TOKEN`.
   - Logs to stderr: `shelf:`, `commit:` (the release's `target_commitish`, which anchor sets to the commit SHA), `realm:` (the pin), one line per file with its digest and `fetched` or `cached`, then `N/N in place, digests verified`.
 - **`internal/shelf`**
-  - Source: GitHub API, repo `veil-net/anchor`, tag `shelf`. The tag moves; it names the newest build from anchor `main`.
+  - Source: GitHub API, repo `veil-net/anchor`, tag `latest` from the Makefile (a direct `go run ./cmd/anchor-fetch` needs `-tag latest`: `DefaultTag` is `shelf`, which anchor does not publish). The tag moves; it names the newest build from anchor `main`, which anchor also releases at a dated tag `YYYYMMDD-HHMMSS` that stays.
   - It refuses any `anchoradmin*` asset and any asset not in state `uploaded`.
   - It reads `manifest.json`: `{"formatVersion":1,"pin":"realm…","binaries":[{"name","program","os","arch","bytes","sha256"}]}`, held to the `sha256:` digest the release document gives for it (it arrives through the same storage redirect as the binaries). There are no URLs; assets are resolved by name within the one release.
   - A file already at the destination with the manifest's size and SHA-256 is kept (`cached`); anything else is downloaded to a temp file, checked for size and SHA-256, and renamed into place.
@@ -113,18 +113,18 @@ The concrete facts the workflow relies on. Step 8 of every run keeps this file t
 
 **`.github/workflows/release.yml`**
 - Triggers: push to `version3`, and `workflow_dispatch`. Concurrency `release-${{ github.ref }}`, never cancelled.
-- One job, `build`, self-hosted, `if: github.ref == 'refs/heads/version3'`, 30-minute timeout; permissions `contents`/`id-token`/`attestations: write`. Steps: checkout without persisted credentials, setup, anchor-bins, version and tag = `VERSION` verbatim (warns when the tag is behind the commit), `make dist`, `actions/attest-build-provenance`, notes from `./dist/conflux-linux-amd64 version` plus the wintun pin, `softprops/action-gh-release` with files `dist/conflux-*` plus `dist/SHA256SUMS`. Nothing re-verifies what CI checked.
+- One job, `build`, self-hosted, `if: github.ref == 'refs/heads/version3'`, 30-minute timeout; permissions `contents`/`id-token`/`attestations: write`. Steps: checkout without persisted credentials and with `fetch-depth: 0` (for the notes), setup, anchor-bins, version and tag = `VERSION` verbatim (`latest` refused), `make dist`, `actions/attest-build-provenance`, notes from `scripts/release-notes.sh <version>` (the changes since the nearest other version tag on `version3`'s first-parent history) plus `./dist/conflux-linux-amd64 version` and the wintun pin. Then, for the version and then `latest`: `actions/github-script` deletes the release at that tag and the tag itself (404, and 422 on the tag, mean nothing there), and `softprops/action-gh-release` creates it at the commit with files `dist/conflux-*` plus `dist/SHA256SUMS` and the same notes; `make_latest` is `false` for the version and `true` for `latest`. Nothing re-verifies what CI checked.
 
 **Composite actions (`.github/actions/`)**
 - `setup`: `actions/setup-go` with `go-version-file: go.mod` and `cache-dependency-path: go.sum`; `cache` is off on a self-hosted runner, which keeps `GOCACHE`/`GOMODCACHE` on disk (shared with other repositories, about 6 GB: restoring and re-saving it cost ~630 s a run).
-- `anchor-bins`: inputs `client-id`, `private-key`, `targets` (space-separated pairs; empty = all). Runs `actions/create-github-app-token` (owner `veil-net`, repositories `anchor`), then `make anchor-bins FETCH=1` with the token as `ANCHOR_RELEASE_TOKEN`, `ANCHOR_SRC=no-anchor-checkout` (the shelf only, never a stray local build; relative, since Git Bash rewrites an absolute path it hands to make) and `ONLY` from `targets`. On a self-hosted runner `DEST` is `$RUNNER_TOOL_CACHE/conflux-anchor-bin` (persistent; the fetcher reuses files whose digest matches) and the files are copied into `anchor/bin`; a hosted runner fetches straight into `anchor/bin`.
+- `anchor-bins`: inputs `client-id`, `private-key`, `targets` (space-separated pairs; empty = all). Runs `actions/create-github-app-token` (owner `veil-net`, repositories `anchor`), then `make anchor-bins FETCH=1` with the token as `ANCHOR_RELEASE_TOKEN`, `ANCHOR_SRC=no-anchor-checkout` (anchor's release only, never a stray local build; relative, since Git Bash rewrites an absolute path it hands to make) and `ONLY` from `targets`. On a self-hosted runner `DEST` is `$RUNNER_TOOL_CACHE/conflux-anchor-bin` (persistent; the fetcher reuses files whose digest matches) and the files are copied into `anchor/bin`; a hosted runner fetches straight into `anchor/bin`.
 - Secrets: `ANCHOR_APP_CLIENT_ID` (an organisation secret: the `anchor-access` App's public Client ID) and `ANCHOR_APP_PRIVATE_KEY`, the read-only anchor GitHub App (Contents: read on `veil-net/anchor`) and the only credential. The repository secret `ANCHOR_APP_ID` is no longer read.
 
-Actions in use, each pinned to its release's commit with the tag in a comment: `actions/checkout` v7.0.1, `actions/setup-go` v7.0.0, `actions/create-github-app-token` v3.3.0, `actions/attest-build-provenance` v4.2.2, `softprops/action-gh-release` v3.0.3. After a major bump, check that the self-hosted runner supports the Node runtime the action's `action.yml` names. Validate locally with `actionlint` (with `shellcheck` on `PATH` it also checks `run:` scripts, and it validates the inputs passed to the local actions). `act` is not installed.
+Actions in use, each pinned to its release's commit with the tag in a comment: `actions/checkout` v7.0.1, `actions/setup-go` v7.0.0, `actions/create-github-app-token` v3.3.0, `actions/attest-build-provenance` v4.2.2, `actions/github-script` v9.0.0, `softprops/action-gh-release` v3.0.3. After a major bump, check that the self-hosted runner supports the Node runtime the action's `action.yml` names. Validate locally with `actionlint` (with `shellcheck` on `PATH` it also checks `run:` scripts, and it validates the inputs passed to the local actions). `act` is not installed.
 
 ## Docs and config
 
-- `VERSION`: `1.0.0-pre`. It is both the release tag and the stamped version, verbatim. This skill never bumps it.
+- `VERSION`: `1.0.0`. It is both the release tag and the stamped version, verbatim, `MAJOR.MINOR.PATCH`. Every run moves it on in step 9: a new major for a major new feature from anchor, otherwise a new minor.
 - `docs/`: `build`, `commands`, `concepts`, `config`, `credentials`, `install`, `modes`, `security`, `service`, `testing`, `troubleshooting`, `uplink`, `windows` (`.md`). Each is linked from `README.md`.
 - `config.DefaultAPIBaseURL` = `https://api.veilnet.com.au` (`internal/config/config.go`). `enrol.Client` falls back to it. The renewal URL comes from the manifest and must be on the same host as the configured API (`enrol.SameHost`); `conflux enrol` derives the API from it unless `--api` is given.
 
@@ -156,7 +156,7 @@ Paths are relative to the anchor checkout.
 | uplink spec | `internal/uplink/spec.go` | `config.ParseUplinkSpec` |
 | permanent refusals | the messages of `ErrRealmRootPinned` (`config.go`), `ErrTUNUnavailable` and `ErrRouterHost` (`errors.go`), `ErrCredTaints` (`cred.go`, "does not grant this anchor's taints", exit 1), the kernel's `device or resource busy` from `tundev: creating`, anchorctl's exit 2 for a usage error (`cmd/anchorctl/main.go` `finish`), and `ErrCredRefused` for an expired chain (defined in `cred.go`, returned from `config.go`; permanent only for a credential that does not renew); reasons are mapped in `cmd/anchord/internal/control/lifecycle.go` (`hostRefused`) and `credentials.go` (`refuseInvalid`) | `daemon.Permanent`, `daemon.credential` |
 | release names and targets | `Makefile` (`release`, `dist`, `DIST_TARGETS`) | `Makefile` `TARGETS`, `anchor-bins.sh`, `anchor/bin_*.go` |
-| shelf | `scripts/shelf-manifest.sh`, `scripts/publish-shelf.sh`, `.github/workflows/release.yml` | `internal/shelf`, `cmd/anchor-fetch`, `.github/actions/anchor-bins` |
+| release | `scripts/release-manifest.sh`, `scripts/publish-release.sh`, `.github/workflows/release.yml` | `internal/shelf`, `cmd/anchor-fetch`, `.github/actions/anchor-bins`, the Makefile's `ANCHOR_TAG` |
 | TUN name | `internal/tundev/name.go` and `tun_*.go` (a request: honoured on Linux and Windows; `utunN` on macOS, `tunN` on the BSDs; Linux refuses past IFNAMSIZ, macOS a `utun` name that is not `utun`+digits), reported back by nothing | `config.ValidateTUNName`, `cli.interfaceLine` |
 | Go version | the `go` line in each `go.mod` | `go.mod`, the `setup` action |
 
@@ -172,11 +172,11 @@ When a rule is unclear, anchor's docs cover it: `docs/control.md`, `reverse-prox
     - `anchorctl`, garbled, `-tags lockdown`
     - `anchoradmin`, plain and unrestricted, **always**
   - Output: `release/{anchord,anchorctl,anchoradmin}-<os>-<arch>[.exe]`, 24 files, then `release: 24 binaries in release/, pinned to realm…`. About 25 s with a warm build cache.
-  - Garbled builds are not byte-reproducible, so a local release and the shelf built from the same commit have different digests.
+  - Garbled builds are not byte-reproducible, so a local release and anchor's release built from the same commit have different digests.
   - darwin/amd64 is not in conflux's `TARGETS`, and `anchor-bins.sh` ignores it.
 - **`make dist`:** the unpinned, unobfuscated cross-build for the same 8 targets. Only `anchord` and the `-tags lockdown` `anchorctl` go into `dist/` (16 files). It joins any realm tree: development only, never shippable.
 - **`scripts/client-is-locked.sh DIR [ADMIN_DIR]`:** runs the host's `DIR/anchorctl-<os>-<arch> root` with no daemon and requires the lockdown refusal (`unknown command "root"`). Fails if any `anchorctl` is byte-identical to its `anchoradmin` twin in `ADMIN_DIR`.
-- **Shelf publishing:** anchor's `release.yml` runs on merge to anchor `main`. It runs `make release` with `GENESIS_PIN`, then `scripts/shelf-manifest.sh` (copies `anchord`/`anchorctl` only, runs `client-is-locked.sh`, writes `manifest.json`, whose `pin` is `GENESIS_PIN`), then `scripts/publish-shelf.sh`, which moves the `shelf` release with `target_commitish` set to the commit SHA; the build is also uploaded as a workflow artifact.
+- **Release publishing:** anchor's `release.yml` runs on every push to anchor `main`. It runs `make release` with `GENESIS_PIN`, then `scripts/release-manifest.sh` (copies `anchord`/`anchorctl` only, runs `client-is-locked.sh`, writes `manifest.json`, whose `pin` is `GENESIS_PIN`), then `scripts/publish-release.sh` twice with the same assets and notes: at a dated tag `YYYYMMDD-HHMMSS` (the commit's time in UTC; it stays) and at `latest`, which moves and is marked Latest. Each is deleted and recreated with `target_commitish` set to the commit SHA; the build is also uploaded as a workflow artifact.
 
 ## Live traveller API
 
@@ -225,7 +225,7 @@ Expected fields, in the order the API sends them:
 
 Check every field against `internal/enrol` and anchor's `anchorManifest`. Never print `identity`. Delete `$S/alpha.json` at the end.
 
-**Pin** (step 3): the pin is the realm the live genesis derives to: `realm` plus lowercase unpadded base32 of `SHA3-256("veilnet/anchor/id/v1" || 0x00 || suite 0x01 || genesis)`, anchor's `internal/id` `Derive`. It must equal the pin anchor publishes, the shelf manifest's `pin` (`GENESIS_PIN` as published), which `anchor-fetch` prints as `realm:` after fetching one binary into scratch (any token that can read anchor's releases, in the environment):
+**Pin** (step 3): the pin is the realm the live genesis derives to: `realm` plus lowercase unpadded base32 of `SHA3-256("veilnet/anchor/id/v1" || 0x00 || suite 0x01 || genesis)`, anchor's `internal/id` `Derive`. It must equal the pin anchor publishes, the `pin` in the manifest of anchor's `latest` release (`GENESIS_PIN` as published), which `anchor-fetch` prints as `realm:` after fetching one binary into scratch (any token that can read anchor's releases, in the environment):
 
 ```bash
 PIN=$(python3 - "$S/alpha.json" <<'EOF'
@@ -234,7 +234,7 @@ g = bytes.fromhex(json.loads(base64.b64decode(json.load(open(sys.argv[1]))['cred
 print('realm' + base64.b32encode(hashlib.sha3_256(b'veilnet/anchor/id/v1\x00\x01' + g).digest()).decode().lower().rstrip('='))
 EOF
 )
-ANCHOR_RELEASE_TOKEN=… go run ./cmd/anchor-fetch -dest "$S/shelf" -want anchord-linux-amd64 2>&1 | grep -E '^(commit|realm):'   # realm: must be $PIN
+ANCHOR_RELEASE_TOKEN=… go run ./cmd/anchor-fetch -tag latest -dest "$S/release" -want anchord-linux-amd64 2>&1 | grep -E '^(commit|realm):'   # realm: must be $PIN
 ```
 
 **Guardian contracts** (read in the schema, never call):
@@ -246,7 +246,7 @@ ANCHOR_RELEASE_TOKEN=… go run ./cmd/anchor-fetch -dest "$S/shelf" -want anchor
 
 Schema quirks: only a `firebase` oauth2 security scheme is declared, `guardian-token` is referenced without being declared, and most authenticated routes carry no `security` field. Decide what is authenticated from each route's description, not from `security`.
 
-**Never call** anything else, including `/`, `/health`, `/genesis*`, `/ghosts/realms*`, `/ghosts/me*` (including `/ghosts/me/beta*` and `/ghosts/me/backups*`), `/auth*`, `/orgs*`, `/guardians*`, `/anchor/release*`, `/billing*` and `/users*`. (`GET /anchor/release` serves a shelf-shaped manifest whose `pin` is an array and whose binaries carry a `url`. It is not conflux's binary source.)
+**Never call** anything else, including `/`, `/health`, `/genesis*`, `/ghosts/realms*`, `/ghosts/me*` (including `/ghosts/me/beta*` and `/ghosts/me/backups*`), `/auth*`, `/orgs*`, `/guardians*`, `/anchor/release*`, `/billing*` and `/users*`. (`GET /anchor/release` serves a manifest shaped like the release's, whose `pin` is an array and whose binaries carry a `url`. It is not conflux's binary source.)
 
 ## Probe node
 

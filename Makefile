@@ -45,16 +45,18 @@ MAX_MB := 75
 
 ANCHOR_SRC ?= ../anchor
 
-# FETCH=1 downloads the pinned binaries from anchor's `shelf` release when no local
+# FETCH=1 downloads the pinned binaries from anchor's `latest` release when no local
 # anchor build is available. Opt-in, because it needs ANCHOR_RELEASE_TOKEN -- anchor is
 # private -- and a clone with neither a checkout nor a token should still build against
-# placeholders. The three below are empty by default so the values live in
-# internal/shelf rather than being repeated here. ONLY=darwin-arm64 (and so on)
+# placeholders. ANCHOR_API and ANCHOR_REPO are empty by default so the values live in
+# internal/shelf rather than being repeated here. ANCHOR_TAG is `latest`, the release
+# anchor moves to every newer build, and is set here because internal/shelf's own
+# default names `shelf`, a tag anchor does not publish. ONLY=darwin-arm64 (and so on)
 # narrows a fetch to the pairs one platform needs; DEST moves where it lands.
 FETCH ?= 0
 ANCHOR_API ?=
 ANCHOR_REPO ?=
-ANCHOR_TAG ?=
+ANCHOR_TAG ?= latest
 
 # The tag `make image` builds and the two suites run. Overridable so a second checkout
 # on one machine does not race the first for the name.
@@ -72,7 +74,7 @@ all: fmtcheck lint tidycheck docscheck test cross dist
 # before its first build.
 #
 # Three sources in order: a local release/ (pinned), a local dist/ (unpinned, taken
-# loudly), then with FETCH=1 anchor's `shelf` release, which serves the pinned build and
+# loudly), then with FETCH=1 anchor's `latest` release, which serves the pinned build and
 # needs no checkout -- but does need a token, since anchor is private. With none of them
 # it writes placeholders, which compile and are caught by the size gate in dist.
 anchor-bins:

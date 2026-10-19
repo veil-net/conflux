@@ -7,13 +7,13 @@
 #
 #   make anchor-bins                      from ../anchor
 #   make anchor-bins ANCHOR_SRC=/path     from somewhere else
-#   make anchor-bins FETCH=1              from anchor's release, needs ANCHOR_RELEASE_TOKEN
+#   make anchor-bins FETCH=1              from anchor's `latest` release, needs ANCHOR_RELEASE_TOKEN
 #
 # Three sources, in that order of preference. A local release/ is the pinned build and
 # wins outright. A local dist/ is the unpinned development cross-build and is taken
-# loudly. With neither, FETCH=1 downloads the pinned binaries from anchor's `shelf`
-# release and verifies every digest -- which is what lets CI, and a fresh clone, have the
-# real ones without a checkout of anchor.
+# loudly. With neither, FETCH=1 downloads the pinned binaries from anchor's release (the
+# Makefile names `latest`) and verifies every digest -- which is what lets CI, and a fresh
+# clone, have the real ones without a checkout of anchor.
 #
 # That last one needs a credential, because anchor is private and GitHub has no
 # releases-only read scope. See internal/shelf for why holding that token in a public
@@ -32,13 +32,13 @@ set -euo pipefail
 ANCHOR_SRC=${ANCHOR_SRC:-../anchor}
 DEST=${DEST:-anchor/bin}
 
-# FETCH=1 asks for the shelf. Opt-in, because it needs a token that a clone with no
+# FETCH=1 asks for anchor's release. Opt-in, because it needs a token that a clone with no
 # anchor access does not have.
 FETCH=${FETCH:-0}
 
-# Where the release lives. Empty means the fetcher's own defaults, so the values are
-# stated once in internal/shelf rather than twice. ANCHOR_API exists so this path can be
-# pointed at a stand-in and actually exercised.
+# Where the release lives. Empty means the fetcher's own defaults in internal/shelf; the
+# Makefile passes ANCHOR_TAG=latest. ANCHOR_API exists so this path can be pointed at a
+# stand-in and actually exercised.
 ANCHOR_API=${ANCHOR_API:-}
 ANCHOR_REPO=${ANCHOR_REPO:-}
 ANCHOR_TAG=${ANCHOR_TAG:-}
@@ -115,7 +115,7 @@ Run `make anchor-bins ANCHOR_SRC=/path/to/anchor` with a real checkout to replac
 EOF
 }
 
-# No local build, so try the shelf before giving up. `go run` rather than curl: this
+# No local build, so try anchor's release before giving up. `go run` rather than curl: this
 # repository's one stated dependency is Go, and a fresh clone should not have to acquire
 # a JSON parser to become buildable. The fetcher imports nothing that embeds anything,
 # so it still runs when anchor/bin is empty -- which is the only moment it is wanted.
@@ -147,7 +147,7 @@ if [ -z "$src" ] && [ "$FETCH" = 1 ]; then
 
   # No fallback. FETCH=1 is somebody asking for the real binaries, so quietly writing
   # placeholders instead would answer a different question -- and it buries the useful
-  # error: the fetcher has just printed which binaries the shelf is missing, and a
+  # error: the fetcher has just printed which binaries the release is missing, and a
   # fallback puts "anchor/bin holds placeholders" underneath it as the last word.
   echo "anchor-bins: the fetch failed and FETCH=1 asked for real binaries, so this is fatal" >&2
   echo "anchor-bins: drop FETCH=1 to build against placeholders instead" >&2

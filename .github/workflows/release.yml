@@ -1,11 +1,15 @@
 name: release
 
-# A merge to version3, and nothing else.
+# A release of every push to version3, a merge included, and nothing else: twice, with the same
+# artifacts and the same notes. Once at the tag the VERSION file names, verbatim; and once at
+# `latest`, which moves to every newer build and is the repository's Latest release.
 #
 # version3 is where conflux is developed; main carries no workflows at all. So this is the
-# branch a merge reaches, and the branch a release comes from. Every merge builds and
-# publishes: VERSION names the release, and the merge decides that there is one. The
-# artifacts at that tag are replaced with the ones built from the commit that just landed.
+# branch a merge reaches, and the branch a release comes from. VERSION names the release, and
+# a maintenance pass moves it on: a new major for a major new feature from anchor, a new
+# minor otherwise. A push that leaves it alone is a rebuild of that version: both releases
+# are deleted, tags included, and released again from the commit that just landed, so a
+# version's tag always names the commit its artifacts were built from.
 #
 # It only releases. CI tested the branch, and a merge lands only when CI is green -- which
 # rests on branch protection on version3, and is unsafe without it -- so nothing here
@@ -21,8 +25,8 @@ permissions:
   contents: read
 
 # Serialised rather than cancelled: a burst of merges queues, each publishes in turn, and
-# the last one wins. Cancelling could interrupt a publish half way through replacing a
-# release's assets.
+# the last one wins. Cancelling could interrupt a publish between deleting a release and
+# releasing it again.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -34,8 +38,8 @@ jobs:
     if: github.ref == 'refs/heads/version3'
     runs-on: [self-hosted, linux]
 
-    # The only job that writes: contents to create the release, the other two for the
-    # build-provenance attestation.
+    # The only job that writes: contents to delete and create the releases, the other two
+    # for the build-provenance attestation.
     permissions:
       contents: write
       id-token: write
@@ -44,35 +48,34 @@ jobs:
     steps:
       # Not persisted: the token that can write a release has no business staying in
       # .git/config on a machine that outlives the job.
+      #
+      # With every commit and tag: the notes name what changed since the previous version,
+      # which needs that version's tag and the history between.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: ./.github/actions/setup
 
-      # The shelf moves, so a release carries whatever anchor published most recently,
-      # which is the intent: conflux ships the newest anchor, not a remembered one.
+      # anchor's `latest` moves, so a release carries whatever anchor published most
+      # recently, which is the intent: conflux ships the newest anchor, not a remembered one.
       - uses: ./.github/actions/anchor-bins
         with:
           client-id: ${{ secrets.ANCHOR_APP_CLIENT_ID }}
           private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
 
       # The tag is the VERSION file, verbatim: nothing is prepended, and the same string
-      # is stamped into the binary. GitHub leaves an existing tag where it was cut, so a
-      # tag behind the commit being built is said on every run rather than left to be
-      # discovered from a `conflux version` naming a commit the tag does not reach.
+      # is stamped into the binary. `latest` is refused, since it is the other release's tag
+      # and the two would delete each other.
       - name: what version does this tree claim?
         id: version
         run: |
           set -euo pipefail
           [ -s VERSION ] || { echo "::error::VERSION is missing or empty" >&2; exit 1; }
           tag=$(tr -d '[:space:]' < VERSION)
+          [ "$tag" != latest ] || { echo "::error::VERSION says latest, which is the moving release's tag, not a version" >&2; exit 1; }
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          at=$(git ls-remote origin "refs/tags/$tag" | cut -f1)
-          if [ -z "$at" ]; then
-            echo "$tag does not exist yet; it will be created at ${GITHUB_SHA:0:12}"
-          elif [ "$at" != "$GITHUB_SHA" ]; then
-            echo "::warning::$tag stays at ${at:0:12}; these artifacts are built from ${GITHUB_SHA:0:12}"
-          fi
+          echo "releasing $tag and latest at ${GITHUB_SHA:0:12}"
 
       # All seven targets, CGO_ENABLED=0 throughout, so one Linux machine cross-builds
       # every one of them. The Makefile reads the VERSION file itself.
@@ -82,9 +85,15 @@ jobs:
         with:
           subject-path: dist/conflux-*
 
-      - name: release notes footer
+      # One text for both releases: what was built, the changes since the previous version,
+      # and what is inside. Printed, so the run's log says what the releases will.
+      - name: the release notes
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
+          set -euo pipefail
           {
+            ./scripts/release-notes.sh "$TAG"
             echo
             echo '## What is inside'
             echo
@@ -98,6 +107,37 @@ jobs:
             echo "Windows TUN mode additionally needs wintun.dll, which conflux downloads and verifies when it is first needed:"
             grep -E '^\s*(Version|ZipSHA256)\s*=' internal/wintun/pinned.go | sed 's/^\s*/  /'
           } > notes.md
+          cat notes.md
+
+      # Each release is deleted, with its tag, just before it is released again, rather
+      # than updated in place: an update keeps the tag where it was first cut, so the tag
+      # would name an older commit than the artifacts hanging off it, and reconciling the
+      # asset list leaves a stale binary beside fresh ones if one upload fails. A 404 is
+      # nothing there yet, and a 422 on the tag is the same; anything else stops the run
+      # before anything is created. The version first, then `latest`, so `latest` is absent
+      # only while its own artifacts upload.
+      - name: delete the release at the version
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        with:
+          script: &delete |
+            const { owner, repo } = context.repo;
+            const tag = process.env.TAG;
+            try {
+              const { data } = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+              await github.rest.repos.deleteRelease({ owner, repo, release_id: data.id });
+              core.info(`deleted the release at ${tag}`);
+            } catch (e) {
+              if (e.status !== 404) throw e;
+              core.info(`no release at ${tag} yet`);
+            }
+            try {
+              await github.rest.git.deleteRef({ owner, repo, ref: `tags/${tag}` });
+              core.info(`deleted the tag ${tag}`);
+            } catch (e) {
+              if (e.status !== 404 && e.status !== 422) throw e;
+            }
 
       - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
@@ -108,5 +148,24 @@ jobs:
             dist/conflux-*
             dist/SHA256SUMS
           body_path: notes.md
-          generate_release_notes: true
+          make_latest: "false"
+          fail_on_unmatched_files: true
+
+      - name: delete the release at latest
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          TAG: latest
+        with:
+          script: *delete
+
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          tag_name: latest
+          name: latest (${{ steps.version.outputs.tag }})
+          target_commitish: ${{ github.sha }}
+          files: |
+            dist/conflux-*
+            dist/SHA256SUMS
+          body_path: notes.md
+          make_latest: "true"
           fail_on_unmatched_files: true

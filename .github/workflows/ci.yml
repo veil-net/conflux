@@ -198,3 +198,40 @@ jobs:
           else
             ./test/service-host.sh bin/conflux.exe
           fi
+
+      # The install scripts as a person runs them, against the published `latest`: the script
+      # on stdin, as `curl … | sh` gives it, into /usr/local/bin with sudo where that is root's;
+      # and run again, which finds the release's conflux already there and changes nothing.
+      - name: install.sh installs the latest release
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh < install.sh
+          [ "$(command -v conflux)" = /usr/local/bin/conflux ]
+          conflux version
+          again=$(sh < install.sh)
+          grep 'is already the latest release' <<< "$again"
+
+      # Under Windows PowerShell 5.1, which is what a Windows machine opens, by Invoke-Expression
+      # as `irm … | iex` runs it; then again from PowerShell 7, which finds it on the machine's
+      # PATH and changes nothing.
+      - name: install.ps1 installs the latest release
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          Get-Content install.ps1 -Raw | Invoke-Expression
+          $exe = Join-Path $env:ProgramFiles 'conflux\conflux.exe'
+          if ((Get-Command conflux).Source -ne $exe) { throw "conflux is not $exe on this session's PATH" }
+          conflux version
+          if ($LASTEXITCODE -ne 0) { throw "conflux version exited $LASTEXITCODE" }
+      - name: install.ps1 again, from PowerShell 7
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+          $dir = Join-Path $env:ProgramFiles 'conflux'
+          if (($machine -split ';') -notcontains $dir) { throw "$dir is not on the machine's PATH" }
+          $out = Get-Content install.ps1 -Raw | Invoke-Expression 6>&1 | Out-String
+          Write-Host $out
+          if ($out -notmatch 'is already the latest release') { throw 'the second run did not find the release already installed' }

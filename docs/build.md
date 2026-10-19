@@ -319,8 +319,10 @@ how a merge becomes a *new* release rather than a rebuild of the current one.
 Leaving it alone is not "do not release" — it is "release this again, with what just
 landed". Both releases are deleted, tags included, and released again from the merged
 commit, so a version's tag always names the commit its artifacts were built from, and
-`conflux version` agrees with it. The notes list the changes since the previous version,
-so a rebuild's notes carry everything that version has gathered so far.
+`conflux version` agrees with it. The notes summarise the changes since the previous
+version, each pull request by its title and the opening paragraph of its description, so a
+rebuild's notes carry everything that version has gathered so far; they end with how to
+install it and what is inside.
 
 ## Reproducibility
 

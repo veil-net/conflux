@@ -48,3 +48,7 @@ anchor/bin/
 
 # `go build ./cmd/...` drops this at the repo root.
 /anchor-fetch
+
+# gooze mutation testing
+.gooze-reports
+.gooze.log*

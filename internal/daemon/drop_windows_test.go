@@ -72,7 +72,7 @@ func TestNewLogonSIDIsOneOfItsOwn(t *testing.T) {
 	}
 
 	for _, sid := range []*windows.SID{a, b} {
-		if parts := strings.Split(sid.String(), "-"); len(parts) != 5 || strings.Join(parts[:3], "-") != "S-1-5" || parts[3] != "5" {
+		if s := sid.String(); !strings.HasPrefix(s, "S-1-5-5-") || strings.Count(s, "-") != 5 {
 			t.Errorf("newLogonSID is %s, want S-1-5-5-X-Y", sid)
 		}
 	}

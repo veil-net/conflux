@@ -6,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"os/exec"
-	"sync"
 	"syscall"
 	"unsafe"
 
@@ -40,12 +39,11 @@ func terminate(cmd *exec.Cmd) bool {
 // kill ends anchord outright.
 func kill(cmd *exec.Cmd) { _ = cmd.Process.Kill() }
 
-// killJob is the job every anchord this supervisor starts is put in. Closing it ends
-// them, and the system closes it when this process ends, however it ends: the SCM
-// terminating the service after its stop timeout, or a crash, takes anchord with it
-// rather than leaving it holding the socket.
-var killJob = sync.OnceValues(newKillJob)
-
+// newKillJob is a job for one anchord. Closing it ends anchord and everything it started,
+// and the system closes it when this process ends, however it ends: the SCM terminating
+// the service after its stop timeout, or a crash, takes anchord with it rather than
+// leaving it holding the socket. One per anchord, so that a process anchord started and
+// left behind is ended with the cycle it belonged to rather than at the supervisor's end.
 func newKillJob() (windows.Handle, error) {
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
@@ -68,14 +66,22 @@ func newKillJob() (windows.Handle, error) {
 	return job, nil
 }
 
-// bind puts anchord in killJob.
-func bind(p *os.Process) error {
-	job, err := killJob()
+// bind puts anchord in a job of its own, and returns what closes it.
+func bind(p *os.Process) (func(), error) {
+	job, err := newKillJob()
 	if err != nil {
-		return err
+		return func() {}, err
 	}
 
-	return assign(job, p)
+	release := func() { _ = windows.CloseHandle(job) }
+
+	if err := assign(job, p); err != nil {
+		release()
+
+		return func() {}, err
+	}
+
+	return release, nil
 }
 
 func assign(job windows.Handle, p *os.Process) error {

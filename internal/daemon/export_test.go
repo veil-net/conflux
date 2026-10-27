@@ -36,7 +36,7 @@ func TestAnchordIsStartedWithAConfig(t *testing.T) {
 func TestTheConfigIsWrittenWithNothingToExport(t *testing.T) {
 	d := dirs(t)
 
-	if err := writeDaemonConfig(d, &config.Config{}); err != nil {
+	if err := writeDaemonConfig(d, &config.Config{}, Privilege{}); err != nil {
 		t.Fatalf("writeDaemonConfig: %v", err)
 	}
 
@@ -63,7 +63,7 @@ func TestTheConfigCarriesWhatWasConfigured(t *testing.T) {
 		CACert:   &config.Secret{Path: "/etc/ssl/certs/site.pem"},
 	}}
 
-	if err := writeDaemonConfig(d, cfg); err != nil {
+	if err := writeDaemonConfig(d, cfg, Privilege{}); err != nil {
 		t.Fatalf("writeDaemonConfig: %v", err)
 	}
 
@@ -95,13 +95,13 @@ func TestTheConfigSurvivesARestart(t *testing.T) {
 		Enabled: true, Endpoint: "otlp.example.gov:4317", Metrics: true, Logs: true,
 	}}
 
-	if err := writeDaemonConfig(d, cfg); err != nil {
+	if err := writeDaemonConfig(d, cfg, Privilege{}); err != nil {
 		t.Fatalf("first spawn: %v", err)
 	}
 
 	first := string(read(t, d))
 
-	if err := writeDaemonConfig(d, cfg); err != nil {
+	if err := writeDaemonConfig(d, cfg, Privilege{}); err != nil {
 		t.Fatalf("second spawn: %v", err)
 	}
 
@@ -132,7 +132,7 @@ func TestTheConfigIsNotReadableByAnyoneElse(t *testing.T) {
 
 	d := dirs(t)
 
-	if err := writeDaemonConfig(d, &config.Config{}); err != nil {
+	if err := writeDaemonConfig(d, &config.Config{}, Privilege{}); err != nil {
 		t.Fatalf("writeDaemonConfig: %v", err)
 	}
 

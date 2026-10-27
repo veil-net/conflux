@@ -133,3 +133,7 @@ func (h *handler) Execute(_ []string, r <-chan svc.ChangeRequest, s chan<- svc.S
 		}
 	}
 }
+
+// removeAccount has nothing to remove on Windows: anchord runs as LOCAL SERVICE, which is
+// the system's, and the service SID it is given goes with the service.
+func removeAccount() error { return nil }

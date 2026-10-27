@@ -60,16 +60,7 @@ func install(ctx context.Context, d paths.Dirs, standalone bool) int {
 		return fail(err)
 	}
 
-	// A CONFLUX_DIR run registers a service that has to come back to that same
-	// directory. Passed as an argument rather than an environment variable because
-	// none of the three service managers carries the operator's environment into
-	// what it starts.
-	serveArgs := []string{"serve"}
-	if root := paths.Root(); root != "" {
-		serveArgs = append(serveArgs, "--dir", root)
-	}
-
-	if err := mgr.Install(exe, serveArgs...); err != nil {
+	if err := register(mgr, exe); err != nil {
 		return fail(err)
 	}
 
@@ -93,6 +84,22 @@ func install(ctx context.Context, d paths.Dirs, standalone bool) int {
 	}
 
 	return startFromConfig(ctx, d, mgr, cfg, "install")
+}
+
+// register names exe, the copy Place made, as the boot service, defined as this conflux
+// defines it: an upgraded conflux's definition reaches the service the next time it is
+// placed. Nothing at all when the definition is the one already there.
+func register(mgr service.Manager, exe string) error {
+	// A CONFLUX_DIR run registers a service that has to come back to that same
+	// directory. Passed as an argument rather than an environment variable because
+	// none of the three service managers carries the operator's environment into
+	// what it starts.
+	serveArgs := []string{"serve"}
+	if root := paths.Root(); root != "" {
+		serveArgs = append(serveArgs, "--dir", root)
+	}
+
+	return mgr.Install(exe, serveArgs...)
 }
 
 // startFromConfig starts the anchor this machine is already configured for.
@@ -208,9 +215,15 @@ func runStart(ctx context.Context, args []string) int {
 	}
 
 	// The service runs its own copy of conflux, and this one may be newer: replacing the
-	// binary and typing start is how an upgrade reaches the service. Nothing is
-	// registered -- the unit names the same path whatever is in it.
-	if _, err := service.Place(d); err != nil {
+	// binary and typing start is how an upgrade reaches the service -- the copy, and the
+	// definition the service is registered with, which a newer conflux may write
+	// differently.
+	exe, err := service.Place(d)
+	if err != nil {
+		return fail(err)
+	}
+
+	if err := register(mgr, exe); err != nil {
 		return fail(err)
 	}
 
@@ -312,6 +325,9 @@ func runUninstall(_ context.Context, args []string) int {
 	for _, dir := range []string{d.Run, d.State, d.Config} {
 		errs = append(errs, os.RemoveAll(dir))
 	}
+
+	// The account anchord ran as, once nothing runs as it, if conflux made it.
+	errs = append(errs, removeAccount())
 
 	if err := errors.Join(errs...); err != nil {
 		return fail(err)

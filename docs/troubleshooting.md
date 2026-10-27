@@ -162,6 +162,29 @@ other causes: the plist is not root-owned, or is group- or world-writable; the j
 already loaded (`sudo launchctl bootout system/org.veilnet.conflux`); or the executable
 the plist names is gone or sits on a volume that is not mounted yet.
 
+## anchord runs as root, or with a capability, and you expected neither
+
+`conflux status` says why, on its `anchord` line, and the log says it at every start:
+
+```
+  anchord      root — firewalld takes changes only from root, and anchord lets its port in through it
+  anchord      conflux, with CAP_NET_ADMIN to size its UDP buffers: net.core.rmem_max and wmem_max at 3670016 or more remove the need
+  anchord      root — the account it runs as could not be used: could not create the account conflux that anchord runs as: this host has neither useradd nor busybox's adduser
+```
+
+Each is a host's answer, and each is fixed on the host: raise the two buffer limits with
+`sysctl`, give the account's group `/dev/net/tun` or the uplink's device, or create the
+account with the commands the line names. The next start uses it. A supervisor that is not
+root, or a container that gave it too few capabilities to hand `anchord` over, runs
+`anchord` as itself — never with more than it was given. See
+[security.md](security.md#what-anchord-runs-as).
+
+## A command that writes a file is refused
+
+`conflux keygen -out ~/key` and the like make `anchord` write the file, and `anchord` runs as
+an account of its own, which cannot write into `/root` or a `0700` home. Name a path that
+account can write, or leave out `-out` and the key comes back to your terminal instead.
+
 ## The service starts and the anchor does not
 
 Run the supervisor in the foreground and watch:

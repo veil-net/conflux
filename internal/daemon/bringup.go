@@ -89,10 +89,11 @@ const MaxSkew = 10 * time.Minute
 // that the three cannot drift into starting subtly different anchors. Everything
 // that differs between them is in the config file by the time this runs.
 //
+// dir is the anchor directory the daemon's identity was given (see Supervisor.anchorDir).
 // reopened counts the start as an uplink rebuilt, in the same state write as the rest,
 // once it has succeeded.
 func bringUp(
-	ctx context.Context, d paths.Dirs, ctl *anchorctl.Ctl, r Reporter, reopened bool,
+	ctx context.Context, d paths.Dirs, ctl *anchorctl.Ctl, r Reporter, dir string, reopened bool,
 ) (started anchorctl.Started, err error) {
 	// Against `conflux renew` and the renewal timer, which read and rewrite the same
 	// manifest and state this does.
@@ -131,11 +132,11 @@ func bringUp(
 		return anchorctl.Started{}, err
 	}
 
-	if err := os.MkdirAll(d.AnchorDir(), 0o700); err != nil {
-		return anchorctl.Started{}, fmt.Errorf("create %s: %w", d.AnchorDir(), err)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return anchorctl.Started{}, fmt.Errorf("create %s: %w", dir, err)
 	}
 
-	started, err = ctl.Start(ctx, env, anchorctl.ModeFromConfig(cfg, d.AnchorDir()))
+	started, err = ctl.Start(ctx, env, anchorctl.ModeFromConfig(cfg, dir))
 	if err != nil {
 		return anchorctl.Started{}, err
 	}

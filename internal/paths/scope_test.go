@@ -1,18 +1,18 @@
-package service
+package paths
 
 import "testing"
 
 func TestScopeIsEmptyForAnOrdinaryInstall(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
-	if got := scope(); got != "" {
-		t.Errorf("scope() = %q with no CONFLUX_DIR, want \"\" — the machine's own service keeps its plain name", got)
+	if got := Scope(); got != "" {
+		t.Errorf("Scope() = %q with no CONFLUX_DIR, want \"\" — the machine's own service keeps its plain name", got)
 	}
 }
 
 func TestScopeIsStableAndDistinct(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "/tmp/cfx-a")
-	a := scope()
+	a := Scope()
 
 	if a == "" {
 		t.Fatal("a CONFLUX_DIR run must not share the machine's service name")
@@ -22,13 +22,13 @@ func TestScopeIsStableAndDistinct(t *testing.T) {
 	// could not find what install registered.
 	t.Setenv("CONFLUX_DIR", "/tmp/cfx-a")
 
-	if again := scope(); again != a {
-		t.Errorf("scope() = %q then %q for one root; a service nobody can name again is a service nobody can remove", a, again)
+	if again := Scope(); again != a {
+		t.Errorf("Scope() = %q then %q for one root; a service nobody can name again is a service nobody can remove", a, again)
 	}
 
 	t.Setenv("CONFLUX_DIR", "/tmp/cfx-b")
 
-	if b := scope(); b == a {
+	if b := Scope(); b == a {
 		t.Errorf("two roots both scoped to %q, so one dev run would still replace the other", b)
 	}
 
@@ -36,7 +36,7 @@ func TestScopeIsStableAndDistinct(t *testing.T) {
 	// would, which is why this hashes the whole thing.
 	t.Setenv("CONFLUX_DIR", "/var/tmp/cfx-a")
 
-	if deep := scope(); deep == a {
+	if deep := Scope(); deep == a {
 		t.Errorf("/tmp/cfx-a and /var/tmp/cfx-a both scoped to %q", deep)
 	}
 }
@@ -46,14 +46,14 @@ func TestScopeIsStableAndDistinct(t *testing.T) {
 func TestScopeIsNameSafe(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "/tmp/a b/c:d\\e*f")
 
-	got := scope()
+	got := Scope()
 	if len(got) != 9 || got[0] != '-' {
-		t.Fatalf("scope() = %q, want a hyphen and eight hex digits", got)
+		t.Fatalf("Scope() = %q, want a hyphen and eight hex digits", got)
 	}
 
 	for _, r := range got[1:] {
 		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
-			t.Errorf("scope() = %q contains %q, which is not hex", got, r)
+			t.Errorf("Scope() = %q contains %q, which is not hex", got, r)
 		}
 	}
 }
@@ -62,12 +62,12 @@ func TestScopeIsNameSafe(t *testing.T) {
 // if a trailing slash or a "." in the path names the same service.
 func TestScopeIsTheSameForEverySpellingOfARoot(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "/tmp/cfx-a")
-	want := scope()
+	want := Scope()
 
 	for _, spelling := range []string{"/tmp/cfx-a/", "/tmp/./cfx-a", "/tmp//cfx-a"} {
 		t.Setenv("CONFLUX_DIR", spelling)
 
-		if got := scope(); got != want {
+		if got := Scope(); got != want {
 			t.Errorf("CONFLUX_DIR=%q scoped to %q, but /tmp/cfx-a to %q", spelling, got, want)
 		}
 	}

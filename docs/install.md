@@ -69,8 +69,11 @@ carries the `anchord` and `anchorctl` for its own platform inside it.
 
 ## Linux
 
-Nothing else is needed. TUN is in the kernel, and `conflux up` asks for it through the
-service's `CAP_NET_ADMIN`.
+Nothing else is needed. TUN is in the kernel, and `anchord` gets the `CAP_NET_ADMIN` it
+needs for one from the supervisor, as an account of its own — see
+[security.md](security.md#what-anchord-runs-as). That account, `conflux`, is made with
+`useradd` (or busybox's `adduser`) the first time it is needed, and removed by
+`conflux uninstall`.
 
 On a host with SELinux enforcing, the extracted binaries under `/var/lib/conflux/bin`
 may be labelled `var_lib_t` and refused execution. conflux detects this and prints the

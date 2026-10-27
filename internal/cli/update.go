@@ -146,7 +146,12 @@ func moveService(ctx context.Context, exe string) int {
 		return runChild(ctx, exe, "start")
 	}
 
-	if _, err := service.PlaceFrom(d, exe); err != nil {
+	placed, err := service.PlaceFrom(d, exe)
+	if err != nil {
+		return fail(err)
+	}
+
+	if err := register(service.New(), placed); err != nil {
 		return fail(err)
 	}
 

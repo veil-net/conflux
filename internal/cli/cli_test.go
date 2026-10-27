@@ -816,8 +816,11 @@ func TestASetListReplacesASubnetOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	order := `{"subnets": ["10.9.0.0/24@lab"], "by": "anchorordererexample", "at": "2026-10-06T09:00:00Z"}`
-	if err := os.WriteFile(d.SubnetsOrderFile(), []byte(order), 0o600); err != nil {
+	orderFile := paths.SubnetsOrderFile(d.AnchorDir())
+
+	// Who set it is printed to a terminal, and written by whoever could write the file.
+	order := `{"subnets": ["10.9.0.0/24@lab"], "by": "anchorordererexample\u001b[2J", "at": "2026-10-06T09:00:00Z"}`
+	if err := os.WriteFile(orderFile, []byte(order), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -831,20 +834,32 @@ func TestASetListReplacesASubnetOrder(t *testing.T) {
 	reportSubnets(d, &config.Config{Subnets: []string{"eth1"}})
 
 	if s := shown.String(); !strings.Contains(s, "10.9.0.0/24@lab") || !strings.Contains(s, "anchorordererexample") ||
-		strings.Contains(s, "eth1") {
-		t.Errorf("status should show the order's list and who set it, not conflux.json's:\n%s", s)
+		strings.Contains(s, "eth1") || strings.Contains(s, "\x1b") {
+		t.Errorf("status should show the order's list and who set it, not conflux.json's, and nothing to steer a terminal:\n%q", s)
+	}
+
+	// A copy in the other anchor directory goes too, or the next anchord given that one
+	// would serve it again.
+	if err := os.MkdirAll(d.RootAnchorDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(paths.SubnetsOrderFile(d.RootAnchorDir()), []byte(order), 0o600); err != nil {
+		t.Fatal(err)
 	}
 
 	if err := dropSubnetsOrder(d); err != nil {
 		t.Fatalf("dropSubnetsOrder: %v", err)
 	}
 
-	if _, err := os.Stat(d.SubnetsOrderFile()); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("the order is still in force after the list was set: %v", err)
+	for _, f := range []string{orderFile, paths.SubnetsOrderFile(d.RootAnchorDir())} {
+		if _, err := os.Stat(f); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("the order is still in force after the list was set: %v", err)
+		}
 	}
 
 	// One anchor cannot read is one it will not start on, and setting the list clears it.
-	if err := os.WriteFile(d.SubnetsOrderFile(), []byte("{not json"), 0o600); err != nil {
+	if err := os.WriteFile(orderFile, []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -852,7 +867,7 @@ func TestASetListReplacesASubnetOrder(t *testing.T) {
 		t.Errorf("dropSubnetsOrder refused an order it could not read: %v", err)
 	}
 
-	if _, err := os.Stat(d.SubnetsOrderFile()); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Stat(orderFile); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("an unreadable order is still in force after the list was set: %v", err)
 	}
 

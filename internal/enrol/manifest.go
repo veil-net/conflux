@@ -326,6 +326,21 @@ func (m *Manifest) Exit() bool {
 	return exit
 }
 
+// ListenPort is the UDP port the issuer listed this anchor at, which anchor binds when
+// conflux.json names none, or 0 when the document names none.
+//
+// Read for one reason: a port below 1024 is one only a privileged process may bind on
+// most of the systems conflux runs on, and the supervisor gives anchord what its port
+// needs before anchord starts.
+func (m *Manifest) ListenPort() int {
+	n, err := m.int("listenPort")
+	if err != nil || n < 0 || n > 65535 {
+		return 0
+	}
+
+	return n
+}
+
 // Bootstrap is the peer list the issuer supplied.
 func (m *Manifest) Bootstrap() []string {
 	var out []string

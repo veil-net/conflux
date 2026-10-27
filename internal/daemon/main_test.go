@@ -113,7 +113,7 @@ const fakeAnchorID = "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq
 // fakeAnchordLastWords is what the stand-in anchord says on its way out, with no
 // newline after the last of it: the line a failure report most needs is the one most
 // easily lost.
-const fakeAnchordLastWords = "control: /run/conflux/anchord.sock is already served by a running daemon"
+const fakeAnchordLastWords = "control: /run/conflux/anchord/sock is already served by a running daemon"
 
 func fakeAnchord() int {
 	fmt.Println("anchord starting")
@@ -152,6 +152,12 @@ func dirs(tb testing.TB) paths.Dirs {
 	d := paths.Default()
 	if err := d.EnsureAll(); err != nil {
 		tb.Fatalf("EnsureAll: %v", err)
+	}
+
+	// anchord's own, which the supervisor makes afresh before each start and a test that
+	// stands in for a daemon writes its socket into.
+	if err := os.MkdirAll(d.DaemonRun(), 0o700); err != nil {
+		tb.Fatal(err)
 	}
 
 	return d

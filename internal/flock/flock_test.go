@@ -1,6 +1,7 @@
 package flock
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -27,4 +28,33 @@ func TestTryAcquireReportsAHeldLock(t *testing.T) {
 	}
 
 	again()
+}
+
+// TestHeldAsksWithoutCreating: held while somebody holds it, free once they let go, and a
+// lock that is not there is nobody's -- and asking makes no file.
+func TestHeldAsksWithoutCreating(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sock.lock")
+
+	if held, err := Held(path); err != nil || held {
+		t.Fatalf("Held on a missing lock = %v, %v; want free", held, err)
+	}
+
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("asking made the lock file (%v)", err)
+	}
+
+	unlock, err := Acquire(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if held, err := Held(path); err != nil || !held {
+		t.Errorf("Held on a held lock = %v, %v; want held", held, err)
+	}
+
+	unlock()
+
+	if held, err := Held(path); err != nil || held {
+		t.Errorf("Held on a released lock = %v, %v; want free", held, err)
+	}
 }

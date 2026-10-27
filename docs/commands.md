@@ -361,15 +361,22 @@ Needs root.
 
 ## `conflux uninstall`
 
-Removes the boot service, the configuration and the identity. Asks first, because
-there is no other copy of the credential anywhere; `--yes` skips the question, and a
-non-interactive run without `--yes` refuses rather than destroy an identity silently.
+Removes the boot service, the configuration and the identity — and the account `anchord`
+ran as, once nothing runs as it, when conflux made it; an account of that name that
+conflux did not make is left alone. Asks first, because there is no other copy of the
+credential anywhere; `--yes` skips the question, and a non-interactive run without `--yes`
+refuses rather than destroy an identity silently.
 
 ## `conflux status`
 
-conflux's state — service, mode, exit, taint, AnchorID, credential expiry, API, and
-the uplink reopen tally if there is one — and then `anchorctl status` beneath it.
-Exits 78 when the machine has no configuration.
+conflux's state — service, mode, exit, taint, AnchorID, credential expiry, API, the
+uplink reopen tally if there is one, and while it runs, who `anchord` runs as and with
+what — and then `anchorctl status` beneath it. Exits 78 when the machine has no
+configuration.
+
+The `anchord` line says what it keeps and why: `conflux, with no privilege` in userspace,
+`conflux, with CAP_NET_ADMIN for its interface` for a TUN on Linux, or root and the reason
+the host needs it. See [security.md](security.md#what-anchord-runs-as).
 
 The `taint` line is the set `conflux.json` names, which after enrolment mirrors the one
 the credential grants — `none: the realm's default compartment` for an issued
@@ -452,6 +459,12 @@ conflux supplies the connection details through the environment (`ANCHOR_SOCKET`
 `ANCHORD_TOKEN`) rather than injecting flags, and only where they are not already set.
 anchorctl resolves the socket as `firstNonEmpty(-socket, global -socket,
 ANCHOR_SOCKET)`, so a flag you typed still wins and conflux never rewrites an argv.
+
+A command that makes the daemon itself open a path you name — `keygen -out` and
+`priv -out`, which write "on the daemon's filesystem", or export certificates given by path
+— opens it with `anchord`'s rights, which are an account of its own's wherever its mode
+allows. A path that account cannot reach is refused by `anchord`, naming it: choose one it
+can, or leave out `-out` and the key comes back to your terminal.
 
 One case is intercepted: when no daemon is running, conflux says so and names `start`,
 `up` and `proxy`. anchorctl's own answer at that point asks whether anchord is running on

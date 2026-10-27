@@ -263,7 +263,7 @@ func TestAReopenedLinkIsCounted(t *testing.T) {
 	ctl := fakeCtl(t)
 
 	for _, reopened := range []bool{false, true, true} {
-		if _, err := bringUp(t.Context(), d, ctl, nopReporter{}, reopened); err != nil {
+		if _, err := bringUp(t.Context(), d, ctl, nopReporter{}, d.RootAnchorDir(), reopened); err != nil {
 			t.Fatal(err)
 		}
 	}

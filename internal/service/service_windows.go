@@ -29,7 +29,7 @@ func newManager() Manager { return scm{} }
 //
 // A function and not a constant because a run rooted in a CONFLUX_DIR is a separate
 // installation and must not be registered over the machine's own; see scope.
-func ServiceName() string { return "conflux" + scope() }
+func ServiceName() string { return "conflux" + paths.Scope() }
 
 func (scm) Install(exe string, args ...string) error {
 	m, err := connect(windows.SC_MANAGER_ALL_ACCESS)

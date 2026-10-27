@@ -119,3 +119,38 @@ func TestEnsureAllLeavesTheSharedLogAlone(t *testing.T) {
 		t.Errorf("the shared log directory became %#o; conflux must leave it as the system made it", got)
 	}
 }
+
+// TestSecureKeepsRootsPassThroughGroup: a root of root's at 0710 is how the supervisor
+// lets anchord's own account pass through to what it runs, and every conflux command
+// would otherwise cut a running anchord off; anything wider is still narrowed.
+func TestSecureKeepsRootsPassThroughGroup(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("a directory of root's needs root")
+	}
+
+	dir := t.TempDir()
+
+	if err := os.Chmod(dir, 0o710); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := secure(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := mode(t, dir); got != 0o710 {
+		t.Errorf("a root's 0710 was changed to %#o", got)
+	}
+
+	if err := os.Chmod(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := secure(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := mode(t, dir); got != 0o700 {
+		t.Errorf("a root's 0750 is %#o after secure, want 0700", got)
+	}
+}

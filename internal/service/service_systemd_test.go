@@ -14,10 +14,20 @@ func TestSystemdUnit(t *testing.T) {
 		"\nType=notify\n",
 		"\nRestartPreventExitStatus=78 70\n",
 		"\nRuntimeDirectory=conflux\nRuntimeDirectoryMode=0700\n",
+		"\nUser=root\n",
 		"\nLimitNOFILE=1048576\n",
 	} {
 		if !strings.Contains(unit, want) {
 			t.Errorf("the unit has no %q:\n%s", strings.TrimSpace(want), unit)
+		}
+	}
+
+	// The supervisor gives anchord its capabilities, and systemd must not take anchord's
+	// directory back: a StateDirectory= is re-owned at every start once its group is
+	// anchord's account.
+	for _, absent := range []string{"Capabilities=", "StateDirectory", "NoNewPrivileges"} {
+		if strings.Contains(unit, absent) {
+			t.Errorf("the unit has %q:\n%s", absent, unit)
 		}
 	}
 

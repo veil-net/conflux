@@ -95,11 +95,23 @@ docker exec cfx-a conflux up --taint "$TAINT" --ipv4 10.128.0.1/24 --peers "$NOW
 A_ID=$(anchor_id cfx-a)
 [ -n "$A_ID" ] || { echo "node A recorded no AnchorID" >&2; exit 1; }
 
-say "the identity is 0600 and the state directory 0700"
-[ "$(docker exec cfx-a stat -c%a /var/lib/conflux/manifest.b64)" = 600 ] \
-  || { echo "manifest.b64 is not 0600" >&2; exit 1; }
-[ "$(docker exec cfx-a stat -c%a /run/conflux)" = 700 ] \
-  || { echo "the run directory is not 0700" >&2; exit 1; }
+say "the identity is 0600 and root's alone"
+[ "$(docker exec cfx-a stat -c '%a %U' /var/lib/conflux/manifest.b64)" = "600 root" ] \
+  || { echo "manifest.b64 is not 0600 and root's" >&2; exit 1; }
+
+# A TUN on Linux needs CAP_NET_ADMIN and nothing else, as conflux's own account -- unless
+# the host keeps /dev/net/tun root's, when anchord stays root and says so. The run
+# directory lets that account through to its own and no further.
+say "anchord runs with only what a TUN needs"
+row=$(docker exec cfx-a conflux status | sed -n 's/^  anchord *//p')
+echo "  anchord: $row"
+case $row in
+  "conflux, with CAP_NET_ADMIN for its interface") run="710 root conflux" ;;
+  "root — /dev/net/tun opens only for root") run="700 root root" ;;
+  *) echo "anchord runs as: $row" >&2; exit 1 ;;
+esac
+[ "$(docker exec cfx-a stat -c '%a %U %G' /run/conflux)" = "$run" ] \
+  || { echo "the run directory is $(docker exec cfx-a stat -c '%a %U %G' /run/conflux), want $run" >&2; exit 1; }
 
 say "the credential grants the taint A asked for"
 [ "$(grants cfx-a "$TAINT")" = 1 ] || { echo "A's credential does not grant $TAINT" >&2; exit 1; }

@@ -8,13 +8,15 @@ for the daemon and nothing reads back.
 conflux is system-scoped: one configuration per machine, root-owned, with **no home
 directory anywhere in it**. The boot service runs as root or LocalSystem, so a path
 under `$HOME` is a path the service cannot read — and a `~/.config` layout also breaks
-under a systemd unit with `User=` or `ProtectHome=`.
+under a systemd unit with `User=` or `ProtectHome=`, or for an `anchord` running as an
+account of its own.
 
 | | Linux | macOS | Windows | FreeBSD / OpenBSD |
 |---|---|---|---|---|
 | configuration | `/etc/conflux/` | `/Library/Application Support/conflux/` | `%ProgramData%\conflux\` | `/usr/local/etc/conflux/` |
 | state, identity, binaries | `/var/lib/conflux/` | `/Library/Application Support/conflux/` | `%ProgramData%\conflux\` | `/var/db/conflux/` |
-| socket, token, anchord's pid | `/run/conflux/` | `/var/run/conflux/` | `%ProgramData%\conflux\run\` | `/var/run/conflux/` |
+| token, anchord's pid | `/run/conflux/` | `/var/run/conflux/` | `%ProgramData%\conflux\run\` | `/var/run/conflux/` |
+| anchord's socket | `/run/conflux/anchord/sock` | `/var/run/conflux/anchord/sock` | `%ProgramData%\conflux\run\anchord\sock` | `/var/run/conflux/anchord/sock` |
 
 `CONFLUX_DIR` roots all of them in one directory, and the boot service with them — it is named after the root, so a run under it is a separate installation rather than a replacement for the machine's own. See [testing.md](testing.md).
 
@@ -23,6 +25,13 @@ and every file conflux writes there is `0600`, apart from the programs it runs (
 and the service's own copy of conflux, `0700`). The service definitions live where the service
 manager reads them, at the modes it expects, and on macOS and FreeBSD the log file goes in the
 system's `/var/log`.
+
+Where `anchord` runs as its own account, the supervisor lets that account through to what it
+needs and nothing else: the state and run directories become `0710`, root's, with the account's
+group — it may pass through them, and list or create nothing — and `anchord` itself `0750` in the
+same way. `anchor/`, anchord's `-dir`, and `run/anchord/`, which holds its socket, are the
+account's own; a root anchord is given `anchor.root/` and a `run/anchord/` of root's instead. The
+layout, and why, is in [security.md](security.md#what-anchord-runs-as).
 
 ## `conflux.json` — what you asked for
 
@@ -212,9 +221,11 @@ nothing about the anchor — an anchor's configuration arrives with the `Start` 
 which is what lets conflux own the lifecycle.
 
 Editing it does nothing lasting: the next start overwrites it. `conflux.json` is the
-file with your intent in it, and this is derived from it. It is `0600` in the `0700`
-state directory rather than beside `conflux.json`, because it carries the export
-headers, which are credentials.
+file with your intent in it, and this is derived from it. It is `0600` in the state
+directory rather than beside `conflux.json`, because it carries the export headers, which
+are credentials, and it belongs to whoever `anchord` runs as. TLS material `conflux.json`
+names by path is read by the supervisor and written into it whole, so a key only root can
+read still reaches an `anchord` that is not root.
 
 ## `bin/<setID>/` — the extracted anchor pair
 

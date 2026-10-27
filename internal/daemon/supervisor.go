@@ -26,8 +26,8 @@ import (
 // The supervisor is what the service manager actually runs.
 //
 //	systemd / launchd / rc / SCM
-//	  └── conflux serve
-//	        ├── anchord -socket … -token-file … -config …
+//	  └── conflux serve                  root, or SYSTEM
+//	        ├── anchord -socket … -config …   as its own account wherever that costs nothing; see privilege.go
 //	        ├── the renewal timer
 //	        ├── the watcher: a lost anchor, and on an uplink an ended link
 //	        └── the restart loop
@@ -66,10 +66,26 @@ type Supervisor struct {
 	// tell the service manager the unit has actually started.
 	Ready chan struct{}
 
+	// Drop lets the supervisor start anchord as its own unprivileged account where its
+	// mode and the host allow. The service sets it; a test leaves it off, so a test run
+	// as root makes no account.
+	Drop bool
+
 	tools *libexec.Tools
 	ctl   *anchorctl.Ctl
 	tail  *ring
 	once  sync.Once
+
+	// priv is what the running anchord was started with, and lastDir the anchor
+	// directory the last one was given, which the next starts from when it is given
+	// the other.
+	priv    Privilege
+	lastDir string
+
+	// respawn ends the cycle so the next starts anchord with what it now needs.
+	respawn chan struct{}
+
+	drop dropState
 }
 
 func (s *Supervisor) report() Reporter {
@@ -135,6 +151,17 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		s.report().Warn("%v", err)
 	case pid != 0:
 		s.report().Warn("stopped anchord (pid %d), left running by a supervisor that ended without stopping it", pid)
+	}
+
+	// conflux 1.0.0 kept the socket in the run directory itself. The daemon that held it
+	// is gone by now, and so the two names are nothing's.
+	if held, err := flock.Held(s.Dirs.LegacySocket() + ".lock"); err == nil && !held {
+		_ = os.Remove(s.Dirs.LegacySocket())
+		_ = os.Remove(s.Dirs.LegacySocket() + ".lock")
+	}
+
+	if p, ok := RecordedPrivilege(s.Dirs); ok {
+		s.lastDir = p.Dir
 	}
 
 	// Before anything else can be asked about, because nothing is up yet and a marker
@@ -236,6 +263,8 @@ func (s *Supervisor) loop(ctx context.Context) error {
 
 // cycle is one daemon lifetime.
 func (s *Supervisor) cycle(ctx context.Context) error {
+	s.respawn = make(chan struct{}, 1)
+
 	cfg, c, err := s.spawn(ctx)
 	if err != nil {
 		return err
@@ -256,8 +285,15 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 		}
 	}
 
-	started, err := bringUp(ctx, s.Dirs, s.ctl, s.report(), false)
+	started, err := bringUp(ctx, s.Dirs, s.ctl, s.report(), s.priv.Dir, false)
 	if err != nil {
+		// A start the decision no longer fits -- the first enrolment named a port only root
+		// may bind -- is one the next cycle makes with what it needs. Not wrapped, so a
+		// refusal for good does not count against the configuration.
+		if s.redecided() {
+			return fmt.Errorf("%w: %v", errRespawn, err)
+		}
+
 		return err
 	}
 
@@ -291,6 +327,8 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 		return nil
 	case <-c.exited:
 		return c.gone("unexpectedly", s.tail)
+	case <-s.respawn:
+		return errRespawn
 	}
 }
 
@@ -299,10 +337,12 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 // A function rather than three lines inside spawn, so the argument vector can be
 // asserted without starting a process. -config is what carries conflux.json's export
 // block into the daemon on every start; see writeDaemonConfig.
+//
+// No -token-file: the token arrives as ANCHORD_TOKEN (anchor's contract.Token), so the
+// file the CLI reads it from stays root's whoever anchord runs as.
 func anchordArgs(d paths.Dirs) []string {
 	args := []string{
 		"-socket", d.Socket(),
-		"-token-file", d.TokenFile(),
 		"-config", d.DaemonConfigFile(),
 	}
 
@@ -321,9 +361,10 @@ func anchordArgs(d paths.Dirs) []string {
 // shutdown that came after it then waited forever for an exit already consumed, and
 // a daemon that died was never restarted.
 type child struct {
-	cmd    *exec.Cmd
-	exited chan struct{}
-	err    error // Wait's answer, read only once exited is closed
+	cmd     *exec.Cmd
+	exited  chan struct{}
+	err     error  // Wait's answer, read only once exited is closed
+	release func() // ends whatever anchord left behind it, once it has gone
 }
 
 // gone reports an exit nobody asked for, in anchord's own last words.
@@ -359,25 +400,52 @@ func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *child, error) 
 		return nil, nil, err
 	}
 
-	if err := writeDaemonConfig(s.Dirs, cfg); err != nil {
+	p := s.privilege(cfg)
+
+	// Whatever the account's directories need that the host will not let the supervisor
+	// do, anchord runs as the supervisor instead, which loses nothing it had before.
+	if err := s.prepare(&p); err != nil {
+		if !p.Account {
+			return nil, nil, err
+		}
+
+		s.report().Warn("could not prepare anchord's directories for %s: %v", p.As, err)
+
+		p = asSupervisor("could not prepare its directories for its own account: " + firstLine(err))
+		p.As = supervisorName()
+
+		if err := s.prepare(&p); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	if err := writeDaemonConfig(s.Dirs, cfg, p); err != nil {
 		return nil, nil, err
 	}
+
+	s.report().Step("starting anchord as %s", p)
 
 	out := s.lines()
 
 	cmd := exec.Command(s.tools.Anchord, anchordArgs(s.Dirs)...) //nolint:gosec // our own extracted binary
-	cmd.SysProcAttr = procAttr()
+	cmd.SysProcAttr = s.procAttrFor(p)
+	cmd.Env = anchordEnv(p, s.ctl.Token)
+	cmd.Dir = workDir
 	cmd.Stdout, cmd.Stderr = out, out
 
 	// What anchord started can hold its output open after it has gone; Wait gives up on
 	// the pipe this long after the exit rather than waiting with it.
 	cmd.WaitDelay = 5 * time.Second
 
-	if err := cmd.Start(); err != nil {
-		return nil, nil, fmt.Errorf("start anchord: %w", err)
+	err = startProcess(cmd, p)
+	s.releaseDrop()
+
+	if err != nil {
+		return nil, nil, fmt.Errorf("start anchord as %s: %w", p.As, err)
 	}
 
-	if err := bind(cmd.Process); err != nil {
+	release, err := bind(cmd.Process)
+	if err != nil {
 		s.report().Warn("anchord will not end with this process if it is killed: %v", err)
 	}
 
@@ -385,7 +453,13 @@ func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *child, error) 
 		s.report().Warn("could not record anchord's pid: %v", err)
 	}
 
-	c := &child{cmd: cmd, exited: make(chan struct{})}
+	if err := recordPrivilege(s.Dirs, p); err != nil {
+		s.report().Warn("could not record what anchord runs as: %v", err)
+	}
+
+	s.priv, s.lastDir = p, p.Dir
+
+	c := &child{cmd: cmd, exited: make(chan struct{}), release: release}
 
 	// Wait returns once the output is drained, so the tail holds anchord's last words
 	// by the time anybody reads it.
@@ -545,6 +619,16 @@ func (s *Supervisor) shutdown(c *child) {
 	case <-c.exited:
 	default:
 		s.stop(c)
+	}
+
+	// Whatever anchord started that outlived it: its job, on Windows, and on Unix what
+	// still runs as its account.
+	if c.release != nil {
+		c.release()
+	}
+
+	if s.priv.Account {
+		s.killLeftovers()
 	}
 
 	// Waited for, so the record no longer names a process of ours.

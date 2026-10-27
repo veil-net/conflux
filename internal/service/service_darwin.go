@@ -10,11 +10,12 @@ import (
 	"time"
 
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/paths"
 )
 
 // Functions and not constants because a run rooted in a CONFLUX_DIR is a separate
 // installation and must not be registered over the machine's own; see scope.
-func label() string     { return "org.veilnet.conflux" + scope() }
+func label() string     { return "org.veilnet.conflux" + paths.Scope() }
 func plistPath() string { return "/Library/LaunchDaemons/" + label() + ".plist" }
 func target() string    { return "system/" + label() }
 

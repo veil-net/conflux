@@ -13,8 +13,10 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/enrol"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/taint"
@@ -612,9 +614,13 @@ type subnetsOrder struct {
 	At      time.Time `json:"at"`
 }
 
-// readSubnetsOrder is the order in force, or nil when none is.
+// readSubnetsOrder is the order in force, or nil when none is: in the anchor directory the
+// last anchord was given, which may be one its own account writes, so it is read as a file
+// that account could have made anything of.
 func readSubnetsOrder(d paths.Dirs) (*subnetsOrder, error) {
-	b, err := os.ReadFile(d.SubnetsOrderFile())
+	path := paths.SubnetsOrderFile(daemon.ActiveAnchorDir(d))
+
+	b, err := config.ReadUntrusted(path, 1<<20)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
@@ -625,8 +631,17 @@ func readSubnetsOrder(d paths.Dirs) (*subnetsOrder, error) {
 
 	var o subnetsOrder
 	if err := json.Unmarshal(b, &o); err != nil {
-		return nil, fmt.Errorf("%s: %w", d.SubnetsOrderFile(), err)
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
+
+	// Printed to an operator's terminal, and written by whoever could write the file.
+	o.By = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+
+		return r
+	}, o.By)
 
 	return &o, nil
 }
@@ -634,21 +649,27 @@ func readSubnetsOrder(d paths.Dirs) (*subnetsOrder, error) {
 // dropSubnetsOrder lets the list conflux starts with be served again: the operator just
 // set it, and the last set is the one served. The order's file is anchor's documented way
 // back, removed before the restart that reads it -- whatever is in it, since one anchor
-// cannot read is one it refuses to start on, and this is the command that clears it.
+// cannot read is one it refuses to start on, and this is the command that clears it. From
+// both anchor directories, so the next one given the other does not find it there.
 func dropSubnetsOrder(d paths.Dirs) error {
 	o, readErr := readSubnetsOrder(d)
 
-	if err := os.Remove(d.SubnetsOrderFile()); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil
-		}
+	removed := false
 
-		return fmt.Errorf("could not replace the subnet list an order set: %w", err)
+	for _, dir := range []string{d.AnchorDir(), d.RootAnchorDir()} {
+		switch err := os.Remove(paths.SubnetsOrderFile(dir)); {
+		case err == nil:
+			removed = true
+		case !errors.Is(err, fs.ErrNotExist):
+			return fmt.Errorf("could not replace the subnet list an order set: %w", err)
+		}
 	}
 
-	if readErr != nil {
+	switch {
+	case !removed:
+	case readErr != nil:
 		ui.Printf("Replacing a subnet list an order set, which could not be read: %v.\n", readErr)
-	} else {
+	case o != nil:
 		ui.Printf("Replacing the subnet list an order from %s set at %s.\n", o.By, o.At.Format(time.RFC3339))
 	}
 

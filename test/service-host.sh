@@ -4,10 +4,12 @@
 #   test/service-host.sh CONFLUX     (as root on macOS; as Administrator on Windows)
 #
 # What test/service.sh is for systemd: install registers and starts nothing, status and
-# down answer for a registered service with nothing to run, and uninstall leaves nothing
-# behind -- launchd's disabled database and the SCM's entry included. Nothing is enrolled
-# and nothing is started, so it needs no API and no anchor, and takes seconds. It runs on
-# the machine itself, which is why it is for a CI runner that is thrown away afterwards.
+# down answer for a registered service with nothing to run, a userspace anchord runs as
+# an account of its own -- _conflux on macOS, LOCAL SERVICE on Windows -- and uninstall
+# leaves nothing behind: launchd's disabled database, the SCM's entry and the account
+# included. Nothing is enrolled -- the configuration names an API that answers nothing --
+# so it needs no API and no anchor, and takes seconds. It runs on the machine itself,
+# which is why it is for a CI runner that is thrown away afterwards.
 #
 # bash 3.2, which is what a Mac has, and Git Bash on Windows.
 set -euo pipefail
@@ -58,6 +60,38 @@ esac
 say "down on a service that is not running"
 "$CONFLUX" down || fail "down failed on a service that was not running"
 
+if [ "$os" = darwin ]; then
+  root="/Library/Application Support/conflux"
+else
+  # Git Bash imports Windows's variables upper-cased; the fallback is Windows's default.
+  root="$(cygpath -u "${PROGRAMDATA:-C:\\ProgramData}")/conflux"
+fi
+
+# A configuration conflux could have written, with an API that answers nothing: the
+# supervisor starts anchord, records what it started it as, and retries the enrolment.
+# The record is read rather than the process, which lives only as long as a try.
+say "in userspace anchord runs as an account of its own"
+(umask 077; printf '%s\n' '{"version":1,"mode":"proxy","proxies":["8080=127.0.0.1:3000"],"taints":["cfx-service-host"],"apiBaseUrl":"https://192.0.2.1:9","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}' > "$root/conflux.json")
+if [ "$os" = darwin ]; then
+  launchctl bootstrap system "/Library/LaunchDaemons/$LABEL.plist"
+  account='"as":"_conflux"'
+else
+  sc.exe start conflux >/dev/null
+  account='LOCAL SERVICE'
+fi
+priv=""
+for _ in $(seq 120); do
+  priv=$(cat "$root/anchord.priv" 2>/dev/null || true)
+  [ -n "$priv" ] && break
+  sleep 0.5
+done
+echo "  anchord: $priv"
+case $priv in
+  *'"account":true'*"$account"*) ;;
+  *) fail "anchord did not run as its own account: ${priv:-nothing was recorded}" ;;
+esac
+"$CONFLUX" down || fail "down failed on a running service"
+
 say "uninstall leaves nothing"
 "$CONFLUX" uninstall --yes
 
@@ -70,12 +104,13 @@ if [ "$os" = darwin ]; then
   for path in "/Library/Application Support/conflux" /var/run/conflux /var/log/conflux.log; do
     [ ! -e "$path" ] || fail "$path survived uninstall"
   done
+  if dscl . -read /Users/_conflux >/dev/null 2>&1; then
+    fail "the _conflux account survived uninstall"
+  fi
 else
   if sc.exe query conflux >/dev/null 2>&1; then
     fail "the service survived uninstall"
   fi
-  # Git Bash imports Windows's variables upper-cased; the fallback is Windows's default.
-  root="$(cygpath -u "${PROGRAMDATA:-C:\\ProgramData}")/conflux"
   [ ! -e "$root" ] || fail "$root survived uninstall"
 fi
 

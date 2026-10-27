@@ -67,6 +67,7 @@ func runStatus(ctx context.Context, args []string) int {
 	daemon.wg.Wait()
 
 	reportExport(cfg, daemon)
+	reportPrivilege(d, daemon.asked && daemon.statErr == nil)
 	ui.Println()
 	reportAnchor(daemon)
 
@@ -110,6 +111,18 @@ func askDaemon(ctx context.Context, d paths.Dirs) *daemonAnswers {
 }
 
 func reportService() { ui.Field("service", service.New().Describe()) }
+
+// reportPrivilege says who the running anchord runs as, with what, and why it keeps what
+// it keeps: nothing for a daemon that is not running, whose record describes the last one.
+func reportPrivilege(d paths.Dirs, running bool) {
+	if !running {
+		return
+	}
+
+	if p, ok := daemon.RecordedPrivilege(d); ok {
+		ui.Field("anchord", p.String())
+	}
+}
 
 func reportConfig(d paths.Dirs, cfg *config.Config) {
 	// Before the mode, because it is the medium the mode runs over.

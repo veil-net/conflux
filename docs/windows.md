@@ -94,11 +94,32 @@ could have filled it first. And the two binaries the service runs as SYSTEM, and
 conflux owns them — a set directory is named for content anybody can compute, so one
 made by somebody else is extracted again rather than trusted.
 
+Where `anchord` runs as `LOCAL SERVICE` (below), the service's own SID,
+`NT SERVICE\conflux`, is added to exactly what it needs: read and execute on its set
+directory and `anchord.exe`, and read on `anchord.json`. `anchor\` and `run\anchord\`
+are made with their security set as they are created — full control for that SID on what
+is inside them, no `WRITE_DAC`, `WRITE_OWNER` or `DELETE` on the directories themselves,
+and an `OWNER RIGHTS` entry so that owning a file grants nothing — and are never
+propagated over afterwards. A SYSTEM `anchord` has `anchor.root\` and a `run\anchord\` of
+SYSTEM's and Administrators' instead.
+
 ## The service
 
 Registered as `conflux`, displayed as `VeilNet Conflux`, running as `LocalSystem`. See
 [service.md](service.md).
 
-`anchord` runs in a job object that ends it when the supervisor's process ends, however
-it ends: the SCM terminating a service that overran its stop, or a crash, takes the daemon
-with it rather than leaving one holding the control socket.
+`anchord` itself runs as SYSTEM only for a TUN, which wintun needs. In userspace mode the
+supervisor logs `LOCAL SERVICE` on for it with `LogonUserExExW`, the service's SID added as
+a group, and takes every privilege but `SeChangeNotify` out of the token — `LOCAL SERVICE`
+holds `SeImpersonate`, which is the well-known way back to SYSTEM, and a privilege merely
+disabled can be enabled again. The token's default DACL, and the process's and its
+thread's own, name only SYSTEM, Administrators and the service's SID, so nothing else that
+runs as `LOCAL SERVICE` can open it or what it creates; it does still share that account's
+logon session with them. Before it is relied on, `anchord -h` is started under the token
+once: a host that will not start it so runs it as SYSTEM, as before, and `conflux status`
+says why. See [security.md](security.md#what-anchord-runs-as).
+
+Each `anchord` runs in a job object of its own, which ends it — and anything it started —
+when it has gone, and when the supervisor's process ends, however that ends: the SCM
+terminating a service that overran its stop, or a crash, takes the daemon with it rather
+than leaving one holding the control socket.

@@ -21,12 +21,24 @@ import (
 // and then chmod'ing leaves a window in which the secret exists at the umask's
 // mode, and on a shared machine that window is the whole vulnerability.
 func WriteFileAtomic(path string, data []byte, perm fs.FileMode) error {
-	return writeAtomic(path, perm, data)
+	return writeAtomicAs(path, perm, -1, -1, data)
+}
+
+// WriteFileAtomicAs is WriteFileAtomic for a file that belongs to uid and gid, given to
+// them on the descriptor before any content reaches it, as the mode is: anchord's own
+// configuration, which carries credentials and which anchord, running as its own account,
+// has to be able to read. -1 leaves either as the creating process's.
+func WriteFileAtomicAs(path string, data []byte, perm fs.FileMode, uid, gid int) error {
+	return writeAtomicAs(path, perm, uid, gid, data)
 }
 
 // writeAtomic is WriteFileAtomic for content in pieces, written one after another, so a
 // caller adding a newline need not copy what it was given to add it.
-func writeAtomic(path string, perm fs.FileMode, chunks ...[]byte) (err error) {
+func writeAtomic(path string, perm fs.FileMode, chunks ...[]byte) error {
+	return writeAtomicAs(path, perm, -1, -1, chunks...)
+}
+
+func writeAtomicAs(path string, perm fs.FileMode, uid, gid int, chunks ...[]byte) (err error) {
 	dir := filepath.Dir(path)
 
 	tmp, err := os.CreateTemp(dir, ".tmp-*")
@@ -47,6 +59,12 @@ func writeAtomic(path string, perm fs.FileMode, chunks ...[]byte) (err error) {
 	// neither reliably what we want nor reliably narrower.
 	if err = tmp.Chmod(perm); err != nil {
 		return fmt.Errorf("chmod %s: %w", tmpName, err)
+	}
+
+	if uid >= 0 || gid >= 0 {
+		if err = tmp.Chown(uid, gid); err != nil {
+			return fmt.Errorf("chown %s: %w", tmpName, err)
+		}
 	}
 
 	// On Windows the chmod above is a no-op. Restrict by ownership and DACL instead,

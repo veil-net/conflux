@@ -99,19 +99,26 @@ say "the identity is 0600 and root's alone"
 [ "$(docker exec cfx-a stat -c '%a %U' /var/lib/conflux/manifest.b64)" = "600 root" ] \
   || { echo "manifest.b64 is not 0600 and root's" >&2; exit 1; }
 
-# A TUN on Linux needs CAP_NET_ADMIN and nothing else, as conflux's own account -- unless
-# the host keeps /dev/net/tun root's, when anchord stays root and says so. The run
-# directory lets that account through to its own and no further.
-say "anchord runs with only what a TUN needs"
+# A TUN on Linux needs CAP_NET_ADMIN and nothing else: the anchor A just brought up, and
+# every one after it, is conflux's own account's, holding that alone, and everything the
+# rest of this run proves -- the realm, the overlay, the pings, a reboot -- is proved of it.
+say "anchord runs as its own account, with CAP_NET_ADMIN alone"
+anchord_creds() { # NODE
+  docker exec "$1" sh -c 'for p in /proc/[0-9]*; do
+    case "$(readlink "$p/exe" 2>/dev/null)" in /var/lib/conflux/bin/*/anchord)
+      awk "/^Uid:/ { u = \$2 } /^CapEff:/ { c = \$2 } /^NoNewPrivs:/ { n = \$2 }
+           END { printf \"uid=%s caps=%s nnp=%s\", u, c, n }" "$p/status"; exit 0;; esac
+  done; exit 1'
+}
+want="uid=$(docker exec cfx-a id -u conflux) caps=0000000000001000 nnp=0"
+got=$(anchord_creds cfx-a)
 row=$(docker exec cfx-a conflux status | sed -n 's/^  anchord *//p')
-echo "  anchord: $row"
-case $row in
-  "conflux, with CAP_NET_ADMIN for its interface") run="710 root conflux" ;;
-  "root — /dev/net/tun opens only for root") run="700 root root" ;;
-  *) echo "anchord runs as: $row" >&2; exit 1 ;;
-esac
-[ "$(docker exec cfx-a stat -c '%a %U %G' /run/conflux)" = "$run" ] \
-  || { echo "the run directory is $(docker exec cfx-a stat -c '%a %U %G' /run/conflux), want $run" >&2; exit 1; }
+printf '  anchord: %s\n           %s\n' "$got" "$row"
+[ "$got" = "$want" ] || { echo "anchord runs with $got; want $want" >&2; exit 1; }
+[ "$row" = "conflux, with CAP_NET_ADMIN for its interface" ] \
+  || { echo "status says anchord runs as: $row" >&2; exit 1; }
+[ "$(docker exec cfx-a stat -c '%a %U %G' /run/conflux)" = "710 root conflux" ] \
+  || { echo "the run directory is $(docker exec cfx-a stat -c '%a %U %G' /run/conflux), want 710 root conflux" >&2; exit 1; }
 
 say "the credential grants the taint A asked for"
 [ "$(grants cfx-a "$TAINT")" = 1 ] || { echo "A's credential does not grant $TAINT" >&2; exit 1; }
@@ -256,6 +263,8 @@ wait_active cfx-a
 docker exec cfx-a conflux status
 [ "$(anchor_id cfx-a)" = "$A_ID" ] \
   || { echo "the identity changed across a reboot" >&2; exit 1; }
+[ "$(anchord_creds cfx-a)" = "$want" ] \
+  || { echo "after a reboot anchord runs with $(anchord_creds cfx-a); want $want" >&2; exit 1; }
 
 # A daemon that dies is the supervisor's to restart, with no reboot and nothing typed.
 # The Go tests hold shutdown to returning once anchord has gone; this is the whole path,
@@ -281,6 +290,8 @@ if [ -z "${pid:-}" ] || [ "$pid" = "$A_PID" ] || ! docker exec cfx-a test -f /ru
 fi
 [ "$(anchor_id cfx-a)" = "$A_ID" ] \
   || { echo "the identity changed across a restart of anchord" >&2; exit 1; }
+[ "$(anchord_creds cfx-a)" = "$want" ] \
+  || { echo "the anchord brought back runs with $(anchord_creds cfx-a); want $want" >&2; exit 1; }
 # Over B's IPv6, which is derived from its identity: back on the overlay is what this
 # stage asks, and that address needs nothing from B but its record.
 SECONDS=0
@@ -332,5 +343,9 @@ for dir in /etc/conflux /var/lib/conflux /run/conflux; do
 done
 docker exec cfx-b sh -c '! ip link show anchor0' >/dev/null 2>&1 \
   || { echo "uninstall left the interface up" >&2; exit 1; }
+if docker exec cfx-b id conflux >/dev/null 2>&1; then
+  echo "uninstall left the account anchord ran as" >&2
+  exit 1
+fi
 
 say "all assertions passed"

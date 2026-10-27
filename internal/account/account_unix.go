@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Lookup is this installation's account, or nil when there is none yet. An account or a
@@ -77,12 +78,17 @@ func Ensure() (*Account, error) {
 		}
 	}
 
-	a, err := lookup(name)
-	if a == nil && err == nil {
-		err = fmt.Errorf("%s was created and cannot be found", name)
-	}
+	// macOS's directory service answers for an account a moment after dscl has made it.
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(200 * time.Millisecond) {
+		a, err := lookup(name)
+		if a != nil || err != nil {
+			return a, err
+		}
 
-	return a, err
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("%s was created and cannot be found", name)
+		}
+	}
 }
 
 // planCreate is createCommands for this host.

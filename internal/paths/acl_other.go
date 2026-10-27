@@ -19,7 +19,7 @@ func Restrict(string, bool) error { return nil }
 func Trusted(string) bool { return true }
 
 // secure refuses a root another account owns, and narrows one of conflux's own that
-// something left wider than 0700 -- or, for one of root's, than 0710.
+// something left wider than 0700, or than the 0710 that lets anchord's account through.
 //
 // MkdirAll creates at 0700 and leaves a directory that already exists exactly as it
 // found it, so without this an /etc/conflux somebody made at 0755 would hold the
@@ -55,7 +55,11 @@ func secureAs(dir string, euid int) error {
 		}
 	}
 
-	if mode := fi.Mode().Perm(); mode == 0o700 || mode == 0o710 && rootOwned(fi) {
+	// 0710 -- its group may pass through and list nothing -- is how the supervisor lets
+	// anchord's account reach the few things in the state and run directories that anchord
+	// runs or reads. ownedBy has just shown the directory to be this account's own, and only
+	// its owner can have given it that group and that mode, so it is left as it is.
+	if mode := fi.Mode().Perm(); mode == 0o700 || mode == 0o710 {
 		return nil
 	}
 
@@ -64,16 +68,6 @@ func secureAs(dir string, euid int) error {
 	}
 
 	return nil
-}
-
-// rootOwned reports whether root owns fi. A root's 0710 -- its group may pass through and
-// list nothing -- is how the supervisor lets anchord's account reach the few things in the
-// state and run directories that anchord runs or reads; only root can give a directory of
-// root's that group, so a 0710 one of root's is the supervisor's doing and is left as it is.
-func rootOwned(fi os.FileInfo) bool {
-	st, ok := fi.Sys().(*syscall.Stat_t)
-
-	return ok && st.Uid == 0
 }
 
 func ownedBy(dir string, fi os.FileInfo, euid int) error {

@@ -131,9 +131,17 @@ func localServiceToken(sid *windows.SID) (windows.Token, error) {
 	}
 	defer logon.Close()
 
+	return restrictToken(logon, sid)
+}
+
+// restrictToken is tok with every privilege but SeChangeNotify removed -- removed, not
+// disabled, so the process it starts cannot enable one again -- with sid as the owner of
+// what that process creates, where tok carries sid as a group it may own with, and a
+// default DACL that names only SYSTEM and sid.
+func restrictToken(tok windows.Token, sid *windows.SID) (windows.Token, error) {
 	var restricted windows.Token
 
-	r, _, err = procCreateRestrictedToken.Call(uintptr(logon), disableMaxPrivilege,
+	r, _, err := procCreateRestrictedToken.Call(uintptr(tok), disableMaxPrivilege,
 		0, 0, 0, 0, 0, 0, uintptr(unsafe.Pointer(&restricted)))
 	if r == 0 {
 		return 0, fmt.Errorf("CreateRestrictedToken: %w", err)

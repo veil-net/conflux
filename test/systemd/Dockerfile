@@ -19,6 +19,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -f /lib/systemd/system/multi-user.target.wants/* \
     && ln -sf /lib/systemd/system/dbus.service /etc/systemd/system/multi-user.target.wants/dbus.service
 
+# /dev/net/tun as a stock host's udev leaves it, whatever the runner's own is: anchord makes
+# a TUN as conflux's own account with CAP_NET_ADMIN, and only root can open a device of
+# root's. At every boot, so a restarted container -- the reboot -- keeps it.
+RUN printf 'z /dev/net/tun 0666 root root -\n' > /etc/tmpfiles.d/tun.conf
+
 COPY conflux /usr/local/bin/conflux
 
 STOPSIGNAL SIGRTMIN+3

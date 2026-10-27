@@ -4,9 +4,7 @@ package daemon
 
 import (
 	"os"
-	"os/user"
 	"path/filepath"
-	"strconv"
 	"syscall"
 	"testing"
 )
@@ -41,7 +39,7 @@ func TestCopyTreeTakesOnlyTheAnchorsFiles(t *testing.T) {
 	}
 
 	if err := os.Link(secret, filepath.Join(from, "hard")); err != nil {
-		t.Skipf("no hard links here: %v", err)
+		t.Fatal(err)
 	}
 
 	if err := syscall.Mkfifo(filepath.Join(from, "fifo"), 0o600); err != nil {
@@ -99,59 +97,4 @@ func TestAnchorDirMovesAndCarries(t *testing.T) {
 	if again, err := s.anchorDir(Privilege{}); err != nil || again != dir {
 		t.Errorf("anchorDir again = %q, %v", again, err)
 	}
-}
-
-// TestAnchorDirFlipsToTheAccount: the account's directory is made the account's, by root,
-// and starts with a copy of root's -- run as root, which a flip needs.
-func TestAnchorDirFlipsToTheAccount(t *testing.T) {
-	if os.Geteuid() != 0 {
-		t.Skip("giving a directory to another uid needs root")
-	}
-
-	nobody := lookupNobody(t)
-
-	s := &Supervisor{Dirs: dirs(t)}
-	d := s.Dirs
-
-	if err := os.MkdirAll(d.RootAnchorDir(), 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.WriteFile(filepath.Join(d.RootAnchorDir(), "cache"), []byte("root's"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	s.lastDir = d.RootAnchorDir()
-
-	dir, err := s.anchorDir(nobody)
-	if err != nil || dir != d.AnchorDir() {
-		t.Fatalf("anchorDir = %q, %v", dir, err)
-	}
-
-	for _, path := range []string{dir, filepath.Join(dir, "cache")} {
-		fi, err := os.Lstat(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if st := fi.Sys().(*syscall.Stat_t); int(st.Uid) != nobody.UID {
-			t.Errorf("%s belongs to uid %d, want %d", path, st.Uid, nobody.UID)
-		}
-	}
-}
-
-// lookupNobody is a Privilege for an account every Unix has, so a test run as root can
-// drop to it without making one.
-func lookupNobody(t *testing.T) Privilege {
-	t.Helper()
-
-	u, err := user.Lookup("nobody")
-	if err != nil {
-		t.Skipf("no nobody here: %v", err)
-	}
-
-	uid, _ := strconv.Atoi(u.Uid)
-	gid, _ := strconv.Atoi(u.Gid)
-
-	return Privilege{Account: true, As: "nobody", UID: uid, GID: gid}
 }

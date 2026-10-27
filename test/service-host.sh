@@ -75,9 +75,13 @@ say "in userspace anchord runs as an account of its own"
 if [ "$os" = darwin ]; then
   launchctl bootstrap system "/Library/LaunchDaemons/$LABEL.plist"
   account='"as":"_conflux"'
+  who='starting anchord as _conflux, with no privilege'
+  log=/var/log/conflux.log
 else
   sc.exe start conflux >/dev/null
   account='LOCAL SERVICE'
+  who='starting anchord as NT AUTHORITY\LOCAL SERVICE, with no privilege'
+  log="$root/logs/conflux.log"
 fi
 priv=""
 for _ in $(seq 120); do
@@ -90,6 +94,16 @@ case $priv in
   *'"account":true'*"$account"*) ;;
   *) fail "anchord did not run as its own account: ${priv:-nothing was recorded}" ;;
 esac
+
+# The record says what anchord was started as. The supervisor enrols only once anchord has
+# answered an authenticated call on the socket it made, so "enrolling" after that start is
+# anchord serving as its own account, not merely started as it.
+for _ in $(seq 120); do
+  grep -q 'enrolling' "$log" 2>/dev/null && break
+  sleep 0.5
+done
+grep -F "$who" "$log" >/dev/null || { cat "$log" >&2; fail "the log does not say anchord started as its own account"; }
+grep -q 'enrolling' "$log" || { cat "$log" >&2; fail "anchord never answered on its socket as its own account"; }
 "$CONFLUX" down || fail "down failed on a running service"
 
 say "uninstall leaves nothing"

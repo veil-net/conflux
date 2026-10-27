@@ -39,9 +39,10 @@ type dropState struct {
 func windowsServiceName() string { return "conflux" + paths.Scope() }
 
 var (
-	advapi32                  = windows.NewLazySystemDLL("advapi32.dll")
-	procLogonUserExExW        = advapi32.NewProc("LogonUserExExW")
-	procCreateRestrictedToken = advapi32.NewProc("CreateRestrictedToken")
+	advapi32                    = windows.NewLazySystemDLL("advapi32.dll")
+	procLogonUserExExW          = advapi32.NewProc("LogonUserExExW")
+	procCreateRestrictedToken   = advapi32.NewProc("CreateRestrictedToken")
+	procAllocateLocallyUniqueID = advapi32.NewProc("AllocateLocallyUniqueId")
 )
 
 const (
@@ -110,11 +111,27 @@ func localServiceToken(sid *windows.SID) (windows.Token, error) {
 		return 0, err
 	}
 
-	groups := windows.Tokengroups{GroupCount: 1}
+	// The groups the SCM gives a service's own logon: a logon SID of its own, which the LSA
+	// adds none of once groups are asked for, and the service SID, enabled and an owner and
+	// not mandatory, as a service carries it. In that order: a service SID that is the
+	// first NT AUTHORITY SID asked for is refused as access denied.
+	logonSID, err := newLogonSID()
+	if err != nil {
+		return 0, err
+	}
+
+	groups := struct {
+		GroupCount uint32
+		Groups     [2]windows.SIDAndAttributes
+	}{GroupCount: 2}
 	groups.Groups[0] = windows.SIDAndAttributes{
-		Sid: sid,
+		Sid: logonSID,
 		Attributes: windows.SE_GROUP_MANDATORY | windows.SE_GROUP_ENABLED_BY_DEFAULT |
-			windows.SE_GROUP_ENABLED | windows.SE_GROUP_OWNER,
+			windows.SE_GROUP_ENABLED | windows.SE_GROUP_LOGON_ID,
+	}
+	groups.Groups[1] = windows.SIDAndAttributes{
+		Sid:        sid,
+		Attributes: windows.SE_GROUP_ENABLED | windows.SE_GROUP_OWNER,
 	}
 
 	user, _ := windows.UTF16PtrFromString("LocalService")
@@ -132,6 +149,18 @@ func localServiceToken(sid *windows.SID) (windows.Token, error) {
 	defer logon.Close()
 
 	return restrictToken(logon, sid)
+}
+
+// newLogonSID is S-1-5-5-X-Y, for a locally unique id drawn for it: a logon SID no other
+// token carries.
+func newLogonSID() (*windows.SID, error) {
+	var luid windows.LUID
+
+	if r, _, err := procAllocateLocallyUniqueID.Call(uintptr(unsafe.Pointer(&luid))); r == 0 {
+		return nil, fmt.Errorf("AllocateLocallyUniqueId: %w", err)
+	}
+
+	return windows.StringToSid(fmt.Sprintf("S-1-5-5-%d-%d", uint32(luid.HighPart), luid.LowPart))
 }
 
 // restrictToken is tok with every privilege but SeChangeNotify removed -- removed, not

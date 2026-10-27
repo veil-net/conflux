@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"strings"
 	"testing"
 	"unsafe"
 
@@ -54,6 +55,30 @@ func TestRestrictTokenRemovesPrivileges(t *testing.T) {
 	system, _ := windows.CreateWellKnownSid(windows.WinLocalSystemSid)
 	if !hasACE(dacl, sid) || !hasACE(dacl, system) || dacl.AceCount != 2 {
 		t.Errorf("the default DACL has %d entries, want SYSTEM and the service's SID alone", dacl.AceCount)
+	}
+}
+
+// TestNewLogonSIDIsOneOfItsOwn: the logon SID anchord's logon is given ahead of the
+// service SID is a logon SID, S-1-5-5-X-Y, and a fresh one each time it is drawn.
+func TestNewLogonSIDIsOneOfItsOwn(t *testing.T) {
+	a, err := newLogonSID()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	b, err := newLogonSID()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, sid := range []*windows.SID{a, b} {
+		if parts := strings.Split(sid.String(), "-"); len(parts) != 5 || strings.Join(parts[:3], "-") != "S-1-5" || parts[3] != "5" {
+			t.Errorf("newLogonSID is %s, want S-1-5-5-X-Y", sid)
+		}
+	}
+
+	if a.Equals(b) {
+		t.Errorf("newLogonSID drew %s twice", a)
 	}
 }
 

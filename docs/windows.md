@@ -109,10 +109,11 @@ Registered as `conflux`, displayed as `VeilNet Conflux`, running as `LocalSystem
 [service.md](service.md).
 
 `anchord` itself runs as SYSTEM only for a TUN, which wintun needs. In userspace mode the
-supervisor logs `LOCAL SERVICE` on for it with `LogonUserExExW`, the service's SID added as
-a group, and takes every privilege but `SeChangeNotify` out of the token — `LOCAL SERVICE`
-holds `SeImpersonate`, which is the well-known way back to SYSTEM, and a privilege merely
-disabled can be enabled again. The token's default DACL, and the process's and its
+supervisor logs `LOCAL SERVICE` on for it with `LogonUserExExW`, the service's SID and a
+logon SID of its own added as groups, as the SCM gives a service, and takes every
+privilege but `SeChangeNotify` out of the token — `LOCAL SERVICE` holds `SeImpersonate`,
+which is the well-known way back to SYSTEM, and a privilege merely disabled can be
+enabled again. The token's default DACL, and the process's and its
 thread's own, name only SYSTEM, Administrators and the service's SID, so nothing else that
 runs as `LOCAL SERVICE` can open it or what it creates; it does still share that account's
 logon session with them. Before it is relied on, `anchord -h` is started under the token

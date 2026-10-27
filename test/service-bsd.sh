@@ -94,7 +94,9 @@ id "$account" >/dev/null || fail "no $account account was made"
 i=0
 user=""
 while [ "$i" -lt 60 ]; do
-  user=$(ps -axo user=,command= | awk '$2 ~ /\/anchord$/ && $3 == "-socket" { print $1; exit }')
+  # One -o for each column: FreeBSD's ps, as POSIX has it, takes everything after the
+  # first = as that column's header, the rest of the list included.
+  user=$(ps -ax -o user= -o command= | awk '$2 ~ /\/anchord$/ && $3 == "-socket" { print $1; exit }')
   [ -n "$user" ] && break
   sleep 0.5
   i=$((i + 1))

@@ -42,8 +42,9 @@ func kill(cmd *exec.Cmd) {
 	}
 }
 
-// bind is Windows's; a Unix supervisor's anchord is reached through its pid and group.
-func bind(*os.Process) error { return nil }
+// bind is Windows's; a Unix supervisor's anchord is reached through its pid and group, and
+// what it leaves behind through its account (see killLeftovers).
+func bind(*os.Process) (func(), error) { return func() {}, nil }
 
 // alive reports whether a process with this pid exists. EPERM is one that does and is
 // not ours to signal.

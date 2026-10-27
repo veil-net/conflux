@@ -20,16 +20,25 @@ import (
 //
 // Restart=on-failure rather than always, so a deliberate clean exit stays exited.
 //
-// RuntimeDirectory, StateDirectory and ConfigurationDirectory make systemd create
-// and mode the three directories, and clean /run/conflux on stop. conflux still
-// creates them itself, so running in the foreground and on non-systemd hosts works.
-// They name the machine's own directories, so a unit for a CONFLUX_DIR install leaves
-// them out: stopping it would otherwise empty the real installation's /run/conflux.
+// RuntimeDirectory and ConfigurationDirectory make systemd create and mode two of the
+// directories, and clean /run/conflux on stop. conflux still creates them itself, so
+// running in the foreground and on non-systemd hosts works. They name the machine's own
+// directories, so a unit for a CONFLUX_DIR install leaves them out: stopping it would
+// otherwise empty the real installation's /run/conflux.
 //
-// Deliberately absent: PrivateTmp, because nothing conflux does touches /tmp and it
-// would only confuse the extraction path; and ProtectSystem=strict, which would need
-// a ReadWritePaths list and would break pass-through writes such as
-// `conflux keygen -out ~/key`.
+// User=root, and no capability line: the supervisor is root, and it is the supervisor
+// that gives anchord, as its own account, exactly the capabilities its mode needs and no
+// others (internal/daemon/privilege.go). An AmbientCapabilities= here would be granted
+// to the supervisor, which has them all as root anyway, and to nothing else.
+//
+// Deliberately absent: StateDirectory, because systemd gives a directory it claims to
+// User= and Group= again, recursively, at every start once its top belongs to anybody
+// else -- and the state directory's group is anchord's account, so every start would
+// hand anchord's own directory back to root. PrivateTmp, because nothing conflux does
+// touches /tmp and it would only confuse the extraction path. ProtectSystem=strict, which
+// would need a ReadWritePaths list. And NoNewPrivileges, which would hold for a root
+// anchord too, where a host's firewall answers only root, and stop its firewall commands'
+// SELinux transitions; the supervisor sets no_new_privs on the anchord it can, itself.
 const unitTemplate = `[Unit]
 Description=Conflux — VeilNet anchor
 Documentation=https://github.com/veil-net/conflux
@@ -49,7 +58,6 @@ KillMode=mixed
 KillSignal=SIGTERM
 User=root
 Group=root
-AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
 %sLimitNOFILE=1048576
 
 [Install]
@@ -59,8 +67,6 @@ WantedBy=multi-user.target
 // machineDirectories are the unit's claim on the machine's own directories.
 const machineDirectories = `RuntimeDirectory=conflux
 RuntimeDirectoryMode=0700
-StateDirectory=conflux
-StateDirectoryMode=0700
 ConfigurationDirectory=conflux
 ConfigurationDirectoryMode=0700
 `

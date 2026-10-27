@@ -80,8 +80,10 @@ jobs:
           make build >/dev/null
           diff <(bin/conflux version | sed 1d) <(go run . version | sed 1d)
 
-  # The container suites, on a hosted runner: the boot service under a real systemd, and
-  # three nodes against the live API and the production realm. The third reaches the
+  # The container suites, on a hosted runner: the boot service under a real systemd --
+  # with every branch of what anchord runs as taken, the hosts it depends on made inside
+  # the container -- and three nodes against the live API and the production realm, whose
+  # anchord is conflux's own account with CAP_NET_ADMIN alone. The third reaches the
   # realm through its manifest's bootstrap node over UDP, and from veilnet-dev no
   # handshake gets through to it. A hosted runner is thrown away, so nothing here reaps
   # after the suites; the fetch needs the anchor credential, which a fork's pull request
@@ -112,6 +114,60 @@ jobs:
       # them enrols. -O keeps each suite's output together, in one block per suite.
       - name: the boot service, and three nodes against the live API
         run: make -j2 -O service-test integration
+
+  # FreeBSD and OpenBSD, which no hosted runner is: each in a VM on a hosted Linux runner,
+  # against rc for real -- install registers and starts nothing, anchord runs as conflux's
+  # own account in userspace and as root where its kernel keeps a TUN and a low port for
+  # root, and uninstall leaves nothing, the account included. `make cross` vets both;
+  # this is the one place either runs. Only the pair for the target is fetched, on the
+  # runner, which is where the anchor credential stays: the VM is given the built conflux
+  # and the script, and nothing comes back from it. A fork's pull request is not given the
+  # credential, so it does not run this.
+  bsd:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: freebsd
+            pair: freebsd-amd64
+          - os: openbsd
+            pair: openbsd-amd64
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      # Nothing here pushes or fetches again, so the token has no reason to stay in
+      # .git/config, where every later step -- and the VM, which is handed the tree --
+      # could read it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+
+      - uses: ./.github/actions/anchor-bins
+        with:
+          client-id: ${{ secrets.ANCHOR_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
+          targets: ${{ matrix.pair }}
+
+      - name: conflux for ${{ matrix.os }}
+        run: GOOS=${{ matrix.os }} GOARCH=amd64 make build
+
+      - name: the boot service against rc, in a FreeBSD VM
+        if: matrix.os == 'freebsd'
+        uses: vmactions/freebsd-vm@c46abacb49f09938ca4e1702d15d836285d694cc # v1.5.9
+        with:
+          release: "15.1"
+          copyback: false
+          run: sh test/service-bsd.sh bin/conflux
+
+      - name: the boot service against rc, in an OpenBSD VM
+        if: matrix.os == 'openbsd'
+        uses: vmactions/openbsd-vm@f1ca8bc8ecc5b6ef7218e5b914836e067e1546d3 # v1.4.9
+        with:
+          release: "7.9"
+          copyback: false
+          run: sh test/service-bsd.sh bin/conflux
 
   # macOS and Windows, on the operating systems that have the path handling, the file
   # modes, the DACLs and the service code, and Linux on arm64. Each fetches only its own
@@ -185,8 +241,10 @@ jobs:
           grep -c '^--- PASS' test.log | xargs echo "tests passed:"
 
       # launchd and the SCM for real, which the suite only compiles: install registers and
-      # starts nothing, status and down answer, uninstall leaves nothing behind. Nothing is
-      # enrolled or started. As root on macOS; a Windows runner is an Administrator.
+      # starts nothing, status and down answer, a userspace anchord serves as its own
+      # account -- _conflux, or LOCAL SERVICE -- and uninstall leaves nothing behind. Nothing
+      # is enrolled. As root on macOS; a Windows runner is an Administrator, and the service
+      # it starts is SYSTEM.
       - name: the boot service, against the real service manager
         if: runner.os != 'Linux'
         shell: bash

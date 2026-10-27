@@ -49,6 +49,13 @@ somebody re-ran a command is not something conflux will do.
 A trailing `:digits` is a line speed, split from the right, so a device whose own path
 holds a colon still parses. Anything else is a device path.
 
+`anchord` opens the device itself, as conflux's own account where its mode allows, and
+the supervisor adds that account to the group the device is opened through — `dialout`
+on Debian, `uucp` on Arch. The group opens every device it owns, not only this one. A
+device only root may open keeps `anchord` root, and `conflux status` says so; one that is
+not there yet is decided again when it appears. See
+[security.md](security.md#what-anchord-runs-as).
+
 **`fd:N` is anchor's and not conflux's.** It adopts a descriptor the daemon was handed
 by whatever started it, and what starts `anchord` here is conflux's supervisor, which
 passes it none. Rather than let that arrive as a "bad file descriptor" from a child

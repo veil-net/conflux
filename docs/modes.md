@@ -15,7 +15,10 @@ The daemon creates a real network interface — `anchor0` on Linux and Windows; 
 numbers its own `utunN` and the BSDs their own `tunN` — and the host kernel owns the
 overlay addresses. `ping`, `ssh`, a browser, anything on the machine can use the
 overlay without knowing it exists. This needs `CAP_NET_ADMIN` on Linux, root on macOS
-and the BSDs, Administrator and `wintun.dll` on Windows.
+and the BSDs, Administrator and `wintun.dll` on Windows — and that is what `anchord` is
+given: on Linux it runs as conflux's own account with `CAP_NET_ADMIN` and nothing else,
+unless the host's firewall takes changes only from root. See
+[security.md](security.md#what-anchord-runs-as).
 
 Because the kernel owns the address, a service published on the overlay is an ordinary
 `bind` — there is no proxy to configure and conflux offers none.
@@ -56,7 +59,12 @@ The backend is dialled per connection and is not resolved in advance, so a name 
 does not resolve yet is legitimate.
 
 conflux still needs root to *register the boot service* — a proxy that vanishes on the
-next reboot is not what anyone asked for — but the anchor itself needs nothing.
+next reboot is not what anyone asked for — but the anchor itself needs nothing, and is
+given nothing: `anchord` runs as an account of its own, with no capability, on every
+platform. On Linux, where the kernel's UDP buffer limits are below what quic-go sizes its
+socket to, that account is given `CAP_NET_ADMIN` for the buffers alone; raising
+`net.core.rmem_max` and `wmem_max` to 3670016 or more takes it away again. See
+[security.md](security.md#what-anchord-runs-as).
 
 The way out is a subnet or an exit, which this mode serves too: a **userspace router**.
 Every connection a peer sends through it ends inside the anchor's own process, which

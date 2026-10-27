@@ -7,8 +7,8 @@ and it is not itself the daemon:
 
 ```
 systemd / launchd / rc / SCM
-  └── conflux serve
-        ├── anchord -socket … -token-file …
+  └── conflux serve                     root, or SYSTEM
+        ├── anchord -socket … -config …  its own account wherever that costs it nothing
         ├── the renewal timer
         ├── the watcher: a lost anchor, and on an uplink an ended link
         └── the restart loop
@@ -21,10 +21,15 @@ manager watches.
 
 At every boot the supervisor takes the root's `serve.lock` — one supervisor per root —
 stops any `anchord` a supervisor that died left running (below), reads `conflux.json`,
-extracts the anchor pair if it is not already on disk, writes a fresh bearer token, starts
-`anchord`, waits until it
-answers an authenticated `status` call, renews the credential if it is past two thirds
-of its window, and starts the anchor. No prompts, and nothing typed.
+extracts the anchor pair if it is not already on disk, writes a fresh bearer token,
+decides what `anchord` runs as — its own account, with exactly the capabilities its mode
+needs, wherever that costs it nothing; see [security.md](security.md#what-anchord-runs-as)
+— makes the account the first time, lays out the directories that identity reaches,
+starts `anchord`, waits until it answers an authenticated `status` call, renews the
+credential if it is past two thirds of its window, and starts the anchor. No prompts, and
+nothing typed. A start that fails because the decision no longer fits — the first
+enrolment named a port below 1024, an uplink's device appeared — starts `anchord` again
+with what it now needs.
 
 Readiness is a real probe and not a sleep. A socket file on disk proves nothing —
 a crashed daemon leaves one behind — so the supervisor polls until `anchorctl status`
@@ -113,10 +118,11 @@ not the machine's own: the service takes a suffix derived from the root
 (`conflux-44a6e4f4.service`, or `conflux_44a6e4f4` for rc, whose names become shell
 variables), and the root is written into the argv it is registered with, so the
 supervisor comes back to the same directory at boot. Its systemd unit also leaves out
-the `RuntimeDirectory=`, `StateDirectory=` and `ConfigurationDirectory=` lines: they name
-the machine's own directories, and systemd empties a unit's runtime directory whenever it
-stops, so stopping the scoped unit would otherwise clear the real installation's
-`/run/conflux`. None of this happens without `CONFLUX_DIR`, so an ordinary install is
+the `RuntimeDirectory=` and `ConfigurationDirectory=` lines: they name the machine's own
+directories, and systemd empties a unit's runtime directory whenever it stops, so stopping
+the scoped unit would otherwise clear the real installation's `/run/conflux`. Its
+`anchord` runs as an account of its own too, `conflux-44a6e4f4`, so a test root's daemon
+never shares an identity with the machine's. None of this happens without `CONFLUX_DIR`, so an ordinary install is
 byte-for-byte what it always was.
 See [testing.md](testing.md).
 
@@ -167,11 +173,8 @@ KillMode=mixed
 KillSignal=SIGTERM
 User=root
 Group=root
-AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
 RuntimeDirectory=conflux
 RuntimeDirectoryMode=0700
-StateDirectory=conflux
-StateDirectoryMode=0700
 ConfigurationDirectory=conflux
 ConfigurationDirectoryMode=0700
 LimitNOFILE=1048576
@@ -198,13 +201,26 @@ every start of a unit started more than five times in ten seconds until the ten 
 are up, and a few quick attempts at a configuration that does not work are enough to get
 there; the operator's next start, with it fixed, is not one more of them.
 
-`AmbientCapabilities=CAP_NET_ADMIN` is stated even though the unit runs as root,
-because it documents the requirement and survives somebody adding `User=` later.
+`User=root` and no capability line. The supervisor is root, and it is the supervisor
+that gives `anchord`, as an account of its own, exactly the capabilities its mode needs —
+`CAP_NET_ADMIN` for a TUN, none in userspace — and nothing else. An
+`AmbientCapabilities=` here would go to the supervisor, which as root has them all
+anyway, and reach nothing more.
 
-Two things are deliberately absent. `PrivateTmp=` would be pointless and confusing —
-nothing conflux does touches `/tmp` — and `ProtectSystem=strict` would need a
-`ReadWritePaths=` list and would break pass-through writes such as
-`conflux keygen -out ~/key`.
+Four things are deliberately absent. `StateDirectory=`, because systemd gives a directory
+it claims back to `User=` and `Group=`, recursively, at every start once its top belongs to
+anybody else — and the state directory's group is `anchord`'s account, so every start
+would hand `anchord`'s own directory back to root. `RuntimeDirectory=` stays: systemd
+makes `/run/conflux` afresh at every start, so its top is always root's. `PrivateTmp=`
+would be pointless and confusing — nothing conflux does touches `/tmp`. `ProtectSystem=strict`
+would need a `ReadWritePaths=` list. And `NoNewPrivileges=`, which would hold for a root
+`anchord` too, where the host's firewall answers only root, and stop its firewall commands'
+SELinux transitions; the supervisor sets `no_new_privs` itself on the `anchord` that runs
+nothing.
+
+`up`, `proxy`, `install`, `start` and `update` all register the unit as this conflux
+writes it, which is nothing at all when it is already exactly that — so an upgrade's unit
+reaches the machine with the upgrade.
 
 Logs go to the journal: `journalctl -u conflux -n 50`.
 
@@ -334,4 +350,6 @@ $ sudo conflux serve --foreground
 Runs the supervisor attached to the terminal, with anchord's own output prefixed. This
 is the first thing to try when the service starts and the anchor does not — see
 [troubleshooting.md](troubleshooting.md). Stop the service first: a second supervisor for
-the same root is refused, since each stops the `anchord` the last one left.
+the same root is refused, since each stops the `anchord` the last one left. `anchord` is
+given what the service would give it; on Windows, a console has no `SeTcbPrivilege` to log
+`LOCAL SERVICE` on with, so there it runs as the console's account, and says so.

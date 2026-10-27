@@ -127,8 +127,9 @@ $ sudo conflux proxy 8080=127.0.0.1:3000 53/udp=127.0.0.1:53
 
 A peer that connects to this machine's overlay port 8080 gets a fresh connection to
 `127.0.0.1:3000`. Enrolment, `--taint`, and the boot service all work the same as
-`up`; nothing appears on the host, and the anchor itself needs no privilege at all —
-`sudo` is only for registering the boot service, so the proxy survives a reboot.
+`up`; nothing appears on the host, and the anchor itself needs no privilege at all, so it
+gets none: `anchord` runs as an account of its own with no capabilities — `sudo` is only
+for registering the boot service, so the proxy survives a reboot.
 
 Each spec is `OVERLAYPORT[/NETWORK]=BACKEND`; give more than one to publish more than
 one port:
@@ -231,7 +232,8 @@ the other, and conflux says so when it does.
 |---|---|---|
 | What the host gets | a TUN interface: `ping`, `ssh`, everything | nothing on the host |
 | What the realm gets | this machine, at an overlay address | the named services, at overlay ports |
-| Privilege to run | root / `CAP_NET_ADMIN` / Administrator | root, only to register the boot service |
+| Privilege to run | root, to register the boot service | root, to register the boot service |
+| What `anchord` runs with | its own account and `CAP_NET_ADMIN` on Linux; root on macOS and the BSDs, SYSTEM on Windows | its own account and nothing else (`LOCAL SERVICE` on Windows) |
 | Needs `wintun.dll` on Windows | yes | no |
 | Can forward a subnet or serve an exit | yes, the host forwards | yes, from the anchor's own process |
 | Can run over an uplink | yes, `--uplink` | yes, `--uplink` |
@@ -284,8 +286,10 @@ test.
 | socket and token | `/run/conflux/` | `/var/run/conflux/` | `%ProgramData%\conflux\run\` |
 
 One directory per machine, root-owned, with no home directory involved anywhere — the
-boot service runs as root, and a path under `$HOME` is a path it can't read. See
-[config.md](docs/config.md).
+boot service runs as root, and a path under `$HOME` is a path it can't read. `anchord`
+itself runs as an account of its own wherever that costs it nothing, which reaches only
+its own corners of them. See [config.md](docs/config.md) and
+[security.md](docs/security.md#what-anchord-runs-as).
 
 ## Documentation
 

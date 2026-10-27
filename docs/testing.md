@@ -118,18 +118,52 @@ with `SIGKILL` so nothing is said on the way out, and requires the supervisor to
 it back — a new process, the readiness marker rewritten, the same identity, and the
 peer reachable again at its IPv6 address — without a reboot or anything typed.
 
+Every anchord in it is conflux's own account with `CAP_NET_ADMIN` alone — read from
+`/proc` after `up`, after the reboot and after the kill, and from `status` — so the realm,
+the overlay, the pings and the reboot are all proved of an anchord that is not root. The
+image sets `/dev/net/tun` to `0666` at every boot through `tmpfiles.d`, as a stock host's
+udev leaves it, so this holds whatever the runner's own device is.
+
 All of that is `make integration`. `make service-test` is the unit on its own and enrols
 nothing: `install` registers it without starting anything, the unit runs the root-only
 copy in `/var/lib/conflux` rather than the file conflux was run from, and `uninstall`
-leaves no unit file, no `wants` link and none of `/etc/conflux`, `/var/lib/conflux` or
-`/run/conflux`. Both build the image first, and CI runs the same command a developer does.
+leaves no unit file, no `wants` link, none of `/etc/conflux`, `/var/lib/conflux` or
+`/run/conflux`, and no `conflux` account. Both build the image first, and CI runs the same
+command a developer does.
+
+In between, it takes every branch of what `anchord` runs as, under the real unit. Its
+configuration names an API that a `silent.socket` in the container accepts and never
+answers, so `anchord` stays up while the enrolment waits, and each leg reads its uid,
+capabilities, `no_new_privs` and groups from `/proc` and the reason from `status`:
+
+| leg | anchord |
+|---|---|
+| userspace, and again after a restart | the account, no capabilities (`CAP_NET_ADMIN` where the host's `rmem_max`/`wmem_max` are low), `no_new_privs`; the state and run directories `710 root conflux`, its own `0700`, the token root's |
+| conflux 1.0.0's root-owned `anchor/` | moved to `anchor.root/`, and the account's started from a copy |
+| port 443 | the account with `CAP_NET_BIND_SERVICE` |
+| an uplink device of `dialout`'s, then one of root's | the account in `dialout`; then root, naming the device |
+| a TUN, `/dev/net/tun` opened up | the account with `CAP_NET_ADMIN` alone |
+| a TUN, `/dev/net/tun` root's | root, in `anchor.root/`, which got the account's file and not its symlink or hard link to a file of root's |
+| stand-ins for firewalld and for legacy iptables | root, naming each |
+| a stand-in for iptables on nf_tables, no nft | the account with `CAP_NET_ADMIN` and `CAP_NET_RAW` |
+| back to userspace | the account, starting from root's state, as its own |
+| `start` over a 1.0.0 unit | the unit replaced by this conflux's |
+| an account named `conflux` that conflux did not make | root, saying so; `uninstall` leaves the account |
 
 `test/service-host.sh` is the same lifecycle against launchd and the SCM, on the machine
 itself, which is why only a CI runner that is thrown away afterwards runs it: `install`
 registers and starts nothing — on Windows with the three restarts and recovery that
 covers a service stopping with an error — `status` exits 78 and says the service is
-installed and not running, `down` succeeds on it, and `uninstall` leaves no plist, no
-entry in launchd's disabled database, no SCM service and no directory.
+installed and not running, `down` succeeds on it, a userspace configuration started
+through the service manager runs `anchord` as `_conflux` or `LOCAL SERVICE` and gets as far
+as enrolling, which it does only once `anchord` has answered on the socket it made as that
+account, and `uninstall` leaves no plist, no entry in launchd's disabled database, no
+`_conflux` account, no SCM service and no directory.
+
+`test/service-bsd.sh` is the same against `rc.subr`, in a FreeBSD and an OpenBSD VM: install,
+a userspace `anchord` running as `conflux` or `_conflux` (the record, and the process
+itself), port 80 and a TUN keeping it root with their reasons, and `uninstall` leaving no
+script, no directory and no account.
 
 ### Local network discovery, the bootstrap list, and `conflux enrol`
 
@@ -183,6 +217,7 @@ why it is nonetheless contained.
 |---|---|---|
 | `linux` | veilnet-dev | the whole suite under `-race` with the real binaries and nothing skipped; `make cross`; the digests `make build` stamps are the pair's own |
 | `integration` | GitHub Ubuntu | `test/preflight.sh`, then `make -j2 -O service-test integration` — `dist` with the size gate for every target and the image, once, then the boot service and three nodes against the live API side by side |
+| `bsd` | FreeBSD 15.1 and OpenBSD 7.9, each a VM on GitHub Ubuntu | `test/service-bsd.sh` against `rc.subr`, with that platform's own pair |
 | `platforms` | GitHub macOS, Windows and Linux arm64 | the suite with that platform's own pair, built as a release is (`CGO_ENABLED=0`, `-trimpath`), the tests that need the pair included; on macOS and Windows, `test/service-host.sh` against the real service manager; on Windows, that the pinned wintun digest is the published one; then the install scripts against the published `latest`, run as a person runs them and then again: `install.sh` on macOS and Linux arm64, `install.ps1` under Windows PowerShell 5.1 and then PowerShell 7 |
 
 `linux` is one job because veilnet-dev is one machine with one runner process: separate
@@ -323,9 +358,15 @@ The shape of the exchange is written down once, in
 
 ## What has no coverage, and why
 
-- **FreeBSD and OpenBSD** beyond `make cross` and the rc scripts, which are rendered and
-  parsed by `sh` on Linux but have not run under `rc.subr`. No runner exists, which is
-  the same position anchor is in.
+- **FreeBSD and OpenBSD's Go suite.** `make cross` vets it and the `bsd` job runs the
+  service under `rc.subr` in a VM, but the suite itself does not run there.
+- **What anchord runs as, for the cases no runner has.** A TUN as the account against a
+  real firewalld, or a real legacy iptables, or a router with ipset: CI stands in for the
+  tools to take each decision, and anchor's own suite tests what they do. A kernel without
+  an ambient set. A container whose supervisor has too few capabilities to drop. These
+  are `decide`'s and `canGive`'s table tests.
+- **macOS Local Network privacy for a LaunchDaemon's child that is `_conflux`.** No runner
+  has a second machine on its network to be blocked from.
 - **macOS TUN under a LaunchDaemon.** CI can build and test on macOS, but not open a
   utun from a system daemon.
 - **The Windows service's recovery in action.** `test/service-host.sh` checks the
@@ -337,9 +378,9 @@ The shape of the exchange is written down once, in
   synthetic inputs. Nothing in this tree opens a device or a pseudo-terminal: the link
   itself is anchor's to test, and it does, over a real pty. Two machines on a cable
   have no runner, so the watcher's *reopen* path is reasoned about rather than run.
-- **A Windows TUN, and a service that runs.** The `platforms` job runs the suite on
-  Windows, extraction and ownership included, and registers the service with the SCM
-  and launchd, but no job opens a wintun interface or starts a supervisor under either.
+- **A Windows TUN, and an anchor that runs.** The `platforms` job starts the supervisor
+  under the SCM and launchd, and an `anchord` as `LOCAL SERVICE` and `_conflux` that answers
+  on its socket, but none enrols, and no job opens a wintun interface.
 
 A local fake for the enrolment API is used for the client's error paths, but it cannot
 stand in for a full end-to-end test: the shipped `anchord` is pinned to the production

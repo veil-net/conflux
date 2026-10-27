@@ -5,6 +5,7 @@ package flock
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 
 	"golang.org/x/sys/windows"
@@ -52,4 +53,38 @@ func lock(path string, flags uint32) (func(), bool, error) {
 		_ = windows.UnlockFileEx(h, 0, 1, 0, ol)
 		f.Close()
 	}, true, nil
+}
+
+// Held reports whether somebody holds the lock on path, a file in a directory anchord's
+// own account may write. It is opened to read and never created, and anything but a
+// regular file is refused, so asking cannot be turned into SYSTEM creating a file
+// wherever the name was made to lead. A file that is not there is held by nobody.
+func Held(path string) (bool, error) {
+	f, err := os.Open(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+
+	if err != nil {
+		return false, fmt.Errorf("open the lock %s: %w", path, err)
+	}
+	defer f.Close()
+
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+		return false, fmt.Errorf("the lock %s is not a regular file", path)
+	}
+
+	h := windows.Handle(f.Fd())
+	ol := new(windows.Overlapped)
+
+	switch err := windows.LockFileEx(h, windows.LOCKFILE_EXCLUSIVE_LOCK|windows.LOCKFILE_FAIL_IMMEDIATELY, 0, 1, 0, ol); {
+	case errors.Is(err, windows.ERROR_LOCK_VIOLATION):
+		return true, nil
+	case err != nil:
+		return false, fmt.Errorf("lock %s: %w", path, err)
+	}
+
+	_ = windows.UnlockFileEx(h, 0, 1, 0, ol)
+
+	return false, nil
 }

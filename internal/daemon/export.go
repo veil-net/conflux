@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
@@ -26,13 +27,41 @@ type daemonConfig struct {
 // rather than a setting: it lasts until the next restart or SIGHUP. `conflux status`
 // reports which surface the daemon is actually obeying, so an operator who is
 // surprised can see it rather than infer it. The durable way is conflux.json.
-func writeDaemonConfig(d paths.Dirs, cfg *config.Config) error {
-	b, err := json.MarshalIndent(daemonConfig{Export: cfg.Export}, "", "  ")
+//
+// TLS material conflux.json names by path is read here, by the supervisor, and written in
+// whole: anchord reads the file as whoever it runs as, which may be an account a key in
+// /etc/ssl/private is not readable to, and a daemon that cannot read its -config does not
+// start. A path that cannot be read here is left a path, for anchord to name in its own
+// refusal. Relative paths resolve against the directory anchord used to start in, which
+// is this process's.
+func writeDaemonConfig(d paths.Dirs, cfg *config.Config, p Privilege) error {
+	b, err := json.MarshalIndent(daemonConfig{Export: inlined(cfg.Export)}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("render the daemon config: %w", err)
 	}
 
-	// 0600, because export.headers authenticate this machine to a collector and
-	// this file is where they land. The directory is 0700 already.
-	return config.WriteFileAtomic(d.DaemonConfigFile(), append(b, '\n'), 0o600)
+	// 0600, because export.headers authenticate this machine to a collector and this file
+	// is where they land, and anchord's own, whoever that is.
+	return writeDaemonFile(d.DaemonConfigFile(), append(b, '\n'), p)
+}
+
+// inlined is e with every TLS secret it names by path read in, where it can be.
+func inlined(e *config.Export) *config.Export {
+	if e == nil {
+		return nil
+	}
+
+	out := *e
+
+	for _, sec := range []**config.Secret{&out.CACert, &out.ClientCert, &out.ClientKey} {
+		if *sec == nil || (*sec).Path == "" {
+			continue
+		}
+
+		if b, err := os.ReadFile((*sec).Path); err == nil {
+			*sec = &config.Secret{Inline: b}
+		}
+	}
+
+	return &out
 }

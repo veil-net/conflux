@@ -66,8 +66,11 @@ func Default() Dirs {
 // directory itself. A variable so a test can stand one in.
 var sharedLog = "/var/log"
 
-// socketName is anchord's control socket, an AF_UNIX socket on every platform.
-const socketName = "anchord.sock"
+// socketName is anchord's control socket, an AF_UNIX socket on every platform, inside a
+// directory of anchord's own (DaemonRun). Four letters, so the path is exactly as long as
+// the <run>/anchord.sock it replaced: sun_path is 104 bytes on macOS, and a test root
+// under /var/folders is already most of that.
+const socketName = "sock"
 
 // Root is the CONFLUX_DIR override, or "" when this is an ordinary system install.
 //
@@ -117,14 +120,15 @@ func (d Dirs) ManifestFile() string { return filepath.Join(d.State, "manifest.b6
 // operator who edits it has their edit discarded at the next restart, which is the
 // right way round -- conflux.json is the file with the operator's intent in it.
 //
-// It carries the export headers, which are credentials, so it is 0600 in the same
-// 0700 directory as the manifest rather than anywhere a config file would normally
-// live. anchord warns about exactly this.
+// It carries the export headers, which are credentials, so it is 0600 and belongs to
+// whoever anchord runs as, in the directory beside the manifest rather than anywhere a
+// config file would normally live. anchord warns about exactly this.
 func (d Dirs) DaemonConfigFile() string { return filepath.Join(d.State, "anchord.json") }
 
-// AnchorDir is the anchor's -dir, which `anchorctl start` names: the bootstrap cache, the
-// realm-link cache, and what the realm's orders leave there (a Subnets order's list, a
-// Taints order's grant, the blocks in force).
+// AnchorDir is the anchor's -dir, which `anchorctl start` names, when anchord runs as its
+// own unprivileged account: the bootstrap cache, the realm-link cache, and what the realm's
+// orders leave there (a Subnets order's list, a Taints order's grant, the blocks in force).
+// That account owns it, and can write anything in it.
 //
 // Not optional. An anchor without it that adopts a renewed delegation and then
 // restarts falls back to a chain whose delegation has since lapsed -- cut off, and
@@ -132,10 +136,17 @@ func (d Dirs) DaemonConfigFile() string { return filepath.Join(d.State, "anchord
 // that is exactly the case anchor's warning is about.
 func (d Dirs) AnchorDir() string { return filepath.Join(d.State, "anchor") }
 
-// SubnetsOrderFile is where the anchor keeps a list a member's Subnets order set, which it
-// serves in place of the configured one from every start until the file is removed
-// (anchor's served.go, subnetsFile).
-func (d Dirs) SubnetsOrderFile() string { return filepath.Join(d.AnchorDir(), "subnets.json") }
+// RootAnchorDir is the -dir of an anchord that runs as root (SYSTEM on Windows): a TUN on
+// macOS or the BSDs, a host whose firewall answers only root, a supervisor that cannot
+// drop. Its own, because anchor follows a symlink in its directory, and one the account
+// planted in AnchorDir would otherwise lead root's writes wherever it pointed. What the
+// anchor keeps there is copied across when the identity anchord runs as changes.
+func (d Dirs) RootAnchorDir() string { return filepath.Join(d.State, "anchor.root") }
+
+// SubnetsOrderFile is where an anchor with dir as its -dir keeps a list a member's Subnets
+// order set, which it serves in place of the configured one from every start until the file
+// is removed (anchor's served.go, subnetsFile).
+func SubnetsOrderFile(dir string) string { return filepath.Join(dir, "subnets.json") }
 
 // ServiceExecutable is the copy of conflux the boot service runs: inside the state
 // directory, which only root (Administrators and SYSTEM on Windows) can write, rather
@@ -151,13 +162,31 @@ func (d Dirs) ServiceExecutable() string {
 // Libexec is where the embedded pair is extracted, one directory per content hash.
 func (d Dirs) Libexec() string { return filepath.Join(d.State, "bin") }
 
+// DaemonRun is anchord's own run directory, which holds its control socket and the lock
+// anchor keeps beside it, and belongs to whoever anchord runs as: anchord has to create
+// the socket, and the run directory around it must stay root's, because the pid record
+// in it is what the next supervisor kills by. The supervisor makes it afresh before
+// every start.
+func (d Dirs) DaemonRun() string { return filepath.Join(d.Run, "anchord") }
+
 // Socket is anchord's control socket. anchord creates it 0600; the 0700 directory
 // around it is the first gate and the bearer token is the second.
-func (d Dirs) Socket() string { return filepath.Join(d.Run, socketName) }
+func (d Dirs) Socket() string { return filepath.Join(d.DaemonRun(), socketName) }
+
+// LegacySocket is where conflux 1.0.0 put the socket, directly in the run directory, which
+// an upgrade finds a daemon -- or the lock anchor leaves -- still holding.
+func (d Dirs) LegacySocket() string { return filepath.Join(d.Run, "anchord.sock") }
 
 // TokenFile holds the bearer token anchorctl authenticates with. Regenerated on
 // every supervisor start, so a token left by a crashed run authenticates nothing.
+// Root's alone: anchord is handed the token in its environment instead.
 func (d Dirs) TokenFile() string { return filepath.Join(d.Run, "token") }
+
+// PrivilegeFile records who the last anchord started runs as, with what, why, and which of
+// the two anchor directories it was given, for `conflux status` and for the supervisor that
+// starts the next one: when the next is given the other directory, what the anchor kept is
+// copied across. Root's alone, beside the state, because it has to outlive a reboot.
+func (d Dirs) PrivilegeFile() string { return filepath.Join(d.State, "anchord.priv") }
 
 // LockFile serialises everything that rewrites the manifest or the state: a bring-up,
 // the renewal timer, `conflux renew`, `conflux enrol`, and the uplink watcher's count.
@@ -201,10 +230,13 @@ func (d Dirs) ReadyFile() string { return filepath.Join(d.Run, "ready") }
 
 // EnsureAll creates the four roots at the modes they need.
 //
-// 0700 throughout, including Config: it sits beside nothing that another user has
-// any business reading, and a 0600 file in a traversable directory is one rename
-// away from being replaced. A root that already exists is held to the same: one another
-// account owns is refused, and one of conflux's own that is wider is narrowed. On
+// 0700, including Config: it sits beside nothing that another user has any business
+// reading, and a 0600 file in a traversable directory is one rename away from being
+// replaced. A root that already exists is held to the same: one another account owns is
+// refused, and one of conflux's own that is wider is narrowed -- except a root's 0710,
+// which is how the supervisor lets anchord's own account pass through the state and run
+// directories to the few things in them that anchord needs, and which lists nothing and
+// lets that account create nothing. On
 // Windows, where a mode means nothing, each root that is not inside another is made
 // SYSTEM's and Administrators' instead, and what is created beneath it inherits that.
 // The system's shared log directory is not conflux's, and is left alone.

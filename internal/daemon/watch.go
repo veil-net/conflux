@@ -95,6 +95,15 @@ func (s *Supervisor) watch(ctx context.Context, uplink string, every time.Durati
 		s.report().Warn("%s; rebuilding the anchor", why)
 
 		if err := s.rebuild(ctx, link); err != nil {
+			// A rebuild the decision no longer fits -- an uplink's device that has appeared
+			// with a group anchord was not given -- is the cycle's to start again.
+			if s.redecided() {
+				s.report().Warn("could not rebuild the anchor: %v", err)
+				s.requestRespawn()
+
+				return false
+			}
+
 			if Permanent(err) {
 				refusals++
 			} else {
@@ -226,7 +235,7 @@ func (s *Supervisor) rebuild(ctx context.Context, link bool) error {
 
 	// An ended link's rebuild is counted in the state bringUp writes anyway, where status
 	// reads it: a machine reopening its anchor every few minutes has a failing cable.
-	started, err := bringUp(ctx, s.Dirs, s.ctl, s.report(), link)
+	started, err := bringUp(ctx, s.Dirs, s.ctl, s.report(), s.priv.Dir, link)
 	if err != nil {
 		return err
 	}

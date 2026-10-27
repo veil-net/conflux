@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/paths"
 )
 
 // unitName is used everywhere, suffix included: systemd appends .service to a bare
@@ -17,7 +18,7 @@ import (
 //
 // A function and not a constant because a run rooted in a CONFLUX_DIR is a separate
 // installation and must not be registered over the machine's own; see scope.
-func unitName() string { return "conflux" + scope() + ".service" }
+func unitName() string { return "conflux" + paths.Scope() + ".service" }
 
 func unitPath() string { return "/etc/systemd/system/" + unitName() }
 
@@ -44,7 +45,7 @@ func (s systemd) Install(exe string, args ...string) error {
 			"conflux registers with on Linux")
 	}
 
-	unit := []byte(systemdUnit(exe, args, scope() != ""))
+	unit := []byte(systemdUnit(exe, args, paths.Scope() != ""))
 
 	// Registered exactly so already, which is every re-run of up and proxy: a read and a
 	// stat, rather than a daemon-reload and an enable that would change nothing and cost

@@ -48,6 +48,7 @@ func runServe(ctx context.Context, args []string) int {
 		Dirs:     d,
 		Reporter: reporter{},
 		Ready:    make(chan struct{}),
+		Drop:     true,
 	}
 
 	if !*foreground {

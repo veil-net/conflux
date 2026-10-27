@@ -115,13 +115,13 @@ Anchor is the reference for overlay behaviour, and the live API at `api.veilnet.
 
 **The manifest**
 - It is written before any other processing, decoding included.
-- It is `0600` from creation, in a `0700` directory (a replaced DACL on Windows).
+- It is `0600` from creation, root's, in a directory only root can write (a replaced DACL on Windows).
 - It never appears in argv, `ps`, or logs.
 
 **Writes and state**
 - Config and state writes are atomic, and every writer of the manifest or state holds the lock, `conflux enrol` included.
 - A new manifest, enrolled or imported, starts with no state carried over from the identity before it.
-- A Unix root owned by another account is refused before anything in it changes; one of ours is `0700` (the shared `/var/log` aside).
+- A Unix root owned by another account is refused before anything in it changes; one of ours is `0700`, or a root's `0710` that lets anchord's account through (the shared `/var/log` aside).
 - The boot service runs the copy of conflux in the root-only state directory, never the file conflux was run from.
 - A re-run of `up` or `proxy` never changes an existing machine's address or identity, and the IPv4 question is asked once, a declined answer included.
 - `up` and `proxy` replace each other cleanly.
@@ -129,7 +129,8 @@ Anchor is the reference for overlay behaviour, and the live API at `api.veilnet.
 
 **Supervision**
 - One supervisor per root: `serve` holds `<state>/serve.lock`, and a second is refused.
-- The anchord a dead supervisor left is stopped by the next one only when it is the recorded process (its executable, or anchor's socket lock where none is reported), and `uninstall` reaps it too. On Windows anchord dies with its supervisor's job.
+- anchord runs as root, or with a capability, only where the host or the configuration needs it, and keeps whatever losing would cost an operation or a function; `status` says why. Nothing is re-owned in a directory the account can write, a root anchord never works in one, and what the account wrote is read as untrusted (`flock.Held`, `config.ReadUntrusted`, `copyTree`).
+- The anchord a dead supervisor left is stopped by the next one only when it is the recorded process (its executable, or anchor's socket lock where none is reported), and `uninstall` reaps it too. On Windows anchord dies with its own job, which its supervisor holds.
 - A supervisor that exits 1 is restarted by systemd, launchd and the SCM; on the BSDs nothing does, and the docs say so.
 
 **Extraction**

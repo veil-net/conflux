@@ -3,6 +3,8 @@ package service
 import (
 	"fmt"
 	"strings"
+
+	"github.com/veil-net/conflux/internal/paths"
 )
 
 // The BSDs' rc scripts, rendered here without a build tag so the rendering is tested
@@ -11,7 +13,7 @@ import (
 // rcName is the service name an rc system knows conflux by. An underscore rather than
 // scope's hyphen: both rc.subr implementations build variable names from it --
 // conflux_enable, conflux_flags -- and a hyphen is not legal in one.
-func rcName() string { return "conflux" + strings.ReplaceAll(scope(), "-", "_") }
+func rcName() string { return "conflux" + strings.ReplaceAll(paths.Scope(), "-", "_") }
 
 // plainWords refuses any word an rc script cannot carry as it is.
 //

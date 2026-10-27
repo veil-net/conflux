@@ -235,6 +235,8 @@ func report(d paths.Dirs, cfg *config.Config, st anchorctl.Status, verb string) 
 		ui.Field("service", mgr.Describe())
 	}
 
+	reportPrivilege(d, true)
+
 	ui.Println()
 
 	// Only after a command that just decided the taint, and only for the alpha realm,

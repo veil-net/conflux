@@ -129,6 +129,24 @@ case $got in
 esac
 rc stop >/dev/null 2>&1 || true
 
+# anchor has nothing to capture with here, so conflux refuses the observer before it asks
+# for anything, and a configuration asking for one is refused by the supervisor too.
+say "observing is refused: there is no capture here"
+code=0
+out=$("$CONFLUX" observe 2>&1) || code=$?
+echo "  $out"
+[ "$code" = 2 ] || fail "conflux observe exited $code here, want 2"
+case $out in
+  *"no capture"*) ;;
+  *) fail "conflux observe does not say there is no capture here" ;;
+esac
+code=0
+out=$("$CONFLUX" up --observe --no-ipv4 2>&1) || code=$?
+case $out in
+  *"no capture"*) ;;
+  *) fail "conflux up --observe does not say there is no capture here (exit $code)" ;;
+esac
+
 say "uninstall leaves nothing"
 "$CONFLUX" uninstall --yes
 [ ! -e "$script" ] || fail "the rc script survived uninstall"

@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"io/fs"
 	"runtime"
 	"slices"
 	"strings"
@@ -27,6 +28,13 @@ func roomy() hostFacts {
 func proxyCfg() *config.Config { return &config.Config{Mode: config.ModeProxy} }
 func tunCfg() *config.Config   { return &config.Config{Mode: config.ModeTUN} }
 
+// observing is cfg with the observer on, and observeCfg the observer alone, with the
+// anchor's settings it keeps for later: a low port and an uplink only root may open.
+func observing(cfg *config.Config) *config.Config { cfg.Observer = &config.Observer{}; return cfg }
+func observeCfg() *config.Config {
+	return &config.Config{Mode: config.ModeObserve, Observer: &config.Observer{}, Port: 443, Uplink: "/dev/ttyUSB0"}
+}
+
 // TestDecideTable: anchord gives up root and every capability wherever that costs it
 // nothing, and keeps exactly what each host and mode need -- saying why.
 func TestDecideTable(t *testing.T) {
@@ -51,6 +59,7 @@ func TestDecideTable(t *testing.T) {
 		caps    []string
 		groups  []int
 		why     string
+		bpf     string
 	}{
 		{name: "linux proxy", goos: "linux", cfg: proxyCfg(), h: roomy(), account: true},
 		{name: "linux proxy, small buffers", goos: "linux", cfg: proxyCfg(), h: tight, account: true,
@@ -84,6 +93,33 @@ func TestDecideTable(t *testing.T) {
 		{name: "openbsd tun", goos: "openbsd", cfg: tunCfg(), h: roomy(), why: "only root can open a tun"},
 		{name: "windows proxy", goos: "windows", cfg: proxyCfg(), port: 443, h: hostFacts{}, account: true},
 		{name: "windows tun", goos: "windows", cfg: tunCfg(), h: hostFacts{}, why: "wintun"},
+
+		// The observer: a copy of what the host carries, which is CAP_NET_RAW on Linux, read
+		// access to the BPF devices on macOS, and nothing beyond LOCAL SERVICE on Windows.
+		// Observing alone, the anchor's kept settings -- a low port, a root-only uplink, the
+		// buffers -- grant nothing.
+		{name: "linux observing", goos: "linux", cfg: observeCfg(), h: rootUplink(tight), account: true,
+			caps: []string{capNetRaw}, why: "for the observer"},
+		{name: "linux proxy and observer", goos: "linux", cfg: observing(proxyCfg()), h: roomy(), account: true,
+			caps: []string{capNetRaw}},
+		{name: "linux proxy and observer, small buffers", goos: "linux", cfg: observing(proxyCfg()), h: tight, account: true,
+			caps: []string{capNetAdmin, capNetRaw}},
+		{name: "linux tun and observer", goos: "linux", cfg: observing(tunCfg()), h: roomy(), account: true,
+			caps: []string{capNetAdmin, capNetRaw}},
+		{name: "linux observing, no ambient set", goos: "linux", cfg: observeCfg(), h: oldKernel, why: "CAP_NET_RAW"},
+		{name: "macos observing", goos: "darwin", cfg: observeCfg(), h: rootUplink(roomy()), account: true,
+			why: "/dev/bpf*", bpf: BPFOwn},
+		{name: "macos observing, ChmodBPF's group", goos: "darwin", cfg: observeCfg(),
+			h: bpfReadBy(roomy(), 101, 0o640), account: true, groups: []int{101}, bpf: BPFGroup},
+		{name: "macos observing, the devices already the account's", goos: "darwin", cfg: observeCfg(),
+			h:       func() hostFacts { h := bpfReadBy(roomy(), 299, 0o640); h.bpfOwn = 299; return h }(),
+			account: true, bpf: BPFOwn},
+		{name: "macos proxy and observer", goos: "darwin", cfg: observing(proxyCfg()), h: roomy(), account: true,
+			bpf: BPFOwn},
+		{name: "macos tun and observer", goos: "darwin", cfg: observing(tunCfg()), h: roomy(), why: "utun"},
+		{name: "windows observing", goos: "windows", cfg: observeCfg(), h: hostFacts{}, account: true},
+		{name: "windows proxy and observer", goos: "windows", cfg: observing(proxyCfg()), h: hostFacts{}, account: true},
+		{name: "windows tun and observer", goos: "windows", cfg: observing(tunCfg()), h: hostFacts{}, why: "wintun"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			p := decide(c.goos, c.cfg, c.port, c.h)
@@ -97,8 +133,13 @@ func TestDecideTable(t *testing.T) {
 				t.Errorf("the reason is %q, which does not say %q", p.Why, c.why)
 			}
 
-			// no_new_privs where anchord runs no command at all: userspace mode on Linux.
-			if want := c.account && c.goos == "linux" && c.cfg.Mode == config.ModeProxy; p.NoNewPrivs != want {
+			if p.BPF != c.bpf {
+				t.Errorf("BPF = %q, want %q", p.BPF, c.bpf)
+			}
+
+			// no_new_privs where anchord runs no command at all: userspace mode on Linux, and
+			// observing alone.
+			if want := c.account && c.goos == "linux" && c.cfg.Mode != config.ModeTUN; p.NoNewPrivs != want {
 				t.Errorf("NoNewPrivs = %v, want %v", p.NoNewPrivs, want)
 			}
 		})
@@ -154,6 +195,25 @@ func TestListenPort(t *testing.T) {
 	if got := listenPort(&config.Config{Uplink: "/dev/ttyS0", Port: 443}, 443); got != 0 {
 		t.Errorf("a link binds no port: %d", got)
 	}
+
+	if got := listenPort(observeCfg(), 443); got != 0 {
+		t.Errorf("observing alone binds no port: %d", got)
+	}
+}
+
+// rootUplink is h with an uplink's device only root may open, which an anchor over it would
+// need root for.
+func rootUplink(h hostFacts) hostFacts {
+	h.device = &fileFacts{path: "/dev/ttyUSB0", gid: 0, mode: 0o600}
+
+	return h
+}
+
+// bpfReadBy is h with BPF devices a group of the host's may read.
+func bpfReadBy(h hostFacts, gid int, mode fs.FileMode) hostFacts {
+	h.bpf, h.bpfOwn = &fileFacts{path: "/dev/bpf0", gid: gid, mode: mode}, -1
+
+	return h
 }
 
 func TestPrivilegeString(t *testing.T) {
@@ -165,6 +225,8 @@ func TestPrivilegeString(t *testing.T) {
 		{Privilege{Account: true, As: "conflux", Caps: []string{capNetAdmin}, Why: "CAP_NET_ADMIN for its interface"},
 			"conflux, with CAP_NET_ADMIN for its interface"},
 		{Privilege{As: "root", Why: "only root can open a utun on macOS"}, "root — only root can open a utun on macOS"},
+		{Privilege{Account: true, As: "_conflux", BPF: BPFOwn, Why: "read access to /dev/bpf*, for the observer"},
+			"_conflux, with read access to /dev/bpf*, for the observer"},
 	} {
 		if got := c.p.String(); got != c.want {
 			t.Errorf("%+v = %q, want %q", c.p, got, c.want)

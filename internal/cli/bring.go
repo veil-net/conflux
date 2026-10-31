@@ -16,7 +16,7 @@ import (
 	"github.com/veil-net/conflux/internal/wintun"
 )
 
-// bring is the tail both `up` and `proxy` share: validate, persist, register the
+// bring is the tail `up`, `proxy` and `observe` share: validate, persist, register the
 // boot service, start, and report.
 //
 // The order is deliberate. The configuration is written before the service is
@@ -60,7 +60,7 @@ func bring(ctx context.Context, d paths.Dirs, cfg *config.Config, verb string, s
 		return fail(err)
 	}
 
-	started, err := waitForAnchor(ctx, d)
+	started, err := waitFor(ctx, d, cfg)
 	if err != nil {
 		return fail(err)
 	}
@@ -83,7 +83,7 @@ func restartService(d paths.Dirs) error {
 // restartWith withdraws the readiness marker and then restarts, in that order.
 //
 // The order is the whole of what makes the marker worth reading. A marker left by the
-// supervisor that is about to be replaced would let waitForAnchor return a status for
+// supervisor that is about to be replaced would let waitFor return a status for
 // an anchor on its way out -- reporting success for one that is seconds from being torn
 // down. Removing it first means the marker that appears afterwards can only have been
 // written by the instance this restart started.
@@ -92,7 +92,7 @@ func restartService(d paths.Dirs) error {
 // then waits for an anchor goes through here.
 func restartWith(d paths.Dirs, mgr service.Manager) error {
 	if err := daemon.ClearReady(d); err != nil {
-		// Not fatal. A marker that will not go costs waitForAnchor one status call it
+		// Not fatal. A marker that will not go costs waitFor one status call it
 		// was going to make anyway, which is exactly what the fallback is for.
 		ui.Errf("could not clear the readiness marker: %v", err)
 	}
@@ -100,7 +100,10 @@ func restartWith(d paths.Dirs, mgr service.Manager) error {
 	return mgr.Restart()
 }
 
-// waitForAnchor waits until the supervisor has an anchor up, or says why not.
+// waitFor waits until the supervisor has up what the configuration runs -- an anchor, or
+// observing alone the observer -- or says why not. Beside an anchor the observer is not
+// waited for: the anchor is what the machine is for, and report says what the observer is
+// doing, refused or not.
 //
 // Two signals, and having both is the point. The supervisor writes a readiness marker the
 // instant the anchor is up, which a stat notices within a tick; the status call is the
@@ -108,7 +111,7 @@ func restartWith(d paths.Dirs, mgr service.Manager) error {
 // thing that still works if a marker never arrives at all. systemd's Type=notify makes
 // `systemctl restart` return only once the anchor is up, so on Linux the first call
 // already succeeds; launchd, rc and the Windows SCM give no such signal.
-func waitForAnchor(ctx context.Context, d paths.Dirs) (anchorctl.Status, error) {
+func waitFor(ctx context.Context, d paths.Dirs, cfg *config.Config) (anchorctl.Status, error) {
 	ctl, err := runCtl(d)
 	if err != nil {
 		return anchorctl.Status{}, err
@@ -126,6 +129,7 @@ func waitForAnchor(ctx context.Context, d paths.Dirs) (anchorctl.Status, error) 
 	var (
 		marked   bool
 		nextPoll = time.Now()
+		last     anchorctl.Status
 	)
 
 	ticker := time.NewTicker(tick)
@@ -148,15 +152,27 @@ func waitForAnchor(ctx context.Context, d paths.Dirs) (anchorctl.Status, error) 
 			ctl.Token, _ = readToken(d)
 
 			st, err := ctl.Status(ctx)
-			if err == nil && st.Running {
+			if err == nil && up(cfg, st) {
 				return st, nil
+			}
+
+			if err == nil {
+				last = st
 			}
 		}
 
 		if time.Now().After(deadline) {
+			what := "no anchor came up"
+			if !cfg.Anchor() {
+				what = "the observer did not start"
+				if last.Observer.Note != "" {
+					what += " (" + last.Observer.Note + ")"
+				}
+			}
+
 			return anchorctl.Status{}, fmt.Errorf(
-				"the service started but no anchor came up within 90s.\n"+
-					"  see what it said:  %s", journalHint())
+				"the service started but %s within 90s.\n"+
+					"  see what it said:  %s", what, journalHint())
 		}
 
 		select {
@@ -165,6 +181,16 @@ func waitForAnchor(ctx context.Context, d paths.Dirs) (anchorctl.Status, error) 
 		case <-ticker.C:
 		}
 	}
+}
+
+// up says whether status shows what the configuration runs up: the anchor, or observing
+// alone the observer.
+func up(cfg *config.Config, st anchorctl.Status) bool {
+	if cfg.Anchor() {
+		return st.Running
+	}
+
+	return st.Observer.Running
 }
 
 // exitNote describes this machine's exit settings, or "" when it has neither.
@@ -184,6 +210,39 @@ func report(d paths.Dirs, cfg *config.Config, st anchorctl.Status, verb string) 
 	mgr := service.New()
 
 	ui.Println()
+
+	if cfg.Anchor() {
+		reportAnchorRows(d, cfg, st)
+	}
+
+	reportObserver(cfg, st.Observer)
+
+	if mgr != nil {
+		ui.Field("service", mgr.Describe())
+	}
+
+	reportPrivilege(d, true)
+
+	ui.Println()
+
+	// Only after a command that just decided the taint, and only for the alpha realm,
+	// where --taint is how a machine joins: an issued credential's taints are its
+	// issuer's to grant. One --taint per name: the flag takes one, and a comma inside
+	// one is refused.
+	if (verb == "up" || verb == "proxy") && len(cfg.Taints) > 0 {
+		if held, _ := heldCredential(d); held == nil || held.Alpha() {
+			ui.Printf("Reachable from any machine that runs:  conflux up --taint %s\n",
+				strings.Join(cfg.Taints, " --taint "))
+		}
+	}
+
+	if cfg.Observer != nil {
+		ui.Printf("What it has seen, by service and key exchange:  conflux inventory   (-cbom for a CycloneDX CBOM)\n")
+	}
+}
+
+// reportAnchorRows is what report says of the anchor.
+func reportAnchorRows(d paths.Dirs, cfg *config.Config, st anchorctl.Status) {
 	ui.Field("anchor", st.ID)
 
 	for _, a := range st.Overlay {
@@ -230,25 +289,46 @@ func report(d paths.Dirs, cfg *config.Config, st anchorctl.Status, verb string) 
 		ui.Field("credential", fmt.Sprintf("valid until %s (%s)",
 			st.WorksUntil.Format(time.RFC3339), ui.Until(st.WorksUntil)))
 	}
+}
 
-	if mgr != nil {
-		ui.Field("service", mgr.Describe())
+// reportObserver says what the observer is doing and where its records go, for a machine
+// that observes: the row anchorctl's status gives it, with what it was asked for.
+func reportObserver(cfg *config.Config, o anchorctl.Observer) {
+	if cfg.Observer == nil {
+		return
 	}
 
-	reportPrivilege(d, true)
-
-	ui.Println()
-
-	// Only after a command that just decided the taint, and only for the alpha realm,
-	// where --taint is how a machine joins: an issued credential's taints are its
-	// issuer's to grant. One --taint per name: the flag takes one, and a comma inside
-	// one is refused.
-	if (verb == "up" || verb == "proxy") && len(cfg.Taints) > 0 {
-		if held, _ := heldCredential(d); held == nil || held.Alpha() {
-			ui.Printf("Reachable from any machine that runs:  conflux up --taint %s\n",
-				strings.Join(cfg.Taints, " --taint "))
-		}
+	note := o.Note
+	if note == "" {
+		note = "not reported by the daemon"
 	}
+
+	ui.Field("observer", note)
+
+	var with []string
+	if cfg.Observer.Loopback {
+		with = append(with, "loopback included")
+	}
+
+	if cfg.Observer.HideNames {
+		with = append(with, "names hidden")
+	}
+
+	if len(with) > 0 {
+		ui.Field("", strings.Join(with, ", "))
+	}
+
+	ui.Field("records", recordsNote(cfg))
+}
+
+// recordsNote says where the observer's records go: to a collector as each is made, or
+// nowhere but the daemon's inventory, and how to change that.
+func recordsNote(cfg *config.Config) string {
+	if cfg.Exports() {
+		return "each sent to " + cfg.Export.Endpoint + " as it is made, and kept in the inventory"
+	}
+
+	return "kept here, in the daemon's inventory until it restarts; --export HOST:PORT sends each to a collector"
 }
 
 // reportSubnets says what this machine forwards: the configured list, or the one a

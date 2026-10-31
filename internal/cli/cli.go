@@ -33,7 +33,7 @@ type verb struct {
 // verbs is the closed set of names conflux keeps for itself. Everything else
 // reaches anchorctl.
 //
-// Four of them shadow an anchorctl command -- start, proxy, renew and status --
+// Five of them shadow an anchorctl command -- start, proxy, renew, status and observe --
 // and each resolves its own collision rather than guessing. See the comment on
 // each, and TestTheCollisionsAreTheDocumentedOnes, which reads the set off the
 // embedded binary rather than leaving it to be counted by hand. help is anchorctl's
@@ -44,6 +44,7 @@ func verbs() map[string]verb {
 		"up":        {run: runUp, summary: "join the overlay with a network interface"},
 		"enrol":     {run: runEnrol, summary: "install a credential this machine was given, rather than drawing one"},
 		"proxy":     {run: runProxy, summary: "publish a local service on the overlay, without an interface"},
+		"observe":   {run: runObserve, summary: "inventory the cryptography of this host's traffic, with no anchor"},
 		"start":     {run: runStart, summary: "start the anchor now, from the saved configuration"},
 		"down":      {run: runDown, summary: "stop the anchor now; a reboot brings it back"},
 		"renew":     {run: runRenew, summary: "install a fresh credential on the running anchor, now"},
@@ -57,6 +58,12 @@ func verbs() map[string]verb {
 		"serve":     {run: runServe, summary: "run the supervisor in the foreground", hidden: true},
 	}
 }
+
+// configureHint is how a machine is given a configuration, for every message that finds it
+// has none: the three commands that decide what it runs.
+const configureHint = "  conflux up                          join with a network interface\n" +
+	"  conflux proxy 8080=127.0.0.1:3000   publish a port, no interface needed\n" +
+	"  conflux observe                     inventory this host's traffic, with no anchor"
 
 // anchorLifecycleVerbs are anchorctl commands conflux refuses to pass through
 // while it owns the configuration, each mapped to the conflux verb that does it.

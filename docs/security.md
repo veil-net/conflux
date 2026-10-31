@@ -105,6 +105,7 @@ function, it keeps it, and `conflux status` says why:
 ```
   anchord      conflux, with no privilege
   anchord      conflux, with CAP_NET_ADMIN for its interface
+  anchord      conflux, with CAP_NET_RAW to copy what the host's interfaces carry, for the observer
   anchord      root — firewalld takes changes only from root, and anchord lets its port in through it
 ```
 
@@ -112,12 +113,16 @@ The supervisor, `conflux serve`, stays root (SYSTEM on Windows). It has no liste
 owns the root-only state — the identity, and the binaries root executes — and it is the
 part that hands `anchord` exactly what its mode needs.
 
-| | `conflux proxy` (userspace) | `conflux up` (TUN) |
-|---|---|---|
-| Linux | the account `conflux`, no capabilities, `no_new_privs` | `conflux` with `CAP_NET_ADMIN` |
-| macOS | the account `_conflux` | root: only root gets a utun |
-| FreeBSD, OpenBSD | the account (`conflux`, `_conflux`) | root: only root gets a tun |
-| Windows | `LOCAL SERVICE`, every privilege but `SeChangeNotify` removed, `NT SERVICE\conflux` added | SYSTEM: wintun |
+| | `conflux proxy` (userspace) | `conflux up` (TUN) | `conflux observe` |
+|---|---|---|---|
+| Linux | the account `conflux`, no capabilities, `no_new_privs` | `conflux` with `CAP_NET_ADMIN` | `conflux` with `CAP_NET_RAW`, `no_new_privs` |
+| macOS | the account `_conflux` | root: only root gets a utun | `_conflux`, its group given read access to `/dev/bpf*` |
+| FreeBSD, OpenBSD | the account (`conflux`, `_conflux`) | root: only root gets a tun | refused: no capture |
+| Windows | `LOCAL SERVICE`, every privilege but `SeChangeNotify` removed, `NT SERVICE\conflux` added | SYSTEM: wintun | `LOCAL SERVICE`, as userspace |
+
+The observer beside an anchor, `--observe`, adds its column's capture to the anchor's: `CAP_NET_RAW`
+beside a TUN's `CAP_NET_ADMIN` on Linux, read access to `/dev/bpf*` beside userspace on macOS,
+and nothing where the anchor's `anchord` is root or SYSTEM already.
 
 What changes that, and why:
 
@@ -139,6 +144,15 @@ What changes that, and why:
   is given; one only root may open keeps `anchord` root. That group opens every device it
   owns, not only the uplink.
 - **`/dev/net/tun`** that only root may open keeps a TUN's `anchord` root.
+- **The observer** is given its capture and nothing more. Observing alone, the anchor's kept
+  settings grant nothing: no port is bound and no uplink opened, so a `port` below 1024 or a
+  root-only uplink in `conflux.json` waits for the next `up` or `proxy`. On Linux a kernel with
+  no ambient set keeps an observing `anchord` root, and one that cannot be given `CAP_NET_RAW`
+  at all — a container that holds it back — has its observer refused, for good. On macOS the
+  BPF devices are only root's until the supervisor gives the account's group read access to
+  them, which it does at every start ([observe.md](observe.md#what-it-is-given)); where it cannot,
+  `anchord` stays root and says why, and devices another group of the host's may read already
+  are left alone, the account given that group.
 - **Where the supervisor cannot drop** — it is not root, a container gave it only some
   capabilities (dropping needs `CAP_SETUID`, `CAP_SETGID`, `CAP_CHOWN`, `CAP_FOWNER`,
   `CAP_DAC_OVERRIDE` and `CAP_KILL`), the account cannot be made (no `useradd` or `adduser`),
@@ -194,6 +208,12 @@ interfaces, routes, nf_tables — and, there, no `no_new_privs`, because `nft` a
 are run under it and SELinux would refuse their transitions. On Windows, the logon session
 it shares with the other services that run as `LOCAL SERVICE`. Wherever it runs as root, all
 of it, as before.
+
+Where it observes, also a copy of everything the host's interfaces carry — the start of every
+flow whole, every other packet's headers and its first bytes — which is the observer's whole
+privilege and the reason it is off unless asked for. On Linux that is `CAP_NET_RAW`, which can
+also send a packet of its own making, on any interface; on macOS read access to the BPF
+devices, which can send nothing.
 
 ## What conflux does not defend against
 

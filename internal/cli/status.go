@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/veil-net/conflux/anchor"
+	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
@@ -44,8 +45,7 @@ func runStatus(ctx context.Context, args []string) int {
 		reportService()
 		ui.Field("config", "none — this machine has never been configured")
 		ui.Println()
-		ui.Printf("  conflux up                          join with a network interface\n" +
-			"  conflux proxy 8080=127.0.0.1:3000   publish a port, no interface needed\n")
+		ui.Printf("%s\n", configureHint)
 
 		return ExitNoConfig
 	}
@@ -67,6 +67,16 @@ func runStatus(ctx context.Context, args []string) int {
 	daemon.wg.Wait()
 
 	reportExport(cfg, daemon)
+
+	if cfg.Observer != nil {
+		o := anchorctl.ParseStatus(daemon.status).Observer
+		if !daemon.asked || daemon.statErr != nil {
+			o.Note = "not running"
+		}
+
+		reportObserver(cfg, o)
+	}
+
 	reportPrivilege(d, daemon.asked && daemon.statErr == nil)
 	ui.Println()
 	reportAnchor(daemon)
@@ -135,6 +145,12 @@ func reportConfig(d paths.Dirs, cfg *config.Config) {
 		ui.Field("mode", "tun — interface "+interfaceLine(runtime.GOOS, cfg.TUNInterface()))
 	case config.ModeProxy:
 		ui.Field("mode", "proxy — userspace, no host interface")
+	case config.ModeObserve:
+		ui.Field("mode", "observe — this host's traffic inventoried; no anchor, no realm")
+
+		// The anchor's settings are kept for the next up or proxy, and describe nothing that
+		// runs now.
+		return
 	}
 
 	if note := exitNote(cfg); note != "" {
@@ -162,6 +178,21 @@ func reportConfig(d paths.Dirs, cfg *config.Config) {
 
 func reportCredential(d paths.Dirs, cfg *config.Config, st *config.State) {
 	held, err := heldCredential(d)
+
+	// Observing alone needs no credential. One held is the identity the next up or proxy
+	// comes back with, and is said to be kept rather than reported on.
+	if !cfg.Anchor() {
+		if err == nil && held != nil {
+			kept := "kept for the next up or proxy"
+			if st != nil && st.AnchorID != "" {
+				kept = st.AnchorID + " — " + kept
+			}
+
+			ui.Field("identity", kept)
+		}
+
+		return
+	}
 
 	switch {
 	case err != nil:

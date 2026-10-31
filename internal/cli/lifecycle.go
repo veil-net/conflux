@@ -76,9 +76,8 @@ func install(ctx context.Context, d paths.Dirs, standalone bool) int {
 
 		ui.Printf("The boot service is registered and will start at boot.\n" +
 			"There is no configuration yet, so there is nothing to start now.\n\n" +
-			"  conflux up                          join with a network interface\n" +
-			"  conflux proxy 8080=127.0.0.1:3000   publish a port, no interface needed\n\n" +
-			"Either writes the configuration and starts it.\n")
+			configureHint + "\n\n" +
+			"Each writes the configuration and starts it.\n")
 
 		return ExitOK
 	}
@@ -118,7 +117,7 @@ func startFromConfig(ctx context.Context, d paths.Dirs, mgr service.Manager, cfg
 		return fail(err)
 	}
 
-	st, err := waitForAnchor(ctx, d)
+	st, err := waitFor(ctx, d, cfg)
 	if err != nil {
 		return fail(err)
 	}
@@ -192,9 +191,8 @@ func runStart(ctx context.Context, args []string) int {
 	// because somebody typed "start" is a surprise at the next reboot rather than now.
 	if !installed {
 		ui.Errf("conflux is not installed here, so there is no service to start.\n\n" +
-			"  conflux install    register the boot service, and start it if configured\n" +
-			"  conflux up         join with a network interface\n" +
-			"  conflux proxy 8080=127.0.0.1:3000   publish a port, no interface needed")
+			"  conflux install                     register the boot service, and start it if configured\n" +
+			configureHint)
 
 		return ExitUnavailable
 	}
@@ -207,9 +205,7 @@ func runStart(ctx context.Context, args []string) int {
 			return fail(err)
 		}
 
-		ui.Errf("There is no configuration on this machine, so there is nothing to start.\n\n" +
-			"  conflux up                          join with a network interface\n" +
-			"  conflux proxy 8080=127.0.0.1:3000   publish a port, no interface needed")
+		ui.Errf("There is no configuration on this machine, so there is nothing to start.\n\n" + configureHint)
 
 		return ExitNoConfig
 	}

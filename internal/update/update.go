@@ -35,7 +35,9 @@ import (
 
 const (
 	// DefaultAPI, DefaultRepo and DefaultTag name the release an update comes from. The
-	// tag moves: release.yml moves `latest` to every build of version3.
+	// tag moves: release.yml moves `latest` to every build of version3. A dev build is the
+	// pre-release `dev-latest`, which nothing here asks for, so an update always lands on a
+	// release, a dev build's included.
 	DefaultAPI  = "https://api.github.com"
 	DefaultRepo = "veil-net/conflux"
 	DefaultTag  = "latest"

@@ -61,7 +61,8 @@ type Export struct {
 
 	// Flows exports a log record for each interval of each IP flow the anchor carries
 	// between its own side and a peer, and of each circuit it relays. The anchor counts
-	// flows only while this is on.
+	// flows only while this is on. The observer's records go with it too, an
+	// anchor.observed_flow event for each as it is made, anchor or none.
 	Flows bool `json:"flows,omitempty"`
 
 	// MetricIntervalNanos is how often accumulated metrics are sent. Zero is 60s.

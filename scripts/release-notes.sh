@@ -3,27 +3,39 @@
 # previous version.
 #
 #   GH_TOKEN=… ./scripts/release-notes.sh 1.0.0 > notes.md
+#   GH_TOKEN=… BRANCH=dev ./scripts/release-notes.sh 1.0.0 > notes.md
 #
-# The argument is the tag the VERSION file names. "The previous version" is the nearest version
-# tag on version3's first-parent history other than this one, so every rebuild of a version
-# summarises everything that version has gathered so far, and `latest`, which moves, is never the
-# base. With none, it summarises the most recent pull requests instead and says so.
+# The argument is the version the VERSION file names. BRANCH is the branch built: version3, the
+# release, unless it says dev, whose builds are the pre-release `dev-latest`.
 #
-# A summary, not a commit log. Each pull request version3 merged is its title and the opening
-# paragraph of its description, which is where a pull request says what it does; a commit pushed
-# to version3 on its own, with no pull request to speak for it, is its subject line. Titles and
-# descriptions come from the API, with GH_TOKEN if it is set. Where the API answers nothing, a
-# pull request is its title alone, as its merge commit records it, and the notes are still
-# written.
+# "The previous version" is the nearest version tag behind HEAD. On version3 it is found along
+# version3's own first parent, other than this one, so every rebuild of a version summarises
+# everything that version has gathered so far; on dev along any parent, since release.yml merges
+# version3 back into dev after a release and that merge may not be dev's first parent. Neither
+# `latest` nor `dev-latest`, which move, is ever the base. With none, it summarises the most recent
+# pull requests instead and says so.
 #
-# Both releases of a build carry this text, word for word: the version and `latest`.
-# release.yml appends how to install it and what is inside the binaries.
+# What changed is what dev merged. Every change reaches version3 through dev, so a release is a
+# merge of dev, and version3's own first parent holds nothing but such merges: the notes walk the
+# dev side of it, its second parent, and list the pull requests dev merged since the previous
+# version. A dev build walks dev's own history the same way, so the two read alike.
+#
+# A summary, not a commit log. Each pull request is its title and the opening paragraph of its
+# description, which is where a pull request says what it does; a commit pushed to the branch on
+# its own, with no pull request to speak for it, is its subject line, and a merge that is no pull
+# request's -- version3 merged back into dev -- is nothing. Titles and descriptions come from the
+# API, with GH_TOKEN if it is set. Where the API answers nothing, a pull request is its title
+# alone, as its merge commit records it, and the notes are still written.
+#
+# Every release of a build carries this text, word for word: on version3 the version and
+# `latest`. release.yml appends how to install it and what is inside the binaries.
 #
 # Needs the history and the tags, which a default checkout does not fetch: release.yml checks
 # out with fetch-depth 0.
 set -euo pipefail
 
 TAG=${1:?usage: release-notes.sh <version>}
+BRANCH=${BRANCH:-version3}
 
 REPO=${GITHUB_REPOSITORY:-veil-net/conflux}
 SERVER=${GITHUB_SERVER_URL:-https://github.com}
@@ -41,7 +53,30 @@ die() { echo "release-notes: $*" >&2; exit 1; }
 [ "$(git rev-parse --is-shallow-repository)" = false ] ||
   die "this is a shallow clone, so the changes since the last version cannot be read; check out with fetch-depth 0"
 
-prev=$(git describe --tags --abbrev=0 --first-parent --match "$VERSIONS" --exclude "$TAG" HEAD 2>/dev/null) || prev=""
+case "$BRANCH" in
+  version3 | dev) ;;
+  *) die "BRANCH is \"$BRANCH\"; a release is built from version3 or dev" ;;
+esac
+
+if [ "$BRANCH" = version3 ]; then
+  prev=$(git describe --tags --abbrev=0 --first-parent --match "$VERSIONS" --exclude "$TAG" HEAD 2>/dev/null) || prev=""
+else
+  prev=$(git describe --tags --abbrev=0 --match "$VERSIONS" HEAD 2>/dev/null) || prev=""
+fi
+
+# The history the changes are read from: on version3, the dev side of the merge that released
+# it, where there is one; otherwise the branch's own.
+walk=HEAD
+if [ "$BRANCH" = version3 ] && git rev-parse -q --verify 'HEAD^2' >/dev/null; then
+  walk='HEAD^2'
+fi
+
+# What the links name, and whose anchor is inside: a version's tag and anchor's release, or a
+# dev build's commit and anchor's dev build.
+ref=$TAG anchor="anchor's newest release build"
+if [ "$BRANCH" = dev ]; then
+  ref=$SHA anchor="anchor's newest dev build, \`dev-latest\`,"
+fi
 
 # summary prints pull request $1's title, then the opening paragraph of its description: its
 # first block of text that is not a heading. A list keeps its lines; anything else becomes one
@@ -73,22 +108,27 @@ for block in re.split(r"\n[ \t]*\n", body):
 ' "$doc"
 }
 
-echo "conflux $TAG, built from \`$SHA\` on \`version3\`, with anchor's newest release build embedded."
+echo "conflux $TAG, built from \`$SHA\` on \`$BRANCH\`, with $anchor embedded."
 echo
+if [ "$BRANCH" = dev ]; then
+  echo "A dev build: the pre-release at \`dev-latest\`, which the next merge into dev replaces. A release is \`latest\`."
+  echo
+fi
 
 if [ -n "$prev" ]; then
-  range="$prev..HEAD"
+  range="$prev..$walk"
   echo "## Changes since $prev"
 else
-  range=HEAD
+  range=$walk
   echo "## Recent changes"
   echo
   echo "No earlier version is behind this commit, so these are the most recent pull requests."
 fi
 
-# version3's own history, newest first: its merge commits are the pull requests, and anything else
-# on it was pushed there directly, which only a range with a version behind it lists. One refusal
-# from the API and it is not asked again.
+# dev's history, newest first: its merge commits are the pull requests, a merge that is no pull
+# request's is version3 merged back after a release, and anything else was pushed there directly,
+# which only a range with a version behind it lists. One refusal from the API and it is not asked
+# again.
 prs=0 direct=() api=1
 while IFS=$'\t' read -r hash parents subject; do
   if [[ $parents == *' '* && $subject =~ ^Merge\ pull\ request\ \#([0-9]+)(.*)$ ]]; then
@@ -122,10 +162,18 @@ while IFS=$'\t' read -r hash parents subject; do
       echo
       echo "$text"
     fi
-  elif [ -n "$prev" ]; then
+  elif [ -n "$prev" ] && [[ $parents != *' '* ]]; then
     direct+=("- $subject (${hash:0:7})")
   fi
 done < <(git log --first-parent --format='%H%x09%P%x09%s' "$range")
+
+# And on version3, anything pushed to it directly since the previous version, beside the merges
+# of dev: nothing should be, and a release that carries one says so.
+if [ "$walk" != HEAD ] && [ -n "$prev" ]; then
+  while IFS=$'\t' read -r hash subject; do
+    direct+=("- $subject (${hash:0:7}, on version3)")
+  done < <(git log --first-parent --no-merges --format='%H%x09%s' "$prev..HEAD^")
+fi
 
 if [ "$prs" -gt "$MAX" ]; then
   echo
@@ -134,7 +182,7 @@ fi
 
 if [ "${#direct[@]}" -gt 0 ]; then
   echo
-  echo "### Pushed to version3 directly"
+  echo "### Pushed to $BRANCH directly"
   echo
   printf '%s\n' "${direct[@]:0:MAX}"
   [ "${#direct[@]}" -le "$MAX" ] || echo "- … and $((${#direct[@]} - MAX)) more"
@@ -142,7 +190,7 @@ fi
 
 echo
 if [ -n "$prev" ]; then
-  echo "Full diff: $SERVER/$REPO/compare/$prev...$TAG"
+  echo "Full diff: $SERVER/$REPO/compare/$prev...$ref"
 else
-  echo "History: $SERVER/$REPO/commits/$TAG"
+  echo "History: $SERVER/$REPO/commits/$ref"
 fi

@@ -17,15 +17,19 @@ const overview = `conflux — put this machine on a VeilNet overlay
   conflux up                          join, with a network interface
   conflux proxy 8080=127.0.0.1:3000   publish a service, without one
   conflux up --uplink /dev/ttyUSB0    join over a cable, with no host network at all
+  conflux observe                     inventory the cryptography of this host's traffic
 
 The first command enrols this machine, starts it, and registers a boot service, so
 a reboot brings it back with nothing typed. The second does the same without asking
 the kernel for anything, which is what to use where you cannot get CAP_NET_ADMIN.
 The third is either of those over a link instead of the host's IP network: --uplink
 decides the medium, and the command it is written on decides what this machine gets.
+The fourth joins nothing: it records whether each flow the host's traffic carries has
+a post-quantum key exchange, from every boot, and --observe on up or proxy does the
+same beside an anchor.
 `
 
-const collisions = `Four of conflux's names are also anchorctl's, and each is resolved rather than guessed:
+const collisions = `Five of conflux's names are also anchorctl's, and each is resolved rather than guessed:
 
   conflux status              conflux's, plus anchorctl's beneath it
   conflux status -watch 5s    anchorctl's, because it was given arguments
@@ -39,6 +43,8 @@ const collisions = `Four of conflux's names are also anchorctl's, and each is re
   conflux start               conflux's: start from the saved configuration
   conflux anchorctl start -identity FILE ...
                               anchorctl's: build one from arguments
+  conflux observe             conflux's: observe, with no anchor, from every boot
+  conflux anchorctl observe   anchorctl's: report on, -start or -stop the observer running now
 
 stop and restart are anchorctl's and conflux refuses to pass them through while it
 owns the configuration; use down and start, or the escape hatch above.

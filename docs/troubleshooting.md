@@ -5,9 +5,9 @@ beneath it, and most of what follows is a way of reading that output.
 
 | Symptom | Cause | What to do |
 |---|---|---|
-| `nothing is running here` | no daemon on the socket | `conflux start` if a configuration already exists, otherwise `conflux up` or `conflux proxy` |
+| `nothing is running here` | no daemon on the socket | `conflux start` if a configuration already exists, otherwise `conflux up`, `conflux proxy` or `conflux observe` |
 | `… needs root` (`… needs Administrator` on Windows) | every state-changing verb needs it | run the command it names — yours, flags and all — with `sudo`, or from an elevated PowerShell |
-| `status` exits 78 | never configured | `conflux up` or `conflux proxy` |
+| `status` exits 78 | never configured | `conflux up`, `conflux proxy` or `conflux observe` |
 | `has not been given an IPv4 yet and there is no terminal to ask at` | `up` or `proxy` in a script, on a machine never asked | pass `--ipv4 ADDRESS` or `--no-ipv4`; that is what they are for |
 | `is not a unicast address a host sends from` | a loopback, link-local, multicast or broadcast IPv4 | pick an address a host could send from; any other is accepted |
 | `a reverse proxy needs userspace mode` | a proxy spec in a `tun` configuration | the modes are exclusive; see [modes.md](modes.md) |
@@ -28,6 +28,11 @@ beneath it, and most of what follows is a way of reading that output.
 | `fd:3 adopts a descriptor …` | `--uplink fd:N` | conflux's supervisor hands anchord no descriptors; name the device, or use `conflux anchorctl start` |
 | `anchor has no way to open a link on Windows` | `--uplink` on Windows | anchor opens a link on unix only; see [uplink.md](uplink.md) |
 | an uplink machine is up and reaches nothing | usually the far end, the line speed, or an enrolment that never happened | see below |
+| `capturing needs CAP_NET_RAW for the daemon …`, and observing stops | the host would not let `anchord` capture | see below |
+| `"-start" is anchorctl's observe` (or `"-stop"`) | anchorctl's observe was meant | `conflux anchorctl observe -start`; or `conflux observe` to observe from every boot, `conflux down` or `--no-observe` to stop |
+| `this machine runs an anchor … Pass --yes` | `conflux observe` in a script on a machine running an anchor, which it would stop | pass `--yes` if that is meant; `conflux up --observe` observes beside it |
+| `freebsd has no capture for anchord to observe with` | the observer on FreeBSD or OpenBSD | anchor captures on Linux, macOS and Windows only |
+| `conflux inventory` says `nothing observed` | no flow has ended or lasted a minute yet, or the daemon restarted | a record is made every minute of a flow and at its end, and the inventory lasts as long as the daemon; an export keeps them for good |
 
 ## An uplink machine is up and reaches nothing
 
@@ -178,6 +183,26 @@ account with the commands the line names. The next start uses it. A supervisor t
 root, or a container that gave it too few capabilities to hand `anchord` over, runs
 `anchord` as itself — never with more than it was given. See
 [security.md](security.md#what-anchord-runs-as).
+
+## The observer will not capture
+
+The supervisor gives `anchord` what capturing needs at every start
+([observe.md](observe.md#what-it-is-given)), so a refusal is the host's: anchorctl's
+`capturing needs CAP_NET_RAW for the daemon on Linux, read access to /dev/bpf* on macOS, …`,
+which no retry changes. Observing alone, the supervisor gives up after three, and the unit
+fails; beside an anchor the anchor runs on without it, and `conflux status` shows the
+observer `not observing`.
+
+- **Linux.** The `anchord` line in `conflux status` names `CAP_NET_RAW`, or says why
+  `anchord` is root. A container that holds `CAP_NET_RAW` back from the supervisor cannot give
+  it on, and root inside it does not have it either: run the container with it
+  (`--cap-add NET_RAW`), as conflux's own service test does.
+- **macOS.** `ls -l /dev/bpf0` should show the account's group with read access while it
+  observes. Wireshark's ChmodBPF, or anything else that rewrites the devices after the
+  supervisor has started, can take that away again; `conflux start` gives it back.
+- **Windows.** `anchord` runs as `LOCAL SERVICE`, which may start the trace session the
+  capture is. A host whose policy narrows ETW's security descriptors is the case where it
+  cannot.
 
 ## A command that writes a file is refused
 

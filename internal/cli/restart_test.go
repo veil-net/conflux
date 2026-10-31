@@ -46,7 +46,7 @@ func testDirs(t *testing.T) paths.Dirs {
 
 // The marker has to be gone before the restart and not after it.
 //
-// Reversed, waitForAnchor could read the marker the outgoing supervisor left and return a
+// Reversed, waitFor could read the marker the outgoing supervisor left and return a
 // status for an anchor that is seconds from being torn down -- `conflux up` reporting
 // success for something on its way out. That is the one failure the ordering exists to
 // prevent, and it is invisible in a diff, so it is pinned here.
@@ -68,7 +68,7 @@ func TestRestartWithClearsTheMarkerFirst(t *testing.T) {
 	}
 
 	if mgr.markedAtCall {
-		t.Error("the marker was still there when Restart was called, so waitForAnchor could " +
+		t.Error("the marker was still there when Restart was called, so waitFor could " +
 			"return a status for the anchor this restart is replacing")
 	}
 

@@ -2,11 +2,17 @@ name: ci
 
 # Pull requests, and a hand-run. Nothing else.
 #
-# This is where a change is tested: on the branch, before it is merged. GitHub tests
-# refs/pull/N/merge, the branch already merged into its base, so a green pull request is
-# a green merge result. What makes that a guarantee rather than a hope is branch
-# protection on version3: require a pull request, require these checks, and require the
-# branch to be up to date before merging.
+# This is where a change is tested: on the branch, before it is merged. Work goes into dev by a
+# pull request, and version3 takes dev by another (branch-flow.yml); both run this in full.
+# GitHub tests refs/pull/N/merge, the branch already merged into its base, so a green pull
+# request is a green merge result. What makes that a guarantee rather than a hope is branch
+# protection on dev and version3: require a pull request, require these checks and
+# branch-flow's, and require the branch to be up to date before merging.
+#
+# Each side is tested against the anchor it will embed: a pull request into version3, the
+# release, against anchor's `latest`; everything else -- a pull request into dev, a hand-run on
+# a feature branch -- against anchor's dev build, `dev-latest`, so the two dev branches are
+# always tested together.
 #
 # CI verifies that the code builds and runs. The utility checks -- gofmt, staticcheck,
 # go mod tidy, govulncheck, the docs links, actionlint, shellcheck -- run on the machine
@@ -17,6 +23,9 @@ on:
 
 permissions:
   contents: read
+
+env:
+  ANCHOR_TAG: ${{ (github.base_ref || github.ref_name) == 'version3' && 'latest' || 'dev-latest' }}
 
 # A superseded run holds the one self-hosted machine the run that replaced it is
 # waiting for.
@@ -50,6 +59,7 @@ jobs:
         with:
           client-id: ${{ secrets.ANCHOR_APP_CLIENT_ID }}
           private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
+          tag: ${{ env.ANCHOR_TAG }}
 
       # The whole suite under -race, once, and none of it skipped. A skip is green, and
       # the tests that need the real binaries skip without them, so a run that fetched
@@ -105,6 +115,7 @@ jobs:
         with:
           client-id: ${{ secrets.ANCHOR_APP_CLIENT_ID }}
           private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
+          tag: ${{ env.ANCHOR_TAG }}
 
       - name: what this runner gives the container suites
         run: ./test/preflight.sh
@@ -148,6 +159,7 @@ jobs:
         with:
           client-id: ${{ secrets.ANCHOR_APP_CLIENT_ID }}
           private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
+          tag: ${{ env.ANCHOR_TAG }}
           targets: ${{ matrix.pair }}
 
       - name: conflux for ${{ matrix.os }}
@@ -206,6 +218,7 @@ jobs:
         with:
           client-id: ${{ secrets.ANCHOR_APP_CLIENT_ID }}
           private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
+          tag: ${{ env.ANCHOR_TAG }}
           targets: ${{ matrix.pair }}
 
       # The version and digest come from the product code, not a second copy typed here:

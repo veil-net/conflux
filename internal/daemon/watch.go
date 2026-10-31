@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
@@ -59,19 +60,27 @@ const (
 )
 
 // watch keeps an anchor in the daemon, rebuilding it when it has gone or its link has
-// ended, and reports true once it has given up.
+// ended, and the observer observing, starting it again when its capture has ended; and
+// reports true once it has given up on what the configuration runs.
 //
 // It gives up on a configuration that will not build an anchor, which a rebuild refused
 // for good rebuildRefusals times in a row is -- a conflux.json edited under a running
 // service, a credential that no longer grants its taints. Retrying that every thirty
 // seconds for ever would fill the journal and change nothing; a restart of the service --
-// `conflux start`, a reboot -- tries again, as it always would.
+// `conflux start`, a reboot -- tries again, as it always would. An observer the host will
+// not let capture is given up on the same way: beside an anchor the anchor is still kept,
+// and observing alone there is nothing left to keep.
 //
-// every is how often it looks: checkInterval(uplink), which only a test shortens.
-func (s *Supervisor) watch(ctx context.Context, uplink string, every time.Duration) bool {
-	device := devicePath(uplink)
+// An anchor and an observer are kept apart: each has its own backoff and its own count of
+// refusals, so one that keeps failing neither slows the other's retries nor counts against
+// it. One status call a look answers both.
+//
+// every is how often it looks: checkInterval(cfg), which only a test shortens.
+func (s *Supervisor) watch(ctx context.Context, cfg *config.Config, every time.Duration) bool {
+	device := devicePath(cfg.Uplink)
 
-	backoff, refusals := rebuildBackoffMin, 0
+	anchor, observer := newKeeper(), newKeeper()
+	observing := cfg.Observer != nil
 
 	// zeroSince is when the connection count was first seen at zero, or the zero
 	// time when the link is carrying something.
@@ -84,96 +93,201 @@ func (s *Supervisor) watch(ctx context.Context, uplink string, every time.Durati
 		case <-time.After(every):
 		}
 
-		why, link := s.lost(ctx, uplink, device, &zeroSince)
-		if why == "" {
-			backoff = rebuildBackoffMin
+		// What status said this look, so the observer is read off the call the anchor's
+		// check already made; nil where none was made or it was not answered.
+		var st *anchorctl.Status
 
-			continue
+		if cfg.Anchor() && anchor.due() {
+			why, link, read := s.lost(ctx, cfg.Uplink, device, &zeroSince)
+			st = read
+
+			if why == "" {
+				anchor.backoff = rebuildBackoffMin
+			} else {
+				switch s.rebuildAnchor(ctx, why, link, anchor) {
+				case respawned:
+					return false
+				case gaveUp:
+					return true
+				case kept:
+					// Whatever the state was, it is a fresh anchor now.
+					zeroSince = time.Time{}
+				}
+
+				st = nil
+			}
 		}
 
-		s.clearReady()
-		s.report().Warn("%s; rebuilding the anchor", why)
-
-		if err := s.rebuild(ctx, link); err != nil {
-			// A rebuild the decision no longer fits -- an uplink's device that has appeared
-			// with a group anchord was not given -- is the cycle's to start again.
-			if s.redecided() {
-				s.report().Warn("could not rebuild the anchor: %v", err)
-				s.requestRespawn()
-
-				return false
+		if observing && observer.due() {
+			if st == nil {
+				st = s.status(ctx)
 			}
 
-			if Permanent(err) {
-				refusals++
-			} else {
-				refusals = 0
+			if st == nil || !st.Observer.Failed() {
+				continue
 			}
 
-			if refusals >= rebuildRefusals {
-				s.report().Warn("this configuration will not build an anchor: %v\n"+
-					"  conflux stops rebuilding it until the service is started again", err)
+			if !s.restartObserver(ctx, cfg, st.Observer, observer) {
+				continue
+			}
 
+			if !cfg.Anchor() {
 				return true
 			}
 
-			s.report().Warn("could not rebuild the anchor: %v", err)
-
-			select {
-			case <-ctx.Done():
-				return false
-			case <-time.After(backoff):
-			}
-
-			backoff = min(2*backoff, rebuildBackoffMax)
-
-			continue
+			observing = false
 		}
-
-		s.report().Step("the anchor is back")
-
-		// Whatever the state was, it is a fresh anchor now.
-		zeroSince = time.Time{}
-		backoff, refusals = rebuildBackoffMin, 0
 	}
 }
 
+// outcome is what one attempt to bring something back came to.
+type outcome int
+
+const (
+	kept      outcome = iota // it is back
+	retrying                 // it is not, and is tried again after the backoff
+	gaveUp                   // it has been refused for good too many times in a row
+	respawned                // the decision no longer fits; the cycle starts anchord again
+)
+
+// rebuildAnchor rebuilds an anchor that is lost, and says what came of it.
+func (s *Supervisor) rebuildAnchor(ctx context.Context, why string, link bool, k *keeper) outcome {
+	s.clearReady()
+	s.report().Warn("%s; rebuilding the anchor", why)
+
+	err := s.rebuild(ctx, link)
+	if err == nil {
+		s.report().Step("the anchor is back")
+		k.ok()
+
+		return kept
+	}
+
+	// A rebuild the decision no longer fits -- an uplink's device that has appeared with a
+	// group anchord was not given -- is the cycle's to start again.
+	if s.redecided() {
+		s.report().Warn("could not rebuild the anchor: %v", err)
+		s.requestRespawn()
+
+		return respawned
+	}
+
+	if k.failed(err) {
+		s.report().Warn("this configuration will not build an anchor: %v\n"+
+			"  conflux stops rebuilding it until the service is started again", err)
+
+		return gaveUp
+	}
+
+	s.report().Warn("could not rebuild the anchor: %v", err)
+
+	return retrying
+}
+
+// restartObserver starts an observer whose capture ended again, and says whether to give
+// up on it.
+func (s *Supervisor) restartObserver(ctx context.Context, cfg *config.Config, was anchorctl.Observer, k *keeper) bool {
+	s.report().Warn("the observer stopped (%s); starting it again", strings.TrimPrefix(was.Note, "not observing: "))
+
+	err := s.startObserver(ctx, cfg)
+	if err == nil {
+		s.report().Step("the observer is back")
+		k.ok()
+
+		return false
+	}
+
+	if k.failed(err) {
+		s.report().Warn("this host will not let anchord observe: %v\n"+
+			"  conflux stops starting the observer until the service is started again", err)
+
+		return true
+	}
+
+	s.report().Warn("could not start the observer again: %v", err)
+
+	return false
+}
+
+// keeper is what the watcher holds for one thing it keeps running: how long to wait before
+// trying it again, when it may be tried, and how many tries in a row were refused for good.
+type keeper struct {
+	backoff   time.Duration
+	refusals  int
+	notBefore time.Time
+}
+
+func newKeeper() *keeper { return &keeper{backoff: rebuildBackoffMin} }
+
+// due says whether it may be looked at and tried again now.
+func (k *keeper) due() bool { return !time.Now().Before(k.notBefore) }
+
+// ok records that it is back.
+func (k *keeper) ok() { *k = *newKeeper() }
+
+// failed records a try that failed with err, holds the next off for the backoff, and says
+// whether the tries refused for good have reached rebuildRefusals.
+func (k *keeper) failed(err error) bool {
+	if Permanent(err) {
+		k.refusals++
+	} else {
+		k.refusals = 0
+	}
+
+	k.notBefore = time.Now().Add(k.backoff)
+	k.backoff = min(2*k.backoff, rebuildBackoffMax)
+
+	return k.refusals >= rebuildRefusals
+}
+
 // checkInterval is how often the watcher looks: the gauge on a link, status otherwise.
-func checkInterval(uplink string) time.Duration {
-	if uplink != "" {
+func checkInterval(cfg *config.Config) time.Duration {
+	if cfg.Uplink != "" && cfg.Anchor() {
 		return linkCheckInterval
 	}
 
 	return anchorCheckInterval
 }
 
+// status asks the daemon what it is doing, and is nil where it does not answer: that is
+// the restart loop's business, not the watcher's.
+func (s *Supervisor) status(ctx context.Context) *anchorctl.Status {
+	probe, cancel := context.WithTimeout(ctx, stopTimeout)
+	defer cancel()
+
+	st, err := s.ctl.Status(probe)
+	if err != nil {
+		return nil
+	}
+
+	return &st
+}
+
 // lost says why the anchor needs rebuilding, and whether its link is the reason; "" while
-// it does not.
+// it does not. And what status said, where it was asked and answered.
 //
 // A daemon that does not answer is the restart loop's business rather than this one's:
 // rebuilding an anchor over a problem with the process would fix nothing.
-func (s *Supervisor) lost(ctx context.Context, uplink, device string, zeroSince *time.Time) (string, bool) {
+func (s *Supervisor) lost(ctx context.Context, uplink, device string, zeroSince *time.Time) (string, bool, *anchorctl.Status) {
 	if uplink != "" {
 		dead, reason, err := s.linkIsDead(ctx, device, zeroSince)
 		if dead {
-			return "the uplink " + uplink + " " + reason, true
+			return "the uplink " + uplink + " " + reason, true, nil
 		}
 
 		if err == nil {
-			return "", false
+			return "", false, nil
 		}
 	}
 
 	// Asked when the gauge could not be read, or on the host's network at every tick: a
 	// daemon holding no anchor answers status and nothing else.
-	probe, cancel := context.WithTimeout(ctx, stopTimeout)
-	defer cancel()
-
-	if st, err := s.ctl.Status(probe); err != nil || st.Running {
-		return "", false
+	st := s.status(ctx)
+	if st == nil || st.Running {
+		return "", false, st
 	}
 
-	return "anchord holds no anchor any more", false
+	return "anchord holds no anchor any more", false, st
 }
 
 // linkIsDead decides whether the link has ended, and says why. Its error is the gauge

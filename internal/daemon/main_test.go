@@ -3,8 +3,10 @@ package daemon
 import (
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"testing"
 
@@ -18,13 +20,19 @@ import (
 // once, and "serve" for one that runs until it is signalled. fakeAnchorctlLogEnv,
 // when set, names a file the stand-in anchorctl appends each command it ran to,
 // fakeAnchorctlFailEnv a command it refuses, and fakeAnchorctlStatusEnv what its
-// status says: "running", or "none" for a daemon holding no anchor.
+// status says: "running", or "none" for a daemon holding no anchor. fakeAnchorctlObserverEnv
+// is the observer's row in it -- "running", "stopped", "failed", or none at all -- and
+// fakeAnchorctlCaptureEnv set makes `observe -start` refuse as a host that will not let the
+// daemon capture does.
 const (
-	fakeAnchorctlEnv       = "CONFLUX_TEST_FAKE_ANCHORCTL"
-	fakeAnchorctlLogEnv    = "CONFLUX_TEST_FAKE_ANCHORCTL_LOG"
-	fakeAnchorctlFailEnv   = "CONFLUX_TEST_FAKE_ANCHORCTL_FAIL"
-	fakeAnchorctlStatusEnv = "CONFLUX_TEST_FAKE_ANCHORCTL_STATUS"
-	fakeAnchordEnv         = "CONFLUX_TEST_FAKE_ANCHORD"
+	fakeAnchorctlEnv         = "CONFLUX_TEST_FAKE_ANCHORCTL"
+	fakeAnchorctlLogEnv      = "CONFLUX_TEST_FAKE_ANCHORCTL_LOG"
+	fakeAnchorctlFailEnv     = "CONFLUX_TEST_FAKE_ANCHORCTL_FAIL"
+	fakeAnchorctlStatusEnv   = "CONFLUX_TEST_FAKE_ANCHORCTL_STATUS"
+	fakeAnchorctlObserverEnv = "CONFLUX_TEST_FAKE_ANCHORCTL_OBSERVER"
+	fakeAnchorctlCaptureEnv  = "CONFLUX_TEST_FAKE_ANCHORCTL_NO_CAPTURE"
+	fakeAnchordEnv           = "CONFLUX_TEST_FAKE_ANCHORD"
+	fakeAnchordListenEnv     = "CONFLUX_TEST_FAKE_ANCHORD_LISTEN"
 )
 
 func TestMain(m *testing.M) {
@@ -91,6 +99,17 @@ func fakeAnchorctl(args []string) int {
 		fmt.Print(fakeStarted)
 	case "renew", "stop":
 		fmt.Println("ok")
+	case "observe":
+		// What anchorctl says of a host that will not let the daemon capture, on stderr.
+		if len(args) > 1 && args[1] == "-start" && os.Getenv(fakeAnchorctlCaptureEnv) != "" {
+			fmt.Fprintln(os.Stderr, "anchorctl: capture: not permitted: open a packet socket: operation not permitted (it needs CAP_NET_RAW)\n"+
+				"  capturing needs CAP_NET_RAW for the daemon on Linux, read access to /dev/bpf* on macOS, "+
+				"Administrators or Performance Log Users on Windows; give the daemon that, then \"anchorctl observe -start\" again")
+
+			return 1
+		}
+
+		fmt.Println("observing with  af_packet")
 	case "status":
 		switch os.Getenv(fakeAnchorctlStatusEnv) {
 		case "running":
@@ -99,6 +118,15 @@ func fakeAnchorctl(args []string) int {
 			fmt.Println("no anchor is running")
 		default:
 			return 2
+		}
+
+		switch os.Getenv(fakeAnchorctlObserverEnv) {
+		case "running":
+			fmt.Println("  observer  af_packet, 2 flows held, 32 packets taken")
+		case "stopped":
+			fmt.Println("  observer  not observing")
+		case "failed":
+			fmt.Println("  observer  not observing: capture: reading the ring: network is down")
 		}
 	default:
 		return 2
@@ -127,6 +155,31 @@ func fakeAnchord() int {
 func fakeServingAnchord() int {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+
+	// The socket, where a test asks for one, for the supervisor's readiness probe to find
+	// something listening on; what it asks after that goes to the stand-in anchorctl.
+	if os.Getenv(fakeAnchordListenEnv) == "" {
+		fmt.Println("anchord listening")
+		<-stop
+
+		return 0
+	}
+
+	if l, err := net.Listen("unix", os.Args[2]); err == nil {
+		defer l.Close()
+
+		go func() {
+			for {
+				c, err := l.Accept()
+				if err != nil {
+					return
+				}
+
+				c.Close()
+			}
+		}()
+	}
+
 	fmt.Println("anchord listening")
 	<-stop
 
@@ -145,9 +198,25 @@ func fakeCtl(tb testing.TB) *anchorctl.Ctl {
 }
 
 // dirs roots a test's every path in a directory of its own, and makes the roots.
+//
+// Under /tmp on macOS rather than the test's own directory: a Unix socket's path is 104 bytes
+// at most there, and TMPDIR is long enough that a stand-in anchord could not listen on the
+// socket the supervisor probes.
 func dirs(tb testing.TB) paths.Dirs {
 	tb.Helper()
-	tb.Setenv("CONFLUX_DIR", tb.TempDir())
+
+	root := tb.TempDir()
+	if runtime.GOOS == "darwin" {
+		short, err := os.MkdirTemp("/tmp", "cfx")
+		if err != nil {
+			tb.Fatal(err)
+		}
+
+		tb.Cleanup(func() { _ = os.RemoveAll(short) })
+		root = short
+	}
+
+	tb.Setenv("CONFLUX_DIR", root)
 
 	d := paths.Default()
 	if err := d.EnsureAll(); err != nil {

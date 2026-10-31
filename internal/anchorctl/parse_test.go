@@ -38,6 +38,26 @@ const statusOutput = `10:40:44  reachability=nat-cone  mtu=65521  peers=3  up=2h
 
 const notRunningOutput = "no anchor is running\n"
 
+// What status prints where the daemon serves the observer: the row comes last, padded with
+// the rest of its block, beside an anchor and with none -- as a live anchord with
+// -allow-observer printed it, observing, stopped, and stopped by a capture that ended.
+const (
+	observingAloneOutput = `no anchor is running
+  fips140   off, Go Cryptographic Module latest
+  observer  af_packet, 2 flows held, 32 packets taken
+`
+	notObservingOutput = `no anchor is running
+  fips140   off, Go Cryptographic Module latest
+  observer  not observing
+`
+	observerFailedOutput = `no anchor is running
+  fips140   off, Go Cryptographic Module latest
+  observer  not observing: capture: reading the ring: network is down
+`
+	observingBesideOutput = statusOutput + `  observer        af_packet, 12 flows held, 3480 packets taken, 7 copies dropped
+`
+)
+
 func TestParseStarted(t *testing.T) {
 	if s := ParseStarted(startedOutput); s.ID != wantID {
 		t.Errorf("ID = %q, want %q", s.ID, wantID)
@@ -68,6 +88,34 @@ func TestParseStatus(t *testing.T) {
 func TestParseStatusNotRunning(t *testing.T) {
 	if st := ParseStatus(notRunningOutput); st.Running || st.ID != "" {
 		t.Errorf("ParseStatus(%q) = %+v, want nothing running", notRunningOutput, st)
+	}
+}
+
+func TestParseStatusReadsTheObserver(t *testing.T) {
+	for name, tc := range map[string]struct {
+		out                  string
+		anchor, served, runs bool
+		failed               bool
+		note                 string
+	}{
+		"observing, no anchor":  {observingAloneOutput, false, true, true, false, "af_packet, 2 flows held, 32 packets taken"},
+		"stopped, no anchor":    {notObservingOutput, false, true, false, false, "not observing"},
+		"failed, no anchor":     {observerFailedOutput, false, true, false, true, "not observing: capture: reading the ring: network is down"},
+		"beside an anchor":      {observingBesideOutput, true, true, true, false, "af_packet, 12 flows held, 3480 packets taken, 7 copies dropped"},
+		"not served, an anchor": {statusOutput, true, false, false, false, ""},
+		"not served, none":      {notRunningOutput, false, false, false, false, ""},
+	} {
+		st := ParseStatus(tc.out)
+
+		if st.Running != tc.anchor {
+			t.Errorf("%s: Running = %v, want %v", name, st.Running, tc.anchor)
+		}
+
+		o := st.Observer
+		if o.Served != tc.served || o.Running != tc.runs || o.Failed() != tc.failed || o.Note != tc.note {
+			t.Errorf("%s: Observer = %+v (failed %v), want served %v, running %v, failed %v, note %q",
+				name, o, o.Failed(), tc.served, tc.runs, tc.failed, tc.note)
+		}
 	}
 }
 

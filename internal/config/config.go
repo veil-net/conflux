@@ -24,10 +24,11 @@ import (
 	"github.com/veil-net/conflux/internal/paths"
 )
 
-// Mode is which of anchor's two shapes this machine runs. They are mutually
-// exclusive in anchor itself, not merely in conflux: a config carrying both a host
-// interface and a reverse proxy is refused by anchor.Config.validate before
-// anything starts.
+// Mode is what this machine runs: one of anchor's two shapes, or no anchor at all.
+// The two shapes are mutually exclusive in anchor itself, not merely in conflux: a
+// config carrying both a host interface and a reverse proxy is refused by
+// anchor.Config.validate before anything starts. The observer is no shape of an
+// anchor's, and runs beside either one or alone; see Observer.
 type Mode string
 
 const (
@@ -41,7 +42,31 @@ const (
 	// subnet or an exit the anchor serves from its own process. Needs no privileges
 	// at all, which is the whole reason it exists.
 	ModeProxy Mode = "proxy"
+
+	// ModeObserve runs the daemon's observer and no anchor: this machine joins no
+	// realm, holds and needs no credential, and enrols nothing, and what it does is
+	// inventory the cryptography of its own traffic. The anchor's settings and its
+	// identity stay as they were, unused, for the next up or proxy to come back to.
+	ModeObserve Mode = "observe"
 )
+
+// Observer is what the daemon's observer is told when it starts: anchor.v1.ObserverConfig,
+// field for field.
+//
+// It reads a copy of what the host's interfaces carry, the start of every flow, and
+// records each flow's cryptography: to the collector Export names, as each record is
+// made, with the flows signal on, and into the inventory the daemon keeps, either way.
+// It carries nothing, so it can slow, break or reroute nothing; seeing the host's traffic
+// is the privilege, which is why it is off unless asked for.
+type Observer struct {
+	// Loopback observes the loopback interfaces too. Windows' capture never sees them.
+	Loopback bool `json:"loopback,omitempty"`
+
+	// HideNames leaves every name a flow was reached by -- a handshake's server name, a
+	// DNS answer's -- out of the records and the inventory, the server's address in its
+	// place.
+	HideNames bool `json:"hideNames,omitempty"`
+}
 
 // ConfigVersion is bumped when a field's meaning changes, never merely when one is
 // added -- an added field is absent in an old file and takes its zero value, which
@@ -184,8 +209,36 @@ type Config struct {
 	// See export.go for why it mirrors anchor.v1.ExportConfig name for name.
 	Export *Export `json:"export,omitempty"`
 
+	// Observer runs the daemon's observer, and nil is off. Beside an anchor in either
+	// shape, and alone in ModeObserve, which needs it: the observer is no part of the
+	// anchor and asks nothing of the realm. Refused where anchor has no capture, which
+	// is FreeBSD and OpenBSD.
+	Observer *Observer `json:"observer,omitempty"`
+
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// ObserverSupported says whether anchor can observe on goos: it captures on Linux, macOS
+// and Windows, and the BSDs give it nothing to capture with.
+func ObserverSupported(goos string) error {
+	switch goos {
+	case "freebsd", "openbsd":
+		return fmt.Errorf("%s has no capture for anchord to observe with: the observer runs on Linux, macOS and Windows", goos)
+	}
+
+	return nil
+}
+
+// Anchor says whether this machine runs an anchor: in either of its shapes, and not when
+// it only observes.
+func (c *Config) Anchor() bool { return c.Mode != ModeObserve }
+
+// Exports says whether the observer's records go to a collector as they are made: an
+// export that is on and carries the flows signal. Otherwise they stay in the daemon's
+// inventory, which `anchorctl inventory` reads.
+func (c *Config) Exports() bool {
+	return c.Export != nil && c.Export.Enabled && c.Export.Flows
 }
 
 // OverlayIPv4 is the configured IPv4, or "" when there is none.
@@ -234,8 +287,25 @@ func (c *Config) Validate() error {
 
 	case ModeProxy:
 
+	case ModeObserve:
+		if c.Observer == nil {
+			return fmt.Errorf("mode is %q and no observer is set: observing with no anchor needs the observer", c.Mode)
+		}
+
+		if len(c.Proxies) > 0 {
+			return fmt.Errorf(
+				"mode is %q and %d proxy spec(s) are set: a reverse proxy is an anchor's, and this mode runs none",
+				c.Mode, len(c.Proxies))
+		}
+
 	default:
-		return fmt.Errorf("mode is %q, want %q or %q", c.Mode, ModeTUN, ModeProxy)
+		return fmt.Errorf("mode is %q, want %q, %q or %q", c.Mode, ModeTUN, ModeProxy, ModeObserve)
+	}
+
+	if c.Observer != nil {
+		if err := ObserverSupported(runtime.GOOS); err != nil {
+			return err
+		}
 	}
 
 	// anchor's rule: an exit sends the internet out of this host, and UseExit sends this

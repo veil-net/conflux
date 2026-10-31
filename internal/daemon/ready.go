@@ -21,8 +21,9 @@ import (
 // ask. It is advisory throughout -- every reader falls back to the status call it replaced
 // -- so a marker that is missing, stale or unreadable costs a second and never a start.
 
-// MarkReady records that an anchor is up. The AnchorID goes in so a marker that is read by
-// a human says which anchor it was about, and so a future reader can tell two apart.
+// MarkReady records that what the configuration runs is up: the anchor, by its AnchorID, or
+// "observer" for a machine that only observes. What goes in says to a human what the marker
+// was about, and lets a future reader tell two apart.
 func MarkReady(d paths.Dirs, anchorID string) error {
 	line := time.Now().UTC().Format(time.RFC3339Nano) + " " + anchorID + "\n"
 

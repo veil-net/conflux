@@ -1,8 +1,10 @@
-# The two modes
+# The three modes
 
 conflux runs an anchor one of two ways, and they are mutually exclusive. Not by
 conflux's choice — anchor refuses a configuration that asks for both, before anything
-starts.
+starts. The third mode runs no anchor at all: the daemon's observer alone, which
+inventories the cryptography of the host's traffic and joins no realm
+([Observing](#observing--conflux-observe)). The observer also runs beside either anchor.
 
 This page is about what the machine gets out of the realm. What the anchor reaches
 the realm *over* is a separate question with its own page — the host's IP network by
@@ -80,6 +82,26 @@ $ sudo conflux proxy --subnet 192.168.1.0/24 --serve-exit
 An IPv4 works in both modes. Here the anchor's own stack holds it, so a peer reaches
 the published ports at it as well as at the overlay IPv6 address.
 
+## Observing — `conflux observe`
+
+The daemon runs its observer and nothing else. The host copies the start of every flow
+its interfaces carry to `anchord`, which reads each handshake and records whether its key
+exchange was post-quantum, hybrid, classical or none, and which side held it back — each
+record sent to a collector as it is made where an export is configured, and kept in the
+daemon's inventory either way. Nothing is enrolled, no credential is needed, and there is no
+realm to find, so the anchor's settings — the taints, the IPv4, the subnets and exits, the
+uplink, the peers and the port — are kept, unused, for the next `up` or `proxy`.
+
+```console
+$ sudo conflux observe
+$ sudo conflux up --observe              # beside an anchor with an interface
+$ sudo conflux proxy 8080=127.0.0.1:3000 --observe
+```
+
+What `anchord` is given is the capture and nothing else: `CAP_NET_RAW` on Linux, read
+access to `/dev/bpf*` on macOS, `LOCAL SERVICE` on Windows. FreeBSD and OpenBSD have no
+capture, and refuse. [observe.md](observe.md) has the rest.
+
 ## Why they cannot be combined
 
 A rule of anchor's, and a fact about it:
@@ -117,7 +139,7 @@ from the manifest. A machine configured once and later moved onto a link keeps s
 
 ## Switching
 
-Running one replaces the other, and conflux says so:
+Running one replaces another, and conflux says so:
 
 ```console
 $ sudo conflux proxy 8080=127.0.0.1:3000
@@ -132,6 +154,11 @@ Everything else is kept — the subnets and exits, which either mode routes, and
 the taints, which are the credential's, the uplink, the peers, the port and low latency.
 `--no-subnet`, `--no-serve-exit` and `--no-use-exit` are the way back from routing on
 either verb.
+
+Switching an anchor to `conflux observe` stops it, and the machine leaves its realm, so it is
+asked first at a terminal and refused off one without `--yes`. It clears the proxy specs,
+as `up` does, and keeps everything else, the identity included. Back again, `up` or `proxy`
+starts an anchor beside the observer, which stays on until `--no-observe`.
 
 ## Proxy specs
 

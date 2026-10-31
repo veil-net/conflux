@@ -78,16 +78,24 @@ func runRenew(ctx context.Context, args []string) int {
 // renewNow is the body, split out so the test can drive it against a temporary
 // CONFLUX_DIR without going through privcheck.
 func renewNow(ctx context.Context, d paths.Dirs) int {
-	if _, err := config.Load(d); err != nil {
+	cfg, err := config.Load(d)
+	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			ui.Errf("this machine has never been configured, so there is no credential to renew.\n\n" +
-				"  conflux up                          join with a network interface\n" +
-				"  conflux proxy 8080=127.0.0.1:3000   publish a port, no interface needed")
+			ui.Errf("this machine has never been configured, so there is no credential to renew.\n\n" + configureHint)
 
 			return ExitUnavailable
 		}
 
 		return fail(err)
+	}
+
+	// Unavailable, like a machine with nothing enrolled: observing runs no anchor and needs
+	// no credential, and one this machine holds is renewed by the next anchor it runs.
+	if !cfg.Anchor() {
+		ui.Errf("this machine only observes, which needs no credential, so there is nothing to renew.\n" +
+			"  The next conflux up or proxy renews the one it holds, if it is due.")
+
+		return ExitUnavailable
 	}
 
 	if !config.HasManifest(d) {

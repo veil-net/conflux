@@ -7,7 +7,7 @@ $ make build
   50.1 MB  bin/conflux
 ```
 
-Go 1.27.2 or newer, and nothing else. The only dependency is `golang.org/x/sys`.
+Go 1.27.3 or newer, and nothing else. The only dependency is `golang.org/x/sys`.
 
 `make anchor-bins` is the one step a fresh clone needs and does not get for free. It
 looks in `../anchor` by default. Without it, `//go:embed` has nothing to embed and the
@@ -98,15 +98,25 @@ first failure stops the rest. A fresh fetch then waits for the slowest file rath
 for all fourteen in turn — about six seconds rather than forty — and the `ok` lines
 arrive in the order the files finish.
 
-The tag is fixed and moves: `latest` always names anchor's newest release build, which is
-the intent — conflux ships the newest anchor, not a remembered one. anchor releases every
-build twice, with the same assets: at `latest`, and at a dated tag, `YYYYMMDD-HHMMSS`, which
-stays, and whose notes say what changed since the build before. `ANCHOR_TAG=<dated tag>`
-fetches one of those instead.
+The tag moves: `latest` always names anchor's newest release build, which is the intent —
+conflux ships the newest anchor, not a remembered one. anchor releases every build of its
+`main` twice, with the same assets: at `latest`, and at a dated tag, `YYYYMMDD-HHMMSS`, which
+stays, and whose notes say what changed since the build before. Every build of its `dev` is
+the pre-release `dev-latest`, which the next replaces. `ANCHOR_TAG=` fetches another:
+
+```console
+$ make anchor-bins FETCH=1 ANCHOR_TAG=dev-latest      # anchor's dev build, as conflux's dev embeds
+$ make anchor-bins FETCH=1 ANCHOR_TAG=20261019-023301 # one dated release
+```
+
+Which one CI and a release use follows the branch: conflux's `version3`, and a pull request into
+it, embed anchor's `latest`; conflux's `dev`, and every pull request into it, embed anchor's
+`dev-latest`, so the two dev branches are built and tested together
+([testing.md](testing.md#branches)).
 
 `ANCHOR_REPO=`, `ANCHOR_TAG=` and `ANCHOR_API=` point it elsewhere. The fetcher is
 `cmd/anchor-fetch` over `internal/anchorrelease` — Go rather than curl and a JSON parser, because
-the promise at the top of this page is "Go 1.27.2 or newer, and nothing else", and a fresh
+the promise at the top of this page is "Go 1.27.3 or newer, and nothing else", and a fresh
 clone should not have to acquire anything else to become buildable.
 
 #### The token
@@ -309,7 +319,8 @@ a claim about the tree — and it is the tree that gets built. It names the rele
 not decide whether one happens. `release.yml` runs on every push to `version3`, a merge
 included, and **every push builds and publishes twice**, with the same artifacts and the
 same notes: at the tag this file names, verbatim, and at `latest`, which moves to every newer
-build and is the repository's Latest release.
+build and is the repository's Latest release. A push to `dev` publishes neither: it builds the
+pre-release `dev-latest`, whose title names this file's version beside the commit.
 
 **Each maintenance pass moves the version on.** A major new feature from anchor, which the
 pass finds when it diffs anchor's surface against what conflux uses, makes a new major:

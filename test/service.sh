@@ -6,7 +6,8 @@
 # uninstall leaves nothing behind. Nothing enrols -- the configuration names an API that
 # answers nothing, so anchord stays up while the enrolment waits -- so this runs without
 # touching the API, which is what makes it the cheap one to run when the question is only
-# about the unit and what it starts.
+# about the unit and what it starts. The observer needs no API at all: it is run alone, its
+# records read back from the inventory and from a collector, and beside each anchor.
 #
 # The hosts it needs are made inside the container, so every branch is taken on every
 # runner: /dev/net/tun opened up or kept root's, and firewalld and iptables stood in for by
@@ -18,6 +19,10 @@ set -euo pipefail
 
 IMAGE=${IMAGE:-conflux-systemd-test}
 NAME=${NAME:-cfx}
+OTEL=${OTEL:-$NAME-otel}
+
+# The collector the observer's records are exported to: anchor's own suite runs this one.
+OTEL_IMAGE=${OTEL_IMAGE:-otel/opentelemetry-collector:0.162.0}
 
 say() { printf '\n== %s\n' "$*"; }
 
@@ -25,8 +30,9 @@ say() { printf '\n== %s\n' "$*"; }
 # the runner's SIGTERM ends bash without it, and SIGKILL is not catchable at all --
 # and on a machine that is not thrown away afterwards that leaves a name the next run
 # collides with, for a reason that has nothing to do with the commit under test.
-docker rm -f "$NAME" >/dev/null 2>&1 || true
-trap 'docker rm -f "$NAME" >/dev/null 2>&1 || true' EXIT
+docker rm -f "$NAME" "$OTEL" >/dev/null 2>&1 || true
+otelconf=$(mktemp)
+trap 'docker rm -f "$NAME" "$OTEL" >/dev/null 2>&1 || true; rm -f "$otelconf"' EXIT
 
 say "a container that boots systemd"
 docker run -d --name "$NAME" --privileged --cgroupns=host \
@@ -96,8 +102,8 @@ SH
 # configure writes a configuration conflux could have written, in MODE, with any more
 # fields after it, pointed at that API.
 configure() { # MODE [FIELDS]
-  local extra='"proxies":["8080=127.0.0.1:3000"],'
-  [ "$1" = tun ] && extra=''
+  local extra=''
+  [ "$1" = proxy ] && extra='"proxies":["8080=127.0.0.1:3000"],'
   docker exec -i "$NAME" sh -c "umask 077; cat > /etc/conflux/conflux.json" <<JSON
 {"version":1,"mode":"$1",$extra${2:+$2,}"taints":["cfx-service-test"],"apiBaseUrl":"https://127.0.0.1:9443","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}
 JSON
@@ -267,6 +273,89 @@ configure proxy
 start
 expect "userspace again" "uid=$uid caps=$(caps "$bufcap") nnp=1 groups=" "$bufrow"
 check_mode /var/lib/conflux/anchor/carried "600 conflux conflux"
+
+# The observer, alone: no anchor, so nothing enrols, and anchord is given the capture and
+# nothing else -- CAP_NET_RAW, under no_new_privs, and no buffer capability, since no socket
+# is bound.
+say "observing alone, anchord has CAP_NET_RAW and nothing else, and enrols nothing"
+configure observe '"observer":{}'
+start
+expect "observing" "uid=$uid caps=$(caps 0x2000) nnp=1 groups=" "CAP_NET_RAW to copy what the host's interfaces carry"
+
+# observing waits until status shows the observer capturing.
+observing() {
+  for _ in $(seq 100); do
+    docker exec "$NAME" conflux status 2>/dev/null | grep -q '^  observer *af_packet' && return 0
+    sleep 0.2
+  done
+  echo "the observer is not capturing:" >&2
+  docker exec "$NAME" conflux status >&2 || true
+  journal
+  exit 1
+}
+
+# traffic makes a TLS connection out of the container and ends it: conflux asking GitHub for
+# its latest release, which is one HTTPS exchange and then the process is gone.
+traffic() { docker exec "$NAME" sh -c 'conflux update --check >/dev/null 2>&1 || true'; }
+
+observing
+traffic
+for _ in $(seq 60); do
+  docker exec "$NAME" conflux inventory 2>/dev/null | grep -q ' 443/tcp ' && break
+  sleep 2
+done
+docker exec "$NAME" conflux inventory | grep ' 443/tcp ' \
+  || { echo "the inventory holds no connection to port 443:" >&2
+       docker exec "$NAME" conflux inventory >&2 || true; journal; exit 1; }
+docker exec "$NAME" conflux status | grep -q '^  records *kept here' \
+  || { echo "status does not say the records are kept here" >&2; exit 1; }
+docker exec "$NAME" test ! -e /var/lib/conflux/manifest.b64 \
+  || { echo "observing alone enrolled" >&2; exit 1; }
+
+# Each record leaves as it is made, with no anchor: a collector that logs every record it is
+# sent, in detail, is the dashboard's side of it.
+say "observing alone, each record reaches the collector the export names"
+cat > "$otelconf" <<'YAML'
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+exporters:
+  debug:
+    verbosity: detailed
+service:
+  pipelines:
+    logs: {receivers: [otlp], exporters: [debug]}
+YAML
+chmod 644 "$otelconf"
+docker run -d --name "$OTEL" -v "$otelconf:/etc/otel.yaml:ro" "$OTEL_IMAGE" --config /etc/otel.yaml >/dev/null
+collector=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$OTEL")
+[ -n "$collector" ] || { echo "the collector has no address" >&2; docker logs "$OTEL" >&2; exit 1; }
+configure observe "\"observer\":{},\"export\":{\"enabled\":true,\"endpoint\":\"$collector:4317\",\"insecure\":true,\"flows\":true}"
+start
+expect "observing, exporting" "uid=$uid caps=$(caps 0x2000) nnp=1 groups=" "CAP_NET_RAW to copy what the host's interfaces carry"
+observing
+traffic
+for _ in $(seq 60); do
+  docker logs "$OTEL" 2>&1 | grep -q 'anchor.observed_flow.key_exchange' && break
+  sleep 2
+done
+docker logs "$OTEL" 2>&1 | grep -q 'anchor.observed_flow.key_exchange' \
+  || { echo "no anchor.observed_flow record reached the collector:" >&2
+       docker logs "$OTEL" 2>&1 | tail -20 >&2; journal; exit 1; }
+docker rm -f "$OTEL" >/dev/null
+
+# Beside an anchor, the capture is added to what the anchor's mode is given.
+say "the observer beside an anchor adds CAP_NET_RAW to what its mode has"
+configure proxy '"observer":{}'
+start
+expect "userspace and observing" "uid=$uid caps=$(caps "0x2000|$bufcap") nnp=1 groups=" "CAP_NET_RAW to copy"
+observing
+configure tun '"observer":{}'
+start
+expect "tun and observing" "uid=$uid caps=$(caps 0x3000) nnp=0 groups=" "CAP_NET_RAW to copy"
+observing
 
 # An upgraded conflux brings its own unit, and start is how an upgrade reaches the
 # service: a 1.0.0 unit, with its capability line, is replaced.

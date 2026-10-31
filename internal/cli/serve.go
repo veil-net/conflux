@@ -78,9 +78,7 @@ func supervisorExit(err error) int {
 		// RestartPreventExitStatus, so a registered service on a machine with no
 		// configuration stops here instead of restarting every five seconds until
 		// somebody notices the journal.
-		ui.Errf("there is no configuration to start.\n" +
-			"  conflux up      join with a network interface\n" +
-			"  conflux proxy   publish a port, no interface needed")
+		ui.Errf("there is no configuration to start.\n" + configureHint)
 
 		return ExitNoConfig
 	case daemon.Permanent(err):

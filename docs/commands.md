@@ -5,12 +5,12 @@ to the embedded `anchorctl` unchanged — not parsed, not rewritten, not validat
 
 ## The split
 
-conflux's: `up`, `proxy`, `enrol`, `start`, `down`, `install`, `uninstall`, `renew`,
-`status`, `version`, `update`, `help`, plus `anchorctl` as an escape hatch and a hidden `serve`
-the boot service runs.
+conflux's: `up`, `proxy`, `observe`, `enrol`, `start`, `down`, `install`, `uninstall`,
+`renew`, `status`, `version`, `update`, `help`, plus `anchorctl` as an escape hatch and a
+hidden `serve` the boot service runs.
 
 anchorctl's, reached by typing them: `peers`, `route`, `routes`, `connect`, `punch`,
-`events`, `metrics`, `export`, `telemetry`, `block`, `unblock`, `blocks`, `taints`,
+`events`, `metrics`, `export`, `inventory`, `telemetry`, `block`, `unblock`, `blocks`, `taints`,
 `subnets`, `send`, `subscribe`, `keygen`, `issue`, `delegate`, `renew-link`,
 `install-link`, `id`, `inspect`, `config`, `mint-realm`, `mint-anchor`. The two `mint-*`
 verbs exist only in the lockdown build, which is the one conflux embeds; `root`, which
@@ -58,14 +58,14 @@ shows the credential's taints, since anchor reports no live set locally. A Subne
 order's list is served in place of `conflux.json`'s until `up` or `proxy` sets the list
 again; see [modes.md](modes.md#the-last-set-wins).
 
-### The four collisions
+### The five collisions
 
-`start`, `proxy`, `renew` and `status` exist on both sides. Each is resolved
+`start`, `proxy`, `renew`, `status` and `observe` exist on both sides. Each is resolved
 explicitly. `TestTheCollisionsAreTheDocumentedOnes` reads the set off the embedded
 binary, so a future anchor adding a colliding name fails CI here rather than shadowing
 something silently.
 
-**`help`** is conflux's, always, and is not counted among the four: anchorctl's `help`
+**`help`** is conflux's, always, and is not counted among the five: anchorctl's `help`
 only prints its usage, and conflux's prints that same usage in full, so owning the word
 loses nothing. Bare, it prints conflux's usage and then anchorctl's whole usage beneath
 a rule, so one page covers both surfaces. `conflux help COMMAND` prints that command's
@@ -95,6 +95,16 @@ it starts the anchor this machine is already configured for. anchorctl's builds 
 from arguments the caller supplies. So any flag reaching `conflux start` other than
 `-h` names anchorctl's, and is answered with the escape hatch rather than guessed at.
 
+**`observe`** is resolved by shape, like `proxy`. conflux's takes its own flags and no
+argument, and decides what this machine runs from every boot: the observer, and no anchor.
+anchorctl's reports on the observer of the running daemon, and starts or stops it until the
+daemon next starts. Any other flag reaching `conflux observe` names anchorctl's: `-start` and
+`-stop` are answered with conflux's way to say each — `conflux observe`, `conflux down`,
+`--observe` and `--no-observe` — and with the escape hatch, and the rest with the escape hatch
+alone. Bare, it is conflux's, and since anchorctl's bare form only reports, a bare one on a
+machine running an anchor asks before it stops it (`conflux observe`, above). `inventory` is
+anchorctl's alone and passes straight through.
+
 **`stop` and `restart`** are anchorctl's and conflux refuses to pass them through.
 Running them directly would stop an anchor conflux believes is running, or build one
 its configuration does not describe, and the next reboot would silently disagree. The
@@ -107,6 +117,8 @@ conflux up [--taint T]... [--ipv4 ADDRESS | --no-ipv4] [--subnet CIDR... | --no-
            [--uplink DEV | --no-uplink] [--peers HOST:PORT]... [--no-peers] [--api URL]
            [--port N | --no-port] [--low-latency | --no-low-latency] [--lan-discovery yes|no|auto]
            [--serve-exit | --no-serve-exit] [--use-exit | --no-use-exit]
+           [--observe | --no-observe] [--observe-loopback] [--observe-hide-names]
+           [--export HOST:PORT [--export-insecure]]
 ```
 
 Enrols this machine if it has never been, starts an anchor in TUN mode, writes the
@@ -133,6 +145,11 @@ configuration, and registers the boot service.
 | `--serve-exit` | offer this machine as a way out to the public internet. |
 | `--use-exit` | send this machine's own internet traffic over the overlay. |
 | `--no-serve-exit`, `--no-use-exit` | the way back from either. |
+| `--observe` | run the observer beside the anchor: an inventory of the cryptography of this host's traffic. See [observe.md](observe.md#beside-an-anchor). Naming it, or either option below, says what the observer is now, and an option not given is off; naming none keeps what is configured. |
+| `--observe-loopback`, `--observe-hide-names` | observe the loopback interfaces too; leave the names flows were reached by out of the records. Each implies `--observe`. |
+| `--no-observe` | stop observing. |
+| `--export HOST:PORT` | send telemetry, and each record the observer makes, to the OTLP/gRPC collector there: the export on, that endpoint, `flows` and `metrics` on, and everything else `conflux.json`'s `export` block says kept — headers and TLS above all, which no command line takes. See [config.md](config.md#export--where-telemetry-goes). |
+| `--export-insecure` | reach that collector without TLS. |
 
 An anchor listens on **every** interface, so `--port` is a port and not an address:
 the host's addresses change underneath it, and pinning one is a promise the host
@@ -179,11 +196,13 @@ conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T]... [--ipv4 ADDRESS | --no-i
               [--subnet CIDR... | --no-subnet] [--serve-exit | --no-serve-exit] [--use-exit | --no-use-exit]
               [--uplink DEV | --no-uplink] [--peers HOST:PORT]... [--no-peers] [--api URL]
               [--port N | --no-port] [--low-latency | --no-low-latency] [--lan-discovery yes|no|auto]
+              [--observe | --no-observe] [--observe-loopback] [--observe-hide-names]
+              [--export HOST:PORT [--export-insecure]]
 ```
 
 Starts in userspace mode serving those backends. Same taint, IPv4, subnet, exit,
-uplink, peers, API, `--port`, `--low-latency` and `--lan-discovery` flags as `up`, and
-the IPv4 is asked the same once. Specs and flags may be written in either order.
+uplink, peers, API, `--port`, `--low-latency`, `--lan-discovery`, observer and export
+flags as `up`, and the IPv4 is asked the same once. Specs and flags may be written in either order.
 
 With an IPv4 the anchor's own stack holds it, so a peer reaches these ports at it as
 well as at the IPv6 address.
@@ -200,6 +219,41 @@ overlay port is refused rather than silently keeping the last. See [modes.md](mo
 `conflux anchorctl proxy` for adding and removing them on an anchor already running.
 
 Needs root, only to register the boot service.
+
+## `conflux observe`
+
+```
+conflux observe [--loopback] [--hide-names] [--export HOST:PORT [--export-insecure]] [--yes]
+```
+
+Runs the daemon's observer and no anchor, writes the configuration, and registers the boot
+service: from now and from every boot, until it is stopped. The host copies the start of every
+flow to the daemon, which records each flow's cryptography; nothing is enrolled, no credential
+is needed, and no realm is joined. See [observe.md](observe.md).
+
+| Flag | Meaning |
+|---|---|
+| `--loopback` | observe the loopback interfaces too. Windows' capture never sees them. |
+| `--hide-names` | leave every name a flow was reached by out of the records and the inventory, the server's address in its place. |
+| `--export HOST:PORT` | send each record, as it is made, and the daemon's telemetry to that collector, as on `up`. Without an export with `flows`, the records stay in the daemon's inventory, and conflux says so. |
+| `--export-insecure` | reach it without TLS. |
+| `--yes` | stop the anchor this machine runs without asking. |
+
+The options say what the observer is now, as anchorctl's `observe -start` does: one not given
+is off.
+
+On a machine that runs an anchor, this stops it and the machine leaves its realm, with its
+identity and every setting kept for the next `up` or `proxy` — the proxy specs aside, which it
+clears as `up` does. So it asks first at a terminal, and off one is refused without `--yes`:
+anchorctl's bare `observe` only reports, and a script that meant that one must not stop an
+anchor. `conflux up --observe` observes beside the anchor instead.
+
+FreeBSD and OpenBSD have no capture, and are refused with exit 2 before anything is asked or
+written.
+
+Needs root, only to register the boot service. What the observer has seen is anchorctl's
+`inventory`, which passes straight through: `conflux inventory`, or `conflux inventory -cbom` for a
+CycloneDX CBOM.
 
 ## `conflux start`
 
@@ -222,8 +276,8 @@ retyping eight specs correctly from memory.
 
 | Situation | |
 |---|---|
-| not installed | exit 69, naming `install`, `up` and `proxy` — there is no service to start |
-| installed, no configuration | exit 78, naming `up` and `proxy` — there is nothing to start |
+| not installed | exit 69, naming `install`, `up`, `proxy` and `observe` — there is no service to start |
+| installed, no configuration | exit 78, naming `up`, `proxy` and `observe` — there is nothing to start |
 | already running | restarts it. A `start` that refused would be answering a question nobody asked |
 
 Needs root.
@@ -351,7 +405,9 @@ not part of normal operation. It is for the machine whose renewals have been fai
 restarting the service and paying every session for a swap that needs none of them.
 
 It does not enrol. A machine with no manifest has nothing to renew, and drawing an
-identity here would replace the one a reboot expects; it says so and exits 69. It also
+identity here would replace the one a reboot expects; it says so and exits 69. So does a
+machine that only observes, which needs no credential: the next `up` or `proxy` renews the one
+it holds, if it is due. It also
 exits 69 when nothing is running, because a credential is installed *into* a running
 anchor, and a machine that is meant to be down renews on its next start anyway. And it
 exits 69 on a [fixed-term credential](credentials.md#a-credential-that-does-not-renew),
@@ -375,8 +431,16 @@ what — and then `anchorctl status` beneath it. Exits 78 when the machine has n
 configuration.
 
 The `anchord` line says what it keeps and why: `conflux, with no privilege` in userspace,
-`conflux, with CAP_NET_ADMIN for its interface` for a TUN on Linux, or root and the reason
-the host needs it. See [security.md](security.md#what-anchord-runs-as).
+`conflux, with CAP_NET_ADMIN for its interface` for a TUN on Linux, `conflux, with CAP_NET_RAW
+to copy what the host's interfaces carry, for the observer` observing on Linux, or root and the
+reason the host needs it. See [security.md](security.md#what-anchord-runs-as).
+
+Where the observer runs, an `observer` line is its row from `anchorctl status` — `af_packet, 12
+flows held, 3480 packets taken`, or `not observing` and why a capture that was running ended —
+with its options, and a `records` line says where its records go: to the collector the export
+names, as each is made, or nowhere but the daemon's inventory. Observing alone, the mode line
+says so, and the anchor's taint, address and credential lines are left out: they describe
+nothing that runs, and the identity is said to be kept.
 
 The `taint` line is the set `conflux.json` names, which after enrolment mirrors the one
 the credential grants — `none: the realm's default compartment` for an issued
@@ -418,7 +482,9 @@ conflux update --check
 Replaces this conflux with the one the `latest` release of
 [veil-net/conflux](https://github.com/veil-net/conflux/releases/latest) holds for this
 platform, and moves the boot service onto it. Only when typed: nothing checks on a
-schedule, so a machine changes version when somebody decides it should.
+schedule, so a machine changes version when somebody decides it should. It reads `latest`
+alone, so a dev build installed from `dev-latest` updates to the release, never to a newer dev
+build: that is the install script's to fetch again, by name ([install.md](install.md)).
 
 "Up to date" is a digest rather than a version string. This file is the release's
 binary, byte for byte, or it is not, so a rebuild of the same version (which a merge

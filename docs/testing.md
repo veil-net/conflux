@@ -20,14 +20,14 @@ a daemon or a network. Most of conflux can be.
 | Package | What is asserted |
 |---|---|
 | `anchor` | the embedded binaries are real executables of the right architecture; `SetID` is the same function of the two digests whether stamped or computed, and a malformed stamp is computed instead |
-| `internal/config` | JSON round-trips, the tuning fields included; the mode rules match anchor's — a proxy needs userspace, a subnet, an exit and an IPv4 work in either mode, the two exits are alternatives, a port is refused beside an uplink, an empty taint set is accepted; proxy specs, IPv4 addresses, subnets — `*`, bindings to the machine's own taints and anchor's limits on a list included — AnchorIDs and taint names parse and refuse exactly as anchor does, and bootstrap entries by anchor's grammar (anchor skips a bad one with a warning, conflux refuses it), with conflux's own refusals of a comma in a list entry and of a descriptor uplink; the export block is read as protojson reads it and refuses what anchord refuses at startup; atomic writes leave old-or-new and never a truncated file, and narrow a file that was `0644` |
+| `internal/config` | JSON round-trips, the tuning fields included; the mode rules match anchor's — a proxy needs userspace, a subnet, an exit and an IPv4 work in either mode, the two exits are alternatives, observing needs the observer and serves no proxy, the observer is refused where anchor has no capture, a port is refused beside an uplink, an empty taint set is accepted; proxy specs, IPv4 addresses, subnets — `*`, bindings to the machine's own taints and anchor's limits on a list included — AnchorIDs and taint names parse and refuse exactly as anchor does, and bootstrap entries by anchor's grammar (anchor skips a bad one with a warning, conflux refuses it), with conflux's own refusals of a comma in a list entry and of a descriptor uplink; the export block is read as protojson reads it and refuses what anchord refuses at startup; atomic writes leave old-or-new and never a truncated file, and narrow a file that was `0644` |
 | `internal/enrol` | the manifest decodes exactly as anchorctl reads it, refuses a realm manifest and a future format version, and **survives a renewal losslessly**; which documents are alpha's, and the taints check every start holds a machine to, with a way out that fits who issued the credential |
 | `internal/enrol` (client) | against `httptest`: the alpha exchange byte for byte, taints in the enrolment's body and restated in the renewal's, none refused before anything is sent; the guardian bearer, 4xx and 5xx, an oversized body, a cross-host renewal URL and a downgrading redirect, a plain-http base, cancellation, and clock skew; a renewal's bootstrap list taken only when anchor would dial all of it; and that an enrolment is handed back as it arrived, to be written before it is read |
 | `internal/taint` | generated names — 26 symbols, a little over 128 bits — satisfy anchor's rule, avoid ambiguous glyphs, are grouped for reading, and do not repeat |
-| `internal/daemon` | the renewal arithmetic: two thirds of the *observed* window, expiry, absent timestamps, and the clamp; a renewal against a stand-in issuer, restating the manifest's taints whatever `conflux.json` says, spliced into the manifest with the issuer's bootstrap list and mirrored into the state, and a failed one recorded; an enrolment asking for the configured taints, never for none, and kept before it is read even when it grants others; a machine whose credential grants other taints, or an alpha one granting none, refused for good with no call, and an issued one granting none started; a bad clock measured again rather than trusted; anchord's last words kept when it dies, in order; shutdown returning once anchord has gone, and closing a running one with its signal alone; the anchord a dead supervisor left recorded, stopped by the next one only when it runs the recorded executable or, with none reported, holds the socket's lock, a record of one that has gone cleared, and a second supervisor for one root refused; on Windows, anchord ended with its job; a conflux.json read one way by every reader -- none is nothing to start, unparsable is permanent, unreadable is retried; an uplink reopen counted in the bring-up's own state write; the link watcher's device parsing, its grace against anchor's own dial timeout, and its giving up after three rebuilds refused for good; and which failures stop the supervisor rather than being retried |
-| `internal/anchorctl` | the argv goldens, that every flag they use exists, and the output parsers against anchor's current `start`, `status` and `metrics` shapes |
+| `internal/daemon` | the renewal arithmetic: two thirds of the *observed* window, expiry, absent timestamps, and the clamp; a renewal against a stand-in issuer, restating the manifest's taints whatever `conflux.json` says, spliced into the manifest with the issuer's bootstrap list and mirrored into the state, and a failed one recorded; an enrolment asking for the configured taints, never for none, and kept before it is read even when it grants others; a machine whose credential grants other taints, or an alpha one granting none, refused for good with no call, and an issued one granting none started; a bad clock measured again rather than trusted; anchord's last words kept when it dies, in order; shutdown returning once anchord has gone, and closing a running one with its signal alone; the anchord a dead supervisor left recorded, stopped by the next one only when it runs the recorded executable or, with none reported, holds the socket's lock, a record of one that has gone cleared, and a second supervisor for one root refused; on Windows, anchord ended with its job; a conflux.json read one way by every reader -- none is nothing to start, unparsable is permanent, unreadable is retried; an uplink reopen counted in the bring-up's own state write; the link watcher's device parsing, its grace against anchor's own dial timeout, and its giving up after three rebuilds refused for good; observing alone, a cycle that starts the observer and no anchor and never enrols, and one the host refuses to capture for ending for good; beside an anchor, an observer started first and kept when the anchor cannot come up; the watcher starting an observer whose capture ended again, leaving one stopped by hand alone, and giving up on one the host refuses; `-allow-observer` passed only where the configuration observes; what anchord is given to observe on each platform, and the anchor's kept settings granting nothing while it only observes; and which failures stop the supervisor rather than being retried |
+| `internal/anchorctl` | the argv goldens, the observer's starts among them, that every flag they use exists, and the output parsers against anchor's current `start`, `status` and `metrics` shapes, the `observer` row with an anchor and with none, as a live anchord printed it |
 | `internal/libexec` | extraction, idempotence, eight concurrent callers, repair of a truncated set, and a sweep that leaves alone any set that may be in use |
-| `internal/cli` | a pass-through with nothing running makes nothing — no directory, no extraction; `help` a command only first and a flag only as a flag; `renew` with no credential unavailable; a refusal for privilege repeating the command, with the privilege check stubbed so a root runner tests it too; an oversized manifest refused; on Windows, only the supervisor's transient exit asking the SCM for a restart, and `Stopped` reported once; the collision rules — `start`, `renew` and `proxy` by shape, `status` by arity — and that nothing shadows anchorctl unintentionally, the realm-control commands included; the IPv4 asked once; `--taint` as the enrolment's request before a credential is held, and checked against it after; `enrol` taking the credential's taints, refusing an alpha one granting none, and refusing before it writes; a subnet list set from the terminal replacing a member's order |
+| `internal/cli` | a pass-through with nothing running makes nothing — no directory, no extraction; `help` a command only first and a flag only as a flag; `renew` with no credential unavailable; a refusal for privilege repeating the command, with the privilege check stubbed so a root runner tests it too; an oversized manifest refused; on Windows, only the supervisor's transient exit asking the SCM for a restart, and `Stopped` reported once; the collision rules — `start`, `renew`, `proxy` and `observe` by shape, `status` by arity — and that nothing shadows anchorctl unintentionally, the realm-control commands included; the IPv4 asked once; `--taint` as the enrolment's request before a credential is held, and checked against it after; `enrol` taking the credential's taints, refusing an alpha one granting none, and refusing before it writes; a subnet list set from the terminal replacing a member's order; the observer kept, replaced or turned off by `up`'s and `proxy`'s flags, an option implying `--observe`; `--export` pointing the collector and keeping the headers and TLS `conflux.json` holds; where the observer's records go said either way; and switching an anchor to observing refused off a terminal without `--yes` |
 | `internal/service` | the systemd unit, its `ExecStart=` quoted against splitting and expansion; the launchd plist carrying any path; the rc scripts the BSDs get, rendered and parsed by `sh`, and a root they could not match refused; the copy the service runs; the service's scope, the same for every spelling of a root |
 | `internal/paths` | the root absolute and clean, and a log directory only where the platform has one; on Unix, a root another account owns refused before anything is changed, a symlinked one followed only to its owner's directory, our own narrowed to `0700`, and the shared `/var/log` left alone; on Windows, the root made Administrators', and files restricted to them trusted |
 | `internal/flock` | a held lock reported as held, not waited for |
@@ -235,14 +235,52 @@ so a fork's pull request runs nothing. No checkout leaves its token in `.git/con
 and every action outside this repository is pinned to its release's commit, with the
 tag beside it in a comment.
 
-**The release** runs on every push to `version3`, a merge included, and it only releases:
-it does not re-run any of the above. A merge lands only when CI is green, which rests on
-branch protection on `version3` — require a pull request, require these checks, and
-require the branch to be up to date before merging — and is unsafe without it. It refuses
-to run anywhere but `version3`, fetches anchor's `latest`, runs `make dist`, attests the
-artifacts and writes one set of notes: the changes since the previous version, and what is
-inside. Then it publishes twice, with the same artifacts and notes: at the tag the
-`VERSION` file names, verbatim, and at `latest`, which is the repository's Latest release.
+### Branches
+
+Two long-lived branches, and every change reaches both the same way:
+
+| Branch | Takes | A merge publishes | Embeds anchor's |
+|---|---|---|---|
+| `dev` | a pull request from a feature or maintenance branch cut from `dev` | the pre-release `dev-latest` | `dev-latest` |
+| `version3` | a pull request from `dev`, opened by the owner | the release: `VERSION`'s tag and `latest` | `latest` |
+
+1. Cut a branch from `dev`, do the work, and open its pull request against `dev`
+   (`gh pr create --base dev`: `version3` is the default branch, so the base is always
+   named). CI runs in full on it, against anchor's `dev-latest`.
+2. Merged when it is green, it is published as the pre-release `dev-latest`, which the next
+   merge into `dev` replaces and which nothing reads unless asked for it by name:
+   `CONFLUX_VERSION=dev-latest` for the install scripts ([install.md](install.md)).
+3. When `dev` is to be released, the owner opens a pull request from `dev` into `version3`.
+   CI runs on it in full again, against anchor's `latest`; merged, it is released, and
+   `version3` is merged back into `dev`.
+
+**`dev` stays ahead of `version3`.** Nothing reaches `version3` but `dev`, and after every
+release `release.yml`'s `back-merge` job (`scripts/back-merge.sh`) pushes the release back to
+`dev`: a fast-forward, since the release is a merge whose second parent is `dev`'s tip, or a
+merge where `dev` has taken something since. A release that will not merge cleanly is one that
+holds something pushed to `version3` directly, and the job stops and says so.
+
+**`branch-flow.yml` holds the branches to that** (`scripts/branch-flow.sh`), on every pull
+request and every edit of one — moving a pull request's base fires only `edited`: one into
+`version3` whose head is not this repository's `dev` fails; one into `dev` whose merge does not
+hold `version3`'s tip — a back-merge that did not land — fails; one into any other base fails.
+On a hosted runner, since it reads the repository and holds no secret.
+
+**Branch protection, on `dev` and on `version3` alike:** require a pull request, require CI's
+checks and `branch-flow`, and require the branch to be up to date before merging. And on `dev`,
+let the release workflow push, for the back-merge: GitHub Actions on a ruleset's bypass list.
+Without that the push is refused, the release is out regardless, and `back-merge` fails saying
+what to do: merge `version3` into `dev` by pull request.
+
+**The release** runs on every push to `dev` or `version3`, a merge included, and it only
+releases: it does not re-run any of the above. A merge lands only when CI is green, which rests
+on that branch protection, and is unsafe without it. It refuses to run anywhere but those two,
+fetches anchor's `dev-latest` on `dev` and its `latest` on `version3`, runs `make dist`, attests
+the artifacts and writes one set of notes: the changes since the previous version — on
+`version3` the pull requests `dev` merged, read from the `dev` side of the release's merge — and
+what is inside. On `dev` it publishes the pre-release `dev-latest`, never Latest. On `version3`
+it publishes twice, with the same artifacts and notes: at the tag the `VERSION` file names,
+verbatim, and at `latest`, which is the repository's Latest release; then `back-merge` runs.
 Each is deleted, with its tag, just before it is released again, so a push that leaves
 `VERSION` alone replaces that version's release with one built from the commit that
 landed, tag and all. anchor's `latest` moves, so a release carries whatever anchor

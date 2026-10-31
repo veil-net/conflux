@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"testing"
 
@@ -197,9 +198,25 @@ func fakeCtl(tb testing.TB) *anchorctl.Ctl {
 }
 
 // dirs roots a test's every path in a directory of its own, and makes the roots.
+//
+// Under /tmp on macOS rather than the test's own directory: a Unix socket's path is 104 bytes
+// at most there, and TMPDIR is long enough that a stand-in anchord could not listen on the
+// socket the supervisor probes.
 func dirs(tb testing.TB) paths.Dirs {
 	tb.Helper()
-	tb.Setenv("CONFLUX_DIR", tb.TempDir())
+
+	root := tb.TempDir()
+	if runtime.GOOS == "darwin" {
+		short, err := os.MkdirTemp("/tmp", "cfx")
+		if err != nil {
+			tb.Fatal(err)
+		}
+
+		tb.Cleanup(func() { _ = os.RemoveAll(short) })
+		root = short
+	}
+
+	tb.Setenv("CONFLUX_DIR", root)
 
 	d := paths.Default()
 	if err := d.EnsureAll(); err != nil {

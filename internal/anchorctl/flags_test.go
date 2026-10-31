@@ -10,6 +10,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/anchortest"
+	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
 )
@@ -75,6 +76,8 @@ func TestEveryFlagWeUseExists(t *testing.T) {
 		{"stop", anchorctl.StopArgs()},
 		{"status", anchorctl.StatusArgs()},
 		{"metrics", anchorctl.MetricsArgs()},
+		{"observe", anchorctl.ObserveStartArgs(config.Observer{Loopback: true, HideNames: true})},
+		{"observe-stop", anchorctl.ObserveStopArgs()},
 	} {
 		t.Run(sub.name, func(t *testing.T) {
 			have := supportedFlags(t, tools.Anchorctl, sub.argv[0])

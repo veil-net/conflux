@@ -147,6 +147,26 @@ func (c *Ctl) Stop(ctx context.Context) error {
 	return err
 }
 
+// ObserveStart starts the daemon's observer, or starts it again with o. A host that will
+// not let the daemon capture is refused, with anchorctl's own explanation on stderr.
+func (c *Ctl) ObserveStart(ctx context.Context, o config.Observer) error {
+	_, err := c.run(ctx, nil, ObserveStartArgs(o)...)
+
+	return err
+}
+
+// ObserveStop stops the observer, which records and ends every flow it holds. Not
+// observing is not an error.
+//
+// Worth doing before the daemon is killed rather than signalled: on Windows the capture
+// is a kernel trace session, and one whose process was killed goes on copying every
+// packet until something stops it.
+func (c *Ctl) ObserveStop(ctx context.Context) error {
+	_, err := c.run(ctx, nil, ObserveStopArgs()...)
+
+	return err
+}
+
 // Renew installs a fresh credential on the running anchor, hot: SetRealmCred rather
 // than a restart, so not one session is lost.
 func (c *Ctl) Renew(ctx context.Context, credPath string) error {

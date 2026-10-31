@@ -56,6 +56,7 @@ func runUp(ctx context.Context, args []string) int {
 	fs.Bool("low-latency", false, "carry frames on datagrams: no head-of-line blocking, and a lost frame stays lost")
 	fs.Bool("no-low-latency", false, "go back to carrying frames on streams")
 	registerExits(fs)
+	registerObserver(fs)
 
 	fs.Var(&taints, "taint", taintUsage)
 	fs.Var(&subnets, "subnet", subnetUsage)
@@ -64,12 +65,15 @@ func runUp(ctx context.Context, args []string) int {
 	fs.Usage = func() {
 		ui.Printf("conflux up — join the overlay with a network interface\n\n" +
 			"  conflux up [--taint T] [--ipv4 ADDRESS | --no-ipv4] [--subnet CIDR... | --no-subnet]\n" +
-			"             [--uplink DEV | --no-uplink] [--peers HOST:PORT | --no-peers]\n\n" +
+			"             [--uplink DEV | --no-uplink] [--peers HOST:PORT | --no-peers]\n" +
+			"             [--observe | --no-observe] [--export HOST:PORT]\n\n" +
 			"Enrols this machine if it has never been, starts an anchor in TUN mode, writes\n" +
 			"the configuration, and registers the boot service so a reboot needs nothing.\n\n" +
 			"With --uplink the realm is reached over a link rather than the host's network:\n" +
 			"no socket is bound and no address is advertised. Enrolment still goes over the\n" +
-			"internet, so enrol this machine while it has one.\n\n")
+			"internet, so enrol this machine while it has one.\n\n" +
+			"With --observe the daemon observes beside the anchor: an inventory of the\n" +
+			"cryptography of this host's traffic, which conflux observe -h describes.\n\n")
 		fs.PrintDefaults()
 	}
 
@@ -99,8 +103,14 @@ func runUp(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
+	if err := chooseObserver(cfg, fs); err != nil {
+		return fail(err)
+	}
+
+	sayLeavingObserveMode(cfg)
+
 	// Switching a proxy machine to TUN is a real change of shape, not an edit.
-	if cfg.Mode == config.ModeProxy && len(cfg.Proxies) > 0 {
+	if cfg.Mode != config.ModeTUN && len(cfg.Proxies) > 0 {
 		ui.Errf("this machine was serving %d proxied service(s) in userspace mode.\n"+
 			"  Bringing up a network interface replaces that: one daemon holds one anchor,\n"+
 			"  and an anchor with an interface cannot also serve a reverse proxy.",
@@ -151,6 +161,23 @@ func runUp(ctx context.Context, args []string) int {
 	}
 
 	return bring(ctx, d, cfg, "up", len(subnets) > 0 || *noSubnet)
+}
+
+// sayLeavingObserveMode tells a machine that only observed that it now runs an anchor too,
+// and what became of the observer: it stays on, as every setting a re-run does not name does.
+func sayLeavingObserveMode(cfg *config.Config) {
+	if cfg.Mode != config.ModeObserve {
+		return
+	}
+
+	if cfg.Observer != nil {
+		ui.Errf("this machine only observed. It runs an anchor now, and the observer stays on beside it;\n" +
+			"  --no-observe turns it off.")
+
+		return
+	}
+
+	ui.Errf("this machine only observed. It runs an anchor now, and no longer observes.")
 }
 
 // typedFlags records which flags were actually written, rather than which have a

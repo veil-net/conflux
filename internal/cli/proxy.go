@@ -85,6 +85,12 @@ func runProxy(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
+	if err := chooseObserver(cfg, f.fs); err != nil {
+		return fail(err)
+	}
+
+	sayLeavingObserveMode(cfg)
+
 	if cfg.Mode == config.ModeTUN {
 		ui.Errf("this machine was running in TUN mode with interface %s.\n"+
 			"  Userspace mode replaces that: one daemon holds one anchor, and an anchor with\n"+
@@ -179,6 +185,7 @@ func newProxyFlags() *proxyFlags {
 	fs.Bool("low-latency", false, "carry frames on datagrams: no head-of-line blocking, and a lost frame stays lost")
 	fs.Bool("no-low-latency", false, "go back to carrying frames on streams")
 	registerExits(fs)
+	registerObserver(fs)
 
 	fs.Var(&f.taints, "taint", taintUsage)
 	fs.Var(&f.subnets, "subnet", subnetUsage)
@@ -188,14 +195,17 @@ func newProxyFlags() *proxyFlags {
 		ui.Printf("conflux proxy — publish a local service on the overlay, without an interface\n\n" +
 			"  conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T] [--ipv4 ADDRESS | --no-ipv4]\n" +
 			"                [--subnet CIDR... | --no-subnet] [--serve-exit | --use-exit]\n" +
-			"                [--uplink DEV | --no-uplink] [--peers HOST:PORT | --no-peers]\n\n" +
+			"                [--uplink DEV | --no-uplink] [--peers HOST:PORT | --no-peers]\n" +
+			"                [--observe | --no-observe] [--export HOST:PORT]\n\n" +
 			"Runs the anchor entirely in userspace, so it needs no TUN device and no\n" +
 			"CAP_NET_ADMIN. Nothing on this host can see the overlay: the way in is a\n" +
 			"service named here, and the way out a --subnet or --serve-exit, which the\n" +
 			"anchor forwards from its own process. With one of those, the port specs may\n" +
 			"be left out.\n\n" +
 			"With --uplink the realm is reached over a link rather than the host's network,\n" +
-			"which is the pair a machine with neither privilege nor an IP network needs.\n\n")
+			"which is the pair a machine with neither privilege nor an IP network needs.\n\n" +
+			"With --observe the daemon observes beside the anchor: an inventory of the\n" +
+			"cryptography of this host's traffic, which conflux observe -h describes.\n\n")
 		fs.PrintDefaults()
 	}
 

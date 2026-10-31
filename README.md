@@ -9,6 +9,10 @@ Everything `anchorctl` can do, conflux can do too — any command conflux doesn'
 recognise is passed straight through to it unchanged. What conflux adds on top is
 enrolment, credential renewal, a configuration file, and a boot service.
 
+It can also join nothing at all: `conflux observe` runs the daemon's observer alone, an
+inventory of which services this host's traffic reaches and whether each key exchange is
+post-quantum, from every boot, with no enrolment and no credential.
+
 It also runs against a **self-hosted guardian**: an operator running their own control
 plane and their own subtree of the realm tree. That deployment is the opposite shape —
 machines are commissioned in advance and there is no enrolment route at all, so
@@ -198,6 +202,36 @@ duty-cycled radios can't reach it at all rather than just being slow.
 See [uplink.md](docs/uplink.md) for the device forms, what an uplink refuses beside
 it, and the limits it still has.
 
+### Observer: an inventory of this host's cryptography
+
+To find out which of the connections this machine makes, serves or passes on are
+post-quantum, and which side holds the rest back, observe instead of joining:
+
+```console
+$ sudo conflux observe --export collector.example:4317
+  observer     af_packet, 0 flows held, 0 packets taken
+  records      each sent to collector.example:4317 as it is made, and kept in the inventory
+  service      active (systemd: conflux.service, enabled at boot)
+  anchord      conflux, with CAP_NET_RAW to copy what the host's interfaces carry, for the observer
+
+$ conflux inventory
+SERVICE        PORT     PROTOCOL  KEY EXCHANGE  GROUP           LAGGING  ROLE    PROCESS  FLOWS
+a.example      443/tcp  tls       hybrid        X25519MLKEM768  -        client  curl     3
+```
+
+The host copies the start of every flow to the daemon, which reads each handshake and
+records it; it carries nothing, so it can slow or break nothing. It joins no realm, so
+nothing is enrolled and no credential is needed, and it runs from every boot until it is
+stopped. With `--export`, each record goes to that OpenTelemetry collector as it is made;
+without one they stay in the daemon's inventory, which `conflux inventory` prints and
+`conflux inventory -cbom` gives as a CycloneDX CBOM. `anchord` is given the capture and
+nothing else — `CAP_NET_RAW` on Linux, read access to `/dev/bpf*` on macOS — and the
+FreeBSD and OpenBSD builds refuse, having nothing to capture with.
+
+`--observe` on `up` or `proxy` runs the same observer beside an anchor. Switching a
+machine that runs an anchor to `conflux observe` stops the anchor, so it asks first. See
+[observe.md](docs/observe.md).
+
 ### Four things worth knowing
 
 **The prompt appears once.** conflux asks for an IPv4 because thirty-two bits are
@@ -221,26 +255,31 @@ different taint is a different identity — `conflux uninstall --yes`, then
 `conflux up --taint` — with a new AnchorID and a new overlay address. See
 [credentials.md](docs/credentials.md#taints-are-the-credentials).
 
-**`up` and `proxy` are exclusive.** One daemon holds one anchor, and an anchor with a
-host interface can't also serve a reverse proxy — the kernel owns the overlay address
-in that mode, so a service just binds it directly. Running either command replaces
-the other, and conflux says so when it does.
+**`up`, `proxy` and `observe` are exclusive.** One daemon holds one anchor, and an
+anchor with a host interface can't also serve a reverse proxy — the kernel owns the
+overlay address in that mode, so a service just binds it directly — and `observe` runs
+no anchor at all. Running any of them replaces the other, and conflux says so when it
+does.
 
-## The two modes
+## The three modes
 
-| | `conflux up` | `conflux proxy` |
-|---|---|---|
-| What the host gets | a TUN interface: `ping`, `ssh`, everything | nothing on the host |
-| What the realm gets | this machine, at an overlay address | the named services, at overlay ports |
-| Privilege to run | root, to register the boot service | root, to register the boot service |
-| What `anchord` runs with | its own account and `CAP_NET_ADMIN` on Linux; root on macOS and the BSDs, SYSTEM on Windows | its own account and nothing else (`LOCAL SERVICE` on Windows) |
-| Needs `wintun.dll` on Windows | yes | no |
-| Can forward a subnet or serve an exit | yes, the host forwards | yes, from the anchor's own process |
-| Can run over an uplink | yes, `--uplink` | yes, `--uplink` |
-| Boot service | yes | yes |
+| | `conflux up` | `conflux proxy` | `conflux observe` |
+|---|---|---|---|
+| What the host gets | a TUN interface: `ping`, `ssh`, everything | nothing on the host | an inventory of its own traffic's cryptography |
+| What the realm gets | this machine, at an overlay address | the named services, at overlay ports | nothing: no realm is joined |
+| Privilege to run | root, to register the boot service | root, to register the boot service | root, to register the boot service |
+| What `anchord` runs with | its own account and `CAP_NET_ADMIN` on Linux; root on macOS and the BSDs, SYSTEM on Windows | its own account and nothing else (`LOCAL SERVICE` on Windows) | its own account and the capture: `CAP_NET_RAW` on Linux, `/dev/bpf*` on macOS, `LOCAL SERVICE` on Windows |
+| Needs a credential | yes, enrolled or installed | yes, enrolled or installed | no |
+| Needs `wintun.dll` on Windows | yes | no | no |
+| Can forward a subnet or serve an exit | yes, the host forwards | yes, from the anchor's own process | no |
+| Can run over an uplink | yes, `--uplink` | yes, `--uplink` | no |
+| Boot service | yes | yes | yes |
+
+The observer also runs beside either anchor, with `--observe`, and then adds its capture
+to what `anchord` is given.
 
 **Mode and medium are different questions.** The mode is what this machine gets out
-of the realm, and `up` and `proxy` are exclusive. The medium is what the anchor
+of the realm, and `up`, `proxy` and `observe` are exclusive. The medium is what the anchor
 reaches the realm over — the host's IP network by default, or a link named by
 `--uplink` — and either mode works over either medium. See
 [modes.md](docs/modes.md) and [uplink.md](docs/uplink.md).
@@ -251,6 +290,7 @@ reaches the realm over — the host's IP network by default, or a link named by
 |---|---|
 | `conflux up [--taint T] [--ipv4 ADDRESS \| --no-ipv4] [--subnet CIDR]... [--uplink DEV \| --no-uplink] [--peers HOST:PORT] [--lan-discovery yes\|no\|auto]` | enrol if needed, start in TUN mode, register the boot service |
 | `conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T] [--ipv4 ADDRESS \| --no-ipv4] [--uplink DEV] [--peers HOST:PORT] [--lan-discovery yes\|no\|auto]` | enrol if needed, start in userspace mode serving those backends |
+| `conflux observe [--loopback] [--hide-names] [--export HOST:PORT] [--yes]` | run the observer and no anchor, from every boot; `--observe` on `up` or `proxy` runs it beside one |
 | `conflux enrol --manifest FILE [--api URL] [--ipv4 ADDRESS]` | install a credential this machine was given, instead of drawing one |
 | `conflux down` | stop the anchor now; the boot service and the configuration stay |
 | `conflux start` | start it again now, from the configuration already on disk |
@@ -263,7 +303,7 @@ reaches the realm over — the host's IP network by default, or a link named by
 | `conflux anchorctl ARGS...` | run the embedded `anchorctl`, uninterpreted |
 | *anything else* | passed to `anchorctl` unchanged: `peers`, `routes`, `events`, `metrics`, `send`, `inspect`, … and the realm's control over its members, `block`, `taints`, `subnets`, `telemetry` |
 
-**A closed set of names is conflux's; everything else is anchorctl's.** Four of them
+**A closed set of names is conflux's; everything else is anchorctl's.** Five of them
 shadow a command anchorctl already has, and each collision is resolved rather than
 guessed: bare `conflux status` is conflux's, and prints anchorctl's status beneath it,
 while `conflux status -watch 5s` forwards to anchorctl because it was given arguments.
@@ -272,7 +312,10 @@ while `conflux status -watch 5s` forwards to anchorctl because it was given argu
 `conflux renew` fetches a credential and installs it, while `conflux anchorctl renew
 -cred FILE` installs one you already hold, and `conflux start` starts from the saved
 configuration where `conflux anchorctl start -identity FILE …` builds one from
-arguments. `stop` and `restart` are refused outright rather than passed through —
+arguments; `conflux observe` decides what the machine runs from every boot, where
+`conflux anchorctl observe` reports on the observer running now, and `-start` and `-stop`
+are pointed there. `inventory` is anchorctl's and passes straight through. `stop` and
+`restart` are refused outright rather than passed through —
 running them directly would leave conflux's configuration describing an anchor that
 isn't the one actually running. The set is checked against the embedded binary by a
 test.
@@ -297,7 +340,8 @@ its own corners of them. See [config.md](docs/config.md) and
 |---|---|
 | [install.md](docs/install.md) | Getting a binary onto each platform, and verifying it. |
 | [concepts.md](docs/concepts.md) | Realm, anchor, overlay address, and taints — including the arithmetic people get wrong. |
-| [modes.md](docs/modes.md) | TUN and userspace, why they cannot be combined, subnets and their prerequisites. |
+| [modes.md](docs/modes.md) | TUN, userspace and observing, why they cannot be combined, subnets and their prerequisites. |
+| [observe.md](docs/observe.md) | The observer: what it records, where its records go, what `anchord` is given to capture on each platform. |
 | [uplink.md](docs/uplink.md) | Running over a link instead of a host IP network: the device forms, the line speeds, the limits. |
 | [commands.md](docs/commands.md) | Every command, every flag, what reaches anchorctl, and the exit codes. |
 | [config.md](docs/config.md) | The configuration file, the manifest, file modes, and the layout on each OS. |

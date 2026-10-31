@@ -8,9 +8,9 @@ and it is not itself the daemon:
 ```
 systemd / launchd / rc / SCM
   └── conflux serve                     root, or SYSTEM
-        ├── anchord -socket … -config …  its own account wherever that costs it nothing
-        ├── the renewal timer
-        ├── the watcher: a lost anchor, and on an uplink an ended link
+        ├── anchord -socket … -config … [-allow-observer]  its own account wherever that costs it nothing
+        ├── the renewal timer, beside an anchor
+        ├── the watcher: a lost anchor, on an uplink an ended link, and an observer whose capture ended
         └── the restart loop
 ```
 
@@ -25,9 +25,18 @@ extracts the anchor pair if it is not already on disk, writes a fresh bearer tok
 decides what `anchord` runs as — its own account, with exactly the capabilities its mode
 needs, wherever that costs it nothing; see [security.md](security.md#what-anchord-runs-as)
 — makes the account the first time, lays out the directories that identity reaches,
-starts `anchord`, waits until it answers an authenticated `status` call, renews the
-credential if it is past two thirds of its window, and starts the anchor. No prompts, and
-nothing typed. A start that fails because the decision no longer fits — the first
+starts `anchord`, waits until it answers an authenticated `status` call, starts the
+observer where the configuration observes, renews the credential if it is past two thirds of
+its window, and starts the anchor. No prompts, and nothing typed.
+
+The observer comes first because it needs nothing the anchor does — no credential, no
+enrolment, no realm — and is started on every start because anchord keeps none across one.
+Observing alone, there is no anchor, credential or renewal timer at all, and the observer is
+what readiness waits for. Beside an anchor, an anchor that cannot come up for now — an
+enrolment the API does not answer — leaves the daemon running, and with it the observer and the
+inventory it holds, for the watcher to bring the anchor up when it can. `-allow-observer` is
+passed only where the configuration observes: a daemon that is not to observe is not started
+able to. See [observe.md](observe.md). A start that fails because the decision no longer fits — the first
 enrolment named a port below 1024, an uplink's device appeared — starts `anchord` again
 with what it now needs.
 
@@ -37,8 +46,8 @@ succeeds, which proves the socket is bound, gRPC is serving, and the two sides a
 on the token. It also watches the child, so a daemon that dies during startup is
 reported at once, with its own last lines attached, rather than after a timeout.
 
-Once the anchor is up the supervisor writes a **readiness marker** at `<run>/ready`,
-and removes it when the anchor goes. It is how `conflux up` and `conflux start` learn
+Once the anchor is up — or, observing alone, the observer — the supervisor writes a
+**readiness marker** at `<run>/ready`, and removes it when the anchor goes. It is how `conflux up` and `conflux start` learn
 the anchor is up the moment it happens. systemd's `Type=notify` already gives Linux the
 answer — `systemctl restart conflux` returns once the supervisor has sent `READY=1` —
 but launchd, rc and the Windows SCM say nothing, and without the marker the wait there
@@ -63,7 +72,9 @@ On Unix the close is a `SIGTERM` to anchord's process group: anchord closes its 
 on it, flushes its telemetry and exits, and the twenty-second grace before `SIGKILL` is
 a real grace. Inside a Windows service no signal can be delivered at all, so there the
 anchor is closed over the socket with `anchorctl stop` and the daemon, holding nothing
-by then, is killed; see the Windows section. A daemon that has already died is asked
+by then, is killed; see the Windows section. The observer is stopped over the socket first
+there: its capture is a kernel trace session, which would go on copying every packet the
+host carries after the daemon that started it was killed. A daemon that has already died is asked
 nothing: there is no anchor left to close, and its pid may belong to something else.
 
 ### When the supervisor itself dies

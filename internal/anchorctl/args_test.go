@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/veil-net/conflux/internal/config"
 )
 
 var update = flag.Bool("update", false, "rewrite the golden argv files")
@@ -128,6 +130,41 @@ func TestArgvGoldens(t *testing.T) {
 	for name, mode := range scenarios {
 		t.Run(name, func(t *testing.T) {
 			got := strings.Join(mode.Args(), "\n") + "\n"
+			path := filepath.Join("testdata", "argv", name+".golden")
+
+			if *update {
+				if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
+					t.Fatalf("write golden: %v", err)
+				}
+
+				return
+			}
+
+			want, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read golden (run `go test ./internal/anchorctl -update` to create it): %v", err)
+			}
+
+			if got != string(want) {
+				t.Errorf("argv changed.\n--- want ---\n%s\n--- got ---\n%s", want, got)
+			}
+		})
+	}
+}
+
+// observeScenarios are the observer's starts, kept apart from scenarios: those are anchors,
+// and the properties below are an anchor's.
+var observeScenarios = map[string]config.Observer{
+	"observe-default":    {},
+	"observe-loopback":   {Loopback: true},
+	"observe-hide-names": {HideNames: true},
+	"observe-both":       {Loopback: true, HideNames: true},
+}
+
+func TestObserveArgvGoldens(t *testing.T) {
+	for name, o := range observeScenarios {
+		t.Run(name, func(t *testing.T) {
+			got := strings.Join(ObserveStartArgs(o), "\n") + "\n"
 			path := filepath.Join("testdata", "argv", name+".golden")
 
 			if *update {

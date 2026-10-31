@@ -1,10 +1,12 @@
 package daemon
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -209,5 +211,163 @@ func TestAConfigurationIsReadOneWayEverywhere(t *testing.T) {
 
 	if _, err := loadConfig(d); err == nil || Permanent(err) {
 		t.Errorf("a conflux.json that could not be read: %v, want it tried again", err)
+	}
+}
+
+// cycling runs one cycle of s in the background, and returns how to end it and wait.
+func cycling(t *testing.T, s *Supervisor) (stop func() error) {
+	t.Helper()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+
+	go func() { done <- s.cycle(ctx) }()
+
+	return func() error {
+		cancel()
+
+		select {
+		case err := <-done:
+			return err
+		case <-time.After(15 * time.Second):
+			t.Fatal("the cycle did not end")
+
+			return nil
+		}
+	}
+}
+
+// eventually waits for cond, or fails the test saying what was waited for.
+func eventually(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+
+	for deadline := time.Now().Add(10 * time.Second); !cond(); {
+		if time.Now().After(deadline) {
+			t.Fatalf("%s never happened", what)
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// ran is the commands the stand-in anchorctl ran, in order.
+func ran(t *testing.T, log string) []string {
+	t.Helper()
+
+	b, _ := os.ReadFile(log)
+
+	return strings.Fields(string(b))
+}
+
+// TestObservingAloneStartsNoAnchor: a machine that only observes has its daemon started
+// able to, and the observer started in it, and nothing else -- no anchor, no enrolment, no
+// credential -- and is ready once the observer is.
+func TestObservingAloneStartsNoAnchor(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a console control event needs the console this test shares")
+	}
+
+	t.Setenv(fakeAnchorctlStatusEnv, "none")
+	t.Setenv(fakeAnchorctlObserverEnv, "running")
+
+	t.Setenv(fakeAnchordListenEnv, "1")
+
+	s, log := supervised(t, "serve")
+
+	if err := config.Save(s.Dirs, &config.Config{Mode: config.ModeObserve, Observer: &config.Observer{}}); err != nil {
+		t.Fatal(err)
+	}
+
+	stop := cycling(t, s)
+
+	eventually(t, "the readiness marker", func() bool { return IsReady(s.Dirs) })
+
+	if b, _ := os.ReadFile(s.Dirs.ReadyFile()); !strings.Contains(string(b), "observer") {
+		t.Errorf("the marker is %q, which does not say the observer is up", b)
+	}
+
+	if err := stop(); err != nil {
+		t.Errorf("the cycle ended with %v", err)
+	}
+
+	cmds := ran(t, log)
+	if !slices.Contains(cmds, "observe") {
+		t.Errorf("anchorctl ran %v: the observer was never started", cmds)
+	}
+
+	if slices.Contains(cmds, "start") || slices.Contains(cmds, "renew") {
+		t.Errorf("anchorctl ran %v: observing alone started an anchor", cmds)
+	}
+
+	if config.HasManifest(s.Dirs) {
+		t.Error("observing alone enrolled")
+	}
+}
+
+// TestTheObserverOutlivesAnAnchorThatCannotComeUp: beside an anchor, the observer starts
+// first, and an anchor that cannot come up for now -- an enrolment nobody answers -- leaves
+// the daemon, the observer and its inventory running, for the watcher to bring the anchor up
+// later, rather than ending the cycle and the inventory with it.
+func TestTheObserverOutlivesAnAnchorThatCannotComeUp(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a console control event needs the console this test shares")
+	}
+
+	t.Setenv(fakeAnchorctlStatusEnv, "none")
+	t.Setenv(fakeAnchorctlObserverEnv, "running")
+
+	t.Setenv(fakeAnchordListenEnv, "1")
+
+	s, log := supervised(t, "serve")
+
+	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, Observer: &config.Observer{},
+		Proxies: []string{"8080=127.0.0.1:1"}, APIBaseURL: "http://127.0.0.1:1"}
+	if err := config.Save(s.Dirs, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	stop := cycling(t, s)
+
+	eventually(t, "the observer starting", func() bool { return slices.Contains(ran(t, log), "observe") })
+
+	// Long enough for the enrolment to have been refused: nothing listens on port 1.
+	time.Sleep(time.Second)
+
+	if IsReady(s.Dirs) {
+		t.Error("ready with no anchor up")
+	}
+
+	if err := stop(); err != nil {
+		t.Errorf("the cycle ended with %v, where the anchor's failure should have left it running", err)
+	}
+
+	if cmds := ran(t, log); slices.Index(cmds, "observe") < 0 || slices.Contains(cmds, "start") {
+		t.Errorf("anchorctl ran %v; want the observer started and no anchor", cmds)
+	}
+}
+
+// TestAnObserverTheHostRefusesEndsObservingAlone: observing alone, a host that will not let
+// the daemon capture is the cycle's failure, and a permanent one: no restart changes it.
+func TestAnObserverTheHostRefusesEndsObservingAlone(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a console control event needs the console this test shares")
+	}
+
+	t.Setenv(fakeAnchorctlStatusEnv, "none")
+	t.Setenv(fakeAnchorctlCaptureEnv, "1")
+	t.Setenv(fakeAnchordListenEnv, "1")
+
+	s, _ := supervised(t, "serve")
+
+	if err := config.Save(s.Dirs, &config.Config{Mode: config.ModeObserve, Observer: &config.Observer{}}); err != nil {
+		t.Fatal(err)
+	}
+
+	var err error
+
+	returns(t, "a cycle the host refuses", func() { err = s.cycle(t.Context()) })
+
+	if !Permanent(err) {
+		t.Errorf("the cycle ended with %v, which is not refused for good", err)
 	}
 }

@@ -10,9 +10,13 @@ import (
 )
 
 // probeHost answers decide's questions about this host: on macOS and the BSDs only which
-// ports are root's and who may open an uplink's device.
+// ports are root's, who may open an uplink's device, and on macOS who may read a BPF device.
 func probeHost(cfg *config.Config) hostFacts {
-	h := hostFacts{reservedHigh: 1023, device: deviceFacts(cfg.Uplink)}
+	h := hostFacts{reservedHigh: 1023, device: deviceFacts(cfg.Uplink), bpfOwn: -1}
+
+	if cfg.Observer != nil {
+		h.bpf, h.bpfOwn = bpfFacts()
+	}
 
 	if runtime.GOOS == "freebsd" {
 		if n, err := unix.SysctlUint32("net.inet.ip.portrange.reservedhigh"); err == nil {

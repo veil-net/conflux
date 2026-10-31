@@ -52,6 +52,12 @@ type Privilege struct {
 	// was not given.
 	NoNewPrivs bool `json:"noNewPrivs,omitempty"`
 
+	// BPF is how the account reads the BPF devices on macOS, for the observer: BPFOwn where
+	// the supervisor gives the account's own group read access to them before anchord starts,
+	// BPFGroup where a group of the host's already has it and is among Groups, and "" where
+	// the account does not observe.
+	BPF string `json:"bpf,omitempty"`
+
 	// Why says why anchord keeps what it keeps: root, or each capability.
 	Why string `json:"why,omitempty"`
 
@@ -61,6 +67,12 @@ type Privilege struct {
 	// reasons says what each capability is for, which Why is made from.
 	reasons map[string]string
 }
+
+// How the account reads the BPF devices; see Privilege.BPF.
+const (
+	BPFOwn   = "own"
+	BPFGroup = "group"
+)
 
 // The capabilities anchord is ever given, by name and by number.
 const (
@@ -112,6 +124,15 @@ type hostFacts struct {
 
 	// device is the uplink's device, or nil where there is none or it is not there yet.
 	device *fileFacts
+
+	// bpf is the first BPF device on macOS, asked only where the configuration observes:
+	// who may read it, which is the account's group only once the supervisor has given it
+	// that, or a group of the host's that already has it. nil where there is none.
+	bpf *fileFacts
+
+	// bpfOwn is the account's own group, which a device has only because the supervisor
+	// gave it that, and so is no group of the host's; -1 where there is no account yet.
+	bpfOwn int
 }
 
 // fileFacts is who may open a device.
@@ -126,6 +147,12 @@ type fileFacts struct {
 // 0 for one the kernel picks or none.
 func decide(goos string, cfg *config.Config, port int, h hostFacts) Privilege {
 	tun := cfg.Mode == config.ModeTUN
+
+	// What the configuration runs: an anchor, in either shape, and the observer, beside one
+	// or alone. Observing alone, the anchor's settings are kept for the next up or proxy, and
+	// grant nothing now: no port is bound and no uplink opened.
+	anchor := cfg.Anchor()
+	observe := cfg.Observer != nil
 
 	p := Privilege{Account: true, reasons: map[string]string{}}
 
@@ -197,7 +224,7 @@ func decide(goos string, cfg *config.Config, port int, h hostFacts) Privilege {
 		}
 	}
 
-	if cfg.Uplink != "" && h.device != nil {
+	if anchor && cfg.Uplink != "" && h.device != nil {
 		gid, ok := opens(h.device)
 		if !ok {
 			return asSupervisor(h.device.path + " opens only for root")
@@ -208,7 +235,7 @@ func decide(goos string, cfg *config.Config, port int, h hostFacts) Privilege {
 
 	// The kernel's buffers are sized by the anchor's one socket, which an uplink does not
 	// bind. With a TUN, CAP_NET_ADMIN is there already.
-	if goos == "linux" && !tun && cfg.Uplink == "" && (h.rmemMax < bufferFloor || h.wmemMax < bufferFloor) {
+	if goos == "linux" && anchor && !tun && cfg.Uplink == "" && (h.rmemMax < bufferFloor || h.wmemMax < bufferFloor) {
 		if !h.ambient {
 			return asSupervisor("quic-go needs CAP_NET_ADMIN for its UDP buffers, and this kernel cannot give a " +
 				"capability to a process that is not root")
@@ -218,8 +245,39 @@ func decide(goos string, cfg *config.Config, port int, h hostFacts) Privilege {
 			"remove the need", bufferFloor))
 	}
 
-	// Userspace mode runs no command at all, so nothing is lost by refusing it any gain;
-	// a TUN's runs nft and iptables, whose SELinux transitions no_new_privs would block.
+	// The observer reads a copy of everything the host's interfaces carry, the start of each
+	// flow whole, and that copy is its whole privilege. It carries nothing and sends nothing.
+	// A TUN's anchord on macOS is root already, and on Windows SYSTEM; LOCAL SERVICE, which
+	// the rest run as there, may start the trace session the capture is.
+	if observe {
+		switch goos {
+		case "linux":
+			// A packet socket on every interface, with nothing promiscuous: CAP_NET_RAW alone.
+			if !h.ambient {
+				return asSupervisor("the observer captures with CAP_NET_RAW, and this kernel cannot give a " +
+					"capability to a process that is not root")
+			}
+
+			grant(capNetRaw, "to copy what the host's interfaces carry, for the observer")
+		case "darwin":
+			if !tun {
+				// Only root may read a BPF device until somebody gives a group that. A
+				// group of the host's that has it already -- Wireshark's access_bpf, which
+				// ChmodBPF sets at every boot -- is used as it is, and the devices are left
+				// alone; otherwise the supervisor, which is root, gives the account's own.
+				if gid, ok := reads(h.bpf); ok && gid > 0 && gid != h.bpfOwn {
+					p.Groups = appendGroup(p.Groups, gid)
+					p.BPF = BPFGroup
+				} else {
+					p.BPF = BPFOwn
+				}
+			}
+		}
+	}
+
+	// Userspace mode, and observing, run no command at all, so nothing is lost by refusing
+	// them any gain; a TUN's runs nft and iptables, whose SELinux transitions no_new_privs
+	// would block.
 	p.NoNewPrivs = goos == "linux" && !tun
 	p.explain()
 
@@ -232,12 +290,16 @@ func (p *Privilege) keepCaps(keep func(string) bool) {
 	p.explain()
 }
 
-// explain makes Why from what each capability is for.
+// explain makes Why from what each capability is for, and from the BPF devices' access.
 func (p *Privilege) explain() {
-	why := make([]string, 0, len(p.Caps))
+	why := make([]string, 0, len(p.Caps)+1)
 
 	for _, c := range p.Caps {
 		why = append(why, c+" "+p.reasons[c])
+	}
+
+	if p.BPF != "" {
+		why = append(why, "read access to /dev/bpf*, for the observer")
 	}
 
 	p.Why = strings.Join(why, "; ")
@@ -260,6 +322,24 @@ func opens(f *fileFacts) (gid int, ok bool) {
 	return 0, false
 }
 
+// reads reports whether the account can read a BPF device, and through which group: the
+// device's, where that may read and is not root's or wheel's. Read alone, which is all a
+// capture needs and what ChmodBPF gives.
+func reads(f *fileFacts) (gid int, ok bool) {
+	if f == nil {
+		return 0, false
+	}
+
+	switch perm := f.mode.Perm(); {
+	case perm&0o004 != 0:
+		return -1, true
+	case perm&0o040 != 0 && f.gid != 0:
+		return f.gid, true
+	}
+
+	return 0, false
+}
+
 func appendGroup(groups []int, gid int) []int {
 	if gid < 0 || slices.Contains(groups, gid) {
 		return groups
@@ -269,10 +349,10 @@ func appendGroup(groups []int, gid int) []int {
 }
 
 // listenPort is the port anchor binds: conflux.json's, the manifest's where that names
-// none, and none over an uplink.
+// none, and none over an uplink or with no anchor to bind it.
 func listenPort(cfg *config.Config, manifestPort int) int {
 	switch {
-	case cfg.Uplink != "":
+	case !cfg.Anchor(), cfg.Uplink != "":
 		return 0
 	case cfg.Port != 0:
 		return int(cfg.Port)
@@ -289,7 +369,7 @@ func (p Privilege) String() string {
 	}
 
 	switch {
-	case p.Account && len(p.Caps) == 0:
+	case p.Account && p.Why == "":
 		return who + ", with no privilege"
 	case p.Account:
 		return who + ", with " + p.Why
@@ -341,5 +421,5 @@ func ActiveAnchorDir(d paths.Dirs) string {
 // same capabilities and groups, the same directory.
 func sameGrant(a, b Privilege) bool {
 	return a.Account == b.Account && a.UID == b.UID && a.GID == b.GID && a.NoNewPrivs == b.NoNewPrivs &&
-		slices.Equal(a.Caps, b.Caps) && slices.Equal(a.Groups, b.Groups) && a.Dir == b.Dir
+		slices.Equal(a.Caps, b.Caps) && slices.Equal(a.Groups, b.Groups) && a.BPF == b.BPF && a.Dir == b.Dir
 }

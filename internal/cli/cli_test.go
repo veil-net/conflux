@@ -65,7 +65,7 @@ func TestNoUnintendedShadowing(t *testing.T) {
 	// The verbs conflux is knowingly taking from anchorctl. Every one is documented in
 	// help and explains the collision in its own error text; help, which anchorctl's
 	// usage does not list, prints anchorctl's usage whole.
-	known := map[string]bool{"proxy": true, "status": true, "help": true, "renew": true, "start": true}
+	known := map[string]bool{"proxy": true, "status": true, "help": true, "renew": true, "start": true, "observe": true}
 
 	for name := range verbs() {
 		if theirs[name] && !known[name] {
@@ -81,9 +81,9 @@ func TestNoUnintendedShadowing(t *testing.T) {
 		}
 	}
 
-	// The two conflux resolves by shape and arity really are anchorctl's, or the
-	// elaborate handling in runProxy and runStatus is dead code.
-	for _, name := range []string{"proxy", "status"} {
+	// The three conflux resolves by shape and arity really are anchorctl's, or the
+	// elaborate handling in runProxy, runObserve and runStatus is dead code.
+	for _, name := range []string{"proxy", "status", "observe"} {
 		if !theirs[name] {
 			t.Errorf("conflux resolves a collision on %q that no longer exists", name)
 		}
@@ -626,7 +626,7 @@ func TestTheCollisionsAreTheDocumentedOnes(t *testing.T) {
 
 	sort.Strings(shared)
 
-	want := []string{"proxy", "renew", "start", "status"}
+	want := []string{"observe", "proxy", "renew", "start", "status"}
 	if !slices.Equal(shared, want) {
 		t.Errorf("conflux and anchorctl share %v, and the docs describe %v.\n"+
 			"  Resolve the new collision the way the others are, then update the count in\n"+
@@ -635,7 +635,7 @@ func TestTheCollisionsAreTheDocumentedOnes(t *testing.T) {
 	}
 
 	// The help text an operator reads says the same number, spelled out.
-	if !strings.HasPrefix(collisions, "Four of conflux's names") {
+	if !strings.HasPrefix(collisions, "Five of conflux's names") {
 		t.Errorf("the help text disagrees with the %d collisions that exist", len(want))
 	}
 }

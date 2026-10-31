@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"errors"
 	"github.com/veil-net/conflux/internal/config"
 	"os"
@@ -108,6 +109,11 @@ func TestWhatIsPermanent(t *testing.T) {
 		"taints the credential does not grant": anchorctlSaid("anchorctl: config: anchor: the realm credential does not " +
 			"grant this anchor's taints: Taints names [\"dev\"]: realm: the credential does not grant these taints"),
 		"conflux's own taints refusal": &permanentError{path: "manifest.b64", err: &enrol.TaintsError{Alpha: true}},
+		// What a live anchorctl said to `observe -start` against an anchord with no CAP_NET_RAW.
+		"a host that will not let the daemon capture": anchorctlSaid("anchorctl: capture: not permitted: open a packet " +
+			"socket: operation not permitted (it needs CAP_NET_RAW)\n  capturing needs CAP_NET_RAW for the daemon on " +
+			"Linux, read access to /dev/bpf* on macOS, Administrators or Performance Log Users on Windows; give the daemon " +
+			"that, then \"anchorctl observe -start\" again"),
 		"a usage error": func() error {
 			// The stand-in answers exit 2, anchorctl's usage error, to a status it was
 			// not told how to give.
@@ -172,7 +178,7 @@ func TestALostAnchorIsSeen(t *testing.T) {
 
 			var zeroSince time.Time
 
-			if got, link := s.lost(t.Context(), uplink, devicePath(uplink), &zeroSince); got != tc.want || link {
+			if got, link, _ := s.lost(t.Context(), uplink, devicePath(uplink), &zeroSince); got != tc.want || link {
 				t.Errorf("lost() = %q, %v; want %q, false", got, link, tc.want)
 			}
 		})
@@ -193,7 +199,7 @@ func TestTheWatcherGivesUpOnARefusedConfiguration(t *testing.T) {
 	}
 
 	gaveUp := make(chan bool, 1)
-	go func() { gaveUp <- s.watch(t.Context(), "", time.Millisecond) }()
+	go func() { gaveUp <- s.watch(t.Context(), &config.Config{Mode: config.ModeProxy}, time.Millisecond) }()
 
 	select {
 	case got := <-gaveUp:
@@ -275,5 +281,59 @@ func TestAReopenedLinkIsCounted(t *testing.T) {
 
 	if st.LinkReopens != 2 || st.LastLinkReopen.IsZero() {
 		t.Errorf("after two reopens the state says %d, last %v", st.LinkReopens, st.LastLinkReopen)
+	}
+}
+
+// TestTheWatcherStartsAFailedObserverAgain: an observer whose capture ended is started
+// again; one stopped by hand, or never started, is left as it is.
+func TestTheWatcherStartsAFailedObserverAgain(t *testing.T) {
+	t.Setenv(fakeAnchorctlStatusEnv, "none")
+
+	cfg := &config.Config{Mode: config.ModeObserve, Observer: &config.Observer{}}
+
+	for row, want := range map[string]bool{"failed": true, "stopped": false, "running": false} {
+		t.Run(row, func(t *testing.T) {
+			t.Setenv(fakeAnchorctlObserverEnv, row)
+
+			s, log := supervised(t, "1")
+
+			ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
+			defer cancel()
+
+			s.watch(ctx, cfg, time.Millisecond)
+
+			if got := slices.Contains(ran(t, log), "observe"); got != want {
+				t.Errorf("an observer that is %s: started again %v, want %v", row, got, want)
+			}
+		})
+	}
+}
+
+// TestTheWatcherGivesUpOnAnObserverTheHostRefuses: observing alone, an observer the host
+// will not let capture is started again rebuildRefusals times and then given up on, which
+// ends the cycle's loops, rather than every thirty seconds for ever.
+func TestTheWatcherGivesUpOnAnObserverTheHostRefuses(t *testing.T) {
+	t.Setenv(fakeAnchorctlStatusEnv, "none")
+	t.Setenv(fakeAnchorctlObserverEnv, "failed")
+	t.Setenv(fakeAnchorctlCaptureEnv, "1")
+
+	s, log := supervised(t, "1")
+
+	gaveUp := make(chan bool, 1)
+	go func() {
+		gaveUp <- s.watch(t.Context(), &config.Config{Mode: config.ModeObserve, Observer: &config.Observer{}}, time.Millisecond)
+	}()
+
+	select {
+	case got := <-gaveUp:
+		if !got {
+			t.Fatal("the watch ended without giving up")
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("the watcher went on starting an observer the host refuses")
+	}
+
+	if n := strings.Count(strings.Join(ran(t, log), "\n"), "observe"); n != rebuildRefusals {
+		t.Errorf("started %d times before giving up, want %d", n, rebuildRefusals)
 	}
 }

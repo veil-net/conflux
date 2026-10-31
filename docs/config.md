@@ -58,7 +58,8 @@ layout, and why, is in [security.md](security.md#what-anchord-runs-as).
 
 | Field | Meaning |
 |---|---|
-| `mode` | `tun` or `proxy`. See [modes.md](modes.md). |
+| `mode` | `tun`, `proxy`, or `observe`, which runs the observer and no anchor; the anchor's fields below are then kept, unused, for the next `up` or `proxy`. See [modes.md](modes.md). |
+| `observer` | `{}`, with `loopback` and `hideNames` each `true` where asked for: the daemon's observer runs, beside an anchor or, with `mode` `observe`, alone. Absent is off. Refused on FreeBSD and OpenBSD, which have no capture. Its records go out with the export's `flows`. See [observe.md](observe.md). |
 | `taints` | the compartments this machine's credential grants. Before enrolment they are the request: the one `--taint` named or `up` or `proxy` minted, which the enrolment asks for exactly. After it they mirror the grant, and every start checks them against the manifest, refusing for good when the two disagree: a credential's taints never change. Empty only for an issued credential that grants none, which is its issuer realm's default compartment. Never written from the running anchor, which a member's Taints order may have moved. See [credentials.md](credentials.md#taints-are-the-credentials). |
 | `ipv4` | this machine's IPv4, an address or `address/length`. Either mode. `""` records that the operator declined one, and absent that nobody has been asked yet — the difference is what keeps the question to once. |
 | `subnets` | interface names, private prefixes, or `*` for every private network on every interface, each optionally bound to some of this machine's taints as `SPEC@a+b`; at most 64 entries. Either mode: with an interface the host forwards, in userspace the anchor does from its own process. The list the anchor starts with: a member's Subnets order replaces it, kept by anchor in `anchor/subnets.json` under the state directory, until an `up` or `proxy` with `--subnet` or `--no-subnet` sets it again. See [modes.md](modes.md#the-last-set-wins). |
@@ -71,7 +72,7 @@ layout, and why, is in [security.md](security.md#what-anchord-runs-as).
 | `serveExit`, `useExit` | route the public internet out of and into the overlay. Absent is false. Either mode, as `subnets`; anchor refuses the two together. |
 | `apiBaseUrl` | absent means the default. |
 
-This file is the whole of what a reboot needs. Every `up` and every `proxy` rewrites
+This file is the whole of what a reboot needs. Every `up`, `proxy` and `observe` rewrites
 it, so it is always the current desired state.
 
 Editing it by hand is supported; `conflux start` restarts from whatever it says, and
@@ -119,7 +120,8 @@ The full field list is `enabled`, `endpoint` (host:port, not a URL — the schem
 `metricIntervalNanos`, `traceSampleRatio`, `serviceName`, `resourceAttributes`,
 `exportTimeoutNanos`, `shutdownTimeoutNanos`, `caCert`, `clientCert`, `clientKey`,
 `logLevel` and `cardinalityLimit`. `flows` exports a log record per interval of each IP
-flow the anchor carries and each circuit it relays. The three TLS fields take
+flow the anchor carries and each circuit it relays, and each record the observer makes, as an
+`anchor.observed_flow` event, as it is made. The three TLS fields take
 `{"path": "…"}` or `{"inline": "<base64 PEM>"}`.
 
 **`headers` are credentials.** Anything in them authenticates this machine to a
@@ -137,7 +139,7 @@ Three things can configure export and they disagree by design:
 
 | | Lasts |
 |---|---|
-| this block, rendered to `anchord.json` on every spawn | until you change it |
+| this block, rendered to `anchord.json` on every spawn — which `--export HOST:PORT` on `up`, `proxy` or `observe` writes, keeping the rest of it | until you change it |
 | `conflux anchorctl export -endpoint …` | until the next restart or SIGHUP |
 | a SIGHUP | re-reads the file, discarding the call above |
 

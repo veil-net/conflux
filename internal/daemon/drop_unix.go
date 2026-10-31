@@ -64,6 +64,16 @@ func (s *Supervisor) dropTo(p *Privilege) string {
 		return a.Name + " cannot run anchord on this host: " + firstLine(err)
 	}
 
+	// Last, once the account is known to run anchord, so a drop that fails above leaves the
+	// devices as they were.
+	if p.BPF == BPFOwn {
+		if err := grantBPF(a.GID); err != nil {
+			s.report().Warn("could not give %s read access to /dev/bpf*: %v", a.Name, err)
+
+			return "could not give " + a.Name + " read access to /dev/bpf*, which observing needs: " + firstLine(err)
+		}
+	}
+
 	return ""
 }
 

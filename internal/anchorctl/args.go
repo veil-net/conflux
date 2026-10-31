@@ -202,6 +202,20 @@ func RenewArgs(credPath string) []string {
 // StopArgs closes the anchor. The daemon stays up.
 func StopArgs() []string { return []string{"stop"} }
 
+// ObserveStartArgs starts the daemon's observer with o, or starts it again with o if it
+// is running, which is what anchorctl's -start does.
+//
+// Both options are always written, in the direction conflux.json says, for the reason the
+// mode flags are: the observer that runs is the one asked for, whatever the last start
+// asked for.
+func ObserveStartArgs(o config.Observer) []string {
+	return []string{"observe", "-start", "-loopback=" + boolText(o.Loopback), "-hide-names=" + boolText(o.HideNames)}
+}
+
+// ObserveStopArgs stops the observer. What it recorded stays in the inventory for as long
+// as the daemon runs.
+func ObserveStopArgs() []string { return []string{"observe", "-stop"} }
+
 // StatusArgs asks what is running.
 func StatusArgs() []string { return []string{"status"} }
 

@@ -3,12 +3,12 @@ package cli
 import (
 	"bytes"
 	"flag"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/ui"
 )
 
@@ -48,16 +48,34 @@ func TestObserveTakesNoArguments(t *testing.T) {
 }
 
 // TestObserveIsRefusedWhereThereIsNoCapture: on the BSDs, where anchor has nothing to
-// capture with, conflux observe says so before it asks for root or writes anything.
+// capture with, conflux observe and --observe say so before anything is asked or written; and
+// where there is a capture, neither is refused for it.
 func TestObserveIsRefusedWhereThereIsNoCapture(t *testing.T) {
-	if config.ObserverSupported(runtime.GOOS) == nil {
-		t.Skipf("%s can capture", runtime.GOOS)
-	}
+	for goos, refused := range map[string]bool{"freebsd": true, "openbsd": true, "linux": false, "darwin": false, "windows": false} {
+		t.Run(goos, func(t *testing.T) {
+			was, elevated := hostOS, privcheck.Elevated
+			hostOS = goos
 
-	_, errOut, code := capture(t, "observe")
+			// Refused for privilege where there is a capture, whoever runs this: the check under
+			// test is the one before it, and nothing past it may touch this host.
+			privcheck.Elevated = func() bool { return false }
 
-	if code != ExitUsage || !strings.Contains(errOut, "no capture") {
-		t.Errorf("exited %d, saying:\n%s", code, errOut)
+			t.Cleanup(func() { hostOS, privcheck.Elevated = was, elevated })
+
+			_, errOut, code := capture(t, "observe")
+
+			switch {
+			case refused && (code != ExitUsage || !strings.Contains(errOut, "no capture")):
+				t.Errorf("conflux observe on %s exited %d, saying: %s; want exit %d for no capture", goos, code, errOut, ExitUsage)
+			case !refused && code != ExitDenied:
+				t.Errorf("conflux observe on %s exited %d, saying: %s; want the privilege check reached, exit %d", goos, code, errOut, ExitDenied)
+			}
+
+			err := chooseObserver(&config.Config{}, observerFlags(t, "--observe"))
+			if got := err != nil && strings.Contains(err.Error(), "no capture"); got != refused {
+				t.Errorf("--observe on %s: refused for no capture %v, want %v (%v)", goos, got, refused, err)
+			}
+		})
 	}
 }
 
@@ -80,9 +98,11 @@ func observerFlags(t *testing.T, args ...string) *flag.FlagSet {
 // about; naming it says what it is now, an option left out being off, as anchorctl's
 // -start does; and --no-observe is the way back.
 func TestTheObserverIsKeptOrReplaced(t *testing.T) {
-	if config.ObserverSupported(runtime.GOOS) != nil {
-		t.Skipf("%s has no capture", runtime.GOOS)
-	}
+	// A platform with a capture, whichever this is: the BSDs' refusal has a test of its own.
+	was := hostOS
+	hostOS = "linux"
+
+	t.Cleanup(func() { hostOS = was })
 
 	both := &config.Observer{Loopback: true, HideNames: true}
 

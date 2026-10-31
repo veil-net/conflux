@@ -48,7 +48,7 @@ func runObserve(ctx context.Context, args []string) int {
 
 	// Before anything is asked or written: where anchor has no capture there is nothing
 	// this command could start.
-	if err := config.ObserverSupported(runtime.GOOS); err != nil {
+	if err := config.ObserverSupported(hostOS); err != nil {
 		ui.Errf("%v", err)
 
 		return ExitUsage
@@ -92,6 +92,10 @@ func runObserve(ctx context.Context, args []string) int {
 
 	return bring(ctx, d, cfg, "observe", false)
 }
+
+// hostOS is the platform the observer's support is decided for: this one, outside a test of
+// another's.
+var hostOS = runtime.GOOS
 
 // confirmObserving makes the switch from an anchor explicit before it happens: the anchor
 // stops and this machine leaves its realm, though its identity and settings are kept for the
@@ -237,7 +241,7 @@ func chooseObserver(cfg *config.Config, fs *flag.FlagSet) error {
 	}
 
 	if cfg.Observer != nil {
-		if err := config.ObserverSupported(runtime.GOOS); err != nil {
+		if err := config.ObserverSupported(hostOS); err != nil {
 			return err
 		}
 	}

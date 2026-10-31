@@ -330,7 +330,7 @@ service:
 YAML
 chmod 644 "$otelconf"
 docker run -d --name "$OTEL" -v "$otelconf:/etc/otel.yaml:ro" "$OTEL_IMAGE" --config /etc/otel.yaml >/dev/null
-collector=$(docker inspect -f '{{.NetworkSettings.IPAddress}}' "$OTEL")
+collector=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$OTEL")
 [ -n "$collector" ] || { echo "the collector has no address" >&2; docker logs "$OTEL" >&2; exit 1; }
 configure observe "\"observer\":{},\"export\":{\"enabled\":true,\"endpoint\":\"$collector:4317\",\"insecure\":true,\"flows\":true}"
 start

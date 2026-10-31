@@ -52,7 +52,9 @@ const (
 	// DefaultAPI, DefaultRepo and DefaultTag are the whole of the contract with anchor.
 	// The tag moves: it always names anchor's newest release build, which is the intent
 	// -- conflux ships the newest anchor, not a remembered one. anchor also releases each
-	// build at a dated tag, YYYYMMDD-HHMMSS, which stays; -tag fetches one of those.
+	// build at a dated tag, YYYYMMDD-HHMMSS, which stays, and each build of its dev branch
+	// as the pre-release `dev-latest`, which conflux's dev embeds; -tag fetches either. A
+	// release is asked for by its tag, so a pre-release is as reachable as any other.
 	DefaultAPI  = "https://api.github.com"
 	DefaultRepo = "veil-net/anchor"
 	DefaultTag  = "latest"

@@ -482,7 +482,9 @@ conflux update --check
 Replaces this conflux with the one the `latest` release of
 [veil-net/conflux](https://github.com/veil-net/conflux/releases/latest) holds for this
 platform, and moves the boot service onto it. Only when typed: nothing checks on a
-schedule, so a machine changes version when somebody decides it should.
+schedule, so a machine changes version when somebody decides it should. It reads `latest`
+alone, so a dev build installed from `dev-latest` updates to the release, never to a newer dev
+build: that is the install script's to fetch again, by name ([install.md](install.md)).
 
 "Up to date" is a digest rather than a version string. This file is the release's
 binary, byte for byte, or it is not, so a rebuild of the same version (which a merge

@@ -55,9 +55,9 @@ Work through them in this order:
   - reusing the `dist` artifact for the image jobs
   - cancelling superseded runs
   - job ordering suited to the runners: self-hosted `veilnet-dev` for the Linux Go suite, hosted runners for the container suites (they need the live realm's bootstrap node over UDP) and for macOS and Windows
-- Keep the fork guard on every self-hosted job. The only credential stays the read-only anchor GitHub App. Release stays gated to `version3`.
+- Keep the fork guard on every self-hosted job. The only credential stays the read-only anchor GitHub App. Release stays gated to `version3` and `dev`, and `branch-flow` to a PR into `version3` from `dev` alone.
 - Every external action is pinned to its release's commit, with the tag in a comment, and bumped by moving both. No checkout persists its token.
-- **Release only releases.** The user merges to `version3` only when CI is all green, so `release.yml` doesn't re-verify anything. On a push it fetches the pinned binaries, runs `make dist` (the size gate comes with it), attests, and publishes twice: at the `VERSION` tag and at `latest`, each deleted and released again. Jobs or steps that repeat CI's checks are removed; the `version3` gate is the one guard it keeps.
+- **Release only releases.** A PR merges into `dev`, and the user merges `dev` into `version3`, only when CI is all green, so `release.yml` doesn't re-verify anything. On a push it fetches the pinned binaries (anchor's `dev-latest` on `dev`, its `latest` on `version3`), runs `make dist` (the size gate comes with it), attests, and publishes: on `dev` the pre-release `dev-latest`; on `version3` twice, at the `VERSION` tag and at `latest`, each deleted and released again, then the back-merge into `dev`. Jobs or steps that repeat CI's checks are removed; the `version3`/`dev` gate is the one guard it keeps.
 - Validate workflow and composite-action changes with `actionlint` (and `act` if available) before pushing; the PR's own run is what proves them. Name in the summary any change a PR run cannot exercise, such as `release.yml`.
 
 ## Threat model

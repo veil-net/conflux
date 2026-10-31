@@ -235,14 +235,52 @@ so a fork's pull request runs nothing. No checkout leaves its token in `.git/con
 and every action outside this repository is pinned to its release's commit, with the
 tag beside it in a comment.
 
-**The release** runs on every push to `version3`, a merge included, and it only releases:
-it does not re-run any of the above. A merge lands only when CI is green, which rests on
-branch protection on `version3` — require a pull request, require these checks, and
-require the branch to be up to date before merging — and is unsafe without it. It refuses
-to run anywhere but `version3`, fetches anchor's `latest`, runs `make dist`, attests the
-artifacts and writes one set of notes: the changes since the previous version, and what is
-inside. Then it publishes twice, with the same artifacts and notes: at the tag the
-`VERSION` file names, verbatim, and at `latest`, which is the repository's Latest release.
+### Branches
+
+Two long-lived branches, and every change reaches both the same way:
+
+| Branch | Takes | A merge publishes | Embeds anchor's |
+|---|---|---|---|
+| `dev` | a pull request from a feature or maintenance branch cut from `dev` | the pre-release `dev-latest` | `dev-latest` |
+| `version3` | a pull request from `dev`, opened by the owner | the release: `VERSION`'s tag and `latest` | `latest` |
+
+1. Cut a branch from `dev`, do the work, and open its pull request against `dev`
+   (`gh pr create --base dev`: `version3` is the default branch, so the base is always
+   named). CI runs in full on it, against anchor's `dev-latest`.
+2. Merged when it is green, it is published as the pre-release `dev-latest`, which the next
+   merge into `dev` replaces and which nothing reads unless asked for it by name:
+   `CONFLUX_VERSION=dev-latest` for the install scripts ([install.md](install.md)).
+3. When `dev` is to be released, the owner opens a pull request from `dev` into `version3`.
+   CI runs on it in full again, against anchor's `latest`; merged, it is released, and
+   `version3` is merged back into `dev`.
+
+**`dev` stays ahead of `version3`.** Nothing reaches `version3` but `dev`, and after every
+release `release.yml`'s `back-merge` job (`scripts/back-merge.sh`) pushes the release back to
+`dev`: a fast-forward, since the release is a merge whose second parent is `dev`'s tip, or a
+merge where `dev` has taken something since. A release that will not merge cleanly is one that
+holds something pushed to `version3` directly, and the job stops and says so.
+
+**`branch-flow.yml` holds the branches to that** (`scripts/branch-flow.sh`), on every pull
+request and every edit of one — moving a pull request's base fires only `edited`: one into
+`version3` whose head is not this repository's `dev` fails; one into `dev` whose merge does not
+hold `version3`'s tip — a back-merge that did not land — fails; one into any other base fails.
+On a hosted runner, since it reads the repository and holds no secret.
+
+**Branch protection, on `dev` and on `version3` alike:** require a pull request, require CI's
+checks and `branch-flow`, and require the branch to be up to date before merging. And on `dev`,
+let the release workflow push, for the back-merge: GitHub Actions on a ruleset's bypass list.
+Without that the push is refused, the release is out regardless, and `back-merge` fails saying
+what to do: merge `version3` into `dev` by pull request.
+
+**The release** runs on every push to `dev` or `version3`, a merge included, and it only
+releases: it does not re-run any of the above. A merge lands only when CI is green, which rests
+on that branch protection, and is unsafe without it. It refuses to run anywhere but those two,
+fetches anchor's `dev-latest` on `dev` and its `latest` on `version3`, runs `make dist`, attests
+the artifacts and writes one set of notes: the changes since the previous version — on
+`version3` the pull requests `dev` merged, read from the `dev` side of the release's merge — and
+what is inside. On `dev` it publishes the pre-release `dev-latest`, never Latest. On `version3`
+it publishes twice, with the same artifacts and notes: at the tag the `VERSION` file names,
+verbatim, and at `latest`, which is the repository's Latest release; then `back-merge` runs.
 Each is deleted, with its tag, just before it is released again, so a push that leaves
 `VERSION` alone replaces that version's release with one built from the commit that
 landed, tag and all. anchor's `latest` moves, so a release carries whatever anchor

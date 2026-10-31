@@ -5,7 +5,7 @@ description: Full audit, optimization and consolidation pass over the whole conf
 
 # Conflux maintenance
 
-A run starts from a freshly pulled `version3`, works on a new branch, and ends with that branch merged into `version3` through a PR whose CI is green, plus a summary message. Supporting files:
+A run starts from a freshly pulled `dev`, works on a new branch, and ends with that branch merged into `dev` through a PR whose CI is green, plus a summary message. The release, `dev` into `version3`, is the user's (CLAUDE.md). Supporting files:
 
 - [reference.md](reference.md): repo map, Make targets, binary pipeline, harness, CI/CD, anchor surface map, anchor's release build, live API contract, baseline commands, tools.
 - [standards.md](standards.md): audit goals, performance, CI/CD and test rules, threat model, design references, audit areas, invariants.
@@ -34,10 +34,11 @@ A run starts from a freshly pulled `version3`, works on a new branch, and ends w
   - Renewal happens at two thirds of the observed window and never changes identity.
 - **Secrets on disk:** the manifest is the identity. It is written before anything else is done with an enrolment response, `0600` with the mode set on the descriptor, in a `0700` directory (a replaced DACL on Windows). Never in argv (stdin to `anchorctl start -manifest -`), never in a log (redacting `String`/`GoString`). Config writes are atomic.
 - **Boot service:** systemd, launchd, rc, or a Windows service. It runs a copy of conflux kept in the root-only state directory, which `up`, `proxy`, `install` and `start` refresh, never the file conflux was run from. `down` and `start` leave it registered; `uninstall` leaves nothing behind.
-- **Installing:** `install.sh` (POSIX sh: Linux, macOS, the BSDs) and `install.ps1` (Windows) install the platform's binary from the `latest` release, checked against its `SHA256SUMS` and run once before it goes in place, and do nothing else: `conflux up` is the user's to run, never the script's.
+- **Branches and releases:** work branches from `dev` and goes into `dev` by a PR whose CI is green; a merge into `dev` publishes the pre-release `dev-latest`, built with anchor's `dev-latest`. `version3` takes `dev` alone, by a PR the user opens; its merge publishes `VERSION`'s release and `latest`, built with anchor's `latest`, and `release.yml` then merges `version3` back into `dev`, so `dev` stays ahead. `branch-flow.yml` holds PRs to that. `main` is not used. See `docs/testing.md` § Branches.
+- **Installing:** `install.sh` (POSIX sh: Linux, macOS, the BSDs) and `install.ps1` (Windows) install the platform's binary from the `latest` release (`dev-latest` only when `CONFLUX_VERSION` names it), checked against its `SHA256SUMS` and run once before it goes in place, and do nothing else: `conflux up` is the user's to run, never the script's.
 - **Updates:** `conflux update` replaces conflux with its own `latest` release for the platform, held to the SHA-256 the release document lists, run once for its `version` before it replaces anything, and then moves the boot service onto it (a running anchor restarts; a stopped one stays stopped). Only when typed; nothing checks on a schedule. `--check` changes nothing.
 - **Public repository:** conflux is public, anchor is private. Nothing from anchor's source, no token, no private material is ever committed. CI refuses fork PRs on self-hosted runners.
-- **Anchor relationship:** anchor is the source of truth for `anchorctl` commands and flags, daemon config and mode rules, manifest/credential format, taint and address rules, proxy spec rules, uplink rules, metrics names, release names, and the format of its `latest` release. Conflux consumes it through the embedded binaries, `internal/anchorctl` (argv builders, output and metrics parsers, argv goldens, flag cross-check), `internal/config` (rules matching anchor's), `internal/enrol` (manifest decoding), `internal/anchorrelease` and `anchor-fetch`, `anchor-bins.sh`, and the CI actions.
+- **Anchor relationship:** anchor is the source of truth for `anchorctl` commands and flags, daemon config and mode rules, manifest/credential format, taint and address rules, proxy spec rules, uplink rules, metrics names, release names, and the format of its releases (`latest` from anchor's `main`, `dev-latest` from its `dev`). Conflux consumes it through the embedded binaries, `internal/anchorctl` (argv builders, output and metrics parsers, argv goldens, flag cross-check), `internal/config` (rules matching anchor's), `internal/enrol` (manifest decoding), `internal/anchorrelease` and `anchor-fetch`, `anchor-bins.sh`, and the CI actions.
 - **Traveller relationship:** traveller is live in production at `https://api.veilnet.com.au`; that deployment is the source of truth for the enrolment, renewal, and guardian manifest/bearer HTTP contracts. The live OpenAPI schema (served at `/docs`) plus real calls to the anonymous alpha routes are the reference. No traveller checkout is needed.
 
 This context is authoritative. Docs describe the design but may be wrong: where code or docs disagree with it, fix them to match. If the right answer is unclear, it is a design question (see Workflow).
@@ -80,10 +81,10 @@ T=cfx-maint-$(head -c6 /dev/urandom | od -An -tx1 | tr -d ' \n')   # random tain
 ### 1. Sync
 
 1. **Conflux.** `git status --porcelain` must be empty; if not, stop and ask (never stash or discard someone's work). Then:
-   `git fetch origin && git switch version3 && git pull --ff-only origin version3 && git switch -c maintenance/$(date +%F)` (add `-2`, `-3` if the name is taken), or the branch the session assigns, started from that same commit. Don't use `main`; it exists on the remote but is not the development branch.
-2. **Anchor.** No `$A/.git` means stop and say so. Record `git -C "$A" status --porcelain` (compared again at the end) and `git -C "$A" rev-parse origin/main` (the synced-from commit). Then `git -C "$A" fetch origin main`.
-   - Clean and on `main`: `git -C "$A" pull --ff-only origin main`, and set `AS=$A`.
-   - Dirty or on another branch (someone's work in progress): leave that checkout alone. Build from a detached worktree with `git -C "$A" worktree add --detach "$S/anchor" origin/main`, and set `AS=$S/anchor`.
+   `git fetch origin && git switch dev && git pull --ff-only origin dev && git switch -c maintenance/$(date +%F)` (add `-2`, `-3` if the name is taken), or the branch the session assigns, started from that same commit. Never `version3`, the release branch, which takes only `dev`, nor `main`, which exists on the remote and is not used.
+2. **Anchor.** conflux's `dev` builds against anchor's `dev`, so that is the branch synced. No `$A/.git` means stop and say so. Record `git -C "$A" status --porcelain` (compared again at the end) and `git -C "$A" rev-parse origin/dev` (the synced-from commit). Then `git -C "$A" fetch origin dev`.
+   - Clean and on `dev`: `git -C "$A" pull --ff-only origin dev`, and set `AS=$A`.
+   - Dirty or on another branch (someone's work in progress): leave that checkout alone. Build from a detached worktree with `git -C "$A" worktree add --detach "$S/anchor" origin/dev`, and set `AS=$S/anchor`.
    - Record `git -C "$AS" rev-parse HEAD` as the synced-to commit.
 3. **Live API.** Fetch the schema: `curl -fsS --max-time 15 "$API/docs/swagger-ui-init.js" -o "$S/swagger-ui-init.js"`, then extract `swaggerDoc` into `$S/openapi.json` (snippet in [reference.md § Live API](reference.md#live-traveller-api)). If the API is unreachable, note it, skip the live comparison and every live-API test (`make integration`, the probe node, live baseline numbers), and flag it. Never point conflux at another host to work around it.
 
@@ -95,13 +96,13 @@ T=cfx-maint-$(head -c6 /dev/urandom | od -An -tx1 | tr -d ' \n')   # random tain
 4. Adapt code, tests, `httptest` fixtures, scripts, CI and docs to match. Adopt breaking changes directly. Regenerate argv goldens with `make golden`, then review `git diff internal/anchorctl/testdata/` so every change is intended.
 5. If anchor or the live API looks wrong, don't work around it in conflux; flag it. If either contradicts the context above, that is a design question.
 
-The checks that need the real binaries (flag cross-check, shadowing, collisions) are tests CI runs on the PR, with the binaries from anchor's `latest` release.
+The checks that need the real binaries (flag cross-check, shadowing, collisions) are tests CI runs on the PR, with the binaries from anchor's `dev-latest` pre-release, since the PR goes into `dev`.
 
 ### 3. Build and copy the binaries from anchor
 
 1. **Pin.** `make release` reads `$(GENESIS_DIR)/genesis.pin` (default `genesis/`) and **mints a brand-new genesis if that file is missing**, so it must never run without the pin in place.
    - The production pin is the realm the live API's genesis derives to, computed from the step 2 enrolment's `genesis` (snippet in [reference.md § Live API](reference.md#live-traveller-api)). It starts with `realm`.
-   - It must equal what anchor publishes from its `GENESIS_PIN` variable: the `pin` in the manifest of anchor's `latest` release (the `realm:` line of `anchor-fetch`, [reference.md § Live API](reference.md#live-traveller-api)), or `gh variable get GENESIS_PIN --repo veil-net/anchor` where that is readable. A mismatch means the live realm moved past anchor's pin: stop the binary step, leave `anchor/bin/` alone, and ask.
+   - It must equal what anchor publishes from its `GENESIS_PIN` variable: the `pin` in the manifest of anchor's `dev-latest` pre-release (the `realm:` line of `anchor-fetch -tag dev-latest`, [reference.md § Live API](reference.md#live-traveller-api)), or `gh variable get GENESIS_PIN --repo veil-net/anchor` where that is readable. A mismatch means the live realm moved past anchor's pin: stop the binary step, leave `anchor/bin/` alone, and ask.
    - `$A/genesis/` may hold a locally minted development root (a `genesis.key` beside the pin). Never build from it.
    - Without the enrolment, go to the fallback. Never mint or invent a pin.
    ```bash
@@ -120,8 +121,8 @@ The checks that need the real binaries (flag cross-check, shadowing, collisions)
    make image                                                       # the probe node's image (it builds `dist` on the way; CI owns that gate)
    ```
    Then bring up the probe node ([reference.md § Probe node](reference.md#probe-node)): `conflux up` (or `conflux proxy` where Docker has no IPv6) against the live realm with `--taint "$T"`, then `conflux status`, then the one `conflux renew`. A pinned `anchord` refuses at start any realm whose root isn't its pin, so a successful `up` proves the pin. The join between peers is proven by CI's `integration` job on the PR (step 9).
-4. **Fallback.** Use this only when the pin or `make release` is unavailable. Fetch anchor's `latest` release into scratch first, so `anchor/bin/` stays untouched unless it qualifies:
-   `DEST="$S/release" make anchor-bins FETCH=1 ANCHOR_SRC=/nonexistent` (`ANCHOR_RELEASE_TOKEN` in the environment, never argv). Accept it only if the `commit:` line equals the synced-to commit. Then copy the 14 files into `anchor/bin/` and run the same verification, except: `"$AS/scripts/client-is-locked.sh" anchor/bin` (no admin directory to compare against), and no `cmp`, since the fetcher already checked every digest. If the release is at a different commit, stop the binary step, leave `anchor/bin/` untouched, and flag it. Never test or ship against placeholders or stale binaries without saying so.
+4. **Fallback.** Use this only when the pin or `make release` is unavailable. Fetch anchor's `dev-latest` pre-release into scratch first, so `anchor/bin/` stays untouched unless it qualifies:
+   `DEST="$S/release" make anchor-bins FETCH=1 ANCHOR_TAG=dev-latest ANCHOR_SRC=/nonexistent` (`ANCHOR_RELEASE_TOKEN` in the environment, never argv). Accept it only if the `commit:` line equals the synced-to commit. Then copy the 14 files into `anchor/bin/` and run the same verification, except: `"$AS/scripts/client-is-locked.sh" anchor/bin` (no admin directory to compare against), and no `cmp`, since the fetcher already checked every digest. If the release is at a different commit, stop the binary step, leave `anchor/bin/` untouched, and flag it. Never test or ship against placeholders or stale binaries without saying so.
 5. `for p in anchor/bin/x dist/x test/systemd/conflux; do git check-ignore -q "$p" || echo "NOT IGNORED $p"; done` must print nothing (`-q` takes one path). Binaries are never committed.
 
 ### 4. Update dependencies
@@ -157,17 +158,17 @@ Check every file in `.claude/skills/conflux-maintenance/` against conflux, ancho
 
 Move `VERSION` on, in its own commit: a new major (`1.4.0` → `2.0.0`) if step 2 found a major new feature in anchor that conflux now carries, otherwise a new minor (`1.4.0` → `1.5.0`). It is `MAJOR.MINOR.PATCH`, with no suffix, and `internal/version`'s default `Version` changes with it (`TestVersionMatchesFile`).
 
-Commit on the branch, push it, and open a PR with `--base version3`. Then watch its CI (`gh pr checks <n> --watch`) until every check is green. Where `gh` is not authenticated, the GitHub MCP tools do the same: `create_pull_request`, `actions_list`/`get_job_logs`, `merge_pull_request`.
+Commit on the branch, push it, and open a PR with `--base dev` (`version3` is the default branch, so the base is always named; `branch-flow` fails a PR into `version3` from anything but `dev`). Then watch its CI (`gh pr checks <n> --watch`) until every check is green. Where `gh` is not authenticated, the GitHub MCP tools do the same: `create_pull_request`, `actions_list`/`get_job_logs`, `merge_pull_request`.
 
 - A failure is read from the job's log (`gh run view <run> --log-failed`), fixed on the branch, re-checked locally with the fixed package's tests and the utility checks, pushed, and watched again. Never weaken a test, a gate or the fork guard to get green.
 - A run that failed for the Actions budget, a runner outage or an unreachable API rather than the code is not a failure to fix: say so and do not merge.
-- With every check green, confirm from the `integration` log that `service-test` and `integration` booted systemd containers and that `integration` enrolled against the live API, then `gh pr merge <n> --merge`. The merge publishes `VERSION`'s release and `latest` (`release.yml`); don't trigger one by hand.
+- With every check green, confirm from the `integration` log that `service-test` and `integration` booted systemd containers and that `integration` enrolled against the live API, then `gh pr merge <n> --merge`. The merge publishes the pre-release `dev-latest` (`release.yml`); don't trigger one by hand. Never open or merge the PR from `dev` into `version3`: that is the release, and the user's.
 
 Clean up: `docker rm -f cfx-probe`, `git -C "$A" worktree remove --force "$S/anchor"` if one was made, and delete the enrolment output under `$S`. `git -C "$A" status --porcelain` must match the step 1 snapshot. Don't write a report file. End with a brief summary covering:
 
 - the anchor commit synced from and to, and what changed as a result
 - live API contract changes found, and what changed as a result
-- binaries built and copied, from which source (a local `make release` or anchor's `latest` release), and anything skipped, with the reason
+- binaries built and copied, from which source (a local `make release` from anchor's `dev`, or its `dev-latest` pre-release), and anything skipped, with the reason
 - the new `VERSION`, and why it is a major or a minor
 - before/after numbers, including artifact sizes
 - the PR, what its CI caught and how it was fixed, and the merge

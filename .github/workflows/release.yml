@@ -1,23 +1,33 @@
 name: release
 
-# A release of every push to version3, a merge included, and nothing else: twice, with the same
-# artifacts and the same notes. Once at the tag the VERSION file names, verbatim; and once at
-# `latest`, which moves to every newer build and is the repository's Latest release.
+# A release of every push to version3 or dev, a merge included, and nothing else.
 #
-# version3 is where conflux is developed; main carries no workflows at all. So this is the
-# branch a merge reaches, and the branch a release comes from. VERSION names the release, and
-# a maintenance pass moves it on: a new major for a major new feature from anchor, a new
-# minor otherwise. A push that leaves it alone is a rebuild of that version: both releases
-# are deleted, tags included, and released again from the commit that just landed, so a
-# version's tag always names the commit its artifacts were built from.
+# Every change reaches dev first, by a pull request CI has passed, and version3 only as a merge
+# of dev, which the owner opens (docs/testing.md, "Branches"); main carries no workflows at all.
+# So there are two channels:
+#
+#   dev       a pre-release at `dev-latest`, replaced by every merge into dev and never the
+#             repository's Latest, built with anchor's `dev-latest` embedded: the two dev
+#             branches are built, and tested, together.
+#   version3  the release, twice, with the same artifacts and the same notes: once at the tag
+#             the VERSION file names, verbatim; and once at `latest`, which moves to every newer
+#             build and is the repository's Latest release, built with anchor's `latest`. Then
+#             version3 is merged back into dev, so dev never falls behind the release it made.
+#
+# VERSION names the release, and a maintenance pass moves it on: a new major for a major new
+# feature from anchor, a new minor otherwise. A push to version3 that leaves it alone is a
+# rebuild of that version: both releases are deleted, tags included, and released again from
+# the commit that just landed, so a version's tag always names the commit its artifacts were
+# built from. install.sh, install.ps1 and `conflux update` read `latest` by name, so a dev build
+# reaches nobody who did not ask for `dev-latest`.
 #
 # It only releases. CI tested the branch, and a merge lands only when CI is green -- which
-# rests on branch protection on version3, and is unsafe without it -- so nothing here
+# rests on branch protection on dev and version3, and is unsafe without it -- so nothing here
 # re-verifies. It fetches the pinned binaries, runs `make dist` (the size gate comes with
 # it), attests, and publishes.
 on:
   push:
-    branches: [version3]
+    branches: [version3, dev]
   # Rebuilds and republishes whatever VERSION currently says, exactly as a merge does.
   workflow_dispatch:
 
@@ -35,7 +45,7 @@ jobs:
   build:
     # The one guard this keeps. `workflow_dispatch` is not restricted to a branch, and
     # nothing else would stop a hand-run on a feature branch publishing to the public.
-    if: github.ref == 'refs/heads/version3'
+    if: github.ref == 'refs/heads/version3' || github.ref == 'refs/heads/dev'
     runs-on: [self-hosted, linux]
 
     # The only job that writes: contents to delete and create the releases, the other two
@@ -60,23 +70,32 @@ jobs:
 
       # anchor's `latest` moves, so a release carries whatever anchor published most
       # recently, which is the intent: conflux ships the newest anchor, not a remembered one.
+      # A dev build carries anchor's dev build, `dev-latest`, for the same reason.
       - uses: ./.github/actions/anchor-bins
         with:
           client-id: ${{ secrets.ANCHOR_APP_CLIENT_ID }}
           private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
+          tag: ${{ github.ref == 'refs/heads/version3' && 'latest' || 'dev-latest' }}
 
       # The tag is the VERSION file, verbatim: nothing is prepended, and the same string
-      # is stamped into the binary. `latest` is refused, since it is the other release's tag
-      # and the two would delete each other.
+      # is stamped into the binary. `latest` and `dev-latest` are refused, since they are the
+      # moving releases' tags and the version would delete one of them.
       - name: what version does this tree claim?
         id: version
         run: |
           set -euo pipefail
           [ -s VERSION ] || { echo "::error::VERSION is missing or empty" >&2; exit 1; }
           tag=$(tr -d '[:space:]' < VERSION)
-          [ "$tag" != latest ] || { echo "::error::VERSION says latest, which is the moving release's tag, not a version" >&2; exit 1; }
+          case "$tag" in
+            latest | dev-latest) echo "::error::VERSION says $tag, which is a moving release's tag, not a version" >&2; exit 1 ;;
+          esac
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "releasing $tag and latest at ${GITHUB_SHA:0:12}"
+          echo "short=${GITHUB_SHA:0:12}" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF" = refs/heads/dev ]; then
+            echo "releasing dev-latest ($tag) at ${GITHUB_SHA:0:12}"
+          else
+            echo "releasing $tag and latest at ${GITHUB_SHA:0:12}"
+          fi
 
       # All seven targets, CGO_ENABLED=0 throughout, so one Linux machine cross-builds
       # every one of them. The Makefile reads the VERSION file itself.
@@ -94,21 +113,27 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
+          BRANCH: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          # A dev build is installed by naming it; nothing else ever reads it.
+          pick='' pickps=''
+          if [ "$BRANCH" = dev ]; then
+            pick='CONFLUX_VERSION=dev-latest ' pickps="\$env:CONFLUX_VERSION = 'dev-latest'; "
+          fi
           {
             ./scripts/release-notes.sh "$TAG"
             echo
             echo '## Install'
             echo
             echo '```sh'
-            echo 'curl -fsSL https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.sh | sh'
+            echo "curl -fsSL https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.sh | ${pick}sh"
             echo '```'
             echo
             echo 'On Windows, in PowerShell as Administrator:'
             echo
             echo '```powershell'
-            echo 'irm https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.ps1 | iex'
+            echo "${pickps}irm https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.ps1 | iex"
             echo '```'
             echo
             # shellcheck disable=SC2016 # Markdown backticks, not a command substitution
@@ -136,6 +161,7 @@ jobs:
       # before anything is created. The version first, then `latest`, so `latest` is absent
       # only while its own artifacts upload.
       - name: delete the release at the version
+        if: github.ref == 'refs/heads/version3'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           TAG: ${{ steps.version.outputs.tag }}
@@ -158,7 +184,8 @@ jobs:
               if (e.status !== 404 && e.status !== 422) throw e;
             }
 
-      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+      - if: github.ref == 'refs/heads/version3'
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}
@@ -171,13 +198,15 @@ jobs:
           fail_on_unmatched_files: true
 
       - name: delete the release at latest
+        if: github.ref == 'refs/heads/version3'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           TAG: latest
         with:
           script: *delete
 
-      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+      - if: github.ref == 'refs/heads/version3'
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: latest
           name: latest (${{ steps.version.outputs.tag }})
@@ -188,3 +217,55 @@ jobs:
           body_path: notes.md
           make_latest: "true"
           fail_on_unmatched_files: true
+
+      # A dev build is one pre-release, replaced by the next: nothing at the version, so dev's
+      # merges leave nothing behind them, and never Latest, so nothing that asks for the Latest
+      # release ever finds it.
+      - name: delete the release at dev-latest
+        if: github.ref == 'refs/heads/dev'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          TAG: dev-latest
+        with:
+          script: *delete
+
+      - if: github.ref == 'refs/heads/dev'
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          tag_name: dev-latest
+          name: dev-latest (${{ steps.version.outputs.tag }}, ${{ steps.version.outputs.short }})
+          target_commitish: ${{ github.sha }}
+          files: |
+            dist/conflux-*
+            dist/SHA256SUMS
+          body_path: notes.md
+          prerelease: true
+          make_latest: "false"
+          fail_on_unmatched_files: true
+
+  # version3 merged back into dev, so dev stays ahead of the release it made: a fast-forward,
+  # since the release is a merge whose second parent is dev's tip, or a merge where dev has moved
+  # on since. Pushed with this workflow's token, which starts no workflow, so it publishes no dev
+  # build of its own; dev's next merge does.
+  #
+  # dev's protection must let this job push; without that the push is refused, the release is
+  # out regardless, and this fails saying so.
+  #
+  # On a hosted runner, which is thrown away with the token this job pushes with.
+  back-merge:
+    name: merge version3 back into dev
+    needs: build
+    if: github.ref == 'refs/heads/version3'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: dev
+          fetch-depth: 0
+      - name: dev takes version3
+        env:
+          SHA: ${{ github.sha }}
+        run: ./scripts/back-merge.sh "$SHA"

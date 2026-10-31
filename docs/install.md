@@ -34,6 +34,12 @@ $ curl -fsSL https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.sh 
 conflux somewhere else, and a directory you can write to needs no root. On Windows they are
 `$env:CONFLUX_VERSION` and `$env:CONFLUX_INSTALL_DIR`, set before the `irm`.
 
+`CONFLUX_VERSION=dev-latest` installs the newest dev build: the pre-release every merge into
+conflux's `dev` replaces, with anchor's own dev build inside it, for trying what the next
+release holds before it is released. Nothing installs it unless asked to by name, and
+`conflux update` on it moves to `latest`, the release, since that is the only tag an update
+reads.
+
 The BSDs have no `curl` in the base system, and the script uses whatever downloader it
 finds, so it can be fetched with theirs:
 

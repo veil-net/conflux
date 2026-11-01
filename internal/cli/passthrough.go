@@ -231,7 +231,7 @@ func toolsFor(d paths.Dirs) (*libexec.Tools, error) {
 		return libexec.Ensure(d)
 	}
 
-	if !daemon.IsReady(d) {
+	if !daemon.IsLiveReady(d) {
 		return nil, errEphemeralStarting
 	}
 

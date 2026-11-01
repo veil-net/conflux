@@ -91,6 +91,13 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 		return &permanentError{err: fmt.Errorf("an ephemeral anchor is already running from %s; stop it first", d.State)}
 	}
 
+	// A killed run's readiness marker is withdrawn before anything else: a reader that finds
+	// the lock held takes the marker beside it for this run's. IsLiveReady refuses one whose
+	// writer has gone anyway; this is for a writer's pid that something since was given.
+	if err := ClearReady(d); err != nil {
+		return err
+	}
+
 	// The root and the lock in it go last, after anchord has gone, so a second run is refused
 	// until there is nothing left of this one.
 	defer func() {

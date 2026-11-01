@@ -147,7 +147,7 @@ func reportEphemeralRun(ctx context.Context) bool {
 
 	ui.Println("ephemeral:")
 
-	if !daemon.IsReady(d) {
+	if !daemon.IsLiveReady(d) {
 		ui.Field("running", "starting, from "+d.State+" — in memory alone; nothing of it outlives the run")
 		ui.Println()
 

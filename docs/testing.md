@@ -201,6 +201,14 @@ never who is let in. Loopback is not probed, so two anchors on one machine still
 
 ## What CI runs, and on what
 
+**The tests run with the FIPS 140-3 module refusing what it does not approve**:
+`GODEBUG=fips140=only`, set on the test binaries alone through `go test -exec`, in `make test`,
+`make race` and every CI job that tests. A non-approved algorithm, or an approved one used
+outside its approved parameters, is then an error or a panic rather than a passing test. Every
+build CI makes is against the module, as a release is ([build.md](build.md#fips-140-3)), and
+`linux` also checks that the binary that ships passes the module's integrity check and refuses
+to run with the mode switched off.
+
 CI verifies that the code builds and runs. The utility checks — `gofmt`, `staticcheck`,
 `go mod tidy`, the docs links, which `make all` runs, and `govulncheck`, `actionlint` and
 `shellcheck`, which it does not since they need the network or tools of their own — run
@@ -215,10 +223,10 @@ why it is nonetheless contained.
 
 | job | machine | what it runs |
 |---|---|---|
-| `linux` | veilnet-dev | the whole suite under `-race` with the real binaries and nothing skipped; `make cross`; the digests `make build` stamps are the pair's own |
+| `linux` | veilnet-dev | the whole suite under `-race` and `fips140=only` with the real binaries and nothing skipped; `make cross`; the digests `make build` stamps are the pair's own; the built conflux in FIPS 140-3 mode, its integrity check passing, and refusing to run with the mode off |
 | `integration` | GitHub Ubuntu | `test/preflight.sh`, then `make -j2 -O service-test integration` — `dist` with the size gate for every target and the image, once, then the boot service and three nodes against the live API of the base's tree (`$VEILNET_API`) side by side |
-| `bsd` | FreeBSD 15.1 and OpenBSD 7.9, each a VM on GitHub Ubuntu | `test/service-bsd.sh` against `rc.subr`, with that platform's own pair |
-| `platforms` | GitHub macOS, Windows and Linux arm64 | the suite with that platform's own pair, built as a release is (`CGO_ENABLED=0`, `-trimpath`), the tests that need the pair included; on macOS and Windows, `test/service-host.sh` against the real service manager; on Windows, that the pinned wintun digest is the published one; then the install scripts against the published `latest`, run as a person runs them and then again: `install.sh` on macOS and Linux arm64, `install.ps1` under Windows PowerShell 5.1 and then PowerShell 7 |
+| `bsd` | FreeBSD 15.1 and OpenBSD 7.9, each a VM on GitHub Ubuntu | `test/service-bsd.sh` against `rc.subr`, with that platform's own pair; FreeBSD's conflux in FIPS 140-3 mode, OpenBSD's without the module |
+| `platforms` | GitHub macOS, Windows and Linux arm64 | the suite under `fips140=only` with that platform's own pair, built as a release is (`CGO_ENABLED=0`, `-trimpath`), the tests that need the pair included; on macOS and Windows, `test/service-host.sh` against the real service manager; on Windows, that the pinned wintun digest is the published one; then the install scripts against the published `latest`, run as a person runs them and then again: `install.sh` on macOS and Linux arm64, `install.ps1` under Windows PowerShell 5.1 and then PowerShell 7 |
 
 `linux` is one job because veilnet-dev is one machine with one runner process: separate
 jobs would queue anyway, each paying a checkout and a fetch. Its fetch goes through the

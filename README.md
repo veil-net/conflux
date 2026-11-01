@@ -349,7 +349,7 @@ its own corners of them. See [config.md](docs/config.md) and
 | [service.md](docs/service.md) | The boot service: systemd, launchd, rc on the BSDs, and the Windows service. |
 | [credentials.md](docs/credentials.md) | The two issuers, enrolment, the window, renewal, and what "the only copy" means. |
 | [windows.md](docs/windows.md) | `wintun.dll`, why it is not embedded, the pinned digest, and Defender. |
-| [security.md](docs/security.md) | What conflux adds to anchor's threat model: an executable on disk and a key in a file. |
+| [security.md](docs/security.md) | What conflux adds to anchor's threat model: an executable on disk and a key in a file. FIPS 140-3 mode, and what may be claimed of it. |
 | [troubleshooting.md](docs/troubleshooting.md) | Symptom, cause, and what to do about it. |
 | [build.md](docs/build.md) | Building from source, where the anchor binaries come from, cross-compiling. |
 | [testing.md](docs/testing.md) | What is tested, how, and what has no coverage. |

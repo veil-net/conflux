@@ -9,7 +9,9 @@ package cli
 
 import (
 	"context"
+	"crypto/fips140"
 	"errors"
+	"fmt"
 	"os"
 	"os/signal"
 	"runtime"
@@ -81,6 +83,12 @@ var anchorLifecycleVerbs = map[string]string{
 // Main dispatches. It returns an exit code rather than calling os.Exit so that the
 // tests can drive it.
 func Main(argv []string) int {
+	if err := fipsRefusal(fips140.Version(), fips140.Enabled()); err != nil {
+		ui.Errf("%v", err)
+
+		return ExitChildFailed
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -117,6 +125,24 @@ func Main(argv []string) int {
 	}
 
 	return passthrough(ctx, argv[1:])
+}
+
+// fipsRefusal refuses a conflux built to run in FIPS 140-3 mode whose mode has been switched
+// off, as anchord refuses one.
+//
+// A build against a frozen Go Cryptographic Module runs in the mode by default, and only a
+// GODEBUG fips140=off turns it off. Running anyway would make every claim docs/security.md
+// makes about this binary untrue while nothing on the machine said so, so every verb refuses,
+// exiting 70: a service manager restarting into the same environment meets the same answer.
+// A build against the toolchain's own tree ("latest") has nothing to refuse: OpenBSD's, which
+// the module will not run on, and a plain `go build`.
+func fipsRefusal(module string, enabled bool) error {
+	if module == "latest" || enabled {
+		return nil
+	}
+
+	return fmt.Errorf("this conflux is built against the Go Cryptographic Module %s to run in FIPS 140-3 mode,\n"+
+		"  and GODEBUG has switched that mode off. Unset GODEBUG's fips140", module)
 }
 
 // refuseLifecycle explains rather than obeys.

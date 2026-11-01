@@ -120,6 +120,7 @@ func printAnchorctlUsage(ctx context.Context) {
 // against a release note without running it.
 func runVersion(_ context.Context, _ []string) int {
 	ui.Println(version.String())
+	ui.Println("fips140 " + version.FIPS())
 	ui.Println(version.Anchor())
 
 	return ExitOK

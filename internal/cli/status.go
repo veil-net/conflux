@@ -34,6 +34,8 @@ func runStatus(ctx context.Context, args []string) int {
 	d := paths.Default()
 
 	ui.Println(version.String())
+	// conflux's own mode: anchord's is the fips140 row of the anchor's status below.
+	ui.Field("fips140", version.FIPS())
 	ui.Println()
 
 	cfg, err := config.Load(d)

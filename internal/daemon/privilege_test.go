@@ -234,17 +234,6 @@ func TestPrivilegeString(t *testing.T) {
 	}
 }
 
-// TestServiceSID: the SID Windows derives for a service, against one everybody knows.
-func TestServiceSID(t *testing.T) {
-	if got, want := serviceSID("TrustedInstaller"), "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464"; got != want {
-		t.Errorf("serviceSID(TrustedInstaller) = %s, want %s", got, want)
-	}
-
-	if serviceSID("conflux") != serviceSID("CONFLUX") {
-		t.Error("a service's SID does not depend on how its name is cased")
-	}
-}
-
 // TestAnchordEnv: the token in the environment, and nothing of the service manager's or of
 // conflux's own, and for the account nobody's home.
 func TestAnchordEnv(t *testing.T) {

@@ -20,7 +20,7 @@ func TestRestrictTokenRemovesPrivileges(t *testing.T) {
 	}
 	defer own.Close()
 
-	sid, err := windows.StringToSid(serviceSID("conflux"))
+	sid, err := serviceSID("conflux")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,4 +122,31 @@ func tokenInfo(t *testing.T, tok windows.Token, class uint32) []byte {
 	}
 
 	return b
+}
+
+// TestServiceSID: the SID Windows gives a service, against one everybody knows, and the same
+// whatever the name's case.
+func TestServiceSID(t *testing.T) {
+	sid, err := serviceSID("TrustedInstaller")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got, want := sid.String(), "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464"; got != want {
+		t.Errorf("serviceSID(TrustedInstaller) = %s, want %s", got, want)
+	}
+
+	lower, err := serviceSID("conflux")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	upper, err := serviceSID("CONFLUX")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !lower.Equals(upper) {
+		t.Error("a service's SID does not depend on how its name is cased")
+	}
 }

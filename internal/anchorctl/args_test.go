@@ -17,15 +17,15 @@ var update = flag.Bool("update", false, "rewrite the golden argv files")
 // -serve-subnet" from a runtime failure on somebody's laptop into a reviewable text diff.
 var scenarios = map[string]StartMode{
 	"up-minimal": {
-		TUN: true, TUNName: "anchor0",
+		TUN: true,
 		Dir: "/var/lib/conflux/anchor",
 	},
 	"up-ipv4": {
-		TUN: true, TUNName: "anchor0",
+		TUN:  true,
 		IPv4: "10.128.0.7/24", Dir: "/var/lib/conflux/anchor",
 	},
 	"up-subnets": {
-		TUN: true, TUNName: "anchor0",
+		TUN:  true,
 		IPv4: "10.128.0.7/24", Subnets: []string{"192.168.1.0/24", "eth1"},
 		Dir: "/var/lib/conflux/anchor",
 	},
@@ -42,12 +42,12 @@ var scenarios = map[string]StartMode{
 		Dir:     "/var/lib/conflux/anchor",
 	},
 	"up-peers": {
-		TUN: true, TUNName: "anchor0",
+		TUN:   true,
 		Peers: []string{"genesis.veilnet.com.au:4700"},
 		Dir:   "/var/lib/conflux/anchor",
 	},
 	"up-peers-many": {
-		TUN: true, TUNName: "anchor0",
+		TUN:   true,
 		Peers: []string{"genesis.veilnet.com.au:4700", "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq@203.0.113.9:4700"},
 		Dir:   "/var/lib/conflux/anchor",
 	},
@@ -57,11 +57,11 @@ var scenarios = map[string]StartMode{
 		Dir:     "/var/lib/conflux/anchor",
 	},
 	"up-uplink": {
-		TUN: true, TUNName: "anchor0",
+		TUN:    true,
 		Uplink: "/dev/ttyUSB0:115200", Dir: "/var/lib/conflux/anchor",
 	},
 	"up-uplink-ipv4": {
-		TUN: true, TUNName: "anchor0",
+		TUN:  true,
 		IPv4: "10.128.0.7/24", Uplink: "/dev/ttyUSB0", Dir: "/var/lib/conflux/anchor",
 	},
 	"proxy-uplink": {
@@ -86,11 +86,11 @@ var scenarios = map[string]StartMode{
 		Dir:     `C:\ProgramData\conflux\anchor`,
 	},
 	"up-port": {
-		TUN: true, TUNName: "anchor0",
+		TUN:  true,
 		Port: 4711, Dir: "/var/lib/conflux/anchor",
 	},
 	"up-low-latency": {
-		TUN: true, TUNName: "anchor0",
+		TUN:        true,
 		LowLatency: true, Dir: "/var/lib/conflux/anchor",
 	},
 	// The three lan-discovery answers. "auto" is the absence of a golden of its own:
@@ -98,11 +98,11 @@ var scenarios = map[string]StartMode{
 	// -lan-discovery appears there -- an auto that emitted a flag would override the
 	// manifest with anchorctl's default on every machine that never asked.
 	"up-lan-discovery-yes": {
-		TUN: true, TUNName: "anchor0",
+		TUN:          true,
 		LANDiscovery: boolp(true), Dir: "/var/lib/conflux/anchor",
 	},
 	"up-lan-discovery-no": {
-		TUN: true, TUNName: "anchor0",
+		TUN:          true,
 		LANDiscovery: boolp(false), Dir: "/var/lib/conflux/anchor",
 	},
 	"proxy-lan-discovery-no": {
@@ -111,11 +111,11 @@ var scenarios = map[string]StartMode{
 		Dir:          "/var/lib/conflux/anchor",
 	},
 	"up-serve-exit-only": {
-		TUN: true, TUNName: "anchor0",
+		TUN:       true,
 		ServeExit: true, Dir: "/var/lib/conflux/anchor",
 	},
 	"up-use-exit-only": {
-		TUN: true, TUNName: "anchor0",
+		TUN:     true,
 		UseExit: true, Dir: "/var/lib/conflux/anchor",
 	},
 	"proxy-low-latency": {

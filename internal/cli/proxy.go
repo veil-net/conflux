@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"flag"
-	"runtime"
 	"strings"
 
 	"github.com/veil-net/conflux/internal/config"
@@ -92,11 +91,10 @@ func runProxy(ctx context.Context, args []string) int {
 	sayLeavingObserveMode(cfg)
 
 	if cfg.Mode == config.ModeTUN {
-		ui.Errf("this machine was running in TUN mode with interface %s.\n"+
-			"  Userspace mode replaces that: one daemon holds one anchor, and an anchor with\n"+
-			"  a host interface cannot also serve a reverse proxy -- with a TUN the kernel owns\n"+
-			"  the overlay address, so a service binds it directly and needs no proxy.",
-			interfaceLine(runtime.GOOS, cfg.TUNInterface()))
+		ui.Errf("this machine was running in TUN mode.\n" +
+			"  Userspace mode replaces that: one daemon holds one anchor, and an anchor with\n" +
+			"  a host interface cannot also serve a reverse proxy -- with a TUN the kernel owns\n" +
+			"  the overlay address, so a service binds it directly and needs no proxy.")
 
 		// What it routes stays, and so does the IPv4: in userspace the anchor forwards
 		// subnets and serves an exit from its own process.

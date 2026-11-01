@@ -131,7 +131,7 @@ configuration, and registers the boot service.
 | `--no-ipv4` | no IPv4 of its own, without prompting. It still reaches IPv4 peers. |
 | `--subnet CIDR` | a network this machine forwards for the realm: an interface, a private network with no host bits set, or `'*'` for every private network on every interface, each optionally bound to some of this machine's taints as `SPEC@a+b`; repeat for more. It replaces a list a member's Subnets order set. See [modes.md](modes.md#--subnet-and-what-the-host-has-to-be). |
 | `--no-subnet` | forward nothing for the realm; the way back from `--subnet`, and from a member's Subnets order. |
-| `--interface NAME` | the network interface name. Default `anchor0`. Linux and Windows honour it; macOS numbers its own `utunN` and the BSDs their own `tunN`, taking a name of that form as the unit to ask for, and `conflux status` says so rather than naming one that is not there. A name the platform refuses — on Linux one of 16 bytes or more, or holding `/`, `:` or a space; on macOS `utun` followed by anything but a number — is refused here, for good, rather than retried. |
+| `--interface NAME` | the network interface name. Default: the anchor's own, `anchor` and the start of its AnchorID, which `conflux status` shows. Linux and Windows honour it; macOS numbers its own `utunN` and the BSDs their own `tunN`, taking a name of that form as the unit to ask for, and `conflux status` says so rather than naming one that is not there. A name the platform refuses — on Linux one of 16 bytes or more, or holding `/`, `:` or a space; on macOS `utun` followed by anything but a number — is refused here, for good, rather than retried. |
 | `--uplink DEV` | reach the realm over a link rather than the host's network: `/dev/ttyUSB0`, or `/dev/ttyUSB0:115200` with a line speed. See [uplink.md](uplink.md). |
 | `--no-uplink` | go back to the host's network on a machine configured for a link. |
 | `--peers HOST:PORT` | where to start looking for the realm; repeat for more. `ANCHORID@host:port` also names the anchor expected there. Enrolment supplies this, so it is an override — see below. |
@@ -148,7 +148,7 @@ configuration, and registers the boot service.
 | `--observe` | run the observer beside the anchor: an inventory of the cryptography of this host's traffic. See [observe.md](observe.md#beside-an-anchor). Naming it, or either option below, says what the observer is now, and an option not given is off; naming none keeps what is configured. |
 | `--observe-loopback`, `--observe-hide-names` | observe the loopback interfaces too; leave the names flows were reached by out of the records. Each implies `--observe`. |
 | `--no-observe` | stop observing. |
-| `--export HOST:PORT` | send telemetry, and each record the observer makes, to the OTLP/gRPC collector there: the export on, that endpoint, `flows` and `metrics` on, and everything else `conflux.json`'s `export` block says kept — headers and TLS above all, which no command line takes. See [config.md](config.md#export--where-telemetry-goes). |
+| `--export HOST:PORT` | send telemetry, each record the observer makes and each circuit the anchor relays, to the OTLP/gRPC collector there: the export on, that endpoint, `flows` and `metrics` on, and everything else `conflux.json`'s `export` block says kept — headers and TLS above all, which no command line takes. See [config.md](config.md#export--where-telemetry-goes). |
 | `--export-insecure` | reach that collector without TLS. |
 
 An anchor listens on **every** interface, so `--port` is a port and not an address:

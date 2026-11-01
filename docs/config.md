@@ -49,7 +49,6 @@ layout, and why, is in [security.md](security.md#what-anchord-runs-as).
   "lanDiscovery": false,
   "serveExit": false,
   "useExit": false,
-  "tunName": "anchor0",
   "apiBaseUrl": "https://api.veilnet.com.au",
   "createdAt": "2026-09-06T06:35:41Z",
   "updatedAt": "2026-09-06T06:35:41Z"
@@ -70,6 +69,7 @@ layout, and why, is in [security.md](security.md#what-anchord-runs-as).
 | `lowLatency` | carry layer-2 frames on QUIC datagrams instead of streams. Absent is false. Either mode. |
 | `lanDiscovery` | probe the host's own networks for anchors of this realm tree. Either mode. The one field here where **absent is not false**: it is `auto`, and it passes no flag at all, which is what leaves enrolment's own `lanDiscovery` in play. `false` and absent are different documents and `--lan-discovery no` writes the first of them. |
 | `serveExit`, `useExit` | route the public internet out of and into the overlay. Absent is false. Either mode, as `subnets`; anchor refuses the two together. |
+| `tunName` | the interface name `--interface` asked for. `tun` only. Absent is the usual case: the anchor then names the interface after itself, `anchor` and the start of its AnchorID, on Linux and Windows, and macOS and the BSDs number their own. `conflux status` names the one it holds. |
 | `apiBaseUrl` | absent means the default. |
 
 This file is the whole of what a reboot needs. Every `up`, `proxy` and `observe` rewrites
@@ -120,8 +120,10 @@ The full field list is `enabled`, `endpoint` (host:port, not a URL — the schem
 `metricIntervalNanos`, `traceSampleRatio`, `serviceName`, `resourceAttributes`,
 `exportTimeoutNanos`, `shutdownTimeoutNanos`, `caCert`, `clientCert`, `clientKey`,
 `logLevel` and `cardinalityLimit`. `flows` exports a log record per interval of each IP
-flow the anchor carries and each circuit it relays, and each record the observer makes, as an
-`anchor.observed_flow` event, as it is made. The three TLS fields take
+flow the observer records, from the host's interfaces and, beside an anchor, from the
+overlay, as an `anchor.observed_flow` event as it is made, and of each circuit the anchor
+relays, as an `anchor.circuit` event. Without the observer it sends circuits alone: the anchor
+counts no IP flow of its own ([observe.md](observe.md#beside-an-anchor)). The three TLS fields take
 `{"path": "…"}` or `{"inline": "<base64 PEM>"}`.
 
 **`headers` are credentials.** Anything in them authenticates this machine to a

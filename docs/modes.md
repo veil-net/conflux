@@ -13,13 +13,15 @@ default, or a link named by `--uplink`, which works with either mode below. See
 
 ## TUN — `conflux up`
 
-The daemon creates a real network interface — `anchor0` on Linux and Windows; macOS
-numbers its own `utunN` and the BSDs their own `tunN` — and the host kernel owns the
-overlay addresses. `ping`, `ssh`, a browser, anything on the machine can use the
-overlay without knowing it exists. This needs `CAP_NET_ADMIN` on Linux, root on macOS
-and the BSDs, Administrator and `wintun.dll` on Windows — and that is what `anchord` is
-given: on Linux it runs as conflux's own account with `CAP_NET_ADMIN` and nothing else,
-unless the host's firewall takes changes only from root. See
+The daemon creates a real network interface — on Linux and Windows named after the
+anchor, `anchor` and the start of its AnchorID (`anchor6btpa3gn6`), unless `--interface`
+names another; macOS numbers its own `utunN` and the BSDs their own `tunN` — and the host
+kernel owns the overlay addresses; `conflux status` names the one the anchor holds.
+`ping`, `ssh`, a browser, anything on the machine can use the overlay without knowing it
+exists. This needs `CAP_NET_ADMIN` on Linux, root on macOS and the BSDs, Administrator and
+`wintun.dll` on Windows — and that is what `anchord` is given: on Linux it runs as
+conflux's own account with `CAP_NET_ADMIN` and nothing else, unless the host's firewall
+takes changes only from root. See
 [security.md](security.md#what-anchord-runs-as).
 
 Because the kernel owns the address, a service published on the overlay is an ordinary
@@ -98,6 +100,10 @@ $ sudo conflux up --observe              # beside an anchor with an interface
 $ sudo conflux proxy 8080=127.0.0.1:3000 --observe
 ```
 
+Beside an anchor, in either mode, the observer also records what the anchor carries over
+the overlay, as the anchor hands it on, so a userspace machine's traffic, which no capture
+sees, is in the inventory as an interface machine's is.
+
 What `anchord` is given is the capture and nothing else: `CAP_NET_RAW` on Linux, read
 access to `/dev/bpf*` on macOS, `LOCAL SERVICE` on Windows. FreeBSD and OpenBSD have no
 capture, and refuse. [observe.md](observe.md) has the rest.
@@ -143,7 +149,7 @@ Running one replaces another, and conflux says so:
 
 ```console
 $ sudo conflux proxy 8080=127.0.0.1:3000
-conflux: this machine was running in TUN mode with interface anchor0.
+conflux: this machine was running in TUN mode.
   Userspace mode replaces that: one daemon holds one anchor, and an anchor with
   a host interface cannot also serve a reverse proxy …
 ```

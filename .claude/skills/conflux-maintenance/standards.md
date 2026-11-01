@@ -63,7 +63,7 @@ Work through them in this order:
 ## Threat model
 
 - Anchor nodes are assumed to run genuine, unmodified anchor binaries. Don't raise overlay findings that hold only against a modified peer. The protocol, handshake and credential chain are anchor's threat model, not conflux's.
-- `api.veilnet.com.au` is assumed to be the genuine traveller deployment. Transport handling is still in scope: TLS only, no plain-http base, no cross-host renewal URLs, bounded response sizes, and malformed responses.
+- `api.veilnet.com.au` and `api-dev.veilnet.com.au` are assumed to be the genuine traveller deployments. Transport handling is still in scope: TLS only, no plain-http base, no cross-host renewal URLs, bounded response sizes, and malformed responses.
 - Conflux's own surface is in scope:
   - the executable it writes to disk and runs (a dropper shape)
   - the private key in a file
@@ -73,7 +73,7 @@ Work through them in this order:
 
 ## Design references
 
-Anchor is the reference for overlay behaviour, and the live API at `api.veilnet.com.au` for the enrolment and renewal contracts. Conflux doesn't reimplement or second-guess anchor logic, except to pre-validate input for clear errors, and then it matches anchor exactly. Where conflux's docs describe anchor or the API differently from how they currently behave, fix conflux's docs. Where anchor's own docs and code disagree, or the live schema and live behaviour disagree, flag it rather than guessing.
+Anchor is the reference for overlay behaviour, and the live API for the enrolment and renewal contracts: `api-dev.veilnet.com.au` for `dev`, `api.veilnet.com.au` for the release. Conflux doesn't reimplement or second-guess anchor logic, except to pre-validate input for clear errors, and then it matches anchor exactly. Where conflux's docs describe anchor or the API differently from how they currently behave, fix conflux's docs. Where anchor's own docs and code disagree, or the live schema and live behaviour disagree, flag it rather than guessing.
 
 ## Test rules
 
@@ -87,7 +87,7 @@ Anchor is the reference for overlay behaviour, and the live API at `api.veilnet.
 ## Invariants (verify every run)
 
 **Embedded binaries**
-- Every `TARGETS` entry embeds exactly its own pinned `anchord` and lockdown `anchorctl`, built from the synced anchor commit and pinned to the genesis `api.veilnet.com.au` issues under.
+- Every `TARGETS` entry embeds exactly its own pinned `anchord` and lockdown `anchorctl`, built from the synced anchor commit and pinned to the genesis of the tree its branch is tested in: on `dev`, the one `api-dev.veilnet.com.au` issues under, as anchor's `dev-latest` is.
 - `make dist` passes the size gate for every target.
 - A placeholder build reports no anchor pair.
 - No `anchoradmin*` file exists anywhere in conflux.

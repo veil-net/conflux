@@ -6,7 +6,5 @@ start
 -port
 4711
 -tun=true
--tun-name
-anchor0
 -serve-exit=false
 -use-exit=false

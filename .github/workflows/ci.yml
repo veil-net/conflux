@@ -24,8 +24,14 @@ on:
 permissions:
   contents: read
 
+# Each base is tested against its own tree: a pull request into version3 embeds anchor's
+# release, pinned to the production genesis, and enrols at the production API; one into
+# dev embeds anchor's dev build, pinned to the dev genesis, and enrols at api-dev, which
+# issues under it. A pinned anchord refuses a credential from the other tree, so the two
+# move together (docs/testing.md, "The genesis node").
 env:
   ANCHOR_TAG: ${{ (github.base_ref || github.ref_name) == 'version3' && 'latest' || 'dev-latest' }}
+  VEILNET_API: ${{ (github.base_ref || github.ref_name) == 'version3' && 'https://api.veilnet.com.au' || 'https://api-dev.veilnet.com.au' }}
 
 # A superseded run holds the one self-hosted machine the run that replaced it is
 # waiting for.
@@ -92,8 +98,8 @@ jobs:
 
   # The container suites, on a hosted runner: the boot service under a real systemd --
   # with every branch of what anchord runs as taken, the hosts it depends on made inside
-  # the container -- and three nodes against the live API and the production realm, whose
-  # anchord is conflux's own account with CAP_NET_ADMIN alone. The third reaches the
+  # the container -- and three nodes against the live API of the base's tree ($VEILNET_API
+  # above), whose anchord is conflux's own account with CAP_NET_ADMIN alone. The third reaches the
   # realm through its manifest's bootstrap node over UDP, and from veilnet-dev no
   # handshake gets through to it. A hosted runner is thrown away, so nothing here reaps
   # after the suites; the fetch needs the anchor credential, which a fork's pull request

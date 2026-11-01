@@ -74,8 +74,27 @@ lists, which any user may read; the process holding a socket another user owns m
 
 `--observe` on `conflux up` or `conflux proxy` runs the observer beside the anchor, in the same
 daemon, and its capture is added to what `anchord` is given for the anchor: `CAP_NET_RAW` beside
-`CAP_NET_ADMIN` on Linux, `/dev/bpf*` beside nothing in userspace on macOS. The anchor's own
-connections are observed with the rest.
+`CAP_NET_ADMIN` on Linux, `/dev/bpf*` beside nothing in userspace on macOS. It then records from
+two sources, which each record and inventory entry names:
+
+- **interfaces**, what the host's interfaces carry, as `conflux observe` records alone — the
+  anchor's own connections to its peers among them, and in TUN mode less the anchor's interface,
+  which would carry the overlay's flows a second time;
+- **overlay**, what the anchor carries over the overlay: each packet as it passes between the
+  anchor's own side — the host, its stack, the networks it serves — and one peer. That is so in
+  userspace as much as in TUN mode, so a `conflux proxy` machine, whose traffic no capture could
+  see, is observed as an `up` one is. Each record names the peer on the far side and the relays
+  its traffic took, and needs nothing beyond the observer's privilege: the packets are the
+  anchor's own, handed over inside the daemon.
+
+Traffic the anchor relays between two others is in neither, since it cannot read it; with
+`flows` exported, each circuit it relays goes to the collector as an `anchor.circuit` record
+instead ([config.md](config.md#export--where-telemetry-goes)). `conflux status` gives the overlay on the
+observer's line, once an anchor runs beside it:
+
+```console
+  observer     af_packet, 5 flows held, 24 packets taken; overlay of 6btpa3gn6w, 2 flows held, 31 packets taken
+```
 
 ```console
 $ sudo conflux up --observe

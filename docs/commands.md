@@ -469,8 +469,21 @@ member's Subnets order replaced `conflux.json`'s list there is one line, saying 
 
 ## `conflux version`
 
-conflux's version and commit, and the SHA-256 of both embedded anchor binaries. Put
-this in a bug report; it names the exact anchor build without running it.
+conflux's version and commit, whether it runs in FIPS 140-3 mode and against which Go
+Cryptographic Module, and the SHA-256 of both embedded anchor binaries. Put this in a bug
+report; it names the exact anchor build without running it.
+
+```console
+$ conflux version
+conflux 1.0.0 (1fea995613e4326c6a70a1a87f57dc120f6b98c9) linux/amd64
+fips140 on, Go Cryptographic Module v1.26.0
+anchor set 1c647d7e06874286
+  anchord    be6edb0db7ae…
+  anchorctl  dfe2e7a147fd…
+```
+
+A conflux built against the module refuses every command, `version` included, when GODEBUG
+switches FIPS 140-3 mode off; see [security.md](security.md#fips-140-3-and-cmvp).
 
 ## `conflux update`
 
@@ -556,6 +569,6 @@ other refusal — passes through untouched.
 | 2 | usage |
 | 13 | needs root or Administrator, or a pass-through that cannot read the daemon's token |
 | 69 | nothing here to act on: nothing running, or no credential to renew |
-| 70 | a configuration conflux or anchor refuses for good; the systemd unit does not restart on it |
+| 70 | a configuration conflux or anchor refuses for good, or a conflux built for FIPS 140-3 mode run with it switched off; the systemd unit does not restart on it |
 | 78 | no configuration — the code the systemd unit keys `RestartPreventExitStatus` on |
 | other | for pass-through, anchorctl's own code, verbatim |

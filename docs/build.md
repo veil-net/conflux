@@ -7,7 +7,8 @@ $ make build
   50.1 MB  bin/conflux
 ```
 
-Go 1.27.3 or newer, and nothing else. The only dependency is `golang.org/x/sys`.
+Go 1.27.3 or newer, and nothing else. The only dependency is `golang.org/x/sys`. The
+Makefile builds against the FIPS 140-3 Go Cryptographic Module; see [FIPS 140-3](#fips-140-3).
 
 `make anchor-bins` is the one step a fresh clone needs and does not get for free. It
 looks in `../anchor` by default. Without it, `//go:embed` has nothing to embed and the
@@ -268,8 +269,7 @@ $ make cross
   ok   linux/amd64
   …
 $ make dist
-  ok   dist/conflux-linux-amd64  50 MB
-  ok   dist/conflux-darwin-arm64  48 MB
+  ok   dist/conflux-linux-amd64  62 MB  GOFIPS140=v1.26.0
   …
   wrote dist/SHA256SUMS
 ```
@@ -277,18 +277,45 @@ $ make dist
 `cross` vets every target, which compiles each one's packages and test files: `go build
 ./...` compiles no test files, and a platform-specific test that no longer builds would
 otherwise go unnoticed. It works on placeholders. `dist` builds every target with the
-real binaries and the size gate.
+real binaries, the size gate and the module each target ships with: every line ends
+`GOFIPS140=v1.26.0` but OpenBSD's, which ends `GOFIPS140=off`.
 
 `CGO_ENABLED=0` throughout. No garble: anchor garbles its own release build to hide
 the genesis pin inside it, and conflux hides nothing — garbling would only make every
 stack trace a user sends back useless.
+
+## FIPS 140-3
+
+Every conflux the Makefile builds is built against the frozen Go Cryptographic Module
+v1.26.0 and runs in FIPS 140-3 mode, as anchor builds its own programs. `GOFIPS140 ?= v1.26.0`
+makes the build compile that snapshot, which ships in the toolchain as
+`lib/fips140/v1.26.0.zip`, and makes `fips140=on` the default GODEBUG: conflux runs the
+module's self-tests and integrity check as it starts, and its TLS negotiates only approved
+parameters. Why v1.26.0 and not the certified v1.0.0, and what may be claimed, is in
+[security.md](security.md#fips-140-3-and-cmvp).
+
+- **OpenBSD is built with `GOFIPS140=off`.** The module refuses to run there
+  (`-fexecute-only`, golang/go#70880), and a binary built with it panics before `main`.
+  `make build` and `make dist` choose per target.
+- **`make dist` checks it.** Each artifact's build settings, as `go version -m` reads them,
+  must name the module its target ships with — `GOFIPS140=v1.26.0`, or none for OpenBSD —
+  or the build fails.
+- **An older installed Go.** One that predates v1.26.0 stops at "unknown GOFIPS140 version"
+  before it would switch to the toolchain `go.mod` names. The Makefile asks that toolchain
+  for its `GOROOT` with the module off and puts its `go` first on `PATH`, so `make` works
+  with any installed Go that can switch.
+- **A plain `go build`** sets no `GOFIPS140` and builds against the toolchain's own tree,
+  which runs outside FIPS mode and says so: `conflux version` reports `fips140 off, this build
+  carries no frozen Go Cryptographic Module`. Set `GOFIPS140=v1.26.0` to build what ships.
+- **The tests** run with the module refusing what it does not approve; see
+  [testing.md](testing.md#what-ci-runs-and-on-what).
 
 ## Targets
 
 | | |
 |---|---|
 | `make build` | this machine |
-| `make test` / `make race` | the tests |
+| `make test` / `make race` | the tests, under `GODEBUG=fips140=only` (`FIPSTEST=` without) |
 | `make cross` | vet all seven, test files included |
 | `make dist` | build all seven into `dist/`, with `SHA256SUMS` and the size gate |
 | `make golden` | rewrite the argv fixtures after an intended change |

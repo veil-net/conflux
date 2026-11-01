@@ -30,7 +30,10 @@ const workDir = ""
 // dropState holds the token the next anchord is started with, from dropTo to the start,
 // and the sets anchord -h has started from under one.
 type dropState struct {
-	token  windows.Token
+	token windows.Token
+	// sid is the service SID the token was made for, which anchord's process and thread
+	// are opened to: asked of Windows once, by dropTo, beside the token it goes with.
+	sid    string
 	smoked map[string]bool
 }
 
@@ -58,7 +61,7 @@ const (
 
 // dropTo makes the token anchord runs as, and checks that anchord starts under it.
 func (s *Supervisor) dropTo(p *Privilege) string {
-	sid, err := windows.StringToSid(serviceSID(windowsServiceName()))
+	sid, err := serviceSID(windowsServiceName())
 	if err != nil {
 		return "could not form the service's SID: " + err.Error()
 	}
@@ -72,6 +75,7 @@ func (s *Supervisor) dropTo(p *Privilege) string {
 
 	s.releaseDrop()
 	s.drop.token = tok
+	s.drop.sid = sid.String()
 
 	p.As = `NT AUTHORITY\LOCAL SERVICE`
 
@@ -278,8 +282,7 @@ func (s *Supervisor) procAttrFor(p Privilege) *syscall.SysProcAttr {
 		return attr
 	}
 
-	sid := serviceSID(windowsServiceName())
-	sd := "O:SYD:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;" + sid + ")(A;;RC;;;OW)"
+	sd := "O:SYD:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;" + s.drop.sid + ")(A;;RC;;;OW)"
 
 	attr.Token = syscall.Token(s.drop.token)
 	attr.ProcessAttributes = securityAttributes(sd)
@@ -306,6 +309,8 @@ func (s *Supervisor) releaseDrop() {
 		s.drop.token.Close()
 		s.drop.token = 0
 	}
+
+	s.drop.sid = ""
 }
 
 func startProcess(cmd *exec.Cmd, _ Privilege) error { return cmd.Start() }
@@ -338,7 +343,12 @@ func makeAnchorDir(path string, p Privilege) error {
 		return paths.Restrict(path, true)
 	}
 
-	sid := serviceSID(windowsServiceName())
+	ssid, err := serviceSID(windowsServiceName())
+	if err != nil {
+		return err
+	}
+
+	sid := ssid.String()
 	sddl := "O:SYG:SYD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;;" + dirOwnRights + ";;;" + sid + ")" +
 		"(A;OICIIO;FA;;;" + sid + ")(A;OICI;RC;;;OW)"
 
@@ -380,7 +390,7 @@ func anchorDirFor(path string, p Privilege) bool {
 }
 
 func grantsServiceSID(path string) bool {
-	sid, err := windows.StringToSid(serviceSID(windowsServiceName()))
+	sid, err := serviceSID(windowsServiceName())
 	if err != nil {
 		return false
 	}
@@ -468,7 +478,7 @@ func writeDaemonFile(path string, data []byte, p Privilege) error {
 		return nil
 	}
 
-	sid, err := windows.StringToSid(serviceSID(windowsServiceName()))
+	sid, err := serviceSID(windowsServiceName())
 	if err != nil {
 		return err
 	}

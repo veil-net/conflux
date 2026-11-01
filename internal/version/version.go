@@ -2,6 +2,7 @@
 package version
 
 import (
+	"crypto/fips140"
 	"fmt"
 	"runtime"
 	"runtime/debug"
@@ -67,4 +68,29 @@ func Anchor() string {
 
 	return fmt.Sprintf("anchor set %s\n  anchord    %s\n  anchorctl  %s",
 		anchor.SetID(), anchordSHA, anchorctlSHA)
+}
+
+// FIPS says whether this conflux runs in FIPS 140-3 mode, and against which Go Cryptographic
+// Module: the line `conflux version` and `conflux status` give it.
+func FIPS() string {
+	return fipsLine(fips140.Version(), fips140.Enabled())
+}
+
+// fipsLine is FIPS for a given module version and mode, so each case can be asserted.
+//
+// "latest" is what crypto/fips140 reports for a build against the toolchain's own tree rather
+// than a frozen module: an OpenBSD build, which the module refuses, or a plain `go build`
+// without the Makefile's GOFIPS140. A frozen module with the mode switched off is refused at
+// start (cli.fipsRefusal), so it never reaches a report.
+func fipsLine(module string, enabled bool) string {
+	switch {
+	case enabled && module != "latest":
+		return "on, Go Cryptographic Module " + module
+	case enabled:
+		return "on, against the toolchain's own module rather than a frozen one"
+	case module == "latest":
+		return "off, this build carries no frozen Go Cryptographic Module"
+	default:
+		return "off, switched off by GODEBUG in a build against Go Cryptographic Module " + module
+	}
 }

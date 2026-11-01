@@ -89,6 +89,12 @@ Anchor is the reference for overlay behaviour, and the live API for the enrolmen
 **Embedded binaries**
 - Every `TARGETS` entry embeds exactly its own pinned `anchord` and lockdown `anchorctl`, built from the synced anchor commit and pinned to the genesis of the tree its branch is tested in: on `dev`, the one `api-dev.veilnet.com.au` issues under, as anchor's `dev-latest` is.
 - `make dist` passes the size gate for every target.
+
+**FIPS 140-3**
+- Every target is built against the Go Cryptographic Module v1.26.0 (`GOFIPS140`, the Makefile and ci.yml equal) except OpenBSD's, built with it off; `make dist` holds each artifact to it.
+- Every cryptographic service conflux's own code uses is approved in module v1.0.0's Security Policy (CMVP #5247), used as it approves, with ML-DSA the one exception, as docs/security.md "FIPS 140-3 and CMVP" states. No SHA-1, MD5, DES, RC4 or DSA in conflux's code; a new use goes into that section's table in the same change.
+- The tests run under `GODEBUG=fips140=only`, locally (`make test`) and in every CI job that tests.
+- A build against the module run with `GODEBUG=fips140=off` refuses every command, exit 70.
 - A placeholder build reports no anchor pair.
 - No `anchoradmin*` file exists anywhere in conflux.
 - No binary is tracked by git.

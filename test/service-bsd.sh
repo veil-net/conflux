@@ -18,8 +18,10 @@ say() { printf '\n== %s\n' "$*"; }
 fail() { echo "$*" >&2; exit 1; }
 
 case "$(uname -s)" in
-  FreeBSD) os=freebsd account=conflux script=/usr/local/etc/rc.d/conflux log=/var/log/conflux.log ;;
-  OpenBSD) os=openbsd account=_conflux script=/etc/rc.d/conflux log=/var/log/daemon ;;
+  FreeBSD) os=freebsd account=conflux script=/usr/local/etc/rc.d/conflux log=/var/log/conflux.log
+    fips='fips140 on, Go Cryptographic Module v1.26.0' ;;
+  OpenBSD) os=openbsd account=_conflux script=/etc/rc.d/conflux log=/var/log/daemon
+    fips='fips140 off, this build carries no frozen Go Cryptographic Module' ;;
   *) fail "service-bsd.sh is for FreeBSD and OpenBSD" ;;
 esac
 
@@ -29,6 +31,11 @@ priv=$state/anchord.priv
 rc() { # VERB
   if [ "$os" = freebsd ]; then service conflux "$1"; else rcctl "$1" conflux; fi
 }
+
+# FreeBSD's conflux runs the Go Cryptographic Module in FIPS 140-3 mode, here on the kernel it
+# ships for; OpenBSD's is built without it, which the module refuses to run on.
+say "conflux reports the FIPS 140-3 mode its build carries"
+"$CONFLUX" version | grep -qx "$fips" || fail "conflux version does not say: $fips"
 
 # A run cut short leaves its registration behind; a fresh VM has none to remove.
 "$CONFLUX" uninstall --yes >/dev/null 2>&1 || true

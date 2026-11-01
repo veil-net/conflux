@@ -29,9 +29,14 @@ permissions:
 # dev embeds anchor's dev build, pinned to the dev genesis, and enrols at api-dev, which
 # issues under it. A pinned anchord refuses a credential from the other tree, so the two
 # move together (docs/testing.md, "The genesis node").
+#
+# GOFIPS140 is the Makefile's: every conflux built here, by make or by a bare go command, is
+# built against that Go Cryptographic Module and runs in FIPS 140-3 mode (docs/security.md,
+# "FIPS 140-3 and CMVP"). Keep the two equal. The make recipes build OpenBSD with it off.
 env:
   ANCHOR_TAG: ${{ (github.base_ref || github.ref_name) == 'version3' && 'latest' || 'dev-latest' }}
   VEILNET_API: ${{ (github.base_ref || github.ref_name) == 'version3' && 'https://api.veilnet.com.au' || 'https://api-dev.veilnet.com.au' }}
+  GOFIPS140: v1.26.0
 
 # A superseded run holds the one self-hosted machine the run that replaced it is
 # waiting for.
@@ -70,11 +75,12 @@ jobs:
       # The whole suite under -race, once, and none of it skipped. A skip is green, and
       # the tests that need the real binaries skip without them, so a run that fetched
       # them and then reports "no anchor pair" has lost them. On Linux nothing skips for
-      # any other reason, so zero is the right number.
+      # any other reason, so zero is the right number. With the module refusing what it
+      # does not approve, set on the test binaries alone, as the Makefile's TESTEXEC does.
       - name: the suite under -race, with the real binaries, nothing skipped
         run: |
           set -euo pipefail
-          go test -race -count=1 -v ./... > test.log 2>&1 || { cat test.log; exit 1; }
+          go test -exec 'env GODEBUG=fips140=only' -race -count=1 -v ./... > test.log 2>&1 || { cat test.log; exit 1; }
           if grep -q -- '--- SKIP' test.log; then
             echo "::error::a test skipped in the job that provides the anchor binaries" >&2
             grep -B1 -- '--- SKIP' test.log >&2
@@ -95,6 +101,17 @@ jobs:
           set -euo pipefail
           make build >/dev/null
           diff <(bin/conflux version | sed 1d) <(go run . version | sed 1d)
+
+      # The binary that ships runs in FIPS 140-3 mode: the module's integrity check passes
+      # as it starts, and a GODEBUG that switches the mode off is refused, exit 70, rather
+      # than run without it.
+      - name: conflux runs in FIPS 140-3 mode, and refuses to run with it off
+        run: |
+          set -euo pipefail
+          bin/conflux version | grep -qx 'fips140 on, Go Cryptographic Module v1.26.0'
+          GODEBUG=fips140=debug bin/conflux version 2>&1 | grep -q '^fips140: verified'
+          rc=0; GODEBUG=fips140=off bin/conflux version >/dev/null 2>&1 || rc=$?
+          [ "$rc" = 70 ] || { echo "::error::with fips140=off conflux exited $rc, not 70" >&2; exit 1; }
 
   # The container suites, on a hosted runner: the boot service under a real systemd --
   # with every branch of what anchord runs as taken, the hosts it depends on made inside
@@ -252,7 +269,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          go test -count=1 -v ./... > test.log 2>&1 || { cat test.log; exit 1; }
+          go test -exec 'env GODEBUG=fips140=only' -count=1 -v ./... > test.log 2>&1 || { cat test.log; exit 1; }
           if grep -B1 -- 'no anchor pair' test.log; then
             echo "::error::a test that needs the anchor binaries skipped" >&2
             exit 1

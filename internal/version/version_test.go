@@ -28,3 +28,22 @@ func TestVersionMatchesFile(t *testing.T) {
 		t.Errorf("version.Version = %q, VERSION file = %q; change both or neither", Version, want)
 	}
 }
+
+// TestFIPSLine: what each combination of module and mode reports, so a build that is not in
+// FIPS 140-3 mode never reads as one that is.
+func TestFIPSLine(t *testing.T) {
+	for _, c := range []struct {
+		module  string
+		enabled bool
+		want    string
+	}{
+		{"v1.26.0", true, "on, Go Cryptographic Module v1.26.0"},
+		{"latest", true, "on, against the toolchain's own module"},
+		{"latest", false, "off, this build carries no frozen"},
+		{"v1.26.0", false, "off, switched off by GODEBUG"},
+	} {
+		if got := fipsLine(c.module, c.enabled); !strings.HasPrefix(got, c.want) {
+			t.Errorf("fipsLine(%q, %v) = %q, want it to start %q", c.module, c.enabled, got, c.want)
+		}
+	}
+}

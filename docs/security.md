@@ -215,6 +215,55 @@ privilege and the reason it is off unless asked for. On Linux that is `CAP_NET_R
 also send a packet of its own making, on any interface; on macOS read access to the BPF
 devices, which can send nothing.
 
+## FIPS 140-3 and CMVP
+
+**The requirement.** Every cryptographic service conflux's own code uses is an approved
+service of the Go Cryptographic Module, used the way the module's Security Policy approves it.
+conflux is built against the module (`GOFIPS140` in the Makefile, see
+[build.md](build.md#fips-140-3)) and runs in FIPS 140-3 mode, and its tests run with the
+module refusing what it does not approve. anchord is its own program, built and claimed by
+anchor, whose `docs/security.md` says what it runs and claims; conflux carries it unchanged.
+
+**What may be claimed, exactly.** Every service conflux's code uses is one that the Security
+Policy of module v1.0.0 (CMVP certificate #5247) approves. The binaries run module v1.26.0,
+which is in CMVP review and is the module anchord runs, because v1.0.0 has no ML-DSA and
+anchor signs with nothing else; one program carries one module. So nothing conflux ships runs
+in a *validated* module yet:
+
+- v1.0.0 is validated, and every service named below is approved in it.
+- v1.26.0 is what the builds run, and it is not validated until its certificate is issued.
+
+A certificate covers the operating environments it lists, and nothing else. #5247's include
+Linux on amd64 and arm64, Windows on amd64 and arm64, macOS on arm64 and FreeBSD on amd64,
+which is every target conflux ships but OpenBSD's.
+
+**The services, and how each is used.**
+
+| Service | Standard | Used for | How it is kept approved |
+|---|---|---|---|
+| SHA-256 | FIPS 180-4 | the digests of the embedded anchor binaries, of a release `conflux update` installs, of anchor's release files and of wintun's archive; a `CONFLUX_DIR` installation's scope | — |
+| CTR_DRBG | SP 800-90A | every random byte, through `crypto/rand`: the bearer token anchord is started with, a minted taint | — |
+| TLS 1.3 and 1.2, as a client | SP 800-52r2, with the module's KDFs (SP 800-135 for 1.2, HKDF for 1.3) | HTTPS to the enrolment API, to GitHub for `conflux update` and for anchor's release files, and to wintun.net | `crypto/tls` in FIPS 140-3 mode offers and accepts only approved parameters: AES-GCM suites; P-256, P-384, P-521 and the ML-KEM hybrids; the Extended Master Secret on 1.2 |
+| ECDSA, RSA and EdDSA verification | FIPS 186-5 | the server certificate chains of those connections, on Linux and the BSDs | — |
+
+**What is outside the module.**
+
+- **The chain check on macOS and Windows.** There `crypto/x509` hands a chain verified
+  against the system roots to the operating system's verifier, so the certificate signatures
+  of conflux's HTTPS are checked by the OS, not by the module. The handshake and the session
+  are still the module's.
+- **OpenBSD.** The module refuses to run there (`-fexecute-only`), so OpenBSD's conflux is
+  built without it, reports `fips140 off`, and claims nothing.
+- **SHA-1.** The one SHA-1 an installation involves is the Windows service SID, `S-1-5-80`
+  and the SHA-1 of the service's name. Windows computes it (`RtlCreateServiceSid`); conflux
+  computes no SHA-1 itself.
+
+**Seeing it.** `conflux version` and `conflux status` say `fips140 on, Go Cryptographic Module
+v1.26.0`, and `GODEBUG=fips140=debug conflux version` prints the module's self-tests and its
+integrity check (`fips140: verified`). A build against the module that is run with
+`GODEBUG=fips140=off` refuses every command, with exit 70, as anchord refuses to start: running
+anyway would make all of the above untrue while nothing on the machine said so.
+
 ## What conflux does not defend against
 
 - **A root-equivalent local attacker.** They can read the manifest, and that is the

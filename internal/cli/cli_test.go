@@ -902,3 +902,28 @@ func TestASetListReplacesASubnetOrder(t *testing.T) {
 		t.Errorf("dropSubnetsOrder with no order: %v", err)
 	}
 }
+
+// TestFIPSRefusal: a build against a frozen module refuses to run with FIPS 140-3 mode
+// switched off, and nothing else is refused: not the mode on, and not a build against the
+// toolchain's own tree, which OpenBSD's is.
+func TestFIPSRefusal(t *testing.T) {
+	for _, c := range []struct {
+		module  string
+		enabled bool
+		refused bool
+	}{
+		{"v1.26.0", true, false},
+		{"v1.26.0", false, true},
+		{"latest", true, false},
+		{"latest", false, false},
+	} {
+		err := fipsRefusal(c.module, c.enabled)
+		if (err != nil) != c.refused {
+			t.Errorf("fipsRefusal(%q, %v) = %v, want refused %v", c.module, c.enabled, err, c.refused)
+		}
+
+		if err != nil && !strings.Contains(err.Error(), "GODEBUG") {
+			t.Errorf("the refusal %q does not name GODEBUG, which is the way out", err)
+		}
+	}
+}

@@ -2,9 +2,13 @@ package cli
 
 import (
 	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/daemon"
@@ -61,6 +65,35 @@ func TestStatusWritesNothingIntoAStartingEphemeralRun(t *testing.T) {
 
 	if entries, err := os.ReadDir(d.Libexec()); err == nil && len(entries) > 0 {
 		t.Errorf("status wrote %d entries into the run's %s", len(entries), d.Libexec())
+	}
+}
+
+// TestAKilledRunsMarkerIsNotTheNextRuns: a run killed outright leaves its readiness marker
+// in the root, and the next run, holding the lock, takes a moment to clear it. Read beside
+// that lock, the old marker said the new run was up -- status reported it running, then
+// starting once the root was cleared, then running -- and let a reader into a root being
+// emptied. Neither status nor a reader takes it for the new run's.
+func TestAKilledRunsMarkerIsNotTheNextRuns(t *testing.T) {
+	anchortest.Require(t)
+
+	d := startingEphemeral(t)
+
+	killed := exec.Command(os.Args[0], "-test.run=^$")
+	if err := killed.Run(); err != nil {
+		t.Fatalf("run a process to end: %v", err)
+	}
+
+	marker := fmt.Sprintf("%s anchorkilled %d\n", time.Now().UTC().Format(time.RFC3339Nano), killed.ProcessState.Pid())
+	if err := os.WriteFile(d.ReadyFile(), []byte(marker), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := toolsFor(d); !errors.Is(err, errEphemeralStarting) {
+		t.Errorf("a reader, with the killed run's marker beside the new run's lock: %v, want errEphemeralStarting", err)
+	}
+
+	if out, _, _ := capture(t, "status"); !strings.Contains(out, "starting, from "+d.State) {
+		t.Errorf("status, with the killed run's marker beside the new run's lock, does not say it is starting:\n%s", out)
 	}
 }
 

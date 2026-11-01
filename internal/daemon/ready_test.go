@@ -1,7 +1,9 @@
 package daemon
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -89,4 +91,54 @@ func TestReadyFileIsInTheRunDirectory(t *testing.T) {
 		t.Errorf("ReadyFile is %s, which is not under Run (%s) -- a marker that survives a "+
 			"reboot is a marker that lies", d.ReadyFile(), d.Run)
 	}
+}
+
+// IsLiveReady gates a reader's way into an ephemeral run's root. A run that is killed leaves
+// its marker behind, and a marker whose writer has gone must not count: beside the next run's
+// lock it would say that run is up while it is still clearing the root. IsReady, which the
+// installed root's readers use and fall back from, reads every one of them as before.
+func TestIsLiveReadyCountsOnlyAWriterThatRuns(t *testing.T) {
+	d := dirs(t)
+
+	if err := MarkReady(d, "anchorlive"); err != nil {
+		t.Fatalf("MarkReady: %v", err)
+	}
+
+	if b, _ := os.ReadFile(d.ReadyFile()); !IsLiveReady(d) {
+		t.Fatalf("this process's own marker, %q, does not count", b)
+	}
+
+	for name, content := range map[string]string{
+		"a writer that has gone":  fmt.Sprintf("2026-11-01T13:19:00Z anchorkilled %d\n", exitedPID(t)),
+		"no writer":               "2026-11-01T13:19:00Z anchorold\n",
+		"a writer that is no pid": "2026-11-01T13:19:00Z anchorx pid\n",
+		// kill(0, 0) is this process's group, which is always there.
+		"pid 0":  "2026-11-01T13:19:00Z anchorx 0\n",
+		"pid -1": "2026-11-01T13:19:00Z anchorx -1\n",
+	} {
+		if err := os.WriteFile(d.ReadyFile(), []byte(content), 0o600); err != nil {
+			t.Fatalf("%s: write: %v", name, err)
+		}
+
+		if IsLiveReady(d) {
+			t.Errorf("%s: a marker holding %q counts", name, content)
+		}
+
+		if !IsReady(d) {
+			t.Errorf("%s: IsReady no longer reads %q", name, content)
+		}
+	}
+}
+
+// exitedPID is the pid of a process that has run and been waited for: this test binary,
+// asked to run no test.
+func exitedPID(t *testing.T) int {
+	t.Helper()
+
+	cmd := exec.Command(os.Args[0], "-test.run=^$")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("run a process to end: %v", err)
+	}
+
+	return cmd.ProcessState.Pid()
 }

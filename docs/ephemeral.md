@@ -113,7 +113,9 @@ the overlay's routes, so `conflux down` first where that matters.
 `conflux status` reports an ephemeral run before the machine's own anchor, from its lock,
 and says what a killed one left behind. Until the run's anchor is up it says the run is
 starting, and asks it nothing: the run may still be clearing what a killed one left, and
-another conflux reaching into its root then would get in its way. Neither `status` nor
+another conflux reaching into its root then would get in its way. A killed run's word that
+it was up is not taken for the next run's: it counts only while the conflux that wrote it
+runs. Neither `status` nor
 pass-through ever writes into a run's root. Pass-through — `conflux peers`,
 `conflux blocks`, every anchorctl command — reaches the ephemeral anchor when it is the
 only one running, once it is up.

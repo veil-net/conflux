@@ -245,7 +245,7 @@ why it is nonetheless contained.
 
 | job | machine | what it runs |
 |---|---|---|
-| `linux` | veilnet-dev | the whole suite under `-race` and `fips140=only` with the real binaries and nothing skipped; `make cross`; the digests `make build` stamps are the pair's own; the built conflux in FIPS 140-3 mode, its integrity check passing, and refusing to run with the mode off |
+| `linux` | veilnet-dev | the whole suite under `-race` and `fips140=only` with the real binaries and nothing skipped; `make cross`; the digests `make build` stamps are the pair's own; the built conflux in FIPS 140-3 mode, its integrity check passing, and refusing to run with the mode off; `conflux cert probe` handshaking, in that mode, with every host conflux reaches (both APIs, GitHub's API, web and asset hosts, wintun.net) |
 | `integration` | GitHub Ubuntu | `test/preflight.sh`, then `make -j2 -O service-test integration` — `dist` with the size gate for every target and the image, once, then the boot service, three nodes and an ephemeral fourth against the live API of the base's tree (`$VEILNET_API`) side by side |
 | `bsd` | FreeBSD 15.1 and OpenBSD 7.9, each a VM on GitHub Ubuntu | `test/service-bsd.sh` against `rc.subr`, with that platform's own pair; FreeBSD's conflux in FIPS 140-3 mode, making and verifying an ML-DSA certificate; OpenBSD's without the module, its `conflux cert` refusing with 70 |
 | `platforms` | GitHub macOS, Windows and Linux arm64 | the suite under `fips140=only` with that platform's own pair, built as a release is (`CGO_ENABLED=0`, `-trimpath`), the tests that need the pair included; on macOS and Windows, `test/service-host.sh` against the real service manager; on Windows, that the pinned wintun digest is the published one; then the install scripts against the published `latest`, run as a person runs them and then again: `install.sh` on macOS and Linux arm64, `install.ps1` under Windows PowerShell 5.1 and then PowerShell 7 |
@@ -467,7 +467,7 @@ The shape of the exchange is written down once, in
 
 - **`conflux cert` against OpenSSL.** OpenSSL 3.5 is the first to read ML-DSA and no runner
   ships it, so the interop in [cert.md](cert.md#checked-against-openssl) was checked by hand,
-  in a container; the PBES2 known answer is what CI keeps of it. The passphrase prompt's
+  in a container, TLS both ways included; the PBES2 known answer is what CI keeps of it. The passphrase prompt's
   echo, too, is checked by hand under a pseudo-terminal: CI has no terminal, and the tests
   replace the one it opens.
 

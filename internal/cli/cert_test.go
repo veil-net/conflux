@@ -1,12 +1,19 @@
 package cli
 
 import (
+	"bytes"
+	"context"
+	"crypto/tls"
 	"encoding/json"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/veil-net/conflux/internal/pki"
+	"github.com/veil-net/conflux/internal/pki/tlsprobe"
 	"github.com/veil-net/conflux/internal/ui"
 )
 
@@ -172,4 +179,142 @@ func TestCertRefusesUsageMistakes(t *testing.T) {
 	if _, stderr := certIn(t, dir, ExitError, "fingerprint", "--alg", "sha1", "k.pem"); !strings.Contains(stderr, "FIPS 140-3") {
 		t.Errorf("a SHA-1 fingerprint said: %s", stderr)
 	}
+}
+
+// pqServer makes, in dir, an ML-DSA root and a server chain for server.test under it.
+func pqServer(t *testing.T, dir string) {
+	t.Helper()
+
+	certIn(t, dir, ExitOK, "genkey", "--out", "root.key")
+	certIn(t, dir, ExitOK, "selfsign", "--key", "root.key", "--subject", "CN=TLS Root", "--out", "root.pem")
+	certIn(t, dir, ExitOK, "genkey", "--alg", "ml-dsa-65", "--out", "server.key")
+	certIn(t, dir, ExitOK, "req", "--key", "server.key", "--subject", "CN=server.test", "--san", "server.test", "--out", "server.csr")
+	certIn(t, dir, ExitOK, "sign", "--csr", "server.csr", "--ca", "root.pem", "--ca-key", "root.key", "--days", "5",
+		"--bundle", "--out", "chain.pem")
+}
+
+// freeAddr is a loopback address nothing listens on, for a server told where to listen.
+func freeAddr(t *testing.T) string {
+	t.Helper()
+
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer l.Close()
+
+	return l.Addr().String()
+}
+
+// TestServeAnswersAndReports: cert serve --once answers one FIPS 140-3 mode client over a
+// hybrid group with its ML-DSA chain, reports what the client offered as JSON, and exits 0.
+func TestServeAnswersAndReports(t *testing.T) {
+	dir := t.TempDir()
+	pqServer(t, dir)
+
+	addr := freeAddr(t)
+
+	var out, errBuf bytes.Buffer
+
+	oldOut, oldErr := ui.Out, ui.Errw
+	ui.Out, ui.Errw = &out, &errBuf
+
+	t.Cleanup(func() { ui.Out, ui.Errw = oldOut, oldErr })
+
+	code := make(chan int, 1)
+
+	go func() {
+		code <- runCertServe(t.Context(), []string{"--cert", filepath.Join(dir, "chain.pem"), "--key", filepath.Join(dir, "server.key"),
+			"--listen", addr, "--once", "--json"})
+	}()
+
+	root, _ := loadCerts(filepath.Join(dir, "root.pem"))
+
+	var (
+		r   tlsprobe.Report
+		err error
+	)
+
+	for range 50 {
+		if r, err = tlsprobe.Probe(t.Context(), tlsprobe.Options{Address: addr, ServerName: "server.test", Roots: root}); err == nil {
+			break
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if c := <-code; c != ExitOK {
+		t.Fatalf("serve exited %d: %s", c, errBuf.String())
+	}
+
+	if !r.Chain.Valid || r.Chain.Authentication != pki.ClassPQC || r.GroupClass != pki.ClassHybrid {
+		t.Errorf("the probe found %+v", r)
+	}
+
+	var seen tlsprobe.Seen
+	if err := json.Unmarshal(out.Bytes(), &seen); err != nil || seen.Version != "TLS 1.3" || seen.Signature != "ML-DSA-65" {
+		t.Errorf("serve reported %s (%v)", out.String(), err)
+	}
+}
+
+// TestProbeSaysWhatItFound: against a server of its chain, cert probe exits 0 and says the
+// handshake is post-quantum both ways; trusting another root, it exits 3 saying why; with
+// --require-pq-kex and classical groups, 3; with nothing listening, 1.
+func TestProbeSaysWhatItFound(t *testing.T) {
+	dir := t.TempDir()
+	pqServer(t, dir)
+
+	chain, _ := loadCerts(filepath.Join(dir, "chain.pem"))
+	key, err := loadKey(t.Context(), filepath.Join(dir, "server.key"), passFlags{file: new(string), env: new(string)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cert := tls.Certificate{PrivateKey: key, Leaf: chain[0]}
+	for _, c := range chain {
+		cert.Certificate = append(cert.Certificate, c.Raw)
+	}
+
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+
+	go func() {
+		_ = tlsprobe.Serve(ctx, tlsprobe.ServeOptions{Listener: l, Cert: cert}, func(tlsprobe.Seen) {})
+		close(done)
+	}()
+
+	t.Cleanup(func() { cancel(); <-done })
+
+	addr := l.Addr().String()
+
+	out, _ := certIn(t, dir, ExitOK, "probe", addr, "--name", "server.test", "--ca", "root.pem", "--require-pq")
+	if !strings.Contains(out, "post-quantum    key exchange yes; authentication yes") {
+		t.Errorf("probe said:\n%s", out)
+	}
+
+	certIn(t, dir, ExitOK, "genkey", "--out", "other.key")
+	certIn(t, dir, ExitOK, "selfsign", "--key", "other.key", "--subject", "CN=Other", "--out", "other.pem")
+
+	out, _ = certIn(t, dir, ExitCheckFailed, "probe", addr, "--name", "server.test", "--ca", "other.pem")
+	if !strings.Contains(out, "not verified") {
+		t.Errorf("probe against another root said:\n%s", out)
+	}
+
+	out, _ = certIn(t, dir, ExitCheckFailed, "probe", addr, "--name", "server.test", "--ca", "root.pem",
+		"--groups", "classical", "--require-pq-kex")
+	if !strings.Contains(out, "the key exchange is classical") {
+		t.Errorf("probe --require-pq-kex over classical groups said:\n%s", out)
+	}
+
+	certIn(t, dir, ExitError, "probe", freeAddr(t), "--timeout", "2s")
 }

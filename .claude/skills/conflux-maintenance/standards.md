@@ -105,6 +105,7 @@ Anchor is the reference for overlay behaviour, and the live API for the enrolmen
 - A certificate never outlives its issuer, starts five minutes back, carries a random 128-bit serial and an RFC 7093 SKI; a request contributes its subject and names alone. No certificateHold. No SHA-1 or MD5 fingerprint.
 - `verify` exits 3 for a chain that does not hold, a revoked certificate, a list out of date, or `--require-pq` on a classical chain; authentication is `pqc` only when the leaf key and every signature below the root are ML-DSA.
 - The `show` goldens' fixtures are public material alone; no private key, encrypted or not, is committed.
+- `cert probe` sends nothing but the handshake, checks the chain itself with `pki.Verify` (the one `InsecureSkipVerify` in conflux, and only so a failing chain is described), and exits 3 for a chain that does not verify or an unmet `--require-pq*`; X25519 is never offered alone. CI's `linux` job probes every host conflux reaches (both APIs, GitHub's API, web and asset hosts, wintun.net); a new host conflux talks to joins that list.
 - A placeholder build reports no anchor pair.
 - No `anchoradmin*` file exists anywhere in conflux.
 - No binary is tracked by git.
@@ -150,7 +151,7 @@ Anchor is the reference for overlay behaviour, and the live API for the enrolmen
 - A supervisor that exits 1 is restarted by systemd, launchd and the SCM; on the BSDs nothing does, and the docs say so.
 
 **Ephemeral runs**
-- No other conflux writes into a run's root: status and pass-through take its pair through `libexec.Extracted`, and ask it nothing before the run's `MarkReady`, which follows its anchor's start.
+- No other conflux writes into a run's root: status and pass-through take its pair through `libexec.Extracted`, and ask it nothing before the run's `MarkReady`, which follows its anchor's start, and only while the process that wrote the marker runs (`IsLiveReady`): a killed run leaves its marker, and the next run withdraws it once it holds the lock.
 - Nothing of the machine's is read or written: no `conflux.json`, `manifest.b64`, `state.json`, `anchord.json`, anchor directory or service; no file holds the credential or the chain at any point (the renewal goes on stdin); anchord gets no `-dir` and no `-config`.
 - The run ends when anchord does, and its root goes with it; nothing restarts or rebuilds. anchord ends with conflux on Linux (parent-death signal, started from a thread held for anchord's life) and Windows (the job); the next run reaps what a killed one left on macOS and the BSDs.
 - As root, anchord drops by the installed rules to `conflux-ephemeral`, never the installation's account; otherwise it runs as the invoking user. Core dumps are off for the run and its anchord.

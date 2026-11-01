@@ -41,12 +41,15 @@ func certCommands() map[string]certCommand {
 		"convert":     {runCertConvert, "convert IN --out FILE [--to pem|der] [--encrypt | --decrypt] [--pubout]", "re-encode, encrypt or decrypt"},
 		"match":       {runCertMatch, "match A B", "check two files hold the same key: a key and its certificate, say"},
 		"fingerprint": {runCertFingerprint, "fingerprint FILE... [--alg sha256] [--spki] [--json]", "a certificate's, request's, list's or key's digest"},
+		"probe":       {runCertProbe, "probe HOST[:PORT] [--ca ROOT]... [--groups pq] [--require-pq] [--json]", "connect, and say what the server negotiates: TLS, group, signature, chain"},
+		"serve":       {runCertServe, "serve --cert CHAIN --key KEY [--listen ADDR] [--client-ca ROOT]... [--once]", "answer TLS, and say what each client offers and gets"},
 		"crl":         {runCertCRL, "crl --ca CERT --ca-key KEY [--revoke SERIAL[:REASON]]... [--from CRL] [--out FILE]", "make a revocation list"},
 	}
 }
 
 // ExitCheckFailed is a check that ran and did not hold: a certificate that does not verify,
-// two keys that do not match, a probe that fell short of what it required.
+// two keys that do not match, a probe whose chain does not verify or that fell short of what
+// it required.
 const ExitCheckFailed = 3
 
 func runCert(ctx context.Context, args []string) int {
@@ -836,7 +839,7 @@ func printVerify(r pki.Result, system bool) {
 
 		switch {
 		case l.Root && system:
-			role = "root, the system's"
+			role = "system root"
 		case l.Root:
 			role = "root"
 		case i > 0:

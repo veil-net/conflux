@@ -292,8 +292,9 @@ needs no root at all. See [ephemeral.md](docs/ephemeral.md).
 
 **Post-quantum certificates.** `conflux cert` is a certificate toolkit in the spirit of
 OpenSSL's: keys, requests, certificates, revocation lists and chain checks, ML-DSA-87 by default,
-made and checked with the Go Cryptographic Module in FIPS 140-3 mode. Its output is read by
-OpenSSL 3.5, and it reads OpenSSL's. See [cert.md](docs/cert.md).
+made and checked with the Go Cryptographic Module in FIPS 140-3 mode, and a TLS client and server
+that say whether a handshake's key exchange and authentication are post-quantum. Its output is
+read by OpenSSL 3.5, and it reads OpenSSL's. See [cert.md](docs/cert.md).
 
 ## Commands
 
@@ -311,7 +312,7 @@ OpenSSL 3.5, and it reads OpenSSL's. See [cert.md](docs/cert.md).
 | `conflux uninstall` | remove the boot service, the configuration and the identity |
 | `conflux version` | conflux's version, and the anchor build it carries |
 | `conflux update [--check]` | replace this conflux with the latest release, verified, and restart the anchor on it |
-| `conflux cert genkey \| req \| selfsign \| sign \| verify \| show \| convert \| match \| fingerprint \| crl` | make and check ML-DSA (and ECDSA, RSA, Ed25519) keys, certificates and revocation lists, in FIPS 140-3 mode; see [cert.md](docs/cert.md) |
+| `conflux cert genkey \| req \| selfsign \| sign \| verify \| show \| convert \| match \| fingerprint \| crl \| probe \| serve` | make and check ML-DSA (and ECDSA, RSA, Ed25519) keys, certificates and revocation lists, and probe and serve TLS, in FIPS 140-3 mode; see [cert.md](docs/cert.md) |
 | `conflux anchorctl ARGS...` | run the embedded `anchorctl`, uninterpreted |
 | *anything else* | passed to `anchorctl` unchanged: `peers`, `routes`, `events`, `metrics`, `send`, `inspect`, … and the realm's control over its members, `block`, `taints`, `subnets`, `telemetry` |
 
@@ -354,7 +355,7 @@ its own corners of them. See [config.md](docs/config.md) and
 | [concepts.md](docs/concepts.md) | Realm, anchor, overlay address, and taints — including the arithmetic people get wrong. |
 | [modes.md](docs/modes.md) | TUN, userspace and observing, why they cannot be combined, subnets and their prerequisites. |
 | [observe.md](docs/observe.md) | The observer: what it records, where its records go, what `anchord` is given to capture on each platform. |
-| [cert.md](docs/cert.md) | `conflux cert`: ML-DSA keys, requests, certificates and revocation lists, made and checked in FIPS 140-3 mode, and how they meet OpenSSL's. |
+| [cert.md](docs/cert.md) | `conflux cert`: ML-DSA keys, requests, certificates and revocation lists, made and checked in FIPS 140-3 mode; probing and serving TLS; and how they meet OpenSSL's. |
 | [ephemeral.md](docs/ephemeral.md) | An anchor in the foreground from a credential held in memory alone: nothing written, nothing registered, nothing left when it stops. |
 | [uplink.md](docs/uplink.md) | Running over a link instead of a host IP network: the device forms, the line speeds, the limits. |
 | [commands.md](docs/commands.md) | Every command, every flag, what reaches anchorctl, and the exit codes. |

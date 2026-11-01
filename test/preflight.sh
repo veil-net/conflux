@@ -51,10 +51,12 @@ fi
 
 # Not a requirement, only worth knowing: enrolment is an ordinary HTTPS POST, and a
 # machine that cannot reach the API fails at the first `conflux up` rather than here.
-if curl -fsS -o /dev/null --max-time 10 https://api.veilnet.com.au/docs 2>/dev/null; then
-  note api "api.veilnet.com.au reachable"
+# The one integration.sh enrols at, which CI chooses by the pull request's base.
+api=${VEILNET_API:-https://api.veilnet.com.au}
+if curl -fsS -o /dev/null --max-time 10 "$api/docs" 2>/dev/null; then
+  note api "$api reachable"
 else
-  note api "api.veilnet.com.au NOT reachable -- enrolment will fail"
+  note api "$api NOT reachable -- enrolment will fail"
 fi
 
 exit $fail

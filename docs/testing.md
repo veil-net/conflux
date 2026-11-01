@@ -216,7 +216,7 @@ why it is nonetheless contained.
 | job | machine | what it runs |
 |---|---|---|
 | `linux` | veilnet-dev | the whole suite under `-race` with the real binaries and nothing skipped; `make cross`; the digests `make build` stamps are the pair's own |
-| `integration` | GitHub Ubuntu | `test/preflight.sh`, then `make -j2 -O service-test integration` — `dist` with the size gate for every target and the image, once, then the boot service and three nodes against the live API side by side |
+| `integration` | GitHub Ubuntu | `test/preflight.sh`, then `make -j2 -O service-test integration` — `dist` with the size gate for every target and the image, once, then the boot service and three nodes against the live API of the base's tree (`$VEILNET_API`) side by side |
 | `bsd` | FreeBSD 15.1 and OpenBSD 7.9, each a VM on GitHub Ubuntu | `test/service-bsd.sh` against `rc.subr`, with that platform's own pair |
 | `platforms` | GitHub macOS, Windows and Linux arm64 | the suite with that platform's own pair, built as a release is (`CGO_ENABLED=0`, `-trimpath`), the tests that need the pair included; on macOS and Windows, `test/service-host.sh` against the real service manager; on Windows, that the pinned wintun digest is the published one; then the install scripts against the published `latest`, run as a person runs them and then again: `install.sh` on macOS and Linux arm64, `install.ps1` under Windows PowerShell 5.1 and then PowerShell 7 |
 
@@ -291,8 +291,10 @@ moves.
 
 **The binaries CI uses are the pinned ones**, which a locally-built `make dist` cannot
 be: an anchor pinned to the genesis realm refuses to handshake with any other tree. So
-`integration` exercises the binaries that ship, against the **production realm** and
-nothing else, and a join there proves the pin as well as conflux.
+`integration` exercises the binaries that ship, in **the tree they are pinned to** and
+nothing else — the dev tree on a pull request into `dev`, the production one on the one
+into `version3` ([The genesis node](#the-genesis-node)) — and a join there proves the pin
+as well as conflux.
 
 **A machine that is not thrown away.** Both container suites reap their fixed container
 names before themselves as well as after, because a cancelled run fires no `EXIT` trap,
@@ -307,14 +309,26 @@ than skipping.
 
 ## The genesis node
 
-`genesis.veilnet.com.au:4700` is the bootstrap node the alpha realm's manifest names
-today. conflux never names it itself and must never: end users get their bootstrap list
-from the enrolment manifest, which is what lets the API move a node without touching a
-single machine. To exercise `--peers`, point a dev build at it explicitly:
+There are two trees, and a build belongs to one of them by the anchor it embeds:
+
+| Build | Embeds | Pinned to | Enrols at | Bootstrap the manifest names |
+|---|---|---|---|---|
+| a release, from `version3` | anchor's `latest` | the production genesis | `https://api.veilnet.com.au` | `genesis.veilnet.com.au:4700` |
+| a dev build, from `dev` | anchor's `dev-latest` | the dev genesis | `https://api-dev.veilnet.com.au` | `genesis.veilnet.com.au:4701` |
+
+A dev build cannot join the production tree, nor a release the dev one: each anchord
+refuses a credential under a root other than its pin. conflux's default API is the
+production one in every build, so a dev build is given the dev API with `--api`, as CI's
+live suite does.
+
+conflux never names a bootstrap node itself and must never: end users get their
+bootstrap list from the enrolment manifest, which is what lets the API move a node
+without touching a single machine. To exercise `--peers`, point a dev build at the dev
+genesis explicitly:
 
 ```console
-$ sudo CONFLUX_DIR=/var/lib/cfx-dev conflux up --peers genesis.veilnet.com.au:4700 \
-      --interface anchor1
+$ sudo CONFLUX_DIR=/var/lib/cfx-dev conflux proxy --api https://api-dev.veilnet.com.au \
+      --peers genesis.veilnet.com.au:4701 8080=127.0.0.1:3000
 $ sudo CONFLUX_DIR=/var/lib/cfx-dev conflux status  # peers > 0, up=yes
 ```
 
@@ -341,12 +355,13 @@ $ CONFLUX_DIR=/var/lib/cfx-dev conflux status       # the dev one
   service      active (systemd: conflux-e7616592.service, enabled at boot)
 ```
 
-**They still share the interface name.** Both default to `anchor0`, and the second to
-start gets `device or resource busy` — pass `--interface anchor1` to the dev one, as
-above. That is the one thing `CONFLUX_DIR` does not name, because an interface belongs
-to the host and not to a conflux installation. The failure is treated as permanent
-rather than retried to the unit's ninety-second timeout, so it arrives in a few
-seconds and says what it is.
+**The dev one runs in userspace, as above.** A host runs one TUN anchor. Two no longer
+collide on the interface's name, which each anchor takes from its own identity, but
+they share everything else a TUN anchor sets up on the host — its routes, forwarding and
+firewall rules, which carry fixed names — so a second's start replaces the first's and
+its stop removes them (anchor's `docs/operations.md`, "Deploying"). That is the one thing
+`CONFLUX_DIR` cannot separate, because the host's networking belongs to the host and not
+to a conflux installation. `conflux proxy` sets nothing on the host up.
 
 **Not `/tmp`.** systemd clears it on boot, so a dev root there is gone by the time the
 service starts and the unit exits 78 — correctly, but it makes the reboot test
@@ -362,8 +377,8 @@ Two things worth checking deliberately, because neither is obvious from a passin
   from a different root will enrol fine and then never handshake, because the pin is
   what refuses it. That failure is on the anchor side, not conflux's.
 
-  This node is the production realm's own, so it answers only a build carrying the
-  production pin: `make anchor-bins FETCH=1` prints the realm the binaries it fetched
+  Each genesis node answers only a build carrying its tree's pin — `:4701` a dev build's,
+  `:4700` a release's: `make anchor-bins FETCH=1` prints the realm the binaries it fetched
   are pinned to, and a local `make release` pins whatever `genesis/genesis.pin` says.
 
 ## The other half of the contract is tested in the other repository

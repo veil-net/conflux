@@ -17,6 +17,10 @@
 # because proving a machine comes back needs a machine that was up.
 set -euo pipefail
 
+# Nothing here pipes a command into grep -q: grep stops at its first match, the command still
+# writing is then ended by SIGPIPE, and under pipefail that fails the line however right its
+# output was. Each answer is read whole, then searched (grep -q PATTERN <<<"$(COMMAND)").
+
 IMAGE=${IMAGE:-conflux-systemd-test}
 NAME=${NAME:-cfx}
 OTEL=${OTEL:-$NAME-otel}
@@ -285,7 +289,7 @@ expect "observing" "uid=$uid caps=$(caps 0x2000) nnp=1 groups=" "CAP_NET_RAW to 
 # observing waits until status shows the observer capturing.
 observing() {
   for _ in $(seq 100); do
-    docker exec "$NAME" conflux status 2>/dev/null | grep -q '^  observer *af_packet' && return 0
+    grep -q '^  observer *af_packet' <<<"$(docker exec "$NAME" conflux status 2>/dev/null)" && return 0
     sleep 0.2
   done
   echo "the observer is not capturing:" >&2
@@ -301,13 +305,13 @@ traffic() { docker exec "$NAME" sh -c 'conflux update --check >/dev/null 2>&1 ||
 observing
 traffic
 for _ in $(seq 60); do
-  docker exec "$NAME" conflux inventory 2>/dev/null | grep -q ' 443/tcp ' && break
+  grep -q ' 443/tcp ' <<<"$(docker exec "$NAME" conflux inventory 2>/dev/null)" && break
   sleep 2
 done
 docker exec "$NAME" conflux inventory | grep ' 443/tcp ' \
   || { echo "the inventory holds no connection to port 443:" >&2
        docker exec "$NAME" conflux inventory >&2 || true; journal; exit 1; }
-docker exec "$NAME" conflux status | grep -q '^  records *kept here' \
+grep -q '^  records *kept here' <<<"$(docker exec "$NAME" conflux status)" \
   || { echo "status does not say the records are kept here" >&2; exit 1; }
 docker exec "$NAME" test ! -e /var/lib/conflux/manifest.b64 \
   || { echo "observing alone enrolled" >&2; exit 1; }
@@ -338,10 +342,10 @@ expect "observing, exporting" "uid=$uid caps=$(caps 0x2000) nnp=1 groups=" "CAP_
 observing
 traffic
 for _ in $(seq 60); do
-  docker logs "$OTEL" 2>&1 | grep -q 'anchor.observed_flow.key_exchange' && break
+  grep -q 'anchor.observed_flow.key_exchange' <<<"$(docker logs "$OTEL" 2>&1)" && break
   sleep 2
 done
-docker logs "$OTEL" 2>&1 | grep -q 'anchor.observed_flow.key_exchange' \
+grep -q 'anchor.observed_flow.key_exchange' <<<"$(docker logs "$OTEL" 2>&1)" \
   || { echo "no anchor.observed_flow record reached the collector:" >&2
        docker logs "$OTEL" 2>&1 | tail -20 >&2; journal; exit 1; }
 docker rm -f "$OTEL" >/dev/null

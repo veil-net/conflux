@@ -186,6 +186,11 @@ func sniff(der []byte) (Object, error) {
 		return Object{KindCRL, der}, nil
 	}
 
+	// A PKCS#12 bundle begins with an INTEGER too, so it is told apart first.
+	if IsPKCS12(der) {
+		return Object{}, errors.New("is a PKCS#12 bundle: conflux cert p12 import takes it apart")
+	}
+
 	// SEQUENCE { INTEGER, ... } is PKCS#8; SEQUENCE { SEQUENCE, OCTET STRING } an encrypted
 	// key; SEQUENCE { SEQUENCE, BIT STRING } a public key.
 	var seq asn1.RawValue

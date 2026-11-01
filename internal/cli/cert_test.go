@@ -413,3 +413,47 @@ func TestAManagedCAEndToEnd(t *testing.T) {
 
 	certIn(t, dir, ExitError, "ca", "init", "ca", "--name", "Again", "--no-encrypt")
 }
+
+// TestPKCS12ExportAndImport: a key, its certificate and its chain go into a bundle and come
+// back out the same; --in takes them in one PEM, as `openssl pkcs12 -nodes` writes them; a
+// wrong passphrase is refused, and a key is not written over.
+func TestPKCS12ExportAndImport(t *testing.T) {
+	dir := t.TempDir()
+	pqServer(t, dir)
+
+	if err := os.WriteFile(filepath.Join(dir, "p12pass"), []byte("the bundle's passphrase\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	certIn(t, dir, ExitOK, "p12", "export", "--key", "server.key", "--cert", "chain.pem", "--out", "s.p12", "--p12-passphrase-file", "p12pass")
+	certIn(t, dir, ExitOK, "p12", "import", "s.p12", "--key-out", "k2.pem", "--cert-out", "c2.pem", "--chain-out", "chain2.pem",
+		"--p12-passphrase-file", "p12pass")
+	certIn(t, dir, ExitOK, "match", "k2.pem", "c2.pem")
+	certIn(t, dir, ExitOK, "verify", "c2.pem", "--untrusted", "chain2.pem", "--ca", "root.pem", "--name", "server.test", "--require-pq")
+
+	_, stderr := certIn(t, dir, ExitError, "p12", "import", "s.p12", "--key-out", "k3.pem", "--cert-out", "c3.pem",
+		"--p12-passphrase-file", "server.csr")
+	if !strings.Contains(stderr, "does not open") {
+		t.Errorf("a wrong passphrase said: %s", stderr)
+	}
+
+	certIn(t, dir, ExitError, "p12", "import", "s.p12", "--key-out", "k2.pem", "--cert-out", "c2.pem", "--p12-passphrase-file", "p12pass")
+
+	key, _ := os.ReadFile(filepath.Join(dir, "server.key"))
+	chain, _ := os.ReadFile(filepath.Join(dir, "chain.pem"))
+
+	if err := os.WriteFile(filepath.Join(dir, "all.pem"), append(chain, key...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	certIn(t, dir, ExitOK, "p12", "export", "--in", "all.pem", "--out", "t.p12", "--p12-passphrase-file", "p12pass")
+	certIn(t, dir, ExitOK, "p12", "import", "t.p12", "--key-out", "k4.pem", "--cert-out", "c4.pem", "--encrypt", "--p12-passphrase-file", "p12pass")
+
+	if b, _ := os.ReadFile(filepath.Join(dir, "k4.pem")); !strings.Contains(string(b), "ENCRYPTED PRIVATE KEY") {
+		t.Error("--encrypt wrote the key in the clear")
+	}
+
+	if _, stderr := certIn(t, dir, ExitError, "show", "t.p12"); !strings.Contains(stderr, "p12 import") {
+		t.Errorf("show of a bundle said: %s", stderr)
+	}
+}

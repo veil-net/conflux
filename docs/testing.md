@@ -70,7 +70,9 @@ which the module never sees; an AES block alone, which is AES-ECB; AES-CBC outsi
 `internal/pki/pbes2.go`; and the rest of the list in
 [security.md](security.md#fips-140-3-and-cmvp). Each rule's control is a file planted to
 break it. **`pki.TestPBES2KnownAnswer`** holds an encrypted key's exact bytes under a fixed
-salt and IV, which OpenSSL 3.5 opens to the same key, and **`pki.TestShowGoldens`** holds what
+salt and IV, which OpenSSL 3.5 opens to the same key; **`pki.TestPBMAC1KnownAnswer`** holds a
+PKCS#12 MAC to the digest Python's hashlib computes independently, and its parameters to RFC
+9579's encoding; and **`pki.TestShowGoldens`** holds what
 `cert show` prints of committed certificates, a request, a list and a public key, in
 `internal/pki/testdata/show/`. They are public material alone; the keys that made them were
 thrown away. `make golden` rewrites them with the argv goldens after an intended change.

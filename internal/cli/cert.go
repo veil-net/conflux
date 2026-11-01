@@ -41,6 +41,7 @@ func certCommands() map[string]certCommand {
 		"convert":     {runCertConvert, "convert IN --out FILE [--to pem|der] [--encrypt | --decrypt] [--pubout]", "re-encode, encrypt or decrypt"},
 		"match":       {runCertMatch, "match A B", "check two files hold the same key: a key and its certificate, say"},
 		"fingerprint": {runCertFingerprint, "fingerprint FILE... [--alg sha256] [--spki] [--json]", "a certificate's, request's, list's or key's digest"},
+		"p12":         {runCertP12, "p12 export|import ...", "PKCS#12 bundles, PBES2 and PBMAC1 throughout, every part FIPS 140-3 approved"},
 		"probe":       {runCertProbe, "probe HOST[:PORT] [--ca ROOT]... [--groups pq] [--require-pq] [--json]", "connect, and say what the server negotiates: TLS, group, signature, chain"},
 		"serve":       {runCertServe, "serve --cert CHAIN --key KEY [--listen ADDR] [--client-ca ROOT]... [--once]", "answer TLS, and say what each client offers and gets"},
 		"ca":          {runCertCA, "ca init|issue|revoke|list|crl DIR ...", "a certificate authority kept in a directory: what it issued, what it revoked, its CRLs"},

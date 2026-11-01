@@ -2,8 +2,8 @@
 
 `conflux cert` makes and checks X.509: private keys, certificate signing requests,
 certificates and revocation lists, and the TLS handshakes they are used in. It covers the part
-of OpenSSL's `genpkey`, `req`, `x509`, `ca`, `verify`, `crl`, `pkcs8`, `s_client` and
-`s_server` that a certificate authority and its users need, and keeps a CA's records, and it does it post-quantum
+of OpenSSL's `genpkey`, `req`, `x509`, `ca`, `verify`, `crl`, `pkcs8`, `pkcs12`, `s_client`
+and `s_server` that a certificate authority and its users need, and keeps a CA's records, and it does it post-quantum
 first. Keys are ML-DSA-87 unless asked otherwise, and a chain can be ML-DSA
 from the root to the leaf.
 
@@ -155,6 +155,7 @@ records where the issuer's revocation list is published.
 | `fingerprint FILE... [--alg sha256] [--spki]` | A digest: SHA-256, -384 or -512, or SHA3-256, -384 or -512. `--spki` takes the public key's, the form a pin takes. A key's fingerprint is always its public key's. There is no SHA-1 or MD5. |
 | `crl --ca CERT --ca-key KEY [--revoke SERIAL[:REASON]]... [--from CRL]` | See [Revocation lists](#revocation-lists). |
 | `ca init\|issue\|revoke\|list\|crl DIR ...` | See [A managed CA](#a-managed-ca). |
+| `p12 export\|import ...` | See [PKCS#12](#pkcs12). |
 | `probe HOST[:PORT] [--ca ROOT]... [--groups pq] [--require-pq]` | See [Probing a server](#probing-a-server). |
 | `serve --cert CHAIN --key KEY [--listen ADDR] [--client-ca ROOT]...` | See [Serving](#serving). |
 
@@ -237,6 +238,51 @@ The directory:
   intermediate's is 0. Nothing below the CA can issue.
 - **Revocation is final.** There is no `certificateHold`. Revoking the issuing CA itself is not
   offered: make a new CA.
+
+## PKCS#12
+
+`conflux cert p12` writes and reads PKCS#12 bundles in the one profile every part of which FIPS
+140-3 approves:
+
+| | |
+|---|---|
+| the key | a shrouded key bag under PBES2: PBKDF2-HMAC-SHA-256, 600,000 iterations, a 16-byte salt, AES-256-CBC, as `--encrypt` writes a key |
+| the certificates | a SafeContents encrypted the same way |
+| integrity | a PBMAC1 MAC (RFC 9579): HMAC-SHA-256 under a key PBKDF2-HMAC-SHA-256 derives, never PKCS#12's own KDF |
+
+```sh
+conflux cert p12 export --key server.key --cert server.pem --chain chain.pem --out server.p12
+conflux cert p12 import server.p12 --key-out server.key --cert-out server.pem --chain-out chain.pem
+```
+
+- **Export.** `export` takes `--key` and `--cert` (with the chain after it in the file, or in
+  `--chain`), or `--in` holding the key and the certificates together. `--name` is the friendly
+  name an importer shows; the certificate's CN by default.
+- **Import.** `import` writes the key in the clear (0600) unless `--encrypt`, which encrypts it
+  under the bundle's passphrase. With no `--chain-out`, the chain follows the certificate in
+  `--cert-out`.
+- **Passphrases.** The bundle's passphrase comes from `--p12-passphrase-file`,
+  `--p12-passphrase-env`, or the terminal. It is used as its UTF-8 bytes, as OpenSSL uses it, and
+  as RFC 9579's test vectors are made.
+- **Order of checks.** The MAC is checked before any bag is opened. A wrong passphrase or a
+  changed byte is refused there.
+
+**What is refused.** Most PKCS#12 files are refused, since most use PKCS#12's own MAC and KDF.
+That includes `openssl pkcs12 -export`'s default and its `-legacy` (SHA-1, 3DES, RC2), and what
+Windows and Java usually export. A key in the clear (a keyBag) and a salt under 16 bytes are
+refused too. The refusal gives the line that rewrites the bundle, with the key passing through a
+pipe and never written in the clear:
+
+```sh
+openssl pkcs12 -in OLD.p12 -nodes | conflux cert p12 export --in - --out NEW.p12
+```
+
+**Who reads what this writes.** OpenSSL 3.4 and later; this was checked against 3.5.9, both ways.
+`openssl pkcs12 -export -pbmac1_pbkdf2 -keypbe AES-256-CBC -certpbe AES-256-CBC -iter 600000
+-macsaltlen 16` writes a bundle conflux reads. PBMAC1 is recent (2024), and other readers
+(Windows's certificate import, Java's keytool, macOS's Keychain) were not checked; an older one
+refuses the MAC. Few of them read an ML-DSA key at all, so for an ML-DSA key a bundle is mostly a
+way to move it between OpenSSL and conflux.
 
 ## Probing a server
 
@@ -331,6 +377,10 @@ OpenSSL 3.5 is the first that reads ML-DSA. These were checked against OpenSSL 3
   - its PBES2 key decrypts;
   - its request is signed, and `openssl verify` accepts the result;
   - its PBES1, scrypt, `priv-only` ML-DSA and legacy-PEM keys are refused, each by name.
+- **PKCS#12.** `openssl pkcs12 -info` reads a `p12 export` bundle as PBMAC1 (a 32-byte key,
+  a 16-byte salt) with PBES2 AES-256-CBC bags at 600,000 iterations, and `-nodes` gives the key
+  back; `p12 import` opens OpenSSL's `-pbmac1_pbkdf2` bundle, refuses its default and
+  `-legacy` ones, and the rewrite line turns either into one it reads.
 - **A managed CA.** `openssl verify -crl_check_all` accepts a `cert ca` chain (root, intermediate
   with `pathlen:0`, leaf) and both of its CRLs, and finds the leaf revoked once `ca revoke` has
   published.
@@ -347,8 +397,8 @@ like): classical, but widely accepted.
 
 ## What `conflux cert` does not do
 
-PKCS#12, in its common form, is not approved: SHA-1, 3DES, RC2 and PKCS#12's own KDF. SLH-DSA
-is not offered either. Nor are OCSP, ACME, Certificate Transparency, SHA-1 fingerprints, and
+PKCS#12 in its common form, with SHA-1, 3DES, RC2 and PKCS#12's own KDF, is not approved, and
+`p12` reads only the approved profile above. SLH-DSA is not offered either. Nor are OCSP, ACME, Certificate Transparency, SHA-1 fingerprints, and
 probing STARTTLS or QUIC.
 
 ## Exit codes

@@ -6,8 +6,8 @@ to the embedded `anchorctl` unchanged — not parsed, not rewritten, not validat
 ## The split
 
 conflux's: `up`, `proxy`, `observe`, `enrol`, `start`, `down`, `install`, `uninstall`,
-`renew`, `status`, `version`, `update`, `help`, plus `anchorctl` as an escape hatch and a
-hidden `serve` the boot service runs.
+`renew`, `status`, `version`, `update`, `cert`, `help`, plus `anchorctl` as an escape hatch
+and a hidden `serve` the boot service runs.
 
 anchorctl's, reached by typing them: `peers`, `route`, `routes`, `connect`, `punch`,
 `events`, `metrics`, `export`, `inventory`, `telemetry`, `block`, `unblock`, `blocks`, `taints`,
@@ -525,6 +525,21 @@ and the next update removes it. No token is needed or sent: the repository is pu
 
 Needs root, except `--check`.
 
+## `conflux cert`
+
+```
+conflux cert genkey | req | selfsign | sign | verify | show | convert | match | fingerprint | crl  ...
+```
+
+Keys, certificate signing requests, certificates and revocation lists, made and checked with the
+Go Cryptographic Module in FIPS 140-3 mode: ML-DSA-87 by default, with ECDSA, RSA and Ed25519
+beside it. It needs no root, no configuration and no anchor. A conflux that does not run in FIPS
+140-3 mode (OpenBSD's) refuses every `cert` command, with exit 70. `verify` and `match` exit 3
+when the check does not hold. [cert.md](cert.md) has every command and flag.
+
+It is not anchorctl's `keygen` or `issue`, which make an anchor's identity and its
+credentials; `cert` makes X.509, for TLS and anything else that takes a certificate.
+
 ## `conflux anchorctl ARGS...`
 
 Runs the embedded `anchorctl` with those arguments and no interpretation. This is how
@@ -571,8 +586,9 @@ other refusal — passes through untouched.
 | 0 | success |
 | 1 | failure |
 | 2 | usage |
+| 3 | `conflux cert verify` or `match`: the check ran and did not hold |
 | 13 | needs root or Administrator, or a pass-through that cannot read the daemon's token |
 | 69 | nothing here to act on: nothing running, or no credential to renew |
-| 70 | a configuration conflux or anchor refuses for good, or a conflux built for FIPS 140-3 mode run with it switched off; the systemd unit does not restart on it |
+| 70 | a configuration conflux or anchor refuses for good, or a conflux built for FIPS 140-3 mode run with it switched off, or `conflux cert` where it does not run in that mode; the systemd unit does not restart on it |
 | 78 | no configuration — the code the systemd unit keys `RestartPreventExitStatus` on |
 | other | for pass-through, anchorctl's own code, verbatim |

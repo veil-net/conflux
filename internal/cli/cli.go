@@ -55,6 +55,7 @@ func verbs() map[string]verb {
 		"status":    {run: runStatus, summary: "what conflux and the anchor are doing"},
 		"version":   {run: runVersion, summary: "conflux's version, and the anchor build it carries"},
 		"update":    {run: runUpdate, summary: "replace this conflux with the latest release"},
+		"cert":      {run: runCert, summary: "make and check post-quantum keys, certificates and revocation lists"},
 		"help":      {run: runHelp, summary: "this, and anchorctl's usage beneath it"},
 		"anchorctl": {run: runEscapeHatch, summary: "run the embedded anchorctl with these arguments, uninterpreted"},
 		"serve":     {run: runServe, summary: "run the supervisor in the foreground", hidden: true},

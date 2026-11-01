@@ -37,6 +37,24 @@ rc() { # VERB
 say "conflux reports the FIPS 140-3 mode its build carries"
 "$CONFLUX" version | grep -qx "$fips" || fail "conflux version does not say: $fips"
 
+# The certificate toolkit makes artifacts other people rely on, so it runs only where the
+# module does: FreeBSD makes and checks an ML-DSA certificate, OpenBSD refuses with 70.
+say "conflux cert runs where the module does, and refuses where it does not"
+certs=$(mktemp -d)
+if [ "$os" = freebsd ]; then
+  "$CONFLUX" cert genkey --out "$certs/k.pem" || fail "cert genkey failed"
+  "$CONFLUX" cert selfsign --key "$certs/k.pem" --subject CN=bsd.test --profile server --out "$certs/c.pem" ||
+    fail "cert selfsign failed"
+  "$CONFLUX" cert verify "$certs/c.pem" --ca "$certs/c.pem" --name bsd.test --require-pq >/dev/null ||
+    fail "a self-signed ML-DSA certificate does not verify"
+else
+  code=0
+  "$CONFLUX" cert genkey --out "$certs/k.pem" 2>/dev/null || code=$?
+  [ "$code" = 70 ] || fail "cert genkey on a build without the module exited $code, not 70"
+  [ ! -e "$certs/k.pem" ] || fail "cert genkey wrote a key on a build without the module"
+fi
+rm -rf "$certs"
+
 # A run cut short leaves its registration behind; a fresh VM has none to remove.
 "$CONFLUX" uninstall --yes >/dev/null 2>&1 || true
 

@@ -1,0 +1,35 @@
+{
+  "kind": "certificate",
+  "subject": "CN=server.test,O=Conflux Test",
+  "issuer": "CN=Conflux Test Root,O=Conflux Test,C=AU",
+  "serial": "12:30:B1:A6:52:EE:65:7D:86:AC:23:E6:5D:F8:64:67",
+  "notBefore": "2026-11-01T07:55:00Z",
+  "notAfter": "2027-01-30T08:00:00Z",
+  "status": "valid, 89d left",
+  "key": {
+    "algorithm": "ML-DSA-65",
+    "class": "pqc"
+  },
+  "keySHA256": "CF:E1:83:38:40:BA:51:0A:6D:7F:01:2B:67:35:24:A0:42:28:8C:4F:AE:7A:C2:D7:CA:ED:60:FE:F5:C6:01:04",
+  "signature": "ML-DSA-87",
+  "signatureClass": "pqc",
+  "ca": false,
+  "keyUsage": [
+    "digitalSignature"
+  ],
+  "extKeyUsage": [
+    "serverAuth"
+  ],
+  "dnsNames": [
+    "server.test"
+  ],
+  "ipAddresses": [
+    "192.0.2.10"
+  ],
+  "subjectKeyId": "AA:A1:3F:A4:16:3D:4A:19:74:22:68:08:E1:6B:6C:F7:A6:CD:E1:A2",
+  "authorityKeyId": "76:65:4D:19:B4:9B:52:E7:43:77:7C:13:7C:99:4C:AA:0D:6B:FA:9C",
+  "crlDistributionPoints": [
+    "http://ca.test/root.crl"
+  ],
+  "sha256": "E2:E2:31:84:E9:BD:45:41:BA:26:BA:87:2F:02:DE:6A:27:E0:3A:D5:DC:9F:D1:32:92:DE:41:5F:B6:99:DA:A2"
+}

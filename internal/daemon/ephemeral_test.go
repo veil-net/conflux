@@ -138,6 +138,11 @@ func TestAnEphemeralRunWritesNothingAndLeavesNothing(t *testing.T) {
 		t.Errorf("the run reported anchor %q, want %q", u.Started.ID, fakeAnchorID)
 	}
 
+	// Up, and saying so to the readers that wait for it, in the root that goes with it.
+	if !IsReady(paths.EphemeralDirs(r.root)) {
+		t.Error("the run is up and has not marked itself ready")
+	}
+
 	select {
 	case <-r.finished:
 		t.Fatalf("the run ended a moment after its anchor came up: %v", r.err)

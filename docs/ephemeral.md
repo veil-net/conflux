@@ -111,8 +111,12 @@ the overlay's routes, so `conflux down` first where that matters.
 ## Reaching it from another terminal
 
 `conflux status` reports an ephemeral run before the machine's own anchor, from its lock,
-and says what a killed one left behind. Pass-through — `conflux peers`, `conflux blocks`,
-every anchorctl command — reaches the ephemeral anchor when it is the only one running.
+and says what a killed one left behind. Until the run's anchor is up it says the run is
+starting, and asks it nothing: the run may still be clearing what a killed one left, and
+another conflux reaching into its root then would get in its way. Neither `status` nor
+pass-through ever writes into a run's root. Pass-through — `conflux peers`,
+`conflux blocks`, every anchorctl command — reaches the ephemeral anchor when it is the
+only one running, once it is up.
 With an installed anchor running too, it reaches that one unless `CONFLUX_EPHEMERAL=1` is
 set, so a command never switches anchors because one was started beside it. `conflux renew`
 says the run renews itself.

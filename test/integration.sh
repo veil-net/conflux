@@ -380,9 +380,10 @@ pids_of() { # NODE PATTERN
   done'
 }
 
-# eph_running is whether status on NODE reports an ephemeral anchor running.
+# eph_running is whether status on NODE reports an ephemeral anchor up: running, and not
+# still starting, which a run is from taking its lock until its anchor has started.
 # Read whole, then searched: a pipe into grep -q ends status on SIGPIPE, failing under pipefail.
-eph_running() { grep -q '^ephemeral:' <<<"$(docker exec "$1" conflux status 2>/dev/null)"; }
+eph_running() { grep -qE '^  running +from ' <<<"$(docker exec "$1" conflux status 2>/dev/null)"; }
 
 # eph_gone waits for NODE to have no ephemeral root and no ephemeral anchord.
 eph_gone() { # NODE WHAT

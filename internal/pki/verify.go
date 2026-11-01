@@ -147,7 +147,7 @@ func Verify(leaf *x509.Certificate, opts VerifyOptions) Result {
 		})
 	}
 
-	r.Authentication = chainClass(chain)
+	r.Authentication = ChainClass(chain)
 	r.Valid = true
 
 	r.checkRevocation(chain, opts)
@@ -155,9 +155,13 @@ func Verify(leaf *x509.Certificate, opts VerifyOptions) Result {
 	return r
 }
 
-// chainClass is pqc when the leaf's key and every signature but the root's on itself are
-// ML-DSA.
-func chainClass(chain []*x509.Certificate) string {
+// ChainClass is pqc when the leaf's key and every signature but the root's on itself are
+// ML-DSA: a chain leaf first, its root (or its last certificate) last.
+func ChainClass(chain []*x509.Certificate) string {
+	if len(chain) == 0 {
+		return ClassClassical
+	}
+
 	if _, ok := chain[0].PublicKey.(*mldsa.PublicKey); !ok {
 		return ClassClassical
 	}

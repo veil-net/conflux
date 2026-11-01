@@ -1,9 +1,10 @@
 # Certificates
 
 `conflux cert` makes and checks X.509: private keys, certificate signing requests,
-certificates and revocation lists. It covers the part of OpenSSL's `genpkey`, `req`, `x509`,
-`ca`, `verify`, `crl` and `pkcs8` that a certificate authority and its users need, and it does
-it post-quantum first. Keys are ML-DSA-87 unless asked otherwise, and a chain can be ML-DSA
+certificates and revocation lists, and the TLS handshakes they are used in. It covers the part
+of OpenSSL's `genpkey`, `req`, `x509`, `ca`, `verify`, `crl`, `pkcs8`, `s_client` and
+`s_server` that a certificate authority and its users need, and it does it post-quantum
+first. Keys are ML-DSA-87 unless asked otherwise, and a chain can be ML-DSA
 from the root to the leaf.
 
 Every key, signature, digest, KDF and cipher here belongs to the Go Cryptographic Module,
@@ -14,7 +15,7 @@ built without the module) refuses every `cert` command with exit 70. These are a
 other people rely on, and the claim has to hold for every one of them.
 
 `conflux cert` needs no root, no configuration and no anchor. It touches only the files it
-is named.
+is named, and the network only for `probe` and `serve`.
 
 ## A certificate authority in five commands
 
@@ -153,6 +154,8 @@ records where the issuer's revocation list is published.
 | `match A B` | Whether two files hold the same key, such as a key and its certificate. Each may be a key, a certificate, a request or a public key. |
 | `fingerprint FILE... [--alg sha256] [--spki]` | A digest: SHA-256, -384 or -512, or SHA3-256, -384 or -512. `--spki` takes the public key's, the form a pin takes. A key's fingerprint is always its public key's. There is no SHA-1 or MD5. |
 | `crl --ca CERT --ca-key KEY [--revoke SERIAL[:REASON]]... [--from CRL]` | See [Revocation lists](#revocation-lists). |
+| `probe HOST[:PORT] [--ca ROOT]... [--groups pq] [--require-pq]` | See [Probing a server](#probing-a-server). |
+| `serve --cert CHAIN --key KEY [--listen ADDR] [--client-ca ROOT]...` | See [Serving](#serving). |
 
 Flags and arguments go in any order. Everything that writes takes `--out` (`-` is stdout,
 where the commands that make a public object default to), `--der`, and `--force`. Status lines
@@ -182,6 +185,68 @@ command's flags.
 
 `--json` gives the same answer as an object. The exit code is 0 when the certificate is
 valid, and 3 when it is not.
+
+## Probing a server
+
+`probe` connects as a FIPS 140-3 mode TLS client, like `openssl s_client`, completes the
+handshake, sends nothing else, and says what was negotiated:
+
+```
+$ conflux cert probe server.example:8443 --ca root.pem --require-pq
+Connected to server.example:8443 (192.0.2.10:8443), as server.example
+  tls             TLS 1.3, TLS_AES_128_GCM_SHA256
+  key exchange    SecP384r1MLKEM1024 (hybrid)
+  signature       ML-DSA-65 (pqc)
+  chain           verified for server.example, authentication pqc
+    leaf          CN=server.example: ML-DSA-65 key, signed ML-DSA-87
+    root          CN=Example Root,O=Example: ML-DSA-87 key, signed ML-DSA-87
+  post-quantum    key exchange yes; authentication yes
+```
+
+- **Key exchange.** This is the group the server picked. It is `hybrid` for ML-KEM beside a
+  classical group (X25519MLKEM768, SecP256r1MLKEM768, SecP384r1MLKEM1024), `pqc` for
+  ML-KEM-1024 alone, and `classical` for P-256, P-384 and P-521: the observer's words.
+  `--groups` limits what is offered: `pq`, `classical`, or names. crypto/tls orders the offer
+  itself, and the server picks by its own order. X25519 is never offered alone; FIPS 140-3 does
+  not approve it, and X25519MLKEM768 carries it.
+- **Signature.** crypto/tls does not report the handshake's signature scheme, so it is inferred
+  from the leaf's key. That is exact for ML-DSA, for Ed25519, and for ECDSA in TLS 1.3, which
+  binds the curve to its hash. For RSA, and ECDSA in 1.2, the padding and hash are the peers'
+  choice and are not said.
+- **Chain.** The chain is checked as `verify` checks it, for `--name` (the host by default),
+  against `--ca` or the system's roots. One that does not verify is described rather than only
+  refused, along with the class of what was presented.
+- **Requirements.** `--require-pq-kex` fails a classical key exchange. `--require-pq-auth`
+  fails unless the chain verifies and is ML-DSA throughout. `--require-pq` asks for both.
+- **Options.** `--tls 1.2|1.3`, `--alpn`, `--cert`/`--key` for a client certificate,
+  `--timeout`, and `--json`.
+
+The exit code is 0, or 3 when the chain does not verify or a requirement is not met, or 1 when
+there was no handshake. A FIPS 140-3 mode client offers TLS 1.2 and 1.3, AES-GCM (and, in 1.2,
+AES-CBC with SHA-256), the groups above, and ML-DSA, ECDSA, RSA-PSS, RSA PKCS #1 v1.5 and
+Ed25519 signatures. A server that accepts none of them fails the handshake, and the error says
+so.
+
+## Serving
+
+`serve` answers TLS as a FIPS 140-3 mode server, like `openssl s_server`. For each client it
+reports what the client offered (its SNI, versions, groups, signature schemes and ALPN) and
+what was negotiated. A client that sends an HTTP request is answered with the same report as
+`text/plain`, so `curl` and a browser show it; anything else is sent the report and closed.
+
+```sh
+conflux cert serve --cert chain.pem --key server.key --listen :8443
+openssl s_client -connect localhost:8443 -groups SecP384r1MLKEM1024 -CAfile root.pem
+```
+
+- **Listening.** `--listen` defaults to 127.0.0.1:8443.
+- **Client certificates.** `--client-ca` requires one from every client, verified against that
+  root, and the report names its subject.
+- **Groups and ALPN.** `--groups` limits the groups. `--alpn` sets what is advertised;
+  `http/1.1` when not given.
+- **Output.** `--once` stops after the first client, exiting 1 if its handshake failed.
+  `--json` reports each client as a line of JSON.
+- **Stopping.** Ctrl-C stops it.
 
 ## Revocation lists
 
@@ -214,6 +279,12 @@ OpenSSL 3.5 is the first that reads ML-DSA. These were checked against OpenSSL 3
   - its PBES2 key decrypts;
   - its request is signed, and `openssl verify` accepts the result;
   - its PBES1, scrypt, `priv-only` ML-DSA and legacy-PEM keys are refused, each by name.
+- **TLS, both ways.**
+  - `openssl s_client -groups SecP384r1MLKEM1024` against `conflux cert serve` negotiates TLS
+    1.3, SecP384r1MLKEM1024 and `mldsa65` (the scheme `probe` and `serve` infer), and
+    verifies the ML-DSA chain;
+  - `conflux cert probe` against `openssl s_server` with an ML-DSA-87 certificate verifies it
+    over SecP256r1MLKEM768, and over ML-KEM-1024 alone.
 
 Most browsers, curl, and TLS stacks built on older OpenSSL cannot use an ML-DSA certificate
 yet. For a server those clients must reach, issue an ECDSA leaf (under an ML-DSA root, if you
@@ -222,7 +293,8 @@ like): classical, but widely accepted.
 ## What `conflux cert` does not do
 
 PKCS#12, in its common form, is not approved: SHA-1, 3DES, RC2 and PKCS#12's own KDF. SLH-DSA
-is not offered either. Nor are OCSP, ACME, Certificate Transparency, and SHA-1 fingerprints.
+is not offered either. Nor are OCSP, ACME, Certificate Transparency, SHA-1 fingerprints, and
+probing STARTTLS or QUIC.
 
 ## Exit codes
 
@@ -231,5 +303,5 @@ is not offered either. Nor are OCSP, ACME, Certificate Transparency, and SHA-1 f
 | 0 | done, or the check held |
 | 1 | failure: a file unreadable, a key refused, a passphrase wrong |
 | 2 | usage |
-| 3 | a check that ran and did not hold: `verify` found the certificate not valid, `match` found two keys |
+| 3 | a check that ran and did not hold: `verify` found the certificate not valid, `match` found two keys, `probe` found a chain that does not verify or a requirement not met |
 | 70 | this conflux does not run in FIPS 140-3 mode, so it makes and checks nothing |

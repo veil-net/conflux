@@ -117,6 +117,20 @@ jobs:
           rc=0; GODEBUG=fips140=off bin/conflux version >/dev/null 2>&1 || rc=$?
           [ "$rc" = 70 ] || { echo "::error::with fips140=off conflux exited $rc, not 70" >&2; exit 1; }
 
+      # conflux's HTTPS is crypto/tls in FIPS 140-3 mode, which offers only approved parameters,
+      # so a host that accepts none of them fails an enrolment, an update or a wintun fetch
+      # where it happens, on somebody's machine. Each host conflux reaches is probed here as
+      # conflux reaches it, its chain checked against the system's roots: the group and the
+      # chain's class are printed, not required. wintun.net is otherwise reached only by a
+      # Windows TUN's first start, which no job makes.
+      - name: FIPS 140-3 mode TLS reaches every host conflux talks to
+        run: |
+          set -euo pipefail
+          for host in api.veilnet.com.au api-dev.veilnet.com.au api.github.com github.com \
+            release-assets.githubusercontent.com objects.githubusercontent.com www.wintun.net; do
+            bin/conflux cert probe "$host"
+          done
+
   # The container suites, on a hosted runner: the boot service under a real systemd --
   # with every branch of what anchord runs as taken, the hosts it depends on made inside
   # the container -- and three nodes against the live API of the base's tree ($VEILNET_API

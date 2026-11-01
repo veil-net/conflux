@@ -528,14 +528,15 @@ Needs root, except `--check`.
 ## `conflux cert`
 
 ```
-conflux cert genkey | req | selfsign | sign | verify | show | convert | match | fingerprint | crl  ...
+conflux cert genkey | req | selfsign | sign | verify | show | convert | match | fingerprint | crl | probe | serve  ...
 ```
 
 Keys, certificate signing requests, certificates and revocation lists, made and checked with the
 Go Cryptographic Module in FIPS 140-3 mode: ML-DSA-87 by default, with ECDSA, RSA and Ed25519
-beside it. It needs no root, no configuration and no anchor. A conflux that does not run in FIPS
-140-3 mode (OpenBSD's) refuses every `cert` command, with exit 70. `verify` and `match` exit 3
-when the check does not hold. [cert.md](cert.md) has every command and flag.
+beside it, and a FIPS 140-3 mode TLS client and server (`probe`, `serve`) that say what a handshake
+negotiated, post-quantum or not. It needs no root, no configuration and no anchor. A conflux that
+does not run in FIPS 140-3 mode (OpenBSD's) refuses every `cert` command, with exit 70. `verify`,
+`match` and `probe` exit 3 when the check does not hold. [cert.md](cert.md) has every command and flag.
 
 It is not anchorctl's `keygen` or `issue`, which make an anchor's identity and its
 credentials; `cert` makes X.509, for TLS and anything else that takes a certificate.
@@ -586,7 +587,7 @@ other refusal — passes through untouched.
 | 0 | success |
 | 1 | failure |
 | 2 | usage |
-| 3 | `conflux cert verify` or `match`: the check ran and did not hold |
+| 3 | `conflux cert verify`, `match` or `probe`: the check ran and did not hold |
 | 13 | needs root or Administrator, or a pass-through that cannot read the daemon's token |
 | 69 | nothing here to act on: nothing running, or no credential to renew |
 | 70 | a configuration conflux or anchor refuses for good, or a conflux built for FIPS 140-3 mode run with it switched off, or `conflux cert` where it does not run in that mode; the systemd unit does not restart on it |

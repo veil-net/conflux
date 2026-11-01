@@ -105,6 +105,7 @@ Anchor is the reference for overlay behaviour, and the live API for the enrolmen
 - A certificate never outlives its issuer, starts five minutes back, carries a random 128-bit serial and an RFC 7093 SKI; a request contributes its subject and names alone. No certificateHold. No SHA-1 or MD5 fingerprint.
 - `verify` exits 3 for a chain that does not hold, a revoked certificate, a list out of date, or `--require-pq` on a classical chain; authentication is `pqc` only when the leaf key and every signature below the root are ML-DSA.
 - The `show` goldens' fixtures are public material alone; no private key, encrypted or not, is committed.
+- `cert probe` sends nothing but the handshake, checks the chain itself with `pki.Verify` (the one `InsecureSkipVerify` in conflux, and only so a failing chain is described), and exits 3 for a chain that does not verify or an unmet `--require-pq*`; X25519 is never offered alone. CI's `linux` job probes every host conflux reaches (both APIs, GitHub's API, web and asset hosts, wintun.net); a new host conflux talks to joins that list.
 - A placeholder build reports no anchor pair.
 - No `anchoradmin*` file exists anywhere in conflux.
 - No binary is tracked by git.

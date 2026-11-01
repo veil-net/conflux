@@ -48,7 +48,7 @@ func TestEveryFlagWeUseExists(t *testing.T) {
 		argv []string
 	}{
 		{"start", anchorctl.StartMode{
-			TUN: true, TUNName: "anchor0", IPv4: "10.0.0.1/24",
+			TUN: true, TUNName: "veil0", IPv4: "10.0.0.1/24",
 			Subnets: []string{"10.0.0.0/24"}, Proxies: nil,
 			Dir: "/tmp/x",
 		}.Args()},
@@ -58,13 +58,13 @@ func TestEveryFlagWeUseExists(t *testing.T) {
 		// A failure here means the embedded pair predates the generic uplink, not
 		// that conflux is wrong: refresh anchor/bin from an anchor that has it.
 		{"start-uplink", anchorctl.StartMode{
-			TUN: true, TUNName: "anchor0",
+			TUN:    true,
 			Uplink: "/dev/ttyUSB0:115200", Dir: "/tmp/x",
 		}.Args()},
 		// Named separately because -peers is the one flag conflux omits when the
 		// operator names nothing, so the cases above never carry it.
 		{"start-peers", anchorctl.StartMode{
-			TUN: true, TUNName: "anchor0", Dir: "/tmp/x",
+			TUN: true, Dir: "/tmp/x",
 			Peers: []string{"genesis.veilnet.com.au:4700"},
 		}.Args()},
 		// The flags conflux passes only when set, so the cases above never carry them.

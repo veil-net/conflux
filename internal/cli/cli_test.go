@@ -662,26 +662,52 @@ func TestARefusalForPrivilegeRepeatsTheCommand(t *testing.T) {
 
 // TestTheInterfaceIsNamedOnlyWhereItIsHonoured: Linux and Windows make the interface
 // they are asked for, and macOS and the BSDs number their own unless asked for one of
-// theirs. A status line naming anchor0 on a Mac names nothing ifconfig can find.
+// theirs. A status line naming veil0 on a Mac names nothing ifconfig can find.
 func TestTheInterfaceIsNamedOnlyWhereItIsHonoured(t *testing.T) {
 	for _, tc := range []struct {
 		goos, name string
 		named      bool
 	}{
-		{"linux", "anchor0", true},
-		{"windows", "anchor0", true},
-		{"darwin", "anchor0", false},
+		{"linux", "veil0", true},
+		{"windows", "veil0", true},
+		{"darwin", "veil0", false},
 		{"darwin", "utun7", true},
 		{"darwin", "utun", false},
-		{"freebsd", "anchor0", false},
+		{"freebsd", "veil0", false},
 		{"freebsd", "tun3", true},
 		{"openbsd", "tun0", true},
 		{"openbsd", "utun1", false},
 	} {
-		got := interfaceLine(tc.goos, tc.name)
+		got := interfaceLine(tc.goos, tc.name, "")
 
 		if named := got == tc.name; named != tc.named {
 			t.Errorf("%s, %q: %q", tc.goos, tc.name, got)
+		}
+	}
+}
+
+// TestTheInterfaceIsWhatTheAnchorSaysItHolds: once the anchor runs, its status names the
+// interface it holds, as the platform named it, and that is the name shown, whatever was
+// asked for. Asked for nothing, a machine that is not running says the anchor names its
+// own where the platform lets it, and the unit it takes where it does not.
+func TestTheInterfaceIsWhatTheAnchorSaysItHolds(t *testing.T) {
+	for _, goos := range []string{"linux", "windows", "darwin", "freebsd"} {
+		if got := interfaceLine(goos, "", "utun4"); got != "utun4" {
+			t.Errorf("%s, reported utun4: %q", goos, got)
+		}
+		if got := interfaceLine(goos, "veil0", "anchorlh2av6spu"); got != "anchorlh2av6spu" {
+			t.Errorf("%s, asked veil0, reported anchorlh2av6spu: %q", goos, got)
+		}
+	}
+
+	for goos, want := range map[string]string{
+		"linux":   "the anchor's own name: anchor and the start of its ID",
+		"windows": "the anchor's own name: anchor and the start of its ID",
+		"darwin":  "the first free utunN, which darwin numbers itself",
+		"openbsd": "the first free tunN, which openbsd numbers itself",
+	} {
+		if got := interfaceLine(goos, "", ""); got != want {
+			t.Errorf("%s, asked for nothing: %q, want %q", goos, got, want)
 		}
 	}
 }

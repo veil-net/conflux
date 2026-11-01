@@ -76,14 +76,13 @@ func TestLinkIsDeadWhenTheDeviceGoes(t *testing.T) {
 	}
 }
 
-// TestBusyInterfaceIsPermanent: two conflux installations on one machine both default
-// to anchor0, so this is the failure a second one hits every time. Retrying it to the
-// unit's 90-second timeout leaves the reason in the journal and nothing but "job
-// failed" in front of the operator.
+// TestBusyInterfaceIsPermanent: an --interface naming one another interface already
+// holds is refused on every start. Retrying it to the unit's 90-second timeout leaves the
+// reason in the journal and nothing but "job failed" in front of the operator.
 func TestBusyInterfaceIsPermanent(t *testing.T) {
 	err := &anchorctl.Error{
-		Args:   []string{"start", "-tun=true", "-tun-name", "anchor0"},
-		Stderr: `anchorctl: starting: anchor: opening anchor0: tundev: creating "anchor0": device or resource busy`,
+		Args:   []string{"start", "-tun=true", "-tun-name", "veil0"},
+		Stderr: `anchorctl: starting: anchor: opening veil0: tundev: creating "veil0": device or resource busy`,
 	}
 
 	if !Permanent(err) {
@@ -101,7 +100,7 @@ func TestWhatIsPermanent(t *testing.T) {
 		"a manifest conflux cannot read":  &permanentError{path: "manifest.b64", err: errors.New("format version 2")},
 		"another tree's credential":       anchorctlSaid("anchorctl: anchor: realm root is not the pinned genesis: have x, want y"),
 		"no TUN for this daemon": anchorctlSaid("anchorctl: anchor: this host will not give this process a TUN device: " +
-			"tundev: creating \"anchor0\": operation not permitted\n" +
+			"tundev: creating \"anchor6btpa3gn6\": operation not permitted\n" +
 			"  a TUN needs IPv6 on the daemon's host, and CAP_NET_ADMIN on Linux, root on macOS and the BSDs, " +
 			"Administrator and wintun.dll on Windows; give the daemon that, or start it in userspace mode"),
 		"a host that will not forward": anchorctlSaid("anchorctl: starting: anchor: this host could not be set up to " +

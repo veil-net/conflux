@@ -79,7 +79,7 @@ Starting.
   anchor       anchor6btpa3gn6w4stipba4hekzho7caw6srfyy5puvbz7mfanaiept5a
   overlay      fd80:c4b9:99ae:4411:c531:fd4f:754f:f08a/48
   ipv4         10.128.0.1/24
-  interface    anchor0
+  interface    anchor6btpa3gn6
   taint        brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf
   credential   valid until 2026-10-06T06:35:43Z (29d 23h)
   service      active (systemd: conflux.service, enabled at boot)
@@ -169,7 +169,7 @@ realm with no IP network between them:
 $ sudo conflux up --uplink /dev/ttyUSB0:115200 --taint brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf --no-ipv4
   anchor       anchor6btpa3gn6w4stipba4hekzho7caw6srfyy5puvbz7mfanaiept5a
   uplink       /dev/ttyUSB0:115200 — no socket bound, no address advertised
-  interface    anchor0
+  interface    anchor6btpa3gn6
   taint        brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf
   service      active (systemd: conflux.service, enabled at boot)
 ```

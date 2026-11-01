@@ -76,10 +76,6 @@ const ConfigVersion = 1
 // DefaultAPIBaseURL is where enrolment happens.
 const DefaultAPIBaseURL = "https://api.veilnet.com.au"
 
-// DefaultTUNName matches anchor's own default, so `ip link show anchor0` works
-// whether a machine was brought up by conflux or by anchorctl directly.
-const DefaultTUNName = "anchor0"
-
 // Config is the operator's intent, and the only thing a reboot needs in order to
 // reconstruct the running state without asking anybody anything.
 type Config struct {
@@ -250,12 +246,10 @@ func (c *Config) OverlayIPv4() string {
 	return *c.IPv4
 }
 
-// TUNInterface is the interface name to ask for, defaulted.
+// TUNInterface is the interface name to ask for, and empty for none: anchor then names
+// the interface after itself, `anchor` and the start of its AnchorID, on the platforms
+// that honour a name asked for (Linux, Windows), and the others number their own.
 func (c *Config) TUNInterface() string {
-	if c.TUNName == "" {
-		return DefaultTUNName
-	}
-
 	return c.TUNName
 }
 
@@ -321,8 +315,8 @@ func (c *Config) Validate() error {
 		return err
 	}
 
-	if c.Mode == ModeTUN {
-		if err := ValidateTUNName(c.TUNInterface(), runtime.GOOS); err != nil {
+	if c.Mode == ModeTUN && c.TUNName != "" {
+		if err := ValidateTUNName(c.TUNName, runtime.GOOS); err != nil {
 			return err
 		}
 	}

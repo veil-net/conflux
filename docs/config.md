@@ -49,7 +49,6 @@ layout, and why, is in [security.md](security.md#what-anchord-runs-as).
   "lanDiscovery": false,
   "serveExit": false,
   "useExit": false,
-  "tunName": "anchor0",
   "apiBaseUrl": "https://api.veilnet.com.au",
   "createdAt": "2026-09-06T06:35:41Z",
   "updatedAt": "2026-09-06T06:35:41Z"
@@ -70,6 +69,7 @@ layout, and why, is in [security.md](security.md#what-anchord-runs-as).
 | `lowLatency` | carry layer-2 frames on QUIC datagrams instead of streams. Absent is false. Either mode. |
 | `lanDiscovery` | probe the host's own networks for anchors of this realm tree. Either mode. The one field here where **absent is not false**: it is `auto`, and it passes no flag at all, which is what leaves enrolment's own `lanDiscovery` in play. `false` and absent are different documents and `--lan-discovery no` writes the first of them. |
 | `serveExit`, `useExit` | route the public internet out of and into the overlay. Absent is false. Either mode, as `subnets`; anchor refuses the two together. |
+| `tunName` | the interface name `--interface` asked for. `tun` only. Absent is the usual case: the anchor then names the interface after itself, `anchor` and the start of its AnchorID, on Linux and Windows, and macOS and the BSDs number their own. `conflux status` names the one it holds. |
 | `apiBaseUrl` | absent means the default. |
 
 This file is the whole of what a reboot needs. Every `up`, `proxy` and `observe` rewrites

@@ -263,7 +263,7 @@ func reportAnchorRows(d paths.Dirs, cfg *config.Config, st anchorctl.Status) {
 	}
 
 	if cfg.Mode == config.ModeTUN {
-		ui.Field("interface", interfaceLine(runtime.GOOS, cfg.TUNInterface()))
+		ui.Field("interface", interfaceLine(runtime.GOOS, cfg.TUNInterface(), st.Interface))
 	} else {
 		for _, p := range cfg.Proxies {
 			ui.Field("serving", p)
@@ -353,11 +353,17 @@ func reportSubnets(d paths.Dirs, cfg *config.Config) {
 
 // interfaceLine is the interface a TUN machine gets, as far as conflux can say.
 //
-// The name is a request, which Linux and Windows honour. macOS only ever makes utunN
-// and the BSDs tunN: a name of that form asks for that unit, anything else takes the
-// first free one, and anchor does not report which it got. So off Linux and Windows,
-// anchor0 is not a name to go looking for.
-func interfaceLine(goos, name string) string {
+// The anchor's own answer when it has given one: `anchorctl status` names the interface
+// it holds, as the platform named it, on every platform. Short of that, what was asked
+// for. A name is a request, which Linux and Windows honour, and with none anchor asks for
+// its own, `anchor` and the start of its AnchorID. macOS only ever makes utunN and the BSDs
+// tunN: a name of that form asks for that unit, and anything else, or none, takes the
+// first free one.
+func interfaceLine(goos, configured, reported string) string {
+	if reported != "" {
+		return reported
+	}
+
 	var family string
 
 	switch goos {
@@ -366,14 +372,18 @@ func interfaceLine(goos, name string) string {
 	case "freebsd", "openbsd":
 		family = "tun"
 	default:
-		return name
+		if configured == "" {
+			return "the anchor's own name: anchor and the start of its ID"
+		}
+
+		return configured
 	}
 
-	if unit, ok := strings.CutPrefix(name, family); ok && unit != "" && strings.Trim(unit, "0123456789") == "" {
-		return name
+	if unit, ok := strings.CutPrefix(configured, family); ok && unit != "" && strings.Trim(unit, "0123456789") == "" {
+		return configured
 	}
 
-	return "the first free " + family + "N, which " + goos + " numbers itself; ifconfig names it"
+	return "the first free " + family + "N, which " + goos + " numbers itself"
 }
 
 // joinTaints is the taint set for a status line.

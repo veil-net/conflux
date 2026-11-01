@@ -820,9 +820,9 @@ func (s *Supervisor) freshToken() (string, error) {
 // A file conflux itself refuses, an argument vector anchorctl refuses as a usage error,
 // and what anchor refuses that conflux cannot check beforehand: a credential under a
 // root other than the one these binaries are pinned to; a TUN the host will not give --
-// no capability, no device or no IPv6, or the name held by another interface, which two
-// conflux installations both defaulting to anchor0 hit every time; and a host that will
-// not be set up to forward for the realm. None frees itself inside thirty seconds of
+// no capability, no device or no IPv6, or the name held by another interface, which an
+// --interface naming one already there meets on every start; and a host that will not be
+// set up to forward for the realm. None frees itself inside thirty seconds of
 // backoff, and failing in three puts the reason in front of somebody rather than
 // burying it in the journal under a unit timeout.
 //

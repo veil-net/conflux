@@ -115,29 +115,41 @@ func EncryptPrivateKey(p8, passphrase []byte) ([]byte, error) {
 		return nil, fmt.Errorf("a passphrase is %d characters or more", MinPassphrase)
 	}
 
-	salt := make([]byte, pbkdf2SaltSize)
-	iv := make([]byte, aes.BlockSize)
+	algo, data, err := pbes2SealFresh(p8, passphrase)
+	if err != nil {
+		return nil, err
+	}
 
-	rand.Read(salt)
-	rand.Read(iv)
-
-	return encryptWith(p8, passphrase, salt, iv)
+	return asn1.Marshal(encryptedPrivateKeyInfo{Algo: algo, Data: data})
 }
 
 // encryptWith is EncryptPrivateKey with its salt and IV given, for the known-answer test.
 func encryptWith(p8, passphrase, salt, iv []byte) ([]byte, error) {
+	algo, data, err := pbes2Seal(p8, passphrase, salt, iv)
+	if err != nil {
+		return nil, err
+	}
+
+	return asn1.Marshal(encryptedPrivateKeyInfo{Algo: algo, Data: data})
+}
+
+// pbes2Seal encrypts plain under passphrase as written here, returning the PBES2
+// AlgorithmIdentifier and the ciphertext: a key's, or PKCS#12's SafeContents.
+func pbes2Seal(plain, passphrase, salt, iv []byte) (pkix.AlgorithmIdentifier, []byte, error) {
+	none := pkix.AlgorithmIdentifier{}
+
 	kdf, err := asn1.Marshal(pbkdf2Params{
 		Salt:       salt,
 		Iterations: pbkdf2Iterations,
 		PRF:        pkix.AlgorithmIdentifier{Algorithm: oidHMACSHA256, Parameters: asn1.NullRawValue},
 	})
 	if err != nil {
-		return nil, err
+		return none, nil, err
 	}
 
 	ivDER, err := asn1.Marshal(iv)
 	if err != nil {
-		return nil, err
+		return none, nil, err
 	}
 
 	params, err := asn1.Marshal(pbes2Params{
@@ -145,27 +157,35 @@ func encryptWith(p8, passphrase, salt, iv []byte) ([]byte, error) {
 		Enc: pkix.AlgorithmIdentifier{Algorithm: oidAES256CBC, Parameters: asn1.RawValue{FullBytes: ivDER}},
 	})
 	if err != nil {
-		return nil, err
+		return none, nil, err
 	}
 
 	key, err := pbkdf2.Key(sha256.New, string(passphrase), salt, pbkdf2Iterations, 32)
 	if err != nil {
-		return nil, err
+		return none, nil, err
 	}
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return nil, err
+		return none, nil, err
 	}
 
-	pad := aes.BlockSize - len(p8)%aes.BlockSize
-	data := append(append([]byte{}, p8...), bytesOf(byte(pad), pad)...)
+	pad := aes.BlockSize - len(plain)%aes.BlockSize
+	data := append(append([]byte{}, plain...), bytesOf(byte(pad), pad)...)
 	cipher.NewCBCEncrypter(block, iv).CryptBlocks(data, data)
 
-	return asn1.Marshal(encryptedPrivateKeyInfo{
-		Algo: pkix.AlgorithmIdentifier{Algorithm: oidPBES2, Parameters: asn1.RawValue{FullBytes: params}},
-		Data: data,
-	})
+	return pkix.AlgorithmIdentifier{Algorithm: oidPBES2, Parameters: asn1.RawValue{FullBytes: params}}, data, nil
+}
+
+// pbes2SealFresh is pbes2Seal under a fresh salt and IV.
+func pbes2SealFresh(plain, passphrase []byte) (pkix.AlgorithmIdentifier, []byte, error) {
+	salt := make([]byte, pbkdf2SaltSize)
+	iv := make([]byte, aes.BlockSize)
+
+	rand.Read(salt)
+	rand.Read(iv)
+
+	return pbes2Seal(plain, passphrase, salt, iv)
 }
 
 // pbes2Scheme is a parsed EncryptedPrivateKeyInfo's scheme, everything decryption needs but
@@ -193,7 +213,13 @@ func parseEncrypted(der []byte) (pbes2Scheme, error) {
 		return pbes2Scheme{}, errors.New("not an encrypted PKCS#8 key")
 	}
 
-	alg := info.Algo.Algorithm
+	return parseScheme(info.Algo, info.Data)
+}
+
+// parseScheme reads an encryption AlgorithmIdentifier and the data under it, refusing a
+// scheme that is not approved.
+func parseScheme(algo pkix.AlgorithmIdentifier, data []byte) (pbes2Scheme, error) {
+	alg := algo.Algorithm
 
 	switch {
 	case alg.Equal(oidPBES2):
@@ -204,11 +230,11 @@ func parseEncrypted(der []byte) (pbes2Scheme, error) {
 	}
 
 	var params pbes2Params
-	if rest, err := asn1.Unmarshal(info.Algo.Parameters.FullBytes, &params); err != nil || len(rest) != 0 {
+	if rest, err := asn1.Unmarshal(algo.Parameters.FullBytes, &params); err != nil || len(rest) != 0 {
 		return pbes2Scheme{}, errors.New("this key's PBES2 parameters are damaged")
 	}
 
-	s := pbes2Scheme{data: info.Data}
+	s := pbes2Scheme{data: data}
 
 	switch {
 	case params.KDF.Algorithm.Equal(oidPBKDF2):
@@ -285,6 +311,28 @@ func DecryptPrivateKey(der, passphrase []byte) ([]byte, error) {
 		return nil, err
 	}
 
+	out, err := pbes2Open(s, passphrase)
+	if err != nil {
+		return nil, err
+	}
+
+	// What a wrong passphrase decrypts is not PKCS#8. What the right one decrypts is, and a
+	// key inside it this does not read is refused by name where the key is parsed.
+	var p8 struct {
+		Version    int
+		Algo       pkix.AlgorithmIdentifier
+		PrivateKey []byte
+	}
+
+	if rest, err := asn1.Unmarshal(out, &p8); err != nil || len(rest) != 0 {
+		return nil, ErrPassphrase
+	}
+
+	return out, nil
+}
+
+// pbes2Open decrypts what s describes under passphrase, its padding checked.
+func pbes2Open(s pbes2Scheme, passphrase []byte) ([]byte, error) {
 	if len(passphrase) == 0 {
 		return nil, ErrPassphrase
 	}
@@ -310,27 +358,19 @@ func DecryptPrivateKey(der, passphrase []byte) ([]byte, error) {
 		return nil, ErrPassphrase
 	}
 
-	// What a wrong passphrase decrypts is not PKCS#8. What the right one decrypts is, and a
-	// key inside it this does not read is refused by name where the key is parsed.
-	p8 := out[:len(out)-pad]
-
-	var info struct {
-		Version    int
-		Algo       pkix.AlgorithmIdentifier
-		PrivateKey []byte
-	}
-
-	if rest, err := asn1.Unmarshal(p8, &info); err != nil || len(rest) != 0 {
-		return nil, ErrPassphrase
-	}
-
-	return p8, nil
+	return out[:len(out)-pad], nil
 }
 
-func refuseScheme(what string) error {
-	return fmt.Errorf("this key is encrypted with %s. conflux reads PBES2 alone, with PBKDF2-HMAC-SHA-2 and "+
-		"AES-CBC, which FIPS 140-3 approves. To re-encrypt it with OpenSSL:\n  %s", what, reencrypt)
+// SchemeRefusal is an encryption scheme refused as not approved. Its words are a key's; a
+// PKCS#12 bundle says them its own way.
+type SchemeRefusal struct{ What string }
+
+func (r SchemeRefusal) Error() string {
+	return fmt.Sprintf("this key is encrypted with %s. conflux reads PBES2 alone, with PBKDF2-HMAC-SHA-2 and "+
+		"AES-CBC, which FIPS 140-3 approves. To re-encrypt it with OpenSSL:\n  %s", r.What, reencrypt)
 }
+
+func refuseScheme(what string) error { return SchemeRefusal{what} }
 
 func hasPrefix(oid, arc asn1.ObjectIdentifier) bool {
 	return len(oid) > len(arc) && oid[:len(arc)].Equal(arc)

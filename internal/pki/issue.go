@@ -41,6 +41,9 @@ type Template struct {
 
 	// RSAPSS signs with RSASSA-PSS where the issuer's key is RSA, rather than PKCS #1 v1.5.
 	RSAPSS bool
+
+	// Serial, when set, is the serial number; otherwise Issue draws one.
+	Serial *big.Int
 }
 
 // SignatureAlgorithm is the algorithm a key signs certificates, requests and lists with:
@@ -105,9 +108,12 @@ func Issue(t Template, pub crypto.PublicKey, issuer *x509.Certificate, issuerKey
 		return nil, fmt.Errorf("a %s certificate needs a name a client checks: --san", t.Profile)
 	}
 
-	serial, err := Serial()
-	if err != nil {
-		return nil, err
+	serial := t.Serial
+	if serial == nil {
+		var err error
+		if serial, err = Serial(); err != nil {
+			return nil, err
+		}
 	}
 
 	ski, err := SubjectKeyID(pub)

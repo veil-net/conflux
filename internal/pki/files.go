@@ -186,6 +186,11 @@ func sniff(der []byte) (Object, error) {
 		return Object{KindCRL, der}, nil
 	}
 
+	// A PKCS#12 bundle begins with an INTEGER too, so it is told apart first.
+	if IsPKCS12(der) {
+		return Object{}, errors.New("is a PKCS#12 bundle: conflux cert p12 import takes it apart")
+	}
+
 	// SEQUENCE { INTEGER, ... } is PKCS#8; SEQUENCE { SEQUENCE, OCTET STRING } an encrypted
 	// key; SEQUENCE { SEQUENCE, BIT STRING } a public key.
 	var seq asn1.RawValue
@@ -251,15 +256,23 @@ func Write(path string, objs []Object, der, force bool) error {
 		perm = 0o600
 	}
 
-	return writeFile(path, data, perm, isKey && !force)
+	err := WriteFile(path, data, perm, isKey && !force)
+	if errors.Is(err, ErrExists) {
+		return fmt.Errorf("%s is already there, and a key overwritten is lost; --force replaces it", path)
+	}
+
+	return err
 }
 
-// writeFile writes path atomically, at perm from before the first byte, and when keep, only
-// where nothing is yet.
-func writeFile(path string, data []byte, perm fs.FileMode, keep bool) (err error) {
+// ErrExists is a name WriteFile was asked to keep that is already taken.
+var ErrExists = errors.New("already there")
+
+// WriteFile writes path atomically, at perm from before the first byte, and when keep, only
+// where nothing is yet: a name already taken is ErrExists, and is left as it was.
+func WriteFile(path string, data []byte, perm fs.FileMode, keep bool) (err error) {
 	if keep {
 		if _, err := os.Lstat(path); err == nil {
-			return fmt.Errorf("%s is already there, and a key overwritten is lost; --force replaces it", path)
+			return fmt.Errorf("%s: %w", path, ErrExists)
 		}
 	}
 
@@ -318,7 +331,7 @@ func writeFile(path string, data []byte, perm fs.FileMode, keep bool) (err error
 	// links falls back to the rename, the check above its guard.
 	if err := os.Link(tmpName, path); err != nil {
 		if errors.Is(err, fs.ErrExist) {
-			return fmt.Errorf("%s is already there, and a key overwritten is lost; --force replaces it", path)
+			return fmt.Errorf("%s: %w", path, ErrExists)
 		}
 
 		return os.Rename(tmpName, path)

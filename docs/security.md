@@ -261,8 +261,9 @@ which is every target conflux ships but OpenBSD's.
 | ECDSA, RSA and EdDSA key generation and signing | FIPS 186-5 | `conflux cert`'s classical keys, and what it signs with them | P-256, P-384 and P-521; RSA of 2048 bits or more, PKCS #1 v1.5 or PSS, SHA-2; pure Ed25519, never Ed25519ctx or Ed25519ph |
 | SHA-384, SHA-512, SHA3-256, SHA3-384, SHA3-512 | FIPS 180-4, FIPS 202 | the hashes of ECDSA and RSA signatures; `conflux cert fingerprint` | no SHA-1 or MD5 fingerprint is offered |
 | SHAKE256 | FIPS 202 | checking an ML-DSA key's expanded half against its seed, as it is read | — |
-| PBKDF2, with HMAC-SHA-2 | SP 800-132, FIPS 198-1 | the key that encrypts a private key `conflux cert` writes or reads | a salt of 16 bytes or more; 600,000 iterations written |
-| AES-CBC | SP 800-38A | encrypting a private key, under PBES2 | `internal/pki/pbes2.go` alone builds it; nothing else in conflux holds an AES block |
+| PBKDF2, with HMAC-SHA-2 | SP 800-132, FIPS 198-1 | the key that encrypts a private key `conflux cert` writes or reads, and a PKCS#12 bundle's bags and MAC key | a salt of 16 bytes or more; 600,000 iterations written |
+| HMAC-SHA-2 | FIPS 198-1 | a PKCS#12 bundle's PBMAC1 MAC (RFC 9579) | PKCS#12's own KDF is never used: a bundle made with it is refused |
+| AES-CBC | SP 800-38A | encrypting a private key, or a PKCS#12 bundle's bags, under PBES2 | `internal/pki/pbes2.go` alone builds it; nothing else in conflux holds an AES block |
 
 **What is outside the module.**
 

@@ -70,10 +70,16 @@ which the module never sees; an AES block alone, which is AES-ECB; AES-CBC outsi
 `internal/pki/pbes2.go`; and the rest of the list in
 [security.md](security.md#fips-140-3-and-cmvp). Each rule's control is a file planted to
 break it. **`pki.TestPBES2KnownAnswer`** holds an encrypted key's exact bytes under a fixed
-salt and IV, which OpenSSL 3.5 opens to the same key, and **`pki.TestShowGoldens`** holds what
+salt and IV, which OpenSSL 3.5 opens to the same key; **`pki.TestPBMAC1KnownAnswer`** holds a
+PKCS#12 MAC to the digest Python's hashlib computes independently, and its parameters to RFC
+9579's encoding; and **`pki.TestShowGoldens`** holds what
 `cert show` prints of committed certificates, a request, a list and a public key, in
 `internal/pki/testdata/show/`. They are public material alone; the keys that made them were
 thrown away. `make golden` rewrites them with the argv goldens after an intended change.
+**`cli.TestAManagedCAEndToEnd`** is the toolkit whole: a managed CA with an ML-DSA-87 root and
+an ML-DSA-65 issuing CA issues a server certificate, a FIPS 140-3 mode client reaches it over a
+hybrid group with its authentication pqc throughout, and once revoked `verify` fails it against
+the CA's own lists; an ECDSA leaf from the same CA is classical.
 
 **`enrol.TestWithRenewalIsLossless`** renews a manifest and compares every field.
 Four are meant to change — `chain`, `notAfter`, `issuedAt` and `bootstrap`, which the

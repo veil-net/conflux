@@ -292,7 +292,8 @@ needs no root at all. See [ephemeral.md](docs/ephemeral.md).
 
 **Post-quantum certificates.** `conflux cert` is a certificate toolkit in the spirit of
 OpenSSL's: keys, requests, certificates, revocation lists and chain checks, ML-DSA-87 by default,
-made and checked with the Go Cryptographic Module in FIPS 140-3 mode, and a TLS client and server
+made and checked with the Go Cryptographic Module in FIPS 140-3 mode; a managed CA that remembers
+what it issued and revoked; and a TLS client and server
 that say whether a handshake's key exchange and authentication are post-quantum. Its output is
 read by OpenSSL 3.5, and it reads OpenSSL's. See [cert.md](docs/cert.md).
 
@@ -312,7 +313,7 @@ read by OpenSSL 3.5, and it reads OpenSSL's. See [cert.md](docs/cert.md).
 | `conflux uninstall` | remove the boot service, the configuration and the identity |
 | `conflux version` | conflux's version, and the anchor build it carries |
 | `conflux update [--check]` | replace this conflux with the latest release, verified, and restart the anchor on it |
-| `conflux cert genkey \| req \| selfsign \| sign \| verify \| show \| convert \| match \| fingerprint \| crl \| probe \| serve` | make and check ML-DSA (and ECDSA, RSA, Ed25519) keys, certificates and revocation lists, and probe and serve TLS, in FIPS 140-3 mode; see [cert.md](docs/cert.md) |
+| `conflux cert genkey \| req \| selfsign \| sign \| verify \| show \| convert \| match \| fingerprint \| crl \| ca \| p12 \| probe \| serve` | make and check ML-DSA (and ECDSA, RSA, Ed25519) keys, certificates and revocation lists, keep a CA, bundle PKCS#12, and probe and serve TLS, in FIPS 140-3 mode; see [cert.md](docs/cert.md) |
 | `conflux anchorctl ARGS...` | run the embedded `anchorctl`, uninterpreted |
 | *anything else* | passed to `anchorctl` unchanged: `peers`, `routes`, `events`, `metrics`, `send`, `inspect`, … and the realm's control over its members, `block`, `taints`, `subnets`, `telemetry` |
 

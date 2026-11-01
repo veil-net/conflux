@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"slices"
 	"syscall"
 	"testing"
 
@@ -23,7 +24,8 @@ import (
 // status says: "running", or "none" for a daemon holding no anchor. fakeAnchorctlObserverEnv
 // is the observer's row in it -- "running", "stopped", "failed", or none at all -- and
 // fakeAnchorctlCaptureEnv set makes `observe -start` refuse as a host that will not let the
-// daemon capture does.
+// daemon capture does. fakeAnchorctlRenewedEnv names a file `renew` writes the chain it was
+// handed on stdin to.
 const (
 	fakeAnchorctlEnv         = "CONFLUX_TEST_FAKE_ANCHORCTL"
 	fakeAnchorctlLogEnv      = "CONFLUX_TEST_FAKE_ANCHORCTL_LOG"
@@ -31,6 +33,7 @@ const (
 	fakeAnchorctlStatusEnv   = "CONFLUX_TEST_FAKE_ANCHORCTL_STATUS"
 	fakeAnchorctlObserverEnv = "CONFLUX_TEST_FAKE_ANCHORCTL_OBSERVER"
 	fakeAnchorctlCaptureEnv  = "CONFLUX_TEST_FAKE_ANCHORCTL_NO_CAPTURE"
+	fakeAnchorctlRenewedEnv  = "CONFLUX_TEST_FAKE_ANCHORCTL_RENEWED"
 	fakeAnchordEnv           = "CONFLUX_TEST_FAKE_ANCHORD"
 	fakeAnchordListenEnv     = "CONFLUX_TEST_FAKE_ANCHORD_LISTEN"
 )
@@ -97,7 +100,31 @@ func fakeAnchorctl(args []string) int {
 		_, _ = io.Copy(io.Discard, os.Stdin)
 
 		fmt.Print(fakeStarted)
-	case "renew", "stop":
+	case "renew":
+		// The chain arrives on stdin, as conflux hands it over: `renew -cred -` and nothing
+		// else is the shape conflux renews with. fakeAnchorctlRenewedEnv, set, names a file
+		// the chain is written to, for a test to read what the daemon would have been sent.
+		if !slices.Equal(args, []string{"renew", "-cred", "-"}) {
+			fmt.Fprintf(os.Stderr, "renew %q is not how conflux renews\n", args[1:])
+
+			return 2
+		}
+
+		chain, err := io.ReadAll(os.Stdin)
+		if err != nil || len(chain) == 0 {
+			fmt.Fprintln(os.Stderr, "no credential on stdin")
+
+			return 1
+		}
+
+		if out := os.Getenv(fakeAnchorctlRenewedEnv); out != "" {
+			if err := os.WriteFile(out, chain, 0o600); err != nil {
+				return 1
+			}
+		}
+
+		fmt.Println("ok")
+	case "stop":
 		fmt.Println("ok")
 	case "observe":
 		// What anchorctl says of a host that will not let the daemon capture, on stderr.

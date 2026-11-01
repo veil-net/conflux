@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
@@ -38,28 +37,12 @@ func renewStored(
 		return renewal{}, err
 	}
 
-	// A scheme this build does not implement is refused rather than downgraded to
-	// sending nothing, and names the value; see enrol.Auth.
-	auth, err := m.Auth()
-	if err != nil {
-		return fail(err)
-	}
-
-	client.Auth = auth
-
-	// The manifest's taints and never conflux.json's: they are what the credential
-	// grants, and the running anchor refuses a chain granting any other set.
-	got, err := client.Renew(ctx, m.RenewalURL(), st.AnchorID, m.Taints())
+	next, chain, err := renewChain(ctx, client, m, st.AnchorID)
 
 	if skew, measured := client.Skew(); measured {
 		st.ClockSkew = skew
 	}
 
-	if err != nil {
-		return fail(err)
-	}
-
-	next, err := m.WithRenewal(got, time.Now())
 	if err != nil {
 		return fail(err)
 	}
@@ -80,7 +63,38 @@ func renewStored(
 	st.LastRenewalError = ""
 	st.IssuedAt, st.NotAfter = next.IssuedAt(), next.NotAfter()
 
-	return renewal{m: next, env: env, chain: got.Chain}, nil
+	return renewal{m: next, env: env, chain: chain}, nil
+}
+
+// renewChain asks m's issuer for a fresh chain for anchorID, and returns m with it spliced
+// in and the raw chain to install: the renewal itself, touching no file, so a caller that
+// keeps nothing on disk renews by the same body as one that does. The client's measured
+// skew is the caller's to read after.
+func renewChain(
+	ctx context.Context, client *enrol.Client, m *enrol.Manifest, anchorID string,
+) (*enrol.Manifest, []byte, error) {
+	// A scheme this build does not implement is refused rather than downgraded to
+	// sending nothing, and names the value; see enrol.Auth.
+	auth, err := m.Auth()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	client.Auth = auth
+
+	// The manifest's taints and never conflux.json's: they are what the credential
+	// grants, and the running anchor refuses a chain granting any other set.
+	got, err := client.Renew(ctx, m.RenewalURL(), anchorID, m.Taints())
+	if err != nil {
+		return nil, nil, err
+	}
+
+	next, err := m.WithRenewal(got, time.Now())
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return next, got.Chain, nil
 }
 
 // RenewNow fetches a fresh chain and installs it on the running anchor.
@@ -143,7 +157,7 @@ func RenewNow(ctx context.Context, dirs paths.Dirs, ctl *anchorctl.Ctl, rep Repo
 
 	got, err := renewStored(ctx, dirs, st, &enrol.Client{BaseURL: cfg.APIBase()}, m)
 	if err == nil {
-		if err = install(ctx, dirs, ctl, got.chain); err != nil {
+		if err = ctl.Renew(ctx, got.chain); err != nil {
 			// The renewed chain is on disk, so the next start runs on it, but the running
 			// anchor still holds the old one. The state keeps describing that one, so a
 			// renewal that was due is due again in a minute rather than three weeks after
@@ -166,36 +180,4 @@ func RenewNow(ctx context.Context, dirs paths.Dirs, ctl *anchorctl.Ctl, rep Repo
 		st.NotAfter.Format(time.RFC3339), ui.Until(st.NotAfter))
 
 	return nil
-}
-
-// install hands the renewed chain to the running anchor.
-//
-// The bytes are raw here, not base64: the API sends base64 and the client decoded
-// it on the way in, because the file `-cred` reads wants the credential itself.
-// Getting that backwards produces a credential the daemon refuses, with nothing
-// saying the encoding is why.
-//
-// Through a file because that is what anchorctl reads, with -inline so that anchorctl
-// sends the contents and the daemon never opens a path a caller named. The chain is
-// public -- it is worth nothing without the identity -- and the file is gone as soon
-// as anchorctl has read it, so it is written plainly rather than atomically.
-func install(ctx context.Context, dirs paths.Dirs, ctl *anchorctl.Ctl, chain []byte) error {
-	f, err := os.CreateTemp(dirs.State, ".renewed-*.cred")
-	if err != nil {
-		return err
-	}
-
-	defer os.Remove(f.Name())
-
-	if _, err := f.Write(chain); err != nil {
-		f.Close()
-
-		return err
-	}
-
-	if err := f.Close(); err != nil {
-		return err
-	}
-
-	return ctl.Renew(ctx, f.Name())
 }

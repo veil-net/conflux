@@ -193,10 +193,12 @@ func (m StartMode) Args() []string {
 
 // RenewArgs installs a renewed chain on the running anchor, without a restart.
 //
-// -inline makes anchorctl read the file and send the bytes, so the daemon never
-// opens a path a caller named.
-func RenewArgs(credPath string) []string {
-	return []string{"renew", "-cred", credPath, "-inline"}
+// The chain arrives on stdin, as the manifest does for start, and anchorctl sends it
+// inline: it is never a file, so the daemon never opens a path a caller named and a
+// renewal leaves nothing behind, which an ephemeral run, holding its credential in memory
+// alone, depends on.
+func RenewArgs() []string {
+	return []string{"renew", "-cred", "-"}
 }
 
 // StopArgs closes the anchor. The daemon stays up.

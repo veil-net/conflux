@@ -71,7 +71,7 @@ The concrete facts the workflow relies on. Step 8 of every run keeps this file t
 
 ## Test harness
 
-- **`test/preflight.sh`:** checks the Docker daemon, `/dev/net/tun`, `/sys/fs/cgroup` (v1 accepted), and IPv6. Reports whether the API is reachable (`curl …/docs`); that line is informational only.
+- **`test/preflight.sh`:** checks the Docker daemon, `/dev/net/tun`, `/sys/fs/cgroup` (v1 accepted), and IPv6. Reports whether `$VEILNET_API` (production's when unset) is reachable (`curl …/docs`); that line is informational only.
 - **`test/service.sh`:** container `$NAME` (default `cfx`) from `$IMAGE`. Asserts:
   - systemd reaches `running`
   - `conflux install` leaves the unit `enabled` and `inactive`
@@ -81,15 +81,15 @@ The concrete facts the workflow relies on. Step 8 of every run keeps this file t
   It enrols nothing.
 - **`test/service-host.sh CONFLUX`:** the same lifecycle on macOS (as root) and Windows (Git Bash, as Administrator), against launchd and the SCM, run by CI's `platforms` legs only: `install` registers and starts nothing (Windows: `sc qfailureflag` TRUE, three RESTART actions), `status` exits 78 saying "installed, not running", `down` succeeds, a proxy `conflux.json` with an API at `192.0.2.1:9` started through launchd/the SCM records `anchord.priv` with `"account":true` as `_conflux` / `LOCAL SERVICE` and its log says `starting anchord as` that account and then `enrolling` (anchord answered on its socket), `uninstall --yes` leaves no plist, no `launchctl print-disabled system` entry, no `_conflux` account, no SCM service and no root directory. bash 3.2. Enrols nothing.
 - **`test/service-bsd.sh CONFLUX`:** POSIX sh, as root in a FreeBSD or OpenBSD VM (CI's `bsd` job): `install` writes and enables the rc script and starts nothing, `status` exits 78, a proxy `conflux.json` with an API at an `nc -k -l` that never answers runs anchord as `conflux`/`_conflux` (the record and `ps`), the state directory `drwx--x--- root <account>`, the token root's; port 80 and a TUN keep it root, saying why; `uninstall --yes` leaves no script, no directory and no account.
-- **`test/integration.sh`:** random taint `cfx-ci-<12 hex>`, which every credential is issued in. Makes three live enrolments and one renewal. Waits poll each second and print how long they took. A and B get `--peers 192.0.2.1:4700` (RFC 5737; never answers): anchor probes the link only until its first connection and the live realm answers at once, so without it they would meet through the realm and the link would prove nothing. Stages:
+- **`test/integration.sh`:** random taint `cfx-ci-<12 hex>`, which every credential is issued in. Enrols at `$VEILNET_API`, production's when unset (`--api` on A's and B's `up` and C's `enrol`, and C's `POST`), which must be the tree the embedded anchord is pinned to. Makes three live enrolments and one renewal. Waits poll each second and print how long they took. A and B get `--peers 192.0.2.1:4700` (RFC 5737; never answers): anchor probes the link only until its first connection and the live realm answers at once, so without it they would meet through the realm and the link would prove nothing. Stages:
   1. `cfx-a up --ipv4 10.128.0.1/24`: `anchorId` in `state.json`, `manifest.b64` is `600 root`, anchord is `conflux` with `CapEff` `CAP_NET_ADMIN` alone and `NoNewPrivs` 0 (from `/proc`, and again after the reboot and the kill), status says `conflux, with CAP_NET_ADMIN for its interface`, `/run/conflux` is `710 root conflux`, the credential grants `$TAINT`, a second `up` keeps the identity, an `up --taint` with another taint is refused naming `conflux uninstall` and changes nothing, and `conflux renew` installs a renewed chain hot with the identity and taint unchanged.
-  2. `cfx-b` (`10.128.0.2/24`): `conflux blocks` passes through to anchorctl's table, and `conflux telemetry -from <B>` is refused for want of the capability; reachable both ways (waited for), v4 pings both ways, plus a v6 ping.
+  2. `cfx-b` (`10.128.0.2/24`): its interface, the `interface` row of `conflux status`, is its AnchorID cut to 15 bytes (`B_IF`, which every interface check below names); `conflux blocks` passes through to anchorctl's table, and `conflux telemetry -from <B>` is refused for want of the capability; reachable both ways (waited for), v4 pings both ways, plus a v6 ping.
   3. `anchor_lan_peers_found_total` (labelled per interface; summed) is above 0 on A or B.
-  4. `cfx-c`: enrolled from `POST /ghosts/alpha` with `{"taints":["$TAINT"]}` fetched on the host and piped to `conflux enrol --manifest -`; its credential grants `$TAINT`; `up --taint "$TAINT" --lan-discovery no` (restating it) with no `--peers` must not enrol again, must reach the realm through the manifest's bootstrap list (`anchor_connections` > 0), and its discovery counter stays 0.
+  4. `cfx-c`: enrolled from `POST /ghosts/alpha` with `{"taints":["$TAINT"]}` fetched on the host and piped to `conflux enrol --api "$API" --manifest -`; its credential grants `$TAINT`; `up --taint "$TAINT" --lan-discovery no` (restating it) with no `--peers` must not enrol again, must reach the realm through the manifest's bootstrap list (`anchor_connections` > 0), and its discovery counter stays 0.
   5. Reboot A: the service must come back active (Type=notify, so the anchor is up), same identity.
   6. `anchord` SIGKILLed on A (`docker exec cfx-a sh -c "kill -9 …"`; `kill` is a builtin): the supervisor brings it back without a reboot — a new pid, `/run/conflux/ready` rewritten, same identity, B reachable at its IPv6.
-  7. B `down`: keeps the registration, config and identity, and drops `anchor0`. `start` restores it. `down` then reboot restores it, the service active again.
-  8. `uninstall` removes the unit, its wants link, `/etc/conflux`, `/var/lib/conflux`, `/run/conflux`, `anchor0` and the `conflux` account.
+  7. B `down`: keeps the registration, config and identity, and drops `$B_IF`. `start` restores it. `down` then reboot restores it, the service active again.
+  8. `uninstall` removes the unit, its wants link, `/etc/conflux`, `/var/lib/conflux`, `/run/conflux`, `$B_IF` and the `conflux` account.
 - **`test/systemd/Dockerfile`:** `debian:trixie-slim` plus systemd, systemd-sysv, ca-certificates, iproute2, iputils-ping and dbus, with getty, udev, console, timesyncd, logind and modules-load units stripped (a container cannot load modules, and the failed unit leaves systemd `degraded`), every `multi-user.target.wants` link removed and dbus's put back; `/etc/tmpfiles.d/tun.conf` sets `/dev/net/tun` `0666` at every boot; `COPY conflux /usr/local/bin/conflux`; `STOPSIGNAL SIGRTMIN+3`; boots systemd. Containers run with `--privileged --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw --device /dev/net/tun`.
 - **Tests that skip without real binaries** (`anchortest.Require`, or its copy in `anchor`, which `anchortest` imports; the reason is always "no anchor pair"):
   - `anchor`: `TestPairIsRealExecutables`
@@ -103,7 +103,7 @@ The concrete facts the workflow relies on. Step 8 of every run keeps this file t
 ## CI/CD
 
 **`.github/workflows/ci.yml`**
-- Triggers: `pull_request` and `workflow_dispatch`. `permissions: contents: read`. Concurrency group `ci-${{ github.ref }}`, cancel-in-progress.
+- Triggers: `pull_request` and `workflow_dispatch`. `permissions: contents: read`. Workflow env, by the PR's base (`github.base_ref || github.ref_name`): `ANCHOR_TAG` `latest` for `version3` and `dev-latest` otherwise, and `VEILNET_API` `https://api.veilnet.com.au` for `version3` and `https://api-dev.veilnet.com.au` otherwise, so each base is tested in its own tree. Concurrency group `ci-${{ github.ref }}`, cancel-in-progress.
 - Fork guard on every job: `if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository`.
 - Every checkout `persist-credentials: false`.
 - The utility checks (gofmt, staticcheck, tidy, govulncheck, docs links, actionlint, shellcheck, golden diff) are not in CI; they are § Local checks.
@@ -171,7 +171,7 @@ When a rule is unclear, anchor's docs cover it: `docs/control.md`, `reverse-prox
 
 - **`make release`**
   - Prerequisites: `.bin/garble` (built from anchor's `tools/go.mod`) and `$(GENESIS_DIR)/genesis.pin`, where `GENESIS_DIR ?= genesis`.
-  - **When the pin file is absent, its rule mints a new genesis root** (writes `genesis.key`, `genesis.pub`, `genesis.pin`). Anchor's own CI writes the pin from its public repository variable `GENESIS_PIN` and asserts afterwards that no `genesis.key` appeared. Step 3 mirrors that. A local checkout's `genesis/` may hold exactly such a minted development root, whose pin is not production's.
+  - **When the pin file is absent, its rule mints a new genesis root** (writes `genesis.key`, `genesis.pub`, `genesis.pin`). Anchor's own CI writes the pin from a public repository variable, `GENESIS_PIN` on `main` and `GENESIS_PIN_DEV` on `dev`, and asserts afterwards that no `genesis.key` appeared. Step 3 mirrors that. A local checkout's `genesis/` may hold exactly such a minted development root, whose pin is neither tree's.
   - It first runs `rm -rf release/`. Then, for each anchor `DIST_TARGETS` entry (linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64, windows/arm64, freebsd/amd64, openbsd/amd64), with `CGO_ENABLED=0 GOWORK=off`, it builds three programs:
     - `anchord`, garbled, with `-ldflags -X github.com/veil-net/anchor.pinnedGenesis=<pin>`
     - `anchorctl`, garbled, `-tags lockdown`
@@ -181,7 +181,7 @@ When a rule is unclear, anchor's docs cover it: `docs/control.md`, `reverse-prox
   - darwin/amd64 is not in conflux's `TARGETS`, and `anchor-bins.sh` ignores it.
 - **`make dist`:** the unpinned, unobfuscated cross-build for the same 8 targets. Only `anchord` and the `-tags lockdown` `anchorctl` go into `dist/` (16 files). It joins any realm tree: development only, never shippable.
 - **`scripts/client-is-locked.sh DIR [ADMIN_DIR]`:** runs the host's `DIR/anchorctl-<os>-<arch> root` with no daemon and requires the lockdown refusal (`unknown command "root"`). Fails if any `anchorctl` is byte-identical to its `anchoradmin` twin in `ADMIN_DIR`.
-- **Release publishing:** anchor's `release.yml` runs on every push to anchor `main` or `dev`; on `dev` it publishes one pre-release, `dev-latest`, with the same assets and manifest and nothing dated, and after a release of `main` merges `main` back into anchor's `dev`. It runs `make release` with `GENESIS_PIN`, then `scripts/release-manifest.sh` (copies `anchord`/`anchorctl` only, runs `client-is-locked.sh`, writes `manifest.json`, whose `pin` is `GENESIS_PIN`), then `scripts/publish-release.sh` twice with the same assets and notes: at a dated tag `YYYYMMDD-HHMMSS` (the commit's time in UTC; it stays) and at `latest`, which moves and is marked Latest. Each is deleted and recreated with `target_commitish` set to the commit SHA; the build is also uploaded as a workflow artifact.
+- **Release publishing:** anchor's `release.yml` runs on every push to anchor `main` or `dev`; on `dev` it publishes one pre-release, `dev-latest`, with the same assets and manifest and nothing dated, and after a release of `main` merges `main` back into anchor's `dev`. It runs `make release` with the branch's pin, `GENESIS_PIN` on `main` and `GENESIS_PIN_DEV` on `dev` (two realms, on purpose), then `scripts/release-manifest.sh` (copies `anchord`/`anchorctl` only, runs `client-is-locked.sh`, writes `manifest.json`, whose `pin` is that pin), then `scripts/publish-release.sh` twice with the same assets and notes: at a dated tag `YYYYMMDD-HHMMSS` (the commit's time in UTC; it stays) and at `latest`, which moves and is marked Latest. Each is deleted and recreated with `target_commitish` set to the commit SHA; the build is also uploaded as a workflow artifact.
 
 ## Live traveller API
 
@@ -224,13 +224,13 @@ Expected fields, in the order the API sends them:
 - `formatVersion: 1`, `kind: "anchor"`
 - `realm` (hex), `genesis`, `identity` and `chain` present
 - `notAfter` and `issuedAt` in `2006-01-02T15:04:05.000Z` form, about thirty days apart (`issuedAt` is written just after the chain is signed, so the window is a fraction of a second short of thirty days)
-- `taints: ["$T"]` (the request, echoed), `useExit: false`, `bootstrap: ["genesis.veilnet.com.au:4700"]`; no `telemetrySecret`
-- `renewalUrl` = `https://api.veilnet.com.au/ghosts/alpha/renew` (same host)
+- `taints: ["$T"]` (the request, echoed), `useExit: false`, `bootstrap` holding the tree's genesis node (`genesis.veilnet.com.au:4701` on dev, `:4700` on production) after any nodes of its own; no `telemetrySecret`
+- `renewalUrl` = `$API/ghosts/alpha/renew` (same host)
 - `renewalAuth: "anchor-id"`
 
 Check every field against `internal/enrol` and anchor's `anchorManifest`. Never print `identity`. Delete `$S/alpha.json` at the end.
 
-**Pin** (step 3): the pin is the realm the live genesis derives to: `realm` plus lowercase unpadded base32 of `SHA3-256("veilnet/anchor/id/v1" || 0x00 || suite 0x01 || genesis)`, anchor's `internal/id` `Derive`. It must equal the pin anchor publishes, the `pin` in the manifest of anchor's `dev-latest` pre-release, which is the `latest` release's too (`GENESIS_PIN` as published), which `anchor-fetch` prints as `realm:` after fetching one binary into scratch (any token that can read anchor's releases, in the environment):
+**Pin** (step 3): the pin is the realm the dev genesis derives to: `realm` plus lowercase unpadded base32 of `SHA3-256("veilnet/anchor/id/v1" || 0x00 || suite 0x01 || genesis)`, anchor's `internal/id` `Derive`. It must equal the pin anchor publishes for its `dev-latest` pre-release (`GENESIS_PIN_DEV`; `latest` is pinned to production's `GENESIS_PIN`, a different realm on purpose), the `pin` in that release's manifest, which `anchor-fetch` prints as `realm:` after fetching one binary into scratch (any token that can read anchor's releases, in the environment):
 
 ```bash
 PIN=$(python3 - "$S/alpha.json" <<'EOF'
@@ -239,7 +239,7 @@ g = bytes.fromhex(json.loads(base64.b64decode(json.load(open(sys.argv[1]))['cred
 print('realm' + base64.b32encode(hashlib.sha3_256(b'veilnet/anchor/id/v1\x00\x01' + g).digest()).decode().lower().rstrip('='))
 EOF
 )
-ANCHOR_RELEASE_TOKEN=… go run ./cmd/anchor-fetch -dest "$S/release" -want anchord-linux-amd64 2>&1 | grep -E '^(commit|realm):'   # realm: must be $PIN
+ANCHOR_RELEASE_TOKEN=… go run ./cmd/anchor-fetch -tag dev-latest -dest "$S/release" -want anchord-linux-amd64 2>&1 | grep -E '^(commit|realm):'   # realm: must be $PIN
 ```
 
 **Guardian contracts** (read in the schema, never call):
@@ -262,13 +262,13 @@ docker rm -f cfx-probe >/dev/null 2>&1 || true
 docker run -d --name cfx-probe --privileged --cgroupns=host \
   -v /sys/fs/cgroup:/sys/fs/cgroup:rw --device /dev/net/tun conflux-systemd-test
 for _ in $(seq 40); do [ "$(docker exec cfx-probe systemctl is-system-running 2>/dev/null)" = running ] && break; sleep 1; done
-time docker exec cfx-probe conflux up --taint "$T" --no-ipv4   # enrolment + bring-up to ready; no TTY, so --ipv4 or --no-ipv4 is required
+time docker exec cfx-probe conflux up --api "$API" --taint "$T" --no-ipv4   # enrolment + bring-up to ready; no TTY, so --ipv4 or --no-ipv4 is required
 docker exec cfx-probe conflux status
 time docker exec cfx-probe conflux renew                        # the renewal round trip plus hot install
 ```
 
 - Behind an egress proxy that re-signs TLS, append its CA to the container's `/etc/ssl/certs/ca-certificates.crt` (`docker cp`, then `cat >>`) before `up`.
-- Where Docker has no IPv6, a TUN `up` cannot start: use `conflux proxy --taint "$T" --no-ipv4 8080=127.0.0.1:3000`, which proves the pin and the renewal the same way.
+- Where Docker has no IPv6, a TUN `up` cannot start: use `conflux proxy --api "$API" --taint "$T" --no-ipv4 8080=127.0.0.1:3000`, which proves the pin and the renewal the same way.
 - `serve` beside the running service must be refused ("another conflux supervisor is already serving …", exit 1).
 
 ## Baseline
@@ -300,4 +300,4 @@ Also needed:
 - A Go toolchain installed outside the module cache (the go.dev tarball, `GOTOOLCHAIN=local`) for anchor's `make release`: garble refuses a toolchain `GOTOOLCHAIN` auto-downloaded into `GOMODCACHE` ("overlay contains a replacement for …").
 - `shellcheck`, for actionlint and `shellcheck install.sh scripts/*.sh test/*.sh`: the distro package, `pip install shellcheck-py`, or the release binary (`curl -fsSL https://github.com/koalaman/shellcheck/releases/download/$V/shellcheck-$V.linux.x86_64.tar.xz | tar -xJ -C "$S"`), on `PATH`.
 - Docker with `/dev/net/tun` and cgroups, for the container suites and the probe; where no daemon runs, `dockerd` can be started by hand. `docker run bash:3.2` checks `anchor-bins.sh` and `test/service-host.sh` against the bash a Mac has.
-- `gh`, authenticated, or the GitHub MCP tools, for the PR and its runs; `GENESIS_PIN` only where the variables API is reachable.
+- `gh`, authenticated, or the GitHub MCP tools, for the PR and its runs; `GENESIS_PIN_DEV` only where the variables API is reachable.

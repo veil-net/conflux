@@ -3,7 +3,7 @@
 `conflux cert` makes and checks X.509: private keys, certificate signing requests,
 certificates and revocation lists, and the TLS handshakes they are used in. It covers the part
 of OpenSSL's `genpkey`, `req`, `x509`, `ca`, `verify`, `crl`, `pkcs8`, `s_client` and
-`s_server` that a certificate authority and its users need, and it does it post-quantum
+`s_server` that a certificate authority and its users need, and keeps a CA's records, and it does it post-quantum
 first. Keys are ML-DSA-87 unless asked otherwise, and a chain can be ML-DSA
 from the root to the leaf.
 
@@ -154,6 +154,7 @@ records where the issuer's revocation list is published.
 | `match A B` | Whether two files hold the same key, such as a key and its certificate. Each may be a key, a certificate, a request or a public key. |
 | `fingerprint FILE... [--alg sha256] [--spki]` | A digest: SHA-256, -384 or -512, or SHA3-256, -384 or -512. `--spki` takes the public key's, the form a pin takes. A key's fingerprint is always its public key's. There is no SHA-1 or MD5. |
 | `crl --ca CERT --ca-key KEY [--revoke SERIAL[:REASON]]... [--from CRL]` | See [Revocation lists](#revocation-lists). |
+| `ca init\|issue\|revoke\|list\|crl DIR ...` | See [A managed CA](#a-managed-ca). |
 | `probe HOST[:PORT] [--ca ROOT]... [--groups pq] [--require-pq]` | See [Probing a server](#probing-a-server). |
 | `serve --cert CHAIN --key KEY [--listen ADDR] [--client-ca ROOT]...` | See [Serving](#serving). |
 
@@ -185,6 +186,57 @@ command's flags.
 
 `--json` gives the same answer as an object. The exit code is 0 when the certificate is
 valid, and 3 when it is not.
+
+## A managed CA
+
+`conflux cert ca` keeps a certificate authority in a directory: a root, optionally an issuing
+CA beneath it, every certificate they issued, what they revoked, and their CRLs. The commands
+above do the same things one file at a time; this is for a CA that has to remember.
+
+```sh
+conflux cert ca init ./ca --name Example --intermediate --crl-url http://ca.example/crl.pem
+conflux cert ca issue ./ca --csr server.csr --bundle --out server.pem
+conflux cert ca list ./ca
+conflux cert ca revoke ./ca 41:24:71:…:AB --reason keyCompromise
+conflux cert ca crl ./ca                   # publish again before the last list's next update
+```
+
+| Command | |
+|---|---|
+| `init DIR --name NAME [--org ORG] [--alg ALG] [--intermediate [--intermediate-alg ALG]]` | Makes the CA in a new or empty directory. The root is `NAME Root CA` (ML-DSA-87, 3650 days by default). With `--intermediate`, `NAME Issuing CA` (ML-DSA-65, 1825 days) is made under it, so the root's key can then be kept offline. Its keys are encrypted under a passphrase unless `--no-encrypt`. `--leaf-days`, `--crl-days` and `--crl-url` set what it issues and publishes. |
+| `issue DIR --csr REQ [--profile server] [--days N] [--san NAME]... [--bundle]` | Issues an end-entity certificate for a request: `server`, `client` or `server+client`, never another CA. It is recorded before it is written out. `--bundle` writes the intermediate after it, the chain a server presents. |
+| `revoke DIR SERIAL [--reason REASON]` | Revokes a certificate this CA issued, and publishes its CRL. A serial it never issued, or one already revoked, is refused. |
+| `list DIR [--json]` | Every certificate issued, soonest to expire first: valid, expired, or revoked and why. |
+| `crl DIR` | Publishes the CRLs again, numbered on. A CRL is valid for `--crl-days`, so this is what a schedule runs. |
+
+The directory:
+
+| File | |
+|---|---|
+| `ca.json` | the settings `init` was given |
+| `root.pem`, `root.key` | the root, and its key |
+| `intermediate.pem`, `intermediate.key` | the issuing CA, with `--intermediate` |
+| `chain.pem` | the issuing CA and the root, issuer first |
+| `issued/SERIAL.pem` | one file per certificate issued: the CA's record of what it issued |
+| `index.json` | what was revoked, and the last CRL numbers used |
+| `crl.pem`, `root.crl` | the issuing CA's CRL, and with an intermediate the root's |
+| `.lock` | held by whichever command is working in the CA; a second one is refused |
+
+- **The directory is guarded.** It is made 0700 (its creator's alone on Windows). It is refused
+  if another account owns it, or, on Unix, if others may write it, since whoever can write it can
+  replace the CA.
+- **Nothing is lost to a crash.**
+  - A certificate is written to `issued/` under its serial before it is handed out, and only
+    where no certificate of that serial is. What `issued/` holds is what was issued, and a serial
+    is never issued twice.
+  - A CRL's number is recorded in `index.json` before the CRL is written, so a crash between
+    the two skips a number rather than using one twice.
+- **No subscriber's key is in it.** A certificate is issued for a request, whose key stays with
+  whoever made it.
+- **Path lengths.** The root's path length is 1 with an intermediate and 0 without; the
+  intermediate's is 0. Nothing below the CA can issue.
+- **Revocation is final.** There is no `certificateHold`. Revoking the issuing CA itself is not
+  offered: make a new CA.
 
 ## Probing a server
 
@@ -279,6 +331,9 @@ OpenSSL 3.5 is the first that reads ML-DSA. These were checked against OpenSSL 3
   - its PBES2 key decrypts;
   - its request is signed, and `openssl verify` accepts the result;
   - its PBES1, scrypt, `priv-only` ML-DSA and legacy-PEM keys are refused, each by name.
+- **A managed CA.** `openssl verify -crl_check_all` accepts a `cert ca` chain (root, intermediate
+  with `pathlen:0`, leaf) and both of its CRLs, and finds the leaf revoked once `ca revoke` has
+  published.
 - **TLS, both ways.**
   - `openssl s_client -groups SecP384r1MLKEM1024` against `conflux cert serve` negotiates TLS
     1.3, SecP384r1MLKEM1024 and `mldsa65` (the scheme `probe` and `serve` infer), and

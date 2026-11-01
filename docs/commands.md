@@ -528,12 +528,13 @@ Needs root, except `--check`.
 ## `conflux cert`
 
 ```
-conflux cert genkey | req | selfsign | sign | verify | show | convert | match | fingerprint | crl | probe | serve  ...
+conflux cert genkey | req | selfsign | sign | verify | show | convert | match | fingerprint | crl | ca | probe | serve  ...
 ```
 
 Keys, certificate signing requests, certificates and revocation lists, made and checked with the
 Go Cryptographic Module in FIPS 140-3 mode: ML-DSA-87 by default, with ECDSA, RSA and Ed25519
-beside it, and a FIPS 140-3 mode TLS client and server (`probe`, `serve`) that say what a handshake
+beside it; a certificate authority kept in a directory (`ca init`, `issue`, `revoke`, `list`, `crl`);
+and a FIPS 140-3 mode TLS client and server (`probe`, `serve`) that say what a handshake
 negotiated, post-quantum or not. It needs no root, no configuration and no anchor. A conflux that
 does not run in FIPS 140-3 mode (OpenBSD's) refuses every `cert` command, with exit 70. `verify`,
 `match` and `probe` exit 3 when the check does not hold. [cert.md](cert.md) has every command and flag.

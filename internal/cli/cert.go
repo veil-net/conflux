@@ -43,6 +43,7 @@ func certCommands() map[string]certCommand {
 		"fingerprint": {runCertFingerprint, "fingerprint FILE... [--alg sha256] [--spki] [--json]", "a certificate's, request's, list's or key's digest"},
 		"probe":       {runCertProbe, "probe HOST[:PORT] [--ca ROOT]... [--groups pq] [--require-pq] [--json]", "connect, and say what the server negotiates: TLS, group, signature, chain"},
 		"serve":       {runCertServe, "serve --cert CHAIN --key KEY [--listen ADDR] [--client-ca ROOT]... [--once]", "answer TLS, and say what each client offers and gets"},
+		"ca":          {runCertCA, "ca init|issue|revoke|list|crl DIR ...", "a certificate authority kept in a directory: what it issued, what it revoked, its CRLs"},
 		"crl":         {runCertCRL, "crl --ca CERT --ca-key KEY [--revoke SERIAL[:REASON]]... [--from CRL] [--out FILE]", "make a revocation list"},
 	}
 }
@@ -111,12 +112,18 @@ func certUsage(cmds map[string]certCommand) {
 
 // certFlags is a cert subcommand's flag set, its usage the synopsis and the flags.
 func certFlags(name string) *flag.FlagSet {
+	c := certCommands()[name]
+
+	return certFlagsNamed(name, c.summary, c.usage)
+}
+
+// certFlagsNamed is a flag set for conflux cert NAME, its usage the synopsis and the flags.
+func certFlagsNamed(name, summary, usage string) *flag.FlagSet {
 	fs := flag.NewFlagSet("cert "+name, flag.ContinueOnError)
 	fs.SetOutput(ui.Errw)
 
-	c := certCommands()[name]
 	fs.Usage = func() {
-		ui.Printf("conflux cert %s — %s\n\n  conflux cert %s\n\n", name, c.summary, c.usage)
+		ui.Printf("conflux cert %s — %s\n\n  conflux cert %s\n\n", name, summary, usage)
 		fs.SetOutput(ui.Out)
 		fs.PrintDefaults()
 		fs.SetOutput(ui.Errw)

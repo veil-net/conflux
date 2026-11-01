@@ -318,3 +318,98 @@ func TestProbeSaysWhatItFound(t *testing.T) {
 
 	certIn(t, dir, ExitError, "probe", freeAddr(t), "--timeout", "2s")
 }
+
+// TestAManagedCAEndToEnd: a CA with an ML-DSA-87 root and an ML-DSA-65 issuing CA issues a
+// server certificate that a FIPS 140-3 mode client reaches over a hybrid group with
+// authentication pqc throughout; revoked, verify against the CA's lists fails it with 3; an
+// ECDSA leaf from the same CA is classical; list says all of it.
+func TestAManagedCAEndToEnd(t *testing.T) {
+	dir := t.TempDir()
+
+	t.Setenv("CA_PASS", "the managed CA's passphrase")
+
+	certIn(t, dir, ExitOK, "ca", "init", "ca", "--name", "E2E", "--intermediate", "--passphrase-env", "CA_PASS")
+
+	for _, f := range []string{"ca/root.key", "ca/intermediate.key"} {
+		if b, _ := os.ReadFile(filepath.Join(dir, f)); !strings.Contains(string(b), "ENCRYPTED PRIVATE KEY") {
+			t.Errorf("%s is not encrypted", f)
+		}
+	}
+
+	certIn(t, dir, ExitOK, "genkey", "--alg", "ml-dsa-65", "--out", "server.key")
+	certIn(t, dir, ExitOK, "req", "--key", "server.key", "--subject", "CN=server.test", "--out", "server.csr")
+
+	_, stderr := certIn(t, dir, ExitOK, "ca", "issue", "ca", "--csr", "server.csr", "--bundle", "--passphrase-env", "CA_PASS", "--out", "server.pem")
+	if !strings.Contains(stderr, "recorded in ca") {
+		t.Errorf("issue said: %s", stderr)
+	}
+
+	chain, _ := loadCerts(filepath.Join(dir, "server.pem"))
+	if len(chain) != 2 || chain[1].Subject.CommonName != "E2E Issuing CA" {
+		t.Fatalf("the bundle is %d certificates", len(chain))
+	}
+
+	key, err := loadKey(t.Context(), filepath.Join(dir, "server.key"), passFlags{file: new(string), env: new(string)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cert := tls.Certificate{PrivateKey: key, Leaf: chain[0], Certificate: [][]byte{chain[0].Raw, chain[1].Raw}}
+
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+
+	go func() {
+		_ = tlsprobe.Serve(ctx, tlsprobe.ServeOptions{Listener: l, Cert: cert}, func(tlsprobe.Seen) {})
+		close(done)
+	}()
+
+	t.Cleanup(func() { cancel(); <-done })
+
+	js, _ := certIn(t, dir, ExitOK, "probe", l.Addr().String(), "--name", "server.test", "--ca", "ca/root.pem", "--groups", "pq", "--require-pq", "--json")
+
+	var r tlsprobe.Report
+	if err := json.Unmarshal([]byte(js), &r); err != nil || r.Version != "TLS 1.3" || r.GroupClass != pki.ClassHybrid ||
+		r.Signature != "ML-DSA-65" || r.Chain.Authentication != pki.ClassPQC || len(r.Chain.Chain) != 3 {
+		t.Errorf("probe found %+v (%v)", r, err)
+	}
+
+	certIn(t, dir, ExitOK, "verify", "server.pem", "--ca", "ca/root.pem", "--crl", "ca/crl.pem", "--crl", "ca/root.crl", "--require-pq")
+
+	serial := pki.FormatSerial(chain[0].SerialNumber)
+	certIn(t, dir, ExitOK, "ca", "revoke", "ca", serial, "--reason", "keyCompromise", "--passphrase-env", "CA_PASS")
+	certIn(t, dir, ExitCheckFailed, "verify", "server.pem", "--ca", "ca/root.pem", "--crl", "ca/crl.pem", "--crl", "ca/root.crl")
+	certIn(t, dir, ExitError, "ca", "revoke", "ca", serial, "--passphrase-env", "CA_PASS")
+
+	certIn(t, dir, ExitOK, "genkey", "--alg", "ecdsa-p256", "--out", "ec.key")
+	certIn(t, dir, ExitOK, "req", "--key", "ec.key", "--subject", "CN=ec.test", "--out", "ec.csr")
+	certIn(t, dir, ExitOK, "ca", "issue", "ca", "--csr", "ec.csr", "--bundle", "--passphrase-env", "CA_PASS", "--out", "ec.pem")
+
+	out, _ := certIn(t, dir, ExitOK, "verify", "ec.pem", "--ca", "ca/root.pem")
+	if !strings.Contains(out, "authentication  classical") {
+		t.Errorf("an ECDSA leaf's verify said:\n%s", out)
+	}
+
+	certIn(t, dir, ExitCheckFailed, "verify", "ec.pem", "--ca", "ca/root.pem", "--require-pq")
+	certIn(t, dir, ExitOK, "ca", "crl", "ca", "--passphrase-env", "CA_PASS")
+
+	js, _ = certIn(t, dir, ExitOK, "ca", "list", "ca", "--json")
+
+	var list []struct{ Serial, Status, Reason, Subject string }
+	if err := json.Unmarshal([]byte(js), &list); err != nil || len(list) != 2 {
+		t.Fatalf("list: %v\n%s", err, js)
+	}
+
+	for _, e := range list {
+		if (e.Subject == "CN=server.test") != (e.Status == "revoked" && e.Reason == "keyCompromise") {
+			t.Errorf("list says %+v", e)
+		}
+	}
+
+	certIn(t, dir, ExitError, "ca", "init", "ca", "--name", "Again", "--no-encrypt")
+}

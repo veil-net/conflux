@@ -108,8 +108,12 @@ jobs:
       - name: conflux runs in FIPS 140-3 mode, and refuses to run with it off
         run: |
           set -euo pipefail
-          bin/conflux version | grep -qx 'fips140 on, Go Cryptographic Module v1.26.0'
-          GODEBUG=fips140=debug bin/conflux version 2>&1 | grep -q '^fips140: verified'
+          # Each answer read whole before it is searched: grep -q stops at its first match,
+          # and conflux writing a line after it would then end the step on SIGPIPE.
+          version=$(bin/conflux version)
+          grep -qx 'fips140 on, Go Cryptographic Module v1.26.0' <<<"$version"
+          debug=$(GODEBUG=fips140=debug bin/conflux version 2>&1)
+          grep -q '^fips140: verified' <<<"$debug"
           rc=0; GODEBUG=fips140=off bin/conflux version >/dev/null 2>&1 || rc=$?
           [ "$rc" = 70 ] || { echo "::error::with fips140=off conflux exited $rc, not 70" >&2; exit 1; }
 

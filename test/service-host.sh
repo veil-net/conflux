@@ -138,6 +138,51 @@ if [ "$os" = darwin ]; then
 fi
 "$CONFLUX" down || fail "down failed on an observing service"
 
+# An ephemeral run killed outright: on Windows its anchord goes with it, in its job; on macOS
+# nothing can ask at the start, so it is left, and the next ephemeral run stops it. The API
+# answers nothing, so anchord is up and the run waits on its enrolment when it is killed.
+say "an ephemeral run killed outright, and what becomes of its anchord"
+if [ "$os" = darwin ]; then
+  eroot=/var/run/conflux-ephemeral
+else
+  eroot="$(cygpath -u "${PROGRAMDATA:-C:\\ProgramData}")/conflux-ephemeral"
+fi
+eph_start() { # LOG
+  "$CONFLUX" proxy --ephemeral --api https://192.0.2.1:9 --no-ipv4 --taint cfx-host 8080=127.0.0.1:1 >"$1" 2>&1 &
+}
+eph_pid() { # waits for the run's anchord to be recorded, and prints its pid
+  for _ in $(seq 60); do
+    if [ -s "$eroot/run/anchord.pid" ]; then head -1 "$eroot/run/anchord.pid" | tr -d '\r'; return 0; fi
+    sleep 1
+  done
+  return 1
+}
+alive() { # PID
+  if [ "$os" = darwin ]; then kill -0 "$1" 2>/dev/null; else grep -qi anchord <<<"$(tasklist //FI "PID eq $1" 2>/dev/null)"; fi
+}
+elog=$(mktemp)
+eph_start "$elog"
+first=$(eph_pid) || { cat "$elog" >&2; fail "the ephemeral run never recorded its anchord"; }
+if [ "$os" = darwin ]; then
+  kill -9 $!
+  sleep 2
+  alive "$first" || fail "anchord went with the killed run on macOS, which nothing there arranges"
+  eph_start "$elog"
+  for _ in $(seq 60); do alive "$first" || break; sleep 1; done
+  alive "$first" && { cat "$elog" >&2; fail "the next ephemeral run did not stop the anchord a killed one left"; }
+  second=$(eph_pid) || { cat "$elog" >&2; fail "the next ephemeral run never recorded its anchord"; }
+  [ "$second" != "$first" ] || fail "the next run reports the killed one's anchord as its own"
+  kill -INT $!
+  wait $! 2>/dev/null || true
+else
+  taskkill //F //IM conflux.exe >/dev/null
+  for _ in $(seq 20); do alive "$first" || break; sleep 1; done
+  alive "$first" && fail "anchord outlived the ephemeral run that was killed; its job should have ended it"
+  wait 2>/dev/null || true
+fi
+rm -f "$elog"
+for _ in $(seq 20); do [ ! -e "$eroot/run/anchord.pid" ] && break; sleep 1; done
+
 say "uninstall leaves nothing"
 "$CONFLUX" uninstall --yes
 
@@ -152,6 +197,9 @@ if [ "$os" = darwin ]; then
   done
   if dscl . -read /Users/_conflux >/dev/null 2>&1; then
     fail "the _conflux account survived uninstall"
+  fi
+  if dscl . -read /Users/_conflux-ephemeral >/dev/null 2>&1; then
+    fail "the _conflux-ephemeral account survived uninstall"
   fi
   bpf=$(stat -f '%Sg %Sp' /dev/bpf0)
   [ "$bpf" = "wheel crw-------" ] || fail "/dev/bpf0 is $bpf after uninstall, want root's alone: wheel crw-------"

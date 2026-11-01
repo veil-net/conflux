@@ -46,6 +46,10 @@ that is a bad enough outcome to be worth ordering the code around.
 
 It is also why `conflux uninstall` asks before it runs.
 
+An ephemeral run turns the same fact the other way: it means the identity to be lost, so it
+writes nothing, and the one copy lives in memory for as long as the run. See
+[ephemeral.md](ephemeral.md).
+
 ## Enrolment happens exactly once
 
 conflux enrols only when `manifest.b64` does not exist. In particular:

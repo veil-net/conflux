@@ -17,6 +17,9 @@ import (
 // primary group of that name that conflux did not make is ErrConflict.
 func Lookup() (*Account, error) { return lookup(Name()) }
 
+// LookupNamed is Lookup for the account of that name: Name's or EphemeralName's.
+func LookupNamed(name string) (*Account, error) { return lookup(name) }
+
 func lookup(name string) (*Account, error) {
 	u, err := user.Lookup(name)
 	if err != nil {
@@ -53,9 +56,10 @@ func lookup(name string) (*Account, error) {
 //
 // Looked up again after a creation that failed, since a second conflux making the same
 // account at the same moment fails one of the two over an account that now exists.
-func Ensure() (*Account, error) {
-	name := Name()
+func Ensure() (*Account, error) { return EnsureNamed(Name()) }
 
+// EnsureNamed is Ensure for the account of that name: Name's or EphemeralName's.
+func EnsureNamed(name string) (*Account, error) {
 	if a, err := lookup(name); a != nil || err != nil {
 		return a, err
 	}
@@ -147,9 +151,10 @@ func darwinIDs() (map[int]bool, error) {
 // Remove deletes this installation's account and its group, once nothing runs as it, when
 // conflux made it. One conflux did not make is left alone, and so is a group another
 // account still uses.
-func Remove() error {
-	name := Name()
+func Remove() error { return RemoveNamed(Name()) }
 
+// RemoveNamed is Remove for the account of that name: Name's or EphemeralName's.
+func RemoveNamed(name string) error {
 	a, err := lookup(name)
 
 	switch {

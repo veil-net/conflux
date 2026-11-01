@@ -43,6 +43,8 @@ func TestMain(m *testing.M) {
 	// anchord inherits whatever the test set for anchorctl: anchord is always started
 	// -socket first, and anchorctl with a command.
 	switch daemon := len(os.Args) > 1 && os.Args[1] == "-socket"; {
+	case len(os.Args) > 2 && os.Args[1] == ephemeralRunnerArg:
+		os.Exit(ephemeralRunner(os.Args[2]))
 	case daemon && os.Getenv(fakeAnchordEnv) == "1":
 		os.Exit(fakeAnchord())
 	case daemon && os.Getenv(fakeAnchordEnv) == "serve":

@@ -154,12 +154,50 @@ case $out in
   *) fail "conflux up --observe does not say there is no capture here (exit $code)" ;;
 esac
 
+# An ephemeral run killed outright leaves its anchord on the BSDs, where nothing can ask at the
+# start for it to end with conflux, and the next ephemeral run stops it. The API answers
+# nothing, so anchord is up and the run waits on its enrolment when it is killed.
+say "an ephemeral run killed outright: the next one stops the anchord it left"
+eroot=/var/run/conflux-ephemeral
+eph_start() {
+  "$CONFLUX" proxy --ephemeral --api https://127.0.0.1:9443 --no-ipv4 --taint cfx-bsd 8080=127.0.0.1:1 \
+    >/tmp/ephemeral.log 2>&1 &
+  eph=$!
+}
+eph_pid() {
+  for _ in $(seq 60); do
+    if [ -s "$eroot/run/anchord.pid" ]; then head -1 "$eroot/run/anchord.pid"; return 0; fi
+    sleep 1
+  done
+  return 1
+}
+eph_start
+first=$(eph_pid) || { cat /tmp/ephemeral.log >&2; fail "the ephemeral run never recorded its anchord"; }
+kill -9 "$eph"
+sleep 2
+kill -0 "$first" 2>/dev/null || fail "anchord went with the killed run, which nothing on $os arranges"
+eph_start
+for _ in $(seq 60); do kill -0 "$first" 2>/dev/null || break; sleep 1; done
+if kill -0 "$first" 2>/dev/null; then
+  cat /tmp/ephemeral.log >&2
+  fail "the next ephemeral run did not stop the anchord a killed one left"
+fi
+kill -INT "$eph"
+wait "$eph" 2>/dev/null || true
+for _ in $(seq 20); do [ ! -e "$eroot" ] && break; sleep 1; done
+[ ! -e "$eroot" ] || fail "the ephemeral run left $eroot behind"
+eaccount=$(printf '%s' "$account" | sed 's/conflux$/conflux-ephemeral/')
+id "$eaccount" >/dev/null 2>&1 || fail "no $eaccount account was made for the ephemeral run"
+
 say "uninstall leaves nothing"
 "$CONFLUX" uninstall --yes
 [ ! -e "$script" ] || fail "the rc script survived uninstall"
 for path in /usr/local/etc/conflux "$state" /var/run/conflux; do
   [ ! -e "$path" ] || fail "$path survived uninstall"
 done
+if id "$eaccount" >/dev/null 2>&1; then
+  fail "the $eaccount account survived uninstall"
+fi
 if id "$account" >/dev/null 2>&1; then
   fail "the $account account survived uninstall"
 fi

@@ -143,6 +143,13 @@ answer — and only an explicit `--lan-discovery yes` is refused there. `auto` i
 anchor as `no` on a link, because anchor refuses a yes there and would otherwise take one
 from the manifest. A machine configured once and later moved onto a link keeps starting.
 
+## Ephemeral, in either mode
+
+`--ephemeral` on `up` or `proxy` is not a fourth mode but a way to run either: in the
+foreground, from a credential held in memory, with nothing of the machine's read or
+written, and nothing left when anchord stops. It does not switch the machine's own
+configured mode, which it never touches. See [ephemeral.md](ephemeral.md).
+
 ## Switching
 
 Running one replaces another, and conflux says so:

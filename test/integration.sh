@@ -93,10 +93,10 @@ NOWHERE=192.0.2.1:4700
 # next run to collide with. `docker rm -f` shrugs at a name that is not there, so this
 # is a no-op on a clean machine.
 before=$(docker ps -aq | wc -l)
-docker rm -f cfx-a cfx-b cfx-c >/dev/null 2>&1 || true
+docker rm -f cfx-a cfx-b cfx-c cfx-d >/dev/null 2>&1 || true
 echo "containers on this machine: $before before this run"
 
-trap 'docker rm -f cfx-a cfx-b cfx-c >/dev/null 2>&1 || true' EXIT
+trap 'docker rm -f cfx-a cfx-b cfx-c cfx-d >/dev/null 2>&1 || true' EXIT
 
 say "taint for this run: $TAINT, enrolling at $API"
 
@@ -368,5 +368,100 @@ if docker exec cfx-b id conflux >/dev/null 2>&1; then
   echo "uninstall left the account anchord ran as" >&2
   exit 1
 fi
+
+# D runs ephemeral: an anchor from a credential held in memory, in the foreground, that
+# writes nothing of the machine's and leaves nothing when it stops -- first enrolled in
+# memory, then from an alpha manifest piped in, killed outright and started again.
+
+# pids_of is the processes on NODE whose executable matches PATTERN, as a case pattern.
+pids_of() { # NODE PATTERN
+  docker exec "$1" sh -c 'for p in /proc/[0-9]*; do
+    case "$(readlink "$p/exe" 2>/dev/null)" in '"$2"') echo "${p#/proc/}";; esac
+  done'
+}
+
+# eph_running is whether status on NODE reports an ephemeral anchor running.
+# Read whole, then searched: a pipe into grep -q ends status on SIGPIPE, failing under pipefail.
+eph_running() { grep -q '^ephemeral:' <<<"$(docker exec "$1" conflux status 2>/dev/null)"; }
+
+# eph_gone waits for NODE to have no ephemeral root and no ephemeral anchord.
+eph_gone() { # NODE WHAT
+  for _ in $(seq 20); do
+    if [ -z "$(pids_of "$1" '*/conflux-ephemeral/bin/*/anchord')" ] &&
+      docker exec "$1" sh -c 'test ! -e /run/conflux-ephemeral && test ! -e /var/lib/conflux-ephemeral'; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "$2 left its anchord or its root behind" >&2
+  docker exec "$1" sh -c 'ls -la /run/conflux-ephemeral /var/lib/conflux-ephemeral 2>&1' >&2 || true
+  return 1
+}
+
+say "node D runs ephemeral: enrolled in memory, in the foreground, and nothing of the machine's written"
+boot cfx-d
+docker exec cfx-d sh -c "setsid conflux up --ephemeral --api '$API' --taint '$TAINT' --ipv4 10.128.0.4/24 \
+  --peers '$NOWHERE' > /tmp/ephemeral.log 2>&1 &"
+for _ in $(seq 60); do eph_running cfx-d && break; sleep 1; done
+eph_running cfx-d || { docker exec cfx-d cat /tmp/ephemeral.log >&2; echo "D's ephemeral anchor never came up" >&2; exit 1; }
+SECONDS=0
+until docker exec cfx-a ping -c1 -W1 10.128.0.4 >/dev/null 2>&1; do
+  [ "$SECONDS" -lt 120 ] || { docker exec cfx-d cat /tmp/ephemeral.log >&2; echo "A never reached D" >&2; exit 1; }
+  sleep 1
+done
+echo "A reaches D after ${SECONDS}s"
+for path in /etc/conflux /var/lib/conflux /etc/systemd/system/conflux.service; do
+  docker exec cfx-d test ! -e "$path" || { echo "an ephemeral run made $path" >&2; exit 1; }
+done
+if [ -n "$(docker exec cfx-d sh -c 'find /run/conflux-ephemeral /var/lib/conflux-ephemeral \
+  \( -name manifest.b64 -o -name conflux.json -o -name state.json -o -name anchord.json \) 2>/dev/null')" ]; then
+  echo "an ephemeral run wrote its credential or a configuration" >&2
+  exit 1
+fi
+d_creds=$(docker exec cfx-d sh -c 'for p in /proc/[0-9]*; do
+  case "$(readlink "$p/exe" 2>/dev/null)" in */conflux-ephemeral/bin/*/anchord)
+    awk "/^Uid:/ { u = \$2 } /^CapEff:/ { c = \$2 } END { printf \"uid=%s caps=%s\", u, c }" "$p/status"; exit 0;; esac
+done; exit 1')
+want="uid=$(docker exec cfx-d id -u conflux-ephemeral) caps=0000000000001000"
+echo "  anchord: $d_creds"
+[ "$d_creds" = "$want" ] || { echo "D's ephemeral anchord runs with $d_creds; want $want" >&2; exit 1; }
+D_IF=$(interface cfx-d)
+[ -n "$D_IF" ] || { echo "D's status names no interface" >&2; exit 1; }
+
+say "SIGTERM stops D cleanly: anchord, its interface and the root go, and the account stays"
+for pid in $(pids_of cfx-d /usr/local/bin/conflux); do docker exec cfx-d sh -c "kill -TERM $pid"; done
+eph_gone cfx-d "a stopped ephemeral run"
+docker exec cfx-d sh -c "! ip link show $D_IF" >/dev/null 2>&1 \
+  || { echo "a stopped ephemeral run left its interface up" >&2; exit 1; }
+docker exec cfx-d id conflux-ephemeral >/dev/null \
+  || { echo "the ephemeral account went with the run; it is kept until uninstall" >&2; exit 1; }
+docker exec cfx-d grep -q 'Nothing of the run remains' /tmp/ephemeral.log \
+  || { docker exec cfx-d cat /tmp/ephemeral.log >&2; echo "D did not say it stopped cleanly" >&2; exit 1; }
+
+say "D runs ephemeral from a manifest piped in; killed outright, its anchord goes with it"
+manifest=$(curl -fsS -X POST -H 'Accept: application/json' -H 'Content-Type: application/json' \
+  -d "{\"taints\":[\"$TAINT\"]}" --max-time 30 "$API/ghosts/alpha" |
+  sed -n 's/^{"credentials":"\([A-Za-z0-9+/=]*\)"}$/\1/p')
+[ -n "$manifest" ] || { echo "POST /ghosts/alpha did not answer with {\"credentials\": ...}" >&2; exit 1; }
+log=$(mktemp)
+printf '%s' "$manifest" | docker exec -i cfx-d conflux proxy --ephemeral --manifest - --no-ipv4 \
+  8080=127.0.0.1:1 >"$log" 2>&1 &
+for _ in $(seq 60); do eph_running cfx-d && break; sleep 1; done
+eph_running cfx-d || { cat "$log" >&2; echo "D's piped ephemeral anchor never came up" >&2; exit 1; }
+for pid in $(pids_of cfx-d /usr/local/bin/conflux); do docker exec cfx-d sh -c "kill -KILL $pid"; done
+for _ in $(seq 10); do [ -z "$(pids_of cfx-d '*/conflux-ephemeral/bin/*/anchord')" ] && break; sleep 1; done
+[ -z "$(pids_of cfx-d '*/conflux-ephemeral/bin/*/anchord')" ] \
+  || { echo "a killed ephemeral run left anchord running" >&2; exit 1; }
+
+say "the same credential again: what the killed run left is cleared, and it comes up"
+printf '%s' "$manifest" | docker exec -i cfx-d conflux proxy --ephemeral --manifest - --no-ipv4 \
+  8080=127.0.0.1:1 >"$log" 2>&1 &
+unset manifest
+for _ in $(seq 60); do eph_running cfx-d && break; sleep 1; done
+eph_running cfx-d || { cat "$log" >&2; echo "D did not come up again after a kill" >&2; exit 1; }
+for pid in $(pids_of cfx-d /usr/local/bin/conflux); do docker exec cfx-d sh -c "kill -INT $pid"; done
+eph_gone cfx-d "an interrupted ephemeral run"
+wait
+rm -f "$log"
 
 say "all assertions passed"

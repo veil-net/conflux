@@ -33,6 +33,13 @@ var scenarios = map[string]StartMode{
 		TUN: true, TUNName: "veil0",
 		Dir: "/var/lib/conflux/anchor",
 	},
+	// An ephemeral run gives the anchor no directory, so it writes nothing: no -dir at all.
+	"up-ephemeral": {
+		TUN: true,
+	},
+	"proxy-ephemeral": {
+		Proxies: []string{"8080=127.0.0.1:3000"},
+	},
 	"proxy-tcp": {
 		Proxies: []string{"8080=127.0.0.1:3000"},
 		Dir:     "/var/lib/conflux/anchor",

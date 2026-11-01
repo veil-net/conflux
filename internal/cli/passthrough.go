@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
+	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/privcheck"
@@ -26,7 +27,7 @@ import (
 // exit code without translation, signals delivered to the right process, and
 // nothing left in `ps` pretending to be a wrapper.
 func passthrough(ctx context.Context, args []string) int {
-	d := paths.Default()
+	d := activeDirs()
 
 	token, code := connectionDetails(d, args)
 	if code != ExitOK {
@@ -174,4 +175,60 @@ func runQuiet(ctx context.Context, bin string, env, args []string) (string, erro
 	out, err := cmd.CombinedOutput()
 
 	return string(out), err
+}
+
+// ephemeralEnv set to 1 sends pass-through to the ephemeral anchor while the installed one
+// runs too; see activeDirs.
+const ephemeralEnv = "CONFLUX_EPHEMERAL"
+
+// activeDirs is the root whose anchor the pass-through reaches: the machine's own, or an
+// ephemeral run's. The ephemeral one only when it is the one running, or when asked for by
+// CONFLUX_EPHEMERAL=1: a command never switches anchors because one was started beside it.
+func activeDirs() paths.Dirs {
+	installed := paths.Default()
+
+	eph, live := liveEphemeral()
+	if !live {
+		return installed
+	}
+
+	if os.Getenv(ephemeralEnv) == "1" {
+		return eph
+	}
+
+	if _, err := os.Stat(installed.Socket()); err == nil {
+		return installed
+	}
+
+	return eph
+}
+
+// liveEphemeral is the root of the ephemeral run that is running, if one is: the one whose
+// lock is held.
+func liveEphemeral() (paths.Dirs, bool) {
+	for _, root := range paths.EphemeralCandidates() {
+		d := paths.EphemeralDirs(root)
+		if held, err := flock.Held(d.ServeLockFile()); err == nil && held {
+			return d, true
+		}
+	}
+
+	return paths.Dirs{}, false
+}
+
+// staleEphemeral is the root an ephemeral run that was killed left behind, if one did: there,
+// with nobody holding its lock.
+func staleEphemeral() (paths.Dirs, bool) {
+	for _, root := range paths.EphemeralCandidates() {
+		d := paths.EphemeralDirs(root)
+		if _, err := os.Stat(d.ServeLockFile()); err != nil {
+			continue
+		}
+
+		if held, err := flock.Held(d.ServeLockFile()); err == nil && !held {
+			return d, true
+		}
+	}
+
+	return paths.Dirs{}, false
 }

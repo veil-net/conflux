@@ -78,6 +78,7 @@ func TestEveryFlagWeUseExists(t *testing.T) {
 		{"metrics", anchorctl.MetricsArgs()},
 		{"observe", anchorctl.ObserveStartArgs(config.Observer{Loopback: true, HideNames: true})},
 		{"observe-stop", anchorctl.ObserveStopArgs()},
+		{"export", anchorctl.ExportArgs("collector.example:4317", true, []string{"metrics", "flows"})},
 	} {
 		t.Run(sub.name, func(t *testing.T) {
 			have := supportedFlags(t, tools.Anchorctl, sub.argv[0])

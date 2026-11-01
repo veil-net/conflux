@@ -218,6 +218,15 @@ func ObserveStartArgs(o config.Observer) []string {
 // as the daemon runs.
 func ObserveStopArgs() []string { return []string{"observe", "-stop"} }
 
+// ExportArgs points the running daemon's export at endpoint, sending signals: the
+// Observability service's own call, which anchord holds in memory and nothing writes down,
+// so it lasts as long as the daemon -- what an ephemeral run, which writes no anchord.json,
+// configures its export with. No headers and no TLS material: on a command line they would
+// be in every process listing.
+func ExportArgs(endpoint string, insecure bool, signals []string) []string {
+	return []string{"export", "-endpoint", endpoint, "-insecure=" + boolText(insecure), "-signals", strings.Join(signals, ",")}
+}
+
 // StatusArgs asks what is running.
 func StatusArgs() []string { return []string{"status"} }
 

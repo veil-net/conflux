@@ -38,6 +38,8 @@ func runStatus(ctx context.Context, args []string) int {
 	ui.Field("fips140", version.FIPS())
 	ui.Println()
 
+	ephemeral := reportEphemeralRun(ctx)
+
 	cfg, err := config.Load(d)
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -48,6 +50,11 @@ func runStatus(ctx context.Context, args []string) int {
 		ui.Field("config", "none — this machine has never been configured")
 		ui.Println()
 		ui.Printf("%s\n", configureHint)
+
+		// What runs is the ephemeral anchor, which needs no configuration to be running.
+		if ephemeral {
+			return ExitOK
+		}
 
 		return ExitNoConfig
 	}
@@ -123,6 +130,32 @@ func askDaemon(ctx context.Context, d paths.Dirs) *daemonAnswers {
 }
 
 func reportService() { ui.Field("service", service.New().Describe()) }
+
+// reportEphemeralRun says what an ephemeral run is doing, before the machine's own anchor,
+// and whether one is running: or what a killed one left behind.
+func reportEphemeralRun(ctx context.Context) bool {
+	if d, stale := staleEphemeral(); stale {
+		ui.Field("ephemeral", "none running; "+d.State+" was left by one that was killed, and the next "+
+			"ephemeral run clears it and stops any anchord it left")
+		ui.Println()
+	}
+
+	d, live := liveEphemeral()
+	if !live {
+		return false
+	}
+
+	daemon := askDaemon(ctx, d)
+	daemon.wg.Wait()
+
+	ui.Println("ephemeral:")
+	ui.Field("running", "from "+d.State+" — in memory alone; nothing of it outlives the run")
+	reportPrivilege(d, daemon.asked && daemon.statErr == nil)
+	reportAnchor(daemon)
+	ui.Println()
+
+	return true
+}
 
 // reportPrivilege says who the running anchord runs as, with what, and why it keeps what
 // it keeps: nothing for a daemon that is not running, whose record describes the last one.

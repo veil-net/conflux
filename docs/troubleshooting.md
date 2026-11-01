@@ -129,6 +129,19 @@ anchor installs a route for each network it reaches, on every platform and for b
 families, so an overlay network routed anywhere else — out of Wi-Fi by the default
 route — is anchor's to fix, and worth reporting there with that output attached.
 
+## An ephemeral run is refused, or left something behind
+
+- **"an ephemeral anchor is already running from …"**: one ephemeral run per user at a time.
+  `conflux status` reports the one that is running; stop it where it runs (Ctrl-C).
+- **"every place an ephemeral run is kept is on a filesystem mounted noexec"**: the run
+  extracts anchord into its root, and every candidate refused execution. Set `CONFLUX_DIR`
+  to a directory on a filesystem that allows it.
+- **`conflux status` says a root was left behind**: an ephemeral run was killed before it
+  could clean up, which on macOS and the BSDs can leave its anchord running. The next
+  ephemeral run stops it and clears the root; so does a reboot.
+
+See [ephemeral.md](ephemeral.md).
+
 ## The extracted binaries will not run
 
 A "permission denied" on a `0700` file you own is the most confusing failure in this

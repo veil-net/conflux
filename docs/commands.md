@@ -150,6 +150,8 @@ configuration, and registers the boot service.
 | `--no-observe` | stop observing. |
 | `--export HOST:PORT` | send telemetry, each record the observer makes and each circuit the anchor relays, to the OTLP/gRPC collector there: the export on, that endpoint, `flows` and `metrics` on, and everything else `conflux.json`'s `export` block says kept — headers and TLS above all, which no command line takes. See [config.md](config.md#export--where-telemetry-goes). |
 | `--export-insecure` | reach that collector without TLS. |
+| `--ephemeral` | run in the foreground and keep nothing: the credential is held in memory, nothing is written or registered, and when anchord stops, or on Ctrl-C, everything is gone. Asks nothing; with neither `--ipv4` nor `--no-ipv4`, the IPv4 is the handed credential's or none. See [ephemeral.md](ephemeral.md). |
+| `--manifest FILE`, `--manifest -` | with `--ephemeral`, run on this issued credential, read from FILE or stdin and never written, rather than enrolling. Without `--ephemeral` it is refused: a credential to keep is `conflux enrol`'s. |
 
 An anchor listens on **every** interface, so `--port` is a port and not an address:
 the host's addresses change underneath it, and pinning one is a promise the host
@@ -237,6 +239,7 @@ is needed, and no realm is joined. See [observe.md](observe.md).
 | `--hide-names` | leave every name a flow was reached by out of the records and the inventory, the server's address in its place. |
 | `--export HOST:PORT` | send each record, as it is made, and the daemon's telemetry to that collector, as on `up`. Without an export with `flows`, the records stay in the daemon's inventory, and conflux says so. |
 | `--export-insecure` | reach it without TLS. |
+| `--ephemeral`, `--manifest FILE\|-` | as on `up`: in the foreground, keeping nothing; and in userspace, needing no root. See [ephemeral.md](ephemeral.md). |
 | `--yes` | stop the anchor this machine runs without asking. |
 
 The options say what the observer is now, as anchorctl's `observe -start` does: one not given
@@ -557,6 +560,7 @@ other refusal — passes through untouched.
 |---|---|
 | `CONFLUX_DIR` | roots a whole separate conflux installation in one directory — config, identity, socket and the boot service, which is named after the root so it cannot replace the machine's own. What the tests use. See [testing.md](testing.md). |
 | `CONFLUX_DEBUG=1` | pass `-v` to anchord. |
+| `CONFLUX_EPHEMERAL=1` | send pass-through to the ephemeral anchor while an installed one runs too, which it otherwise reaches first. See [ephemeral.md](ephemeral.md#reaching-it-from-another-terminal). |
 | `CONFLUX_ALLOW_INSECURE_API=1` | permit a plain-http API base. For tests only. |
 | `ANCHOR_SOCKET`, `ANCHORD_TOKEN` | if already set, conflux leaves them alone and pass-through uses yours. |
 

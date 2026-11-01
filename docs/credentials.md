@@ -163,7 +163,8 @@ Three states, three behaviours:
 
 `conflux renew` forces one now: it fetches a fresh chain and installs it on the
 running anchor with `anchorctl renew`, the same hot swap the timer uses. Nothing is
-restarted and no session is dropped.
+restarted and no session is dropped. The chain goes to anchorctl on its stdin
+(`renew -cred -`), so a renewal writes the manifest it is spliced into and no other file.
 
 It is not part of normal operation — the two automatic paths above cover every machine
 that is working. It is for the one that is not, where `renewal: failing since ...` has

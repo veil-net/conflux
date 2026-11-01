@@ -169,8 +169,12 @@ func (c *Ctl) ObserveStop(ctx context.Context) error {
 
 // Renew installs a fresh credential on the running anchor, hot: SetRealmCred rather
 // than a restart, so not one session is lost.
-func (c *Ctl) Renew(ctx context.Context, credPath string) error {
-	_, err := c.run(ctx, nil, RenewArgs(credPath)...)
+//
+// chain is the credential itself, raw, not base64: the API sends base64 and the client
+// decodes it on the way in. Getting that backwards produces a credential the daemon
+// refuses, with nothing saying the encoding is why.
+func (c *Ctl) Renew(ctx context.Context, chain []byte) error {
+	_, err := c.run(ctx, chain, RenewArgs()...)
 
 	return err
 }

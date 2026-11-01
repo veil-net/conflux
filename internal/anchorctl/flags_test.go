@@ -72,7 +72,7 @@ func TestEveryFlagWeUseExists(t *testing.T) {
 			Proxies: []string{"8080=127.0.0.1:1"}, Dir: "/tmp/x",
 			IPv4: "10.0.0.1", Port: 4711, LowLatency: true, LANDiscovery: &yes,
 		}.Args()},
-		{"renew", anchorctl.RenewArgs("/tmp/c")},
+		{"renew", anchorctl.RenewArgs()},
 		{"stop", anchorctl.StopArgs()},
 		{"status", anchorctl.StatusArgs()},
 		{"metrics", anchorctl.MetricsArgs()},

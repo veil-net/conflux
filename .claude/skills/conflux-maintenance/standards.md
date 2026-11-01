@@ -95,6 +95,16 @@ Anchor is the reference for overlay behaviour, and the live API for the enrolmen
 - Every cryptographic service conflux's own code uses is approved in module v1.0.0's Security Policy (CMVP #5247), used as it approves, with ML-DSA the one exception, as docs/security.md "FIPS 140-3 and CMVP" states. No SHA-1, MD5, DES, RC4 or DSA in conflux's code; a new use goes into that section's table in the same change.
 - The tests run under `GODEBUG=fips140=only`, locally (`make test`) and in every CI job that tests.
 - A build against the module run with `GODEBUG=fips140=off` refuses every command, exit 70.
+- `internal/pki/approved_test.go` passes, every rule with its control: no x/crypto, MD5, SHA-1, DES, RC4, DSA or crypto/ecdh; no AES block or AES-CBC outside `internal/pki/pbes2.go`; no CTR, CFB, OFB or caller-nonce GCM; no RSA PKCS #1 v1.5 encryption, legacy PEM encryption, Ed25519ctx/ph or `WithoutEnforcement`.
+
+**Certificates**
+- `conflux cert` refuses every command where `fips140.Enabled()` is false, exit 70, before reading anything.
+- ML-DSA keys are written seed-only; the both form is read only when its expanded half matches its seed; the expanded-only form is refused.
+- An encrypted key is written PBKDF2-HMAC-SHA-256, 600,000 iterations, a 16-byte salt, AES-256-CBC, and only PBES2 with a SHA-2 PRF, a salt of 16 bytes or more and AES-CBC is read; every refusal names `reencrypt`'s pipe.
+- A clear key is written 0600, never over an existing file without `--force`, never to a terminal; a passphrase comes from a file, an environment variable or the terminal, never a flag's value or stdin.
+- A certificate never outlives its issuer, starts five minutes back, carries a random 128-bit serial and an RFC 7093 SKI; a request contributes its subject and names alone. No certificateHold. No SHA-1 or MD5 fingerprint.
+- `verify` exits 3 for a chain that does not hold, a revoked certificate, a list out of date, or `--require-pq` on a classical chain; authentication is `pqc` only when the leaf key and every signature below the root are ML-DSA.
+- The `show` goldens' fixtures are public material alone; no private key, encrypted or not, is committed.
 - A placeholder build reports no anchor pair.
 - No `anchoradmin*` file exists anywhere in conflux.
 - No binary is tracked by git.

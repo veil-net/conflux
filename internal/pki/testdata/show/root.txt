@@ -1,0 +1,13 @@
+Certificate
+  subject         CN=Conflux Test Root,O=Conflux Test,C=AU
+  issuer          CN=Conflux Test Root,O=Conflux Test,C=AU
+  serial          A2:60:92:57:41:10:42:14:2B:AD:9D:19:B7:8E:FB:CF
+  valid           2026-11-01 07:55:00 to 2036-10-29 08:00:00 UTC
+  status          valid, 3649d left
+  key             ML-DSA-87 (pqc)
+  key sha256      1A:2F:B4:B4:75:54:BE:7F:9A:36:E5:10:34:D9:48:28:03:E6:56:86:F9:09:1B:8F:A1:5C:E9:74:4A:68:E0:C2
+  signature       ML-DSA-87 (pqc)
+  ca              yes
+  key usage       digitalSignature, keyCertSign, cRLSign
+  subject key id  76:65:4D:19:B4:9B:52:E7:43:77:7C:13:7C:99:4C:AA:0D:6B:FA:9C
+  sha256          B3:77:CF:B4:CA:38:21:38:88:3D:6F:9F:E2:2C:F5:46:D5:1A:DC:11:D9:52:46:A9:DA:7E:6A:20:6D:AE:1C:09

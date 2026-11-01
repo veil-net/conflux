@@ -1,0 +1,19 @@
+{
+  "kind": "revocation list",
+  "issuer": "CN=Conflux Test Root,O=Conflux Test,C=AU",
+  "status": "current",
+  "signature": "ML-DSA-87",
+  "signatureClass": "pqc",
+  "authorityKeyId": "76:65:4D:19:B4:9B:52:E7:43:77:7C:13:7C:99:4C:AA:0D:6B:FA:9C",
+  "crlNumber": "7",
+  "thisUpdate": "2026-11-01T08:00:00Z",
+  "nextUpdate": "2026-11-08T08:00:00Z",
+  "revoked": [
+    {
+      "serial": "12:34",
+      "revokedAt": "2026-11-01T08:00:00Z",
+      "reason": "superseded"
+    }
+  ],
+  "sha256": "9D:6E:C6:7B:4F:FA:6C:57:71:8F:C5:CB:57:E5:31:75:6A:26:65:70:8D:F6:95:B4:4D:F3:FD:8C:4B:E1:B6:59"
+}

@@ -187,11 +187,11 @@ docscheck:
 	done; \
 	exit $$fail
 
-# golden rewrites the argv fixtures after an intended change, so a change to what
-# conflux passes anchorctl shows up as a reviewable text diff; TestArgvGoldens fails on
-# any other.
+# golden rewrites the argv fixtures and cert show's goldens after an intended change, so a
+# change to what conflux passes anchorctl, or prints of a certificate, shows up as a
+# reviewable text diff; TestArgvGoldens and TestShowGoldens fail on any other.
 golden:
-	$(GO) test $(TESTEXEC) ./internal/anchorctl -update
+	$(GO) test $(TESTEXEC) ./internal/anchorctl ./internal/pki -run 'TestArgvGoldens|TestShowGoldens' -update
 
 # cross vets every target, which compiles each one's packages and test files -- `go
 # build ./...` compiles no test files, so vet is what catches a platform-specific test
@@ -301,7 +301,7 @@ help:
 	@echo "  make cross       vet all 7 targets, test files included (works with placeholders)"
 	@echo "  make dist        build all 7 into $(DIST)/ with SHA256SUMS and the size gate"
 	@echo "                   (needs real binaries: make anchor-bins first)"
-	@echo "  make golden      rewrite the argv fixtures after an intended change"
+	@echo "  make golden      rewrite the argv and cert show goldens after an intended change"
 	@echo "  make image       build the systemd test image from $(DIST)/conflux-linux-amd64"
 	@echo "  make service-test  install and uninstall in a container that boots systemd"
 	@echo "  make integration   three nodes, one taint, over the real API (needs Docker)"

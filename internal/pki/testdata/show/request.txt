@@ -1,0 +1,7 @@
+Certificate request
+  subject         CN=client.test
+  status          signature verifies
+  key             ECDSA P-256 (classical)
+  key sha256      10:6B:27:EB:3E:35:9A:E6:1E:03:7A:BC:90:51:E8:08:72:CF:33:F4:AF:89:5F:31:03:C3:04:AF:D1:11:9E:03
+  signature       ECDSA-SHA256 (classical)
+  emails          ops@client.test

@@ -32,7 +32,7 @@ a daemon or a network. Most of conflux can be.
 | `internal/paths` | the root absolute and clean, and a log directory only where the platform has one; on Unix, a root another account owns refused before anything is changed, a symlinked one followed only to its owner's directory, our own narrowed to `0700`, and the shared `/var/log` left alone; on Windows, the root made Administrators', and files restricted to them trusted; an ephemeral root inside `CONFLUX_DIR` and nowhere else, and a root not made yet judged by the filesystem it would be made on |
 | `internal/flock` | a held lock reported as held, not waited for |
 
-## The three tests worth knowing about
+## The tests worth knowing about
 
 **`anchor.TestPairIsRealExecutables`** parses each embedded binary's ELF, Mach-O or PE
 header and checks the machine field against `GOARCH`. It exists because a wrong file in
@@ -63,6 +63,17 @@ exists — every flag conflux can pass, including the ones it passes only when s
 package refuses an unknown flag rather than ignoring it, so that would otherwise be a
 daemon that will not start — discovered after the binaries were dropped into
 `anchor/bin` and shipped.
+
+**`pki.TestOnlyApprovedCryptographyIsUsed`** reads every non-test Go file for the
+cryptography `fips140=only` does not refuse as it happens: anything from golang.org/x/crypto,
+which the module never sees; an AES block alone, which is AES-ECB; AES-CBC outside
+`internal/pki/pbes2.go`; and the rest of the list in
+[security.md](security.md#fips-140-3-and-cmvp). Each rule's control is a file planted to
+break it. **`pki.TestPBES2KnownAnswer`** holds an encrypted key's exact bytes under a fixed
+salt and IV, which OpenSSL 3.5 opens to the same key, and **`pki.TestShowGoldens`** holds what
+`cert show` prints of committed certificates, a request, a list and a public key, in
+`internal/pki/testdata/show/`. They are public material alone; the keys that made them were
+thrown away. `make golden` rewrites them with the argv goldens after an intended change.
 
 **`enrol.TestWithRenewalIsLossless`** renews a manifest and compares every field.
 Four are meant to change — `chain`, `notAfter`, `issuedAt` and `bootstrap`, which the
@@ -236,7 +247,7 @@ why it is nonetheless contained.
 |---|---|---|
 | `linux` | veilnet-dev | the whole suite under `-race` and `fips140=only` with the real binaries and nothing skipped; `make cross`; the digests `make build` stamps are the pair's own; the built conflux in FIPS 140-3 mode, its integrity check passing, and refusing to run with the mode off |
 | `integration` | GitHub Ubuntu | `test/preflight.sh`, then `make -j2 -O service-test integration` — `dist` with the size gate for every target and the image, once, then the boot service, three nodes and an ephemeral fourth against the live API of the base's tree (`$VEILNET_API`) side by side |
-| `bsd` | FreeBSD 15.1 and OpenBSD 7.9, each a VM on GitHub Ubuntu | `test/service-bsd.sh` against `rc.subr`, with that platform's own pair; FreeBSD's conflux in FIPS 140-3 mode, OpenBSD's without the module |
+| `bsd` | FreeBSD 15.1 and OpenBSD 7.9, each a VM on GitHub Ubuntu | `test/service-bsd.sh` against `rc.subr`, with that platform's own pair; FreeBSD's conflux in FIPS 140-3 mode, making and verifying an ML-DSA certificate; OpenBSD's without the module, its `conflux cert` refusing with 70 |
 | `platforms` | GitHub macOS, Windows and Linux arm64 | the suite under `fips140=only` with that platform's own pair, built as a release is (`CGO_ENABLED=0`, `-trimpath`), the tests that need the pair included; on macOS and Windows, `test/service-host.sh` against the real service manager; on Windows, that the pinned wintun digest is the published one; then the install scripts against the published `latest`, run as a person runs them and then again: `install.sh` on macOS and Linux arm64, `install.ps1` under Windows PowerShell 5.1 and then PowerShell 7 |
 
 `linux` is one job because veilnet-dev is one machine with one runner process: separate
@@ -453,6 +464,12 @@ The shape of the exchange is written down once, in
 - **A Windows TUN, and an anchor that runs.** The `platforms` job starts the supervisor
   under the SCM and launchd, and an `anchord` as `LOCAL SERVICE` and `_conflux` that answers
   on its socket, but none enrols, and no job opens a wintun interface.
+
+- **`conflux cert` against OpenSSL.** OpenSSL 3.5 is the first to read ML-DSA and no runner
+  ships it, so the interop in [cert.md](cert.md#checked-against-openssl) was checked by hand,
+  in a container; the PBES2 known answer is what CI keeps of it. The passphrase prompt's
+  echo, too, is checked by hand under a pseudo-terminal: CI has no terminal, and the tests
+  replace the one it opens.
 
 A local fake for the enrolment API is used for the client's error paths, but it cannot
 stand in for a full end-to-end test: the shipped `anchord` is pinned to the production

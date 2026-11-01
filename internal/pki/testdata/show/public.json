@@ -1,0 +1,8 @@
+{
+  "kind": "public key",
+  "key": {
+    "algorithm": "Ed25519",
+    "class": "classical"
+  },
+  "keySHA256": "BF:DB:30:11:95:F2:2C:87:2E:5E:FF:F2:7C:51:16:87:0C:4D:A6:39:5C:A9:76:66:93:AC:FB:4F:39:58:96:FB"
+}

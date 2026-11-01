@@ -76,6 +76,50 @@ func Restrict(path string, dir bool) error {
 	return err
 }
 
+// RestrictToOwner makes path the current account's alone, as a 0600 file or a 0700
+// directory is on Unix: a protected DACL granting full control to the account running
+// conflux, and to SYSTEM and Administrators, who can take any file anyway. It is for what
+// conflux writes for whoever runs it rather than for the machine -- a private key `conflux
+// cert` writes, by anybody -- where Restrict, SYSTEM and Administrators alone, would lock an
+// ordinary user out of their own file. The owner is left as the creating token made it.
+func RestrictToOwner(path string, dir bool) error {
+	user := currentUser()
+	if user == nil {
+		return errors.New("the account this process runs as could not be read from its token")
+	}
+
+	inherit := uint32(windows.NO_INHERITANCE)
+	if dir {
+		inherit = windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT
+	}
+
+	var entries []windows.EXPLICIT_ACCESS
+
+	for _, t := range []struct {
+		sid  *windows.SID
+		kind windows.TRUSTEE_TYPE
+	}{{user, windows.TRUSTEE_IS_USER}, {sidSystem, windows.TRUSTEE_IS_USER}, {sidAdmins, windows.TRUSTEE_IS_GROUP}} {
+		entries = append(entries, windows.EXPLICIT_ACCESS{
+			AccessPermissions: windows.GENERIC_ALL,
+			AccessMode:        windows.GRANT_ACCESS,
+			Inheritance:       inherit,
+			Trustee: windows.TRUSTEE{
+				TrusteeForm:  windows.TRUSTEE_IS_SID,
+				TrusteeType:  t.kind,
+				TrusteeValue: windows.TrusteeValueFromSID(t.sid),
+			},
+		})
+	}
+
+	acl, err := windows.ACLFromEntries(entries, nil)
+	if err != nil {
+		return err
+	}
+
+	return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, acl, nil)
+}
+
 // Trusted reports whether path is owned by SYSTEM, Administrators or the account
 // running conflux -- by somebody who could have written it anyway. Restrict makes
 // Administrators the owner of everything conflux writes, so another owner is another

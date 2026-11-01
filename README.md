@@ -228,7 +228,8 @@ without one they stay in the daemon's inventory, which `conflux inventory` print
 nothing else — `CAP_NET_RAW` on Linux, read access to `/dev/bpf*` on macOS — and the
 FreeBSD and OpenBSD builds refuse, having nothing to capture with.
 
-`--observe` on `up` or `proxy` runs the same observer beside an anchor. Switching a
+`--observe` on `up` or `proxy` runs the same observer beside an anchor, and it then records
+what the anchor carries over the overlay too, in userspace as with an interface. Switching a
 machine that runs an anchor to `conflux observe` stops the anchor, so it asks first. See
 [observe.md](docs/observe.md).
 

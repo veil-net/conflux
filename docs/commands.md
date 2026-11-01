@@ -148,7 +148,7 @@ configuration, and registers the boot service.
 | `--observe` | run the observer beside the anchor: an inventory of the cryptography of this host's traffic. See [observe.md](observe.md#beside-an-anchor). Naming it, or either option below, says what the observer is now, and an option not given is off; naming none keeps what is configured. |
 | `--observe-loopback`, `--observe-hide-names` | observe the loopback interfaces too; leave the names flows were reached by out of the records. Each implies `--observe`. |
 | `--no-observe` | stop observing. |
-| `--export HOST:PORT` | send telemetry, and each record the observer makes, to the OTLP/gRPC collector there: the export on, that endpoint, `flows` and `metrics` on, and everything else `conflux.json`'s `export` block says kept — headers and TLS above all, which no command line takes. See [config.md](config.md#export--where-telemetry-goes). |
+| `--export HOST:PORT` | send telemetry, each record the observer makes and each circuit the anchor relays, to the OTLP/gRPC collector there: the export on, that endpoint, `flows` and `metrics` on, and everything else `conflux.json`'s `export` block says kept — headers and TLS above all, which no command line takes. See [config.md](config.md#export--where-telemetry-goes). |
 | `--export-insecure` | reach that collector without TLS. |
 
 An anchor listens on **every** interface, so `--port` is a port and not an address:

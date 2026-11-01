@@ -250,9 +250,10 @@ func chooseObserver(cfg *config.Config, fs *flag.FlagSet) error {
 }
 
 // chooseExport points the export at --export's collector, with flows -- each record the
-// observer makes, and each the anchor's flows make -- and metrics on, keeping everything else
-// conflux.json says of it: headers and TLS material, which are credentials and never taken
-// on a command line, the other signals, the intervals.
+// observer makes, of the host's interfaces and of the overlay beside an anchor, and each
+// circuit the anchor relays, which is all flows carries without the observer -- and metrics
+// on, keeping everything else conflux.json says of it: headers and TLS material, which are
+// credentials and never taken on a command line, the other signals, the intervals.
 func chooseExport(cfg *config.Config, typed map[string]bool, endpoint string, insecure bool) error {
 	if !typed["export"] {
 		if typed["export-insecure"] {

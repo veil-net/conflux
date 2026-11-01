@@ -120,8 +120,10 @@ The full field list is `enabled`, `endpoint` (host:port, not a URL — the schem
 `metricIntervalNanos`, `traceSampleRatio`, `serviceName`, `resourceAttributes`,
 `exportTimeoutNanos`, `shutdownTimeoutNanos`, `caCert`, `clientCert`, `clientKey`,
 `logLevel` and `cardinalityLimit`. `flows` exports a log record per interval of each IP
-flow the anchor carries and each circuit it relays, and each record the observer makes, as an
-`anchor.observed_flow` event, as it is made. The three TLS fields take
+flow the observer records, from the host's interfaces and, beside an anchor, from the
+overlay, as an `anchor.observed_flow` event as it is made, and of each circuit the anchor
+relays, as an `anchor.circuit` event. Without the observer it sends circuits alone: the anchor
+counts no IP flow of its own ([observe.md](observe.md#beside-an-anchor)). The three TLS fields take
 `{"path": "…"}` or `{"inline": "<base64 PEM>"}`.
 
 **`headers` are credentials.** Anything in them authenticates this machine to a

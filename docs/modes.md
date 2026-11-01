@@ -100,6 +100,10 @@ $ sudo conflux up --observe              # beside an anchor with an interface
 $ sudo conflux proxy 8080=127.0.0.1:3000 --observe
 ```
 
+Beside an anchor, in either mode, the observer also records what the anchor carries over
+the overlay, as the anchor hands it on, so a userspace machine's traffic, which no capture
+sees, is in the inventory as an interface machine's is.
+
 What `anchord` is given is the capture and nothing else: `CAP_NET_RAW` on Linux, read
 access to `/dev/bpf*` on macOS, `LOCAL SERVICE` on Windows. FreeBSD and OpenBSD have no
 capture, and refuse. [observe.md](observe.md) has the rest.

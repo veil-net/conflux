@@ -234,16 +234,22 @@ func fakeCtl(tb testing.TB) *anchorctl.Ctl {
 func dirs(tb testing.TB) paths.Dirs {
 	tb.Helper()
 
-	root := tb.TempDir()
+	// A short root of its own rather than TempDir's, which is named after the test: the
+	// control socket lies four levels below it, and a unix socket's path has room for 103
+	// bytes on macOS and 107 on Linux and Windows. A test named at length under Windows's
+	// %TEMP% would otherwise pass that, and be refused for it. macOS's %TMPDIR% is long
+	// enough by itself, so there it is /tmp.
+	base := ""
 	if runtime.GOOS == "darwin" {
-		short, err := os.MkdirTemp("/tmp", "cfx")
-		if err != nil {
-			tb.Fatal(err)
-		}
-
-		tb.Cleanup(func() { _ = os.RemoveAll(short) })
-		root = short
+		base = "/tmp"
 	}
+
+	root, err := os.MkdirTemp(base, "cfx")
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	tb.Cleanup(func() { _ = os.RemoveAll(root) })
 
 	tb.Setenv("CONFLUX_DIR", root)
 

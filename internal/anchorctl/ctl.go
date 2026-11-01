@@ -167,6 +167,13 @@ func (c *Ctl) ObserveStop(ctx context.Context) error {
 	return err
 }
 
+// Export points the running daemon's export at endpoint; see ExportArgs.
+func (c *Ctl) Export(ctx context.Context, endpoint string, insecure bool, signals []string) error {
+	_, err := c.run(ctx, nil, ExportArgs(endpoint, insecure, signals)...)
+
+	return err
+}
+
 // Renew installs a fresh credential on the running anchor, hot: SetRealmCred rather
 // than a restart, so not one session is lost.
 //

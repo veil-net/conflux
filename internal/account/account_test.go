@@ -10,16 +10,24 @@ import (
 // TestNameFollowsThePlatformAndTheScope: the platform's own convention for a daemon's
 // account, and a CONFLUX_DIR installation's never the machine's.
 func TestNameFollowsThePlatformAndTheScope(t *testing.T) {
-	for _, c := range []struct{ goos, scope, want string }{
-		{"linux", "", "conflux"},
-		{"freebsd", "", "conflux"},
-		{"darwin", "", "_conflux"},
-		{"openbsd", "-44a6e4f4", "_conflux-44a6e4f4"},
-		{"linux", "-44a6e4f4", "conflux-44a6e4f4"},
+	for _, c := range []struct{ goos, base, scope, want string }{
+		{"linux", "conflux", "", "conflux"},
+		{"freebsd", "conflux", "", "conflux"},
+		{"darwin", "conflux", "", "_conflux"},
+		{"openbsd", "conflux", "-44a6e4f4", "_conflux-44a6e4f4"},
+		{"linux", "conflux", "-44a6e4f4", "conflux-44a6e4f4"},
+		{"linux", "conflux-ephemeral", "", "conflux-ephemeral"},
+		{"darwin", "conflux-ephemeral", "-44a6e4f4", "_conflux-ephemeral-44a6e4f4"},
 	} {
-		if got := nameFor(c.goos, c.scope); got != c.want {
-			t.Errorf("nameFor(%q, %q) = %q, want %q", c.goos, c.scope, got, c.want)
+		if got := nameFor(c.goos, c.base, c.scope); got != c.want {
+			t.Errorf("nameFor(%q, %q, %q) = %q, want %q", c.goos, c.base, c.scope, got, c.want)
 		}
+	}
+
+	// Never the installation's, whatever the scope: an ephemeral anchord running as the
+	// installation's account is one its supervisor would end.
+	if Name() == EphemeralName() {
+		t.Errorf("the ephemeral account is the installation's, %s", Name())
 	}
 }
 

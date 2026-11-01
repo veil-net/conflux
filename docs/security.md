@@ -8,7 +8,7 @@ private key in a file**.
 
 ## A stolen `manifest.b64` is permanent
 
-The manifest holds the 32-byte identity seed. Anyone who has it *is* that anchor. A
+The manifest holds the 64-byte identity seed. Anyone who has it *is* that anchor. A
 guardian-issued one holds a renewal bearer as well, so whoever has it can also keep
 that identity's credential current indefinitely — the same statement, one step
 stronger.
@@ -34,6 +34,12 @@ the credential lapses on its own schedule with nothing pushed and no list distri
 Everything above still holds — the file is still the identity, a thief is still that
 anchor, and they remain one until the credential lapses. What changes is that the
 lapse now happens, and that the window is the operator's to choose.
+
+**Or there is no file.** An ephemeral run (`--ephemeral`, [ephemeral.md](ephemeral.md))
+holds the identity in memory alone, from the enrolment response or the manifest handed in
+straight through to anchord, and writes it nowhere; core dumps are off for it and its
+anchord. What is left to steal is the memory of a running process, which only root on that
+host can read, and when the run stops there is nothing at all.
 
 ## The file, and the directory around it
 
@@ -101,6 +107,10 @@ runs from where it was installed whatever the working directory was.
 confining. The rule: **it runs as root, or with a capability, only where the host or the
 configuration needs that** — and wherever giving something up would cost an operation or a
 function, it keeps it, and `conflux status` says why:
+
+An ephemeral run started as root holds its anchord to the same rule under an account of
+its own, `conflux-ephemeral`, which the installed supervisor never touches; started as an
+ordinary user, anchord runs as that user. See [ephemeral.md](ephemeral.md#who-runs-it-and-as-what).
 
 ```
   anchord      conflux, with no privilege

@@ -286,3 +286,8 @@ into it. See [windows.md](windows.md#file-permissions).
 | `anchord.json` | kept | rewritten | rewritten | deleted |
 | the service's log file (macOS, FreeBSD, Windows) | kept | appended | appended | deleted |
 | extracted binaries | kept | kept | kept | deleted |
+
+An ephemeral run is outside this table: it reads and writes none of these files, and keeps
+its socket and its extracted binaries in a root of its own that goes when the run does. The
+one thing of it that outlives a run is the `conflux-ephemeral` account, which `uninstall`
+removes with the installation's. See [ephemeral.md](ephemeral.md).

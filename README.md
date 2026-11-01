@@ -285,6 +285,11 @@ reaches the realm over — the host's IP network by default, or a link named by
 `--uplink` — and either mode works over either medium. See
 [modes.md](docs/modes.md) and [uplink.md](docs/uplink.md).
 
+**An anchor that keeps nothing.** `--ephemeral` on `up` or `proxy` runs in the foreground
+from a credential held in memory alone — enrolled, or piped in with `--manifest -` — and
+writes and registers nothing. When anchord stops, everything is gone. `proxy --ephemeral`
+needs no root at all. See [ephemeral.md](docs/ephemeral.md).
+
 ## Commands
 
 | Command | What it does |
@@ -343,6 +348,7 @@ its own corners of them. See [config.md](docs/config.md) and
 | [concepts.md](docs/concepts.md) | Realm, anchor, overlay address, and taints — including the arithmetic people get wrong. |
 | [modes.md](docs/modes.md) | TUN, userspace and observing, why they cannot be combined, subnets and their prerequisites. |
 | [observe.md](docs/observe.md) | The observer: what it records, where its records go, what `anchord` is given to capture on each platform. |
+| [ephemeral.md](docs/ephemeral.md) | An anchor in the foreground from a credential held in memory alone: nothing written, nothing registered, nothing left when it stops. |
 | [uplink.md](docs/uplink.md) | Running over a link instead of a host IP network: the device forms, the line speeds, the limits. |
 | [commands.md](docs/commands.md) | Every command, every flag, what reaches anchorctl, and the exit codes. |
 | [config.md](docs/config.md) | The configuration file, the manifest, file modes, and the layout on each OS. |

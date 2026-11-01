@@ -313,7 +313,7 @@ func (s *Supervisor) releaseDrop() {
 	s.drop.sid = ""
 }
 
-func startProcess(cmd *exec.Cmd, _ Privilege) error { return cmd.Start() }
+func startProcess(cmd *exec.Cmd, _ Privilege, _ <-chan struct{}) error { return cmd.Start() }
 
 // freshDaemonRun makes anchord's run directory afresh: the service SID's, with its rights
 // set as it is created and never propagated over anything the account wrote; SYSTEM's and

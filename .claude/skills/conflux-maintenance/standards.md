@@ -139,6 +139,12 @@ Anchor is the reference for overlay behaviour, and the live API for the enrolmen
 - The anchord a dead supervisor left is stopped by the next one only when it is the recorded process (its executable, or anchor's socket lock where none is reported), and `uninstall` reaps it too. On Windows anchord dies with its own job, which its supervisor holds.
 - A supervisor that exits 1 is restarted by systemd, launchd and the SCM; on the BSDs nothing does, and the docs say so.
 
+**Ephemeral runs**
+- Nothing of the machine's is read or written: no `conflux.json`, `manifest.b64`, `state.json`, `anchord.json`, anchor directory or service; no file holds the credential or the chain at any point (the renewal goes on stdin); anchord gets no `-dir` and no `-config`.
+- The run ends when anchord does, and its root goes with it; nothing restarts or rebuilds. anchord ends with conflux on Linux (parent-death signal, started from a thread held for anchord's life) and Windows (the job); the next run reaps what a killed one left on macOS and the BSDs.
+- As root, anchord drops by the installed rules to `conflux-ephemeral`, never the installation's account; otherwise it runs as the invoking user. Core dumps are off for the run and its anchord.
+- An installed conflux is never read, stopped or changed by one; `uninstall` refuses while one is live, and removes its account.
+
 **Extraction**
 - `SetID` is the same function of the two SHA-256s whether stamped at build or computed; CI's `linux` job checks a stamped build against an unstamped one.
 

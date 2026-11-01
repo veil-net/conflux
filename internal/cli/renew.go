@@ -72,6 +72,15 @@ func runRenew(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
+	// An ephemeral run renews itself, in memory, and nothing outside it holds its credential
+	// to renew it with.
+	if e, live := liveEphemeral(); live && !config.HasManifest(paths.Default()) {
+		ui.Errf("the anchor running is ephemeral, from %s, and renews itself in memory: nothing\n"+
+			"  outside it holds its credential, so there is nothing here to renew", e.State)
+
+		return ExitUnavailable
+	}
+
 	return renewNow(ctx, paths.Default())
 }
 

@@ -89,6 +89,13 @@ type Supervisor struct {
 	// before it kills a daemon it cannot signal.
 	observing bool
 
+	// ephemeral is set by an ephemeral run, which uses the process plumbing below and none
+	// of the persistence: anchord is handed to the ephemeral account rather than the
+	// installation's, ends with this process however this process ends, where the platform
+	// can say so at the start (Linux; Windows ends it with its job anyway), and leaves the
+	// macOS BPF devices to the installation. See ephemeral.go.
+	ephemeral bool
+
 	drop dropState
 }
 
@@ -506,11 +513,22 @@ func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *child, error) 
 		return nil, nil, err
 	}
 
+	c, err := s.exec(p, anchordArgs(s.Dirs, cfg), cfg.Observer != nil)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return cfg, c, nil
+}
+
+// exec starts anchord with args as p says, records it, and returns it running: the part of
+// a spawn that does not depend on where its configuration came from.
+func (s *Supervisor) exec(p Privilege, args []string, observing bool) (*child, error) {
 	s.report().Step("starting anchord as %s", p)
 
 	out := s.lines()
 
-	cmd := exec.Command(s.tools.Anchord, anchordArgs(s.Dirs, cfg)...) //nolint:gosec // our own extracted binary
+	cmd := exec.Command(s.tools.Anchord, args...) //nolint:gosec // our own extracted binary
 	cmd.SysProcAttr = s.procAttrFor(p)
 	cmd.Env = anchordEnv(p, s.ctl.Token)
 	cmd.Dir = workDir
@@ -520,11 +538,23 @@ func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *child, error) 
 	// the pipe this long after the exit rather than waiting with it.
 	cmd.WaitDelay = 5 * time.Second
 
-	err = startProcess(cmd, p)
+	c := &child{cmd: cmd, exited: make(chan struct{})}
+
+	// A parent-death signal is the forking thread's, not the process's: the thread that
+	// starts anchord is held until anchord has gone, so the signal comes only when this
+	// process ends.
+	var hold <-chan struct{}
+	if s.ephemeral {
+		setParentDeath(cmd.SysProcAttr)
+
+		hold = c.exited
+	}
+
+	err := startProcess(cmd, p, hold)
 	s.releaseDrop()
 
 	if err != nil {
-		return nil, nil, fmt.Errorf("start anchord as %s: %w", p.As, err)
+		return nil, fmt.Errorf("start anchord as %s: %w", p.As, err)
 	}
 
 	release, err := bind(cmd.Process)
@@ -540,9 +570,8 @@ func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *child, error) 
 		s.report().Warn("could not record what anchord runs as: %v", err)
 	}
 
-	s.priv, s.lastDir, s.observing = p, p.Dir, cfg.Observer != nil
-
-	c := &child{cmd: cmd, exited: make(chan struct{}), release: release}
+	s.priv, s.lastDir, s.observing = p, p.Dir, observing
+	c.release = release
 
 	// Wait returns once the output is drained, so the tail holds anchord's last words
 	// by the time anybody reads it.
@@ -552,7 +581,7 @@ func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *child, error) 
 		close(c.exited)
 	}()
 
-	return cfg, c, nil
+	return c, nil
 }
 
 // lines is a writer for anchord's output, delivering it a line at a time to the tail

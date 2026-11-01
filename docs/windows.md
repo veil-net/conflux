@@ -103,6 +103,14 @@ and an `OWNER RIGHTS` entry so that owning a file grants nothing — and are nev
 propagated over afterwards. A SYSTEM `anchord` has `anchor.root\` and a `run\anchord\` of
 SYSTEM's and Administrators' instead.
 
+## An ephemeral run
+
+`conflux up --ephemeral` and `conflux proxy --ephemeral` need Administrator on Windows,
+whatever the mode: every directory conflux keeps there, the ephemeral run's
+`%ProgramData%\conflux-ephemeral` included, is SYSTEM's and Administrators'. anchord runs
+as that Administrator, in conflux's job object, so it ends however conflux does. See
+[ephemeral.md](ephemeral.md).
+
 ## The service
 
 Registered as `conflux`, displayed as `VeilNet Conflux`, running as `LocalSystem`. See

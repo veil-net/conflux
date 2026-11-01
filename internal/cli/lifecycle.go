@@ -305,6 +305,15 @@ func runUninstall(_ context.Context, args []string) int {
 
 	d := paths.Default()
 
+	// Its account goes with the installation's, and nothing may be running as it when it does:
+	// the run ends itself, with its anchor, when it is stopped.
+	if e, live := liveEphemeral(); live {
+		ui.Errf("an ephemeral anchor is running from %s.\n"+
+			"  Stop it first (Ctrl-C where it runs): uninstall removes the account it runs as", e.State)
+
+		return ExitUsage
+	}
+
 	if !confirmUninstall(d, *yes) {
 		return ExitUsage
 	}

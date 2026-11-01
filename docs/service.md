@@ -358,6 +358,10 @@ the node itself is the platform's, not conflux's.
 $ sudo conflux serve --foreground
 ```
 
+Not to be confused with an ephemeral run (`conflux up --ephemeral`,
+[ephemeral.md](ephemeral.md)), which is in the foreground too but registers no service,
+reads no configuration and keeps nothing, and does not come back when anchord ends.
+
 Runs the supervisor attached to the terminal, with anchord's own output prefixed. This
 is the first thing to try when the service starts and the anchor does not — see
 [troubleshooting.md](troubleshooting.md). Stop the service first: a second supervisor for

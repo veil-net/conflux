@@ -58,6 +58,8 @@ func runUp(ctx context.Context, args []string) int {
 	registerExits(fs)
 	registerObserver(fs)
 
+	eph := registerEphemeral(fs)
+
 	fs.Var(&taints, "taint", taintUsage)
 	fs.Var(&subnets, "subnet", subnetUsage)
 	fs.Var(&peers, "peers", "bootstrap entry as host:port; repeat for more. Enrolment supplies these, so this is an override")
@@ -66,14 +68,18 @@ func runUp(ctx context.Context, args []string) int {
 		ui.Printf("conflux up — join the overlay with a network interface\n\n" +
 			"  conflux up [--taint T] [--ipv4 ADDRESS | --no-ipv4] [--subnet CIDR... | --no-subnet]\n" +
 			"             [--uplink DEV | --no-uplink] [--peers HOST:PORT | --no-peers]\n" +
-			"             [--observe | --no-observe] [--export HOST:PORT]\n\n" +
+			"             [--observe | --no-observe] [--export HOST:PORT]\n" +
+			"             [--ephemeral [--manifest FILE|-]]\n\n" +
 			"Enrols this machine if it has never been, starts an anchor in TUN mode, writes\n" +
 			"the configuration, and registers the boot service so a reboot needs nothing.\n\n" +
 			"With --uplink the realm is reached over a link rather than the host's network:\n" +
 			"no socket is bound and no address is advertised. Enrolment still goes over the\n" +
 			"internet, so enrol this machine while it has one.\n\n" +
 			"With --observe the daemon observes beside the anchor: an inventory of the\n" +
-			"cryptography of this host's traffic, which conflux observe -h describes.\n\n")
+			"cryptography of this host's traffic, which conflux observe -h describes.\n\n" +
+			"With --ephemeral nothing is kept: it runs in the foreground from a credential held\n" +
+			"in memory alone, enrolled or piped in with --manifest, and registers nothing. When\n" +
+			"anchord stops, or on Ctrl-C, everything is gone; docs/ephemeral.md describes it.\n\n")
 		fs.PrintDefaults()
 	}
 
@@ -81,18 +87,34 @@ func runUp(ctx context.Context, args []string) int {
 		return ExitUsage
 	}
 
+	// An ephemeral run reads its credential first, and touches nothing of the machine's.
+	run, err := eph.prepare()
+	if err != nil {
+		return fail(err)
+	}
+
 	if err := needsRoot("bringing up a network interface", "up", args); err != nil {
 		return fail(err)
 	}
 
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		return fail(err)
-	}
+	var (
+		d   paths.Dirs
+		cfg *config.Config
+	)
 
-	cfg, err := loadOrNew(d)
-	if err != nil {
-		return fail(err)
+	if run != nil {
+		if cfg, err = run.fresh(*apiBase); err != nil {
+			return fail(err)
+		}
+	} else {
+		d = paths.Default()
+		if err := d.EnsureAll(); err != nil {
+			return fail(err)
+		}
+
+		if cfg, err = loadOrNew(d); err != nil {
+			return fail(err)
+		}
 	}
 
 	// Before the warning below, because a flag that is going to be refused should be
@@ -141,7 +163,7 @@ func runUp(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	held, err := heldCredential(d)
+	held, err := runCredential(run, d)
 	if err != nil {
 		return fail(err)
 	}
@@ -154,6 +176,14 @@ func runUp(ctx context.Context, args []string) int {
 	// given only to be told a flag was wrong is an answer given twice.
 	if err := config.ValidateSubnets(cfg.Subnets, cfg.Taints); err != nil {
 		return fail(err)
+	}
+
+	if run != nil {
+		if err := run.ipv4(cfg, *ipv4, *noIPv4); err != nil {
+			return fail(err)
+		}
+
+		return runEphemeral(ctx, cfg, run)
 	}
 
 	if err := chooseIPv4(cfg, *ipv4, *noIPv4); err != nil {

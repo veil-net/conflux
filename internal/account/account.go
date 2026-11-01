@@ -39,12 +39,18 @@ var ErrConflict = errors.New("an account of that name exists and conflux did not
 
 // Name is this installation's account: conflux, or _conflux where the platform names its
 // own daemons' accounts so, with a CONFLUX_DIR installation's scope after it.
-func Name() string { return nameFor(runtime.GOOS, paths.Scope()) }
+func Name() string { return nameFor(runtime.GOOS, "conflux", paths.Scope()) }
 
-func nameFor(goos, scope string) string {
-	base := "conflux"
+// EphemeralName is the account an ephemeral run's anchord runs as: conflux-ephemeral, named
+// as Name is. One of its own rather than the installation's, which it cannot share: the
+// installed supervisor ends every process of its account each time it starts anchord, and an
+// ephemeral anchord running as that account would go with them. Made the first time an
+// ephemeral run needs it and kept, as the installation's is, until `conflux uninstall`.
+func EphemeralName() string { return nameFor(runtime.GOOS, "conflux-ephemeral", paths.Scope()) }
+
+func nameFor(goos, base, scope string) string {
 	if goos == "darwin" || goos == "openbsd" {
-		base = "_conflux"
+		base = "_" + base
 	}
 
 	return base + scope

@@ -13,4 +13,4 @@ func canGive(*Privilege) string { return "" }
 
 func withCaps(*syscall.SysProcAttr, []string) {}
 
-func startProcess(cmd *exec.Cmd, _ Privilege) error { return cmd.Start() }
+func startProcess(cmd *exec.Cmd, _ Privilege, _ <-chan struct{}) error { return cmd.Start() }

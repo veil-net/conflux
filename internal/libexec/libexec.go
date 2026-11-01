@@ -57,16 +57,8 @@ func Ensure(d paths.Dirs) (*Tools, error) {
 			"this conflux was built for %s/%s and carries no anchor binaries for it", runtime.GOOS, runtime.GOARCH)
 	}
 
-	setID := anchor.SetID()
 	root := d.Libexec()
-	target := filepath.Join(root, setID)
-
-	t := &Tools{
-		Dir:       target,
-		Anchord:   filepath.Join(target, exeName("anchord")),
-		Anchorctl: filepath.Join(target, exeName("anchorctl")),
-		SetID:     setID,
-	}
+	t := toolsIn(d)
 
 	// The hot path: every conflux invocation reaches here, including a bare
 	// pass-through, so it is three stats and nothing more.
@@ -97,7 +89,7 @@ func Ensure(d paths.Dirs) (*Tools, error) {
 		return t, nil
 	}
 
-	if err := extract(root, target, t); err != nil {
+	if err := extract(root, t.Dir, t); err != nil {
 		return nil, err
 	}
 
@@ -115,6 +107,39 @@ func Ensure(d paths.Dirs) (*Tools, error) {
 // And on Windows, that conflux wrote them: a set directory is named for content
 // anybody can compute, and one another account made first, marker and sizes and all,
 // would otherwise be run as SYSTEM. One that fails any of this is extracted again.
+// toolsIn is where this build's pair is, or would be, extracted under d.
+func toolsIn(d paths.Dirs) *Tools {
+	setID := anchor.SetID()
+	target := filepath.Join(d.Libexec(), setID)
+
+	return &Tools{
+		Dir:       target,
+		Anchord:   filepath.Join(target, exeName("anchord")),
+		Anchorctl: filepath.Join(target, exeName("anchorctl")),
+		SetID:     setID,
+	}
+}
+
+// ErrNotExtracted is a pair Extracted did not find whole.
+var ErrNotExtracted = errors.New("the anchor binaries are not extracted there")
+
+// Extracted is this build's pair under d when a whole extraction of it is there, and
+// writes nothing: for a root another process owns -- an ephemeral run's -- which a reader
+// must not fill while its owner may be clearing it.
+func Extracted(d paths.Dirs) (*Tools, error) {
+	if !anchor.Supported {
+		return nil, fmt.Errorf(
+			"this conflux was built for %s/%s and carries no anchor binaries for it", runtime.GOOS, runtime.GOARCH)
+	}
+
+	t := toolsIn(d)
+	if !t.complete() {
+		return nil, ErrNotExtracted
+	}
+
+	return t, nil
+}
+
 func (t *Tools) complete() bool {
 	if _, err := os.Stat(filepath.Join(t.Dir, completeMarker)); err != nil {
 		return false

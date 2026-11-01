@@ -6,9 +6,11 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
+	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
@@ -37,7 +39,7 @@ func passthrough(ctx context.Context, args []string) int {
 	// Only once there is something to talk to. Extracting first made the directories
 	// uninstall had removed, and 45 MB in them, on a machine with nothing running, and
 	// failed for an account that cannot write them before saying what was wrong.
-	tools, err := libexec.Ensure(d)
+	tools, err := toolsFor(d)
 	if err != nil {
 		return fail(err)
 	}
@@ -144,7 +146,7 @@ func runEscapeHatch(ctx context.Context, args []string) int {
 // runCtl builds a Ctl for conflux's own use, against conflux's own daemon. Its token
 // is empty when there is none to read, which is a daemon that is not running.
 func runCtl(d paths.Dirs) (*anchorctl.Ctl, error) {
-	tools, err := libexec.Ensure(d)
+	tools, err := toolsFor(d)
 	if err != nil {
 		return nil, err
 	}
@@ -214,6 +216,26 @@ func liveEphemeral() (paths.Dirs, bool) {
 	}
 
 	return paths.Dirs{}, false
+}
+
+// errEphemeralStarting is an ephemeral run asked for before it is up.
+var errEphemeralStarting = errors.New("the ephemeral run is still starting; ask again once it is up")
+
+// toolsFor is the anchor pair to reach d's daemon with. An ephemeral run's root is the run's
+// own: a reader takes the pair it finds there and writes nothing, and reads nothing until the
+// run has marked itself up, since before that the run may still be clearing what a killed one
+// left -- and a reader that refilled what it was clearing, or held one of its binaries open,
+// would stop it.
+func toolsFor(d paths.Dirs) (*libexec.Tools, error) {
+	if !slices.Contains(paths.EphemeralCandidates(), d.State) {
+		return libexec.Ensure(d)
+	}
+
+	if !daemon.IsReady(d) {
+		return nil, errEphemeralStarting
+	}
+
+	return libexec.Extracted(d)
 }
 
 // staleEphemeral is the root an ephemeral run that was killed left behind, if one did: there,

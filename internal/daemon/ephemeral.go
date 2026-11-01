@@ -209,6 +209,13 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 		return err
 	}
 
+	// Only now may another conflux reach the run, by status or pass-through: before it, the
+	// root may still hold what a killed run left, and be being cleared of it. The marker goes
+	// with the root.
+	if err := MarkReady(d, started.ID); err != nil {
+		return err
+	}
+
 	if e.Up != nil {
 		up := EphemeralUp{Started: started, Manifest: m, Privilege: p}
 		if st := s.status(ctx); st != nil {

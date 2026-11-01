@@ -145,10 +145,18 @@ func reportEphemeralRun(ctx context.Context) bool {
 		return false
 	}
 
+	ui.Println("ephemeral:")
+
+	if !daemon.IsReady(d) {
+		ui.Field("running", "starting, from "+d.State+" — in memory alone; nothing of it outlives the run")
+		ui.Println()
+
+		return true
+	}
+
 	daemon := askDaemon(ctx, d)
 	daemon.wg.Wait()
 
-	ui.Println("ephemeral:")
 	ui.Field("running", "from "+d.State+" — in memory alone; nothing of it outlives the run")
 	reportPrivilege(d, daemon.asked && daemon.statErr == nil)
 	reportAnchor(daemon)

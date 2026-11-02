@@ -144,7 +144,7 @@ configuration, and registers the boot service.
 | `--lan-discovery` | `yes`, `no`, or `auto`. Probe the networks this host is attached to for anchors of the same realm tree — a third bootstrap source, tried *with* the configured and remembered ones rather than as a fallback when they are empty. `auto` is the default and passes nothing, which leaves the answer to enrolment's own `lanDiscovery` and, failing that, to anchor, where it is on. Typing `auto` is the way back from a persisted `yes` or `no`. Refused as an explicit `yes` beside `--uplink`: there is no host network to probe and nothing on a cable to answer. It never replaces enrolment — the probe is sealed under the realm's root public key, which a machine only holds once it has enrolled. |
 | `--serve-exit` | offer this machine as a way out to the public internet. |
 | `--use-exit` | send this machine's own internet traffic over the overlay. |
-| `--no-serve-exit`, `--no-use-exit` | the way back from either. |
+| `--no-serve-exit`, `--no-use-exit` | the way back from either. Every pair here takes `--x=false` as `--no-x`, and `--no-x=false` as neither, so a script that templates `--serve-exit=$X` never turns on what `X=false` meant to leave off. |
 | `--observe` | run the observer beside the anchor: an inventory of the cryptography of this host's traffic. See [observe.md](observe.md#beside-an-anchor). Naming it, or either option below, says what the observer is now, and an option not given is off; naming none keeps what is configured. |
 | `--observe-loopback`, `--observe-hide-names` | observe the loopback interfaces too; leave the names flows were reached by out of the records. Each implies `--observe`. |
 | `--no-observe` | stop observing. |

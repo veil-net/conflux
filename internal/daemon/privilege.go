@@ -55,7 +55,7 @@ type Privilege struct {
 	// BPF is how the account reads the BPF devices on macOS, for the observer: BPFOwn where
 	// the supervisor gives the account's own group read access to them before anchord starts,
 	// BPFGroup where a group of the host's already has it and is among Groups, and "" where
-	// the account does not observe.
+	// the account does not observe, or every account may read them already.
 	BPF string `json:"bpf,omitempty"`
 
 	// Why says why anchord keeps what it keeps: root, or each capability.
@@ -263,12 +263,15 @@ func decide(goos string, cfg *config.Config, port int, h hostFacts) Privilege {
 			if !tun {
 				// Only root may read a BPF device until somebody gives a group that. A
 				// group of the host's that has it already -- Wireshark's access_bpf, which
-				// ChmodBPF sets at every boot -- is used as it is, and the devices are left
-				// alone; otherwise the supervisor, which is root, gives the account's own.
-				if gid, ok := reads(h.bpf); ok && gid > 0 && gid != h.bpfOwn {
+				// ChmodBPF sets at every boot -- is used as it is, and devices every account
+				// may read need nothing; either way the devices are left alone. Otherwise the
+				// supervisor, which is root, gives the account's own group.
+				switch gid, ok := reads(h.bpf); {
+				case ok && gid < 0:
+				case ok && gid > 0 && gid != h.bpfOwn:
 					p.Groups = appendGroup(p.Groups, gid)
 					p.BPF = BPFGroup
-				} else {
+				default:
 					p.BPF = BPFOwn
 				}
 			}

@@ -38,13 +38,18 @@ type Ctl struct {
 // renewal -- must reach conflux's daemon and no other: an ephemeral run's credential piped to
 // whatever daemon the shell names would outlive the run.
 func (c *Ctl) Env() []string {
-	env := make([]string, 0, len(os.Environ())+2)
+	// Filtered in place: os.Environ returns a copy of its own each call, and every call conflux
+	// makes to anchorctl comes through here, so a second slice would be one per call.
+	env := os.Environ()
+	kept := env[:0]
 
-	for _, kv := range os.Environ() {
+	for _, kv := range env {
 		if k, _, _ := strings.Cut(kv, "="); !connection(k) {
-			env = append(env, kv)
+			kept = append(kept, kv)
 		}
 	}
+
+	env = kept
 
 	for _, kv := range [...][2]string{{SocketEnv, c.Socket}, {TokenEnv, c.Token}} {
 		if kv[1] != "" {

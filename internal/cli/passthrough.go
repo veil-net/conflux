@@ -44,7 +44,7 @@ func passthrough(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	env := (&anchorctl.Ctl{Socket: d.Socket(), Token: token}).Env()
+	env := (&anchorctl.Ctl{Socket: d.Socket(), Token: token}).PassthroughEnv()
 
 	return execAnchorctl(ctx, tools.Anchorctl, args, env)
 }

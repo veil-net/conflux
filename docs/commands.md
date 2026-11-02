@@ -580,7 +580,7 @@ other refusal — passes through untouched.
 | `CONFLUX_DEBUG=1` | pass `-v` to anchord. |
 | `CONFLUX_EPHEMERAL=1` | send pass-through to the ephemeral anchor while an installed one runs too, which it otherwise reaches first. See [ephemeral.md](ephemeral.md#reaching-it-from-another-terminal). |
 | `CONFLUX_ALLOW_INSECURE_API=1` | permit a plain-http API base. For tests only. |
-| `ANCHOR_SOCKET`, `ANCHORD_TOKEN` | if already set, conflux leaves them alone and pass-through uses yours. |
+| `ANCHOR_SOCKET`, `ANCHORD_TOKEN` | if already set, conflux leaves them alone and pass-through uses yours. conflux's own calls — `up`, `status`, `renew`, an ephemeral run's start — always use conflux's daemon, whatever these say. |
 
 ## Exit codes
 

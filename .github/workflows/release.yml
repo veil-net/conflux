@@ -136,8 +136,15 @@ jobs:
             echo "${pickps}irm https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.ps1 | iex"
             echo '```'
             echo
+            # A dev build's anchor is pinned to the dev tree, which only api-dev enrols in, and
+            # `conflux update` reads `latest`, the release, pinned to the production tree.
             # shellcheck disable=SC2016 # Markdown backticks, not a command substitution
-            echo 'Then `sudo conflux up`. Already installed? `sudo conflux update`.'
+            if [ "$BRANCH" = dev ]; then
+              echo 'Then `sudo conflux up --api https://api-dev.veilnet.com.au`: this build'"'"'s anchor is pinned to the dev tree, which only api-dev enrols in.'
+              echo 'A newer dev build is installed by running the installer again: `conflux update` reads `latest`, the release, pinned to the production tree.'
+            else
+              echo 'Then `sudo conflux up`. Already installed? `sudo conflux update`.'
+            fi
             echo
             echo '## What is inside'
             echo

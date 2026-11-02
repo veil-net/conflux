@@ -36,9 +36,11 @@ conflux somewhere else, and a directory you can write to needs no root. On Windo
 
 `CONFLUX_VERSION=dev-latest` installs the newest dev build: the pre-release every merge into
 conflux's `dev` replaces, with anchor's own dev build inside it, for trying what the next
-release holds before it is released. Nothing installs it unless asked to by name, and
-`conflux update` on it moves to `latest`, the release, since that is the only tag an update
-reads.
+release holds before it is released. Nothing installs it unless asked to by name. Its anchor is
+pinned to the dev tree, which only `https://api-dev.veilnet.com.au` enrols in, so it is brought
+up with `--api https://api-dev.veilnet.com.au`. A newer dev build is installed by running the
+installer again: `conflux update` on it moves to `latest`, the release, pinned to the production
+tree, since that is the only tag an update reads.
 
 The BSDs have no `curl` in the base system, and the script uses whatever downloader it
 finds, so it can be fetched with theirs:

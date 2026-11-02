@@ -295,7 +295,10 @@ Two long-lived branches, and every change reaches both the same way:
 release `release.yml`'s `back-merge` job (`scripts/back-merge.sh`) pushes the release back to
 `dev`: a fast-forward, since the release is a merge whose second parent is `dev`'s tip, or a
 merge where `dev` has taken something since. A release that will not merge cleanly is one that
-holds something pushed to `version3` directly, and the job stops and says so.
+holds something pushed to `version3` directly, and the job stops and says so; so does a push
+refused because `dev` moved while the job ran, which a second run of it settles. The checkout
+persists no token: the script gives the workflow's to git through git's environment, for the
+push alone.
 
 **`branch-flow.yml` holds the branches to that** (`scripts/branch-flow.sh`), on every pull
 request and every edit of one — moving a pull request's base fires only `edited`: one into

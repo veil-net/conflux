@@ -258,7 +258,8 @@ jobs:
   # dev's protection must let this job push; without that the push is refused, the release is
   # out regardless, and this fails saying so.
   #
-  # On a hosted runner, which is thrown away with the token this job pushes with.
+  # The checkout persists no token: back-merge.sh hands it to git through git's environment for
+  # the push, and for the fetch that says why a refused push was refused.
   back-merge:
     name: merge version3 back into dev
     needs: build
@@ -272,7 +273,9 @@ jobs:
         with:
           ref: dev
           fetch-depth: 0
+          persist-credentials: false
       - name: dev takes version3
         env:
           SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: ./scripts/back-merge.sh "$SHA"

@@ -150,6 +150,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
+        with:
+          cache-key: integration
 
       # Every pair, not only linux-amd64: `dist` builds every target, with the size gate.
       - uses: ./.github/actions/anchor-bins
@@ -195,6 +197,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
+        with:
+          cache-key: bsd-${{ matrix.os }}
 
       - uses: ./.github/actions/anchor-bins
         with:

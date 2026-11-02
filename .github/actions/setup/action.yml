@@ -1,5 +1,14 @@
 name: setup
 description: Go, from go.mod, with the module and build caches.
+inputs:
+  cache-key:
+    description: >-
+      This job's name for its caches on a hosted runner. Jobs that build different things on
+      the same runner image share setup-go's one key, and the first to save would hold the
+      cache for all of them; a job given a name of its own keeps its own. Empty, setup-go's
+      key is used.
+    required: false
+    default: ''
 runs:
   using: composite
   steps:
@@ -12,4 +21,18 @@ runs:
         # self-hosted machine survives the job and keeps GOCACHE and GOMODCACHE on disk,
         # shared with every other repository it builds: restoring that directory over
         # itself and uploading it again cost ten minutes a run and bought nothing.
-        cache: ${{ runner.environment != 'self-hosted' }}
+        cache: ${{ runner.environment != 'self-hosted' && inputs.cache-key == '' }}
+    - id: where
+      if: runner.environment != 'self-hosted' && inputs.cache-key != ''
+      shell: bash
+      run: |
+        echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+        echo "modules=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+    - if: runner.environment != 'self-hosted' && inputs.cache-key != ''
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ${{ steps.where.outputs.build }}
+          ${{ steps.where.outputs.modules }}
+        key: go-${{ runner.os }}-${{ runner.arch }}-${{ inputs.cache-key }}-${{ hashFiles('go.mod', 'go.sum') }}
+        restore-keys: go-${{ runner.os }}-${{ runner.arch }}-${{ inputs.cache-key }}-

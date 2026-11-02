@@ -26,7 +26,6 @@ const guardianDoc = `{
   "notAfter": "2126-10-13T04:12:00.000Z",
   "taints": [],
   "useExit": false,
-  "telemetrySecret": "cafebabe0123",
   "bootstrap": ["genesis-1.example.gov:4700"],
   "renewalUrl": "https://guardian.example.gov/nodes/abc/credential",
   "renewalAuth": "node-secret",
@@ -502,7 +501,6 @@ const ghostNodeDoc = `{
   "taints": ["au"],
   "listenPort": 4701,
   "exit": true,
-  "telemetrySecret": "ddeafdc272de9e4",
   "bootstrap": ["genesis.veilnet.com.au:4700"],
   "issuedAt": "2026-10-02T11:25:57.587Z"
 }`

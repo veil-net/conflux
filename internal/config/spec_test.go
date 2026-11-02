@@ -247,7 +247,9 @@ func TestValidateSubnets(t *testing.T) {
 		"one of two missing":  {[]string{"eth1@office+prod"}, own, "not in"},
 		"bound with no taint": {[]string{"eth1@office"}, nil, "default compartment"},
 		"bound too widely":    {[]string{"*@" + strings.Join(wide, "+")}, wide, "compartments"},
-		"a bad entry":         {[]string{"eth1", "203.0.113.0/24"}, own, "private"},
+		// One compartment, named more times than anchor counts in a binding.
+		"named too often": {[]string{"eth1@" + strings.Repeat("office+", MaxTaints) + "office"}, own, "names 33 taints"},
+		"a bad entry":     {[]string{"eth1", "203.0.113.0/24"}, own, "private"},
 	} {
 		err := ValidateSubnets(tc.entries, tc.taints)
 		if err == nil || !strings.Contains(err.Error(), tc.says) {

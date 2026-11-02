@@ -451,6 +451,11 @@ func validateSubnet(entry string) ([]string, error) {
 		if strings.TrimSpace(spec) == "" {
 			return nil, fmt.Errorf("subnet %q binds nothing: write the network or interface before the @", entry)
 		}
+		// Counted as written, repeats included, as anchor counts a binding before it
+		// derives the set (realm.TaintSetFor).
+		if len(names) > MaxTaints {
+			return nil, fmt.Errorf("subnet %q names %d taints, and anchor allows %d", entry, len(names), MaxTaints)
+		}
 
 		for _, n := range names {
 			if err := ValidateTaint(n); err != nil {
@@ -541,19 +546,40 @@ func describeTaints(taints []string) string {
 	return strings.Join(taints, ", ")
 }
 
+// linuxTUNName is anchor's ifaceName (internal/hostsetup/router.go, `^[A-Za-z0-9_.+@-]{1,15}$`):
+// what Linux names an interface, less anything a rule would have to quote. A loop rather
+// than the expression, which would link regexp into every build for this one check.
+func linuxTUNName(name string) bool {
+	if name == "" || len(name) > 15 {
+		return false
+	}
+	for _, c := range []byte(name) {
+		switch {
+		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9':
+		case c == '_', c == '.', c == '+', c == '@', c == '-':
+		default:
+			return false
+		}
+	}
+
+	return true
+}
+
 // ValidateTUNName refuses an interface name the platform will not give anchor, which it
 // would otherwise find only when the TUN is made, once a second.
 //
 // A name is a request: macOS numbers its own utun and the BSDs their own tun, and anchor
 // takes what it is given rather than refusing a name it cannot have. What it does refuse
-// is a name that cannot be one on Linux -- IFNAMSIZ, and what the kernel will not name an
-// interface -- and on macOS a utun whose number is not one.
+// on Linux is a name a firewall rule cannot match unquoted -- anchor's hostsetup ifaceName:
+// 1 to 15 of letters, digits and `_.+@-`, inside what the kernel itself takes -- once the
+// TUN routes, for subnets or an exit. Refused here for every TUN, since a member's Subnets
+// order can make any of them route while it runs. On macOS, a utun whose number is not one.
 func ValidateTUNName(name, goos string) error {
 	switch goos {
 	case "linux":
-		if name == "" || name == "." || name == ".." || len(name) >= 16 || strings.ContainsAny(name, "/: \t\n\r\v\f") {
-			return fmt.Errorf("%q cannot name a Linux interface: it must be 1 to 15 bytes, not . or .., "+
-				"with no / or : or space", name)
+		if !linuxTUNName(name) || name == "." || name == ".." {
+			return fmt.Errorf("%q cannot name this anchor's interface: on Linux it must be 1 to 15 of "+
+				"letters, digits and _ . + @ -, and not . or ..", name)
 		}
 	case "darwin":
 		if rest, ok := strings.CutPrefix(name, "utun"); ok && rest != "" {

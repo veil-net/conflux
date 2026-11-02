@@ -27,7 +27,6 @@ const guardianDocument = `{
   "notAfter": "2026-10-13T04:12:00.000Z",
   "taints": [],
   "useExit": false,
-  "telemetrySecret": "cafebabe0123",
   "bootstrap": ["genesis-1.example.gov:4700", "genesis-2.example.gov:4700"],
   "renewalUrl": "https://guardian.example.gov/nodes/e3b0c442-98fc-1c14-9afb-f4c8996fb924/credential",
   "renewalAuth": "node-secret",
@@ -239,6 +238,32 @@ func TestRenewalSecretSurvivesARenewal(t *testing.T) {
 	}
 }
 
+// TestRenewalDropsSeveredAt. anchorctl notes in a document it mints when the chain above
+// the credential lapses; a renewal names no such date for the chain it hands back, so
+// the note goes rather than outlive the chain it described. Everything else stays.
+func TestRenewalDropsSeveredAt(t *testing.T) {
+	minted := strings.Replace(guardianDocument, `"notAfter"`, `"severedAt": "2026-10-01T00:00:00.000Z", "notAfter"`, 1)
+	before := manifest(t, minted)
+
+	next, err := before.WithRenewal(Renewal{Chain: []byte("fresh"), NotAfter: time.Now()}, time.Now())
+	if err != nil {
+		t.Fatalf("WithRenewal: %v", err)
+	}
+
+	env, err := next.Encode()
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+
+	after := decoded(t, env)
+	if strings.Contains(after, "severedAt") {
+		t.Errorf("the renewed document still notes when the old chain was severed: %s", after)
+	}
+	if !strings.Contains(minted, "severedAt") || !strings.Contains(after, `"renewalSecret"`) {
+		t.Errorf("the renewal dropped more than the note, or the fixture carried none")
+	}
+}
+
 func decoded(t *testing.T, env config.Envelope) string {
 	t.Helper()
 
@@ -265,7 +290,6 @@ const ghostNodeDocument = `{
   "taints": ["au"],
   "listenPort": 4701,
   "exit": true,
-  "telemetrySecret": "ddeafdc272de9e4",
   "bootstrap": ["genesis.veilnet.com.au:4700"],
   "issuedAt": "2026-10-02T11:25:57.587Z"
 }`

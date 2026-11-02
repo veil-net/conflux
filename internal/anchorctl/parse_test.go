@@ -28,6 +28,7 @@ const statusOutput = `10:40:44  reachability=nat-cone  mtu=65521  peers=3  up=2h
   overlay         fd80:c4b9:99ae:c540:9d81:a45c:141a:1ce5/48
   ipv4            10.128.0.7  sent from and answered at, translated
   hardware        5a:f0:a9:da:4e:32
+  fips140         on, Go Cryptographic Module v1.26.0
   realm           tglwuedqqa/snnfpxzuti
   cut depth 0     joined to the whole tree
   renew by        2026-10-04T10:40:39Z
@@ -36,7 +37,7 @@ const statusOutput = `10:40:44  reachability=nat-cone  mtu=65521  peers=3  up=2h
   proxy 8080/tcp  [fd80:c4b9:99ae:c540:9d81:a45c:141a:1ce5]:8080, 10.128.0.7:8080 → 127.0.0.1:3000
 `
 
-const notRunningOutput = "no anchor is running\n"
+const notRunningOutput = "no anchor is running\n  fips140  on, Go Cryptographic Module v1.26.0\n"
 
 // What status prints where the daemon serves the observer: the row comes last, padded with
 // the rest of its block, beside an anchor and with none -- as a live anchord with

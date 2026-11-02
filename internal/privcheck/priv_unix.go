@@ -18,7 +18,8 @@ var Elevated = func() bool { return os.Geteuid() == 0 }
 //
 // Every state-changing conflux verb needs root, including proxy -- userspace mode
 // itself needs no privileges at all, but registering a boot service and writing to
-// /etc does, and a proxy that vanishes on reboot is not what anyone asked for.
+// /etc does, and a proxy that vanishes on reboot is not what anyone asked for. An
+// ephemeral proxy, which registers and writes nothing, is the one that does not ask.
 func Require(what, retry string) error {
 	if Elevated() {
 		return nil

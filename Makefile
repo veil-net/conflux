@@ -304,7 +304,7 @@ help:
 	@echo "  make golden      rewrite the argv and cert show goldens after an intended change"
 	@echo "  make image       build the systemd test image from $(DIST)/conflux-linux-amd64"
 	@echo "  make service-test  install and uninstall in a container that boots systemd"
-	@echo "  make integration   three nodes, one taint, over the real API (needs Docker)"
+	@echo "  make integration   four nodes, one taint, over the real API (needs Docker)"
 	@echo "  the checks run before a push, which CI does not run:"
 	@echo "  make fmtcheck    gofmt, checking (make fmt rewrites)"
 	@echo "  make lint        staticcheck, once per target OS"

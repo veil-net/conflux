@@ -53,14 +53,11 @@ func lookup(name string) (*Account, error) {
 	return &Account{Name: name, UID: uid, GID: gid}, nil
 }
 
-// Ensure is this installation's account, made first if there is none. Only root can make
-// one, and only root calls this.
+// EnsureNamed is the account of that name -- Name's or EphemeralName's -- made first if there
+// is none. Only root can make one, and only root calls this.
 //
 // Looked up again after a creation that failed, since a second conflux making the same
 // account at the same moment fails one of the two over an account that now exists.
-func Ensure() (*Account, error) { return EnsureNamed(Name()) }
-
-// EnsureNamed is Ensure for the account of that name: Name's or EphemeralName's.
 func EnsureNamed(name string) (*Account, error) {
 	if a, err := lookup(name); a != nil || err != nil {
 		return a, err

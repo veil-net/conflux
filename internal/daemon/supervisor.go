@@ -207,7 +207,11 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	}
 
 	// This supervisor is the one running the service now, so no other set is in use by it.
-	go libexec.Sweep(tools)
+	// Beside the start, which it need not delay, and finished before Run returns.
+	var sweep sync.WaitGroup
+
+	sweep.Go(func() { libexec.Sweep(tools) })
+	defer sweep.Wait()
 
 	s.tools = tools
 	s.tail = newRing(tailLines)

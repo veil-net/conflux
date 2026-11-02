@@ -6,8 +6,9 @@
 // fourteen binaries in bin/. Each file names its two files explicitly for the same
 // reason: //go:embed bin, or a glob, would pull in all of them.
 //
-// The binaries in bin/ are release builds: pinned to the production genesis and
-// garbled. anchorctl among them is the -tags lockdown build, which cannot mint a
+// The binaries in bin/ are release builds: pinned and garbled -- a release of conflux
+// carries anchor's `latest`, pinned to the production genesis, and a dev build anchor's
+// `dev-latest`, pinned to the dev genesis. anchorctl among them is the -tags lockdown build, which cannot mint a
 // realm root. anchoradmin, which can, is deliberately not here and must never be.
 package anchor
 

@@ -101,7 +101,7 @@ and restarting it is the reboot.
 built `conflux` in beside it, then:
 
 ```console
-$ make anchor-bins && make integration   # the whole suite, three nodes
+$ make anchor-bins && make integration   # the whole suite, four nodes
 $ make service-test                      # or just the unit, which enrols nothing
 ```
 
@@ -195,7 +195,8 @@ they can meet is then discovery on the bridge: their reachability proves it, and
 and a check for the name alone would pass on whatever else writes it. Reachability is waited for in both directions, since each learns the other's
 IPv4 from a signed advertisement and the two need not arrive together.
 
-The third node takes the other paths, and it is why the suite enrols three times:
+The third node takes the other paths, and with the ephemeral fourth it is why the suite enrols
+five times:
 
 - **It is enrolled from a live alpha manifest** — fetched on the host with
   `POST /ghosts/alpha` carrying `{"taints": ["$TAINT"]}`, and handed to

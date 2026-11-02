@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Three conflux nodes, one taint, reaching each other over the overlay.
+# Four conflux nodes, one taint, reaching each other over the overlay.
 #
-# This enrols three times against the live API, and renews once. That is deliberate
+# This enrols five times against the live API, and renews once. That is deliberate
 # and cheap: the routes are anonymous, store nothing, and the taint below is random --
 # every credential is issued in it, so the nodes sit in a compartment of their own and
 # can exchange data with nobody else in the realm.

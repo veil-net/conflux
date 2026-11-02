@@ -133,7 +133,7 @@ jobs:
 
   # The container suites, on a hosted runner: the boot service under a real systemd --
   # with every branch of what anchord runs as taken, the hosts it depends on made inside
-  # the container -- and three nodes against the live API of the base's tree ($VEILNET_API
+  # the container -- and four nodes against the live API of the base's tree ($VEILNET_API
   # above), whose anchord is conflux's own account with CAP_NET_ADMIN alone. The third reaches the
   # realm through its manifest's bootstrap node over UDP, and from veilnet-dev no
   # handshake gets through to it. A hosted runner is thrown away, so nothing here reaps
@@ -164,7 +164,7 @@ jobs:
       # One invocation, so `dist` and the image are built once for both suites, which
       # then run side by side: they boot containers of different names, and only one of
       # them enrols. -O keeps each suite's output together, in one block per suite.
-      - name: the boot service, and three nodes against the live API
+      - name: the boot service, and four nodes against the live API
         run: make -j2 -O service-test integration
 
   # FreeBSD and OpenBSD, which no hosted runner is: each in a VM on a hosted Linux runner,

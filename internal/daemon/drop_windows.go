@@ -187,13 +187,15 @@ func restrictToken(tok windows.Token, sid *windows.SID) (windows.Token, error) {
 
 	// The SID owns what anchord creates, rather than LOCAL SERVICE, whose every other
 	// process would otherwise have an owner's rights on it.
+	//
+	// Best effort, and not a reason to give up the drop: localServiceToken adds the SID with
+	// SE_GROUP_OWNER, so this holds for the token anchord is started with, and where it did
+	// not, what the default DACL below grants SYSTEM and the SID alone still bounds what the
+	// owner could do. Every drop that fails runs anchord as SYSTEM instead, which would trade
+	// this narrower gap for a wider one.
 	owner := struct{ Owner *windows.SID }{sid}
-	if err := windows.SetTokenInformation(restricted, windows.TokenOwner,
-		(*byte)(unsafe.Pointer(&owner)), uint32(unsafe.Sizeof(owner))); err != nil {
-		restricted.Close()
-
-		return 0, fmt.Errorf("set the token's owner: %w", err)
-	}
+	_ = windows.SetTokenInformation(restricted, windows.TokenOwner,
+		(*byte)(unsafe.Pointer(&owner)), uint32(unsafe.Sizeof(owner)))
 
 	dacl, err := aclFromSDDL("D:(A;;GA;;;SY)(A;;GA;;;" + sid.String() + ")")
 	if err == nil {

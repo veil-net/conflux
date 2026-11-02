@@ -209,7 +209,8 @@ observer `not observing`.
 - **Linux.** The `anchord` line in `conflux status` names `CAP_NET_RAW`, or says why
   `anchord` is root. A container that holds `CAP_NET_RAW` back from the supervisor cannot give
   it on, and root inside it does not have it either: run the container with it
-  (`--cap-add NET_RAW`), as conflux's own service test does.
+  (`--cap-add NET_RAW`). conflux's own service test runs its container `--privileged`, which
+  gives it that and more.
 - **macOS.** `ls -l /dev/bpf0` should show the account's group with read access while it
   observes. Wireshark's ChmodBPF, or anything else that rewrites the devices after the
   supervisor has started, can take that away again; `conflux start` gives it back.

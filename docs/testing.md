@@ -243,8 +243,9 @@ CI verifies that the code builds and runs. The utility checks — `gofmt`, `stat
 `shellcheck`, which it does not since they need the network or tools of their own — run
 on a developer's machine before a push, and not in CI.
 
-Every job fetches the **pinned** release build from the `latest` release of
-`veil-net/anchor` and verifies every digest, with no anchor checkout. It needs a
+Every job fetches the **pinned** release build of `veil-net/anchor` for the base it runs
+against — `dev-latest` for a pull request into `dev` and a push to it, `latest` for
+`version3` — and verifies every digest, with no anchor checkout. It needs a
 credential, since anchor is private: CI stores a GitHub App's Client ID and private key and
 mints an hour-long token per job, so the secret held here is not itself a key to
 anything — see [build.md](build.md) for why the grant is wider than it wants to be and
@@ -266,9 +267,10 @@ its own on disk, and round-tripping them through the Actions cache cost ten minu
 run where the suite itself takes seconds. The hosted jobs start empty and do use it. The container
 suites run on a hosted runner instead, because the third integration node reaches the
 realm through its manifest's bootstrap node over UDP, and from veilnet-dev no handshake
-gets through to it. Every job refuses a fork's pull request — a machine that survives the job does not run
+gets through to it. Every CI job refuses a fork's pull request — a machine that survives the job does not run
 a stranger's code, and the hosted jobs need the anchor credential a fork is not given —
-so a fork's pull request runs nothing. No checkout leaves its token in `.git/config`,
+so a fork's pull request runs nothing but `branch-flow`, which reads the repository on a hosted
+runner and holds no secret. No checkout leaves its token in `.git/config`,
 and every action outside this repository is pinned to its release's commit, with the
 tag beside it in a comment.
 
@@ -482,6 +484,6 @@ The shape of the exchange is written down once, in
   replace the one it opens.
 
 A local fake for the enrolment API is used for the client's error paths, but it cannot
-stand in for a full end-to-end test: the shipped `anchord` is pinned to the production
-genesis and the `anchorctl` beside it is the lockdown build, so nothing can mint a
+stand in for a full end-to-end test: the shipped `anchord` is pinned — a release's to the
+production genesis, a dev build's to the dev genesis — and the `anchorctl` beside it is the lockdown build, so nothing can mint a
 credential those binaries will accept.

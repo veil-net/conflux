@@ -24,12 +24,8 @@ func Acquire(path string) (func(), error) {
 	return unlock, err
 }
 
-// TryAcquire takes the lock if nobody holds it. ok is false when somebody does, and
-// then nothing is held and there is nothing to release.
-//
-// The same flock anchord takes on its control socket's .lock, so it answers for that
-// file too: whether a daemon is serving there.
-func TryAcquire(path string) (unlock func(), ok bool, err error) {
+// tryAcquire is one attempt at TryAcquire.
+func tryAcquire(path string) (unlock func(), ok bool, err error) {
 	unlock, ok, err = lock(path, unix.LOCK_EX|unix.LOCK_NB)
 	if errors.Is(err, unix.EWOULDBLOCK) {
 		return nil, false, nil

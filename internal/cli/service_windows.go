@@ -4,12 +4,12 @@ package cli
 
 import (
 	"context"
-	"os"
 	"time"
 
 	"golang.org/x/sys/windows/svc"
 
 	"github.com/veil-net/conflux/internal/daemon"
+	"github.com/veil-net/conflux/internal/logfile"
 	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
 )
@@ -32,7 +32,8 @@ func serveAsService(sup *daemon.Supervisor) (bool, int) {
 	setup := sup.Dirs.EnsureAll()
 
 	if setup == nil {
-		if f, err := os.OpenFile(sup.Dirs.LogFile(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
+		// Each line stamped, and the file moved aside to .1 when it passes 10 MiB.
+		if f, err := logfile.Open(sup.Dirs.LogFile()); err == nil {
 			defer f.Close()
 
 			ui.Out, ui.Errw = f, f

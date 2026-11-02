@@ -105,6 +105,8 @@ for _ in $(seq 120); do
 done
 grep -F "$who" "$log" >/dev/null || { cat "$log" >&2; fail "the log does not say anchord started as its own account"; }
 grep -q 'enrolling' "$log" || { cat "$log" >&2; fail "anchord never answered on its socket as its own account"; }
+grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z .*enrolling' "$log" \
+  || { cat "$log" >&2; fail "the log's lines are not stamped with the time they were written"; }
 "$CONFLUX" down || fail "down failed on a running service"
 
 # Observing alone needs no API, so this one comes all the way up: start waits for the

@@ -177,9 +177,10 @@ func secure(dir string) error {
 		account, domain, _, _ := owner.LookupAccount("")
 
 		return fmt.Errorf(
-			"%s belongs to %s\\%s (%s), which is not an administrator, so conflux did not create it and will not "+
-				"use what is in it.\n  Remove it, then run this again as Administrator. If it is left over from "+
-				"conflux itself, running any conflux command as that account once repairs it",
+			"%s belongs to %s\\%s (%s), not to SYSTEM or the Administrators, so conflux did not create it and "+
+				"will not use what is in it.\n  Remove it, then run this again as Administrator. If conflux left it, "+
+				"run elevated by that same account, running any conflux command that way once repairs it; an "+
+				"account that is not an administrator cannot",
 			dir, domain, account, owner)
 	}
 

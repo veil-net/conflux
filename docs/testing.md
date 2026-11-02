@@ -264,7 +264,9 @@ runner's tool cache, which survives between runs, so an unchanged release costs 
 the files the fetcher already holds rather than three hundred megabytes. For the same
 reason the Go build and module caches are not restored or saved there: the machine keeps
 its own on disk, and round-tripping them through the Actions cache cost ten minutes a
-run where the suite itself takes seconds. The hosted jobs start empty and do use it. The container
+run where the suite itself takes seconds. The hosted jobs start empty and do use it,
+`integration` and each BSD job under a key of its own, since they build different things on the
+same runner image and would otherwise share setup-go's one. The container
 suites run on a hosted runner instead, because the third integration node reaches the
 realm through its manifest's bootstrap node over UDP, and from veilnet-dev no handshake
 gets through to it. Every CI job refuses a fork's pull request — a machine that survives the job does not run

@@ -239,7 +239,6 @@ is needed, and no realm is joined. See [observe.md](observe.md).
 | `--hide-names` | leave every name a flow was reached by out of the records and the inventory, the server's address in its place. |
 | `--export HOST:PORT` | send each record, as it is made, and the daemon's telemetry to that collector, as on `up`. Without an export with `flows`, the records stay in the daemon's inventory, and conflux says so. |
 | `--export-insecure` | reach it without TLS. |
-| `--ephemeral`, `--manifest FILE\|-` | as on `up`: in the foreground, keeping nothing; and in userspace, needing no root. See [ephemeral.md](ephemeral.md). |
 | `--yes` | stop the anchor this machine runs without asking. |
 
 The options say what the observer is now, as anchorctl's `observe -start` does: one not given
@@ -431,7 +430,7 @@ refuses rather than destroy an identity silently.
 conflux's state — service, mode, exit, taint, AnchorID, credential expiry, API, the
 uplink reopen tally if there is one, and while it runs, who `anchord` runs as and with
 what — and then `anchorctl status` beneath it. Exits 78 when the machine has no
-configuration.
+configuration and no ephemeral run is live; with one live, it reports the run and exits 0.
 
 The `anchord` line says what it keeps and why: `conflux, with no privilege` in userspace,
 `conflux, with CAP_NET_ADMIN for its interface` for a TUN on Linux, `conflux, with CAP_NET_RAW
@@ -567,7 +566,7 @@ allows. A path that account cannot reach is refused by `anchord`, naming it: cho
 can, or leave out `-out` and the key comes back to your terminal.
 
 One case is intercepted: when no daemon is running, conflux says so and names `start`,
-`up` and `proxy`. anchorctl's own answer at that point asks whether anchord is running on
+`up`, `proxy` and `observe`. anchorctl's own answer at that point asks whether anchord is running on
 that socket, which is true and no help to somebody holding conflux, who never started
 anchord. Everything else — including anchorctl's genuinely good explanations of every
 other refusal — passes through untouched.

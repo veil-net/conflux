@@ -176,6 +176,23 @@ func (e *Export) Validate() error {
 	return nil
 }
 
+// Signals are the signals the block turns on, as anchorctl's export names them: what a
+// start asks the daemon for, and what status says is being sent.
+func (e *Export) Signals() []string {
+	var out []string
+
+	for _, s := range []struct {
+		on   bool
+		name string
+	}{{e.Metrics, "metrics"}, {e.Traces, "traces"}, {e.Logs, "logs"}, {e.Flows, "flows"}} {
+		if s.on {
+			out = append(out, s.name)
+		}
+	}
+
+	return out
+}
+
 // String and GoString keep what an export block carries out of anything printed: its
 // headers are credentials, and a client key may be inline in it.
 func (e Export) String() string {

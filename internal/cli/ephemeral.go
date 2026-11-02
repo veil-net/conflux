@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"fmt"
 	"os"
 	"os/signal"
 	"runtime"
@@ -240,12 +239,9 @@ func reportEphemeral(d paths.Dirs, cfg *config.Config, u daemon.EphemeralUp) {
 		ui.Printf("Reachable from any machine that runs:  conflux up --taint %s\n", strings.Join(cfg.Taints, " --taint "))
 	}
 
+	// How anchorctl's commands reach this anchor beside an installed one, which they
+	// otherwise reach first.
 	ui.Printf("Running in the foreground. Ctrl-C stops it and removes what it made; "+
-		"conflux status, from another terminal, reports it.\n%s\n", ephemeralReachedBy(d))
-}
-
-// ephemeralReachedBy says how anchorctl's commands reach an ephemeral anchor beside an
-// installed one, which they otherwise reach first.
-func ephemeralReachedBy(paths.Dirs) string {
-	return fmt.Sprintf("With an installed conflux running too, conflux's pass-through reaches it with %s=1.", ephemeralEnv)
+		"conflux status, from another terminal, reports it.\n"+
+		"With an installed conflux running too, conflux's pass-through reaches it with %s=1.\n", ephemeralEnv)
 }

@@ -72,6 +72,12 @@ type EphemeralUp struct {
 // returns when the context is cancelled (nil) or anchord or its anchor ends (why). Either
 // way it stops anchord and removes the run's root before returning.
 func (e *Ephemeral) Run(ctx context.Context) error {
+	// Before anything is started: observing alone is the service's, and a run with no anchor
+	// would start an observer and an export only to refuse after them.
+	if !e.Config.Anchor() {
+		return &permanentError{err: errors.New("an ephemeral run is an anchor: up or proxy")}
+	}
+
 	// First, before anything holding the credential can crash: a core dump would put the
 	// identity seed on disk, which is the one thing this mode promises never happens.
 	noCoreDumps()
@@ -189,13 +195,9 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 	}
 
 	if x := e.Config.Export; x != nil && x.Enabled {
-		if err := s.ctl.Export(ctx, x.Endpoint, x.Insecure, exportSignals(x)); err != nil {
+		if err := s.ctl.Export(ctx, x.Endpoint, x.Insecure, x.Signals()); err != nil {
 			return fmt.Errorf("pointing the export at %s: %w", x.Endpoint, err)
 		}
-	}
-
-	if !e.Config.Anchor() {
-		return errors.New("an ephemeral run is an anchor: up or proxy")
 	}
 
 	if env == nil {
@@ -262,22 +264,6 @@ func ephemeralArgs(d paths.Dirs, cfg *config.Config) []string {
 	}
 
 	return args
-}
-
-// exportSignals are the signals an export block turns on, as anchorctl export names them.
-func exportSignals(x *config.Export) []string {
-	var signals []string
-
-	for _, s := range []struct {
-		on   bool
-		name string
-	}{{x.Metrics, "metrics"}, {x.Traces, "traces"}, {x.Logs, "logs"}, {x.Flows, "flows"}} {
-		if s.on {
-			signals = append(signals, s.name)
-		}
-	}
-
-	return signals
 }
 
 // handedCredential is a credential an ephemeral run was handed, checked as a start checks

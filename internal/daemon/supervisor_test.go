@@ -307,7 +307,9 @@ func TestObservingAloneStartsNoAnchor(t *testing.T) {
 // TestTheObserverOutlivesAnAnchorThatCannotComeUp: beside an anchor, the observer starts
 // first, and an anchor that cannot come up for now -- an enrolment nobody answers -- leaves
 // the daemon, the observer and its inventory running, for the watcher to bring the anchor up
-// later, rather than ending the cycle and the inventory with it.
+// later, rather than ending the cycle and the inventory with it. The service manager is told
+// the unit started, or systemd would fail it after TimeoutStartSec and take the observer down
+// anyway; the marker, which says an anchor is up, is not written.
 func TestTheObserverOutlivesAnAnchorThatCannotComeUp(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("a console control event needs the console this test shares")
@@ -319,6 +321,7 @@ func TestTheObserverOutlivesAnAnchorThatCannotComeUp(t *testing.T) {
 	t.Setenv(fakeAnchordListenEnv, "1")
 
 	s, log := supervised(t, "serve")
+	s.Ready = make(chan struct{})
 
 	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, Observer: &config.Observer{},
 		Proxies: []string{"8080=127.0.0.1:1"}, APIBaseURL: "http://127.0.0.1:1"}
@@ -328,10 +331,16 @@ func TestTheObserverOutlivesAnAnchorThatCannotComeUp(t *testing.T) {
 
 	stop := cycling(t, s)
 
-	eventually(t, "the observer starting", func() bool { return slices.Contains(ran(t, log), "observe") })
-
-	// Long enough for the enrolment to have been refused: nothing listens on port 1.
-	time.Sleep(time.Second)
+	// Closed once the anchor's start has been refused -- nothing listens on port 1 -- and the
+	// cycle has decided to go on without it.
+	eventually(t, "the service manager being told the unit started", func() bool {
+		select {
+		case <-s.Ready:
+			return true
+		default:
+			return false
+		}
+	})
 
 	if IsReady(s.Dirs) {
 		t.Error("ready with no anchor up")

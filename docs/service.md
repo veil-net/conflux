@@ -198,7 +198,11 @@ Four of those lines are worth explaining.
 
 `Type=notify`, with `sd_notify` from the supervisor, makes `systemctl start conflux`
 return when the anchor is genuinely up rather than when `fork` succeeded. Anything
-ordered `After=conflux.service` gets the same guarantee for free.
+ordered `After=conflux.service` gets the same guarantee for free. Beside an anchor that
+cannot come up for now, the supervisor sends `READY=1` once the observer is running and writes
+no marker: a unit still waiting at `TimeoutStartSec` would be failed and stopped, observer and
+inventory with it, which an anchor that cannot come up must never cause. The Windows SCM is
+told the same.
 
 `RestartPreventExitStatus=78 70` is the two answers a restart would only repeat.
 `conflux serve` exits 78 when there is nothing to start and 70 when it has given up on

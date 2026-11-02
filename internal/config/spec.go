@@ -579,7 +579,7 @@ func ValidateTUNName(name, goos string) error {
 	case "linux":
 		if !linuxTUNName(name) || name == "." || name == ".." {
 			return fmt.Errorf("%q cannot name this anchor's interface: on Linux it must be 1 to 15 of "+
-				"letters, digits and _ . + @ -, and not . or ..", name)
+				"letters, digits and _ . + @ -, other than . or .. alone", name)
 		}
 	case "darwin":
 		if rest, ok := strings.CutPrefix(name, "utun"); ok && rest != "" {

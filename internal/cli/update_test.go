@@ -14,6 +14,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/update"
+	"github.com/veil-net/conflux/internal/version"
 )
 
 // serveRelease stands in for conflux's `latest` release, holding body as this platform's
@@ -184,5 +185,44 @@ func TestUpdateRefusesABinaryThatDoesNotRun(t *testing.T) {
 
 	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
 		t.Errorf("the refused update left %d files where there was one", len(entries))
+	}
+}
+
+// TestADevBuildAsksBeforeLeaving: a dev build's anchor is pinned to the dev tree, and the
+// release's to the production one, so an update from a dev build is refused until it is asked
+// for with --yes, and changes nothing until then; --check says why, and changes nothing either.
+func TestADevBuildAsksBeforeLeaving(t *testing.T) {
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return false }
+
+	defer func(was string) { version.Channel = was }(version.Channel)
+	version.Channel = "dev"
+
+	exe := filepath.Join(t.TempDir(), "conflux")
+	old := []byte("\x7fELF a dev build")
+
+	if err := os.WriteFile(exe, old, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	serveRelease(t, []byte("\x7fELF the release"), exe)
+
+	_, errOut, code := capture(t, "update")
+	if code != ExitUsage || !strings.Contains(errOut, "dev build") || !strings.Contains(errOut, "--yes") {
+		t.Errorf("update on a dev build exited %d and said:\n%s", code, errOut)
+	}
+
+	out, _, code := capture(t, "update", "--check")
+	if code != ExitOK || !strings.Contains(out, "dev build") {
+		t.Errorf("update --check on a dev build exited %d and printed:\n%s", code, out)
+	}
+
+	if got, _ := os.ReadFile(exe); string(got) != string(old) {
+		t.Error("a refused update changed the executable")
+	}
+
+	// Asked for by name, it goes on to what any update needs: root, here refused.
+	if _, _, code := capture(t, "update", "--yes"); code != ExitDenied {
+		t.Errorf("update --yes on a dev build exited %d, want %d: root is what it needs next", code, ExitDenied)
 	}
 }

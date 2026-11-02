@@ -98,8 +98,11 @@ jobs:
           fi
 
       # All seven targets, CGO_ENABLED=0 throughout, so one Linux machine cross-builds
-      # every one of them. The Makefile reads the VERSION file itself.
-      - run: make dist
+      # every one of them. The Makefile reads the VERSION file itself; a build of dev is
+      # stamped as one, which `conflux version` says and `conflux update` asks about.
+      - run: make dist CHANNEL="$CHANNEL"
+        env:
+          CHANNEL: ${{ github.ref == 'refs/heads/dev' && 'dev' || '' }}
 
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -141,7 +144,7 @@ jobs:
             # shellcheck disable=SC2016 # Markdown backticks, not a command substitution
             if [ "$BRANCH" = dev ]; then
               echo 'Then `sudo conflux up --api https://api-dev.veilnet.com.au`: this build'"'"'s anchor is pinned to the dev tree, which only api-dev enrols in.'
-              echo 'A newer dev build is installed by running the installer again: `conflux update` reads `latest`, the release, pinned to the production tree.'
+              echo 'A newer dev build is installed by running the installer again: `conflux update` reads `latest`, the release, pinned to the production tree, and asks for `--yes` first.'
             else
               echo 'Then `sudo conflux up`. Already installed? `sudo conflux update`.'
             fi

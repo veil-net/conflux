@@ -492,6 +492,7 @@ switches FIPS 140-3 mode off; see [security.md](security.md#fips-140-3-and-cmvp)
 ```
 conflux update
 conflux update --check
+conflux update --yes
 ```
 
 Replaces this conflux with the one the `latest` release of
@@ -499,7 +500,11 @@ Replaces this conflux with the one the `latest` release of
 platform, and moves the boot service onto it. Only when typed: nothing checks on a
 schedule, so a machine changes version when somebody decides it should. It reads `latest`
 alone, so a dev build installed from `dev-latest` updates to the release, never to a newer dev
-build: that is the install script's to fetch again, by name ([install.md](install.md)).
+build: that is the install script's to fetch again, by name ([install.md](install.md)). And since
+a dev build's anchor is pinned to the dev tree and the release's to the production tree, where
+the credential the machine holds is not valid, `update` on a dev build says so and changes
+nothing until it is asked again with `--yes`; after that, the machine enrols again with
+`conflux up --api` naming the production API. `conflux version` says when it is a dev build.
 
 "Up to date" is a digest rather than a version string. This file is the release's
 binary, byte for byte, or it is not, so a rebuild of the same version (which a merge

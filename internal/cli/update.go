@@ -34,15 +34,22 @@ var (
 // "Up to date" is a digest, not a version string: this file is the release's binary, byte
 // for byte, or it is not. A rebuild of the same version is an update, as release.yml
 // publishes one.
+// devUpdateNote is what a dev build is told before it moves to the release.
+const devUpdateNote = "This is a dev build: its anchor is pinned to the dev tree, and the release's to the " +
+	"production tree, where the credential this machine holds is not valid. After the update it " +
+	"enrols again: conflux up --api https://api.veilnet.com.au, or the API of the realm it is to join."
+
 func runUpdate(ctx context.Context, args []string) int {
 	fs := flag.NewFlagSet("update", flag.ContinueOnError)
 	fs.SetOutput(ui.Errw)
 	check := fs.Bool("check", false, "say whether there is an update, and change nothing")
+	yes := fs.Bool("yes", false, "on a dev build, move to the release anyway")
 	fs.Usage = func() {
 		ui.Printf("conflux update — replace this conflux with the latest release\n\n" +
 			"  conflux update           download it, verify it, put it in place, and move\n" +
 			"                           the boot service onto it\n" +
-			"  conflux update --check   say whether there is one, and change nothing\n\n" +
+			"  conflux update --check   say whether there is one, and change nothing\n" +
+			"  conflux update --yes     on a dev build, move to the release anyway\n\n" +
 			"From the `latest` release of github.com/veil-net/conflux, held to the SHA-256\n" +
 			"the release lists. A running anchor is restarted on the new conflux; a stopped\n" +
 			"one is left stopped, and starts on it next time.\n")
@@ -86,7 +93,22 @@ func runUpdate(ctx context.Context, args []string) int {
 	if *check {
 		ui.Printf("\n  conflux update    install it\n")
 
+		if version.Dev() {
+			ui.Printf("\n%s\n", devUpdateNote)
+		}
+
 		return ExitOK
+	}
+
+	// A dev build's anchor is pinned to the dev tree and enrolled there; the release's is
+	// pinned to the production tree, which that enrolment cannot join. Moving is a choice to
+	// make knowingly, so it is asked for by name.
+	if version.Dev() && !*yes {
+		ui.Errf("%s\n\n"+
+			"  conflux update --yes       move to the release anyway\n"+
+			"  CONFLUX_VERSION=dev-latest, through the installer, for a newer dev build", devUpdateNote)
+
+		return ExitUsage
 	}
 
 	if err := needsRoot("updating conflux", "update", args); err != nil {

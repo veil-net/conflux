@@ -57,9 +57,13 @@ TESTEXEC = $(if $(FIPSTEST),-exec 'env GODEBUG=fips140=$(FIPSTEST)')
 VERSION := $(shell cat $(CURDIR)/VERSION 2>/dev/null || echo dev)
 COMMIT  := $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 
+# CHANNEL is dev for a build of dev, which release.yml passes, and empty for a release.
+CHANNEL ?=
+
 LDFLAGS := -s -w \
 	-X github.com/veil-net/conflux/internal/version.Version=$(VERSION) \
-	-X github.com/veil-net/conflux/internal/version.Commit=$(COMMIT)
+	-X github.com/veil-net/conflux/internal/version.Commit=$(COMMIT) \
+	-X github.com/veil-net/conflux/internal/version.Channel=$(CHANNEL)
 
 # STAMP defines `stamp os-arch[.exe]`, which prints the -X flags that hand a build the
 # SHA-256s of the two files that target's //go:embed names, so a released conflux

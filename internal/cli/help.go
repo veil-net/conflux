@@ -121,6 +121,11 @@ func printAnchorctlUsage(ctx context.Context) {
 // against a release note without running it.
 func runVersion(_ context.Context, _ []string) int {
 	ui.Println(version.String())
+
+	if version.Dev() {
+		ui.Println("dev build: anchor's dev-latest, pinned to the dev tree")
+	}
+
 	ui.Println("fips140 " + version.FIPS())
 	ui.Println(version.Anchor())
 

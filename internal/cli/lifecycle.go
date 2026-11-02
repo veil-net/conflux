@@ -10,6 +10,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
+	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
@@ -327,6 +328,14 @@ func runUninstall(_ context.Context, args []string) int {
 	// once the service's own supervisor has let go of it.
 	daemon.Reap(d, 35*time.Second)
 
+	// And what an ephemeral run that was killed left: its anchord, where nothing ended it with
+	// the run (macOS and the BSDs), and its root -- the extracted pair and the token -- which
+	// nothing else removes. Under the root's lock, as a run's own clean-up is, so one starting
+	// now is not emptied out from under itself.
+	if e, stale := staleEphemeral(); stale {
+		errs = append(errs, removeEphemeralRoot(e))
+	}
+
 	for _, dir := range []string{d.Run, d.State, d.Config} {
 		errs = append(errs, os.RemoveAll(dir))
 	}
@@ -342,6 +351,21 @@ func runUninstall(_ context.Context, args []string) int {
 		"conflux up here again draws a new identity and a new overlay address.\n")
 
 	return ExitOK
+}
+
+// removeEphemeralRoot stops whatever anchord a killed ephemeral run left in its root, and
+// removes the root, unless a run holds it by now.
+func removeEphemeralRoot(e paths.Dirs) error {
+	unlock, ok, err := flock.TryAcquire(e.ServeLockFile())
+	if err != nil || !ok {
+		return err
+	}
+
+	_, reapErr := daemon.ReapOrphan(e)
+
+	unlock()
+
+	return errors.Join(reapErr, os.RemoveAll(e.State))
 }
 
 // confirmUninstall makes the irreversible part explicit before it happens.

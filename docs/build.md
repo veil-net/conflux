@@ -321,7 +321,7 @@ parameters. Why v1.26.0 and not the certified v1.0.0, and what may be claimed, i
 | `make golden` | rewrite the argv fixtures after an intended change |
 | `make image` | the systemd test image, from `dist/conflux-linux-amd64` |
 | `make service-test` | install and uninstall, in a container that boots systemd |
-| `make integration` | three nodes, one taint, over the real API (needs Docker) |
+| `make integration` | four nodes, one taint, over the real API (needs Docker) |
 | `make fmtcheck` `make lint` `make tidycheck` `make vulncheck` `make docscheck` | the utility checks, which run here rather than in CI |
 | `make all` | every check that needs neither Docker nor the network |
 

@@ -207,7 +207,6 @@ func exitNote(cfg *config.Config) string {
 
 // report is what a person sees when it worked.
 func report(d paths.Dirs, cfg *config.Config, st anchorctl.Status, verb string) {
-	mgr := service.New()
 
 	ui.Println()
 
@@ -217,9 +216,7 @@ func report(d paths.Dirs, cfg *config.Config, st anchorctl.Status, verb string) 
 
 	reportObserver(cfg, st.Observer)
 
-	if mgr != nil {
-		ui.Field("service", mgr.Describe())
-	}
+	ui.Field("service", service.New().Describe())
 
 	reportPrivilege(d, true)
 

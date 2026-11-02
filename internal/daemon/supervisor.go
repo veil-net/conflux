@@ -62,8 +62,9 @@ type Supervisor struct {
 	Dirs     paths.Dirs
 	Reporter Reporter
 
-	// Ready is closed once the anchor is up. The service integrations use it to
-	// tell the service manager the unit has actually started.
+	// Ready is closed once the service has started: the anchor is up, or, beside one that
+	// cannot come up for now, the observer is. The service integrations use it to tell the
+	// service manager the unit has actually started.
 	Ready chan struct{}
 
 	// Drop lets the supervisor start anchord as its own unprivileged account where its
@@ -121,6 +122,16 @@ func (s *Supervisor) signalReady(id string) {
 		s.report().Warn("could not record readiness: %v", err)
 	}
 
+	s.signalStarted()
+}
+
+// signalStarted tells the service manager the unit has started, and writes no marker. It is
+// the observer's, beside an anchor that cannot come up for now: the service is doing what it
+// can, and a manager still waiting for it would fail the start -- systemd after
+// TimeoutStartSec, taking the observer and its inventory down with it -- which is the one
+// thing an anchor that cannot come up must not do. The marker waits for the anchor, since
+// what reads it is waiting for one.
+func (s *Supervisor) signalStarted() {
 	s.once.Do(func() {
 		if s.Ready != nil {
 			close(s.Ready)
@@ -196,7 +207,11 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	}
 
 	// This supervisor is the one running the service now, so no other set is in use by it.
-	go libexec.Sweep(tools)
+	// Beside the start, which it need not delay, and finished before Run returns.
+	var sweep sync.WaitGroup
+
+	sweep.Go(func() { libexec.Sweep(tools) })
+	defer sweep.Wait()
 
 	s.tools = tools
 	s.tail = newRing(tailLines)
@@ -309,6 +324,8 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 
 		if ready != "" {
 			s.signalReady(ready)
+		} else {
+			s.signalStarted()
 		}
 	} else {
 		s.signalReady("observer")

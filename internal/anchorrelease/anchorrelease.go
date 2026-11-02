@@ -251,6 +251,11 @@ func Fetch(ctx context.Context, src Source, want []string, dir string, log func(
 		wg    sync.WaitGroup
 		mu    sync.Mutex
 		first error
+
+		// staged is each binary downloaded and verified, by where it goes: moved there only
+		// once every one has arrived, so a fetch that fails part way leaves the directory as
+		// it found it, rather than one build's anchord beside another's anchorctl.
+		staged = map[string]string{}
 	)
 
 	for _, name := range want {
@@ -264,14 +269,22 @@ func Fetch(ctx context.Context, src Source, want []string, dir string, log func(
 			// else is fetched.
 			how := "cached"
 
-			var err error
+			var (
+				tmp string
+				err error
+			)
+
 			if !matches(dest, b) {
 				how = "fetched"
-				err = download(ctx, src, assets[name], b, dest)
+				tmp, err = download(ctx, src, assets[name], b, dest)
 			}
 
 			mu.Lock()
 			defer mu.Unlock()
+
+			if tmp != "" {
+				staged[dest] = tmp
+			}
 
 			switch {
 			case err != nil && first == nil:
@@ -284,6 +297,16 @@ func Fetch(ctx context.Context, src Source, want []string, dir string, log func(
 	}
 
 	wg.Wait()
+
+	for dest, tmp := range staged {
+		if first == nil {
+			if err := os.Rename(tmp, dest); err != nil {
+				first = err
+			}
+		}
+
+		_ = os.Remove(tmp) // gone once moved; what is left of a failed fetch otherwise
+	}
 
 	return first
 }
@@ -395,54 +418,57 @@ func manifest(ctx context.Context, src Source, assets map[string]asset) (*Manife
 // leave a half-written file that is a real binary of nearly the right size -- which is
 // exactly the shape neither the size gate in `make dist` nor the header check in
 // anchor.TestPairIsRealExecutables would catch.
-func download(ctx context.Context, src Source, a asset, b Binary, dest string) error {
+func download(ctx context.Context, src Source, a asset, b Binary, dest string) (staged string, err error) {
 	ctx, cancel := context.WithTimeout(ctx, binaryTimeout)
 	defer cancel()
 
 	resp, err := do(ctx, src, assetURL(src, a), "application/octet-stream")
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer resp.Body.Close()
 
 	if err := statusErr(resp, src); err != nil {
-		return err
+		return "", err
 	}
 
 	tmp, err := os.CreateTemp(filepath.Dir(dest), ".anchor-fetch-*")
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	defer func() {
 		tmp.Close()
-		os.Remove(tmp.Name())
+
+		if err != nil {
+			os.Remove(tmp.Name())
+		}
 	}()
 
 	sum := sha256.New()
 
 	n, err := io.Copy(io.MultiWriter(tmp, sum), io.LimitReader(resp.Body, maxBinary))
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	if b.Bytes != 0 && n != b.Bytes {
-		return fmt.Errorf("got %d bytes, the manifest says %d", n, b.Bytes)
+		return "", fmt.Errorf("got %d bytes, the manifest says %d", n, b.Bytes)
 	}
 
 	if got := hex.EncodeToString(sum.Sum(nil)); !strings.EqualFold(got, b.SHA256) {
-		return fmt.Errorf("sha256 is %s, the manifest says %s", got, b.SHA256)
+		return "", fmt.Errorf("sha256 is %s, the manifest says %s", got, b.SHA256)
 	}
 
 	if err := tmp.Chmod(0o755); err != nil {
-		return err
+		return "", err
 	}
 
 	if err := tmp.Close(); err != nil {
-		return err
+		return "", err
 	}
 
-	return os.Rename(tmp.Name(), dest)
+	return tmp.Name(), nil
 }
 
 func assetURL(src Source, a asset) string {
@@ -477,6 +503,14 @@ func statusErr(resp *http.Response, src Source) error {
 	case http.StatusForbidden:
 		if resp.Header.Get("X-RateLimit-Remaining") == "0" {
 			return errors.New("GitHub rate limit reached (403)")
+		}
+
+		// A binary comes from the storage host the API redirects to, which is sent no token:
+		// its 403 is the signed link it was given, most often expired, and nothing the token
+		// grants or lacks.
+		if api, err := url.Parse(src.API); err == nil && resp.Request != nil && resp.Request.URL.Host != api.Host {
+			return fmt.Errorf("%s refused the download (403), which it does to a signed link once that has expired; fetch again",
+				resp.Request.URL.Host)
 		}
 
 		return fmt.Errorf("GitHub refused the token (403). %s needs Contents: read on %s", TokenEnv, src.Repo)

@@ -5,9 +5,11 @@ package account
 import (
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"os/user"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -51,21 +53,36 @@ func lookup(name string) (*Account, error) {
 	return &Account{Name: name, UID: uid, GID: gid}, nil
 }
 
-// Ensure is this installation's account, made first if there is none. Only root can make
-// one, and only root calls this.
+// EnsureNamed is the account of that name -- Name's or EphemeralName's -- made first if there
+// is none. Only root can make one, and only root calls this.
 //
 // Looked up again after a creation that failed, since a second conflux making the same
 // account at the same moment fails one of the two over an account that now exists.
-func Ensure() (*Account, error) { return EnsureNamed(Name()) }
-
-// EnsureNamed is Ensure for the account of that name: Name's or EphemeralName's.
 func EnsureNamed(name string) (*Account, error) {
 	if a, err := lookup(name); a != nil || err != nil {
 		return a, err
 	}
 
-	_, err := user.LookupGroup(name)
+	g, err := user.LookupGroup(name)
 	groupExists := err == nil
+
+	// A group of the name is adopted as the account's own only when it lets nobody in: one
+	// conflux left when making the account failed half-way. One that lets anybody in is
+	// somebody else's, and adopting it would give each of them what the account's group is
+	// given -- passage to anchord, and on macOS the BPF devices -- and uninstall would then
+	// delete a group they rely on.
+	if groupExists {
+		users, err := groupUsers(name, g.Gid)
+		if err != nil {
+			return nil, fmt.Errorf("read who the existing group %s lets in: %w", name, err)
+		}
+
+		if len(users) > 0 {
+			return nil, fmt.Errorf("%w: the group %s already exists and lets in %s, so conflux will not make it its "+
+				"account's; remove the group, or take them out of it, if it is conflux's", ErrConflict, name,
+				strings.Join(users, ", "))
+		}
+	}
 
 	cmds, err := planCreate(name, groupExists)
 	if err != nil {
@@ -93,6 +110,94 @@ func EnsureNamed(name string) (*Account, error) {
 			return nil, fmt.Errorf("%s was created and cannot be found", name)
 		}
 	}
+}
+
+// groupUsers are the accounts the group of that name lets in: the members it lists, and
+// every account it is the primary group of.
+func groupUsers(name, gid string) ([]string, error) {
+	var groupArgv, usersArgv []string
+
+	// A bare busybox has no getent, and only the files to ask.
+	if _, err := exec.LookPath("getent"); err != nil && runtime.GOOS != "darwin" {
+		return groupUsersFromFiles(name, gid)
+	}
+
+	if runtime.GOOS == "darwin" {
+		groupArgv = []string{"dscl", ".", "-read", "/Groups/" + name}
+		usersArgv = []string{"dscl", ".", "-list", "/Users", "PrimaryGroupID"}
+	} else {
+		groupArgv = []string{"getent", "group", name}
+		usersArgv = []string{"getent", "passwd"}
+	}
+
+	group, err := exec.Command(groupArgv[0], groupArgv[1:]...).Output() //nolint:gosec // our own argv
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", shell(groupArgv), err)
+	}
+
+	users, err := exec.Command(usersArgv[0], usersArgv[1:]...).Output() //nolint:gosec // our own argv
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", shell(usersArgv), err)
+	}
+
+	return groupUsersFrom(runtime.GOOS, string(group), string(users), gid), nil
+}
+
+// groupUsersFromFiles is groupUsers read from /etc/group and /etc/passwd.
+func groupUsersFromFiles(name, gid string) ([]string, error) {
+	groups, err := os.ReadFile("/etc/group")
+	if err != nil {
+		return nil, err
+	}
+
+	users, err := os.ReadFile("/etc/passwd")
+	if err != nil {
+		return nil, err
+	}
+
+	var group string
+
+	for line := range strings.Lines(string(groups)) {
+		if strings.HasPrefix(line, name+":") {
+			group = line
+		}
+	}
+
+	return groupUsersFrom(runtime.GOOS, group, string(users), gid), nil
+}
+
+// groupUsersFrom reads groupUsers' two answers: getent's group line and passwd database, or
+// dscl's group record and its list of each account's primary group.
+func groupUsersFrom(goos, group, users, gid string) []string {
+	var out []string
+
+	if goos == "darwin" {
+		for line := range strings.Lines(group) {
+			if rest, ok := strings.CutPrefix(line, "GroupMembership:"); ok {
+				out = append(out, strings.Fields(rest)...)
+			}
+		}
+
+		for line := range strings.Lines(users) {
+			if f := strings.Fields(line); len(f) == 2 && f[1] == gid {
+				out = append(out, f[0])
+			}
+		}
+	} else {
+		if f := strings.Split(strings.TrimSpace(group), ":"); len(f) == 4 && f[3] != "" {
+			out = append(out, strings.Split(f[3], ",")...)
+		}
+
+		for line := range strings.Lines(users) {
+			if f := strings.Split(line, ":"); len(f) >= 4 && f[3] == gid {
+				out = append(out, f[0])
+			}
+		}
+	}
+
+	slices.Sort(out)
+
+	return slices.Compact(out)
 }
 
 // planCreate is createCommands for this host.

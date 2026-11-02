@@ -844,8 +844,8 @@ func TestASetListReplacesASubnetOrder(t *testing.T) {
 
 	orderFile := paths.SubnetsOrderFile(d.AnchorDir())
 
-	// Who set it is printed to a terminal, and written by whoever could write the file.
-	order := `{"subnets": ["10.9.0.0/24@lab"], "by": "anchorordererexample\u001b[2J", "at": "2026-10-06T09:00:00Z"}`
+	// What it says is printed to a terminal, and written by whoever could write the file.
+	order := `{"subnets": ["10.9.0.0/24@lab", "\u001b]0;owned\u0007eth9"], "by": "anchorordererexample\u001b[2J", "at": "2026-10-06T09:00:00Z"}`
 	if err := os.WriteFile(orderFile, []byte(order), 0o600); err != nil {
 		t.Fatal(err)
 	}

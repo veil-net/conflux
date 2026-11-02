@@ -198,7 +198,11 @@ Four of those lines are worth explaining.
 
 `Type=notify`, with `sd_notify` from the supervisor, makes `systemctl start conflux`
 return when the anchor is genuinely up rather than when `fork` succeeded. Anything
-ordered `After=conflux.service` gets the same guarantee for free.
+ordered `After=conflux.service` gets the same guarantee for free. Beside an anchor that
+cannot come up for now, the supervisor sends `READY=1` once the observer is running and writes
+no marker: a unit still waiting at `TimeoutStartSec` would be failed and stopped, observer and
+inventory with it, which an anchor that cannot come up must never cause. The Windows SCM is
+told the same.
 
 `RestartPreventExitStatus=78 70` is the two answers a restart would only repeat.
 `conflux serve` exits 78 when there is nothing to start and 70 when it has given up on
@@ -241,7 +245,9 @@ Job at `/Library/LaunchDaemons/org.veilnet.conflux.plist`, label `org.veilnet.co
 
 `KeepAlive` is `{SuccessfulExit: false}` rather than `true`, so a deliberate clean exit
 stays exited. launchd has no way to name the exit codes that should not restart, so a
-supervisor that exits 78 or 70 is started again after `ThrottleInterval`. `ProcessType`
+supervisor launchd started (`XPC_SERVICE_NAME` is the job's label) that would exit 78 or 70
+writes why to the log and exits 0 instead, which `KeepAlive` leaves stopped, as the Windows
+SCM is told; `conflux up`, `proxy`, `observe` or `start` starts it again. `ProcessType`
 is `Interactive` rather than the `Background` daemons default to, because `Background`
 brings a low-priority I/O class and App Nap eligibility, and a networking daemon the
 scheduler throttles is a support ticket nobody can diagnose.
@@ -281,7 +287,11 @@ is already in the state `down` asks for, and says so rather than passing on laun
 
 macOS needs no driver: `utun` is in the kernel and a root LaunchDaemon can open it.
 
-Logs: `/var/log/conflux.log`, which `uninstall` removes with the plist.
+Logs: `/var/log/conflux.log`, which `uninstall` removes with the plist and the one moved
+aside. The plist names it, for what conflux cannot write itself, and `serve --log` is how
+conflux writes everything else there: each line stamped with the time in UTC, and the file
+moved aside to `conflux.log.1`, replacing the one before, once it passes 10 MiB. The file
+is placed over conflux's own standard output and error each time, so a crash lands in it too.
 
 ## The Windows service
 
@@ -323,18 +333,21 @@ access than any account has.
 Windows also needs `wintun.dll` for TUN mode; see [windows.md](windows.md).
 
 Logs: a service has no console, so the supervisor writes what it and `anchord` say to
-`%ProgramData%\conflux\logs\conflux.log`, which `uninstall` removes with the rest.
+`%ProgramData%\conflux\logs\conflux.log`, each line stamped with the time in UTC and the file
+moved aside to `conflux.log.1` past 10 MiB, as on macOS; `uninstall` removes both with the
+rest.
 
 ## rc: FreeBSD and OpenBSD
 
 **FreeBSD.** Script at `/usr/local/etc/rc.d/conflux`, enabled with
-`sysrc conflux_enable=YES`. It runs `conflux serve` under `daemon(8)`, which backgrounds
-it, appends its output to `/var/log/conflux.log`, and records conflux's own pid — so
+`sysrc conflux_enable=YES`. It runs `conflux serve --log /var/log/conflux.log` under
+`daemon(8)`, which backgrounds it and records conflux's own pid, and conflux writes the log
+itself, stamped and moved aside to `conflux.log.1` past 10 MiB, as on macOS — so
 `service conflux stop` signals the supervisor, which closes the anchor before anything
 is killed. `daemon(8)` is not told to restart it: conflux restarts `anchord` itself, and a
 supervisor that exits 78 or 70 would only repeat the answer. `conflux down` on a service
 that is not running succeeds rather than passing on `rc.subr`'s "not running?".
-`uninstall` stops it, removes the `rc.conf` line, the script and the log.
+`uninstall` stops it, removes the `rc.conf` line, the script and both logs.
 
 **OpenBSD.** Script at `/etc/rc.d/conflux`, enabled with `rcctl enable conflux`.
 `rc.subr` backgrounds it and sends its output to syslog, so the logs are in

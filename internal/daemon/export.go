@@ -32,8 +32,9 @@ type daemonConfig struct {
 // whole: anchord reads the file as whoever it runs as, which may be an account a key in
 // /etc/ssl/private is not readable to, and a daemon that cannot read its -config does not
 // start. A path that cannot be read here is left a path, for anchord to name in its own
-// refusal. Relative paths resolve against the directory anchord used to start in, which
-// is this process's.
+// refusal. A relative path is read here against this process's working directory -- the
+// service manager's, which is / under systemd and launchd -- and one left a path is anchord's
+// to resolve, from workDir where it runs. The two differ only under serve --foreground.
 func writeDaemonConfig(d paths.Dirs, cfg *config.Config, p Privilege) error {
 	b, err := json.MarshalIndent(daemonConfig{Export: inlined(cfg.Export)}, "", "  ")
 	if err != nil {

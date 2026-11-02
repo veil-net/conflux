@@ -93,20 +93,17 @@ func Ensure(d paths.Dirs) (*Tools, error) {
 		return nil, err
 	}
 
+	// A set that will not run is not kept: left whole, the next conflux would take it as done
+	// and fail with a bare "permission denied" at every start, where this says why.
 	if err := smoke(t); err != nil {
+		_ = os.RemoveAll(t.Dir)
+
 		return nil, err
 	}
 
 	return t, nil
 }
 
-// complete reports whether the directory holds a finished extraction of exactly
-// this pair. The sizes are checked as well as the marker, because a truncated write
-// that still managed to place the marker is the one failure a marker alone misses.
-//
-// And on Windows, that conflux wrote them: a set directory is named for content
-// anybody can compute, and one another account made first, marker and sizes and all,
-// would otherwise be run as SYSTEM. One that fails any of this is extracted again.
 // toolsIn is where this build's pair is, or would be, extracted under d.
 func toolsIn(d paths.Dirs) *Tools {
 	setID := anchor.SetID()
@@ -140,6 +137,45 @@ func Extracted(d paths.Dirs) (*Tools, error) {
 	return t, nil
 }
 
+// ForUsage is an anchorctl to ask what a command takes, for help that must leave nothing
+// behind: this build's, extracted under d, where a whole extraction is there and readable,
+// and otherwise a copy in a private temporary directory, which done removes. Never d's own
+// directories. Making them for help remade, after an uninstall, what it had removed, with 45 MB
+// of binaries in it; and on Windows, asked by an account that is not an administrator, it
+// left %ProgramData%\conflux owned by that account, which every later install then refused.
+func ForUsage(d paths.Dirs) (bin string, done func(), err error) {
+	if t, err := Extracted(d); err == nil {
+		return t.Anchorctl, func() {}, nil
+	}
+
+	if !anchor.Supported {
+		return "", nil, fmt.Errorf(
+			"this conflux was built for %s/%s and carries no anchor binaries for it", runtime.GOOS, runtime.GOARCH)
+	}
+
+	dir, err := os.MkdirTemp("", "conflux-usage-")
+	if err != nil {
+		return "", nil, err
+	}
+
+	bin = filepath.Join(dir, exeName("anchorctl"))
+	if err := writeExecutable(bin, anchor.Anchorctl()); err != nil {
+		_ = os.RemoveAll(dir)
+
+		return "", nil, err
+	}
+
+	return bin, func() { _ = os.RemoveAll(dir) }, nil
+}
+
+// complete reports whether the directory holds a finished extraction of exactly
+// this pair. The sizes are checked as well as the marker, because a truncated write
+// that still managed to place the marker is the one failure a marker alone misses.
+//
+// And on Windows, that a trusted owner wrote them -- this account, SYSTEM or the
+// Administrators -- since a set directory is named for content anybody can compute, and
+// one another account made first, marker and sizes and all, would otherwise be run as
+// SYSTEM. One that fails any of this is extracted again.
 func (t *Tools) complete() bool {
 	if _, err := os.Stat(filepath.Join(t.Dir, completeMarker)); err != nil {
 		return false

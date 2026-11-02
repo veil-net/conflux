@@ -35,6 +35,11 @@ type dropState struct {
 	// are opened to: asked of Windows once, by dropTo, beside the token it goes with.
 	sid    string
 	smoked map[string]bool
+
+	// sd is the descriptor anchord's process and thread are created with. The attributes
+	// CreateProcess reads hold it as a uintptr, which keeps nothing alive, and it is on the
+	// Go heap: held here, it outlives every start that names it.
+	sd *windows.SECURITY_DESCRIPTOR
 }
 
 // windowsServiceName is the SCM name of this installation's service, as
@@ -182,6 +187,12 @@ func restrictToken(tok windows.Token, sid *windows.SID) (windows.Token, error) {
 
 	// The SID owns what anchord creates, rather than LOCAL SERVICE, whose every other
 	// process would otherwise have an owner's rights on it.
+	//
+	// Best effort, and not a reason to give up the drop: localServiceToken adds the SID with
+	// SE_GROUP_OWNER, so this holds for the token anchord is started with, and where it did
+	// not, what the default DACL below grants SYSTEM and the SID alone still bounds what the
+	// owner could do. Every drop that fails runs anchord as SYSTEM instead, which would trade
+	// this narrower gap for a wider one.
 	owner := struct{ Owner *windows.SID }{sid}
 	_ = windows.SetTokenInformation(restricted, windows.TokenOwner,
 		(*byte)(unsafe.Pointer(&owner)), uint32(unsafe.Sizeof(owner)))
@@ -282,21 +293,27 @@ func (s *Supervisor) procAttrFor(p Privilege) *syscall.SysProcAttr {
 		return attr
 	}
 
-	sd := "O:SYD:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;" + s.drop.sid + ")(A;;RC;;;OW)"
-
 	attr.Token = syscall.Token(s.drop.token)
-	attr.ProcessAttributes = securityAttributes(sd)
-	attr.ThreadAttributes = securityAttributes(sd)
+
+	if s.drop.sd == nil {
+		sd, err := windows.SecurityDescriptorFromString(
+			"O:SYD:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;" + s.drop.sid + ")(A;;RC;;;OW)")
+		if err != nil {
+			return attr
+		}
+
+		s.drop.sd = sd
+	}
+
+	attr.ProcessAttributes = securityAttributes(s.drop.sd)
+	attr.ThreadAttributes = securityAttributes(s.drop.sd)
 
 	return attr
 }
 
-func securityAttributes(sddl string) *syscall.SecurityAttributes {
-	sd, err := windows.SecurityDescriptorFromString(sddl)
-	if err != nil {
-		return nil
-	}
-
+// securityAttributes points at sd, which the caller keeps alive for as long as the
+// attributes may be read.
+func securityAttributes(sd *windows.SECURITY_DESCRIPTOR) *syscall.SecurityAttributes {
 	return &syscall.SecurityAttributes{
 		Length:             uint32(unsafe.Sizeof(syscall.SecurityAttributes{})),
 		SecurityDescriptor: uintptr(unsafe.Pointer(sd)),
@@ -310,7 +327,7 @@ func (s *Supervisor) releaseDrop() {
 		s.drop.token = 0
 	}
 
-	s.drop.sid = ""
+	s.drop.sid, s.drop.sd = "", nil
 }
 
 func startProcess(cmd *exec.Cmd, _ Privilege, _ <-chan struct{}) error { return cmd.Start() }

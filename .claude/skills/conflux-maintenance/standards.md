@@ -116,7 +116,7 @@ Anchor is the reference for overlay behaviour, and the live API for the enrolmen
 - Every command and flag conflux emits exists in current anchor with the same meaning (argv goldens plus the flag cross-check against the real binary).
 - Every parsed output and metric name matches current anchor.
 
-**Config rules** (a proxy needs userspace; a subnet, an exit and an IPv4 work in either mode; the two exits are alternatives; no port or explicit LAN discovery beside an uplink, and there both are typed off so a manifest cannot supply them; taint, IPv4 (translation pool included), subnet (`*`, `SPEC@a+b` bindings to the machine's own taints, the list bounds), AnchorID, bootstrap-entry and proxy-spec parsing; the export block anchord reads at startup, read as protojson reads it, TLS material included) accept and refuse exactly what current anchor does, plus conflux's own rules: no list entry holds a comma, and an uplink is a device rather than a descriptor. A file conflux refuses is refused before anchord starts on it, and is permanent.
+**Config rules** (a proxy needs userspace; a subnet, an exit and an IPv4 work in either mode; the two exits are alternatives; no port or explicit LAN discovery beside an uplink, and there both are typed off so a manifest cannot supply them; taint, IPv4 (translation pool included), subnet (`*`, `SPEC@a+b` bindings to the machine's own taints, the list bounds), AnchorID, bootstrap-entry and proxy-spec parsing; the export block anchord reads at startup, read as protojson reads it, TLS material included) accept and refuse exactly what current anchor does, plus conflux's own rules: no list entry holds a comma, an uplink is a device rather than a descriptor, and on Linux every TUN name meets the rule anchor holds a routing TUN's to, since an order can make any TUN route. A file conflux refuses is refused before anchord starts on it, and is permanent. A persisted toggle is decided by whether its flag was written, and `--x=false` is read as `--no-x` (`typedFlags`), never as `--x`.
 
 **Taints**
 - An alpha enrolment always asks for a taint, minted or given; conflux never asks for none.
@@ -124,7 +124,7 @@ Anchor is the reference for overlay behaviour, and the live API for the enrolmen
 - An imported credential's taints are taken as granted, none included.
 - Served subnets are the last set: conflux's at start, or after an explicit `--subnet`/`--no-subnet`, otherwise a member's Subnets order.
 
-**Manifest decoding** handles anchor's current format, refuses a realm manifest and a future version, and survives renewal losslessly.
+**Manifest decoding** handles anchor's current format, refuses a realm manifest and a future version, and survives renewal losslessly, a stale `severedAt` aside, which a renewal drops.
 
 **Live API**
 - `config.DefaultAPIBaseURL` is `https://api.veilnet.com.au`.
@@ -150,9 +150,13 @@ Anchor is the reference for overlay behaviour, and the live API for the enrolmen
 - One supervisor per root: `serve` holds `<state>/serve.lock`, and a second is refused.
 - anchord runs as root, or with a capability, only where the host or the configuration needs it, and keeps whatever losing would cost an operation or a function; `status` says why. Nothing is re-owned in a directory the account can write, a root anchord never works in one, and what the account wrote is read as untrusted (`flock.Held`, `config.ReadUntrusted`, `copyTree`).
 - The anchord a dead supervisor left is stopped by the next one only when it is the recorded process (its executable, or anchor's socket lock where none is reported), and `uninstall` reaps it too. On Windows anchord dies with its own job, which its supervisor holds.
-- A supervisor that exits 1 is restarted by systemd, launchd and the SCM; on the BSDs nothing does, and the docs say so.
+- A supervisor that exits 1 is restarted by systemd, launchd and the SCM; on the BSDs nothing does, and the docs say so. One that exits 78 or 70 is restarted by none: systemd names them in `RestartPreventExitStatus`, launchd is told 0 (`cli.launchdExit`), and the SCM a clean stop (`scmExit`).
+- Readiness: the service manager is told the unit started once the anchor is up, or, beside an anchor that cannot come up yet, once the observer is (`signalStarted`), so a start timeout never takes the observer down; the marker waits for the anchor.
+- Where conflux writes the service log itself (macOS, FreeBSD, Windows), each line is stamped and the file moved aside to `.1` past 10 MiB; the journal and OpenBSD's syslog keep their own.
+- conflux's own anchorctl calls reach conflux's daemon whatever the shell exports (`Ctl.Env`); only pass-through defers to `ANCHOR_SOCKET`/`ANCHORD_TOKEN`. Help and usage make nothing: no directory and no extraction (`libexec.ForUsage`).
 
 **Ephemeral runs**
+- `uninstall` refuses a live run and removes a killed run's root, stopping the anchord it left, under the root's lock.
 - No other conflux writes into a run's root: status and pass-through take its pair through `libexec.Extracted`, and ask it nothing before the run's `MarkReady`, which follows its anchor's start, and only while the process that wrote the marker runs (`IsLiveReady`): a killed run leaves its marker, and the next run withdraws it once it holds the lock.
 - Nothing of the machine's is read or written: no `conflux.json`, `manifest.b64`, `state.json`, `anchord.json`, anchor directory or service; no file holds the credential or the chain at any point (the renewal goes on stdin); anchord gets no `-dir` and no `-config`.
 - The run ends when anchord does, and its root goes with it; nothing restarts or rebuilds. anchord ends with conflux on Linux (parent-death signal, started from a thread held for anchord's life) and Windows (the job); the next run reaps what a killed one left on macOS and the BSDs.

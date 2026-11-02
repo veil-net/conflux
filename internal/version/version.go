@@ -19,7 +19,15 @@ import (
 // tree claims to be, the Makefile stamps that same string, and a plain `go build`
 // that stamps nothing should not disagree with `make build` about what it just
 // compiled. TestVersionMatchesFile holds the two together.
-var Version = "1.0.0"
+var Version = "1.1.0"
+
+// Channel is "dev" in a dev build -- conflux's `dev-latest`, whose anchor is anchor's
+// `dev-latest`, pinned to the dev tree -- and empty in a release. Injected the same way, by
+// release.yml for a build of dev.
+var Channel = ""
+
+// Dev reports whether this is a dev build.
+func Dev() bool { return Channel == "dev" }
 
 // Commit is the git revision, injected the same way. Left empty, it is recovered
 // from the build info Go embeds, so `go build` alone still says something useful.

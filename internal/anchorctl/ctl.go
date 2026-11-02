@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 
 	"github.com/veil-net/conflux/internal/config"
@@ -31,9 +32,38 @@ type Ctl struct {
 	SetID  string
 }
 
-// Env is the child environment: the caller's, with conflux's connection details
-// added only where the caller has not set them.
+// Env is the child environment for conflux's own calls: the caller's, with conflux's socket
+// and token in place of any the caller set. anchor's operations guide has operators export
+// both, and a call conflux makes for itself -- a start handed the credential, a status, a
+// renewal -- must reach conflux's daemon and no other: an ephemeral run's credential piped to
+// whatever daemon the shell names would outlive the run.
 func (c *Ctl) Env() []string {
+	// Filtered in place: os.Environ returns a copy of its own each call, and every call conflux
+	// makes to anchorctl comes through here, so a second slice would be one per call.
+	env := os.Environ()
+	kept := env[:0]
+
+	for _, kv := range env {
+		if k, _, _ := strings.Cut(kv, "="); !connection(k) {
+			kept = append(kept, kv)
+		}
+	}
+
+	env = kept
+
+	for _, kv := range [...][2]string{{SocketEnv, c.Socket}, {TokenEnv, c.Token}} {
+		if kv[1] != "" {
+			env = append(env, kv[0]+"="+kv[1])
+		}
+	}
+
+	return env
+}
+
+// PassthroughEnv is the child environment for a command somebody typed: the caller's, with
+// conflux's connection details added only where the caller has not set them, so that
+// `ANCHOR_SOCKET=... conflux peers` talks to the daemon they named.
+func (c *Ctl) PassthroughEnv() []string {
 	env := os.Environ()
 
 	for _, kv := range [...][2]string{{SocketEnv, c.Socket}, {TokenEnv, c.Token}} {
@@ -43,6 +73,18 @@ func (c *Ctl) Env() []string {
 	}
 
 	return env
+}
+
+// connection reports whether an environment variable is one of the two Env replaces. Windows
+// keeps names without regard to case, and so does the comparison there.
+func connection(name string) bool {
+	for _, k := range [...]string{SocketEnv, TokenEnv} {
+		if name == k || (runtime.GOOS == "windows" && strings.EqualFold(name, k)) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // Error is a failed run, carrying what the child said.

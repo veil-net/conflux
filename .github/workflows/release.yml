@@ -98,8 +98,11 @@ jobs:
           fi
 
       # All seven targets, CGO_ENABLED=0 throughout, so one Linux machine cross-builds
-      # every one of them. The Makefile reads the VERSION file itself.
-      - run: make dist
+      # every one of them. The Makefile reads the VERSION file itself; a build of dev is
+      # stamped as one, which `conflux version` says and `conflux update` asks about.
+      - run: make dist CHANNEL="$CHANNEL"
+        env:
+          CHANNEL: ${{ github.ref == 'refs/heads/dev' && 'dev' || '' }}
 
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -136,8 +139,15 @@ jobs:
             echo "${pickps}irm https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.ps1 | iex"
             echo '```'
             echo
+            # A dev build's anchor is pinned to the dev tree, which only api-dev enrols in, and
+            # `conflux update` reads `latest`, the release, pinned to the production tree.
             # shellcheck disable=SC2016 # Markdown backticks, not a command substitution
-            echo 'Then `sudo conflux up`. Already installed? `sudo conflux update`.'
+            if [ "$BRANCH" = dev ]; then
+              echo 'Then `sudo conflux up --api https://api-dev.veilnet.com.au`: this build'"'"'s anchor is pinned to the dev tree, which only api-dev enrols in.'
+              echo 'A newer dev build is installed by running the installer again: `conflux update` reads `latest`, the release, pinned to the production tree, and asks for `--yes` first.'
+            else
+              echo 'Then `sudo conflux up`. Already installed? `sudo conflux update`.'
+            fi
             echo
             echo '## What is inside'
             echo
@@ -251,7 +261,8 @@ jobs:
   # dev's protection must let this job push; without that the push is refused, the release is
   # out regardless, and this fails saying so.
   #
-  # On a hosted runner, which is thrown away with the token this job pushes with.
+  # The checkout persists no token: back-merge.sh hands it to git through git's environment for
+  # the push, and for the fetch that says why a refused push was refused.
   back-merge:
     name: merge version3 back into dev
     needs: build
@@ -265,7 +276,9 @@ jobs:
         with:
           ref: dev
           fetch-depth: 0
+          persist-credentials: false
       - name: dev takes version3
         env:
           SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: ./scripts/back-merge.sh "$SHA"

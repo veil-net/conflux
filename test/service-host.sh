@@ -105,6 +105,8 @@ for _ in $(seq 120); do
 done
 grep -F "$who" "$log" >/dev/null || { cat "$log" >&2; fail "the log does not say anchord started as its own account"; }
 grep -q 'enrolling' "$log" || { cat "$log" >&2; fail "anchord never answered on its socket as its own account"; }
+grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z .*enrolling' "$log" \
+  || { cat "$log" >&2; fail "the log's lines are not stamped with the time they were written"; }
 "$CONFLUX" down || fail "down failed on a running service"
 
 # Observing alone needs no API, so this one comes all the way up: start waits for the
@@ -181,7 +183,13 @@ else
   wait 2>/dev/null || true
 fi
 rm -f "$elog"
-for _ in $(seq 20); do [ ! -e "$eroot/run/anchord.pid" ] && break; sleep 1; done
+# A run stopped with Ctrl-C removes its root; a killed one leaves it to the next run, or to
+# uninstall, which must remove it below.
+if [ "$os" = darwin ]; then
+  [ ! -e "$eroot" ] || fail "the ephemeral run stopped with Ctrl-C left $eroot behind"
+else
+  [ -e "$eroot" ] || fail "the killed ephemeral run left no root, so uninstall's removal of one goes untested"
+fi
 
 say "uninstall leaves nothing"
 "$CONFLUX" uninstall --yes
@@ -212,5 +220,6 @@ else
   fi
   [ ! -e "$root" ] || fail "$root survived uninstall"
 fi
+[ ! -e "$eroot" ] || fail "$eroot, a killed ephemeral run's root, survived uninstall"
 
 say "all assertions passed"

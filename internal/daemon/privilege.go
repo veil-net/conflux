@@ -27,7 +27,7 @@ import (
 // capabilities it holds, a binary that runs as that account at all -- is settled after,
 // in grant, and only ever takes privilege back to what the supervisor has.
 
-// Privilege is what one anchord was started with, recorded in <run>/anchord.priv for
+// Privilege is what one anchord was started with, recorded in <state>/anchord.priv for
 // `conflux status` and for the supervisor that starts the next one.
 type Privilege struct {
 	// Account is true for the installation's unprivileged account, and false for the
@@ -55,7 +55,7 @@ type Privilege struct {
 	// BPF is how the account reads the BPF devices on macOS, for the observer: BPFOwn where
 	// the supervisor gives the account's own group read access to them before anchord starts,
 	// BPFGroup where a group of the host's already has it and is among Groups, and "" where
-	// the account does not observe.
+	// the account does not observe, or every account may read them already.
 	BPF string `json:"bpf,omitempty"`
 
 	// Why says why anchord keeps what it keeps: root, or each capability.
@@ -260,17 +260,19 @@ func decide(goos string, cfg *config.Config, port int, h hostFacts) Privilege {
 
 			grant(capNetRaw, "to copy what the host's interfaces carry, for the observer")
 		case "darwin":
-			if !tun {
-				// Only root may read a BPF device until somebody gives a group that. A
-				// group of the host's that has it already -- Wireshark's access_bpf, which
-				// ChmodBPF sets at every boot -- is used as it is, and the devices are left
-				// alone; otherwise the supervisor, which is root, gives the account's own.
-				if gid, ok := reads(h.bpf); ok && gid > 0 && gid != h.bpfOwn {
-					p.Groups = appendGroup(p.Groups, gid)
-					p.BPF = BPFGroup
-				} else {
-					p.BPF = BPFOwn
-				}
+			// Only root may read a BPF device until somebody gives a group that. A group
+			// of the host's that has it already -- Wireshark's access_bpf, which ChmodBPF
+			// sets at every boot -- is used as it is, and devices every account may read
+			// need nothing; either way the devices are left alone. Otherwise the
+			// supervisor, which is root, gives the account's own group. (A TUN's anchord
+			// here is root, and was settled above.)
+			switch gid, ok := reads(h.bpf); {
+			case ok && gid < 0:
+			case ok && gid > 0 && gid != h.bpfOwn:
+				p.Groups = appendGroup(p.Groups, gid)
+				p.BPF = BPFGroup
+			default:
+				p.BPF = BPFOwn
 			}
 		}
 	}

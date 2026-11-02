@@ -162,7 +162,7 @@ What changes that, and why:
   BPF devices are only root's until the supervisor gives the account's group read access to
   them, which it does at every start ([observe.md](observe.md#what-it-is-given)); where it cannot,
   `anchord` stays root and says why, and devices another group of the host's may read already
-  are left alone, the account given that group.
+  are left alone, the account given that group, as are devices every account may read.
 - **Where the supervisor cannot drop** — it is not root, a container gave it only some
   capabilities (dropping needs `CAP_SETUID`, `CAP_SETGID`, `CAP_CHOWN`, `CAP_FOWNER`,
   `CAP_DAC_OVERRIDE` and `CAP_KILL`), the account cannot be made (no `useradd` or `adduser`),

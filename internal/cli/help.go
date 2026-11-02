@@ -100,14 +100,15 @@ func runHelp(ctx context.Context, args []string) int {
 }
 
 // printAnchorctlUsage appends the embedded anchorctl's own help, under a rule. Best
-// effort: a machine where extraction fails still gets conflux's half.
+// effort: a machine where no anchorctl can be run still gets conflux's half.
 func printAnchorctlUsage(ctx context.Context) {
-	tools, err := libexec.Ensure(paths.Default())
+	bin, done, err := libexec.ForUsage(paths.Default())
 	if err != nil {
 		return
 	}
+	defer done()
 
-	out, err := runQuiet(ctx, tools.Anchorctl, os.Environ(), []string{"help"})
+	out, err := runQuiet(ctx, bin, os.Environ(), []string{"help"})
 	if err != nil && out == "" {
 		return
 	}
@@ -120,6 +121,11 @@ func printAnchorctlUsage(ctx context.Context) {
 // against a release note without running it.
 func runVersion(_ context.Context, _ []string) int {
 	ui.Println(version.String())
+
+	if version.Dev() {
+		ui.Println("dev build: anchor's dev-latest, pinned to the dev tree")
+	}
+
 	ui.Println("fips140 " + version.FIPS())
 	ui.Println(version.Anchor())
 

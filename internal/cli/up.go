@@ -217,10 +217,30 @@ func sayLeavingObserveMode(cfg *config.Config) {
 // --port at all are the same value and opposite instructions, and a boolean that
 // defaults false cannot say "leave it alone" by its value either. anchorctl draws the
 // same line with fs.Visit, for the same reason.
+//
+// A boolean written false is not the flag: --x=false is recorded as --no-x where the pair has
+// one, and --no-x=false as nothing, so a script templating --serve-exit=$X with X=false
+// leaves the exit off rather than turning it on, which is all a written flag otherwise
+// means here. A boolean with no negation is recorded as written, and its reader takes the
+// value: --observe-hide-names=false still names the observer, with the option off.
 func typedFlags(fs *flag.FlagSet) map[string]bool {
 	typed := map[string]bool{}
 
-	fs.Visit(func(f *flag.Flag) { typed[f.Name] = true })
+	fs.Visit(func(f *flag.Flag) {
+		if b, ok := f.Value.(interface{ IsBoolFlag() bool }); ok && b.IsBoolFlag() && f.Value.String() == "false" {
+			if pos, ok := strings.CutPrefix(f.Name, "no-"); ok && fs.Lookup(pos) != nil {
+				return
+			}
+
+			if fs.Lookup("no-"+f.Name) != nil {
+				typed["no-"+f.Name] = true
+
+				return
+			}
+		}
+
+		typed[f.Name] = true
+	})
 
 	return typed
 }
@@ -691,16 +711,25 @@ func readSubnetsOrder(d paths.Dirs) (*subnetsOrder, error) {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 
-	// Printed to an operator's terminal, and written by whoever could write the file.
-	o.By = strings.Map(func(r rune) rune {
+	// Printed to an operator's terminal, and written by whoever could write the file: every
+	// string in it, so an entry cannot carry escape sequences any more than the name can.
+	o.By = printable(o.By)
+	for i, s := range o.Subnets {
+		o.Subnets[i] = printable(s)
+	}
+
+	return &o, nil
+}
+
+// printable is s without its control characters, for a terminal it was not written for.
+func printable(s string) string {
+	return strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
 			return -1
 		}
 
 		return r
-	}, o.By)
-
-	return &o, nil
+	}, s)
 }
 
 // dropSubnetsOrder lets the list conflux starts with be served again: the operator just

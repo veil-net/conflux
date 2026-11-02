@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // TestTryAcquireReportsAHeldLock: a lock somebody holds is reported held, with nothing
@@ -57,4 +58,24 @@ func TestHeldAsksWithoutCreating(t *testing.T) {
 	if held, err := Held(path); err != nil || held {
 		t.Errorf("Held on a released lock = %v, %v; want free", held, err)
 	}
+}
+
+// TestTryAcquireOutlastsAQuestion: a lock held for a moment -- Held asking whether anybody
+// holds it, which takes it to find out -- is not mistaken for somebody running.
+func TestTryAcquireOutlastsAQuestion(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "x.lock")
+
+	unlock, err := Acquire(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	time.AfterFunc(15*time.Millisecond, unlock)
+
+	release, ok, err := TryAcquire(path)
+	if err != nil || !ok {
+		t.Fatalf("TryAcquire beside a lock held a moment = ok %v, err %v; want it taken", ok, err)
+	}
+
+	release()
 }

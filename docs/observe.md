@@ -62,7 +62,7 @@ does what Wireshark's ChmodBPF does before it starts `anchord`: it opens each de
 kernel's limit, so that each exists, and gives the account's own group read access — read and
 nothing more, so the account can see what the host carries and send nothing. Devices another
 group can read already, such as ChmodBPF's `access_bpf`, are left as they are and the account is
-given that group instead. A start that does not observe as the account, and `conflux
+given that group instead; devices every account can read are left as they are too. A start that does not observe as the account, and `conflux
 uninstall`, give the devices back to root alone.
 
 On **Linux** `CAP_NET_RAW` reaches `anchord` as an ambient capability; a kernel without an

@@ -101,7 +101,7 @@ and restarting it is the reboot.
 built `conflux` in beside it, then:
 
 ```console
-$ make anchor-bins && make integration   # the whole suite, three nodes
+$ make anchor-bins && make integration   # the whole suite, four nodes
 $ make service-test                      # or just the unit, which enrols nothing
 ```
 
@@ -195,7 +195,8 @@ they can meet is then discovery on the bridge: their reachability proves it, and
 and a check for the name alone would pass on whatever else writes it. Reachability is waited for in both directions, since each learns the other's
 IPv4 from a signed advertisement and the two need not arrive together.
 
-The third node takes the other paths, and it is why the suite enrols three times:
+The third node takes the other paths, and with the ephemeral fourth it is why the suite enrols
+five times:
 
 - **It is enrolled from a live alpha manifest** — fetched on the host with
   `POST /ghosts/alpha` carrying `{"taints": ["$TAINT"]}`, and handed to
@@ -242,8 +243,9 @@ CI verifies that the code builds and runs. The utility checks — `gofmt`, `stat
 `shellcheck`, which it does not since they need the network or tools of their own — run
 on a developer's machine before a push, and not in CI.
 
-Every job fetches the **pinned** release build from the `latest` release of
-`veil-net/anchor` and verifies every digest, with no anchor checkout. It needs a
+Every job fetches the **pinned** release build of `veil-net/anchor` for the base it runs
+against — `dev-latest` for a pull request into `dev` and a push to it, `latest` for
+`version3` — and verifies every digest, with no anchor checkout. It needs a
 credential, since anchor is private: CI stores a GitHub App's Client ID and private key and
 mints an hour-long token per job, so the secret held here is not itself a key to
 anything — see [build.md](build.md) for why the grant is wider than it wants to be and
@@ -262,12 +264,15 @@ runner's tool cache, which survives between runs, so an unchanged release costs 
 the files the fetcher already holds rather than three hundred megabytes. For the same
 reason the Go build and module caches are not restored or saved there: the machine keeps
 its own on disk, and round-tripping them through the Actions cache cost ten minutes a
-run where the suite itself takes seconds. The hosted jobs start empty and do use it. The container
+run where the suite itself takes seconds. The hosted jobs start empty and do use it,
+`integration` and each BSD job under a key of its own, since they build different things on the
+same runner image and would otherwise share setup-go's one. The container
 suites run on a hosted runner instead, because the third integration node reaches the
 realm through its manifest's bootstrap node over UDP, and from veilnet-dev no handshake
-gets through to it. Every job refuses a fork's pull request — a machine that survives the job does not run
+gets through to it. Every CI job refuses a fork's pull request — a machine that survives the job does not run
 a stranger's code, and the hosted jobs need the anchor credential a fork is not given —
-so a fork's pull request runs nothing. No checkout leaves its token in `.git/config`,
+so a fork's pull request runs nothing but `branch-flow`, which reads the repository on a hosted
+runner and holds no secret. No checkout leaves its token in `.git/config`,
 and every action outside this repository is pinned to its release's commit, with the
 tag beside it in a comment.
 
@@ -294,7 +299,10 @@ Two long-lived branches, and every change reaches both the same way:
 release `release.yml`'s `back-merge` job (`scripts/back-merge.sh`) pushes the release back to
 `dev`: a fast-forward, since the release is a merge whose second parent is `dev`'s tip, or a
 merge where `dev` has taken something since. A release that will not merge cleanly is one that
-holds something pushed to `version3` directly, and the job stops and says so.
+holds something pushed to `version3` directly, and the job stops and says so; so does a push
+refused because `dev` moved while the job ran, which a second run of it settles. The checkout
+persists no token: the script gives the workflow's to git through git's environment, for the
+push alone.
 
 **`branch-flow.yml` holds the branches to that** (`scripts/branch-flow.sh`), on every pull
 request and every edit of one — moving a pull request's base fires only `edited`: one into
@@ -478,6 +486,6 @@ The shape of the exchange is written down once, in
   replace the one it opens.
 
 A local fake for the enrolment API is used for the client's error paths, but it cannot
-stand in for a full end-to-end test: the shipped `anchord` is pinned to the production
-genesis and the `anchorctl` beside it is the lockdown build, so nothing can mint a
+stand in for a full end-to-end test: the shipped `anchord` is pinned — a release's to the
+production genesis, a dev build's to the dev genesis — and the `anchorctl` beside it is the lockdown build, so nothing can mint a
 credential those binaries will accept.

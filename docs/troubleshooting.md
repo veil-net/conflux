@@ -209,7 +209,8 @@ observer `not observing`.
 - **Linux.** The `anchord` line in `conflux status` names `CAP_NET_RAW`, or says why
   `anchord` is root. A container that holds `CAP_NET_RAW` back from the supervisor cannot give
   it on, and root inside it does not have it either: run the container with it
-  (`--cap-add NET_RAW`), as conflux's own service test does.
+  (`--cap-add NET_RAW`). conflux's own service test runs its container `--privileged`, which
+  gives it that and more.
 - **macOS.** `ls -l /dev/bpf0` should show the account's group with read access while it
   observes. Wireshark's ChmodBPF, or anything else that rewrites the devices after the
   supervisor has started, can take that away again; `conflux start` gives it back.
@@ -246,7 +247,8 @@ for the realm, and an argument vector anchorctl refuses outright.
 
 Where the logs are: `journalctl -u conflux -n 50` on Linux, `/var/log/conflux.log` on
 macOS and FreeBSD, `/var/log/daemon` on OpenBSD, and
-`%ProgramData%\conflux\logs\conflux.log` on Windows. A start that times out names the
+`%ProgramData%\conflux\logs\conflux.log` on Windows; on those last three, past 10 MiB the
+older lines are in `conflux.log.1` beside it. A start that times out names the
 right one for the machine.
 
 ## Renewal is failing

@@ -333,7 +333,7 @@ func reportBinaries(st *config.State) {
 func reportExport(cfg *config.Config, a *daemonAnswers) {
 	want := "none — nothing is exported until an endpoint is set"
 	if cfg.Export != nil && cfg.Export.Enabled {
-		want = cfg.Export.Endpoint + " — " + strings.Join(exportSignals(cfg.Export), ", ")
+		want = cfg.Export.Endpoint + " — " + strings.Join(cfg.Export.Signals(), ", ")
 	}
 
 	ui.Field("telemetry", want)
@@ -360,22 +360,6 @@ func reportExport(cfg *config.Config, a *daemonAnswers) {
 			ui.Field("", "set by "+source)
 		}
 	}
-}
-
-// exportSignals names what is being sent, for a status line.
-func exportSignals(e *config.Export) []string {
-	var out []string
-
-	for _, s := range []struct {
-		on   bool
-		name string
-	}{{e.Metrics, "metrics"}, {e.Traces, "traces"}, {e.Logs, "logs"}, {e.Flows, "flows"}} {
-		if s.on {
-			out = append(out, s.name)
-		}
-	}
-
-	return out
 }
 
 // reportAnchor prints anchorctl's own answer beneath conflux's, indented.

@@ -7,7 +7,8 @@ one command; rejoining takes none.
 
 Everything `anchorctl` can do, conflux can do too — any command conflux doesn't
 recognise is passed straight through to it unchanged. What conflux adds on top is
-enrolment, credential renewal, a configuration file, and a boot service.
+enrolment, credential renewal, a configuration file, a boot service, `conflux update` for
+itself, and `conflux cert`, a FIPS 140-3 certificate toolkit.
 
 It can also join nothing at all: `conflux observe` runs the daemon's observer alone, an
 inventory of which services this host's traffic reaches and whether each key exchange is

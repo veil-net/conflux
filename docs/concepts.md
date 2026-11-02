@@ -135,8 +135,9 @@ knowing that anybody who guesses it can be issued a credential in it too.
 
 conflux decides: which mode, which taints to ask for at enrolment, which IPv4, which
 subnets or proxies, whether the machine is an exit, what it reaches the realm over and
-how (an uplink, a port, low latency, LAN discovery, a bootstrap override), where
-telemetry goes, where the files live, and when to renew. That is the whole list, and it
+how (an uplink, a port, low latency, LAN discovery, a bootstrap override), whether the
+observer runs and what it watches, where telemetry goes, where the files live, and when to
+renew. That is the whole list, and it
 is what the configuration file holds.
 
 anchor decides everything else — every packet, every route, every credential check,

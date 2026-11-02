@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/veil-net/conflux/internal/daemon"
+	"github.com/veil-net/conflux/internal/logfile"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/ui"
 )
@@ -22,6 +23,8 @@ func runServe(ctx context.Context, args []string) int {
 
 	foreground := fs.Bool("foreground", false, "stay in the foreground even where a service manager is available")
 	dir := fs.String("dir", "", "root every conflux path here, as CONFLUX_DIR does; the service registration passes it back")
+	logPath := fs.String("log", "", "write the output to this file, each line stamped and the file moved aside to .1 past 10 MiB; "+
+		"launchd's and FreeBSD's registrations pass it")
 
 	if err := fs.Parse(args); err != nil {
 		return ExitUsage
@@ -42,6 +45,18 @@ func runServe(ctx context.Context, args []string) int {
 		}
 	}
 
+	// Where launchd or daemon(8) was told to write it: conflux writes it itself from here on,
+	// stamping each line and moving it aside when it is full, which neither of them does.
+	if *logPath != "" {
+		if lf, err := logfile.Open(*logPath); err != nil {
+			ui.Errf("could not open the log %s, so the output goes where the service manager sends it: %v", *logPath, err)
+		} else {
+			defer lf.Close()
+
+			ui.Out, ui.Errw = lf, lf
+		}
+	}
+
 	d := paths.Default()
 
 	sup := &daemon.Supervisor{
@@ -57,7 +72,7 @@ func runServe(ctx context.Context, args []string) int {
 		}
 	}
 
-	return runSupervisor(ctx, sup)
+	return launchdExit(runSupervisor(ctx, sup))
 }
 
 func runSupervisor(ctx context.Context, sup *daemon.Supervisor) int {

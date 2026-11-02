@@ -36,6 +36,18 @@ func passthrough(ctx context.Context, args []string) int {
 		return code
 	}
 
+	// Usage reaches no daemon, and makes nothing: anchorctl's answer is the same from any
+	// copy, and the run waits for it, so a temporary one can be removed.
+	if wantsUsage(args) {
+		bin, done, err := libexec.ForUsage(paths.Default())
+		if err != nil {
+			return fail(err)
+		}
+		defer done()
+
+		return runAnchorctl(bin, args, os.Environ())
+	}
+
 	// Only once there is something to talk to. Extracting first made the directories
 	// uninstall had removed, and 45 MB in them, on a machine with nothing running, and
 	// failed for an account that cannot write them before saying what was wrong.
@@ -44,7 +56,7 @@ func passthrough(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	env := (&anchorctl.Ctl{Socket: d.Socket(), Token: token}).Env()
+	env := (&anchorctl.Ctl{Socket: d.Socket(), Token: token}).PassthroughEnv()
 
 	return execAnchorctl(ctx, tools.Anchorctl, args, env)
 }

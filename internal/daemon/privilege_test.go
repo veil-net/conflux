@@ -111,6 +111,8 @@ func TestDecideTable(t *testing.T) {
 			why: "/dev/bpf*", bpf: BPFOwn},
 		{name: "macos observing, ChmodBPF's group", goos: "darwin", cfg: observeCfg(),
 			h: bpfReadBy(roomy(), 101, 0o640), account: true, groups: []int{101}, bpf: BPFGroup},
+		{name: "macos observing, devices every account reads", goos: "darwin", cfg: observeCfg(),
+			h: bpfReadBy(roomy(), 0, 0o644), account: true},
 		{name: "macos observing, the devices already the account's", goos: "darwin", cfg: observeCfg(),
 			h:       func() hostFacts { h := bpfReadBy(roomy(), 299, 0o640); h.bpfOwn = 299; return h }(),
 			account: true, bpf: BPFOwn},

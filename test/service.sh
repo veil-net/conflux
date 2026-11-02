@@ -283,6 +283,12 @@ check_mode /var/lib/conflux/anchor/carried "600 conflux conflux"
 # is bound.
 say "observing alone, anchord has CAP_NET_RAW and nothing else, and enrols nothing"
 configure observe '"observer":{}'
+# Every connection to the silent API is a silent@ instance, and one is left for each, so a
+# count that grows is an enrolment tried. Taken once the last service has stopped.
+asked() { docker exec "$NAME" systemctl list-units --all --no-legend --plain 'silent@*.service' | wc -l; }
+docker exec "$NAME" systemctl stop conflux.service
+before=$(asked)
+[ "$before" -gt 0 ] || { echo "no earlier start reached the silent API, so its count proves nothing" >&2; exit 1; }
 start
 expect "observing" "uid=$uid caps=$(caps 0x2000) nnp=1 groups=" "CAP_NET_RAW to copy what the host's interfaces carry"
 
@@ -313,8 +319,8 @@ docker exec "$NAME" conflux inventory | grep ' 443/tcp ' \
        docker exec "$NAME" conflux inventory >&2 || true; journal; exit 1; }
 grep -q '^  records *kept here' <<<"$(docker exec "$NAME" conflux status)" \
   || { echo "status does not say the records are kept here" >&2; exit 1; }
-docker exec "$NAME" test ! -e /var/lib/conflux/manifest.b64 \
-  || { echo "observing alone enrolled" >&2; exit 1; }
+[ $(( $(asked) - before )) -eq 0 ] \
+  || { echo "observing alone tried to enrol: the API was asked $(( $(asked) - before )) times" >&2; exit 1; }
 
 # Each record leaves as it is made, with no anchor: a collector that logs every record it is
 # sent, in detail, is the dashboard's side of it.

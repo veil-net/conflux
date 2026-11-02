@@ -711,16 +711,25 @@ func readSubnetsOrder(d paths.Dirs) (*subnetsOrder, error) {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 
-	// Printed to an operator's terminal, and written by whoever could write the file.
-	o.By = strings.Map(func(r rune) rune {
+	// Printed to an operator's terminal, and written by whoever could write the file: every
+	// string in it, so an entry cannot carry escape sequences any more than the name can.
+	o.By = printable(o.By)
+	for i, s := range o.Subnets {
+		o.Subnets[i] = printable(s)
+	}
+
+	return &o, nil
+}
+
+// printable is s without its control characters, for a terminal it was not written for.
+func printable(s string) string {
+	return strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
 			return -1
 		}
 
 		return r
-	}, o.By)
-
-	return &o, nil
+	}, s)
 }
 
 // dropSubnetsOrder lets the list conflux starts with be served again: the operator just

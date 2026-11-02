@@ -207,7 +207,9 @@ func runEphemeral(ctx context.Context, cfg *config.Config, run *ephemeralRun) in
 	err = e.Run(ctx)
 
 	switch {
-	case err == nil:
+	// Ctrl-C while the run is still starting ends whatever it was waiting on with the
+	// context's error, and is as much a stop asked for as one once it is up.
+	case err == nil || ctx.Err() != nil:
 		ui.Printf("\nStopped. Nothing of the run remains: no credential, no configuration, no state.\n")
 
 		return ExitOK

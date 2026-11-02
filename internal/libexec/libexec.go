@@ -93,7 +93,11 @@ func Ensure(d paths.Dirs) (*Tools, error) {
 		return nil, err
 	}
 
+	// A set that will not run is not kept: left whole, the next conflux would take it as done
+	// and fail with a bare "permission denied" at every start, where this says why.
 	if err := smoke(t); err != nil {
+		_ = os.RemoveAll(t.Dir)
+
 		return nil, err
 	}
 

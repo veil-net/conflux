@@ -17,13 +17,20 @@ import (
 func chain(t *testing.T, rootAlg, leafAlg pki.Alg, p pki.Profile) (*x509.Certificate, tls.Certificate) {
 	t.Helper()
 
+	return chainAt(t, rootAlg, leafAlg, p, time.Now())
+}
+
+// chainAt is chain issued at: a root for 60 days and a leaf for 10.
+func chainAt(t *testing.T, rootAlg, leafAlg pki.Alg, p pki.Profile, at time.Time) (*x509.Certificate, tls.Certificate) {
+	t.Helper()
+
 	rk, err := rootAlg.Generate()
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	name, _ := pki.ParseName("CN=Probe Root")
-	rootDER, err := pki.Issue(pki.Template{Subject: name, Profile: pki.ProfileCA, Days: 30, PathLen: -1}, rk.Public(), nil, rk, time.Now())
+	rootDER, err := pki.Issue(pki.Template{Subject: name, Profile: pki.ProfileCA, Days: 60, PathLen: -1}, rk.Public(), nil, rk, at)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +47,7 @@ func chain(t *testing.T, rootAlg, leafAlg pki.Alg, p pki.Profile) (*x509.Certifi
 	_ = tm.SANs.AddSAN("server.test")
 	_ = tm.SANs.AddSAN("127.0.0.1")
 
-	leafDER, err := pki.Issue(tm, lk.Public(), root, rk, time.Now())
+	leafDER, err := pki.Issue(tm, lk.Public(), root, rk, at)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,6 +110,8 @@ func TestAPostQuantumHandshake(t *testing.T) {
 	if !r.Chain.Valid || r.Chain.Authentication != pki.ClassPQC || !r.KeyExchangePQ() || !r.AuthenticationPQ() {
 		t.Errorf("chain %+v", r.Chain)
 	}
+
+	assertLeaf(t, r.Leaf, cert)
 
 	s := <-seen
 	if s.Error != "" || s.GroupClass != pki.ClassHybrid || s.Offered.ServerName != "server.test" ||
@@ -177,9 +186,60 @@ func TestAChainThatDoesNotVerifyIsReported(t *testing.T) {
 		t.Errorf("%+v", r)
 	}
 
+	// The leaf is described all the same: a chain from another CA is dated too.
+	assertLeaf(t, r.Leaf, cert)
+
 	r, _ = Probe(t.Context(), Options{Address: addr, ServerName: "wrong.test", Roots: []*x509.Certificate{other}})
 	if r.Chain.Valid {
 		t.Error("a chain for another name verified")
+	}
+}
+
+// TestAnExpiredCertificateIsDated: a leaf whose time has passed fails its chain, and the report
+// still says when it ran out, so its expiry can be shown rather than only its failure.
+func TestAnExpiredCertificateIsDated(t *testing.T) {
+	root, cert := chainAt(t, pki.MLDSA87, pki.MLDSA65, pki.ProfileServer, time.Now().AddDate(0, 0, -30))
+	addr, _ := serve(t, ServeOptions{Cert: cert})
+
+	r, err := Probe(t.Context(), Options{Address: addr, ServerName: "server.test", Roots: []*x509.Certificate{root}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if r.Chain.Valid || r.Chain.Problem == "" {
+		t.Errorf("an expired leaf verified: %+v", r.Chain)
+	}
+
+	assertLeaf(t, r.Leaf, cert)
+
+	if !r.Leaf.NotAfter.Before(time.Now()) {
+		t.Errorf("the expired leaf runs to %s", r.Leaf.NotAfter)
+	}
+}
+
+// assertLeaf: l describes the leaf cert sends, in UTC, its serial as the CA tools write it.
+func assertLeaf(t *testing.T, l Leaf, cert tls.Certificate) {
+	t.Helper()
+
+	c, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := Leaf{
+		Subject:   "CN=server.test",
+		Issuer:    "CN=Probe Root",
+		Serial:    pki.FormatSerial(c.SerialNumber),
+		NotBefore: c.NotBefore.UTC(),
+		NotAfter:  c.NotAfter.UTC(),
+	}
+
+	if l != want {
+		t.Errorf("the leaf is described as %+v, not %+v", l, want)
+	}
+
+	if l.NotBefore.Location() != time.UTC || l.NotAfter.Location() != time.UTC {
+		t.Errorf("the leaf is dated outside UTC: %s, %s", l.NotBefore, l.NotAfter)
 	}
 }
 

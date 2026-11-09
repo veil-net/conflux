@@ -50,6 +50,31 @@ type Report struct {
 
 	// Presented is the class of the chain the server sent, whether or not it verified.
 	Presented string `json:"presentedClass"`
+
+	// Leaf is the certificate the server sent first, whether or not its chain verified.
+	Leaf Leaf `json:"leaf"`
+}
+
+// Leaf names a certificate and dates it, as it was sent: one that has expired, or that comes
+// from a CA the probe was not given, is described all the same, so whoever reads the report
+// can say when it runs out.
+type Leaf struct {
+	Subject   string    `json:"subject"`
+	Issuer    string    `json:"issuer"`
+	Serial    string    `json:"serial"`
+	NotBefore time.Time `json:"notBefore"`
+	NotAfter  time.Time `json:"notAfter"`
+}
+
+// leafOf describes c as Leaf does.
+func leafOf(c *x509.Certificate) Leaf {
+	return Leaf{
+		Subject:   c.Subject.String(),
+		Issuer:    c.Issuer.String(),
+		Serial:    pki.FormatSerial(c.SerialNumber),
+		NotBefore: c.NotBefore.UTC(),
+		NotAfter:  c.NotAfter.UTC(),
+	}
 }
 
 // KeyExchangePQ reports whether the key exchange resists a quantum computer: ML-KEM, alone or
@@ -132,6 +157,7 @@ func Probe(ctx context.Context, opts Options) (Report, error) {
 		SignatureExact: exact,
 		SignatureClass: pki.SignatureClass(sigAlgOf(leaf)),
 		Presented:      pki.ChainClass(st.PeerCertificates),
+		Leaf:           leafOf(leaf),
 	}
 
 	r.Chain = pki.Verify(leaf, pki.VerifyOptions{

@@ -295,6 +295,8 @@ Connected to server.example:8443 (192.0.2.10:8443), as server.example
   tls             TLS 1.3, TLS_AES_128_GCM_SHA256
   key exchange    SecP384r1MLKEM1024 (hybrid)
   signature       ML-DSA-65 (pqc)
+  certificate     CN=server.example, issued by CN=Example Root,O=Example
+                  valid 2026-10-01 to 2027-01-01
   chain           verified for server.example, authentication pqc
     leaf          CN=server.example: ML-DSA-65 key, signed ML-DSA-87
     root          CN=Example Root,O=Example: ML-DSA-87 key, signed ML-DSA-87
@@ -311,6 +313,10 @@ Connected to server.example:8443 (192.0.2.10:8443), as server.example
   from the leaf's key. That is exact for ML-DSA, for Ed25519, and for ECDSA in TLS 1.3, which
   binds the curve to its hash. For RSA, and ECDSA in 1.2, the padding and hash are the peers'
   choice and are not said.
+- **Certificate.** The leaf the server sent is named and dated whether or not its chain
+  verifies, so one that has expired, or that comes from a CA not given, still says when it
+  runs out (`, expired` once it has). `--json` carries it as `leaf`: its `subject`, `issuer`,
+  `serial` (as `ca list` writes one), `notBefore` and `notAfter`, in UTC.
 - **Chain.** The chain is checked as `verify` checks it, for `--name` (the host by default),
   against `--ca` or the system's roots. One that does not verify is described rather than only
   refused, along with the class of what was presented.

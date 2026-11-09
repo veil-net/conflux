@@ -184,6 +184,9 @@ func printProbe(r tlsprobe.Report, system bool, unmet []string) {
 		row("alpn", r.ALPN)
 	}
 
+	row("certificate", r.Leaf.Subject+", issued by "+r.Leaf.Issuer)
+	row("", "valid "+r.Leaf.NotBefore.Format(time.DateOnly)+" to "+r.Leaf.NotAfter.Format(time.DateOnly)+expiry(r.Leaf.NotAfter))
+
 	if r.Chain.Valid {
 		row("chain", "verified for "+r.ServerName+", authentication "+r.Chain.Authentication)
 	} else {
@@ -288,4 +291,13 @@ func runCertServe(ctx context.Context, args []string) int {
 	}
 
 	return ExitOK
+}
+
+// expiry says when a certificate valid until notAfter is not valid now.
+func expiry(notAfter time.Time) string {
+	if time.Now().After(notAfter) {
+		return ", expired"
+	}
+
+	return ""
 }

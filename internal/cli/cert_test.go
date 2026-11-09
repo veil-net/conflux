@@ -298,7 +298,9 @@ func TestProbeSaysWhatItFound(t *testing.T) {
 	addr := l.Addr().String()
 
 	out, _ := certIn(t, dir, ExitOK, "probe", addr, "--name", "server.test", "--ca", "root.pem", "--require-pq")
-	if !strings.Contains(out, "post-quantum    key exchange yes; authentication yes") {
+	if !strings.Contains(out, "post-quantum    key exchange yes; authentication yes") ||
+		!strings.Contains(out, "certificate     CN=server.test, issued by ") ||
+		!strings.Contains(out, "valid "+chain[0].NotBefore.UTC().Format(time.DateOnly)+" to "+chain[0].NotAfter.UTC().Format(time.DateOnly)+"\n") {
 		t.Errorf("probe said:\n%s", out)
 	}
 
@@ -375,7 +377,8 @@ func TestAManagedCAEndToEnd(t *testing.T) {
 
 	var r tlsprobe.Report
 	if err := json.Unmarshal([]byte(js), &r); err != nil || r.Version != "TLS 1.3" || r.GroupClass != pki.ClassHybrid ||
-		r.Signature != "ML-DSA-65" || r.Chain.Authentication != pki.ClassPQC || len(r.Chain.Chain) != 3 {
+		r.Signature != "ML-DSA-65" || r.Chain.Authentication != pki.ClassPQC || len(r.Chain.Chain) != 3 ||
+		r.Leaf.Serial != pki.FormatSerial(chain[0].SerialNumber) || !r.Leaf.NotAfter.Equal(chain[0].NotAfter) {
 		t.Errorf("probe found %+v (%v)", r, err)
 	}
 

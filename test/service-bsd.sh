@@ -18,8 +18,10 @@ say() { printf '\n== %s\n' "$*"; }
 fail() { echo "$*" >&2; exit 1; }
 
 case "$(uname -s)" in
-  FreeBSD) os=freebsd account=conflux script=/usr/local/etc/rc.d/conflux log=/var/log/conflux.log ;;
-  OpenBSD) os=openbsd account=_conflux script=/etc/rc.d/conflux log=/var/log/daemon ;;
+  FreeBSD) os=freebsd account=conflux script=/usr/local/etc/rc.d/conflux log=/var/log/conflux.log
+    fips='fips140 on, Go Cryptographic Module v1.26.0' ;;
+  OpenBSD) os=openbsd account=_conflux script=/etc/rc.d/conflux log=/var/log/daemon
+    fips='fips140 off, this build carries no frozen Go Cryptographic Module' ;;
   *) fail "service-bsd.sh is for FreeBSD and OpenBSD" ;;
 esac
 
@@ -29,6 +31,29 @@ priv=$state/anchord.priv
 rc() { # VERB
   if [ "$os" = freebsd ]; then service conflux "$1"; else rcctl "$1" conflux; fi
 }
+
+# FreeBSD's conflux runs the Go Cryptographic Module in FIPS 140-3 mode, here on the kernel it
+# ships for; OpenBSD's is built without it, which the module refuses to run on.
+say "conflux reports the FIPS 140-3 mode its build carries"
+"$CONFLUX" version | grep -qx "$fips" || fail "conflux version does not say: $fips"
+
+# The certificate toolkit makes artifacts other people rely on, so it runs only where the
+# module does: FreeBSD makes and checks an ML-DSA certificate, OpenBSD refuses with 70.
+say "conflux cert runs where the module does, and refuses where it does not"
+certs=$(mktemp -d)
+if [ "$os" = freebsd ]; then
+  "$CONFLUX" cert genkey --out "$certs/k.pem" || fail "cert genkey failed"
+  "$CONFLUX" cert selfsign --key "$certs/k.pem" --subject CN=bsd.test --profile server --out "$certs/c.pem" ||
+    fail "cert selfsign failed"
+  "$CONFLUX" cert verify "$certs/c.pem" --ca "$certs/c.pem" --name bsd.test --require-pq >/dev/null ||
+    fail "a self-signed ML-DSA certificate does not verify"
+else
+  code=0
+  "$CONFLUX" cert genkey --out "$certs/k.pem" 2>/dev/null || code=$?
+  [ "$code" = 70 ] || fail "cert genkey on a build without the module exited $code, not 70"
+  [ ! -e "$certs/k.pem" ] || fail "cert genkey wrote a key on a build without the module"
+fi
+rm -rf "$certs"
 
 # A run cut short leaves its registration behind; a fresh VM has none to remove.
 "$CONFLUX" uninstall --yes >/dev/null 2>&1 || true
@@ -129,12 +154,68 @@ case $got in
 esac
 rc stop >/dev/null 2>&1 || true
 
+# anchor has nothing to capture with here, so conflux refuses the observer before it asks
+# for anything, and a configuration asking for one is refused by the supervisor too.
+say "observing is refused: there is no capture here"
+code=0
+out=$("$CONFLUX" observe 2>&1) || code=$?
+echo "  $out"
+[ "$code" = 2 ] || fail "conflux observe exited $code here, want 2"
+case $out in
+  *"no capture"*) ;;
+  *) fail "conflux observe does not say there is no capture here" ;;
+esac
+code=0
+out=$("$CONFLUX" up --observe --no-ipv4 2>&1) || code=$?
+case $out in
+  *"no capture"*) ;;
+  *) fail "conflux up --observe does not say there is no capture here (exit $code)" ;;
+esac
+
+# An ephemeral run killed outright leaves its anchord on the BSDs, where nothing can ask at the
+# start for it to end with conflux, and the next ephemeral run stops it. The API answers
+# nothing, so anchord is up and the run waits on its enrolment when it is killed.
+say "an ephemeral run killed outright: the next one stops the anchord it left"
+eroot=/var/run/conflux-ephemeral
+eph_start() {
+  "$CONFLUX" proxy --ephemeral --api https://127.0.0.1:9443 --no-ipv4 --taint cfx-bsd 8080=127.0.0.1:1 \
+    >/tmp/ephemeral.log 2>&1 &
+  eph=$!
+}
+eph_pid() {
+  for _ in $(seq 60); do
+    if [ -s "$eroot/run/anchord.pid" ]; then head -1 "$eroot/run/anchord.pid"; return 0; fi
+    sleep 1
+  done
+  return 1
+}
+eph_start
+first=$(eph_pid) || { cat /tmp/ephemeral.log >&2; fail "the ephemeral run never recorded its anchord"; }
+kill -9 "$eph"
+sleep 2
+kill -0 "$first" 2>/dev/null || fail "anchord went with the killed run, which nothing on $os arranges"
+eph_start
+for _ in $(seq 60); do kill -0 "$first" 2>/dev/null || break; sleep 1; done
+if kill -0 "$first" 2>/dev/null; then
+  cat /tmp/ephemeral.log >&2
+  fail "the next ephemeral run did not stop the anchord a killed one left"
+fi
+kill -INT "$eph"
+wait "$eph" 2>/dev/null || true
+for _ in $(seq 20); do [ ! -e "$eroot" ] && break; sleep 1; done
+[ ! -e "$eroot" ] || fail "the ephemeral run left $eroot behind"
+eaccount=$(printf '%s' "$account" | sed 's/conflux$/conflux-ephemeral/')
+id "$eaccount" >/dev/null 2>&1 || fail "no $eaccount account was made for the ephemeral run"
+
 say "uninstall leaves nothing"
 "$CONFLUX" uninstall --yes
 [ ! -e "$script" ] || fail "the rc script survived uninstall"
 for path in /usr/local/etc/conflux "$state" /var/run/conflux; do
   [ ! -e "$path" ] || fail "$path survived uninstall"
 done
+if id "$eaccount" >/dev/null 2>&1; then
+  fail "the $eaccount account survived uninstall"
+fi
 if id "$account" >/dev/null 2>&1; then
   fail "the $account account survived uninstall"
 fi

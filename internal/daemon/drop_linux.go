@@ -99,14 +99,22 @@ func withCaps(attr *syscall.SysProcAttr, caps []string) {
 	}
 }
 
-// startProcess starts cmd, under no_new_privs where p asks for it.
+// startProcess starts cmd, under no_new_privs where p asks for it, and from a thread held
+// until hold is closed where hold is given.
 //
 // Go has no field for no_new_privs, and it is a thread's: set on the thread that forks,
 // the child inherits it. So it is set on a goroutine locked to its thread, which starts
 // the child and then returns without unlocking -- and a goroutine that ends locked takes
 // its thread with it, so nothing else in the supervisor is ever run under it.
-func startProcess(cmd *exec.Cmd, p Privilege) error {
-	if !p.Account || !p.NoNewPrivs {
+//
+// A parent-death signal is the forking thread's too: it is sent when that thread ends,
+// not when the process does. So where cmd asks for one (hold given), the child is started
+// from a locked thread that waits on hold before it ends -- closed once the child has gone
+// -- and the signal comes only when this process ends while the child still runs. Started
+// from the locked thread of no_new_privs and let go, it would come at once.
+func startProcess(cmd *exec.Cmd, p Privilege, hold <-chan struct{}) error {
+	noNewPrivs := p.NoNewPrivs && (p.Account || hold != nil)
+	if !noNewPrivs && hold == nil {
 		return cmd.Start()
 	}
 
@@ -115,13 +123,20 @@ func startProcess(cmd *exec.Cmd, p Privilege) error {
 	go func() {
 		runtime.LockOSThread()
 
-		if err := unix.Prctl(unix.PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0); err != nil {
-			errc <- fmt.Errorf("set no_new_privs: %w", err)
+		if noNewPrivs {
+			if err := unix.Prctl(unix.PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0); err != nil {
+				errc <- fmt.Errorf("set no_new_privs: %w", err)
 
-			return
+				return
+			}
 		}
 
-		errc <- cmd.Start()
+		err := cmd.Start()
+		errc <- err
+
+		if err == nil && hold != nil {
+			<-hold
+		}
 	}()
 
 	return <-errc

@@ -65,7 +65,7 @@ func TestNoUnintendedShadowing(t *testing.T) {
 	// The verbs conflux is knowingly taking from anchorctl. Every one is documented in
 	// help and explains the collision in its own error text; help, which anchorctl's
 	// usage does not list, prints anchorctl's usage whole.
-	known := map[string]bool{"proxy": true, "status": true, "help": true, "renew": true, "start": true}
+	known := map[string]bool{"proxy": true, "status": true, "help": true, "renew": true, "start": true, "observe": true}
 
 	for name := range verbs() {
 		if theirs[name] && !known[name] {
@@ -81,9 +81,9 @@ func TestNoUnintendedShadowing(t *testing.T) {
 		}
 	}
 
-	// The two conflux resolves by shape and arity really are anchorctl's, or the
-	// elaborate handling in runProxy and runStatus is dead code.
-	for _, name := range []string{"proxy", "status"} {
+	// The three conflux resolves by shape and arity really are anchorctl's, or the
+	// elaborate handling in runProxy, runObserve and runStatus is dead code.
+	for _, name := range []string{"proxy", "status", "observe"} {
 		if !theirs[name] {
 			t.Errorf("conflux resolves a collision on %q that no longer exists", name)
 		}
@@ -626,7 +626,7 @@ func TestTheCollisionsAreTheDocumentedOnes(t *testing.T) {
 
 	sort.Strings(shared)
 
-	want := []string{"proxy", "renew", "start", "status"}
+	want := []string{"observe", "proxy", "renew", "start", "status"}
 	if !slices.Equal(shared, want) {
 		t.Errorf("conflux and anchorctl share %v, and the docs describe %v.\n"+
 			"  Resolve the new collision the way the others are, then update the count in\n"+
@@ -635,7 +635,7 @@ func TestTheCollisionsAreTheDocumentedOnes(t *testing.T) {
 	}
 
 	// The help text an operator reads says the same number, spelled out.
-	if !strings.HasPrefix(collisions, "Four of conflux's names") {
+	if !strings.HasPrefix(collisions, "Five of conflux's names") {
 		t.Errorf("the help text disagrees with the %d collisions that exist", len(want))
 	}
 }
@@ -662,26 +662,52 @@ func TestARefusalForPrivilegeRepeatsTheCommand(t *testing.T) {
 
 // TestTheInterfaceIsNamedOnlyWhereItIsHonoured: Linux and Windows make the interface
 // they are asked for, and macOS and the BSDs number their own unless asked for one of
-// theirs. A status line naming anchor0 on a Mac names nothing ifconfig can find.
+// theirs. A status line naming veil0 on a Mac names nothing ifconfig can find.
 func TestTheInterfaceIsNamedOnlyWhereItIsHonoured(t *testing.T) {
 	for _, tc := range []struct {
 		goos, name string
 		named      bool
 	}{
-		{"linux", "anchor0", true},
-		{"windows", "anchor0", true},
-		{"darwin", "anchor0", false},
+		{"linux", "veil0", true},
+		{"windows", "veil0", true},
+		{"darwin", "veil0", false},
 		{"darwin", "utun7", true},
 		{"darwin", "utun", false},
-		{"freebsd", "anchor0", false},
+		{"freebsd", "veil0", false},
 		{"freebsd", "tun3", true},
 		{"openbsd", "tun0", true},
 		{"openbsd", "utun1", false},
 	} {
-		got := interfaceLine(tc.goos, tc.name)
+		got := interfaceLine(tc.goos, tc.name, "")
 
 		if named := got == tc.name; named != tc.named {
 			t.Errorf("%s, %q: %q", tc.goos, tc.name, got)
+		}
+	}
+}
+
+// TestTheInterfaceIsWhatTheAnchorSaysItHolds: once the anchor runs, its status names the
+// interface it holds, as the platform named it, and that is the name shown, whatever was
+// asked for. Asked for nothing, a machine that is not running says the anchor names its
+// own where the platform lets it, and the unit it takes where it does not.
+func TestTheInterfaceIsWhatTheAnchorSaysItHolds(t *testing.T) {
+	for _, goos := range []string{"linux", "windows", "darwin", "freebsd"} {
+		if got := interfaceLine(goos, "", "utun4"); got != "utun4" {
+			t.Errorf("%s, reported utun4: %q", goos, got)
+		}
+		if got := interfaceLine(goos, "veil0", "anchorlh2av6spu"); got != "anchorlh2av6spu" {
+			t.Errorf("%s, asked veil0, reported anchorlh2av6spu: %q", goos, got)
+		}
+	}
+
+	for goos, want := range map[string]string{
+		"linux":   "the anchor's own name: anchor and the start of its ID",
+		"windows": "the anchor's own name: anchor and the start of its ID",
+		"darwin":  "the first free utunN, which darwin numbers itself",
+		"openbsd": "the first free tunN, which openbsd numbers itself",
+	} {
+		if got := interfaceLine(goos, "", ""); got != want {
+			t.Errorf("%s, asked for nothing: %q, want %q", goos, got, want)
 		}
 	}
 }
@@ -818,8 +844,8 @@ func TestASetListReplacesASubnetOrder(t *testing.T) {
 
 	orderFile := paths.SubnetsOrderFile(d.AnchorDir())
 
-	// Who set it is printed to a terminal, and written by whoever could write the file.
-	order := `{"subnets": ["10.9.0.0/24@lab"], "by": "anchorordererexample\u001b[2J", "at": "2026-10-06T09:00:00Z"}`
+	// What it says is printed to a terminal, and written by whoever could write the file.
+	order := `{"subnets": ["10.9.0.0/24@lab", "\u001b]0;owned\u0007eth9"], "by": "anchorordererexample\u001b[2J", "at": "2026-10-06T09:00:00Z"}`
 	if err := os.WriteFile(orderFile, []byte(order), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -874,5 +900,30 @@ func TestASetListReplacesASubnetOrder(t *testing.T) {
 	// Nothing to replace is not an error.
 	if err := dropSubnetsOrder(d); err != nil {
 		t.Errorf("dropSubnetsOrder with no order: %v", err)
+	}
+}
+
+// TestFIPSRefusal: a build against a frozen module refuses to run with FIPS 140-3 mode
+// switched off, and nothing else is refused: not the mode on, and not a build against the
+// toolchain's own tree, which OpenBSD's is.
+func TestFIPSRefusal(t *testing.T) {
+	for _, c := range []struct {
+		module  string
+		enabled bool
+		refused bool
+	}{
+		{"v1.26.0", true, false},
+		{"v1.26.0", false, true},
+		{"latest", true, false},
+		{"latest", false, false},
+	} {
+		err := fipsRefusal(c.module, c.enabled)
+		if (err != nil) != c.refused {
+			t.Errorf("fipsRefusal(%q, %v) = %v, want refused %v", c.module, c.enabled, err, c.refused)
+		}
+
+		if err != nil && !strings.Contains(err.Error(), "GODEBUG") {
+			t.Errorf("the refusal %q does not name GODEBUG, which is the way out", err)
+		}
 	}
 }

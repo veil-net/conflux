@@ -163,7 +163,9 @@ main() {
   base=https://github.com/$REPO/releases/download/$tag
 
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/conflux-install.XXXXXX") || die "could not make a temporary directory"
-  trap 'rm -rf "$tmp"' EXIT
+  # And the copy beside the destination, if one was interrupted before it was renamed into place.
+  new=
+  trap 'rm -rf "$tmp"; if [ -n "$new" ] && [ -e "$new" ]; then asroot rm -f "$new"; fi' EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
 

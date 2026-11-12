@@ -18,8 +18,9 @@ import (
 // a test here rather than a deployment somewhere else.
 //
 // Every line that matters is a key and a value, the key first: `anchor ID` from
-// start, and the tabwriter rows of status, `  overlay  ADDR` and `  works until  TIME`.
-// So each is read by its leading fields, and a line of any other shape is skipped.
+// start, and the tabwriter rows of status, `  overlay  ADDR`, `  interface  NAME`,
+// `  works until  TIME` and `  observer  NOTE`. So each is read by its leading fields, and
+// a line of any other shape is skipped.
 
 // Started is what a successful `start` reported.
 type Started struct {
@@ -50,6 +51,40 @@ type Status struct {
 	ID         string
 	Overlay    []string
 	WorksUntil time.Time
+
+	// Interface is the network interface a TUN anchor holds, as the platform named it:
+	// the name anchor asked for where it is honoured (its own, `anchor` and the start of
+	// its AnchorID, unless one was configured), and the unit macOS or a BSD gave it.
+	// Empty in userspace, where there is none.
+	Interface string
+
+	// Observer is the observer's row, which status prints whether or not an anchor
+	// runs, and only where the daemon serves the observer.
+	Observer Observer
+}
+
+// Observer is what status said of the daemon's observer.
+type Observer struct {
+	// Served says the daemon was started with the observer allowed: status prints a row
+	// for it, running or not.
+	Served bool
+
+	// Running says it is observing now.
+	Running bool
+
+	// Note is the row as anchorctl wrote it: "af_packet, 12 flows held, 3480 packets
+	// taken", "not observing", or "not observing: " and why a capture that was running
+	// stopped.
+	Note string
+}
+
+// notObserving is how the row of an observer that is not running begins.
+const notObserving = "not observing"
+
+// Failed says the observer stopped of itself, its capture having ended, rather than being
+// stopped or never started: anchor records why only then.
+func (o Observer) Failed() bool {
+	return strings.HasPrefix(o.Note, notObserving+": ")
 }
 
 // ParseStatus reads the output of `anchorctl status`.
@@ -68,8 +103,13 @@ func ParseStatus(stdout string) Status {
 		switch {
 		case len(f) == 2 && f[0] == "overlay":
 			st.Overlay = append(st.Overlay, f[1])
+		case len(f) == 2 && f[0] == "interface":
+			st.Interface = f[1]
 		case len(f) == 3 && f[0] == "works" && f[1] == "until":
 			st.WorksUntil, _ = time.Parse(time.RFC3339, f[2])
+		case len(f) >= 2 && f[0] == "observer":
+			note := strings.Join(f[1:], " ")
+			st.Observer = Observer{Served: true, Running: !strings.HasPrefix(note, notObserving), Note: note}
 		}
 	}
 

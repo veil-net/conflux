@@ -62,7 +62,9 @@
     $repo = 'veil-net/conflux'
     $tag = if ($env:CONFLUX_VERSION) { $env:CONFLUX_VERSION } else { 'latest' }
     $dir = if ($env:CONFLUX_INSTALL_DIR) { $env:CONFLUX_INSTALL_DIR } else { Join-Path $env:ProgramFiles 'conflux' }
-    $dir = [IO.Path]::GetFullPath($dir).TrimEnd('\')
+    # Against PowerShell's location, which a relative CONFLUX_INSTALL_DIR means, and not the
+    # process's working directory, which [IO.Path]::GetFullPath would use and need not be it.
+    $dir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($dir).TrimEnd('\')
     $exe = Join-Path $dir 'conflux.exe'
     $asset = "conflux-windows-$arch.exe"
     $base = "https://github.com/$repo/releases/download/$tag"
@@ -115,15 +117,26 @@
             # the old one is moved aside to conflux.exe.old, and put back if the new one cannot go
             # in. `conflux update` does the same, and removes what an earlier one left.
             New-Item -ItemType Directory -Force -Path $dir | Out-Null
-            if ($have) {
-                Remove-Item -LiteralPath "$exe.old" -Force -ErrorAction SilentlyContinue
-                Move-Item -LiteralPath $exe -Destination "$exe.old" -Force
-            }
+
+            # Copied in beside it, not moved: a file moved from the account's temporary directory
+            # keeps the ACL it was made with there, which grants that account itself full control,
+            # and the service runs this as SYSTEM. A copy made in the install directory takes that
+            # directory's, and is then renamed into place whole.
+            $staged = "$exe.new"
+            Copy-Item -LiteralPath $new -Destination $staged -Force
             try {
-                Move-Item -LiteralPath $new -Destination $exe
-            } catch {
-                if ($have) { Move-Item -LiteralPath "$exe.old" -Destination $exe -Force }
-                throw
+                if ($have) {
+                    Remove-Item -LiteralPath "$exe.old" -Force -ErrorAction SilentlyContinue
+                    Move-Item -LiteralPath $exe -Destination "$exe.old" -Force
+                }
+                try {
+                    Move-Item -LiteralPath $staged -Destination $exe
+                } catch {
+                    if ($have) { Move-Item -LiteralPath "$exe.old" -Destination $exe -Force }
+                    throw
+                }
+            } finally {
+                Remove-Item -LiteralPath $staged -Force -ErrorAction SilentlyContinue
             }
             Remove-Item -LiteralPath "$exe.old" -Force -ErrorAction SilentlyContinue
 

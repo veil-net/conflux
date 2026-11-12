@@ -17,7 +17,7 @@ import (
 func TestAnchordIsStartedWithAConfig(t *testing.T) {
 	d := dirs(t)
 
-	args := anchordArgs(d)
+	args := anchordArgs(d, &config.Config{Mode: config.ModeProxy})
 
 	i := slices.Index(args, "-config")
 	if i < 0 {
@@ -26,6 +26,26 @@ func TestAnchordIsStartedWithAConfig(t *testing.T) {
 
 	if got := args[i+1]; got != d.DaemonConfigFile() {
 		t.Errorf("-config %s, want %s", got, d.DaemonConfigFile())
+	}
+}
+
+// TestTheObserverIsAllowedOnlyWhereItIsConfigured: the Observer service has the host copy
+// the start of every flow to the daemon, so a daemon not asked to observe is not started
+// able to.
+func TestTheObserverIsAllowedOnlyWhereItIsConfigured(t *testing.T) {
+	d := dirs(t)
+
+	for name, tc := range map[string]struct {
+		cfg  config.Config
+		want bool
+	}{
+		"an anchor":                  {config.Config{Mode: config.ModeTUN}, false},
+		"an anchor and the observer": {config.Config{Mode: config.ModeProxy, Observer: &config.Observer{}}, true},
+		"observing alone":            {config.Config{Mode: config.ModeObserve, Observer: &config.Observer{}}, true},
+	} {
+		if got := slices.Contains(anchordArgs(d, &tc.cfg), "-allow-observer"); got != tc.want {
+			t.Errorf("%s: -allow-observer %v, want %v", name, got, tc.want)
+		}
 	}
 }
 

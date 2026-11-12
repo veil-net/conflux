@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -355,8 +356,9 @@ func TestFetchRefusesAWrongDigest(t *testing.T) {
 	}
 }
 
-// A failed fetch must leave nothing behind. The temp-and-rename exists so a half-written
-// file cannot be mistaken for a binary, and this is what proves it.
+// A failed fetch must leave nothing behind: not a half-written file, which the temp-and-rename
+// keeps from being mistaken for a binary, and not the binaries that did arrive, which beside
+// an older copy of the one that did not would be a pair from two builds.
 func TestARefusedFetchWritesNothing(t *testing.T) {
 	files := pair()
 	f := newRelease(files)
@@ -368,7 +370,8 @@ func TestARefusedFetchWritesNothing(t *testing.T) {
 
 	dir := t.TempDir()
 
-	if err := Fetch(context.Background(), src, []string{"anchord-linux-amd64"}, dir, quiet); err == nil {
+	err := Fetch(context.Background(), src, []string{"anchord-linux-amd64", "anchorctl-linux-amd64"}, dir, quiet)
+	if err == nil {
 		t.Fatal("want a refusal")
 	}
 
@@ -542,6 +545,28 @@ func TestARefusedTokenSaysSo(t *testing.T) {
 	err := Fetch(context.Background(), src, []string{"anchord-linux-amd64"}, t.TempDir(), quiet)
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Fatalf("want a 401 refusal, got %v", err)
+	}
+}
+
+// TestA403SaysWhoRefused: a 403 from the API is the token's; one from the storage host a
+// binary is redirected to, which is sent no token, is the signed link's, and saying the token
+// lacks a permission there would send somebody to fix the wrong thing.
+func TestA403SaysWhoRefused(t *testing.T) {
+	src := Source{API: "https://api.github.com", Repo: "veil-net/anchor", Tag: "latest"}
+
+	for host, want := range map[string]string{
+		"api.github.com":                       "Contents: read",
+		"release-assets.githubusercontent.com": "signed link",
+	} {
+		resp := &http.Response{
+			StatusCode: http.StatusForbidden,
+			Header:     http.Header{},
+			Request:    &http.Request{URL: &url.URL{Scheme: "https", Host: host, Path: "/x"}},
+		}
+
+		if err := statusErr(resp, src); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("a 403 from %s: %v, want it to say %q", host, err, want)
+		}
 	}
 }
 

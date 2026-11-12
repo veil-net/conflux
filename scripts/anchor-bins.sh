@@ -93,7 +93,8 @@ done
 
 # And what a fetch that was killed part way left: its temporary files are dotfiles,
 # which the glob above does not see, and on the persistent runner nothing else would.
-rm -f "$DEST"/.anchor-fetch-*
+# Only stale ones: a job beside this one sharing the cache may be fetching into it now.
+find "$DEST" -maxdepth 1 -name '.anchor-fetch-*' -mmin +60 -exec rm -f {} +
 
 # release/ is the pinned, garbled build users get. dist/ is the unpinned development
 # cross-build, which joins any tree and is wrong for anything shipped -- so it is
@@ -169,24 +170,29 @@ if [ "$kind" = dist ]; then
   echo "anchor-bins: it will join any realm tree. Do not ship a conflux built from it." >&2
 fi
 
+# Every file checked before any is copied: a release/ that is half built would otherwise
+# leave one build's anchord beside another's anchorctl, which the next make build embeds.
 missing=0
-copied=0
 
 for n in "${want[@]}"; do
   if [ ! -f "$src/$n" ]; then
     echo "anchor-bins: missing $src/$n" >&2
-    missing=1
-    continue
+    missing=$((missing + 1))
   fi
+done
+
+if [ "$missing" != 0 ]; then
+  echo "anchor-bins: $missing of $TOTAL are missing from $src, so nothing was copied" >&2
+  echo "anchor-bins: build them with 'make release' (pinned) or 'make dist' in the anchor repo" >&2
+  exit 1
+fi
+
+copied=0
+
+for n in "${want[@]}"; do
   cp -f "$src/$n" "$DEST/$n"
   chmod 0755 "$DEST/$n"
   copied=$((copied + 1))
 done
-
-if [ "$missing" != 0 ]; then
-  echo "anchor-bins: $copied of $TOTAL copied; the rest are missing from $src" >&2
-  echo "anchor-bins: build them with 'make release' (pinned) or 'make dist' in the anchor repo" >&2
-  exit 1
-fi
 
 echo "anchor-bins: $copied/$TOTAL copied from $src ($kind)"

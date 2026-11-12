@@ -30,8 +30,16 @@ const workDir = ""
 // dropState holds the token the next anchord is started with, from dropTo to the start,
 // and the sets anchord -h has started from under one.
 type dropState struct {
-	token  windows.Token
+	token windows.Token
+	// sid is the service SID the token was made for, which anchord's process and thread
+	// are opened to: asked of Windows once, by dropTo, beside the token it goes with.
+	sid    string
 	smoked map[string]bool
+
+	// sd is the descriptor anchord's process and thread are created with. The attributes
+	// CreateProcess reads hold it as a uintptr, which keeps nothing alive, and it is on the
+	// Go heap: held here, it outlives every start that names it.
+	sd *windows.SECURITY_DESCRIPTOR
 }
 
 // windowsServiceName is the SCM name of this installation's service, as
@@ -58,7 +66,7 @@ const (
 
 // dropTo makes the token anchord runs as, and checks that anchord starts under it.
 func (s *Supervisor) dropTo(p *Privilege) string {
-	sid, err := windows.StringToSid(serviceSID(windowsServiceName()))
+	sid, err := serviceSID(windowsServiceName())
 	if err != nil {
 		return "could not form the service's SID: " + err.Error()
 	}
@@ -72,6 +80,7 @@ func (s *Supervisor) dropTo(p *Privilege) string {
 
 	s.releaseDrop()
 	s.drop.token = tok
+	s.drop.sid = sid.String()
 
 	p.As = `NT AUTHORITY\LOCAL SERVICE`
 
@@ -178,6 +187,12 @@ func restrictToken(tok windows.Token, sid *windows.SID) (windows.Token, error) {
 
 	// The SID owns what anchord creates, rather than LOCAL SERVICE, whose every other
 	// process would otherwise have an owner's rights on it.
+	//
+	// Best effort, and not a reason to give up the drop: localServiceToken adds the SID with
+	// SE_GROUP_OWNER, so this holds for the token anchord is started with, and where it did
+	// not, what the default DACL below grants SYSTEM and the SID alone still bounds what the
+	// owner could do. Every drop that fails runs anchord as SYSTEM instead, which would trade
+	// this narrower gap for a wider one.
 	owner := struct{ Owner *windows.SID }{sid}
 	_ = windows.SetTokenInformation(restricted, windows.TokenOwner,
 		(*byte)(unsafe.Pointer(&owner)), uint32(unsafe.Sizeof(owner)))
@@ -278,22 +293,27 @@ func (s *Supervisor) procAttrFor(p Privilege) *syscall.SysProcAttr {
 		return attr
 	}
 
-	sid := serviceSID(windowsServiceName())
-	sd := "O:SYD:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;" + sid + ")(A;;RC;;;OW)"
-
 	attr.Token = syscall.Token(s.drop.token)
-	attr.ProcessAttributes = securityAttributes(sd)
-	attr.ThreadAttributes = securityAttributes(sd)
+
+	if s.drop.sd == nil {
+		sd, err := windows.SecurityDescriptorFromString(
+			"O:SYD:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;" + s.drop.sid + ")(A;;RC;;;OW)")
+		if err != nil {
+			return attr
+		}
+
+		s.drop.sd = sd
+	}
+
+	attr.ProcessAttributes = securityAttributes(s.drop.sd)
+	attr.ThreadAttributes = securityAttributes(s.drop.sd)
 
 	return attr
 }
 
-func securityAttributes(sddl string) *syscall.SecurityAttributes {
-	sd, err := windows.SecurityDescriptorFromString(sddl)
-	if err != nil {
-		return nil
-	}
-
+// securityAttributes points at sd, which the caller keeps alive for as long as the
+// attributes may be read.
+func securityAttributes(sd *windows.SECURITY_DESCRIPTOR) *syscall.SecurityAttributes {
 	return &syscall.SecurityAttributes{
 		Length:             uint32(unsafe.Sizeof(syscall.SecurityAttributes{})),
 		SecurityDescriptor: uintptr(unsafe.Pointer(sd)),
@@ -306,9 +326,11 @@ func (s *Supervisor) releaseDrop() {
 		s.drop.token.Close()
 		s.drop.token = 0
 	}
+
+	s.drop.sid, s.drop.sd = "", nil
 }
 
-func startProcess(cmd *exec.Cmd, _ Privilege) error { return cmd.Start() }
+func startProcess(cmd *exec.Cmd, _ Privilege, _ <-chan struct{}) error { return cmd.Start() }
 
 // freshDaemonRun makes anchord's run directory afresh: the service SID's, with its rights
 // set as it is created and never propagated over anything the account wrote; SYSTEM's and
@@ -338,7 +360,12 @@ func makeAnchorDir(path string, p Privilege) error {
 		return paths.Restrict(path, true)
 	}
 
-	sid := serviceSID(windowsServiceName())
+	ssid, err := serviceSID(windowsServiceName())
+	if err != nil {
+		return err
+	}
+
+	sid := ssid.String()
 	sddl := "O:SYG:SYD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;;" + dirOwnRights + ";;;" + sid + ")" +
 		"(A;OICIIO;FA;;;" + sid + ")(A;OICI;RC;;;OW)"
 
@@ -380,7 +407,7 @@ func anchorDirFor(path string, p Privilege) bool {
 }
 
 func grantsServiceSID(path string) bool {
-	sid, err := windows.StringToSid(serviceSID(windowsServiceName()))
+	sid, err := serviceSID(windowsServiceName())
 	if err != nil {
 		return false
 	}
@@ -468,7 +495,7 @@ func writeDaemonFile(path string, data []byte, p Privilege) error {
 		return nil
 	}
 
-	sid, err := windows.StringToSid(serviceSID(windowsServiceName()))
+	sid, err := serviceSID(windowsServiceName())
 	if err != nil {
 		return err
 	}

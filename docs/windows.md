@@ -33,7 +33,7 @@ LocalSystem process. conflux:
 3. verifies the **archive** digest against the pin, and aborts printing both digests if
    it disagrees;
 4. extracts `wintun/bin/<arch>/wintun.dll` and only then writes it, atomically, into
-   the `0700` set directory.
+   the set directory, which only SYSTEM and Administrators may write.
 
 The same constant is read by CI, rather than typed a second time — a workflow that
 pinned a different version from the product code would be a test of nothing.
@@ -103,6 +103,14 @@ and an `OWNER RIGHTS` entry so that owning a file grants nothing — and are nev
 propagated over afterwards. A SYSTEM `anchord` has `anchor.root\` and a `run\anchord\` of
 SYSTEM's and Administrators' instead.
 
+## An ephemeral run
+
+`conflux up --ephemeral` and `conflux proxy --ephemeral` need Administrator on Windows,
+whatever the mode: every directory conflux keeps there, the ephemeral run's
+`%ProgramData%\conflux-ephemeral` included, is SYSTEM's and Administrators'. anchord runs
+as that Administrator, in conflux's job object, so it ends however conflux does. See
+[ephemeral.md](ephemeral.md).
+
 ## The service
 
 Registered as `conflux`, displayed as `VeilNet Conflux`, running as `LocalSystem`. See
@@ -113,9 +121,9 @@ supervisor logs `LOCAL SERVICE` on for it with `LogonUserExExW`, the service's S
 logon SID of its own added as groups, as the SCM gives a service, and takes every
 privilege but `SeChangeNotify` out of the token — `LOCAL SERVICE` holds `SeImpersonate`,
 which is the well-known way back to SYSTEM, and a privilege merely disabled can be
-enabled again. The token's default DACL, and the process's and its
-thread's own, name only SYSTEM, Administrators and the service's SID, so nothing else that
-runs as `LOCAL SERVICE` can open it or what it creates; it does still share that account's
+enabled again. The token's default DACL names only SYSTEM and the service's SID, and the
+process's and its thread's own add Administrators, so nothing else that runs as
+`LOCAL SERVICE` can open it or what it creates; it does still share that account's
 logon session with them. Before it is relied on, `anchord -h` is started under the token
 once: a host that will not start it so runs it as SYSTEM, as before, and `conflux status`
 says why. See [security.md](security.md#what-anchord-runs-as).

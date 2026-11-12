@@ -235,3 +235,59 @@ func TestSweepLeavesWhatMayBeInUse(t *testing.T) {
 		}
 	}
 }
+
+// TestUsageMakesNothing: help, asked where nothing is extracted -- before an install, after an
+// uninstall, by an account that cannot read the installation -- runs a temporary anchorctl and
+// removes it, and makes none of the installation's directories. Where a whole extraction is
+// there it is the one used, and nothing is removed.
+func TestUsageMakesNothing(t *testing.T) {
+	anchortest.Require(t)
+
+	t.Setenv("CONFLUX_DIR", filepath.Join(t.TempDir(), "never"))
+	t.Setenv("TMPDIR", t.TempDir())
+
+	d := paths.Default()
+
+	bin, done, err := ForUsage(d)
+	if err != nil {
+		t.Fatalf("ForUsage: %v", err)
+	}
+
+	if out, err := exec.Command(bin, "help").CombinedOutput(); err != nil || !strings.Contains(string(out), "anchorctl") {
+		t.Fatalf("the temporary anchorctl did not answer help: %v\n%s", err, out)
+	}
+
+	done()
+
+	if _, err := os.Stat(filepath.Dir(bin)); !os.IsNotExist(err) {
+		t.Errorf("the temporary anchorctl's directory is still there after done (%v)", err)
+	}
+
+	if _, err := os.Stat(os.Getenv("CONFLUX_DIR")); !os.IsNotExist(err) {
+		t.Errorf("asking for usage made the installation's directories (%v)", err)
+	}
+
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	tools, err := Ensure(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	bin, done, err = ForUsage(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	done()
+
+	if bin != tools.Anchorctl {
+		t.Errorf("usage ran %s where %s is extracted", bin, tools.Anchorctl)
+	}
+
+	if _, err := os.Stat(bin); err != nil {
+		t.Errorf("done removed the extracted anchorctl: %v", err)
+	}
+}

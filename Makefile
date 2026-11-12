@@ -6,6 +6,49 @@
 GO      ?= go
 BIN     ?= bin
 DIST    ?= dist
+
+# FIPS 140-3 mode, on in every conflux built here, against a frozen Go Cryptographic Module,
+# as anchor builds its own programs. GOFIPS140 names the module version: the build compiles
+# that snapshot (it ships in the toolchain as lib/fips140/<version>.zip) in place of the
+# tree's own crypto/internal/fips140, and makes fips140=on the default GODEBUG, so conflux
+# runs the module's self-tests and integrity check as it starts and crypto/tls negotiates
+# only approved parameters with the enrolment API, GitHub and wintun.net.
+#
+# v1.26.0 and not v1.0.0, which is the version CMVP has certified (#5247): v1.0.0 has no
+# ML-DSA, which `conflux cert` signs with. v1.26.0 is the module in CMVP review, and the one
+# anchord is built against. docs/security.md, "FIPS 140-3 and CMVP", says what is and is
+# not claimed. The pin is also in ci.yml; keep the two equal.
+#
+# Not for OpenBSD, which the module refuses (-fexecute-only, golang/go#70880): a binary for
+# it built with fips140=on panics before main. build and dist build that target with
+# GOFIPS140=off, and `conflux cert` refuses to run there.
+GOFIPS140 ?= v1.26.0
+export GOFIPS140
+
+# The go.mod toolchain first on PATH, for every recipe and every script one runs.
+#
+# An installed go older than the version go.mod names switches to that version itself
+# (GOTOOLCHAIN=auto), but it reads GOFIPS140 first, and one that predates v1.26.0 stops
+# there: "unknown GOFIPS140 version". Asked with the module switched off, `go env GOROOT`
+# names the toolchain go.mod selects, downloading it if need be, and its go is then the one
+# found.
+GOROOT_BIN := $(shell GOFIPS140=off go env GOROOT 2>/dev/null)
+ifneq ($(GOROOT_BIN),)
+export PATH := $(GOROOT_BIN)/bin:$(PATH)
+endif
+
+# fips names the GOFIPS140 a target builds with: off for OpenBSD, the pin for every other.
+# dist holds each artifact to it, from the build settings `go version -m` reads, where a build
+# with the module off records no GOFIPS140 at all.
+FIPS = fips() { if [ "$$1" = openbsd ]; then echo off; else echo $(GOFIPS140); fi; }
+
+# The tests run with the module refusing what it does not approve: GODEBUG=fips140=only
+# turns a non-approved algorithm, or an approved one used outside its approved parameters,
+# into an error or a panic. Set on the test binary through -exec, never on the go command,
+# whose own GODEBUG is no business of this check; `env` replaces any GODEBUG already set.
+# FIPSTEST= runs them without it.
+FIPSTEST ?= only
+TESTEXEC = $(if $(FIPSTEST),-exec 'env GODEBUG=fips140=$(FIPSTEST)')
 # VERSION is the file, not the tag. A tag is a claim about a commit; the file is a
 # claim about the tree, and it is the tree that gets built. release.yml tags the release
 # with this same file, so the number in the binary and the number on the release cannot
@@ -14,9 +57,13 @@ DIST    ?= dist
 VERSION := $(shell cat $(CURDIR)/VERSION 2>/dev/null || echo dev)
 COMMIT  := $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 
+# CHANNEL is dev for a build of dev, which release.yml passes, and empty for a release.
+CHANNEL ?=
+
 LDFLAGS := -s -w \
 	-X github.com/veil-net/conflux/internal/version.Version=$(VERSION) \
-	-X github.com/veil-net/conflux/internal/version.Commit=$(COMMIT)
+	-X github.com/veil-net/conflux/internal/version.Commit=$(COMMIT) \
+	-X github.com/veil-net/conflux/internal/version.Channel=$(CHANNEL)
 
 # STAMP defines `stamp os-arch[.exe]`, which prints the -X flags that hand a build the
 # SHA-256s of the two files that target's //go:embed names, so a released conflux
@@ -90,15 +137,15 @@ anchor-bins:
 # executable suffix: bin/conflux.exe on Windows.
 build:
 	@mkdir -p $(BIN)
-	@$(STAMP); set -- $$($(GO) env GOOS GOARCH GOEXE); \
-	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS) $$(stamp $$1-$$2$$3)" -o $(BIN)/conflux$$3 . && \
+	@$(STAMP); $(FIPS); set -- $$($(GO) env GOOS GOARCH GOEXE); \
+	GOFIPS140=$$(fips $$1) CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS) $$(stamp $$1-$$2$$3)" -o $(BIN)/conflux$$3 . && \
 	ls -l $(BIN)/conflux$$3 | awk '{printf "  %.1f MB  %s\n", $$5/1048576, $$NF}'
 
 test:
-	$(GO) test ./...
+	$(GO) test $(TESTEXEC) ./...
 
 race:
-	$(GO) test -race ./...
+	$(GO) test $(TESTEXEC) -race ./...
 
 vet:
 	$(GO) vet ./...
@@ -144,11 +191,11 @@ docscheck:
 	done; \
 	exit $$fail
 
-# golden rewrites the argv fixtures after an intended change, so a change to what
-# conflux passes anchorctl shows up as a reviewable text diff; TestArgvGoldens fails on
-# any other.
+# golden rewrites the argv fixtures and cert show's goldens after an intended change, so a
+# change to what conflux passes anchorctl, or prints of a certificate, shows up as a
+# reviewable text diff; TestArgvGoldens and TestShowGoldens fail on any other.
 golden:
-	$(GO) test ./internal/anchorctl -update
+	$(GO) test $(TESTEXEC) ./internal/anchorctl ./internal/pki -run 'TestArgvGoldens|TestShowGoldens' -update
 
 # cross vets every target, which compiles each one's packages and test files -- `go
 # build ./...` compiles no test files, so vet is what catches a platform-specific test
@@ -187,11 +234,11 @@ dist:
 	@# they take seven times as long for nothing. Each build's output waits in a log and the
 	@# gate reads them in TARGETS order, so a failure reads as it would have alone.
 	@rm -rf $(DIST)/.build && mkdir -p $(DIST)/.build
-	@$(STAMP); trap 'rm -rf $(DIST)/.build' EXIT; \
+	@$(STAMP); $(FIPS); trap 'rm -rf $(DIST)/.build' EXIT; \
 	for t in $(TARGETS); do \
 		os=$${t%/*}; arch=$${t#*/}; ext=""; \
 		[ "$$os" = windows ] && ext=.exe; \
-		( CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath -ldflags "$(LDFLAGS) $$(stamp $$os-$$arch$$ext)" \
+		( GOFIPS140=$$(fips $$os) CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath -ldflags "$(LDFLAGS) $$(stamp $$os-$$arch$$ext)" \
 			-o $(DIST)/conflux-$$os-$$arch$$ext . > $(DIST)/.build/$$os-$$arch 2>&1; \
 		  echo $$? > $(DIST)/.build/$$os-$$arch.rc ) & \
 	done; wait; \
@@ -214,7 +261,13 @@ dist:
 			echo "       one anchor pair is ~45 MB; check that anchor/*.go names two files and not the directory"; \
 			exit 1; \
 		fi; \
-		echo "  ok   $$out  $${mb} MB"; \
+		want=$$(fips $$os); got=$$($(GO) version -m $$out | awk '$$1 == "build" && $$2 ~ /^GOFIPS140=/ { sub(/^GOFIPS140=/, "", $$2); print $$2 }'); \
+		got=$${got:-off}; \
+		if [ "$$got" != "$$want" ]; then \
+			echo "  FAIL $$out was built with GOFIPS140=$$got, and $$t ships with $$want"; \
+			exit 1; \
+		fi; \
+		echo "  ok   $$out  $${mb} MB  GOFIPS140=$$got"; \
 	done
 	@cd $(DIST) && (sha256sum conflux-* > SHA256SUMS 2>/dev/null || shasum -a 256 conflux-* > SHA256SUMS)
 	@echo "  wrote $(DIST)/SHA256SUMS"
@@ -246,16 +299,16 @@ help:
 	@echo "                   FETCH=1 to fetch the pinned binaries from anchor's release"
 	@echo "                   (needs ANCHOR_RELEASE_TOKEN; anchor is private)"
 	@echo "  make build       build for this machine, stamped, into $(BIN)/"
-	@echo "  make test        run the tests"
-	@echo "  make race        run them under the race detector"
+	@echo "  make test        run the tests, with the FIPS module refusing what it does not approve"
+	@echo "  make race        run them under the race detector, the same way"
 	@echo "  make vet         go vet for this machine"
 	@echo "  make cross       vet all 7 targets, test files included (works with placeholders)"
 	@echo "  make dist        build all 7 into $(DIST)/ with SHA256SUMS and the size gate"
 	@echo "                   (needs real binaries: make anchor-bins first)"
-	@echo "  make golden      rewrite the argv fixtures after an intended change"
+	@echo "  make golden      rewrite the argv and cert show goldens after an intended change"
 	@echo "  make image       build the systemd test image from $(DIST)/conflux-linux-amd64"
 	@echo "  make service-test  install and uninstall in a container that boots systemd"
-	@echo "  make integration   three nodes, one taint, over the real API (needs Docker)"
+	@echo "  make integration   four nodes, one taint, over the real API (needs Docker)"
 	@echo "  the checks run before a push, which CI does not run:"
 	@echo "  make fmtcheck    gofmt, checking (make fmt rewrites)"
 	@echo "  make lint        staticcheck, once per target OS"

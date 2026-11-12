@@ -15,6 +15,9 @@ import (
 // Restrict is a no-op here.
 func Restrict(string, bool) error { return nil }
 
+// RestrictToOwner is a no-op here: the mode set on the descriptor is the restriction.
+func RestrictToOwner(string, bool) error { return nil }
+
 // Trusted is always true here.
 func Trusted(string) bool { return true }
 

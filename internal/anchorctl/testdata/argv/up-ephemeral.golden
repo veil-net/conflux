@@ -1,0 +1,6 @@
+start
+-manifest
+-
+-tun=true
+-serve-exit=false
+-use-exit=false

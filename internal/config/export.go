@@ -59,9 +59,10 @@ type Export struct {
 	Traces  bool `json:"traces,omitempty"`
 	Logs    bool `json:"logs,omitempty"`
 
-	// Flows exports a log record for each interval of each IP flow the anchor carries
-	// between its own side and a peer, and of each circuit it relays. The anchor counts
-	// flows only while this is on.
+	// Flows exports a log record for each interval of each IP flow the observer records --
+	// the host's interfaces, and beside an anchor the overlay -- as an anchor.observed_flow
+	// event as it is made, and of each circuit the anchor relays. Without the observer it
+	// sends circuits alone: the anchor counts no IP flow of its own.
 	Flows bool `json:"flows,omitempty"`
 
 	// MetricIntervalNanos is how often accumulated metrics are sent. Zero is 60s.
@@ -173,6 +174,23 @@ func (e *Export) Validate() error {
 	}
 
 	return nil
+}
+
+// Signals are the signals the block turns on, as anchorctl's export names them: what a
+// start asks the daemon for, and what status says is being sent.
+func (e *Export) Signals() []string {
+	var out []string
+
+	for _, s := range []struct {
+		on   bool
+		name string
+	}{{e.Metrics, "metrics"}, {e.Traces, "traces"}, {e.Logs, "logs"}, {e.Flows, "flows"}} {
+		if s.on {
+			out = append(out, s.name)
+		}
+	}
+
+	return out
 }
 
 // String and GoString keep what an export block carries out of anything printed: its

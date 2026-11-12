@@ -1,0 +1,44 @@
+name: branch-flow
+
+# Whether a pull request goes where this repository's branches allow: work into dev, version3
+# from dev alone, and dev never behind version3 (docs/testing.md, "Branches";
+# scripts/branch-flow.sh).
+#
+# A workflow of its own rather than a job in ci.yml, for its triggers. Moving an open pull
+# request's base from dev to version3 fires `edited` and nothing else, so this has to run on it
+# -- and ci.yml, which cancels a run in progress for a newer one, would then rerun the whole
+# suite every time a title or a description changed. Here an edit costs a checkout.
+#
+# Required on dev and on version3 alike, beside ci.yml's checks. It always runs and fails rather
+# than skips, since a skipped required check counts as passing. On a hosted runner, fork or
+# not: it reads the repository and holds no secret.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: branch-flow-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  branch-flow:
+    name: branch-flow
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Every branch, for origin/version3 beside the pull request's merge, which is HEAD.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: where it goes, and from where
+        env:
+          BASE: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
+          RELEASE: version3
+        run: ./scripts/branch-flow.sh

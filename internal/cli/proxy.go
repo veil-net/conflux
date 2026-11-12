@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"flag"
-	"runtime"
 	"strings"
 
 	"github.com/veil-net/conflux/internal/config"
@@ -63,21 +62,37 @@ func runProxy(ctx context.Context, args []string) int {
 		parsed[i] = spec.String()
 	}
 
-	// Registering the boot service needs root even though userspace mode itself
-	// needs nothing, and a proxy that vanishes at the next reboot is not what
-	// anyone asked for.
-	if err := needsRoot("registering the boot service", "proxy", args); err != nil {
-		return fail(err)
-	}
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		return fail(err)
-	}
-
-	cfg, err := loadOrNew(d)
+	// An ephemeral run reads its credential first, and touches nothing of the machine's.
+	run, err := f.eph.prepare()
 	if err != nil {
 		return fail(err)
+	}
+
+	var (
+		d   paths.Dirs
+		cfg *config.Config
+	)
+
+	if run != nil {
+		if cfg, err = run.fresh(*f.apiBase); err != nil {
+			return fail(err)
+		}
+	} else {
+		// Registering the boot service needs root even though userspace mode itself
+		// needs nothing, and a proxy that vanishes at the next reboot is not what
+		// anyone asked for. An ephemeral run registers nothing; see run.root below.
+		if err := needsRoot("registering the boot service", "proxy", args); err != nil {
+			return fail(err)
+		}
+
+		d = paths.Default()
+		if err := d.EnsureAll(); err != nil {
+			return fail(err)
+		}
+
+		if cfg, err = loadOrNew(d); err != nil {
+			return fail(err)
+		}
 	}
 
 	// Before the warning below; see the same move in up.go.
@@ -85,12 +100,23 @@ func runProxy(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
+	if err := chooseObserver(cfg, f.fs); err != nil {
+		return fail(err)
+	}
+
+	if run != nil {
+		if err := run.root("proxy", cfg, args); err != nil {
+			return fail(err)
+		}
+	}
+
+	sayLeavingObserveMode(cfg)
+
 	if cfg.Mode == config.ModeTUN {
-		ui.Errf("this machine was running in TUN mode with interface %s.\n"+
-			"  Userspace mode replaces that: one daemon holds one anchor, and an anchor with\n"+
-			"  a host interface cannot also serve a reverse proxy -- with a TUN the kernel owns\n"+
-			"  the overlay address, so a service binds it directly and needs no proxy.",
-			interfaceLine(runtime.GOOS, cfg.TUNInterface()))
+		ui.Errf("this machine was running in TUN mode.\n" +
+			"  Userspace mode replaces that: one daemon holds one anchor, and an anchor with\n" +
+			"  a host interface cannot also serve a reverse proxy -- with a TUN the kernel owns\n" +
+			"  the overlay address, so a service binds it directly and needs no proxy.")
 
 		// What it routes stays, and so does the IPv4: in userspace the anchor forwards
 		// subnets and serves an exit from its own process.
@@ -124,7 +150,7 @@ func runProxy(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	held, err := heldCredential(d)
+	held, err := runCredential(run, d)
 	if err != nil {
 		return fail(err)
 	}
@@ -136,6 +162,14 @@ func runProxy(ctx context.Context, args []string) int {
 	// Last, as in up: the one step that may ask a question.
 	if err := config.ValidateSubnets(cfg.Subnets, cfg.Taints); err != nil {
 		return fail(err)
+	}
+
+	if run != nil {
+		if err := run.ipv4(cfg, *f.ipv4, *f.noIPv4); err != nil {
+			return fail(err)
+		}
+
+		return runEphemeral(ctx, cfg, run)
 	}
 
 	if err := chooseIPv4(cfg, *f.ipv4, *f.noIPv4); err != nil {
@@ -155,6 +189,7 @@ type proxyFlags struct {
 	ipv4, uplink, apiBase, lanDisco     *string
 	noIPv4, noUplink, noPeers, noSubnet *bool
 	port                                *uint
+	eph                                 ephemeralFlags
 }
 
 func newProxyFlags() *proxyFlags {
@@ -179,6 +214,9 @@ func newProxyFlags() *proxyFlags {
 	fs.Bool("low-latency", false, "carry frames on datagrams: no head-of-line blocking, and a lost frame stays lost")
 	fs.Bool("no-low-latency", false, "go back to carrying frames on streams")
 	registerExits(fs)
+	registerObserver(fs)
+
+	f.eph = registerEphemeral(fs)
 
 	fs.Var(&f.taints, "taint", taintUsage)
 	fs.Var(&f.subnets, "subnet", subnetUsage)
@@ -188,14 +226,22 @@ func newProxyFlags() *proxyFlags {
 		ui.Printf("conflux proxy — publish a local service on the overlay, without an interface\n\n" +
 			"  conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T] [--ipv4 ADDRESS | --no-ipv4]\n" +
 			"                [--subnet CIDR... | --no-subnet] [--serve-exit | --use-exit]\n" +
-			"                [--uplink DEV | --no-uplink] [--peers HOST:PORT | --no-peers]\n\n" +
+			"                [--uplink DEV | --no-uplink] [--peers HOST:PORT | --no-peers]\n" +
+			"                [--observe | --no-observe] [--export HOST:PORT]\n" +
+			"                [--ephemeral [--manifest FILE|-]]\n\n" +
 			"Runs the anchor entirely in userspace, so it needs no TUN device and no\n" +
 			"CAP_NET_ADMIN. Nothing on this host can see the overlay: the way in is a\n" +
 			"service named here, and the way out a --subnet or --serve-exit, which the\n" +
 			"anchor forwards from its own process. With one of those, the port specs may\n" +
 			"be left out.\n\n" +
 			"With --uplink the realm is reached over a link rather than the host's network,\n" +
-			"which is the pair a machine with neither privilege nor an IP network needs.\n\n")
+			"which is the pair a machine with neither privilege nor an IP network needs.\n\n" +
+			"With --observe the daemon observes beside the anchor: an inventory of the\n" +
+			"cryptography of this host's traffic, which conflux observe -h describes.\n\n" +
+			"With --ephemeral nothing is kept: it runs in the foreground from a credential held\n" +
+			"in memory alone, enrolled or piped in with --manifest, registers nothing, and needs\n" +
+			"no root. When anchord stops, or on Ctrl-C, everything is gone; docs/ephemeral.md\n" +
+			"describes it.\n\n")
 		fs.PrintDefaults()
 	}
 
@@ -215,15 +261,22 @@ func (f *proxyFlags) lookup(arg string) (fl *flag.Flag, help bool) {
 }
 
 // unknown returns the first dash-prefixed argument that is not one of conflux proxy's
-// own, or "".
+// own, or "". The value of a flag that takes one is its value whatever it looks like, as
+// split reads it: `--manifest -` names stdin, and is not a flag called "-".
 func (f *proxyFlags) unknown(args []string) string {
-	for _, a := range args {
-		if !strings.HasPrefix(a, "-") {
-			continue
-		}
+	expectValue := false
 
-		if fl, help := f.lookup(a); fl == nil && !help {
-			return a
+	for _, a := range args {
+		switch {
+		case expectValue:
+			expectValue = false
+		case strings.HasPrefix(a, "-"):
+			fl, help := f.lookup(a)
+			if fl == nil && !help {
+				return a
+			}
+
+			expectValue = fl != nil && !strings.Contains(a, "=") && !isBoolFlag(fl)
 		}
 	}
 

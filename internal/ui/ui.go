@@ -103,3 +103,7 @@ func Confirm(prompt string) bool {
 		return false
 	}
 }
+
+// IsTerminalFile reports whether f is a terminal, asking the line discipline: /dev/null,
+// a character device too, is not one.
+func IsTerminalFile(f *os.File) bool { return isTerminal(f.Fd()) }

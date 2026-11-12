@@ -10,6 +10,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
+	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
@@ -76,9 +77,8 @@ func install(ctx context.Context, d paths.Dirs, standalone bool) int {
 
 		ui.Printf("The boot service is registered and will start at boot.\n" +
 			"There is no configuration yet, so there is nothing to start now.\n\n" +
-			"  conflux up                          join with a network interface\n" +
-			"  conflux proxy 8080=127.0.0.1:3000   publish a port, no interface needed\n\n" +
-			"Either writes the configuration and starts it.\n")
+			configureHint + "\n\n" +
+			"Each writes the configuration and starts it.\n")
 
 		return ExitOK
 	}
@@ -118,7 +118,7 @@ func startFromConfig(ctx context.Context, d paths.Dirs, mgr service.Manager, cfg
 		return fail(err)
 	}
 
-	st, err := waitForAnchor(ctx, d)
+	st, err := waitFor(ctx, d, cfg)
 	if err != nil {
 		return fail(err)
 	}
@@ -192,9 +192,8 @@ func runStart(ctx context.Context, args []string) int {
 	// because somebody typed "start" is a surprise at the next reboot rather than now.
 	if !installed {
 		ui.Errf("conflux is not installed here, so there is no service to start.\n\n" +
-			"  conflux install    register the boot service, and start it if configured\n" +
-			"  conflux up         join with a network interface\n" +
-			"  conflux proxy 8080=127.0.0.1:3000   publish a port, no interface needed")
+			"  conflux install                     register the boot service, and start it if configured\n" +
+			configureHint)
 
 		return ExitUnavailable
 	}
@@ -207,9 +206,7 @@ func runStart(ctx context.Context, args []string) int {
 			return fail(err)
 		}
 
-		ui.Errf("There is no configuration on this machine, so there is nothing to start.\n\n" +
-			"  conflux up                          join with a network interface\n" +
-			"  conflux proxy 8080=127.0.0.1:3000   publish a port, no interface needed")
+		ui.Errf("There is no configuration on this machine, so there is nothing to start.\n\n" + configureHint)
 
 		return ExitNoConfig
 	}
@@ -309,6 +306,15 @@ func runUninstall(_ context.Context, args []string) int {
 
 	d := paths.Default()
 
+	// Its account goes with the installation's, and nothing may be running as it when it does:
+	// the run ends itself, with its anchor, when it is stopped.
+	if e, live := liveEphemeral(); live {
+		ui.Errf("an ephemeral anchor is running from %s.\n"+
+			"  Stop it first (Ctrl-C where it runs): uninstall removes the account it runs as", e.State)
+
+		return ExitUsage
+	}
+
 	if !confirmUninstall(d, *yes) {
 		return ExitUsage
 	}
@@ -321,6 +327,14 @@ func runUninstall(_ context.Context, args []string) int {
 	// Whatever anchord a supervisor that died left running out of the state directory,
 	// once the service's own supervisor has let go of it.
 	daemon.Reap(d, 35*time.Second)
+
+	// And what an ephemeral run that was killed left: its anchord, where nothing ended it with
+	// the run (macOS and the BSDs), and its root -- the extracted pair and the token -- which
+	// nothing else removes. Under the root's lock, as a run's own clean-up is, so one starting
+	// now is not emptied out from under itself.
+	if e, stale := staleEphemeral(); stale {
+		errs = append(errs, removeEphemeralRoot(e))
+	}
 
 	for _, dir := range []string{d.Run, d.State, d.Config} {
 		errs = append(errs, os.RemoveAll(dir))
@@ -337,6 +351,21 @@ func runUninstall(_ context.Context, args []string) int {
 		"conflux up here again draws a new identity and a new overlay address.\n")
 
 	return ExitOK
+}
+
+// removeEphemeralRoot stops whatever anchord a killed ephemeral run left in its root, and
+// removes the root, unless a run holds it by now.
+func removeEphemeralRoot(e paths.Dirs) error {
+	unlock, ok, err := flock.TryAcquire(e.ServeLockFile())
+	if err != nil || !ok {
+		return err
+	}
+
+	_, reapErr := daemon.ReapOrphan(e)
+
+	unlock()
+
+	return errors.Join(reapErr, os.RemoveAll(e.State))
 }
 
 // confirmUninstall makes the irreversible part explicit before it happens.

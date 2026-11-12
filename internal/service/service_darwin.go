@@ -15,7 +15,11 @@ import (
 
 // Functions and not constants because a run rooted in a CONFLUX_DIR is a separate
 // installation and must not be registered over the machine's own; see scope.
-func label() string     { return "org.veilnet.conflux" + paths.Scope() }
+func label() string { return "org.veilnet.conflux" + paths.Scope() }
+
+// Label is the launchd job's label, which launchd hands what it starts as XPC_SERVICE_NAME.
+func Label() string { return label() }
+
 func plistPath() string { return "/Library/LaunchDaemons/" + label() + ".plist" }
 func target() string    { return "system/" + label() }
 
@@ -31,7 +35,7 @@ func newManager() Manager { return launchd{} }
 // /Library/LaunchDaemons at boot, so the plist on disk *is* the registration, and
 // Start and Restart load it when there is something to run.
 func (l launchd) Install(exe string, args ...string) error {
-	plist := launchdPlist(label(), append([]string{exe}, args...), logFile())
+	plist := launchdPlist(label(), append([]string{exe}, withLog(args)...), logFile())
 
 	// 0644 whatever was there before: launchd refuses a job whose plist is group- or
 	// world-writable, for a reason nothing in its error names.

@@ -20,12 +20,8 @@ func Acquire(path string) (func(), error) {
 	return unlock, err
 }
 
-// TryAcquire takes the lock if nobody holds it. ok is false when somebody does, and
-// then nothing is held and there is nothing to release.
-//
-// The same lock anchord takes on its control socket's .lock, so it answers for that
-// file too: whether a daemon is serving there.
-func TryAcquire(path string) (unlock func(), ok bool, err error) {
+// tryAcquire is one attempt at TryAcquire.
+func tryAcquire(path string) (unlock func(), ok bool, err error) {
 	unlock, ok, err = lock(path, windows.LOCKFILE_EXCLUSIVE_LOCK|windows.LOCKFILE_FAIL_IMMEDIATELY)
 	if errors.Is(err, windows.ERROR_LOCK_VIOLATION) {
 		return nil, false, nil

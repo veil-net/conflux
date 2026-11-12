@@ -1,7 +1,8 @@
 name: anchor-bins
 description: >
-  Populate anchor/bin with the pinned anchor binaries, fetched from the `latest` release
-  of veil-net/anchor.
+  Populate anchor/bin with the pinned anchor binaries, fetched from a release of
+  veil-net/anchor: `latest` for a release of conflux and what is tested against one,
+  `dev-latest`, anchor's dev build, for conflux's dev.
 
 inputs:
   client-id:
@@ -20,6 +21,12 @@ inputs:
       that builds for one platform. Empty fetches every target.
     required: false
     default: ""
+  tag:
+    description: >
+      The release of anchor to fetch, by its tag: `latest`, anchor's release, or
+      `dev-latest`, its dev build, which conflux's dev embeds and is tested against.
+    required: false
+    default: latest
 
 runs:
   using: composite
@@ -54,8 +61,10 @@ runs:
     # On veilnet-dev, fetched into the runner's tool cache and copied from there: that
     # directory survives between runs, and the fetcher keeps a file whose SHA-256 is the
     # one the release's manifest gives -- so an unchanged release costs a read rather than
-    # three hundred megabytes, and nothing the manifest does not describe survives. A
-    # hosted runner starts empty every time, so it fetches straight into anchor/bin.
+    # three hundred megabytes, and nothing the manifest does not describe survives. One
+    # directory a tag, so a dev job and a release job on one machine neither evict each
+    # other's binaries nor write the same files at once. A hosted runner starts empty every
+    # time, so it fetches straight into anchor/bin.
     #
     # The token reaches the fetcher as an environment variable and never as an argument:
     # an argument is visible in `ps` to every other user on the machine.
@@ -71,7 +80,8 @@ runs:
         ANCHOR_RELEASE_TOKEN: ${{ steps.app.outputs.token }}
         ANCHOR_SRC: no-anchor-checkout
         ONLY: ${{ inputs.targets }}
-        DEST: ${{ runner.environment == 'self-hosted' && format('{0}/conflux-anchor-bin', runner.tool_cache) || 'anchor/bin' }}
+        ANCHOR_TAG: ${{ inputs.tag }}
+        DEST: ${{ runner.environment == 'self-hosted' && format('{0}/conflux-anchor-bin-{1}', runner.tool_cache, inputs.tag) || 'anchor/bin' }}
       run: |
         set -euo pipefail
         make anchor-bins FETCH=1

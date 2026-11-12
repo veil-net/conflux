@@ -277,9 +277,9 @@ func (m *Manifest) IPv4() string {
 // is the field where that distinction was hardest to settle. The precedent cuts
 // both ways and both halves of it are real.
 //
-// For carrying it: telemetrySecret already travels in this document, so the
-// principle that a manifest may configure how a machine is observed is not new.
-// And the alternative is worse in practice -- an operator who commissioned fifty
+// For carrying it: this document already decides how the machine runs -- its taints,
+// whether it is an exit, the port it binds -- so a manifest configuring how it is
+// observed is not a new kind of authority. And the alternative is worse in practice -- an operator who commissioned fifty
 // nodes in a web UI would then have to type the same collector endpoint and a
 // different per-node credential into fifty config files by hand, which is a
 // procedure with a typo in it.
@@ -354,7 +354,11 @@ func (m *Manifest) Bootstrap() []string {
 
 // WithRenewal splices a renewal into the document: the chain, when it expires, when it
 // was received, and the issuer's bootstrap list when the answer carried one -- and
-// nothing else. The taints stay: the renewal restated them.
+// nothing else, but for `severedAt`, which goes. The taints stay: the renewal restated
+// them. `severedAt` is anchorctl's note, made when it minted the document, of when the
+// chain above the old credential lapsed; a renewal answers with no such date for the new
+// one, and nothing reads it to start, so it is dropped rather than left describing a chain
+// the machine no longer holds.
 //
 // This has to happen on every successful renewal, not just the hot install into the
 // running anchor. `anchorctl renew` swaps the chain in memory; if the document on
@@ -394,6 +398,7 @@ func (m *Manifest) WithRenewal(r Renewal, issuedAt time.Time) (*Manifest, error)
 
 		next.raw[field] = b
 	}
+	delete(next.raw, "severedAt")
 
 	return next, nil
 }

@@ -9,7 +9,5 @@ start
 0
 -lan-discovery=no
 -tun=true
--tun-name
-anchor0
 -serve-exit=false
 -use-exit=false

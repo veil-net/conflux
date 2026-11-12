@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/veil-net/conflux/anchor"
+	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
@@ -33,7 +34,11 @@ func runStatus(ctx context.Context, args []string) int {
 	d := paths.Default()
 
 	ui.Println(version.String())
+	// conflux's own mode: anchord's is the fips140 row of the anchor's status below.
+	ui.Field("fips140", version.FIPS())
 	ui.Println()
+
+	ephemeral := reportEphemeralRun(ctx)
 
 	cfg, err := config.Load(d)
 	if err != nil {
@@ -44,8 +49,12 @@ func runStatus(ctx context.Context, args []string) int {
 		reportService()
 		ui.Field("config", "none — this machine has never been configured")
 		ui.Println()
-		ui.Printf("  conflux up                          join with a network interface\n" +
-			"  conflux proxy 8080=127.0.0.1:3000   publish a port, no interface needed\n")
+		ui.Printf("%s\n", configureHint)
+
+		// What runs is the ephemeral anchor, which needs no configuration to be running.
+		if ephemeral {
+			return ExitOK
+		}
 
 		return ExitNoConfig
 	}
@@ -67,6 +76,16 @@ func runStatus(ctx context.Context, args []string) int {
 	daemon.wg.Wait()
 
 	reportExport(cfg, daemon)
+
+	if cfg.Observer != nil {
+		o := anchorctl.ParseStatus(daemon.status).Observer
+		if !daemon.asked || daemon.statErr != nil {
+			o.Note = "not running"
+		}
+
+		reportObserver(cfg, o)
+	}
+
 	reportPrivilege(d, daemon.asked && daemon.statErr == nil)
 	ui.Println()
 	reportAnchor(daemon)
@@ -112,6 +131,40 @@ func askDaemon(ctx context.Context, d paths.Dirs) *daemonAnswers {
 
 func reportService() { ui.Field("service", service.New().Describe()) }
 
+// reportEphemeralRun says what an ephemeral run is doing, before the machine's own anchor,
+// and whether one is running: or what a killed one left behind.
+func reportEphemeralRun(ctx context.Context) bool {
+	if d, stale := staleEphemeral(); stale {
+		ui.Field("ephemeral", "none running; "+d.State+" was left by one that was killed, and the next "+
+			"ephemeral run clears it and stops any anchord it left")
+		ui.Println()
+	}
+
+	d, live := liveEphemeral()
+	if !live {
+		return false
+	}
+
+	ui.Println("ephemeral:")
+
+	if !daemon.IsLiveReady(d) {
+		ui.Field("running", "starting, from "+d.State+" — in memory alone; nothing of it outlives the run")
+		ui.Println()
+
+		return true
+	}
+
+	daemon := askDaemon(ctx, d)
+	daemon.wg.Wait()
+
+	ui.Field("running", "from "+d.State+" — in memory alone; nothing of it outlives the run")
+	reportPrivilege(d, daemon.asked && daemon.statErr == nil)
+	reportAnchor(daemon)
+	ui.Println()
+
+	return true
+}
+
 // reportPrivilege says who the running anchord runs as, with what, and why it keeps what
 // it keeps: nothing for a daemon that is not running, whose record describes the last one.
 func reportPrivilege(d paths.Dirs, running bool) {
@@ -132,9 +185,17 @@ func reportConfig(d paths.Dirs, cfg *config.Config) {
 
 	switch cfg.Mode {
 	case config.ModeTUN:
-		ui.Field("mode", "tun — interface "+interfaceLine(runtime.GOOS, cfg.TUNInterface()))
+		// What was asked for: the anchor's own answer, the name it holds, is its status's
+		// `interface` row below.
+		ui.Field("mode", "tun — interface "+interfaceLine(runtime.GOOS, cfg.TUNInterface(), ""))
 	case config.ModeProxy:
 		ui.Field("mode", "proxy — userspace, no host interface")
+	case config.ModeObserve:
+		ui.Field("mode", "observe — this host's traffic inventoried; no anchor, no realm")
+
+		// The anchor's settings are kept for the next up or proxy, and describe nothing that
+		// runs now.
+		return
 	}
 
 	if note := exitNote(cfg); note != "" {
@@ -162,6 +223,21 @@ func reportConfig(d paths.Dirs, cfg *config.Config) {
 
 func reportCredential(d paths.Dirs, cfg *config.Config, st *config.State) {
 	held, err := heldCredential(d)
+
+	// Observing alone needs no credential. One held is the identity the next up or proxy
+	// comes back with, and is said to be kept rather than reported on.
+	if !cfg.Anchor() {
+		if err == nil && held != nil {
+			kept := "kept for the next up or proxy"
+			if st != nil && st.AnchorID != "" {
+				kept = st.AnchorID + " — " + kept
+			}
+
+			ui.Field("identity", kept)
+		}
+
+		return
+	}
 
 	switch {
 	case err != nil:
@@ -257,7 +333,7 @@ func reportBinaries(st *config.State) {
 func reportExport(cfg *config.Config, a *daemonAnswers) {
 	want := "none — nothing is exported until an endpoint is set"
 	if cfg.Export != nil && cfg.Export.Enabled {
-		want = cfg.Export.Endpoint + " — " + strings.Join(exportSignals(cfg.Export), ", ")
+		want = cfg.Export.Endpoint + " — " + strings.Join(cfg.Export.Signals(), ", ")
 	}
 
 	ui.Field("telemetry", want)
@@ -284,22 +360,6 @@ func reportExport(cfg *config.Config, a *daemonAnswers) {
 			ui.Field("", "set by "+source)
 		}
 	}
-}
-
-// exportSignals names what is being sent, for a status line.
-func exportSignals(e *config.Export) []string {
-	var out []string
-
-	for _, s := range []struct {
-		on   bool
-		name string
-	}{{e.Metrics, "metrics"}, {e.Traces, "traces"}, {e.Logs, "logs"}, {e.Flows, "flows"}} {
-		if s.on {
-			out = append(out, s.name)
-		}
-	}
-
-	return out
 }
 
 // reportAnchor prints anchorctl's own answer beneath conflux's, indented.

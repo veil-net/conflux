@@ -34,7 +34,20 @@ const copyFileMax = 16 << 20
 
 // privilege decides who anchord runs as, and settles what the supervisor can give.
 func (s *Supervisor) privilege(cfg *config.Config) Privilege {
-	p := decide(runtime.GOOS, cfg, listenPort(cfg, manifestPort(s)), probeHost(cfg))
+	return s.privilegeFor(cfg, manifestPort(s))
+}
+
+// privilegeFor is privilege for a credential naming port, or 0 before there is one.
+func (s *Supervisor) privilegeFor(cfg *config.Config, port int) Privilege {
+	p := decide(runtime.GOOS, cfg, listenPort(cfg, port), probeHost(cfg))
+
+	// The BPF devices are the installation's to give and take back: its supervisor gives
+	// them back to root at every start that does not observe as its account, so an ephemeral
+	// observer reading them through its own group could lose them at any moment. It reads
+	// them as root instead, which needs no grant.
+	if s.ephemeral && p.Account && p.BPF == BPFOwn {
+		p = asSupervisor("an ephemeral run leaves the BPF devices to the installed conflux, so it observes as root")
+	}
 
 	if p.Account {
 		if !s.Drop {

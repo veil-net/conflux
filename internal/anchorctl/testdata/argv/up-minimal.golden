@@ -4,7 +4,5 @@ start
 -dir
 /var/lib/conflux/anchor
 -tun=true
--tun-name
-anchor0
 -serve-exit=false
 -use-exit=false

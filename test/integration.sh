@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
-# Three conflux nodes, one taint, reaching each other over the overlay.
+# Four conflux nodes, one taint, reaching each other over the overlay.
 #
-# This enrols three times against the live API, and renews once. That is deliberate
+# This enrols five times against the live API, and renews once. That is deliberate
 # and cheap: the routes are anonymous, store nothing, and the taint below is random --
 # every credential is issued in it, so the nodes sit in a compartment of their own and
 # can exchange data with nobody else in the realm.
+#
+# The API is $VEILNET_API, and production's when that is unset. It has to be the one
+# whose tree the embedded anchord is pinned to, or the anchor refuses the credential:
+# CI names api-dev for a pull request into dev, whose build embeds anchor's dev-latest
+# (docs/testing.md, "The genesis node").
 #
 # The third node is the LAN-discovery control and joins late; everything before it is
 # the two-node test this file has always been.
@@ -12,6 +17,7 @@ set -euo pipefail
 
 IMAGE=${IMAGE:-conflux-systemd-test}
 TAINT="cfx-ci-$(head -c6 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+API=${VEILNET_API:-https://api.veilnet.com.au}
 
 say() { printf '\n== %s\n' "$*"; }
 
@@ -41,6 +47,11 @@ wait_active() {
 }
 
 anchor_id() { docker exec "$1" sh -c "sed -n 's/.*\"anchorId\": \"\([^\"]*\)\".*/\1/p' /var/lib/conflux/state.json"; }
+
+# interface is the TUN a running node's anchor says it holds: the `interface` row of its
+# status, which `conflux status` prints as anchorctl gives it.
+# Read to the end, so the pipe stays open for everything status writes after the row.
+interface() { docker exec "$1" conflux status | awk '$1 == "interface" && !n { print $2; n = 1 }'; }
 
 # grants is 1 when a node's credential grants exactly [$2], and 0 otherwise: the
 # manifest is compact JSON on one line, from the API and as conflux rewrites it.
@@ -82,16 +93,16 @@ NOWHERE=192.0.2.1:4700
 # next run to collide with. `docker rm -f` shrugs at a name that is not there, so this
 # is a no-op on a clean machine.
 before=$(docker ps -aq | wc -l)
-docker rm -f cfx-a cfx-b cfx-c >/dev/null 2>&1 || true
+docker rm -f cfx-a cfx-b cfx-c cfx-d >/dev/null 2>&1 || true
 echo "containers on this machine: $before before this run"
 
-trap 'docker rm -f cfx-a cfx-b cfx-c >/dev/null 2>&1 || true' EXIT
+trap 'docker rm -f cfx-a cfx-b cfx-c cfx-d >/dev/null 2>&1 || true' EXIT
 
-say "taint for this run: $TAINT"
+say "taint for this run: $TAINT, enrolling at $API"
 
 say "node A joins"
 boot cfx-a
-docker exec cfx-a conflux up --taint "$TAINT" --ipv4 10.128.0.1/24 --peers "$NOWHERE"
+docker exec cfx-a conflux up --api "$API" --taint "$TAINT" --ipv4 10.128.0.1/24 --peers "$NOWHERE"
 A_ID=$(anchor_id cfx-a)
 [ -n "$A_ID" ] || { echo "node A recorded no AnchorID" >&2; exit 1; }
 
@@ -150,7 +161,17 @@ docker exec cfx-a conflux renew
 
 say "node B joins with the same taint"
 boot cfx-b
-docker exec cfx-b conflux up --taint "$TAINT" --ipv4 10.128.0.2/24 --peers "$NOWHERE"
+docker exec cfx-b conflux up --api "$API" --taint "$TAINT" --ipv4 10.128.0.2/24 --peers "$NOWHERE"
+
+# Nothing names the interface, so the anchor names it after itself: its AnchorID cut to
+# Linux's fifteen bytes, which starts `anchor`. Taken from B's own report, so every check
+# on the interface below looks for what B holds rather than for a name assumed here.
+say "B's interface is the anchor's own name"
+B_IF=$(interface cfx-b || true)
+[ -n "$B_IF" ] && [ "$B_IF" = "$(anchor_id cfx-b | cut -c1-15)" ] \
+  || { echo "B holds interface '$B_IF', and its anchor is $(anchor_id cfx-b)" >&2; exit 1; }
+docker exec cfx-b ip link show "$B_IF" >/dev/null
+echo "$B_IF"
 
 # The realm's control over its members is anchorctl's, reached through conflux unchanged.
 # Listing blocks needs no power; an order does, and an alpha credential grants none, so
@@ -184,7 +205,7 @@ done
 say "reachable both ways, v4 and v6"
 docker exec cfx-a ping -c3 -W3 10.128.0.2
 docker exec cfx-b ping -c3 -W3 10.128.0.1
-B6=$(docker exec cfx-b sh -c "ip -o -6 addr show anchor0 scope global | awk '{print \$4}' | cut -d/ -f1")
+B6=$(docker exec cfx-b sh -c "ip -o -6 addr show $B_IF scope global | awk '{print \$4}' | cut -d/ -f1")
 docker exec cfx-a ping -c2 -W3 "$B6"
 
 # Both containers sit on one Docker bridge, which is a real link with a real
@@ -211,14 +232,14 @@ done
 # and handed to `conflux enrol` on stdin, which is the path a commissioned machine takes
 # and the one that would otherwise only ever see hand-written fixtures. The taint comes
 # from the credential; `up` restating it is accepted, and must start from the manifest
-# without enrolling again.
+# without enrolling again. --api asserts the manifest renews against the API it came from.
 say "node C is enrolled from a live alpha manifest, then joins with --lan-discovery no and no bootstrap list of its own"
 boot cfx-c
 manifest=$(curl -fsS -X POST -H 'Accept: application/json' -H 'Content-Type: application/json' \
-  -d "{\"taints\":[\"$TAINT\"]}" --max-time 30 https://api.veilnet.com.au/ghosts/alpha |
+  -d "{\"taints\":[\"$TAINT\"]}" --max-time 30 "$API/ghosts/alpha" |
   sed -n 's/^{"credentials":"\([A-Za-z0-9+/=]*\)"}$/\1/p')
 [ -n "$manifest" ] || { echo "POST /ghosts/alpha did not answer with {\"credentials\": ...}" >&2; exit 1; }
-printf '%s' "$manifest" | docker exec -i cfx-c conflux enrol --manifest -
+printf '%s' "$manifest" | docker exec -i cfx-c conflux enrol --api "$API" --manifest -
 unset manifest
 [ "$(grants cfx-c "$TAINT")" = 1 ] || { echo "C's credential does not grant $TAINT" >&2; exit 1; }
 docker exec cfx-c conflux up --taint "$TAINT" --ipv4 10.128.0.3/24 --lan-discovery no
@@ -309,17 +330,17 @@ docker exec cfx-b sh -c 'test -f /etc/conflux/conflux.json' \
   || { echo "down removed the configuration" >&2; exit 1; }
 docker exec cfx-b sh -c 'test -f /var/lib/conflux/manifest.b64' \
   || { echo "down removed the identity" >&2; exit 1; }
-docker exec cfx-b sh -c '! ip link show anchor0' >/dev/null 2>&1 \
+docker exec cfx-b sh -c "! ip link show $B_IF" >/dev/null 2>&1 \
   || { echo "down left the interface up" >&2; exit 1; }
 
 say "start brings B back without a reboot, and without retyping anything"
 B_BEFORE=$(anchor_id cfx-b)
 docker exec cfx-b conflux start
 for _ in $(seq 40); do
-  docker exec cfx-b sh -c 'ip link show anchor0' >/dev/null 2>&1 && break
+  docker exec cfx-b ip link show "$B_IF" >/dev/null 2>&1 && break
   sleep 1
 done
-docker exec cfx-b sh -c 'ip link show anchor0' >/dev/null 2>&1 \
+docker exec cfx-b ip link show "$B_IF" >/dev/null 2>&1 \
   || { echo "start did not bring the interface back" >&2; exit 1; }
 [ "$(anchor_id cfx-b)" = "$B_BEFORE" ] \
   || { echo "B's identity changed across down and start" >&2; exit 1; }
@@ -341,11 +362,107 @@ docker exec cfx-b sh -c 'test ! -L /etc/systemd/system/multi-user.target.wants/c
 for dir in /etc/conflux /var/lib/conflux /run/conflux; do
   docker exec cfx-b test ! -e "$dir" || { echo "$dir survived uninstall" >&2; exit 1; }
 done
-docker exec cfx-b sh -c '! ip link show anchor0' >/dev/null 2>&1 \
+docker exec cfx-b sh -c "! ip link show $B_IF" >/dev/null 2>&1 \
   || { echo "uninstall left the interface up" >&2; exit 1; }
 if docker exec cfx-b id conflux >/dev/null 2>&1; then
   echo "uninstall left the account anchord ran as" >&2
   exit 1
 fi
+
+# D runs ephemeral: an anchor from a credential held in memory, in the foreground, that
+# writes nothing of the machine's and leaves nothing when it stops -- first enrolled in
+# memory, then from an alpha manifest piped in, killed outright and started again.
+
+# pids_of is the processes on NODE whose executable matches PATTERN, as a case pattern.
+pids_of() { # NODE PATTERN
+  docker exec "$1" sh -c 'for p in /proc/[0-9]*; do
+    case "$(readlink "$p/exe" 2>/dev/null)" in '"$2"') echo "${p#/proc/}";; esac
+  done'
+}
+
+# eph_running is whether status on NODE reports an ephemeral anchor up: running, and not
+# still starting, which a run is from taking its lock until its anchor has started.
+# Read whole, then searched: a pipe into grep -q ends status on SIGPIPE, failing under pipefail.
+eph_running() { grep -qE '^  running +from ' <<<"$(docker exec "$1" conflux status 2>/dev/null)"; }
+
+# eph_gone waits for NODE to have no ephemeral root and no ephemeral anchord.
+eph_gone() { # NODE WHAT
+  for _ in $(seq 20); do
+    if [ -z "$(pids_of "$1" '*/conflux-ephemeral/bin/*/anchord')" ] &&
+      docker exec "$1" sh -c 'test ! -e /run/conflux-ephemeral && test ! -e /var/lib/conflux-ephemeral'; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "$2 left its anchord or its root behind" >&2
+  docker exec "$1" sh -c 'ls -la /run/conflux-ephemeral /var/lib/conflux-ephemeral 2>&1' >&2 || true
+  return 1
+}
+
+say "node D runs ephemeral: enrolled in memory, in the foreground, and nothing of the machine's written"
+boot cfx-d
+docker exec cfx-d sh -c "setsid conflux up --ephemeral --api '$API' --taint '$TAINT' --ipv4 10.128.0.4/24 \
+  --peers '$NOWHERE' > /tmp/ephemeral.log 2>&1 &"
+for _ in $(seq 60); do eph_running cfx-d && break; sleep 1; done
+eph_running cfx-d || { docker exec cfx-d cat /tmp/ephemeral.log >&2; echo "D's ephemeral anchor never came up" >&2; exit 1; }
+SECONDS=0
+until docker exec cfx-a ping -c1 -W1 10.128.0.4 >/dev/null 2>&1; do
+  [ "$SECONDS" -lt 120 ] || { docker exec cfx-d cat /tmp/ephemeral.log >&2; echo "A never reached D" >&2; exit 1; }
+  sleep 1
+done
+echo "A reaches D after ${SECONDS}s"
+for path in /etc/conflux /var/lib/conflux /etc/systemd/system/conflux.service; do
+  docker exec cfx-d test ! -e "$path" || { echo "an ephemeral run made $path" >&2; exit 1; }
+done
+if [ -n "$(docker exec cfx-d sh -c 'find /run/conflux-ephemeral /var/lib/conflux-ephemeral \
+  \( -name manifest.b64 -o -name conflux.json -o -name state.json -o -name anchord.json \) 2>/dev/null')" ]; then
+  echo "an ephemeral run wrote its credential or a configuration" >&2
+  exit 1
+fi
+d_creds=$(docker exec cfx-d sh -c 'for p in /proc/[0-9]*; do
+  case "$(readlink "$p/exe" 2>/dev/null)" in */conflux-ephemeral/bin/*/anchord)
+    awk "/^Uid:/ { u = \$2 } /^CapEff:/ { c = \$2 } END { printf \"uid=%s caps=%s\", u, c }" "$p/status"; exit 0;; esac
+done; exit 1')
+want="uid=$(docker exec cfx-d id -u conflux-ephemeral) caps=0000000000001000"
+echo "  anchord: $d_creds"
+[ "$d_creds" = "$want" ] || { echo "D's ephemeral anchord runs with $d_creds; want $want" >&2; exit 1; }
+D_IF=$(interface cfx-d)
+[ -n "$D_IF" ] || { echo "D's status names no interface" >&2; exit 1; }
+
+say "SIGTERM stops D cleanly: anchord, its interface and the root go, and the account stays"
+for pid in $(pids_of cfx-d /usr/local/bin/conflux); do docker exec cfx-d sh -c "kill -TERM $pid"; done
+eph_gone cfx-d "a stopped ephemeral run"
+docker exec cfx-d sh -c "! ip link show $D_IF" >/dev/null 2>&1 \
+  || { echo "a stopped ephemeral run left its interface up" >&2; exit 1; }
+docker exec cfx-d id conflux-ephemeral >/dev/null \
+  || { echo "the ephemeral account went with the run; it is kept until uninstall" >&2; exit 1; }
+docker exec cfx-d grep -q 'Nothing of the run remains' /tmp/ephemeral.log \
+  || { docker exec cfx-d cat /tmp/ephemeral.log >&2; echo "D did not say it stopped cleanly" >&2; exit 1; }
+
+say "D runs ephemeral from a manifest piped in; killed outright, its anchord goes with it"
+manifest=$(curl -fsS -X POST -H 'Accept: application/json' -H 'Content-Type: application/json' \
+  -d "{\"taints\":[\"$TAINT\"]}" --max-time 30 "$API/ghosts/alpha" |
+  sed -n 's/^{"credentials":"\([A-Za-z0-9+/=]*\)"}$/\1/p')
+[ -n "$manifest" ] || { echo "POST /ghosts/alpha did not answer with {\"credentials\": ...}" >&2; exit 1; }
+log=$(mktemp)
+printf '%s' "$manifest" | docker exec -i cfx-d conflux proxy --ephemeral --manifest - --no-ipv4 \
+  8080=127.0.0.1:1 >"$log" 2>&1 &
+for _ in $(seq 60); do eph_running cfx-d && break; sleep 1; done
+eph_running cfx-d || { cat "$log" >&2; echo "D's piped ephemeral anchor never came up" >&2; exit 1; }
+for pid in $(pids_of cfx-d /usr/local/bin/conflux); do docker exec cfx-d sh -c "kill -KILL $pid"; done
+for _ in $(seq 10); do [ -z "$(pids_of cfx-d '*/conflux-ephemeral/bin/*/anchord')" ] && break; sleep 1; done
+[ -z "$(pids_of cfx-d '*/conflux-ephemeral/bin/*/anchord')" ] \
+  || { echo "a killed ephemeral run left anchord running" >&2; exit 1; }
+
+say "the same credential again: what the killed run left is cleared, and it comes up"
+printf '%s' "$manifest" | docker exec -i cfx-d conflux proxy --ephemeral --manifest - --no-ipv4 \
+  8080=127.0.0.1:1 >"$log" 2>&1 &
+unset manifest
+for _ in $(seq 60); do eph_running cfx-d && break; sleep 1; done
+eph_running cfx-d || { cat "$log" >&2; echo "D did not come up again after a kill" >&2; exit 1; }
+for pid in $(pids_of cfx-d /usr/local/bin/conflux); do docker exec cfx-d sh -c "kill -INT $pid"; done
+eph_gone cfx-d "an interrupted ephemeral run"
+wait
+rm -f "$log"
 
 say "all assertions passed"

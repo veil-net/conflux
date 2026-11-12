@@ -20,19 +20,19 @@ a daemon or a network. Most of conflux can be.
 | Package | What is asserted |
 |---|---|
 | `anchor` | the embedded binaries are real executables of the right architecture; `SetID` is the same function of the two digests whether stamped or computed, and a malformed stamp is computed instead |
-| `internal/config` | JSON round-trips, the tuning fields included; the mode rules match anchor's — a proxy needs userspace, a subnet, an exit and an IPv4 work in either mode, the two exits are alternatives, a port is refused beside an uplink, an empty taint set is accepted; proxy specs, IPv4 addresses, subnets — `*`, bindings to the machine's own taints and anchor's limits on a list included — AnchorIDs and taint names parse and refuse exactly as anchor does, and bootstrap entries by anchor's grammar (anchor skips a bad one with a warning, conflux refuses it), with conflux's own refusals of a comma in a list entry and of a descriptor uplink; the export block is read as protojson reads it and refuses what anchord refuses at startup; atomic writes leave old-or-new and never a truncated file, and narrow a file that was `0644` |
+| `internal/config` | JSON round-trips, the tuning fields included; the mode rules match anchor's — a proxy needs userspace, a subnet, an exit and an IPv4 work in either mode, the two exits are alternatives, observing needs the observer and serves no proxy, the observer is refused where anchor has no capture, a port is refused beside an uplink, an empty taint set is accepted; proxy specs, IPv4 addresses, subnets — `*`, bindings to the machine's own taints and anchor's limits on a list included — AnchorIDs and taint names parse and refuse exactly as anchor does, and bootstrap entries by anchor's grammar (anchor skips a bad one with a warning, conflux refuses it), with conflux's own refusals of a comma in a list entry and of a descriptor uplink; the export block is read as protojson reads it and refuses what anchord refuses at startup; atomic writes leave old-or-new and never a truncated file, and narrow a file that was `0644` |
 | `internal/enrol` | the manifest decodes exactly as anchorctl reads it, refuses a realm manifest and a future format version, and **survives a renewal losslessly**; which documents are alpha's, and the taints check every start holds a machine to, with a way out that fits who issued the credential |
 | `internal/enrol` (client) | against `httptest`: the alpha exchange byte for byte, taints in the enrolment's body and restated in the renewal's, none refused before anything is sent; the guardian bearer, 4xx and 5xx, an oversized body, a cross-host renewal URL and a downgrading redirect, a plain-http base, cancellation, and clock skew; a renewal's bootstrap list taken only when anchor would dial all of it; and that an enrolment is handed back as it arrived, to be written before it is read |
 | `internal/taint` | generated names — 26 symbols, a little over 128 bits — satisfy anchor's rule, avoid ambiguous glyphs, are grouped for reading, and do not repeat |
-| `internal/daemon` | the renewal arithmetic: two thirds of the *observed* window, expiry, absent timestamps, and the clamp; a renewal against a stand-in issuer, restating the manifest's taints whatever `conflux.json` says, spliced into the manifest with the issuer's bootstrap list and mirrored into the state, and a failed one recorded; an enrolment asking for the configured taints, never for none, and kept before it is read even when it grants others; a machine whose credential grants other taints, or an alpha one granting none, refused for good with no call, and an issued one granting none started; a bad clock measured again rather than trusted; anchord's last words kept when it dies, in order; shutdown returning once anchord has gone, and closing a running one with its signal alone; the anchord a dead supervisor left recorded, stopped by the next one only when it runs the recorded executable or, with none reported, holds the socket's lock, a record of one that has gone cleared, and a second supervisor for one root refused; on Windows, anchord ended with its job; a conflux.json read one way by every reader -- none is nothing to start, unparsable is permanent, unreadable is retried; an uplink reopen counted in the bring-up's own state write; the link watcher's device parsing, its grace against anchor's own dial timeout, and its giving up after three rebuilds refused for good; and which failures stop the supervisor rather than being retried |
-| `internal/anchorctl` | the argv goldens, that every flag they use exists, and the output parsers against anchor's current `start`, `status` and `metrics` shapes |
+| `internal/daemon` | the renewal arithmetic: two thirds of the *observed* window, expiry, absent timestamps, and the clamp; a renewal against a stand-in issuer, restating the manifest's taints whatever `conflux.json` says, spliced into the manifest with the issuer's bootstrap list and mirrored into the state, and a failed one recorded; an enrolment asking for the configured taints, never for none, and kept before it is read even when it grants others; a machine whose credential grants other taints, or an alpha one granting none, refused for good with no call, and an issued one granting none started; a bad clock measured again rather than trusted; anchord's last words kept when it dies, in order; shutdown returning once anchord has gone, and closing a running one with its signal alone; the anchord a dead supervisor left recorded, stopped by the next one only when it runs the recorded executable or, with none reported, holds the socket's lock, a record of one that has gone cleared, and a second supervisor for one root refused; on Windows, anchord ended with its job; a conflux.json read one way by every reader -- none is nothing to start, unparsable is permanent, unreadable is retried; an uplink reopen counted in the bring-up's own state write; the link watcher's device parsing, its grace against anchor's own dial timeout, and its giving up after three rebuilds refused for good; observing alone, a cycle that starts the observer and no anchor and never enrols, and one the host refuses to capture for ending for good; beside an anchor, an observer started first and kept when the anchor cannot come up; the watcher starting an observer whose capture ended again, leaving one stopped by hand alone, and giving up on one the host refuses; `-allow-observer` passed only where the configuration observes; what anchord is given to observe on each platform, and the anchor's kept settings granting nothing while it only observes; and which failures stop the supervisor rather than being retried; and an ephemeral run, against the stand-ins, that writes nothing of the credential and removes its root when cancelled, ends with its daemon, renews a due credential in memory by the AnchorID it started with, with the chain on anchorctl's stdin, is refused while another holds the root, refuses an expired credential before anything starts, and, on Linux, whose anchord goes when the run is killed outright |
+| `internal/anchorctl` | the argv goldens, the observer's starts among them, that every flag they use exists, and the output parsers against anchor's current `start`, `status` and `metrics` shapes, the `observer` row with an anchor and with none, as a live anchord printed it |
 | `internal/libexec` | extraction, idempotence, eight concurrent callers, repair of a truncated set, and a sweep that leaves alone any set that may be in use |
-| `internal/cli` | a pass-through with nothing running makes nothing — no directory, no extraction; `help` a command only first and a flag only as a flag; `renew` with no credential unavailable; a refusal for privilege repeating the command, with the privilege check stubbed so a root runner tests it too; an oversized manifest refused; on Windows, only the supervisor's transient exit asking the SCM for a restart, and `Stopped` reported once; the collision rules — `start`, `renew` and `proxy` by shape, `status` by arity — and that nothing shadows anchorctl unintentionally, the realm-control commands included; the IPv4 asked once; `--taint` as the enrolment's request before a credential is held, and checked against it after; `enrol` taking the credential's taints, refusing an alpha one granting none, and refusing before it writes; a subnet list set from the terminal replacing a member's order |
+| `internal/cli` | a pass-through with nothing running makes nothing — no directory, no extraction; `help` a command only first and a flag only as a flag; `renew` with no credential unavailable; a refusal for privilege repeating the command, with the privilege check stubbed so a root runner tests it too; an oversized manifest refused; on Windows, only the supervisor's transient exit asking the SCM for a restart, and `Stopped` reported once; the collision rules — `start`, `renew`, `proxy` and `observe` by shape, `status` by arity — and that nothing shadows anchorctl unintentionally, the realm-control commands included; the IPv4 asked once; `--taint` as the enrolment's request before a credential is held, and checked against it after; `enrol` taking the credential's taints, refusing an alpha one granting none, and refusing before it writes; a subnet list set from the terminal replacing a member's order; the observer kept, replaced or turned off by `up`'s and `proxy`'s flags, an option implying `--observe`; `--export` pointing the collector and keeping the headers and TLS `conflux.json` holds; where the observer's records go said either way; and switching an anchor to observing refused off a terminal without `--yes`; `--manifest` refused without `--ephemeral`, an ephemeral run taking a handed credential's API and taints and never asking for an IPv4, and an ephemeral proxy needing no root where an ephemeral `up` and observer do |
 | `internal/service` | the systemd unit, its `ExecStart=` quoted against splitting and expansion; the launchd plist carrying any path; the rc scripts the BSDs get, rendered and parsed by `sh`, and a root they could not match refused; the copy the service runs; the service's scope, the same for every spelling of a root |
-| `internal/paths` | the root absolute and clean, and a log directory only where the platform has one; on Unix, a root another account owns refused before anything is changed, a symlinked one followed only to its owner's directory, our own narrowed to `0700`, and the shared `/var/log` left alone; on Windows, the root made Administrators', and files restricted to them trusted |
+| `internal/paths` | the root absolute and clean, and a log directory only where the platform has one; on Unix, a root another account owns refused before anything is changed, a symlinked one followed only to its owner's directory, our own narrowed to `0700`, and the shared `/var/log` left alone; on Windows, the root made Administrators', and files restricted to them trusted; an ephemeral root inside `CONFLUX_DIR` and nowhere else, and a root not made yet judged by the filesystem it would be made on |
 | `internal/flock` | a held lock reported as held, not waited for |
 
-## The three tests worth knowing about
+## The tests worth knowing about
 
 **`anchor.TestPairIsRealExecutables`** parses each embedded binary's ELF, Mach-O or PE
 header and checks the machine field against `GOARCH`. It exists because a wrong file in
@@ -64,6 +64,23 @@ package refuses an unknown flag rather than ignoring it, so that would otherwise
 daemon that will not start — discovered after the binaries were dropped into
 `anchor/bin` and shipped.
 
+**`pki.TestOnlyApprovedCryptographyIsUsed`** reads every non-test Go file for the
+cryptography `fips140=only` does not refuse as it happens: anything from golang.org/x/crypto,
+which the module never sees; an AES block alone, which is AES-ECB; AES-CBC outside
+`internal/pki/pbes2.go`; and the rest of the list in
+[security.md](security.md#fips-140-3-and-cmvp). Each rule's control is a file planted to
+break it. **`pki.TestPBES2KnownAnswer`** holds an encrypted key's exact bytes under a fixed
+salt and IV, which OpenSSL 3.5 opens to the same key; **`pki.TestPBMAC1KnownAnswer`** holds a
+PKCS#12 MAC to the digest Python's hashlib computes independently, and its parameters to RFC
+9579's encoding; and **`pki.TestShowGoldens`** holds what
+`cert show` prints of committed certificates, a request, a list and a public key, in
+`internal/pki/testdata/show/`. They are public material alone; the keys that made them were
+thrown away. `make golden` rewrites them with the argv goldens after an intended change.
+**`cli.TestAManagedCAEndToEnd`** is the toolkit whole: a managed CA with an ML-DSA-87 root and
+an ML-DSA-65 issuing CA issues a server certificate, a FIPS 140-3 mode client reaches it over a
+hybrid group with its authentication pqc throughout, and once revoked `verify` fails it against
+the CA's own lists; an ECDSA leaf from the same CA is classical.
+
 **`enrol.TestWithRenewalIsLossless`** renews a manifest and compares every field.
 Four are meant to change — `chain`, `notAfter`, `issuedAt` and `bootstrap`, which the
 issuer's answer refreshes — and every other must not, `taints` above all. The document
@@ -84,7 +101,7 @@ and restarting it is the reboot.
 built `conflux` in beside it, then:
 
 ```console
-$ make anchor-bins && make integration   # the whole suite, three nodes
+$ make anchor-bins && make integration   # the whole suite, four nodes
 $ make service-test                      # or just the unit, which enrols nothing
 ```
 
@@ -178,7 +195,8 @@ they can meet is then discovery on the bridge: their reachability proves it, and
 and a check for the name alone would pass on whatever else writes it. Reachability is waited for in both directions, since each learns the other's
 IPv4 from a signed advertisement and the two need not arrive together.
 
-The third node takes the other paths, and it is why the suite enrols three times:
+The third node takes the other paths, and with the ephemeral fourth it is why the suite enrols
+five times:
 
 - **It is enrolled from a live alpha manifest** — fetched on the host with
   `POST /ghosts/alpha` carrying `{"taints": ["$TAINT"]}`, and handed to
@@ -193,6 +211,17 @@ The third node takes the other paths, and it is why the suite enrols three times
   which proves `--lan-discovery no` reached anchor rather than being accepted by conflux
   and dropped.
 
+A fourth node, D, runs **ephemeral** ([ephemeral.md](ephemeral.md)), and enrols twice more:
+
+- `up --ephemeral`, enrolled in memory, must be reached by A over the overlay, with no
+  `/etc/conflux`, no `/var/lib/conflux`, no unit, and no manifest, configuration or state
+  anywhere in its root, and its anchord running as `conflux-ephemeral` with
+  `CAP_NET_ADMIN` alone. SIGTERM must leave no anchord, no root and no interface, and the
+  account, which is kept.
+- `proxy --ephemeral --manifest -`, from an alpha manifest piped in, is killed with SIGKILL,
+  and its anchord must go with it: the parent-death signal it was started with. Started again
+  on the same credential, the run clears what the killed one left and comes up.
+
 Note what discovery cannot do, and anchor's own `docs/discovery.md` is the reference:
 the probe is sealed under the realm's **root public key**, which a node only holds after
 it has enrolled. So it never replaces enrolment — it decides who is worth dialling,
@@ -201,13 +230,22 @@ never who is let in. Loopback is not probed, so two anchors on one machine still
 
 ## What CI runs, and on what
 
+**The tests run with the FIPS 140-3 module refusing what it does not approve**:
+`GODEBUG=fips140=only`, set on the test binaries alone through `go test -exec`, in `make test`,
+`make race` and every CI job that tests. A non-approved algorithm, or an approved one used
+outside its approved parameters, is then an error or a panic rather than a passing test. Every
+build CI makes is against the module, as a release is ([build.md](build.md#fips-140-3)), and
+`linux` also checks that the binary that ships passes the module's integrity check and refuses
+to run with the mode switched off.
+
 CI verifies that the code builds and runs. The utility checks — `gofmt`, `staticcheck`,
 `go mod tidy`, the docs links, which `make all` runs, and `govulncheck`, `actionlint` and
 `shellcheck`, which it does not since they need the network or tools of their own — run
 on a developer's machine before a push, and not in CI.
 
-Every job fetches the **pinned** release build from the `latest` release of
-`veil-net/anchor` and verifies every digest, with no anchor checkout. It needs a
+Every job fetches the **pinned** release build of `veil-net/anchor` for the base it runs
+against — `dev-latest` for a pull request into `dev` and a push to it, `latest` for
+`version3` — and verifies every digest, with no anchor checkout. It needs a
 credential, since anchor is private: CI stores a GitHub App's Client ID and private key and
 mints an hour-long token per job, so the secret held here is not itself a key to
 anything — see [build.md](build.md) for why the grant is wider than it wants to be and
@@ -215,10 +253,10 @@ why it is nonetheless contained.
 
 | job | machine | what it runs |
 |---|---|---|
-| `linux` | veilnet-dev | the whole suite under `-race` with the real binaries and nothing skipped; `make cross`; the digests `make build` stamps are the pair's own |
-| `integration` | GitHub Ubuntu | `test/preflight.sh`, then `make -j2 -O service-test integration` — `dist` with the size gate for every target and the image, once, then the boot service and three nodes against the live API side by side |
-| `bsd` | FreeBSD 15.1 and OpenBSD 7.9, each a VM on GitHub Ubuntu | `test/service-bsd.sh` against `rc.subr`, with that platform's own pair |
-| `platforms` | GitHub macOS, Windows and Linux arm64 | the suite with that platform's own pair, built as a release is (`CGO_ENABLED=0`, `-trimpath`), the tests that need the pair included; on macOS and Windows, `test/service-host.sh` against the real service manager; on Windows, that the pinned wintun digest is the published one; then the install scripts against the published `latest`, run as a person runs them and then again: `install.sh` on macOS and Linux arm64, `install.ps1` under Windows PowerShell 5.1 and then PowerShell 7 |
+| `linux` | veilnet-dev | the whole suite under `-race` and `fips140=only` with the real binaries and nothing skipped; `make cross`; the digests `make build` stamps are the pair's own; the built conflux in FIPS 140-3 mode, its integrity check passing, and refusing to run with the mode off; `conflux cert probe` handshaking, in that mode, with every host conflux reaches (both APIs, GitHub's API, web and asset hosts, wintun.net) |
+| `integration` | GitHub Ubuntu | `test/preflight.sh`, then `make -j2 -O service-test integration` — `dist` with the size gate for every target and the image, once, then the boot service, three nodes and an ephemeral fourth against the live API of the base's tree (`$VEILNET_API`) side by side |
+| `bsd` | FreeBSD 15.1 and OpenBSD 7.9, each a VM on GitHub Ubuntu | `test/service-bsd.sh` against `rc.subr`, with that platform's own pair; FreeBSD's conflux in FIPS 140-3 mode, making and verifying an ML-DSA certificate; OpenBSD's without the module, its `conflux cert` refusing with 70 |
+| `platforms` | GitHub macOS, Windows and Linux arm64 | the suite under `fips140=only` with that platform's own pair, built as a release is (`CGO_ENABLED=0`, `-trimpath`), the tests that need the pair included; on macOS and Windows, `test/service-host.sh` against the real service manager; on Windows, that the pinned wintun digest is the published one; then the install scripts against the published `latest`, run as a person runs them and then again: `install.sh` on macOS and Linux arm64, `install.ps1` under Windows PowerShell 5.1 and then PowerShell 7 |
 
 `linux` is one job because veilnet-dev is one machine with one runner process: separate
 jobs would queue anyway, each paying a checkout and a fetch. Its fetch goes through the
@@ -226,23 +264,67 @@ runner's tool cache, which survives between runs, so an unchanged release costs 
 the files the fetcher already holds rather than three hundred megabytes. For the same
 reason the Go build and module caches are not restored or saved there: the machine keeps
 its own on disk, and round-tripping them through the Actions cache cost ten minutes a
-run where the suite itself takes seconds. The hosted jobs start empty and do use it. The container
+run where the suite itself takes seconds. The hosted jobs start empty and do use it,
+`integration` and each BSD job under a key of its own, since they build different things on the
+same runner image and would otherwise share setup-go's one. The container
 suites run on a hosted runner instead, because the third integration node reaches the
 realm through its manifest's bootstrap node over UDP, and from veilnet-dev no handshake
-gets through to it. Every job refuses a fork's pull request — a machine that survives the job does not run
+gets through to it. Every CI job refuses a fork's pull request — a machine that survives the job does not run
 a stranger's code, and the hosted jobs need the anchor credential a fork is not given —
-so a fork's pull request runs nothing. No checkout leaves its token in `.git/config`,
+so a fork's pull request runs nothing but `branch-flow`, which reads the repository on a hosted
+runner and holds no secret. No checkout leaves its token in `.git/config`,
 and every action outside this repository is pinned to its release's commit, with the
 tag beside it in a comment.
 
-**The release** runs on every push to `version3`, a merge included, and it only releases:
-it does not re-run any of the above. A merge lands only when CI is green, which rests on
-branch protection on `version3` — require a pull request, require these checks, and
-require the branch to be up to date before merging — and is unsafe without it. It refuses
-to run anywhere but `version3`, fetches anchor's `latest`, runs `make dist`, attests the
-artifacts and writes one set of notes: the changes since the previous version, and what is
-inside. Then it publishes twice, with the same artifacts and notes: at the tag the
-`VERSION` file names, verbatim, and at `latest`, which is the repository's Latest release.
+### Branches
+
+Two long-lived branches, and every change reaches both the same way:
+
+| Branch | Takes | A merge publishes | Embeds anchor's |
+|---|---|---|---|
+| `dev` | a pull request from a feature or maintenance branch cut from `dev` | the pre-release `dev-latest` | `dev-latest` |
+| `version3` | a pull request from `dev`, opened by the owner | the release: `VERSION`'s tag and `latest` | `latest` |
+
+1. Cut a branch from `dev`, do the work, and open its pull request against `dev`
+   (`gh pr create --base dev`: `version3` is the default branch, so the base is always
+   named). CI runs in full on it, against anchor's `dev-latest`.
+2. Merged when it is green, it is published as the pre-release `dev-latest`, which the next
+   merge into `dev` replaces and which nothing reads unless asked for it by name:
+   `CONFLUX_VERSION=dev-latest` for the install scripts ([install.md](install.md)).
+3. When `dev` is to be released, the owner opens a pull request from `dev` into `version3`.
+   CI runs on it in full again, against anchor's `latest`; merged, it is released, and
+   `version3` is merged back into `dev`.
+
+**`dev` stays ahead of `version3`.** Nothing reaches `version3` but `dev`, and after every
+release `release.yml`'s `back-merge` job (`scripts/back-merge.sh`) pushes the release back to
+`dev`: a fast-forward, since the release is a merge whose second parent is `dev`'s tip, or a
+merge where `dev` has taken something since. A release that will not merge cleanly is one that
+holds something pushed to `version3` directly, and the job stops and says so; so does a push
+refused because `dev` moved while the job ran, which a second run of it settles. The checkout
+persists no token: the script gives the workflow's to git through git's environment, for the
+push alone.
+
+**`branch-flow.yml` holds the branches to that** (`scripts/branch-flow.sh`), on every pull
+request and every edit of one — moving a pull request's base fires only `edited`: one into
+`version3` whose head is not this repository's `dev` fails; one into `dev` whose merge does not
+hold `version3`'s tip — a back-merge that did not land — fails; one into any other base fails.
+On a hosted runner, since it reads the repository and holds no secret.
+
+**Branch protection, on `dev` and on `version3` alike:** require a pull request, require CI's
+checks and `branch-flow`, and require the branch to be up to date before merging. And on `dev`,
+let the release workflow push, for the back-merge: GitHub Actions on a ruleset's bypass list.
+Without that the push is refused, the release is out regardless, and `back-merge` fails saying
+what to do: merge `version3` into `dev` by pull request.
+
+**The release** runs on every push to `dev` or `version3`, a merge included, and it only
+releases: it does not re-run any of the above. A merge lands only when CI is green, which rests
+on that branch protection, and is unsafe without it. It refuses to run anywhere but those two,
+fetches anchor's `dev-latest` on `dev` and its `latest` on `version3`, runs `make dist`, attests
+the artifacts and writes one set of notes: the changes since the previous version — on
+`version3` the pull requests `dev` merged, read from the `dev` side of the release's merge — and
+what is inside. On `dev` it publishes the pre-release `dev-latest`, never Latest. On `version3`
+it publishes twice, with the same artifacts and notes: at the tag the `VERSION` file names,
+verbatim, and at `latest`, which is the repository's Latest release; then `back-merge` runs.
 Each is deleted, with its tag, just before it is released again, so a push that leaves
 `VERSION` alone replaces that version's release with one built from the commit that
 landed, tag and all. anchor's `latest` moves, so a release carries whatever anchor
@@ -253,8 +335,10 @@ moves.
 
 **The binaries CI uses are the pinned ones**, which a locally-built `make dist` cannot
 be: an anchor pinned to the genesis realm refuses to handshake with any other tree. So
-`integration` exercises the binaries that ship, against the **production realm** and
-nothing else, and a join there proves the pin as well as conflux.
+`integration` exercises the binaries that ship, in **the tree they are pinned to** and
+nothing else — the dev tree on a pull request into `dev`, the production one on the one
+into `version3` ([The genesis node](#the-genesis-node)) — and a join there proves the pin
+as well as conflux.
 
 **A machine that is not thrown away.** Both container suites reap their fixed container
 names before themselves as well as after, because a cancelled run fires no `EXIT` trap,
@@ -269,14 +353,26 @@ than skipping.
 
 ## The genesis node
 
-`genesis.veilnet.com.au:4700` is the bootstrap node the alpha realm's manifest names
-today. conflux never names it itself and must never: end users get their bootstrap list
-from the enrolment manifest, which is what lets the API move a node without touching a
-single machine. To exercise `--peers`, point a dev build at it explicitly:
+There are two trees, and a build belongs to one of them by the anchor it embeds:
+
+| Build | Embeds | Pinned to | Enrols at | Bootstrap the manifest names |
+|---|---|---|---|---|
+| a release, from `version3` | anchor's `latest` | the production genesis | `https://api.veilnet.com.au` | `genesis.veilnet.com.au:4700` |
+| a dev build, from `dev` | anchor's `dev-latest` | the dev genesis | `https://api-dev.veilnet.com.au` | `genesis.veilnet.com.au:4701` |
+
+A dev build cannot join the production tree, nor a release the dev one: each anchord
+refuses a credential under a root other than its pin. conflux's default API is the
+production one in every build, so a dev build is given the dev API with `--api`, as CI's
+live suite does.
+
+conflux never names a bootstrap node itself and must never: end users get their
+bootstrap list from the enrolment manifest, which is what lets the API move a node
+without touching a single machine. To exercise `--peers`, point a dev build at the dev
+genesis explicitly:
 
 ```console
-$ sudo CONFLUX_DIR=/var/lib/cfx-dev conflux up --peers genesis.veilnet.com.au:4700 \
-      --interface anchor1
+$ sudo CONFLUX_DIR=/var/lib/cfx-dev conflux proxy --api https://api-dev.veilnet.com.au \
+      --peers genesis.veilnet.com.au:4701 8080=127.0.0.1:3000
 $ sudo CONFLUX_DIR=/var/lib/cfx-dev conflux status  # peers > 0, up=yes
 ```
 
@@ -303,12 +399,13 @@ $ CONFLUX_DIR=/var/lib/cfx-dev conflux status       # the dev one
   service      active (systemd: conflux-e7616592.service, enabled at boot)
 ```
 
-**They still share the interface name.** Both default to `anchor0`, and the second to
-start gets `device or resource busy` — pass `--interface anchor1` to the dev one, as
-above. That is the one thing `CONFLUX_DIR` does not name, because an interface belongs
-to the host and not to a conflux installation. The failure is treated as permanent
-rather than retried to the unit's ninety-second timeout, so it arrives in a few
-seconds and says what it is.
+**The dev one runs in userspace, as above.** A host runs one TUN anchor. Two no longer
+collide on the interface's name, which each anchor takes from its own identity, but
+they share everything else a TUN anchor sets up on the host — its routes, forwarding and
+firewall rules, which carry fixed names — so a second's start replaces the first's and
+its stop removes them (anchor's `docs/operations.md`, "Deploying"). That is the one thing
+`CONFLUX_DIR` cannot separate, because the host's networking belongs to the host and not
+to a conflux installation. `conflux proxy` sets nothing on the host up.
 
 **Not `/tmp`.** systemd clears it on boot, so a dev root there is gone by the time the
 service starts and the unit exits 78 — correctly, but it makes the reboot test
@@ -324,8 +421,8 @@ Two things worth checking deliberately, because neither is obvious from a passin
   from a different root will enrol fine and then never handshake, because the pin is
   what refuses it. That failure is on the anchor side, not conflux's.
 
-  This node is the production realm's own, so it answers only a build carrying the
-  production pin: `make anchor-bins FETCH=1` prints the realm the binaries it fetched
+  Each genesis node answers only a build carrying its tree's pin — `:4701` a dev build's,
+  `:4700` a release's: `make anchor-bins FETCH=1` prints the realm the binaries it fetched
   are pinned to, and a local `make release` pins whatever `genesis/genesis.pin` says.
 
 ## The other half of the contract is tested in the other repository
@@ -382,7 +479,13 @@ The shape of the exchange is written down once, in
   under the SCM and launchd, and an `anchord` as `LOCAL SERVICE` and `_conflux` that answers
   on its socket, but none enrols, and no job opens a wintun interface.
 
+- **`conflux cert` against OpenSSL.** OpenSSL 3.5 is the first to read ML-DSA and no runner
+  ships it, so the interop in [cert.md](cert.md#checked-against-openssl) was checked by hand,
+  in a container, TLS both ways included; the PBES2 known answer is what CI keeps of it. The passphrase prompt's
+  echo, too, is checked by hand under a pseudo-terminal: CI has no terminal, and the tests
+  replace the one it opens.
+
 A local fake for the enrolment API is used for the client's error paths, but it cannot
-stand in for a full end-to-end test: the shipped `anchord` is pinned to the production
-genesis and the `anchorctl` beside it is the lockdown build, so nothing can mint a
+stand in for a full end-to-end test: the shipped `anchord` is pinned — a release's to the
+production genesis, a dev build's to the dev genesis — and the `anchorctl` beside it is the lockdown build, so nothing can mint a
 credential those binaries will accept.

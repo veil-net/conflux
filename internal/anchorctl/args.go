@@ -193,14 +193,39 @@ func (m StartMode) Args() []string {
 
 // RenewArgs installs a renewed chain on the running anchor, without a restart.
 //
-// -inline makes anchorctl read the file and send the bytes, so the daemon never
-// opens a path a caller named.
-func RenewArgs(credPath string) []string {
-	return []string{"renew", "-cred", credPath, "-inline"}
+// The chain arrives on stdin, as the manifest does for start, and anchorctl sends it
+// inline: it is never a file, so the daemon never opens a path a caller named and a
+// renewal leaves nothing behind, which an ephemeral run, holding its credential in memory
+// alone, depends on.
+func RenewArgs() []string {
+	return []string{"renew", "-cred", "-"}
 }
 
 // StopArgs closes the anchor. The daemon stays up.
 func StopArgs() []string { return []string{"stop"} }
+
+// ObserveStartArgs starts the daemon's observer with o, or starts it again with o if it
+// is running, which is what anchorctl's -start does.
+//
+// Both options are always written, in the direction conflux.json says, for the reason the
+// mode flags are: the observer that runs is the one asked for, whatever the last start
+// asked for.
+func ObserveStartArgs(o config.Observer) []string {
+	return []string{"observe", "-start", "-loopback=" + boolText(o.Loopback), "-hide-names=" + boolText(o.HideNames)}
+}
+
+// ObserveStopArgs stops the observer. What it recorded stays in the inventory for as long
+// as the daemon runs.
+func ObserveStopArgs() []string { return []string{"observe", "-stop"} }
+
+// ExportArgs points the running daemon's export at endpoint, sending signals: the
+// Observability service's own call, which anchord holds in memory and nothing writes down,
+// so it lasts as long as the daemon -- what an ephemeral run, which writes no anchord.json,
+// configures its export with. No headers and no TLS material: on a command line they would
+// be in every process listing.
+func ExportArgs(endpoint string, insecure bool, signals []string) []string {
+	return []string{"export", "-endpoint", endpoint, "-insecure=" + boolText(insecure), "-signals", strings.Join(signals, ",")}
+}
 
 // StatusArgs asks what is running.
 func StatusArgs() []string { return []string{"status"} }

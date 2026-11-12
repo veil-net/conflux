@@ -1,8 +1,10 @@
-# The two modes
+# The three modes
 
 conflux runs an anchor one of two ways, and they are mutually exclusive. Not by
 conflux's choice — anchor refuses a configuration that asks for both, before anything
-starts.
+starts. The third mode runs no anchor at all: the daemon's observer alone, which
+inventories the cryptography of the host's traffic and joins no realm
+([Observing](#observing--conflux-observe)). The observer also runs beside either anchor.
 
 This page is about what the machine gets out of the realm. What the anchor reaches
 the realm *over* is a separate question with its own page — the host's IP network by
@@ -11,13 +13,15 @@ default, or a link named by `--uplink`, which works with either mode below. See
 
 ## TUN — `conflux up`
 
-The daemon creates a real network interface — `anchor0` on Linux and Windows; macOS
-numbers its own `utunN` and the BSDs their own `tunN` — and the host kernel owns the
-overlay addresses. `ping`, `ssh`, a browser, anything on the machine can use the
-overlay without knowing it exists. This needs `CAP_NET_ADMIN` on Linux, root on macOS
-and the BSDs, Administrator and `wintun.dll` on Windows — and that is what `anchord` is
-given: on Linux it runs as conflux's own account with `CAP_NET_ADMIN` and nothing else,
-unless the host's firewall takes changes only from root. See
+The daemon creates a real network interface — on Linux and Windows named after the
+anchor, `anchor` and the start of its AnchorID (`anchor6btpa3gn6`), unless `--interface`
+names another; macOS numbers its own `utunN` and the BSDs their own `tunN` — and the host
+kernel owns the overlay addresses; `conflux status` names the one the anchor holds.
+`ping`, `ssh`, a browser, anything on the machine can use the overlay without knowing it
+exists. This needs `CAP_NET_ADMIN` on Linux, root on macOS and the BSDs, Administrator and
+`wintun.dll` on Windows — and that is what `anchord` is given: on Linux it runs as
+conflux's own account with `CAP_NET_ADMIN` and nothing else, unless the host's firewall
+takes changes only from root. See
 [security.md](security.md#what-anchord-runs-as).
 
 Because the kernel owns the address, a service published on the overlay is an ordinary
@@ -80,6 +84,30 @@ $ sudo conflux proxy --subnet 192.168.1.0/24 --serve-exit
 An IPv4 works in both modes. Here the anchor's own stack holds it, so a peer reaches
 the published ports at it as well as at the overlay IPv6 address.
 
+## Observing — `conflux observe`
+
+The daemon runs its observer and nothing else. The host copies the start of every flow
+its interfaces carry to `anchord`, which reads each handshake and records whether its key
+exchange was post-quantum, hybrid, classical or none, and which side held it back — each
+record sent to a collector as it is made where an export is configured, and kept in the
+daemon's inventory either way. Nothing is enrolled, no credential is needed, and there is no
+realm to find, so the anchor's settings — the taints, the IPv4, the subnets and exits, the
+uplink, the peers and the port — are kept, unused, for the next `up` or `proxy`.
+
+```console
+$ sudo conflux observe
+$ sudo conflux up --observe              # beside an anchor with an interface
+$ sudo conflux proxy 8080=127.0.0.1:3000 --observe
+```
+
+Beside an anchor, in either mode, the observer also records what the anchor carries over
+the overlay, as the anchor hands it on, so a userspace machine's traffic, which no capture
+sees, is in the inventory as an interface machine's is.
+
+What `anchord` is given is the capture and nothing else: `CAP_NET_RAW` on Linux, read
+access to `/dev/bpf*` on macOS, `LOCAL SERVICE` on Windows. FreeBSD and OpenBSD have no
+capture, and refuse. [observe.md](observe.md) has the rest.
+
 ## Why they cannot be combined
 
 A rule of anchor's, and a fact about it:
@@ -115,13 +143,20 @@ answer — and only an explicit `--lan-discovery yes` is refused there. `auto` i
 anchor as `no` on a link, because anchor refuses a yes there and would otherwise take one
 from the manifest. A machine configured once and later moved onto a link keeps starting.
 
+## Ephemeral, in either mode
+
+`--ephemeral` on `up` or `proxy` is not a fourth mode but a way to run either: in the
+foreground, from a credential held in memory, with nothing of the machine's read or
+written, and nothing left when anchord stops. It does not switch the machine's own
+configured mode, which it never touches. See [ephemeral.md](ephemeral.md).
+
 ## Switching
 
-Running one replaces the other, and conflux says so:
+Running one replaces another, and conflux says so:
 
 ```console
 $ sudo conflux proxy 8080=127.0.0.1:3000
-conflux: this machine was running in TUN mode with interface anchor0.
+conflux: this machine was running in TUN mode.
   Userspace mode replaces that: one daemon holds one anchor, and an anchor with
   a host interface cannot also serve a reverse proxy …
 ```
@@ -132,6 +167,11 @@ Everything else is kept — the subnets and exits, which either mode routes, and
 the taints, which are the credential's, the uplink, the peers, the port and low latency.
 `--no-subnet`, `--no-serve-exit` and `--no-use-exit` are the way back from routing on
 either verb.
+
+Switching an anchor to `conflux observe` stops it, and the machine leaves its realm, so it is
+asked first at a terminal and refused off one without `--yes`. It clears the proxy specs,
+as `up` does, and keeps everything else, the identity included. Back again, `up` or `proxy`
+starts an anchor beside the observer, which stays on until `--no-observe`.
 
 ## Proxy specs
 

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 
@@ -25,8 +26,11 @@ func dirsForTest(t *testing.T) paths.Dirs {
 // thing and the failure names that thing rather than a missing taint.
 func base(mode Mode) *Config {
 	c := &Config{Mode: mode, Taints: []string{"office"}}
-	if mode == ModeProxy {
+	switch mode {
+	case ModeProxy:
 		c.Proxies = []string{"8080=127.0.0.1:3000"}
+	case ModeObserve:
+		c.Observer = &Observer{}
 	}
 
 	return c
@@ -34,7 +38,9 @@ func base(mode Mode) *Config {
 
 // TestModeRules are anchor's, and only anchor's: a proxy needs userspace, a subnet, an
 // exit and an IPv4 work in either mode -- in userspace the anchor forwards from its own
-// process -- and the two exits are alternatives.
+// process -- and the two exits are alternatives. Observing needs the observer and runs no
+// anchor, so serves no proxy; it runs beside either shape, and the anchor's other settings
+// stay through it, whether or not it exports.
 func TestModeRules(t *testing.T) {
 	ip := "10.128.0.7/24"
 
@@ -63,10 +69,22 @@ func TestModeRules(t *testing.T) {
 		"a binding with no taints": {ModeTUN, func(c *Config) {
 			c.Taints, c.Subnets = nil, []string{"*@office"}
 		}, false, "default compartment"},
+		"observing with no observer":    {ModeObserve, func(c *Config) { c.Observer = nil }, false, "needs the observer"},
+		"observing, serving a proxy":    {ModeObserve, func(c *Config) { c.Proxies = []string{"8080=127.0.0.1:1"} }, false, "runs none"},
+		"observing, nothing exported":   {ModeObserve, func(c *Config) {}, true, ""},
+		"observing, settings kept":      {ModeObserve, func(c *Config) { c.IPv4, c.Subnets, c.ServeExit = &ip, []string{"10.0.0.0/24"}, true }, true, ""},
+		"observing beside an interface": {ModeTUN, func(c *Config) { c.Observer = &Observer{Loopback: true} }, true, ""},
+		"observing beside a proxy":      {ModeProxy, func(c *Config) { c.Observer = &Observer{HideNames: true} }, true, ""},
+		"a mode nobody knows":           {"bridge", func(c *Config) {}, false, `want "tun", "proxy" or "observe"`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			c := base(tc.mode)
 			tc.set(c)
+
+			// Where there is no capture, any observer is refused first, whatever else holds.
+			if c.Observer != nil && ObserverSupported(runtime.GOOS) != nil {
+				tc.ok, tc.says = false, "no capture"
+			}
 
 			err := c.Validate()
 
@@ -79,6 +97,39 @@ func TestModeRules(t *testing.T) {
 				t.Errorf("the error should say %q; it said: %v", tc.says, err)
 			}
 		})
+	}
+}
+
+// The observer captures where anchor can: the BSDs give it nothing to capture with, and
+// a configuration asking for it there is refused before anything starts.
+func TestTheObserverIsRefusedWhereThereIsNoCapture(t *testing.T) {
+	for goos, ok := range map[string]bool{"linux": true, "darwin": true, "windows": true, "freebsd": false, "openbsd": false} {
+		err := ObserverSupported(goos)
+		if ok != (err == nil) {
+			t.Errorf("%s: %v, want supported %v", goos, err, ok)
+		}
+
+		if err != nil && !strings.Contains(err.Error(), "no capture") {
+			t.Errorf("%s: %v does not say why", goos, err)
+		}
+	}
+}
+
+// Exports is the observer's records leaving as they are made: an export that is on and
+// carries flows, and nothing less.
+func TestExportsNeedsFlowsOn(t *testing.T) {
+	for name, tc := range map[string]struct {
+		e    *Export
+		want bool
+	}{
+		"none":           {nil, false},
+		"off":            {&Export{Endpoint: "c:4317", Flows: true}, false},
+		"on, no flows":   {&Export{Enabled: true, Endpoint: "c:4317", Metrics: true}, false},
+		"on, with flows": {&Export{Enabled: true, Endpoint: "c:4317", Flows: true}, true},
+	} {
+		if got := (&Config{Export: tc.e}).Exports(); got != tc.want {
+			t.Errorf("%s: Exports %v, want %v", name, got, tc.want)
+		}
 	}
 }
 

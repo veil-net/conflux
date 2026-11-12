@@ -6,9 +6,12 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
+	"github.com/veil-net/conflux/internal/daemon"
+	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/privcheck"
@@ -26,22 +29,34 @@ import (
 // exit code without translation, signals delivered to the right process, and
 // nothing left in `ps` pretending to be a wrapper.
 func passthrough(ctx context.Context, args []string) int {
-	d := paths.Default()
+	d := activeDirs()
 
 	token, code := connectionDetails(d, args)
 	if code != ExitOK {
 		return code
 	}
 
+	// Usage reaches no daemon, and makes nothing: anchorctl's answer is the same from any
+	// copy, and the run waits for it, so a temporary one can be removed.
+	if wantsUsage(args) {
+		bin, done, err := libexec.ForUsage(paths.Default())
+		if err != nil {
+			return fail(err)
+		}
+		defer done()
+
+		return runAnchorctl(bin, args, os.Environ())
+	}
+
 	// Only once there is something to talk to. Extracting first made the directories
 	// uninstall had removed, and 45 MB in them, on a machine with nothing running, and
 	// failed for an account that cannot write them before saying what was wrong.
-	tools, err := libexec.Ensure(d)
+	tools, err := toolsFor(d)
 	if err != nil {
 		return fail(err)
 	}
 
-	env := (&anchorctl.Ctl{Socket: d.Socket(), Token: token}).Env()
+	env := (&anchorctl.Ctl{Socket: d.Socket(), Token: token}).PassthroughEnv()
 
 	return execAnchorctl(ctx, tools.Anchorctl, args, env)
 }
@@ -72,8 +87,7 @@ func connectionDetails(d paths.Dirs, args []string) (string, int) {
 	if _, err := os.Stat(d.Socket()); errors.Is(err, fs.ErrNotExist) {
 		ui.Errf("nothing is running here.\n\n"+
 			"  conflux start                       start from a configuration that already exists\n"+
-			"  conflux up                          join with a network interface\n"+
-			"  conflux proxy 8080=127.0.0.1:3000   publish a port, no interface needed\n\n"+
+			configureHint+"\n\n"+
 			"  (the control socket would be %s)", d.Socket())
 
 		return "", ExitUnavailable
@@ -144,7 +158,7 @@ func runEscapeHatch(ctx context.Context, args []string) int {
 // runCtl builds a Ctl for conflux's own use, against conflux's own daemon. Its token
 // is empty when there is none to read, which is a daemon that is not running.
 func runCtl(d paths.Dirs) (*anchorctl.Ctl, error) {
-	tools, err := libexec.Ensure(d)
+	tools, err := toolsFor(d)
 	if err != nil {
 		return nil, err
 	}
@@ -175,4 +189,80 @@ func runQuiet(ctx context.Context, bin string, env, args []string) (string, erro
 	out, err := cmd.CombinedOutput()
 
 	return string(out), err
+}
+
+// ephemeralEnv set to 1 sends pass-through to the ephemeral anchor while the installed one
+// runs too; see activeDirs.
+const ephemeralEnv = "CONFLUX_EPHEMERAL"
+
+// activeDirs is the root whose anchor the pass-through reaches: the machine's own, or an
+// ephemeral run's. The ephemeral one only when it is the one running, or when asked for by
+// CONFLUX_EPHEMERAL=1: a command never switches anchors because one was started beside it.
+func activeDirs() paths.Dirs {
+	installed := paths.Default()
+
+	eph, live := liveEphemeral()
+	if !live {
+		return installed
+	}
+
+	if os.Getenv(ephemeralEnv) == "1" {
+		return eph
+	}
+
+	if _, err := os.Stat(installed.Socket()); err == nil {
+		return installed
+	}
+
+	return eph
+}
+
+// liveEphemeral is the root of the ephemeral run that is running, if one is: the one whose
+// lock is held.
+func liveEphemeral() (paths.Dirs, bool) {
+	for _, root := range paths.EphemeralCandidates() {
+		d := paths.EphemeralDirs(root)
+		if held, err := flock.Held(d.ServeLockFile()); err == nil && held {
+			return d, true
+		}
+	}
+
+	return paths.Dirs{}, false
+}
+
+// errEphemeralStarting is an ephemeral run asked for before it is up.
+var errEphemeralStarting = errors.New("the ephemeral run is still starting; ask again once it is up")
+
+// toolsFor is the anchor pair to reach d's daemon with. An ephemeral run's root is the run's
+// own: a reader takes the pair it finds there and writes nothing, and reads nothing until the
+// run has marked itself up, since before that the run may still be clearing what a killed one
+// left -- and a reader that refilled what it was clearing, or held one of its binaries open,
+// would stop it.
+func toolsFor(d paths.Dirs) (*libexec.Tools, error) {
+	if !slices.Contains(paths.EphemeralCandidates(), d.State) {
+		return libexec.Ensure(d)
+	}
+
+	if !daemon.IsLiveReady(d) {
+		return nil, errEphemeralStarting
+	}
+
+	return libexec.Extracted(d)
+}
+
+// staleEphemeral is the root an ephemeral run that was killed left behind, if one did: there,
+// with nobody holding its lock.
+func staleEphemeral() (paths.Dirs, bool) {
+	for _, root := range paths.EphemeralCandidates() {
+		d := paths.EphemeralDirs(root)
+		if _, err := os.Stat(d.ServeLockFile()); err != nil {
+			continue
+		}
+
+		if held, err := flock.Held(d.ServeLockFile()); err == nil && !held {
+			return d, true
+		}
+	}
+
+	return paths.Dirs{}, false
 }

@@ -32,6 +32,16 @@ type dropState struct {
 // nothing private.
 const workDir = "/"
 
+// account is the account anchord is handed to: the installation's, or an ephemeral run's
+// own.
+func (s *Supervisor) account() string {
+	if s.ephemeral {
+		return account.EphemeralName()
+	}
+
+	return account.Name()
+}
+
 // dropTo settles whether the supervisor can hand anchord to the account, and fills in
 // which account that is. "" is yes; anything else is why not.
 func (s *Supervisor) dropTo(p *Privilege) string {
@@ -43,7 +53,7 @@ func (s *Supervisor) dropTo(p *Privilege) string {
 		return why
 	}
 
-	a, err := account.Ensure()
+	a, err := account.EnsureNamed(s.account())
 	if err != nil {
 		s.report().Warn("%v", err)
 
@@ -62,6 +72,16 @@ func (s *Supervisor) dropTo(p *Privilege) string {
 		s.report().Warn("%v", err)
 
 		return a.Name + " cannot run anchord on this host: " + firstLine(err)
+	}
+
+	// Last, once the account is known to run anchord, so a drop that fails above leaves the
+	// devices as they were.
+	if p.BPF == BPFOwn {
+		if err := grantBPF(a.GID); err != nil {
+			s.report().Warn("could not give %s read access to /dev/bpf*: %v", a.Name, err)
+
+			return "could not give " + a.Name + " read access to /dev/bpf*, which observing needs: " + firstLine(err)
+		}
 	}
 
 	return ""
@@ -121,7 +141,7 @@ func (s *Supervisor) smoke(p Privilege) error {
 	var out strings.Builder
 	cmd.Stdout, cmd.Stderr = &out, &out
 
-	err := startProcess(cmd, p)
+	err := startProcess(cmd, p, nil)
 	if err == nil {
 		err = cmd.Wait()
 	}
@@ -233,7 +253,7 @@ func (s *Supervisor) killLeftovers() {
 		return
 	}
 
-	a, err := account.Lookup()
+	a, err := account.LookupNamed(s.account())
 	if err != nil || a == nil {
 		return
 	}

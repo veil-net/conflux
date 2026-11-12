@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -195,6 +197,52 @@ func TestRenewNowSplicesAndInstalls(t *testing.T) {
 	// The bootstrap list the issuer answered with is the next start's.
 	if got := m.Bootstrap(); !slices.Equal(got, is.bootstrap) {
 		t.Errorf("the manifest's bootstrap is %v, want the renewal's %v", got, is.bootstrap)
+	}
+}
+
+// TestTheRenewedChainArrivesOnStdin: what the issuer answered is handed to anchorctl on
+// stdin, byte for byte, and no file of it is left behind: a renewal writes the manifest it
+// splices into, and nothing else.
+func TestTheRenewedChainArrivesOnStdin(t *testing.T) {
+	is := newIssuer(t)
+	d := machine(t, is, time.Now().Add(-5*24*time.Hour), time.Now().Add(2*24*time.Hour))
+
+	sent := filepath.Join(t.TempDir(), "sent")
+	t.Setenv(fakeAnchorctlRenewedEnv, sent)
+
+	before, err := os.ReadDir(d.State)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RenewNow(t.Context(), d, fakeCtl(t), nil); err != nil {
+		t.Fatalf("RenewNow: %v", err)
+	}
+
+	got, err := os.ReadFile(sent)
+	if err != nil {
+		t.Fatalf("anchorctl renew was handed nothing: %v", err)
+	}
+
+	if !bytes.Equal(got, is.chain) {
+		t.Errorf("anchorctl renew was handed %q, want the issuer's chain %q", got, is.chain)
+	}
+
+	after, err := os.ReadDir(d.State)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// What was there, and the lock every renewal takes: never a file of the chain.
+	had := map[string]bool{d.LockFile(): true}
+	for _, e := range before {
+		had[filepath.Join(d.State, e.Name())] = true
+	}
+
+	for _, e := range after {
+		if p := filepath.Join(d.State, e.Name()); !had[p] {
+			t.Errorf("a renewal left %s behind", p)
+		}
 	}
 }
 

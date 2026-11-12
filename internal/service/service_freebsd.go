@@ -19,7 +19,7 @@ func scriptPath() string { return "/usr/local/etc/rc.d/" + rcName() }
 
 // Install writes the script and enables it, and starts nothing.
 func (freebsd) Install(exe string, args ...string) error {
-	script, err := freebsdScript(rcName(), exe, args, logFile())
+	script, err := freebsdScript(rcName(), exe, withLog(args), logFile())
 	if err != nil {
 		return err
 	}

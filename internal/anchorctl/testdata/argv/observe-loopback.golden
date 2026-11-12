@@ -1,0 +1,4 @@
+observe
+-start
+-loopback=true
+-hide-names=false

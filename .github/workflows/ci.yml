@@ -2,11 +2,17 @@ name: ci
 
 # Pull requests, and a hand-run. Nothing else.
 #
-# This is where a change is tested: on the branch, before it is merged. GitHub tests
-# refs/pull/N/merge, the branch already merged into its base, so a green pull request is
-# a green merge result. What makes that a guarantee rather than a hope is branch
-# protection on version3: require a pull request, require these checks, and require the
-# branch to be up to date before merging.
+# This is where a change is tested: on the branch, before it is merged. Work goes into dev by a
+# pull request, and version3 takes dev by another (branch-flow.yml); both run this in full.
+# GitHub tests refs/pull/N/merge, the branch already merged into its base, so a green pull
+# request is a green merge result. What makes that a guarantee rather than a hope is branch
+# protection on dev and version3: require a pull request, require these checks and
+# branch-flow's, and require the branch to be up to date before merging.
+#
+# Each side is tested against the anchor it will embed: a pull request into version3, the
+# release, against anchor's `latest`; everything else -- a pull request into dev, a hand-run on
+# a feature branch -- against anchor's dev build, `dev-latest`, so the two dev branches are
+# always tested together.
 #
 # CI verifies that the code builds and runs. The utility checks -- gofmt, staticcheck,
 # go mod tidy, govulncheck, the docs links, actionlint, shellcheck -- run on the machine
@@ -17,6 +23,20 @@ on:
 
 permissions:
   contents: read
+
+# Each base is tested against its own tree: a pull request into version3 embeds anchor's
+# release, pinned to the production genesis, and enrols at the production API; one into
+# dev embeds anchor's dev build, pinned to the dev genesis, and enrols at api-dev, which
+# issues under it. A pinned anchord refuses a credential from the other tree, so the two
+# move together (docs/testing.md, "The genesis node").
+#
+# GOFIPS140 is the Makefile's: every conflux built here, by make or by a bare go command, is
+# built against that Go Cryptographic Module and runs in FIPS 140-3 mode (docs/security.md,
+# "FIPS 140-3 and CMVP"). Keep the two equal. The make recipes build OpenBSD with it off.
+env:
+  ANCHOR_TAG: ${{ (github.base_ref || github.ref_name) == 'version3' && 'latest' || 'dev-latest' }}
+  VEILNET_API: ${{ (github.base_ref || github.ref_name) == 'version3' && 'https://api.veilnet.com.au' || 'https://api-dev.veilnet.com.au' }}
+  GOFIPS140: v1.26.0
 
 # A superseded run holds the one self-hosted machine the run that replaced it is
 # waiting for.
@@ -50,15 +70,17 @@ jobs:
         with:
           client-id: ${{ secrets.ANCHOR_APP_CLIENT_ID }}
           private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
+          tag: ${{ env.ANCHOR_TAG }}
 
       # The whole suite under -race, once, and none of it skipped. A skip is green, and
       # the tests that need the real binaries skip without them, so a run that fetched
       # them and then reports "no anchor pair" has lost them. On Linux nothing skips for
-      # any other reason, so zero is the right number.
+      # any other reason, so zero is the right number. With the module refusing what it
+      # does not approve, set on the test binaries alone, as the Makefile's TESTEXEC does.
       - name: the suite under -race, with the real binaries, nothing skipped
         run: |
           set -euo pipefail
-          go test -race -count=1 -v ./... > test.log 2>&1 || { cat test.log; exit 1; }
+          go test -exec 'env GODEBUG=fips140=only' -race -count=1 -v ./... > test.log 2>&1 || { cat test.log; exit 1; }
           if grep -q -- '--- SKIP' test.log; then
             echo "::error::a test skipped in the job that provides the anchor binaries" >&2
             grep -B1 -- '--- SKIP' test.log >&2
@@ -80,10 +102,39 @@ jobs:
           make build >/dev/null
           diff <(bin/conflux version | sed 1d) <(go run . version | sed 1d)
 
+      # The binary that ships runs in FIPS 140-3 mode: the module's integrity check passes
+      # as it starts, and a GODEBUG that switches the mode off is refused, exit 70, rather
+      # than run without it.
+      - name: conflux runs in FIPS 140-3 mode, and refuses to run with it off
+        run: |
+          set -euo pipefail
+          # Each answer read whole before it is searched: grep -q stops at its first match,
+          # and conflux writing a line after it would then end the step on SIGPIPE.
+          version=$(bin/conflux version)
+          grep -qx 'fips140 on, Go Cryptographic Module v1.26.0' <<<"$version"
+          debug=$(GODEBUG=fips140=debug bin/conflux version 2>&1)
+          grep -q '^fips140: verified' <<<"$debug"
+          rc=0; GODEBUG=fips140=off bin/conflux version >/dev/null 2>&1 || rc=$?
+          [ "$rc" = 70 ] || { echo "::error::with fips140=off conflux exited $rc, not 70" >&2; exit 1; }
+
+      # conflux's HTTPS is crypto/tls in FIPS 140-3 mode, which offers only approved parameters,
+      # so a host that accepts none of them fails an enrolment, an update or a wintun fetch
+      # where it happens, on somebody's machine. Each host conflux reaches is probed here as
+      # conflux reaches it, its chain checked against the system's roots: the group and the
+      # chain's class are printed, not required. wintun.net is otherwise reached only by a
+      # Windows TUN's first start, which no job makes.
+      - name: FIPS 140-3 mode TLS reaches every host conflux talks to
+        run: |
+          set -euo pipefail
+          for host in api.veilnet.com.au api-dev.veilnet.com.au api.github.com github.com \
+            release-assets.githubusercontent.com objects.githubusercontent.com www.wintun.net; do
+            bin/conflux cert probe "$host"
+          done
+
   # The container suites, on a hosted runner: the boot service under a real systemd --
   # with every branch of what anchord runs as taken, the hosts it depends on made inside
-  # the container -- and three nodes against the live API and the production realm, whose
-  # anchord is conflux's own account with CAP_NET_ADMIN alone. The third reaches the
+  # the container -- and four nodes against the live API of the base's tree ($VEILNET_API
+  # above), whose anchord is conflux's own account with CAP_NET_ADMIN alone. The third reaches the
   # realm through its manifest's bootstrap node over UDP, and from veilnet-dev no
   # handshake gets through to it. A hosted runner is thrown away, so nothing here reaps
   # after the suites; the fetch needs the anchor credential, which a fork's pull request
@@ -99,12 +150,15 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
+        with:
+          cache-key: integration
 
       # Every pair, not only linux-amd64: `dist` builds every target, with the size gate.
       - uses: ./.github/actions/anchor-bins
         with:
           client-id: ${{ secrets.ANCHOR_APP_CLIENT_ID }}
           private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
+          tag: ${{ env.ANCHOR_TAG }}
 
       - name: what this runner gives the container suites
         run: ./test/preflight.sh
@@ -112,7 +166,7 @@ jobs:
       # One invocation, so `dist` and the image are built once for both suites, which
       # then run side by side: they boot containers of different names, and only one of
       # them enrols. -O keeps each suite's output together, in one block per suite.
-      - name: the boot service, and three nodes against the live API
+      - name: the boot service, and four nodes against the live API
         run: make -j2 -O service-test integration
 
   # FreeBSD and OpenBSD, which no hosted runner is: each in a VM on a hosted Linux runner,
@@ -143,11 +197,14 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
+        with:
+          cache-key: bsd-${{ matrix.os }}
 
       - uses: ./.github/actions/anchor-bins
         with:
           client-id: ${{ secrets.ANCHOR_APP_CLIENT_ID }}
           private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
+          tag: ${{ env.ANCHOR_TAG }}
           targets: ${{ matrix.pair }}
 
       - name: conflux for ${{ matrix.os }}
@@ -206,6 +263,7 @@ jobs:
         with:
           client-id: ${{ secrets.ANCHOR_APP_CLIENT_ID }}
           private-key: ${{ secrets.ANCHOR_APP_PRIVATE_KEY }}
+          tag: ${{ env.ANCHOR_TAG }}
           targets: ${{ matrix.pair }}
 
       # The version and digest come from the product code, not a second copy typed here:
@@ -233,7 +291,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          go test -count=1 -v ./... > test.log 2>&1 || { cat test.log; exit 1; }
+          go test -exec 'env GODEBUG=fips140=only' -count=1 -v ./... > test.log 2>&1 || { cat test.log; exit 1; }
           if grep -B1 -- 'no anchor pair' test.log; then
             echo "::error::a test that needs the anchor binaries skipped" >&2
             exit 1

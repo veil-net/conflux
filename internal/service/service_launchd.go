@@ -11,9 +11,12 @@ import (
 // plistTemplate is the job conflux writes.
 //
 // KeepAlive is {SuccessfulExit: false} rather than true, so a deliberate clean exit
-// stays exited. launchd has no way to name the exit codes that should not restart,
-// so unlike the systemd unit a supervisor that exits 78 or 70 is started again after
-// ThrottleInterval.
+// stays exited. launchd has no way to name the exit codes that should not restart, so
+// the supervisor it starts exits 0 where it would exit 78 or 70 (cli.launchdExit), and is
+// left stopped as the systemd unit leaves it.
+//
+// StandardOutPath and StandardErrorPath name the log for what conflux cannot write itself;
+// the rest it writes there with serve --log, stamped and moved aside when full.
 //
 // ProcessType is Interactive rather than the Background that daemons default to,
 // because Background imposes a low-priority I/O class and App Nap eligibility, and a

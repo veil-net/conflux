@@ -55,15 +55,15 @@ Work through them in this order:
   - reusing the `dist` artifact for the image jobs
   - cancelling superseded runs
   - job ordering suited to the runners: self-hosted `veilnet-dev` for the Linux Go suite, hosted runners for the container suites (they need the live realm's bootstrap node over UDP) and for macOS and Windows
-- Keep the fork guard on every self-hosted job. The only credential stays the read-only anchor GitHub App. Release stays gated to `version3`.
+- Keep the fork guard on every self-hosted job. The only credential stays the read-only anchor GitHub App. Release stays gated to `version3` and `dev`, and `branch-flow` to a PR into `version3` from `dev` alone.
 - Every external action is pinned to its release's commit, with the tag in a comment, and bumped by moving both. No checkout persists its token.
-- **Release only releases.** The user merges to `version3` only when CI is all green, so `release.yml` doesn't re-verify anything. On a push it fetches the pinned binaries, runs `make dist` (the size gate comes with it), attests, and publishes twice: at the `VERSION` tag and at `latest`, each deleted and released again. Jobs or steps that repeat CI's checks are removed; the `version3` gate is the one guard it keeps.
+- **Release only releases.** A PR merges into `dev`, and the user merges `dev` into `version3`, only when CI is all green, so `release.yml` doesn't re-verify anything. On a push it fetches the pinned binaries (anchor's `dev-latest` on `dev`, its `latest` on `version3`), runs `make dist` (the size gate comes with it), attests, and publishes: on `dev` the pre-release `dev-latest`; on `version3` twice, at the `VERSION` tag and at `latest`, each deleted and released again, then the back-merge into `dev`. Jobs or steps that repeat CI's checks are removed; the `version3`/`dev` gate is the one guard it keeps.
 - Validate workflow and composite-action changes with `actionlint` (and `act` if available) before pushing; the PR's own run is what proves them. Name in the summary any change a PR run cannot exercise, such as `release.yml`.
 
 ## Threat model
 
 - Anchor nodes are assumed to run genuine, unmodified anchor binaries. Don't raise overlay findings that hold only against a modified peer. The protocol, handshake and credential chain are anchor's threat model, not conflux's.
-- `api.veilnet.com.au` is assumed to be the genuine traveller deployment. Transport handling is still in scope: TLS only, no plain-http base, no cross-host renewal URLs, bounded response sizes, and malformed responses.
+- `api.veilnet.com.au` and `api-dev.veilnet.com.au` are assumed to be the genuine traveller deployments. Transport handling is still in scope: TLS only, no plain-http base, no cross-host renewal URLs, bounded response sizes, and malformed responses.
 - Conflux's own surface is in scope:
   - the executable it writes to disk and runs (a dropper shape)
   - the private key in a file
@@ -73,7 +73,7 @@ Work through them in this order:
 
 ## Design references
 
-Anchor is the reference for overlay behaviour, and the live API at `api.veilnet.com.au` for the enrolment and renewal contracts. Conflux doesn't reimplement or second-guess anchor logic, except to pre-validate input for clear errors, and then it matches anchor exactly. Where conflux's docs describe anchor or the API differently from how they currently behave, fix conflux's docs. Where anchor's own docs and code disagree, or the live schema and live behaviour disagree, flag it rather than guessing.
+Anchor is the reference for overlay behaviour, and the live API for the enrolment and renewal contracts: `api-dev.veilnet.com.au` for `dev`, `api.veilnet.com.au` for the release. Conflux doesn't reimplement or second-guess anchor logic, except to pre-validate input for clear errors, and then it matches anchor exactly. Where conflux's docs describe anchor or the API differently from how they currently behave, fix conflux's docs. Where anchor's own docs and code disagree, or the live schema and live behaviour disagree, flag it rather than guessing.
 
 ## Test rules
 
@@ -87,8 +87,27 @@ Anchor is the reference for overlay behaviour, and the live API at `api.veilnet.
 ## Invariants (verify every run)
 
 **Embedded binaries**
-- Every `TARGETS` entry embeds exactly its own pinned `anchord` and lockdown `anchorctl`, built from the synced anchor commit and pinned to the genesis `api.veilnet.com.au` issues under.
+- Every `TARGETS` entry embeds exactly its own pinned `anchord` and lockdown `anchorctl`, built from the synced anchor commit and pinned to the genesis of the tree its branch is tested in: on `dev`, the one `api-dev.veilnet.com.au` issues under, as anchor's `dev-latest` is.
 - `make dist` passes the size gate for every target.
+
+**FIPS 140-3**
+- Every target is built against the Go Cryptographic Module v1.26.0 (`GOFIPS140`, the Makefile and ci.yml equal) except OpenBSD's, built with it off; `make dist` holds each artifact to it.
+- Every cryptographic service conflux's own code uses is approved in module v1.0.0's Security Policy (CMVP #5247), used as it approves, with ML-DSA the one exception, as docs/security.md "FIPS 140-3 and CMVP" states. No SHA-1, MD5, DES, RC4 or DSA in conflux's code; a new use goes into that section's table in the same change.
+- The tests run under `GODEBUG=fips140=only`, locally (`make test`) and in every CI job that tests.
+- A build against the module run with `GODEBUG=fips140=off` refuses every command, exit 70.
+- `internal/pki/approved_test.go` passes, every rule with its control: no x/crypto, MD5, SHA-1, DES, RC4, DSA or crypto/ecdh; no AES block or AES-CBC outside `internal/pki/pbes2.go`; no CTR, CFB, OFB or caller-nonce GCM; no RSA PKCS #1 v1.5 encryption, legacy PEM encryption, Ed25519ctx/ph or `WithoutEnforcement`.
+
+**Certificates**
+- `conflux cert` refuses every command where `fips140.Enabled()` is false, exit 70, before reading anything.
+- ML-DSA keys are written seed-only; the both form is read only when its expanded half matches its seed; the expanded-only form is refused.
+- An encrypted key is written PBKDF2-HMAC-SHA-256, 600,000 iterations, a 16-byte salt, AES-256-CBC, and only PBES2 with a SHA-2 PRF, a salt of 16 bytes or more and AES-CBC is read; every refusal names `reencrypt`'s pipe.
+- A clear key is written 0600, never over an existing file without `--force`, never to a terminal; a passphrase comes from a file, an environment variable or the terminal, never a flag's value or stdin.
+- A certificate never outlives its issuer, starts five minutes back, carries a random 128-bit serial and an RFC 7093 SKI; a request contributes its subject and names alone. No certificateHold. No SHA-1 or MD5 fingerprint.
+- `verify` exits 3 for a chain that does not hold, a revoked certificate, a list out of date, or `--require-pq` on a classical chain; authentication is `pqc` only when the leaf key and every signature below the root are ML-DSA.
+- The `show` goldens' fixtures are public material alone; no private key, encrypted or not, is committed.
+- `cert ca`: a CA directory is 0700 and refused when another account owns it or (Unix) others may write it; one command at a time, by `.lock`; a certificate is recorded in `issued/` under its serial, never over another, before it is handed out; a CRL number is recorded before its list is written; no subscriber key is ever in the directory; the CA issues no CA; its keys are encrypted unless `--no-encrypt`.
+- `cert p12` writes PBES2 bags (PBKDF2-HMAC-SHA-256, 600,000 iterations, 16-byte salts, AES-256-CBC) under a PBMAC1 MAC with its key length present, and reads only that profile, the MAC checked before any bag; PKCS#12's own KDF, SHA-1, 3DES, RC2 and keyBags are refused, naming the rewrite line.
+- `cert probe` sends nothing but the handshake, checks the chain itself with `pki.Verify` (the one `InsecureSkipVerify` in conflux, and only so a failing chain is described), and exits 3 for a chain that does not verify or an unmet `--require-pq*`; X25519 is never offered alone. CI's `linux` job probes every host conflux reaches (both APIs, GitHub's API, web and asset hosts, wintun.net); a new host conflux talks to joins that list.
 - A placeholder build reports no anchor pair.
 - No `anchoradmin*` file exists anywhere in conflux.
 - No binary is tracked by git.
@@ -97,7 +116,7 @@ Anchor is the reference for overlay behaviour, and the live API at `api.veilnet.
 - Every command and flag conflux emits exists in current anchor with the same meaning (argv goldens plus the flag cross-check against the real binary).
 - Every parsed output and metric name matches current anchor.
 
-**Config rules** (a proxy needs userspace; a subnet, an exit and an IPv4 work in either mode; the two exits are alternatives; no port or explicit LAN discovery beside an uplink, and there both are typed off so a manifest cannot supply them; taint, IPv4 (translation pool included), subnet (`*`, `SPEC@a+b` bindings to the machine's own taints, the list bounds), AnchorID, bootstrap-entry and proxy-spec parsing; the export block anchord reads at startup, read as protojson reads it, TLS material included) accept and refuse exactly what current anchor does, plus conflux's own rules: no list entry holds a comma, and an uplink is a device rather than a descriptor. A file conflux refuses is refused before anchord starts on it, and is permanent.
+**Config rules** (a proxy needs userspace; a subnet, an exit and an IPv4 work in either mode; the two exits are alternatives; no port or explicit LAN discovery beside an uplink, and there both are typed off so a manifest cannot supply them; taint, IPv4 (translation pool included), subnet (`*`, `SPEC@a+b` bindings to the machine's own taints, the list bounds), AnchorID, bootstrap-entry and proxy-spec parsing; the export block anchord reads at startup, read as protojson reads it, TLS material included) accept and refuse exactly what current anchor does, plus conflux's own rules: no list entry holds a comma, an uplink is a device rather than a descriptor, and on Linux every TUN name meets the rule anchor holds a routing TUN's to, since an order can make any TUN route. A file conflux refuses is refused before anchord starts on it, and is permanent. A persisted toggle is decided by whether its flag was written, and `--x=false` is read as `--no-x` (`typedFlags`), never as `--x`.
 
 **Taints**
 - An alpha enrolment always asks for a taint, minted or given; conflux never asks for none.
@@ -105,7 +124,7 @@ Anchor is the reference for overlay behaviour, and the live API at `api.veilnet.
 - An imported credential's taints are taken as granted, none included.
 - Served subnets are the last set: conflux's at start, or after an explicit `--subnet`/`--no-subnet`, otherwise a member's Subnets order.
 
-**Manifest decoding** handles anchor's current format, refuses a realm manifest and a future version, and survives renewal losslessly.
+**Manifest decoding** handles anchor's current format, refuses a realm manifest and a future version, and survives renewal losslessly, a stale `severedAt` aside, which a renewal drops.
 
 **Live API**
 - `config.DefaultAPIBaseURL` is `https://api.veilnet.com.au`.
@@ -131,7 +150,18 @@ Anchor is the reference for overlay behaviour, and the live API at `api.veilnet.
 - One supervisor per root: `serve` holds `<state>/serve.lock`, and a second is refused.
 - anchord runs as root, or with a capability, only where the host or the configuration needs it, and keeps whatever losing would cost an operation or a function; `status` says why. Nothing is re-owned in a directory the account can write, a root anchord never works in one, and what the account wrote is read as untrusted (`flock.Held`, `config.ReadUntrusted`, `copyTree`).
 - The anchord a dead supervisor left is stopped by the next one only when it is the recorded process (its executable, or anchor's socket lock where none is reported), and `uninstall` reaps it too. On Windows anchord dies with its own job, which its supervisor holds.
-- A supervisor that exits 1 is restarted by systemd, launchd and the SCM; on the BSDs nothing does, and the docs say so.
+- A supervisor that exits 1 is restarted by systemd, launchd and the SCM; on the BSDs nothing does, and the docs say so. One that exits 78 or 70 is restarted by none: systemd names them in `RestartPreventExitStatus`, launchd is told 0 (`cli.launchdExit`), and the SCM a clean stop (`scmExit`).
+- Readiness: the service manager is told the unit started once the anchor is up, or, beside an anchor that cannot come up yet, once the observer is (`signalStarted`), so a start timeout never takes the observer down; the marker waits for the anchor.
+- Where conflux writes the service log itself (macOS, FreeBSD, Windows), each line is stamped and the file moved aside to `.1` past 10 MiB; the journal and OpenBSD's syslog keep their own.
+- conflux's own anchorctl calls reach conflux's daemon whatever the shell exports (`Ctl.Env`); only pass-through defers to `ANCHOR_SOCKET`/`ANCHORD_TOKEN`. Help and usage make nothing: no directory and no extraction (`libexec.ForUsage`).
+
+**Ephemeral runs**
+- `uninstall` refuses a live run and removes a killed run's root, stopping the anchord it left, under the root's lock.
+- No other conflux writes into a run's root: status and pass-through take its pair through `libexec.Extracted`, and ask it nothing before the run's `MarkReady`, which follows its anchor's start, and only while the process that wrote the marker runs (`IsLiveReady`): a killed run leaves its marker, and the next run withdraws it once it holds the lock.
+- Nothing of the machine's is read or written: no `conflux.json`, `manifest.b64`, `state.json`, `anchord.json`, anchor directory or service; no file holds the credential or the chain at any point (the renewal goes on stdin); anchord gets no `-dir` and no `-config`.
+- The run ends when anchord does, and its root goes with it; nothing restarts or rebuilds. anchord ends with conflux on Linux (parent-death signal, started from a thread held for anchord's life) and Windows (the job); the next run reaps what a killed one left on macOS and the BSDs.
+- As root, anchord drops by the installed rules to `conflux-ephemeral`, never the installation's account; otherwise it runs as the invoking user. Core dumps are off for the run and its anchord.
+- An installed conflux is never read, stopped or changed by one; `uninstall` refuses while one is live, and removes its account.
 
 **Extraction**
 - `SetID` is the same function of the two SHA-256s whether stamped at build or computed; CI's `linux` job checks a stamped build against an unstamped one.

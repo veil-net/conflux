@@ -38,7 +38,7 @@ func runUp(ctx context.Context, args []string) int {
 		subnets  repeated
 		ipv4     = fs.String("ipv4", "", ipv4Usage)
 		noIPv4   = fs.Bool("no-ipv4", false, noIPv4Usage)
-		tunName  = fs.String("interface", "", "name for the network interface (default anchor0); macOS and the BSDs number their own")
+		tunName  = fs.String("interface", "", "name for the network interface (default: the anchor's own, anchor and the start of its ID); macOS and the BSDs number their own")
 		uplink   = fs.String("uplink", "", "carry the mesh over a link rather than the host network, e.g. /dev/ttyUSB0:115200")
 		noUplink = fs.Bool("no-uplink", false, "go back to the host's network on a machine configured for a link")
 		noPeers  = fs.Bool("no-peers", false, "forget the bootstrap list and go back to the one enrolment supplies")
@@ -56,6 +56,9 @@ func runUp(ctx context.Context, args []string) int {
 	fs.Bool("low-latency", false, "carry frames on datagrams: no head-of-line blocking, and a lost frame stays lost")
 	fs.Bool("no-low-latency", false, "go back to carrying frames on streams")
 	registerExits(fs)
+	registerObserver(fs)
+
+	eph := registerEphemeral(fs)
 
 	fs.Var(&taints, "taint", taintUsage)
 	fs.Var(&subnets, "subnet", subnetUsage)
@@ -64,12 +67,19 @@ func runUp(ctx context.Context, args []string) int {
 	fs.Usage = func() {
 		ui.Printf("conflux up — join the overlay with a network interface\n\n" +
 			"  conflux up [--taint T] [--ipv4 ADDRESS | --no-ipv4] [--subnet CIDR... | --no-subnet]\n" +
-			"             [--uplink DEV | --no-uplink] [--peers HOST:PORT | --no-peers]\n\n" +
+			"             [--uplink DEV | --no-uplink] [--peers HOST:PORT | --no-peers]\n" +
+			"             [--observe | --no-observe] [--export HOST:PORT]\n" +
+			"             [--ephemeral [--manifest FILE|-]]\n\n" +
 			"Enrols this machine if it has never been, starts an anchor in TUN mode, writes\n" +
 			"the configuration, and registers the boot service so a reboot needs nothing.\n\n" +
 			"With --uplink the realm is reached over a link rather than the host's network:\n" +
 			"no socket is bound and no address is advertised. Enrolment still goes over the\n" +
-			"internet, so enrol this machine while it has one.\n\n")
+			"internet, so enrol this machine while it has one.\n\n" +
+			"With --observe the daemon observes beside the anchor: an inventory of the\n" +
+			"cryptography of this host's traffic, which conflux observe -h describes.\n\n" +
+			"With --ephemeral nothing is kept: it runs in the foreground from a credential held\n" +
+			"in memory alone, enrolled or piped in with --manifest, and registers nothing. When\n" +
+			"anchord stops, or on Ctrl-C, everything is gone; docs/ephemeral.md describes it.\n\n")
 		fs.PrintDefaults()
 	}
 
@@ -77,18 +87,34 @@ func runUp(ctx context.Context, args []string) int {
 		return ExitUsage
 	}
 
+	// An ephemeral run reads its credential first, and touches nothing of the machine's.
+	run, err := eph.prepare()
+	if err != nil {
+		return fail(err)
+	}
+
 	if err := needsRoot("bringing up a network interface", "up", args); err != nil {
 		return fail(err)
 	}
 
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		return fail(err)
-	}
+	var (
+		d   paths.Dirs
+		cfg *config.Config
+	)
 
-	cfg, err := loadOrNew(d)
-	if err != nil {
-		return fail(err)
+	if run != nil {
+		if cfg, err = run.fresh(*apiBase); err != nil {
+			return fail(err)
+		}
+	} else {
+		d = paths.Default()
+		if err := d.EnsureAll(); err != nil {
+			return fail(err)
+		}
+
+		if cfg, err = loadOrNew(d); err != nil {
+			return fail(err)
+		}
 	}
 
 	// Before the warning below, because a flag that is going to be refused should be
@@ -99,8 +125,14 @@ func runUp(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
+	if err := chooseObserver(cfg, fs); err != nil {
+		return fail(err)
+	}
+
+	sayLeavingObserveMode(cfg)
+
 	// Switching a proxy machine to TUN is a real change of shape, not an edit.
-	if cfg.Mode == config.ModeProxy && len(cfg.Proxies) > 0 {
+	if cfg.Mode != config.ModeTUN && len(cfg.Proxies) > 0 {
 		ui.Errf("this machine was serving %d proxied service(s) in userspace mode.\n"+
 			"  Bringing up a network interface replaces that: one daemon holds one anchor,\n"+
 			"  and an anchor with an interface cannot also serve a reverse proxy.",
@@ -131,7 +163,7 @@ func runUp(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	held, err := heldCredential(d)
+	held, err := runCredential(run, d)
 	if err != nil {
 		return fail(err)
 	}
@@ -146,11 +178,36 @@ func runUp(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
+	if run != nil {
+		if err := run.ipv4(cfg, *ipv4, *noIPv4); err != nil {
+			return fail(err)
+		}
+
+		return runEphemeral(ctx, cfg, run)
+	}
+
 	if err := chooseIPv4(cfg, *ipv4, *noIPv4); err != nil {
 		return fail(err)
 	}
 
 	return bring(ctx, d, cfg, "up", len(subnets) > 0 || *noSubnet)
+}
+
+// sayLeavingObserveMode tells a machine that only observed that it now runs an anchor too,
+// and what became of the observer: it stays on, as every setting a re-run does not name does.
+func sayLeavingObserveMode(cfg *config.Config) {
+	if cfg.Mode != config.ModeObserve {
+		return
+	}
+
+	if cfg.Observer != nil {
+		ui.Errf("this machine only observed. It runs an anchor now, and the observer stays on beside it;\n" +
+			"  --no-observe turns it off.")
+
+		return
+	}
+
+	ui.Errf("this machine only observed. It runs an anchor now, and no longer observes.")
 }
 
 // typedFlags records which flags were actually written, rather than which have a
@@ -160,10 +217,30 @@ func runUp(ctx context.Context, args []string) int {
 // --port at all are the same value and opposite instructions, and a boolean that
 // defaults false cannot say "leave it alone" by its value either. anchorctl draws the
 // same line with fs.Visit, for the same reason.
+//
+// A boolean written false is not the flag: --x=false is recorded as --no-x where the pair has
+// one, and --no-x=false as nothing, so a script templating --serve-exit=$X with X=false
+// leaves the exit off rather than turning it on, which is all a written flag otherwise
+// means here. A boolean with no negation is recorded as written, and its reader takes the
+// value: --observe-hide-names=false still names the observer, with the option off.
 func typedFlags(fs *flag.FlagSet) map[string]bool {
 	typed := map[string]bool{}
 
-	fs.Visit(func(f *flag.Flag) { typed[f.Name] = true })
+	fs.Visit(func(f *flag.Flag) {
+		if b, ok := f.Value.(interface{ IsBoolFlag() bool }); ok && b.IsBoolFlag() && f.Value.String() == "false" {
+			if pos, ok := strings.CutPrefix(f.Name, "no-"); ok && fs.Lookup(pos) != nil {
+				return
+			}
+
+			if fs.Lookup("no-"+f.Name) != nil {
+				typed["no-"+f.Name] = true
+
+				return
+			}
+		}
+
+		typed[f.Name] = true
+	})
 
 	return typed
 }
@@ -634,16 +711,25 @@ func readSubnetsOrder(d paths.Dirs) (*subnetsOrder, error) {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 
-	// Printed to an operator's terminal, and written by whoever could write the file.
-	o.By = strings.Map(func(r rune) rune {
+	// Printed to an operator's terminal, and written by whoever could write the file: every
+	// string in it, so an entry cannot carry escape sequences any more than the name can.
+	o.By = printable(o.By)
+	for i, s := range o.Subnets {
+		o.Subnets[i] = printable(s)
+	}
+
+	return &o, nil
+}
+
+// printable is s without its control characters, for a terminal it was not written for.
+func printable(s string) string {
+	return strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
 			return -1
 		}
 
 		return r
-	}, o.By)
-
-	return &o, nil
+	}, s)
 }
 
 // dropSubnetsOrder lets the list conflux starts with be served again: the operator just

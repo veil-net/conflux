@@ -46,6 +46,10 @@ that is a bad enough outcome to be worth ordering the code around.
 
 It is also why `conflux uninstall` asks before it runs.
 
+An ephemeral run turns the same fact the other way: it means the identity to be lost, so it
+writes nothing, and the one copy lives in memory for as long as the run. See
+[ephemeral.md](ephemeral.md).
+
 ## Enrolment happens exactly once
 
 conflux enrols only when `manifest.b64` does not exist. In particular:
@@ -163,7 +167,8 @@ Three states, three behaviours:
 
 `conflux renew` forces one now: it fetches a fresh chain and installs it on the
 running anchor with `anchorctl renew`, the same hot swap the timer uses. Nothing is
-restarted and no session is dropped.
+restarted and no session is dropped. The chain goes to anchorctl on its stdin
+(`renew -cred -`), so a renewal writes the manifest it is spliced into and no other file.
 
 It is not part of normal operation — the two automatic paths above cover every machine
 that is working. It is for the one that is not, where `renewal: failing since ...` has

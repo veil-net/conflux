@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/veil-net/conflux/internal/config"
 )
 
 var update = flag.Bool("update", false, "rewrite the golden argv files")
@@ -15,21 +17,28 @@ var update = flag.Bool("update", false, "rewrite the golden argv files")
 // -serve-subnet" from a runtime failure on somebody's laptop into a reviewable text diff.
 var scenarios = map[string]StartMode{
 	"up-minimal": {
-		TUN: true, TUNName: "anchor0",
+		TUN: true,
 		Dir: "/var/lib/conflux/anchor",
 	},
 	"up-ipv4": {
-		TUN: true, TUNName: "anchor0",
+		TUN:  true,
 		IPv4: "10.128.0.7/24", Dir: "/var/lib/conflux/anchor",
 	},
 	"up-subnets": {
-		TUN: true, TUNName: "anchor0",
+		TUN:  true,
 		IPv4: "10.128.0.7/24", Subnets: []string{"192.168.1.0/24", "eth1"},
 		Dir: "/var/lib/conflux/anchor",
 	},
 	"up-custom-interface": {
 		TUN: true, TUNName: "veil0",
 		Dir: "/var/lib/conflux/anchor",
+	},
+	// An ephemeral run gives the anchor no directory, so it writes nothing: no -dir at all.
+	"up-ephemeral": {
+		TUN: true,
+	},
+	"proxy-ephemeral": {
+		Proxies: []string{"8080=127.0.0.1:3000"},
 	},
 	"proxy-tcp": {
 		Proxies: []string{"8080=127.0.0.1:3000"},
@@ -40,12 +49,12 @@ var scenarios = map[string]StartMode{
 		Dir:     "/var/lib/conflux/anchor",
 	},
 	"up-peers": {
-		TUN: true, TUNName: "anchor0",
+		TUN:   true,
 		Peers: []string{"genesis.veilnet.com.au:4700"},
 		Dir:   "/var/lib/conflux/anchor",
 	},
 	"up-peers-many": {
-		TUN: true, TUNName: "anchor0",
+		TUN:   true,
 		Peers: []string{"genesis.veilnet.com.au:4700", "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq@203.0.113.9:4700"},
 		Dir:   "/var/lib/conflux/anchor",
 	},
@@ -55,11 +64,11 @@ var scenarios = map[string]StartMode{
 		Dir:     "/var/lib/conflux/anchor",
 	},
 	"up-uplink": {
-		TUN: true, TUNName: "anchor0",
+		TUN:    true,
 		Uplink: "/dev/ttyUSB0:115200", Dir: "/var/lib/conflux/anchor",
 	},
 	"up-uplink-ipv4": {
-		TUN: true, TUNName: "anchor0",
+		TUN:  true,
 		IPv4: "10.128.0.7/24", Uplink: "/dev/ttyUSB0", Dir: "/var/lib/conflux/anchor",
 	},
 	"proxy-uplink": {
@@ -84,11 +93,11 @@ var scenarios = map[string]StartMode{
 		Dir:     `C:\ProgramData\conflux\anchor`,
 	},
 	"up-port": {
-		TUN: true, TUNName: "anchor0",
+		TUN:  true,
 		Port: 4711, Dir: "/var/lib/conflux/anchor",
 	},
 	"up-low-latency": {
-		TUN: true, TUNName: "anchor0",
+		TUN:        true,
 		LowLatency: true, Dir: "/var/lib/conflux/anchor",
 	},
 	// The three lan-discovery answers. "auto" is the absence of a golden of its own:
@@ -96,11 +105,11 @@ var scenarios = map[string]StartMode{
 	// -lan-discovery appears there -- an auto that emitted a flag would override the
 	// manifest with anchorctl's default on every machine that never asked.
 	"up-lan-discovery-yes": {
-		TUN: true, TUNName: "anchor0",
+		TUN:          true,
 		LANDiscovery: boolp(true), Dir: "/var/lib/conflux/anchor",
 	},
 	"up-lan-discovery-no": {
-		TUN: true, TUNName: "anchor0",
+		TUN:          true,
 		LANDiscovery: boolp(false), Dir: "/var/lib/conflux/anchor",
 	},
 	"proxy-lan-discovery-no": {
@@ -109,11 +118,11 @@ var scenarios = map[string]StartMode{
 		Dir:          "/var/lib/conflux/anchor",
 	},
 	"up-serve-exit-only": {
-		TUN: true, TUNName: "anchor0",
+		TUN:       true,
 		ServeExit: true, Dir: "/var/lib/conflux/anchor",
 	},
 	"up-use-exit-only": {
-		TUN: true, TUNName: "anchor0",
+		TUN:     true,
 		UseExit: true, Dir: "/var/lib/conflux/anchor",
 	},
 	"proxy-low-latency": {
@@ -128,6 +137,41 @@ func TestArgvGoldens(t *testing.T) {
 	for name, mode := range scenarios {
 		t.Run(name, func(t *testing.T) {
 			got := strings.Join(mode.Args(), "\n") + "\n"
+			path := filepath.Join("testdata", "argv", name+".golden")
+
+			if *update {
+				if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
+					t.Fatalf("write golden: %v", err)
+				}
+
+				return
+			}
+
+			want, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read golden (run `go test ./internal/anchorctl -update` to create it): %v", err)
+			}
+
+			if got != string(want) {
+				t.Errorf("argv changed.\n--- want ---\n%s\n--- got ---\n%s", want, got)
+			}
+		})
+	}
+}
+
+// observeScenarios are the observer's starts, kept apart from scenarios: those are anchors,
+// and the properties below are an anchor's.
+var observeScenarios = map[string]config.Observer{
+	"observe-default":    {},
+	"observe-loopback":   {Loopback: true},
+	"observe-hide-names": {HideNames: true},
+	"observe-both":       {Loopback: true, HideNames: true},
+}
+
+func TestObserveArgvGoldens(t *testing.T) {
+	for name, o := range observeScenarios {
+		t.Run(name, func(t *testing.T) {
+			got := strings.Join(ObserveStartArgs(o), "\n") + "\n"
 			path := filepath.Join("testdata", "argv", name+".golden")
 
 			if *update {

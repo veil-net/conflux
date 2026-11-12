@@ -151,7 +151,7 @@ func BenchmarkAnchorCheck(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		if why, _ := s.lost(ctx, "", "", &zeroSince); why != "" {
+		if why, _, _ := s.lost(ctx, "", "", &zeroSince); why != "" {
 			b.Fatalf("an anchor that is running read as lost: %s", why)
 		}
 	}

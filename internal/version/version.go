@@ -2,6 +2,7 @@
 package version
 
 import (
+	"crypto/fips140"
 	"fmt"
 	"runtime"
 	"runtime/debug"
@@ -18,7 +19,15 @@ import (
 // tree claims to be, the Makefile stamps that same string, and a plain `go build`
 // that stamps nothing should not disagree with `make build` about what it just
 // compiled. TestVersionMatchesFile holds the two together.
-var Version = "1.0.0"
+var Version = "1.1.0"
+
+// Channel is "dev" in a dev build -- conflux's `dev-latest`, whose anchor is anchor's
+// `dev-latest`, pinned to the dev tree -- and empty in a release. Injected the same way, by
+// release.yml for a build of dev.
+var Channel = ""
+
+// Dev reports whether this is a dev build.
+func Dev() bool { return Channel == "dev" }
 
 // Commit is the git revision, injected the same way. Left empty, it is recovered
 // from the build info Go embeds, so `go build` alone still says something useful.
@@ -67,4 +76,29 @@ func Anchor() string {
 
 	return fmt.Sprintf("anchor set %s\n  anchord    %s\n  anchorctl  %s",
 		anchor.SetID(), anchordSHA, anchorctlSHA)
+}
+
+// FIPS says whether this conflux runs in FIPS 140-3 mode, and against which Go Cryptographic
+// Module: the line `conflux version` and `conflux status` give it.
+func FIPS() string {
+	return fipsLine(fips140.Version(), fips140.Enabled())
+}
+
+// fipsLine is FIPS for a given module version and mode, so each case can be asserted.
+//
+// "latest" is what crypto/fips140 reports for a build against the toolchain's own tree rather
+// than a frozen module: an OpenBSD build, which the module refuses, or a plain `go build`
+// without the Makefile's GOFIPS140. A frozen module with the mode switched off is refused at
+// start (cli.fipsRefusal), so it never reaches a report.
+func fipsLine(module string, enabled bool) string {
+	switch {
+	case enabled && module != "latest":
+		return "on, Go Cryptographic Module " + module
+	case enabled:
+		return "on, against the toolchain's own module rather than a frozen one"
+	case module == "latest":
+		return "off, this build carries no frozen Go Cryptographic Module"
+	default:
+		return "off, switched off by GODEBUG in a build against Go Cryptographic Module " + module
+	}
 }

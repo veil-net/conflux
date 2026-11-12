@@ -15,3 +15,8 @@ anchor/bin/** binary -text -diff -merge
 # looks identical on both sides, so it reads as "argv changed" on a platform where
 # nothing about the argv is different.
 *.golden -text
+
+# cert show's goldens, and the fixtures they are made from, likewise: TestShowGoldens compares
+# what show prints, "\n" between its lines, with each file byte for byte, so a checkout that
+# made those lines \r\n would fail it on Windows with a diff identical on both sides.
+internal/pki/testdata/show/** -text

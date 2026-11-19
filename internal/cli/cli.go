@@ -27,8 +27,9 @@ type verb struct {
 	run     func(ctx context.Context, args []string) int
 	summary string
 
-	// hidden keeps a verb out of the help listing. Only `serve` is hidden: it is
-	// the service manager's entry point and not something to run by hand.
+	// hidden keeps a verb out of the help listing. `serve` is the service manager's entry
+	// point, and `register` the step `update` has the conflux it put in place run; neither
+	// is something to run by hand.
 	hidden bool
 }
 
@@ -59,6 +60,7 @@ func verbs() map[string]verb {
 		"help":      {run: runHelp, summary: "this, and anchorctl's usage beneath it"},
 		"anchorctl": {run: runEscapeHatch, summary: "run the embedded anchorctl with these arguments, uninterpreted"},
 		"serve":     {run: runServe, summary: "run the supervisor in the foreground", hidden: true},
+		"register":  {run: runRegister, summary: "register the boot service on this conflux, and start nothing", hidden: true},
 	}
 }
 

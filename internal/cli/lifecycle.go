@@ -49,12 +49,47 @@ func runInstall(ctx context.Context, args []string) int {
 	return install(ctx, d, true)
 }
 
+// runRegister places this conflux's copy for the boot service and registers the service
+// as this conflux defines it, and starts nothing: install's silent half, which `update` has
+// the conflux it put in place run when the anchor is stopped, so the new conflux writes
+// its own definition, as the new conflux's `start` does when the anchor is running.
+func runRegister(ctx context.Context, args []string) int {
+	fs := flag.NewFlagSet("register", flag.ContinueOnError)
+	fs.SetOutput(ui.Errw)
+	fs.Usage = func() {
+		ui.Printf("conflux register — register the boot service on this conflux, and start nothing\n\n" +
+			"  conflux register\n\n" +
+			"conflux update runs it in the conflux it put in place.\n")
+	}
+
+	if err := fs.Parse(args); err != nil {
+		return ExitUsage
+	}
+
+	if fs.NArg() > 0 {
+		ui.Errf("conflux register takes no arguments, and got %q.", fs.Arg(0))
+
+		return ExitUsage
+	}
+
+	if err := needsRoot("registering the boot service", "register", args); err != nil {
+		return fail(err)
+	}
+
+	d := paths.Default()
+	if err := d.EnsureAll(); err != nil {
+		return fail(err)
+	}
+
+	return install(ctx, d, false)
+}
+
 // install places the copy of conflux the service runs, and registers it. standalone
 // distinguishes `conflux install` typed by a person, which reports and may start, from the
-// internal call `up`, `proxy` and `observe` make, and `start`, which is silent and leaves
-// starting to the caller. Each has its directories already.
+// internal call `up`, `proxy` and `observe` make, and `start` and `register`, which is
+// silent and leaves starting to the caller. Each has its directories already.
 func install(ctx context.Context, d paths.Dirs, standalone bool) int {
-	mgr := service.New()
+	mgr := newService()
 
 	exe, err := service.Place(d)
 	if err != nil {
@@ -85,6 +120,10 @@ func install(ctx context.Context, d paths.Dirs, standalone bool) int {
 
 	return startFromConfig(ctx, d, mgr, cfg, "install")
 }
+
+// newService is the boot manager install registers with and update asks about; a test's
+// stands in for it.
+var newService = service.New
 
 // register names exe, the copy Place made, as the boot service, defined as this conflux
 // defines it: an upgraded conflux's definition reaches the service the next time it is

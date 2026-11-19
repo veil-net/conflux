@@ -67,13 +67,6 @@ func Place(d paths.Dirs) (string, error) {
 		return "", err
 	}
 
-	return PlaceFrom(d, src)
-}
-
-// PlaceFrom is Place with the file to copy named, rather than this process's own. `conflux
-// update` uses it once it has replaced the file it was started from: what this process
-// reports as its executable after that is not something every platform agrees on.
-func PlaceFrom(d paths.Dirs, src string) (string, error) {
 	dst := d.ServiceExecutable()
 	aside := dst + ".old"
 

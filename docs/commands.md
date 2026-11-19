@@ -546,7 +546,7 @@ and the next update removes it. No token is needed or sent: the repository is pu
 |---|---|
 | this is the latest release | says so, exit 0, nothing changed |
 | the anchor is running | the new conflux's `start` restarts it on the new version, and its exit code is `update`'s |
-| installed, not running | left stopped, as `down` left it; the boot service's copy is refreshed, so it starts on the new version next time |
+| installed, not running | left stopped, as `down` left it; the new conflux registers the boot service itself, its copy and its definition, through a hidden `register` that starts nothing, so it starts on the new version next time; its exit code is `update`'s |
 | not installed | the file is replaced, and that is all |
 | the release has no build for this platform, lists no digest, or is still uploading | refused, nothing changed |
 

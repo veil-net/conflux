@@ -170,7 +170,8 @@ func TestHelpListsEveryVisibleVerb(t *testing.T) {
 
 	for name, v := range verbs() {
 		if v.hidden {
-			if strings.Contains(out, "  "+name+" ") {
+			// As a row of the listing: "register" is also a word in install's summary.
+			if strings.Contains(out, "\n  "+name+" ") {
 				t.Errorf("help lists the hidden verb %q", name)
 			}
 

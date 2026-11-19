@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/veil-net/conflux/internal/paths"
-	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
 	"github.com/veil-net/conflux/internal/update"
 	"github.com/veil-net/conflux/internal/version"
@@ -143,12 +142,13 @@ func runUpdate(ctx context.Context, args []string) int {
 
 // moveService puts the boot service on the conflux at exe, which has just replaced this one.
 //
-// A running anchor is restarted by the new conflux's own `start`, which places the copy
-// the service runs and restarts it: the new code decides how it is started. A stopped one
-// is left stopped, as `down` left it, with its copy refreshed so that whatever starts it
-// next starts the new one.
+// The new conflux does it, so its code decides how its service is defined and started. A
+// running anchor is restarted by the new conflux's own `start`, which places the copy the
+// service runs, registers it and restarts it. A stopped one is left stopped, as `down` left
+// it: the new conflux's hidden `register` places the copy and registers it, starting
+// nothing, so whatever starts it next starts the new one under the new definition.
 func moveService(ctx context.Context, exe string) int {
-	installed, err := service.New().Installed()
+	installed, err := newService().Installed()
 	if err != nil {
 		return fail(err)
 	}
@@ -157,9 +157,7 @@ func moveService(ctx context.Context, exe string) int {
 		return ExitOK
 	}
 
-	d := paths.Default()
-
-	a := askDaemon(ctx, d, false)
+	a := askDaemon(ctx, paths.Default(), false)
 	a.wg.Wait()
 
 	if a.asked && a.statErr == nil {
@@ -168,13 +166,8 @@ func moveService(ctx context.Context, exe string) int {
 		return runChild(ctx, exe, "start")
 	}
 
-	placed, err := service.PlaceFrom(d, exe)
-	if err != nil {
-		return fail(err)
-	}
-
-	if err := register(service.New(), placed); err != nil {
-		return fail(err)
+	if code := runChild(ctx, exe, "register"); code != ExitOK {
+		return code
 	}
 
 	ui.Printf("The anchor is not running; the boot service starts it on this conflux next time.\n")

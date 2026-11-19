@@ -9,10 +9,13 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/privcheck"
+	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/update"
 	"github.com/veil-net/conflux/internal/version"
 )
@@ -151,6 +154,92 @@ func TestUpdateReplacesTheExecutable(t *testing.T) {
 
 	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
 		t.Errorf("the update left %d files where there was one", len(entries))
+	}
+}
+
+// standInService makes the boot manager install and update use mgr.
+func standInService(t *testing.T, mgr service.Manager) {
+	t.Helper()
+
+	was := newService
+	t.Cleanup(func() { newService = was })
+
+	newService = func() service.Manager { return mgr }
+}
+
+// TestUpdateHandsAStoppedServiceToTheNewConflux: with the boot service installed and the
+// anchor stopped, the conflux the update put in place registers the service itself -- its
+// own copy, defined as it defines it -- and nothing starts. This one registers nothing.
+func TestUpdateHandsAStoppedServiceToTheNewConflux(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in conflux is a shell script")
+	}
+
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	exe := filepath.Join(t.TempDir(), "conflux")
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\necho conflux 1.0.0 old\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	asked := filepath.Join(t.TempDir(), "asked")
+	newer := []byte("#!/bin/sh\ncase $1 in\n" +
+		"version) echo 'conflux 9.9.9 (0aea0f77bb77) " + runtime.GOOS + "/" + runtime.GOARCH + "' ;;\n" +
+		"*) echo \"$*\" >>'" + asked + "' ;;\nesac\n")
+	serveRelease(t, newer, exe)
+
+	mgr := &fakeManager{}
+	standInService(t, mgr)
+
+	out, errOut, code := capture(t, "update")
+	if code != ExitOK || !strings.Contains(out, "not running") {
+		t.Fatalf("update exited %d and printed:\n%s%s", code, out, errOut)
+	}
+
+	if got, _ := os.ReadFile(asked); string(got) != "register\n" {
+		t.Errorf("the new conflux was asked %q, want its register alone", got)
+	}
+
+	if len(mgr.installs) != 0 || mgr.restarts != 0 {
+		t.Errorf("this conflux registered %q and restarted %d times; the new one registers, and nothing starts",
+			mgr.installs, mgr.restarts)
+	}
+}
+
+// TestRegisterStartsNothing: the step update hands a stopped service to, in the conflux it
+// put in place, places that conflux's copy and registers the service as it defines it, and
+// starts nothing.
+func TestRegisterStartsNothing(t *testing.T) {
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	t.Setenv("CONFLUX_DIR", t.TempDir())
+
+	mgr := &fakeManager{}
+	standInService(t, mgr)
+
+	if _, errOut, code := capture(t, "register"); code != ExitOK {
+		t.Fatalf("register exited %d: %s", code, errOut)
+	}
+
+	d := paths.Default()
+
+	want := []string{d.ServiceExecutable(), "serve", "--dir", paths.Root()}
+	if len(mgr.installs) != 1 || !slices.Equal(mgr.installs[0], want) {
+		t.Errorf("register registered %q, want %q once", mgr.installs, want)
+	}
+
+	if mgr.restarts != 0 {
+		t.Errorf("register started the service %d times", mgr.restarts)
+	}
+
+	if _, err := os.Stat(d.ServiceExecutable()); err != nil {
+		t.Errorf("register placed no copy for the service: %v", err)
+	}
+
+	if _, errOut, code := capture(t, "register", "now"); code != ExitUsage || !strings.Contains(errOut, "no arguments") {
+		t.Errorf("register now exited %d: %s", code, errOut)
 	}
 }
 

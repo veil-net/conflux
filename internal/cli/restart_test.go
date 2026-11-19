@@ -13,16 +13,22 @@ import (
 type fakeManager struct {
 	d paths.Dirs
 
+	installs     [][]string
 	restarts     int
 	markedAtCall bool
 }
 
-func (m *fakeManager) Install(string, ...string) error { return nil }
-func (m *fakeManager) Remove() error                   { return nil }
-func (m *fakeManager) Stop() error                     { return nil }
-func (m *fakeManager) Installed() (bool, error)        { return true, nil }
-func (m *fakeManager) Describe() string                { return "fake" }
-func (m *fakeManager) LogHint() string                 { return "fake" }
+func (m *fakeManager) Install(exe string, args ...string) error {
+	m.installs = append(m.installs, append([]string{exe}, args...))
+
+	return nil
+}
+
+func (m *fakeManager) Remove() error            { return nil }
+func (m *fakeManager) Stop() error              { return nil }
+func (m *fakeManager) Installed() (bool, error) { return true, nil }
+func (m *fakeManager) Describe() string         { return "fake" }
+func (m *fakeManager) LogHint() string          { return "fake" }
 
 func (m *fakeManager) Restart() error {
 	m.restarts++

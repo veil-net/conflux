@@ -40,12 +40,11 @@ const (
 // client at an httptest server.
 const insecureEnv = "CONFLUX_ALLOW_INSECURE_API"
 
-// defaultHTTP is the transport every Client shares unless given its own: Go's
-// default, which keeps idle connections for a bounded time and honours a proxy in
+// defaultHTTP is the client every Client shares unless given its own: Go's default
+// transport, which keeps idle connections for a bounded time and honours a proxy in
 // the environment, and redirects that stay on one host and on https.
 var defaultHTTP = &http.Client{
-	Timeout:   requestTimeout,
-	Transport: http.DefaultTransport.(*http.Transport).Clone(),
+	Timeout: requestTimeout,
 
 	// A credential request that follows a redirect to another host is a credential
 	// request aimed somewhere conflux did not choose, and one that follows it to

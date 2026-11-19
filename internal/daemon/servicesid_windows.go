@@ -2,8 +2,10 @@ package daemon
 
 import (
 	"fmt"
+	"sync"
 	"unsafe"
 
+	"github.com/veil-net/conflux/internal/service"
 	"golang.org/x/sys/windows"
 )
 
@@ -12,6 +14,12 @@ var rtlCreateServiceSid = windows.NewLazySystemDLL("ntdll.dll").NewProc("RtlCrea
 
 // securityMaxSIDSize is SECURITY_MAX_SID_SIZE, room for any SID.
 const securityMaxSIDSize = 68
+
+// ourServiceSID is serviceSID of this installation's service, asked of Windows once: its
+// name is fixed by the root, which is fixed for the life of the process, and a start needs
+// the SID in several places -- the token, anchord's directory, the -config's grant, and
+// the check that a directory is the account's.
+var ourServiceSID = sync.OnceValues(func() (*windows.SID, error) { return serviceSID(service.ServiceName()) })
 
 // serviceSID is NT SERVICE\name, the SID of conflux's own service, which nothing but this
 // installation's anchord is ever given on Windows: the one identity its files and its

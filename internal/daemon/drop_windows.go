@@ -12,7 +12,6 @@ import (
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
-	"github.com/veil-net/conflux/internal/service"
 	"golang.org/x/sys/windows"
 )
 
@@ -33,7 +32,7 @@ const workDir = ""
 type dropState struct {
 	token windows.Token
 	// sid is the service SID the token was made for, which anchord's process and thread
-	// are opened to: asked of Windows once, by dropTo, beside the token it goes with.
+	// are opened to, kept as a string beside the token it goes with.
 	sid    string
 	smoked map[string]bool
 
@@ -63,7 +62,7 @@ const (
 
 // dropTo makes the token anchord runs as, and checks that anchord starts under it.
 func (s *Supervisor) dropTo(p *Privilege) string {
-	sid, err := serviceSID(service.ServiceName())
+	sid, err := ourServiceSID()
 	if err != nil {
 		return "could not form the service's SID: " + err.Error()
 	}
@@ -357,7 +356,7 @@ func makeAnchorDir(path string, p Privilege) error {
 		return paths.Restrict(path, true)
 	}
 
-	ssid, err := serviceSID(service.ServiceName())
+	ssid, err := ourServiceSID()
 	if err != nil {
 		return err
 	}
@@ -404,7 +403,7 @@ func anchorDirFor(path string, p Privilege) bool {
 }
 
 func grantsServiceSID(path string) bool {
-	sid, err := serviceSID(service.ServiceName())
+	sid, err := ourServiceSID()
 	if err != nil {
 		return false
 	}
@@ -492,7 +491,7 @@ func writeDaemonFile(path string, data []byte, p Privilege) error {
 		return nil
 	}
 
-	sid, err := serviceSID(service.ServiceName())
+	sid, err := ourServiceSID()
 	if err != nil {
 		return err
 	}

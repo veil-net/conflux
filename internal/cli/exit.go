@@ -1,6 +1,8 @@
 package cli
 
-// Exit codes. Most are conventional; 78 is load-bearing.
+import "github.com/veil-net/conflux/internal/service"
+
+// Exit codes. Most are conventional; 78 and 70 are load-bearing, and service defines them.
 const (
 	ExitOK    = 0
 	ExitError = 1
@@ -13,14 +15,13 @@ const (
 	ExitUnavailable = 69
 
 	// ExitChildFailed means a configuration conflux or anchor refuses for good: no
-	// restart would start it, and the systemd unit names this number in
-	// RestartPreventExitStatus beside 78.
-	ExitChildFailed = 70
+	// restart would start it, so no boot manager restarts the supervisor after it.
+	ExitChildFailed = service.ExitChildFailed
 
 	// ExitNoConfig means this machine has never been configured. EX_CONFIG.
 	//
-	// The systemd unit names this exact number in RestartPreventExitStatus, so a
-	// machine with a registered service and no configuration stops cleanly instead
-	// of restarting every five seconds until somebody notices.
-	ExitNoConfig = 78
+	// No boot manager restarts the supervisor after it, so a machine with a registered
+	// service and no configuration stops cleanly instead of restarting every five seconds
+	// until somebody notices.
+	ExitNoConfig = service.ExitNoConfig
 )

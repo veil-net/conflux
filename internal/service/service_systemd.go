@@ -13,10 +13,11 @@ import (
 // Type=notify, with sd_notify from the supervisor, is what makes `systemctl start`
 // return only once the anchor is actually up rather than once fork succeeded.
 //
-// RestartPreventExitStatus=78 70 is the two answers a restart would only repeat.
-// `conflux serve` exits 78 when there is nothing to start, and 70 when it has given up
-// on a configuration or a host that no retry changes; without this the unit would
-// restart into the same answer every five seconds forever, instead of showing failed.
+// RestartPreventExitStatus names the two answers a restart would only repeat, 78 and 70:
+// `conflux serve` exits ExitNoConfig when there is nothing to start, and ExitChildFailed
+// when it has given up on a configuration or a host that no retry changes; without this
+// the unit would restart into the same answer every five seconds forever, instead of
+// showing failed.
 //
 // Restart=on-failure rather than always, so a deliberate clean exit stays exited.
 //
@@ -48,17 +49,17 @@ Wants=network-online.target
 [Service]
 Type=notify
 NotifyAccess=main
-ExecStart=%s
+ExecStart=%[1]s
 Restart=on-failure
 RestartSec=5
-RestartPreventExitStatus=78 70
+RestartPreventExitStatus=%[2]d %[3]d
 TimeoutStartSec=90
 TimeoutStopSec=30
 KillMode=mixed
 KillSignal=SIGTERM
 User=root
 Group=root
-%sLimitNOFILE=1048576
+%[4]sLimitNOFILE=1048576
 
 [Install]
 WantedBy=multi-user.target
@@ -79,7 +80,7 @@ func systemdUnit(exe string, args []string, scoped bool) string {
 		dirs = ""
 	}
 
-	return fmt.Sprintf(unitTemplate, execLine(append([]string{exe}, args...)), dirs)
+	return fmt.Sprintf(unitTemplate, execLine(append([]string{exe}, args...)), ExitNoConfig, ExitChildFailed, dirs)
 }
 
 // execLine renders an ExecStart= command line, each word quoted where systemd would

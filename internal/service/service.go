@@ -18,6 +18,19 @@ import (
 	"github.com/veil-net/conflux/internal/update"
 )
 
+// The supervisor's two exits a restart would only repeat, which no boot manager restarts
+// it after: systemd's unit names them in RestartPreventExitStatus, launchd is told 0 in
+// their place, and the SCM a clean stop.
+const (
+	// ExitNoConfig means this machine has never been configured: there is nothing to
+	// start. EX_CONFIG.
+	ExitNoConfig = 78
+
+	// ExitChildFailed means a configuration conflux or anchor refuses for good, or a host
+	// no retry changes: no restart would start it.
+	ExitChildFailed = 70
+)
+
 // Manager is one platform's boot manager.
 type Manager interface {
 	// Install registers the service to start at boot. Idempotent, and it neither starts

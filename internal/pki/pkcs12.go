@@ -7,7 +7,6 @@ import (
 	"crypto/pbkdf2"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/sha512"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
@@ -378,21 +377,12 @@ func DecodePKCS12(der, passphrase []byte) (crypto.Signer, []*x509.Certificate, e
 	return nil, nil, errors.New("no certificate in this PKCS#12 bundle is the key's")
 }
 
-// macHashes are the HMACs a PBMAC1 MAC is read under, by OID: SHA-2's.
-var macHashes = []struct {
-	oid asn1.ObjectIdentifier
-	new func() hash.Hash
-}{
-	{oidHMACSHA224, sha256.New224},
-	{oidHMACSHA256, sha256.New},
-	{oidHMACSHA384, sha512.New384},
-	{oidHMACSHA512, sha512.New},
-}
-
+// macHash is the hash of the HMAC a PBMAC1 MAC names, one of the PRFs PBKDF2 is read
+// under, or nil.
 func macHash(oid asn1.ObjectIdentifier) func() hash.Hash {
-	for _, h := range macHashes {
-		if oid.Equal(h.oid) {
-			return h.new
+	for _, p := range prfs {
+		if oid.Equal(p.oid) {
+			return p.new
 		}
 	}
 

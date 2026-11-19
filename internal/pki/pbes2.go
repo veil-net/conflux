@@ -60,7 +60,8 @@ var (
 	oidDESEDE3CBC = asn1.ObjectIdentifier{1, 2, 840, 113549, 3, 7}
 )
 
-// prfs are the HMACs read, by OID: SHA-2's, which the module approves for PBKDF2.
+// prfs are the HMACs read, by OID, as PBKDF2's PRF and as a PBMAC1 MAC (macHash): SHA-2's,
+// which the module approves for each.
 var prfs = []struct {
 	oid  asn1.ObjectIdentifier
 	name string

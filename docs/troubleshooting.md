@@ -29,7 +29,8 @@ beneath it, and most of what follows is a way of reading that output.
 | `anchor has no way to open a link on Windows` | `--uplink` on Windows | anchor opens a link on unix only; see [uplink.md](uplink.md) |
 | an uplink machine is up and reaches nothing | usually the far end, the line speed, or an enrolment that never happened | see below |
 | `capturing needs CAP_NET_RAW for the daemon …`, and observing stops | the host would not let `anchord` capture | see below |
-| `"-start" is anchorctl's observe` (or `"-stop"`) | anchorctl's observe was meant | `conflux anchorctl observe -start`; or `conflux observe` to observe from every boot, `conflux down` or `--no-observe` to stop |
+| `"-start" is anchorctl's observe` (or `"-stop"`) | anchorctl's observe was meant | `conflux anchorctl observe -start -manifest FILE`, under a credential you hold; or `conflux observe` to observe from every boot, `conflux down` or `--no-observe` to stop |
+| the observer's line says `credential lapsed at …; nothing observed is exported until "conflux renew" renews it` | its credential's renewals failed past its expiry; it captures and inventories on, and exports nothing | `conflux renew`; `conflux status`'s `renewal` line says why the timer's failed |
 | `this machine runs an anchor … Pass --yes` | `conflux observe` in a script on a machine running an anchor, which it would stop | pass `--yes` if that is meant; `conflux up --observe` observes beside it |
 | `freebsd has no capture for anchord to observe with` | the observer on FreeBSD or OpenBSD | anchor captures on Linux, macOS and Windows only |
 | `conflux inventory` says `nothing observed` | no flow has ended or lasted a minute yet, or the daemon restarted | a record is made every minute of a flow and at its end, and the inventory lasts as long as the daemon; an export keeps them for good |

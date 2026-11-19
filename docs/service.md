@@ -8,8 +8,8 @@ and it is not itself the daemon:
 ```
 systemd / launchd / rc / SCM
   └── conflux serve                     root, or SYSTEM
-        ├── anchord -socket … -config … [-allow-observer]  its own account wherever that costs it nothing
-        ├── the renewal timer, beside an anchor
+        ├── anchord -socket … -config …   its own account wherever that costs it nothing
+        ├── the renewal timer, for the anchor and the observer
         ├── the watcher: a lost anchor, on an uplink an ended link, and an observer whose capture ended
         └── the restart loop
 ```
@@ -25,18 +25,21 @@ extracts the anchor pair if it is not already on disk, writes a fresh bearer tok
 decides what `anchord` runs as — its own account, with exactly the capabilities its mode
 needs, wherever that costs it nothing; see [security.md](security.md#what-anchord-runs-as)
 — makes the account the first time, lays out the directories that identity reaches,
-starts `anchord`, waits until it answers an authenticated `status` call, starts the
-observer where the configuration observes, renews the credential if it is past two thirds of
-its window, and starts the anchor. No prompts, and nothing typed.
+starts `anchord`, waits until it answers an authenticated `status` call, enrols the machine if
+it holds no credential or renews the one it holds if it is past two thirds of its window,
+starts the observer where the configuration observes, and starts the anchor. No prompts, and
+nothing typed.
 
-The observer comes first because it needs nothing the anchor does — no credential, no
-enrolment, no realm — and is started on every start because anchord keeps none across one.
-Observing alone, there is no anchor, credential or renewal timer at all, and the observer is
-what readiness waits for. Beside an anchor, an anchor that cannot come up for now — an
-enrolment the API does not answer — leaves the daemon running, and with it the observer and the
-inventory it holds, for the watcher to bring the anchor up when it can. `-allow-observer` is
-passed only where the configuration observes: a daemon that is not to observe is not started
-able to. See [observe.md](observe.md). A start that fails because the decision no longer fits — the first
+The credential comes first because the observer runs under it as the anchor does, handed the
+same manifest on stdin, so an enrolment the API does not answer starts neither, and the restart
+loop tries again. The observer comes next, and is started on every start because anchord keeps
+none across one; observing alone, it is what readiness waits for, and the identity it reports
+running as is the AnchorID renewals name. Beside an anchor, an anchor that then cannot come up
+for now leaves the daemon running, and with it the observer and the inventory it holds, for the
+watcher to bring the anchor up when it can. The renewal timer runs whatever the configuration
+runs, and installs each renewed chain in the anchor and in the observer. anchord serves the
+observer always; what lets it capture is the privilege the supervisor gives it, only where the
+configuration observes. See [observe.md](observe.md). A start that fails because the decision no longer fits — the first
 enrolment named a port below 1024, an uplink's device appeared — starts `anchord` again
 with what it now needs.
 

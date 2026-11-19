@@ -97,11 +97,11 @@ from arguments the caller supplies. So any flag reaching `conflux start` other t
 
 **`observe`** is resolved by shape, like `proxy`. conflux's takes its own flags and no
 argument, and decides what this machine runs from every boot: the observer, and no anchor.
-anchorctl's reports on the observer of the running daemon, and starts or stops it until the
-daemon next starts. Any other flag reaching `conflux observe` names anchorctl's: `-start` and
+anchorctl's reports on the observer of the running daemon, and starts it under a credential it
+is handed, or stops it, until the daemon next starts. Any other flag reaching `conflux observe` names anchorctl's: `-start` and
 `-stop` are answered with conflux's way to say each — `conflux observe`, `conflux down`,
-`--observe` and `--no-observe` — and with the escape hatch, and the rest with the escape hatch
-alone. Bare, it is conflux's, and since anchorctl's bare form only reports, a bare one on a
+`--observe` and `--no-observe` — and with the escape hatch, `-start` with the `-manifest FILE`
+anchorctl needs, and the rest with the escape hatch alone. Bare, it is conflux's, and since anchorctl's bare form only reports, a bare one on a
 machine running an anchor asks before it stops it (`conflux observe`, above). `inventory` is
 anchorctl's alone and passes straight through.
 
@@ -225,16 +225,21 @@ Needs root, only to register the boot service.
 ## `conflux observe`
 
 ```
-conflux observe [--loopback] [--hide-names] [--export HOST:PORT [--export-insecure]] [--yes]
+conflux observe [--taint T] [--api URL] [--loopback] [--hide-names]
+                [--export HOST:PORT [--export-insecure]] [--yes]
 ```
 
-Runs the daemon's observer and no anchor, writes the configuration, and registers the boot
-service: from now and from every boot, until it is stopped. The host copies the start of every
-flow to the daemon, which records each flow's cryptography; nothing is enrolled, no credential
-is needed, and no realm is joined. See [observe.md](observe.md).
+Enrols this machine if it holds no credential, exactly as `up` does, runs the daemon's observer
+under that credential and no anchor, writes the configuration, and registers the boot service:
+from now and from every boot, until it is stopped. The host copies the start of every flow to
+the daemon, which records each flow's cryptography. The credential is renewed as an anchor's
+is; a guardian's, installed beforehand with `conflux enrol --manifest`, is run under as it is.
+See [observe.md](observe.md#the-credential-it-runs-under).
 
 | Flag | Meaning |
 |---|---|
+| `--taint T` | the taint to enrol in, as on `up`: on a machine with no credential yet the enrolment's request, minted when omitted; with one, it may only restate the taints it grants. |
+| `--api URL` | the enrolment API, as on `up`. |
 | `--loopback` | observe the loopback interfaces too. Windows' capture never sees them. |
 | `--hide-names` | leave every name a flow was reached by out of the records and the inventory, the server's address in its place. |
 | `--export HOST:PORT` | send each record, as it is made, and the daemon's telemetry to that collector, as on `up`. Without an export with `flows`, the records stay in the daemon's inventory, and conflux says so. |
@@ -244,9 +249,9 @@ is needed, and no realm is joined. See [observe.md](observe.md).
 The options say what the observer is now, as anchorctl's `observe -start` does: one not given
 is off.
 
-On a machine that runs an anchor, this stops it and the machine leaves its realm, with its
-identity and every setting kept for the next `up` or `proxy` — the proxy specs aside, which it
-clears as `up` does. So it asks first at a terminal, and off one is refused without `--yes`:
+On a machine that runs an anchor, this stops it and the anchor leaves its realm, with every
+setting kept for the next `up` or `proxy` — the proxy specs aside, which it clears as `up` does —
+and the observer runs under the same identity meanwhile. So it asks first at a terminal, and off one is refused without `--yes`:
 anchorctl's bare `observe` only reports, and a script that meant that one must not stop an
 anchor. `conflux up --observe` observes beside the anchor instead.
 
@@ -390,28 +395,31 @@ Needs root.
 conflux renew
 ```
 
-Fetches a fresh credential from the enrolment API and installs it on the anchor that
-is already running. Takes no arguments.
+Fetches a fresh credential from the enrolment API and installs it in what is already running:
+the anchor, and the observer, which runs under the same credential and which a renewal of the
+anchor's does not reach. Takes no arguments.
 
-The swap is hot — `anchorctl renew`, which calls `SetRealmCred` — so the identity does
-not change and not one session is dropped. It is not a restart and does not need to be
-treated as one. The request restates the taints the manifest names, which a renewal
-cannot change. The fresh chain is written into the stored manifest, and so is the
-bootstrap list the answer carries, when it carries a usable one; `anchorctl renew`
-installs only the chain, so the list is the next start's.
+The swap is hot — `anchorctl renew`, which calls `SetRealmCred`, and `anchorctl observe -cred`,
+which calls `SetObserverCred` — so the identity does not change and not one session is dropped.
+It is not a restart and does not need to be treated as one. The request restates the taints the
+manifest names, which a renewal cannot change. The fresh chain is written into the stored
+manifest, and so is the bootstrap list the answer carries, when it carries a usable one; the
+installs carry only the chain, so the list is the next start's. An anchor or an observer the
+daemon is not running has nothing to replace, and its next start is handed the manifest the
+chain is already in.
 
-Renewal is automatic in two places already: once at every start, before the anchor is
-built, and again on a timer at two thirds of the credential's life. So this command is
-not part of normal operation. It is for the machine whose renewals have been failing —
-`conflux status` prints `renewal: failing since ...` — where the alternative was
-restarting the service and paying every session for a swap that needs none of them.
+Renewal is automatic in two places already: once at every start, before the anchor or the
+observer is started, and again on a timer at two thirds of the credential's life. So this
+command is not part of normal operation. It is for the machine whose renewals have been failing
+— `conflux status` prints `renewal: failing since ...`, or an observer's line says its
+credential lapsed and nothing is exported — where the alternative was restarting the service
+and paying every session for a swap that needs none of them.
 
 It does not enrol. A machine with no manifest has nothing to renew, and drawing an
-identity here would replace the one a reboot expects; it says so and exits 69. So does a
-machine that only observes, which needs no credential: the next `up` or `proxy` renews the one
-it holds, if it is due. It also
-exits 69 when nothing is running, because a credential is installed *into* a running
-anchor, and a machine that is meant to be down renews on its next start anyway. And it
+identity here would replace the one a reboot expects; it says so and exits 69, as it does for
+one whose anchor or observer has never started to report the AnchorID a renewal names. It also
+exits 69 when nothing is running, because a credential is installed *into* what runs, and a
+machine that is meant to be down renews on its next start anyway. And it
 exits 69 on a [fixed-term credential](credentials.md#a-credential-that-does-not-renew),
 which names nowhere to renew it.
 
@@ -438,11 +446,13 @@ to copy what the host's interfaces carry, for the observer` observing on Linux, 
 reason the host needs it. See [security.md](security.md#what-anchord-runs-as).
 
 Where the observer runs, an `observer` line is its row from `anchorctl status` — `af_packet, 12
-flows held, 3480 packets taken`, or `not observing` and why a capture that was running ended —
+flows held, 3480 packets taken; credential valid until …`, the credential `lapsed at …` with
+`conflux renew` named to renew it, or `not observing` and why a capture that was running ended —
 with its options, and a `records` line says where its records go: to the collector the export
 names, as each is made, or nowhere but the daemon's inventory. Observing alone, the mode line
-says so, and the anchor's taint, address and credential lines are left out: they describe
-nothing that runs, and the identity is said to be kept.
+says so and the taint follows it; the credential's lines are reported as an anchor's are, with
+the identity the observer runs as on an `identity` line, and the anchor's address, exits and
+subnets are left out: they describe nothing that runs.
 
 The `taint` line is the set `conflux.json` names, which after enrolment mirrors the one
 the credential grants — `none: the realm's default compartment` for an issued

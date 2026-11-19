@@ -6,11 +6,11 @@ service the host reaches, serves or passes on, which protocol it spoke and wheth
 exchange was post-quantum, hybrid, classical or none at all — and, where it was not
 post-quantum, which side held it back. It is anchor's Observer (anchor's `docs/observe.md` has
 everything it reads, and how), run the way conflux runs everything else: from every boot, as an
-account of its own, given exactly the privilege it needs.
+account of its own, given exactly the privilege it needs, under the machine's own credential.
 
 ```console
 $ sudo conflux observe
-  observer     af_packet, 0 flows held, 0 packets taken
+  observer     af_packet, 0 flows held, 0 packets taken; credential valid until 2026-12-19T04:16:00Z
   records      kept here, in the daemon's inventory until it restarts; --export HOST:PORT sends each to a collector
   service      active (systemd: conflux.service, enabled at boot)
   anchord      conflux, with CAP_NET_RAW to copy what the host's interfaces carry, for the observer
@@ -19,8 +19,26 @@ What it has seen, by service and key exchange:  conflux inventory   (-cbom for a
 ```
 
 It **carries nothing**: what it reads is a copy, so it can slow, break or reroute no connection,
-and if it stops nothing on the host notices but the inventory. It **joins no realm**: nothing is
-enrolled, no credential is needed and none is renewed, and the enrolment API is never asked.
+and if it stops nothing on the host notices but the inventory.
+
+## The credential it runs under
+
+The observer runs as an identity its realm admits, as an anchor does, and conflux's is the
+machine's own: the manifest `up` and `proxy` start from, handed to `anchord` on stdin and never
+named on a command line. A machine with none is enrolled first, exactly as `conflux up` enrols
+one — in the alpha realm, in the taint `--taint` names or one minted for it, against `--api` —
+or runs under a guardian's credential installed beforehand with `conflux enrol --manifest`. Its
+taints are the identity's for its life, as an anchor's are, so a later `conflux up` on the
+machine comes up as the same identity. The credential comes first: an enrolment the API does not
+answer starts nothing, and the supervisor tries again as it does for an anchor.
+
+It is renewed as an anchor's is, by the supervisor's timer at two thirds of its window and by
+`conflux renew`, and each renewal is installed in the observer in place, as in the anchor beside
+it; a machine that only observes renews by the identity its observer reports running as, which
+`conflux status` shows. Should the credential lapse anyway — renewals failing past its expiry —
+the observer goes on capturing and inventorying, and stops exporting: nothing it observes reaches
+the collector until a renewal arrives. `conflux status` says so on the observer's line, and names
+`conflux renew`.
 
 ## Where the records go
 
@@ -106,18 +124,18 @@ Naming the observer says what it is now, as anchorctl's `observe -start` does: `
 either option, which implies it — `--observe-loopback`, `--observe-hide-names` — and an option
 not given is off. Naming nothing keeps what is configured, and `--no-observe` turns it off.
 
-The observer starts before the anchor, and needs nothing the anchor does, so an anchor that
-cannot come up — an enrolment the API does not answer — leaves the observer and its inventory
-running while the anchor is tried again.
+The credential comes first, then the observer, then the anchor, so an anchor that cannot come up
+once the credential is held leaves the observer and its inventory running while the anchor is
+tried again.
 
 ## Switching
 
-`conflux observe` on a machine that runs an anchor stops it: the machine leaves its realm until
-the next `conflux up` or `conflux proxy`, which come back with the identity and every setting it
-had — address, taints, subnets, exits, uplink — since none of them is cleared. The proxy specs
-are, as `up` clears them. Because the switch takes a machine out of its realm, and because
-anchorctl's bare `observe` only reports, it asks first at a terminal, and off one is refused
-without `--yes`.
+`conflux observe` on a machine that runs an anchor stops it: the anchor leaves its realm until
+the next `conflux up` or `conflux proxy`, which come back with every setting it had — address,
+taints, subnets, exits, uplink — since none of them is cleared; the observer runs under the same
+identity meanwhile. The proxy specs are, as `up` clears them. Because the switch takes a
+machine's anchor out of its realm, and because anchorctl's bare `observe` only reports, it asks
+first at a terminal, and off one is refused without `--yes`.
 
 From observing, `conflux up` or `conflux proxy` starts an anchor beside the observer, which stays
 on: `--no-observe` turns it off.
@@ -127,6 +145,8 @@ on: `--no-observe` turns it off.
 | `conflux observe` | `up` and `proxy` | Means |
 |---|---|---|
 | | `--observe` | observe beside the anchor |
+| `--taint T` | `--taint T` | the taint to enrol in, for a machine with no credential yet; repeat for more |
+| `--api URL` | `--api URL` | the enrolment API |
 | `--loopback` | `--observe-loopback` | observe the loopback interfaces too; Windows' capture never sees them |
 | `--hide-names` | `--observe-hide-names` | leave every name a flow was reached by — a server name, a DNS answer's — out of the records and the inventory, the server's address in its place |
 | | `--no-observe` | stop observing |
@@ -135,8 +155,9 @@ on: `--no-observe` turns it off.
 | `--yes` | | stop the anchor this machine runs without asking |
 
 anchorctl's own observe reaches the running observer, and is one word away: `conflux anchorctl
-observe` reports, and `-start` and `-stop` start and stop it until the daemon next starts —
-`conflux observe` answers either flag with where it belongs.
+observe` reports, with the identity it runs as and until when its credential is valid, and
+`-start` and `-stop` start and stop it until the daemon next starts — `-start` under a credential
+it is handed, `-manifest FILE` — and `conflux observe` answers either flag with where it belongs.
 
 ## What it cannot see
 

@@ -63,8 +63,9 @@ $ fetch-credential | conflux proxy --ephemeral --manifest - 8080=127.0.0.1:3000
   leaving anchord, which the watcher looks for every 30 seconds (every 10 on an uplink).
   There is no restart and no rebuild.
 - **`--observe` and `--export HOST:PORT` work**, both set in anchord over its socket, so
-  nothing is written for them and both end with it. The inventory lasts as long as the
-  run. Observing needs root, as it does anywhere.
+  nothing is written for them and both end with it. The observer runs under the run's own
+  credential, handed to it on stdin once it is held, and each renewal reaches it too. The
+  inventory lasts as long as the run. Observing needs root, as it does anywhere.
 
 ### What the anchor cannot keep
 

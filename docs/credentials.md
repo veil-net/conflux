@@ -107,16 +107,19 @@ days of retry budget for a machine that is having a bad week.
 
 Renewal happens in two places, and both go through the same arithmetic:
 
-- **On every start**, before the anchor is built, so that `start` always receives a
-  current chain. This is why the boot path needs no separate renewal step.
+- **On every start**, before the anchor is built and the observer started, so that each
+  always receives a current chain. This is why the boot path needs no separate renewal step.
 - **On a timer** while running. The sleep is clamped to at most six hours and
   recomputed against the wall clock each time, so a laptop that was suspended for six
   months renews within six hours of waking rather than sleeping on a timer armed in
   another era.
 
-Renewal is hot. `anchorctl renew` calls `SetRealmCred` on the running anchor: the
-identity does not change and not one session is lost. A restart would cost every
-connection the anchor is holding, for a swap that needs none of that.
+Renewal is hot. `anchorctl renew` calls `SetRealmCred` on the running anchor, and `anchorctl
+observe -cred` `SetObserverCred` on the observer, which runs under the same credential and which
+the anchor's renewal does not reach: the identity does not change and not one session is lost.
+A restart would cost every connection the anchor is holding, for a swap that needs none of
+that. An anchor or an observer the daemon is not running holds nothing to replace; its next
+start is handed the manifest the renewed chain is already in.
 
 **The renewed chain is written to disk as well as installed**, before it is installed,
 along with its expiry and the moment it arrived. If it were only installed, the next
@@ -133,10 +136,11 @@ with and the next start uses the fresh one. An answer with no list, or one ancho
 not dial, leaves the manifest's own. The taints are never rewritten: the renewal
 restated them.
 
-A renewed chain the running anchor will not take is a failed renewal, even though it
-is on disk: the next start runs on it, and until then the timer keeps to the schedule
-of the chain the anchor holds, so a renewal that was due is retried every minute, and
-`conflux status` names the install as what failed.
+A renewed chain the running anchor or observer will not take is a failed renewal, even
+though it is on disk: the next start runs on it, and until then the timer keeps to the
+schedule of the chain they hold, so a renewal that was due is retried every minute, and
+`conflux status` names the install as what failed. One with nothing running to take it is
+not: its next start is handed the manifest the chain is already in.
 
 ## Being offline past the expiry costs nothing but a call
 
@@ -160,15 +164,16 @@ Three states, three behaviours:
 | State | What conflux does |
 |---|---|
 | credential valid, renewal failed | warns with the time remaining, starts normally, retries every minute |
-| credential expired, renewal failed | a running anchor stays up, with every handshake refused, and the timer retries every minute; a start is refused by anchor, which will not build an anchor on an expired credential, so the supervisor retries with a backoff up to thirty seconds, renewing first each time. Either way `conflux status` says `EXPIRED` and names the last error, because reporting "running" would be describing the wrong thing |
+| credential expired, renewal failed | a running anchor stays up, with every handshake refused, and a running observer goes on observing and exports nothing, and the timer retries every minute; a start is refused by anchor, which will not build an anchor on an expired credential, so the supervisor retries with a backoff up to thirty seconds, renewing first each time. Either way `conflux status` says `EXPIRED` and names the last error, because reporting "running" would be describing the wrong thing |
 | credential expired, renewal succeeded | nothing special; this is the ordinary long-offline case |
 
 ## Renewing by hand
 
-`conflux renew` forces one now: it fetches a fresh chain and installs it on the
-running anchor with `anchorctl renew`, the same hot swap the timer uses. Nothing is
-restarted and no session is dropped. The chain goes to anchorctl on its stdin
-(`renew -cred -`), so a renewal writes the manifest it is spliced into and no other file.
+`conflux renew` forces one now: it fetches a fresh chain and installs it in what runs —
+the anchor with `anchorctl renew`, the observer with `anchorctl observe -cred` — the same
+hot swap the timer uses. Nothing is restarted and no session is dropped. The chain goes to
+anchorctl on its stdin (`renew -cred -`, `observe -cred -`), so a renewal writes the
+manifest it is spliced into and no other file.
 
 It is not part of normal operation — the two automatic paths above cover every machine
 that is working. It is for the one that is not, where `renewal: failing since ...` has

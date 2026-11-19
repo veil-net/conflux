@@ -55,9 +55,11 @@ host can read, and when the run stops there is nothing at all.
   beneath it, so conflux gives its root to SYSTEM and Administrators — owner, and a
   protected DACL everything beneath inherits — and refuses a root another account made.
   See [windows.md](windows.md#file-permissions).
-- Never in an argv. It travels on stdin to `anchorctl start -manifest -`, becomes an
+- Never in an argv. It travels on stdin to `anchorctl start -manifest -`, and to
+  `anchorctl observe -start -manifest -` for the observer, which runs under it too, becomes an
   inline secret on the wire, and is never named as a path in the request — so it never
-  appears in `ps` or `/proc/*/cmdline`.
+  appears in `ps` or `/proc/*/cmdline`. A renewed chain goes the same way, to `renew -cred -`
+  and `observe -cred -`.
 - Never in a log. The types that carry it have `String` and `GoString` methods that
   return `<anchor manifest, redacted>`, so no `%v` or `%#v` anywhere can print it.
 

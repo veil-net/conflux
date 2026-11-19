@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/veil-net/conflux/internal/logfile"
 	"github.com/veil-net/conflux/internal/paths"
 )
 
@@ -50,7 +51,7 @@ func (l launchd) Remove() error {
 		errs = append(errs, err)
 	}
 
-	errs = append(errs, removeLog(logFile()))
+	errs = append(errs, logfile.Remove(logFile()))
 
 	if installed, _ := l.Installed(); installed {
 		return errors.Join(errs...)

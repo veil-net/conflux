@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/logfile"
 )
 
 // freebsd is rc(8): a script in /usr/local/etc/rc.d, enabled in rc.conf with sysrc.
@@ -43,7 +44,7 @@ func (f freebsd) Remove() error {
 		errs = append(errs, err)
 	}
 
-	return errors.Join(append(errs, removeLog(logFile()))...)
+	return errors.Join(append(errs, logfile.Remove(logFile()))...)
 }
 
 // Stop succeeds on a service that is not running, which rc.subr answers "not running?"

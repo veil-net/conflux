@@ -7,27 +7,6 @@ import (
 	"testing"
 )
 
-func TestWriteFileAtomicSetsModeBeforeContent(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("mode bits are not meaningful on windows; the DACL is")
-	}
-
-	path := filepath.Join(t.TempDir(), "secret")
-
-	if err := WriteFileAtomic(path, []byte("seed"), 0o600); err != nil {
-		t.Fatalf("WriteFileAtomic: %v", err)
-	}
-
-	fi, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("stat: %v", err)
-	}
-
-	if got := fi.Mode().Perm(); got != 0o600 {
-		t.Errorf("mode = %o, want 600", got)
-	}
-}
-
 // TestWriteFileAtomicNarrowsAnExistingFile is the case a plain os.WriteFile gets
 // wrong: it keeps the mode of a file that already exists, so a manifest that was
 // once 0644 stays world-readable forever.

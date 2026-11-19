@@ -49,4 +49,13 @@ func TestSystemdUnitQuotesAnything(t *testing.T) {
 	if !strings.Contains(unit, want) {
 		t.Errorf("the unit has no\n  %s\n%s", want, unit)
 	}
+
+	// A line break would end the line, and systemd reads the rest as a setting of its own;
+	// every control character goes in as its C escape, which systemd reads back inside quotes.
+	unit = systemdUnit("/opt/conflux", []string{"serve", "--dir", "/srv/a\nRestart=no\tb\x01\x7f"}, true)
+
+	want = `ExecStart=/opt/conflux serve --dir "/srv/a\nRestart=no\tb\x01\x7f"` + "\n"
+	if !strings.Contains(unit, want) || strings.Contains(unit, "\nRestart=no") {
+		t.Errorf("the unit has no\n  %s\n%s", want, unit)
+	}
 }

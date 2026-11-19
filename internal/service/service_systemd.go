@@ -83,23 +83,55 @@ func systemdUnit(exe string, args []string, scoped bool) string {
 }
 
 // execLine renders an ExecStart= command line, each word quoted where systemd would
-// otherwise split it or read it: whitespace, quotes and backslashes are quoted and
-// escaped, and a % or a $ -- a specifier or a variable to systemd, quoted or not -- is
-// doubled. A CONFLUX_DIR run registers its root here, and a path may hold any of them.
+// otherwise split it or read it: whitespace, quotes, backslashes and control characters
+// are quoted and escaped, and a % or a $ -- a specifier or a variable to systemd, quoted
+// or not -- is doubled. A CONFLUX_DIR run registers its root here, and a path may hold any
+// of them.
 func execLine(words []string) string {
 	literal := strings.NewReplacer("%", "%%", "$", "$$")
-	quoted := strings.NewReplacer(`\`, `\\`, `"`, `\"`)
 
 	out := make([]string, len(words))
 
 	for i, w := range words {
 		w = literal.Replace(w)
-		if w == "" || strings.ContainsAny(w, " \t\n\"'\\;") {
-			w = `"` + quoted.Replace(w) + `"`
+		if w == "" || strings.ContainsAny(w, " \"'\\;") || strings.ContainsFunc(w, control) {
+			w = quoteExec(w)
 		}
 
 		out[i] = w
 	}
 
 	return strings.Join(out, " ")
+}
+
+// control is an ASCII control character, which a unit file cannot hold as itself: a line
+// break would end the setting, and systemd read what follows it as one of its own.
+func control(r rune) bool { return r < 0x20 || r == 0x7f }
+
+// quoteExec is w in double quotes, a quote and a backslash escaped and every control
+// character written as the C escape systemd reads back.
+func quoteExec(w string) string {
+	var b strings.Builder
+
+	b.WriteByte('"')
+
+	for i := range len(w) {
+		switch c := w[i]; {
+		case c == '"' || c == '\\':
+			b.WriteByte('\\')
+			b.WriteByte(c)
+		case c == '\n':
+			b.WriteString(`\n`)
+		case c == '\t':
+			b.WriteString(`\t`)
+		case control(rune(c)):
+			fmt.Fprintf(&b, `\x%02x`, c)
+		default:
+			b.WriteByte(c)
+		}
+	}
+
+	b.WriteByte('"')
+
+	return b.String()
 }

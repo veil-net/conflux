@@ -265,8 +265,8 @@ func (r *Release) Download(ctx context.Context, dir string) (string, error) {
 //
 // A rename, so a process running dst keeps the file it has. Windows will not replace the
 // image of a running process but will rename it, so there dst is moved aside to dst.old
-// first, which the next update removes. The same way service.Place replaces the boot
-// service's copy.
+// first, which the next update removes. service.Place replaces the boot service's copy
+// with it too.
 func Replace(src, dst string) error {
 	if err := os.Rename(src, dst); err == nil || runtime.GOOS != "windows" {
 		return err

@@ -20,8 +20,8 @@ import (
 
 // Manager is one platform's boot manager.
 type Manager interface {
-	// Install registers the service to start at boot. Idempotent, and it does not
-	// start anything.
+	// Install registers the service to start at boot. Idempotent, and it neither starts
+	// anything nor stops what is running.
 	Install(exe string, args ...string) error
 
 	// Remove deregisters it and deletes what registering it wrote, its log included.

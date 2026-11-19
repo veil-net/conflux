@@ -6,10 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
-	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
 )
 
@@ -21,109 +19,22 @@ func label() string { return "org.veilnet.conflux" + paths.Scope() }
 func Label() string { return label() }
 
 func plistPath() string { return "/Library/LaunchDaemons/" + label() + ".plist" }
-func target() string    { return "system/" + label() }
+
+// job is this installation's job, driven by the real launchctl.
+func job() launchdJob {
+	return launchdJob{label: label(), plistPath: plistPath(), ctl: launchctl{
+		run:   func(args ...string) error { return run("launchctl", args...) },
+		query: func(args ...string) (string, bool) { return query("launchctl", args...) },
+	}}
+}
 
 type launchd struct{}
 
 func newManager() Manager { return launchd{} }
 
-// Install writes the job and loads nothing, which is the whole of what registration
-// means here. Loading it would start it -- bootstrap honours RunAtLoad -- and Install
-// starts nothing, so the caller's Restart is the one start.
-//
-// Nothing about a reboot depends on loading it here. launchd bootstraps everything in
-// /Library/LaunchDaemons at boot, so the plist on disk *is* the registration, and
-// Start and Restart load it when there is something to run.
-func (l launchd) Install(exe string, args ...string) error {
-	plist := launchdPlist(label(), append([]string{exe}, withLog(args)...), logFile())
-
-	// 0644 whatever was there before: launchd refuses a job whose plist is group- or
-	// world-writable, for a reason nothing in its error names.
-	if err := config.WriteFileAtomic(plistPath(), []byte(plist), 0o644); err != nil {
-		return err
-	}
-
-	// A job already loaded is loaded from the plist it was bootstrapped with, not from
-	// the one just written, so an upgrade that moved the executable would keep running
-	// the old path until something unloaded it. Unloading here is also what makes the
-	// next Restart take the bootstrap branch, which is the single start.
-	_ = run("launchctl", "bootout", target())
-
-	enableIfDisabled()
-
-	return nil
-}
-
-// enableIfDisabled lifts a disable on the label, and does nothing to one that has none.
-//
-// launchctl(1): "Once a service is disabled, it cannot be loaded in the specified domain
-// until it is once again enabled. This state persists across boots of the device." A
-// disabled label makes bootstrap fail with "Bootstrap failed: 5: Input/output error",
-// which names nothing. But an enable is itself an entry in that database, which outlives
-// the plist and which uninstall cannot remove, so it is written only where a disable is
-// there to lift.
-func enableIfDisabled() {
-	out, _ := query("launchctl", "print-disabled", "system")
-
-	for line := range strings.Lines(out) {
-		key, value, _ := strings.Cut(strings.TrimSpace(line), "=>")
-		if strings.TrimSpace(key) != `"`+label()+`"` {
-			continue
-		}
-
-		if v := strings.TrimSpace(value); v == "disabled" || v == "true" {
-			_ = run("launchctl", "enable", target())
-		}
-
-		return
-	}
-}
-
-// printJob is launchd's view of the job, and whether there is one in the domain at all.
-// One spelling of the command, because loaded and Running ask it the same question and
-// read different halves of the answer.
-func printJob() (string, bool) { return query("launchctl", "print", target()) }
-
-// loaded reports whether the job is bootstrapped into the system domain.
-//
-// Not "is it running": a job that has been stopped by `conflux down` is still loaded,
-// and the two need different starts.
-func (l launchd) loaded() bool {
-	_, ok := printJob()
-
-	return ok
-}
-
-// load bootstraps the job, which also starts it.
-//
-// Loading is a start and cannot be anything else here. RunAtLoad asks for it, and
-// launchd.plist(5) says KeepAlive asks for it too -- "this key implies that RunAtLoad is
-// set to true, since the job needs to run at least once before an exit status can be
-// determined" -- so a job carrying KeepAlive{SuccessfulExit:false} launches when it is
-// loaded whatever the RunAtLoad key says. Start and Restart are built on that rather than
-// trying to work around it.
-//
-// A disabled label is enabled first; see enableIfDisabled.
-func (l launchd) load() error {
-	enableIfDisabled()
-
-	if err := run("launchctl", "bootstrap", "system", plistPath()); err != nil {
-		return fmt.Errorf("%w\n%s", err, bootstrapHint())
-	}
-
-	return nil
-}
-
-// bootstrapHint names what launchd will not say for itself.
-//
-// Error 5 is "Input/output error" and covers every refusal launchd has no code for, so the
-// message an operator gets names none of the four things that actually cause it.
-func bootstrapHint() string {
-	return "  launchd reports most refusals as error 5, which names nothing. The usual causes:\n" +
-		"    - the label is disabled:  sudo launchctl enable " + target() + "\n" +
-		"    - " + plistPath() + " is not root-owned, or is group- or world-writable\n" +
-		"    - the job is already loaded:  sudo launchctl bootout " + target() + "\n" +
-		"    - the executable it names is gone, or is on a volume that is not mounted yet"
+// Install writes the job and loads nothing; see launchdJob.install.
+func (launchd) Install(exe string, args ...string) error {
+	return job().install([]byte(launchdPlist(label(), append([]string{exe}, withLog(args)...), logFile())))
 }
 
 // Remove deregisters the job and deletes its plist and its log, and deliberately
@@ -133,7 +44,8 @@ func bootstrapHint() string {
 //
 // Each step tolerates its own failure, so a half-removed service can always be finished off.
 func (l launchd) Remove() error {
-	errs := []error{run("launchctl", "bootout", target())}
+	j := job()
+	errs := []error{j.ctl.run("bootout", j.target())}
 
 	if err := os.Remove(plistPath()); err != nil && !os.IsNotExist(err) {
 		errs = append(errs, err)
@@ -157,11 +69,12 @@ func (l launchd) Remove() error {
 // in progress" -- so it is kickstarted with -k, which starts a stopped job and restarts a
 // running one.
 func (l launchd) Restart() error {
-	if !l.loaded() {
-		return l.load()
+	j := job()
+	if _, loaded := j.print(); !loaded {
+		return j.load()
 	}
 
-	return run("launchctl", "kickstart", "-k", target())
+	return j.ctl.run("kickstart", "-k", j.target())
 }
 
 // Stop kills the process and leaves the job loaded, which is exactly the semantics
@@ -175,15 +88,16 @@ func (l launchd) Restart() error {
 // launchctl kill returns at once, so Stop waits for the job to go, as systemctl stop does,
 // within the plist's ExitTimeOut and a little more.
 func (l launchd) Stop() error {
-	if !running() {
+	j := job()
+	if !j.running() {
 		return nil
 	}
 
-	if err := run("launchctl", "kill", "SIGTERM", target()); err != nil {
+	if err := j.ctl.run("kill", "SIGTERM", j.target()); err != nil {
 		return err
 	}
 
-	for deadline := time.Now().Add(35 * time.Second); running(); time.Sleep(200 * time.Millisecond) {
+	for deadline := time.Now().Add(35 * time.Second); j.running(); time.Sleep(200 * time.Millisecond) {
 		if time.Now().After(deadline) {
 			return errors.New("the job did not stop within 35s")
 		}
@@ -194,15 +108,6 @@ func (l launchd) Stop() error {
 
 func (launchd) Installed() (bool, error) { return exists(plistPath()) }
 
-// running asks launchd rather than inferring it from Installed. A job that is not
-// loaded -- registered but never started in this boot -- prints nothing and is not
-// running, which is the honest answer and the one Describe needs.
-func running() bool {
-	out, ok := printJob()
-
-	return ok && strings.Contains(out, "state = running")
-}
-
 func (launchd) LogHint() string { return "tail -n 50 " + logFile() }
 
 func (l launchd) Describe() string {
@@ -211,7 +116,7 @@ func (l launchd) Describe() string {
 		return "not installed"
 	}
 
-	if running() {
+	if job().running() {
 		return fmt.Sprintf("running (launchd: %s, at boot)", label())
 	}
 

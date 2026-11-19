@@ -12,6 +12,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/service"
 	"golang.org/x/sys/windows"
 )
 
@@ -42,10 +43,6 @@ type dropState struct {
 	sd *windows.SECURITY_DESCRIPTOR
 }
 
-// windowsServiceName is the SCM name of this installation's service, as
-// service.ServiceName registers it: conflux, with a CONFLUX_DIR installation's scope.
-func windowsServiceName() string { return "conflux" + paths.Scope() }
-
 var (
 	advapi32                    = windows.NewLazySystemDLL("advapi32.dll")
 	procLogonUserExExW          = advapi32.NewProc("LogonUserExExW")
@@ -66,7 +63,7 @@ const (
 
 // dropTo makes the token anchord runs as, and checks that anchord starts under it.
 func (s *Supervisor) dropTo(p *Privilege) string {
-	sid, err := serviceSID(windowsServiceName())
+	sid, err := serviceSID(service.ServiceName())
 	if err != nil {
 		return "could not form the service's SID: " + err.Error()
 	}
@@ -360,7 +357,7 @@ func makeAnchorDir(path string, p Privilege) error {
 		return paths.Restrict(path, true)
 	}
 
-	ssid, err := serviceSID(windowsServiceName())
+	ssid, err := serviceSID(service.ServiceName())
 	if err != nil {
 		return err
 	}
@@ -407,7 +404,7 @@ func anchorDirFor(path string, p Privilege) bool {
 }
 
 func grantsServiceSID(path string) bool {
-	sid, err := serviceSID(windowsServiceName())
+	sid, err := serviceSID(service.ServiceName())
 	if err != nil {
 		return false
 	}
@@ -495,7 +492,7 @@ func writeDaemonFile(path string, data []byte, p Privilege) error {
 		return nil
 	}
 
-	sid, err := serviceSID(windowsServiceName())
+	sid, err := serviceSID(service.ServiceName())
 	if err != nil {
 		return err
 	}

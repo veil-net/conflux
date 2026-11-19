@@ -18,9 +18,9 @@ import (
 // a test here rather than a deployment somewhere else.
 //
 // Every line that matters is a key and a value, the key first: `anchor ID` from
-// start, and the tabwriter rows of status, `  overlay  ADDR`, `  interface  NAME`,
-// `  works until  TIME` and `  observer  NOTE`. So each is read by its leading fields, and
-// a line of any other shape is skipped.
+// start, the tabwriter rows of status, `  overlay  ADDR`, `  interface  NAME`,
+// `  works until  TIME` and `  observer  NOTE`, and observe's `  as  ID`. So each is read by
+// its leading fields, and a line of any other shape is skipped.
 
 // Started is what a successful `start` reported.
 type Started struct {
@@ -58,23 +58,19 @@ type Status struct {
 	// Empty in userspace, where there is none.
 	Interface string
 
-	// Observer is the observer's row, which status prints whether or not an anchor
-	// runs, and only where the daemon serves the observer.
+	// Observer is the observer's row, which status prints whether or not an anchor runs.
 	Observer Observer
 }
 
 // Observer is what status said of the daemon's observer.
 type Observer struct {
-	// Served says the daemon was started with the observer allowed: status prints a row
-	// for it, running or not.
-	Served bool
-
 	// Running says it is observing now.
 	Running bool
 
 	// Note is the row as anchorctl wrote it: "af_packet, 12 flows held, 3480 packets
-	// taken", "not observing", or "not observing: " and why a capture that was running
-	// stopped.
+	// taken; credential valid until TIME", the credential "lapsed at TIME" and what that
+	// holds where it has, "not observing", or "not observing: " and why a capture that was
+	// running stopped.
 	Note string
 }
 
@@ -109,11 +105,34 @@ func ParseStatus(stdout string) Status {
 			st.WorksUntil, _ = time.Parse(time.RFC3339, f[2])
 		case len(f) >= 2 && f[0] == "observer":
 			note := strings.Join(f[1:], " ")
-			st.Observer = Observer{Served: true, Running: !strings.HasPrefix(note, notObserving), Note: note}
+			st.Observer = Observer{Running: !strings.HasPrefix(note, notObserving), Note: note}
 		}
 	}
 
 	return st
+}
+
+// Observed is what `anchorctl observe` reported of the observer, as far as conflux reads it.
+type Observed struct {
+	// ID is the identity it runs as, in full: what its credential is renewed by, and on a
+	// machine running no anchor the one place that is said.
+	ID string
+}
+
+// ParseObserve reads the output of `anchorctl observe`, -start's included: the `as` row,
+// which a running observer prints with the realm and its credential on the rows after it.
+func ParseObserve(stdout string) Observed {
+	var o Observed
+
+	for line := range strings.Lines(stdout) {
+		if f := strings.Fields(line); len(f) == 2 && f[0] == "as" && strings.HasPrefix(f[1], "anchor") {
+			o.ID = f[1]
+
+			break
+		}
+	}
+
+	return o
 }
 
 // anchorID reads the `anchor ID` line both commands print first.

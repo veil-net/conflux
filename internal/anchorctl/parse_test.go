@@ -39,31 +39,35 @@ const statusOutput = `10:40:44  reachability=nat-cone  mtu=65521  peers=3  up=2h
 
 const notRunningOutput = "no anchor is running\n  fips140  on, Go Cryptographic Module v1.26.0\n"
 
-// What status prints where the daemon serves the observer: the row comes last, padded with
-// the rest of its block, beside an anchor and with none -- as a live anchord with
-// -allow-observer printed it, observing, stopped, and stopped by a capture that ended.
+// What status prints of the observer, which it always serves: the row comes last, padded with
+// the rest of its block, beside an anchor and with none, as observerNote in anchor's
+// cmd/anchorctl/observe.go writes it -- observing, with when its credential lapses or that it
+// has; stopped; and stopped by a capture that ended.
 const (
 	observingAloneOutput = `no anchor is running
-  fips140   off, Go Cryptographic Module latest
-  observer  af_packet, 2 flows held, 32 packets taken
+  fips140   on, Go Cryptographic Module v1.26.0
+  observer  af_packet, 2 flows held, 32 packets taken; credential valid until 2026-12-19T04:16:00Z
 `
 	notObservingOutput = `no anchor is running
-  fips140   off, Go Cryptographic Module latest
+  fips140   on, Go Cryptographic Module v1.26.0
   observer  not observing
 `
 	observerFailedOutput = `no anchor is running
-  fips140   off, Go Cryptographic Module latest
+  fips140   on, Go Cryptographic Module v1.26.0
   observer  not observing: capture: reading the ring: network is down
 `
-	observingBesideOutput = statusOutput + `  observer        af_packet, 12 flows held, 3480 packets taken, 7 copies dropped
+	observerLapsedOutput = `no anchor is running
+  fips140   on, Go Cryptographic Module v1.26.0
+  observer  af_packet, 2 flows held, 32 packets taken; credential lapsed at 2026-11-02T04:16:00Z; nothing observed is exported until "anchorctl observe -cred FILE" renews it
+`
+	observingBesideOutput = statusOutput + `  observer        af_packet, 12 flows held, 3480 packets taken, 7 copies dropped; credential valid until 2026-10-04T10:40:39Z
 `
 )
 
-// What anchor's dev build prints beside an anchor: the observer's row carrying the
-// overlay's figures after its own, as a live anchord with -allow-observer printed it in
-// userspace, and the interface row a TUN anchor adds after the IPv4 one, named after the
-// anchor, as the status printer in anchor's cmd/anchorctl/lifecycle.go places it. A TUN
-// needs a host with IPv6, which the machine this was taken on had not.
+// What status prints beside a TUN anchor: the observer's row carrying the overlay's figures
+// after its own, and then its credential's, and the interface row a TUN anchor adds after the
+// IPv4 one, named after the anchor, as the status printer in anchor's cmd/anchorctl/lifecycle.go
+// places it.
 const tunObservingOutput = `04:16:16  reachability=unknown  mtu=65510  peers=0  up=2s
   anchor       anchorqsgwfbu4sk2mkzxmmsydbzcj2cg7rstcjrmsekf2bpaxsdiinmyq
   underlay     192.0.2.2:49055
@@ -76,7 +80,28 @@ const tunObservingOutput = `04:16:16  reachability=unknown  mtu=65510  peers=0  
   cut depth 0  joined to the whole tree
   renew by     2026-11-02T04:16:00Z
   works until  2026-11-02T04:16:00Z
-  observer     af_packet, 5 flows held, 24 packets taken; overlay of qsgwfbu4sk, 0 flows held, 0 packets taken
+  observer     af_packet, 5 flows held, 24 packets taken; overlay of qsgwfbu4sk, 0 flows held, 0 packets taken; credential valid until 2026-11-02T04:16:00Z
+`
+
+// What `anchorctl observe -start` prints of the observer it started, as printObserver in
+// anchor's cmd/anchorctl/observe.go writes it: one tabwriter block, the identity in full on its
+// own `as` row, the realm and the credential on the two after it.
+const observeStartedOutput = `observing with  af_packet
+  with          loopback, names hidden
+  since         0s
+  flows         0 held
+  packets       0 taken
+  overlay       no anchor running
+  records       0, in 0 inventory entries
+  as            ` + wantID + `
+  realm         eocs6meuty
+  credential    valid until 2026-12-19T04:16:00Z
+`
+
+// What it prints of one that is not running: no identity.
+const notObservingReport = `not observing
+  packets  0 taken
+  records  0, in 0 inventory entries
 `
 
 func TestParseStarted(t *testing.T) {
@@ -125,18 +150,19 @@ func TestParseStatusNotRunning(t *testing.T) {
 
 func TestParseStatusReadsTheObserver(t *testing.T) {
 	for name, tc := range map[string]struct {
-		out                  string
-		anchor, served, runs bool
-		failed               bool
-		note                 string
+		out          string
+		anchor, runs bool
+		failed       bool
+		note         string
 	}{
-		"observing, no anchor":  {observingAloneOutput, false, true, true, false, "af_packet, 2 flows held, 32 packets taken"},
-		"stopped, no anchor":    {notObservingOutput, false, true, false, false, "not observing"},
-		"failed, no anchor":     {observerFailedOutput, false, true, false, true, "not observing: capture: reading the ring: network is down"},
-		"beside an anchor":      {observingBesideOutput, true, true, true, false, "af_packet, 12 flows held, 3480 packets taken, 7 copies dropped"},
-		"and its overlay":       {tunObservingOutput, true, true, true, false, "af_packet, 5 flows held, 24 packets taken; overlay of qsgwfbu4sk, 0 flows held, 0 packets taken"},
-		"not served, an anchor": {statusOutput, true, false, false, false, ""},
-		"not served, none":      {notRunningOutput, false, false, false, false, ""},
+		"observing, no anchor": {observingAloneOutput, false, true, false, "af_packet, 2 flows held, 32 packets taken; credential valid until 2026-12-19T04:16:00Z"},
+		"stopped, no anchor":   {notObservingOutput, false, false, false, "not observing"},
+		"failed, no anchor":    {observerFailedOutput, false, false, true, "not observing: capture: reading the ring: network is down"},
+		"lapsed, no anchor": {observerLapsedOutput, false, true, false, "af_packet, 2 flows held, 32 packets taken; credential lapsed at 2026-11-02T04:16:00Z; " +
+			"nothing observed is exported until \"anchorctl observe -cred FILE\" renews it"},
+		"beside an anchor": {observingBesideOutput, true, true, false, "af_packet, 12 flows held, 3480 packets taken, 7 copies dropped; credential valid until 2026-10-04T10:40:39Z"},
+		"and its overlay": {tunObservingOutput, true, true, false, "af_packet, 5 flows held, 24 packets taken; overlay of qsgwfbu4sk, 0 flows held, 0 packets taken; " +
+			"credential valid until 2026-11-02T04:16:00Z"},
 	} {
 		st := ParseStatus(tc.out)
 
@@ -145,9 +171,24 @@ func TestParseStatusReadsTheObserver(t *testing.T) {
 		}
 
 		o := st.Observer
-		if o.Served != tc.served || o.Running != tc.runs || o.Failed() != tc.failed || o.Note != tc.note {
-			t.Errorf("%s: Observer = %+v (failed %v), want served %v, running %v, failed %v, note %q",
-				name, o, o.Failed(), tc.served, tc.runs, tc.failed, tc.note)
+		if o.Running != tc.runs || o.Failed() != tc.failed || o.Note != tc.note {
+			t.Errorf("%s: Observer = %+v (failed %v), want running %v, failed %v, note %q",
+				name, o, o.Failed(), tc.runs, tc.failed, tc.note)
+		}
+	}
+}
+
+// TestParseObserve: the identity an observer runs as is its `as` row, which is how a machine
+// that runs no anchor learns the AnchorID its credential is renewed by; one not running says
+// none.
+func TestParseObserve(t *testing.T) {
+	if got := ParseObserve(observeStartedOutput).ID; got != wantID {
+		t.Errorf("ID = %q, want %q", got, wantID)
+	}
+
+	for _, in := range []string{notObservingReport, "", "  as\n", "  as  someone\n", statusOutput} {
+		if got := ParseObserve(in).ID; got != "" {
+			t.Errorf("ParseObserve(%q).ID = %q, want none", in, got)
 		}
 	}
 }

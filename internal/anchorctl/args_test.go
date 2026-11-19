@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -191,6 +192,29 @@ func TestObserveArgvGoldens(t *testing.T) {
 				t.Errorf("argv changed.\n--- want ---\n%s\n--- got ---\n%s", want, got)
 			}
 		})
+	}
+}
+
+// TestTheObserverStartsOnTheManifestOnStdin: anchorctl's observe -start needs a credential,
+// and conflux hands it the machine's own manifest the way start is handed it -- on stdin,
+// "-manifest -" -- and never names the identity, the root or the credential by a path.
+func TestTheObserverStartsOnTheManifestOnStdin(t *testing.T) {
+	for name, o := range observeScenarios {
+		args := ObserveStartArgs(o)
+
+		if i := slices.Index(args, "-manifest"); i < 0 || i+1 >= len(args) || args[i+1] != "-" {
+			t.Errorf("%s: %q does not read the manifest from stdin", name, args)
+		}
+
+		for _, a := range args {
+			if a == "-identity" || a == "-root" || a == "-cred" || a == "-inline" {
+				t.Errorf("%s: %q names a credential by %s", name, args, a)
+			}
+		}
+	}
+
+	if got := ObserveRenewArgs(); strings.Join(got, " ") != "observe -cred -" {
+		t.Errorf("ObserveRenewArgs() = %q, want the renewed chain on stdin: observe -cred -", got)
 	}
 }
 

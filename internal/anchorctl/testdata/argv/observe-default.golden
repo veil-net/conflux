@@ -1,4 +1,6 @@
 observe
 -start
+-manifest
+-
 -loopback=false
 -hide-names=false

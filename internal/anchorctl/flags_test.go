@@ -77,6 +77,7 @@ func TestEveryFlagWeUseExists(t *testing.T) {
 		{"status", anchorctl.StatusArgs()},
 		{"metrics", anchorctl.MetricsArgs()},
 		{"observe", anchorctl.ObserveStartArgs(config.Observer{Loopback: true, HideNames: true})},
+		{"observe-renew", anchorctl.ObserveRenewArgs()},
 		{"observe-stop", anchorctl.ObserveStopArgs()},
 		{"export", anchorctl.ExportArgs("collector.example:4317", true, []string{"metrics", "flows"})},
 	} {
@@ -84,8 +85,8 @@ func TestEveryFlagWeUseExists(t *testing.T) {
 			have := supportedFlags(t, tools.Anchorctl, sub.argv[0])
 
 			for _, tok := range sub.argv[1:] {
-				// A bare "-" is the stdin marker that -manifest takes as its
-				// value, not a flag.
+				// A bare "-" is the stdin marker that -manifest and -cred take as
+				// their value, not a flag.
 				if tok == "-" || !strings.HasPrefix(tok, "-") {
 					continue
 				}

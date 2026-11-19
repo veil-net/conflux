@@ -75,13 +75,16 @@ func TestAlphaRenewIsUnauthenticated(t *testing.T) {
 		"no renewalAuth at all":   withoutRenewalAuth,
 	} {
 		t.Run(name, func(t *testing.T) {
-			// Decoded so the test fails if the document itself stops being one
-			// conflux accepts, rather than passing while exercising nothing.
-			if _, err := Decode(envelope(t, doc)); err != nil {
-				t.Fatalf("Decode: %v", err)
+			// The client authenticates as the document says, as the daemon's does: decoded,
+			// so the test fails if the document stops being one conflux accepts, and its
+			// scheme resolved, so it fails if that scheme stops sending nothing.
+			auth, err := manifest(t, doc).Auth()
+			if err != nil {
+				t.Fatalf("Auth: %v", err)
 			}
 
 			c, s, got := record(t, reply)
+			c.Auth = auth
 
 			if _, err := c.Renew(t.Context(), s.URL+alphaRenewPath, "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq", asked); err != nil {
 				t.Fatalf("Renew: %v", err)

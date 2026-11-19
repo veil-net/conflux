@@ -21,13 +21,14 @@ import (
 // once, and "serve" for one that runs until it is signalled. fakeAnchorctlLogEnv,
 // when set, names a file the stand-in anchorctl appends each command it ran to,
 // fakeAnchorctlFailEnv a command it refuses, and fakeAnchorctlStatusEnv what its
-// status says: "running", or "none" for a daemon holding no anchor. fakeAnchorctlObserverEnv
-// is the observer's row in it -- "running", "failed", or anything else not observing -- and
-// fakeAnchorctlCaptureEnv set makes `observe -start` refuse as a host that will not let the
-// daemon capture does. fakeAnchorctlRenewedEnv names a file `renew` writes the chain it was
-// handed on stdin to, fakeAnchorctlObservedEnv one `observe -start` writes the manifest it
-// was handed to, and fakeAnchorctlObserverRenewedEnv one `observe -cred -` writes the chain it
-// was handed to; that refuses as REASON_NOT_OBSERVING unless the observer's row is "running".
+// status says: "running", or "none" for a daemon holding no anchor, whose renew refuses
+// as REASON_NOT_RUNNING. fakeAnchorctlObserverEnv is the observer's row in it --
+// "running", "failed", or anything else not observing -- and fakeAnchorctlCaptureEnv set
+// makes `observe -start` refuse as a host that will not let the daemon capture does.
+// fakeAnchorctlRenewedEnv names a file `renew` writes the chain it was handed on stdin to,
+// fakeAnchorctlObservedEnv one `observe -start` writes the manifest it was handed to, and
+// fakeAnchorctlObserverRenewedEnv one `observe -cred -` writes the chain it was handed to;
+// that refuses as REASON_NOT_OBSERVING unless the observer's row is "running".
 const (
 	fakeAnchorctlEnv                = "CONFLUX_TEST_FAKE_ANCHORCTL"
 	fakeAnchorctlLogEnv             = "CONFLUX_TEST_FAKE_ANCHORCTL_LOG"
@@ -132,6 +133,14 @@ func fakeAnchorctl(args []string) int {
 		chain, err := io.ReadAll(os.Stdin)
 		if err != nil || len(chain) == 0 {
 			fmt.Fprintln(os.Stderr, "no credential on stdin")
+
+			return 1
+		}
+
+		// A daemon holding no anchor refuses it as REASON_NOT_RUNNING, as anchorctl words it.
+		if os.Getenv(fakeAnchorctlStatusEnv) == "none" {
+			fmt.Fprintln(os.Stderr, "anchorctl: no anchor is running\n"+
+				"  start one with: anchorctl start -identity FILE -root FILE -cred FILE")
 
 			return 1
 		}

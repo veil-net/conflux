@@ -244,6 +244,14 @@ func NotObserving(err error) bool {
 	return errors.As(err, &e) && strings.Contains(e.Stderr, "the observer is not running, so it has no credential to renew")
 }
 
+// NotRunning says err is anchor's refusal of a daemon that holds no anchor, REASON_NOT_RUNNING,
+// by the hint anchorctl gives it.
+func NotRunning(err error) bool {
+	var e *Error
+
+	return errors.As(err, &e) && strings.Contains(e.Stderr, "start one with: anchorctl start")
+}
+
 // Renew installs a fresh credential on the running anchor, hot: SetRealmCred rather
 // than a restart, so not one session is lost.
 //

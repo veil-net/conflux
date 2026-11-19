@@ -100,14 +100,15 @@ func renewChain(
 
 // installRenewal hands a renewed chain to what cfg runs, each in place: the anchor by renew,
 // and the observer by observe -cred, since a renewal of the anchor's does not reach it. An
-// observer that is not running holds no chain to replace, and its next start is handed the
-// manifest the chain is already in, so anchor's REASON_NOT_OBSERVING fails nothing. holding
-// names what holds this chain already: what a bring-up has just started on it.
+// anchor or an observer that is not running holds no chain to replace, and its next start --
+// the watcher's, the next boot's -- is handed the manifest the chain is already in, so anchor's
+// REASON_NOT_RUNNING and REASON_NOT_OBSERVING fail nothing. holding names what holds this chain
+// already: what a bring-up has just started on it.
 func installRenewal(ctx context.Context, ctl *anchorctl.Ctl, cfg *config.Config, chain []byte, holding parts) error {
 	var errs []error
 
 	if cfg.Anchor() && !holding.anchor {
-		if err := ctl.Renew(ctx, chain); err != nil {
+		if err := ctl.Renew(ctx, chain); err != nil && !anchorctl.NotRunning(err) {
 			errs = append(errs, err)
 		}
 	}

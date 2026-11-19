@@ -776,3 +776,48 @@ func TestARenewalBeforeAStartReachesWhatAlreadyRuns(t *testing.T) {
 		})
 	}
 }
+
+// TestARenewalWhileTheAnchorIsNotRunningIsNotDueAgain: REASON_NOT_RUNNING is no failed install
+// either -- the renewed chain is saved, and the watcher's rebuild starts the anchor from it -- so
+// the renewal stands, recorded, rather than staying due and drawing a fresh credential from the
+// issuer every minute the anchor is down; and an observer running beside it is handed the chain.
+func TestARenewalWhileTheAnchorIsNotRunningIsNotDueAgain(t *testing.T) {
+	for name, observer := range map[string]bool{"an anchor": false, "an anchor and the observer": true} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(fakeAnchorctlStatusEnv, "none")
+			t.Setenv(fakeAnchorctlObserverEnv, "running")
+
+			is := newIssuer(t)
+			d := machine(t, is, time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour))
+
+			if observer {
+				cfg := configOf(t, d)
+				cfg.Observer = &config.Observer{}
+
+				if err := config.Save(d, cfg); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			_, observed := renewedInto(t)
+
+			if err := RenewNow(t.Context(), d, fakeCtl(t), nil); err != nil {
+				t.Fatalf("RenewNow: %v", err)
+			}
+
+			st, err := config.LoadState(d)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if m := stored(t, d); !st.NotAfter.Equal(m.NotAfter()) || dueAt(st.IssuedAt, st.NotAfter, time.Now()) || st.LastRenewalError != "" {
+				t.Errorf("the state (%v to %v, error %q) does not record the renewal saved, to %v",
+					st.IssuedAt, st.NotAfter, st.LastRenewalError, m.NotAfter())
+			}
+
+			if got := handedTo(observed, is.chain); got != observer {
+				t.Errorf("the observer was handed the renewed chain: %v, want %v", got, observer)
+			}
+		})
+	}
+}

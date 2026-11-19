@@ -284,6 +284,24 @@ func TestAnEphemeralObserverRunsOnTheRunsCredential(t *testing.T) {
 	}
 }
 
+// TestAnEphemeralRunRenewsItsObserverInMemory: beside an ephemeral anchor, a renewed chain
+// reaches the observer too, on its stdin, since a renewal of the anchor's does not.
+func TestAnEphemeralRunRenewsItsObserverInMemory(t *testing.T) {
+	t.Setenv(fakeAnchorctlObserverEnv, "running")
+
+	is := newIssuer(t)
+	anchor, observer := renewedInto(t)
+
+	r := runEphemeralOf(t, &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, APIBaseURL: is.srv.URL,
+		Proxies: []string{"8080=127.0.0.1:1"}, Observer: &config.Observer{}},
+		handed(t, is, time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour)))
+	r.up(t)
+
+	eventually(t, "the renewed chain reaching the anchor and the observer", func() bool {
+		return handedTo(anchor, is.chain) && handedTo(observer, is.chain)
+	})
+}
+
 // TestASecondEphemeralRunIsRefused: one ephemeral run per root, refused before it touches the
 // one already running.
 func TestASecondEphemeralRunIsRefused(t *testing.T) {

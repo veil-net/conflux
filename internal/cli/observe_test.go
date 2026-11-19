@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/ui"
@@ -264,5 +265,25 @@ func TestProxyTakesTheObserverFlags(t *testing.T) {
 
 	if want := []string{"--export", "c:4317", "--observe-loopback"}; !slices.Equal(flags, want) {
 		t.Errorf("flags %v, want %v", flags, want)
+	}
+}
+
+// TestALapsedObserverPointsAtConfluxRenew: anchor's note names anchorctl's way to renew a lapsed
+// observer credential, a file somebody holds; conflux renews the machine's own, and its command
+// is the one shown.
+func TestALapsedObserverPointsAtConfluxRenew(t *testing.T) {
+	var out bytes.Buffer
+
+	old := ui.Out
+	ui.Out = &out
+
+	t.Cleanup(func() { ui.Out = old })
+
+	reportObserver(&config.Config{Observer: &config.Observer{}}, anchorctl.Observer{Running: true,
+		Note: `af_packet, 2 flows held, 32 packets taken; credential lapsed at 2026-11-02T04:16:00Z; ` +
+			`nothing observed is exported until "anchorctl observe -cred FILE" renews it`})
+
+	if said := out.String(); !strings.Contains(said, `"conflux renew" renews it`) || strings.Contains(said, "anchorctl observe -cred") {
+		t.Errorf("a lapsed observer is reported as:\n%s", said)
 	}
 }

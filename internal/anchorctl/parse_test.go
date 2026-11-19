@@ -1,6 +1,7 @@
 package anchorctl
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -175,6 +176,20 @@ func TestParseStatusReadsTheObserver(t *testing.T) {
 			t.Errorf("%s: Observer = %+v (failed %v), want running %v, failed %v, note %q",
 				name, o, o.Failed(), tc.runs, tc.failed, tc.note)
 		}
+	}
+}
+
+// TestALapsedNoteNamesAnotherRenewal: the command a lapsed observer's note names to renew its
+// credential can be put in its words, for a caller that renews it another way.
+func TestALapsedNoteNamesAnotherRenewal(t *testing.T) {
+	o := ParseStatus(observerLapsedOutput).Observer
+
+	if got := o.RenewedBy(`"conflux renew"`); !strings.HasSuffix(got, `nothing observed is exported until "conflux renew" renews it`) {
+		t.Errorf("RenewedBy = %q", got)
+	}
+
+	if o := ParseStatus(observingAloneOutput).Observer; o.RenewedBy("x") != o.Note {
+		t.Errorf("a note that has not lapsed was changed: %q", o.RenewedBy("x"))
 	}
 }
 

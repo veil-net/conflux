@@ -363,7 +363,7 @@ func TestAnEnrolmentIsKeptBeforeItIsRead(t *testing.T) {
 
 	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, APIBaseURL: api.URL}
 
-	_, _, err := credential(t.Context(), d, &config.State{}, cfg, nopReporter{})
+	_, err := credential(t.Context(), d, &config.State{}, cfg, nopReporter{})
 	if err == nil || !Permanent(err) {
 		t.Fatalf("credential() = %v, want a permanent refusal", err)
 	}
@@ -420,13 +420,13 @@ func TestAnEnrolmentAsksForTheConfiguredTaints(t *testing.T) {
 
 	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"office", "lab"}, APIBaseURL: api.URL}
 
-	_, m, err := credential(t.Context(), d, &config.State{}, cfg, nopReporter{})
+	h, err := credential(t.Context(), d, &config.State{}, cfg, nopReporter{})
 	if err != nil {
 		t.Fatalf("credential() = %v", err)
 	}
 
-	if !slices.Equal(*asked, cfg.Taints) || !slices.Equal(m.Taints(), cfg.Taints) {
-		t.Errorf("asked for %v and was granted %v, want %v both", *asked, m.Taints(), cfg.Taints)
+	if !slices.Equal(*asked, cfg.Taints) || !slices.Equal(h.m.Taints(), cfg.Taints) {
+		t.Errorf("asked for %v and was granted %v, want %v both", *asked, h.m.Taints(), cfg.Taints)
 	}
 }
 
@@ -438,7 +438,7 @@ func TestAnEnrolmentWithNoTaintsIsRefused(t *testing.T) {
 
 	cfg := &config.Config{Mode: config.ModeProxy, APIBaseURL: api.URL}
 
-	_, _, err := credential(t.Context(), d, &config.State{}, cfg, nopReporter{})
+	_, err := credential(t.Context(), d, &config.State{}, cfg, nopReporter{})
 	if !Permanent(err) || !errors.Is(err, enrol.ErrNoTaints) {
 		t.Errorf("credential() = %v, want a permanent ErrNoTaints", err)
 	}
@@ -457,7 +457,7 @@ func TestAnEnrolmentGrantingOtherTaintsIsKeptAndRefused(t *testing.T) {
 
 	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, APIBaseURL: api.URL}
 
-	_, _, err := credential(t.Context(), d, &config.State{}, cfg, nopReporter{})
+	_, err := credential(t.Context(), d, &config.State{}, cfg, nopReporter{})
 
 	var te *enrol.TaintsError
 	if !Permanent(err) || !errors.As(err, &te) {
@@ -495,7 +495,7 @@ func TestAPreTaintEnrolmentIsRefusedForGood(t *testing.T) {
 			cfg := configOf(t, d)
 			cfg.Taints = configured
 
-			_, _, err := credential(t.Context(), d, &config.State{AnchorID: renewTestAnchor}, cfg, nopReporter{})
+			_, err := credential(t.Context(), d, &config.State{AnchorID: renewTestAnchor}, cfg, nopReporter{})
 			if !Permanent(err) || !strings.Contains(err.Error(), "conflux uninstall") {
 				t.Errorf("credential() = %v, want a permanent refusal naming the way out", err)
 			}
@@ -525,7 +525,7 @@ func TestAnIssuedCredentialMayGrantNone(t *testing.T) {
 	cfg := configOf(t, d)
 	cfg.Taints = nil
 
-	if _, _, err := credential(t.Context(), d, &config.State{AnchorID: renewTestAnchor}, cfg, nopReporter{}); err != nil {
+	if _, err := credential(t.Context(), d, &config.State{AnchorID: renewTestAnchor}, cfg, nopReporter{}); err != nil {
 		t.Errorf("credential() = %v, want a start in the realm's default compartment", err)
 	}
 }
@@ -549,7 +549,7 @@ func TestAStaleClockIsMeasuredAgain(t *testing.T) {
 			d := machine(t, is, time.Now(), time.Now().Add(30*24*time.Hour))
 			st := &config.State{AnchorID: renewTestAnchor, ClockSkew: 30 * time.Minute}
 
-			_, _, err := credential(t.Context(), d, st, configOf(t, d), nopReporter{})
+			_, err := credential(t.Context(), d, st, configOf(t, d), nopReporter{})
 
 			if is.calls.Load() != 1 {
 				t.Errorf("made %d calls to the issuer, want the one that measures", is.calls.Load())
@@ -580,7 +580,7 @@ func TestAFixedTermCredentialIsNotRenewed(t *testing.T) {
 	})
 
 	st := &config.State{AnchorID: renewTestAnchor, ClockSkew: 30 * time.Minute}
-	if _, _, err := credential(t.Context(), d, st, configOf(t, d), nopReporter{}); err != nil {
+	if _, err := credential(t.Context(), d, st, configOf(t, d), nopReporter{}); err != nil {
 		t.Errorf("credential() = %v, want a start from the credential as it is", err)
 	}
 
@@ -612,7 +612,7 @@ func TestAnExpiredFixedTermCredentialIsPermanent(t *testing.T) {
 		"taints":   []string{"t"},
 	})
 
-	_, _, err := credential(t.Context(), d, &config.State{AnchorID: renewTestAnchor}, configOf(t, d), nopReporter{})
+	_, err := credential(t.Context(), d, &config.State{AnchorID: renewTestAnchor}, configOf(t, d), nopReporter{})
 	if !Permanent(err) || !errors.Is(err, enrol.ErrDoesNotRenew) {
 		t.Errorf("credential() = %v, want a permanent refusal naming a credential that does not renew", err)
 	}
@@ -630,12 +630,149 @@ func TestAnExpiredCredentialWithNoAnchorIDIsPermanent(t *testing.T) {
 	is := newIssuer(t)
 	d := machine(t, is, time.Now().Add(-40*24*time.Hour), time.Now().Add(-time.Hour))
 
-	_, _, err := credential(t.Context(), d, &config.State{}, configOf(t, d), nopReporter{})
+	_, err := credential(t.Context(), d, &config.State{}, configOf(t, d), nopReporter{})
 	if !Permanent(err) || !strings.Contains(err.Error(), "no AnchorID") {
 		t.Errorf("credential() = %v, want a permanent refusal naming the missing AnchorID", err)
 	}
 
 	if is.calls.Load() != 0 {
 		t.Errorf("made %d calls to the issuer, want none", is.calls.Load())
+	}
+}
+
+// renewedInto points the stand-in anchorctl's renew and observe -cred at files of their own,
+// and returns them: what the anchor and the observer were handed.
+func renewedInto(t *testing.T) (anchor, observer string) {
+	t.Helper()
+
+	anchor, observer = filepath.Join(t.TempDir(), "anchor"), filepath.Join(t.TempDir(), "observer")
+	t.Setenv(fakeAnchorctlRenewedEnv, anchor)
+	t.Setenv(fakeAnchorctlObserverRenewedEnv, observer)
+
+	return anchor, observer
+}
+
+// handedTo says whether path holds chain: the stand-in was handed it.
+func handedTo(path string, chain []byte) bool {
+	b, err := os.ReadFile(path)
+
+	return err == nil && bytes.Equal(b, chain)
+}
+
+// TestARenewalReachesWhatRuns: a renewed chain is installed in everything the configuration
+// runs, each in place and on stdin -- the anchor by renew, and the observer by observe -cred,
+// since a renewal of the anchor's does not reach it -- and a machine that only observes renews
+// by the AnchorID its observer reported, and installs in the observer alone.
+func TestARenewalReachesWhatRuns(t *testing.T) {
+	for name, tc := range map[string]struct {
+		mode             config.Mode
+		observer         bool
+		anchor, observed bool
+	}{
+		"an anchor":                  {config.ModeProxy, false, true, false},
+		"an anchor and the observer": {config.ModeProxy, true, true, true},
+		"observing alone":            {config.ModeObserve, true, false, true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(fakeAnchorctlObserverEnv, "running")
+
+			is := newIssuer(t)
+			d := machine(t, is, time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour))
+
+			cfg := configOf(t, d)
+			if cfg.Mode = tc.mode; tc.observer {
+				cfg.Observer = &config.Observer{}
+			}
+
+			if err := config.Save(d, cfg); err != nil {
+				t.Fatal(err)
+			}
+
+			anchor, observer := renewedInto(t)
+
+			if err := RenewNow(t.Context(), d, fakeCtl(t), nil); err != nil {
+				t.Fatalf("RenewNow: %v", err)
+			}
+
+			if got := handedTo(anchor, is.chain); got != tc.anchor {
+				t.Errorf("the anchor was handed the renewed chain: %v, want %v", got, tc.anchor)
+			}
+
+			if got := handedTo(observer, is.chain); got != tc.observed {
+				t.Errorf("the observer was handed the renewed chain: %v, want %v", got, tc.observed)
+			}
+
+			if got := is.asked(t).AnchorID; got != renewTestAnchor {
+				t.Errorf("renewed for %q, want the recorded %q", got, renewTestAnchor)
+			}
+		})
+	}
+}
+
+// TestAnObserverThatIsNotRunningHasNothingToRenew: REASON_NOT_OBSERVING is no failed install --
+// nothing holds the old chain, and the next start hands the observer the renewed manifest -- so
+// the renewal stands, and is not due again.
+func TestAnObserverThatIsNotRunningHasNothingToRenew(t *testing.T) {
+	is := newIssuer(t)
+	d := machine(t, is, time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour))
+
+	cfg := configOf(t, d)
+	cfg.Mode, cfg.Observer = config.ModeObserve, &config.Observer{}
+
+	if err := config.Save(d, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RenewNow(t.Context(), d, fakeCtl(t), nil); err != nil {
+		t.Fatalf("RenewNow: %v", err)
+	}
+
+	st, err := config.LoadState(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if dueAt(st.IssuedAt, st.NotAfter, time.Now()) || st.LastRenewalError != "" {
+		t.Errorf("the renewal is due again (%v to %v, error %q)", st.IssuedAt, st.NotAfter, st.LastRenewalError)
+	}
+}
+
+// TestARenewalBeforeAStartReachesWhatAlreadyRuns: the watcher starting one part again renews a
+// due credential before it does, and the part that runs on is handed the renewed chain too, or
+// it would run on the old one past its expiry while the state said it held the new.
+func TestARenewalBeforeAStartReachesWhatAlreadyRuns(t *testing.T) {
+	for name, start := range map[string]parts{"the observer started again": {observer: true}, "the anchor rebuilt": {anchor: true}} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(fakeAnchorctlObserverEnv, "running")
+
+			is := newIssuer(t)
+			d := machine(t, is, time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour))
+
+			cfg := configOf(t, d)
+			cfg.Observer = &config.Observer{}
+
+			if err := config.Save(d, cfg); err != nil {
+				t.Fatal(err)
+			}
+
+			anchor, observer := renewedInto(t)
+
+			if _, err := bringUp(t.Context(), d, fakeCtl(t), nopReporter{}, d.RootAnchorDir(), false, start); err != nil {
+				t.Fatalf("bringUp: %v", err)
+			}
+
+			if is.calls.Load() != 1 {
+				t.Fatalf("the issuer was asked %d times, want the one renewal before the start", is.calls.Load())
+			}
+
+			runs := observer
+			if start.observer {
+				runs = anchor
+			}
+
+			if !handedTo(runs, is.chain) {
+				t.Error("what runs on was not handed the renewed chain")
+			}
+		})
 	}
 }

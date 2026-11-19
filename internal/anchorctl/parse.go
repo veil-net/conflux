@@ -83,6 +83,16 @@ func (o Observer) Failed() bool {
 	return strings.HasPrefix(o.Note, notObserving+": ")
 }
 
+// observerRenewal is the command a lapsed observer's note names to renew its credential:
+// anchorctl's own, with a file the caller holds.
+const observerRenewal = `"anchorctl observe -cred FILE"`
+
+// RenewedBy is the note with the command that renews a lapsed credential given as command, in
+// place of anchorctl's own.
+func (o Observer) RenewedBy(command string) string {
+	return strings.Replace(o.Note, observerRenewal, command, 1)
+}
+
 // ParseStatus reads the output of `anchorctl status`.
 func ParseStatus(stdout string) Status {
 	var st Status

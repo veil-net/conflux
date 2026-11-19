@@ -14,8 +14,9 @@ import (
 	"github.com/veil-net/conflux/internal/ui"
 )
 
-// renewal is one successful exchange with the issuer, already on disk.
-type renewal struct {
+// held is a credential on disk: the manifest, its envelope, and, where a renewal has just
+// replaced the chain, the raw chain to install in what runs on the old one.
+type held struct {
 	m     *enrol.Manifest
 	env   config.Envelope
 	chain []byte
@@ -28,13 +29,13 @@ type renewal struct {
 // `conflux renew` -- so none of them grows its own ordering. The caller holds the lock.
 func renewStored(
 	ctx context.Context, d paths.Dirs, st *config.State, client *enrol.Client, m *enrol.Manifest,
-) (renewal, error) {
+) (held, error) {
 	st.LastRenewalTry = time.Now().UTC()
 
-	fail := func(err error) (renewal, error) {
+	fail := func(err error) (held, error) {
 		st.LastRenewalError = err.Error()
 
-		return renewal{}, err
+		return held{}, err
 	}
 
 	next, chain, err := renewChain(ctx, client, m, st.AnchorID)
@@ -63,7 +64,7 @@ func renewStored(
 	st.LastRenewalError = ""
 	st.IssuedAt, st.NotAfter = next.IssuedAt(), next.NotAfter()
 
-	return renewal{m: next, env: env, chain: chain}, nil
+	return held{m: next, env: env, chain: chain}, nil
 }
 
 // renewChain asks m's issuer for a fresh chain for anchorID, and returns m with it spliced
@@ -97,11 +98,34 @@ func renewChain(
 	return next, got.Chain, nil
 }
 
-// RenewNow fetches a fresh chain and installs it on the running anchor.
+// installRenewal hands a renewed chain to what cfg runs, each in place: the anchor by renew,
+// and the observer by observe -cred, since a renewal of the anchor's does not reach it. An
+// observer that is not running holds no chain to replace, and its next start is handed the
+// manifest the chain is already in, so anchor's REASON_NOT_OBSERVING fails nothing. holding
+// names what holds this chain already: what a bring-up has just started on it.
+func installRenewal(ctx context.Context, ctl *anchorctl.Ctl, cfg *config.Config, chain []byte, holding parts) error {
+	var errs []error
+
+	if cfg.Anchor() && !holding.anchor {
+		if err := ctl.Renew(ctx, chain); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	if cfg.Observer != nil && !holding.observer {
+		if err := ctl.ObserveRenew(ctx, chain); err != nil && !anchorctl.NotObserving(err) {
+			errs = append(errs, err)
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+// RenewNow fetches a fresh chain and installs it in what runs: the anchor, the observer.
 //
-// Hot, via anchorctl renew, which calls SetRealmCred: the identity does not change
-// and not one session is lost. A restart would cost every connection the anchor is
-// holding, for a swap that needs none of that.
+// Hot, via anchorctl renew and observe -cred, which call SetRealmCred and SetObserverCred:
+// the identity does not change and not one session is lost. A restart would cost every
+// connection the anchor is holding, for a swap that needs none of that.
 //
 // A free function rather than a Supervisor method because two callers want it and
 // only one of them is a supervisor: the timer inside `conflux serve`, and `conflux
@@ -132,7 +156,7 @@ func RenewNow(ctx context.Context, dirs paths.Dirs, ctl *anchorctl.Ctl, rep Repo
 	}
 
 	if st.AnchorID == "" {
-		return errors.New("no AnchorID recorded; the anchor has to have started at least once")
+		return errors.New("no AnchorID recorded; the anchor or the observer has to have started at least once")
 	}
 
 	env, err := config.LoadManifest(dirs)
@@ -157,11 +181,11 @@ func RenewNow(ctx context.Context, dirs paths.Dirs, ctl *anchorctl.Ctl, rep Repo
 
 	got, err := renewStored(ctx, dirs, st, &enrol.Client{BaseURL: cfg.APIBase()}, m)
 	if err == nil {
-		if err = ctl.Renew(ctx, got.chain); err != nil {
-			// The renewed chain is on disk, so the next start runs on it, but the running
-			// anchor still holds the old one. The state keeps describing that one, so a
-			// renewal that was due is due again in a minute rather than three weeks after
-			// the running chain has lapsed, and status says why.
+		if err = installRenewal(ctx, ctl, cfg, got.chain, parts{}); err != nil {
+			// The renewed chain is on disk, so the next start runs on it, but what runs
+			// still holds the old one. The state keeps describing that one, so a renewal
+			// that was due is due again in a minute rather than three weeks after the
+			// running chain has lapsed, and status says why.
 			err = fmt.Errorf("install the renewed credential: %w", err)
 			st.IssuedAt, st.NotAfter = held, heldUntil
 			st.LastRenewalError = err.Error()

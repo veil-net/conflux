@@ -3,6 +3,7 @@ package anchorctl
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -224,6 +225,23 @@ func (c *Ctl) Export(ctx context.Context, endpoint string, insecure bool, signal
 	_, err := c.run(ctx, nil, ExportArgs(endpoint, insecure, signals)...)
 
 	return err
+}
+
+// ObserveRenew installs a renewed chain on the running observer, in place: SetObserverCred, as
+// Renew is SetRealmCred, and a renewal of the anchor's does not reach it. With no observer
+// running, anchor refuses it as REASON_NOT_OBSERVING, which NotObserving reads.
+func (c *Ctl) ObserveRenew(ctx context.Context, chain []byte) error {
+	_, err := c.run(ctx, chain, ObserveRenewArgs()...)
+
+	return err
+}
+
+// NotObserving says err is anchor's refusal to renew an observer that is not running,
+// REASON_NOT_OBSERVING, by the hint anchorctl gives it.
+func NotObserving(err error) bool {
+	var e *Error
+
+	return errors.As(err, &e) && strings.Contains(e.Stderr, "the observer is not running, so it has no credential to renew")
 }
 
 // Renew installs a fresh credential on the running anchor, hot: SetRealmCred rather

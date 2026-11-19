@@ -458,3 +458,44 @@ func TestAnObserverTheHostRefusesEndsObservingAlone(t *testing.T) {
 		t.Errorf("the cycle ended with %v, which is not refused for good", err)
 	}
 }
+
+// TestObservingAloneRenews: the renewal timer runs for a machine that only observes, as it does
+// beside an anchor, and renews by the AnchorID the observer reported running as, installing the
+// chain in the observer.
+func TestObservingAloneRenews(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a console control event needs the console this test shares")
+	}
+
+	t.Setenv(fakeAnchorctlStatusEnv, "none")
+	t.Setenv(fakeAnchorctlObserverEnv, "running")
+	t.Setenv(fakeAnchordListenEnv, "1")
+
+	s, _ := supervised(t, "serve")
+	is := newIssuer(t)
+
+	if err := config.Save(s.Dirs, &config.Config{Mode: config.ModeObserve, Observer: &config.Observer{},
+		Taints: []string{"t"}, APIBaseURL: is.srv.URL}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Due, and with no AnchorID recorded yet, so nothing renews it before the observer starts
+	// and reports one: the timer is what does.
+	if err := config.SaveManifest(s.Dirs, handed(t, is, time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+
+	_, observer := renewedInto(t)
+
+	stop := cycling(t, s)
+
+	eventually(t, "the renewed chain reaching the observer", func() bool { return handedTo(observer, is.chain) })
+
+	if err := stop(); err != nil {
+		t.Errorf("the cycle ended with %v", err)
+	}
+
+	if got := is.asked(t).AnchorID; got != fakeAnchorID {
+		t.Errorf("renewed for %q, want the observer's %q", got, fakeAnchorID)
+	}
+}

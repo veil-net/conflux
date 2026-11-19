@@ -324,7 +324,8 @@ func enrolInMemory(ctx context.Context, cfg *config.Config, r Reporter) (config.
 // keepEphemeral keeps the credential current until the context is cancelled, anchord ends,
 // or its anchor does: renewing at two thirds of the window by the same body every renewal
 // goes through, with the renewed manifest kept here and the chain handed to anchorctl on
-// its stdin, and a failed renewal tried again every minute until the credential has run out.
+// its stdin, for the anchor and the observer beside it, and a failed renewal tried again
+// every minute until the credential has run out.
 // A credential that names nowhere to renew it runs to its expiry, and the run with it.
 func (s *Supervisor) keepEphemeral(
 	ctx context.Context, c *child, cfg *config.Config, m *enrol.Manifest, id string, every time.Duration,
@@ -369,7 +370,7 @@ func (s *Supervisor) keepEphemeral(
 
 			next, chain, err := renewChain(ctx, client, m, id)
 			if err == nil {
-				err = s.ctl.Renew(ctx, chain)
+				err = installRenewal(ctx, s.ctl, cfg, chain, parts{})
 			}
 
 			if err != nil {

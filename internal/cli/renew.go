@@ -17,14 +17,16 @@ import (
 	"github.com/veil-net/conflux/internal/ui"
 )
 
-// runRenew fetches a fresh credential now and installs it on the running anchor.
+// runRenew fetches a fresh credential now and installs it in what runs: the anchor, and the
+// observer, which runs under the same credential.
 //
 // Renewal is otherwise automatic in two places -- once on every start, and on a
 // timer at two thirds of the credential's life -- and neither is reachable by hand.
 // That is fine until it is not: a machine whose renewals have been failing shows
-// "renewal: failing since ..." in conflux status and offers nothing to do about it
-// but restart the service, which costs every session the anchor is holding for a
-// swap that needs none of them. This is that swap, on demand.
+// "renewal: failing since ..." in conflux status, or an observer whose credential has
+// lapsed and exports nothing, and offers nothing to do about it but restart the service,
+// which costs every session the anchor is holding for a swap that needs none of them.
+// This is that swap, on demand.
 //
 // It does not enrol. A machine with no manifest has nothing to renew, and inventing
 // an identity for it here would silently replace the one a reboot expects.
@@ -33,11 +35,11 @@ func runRenew(ctx context.Context, args []string) int {
 	fs.SetOutput(ui.Errw)
 
 	fs.Usage = func() {
-		ui.Printf("conflux renew — install a fresh credential on the running anchor\n\n" +
+		ui.Printf("conflux renew — install a fresh credential in the running anchor and observer\n\n" +
 			"  conflux renew\n\n" +
 			"Renewal is automatic: once at every start, and again on a timer at two thirds\n" +
 			"of the credential's life. This forces one now, which is what a machine whose\n" +
-			"renewals have been failing needs.\n\n" +
+			"renewals have been failing needs, or an observer whose credential lapsed.\n\n" +
 			"The swap is hot. The identity does not change and no session is dropped, so\n" +
 			"this is not a restart and does not need to be treated as one.\n\n")
 		fs.PrintDefaults()
@@ -87,8 +89,8 @@ func runRenew(ctx context.Context, args []string) int {
 // renewNow is the body, split out so the test can drive it against a temporary
 // CONFLUX_DIR without going through privcheck.
 func renewNow(ctx context.Context, d paths.Dirs) int {
-	cfg, err := config.Load(d)
-	if err != nil {
+	// What it runs is RenewNow's to read, under the lock; here only whether there is any.
+	if _, err := config.Load(d); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			ui.Errf("this machine has never been configured, so there is no credential to renew.\n\n" + configureHint)
 
@@ -98,23 +100,14 @@ func renewNow(ctx context.Context, d paths.Dirs) int {
 		return fail(err)
 	}
 
-	// Unavailable, like a machine with nothing enrolled: observing runs no anchor and needs
-	// no credential, and one this machine holds is renewed by the next anchor it runs.
-	if !cfg.Anchor() {
-		ui.Errf("this machine only observes, which needs no credential, so there is nothing to renew.\n" +
-			"  The next conflux up or proxy renews the one it holds, if it is due.")
-
-		return ExitUnavailable
-	}
-
 	if !config.HasManifest(d) {
 		return neverEnrolled()
 	}
 
-	// Renewal is a hot swap into a running anchor, so "nothing is running" is the
-	// likely failure and deserves conflux's own answer rather than a dial error.
+	// Renewal is a hot swap into what runs, so "nothing is running" is the likely failure
+	// and deserves conflux's own answer rather than a dial error.
 	if _, err := os.Stat(d.Socket()); errors.Is(err, fs.ErrNotExist) {
-		ui.Errf("nothing is running here, and a credential is installed into a running anchor.\n\n"+
+		ui.Errf("nothing is running here, and a credential is installed into what runs: the anchor, the observer.\n\n"+
 			"  conflux start     start from the configuration this machine already has\n\n"+
 			"  The next start renews on its own, so a machine that is meant to be down needs\n"+
 			"  nothing done here.\n\n"+
@@ -139,7 +132,8 @@ func renewNow(ctx context.Context, d paths.Dirs) int {
 		return fail(err)
 	}
 
-	// A renewal names the anchor, and an anchor that has never started has reported no name.
+	// A renewal names the identity by the AnchorID its anchor or observer reported starting
+	// as, and neither has reported one before it has started.
 	if before.AnchorID == "" {
 		return neverEnrolled()
 	}
@@ -165,7 +159,8 @@ func renewNow(ctx context.Context, d paths.Dirs) int {
 // neverEnrolled is renew's answer for a machine with nothing to renew: unavailable, like
 // one that was never configured, since nothing went wrong.
 func neverEnrolled() int {
-	ui.Errf("there is nothing to renew yet: a renewal names the anchor, and none has started here.\n\n" +
+	ui.Errf("there is nothing to renew yet: a renewal names the identity, and neither an anchor nor the observer\n" +
+		"  has started here to report it.\n\n" +
 		"  conflux start     start from the configuration this machine already has")
 
 	return ExitUnavailable

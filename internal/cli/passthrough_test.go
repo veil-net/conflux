@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/ui"
 )
 
 // TestAPassThroughWithNothingRunningMakesNothing: on a machine with no daemon -- one never
@@ -63,5 +65,38 @@ func TestRenewWithNoCredentialIsUnavailable(t *testing.T) {
 
 	if code := renewNow(t.Context(), d); code != ExitUnavailable {
 		t.Errorf("renew with no manifest exited %d, want %d", code, ExitUnavailable)
+	}
+}
+
+// TestRenewCoversAMachineThatOnlyObserves: the observer runs under the machine's credential, so
+// a machine that only observes has one to renew, and is answered as any other is: here, that a
+// renewal is installed into what runs, and nothing does.
+func TestRenewCoversAMachineThatOnlyObserves(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", t.TempDir())
+
+	d := paths.Default()
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := config.Save(d, &config.Config{Mode: config.ModeObserve, Observer: &config.Observer{}, Taints: []string{"t"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := config.SaveManifest(d, config.Envelope("e30=")); err != nil {
+		t.Fatal(err)
+	}
+
+	var errBuf bytes.Buffer
+
+	old := ui.Errw
+	ui.Errw = &errBuf
+
+	t.Cleanup(func() { ui.Errw = old })
+
+	code := renewNow(t.Context(), d)
+
+	if said := errBuf.String(); code != ExitUnavailable || strings.Contains(said, "only observes") || !strings.Contains(said, "nothing is running") {
+		t.Errorf("renew on a machine that only observes exited %d, saying:\n%s", code, said)
 	}
 }

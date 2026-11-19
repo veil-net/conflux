@@ -289,13 +289,15 @@ func reportAnchorRows(d paths.Dirs, cfg *config.Config, st anchorctl.Status) {
 }
 
 // reportObserver says what the observer is doing and where its records go, for a machine
-// that observes: the row anchorctl's status gives it, with what it was asked for.
+// that observes: the row anchorctl's status gives it, with what it was asked for. Where its
+// credential has lapsed, the row's way to renew it is conflux's, which renews the machine's
+// own, rather than anchorctl's, which wants a file.
 func reportObserver(cfg *config.Config, o anchorctl.Observer) {
 	if cfg.Observer == nil {
 		return
 	}
 
-	note := o.Note
+	note := o.RenewedBy(`"conflux renew"`)
 	if note == "" {
 		note = "not reported by the daemon"
 	}

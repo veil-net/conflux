@@ -28,7 +28,7 @@ import (
 //	systemd / launchd / rc / SCM
 //	  └── conflux serve                  root, or SYSTEM
 //	        ├── anchord -socket … -config …   as its own account wherever that costs nothing; see privilege.go
-//	        ├── the renewal timer, beside an anchor
+//	        ├── the renewal timer, for the anchor and the observer
 //	        ├── the watcher: a lost anchor, on an uplink an ended link, and an observer whose capture ended
 //	        └── the restart loop
 //
@@ -326,12 +326,13 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 		return err
 	}
 
-	// The timer, and the watcher that keeps an anchor in the daemon -- and on a link,
-	// keeps the link carrying something. Both are finished before the daemon is shut
-	// down, so neither writes state or talks to a daemon that the next cycle has already
-	// replaced. A watcher that gives up on an anchor this configuration will not build
-	// ends both: there is nothing left to keep, or to renew a credential for, until the
-	// service is started again.
+	// The timer, which keeps the credential the anchor and the observer run under current,
+	// and the watcher that keeps an anchor in the daemon -- and on a link, keeps the link
+	// carrying something -- and the observer observing. Both are finished before the daemon
+	// is shut down, so neither writes state or talks to a daemon that the next cycle has
+	// already replaced. A watcher that gives up on what this configuration runs ends both:
+	// there is nothing left to keep, or to renew a credential for, until the service is
+	// started again.
 	loops, stopLoops := context.WithCancel(ctx)
 
 	var wg sync.WaitGroup
@@ -341,9 +342,7 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 		wg.Wait()
 	}()
 
-	if cfg.Anchor() {
-		wg.Go(func() { s.renewLoop(loops) })
-	}
+	wg.Go(func() { s.renewLoop(loops) })
 
 	wg.Go(func() {
 		if s.watch(loops, cfg, checkInterval(cfg)) {
@@ -748,7 +747,8 @@ func (s *Supervisor) stop(c *child) {
 	<-c.exited
 }
 
-// renewLoop keeps the credential current while the anchor runs.
+// renewLoop keeps the credential current while what the configuration runs runs: an anchor,
+// the observer, each given the renewed chain in place (RenewNow).
 //
 // It re-reads the state every round rather than trusting what it read before
 // sleeping, so a renewal somebody ran by hand in between moves the next one along.

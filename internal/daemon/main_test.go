@@ -25,19 +25,21 @@ import (
 // is the observer's row in it -- "running", "failed", or anything else not observing -- and
 // fakeAnchorctlCaptureEnv set makes `observe -start` refuse as a host that will not let the
 // daemon capture does. fakeAnchorctlRenewedEnv names a file `renew` writes the chain it was
-// handed on stdin to, and fakeAnchorctlObservedEnv one `observe -start` writes the manifest it
-// was handed to.
+// handed on stdin to, fakeAnchorctlObservedEnv one `observe -start` writes the manifest it
+// was handed to, and fakeAnchorctlObserverRenewedEnv one `observe -cred -` writes the chain it
+// was handed to; that refuses as REASON_NOT_OBSERVING unless the observer's row is "running".
 const (
-	fakeAnchorctlEnv         = "CONFLUX_TEST_FAKE_ANCHORCTL"
-	fakeAnchorctlLogEnv      = "CONFLUX_TEST_FAKE_ANCHORCTL_LOG"
-	fakeAnchorctlFailEnv     = "CONFLUX_TEST_FAKE_ANCHORCTL_FAIL"
-	fakeAnchorctlStatusEnv   = "CONFLUX_TEST_FAKE_ANCHORCTL_STATUS"
-	fakeAnchorctlObserverEnv = "CONFLUX_TEST_FAKE_ANCHORCTL_OBSERVER"
-	fakeAnchorctlCaptureEnv  = "CONFLUX_TEST_FAKE_ANCHORCTL_NO_CAPTURE"
-	fakeAnchorctlRenewedEnv  = "CONFLUX_TEST_FAKE_ANCHORCTL_RENEWED"
-	fakeAnchorctlObservedEnv = "CONFLUX_TEST_FAKE_ANCHORCTL_OBSERVED"
-	fakeAnchordEnv           = "CONFLUX_TEST_FAKE_ANCHORD"
-	fakeAnchordListenEnv     = "CONFLUX_TEST_FAKE_ANCHORD_LISTEN"
+	fakeAnchorctlEnv                = "CONFLUX_TEST_FAKE_ANCHORCTL"
+	fakeAnchorctlLogEnv             = "CONFLUX_TEST_FAKE_ANCHORCTL_LOG"
+	fakeAnchorctlFailEnv            = "CONFLUX_TEST_FAKE_ANCHORCTL_FAIL"
+	fakeAnchorctlStatusEnv          = "CONFLUX_TEST_FAKE_ANCHORCTL_STATUS"
+	fakeAnchorctlObserverEnv        = "CONFLUX_TEST_FAKE_ANCHORCTL_OBSERVER"
+	fakeAnchorctlCaptureEnv         = "CONFLUX_TEST_FAKE_ANCHORCTL_NO_CAPTURE"
+	fakeAnchorctlRenewedEnv         = "CONFLUX_TEST_FAKE_ANCHORCTL_RENEWED"
+	fakeAnchorctlObservedEnv        = "CONFLUX_TEST_FAKE_ANCHORCTL_OBSERVED"
+	fakeAnchorctlObserverRenewedEnv = "CONFLUX_TEST_FAKE_ANCHORCTL_OBSERVER_RENEWED"
+	fakeAnchordEnv                  = "CONFLUX_TEST_FAKE_ANCHORD"
+	fakeAnchordListenEnv            = "CONFLUX_TEST_FAKE_ANCHORD_LISTEN"
 )
 
 func TestMain(m *testing.M) {
@@ -157,6 +159,10 @@ func fakeAnchorctl(args []string) int {
 			return fakeObserveStart(args)
 		}
 
+		if len(args) > 1 && args[1] == "-cred" {
+			return fakeObserveRenew(args)
+		}
+
 		fmt.Println("observing with  af_packet")
 	case "status":
 		switch os.Getenv(fakeAnchorctlStatusEnv) {
@@ -204,6 +210,41 @@ func fakeObserveStart(args []string) int {
 
 	if out := os.Getenv(fakeAnchorctlObservedEnv); out != "" {
 		if err := os.WriteFile(out, manifest, 0o600); err != nil {
+			return 1
+		}
+	}
+
+	fmt.Print(fakeObserving)
+
+	return 0
+}
+
+// fakeObserveRenew is `observe -cred -`: the chain on stdin, installed in the observer running,
+// and anchor's refusal, REASON_NOT_OBSERVING, as anchorctl words it, where none runs.
+func fakeObserveRenew(args []string) int {
+	if !slices.Equal(args, []string{"observe", "-cred", "-"}) {
+		fmt.Fprintf(os.Stderr, "observe %q is not how conflux renews the observer\n", args[1:])
+
+		return 2
+	}
+
+	chain, err := io.ReadAll(os.Stdin)
+	if err != nil || len(chain) == 0 {
+		fmt.Fprintln(os.Stderr, "anchorctl: the credential on stdin is empty")
+
+		return 1
+	}
+
+	if os.Getenv(fakeAnchorctlObserverEnv) != "running" {
+		fmt.Fprintln(os.Stderr, "anchorctl: not observing, so there is no credential to renew; start the observer with the credential\n"+
+			"  the observer is not running, so it has no credential to renew; start it under one: "+
+			"anchorctl observe -start -identity FILE -root FILE -cred FILE")
+
+		return 1
+	}
+
+	if out := os.Getenv(fakeAnchorctlObserverRenewedEnv); out != "" {
+		if err := os.WriteFile(out, chain, 0o600); err != nil {
 			return 1
 		}
 	}

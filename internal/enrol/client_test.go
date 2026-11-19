@@ -272,18 +272,27 @@ func TestRenewToleratesABootstrapItCannotUse(t *testing.T) {
 	}
 }
 
-// TestRenewRefusesAForeignHost is the check on a field conflux stores and re-reads.
+// TestRenewRefusesAForeignHost is the check on a field conflux stores and re-reads. The
+// renewal URL reaches the stand-in under another name for it -- localhost, where the base
+// says 127.0.0.1 -- so only the host check, and not a failure to connect, keeps the request
+// from arriving.
 func TestRenewRefusesAForeignHost(t *testing.T) {
-	c, _ := server(t, func(w http.ResponseWriter, _ *http.Request) {
+	c, s := server(t, func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("the renewal was sent to a host the config does not name")
 		fmt.Fprint(w, `{"chain":"YQ==","notAfter":"2026-09-20T04:12:00.000Z"}`)
 	})
 
-	_, err := c.Renew(t.Context(), "https://attacker.example/ghosts/alpha/renew", "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq", asked)
+	foreign := strings.Replace(s.URL, "127.0.0.1", "localhost", 1)
+	if foreign == s.URL {
+		t.Fatalf("the stand-in is not at 127.0.0.1: %s", s.URL)
+	}
+
+	_, err := c.Renew(t.Context(), foreign+alphaRenewPath, "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq", asked)
 	if err == nil {
 		t.Fatal("Renew sent the request to a host the config does not name")
 	}
 
-	if !strings.Contains(err.Error(), "attacker.example") {
+	if !strings.Contains(err.Error(), "localhost") {
 		t.Errorf("the error should name the host it refused: %v", err)
 	}
 }

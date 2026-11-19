@@ -176,15 +176,13 @@ func TestHTTPErrorSaysWhatTheServerSaid(t *testing.T) {
 }
 
 // TestBodyIsBounded: a server that answers with a gigabyte must not be able to
-// make conflux hold it.
+// make conflux hold it. The answer is a well-formed enrolment twice the cap long, so
+// only the bound refuses it: read whole, it would be accepted.
 func TestBodyIsBounded(t *testing.T) {
 	c, _ := server(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 
-		chunk := strings.Repeat("a", 1<<16)
-		for range 64 { // 4 MiB, four times the cap
-			fmt.Fprint(w, chunk)
-		}
+		fmt.Fprintf(w, `{"credentials":"%s"}`, strings.Repeat("a", 2*maxBody))
 	})
 
 	if _, err := c.Enrol(t.Context(), asked); err == nil {

@@ -4,14 +4,20 @@ What the audit aims for, the rules it works under, and what must hold at the end
 
 ## Audit goals
 
-1. **Issues:** bugs, race conditions, and resource leaks (child processes, goroutines, file descriptors, locks, extracted files). Incorrect assumptions, especially stale assumptions about anchor behaviour, flags, or the live API. Platform-specific breakage.
+1. **Issues:** bugs, race conditions, and resource leaks (child processes, goroutines, file descriptors, locks, extracted files). Incorrect assumptions, especially stale assumptions about anchor behaviour, flags, or the live API. Platform-specific breakage. Code that departs from the Project Context's design. Performance regressions: an extraction, bring-up, status, enrolment, renewal or watcher time, or an artifact size, worse than step 5's figures or the benchmarks of the code a change touches.
 2. **Optimization:** fewer goroutines, copies, allocations and syscalls; faster extraction, bring-up and status; smaller artifacts where that doesn't change what is embedded.
-3. **Consolidation:** remove
-   - unnecessary mechanisms, gates and guards
-   - single-use helpers not tied to a public API
+3. **Consolidation:** one mechanism for each job, and none the design does not need. Consolidation unifies and removes; it does not change behaviour. A mechanism is redundant when removing it changes no outcome on any path, because something else already has its effect there. The kinds to look for:
+   - unnecessary mechanisms, gates and guards, and single-use helpers not tied to a public API
+   - double guards: a check, lock, retry or validation repeated where another already holds on every path to it; a caller's check that saves work first is an early exit, not a double
+   - duplicated state: two sources of truth for one fact
+   - repeated code: the same logic written out in more than one place, a test's scaffolding copied into another test among it, merged into one that every place uses
+   - a mechanism reimplemented instead of reused: a second retry loop, parser, atomic write or supervisor where the standard library, an existing package, or one shared by both callers would do
    - handling for cases that can't occur given this design or the current anchor and API
    - duplicated logic that anchor already enforces, except where conflux must pre-validate to give a clear error
-4. **Docs and comments:** accurate to the implementation, the current anchor, and the live API.
+
+   Not redundant, however alike they look: validation of what comes from outside the process (the API, anchor's output, disk, the host), and a backstop that something can still reach. Redundancy is proven before anything goes, never argued alone, by whoever removes it, path by path, error, exit and restart paths included: a duplicated mechanism goes only once the one kept is shown to act on every path the other did, by a mechanical equivalence (the same calls in the same order, with the same errors) or a temporary count through the area's tests; duplicated state, only once an assertion that the two agree has held through the area's tests under `-race`. What cannot be proven stays. The outcomes stay the same, and the area's tests pass unchanged, except those of a removed mechanism's own internals; one that has to change marks a design question.
+4. **Docs and comments:** accurate to the implementation, the current anchor, and the live API, and describing the code rather than its history.
+5. **Tests:** held to the test rules below, and to the same standard as production code.
 
 ## Audit areas
 

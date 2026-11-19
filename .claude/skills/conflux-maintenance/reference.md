@@ -309,3 +309,14 @@ Also needed:
 - `shellcheck`, for actionlint and `shellcheck install.sh scripts/*.sh test/*.sh`: the distro package, `pip install shellcheck-py`, or the release binary (`curl -fsSL https://github.com/koalaman/shellcheck/releases/download/$V/shellcheck-$V.linux.x86_64.tar.xz | tar -xJ -C "$S"`), on `PATH`.
 - Docker with `/dev/net/tun` and cgroups, for the container suites and the probe; where no daemon runs, `dockerd` can be started by hand. `docker run bash:3.2` checks `anchor-bins.sh` and `test/service-host.sh` against the bash a Mac has.
 - `gh`, authenticated, or the GitHub MCP tools, for the PR and its runs; `GENESIS_PIN_DEV` only where the variables API is reachable.
+
+## Sub-agents
+
+Step 6's auditors and fixers are sub-agents. What they are told is all they know, so a brief names the goal, the scope (the area, or the commits of a changes audit), the files to read first (this skill's three files), the constraints below, and the report wanted. An auditor is handed no conclusion, and a finding it reports is a claim that whoever makes it re-derives from the code.
+
+- **Read-only, here and in anchor.** An agent changes nothing in the main checkout, and nothing in anchor ever (rule 2). A fixer works in a worktree cut by hand from the branch HEAD (`git worktree add -b <name> "$S/<name>" HEAD`) and confirms `git rev-parse HEAD` first: an agent tool's own worktree isolation cuts from the default branch, `version3`. The HEAD moves while it works, so its branch is rebased onto the HEAD as it is then and taken by fast-forward, its diff checked first; a comment-only change is checked by comparing the Go tokens with comments stripped.
+- **A scratch directory of its own** under `$S`, for every temporary file: agents running at once overwrite a common name.
+- **The rules bind them.** Rule 10 holds for every agent that touches the live API, and rule 12 for every commit one makes. A design question an agent meets goes back to the main session, which asks the user; the agent goes on with what does not depend on it.
+- **Taken in turn, branches can rebase cleanly and still not compile together.** Build and vet after each is taken, and run the tests of the areas both touched.
+- **A hash a commit message cites changes with a rebase.** Cite a commit by its subject where it can move, and check before a push that every hash a message on the branch cites is on the branch.
+- **They share the host's CPUs.** Pin each agent's runs to CPUs of its own (`taskset -c`), and take a timing only where nothing else runs.

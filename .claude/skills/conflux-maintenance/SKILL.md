@@ -7,7 +7,7 @@ description: Full audit, optimization and consolidation pass over the whole conf
 
 A run starts from a freshly pulled `dev`, works on a new branch, and ends with that branch merged into `dev` through a PR whose CI is green, plus a summary message. The release, `dev` into `version3`, is the user's (CLAUDE.md). Supporting files:
 
-- [reference.md](reference.md): repo map, Make targets, binary pipeline, harness, CI/CD, anchor surface map, anchor's release build, live API contract, baseline commands, tools.
+- [reference.md](reference.md): repo map, Make targets, binary pipeline, harness, CI/CD, anchor surface map, anchor's release build, live API contract, baseline commands, tools, and how step 6's sub-agents work.
 - [standards.md](standards.md): audit goals, performance, CI/CD and test rules, threat model, design references, audit areas, invariants.
 
 ## Project context (authoritative; changes only on the user's explicit instruction)
@@ -138,9 +138,20 @@ The checks that need the real binaries (flag cross-check, shadowing, collisions)
 
 Record the before numbers with the commands in [reference.md § Baseline](reference.md#baseline): `dist` sizes per target, extraction time, `conflux up` → ready overlay against the live API, enrolment and renewal round-trips, `conflux status` latency, goroutines and allocations in the supervisor, renewal and link-watcher paths, and the CI suite durations (taken from CI, not run locally). The benchmarks are `internal/daemon/bench_test.go`; add one first for any of those paths that lacks it.
 
-### 6. Audit and fix, area by area
+### 6. Audit every area, sweep for redundancy, fix, then audit the run's own work
 
-Work through the areas in [standards.md § Audit areas](standards.md#audit-areas) against the audit goals, performance rules, threat model, CI/CD rules and test rules in the same file. For each area, fix issues and apply optimizations and consolidation. Update docs, comments and affected tests in the same change, then run only the affected tests (`go test [-race] ./internal/<pkg>/…`). A change touching goroutine lifecycle, child-process supervision, renewal timing or the watcher must pass its tests under `-race` now and CI's `integration` on the PR, with no leaked processes or goroutines.
+The areas are [standards.md § Audit areas](standards.md#audit-areas). Auditors are sub-agents handed no conclusion ([reference.md § Sub-agents](reference.md#sub-agents)).
+
+1. **Audit every area, changing nothing.** Read each whole against every audit goal, the performance rules, threat model, CI/CD rules and test rules ([standards.md](standards.md)), the Project Context, the current anchor and the live API. Class each finding: an issue, an optimisation, a consolidation, a docs or comments alignment, or a design question, asked as the Workflow says. The audits change nothing, so they run side by side.
+2. **Then audit the whole tree for redundancy** (standards.md, goal 3), with every area's findings in hand: every mechanism, whoever wrote it, against all the others across every area, and every mechanism a finding would add against what the tree already has. An area's own audit sees no copy in another, and a finding can rebuild what exists elsewhere. Each redundancy found becomes a finding of the area it falls in; one that spans areas goes to the later of them, and both areas' tests are run; a finding that would add a mechanism the tree already has is remade to reuse it.
+3. **Then make the findings, one area at a time.** One finding per commit, with its docs, comments and tests (rule 7). A fix's test runs red against the unchanged code first, and its failing output goes in the commit message. A redundancy goes only on goal 3's proof. Run only the affected tests (`go test [-race] ./internal/<pkg>/…`). A change touching goroutine lifecycle, child-process supervision, renewal timing or the watcher must pass its tests under `-race` now and CI's `integration` on the PR, with no leaked processes or goroutines.
+4. **Then audit what the run changed, as an area is audited.** Once the last area has landed, the run's own diff from where its branch was cut (the code as this run left it, which rule 1 allows), against every audit goal and the Project Context, by auditors who wrote none of it: one for each area the diff touches, and one across the areas for goal 3. The first audits read the tree before the run changed it; this one reads the run's own work, which nobody has read whole. For each change, it looks for:
+   - issues the change brought in, a performance regression among them (a step 5 number made worse, measured where a change touches extraction, bring-up, status, renewal or the watcher), and a change that does not do what its commit says;
+   - optimisation: a goroutine, copy, allocation or syscall the change added that its job does not need;
+   - consolidation: repeated code and redundant mechanisms, such as one a fix added that the tree already had, a copy a later change wrote of an earlier one, and an older mechanism a change left redundant; and every consolidation the run made, proven again by goal 3's bar, and restored where it cannot be;
+   - docs and comments that no longer say what the change made the code do, and tests that no longer test it.
+
+   What it finds is made as point 3 makes a finding, a design question among them asked, and the audit runs again over what that changed, until it finds nothing. A change made after it, such as a fix for a CI failure or an answer to a design question, is audited the same way before it is pushed.
 
 ### 7. Final local checks
 
@@ -163,7 +174,7 @@ Move `VERSION` on, in its own commit: a new major (`1.4.0` → `2.0.0`) if step 
 
 Commit on the branch, push it, and open a PR with `--base dev` (`version3` is the default branch, so the base is always named; `branch-flow` fails a PR into `version3` from anything but `dev`). Then watch its CI (`gh pr checks <n> --watch`) until every check is green. Where `gh` is not authenticated, the GitHub MCP tools do the same: `create_pull_request`, `actions_list`/`get_job_logs`, `merge_pull_request`.
 
-- A failure is read from the job's log (`gh run view <run> --log-failed`), fixed on the branch, re-checked locally with the fixed package's tests and the utility checks, pushed, and watched again. Never weaken a test, a gate or the fork guard to get green.
+- A failure is read from the job's log (`gh run view <run> --log-failed`), fixed on the branch, and re-checked locally with the fixed package's tests. Re-run only the failed job to learn whether a failure repeats; never push for a fresh result. Batch the fixes, audit them as step 6's last point says, run the utility checks, and push once. The loop ends when both hold for one tree: every check green on it, and the audit clean over every change since the last clean audit. Never weaken a test, a gate or the fork guard to get green.
 - A run that failed for the Actions budget, a runner outage or an unreachable API rather than the code is not a failure to fix: say so and do not merge.
 - With every check green, confirm from the `integration` log that `service-test` and `integration` booted systemd containers and that `integration` enrolled against api-dev (`enrolling at https://api-dev.veilnet.com.au`), then `gh pr merge <n> --merge`. The merge publishes the pre-release `dev-latest` (`release.yml`); don't trigger one by hand. Never open or merge the PR from `dev` into `version3`: that is the release, and the user's.
 

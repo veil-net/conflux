@@ -448,9 +448,10 @@ func (m *Manifest) time(key string) time.Time {
 	return t.UTC()
 }
 
-// String keeps the identity out of fmt, the way Envelope's does.
-func (m *Manifest) String() string { return "<anchor manifest, redacted>" }
+// String keeps the identity out of fmt, the way Envelope's does. It and GoString
+// take the value, so they are in the method sets of Manifest and *Manifest alike and
+// no verb on either can print the raw document, seed and bearer included.
+func (Manifest) String() string { return "<anchor manifest, redacted>" }
 
-// GoString covers %#v, which String does not and which would otherwise print the raw
-// document, seed and bearer included.
-func (m *Manifest) GoString() string { return "<anchor manifest, redacted>" }
+// GoString covers %#v, which String does not.
+func (Manifest) GoString() string { return "<anchor manifest, redacted>" }

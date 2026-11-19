@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -326,8 +327,14 @@ func TestEnvelopeRedacts(t *testing.T) {
 		t.Fatalf("Decode: %v", err)
 	}
 
-	if got := m.String(); got != "<anchor manifest, redacted>" {
-		t.Errorf("Manifest.String() = %q", got)
+	// Every verb, on the pointer and on the value: a method on the pointer alone is not
+	// in the value's method set, and fmt would print the value's raw document.
+	for _, verb := range []string{"%s", "%v", "%+v", "%#v"} {
+		for name, v := range map[string]any{"*Manifest": m, "Manifest": *m} {
+			if got := fmt.Sprintf(verb, v); got != "<anchor manifest, redacted>" {
+				t.Errorf("Sprintf(%q, %s) = %q", verb, name, got)
+			}
+		}
 	}
 }
 

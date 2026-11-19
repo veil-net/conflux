@@ -191,10 +191,11 @@ func reportConfig(d paths.Dirs, cfg *config.Config) {
 	case config.ModeProxy:
 		ui.Field("mode", "proxy — userspace, no host interface")
 	case config.ModeObserve:
-		ui.Field("mode", "observe — this host's traffic inventoried; no anchor, no realm")
+		ui.Field("mode", "observe — this host's traffic inventoried, under this machine's credential; no anchor")
+		ui.Field("taint", joinTaints(cfg.Taints))
 
-		// The anchor's settings are kept for the next up or proxy, and describe nothing that
-		// runs now.
+		// The anchor's other settings are kept for the next up or proxy, and describe nothing
+		// that runs now.
 		return
 	}
 
@@ -221,23 +222,10 @@ func reportConfig(d paths.Dirs, cfg *config.Config) {
 	}
 }
 
+// reportCredential says what the credential the anchor and the observer run under is, and how
+// its renewal goes.
 func reportCredential(d paths.Dirs, cfg *config.Config, st *config.State) {
 	held, err := heldCredential(d)
-
-	// Observing alone needs no credential. One held is the identity the next up or proxy
-	// comes back with, and is said to be kept rather than reported on.
-	if !cfg.Anchor() {
-		if err == nil && held != nil {
-			kept := "kept for the next up or proxy"
-			if st != nil && st.AnchorID != "" {
-				kept = st.AnchorID + " — " + kept
-			}
-
-			ui.Field("identity", kept)
-		}
-
-		return
-	}
 
 	switch {
 	case err != nil:
@@ -263,8 +251,13 @@ func reportCredential(d paths.Dirs, cfg *config.Config, st *config.State) {
 		return
 	}
 
+	// The identity's AnchorID, which is the anchor's name, and what an observer alone runs as.
 	if st.AnchorID != "" {
-		ui.Field("anchor", st.AnchorID)
+		if cfg.Anchor() {
+			ui.Field("anchor", st.AnchorID)
+		} else {
+			ui.Field("identity", st.AnchorID)
+		}
 	}
 
 	left := time.Until(st.NotAfter)

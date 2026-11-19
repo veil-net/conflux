@@ -2,13 +2,16 @@ package cli
 
 import (
 	"bytes"
+	"encoding/base64"
 	"flag"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/ui"
 )
@@ -21,10 +24,10 @@ func TestObserveRefusesAnchorctlFlags(t *testing.T) {
 		args []string
 		says []string
 	}{
-		{[]string{"observe", "-start"}, []string{"conflux anchorctl observe -start", "conflux up --observe"}},
+		{[]string{"observe", "-start"}, []string{"conflux anchorctl observe -start -manifest FILE", "conflux up --observe"}},
 		{[]string{"observe", "-stop"}, []string{"conflux down", "--no-observe", "conflux anchorctl observe -stop"}},
 		{[]string{"observe", "-socket", "/run/x.sock"}, []string{"conflux anchorctl observe -socket /run/x.sock"}},
-		{[]string{"observe", "--loopback", "-start=true"}, []string{"conflux anchorctl observe -start"}},
+		{[]string{"observe", "--loopback", "-start=true"}, []string{"conflux anchorctl observe -start -manifest FILE"}},
 	} {
 		_, errOut, code := capture(t, tc.args...)
 
@@ -285,5 +288,75 @@ func TestALapsedObserverPointsAtConfluxRenew(t *testing.T) {
 
 	if said := out.String(); !strings.Contains(said, `"conflux renew" renews it`) || strings.Contains(said, "anchorctl observe -cred") {
 		t.Errorf("a lapsed observer is reported as:\n%s", said)
+	}
+}
+
+// TestObserveEnrolsAsUpDoes: the observer runs under the machine's own credential, so conflux
+// observe takes up's enrolment flags -- the API, and the taints, repeated -- for the machine
+// it enrols when it holds none.
+func TestObserveEnrolsAsUpDoes(t *testing.T) {
+	f := newObserveFlags()
+
+	for _, name := range []string{"api", "taint"} {
+		if f.fs.Lookup(name) == nil {
+			t.Fatalf("conflux observe has no --%s", name)
+		}
+	}
+
+	if hint := f.anchorctls([]string{"--taint", "office", "--api", "https://api-dev.veilnet.com.au"}); hint != "" {
+		t.Errorf("up's enrolment flags were handed back to anchorctl: %s", hint)
+	}
+
+	if err := f.fs.Parse([]string{"--taint", "office", "--taint", "lab", "--api", "https://api-dev.veilnet.com.au"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := f.fs.Lookup("taint").Value.String(); got != "office,lab" {
+		t.Errorf("--taint twice reads %q", got)
+	}
+
+	if got := f.fs.Lookup("api").Value.String(); got != "https://api-dev.veilnet.com.au" {
+		t.Errorf("--api reads %q", got)
+	}
+}
+
+// TestStatusReportsTheObserversCredential: a machine that only observes runs under its
+// credential, and status reports it as it reports an anchor's -- until when it is valid, and
+// the identity it runs as -- rather than as one kept for the next anchor.
+func TestStatusReportsTheObserversCredential(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", t.TempDir())
+
+	d := paths.Default()
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := config.SaveManifest(d, config.Envelope(base64.StdEncoding.EncodeToString([]byte(alphaDoc)))); err != nil {
+		t.Fatal(err)
+	}
+
+	const id = "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq"
+
+	notAfter := time.Now().Add(20 * 24 * time.Hour).UTC().Truncate(time.Second)
+	cfg := &config.Config{Mode: config.ModeObserve, Observer: &config.Observer{}, Taints: []string{"brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf"}}
+
+	var out bytes.Buffer
+
+	old := ui.Out
+	ui.Out = &out
+
+	t.Cleanup(func() { ui.Out = old })
+
+	reportCredential(d, cfg, &config.State{AnchorID: id, NotAfter: notAfter})
+
+	said := out.String()
+	for _, want := range []string{"identity", id, "valid until " + notAfter.Format(time.RFC3339)} {
+		if !strings.Contains(said, want) {
+			t.Errorf("status should say %q; it said:\n%s", want, said)
+		}
+	}
+
+	if strings.Contains(said, "kept for the next") {
+		t.Errorf("status reports the observer's credential as kept for an anchor:\n%s", said)
 	}
 }

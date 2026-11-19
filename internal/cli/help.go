@@ -24,9 +24,9 @@ a reboot brings it back with nothing typed. The second does the same without ask
 the kernel for anything, which is what to use where you cannot get CAP_NET_ADMIN.
 The third is either of those over a link instead of the host's IP network: --uplink
 decides the medium, and the command it is written on decides what this machine gets.
-The fourth joins nothing: it records whether each flow the host's traffic carries has
-a post-quantum key exchange, from every boot, and --observe on up or proxy does the
-same beside an anchor.
+The fourth runs no anchor: it records whether each flow the host's traffic carries has
+a post-quantum key exchange, from every boot, under this machine's own credential,
+enrolled as the first enrols; --observe on up or proxy does the same beside an anchor.
 `
 
 const collisions = `Five of conflux's names are also anchorctl's, and each is resolved rather than guessed:

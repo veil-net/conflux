@@ -16,11 +16,13 @@ import (
 //
 // conflux's decides what the machine runs: the daemon's observer and no anchor, inventorying
 // the cryptography of the host's own traffic -- which services it reaches, serves or passes
-// on, over which protocols, and whether each key exchange is post-quantum -- and joining no
-// realm, so with no enrolment, no credential and no taint. The observer runs until it is
-// stopped and starts again at every boot; each record of a flow is sent to the collector the
-// export names as it is made, and kept in the daemon's inventory whether or not one is.
-// anchorctl's observe starts and stops the observer of a running daemon, and reports on it.
+// on, over which protocols, and whether each key exchange is post-quantum. The observer runs
+// under the machine's own credential, as an anchor does, so a machine with none is enrolled
+// first, exactly as up enrols it: alpha in the taint given or one minted, or the guardian's
+// credential conflux enrol installed. It runs until it is stopped and starts again at every
+// boot; each record of a flow is sent to the collector the export names as it is made, and kept
+// in the daemon's inventory whether or not one is. anchorctl's observe starts and stops the
+// observer of a running daemon, and reports on it.
 //
 // The collision is resolved by shape, as conflux proxy's is: conflux observe takes its own
 // flags and no argument, and every other dash-prefixed word -- anchorctl's -start, -stop,
@@ -90,6 +92,22 @@ func runObserve(ctx context.Context, args []string) int {
 	cfg.Mode = config.ModeObserve
 	cfg.Observer = &config.Observer{Loopback: *f.loopback, HideNames: *f.hideNames}
 
+	if *f.apiBase != "" {
+		cfg.APIBaseURL = *f.apiBase
+	}
+
+	// The credential the observer runs under is decided as up decides it: one held --
+	// enrolled before, or installed by conflux enrol -- fixes the taints; with none, --taint is
+	// the request, and one is minted for a machine that names none. The supervisor enrols.
+	held, err := heldCredential(d)
+	if err != nil {
+		return fail(err)
+	}
+
+	if err := chooseTaints(cfg, f.taints, held); err != nil {
+		return fail(err)
+	}
+
 	return bring(ctx, d, cfg, "observe", false)
 }
 
@@ -111,10 +129,10 @@ func confirmObserving(d paths.Dirs, cfg *config.Config, yes bool) bool {
 		shape = "userspace"
 	}
 
-	what := fmt.Sprintf("this machine runs an anchor (%s). Observing alone stops it: the machine leaves its realm\n"+
-		"  until the next conflux up or proxy, which come back with the identity and settings kept.\n"+
-		"  conflux up --observe or conflux proxy --observe observes beside the anchor instead,\n"+
-		"  and conflux anchorctl observe reports on a running observer.", shape)
+	what := fmt.Sprintf("this machine runs an anchor (%s). Observing alone stops it: the anchor leaves its realm\n"+
+		"  until the next conflux up or proxy, which come back with the settings kept, and the observer\n"+
+		"  runs under the same identity meanwhile. conflux up --observe or conflux proxy --observe\n"+
+		"  observes beside the anchor instead, and conflux anchorctl observe reports on a running observer.", shape)
 
 	if !ui.IsTerminal() {
 		ui.Errf("%s\n  Pass --yes to say so explicitly; a scripted observe will not stop an anchor by default.", what)
@@ -133,7 +151,8 @@ type observeFlags struct {
 	fs *flag.FlagSet
 
 	loopback, hideNames, exportInsecure, yes *bool
-	export                                   *string
+	export, apiBase                          *string
+	taints                                   repeated
 }
 
 func newObserveFlags() *observeFlags {
@@ -148,15 +167,22 @@ func newObserveFlags() *observeFlags {
 	f.export = fs.String("export", "", exportUsage)
 	f.exportInsecure = fs.Bool("export-insecure", false, exportInsecureUsage)
 	f.yes = fs.Bool("yes", false, "stop the anchor this machine runs without asking: it leaves its realm, and keeps its identity and settings")
+	f.apiBase = fs.String("api", "", "enrolment API base URL")
+	fs.Var(&f.taints, "taint", taintUsage)
 
 	fs.Usage = func() {
 		ui.Printf("conflux observe — inventory the cryptography of this host's traffic, with no anchor\n\n" +
-			"  conflux observe [--loopback] [--hide-names] [--export HOST:PORT [--export-insecure]] [--yes]\n\n" +
+			"  conflux observe [--taint T] [--api URL] [--loopback] [--hide-names]\n" +
+			"                  [--export HOST:PORT [--export-insecure]] [--yes]\n\n" +
 			"Runs the daemon's observer and nothing else. The host copies the start of every flow\n" +
 			"its interfaces carry to it, and it records which services the host reaches, serves\n" +
 			"or passes on, over which protocols, and whether each key exchange is post-quantum,\n" +
 			"hybrid, classical or none, and which side held it back. It carries nothing, so it\n" +
-			"can slow or break nothing, and it joins no realm: nothing is enrolled.\n\n" +
+			"can slow or break nothing.\n\n" +
+			"It runs under this machine's own credential, as an anchor does, renewed as an\n" +
+			"anchor's is. A machine with none is enrolled first, exactly as conflux up enrols:\n" +
+			"with --taint, or a taint minted for it, or a guardian's credential installed\n" +
+			"beforehand with conflux enrol --manifest.\n\n" +
 			"It runs until it is stopped, and from every boot. With --export, or an export with\n" +
 			"flows in conflux.json, each record goes to that collector as it is made; either way\n" +
 			"the daemon keeps an inventory of them, which conflux inventory prints.\n\n" +
@@ -183,10 +209,12 @@ func (f *observeFlags) anchorctls(args []string) string {
 
 		switch name {
 		case "start":
-			return "-start is anchorctl's observe, which starts the observer of a running daemon until it next starts.\n\n" +
-				"  conflux observe                  this machine observes, from now and from every boot\n" +
-				"  conflux up --observe             ... beside an anchor with an interface\n" +
-				"  conflux anchorctl observe -start anchorctl's own, uninterpreted"
+			return "-start is anchorctl's observe, which starts the observer of a running daemon until it next starts,\n" +
+				"under a credential it is handed.\n\n" +
+				"  conflux observe                                  this machine observes under its own credential,\n" +
+				"                                                   from now and from every boot\n" +
+				"  conflux up --observe                             ... beside an anchor with an interface\n" +
+				"  conflux anchorctl observe -start -manifest FILE  anchorctl's own, uninterpreted, under FILE's credential"
 		case "stop":
 			return "-stop is anchorctl's observe, which stops the observer until the daemon next starts.\n\n" +
 				"  conflux down                     stop everything now; a reboot brings it back\n" +

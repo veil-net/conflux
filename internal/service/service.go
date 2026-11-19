@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/update"
@@ -81,9 +82,12 @@ func Place(d paths.Dirs) (string, error) {
 	}
 
 	dst := d.ServiceExecutable()
-	aside := dst + ".old"
 
-	_ = os.Remove(aside) // a copy a service ran until the last Place; still running is fine
+	// A copy a service ran until the last Place, which only Windows moves aside; still
+	// running is fine.
+	if runtime.GOOS == "windows" {
+		_ = os.Remove(dst + ".old")
+	}
 
 	if src == dst || sameFile(src, dst) {
 		return dst, nil

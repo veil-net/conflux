@@ -189,7 +189,11 @@ type Config struct {
 	ServeExit bool `json:"serveExit,omitempty"`
 	UseExit   bool `json:"useExit,omitempty"`
 
-	TUNName    string `json:"tunName,omitempty"`
+	// TUNName is the interface name to ask for, and empty for none: anchor then names the
+	// interface after itself, `anchor` and the start of its AnchorID, on the platforms that
+	// honour a name asked for (Linux, Windows), and the others number their own.
+	TUNName string `json:"tunName,omitempty"`
+
 	APIBaseURL string `json:"apiBaseUrl,omitempty"`
 
 	// Export is where this machine's telemetry goes, and nil is the normal case:
@@ -245,13 +249,6 @@ func (c *Config) OverlayIPv4() string {
 	}
 
 	return *c.IPv4
-}
-
-// TUNInterface is the interface name to ask for, and empty for none: anchor then names
-// the interface after itself, `anchor` and the start of its AnchorID, on the platforms
-// that honour a name asked for (Linux, Windows), and the others number their own.
-func (c *Config) TUNInterface() string {
-	return c.TUNName
 }
 
 // APIBase is the enrolment endpoint, defaulted.

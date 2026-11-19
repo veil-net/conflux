@@ -90,7 +90,7 @@ func ModeFromConfig(c *config.Config, anchorDir string) StartMode {
 	}
 
 	if m.TUN {
-		m.TUNName = c.TUNInterface()
+		m.TUNName = c.TUNName
 	}
 
 	return m

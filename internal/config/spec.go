@@ -412,7 +412,7 @@ func splitBinding(entry string) (spec string, names []string) {
 	return entry[:i], strings.Split(entry[i+1:], "+")
 }
 
-// ValidateSubnet refuses the entries anchor refuses without looking at the host.
+// validateSubnet refuses the entries anchor refuses without looking at the host.
 //
 // An entry is an interface name, which anchor expands to every private network on
 // it; a prefix, which must match an attached private network exactly; or *, every
@@ -426,15 +426,8 @@ func splitBinding(entry string) (spec string, names []string) {
 //
 // A comma is refused, since -serve-subnets is a comma-separated flag, and so is a
 // slash outside a prefix, since no interface name holds one. Whether a binding names
-// this machine's own compartments is ValidateSubnets', which knows them.
-func ValidateSubnet(entry string) error {
-	_, err := validateSubnet(entry)
-
-	return err
-}
-
-// validateSubnet is ValidateSubnet, returning the compartments the entry binds to as well,
-// so a list is split once.
+// this machine's own compartments is ValidateSubnets', which knows them. It returns the
+// compartments the entry binds to, so a list is split once.
 func validateSubnet(entry string) ([]string, error) {
 	if strings.Contains(entry, ",") {
 		return nil, fmt.Errorf(

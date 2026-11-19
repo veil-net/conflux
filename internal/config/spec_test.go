@@ -175,15 +175,15 @@ func TestValidateTaints(t *testing.T) {
 	}
 }
 
-// TestValidateSubnet is what anchor refuses without looking at the host
+// TestValidateSubnet is what anchor refuses of an entry without looking at the host
 // (internal/hostnet.Select and IsPrivateNetwork).
 func TestValidateSubnet(t *testing.T) {
 	for _, in := range []string{
 		"eth1", "192.168.1.0/24", "10.0.0.0/8", "172.20.0.0/16", "100.64.0.0/10", "fd12:3456::/64",
 		"*", "eth1@office", "192.168.1.0/24@office+lab", "*@office", "eth@1@office", "eth1@team/a",
 	} {
-		if err := ValidateSubnet(in); err != nil {
-			t.Errorf("ValidateSubnet(%q) = %v", in, err)
+		if _, err := validateSubnet(in); err != nil {
+			t.Errorf("validateSubnet(%q) = %v", in, err)
 		}
 	}
 
@@ -205,16 +205,16 @@ func TestValidateSubnet(t *testing.T) {
 		"*@":                                  "a binding to an empty compartment",
 		strings.Repeat("e", MaxSubnetEntry+1): "longer than anchor's entry",
 	} {
-		if err := ValidateSubnet(in); err == nil {
-			t.Errorf("ValidateSubnet(%q) succeeded; it is %s", in, why)
+		if _, err := validateSubnet(in); err == nil {
+			t.Errorf("validateSubnet(%q) succeeded; it is %s", in, why)
 		}
 	}
 
-	if err := ValidateSubnet("192.168.1.7/24"); err == nil || !strings.Contains(err.Error(), "192.168.1.0/24") {
+	if _, err := validateSubnet("192.168.1.7/24"); err == nil || !strings.Contains(err.Error(), "192.168.1.0/24") {
 		t.Errorf("a prefix with host bits should name the network it meant, got %v", err)
 	}
 
-	if err := ValidateSubnet("::ffff:10.0.0.0/104"); err == nil || !strings.Contains(err.Error(), "10.0.0.0/8") {
+	if _, err := validateSubnet("::ffff:10.0.0.0/104"); err == nil || !strings.Contains(err.Error(), "10.0.0.0/8") {
 		t.Errorf("a mapped IPv4 network should name how to write it, got %v", err)
 	}
 }

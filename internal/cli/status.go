@@ -193,7 +193,7 @@ func reportConfig(d paths.Dirs, cfg *config.Config) {
 	case config.ModeTUN:
 		// What was asked for: the anchor's own answer, the name it holds, is its status's
 		// `interface` row below.
-		ui.Field("mode", "tun — interface "+interfaceLine(runtime.GOOS, cfg.TUNInterface(), ""))
+		ui.Field("mode", "tun — interface "+interfaceLine(runtime.GOOS, cfg.TUNName, ""))
 	case config.ModeProxy:
 		ui.Field("mode", "proxy — userspace, no host interface")
 	case config.ModeObserve:

@@ -260,7 +260,7 @@ func reportAnchorRows(d paths.Dirs, cfg *config.Config, st anchorctl.Status) {
 	}
 
 	if cfg.Mode == config.ModeTUN {
-		ui.Field("interface", interfaceLine(runtime.GOOS, cfg.TUNInterface(), st.Interface))
+		ui.Field("interface", interfaceLine(runtime.GOOS, cfg.TUNName, st.Interface))
 	} else {
 		for _, p := range cfg.Proxies {
 			ui.Field("serving", p)

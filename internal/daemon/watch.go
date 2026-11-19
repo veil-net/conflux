@@ -127,7 +127,7 @@ func (s *Supervisor) watch(ctx context.Context, cfg *config.Config, every time.D
 				continue
 			}
 
-			if !s.restartObserver(ctx, cfg, st.Observer, observer) {
+			if !s.restartObserver(ctx, st.Observer, observer) {
 				continue
 			}
 
@@ -184,12 +184,12 @@ func (s *Supervisor) rebuildAnchor(ctx context.Context, why string, link bool, k
 	return retrying
 }
 
-// restartObserver starts an observer whose capture ended again, and says whether to give
-// up on it.
-func (s *Supervisor) restartObserver(ctx context.Context, cfg *config.Config, was anchorctl.Observer, k *keeper) bool {
+// restartObserver starts an observer whose capture ended again, under the credential bringUp
+// holds for it, and says whether to give up on it.
+func (s *Supervisor) restartObserver(ctx context.Context, was anchorctl.Observer, k *keeper) bool {
 	s.report().Warn("the observer stopped (%s); starting it again", strings.TrimPrefix(was.Note, "not observing: "))
 
-	err := s.startObserver(ctx, cfg)
+	_, err := bringUp(ctx, s.Dirs, s.ctl, s.report(), s.priv.Dir, false, parts{observer: true})
 	if err == nil {
 		s.report().Step("the observer is back")
 		k.ok()
@@ -334,8 +334,8 @@ func (s *Supervisor) linkIsDead(ctx context.Context, device string, zeroSince *t
 
 // rebuild stops whatever anchor is left and builds it again from the configuration.
 //
-// bringUp rather than anything of its own: it is the path `up`, `proxy` and every
-// boot already take, so a rebuilt anchor cannot be a subtly different one from the one
+// bringUp rather than anything of its own: it is the path `up`, `proxy`, `observe` and
+// every boot already take, so a rebuilt anchor cannot be a subtly different one from the one
 // a reboot would start. The daemon is untouched, so this costs one anchor's sessions
 // and not the process.
 func (s *Supervisor) rebuild(ctx context.Context, link bool) error {
@@ -349,12 +349,12 @@ func (s *Supervisor) rebuild(ctx context.Context, link bool) error {
 
 	// An ended link's rebuild is counted in the state bringUp writes anyway, where status
 	// reads it: a machine reopening its anchor every few minutes has a failing cable.
-	started, err := bringUp(ctx, s.Dirs, s.ctl, s.report(), s.priv.Dir, link)
+	up, err := bringUp(ctx, s.Dirs, s.ctl, s.report(), s.priv.Dir, link, parts{anchor: true})
 	if err != nil {
 		return err
 	}
 
-	s.signalReady(started.ID)
+	s.signalReady(up.id)
 
 	return nil
 }

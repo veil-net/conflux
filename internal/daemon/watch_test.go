@@ -3,7 +3,6 @@ package daemon
 import (
 	"context"
 	"errors"
-	"github.com/veil-net/conflux/internal/config"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,7 +11,9 @@ import (
 	"time"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
+	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/enrol"
+	"github.com/veil-net/conflux/internal/paths"
 )
 
 func TestDevicePath(t *testing.T) {
@@ -268,7 +269,7 @@ func TestAReopenedLinkIsCounted(t *testing.T) {
 	ctl := fakeCtl(t)
 
 	for _, reopened := range []bool{false, true, true} {
-		if _, err := bringUp(t.Context(), d, ctl, nopReporter{}, d.RootAnchorDir(), reopened); err != nil {
+		if _, err := bringUp(t.Context(), d, ctl, nopReporter{}, d.RootAnchorDir(), reopened, parts{anchor: true}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -283,6 +284,19 @@ func TestAReopenedLinkIsCounted(t *testing.T) {
 	}
 }
 
+// observingAlone saves cfg, observing alone in the taint supervised configures, with a current
+// credential to observe under: what the watcher's restart of an observer starts it on.
+func observingAlone(t *testing.T, d paths.Dirs, cfg *config.Config) {
+	t.Helper()
+
+	cfg.Taints = []string{"t"}
+	if err := config.Save(d, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	credentialed(t, d)
+}
+
 // TestTheWatcherStartsAFailedObserverAgain: an observer whose capture ended is started
 // again; one stopped by hand, or never started, is left as it is.
 func TestTheWatcherStartsAFailedObserverAgain(t *testing.T) {
@@ -295,6 +309,7 @@ func TestTheWatcherStartsAFailedObserverAgain(t *testing.T) {
 			t.Setenv(fakeAnchorctlObserverEnv, row)
 
 			s, log := supervised(t, "1")
+			observingAlone(t, s.Dirs, cfg)
 
 			ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
 			defer cancel()
@@ -317,11 +332,11 @@ func TestTheWatcherGivesUpOnAnObserverTheHostRefuses(t *testing.T) {
 	t.Setenv(fakeAnchorctlCaptureEnv, "1")
 
 	s, log := supervised(t, "1")
+	cfg := &config.Config{Mode: config.ModeObserve, Observer: &config.Observer{}}
+	observingAlone(t, s.Dirs, cfg)
 
 	gaveUp := make(chan bool, 1)
-	go func() {
-		gaveUp <- s.watch(t.Context(), &config.Config{Mode: config.ModeObserve, Observer: &config.Observer{}}, time.Millisecond)
-	}()
+	go func() { gaveUp <- s.watch(t.Context(), cfg, time.Millisecond) }()
 
 	select {
 	case got := <-gaveUp:

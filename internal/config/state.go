@@ -15,22 +15,23 @@ const StateVersion = 1
 // State is what conflux worked out, as against what the operator asked for.
 //
 // Most of it is re-learned by the next start: the credential window from the manifest,
-// and the AnchorID from what `anchorctl start` reports. Not all of it. A renewal names
-// the anchor by its AnchorID and anchor will not start on an expired credential, so a
-// machine whose credential has expired and whose state.json is gone has no way to learn
-// its AnchorID again, and is refused for good until it is given a new identity. The
-// manifest, the one thing recoverable from nowhere at all, is a file of its own.
+// and the AnchorID from what `anchorctl start` reports, or the observer's start. Not all of
+// it. A renewal names the identity by its AnchorID and neither starts on an expired
+// credential, so a machine whose credential has expired and whose state.json is gone has no
+// way to learn its AnchorID again, and is refused for good until it is given a new identity.
+// The manifest, the one thing recoverable from nowhere at all, is a file of its own.
 type State struct {
 	Version int `json:"version"`
 
 	// AnchorID is this machine's permanent name in the realm, derived from the
-	// identity seed and the realm root. It is what the renewal route needs, and
-	// it is the half that does not change.
+	// identity seed and the realm root: what its anchor reports starting as, and its
+	// observer running as. It is what the renewal route needs, and it is the half that
+	// does not change.
 	AnchorID string `json:"anchorId,omitempty"`
 
-	// IssuedAt and NotAfter bound the credential the running anchor holds. Both are
-	// mirrored from the manifest so the renewal timer needs no other state, and both
-	// are rewritten at every start and every renewal the anchor installs.
+	// IssuedAt and NotAfter bound the credential what runs holds, the anchor or the
+	// observer. Both are mirrored from the manifest so the renewal timer needs no other
+	// state, and both are rewritten at every start and every renewal installed.
 	IssuedAt time.Time `json:"issuedAt,omitzero"`
 	NotAfter time.Time `json:"notAfter,omitzero"`
 

@@ -14,6 +14,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/libexec"
+	"github.com/veil-net/conflux/internal/paths"
 )
 
 // supervised is a supervisor over the stand-in anchord in the given mode, with the
@@ -259,22 +260,37 @@ func ran(t *testing.T, log string) []string {
 	return strings.Fields(string(b))
 }
 
-// TestObservingAloneStartsNoAnchor: a machine that only observes has its daemon started
-// able to, and the observer started in it, and nothing else -- no anchor, no enrolment, no
-// credential -- and is ready once the observer is.
-func TestObservingAloneStartsNoAnchor(t *testing.T) {
+// credentialed gives d a current credential in the taint supervised configures, which nothing
+// asks to renew yet.
+func credentialed(t *testing.T, d paths.Dirs) {
+	t.Helper()
+
+	if err := config.SaveManifest(d, handed(t, newIssuer(t), time.Now(), time.Now().Add(30*24*time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestObservingAloneEnrolsFirstAndStartsNoAnchor: a machine that only observes runs the
+// observer under its own credential, so it enrols first, as up does, and hands the observer the
+// manifest it saved, on stdin; it records the identity the observer reports running as, which
+// its renewals name; it starts no anchor; and it is ready once the observer is.
+func TestObservingAloneEnrolsFirstAndStartsNoAnchor(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("a console control event needs the console this test shares")
 	}
 
 	t.Setenv(fakeAnchorctlStatusEnv, "none")
 	t.Setenv(fakeAnchorctlObserverEnv, "running")
-
 	t.Setenv(fakeAnchordListenEnv, "1")
 
-	s, log := supervised(t, "serve")
+	observed := filepath.Join(t.TempDir(), "observed")
+	t.Setenv(fakeAnchorctlObservedEnv, observed)
 
-	if err := config.Save(s.Dirs, &config.Config{Mode: config.ModeObserve, Observer: &config.Observer{}}); err != nil {
+	s, log := supervised(t, "serve")
+	api, asked, _ := enroller(t, []string{"t"})
+
+	cfg := &config.Config{Mode: config.ModeObserve, Observer: &config.Observer{}, Taints: []string{"t"}, APIBaseURL: api.URL}
+	if err := config.Save(s.Dirs, cfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -282,34 +298,39 @@ func TestObservingAloneStartsNoAnchor(t *testing.T) {
 
 	eventually(t, "the readiness marker", func() bool { return IsReady(s.Dirs) })
 
-	if b, _ := os.ReadFile(s.Dirs.ReadyFile()); !strings.Contains(string(b), "observer") {
-		t.Errorf("the marker is %q, which does not say the observer is up", b)
-	}
-
 	if err := stop(); err != nil {
 		t.Errorf("the cycle ended with %v", err)
 	}
 
 	cmds := ran(t, log)
-	if !slices.Contains(cmds, "observe") {
-		t.Errorf("anchorctl ran %v: the observer was never started", cmds)
-	}
-
 	if slices.Contains(cmds, "start") || slices.Contains(cmds, "renew") {
 		t.Errorf("anchorctl ran %v: observing alone started an anchor", cmds)
 	}
 
-	if config.HasManifest(s.Dirs) {
-		t.Error("observing alone enrolled")
+	saved, err := config.LoadManifest(s.Dirs)
+	if err != nil {
+		t.Fatalf("observing alone enrolled nothing: %v", err)
+	}
+
+	if !slices.Equal(*asked, cfg.Taints) {
+		t.Errorf("enrolled in %v, want %v", *asked, cfg.Taints)
+	}
+
+	if got, _ := os.ReadFile(observed); strings.TrimSpace(string(got)) != strings.TrimSpace(string(saved)) {
+		t.Errorf("the observer was handed %q on stdin, want the manifest saved", got)
+	}
+
+	if st, _ := config.LoadState(s.Dirs); st.AnchorID != fakeAnchorID {
+		t.Errorf("the state records AnchorID %q, want the observer's %q", st.AnchorID, fakeAnchorID)
 	}
 }
 
-// TestTheObserverOutlivesAnAnchorThatCannotComeUp: beside an anchor, the observer starts
-// first, and an anchor that cannot come up for now -- an enrolment nobody answers -- leaves
-// the daemon, the observer and its inventory running, for the watcher to bring the anchor up
-// later, rather than ending the cycle and the inventory with it. The service manager is told
-// the unit started, or systemd would fail it after TimeoutStartSec and take the observer down
-// anyway; the marker, which says an anchor is up, is not written.
+// TestTheObserverOutlivesAnAnchorThatCannotComeUp: beside an anchor, the observer starts once
+// the credential is held and before the anchor, and an anchor that cannot come up for now -- a
+// start anchorctl refuses -- leaves the daemon, the observer and its inventory running, for the
+// watcher to bring the anchor up later, rather than ending the cycle and the inventory with it.
+// The service manager is told the unit started, or systemd would fail it after TimeoutStartSec
+// and take the observer down anyway; the marker, which says an anchor is up, is not written.
 func TestTheObserverOutlivesAnAnchorThatCannotComeUp(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("a console control event needs the console this test shares")
@@ -317,22 +338,27 @@ func TestTheObserverOutlivesAnAnchorThatCannotComeUp(t *testing.T) {
 
 	t.Setenv(fakeAnchorctlStatusEnv, "none")
 	t.Setenv(fakeAnchorctlObserverEnv, "running")
-
+	t.Setenv(fakeAnchorctlFailEnv, "start")
 	t.Setenv(fakeAnchordListenEnv, "1")
+
+	observed := filepath.Join(t.TempDir(), "observed")
+	t.Setenv(fakeAnchorctlObservedEnv, observed)
 
 	s, log := supervised(t, "serve")
 	s.Ready = make(chan struct{})
 
 	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, Observer: &config.Observer{},
-		Proxies: []string{"8080=127.0.0.1:1"}, APIBaseURL: "http://127.0.0.1:1"}
+		Proxies: []string{"8080=127.0.0.1:1"}}
 	if err := config.Save(s.Dirs, cfg); err != nil {
 		t.Fatal(err)
 	}
 
+	credentialed(t, s.Dirs)
+
 	stop := cycling(t, s)
 
-	// Closed once the anchor's start has been refused -- nothing listens on port 1 -- and the
-	// cycle has decided to go on without it.
+	// Closed once the anchor's start has been refused and the cycle has decided to go on
+	// without it.
 	eventually(t, "the service manager being told the unit started", func() bool {
 		select {
 		case <-s.Ready:
@@ -350,8 +376,58 @@ func TestTheObserverOutlivesAnAnchorThatCannotComeUp(t *testing.T) {
 		t.Errorf("the cycle ended with %v, where the anchor's failure should have left it running", err)
 	}
 
-	if cmds := ran(t, log); slices.Index(cmds, "observe") < 0 || slices.Contains(cmds, "start") {
-		t.Errorf("anchorctl ran %v; want the observer started and no anchor", cmds)
+	if cmds := ran(t, log); slices.Index(cmds, "observe") < 0 || slices.Index(cmds, "observe") > slices.Index(cmds, "start") {
+		t.Errorf("anchorctl ran %v; want the observer started, then the anchor's start", cmds)
+	}
+
+	if _, err := os.Stat(observed); err != nil {
+		t.Errorf("the observer was handed no credential, so it never ran: %v", err)
+	}
+}
+
+// TestACredentialThatCannotBeHadEndsTheCycle: the observer runs under the machine's credential
+// as the anchor does, so an enrolment the API does not answer leaves nothing to run: the cycle
+// ends, as up's does, for the restart loop to try again, with no observer started and nothing
+// told the unit started.
+func TestACredentialThatCannotBeHadEndsTheCycle(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a console control event needs the console this test shares")
+	}
+
+	t.Setenv(fakeAnchorctlStatusEnv, "none")
+	t.Setenv(fakeAnchorctlObserverEnv, "running")
+	t.Setenv(fakeAnchordListenEnv, "1")
+	t.Setenv("CONFLUX_ALLOW_INSECURE_API", "1")
+
+	s, log := supervised(t, "serve")
+	s.Ready = make(chan struct{})
+
+	for name, cfg := range map[string]*config.Config{
+		"observing alone":  {Mode: config.ModeObserve, Observer: &config.Observer{}},
+		"beside an anchor": {Mode: config.ModeProxy, Observer: &config.Observer{}, Proxies: []string{"8080=127.0.0.1:1"}},
+	} {
+		cfg.Taints, cfg.APIBaseURL = []string{"t"}, "http://127.0.0.1:1"
+		if err := config.Save(s.Dirs, cfg); err != nil {
+			t.Fatal(err)
+		}
+
+		var err error
+
+		returns(t, name+": a cycle with no credential to be had", func() { err = s.cycle(t.Context()) })
+
+		if err == nil {
+			t.Errorf("%s: the cycle ended with no error", name)
+		}
+	}
+
+	select {
+	case <-s.Ready:
+		t.Error("the unit was said to have started")
+	default:
+	}
+
+	if cmds := ran(t, log); slices.Contains(cmds, "observe") {
+		t.Errorf("anchorctl ran %v; the observer was started with no credential", cmds)
 	}
 }
 
@@ -368,9 +444,11 @@ func TestAnObserverTheHostRefusesEndsObservingAlone(t *testing.T) {
 
 	s, _ := supervised(t, "serve")
 
-	if err := config.Save(s.Dirs, &config.Config{Mode: config.ModeObserve, Observer: &config.Observer{}}); err != nil {
+	if err := config.Save(s.Dirs, &config.Config{Mode: config.ModeObserve, Observer: &config.Observer{}, Taints: []string{"t"}}); err != nil {
 		t.Fatal(err)
 	}
+
+	credentialed(t, s.Dirs)
 
 	var err error
 

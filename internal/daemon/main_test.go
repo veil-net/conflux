@@ -22,10 +22,11 @@ import (
 // when set, names a file the stand-in anchorctl appends each command it ran to,
 // fakeAnchorctlFailEnv a command it refuses, and fakeAnchorctlStatusEnv what its
 // status says: "running", or "none" for a daemon holding no anchor. fakeAnchorctlObserverEnv
-// is the observer's row in it -- "running", "stopped", "failed", or none at all -- and
+// is the observer's row in it -- "running", "failed", or anything else not observing -- and
 // fakeAnchorctlCaptureEnv set makes `observe -start` refuse as a host that will not let the
 // daemon capture does. fakeAnchorctlRenewedEnv names a file `renew` writes the chain it was
-// handed on stdin to.
+// handed on stdin to, and fakeAnchorctlObservedEnv one `observe -start` writes the manifest it
+// was handed to.
 const (
 	fakeAnchorctlEnv         = "CONFLUX_TEST_FAKE_ANCHORCTL"
 	fakeAnchorctlLogEnv      = "CONFLUX_TEST_FAKE_ANCHORCTL_LOG"
@@ -34,6 +35,7 @@ const (
 	fakeAnchorctlObserverEnv = "CONFLUX_TEST_FAKE_ANCHORCTL_OBSERVER"
 	fakeAnchorctlCaptureEnv  = "CONFLUX_TEST_FAKE_ANCHORCTL_NO_CAPTURE"
 	fakeAnchorctlRenewedEnv  = "CONFLUX_TEST_FAKE_ANCHORCTL_RENEWED"
+	fakeAnchorctlObservedEnv = "CONFLUX_TEST_FAKE_ANCHORCTL_OBSERVED"
 	fakeAnchordEnv           = "CONFLUX_TEST_FAKE_ANCHORD"
 	fakeAnchordListenEnv     = "CONFLUX_TEST_FAKE_ANCHORD_LISTEN"
 )
@@ -68,6 +70,19 @@ anchor_peers_known                                    1
 anchor_resource_held{kind=conns}                      1
 anchor_rtt_seconds                                    n=4 mean=0.00214123575 min=0.001294105 max=0.002989687
 anchor_translated_to_ipv6                             0
+`
+
+// fakeObserving is what `anchorctl observe -start` prints of the observer it started: its
+// identity in full on the `as` row.
+const fakeObserving = `observing with  af_packet
+  since         0s
+  flows         0 held
+  packets       0 taken
+  overlay       no anchor running
+  records       0, in 0 inventory entries
+  as            ` + fakeAnchorID + `
+  realm         eocs6meuty
+  credential    valid until 2026-12-19T04:16:00Z
 `
 
 // fakeStarted is what `anchorctl start` prints for the anchor it started.
@@ -138,6 +153,10 @@ func fakeAnchorctl(args []string) int {
 			return 1
 		}
 
+		if len(args) > 1 && args[1] == "-start" {
+			return fakeObserveStart(args)
+		}
+
 		fmt.Println("observing with  af_packet")
 	case "status":
 		switch os.Getenv(fakeAnchorctlStatusEnv) {
@@ -149,17 +168,47 @@ func fakeAnchorctl(args []string) int {
 			return 2
 		}
 
+		// The observer's row, which status prints always, as observerNote writes it.
 		switch os.Getenv(fakeAnchorctlObserverEnv) {
 		case "running":
-			fmt.Println("  observer  af_packet, 2 flows held, 32 packets taken")
-		case "stopped":
-			fmt.Println("  observer  not observing")
+			fmt.Println("  observer  af_packet, 2 flows held, 32 packets taken; credential valid until 2026-12-19T04:16:00Z")
 		case "failed":
 			fmt.Println("  observer  not observing: capture: reading the ring: network is down")
+		default:
+			fmt.Println("  observer  not observing")
 		}
 	default:
 		return 2
 	}
+
+	return 0
+}
+
+// fakeObserveStart is `observe -start`, which needs a credential as the real one does: conflux
+// starts the observer on its manifest, `-manifest -`, read here to the end and written to
+// fakeAnchorctlObservedEnv's file where that is set. Without one it is a usage error, exit 2.
+func fakeObserveStart(args []string) int {
+	if i := slices.Index(args, "-manifest"); i < 0 || i+1 >= len(args) || args[i+1] != "-" {
+		fmt.Fprintln(os.Stderr, "anchorctl: -identity, -root, -cred: the observer runs as an identity its realm admits: "+
+			"it needs one, the realm root it pins and its credential")
+
+		return 2
+	}
+
+	manifest, err := io.ReadAll(os.Stdin)
+	if err != nil || len(manifest) == 0 {
+		fmt.Fprintln(os.Stderr, "anchorctl: reading manifest: manifest is empty")
+
+		return 1
+	}
+
+	if out := os.Getenv(fakeAnchorctlObservedEnv); out != "" {
+		if err := os.WriteFile(out, manifest, 0o600); err != nil {
+			return 1
+		}
+	}
+
+	fmt.Print(fakeObserving)
 
 	return 0
 }

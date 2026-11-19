@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -52,6 +53,13 @@ type ephemeralRig struct {
 
 func runEphemeral(t *testing.T, is *issuer, env config.Envelope) *ephemeralRig {
 	t.Helper()
+
+	return runEphemeralOf(t, &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, APIBaseURL: is.srv.URL}, env)
+}
+
+// runEphemeralOf is runEphemeral for a run of cfg.
+func runEphemeralOf(t *testing.T, cfg *config.Config, env config.Envelope) *ephemeralRig {
+	t.Helper()
 	t.Setenv(fakeAnchordEnv, "serve")
 	t.Setenv(fakeAnchordListenEnv, "1")
 	t.Setenv(fakeAnchorctlStatusEnv, "running")
@@ -64,7 +72,7 @@ func runEphemeral(t *testing.T, is *issuer, env config.Envelope) *ephemeralRig {
 
 	e := &Ephemeral{
 		Dirs:       paths.EphemeralDirs(root),
-		Config:     &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, APIBaseURL: is.srv.URL},
+		Config:     cfg,
 		Manifest:   env,
 		Up:         func(u EphemeralUp) { r.ups <- u },
 		tools:      &libexec.Tools{Anchord: os.Args[0], Anchorctl: os.Args[0]},
@@ -239,6 +247,40 @@ func TestAnEphemeralRunRenewsInMemory(t *testing.T) {
 
 	if got := is.asked(t).AnchorID; got != fakeAnchorID {
 		t.Errorf("the renewal named anchor %q, want the started one, %q", got, fakeAnchorID)
+	}
+}
+
+// TestAnEphemeralObserverRunsOnTheRunsCredential: beside an ephemeral anchor the observer runs
+// under the run's own credential, which comes first -- here enrolled, into memory alone -- and
+// is handed to it on stdin before the anchor starts, as the supervisor's is.
+func TestAnEphemeralObserverRunsOnTheRunsCredential(t *testing.T) {
+	observed := filepath.Join(t.TempDir(), "observed")
+	t.Setenv(fakeAnchorctlObservedEnv, observed)
+
+	log := filepath.Join(t.TempDir(), "anchorctl.log")
+	t.Setenv(fakeAnchorctlLogEnv, log)
+
+	api, _, calls := enroller(t, []string{"t"})
+
+	r := runEphemeralOf(t, &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, APIBaseURL: api.URL,
+		Proxies: []string{"8080=127.0.0.1:1"}, Observer: &config.Observer{}}, nil)
+	r.up(t)
+
+	b, err := os.ReadFile(observed)
+	if err != nil {
+		t.Fatalf("the observer was handed no credential: %v", err)
+	}
+
+	if m, err := enrol.Decode(config.Envelope(bytes.TrimSpace(b))); err != nil || !slices.Equal(m.Taints(), []string{"t"}) {
+		t.Errorf("the observer was handed %q (%v), want the run's enrolment", b, err)
+	}
+
+	if calls.Load() != 1 {
+		t.Errorf("enrolled %d times, want once", calls.Load())
+	}
+
+	if cmds := ran(t, log); slices.Index(cmds, "observe") < 0 || slices.Index(cmds, "observe") > slices.Index(cmds, "start") {
+		t.Errorf("anchorctl ran %v; want the observer started, then the anchor", cmds)
 	}
 }
 

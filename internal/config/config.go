@@ -43,10 +43,11 @@ const (
 	// at all, which is the whole reason it exists.
 	ModeProxy Mode = "proxy"
 
-	// ModeObserve runs the daemon's observer and no anchor: this machine joins no
-	// realm, holds and needs no credential, and enrols nothing, and what it does is
-	// inventory the cryptography of its own traffic. The anchor's settings and its
-	// identity stay as they were, unused, for the next up or proxy to come back to.
+	// ModeObserve runs the daemon's observer and no anchor: what this machine does is
+	// inventory the cryptography of its own traffic. The observer runs under the machine's
+	// own credential, as an anchor does -- enrolled as up enrols, or installed by conflux
+	// enrol -- which it exports under; it carries nothing for the realm. The anchor's settings
+	// stay as they were, unused, for the next up or proxy to come back to.
 	ModeObserve Mode = "observe"
 )
 
@@ -207,8 +208,8 @@ type Config struct {
 
 	// Observer runs the daemon's observer, and nil is off. Beside an anchor in either
 	// shape, and alone in ModeObserve, which needs it: the observer is no part of the
-	// anchor and asks nothing of the realm. Refused where anchor has no capture, which
-	// is FreeBSD and OpenBSD.
+	// anchor, and runs under the same credential. Refused where anchor has no capture,
+	// which is FreeBSD and OpenBSD.
 	Observer *Observer `json:"observer,omitempty"`
 
 	CreatedAt time.Time `json:"createdAt"`

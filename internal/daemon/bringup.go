@@ -82,40 +82,76 @@ func (nopReporter) Warn(string, ...any) {}
 // from a wrong realm. Refused here, either way, naming the clock.
 const MaxSkew = 10 * time.Minute
 
-// bringUp takes a daemon that is up and answering, and leaves it hosting the anchor
-// this machine is configured for.
+// parts is what a bring-up starts: the observer, the anchor, or both. The watcher starts one
+// again while the other runs on.
+type parts struct{ observer, anchor bool }
+
+// everything is every part cfg runs.
+func everything(cfg *config.Config) parts {
+	return parts{observer: cfg.Observer != nil, anchor: cfg.Anchor()}
+}
+
+// brought is what a bring-up started.
+type brought struct {
+	// id is the identity's AnchorID, as what started reported it: the observer's `as` row, or
+	// the anchor's start, which name the same identity.
+	id string
+
+	// observing and anchor say which started.
+	observing, anchor bool
+}
+
+// bringUp takes a daemon that is up and answering, and leaves it running what this machine
+// is configured for, of what start asks: the credential first, then the observer, then the
+// anchor.
 //
-// One function, shared verbatim by `conflux up`, `conflux proxy` and every boot, so
-// that the three cannot drift into starting subtly different anchors. Everything
-// that differs between them is in the config file by the time this runs.
+// One function, shared verbatim by `conflux up`, `conflux proxy`, `conflux observe` and every
+// boot, so that they cannot drift into starting subtly different things. Everything that
+// differs between them is in the config file by the time this runs.
+//
+// The observer runs under the machine's own credential, as the anchor does, so a credential
+// that cannot be had -- an enrolment the API does not answer -- starts neither. The observer
+// before the anchor, because an anchor that then cannot come up must not keep it from
+// observing: beside an anchor, an observer that will not start is said, and the anchor starts
+// without it; observing alone, it is the error.
 //
 // dir is the anchor directory the daemon's identity was given (see Supervisor.anchorDir).
 // reopened counts the start as an uplink rebuilt, in the same state write as the rest,
 // once it has succeeded.
 func bringUp(
-	ctx context.Context, d paths.Dirs, ctl *anchorctl.Ctl, r Reporter, dir string, reopened bool,
-) (started anchorctl.Started, err error) {
+	ctx context.Context, d paths.Dirs, ctl *anchorctl.Ctl, r Reporter, dir string, reopened bool, start parts,
+) (up brought, err error) {
 	// Against `conflux renew` and the renewal timer, which read and rewrite the same
 	// manifest and state this does.
 	unlock, err := flock.Acquire(d.LockFile())
 	if err != nil {
-		return anchorctl.Started{}, err
+		return up, err
 	}
 	defer unlock()
 
 	cfg, err := loadConfig(d)
 	if err != nil {
-		return anchorctl.Started{}, err
+		return up, err
+	}
+
+	// Of what was asked, what this configuration runs: the file may have changed since the
+	// caller read it.
+	start.observer = start.observer && cfg.Observer != nil
+	start.anchor = start.anchor && cfg.Anchor()
+
+	if !start.observer && !start.anchor {
+		return up, &permanentError{path: d.ConfigFile(), err: errors.New(
+			"it changed under the running service, and no longer runs what was to be started; conflux start starts what it runs")}
 	}
 
 	st, err := config.LoadState(d)
 	if err != nil {
-		return anchorctl.Started{}, err
+		return up, err
 	}
 
-	// Whatever happens below -- an enrolment, a renewal, a measured clock -- is worth
-	// keeping even if the start then fails. The next start re-learns all of it, but
-	// status reads it in between.
+	// Whatever happens below -- an enrolment, a renewal, a measured clock, an observer that
+	// started beside an anchor that did not -- is worth keeping even if a start then fails.
+	// The next start re-learns all of it, but status reads it in between.
 	defer func() {
 		if reopened && err == nil {
 			st.LinkReopens++
@@ -129,30 +165,78 @@ func bringUp(
 
 	env, m, err := credential(ctx, d, st, cfg, r)
 	if err != nil {
-		return anchorctl.Started{}, err
+		return up, err
+	}
+
+	// What runs holds this credential now, under this identity, from these binaries.
+	running := func(id string) {
+		st.AnchorID = id
+		st.IssuedAt, st.NotAfter = m.IssuedAt(), m.NotAfter()
+		st.BinSetID = ctl.SetID
+	}
+
+	if start.observer {
+		o, err := startObserver(ctx, ctl, r, cfg, env)
+
+		switch {
+		case err == nil:
+			up.id, up.observing = o.ID, true
+			running(o.ID)
+		case !start.anchor:
+			return up, err
+		default:
+			r.Warn("the observer did not start, and the anchor starts without it: %v", err)
+		}
+	}
+
+	if !start.anchor {
+		return up, nil
 	}
 
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return anchorctl.Started{}, fmt.Errorf("create %s: %w", dir, err)
+		return up, fmt.Errorf("create %s: %w", dir, err)
 	}
 
-	started, err = ctl.Start(ctx, env, anchorctl.ModeFromConfig(cfg, dir))
+	started, err := ctl.Start(ctx, env, anchorctl.ModeFromConfig(cfg, dir))
 	if err != nil {
-		return anchorctl.Started{}, err
+		return up, err
 	}
 
-	st.AnchorID = started.ID
-	st.IssuedAt, st.NotAfter = m.IssuedAt(), m.NotAfter()
-	st.BinSetID = ctl.SetID
+	up.id, up.anchor = started.ID, true
+	running(started.ID)
 
-	return started, nil
+	return up, nil
+}
+
+// startObserver starts the daemon's observer under the credential env carries, with what cfg
+// asks of it, and says where its records go. anchord keeps no observer across a restart, so
+// every daemon is asked afresh.
+func startObserver(
+	ctx context.Context, ctl *anchorctl.Ctl, r Reporter, cfg *config.Config, env config.Envelope,
+) (anchorctl.Observed, error) {
+	start, cancel := context.WithTimeout(ctx, stopTimeout)
+	defer cancel()
+
+	o, err := ctl.ObserveStart(start, env, *cfg.Observer)
+	if err != nil {
+		return o, fmt.Errorf("starting the observer: %w", err)
+	}
+
+	where := "kept in the daemon's inventory"
+	if cfg.Exports() {
+		where = "each sent to " + cfg.Export.Endpoint + " as it is made"
+	}
+
+	r.Step("observing as %s; the records are %s", o.ID, where)
+
+	return o, nil
 }
 
 // credential returns the manifest to start from, enrolling or renewing as needed.
 //
-// The order matters. Renewal happens before start rather than after, so `start`
-// always receives a chain that is current -- which is why the boot path needs no
-// separate `anchorctl renew` call at all.
+// The order matters. Renewal happens before start rather than after, so a start -- the
+// anchor's or the observer's -- always receives a chain that is current, which is why the
+// boot path needs no separate renewal call at all.
 //
 // The taints are checked before either: the credential grants them, anchorctl starts
 // the anchor under the manifest's, and a machine configured for others -- one enrolled
@@ -169,11 +253,11 @@ func credential(
 	case err == nil:
 		// Have one.
 	case errors.Is(err, fs.ErrNotExist):
-		// Never the shared compartment. `up` and `proxy` mint a taint for a machine with
-		// none, so this is a conflux.json somebody emptied; no retry changes it.
+		// Never the shared compartment. `up`, `proxy` and `observe` mint a taint for a
+		// machine with none, so this is a conflux.json somebody emptied; no retry changes it.
 		if len(cfg.Taints) == 0 {
 			return nil, nil, &permanentError{path: d.ConfigFile(), err: fmt.Errorf(
-				"%w; run conflux up or conflux proxy, which mint one", enrol.ErrNoTaints)}
+				"%w; run conflux up, proxy or observe, which mint one", enrol.ErrNoTaints)}
 		}
 
 		r.Step("enrolling")
@@ -223,12 +307,12 @@ func credential(
 					"it has to be replaced", lapsed.Round(time.Minute), enrol.ErrDoesNotRenew)}
 		}
 	case st.AnchorID == "" && !m.NotAfter().IsZero() && time.Now().After(m.NotAfter()):
-		// A renewal names the anchor by the AnchorID it reported when it started, and anchor
-		// will not start one on an expired credential: with none recorded, nothing here can
-		// bring this one back, however often it is tried.
+		// A renewal names the identity by the AnchorID its anchor or observer reported when it
+		// started, and neither starts on an expired credential: with none recorded, nothing
+		// here can bring this one back, however often it is tried.
 		return nil, nil, &permanentError{path: d.ManifestFile(), err: fmt.Errorf(
 			"the credential expired %s ago, and no AnchorID is recorded to renew it with -- "+
-				"the anchor never started on it, or %s was lost -- so it has to be replaced",
+				"neither an anchor nor the observer ever started on it, or %s was lost -- so it has to be replaced",
 			time.Since(m.NotAfter()).Round(time.Minute), d.StateFile())}
 	case st.AnchorID != "" && (dueAt(m.IssuedAt(), m.NotAfter(), time.Now()) || st.ClockSkew > MaxSkew):
 		env = renewBeforeStart(ctx, d, st, client, m, env, r)
@@ -252,9 +336,8 @@ func credential(
 // address, and orphans every peer that had the old one -- and it is not needed,
 // because a renewal works after expiry: the alpha route asks only for the AnchorID and
 // the taints the manifest names, and a guardian's for the bearer the manifest carries
-// as well. So: try, say what happened,
-// and start with what we have -- which anchor refuses once it has expired, and the
-// restart loop brings this round again.
+// as well. So: try, say what happened, and start with what we have -- which anchor and
+// its observer refuse once it has expired, and the restart loop brings this round again.
 func renewBeforeStart(
 	ctx context.Context,
 	d paths.Dirs,
@@ -278,7 +361,7 @@ func renewBeforeStart(
 			err, left.Round(time.Minute))
 	} else {
 		r.Warn("could not renew, and the credential expired %s ago: %v\n"+
-			"  anchor will not start on it, so conflux tries again until this succeeds",
+			"  neither the anchor nor the observer starts on it, so conflux tries again until this succeeds",
 			time.Since(m.NotAfter()).Round(time.Minute), err)
 	}
 

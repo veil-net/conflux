@@ -93,17 +93,7 @@ func writeAtomicAs(path string, perm fs.FileMode, uid, gid int, chunks ...[]byte
 		return fmt.Errorf("rename %s to %s: %w", tmpName, path, err)
 	}
 
-	syncDir(dir)
+	paths.SyncDir(dir)
 
 	return nil
-}
-
-// syncDir makes the rename durable, as far as the platform lets it. Best effort: the
-// rename already happened, and a directory some filesystems refuse to fsync -- and
-// NTFS, which orders its metadata itself -- is not worth losing the write over.
-func syncDir(dir string) {
-	if f, err := os.Open(dir); err == nil {
-		_ = f.Sync()
-		f.Close()
-	}
 }

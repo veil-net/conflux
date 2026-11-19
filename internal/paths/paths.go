@@ -295,3 +295,14 @@ func (d Dirs) CheckSocketLen() error {
 		"the control socket path is %d bytes and the kernel allows %d:\n  %s\nset CONFLUX_DIR to something shorter",
 		len(sock), sockPathMax-1, sock)
 }
+
+// SyncDir makes a name just placed in dir durable, as far as the platform lets it: what an
+// atomic write calls after its rename or link. Best effort, since the file is already in
+// place, and some filesystems refuse to fsync a directory -- and NTFS orders its metadata
+// itself -- which is not worth losing the write over.
+func SyncDir(dir string) {
+	if f, err := os.Open(dir); err == nil {
+		_ = f.Sync()
+		f.Close()
+	}
+}

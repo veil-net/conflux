@@ -320,7 +320,7 @@ func WriteFile(path string, data []byte, perm fs.FileMode, keep bool) (err error
 		return err
 	}
 
-	defer syncDir(dir)
+	defer paths.SyncDir(dir)
 
 	if !keep {
 		return os.Rename(tmpName, path)
@@ -338,15 +338,6 @@ func WriteFile(path string, data []byte, perm fs.FileMode, keep bool) (err error
 	}
 
 	return nil
-}
-
-// syncDir makes the new name durable, as far as the platform lets it: best effort, since the
-// file is already in place.
-func syncDir(dir string) {
-	if f, err := os.Open(dir); err == nil {
-		_ = f.Sync()
-		f.Close()
-	}
 }
 
 // Stdout is where - writes; the command line points it where its own output goes.

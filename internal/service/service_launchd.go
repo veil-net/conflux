@@ -171,10 +171,9 @@ func jobRunning(out string, loaded bool) bool {
 // loaded whatever the RunAtLoad key says. Start and Restart are built on that rather than
 // trying to work around it.
 //
-// A disabled label is enabled first; see enableIfDisabled.
+// A disabled label would refuse it, and install has lifted any already: every start --
+// Install's own, and the Restart up, proxy, install and start make -- follows an install.
 func (j launchdJob) load() error {
-	j.enableIfDisabled()
-
 	if err := j.ctl.run("bootstrap", "system", j.plistPath); err != nil {
 		return fmt.Errorf("%w\n%s", err, j.bootstrapHint())
 	}

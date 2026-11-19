@@ -11,18 +11,17 @@ import (
 	"github.com/veil-net/conflux/internal/paths"
 )
 
+// Label is the launchd job's label, which launchd hands what it starts as XPC_SERVICE_NAME.
+//
 // Functions and not constants because a run rooted in a CONFLUX_DIR is a separate
 // installation and must not be registered over the machine's own; see scope.
-func label() string { return "org.veilnet.conflux" + paths.Scope() }
+func Label() string { return "org.veilnet.conflux" + paths.Scope() }
 
-// Label is the launchd job's label, which launchd hands what it starts as XPC_SERVICE_NAME.
-func Label() string { return label() }
-
-func plistPath() string { return "/Library/LaunchDaemons/" + label() + ".plist" }
+func plistPath() string { return "/Library/LaunchDaemons/" + Label() + ".plist" }
 
 // job is this installation's job, driven by the real launchctl.
 func job() launchdJob {
-	return launchdJob{label: label(), plistPath: plistPath(), ctl: launchctl{
+	return launchdJob{label: Label(), plistPath: plistPath(), ctl: launchctl{
 		run:   func(args ...string) error { return run("launchctl", args...) },
 		query: func(args ...string) (string, bool) { return query("launchctl", args...) },
 	}}
@@ -34,7 +33,7 @@ func newManager() Manager { return launchd{} }
 
 // Install writes the job and loads nothing; see launchdJob.install.
 func (launchd) Install(exe string, args ...string) error {
-	return job().install([]byte(launchdPlist(label(), append([]string{exe}, withLog(args)...), logFile())))
+	return job().install([]byte(launchdPlist(Label(), append([]string{exe}, withLog(args)...), logFile())))
 }
 
 // Remove deregisters the job and deletes its plist and its log, and deliberately
@@ -117,8 +116,8 @@ func (l launchd) Describe() string {
 	}
 
 	if job().running() {
-		return fmt.Sprintf("running (launchd: %s, at boot)", label())
+		return fmt.Sprintf("running (launchd: %s, at boot)", Label())
 	}
 
-	return fmt.Sprintf("installed, not running (launchd: %s, at boot)", label())
+	return fmt.Sprintf("installed, not running (launchd: %s, at boot)", Label())
 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
 	"github.com/veil-net/conflux/internal/update"
 	"github.com/veil-net/conflux/internal/version"
@@ -21,7 +22,7 @@ import (
 // reads, and the file it replaces.
 var (
 	updateFrom       = update.Source{}
-	updateExecutable = thisExecutable
+	updateExecutable = service.Executable
 )
 
 // devUpdateNote is what a dev build is told before it moves to the release.
@@ -173,21 +174,6 @@ func moveService(ctx context.Context, exe string) int {
 	ui.Printf("The anchor is not running; the boot service starts it on this conflux next time.\n")
 
 	return ExitOK
-}
-
-// thisExecutable is the file this process was started from, symlinks followed: the one an
-// update replaces, rather than the link somebody put on their PATH.
-func thisExecutable() (string, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "", err
-	}
-
-	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
-		exe = resolved
-	}
-
-	return filepath.Clean(exe), nil
 }
 
 // versionOf runs the binary at path and returns the line its `version` leads with.

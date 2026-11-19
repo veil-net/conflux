@@ -20,7 +20,7 @@ func TestPlaceCopiesWhatTheServiceRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	src, err := executable()
+	src, err := Executable()
 	if err != nil {
 		t.Fatal(err)
 	}

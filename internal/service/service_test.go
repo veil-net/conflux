@@ -54,18 +54,24 @@ func TestPlaceCopiesWhatTheServiceRuns(t *testing.T) {
 		t.Error("an identical copy was written again")
 	}
 
-	// A copy that is no longer this conflux -- an older one, or one somebody changed --
-	// is replaced.
-	if err := os.WriteFile(placed, []byte("an older conflux"), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	// A copy that is no longer this conflux is replaced: an older one, and one somebody
+	// changed, which is the same size -- a byte changed at its end, past the first buffer
+	// compared.
+	changed := bytes.Clone(want)
+	changed[len(changed)-1] ^= 0xff
 
-	if _, err := Place(d); err != nil {
-		t.Fatalf("Place over a stale copy: %v", err)
-	}
+	for name, stale := range map[string][]byte{"an older conflux": []byte("an older conflux"), "one somebody changed": changed} {
+		if err := os.WriteFile(placed, stale, 0o700); err != nil {
+			t.Fatal(err)
+		}
 
-	if got, _ := os.ReadFile(placed); !bytes.Equal(got, want) {
-		t.Error("a stale copy was left in place")
+		if _, err := Place(d); err != nil {
+			t.Fatalf("Place over %s: %v", name, err)
+		}
+
+		if got, _ := os.ReadFile(placed); !bytes.Equal(got, want) {
+			t.Errorf("%s was left in place", name)
+		}
 	}
 
 	if info, _ := os.Stat(placed); info.Mode().Perm()&0o077 != 0 && os.PathSeparator == '/' {

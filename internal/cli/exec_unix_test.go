@@ -19,6 +19,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
@@ -34,16 +36,23 @@ const (
 )
 
 // standIn is an anchorctl that runs until it is signalled: it records its PID, and, trapping,
-// which signal it was sent, exiting 7.
-const standIn = `#!/bin/sh
+// which of the forwarded signals it was sent, exiting 7.
+var standIn = func() string {
+	traps := make([]string, len(forwarded))
+	for i, s := range forwarded {
+		traps[i] = trapName(s.(syscall.Signal))
+	}
+
+	return `#!/bin/sh
 if [ -n "$` + standInTrap + `" ]; then
-	for s in TERM HUP INT; do
+	for s in ` + strings.Join(traps, " ") + `; do
 		trap "echo $s > \"\$` + standInTrap + `\"; exit 7" $s
 	done
 fi
 echo $$ > "$` + standInPID + `.tmp" && mv "$` + standInPID + `.tmp" "$` + standInPID + `"
 while :; do sleep 0.05; done
 `
+}()
 
 // TestASignalToConfluxReachesItsAnchorctl: the anchorctl conflux runs as a child, for usage or
 // a socket the user named, is sent what conflux's PID alone is sent -- a kill, a service
@@ -67,15 +76,19 @@ func TestASignalToConfluxReachesItsAnchorctl(t *testing.T) {
 
 	defaultSignals(t)
 
-	for _, tc := range []struct {
+	// Each signal that is forwarded, which the stand-in traps, and SIGTERM again, which it does
+	// not, so that it ends anchorctl, and conflux after it, by its default action.
+	type signalCase struct {
 		sig  syscall.Signal
 		trap bool
-	}{
-		{syscall.SIGTERM, true},
-		{syscall.SIGHUP, true},
-		{syscall.SIGINT, true},
-		{syscall.SIGTERM, false},
-	} {
+	}
+
+	cases := make([]signalCase, 0, len(forwarded)+1)
+	for _, s := range forwarded {
+		cases = append(cases, signalCase{s.(syscall.Signal), true})
+	}
+
+	for _, tc := range append(cases, signalCase{syscall.SIGTERM, false}) {
 		t.Run(tc.sig.String()+map[bool]string{true: ", trapped", false: ", not trapped"}[tc.trap], func(t *testing.T) {
 			dir, state := t.TempDir(), t.TempDir()
 			pidFile, trapFile := filepath.Join(state, "pid"), ""
@@ -118,7 +131,7 @@ func TestASignalToConfluxReachesItsAnchorctl(t *testing.T) {
 
 			switch {
 			case tc.trap:
-				if b, _ := os.ReadFile(trapFile); strings.TrimSpace(string(b)) != strings.TrimPrefix(signalName(tc.sig), "SIG") {
+				if b, _ := os.ReadFile(trapFile); strings.TrimSpace(string(b)) != trapName(tc.sig) {
 					t.Errorf("the stand-in was not sent %v: it recorded %q", tc.sig, b)
 				}
 
@@ -354,7 +367,7 @@ func TestAFirstSignalStopsAnEphemeralRun(t *testing.T) {
 	defaultSignals(t)
 
 	for _, sig := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM} {
-		t.Run(signalName(sig), func(t *testing.T) {
+		t.Run(unix.SignalName(sig), func(t *testing.T) {
 			// A short root rather than TempDir's: the run's control socket lies four levels below it.
 			root := pathstest.ShortRoot(t)
 			d := paths.EphemeralDirs(filepath.Join(root, "ephemeral")) // paths.Ephemeral, under CONFLUX_DIR
@@ -474,7 +487,5 @@ func waitForPID(t *testing.T, path string, exited <-chan error) int {
 	return 0
 }
 
-// signalName is a signal's name as the shell's trap spells it, SIGTERM for syscall.SIGTERM.
-func signalName(s syscall.Signal) string {
-	return map[syscall.Signal]string{syscall.SIGTERM: "SIGTERM", syscall.SIGHUP: "SIGHUP", syscall.SIGINT: "SIGINT"}[s]
-}
+// trapName is a signal's name as the shell's trap spells it, TERM for syscall.SIGTERM.
+func trapName(s syscall.Signal) string { return strings.TrimPrefix(unix.SignalName(s), "SIG") }

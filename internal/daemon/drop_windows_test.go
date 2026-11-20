@@ -36,8 +36,8 @@ func TestRestrictTokenRemovesPrivileges(t *testing.T) {
 	}
 	defer tok.Close()
 
-	notify := privilegeLUID(t, "SeChangeNotifyPrivilege")
-	impersonate := privilegeLUID(t, "SeImpersonatePrivilege")
+	notify := privtest.LUID(t, "SeChangeNotifyPrivilege")
+	impersonate := privtest.LUID(t, "SeImpersonatePrivilege")
 
 	held := privileges(t, tok)
 	for _, luid := range held {
@@ -100,19 +100,6 @@ func privileges(t *testing.T, tok windows.Token) []windows.LUID {
 	}
 
 	return held
-}
-
-func privilegeLUID(t *testing.T, name string) windows.LUID {
-	t.Helper()
-
-	var luid windows.LUID
-
-	n, _ := windows.UTF16PtrFromString(name)
-	if err := windows.LookupPrivilegeValue(nil, n, &luid); err != nil {
-		t.Fatal(err)
-	}
-
-	return luid
 }
 
 func tokenInfo(t *testing.T, tok windows.Token, class uint32) []byte {

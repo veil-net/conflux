@@ -20,15 +20,7 @@ func WithRestore(tb testing.TB, f func() error) error {
 	}
 	defer tok.Close()
 
-	name, err := windows.UTF16PtrFromString("SeRestorePrivilege")
-	if err != nil {
-		tb.Fatal(err)
-	}
-
-	var luid windows.LUID
-	if err := windows.LookupPrivilegeValue(nil, name, &luid); err != nil {
-		tb.Fatal(err)
-	}
+	luid := LUID(tb, "SeRestorePrivilege")
 
 	set := func(attributes uint32) {
 		tp := windows.Tokenprivileges{PrivilegeCount: 1}
@@ -43,6 +35,23 @@ func WithRestore(tb testing.TB, f func() error) error {
 	defer set(0)
 
 	return f()
+}
+
+// LUID is the locally unique id this machine knows the privilege name by.
+func LUID(tb testing.TB, name string) windows.LUID {
+	tb.Helper()
+
+	n, err := windows.UTF16PtrFromString(name)
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	var luid windows.LUID
+	if err := windows.LookupPrivilegeValue(nil, n, &luid); err != nil {
+		tb.Fatal(err)
+	}
+
+	return luid
 }
 
 // Users is BUILTIN\Users, every account on the machine.

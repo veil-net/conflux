@@ -115,6 +115,24 @@ func runUpdate(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
+	// Where there is a boot service to move onto the new conflux, whether the anchor runs is asked
+	// of the root's socket, by its name, so the roots pass paths' check here, before anything is
+	// downloaded or replaced: a root that fails leaves this conflux, and the service on it, as they
+	// were.
+	installed, err := newService().Installed()
+	if err != nil {
+		return fail(err)
+	}
+
+	d := paths.Default()
+
+	var checked error
+	if installed {
+		if checked = d.Check(); checked != nil && !errors.Is(checked, os.ErrNotExist) {
+			return fail(checked)
+		}
+	}
+
 	// A Windows image an earlier update moved aside, which nothing runs any more.
 	_ = os.Remove(exe + ".old")
 
@@ -138,35 +156,23 @@ func runUpdate(ctx context.Context, args []string) int {
 
 	ui.Printf("Updated %s: %s.\n", exe, now)
 
-	return moveService(ctx, exe)
+	if !installed {
+		return ExitOK
+	}
+
+	return moveService(ctx, exe, d, checked)
 }
 
-// moveService puts the boot service on the conflux at exe, which has just replaced this one.
+// moveService puts the boot service on the conflux at exe, which has just replaced this one. d's
+// roots were held to paths' check before anything was replaced, and checked is what it said: nil,
+// or, with none of them there, an error that is fs.ErrNotExist, and nothing runs.
 //
 // The new conflux does it, so its code decides how its service is defined and started. A
 // running anchor is restarted by the new conflux's own `start`, which places the copy the
 // service runs, registers it and restarts it. A stopped one is left stopped, as `down` left
 // it: the new conflux's hidden `register` places the copy and registers it, starting
 // nothing, so whatever starts it next starts the new one under the new definition.
-func moveService(ctx context.Context, exe string) int {
-	installed, err := newService().Installed()
-	if err != nil {
-		return fail(err)
-	}
-
-	if !installed {
-		return ExitOK
-	}
-
-	// Whether the anchor runs is asked of the root's socket, by its name, so the roots pass paths'
-	// check first; with none there, nothing runs.
-	d := paths.Default()
-
-	checked := d.Check()
-	if checked != nil && !errors.Is(checked, os.ErrNotExist) {
-		return fail(checked)
-	}
-
+func moveService(ctx context.Context, exe string, d paths.Dirs, checked error) int {
 	a := &daemonAnswers{}
 	if checked == nil {
 		a = askDaemon(ctx, d, false)

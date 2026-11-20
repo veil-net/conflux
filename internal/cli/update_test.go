@@ -20,7 +20,7 @@ import (
 
 // serveRelease stands in for conflux's `latest` release, holding body as this platform's
 // binary, and points `conflux update` at it and at exe as the file to replace.
-func serveRelease(t *testing.T, body []byte, exe string) {
+func serveRelease(t *testing.T, body []byte, exe string) *ghreleasetest.Release {
 	t.Helper()
 
 	f := &ghreleasetest.Release{
@@ -39,6 +39,8 @@ func serveRelease(t *testing.T, body []byte, exe string) {
 
 	updateFrom = update.Source{API: api}
 	updateExecutable = func() (string, error) { return exe, nil }
+
+	return f
 }
 
 func TestUpdateTakesNoArguments(t *testing.T) {
@@ -142,10 +144,10 @@ func TestUpdateReplacesTheExecutable(t *testing.T) {
 	}
 }
 
-// releaseAsking stands in for an update to a release whose conflux, a shell script, answers
+// releaseAsking stands in for an update to rel, a release whose conflux, a shell script, answers
 // `version` as the real one does and notes every other command it is asked, a line each, in the
 // file asked; exe is the file the update replaces, an older conflux.
-func releaseAsking(t *testing.T) (exe, asked string) {
+func releaseAsking(t *testing.T) (rel *ghreleasetest.Release, exe, asked string) {
 	t.Helper()
 
 	exe = filepath.Join(t.TempDir(), "conflux")
@@ -154,11 +156,11 @@ func releaseAsking(t *testing.T) (exe, asked string) {
 	}
 
 	asked = filepath.Join(t.TempDir(), "asked")
-	serveRelease(t, []byte("#!/bin/sh\ncase $1 in\n"+
+	rel = serveRelease(t, []byte("#!/bin/sh\ncase $1 in\n"+
 		"version) echo 'conflux 9.9.9 (0aea0f77bb77) "+runtime.GOOS+"/"+runtime.GOARCH+"' ;;\n"+
 		"*) echo \"$*\" >>'"+asked+"' ;;\nesac\n"), exe)
 
-	return exe, asked
+	return rel, exe, asked
 }
 
 // standInService makes mgr what newService answers, for the rest of the test.
@@ -181,7 +183,7 @@ func TestUpdateHandsAStoppedServiceToTheNewConflux(t *testing.T) {
 
 	rootOnLinux(t)
 
-	_, asked := releaseAsking(t)
+	_, _, asked := releaseAsking(t)
 
 	mgr := &fakeManager{}
 	standInService(t, mgr)

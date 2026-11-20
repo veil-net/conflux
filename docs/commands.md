@@ -564,6 +564,7 @@ and the next update removes it. No token is needed or sent: the repository is pu
 | the anchor is running | the new conflux's `start` restarts it on the new version, and its exit code is `update`'s |
 | installed, not running | left stopped, as `down` left it; the new conflux registers the boot service itself, its copy and its definition, through a hidden `register` that starts nothing, so it starts on the new version next time; its exit code is `update`'s |
 | not installed | the file is replaced, and that is all |
+| installed, its root refused by the [readers' check](security.md#the-file-and-the-directory-around-it) | exit 1, naming the root and why, before anything is downloaded: nothing changed, the service left on the conflux it runs |
 | the release has no build for this platform, lists no digest, or is still uploading | refused, nothing changed |
 
 Needs root, except `--check`.

@@ -84,23 +84,42 @@ func plantedRoot(t *testing.T) paths.Dirs {
 // uninstall -- refuses it, exit 1, naming its root and saying who could write it (why), and leaves
 // it as it was: nothing in it read (status prints no configuration), and nothing made, changed or
 // removed there, a lock included; the boot service neither registered again, started, stopped nor
-// removed; and the conflux update put in place asked neither to start nor to register it.
+// removed; and no conflux downloaded, put in place or asked anything by update.
 func readersRefuse(t *testing.T, d paths.Dirs, why string) {
 	t.Helper()
 
 	// The release update reads, whose conflux notes what it is asked in asked; and no socket of
 	// the caller's, which a pass-through would take instead of d's.
 	root := paths.Root()
-	_, asked := releaseAsking(t)
+	rel, exe, asked := releaseAsking(t)
 	t.Setenv("CONFLUX_DIR", root)
 	t.Setenv(anchorctl.SocketEnv, "")
 
-	held := tree(t, d.State)
+	// What each command finds, which it leaves as it was: the root, the file update replaces, the
+	// release's downloads and what the conflux it puts in place was asked.
+	found := func() []string {
+		have := tree(t, d.State)
+
+		for _, f := range []string{exe, asked} {
+			b, _ := os.ReadFile(f)
+			have = append(have, fmt.Sprintf("%s holding %q", f, b))
+		}
+
+		for _, p := range rel.Seen() {
+			if strings.Contains(p, "/releases/assets/") {
+				have = append(have, "downloaded "+p)
+			}
+		}
+
+		return have
+	}
 
 	for _, argv := range [][]string{{"status"}, {"start"}, {"down"}, {"renew"}, {"update"}, {"peers"}, {"uninstall", "--yes"}} {
 		t.Run(argv[0], func(t *testing.T) {
 			mgr := &untouched{fakeManager: fakeManager{d: d, restartErr: errStartsNothing}}
 			standInService(t, mgr)
+
+			was := found()
 
 			out, errOut, code := capture(t, argv...)
 			if code != ExitError || !strings.Contains(errOut, d.State) || !strings.Contains(errOut, why) {
@@ -117,12 +136,8 @@ func readersRefuse(t *testing.T, d paths.Dirs, why string) {
 					argv[0], len(mgr.installs), mgr.restarts, mgr.stops, mgr.removals)
 			}
 
-			if now := tree(t, d.State); !slices.Equal(now, held) {
-				t.Errorf("conflux %s changed a root it refuses: it holds\n%q\nwhere it held\n%q", argv[0], now, held)
-			}
-
-			if b, _ := os.ReadFile(asked); len(b) > 0 {
-				t.Errorf("conflux %s asked the conflux update put in place for %q", argv[0], b)
+			if now := found(); !slices.Equal(now, was) {
+				t.Errorf("conflux %s, refusing the root, changed\n%q\nwhich was\n%q", argv[0], now, was)
 			}
 		})
 	}

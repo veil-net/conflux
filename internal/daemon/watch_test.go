@@ -219,21 +219,23 @@ func TestTheWatcherGivesUpOnARefusedConfiguration(t *testing.T) {
 	}
 }
 
-// TestEachIsGivenUpOnAlone: beside an observer still observing, an anchor refused for good
-// rebuildRefusals times in a row is given up on alone -- tried no more, while the watch goes on
-// keeping the observer, and with it the renewal timer, which a watch that gives up ends -- and
-// the watch gives up only once the observer is given up on too.
+// TestEachIsGivenUpOnAlone: the anchor or the observer refused for good rebuildRefusals times in
+// a row is given up on alone -- tried no more, while the watch goes on keeping the other, and
+// with it the renewal timer, which a watch that gives up ends -- and the watch gives up only once
+// both are given up on.
 func TestEachIsGivenUpOnAlone(t *testing.T) {
 	for name, tc := range map[string]struct {
-		observer, capture string
-		gaveUp            bool
-		observes          int
+		status, observer, capture string
+		gaveUp                    bool
+		rebuilds, observes        int
 	}{
-		"beside an observer observing":   {observer: "running"},
-		"beside an observer refused too": {observer: "failed", capture: "1", gaveUp: true, observes: rebuildRefusals},
+		"an anchor beside an observer observing": {status: "none", observer: "running", rebuilds: rebuildRefusals},
+		"an anchor beside an observer refused too": {status: "none", observer: "failed", capture: "1", gaveUp: true,
+			rebuilds: rebuildRefusals, observes: rebuildRefusals},
+		"an observer beside an anchor running": {status: "running", observer: "failed", capture: "1", observes: rebuildRefusals},
 	} {
 		t.Run(name, func(t *testing.T) {
-			t.Setenv(fakeAnchorctlStatusEnv, "none")
+			t.Setenv(fakeAnchorctlStatusEnv, tc.status)
 			t.Setenv(fakeAnchorctlObserverEnv, tc.observer)
 			t.Setenv(fakeAnchorctlCaptureEnv, tc.capture)
 			t.Setenv(fakeAnchorctlRefuseEnv, "start")
@@ -257,8 +259,8 @@ func TestEachIsGivenUpOnAlone(t *testing.T) {
 
 			cmds := strings.Join(ran(t, log), "\n")
 
-			if n := strings.Count(cmds, "start"); n != rebuildRefusals {
-				t.Errorf("the anchor was rebuilt %d times, want %d and then given up on", n, rebuildRefusals)
+			if n := strings.Count(cmds, "start"); n != tc.rebuilds {
+				t.Errorf("the anchor was rebuilt %d times, want %d", n, tc.rebuilds)
 			}
 
 			if n := strings.Count(cmds, "observe"); n != tc.observes {
@@ -266,8 +268,13 @@ func TestEachIsGivenUpOnAlone(t *testing.T) {
 			}
 
 			// Given up on, the anchor's refusal is recorded for status.
-			if st, err := config.LoadState(s.Dirs); err != nil || !strings.Contains(st.AnchorRefused, "TUN device") || st.AnchorRefusedAt.IsZero() {
-				t.Errorf("the state records the anchor refused as %q at %v (%v), want the refusal", st.AnchorRefused, st.AnchorRefusedAt, err)
+			st, err := config.LoadState(s.Dirs)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if recorded := strings.Contains(st.AnchorRefused, "TUN device") && !st.AnchorRefusedAt.IsZero(); recorded != (tc.rebuilds > 0) {
+				t.Errorf("the state records the anchor refused as %q at %v, want recorded %v", st.AnchorRefused, st.AnchorRefusedAt, tc.rebuilds > 0)
 			}
 		})
 	}

@@ -34,7 +34,8 @@ func runProxy(ctx context.Context, args []string) int {
 
 	f := newProxyFlags()
 
-	if hint := f.unknown(args); hint != "" {
+	specs, flags, hint := f.split(args)
+	if hint != "" {
 		ui.Errf("%q is not one of conflux proxy's flags.\n\n"+
 			"  conflux proxy takes port specs and the flags in conflux proxy -h:\n\n"+
 			"    conflux proxy 8080=127.0.0.1:3000 --taint mynet\n\n"+
@@ -43,8 +44,6 @@ func runProxy(ctx context.Context, args []string) int {
 
 		return ExitUsage
 	}
-
-	specs, flags := f.split(args)
 
 	if err := f.fs.Parse(flags); err != nil {
 		return ExitUsage
@@ -179,9 +178,8 @@ func runProxy(ctx context.Context, args []string) int {
 	return bring(ctx, d, cfg, "proxy", len(f.subnets) > 0 || *f.noSubnet)
 }
 
-// proxyFlags is conflux proxy's flag set, and the one list of what it takes: the
-// check that hands anchorctl's flags back and the splitter that lets specs and flags
-// come in any order both read it, rather than each keeping a copy to drift from it.
+// proxyFlags is conflux proxy's flag set, and the one list of what it takes, which split
+// reads both to let specs and flags come in any order and to hand anchorctl's flags back.
 type proxyFlags struct {
 	fs *flag.FlagSet
 
@@ -261,56 +259,39 @@ func (f *proxyFlags) lookup(arg string) (fl *flag.Flag, help bool) {
 	return f.fs.Lookup(name), false
 }
 
-// unknown returns the first dash-prefixed argument that is not one of conflux proxy's
-// own, or "". The value of a flag that takes one is its value whatever it looks like, as
-// split reads it: `--manifest -` names stdin, and is not a flag called "-".
-func (f *proxyFlags) unknown(args []string) string {
+// split separates the specs from the flags, so that they may be written in any order
+// -- `conflux proxy --taint x 8080=…` and the reverse both work, which Go's flag
+// package on its own does not allow -- and finds the first dash-prefixed argument that
+// is not one of conflux proxy's own, unknown, or "".
+//
+// A flag written as -taint value, rather than -taint=value, takes the next argument
+// with it unless it is a boolean, and that value is its value whatever it looks like:
+// `--manifest -` names stdin, and is not a flag called "-". --lan-discovery is a
+// tristate written as a value, so `conflux proxy --lan-discovery no 8080=127.0.0.1:3000`
+// has one spec and not two.
+func (f *proxyFlags) split(args []string) (positional, flags []string, unknown string) {
 	expectValue := false
 
 	for _, a := range args {
 		switch {
 		case expectValue:
+			flags = append(flags, a)
 			expectValue = false
 		case strings.HasPrefix(a, "-"):
+			flags = append(flags, a)
+
 			fl, help := f.lookup(a)
-			if fl == nil && !help {
-				return a
+			if fl == nil && !help && unknown == "" {
+				unknown = a
 			}
 
 			expectValue = fl != nil && !strings.Contains(a, "=") && !isBoolFlag(fl)
-		}
-	}
-
-	return ""
-}
-
-// split separates the specs from the flags, so that they may be written in any order
-// -- `conflux proxy --taint x 8080=…` and the reverse both work, which Go's flag
-// package on its own does not allow.
-//
-// A flag written as -taint value, rather than -taint=value, takes the next argument
-// with it unless it is a boolean. --lan-discovery is a tristate written as a value, so
-// `conflux proxy --lan-discovery no 8080=127.0.0.1:3000` has one spec and not two.
-func (f *proxyFlags) split(args []string) (positional, flags []string) {
-	expectValue := false
-
-	for _, a := range args {
-		switch {
-		case expectValue:
-			flags = append(flags, a)
-			expectValue = false
-		case strings.HasPrefix(a, "-"):
-			flags = append(flags, a)
-
-			if fl, _ := f.lookup(a); fl != nil && !strings.Contains(a, "=") && !isBoolFlag(fl) {
-				expectValue = true
-			}
 		default:
 			positional = append(positional, a)
 		}
 	}
 
-	return positional, flags
+	return positional, flags, unknown
 }
 
 // isBoolFlag is how the flag package itself tells a flag that takes no value.

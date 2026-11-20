@@ -270,13 +270,10 @@ func TestProxyKeepsItsOwnUplinkFlag(t *testing.T) {
 		{"8080=127.0.0.1:3000", "--uplink=/dev/ttyUSB0:115200"},
 		{"--no-uplink", "8080=127.0.0.1:3000"},
 	} {
-		f := newProxyFlags()
-
-		if hint := f.unknown(args); hint != "" {
+		specs, _, hint := newProxyFlags().split(args)
+		if hint != "" {
 			t.Errorf("%v: unknown said %q", args, hint)
 		}
-
-		specs, _ := f.split(args)
 
 		if len(specs) != 1 || specs[0] != "8080=127.0.0.1:3000" {
 			t.Errorf("%v: positional args are %v, want just the port spec", args, specs)
@@ -293,13 +290,12 @@ func TestProxyRoutesInUserspace(t *testing.T) {
 		{"8080=127.0.0.1:3000", "--serve-exit", "--no-subnet"},
 		{"--use-exit", "--no-serve-exit", "8080=127.0.0.1:3000"},
 	} {
-		f := newProxyFlags()
-
-		if hint := f.unknown(args); hint != "" {
+		specs, _, hint := newProxyFlags().split(args)
+		if hint != "" {
 			t.Errorf("%v: unknown said %q", args, hint)
 		}
 
-		if specs, _ := f.split(args); len(specs) != 1 || specs[0] != "8080=127.0.0.1:3000" {
+		if len(specs) != 1 || specs[0] != "8080=127.0.0.1:3000" {
 			t.Errorf("%v: positional args are %v, want just the port spec", args, specs)
 		}
 	}
@@ -521,13 +517,10 @@ func TestProxyKeepsItsOwnLANDiscoveryFlag(t *testing.T) {
 		{"8080=127.0.0.1:3000", "--lan-discovery=yes"},
 		{"--lan-discovery", "auto", "8080=127.0.0.1:3000"},
 	} {
-		f := newProxyFlags()
-
-		if hint := f.unknown(args); hint != "" {
+		specs, _, hint := newProxyFlags().split(args)
+		if hint != "" {
 			t.Errorf("%v: unknown said %q", args, hint)
 		}
-
-		specs, _ := f.split(args)
 
 		if len(specs) != 1 || specs[0] != "8080=127.0.0.1:3000" {
 			t.Errorf("%v: positional args are %v, want just the port spec", args, specs)

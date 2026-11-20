@@ -95,6 +95,39 @@ func TestHelpIsACommandOrAFlag(t *testing.T) {
 	}
 }
 
+// TestEveryHelpFlagIsHelp: each spelling Go's flag package answers with usage -- -h, --h,
+// -help, --help, any of them with a value -- asks for usage wherever conflux reads one:
+// renew prints its own rather than taking the flag for anchorctl's renew's, and a pass-through
+// with nothing running reaches anchorctl's rather than being told nothing runs.
+func TestEveryHelpFlagIsHelp(t *testing.T) {
+	anchortest.Require(t)
+
+	t.Setenv("CONFLUX_DIR", filepath.Join(t.TempDir(), "conflux"))
+	t.Setenv("ANCHOR_SOCKET", "")
+
+	// anchorctl's usage, which a pass-through prints to the terminal itself.
+	devNull, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer devNull.Close()
+
+	for _, h := range []string{"-h", "--h", "-help", "--help", "-h=x", "--help=x"} {
+		if out, errOut, _ := capture(t, "renew", h); !strings.Contains(out, "conflux renew —") {
+			t.Errorf("conflux renew %s did not print renew's usage; it said:\n%s", h, errOut)
+		}
+
+		stdout, stderr := os.Stdout, os.Stderr
+		os.Stdout, os.Stderr = devNull, devNull
+		_, errOut, code := capture(t, "peers", h)
+		os.Stdout, os.Stderr = stdout, stderr
+
+		if code != ExitOK {
+			t.Errorf("conflux peers %s, with nothing running, exited %d rather than printing anchorctl's usage:\n%s", h, code, errOut)
+		}
+	}
+}
+
 // TestRenewWithNoCredentialIsUnavailable: a machine configured but never enrolled, or
 // enrolled and never started, has nothing to renew -- unavailable, as documented, not a
 // failure.

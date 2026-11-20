@@ -69,7 +69,9 @@ something silently.
 only prints its usage, and conflux's prints that same usage in full, so owning the word
 loses nothing. Bare, it prints conflux's usage and then anchorctl's whole usage beneath
 a rule, so one page covers both surfaces. `conflux help COMMAND` prints that command's
-own usage instead, whichever binary it belongs to.
+own usage instead, whichever binary it belongs to. A help flag is any spelling Go's flag
+package answers with usage — `-h`, `--h`, `-help`, `--help`, with a value or without — and
+conflux reads every one as help, wherever it meets one.
 
 **`status`** is resolved by arity. Bare `conflux status` is conflux's, and it prints
 `anchorctl status` underneath — additive, so nothing is lost by conflux owning that
@@ -87,13 +89,13 @@ signal.
 **`renew`** is resolved by shape, like `proxy`. conflux's takes no arguments at all:
 it fetches a fresh credential from the enrolment API and installs it. anchorctl's
 takes `-cred FILE` and installs one the caller already holds. So any flag reaching
-`conflux renew` other than `-h` names anchorctl's, and is answered with the escape
+`conflux renew` other than a help flag names anchorctl's, and is answered with the escape
 hatch rather than guessed at.
 
 **`start`** is resolved by shape, like `renew`. conflux's takes no arguments at all:
 it starts the anchor this machine is already configured for. anchorctl's builds one
-from arguments the caller supplies. So any flag reaching `conflux start` other than
-`-h` names anchorctl's, and is answered with the escape hatch rather than guessed at.
+from arguments the caller supplies. So any flag reaching `conflux start` other than a
+help flag names anchorctl's, and is answered with the escape hatch rather than guessed at.
 
 **`observe`** is resolved by shape, like `proxy`. conflux's takes its own flags and no
 argument, and decides what this machine runs from every boot: the observer, and no anchor.

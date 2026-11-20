@@ -57,7 +57,7 @@ const ExitCheckFailed = 3
 func runCert(ctx context.Context, args []string) int {
 	cmds := certCommands()
 
-	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" || args[0] == "-help" {
+	if len(args) == 0 || args[0] == "help" || isHelpFlag(args[0]) {
 		certUsage(cmds)
 
 		if len(args) == 0 {

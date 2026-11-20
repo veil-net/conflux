@@ -119,18 +119,7 @@ func runDetached(args []string) int {
 // as the command, or a help flag anywhere. Not help anywhere at all, which is as likely a
 // flag's value -- `block -target X -reason help` -- as a request.
 func wantsUsage(args []string) bool {
-	if len(args) > 0 && args[0] == "help" {
-		return true
-	}
-
-	for _, a := range args {
-		switch a {
-		case "-h", "--help", "-help":
-			return true
-		}
-	}
-
-	return false
+	return len(args) > 0 && args[0] == "help" || slices.ContainsFunc(args, isHelpFlag)
 }
 
 // namesSocket reports whether the user supplied their own -socket, in any of the

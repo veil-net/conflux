@@ -249,13 +249,14 @@ func newProxyFlags() *proxyFlags {
 }
 
 // lookup finds the flag a dash-prefixed argument names, in any spelling Go's flag
-// package accepts. help is true for -h and -help, which the package answers without
-// their being registered.
+// package accepts. help is true for a help flag, which the package answers without its
+// being registered.
 func (f *proxyFlags) lookup(arg string) (fl *flag.Flag, help bool) {
-	name, _, _ := strings.Cut(strings.TrimLeft(arg, "-"), "=")
-	if name == "h" || name == "help" {
+	if isHelpFlag(arg) {
 		return nil, true
 	}
+
+	name, _, _ := strings.Cut(strings.TrimLeft(arg, "-"), "=")
 
 	return f.fs.Lookup(name), false
 }

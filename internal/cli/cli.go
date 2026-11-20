@@ -103,10 +103,10 @@ func Main(argv []string) int {
 	// would otherwise be ambiguous with conflux's own status, and a rule that is
 	// sometimes right is worse here than one that always explains itself.
 	if strings.HasPrefix(name, "-") {
-		switch name {
-		case "-h", "--help", "-help":
+		switch {
+		case isHelpFlag(name):
 			return runHelp(ctx, rest)
-		case "-v", "--version", "-version":
+		case name == "-v" || name == "--version" || name == "-version":
 			return runVersion(ctx, rest)
 		default:
 			ui.Errf("%q is not a conflux option.\n"+
@@ -126,6 +126,21 @@ func Main(argv []string) int {
 	}
 
 	return passthrough(ctx, argv[1:])
+}
+
+// isHelpFlag reports whether an argument is a request for usage as Go's flag package reads one,
+// which answers -h and -help, with one dash or two and with a value or none, whenever neither
+// is a flag of the set: every place conflux tells a help flag from another flag asks this, so
+// none answers a spelling the package takes for help as anything else.
+func isHelpFlag(arg string) bool {
+	name, _, _ := strings.Cut(arg, "=")
+
+	switch name {
+	case "-h", "--h", "-help", "--help":
+		return true
+	}
+
+	return false
 }
 
 // fipsRefusal refuses a conflux built to run in FIPS 140-3 mode whose mode has been switched

@@ -18,7 +18,7 @@ import (
 // internal/pki/pkcs12.go.
 
 func runCertP12(ctx context.Context, args []string) int {
-	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
+	if len(args) == 0 || args[0] == "help" || isHelpFlag(args[0]) {
 		ui.Printf("conflux cert p12 — PKCS#12 bundles, PBES2 and PBMAC1 throughout\n\n" +
 			"  export   bundle a key, its certificate and its chain\n" +
 			"  import   take a bundle apart into a key, its certificate and its chain\n\n" +

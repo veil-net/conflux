@@ -203,7 +203,7 @@ func (f *observeFlags) anchorctls(args []string) string {
 		}
 
 		name, _, _ := strings.Cut(strings.TrimLeft(a, "-"), "=")
-		if name == "h" || name == "help" || f.fs.Lookup(name) != nil {
+		if isHelpFlag(a) || f.fs.Lookup(name) != nil {
 			continue
 		}
 

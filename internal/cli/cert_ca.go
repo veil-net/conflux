@@ -35,7 +35,7 @@ func caCommands() map[string]caCommand {
 func runCertCA(ctx context.Context, args []string) int {
 	cmds := caCommands()
 
-	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
+	if len(args) == 0 || args[0] == "help" || isHelpFlag(args[0]) {
 		names := make([]string, 0, len(cmds))
 		for n := range cmds {
 			names = append(names, n)

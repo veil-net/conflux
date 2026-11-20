@@ -611,8 +611,7 @@ case it misses.
 conflux supplies the connection details through the environment (`ANCHOR_SOCKET`,
 `ANCHORD_TOKEN`) rather than injecting flags, and only where they are not already set. One
 exported empty is unset, as anchorctl reads it, and conflux's takes its place.
-anchorctl resolves the socket as `firstNonEmpty(-socket, global -socket,
-ANCHOR_SOCKET)`, so a flag you typed still wins and conflux never rewrites an argv.
+A `-socket` you type, or `ANCHOR_SOCKET` set, runs anchorctl with your environment alone.
 
 A command that makes the daemon itself open a path you name — `keygen -out` and
 `priv -out`, which write "on the daemon's filesystem", or export certificates given by path

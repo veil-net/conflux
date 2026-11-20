@@ -3,11 +3,12 @@
 ## Which Windows
 
 Windows 10 version 1607 (build 14393) or later, Windows 11, and Windows Server 2016 (the same
-build) or later. conflux makes the folders it keeps in a root through a handle on the root, with a
-flag that stops the create being taken anywhere a junction leads (`OBJ_DONT_REPARSE`), which
-Windows 10's first release, build 10240, does not know, and 1607 is the oldest known to take; on an
-older build that refuses it, conflux stops, saying the build is too old, rather than make them
-without it.
+build) or later. conflux makes `run\` in a root, and the junction it puts in place of a junction
+root, through a handle on the folder each goes in, with a flag that stops the create being taken
+anywhere a junction leads (`OBJ_DONT_REPARSE`); the other folders it keeps in a root (`logs\`,
+`bin\` and what extraction makes in it, `anchor\`, `anchor.root\`, `run\anchord\`) it makes by their names. Windows 10's first
+release, build 10240, does not know the flag, and 1607 is the oldest known to take it; on an older
+build that refuses it, conflux stops, saying the build is too old, rather than make them without it.
 
 ## `wintun.dll` is downloaded, never embedded
 

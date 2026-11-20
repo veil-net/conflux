@@ -304,7 +304,7 @@ read by OpenSSL 3.5, and it reads OpenSSL's. See [cert.md](docs/cert.md).
 
 | Command | What it does |
 |---|---|
-| `conflux up [--taint T] [--ipv4 ADDRESS \| --no-ipv4] [--subnet CIDR]... [--uplink DEV \| --no-uplink] [--peers HOST:PORT] [--lan-discovery yes\|no\|auto]` | enrol if needed, start in TUN mode, register the boot service |
+| `conflux up [--taint T] [--ipv4 ADDRESS \| --no-ipv4] [--subnet CIDR]... [--interface NAME \| --no-interface] [--uplink DEV \| --no-uplink] [--peers HOST:PORT] [--lan-discovery yes\|no\|auto]` | enrol if needed, start in TUN mode, register the boot service |
 | `conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T] [--ipv4 ADDRESS \| --no-ipv4] [--uplink DEV] [--peers HOST:PORT] [--lan-discovery yes\|no\|auto]` | enrol if needed, start in userspace mode serving those backends |
 | `conflux observe [--taint T] [--api URL] [--loopback] [--hide-names] [--export HOST:PORT] [--yes]` | enrol if needed, run the observer and no anchor, from every boot; `--observe` on `up` or `proxy` runs it beside one |
 | `conflux enrol --manifest FILE [--api URL] [--ipv4 ADDRESS]` | install a credential this machine was given, instead of drawing one |

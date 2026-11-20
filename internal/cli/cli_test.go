@@ -323,6 +323,37 @@ func TestSubnetsAreKeptOrCleared(t *testing.T) {
 	}
 }
 
+// TestTheInterfaceNameIsKeptSetOrReset: a name given once is kept by every re-run of up that
+// names none, as every setting is, and --no-interface is the way back to the anchor's own
+// name, as every persisted setting has one; the two together contradict.
+func TestTheInterfaceNameIsKeptSetOrReset(t *testing.T) {
+	// up takes the flag: refused here for privilege alone, which comes after the flags.
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return false }
+
+	if _, errOut, code := capture(t, "up", "--no-interface"); code != ExitDenied {
+		t.Errorf("conflux up --no-interface exited %d, want %d, refused for privilege alone:\n%s", code, ExitDenied, errOut)
+	}
+
+	cfg := config.Config{TUNName: "veil0"}
+
+	if err := chooseInterface(&cfg, "", false); err != nil || cfg.TUNName != "veil0" {
+		t.Errorf("no flag: the name is %q (%v), want veil0 kept", cfg.TUNName, err)
+	}
+
+	if err := chooseInterface(&cfg, "veil1", false); err != nil || cfg.TUNName != "veil1" {
+		t.Errorf("--interface veil1: the name is %q (%v)", cfg.TUNName, err)
+	}
+
+	if err := chooseInterface(&cfg, "", true); err != nil || cfg.TUNName != "" {
+		t.Errorf("--no-interface: the name is %q (%v), want none, the anchor's own", cfg.TUNName, err)
+	}
+
+	if err := chooseInterface(&cfg, "veil1", true); err == nil {
+		t.Error("--interface and --no-interface were both accepted")
+	}
+}
+
 // TestUplinkFDIsExplainedRatherThanPassed: a descriptor is adopted from whatever
 // started the daemon, and conflux's supervisor starts anchord with none, so the
 // form has to be refused here rather than fail as "bad file descriptor" from a

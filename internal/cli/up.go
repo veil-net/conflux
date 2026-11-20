@@ -39,6 +39,7 @@ func runUp(ctx context.Context, args []string) int {
 		ipv4     = fs.String("ipv4", "", ipv4Usage)
 		noIPv4   = fs.Bool("no-ipv4", false, noIPv4Usage)
 		tunName  = fs.String("interface", "", "name for the network interface (default: the anchor's own, anchor and the start of its ID); macOS and the BSDs number their own")
+		noTUN    = fs.Bool("no-interface", false, "go back to the anchor's own name for the interface on a machine given one")
 		uplink   = fs.String("uplink", "", "carry the mesh over a link rather than the host network, e.g. /dev/ttyUSB0:115200")
 		noUplink = fs.Bool("no-uplink", false, "go back to the host's network on a machine configured for a link")
 		noPeers  = fs.Bool("no-peers", false, "forget the bootstrap list and go back to the one enrolment supplies")
@@ -67,9 +68,9 @@ func runUp(ctx context.Context, args []string) int {
 	fs.Usage = func() {
 		ui.Printf("conflux up — join the overlay with a network interface\n\n" +
 			"  conflux up [--taint T] [--ipv4 ADDRESS | --no-ipv4] [--subnet CIDR... | --no-subnet]\n" +
-			"             [--uplink DEV | --no-uplink] [--peers HOST:PORT | --no-peers]\n" +
-			"             [--observe | --no-observe] [--export HOST:PORT]\n" +
-			"             [--ephemeral [--manifest FILE|-]]\n\n" +
+			"             [--interface NAME | --no-interface] [--uplink DEV | --no-uplink]\n" +
+			"             [--peers HOST:PORT | --no-peers] [--observe | --no-observe]\n" +
+			"             [--export HOST:PORT] [--ephemeral [--manifest FILE|-]]\n\n" +
 			"Enrols this machine if it has never been, starts an anchor in TUN mode, writes\n" +
 			"the configuration, and registers the boot service so a reboot needs nothing.\n\n" +
 			"With --uplink the realm is reached over a link rather than the host's network:\n" +
@@ -143,8 +144,8 @@ func runUp(ctx context.Context, args []string) int {
 
 	cfg.Mode = config.ModeTUN
 
-	if *tunName != "" {
-		cfg.TUNName = *tunName
+	if err := chooseInterface(cfg, *tunName, *noTUN); err != nil {
+		return fail(err)
 	}
 
 	if err := chooseUplink(cfg, *uplink, *noUplink); err != nil {
@@ -478,6 +479,23 @@ func promptIPv4() (string, error) {
 
 		return answer, nil
 	}
+}
+
+// chooseInterface decides the name the TUN is asked for: --interface names one, and
+// --no-interface goes back to none, the anchor's own name, which is the way back every
+// persisted setting has (see chooseToggle). Neither keeps what is configured, as every re-run
+// keeps its settings.
+func chooseInterface(cfg *config.Config, name string, none bool) error {
+	switch {
+	case none && name != "":
+		return errors.New("--interface and --no-interface contradict each other")
+	case none:
+		cfg.TUNName = ""
+	case name != "":
+		cfg.TUNName = name
+	}
+
+	return nil
 }
 
 // chooseUplink decides what layer 1 runs over.

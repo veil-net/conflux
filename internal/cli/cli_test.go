@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -226,8 +227,10 @@ func TestHelpListsEveryVisibleVerb(t *testing.T) {
 			continue
 		}
 
-		if !strings.Contains(out, name) {
-			t.Errorf("help does not mention %q", name)
+		// The row itself: the name alone is in the overview and the collisions too, which
+		// would still mention a verb whose row had gone.
+		if row := fmt.Sprintf("  %-10s %s\n", name, v.summary); !strings.Contains(out, row) {
+			t.Errorf("help has no row %q", row)
 		}
 	}
 }

@@ -99,14 +99,33 @@ func configOf(t *testing.T, d paths.Dirs) *config.Config {
 	return cfg
 }
 
+// manifestDoc is an anchor's manifest as its issuer writes one: chain, issued and expiring
+// when asked, granting taints, renewed by its AnchorID at renewal.
+func manifestDoc(chain []byte, issued, expires time.Time, taints []string, renewal string) map[string]any {
+	return map[string]any{
+		"formatVersion": 1, "kind": "anchor", "identity": "aa", "genesis": "bb",
+		"chain":      base64.StdEncoding.EncodeToString(chain),
+		"issuedAt":   issued.UTC().Format(enrol.ManifestTime),
+		"notAfter":   expires.UTC().Format(enrol.ManifestTime),
+		"taints":     taints,
+		"bootstrap":  []string{"genesis.veilnet.com.au:4700"},
+		"renewalUrl": renewal, "renewalAuth": "anchor-id",
+	}
+}
+
+// envelope is a manifest document as the issuer hands it over.
+func envelope(doc map[string]any) config.Envelope {
+	b, _ := json.Marshal(doc) // strings, numbers and lists of them
+
+	return config.Envelope(base64.StdEncoding.EncodeToString(b))
+}
+
 // saveDoc stores a manifest document as the machine's credential.
-func saveDoc(t *testing.T, d paths.Dirs, doc map[string]any) {
-	t.Helper()
+func saveDoc(tb testing.TB, d paths.Dirs, doc map[string]any) {
+	tb.Helper()
 
-	b, _ := json.Marshal(doc)
-
-	if err := config.SaveManifest(d, config.Envelope(base64.StdEncoding.EncodeToString(b))); err != nil {
-		t.Fatal(err)
+	if err := config.SaveManifest(d, envelope(doc)); err != nil {
+		tb.Fatal(err)
 	}
 }
 
@@ -129,15 +148,9 @@ func machine(t *testing.T, is *issuer, issued, expires time.Time) paths.Dirs {
 		t.Fatal(err)
 	}
 
-	saveDoc(t, d, map[string]any{
-		"formatVersion": 1, "kind": "anchor", "identity": "aa", "genesis": "bb",
-		"chain":      base64.StdEncoding.EncodeToString([]byte("the first chain")),
-		"issuedAt":   issued.UTC().Format(enrol.ManifestTime),
-		"notAfter":   expires.UTC().Format(enrol.ManifestTime),
-		"taints":     []string{"t"},
-		"bootstrap":  []string{"genesis.veilnet.com.au:4700"},
-		"renewalUrl": is.srv.URL + "/ghosts/alpha/renew", "renewalAuth": "anchor-id",
-	})
+	if err := config.SaveManifest(d, handed(t, is, issued, expires)); err != nil {
+		t.Fatal(err)
+	}
 
 	return d
 }
@@ -396,17 +409,11 @@ func enroller(t *testing.T, grants []string) (*httptest.Server, *[]string, *atom
 		_ = json.NewDecoder(r.Body).Decode(&in)
 		asked = in.Taints
 
-		doc, _ := json.Marshal(map[string]any{
-			"formatVersion": 1, "kind": "anchor", "identity": "aa", "genesis": "bb",
-			"chain":      base64.StdEncoding.EncodeToString([]byte("chain")),
-			"issuedAt":   time.Now().UTC().Format(enrol.ManifestTime),
-			"notAfter":   time.Now().Add(30 * 24 * time.Hour).UTC().Format(enrol.ManifestTime),
-			"taints":     grants,
-			"renewalUrl": "http://" + r.Host + "/ghosts/alpha/renew", "renewalAuth": "anchor-id",
-		})
+		doc := manifestDoc([]byte("chain"), time.Now(), time.Now().Add(30*24*time.Hour), grants,
+			"http://"+r.Host+"/ghosts/alpha/renew")
 
 		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(map[string]string{"credentials": base64.StdEncoding.EncodeToString(doc)})
+		_ = json.NewEncoder(w).Encode(map[string]string{"credentials": string(envelope(doc))})
 	}))
 	t.Cleanup(api.Close)
 

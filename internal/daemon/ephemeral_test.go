@@ -3,8 +3,6 @@ package daemon
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -26,20 +24,7 @@ import (
 func handed(t *testing.T, is *issuer, issued, expires time.Time) config.Envelope {
 	t.Helper()
 
-	b, err := json.Marshal(map[string]any{
-		"formatVersion": 1, "kind": "anchor", "identity": "aa", "genesis": "bb",
-		"chain":      base64.StdEncoding.EncodeToString([]byte("the first chain")),
-		"issuedAt":   issued.UTC().Format(enrol.ManifestTime),
-		"notAfter":   expires.UTC().Format(enrol.ManifestTime),
-		"taints":     []string{"t"},
-		"bootstrap":  []string{"genesis.veilnet.com.au:4700"},
-		"renewalUrl": is.srv.URL + "/ghosts/alpha/renew", "renewalAuth": "anchor-id",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return config.Envelope(base64.StdEncoding.EncodeToString(b))
+	return envelope(manifestDoc([]byte("the first chain"), issued, expires, []string{"t"}, is.srv.URL+"/ghosts/alpha/renew"))
 }
 
 // decoded is env as the caller of an ephemeral run hands it over, decoded; nil for none.

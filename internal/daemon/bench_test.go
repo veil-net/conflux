@@ -162,10 +162,10 @@ func BenchmarkAnchorCheck(b *testing.B) {
 // BenchmarkRenewal is the whole of a timer renewal against a stand-in API: the lock, the
 // stored files, the POST, the splice, the writes and the hot install.
 func BenchmarkRenewal(b *testing.B) {
-	b.Setenv("CONFLUX_DIR", b.TempDir())
 	b.Setenv("CONFLUX_ALLOW_INSECURE_API", "1")
 
-	chain := base64.StdEncoding.EncodeToString(make([]byte, 6<<10))
+	raw := make([]byte, 6<<10)
+	chain := base64.StdEncoding.EncodeToString(raw)
 
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -187,16 +187,7 @@ func BenchmarkRenewal(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	doc, _ := json.Marshal(map[string]any{
-		"formatVersion": 1, "kind": "anchor", "identity": "00", "genesis": "00", "chain": chain,
-		"issuedAt": time.Now().UTC().Format(time.RFC3339), "notAfter": time.Now().UTC().Format(time.RFC3339),
-		"taints": []string{"bench"}, "bootstrap": []string{"genesis.veilnet.com.au:4700"},
-		"renewalUrl": api.URL + "/ghosts/alpha/renew", "renewalAuth": "anchor-id",
-	})
-
-	if err := config.SaveManifest(d, config.Envelope(base64.StdEncoding.EncodeToString(doc))); err != nil {
-		b.Fatal(err)
-	}
+	saveDoc(b, d, manifestDoc(raw, time.Now(), time.Now(), []string{"bench"}, api.URL+"/ghosts/alpha/renew"))
 
 	ctl := fakeCtl(b)
 	ctx := context.Background()
@@ -218,8 +209,6 @@ func BenchmarkRenewal(b *testing.B) {
 // spawn, the readiness probe, and the shutdown that closes and reaps it.
 func BenchmarkDaemonLifecycle(b *testing.B) {
 	anchortest.Require(b)
-
-	b.Setenv("CONFLUX_DIR", b.TempDir())
 
 	d := dirs(b)
 
@@ -277,19 +266,9 @@ func benchSite(tb testing.TB) paths.Dirs {
 		tb.Fatal(err)
 	}
 
-	now := time.Now().UTC()
-
-	doc, _ := json.Marshal(map[string]any{
-		"formatVersion": 1, "kind": "anchor", "identity": "00", "genesis": "00",
-		"chain":    base64.StdEncoding.EncodeToString(make([]byte, 6<<10)),
-		"issuedAt": now.Format(time.RFC3339), "notAfter": now.Add(30 * 24 * time.Hour).Format(time.RFC3339),
-		"taints": []string{"bench"}, "bootstrap": []string{"genesis.veilnet.com.au:4700"},
-		"renewalUrl": "https://api.veilnet.com.au/ghosts/alpha/renew", "renewalAuth": "anchor-id",
-	})
-
-	if err := config.SaveManifest(d, config.Envelope(base64.StdEncoding.EncodeToString(doc))); err != nil {
-		tb.Fatal(err)
-	}
+	now := time.Now()
+	saveDoc(tb, d, manifestDoc(make([]byte, 6<<10), now, now.Add(30*24*time.Hour), []string{"bench"},
+		"https://api.veilnet.com.au/ghosts/alpha/renew"))
 
 	return d
 }

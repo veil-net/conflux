@@ -61,7 +61,9 @@ any other.
 
 Paired with them is `TestEveryFlagWeUseExists`, which runs the **embedded** anchorctl,
 scrapes each command's `-h`, and fails if conflux's argv names a flag that no longer
-exists — every flag conflux can pass, including the ones it passes only when set. Go's flag
+exists — every flag conflux can pass, including the ones it passes only when set: every
+golden, read from `testdata/argv`, for `start` and `observe -start`, and a vector of each other
+command conflux runs. Go's flag
 package refuses an unknown flag rather than ignoring it, so that would otherwise be a
 daemon that will not start — discovered after the binaries were dropped into
 `anchor/bin` and shipped.

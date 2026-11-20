@@ -2,7 +2,9 @@ package anchorctl_test
 
 import (
 	"maps"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -10,7 +12,6 @@ import (
 
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/anchortest"
-	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
 )
@@ -26,6 +27,9 @@ var flagLine = regexp.MustCompile(`(?m)^\s+-([a-z0-9-]+)`)
 // flag package refuses an unknown flag rather than ignoring it, so the failure would
 // otherwise be a daemon that will not start -- discovered after the binaries were
 // dropped into anchor/bin and shipped, not before.
+//
+// Every start and observe -start conflux can make is an argv golden of its own (args_test.go),
+// so those are read from testdata/argv, all of them; what has no golden is listed here.
 func TestEveryFlagWeUseExists(t *testing.T) {
 	anchortest.Require(t)
 
@@ -41,50 +45,42 @@ func TestEveryFlagWeUseExists(t *testing.T) {
 		t.Fatalf("Ensure: %v", err)
 	}
 
-	yes := true
+	argvs := map[string][]string{
+		"renew":         anchorctl.RenewArgs(),
+		"stop":          anchorctl.StopArgs(),
+		"status":        anchorctl.StatusArgs(),
+		"metrics":       anchorctl.MetricsArgs(),
+		"observe-renew": anchorctl.ObserveRenewArgs(),
+		"observe-stop":  anchorctl.ObserveStopArgs(),
+		"export":        anchorctl.ExportArgs("collector.example:4317", true, []string{"metrics", "flows"}),
+	}
 
-	for _, sub := range []struct {
-		name string
-		argv []string
-	}{
-		{"start", anchorctl.StartMode{
-			TUN: true, TUNName: "veil0", IPv4: "10.0.0.1/24",
-			Subnets: []string{"10.0.0.0/24"}, Proxies: nil,
-			Dir: "/tmp/x",
-		}.Args()},
-		{"start-proxy", anchorctl.StartMode{
-			Proxies: []string{"8080=127.0.0.1:1"}, Dir: "/tmp/x",
-		}.Args()},
-		// A failure here means the embedded pair predates the generic uplink, not
-		// that conflux is wrong: refresh anchor/bin from an anchor that has it.
-		{"start-uplink", anchorctl.StartMode{
-			TUN:    true,
-			Uplink: "/dev/ttyUSB0:115200", Dir: "/tmp/x",
-		}.Args()},
-		// Named separately because -peers is the one flag conflux omits when the
-		// operator names nothing, so the cases above never carry it.
-		{"start-peers", anchorctl.StartMode{
-			TUN: true, Dir: "/tmp/x",
-			Peers: []string{"genesis.veilnet.com.au:4700"},
-		}.Args()},
-		// The flags conflux passes only when set, so the cases above never carry them.
-		{"start-tuning", anchorctl.StartMode{
-			Proxies: []string{"8080=127.0.0.1:1"}, Dir: "/tmp/x",
-			IPv4: "10.0.0.1", Port: 4711, LowLatency: true, LANDiscovery: &yes,
-		}.Args()},
-		{"renew", anchorctl.RenewArgs()},
-		{"stop", anchorctl.StopArgs()},
-		{"status", anchorctl.StatusArgs()},
-		{"metrics", anchorctl.MetricsArgs()},
-		{"observe", anchorctl.ObserveStartArgs(config.Observer{Loopback: true, HideNames: true})},
-		{"observe-renew", anchorctl.ObserveRenewArgs()},
-		{"observe-stop", anchorctl.ObserveStopArgs()},
-		{"export", anchorctl.ExportArgs("collector.example:4317", true, []string{"metrics", "flows"})},
-	} {
-		t.Run(sub.name, func(t *testing.T) {
-			have := supportedFlags(t, tools.Anchorctl, sub.argv[0])
+	goldens, err := filepath.Glob(filepath.Join("testdata", "argv", "*.golden"))
+	if err != nil || len(goldens) == 0 {
+		t.Fatalf("no argv goldens to read (%v)", err)
+	}
 
-			for _, tok := range sub.argv[1:] {
+	for _, path := range goldens {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		argvs[strings.TrimSuffix(filepath.Base(path), ".golden")] = strings.Split(strings.TrimSuffix(string(b), "\n"), "\n")
+	}
+
+	// Each command's flags, scraped once.
+	scraped := map[string]map[string]bool{}
+
+	for name, argv := range argvs {
+		t.Run(name, func(t *testing.T) {
+			have, ok := scraped[argv[0]]
+			if !ok {
+				have = supportedFlags(t, tools.Anchorctl, argv[0])
+				scraped[argv[0]] = have
+			}
+
+			for _, tok := range argv[1:] {
 				// A bare "-" is the stdin marker that -manifest and -cred take as
 				// their value, not a flag.
 				if tok == "-" || !strings.HasPrefix(tok, "-") {
@@ -98,7 +94,7 @@ func TestEveryFlagWeUseExists(t *testing.T) {
 
 				if !have[name] {
 					t.Errorf("anchorctl %s has no -%s flag; conflux's argv would be refused outright.\n"+
-						"  it has: %s", sub.argv[0], name, strings.Join(sorted(have), " "))
+						"  it has: %s", argv[0], name, strings.Join(sorted(have), " "))
 				}
 			}
 		})

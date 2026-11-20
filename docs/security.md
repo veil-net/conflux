@@ -95,7 +95,8 @@ conflux was run from — a home directory or a download that another account cou
 for a program of its own, to be run as root at the next start. On Windows the root's
 DACL is set by the first conflux command that creates it, extraction included, and a
 root that holds anything another account made before then is refused rather than
-repaired around it.
+repaired around it, as is a root that is a junction another account may point elsewhere
+(see [windows.md](windows.md#file-permissions)).
 
 `CONFLUX_DIR` can point the extraction somewhere else, which is a knob worth knowing
 about: it lets a caller choose the directory a root daemon executes from. It exists

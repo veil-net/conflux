@@ -89,7 +89,14 @@ inherited by everything beneath. Every secret file gets the same, explicitly, be
 anything is written into it.
 
 A root some other account created is refused rather than taken over: whoever made it
-could have filled it first. And the two binaries the service runs as SYSTEM, and
+could have filled it first. So is a root that is a junction another account may point
+elsewhere: `%ProgramData%` lets any user make one where `%ProgramData%\conflux` or
+`%ProgramData%\conflux-ephemeral` is not yet, leading into a directory of SYSTEM's, and point
+it at a directory of their own once conflux has filled it. A junction root is used only when
+it belongs to SYSTEM, the Administrators, TrustedInstaller or the account running conflux,
+and its DACL grants nobody else the right to write its data or attributes, delete it, or
+change its DACL or owner; an ephemeral root that fails this is passed over by every reader
+too. And the two binaries the service runs as SYSTEM, and
 `wintun.dll` beside them, are run only if Administrators, SYSTEM or the account running
 conflux owns them — a set directory is named for content anybody can compute, so one
 made by somebody else is extracted again rather than trusted.

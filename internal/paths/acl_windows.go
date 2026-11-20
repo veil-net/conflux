@@ -157,7 +157,8 @@ func ownership(path string) (*windows.SID, windows.SECURITY_DESCRIPTOR_CONTROL, 
 }
 
 // secure gives a conflux root its ownership and DACL, once, and refuses one another
-// account made, or a CONFLUX_DIR another account can move (see parents).
+// account made, a junction another account may point elsewhere (heldLink), or a CONFLUX_DIR
+// another account can move (see parents).
 //
 // A directory conflux did not create is one somebody else may have filled before it
 // looked -- with a binary for the service to run, or a manifest whose key they hold --
@@ -171,6 +172,15 @@ func ownership(path string) (*windows.SID, windows.SECURITY_DESCRIPTOR_CONTROL, 
 // can always grant itself the rest -- so the service would go on writing its log or its
 // token into a place that account controls.
 func secure(dir string) error {
+	link, err := os.Lstat(dir)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", dir, err)
+	}
+
+	if err := heldLink(dir, link); err != nil {
+		return err
+	}
+
 	if chosen(dir) {
 		if err := parents(dir); err != nil {
 			return err
@@ -221,17 +231,48 @@ func ownerRefusal(dir string, owner *windows.SID) error {
 		dir, accountName(owner))
 }
 
-// Foreign is what secure would refuse dir with for its owner, before anything is made, or
-// nil where dir is this account's or is not there yet. A directory another account made is
-// none of conflux's to use, and whoever reads one -- an ephemeral run's root, which
-// %ProgramData% lets anybody make first -- holds it to this as the conflux that makes one does.
+// Foreign is what secure would refuse dir with for its owner, or for a junction another
+// account may point elsewhere, before anything is made, or nil where dir is this account's or
+// is not there yet. A directory another account made is none of conflux's to use, and whoever
+// reads one -- an ephemeral run's root, which %ProgramData% lets anybody make first -- holds it
+// to this as the conflux that makes one does.
 func Foreign(dir string) error {
+	link, err := os.Lstat(dir)
+	if err != nil {
+		return nil
+	}
+
+	if err := heldLink(dir, link); err != nil {
+		return err
+	}
+
 	owner, _, err := ownership(dir)
 	if err != nil {
 		return nil
 	}
 
 	return ownerRefusal(dir, owner)
+}
+
+// heldLink refuses dir, which Lstat found to be fi, where it is a junction or a link that an
+// account other than those trustedOwner names may point elsewhere: by owning it, or by a grant
+// of retargets in its DACL. ownership follows a junction, so the directory it leads to would
+// otherwise answer for it, and %ProgramData% lets any user make one where %ProgramData%\conflux
+// or conflux-ephemeral is not yet, leading into a directory of SYSTEM's, and point it at one of
+// their own once conflux has filled it, with a conflux.exe for the service to run as SYSTEM.
+// Held as a link is on Unix, by its owner, and here by its DACL too.
+func heldLink(dir string, fi os.FileInfo) error {
+	if !isLink(fi) {
+		return nil
+	}
+
+	who, err := mayChange(dir, retargets, "point it elsewhere or move it")
+	if err != nil || who == "" {
+		return err
+	}
+
+	return fmt.Errorf("%s is a junction or a link, which %s could point at a directory of their own, with a "+
+		"conflux in it for the service to run.\n  Remove it, then run this again as Administrator", dir, who)
 }
 
 // fileDeleteChild is FILE_DELETE_CHILD: on a directory, the right to delete or rename what
@@ -275,32 +316,9 @@ func parents(dir string) error {
 			where, what, rights = "reached through", "point it elsewhere or move it", retargets
 		}
 
-		sd, err := ownSecurity(p)
+		who, err := mayChange(p, rights, what)
 		if err != nil {
-			return fmt.Errorf("read the ownership of %s: %w", p, err)
-		}
-
-		owner, _, err := sd.Owner()
-		if err != nil {
-			return fmt.Errorf("read the owner of %s: %w", p, err)
-		}
-
-		dacl, _, err := sd.DACL()
-		if err != nil {
-			return fmt.Errorf("read the DACL of %s: %w", p, err)
-		}
-
-		who := ""
-
-		switch {
-		case !trustedOwner(owner):
-			who = "belongs to " + accountName(owner) + ", who"
-		case dacl == nil:
-			who = "has no DACL, so anybody"
-		default:
-			if sid := mover(dacl, rights); sid != nil {
-				who = "grants " + accountName(sid) + " the right to " + what + ", who"
-			}
+			return err
 		}
 
 		if who != "" {
@@ -311,6 +329,39 @@ func parents(dir string) error {
 	}
 
 	return nil
+}
+
+// mayChange is who besides SYSTEM, the Administrators, TrustedInstaller and the account running
+// conflux may change p itself, as a refusal names them, or "": its owner, who may grant itself
+// anything, or anybody its DACL grants one of rights, which lets them what.
+func mayChange(p string, rights windows.ACCESS_MASK, what string) (string, error) {
+	sd, err := ownSecurity(p)
+	if err != nil {
+		return "", fmt.Errorf("read the ownership of %s: %w", p, err)
+	}
+
+	owner, _, err := sd.Owner()
+	if err != nil {
+		return "", fmt.Errorf("read the owner of %s: %w", p, err)
+	}
+
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		return "", fmt.Errorf("read the DACL of %s: %w", p, err)
+	}
+
+	switch {
+	case !trustedOwner(owner):
+		return "belongs to " + accountName(owner) + ", who", nil
+	case dacl == nil:
+		return "has no DACL, so anybody", nil
+	}
+
+	if sid := mover(dacl, rights); sid != nil {
+		return "grants " + accountName(sid) + " the right to " + what + ", who", nil
+	}
+
+	return "", nil
 }
 
 // ownSecurity is the owner and DACL of p itself: of a link or a junction, not of what it

@@ -214,3 +214,35 @@ func mklinkJ(t *testing.T, link, target string) string {
 
 	return link
 }
+
+// TestSecureHoldsAJunctionRoot: a root that is a junction is held to who may point it elsewhere,
+// as a link is on Unix to its owner: %ProgramData% lets any user make one where conflux's root
+// is not yet, leading into a directory of SYSTEM's, whose owner would answer for it. One whose
+// own DACL lets Users write its attributes, enough to rewrite its target, is refused by secure
+// and by Foreign, naming it; one only this account and the system may change is accepted by
+// both. A root of the platform's, so no CONFLUX_DIR: no parents are read. Windows-only, so it
+// runs in CI's platforms job alone.
+func TestSecureHoldsAJunctionRoot(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", "")
+
+	open := mklinkJ(t, filepath.Join(t.TempDir(), "j"), t.TempDir())
+	grantLink(t, open, windows.FILE_WRITE_ATTRIBUTES)
+
+	if err := Foreign(open); err == nil || !strings.Contains(err.Error(), open) {
+		t.Errorf("Foreign(a junction Users may point elsewhere) = %v, want a refusal naming it", err)
+	}
+
+	if err := secure(open); err == nil || !strings.Contains(err.Error(), open) {
+		t.Errorf("secure(a junction Users may point elsewhere) = %v, want a refusal naming it", err)
+	}
+
+	held := mklinkJ(t, filepath.Join(t.TempDir(), "j"), t.TempDir())
+
+	if err := Foreign(held); err != nil {
+		t.Errorf("Foreign(a junction only this account and the system may change) = %v", err)
+	}
+
+	if err := secure(held); err != nil {
+		t.Errorf("secure(a junction only this account and the system may change) = %v", err)
+	}
+}

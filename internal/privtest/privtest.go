@@ -3,8 +3,9 @@
 // the supervisor runs as, may do without asking, and the id a privilege is known by (LUID); the
 // SIDs of Users, SYSTEM and the Administrators; a grant to Users beside what a DACL holds
 // (GrantUsers, WithUsers), %ProgramData%'s among them (ProgramDataGrant); a parent that refuses
-// what is made in it a DACL given afterwards (DenyOwnersTheirDACL); and a file's owner and DACL as
-// a test reads them (ReadSecurity).
+// what is made in it a DACL given afterwards (DenyOwnersTheirDACL); a file's owner and DACL as a
+// test reads them (ReadSecurity); and a folder shared through this machine's own server, a network
+// volume as Windows sees one (Share).
 //
 // It imports nothing of conflux's, so any package's tests can use it, paths' own among them.
 package privtest

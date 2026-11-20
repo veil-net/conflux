@@ -1,6 +1,10 @@
 package privtest
 
 import (
+	"fmt"
+	"os"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"unsafe"
 
@@ -237,4 +241,78 @@ func ReadSecurity(tb testing.TB, path string) Security {
 	}
 
 	return s
+}
+
+// netapi32's share management, which x/sys does not wrap.
+var (
+	netapi32    = windows.NewLazySystemDLL("netapi32.dll")
+	netShareAdd = netapi32.NewProc("NetShareAdd")
+	netShareDel = netapi32.NewProc("NetShareDel")
+)
+
+// shareInfo2 is SHARE_INFO_2: a share's name, its type, a remark, permissions no Windows reads,
+// how many may use it and how many do, the path it shares, and a password no Windows reads.
+type shareInfo2 struct {
+	netname     *uint16
+	shareType   uint32
+	remark      *uint16
+	permissions uint32
+	maxUses     uint32
+	currentUses uint32
+	path        *uint16
+	passwd      *uint16
+}
+
+const (
+	stypeDisktree  = 0x0        // STYPE_DISKTREE: a folder
+	stypeTemporary = 0x40000000 // STYPE_TEMPORARY: gone when the server restarts
+
+	nerrServerNotStarted = syscall.Errno(2114) // NERR_ServerNotStarted: this machine serves no shares
+)
+
+// shared counts the shares Share has made, so that each has a name of its own.
+var shared atomic.Uint32
+
+// Share shares dir through this machine's own server for as long as tb runs, under a name of its
+// own, and is the UNC path that reaches it there, \\localhost\NAME: a folder on a network volume, as
+// Windows sees one, though the server is this machine. tb is skipped where this machine serves no
+// shares, may not be asked by this account to add one, or cannot reach its own.
+func Share(tb testing.TB, dir string) string {
+	tb.Helper()
+
+	name := fmt.Sprintf("conflux%d-%d", os.Getpid(), shared.Add(1))
+
+	n, err := windows.UTF16PtrFromString(name)
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	p, err := windows.UTF16PtrFromString(dir)
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	info := shareInfo2{netname: n, shareType: stypeDisktree | stypeTemporary, maxUses: ^uint32(0), path: p}
+
+	r, _, _ := netShareAdd.Call(0, 2, uintptr(unsafe.Pointer(&info)), 0)
+	switch err := syscall.Errno(r); err {
+	case 0:
+	case windows.ERROR_ACCESS_DENIED, nerrServerNotStarted:
+		tb.Skipf("this machine will not share %s for this account: NetShareAdd: %v", dir, err)
+	default:
+		tb.Fatalf("share %s: NetShareAdd: %v", dir, err)
+	}
+
+	tb.Cleanup(func() {
+		if r, _, _ := netShareDel.Call(0, uintptr(unsafe.Pointer(n)), 0); r != 0 {
+			tb.Errorf("stop sharing %s: NetShareDel: %v", dir, syscall.Errno(r))
+		}
+	})
+
+	unc := `\\localhost\` + name
+	if _, err := os.Stat(unc); err != nil {
+		tb.Skipf("%s, shared as %s, cannot be reached through this machine's own server: %v", dir, unc, err)
+	}
+
+	return unc
 }

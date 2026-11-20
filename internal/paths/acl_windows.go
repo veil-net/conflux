@@ -707,14 +707,14 @@ func ownerRefusal(dir string, owner *windows.SID) error {
 }
 
 // Foreign is what secure would refuse dir with for its owner, for a junction another account
-// may point elsewhere, for a DACL that lets another account move what is in it, or for anything
-// in it another account may change (contents), before anything is made, or nil where dir is this
-// account's or is not there yet. A directory another
-// account made, or could have planted something in, is none of conflux's to use, and whoever
-// reads one -- an ephemeral run's root, which %ProgramData% lets anybody make first -- holds it
-// to this as the conflux that makes one does, through one handle as secure does, and reading
-// alone: nothing is run from a root whose contents another account could have planted or can
-// point elsewhere.
+// may point elsewhere, or one leading where no junction of conflux's could (leadsTo), for a DACL
+// that lets another account move what is in it, or for anything in it another account may change
+// (contents), before anything is made, or nil where dir is this account's or is not there yet. A
+// directory another account made, or could have planted something in, is none of conflux's to
+// use, and whoever reads one -- an ephemeral run's root, which %ProgramData% lets anybody make
+// first -- holds it to this as the conflux that makes one does, through one handle as secure
+// does, and reading alone: nothing is run from a root whose contents another account could have
+// planted or can point elsewhere.
 func Foreign(dir string) error {
 	root, err := heldRoot(dir, readAccess)
 	if errors.As(err, new(unopened)) {
@@ -725,6 +725,13 @@ func Foreign(dir string) error {
 		return err
 	}
 	defer root.close()
+
+	// A link leads where one of conflux's could, as secure holds one: never to a network share.
+	if root.link != nil {
+		if _, err := leadsTo(dir, root.dir); err != nil {
+			return err
+		}
+	}
 
 	sd, err := security(root.dir)
 	if err != nil {

@@ -296,6 +296,34 @@ func TestSecureHoldsAJunctionRoot(t *testing.T) {
 	}
 }
 
+// TestALinkRootLeadingToAShareIsRefused: a junction of conflux's can lead only to a directory named
+// by its volume's GUID, which a network share's has none of, so a root that is a link leading to a
+// share is refused by secure, which could not replace it, and by Foreign alike, naming it: whoever
+// reads an ephemeral root holds a link root to where it leads as secure does. The share is a folder
+// of this machine's, reached through its own server. Windows-only, so it runs in CI's platforms job
+// alone, and skipped where the machine will not share a folder.
+func TestALinkRootLeadingToAShareIsRefused(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", "")
+
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "conflux"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(filepath.Join(privtest.Share(t, dir), "conflux"), link); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Foreign(link); err == nil || !strings.Contains(err.Error(), link) {
+		t.Errorf("Foreign(a link leading to a share) = %v, want a refusal naming it", err)
+	}
+
+	if err := secure(link); err == nil || !strings.Contains(err.Error(), link) {
+		t.Errorf("secure(a link leading to a share) = %v, want a refusal naming it", err)
+	}
+}
+
 // TestARootIsMadeWithItsDACL: %ProgramData% passes Users the right to create in what is made in it,
 // enough to turn an empty directory into a junction, so a root is made with its own ownership and
 // protected DACL set as it is created, and carries that grant not even for an instant: read as

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -14,71 +15,36 @@ import (
 	"runtime"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/veil-net/conflux/internal/ghrelease"
+	"github.com/veil-net/conflux/internal/ghrelease/ghreleasetest"
 )
 
-// A release, served the way GitHub serves one: a release document listing assets by id,
-// and an asset endpoint per id that answers with the bytes.
-//
-// Modelled on the real API rather than on what this package happens to need, because the
-// gap between those two is where a fetcher that passes its tests and fails in CI lives.
-type fakeRelease struct {
-	tag    string
-	commit string
-	files  map[string][]byte
+// newRelease is anchor's release holding files, with the manifest.json that describes
+// them, served the way GitHub serves one. Every request must carry the token.
+func newRelease(files map[string][]byte, pin string, version int) *ghreleasetest.Release {
+	all := maps.Clone(files)
+	all[manifestName] = []byte(manifestOf(files, pin, version))
 
-	// states overrides an asset's state, for the half-finished-release case.
-	states map[string]string
-
-	// manifestJSON overrides the generated manifest, for the malformed cases.
-	manifestJSON string
-	// served, when set, is what the asset endpoint answers for the manifest in place of
-	// the file the release document lists and digests: a substitution past the API.
-	served string
-	// noDigest leaves the release document's digests out.
-	noDigest bool
-
-	// mu guards what the server records: Fetch downloads every binary at once, so the
-	// handlers that append run side by side.
-	mu       sync.Mutex
-	requests []string
-	tokens   []string
-}
-
-// record notes a request, from whichever handler goroutine served it.
-func (f *fakeRelease) record(r *http.Request) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	f.requests = append(f.requests, r.URL.Path)
-	f.tokens = append(f.tokens, r.Header.Get("Authorization"))
-}
-
-// seen is what the server recorded, copied under the lock.
-func (f *fakeRelease) seen() (requests, tokens []string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	return slices.Clone(f.requests), slices.Clone(f.tokens)
-}
-
-func newRelease(files map[string][]byte) *fakeRelease {
-	return &fakeRelease{
-		tag:    "latest",
-		commit: "0aea0f77bb77f8bbaa23c5055d9fe245d3a9bee2",
-		files:  files,
-		states: map[string]string{},
+	return &ghreleasetest.Release{
+		Repo:   DefaultRepo,
+		Tag:    "latest",
+		Commit: "0aea0f77bb77f8bbaa23c5055d9fe245d3a9bee2",
+		Files:  all,
+		Auth:   "Bearer t0ken",
 	}
 }
 
-func (f *fakeRelease) manifest(pin string, version int) string {
-	if f.manifestJSON != "" {
-		return f.manifestJSON
-	}
+// serve stands f up and points a Source at it.
+func serve(t *testing.T, f *ghreleasetest.Release) Source {
+	t.Helper()
 
+	return Source{API: f.Serve(t), Repo: "veil-net/anchor", Tag: "latest", Token: "t0ken"}
+}
+
+// manifestOf is the manifest.json describing files.
+func manifestOf(files map[string][]byte, pin string, version int) string {
 	type entry struct {
 		Name    string `json:"name"`
 		Program string `json:"program"`
@@ -90,7 +56,7 @@ func (f *fakeRelease) manifest(pin string, version int) string {
 
 	var entries []entry
 
-	for name, body := range f.files {
+	for name, body := range files {
 		sum := sha256.Sum256(body)
 		entries = append(entries, entry{
 			Name:    name,
@@ -115,112 +81,10 @@ func (f *fakeRelease) manifest(pin string, version int) string {
 	return string(out)
 }
 
-// serve returns a server and the Source pointing at it. The manifest is built from files
-// unless one was set explicitly.
-func (f *fakeRelease) serve(t *testing.T, pin string, version int) (*httptest.Server, Source) {
-	t.Helper()
-
-	// ids are assigned in one pass so that the release document and the asset endpoints
-	// agree without either being the source of truth for the other.
-	ids := map[string]int64{}
-	byID := map[int64]string{}
-
-	var id int64 = 100
-
-	names := []string{manifestName}
-	for name := range f.files {
-		names = append(names, name)
-	}
-
-	for _, name := range names {
-		ids[name] = id
-		byID[id] = name
-		id++
-	}
-
-	bodies := func(name string) []byte {
-		if name == manifestName {
-			return []byte(f.manifest(pin, version))
-		}
-
-		return f.files[name]
-	}
-
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/repos/veil-net/anchor/releases/tags/", func(w http.ResponseWriter, r *http.Request) {
-		f.record(r)
-
-		tag := strings.TrimPrefix(r.URL.Path, "/repos/veil-net/anchor/releases/tags/")
-		if tag != f.tag {
-			w.WriteHeader(http.StatusNotFound)
-			fmt.Fprint(w, `{"message":"Not Found"}`)
-
-			return
-		}
-
-		type a struct {
-			ID     int64  `json:"id"`
-			Name   string `json:"name"`
-			Size   int64  `json:"size"`
-			State  string `json:"state"`
-			Digest string `json:"digest,omitempty"`
-		}
-
-		var assets []a
-
-		for _, name := range names {
-			state := "uploaded"
-			if s, ok := f.states[name]; ok {
-				state = s
-			}
-
-			sum := sha256.Sum256(bodies(name))
-
-			digest := "sha256:" + hex.EncodeToString(sum[:])
-			if f.noDigest {
-				digest = ""
-			}
-
-			assets = append(assets, a{ID: ids[name], Name: name, Size: int64(len(bodies(name))), State: state, Digest: digest})
-		}
-
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"id":               42,
-			"tag_name":         f.tag,
-			"target_commitish": f.commit,
-			"assets":           assets,
-		})
-	})
-
-	mux.HandleFunc("/repos/veil-net/anchor/releases/assets/", func(w http.ResponseWriter, r *http.Request) {
-		f.record(r)
-
-		var got int64
-		fmt.Sscanf(strings.TrimPrefix(r.URL.Path, "/repos/veil-net/anchor/releases/assets/"), "%d", &got)
-
-		name, ok := byID[got]
-		if !ok {
-			w.WriteHeader(http.StatusNotFound)
-
-			return
-		}
-
-		if name == manifestName && f.served != "" {
-			_, _ = w.Write([]byte(f.served))
-
-			return
-		}
-
-		_, _ = w.Write(bodies(name))
-	})
-
-	srv := httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
-
-	t.Setenv(ghrelease.InsecureEnv, "1")
-
-	return srv, Source{API: srv.URL, Repo: "veil-net/anchor", Tag: "latest", Token: "t0ken"}
+// rewrite replaces old with new in f's manifest.json, once: a manifest that says something
+// other than what is served.
+func rewrite(f *ghreleasetest.Release, old, new string) {
+	f.Files[manifestName] = []byte(strings.Replace(string(f.Files[manifestName]), old, new, 1))
 }
 
 func quiet(string, ...any) {}
@@ -236,8 +100,8 @@ func pair() map[string][]byte {
 
 func TestFetchWritesVerifiedBinaries(t *testing.T) {
 	files := pair()
-	f := newRelease(files)
-	_, src := f.serve(t, testPin, 1)
+	f := newRelease(files, testPin, 1)
+	src := serve(t, f)
 
 	dir := t.TempDir()
 
@@ -278,8 +142,8 @@ func TestFetchWritesVerifiedBinaries(t *testing.T) {
 // is replaced by the verified download.
 func TestFetchKeepsAVerifiedCopy(t *testing.T) {
 	files := pair()
-	f := newRelease(files)
-	_, src := f.serve(t, testPin, 1)
+	f := newRelease(files, testPin, 1)
+	src := serve(t, f)
 
 	dir := t.TempDir()
 
@@ -298,9 +162,7 @@ func TestFetchKeepsAVerifiedCopy(t *testing.T) {
 
 	var downloads []string
 
-	requests, _ := f.seen()
-
-	for _, p := range requests {
+	for _, p := range f.Seen() {
 		if strings.Contains(p, "/releases/assets/") {
 			downloads = append(downloads, p)
 		}
@@ -317,40 +179,31 @@ func TestFetchKeepsAVerifiedCopy(t *testing.T) {
 }
 
 // The token must reach the API and it must be a Bearer. A fetch that silently sent no
-// credential would pass every other test here against a server that does not check one,
-// and fail only against the private repository it exists for.
+// credential would pass against a server that does not check one, and fail only against
+// the private repository it exists for. The fake holds every request to the bearer
+// (newRelease's Auth); this is the fetch that makes sure there were requests to hold.
 func TestFetchSendsTheToken(t *testing.T) {
-	f := newRelease(pair())
-	_, src := f.serve(t, testPin, 1)
+	f := newRelease(pair(), testPin, 1)
+	src := serve(t, f)
 
 	if err := Fetch(context.Background(), src, []string{"anchord-linux-amd64"}, t.TempDir(), quiet); err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
 
-	requests, tokens := f.seen()
-	if len(tokens) == 0 {
+	if len(f.Seen()) == 0 {
 		t.Fatal("no requests were made")
-	}
-
-	for i, got := range tokens {
-		if got != "Bearer t0ken" {
-			t.Errorf("request %d (%s) carried Authorization %q", i, requests[i], got)
-		}
 	}
 }
 
 func TestFetchRefusesAWrongDigest(t *testing.T) {
 	files := pair()
-	f := newRelease(files)
+	f := newRelease(files, testPin, 1)
 
 	// A manifest describing different bytes from the ones served: the substitution the
 	// digest exists to catch.
-	f.manifestJSON = f.manifest(testPin, 1)
-	f.manifestJSON = strings.Replace(f.manifestJSON,
-		hex.EncodeToString(sha256Of(files["anchord-linux-amd64"])),
-		strings.Repeat("a", 64), 1)
+	rewrite(f, hex.EncodeToString(sha256Of(files["anchord-linux-amd64"])), strings.Repeat("a", 64))
 
-	_, src := f.serve(t, testPin, 1)
+	src := serve(t, f)
 
 	err := Fetch(context.Background(), src, []string{"anchord-linux-amd64"}, t.TempDir(), quiet)
 	if err == nil || !strings.Contains(err.Error(), "SHA-256") {
@@ -363,12 +216,10 @@ func TestFetchRefusesAWrongDigest(t *testing.T) {
 // an older copy of the one that did not would be a pair from two builds.
 func TestARefusedFetchWritesNothing(t *testing.T) {
 	files := pair()
-	f := newRelease(files)
-	f.manifestJSON = strings.Replace(f.manifest(testPin, 1),
-		hex.EncodeToString(sha256Of(files["anchord-linux-amd64"])),
-		strings.Repeat("a", 64), 1)
+	f := newRelease(files, testPin, 1)
+	rewrite(f, hex.EncodeToString(sha256Of(files["anchord-linux-amd64"])), strings.Repeat("a", 64))
 
-	_, src := f.serve(t, testPin, 1)
+	src := serve(t, f)
 
 	dir := t.TempDir()
 
@@ -398,8 +249,8 @@ func TestFetchRefusesAnchoradminInTheRelease(t *testing.T) {
 	files := pair()
 	files["anchoradmin-linux-amd64"] = []byte("admin")
 
-	f := newRelease(files)
-	_, src := f.serve(t, testPin, 1)
+	f := newRelease(files, testPin, 1)
+	src := serve(t, f)
 
 	err := Fetch(context.Background(), src, []string{"anchord-linux-amd64"}, t.TempDir(), quiet)
 	if err == nil || !strings.Contains(err.Error(), "anchoradmin") {
@@ -408,8 +259,8 @@ func TestFetchRefusesAnchoradminInTheRelease(t *testing.T) {
 }
 
 func TestFetchNamesWhatIsMissing(t *testing.T) {
-	f := newRelease(pair())
-	_, src := f.serve(t, testPin, 1)
+	f := newRelease(pair(), testPin, 1)
+	src := serve(t, f)
 
 	want := []string{"anchord-linux-amd64", "anchord-darwin-arm64", "anchorctl-darwin-arm64"}
 
@@ -430,14 +281,14 @@ func TestFetchNamesWhatIsMissing(t *testing.T) {
 // publish step.
 func TestFetchNamesAnUnattachedBinary(t *testing.T) {
 	files := pair()
-	f := newRelease(files)
+	f := newRelease(files, testPin, 1)
 
 	// Describe a third binary in the manifest without serving it.
-	f.manifestJSON = strings.Replace(f.manifest(testPin, 1), `"binaries":[`,
+	rewrite(f, `"binaries":[`,
 		`"binaries":[{"name":"anchord-darwin-arm64","program":"anchord","os":"darwin","arch":"arm64","bytes":1,"sha256":"`+
-			strings.Repeat("b", 64)+`"},`, 1)
+			strings.Repeat("b", 64)+`"},`)
 
-	_, src := f.serve(t, testPin, 1)
+	src := serve(t, f)
 
 	err := Fetch(context.Background(), src, []string{"anchord-darwin-arm64"}, t.TempDir(), quiet)
 	if err == nil || !strings.Contains(err.Error(), "not attached to the release") {
@@ -446,8 +297,8 @@ func TestFetchNamesAnUnattachedBinary(t *testing.T) {
 }
 
 func TestFetchRefusesAnUnknownFormatVersion(t *testing.T) {
-	f := newRelease(pair())
-	_, src := f.serve(t, testPin, 2)
+	f := newRelease(pair(), testPin, 2)
+	src := serve(t, f)
 
 	err := Fetch(context.Background(), src, []string{"anchord-linux-amd64"}, t.TempDir(), quiet)
 	if err == nil || !strings.Contains(err.Error(), "format") {
@@ -456,8 +307,8 @@ func TestFetchRefusesAnUnknownFormatVersion(t *testing.T) {
 }
 
 func TestFetchRefusesAManifestWithNoPin(t *testing.T) {
-	f := newRelease(pair())
-	_, src := f.serve(t, "", 1)
+	f := newRelease(pair(), "", 1)
+	src := serve(t, f)
 
 	err := Fetch(context.Background(), src, []string{"anchord-linux-amd64"}, t.TempDir(), quiet)
 	if err == nil || !strings.Contains(err.Error(), "pin") {
@@ -491,10 +342,10 @@ func TestFetchRefusesAReleaseWithNoManifest(t *testing.T) {
 // Half-uploaded assets mean the publish step is still running, or failed part way. Either
 // way the release is not what the manifest claims yet.
 func TestFetchRefusesAnUnfinishedRelease(t *testing.T) {
-	f := newRelease(pair())
-	f.states["anchord-linux-amd64"] = "starter"
+	f := newRelease(pair(), testPin, 1)
+	f.States = map[string]string{"anchord-linux-amd64": "starter"}
 
-	_, src := f.serve(t, testPin, 1)
+	src := serve(t, f)
 
 	err := Fetch(context.Background(), src, []string{"anchord-linux-amd64"}, t.TempDir(), quiet)
 	if err == nil || !strings.Contains(err.Error(), "not finished") {
@@ -503,8 +354,8 @@ func TestFetchRefusesAnUnfinishedRelease(t *testing.T) {
 }
 
 func TestFetchWithoutATokenSaysSo(t *testing.T) {
-	f := newRelease(pair())
-	_, src := f.serve(t, testPin, 1)
+	f := newRelease(pair(), testPin, 1)
+	src := serve(t, f)
 
 	src.Token = ""
 
@@ -517,8 +368,8 @@ func TestFetchWithoutATokenSaysSo(t *testing.T) {
 // A 404 against a private repository is ambiguous between "no such tag" and "this token
 // cannot see the repository", so the message has to raise both.
 func TestAMissingTagNamesBothCauses(t *testing.T) {
-	f := newRelease(pair())
-	_, src := f.serve(t, testPin, 1)
+	f := newRelease(pair(), testPin, 1)
+	src := serve(t, f)
 
 	src.Tag = "nope"
 
@@ -573,8 +424,7 @@ func TestA403SaysWhoRefused(t *testing.T) {
 }
 
 func TestFetchRefusesPlainHTTPWithoutTheOverride(t *testing.T) {
-	f := newRelease(pair())
-	srv, src := f.serve(t, testPin, 1)
+	src := serve(t, newRelease(pair(), testPin, 1))
 
 	// serve() sets the override; take it away again, which is the real configuration.
 	t.Setenv(ghrelease.InsecureEnv, "")
@@ -583,8 +433,6 @@ func TestFetchRefusesPlainHTTPWithoutTheOverride(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "plain http") {
 		t.Fatalf("want a scheme refusal, got %v", err)
 	}
-
-	_ = srv
 }
 
 // A truncated download is a real binary of nearly the right size, which is the shape
@@ -592,16 +440,14 @@ func TestFetchRefusesPlainHTTPWithoutTheOverride(t *testing.T) {
 // catch. The byte count is checked before the digest so the message says which it was.
 func TestFetchRefusesAShortBody(t *testing.T) {
 	files := pair()
-	f := newRelease(files)
-
-	f.manifestJSON = f.manifest(testPin, 1)
+	f := newRelease(files, testPin, 1)
 
 	// Claim more bytes than are served.
-	f.manifestJSON = strings.Replace(f.manifestJSON,
+	rewrite(f,
 		fmt.Sprintf(`"bytes":%d`, len(files["anchord-linux-amd64"])),
-		fmt.Sprintf(`"bytes":%d`, len(files["anchord-linux-amd64"])+1), 1)
+		fmt.Sprintf(`"bytes":%d`, len(files["anchord-linux-amd64"])+1))
 
-	_, src := f.serve(t, testPin, 1)
+	src := serve(t, f)
 
 	err := Fetch(context.Background(), src, []string{"anchord-linux-amd64"}, t.TempDir(), quiet)
 	if err == nil || !strings.Contains(err.Error(), "bytes") {
@@ -612,8 +458,8 @@ func TestFetchRefusesAShortBody(t *testing.T) {
 // The realm and the commit are the two lines worth reading on a fetch: they say which
 // tree these binaries will talk to, and which anchor commit produced them.
 func TestFetchReportsTheRealmAndCommit(t *testing.T) {
-	f := newRelease(pair())
-	_, src := f.serve(t, testPin, 1)
+	f := newRelease(pair(), testPin, 1)
+	src := serve(t, f)
 
 	var out strings.Builder
 
@@ -623,7 +469,7 @@ func TestFetchReportsTheRealmAndCommit(t *testing.T) {
 		t.Fatalf("Fetch: %v", err)
 	}
 
-	for _, s := range []string{testPin, f.commit, "veil-net/anchor", "latest"} {
+	for _, s := range []string{testPin, f.Commit, "veil-net/anchor", "latest"} {
 		if !strings.Contains(out.String(), s) {
 			t.Errorf("the log does not mention %q:\n%s", s, out.String())
 		}
@@ -642,20 +488,20 @@ func sha256Of(b []byte) []byte {
 // answered by the API itself, gives for it; and a release giving none is refused.
 func TestFetchHoldsTheManifestToTheRelease(t *testing.T) {
 	files := pair()
-	evil := newRelease(map[string][]byte{"anchord-linux-amd64": []byte("not anchord")})
+	evil := manifestOf(map[string][]byte{"anchord-linux-amd64": []byte("not anchord")}, testPin, 1)
 
-	f := newRelease(files)
-	f.served = evil.manifest(testPin, 1)
-	_, src := f.serve(t, testPin, 1)
+	f := newRelease(files, testPin, 1)
+	f.Served = map[string][]byte{manifestName: []byte(evil)}
+	src := serve(t, f)
 
 	err := Fetch(context.Background(), src, []string{"anchord-linux-amd64"}, t.TempDir(), quiet)
 	if err == nil || !strings.Contains(err.Error(), "differs") {
 		t.Fatalf("want a refusal of the substituted manifest, got %v", err)
 	}
 
-	bare := newRelease(files)
-	bare.noDigest = true
-	_, src = bare.serve(t, testPin, 1)
+	bare := newRelease(files, testPin, 1)
+	bare.NoDigest = true
+	src = serve(t, bare)
 
 	err = Fetch(context.Background(), src, []string{"anchord-linux-amd64"}, t.TempDir(), quiet)
 	if err == nil || !strings.Contains(err.Error(), "vouches") {

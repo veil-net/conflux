@@ -3,130 +3,42 @@ package update
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"fmt"
-	"maps"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
 	"github.com/veil-net/conflux/internal/ghrelease"
+	"github.com/veil-net/conflux/internal/ghrelease/ghreleasetest"
 )
 
-// A release, served the way GitHub serves one: a release document listing assets by id,
-// with the digest of each, and an asset endpoint per id that answers with the bytes.
-type fakeRelease struct {
-	files map[string][]byte
-
-	// served replaces what the asset endpoint answers, for a body that is not the one
-	// the document describes. state and noDigest change what the document says.
-	served   []byte
-	state    string
-	noDigest bool
-
-	// status, if set, is what the release document answers instead.
-	status int
-	header map[string]string
+// release is conflux's `latest` release holding files, served the way GitHub serves one.
+func release(files map[string][]byte) *ghreleasetest.Release {
+	return &ghreleasetest.Release{
+		Repo:   DefaultRepo,
+		Name:   "latest (1.1.0)",
+		Commit: "0aea0f77bb77f8bbaa23c5055d9fe245d3a9bee2",
+		Files:  files,
+	}
 }
 
-func (f *fakeRelease) serve(t *testing.T) Source {
+// serve stands f up and points a Source at it. Auth stays empty: conflux is public, so a
+// request that carried a credential fails the test.
+func serve(t *testing.T, f *ghreleasetest.Release) Source {
 	t.Helper()
 
-	// Ids by name, the same in the document and at the asset endpoint.
-	names := slices.Sorted(maps.Keys(f.files))
-
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/repos/veil-net/conflux/releases/tags/", func(w http.ResponseWriter, r *http.Request) {
-		if f.status != 0 {
-			for k, v := range f.header {
-				w.Header().Set(k, v)
-			}
-
-			w.WriteHeader(f.status)
-
-			return
-		}
-
-		if strings.TrimPrefix(r.URL.Path, "/repos/veil-net/conflux/releases/tags/") != "latest" {
-			w.WriteHeader(http.StatusNotFound)
-
-			return
-		}
-
-		var assets []map[string]any
-
-		for i, name := range names {
-			body := f.files[name]
-			sum := sha256.Sum256(body)
-
-			digest := "sha256:" + hex.EncodeToString(sum[:])
-			if f.noDigest {
-				digest = ""
-			}
-
-			state := "uploaded"
-			if f.state != "" {
-				state = f.state
-			}
-
-			assets = append(assets, map[string]any{"id": i + 1, "name": name, "size": len(body), "state": state, "digest": digest})
-		}
-
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"name":             "latest (1.1.0)",
-			"tag_name":         "latest",
-			"target_commitish": "0aea0f77bb77f8bbaa23c5055d9fe245d3a9bee2",
-			"assets":           assets,
-		})
-	})
-
-	mux.HandleFunc("/repos/veil-net/conflux/releases/assets/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "" {
-			t.Errorf("a request to a public repository carried a credential")
-		}
-
-		if f.served != nil {
-			_, _ = w.Write(f.served)
-
-			return
-		}
-
-		var want int
-		fmt.Sscanf(strings.TrimPrefix(r.URL.Path, "/repos/veil-net/conflux/releases/assets/"), "%d", &want)
-
-		if want < 1 || want > len(names) {
-			w.WriteHeader(http.StatusNotFound)
-
-			return
-		}
-
-		_, _ = w.Write(f.files[names[want-1]])
-	})
-
-	srv := httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
-
-	t.Setenv(ghrelease.InsecureEnv, "1")
-
-	return Source{API: srv.URL, UserAgent: "conflux/test"}
+	return Source{API: f.Serve(t), UserAgent: "conflux/test"}
 }
 
 var newBuild = []byte("\x7fELF a newer conflux")
 
 func TestAnUpdateIsDownloadedVerifiedAndPutInPlace(t *testing.T) {
-	f := &fakeRelease{files: map[string][]byte{
+	src := serve(t, release(map[string][]byte{
 		"conflux-linux-amd64":       newBuild,
 		"conflux-windows-amd64.exe": []byte("MZ"),
 		"SHA256SUMS":                []byte("…"),
-	}}
-	src := f.serve(t)
+	}))
 
 	rel, err := Latest(context.Background(), src, "linux", "amd64")
 	if err != nil {
@@ -172,9 +84,9 @@ func TestAnUpdateIsDownloadedVerifiedAndPutInPlace(t *testing.T) {
 }
 
 func TestAWindowsAssetIsNamedAndDownloadedAsAnExecutable(t *testing.T) {
-	f := &fakeRelease{files: map[string][]byte{"conflux-windows-arm64.exe": []byte("MZ a newer conflux")}}
+	f := release(map[string][]byte{"conflux-windows-arm64.exe": []byte("MZ a newer conflux")})
 
-	rel, err := Latest(context.Background(), f.serve(t), "windows", "arm64")
+	rel, err := Latest(context.Background(), serve(t, f), "windows", "arm64")
 	if err != nil {
 		t.Fatalf("Latest: %v", err)
 	}
@@ -192,8 +104,8 @@ func TestAWindowsAssetIsNamedAndDownloadedAsAnExecutable(t *testing.T) {
 // TestSubstitutedBytesAreNeverLeftBehind: a body that is not the one the release document
 // describes fails the compare, and nothing it wrote survives to be run.
 func TestSubstitutedBytesAreNeverLeftBehind(t *testing.T) {
-	f := &fakeRelease{files: map[string][]byte{"conflux-linux-amd64": newBuild}}
-	src := f.serve(t)
+	f := release(map[string][]byte{"conflux-linux-amd64": newBuild})
+	src := serve(t, f)
 
 	rel, err := Latest(context.Background(), src, "linux", "amd64")
 	if err != nil {
@@ -204,7 +116,7 @@ func TestSubstitutedBytesAreNeverLeftBehind(t *testing.T) {
 		[]byte("\x7fELF somebody else's program, same len"),
 		newBuild[:len(newBuild)-1],
 	} {
-		f.served = body
+		f.Served = map[string][]byte{"conflux-linux-amd64": body}
 		dir := t.TempDir()
 
 		if _, err := rel.Download(context.Background(), dir); err == nil {
@@ -218,21 +130,30 @@ func TestSubstitutedBytesAreNeverLeftBehind(t *testing.T) {
 }
 
 func TestAReleaseThatCannotBeTrustedOrUsedIsRefused(t *testing.T) {
+	ours := map[string][]byte{"conflux-linux-amd64": newBuild}
+
 	cases := []struct {
 		name string
-		f    fakeRelease
+		f    func(*ghreleasetest.Release)
 		want string
 	}{
-		{"no digest", fakeRelease{files: map[string][]byte{"conflux-linux-amd64": newBuild}, noDigest: true}, "no SHA-256"},
-		{"still uploading", fakeRelease{files: map[string][]byte{"conflux-linux-amd64": newBuild}, state: "starter"}, "not finished"},
-		{"no build for this platform", fakeRelease{files: map[string][]byte{"conflux-darwin-arm64": newBuild}}, "no conflux-linux-amd64"},
-		{"no release", fakeRelease{status: http.StatusNotFound}, "no release tagged"},
-		{"rate limited", fakeRelease{status: http.StatusForbidden, header: map[string]string{"X-RateLimit-Remaining": "0"}}, "limit"},
+		{"no digest", func(f *ghreleasetest.Release) { f.NoDigest = true }, "no SHA-256"},
+		{"still uploading", func(f *ghreleasetest.Release) { f.States = map[string]string{"conflux-linux-amd64": "starter"} }, "not finished"},
+		{"no build for this platform", func(f *ghreleasetest.Release) {
+			f.Files = map[string][]byte{"conflux-darwin-arm64": newBuild}
+		}, "no conflux-linux-amd64"},
+		{"no release", func(f *ghreleasetest.Release) { f.Status = http.StatusNotFound }, "no release tagged"},
+		{"rate limited", func(f *ghreleasetest.Release) {
+			f.Status, f.Header = http.StatusForbidden, map[string]string{"X-RateLimit-Remaining": "0"}
+		}, "limit"},
 	}
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			_, err := Latest(context.Background(), c.f.serve(t), "linux", "amd64")
+			f := release(ours)
+			c.f(f)
+
+			_, err := Latest(context.Background(), serve(t, f), "linux", "amd64")
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Errorf("Latest: %v, want an error mentioning %q", err, c.want)
 			}

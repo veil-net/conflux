@@ -1,11 +1,6 @@
 package cli
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -13,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/veil-net/conflux/internal/ghrelease/ghreleasetest"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/service"
@@ -25,33 +21,21 @@ import (
 func serveRelease(t *testing.T, body []byte, exe string) {
 	t.Helper()
 
-	sum := sha256.Sum256(body)
+	f := &ghreleasetest.Release{
+		Repo:   update.DefaultRepo,
+		Name:   "latest (9.9.9)",
+		Commit: "0aea0f77bb77f8bbaa23c5055d9fe245d3a9bee2",
+		Files:  map[string][]byte{update.AssetName(runtime.GOOS, runtime.GOARCH): body},
+	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/repos/veil-net/conflux/releases/tags/latest", func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"name":             "latest (9.9.9)",
-			"target_commitish": "0aea0f77bb77f8bbaa23c5055d9fe245d3a9bee2",
-			"assets": []map[string]any{{
-				"id": 7, "name": update.AssetName(runtime.GOOS, runtime.GOARCH), "size": len(body),
-				"state": "uploaded", "digest": "sha256:" + hex.EncodeToString(sum[:]),
-			}},
-		})
-	})
-	mux.HandleFunc("/repos/veil-net/conflux/releases/assets/7", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write(body)
-	})
+	api := f.Serve(t)
 
-	srv := httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
-
-	t.Setenv("CONFLUX_ALLOW_INSECURE_API", "1")
 	t.Setenv("CONFLUX_DIR", t.TempDir())
 
 	was, wasExe := updateFrom, updateExecutable
 	t.Cleanup(func() { updateFrom, updateExecutable = was, wasExe })
 
-	updateFrom = update.Source{API: srv.URL}
+	updateFrom = update.Source{API: api}
 	updateExecutable = func() (string, error) { return exe, nil }
 }
 

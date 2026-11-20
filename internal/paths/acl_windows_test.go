@@ -529,9 +529,7 @@ func TestSecureRefusesARootThatBecomesAJunction(t *testing.T) {
 // is judged again once it is restricted: here a folder Users own, added as soon as secure has
 // restricted the root, is refused, naming it. The root stays restricted, and the next secure, which
 // finds it secured, judges what it holds all the same and refuses the folder again rather than
-// taking the root as done. Neither refusal leaves the root empty: with the folder gone, a handle
-// opened on the root before secure still cannot make a junction of it. Windows-only, so it runs in
-// CI's platforms job alone.
+// taking the root as done. Windows-only, so it runs in CI's platforms job alone.
 func TestSecureJudgesWhatTheRootGainsBeforeItIsRestricted(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
@@ -539,9 +537,6 @@ func TestSecureJudgesWhatTheRootGainsBeforeItIsRestricted(t *testing.T) {
 	if err := os.Mkdir(root, 0o700); err != nil {
 		t.Fatal(err)
 	}
-
-	early := openToWrite(t, root)
-	defer windows.CloseHandle(early)
 
 	planted := filepath.Join(root, "logs")
 
@@ -564,15 +559,6 @@ func TestSecureJudgesWhatTheRootGainsBeforeItIsRestricted(t *testing.T) {
 
 	if err := secure(root); err == nil || !strings.Contains(err.Error(), planted) {
 		t.Errorf("secure(the restricted root still holding that folder) = %v, want a refusal naming it", err)
-	}
-
-	if err := os.Remove(planted); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := leadTo(early, t.TempDir()); !errors.Is(err, windows.ERROR_DIR_NOT_EMPTY) {
-		t.Errorf("a handle opened on the root before secure refused it made a junction of it once the folder "+
-			"was gone: %v, want %v", err, windows.ERROR_DIR_NOT_EMPTY)
 	}
 }
 
@@ -618,8 +604,9 @@ func leadTo(h windows.Handle, target string) error { return setMountPoint(h, `\?
 // root hold its run directory, SYSTEM's and the Administrators' as it is made, before it judges
 // what the root holds, and the handle opened beforehand can no longer make a junction of it: a
 // reparse point cannot be set on a directory that is not empty. That holds for a root found
-// unrestricted and one secured already, and where secure refuses the root for a folder Users own
-// in it, once the folder is gone. Windows-only, so it runs in CI's platforms job alone.
+// unrestricted and one secured already, and where secure refuses either for a folder Users own in
+// it, once the folder is gone: the root is filled before what it holds is judged. Windows-only, so
+// it runs in CI's platforms job alone.
 func TestSecureFillsTheRoot(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
@@ -628,6 +615,7 @@ func TestSecureFillsTheRoot(t *testing.T) {
 		secured, planted bool
 	}{
 		{"found unrestricted", false, false},
+		{"found unrestricted, holding a folder Users own", false, true},
 		{"secured already", true, false},
 		{"secured already, holding a folder Users own", true, true},
 	} {

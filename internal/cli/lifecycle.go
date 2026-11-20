@@ -332,8 +332,8 @@ func runUninstall(_ context.Context, args []string) int {
 	// the run (macOS and the BSDs), and its root -- the extracted pair and the token -- which
 	// nothing else removes. Under the root's lock, as a run's own clean-up is, so one starting
 	// now is not emptied out from under itself.
-	if e, stale := staleEphemeral(); stale {
-		errs = append(errs, removeEphemeralRoot(e))
+	if _, e := ephemeralRuns(); e != nil {
+		errs = append(errs, removeEphemeralRoot(*e))
 	}
 
 	for _, dir := range []string{d.Run, d.State, d.Config} {

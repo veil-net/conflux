@@ -180,7 +180,7 @@ capabilities, `no_new_privs` and groups from `/proc` and the reason from `status
 | back to userspace | the account, starting from root's state, as its own |
 | observing alone | the account with `CAP_NET_RAW` alone, `no_new_privs` |
 | the observer beside userspace, and beside a TUN | the mode's own, and `CAP_NET_RAW` |
-| `start` over a 1.0.0 unit | the unit replaced by this conflux's |
+| `start` over an older unit | the unit replaced by this conflux's |
 | an account named `conflux` that conflux did not make | root, saying so; `uninstall` leaves the account |
 
 What `anchord` is given to observe with is decided as it is started, before any credential, so

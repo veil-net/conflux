@@ -262,7 +262,7 @@ start
 expect "tun and observing" "uid=$uid caps=$(caps 0x3000) nnp=0 groups=" "CAP_NET_RAW to copy"
 
 # An upgraded conflux brings its own unit, and start is how an upgrade reaches the
-# service: a 1.0.0 unit, with its capability line, is replaced.
+# service: an older unit, with a capability line, is replaced.
 say "start registers the unit this conflux writes"
 docker exec "$NAME" sh -c 'sed -i "s/^User=root$/User=root\nAmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW/" /etc/systemd/system/conflux.service && systemctl daemon-reload'
 docker exec "$NAME" systemctl stop conflux.service

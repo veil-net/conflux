@@ -536,7 +536,7 @@ func TestFetchHoldsTheManifestToTheRelease(t *testing.T) {
 	src := serve(t, f)
 
 	err := Fetch(context.Background(), src, []string{"anchord-linux-amd64"}, t.TempDir(), quiet)
-	if err == nil || !strings.Contains(err.Error(), "differs") {
+	if err == nil || !strings.Contains(err.Error(), manifestName+": its SHA-256 is ") {
 		t.Fatalf("want a refusal of the substituted manifest, got %v", err)
 	}
 

@@ -2,8 +2,8 @@
 // `conflux update` (internal/update), and anchor's, for a build (internal/anchorrelease).
 //
 // Nothing here reads a URL out of a document. Every request is built from the Source, and
-// an asset is asked for by its id in that release's own document. Each caller holds what
-// arrives to a digest from something that did not come through GitHub's storage.
+// an asset is asked for by its id in that release's own document. What arrives is held to
+// the digest its caller gives, from something that did not come through GitHub's storage.
 //
 // Nothing it imports embeds anything (httpsonly is its one import of conflux's, a leaf):
 // cmd/anchor-fetch imports it, for DefaultAPI and DefaultTag and through
@@ -256,13 +256,13 @@ func (s Source) Download(ctx context.Context, a Asset, dir, pattern string, sync
 	return tmp.Name(), nil
 }
 
-// Read answers the bytes of a small asset, at most max of them. What vouches for them is
-// the caller's to check.
-func (s Source) Read(ctx context.Context, id, max int64) ([]byte, error) {
+// Read answers the bytes of a small asset, at most max of them, once they hold the size and
+// SHA-256 given.
+func (s Source) Read(ctx context.Context, a Asset, max int64) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, documentTimeout)
 	defer cancel()
 
-	resp, err := s.get(ctx, s.assetURL(id), "application/octet-stream")
+	resp, err := s.get(ctx, s.assetURL(a.ID), "application/octet-stream")
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +272,17 @@ func (s Source) Read(ctx context.Context, id, max int64) ([]byte, error) {
 		return nil, err
 	}
 
-	return io.ReadAll(io.LimitReader(resp.Body, max))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, max))
+	if err != nil {
+		return nil, err
+	}
+
+	sum := sha256.Sum256(body)
+	if err := a.check(int64(len(body)), sum[:]); err != nil {
+		return nil, err
+	}
+
+	return body, nil
 }
 
 func (s Source) assetURL(id int64) string {

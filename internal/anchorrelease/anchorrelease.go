@@ -34,8 +34,6 @@ package anchorrelease
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -296,12 +294,7 @@ func manifest(ctx context.Context, src ghrelease.Source, assets map[string]ghrel
 			src.Tag, manifestName, len(names), strings.Join(names, ", "))
 	}
 
-	body, err := src.Read(ctx, a.ID, maxManifest)
-	if err != nil {
-		return nil, fmt.Errorf("fetching %s: %w", manifestName, err)
-	}
-
-	// The digests every binary is checked against are only as good as this one: it came
+	// The digests every binary is checked against are only as good as this one: it comes
 	// through the same redirect as the binaries, so it is held to the digest the release
 	// document gives, which did not.
 	want, ok := a.SHA256()
@@ -309,8 +302,9 @@ func manifest(ctx context.Context, src ghrelease.Source, assets map[string]ghrel
 		return nil, fmt.Errorf("the release gives no SHA-256 for %s, so nothing vouches for the digests in it", manifestName)
 	}
 
-	if sum := sha256.Sum256(body); !strings.EqualFold(hex.EncodeToString(sum[:]), want) {
-		return nil, fmt.Errorf("%s is not the file the release lists: its SHA-256 differs from %s", manifestName, want)
+	body, err := src.Read(ctx, ghrelease.Asset{ID: a.ID, SHA256: want}, maxManifest)
+	if err != nil {
+		return nil, fmt.Errorf("fetching %s: %w", manifestName, err)
 	}
 
 	var m Manifest

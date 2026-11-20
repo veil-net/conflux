@@ -4,6 +4,8 @@
 package pathstest
 
 import (
+	"os"
+	"runtime"
 	"testing"
 
 	"github.com/veil-net/conflux/internal/paths"
@@ -21,4 +23,27 @@ func Dirs(tb testing.TB) paths.Dirs {
 	}
 
 	return d
+}
+
+// ShortRoot is a fresh directory with a short name, removed when the test ends, for a root a
+// control socket lies below: TempDir's is named after the test, and a unix socket's path has
+// room for 103 bytes on macOS and 107 on Linux and Windows. A test named at length under
+// Windows's %TEMP% would otherwise pass that, and be refused for it. macOS's $TMPDIR is long
+// enough by itself, so there it is /tmp.
+func ShortRoot(tb testing.TB) string {
+	tb.Helper()
+
+	base := ""
+	if runtime.GOOS == "darwin" {
+		base = "/tmp"
+	}
+
+	root, err := os.MkdirTemp(base, "cfx")
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	tb.Cleanup(func() { _ = os.RemoveAll(root) })
+
+	return root
 }

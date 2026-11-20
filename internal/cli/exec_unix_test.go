@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -22,6 +21,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/pathstest"
 )
 
 // standInDir, set, makes the test binary the conflux TestASignalToConfluxReachesItsAnchorctl
@@ -355,20 +355,8 @@ func TestAFirstSignalStopsAnEphemeralRun(t *testing.T) {
 
 	for _, sig := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM} {
 		t.Run(signalName(sig), func(t *testing.T) {
-			// A short root rather than TempDir's, named after the test: the run's control socket
-			// lies four levels below it, and macOS's TMPDIR alone leaves too little room for that.
-			base := ""
-			if runtime.GOOS == "darwin" {
-				base = "/tmp"
-			}
-
-			root, err := os.MkdirTemp(base, "cfx")
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			t.Cleanup(func() { _ = os.RemoveAll(root) })
-
+			// A short root rather than TempDir's: the run's control socket lies four levels below it.
+			root := pathstest.ShortRoot(t)
 			d := paths.EphemeralDirs(filepath.Join(root, "ephemeral")) // paths.Ephemeral, under CONFLUX_DIR
 
 			// An API that takes the connection and answers nothing, so the run waits on its

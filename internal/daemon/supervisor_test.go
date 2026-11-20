@@ -3,15 +3,18 @@ package daemon
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
@@ -497,5 +500,130 @@ func TestObservingAloneRenews(t *testing.T) {
 
 	if got := is.asked(t).AnchorID; got != fakeAnchorID {
 		t.Errorf("renewed for %q, want the observer's %q", got, fakeAnchorID)
+	}
+}
+
+// recorder is a Reporter that keeps what it was told.
+type recorder struct {
+	mu           sync.Mutex
+	steps, warns []string
+}
+
+func (r *recorder) Step(format string, a ...any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.steps = append(r.steps, fmt.Sprintf(format, a...))
+}
+
+func (r *recorder) Warn(format string, a ...any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.warns = append(r.warns, fmt.Sprintf(format, a...))
+}
+
+// said is every step and warning so far.
+func (r *recorder) said() (steps, warns []string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return slices.Clone(r.steps), slices.Clone(r.warns)
+}
+
+// TestThreeRefusalsEndTheService: a configuration refused for good on three starts in a row
+// ends the restart loop with an error Permanent reports -- serve's exit 70, which no service
+// manager restarts -- after a second's wait and then two between the starts.
+func TestThreeRefusalsEndTheService(t *testing.T) {
+	s, _ := supervised(t, "serve")
+
+	r := &recorder{}
+	s.Reporter = r
+
+	// A configuration conflux refuses, which every spawn reads afresh.
+	if err := os.WriteFile(s.Dirs.ConfigFile(), []byte(`{"version":1,"mode":"neither"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ended := make(chan error, 1)
+	go func() { ended <- s.loop(t.Context()) }()
+
+	select {
+	case err := <-ended:
+		if !Permanent(err) {
+			t.Errorf("the loop ended with %v, which serve would not exit 70 on", err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("the restart loop went on starting a configuration refused for good")
+	}
+
+	steps, _ := r.said()
+	if want := []string{"restarting in 1s", "restarting in 2s"}; !slices.Equal(steps, want) {
+		t.Errorf("the loop said %q, want %q", steps, want)
+	}
+}
+
+// TestTheKeeperBacksOff: a failed try holds the next off for the backoff, which doubles from
+// rebuildBackoffMin to rebuildBackoffMax, and a try that works starts it over; only tries
+// refused for good, rebuildRefusals of them in a row, give up, and a failure a retry may fix
+// starts that count over -- a healthy run does, for the supervisor's restart loop.
+func TestTheKeeperBacksOff(t *testing.T) {
+	transient, refused := errors.New("connection refused"), &permanentError{err: errors.New("refused")}
+
+	k := newKeeper()
+
+	for _, want := range []time.Duration{1, 2, 4, 8, 16, 30, 30} {
+		want *= time.Second
+		before := time.Now()
+
+		if k.failed(transient) {
+			t.Fatal("gave up on a failure a retry may fix")
+		}
+
+		if k.due() {
+			t.Errorf("due again at once after a failure that holds the next try off for %s", want)
+		}
+
+		if held := k.notBefore.Sub(before); held < want || held > want+time.Second {
+			t.Errorf("held the next try off for %s, want %s", held, want)
+		}
+	}
+
+	if k.ok(); !k.due() || k.backoff != rebuildBackoffMin {
+		t.Errorf("a try that worked left the backoff at %s, due %v", k.backoff, k.due())
+	}
+
+	for i, want := range []bool{false, false, false, false, false, true} {
+		err := error(refused)
+		if i == 2 {
+			err = transient
+		}
+
+		if got := k.failed(err); got != want {
+			t.Errorf("try %d (%v): gave up %v, want %v", i+1, err, got, want)
+		}
+	}
+}
+
+// TestWhatAProbeCannotRecoverFrom: a socket conflux may not reach and a token anchord refuses
+// end the wait for readiness at once, since retrying cannot change either; a daemon that does
+// not answer yet is waited for.
+func TestWhatAProbeCannotRecoverFrom(t *testing.T) {
+	for name, err := range map[string]error{
+		"a socket conflux may not reach": fmt.Errorf("dial unix /run/conflux/anchord/sock: %w", os.ErrPermission),
+		"a token anchord refuses":        &anchorctl.Error{Args: []string{"status"}, Stderr: "anchorctl: unauthenticated: bad token"},
+	} {
+		if probeIsFatal(err) == nil {
+			t.Errorf("%s is waited out as if a retry could fix it", name)
+		}
+	}
+
+	for name, err := range map[string]error{
+		"nothing listening yet": fmt.Errorf("dial unix /run/conflux/anchord/sock: %w", os.ErrNotExist),
+		"a status that failed":  &anchorctl.Error{Args: []string{"status"}, Stderr: "anchorctl: connection refused"},
+	} {
+		if err := probeIsFatal(err); err != nil {
+			t.Errorf("%s ended the wait for readiness: %v", name, err)
+		}
 	}
 }

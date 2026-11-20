@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -819,5 +820,61 @@ func TestARenewalWhileTheAnchorIsNotRunningIsNotDueAgain(t *testing.T) {
 				t.Errorf("the observer was handed the renewed chain: %v, want %v", got, observer)
 			}
 		})
+	}
+}
+
+// TestTheTimerRenewsWhatRuns: the renewal timer renews a credential that is due, hands the
+// chain to what runs, and goes on keeping it current.
+func TestTheTimerRenewsWhatRuns(t *testing.T) {
+	is := newIssuer(t)
+	d := machine(t, is, time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour))
+	anchor, _ := renewedInto(t)
+
+	s := &Supervisor{Dirs: d, ctl: fakeCtl(t)}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+
+	go func() {
+		s.renewLoop(ctx)
+		close(done)
+	}()
+
+	eventually(t, "the timer's renewal reaching the anchor", func() bool { return handedTo(anchor, is.chain) })
+
+	select {
+	case <-done:
+		t.Error("the timer stopped once it had renewed")
+	default:
+	}
+
+	cancel()
+	returns(t, "the timer, cancelled", func() { <-done })
+
+	if n := is.calls.Load(); n != 1 {
+		t.Errorf("the issuer was asked %d times, want the one renewal that was due", n)
+	}
+}
+
+// TestTheTimerStopsOnACredentialThatDoesNotRenew: a credential that names nowhere to renew it
+// ends the timer, which asking every minute could not change, and asks the issuer nothing.
+func TestTheTimerStopsOnACredentialThatDoesNotRenew(t *testing.T) {
+	is := newIssuer(t)
+	d := machine(t, is, time.Now().Add(-5*24*time.Hour), time.Now().Add(2*24*time.Hour))
+
+	saveDoc(t, d, map[string]any{
+		"formatVersion": 1, "kind": "anchor", "identity": "aa", "genesis": "bb",
+		"chain":    base64.StdEncoding.EncodeToString([]byte("a node's chain")),
+		"issuedAt": time.Now().Add(-5 * 24 * time.Hour).UTC().Format(enrol.ManifestTime),
+		"notAfter": time.Now().Add(2 * 24 * time.Hour).UTC().Format(enrol.ManifestTime),
+		"taints":   []string{"t"},
+	})
+
+	s := &Supervisor{Dirs: d, ctl: fakeCtl(t)}
+
+	returns(t, "the timer, on a credential that does not renew", func() { s.renewLoop(t.Context()) })
+
+	if n := is.calls.Load(); n != 0 {
+		t.Errorf("the issuer was asked %d times, want none", n)
 	}
 }

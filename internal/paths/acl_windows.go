@@ -995,12 +995,12 @@ func heldRoot(dir string, access uint32) (held, error) {
 		}
 
 		r.dir = led
-	}
 
-	if err := notLink(dir, r.dir, "leads to a reparse point conflux cannot follow"); err != nil {
-		r.close()
+		if err := notLink(dir, r.dir, "leads to a reparse point conflux cannot follow"); err != nil {
+			r.close()
 
-		return held{}, err
+			return held{}, err
+		}
 	}
 
 	if err := remote(dir, r.dir); err != nil {

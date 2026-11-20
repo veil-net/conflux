@@ -97,23 +97,37 @@ func runObserve(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	if err := chooseTaints(cfg, f.taints, held); err != nil {
-		return fail(err)
+	// chooseTaints mints a taint, and prints it to be shared, for a machine holding no
+	// credential with none given or configured -- its last case. Then the question comes first,
+	// so a "no" leaves nothing minted or printed. Otherwise the taints are checked first and the
+	// question asked last, as launch asks for the IPv4: an answer given only to be told a flag
+	// was wrong is an answer given twice.
+	mints := held == nil && len(f.taints) == 0 && len(cfg.Taints) == 0
+
+	if !mints {
+		if err := chooseTaints(cfg, f.taints, held); err != nil {
+			return fail(err)
+		}
 	}
 
-	// Asked last, once everything typed has been checked, as launch asks for the IPv4: an
-	// answer given only to be told a flag was wrong is an answer given twice.
 	if was != "" && !confirmObserving(was, *f.yes) {
 		return ExitUsage
 	}
 
 	// What only an anchor in userspace serves, and the next `conflux proxy` names again; up
-	// drops them the same way.
+	// drops them the same way. Before a minted taint's configuration is checked, which refuses
+	// a proxy where nothing serves one.
 	if len(cfg.Proxies) > 0 {
 		ui.Errf("the %d proxied service(s) this machine served are dropped: a reverse proxy is an anchor's,\n"+
 			"  and this machine runs none. conflux proxy publishes them again.", len(cfg.Proxies))
 
 		cfg.Proxies = nil
+	}
+
+	if mints {
+		if err := chooseTaints(cfg, f.taints, held); err != nil {
+			return fail(err)
+		}
 	}
 
 	return bring(ctx, d, cfg, "observe", false)

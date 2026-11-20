@@ -257,7 +257,9 @@ setting kept for the next `up` or `proxy` — the proxy specs aside, which it cl
 and the observer runs under the same identity meanwhile. So it asks first at a terminal, and off one is refused without `--yes`:
 anchorctl's bare `observe` only reports, and a script that meant that one must not stop an
 anchor. It asks once everything typed has been checked, so a `--taint` the credential does not
-grant is refused with nothing asked. `conflux up --observe` observes beside the anchor instead.
+grant is refused with nothing asked, and before a taint is minted for a machine with neither a
+credential nor a taint, so a no leaves none minted. `conflux up --observe` observes beside the
+anchor instead.
 
 FreeBSD and OpenBSD have no capture, and are refused with exit 2 before anything is asked or
 written.

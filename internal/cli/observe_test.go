@@ -288,6 +288,60 @@ func TestObserveChecksTheTaintBeforeItAsks(t *testing.T) {
 	}
 }
 
+// TestObserveAsksBeforeItMints: a machine running an anchor with no credential and no taint
+// configured has one minted for it by observe, and printed to be shared; asked to stop the
+// anchor first, a "no" -- off a terminal, no --yes -- leaves nothing minted, printed or saved.
+// A proxy machine's specs are dropped before the minted taint's configuration is checked.
+func TestObserveAsksBeforeItMints(t *testing.T) {
+	if ui.IsTerminal() {
+		t.Skip("this test's stdin is a terminal")
+	}
+
+	was, elevated := hostOS, privcheck.Elevated
+	hostOS, privcheck.Elevated = "linux", func() bool { return true }
+
+	t.Cleanup(func() { hostOS, privcheck.Elevated = was, elevated })
+
+	for name, have := range map[string]*config.Config{
+		"tun":   {Mode: config.ModeTUN},
+		"proxy": {Mode: config.ModeProxy, Proxies: []string{"8080=127.0.0.1:3000"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := pathstest.Dirs(t)
+
+			if err := config.Save(d, have); err != nil {
+				t.Fatal(err)
+			}
+
+			mgr := &fakeManager{d: d, restartErr: errStartsNothing}
+			standInService(t, mgr)
+
+			out, errOut, code := capture(t, "observe")
+
+			if code != ExitUsage || !strings.Contains(errOut, "Observing alone stops it") {
+				t.Errorf("conflux observe exited %d, saying:\n%s\nwant the switch refused without --yes", code, errOut)
+			}
+
+			if strings.Contains(out, "Minted") {
+				t.Errorf("a taint was minted and printed before the switch was refused:\n%s", out)
+			}
+
+			if cfg, err := config.Load(d); err != nil || cfg.Mode != have.Mode || len(cfg.Taints) > 0 || len(mgr.installs) > 0 {
+				t.Errorf("a refused observe changed something: %+v (%v), registered %d times", cfg, err, len(mgr.installs))
+			}
+
+			// Said yes to, the taint is minted, and the proxy specs gone before it is checked.
+			if _, errOut, code := capture(t, "observe", "--yes"); code != ExitError || !strings.Contains(errOut, errStartsNothing.Error()) {
+				t.Errorf("conflux observe --yes exited %d, saying:\n%s\nwant the stand-in's Restart refused", code, errOut)
+			}
+
+			if cfg, err := config.Load(d); err != nil || cfg.Mode != config.ModeObserve || len(cfg.Taints) != 1 || len(cfg.Proxies) > 0 {
+				t.Errorf("conflux observe --yes saved %+v (%v), want observing in one minted taint", cfg, err)
+			}
+		})
+	}
+}
+
 // TestProxyTakesTheObserverFlags: conflux proxy's specs and flags come in any order, and
 // --export takes a value while the observer's switches do not.
 func TestProxyTakesTheObserverFlags(t *testing.T) {

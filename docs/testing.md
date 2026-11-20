@@ -185,7 +185,8 @@ account, and `uninstall` leaves no plist, no entry in launchd's disabled databas
 `test/service-bsd.sh` is the same against `rc.subr`, in a FreeBSD and an OpenBSD VM: install,
 a userspace `anchord` running as `conflux` or `_conflux` (the record, and the process
 itself), port 80 and a TUN keeping it root with their reasons, and `uninstall` leaving no
-script, no directory and no account.
+script, no directory, no account, nothing enabling it in `rc.conf` or `rc.conf.local`, and on
+FreeBSD no log.
 
 ### Local network discovery, the bootstrap list, and `conflux enrol`
 

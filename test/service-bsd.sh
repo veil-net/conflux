@@ -71,6 +71,8 @@ if [ "$os" = freebsd ]; then
   [ "$(sysrc -n conflux_enable)" = YES ] || fail "install did not enable the service"
 else
   rcctl ls on | grep -qx conflux || fail "install did not enable the service"
+  # Where rcctl recorded it, which uninstall's check below reads.
+  grep -q conflux /etc/rc.conf.local || fail "rcctl enable wrote nothing of conflux to rc.conf.local"
 fi
 if pgrep -f 'conflux serve' >/dev/null; then
   fail "install started the service; it must only register"
@@ -218,6 +220,23 @@ if id "$eaccount" >/dev/null 2>&1; then
 fi
 if id "$account" >/dev/null 2>&1; then
   fail "the $account account survived uninstall"
+fi
+# Uninstall disables the service, and on FreeBSD removes the log conflux writes there itself,
+# ignoring what either says, so their outcome is read here. OpenBSD's rcctl lists only services
+# whose script is in /etc/rc.d, which uninstall has removed, so a disable that failed shows in
+# rc.conf.local alone.
+if [ "$os" = freebsd ]; then
+  if sysrc -n conflux_enable >/dev/null 2>&1; then
+    fail "conflux_enable survived uninstall in rc.conf"
+  fi
+  [ ! -e "$log" ] || fail "$log survived uninstall"
+else
+  if rcctl ls on | grep -qx conflux; then
+    fail "rcctl still lists conflux as enabled after uninstall"
+  fi
+  if [ -e /etc/rc.conf.local ] && grep -q conflux /etc/rc.conf.local; then
+    fail "rc.conf.local still enables conflux after uninstall: $(grep conflux /etc/rc.conf.local)"
+  fi
 fi
 
 say "all assertions passed"

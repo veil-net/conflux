@@ -15,7 +15,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/veil-net/conflux/internal/ghrelease"
+	"github.com/veil-net/conflux/internal/httpsonly"
 )
 
 // Release is one release of one repository: a release document listing its assets by id,
@@ -66,7 +66,7 @@ type Release struct {
 }
 
 // Serve stands the release up and returns its API's URL, plain http, with
-// ghrelease.InsecureEnv set for the test so that a client accepts it.
+// httpsonly.InsecureEnv set for the test so that a client accepts it.
 func (f *Release) Serve(t *testing.T) string {
 	t.Helper()
 
@@ -167,7 +167,7 @@ func (f *Release) Serve(t *testing.T) string {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	t.Setenv(ghrelease.InsecureEnv, "1")
+	t.Setenv(httpsonly.InsecureEnv, "1")
 
 	return srv.URL
 }

@@ -30,6 +30,7 @@ import (
 	"strings"
 
 	"github.com/veil-net/conflux/internal/ghrelease"
+	"github.com/veil-net/conflux/internal/httpsonly"
 )
 
 const (
@@ -95,7 +96,7 @@ func AssetName(goos, goarch string) string {
 func Latest(ctx context.Context, s Source, goos, goarch string) (*Release, error) {
 	src := s.client()
 
-	if err := ghrelease.CheckScheme(src.API, ""); err != nil {
+	if err := httpsonly.Check(src.API, ""); err != nil {
 		return nil, err
 	}
 

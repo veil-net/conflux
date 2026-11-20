@@ -47,6 +47,7 @@ import (
 	"sync"
 
 	"github.com/veil-net/conflux/internal/ghrelease"
+	"github.com/veil-net/conflux/internal/httpsonly"
 )
 
 const (
@@ -137,7 +138,7 @@ type release struct {
 func Fetch(ctx context.Context, s Source, want []string, dir string, log func(string, ...any)) error {
 	src := s.client()
 
-	if err := ghrelease.CheckScheme(src.API, ""); err != nil {
+	if err := httpsonly.Check(src.API, ""); err != nil {
 		return err
 	}
 

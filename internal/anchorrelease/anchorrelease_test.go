@@ -21,6 +21,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/ghrelease"
 	"github.com/veil-net/conflux/internal/ghrelease/ghreleasetest"
+	"github.com/veil-net/conflux/internal/httpsonly"
 )
 
 // newRelease is anchor's release holding files, with the manifest.json that describes
@@ -381,7 +382,7 @@ func TestFetchRefusesAReleaseWithNoManifest(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	t.Setenv(ghrelease.InsecureEnv, "1")
+	t.Setenv(httpsonly.InsecureEnv, "1")
 
 	src := Source{API: srv.URL, Repo: "veil-net/anchor", Tag: "latest", Token: "t0ken"}
 
@@ -443,7 +444,7 @@ func TestARefusedTokenSaysSo(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	t.Setenv(ghrelease.InsecureEnv, "1")
+	t.Setenv(httpsonly.InsecureEnv, "1")
 
 	src := Source{API: srv.URL, Repo: "veil-net/anchor", Tag: "latest", Token: "expired"}
 
@@ -479,7 +480,7 @@ func TestFetchRefusesPlainHTTPWithoutTheOverride(t *testing.T) {
 	src := serve(t, newRelease(pair(), testPin, 1))
 
 	// serve() sets the override; take it away again, which is the real configuration.
-	t.Setenv(ghrelease.InsecureEnv, "")
+	t.Setenv(httpsonly.InsecureEnv, "")
 
 	err := Fetch(context.Background(), src, []string{"anchord-linux-amd64"}, t.TempDir(), quiet)
 	if err == nil || !strings.Contains(err.Error(), "plain http") {

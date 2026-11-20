@@ -5,8 +5,9 @@
 // an asset is asked for by its id in that release's own document. Each caller holds what
 // arrives to a digest from something that did not come through GitHub's storage.
 //
-// A leaf, importing nothing of conflux's: cmd/anchor-fetch reaches it through
-// internal/anchorrelease, and has to run while anchor/bin is still empty.
+// Nothing it imports embeds anything (httpsonly is its one import of conflux's, a leaf):
+// cmd/anchor-fetch reaches it through internal/anchorrelease, and has to run while
+// anchor/bin is still empty.
 package ghrelease
 
 import (
@@ -22,6 +23,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/veil-net/conflux/internal/httpsonly"
 )
 
 const (
@@ -29,10 +32,6 @@ const (
 	// `latest`, which each caller's repository moves to its newest release.
 	DefaultAPI = "https://api.github.com"
 	DefaultTag = "latest"
-
-	// InsecureEnv permits a plain-http URL, for a test server, in every client conflux has
-	// (CheckScheme).
-	InsecureEnv = "CONFLUX_ALLOW_INSECURE_API"
 
 	// maxDocument bounds the release document, which lists a few dozen assets at most;
 	// maxAsset one download, far above any conflux or anchor binary and far below anything
@@ -81,7 +80,7 @@ func (s Source) WithDefaults(repo string) Source {
 }
 
 // Lookup reads the release document at the tag into doc, which is the caller's own shape
-// of it. Plain http is the caller's to refuse first (CheckScheme), in its own order.
+// of it. Plain http is the caller's to refuse first (httpsonly.Check), in its own order.
 //
 // By tag rather than by GitHub's "latest", which is a heuristic over publication dates that
 // a release cut by hand would win. A tag is exact.
@@ -232,7 +231,7 @@ func (s Source) get(ctx context.Context, u, accept string) (*http.Response, erro
 // the bytes to anyone on the path, and a chain past five requests.
 var client = &http.Client{
 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		if err := CheckScheme(req.URL.String(), ""); err != nil {
+		if err := httpsonly.Check(req.URL.String(), ""); err != nil {
 			return err
 		}
 
@@ -242,31 +241,4 @@ var client = &http.Client{
 
 		return nil
 	},
-}
-
-// CheckScheme refuses a URL that is not https. Plain http passes where InsecureEnv is 1,
-// for a test server; otherwise its refusal gives why, a caller's own reason, when there is
-// one. internal/enrol's client keeps this rule as well, with its own reason.
-func CheckScheme(raw, why string) error {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return fmt.Errorf("%q is not a URL: %w", raw, err)
-	}
-
-	switch u.Scheme {
-	case "https":
-		return nil
-	case "http":
-		if os.Getenv(InsecureEnv) == "1" {
-			return nil
-		}
-
-		if why != "" {
-			why = "; " + why
-		}
-
-		return fmt.Errorf("%s is plain http%s (set %s=1 to override, for tests)", raw, why, InsecureEnv)
-	default:
-		return fmt.Errorf("%s has scheme %q, want https", raw, u.Scheme)
-	}
 }

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/veil-net/conflux/internal/ghrelease"
 	"github.com/veil-net/conflux/internal/ghrelease/ghreleasetest"
+	"github.com/veil-net/conflux/internal/httpsonly"
 )
 
 // release is conflux's `latest` release holding files, served the way GitHub serves one.
@@ -162,7 +162,7 @@ func TestAReleaseThatCannotBeTrustedOrUsedIsRefused(t *testing.T) {
 }
 
 func TestPlainHTTPIsRefusedUnlessATestAsksForIt(t *testing.T) {
-	t.Setenv(ghrelease.InsecureEnv, "")
+	t.Setenv(httpsonly.InsecureEnv, "")
 
 	if _, err := Latest(context.Background(), Source{API: "http://127.0.0.1:1"}, "linux", "amd64"); err == nil ||
 		!strings.Contains(err.Error(), "plain http") {

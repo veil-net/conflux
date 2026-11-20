@@ -9,15 +9,9 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+
+	"github.com/veil-net/conflux/internal/httpsonly"
 )
-
-func TestOnlyHTTPSIsAccepted(t *testing.T) {
-	t.Setenv(InsecureEnv, "")
-
-	if err := CheckScheme("ftp://example.com", ""); err == nil {
-		t.Error("CheckScheme accepted ftp")
-	}
-}
 
 // TestTheRedirectPolicy holds the one client every release conflux reads goes through,
 // update's and anchorrelease's alike, to its rule: the hop from an asset to storage on
@@ -25,7 +19,7 @@ func TestOnlyHTTPSIsAccepted(t *testing.T) {
 // neither is a chain past five requests.
 func TestTheRedirectPolicy(t *testing.T) {
 	t.Run("to plain http", func(t *testing.T) {
-		t.Setenv(InsecureEnv, "")
+		t.Setenv(httpsonly.InsecureEnv, "")
 
 		req := httptest.NewRequest(http.MethodGet, "http://objects.example.com/conflux", nil)
 		if err := client.CheckRedirect(req, make([]*http.Request, 1)); err == nil {
@@ -80,7 +74,7 @@ func TestTheRedirectPolicy(t *testing.T) {
 			return (&net.Dialer{}).DialContext(ctx, network, srv.Listener.Addr().String())
 		}}
 
-		t.Setenv(InsecureEnv, "1")
+		t.Setenv(httpsonly.InsecureEnv, "1")
 
 		src := Source{
 			API:    "http://api.example",

@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/veil-net/conflux/internal/config"
-	"github.com/veil-net/conflux/internal/ghrelease"
+	"github.com/veil-net/conflux/internal/httpsonly"
 	"github.com/veil-net/conflux/internal/ui"
 	"github.com/veil-net/conflux/internal/version"
 )
@@ -37,10 +37,10 @@ const (
 	maxRedirects = 3
 )
 
-// httpsOnly is what a refusal of plain http says: a base URL, a renewal URL or a redirect
-// there is refused unless ghrelease.InsecureEnv is 1, which tests set to point the client
+// whyHTTPS is what a refusal of plain http says: a base URL, a renewal URL or a redirect
+// there is refused unless httpsonly.InsecureEnv is 1, which tests set to point the client
 // at an httptest server.
-const httpsOnly = "credentials are only fetched over https"
+const whyHTTPS = "credentials are only fetched over https"
 
 // defaultHTTP is the client every Client shares unless given its own: Go's default
 // transport, which keeps idle connections for a bounded time and honours a proxy in
@@ -57,7 +57,7 @@ var defaultHTTP = &http.Client{
 			return fmt.Errorf("refusing a redirect from %s to %s", via[0].URL.Host, req.URL.Host)
 		}
 
-		if err := ghrelease.CheckScheme(req.URL.String(), httpsOnly); err != nil {
+		if err := httpsonly.Check(req.URL.String(), whyHTTPS); err != nil {
 			return err
 		}
 
@@ -196,7 +196,7 @@ func (c *Client) Enrol(ctx context.Context, taints []string) (config.Envelope, e
 
 	u := c.base() + enrolPath
 
-	if err := ghrelease.CheckScheme(u, httpsOnly); err != nil {
+	if err := httpsonly.Check(u, whyHTTPS); err != nil {
 		return nil, err
 	}
 
@@ -250,7 +250,7 @@ func (c *Client) Renew(ctx context.Context, renewalURL, anchorID string, taints 
 		return Renewal{}, errors.New("renew: the credential names no renewal URL, so there is nowhere to renew it")
 	}
 
-	if err := ghrelease.CheckScheme(renewalURL, httpsOnly); err != nil {
+	if err := httpsonly.Check(renewalURL, whyHTTPS); err != nil {
 		return Renewal{}, err
 	}
 

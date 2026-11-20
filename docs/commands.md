@@ -344,9 +344,9 @@ its enrolment asked for, and little else.
 
 `--api` is also an assertion when given: the document must renew against the same host,
 and a mismatch is refused naming both rather than discovered at the first renewal weeks
-later. It stopped being *required* because the argument for requiring it does not hold —
-the same document carries the identity seed and the renewal bearer, so anybody able to
-rewrite its `renewalUrl` already holds everything a redirect would steal.
+later. It is not required: the same document carries the identity seed and the renewal
+bearer, so anybody able to rewrite its `renewalUrl` already holds everything a redirect
+would steal.
 
 **Taints are the credential's, and are validated rather than copied through.** The
 credential commits to the set its issuer granted, anchor starts the identity under no
@@ -433,10 +433,16 @@ Needs root.
 ## `conflux uninstall`
 
 Removes the boot service, the configuration and the identity — and the account `anchord`
-ran as, once nothing runs as it, when conflux made it; an account of that name that
-conflux did not make is left alone. Asks first, because there is no other copy of the
-credential anywhere; `--yes` skips the question, and a non-interactive run without `--yes`
-refuses rather than destroy an identity silently.
+ran as, and `conflux-ephemeral`, once nothing runs as either, when conflux made them; an
+account of either name that conflux did not make is left alone. Asks first, because there is
+no other copy of the credential anywhere; `--yes` skips the question, and a non-interactive
+run without `--yes` refuses rather than destroy an identity silently.
+
+While an [ephemeral run](ephemeral.md) is live it refuses, exit 2, before asking anything:
+the run's anchord may run as the account it would remove, so the run is stopped first,
+with Ctrl-C where it runs. The root a killed run left behind — its extracted pair, token and
+socket — it removes, stopping the anchord the run left, under the root's lock, so a run
+starting at that moment keeps its own.
 
 ## `conflux status`
 

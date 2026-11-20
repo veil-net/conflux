@@ -191,12 +191,9 @@ func TestEnrolRefusesBeforeWriting(t *testing.T) {
 // URL because a self-hosted API is wherever its operator put it, so the base is
 // already there and making somebody retype it buys a typo rather than a check.
 //
-// This replaces a test that pinned the opposite. The argument then was that a
-// stored field must not decide where a credential is POSTed -- but the same
+// The stored field deciding where a credential is POSTed defends nothing: the same
 // document carries the identity seed and the renewal bearer, so anyone able to
-// rewrite its renewalUrl already holds everything the redirect would steal. The
-// check was defending a boundary that is not there, at the cost of a required flag
-// on every enrolment.
+// rewrite its renewalUrl already holds everything the redirect would steal.
 func TestEnrolDerivesTheAPIFromTheManifest(t *testing.T) {
 	d, path := site(t, guardianDoc)
 

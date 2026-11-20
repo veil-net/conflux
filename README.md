@@ -315,7 +315,7 @@ read by OpenSSL 3.5, and it reads OpenSSL's. See [cert.md](docs/cert.md).
 | `conflux install` | register the boot service; start it if a configuration exists |
 | `conflux uninstall` | remove the boot service, the configuration and the identity |
 | `conflux version` | conflux's version, and the anchor build it carries |
-| `conflux update [--check]` | replace this conflux with the latest release, verified, and restart the anchor on it |
+| `conflux update [--check] [--yes]` | replace this conflux with the latest release, verified: a running anchor restarts on it, and a stopped one stays stopped; `--yes` moves a dev build to the release |
 | `conflux cert genkey \| req \| selfsign \| sign \| verify \| show \| convert \| match \| fingerprint \| crl \| ca \| p12 \| probe \| serve` | make and check ML-DSA (and ECDSA, RSA, Ed25519) keys, certificates and revocation lists, keep a CA, bundle PKCS#12, and probe and serve TLS, in FIPS 140-3 mode; see [cert.md](docs/cert.md) |
 | `conflux anchorctl ARGS...` | run the embedded `anchorctl`, uninterpreted |
 | *anything else* | passed to `anchorctl` unchanged: `peers`, `routes`, `events`, `metrics`, `send`, `inspect`, … and the realm's control over its members, `block`, `taints`, `subnets`, `telemetry` |

@@ -25,6 +25,11 @@ var (
 	updateExecutable = thisExecutable
 )
 
+// devUpdateNote is what a dev build is told before it moves to the release.
+const devUpdateNote = "This is a dev build: its anchor is pinned to the dev tree, and the release's to the " +
+	"production tree, where the credential this machine holds is not valid. After the update it " +
+	"enrols again: conflux up --api https://api.veilnet.com.au, or the API of the realm it is to join."
+
 // runUpdate replaces this conflux with the one conflux's `latest` release holds for this
 // platform, and moves the boot service onto it.
 //
@@ -34,11 +39,6 @@ var (
 // "Up to date" is a digest, not a version string: this file is the release's binary, byte
 // for byte, or it is not. A rebuild of the same version is an update, as release.yml
 // publishes one.
-// devUpdateNote is what a dev build is told before it moves to the release.
-const devUpdateNote = "This is a dev build: its anchor is pinned to the dev tree, and the release's to the " +
-	"production tree, where the credential this machine holds is not valid. After the update it " +
-	"enrols again: conflux up --api https://api.veilnet.com.au, or the API of the realm it is to join."
-
 func runUpdate(ctx context.Context, args []string) int {
 	fs := flag.NewFlagSet("update", flag.ContinueOnError)
 	fs.SetOutput(ui.Errw)

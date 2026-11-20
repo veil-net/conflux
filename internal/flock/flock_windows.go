@@ -5,11 +5,8 @@ package flock
 import (
 	"errors"
 	"fmt"
-	"io/fs"
-	"math"
 	"os"
 
-	"github.com/veil-net/conflux/internal/paths"
 	"golang.org/x/sys/windows"
 )
 
@@ -53,25 +50,20 @@ func lock(path string, flags uint32) (func(), bool, error) {
 	}, true, nil
 }
 
-// Held reports whether somebody holds the lock on path, a file in a directory anchord's
-// own account may write. It is opened to read and never created, and anything but a
-// regular file -- a reparse point among them, opened as itself -- is refused, so asking
-// cannot be turned into SYSTEM creating a file wherever the name was made to lead, or
-// locking it. A file that is not there is held by nobody.
-func Held(path string) (bool, error) {
-	f, err := os.OpenFile(path, paths.OpenUntrusted, 0)
-	if errors.Is(err, fs.ErrNotExist) {
-		return false, nil
-	}
+// plainLock is what openHeld refuses a lock for not being: a reparse point, opened as itself,
+// is not one.
+const plainLock = "a regular file"
 
-	if err != nil {
-		return false, fmt.Errorf("open the lock %s: %w", path, err)
+// Held reports whether somebody holds the lock on path, a file in a directory anchord's
+// own account may write. It is opened without trusting the file (openHeld), so asking cannot
+// be turned into SYSTEM creating a file wherever the name was made to lead, or locking it. A
+// file that is not there is held by nobody.
+func Held(path string) (bool, error) {
+	f, err := openHeld(path)
+	if f == nil {
+		return false, err
 	}
 	defer f.Close()
-
-	if fi, err := f.Stat(); err != nil || !paths.PlainFile(fi, math.MaxInt64) {
-		return false, fmt.Errorf("the lock %s is not a regular file", path)
-	}
 
 	h := windows.Handle(f.Fd())
 	ol := new(windows.Overlapped)

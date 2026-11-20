@@ -5,11 +5,8 @@ package flock
 import (
 	"errors"
 	"fmt"
-	"io/fs"
-	"math"
 	"os"
 
-	"github.com/veil-net/conflux/internal/paths"
 	"golang.org/x/sys/unix"
 )
 
@@ -54,30 +51,21 @@ func lock(path string, how int) (func(), bool, error) {
 	}, true, nil
 }
 
+// plainLock is what openHeld refuses a lock for not being: a second name for another file --
+// the supervisor's own serve.lock, held while it asks -- is not taken for anchord's.
+const plainLock = "a regular file with one name"
+
 // Held reports whether somebody holds the lock on path, a file in a directory another
 // account may write: anchor's lock beside a socket that anchord, running as its own
-// account, made.
-//
-// So it is asked without trusting the file. It is opened to read and never created, and a
-// symlink, a FIFO or a device is refused rather than opened, so the question cannot be
-// turned into root creating, truncating or blocking on whatever the name was made to point
-// at; a second name for another file -- the supervisor's own serve.lock, held while it
-// asks -- is refused rather than taken for anchord's. A file that is not there is held by
-// nobody.
+// account, made. It is opened without trusting the file (openHeld), so the question cannot
+// be turned into root creating, truncating or blocking on whatever the name was made to
+// point at. A file that is not there is held by nobody.
 func Held(path string) (bool, error) {
-	f, err := os.OpenFile(path, paths.OpenUntrusted, 0)
-	if errors.Is(err, fs.ErrNotExist) {
-		return false, nil
-	}
-
-	if err != nil {
-		return false, fmt.Errorf("open the lock %s: %w", path, err)
+	f, err := openHeld(path)
+	if f == nil {
+		return false, err
 	}
 	defer f.Close()
-
-	if fi, err := f.Stat(); err != nil || !paths.PlainFile(fi, math.MaxInt64) {
-		return false, fmt.Errorf("the lock %s is not a regular file with one name", path)
-	}
 
 	switch err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); {
 	case errors.Is(err, unix.EWOULDBLOCK):

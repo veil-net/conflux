@@ -9,7 +9,16 @@
 // shared and then diverges on the platform nobody develops on.
 package flock
 
-import "time"
+import (
+	"errors"
+	"fmt"
+	"io/fs"
+	"math"
+	"os"
+	"time"
+
+	"github.com/veil-net/conflux/internal/paths"
+)
 
 // TryAcquire takes the lock if nobody holds it. ok is false when somebody does, and then
 // nothing is held and there is nothing to release.
@@ -30,4 +39,27 @@ func TryAcquire(path string) (unlock func(), ok bool, err error) {
 
 		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+// openHeld opens the lock at path for Held, without trusting it: to read and never created, as
+// paths.OpenUntrusted opens a file -- never through a symlink or, on Windows, a reparse point,
+// never blocking on a FIFO -- and kept only where it is plainLock. Neither file nor error where
+// there is no file at all.
+func openHeld(path string) (*os.File, error) {
+	f, err := os.OpenFile(path, paths.OpenUntrusted, 0)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("open the lock %s: %w", path, err)
+	}
+
+	if fi, err := f.Stat(); err != nil || !paths.PlainFile(fi, math.MaxInt64) {
+		f.Close()
+
+		return nil, fmt.Errorf("the lock %s is not %s", path, plainLock)
+	}
+
+	return f, nil
 }

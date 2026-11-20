@@ -62,7 +62,9 @@ func TestHeldAsksWithoutCreating(t *testing.T) {
 }
 
 // TestTryAcquireOutlastsAQuestion: a lock held for a moment -- Held asking whether anybody
-// holds it, which takes it to find out -- is not mistaken for somebody running.
+// holds it, which takes it to find out -- is not mistaken for somebody running. The moment
+// here is 25 ms, past what two or three tries span, so a TryAcquire that gave up sooner
+// than its five would fail.
 //
 // The moment ends on a timer, which a loaded runner under -race can fire after every try is
 // spent; a round like that shows nothing either way, and is run again. The failure is a
@@ -80,7 +82,7 @@ func TestTryAcquireOutlastsAQuestion(t *testing.T) {
 
 		freed := make(chan struct{})
 
-		time.AfterFunc(5*time.Millisecond, func() {
+		time.AfterFunc(25*time.Millisecond, func() {
 			unlock()
 			freedAt.Store(time.Now().UnixNano())
 			close(freed)

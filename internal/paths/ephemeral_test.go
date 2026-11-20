@@ -1,6 +1,7 @@
 package paths
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 )
@@ -24,6 +25,25 @@ func TestEphemeralRootIsInsideCONFLUXDIR(t *testing.T) {
 	want := filepath.Join(root, "ephemeral")
 	if d.State != want || d.Config != want || d.Run != filepath.Join(want, "run") || d.Log != "" {
 		t.Errorf("Ephemeral() = %+v, want everything in %s and no log directory", d, want)
+	}
+}
+
+// TestFirstExecutableSaysWhyItRefused: where every candidate is refused, the first refusal is
+// the answer, not ErrNoExec, which would send the user to their mount options for a directory
+// another account made.
+func TestFirstExecutableSaysWhyItRefused(t *testing.T) {
+	first, second := filepath.Join(t.TempDir(), "a"), filepath.Join(t.TempDir(), "b")
+	refusal := errors.New(first + " belongs to another account")
+
+	_, err := FirstExecutable([]string{first, second}, func(c string) error {
+		if c == first {
+			return refusal
+		}
+
+		return errors.New(c + " belongs to another account too")
+	})
+	if !errors.Is(err, refusal) {
+		t.Errorf("FirstExecutable with every candidate refused = %v, want the first refusal", err)
 	}
 }
 

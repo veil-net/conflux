@@ -49,8 +49,9 @@ host can read, and when the run stops there is nothing at all.
   which lets that account pass and list nothing, read nothing of root's and create
   nothing. A `0600` file in a directory others may write is one `rename` away from being
   replaced. A directory that already exists is held to the same: one of conflux's own left
-  wider is narrowed to `0700`, and one another account owns is refused rather than used,
-  since whatever that account put in it is not conflux's.
+  wider is narrowed to `0700`, and one another account owns, or whose own extended ACL (macOS,
+  NFSv4), which narrowing leaves as it is, lets another account write or move it, is refused
+  rather than used, since whatever that account put in it is not conflux's.
 - On Windows, mode bits mean nothing and `%ProgramData%` lets `Users` read and create
   beneath it, so conflux gives its root to SYSTEM and Administrators — owner, and a
   protected DACL everything beneath inherits — and refuses a root another account made.
@@ -124,15 +125,23 @@ refused like its mode's bits. Once a directory has an ACL its mode's group bits 
 rather than what its group may do, so its group is then judged by the ACL's entry for it.
 FreeBSD's POSIX.1e ACLs (UFS) are read the same way. An extended ACL — macOS's, or FreeBSD's NFSv4 ACL
 (ZFS) — is read too, without cgo: an entry allowing anybody but the owner a right to write the
-directory (to add a file or a directory to it, to delete what is in it, or to change its ACL or
-owner) is refused, and on macOS, whose ACLs name accounts by a UUID conflux cannot map to one
-without cgo, that is every such entry, one naming the account conflux runs as included. An entry
-counts whatever it says of inheritance: one the directory only passes on is inherited by the root
-conflux makes inside it. A deny entry takes nothing away from what is counted, so it is not
-read: the `everyone deny delete` on a macOS home directory passes. A sticky directory lets
-through an entry that only lets somebody write it, as it does its mode's bits — ZFS's own ACL
-for a `1777` `/tmp` among them — but not one that lets them delete what is in it or change its
-ACL or owner, which the sticky bit does not hold back. On Windows it is any directory
+directory (to add a file or a directory to it, to delete what is in it or the directory itself,
+or to change its ACL or owner) is refused, and on macOS, whose ACLs name accounts by a UUID
+conflux cannot map to one without cgo, that is every such entry, one naming the account conflux
+runs as included. An entry counts whatever it says of inheritance: one the directory only passes
+on is inherited by the root conflux makes inside it. A deny entry takes nothing away from what is
+counted, so it is not read: the `everyone deny delete` on a macOS home directory passes. A sticky
+directory lets through an entry that only lets somebody write it, as it does its mode's bits —
+ZFS's own ACL for a `1777` `/tmp` among them — but not one that lets them delete what is in it,
+delete the directory, or change its ACL or owner, which the sticky bit does not hold back. The
+root's own ACL is read by the same rules, every root's and not only a `CONFLUX_DIR`'s, as the
+root will be once narrowed, with no sticky bit to let anything through: an entry a directory
+above passed on lands there, though that directory was let through itself, and an extended ACL
+sits beside the mode and keeps its entries through the narrowing, so one that lets another
+account write the root or move it is refused. A POSIX ACL's mask is the mode's group bits, so
+narrowing the root to `0700` sets the mask to nothing and takes the write from every entry: a
+root's POSIX ACL, one passed on by a default ACL above it among them, is left to the narrowing.
+On Windows it is any directory
 on the way owned by an account other than SYSTEM, the Administrators, TrustedInstaller and the
 one running conflux, or one whose DACL grants another account the right to delete or rename
 what is in it, to delete or rename the directory itself, or to change its DACL or owner; the

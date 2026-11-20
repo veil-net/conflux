@@ -77,9 +77,9 @@ func freebsdBuf(entries ...[5]uint32) []byte {
 
 // TestFreeBSDACL: who FreeBSD's ACLs let write. A POSIX.1e access ACL is read as Linux's is,
 // its trivial three entries letting nobody past the mode's bits. Of an NFSv4 ACL, each allow
-// entry that adds to the directory or, past the sticky bit, deletes from it or changes its ACL
-// or owner, other than owner@'s; ZFS's trivial ACL for a 1777 /tmp lets everyone@ write alone,
-// and deny entries and rights that write nothing are not read.
+// entry that adds to the directory or, past the sticky bit, deletes from it, deletes it, or
+// changes its ACL or owner, other than owner@'s; ZFS's trivial ACL for a 1777 /tmp lets
+// everyone@ write alone, and deny entries and rights that write nothing are not read.
 func TestFreeBSDACL(t *testing.T) {
 	const allow, deny = nfs4Allow, 0x0200
 
@@ -101,9 +101,10 @@ func TestFreeBSDACL(t *testing.T) {
 		[5]uint32{0x02, 1001, nfs4WriteACL, deny},                          // a deny takes nothing away
 		[5]uint32{0x08, 50, 0x8 | 0x200, allow},                            // reading writes nothing
 		[5]uint32{0x02, 1002, nfs4WriteOwner, allow},                       // past the sticky bit
+		[5]uint32{0x08, 60, nfs4Delete, allow},                             // deleting the directory itself, too
 	)
 
-	want := []writer{{who: everyone}, {who: aUser, id: 1002, pastSticky: true}}
+	want := []writer{{who: everyone}, {who: aUser, id: 1002, pastSticky: true}, {who: aGroup, id: 60, pastSticky: true}}
 	if got, err := freebsdACL(tmp, true); err != nil || !slices.Equal(got, want) {
 		t.Errorf("freebsdACL(an NFSv4 ACL) = %+v, %v; want %+v", got, err, want)
 	}
@@ -166,11 +167,13 @@ func TestKauthWriters(t *testing.T) {
 		want []writer
 	}{
 		{"no ACL", kauthAttrBuf(), nil},
-		{"a home directory's", kauthAttrBuf(kauthEntry{kauthEveryone, deny, 1 << 4}), nil},
+		{"a home directory's", kauthAttrBuf(kauthEntry{kauthEveryone, deny, kauthDelete}), nil},
 		{"a permit to read", kauthAttrBuf(kauthEntry{someone, kauthPermit, 1<<1 | 1<<3}), nil},
 		{"a permit to add a file", kauthAttrBuf(kauthEntry{someone, kauthPermit | inherits, kauthWriteData}),
 			[]writer{{who: anAccount, uuid: "5B1E0F1C-2D3E-4F50-6172-8394A5B6C7D8"}}},
 		{"everybody may delete what is in it", kauthAttrBuf(kauthEntry{kauthEveryone, kauthPermit, kauthDeleteChild}),
+			[]writer{{who: everyone, pastSticky: true}}},
+		{"everybody may delete it", kauthAttrBuf(kauthEntry{kauthEveryone, kauthPermit, kauthDelete}),
 			[]writer{{who: everyone, pastSticky: true}}},
 	} {
 		if got, err := kauthAttr(c.b); err != nil || !slices.Equal(got, c.want) {

@@ -30,8 +30,9 @@ type writer struct {
 	uuid string // anAccount's
 
 	// pastSticky is a right the sticky bit does not hold back: to delete what is in the
-	// directory, or to change its ACL or owner. Writing it, all a mode's bits or a POSIX.1e
-	// ACL can grant, is held back.
+	// directory, to delete the directory itself, which the kernel grants before it looks at a
+	// sticky bit, or to change its ACL or owner. Writing it, all a mode's bits or a POSIX.1e ACL
+	// can grant, is held back.
 	pastSticky bool
 }
 
@@ -113,7 +114,7 @@ const (
 
 // NFSv4 ACLs, as FreeBSD numbers them: the tags POSIX.1e does not have, the allow type, and the
 // rights that write a directory -- to add a file or a directory to it and, past the sticky bit, to
-// delete what is in it or change its ACL or owner.
+// delete what is in it, to delete the directory itself, or to change its ACL or owner.
 const (
 	nfs4Owner    = 0x01 // owner@
 	nfs4Everyone = 0x40 // everyone@
@@ -122,9 +123,10 @@ const (
 	nfs4AddFile         = 0x0010
 	nfs4AddSubdirectory = 0x0020
 	nfs4DeleteChild     = 0x0100
+	nfs4Delete          = 0x0800
 	nfs4WriteACL        = 0x2000
 	nfs4WriteOwner      = 0x4000
-	nfs4PastSticky      = nfs4DeleteChild | nfs4WriteACL | nfs4WriteOwner
+	nfs4PastSticky      = nfs4DeleteChild | nfs4Delete | nfs4WriteACL | nfs4WriteOwner
 )
 
 // freebsdACL is who FreeBSD's struct acl lets write, read as the NFSv4 ACL or the POSIX.1e
@@ -197,13 +199,15 @@ const (
 	kauthPermit = 1
 
 	kauthWriteData     = 1 << 2 // add_file on a directory
+	kauthDelete        = 1 << 4
 	kauthAppendData    = 1 << 5 // add_subdirectory
 	kauthDeleteChild   = 1 << 6
 	kauthWriteSecurity = 1 << 12
 	kauthTakeOwnership = 1 << 13
 	kauthGenericAll    = 1 << 21
 	kauthGenericWrite  = 1 << 23
-	kauthPastSticky    = kauthDeleteChild | kauthWriteSecurity | kauthTakeOwnership | kauthGenericAll | kauthGenericWrite
+	kauthPastSticky    = kauthDeleteChild | kauthDelete | kauthWriteSecurity | kauthTakeOwnership | kauthGenericAll |
+		kauthGenericWrite
 	kauthWritesSomehow = kauthWriteData | kauthAppendData | kauthPastSticky
 )
 

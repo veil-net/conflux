@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/user"
+	"path/filepath"
 	"strconv"
 	"syscall"
 
@@ -28,9 +29,9 @@ func RestrictToOwner(string, bool) error { return nil }
 // Trusted is always true here.
 func Trusted(string) bool { return true }
 
-// secure refuses a root another account owns, or a CONFLUX_DIR another account can move,
-// and narrows one of conflux's own that something left wider than 0700, or than the 0710
-// that lets anchord's account through.
+// secure refuses a root another account owns, or whose extended ACL lets another account write
+// or move it, or a CONFLUX_DIR another account can move, and narrows one of conflux's own that
+// something left wider than 0700, or than the 0710 that lets anchord's account through.
 //
 // MkdirAll creates at 0700 and leaves a directory that already exists exactly as it
 // found it, so without this an /etc/conflux somebody made at 0755 would hold the
@@ -54,6 +55,30 @@ func secureAs(dir string, euid int) error {
 	fi, err := ownedAs(dir, link, euid)
 	if err != nil {
 		return err
+	}
+
+	// The root's own ACL, judged as the root will be once narrowed below: 0700, or a 0710 whose
+	// group writes nothing either, and no sticky bit to let anything through. A directory above
+	// passes an entry on to what is made inside it, so one lands on the root whether or not that
+	// directory was let through itself -- a sticky one, or one above a root that is not a
+	// CONFLUX_DIR. An extended ACL (macOS's, FreeBSD's NFSv4) sits beside the mode and keeps
+	// it through the narrowing, so it is refused; a POSIX.1e ACL's mask is the mode's group
+	// bits, which the narrowing takes every entry's write away with (judge). A link's own ACL
+	// says nothing, so it is read where the link leads.
+	acl := dir
+	if isLink(link) {
+		if acl, err = filepath.EvalSymlinks(dir); err != nil {
+			return fmt.Errorf("read %s: %w", dir, err)
+		}
+	}
+
+	switch who, err := mayWrite(acl, 0o700, fi.Sys().(*syscall.Stat_t).Gid, euid); {
+	case err != nil:
+		return err
+	case who != "":
+		return fmt.Errorf("%s is not conflux's alone: %s could put what it likes in it, or move it aside, "+
+			"for conflux to run.\n  Remove that entry from its ACL, and from the directory above that passed "+
+			"it on, if one did; then run this again", dir, who)
 	}
 
 	if chosen(dir) {
@@ -156,7 +181,7 @@ func parentsAs(dir string, euid int) error {
 		case int(st.Uid) != 0 && int(st.Uid) != euid:
 			who = fmt.Sprintf("belongs to uid %d, who", st.Uid)
 		default:
-			if who, err = mayWrite(p, fi, st.Gid, euid); err != nil {
+			if who, err = mayWrite(p, fi.Mode(), st.Gid, euid); err != nil {
 				return err
 			}
 		}
@@ -171,15 +196,15 @@ func parentsAs(dir string, euid int) error {
 	return nil
 }
 
-// mayWrite is who besides root and euid may write the directory p, as a refusal names them,
-// or "": see judge, which it hands p's ACL (extendedWriters).
-func mayWrite(p string, fi os.FileInfo, gid uint32, euid int) (string, error) {
+// mayWrite is who besides root and euid may write the directory p of mode and group gid, as a
+// refusal names them, or "": see judge, which it hands p's ACL (extendedWriters).
+func mayWrite(p string, mode os.FileMode, gid uint32, euid int) (string, error) {
 	acl, aclGroup, err := extendedWriters(p)
 	if err != nil {
 		return "", fmt.Errorf("read the ACL of %s: %w", p, err)
 	}
 
-	return judge(fi.Mode(), gid, acl, aclGroup, euid), nil
+	return judge(mode, gid, acl, aclGroup, euid), nil
 }
 
 // judge is who besides root and euid may write a directory of mode and group gid with the ACL
@@ -187,10 +212,16 @@ func mayWrite(p string, fi os.FileInfo, gid uint32, euid int) (string, error) {
 // group, where the mode or the ACL lets the group and the group lets in another account
 // (groupOf); a user other than euid, or a group that lets in another account, that its ACL
 // names; and any account an ACL names by a UUID alone. aclGroup is an ACL whose mask the mode's
-// group bits are (POSIX.1e), which then says what the group may itself. A sticky directory lets
-// nobody rename what is not theirs, so what only lets them write it is left out there, as its
-// mode's bits are; a right the sticky bit does not hold back is not.
+// group bits are (POSIX.1e), which then says what the group may itself, and lets nobody write
+// where those bits do not: a directory's own are its mask already, and a root judged as secure
+// narrows it is judged at the mask the narrowing gives it. A sticky directory lets nobody
+// rename what is not theirs, so what only lets them write it is left out there, as its mode's
+// bits are; a right the sticky bit does not hold back is not.
 func judge(mode os.FileMode, gid uint32, acl []writer, aclGroup bool, euid int) string {
+	if aclGroup && mode&0o020 == 0 {
+		acl = nil
+	}
+
 	sticky := mode&os.ModeSticky != 0
 
 	if !sticky {

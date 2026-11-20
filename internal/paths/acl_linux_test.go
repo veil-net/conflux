@@ -3,6 +3,7 @@ package paths
 import (
 	"os"
 	"os/user"
+	"path/filepath"
 	"strconv"
 	"testing"
 
@@ -57,4 +58,57 @@ func TestEnsureAllReadsAPOSIXACL(t *testing.T) {
 			ensureAllRefuses(t, "a root under a parent where "+c.name, c.refused)
 		})
 	}
+}
+
+// TestEnsureAllLeavesTheRootsPOSIXACLToTheNarrowing: a POSIX ACL's mask is the mode's group bits,
+// so narrowing a root to 0700 takes the write from every entry in it. One found letting another
+// account write the root is narrowed and accepted, and lets nobody write it afterwards; one a
+// parent's default ACL passes on to the root conflux makes there takes its mask from the 0700
+// the root is made at, and that root is accepted too.
+func TestEnsureAllLeavesTheRootsPOSIXACLToTheNarrowing(t *testing.T) {
+	const none = 1<<32 - 1
+
+	another := posixACL([3]uint32{0x01, 7, none}, [3]uint32{0x02, 7, 65534}, [3]uint32{0x04, 5, none},
+		[3]uint32{0x10, 7, none}, [3]uint32{0x20, 0, none})
+
+	t.Run("on the root", func(t *testing.T) {
+		root := filepath.Join(t.TempDir(), "conflux")
+		if err := os.Mkdir(root, 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := unix.Setxattr(root, "system.posix_acl_access", another, 0); err != nil {
+			t.Fatalf("give %s an ACL: %v", root, err)
+		}
+
+		t.Setenv("CONFLUX_DIR", root)
+		ensureAllRefuses(t, "a root whose own POSIX ACL lets another account write", "")
+
+		b := make([]byte, 256)
+
+		n, err := unix.Getxattr(root, "system.posix_acl_access", b)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		entries, err := linuxACL(b[:n])
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got := mode(t, root); got != 0o700 || len(posixWriters(entries)) != 0 {
+			t.Errorf("the root is %#o after EnsureAll, its ACL letting %+v write; want 0700, nobody",
+				got, posixWriters(entries))
+		}
+	})
+
+	t.Run("passed on by its parent", func(t *testing.T) {
+		parent := t.TempDir()
+		if err := unix.Setxattr(parent, "system.posix_acl_default", another, 0); err != nil {
+			t.Fatalf("give %s a default ACL: %v", parent, err)
+		}
+
+		t.Setenv("CONFLUX_DIR", filepath.Join(parent, "conflux"))
+		ensureAllRefuses(t, "a root made under a default ACL that lets another account write", "")
+	})
 }

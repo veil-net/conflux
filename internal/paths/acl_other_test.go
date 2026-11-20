@@ -487,8 +487,9 @@ func TestAncestorsFollowsEveryLink(t *testing.T) {
 // TestJudgeHoldsAnACLToTheStickyBit: a sticky directory lets nobody rename what is not theirs,
 // so an ACL entry that only lets somebody write it is let through there, as its mode's bits
 // are -- ZFS's trivial ACL for a 1777 /tmp among them -- but not one that lets them delete what
-// is in it or change its ACL or owner, which the sticky bit does not hold back. Nowhere is a
-// deny entry, or the everyone-deny-delete on a macOS home directory, read as anything.
+// is in it, delete it, or change its ACL or owner, which the sticky bit does not hold back.
+// Nowhere is a deny entry, or the everyone-deny-delete on a macOS home directory, read as
+// anything.
 func TestJudgeHoldsAnACLToTheStickyBit(t *testing.T) {
 	const allow, deny = nfs4Allow, 0x0200
 
@@ -504,7 +505,14 @@ func TestJudgeHoldsAnACLToTheStickyBit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	home, err := kauthAttr(kauthAttrBuf(kauthEntry{kauthEveryone, deny, 1 << 4}))
+	moves, err := freebsdACL(freebsdBuf(
+		[5]uint32{0x01, 0, 0x1ffff, allow},
+		[5]uint32{0x02, 1002, nfs4Delete, allow}), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	home, err := kauthAttr(kauthAttrBuf(kauthEntry{kauthEveryone, deny, kauthDelete}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -521,12 +529,66 @@ func TestJudgeHoldsAnACLToTheStickyBit(t *testing.T) {
 		{"a sticky /tmp's trivial NFSv4 ACL", sticky, tmp, ""},
 		{"the same ACL without the sticky bit", sticky &^ os.ModeSticky, tmp, "anybody"},
 		{"a sticky directory everybody may delete from", sticky, deletes, "anybody"},
+		{"a sticky directory another account may delete", sticky, moves, "uid 1002"},
 		{"a home directory's deny", os.ModeDir | 0o750, home, ""},
 		{"a UUID's write", os.ModeDir | 0o755, []writer{{who: anAccount, uuid: "5B1E0F1C-2D3E-4F50-6172-8394A5B6C7D8"}},
 			"5B1E0F1C-2D3E-4F50-6172-8394A5B6C7D8"},
 		{"root's write", os.ModeDir | 0o755, []writer{{who: aUser, id: 0}}, ""},
 	} {
 		got := judge(c.mode, 0, c.acl, false, euid)
+
+		switch {
+		case c.refused != "" && !strings.Contains(got, c.refused):
+			t.Errorf("%s: judge = %q, want a refusal naming %s", c.name, got, c.refused)
+		case c.refused == "" && got != "":
+			t.Errorf("%s: judge = %q, want nothing", c.name, got)
+		}
+	}
+}
+
+// TestJudgeHoldsARootAsSecureLeavesIt: a root's own ACL is judged as the root will be once
+// narrowed, 0700 with no sticky bit. An extended ACL keeps its entries through that, so one
+// letting anybody add a file to the root, or an account named by its UUID add a directory, is
+// refused there; a POSIX ACL's mask becomes the narrowed group bits, so its entries let nobody
+// write, though found at 0770 one lets uid 65534.
+func TestJudgeHoldsARootAsSecureLeavesIt(t *testing.T) {
+	const none = 1<<32 - 1
+
+	nfs4, err := freebsdACL(freebsdBuf(
+		[5]uint32{0x01, 0, 0x1ffff, nfs4Allow},
+		[5]uint32{0x40, 0, nfs4AddFile, nfs4Allow}), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	someone := [16]byte{0x5b, 0x1e, 0x0f, 0x1c, 0x2d, 0x3e, 0x4f, 0x50, 0x61, 0x72, 0x83, 0x94, 0xa5, 0xb6, 0xc7, 0xd8}
+
+	kauth, err := kauthAttr(kauthAttrBuf(kauthEntry{someone, kauthPermit, kauthAppendData}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := linuxACL(posixACL([3]uint32{0x01, 7, none}, [3]uint32{0x02, 7, 65534}, [3]uint32{0x04, 5, none},
+		[3]uint32{0x10, 7, none}, [3]uint32{0x20, 0, none}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	posix := posixWriters(entries)
+
+	for _, c := range []struct {
+		name     string
+		mode     os.FileMode
+		acl      []writer
+		aclGroup bool
+		refused  string
+	}{
+		{"an NFSv4 entry letting anybody add a file", 0o700, nfs4, false, "anybody"},
+		{"a macOS entry letting an account add a directory", 0o700, kauth, false, "5B1E0F1C-2D3E-4F50-6172-8394A5B6C7D8"},
+		{"a POSIX entry, under the mask the narrowing gives", 0o700, posix, true, ""},
+		{"the same entry, as found at 0770", 0o770, posix, true, "uid 65534"},
+	} {
+		got := judge(c.mode, 0, c.acl, c.aclGroup, os.Geteuid())
 
 		switch {
 		case c.refused != "" && !strings.Contains(got, c.refused):

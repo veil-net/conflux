@@ -55,6 +55,10 @@ type Release struct {
 	// Auth is the Authorization header every request must carry; empty is none.
 	Auth string
 
+	// Hold, when set, is called with an asset's name before the endpoint answers for it, so
+	// a test can put the answers in an order.
+	Hold func(name string)
+
 	// mu guards what the server records: a caller may fetch every asset at once, so the
 	// handlers run side by side.
 	mu       sync.Mutex
@@ -147,6 +151,10 @@ func (f *Release) Serve(t *testing.T) string {
 		}
 
 		name := names[id-1]
+
+		if f.Hold != nil {
+			f.Hold(name)
+		}
 
 		body, ok := f.Served[name]
 		if !ok {

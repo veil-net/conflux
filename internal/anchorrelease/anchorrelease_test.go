@@ -15,7 +15,9 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/veil-net/conflux/internal/ghrelease"
 	"github.com/veil-net/conflux/internal/ghrelease/ghreleasetest"
@@ -214,16 +216,43 @@ func TestFetchRefusesAWrongDigest(t *testing.T) {
 // A failed fetch must leave nothing behind: not a half-written file, which the temp-and-rename
 // keeps from being mistaken for a binary, and not the binaries that did arrive, which beside
 // an older copy of the one that did not would be a pair from two builds.
+//
+// The bad anchord is answered only once anchorctl has arrived and been staged, which its
+// "ok" line says; left to race, the failure would often cancel anchorctl's download first,
+// and the staged file's removal would go untested.
 func TestARefusedFetchWritesNothing(t *testing.T) {
 	files := pair()
 	f := newRelease(files, testPin, 1)
 	rewrite(f, hex.EncodeToString(sha256Of(files["anchord-linux-amd64"])), strings.Repeat("a", 64))
 
+	var (
+		staged = make(chan struct{})
+		once   sync.Once
+	)
+
+	f.Hold = func(name string) {
+		if name != "anchord-linux-amd64" {
+			return
+		}
+
+		select {
+		case <-staged:
+		case <-time.After(10 * time.Second):
+			t.Error("anchorctl was never staged")
+		}
+	}
+
+	log := func(format string, a ...any) {
+		if strings.Contains(fmt.Sprintf(format, a...), "anchorctl-linux-amd64") {
+			once.Do(func() { close(staged) })
+		}
+	}
+
 	src := serve(t, f)
 
 	dir := t.TempDir()
 
-	err := Fetch(context.Background(), src, []string{"anchord-linux-amd64", "anchorctl-linux-amd64"}, dir, quiet)
+	err := Fetch(context.Background(), src, []string{"anchord-linux-amd64", "anchorctl-linux-amd64"}, dir, log)
 	if err == nil {
 		t.Fatal("want a refusal")
 	}

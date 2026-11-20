@@ -103,8 +103,12 @@ must belong to the account running conflux — on every platform, a root another
 owns is refused — and so must the way to it: a `CONFLUX_DIR` inside a directory another
 account can change is refused too, naming that directory and who can change it, since
 whoever can move the root aside can put a directory of their own in its place, with a
-conflux in it for the boot service to run as root. On Unix that is any directory above it
-owned by an account other than root and the one running conflux, or one its group or
+conflux in it for the boot service to run as root. The way to it is every directory the
+lookup of the root passes through: those above it as it is spelled and, for each link on the
+way, the directory the link is in and those above where it leads, however many links are
+chained, with each link held to its owner too, who may point it elsewhere. On Unix that is any
+directory on the way owned by an account other than root and the one running conflux, or one
+its group or
 anybody may write, unless it is sticky, as `/tmp` is, where nobody may rename what is not
 theirs. A group that lets in no account but the one running conflux, as the group database
 answers (its members, and every account it is the primary group of) — the group of one user
@@ -114,7 +118,7 @@ database cannot answer for, is. conflux is built without cgo, so on Linux and th
 names the directory's group and the account it runs as from `/etc/group` and `/etc/passwd`
 alone: one that is only in a network directory (LDAP, SSSD) is not found there, and the group
 is refused. macOS asks its directory service either way. On Windows it is any directory
-above it owned by an account other than SYSTEM, the Administrators, TrustedInstaller and the
+on the way owned by an account other than SYSTEM, the Administrators, TrustedInstaller and the
 one running conflux, or one whose DACL grants another account the right to delete or rename
 what is in it, to delete or rename the directory itself, or to change its DACL or owner; the
 right to create folders in it, which `C:\` gives every user, is not one of them. The root

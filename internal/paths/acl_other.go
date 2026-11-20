@@ -114,11 +114,12 @@ func Foreign(dir string) error {
 }
 
 // parentsAs refuses dir where another account may write a directory above it: one whose
-// owner is neither root nor euid, who can always give itself the right, or one its group
-// or anybody may write, unless it is sticky, where nobody may rename what is not theirs --
-// or, for its group, unless the group lets in no account but euid's (groupOf).
-// Whoever may write a parent can move dir aside and put a directory of their own in its
-// place, with a conflux in it for the boot service to run as root.
+// owner is neither root nor euid, who can always give itself the right, or one its group or
+// anybody may write, unless it is sticky, where nobody may rename what is not theirs -- or, for
+// its group, unless the group lets in no account but euid's (groupOf). Whoever may write a
+// parent can move dir aside and put a directory of their own in its place, with a conflux in it
+// for the boot service to run as root. A link on the way is held to the directory it is in, to
+// those above where it leads, and to its owner, who may point it elsewhere (ancestors).
 func parentsAs(dir string, euid int) error {
 	above, err := ancestors(dir)
 	if err != nil {
@@ -126,7 +127,7 @@ func parentsAs(dir string, euid int) error {
 	}
 
 	for _, p := range above {
-		fi, err := os.Stat(p)
+		fi, err := os.Lstat(p)
 		if err != nil {
 			return fmt.Errorf("read %s: %w", p, err)
 		}
@@ -136,9 +137,17 @@ func parentsAs(dir string, euid int) error {
 			return fmt.Errorf("read the owner of %s: no ownership on this filesystem", p)
 		}
 
-		who := ""
+		where, who := "inside", ""
 
 		switch perm := fi.Mode().Perm(); {
+		case fi.Mode()&os.ModeSymlink != 0:
+			// A link's mode means nothing: who may change it is its owner, and whoever may
+			// write the directory it is in, which is checked as one above.
+			where = "reached through"
+
+			if int(st.Uid) != 0 && int(st.Uid) != euid {
+				who = fmt.Sprintf("belongs to uid %d, who", st.Uid)
+			}
 		case int(st.Uid) != 0 && int(st.Uid) != euid:
 			who = fmt.Sprintf("belongs to uid %d, who", st.Uid)
 		case fi.Mode()&os.ModeSticky != 0:
@@ -149,9 +158,9 @@ func parentsAs(dir string, euid int) error {
 		}
 
 		if who != "" {
-			return fmt.Errorf("%s is inside %s, which %s could move it aside and put another in its place "+
+			return fmt.Errorf("%s is %s %s, which %s could move it aside and put another in its place "+
 				"for conflux to run.\n  Choose a CONFLUX_DIR whose every parent only root and uid %d can change, "+
-				"or that sits in a sticky directory such as /tmp", dir, p, who, euid)
+				"or that sits in a sticky directory such as /tmp", dir, where, p, who, euid)
 		}
 	}
 

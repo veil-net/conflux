@@ -273,29 +273,97 @@ func chosen(dir string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-// ancestors is every directory above dir, as it is spelled and as its links resolve, each
-// once: whoever may write any of them can put another directory where dir is.
+// ancestors is everything on the way to dir that whoever may change it can put another
+// directory where dir leads by: every directory a lookup of dir looks a name up in, and every
+// link it follows, each once, in the order the lookup meets them. That is each directory above
+// dir as it is spelled, and for each link on the way the directory it is in, the link itself --
+// an account that owns one can point it elsewhere -- and the directories above where it leads,
+// where the next link may be. The directory dir resolves to is not among them.
 func ancestors(dir string) ([]string, error) {
-	resolved, err := filepath.EvalSymlinks(dir)
+	dir, err := filepath.Abs(dir)
 	if err != nil {
-		return nil, fmt.Errorf("resolve %s: %w", dir, err)
+		return nil, err
 	}
 
-	var above []string
+	var met []string
 
-	for _, start := range []string{dir, resolved} {
-		for p := filepath.Dir(start); ; p = filepath.Dir(p) {
-			if !slices.Contains(above, p) {
-				above = append(above, p)
-			}
-
-			if p == filepath.Dir(p) {
-				break
-			}
+	meet := func(p string) {
+		if !slices.Contains(met, p) {
+			met = append(met, p)
 		}
 	}
 
-	return above, nil
+	vol := filepath.VolumeName(dir)
+	at, rest := vol+string(filepath.Separator), dir[len(vol):]
+
+	for links := 0; ; {
+		var name string
+		if name, rest = nextName(rest); name == "" {
+			return met, nil
+		}
+
+		switch name {
+		case ".":
+			continue
+		case "..":
+			at = filepath.Dir(at)
+
+			continue
+		}
+
+		meet(at)
+
+		p := filepath.Join(at, name)
+
+		fi, err := os.Lstat(p)
+		if err != nil {
+			return nil, fmt.Errorf("resolve %s: %w", dir, err)
+		}
+
+		if fi.Mode()&os.ModeSymlink == 0 {
+			at = p
+
+			continue
+		}
+
+		if links++; links > 255 {
+			return nil, fmt.Errorf("resolve %s: more than 255 links", dir)
+		}
+
+		meet(p)
+
+		target, err := os.Readlink(p)
+		if err != nil {
+			return nil, fmt.Errorf("resolve %s: %w", dir, err)
+		}
+
+		// What the link names goes before what was left of the path, looked up from the
+		// directory the link is in, or from the top of the volume it names.
+		rest = target + string(filepath.Separator) + rest
+
+		switch v := filepath.VolumeName(target); {
+		case v != "":
+			at, rest = v+string(filepath.Separator), rest[len(v):]
+		case target != "" && os.IsPathSeparator(target[0]):
+			at = filepath.VolumeName(at) + string(filepath.Separator)
+		}
+	}
+}
+
+// nextName is the first name in path and what follows it, separators around it dropped: "" when
+// none is left.
+func nextName(path string) (name, rest string) {
+	i := 0
+	for i < len(path) && os.IsPathSeparator(path[i]) {
+		i++
+	}
+
+	j := i
+	for j < len(path) && !os.IsPathSeparator(path[j]) {
+		j++
+	}
+
+	return path[i:j], path[j:]
 }
 
 // within reports whether dir sits strictly inside another of dirs.

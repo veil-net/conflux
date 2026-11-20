@@ -7,9 +7,11 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func mode(t *testing.T, dir string) os.FileMode {
@@ -275,6 +277,73 @@ func TestEnsureAllRefusesARootAnotherAccountCanMove(t *testing.T) {
 		}
 	})
 
+	// And to the directory every link on the way is in, where the chain ends somewhere safe:
+	// whoever may write one can point its link anywhere.
+	t.Run("a chain of links through one", func(t *testing.T) {
+		a, open, safe := t.TempDir(), t.TempDir(), t.TempDir()
+		for _, dir := range []string{a, safe} {
+			if err := os.Chmod(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		real := filepath.Join(safe, "real")
+		if err := os.Mkdir(real, 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		l2 := filepath.Join(open, "l2")
+		if err := os.Symlink(real, l2); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.Chmod(open, 0o777); err != nil {
+			t.Fatal(err)
+		}
+
+		l1 := filepath.Join(a, "l1")
+		if err := os.Symlink(l2, l1); err != nil {
+			t.Fatal(err)
+		}
+
+		t.Setenv("CONFLUX_DIR", l1)
+
+		if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), open) {
+			t.Errorf("a root reached through a link in a directory anybody may write was accepted, or the refusal does not name it: %v", err)
+		}
+	})
+
+	// A link on the way that belongs to another account is that account's to point elsewhere,
+	// even in a sticky directory, where nobody else may rename it. /tmp is root's and sticky,
+	// and the link leads to /, so only the link is another account's: this one's, held to
+	// another uid -- or, for root, a link given to another account.
+	t.Run("a link another account owns", func(t *testing.T) {
+		tmp, err := filepath.EvalSymlinks("/tmp") // /private/tmp on macOS
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		link := filepath.Join(tmp, "conflux-link-"+strconv.FormatInt(time.Now().UnixNano(), 36))
+		if err := os.Symlink("/", link); err != nil {
+			t.Fatal(err)
+		}
+
+		t.Cleanup(func() { os.Remove(link) })
+
+		euid := os.Geteuid() + 1
+		if os.Geteuid() == 0 {
+			euid = 0
+			if err := os.Lchown(link, 65534, 65534); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		err = parentsAs(filepath.Join(link, "tmp"), euid)
+		if err == nil || !strings.Contains(err.Error(), "reached through "+link) {
+			t.Errorf("a root reached through a link another uid owns was accepted, or the refusal does not name it: %v", err)
+		}
+	})
+
 	t.Run("sticky", func(t *testing.T) {
 		parent := t.TempDir()
 		if err := os.Chmod(parent, 0o777|os.ModeSticky); err != nil {
@@ -332,5 +401,48 @@ func TestEnsureAllTakesAGroupOfItsOwn(t *testing.T) {
 				t.Errorf("a root its group may write, the group letting in %q, was refused: %v", c.users, err)
 			}
 		})
+	}
+}
+
+// TestAncestorsFollowsEveryLink: the lookup is followed as the kernel makes it, a link's
+// target read from the directory the link is in, ".." included, and each directory a name is
+// looked up in is there once, the links with them, and not the directory the root resolves to.
+func TestAncestorsFollowsEveryLink(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir()) // under /private/var on macOS
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, dir := range []string{"a", "b/c", "d"} {
+		if err := os.MkdirAll(filepath.Join(base, dir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// a/l -> ../d/m, and d/m -> <base>/b/c, absolute: the root is b/c, reached through d.
+	if err := os.Symlink("../d/m", filepath.Join(base, "a", "l")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Symlink(filepath.Join(base, "b", "c"), filepath.Join(base, "d", "m")); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := ancestors(filepath.Join(base, "a", "l"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []string{"/", base, filepath.Join(base, "a"), filepath.Join(base, "a", "l"),
+		filepath.Join(base, "d"), filepath.Join(base, "d", "m"), filepath.Join(base, "b")} {
+		if !slices.Contains(got, want) {
+			t.Errorf("ancestors lacks %s: %q", want, got)
+		}
+	}
+
+	for i, p := range got {
+		if p == filepath.Join(base, "b", "c") || slices.Contains(got[:i], p) {
+			t.Errorf("ancestors holds %s, which is the root or met already: %q", p, got)
+		}
 	}
 }

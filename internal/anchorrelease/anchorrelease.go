@@ -100,6 +100,18 @@ func (s Source) withDefaults() Source {
 	return s
 }
 
+// client is the release s names, as ghrelease reads it: the token on every request, and
+// this package's sentences for a refusal.
+func (s Source) client() ghrelease.Source {
+	return ghrelease.Source{
+		API:    s.API,
+		Repo:   s.Repo,
+		Tag:    s.Tag,
+		Header: http.Header{"Authorization": {"Bearer " + s.Token}},
+		Status: func(resp *http.Response) error { return statusErr(resp, s) },
+	}
+}
+
 // Binary is one entry in the manifest.
 //
 // No URL. The name is what locates the file, as an asset of the release being read; see
@@ -153,8 +165,8 @@ func Fetch(ctx context.Context, src Source, want []string, dir string, log func(
 		return fmt.Errorf("%q is not an owner/name repository", src.Repo)
 	}
 
-	rel, err := lookup(ctx, src)
-	if err != nil {
+	var rel release
+	if err := src.client().Lookup(ctx, &rel); err != nil {
 		return err
 	}
 
@@ -315,35 +327,6 @@ func matches(path string, b Binary) bool {
 	}
 
 	return strings.EqualFold(hex.EncodeToString(sum.Sum(nil)), b.SHA256)
-}
-
-// lookup reads the release at the configured tag.
-//
-// By tag rather than by "latest": latest is a heuristic over publication dates that a
-// real product release cut in anchor would win, and conflux would then embed something
-// that was never meant for it. A tag is exact.
-func lookup(ctx context.Context, src Source) (*release, error) {
-	ctx, cancel := context.WithTimeout(ctx, releaseTimeout)
-	defer cancel()
-
-	u := fmt.Sprintf("%s/repos/%s/releases/tags/%s", src.API, strings.Trim(src.Repo, "/"), url.PathEscape(src.Tag))
-
-	resp, err := do(ctx, src, u, "application/vnd.github+json")
-	if err != nil {
-		return nil, fmt.Errorf("looking up the release: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if err := statusErr(resp, src); err != nil {
-		return nil, err
-	}
-
-	var rel release
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxManifest)).Decode(&rel); err != nil {
-		return nil, fmt.Errorf("the release is not the JSON this expects: %w", err)
-	}
-
-	return &rel, nil
 }
 
 func manifest(ctx context.Context, src Source, assets map[string]asset) (*Manifest, error) {

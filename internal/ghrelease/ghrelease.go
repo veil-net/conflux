@@ -6,12 +6,16 @@
 package ghrelease
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
+	"time"
 )
 
 const (
@@ -23,14 +27,27 @@ const (
 	// InsecureEnv permits a plain-http URL, for a test server, in every client conflux has
 	// (CheckScheme).
 	InsecureEnv = "CONFLUX_ALLOW_INSECURE_API"
+
+	// maxDocument bounds the release document, which lists a few dozen assets at most.
+	maxDocument = 1 << 20
+
+	documentTimeout = 30 * time.Second
 )
 
-// Source is one release: the API it is read from, the owner/name repository holding it,
-// and its tag.
+// Source is one release, and how its requests are made: the API it is read from, the
+// owner/name repository holding it, and its tag.
 type Source struct {
 	API  string
 	Repo string
 	Tag  string
+
+	// Header is set on every request, beside Accept and the API version: a caller's token,
+	// or its User-Agent.
+	Header http.Header
+
+	// Status turns an answer into the caller's sentence for it: nil for 200 OK, and
+	// whatever somebody can act on for the codes that caller meets.
+	Status func(*http.Response) error
 }
 
 // WithDefaults fills what is empty: DefaultAPI, repo and DefaultTag; and drops a trailing
@@ -51,6 +68,50 @@ func (s Source) WithDefaults(repo string) Source {
 	s.API = strings.TrimSuffix(s.API, "/")
 
 	return s
+}
+
+// Lookup reads the release document at the tag into doc, which is the caller's own shape
+// of it. Plain http is the caller's to refuse first (CheckScheme), in its own order.
+//
+// By tag rather than by GitHub's "latest", which is a heuristic over publication dates that
+// a release cut by hand would win. A tag is exact.
+func (s Source) Lookup(ctx context.Context, doc any) error {
+	ctx, cancel := context.WithTimeout(ctx, documentTimeout)
+	defer cancel()
+
+	u := fmt.Sprintf("%s/repos/%s/releases/tags/%s", s.API, strings.Trim(s.Repo, "/"), url.PathEscape(s.Tag))
+
+	resp, err := s.get(ctx, u, "application/vnd.github+json")
+	if err != nil {
+		return fmt.Errorf("looking up the %s release of %s: %w", s.Tag, s.Repo, err)
+	}
+	defer resp.Body.Close()
+
+	if err := s.Status(resp); err != nil {
+		return err
+	}
+
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxDocument)).Decode(doc); err != nil {
+		return fmt.Errorf("the release is not the JSON this expects: %w", err)
+	}
+
+	return nil
+}
+
+func (s Source) get(ctx context.Context, u, accept string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	for k, v := range s.Header {
+		req.Header[k] = v
+	}
+
+	req.Header.Set("Accept", accept)
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	return Client.Do(req)
 }
 
 // Client is every request's. An asset is answered with a redirect to GitHub's storage, on

@@ -20,12 +20,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -42,13 +40,11 @@ const (
 	// lands on a release, a dev build's included.
 	DefaultRepo = "veil-net/conflux"
 
-	// maxRelease bounds the release document; maxBinary one download. A conflux is
-	// 45 to 75 MB (the size gate in `make dist`), so 200 MB is far above anything real.
-	maxRelease = 1 << 20
-	maxBinary  = 200 << 20
+	// maxBinary bounds one download. A conflux is 45 to 75 MB (the size gate in `make
+	// dist`), so 200 MB is far above anything real.
+	maxBinary = 200 << 20
 
-	releaseTimeout = 30 * time.Second
-	binaryTimeout  = 10 * time.Minute
+	binaryTimeout = 10 * time.Minute
 )
 
 // Source is where an update comes from. Zero fields take the defaults above.
@@ -64,6 +60,20 @@ func (s Source) withDefaults() Source {
 	s.API, s.Repo, s.Tag = d.API, d.Repo, d.Tag
 
 	return s
+}
+
+// client is the release s names, as ghrelease reads it: this conflux's User-Agent on
+// every request, and this package's sentences for a refusal.
+func (s Source) client() ghrelease.Source {
+	src := ghrelease.Source{API: s.API, Repo: s.Repo, Tag: s.Tag, Status: func(resp *http.Response) error {
+		return statusErr(resp, s)
+	}}
+
+	if s.UserAgent != "" {
+		src.Header = http.Header{"User-Agent": {s.UserAgent}}
+	}
+
+	return src
 }
 
 // Release is what the release at the tag offers one platform.
@@ -102,21 +112,6 @@ func Latest(ctx context.Context, src Source, goos, goarch string) (*Release, err
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, releaseTimeout)
-	defer cancel()
-
-	u := fmt.Sprintf("%s/repos/%s/releases/tags/%s", src.API, strings.Trim(src.Repo, "/"), url.PathEscape(src.Tag))
-
-	resp, err := do(ctx, src, u, "application/vnd.github+json")
-	if err != nil {
-		return nil, fmt.Errorf("looking up conflux's %s release: %w", src.Tag, err)
-	}
-	defer resp.Body.Close()
-
-	if err := statusErr(resp, src); err != nil {
-		return nil, err
-	}
-
 	var doc struct {
 		Name            string `json:"name"`
 		TargetCommitish string `json:"target_commitish"`
@@ -129,8 +124,8 @@ func Latest(ctx context.Context, src Source, goos, goarch string) (*Release, err
 		} `json:"assets"`
 	}
 
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxRelease)).Decode(&doc); err != nil {
-		return nil, fmt.Errorf("the release is not the JSON this expects: %w", err)
+	if err := src.client().Lookup(ctx, &doc); err != nil {
+		return nil, err
 	}
 
 	want := AssetName(goos, goarch)

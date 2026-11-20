@@ -403,9 +403,9 @@ func TestAFirstSignalStopsAnEphemeralRun(t *testing.T) {
 			exited := make(chan error, 1)
 			go func() { exited <- conflux.Wait() }()
 
-			// A test that fails kills conflux, then stops the anchord it recorded, which off Linux,
-			// with no parent-death signal, would run on past it.
-			t.Cleanup(func() { _, _ = daemon.ReapOrphan(d) })
+			// A test that fails kills conflux, then, once it has let go of the root's lock, stops the
+			// anchord it recorded, which off Linux, with no parent-death signal, would run on past it.
+			t.Cleanup(func() { daemon.Reap(d, 10*time.Second) })
 			t.Cleanup(func() { _ = conflux.Process.Kill() })
 
 			select {

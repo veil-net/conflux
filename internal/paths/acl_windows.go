@@ -295,7 +295,11 @@ func trusted(sid *windows.SID) bool {
 
 // secure gives a conflux root its ownership and DACL, once, and refuses one another
 // account made, a junction another account may point elsewhere (heldLink), or a CONFLUX_DIR
-// another account can move (see parents).
+// another account can move (see parents). A root secured already -- SYSTEM's or the
+// Administrators', under a protected DACL that grants nobody else a right retargets names -- is not
+// restricted again, but what it holds is judged again (contents), so that what a run refused once
+// the root was restricted is refused by every run after; one protected that grants more, or has
+// no DACL at all, is held to all of what follows, as one found unrestricted is.
 //
 // A directory conflux did not create is one somebody else may have filled before it
 // looked -- with a binary for the service to run, or a manifest whose key they hold --
@@ -349,9 +353,18 @@ func secure(dir string) error {
 		return fmt.Errorf("read the DACL of %s: %w", dir, err)
 	}
 
-	admin := owner.Equals(sidSystem) || owner.Equals(sidAdmins)
-	if admin && control&windows.SE_DACL_PROTECTED != 0 {
-		return nil
+	// Secured already: SYSTEM's or the Administrators', under a protected DACL that lets nobody else
+	// write it, move it or change who may -- what a restriction leaves. It is not restricted or
+	// filled again, but what it holds is judged as it is once a root is restricted: a restriction
+	// refused by that judgement is still in place, and what it refused is still there. A protected
+	// DACL that grants more, or none at all, is repaired or refused below as an unrestricted one is.
+	if (owner.Equals(sidSystem) || owner.Equals(sidAdmins)) && control&windows.SE_DACL_PROTECTED != 0 {
+		switch who, _, err := changerIn(dir, sd, retargets, "write it", nil); {
+		case err != nil:
+			return err
+		case who == "":
+			return contents(dir)
+		}
 	}
 
 	if err := ownerRefusal(dir, owner); err != nil {
@@ -367,8 +380,8 @@ func secure(dir string) error {
 		return err
 	case who != "":
 		return fmt.Errorf("%s %s could take out what conflux puts in it, with a handle opened now that keeps the "+
-			"right once conflux restricts it, so conflux will not use it.\n  Remove that entry from its DACL, then "+
-			"run this again as Administrator", dir, who)
+			"right once conflux restricts it, so conflux will not use it.\n  Give it a DACL that grants nobody "+
+			"else that right, then run this again as Administrator", dir, who)
 	}
 
 	if err := contents(dir); err != nil {
@@ -425,8 +438,9 @@ func ownerRefusal(dir string, owner *windows.SID) error {
 }
 
 // Foreign is what secure would refuse dir with for its owner, for a junction another account
-// may point elsewhere, or for anything in it another account may change (contents), before
-// anything is made, or nil where dir is this account's or is not there yet. A directory another
+// may point elsewhere, for a DACL that lets another account move what is in it, or for anything
+// in it another account may change (contents), before anything is made, or nil where dir is this
+// account's or is not there yet. A directory another
 // account made, or could have planted something in, is none of conflux's to use, and whoever
 // reads one -- an ephemeral run's root, which %ProgramData% lets anybody make first -- holds it
 // to this as the conflux that makes one does, through one handle as secure does, and reading
@@ -455,6 +469,15 @@ func Foreign(dir string) error {
 
 	if err := ownerRefusal(dir, owner); err != nil {
 		return err
+	}
+
+	switch who, _, err := changerIn(dir, sd, moves, "move it or what is in it", nil); {
+	case err != nil:
+		return err
+	case who != "":
+		return fmt.Errorf("%s %s could take out what is in it and put something of their own in its place, so "+
+			"conflux will not use it.\n  Give it a DACL that grants nobody else that right, then run this again "+
+			"as Administrator", dir, who)
 	}
 
 	return contents(dir)

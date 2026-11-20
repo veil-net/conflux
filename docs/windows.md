@@ -97,10 +97,14 @@ reparse point cannot be set on a directory that is not empty: a handle somebody 
 root while its old DACL let them write it, which keeps that right, can no longer make a junction
 of it. That holds only while nobody else may take `run\` out again, so a root whose DACL, as
 found, lets another account delete or rename what is in it, or change who may, is refused before
-it is restricted; `%ProgramData%`'s own grant to `Users`, to add to a folder and write its
+it is restricted, and passed over by every reader of an ephemeral root; `%ProgramData%`'s own grant to `Users`, to add to a folder and write its
 attributes, is not that. Then it is read once more through the handle: one that became a junction meanwhile is
-refused. A root some other account created is refused rather than taken over: whoever made it
-could have filled it first. So is one that holds anything another account may change, each
+refused. A root already secured — the Administrators' or SYSTEM's, under a protected DACL that
+lets nobody else write it, add to it, move it or change who may — is not restricted again, but
+what it holds is judged again, so that a folder refused once stays refused; a protected
+one that grants more is judged and restricted as any other, and one with no DACL at all, which
+grants anybody everything, is refused. A root some other account created is refused rather than
+taken over: whoever made it could have filled it first. So is one that holds anything another account may change, each
 thing in it judged by its own owner and DACL rather than by what it leads to, before the root is
 restricted, what it inherits from the root included, and again once it is, before `run\` is made,
 so that a folder another account added in between is judged too: anything another

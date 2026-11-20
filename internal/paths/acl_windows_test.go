@@ -290,8 +290,9 @@ func TestSecureRefusesARootThatBecomesAJunction(t *testing.T) {
 // TestSecureJudgesWhatTheRootGainsBeforeItIsRestricted: until a found root is restricted, Users may
 // add a folder to it, which keeps them as its owner through the restriction, so what the root holds
 // is judged again once it is restricted, before it is filled: here a folder Users own, added as
-// soon as secure has restricted the root, is refused, naming it. Windows-only, so it runs in CI's
-// platforms job alone.
+// soon as secure has restricted the root, is refused, naming it. The root stays restricted, and the
+// next secure, which finds it secured, judges what it holds all the same and refuses the folder
+// again rather than taking the root as done. Windows-only, so it runs in CI's platforms job alone.
 func TestSecureJudgesWhatTheRootGainsBeforeItIsRestricted(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
@@ -315,6 +316,12 @@ func TestSecureJudgesWhatTheRootGainsBeforeItIsRestricted(t *testing.T) {
 
 	if err := secure(root); err == nil || !strings.Contains(err.Error(), planted) {
 		t.Errorf("secure(a root Users added a folder to before it was restricted) = %v, want a refusal naming it", err)
+	}
+
+	restricted = was
+
+	if err := secure(root); err == nil || !strings.Contains(err.Error(), planted) {
+		t.Errorf("secure(the restricted root still holding that folder) = %v, want a refusal naming it", err)
 	}
 }
 
@@ -579,8 +586,9 @@ func ownBy(t *testing.T, path string, sid *windows.SID) {
 // TestSecureRefusesARootWhoseDACLLetsAnotherMoveWhatIsInIt: fill keeps a handle opened under a
 // found root's old DACL from making a junction of it only while nobody else may take out what fill
 // puts there, so a root whose DACL lets Users delete what is in it is refused, naming the grant,
-// and left as it was; one that only inherits %ProgramData%'s grant to Users, to add to a folder and
-// write its attributes, passes. Windows-only, so it runs in CI's platforms job alone.
+// and left as it was, and passed over by Foreign too; one that only inherits %ProgramData%'s grant
+// to Users, to add to a folder and write its attributes, passes. Windows-only, so it runs in CI's
+// platforms job alone.
 func TestSecureRefusesARootWhoseDACLLetsAnotherMoveWhatIsInIt(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
@@ -590,6 +598,10 @@ func TestSecureRefusesARootWhoseDACLLetsAnotherMoveWhatIsInIt(t *testing.T) {
 	}
 
 	privtest.GrantUsers(t, root, fileDeleteChild, windows.NO_INHERITANCE)
+
+	if err := Foreign(root); err == nil || !strings.Contains(err.Error(), root) || !strings.Contains(err.Error(), privtest.Users.String()) {
+		t.Errorf("Foreign(a root whose DACL lets Users delete what is in it) = %v, want a refusal naming it and Users", err)
+	}
 
 	if err := secure(root); err == nil || !strings.Contains(err.Error(), root) || !strings.Contains(err.Error(), privtest.Users.String()) {
 		t.Errorf("secure(a root whose DACL lets Users delete what is in it) = %v, want a refusal naming it and Users", err)
@@ -610,5 +622,70 @@ func TestSecureRefusesARootWhoseDACLLetsAnotherMoveWhatIsInIt(t *testing.T) {
 
 	if err := secure(inherits); err != nil {
 		t.Errorf("secure(a root inheriting %%ProgramData%%'s grant to Users) = %v", err)
+	}
+}
+
+// TestSecureHoldsAProtectedRootToItsDACL: a root already the Administrators' under a protected DACL
+// is one conflux secured only where that DACL lets nobody else write it, move it or change who may;
+// otherwise it is held to what a root found unrestricted is. One granting Users the right to write
+// its attributes is repaired, left SYSTEM's and the Administrators' alone; one granting them the
+// right to delete what is in it, or with no DACL at all, which grants anybody everything, is
+// refused, naming it. Windows-only, so it runs in CI's platforms job alone.
+func TestSecureHoldsAProtectedRootToItsDACL(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", "")
+
+	for _, c := range []struct {
+		name, sddl string
+		refused    bool
+	}{
+		{"grants Users the right to write its attributes", "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;;0x100;;;BU)", false},
+		{"grants Users the right to delete what is in it", "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;;0x40;;;BU)", true},
+		{"has no DACL", "O:BAD:PNO_ACCESS_CONTROL", true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "conflux")
+			if err := os.Mkdir(root, 0o700); err != nil {
+				t.Fatal(err)
+			}
+
+			setSecurity(t, root, c.sddl)
+
+			err := secure(root)
+
+			switch {
+			case c.refused && (err == nil || !strings.Contains(err.Error(), root)):
+				t.Errorf("secure(a protected root that %s) = %v, want a refusal naming it", c.name, err)
+			case !c.refused && err != nil:
+				t.Errorf("secure(a protected root that %s) = %v", c.name, err)
+			case !c.refused:
+				onlyTheSystems(t, root)
+			}
+		})
+	}
+}
+
+// setSecurity gives path the owner and the protected DACL -- or the NULL one, NO_ACCESS_CONTROL --
+// that sddl holds, by name.
+func setSecurity(t *testing.T, path, sddl string) {
+	t.Helper()
+
+	sd, err := windows.SecurityDescriptorFromString(sddl)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	owner, _, err := sd.Owner()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION|
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, owner, nil, dacl, nil); err != nil {
+		t.Fatal(err)
 	}
 }

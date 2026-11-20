@@ -99,11 +99,11 @@ func runObserve(ctx context.Context, args []string) int {
 	}
 
 	// chooseTaints mints a taint, and prints it to be shared, for a machine holding no
-	// credential with none given or configured -- its last case. Then the question comes first,
-	// so a "no" leaves nothing minted or printed. Otherwise the taints are checked first and the
+	// credential with none given or configured (mintsTaint). Then the question comes first, so a
+	// "no" leaves nothing minted or printed. Otherwise the taints are checked first and the
 	// question asked last, as launch asks for the IPv4: an answer given only to be told a flag
 	// was wrong is an answer given twice.
-	mints := held == nil && len(f.taints) == 0 && len(cfg.Taints) == 0
+	mints := mintsTaint(cfg, f.taints, held)
 
 	if !mints {
 		if err := chooseTaints(cfg, f.taints, held); err != nil {

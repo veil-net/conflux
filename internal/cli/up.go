@@ -654,11 +654,7 @@ func chooseTaints(cfg *config.Config, given []string, held *enrol.Manifest) erro
 	}
 
 	switch {
-	case len(given) > 0:
-		cfg.Taints = given
-	case len(cfg.Taints) > 0:
-		return nil // asked for by an earlier run that has not enrolled yet
-	default:
+	case mintsTaint(cfg, given, held):
 		minted := taint.New()
 		cfg.Taints = []string{minted}
 
@@ -684,6 +680,10 @@ func chooseTaints(cfg *config.Config, given []string, held *enrol.Manifest) erro
 		ui.Println()
 
 		return nil
+	case len(given) > 0:
+		cfg.Taints = given
+	default:
+		return nil // asked for by an earlier run that has not enrolled yet
 	}
 
 	if len(given) > 1 {
@@ -693,6 +693,12 @@ func chooseTaints(cfg *config.Config, given []string, held *enrol.Manifest) erro
 	}
 
 	return nil
+}
+
+// mintsTaint reports whether chooseTaints mints a taint: for a machine holding no credential,
+// with none given or configured.
+func mintsTaint(cfg *config.Config, given []string, held *enrol.Manifest) bool {
+	return held == nil && len(given) == 0 && len(cfg.Taints) == 0
 }
 
 // heldCredential is this machine's credential, or nil before it has one.

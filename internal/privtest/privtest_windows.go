@@ -309,8 +309,9 @@ func Share(tb testing.TB, dir string) string {
 		}
 	})
 
+	// A share's root is read by its name and a separator, as a volume's is.
 	unc := `\\localhost\` + name
-	if _, err := os.Stat(unc); err != nil {
+	if _, err := os.Stat(unc + `\`); err != nil {
 		tb.Skipf("%s, shared as %s, cannot be reached through this machine's own server: %v", dir, unc, err)
 	}
 

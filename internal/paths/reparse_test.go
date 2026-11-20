@@ -73,6 +73,7 @@ func TestWindowsLinkTarget(t *testing.T) {
 			symlinkData(`\??\GLOBALROOT\Device\Mup\192.0.2.1\share`, "", false)},
 		{"a link to a device", `\Device\Mup\192.0.2.1\share`, symlinkData(`\Device\Mup\192.0.2.1\share`, "", false)},
 		{"a link to a drive's device", `\??\C:`, symlinkData(`\??\C:`, "", false)},
+		{"a link to a drive's device, a name after it", `\??\C:x`, symlinkData(`\??\C:x`, "", false)},
 		{"a relative link written as a UNC path", `\\192.0.2.1\share`, symlinkData(`\\192.0.2.1\share`, "", true)},
 		{"a relative link written as a UNC path, separators mixed", `/\192.0.2.1\share`,
 			symlinkData(`/\192.0.2.1\share`, "", true)},

@@ -35,28 +35,7 @@ type Ctl struct {
 // both, and a call conflux makes for itself -- a start handed the credential, a status, a
 // renewal -- must reach conflux's daemon and no other: an ephemeral run's credential piped to
 // whatever daemon the shell names would outlive the run.
-func (c *Ctl) Env() []string {
-	// Filtered in place: os.Environ returns a copy of its own each call, and every call conflux
-	// makes to anchorctl comes through here, so a second slice would be one per call.
-	env := os.Environ()
-	kept := env[:0]
-
-	for _, kv := range env {
-		if k, _, _ := strings.Cut(kv, "="); !connection(k) {
-			kept = append(kept, kv)
-		}
-	}
-
-	env = kept
-
-	for _, kv := range [...][2]string{{SocketEnv, c.Socket}, {TokenEnv, c.Token}} {
-		if kv[1] != "" {
-			env = append(env, kv[0]+"="+kv[1])
-		}
-	}
-
-	return env
-}
+func (c *Ctl) Env() []string { return c.env(false) }
 
 // PassthroughEnv is the child environment for a command somebody typed for conflux's own
 // daemon: the caller's, with conflux's socket, and its token only where the caller has not
@@ -65,14 +44,27 @@ func (c *Ctl) Env() []string {
 //
 // Either exported empty is unset, and dropped: anchorctl, replacing conflux on Unix, reads the
 // first entry for a name, so an empty one left ahead of conflux's would be the one it read.
-func (c *Ctl) PassthroughEnv() []string {
-	// Filtered in place, as Env is.
+func (c *Ctl) PassthroughEnv() []string { return c.env(true) }
+
+// env is the caller's environment with conflux's socket and token added. What the caller
+// exported of either is dropped, or, for a typed command, only what is exported empty, and a
+// token of the caller's that is kept keeps conflux's out.
+func (c *Ctl) env(typed bool) []string {
+	// Filtered in place: os.Environ returns a copy of its own each call, and every call conflux
+	// makes to anchorctl comes through here, so a second slice would be one per call.
 	env := os.Environ()
 	kept := env[:0]
+	callersToken := false
 
 	for _, kv := range env {
-		if k, v, _ := strings.Cut(kv, "="); v != "" || !connection(k) {
+		k, v, _ := strings.Cut(kv, "=")
+
+		switch name := connection(k); {
+		case name == "":
 			kept = append(kept, kv)
+		case typed && v != "":
+			kept = append(kept, kv)
+			callersToken = callersToken || name == TokenEnv
 		}
 	}
 
@@ -82,24 +74,23 @@ func (c *Ctl) PassthroughEnv() []string {
 		env = append(env, SocketEnv+"="+c.Socket)
 	}
 
-	if c.Token != "" && os.Getenv(TokenEnv) == "" {
+	if c.Token != "" && !callersToken {
 		env = append(env, TokenEnv+"="+c.Token)
 	}
 
 	return env
 }
 
-// connection reports whether an environment variable is one of the two Env replaces, and
-// PassthroughEnv drops when empty. Windows
+// connection is which of the two connection variables a name is, or "" for neither. Windows
 // keeps names without regard to case, and so does the comparison there.
-func connection(name string) bool {
+func connection(name string) string {
 	for _, k := range [...]string{SocketEnv, TokenEnv} {
 		if name == k || (runtime.GOOS == "windows" && strings.EqualFold(name, k)) {
-			return true
+			return k
 		}
 	}
 
-	return false
+	return ""
 }
 
 // Error is a failed run, carrying what the child said.

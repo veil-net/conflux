@@ -1,6 +1,7 @@
 package paths
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -782,8 +783,11 @@ func changer(p string, h windows.Handle, rights windows.ACCESS_MASK, what string
 		return "has no DACL, so anybody", false, nil
 	}
 
-	sid, anchords := mover(dacl, rights, anchord)
-	if sid != nil {
+	sid, anchords, err := mover(dacl, rights, anchord)
+	switch {
+	case err != nil:
+		return "", false, fmt.Errorf("read the DACL of %s: %w", p, err)
+	case sid != nil:
 		return "grants " + accountName(sid) + " the right to " + what + ", who", anchords, nil
 	}
 
@@ -799,26 +803,31 @@ func isLink(fi os.FileInfo) bool {
 
 // mover is the first account dacl grants one of rights on the object itself, other than those
 // trustedOwner names and anchord, where it is given, or nil; and whether it grants anchord one of
-// them before it.
-func mover(dacl *windows.ACL, rights windows.ACCESS_MASK, anchord *windows.SID) (*windows.SID, bool) {
+// them before it: each entry that allows rights on the object, as windowsGrants reads them.
+func mover(dacl *windows.ACL, rights windows.ACCESS_MASK, anchord *windows.SID) (*windows.SID, bool, error) {
+	header := unsafe.Slice((*byte)(unsafe.Pointer(dacl)), 8)
+
+	grants, err := windowsGrants(unsafe.Slice((*byte)(unsafe.Pointer(dacl)), binary.LittleEndian.Uint16(header[2:])))
+	if err != nil {
+		return nil, false, err
+	}
+
 	anchords := false
 
-	for i := range uint32(dacl.AceCount) {
-		var ace *windows.ACCESS_ALLOWED_ACE
-		if windows.GetAce(dacl, i, &ace) != nil || ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE ||
-			ace.Header.AceFlags&windows.INHERIT_ONLY_ACE != 0 || ace.Mask&rights == 0 {
+	for _, g := range grants {
+		if g.rights&uint32(rights) == 0 {
 			continue
 		}
 
-		switch sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart)); {
+		switch sid := (*windows.SID)(unsafe.Pointer(&g.sid[0])); {
 		case anchord != nil && sid.Equals(anchord):
 			anchords = true
 		case !trustedOwner(sid):
-			return sid, anchords
+			return sid, anchords, nil
 		}
 	}
 
-	return nil, anchords
+	return nil, anchords, nil
 }
 
 // trustedOwner is whom trusted names, or TrustedInstaller: somebody who could change anything

@@ -1,6 +1,7 @@
 package paths
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"slices"
@@ -215,5 +216,103 @@ func TestKauthWriters(t *testing.T) {
 
 	if _, err := kauthAttr(bad); !errors.Is(err, errACL) {
 		t.Errorf("a kauth_filesec with another magic number = %v, want errACL", err)
+	}
+}
+
+// windowsACL is a Windows ACL holding aces, as GetSecurityInfo hands a DACL back: its revision, its
+// size and its entries' count, then the entries.
+func windowsACL(aces ...[]byte) []byte {
+	var body []byte
+	for _, a := range aces {
+		body = append(body, a...)
+	}
+
+	b := []byte{4, 0}
+	b = binary.LittleEndian.AppendUint16(b, uint16(8+len(body)))
+	b = binary.LittleEndian.AppendUint16(b, uint16(len(aces)))
+	b = binary.LittleEndian.AppendUint16(b, 0)
+
+	return append(b, body...)
+}
+
+// windowsACE is an ACE of kind and flags holding body: its rights, and what its kind holds after.
+func windowsACE(kind, flags byte, body ...[]byte) []byte {
+	var b []byte
+	for _, part := range body {
+		b = append(b, part...)
+	}
+
+	return append(binary.LittleEndian.AppendUint16([]byte{kind, flags}, uint16(4+len(b))), b...)
+}
+
+// windowsSIDOf is the SID S-1-authority-subs... as an ACL holds it.
+func windowsSIDOf(authority byte, subs ...uint32) []byte {
+	b := []byte{1, byte(len(subs)), 0, 0, 0, 0, 0, authority}
+	for _, s := range subs {
+		b = binary.LittleEndian.AppendUint32(b, s)
+	}
+
+	return b
+}
+
+func le32(v uint32) []byte { return binary.LittleEndian.AppendUint32(nil, v) }
+
+// TestWindowsGrants: what a Windows DACL allows on the object itself, read from its bytes. An
+// allowed entry counts, and so does its callback form, whose condition AccessCheck may find true,
+// and either object form with no object type to narrow it, whether or not it names a kind of child
+// to pass itself on to; one with an object type allows nothing on a file, nor does an entry that
+// only passes its rights on, a deny or an audit. An ACL in any other shape is refused rather than
+// read as allowing nobody.
+func TestWindowsGrants(t *testing.T) {
+	users, mallory, guest := windowsSIDOf(5, 32, 545), windowsSIDOf(5, 21, 1, 2, 3, 1001), windowsSIDOf(5, 21, 1, 2, 3, 501)
+	guid := bytes.Repeat([]byte{0xab}, 16)
+	condition := []byte("artx\x01\x00\x00\x00")
+
+	acl := windowsACL(
+		windowsACE(aceAllowed, 0, le32(0x2), users),                                              // add a file
+		windowsACE(0x1, 0, le32(0x2), mallory),                                                   // a deny
+		windowsACE(aceAllowed, aceInheritOnly|0x2, le32(0x10000), mallory),                       // passed on alone
+		windowsACE(aceAllowedCallback, 0, le32(0x100), mallory, condition),                       // write attributes, if
+		windowsACE(aceAllowedObject, 0, le32(0x40000), le32(0), guest),                           // change the DACL
+		windowsACE(aceAllowedObject, 0, le32(0x80000), le32(aceObjectType), guid, mallory),       // a property's
+		windowsACE(aceAllowedObject, 0x2, le32(0x40), le32(aceInheritedObjectType), guid, guest), // to children of a kind
+		windowsACE(aceAllowedCallbackObject, 0, le32(0x10000), le32(0), users, condition),        // delete, if
+		windowsACE(0x2, 0x40, le32(0x2), mallory),                                                // an audit
+	)
+
+	want := []windowsGrant{{0x2, users}, {0x100, mallory}, {0x40000, guest}, {0x40, guest}, {0x10000, users}}
+
+	got, err := windowsGrants(acl)
+	if err != nil || !slices.EqualFunc(got, want, func(a, b windowsGrant) bool {
+		return a.rights == b.rights && bytes.Equal(a.sid, b.sid)
+	}) {
+		t.Errorf("windowsGrants = %x, %v; want %x", got, err, want)
+	}
+
+	if got, err := windowsGrants(windowsACL()); err != nil || len(got) != 0 {
+		t.Errorf("windowsGrants(an empty ACL) = %x, %v; want nobody", got, err)
+	}
+
+	tooLong := windowsACL(windowsACE(aceAllowed, 0, le32(0x2), users))
+	binary.LittleEndian.PutUint16(tooLong[2:], uint16(len(tooLong)+1))
+
+	overrun := windowsACL(windowsACE(aceAllowed, 0, le32(0x2), users))
+	binary.LittleEndian.PutUint16(overrun[10:], 64) // the ACE's size
+
+	missing := windowsACL(windowsACE(aceAllowed, 0, le32(0x2), users))
+	binary.LittleEndian.PutUint16(missing[4:], 2) // the count of ACEs
+
+	for name, b := range map[string][]byte{
+		"shorter than its header":     windowsACL()[:6],
+		"longer than it is":           tooLong,
+		"an ACE past its end":         overrun,
+		"more ACEs than it holds":     missing,
+		"a SID past its ACE":          windowsACL(windowsACE(aceAllowed, 0, le32(0x2), users[:12])),
+		"a SID of another revision":   windowsACL(windowsACE(aceAllowed, 0, le32(0x2), append([]byte{2}, users[1:]...))),
+		"an object ACE without flags": windowsACL(windowsACE(aceAllowedObject, 0, le32(0x2))),
+	} {
+		if _, err := windowsGrants(b); !errors.Is(err, errACL) {
+			t.Errorf("windowsGrants(an ACL %s) = %v, want errACL", name, err)
+		}
 	}
 }

@@ -150,8 +150,8 @@ narrowing the root to `0700` sets the mask to nothing and takes the write from e
 root's POSIX ACL, one passed on by a default ACL above it among them, is left to the narrowing.
 On Windows it is any directory
 on the way owned by an account other than SYSTEM, the Administrators, TrustedInstaller and the
-one running conflux, or one whose DACL grants another account the right to delete or rename
-what is in it, to delete or rename the directory itself, or to change its DACL or owner; the
+one running conflux, or one whose DACL grants another account — by any entry that allows, a
+conditional one included — the right to delete or rename what is in it, to delete or rename the directory itself, or to change its DACL or owner; the
 right to create folders in it, which `C:\` gives every user, is not one of them. A link or
 junction on the way is held as well to whoever may point it elsewhere: the right to write its
 data or its attributes is enough to rewrite where a junction leads. The root

@@ -78,17 +78,13 @@ jobs:
           tag: ${{ github.ref == 'refs/heads/version3' && 'latest' || 'dev-latest' }}
 
       # The tag is the VERSION file, verbatim: nothing is prepended, and the same string
-      # is stamped into the binary. `latest` and `dev-latest` are refused, since they are the
-      # moving releases' tags and the version would delete one of them.
+      # is stamped into the binary. CI's TestVersionMatchesFile holds it to MAJOR.MINOR.PATCH,
+      # so it is never `latest` or `dev-latest`, the moving releases' tags.
       - name: what version does this tree claim?
         id: version
         run: |
           set -euo pipefail
-          [ -s VERSION ] || { echo "::error::VERSION is missing or empty" >&2; exit 1; }
           tag=$(tr -d '[:space:]' < VERSION)
-          case "$tag" in
-            latest | dev-latest) echo "::error::VERSION says $tag, which is a moving release's tag, not a version" >&2; exit 1 ;;
-          esac
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "short=${GITHUB_SHA:0:12}" >> "$GITHUB_OUTPUT"
           if [ "$GITHUB_REF" = refs/heads/dev ]; then

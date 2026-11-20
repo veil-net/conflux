@@ -332,10 +332,12 @@ parameters. Why v1.26.0 and not the certified v1.0.0, and what may be claimed, i
 ## Version stamping
 
 ```console
-$ make build VERSION=v0.2.0
+$ make build VERSION=1.2.0
 ```
 
 `VERSION` defaults to the contents of the `VERSION` file, and `COMMIT` to `git rev-parse`.
+The file is `MAJOR.MINOR.PATCH`, with no `v` and no suffix, which `TestVersionMatchesFile` holds
+it to, since it is also the release's tag; a version given by hand takes the same form.
 A tree with no `VERSION` file says `dev`, which is the honest answer rather than a number
 nobody released.
 

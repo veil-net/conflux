@@ -13,8 +13,8 @@ import (
 // counts whatever it says of inheritance: one a directory only passes on is inherited by the root
 // conflux makes inside it, so it counts as one that applies; inheritance tells only an NFSv4
 // entry that is the mode from one that is not (writer.modeBit). Windows's DACLs are read here
-// too, into what they allow on the object itself (windowsGrants), which mover holds to who may
-// change it.
+// too, into what they allow on the object itself, or on it and on what is made in it
+// (windowsGrants), which mover holds to who may change it.
 
 // grantee is who an ACL entry lets write a directory.
 type grantee int
@@ -318,17 +318,18 @@ type windowsGrant struct {
 	sid    []byte
 }
 
-// windowsGrants is each entry of the Windows ACL acl that allows rights on the object itself. An
-// allowed entry counts, and its callback form, whose condition AccessCheck may find true and
-// conflux does not weigh; so do the object forms where no object type narrows them to a property
-// or a kind of child -- AccessCheck, asked of a file with no list of object types, takes one with
-// none for an allowed entry and one with a type as allowing nothing -- and a compound entry, which
-// allows its rights to its client's SID while a server holding the other acts for it, counted as
-// the client's. An entry that only passes its rights on does not count, nor a deny, an audit, an
-// alarm or a label: a deny takes nothing away from an allow conflux counts. An entry of a type
-// MS-DTYP does not number is refused, as an ACL in any other shape is, rather than read as allowing
-// nobody: it may allow what conflux cannot see.
-func windowsGrants(acl []byte) ([]windowsGrant, error) {
+// windowsGrants is each entry of the Windows ACL acl that allows rights on the object itself, or,
+// where passedOn, on what is made in it too. An allowed entry counts, and its callback form, whose
+// condition AccessCheck may find true and conflux does not weigh; so do the object forms where no
+// object type narrows them to a property or a kind of child -- AccessCheck, asked of a file with no
+// list of object types, takes one with none for an allowed entry and one with a type as allowing
+// nothing -- and a compound entry, which allows its rights to its client's SID while a server
+// holding the other acts for it, counted as the client's. An entry that only passes its rights on
+// counts only where passedOn; a deny, an audit, an alarm or a label never does: a deny takes nothing
+// away from an allow conflux counts. An entry of a type MS-DTYP does not number is refused, as an
+// ACL in any other shape is, rather than read as allowing nobody: it may allow what conflux cannot
+// see.
+func windowsGrants(acl []byte, passedOn bool) ([]windowsGrant, error) {
 	if len(acl) < 8 {
 		return nil, errACL
 	}
@@ -389,7 +390,7 @@ func windowsGrants(acl []byte) ([]windowsGrant, error) {
 			continue
 		}
 
-		if flags&aceInheritOnly != 0 {
+		if flags&aceInheritOnly != 0 && !passedOn {
 			continue
 		}
 

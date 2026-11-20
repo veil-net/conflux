@@ -804,11 +804,13 @@ func TestSecureRefusesARootWhoseDACLLetsAnotherMoveWhatIsInIt(t *testing.T) {
 }
 
 // TestSecureHoldsAProtectedRootToItsDACL: a root already the Administrators' under a protected DACL
-// is one conflux secured only where that DACL lets nobody else write it, move it or change who may;
-// otherwise it is held to what a root found unrestricted is. One granting Users the right to write
-// its attributes is repaired, left SYSTEM's and the Administrators' alone; one granting them the
-// right to delete what is in it, or with no DACL at all, which grants anybody everything, is
-// refused, naming it. Windows-only, so it runs in CI's platforms job alone.
+// is one conflux secured only where that DACL lets nobody else write it, move it or change who may,
+// nor passes such a right on to what is made in it, as logs\ is made by its name; otherwise it is
+// held to what a root found unrestricted is. One granting Users the right to write its attributes,
+// or passing them full control of what is made in it, is repaired, left SYSTEM's and the
+// Administrators' alone; one granting them the right to delete what is in it, or with no DACL at
+// all, which grants anybody everything, is refused, naming it. Windows-only, so it runs in CI's
+// platforms job alone.
 func TestSecureHoldsAProtectedRootToItsDACL(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
@@ -817,6 +819,7 @@ func TestSecureHoldsAProtectedRootToItsDACL(t *testing.T) {
 		refused    bool
 	}{
 		{"grants Users the right to write its attributes", "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;;0x100;;;BU)", false},
+		{"passes Users full control of what is made in it", "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICIIO;FA;;;BU)", false},
 		{"grants Users the right to delete what is in it", "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;;0x40;;;BU)", true},
 		{"has no DACL", "O:BAD:PNO_ACCESS_CONTROL", true},
 	} {

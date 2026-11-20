@@ -349,11 +349,11 @@ func trusted(sid *windows.SID) bool {
 // secure gives a conflux root its ownership and DACL, once, and refuses one another
 // account made, a junction another account may point elsewhere (heldLink), or a CONFLUX_DIR
 // another account can move (see parents). A root secured already -- SYSTEM's or the
-// Administrators', under a protected DACL that grants nobody else a right retargets names -- is not
-// restricted again, but it is filled as any root is (fill), and what it holds is judged again
-// (contents), so that what a run refused once the root was restricted is refused by every run
-// after; one protected that grants more, or has no DACL at all, is held to all of what follows, as
-// one found unrestricted is.
+// Administrators', under a protected DACL that grants nobody else a right retargets names, on the
+// root or on what is made in it -- is not restricted again, but it is filled as any root is (fill),
+// and what it holds is judged again (contents), so that what a run refused once the root was
+// restricted is refused by every run after; one protected that grants more, or passes more on, or
+// has no DACL at all, is held to all of what follows, as one found unrestricted is.
 //
 // A directory conflux did not create is one somebody else may have filled before it
 // looked -- with a binary for the service to run, or a manifest whose key they hold --
@@ -406,16 +406,18 @@ func secure(dir string) error {
 	}
 
 	// Secured already: SYSTEM's or the Administrators', under a protected DACL that lets nobody else
-	// write it, move it or change who may -- what a restriction leaves -- and, where the root is a
-	// junction, the junction SYSTEM's or the Administrators' under a protected DACL too, as
-	// replaceLink leaves one. It is not restricted again, but it is filled, since one secured and
-	// empty -- as an administrator may have restricted it -- is as open to a handle opened on it
-	// before as one found unrestricted, and what it holds is judged as it is once a root is
-	// restricted: a restriction refused by that judgement is still in place, and what it refused is
-	// still there. A protected DACL that grants more, or none at all, or a junction conflux did not
-	// make, is repaired, replaced or refused below as an unrestricted root is.
+	// write it, move it or change who may, nor passes such a right on to what is made in it -- what a
+	// restriction leaves -- and, where the root is a junction, the junction SYSTEM's or the
+	// Administrators' under a protected DACL too, as replaceLink leaves one. It is not restricted
+	// again, but it is filled, since one secured and empty -- as an administrator may have restricted
+	// it -- is as open to a handle opened on it before as one found unrestricted, and what it holds is
+	// judged as it is once a root is restricted: a restriction refused by that judgement is still in
+	// place, and what it refused is still there. A protected DACL that grants more, or passes more on
+	// -- to logs\, which EnsureAll then makes in the root by its name, and the service writes in
+	// before any run judges it -- or none at all, or a junction conflux did not make, is repaired,
+	// replaced or refused below as an unrestricted root is.
 	if secured(sd) && (root.link == nil || secured(root.link)) {
-		switch who, _, err := changerIn(dir, sd, retargets, "write it", nil); {
+		switch who, _, err := changerIn(dir, sd, retargets, "write it or what is made in it", nil, true); {
 		case err != nil:
 			return err
 		case who == "":
@@ -750,7 +752,7 @@ func Foreign(dir string) error {
 // account other than those trustedOwner names move it or what is in it (moves), saying what that
 // account could then do; or is nil.
 func moverRefusal(dir string, sd *windows.SECURITY_DESCRIPTOR, could string) error {
-	switch who, _, err := changerIn(dir, sd, moves, "move it or what is in it", nil); {
+	switch who, _, err := changerIn(dir, sd, moves, "move it or what is in it", nil, false); {
 	case err != nil:
 		return err
 	case who != "":
@@ -951,7 +953,7 @@ func contents(dir string) error {
 // and point it at one of their own once conflux has filled it, with a conflux.exe for the
 // service to run as SYSTEM. Held as a link is on Unix, by its owner, and here by its DACL too.
 func heldLink(dir string, sd *windows.SECURITY_DESCRIPTOR) error {
-	who, _, err := changerIn(dir, sd, retargets, "point it elsewhere or move it", nil)
+	who, _, err := changerIn(dir, sd, retargets, "point it elsewhere or move it", nil, false)
 	if err != nil || who == "" {
 		return err
 	}
@@ -1098,7 +1100,8 @@ func mayChange(p string, rights windows.ACCESS_MASK, what string) (string, error
 	return who, err
 }
 
-// changer is changerIn of p, held open as itself by h, over the owner and DACL read through h.
+// changer is changerIn of p, held open as itself by h, over the owner and DACL read through h, and
+// what they allow on p itself.
 func changer(p string, h windows.Handle, rights windows.ACCESS_MASK, what string,
 	anchord *windows.SID) (who string, anchords bool, err error) {
 	sd, err := security(h)
@@ -1106,15 +1109,16 @@ func changer(p string, h windows.Handle, rights windows.ACCESS_MASK, what string
 		return "", false, fmt.Errorf("read the ownership of %s: %w", p, err)
 	}
 
-	return changerIn(p, sd, rights, what, anchord)
+	return changerIn(p, sd, rights, what, anchord, false)
 }
 
 // changerIn is who besides SYSTEM, the Administrators, TrustedInstaller and the account running
 // conflux may change p, whose owner and DACL sd holds, as a refusal names them, or "": its owner,
 // who may grant itself anything, or anybody but anchord, where it is given, its DACL grants one of
-// rights, which lets them what. anchords is whether the DACL grants anchord one of them.
+// rights -- on p itself, or, where passedOn, on what is made in it too (mover) -- which lets them
+// what. anchords is whether the DACL grants anchord one of them.
 func changerIn(p string, sd *windows.SECURITY_DESCRIPTOR, rights windows.ACCESS_MASK, what string,
-	anchord *windows.SID) (who string, anchords bool, err error) {
+	anchord *windows.SID, passedOn bool) (who string, anchords bool, err error) {
 	owner, _, err := sd.Owner()
 	if err != nil {
 		return "", false, fmt.Errorf("read the owner of %s: %w", p, err)
@@ -1132,7 +1136,7 @@ func changerIn(p string, sd *windows.SECURITY_DESCRIPTOR, rights windows.ACCESS_
 		return "has no DACL, so anybody", false, nil
 	}
 
-	sid, anchords, err := mover(dacl, rights, anchord)
+	sid, anchords, err := mover(dacl, rights, anchord, passedOn)
 	switch {
 	case err != nil:
 		return "", false, fmt.Errorf("read the DACL of %s: %w", p, err)
@@ -1150,13 +1154,16 @@ func isLink(fi os.FileInfo) bool {
 	return fi.Mode()&os.ModeSymlink != 0 || fi.Mode()&os.ModeIrregular != 0 && !fi.IsDir()
 }
 
-// mover is the first account dacl grants one of rights on the object itself, other than those
-// trustedOwner names and anchord, where it is given, or nil; and whether it grants anchord one of
-// them before it: each entry that allows rights on the object, as windowsGrants reads them.
-func mover(dacl *windows.ACL, rights windows.ACCESS_MASK, anchord *windows.SID) (*windows.SID, bool, error) {
+// mover is the first account dacl grants one of rights on the object itself, or, where passedOn,
+// on what is made in it too, other than those trustedOwner names and anchord, where it is given, or
+// nil; and whether it grants anchord one of them before it: each entry that allows rights there, as
+// windowsGrants reads them.
+func mover(dacl *windows.ACL, rights windows.ACCESS_MASK, anchord *windows.SID,
+	passedOn bool) (*windows.SID, bool, error) {
 	header := unsafe.Slice((*byte)(unsafe.Pointer(dacl)), 8)
 
-	grants, err := windowsGrants(unsafe.Slice((*byte)(unsafe.Pointer(dacl)), binary.LittleEndian.Uint16(header[2:])))
+	grants, err := windowsGrants(unsafe.Slice((*byte)(unsafe.Pointer(dacl)), binary.LittleEndian.Uint16(header[2:])),
+		passedOn)
 	if err != nil {
 		return nil, false, err
 	}

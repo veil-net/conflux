@@ -277,8 +277,9 @@ func le16(v uint16) []byte { return binary.LittleEndian.AppendUint16(nil, v) }
 // either object form with no object type to narrow it, whether or not it names a kind of child to
 // pass itself on to, and a compound one, by its client's SID; one with an object type allows
 // nothing on a file, nor does an entry that only passes its rights on, a deny, an audit or a label.
-// An ACL in any other shape, or holding an entry of a type no Windows writes, is refused rather
-// than read as allowing nobody.
+// Asked for what the DACL passes on to what is made in it too, the entry that only passes its
+// rights on counts as well, and nothing else changes. An ACL in any other shape, or holding an
+// entry of a type no Windows writes, is refused rather than read as allowing nobody.
 func TestWindowsGrants(t *testing.T) {
 	users, mallory, guest := windowsSIDOf(5, 32, 545), windowsSIDOf(5, 21, 1, 2, 3, 1001), windowsSIDOf(5, 21, 1, 2, 3, 501)
 	guid := bytes.Repeat([]byte{0xab}, 16)
@@ -302,14 +303,19 @@ func TestWindowsGrants(t *testing.T) {
 		{0x2, users}, {0x100, mallory}, {0x40000, guest}, {0x40, guest}, {0x10000, users}, {0x40000, mallory},
 	}
 
-	got, err := windowsGrants(acl)
-	if err != nil || !slices.EqualFunc(got, want, func(a, b windowsGrant) bool {
-		return a.rights == b.rights && bytes.Equal(a.sid, b.sid)
-	}) {
+	same := func(a, b windowsGrant) bool { return a.rights == b.rights && bytes.Equal(a.sid, b.sid) }
+
+	if got, err := windowsGrants(acl, false); err != nil || !slices.EqualFunc(got, want, same) {
 		t.Errorf("windowsGrants = %x, %v; want %x", got, err, want)
 	}
 
-	if got, err := windowsGrants(windowsACL()); err != nil || len(got) != 0 {
+	passedOn := slices.Insert(slices.Clone(want), 1, windowsGrant{0x10000, mallory})
+
+	if got, err := windowsGrants(acl, true); err != nil || !slices.EqualFunc(got, passedOn, same) {
+		t.Errorf("windowsGrants, with what is passed on = %x, %v; want %x", got, err, passedOn)
+	}
+
+	if got, err := windowsGrants(windowsACL(), false); err != nil || len(got) != 0 {
 		t.Errorf("windowsGrants(an empty ACL) = %x, %v; want nobody", got, err)
 	}
 
@@ -338,7 +344,7 @@ func TestWindowsGrants(t *testing.T) {
 		"a compound ACE without its client":    windowsACL(windowsACE(0x4, 0, le32(0x2), le16(1), le16(0), guest)),
 		"an ACE of a type no Windows writes":   windowsACL(windowsACE(0x14, 0, le32(0x2), users)),
 	} {
-		if _, err := windowsGrants(b); !errors.Is(err, errACL) {
+		if _, err := windowsGrants(b, false); !errors.Is(err, errACL) {
 			t.Errorf("windowsGrants(an ACL %s) = %v, want errACL", name, err)
 		}
 	}

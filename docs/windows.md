@@ -102,12 +102,13 @@ reader of an ephemeral root; `%ProgramData%`'s own grant to `Users`, to add to a
 its attributes, is not that. Then it is read once more through the handle: one that became a
 junction meanwhile is refused, and one whose DACL, as found, does not let conflux create `run\` in
 it is refused, saying so. A root already secured — the Administrators' or SYSTEM's, under a
-protected DACL that lets nobody else write it, add to it, move it or change who may — is not
-restricted again, but it is made to hold `run\` and read again the same way, since one an
-administrator restricted while it was empty is as open to a handle opened before, and what it holds
-is judged again, so that a folder refused once stays refused; a protected one that grants more is
-judged and restricted as any other, and one with no DACL at all, which grants anybody everything,
-is refused. A root some other account created is refused rather than taken over: whoever made it
+protected DACL that lets nobody else write it, add to it, move it or change who may, nor passes such
+a right on to what is made in it — is not restricted again, but it is made to hold `run\` and read
+again the same way, since one an administrator restricted while it was empty is as open to a handle
+opened before, and what it holds is judged again, so that a folder refused once stays refused; a
+protected one that grants more, or passes more on — to `logs\`, which conflux then makes in it by
+its name — is judged and restricted as any other, and one with no DACL at all, which grants anybody
+everything, is refused. A root some other account created is refused rather than taken over: whoever made it
 could have filled it first. So is one that holds anything another account may change, each thing in
 it judged by its own owner and DACL rather than by what it leads to, before the root is restricted,
 what it inherits from the root included, and again once it is, so that a folder another account

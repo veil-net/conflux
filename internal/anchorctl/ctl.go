@@ -155,16 +155,16 @@ func (c *Ctl) Start(ctx context.Context, env config.Envelope, mode StartMode) (S
 }
 
 // Metric reads one of the daemon's counters or gauges. One that has not been
-// published yet is not an error; it is reported absent.
-func (c *Ctl) Metric(ctx context.Context, name string) (float64, bool, error) {
+// published yet is not an error; it reads as zero.
+func (c *Ctl) Metric(ctx context.Context, name string) (float64, error) {
 	out, err := c.run(ctx, nil, MetricsArgs()...)
 	if err != nil {
-		return 0, false, err
+		return 0, err
 	}
 
-	v, ok := ParseMetric(out, name)
+	v, _ := ParseMetric(out, name)
 
-	return v, ok, nil
+	return v, nil
 }
 
 // Status asks what is running. A daemon that is up with no anchor in it is not an

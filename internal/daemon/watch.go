@@ -396,7 +396,7 @@ func (s *Supervisor) linkIsDead(ctx context.Context, device string, zeroSince *t
 	probe, cancel := context.WithTimeout(ctx, stopTimeout)
 	defer cancel()
 
-	conns, _, err := s.ctl.Metric(probe, anchorctl.MetricConnections)
+	conns, err := s.ctl.Metric(probe, anchorctl.MetricConnections)
 	if err != nil {
 		return false, false, "", err
 	}

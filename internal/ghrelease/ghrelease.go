@@ -15,7 +15,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -313,16 +312,4 @@ func (s Source) get(ctx context.Context, u, accept string) (*http.Response, erro
 // itself: what arrives is held to a digest that the release document, which the API
 // answers directly, gave. What is refused is a downgrade to plain http, which would hand
 // the bytes to anyone on the path, and a chain past five requests.
-var client = &http.Client{
-	CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		if err := httpsonly.Check(req.URL.String(), ""); err != nil {
-			return err
-		}
-
-		if len(via) >= 5 {
-			return errors.New("too many redirects")
-		}
-
-		return nil
-	},
-}
+var client = &http.Client{CheckRedirect: httpsonly.Redirects(5, false, "")}

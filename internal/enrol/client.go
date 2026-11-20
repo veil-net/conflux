@@ -52,21 +52,7 @@ var defaultHTTP = &http.Client{
 	// request aimed somewhere conflux did not choose, and one that follows it to
 	// plain http hands a renewal bearer to the path. Go keeps an Authorization
 	// header across a same-host redirect, so the scheme is checked as well.
-	CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		if req.URL.Host != via[0].URL.Host {
-			return fmt.Errorf("refusing a redirect from %s to %s", via[0].URL.Host, req.URL.Host)
-		}
-
-		if err := httpsonly.Check(req.URL.String(), whyHTTPS); err != nil {
-			return err
-		}
-
-		if len(via) >= maxRedirects {
-			return errors.New("too many redirects")
-		}
-
-		return nil
-	},
+	CheckRedirect: httpsonly.Redirects(maxRedirects, true, whyHTTPS),
 }
 
 // Client talks to the enrolment API.

@@ -290,30 +290,35 @@ func TestALapsedObserverPointsAtConfluxRenew(t *testing.T) {
 
 // TestObserveEnrolsAsUpDoes: the observer runs under the machine's own credential, so conflux
 // observe takes up's enrolment flags -- the API, and the taints, repeated -- for the machine
-// it enrols when it holds none.
+// it enrols when it holds none, and keeps them in conflux.json for the supervisor, which
+// enrols.
 func TestObserveEnrolsAsUpDoes(t *testing.T) {
-	f := newObserveFlags()
+	was, elevated := hostOS, privcheck.Elevated
+	hostOS, privcheck.Elevated = "linux", func() bool { return true }
 
-	for _, name := range []string{"api", "taint"} {
-		if f.fs.Lookup(name) == nil {
-			t.Fatalf("conflux observe has no --%s", name)
-		}
+	t.Cleanup(func() { hostOS, privcheck.Elevated = was, elevated })
+
+	d := pathstest.Dirs(t)
+	standInService(t, &fakeManager{d: d, restartErr: errStartsNothing})
+
+	const api = "https://api-dev.veilnet.com.au"
+
+	if _, errOut, code := capture(t, "observe", "--taint", "office", "--taint", "lab", "--api", api); code != ExitError ||
+		!strings.Contains(errOut, errStartsNothing.Error()) {
+		t.Fatalf("conflux observe exited %d, saying:\n%s\nwant the stand-in's Restart refused", code, errOut)
 	}
 
-	if hint := f.anchorctls([]string{"--taint", "office", "--api", "https://api-dev.veilnet.com.au"}); hint != "" {
-		t.Errorf("up's enrolment flags were handed back to anchorctl: %s", hint)
-	}
-
-	if err := f.fs.Parse([]string{"--taint", "office", "--taint", "lab", "--api", "https://api-dev.veilnet.com.au"}); err != nil {
+	cfg, err := config.Load(d)
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	if got := f.fs.Lookup("taint").Value.String(); got != "office,lab" {
-		t.Errorf("--taint twice reads %q", got)
+	if !slices.Equal(cfg.Taints, []string{"office", "lab"}) {
+		t.Errorf("conflux.json asks for taints %q, want the two given", cfg.Taints)
 	}
 
-	if got := f.fs.Lookup("api").Value.String(); got != "https://api-dev.veilnet.com.au" {
-		t.Errorf("--api reads %q", got)
+	if cfg.APIBaseURL != api {
+		t.Errorf("conflux.json names the API %q, want %q", cfg.APIBaseURL, api)
 	}
 }
 

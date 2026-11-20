@@ -106,6 +106,45 @@ func grant(t *testing.T, dir string, access windows.ACCESS_MASK) {
 		t.Fatal(err)
 	}
 
+	if err := windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION,
+		nil, nil, withUsers(t, sd, access), nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// grantLink is grant for a link or junction: its own DACL, opened as itself, where grant's named
+// calls would follow it and change the DACL of where it leads.
+func grantLink(t *testing.T, link string, access windows.ACCESS_MASK) {
+	t.Helper()
+
+	name, err := windows.UTF16PtrFromString(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	h, err := windows.CreateFile(name, windows.READ_CONTROL|windows.WRITE_DAC,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING,
+		windows.FILE_FLAG_OPEN_REPARSE_POINT|windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.CloseHandle(h)
+
+	sd, err := windows.GetSecurityInfo(h, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := windows.SetSecurityInfo(h, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION,
+		nil, nil, withUsers(t, sd, access), nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// withUsers is sd's DACL with access granted to Users on the object itself.
+func withUsers(t *testing.T, sd *windows.SECURITY_DESCRIPTOR, access windows.ACCESS_MASK) *windows.ACL {
+	t.Helper()
+
 	dacl, _, err := sd.DACL()
 	if err != nil {
 		t.Fatal(err)
@@ -125,16 +164,15 @@ func grant(t *testing.T, dir string, access windows.ACCESS_MASK) {
 		t.Fatal(err)
 	}
 
-	if err := windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION,
-		nil, nil, acl, nil); err != nil {
-		t.Fatal(err)
-	}
+	return acl
 }
 
 // TestEnsureAllFollowsAJunction: a junction is a link the lookup follows, which Go does not
 // report as one, so a root that is a junction, or that one leads to, is held to the
 // directories above where it leads too -- here one Users may rename what is in -- and a
-// junction on the way is followed rather than taken for a file.
+// junction on the way is followed rather than taken for a file. A junction is held as well to
+// who may point it elsewhere: here Users, granted the right to write its attributes, which
+// is enough to rewrite its target, though where it leads is nobody else's.
 func TestEnsureAllFollowsAJunction(t *testing.T) {
 	open := filepath.Join(t.TempDir(), "open-to-users")
 	if err := os.MkdirAll(filepath.Join(open, "real"), 0o700); err != nil {
@@ -143,10 +181,7 @@ func TestEnsureAllFollowsAJunction(t *testing.T) {
 
 	grant(t, open, fileDeleteChild)
 
-	junction := filepath.Join(t.TempDir(), "j")
-	if out, err := exec.Command("cmd", "/c", "mklink", "/J", junction, filepath.Join(open, "real")).CombinedOutput(); err != nil {
-		t.Fatalf("mklink /J: %v\n%s", err, out)
-	}
+	junction := mklinkJ(t, filepath.Join(t.TempDir(), "j"), filepath.Join(open, "real"))
 
 	for _, root := range []string{junction, filepath.Join(junction, "conflux")} {
 		t.Setenv("CONFLUX_DIR", root)
@@ -156,4 +191,26 @@ func TestEnsureAllFollowsAJunction(t *testing.T) {
 				"or the refusal does not name that directory: %v", root, err)
 		}
 	}
+
+	retargeted := mklinkJ(t, filepath.Join(t.TempDir(), "j"), t.TempDir())
+	grantLink(t, retargeted, windows.FILE_WRITE_ATTRIBUTES)
+
+	root := filepath.Join(retargeted, "conflux")
+	t.Setenv("CONFLUX_DIR", root)
+
+	if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), retargeted) {
+		t.Errorf("a root at %s, through a junction Users may point elsewhere, was accepted, or the refusal does not "+
+			"name the junction: %v", root, err)
+	}
+}
+
+// mklinkJ makes a junction at link that leads to target, and is link.
+func mklinkJ(t *testing.T, link, target string) string {
+	t.Helper()
+
+	if out, err := exec.Command("cmd", "/c", "mklink", "/J", link, target).CombinedOutput(); err != nil {
+		t.Fatalf("mklink /J: %v\n%s", err, out)
+	}
+
+	return link
 }

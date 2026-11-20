@@ -245,6 +245,11 @@ const fileDeleteChild = 0x40
 // cannot on Unix.
 const moves = fileDeleteChild | windows.DELETE | windows.WRITE_DAC | windows.WRITE_OWNER | windows.GENERIC_ALL
 
+// retargets is what an ACE on a link or a junction must not grant another account: moves, or a
+// right that rewrites where it leads -- setting a reparse point takes FILE_WRITE_DATA or
+// FILE_WRITE_ATTRIBUTES (MS-FSA 2.1.5.10.37) -- or GENERIC_WRITE, which holds both.
+const retargets = moves | windows.FILE_WRITE_DATA | windows.FILE_WRITE_ATTRIBUTES | windows.GENERIC_WRITE
+
 // sidTrustedInstaller is NT SERVICE\TrustedInstaller, which owns much of the system drive.
 var sidTrustedInstaller, _ = windows.StringToSid("S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464")
 
@@ -252,8 +257,9 @@ var sidTrustedInstaller, _ = windows.StringToSid("S-1-5-80-956008885-3418522649-
 // and the one running conflux may move it: one owns a directory above it, which lets it
 // grant itself anything, or is granted one of moves on it. Whoever may move a parent can
 // put a directory of their own where dir is, with a conflux in it for the service to run
-// as SYSTEM. A link or junction on the way is held to the same, as itself, and the lookup
-// goes on where it leads (ancestors).
+// as SYSTEM. A link or junction on the way is held to the same, as itself, and to retargets,
+// since whoever may point it elsewhere may as well; the lookup goes on where it leads
+// (ancestors).
 func parents(dir string) error {
 	above, err := ancestors(dir)
 	if err != nil {
@@ -262,6 +268,12 @@ func parents(dir string) error {
 
 	for _, s := range above {
 		p := s.path
+
+		// A step the lookup reached without looking its name up is never a link (step).
+		where, what, rights := "inside", "move it or what is in it", windows.ACCESS_MASK(moves)
+		if s.fi != nil && isLink(s.fi) {
+			where, what, rights = "reached through", "point it elsewhere or move it", retargets
+		}
 
 		sd, err := ownSecurity(p)
 		if err != nil {
@@ -286,15 +298,15 @@ func parents(dir string) error {
 		case dacl == nil:
 			who = "has no DACL, so anybody"
 		default:
-			if sid := mover(dacl); sid != nil {
-				who = "grants " + accountName(sid) + " the right to move it or what is in it, who"
+			if sid := mover(dacl, rights); sid != nil {
+				who = "grants " + accountName(sid) + " the right to " + what + ", who"
 			}
 		}
 
 		if who != "" {
-			return fmt.Errorf("%s is inside %s, which %s could move it aside and put another in its place "+
+			return fmt.Errorf("%s is %s %s, which %s could move it aside and put another in its place "+
 				"for conflux to run.\n  Choose a CONFLUX_DIR whose every parent only SYSTEM, the Administrators "+
-				"and this account can change", dir, p, who)
+				"and this account can change", dir, where, p, who)
 		}
 	}
 
@@ -328,13 +340,13 @@ func isLink(fi os.FileInfo) bool {
 	return fi.Mode()&os.ModeSymlink != 0 || fi.Mode()&os.ModeIrregular != 0 && !fi.IsDir()
 }
 
-// mover is the first account dacl grants one of moves on the directory itself, other
-// than those trustedOwner names, or nil.
-func mover(dacl *windows.ACL) *windows.SID {
+// mover is the first account dacl grants one of rights on the object itself, other than those
+// trustedOwner names, or nil.
+func mover(dacl *windows.ACL, rights windows.ACCESS_MASK) *windows.SID {
 	for i := range uint32(dacl.AceCount) {
 		var ace *windows.ACCESS_ALLOWED_ACE
 		if windows.GetAce(dacl, i, &ace) != nil || ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE ||
-			ace.Header.AceFlags&windows.INHERIT_ONLY_ACE != 0 || ace.Mask&moves == 0 {
+			ace.Header.AceFlags&windows.INHERIT_ONLY_ACE != 0 || ace.Mask&rights == 0 {
 			continue
 		}
 

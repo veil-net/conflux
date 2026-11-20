@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/pathstest"
@@ -20,7 +21,7 @@ import (
 func TestAPassThroughWithNothingRunningMakesNothing(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "conflux")
 	t.Setenv("CONFLUX_DIR", root)
-	t.Setenv("ANCHOR_SOCKET", "")
+	t.Setenv(anchorctl.SocketEnv, "")
 
 	_, errOut, code := capture(t, "peers")
 
@@ -56,14 +57,14 @@ func TestAPassThroughToANamedSocketMakesNothing(t *testing.T) {
 		args []string
 		env  string
 	}{
-		"ANCHOR_SOCKET": {[]string{"peers"}, "ANCHOR_SOCKET=" + sock},
-		"-socket":       {[]string{"peers", "-socket", sock}, "ANCHOR_SOCKET="},
+		anchorctl.SocketEnv: {[]string{"peers"}, anchorctl.SocketEnv + "=" + sock},
+		"-socket":           {[]string{"peers", "-socket", sock}, anchorctl.SocketEnv + "="},
 	} {
 		t.Run(name, func(t *testing.T) {
 			root := filepath.Join(t.TempDir(), "conflux")
 
 			cmd := exec.Command(os.Args[0], "-test.run=^TestAPassThroughToANamedSocketMakesNothing$") //nolint:gosec // this test binary
-			cmd.Env = append(os.Environ(), "CONFLUX_DIR="+root, "ANCHORD_TOKEN=t", tc.env,
+			cmd.Env = append(os.Environ(), "CONFLUX_DIR="+root, anchorctl.TokenEnv+"=t", tc.env,
 				namedSocketArgs+"="+strings.Join(tc.args, "\n"))
 
 			// anchorctl's own answer: a dial to the socket named, which nothing listens on.
@@ -103,7 +104,7 @@ func TestEveryHelpFlagIsHelp(t *testing.T) {
 	anchortest.Require(t)
 
 	t.Setenv("CONFLUX_DIR", filepath.Join(t.TempDir(), "conflux"))
-	t.Setenv("ANCHOR_SOCKET", "")
+	t.Setenv(anchorctl.SocketEnv, "")
 
 	// anchorctl's usage, which a pass-through prints to the terminal itself.
 	devNull, err := os.Open(os.DevNull)

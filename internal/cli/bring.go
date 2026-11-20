@@ -60,7 +60,7 @@ func bring(ctx context.Context, d paths.Dirs, cfg *config.Config, verb string, s
 	// started it. A `conflux up` that ran its own daemon would leave two ideas of what is
 	// running -- the service manager's and ours -- and they would disagree the moment either
 	// changed.
-	if err := restartWith(d, service.New()); err != nil {
+	if err := service.New().Restart(); err != nil {
 		return fail(err)
 	}
 
@@ -72,26 +72,6 @@ func bring(ctx context.Context, d paths.Dirs, cfg *config.Config, verb string, s
 	report(d, cfg, started, verb)
 
 	return ExitOK
-}
-
-// restartWith withdraws the readiness marker and then restarts, in that order.
-//
-// The order is the whole of what makes the marker worth reading. A marker left by the
-// supervisor that is about to be replaced would let waitFor return a status for
-// an anchor on its way out -- reporting success for one that is seconds from being torn
-// down. Removing it first means the marker that appears afterwards can only have been
-// written by the instance this restart started.
-//
-// One function so the two callers cannot drift: every path that restarts the service and
-// then waits for an anchor goes through here.
-func restartWith(d paths.Dirs, mgr service.Manager) error {
-	if err := daemon.ClearReady(d); err != nil {
-		// Not fatal. A marker that will not go costs waitFor one status call it
-		// was going to make anyway, which is exactly what the fallback is for.
-		ui.Errf("could not clear the readiness marker: %v", err)
-	}
-
-	return mgr.Restart()
 }
 
 // waitFor waits until the supervisor has up what the configuration runs -- an anchor, or

@@ -62,9 +62,11 @@ in the run directory rather than the state directory, which is what stops it out
 the anchor it describes: most systems empty the run directory at boot, systemd's
 `RuntimeDirectory=` empties it whenever the service stops, and the supervisor clears the
 marker as it starts, for Windows, where neither happens. Every path that restarts the service
-clears it *before* restarting, so the marker that appears afterwards can only have been
-written by the instance that restart started — otherwise `up` could report success for an
-anchor that was seconds from being torn down.
+and waits for it clears it *before* registering it — before anything can start it, since on
+macOS registering a running job whose definition changed starts it again — and never after,
+so the marker that appears can only have been written by an instance started since:
+otherwise `up` could report success for an anchor that was seconds from being torn down, or
+miss the marker of the one that had just come up.
 
 Shutdown runs in one order everywhere: stop the renewal timer, withdraw the readiness
 marker, close the anchor so it says goodbye, and only then let the daemon go. The close

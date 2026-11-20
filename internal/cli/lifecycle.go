@@ -88,8 +88,22 @@ func runRegister(ctx context.Context, args []string) int {
 // distinguishes `conflux install` typed by a person, which reports and may start, from the
 // internal call `up`, `proxy` and `observe` make, and `start` and `register`, which is
 // silent and leaves starting to the caller. Each has its directories already.
+//
+// The readiness marker is withdrawn first, before anything that can start the service --
+// launchd's Install does, for a running job whose definition changed -- and nothing
+// withdraws it after. Every path that restarts the service and waits for it comes through
+// here, so the marker waitFor sees can only have been written by a supervisor started
+// since: one the outgoing supervisor left would let it report an anchor seconds from being
+// torn down, and one withdrawn after a start would leave it nothing to see but a status
+// call once a second.
 func install(ctx context.Context, d paths.Dirs, standalone bool) int {
 	mgr := newService()
+
+	if err := daemon.ClearReady(d); err != nil {
+		// Not fatal. A marker that will not go costs waitFor one status call it was going
+		// to make anyway, which is exactly what the fallback is for.
+		ui.Errf("could not clear the readiness marker: %v", err)
+	}
 
 	exe, err := service.Place(d)
 	if err != nil {
@@ -150,10 +164,8 @@ func register(mgr service.Manager, exe string) error {
 func startFromConfig(ctx context.Context, d paths.Dirs, mgr service.Manager, cfg *config.Config, verb string) int {
 	ui.Printf("Starting from the configuration in %s.\n", d.ConfigFile())
 
-	// Through restartWith rather than mgr.Restart, so this path clears the readiness
-	// marker like every other one does. Calling Restart directly here is exactly how a
-	// marker comes to be trustworthy on one path and stale on another.
-	if err := restartWith(d, mgr); err != nil {
+	// The marker was withdrawn by install, which every caller has just been through.
+	if err := mgr.Restart(); err != nil {
 		return fail(err)
 	}
 

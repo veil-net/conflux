@@ -31,7 +31,7 @@ func TestMarkReadyRoundTrips(t *testing.T) {
 	}
 }
 
-// Clearing is what restartWith does before it restarts anything, so it has to work on a
+// Clearing is what cli's install does before it registers anything, so it has to work on a
 // machine that has never written one -- and every shutdown path calls it, including those
 // that never got as far as an anchor.
 func TestClearReadyIsIdempotent(t *testing.T) {

@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/veil-net/conflux/internal/daemon"
@@ -9,17 +11,27 @@ import (
 )
 
 // fakeManager records what it was asked and reports what the marker looked like at the
-// moment Restart was called.
+// moment Install and Restart were called. startsOnInstall makes its Install start the
+// service, as launchd's does for a running job whose plist changed, with a supervisor that
+// marks itself ready at once.
 type fakeManager struct {
 	d paths.Dirs
 
-	installs     [][]string
-	restarts     int
-	markedAtCall bool
+	startsOnInstall bool
+
+	installs        [][]string
+	restarts        int
+	markedAtInstall bool
+	markedAtCall    bool
 }
 
 func (m *fakeManager) Install(exe string, args ...string) error {
 	m.installs = append(m.installs, append([]string{exe}, args...))
+	m.markedAtInstall = daemon.IsReady(m.d)
+
+	if m.startsOnInstall {
+		return daemon.MarkReady(m.d, "anchorstartedbyinstall")
+	}
 
 	return nil
 }
@@ -50,35 +62,48 @@ func testDirs(t *testing.T) paths.Dirs {
 	return d
 }
 
-// The marker has to be gone before the restart and not after it.
+// TestTheMarkerIsWithdrawnBeforeAnythingStarts: every path that restarts the service and
+// waits for it registers it first, and the readiness marker is withdrawn before anything
+// in that can start the service -- launchd's Install can -- and not after.
 //
-// Reversed, waitFor could read the marker the outgoing supervisor left and return a
-// status for an anchor that is seconds from being torn down -- `conflux up` reporting
-// success for something on its way out. That is the one failure the ordering exists to
-// prevent, and it is invisible in a diff, so it is pinned here.
-func TestRestartWithClearsTheMarkerFirst(t *testing.T) {
-	d := testDirs(t)
+// A marker the outgoing supervisor left would otherwise let waitFor return a status for an
+// anchor seconds from being torn down -- `conflux up` reporting success for something on
+// its way out -- so it is gone before Install. And a marker the new supervisor writes the
+// moment Install starts it is the one waitFor is waiting for, so nothing withdraws it
+// after: withdrawn, waitFor would see nothing and fall back to asking status once a second.
+func TestTheMarkerIsWithdrawnBeforeAnythingStarts(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Chmod(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("CONFLUX_DIR", root)
+
+	d := paths.Default()
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := daemon.MarkReady(d, "anchorfromthepreviousrun"); err != nil {
 		t.Fatalf("MarkReady: %v", err)
 	}
 
-	mgr := &fakeManager{d: d}
+	mgr := &fakeManager{d: d, startsOnInstall: true}
+	standInService(t, mgr)
 
-	if err := restartWith(d, mgr); err != nil {
-		t.Fatalf("restartWith: %v", err)
+	if code := install(t.Context(), d, false); code != ExitOK {
+		t.Fatalf("install exited %d", code)
 	}
 
-	if mgr.restarts != 1 {
-		t.Errorf("Restart called %d times, want 1", mgr.restarts)
+	if err := mgr.Restart(); err != nil {
+		t.Fatalf("restart: %v", err)
 	}
 
-	if mgr.markedAtCall {
-		t.Error("the marker was still there when Restart was called, so waitFor could " +
-			"return a status for the anchor this restart is replacing")
+	if mgr.markedAtInstall {
+		t.Error("the outgoing supervisor's marker was still there when Install ran, which can start the service")
 	}
 
-	if daemon.IsReady(d) {
-		t.Error("the marker survived restartWith")
+	if b, _ := os.ReadFile(d.ReadyFile()); !strings.Contains(string(b), "anchorstartedbyinstall") {
+		t.Errorf("the marker the supervisor Install started wrote is gone (%q), so waitFor would fall back to status", b)
 	}
 }

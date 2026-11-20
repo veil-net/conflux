@@ -53,13 +53,18 @@ func Default() Dirs {
 		return Dirs{
 			Config: root,
 			State:  root,
-			Run:    filepath.Join(root, "run"),
+			Run:    filepath.Join(root, runName),
 			Log:    log,
 		}
 	}
 
 	return d
 }
+
+// runName is the run directory's name inside a root that holds it: a CONFLUX_DIR's, an
+// ephemeral run's, and Windows's own. On Windows secure makes it as it secures a root it found,
+// so the root holds something (fill).
+const runName = "run"
 
 // sharedLog is the system's own log directory, which macOS and FreeBSD put the service's
 // log file in. conflux writes a file there and never creates, narrows or claims the
@@ -234,8 +239,9 @@ func (d Dirs) ReadyFile() string { return filepath.Join(d.Run, "ready") }
 // directories to the few things in them that anchord needs, and which lists nothing and
 // lets that account create nothing. On
 // Windows, where a mode means nothing, each root that is not inside another is made
-// SYSTEM's and Administrators' instead, and what is created beneath it inherits that.
-// The system's shared log directory is not conflux's, and is left alone.
+// SYSTEM's and Administrators' instead, as it is created where it is not there yet
+// (makeRoot), and what is created beneath it inherits that. The system's shared log
+// directory is not conflux's, and is left alone.
 func (d Dirs) EnsureAll() error {
 	dirs := []string{d.Config, d.State, d.Run, d.Log}
 
@@ -245,14 +251,20 @@ func (d Dirs) EnsureAll() error {
 			continue
 		}
 
-		if err := os.MkdirAll(dir, 0o700); err != nil {
+		if within(dir, dirs) {
+			if err := os.MkdirAll(dir, 0o700); err != nil {
+				return fmt.Errorf("create %s: %w", dir, err)
+			}
+
+			continue
+		}
+
+		if err := makeRoot(dir); err != nil {
 			return fmt.Errorf("create %s: %w", dir, err)
 		}
 
-		if !within(dir, dirs) {
-			if err := secure(dir); err != nil {
-				return err
-			}
+		if err := secure(dir); err != nil {
+			return err
 		}
 	}
 

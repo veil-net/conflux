@@ -54,8 +54,8 @@ host can read, and when the run stops there is nothing at all.
   rather than used, since whatever that account put in it is not conflux's.
 - On Windows, mode bits mean nothing and `%ProgramData%` lets `Users` read and create
   beneath it, so conflux gives its root to SYSTEM and Administrators — owner, and a
-  protected DACL everything beneath inherits — and refuses a root another account made.
-  See [windows.md](windows.md#file-permissions).
+  protected DACL everything beneath inherits, set as the root is made — and refuses a root
+  another account made. See [windows.md](windows.md#file-permissions).
 - Never in an argv. It travels on stdin to `anchorctl start -manifest -`, and to
   `anchorctl observe -start -manifest -` for the observer, which runs under it too, becomes an
   inline secret on the wire, and is never named as a path in the request — so it never
@@ -93,10 +93,16 @@ starts whatever file it names at every boot, so it names a copy of conflux in th
 state directory, which `up`, `proxy`, `install` and `start` refresh, and never the file
 conflux was run from — a home directory or a download that another account could swap
 for a program of its own, to be run as root at the next start. On Windows the root's
-DACL is set by the first conflux command that creates it, extraction included, and a
-root that holds anything another account made before then is refused rather than
-repaired around it, as is a root that is a junction another account may point elsewhere
-(see [windows.md](windows.md#file-permissions)).
+DACL is set as the first conflux command that creates it makes it, extraction included, so
+it never carries `%ProgramData%`'s grant to `Users`, not even for an instant. A root found
+already there is judged and restricted through one handle on the directory itself, never by
+its name again, refused where its DACL lets another account move what is in it, made to hold
+its `run\` directory through that handle so that no handle opened on it earlier can make a
+junction of it, and refused if it became one meanwhile; one that holds
+anything another account may change — that it owns, or that it may write, move or point
+elsewhere, `anchord`'s own account aside — is refused rather than repaired around, by every
+reader of an ephemeral root too, as is a root that is itself a junction another account may
+point elsewhere (see [windows.md](windows.md#file-permissions)).
 
 `CONFLUX_DIR` can point the extraction somewhere else, which is a knob worth knowing
 about: it lets a caller choose the directory a root daemon executes from. It exists

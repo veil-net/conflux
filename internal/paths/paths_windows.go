@@ -26,7 +26,7 @@ func platformDirs() Dirs {
 	return Dirs{
 		Config: root,
 		State:  root,
-		Run:    filepath.Join(root, "run"),
+		Run:    filepath.Join(root, runName),
 		Log:    filepath.Join(root, "logs"),
 	}
 }

@@ -24,7 +24,7 @@ const ephemeralName = "conflux-ephemeral"
 // root itself, though nothing is ever written as either, Run beneath it, and no log
 // directory, since an ephemeral run's output goes to the terminal it runs in.
 func EphemeralDirs(root string) Dirs {
-	return Dirs{Config: root, State: root, Run: filepath.Join(root, "run")}
+	return Dirs{Config: root, State: root, Run: filepath.Join(root, runName)}
 }
 
 // EphemeralCandidates are where an ephemeral run may be kept, in the order one is chosen:

@@ -29,6 +29,10 @@ func RestrictToOwner(string, bool) error { return nil }
 // Trusted is always true here.
 func Trusted(string) bool { return true }
 
+// makeRoot creates the root dir, and the directories above it, where they are not there yet: at
+// 0700, which is all a root made here needs.
+func makeRoot(dir string) error { return os.MkdirAll(dir, 0o700) }
+
 // secure refuses a root another account owns, or whose extended ACL lets another account write
 // or move it, or a CONFLUX_DIR another account can move, and narrows one of conflux's own that
 // something left wider than 0700, or than the 0710 that lets anchord's account through.

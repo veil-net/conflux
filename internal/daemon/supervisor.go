@@ -329,6 +329,7 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 		// with nothing else running does a refusal for good end the cycle, and count toward the
 		// exit no restart follows.
 		if Permanent(err) {
+			s.recordRefusal(err)
 			s.report().Warn("the anchor was refused, and the observer goes on without it: %v", err)
 		} else {
 			s.report().Warn("the anchor did not come up, and the observer goes on without it until it does: %v", err)
@@ -371,6 +372,30 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 		return c.gone("unexpectedly", s.tail)
 	case <-s.respawn:
 		return errRespawn
+	}
+}
+
+// recordRefusal writes down that the anchor was refused for good, why and when, where the
+// supervisor goes on with the observer alone, for status to say: nothing else outside the
+// service's log would. Under the lock, as every writer of the state is. A bring-up that starts
+// an anchor clears it.
+func (s *Supervisor) recordRefusal(refusal error) {
+	unlock, err := flock.Acquire(s.Dirs.LockFile())
+	if err != nil {
+		s.report().Warn("could not record the anchor's refusal: %v", err)
+
+		return
+	}
+	defer unlock()
+
+	st, err := config.LoadState(s.Dirs)
+	if err == nil {
+		st.AnchorRefused, st.AnchorRefusedAt = refusal.Error(), time.Now().UTC()
+		err = config.SaveState(s.Dirs, st)
+	}
+
+	if err != nil {
+		s.report().Warn("could not record the anchor's refusal: %v", err)
 	}
 }
 

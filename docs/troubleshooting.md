@@ -251,7 +251,8 @@ for the realm, an argument vector anchorctl refuses outright, a daemon socket co
 may not reach or a token the daemon refuses, and a machine still laid out as conflux 1.0.0
 left it. Beside an observer that is running, an anchor refused for good does not fail the
 unit: the observer goes on, and the anchor is given up on alone, saying `the anchor was
-refused` in the log.
+refused` in the log, and in `conflux status`'s `refused` line, with why and since when, until
+an anchor comes up.
 
 Where the logs are: `journalctl -u conflux -n 50` on Linux, `/var/log/conflux.log` on
 macOS and FreeBSD, `/var/log/daemon` on OpenBSD, and

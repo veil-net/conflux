@@ -88,6 +88,7 @@ func runStatus(ctx context.Context, args []string) int {
 	}
 
 	reportCredential(d, cfg, st)
+	reportRefusal(cfg, st)
 
 	reportBinaries(st)
 
@@ -320,6 +321,18 @@ func reportCredential(d paths.Dirs, cfg *config.Config, st *config.State) {
 	if st.LinkReopens > 0 {
 		ui.Field("uplink", plural(st.LinkReopens, "reopen")+", last "+st.LastLinkReopen.Format(time.RFC3339))
 	}
+}
+
+// reportRefusal says the anchor was refused for good, why and since when, where the supervisor
+// gave up on it and runs the observer without it: anchorctl's status beneath says only that no
+// anchor runs. Observing alone, there is no anchor to have been refused.
+func reportRefusal(cfg *config.Config, st *config.State) {
+	if st == nil || st.AnchorRefused == "" || !cfg.Anchor() {
+		return
+	}
+
+	ui.Field("refused", "the anchor, for good, at "+st.AnchorRefusedAt.Format(time.RFC3339)+": "+st.AnchorRefused)
+	ui.Field("", "the observer runs without it; conflux start tries the anchor again")
 }
 
 // plural renders a count with its noun, so "1 reopen" does not read as a typo.

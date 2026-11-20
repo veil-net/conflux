@@ -56,7 +56,7 @@ func TestANewIdentityForgetsTheOldOne(t *testing.T) {
 	st := State{
 		AnchorID: "anchorold", IssuedAt: time.Now(), NotAfter: time.Now(), ClockSkew: time.Hour,
 		LastRenewalError: "x", LastRenewalTry: time.Now(), LinkReopens: 3, LastLinkReopen: time.Now(),
-		BinSetID: "keep",
+		AnchorRefused: "x", AnchorRefusedAt: time.Now(), BinSetID: "keep",
 	}
 
 	st.NewIdentity()

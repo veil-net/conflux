@@ -8,12 +8,14 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/veil-net/conflux/anchor"
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/pathstest"
 )
 
 // runningStandIn makes d's daemon look running to status -- its socket and token there -- and
@@ -147,5 +149,39 @@ func TestStatusAsksWhatItReports(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("status should say %q; it said:\n%s", want, out)
 		}
+	}
+}
+
+// TestStatusSaysTheAnchorWasRefused: an anchor the supervisor gave up on for good, while the
+// observer runs on without it, is said with why and since when, and what tries again -- where
+// anchorctl's status below says only that no anchor runs. Observing alone, nothing of it is.
+func TestStatusSaysTheAnchorWasRefused(t *testing.T) {
+	const why = "anchorctl: anchor: this host will not give this process a TUN device"
+
+	at := time.Date(2026, 11, 20, 3, 0, 0, 0, time.UTC)
+
+	for mode, said := range map[config.Mode]bool{config.ModeTUN: true, config.ModeObserve: false} {
+		t.Run(string(mode), func(t *testing.T) {
+			d := pathstest.Dirs(t)
+
+			if err := config.Save(d, &config.Config{Mode: mode, Observer: &config.Observer{}, Taints: []string{"t"}}); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := config.SaveState(d, &config.State{AnchorRefused: why, AnchorRefusedAt: at}); err != nil {
+				t.Fatal(err)
+			}
+
+			out, errOut, code := capture(t, "status")
+			if code != ExitOK {
+				t.Fatalf("status exited %d:\n%s%s", code, out, errOut)
+			}
+
+			for _, want := range []string{why, at.Format(time.RFC3339), "conflux start"} {
+				if strings.Contains(out, want) != said {
+					t.Errorf("status saying %q is %v, want %v; it said:\n%s", want, !said, said, out)
+				}
+			}
+		})
 	}
 }

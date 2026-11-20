@@ -456,6 +456,11 @@ configuration and no ephemeral run is live; with one live, it reports the run an
 An installed machine's configuration is root's alone (Administrators' on Windows), so asked by
 another account it exits 13, naming the command to run again, as every verb needing root does.
 
+A `refused` line says an anchor was refused for good while the observer runs on without it —
+the supervisor gave up on it at a start, or after the watcher's three rebuilds — with why and
+since when, where `anchorctl status` beneath says only that no anchor runs. `conflux start`
+tries it again, and the line goes once an anchor comes up.
+
 The `anchord` line says what it keeps and why: `conflux, with no privilege` in userspace,
 `conflux, with CAP_NET_ADMIN for its interface` for a TUN on Linux, `conflux, with CAP_NET_RAW
 to copy what the host's interfaces carry, for the observer` observing on Linux, or root and the

@@ -340,9 +340,12 @@ func TestTheObserverOutlivesAnAnchorThatCannotComeUp(t *testing.T) {
 		t.Skip("a console control event needs the console this test shares")
 	}
 
-	for name, tc := range map[string]struct{ env, said string }{
-		"for now":  {fakeAnchorctlFailEnv, "the anchor did not come up"},
-		"for good": {fakeAnchorctlRefuseEnv, "the anchor was refused"},
+	for name, tc := range map[string]struct {
+		env, said string
+		refused   bool
+	}{
+		"for now":  {fakeAnchorctlFailEnv, "the anchor did not come up", false},
+		"for good": {fakeAnchorctlRefuseEnv, "the anchor was refused", true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv(fakeAnchorctlStatusEnv, "none")
@@ -398,6 +401,16 @@ func TestTheObserverOutlivesAnAnchorThatCannotComeUp(t *testing.T) {
 
 			if _, warns := r.said(); !slices.ContainsFunc(warns, func(w string) bool { return strings.HasPrefix(w, tc.said) }) {
 				t.Errorf("the supervisor warned %q, want it to say %q", warns, tc.said)
+			}
+
+			// A refusal for good is recorded for status, which otherwise sees only that no anchor runs.
+			st, err := config.LoadState(s.Dirs)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if refused := strings.Contains(st.AnchorRefused, "TUN device") && !st.AnchorRefusedAt.IsZero(); refused != tc.refused {
+				t.Errorf("the state records the anchor refused as %q at %v, want recorded %v", st.AnchorRefused, st.AnchorRefusedAt, tc.refused)
 			}
 		})
 	}

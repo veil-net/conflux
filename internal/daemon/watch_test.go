@@ -264,7 +264,31 @@ func TestEachIsGivenUpOnAlone(t *testing.T) {
 			if n := strings.Count(cmds, "observe"); n != tc.observes {
 				t.Errorf("the observer was started %d times, want %d", n, tc.observes)
 			}
+
+			// Given up on, the anchor's refusal is recorded for status.
+			if st, err := config.LoadState(s.Dirs); err != nil || !strings.Contains(st.AnchorRefused, "TUN device") || st.AnchorRefusedAt.IsZero() {
+				t.Errorf("the state records the anchor refused as %q at %v (%v), want the refusal", st.AnchorRefused, st.AnchorRefusedAt, err)
+			}
 		})
+	}
+}
+
+// TestAnAnchorThatComesUpClearsItsRefusal: an anchor recorded as refused for good that comes up
+// after all -- the host gave it its TUN, the service was started again -- is not reported as
+// refused any more.
+func TestAnAnchorThatComesUpClearsItsRefusal(t *testing.T) {
+	d := benchSite(t)
+
+	if err := config.SaveState(d, &config.State{AnchorRefused: "refused", AnchorRefusedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := bringUp(t.Context(), d, fakeCtl(t), nopReporter{}, d.RootAnchorDir(), false, parts{anchor: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	if st, err := config.LoadState(d); err != nil || st.AnchorRefused != "" || !st.AnchorRefusedAt.IsZero() {
+		t.Errorf("an anchor came up, and the state still records it refused: %q at %v (%v)", st.AnchorRefused, st.AnchorRefusedAt, err)
 	}
 }
 

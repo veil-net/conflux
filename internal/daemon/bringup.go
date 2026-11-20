@@ -237,6 +237,10 @@ func bringUp(
 	up.id, up.anchor = started.ID, true
 	running(started.ID)
 
+	// Whatever refused an anchor before -- at a start, or the watcher's last rebuilds -- this
+	// one came up.
+	st.AnchorRefused, st.AnchorRefusedAt = "", time.Time{}
+
 	return up, nil
 }
 

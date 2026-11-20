@@ -62,6 +62,14 @@ type State struct {
 	// along -- the uptime resets, so nothing else would say.
 	LinkReopens    int       `json:"linkReopens,omitempty"`
 	LastLinkReopen time.Time `json:"lastLinkReopen,omitzero"`
+
+	// AnchorRefused and AnchorRefusedAt record an anchor refused for good while the observer
+	// runs on without it: why, and when the supervisor gave up on it, at a start or after the
+	// watcher's rebuilds. Cleared once an anchor comes up. Persisted for the reason the link's
+	// reopens are: the supervisor that gives up and the `conflux status` that reports it are
+	// different processes, and without it status could say only that no anchor runs.
+	AnchorRefused   string    `json:"anchorRefused,omitempty"`
+	AnchorRefusedAt time.Time `json:"anchorRefusedAt,omitzero"`
 }
 
 // ErrStateCorrupt is what LoadState's refusal of a state.json it cannot parse wraps. No
@@ -115,4 +123,5 @@ func (s *State) NewIdentity() {
 	s.AnchorID, s.IssuedAt, s.NotAfter, s.ClockSkew = "", time.Time{}, time.Time{}, 0
 	s.LastRenewalError, s.LastRenewalTry = "", time.Time{}
 	s.LinkReopens, s.LastLinkReopen = 0, time.Time{}
+	s.AnchorRefused, s.AnchorRefusedAt = "", time.Time{}
 }

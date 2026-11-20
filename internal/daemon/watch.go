@@ -263,6 +263,7 @@ func (s *Supervisor) rebuildAnchor(ctx context.Context, why string, link bool, k
 	}
 
 	if k.failed(err) {
+		s.recordRefusal(err)
 		s.report().Warn("this configuration will not build an anchor: %v\n"+
 			"  conflux stops rebuilding it until the service is started again", err)
 

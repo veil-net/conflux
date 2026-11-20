@@ -204,6 +204,9 @@ held was received, so the renewal timer divides the credential's own window.
 It, `linkReopens` and `lastLinkReopen` are here rather than in memory because the
 supervisor that measures them and the `conflux status` that reports them are different
 processes. See [credentials.md](credentials.md#clock-skew) and [uplink.md](uplink.md).
+`anchorRefused` and `anchorRefusedAt`, there only while it holds, say why and since when an
+anchor was refused for good with the observer running on without it, for the same reason;
+an anchor that comes up clears them.
 
 Everything here is derived, and most of it is re-learned by the next start: the window
 from the manifest, the AnchorID from what `anchorctl start` reports. Not on a machine

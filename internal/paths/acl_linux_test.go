@@ -22,29 +22,25 @@ func TestEnsureAllReadsAPOSIXACL(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const none = 1<<32 - 1 // the id of an entry that names nobody
-
 	for _, c := range []struct {
 		name    string
 		acl     []byte
 		refused string
 		shared  bool // the parent's own group lets in another account too
 	}{
-		{"another account may write", posixACL(
-			[3]uint32{0x01, 7, none}, [3]uint32{0x02, 7, 65534}, [3]uint32{0x04, 5, none},
-			[3]uint32{0x10, 7, none}, [3]uint32{0x20, 0, none}), "uid 65534", false},
+		{"another account may write", anotherMayWrite, "uid 65534", false},
 		{"another group may write", posixACL(
-			[3]uint32{0x01, 7, none}, [3]uint32{0x04, 5, none}, [3]uint32{0x08, 7, 0},
-			[3]uint32{0x10, 7, none}, [3]uint32{0x20, 0, none}), "gid 0", false},
+			[3]uint32{0x01, 7, posixNone}, [3]uint32{0x04, 5, posixNone}, [3]uint32{0x08, 7, 0},
+			[3]uint32{0x10, 7, posixNone}, [3]uint32{0x20, 0, posixNone}), "gid 0", false},
 		{"the mask takes the write away", posixACL(
-			[3]uint32{0x01, 7, none}, [3]uint32{0x02, 7, 65534}, [3]uint32{0x04, 5, none},
-			[3]uint32{0x10, 5, none}, [3]uint32{0x20, 0, none}), "", false},
+			[3]uint32{0x01, 7, posixNone}, [3]uint32{0x02, 7, 65534}, [3]uint32{0x04, 5, posixNone},
+			[3]uint32{0x10, 5, posixNone}, [3]uint32{0x20, 0, posixNone}), "", false},
 		{"only this account may write", posixACL(
-			[3]uint32{0x01, 7, none}, [3]uint32{0x02, 7, uint32(os.Geteuid())}, [3]uint32{0x04, 7, none},
-			[3]uint32{0x10, 7, none}, [3]uint32{0x20, 0, none}), "", false},
+			[3]uint32{0x01, 7, posixNone}, [3]uint32{0x02, 7, uint32(os.Geteuid())}, [3]uint32{0x04, 7, posixNone},
+			[3]uint32{0x10, 7, posixNone}, [3]uint32{0x20, 0, posixNone}), "", false},
 		{"its group may not write, though the mask would let it", posixACL(
-			[3]uint32{0x01, 7, none}, [3]uint32{0x02, 7, uint32(os.Geteuid())}, [3]uint32{0x04, 5, none},
-			[3]uint32{0x10, 7, none}, [3]uint32{0x20, 0, none}), "", true},
+			[3]uint32{0x01, 7, posixNone}, [3]uint32{0x02, 7, uint32(os.Geteuid())}, [3]uint32{0x04, 5, posixNone},
+			[3]uint32{0x10, 7, posixNone}, [3]uint32{0x20, 0, posixNone}), "", true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			// The parent's own group lets in this account alone, unless shared; any other lets
@@ -72,10 +68,7 @@ func TestEnsureAllReadsAPOSIXACL(t *testing.T) {
 // parent's default ACL passes on to the root conflux makes there takes its mask from the 0700
 // the root is made at, and that root is accepted too.
 func TestEnsureAllLeavesTheRootsPOSIXACLToTheNarrowing(t *testing.T) {
-	const none = 1<<32 - 1
-
-	another := posixACL([3]uint32{0x01, 7, none}, [3]uint32{0x02, 7, 65534}, [3]uint32{0x04, 5, none},
-		[3]uint32{0x10, 7, none}, [3]uint32{0x20, 0, none})
+	another := anotherMayWrite
 
 	t.Run("on the root", func(t *testing.T) {
 		root := filepath.Join(t.TempDir(), "conflux")
@@ -125,11 +118,8 @@ func TestEnsureAllLeavesTheRootsPOSIXACLToTheNarrowing(t *testing.T) {
 // which takes every entry's write away. Held here: an ACL letting another account write, read as
 // one whose mask is the group bits, and judged at any mode found as letting nobody.
 func TestARootsACLCannotRefuseItHere(t *testing.T) {
-	const none = 1<<32 - 1
-
 	dir := t.TempDir()
-	if err := unix.Setxattr(dir, "system.posix_acl_access", posixACL([3]uint32{0x01, 7, none},
-		[3]uint32{0x02, 7, 65534}, [3]uint32{0x04, 7, none}, [3]uint32{0x10, 7, none}, [3]uint32{0x20, 7, none}), 0); err != nil {
+	if err := unix.Setxattr(dir, "system.posix_acl_access", anotherMayWrite, 0); err != nil {
 		t.Fatalf("give %s an ACL: %v", dir, err)
 	}
 

@@ -569,8 +569,6 @@ func TestJudgeHoldsAnACLToTheStickyBit(t *testing.T) {
 // refused there; a POSIX ACL's mask becomes the narrowed group bits, so its entries let nobody
 // write, though found at 0770 one lets uid 65534.
 func TestJudgeHoldsARootAsSecureLeavesIt(t *testing.T) {
-	const none = 1<<32 - 1
-
 	nfs4, err := freebsdACL(freebsdBuf(
 		[5]uint32{0x01, 0, 0x1ffff, nfs4Allow},
 		[5]uint32{0x40, 0, nfs4AddFile, nfs4Allow}), true)
@@ -585,8 +583,7 @@ func TestJudgeHoldsARootAsSecureLeavesIt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	entries, err := linuxACL(posixACL([3]uint32{0x01, 7, none}, [3]uint32{0x02, 7, 65534}, [3]uint32{0x04, 5, none},
-		[3]uint32{0x10, 7, none}, [3]uint32{0x20, 0, none}))
+	entries, err := linuxACL(anotherMayWrite)
 	if err != nil {
 		t.Fatal(err)
 	}

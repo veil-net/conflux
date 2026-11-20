@@ -21,16 +21,28 @@ func posixACL(entries ...[3]uint32) []byte {
 	return b
 }
 
+// posixNone is the id of a POSIX.1e entry that names nobody: the owner's, the group's, the mask's
+// or everybody else's.
+const posixNone = 1<<32 - 1
+
+// anotherMayWrite is a POSIX.1e access ACL that lets uid 65534 write, through a mask of rwx, its
+// group read and search, and everybody else nothing (TestPOSIXWriters holds it to that).
+var anotherMayWrite = posixACL([3]uint32{0x01, 7, posixNone}, [3]uint32{0x02, 7, 65534},
+	[3]uint32{0x04, 5, posixNone}, [3]uint32{0x10, 7, posixNone}, [3]uint32{0x20, 0, posixNone})
+
 // TestPOSIXWriters: who a POSIX.1e access ACL lets write, read from the bytes Linux keeps it
 // in -- each named user and group and the directory's own group, as the mask leaves their write,
 // and never the owner or everybody else, which the mode's bits are -- and an attribute in any
 // other shape refused rather than read as allowing nobody.
 func TestPOSIXWriters(t *testing.T) {
-	const none = 1<<32 - 1
+	another, err := linuxACL(anotherMayWrite)
+	if err != nil || !slices.Equal(posixWriters(another), []writer{{who: aUser, id: 65534}}) {
+		t.Errorf("anotherMayWrite lets %+v write (%v), want uid 65534 alone", posixWriters(another), err)
+	}
 
 	entries, err := linuxACL(posixACL(
-		[3]uint32{0x01, 7, none}, [3]uint32{0x02, 6, 1001}, [3]uint32{0x02, 5, 1002}, [3]uint32{0x04, 7, none},
-		[3]uint32{0x08, 2, 50}, [3]uint32{0x10, 7, none}, [3]uint32{0x20, 7, none}))
+		[3]uint32{0x01, 7, posixNone}, [3]uint32{0x02, 6, 1001}, [3]uint32{0x02, 5, 1002}, [3]uint32{0x04, 7, posixNone},
+		[3]uint32{0x08, 2, 50}, [3]uint32{0x10, 7, posixNone}, [3]uint32{0x20, 7, posixNone}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +61,7 @@ func TestPOSIXWriters(t *testing.T) {
 	for _, b := range [][]byte{
 		nil,
 		binary.LittleEndian.AppendUint32(nil, 1), // another version
-		append(posixACL([3]uint32{0x01, 7, none}), 0, 0, 0), // an entry cut short
+		append(posixACL([3]uint32{0x01, 7, posixNone}), 0, 0, 0), // an entry cut short
 	} {
 		if _, err := linuxACL(b); !errors.Is(err, errACL) {
 			t.Errorf("linuxACL(%x) = %v, want errACL", b, err)

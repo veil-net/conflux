@@ -462,10 +462,11 @@ then that `conflux start` tries the anchor again. It is there while none runs �
 answering with no anchor, or not answering because the service ended on it — since `anchorctl
 status` beneath says only that none runs, and never on a machine that only observes. The
 supervisor records it where it stops trying the anchor: beside an observer, once the watcher
-gives up rebuilding it, and with nothing else running, once the service ends on it (exit 70).
-An anchor that comes up clears it, as do every start of everything the configuration runs
-(`conflux start`, a reboot, the supervisor's own restart), `conflux down` and a new identity.
-Whether the observer runs is its own line's to say.
+gives up rebuilding it — after a start's refusal, three rebuilds refused in a row, four tries in
+all — and with nothing else running, once the service ends on it (exit 70). An anchor that comes
+up clears it, as do every start of everything the configuration runs (`conflux start`, a reboot,
+the supervisor's own restart), `conflux down` and a new identity. Whether the observer runs is
+its own line's to say.
 
 The `anchord` line says what it keeps and why: `conflux, with no privilege` in userspace,
 `conflux, with CAP_NET_ADMIN for its interface` for a TUN on Linux, `conflux, with CAP_NET_RAW

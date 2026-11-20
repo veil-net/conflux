@@ -56,7 +56,11 @@ func bring(ctx context.Context, d paths.Dirs, cfg *config.Config, verb string, s
 
 	ui.Printf("\nStarting.\n")
 
-	if err := restartService(d); err != nil {
+	// The boot service starts the anchor, rather than this process: one supervisor, whatever
+	// started it. A `conflux up` that ran its own daemon would leave two ideas of what is
+	// running -- the service manager's and ours -- and they would disagree the moment either
+	// changed.
+	if err := restartWith(d, service.New()); err != nil {
 		return fail(err)
 	}
 
@@ -68,16 +72,6 @@ func bring(ctx context.Context, d paths.Dirs, cfg *config.Config, verb string, s
 	report(d, cfg, started, verb)
 
 	return ExitOK
-}
-
-// restartService hands the machine to the boot service rather than running an
-// anchor from this process.
-//
-// One supervisor, whatever started it. A `conflux up` that ran its own daemon would
-// leave two ideas of what is running -- the service manager's and ours -- and they
-// would disagree the moment either changed.
-func restartService(d paths.Dirs) error {
-	return restartWith(d, service.New())
 }
 
 // restartWith withdraws the readiness marker and then restarts, in that order.
@@ -172,7 +166,7 @@ func waitFor(ctx context.Context, d paths.Dirs, cfg *config.Config) (anchorctl.S
 
 			return anchorctl.Status{}, fmt.Errorf(
 				"the service started but %s within 90s.\n"+
-					"  see what it said:  %s", what, journalHint())
+					"  see what it said:  %s", what, service.New().LogHint())
 		}
 
 		select {
@@ -397,9 +391,4 @@ func joinTaints(t []string) string {
 	}
 
 	return strings.Join(t, ",")
-}
-
-// journalHint names where the supervisor's output is.
-func journalHint() string {
-	return service.New().LogHint()
 }

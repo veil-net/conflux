@@ -163,8 +163,9 @@ func anchordDirSDDL(sid *windows.SID) string {
 
 // MakeDir creates the directory path, which must not be there yet, in a parent that is, with sd as
 // its security descriptor, set as it is created: it is never anything else, not even for an
-// instant, as one made and then given its security would be, under what its parent passes on.
-// Every directory conflux makes with security of its own is made so.
+// instant, as one made and then given its security would be, under what its parent passes on. A
+// root (makeRoot, through MakeRestricted) and the directories anchord is given (daemon's
+// makeAnchorDir: MakeRestricted, or MakeAnchordDir for its account) are made so.
 func MakeDir(path string, sd *windows.SECURITY_DESCRIPTOR) error {
 	name, err := windows.UTF16PtrFromString(path)
 	if err != nil {

@@ -16,6 +16,7 @@ import (
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/apitest"
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/httpsonly"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
 )
@@ -163,7 +164,7 @@ func BenchmarkAnchorCheck(b *testing.B) {
 // BenchmarkRenewal is the whole of a timer renewal against a stand-in API: the lock, the
 // stored files, the POST, the splice, the writes and the hot install.
 func BenchmarkRenewal(b *testing.B) {
-	b.Setenv("CONFLUX_ALLOW_INSECURE_API", "1")
+	b.Setenv(httpsonly.InsecureEnv, "1")
 
 	raw := make([]byte, 6<<10)
 	chain := base64.StdEncoding.EncodeToString(raw)

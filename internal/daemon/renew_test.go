@@ -20,6 +20,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/enrol"
+	"github.com/veil-net/conflux/internal/httpsonly"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
 )
@@ -42,7 +43,7 @@ type issuer struct {
 
 func newIssuer(t *testing.T) *issuer {
 	t.Helper()
-	t.Setenv("CONFLUX_ALLOW_INSECURE_API", "1")
+	t.Setenv(httpsonly.InsecureEnv, "1")
 
 	is := &issuer{chain: []byte("a renewed chain"), bootstrap: []string{"api.veilnet.com.au:4700"}}
 	is.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -355,7 +356,7 @@ func TestAFailedInstallIsDueAgain(t *testing.T) {
 // TestAnEnrolmentIsKeptBeforeItIsRead: a document this build cannot read is still
 // written -- it is the only copy of an identity -- and then refused, permanently.
 func TestAnEnrolmentIsKeptBeforeItIsRead(t *testing.T) {
-	t.Setenv("CONFLUX_ALLOW_INSECURE_API", "1")
+	t.Setenv(httpsonly.InsecureEnv, "1")
 
 	d := pathstest.Dirs(t)
 
@@ -384,7 +385,7 @@ func TestAnEnrolmentIsKeptBeforeItIsRead(t *testing.T) {
 // grants, and recording what it was asked for.
 func enroller(t *testing.T, grants []string) (*httptest.Server, *[]string, *atomic.Int32) {
 	t.Helper()
-	t.Setenv("CONFLUX_ALLOW_INSECURE_API", "1")
+	t.Setenv(httpsonly.InsecureEnv, "1")
 
 	var (
 		asked []string

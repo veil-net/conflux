@@ -5,6 +5,10 @@ package paths
 import (
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"go/types"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -680,5 +684,88 @@ func TestJudgeLeavesARootsTrivialNFSv4ACLToTheNarrowing(t *testing.T) {
 		case c.refused == "" && got != "":
 			t.Errorf("%s: judgeRoot = %q, want nothing", c.name, got)
 		}
+	}
+}
+
+// TestARootsACLIsLeftUnreadOnlyBesideAPOSIXReader ties rootACLMayRefuse, where a platform's file
+// makes it false, to the extendedWriters beside it. secure leaves a root's own ACL unread there,
+// which loses nothing only while every ACL that reader returns is a POSIX.1e one, reported by its
+// aclGroup, which judgeRoot judges at the narrowed 0700 as letting nobody write
+// (TestARootsACLCannotRefuseItHere), or none at all. So each of its returns is no ACL, nil and
+// false, or a POSIX.1e one, true; a reader of anything else there -- an NFSv4 mount's
+// system.nfs4_acl, on Linux -- needs that file's rootACLMayRefuse true.
+func TestARootsACLIsLeftUnreadOnlyBesideAPOSIXReader(t *testing.T) {
+	names, err := filepath.Glob("acl_*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fset := token.NewFileSet()
+	unread := 0
+
+	for _, name := range names {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+
+		f, err := parser.ParseFile(fset, name, nil, parser.SkipObjectResolution)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		mayRefuse, reader := "", (*ast.FuncDecl)(nil)
+
+		for _, d := range f.Decls {
+			switch d := d.(type) {
+			case *ast.GenDecl:
+				for _, s := range d.Specs {
+					if v, ok := s.(*ast.ValueSpec); ok && len(v.Names) == 1 && v.Names[0].Name == "rootACLMayRefuse" &&
+						len(v.Values) == 1 {
+						mayRefuse = types.ExprString(v.Values[0])
+					}
+				}
+			case *ast.FuncDecl:
+				if d.Name.Name == "extendedWriters" {
+					reader = d
+				}
+			}
+		}
+
+		if mayRefuse != "false" {
+			continue
+		}
+
+		if unread++; reader == nil {
+			t.Errorf("%s leaves a root's ACL unread, and holds no extendedWriters to say it reads none but POSIX.1e ones", name)
+
+			continue
+		}
+
+		ast.Inspect(reader.Body, func(n ast.Node) bool {
+			r, ok := n.(*ast.ReturnStmt)
+			if !ok {
+				_, closure := n.(*ast.FuncLit)
+
+				return !closure
+			}
+
+			if len(r.Results) != 3 {
+				t.Errorf("%s: extendedWriters returns at %s what this cannot read", name, fset.Position(r.Pos()))
+
+				return true
+			}
+
+			if ws, posix := types.ExprString(r.Results[0]), types.ExprString(r.Results[1]); posix != "true" &&
+				(ws != "nil" || posix != "false") {
+				t.Errorf("%s: extendedWriters returns %s, %s at %s, an ACL it does not report as POSIX.1e, which can "+
+					"refuse a root, so rootACLMayRefuse is true there", name, ws, posix, fset.Position(r.Pos()))
+			}
+
+			return true
+		})
+	}
+
+	if unread == 0 {
+		t.Fatal("no platform's file leaves a root's ACL unread, so nothing was held")
 	}
 }

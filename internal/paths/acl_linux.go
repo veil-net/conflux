@@ -11,7 +11,8 @@ const posixACLName = "system.posix_acl_access"
 
 // rootACLMayRefuse is whether a root's own ACL can refuse it once secure has narrowed it: not
 // here, where every ACL extendedWriters reads is a POSIX.1e one, whose mask is the mode's group
-// bits, which the narrowing to 0700 empties (judge). So the read is left out.
+// bits, which the narrowing to 0700 empties (judge). So the read is left out, while the reader
+// reports every ACL it returns as POSIX.1e (TestARootsACLIsLeftUnreadOnlyBesideAPOSIXReader).
 const rootACLMayRefuse = false
 
 // extendedWriters is who p's ACL lets write it besides its owner and everybody, and whether

@@ -234,7 +234,7 @@ func TestSwitchingAnAnchorToObservingIsConfirmed(t *testing.T) {
 
 	cfg := &config.Config{Mode: config.ModeTUN}
 
-	if confirmObserving(testDirs(t), cfg, false) {
+	if confirmObserving(cfg, false) {
 		t.Fatal("an anchor was stopped with nobody asked")
 	}
 
@@ -244,7 +244,7 @@ func TestSwitchingAnAnchorToObservingIsConfirmed(t *testing.T) {
 		}
 	}
 
-	if !confirmObserving(testDirs(t), cfg, true) {
+	if !confirmObserving(cfg, true) {
 		t.Error("--yes did not say so")
 	}
 }

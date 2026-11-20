@@ -76,7 +76,7 @@ func runObserve(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	if cfg.Anchor() && cfg.Mode != "" && !confirmObserving(d, cfg, *f.yes) {
+	if cfg.Anchor() && cfg.Mode != "" && !confirmObserving(cfg, *f.yes) {
 		return ExitUsage
 	}
 
@@ -119,7 +119,7 @@ var hostOS = runtime.GOOS
 // stops and this machine leaves its realm, though its identity and settings are kept for the
 // next up or proxy. Asked at a terminal; off one, only --yes says so, so a script that meant
 // anchorctl's report never stops an anchor.
-func confirmObserving(d paths.Dirs, cfg *config.Config, yes bool) bool {
+func confirmObserving(cfg *config.Config, yes bool) bool {
 	if yes {
 		return true
 	}

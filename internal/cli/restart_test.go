@@ -2,12 +2,12 @@ package cli
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/pathstest"
 )
 
 // fakeManager records what it was asked and reports what the marker looked like at the
@@ -49,19 +49,6 @@ func (m *fakeManager) Restart() error {
 	return nil
 }
 
-func testDirs(t *testing.T) paths.Dirs {
-	t.Helper()
-
-	root := t.TempDir()
-	d := paths.Dirs{Config: root, State: root, Run: filepath.Join(root, "run"), Log: filepath.Join(root, "logs")}
-
-	if err := d.EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll: %v", err)
-	}
-
-	return d
-}
-
 // TestTheMarkerIsWithdrawnBeforeAnythingStarts: every path that restarts the service and
 // waits for it registers it first, and the readiness marker is withdrawn before anything
 // in that can start the service -- launchd's Install can -- and not after.
@@ -72,17 +59,7 @@ func testDirs(t *testing.T) paths.Dirs {
 // moment Install starts it is the one waitFor is waiting for, so nothing withdraws it
 // after: withdrawn, waitFor would see nothing and fall back to asking status once a second.
 func TestTheMarkerIsWithdrawnBeforeAnythingStarts(t *testing.T) {
-	root := t.TempDir()
-	if err := os.Chmod(root, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	t.Setenv("CONFLUX_DIR", root)
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatal(err)
-	}
+	d := pathstest.Dirs(t)
 
 	if err := daemon.MarkReady(d, "anchorfromthepreviousrun"); err != nil {
 		t.Fatalf("MarkReady: %v", err)

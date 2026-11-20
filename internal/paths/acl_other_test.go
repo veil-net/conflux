@@ -785,21 +785,22 @@ func TestARootsACLIsLeftUnreadOnlyBesideAPOSIXReader(t *testing.T) {
 
 // TestAJudgementDropsWhatItRead: what a judgement reads of who a group lets in is kept, and shared,
 // while it or another begun before it ended is under way, and dropped once none is, so that a
-// supervisor, which judges its roots again at every bring-up, sees who a group lets in by then:
-// EnsureAll, Check and Foreign each leave nothing kept.
+// supervisor, which judges its roots again at every start, sees who a group lets in by then; a
+// judgement ended twice ends once; and EnsureAll, Check and Foreign each leave nothing kept.
 func TestAJudgementDropsWhatItRead(t *testing.T) {
-	outer := judging()
+	outer := Judging()
 	first := lookups.l
 
-	inner := judging()
+	inner := Judging()
 	if first == nil || lookups.l != first {
 		t.Errorf("a judgement begun inside another reads into %p, not the other's %p", lookups.l, first)
 	}
 
 	inner()
+	inner()
 
 	if lookups.l != first {
-		t.Error("a judgement's end dropped what another under way had read")
+		t.Error("a judgement's end, twice, dropped what another under way had read")
 	}
 
 	outer()
@@ -808,7 +809,7 @@ func TestAJudgementDropsWhatItRead(t *testing.T) {
 		t.Error("what the judgements read was kept once none was under way")
 	}
 
-	if done := judging(); lookups.l == first {
+	if done := Judging(); lookups.l == first {
 		t.Error("the next judgement read into the one before's")
 	} else {
 		done()

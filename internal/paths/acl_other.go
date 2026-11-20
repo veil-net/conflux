@@ -19,7 +19,7 @@ import (
 	"github.com/veil-net/conflux/internal/group"
 )
 
-// groupUsers is who a group lets in: within a judgement (judging), from the group.Lookup it shares,
+// groupUsers is who a group lets in: within a judgement (Judging), from the group.Lookup it shares,
 // since a walk of a CONFLUX_DIR's parents asks of each one its group may write, and otherwise read
 // afresh. A test's stands in for the system's databases.
 var groupUsers = func(name, gid string) ([]string, error) {
@@ -41,22 +41,29 @@ var lookups struct {
 	l *group.Lookup
 }
 
-// judging begins a judgement, and is what ends it: while any is under way, each group's record and
-// the account database are read at most once (lookups), and once none is they are dropped, so that a
-// supervisor, which judges its roots at every bring-up, sees who a group lets in by then.
-func judging() (done func()) {
+// Judging begins a judgement, and done ends it, however often it is called: while any is under
+// way, each group's record and the account database are read at most once, however many roots and
+// ways are judged (lookups), and once none is they are dropped. EnsureAll, Check, Foreign and each
+// walk are judgements of their own; a command is one, in which those it makes share what they read;
+// and a supervisor's start is one, which ends before it keeps the anchor up, so that the next start
+// sees who a group lets in by then.
+func Judging() (done func()) {
 	lookups.Lock()
 	if lookups.n++; lookups.l == nil {
 		lookups.l = &group.Lookup{}
 	}
 	lookups.Unlock()
 
+	var once sync.Once
+
 	return func() {
-		lookups.Lock()
-		if lookups.n--; lookups.n == 0 {
-			lookups.l = nil
-		}
-		lookups.Unlock()
+		once.Do(func() {
+			lookups.Lock()
+			if lookups.n--; lookups.n == 0 {
+				lookups.l = nil
+			}
+			lookups.Unlock()
+		})
 	}
 }
 

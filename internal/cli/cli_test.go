@@ -220,6 +220,45 @@ func TestStatusWithNoConfigExits78(t *testing.T) {
 	}
 }
 
+// TestStatusOfAConfigurationClosedToThisAccountIsDenied: an installed machine's configuration
+// is root's alone, and status asked by any other account is refused as every verb that needs
+// privilege is -- exit 13, and the command to run again -- rather than failing on the read.
+func TestStatusOfAConfigurationClosedToThisAccountIsDenied(t *testing.T) {
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return false }
+
+	t.Setenv("CONFLUX_DIR", t.TempDir())
+
+	d := paths.Default()
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Chmod(d.ConfigFile(), 0); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = os.Chmod(d.ConfigFile(), 0o600) })
+
+	// The premise, checked rather than assumed: root reads it anyway, and on Windows the mode
+	// bits close nothing.
+	if _, err := os.ReadFile(d.ConfigFile()); !errors.Is(err, fs.ErrPermission) {
+		t.Logf("this account reads a file closed to it (%v), so there is no refusal here to exercise", err)
+
+		return
+	}
+
+	_, errOut, code := capture(t, "status")
+	if want := privcheck.Retry("conflux status"); code != ExitDenied || !strings.Contains(errOut, want) {
+		t.Errorf("status of a configuration this account cannot read exited %d, want %d naming %q:\n%s",
+			code, ExitDenied, want, errOut)
+	}
+}
+
 // TestProxyKeepsItsOwnUplinkFlag: --uplink is conflux proxy's, so the gate that
 // hands anchorctl's flags back must not catch it, and the splitter has to know it
 // takes a value -- otherwise the device path lands in the positional list and is

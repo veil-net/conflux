@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"runtime"
 	"strconv"
@@ -42,6 +44,14 @@ func runStatus(ctx context.Context, args []string) int {
 
 	cfg, err := config.Load(d)
 	if err != nil {
+		// An installed machine's configuration is root's alone, so another account is refused
+		// as every verb needing privilege refuses it: exit 13, and the command to run again.
+		if errors.Is(err, fs.ErrPermission) {
+			if denial := needsRoot("reading this machine's configuration", "status", nil); denial != nil {
+				return fail(denial)
+			}
+		}
+
 		if !os.IsNotExist(err) {
 			return fail(err)
 		}

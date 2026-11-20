@@ -441,6 +441,8 @@ conflux's state — service, mode, exit, taint, AnchorID, credential expiry, API
 uplink reopen tally if there is one, and while it runs, who `anchord` runs as and with
 what — and then `anchorctl status` beneath it. Exits 78 when the machine has no
 configuration and no ephemeral run is live; with one live, it reports the run and exits 0.
+An installed machine's configuration is root's alone (Administrators' on Windows), so asked by
+another account it exits 13, naming the command to run again, as every verb needing root does.
 
 The `anchord` line says what it keeps and why: `conflux, with no privilege` in userspace,
 `conflux, with CAP_NET_ADMIN for its interface` for a TUN on Linux, `conflux, with CAP_NET_RAW
@@ -612,7 +614,7 @@ other refusal — passes through untouched.
 | 1 | failure |
 | 2 | usage |
 | 3 | `conflux cert verify`, `match` or `probe`: the check ran and did not hold |
-| 13 | needs root or Administrator, or a pass-through that cannot read the daemon's token |
+| 13 | needs root or Administrator: a verb that changes the machine, `status` where the configuration is closed to this account, or a pass-through that cannot read the daemon's token |
 | 69 | nothing here to act on: nothing running, or no credential to renew |
 | 70 | a configuration conflux or anchor refuses for good, or a conflux built for FIPS 140-3 mode run with it switched off, or `conflux cert` where it does not run in that mode; the systemd unit does not restart on it |
 | 78 | no configuration — the code the systemd unit keys `RestartPreventExitStatus` on |

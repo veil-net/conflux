@@ -15,24 +15,13 @@ import (
 	"github.com/veil-net/conflux/anchor"
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/pathstest"
 )
-
-func dirs(t *testing.T) paths.Dirs {
-	t.Helper()
-	t.Setenv("CONFLUX_DIR", t.TempDir())
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll: %v", err)
-	}
-
-	return d
-}
 
 func TestEnsureExtractsAndRuns(t *testing.T) {
 	anchortest.Require(t)
 
-	d := dirs(t)
+	d := pathstest.Dirs(t)
 
 	tools, err := Ensure(d)
 	if err != nil {
@@ -75,7 +64,7 @@ func TestEnsureExtractsAndRuns(t *testing.T) {
 func TestEnsureIsIdempotent(t *testing.T) {
 	anchortest.Require(t)
 
-	d := dirs(t)
+	d := pathstest.Dirs(t)
 
 	first, err := Ensure(d)
 	if err != nil {
@@ -112,7 +101,7 @@ func TestEnsureIsIdempotent(t *testing.T) {
 func TestEnsureIsConcurrencySafe(t *testing.T) {
 	anchortest.Require(t)
 
-	d := dirs(t)
+	d := pathstest.Dirs(t)
 
 	const n = 8
 
@@ -185,7 +174,7 @@ func TestEnsureIsConcurrencySafe(t *testing.T) {
 func TestASetThatWillNotRunIsRemoved(t *testing.T) {
 	anchortest.Require(t)
 
-	d := dirs(t)
+	d := pathstest.Dirs(t)
 
 	refused := errors.New("the stand-in smoke run refused it")
 
@@ -221,7 +210,7 @@ func TestASetThatWillNotRunIsRemoved(t *testing.T) {
 func TestASetTakesItsNameOnlyOnceItHasRun(t *testing.T) {
 	anchortest.Require(t)
 
-	d := dirs(t)
+	d := pathstest.Dirs(t)
 	set := toolsIn(d).Dir
 
 	var smoked int
@@ -256,7 +245,7 @@ func TestASetTakesItsNameOnlyOnceItHasRun(t *testing.T) {
 func TestEnsureRepairsATruncatedExtraction(t *testing.T) {
 	anchortest.Require(t)
 
-	d := dirs(t)
+	d := pathstest.Dirs(t)
 
 	tools, err := Ensure(d)
 	if err != nil {

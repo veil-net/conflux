@@ -5,22 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/pathstest"
 )
-
-// dirsForTest roots every conflux path in a temporary directory, the way CONFLUX_DIR
-// does for a dev run.
-func dirsForTest(t *testing.T) paths.Dirs {
-	t.Helper()
-	t.Setenv("CONFLUX_DIR", t.TempDir())
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll: %v", err)
-	}
-
-	return d
-}
 
 // base is a configuration that validates, so each case below changes exactly one
 // thing and the failure names that thing rather than a missing taint.
@@ -210,7 +196,7 @@ func TestLANDiscoveryRoundTripsAllThree(t *testing.T) {
 		{"no", func() *bool { v := false; return &v }()},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			d := dirsForTest(t)
+			d := pathstest.Dirs(t)
 
 			want := base(ModeTUN)
 			want.LANDiscovery = tc.set
@@ -239,7 +225,7 @@ func TestLANDiscoveryRoundTripsAllThree(t *testing.T) {
 // TestTuningSurvivesTheRoundTrip: the four new fields are omitempty, so a zero value
 // is absent from the document. What must not happen is a set one being dropped.
 func TestTuningSurvivesTheRoundTrip(t *testing.T) {
-	d := dirsForTest(t)
+	d := pathstest.Dirs(t)
 
 	want := base(ModeTUN)
 	want.Port = 4711

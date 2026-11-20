@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/veil-net/conflux/internal/pathstest"
 )
 
 // TestExportMaterialIsNotPrinted: an export block's headers are credentials and a client
@@ -33,9 +35,7 @@ func TestExportMaterialIsNotPrinted(t *testing.T) {
 // TestSaveManifestLeavesTheCallersEnvelope: the newline the file ends with is the
 // file's, never written into spare capacity of the envelope the caller holds.
 func TestSaveManifestLeavesTheCallersEnvelope(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", t.TempDir())
-
-	d := dirsForTest(t)
+	d := pathstest.Dirs(t)
 
 	backing := make([]byte, 0, 64)
 	backing = append(backing, "bWFuaWZlc3Q=  XYZ"...)
@@ -70,7 +70,7 @@ func TestANewIdentityForgetsTheOldOne(t *testing.T) {
 // and what to do, never an empty State: that would lose the AnchorID, which a machine
 // whose credential has expired has nowhere else to learn.
 func TestACorruptStateIsRefused(t *testing.T) {
-	d := dirsForTest(t)
+	d := pathstest.Dirs(t)
 
 	if err := os.WriteFile(d.StateFile(), []byte(`{"anchorId": "anchorx`), 0o600); err != nil {
 		t.Fatal(err)

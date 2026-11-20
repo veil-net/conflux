@@ -11,7 +11,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/config"
-	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/pathstest"
 	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/ui"
 )
@@ -321,12 +321,7 @@ func TestObserveEnrolsAsUpDoes(t *testing.T) {
 // credential, and status reports it as it reports an anchor's -- until when it is valid, and
 // the identity it runs as -- rather than as one kept for the next anchor.
 func TestStatusReportsTheObserversCredential(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", t.TempDir())
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatal(err)
-	}
+	d := pathstest.Dirs(t)
 
 	if err := config.SaveManifest(d, config.Envelope(base64.StdEncoding.EncodeToString([]byte(alphaDoc)))); err != nil {
 		t.Fatal(err)

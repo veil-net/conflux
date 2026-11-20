@@ -11,6 +11,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/pathstest"
 	"github.com/veil-net/conflux/internal/ui"
 )
 
@@ -41,17 +42,13 @@ const guardianAPI = "https://guardian.example.gov"
 // importCredential tells a person goes nowhere.
 func site(t *testing.T, doc string) (paths.Dirs, string) {
 	t.Helper()
-	t.Setenv("CONFLUX_DIR", t.TempDir())
 
 	out := ui.Out
 	ui.Out = io.Discard
 
 	t.Cleanup(func() { ui.Out = out })
 
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll: %v", err)
-	}
+	d := pathstest.Dirs(t)
 
 	path := filepath.Join(t.TempDir(), "manifest.b64")
 	env := base64.StdEncoding.EncodeToString([]byte(doc))

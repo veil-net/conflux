@@ -10,7 +10,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/config"
-	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/pathstest"
 	"github.com/veil-net/conflux/internal/ui"
 )
 
@@ -132,12 +132,7 @@ func TestEveryHelpFlagIsHelp(t *testing.T) {
 // enrolled and never started, has nothing to renew -- unavailable, as documented, not a
 // failure.
 func TestRenewWithNoCredentialIsUnavailable(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", t.TempDir())
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatal(err)
-	}
+	d := pathstest.Dirs(t)
 
 	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}}); err != nil {
 		t.Fatal(err)
@@ -152,12 +147,7 @@ func TestRenewWithNoCredentialIsUnavailable(t *testing.T) {
 // a machine that only observes has one to renew, and is answered as any other is: here, that a
 // renewal is installed into what runs, and nothing does.
 func TestRenewCoversAMachineThatOnlyObserves(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", t.TempDir())
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatal(err)
-	}
+	d := pathstest.Dirs(t)
 
 	if err := config.Save(d, &config.Config{Mode: config.ModeObserve, Observer: &config.Observer{}, Taints: []string{"t"}}); err != nil {
 		t.Fatal(err)

@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/pathstest"
 )
 
 // TestPlaceCopiesWhatTheServiceRuns: the boot service runs a copy in the state
@@ -13,12 +13,7 @@ import (
 // is this executable byte for byte, left alone while it still is, and replaced when it
 // is not -- an upgraded conflux reaches the service at its next install.
 func TestPlaceCopiesWhatTheServiceRuns(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", t.TempDir())
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatal(err)
-	}
+	d := pathstest.Dirs(t)
 
 	src, err := Executable()
 	if err != nil {

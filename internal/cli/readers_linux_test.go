@@ -11,9 +11,9 @@ import (
 )
 
 // TestAReaderRefusesARootAnACLLetsAnotherAccountWrite: a root's mode is not the whole of who may
-// write it, so status and uninstall read its POSIX ACL too: one that lets uid 65534 write it, its
-// mask letting the entry through, is refused, naming that account, with nothing in it read or
-// removed (readersRefuse). Skipped where the file system keeps no ACLs.
+// write it, so every reader reads its POSIX ACL too: one that lets uid 65534 write it, its mask
+// letting the entry through, is refused, naming that account, with nothing in it read, made,
+// stopped or removed (readersRefuse). Skipped where the file system keeps no ACLs.
 func TestAReaderRefusesARootAnACLLetsAnotherAccountWrite(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }

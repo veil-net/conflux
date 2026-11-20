@@ -142,6 +142,25 @@ func TestUpdateReplacesTheExecutable(t *testing.T) {
 	}
 }
 
+// releaseAsking stands in for an update to a release whose conflux, a shell script, answers
+// `version` as the real one does and notes every other command it is asked, a line each, in the
+// file asked; exe is the file the update replaces, an older conflux.
+func releaseAsking(t *testing.T) (exe, asked string) {
+	t.Helper()
+
+	exe = filepath.Join(t.TempDir(), "conflux")
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\necho conflux 1.0.0 old\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	asked = filepath.Join(t.TempDir(), "asked")
+	serveRelease(t, []byte("#!/bin/sh\ncase $1 in\n"+
+		"version) echo 'conflux 9.9.9 (0aea0f77bb77) "+runtime.GOOS+"/"+runtime.GOARCH+"' ;;\n"+
+		"*) echo \"$*\" >>'"+asked+"' ;;\nesac\n"), exe)
+
+	return exe, asked
+}
+
 // standInService makes mgr what newService answers, for the rest of the test.
 func standInService(t *testing.T, mgr service.Manager) {
 	t.Helper()
@@ -162,16 +181,7 @@ func TestUpdateHandsAStoppedServiceToTheNewConflux(t *testing.T) {
 
 	rootOnLinux(t)
 
-	exe := filepath.Join(t.TempDir(), "conflux")
-	if err := os.WriteFile(exe, []byte("#!/bin/sh\necho conflux 1.0.0 old\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	asked := filepath.Join(t.TempDir(), "asked")
-	newer := []byte("#!/bin/sh\ncase $1 in\n" +
-		"version) echo 'conflux 9.9.9 (0aea0f77bb77) " + runtime.GOOS + "/" + runtime.GOARCH + "' ;;\n" +
-		"*) echo \"$*\" >>'" + asked + "' ;;\nesac\n")
-	serveRelease(t, newer, exe)
+	_, asked := releaseAsking(t)
 
 	mgr := &fakeManager{}
 	standInService(t, mgr)

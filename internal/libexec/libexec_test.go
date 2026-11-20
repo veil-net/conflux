@@ -369,6 +369,53 @@ func TestUsageMakesNothing(t *testing.T) {
 	}
 }
 
+// TestUsageRunsNothingFromARootItRefuses: whoever may write a root could have put an anchorctl of
+// their own where a set is extracted, with the set's name and sizes, so help runs an extraction
+// only from a root that passes paths' check: in one every account may write, it runs a private
+// temporary copy, though a whole extraction is there.
+func TestUsageRunsNothingFromARootItRefuses(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a mode bit refuses nothing on Windows")
+	}
+
+	anchortest.Require(t)
+
+	parent := t.TempDir()
+	if err := os.Chmod(parent, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("CONFLUX_DIR", filepath.Join(parent, "conflux"))
+
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+
+	d := paths.Default()
+
+	planted, err := Ensure(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Chmod(d.State, 0o757); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = os.Chmod(d.State, 0o700) })
+
+	bin, done, err := ForUsage(d)
+	if err != nil {
+		t.Fatalf("ForUsage: %v", err)
+	}
+
+	defer done()
+
+	if !strings.HasPrefix(bin, tmp+string(filepath.Separator)) {
+		t.Errorf("help ran %s from a root every account may write, where %s is extracted; want a copy in %s",
+			bin, planted.Anchorctl, tmp)
+	}
+}
+
 // TestUsageMakesNoTemporaryDirectory: help's copy goes in the system's temporary directory,
 // which it never makes: one that is missing is left missing, and help says why it could not
 // run rather than leaving a directory behind.

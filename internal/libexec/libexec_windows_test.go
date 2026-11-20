@@ -16,7 +16,9 @@ import (
 // the account running it, which need not be an administrator, and a set's binaries to SYSTEM
 // and the Administrators alone: a copy restricted as a set is could not be executed by such an
 // account. CI runs elevated, where a set's DACL would let the runner in all the same, so it is
-// the grants themselves that are checked, on the copy ForUsage made and the set Ensure made.
+// the grants themselves that are checked, on the copy ForUsage made and the set Ensure made;
+// and the copy's DACL is checked to be its own, protected, since the one %TEMP% passes on
+// grants the runner already.
 func TestAUsageCopyIsItsRunners(t *testing.T) {
 	anchortest.Require(t)
 
@@ -41,13 +43,14 @@ func TestAUsageCopyIsItsRunners(t *testing.T) {
 
 	defer done()
 
-	if !slices.ContainsFunc(allowed(t, bin), user.Equals) {
+	sids, protected := allowed(t, bin)
+	if !slices.ContainsFunc(sids, user.Equals) {
 		t.Errorf("the temporary anchorctl %s grants nothing to %s, the account that ran it: one that is not an "+
 			"administrator could not execute it", bin, user)
 	}
 
-	if err := d.EnsureAll(); err != nil {
-		t.Fatal(err)
+	if !protected {
+		t.Errorf("the temporary anchorctl %s keeps the DACL its directory passed on, not one of its own", bin)
 	}
 
 	tools, err := Ensure(d)
@@ -58,18 +61,25 @@ func TestAUsageCopyIsItsRunners(t *testing.T) {
 	system, _ := windows.CreateWellKnownSid(windows.WinLocalSystemSid)
 	admins, _ := windows.CreateWellKnownSid(windows.WinBuiltinAdministratorsSid)
 
-	for _, sid := range allowed(t, tools.Anchorctl) {
+	sids, _ = allowed(t, tools.Anchorctl)
+	for _, sid := range sids {
 		if !sid.Equals(system) && !sid.Equals(admins) {
 			t.Errorf("the set's anchorctl %s grants %s, beside SYSTEM and the Administrators", tools.Anchorctl, sid)
 		}
 	}
 }
 
-// allowed is whom path's DACL allows anything.
-func allowed(t *testing.T, path string) []*windows.SID {
+// allowed is whom path's DACL allows anything, and whether the DACL is protected: its own,
+// with nothing from its directory merged in.
+func allowed(t *testing.T, path string) (sids []*windows.SID, protected bool) {
 	t.Helper()
 
 	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	control, _, err := sd.Control()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,8 +88,6 @@ func allowed(t *testing.T, path string) []*windows.SID {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	var sids []*windows.SID
 
 	for i := range uint32(dacl.AceCount) {
 		var ace *windows.ACCESS_ALLOWED_ACE
@@ -92,5 +100,5 @@ func allowed(t *testing.T, path string) []*windows.SID {
 		}
 	}
 
-	return sids
+	return sids, control&windows.SE_DACL_PROTECTED != 0
 }

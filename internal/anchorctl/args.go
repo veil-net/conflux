@@ -164,7 +164,7 @@ func (m StartMode) Args() []string {
 		args = append(args, "-lan-discovery=no")
 	}
 
-	args = append(args, "-tun="+boolText(m.TUN))
+	args = append(args, "-tun="+strconv.FormatBool(m.TUN))
 
 	if m.TUN && m.TUNName != "" {
 		args = append(args, "-tun-name", m.TUNName)
@@ -173,7 +173,7 @@ func (m StartMode) Args() []string {
 	// Always both, in whichever direction, rather than leaving either to the
 	// manifest: an anchor that silently became an internet exit because a document
 	// said so would be a surprise of the worst kind. Off unless conflux was asked.
-	args = append(args, "-serve-exit="+boolText(m.ServeExit), "-use-exit="+boolText(m.UseExit))
+	args = append(args, "-serve-exit="+strconv.FormatBool(m.ServeExit), "-use-exit="+strconv.FormatBool(m.UseExit))
 
 	if m.IPv4 != "" {
 		args = append(args, "-ipv4", m.IPv4)
@@ -213,7 +213,7 @@ func StopArgs() []string { return []string{"stop"} }
 // says, for the reason the mode flags are: the observer that runs is the one asked for,
 // whatever the last start asked for.
 func ObserveStartArgs(o config.Observer) []string {
-	return []string{"observe", "-start", "-manifest", "-", "-loopback=" + boolText(o.Loopback), "-hide-names=" + boolText(o.HideNames)}
+	return []string{"observe", "-start", "-manifest", "-", "-loopback=" + strconv.FormatBool(o.Loopback), "-hide-names=" + strconv.FormatBool(o.HideNames)}
 }
 
 // ObserveRenewArgs installs a renewed chain on the running observer, in place, as RenewArgs
@@ -231,7 +231,7 @@ func ObserveStopArgs() []string { return []string{"observe", "-stop"} }
 // configures its export with. No headers and no TLS material: on a command line they would
 // be in every process listing.
 func ExportArgs(endpoint string, insecure bool, signals []string) []string {
-	return []string{"export", "-endpoint", endpoint, "-insecure=" + boolText(insecure), "-signals", strings.Join(signals, ",")}
+	return []string{"export", "-endpoint", endpoint, "-insecure=" + strconv.FormatBool(insecure), "-signals", strings.Join(signals, ",")}
 }
 
 // StatusArgs asks what is running.
@@ -245,17 +245,9 @@ func StatusArgs() []string { return []string{"status"} }
 // the link either.
 func MetricsArgs() []string { return []string{"metrics"} }
 
-func boolText(v bool) string {
-	if v {
-		return "true"
-	}
-
-	return "false"
-}
-
 // yesNo renders a tristate's two decided values the way anchorctl spells them.
 //
-// Not boolText: -lan-discovery is a string flag over yes/no/auto, not a bool, so
+// Not strconv.FormatBool: -lan-discovery is a string flag over yes/no/auto, not a bool, so
 // "true" would be accepted today only because anchorctl's parser happens to take it
 // as a synonym. The canonical spelling is the one its own help text uses, and a
 // golden file that reads -lan-discovery=no says what it does without a lookup.

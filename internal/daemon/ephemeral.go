@@ -102,9 +102,11 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 	}
 
 	// The root and the lock in it go last, after anchord has gone, so a second run is refused
-	// until there is nothing left of this one.
+	// until there is nothing left of this one. Emptied, and nothing more: what a killed run left
+	// running is stopped below, before anything starts, and what this run starts, its shutdown
+	// stops.
 	defer func() {
-		if err := RemoveEphemeral(d, unlock, e.Reporter); err != nil {
+		if err := emptyEphemeral(d, unlock); err != nil {
 			e.report().Warn("could not empty %s: %v", d.State, err)
 		}
 	}()
@@ -117,16 +119,14 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 
 	// What a run killed before it could clean up left behind, and the directories made again,
 	// emptied of whatever it was.
-	pid, reapErr, err := s.clearLeftovers()
-
-	switch {
-	case reapErr != nil:
-		e.report().Warn("%v", reapErr)
+	switch pid, err := s.reapLeftovers(); {
+	case err != nil:
+		e.report().Warn("%v", err)
 	case pid != 0:
 		e.report().Warn("stopped anchord (pid %d), left running by an ephemeral run that ended without stopping it", pid)
 	}
 
-	if err != nil {
+	if err := clearExcept(d.State, d.ServeLockFile()); err != nil {
 		return err
 	}
 
@@ -375,33 +375,39 @@ func untilRenewal(m *enrol.Manifest) time.Duration {
 	return min(max(time.Until(at), 0), maxSleep)
 }
 
-// RemoveEphemeral removes an ephemeral run's root e, whose lock the caller holds and lets go of
-// with unlock: the run's own, as it ends, or a killed one's, which uninstall clears. Whatever
-// was left running is stopped and the root emptied but for its lock while the lock is held, so
-// a run that takes it the moment it is let go is never emptied out from under itself; then the
-// lock is let go, and the lock file and the root, which is empty unless such a run has taken
-// it, are removed, nothing more.
+// RemoveEphemeral removes a killed ephemeral run's root e, as uninstall clears it, whose lock the
+// caller holds and lets go of with unlock: whatever the run left running is stopped first, and
+// then the root is emptied and removed (emptyEphemeral).
 func RemoveEphemeral(e paths.Dirs, unlock func(), r Reporter) error {
-	_, reapErr, err := (&Supervisor{Dirs: e, Reporter: r, ephemeral: true}).clearLeftovers()
+	_, reapErr := (&Supervisor{Dirs: e, Reporter: r, ephemeral: true}).reapLeftovers()
+
+	return errors.Join(reapErr, emptyEphemeral(e, unlock))
+}
+
+// emptyEphemeral empties an ephemeral run's root e but for its lock while the lock is held, so a
+// run that takes it the moment it is let go is never emptied out from under itself; then lets go
+// of the lock with unlock, and removes the lock file and the root, which is empty unless such a
+// run has taken it, nothing more. It says why the root could not be emptied.
+func emptyEphemeral(e paths.Dirs, unlock func()) error {
+	err := clearExcept(e.State, e.ServeLockFile())
 
 	unlock()
 
 	_ = os.Remove(e.ServeLockFile())
 	_ = os.Remove(e.State)
 
-	return errors.Join(reapErr, err)
+	return err
 }
 
-// clearLeftovers stops what a run killed before it could clean up left running from the root --
+// reapLeftovers stops what a run killed before it could clean up left running from the root --
 // its anchord, where nothing ended it with that run (macOS and the BSDs), and whatever runs as
-// the ephemeral account -- and empties the root but for its lock, which the caller holds. It
-// says which anchord it stopped, why it could not, and why the root could not be emptied.
-func (s *Supervisor) clearLeftovers() (pid int, reapErr, err error) {
-	pid, reapErr = ReapOrphan(s.Dirs)
+// the ephemeral account -- and says which anchord it stopped, or why it could not.
+func (s *Supervisor) reapLeftovers() (pid int, err error) {
+	pid, err = ReapOrphan(s.Dirs)
 
 	s.killLeftovers()
 
-	return pid, reapErr, clearExcept(s.Dirs.State, s.Dirs.ServeLockFile())
+	return pid, err
 }
 
 // clearExcept removes everything in dir but keep: what a run killed before it could clean up

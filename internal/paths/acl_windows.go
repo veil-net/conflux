@@ -209,7 +209,8 @@ func restrictedDir(create func(sd *windows.SECURITY_DESCRIPTOR) error) error {
 // opened on the root while its DACL let them write it, which keeps the rights it was opened with,
 // can no longer make a junction of it, and the run directory, SYSTEM's and the Administrators', is
 // not theirs to remove. Anything already there by that name does the same, and is judged with the
-// rest of what the root holds (contents).
+// rest of what the root holds (contents). A root whose DACL does not let this account create a
+// folder in it is refused, saying so: it is filled before anything else, its DACL as found.
 func fill(dir string, h windows.Handle) error {
 	filling(dir)
 
@@ -226,11 +227,17 @@ func fill(dir string, h windows.Handle) error {
 		return err
 	}
 
-	if filled != nil && !errors.Is(filled, windows.ERROR_ALREADY_EXISTS) {
-		return fmt.Errorf("create %s in %s: %w", runName, dir, filled)
+	switch {
+	case filled == nil, errors.Is(filled, windows.ERROR_ALREADY_EXISTS):
+		return nil
+	case errors.Is(filled, windows.ERROR_ACCESS_DENIED):
+		return fmt.Errorf("conflux could not add %s to %s, whose DACL does not let this account create a folder in "+
+			"it: conflux adds %s before it judges or restricts a root, so that no handle opened on the root earlier "+
+			"can make a junction of it.\n  Give SYSTEM and the Administrators full control of %s, then run this "+
+			"again as Administrator", runName, dir, runName, dir)
 	}
 
-	return nil
+	return fmt.Errorf("create %s in %s: %w", runName, dir, filled)
 }
 
 // filling is called before secure fills a root: nothing, but where a test turns the root into a
@@ -489,8 +496,11 @@ func secured(sd *windows.SECURITY_DESCRIPTOR) bool {
 // which keeps the rights it was opened with, can repoint nothing anybody reaches by the name.
 // Something made at the name before conflux makes its own is refused, naming where the junction
 // led and saying to make it again first: with nothing at the name, the next run would make a root
-// afresh there, and the machine a new identity. So is a directory that cannot be named by its
-// volume, a network share's, which a junction cannot lead to. r.self is the new junction after.
+// afresh there, and the machine a new identity. A failure to make or point its own says the same;
+// a kill in that instant says nothing, and leaves conflux's empty directory at the name, which
+// windows.md tells an operator to make the junction again in place of. So is a directory that
+// cannot be named by its volume, a network share's, which a junction cannot lead to. r.self is
+// the new junction after.
 func replaceLink(dir string, r *held) error {
 	target, err := leadsTo(dir, r.dir)
 	if err != nil {
@@ -507,8 +517,9 @@ func replaceLink(dir string, r *held) error {
 		leads = target
 	}
 
-	remake := `Remove it and make the junction again, mklink /J "` + dir + `" "` + leads + `", then run this ` +
-		"again as Administrator; with nothing there, conflux would make a new root, and the machine a new identity"
+	remake := `Remove whatever is at its name and make the junction again, mklink /J "` + dir + `" "` + leads +
+		`", then run this again as Administrator; with nothing there, conflux would make a new root, and the ` +
+		"machine a new identity"
 
 	parent, err := openFile(filepath.Dir(dir), windows.FILE_READ_ATTRIBUTES, true)
 	if err != nil {
@@ -539,13 +550,13 @@ func replaceLink(dir string, r *held) error {
 		return fmt.Errorf("%s was made again by somebody else while conflux replaced the junction there, which led "+
 			"to %s, so conflux will not use it.\n  %s", dir, leads, remake)
 	case err != nil:
-		return fmt.Errorf("make a junction of conflux's own at %s: %w", dir, err)
+		return fmt.Errorf("make a junction of conflux's own at %s: %w\n  %s", dir, err, remake)
 	}
 
 	r.self = link
 
 	if err := setMountPoint(link, `\??\`+strings.TrimPrefix(target, `\\?\`), shown); err != nil {
-		return fmt.Errorf("point the junction %s at %s: %w", dir, target, err)
+		return fmt.Errorf("point the junction %s at %s: %w\n  %s", dir, leads, err, remake)
 	}
 
 	led, err := openFile(dir, windows.FILE_READ_ATTRIBUTES, true)

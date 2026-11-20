@@ -545,6 +545,29 @@ func TestSecureFillsTheRoot(t *testing.T) {
 	}
 }
 
+// TestSecureSaysWhyItCannotFillARoot: secure makes a found root hold its run directory before it
+// judges or restricts it, under its DACL as found, so a root whose DACL does not let this account
+// create a folder in it is refused there, naming it and saying why, rather than with a bare access
+// denied. Windows-only, so it runs in CI's platforms job alone.
+func TestSecureSaysWhyItCannotFillARoot(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", "")
+
+	root := filepath.Join(t.TempDir(), "conflux")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	// Full control but FILE_ADD_SUBDIRECTORY (0x4), for this account alone.
+	me := currentUser().String()
+	setSecurity(t, root, "O:"+me+"D:P(A;;0x1f01fb;;;"+me+")")
+
+	if err := secure(root); err == nil || !strings.Contains(err.Error(), "could not add "+runName+" to "+root+
+		", whose DACL") {
+		t.Errorf("secure(a root this account may not create a folder in) = %v, want a refusal saying it could not "+
+			"add %s to it, and why", err, runName)
+	}
+}
+
 // TestSecureHoldsWhatTheRootHolds: what a root found unrestricted holds is judged, by secure before
 // it restricts the root and by Foreign, by its own owner and DACL, read without following it, and
 // held to who may write it, move it or point it elsewhere: a junction, which conflux makes none of

@@ -4,9 +4,17 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"syscall"
 
 	"github.com/veil-net/conflux/internal/ui"
 )
+
+// forwarded are the signals that end a process. On Unix conflux passes each on to the anchorctl
+// it runs as a child (runForwarding): sent to conflux's PID alone -- by kill, a service manager
+// stopping it, a hangup -- they would otherwise end conflux, or be caught by it, and leave
+// anchorctl running. Once an ephemeral run's first has stopped it, the next ends conflux at once
+// (secondSignalEnds).
+var forwarded = []os.Signal{syscall.SIGTERM, syscall.SIGHUP, syscall.SIGINT}
 
 // runAnchorctl runs anchorctl as a child and ends as it ends: what Windows does in place of
 // execve, and what usage and a socket the user named do everywhere, since each waits to remove

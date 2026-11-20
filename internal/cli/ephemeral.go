@@ -4,11 +4,9 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"os"
 	"os/signal"
 	"runtime"
 	"strings"
-	"syscall"
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
@@ -171,13 +169,13 @@ func (r *ephemeralRun) root(cfg *config.Config, args []string) error {
 }
 
 // secondSignalEnds lets the first signal stop a run cleanly, by ending ctx, and waits for no
-// second: once ctx ends the handlers go, so the next interrupt, SIGTERM or hangup ends conflux
-// at once, and anchord with it. One conflux was started ignoring (catches) is ignored still:
-// Reset puts back the ignore it found.
+// second: once ctx ends the handlers of the forwarded signals go, so the next interrupt, SIGTERM
+// or hangup ends conflux at once, and anchord with it. One conflux was started ignoring
+// (catches) is ignored still: Reset puts back the ignore it found.
 func secondSignalEnds(ctx context.Context) {
 	go func() {
 		<-ctx.Done()
-		signal.Reset(os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+		signal.Reset(forwarded...)
 	}()
 }
 

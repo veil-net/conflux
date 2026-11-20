@@ -34,11 +34,6 @@ func execAnchorctl(_ context.Context, bin string, args []string, env []string) i
 	return ExitOK // unreachable: Exec does not return on success
 }
 
-// forwarded are the signals that end a process, which conflux passes on to the anchorctl it
-// runs as a child: sent to conflux's PID alone -- by kill, a service manager stopping it, a
-// hangup -- they would otherwise end conflux, or be caught by it, and leave anchorctl running.
-var forwarded = []os.Signal{syscall.SIGTERM, syscall.SIGHUP, syscall.SIGINT}
-
 // runForwarding runs cmd to its end, passing each forwarded signal conflux catches on to it,
 // and calls done once it has ended, still forwarding, so no signal ends conflux before done
 // has run. Ctrl+C at the terminal reaches anchorctl from the terminal as well, as a second

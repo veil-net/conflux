@@ -18,11 +18,11 @@ import (
 	"github.com/veil-net/conflux/internal/pathstest"
 )
 
-// runningStandIn makes d's daemon look running to status -- its socket and token there -- and
-// puts a stand-in anchorctl where d's extracted pair is found whole: a script that writes each
-// command it is run with to a line of log, says an anchor runs, and says the export was set by
-// a call to anchorctl export. Its anchord never runs. Each is padded to its embedded binary's
-// size, which is what finding a pair whole checks.
+// runningStandIn makes d's daemon look running (looksRunning), and puts a stand-in anchorctl
+// where d's extracted pair is found whole: a script that writes each command it is run with to a
+// line of log, says an anchor runs, and says the export was set by a call to anchorctl export.
+// Its anchord never runs. Each is padded to its embedded binary's size, which is what finding a
+// pair whole checks.
 func runningStandIn(t *testing.T, d paths.Dirs, log string) {
 	t.Helper()
 
@@ -52,6 +52,14 @@ func runningStandIn(t *testing.T, d paths.Dirs, log string) {
 			t.Fatal(err)
 		}
 	}
+
+	looksRunning(t, d)
+}
+
+// looksRunning makes d's daemon look running to status and the pass-through: its socket and its
+// token there. Nothing listens on the socket.
+func looksRunning(t *testing.T, d paths.Dirs) {
+	t.Helper()
 
 	if err := os.MkdirAll(d.DaemonRun(), 0o700); err != nil {
 		t.Fatal(err)

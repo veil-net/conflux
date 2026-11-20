@@ -11,7 +11,6 @@ import (
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/config"
-	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
 	"github.com/veil-net/conflux/internal/ui"
 )
@@ -86,28 +85,8 @@ func TestAPassThroughToANamedSocketMakesNothing(t *testing.T) {
 func TestAnEmptySocketVariableIsUnset(t *testing.T) {
 	anchortest.Require(t)
 
-	root := t.TempDir()
-	if err := os.Chmod(root, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	t.Setenv("CONFLUX_DIR", root)
-
-	// conflux's daemon, as far as the pass-through can tell: its socket and its token there.
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.MkdirAll(d.DaemonRun(), 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	for path, b := range map[string]string{d.Socket(): "", d.TokenFile(): "token\n"} {
-		if err := os.WriteFile(path, []byte(b), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
+	d := pathstest.Dirs(t)
+	looksRunning(t, d)
 
 	// The child TestAPassThroughToANamedSocketMakesNothing makes of this test binary.
 	cmd := exec.Command(os.Args[0], "-test.run=^TestAPassThroughToANamedSocketMakesNothing$") //nolint:gosec // this test binary

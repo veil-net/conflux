@@ -247,6 +247,17 @@ func TestSwitchingAnAnchorToObservingIsConfirmed(t *testing.T) {
 	}
 }
 
+// rootOnLinux runs conflux observe, for the rest of the test, as root on a host with a capture,
+// whoever runs the test on whichever host.
+func rootOnLinux(t *testing.T) {
+	t.Helper()
+
+	was, elevated := hostOS, privcheck.Elevated
+	hostOS, privcheck.Elevated = "linux", func() bool { return true }
+
+	t.Cleanup(func() { hostOS, privcheck.Elevated = was, elevated })
+}
+
 // TestObserveChecksTheTaintBeforeItAsks: switching an anchor to observing is confirmed, and a
 // --taint the held credential does not grant is refused before that, with nothing asked and
 // nothing changed: an answer given only to be told a flag was wrong is an answer given twice.
@@ -255,10 +266,7 @@ func TestObserveChecksTheTaintBeforeItAsks(t *testing.T) {
 		t.Skip("this test's stdin is a terminal")
 	}
 
-	was, elevated := hostOS, privcheck.Elevated
-	hostOS, privcheck.Elevated = "linux", func() bool { return true }
-
-	t.Cleanup(func() { hostOS, privcheck.Elevated = was, elevated })
+	rootOnLinux(t)
 
 	d := pathstest.Dirs(t)
 
@@ -297,10 +305,7 @@ func TestObserveAsksBeforeItMints(t *testing.T) {
 		t.Skip("this test's stdin is a terminal")
 	}
 
-	was, elevated := hostOS, privcheck.Elevated
-	hostOS, privcheck.Elevated = "linux", func() bool { return true }
-
-	t.Cleanup(func() { hostOS, privcheck.Elevated = was, elevated })
+	rootOnLinux(t)
 
 	for name, have := range map[string]*config.Config{
 		"tun":   {Mode: config.ModeTUN},
@@ -386,10 +391,7 @@ func TestALapsedObserverPointsAtConfluxRenew(t *testing.T) {
 // it enrols when it holds none, and keeps them in conflux.json for the supervisor, which
 // enrols.
 func TestObserveEnrolsAsUpDoes(t *testing.T) {
-	was, elevated := hostOS, privcheck.Elevated
-	hostOS, privcheck.Elevated = "linux", func() bool { return true }
-
-	t.Cleanup(func() { hostOS, privcheck.Elevated = was, elevated })
+	rootOnLinux(t)
 
 	d := pathstest.Dirs(t)
 	standInService(t, &fakeManager{d: d, restartErr: errStartsNothing})

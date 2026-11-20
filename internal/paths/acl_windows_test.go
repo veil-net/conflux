@@ -1278,9 +1278,11 @@ func TestAReaderRefusesARootItCannotRead(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := checkRoot(root); !errors.Is(err, windows.ERROR_ACCESS_DENIED) || !strings.Contains(err.Error(), root) {
-		t.Errorf("checkRoot(a root whose DACL denies everybody the right to read it) = %v, want %v, naming it", err,
-			windows.ERROR_ACCESS_DENIED)
+	for name, judge := range map[string]func(string) error{"checkRoot": checkRoot, "Foreign": Foreign} {
+		if err := judge(root); !errors.Is(err, windows.ERROR_ACCESS_DENIED) || !strings.Contains(err.Error(), root) {
+			t.Errorf("%s(a root whose DACL denies everybody the right to read it) = %v, want %v, naming it", name, err,
+				windows.ERROR_ACCESS_DENIED)
+		}
 	}
 
 	absent := filepath.Join(t.TempDir(), "absent")
@@ -1328,8 +1330,9 @@ func TestAReaderTakesCreatorOwnerAsSecureDoes(t *testing.T) {
 // and changing nothing: a root EnsureAll made passes, and one this account owns that grants Users
 // the right to add a file to it is refused, naming it and Users, and left with that grant, by Foreign
 // too, which is this check before it looks inside; so is one that only inherits %ProgramData%'s
-// grant to Users, which conflux never leaves a root with, though secure restricts it. Where no root
-// is there Check is fs.ErrNotExist. Windows-only, so it runs in CI's platforms job alone.
+// grant to Users, which conflux never leaves a root with, though secure restricts it, and one whose
+// own DACL grants Users nothing on it and full control of what is made in it (inherit-only). Where
+// no root is there Check is fs.ErrNotExist. Windows-only, so it runs in CI's platforms job alone.
 func TestCheckHoldsARootAsAReaderNeeds(t *testing.T) {
 	made := filepath.Join(t.TempDir(), "conflux")
 	t.Setenv("CONFLUX_DIR", made)
@@ -1365,6 +1368,14 @@ func TestCheckHoldsARootAsAReaderNeeds(t *testing.T) {
 
 	if err := checkRoot(inherits); err == nil || !strings.Contains(err.Error(), inherits) || !strings.Contains(err.Error(), "Users") {
 		t.Errorf("checkRoot(a root inheriting %%ProgramData%%'s grant to Users) = %v, want a refusal naming it and Users", err)
+	}
+
+	passes := foundRoot(t)
+	setSecurity(t, passes, "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICIIO;FA;;;BU)")
+
+	if err := checkRoot(passes); err == nil || !strings.Contains(err.Error(), passes) || !strings.Contains(err.Error(), "Users") {
+		t.Errorf("checkRoot(a root passing Users full control of what is made in it) = %v, want a refusal naming it "+
+			"and Users", err)
 	}
 
 	users := wellKnown(windows.WinBuiltinUsersSid)

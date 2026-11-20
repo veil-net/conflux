@@ -225,6 +225,9 @@ func liveEphemeral() (paths.Dirs, bool) {
 // foreignRoot is paths.Foreign, which a test points at a root it made.
 var foreignRoot = paths.Foreign
 
+// statLock is os.Stat, for a root's lock, which a test counts.
+var statLock = os.Stat
+
 // ephemeralRuns is what the ephemeral roots hold, read in one pass: the root of the run that is
 // running, whose lock is held, and the root a run that was killed left behind, its lock there
 // with nobody holding it -- the first of each, or nil.
@@ -234,8 +237,16 @@ var foreignRoot = paths.Foreign
 // and an anchorctl of their own in it, which a reader taking it for a run would run.
 func ephemeralRuns() (live, stale *paths.Dirs) {
 	for _, root := range paths.EphemeralCandidates() {
+		// Who made the root first, and nothing beneath it before that: what is in a root another
+		// account made is theirs, links included, and a look at its lock would follow a link there
+		// wherever they pointed it -- on Windows to a share this account then signs in to, on Unix
+		// to an automount that hangs.
+		if foreignRoot(root) != nil {
+			continue
+		}
+
 		d := paths.EphemeralDirs(root)
-		if _, err := os.Stat(d.ServeLockFile()); err != nil || foreignRoot(root) != nil {
+		if _, err := statLock(d.ServeLockFile()); err != nil {
 			continue
 		}
 

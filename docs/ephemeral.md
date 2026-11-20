@@ -121,7 +121,8 @@ another conflux reaching into its root then would get in its way. A killed run's
 it was up is not taken for the next run's: it counts only while the conflux that wrote it
 runs. Neither `status` nor
 pass-through ever writes into a run's root, and a root another account made is no run's to
-them, whatever lock, marker or binaries it holds: they pass it over, as `uninstall` does. Pass-through — `conflux peers`,
+them, whatever lock, marker or binaries it holds: they pass it over, as `uninstall` does,
+looking at nothing inside it and following no link there. Pass-through — `conflux peers`,
 `conflux blocks`, every anchorctl command — reaches the ephemeral anchor when it is the
 only one running, once it is up.
 With an installed anchor running too, it reaches that one unless `CONFLUX_EPHEMERAL=1` is

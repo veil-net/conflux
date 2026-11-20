@@ -149,7 +149,8 @@ func TestAReaderTakesAnEphemeralRunsPairAsItIs(t *testing.T) {
 // TestAReaderPassesOverARootAnotherAccountMade: /tmp lets anybody make the name a user's
 // ephemeral root has, and fill it with a held lock, a readiness marker and an anchorctl of
 // their own. A root another account made is no run's -- a run will not be kept in one -- so
-// status, pass-through and uninstall pass it over, and nothing runs what it holds.
+// status, pass-through and uninstall pass it over, and nothing runs what it holds. Nor do they
+// look inside it first: a link there could lead them anywhere its maker chose.
 func TestAReaderPassesOverARootAnotherAccountMade(t *testing.T) {
 	d := startingEphemeral(t)
 
@@ -157,9 +158,22 @@ func TestAReaderPassesOverARootAnotherAccountMade(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	looked := 0
+
+	defer func(was func(string) (os.FileInfo, error)) { statLock = was }(statLock)
+	statLock = func(name string) (os.FileInfo, error) {
+		if strings.HasPrefix(name, d.State+string(filepath.Separator)) {
+			looked++
+		}
+
+		return os.Stat(name)
+	}
+
+	foreign := true
+
 	defer func(was func(string) error) { foreignRoot = was }(foreignRoot)
 	foreignRoot = func(root string) error {
-		if root == d.State {
+		if foreign && root == d.State {
 			return errors.New(root + " belongs to another account")
 		}
 
@@ -168,5 +182,16 @@ func TestAReaderPassesOverARootAnotherAccountMade(t *testing.T) {
 
 	if live, stale := ephemeralRuns(); live != nil || stale != nil {
 		t.Errorf("a root another account made, with a held lock and a marker, was taken for a run: live %v, stale %v", live, stale)
+	}
+
+	if looked > 0 {
+		t.Errorf("a root another account made was looked inside %d times before it was passed over", looked)
+	}
+
+	// The same root, this account's, is looked in, and is the run.
+	foreign = false
+
+	if live, _ := ephemeralRuns(); live == nil || live.State != d.State || looked == 0 {
+		t.Errorf("this account's root, looked inside %d times, gave the run %v, want %s", looked, live, d.State)
 	}
 }

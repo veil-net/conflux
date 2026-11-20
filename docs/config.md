@@ -18,7 +18,7 @@ account of its own.
 | token, anchord's pid | `/run/conflux/` | `/var/run/conflux/` | `%ProgramData%\conflux\run\` | `/var/run/conflux/` |
 | anchord's socket | `/run/conflux/anchord/sock` | `/var/run/conflux/anchord/sock` | `%ProgramData%\conflux\run\anchord\sock` | `/var/run/conflux/anchord/sock` |
 
-`CONFLUX_DIR` roots all of them in one directory, and the boot service with them — it is named after the root, so a run under it is a separate installation rather than a replacement for the machine's own. See [testing.md](testing.md). Every directory above it must be one only root (SYSTEM and the Administrators on Windows) and the account running conflux can change, or a sticky one such as `/tmp`; another is refused, named, since whoever can change it can put another root in this one's place ([security.md](security.md#the-extracted-binaries)).
+`CONFLUX_DIR` roots all of them in one directory, and the boot service with them — it is named after the root, so a run under it is a separate installation rather than a replacement for the machine's own. See [testing.md](testing.md). Every directory above it must be one only root (SYSTEM and the Administrators on Windows) and the account running conflux can change, or a sticky one such as `/tmp`; another is refused, named, since whoever can change it can put another root in this one's place ([security.md](security.md#the-extracted-binaries)). On Windows it must be on one of the machine's own volumes: a share, or a drive mapped to one, is refused, with nothing made there.
 
 Every directory is `0700` — one found wider is narrowed, and one another account owns is refused —
 and every file conflux writes there is `0600`, apart from the programs it runs (the extracted pair

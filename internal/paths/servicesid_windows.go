@@ -9,7 +9,7 @@ import (
 )
 
 // rtlCreateServiceSid is ntdll's: the SID Windows gives a service, from its name alone.
-var rtlCreateServiceSid = windows.NewLazySystemDLL("ntdll.dll").NewProc("RtlCreateServiceSid")
+var rtlCreateServiceSid = ntdll.NewProc("RtlCreateServiceSid")
 
 // securityMaxSIDSize is SECURITY_MAX_SID_SIZE, room for any SID.
 const securityMaxSIDSize = 68

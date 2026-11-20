@@ -105,11 +105,13 @@ once the root is restricted, and on every run after — is refused rather than r
 every reader of an ephemeral root too, as is a junction in it, and a root that is itself a
 junction another account may point elsewhere; one nobody else may is replaced with a junction
 conflux makes, through its own handle, leading to the directory it judged (see
-[windows.md](windows.md#file-permissions)). One gap is left: a junction root already SYSTEM's or
-the Administrators' under a protected DACL granting nobody else the right to write it, add to it,
-move it or change who may, as conflux leaves the one it makes, is taken as conflux's and not
-replaced, so where an administrator tightened a junction to that after another account had opened
-it under a looser DACL, the handle that account kept can still point it elsewhere.
+[windows.md](windows.md#file-permissions)). A root on a network volume, however it is reached, is
+refused, by every reader of an ephemeral root too, as the volume conflux holds it open on says. One
+gap is left: a junction root already SYSTEM's or the Administrators' under a protected DACL granting
+nobody else the right to write it, add to it, move it or change who may, as conflux leaves the one
+it makes, is taken as conflux's and not replaced, so where an administrator tightened a junction to
+that after another account had opened it under a looser DACL, the handle that account kept can still
+point it elsewhere.
 
 `CONFLUX_DIR` can point the extraction somewhere else, which is a knob worth knowing
 about: it lets a caller choose the directory a root daemon executes from. It exists
@@ -170,9 +172,12 @@ right to create folders in it, which `C:\` gives every user, is not one of them.
 junction on the way is held as well to whoever may point it elsewhere or write it: the right to
 write its data or its attributes is enough to rewrite where a junction leads. A compound entry
 counts as one that allows, for its client, and a DACL holding an entry of a type Windows does
-not document is refused rather than read as granting nobody. The root is used as an absolute
-path, so the service registered under it runs from where it was installed whatever the working
-directory was.
+not document is refused rather than read as granting nobody. A `CONFLUX_DIR` on a network
+volume — a share, a drive mapped to one, or a link leading to either — is refused, before anything
+is made there, whatever the directories above it allow, since their owners and DACLs, and its own,
+name accounts of the machine serving it, which this one cannot judge. The root is used as an
+absolute path, so the service registered under it runs from where it was installed whatever the
+working directory was.
 
 ## What anchord runs as
 

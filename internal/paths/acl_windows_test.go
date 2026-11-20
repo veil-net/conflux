@@ -296,13 +296,16 @@ func TestSecureHoldsAJunctionRoot(t *testing.T) {
 	}
 }
 
-// TestALinkRootLeadingToAShareIsRefused: a junction of conflux's can lead only to a directory named
-// by its volume's GUID, which a network share's has none of, so a root that is a link leading to a
-// share is refused by secure, which could not replace it, and by Foreign alike, naming it: whoever
-// reads an ephemeral root holds a link root to where it leads as secure does. The share is a folder
-// of this machine's, reached through its own server. Windows-only, so it runs in CI's platforms job
-// alone, and skipped where the machine will not share a folder.
-func TestALinkRootLeadingToAShareIsRefused(t *testing.T) {
+// TestARootOnANetworkVolumeIsRefused: who owns what a network volume holds, and whom its DACLs
+// grant, are the accounts of the machine serving it, which this one cannot judge, so a root on
+// one is refused by secure and by Foreign alike, naming it and the network volume, as the device
+// its handle is open on says and not as it is spelled: reached by its UNC path, through a drive
+// mapped to the share, or through a link leading to it. Nothing is made there: secure refuses it
+// before it fills it, and a CONFLUX_DIR there that is not made yet is refused by EnsureAll before
+// it makes the root or anything above it. The share is a folder of this machine's, reached through
+// its own server. Windows-only, so it runs in CI's platforms job alone, and skipped where the
+// machine will not share a folder.
+func TestARootOnANetworkVolumeIsRefused(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
 	dir := t.TempDir()
@@ -310,17 +313,38 @@ func TestALinkRootLeadingToAShareIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	share := privtest.Share(t, dir)
+	unc := filepath.Join(share, "conflux")
+
 	link := filepath.Join(t.TempDir(), "link")
-	if err := os.Symlink(filepath.Join(privtest.Share(t, dir), "conflux"), link); err != nil {
+	if err := os.Symlink(unc, link); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := Foreign(link); err == nil || !strings.Contains(err.Error(), link) {
-		t.Errorf("Foreign(a link leading to a share) = %v, want a refusal naming it", err)
+	drive := privtest.MapDrive(t, share)
+
+	for _, root := range []string{unc, filepath.Join(drive, "conflux"), link} {
+		for name, judge := range map[string]func(string) error{"Foreign": Foreign, "secure": secure} {
+			if err := judge(root); err == nil || !strings.Contains(err.Error(), root+" is on a network volume") {
+				t.Errorf("%s(%s) = %v, want a refusal naming it and the network volume", name, root, err)
+			}
+		}
 	}
 
-	if err := secure(link); err == nil || !strings.Contains(err.Error(), link) {
-		t.Errorf("secure(a link leading to a share) = %v, want a refusal naming it", err)
+	if _, err := os.Lstat(filepath.Join(dir, "conflux", runName)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("secure made %s in a root on a network volume it refused (%v)", runName, err)
+	}
+
+	for _, root := range []string{filepath.Join(share, "made", "conflux"), filepath.Join(drive, "made", "conflux")} {
+		t.Setenv("CONFLUX_DIR", root)
+
+		if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), root+" is on a network volume") {
+			t.Errorf("EnsureAll(a CONFLUX_DIR of %s) = %v, want a refusal naming it and the network volume", root, err)
+		}
+	}
+
+	if _, err := os.Lstat(filepath.Join(dir, "made")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("EnsureAll made the way to a CONFLUX_DIR on a network volume it refused (%v)", err)
 	}
 }
 

@@ -108,8 +108,14 @@ func restrictInfo(owner *windows.SID) windows.SECURITY_INFORMATION {
 // set as it is made (MakeRestricted), so that it never carries what %ProgramData% passes on --
 // Users' right to create in it, enough to turn an empty directory into a junction -- not even for
 // an instant. The directories above it are made as MkdirAll makes them. One already there is
-// secure's.
+// secure's. Before anything is made, the nearest of dir and the directories above it that is there
+// is held to remote, as secure holds a root: a CONFLUX_DIR on a network volume is refused with
+// nothing made there.
 func makeRoot(dir string) error {
+	if err := remoteAbove(dir); err != nil {
+		return err
+	}
+
 	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
 		return err
 	}
@@ -119,6 +125,27 @@ func makeRoot(dir string) error {
 	}
 
 	return nil
+}
+
+// remoteAbove is remote of the nearest of dir and the directories above it that is there, opened by
+// following its name, or nil where none of them is.
+func remoteAbove(dir string) error {
+	for p := dir; ; p = filepath.Dir(p) {
+		h, err := openFile(p, windows.FILE_READ_ATTRIBUTES, true)
+		switch {
+		case errors.Is(err, windows.ERROR_FILE_NOT_FOUND), errors.Is(err, windows.ERROR_PATH_NOT_FOUND):
+			if filepath.Dir(p) == p {
+				return nil
+			}
+
+			continue
+		case err != nil:
+			return fmt.Errorf("read %s: %w", p, err)
+		}
+		defer windows.CloseHandle(h)
+
+		return remote(dir, h)
+	}
 }
 
 // MakeRestricted is makeDir with Restrict's ownership and DACL: Administrators', or the creating
@@ -421,7 +448,8 @@ func secure(dir string) error {
 		case err != nil:
 			return err
 		case who == "":
-			// Taken as conflux's, a link leads where one of conflux's could: never to a network share.
+			// Taken as conflux's, a link leads where one of conflux's could: to a directory its volume's
+			// GUID names.
 			if root.link != nil {
 				if _, err := leadsTo(dir, root.dir); err != nil {
 					return err
@@ -501,8 +529,8 @@ func secured(sd *windows.SECURITY_DESCRIPTOR) bool {
 // afresh there, and the machine a new identity. A failure to make or point its own says the same;
 // a kill in that instant says nothing, and leaves conflux's empty directory at the name, which
 // windows.md tells an operator to make the junction again in place of. So is a directory that
-// cannot be named by its volume, a network share's, which a junction cannot lead to. r.self is
-// the new junction after.
+// cannot be named by its volume's GUID, which a junction cannot lead to (leadsTo). r.self is the
+// new junction after.
 func replaceLink(dir string, r *held) error {
 	target, err := leadsTo(dir, r.dir)
 	if err != nil {
@@ -576,8 +604,9 @@ func replaceLink(dir string, r *held) error {
 }
 
 // leadsTo is where dir, a junction or a link, leads, the directory h holds open, named by its
-// volume's GUID, as a junction of conflux's can lead to it; one that has no such name, a network
-// share's, which a junction cannot lead to, is refused.
+// volume's GUID, as a junction of conflux's can lead to it; one that has no such name, which a
+// junction cannot lead to -- a network share's, which heldRoot refuses first (remote), or a local
+// volume's the mount manager does not name -- is refused.
 func leadsTo(dir string, h windows.Handle) (string, error) {
 	target, err := finalPath(h, volumeNameGUID)
 	if err != nil {
@@ -726,7 +755,8 @@ func Foreign(dir string) error {
 	}
 	defer root.close()
 
-	// A link leads where one of conflux's could, as secure holds one: never to a network share.
+	// A link leads where one of conflux's could, as secure holds one: to a directory its volume's GUID
+	// names.
 	if root.link != nil {
 		if _, err := leadsTo(dir, root.dir); err != nil {
 			return err
@@ -797,8 +827,8 @@ func (r *held) close() {
 // where the link led as it was judged answers for nothing; secure replaces it with one of its own
 // leading to the directory opened (replaceLink), which nobody may have held open before. Where the
 // directory is that is not a plain directory either, it is refused: there is nothing further to
-// follow. A root that could not be opened or read, or whose link leads nowhere, is refused as
-// unopened.
+// follow; so is one on a network volume (remote). A root that could not be opened or read, or
+// whose link leads nowhere, is refused as unopened.
 func heldRoot(dir string, access uint32) (held, error) {
 	self, err := openFile(dir, access, false)
 	if err != nil {
@@ -846,8 +876,68 @@ func heldRoot(dir string, access uint32) (held, error) {
 		return held{}, err
 	}
 
+	if err := remote(dir, r.dir); err != nil {
+		r.close()
+
+		return held{}, err
+	}
+
 	return r, nil
 }
+
+// remote refuses dir, whose directory h holds open, where that is on a network volume -- a share
+// reached by its UNC path, a drive mapped to one, or a link leading to either -- as the device the
+// volume is on says of itself (FILE_FS_DEVICE_INFORMATION, which GetDriveType reads DRIVE_REMOTE
+// from), and not as dir is spelled. Who owns what is there, and whom its DACL grants, are the
+// accounts of the machine serving it -- its Administrators are not this machine's -- which this one
+// cannot judge, as no junction of conflux's could lead there either (leadsTo).
+func remote(dir string, h windows.Handle) error {
+	var (
+		info struct{ deviceType, characteristics uint32 } // FILE_FS_DEVICE_INFORMATION
+		iosb windows.IO_STATUS_BLOCK
+	)
+
+	r, _, _ := ntQueryVolumeInformationFile.Call(uintptr(h), uintptr(unsafe.Pointer(&iosb)),
+		uintptr(unsafe.Pointer(&info)), unsafe.Sizeof(info), fileFsDeviceInformation)
+	if status := windows.NTStatus(r); status != windows.STATUS_SUCCESS {
+		return fmt.Errorf("read the volume %s is on: %w", dir, status.Errno())
+	}
+
+	switch {
+	case info.characteristics&fileRemoteDevice != 0:
+	case info.deviceType == fileDeviceNetwork, info.deviceType == fileDeviceNetworkFileSystem,
+		info.deviceType == fileDeviceMultiUNCProvider, info.deviceType == fileDeviceDFS,
+		info.deviceType == fileDeviceDFSFileSystem, info.deviceType == fileDeviceDFSVolume:
+	default:
+		return nil
+	}
+
+	return fmt.Errorf("%s is on a network volume, or leads to one, so conflux will not use it: who owns what is "+
+		"there, and whom its DACL grants, are accounts of the machine serving it, which this one cannot judge.\n"+
+		"  Keep it on a volume of this machine's own, then run this again as Administrator", dir)
+}
+
+// ntQueryVolumeInformationFile is ntdll's: what the volume a handle is open on says of itself.
+var ntQueryVolumeInformationFile = ntdll.NewProc("NtQueryVolumeInformationFile")
+
+// ntdll is the native API, whose calls x/sys does not all wrap.
+var ntdll = windows.NewLazySystemDLL("ntdll.dll")
+
+// What FILE_FS_DEVICE_INFORMATION says of a volume on another machine: FileFsDeviceInformation, the
+// class that asks for it; FILE_REMOTE_DEVICE, a characteristic of the device; and the device types
+// of a network, its redirectors, the provider of UNC names and DFS.
+const (
+	fileFsDeviceInformation = 4
+
+	fileRemoteDevice = 0x10
+
+	fileDeviceDFS               = 0x06
+	fileDeviceMultiUNCProvider  = 0x10
+	fileDeviceNetwork           = 0x12
+	fileDeviceNetworkFileSystem = 0x14
+	fileDeviceDFSFileSystem     = 0x35
+	fileDeviceDFSVolume         = 0x36
+)
 
 // unopened is why heldRoot could not open or read a root: it is not there, or this account may
 // not read it.

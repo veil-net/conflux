@@ -316,3 +316,47 @@ func Share(tb testing.TB, dir string) string {
 
 	return unc
 }
+
+// MapDrive maps the last drive letter no volume holds to unc, a share's UNC path, in this logon
+// session, as a mapped network drive is, for as long as tb runs, and is that drive's root, Q:\.
+func MapDrive(tb testing.TB, unc string) string {
+	tb.Helper()
+
+	held, err := windows.GetLogicalDrives()
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	for l := 'Z'; l >= 'D'; l-- {
+		if held&(1<<(l-'A')) != 0 {
+			continue
+		}
+
+		drive, err := windows.UTF16PtrFromString(string(l) + ":")
+		if err != nil {
+			tb.Fatal(err)
+		}
+
+		target, err := windows.UTF16PtrFromString(unc)
+		if err != nil {
+			tb.Fatal(err)
+		}
+
+		if err := windows.DefineDosDevice(windows.DDD_NO_BROADCAST_SYSTEM, drive, target); err != nil {
+			tb.Fatalf("map %c: to %s: %v", l, unc, err)
+		}
+
+		tb.Cleanup(func() {
+			if err := windows.DefineDosDevice(windows.DDD_REMOVE_DEFINITION|windows.DDD_NO_BROADCAST_SYSTEM, drive,
+				nil); err != nil {
+				tb.Errorf("unmap %c: from %s: %v", l, unc, err)
+			}
+		})
+
+		return string(l) + `:\`
+	}
+
+	tb.Fatal("every drive letter is held")
+
+	return ""
+}

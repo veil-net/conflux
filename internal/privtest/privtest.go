@@ -5,7 +5,7 @@
 // (GrantUsers, WithUsers), %ProgramData%'s among them (ProgramDataGrant); a parent that refuses
 // what is made in it a DACL given afterwards (DenyOwnersTheirDACL); a file's owner and DACL as a
 // test reads them (ReadSecurity); and a folder shared through this machine's own server, a network
-// volume as Windows sees one (Share).
+// volume as Windows sees one (Share), and a drive mapped to it (MapDrive).
 //
 // It imports nothing of conflux's, so any package's tests can use it, paths' own among them.
 package privtest

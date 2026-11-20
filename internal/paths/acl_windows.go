@@ -329,18 +329,31 @@ func fill(dir string, h windows.Handle) error {
 	return fmt.Errorf("create %s in %s: %w", runName, dir, filled)
 }
 
-// makeIn makes the directory name in the one parent holds open, with Restrict's ownership and
-// DACL set as it is created (restrictedDir), through parent (createDir): ERROR_ALREADY_EXISTS where
-// anything is at the name, a link included, which is not followed.
+// makeIn makes the directory name in the one parent holds open (createIn), and lets it go:
+// ERROR_ALREADY_EXISTS where anything is at the name, a link included, which is not followed.
 func makeIn(parent windows.Handle, name string) error {
-	return restrictedDir(func(sd *windows.SECURITY_DESCRIPTOR) error {
-		h, err := createDir(parent, name, sd, windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES)
-		if err != nil {
-			return err
-		}
+	h, err := createIn(parent, name, windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES)
+	if err != nil {
+		return err
+	}
 
-		return windows.CloseHandle(h)
+	return windows.CloseHandle(h)
+}
+
+// createIn creates the directory name in the one parent holds open, with Restrict's ownership and
+// DACL set as it is created (restrictedDir), through parent (createDir), and holds it open for
+// access: ERROR_ALREADY_EXISTS where anything is at the name, a link included, which is not
+// followed.
+func createIn(parent windows.Handle, name string, access uint32) (windows.Handle, error) {
+	var h windows.Handle
+
+	err := restrictedDir(func(sd *windows.SECURITY_DESCRIPTOR) (err error) {
+		h, err = createDir(parent, name, sd, access)
+
+		return err
 	})
+
+	return h, err
 }
 
 // filling is called before secure fills a root: nothing, but where a test turns the root into a
@@ -633,14 +646,8 @@ func replaceLink(dir string, r *held) error {
 
 	replacing(dir)
 
-	var link windows.Handle
-
-	err = restrictedDir(func(sd *windows.SECURITY_DESCRIPTOR) (err error) {
-		link, err = createDir(parent, filepath.Base(dir), sd,
-			windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES|windows.FILE_WRITE_ATTRIBUTES|windows.FILE_WRITE_DATA)
-
-		return err
-	})
+	link, err := createIn(parent, filepath.Base(dir),
+		windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES|windows.FILE_WRITE_ATTRIBUTES|windows.FILE_WRITE_DATA)
 
 	switch {
 	case errors.Is(err, windows.ERROR_ALREADY_EXISTS):

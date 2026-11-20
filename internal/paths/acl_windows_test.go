@@ -509,7 +509,7 @@ func TestARootOnANetworkVolumeIsRefused(t *testing.T) {
 	}
 
 	// A link naming the share itself, on the way to a CONFLUX_DIR, is refused as a link before
-	// anything is looked up through it (offMachineLinks), and not as the network volume it leads to.
+	// anything is looked up through it (walk), and not as the network volume it leads to.
 	toShare := dirSymlink(t, filepath.Join(t.TempDir(), "share"), share)
 	made := filepath.Join(toShare, "conflux", "made")
 	t.Setenv("CONFLUX_DIR", made)
@@ -530,7 +530,7 @@ func TestARootOnANetworkVolumeIsRefused(t *testing.T) {
 // CONFLUX_DIR, that names a share is read for where it leads off the link itself, and refused before
 // anything follows it, which would sign this machine in to whoever serves the share: by secure and
 // checkRoot for a root of the platform's, as itself (heldRoot), and for a CONFLUX_DIR that is the
-// link or inside it by EnsureAll and checkRoot, as a link on the way to it (ancestors), before
+// link or inside it by EnsureAll and checkRoot, as a link on the way to it (walk), before
 // either looks anything up there. The share is 192.0.2.1's, TEST-NET-1, which nothing answers: a
 // lookup that followed the link would fail slowly, saying the network path was not found, not as
 // these refusals say. A link leading to nothing is refused by them too, as a link conflux cannot
@@ -556,8 +556,9 @@ func TestALinkLeadingOffThisMachineOrNowhereIsRefused(t *testing.T) {
 		}
 	}
 
-	// For a CONFLUX_DIR, by offMachineLinks, which reads the link off itself before anything looks up
-	// a name through it: makeRoot's for EnsureAll, and parents' in checkRoot for a reader of a root there.
+	// For a CONFLUX_DIR, by the walk of its way, which reads the link off itself before anything looks
+	// up a name through it: makeRoot's for EnsureAll, and parents' in checkRoot for a reader of a root
+	// there.
 	refusal := func(dir string) string { return "resolve " + dir + ": " + away + " is a link conflux cannot follow" }
 
 	for _, root := range []string{away, filepath.Join(away, "conflux")} {
@@ -1294,65 +1295,127 @@ func TestCheckHoldsARootAsAReaderNeeds(t *testing.T) {
 	}
 }
 
-// TestMakeRootGoesIntoNoNameTakenMeanwhile: the folders missing on the way to a CONFLUX_DIR are
-// made each through a handle on the one before, and gone into without following anything, so what
-// somebody else makes at a name conflux is about to make -- C:\ lets every user make a folder --
-// answers for nothing: a junction is refused, naming it, and nothing is made where it leads; a folder
-// whose DACL lets Users rename what is in it is refused, naming it, and nothing is made in it; a
+// TestMakeRootGoesIntoNoNameTakenMeanwhile: the way to a CONFLUX_DIR is walked from the top of its
+// volume, each folder judged before a name is looked up in it, and the folders missing are made each
+// through a handle on the one before and held open as they are made, so what somebody else makes at a
+// name meanwhile -- C:\ lets every user make a folder -- answers for nothing it was not judged for.
+// Planted at the name the walk looks up, and at each it makes: a junction is followed and judged where
+// the walk meets it, and refused, naming it, where it was made once conflux was making the name, with
+// nothing made where it leads; a folder whose DACL lets Users rename what is in it is refused, naming
+// it, before anything is made in it, but at the root's own name, which is the root, by secure; and a
 // plain one, as a conflux making the same root at once makes, is gone into. Windows-only, so it runs
 // in CI's platforms job alone.
 func TestMakeRootGoesIntoNoNameTakenMeanwhile(t *testing.T) {
-	was := making
-	t.Cleanup(func() { making = was })
+	was := looking
+	t.Cleanup(func() { looking = was })
 
-	elsewhere := t.TempDir()
+	// fresh is a base to make made\conflux in, with CONFLUX_DIR set to it.
+	fresh := func(t *testing.T) (step, root string) {
+		step = filepath.Join(t.TempDir(), "made")
+		root = filepath.Join(step, "conflux")
+		t.Setenv("CONFLUX_DIR", root)
 
-	for _, c := range []struct {
-		name    string
-		plant   func(t *testing.T, at string)
-		refused bool
-	}{
-		{"a junction", func(t *testing.T, at string) { mklinkJ(t, at, elsewhere) }, true},
-		{"a folder Users may rename what is in", func(t *testing.T, at string) {
-			if err := os.Mkdir(at, 0o700); err != nil {
-				t.Fatal(err)
-			}
+		return step, root
+	}
 
-			privtest.GrantUsers(t, at, fileDeleteChild, windows.NO_INHERITANCE)
-		}, true},
-		{"a plain folder", func(t *testing.T, at string) {
-			if err := os.Mkdir(at, 0o700); err != nil {
-				t.Fatal(err)
-			}
-		}, false},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			base := t.TempDir()
-			step := filepath.Join(base, "made")
-			root := filepath.Join(step, "conflux")
+	// Where looking is called on a run with nothing planted, from the walk's lookup of made on: made
+	// looked up, made made, conflux made.
+	_, root := fresh(t)
 
-			making = func(at string) {
-				if at == step {
-					c.plant(t, at)
+	var calls []string
+
+	looking = func(p string) { calls = append(calls, p) }
+
+	if err := Default().EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	first := slices.Index(calls, filepath.Dir(root))
+	if first < 0 || len(calls) < first+3 || !slices.Equal(calls[first:first+3], []string{filepath.Dir(root),
+		filepath.Dir(root), root}) {
+		t.Fatalf("looking was called with %q, want made looked up and made, then conflux made", calls)
+	}
+
+	phases := []string{"looked up", "made", "made, the root"}
+
+	for i, phase := range phases {
+		for _, c := range []struct {
+			name  string
+			plant func(t *testing.T, at string) (elsewhere string)
+			// refused is what the refusal for the plant at made, by its phase, and at conflux holds.
+			refused func(step, root string) [][]string
+		}{
+			{"a junction into a folder Users may rename what is in", func(t *testing.T, at string) string {
+				open := filepath.Join(t.TempDir(), "open-to-users")
+				if err := os.MkdirAll(filepath.Join(open, "real"), 0o700); err != nil {
+					t.Fatal(err)
 				}
-			}
 
-			t.Setenv("CONFLUX_DIR", root)
+				privtest.GrantUsers(t, open, fileDeleteChild, windows.NO_INHERITANCE)
+				mklinkJ(t, at, filepath.Join(open, "real"))
 
-			err := Default().EnsureAll()
-
-			switch {
-			case !c.refused && err != nil:
-				t.Errorf("EnsureAll, with %s made at %s meanwhile, = %v", c.name, step, err)
-			case c.refused && (err == nil || !strings.Contains(err.Error(), step)):
-				t.Errorf("EnsureAll, with %s made at %s meanwhile, = %v, want a refusal naming it", c.name, step, err)
-			}
-
-			for _, made := range []string{filepath.Join(elsewhere, "conflux"), root} {
-				if _, err := os.Lstat(made); c.refused && !errors.Is(err, os.ErrNotExist) {
-					t.Errorf("EnsureAll made %s, with %s made at %s meanwhile (%v)", made, c.name, step, err)
+				return filepath.Join(open, "real")
+			}, func(step, root string) [][]string {
+				made := func(at string) []string {
+					return []string{at + ", a junction or a link, was made while conflux made the way to " + root}
 				}
-			}
-		})
+
+				return [][]string{{root + " is inside ", `open-to-users, which grants `}, made(step), made(root)}
+			}},
+			{"a folder Users may rename what is in", func(t *testing.T, at string) string {
+				grantedFolder(t, at, fileDeleteChild)
+
+				return ""
+			}, func(step, root string) [][]string {
+				inside := []string{root + " is inside " + step + ", which grants "}
+
+				return [][]string{inside, inside, {root + " grants ", "could take out what conflux puts in it"}}
+			}},
+			{"a plain folder", func(t *testing.T, at string) string {
+				if err := os.Mkdir(at, 0o700); err != nil {
+					t.Fatal(err)
+				}
+
+				return ""
+			}, func(string, string) [][]string { return make([][]string, len(phases)) }},
+		} {
+			t.Run(c.name+", "+phase, func(t *testing.T) {
+				step, root := fresh(t)
+				at := []string{step, step, root}[i]
+
+				var elsewhere string
+
+				n := 0
+				looking = func(p string) {
+					if p == at {
+						if n++; n == []int{1, 2, 1}[i] {
+							elsewhere = c.plant(t, p)
+						}
+					}
+				}
+
+				err := Default().EnsureAll()
+
+				want := c.refused(step, root)[i]
+				for _, w := range want {
+					if err == nil || !strings.Contains(err.Error(), w) {
+						t.Errorf("EnsureAll, with %s planted at %s as it was %s, = %v, want %q", c.name, at, phase,
+							err, want)
+
+						break
+					}
+				}
+
+				if len(want) == 0 && err != nil {
+					t.Errorf("EnsureAll, with %s planted at %s as it was %s, = %v", c.name, at, phase, err)
+				}
+
+				if elsewhere != "" {
+					if entries, err := os.ReadDir(elsewhere); err != nil || len(entries) != 0 {
+						t.Errorf("EnsureAll made %v where the junction planted at %s leads (%v)", entries, at, err)
+					}
+				}
+			})
+		}
 	}
 }

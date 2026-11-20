@@ -158,14 +158,19 @@ must belong to the account running conflux — on every platform, a root another
 owns is refused — and so must the way to it: a `CONFLUX_DIR` inside a directory another
 account can change is refused too, naming that directory and who can change it, since
 whoever can move the root aside can put a directory of their own in its place, with a
-conflux in it for the boot service to run as root. A root not made yet is held to this before
-anything is made on the way to it, as far as the way is there, and each directory missing is made
-through the one before it and gone into without following anything (`mkdirat` and `O_NOFOLLOW` on
-Unix, a handle on Windows), never by its name: one somebody else makes at the name meanwhile — a
-sticky directory such as `/tmp`, and `C:\`, let anybody make a name not taken yet — is held to the
-same rule before anything is made in it, and a link there is refused. One made at the root's own
-name is the root, held to the rules a root found there is (a directory of this account's that is
-too wide is narrowed, on Unix), though a link there is still refused on Unix. The way to it is every directory the
+conflux in it for the boot service to run as root. The way is walked from the top of its volume,
+a name at a time, each directory held open and judged before the next name is looked up in it, and
+that name looked up in the directory held and nowhere else, never followed (`openat` with
+`O_NOFOLLOW` on Unix, `NtCreateFile` relative to a handle on Windows): a link is read where it is,
+judged, and gone on from where it leads, so nothing on the way is looked up by its name after it was
+judged, or used before. A root not made yet is held to this before anything is made, as far as the
+way is there, and each directory missing is made in the last one held and held open in turn, never
+by its name: one somebody else makes at the name meanwhile — a sticky directory such as `/tmp`, and
+`C:\`, let anybody make a name not taken yet — is held to the same rule before anything is made in
+it, and a link there is refused. One made at the root's own name is the root, held to the rules a
+root found there is (a directory of this account's that is too wide is narrowed, on Unix), though a
+link there is still refused; and a way that ends in where a link leads, at a name not there, is
+refused, with nothing made there. The way to it is every directory the
 lookup of the root passes through: those above it as it is spelled and, for each link on the
 way — a junction among them on Windows, which the lookup follows as it does a link — the
 directory the link is in and those above where it leads, however many links are chained, with

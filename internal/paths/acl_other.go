@@ -5,7 +5,6 @@ package paths
 import (
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -34,122 +33,123 @@ func RestrictToOwner(string, bool) error { return nil }
 // Trusted is always true here.
 func Trusted(string) bool { return true }
 
-// makeRoot creates the root dir, and the directories above it, where they are not there yet: at
-// 0700, which is all a root made here needs. Anything already at its name is secure's. Before
-// anything is made, a CONFLUX_DIR where what is there of the way to it lets another account move it
-// is refused (parentsRefusalAs), as secure would refuse it once it was made; then each directory
-// missing is made through a descriptor on the one before (makeWay), never by its name.
-func makeRoot(dir string) error {
-	if _, err := os.Lstat(dir); err == nil {
-		return nil
-	}
+// aLink is what makeWay calls a link made where it was making a directory.
+const aLink = "a link"
 
-	euid := os.Geteuid()
-
-	if chosen(dir) {
-		above, err := ancestors(dir)
-		if err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return err
-		}
-
-		if err := parentsRefusalAs(dir, above, euid); err != nil {
-			return err
-		}
-	}
-
-	return makeWay(dir, euid)
+// step is a directory or a link a walk holds: open as itself on fd, or, where it is a link, or a
+// directory this account may search and not read (holdDir), by its name, rel, in the directory fd is
+// open on, which the walk holds too; with what fstat said of it as the walk met it.
+type step struct {
+	fd  int
+	rel string
+	st  unix.Stat_t
 }
 
-// makeWay makes dir and each directory missing above it, at 0700, from the nearest one that is
-// there, which is opened by its name, each through a descriptor on the one before (mkdirat), and
-// gone into without following anything (openat, O_NOFOLLOW): not by its name, which a link or a
-// directory somebody else made there meanwhile would answer for -- in a sticky directory such as
-// /tmp, which lets anybody make a name not taken yet, or one whose owner is on the way. Where a name
-// is taken by the time conflux makes it, a link is refused; a directory on the way is held to
-// parents' rule (takenStepAs) before anything is made in it, and one at the root's own name is the
-// root, which secure judges as it judges any root found there.
-func makeWay(dir string, euid int) error {
-	var missing []string
-
-	p := dir
-
-	for {
-		_, err := os.Stat(p)
-		if err == nil {
-			break
-		}
-
-		if !errors.Is(err, fs.ErrNotExist) || filepath.Dir(p) == p {
-			return err
-		}
-
-		missing = append(missing, filepath.Base(p))
-		p = filepath.Dir(p)
+// at is name in the directory s is, as an *at call on s.fd takes it.
+func (s step) at(name string) string {
+	if s.rel == "" {
+		return name
 	}
 
-	fd, err := openDirAt(unix.AT_FDCWD, p, false)
+	return s.rel + "/" + name
+}
+
+// close lets s go: its descriptor, where it has one of its own.
+func (s step) close() {
+	if s.rel == "" {
+		unix.Close(s.fd)
+	}
+}
+
+// openTop holds / open.
+func openTop(string) (step, error) {
+	s, err := opened(unix.AT_FDCWD, "/")
 	if err != nil {
-		return &os.PathError{Op: "open", Path: p, Err: err}
+		return step{}, &os.PathError{Op: "open", Path: "/", Err: err}
 	}
 
-	for i := len(missing) - 1; i >= 0; i-- {
-		name := missing[i]
-		at := filepath.Join(p, name)
-
-		making(at)
-
-		err := ignoringEINTR(func() error { return unix.Mkdirat(fd, name, 0o700) })
-		taken := errors.Is(err, unix.EEXIST)
-
-		if err != nil && !taken {
-			unix.Close(fd)
-
-			return &os.PathError{Op: "mkdir", Path: at, Err: err}
-		}
-
-		next, err := openDirAt(fd, name, true)
-		unix.Close(fd)
-
-		switch {
-		case err != nil && taken:
-			return fmt.Errorf("%s was made by somebody else while conflux made the way to %s, and is a link or "+
-				"no directory (%v), which conflux will not follow.\n  Remove it, then run this again", at, dir, err)
-		case err != nil:
-			return &os.PathError{Op: "open", Path: at, Err: err}
-		case taken && i == 0:
-			// The root's own name, which secure holds a root found there to.
-			return unix.Close(next)
-		case taken:
-			if err := takenStepAs(dir, at, next, euid); err != nil {
-				unix.Close(next)
-
-				return err
-			}
-		}
-
-		fd, p = next, at
-	}
-
-	return unix.Close(fd)
+	return s, nil
 }
 
-// openDirAt opens the directory name, in the one dirfd holds open, to make things in: as itself
-// where nofollow, a link at the name refused (ELOOP) rather than followed.
-func openDirAt(dirfd int, name string, nofollow bool) (int, error) {
-	flags := unix.O_RDONLY | unix.O_DIRECTORY | unix.O_CLOEXEC
-	if nofollow {
-		flags |= unix.O_NOFOLLOW
+// lookUp is what is at name in the directory parent is, and whether it is a link: a directory, held
+// open as itself (opened), or by its name where this account may search it and not read it; or a
+// link, by its name, never followed. Anything else at the name is refused, and nothing at it is an
+// error that is fs.ErrNotExist. What fstatat reads of the name, once the open has refused it, is
+// what is there by then: the directory parent is has been judged, and only root and this account
+// may change what is in it -- or, in a sticky one, whoever owns that name.
+func lookUp(parent step, name string) (step, bool, error) {
+	at := parent.at(name)
+
+	s, err := opened(parent.fd, at)
+	if err == nil || errors.Is(err, unix.ENOENT) {
+		return s, false, err
 	}
 
-	var fd int
+	byName := step{fd: parent.fd, rel: at}
+	if err := ignoringEINTR(func() error {
+		return unix.Fstatat(parent.fd, at, &byName.st, unix.AT_SYMLINK_NOFOLLOW)
+	}); err != nil {
+		return step{}, false, err
+	}
 
-	err := ignoringEINTR(func() (err error) {
-		fd, err = unix.Openat(dirfd, name, flags, 0)
+	switch byName.st.Mode & unix.S_IFMT {
+	case unix.S_IFLNK:
+		return byName, true, nil
+	case unix.S_IFDIR:
+		if errors.Is(err, unix.EACCES) {
+			return byName, false, nil
+		}
+	}
+
+	return step{}, false, err
+}
+
+// opened is the directory name, in the one dirfd is open on, held open as itself (holdDir): a link
+// at the name is refused rather than followed.
+func opened(dirfd int, name string) (step, error) {
+	var s step
+
+	if err := ignoringEINTR(func() (err error) {
+		s.fd, err = unix.Openat(dirfd, name, holdDir|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 
 		return err
-	})
+	}); err != nil {
+		return step{}, err
+	}
 
-	return fd, err
+	if err := unix.Fstat(s.fd, &s.st); err != nil {
+		unix.Close(s.fd)
+
+		return step{}, err
+	}
+
+	return s, nil
+}
+
+// readLink is where the link s leads, read where the walk holds it.
+func readLink(s step) (string, error) {
+	for size := 256; ; size *= 2 {
+		b := make([]byte, size)
+
+		var n int
+		if err := ignoringEINTR(func() (err error) {
+			n, err = unix.Readlinkat(s.fd, s.rel, b)
+
+			return err
+		}); err != nil {
+			return "", err
+		}
+
+		if n < size {
+			return string(b[:n]), nil
+		}
+	}
+}
+
+// makeStep makes the directory name, at 0700, in the one parent is (mkdirat), and holds nothing:
+// makeWay goes into it as a walk would (lookUp). The root is made as any other.
+func makeStep(parent step, name string, _ bool) (step, bool, error) {
+	return step{}, false, ignoringEINTR(func() error { return unix.Mkdirat(parent.fd, parent.at(name), 0o700) })
 }
 
 // ignoringEINTR is f, again for as long as a signal interrupts it, as the os package retries its
@@ -162,27 +162,37 @@ func ignoringEINTR(f func() error) error {
 	}
 }
 
-// takenStepAs holds at, the directory fd holds open, which makeWay would have made on the way to dir
-// and found already made, to parents' rule for euid before anything is made in it: owned by root or
-// euid, and not one another account may write (judge) -- a conflux making the same root at once
-// makes one so.
-func takenStepAs(dir, at string, fd, euid int) error {
-	var st unix.Stat_t
-	if err := unix.Fstat(fd, &st); err != nil {
-		return &os.PathError{Op: "stat", Path: at, Err: err}
-	}
+// parentsRule is parents' rule for dir, for the account this process runs as (parentsRuleAs).
+func parentsRule(dir string) judgement { return parentsRuleAs(dir, os.Geteuid()) }
 
-	mode := os.FileMode(st.Mode & 0o777)
-	if st.Mode&unix.S_ISVTX != 0 {
-		mode |= os.ModeSticky
-	}
+// parentsRuleAs is parents' rule for dir, for euid: a directory on the way to it is refused where
+// another account may write it -- one whose owner is neither root nor euid, who can always give
+// itself the right, or one whose mode or ACL lets another account write it (writerOf) -- and a link
+// where another account owns it, who may point it elsewhere: its mode means nothing, and whoever may
+// write the directory it is in is held as one above. Whoever may write a directory above dir can
+// move dir aside and put a directory of their own in its place, with a conflux in it for the boot
+// service to run as root. Owner, group and mode are as fstat read them where the walk met each one;
+// a directory's ACL is read at its path, which leads through directories already judged, and so
+// only root and euid may change where it leads.
+func parentsRuleAs(dir string, euid int) judgement {
+	return func(p string, s step, link bool) error {
+		where := "inside"
+		if link {
+			where = "reached through"
+		}
 
-	who, err := writerOf(at, st.Uid, st.Gid, mode, false, euid)
-	if err == nil && who != "" {
-		err = parentRefusal(dir, "inside", at, who, euid)
-	}
+		mode := os.FileMode(s.st.Mode & 0o777)
+		if s.st.Mode&unix.S_ISVTX != 0 {
+			mode |= os.ModeSticky
+		}
 
-	return err
+		who, err := writerOf(p, s.st.Uid, s.st.Gid, mode, link, euid)
+		if err == nil && who != "" {
+			err = parentRefusal(dir, where, p, who, euid)
+		}
+
+		return err
+	}
 }
 
 // secure refuses a root another account owns, or whose extended ACL lets another account write
@@ -195,20 +205,21 @@ func takenStepAs(dir, at string, fd, euid int) error {
 // the binary root runs at boot where that user can replace it. The owner decides, as on
 // Windows: one that is not the account running conflux did not get its directory from
 // conflux, and whatever it put there is not used. A CONFLUX_DIR is held to its parents
-// as well (see parentsAs). Every refusal comes before secure changes anything; a root that
-// was not there EnsureAll has made by then, and a refusal leaves it, empty and this
-// account's.
+// first (see parentsAs), before anything at its name is read. Every refusal comes before secure
+// changes anything; a root that was not there EnsureAll has made by then, and a refusal leaves
+// it, empty and this account's.
 func secure(dir string) error { return secureAs(dir, os.Geteuid()) }
 
 // secureAs is secure for a given effective uid, so the refusals can be tested without
 // another account.
 func secureAs(dir string, euid int) error {
-	link, err := os.Lstat(dir)
-	if err != nil {
-		return fmt.Errorf("read %s: %w", dir, err)
+	if chosen(dir) {
+		if err := parentsAs(dir, euid); err != nil {
+			return err
+		}
 	}
 
-	fi, err := ownedAs(dir, link, euid)
+	link, fi, err := ownedAs(dir, euid, ownedBy)
 	if err != nil {
 		return err
 	}
@@ -243,12 +254,6 @@ func secureAs(dir string, euid int) error {
 		}
 	}
 
-	if chosen(dir) {
-		if err := parentsAs(dir, euid); err != nil {
-			return err
-		}
-	}
-
 	// 0710 -- its group may pass through and list nothing -- is how the supervisor lets
 	// anchord's account reach the few things in the state and run directories that anchord
 	// runs or reads. ownedBy has just shown the directory to be this account's own, and only
@@ -264,33 +269,33 @@ func secureAs(dir string, euid int) error {
 	return nil
 }
 
-// ownedAs is dir as it resolves, once it is shown to be euid's; link is what Lstat said of
-// dir. A root that is a symlink is held to the same rule as what it points at: one another
-// account planted would otherwise lead straight past the check into a directory of theirs, or
-// of the system's.
-func ownedAs(dir string, link os.FileInfo, euid int) (os.FileInfo, error) {
-	if err := ownedBy(dir, link, euid); err != nil {
-		return nil, err
+// ownedAs is what Lstat says of dir, and what dir resolves to, the same where it is not a link,
+// once owns has held each to euid: secure's rule (ownedBy) or a reader's (readerOwns). A root that
+// is a symlink is held to the same rule as what it points at: one another account planted would
+// otherwise lead straight past the check into a directory of theirs, or of the system's.
+func ownedAs(dir string, euid int, owns func(string, os.FileInfo, int) error) (link, fi os.FileInfo, err error) {
+	if link, err = os.Lstat(dir); err != nil {
+		return nil, nil, fmt.Errorf("read %s: %w", dir, err)
+	}
+
+	if err := owns(dir, link, euid); err != nil {
+		return nil, nil, err
 	}
 
 	if !isLink(link) {
-		return link, nil
+		return link, link, nil
 	}
 
-	fi, err := os.Stat(dir)
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", dir, err)
+	if fi, err = os.Stat(dir); err != nil {
+		return nil, nil, fmt.Errorf("read %s: %w", dir, err)
 	}
 
-	if err := ownedBy(dir, fi, euid); err != nil {
-		return nil, err
+	if err := owns(dir, fi, euid); err != nil {
+		return nil, nil, err
 	}
 
-	return fi, nil
+	return link, fi, nil
 }
-
-// readLink is where the link p leads, as ancestors follows it.
-func readLink(p string) (string, error) { return os.Readlink(p) }
 
 // checkRoot is Check's judgement of the root dir: checkRootAs for this process's effective uid.
 func checkRoot(dir string) error { return checkRootAs(dir, os.Geteuid()) }
@@ -302,10 +307,10 @@ func contents(string) error { return nil }
 
 // checkRootAs refuses the root dir, for a command run as euid about to read what is in it by name,
 // where another account could have put something there: one owned, or reached through a link
-// owned, by an account other than root and euid, or whose mode or ACL, as found, lets another
-// account write it (judge), the sticky bit letting nothing through, since a name not taken yet is
-// anybody's in a sticky directory. A CONFLUX_DIR is held to its parents first (parentsAs). Nothing
-// is narrowed, as secure would narrow it: a reader changes nothing.
+// owned, by an account other than root and euid (ownedAs, readerOwns), or whose mode or ACL, as
+// found, lets another account write it (judge), the sticky bit letting nothing through, since a
+// name not taken yet is anybody's in a sticky directory. A CONFLUX_DIR is held to its parents first
+// (parentsAs). Nothing is narrowed, as secure would narrow it: a reader changes nothing.
 func checkRootAs(dir string, euid int) error {
 	if chosen(dir) {
 		if err := parentsAs(dir, euid); err != nil {
@@ -313,25 +318,13 @@ func checkRootAs(dir string, euid int) error {
 		}
 	}
 
-	link, err := os.Lstat(dir)
+	link, fi, err := ownedAs(dir, euid, readerOwns)
 	if err != nil {
-		return fmt.Errorf("read %s: %w", dir, err)
-	}
-
-	if err := readerOwns(dir, link, euid); err != nil {
 		return err
 	}
 
-	fi, acl := link, dir
+	acl := dir
 	if isLink(link) {
-		if fi, err = os.Stat(dir); err != nil {
-			return fmt.Errorf("read %s: %w", dir, err)
-		}
-
-		if err := readerOwns(dir, fi, euid); err != nil {
-			return err
-		}
-
 		if acl, err = filepath.EvalSymlinks(dir); err != nil {
 			return fmt.Errorf("read %s: %w", dir, err)
 		}
@@ -368,57 +361,9 @@ func readerOwns(dir string, fi os.FileInfo, euid int) error {
 	return nil
 }
 
-// parentsAs refuses dir where another account may write a directory above it: one whose
-// owner is neither root nor euid, who can always give itself the right, or one whose mode or
-// ACL lets another account write it (aclOf, judge). Whoever may write a parent can move dir
-// aside and put a directory of their own in its place, with a conflux in it for the boot
-// service to run as root. A link on the way is held to the directory it is in, to those above
-// where it leads, and to its owner, who may point it elsewhere (ancestors).
-func parentsAs(dir string, euid int) error {
-	above, err := ancestors(dir)
-	if err != nil {
-		return err
-	}
-
-	return parentsRefusalAs(dir, above, euid)
-}
-
-// parentsRefusalAs is parentsAs's refusal of dir over above, the steps on the way to it as
-// ancestors met them, or nil.
-func parentsRefusalAs(dir string, above []step, euid int) error {
-	for _, s := range above {
-		p, fi := s.path, s.fi
-		if fi == nil {
-			var err error
-			if fi, err = os.Lstat(p); err != nil {
-				return fmt.Errorf("read %s: %w", p, err)
-			}
-		}
-
-		st, ok := fi.Sys().(*syscall.Stat_t)
-		if !ok {
-			return fmt.Errorf("read the owner of %s: no ownership on this filesystem", p)
-		}
-
-		// A link's mode means nothing: who may change it is its owner, and whoever may write the
-		// directory it is in, which is checked as one above.
-		where := "inside"
-		if isLink(fi) {
-			where = "reached through"
-		}
-
-		who, err := writerOf(p, st.Uid, st.Gid, fi.Mode(), isLink(fi), euid)
-		if err == nil && who != "" {
-			err = parentRefusal(dir, where, p, who, euid)
-		}
-
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
+// parentsAs refuses dir where its way, walked from / (walk), is not there, or is not held to
+// parents' rule for euid (parentsRuleAs).
+func parentsAs(dir string, euid int) error { return judgeWay(dir, parentsRuleAs(dir, euid)) }
 
 // writerOf is who besides root and euid may move what is in p, a directory or a link on the way to
 // a root owned by uid, of group gid and at mode, as a refusal names them, or "": its owner, where

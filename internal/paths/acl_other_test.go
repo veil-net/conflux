@@ -428,13 +428,11 @@ func ensureAllRefuses(t *testing.T, root, refused string) {
 	}
 }
 
-// TestAncestorsFollowsEveryLink: the lookup is followed as the kernel makes it, a link's
-// target read from the directory the link is in, ".." included, and each directory a name is
-// looked up in is there once, the links with them, and not the directory the root resolves to.
-// What the lookup read of each name it looked up goes with it, a link read as one, and only the
-// top of the volume, which it looked no name up for, goes without: a directory ".." leads back to
-// keeps what was read of it on the way down.
-func TestAncestorsFollowsEveryLink(t *testing.T) {
+// TestTheWalkJudgesEveryStepOnce: the way is walked as the kernel looks dir up, a link's target read
+// from the directory the link is in, ".." included, and each directory a name is looked up in is
+// judged once, before the name is looked up, as is each link before it is followed, as itself, and
+// not the directory the root resolves to. A directory ".." leads back to is not judged again.
+func TestTheWalkJudgesEveryStepOnce(t *testing.T) {
 	base, err := filepath.EvalSymlinks(t.TempDir()) // under /private/var on macOS
 	if err != nil {
 		t.Fatal(err)
@@ -455,48 +453,62 @@ func TestAncestorsFollowsEveryLink(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	steps, err := ancestors(filepath.Join(base, "a", "l"))
+	var judged []string
+
+	links := map[string]bool{}
+	record := func(p string, s step, link bool) error {
+		if fileLink := s.st.Mode&syscall.S_IFMT == syscall.S_IFLNK; link != fileLink {
+			t.Errorf("the walk judged %s as a link %v, but what it holds is %#o", p, link, s.st.Mode)
+		}
+
+		judged, links[p] = append(judged, p), link
+
+		return nil
+	}
+
+	w, err := walk(filepath.Join(base, "a", "l"), record)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	var got []string
-
-	for _, s := range steps {
-		got = append(got, s.path)
-
-		link := s.path == filepath.Join(base, "a", "l") || s.path == filepath.Join(base, "d", "m")
-		if s.fi != nil && (s.fi.Name() != filepath.Base(s.path) || isLink(s.fi) != link) || s.fi == nil && s.path != "/" {
-			t.Errorf("ancestors read %s as %v", s.path, s.fi)
-		}
+	if w.missing != nil || w.last().path != filepath.Join(base, "b", "c") {
+		t.Errorf("the walk ended at %s, %v, want %s, there", w.last().path, w.missing, filepath.Join(base, "b", "c"))
 	}
+
+	w.close()
 
 	for _, want := range []string{"/", base, filepath.Join(base, "a"), filepath.Join(base, "a", "l"),
 		filepath.Join(base, "d"), filepath.Join(base, "d", "m"), filepath.Join(base, "b")} {
-		if !slices.Contains(got, want) {
-			t.Errorf("ancestors lacks %s: %q", want, got)
+		if !slices.Contains(judged, want) {
+			t.Errorf("the walk did not judge %s: %q", want, judged)
 		}
 	}
 
-	for i, p := range got {
-		if p == filepath.Join(base, "b", "c") || slices.Contains(got[:i], p) {
-			t.Errorf("ancestors holds %s, which is the root or met already: %q", p, got)
+	for i, p := range judged {
+		if p == filepath.Join(base, "b", "c") || slices.Contains(judged[:i], p) {
+			t.Errorf("the walk judged %s, which is the root or judged already: %q", p, judged)
+		}
+
+		if link := p == filepath.Join(base, "a", "l") || p == filepath.Join(base, "d", "m"); links[p] != link {
+			t.Errorf("the walk judged %s as a link %v", p, links[p])
 		}
 	}
 
-	// a/up -> ../d: the lookup goes back up to base, and no later link meets it again.
+	// a/up -> ../d: the walk goes back up to base, which it judged on the way down, and on into d.
 	if err := os.Symlink("../d", filepath.Join(base, "a", "up")); err != nil {
 		t.Fatal(err)
 	}
 
-	if steps, err = ancestors(filepath.Join(base, "a", "up")); err != nil {
+	judged = nil
+
+	if w, err = walk(filepath.Join(base, "a", "up", "m"), record); err != nil {
 		t.Fatal(err)
 	}
 
-	for _, s := range steps {
-		if s.fi == nil && s.path != "/" {
-			t.Errorf("ancestors read %s, which \"..\" led back to, as nothing", s.path)
-		}
+	w.close()
+
+	if i := slices.Index(judged, filepath.Join(base, "d")); i < 0 || slices.Contains(judged[i+1:], base) {
+		t.Errorf("the walk did not judge d, or judged base again after going back up to it: %q", judged)
 	}
 }
 

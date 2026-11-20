@@ -99,8 +99,8 @@ anything is written into it.
 
 A root on a network volume — a share reached by its UNC path, a drive mapped to one, or a link
 leading to either, as the volume conflux holds it open on says, not as it is spelled — is refused
-before anything is made or put there, one not made yet by the nearest directory above it that is
-there, and refused by the readers' check (below): who owns what is there, and whom its
+before anything is made or put there, one not made yet by the volume the walk of its way (below)
+reaches, and refused by the readers' check (below): who owns what is there, and whom its
 DACL grants, are accounts of the machine serving it, which this one cannot judge. A link naming
 anything but a drive letter or a volume of this machine's — a share by its UNC path, or a WebDAV
 server's — or a relative link that names a volume itself, which a lookup starts from rather than
@@ -108,15 +108,17 @@ from the link's folder, is refused before anything follows it, by where the link
 leads, so that conflux never signs this machine in to whoever serves it: at a root's name, and for a
 `CONFLUX_DIR` at every step of the way to it, by every command that makes a root and by the
 readers' check (below), before anything is looked up there. So is a link that leads nowhere, with nothing made where it leads.
-A root not made yet is made through a handle on the folder it goes in, so a link somebody plants at
-its name meanwhile is found there, and judged as itself, rather than followed. For a `CONFLUX_DIR`,
-the folders on the way to it that are there are held, before conflux makes anything, to the rule the
-way to one is held to ([security.md](security.md#the-extracted-binaries)): nobody else may move
-what is in them. The rest are made as the root is, each through a handle on the one before, with
-what that one passes on, from the nearest one there, which is held as a root is: never by their
-names, since `C:\` lets every user make a folder where the next is to go, and the owner of a folder
-on the way may make anything in it. One somebody else makes at a name meanwhile is opened as itself
-and held to the same rule before anything is made in it, and a junction or a link there is refused.
+A root not made yet is made through a handle on the folder it goes in, so a junction or a link
+somebody plants at its name meanwhile is found there and refused, rather than followed. The way to
+it is walked from the top of its volume, each folder held open through a handle on the one before,
+never followed, and a junction or a link read off itself and gone on from where it leads; for a
+`CONFLUX_DIR`, each folder there is held, before a name is looked up in it, to the rule the way to
+one is held to ([security.md](security.md#the-extracted-binaries)): nobody else may move what is in
+it. The folders missing are made from the last one held, each through a handle on the one before,
+with what that one passes on: never by their names, since `C:\` lets every user make a folder where
+the next is to go, and the owner of a folder on the way may make anything in it. One somebody else
+makes at a name meanwhile is opened as itself and held to the same rule before anything is made in
+it, and a junction or a link there is refused.
 
 Every command that reads a root, or acts on what it holds, rather than making it — `status`, a
 pass-through and `help`'s `anchorctl`, `renew`, `start`, `down`, `uninstall`, `update` asking
@@ -177,9 +179,7 @@ removed, and one made in its place through conflux's own handle, with the root's
 from the moment it exists, and pointed through that handle at the directory conflux judged. A
 junction can lead only to a directory named by its volume's GUID, so a link root leading to a local
 volume that has no such name is refused, whether conflux would replace it or finds it its own
-already, and by the readers' check; so is such a link at the nearest
-directory there above a `CONFLUX_DIR` not made yet, which conflux holds as it holds a root before it
-makes anything. Something made at that name in
+already, and by the readers' check. Something made at that name in
 between is refused, naming where the junction led and the commands that make it again (below),
 which come before conflux is run again: with nothing at the name, conflux would make a new root
 there, and the machine a new identity. A failure to make or point its own junction says the same.

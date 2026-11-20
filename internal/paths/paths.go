@@ -344,9 +344,9 @@ func Foreign(dir string) error {
 	return contents(dir)
 }
 
-// making is called before makeRoot makes a directory on the way to a root, and on Unix the root
-// itself: nothing, but where a test makes something at its name meanwhile.
-var making = func(string) {}
+// looking is called with the path of each name before a walk looks it up, and before makeWay makes
+// it or looks it up: nothing, but where a test makes something at the name meanwhile.
+var looking = func(string) {}
 
 // chosen reports whether dir is the CONFLUX_DIR root or inside it: a directory whoever set
 // the variable chose, rather than one of the platform's, so secure holds the directories
@@ -362,96 +362,313 @@ func chosen(dir string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-// step is a directory or a link ancestors meets, with what Lstat said of it as the lookup looked
-// its name up: nil only for the top of a volume, which the lookup starts from without looking a
-// name up, and which is never a link. A directory ".." leads back to was met on the way down, and
-// keeps what Lstat said of it then.
-type step struct {
+// judgement is what a walk holds the way to a directory to: each directory it looks a name up in,
+// and each link it follows, which s holds open as itself and p names, through no link -- a link by
+// the directory it is in and its name; nil, or why the way is refused.
+type judgement func(p string, s step, link bool) error
+
+// place is a directory a walk holds open, and its path, through no link.
+type place struct {
+	step
 	path string
-	fi   os.FileInfo
 }
 
-// ancestors is everything on the way to dir that whoever may change it can put another
-// directory where dir leads by: every directory a lookup of dir looks a name up in, and every
-// link it follows -- a junction among them on Windows (isLink) -- each once, in the order the
-// lookup meets them. That is each directory above dir as it is spelled, and for each link on
-// the way the directory it is in, the link itself -- an account that owns one can point it
-// elsewhere -- and the directories above where it leads, where the next link may be. The
-// directory dir resolves to is not among them. Each link is read as itself (readLink), and on
-// Windows one that may lead off this machine is refused before anything is looked up through it.
-// Where a name on the way cannot be looked up -- one that is not there among them -- what was met
-// before it comes back with the error: the way as far as it is there.
-func ancestors(dir string) ([]step, error) {
-	dir, err := filepath.Abs(dir)
+// way is where a walk ended: the directories it holds open, the top of the volume first and the one
+// it ended in last -- the directory walked to, where that is there. Where a name was not there, left
+// is it and the names after it, missing why, and via the link the walk was following, where the name
+// is in where that leads rather than one of the directory's own.
+type way struct {
+	places  []place
+	left    []string
+	missing error
+	via     string
+}
+
+// last is the directory the way ends in.
+func (w *way) last() place { return w.places[len(w.places)-1] }
+
+func (w *way) push(s step, path string) { w.places = append(w.places, place{s, path}) }
+
+// back goes to the directory the last one is in, as ".." leads: the one held before it, but at the
+// top of the volume, whose ".." is itself.
+func (w *way) back() {
+	if n := len(w.places); n > 1 {
+		w.places[n-1].close()
+		w.places = w.places[:n-1]
+	}
+}
+
+// top lets every directory go, and holds the top of the volume vol (openTop).
+func (w *way) top(vol string) error {
+	w.close()
+
+	s, err := openTop(vol)
 	if err != nil {
+		return err
+	}
+
+	w.push(s, vol+string(filepath.Separator))
+
+	return nil
+}
+
+// close lets every directory the way holds go.
+func (w *way) close() {
+	for _, p := range w.places {
+		p.close()
+	}
+
+	w.places = nil
+}
+
+// walk is the way to dir, walked a name at a time from the top of its volume and held open as it
+// goes: each name looked up in the directory held before it and nowhere else, never following what
+// is there (lookUp). A directory is held, and gone on from; a link is read as itself (readLink) and
+// gone on from where it leads -- the top of the volume it names, the top of this one, or the
+// directory it is in -- up to 255 links. Where judge is given, each directory is held to it before a
+// name is looked up in it, and each link before it is followed, each path once: every directory a
+// lookup of dir looks a name up in, and every link it follows. That is all whoever may change it
+// could put another directory where dir leads by: each directory above dir as it is spelled, and for
+// each link on the way the directory it is in, the link itself -- an account that owns one can point
+// it elsewhere -- and the directories above where it leads, where the next link may be. The directory
+// dir leads to is held, not judged.
+//
+// At a name that is not there the walk ends, holding the directory it was to be looked up in, with
+// the names left. Anything else refuses dir: a link that cannot be read -- on Windows, one that may
+// lead off this machine (windowsLinkTarget), which nothing then follows -- a name that is not a
+// directory, more than 255 links, or a lookup the system refuses.
+func walk(dir string, judge judgement) (*way, error) {
+	w := &way{}
+	if err := w.walk(dir, judge); err != nil {
+		w.close()
+
 		return nil, err
 	}
 
-	var met []step
+	return w, nil
+}
 
-	meet := func(p string, fi os.FileInfo) {
-		if !slices.ContainsFunc(met, func(s step) bool { return s.path == p }) {
-			met = append(met, step{p, fi})
-		}
+// walk is walk, ending in w.
+func (w *way) walk(dir string, judge judgement) error {
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return err
 	}
 
 	vol := filepath.VolumeName(dir)
-	at, rest := vol+string(filepath.Separator), dir[len(vol):]
+	if err := w.top(vol); err != nil {
+		return err
+	}
 
-	var atInfo os.FileInfo // at's step
+	judged := map[string]bool{}
+
+	// What is left to look up ends in what is left of dir's own names, plain long, after what the
+	// links followed put before it: while any is, via is the first of those links.
+	rest := dir[len(vol):]
+	plain, via := len(rest), ""
 
 	for links := 0; ; {
 		var name string
 		if name, rest = nextName(rest); name == "" {
-			return met, nil
+			return nil
+		}
+
+		own := len(rest) < plain
+		if own {
+			plain, via = len(rest), ""
 		}
 
 		switch name {
 		case ".":
 			continue
 		case "..":
-			at, atInfo = filepath.Dir(at), nil
+			w.back()
 
 			continue
 		}
 
-		meet(at, atInfo)
+		at := w.last()
+		if judge != nil && !judged[at.path] {
+			if err := judge(at.path, at.step, false); err != nil {
+				return err
+			}
 
-		p := filepath.Join(at, name)
-
-		fi, err := os.Lstat(p)
-		if err != nil {
-			return met, fmt.Errorf("resolve %s: %w", dir, err)
+			judged[at.path] = true
 		}
 
-		if !isLink(fi) {
-			at, atInfo = p, fi
+		p := filepath.Join(at.path, name)
+		looking(p)
+
+		s, link, err := lookUp(at.step, name)
+
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			w.left, w.missing = []string{name}, &os.PathError{Op: "open", Path: p, Err: err}
+			for name, rest = nextName(rest); name != ""; name, rest = nextName(rest) {
+				w.left = append(w.left, name)
+			}
+
+			if !own {
+				w.via = via
+			}
+
+			return nil
+		case err != nil:
+			return fmt.Errorf("resolve %s: %w", dir, &os.PathError{Op: "open", Path: p, Err: err})
+		case !link:
+			w.push(s, p)
 
 			continue
 		}
 
 		if links++; links > 255 {
-			return nil, fmt.Errorf("resolve %s: more than 255 links", dir)
+			s.close()
+
+			return fmt.Errorf("resolve %s: more than 255 links", dir)
 		}
 
-		meet(p, fi)
+		target, err := readLink(s)
 
-		target, err := readLink(p)
+		switch {
+		case err != nil:
+			err = fmt.Errorf("resolve %s: %s is a link conflux cannot follow: %v", dir, p, err)
+		case judge != nil && !judged[p]:
+			err, judged[p] = judge(p, s, true), true
+		}
+
+		s.close()
+
 		if err != nil {
-			return nil, fmt.Errorf("resolve %s: %s is a link conflux cannot follow: %w", dir, p, err)
+			return err
 		}
 
-		// What the link names goes before what was left of the path, looked up from the
-		// directory the link is in, or from the top of the volume it names.
+		if own {
+			via = p
+		}
+
+		// What the link names goes before what was left, looked up from the directory the link is
+		// in, or from the top of the volume it names.
 		rest = target + string(filepath.Separator) + rest
 
 		switch v := filepath.VolumeName(target); {
 		case v != "":
-			at, rest, atInfo = v+string(filepath.Separator), rest[len(v):], nil
+			rest = rest[len(v):]
+
+			if err := w.top(v); err != nil {
+				return err
+			}
 		case target != "" && os.IsPathSeparator(target[0]):
-			at, atInfo = filepath.VolumeName(at)+string(filepath.Separator), nil
+			for len(w.places) > 1 {
+				w.back()
+			}
 		}
 	}
+}
+
+// judgeWay holds the way to dir to rule, as walk does, and refuses dir where a name on it is not
+// there.
+func judgeWay(dir string, rule judgement) error {
+	w, err := walk(dir, rule)
+	if err != nil {
+		return err
+	}
+
+	w.close()
+
+	if w.missing != nil {
+		return fmt.Errorf("resolve %s: %w", dir, w.missing)
+	}
+
+	return nil
+}
+
+// makeRoot creates the root dir where it is not there yet, and each directory missing on the way to
+// it, from the last directory there that the walk to it holds open (makeWay). Before anything is
+// made, a CONFLUX_DIR's way is held to parents' rule as far as it is there (parentsRule), as secure
+// holds it once the root is made. Anything already at the root's name is secure's; and a way that
+// ends at a name not there in where a link leads is refused, as a link conflux cannot follow, with
+// nothing made where it leads.
+func makeRoot(dir string) error {
+	rule := parentsRule(dir)
+
+	judge := judgement(nil)
+	if chosen(dir) {
+		judge = rule
+	}
+
+	w, err := walk(dir, judge)
+	if err != nil {
+		return err
+	}
+	defer w.close()
+
+	switch {
+	case w.missing == nil:
+		return nil
+	case w.via != "":
+		return fmt.Errorf("resolve %s: %s is a link conflux cannot follow: %v", dir, w.via, w.missing)
+	}
+
+	return makeWay(dir, w, rule)
+}
+
+// makeWay makes the names w was left with, the root dir last, each in the directory held before it
+// and nowhere else (makeStep), and holds each open as itself, never by its name: a link or a
+// directory somebody else made at the name meanwhile would answer for that -- a sticky directory such
+// as /tmp, and C:\, let anybody make a name not taken yet, and the owner of a directory on the way
+// may make anything in it. A link at a name, there by the time conflux makes it or once it has, is
+// refused; a directory on the way that is taken is held to rule before anything is made in it; and
+// one at the root's own name is the root, which secure judges as it judges any root found there.
+func makeWay(dir string, w *way, rule judgement) error {
+	for i, name := range w.left {
+		at := w.last()
+		p, root := filepath.Join(at.path, name), i == len(w.left)-1
+
+		looking(p)
+
+		s, held, err := makeStep(at.step, name, root)
+
+		taken := errors.Is(err, fs.ErrExist)
+		if err != nil && !taken {
+			return &os.PathError{Op: "mkdir", Path: p, Err: err}
+		}
+
+		if !held {
+			looking(p)
+
+			var link bool
+
+			switch s, link, err = lookUp(at.step, name); {
+			case err != nil && taken:
+				return fmt.Errorf("%s was made by somebody else while conflux made the way to %s, and is not a "+
+					"directory conflux can go into (%v).\n  Remove it, then run this again", p, dir, err)
+			case err != nil:
+				return &os.PathError{Op: "open", Path: p, Err: err}
+			case link:
+				s.close()
+
+				return fmt.Errorf("%s, %s, was made while conflux made the way to %s, which conflux will not "+
+					"follow.\n  Remove it, then run this again", p, aLink, dir)
+			}
+		}
+
+		switch {
+		case taken && root:
+			s.close()
+
+			return nil
+		case taken:
+			if err := rule(p, s, false); err != nil {
+				s.close()
+
+				return err
+			}
+		}
+
+		w.push(s, p)
+	}
+
+	return nil
 }
 
 // nextName is the first name in path and what follows it, separators around it dropped: "" when

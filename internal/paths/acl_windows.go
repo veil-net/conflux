@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -103,173 +104,90 @@ func restrictInfo(owner *windows.SID) windows.SECURITY_INFORMATION {
 	return info
 }
 
-// makeRoot creates the root dir where it is not there yet, with Restrict's ownership and DACL
-// set as it is created, so that it never carries what %ProgramData% passes on -- Users' right to
-// create in it, enough to turn an empty directory into a junction -- not even for an instant, and
-// through a handle on its parent (makeIn), so that a link somebody plants at its name meanwhile is
-// found there rather than followed. Anything already at its name, a link included, is secure's,
-// whose heldRoot judges a link as itself before it follows it. Before anything is made, a
-// CONFLUX_DIR with a link on the way to it that leads off this machine is refused (offMachineLinks),
-// and so is one where what is there of the way to it lets another account move it
-// (parentsRefusal). The directories missing above it are made as the root is, each through a handle
-// on the one before (makeWay), from the nearest one there, which is held as heldRoot holds a root: a
-// CONFLUX_DIR on a network volume is refused with nothing made there.
-func makeRoot(dir string) error {
-	above, err := offMachineLinks(dir)
+// aLink is what makeWay calls a link made where it was making a folder.
+const aLink = "a junction or a link"
+
+// step is a folder, or a junction or a link, a walk holds open as itself.
+type step struct{ h windows.Handle }
+
+func (s step) close() { windows.CloseHandle(s.h) }
+
+// openTop holds the top of the volume vol open -- a drive (C:), a volume by its GUID, or a share
+// (\\host\share) -- to read who may change it, and refuses it where it is on a network volume
+// (remote): who owns what is there, and whom its DACLs grant, are accounts of the machine serving
+// it, which this one cannot judge, so nothing is judged, looked up or made there.
+func openTop(vol string) (step, error) {
+	top := vol + `\`
+
+	h, err := openFile(top, readAccess, false)
 	if err != nil {
-		return err
+		return step{}, fmt.Errorf("read %s: %w", top, err)
 	}
 
-	if _, err := os.Lstat(dir); err == nil {
-		return nil
+	if err := remote(top, h); err != nil {
+		windows.CloseHandle(h)
+
+		return step{}, err
 	}
 
-	if err := parentsRefusal(dir, above); err != nil {
-		return err
-	}
-
-	parent, done, err := makeWay(dir)
-	if err != nil {
-		return err
-	}
-	defer done()
-
-	if err := makeIn(parent, filepath.Base(dir)); err != nil && !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
-		return err
-	}
-
-	return nil
+	return step{h}, nil
 }
 
-// makeWay is dir's parent held open, made where it is not there, and done, which lets it go. The
-// nearest of the directories above dir that is there is held as heldRoot holds a root, refused
-// where heldRoot refuses one: on a network volume, or a link that leads off this machine or
-// nowhere, or that another account may point elsewhere. Each directory missing below it is made
-// through a handle on the one before (createDir), its name looked up there and nowhere else and
-// never followed, and with nothing set but what the one before passes on, as MkdirAll would have
-// made it -- not by its name, which a folder somebody else made there meanwhile would answer for:
-// where C:\ lets every user, or the owner of a directory on the way, make one. Where the name is
-// taken by the time conflux makes it, what is there is opened as itself and held to parents' rule
-// (takenStep) before anything is made in it.
-func makeWay(dir string) (windows.Handle, func(), error) {
-	var missing []string
-
-	p := filepath.Dir(dir)
-
-	for {
-		r, err := heldRoot(p, readAccess)
-		if err == nil {
-			return madeBelow(dir, p, r, missing)
-		}
-
-		if !errors.Is(err, fs.ErrNotExist) || filepath.Dir(p) == p {
-			return 0, nil, err
-		}
-
-		missing = append(missing, filepath.Base(p))
-		p = filepath.Dir(p)
-	}
-}
-
-// madeBelow makes missing, the names below at that are not there, last first, in r, at held open,
-// for makeWay: what makeWay is.
-func madeBelow(dir, at string, r held, missing []string) (windows.Handle, func(), error) {
-	h, done := r.dir, r.close
-
-	for i := len(missing) - 1; i >= 0; i-- {
-		name := missing[i]
-		at = filepath.Join(at, name)
-
-		making(at)
-
-		next, err := createDir(h, name, nil, windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES)
-		if errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
-			next, err = takenStep(dir, at, h, name)
-		}
-
-		done()
-
-		if err != nil {
-			return 0, nil, err
-		}
-
-		h, done = next, func() { windows.CloseHandle(next) }
-	}
-
-	return h, done, nil
-}
-
-// takenStep is at, the name in the directory parent holds open that makeWay would have made on the
-// way to dir and found taken, opened as itself and not followed (openDir), and held to parents'
-// rule before anything is made in it: a directory, which nobody but SYSTEM, the Administrators,
-// TrustedInstaller and the account running conflux owns or may move what is in -- a conflux making
-// the same root at once makes one so -- and not a junction or a link, which would have to be
-// followed by its name to go on, and was not there when the way was judged.
-func takenStep(dir, at string, parent windows.Handle, name string) (windows.Handle, error) {
-	h, err := openDir(parent, name, windows.SYNCHRONIZE|readAccess)
+// lookUp is what is at name in the folder parent holds open, held open as itself to read who may
+// change it, and whether it is a junction or a link (a name surrogate, as nameSurrogate reads one):
+// looked up there and nowhere else, never followed, nor reparsed anywhere (ntOpen). Anything else
+// that is not a folder is refused, and nothing at the name is an error that is fs.ErrNotExist.
+func lookUp(parent step, name string) (step, bool, error) {
+	h, err := ntOpen(parent.h, name, nil, windows.SYNCHRONIZE|readAccess, windows.FILE_OPEN, 0)
 	if err != nil {
-		return 0, fmt.Errorf("%s was made by somebody else while conflux made the way to %s, and is not a "+
-			"directory conflux can go into without following it (%v), so conflux will not use it.\n  Remove it, "+
-			"then run this again", at, dir, err)
+		return step{}, false, err
 	}
 
-	switch link, err := isReparse(h); {
+	attributes, tag, err := attributeTag(h)
+
+	switch {
 	case err != nil:
-		windows.CloseHandle(h)
-
-		return 0, fmt.Errorf("read %s: %w", at, err)
-	case link:
-		windows.CloseHandle(h)
-
-		return 0, fmt.Errorf("%s, a junction or a link, was made while conflux made the way to %s, which conflux "+
-			"will not follow.\n  Remove it, then run this again", at, dir)
+	case attributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 && tag&reparseTagNameSurrogate != 0:
+		return step{h}, true, nil
+	case attributes&windows.FILE_ATTRIBUTE_DIRECTORY == 0:
+		err = syscall.ENOTDIR
+	default:
+		return step{h}, false, nil
 	}
 
-	who, _, err := changer(at, h, moves, "move it or what is in it", nil, false)
-	if err == nil && who != "" {
-		err = fmt.Errorf("%s is inside %s, which %s could move it aside and put another in its place for conflux "+
-			"to run.\n  Choose a CONFLUX_DIR whose every parent only SYSTEM, the Administrators and this account can "+
-			"change", dir, at, who)
+	windows.CloseHandle(h)
+
+	return step{}, false, err
+}
+
+// readLink is where the junction or link s holds open leads, read off it (linkTarget): one that may
+// lead off this machine is refused unfollowed.
+func readLink(s step) (string, error) { return linkTarget(s.h) }
+
+// makeStep makes the folder name in the one parent holds open, and holds it open: through parent
+// (createDir), looked up there and nowhere else and never followed, the root with Restrict's
+// ownership and DACL set as it is created (createIn), and a folder on the way with nothing set but
+// what the one before passes on. ERROR_ALREADY_EXISTS is anything already at the name, a link
+// included.
+func makeStep(parent step, name string, root bool) (step, bool, error) {
+	const access = windows.SYNCHRONIZE | windows.FILE_READ_ATTRIBUTES
+
+	var (
+		h   windows.Handle
+		err error
+	)
+
+	if root {
+		h, err = createIn(parent.h, name, access)
+	} else {
+		h, err = createDir(parent.h, name, nil, access)
 	}
 
 	if err != nil {
-		windows.CloseHandle(h)
-
-		return 0, err
+		return step{}, false, err
 	}
 
-	return h, nil
-}
-
-// offMachineLinks refuses dir, where whoever set CONFLUX_DIR chose it (chosen), where a link on the
-// way to it leads off this machine (windowsLinkTarget), as ancestors reads each link it meets before
-// it looks anything up through it, as far as the way is there; and is what ancestors met, for
-// makeRoot to judge before it makes anything on the way. Every other error ancestors meets refuses
-// dir too -- a link it cannot read, more than 255 links, a name on the way Lstat is denied -- but a
-// name that is not there, which only ends the way. A lookup of dir by its name follows every link on
-// the way, so this comes before any.
-func offMachineLinks(dir string) ([]step, error) {
-	if !chosen(dir) {
-		return nil, nil
-	}
-
-	above, err := ancestors(dir)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, err
-	}
-
-	return above, nil
-}
-
-// readLink is where the link p, opened as itself, leads (linkTarget), as ancestors follows it.
-func readLink(p string) (string, error) {
-	h, err := openFile(p, windows.FILE_READ_ATTRIBUTES, false)
-	if err != nil {
-		return "", err
-	}
-	defer windows.CloseHandle(h)
-
-	return linkTarget(h)
+	return step{h}, true, nil
 }
 
 // linkTarget is where the symbolic link or junction h holds open as itself leads, read off the link
@@ -324,7 +242,7 @@ func anchordDirSDDL(sid *windows.SID) string {
 // instant, as one made and then given its security would be, under what its parent passes on.
 // libexec's staging directory (MakeRestricted) and the directories anchord is given (daemon's
 // makeAnchorDir: MakeRestricted, or MakeAnchordDir for its account) are made so; a root and its
-// run directory are made the same way through a handle on their parent (makeIn).
+// run directory are made the same way through a handle on their parent (createIn).
 func makeDir(path string, sd *windows.SECURITY_DESCRIPTOR) error {
 	name, err := windows.UTF16PtrFromString(path)
 	if err != nil {
@@ -381,7 +299,10 @@ func restrictedDir(create func(sd *windows.SECURITY_DESCRIPTOR) error) error {
 func fill(dir string, h windows.Handle) error {
 	filling(dir)
 
-	filled := makeIn(h, runName)
+	run, filled := createIn(h, runName, windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES)
+	if filled == nil {
+		filled = windows.CloseHandle(run)
+	}
 
 	if err := notLink(dir, h, "became a junction or a link while conflux secured it"); err != nil {
 		return err
@@ -398,17 +319,6 @@ func fill(dir string, h windows.Handle) error {
 	}
 
 	return fmt.Errorf("create %s in %s: %w", runName, dir, filled)
-}
-
-// makeIn makes the directory name in the one parent holds open (createIn), and lets it go:
-// ERROR_ALREADY_EXISTS where anything is at the name, a link included, which is not followed.
-func makeIn(parent windows.Handle, name string) error {
-	h, err := createIn(parent, name, windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES)
-	if err != nil {
-		return err
-	}
-
-	return windows.CloseHandle(h)
 }
 
 // createIn creates the directory name in the one parent holds open, with Restrict's ownership and
@@ -441,19 +351,13 @@ var filling = func(string) {}
 // to, as CreateDirectory returns one -- ERROR_ALREADY_EXISTS for a name already taken -- so that
 // restrictWith tells a refused owner.
 func createDir(parent windows.Handle, name string, sd *windows.SECURITY_DESCRIPTOR, access uint32) (windows.Handle, error) {
-	return ntDir(parent, name, sd, access, windows.FILE_CREATE)
+	return ntOpen(parent, name, sd, access, windows.FILE_CREATE, windows.FILE_DIRECTORY_FILE)
 }
 
-// openDir opens the directory name in the one parent holds open, for access, as createDir would
-// create it: looked up there and nowhere else, never followed, nor reparsed anywhere. A reparse
-// point at the name is opened as itself, or refused; anything but a directory is refused.
-func openDir(parent windows.Handle, name string, access uint32) (windows.Handle, error) {
-	return ntDir(parent, name, nil, access, windows.FILE_OPEN)
-}
-
-// ntDir is createDir and openDir: NtCreateFile of the directory name relative to parent, as
-// disposition says, with sd where it creates one.
-func ntDir(parent windows.Handle, name string, sd *windows.SECURITY_DESCRIPTOR, access, disposition uint32) (windows.Handle, error) {
+// ntOpen is createDir and lookUp's open: NtCreateFile of name relative to parent, as disposition
+// says, with options beside never following what is at the name, and sd where it creates one.
+func ntOpen(parent windows.Handle, name string, sd *windows.SECURITY_DESCRIPTOR, access, disposition,
+	options uint32) (windows.Handle, error) {
 	u, err := windows.NewNTUnicodeString(name)
 	if err != nil {
 		return 0, err
@@ -474,7 +378,7 @@ func ntDir(parent windows.Handle, name string, sd *windows.SECURITY_DESCRIPTOR, 
 
 	err = windows.NtCreateFile(&h, access, &oa, &iosb, nil,
 		windows.FILE_ATTRIBUTE_NORMAL, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
-		disposition, windows.FILE_DIRECTORY_FILE|windows.FILE_SYNCHRONOUS_IO_NONALERT|windows.FILE_OPEN_REPARSE_POINT,
+		disposition, options|windows.FILE_SYNCHRONOUS_IO_NONALERT|windows.FILE_OPEN_REPARSE_POINT,
 		0, 0)
 
 	if status, ok := err.(windows.NTStatus); ok {
@@ -587,17 +491,17 @@ func trusted(sid *windows.SID) bool {
 // keeps that owner through the new DACL -- an owner can always grant itself the rest -- so the
 // service would go on writing its log or its token into a place that account controls.
 func secure(dir string) error {
-	root, err := heldRoot(dir, rootAccess)
-	if err != nil {
-		return err
-	}
-	defer root.close()
-
 	if chosen(dir) {
 		if err := parents(dir); err != nil {
 			return err
 		}
 	}
+
+	root, err := heldRoot(dir, rootAccess)
+	if err != nil {
+		return err
+	}
+	defer root.close()
 
 	sd, err := security(root.dir)
 	if err != nil {
@@ -641,9 +545,13 @@ func secure(dir string) error {
 	// else may take out what fill puts in the root, and a handle keeps what it was opened with
 	// once the DACL is replaced. %ProgramData%'s grant to Users -- to add to a folder and write its
 	// attributes -- moves nothing, so a root that only inherits it passes.
-	if err := moverRefusal(dir, sd, "take out what conflux puts in it, with a handle opened now that keeps the "+
-		"right once conflux restricts it"); err != nil {
+	switch who, _, err := changerIn(dir, sd, moves, "move it or what is in it", nil, false); {
+	case err != nil:
 		return err
+	case who != "":
+		return fmt.Errorf("%s %s could take out what conflux puts in it, with a handle opened now that keeps the "+
+			"right once conflux restricts it, so conflux will not use it.\n  Give it a DACL that grants nobody "+
+			"else that right, then run this again as Administrator", dir, who)
 	}
 
 	// A junction is made conflux's own before what the root holds is read by its name, through it.
@@ -962,21 +870,6 @@ func checkRoot(dir string) error {
 	return nil
 }
 
-// moverRefusal refuses the root dir, whose owner and DACL sd holds as found, where they let an
-// account other than those trustedOwner names move it or what is in it (moves), saying what that
-// account could then do; or is nil.
-func moverRefusal(dir string, sd *windows.SECURITY_DESCRIPTOR, could string) error {
-	switch who, _, err := changerIn(dir, sd, moves, "move it or what is in it", nil, false); {
-	case err != nil:
-		return err
-	case who != "":
-		return fmt.Errorf("%s %s could %s, so conflux will not use it.\n  Give it a DACL that grants nobody else "+
-			"that right, then run this again as Administrator", dir, who, could)
-	}
-
-	return nil
-}
-
 // readAccess is what a handle that only reads who may change a file is opened for.
 const readAccess = windows.READ_CONTROL | windows.FILE_READ_ATTRIBUTES
 
@@ -1154,7 +1047,7 @@ func notLink(dir string, h windows.Handle, why string) error {
 }
 
 // contents refuses the root dir where anything in it another account may change: each entry is
-// judged by its own owner and DACL, read without following it, as mayChange reads them, and held to
+// judged by its own owner and DACL, read without following it, as parentsRule reads them, and held to
 // retargets, as a junction root is. A junction or a link (nameSurrogate) is refused, and not
 // followed, whoever may change it: conflux makes none there, and one there could have been opened
 // to repoint it while its DACL let somebody. So is anything else another account may write, move or
@@ -1296,13 +1189,21 @@ func openFile(p string, access uint32, follow bool) (windows.Handle, error) {
 // or a symbolic link, whose tag says it stands for another name (IsReparseTagNameSurrogate) --
 // rather than one holding something of its own, as anchord's AF_UNIX socket does.
 func nameSurrogate(h windows.Handle) (bool, error) {
-	var info struct{ FileAttributes, ReparseTag uint32 } // FILE_ATTRIBUTE_TAG_INFO
+	attributes, tag, err := attributeTag(h)
+
+	return attributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 && tag&reparseTagNameSurrogate != 0, err
+}
+
+// attributeTag is what h holds open's attributes and, where it is a reparse point, its tag say
+// (FILE_ATTRIBUTE_TAG_INFO).
+func attributeTag(h windows.Handle) (attributes, tag uint32, err error) {
+	var info struct{ FileAttributes, ReparseTag uint32 }
 	if err := windows.GetFileInformationByHandleEx(h, windows.FileAttributeTagInfo, (*byte)(unsafe.Pointer(&info)),
 		uint32(unsafe.Sizeof(info))); err != nil {
-		return false, err
+		return 0, 0, err
 	}
 
-	return info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 && info.ReparseTag&reparseTagNameSurrogate != 0, nil
+	return info.FileAttributes, info.ReparseTag, nil
 }
 
 // reparseTagNameSurrogate is the bit of a reparse tag that says it stands for another name.
@@ -1349,62 +1250,34 @@ const retargets = moves | windows.FILE_WRITE_DATA | windows.FILE_APPEND_DATA | w
 // sidTrustedInstaller is NT SERVICE\TrustedInstaller, which owns much of the system drive.
 var sidTrustedInstaller, _ = windows.StringToSid("S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464")
 
-// parents refuses dir where an account other than SYSTEM, Administrators, TrustedInstaller
-// and the one running conflux may move it: one owns a directory above it, which lets it
-// grant itself anything, or is granted one of moves on it. Whoever may move a parent can
-// put a directory of their own where dir is, with a conflux in it for the service to run
-// as SYSTEM. A link or junction on the way is held to the same, as itself, and to retargets,
-// since whoever may point it elsewhere may as well; the lookup goes on where it leads
-// (ancestors).
-func parents(dir string) error {
-	above, err := ancestors(dir)
-	if err != nil {
-		return err
-	}
-
-	return parentsRefusal(dir, above)
-}
-
-// parentsRefusal is parents' refusal of dir over above, the steps on the way to it as ancestors met
-// them, or nil.
-func parentsRefusal(dir string, above []step) error {
-	for _, s := range above {
-		p := s.path
-
-		// A step the lookup reached without looking its name up is never a link (step).
+// parentsRule is parents' rule for dir: a folder on the way to it is refused where an account other
+// than SYSTEM, Administrators, TrustedInstaller and the one running conflux owns it, which lets it
+// grant itself anything, or is granted one of moves on it -- whoever may move a parent can put a
+// directory of their own where dir is, with a conflux in it for the service to run as SYSTEM -- and
+// a link or a junction is held to the same, as itself, and to retargets, since whoever may point it
+// elsewhere may as well. Each is judged by the owner and DACL read through the handle the walk holds
+// it by.
+func parentsRule(dir string) judgement {
+	return func(p string, s step, link bool) error {
 		where, what, rights := "inside", "move it or what is in it", windows.ACCESS_MASK(moves)
-		if s.fi != nil && isLink(s.fi) {
+		if link {
 			where, what, rights = "reached through", "point it elsewhere or move it", retargets
 		}
 
-		who, err := mayChange(p, rights, what)
-		if err != nil {
-			return err
+		who, _, err := changer(p, s.h, rights, what, nil, false)
+		if err == nil && who != "" {
+			err = fmt.Errorf("%s is %s %s, which %s could move it aside and put another in its place for conflux "+
+				"to run.\n  Choose a CONFLUX_DIR whose every parent only SYSTEM, the Administrators and this account "+
+				"can change", dir, where, p, who)
 		}
 
-		if who != "" {
-			return fmt.Errorf("%s is %s %s, which %s could move it aside and put another in its place "+
-				"for conflux to run.\n  Choose a CONFLUX_DIR whose every parent only SYSTEM, the Administrators "+
-				"and this account can change", dir, where, p, who)
-		}
+		return err
 	}
-
-	return nil
 }
 
-// mayChange is who besides SYSTEM, the Administrators, TrustedInstaller and the account running
-// conflux may change p itself, as a refusal names them, or "": changer, of p opened as itself.
-func mayChange(p string, rights windows.ACCESS_MASK, what string) (string, error) {
-	h, err := openFile(p, windows.READ_CONTROL, false)
-	if err != nil {
-		return "", fmt.Errorf("read the ownership of %s: %w", p, err)
-	}
-	defer windows.CloseHandle(h)
-
-	who, _, err := changer(p, h, rights, what, nil, false)
-
-	return who, err
-}
+// parents refuses dir where its way, walked from the top of its volume (walk), is not there, or is
+// not held to parents' rule (parentsRule).
+func parents(dir string) error { return judgeWay(dir, parentsRule(dir)) }
 
 // changer is changerIn of p, held open as itself by h, over the owner and DACL read through h, and
 // what they allow on p itself, or, where passedOn, on what is made in it too.
@@ -1451,13 +1324,6 @@ func changerIn(p string, sd *windows.SECURITY_DESCRIPTOR, rights windows.ACCESS_
 	}
 
 	return "", anchords, nil
-}
-
-// isLink reports whether fi, read without following it, is a link a lookup follows: a
-// symbolic link, or a junction or mount point, which Go reports as irregular rather than as
-// a link or a directory.
-func isLink(fi os.FileInfo) bool {
-	return fi.Mode()&os.ModeSymlink != 0 || fi.Mode()&os.ModeIrregular != 0 && !fi.IsDir()
 }
 
 // mover is the first account dacl grants one of rights on the object itself, or, where passedOn,

@@ -2,7 +2,14 @@
 
 package paths
 
+import "golang.org/x/sys/unix"
+
 const sockPathMax = 108 // sizeof(sockaddr_un.sun_path) on Linux
+
+// holdDir is how a walk opens a directory to hold it: as a path alone (O_PATH), which needs no
+// right on the directory but to reach it, as a lookup through it needs, and serves fstat and the
+// *at calls.
+const holdDir = unix.O_PATH
 
 // platformDirs follows the FHS: configuration in /etc, variable state a program
 // maintains in /var/lib, runtime files that do not survive a reboot in /run.

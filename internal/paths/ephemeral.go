@@ -137,28 +137,18 @@ func FirstExecutable(candidates []string, refuse func(string) error) (string, er
 
 // executable reports whether a program extracted under root may run: whether the
 // filesystem holding the nearest of root and its parents that exists is mounted to allow
-// it, so a root not made yet is judged by where it would be made.
+// it, so a root not made yet is judged by where it would be made. It walks up by name and
+// judges nothing: what it reads of a directory is the filesystem it is on, not who may
+// change it.
 func executable(root string) (bool, error) {
-	var ok bool
+	for p := root; ; p = filepath.Dir(p) {
+		ok, err := MountAllowsExec(p)
+		if !errors.Is(err, fs.ErrNotExist) || filepath.Dir(p) == p {
+			if err != nil {
+				return false, fmt.Errorf("read the filesystem holding %s: %w", root, err)
+			}
 
-	if err := nearest(root, func(dir string) (err error) {
-		ok, err = MountAllowsExec(dir)
-
-		return err
-	}); err != nil {
-		return false, fmt.Errorf("read the filesystem holding %s: %w", root, err)
-	}
-
-	return ok, nil
-}
-
-// nearest calls at with dir, and then with each directory above it in turn while at says the one it
-// was given is not there (fs.ErrNotExist), and is what at said last: of the nearest of them that is
-// there, or, where none is, of the top of the volume.
-func nearest(dir string, at func(string) error) error {
-	for p := dir; ; p = filepath.Dir(p) {
-		if err := at(p); !errors.Is(err, fs.ErrNotExist) || filepath.Dir(p) == p {
-			return err
+			return ok, nil
 		}
 	}
 }

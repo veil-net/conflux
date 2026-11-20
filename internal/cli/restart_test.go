@@ -9,7 +9,6 @@ import (
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
-	"github.com/veil-net/conflux/internal/privcheck"
 )
 
 // fakeManager records what it was asked and reports what the marker looked like at the
@@ -67,8 +66,7 @@ var errStartsNothing = errors.New("the stand-in service manager starts nothing")
 // moment Install starts it is the one waitFor is waiting for, so nothing withdraws it
 // after: withdrawn, waitFor would see nothing and fall back to asking status once a second.
 func TestTheMarkerIsWithdrawnBeforeAnythingStarts(t *testing.T) {
-	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
-	privcheck.Elevated = func() bool { return true }
+	rootOnLinux(t)
 
 	for name, args := range map[string][]string{
 		"start": {"start"},

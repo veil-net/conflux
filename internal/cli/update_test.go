@@ -116,8 +116,7 @@ func TestUpdateReplacesTheExecutable(t *testing.T) {
 		t.Skip("the stand-in conflux is a shell script")
 	}
 
-	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
-	privcheck.Elevated = func() bool { return true }
+	rootOnLinux(t)
 
 	dir := t.TempDir()
 	exe := filepath.Join(dir, "conflux")
@@ -161,8 +160,7 @@ func TestUpdateHandsAStoppedServiceToTheNewConflux(t *testing.T) {
 		t.Skip("the stand-in conflux is a shell script")
 	}
 
-	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
-	privcheck.Elevated = func() bool { return true }
+	rootOnLinux(t)
 
 	exe := filepath.Join(t.TempDir(), "conflux")
 	if err := os.WriteFile(exe, []byte("#!/bin/sh\necho conflux 1.0.0 old\n"), 0o755); err != nil {
@@ -198,8 +196,7 @@ func TestUpdateHandsAStoppedServiceToTheNewConflux(t *testing.T) {
 // starts nothing -- on a machine with a configuration to start, as every machine update
 // hands a service to has.
 func TestRegisterStartsNothing(t *testing.T) {
-	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
-	privcheck.Elevated = func() bool { return true }
+	rootOnLinux(t)
 
 	d := pathstest.Dirs(t)
 
@@ -239,8 +236,7 @@ func TestUpdateRefusesABinaryThatDoesNotRun(t *testing.T) {
 		t.Skip("the stand-in conflux is a shell script")
 	}
 
-	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
-	privcheck.Elevated = func() bool { return true }
+	rootOnLinux(t)
 
 	dir := t.TempDir()
 	exe := filepath.Join(dir, "conflux")

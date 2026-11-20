@@ -16,7 +16,6 @@ import (
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
-	"github.com/veil-net/conflux/internal/privcheck"
 )
 
 // runningStandIn makes d's daemon look running (looksRunning), and puts a stand-in anchorctl
@@ -229,8 +228,7 @@ func TestStatusSaysTheAnchorWasGivenUp(t *testing.T) {
 // TestDownForgetsWhatWasGivenUp: an anchor stopped by hand is not one the supervisor gave up on,
 // so `conflux down` clears the record, and status says nothing of it after.
 func TestDownForgetsWhatWasGivenUp(t *testing.T) {
-	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
-	privcheck.Elevated = func() bool { return true }
+	rootOnLinux(t)
 
 	d := pathstest.Dirs(t)
 

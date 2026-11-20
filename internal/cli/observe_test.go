@@ -260,8 +260,8 @@ func holdingAlpha(t *testing.T, d paths.Dirs) []string {
 	return credentialFrom(t, alphaDoc).Taints()
 }
 
-// rootOnLinux runs conflux observe, for the rest of the test, as root on a host with a capture,
-// whoever runs the test on whichever host.
+// rootOnLinux runs conflux, for the rest of the test, as root on a host with a capture, whoever
+// runs the test on whichever host.
 func rootOnLinux(t *testing.T) {
 	t.Helper()
 

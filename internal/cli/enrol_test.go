@@ -184,6 +184,44 @@ func TestEnrolRefusesBeforeWriting(t *testing.T) {
 	}
 }
 
+// TestEnrolReplacesACorruptState: a state.json that does not parse, on a machine holding no
+// credential, describes no identity there is, so installing one replaces it rather than
+// refusing; and a state.json that cannot be read at all is refused before anything is
+// written.
+func TestEnrolReplacesACorruptState(t *testing.T) {
+	d, path := site(t, guardianDoc)
+
+	if err := os.WriteFile(d.StateFile(), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := importCredential(d, path, guardianAPI, ""); err != nil {
+		t.Errorf("importCredential refused a corrupt state.json with no identity held: %v", err)
+	}
+
+	if st, err := config.LoadState(d); err != nil || st.AnchorID != "" {
+		t.Errorf("state.json after the import: %+v (%v), want a fresh one", st, err)
+	}
+
+	if !config.HasManifest(d) {
+		t.Error("the manifest was not installed")
+	}
+
+	d, path = site(t, guardianDoc)
+
+	if err := os.Mkdir(d.StateFile(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := importCredential(d, path, guardianAPI, ""); err == nil {
+		t.Fatal("importCredential accepted a state.json it cannot read")
+	}
+
+	if _, err := config.Load(d); err == nil || config.HasManifest(d) {
+		t.Errorf("a refused import wrote the configuration (%v) or the manifest (%v)", err, config.HasManifest(d))
+	}
+}
+
 // TestEnrolDerivesTheAPIFromTheManifest. The document names an absolute renewal
 // URL because a self-hosted API is wherever its operator put it, so the base is
 // already there and making somebody retype it buys a typo rather than a check.

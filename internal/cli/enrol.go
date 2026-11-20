@@ -413,6 +413,19 @@ func seedExport(cfg *config.Config, m *enrol.Manifest) error {
 }
 
 func saveImported(d paths.Dirs, cfg *config.Config, env config.Envelope) error {
+	// A state.json left from an identity removed by hand would have the next start renew
+	// this one under the old AnchorID, so the new identity starts from none of it. Read
+	// before anything is written, so a state.json that cannot be read is refused with nothing
+	// changed. One that does not parse is replaced rather than refused: no manifest is held,
+	// so it describes no identity there is, and there is no AnchorID in it to lose.
+	st, err := config.LoadState(d)
+	switch {
+	case errors.Is(err, config.ErrStateCorrupt):
+		st = &config.State{}
+	case err != nil:
+		return err
+	}
+
 	// Mode is whatever it already was, or TUN for a machine with no configuration
 	// yet: this verb installs a credential and does not decide what the machine
 	// does with it. `up` and `proxy` still own that, and either of them run after
@@ -428,14 +441,8 @@ func saveImported(d paths.Dirs, cfg *config.Config, env config.Envelope) error {
 		return err
 	}
 
-	// A state.json left from an identity removed by hand would have the next start renew
-	// this one under the old AnchorID. Before the manifest: with none on disk it describes
-	// no identity there is, so clearing it first loses nothing whichever write fails.
-	st, err := config.LoadState(d)
-	if err != nil {
-		return err
-	}
-
+	// Before the manifest: with none on disk the state describes no identity there is, so
+	// clearing it first loses nothing whichever write fails.
 	st.NewIdentity()
 
 	if err := config.SaveState(d, st); err != nil {

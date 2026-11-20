@@ -379,7 +379,8 @@ func makeAnchorDir(path string, p Privilege) error {
 }
 
 // legacyAnchorDir reports an anchor directory at the account's name that the service SID
-// was never given: conflux 1.0.0's, which a SYSTEM anchord used.
+// was never given: conflux 1.0.0's, which a SYSTEM anchord used, and which the supervisor
+// refuses to start on.
 func legacyAnchorDir(path string) bool {
 	fi, err := os.Lstat(path)
 	if err != nil || !fi.IsDir() {

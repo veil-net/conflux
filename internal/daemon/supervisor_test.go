@@ -641,3 +641,33 @@ func TestWhatAProbeCannotRecoverFrom(t *testing.T) {
 		}
 	}
 }
+
+// TestAMachineLaidOutByOneZeroZeroIsRefused: conflux 1.0.0 gave a root anchord the account's
+// name for its directory, and this conflux does not take a machine over from that layout: the
+// supervisor refuses it for good before it starts anything, naming the way on, a new identity.
+func TestAMachineLaidOutByOneZeroZeroIsRefused(t *testing.T) {
+	s, log := supervised(t, "serve")
+
+	// An API nothing answers on, so a supervisor that went on would enrol nowhere.
+	t.Setenv("CONFLUX_ALLOW_INSECURE_API", "1")
+
+	if err := config.Save(s.Dirs, &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, APIBaseURL: "http://127.0.0.1:1"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.MkdirAll(s.Dirs.AnchorDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+
+	err := s.Run(ctx)
+	if !Permanent(err) || !strings.Contains(err.Error(), "conflux uninstall") || !strings.Contains(err.Error(), "conflux up") {
+		t.Errorf("Run = %v, want a refusal for good naming conflux uninstall and conflux up", err)
+	}
+
+	if cmds := ran(t, log); len(cmds) > 0 {
+		t.Errorf("anchorctl ran %v on a machine refused", cmds)
+	}
+}

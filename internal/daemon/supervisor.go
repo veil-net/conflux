@@ -182,13 +182,6 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		s.report().Warn("stopped anchord (pid %d), left running by a supervisor that ended without stopping it", pid)
 	}
 
-	// conflux 1.0.0 kept the socket in the run directory itself. The daemon that held it
-	// is gone by now, and so the two names are nothing's.
-	if held, err := flock.Held(s.Dirs.LegacySocket() + ".lock"); err == nil && !held {
-		_ = os.Remove(s.Dirs.LegacySocket())
-		_ = os.Remove(s.Dirs.LegacySocket() + ".lock")
-	}
-
 	if p, ok := RecordedPrivilege(s.Dirs); ok {
 		s.lastDir = p.Dir
 	}
@@ -206,6 +199,14 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	// same answer every five seconds.
 	if _, err := loadConfig(s.Dirs); err != nil {
 		return err
+	}
+
+	// Nor on a machine laid out as conflux 1.0.0 left it, which this conflux does not take
+	// over; told once, with the way on.
+	if legacyAnchorDir(s.Dirs.AnchorDir()) {
+		return &permanentError{err: fmt.Errorf("%s is conflux 1.0.0's anchor directory, and this conflux does not "+
+			"take over a machine laid out as 1.0.0 left it.\n  Run conflux uninstall, then conflux up, which draws "+
+			"a new identity and a new overlay address", s.Dirs.AnchorDir())}
 	}
 
 	tools, err := libexec.Ensure(s.Dirs)

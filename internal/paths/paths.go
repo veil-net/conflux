@@ -173,10 +173,6 @@ func (d Dirs) DaemonRun() string { return filepath.Join(d.Run, "anchord") }
 // around it is the first gate and the bearer token is the second.
 func (d Dirs) Socket() string { return filepath.Join(d.DaemonRun(), socketName) }
 
-// LegacySocket is where conflux 1.0.0 put the socket, directly in the run directory, which
-// an upgrade finds a daemon -- or the lock anchor leaves -- still holding.
-func (d Dirs) LegacySocket() string { return filepath.Join(d.Run, "anchord.sock") }
-
 // TokenFile holds the bearer token anchorctl authenticates with. Regenerated on
 // every supervisor start, so a token left by a crashed run authenticates nothing.
 // Root's alone: anchord is handed the token in its environment instead.

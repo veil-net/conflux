@@ -259,7 +259,8 @@ func (s *Supervisor) killLeftovers() {
 }
 
 // legacyAnchorDir reports an anchor directory at the account's name that is the
-// supervisor's own: conflux 1.0.0's, from before anchord ran as anything but root.
+// supervisor's own: conflux 1.0.0's, from before anchord ran as anything but root, which
+// the supervisor refuses to start on. One lstat.
 func legacyAnchorDir(path string) bool {
 	fi, err := os.Lstat(path)
 	if err != nil || !fi.IsDir() {

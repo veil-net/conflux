@@ -161,10 +161,6 @@ bufcap=0
 bufrow="with no privilege"
 [ "$bufcap" = 0x1000 ] && bufrow="CAP_NET_ADMIN to size its UDP buffers"
 
-# conflux 1.0.0 gave a root anchord the account's name for its directory: the first start
-# after the upgrade moves that state to root's own, and the account starts from a copy.
-docker exec "$NAME" sh -c 'umask 077 && mkdir -p /var/lib/conflux/anchor && echo 1.0.0 > /var/lib/conflux/anchor/legacy'
-
 say "in userspace anchord runs as its own account, with no capability"
 configure proxy
 start
@@ -186,10 +182,6 @@ check_mode /run/conflux/anchord "700 conflux conflux"
 check_mode /var/lib/conflux/anchord.json "600 conflux conflux"
 check_mode /run/conflux/token "600 root root"
 check_mode /var/lib/conflux/conflux "700 root root"
-
-say "the 1.0.0 anchor directory became root's, and the account's started from a copy"
-check_mode /var/lib/conflux/anchor.root/legacy "600 root root"
-check_mode /var/lib/conflux/anchor/legacy "600 conflux conflux"
 
 # systemd re-owns a directory it was told to make, at every start, once its group is not
 # the unit's: the state directory is not one of those, and stays as the supervisor left it.

@@ -14,10 +14,11 @@
 // holds to read two binaries could also clone the repository, and that is the trade being
 // made knowingly rather than by accident.
 //
-// It is acceptable for a reason worth stating rather than re-deriving: GitHub never passes
-// secrets to workflows triggered by fork pull requests, and every conflux job refuses fork
-// pull requests outright, so the token is not reachable by anyone who does not already
-// have write access to conflux.
+// It is acceptable for a reason worth stating rather than re-deriving: GitHub passes a
+// fork's pull_request run no secret, and a fork's run from outside the organisation and its
+// collaborators waits for a maintainer's approval, which none gives (docs/testing.md), so
+// the token is not reachable by anyone who is neither a member of the organisation nor a
+// collaborator on conflux.
 //
 // # Where a fetch can reach, and what vouches for what arrives
 //

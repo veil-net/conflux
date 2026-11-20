@@ -11,10 +11,11 @@ name: branch-flow
 #
 # Required on dev and on version3 alike, beside ci.yml's checks. It always runs and fails rather
 # than skips, since a skipped required check counts as passing. On a hosted runner: it reads
-# the repository and holds no secret. A fork's pull request runs nothing until a maintainer
-# approves it, which none does (docs/testing.md); failing one here is a second line behind that
-# setting, for a run approved by mistake, since a fork's pull request runs its own copies of
-# this file and the script, and could have edited the refusal out.
+# the repository and holds no secret. A fork's pull request from outside the organisation and
+# its collaborators runs nothing until a maintainer approves it, which none does
+# (docs/testing.md); failing one here is a second line behind that setting, for a run approved
+# by mistake. A member's or a collaborator's fork runs unapproved, and since a fork's pull
+# request runs its own copies of this file and the script, it can edit the refusal out.
 on:
   pull_request:
     types: [opened, synchronize, reopened, edited]

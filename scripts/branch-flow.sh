@@ -9,10 +9,12 @@
 # its base. The branches (docs/testing.md, "Branches"):
 #
 #   - A pull request's head is a branch of this repository, and its branch is tested by pushing
-#     it here. The guard is the repository's setting that a fork's run waits for a
-#     maintainer's approval, which is never given (docs/testing.md, "A fork's pull request
-#     runs nothing"). This refusal is a second line, for a run approved by mistake: a fork's
-#     pull request runs its own copy of this file, and could have edited the refusal out.
+#     it here. The guard is the repository's setting that a fork's run from outside the
+#     organisation and its collaborators waits for a maintainer's approval, which is never
+#     given (docs/testing.md, "A fork's pull request from outside the organisation"). This
+#     refusal is a second line, for a run approved by mistake: a fork's pull request runs its
+#     own copy of this file, so a member's or a collaborator's fork, which runs unapproved,
+#     can edit the refusal out.
 #   - Work goes into dev, and only into dev: a feature or maintenance branch is cut from dev and
 #     its pull request is opened against it.
 #   - RELEASE takes dev and nothing else: its pull request's head is this repository's dev.

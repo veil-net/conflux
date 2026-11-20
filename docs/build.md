@@ -151,9 +151,10 @@ What the App changes is not what can be read but what is *kept here*:
 - **It does not expire and belongs to no person**, so CI does not go red a year from now
   for a reason unrelated to any code change, and the credential does not die when somebody
   leaves the org.
-- GitHub never passes secrets to workflows triggered by **fork** pull requests, and
-  conflux's Linux jobs refuse fork pull requests outright, so none of this is reachable by
-  anyone who does not already have write access to conflux.
+- GitHub never passes secrets to workflows triggered by **fork** pull requests, and a fork's
+  run from outside the organisation and its collaborators waits for a maintainer's approval,
+  which none gives ([testing.md](testing.md)), so none of this is reachable by anyone who is
+  neither a member of the organisation nor a collaborator on conflux.
 
 A deploy key cannot do this job. Deploy keys authenticate git transport only — `clone`,
 `fetch`, `push` over SSH — and release assets are API objects, not git objects. The REST

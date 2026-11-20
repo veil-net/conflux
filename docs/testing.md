@@ -321,18 +321,21 @@ realm through its manifest's bootstrap node over UDP, and from veilnet-dev no ha
 gets through to it. No checkout leaves its token in `.git/config`, and every action outside
 this repository is pinned to its release's commit, with the tag beside it in a comment.
 
-**A fork's pull request runs nothing until a maintainer approves it, and none ever does.**
-That is the fork guard: the repository's setting that every run for a pull request from an
-outside contributor waits for a maintainer's approval (`approval_policy:
+**A fork's pull request from outside the organisation runs nothing until a maintainer
+approves it, and none ever does.** That is the fork guard: the repository's setting that a run
+for a pull request from anyone who is neither a member of the organisation nor a collaborator
+on this repository waits for a maintainer's approval (`approval_policy:
 all_external_contributors`, under Settings, Actions, General). A machine that survives the job
 does not run a stranger's code, and the hosted jobs need the anchor credential a fork is not
-given, so a fork's run is never approved: its branch is pushed here instead and tested from
+given, so such a run is never approved: its branch is pushed here instead and tested from
 there. Unapproved, the run never starts, so the required checks never report and the pull
-request cannot merge. The setting stays as it is; a change to it is a change to the threat
-model. The refusals in the workflows — each job's `if:` in `ci.yml`, and `branch-flow`, which
-fails a fork's pull request — are a second line, for a run approved by mistake: a fork's pull
-request runs its own copies of the workflows and of `scripts/branch-flow.sh`, and could have
-edited the refusals out, which is why the setting is the guard and they are not.
+request cannot merge. A member's or a collaborator's fork is not held by the setting: its pull
+request runs unapproved, from its own copies of the workflows and of `scripts/branch-flow.sh`,
+held only by the refusals in them — each job's `if:` in `ci.yml`, and `branch-flow`, which
+fails a fork's pull request — and it can edit those out. So adding a member or a collaborator
+extends trust in the self-hosted runner to them. The setting stays as it is; a change to it,
+or to who is a member or a collaborator, is a change to the threat model. The refusals are a
+second line, for a run approved by mistake, and not the guard.
 
 ### Branches
 

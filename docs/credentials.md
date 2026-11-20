@@ -112,7 +112,9 @@ Renewal happens in two places, and both go through the same arithmetic:
 - **On a timer** while running. The sleep is clamped to at most six hours and
   recomputed against the wall clock each time, so a laptop that was suspended for six
   months renews within six hours of waking rather than sleeping on a timer armed in
-  another era.
+  another era. A renewal names the identity by the AnchorID the anchor or the observer
+  reported starting as, so until one has -- after a credential imported under the running
+  service -- the timer has nothing to renew, and looks again every minute without a word.
 
 Renewal is hot. `anchorctl renew` calls `SetRealmCred` on the running anchor, and `anchorctl
 observe -cred` `SetObserverCred` on the observer, which runs under the same credential and which

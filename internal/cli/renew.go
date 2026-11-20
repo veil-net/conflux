@@ -125,26 +125,24 @@ func renewNow(ctx context.Context, d paths.Dirs) int {
 		return fail(fmt.Errorf("could not read %s, which anchorctl authenticates with", d.TokenFile()))
 	}
 
-	// For the line it prints, and to say plainly what RenewNow would refuse: it reads the
-	// state again, under the lock.
+	// For the line it prints.
 	before, err := config.LoadState(d)
 	if err != nil {
 		return fail(err)
 	}
 
-	// A renewal names the identity by the AnchorID its anchor or observer reported starting
-	// as, and neither has reported one before it has started.
-	if before.AnchorID == "" {
-		return neverEnrolled()
-	}
-
 	// Unavailable rather than an error, like a machine that never enrolled: nothing went
-	// wrong, there is just nothing here this verb can do.
-	if err := daemon.RenewNow(ctx, d, ctl, reporter{}); errors.Is(err, enrol.ErrDoesNotRenew) {
+	// wrong, there is just nothing here this verb can do. A renewal names the identity by the
+	// AnchorID its anchor or observer reported starting as, and before either has, there is
+	// none.
+	switch err := daemon.RenewNow(ctx, d, ctl, reporter{}); {
+	case errors.Is(err, daemon.ErrNoAnchorID):
+		return neverEnrolled()
+	case errors.Is(err, enrol.ErrDoesNotRenew):
 		ui.Errf("%v", err)
 
 		return ExitUnavailable
-	} else if err != nil {
+	case err != nil:
 		return fail(err)
 	}
 

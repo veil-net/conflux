@@ -878,3 +878,32 @@ func TestTheTimerStopsOnACredentialThatDoesNotRenew(t *testing.T) {
 		t.Errorf("the issuer was asked %d times, want none", n)
 	}
 }
+
+// TestTheTimerWaitsQuietlyForAnAnchorID: a renewal names the identity by the AnchorID what
+// runs reported, so before anything has -- a credential imported under a running service --
+// there is nothing to renew yet, and the timer says nothing about it, rather than "renewal
+// failed" every minute.
+func TestTheTimerWaitsQuietlyForAnAnchorID(t *testing.T) {
+	is := newIssuer(t)
+	d := machine(t, is, time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour))
+
+	if err := config.SaveState(d, &config.State{}); err != nil {
+		t.Fatal(err)
+	}
+
+	r := &recorder{}
+	s := &Supervisor{Dirs: d, Reporter: r, ctl: fakeCtl(t)}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+
+	s.renewLoop(ctx)
+
+	if _, warns := r.said(); len(warns) > 0 {
+		t.Errorf("the timer warned %q with nothing to renew yet", warns)
+	}
+
+	if n := is.calls.Load(); n != 0 {
+		t.Errorf("the issuer was asked %d times, want none", n)
+	}
+}

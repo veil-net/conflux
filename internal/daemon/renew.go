@@ -14,6 +14,11 @@ import (
 	"github.com/veil-net/conflux/internal/ui"
 )
 
+// ErrNoAnchorID is RenewNow's answer before anything has run on the credential: a renewal
+// names the identity by the AnchorID the anchor or the observer reported starting as, and
+// neither has. Nothing failed, and nothing is recorded.
+var ErrNoAnchorID = errors.New("no AnchorID recorded; the anchor or the observer has to have started at least once")
+
 // held is a credential on disk: the manifest, its envelope, and, where a renewal has just
 // replaced the chain, the raw chain to install in what runs on the old one.
 type held struct {
@@ -157,7 +162,7 @@ func RenewNow(ctx context.Context, dirs paths.Dirs, ctl *anchorctl.Ctl, rep Repo
 	}
 
 	if st.AnchorID == "" {
-		return errors.New("no AnchorID recorded; the anchor or the observer has to have started at least once")
+		return ErrNoAnchorID
 	}
 
 	env, err := config.LoadManifest(dirs)

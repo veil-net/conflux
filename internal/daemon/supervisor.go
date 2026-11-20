@@ -747,7 +747,9 @@ func (s *Supervisor) stop(c *child) {
 //
 // It re-reads the state every round rather than trusting what it read before
 // sleeping, so a renewal somebody ran by hand in between moves the next one along.
-// A failed renewal is retried after minSleep. A credential that does not renew ends
+// A failed renewal is retried after minSleep, and so, without a word, is one with no
+// AnchorID to name the identity by yet: nothing has run on the credential to report one,
+// as after one imported under the running service. A credential that does not renew ends
 // the loop: the manifest cannot change while this process holds it, so asking again
 // would only say the same thing every minute.
 func (s *Supervisor) renewLoop(ctx context.Context) {
@@ -758,14 +760,15 @@ func (s *Supervisor) renewLoop(ctx context.Context) {
 		case err != nil:
 			s.report().Warn("%v", err) // names the file, as a read error does
 		case dueAt(st.IssuedAt, st.NotAfter, time.Now()):
-			if err := RenewNow(ctx, s.Dirs, s.ctl, s.report()); errors.Is(err, enrol.ErrDoesNotRenew) {
+			switch err := RenewNow(ctx, s.Dirs, s.ctl, s.report()); {
+			case err == nil:
+				continue
+			case errors.Is(err, enrol.ErrDoesNotRenew):
 				s.report().Warn("%v", err)
 
 				return
-			} else if err != nil {
+			case !errors.Is(err, ErrNoAnchorID):
 				s.report().Warn("renewal failed: %v", err)
-			} else {
-				continue
 			}
 		default:
 			wait = sleepUntilRenewal(st.IssuedAt, st.NotAfter, time.Now())

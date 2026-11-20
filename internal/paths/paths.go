@@ -62,8 +62,8 @@ func Default() Dirs {
 }
 
 // runName is the run directory's name inside a root that holds it: a CONFLUX_DIR's, an
-// ephemeral run's, and Windows's own. On Windows secure makes it as it secures a root it found,
-// so the root holds something (fill).
+// ephemeral run's, and Windows's own. On Windows secure makes it as it secures any root, so the
+// root holds something (fill).
 const runName = "run"
 
 // sharedLog is the system's own log directory, which macOS and FreeBSD put the service's

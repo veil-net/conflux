@@ -106,12 +106,21 @@ every reader of an ephemeral root too, as is a junction in it, and a root that i
 junction another account may point elsewhere; one nobody else may is replaced with a junction
 conflux makes, through its own handle, leading to the directory it judged (see
 [windows.md](windows.md#file-permissions)). A root on a network volume, however it is reached, is
-refused, by every reader of an ephemeral root too, as the volume conflux holds it open on says. One
-gap is left: a junction root already SYSTEM's or the Administrators' under a protected DACL granting
-nobody else the right to write it, add to it, move it or change who may, as conflux leaves the one
-it makes, is taken as conflux's and not replaced, so where an administrator tightened a junction to
-that after another account had opened it under a looser DACL, the handle that account kept can still
-point it elsewhere.
+refused, by every reader of an ephemeral root too, as the volume conflux holds it open on says.
+
+On Windows one gap is left, and it is a class: a handle keeps every right it was opened with, and
+conflux judges a DACL as it finds it, so where an administrator tightened a DACL after another
+account had opened what it guards under a looser one, the handle that account kept outlives the
+tightening, and conflux cannot see it. So a handle on a root, opened with `DELETE`, can still move
+it aside; one on a directory above a `CONFLUX_DIR`, opened to rename what is in it, can move the
+root aside and put another in its place; one on an empty folder in the root, opened to write its
+attributes, can make a junction of it; and one on a junction root, opened to write its attributes,
+can point it elsewhere once the junction is tightened to SYSTEM's or the Administrators' under a
+protected DACL granting nobody else the right to write it, add to it, move it or change who may, as
+conflux leaves the one it makes, since conflux then takes it as its own and does not replace it.
+What conflux makes, it makes with its DACL set as it is created, which nobody can have opened
+before; what an administrator tightens by hand is safe from such a handle once nobody else can hold
+one: after a restart, or made again rather than tightened.
 
 `CONFLUX_DIR` can point the extraction somewhere else, which is a knob worth knowing
 about: it lets a caller choose the directory a root daemon executes from. It exists

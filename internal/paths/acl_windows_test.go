@@ -939,7 +939,11 @@ func TestSecureRefusesARootWhoseDACLLetsAnotherMoveWhatIsInIt(t *testing.T) {
 	}
 
 	if privtest.ReadSecurity(t, root).Protected {
-		t.Error("the refused root was restricted; a refusal must change nothing")
+		t.Error("the root refused for its DACL was restricted; that refusal comes before anything is changed")
+	}
+
+	if _, err := os.Lstat(filepath.Join(root, runName)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the root refused for its DACL was filled; that refusal comes before anything is changed (%v)", err)
 	}
 
 	parent := t.TempDir()

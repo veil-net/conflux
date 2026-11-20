@@ -274,9 +274,9 @@ const (
 var shared atomic.Uint32
 
 // Share shares dir through this machine's own server for as long as tb runs, under a name of its
-// own, and is the UNC path that reaches it there, \\localhost\NAME: a folder on a network volume, as
-// Windows sees one, though the server is this machine. tb is skipped where this machine serves no
-// shares, may not be asked by this account to add one, or cannot reach its own.
+// own, and is the UNC path that reaches it there, \\localhost\NAME: a folder on a network volume,
+// as Windows sees one, though the server is this machine. tb is skipped where this machine serves
+// no shares, may not be asked by this account to add one, or cannot reach its own.
 func Share(tb testing.TB, dir string) string {
 	tb.Helper()
 

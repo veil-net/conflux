@@ -237,7 +237,8 @@ func restrictedDir(create func(sd *windows.SECURITY_DESCRIPTOR) error) error {
 // can no longer make a junction of it, and the run directory, SYSTEM's and the Administrators', is
 // not theirs to remove. Anything already there by that name does the same, and is judged with the
 // rest of what the root holds (contents). A root whose DACL does not let this account create a
-// folder in it is refused, saying so: it is filled before anything else, its DACL as found.
+// folder in it is refused, saying so: it is filled before what the root holds is judged or the
+// root restricted, under the DACL secure found.
 func fill(dir string, h windows.Handle) error {
 	filling(dir)
 
@@ -550,11 +551,12 @@ func secured(sd *windows.SECURITY_DESCRIPTOR) bool {
 // which keeps the rights it was opened with, can repoint nothing anybody reaches by the name.
 // Something made at the name before conflux makes its own is refused, naming where the junction
 // led and saying how to make it again first: with nothing at the name, the next run would make a
-// root afresh there, and the machine a new identity. A failure to make or point its own says the
-// same; a kill in that instant says nothing, and leaves nothing, or conflux's empty directory, at
-// the name, which windows.md tells an operator to remove and make the junction again in place of.
-// So is a directory that cannot be named by its volume's GUID, which a junction cannot lead to
-// (leadsTo). r.self is the new junction after.
+// root afresh there, and the machine a new identity. So is a directory that cannot be named by its
+// volume's GUID, which a junction cannot lead to (leadsTo), before anything is removed. A failure
+// to make or point its own says the same as something made at the name; a kill in that instant
+// says nothing, and leaves nothing, or conflux's empty directory, at the name, which windows.md
+// tells an operator to remove and make the junction again in place of. r.self is the new junction
+// after.
 func replaceLink(dir string, r *held) error {
 	target, err := leadsTo(dir, r.dir)
 	if err != nil {
@@ -772,15 +774,15 @@ func ownerRefusal(dir string, owner *windows.SID) error {
 		dir, accountName(owner))
 }
 
-// Foreign is what secure would refuse dir with for its owner, for a junction another account
-// may point elsewhere, or one leading where no junction of conflux's could (leadsTo), for a DACL
-// that lets another account move what is in it, or for anything in it another account may change
-// (contents), before anything is made, or nil where dir is this account's or is not there yet. A
-// directory another account made, or could have planted something in, is none of conflux's to
-// use, and whoever reads one -- an ephemeral run's root, which %ProgramData% lets anybody make
-// first -- holds it to this as the conflux that makes one does, through one handle as secure
-// does, and reading alone: nothing is run from a root whose contents another account could have
-// planted or can point elsewhere.
+// Foreign is what secure would refuse dir with for its owner, for a network volume it is on or
+// leads to (remote), for a junction another account may point elsewhere, or one leading where no
+// junction of conflux's could (leadsTo), for a DACL that lets another account move what is in it,
+// or for anything in it another account may change (contents), before anything is made, or nil
+// where dir is this account's or is not there yet. A directory another account made, or could have
+// planted something in, is none of conflux's to use, and whoever reads one -- an ephemeral run's
+// root, which %ProgramData% lets anybody make first -- holds it to this as the conflux that makes
+// one does, through one handle as secure does, and reading alone: nothing is run from a root whose
+// contents another account could have planted or can point elsewhere.
 func Foreign(dir string) error {
 	root, err := heldRoot(dir, readAccess)
 	if errors.As(err, new(unopened)) {
@@ -862,10 +864,11 @@ func (r *held) close() {
 // and that directory, held open, is what is judged after. A handle somebody opened on the link
 // while its DACL let them write it may still repoint it between the judgement and that open, so
 // where the link led as it was judged answers for nothing; secure replaces it with one of its own
-// leading to the directory opened (replaceLink), which nobody may have held open before. Where the
-// directory is that is not a plain directory either, it is refused: there is nothing further to
-// follow; so is one on a network volume (remote). A root that could not be opened or read, or
-// whose link leads nowhere, is refused as unopened.
+// leading to the directory opened (replaceLink), which nobody may have held open before, unless it
+// finds it secured already (security.md's gap). Where the directory is that is not a plain
+// directory either, it is refused: there is nothing further to follow; so is one on a network
+// volume (remote). A root that could not be opened or read, or whose link leads nowhere, is refused
+// as unopened.
 func heldRoot(dir string, access uint32) (held, error) {
 	self, err := openFile(dir, access, false)
 	if err != nil {

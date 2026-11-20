@@ -109,18 +109,13 @@ func restrictInfo(owner *windows.SID) windows.SECURITY_INFORMATION {
 // through a handle on its parent (makeIn), so that a link somebody plants at its name meanwhile is
 // found there rather than followed. The directories above it are made as MkdirAll makes them.
 // Anything already at its name, a link included, is secure's, whose heldRoot judges a link as
-// itself before it follows it. Before anything is made, a Windows older than conflux runs on is
-// refused (tooOld); so is a CONFLUX_DIR with a link on the way to it that leads off this machine
-// (offMachineLinks), and one where what is there of the way to it lets another account move it
-// (parentsRefusal): whoever may could make a junction where the next directory is to go, which
-// MkdirAll and the open of the parent would follow by name. Then the nearest directory above dir
-// that is there is held as heldRoot holds a root (remoteAbove): a CONFLUX_DIR on a network volume
-// is refused with nothing made there.
+// itself before it follows it. Before anything is made, a CONFLUX_DIR with a link on the way to it
+// that leads off this machine is refused (offMachineLinks), and so is one where what is there of
+// the way to it lets another account move it (parentsRefusal): whoever may could make a junction
+// where the next directory is to go, which MkdirAll and the open of the parent would follow by
+// name. Then the nearest directory above dir that is there is held as heldRoot holds a root
+// (remoteAbove): a CONFLUX_DIR on a network volume is refused with nothing made there.
 func makeRoot(dir string) error {
-	if err := tooOld(); err != nil {
-		return err
-	}
-
 	above, err := offMachineLinks(dir)
 	if err != nil {
 		return err
@@ -390,27 +385,6 @@ func createDir(parent windows.Handle, name string, sd *windows.SECURITY_DESCRIPT
 	}
 
 	return h, err
-}
-
-// oldestBuild is the oldest Windows conflux runs on: Windows 10 version 1803, the first release
-// with AF_UNIX sockets (from build 17063), which anchord's control socket is; on servers, Windows
-// Server 2019.
-const oldestBuild = 17134
-
-// windowsBuild is this Windows's build number, which a test stands an older one in for.
-var windowsBuild = func() uint32 { return windows.RtlGetVersion().BuildNumber }
-
-// tooOld refuses a Windows older than oldestBuild, naming its build and the oldest conflux runs on:
-// anchord could not listen on its control socket there.
-func tooOld() error {
-	build := windowsBuild()
-	if build >= oldestBuild {
-		return nil
-	}
-
-	return fmt.Errorf("this Windows, build %d, is too old for conflux, which needs Windows 10 version 1803 "+
-		"(build %d) or later, Windows 11, or Windows Server 2019 or later: anchord's control socket is an "+
-		"AF_UNIX socket, which Windows has from build 17063", build, oldestBuild)
 }
 
 // RestrictToOwner makes path the current account's alone, as a 0600 file or a 0700

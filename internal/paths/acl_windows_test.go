@@ -526,30 +526,6 @@ func TestARootOnANetworkVolumeIsRefused(t *testing.T) {
 	}
 }
 
-// TestAWindowsTooOldIsRefusedBeforeAnythingIsMade: anchord's control socket is an AF_UNIX socket,
-// which Windows has from build 17063, first released as Windows 10 version 1803, so EnsureAll on an
-// older build -- here 1709's, 16299, stood in for this one's -- refuses before it makes anything,
-// naming the build and the oldest conflux runs on. Windows-only, so it runs in CI's platforms job
-// alone.
-func TestAWindowsTooOldIsRefusedBeforeAnythingIsMade(t *testing.T) {
-	was := windowsBuild
-	t.Cleanup(func() { windowsBuild = was })
-
-	windowsBuild = func() uint32 { return 16299 }
-
-	above := filepath.Join(t.TempDir(), "made")
-	t.Setenv("CONFLUX_DIR", filepath.Join(above, "conflux"))
-
-	if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), "build 16299") ||
-		!strings.Contains(err.Error(), "build 17134") {
-		t.Errorf("EnsureAll on build 16299 = %v, want a refusal naming it and build 17134", err)
-	}
-
-	if _, err := os.Lstat(above); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("EnsureAll made %s on a Windows it refused (%v)", above, err)
-	}
-}
-
 // TestALinkLeadingOffThisMachineOrNowhereIsRefused: a link at a root's name, or on the way to a
 // CONFLUX_DIR, that names a share is read for where it leads off the link itself, and refused before
 // anything follows it, which would sign this machine in to whoever serves the share: by secure and

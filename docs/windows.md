@@ -4,8 +4,8 @@
 
 Windows 10 version 1803 (build 17134) or later, Windows 11, or Windows Server 2019 or later.
 `anchord`'s control socket is an AF_UNIX socket, which Windows has from build 17063, first
-released as 1803; on an older build conflux stops before it makes anything, naming the build,
-rather than start an `anchord` that cannot listen.
+released as 1803. conflux refuses to run on an older build: every command stops before it does
+anything, naming the build, rather than start an `anchord` that cannot listen.
 
 ## `wintun.dll` is downloaded, never embedded
 

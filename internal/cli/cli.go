@@ -107,8 +107,17 @@ func signalContext() (context.Context, context.CancelFunc) {
 
 // Main dispatches. It returns an exit code rather than calling os.Exit so that the
 // tests can drive it.
+//
+// Before any command, a build whose FIPS 140-3 mode is off (fipsRefusal) and a Windows older
+// than conflux runs on (tooOld) are refused, exiting 70: nothing is read, made or run on either.
 func Main(argv []string) int {
 	if err := fipsRefusal(fips140.Version(), fips140.Enabled()); err != nil {
+		ui.Errf("%v", err)
+
+		return ExitChildFailed
+	}
+
+	if err := tooOld(); err != nil {
 		ui.Errf("%v", err)
 
 		return ExitChildFailed

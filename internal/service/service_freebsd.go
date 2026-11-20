@@ -9,6 +9,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/logfile"
+	"github.com/veil-net/conflux/internal/privcheck"
 )
 
 // freebsd is rc(8): a script in /usr/local/etc/rc.d, enabled in rc.conf with sysrc.
@@ -79,4 +80,4 @@ func (f freebsd) Describe() string {
 	return fmt.Sprintf("installed, not running (rc: %s, enabled at boot)", rcName())
 }
 
-func (freebsd) LogHint() string { return "tail -n 50 " + logFile() }
+func (freebsd) LogHint() string { return privcheck.Command("tail", "-n", "50", logFile()) }

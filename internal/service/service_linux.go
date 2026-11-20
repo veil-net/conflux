@@ -11,6 +11,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/privcheck"
 )
 
 // unitName is used everywhere, suffix included: systemd appends .service to a bare
@@ -134,4 +135,4 @@ func (s systemd) Describe() string {
 	return fmt.Sprintf("%s (systemd: %s, %s at boot)", state, unitName(), enabled)
 }
 
-func (systemd) LogHint() string { return "journalctl -u " + unitName() + " -n 50" }
+func (systemd) LogHint() string { return privcheck.Command("journalctl", "-u", unitName(), "-n", "50") }

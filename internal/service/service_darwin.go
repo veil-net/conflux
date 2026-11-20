@@ -10,6 +10,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/logfile"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/privcheck"
 )
 
 // Label is the launchd job's label, which launchd hands what it starts as XPC_SERVICE_NAME.
@@ -102,7 +103,7 @@ func (*launchd) Installed() (bool, error) { return exists(plistPath()) }
 // and the one Describe needs.
 func (j launchdJob) running() bool { return jobRunning(j.print()) }
 
-func (*launchd) LogHint() string { return "tail -n 50 " + logFile() }
+func (*launchd) LogHint() string { return privcheck.Command("tail", "-n", "50", logFile()) }
 
 func (l *launchd) Describe() string {
 	installed, _ := l.Installed()

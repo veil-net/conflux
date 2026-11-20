@@ -12,6 +12,7 @@ import (
 	"golang.org/x/sys/windows/svc/mgr"
 
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/privcheck"
 )
 
 // The display name has a space in it and the service name does not, deliberately: a
@@ -271,5 +272,5 @@ func (scm) Describe() string {
 // LogHint is the file the service writes its output to. It lives under the conflux
 // root, so uninstall removes it with the rest and Remove has nothing of its own to.
 func (scm) LogHint() string {
-	return `Get-Content -Tail 50 "` + paths.Default().LogFile() + `"`
+	return privcheck.Command("Get-Content", "-Tail", "50", paths.Default().LogFile())
 }

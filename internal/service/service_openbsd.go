@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/privcheck"
 )
 
 // openbsd is rc.d(8): a script in /etc/rc.d, enabled and driven with rcctl.
@@ -62,4 +63,6 @@ func (o openbsd) Describe() string {
 	return fmt.Sprintf("installed, not running (rc.d: %s, enabled at boot)", rcName())
 }
 
-func (openbsd) LogHint() string { return "grep " + rcName() + " /var/log/daemon | tail -n 50" }
+func (openbsd) LogHint() string {
+	return privcheck.Command("grep", rcName(), "/var/log/daemon") + " | tail -n 50"
+}

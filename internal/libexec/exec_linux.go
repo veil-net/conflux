@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/privcheck"
 )
 
 // cannotExecute names the two things that stop a 0700 file owned by the caller from
@@ -25,7 +26,8 @@ func cannotExecute(bin string) string {
 	// refused again.
 	if b, err := os.ReadFile("/sys/fs/selinux/enforce"); err == nil && len(b) > 0 && b[0] == '1' {
 		return msg + "\n  SELinux is enforcing, and a binary under this path is probably labelled var_lib_t.\n" +
-			"  try:  sudo semanage fcontext -a -t bin_t '" + bin + "(/.*)?' && sudo restorecon -R " + bin + "\n" +
+			"  try:  " + privcheck.Command("sudo", "semanage", "fcontext", "-a", "-t", "bin_t", bin+"(/.*)?") +
+			" && " + privcheck.Command("sudo", "restorecon", "-R", bin) + "\n" +
 			"  or set CONFLUX_DIR to a directory execution is permitted from."
 	}
 

@@ -22,3 +22,13 @@ func TestTheServiceIsToldItsLog(t *testing.T) {
 		t.Errorf("withLog changed the argv it was given: %q", args)
 	}
 }
+
+// TestTheLogHintCanBeTypedAgain: the command status prints for reading the log is quoted for
+// the shell it is pasted into, so a CONFLUX_DIR with a space in it still names the log.
+func TestTheLogHintCanBeTypedAgain(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", "/tmp/my conflux")
+
+	if got, want := New().LogHint(), "tail -n 50 '/tmp/my conflux/logs/conflux.log'"; got != want {
+		t.Errorf("LogHint = %s, want %s", got, want)
+	}
+}

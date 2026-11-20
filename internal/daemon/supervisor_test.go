@@ -329,62 +329,116 @@ func TestObservingAloneEnrolsFirstAndStartsNoAnchor(t *testing.T) {
 }
 
 // TestTheObserverOutlivesAnAnchorThatCannotComeUp: beside an anchor, the observer starts once
-// the credential is held and before the anchor, and an anchor that cannot come up for now -- a
-// start anchorctl refuses -- leaves the daemon, the observer and its inventory running, for the
-// watcher to bring the anchor up later, rather than ending the cycle and the inventory with it.
-// The service manager is told the unit started, or systemd would fail it after TimeoutStartSec
-// and take the observer down anyway; the marker, which says an anchor is up, is not written.
+// the credential is held and before the anchor, and an anchor that cannot come up -- a start
+// anchorctl refuses, for now or for good -- leaves the daemon, the observer and its inventory
+// running, for the watcher to bring the anchor up later or give up on it alone, rather than
+// ending the cycle and the inventory with it. The service manager is told the unit started, or
+// systemd would fail it after TimeoutStartSec and take the observer down anyway; the marker,
+// which says an anchor is up, is not written; and a refusal for good is said to be one.
 func TestTheObserverOutlivesAnAnchorThatCannotComeUp(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("a console control event needs the console this test shares")
 	}
 
+	for name, tc := range map[string]struct{ env, said string }{
+		"for now":  {fakeAnchorctlFailEnv, "the anchor did not come up"},
+		"for good": {fakeAnchorctlRefuseEnv, "the anchor was refused"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(fakeAnchorctlStatusEnv, "none")
+			t.Setenv(fakeAnchorctlObserverEnv, "running")
+			t.Setenv(tc.env, "start")
+			t.Setenv(fakeAnchordListenEnv, "1")
+
+			observed := filepath.Join(t.TempDir(), "observed")
+			t.Setenv(fakeAnchorctlObservedEnv, observed)
+
+			s, log := supervised(t, "serve")
+			s.Ready = make(chan struct{})
+
+			r := &recorder{}
+			s.Reporter = r
+
+			cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, Observer: &config.Observer{},
+				Proxies: []string{"8080=127.0.0.1:1"}}
+			if err := config.Save(s.Dirs, cfg); err != nil {
+				t.Fatal(err)
+			}
+
+			credentialed(t, s.Dirs)
+
+			stop := cycling(t, s)
+
+			// Closed once the anchor's start has been refused and the cycle has decided to go on
+			// without it.
+			eventually(t, "the service manager being told the unit started", func() bool {
+				select {
+				case <-s.Ready:
+					return true
+				default:
+					return false
+				}
+			})
+
+			if IsReady(s.Dirs) {
+				t.Error("ready with no anchor up")
+			}
+
+			if err := stop(); err != nil {
+				t.Errorf("the cycle ended with %v, where the anchor's failure should have left it running", err)
+			}
+
+			if cmds := ran(t, log); slices.Index(cmds, "observe") < 0 || slices.Index(cmds, "observe") > slices.Index(cmds, "start") {
+				t.Errorf("anchorctl ran %v; want the observer started, then the anchor's start", cmds)
+			}
+
+			if _, err := os.Stat(observed); err != nil {
+				t.Errorf("the observer was handed no credential, so it never ran: %v", err)
+			}
+
+			if _, warns := r.said(); !slices.ContainsFunc(warns, func(w string) bool { return strings.HasPrefix(w, tc.said) }) {
+				t.Errorf("the supervisor warned %q, want it to say %q", warns, tc.said)
+			}
+		})
+	}
+}
+
+// TestAnAnchorRefusedWithNothingElseRunningEndsTheService: an anchor refused for good beside an
+// observer that did not start either leaves nothing running, so the cycle ends on it as on an
+// anchor alone, and the third in a row ends the restart loop with the error serve exits 70 on.
+func TestAnAnchorRefusedWithNothingElseRunningEndsTheService(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a console control event needs the console this test shares")
+	}
+
 	t.Setenv(fakeAnchorctlStatusEnv, "none")
-	t.Setenv(fakeAnchorctlObserverEnv, "running")
-	t.Setenv(fakeAnchorctlFailEnv, "start")
+	t.Setenv(fakeAnchorctlCaptureEnv, "1")
+	t.Setenv(fakeAnchorctlRefuseEnv, "start")
 	t.Setenv(fakeAnchordListenEnv, "1")
 
-	observed := filepath.Join(t.TempDir(), "observed")
-	t.Setenv(fakeAnchorctlObservedEnv, observed)
-
 	s, log := supervised(t, "serve")
-	s.Ready = make(chan struct{})
 
-	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, Observer: &config.Observer{},
-		Proxies: []string{"8080=127.0.0.1:1"}}
-	if err := config.Save(s.Dirs, cfg); err != nil {
+	if err := config.Save(s.Dirs, &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, Observer: &config.Observer{},
+		Proxies: []string{"8080=127.0.0.1:1"}}); err != nil {
 		t.Fatal(err)
 	}
 
 	credentialed(t, s.Dirs)
 
-	stop := cycling(t, s)
+	ended := make(chan error, 1)
+	go func() { ended <- s.loop(t.Context()) }()
 
-	// Closed once the anchor's start has been refused and the cycle has decided to go on
-	// without it.
-	eventually(t, "the service manager being told the unit started", func() bool {
-		select {
-		case <-s.Ready:
-			return true
-		default:
-			return false
+	select {
+	case err := <-ended:
+		if !Permanent(err) {
+			t.Errorf("the loop ended with %v, which serve would not exit 70 on", err)
 		}
-	})
-
-	if IsReady(s.Dirs) {
-		t.Error("ready with no anchor up")
+	case <-time.After(15 * time.Second):
+		t.Fatal("the restart loop went on starting an anchor refused for good, with nothing else running")
 	}
 
-	if err := stop(); err != nil {
-		t.Errorf("the cycle ended with %v, where the anchor's failure should have left it running", err)
-	}
-
-	if cmds := ran(t, log); slices.Index(cmds, "observe") < 0 || slices.Index(cmds, "observe") > slices.Index(cmds, "start") {
-		t.Errorf("anchorctl ran %v; want the observer started, then the anchor's start", cmds)
-	}
-
-	if _, err := os.Stat(observed); err != nil {
-		t.Errorf("the observer was handed no credential, so it never ran: %v", err)
+	if n := strings.Count(strings.Join(ran(t, log), "\n"), "start"); n != rebuildRefusals {
+		t.Errorf("the anchor was started %d times, want %d", n, rebuildRefusals)
 	}
 }
 

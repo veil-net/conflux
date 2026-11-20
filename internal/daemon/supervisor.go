@@ -70,7 +70,7 @@ type Supervisor struct {
 	Reporter Reporter
 
 	// Ready is closed once the service has started: the anchor is up, or, beside one that
-	// cannot come up for now, the observer is. The service integrations use it to tell the
+	// cannot come up, the observer is. The service integrations use it to tell the
 	// service manager the unit has actually started.
 	Ready chan struct{}
 
@@ -135,7 +135,7 @@ func (s *Supervisor) signalReady(id string) {
 }
 
 // signalStarted tells the service manager the unit has started, and writes no marker. It is
-// the observer's, beside an anchor that cannot come up for now: the service is doing what it
+// the observer's, beside an anchor that cannot come up: the service is doing what it
 // can, and a manager still waiting for it would fail the start -- systemd after
 // TimeoutStartSec, taking the observer and its inventory down with it -- which is the one
 // thing an anchor that cannot come up must not do. The marker waits for the anchor, since
@@ -313,11 +313,19 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 		// may bind -- is one the next cycle makes with what it needs. Not wrapped, so a
 		// refusal for good does not count against the configuration.
 		return fmt.Errorf("%w: %v", errRespawn, err)
-	case up.observing && !Permanent(err):
-		// An anchor that cannot come up for now, beside an observer that did: the daemon is
-		// kept, and with it the observer and the inventory it holds, and the watcher brings
-		// the anchor up when it can, as it rebuilds one that is lost.
-		s.report().Warn("the anchor did not come up, and the observer goes on without it until it does: %v", err)
+	case up.observing:
+		// An anchor that cannot come up, beside an observer that did: the daemon is kept, and
+		// with it the observer and the inventory it holds, since an anchor that cannot come up
+		// never takes the observer down. The watcher brings the anchor up when it can, as it
+		// rebuilds one that is lost, and gives up on it alone where it is refused for good. Only
+		// with nothing else running does a refusal for good end the cycle, and count toward the
+		// exit no restart follows.
+		if Permanent(err) {
+			s.report().Warn("the anchor was refused, and the observer goes on without it: %v", err)
+		} else {
+			s.report().Warn("the anchor did not come up, and the observer goes on without it until it does: %v", err)
+		}
+
 		s.signalStarted()
 	default:
 		return err

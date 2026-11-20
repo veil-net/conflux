@@ -34,9 +34,10 @@ The credential comes first because the observer runs under it as the anchor does
 same manifest on stdin, so an enrolment the API does not answer starts neither, and the restart
 loop tries again. The observer comes next, and is started on every start because anchord keeps
 none across one; observing alone, it is what readiness waits for, and the identity it reports
-running as is the AnchorID renewals name. Beside an anchor, an anchor that then cannot come up
-for now leaves the daemon running, and with it the observer and the inventory it holds, for the
-watcher to bring the anchor up when it can. The renewal timer runs whatever the configuration
+running as is the AnchorID renewals name. Beside an anchor, an anchor that then cannot come up,
+for now or refused for good, leaves the daemon running, and with it the observer and the
+inventory it holds, for the watcher to bring the anchor up when it can, or to give up on it
+alone. The renewal timer runs whatever the configuration
 runs, and installs each renewed chain in the anchor and in the observer. anchord serves the
 observer always; what lets it capture is the privilege the supervisor gives it, only where the
 configuration observes. See [observe.md](observe.md). A start that fails because the decision no longer fits — the first
@@ -109,7 +110,9 @@ expired credential with nowhere to renew it or no AnchorID recorded to renew it 
 credential for another realm tree, a TUN the host will not give, a host that will not
 be set up to forward, an argument vector anchorctl refuses, a daemon socket conflux may not
 reach or a token the daemon refuses — stops the supervisor after three attempts with exit
-70, and nothing to start at all is exit 78. Anything else the
+70, and nothing to start at all is exit 78. An anchor refused for good beside an observer that
+is running is the exception: the observer goes on, and the watcher gives up on the anchor
+alone, below. Anything else the
 supervisor stops on — an extraction onto a full disk, say — exits 1, which systemd,
 launchd and the Windows SCM restart. On the BSDs nothing does: FreeBSD's `daemon(8)` runs
 without `-r`, which would restart 78 and 70 as well, and OpenBSD's `rc.subr` does not
@@ -210,7 +213,7 @@ Four of those lines are worth explaining.
 `Type=notify`, with `sd_notify` from the supervisor, makes `systemctl start conflux`
 return when the anchor is genuinely up rather than when `fork` succeeded. Anything
 ordered `After=conflux.service` gets the same guarantee for free. Beside an anchor that
-cannot come up for now, the supervisor sends `READY=1` once the observer is running and writes
+cannot come up, the supervisor sends `READY=1` once the observer is running and writes
 no marker: a unit still waiting at `TimeoutStartSec` would be failed and stopped, observer and
 inventory with it, which an anchor that cannot come up must never cause. The Windows SCM is
 told the same.

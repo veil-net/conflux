@@ -249,7 +249,9 @@ these binaries are pinned to, a TUN the host will not give (no capability, devic
 IPv6, or the name held by another interface), a host that will not be set up to forward
 for the realm, an argument vector anchorctl refuses outright, a daemon socket conflux
 may not reach or a token the daemon refuses, and a machine still laid out as conflux 1.0.0
-left it.
+left it. Beside an observer that is running, an anchor refused for good does not fail the
+unit: the observer goes on, and the anchor is given up on alone, saying `the anchor was
+refused` in the log.
 
 Where the logs are: `journalctl -u conflux -n 50` on Linux, `/var/log/conflux.log` on
 macOS and FreeBSD, `/var/log/daemon` on OpenBSD, and

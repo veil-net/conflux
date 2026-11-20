@@ -1062,28 +1062,32 @@ func notLink(dir string, h windows.Handle, why string) error {
 }
 
 // contents refuses the root dir where anything in it another account may change: each entry is
-// judged by its own owner and DACL, read without following it, as mayChange reads them, and held
-// to retargets, as a junction root is. A junction or a link (nameSurrogate) is refused, and not
+// judged by its own owner and DACL, read without following it, as mayChange reads them, and held to
+// retargets, as a junction root is. A junction or a link (nameSurrogate) is refused, and not
 // followed, whoever may change it: conflux makes none there, and one there could have been opened
-// to repoint it while its DACL let somebody. So is anything else another account may write, move
-// or point elsewhere -- a directory among them, which an account that may write its data or its
+// to repoint it while its DACL let somebody. So is anything else another account may write, move or
+// point elsewhere -- a directory among them, which an account that may write its data or its
 // attributes could make a junction of while it is empty, with a handle that keeps those rights once
-// the restriction has replaced what the entry inherited. A reparse point a lookup does not follow,
-// as anchord's socket in a SYSTEM anchord's run\anchord\ is, is judged as any other file.
+// the restriction has replaced what the entry inherited -- and a directory whose DACL passes such a
+// right on to what is made in it, as an inherit-only grant on logs\ would to conflux.log, which the
+// service writes there. A reparse point a lookup does not follow, as anchord's socket in a SYSTEM
+// anchord's run\anchord\ is, is judged as any other file.
 //
 // anchord's own account, this installation's service SID (ServiceSID), is conflux's, as the account
 // anchord runs as is on Unix: what its DACL grants that SID is discounted, as SYSTEM's and the
-// Administrators' grants are. Its owner is not: an entry the SID, or any account but SYSTEM, the
-// Administrators, TrustedInstaller and the one running conflux, owns is refused, whatever its name,
-// so one another account planted as anchor or run\anchord stays refused. A directory the DACL just
-// judged lets that SID write -- anchor\ and run\anchord\, as MakeAnchordDir makes them -- is not
-// gone into: its DACL, which has just shown nobody else may write it, lets only SYSTEM, the
-// Administrators and anchord make anything inside, and what anchord makes there, which it owns,
-// conflux reads as anchord's, untrusted (OpenUntrusted, config.ReadUntrusted, copyTree).
+// Administrators' grants are, what it passes on to what is made in a directory among them --
+// MakeAnchordDir's grant to anchord of what anchor\ and run\anchord\ hold. Its owner is not: an
+// entry the SID, or any account but SYSTEM, the Administrators, TrustedInstaller and the one
+// running conflux, owns is refused, whatever its name, so one another account planted as anchor or
+// run\anchord stays refused. A directory the DACL just judged lets that SID write -- anchor\ and
+// run\anchord\, as MakeAnchordDir makes them -- is not gone into: its DACL, which has just shown
+// nobody else may write it, lets only SYSTEM, the Administrators and anchord make anything inside,
+// and what anchord makes there, which it owns, conflux reads as anchord's, untrusted
+// (OpenUntrusted, config.ReadUntrusted, copyTree).
 //
-// An entry gone between the listing and its judgement is passed over: nothing is there to judge, and
-// a live run's root -- an ephemeral one, which Foreign reads -- has its marker written and removed
-// while it runs.
+// An entry gone between the listing and its judgement is passed over: nothing is there to judge,
+// and a live run's root -- an ephemeral one, which Foreign reads -- has its marker written and
+// removed while it runs.
 func contents(dir string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -1124,7 +1128,12 @@ func contents(dir string) error {
 					"use it.\n  Remove it, then run this again as Administrator", p, dir)
 			}
 
-			who, anchords, err := changer(p, h, retargets, "write it, move it or make a junction of it", anchord)
+			what := "write it, move it or make a junction of it"
+			if d.IsDir() {
+				what = "write it or what is made in it, move it or make a junction of it"
+			}
+
+			who, anchords, err := changer(p, h, retargets, what, anchord, d.IsDir())
 			switch {
 			case err != nil:
 				return err
@@ -1294,21 +1303,21 @@ func mayChange(p string, rights windows.ACCESS_MASK, what string) (string, error
 	}
 	defer windows.CloseHandle(h)
 
-	who, _, err := changer(p, h, rights, what, nil)
+	who, _, err := changer(p, h, rights, what, nil, false)
 
 	return who, err
 }
 
 // changer is changerIn of p, held open as itself by h, over the owner and DACL read through h, and
-// what they allow on p itself.
+// what they allow on p itself, or, where passedOn, on what is made in it too.
 func changer(p string, h windows.Handle, rights windows.ACCESS_MASK, what string,
-	anchord *windows.SID) (who string, anchords bool, err error) {
+	anchord *windows.SID, passedOn bool) (who string, anchords bool, err error) {
 	sd, err := security(h)
 	if err != nil {
 		return "", false, fmt.Errorf("read the ownership of %s: %w", p, err)
 	}
 
-	return changerIn(p, sd, rights, what, anchord, false)
+	return changerIn(p, sd, rights, what, anchord, passedOn)
 }
 
 // changerIn is who besides SYSTEM, the Administrators, TrustedInstaller and the account running

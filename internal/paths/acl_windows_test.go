@@ -830,9 +830,11 @@ func TestSecureSaysWhyItCannotFillARoot(t *testing.T) {
 // delete, or write the attributes of, enough to make a junction of it while it is empty, or add
 // folders to, or write the extended attributes of; one that only inherits the right to write its
 // attributes, which a handle opened before the restriction keeps once the restriction has replaced
-// it; a folder named anchor that another account owns, though it grants anchord what conflux
-// grants it; and one granting anchord that also lets Users add to it. conflux's own layout is let
-// through: anchor\ and run\anchord\ granting anchord's service SID what MakeAnchordDir grants it,
+// it; one passing Users full control of the files made in it, as conflux.log would be in logs\, by
+// a grant to them on it that is inherit-only; a folder named anchor that another account owns,
+// though it grants anchord what conflux grants it; and one granting anchord that also lets Users
+// add to it. conflux's own layout is let through: anchor\ and run\anchord\ granting anchord's
+// service SID what MakeAnchordDir grants it, full control of what is made in them among it,
 // run\anchord\sock owned by that SID, which the walk does not go into, and a SYSTEM anchord's
 // socket in a run\anchord\ of SYSTEM's and the Administrators', a reparse point a lookup does not
 // follow. Windows-only, so it runs in CI's platforms job alone.
@@ -865,6 +867,16 @@ func TestSecureHoldsWhatTheRootHolds(t *testing.T) {
 			if err := os.Mkdir(dir, 0o700); err != nil {
 				t.Fatal(err)
 			}
+
+			return dir
+		}},
+		{"a folder that passes Users full control of the files made in it", func(t *testing.T, root string) string {
+			dir := filepath.Join(root, "logs")
+			if err := os.Mkdir(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+
+			privtest.GrantUsers(t, dir, fileAllAccess, windows.SUB_OBJECTS_ONLY_INHERIT|windows.INHERIT_ONLY)
 
 			return dir
 		}},

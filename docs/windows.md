@@ -136,7 +136,7 @@ what it inherits from the root included, and again once it is, so that a folder 
 added in between is judged too: anything another account owns, whatever its name, or that its DACL
 lets another account write, move or point elsewhere — a folder they may add to, or write the
 attributes or extended attributes of, among them, the attributes enough to make a junction of it
-while it is empty. `anchord`'s own account, `NT SERVICE\conflux`, is conflux's: what a DACL grants
+while it is empty — or, for a folder, passes such a right on to what is made in it. `anchord`'s own account, `NT SERVICE\conflux`, is conflux's: what a DACL grants
 it is not held against the thing granted, though what it owns is, and a folder whose DACL lets it
 write — `anchor\` and `run\anchord\` — is not looked inside, since only SYSTEM, the Administrators
 and `anchord` may write there and conflux reads what `anchord` writes as untrusted. Every reader of

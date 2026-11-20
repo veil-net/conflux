@@ -6,6 +6,7 @@ import (
 	"testing"
 	"unsafe"
 
+	"github.com/veil-net/conflux/internal/paths"
 	"golang.org/x/sys/windows"
 )
 
@@ -21,7 +22,7 @@ func TestRestrictTokenRemovesPrivileges(t *testing.T) {
 	}
 	defer own.Close()
 
-	sid, err := serviceSID("conflux")
+	sid, err := paths.ServiceSID()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,58 +126,20 @@ func tokenInfo(t *testing.T, tok windows.Token, class uint32) []byte {
 	return b
 }
 
-// TestServiceSID: the SID Windows gives a service, against one everybody knows, and the same
-// whatever the name's case.
-func TestServiceSID(t *testing.T) {
-	sid, err := serviceSID("TrustedInstaller")
-	if err != nil {
-		t.Fatal(err)
-	}
+// TestAServiceSIDNotGivenIsNotOneZeroZero: an anchor directory the service SID was wanted for,
+// where Windows did not give it, reads as an error, which the next start reads again -- never as
+// conflux 1.0.0's layout, which the supervisor refuses for good, naming a new identity. That the
+// failure is not kept is paths.ServiceSID's (TestAServiceSIDNotGivenIsNotKept).
+func TestAServiceSIDNotGivenIsNotOneZeroZero(t *testing.T) {
+	t.Cleanup(func() { ourServiceSID = paths.ServiceSID })
 
-	if got, want := sid.String(), "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464"; got != want {
-		t.Errorf("serviceSID(TrustedInstaller) = %s, want %s", got, want)
-	}
-
-	lower, err := serviceSID("conflux")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	upper, err := serviceSID("CONFLUX")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if !lower.Equals(upper) {
-		t.Error("a service's SID does not depend on how its name is cased")
-	}
-}
-
-// TestAServiceSIDNotGivenIsNeitherKeptNorOneZeroZero: a service SID Windows did not give is
-// asked again the next time rather than kept as a failure for the life of the process, and an
-// anchor directory it was wanted for reads as an error, which the next start reads again --
-// never as conflux 1.0.0's layout, which the supervisor refuses for good, naming a new identity.
-func TestAServiceSIDNotGivenIsNeitherKeptNorOneZeroZero(t *testing.T) {
-	ask := askServiceSID
-
-	t.Cleanup(func() {
-		askServiceSID = ask
-		serviceSIDKept.Store(nil)
-	})
-
-	serviceSIDKept.Store(nil)
-
-	askServiceSID = func() (*windows.SID, error) { return nil, errors.New("RtlCreateServiceSid: STATUS_NO_MEMORY") }
+	ourServiceSID = func() (*windows.SID, error) { return nil, errors.New("RtlCreateServiceSid: STATUS_NO_MEMORY") }
 
 	if legacy, err := legacyAnchorDir(t.TempDir()); legacy || err == nil {
 		t.Errorf("legacyAnchorDir = %v, %v with no service SID to read it for; want an error, not 1.0.0's", legacy, err)
 	}
 
-	askServiceSID = ask
-
-	if _, err := ourServiceSID(); err != nil {
-		t.Errorf("the service SID was not asked again once Windows gives it: %v", err)
-	}
+	ourServiceSID = paths.ServiceSID
 
 	// A directory the SID was never given, read with the SID in hand, is 1.0.0's.
 	if legacy, err := legacyAnchorDir(t.TempDir()); !legacy || err != nil {

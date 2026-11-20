@@ -76,17 +76,10 @@ func runObserve(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	if cfg.Anchor() && cfg.Mode != "" && !confirmObserving(cfg, *f.yes) {
-		return ExitUsage
-	}
-
-	// What only an anchor in userspace serves, and the next `conflux proxy` names again; up
-	// drops them the same way.
-	if len(cfg.Proxies) > 0 {
-		ui.Errf("the %d proxied service(s) this machine served are dropped: a reverse proxy is an anchor's,\n"+
-			"  and this machine runs none. conflux proxy publishes them again.", len(cfg.Proxies))
-
-		cfg.Proxies = nil
+	// The mode this replaces: an anchor, unless the machine was never configured.
+	was := cfg.Mode
+	if was == config.ModeObserve {
+		was = ""
 	}
 
 	cfg.Mode = config.ModeObserve
@@ -108,6 +101,21 @@ func runObserve(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
+	// Asked last, once everything typed has been checked, as launch asks for the IPv4: an
+	// answer given only to be told a flag was wrong is an answer given twice.
+	if was != "" && !confirmObserving(was, *f.yes) {
+		return ExitUsage
+	}
+
+	// What only an anchor in userspace serves, and the next `conflux proxy` names again; up
+	// drops them the same way.
+	if len(cfg.Proxies) > 0 {
+		ui.Errf("the %d proxied service(s) this machine served are dropped: a reverse proxy is an anchor's,\n"+
+			"  and this machine runs none. conflux proxy publishes them again.", len(cfg.Proxies))
+
+		cfg.Proxies = nil
+	}
+
 	return bring(ctx, d, cfg, "observe", false)
 }
 
@@ -115,17 +123,17 @@ func runObserve(ctx context.Context, args []string) int {
 // another's.
 var hostOS = runtime.GOOS
 
-// confirmObserving makes the switch from an anchor explicit before it happens: the anchor
-// stops and this machine leaves its realm, though its identity and settings are kept for the
-// next up or proxy. Asked at a terminal; off one, only --yes says so, so a script that meant
-// anchorctl's report never stops an anchor.
-func confirmObserving(cfg *config.Config, yes bool) bool {
+// confirmObserving makes the switch from an anchor, in mode was, explicit before it happens:
+// the anchor stops and this machine leaves its realm, though its identity and settings are
+// kept for the next up or proxy. Asked at a terminal; off one, only --yes says so, so a script
+// that meant anchorctl's report never stops an anchor.
+func confirmObserving(was config.Mode, yes bool) bool {
 	if yes {
 		return true
 	}
 
 	shape := "a network interface"
-	if cfg.Mode == config.ModeProxy {
+	if was == config.ModeProxy {
 		shape = "userspace"
 	}
 

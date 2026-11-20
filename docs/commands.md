@@ -256,7 +256,8 @@ On a machine that runs an anchor, this stops it and the anchor leaves its realm,
 setting kept for the next `up` or `proxy` — the proxy specs aside, which it clears as `up` does —
 and the observer runs under the same identity meanwhile. So it asks first at a terminal, and off one is refused without `--yes`:
 anchorctl's bare `observe` only reports, and a script that meant that one must not stop an
-anchor. `conflux up --observe` observes beside the anchor instead.
+anchor. It asks once everything typed has been checked, so a `--taint` the credential does not
+grant is refused with nothing asked. `conflux up --observe` observes beside the anchor instead.
 
 FreeBSD and OpenBSD have no capture, and are refused with exit 2 before anything is asked or
 written.

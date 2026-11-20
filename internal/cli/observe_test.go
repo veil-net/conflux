@@ -232,9 +232,7 @@ func TestSwitchingAnAnchorToObservingIsConfirmed(t *testing.T) {
 
 	t.Cleanup(func() { ui.Errw = old })
 
-	cfg := &config.Config{Mode: config.ModeTUN}
-
-	if confirmObserving(cfg, false) {
+	if confirmObserving(config.ModeTUN, false) {
 		t.Fatal("an anchor was stopped with nobody asked")
 	}
 
@@ -244,8 +242,49 @@ func TestSwitchingAnAnchorToObservingIsConfirmed(t *testing.T) {
 		}
 	}
 
-	if !confirmObserving(cfg, true) {
+	if !confirmObserving(config.ModeTUN, true) {
 		t.Error("--yes did not say so")
+	}
+}
+
+// TestObserveChecksTheTaintBeforeItAsks: switching an anchor to observing is confirmed, and a
+// --taint the held credential does not grant is refused before that, with nothing asked and
+// nothing changed: an answer given only to be told a flag was wrong is an answer given twice.
+func TestObserveChecksTheTaintBeforeItAsks(t *testing.T) {
+	if ui.IsTerminal() {
+		t.Skip("this test's stdin is a terminal")
+	}
+
+	was, elevated := hostOS, privcheck.Elevated
+	hostOS, privcheck.Elevated = "linux", func() bool { return true }
+
+	t.Cleanup(func() { hostOS, privcheck.Elevated = was, elevated })
+
+	d := pathstest.Dirs(t)
+
+	if err := config.Save(d, &config.Config{Mode: config.ModeTUN, Taints: []string{"brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := config.SaveManifest(d, config.Envelope(base64.StdEncoding.EncodeToString([]byte(alphaDoc)))); err != nil {
+		t.Fatal(err)
+	}
+
+	mgr := &fakeManager{d: d, restartErr: errStartsNothing}
+	standInService(t, mgr)
+
+	_, errOut, code := capture(t, "observe", "--taint", "other")
+
+	if code != ExitError || !strings.Contains(errOut, `configured for the taint "other"`) {
+		t.Errorf("conflux observe --taint other exited %d, saying:\n%s\nwant the taint refused", code, errOut)
+	}
+
+	if strings.Contains(errOut, "Observing alone stops it") {
+		t.Errorf("conflux observe asked to stop the anchor before refusing the taint:\n%s", errOut)
+	}
+
+	if cfg, err := config.Load(d); err != nil || cfg.Mode != config.ModeTUN || len(mgr.installs) > 0 {
+		t.Errorf("a refused observe changed something: %+v (%v), registered %d times", cfg, err, len(mgr.installs))
 	}
 }
 

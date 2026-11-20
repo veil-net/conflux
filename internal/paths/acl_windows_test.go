@@ -453,6 +453,30 @@ func TestARootOnANetworkVolumeIsRefused(t *testing.T) {
 	}
 }
 
+// TestAWindowsTooOldIsRefusedBeforeAnythingIsMade: anchord's control socket is an AF_UNIX socket,
+// which Windows has from build 17063, first released as Windows 10 version 1803, so EnsureAll on an
+// older build -- here 1709's, 16299, stood in for this one's -- refuses before it makes anything,
+// naming the build and the oldest conflux runs on. Windows-only, so it runs in CI's platforms job
+// alone.
+func TestAWindowsTooOldIsRefusedBeforeAnythingIsMade(t *testing.T) {
+	was := windowsBuild
+	t.Cleanup(func() { windowsBuild = was })
+
+	windowsBuild = func() uint32 { return 16299 }
+
+	above := filepath.Join(t.TempDir(), "made")
+	t.Setenv("CONFLUX_DIR", filepath.Join(above, "conflux"))
+
+	if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), "build 16299") ||
+		!strings.Contains(err.Error(), "build 17134") {
+		t.Errorf("EnsureAll on build 16299 = %v, want a refusal naming it and build 17134", err)
+	}
+
+	if _, err := os.Lstat(above); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("EnsureAll made %s on a Windows it refused (%v)", above, err)
+	}
+}
+
 // TestARootIsMadeWithItsDACL: %ProgramData% passes Users the right to create in what is made in it,
 // enough to turn an empty directory into a junction, so a root is made with its own ownership and
 // protected DACL set as it is created, and carries that grant not even for an instant: read as
@@ -516,8 +540,10 @@ func onlyTheSystems(t *testing.T, dir string) {
 // handle was open. So the root is read again, through the handle it was judged through, once it
 // is filled, and refused where it became one meanwhile -- here just before secure fills it, found
 // unrestricted and secured already alike -- and the run directory it fills the root with, made
-// through that handle, is not made where the junction leads either. Windows-only, so it runs in
-// CI's platforms job alone.
+// through that handle, is not made where the junction leads either. That last is a property of the
+// create through the handle, which is not known to fail without OBJ_DONT_REPARSE: it checks what
+// fill leaves, and is not a red test of the flag, which createDir keeps as defence in depth.
+// Windows-only, so it runs in CI's platforms job alone.
 func TestSecureRefusesARootThatBecomesAJunction(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 

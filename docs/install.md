@@ -108,9 +108,9 @@ $ xattr -d com.apple.quarantine conflux-darwin-arm64
 
 ## Windows
 
-Windows 10 version 1607 (build 14393) or later, Windows 11, or Windows Server 2016 or later; an
-older build that refuses what conflux needs of it is told it is too old (see
-[windows.md](windows.md#which-windows)). Run PowerShell as Administrator, for `install.ps1` and for
+Windows 10 version 1803 (build 17134) or later, Windows 11, or Windows Server 2019 or later;
+conflux refuses an older build before it makes anything, since `anchord`'s control socket needs
+AF_UNIX sockets (see [windows.md](windows.md#which-windows)). Run PowerShell as Administrator, for `install.ps1` and for
 conflux itself. TUN mode additionally needs `wintun.dll`, which conflux downloads and verifies when
 it is first needed — see [windows.md](windows.md). `conflux proxy` needs no driver at all.
 

@@ -2,13 +2,10 @@
 
 ## Which Windows
 
-Windows 10 version 1607 (build 14393) or later, Windows 11, and Windows Server 2016 (the same
-build) or later. conflux makes `run\` in a root, and the junction it puts in place of a junction
-root, through a handle on the folder each goes in, with a flag that stops the create being taken
-anywhere a junction leads (`OBJ_DONT_REPARSE`); the other folders it keeps in a root (`logs\`,
-`bin\` and what extraction makes in it, `anchor\`, `anchor.root\`, `run\anchord\`) it makes by their names. Windows 10's first
-release, build 10240, does not know the flag, and 1607 is the oldest known to take it; on an older
-build that refuses it, conflux stops, saying the build is too old, rather than make them without it.
+Windows 10 version 1803 (build 17134) or later, Windows 11, or Windows Server 2019 or later.
+`anchord`'s control socket is an AF_UNIX socket, which Windows has from build 17063, first
+released as 1803; on an older build conflux stops before it makes anything, naming the build,
+rather than start an `anchord` that cannot listen.
 
 ## `wintun.dll` is downloaded, never embedded
 
@@ -182,6 +179,14 @@ move "%ProgramFiles%\conflux.junction" "C:\ProgramData\conflux"
 For a `CONFLUX_DIR` on another volume, where `move` cannot take a junction from `%ProgramFiles%`,
 make it in a directory on that volume that only SYSTEM and the Administrators can write, then move
 it into place the same way.
+
+`run\`, and the junction conflux puts in place of a junction root, are made through a handle on the
+folder each goes in: the name is looked up there and nowhere else, and not followed. The create
+also carries a flag that keeps it from being reparsed anywhere a junction leads (`OBJ_DONT_REPARSE`):
+defence in depth, guarding a case not shown to happen, since a create relative to a folder conflux
+holds is not known to be taken through a junction that folder became without it. The other folders
+conflux keeps in a root — `logs\`, `bin\` and what extraction makes in it, `anchor\`,
+`anchor.root\` and `run\anchord\` — it makes by their names.
 
 Where `anchord` runs as `LOCAL SERVICE` (below), the service's own SID,
 `NT SERVICE\conflux`, is added to exactly what it needs: read and execute on its set

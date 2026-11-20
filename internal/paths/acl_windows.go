@@ -108,10 +108,14 @@ func restrictInfo(owner *windows.SID) windows.SECURITY_INFORMATION {
 // set as it is made (MakeRestricted), so that it never carries what %ProgramData% passes on --
 // Users' right to create in it, enough to turn an empty directory into a junction -- not even for
 // an instant. The directories above it are made as MkdirAll makes them. One already there is
-// secure's. Before anything is made, the nearest of dir and the directories above it that is there
-// is held to remote, as secure holds a root: a CONFLUX_DIR on a network volume is refused with
-// nothing made there.
+// secure's. Before anything is made, a Windows older than conflux runs on is refused (tooOld), and
+// the nearest of dir and the directories above it that is there is held to remote, as secure holds
+// a root: a CONFLUX_DIR on a network volume is refused with nothing made there.
 func makeRoot(dir string) error {
+	if err := tooOld(); err != nil {
+		return err
+	}
+
 	if err := remoteAbove(dir); err != nil {
 		return err
 	}
@@ -273,14 +277,14 @@ func fill(dir string, h windows.Handle) error {
 var filling = func(string) {}
 
 // createDir creates the directory name in the one parent holds open, with sd as its security
-// descriptor, and holds it open for access: its name looked up there and nowhere else, never
-// followed, and the create never reparsed elsewhere (OBJ_DONT_REPARSE) -- a parent that became a
-// junction or a mount point after it was opened fails it, rather than taking it to where it leads.
-// A status NtCreateFile fails with is returned as the Win32 error it maps to, as CreateDirectory
-// returns one -- ERROR_ALREADY_EXISTS for a name already taken -- so that restrictWith tells a
-// refused owner; STATUS_INVALID_PARAMETER, which a Windows too old to know OBJ_DONT_REPARSE fails
-// it with, as Windows 10's first release, build 10240, does, says so on a build older than the
-// oldest conflux runs on (tooOld).
+// descriptor, and holds it open for access: its name looked up there and nowhere else, and never
+// followed (FILE_OPEN_REPARSE_POINT). The create is also kept from being reparsed anywhere
+// (OBJ_DONT_REPARSE), so that a parent that became a junction or a mount point after it was opened
+// would fail it rather than take it to where it leads: defence in depth, guarding a case not shown
+// to happen, since a create relative to a held directory is not known to be reparsed through it
+// without the flag either. A status NtCreateFile fails with is returned as the Win32 error it maps
+// to, as CreateDirectory returns one -- ERROR_ALREADY_EXISTS for a name already taken -- so that
+// restrictWith tells a refused owner.
 func createDir(parent windows.Handle, name string, sd *windows.SECURITY_DESCRIPTOR, access uint32) (windows.Handle, error) {
 	u, err := windows.NewNTUnicodeString(name)
 	if err != nil {
@@ -305,32 +309,33 @@ func createDir(parent windows.Handle, name string, sd *windows.SECURITY_DESCRIPT
 		windows.FILE_CREATE, windows.FILE_DIRECTORY_FILE|windows.FILE_SYNCHRONOUS_IO_NONALERT|windows.FILE_OPEN_REPARSE_POINT,
 		0, 0)
 
-	switch status, ok := err.(windows.NTStatus); {
-	case status == windows.STATUS_INVALID_PARAMETER && windows.RtlGetVersion().BuildNumber < oldestBuild:
-		return h, tooOld{status.Errno()}
-	case ok:
+	if status, ok := err.(windows.NTStatus); ok {
 		return h, status.Errno()
 	}
 
 	return h, err
 }
 
-// oldestBuild is the oldest Windows conflux runs on: Windows 10 version 1607, and Windows Server
-// 2016, the oldest known to take OBJ_DONT_REPARSE.
-const oldestBuild = 14393
+// oldestBuild is the oldest Windows conflux runs on: Windows 10 version 1803, the first release
+// with AF_UNIX sockets (from build 17063), which anchord's control socket is; on servers, Windows
+// Server 2019.
+const oldestBuild = 17134
 
-// tooOld is createDir's refusal where this Windows does not know OBJ_DONT_REPARSE, naming the build
-// and the oldest conflux runs on.
-type tooOld struct{ error }
+// windowsBuild is this Windows's build number, which a test stands an older one in for.
+var windowsBuild = func() uint32 { return windows.RtlGetVersion().BuildNumber }
 
-func (e tooOld) Error() string {
-	return fmt.Sprintf("this Windows, build %d, is too old for conflux, which needs Windows 10 version 1607 "+
-		"(build %d) or later, Windows 11, or Windows Server 2016 or later: it cannot keep a folder conflux "+
-		"makes from being made where a junction leads instead (NtCreateFile refused OBJ_DONT_REPARSE: %v)",
-		windows.RtlGetVersion().BuildNumber, oldestBuild, e.error)
+// tooOld refuses a Windows older than oldestBuild, naming its build and the oldest conflux runs on:
+// anchord could not listen on its control socket there.
+func tooOld() error {
+	build := windowsBuild()
+	if build >= oldestBuild {
+		return nil
+	}
+
+	return fmt.Errorf("this Windows, build %d, is too old for conflux, which needs Windows 10 version 1803 "+
+		"(build %d) or later, Windows 11, or Windows Server 2019 or later: anchord's control socket is an "+
+		"AF_UNIX socket, which Windows has from build 17063", build, oldestBuild)
 }
-
-func (e tooOld) Unwrap() error { return e.error }
 
 // RestrictToOwner makes path the current account's alone, as a 0600 file or a 0700
 // directory is on Unix: a protected DACL granting full control to the account running

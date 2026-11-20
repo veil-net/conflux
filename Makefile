@@ -82,12 +82,13 @@ STAMP = sum() { { sha256sum "$$1" 2>/dev/null || shasum -a 256 "$$1"; } | cut -d
 TARGETS := linux/amd64 linux/arm64 darwin/arm64 \
            windows/amd64 windows/arm64 freebsd/amd64 openbsd/amd64
 
-# The size gate. One anchor pair is about 45 MB, so a conflux outside this range is
-# either missing its binaries -- one of the two is enough to fall under the floor, since
-# a real anchord beside a placeholder anchorctl still comes to about 40 -- or, far more
-# likely, embedded all fourteen because somebody wrote //go:embed bin instead of naming
-# the two files.
-MIN_MB := 45
+# The size gate, in MiB. Under the floor, a conflux is missing a binary of its pair,
+# either one: the floor sits about midway between the largest artifact built with a
+# placeholder anchorctl (windows/amd64, about 46) and the smallest real one (linux/arm64,
+# about 56), so it moves when anchor's binaries grow or shrink by around five. Over the
+# ceiling, far more likely, it embeds all fourteen because somebody wrote //go:embed bin
+# instead of naming the two files.
+MIN_MB := 51
 MAX_MB := 75
 
 ANCHOR_SRC ?= ../anchor

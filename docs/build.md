@@ -212,7 +212,7 @@ empty `anchor/bin` is now an ordinary state to be in. Tests that need real binar
 skip, and `make dist` refuses:
 
 ```
-  FAIL dist/conflux-linux-amd64 is 7 MB, under 45 MB
+  FAIL dist/conflux-linux-amd64 is 8 MB, under 51 MB
        anchor/bin holds placeholders, not binaries. Run:
          make anchor-bins ANCHOR_SRC=/path/to/anchor
 ```
@@ -251,11 +251,13 @@ var anchorctl []byte
 ```
 
 A file whose build tag is false is never compiled, so its `//go:embed` never runs — a
-linux/amd64 conflux carries the ~45 MB pair it needs and not the ~300 MB in `bin/`.
+linux/amd64 conflux carries the one pair it needs and not the fourteen in `bin/`.
 
-**Never `//go:embed bin`, and never a glob.** That would pull in all fourteen and
-produce a 300 MB binary per platform. `make dist` gates every artifact between 45 and
-75 MB precisely so that mistake fails the build rather than reaching a release.
+**Never `//go:embed bin`, and never a glob.** That would pull all fourteen into every
+platform's binary. `make dist` holds every artifact between 51 and 75 MiB precisely so
+that mistake fails the build rather than reaching a release. The floor catches a pair
+missing either half: it sits about midway between the largest artifact built with a
+placeholder `anchorctl` (about 46 MiB) and the smallest real one (about 56).
 
 There is also an eighth file with the negation of all seven tags, so that
 `GOOS=linux GOARCH=riscv64 go build ./...` still succeeds — it produces a conflux that

@@ -50,7 +50,7 @@ host can read, and when the run stops there is nothing at all.
   nothing. A `0600` file in a directory others may write is one `rename` away from being
   replaced. A directory that already exists is held to the same: one of conflux's own left
   wider is narrowed to `0700`, and one another account owns, or whose own extended ACL (macOS,
-  NFSv4), which narrowing leaves as it is, lets another account write or move it, is refused
+  NFSv4) lets another account write or move it past what the narrowing rewrites, is refused
   rather than used, since whatever that account put in it is not conflux's.
 - On Windows, mode bits mean nothing and `%ProgramData%` lets `Users` read and create
   beneath it, so conflux gives its root to SYSTEM and Administrators — owner, and a
@@ -148,6 +148,12 @@ sits beside the mode and keeps its entries through the narrowing, so one that le
 account write the root or move it is refused. A POSIX ACL's mask is the mode's group bits, so
 narrowing the root to `0700` sets the mask to nothing and takes the write from every entry: a
 root's POSIX ACL, one passed on by a default ACL above it among them, is left to the narrowing.
+So is the part of an NFSv4 ACL that is the mode itself — the trivial `owner@`, `group@` and
+`everyone@` entries ZFS, and UFS with `nfsv4acls`, keep it in, which `chmod` rewrites with the
+mode — where it grants the write the mode shows and nothing past it, passing nothing on: a root
+of conflux's found at `0775` or `0777` on ZFS is narrowed, not refused. Every other entry is
+judged: a named user's or group's, one passed on or passing on, and one granting more than the
+mode's write.
 On Windows it is any directory
 on the way owned by an account other than SYSTEM, the Administrators, TrustedInstaller and the
 one running conflux, or one whose DACL grants another account — by any entry that allows, a

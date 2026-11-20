@@ -598,3 +598,65 @@ func TestJudgeHoldsARootAsSecureLeavesIt(t *testing.T) {
 		}
 	}
 }
+
+// TestJudgeLeavesARootsTrivialNFSv4ACLToTheNarrowing: an NFSv4 ACL keeps the mode in its owner@,
+// group@ and everyone@ entries -- ZFS's trivial ACL, and UFS's with nfsv4acls -- which chmod
+// rewrites with the mode. So a root found at 0775, or 0777, whose ACL is that and nothing else is
+// the narrowing's, as a POSIX ACL is: accepted, and narrowed to 0700 as any root wider is
+// (TestEnsureAllNarrowsAnOpenRoot). An entry beyond the mode is judged: a named user's, the group's
+// right to delete what is in the root, an entry passed on from a directory above, or a grant the
+// mode found does not show; a deny entry, which the old trivial ACL had, takes nothing away.
+func TestJudgeLeavesARootsTrivialNFSv4ACLToTheNarrowing(t *testing.T) {
+	defer func(was func(string, string) ([]string, error)) { groupUsers = was }(groupUsers)
+	groupUsers = func(string, string) ([]string, error) { return []string{"mallory"}, nil }
+
+	// What every trivial entry allows, and what read, write and search add, as FreeBSD numbers them.
+	const (
+		allow, deny = nfs4Allow, 0x0200
+		always      = 0x1000 | 0x0200 | 0x0040 | 0x8000 // read the ACL, attributes and named attributes; synchronize
+		owns        = 0x2000 | 0x4000 | 0x0400 | 0x0080 // write the ACL, the owner, attributes and named attributes
+		r, w, x     = 0x0008, nfs4AddFile | nfs4AddSubdirectory, 0x0001
+		inherited   = 0x0080
+	)
+
+	trivial := func(group, everyone uint32, more ...[5]uint32) []writer {
+		t.Helper()
+
+		ws, err := freebsdACL(freebsdBuf(append([][5]uint32{
+			{0x01, 0, always | owns | r | w | x, allow},
+			{0x04, 0, always | group, allow},
+			{0x40, 0, always | everyone, allow},
+		}, more...)...), true)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return ws
+	}
+
+	for _, c := range []struct {
+		name    string
+		mode    os.FileMode
+		acl     []writer
+		refused string
+	}{
+		{"0775's trivial ACL", 0o775, trivial(r|w|x, r|x), ""},
+		{"0777's trivial ACL", 0o777, trivial(r|w|x, r|w|x), ""},
+		{"0775's, with the old trivial ACL's deny", 0o775, trivial(r|w|x, r|x, [5]uint32{0x40, 0, w, deny}), ""},
+		{"0775's, and a named user's write", 0o775, trivial(r|w|x, r|x, [5]uint32{0x02, 1001, nfs4AddFile, allow}),
+			"uid 1001"},
+		{"0775's, its group deleting what is in it", 0o775, trivial(r|w|x|nfs4DeleteChild, r|x), "its group"},
+		{"0755's, and everybody's write passed on", 0o755,
+			trivial(r|x, r|x, [5]uint32{0x40, 0, w, allow, inherited}), "anybody"},
+		{"a group write the mode found does not show", 0o750, trivial(r|w|x, 0), "its group"},
+	} {
+		got := judgeRoot(os.ModeDir|c.mode, 0, c.acl, false, os.Geteuid())
+
+		switch {
+		case c.refused != "" && !strings.Contains(got, c.refused):
+			t.Errorf("%s: judgeRoot = %q, want a refusal naming %s", c.name, got, c.refused)
+		case c.refused == "" && got != "":
+			t.Errorf("%s: judgeRoot = %q, want nothing", c.name, got)
+		}
+	}
+}

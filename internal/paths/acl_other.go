@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"syscall"
 
@@ -66,9 +67,10 @@ func secureAs(dir string, euid int) error {
 	// passes an entry on to what is made inside it, so one lands on the root whether or not that
 	// directory was let through itself -- a sticky one, or one above a root that is not a
 	// CONFLUX_DIR. An extended ACL (macOS's, FreeBSD's NFSv4) sits beside the mode and keeps
-	// it through the narrowing, so it is refused; a POSIX.1e ACL's mask is the mode's group
-	// bits, which the narrowing takes every entry's write away with (judge). A link's own ACL
-	// says nothing, so it is read where the link leads.
+	// it through the narrowing, so it is refused, but for the NFSv4 entries that are the mode
+	// itself, which chmod rewrites (judgeRoot); a POSIX.1e ACL's mask is the mode's group bits,
+	// which the narrowing takes every entry's write away with (judge). A link's own ACL says
+	// nothing, so it is read where the link leads.
 	acl := dir
 	if isLink(link) {
 		if acl, err = filepath.EvalSymlinks(dir); err != nil {
@@ -76,10 +78,12 @@ func secureAs(dir string, euid int) error {
 		}
 	}
 
-	switch who, err := mayWrite(acl, 0o700, fi.Sys().(*syscall.Stat_t).Gid, euid); {
-	case err != nil:
-		return err
-	case who != "":
+	writers, aclGroup, err := extendedWriters(acl)
+	if err != nil {
+		return fmt.Errorf("read the ACL of %s: %w", acl, err)
+	}
+
+	if who := judgeRoot(fi.Mode(), fi.Sys().(*syscall.Stat_t).Gid, writers, aclGroup, euid); who != "" {
 		return fmt.Errorf("%s is not conflux's alone: %s could put what it likes in it, or move it aside, "+
 			"for conflux to run.\n  Remove that entry from its ACL, and from the directory above that passed "+
 			"it on, if one did; then run this again", dir, who)
@@ -206,6 +210,16 @@ func mayWrite(p string, mode os.FileMode, gid uint32, euid int) (string, error) 
 	}
 
 	return judge(mode, gid, acl, aclGroup, euid), nil
+}
+
+// judgeRoot is who besides root and euid may write a root found at mode, of group gid, with the ACL
+// acl, once secure has narrowed it: judge at 0700. An NFSv4 ACL entry that is a write bit the mode
+// found shows (writer.modeBit) is the mode, and chmod rewrites it with the mode, so it is the
+// narrowing's to take away, as a POSIX.1e ACL's write is; any other entry is judged.
+func judgeRoot(mode os.FileMode, gid uint32, acl []writer, aclGroup bool, euid int) string {
+	acl = slices.DeleteFunc(acl, func(w writer) bool { return mode&w.modeBit != 0 })
+
+	return judge(0o700, gid, acl, aclGroup, euid)
 }
 
 // judge is who besides root and euid may write a directory of mode and group gid with the ACL

@@ -80,7 +80,8 @@ func freebsdBuf(entries ...[5]uint32) []byte {
 // its trivial three entries letting nobody past the mode's bits. Of an NFSv4 ACL, each allow
 // entry that adds to the directory or, past the sticky bit, deletes from it, deletes it, or
 // changes its ACL or owner, other than owner@'s; ZFS's trivial ACL for a 1777 /tmp lets
-// everyone@ write alone, and deny entries and rights that write nothing are not read.
+// everyone@ write alone, and deny entries and rights that write nothing are not read. group@'s and
+// everyone@'s right only to add, passed on by nothing, is the mode's write bit.
 func TestFreeBSDACL(t *testing.T) {
 	const allow, deny = nfs4Allow, 0x0200
 
@@ -110,9 +111,9 @@ func TestFreeBSDACL(t *testing.T) {
 	)
 
 	want := []writer{
-		{who: everyone}, {who: aUser, id: 1002, pastSticky: true}, {who: aGroup, id: 60, pastSticky: true},
+		{who: everyone, modeBit: 0o002}, {who: aUser, id: 1002, pastSticky: true}, {who: aGroup, id: 60, pastSticky: true},
 		{who: aUser, id: 1003, pastSticky: true}, {who: aUser, id: 1004, pastSticky: true}, {who: aGroup, id: 61},
-		{who: theGroup},
+		{who: theGroup, modeBit: 0o020},
 	}
 	if got, err := freebsdACL(tmp, true); err != nil || !slices.Equal(got, want) {
 		t.Errorf("freebsdACL(an NFSv4 ACL) = %+v, %v; want %+v", got, err, want)

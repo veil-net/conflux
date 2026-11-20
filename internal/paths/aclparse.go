@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"os"
 )
 
 // The ACLs a directory above a CONFLUX_DIR may carry beside its mode, read into who they let
@@ -35,6 +36,12 @@ type writer struct {
 	// sticky bit, or to change its ACL or owner. Writing it, all a mode's bits or a POSIX.1e ACL
 	// can grant, is held back.
 	pastSticky bool
+
+	// modeBit is the write bit of the directory's mode this entry is, where it is one of those an
+	// NFSv4 ACL keeps the mode in: group@'s or everyone@'s right to add to the directory and
+	// nothing past it, passing nothing on and passed on by nothing -- 0o020 or 0o002 -- and
+	// otherwise 0. chmod rewrites such an entry with the mode.
+	modeBit os.FileMode
 }
 
 // POSIX.1e: tags and the write bit, as Linux's system.posix_acl_access and FreeBSD's acl(9)
@@ -139,8 +146,8 @@ const (
 
 // freebsdACL is who FreeBSD's struct acl lets write, read as the NFSv4 ACL or the POSIX.1e
 // access ACL it was asked for. Of an NFSv4 ACL, each allow entry that grants a right to write
-// the directory, but the owner's; a deny entry takes nothing away from an allow entry
-// conflux counts, so it is not read.
+// the directory, but the owner's, each marked with the mode's bit it is, where it is one; a deny
+// entry takes nothing away from an allow entry conflux counts, so it is not read.
 func freebsdACL(b []byte, nfs4 bool) ([]writer, error) {
 	if len(b) < freebsdACLSize {
 		return nil, errACL
@@ -181,6 +188,16 @@ func freebsdACL(b []byte, nfs4 bool) ([]writer, error) {
 		}
 
 		w.pastSticky = perm&nfs4PastSticky != 0
+
+		if !w.pastSticky && binary.NativeEndian.Uint16(e[14:]) == 0 {
+			switch tag {
+			case posixGroupObj:
+				w.modeBit = 0o020
+			case nfs4Everyone:
+				w.modeBit = 0o002
+			}
+		}
+
 		ws = append(ws, w)
 	}
 

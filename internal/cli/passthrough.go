@@ -25,10 +25,19 @@ import (
 // firstNonEmpty(-socket, global -socket, ANCHOR_SOCKET) -- so a flag the user typed
 // still beats conflux's environment, and there is never an argv to rewrite.
 //
-// On Unix the process is replaced outright. That gives perfect stdio, the child's
-// exit code without translation, signals delivered to the right process, and
-// nothing left in `ps` pretending to be a wrapper.
+// On Unix a command for conflux's daemon replaces the process outright. That gives perfect
+// stdio, the child's exit code without translation, signals delivered to the right process,
+// and nothing left in `ps` pretending to be a wrapper. What needs nothing of conflux's runs as
+// a child instead; see runDetached.
 func passthrough(ctx context.Context, args []string) int {
+	// A user who named a socket themselves is talking to a daemon conflux does not manage, so
+	// nothing of conflux's is checked, read or made for them: the installation's directories
+	// are not theirs to need, and an account that cannot write them still reaches its own
+	// daemon.
+	if namesSocket(args) || os.Getenv(anchorctl.SocketEnv) != "" {
+		return runDetached(args)
+	}
+
 	d := activeDirs()
 
 	token, code := connectionDetails(d, args)
@@ -36,16 +45,8 @@ func passthrough(ctx context.Context, args []string) int {
 		return code
 	}
 
-	// Usage reaches no daemon, and makes nothing: anchorctl's answer is the same from any
-	// copy, and the run waits for it, so a temporary one can be removed.
 	if wantsUsage(args) {
-		bin, done, err := libexec.ForUsage(paths.Default())
-		if err != nil {
-			return fail(err)
-		}
-		defer done()
-
-		return runAnchorctl(bin, args, os.Environ())
+		return runDetached(args)
 	}
 
 	// Only once there is something to talk to. Extracting first made the directories
@@ -69,12 +70,6 @@ func passthrough(ctx context.Context, args []string) int {
 // started anchord and is not meant to. Everything else, including anchorctl's
 // genuinely good explanations of every other refusal, passes through untouched.
 func connectionDetails(d paths.Dirs, args []string) (string, int) {
-	// A user who named a socket themselves is talking to a daemon conflux does not
-	// manage, so none of the checks below apply to them.
-	if namesSocket(args) || os.Getenv(anchorctl.SocketEnv) != "" {
-		return "", ExitOK
-	}
-
 	// Usage needs nothing running. anchorctl groups keygen, issue and inspect
 	// under "no anchor needed", but that means no *anchor*: they are still RPCs to
 	// the daemon, which mints the identity and derives the id. Asking for help is
@@ -104,6 +99,20 @@ func connectionDetails(d paths.Dirs, args []string) (string, int) {
 	// Any other failure is a daemon that is up with its token gone. Let anchorctl
 	// produce the error; it may still work from the user's own environment.
 	return token, ExitOK
+}
+
+// runDetached runs anchorctl for what needs nothing of conflux's -- usage, which reaches no
+// daemon, or a daemon the user named -- and makes nothing: its anchorctl is an extraction
+// already there, or a copy in a temporary directory, which goes once the run, a child that is
+// waited for, ends.
+func runDetached(args []string) int {
+	bin, done, err := libexec.ForUsage(paths.Default())
+	if err != nil {
+		return fail(err)
+	}
+	defer done()
+
+	return runAnchorctl(bin, args, os.Environ())
 }
 
 // wantsUsage reports whether this invocation is only asking what a command takes: help

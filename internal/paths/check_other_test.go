@@ -42,7 +42,7 @@ func TestCheckHoldsARootAsAReaderNeeds(t *testing.T) {
 		t.Errorf("checkRootAs(a root another uid owns) = %v, want a refusal naming it", err)
 	}
 
-	for _, mode := range []os.FileMode{0o757, 0o1777} {
+	for _, mode := range []os.FileMode{0o757, 0o777 | os.ModeSticky} {
 		open := foundRoot(t)
 		if err := os.Chmod(open, mode); err != nil {
 			t.Fatal(err)

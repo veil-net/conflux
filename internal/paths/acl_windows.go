@@ -951,11 +951,13 @@ func security(h windows.Handle) (*windows.SECURITY_DESCRIPTOR, error) {
 // is in it, whatever that grants.
 const fileDeleteChild = 0x40
 
-// moves is what an ACE on a directory above a root must not grant another account: to
-// delete or rename what is in it, to delete or rename the directory itself, or to change
-// who may. Creating folders in it is not among them: C:\ lets every user do that, and a
-// folder of theirs cannot take the place of one that is not, as a sticky directory's
-// cannot on Unix.
+// moves is what an ACE on a directory above a root, or on a root's own DACL as secure and Foreign
+// find it, must not grant another account: to delete or rename what is in it, to delete or rename
+// the directory itself, or to change who may. Above a root, whoever may could move it aside and put
+// another in its place; on the root, a handle opened under such a grant keeps it once the root is
+// restricted, and could take out what fill puts there. Creating folders in it is not among them:
+// C:\ lets every user do that, and a folder of theirs cannot take the place of one that is not, as
+// a sticky directory's cannot on Unix.
 const moves = fileDeleteChild | windows.DELETE | windows.WRITE_DAC | windows.WRITE_OWNER | windows.GENERIC_ALL
 
 // retargets is what an ACE on a link or a junction, or on anything in a root, must not grant

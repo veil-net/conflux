@@ -618,8 +618,10 @@ func TestJudgeHoldsARootAsSecureLeavesIt(t *testing.T) {
 // rewrites with the mode. So a root found at 0775, or 0777, whose ACL is that and nothing else is
 // the narrowing's, as a POSIX ACL is: accepted, and narrowed to 0700 as any root wider is
 // (TestEnsureAllNarrowsAnOpenRoot). An entry beyond the mode is judged: a named user's, the group's
-// right to delete what is in the root, an entry passed on from a directory above, or a grant the
-// mode found does not show; a deny entry, which the old trivial ACL had, takes nothing away.
+// right to delete what is in the root, an entry passed on from a directory above, one the root
+// passes on to what is made in it, though it grants no more than the write the mode found shows
+// (chmod leaves that standing, as one only passed on), or a grant the mode found does not show; a
+// deny entry, which the old trivial ACL had, takes nothing away.
 func TestJudgeLeavesARootsTrivialNFSv4ACLToTheNarrowing(t *testing.T) {
 	defer func(was func(string, string) ([]string, error)) { groupUsers = was }(groupUsers)
 	groupUsers = func(string, string) ([]string, error) { return []string{"mallory"}, nil }
@@ -631,6 +633,7 @@ func TestJudgeLeavesARootsTrivialNFSv4ACLToTheNarrowing(t *testing.T) {
 		owns        = 0x2000 | 0x4000 | 0x0400 | 0x0080 // write the ACL, the owner, attributes and named attributes
 		r, w, x     = 0x0008, nfs4AddFile | nfs4AddSubdirectory, 0x0001
 		inherited   = 0x0080
+		inherits    = 0x0001 | 0x0002 // passed on to the files and the directories made inside
 	)
 
 	trivial := func(group, everyone uint32, more ...[5]uint32) []writer {
@@ -662,6 +665,10 @@ func TestJudgeLeavesARootsTrivialNFSv4ACLToTheNarrowing(t *testing.T) {
 		{"0775's, its group deleting what is in it", 0o775, trivial(r|w|x|nfs4DeleteChild, r|x), "its group"},
 		{"0755's, and everybody's write passed on", 0o755,
 			trivial(r|x, r|x, [5]uint32{0x40, 0, w, allow, inherited}), "anybody"},
+		{"0777's, and everybody's write it passes on", 0o777,
+			trivial(r|w|x, r|w|x, [5]uint32{0x40, 0, w, allow, inherits}), "anybody"},
+		{"0775's, and its group's write it passes on", 0o775,
+			trivial(r|w|x, r|x, [5]uint32{0x04, 0, w, allow, inherits}), "its group"},
 		{"a group write the mode found does not show", 0o750, trivial(r|w|x, 0), "its group"},
 	} {
 		got := judgeRoot(os.ModeDir|c.mode, 0, c.acl, false, os.Geteuid())

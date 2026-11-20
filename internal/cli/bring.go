@@ -60,7 +60,7 @@ func bring(ctx context.Context, d paths.Dirs, cfg *config.Config, verb string, s
 	// started it. A `conflux up` that ran its own daemon would leave two ideas of what is
 	// running -- the service manager's and ours -- and they would disagree the moment either
 	// changed.
-	if err := service.New().Restart(); err != nil {
+	if err := newService().Restart(); err != nil {
 		return fail(err)
 	}
 

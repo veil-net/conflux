@@ -280,9 +280,11 @@ func TestSecureHoldsAJunctionRoot(t *testing.T) {
 // TestARootIsMadeWithItsDACL: %ProgramData% passes Users the right to create in what is made in it,
 // enough to turn an empty directory into a junction, so a root is made with its own ownership and
 // protected DACL set as it is created, and carries that grant not even for an instant: read as
-// makeRoot leaves it, before anything else is done, and again once EnsureAll has made one. One
-// already there is left as it is, for secure. Windows-only, so it runs in CI's platforms job
-// alone.
+// makeRoot leaves it, before anything else is done, and again once EnsureAll has made one. The
+// parent also passes on a denial of WRITE_DAC to whoever owns what is made in it, so a root made
+// and then given its DACL would be refused that, and one made with its descriptor never carries
+// the entry. One already there is left as it is, for secure. Windows-only, so it runs in CI's
+// platforms job alone.
 func TestARootIsMadeWithItsDACL(t *testing.T) {
 	parent := t.TempDir()
 
@@ -290,6 +292,7 @@ func TestARootIsMadeWithItsDACL(t *testing.T) {
 	// appending to it), and write extended attributes and attributes, in every folder made in it.
 	privtest.GrantUsers(t, parent, windows.FILE_WRITE_DATA|windows.FILE_APPEND_DATA|windows.FILE_WRITE_EA|
 		windows.FILE_WRITE_ATTRIBUTES, windows.SUB_CONTAINERS_ONLY_INHERIT)
+	privtest.DenyOwnersTheirDACL(t, parent)
 
 	made := filepath.Join(parent, "made")
 	if err := makeRoot(made); err != nil {
@@ -754,5 +757,27 @@ func setSecurity(t *testing.T, path, sddl string) {
 	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION|
 		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, owner, nil, dacl, nil); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestSecureRefusesARootWithNoDACL: a root with no DACL at all grants anybody everything, so a root
+// conflux could repair by its owner, this account's, is refused, naming it, by secure and by Foreign
+// alike. Windows-only, so it runs in CI's platforms job alone.
+func TestSecureRefusesARootWithNoDACL(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", "")
+
+	root := filepath.Join(t.TempDir(), "conflux")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	setSecurity(t, root, "O:"+currentUser().String()+"D:NO_ACCESS_CONTROL")
+
+	if err := Foreign(root); err == nil || !strings.Contains(err.Error(), root+" has no DACL") {
+		t.Errorf("Foreign(a root with no DACL) = %v, want a refusal naming it", err)
+	}
+
+	if err := secure(root); err == nil || !strings.Contains(err.Error(), root+" has no DACL") {
+		t.Errorf("secure(a root with no DACL) = %v, want a refusal naming it", err)
 	}
 }

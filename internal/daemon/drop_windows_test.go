@@ -139,16 +139,18 @@ func TestAServiceSIDNotGivenIsNotOneZeroZero(t *testing.T) {
 
 // TestMakeAnchorDirSetsItsDACLAsItIsMade: an anchor directory is made with its security set as it
 // is created (paths.MakeDir), never holding what its parent passes on -- here Users' right to add
-// to and write the attributes of every folder made in it, as %ProgramData% passes on: a SYSTEM
-// anchord's SYSTEM's and the Administrators' alone, as Restrict makes one, and an account's
-// granting the service SID besides. One already there is not made again. Windows-only, so it runs
-// in CI's platforms job alone.
+// to, and write the attributes and extended attributes of, every folder made in it, as
+// %ProgramData% passes on, and a denial of WRITE_DAC to whoever owns it, which a directory made and
+// then given its DACL would be refused that by: a SYSTEM anchord's SYSTEM's and the Administrators'
+// alone, as Restrict makes one, and an account's granting the service SID besides. One already
+// there is not made again. Windows-only, so it runs in CI's platforms job alone.
 func TestMakeAnchorDirSetsItsDACLAsItIsMade(t *testing.T) {
 	system, admins := wellKnownSID(t, windows.WinLocalSystemSid), wellKnownSID(t, windows.WinBuiltinAdministratorsSid)
 
 	parent := t.TempDir()
-	privtest.GrantUsers(t, parent, windows.FILE_WRITE_DATA|windows.FILE_APPEND_DATA|windows.FILE_WRITE_ATTRIBUTES,
-		windows.SUB_CONTAINERS_ONLY_INHERIT)
+	privtest.GrantUsers(t, parent, windows.FILE_WRITE_DATA|windows.FILE_APPEND_DATA|windows.FILE_WRITE_EA|
+		windows.FILE_WRITE_ATTRIBUTES, windows.SUB_CONTAINERS_ONLY_INHERIT)
+	privtest.DenyOwnersTheirDACL(t, parent)
 
 	root := filepath.Join(parent, "anchor.root")
 	if err := makeAnchorDir(root, Privilege{}); err != nil {
@@ -184,8 +186,8 @@ func TestMakeAnchorDirSetsItsDACLAsItIsMade(t *testing.T) {
 		seen := map[string]bool{}
 
 		for _, e := range sec.Entries {
-			if e.SID.Equals(privtest.Users) {
-				t.Errorf("the DACL of %s grants Users what its parent passes on", path)
+			if e.Type != windows.ACCESS_ALLOWED_ACE_TYPE || e.SID.Equals(privtest.Users) {
+				t.Errorf("the DACL of %s holds what its parent passes on: an entry of type %d for %s", path, e.Type, e.SID)
 			}
 
 			seen[e.SID.String()] = true

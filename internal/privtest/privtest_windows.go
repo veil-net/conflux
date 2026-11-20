@@ -108,6 +108,48 @@ func WithUsers(tb testing.TB, dacl *windows.ACL, access windows.ACCESS_MASK, inh
 	return acl
 }
 
+// DenyOwnersTheirDACL passes on to everything made in dir, and gives dir itself, an entry denying
+// whoever owns it the right to change its DACL -- (D;OICI;WD;;;OW), OWNER RIGHTS -- beside what
+// its DACL holds: a directory made in dir and given its DACL afterwards is refused that, by the
+// entry it inherited, while one made with its own protected descriptor never carries it.
+func DenyOwnersTheirDACL(tb testing.TB, dir string) {
+	tb.Helper()
+
+	ownerRights, err := windows.CreateWellKnownSid(windows.WinCreatorOwnerRightsSid)
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	sd, err := windows.GetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	acl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{{
+		AccessPermissions: windows.WRITE_DAC,
+		AccessMode:        windows.DENY_ACCESS,
+		Inheritance:       windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT,
+		Trustee: windows.TRUSTEE{
+			TrusteeForm:  windows.TRUSTEE_IS_SID,
+			TrusteeType:  windows.TRUSTEE_IS_WELL_KNOWN_GROUP,
+			TrusteeValue: windows.TrusteeValueFromSID(ownerRights),
+		},
+	}}, dacl)
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	if err := windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION,
+		nil, nil, acl, nil); err != nil {
+		tb.Fatal(err)
+	}
+}
+
 // Security is what a file's security descriptor says of who holds it.
 type Security struct {
 	Owner *windows.SID

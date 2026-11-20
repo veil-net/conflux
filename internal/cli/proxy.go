@@ -149,33 +149,7 @@ func runProxy(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	held, err := runCredential(run, d)
-	if err != nil {
-		return fail(err)
-	}
-
-	if err := chooseTaints(cfg, f.taints, held); err != nil {
-		return fail(err)
-	}
-
-	// Last, as in up: the one step that may ask a question.
-	if err := config.ValidateSubnets(cfg.Subnets, cfg.Taints); err != nil {
-		return fail(err)
-	}
-
-	if run != nil {
-		if err := run.ipv4(cfg, *f.ipv4, *f.noIPv4); err != nil {
-			return fail(err)
-		}
-
-		return runEphemeral(ctx, cfg, run)
-	}
-
-	if err := chooseIPv4(cfg, *f.ipv4, *f.noIPv4); err != nil {
-		return fail(err)
-	}
-
-	return bring(ctx, d, cfg, "proxy", len(f.subnets) > 0 || *f.noSubnet)
+	return launch(ctx, d, cfg, run, "proxy", f.taints, *f.ipv4, *f.noIPv4, len(f.subnets) > 0 || *f.noSubnet)
 }
 
 // proxyFlags is conflux proxy's flag set, and the one list of what it takes, which split

@@ -49,10 +49,10 @@ func runInstall(ctx context.Context, args []string) int {
 	return install(ctx, d, true)
 }
 
-// install registers the service. standalone distinguishes `conflux install` typed by
-// a person, which reports and may start, from the internal call `up` and `proxy`
-// make, which is silent and leaves starting to the caller. Either has created the
-// directories already.
+// install places the copy of conflux the service runs, and registers it. standalone
+// distinguishes `conflux install` typed by a person, which reports and may start, from the
+// internal call `up`, `proxy` and `observe` make, and `start`, which is silent and leaves
+// starting to the caller. Each has its directories already.
 func install(ctx context.Context, d paths.Dirs, standalone bool) int {
 	mgr := service.New()
 
@@ -215,13 +215,8 @@ func runStart(ctx context.Context, args []string) int {
 	// binary and typing start is how an upgrade reaches the service -- the copy, and the
 	// definition the service is registered with, which a newer conflux may write
 	// differently.
-	exe, err := service.Place(d)
-	if err != nil {
-		return fail(err)
-	}
-
-	if err := register(mgr, exe); err != nil {
-		return fail(err)
+	if code := install(ctx, d, false); code != ExitOK {
+		return code
 	}
 
 	// No check for "already running". mgr.Restart covers both, and a start that

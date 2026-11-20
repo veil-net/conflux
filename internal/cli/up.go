@@ -163,6 +163,17 @@ func runUp(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
+	return launch(ctx, d, cfg, run, "up", taints, *ipv4, *noIPv4, len(subnets) > 0 || *noSubnet)
+}
+
+// launch is the tail up and proxy share once each has applied the flags only it reads: the
+// taints, decided against the credential the run will hold; the served subnets checked
+// against them; then the IPv4, last, after everything typed has been checked, since it may
+// ask a question, and an answer given only to be told a flag was wrong is an answer given
+// twice; and the run, ephemeral, or brought up by the boot service. subnetsSet is whether
+// verb's command line set the served list.
+func launch(ctx context.Context, d paths.Dirs, cfg *config.Config, run *ephemeralRun, verb string,
+	taints []string, ipv4 string, noIPv4, subnetsSet bool) int {
 	held, err := runCredential(run, d)
 	if err != nil {
 		return fail(err)
@@ -172,25 +183,23 @@ func runUp(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	// Last, after everything typed has been checked: it may ask a question, and an answer
-	// given only to be told a flag was wrong is an answer given twice.
 	if err := config.ValidateSubnets(cfg.Subnets, cfg.Taints); err != nil {
 		return fail(err)
 	}
 
 	if run != nil {
-		if err := run.ipv4(cfg, *ipv4, *noIPv4); err != nil {
+		if err := run.ipv4(cfg, ipv4, noIPv4); err != nil {
 			return fail(err)
 		}
 
 		return runEphemeral(ctx, cfg, run)
 	}
 
-	if err := chooseIPv4(cfg, *ipv4, *noIPv4); err != nil {
+	if err := chooseIPv4(cfg, ipv4, noIPv4); err != nil {
 		return fail(err)
 	}
 
-	return bring(ctx, d, cfg, "up", len(subnets) > 0 || *noSubnet)
+	return bring(ctx, d, cfg, verb, subnetsSet)
 }
 
 // sayLeavingObserveMode tells a machine that only observed that it now runs an anchor too,

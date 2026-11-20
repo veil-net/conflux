@@ -150,7 +150,7 @@ A "permission denied" on a `0700` file you own is the most confusing failure in 
 design, and there are only two causes. conflux detects both and names them:
 
 ```
-conflux: the anchor binaries were extracted to /var/lib/conflux/bin/998ece52739a7c74 but will not run from there.
+conflux: the anchor binaries were extracted to /var/lib/conflux/bin but will not run from there.
   that filesystem is mounted noexec.
   set CONFLUX_DIR to a directory on a filesystem that allows execution.
 ```

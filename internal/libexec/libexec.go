@@ -38,9 +38,8 @@ import (
 // directory from one a crash left half-written.
 const completeMarker = ".complete"
 
-// smokeTimeout bounds the one-off check that the extracted binary actually runs. A variable
-// only so a test can make that check fail.
-var smokeTimeout = 10 * time.Second
+// smokeTimeout bounds the one-off check that the extracted binary actually runs.
+const smokeTimeout = 10 * time.Second
 
 // Tools are the extracted pair.
 type Tools struct {
@@ -90,14 +89,6 @@ func Ensure(d paths.Dirs) (*Tools, error) {
 	}
 
 	if err := extract(t); err != nil {
-		return nil, err
-	}
-
-	// A set that will not run is not kept: left whole, the next conflux would take it as done
-	// and fail with a bare "permission denied" at every start, where this says why.
-	if err := smoke(t); err != nil {
-		_ = os.RemoveAll(t.Dir)
-
 		return nil, err
 	}
 
@@ -191,8 +182,8 @@ func ours(path string, size int) bool {
 	return err == nil && fi.Size() == int64(size) && paths.Trusted(path)
 }
 
-// extract writes t's pair into a staging directory beside its set directory, and renames it
-// into place.
+// extract writes t's pair into a staging directory beside its set directory, runs it there,
+// and only then renames it into place.
 func extract(t *Tools) error {
 	root, target := filepath.Dir(t.Dir), t.Dir
 
@@ -229,6 +220,22 @@ func extract(t *Tools) error {
 	marker := fmt.Sprintf("setID %s\nplatform %s/%s\n", t.SetID, runtime.GOOS, runtime.GOARCH)
 	if err := os.WriteFile(filepath.Join(staging, completeMarker), []byte(marker), 0o600); err != nil {
 		return fmt.Errorf("write the completion marker: %w", err)
+	}
+
+	// Run before it takes its name, and so only once: whatever finds a set under its name takes
+	// it as whole and never runs it, so one that will not run -- or whose run was interrupted --
+	// would otherwise fail every start with a bare "permission denied", where this says why.
+	// The staging directory is the set directory under another name: the same binaries, modes,
+	// owner and DACL, quarantine cleared, which the rename keeps.
+	staged := &Tools{
+		Dir:       staging,
+		Anchord:   filepath.Join(staging, exeName("anchord")),
+		Anchorctl: filepath.Join(staging, exeName("anchorctl")),
+		SetID:     t.SetID,
+	}
+
+	if err := smokeRun(staged); err != nil {
+		return err
 	}
 
 	if err := os.Rename(staging, target); err != nil {
@@ -339,8 +346,15 @@ var (
 	touched  atomic.Uint32
 )
 
-// smoke runs the extracted anchorctl once, so that a filesystem which will not
-// execute it says so here rather than at the point a daemon fails to start.
+// smokeRun is smoke, a variable only so a test can stand in for it.
+var smokeRun = smoke
+
+// smoke runs the extracted anchorctl once, in its staging directory, so that a filesystem
+// which will not execute it says so here rather than at the point a daemon fails to start.
+//
+// What it says names the directory every set is extracted beneath, not the staging directory,
+// which is gone once this fails: what stops a binary running there -- the filesystem's mount, a
+// policy's label, a scanner's exclusion -- is that directory's.
 func smoke(t *Tools) error {
 	ctx, cancel := context.WithTimeout(context.Background(), smokeTimeout)
 	defer cancel()
@@ -350,14 +364,16 @@ func smoke(t *Tools) error {
 		return nil
 	}
 
+	bin := filepath.Dir(t.Dir)
+
 	// A bare "permission denied" on a 0700 file owned by the caller is the most
 	// confusing failure in this whole design, so name the two things that cause it.
 	if errors.Is(err, os.ErrPermission) || strings.Contains(err.Error(), "permission denied") {
-		return fmt.Errorf("%s\n%s", cannotExecute(t.Dir), strings.TrimSpace(string(out)))
+		return fmt.Errorf("%s\n%s", cannotExecute(bin), strings.TrimSpace(string(out)))
 	}
 
-	return fmt.Errorf("the extracted anchorctl in %s did not run: %w\n%s",
-		t.Dir, err, strings.TrimSpace(string(out)))
+	return fmt.Errorf("the anchorctl extracted beneath %s did not run: %w\n%s",
+		bin, err, strings.TrimSpace(string(out)))
 }
 
 // Sweep removes the sets other than t, and the debris of an extraction that crashed.

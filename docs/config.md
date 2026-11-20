@@ -251,6 +251,12 @@ on Windows. Two conflux processes racing agree on the path. A stale set is
 identifiable and sweepable. And "is it already extracted" is three stats rather than a
 read of forty-odd megabytes.
 
+A set is written into a staging directory beside it, and `anchorctl help` is run there
+once; only a set that runs is renamed to its name. So nothing finds a set there that has
+not run — not another conflux extracting at the same moment, nor the next start after one
+killed mid-check — and one that will not run is removed with its reason named (see
+[troubleshooting.md](troubleshooting.md#the-extracted-binaries-will-not-run)).
+
 Old sets are swept after 24 hours, by the supervisor once it has started on its own
 set — never by another conflux command, which might be standing beside a supervisor
 still running an older set. `conflux uninstall` removes the tree.

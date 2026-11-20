@@ -18,10 +18,10 @@ func clearQuarantine(path string) {
 	_ = unix.Removexattr(path, "com.apple.quarantine")
 }
 
-func cannotExecute(dir string) string {
+func cannotExecute(bin string) string {
 	return fmt.Sprintf(
 		"the anchor binaries were extracted to %s but will not run from there.\n"+
 			"  if this says \"killed: 9\", the binary's signature was rejected -- an Apple Silicon Mac\n"+
 			"  refuses a Mach-O with no code signature at all.\n"+
-			"  otherwise check that the filesystem is not mounted noexec.", dir)
+			"  otherwise check that the filesystem is not mounted noexec.", bin)
 }

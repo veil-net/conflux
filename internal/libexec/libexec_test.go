@@ -1,6 +1,7 @@
 package libexec
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -179,21 +180,20 @@ func TestEnsureIsConcurrencySafe(t *testing.T) {
 }
 
 // TestASetThatWillNotRunIsRemoved: an extraction whose anchorctl does not run is not left in
-// place, where the next conflux would take it as whole and fail at every start with less said,
-// and the next Ensure extracts it again.
+// place, under its name or in staging, where the next conflux would take it as whole and fail
+// at every start with less said, and the next Ensure extracts it again.
 func TestASetThatWillNotRunIsRemoved(t *testing.T) {
 	anchortest.Require(t)
 
 	d := dirs(t)
 
-	// A smoke run with no time at all fails before anchorctl starts, as one that cannot exec does.
-	old := smokeTimeout
-	smokeTimeout = 0
+	refused := errors.New("the stand-in smoke run refused it")
 
-	t.Cleanup(func() { smokeTimeout = old })
+	smokeRun = func(*Tools) error { return refused }
+	t.Cleanup(func() { smokeRun = smoke })
 
-	if _, err := Ensure(d); err == nil || !strings.Contains(err.Error(), "did not run") {
-		t.Fatalf("Ensure with a failing smoke run = %v, want it to say the anchorctl did not run", err)
+	if _, err := Ensure(d); !errors.Is(err, refused) {
+		t.Fatalf("Ensure with a failing smoke run = %v, want its refusal", err)
 	}
 
 	entries, err := os.ReadDir(d.Libexec())
@@ -207,10 +207,46 @@ func TestASetThatWillNotRunIsRemoved(t *testing.T) {
 		}
 	}
 
-	smokeTimeout = old
+	smokeRun = smoke
 
 	if _, err := Ensure(d); err != nil {
 		t.Errorf("the next Ensure did not extract the set again: %v", err)
+	}
+}
+
+// TestASetTakesItsNameOnlyOnceItHasRun: nothing is under a set's name until its smoke run has
+// passed. Otherwise another conflux's Ensure, finding it there meanwhile, takes it as whole
+// unrun, and so does every later one when the run is interrupted -- conflux killed, the power
+// cut -- since a whole set is never run again.
+func TestASetTakesItsNameOnlyOnceItHasRun(t *testing.T) {
+	anchortest.Require(t)
+
+	d := dirs(t)
+	set := toolsIn(d).Dir
+
+	var smoked int
+
+	smokeRun = func(staged *Tools) error {
+		smoked++
+
+		if _, err := os.Stat(set); err == nil {
+			t.Errorf("%s is under its name while its smoke run has not ended", set)
+		}
+
+		if _, err := Extracted(d); !errors.Is(err, ErrNotExtracted) {
+			t.Errorf("a concurrent conflux would take the set as whole before its smoke run ended (%v)", err)
+		}
+
+		return smoke(staged)
+	}
+	t.Cleanup(func() { smokeRun = smoke })
+
+	if _, err := Ensure(d); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+
+	if smoked != 1 {
+		t.Errorf("the set was smoked %d times, want 1", smoked)
 	}
 }
 

@@ -4,14 +4,13 @@ import (
 	"bytes"
 	"crypto/x509"
 	"encoding/json"
-	"flag"
 	"math/big"
 	"os"
 	"path/filepath"
 	"testing"
-)
 
-var update = flag.Bool("update", false, "rewrite the show goldens (and, where missing, the fixtures they read)")
+	"github.com/veil-net/conflux/internal/goldentest"
+)
 
 // fixtures are public material alone -- certificates, a request, a list and a public key --
 // made once by -update and committed; the keys that made them are thrown away.
@@ -67,7 +66,7 @@ func makeFixtures(t *testing.T, dir string) {
 func TestShowGoldens(t *testing.T) {
 	dir := filepath.Join("testdata", "show")
 
-	if _, err := os.Stat(filepath.Join(dir, "root.pem")); os.IsNotExist(err) && *update {
+	if _, err := os.Stat(filepath.Join(dir, "root.pem")); os.IsNotExist(err) && goldentest.Updating() {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -92,24 +91,7 @@ func TestShowGoldens(t *testing.T) {
 		js, _ := json.MarshalIndent(s, "", "  ")
 
 		for ext, got := range map[string][]byte{".txt": text.Bytes(), ".json": append(js, '\n')} {
-			golden := filepath.Join(dir, f[:len(f)-4]+ext)
-
-			if *update {
-				if err := os.WriteFile(golden, got, 0o644); err != nil {
-					t.Fatal(err)
-				}
-
-				continue
-			}
-
-			want, err := os.ReadFile(golden)
-			if err != nil {
-				t.Fatalf("%v (go test ./internal/pki -update writes it)", err)
-			}
-
-			if !bytes.Equal(got, want) {
-				t.Errorf("%s changed:\n--- got\n%s\n--- want\n%s", golden, got, want)
-			}
+			goldentest.Check(t, filepath.Join(dir, f[:len(f)-4]+ext), got)
 		}
 	}
 }

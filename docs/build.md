@@ -322,7 +322,7 @@ parameters. Why v1.26.0 and not the certified v1.0.0, and what may be claimed, i
 | `make test` / `make race` | the tests, under `GODEBUG=fips140=only` (`FIPSTEST=` without) |
 | `make cross` | vet all seven, test files included |
 | `make dist` | build all seven into `dist/`, with `SHA256SUMS` and the size gate |
-| `make golden` | rewrite the argv fixtures after an intended change |
+| `make golden` | rewrite every golden file after an intended change |
 | `make image` | the systemd test image, from `dist/conflux-linux-amd64` |
 | `make service-test` | install and uninstall, in a container that boots systemd |
 | `make integration` | four nodes, one taint, over the real API (needs Docker) |

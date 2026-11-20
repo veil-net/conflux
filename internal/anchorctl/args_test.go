@@ -1,17 +1,14 @@
 package anchorctl
 
 import (
-	"flag"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/goldentest"
 )
-
-var update = flag.Bool("update", false, "rewrite the golden argv files")
 
 // scenarios are the argv shapes conflux can produce. Each is written to a golden
 // file, one argument per line, because that turns "the flag is -serve-subnets, not
@@ -136,28 +133,14 @@ var scenarios = map[string]StartMode{
 
 func TestArgvGoldens(t *testing.T) {
 	for name, mode := range scenarios {
-		t.Run(name, func(t *testing.T) {
-			got := strings.Join(mode.Args(), "\n") + "\n"
-			path := filepath.Join("testdata", "argv", name+".golden")
-
-			if *update {
-				if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
-					t.Fatalf("write golden: %v", err)
-				}
-
-				return
-			}
-
-			want, err := os.ReadFile(path)
-			if err != nil {
-				t.Fatalf("read golden (run `go test ./internal/anchorctl -update` to create it): %v", err)
-			}
-
-			if got != string(want) {
-				t.Errorf("argv changed.\n--- want ---\n%s\n--- got ---\n%s", want, got)
-			}
-		})
+		t.Run(name, func(t *testing.T) { checkArgv(t, name, mode.Args()) })
 	}
+}
+
+// checkArgv holds an argv to its golden, testdata/argv/NAME.golden, one argument to a line.
+func checkArgv(t *testing.T, name string, argv []string) {
+	t.Helper()
+	goldentest.Check(t, filepath.Join("testdata", "argv", name+".golden"), []byte(strings.Join(argv, "\n")+"\n"))
 }
 
 // observeScenarios are the observer's starts, kept apart from scenarios: those are anchors,
@@ -171,27 +154,7 @@ var observeScenarios = map[string]config.Observer{
 
 func TestObserveArgvGoldens(t *testing.T) {
 	for name, o := range observeScenarios {
-		t.Run(name, func(t *testing.T) {
-			got := strings.Join(ObserveStartArgs(o), "\n") + "\n"
-			path := filepath.Join("testdata", "argv", name+".golden")
-
-			if *update {
-				if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
-					t.Fatalf("write golden: %v", err)
-				}
-
-				return
-			}
-
-			want, err := os.ReadFile(path)
-			if err != nil {
-				t.Fatalf("read golden (run `go test ./internal/anchorctl -update` to create it): %v", err)
-			}
-
-			if got != string(want) {
-				t.Errorf("argv changed.\n--- want ---\n%s\n--- got ---\n%s", want, got)
-			}
-		})
+		t.Run(name, func(t *testing.T) { checkArgv(t, name, ObserveStartArgs(o)) })
 	}
 }
 

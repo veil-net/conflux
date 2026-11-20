@@ -192,11 +192,14 @@ docscheck:
 	done; \
 	exit $$fail
 
-# golden rewrites the argv fixtures and cert show's goldens after an intended change, so a
-# change to what conflux passes anchorctl, or prints of a certificate, shows up as a
-# reviewable text diff; TestArgvGoldens and TestShowGoldens fail on any other.
+# golden rewrites every golden file after an intended change -- the argv fixtures, cert show's
+# -- so a change to what conflux passes anchorctl, or prints of a certificate, shows up as a
+# reviewable text diff, and the tests holding them fail on any other. Every package whose tests
+# check a golden through internal/goldentest, each run whole with its -update: none is named
+# here, so none can be left out.
 golden:
-	$(GO) test $(TESTEXEC) ./internal/anchorctl ./internal/pki -run 'TestArgvGoldens|TestShowGoldens' -update
+	$(GO) test $(TESTEXEC) $$($(GO) list -e -f '{{.ImportPath}} {{join .TestImports " "}} {{join .XTestImports " "}}' ./... | \
+		awk '/ github.com\/veil-net\/conflux\/internal\/goldentest( |$$)/ { print $$1 }') -update
 
 # cross vets every target, which compiles each one's packages and test files -- `go
 # build ./...` compiles no test files, so vet is what catches a platform-specific test

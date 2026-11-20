@@ -4,7 +4,7 @@
 $ make anchor-bins # populate anchor/bin; see docs/build.md
 $ make test        # everything
 $ make race        # under the race detector
-$ make golden      # rewrite the argv fixtures after an intended change
+$ make golden      # rewrite every golden file after an intended change
 ```
 
 Most of the suite runs without the real anchor binaries — the tests that need them
@@ -56,8 +56,10 @@ looks for that reason rather than a list of names a new test would be missing fr
 scenario, one argument per line. Argv construction is where a wrapper's bugs live and
 it is invisible in a review diff — anchor's flag is `-serve-subnets`, plural — so a
 change to what conflux passes anchorctl shows up as a reviewable text diff instead.
-`make golden` rewrites them after an intended change, and `TestArgvGoldens` fails on
-any other.
+`make golden` rewrites them after an intended change, and `TestArgvGoldens`, and
+`TestObserveArgvGoldens` for the observer's starts, fail on any other. It rewrites every
+golden file in the tree, running each package whose tests check one through
+`internal/goldentest` with that package's `-update`.
 
 Paired with them is `TestEveryFlagWeUseExists`, which runs the **embedded** anchorctl,
 scrapes each command's `-h`, and fails if conflux's argv names a flag that no longer

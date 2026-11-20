@@ -91,27 +91,29 @@ junction — not even for an instant. Every secret file gets the same, explicitl
 anything is written into it.
 
 A root found already there is judged and restricted through one handle, opened on the directory
-itself and never looked up by its name again. Once restricted, it is made to hold its `run\`
-directory, created through that handle with the same ownership and DACL, since a reparse point
-cannot be set on a directory that is not empty: a handle somebody opened on the root while its
-old DACL let them write it, which keeps that right, can no longer make a junction of it. That
-holds only while nobody else may take `run\` out again, so a root whose DACL, as found, lets
-another account delete or rename what is in it, or change who may, is refused before it is
-restricted, and passed over by every reader of an ephemeral root; `%ProgramData%`'s own grant to
-`Users`, to add to a folder and write its attributes, is not that. Then it is read once more
-through the handle: one that became a junction meanwhile is refused. A root already secured —
-the Administrators' or SYSTEM's, under a protected DACL that lets nobody else write it, add to
-it, move it or change who may — is not restricted again, but what it holds is judged again, so
-that a folder refused once stays refused; a protected one that grants more is judged and
+itself and never looked up by its name again. Before anything in it is judged, it is made to hold
+its `run\` directory, created through that handle, SYSTEM's and the Administrators' from the
+moment it exists, since a reparse point cannot be set on a directory that is not empty: a handle
+somebody opened on the root while its old DACL let them write it, which keeps that right, can no
+longer make a junction of it, whatever conflux then decides, a refusal included. That holds only while nobody else may
+take `run\` out again, so a root whose DACL, as found, lets another account delete or rename what
+is in it, or change who may, is refused before `run\` is made, and passed over by every reader of
+an ephemeral root; `%ProgramData%`'s own grant to `Users`, to add to a folder and write its
+attributes, is not that. Then it is read once more through the handle: one that became a junction
+meanwhile is refused. A root already secured — the Administrators' or SYSTEM's, under a protected
+DACL that lets nobody else write it, add to it, move it or change who may — is not restricted
+again, but it is made to hold `run\` and read again the same way, since one an administrator
+restricted while it was empty is as open to a handle opened before, and what it holds is judged
+again, so that a folder refused once stays refused; a protected one that grants more is judged and
 restricted as any other, and one with no DACL at all, which grants anybody everything, is
 refused. A root some other account created is refused rather than taken over: whoever made it
 could have filled it first. So is one that holds anything another account may change, each thing
 in it judged by its own owner and DACL rather than by what it leads to, before the root is
-restricted, what it inherits from the root included, and again once it is, before `run\` is
-made, so that a folder another account added in between is judged too: anything another account
-owns, whatever its name, or that its DACL lets another account write, move or point elsewhere —
-a folder they may add to, or write the attributes or extended attributes of, among them, the
-attributes enough to make a junction of it while it is empty. `anchord`'s own account,
+restricted, what it inherits from the root included, and again once it is, so that a folder
+another account added in between is judged too: anything another account owns, whatever its
+name, or that its DACL lets another account write, move or point elsewhere — a folder they may
+add to, or write the attributes or extended attributes of, among them, the attributes enough to
+make a junction of it while it is empty. `anchord`'s own account,
 `NT SERVICE\conflux`, is conflux's: what a DACL grants it is not held against the thing granted,
 though what it owns is, and a folder whose DACL lets it write — `anchor\` and `run\anchord\` —
 is not looked inside, since only SYSTEM, the Administrators and `anchord` may write there and

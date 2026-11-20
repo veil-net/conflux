@@ -204,15 +204,19 @@ func restrictedSD(owner *windows.SID, dacl *windows.ACL) (*windows.SECURITY_DESC
 	return sd, nil
 }
 
-// fill makes the root held open by h hold something: its run directory, which EnsureAll makes
-// there anyway, with Restrict's ownership and DACL set as it is created, made through h -- its
-// name looked up in the directory h holds and nowhere else. A reparse point cannot be set on a
-// directory that is not empty (FSCTL_SET_REPARSE_POINT fails with STATUS_DIRECTORY_NOT_EMPTY), so
-// a handle somebody opened on the root before it was restricted, which keeps the rights it was
-// opened with, can no longer make a junction of it, and the run directory, SYSTEM's and the
-// Administrators', is not theirs to remove. Anything already there by that name does the same.
-func fill(h windows.Handle) error {
-	return restrictWith(true, func(owner *windows.SID, dacl *windows.ACL) error {
+// fill makes the root dir, held open by h, hold something -- its run directory, which EnsureAll
+// makes there anyway, with Restrict's ownership and DACL set as it is created, made through h: its
+// name looked up in the directory h holds and nowhere else -- and reads h again: one that became a
+// junction or a link before then is refused. A reparse point cannot be set on a directory that is
+// not empty (FSCTL_SET_REPARSE_POINT fails with STATUS_DIRECTORY_NOT_EMPTY), so a handle somebody
+// opened on the root while its DACL let them write it, which keeps the rights it was opened with,
+// can no longer make a junction of it, and the run directory, SYSTEM's and the Administrators', is
+// not theirs to remove. Anything already there by that name does the same, and is judged with the
+// rest of what the root holds (contents).
+func fill(dir string, h windows.Handle) error {
+	filling(dir)
+
+	filled := restrictWith(true, func(owner *windows.SID, dacl *windows.ACL) error {
 		sd, err := restrictedSD(owner, dacl)
 		if err != nil {
 			return err
@@ -233,7 +237,21 @@ func fill(h windows.Handle) error {
 
 		return err
 	})
+
+	if err := notLink(dir, h, "became a junction or a link while conflux secured it"); err != nil {
+		return err
+	}
+
+	if filled != nil {
+		return fmt.Errorf("create %s in %s: %w", runName, dir, filled)
+	}
+
+	return nil
 }
+
+// filling is called before secure fills a root: nothing, but where a test turns the root into a
+// junction meanwhile.
+var filling = func(string) {}
 
 // createDir creates the directory name in the one parent holds open, with sd as its security
 // descriptor, and holds it open for access: its name looked up there and nowhere else, and never
@@ -335,9 +353,10 @@ func trusted(sid *windows.SID) bool {
 // account made, a junction another account may point elsewhere (heldLink), or a CONFLUX_DIR
 // another account can move (see parents). A root secured already -- SYSTEM's or the
 // Administrators', under a protected DACL that grants nobody else a right retargets names -- is not
-// restricted again, but what it holds is judged again (contents), so that what a run refused once
-// the root was restricted is refused by every run after; one protected that grants more, or has
-// no DACL at all, is held to all of what follows, as one found unrestricted is.
+// restricted again, but it is filled as any root is (fill), and what it holds is judged again
+// (contents), so that what a run refused once the root was restricted is refused by every run
+// after; one protected that grants more, or has no DACL at all, is held to all of what follows, as
+// one found unrestricted is.
 //
 // A directory conflux did not create is one somebody else may have filled before it
 // looked -- with a binary for the service to run, or a manifest whose key they hold --
@@ -349,23 +368,23 @@ func trusted(sid *windows.SID) bool {
 // never by its name again (heldRoot): a name looked up afresh at each step could be a junction
 // at the next, which Users may make of an empty directory they may write -- its own data or
 // attributes are enough -- and which the named calls would follow, the ownership of where it
-// leads answering for it and the restriction landing there. Once restricted, the root is made to
-// hold something through the handle (fill), so that no handle opened on it earlier can make a
-// junction of it afterwards, and read again through the handle: one that became a junction
-// meanwhile is refused. A root whose DACL, as found, lets another account move what is in it is
-// refused before that, since a handle opened under that grant could take out what fill puts there.
-// A root that is a junction is held as a symlinked root is on Unix, to who may point it elsewhere,
-// and replaced with a junction of conflux's own leading to the directory judged (replaceLink),
-// since a handle opened on it while its DACL let somebody write it could repoint it in place.
+// leads answering for it and the restriction landing there. A root that is a junction is held as a
+// symlinked root is on Unix, to who may point it elsewhere, and replaced with a junction of
+// conflux's own leading to the directory judged (replaceLink), since a handle opened on it while
+// its DACL let somebody write it could repoint it in place. Then, before anything the root holds is
+// judged, it is made to hold something through the handle (fill), so that no handle opened on it
+// earlier can make a junction of it afterwards, whatever secure goes on to decide, a refusal
+// included, and read again through the handle: one that became a junction meanwhile is refused. A
+// root whose DACL, as found, lets another account move what is in it is refused before either,
+// since a handle opened under that grant could take out what fill puts there.
 //
 // What it holds is held to the same rule (contents): before it is repaired, as it was found, what
 // each thing inherits from the root included -- a handle opened under an inherited grant keeps it
-// once the restriction has replaced it -- and again once the root is restricted, before it is
-// filled. Until the root has its own DACL it has %ProgramData%'s, under which Users may create
-// folders in it, the moment between the first look and the restriction included, and a folder
-// another account made there keeps that owner through the new DACL -- an owner can always grant
-// itself the rest -- so the service would go on writing its log or its token into a place that
-// account controls.
+// once the restriction has replaced it -- and again once the root is restricted. Until the root
+// has its own DACL it has %ProgramData%'s, under which Users may create folders in it, the moment
+// between the first look and the restriction included, and a folder another account made there
+// keeps that owner through the new DACL -- an owner can always grant itself the rest -- so the
+// service would go on writing its log or its token into a place that account controls.
 func secure(dir string) error {
 	root, err := heldRoot(dir, rootAccess)
 	if err != nil {
@@ -392,15 +411,21 @@ func secure(dir string) error {
 	// Secured already: SYSTEM's or the Administrators', under a protected DACL that lets nobody else
 	// write it, move it or change who may -- what a restriction leaves -- and, where the root is a
 	// junction, the junction SYSTEM's or the Administrators' under a protected DACL too, as
-	// replaceLink leaves one. It is not restricted or filled again, but what it holds is judged as it
-	// is once a root is restricted: a restriction refused by that judgement is still in place, and
-	// what it refused is still there. A protected DACL that grants more, or none at all, or a
-	// junction conflux did not make, is repaired, replaced or refused below as an unrestricted root is.
+	// replaceLink leaves one. It is not restricted again, but it is filled, since one secured and
+	// empty -- as an administrator may have restricted it -- is as open to a handle opened on it
+	// before as one found unrestricted, and what it holds is judged as it is once a root is
+	// restricted: a restriction refused by that judgement is still in place, and what it refused is
+	// still there. A protected DACL that grants more, or none at all, or a junction conflux did not
+	// make, is repaired, replaced or refused below as an unrestricted root is.
 	if secured(sd) && (root.link == nil || secured(root.link)) {
 		switch who, _, err := changerIn(dir, sd, retargets, "write it", nil); {
 		case err != nil:
 			return err
 		case who == "":
+			if err := fill(dir, root.dir); err != nil {
+				return err
+			}
+
 			return contents(dir)
 		}
 	}
@@ -429,6 +454,12 @@ func secure(dir string) error {
 		}
 	}
 
+	// Filled before anything is judged, so that no refusal below leaves the root empty, restricted
+	// or not, for a handle opened on it earlier to make a junction of.
+	if err := fill(dir, root.dir); err != nil {
+		return err
+	}
+
 	if err := contents(dir); err != nil {
 		return err
 	}
@@ -441,21 +472,7 @@ func secure(dir string) error {
 
 	restricted(dir)
 
-	if err := contents(dir); err != nil {
-		return err
-	}
-
-	filled := fill(root.dir)
-
-	if err := notLink(dir, root.dir, "became a junction or a link while conflux secured it"); err != nil {
-		return err
-	}
-
-	if filled != nil {
-		return fmt.Errorf("create %s in %s: %w", runName, dir, filled)
-	}
-
-	return nil
+	return contents(dir)
 }
 
 // secured reports whether sd is owned and protected as a restriction leaves it: SYSTEM's or the
@@ -655,8 +672,7 @@ func setMountPoint(h windows.Handle, substitute, display string) error {
 }
 
 // restricted is called once secure has restricted a root through its handle, before it judges what
-// the root holds again, fills it and reads the handle again: nothing, but where a test turns the
-// root into a junction, or adds to it, meanwhile.
+// the root holds again: nothing, but where a test adds to the root meanwhile.
 var restricted = func(string) {}
 
 // rootAccess is what secure holds a root open for: to read its owner, DACL and attributes, and

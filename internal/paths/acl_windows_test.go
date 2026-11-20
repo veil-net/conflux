@@ -339,35 +339,49 @@ func onlyTheSystems(t *testing.T, dir string) {
 
 // TestSecureRefusesARootThatBecomesAJunction: a root found unrestricted is one Users may have been
 // let write, enough to turn it into a junction while it is empty, and to keep a handle that does
-// so once its DACL is replaced. So the root is read again, through the handle it was judged and
-// restricted through, and refused where it became one meanwhile -- here as soon as secure has
-// restricted it. Windows-only, so it runs in CI's platforms job alone.
+// so once its DACL is replaced, and one secured already may have been restricted while such a
+// handle was open. So the root is read again, through the handle it was judged through, once it
+// is filled, and refused where it became one meanwhile -- here just before secure fills it, found
+// unrestricted and secured already alike. Windows-only, so it runs in CI's platforms job alone.
 func TestSecureRefusesARootThatBecomesAJunction(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
-	root := filepath.Join(t.TempDir(), "conflux")
-	if err := os.Mkdir(root, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	for _, secured := range []bool{false, true} {
+		root := filepath.Join(t.TempDir(), "conflux")
+		if err := os.Mkdir(root, 0o700); err != nil {
+			t.Fatal(err)
+		}
 
-	elsewhere := t.TempDir()
+		if secured {
+			if err := Restrict(root, true); err != nil {
+				t.Fatal(err)
+			}
+		}
 
-	was := restricted
-	t.Cleanup(func() { restricted = was })
+		elsewhere := t.TempDir()
 
-	restricted = func(dir string) { mountPoint(t, dir, elsewhere) }
+		was := filling
+		t.Cleanup(func() { filling = was })
 
-	if err := secure(root); err == nil || !strings.Contains(err.Error(), root+" became a junction") {
-		t.Errorf("secure(a root that became a junction once restricted) = %v, want a refusal naming it", err)
+		filling = func(dir string) { mountPoint(t, dir, elsewhere) }
+
+		if err := secure(root); err == nil || !strings.Contains(err.Error(), root+" became a junction") {
+			t.Errorf("secure(a root, secured already %v, that became a junction before it was filled) = %v, "+
+				"want a refusal naming it", secured, err)
+		}
+
+		filling = was
 	}
 }
 
 // TestSecureJudgesWhatTheRootGainsBeforeItIsRestricted: until a found root is restricted, Users may
 // add a folder to it, which keeps them as its owner through the restriction, so what the root holds
-// is judged again once it is restricted, before it is filled: here a folder Users own, added as
-// soon as secure has restricted the root, is refused, naming it. The root stays restricted, and the
-// next secure, which finds it secured, judges what it holds all the same and refuses the folder
-// again rather than taking the root as done. Windows-only, so it runs in CI's platforms job alone.
+// is judged again once it is restricted: here a folder Users own, added as soon as secure has
+// restricted the root, is refused, naming it. The root stays restricted, and the next secure, which
+// finds it secured, judges what it holds all the same and refuses the folder again rather than
+// taking the root as done. Neither refusal leaves the root empty: with the folder gone, a handle
+// opened on the root before secure still cannot make a junction of it. Windows-only, so it runs in
+// CI's platforms job alone.
 func TestSecureJudgesWhatTheRootGainsBeforeItIsRestricted(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
@@ -375,6 +389,9 @@ func TestSecureJudgesWhatTheRootGainsBeforeItIsRestricted(t *testing.T) {
 	if err := os.Mkdir(root, 0o700); err != nil {
 		t.Fatal(err)
 	}
+
+	early := openToWrite(t, root)
+	defer windows.CloseHandle(early)
 
 	planted := filepath.Join(root, "logs")
 
@@ -397,6 +414,15 @@ func TestSecureJudgesWhatTheRootGainsBeforeItIsRestricted(t *testing.T) {
 
 	if err := secure(root); err == nil || !strings.Contains(err.Error(), planted) {
 		t.Errorf("secure(the restricted root still holding that folder) = %v, want a refusal naming it", err)
+	}
+
+	if err := os.Remove(planted); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := leadTo(early, t.TempDir()); !errors.Is(err, windows.ERROR_DIR_NOT_EMPTY) {
+		t.Errorf("a handle opened on the root before secure refused it made a junction of it once the folder "+
+			"was gone: %v, want %v", err, windows.ERROR_DIR_NOT_EMPTY)
 	}
 }
 
@@ -436,32 +462,70 @@ func openToWrite(t *testing.T, dir string) windows.Handle {
 // setMountPoint makes one.
 func leadTo(h windows.Handle, target string) error { return setMountPoint(h, `\??\`+target, target) }
 
-// TestSecureFillsAFoundRoot: a handle opened on a root found unrestricted, by an account its old
-// DACL let write its attributes, keeps that right once the DACL is replaced. So secure makes the
-// root hold its run directory, SYSTEM's and the Administrators' as it is made, before it reads the
-// root again, and the handle opened beforehand can no longer make a junction of it: a reparse
-// point cannot be set on a directory that is not empty. Windows-only, so it runs in CI's platforms
-// job alone.
-func TestSecureFillsAFoundRoot(t *testing.T) {
+// TestSecureFillsTheRoot: a handle opened on a root, by an account its DACL then let write its
+// attributes, keeps that right once the DACL is replaced -- by secure, for a root found
+// unrestricted, or before secure finds it, by an administrator restricting it. So secure makes the
+// root hold its run directory, SYSTEM's and the Administrators' as it is made, before it judges
+// what the root holds, and the handle opened beforehand can no longer make a junction of it: a
+// reparse point cannot be set on a directory that is not empty. That holds for a root found
+// unrestricted and one secured already, and where secure refuses the root for a folder Users own
+// in it, once the folder is gone. Windows-only, so it runs in CI's platforms job alone.
+func TestSecureFillsTheRoot(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
-	root := filepath.Join(t.TempDir(), "conflux")
-	if err := os.Mkdir(root, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	for _, c := range []struct {
+		name             string
+		secured, planted bool
+	}{
+		{"found unrestricted", false, false},
+		{"secured already", true, false},
+		{"secured already, holding a folder Users own", true, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "conflux")
+			if err := os.Mkdir(root, 0o700); err != nil {
+				t.Fatal(err)
+			}
 
-	early := openToWrite(t, root)
-	defer windows.CloseHandle(early)
+			early := openToWrite(t, root)
+			defer windows.CloseHandle(early)
 
-	if err := secure(root); err != nil {
-		t.Fatalf("secure(a root found empty) = %v", err)
-	}
+			planted := filepath.Join(root, "logs")
 
-	onlyTheSystems(t, filepath.Join(root, runName))
+			if c.planted {
+				if err := os.Mkdir(planted, 0o700); err != nil {
+					t.Fatal(err)
+				}
 
-	if err := leadTo(early, t.TempDir()); !errors.Is(err, windows.ERROR_DIR_NOT_EMPTY) {
-		t.Errorf("a handle opened on the root before secure made it a junction afterwards: %v, want %v",
-			err, windows.ERROR_DIR_NOT_EMPTY)
+				ownBy(t, planted, privtest.Users)
+			}
+
+			if c.secured {
+				if err := Restrict(root, true); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			switch err := secure(root); {
+			case c.planted && (err == nil || !strings.Contains(err.Error(), planted)):
+				t.Fatalf("secure(a root %s) = %v, want a refusal naming %s", c.name, err, planted)
+			case !c.planted && err != nil:
+				t.Fatalf("secure(a root %s) = %v", c.name, err)
+			}
+
+			onlyTheSystems(t, filepath.Join(root, runName))
+
+			if c.planted {
+				if err := os.Remove(planted); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			if err := leadTo(early, t.TempDir()); !errors.Is(err, windows.ERROR_DIR_NOT_EMPTY) {
+				t.Errorf("a handle opened on the root before secure made it a junction afterwards: %v, want %v",
+					err, windows.ERROR_DIR_NOT_EMPTY)
+			}
+		})
 	}
 }
 

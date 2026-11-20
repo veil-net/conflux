@@ -96,19 +96,20 @@ as root at the next start. On Windows the root's DACL is set as the first conflu
 creates it makes it, extraction included, so it never carries `%ProgramData%`'s grant to
 `Users`, not even for an instant. A root found already there is judged and restricted through
 one handle on the directory itself, never by its name again, refused where its DACL lets another
-account move what is in it, made to hold its `run\` directory through that handle so that no
-handle opened on it earlier can make a junction of it, and refused if it became one meanwhile;
-one that holds anything another account may change — that it owns, or that it may write, move or
-point elsewhere, `anchord`'s own account aside, judged as found, again once the root is
-restricted, and on every run after — is refused rather than repaired around, by every reader of
-an ephemeral root too, as is a junction in it, and a root that is itself a junction another
-account may point elsewhere; one nobody else may is replaced with a junction conflux makes,
-through its own handle, leading to the directory it judged (see
+account move what is in it, made to hold its `run\` directory through that handle before anything
+in it is judged, so that no handle opened on it earlier can make a junction of it whatever conflux
+then decides, a refusal included, and refused if it became one meanwhile; a root already secured
+is made to hold it too. One that holds anything another account may change — that it owns, or
+that it may write, move or point elsewhere, `anchord`'s own account aside, judged as found, again
+once the root is restricted, and on every run after — is refused rather than repaired around, by
+every reader of an ephemeral root too, as is a junction in it, and a root that is itself a
+junction another account may point elsewhere; one nobody else may is replaced with a junction
+conflux makes, through its own handle, leading to the directory it judged (see
 [windows.md](windows.md#file-permissions)). One gap is left: a junction root already SYSTEM's or
-the Administrators' under a protected DACL granting nobody else anything, as conflux leaves the
-one it makes, is taken as conflux's and not replaced, so where an administrator tightened a
-junction to that after another account had opened it under a looser DACL, the handle that
-account kept can still point it elsewhere.
+the Administrators' under a protected DACL granting nobody else the right to write it, add to it,
+move it or change who may, as conflux leaves the one it makes, is taken as conflux's and not
+replaced, so where an administrator tightened a junction to that after another account had opened
+it under a looser DACL, the handle that account kept can still point it elsewhere.
 
 `CONFLUX_DIR` can point the extraction somewhere else, which is a knob worth knowing
 about: it lets a caller choose the directory a root daemon executes from. It exists

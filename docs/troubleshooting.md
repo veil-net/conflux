@@ -249,8 +249,9 @@ for the realm, and an argument vector anchorctl refuses outright.
 
 Where the logs are: `journalctl -u conflux -n 50` on Linux, `/var/log/conflux.log` on
 macOS and FreeBSD, `/var/log/daemon` on OpenBSD, and
-`%ProgramData%\conflux\logs\conflux.log` on Windows; on those last three, past 10 MiB the
-older lines are in `conflux.log.1` beside it. A start that times out names the
+`%ProgramData%\conflux\logs\conflux.log` on Windows. On macOS, FreeBSD and Windows, where
+conflux writes the file itself, past 10 MiB the older lines are in `conflux.log.1` beside it;
+syslog keeps OpenBSD's. A start that times out names the
 right one for the machine.
 
 ## Renewal is failing

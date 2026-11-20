@@ -244,12 +244,35 @@ func TestARefusedFetchWritesNothing(t *testing.T) {
 }
 
 // anchoradmin mints realm roots. Refused on sight in the release, before anything is
-// downloaded -- not merely left unselected.
+// downloaded -- not merely left unselected. Attached and left out of the manifest, so the
+// release document is the only thing that names it.
 func TestFetchRefusesAnchoradminInTheRelease(t *testing.T) {
-	files := pair()
-	files["anchoradmin-linux-amd64"] = []byte("admin")
+	f := newRelease(pair(), testPin, 1)
+	f.Files["anchoradmin-linux-amd64"] = []byte("admin")
 
+	src := serve(t, f)
+
+	err := Fetch(context.Background(), src, []string{"anchord-linux-amd64"}, t.TempDir(), quiet)
+	if err == nil || !strings.Contains(err.Error(), "anchoradmin") {
+		t.Fatalf("want an anchoradmin refusal, got %v", err)
+	}
+
+	for _, p := range f.Seen() {
+		if strings.Contains(p, "/releases/assets/") {
+			t.Errorf("asked for %s of a release that carries anchoradmin", p)
+		}
+	}
+}
+
+// A manifest that describes anchoradmin is refused too, though it was never attached:
+// anchor is publishing it, which is worth stopping over.
+func TestFetchRefusesAnchoradminInTheManifest(t *testing.T) {
+	files := pair()
 	f := newRelease(files, testPin, 1)
+
+	files["anchoradmin-linux-amd64"] = []byte("admin")
+	f.Files[manifestName] = []byte(manifestOf(files, testPin, 1))
+
 	src := serve(t, f)
 
 	err := Fetch(context.Background(), src, []string{"anchord-linux-amd64"}, t.TempDir(), quiet)

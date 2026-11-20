@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -193,5 +194,85 @@ func TestAReaderPassesOverARootAnotherAccountMade(t *testing.T) {
 
 	if live, _ := ephemeralRuns(); live == nil || live.State != d.State || looked == 0 {
 		t.Errorf("this account's root, looked inside %d times, gave the run %v, want %s", looked, live, d.State)
+	}
+}
+
+// TestAReaderReadsNothingOfARootNotThere: an ephemeral root that is not there when a reader asks
+// whose it is holds no run, and nothing more is looked up at its name: /tmp lets anybody make it a
+// moment later, with a lock, held or left, a marker and an anchorctl of their own in it, and taken
+// for a run it would have a pass-through reach their daemon and run their anchorctl, and uninstall
+// stop their pid and empty what it led to. So a root made just after Foreign found none there is
+// neither the live run nor a stale one, and not looked inside.
+func TestAReaderReadsNothingOfARootNotThere(t *testing.T) {
+	for name, held := range map[string]bool{"a run's lock held": true, "a killed run's lock left": false} {
+		t.Run(name, func(t *testing.T) {
+			// 0700 whatever the umask made it: the run's root is inside, and a parent its group
+			// may write is refused.
+			root := t.TempDir()
+			if err := os.Chmod(root, 0o700); err != nil {
+				t.Fatal(err)
+			}
+
+			t.Setenv("CONFLUX_DIR", root)
+
+			d := paths.EphemeralDirs(paths.EphemeralCandidates()[0])
+
+			looked := 0
+
+			defer func(was func(string) (os.FileInfo, error)) { statLock = was }(statLock)
+			statLock = func(name string) (os.FileInfo, error) {
+				if strings.HasPrefix(name, d.State+string(filepath.Separator)) {
+					looked++
+				}
+
+				return os.Stat(name)
+			}
+
+			// Foreign's answer for a root not there, and the root made, a run's in all but who made
+			// it, the moment after.
+			defer func(was func(string) error) { foreignRoot = was }(foreignRoot)
+			foreignRoot = func(r string) error {
+				if _, err := os.Lstat(r); !errors.Is(err, fs.ErrNotExist) {
+					t.Fatalf("%s is there before it is planted (%v)", r, err)
+				}
+
+				plantRun(t, d, held)
+
+				return fmt.Errorf("%s: %w", r, fs.ErrNotExist)
+			}
+
+			if live, stale := ephemeralRuns(); live != nil || stale != nil {
+				t.Errorf("a root made after it was found not there was taken for a run: live %v, stale %v", live, stale)
+			}
+
+			if looked > 0 {
+				t.Errorf("a root made after it was found not there was looked inside %d times", looked)
+			}
+		})
+	}
+}
+
+// plantRun makes d a run's root, marked up, its lock held for the rest of the test where held is
+// set, and left as a killed run leaves it otherwise.
+func plantRun(t *testing.T, d paths.Dirs, held bool) {
+	t.Helper()
+
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	unlock, ok, err := flock.TryAcquire(d.ServeLockFile())
+	if err != nil || !ok {
+		t.Fatalf("take the run's lock: %v", err)
+	}
+
+	if held {
+		t.Cleanup(unlock)
+	} else {
+		unlock()
+	}
+
+	if err := daemon.MarkReady(d, "anchorplanted"); err != nil {
+		t.Fatal(err)
 	}
 }

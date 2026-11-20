@@ -454,16 +454,16 @@ func TestACredentialThatCannotBeHadEndsTheCycle(t *testing.T) {
 	t.Setenv(fakeAnchorctlStatusEnv, "none")
 	t.Setenv(fakeAnchorctlObserverEnv, "running")
 	t.Setenv(fakeAnchordListenEnv, "1")
-	t.Setenv("CONFLUX_ALLOW_INSECURE_API", "1")
 
 	s, log := supervised(t, "serve")
 	s.Ready = make(chan struct{})
 
+	// Each enrols at the default API, which nothing answers under test (apitest).
 	for name, cfg := range map[string]*config.Config{
 		"observing alone":  {Mode: config.ModeObserve, Observer: &config.Observer{}},
 		"beside an anchor": {Mode: config.ModeProxy, Observer: &config.Observer{}, Proxies: []string{"8080=127.0.0.1:1"}},
 	} {
-		cfg.Taints, cfg.APIBaseURL = []string{"t"}, "http://127.0.0.1:1"
+		cfg.Taints = []string{"t"}
 		if err := config.Save(s.Dirs, cfg); err != nil {
 			t.Fatal(err)
 		}
@@ -734,14 +734,9 @@ func TestWhatAProbeCannotRecoverFrom(t *testing.T) {
 // name for its directory, and this conflux does not take a machine over from that layout: the
 // supervisor refuses it for good before it starts anything, naming the way on, a new identity.
 func TestAMachineLaidOutByOneZeroZeroIsRefused(t *testing.T) {
+	// Configured, with no credential, so a supervisor that went on would enrol at the default
+	// API, which nothing answers under test (apitest).
 	s, log := supervised(t, "serve")
-
-	// An API nothing answers on, so a supervisor that went on would enrol nowhere.
-	t.Setenv("CONFLUX_ALLOW_INSECURE_API", "1")
-
-	if err := config.Save(s.Dirs, &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, APIBaseURL: "http://127.0.0.1:1"}); err != nil {
-		t.Fatal(err)
-	}
 
 	if err := os.MkdirAll(s.Dirs.AnchorDir(), 0o700); err != nil {
 		t.Fatal(err)

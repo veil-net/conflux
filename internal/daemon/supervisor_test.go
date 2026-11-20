@@ -514,7 +514,9 @@ func TestACredentialThatCannotBeHadEndsTheCycle(t *testing.T) {
 }
 
 // TestAnObserverTheHostRefusesEndsObservingAlone: observing alone, a host that will not let
-// the daemon capture is the cycle's failure, and a permanent one: no restart changes it.
+// the daemon capture is the cycle's failure, and a permanent one: no restart changes it, so the
+// restart loop ends on it with the error serve exits 70 on. The refusal is the observer's, not
+// the anchor's, so nothing is recorded for status as an anchor given up on.
 func TestAnObserverTheHostRefusesEndsObservingAlone(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("a console control event needs the console this test shares")
@@ -532,12 +534,20 @@ func TestAnObserverTheHostRefusesEndsObservingAlone(t *testing.T) {
 
 	credentialed(t, s.Dirs)
 
-	var err error
+	ended := make(chan error, 1)
+	go func() { ended <- s.loop(t.Context()) }()
 
-	returns(t, "a cycle the host refuses", func() { err = s.cycle(t.Context()) })
+	select {
+	case err := <-ended:
+		if !Permanent(err) {
+			t.Errorf("the loop ended with %v, which serve would not exit 70 on", err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("the restart loop went on starting an observer the host refuses, with nothing else running")
+	}
 
-	if !Permanent(err) {
-		t.Errorf("the cycle ended with %v, which is not refused for good", err)
+	if st, err := config.LoadState(s.Dirs); err != nil || st.AnchorRefused != "" || !st.AnchorRefusedAt.IsZero() {
+		t.Errorf("the state records an anchor given up on as %q at %v (%v), where the observer was refused", st.AnchorRefused, st.AnchorRefusedAt, err)
 	}
 }
 

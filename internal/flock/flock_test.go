@@ -3,6 +3,7 @@ package flock
 import (
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -62,20 +63,50 @@ func TestHeldAsksWithoutCreating(t *testing.T) {
 
 // TestTryAcquireOutlastsAQuestion: a lock held for a moment -- Held asking whether anybody
 // holds it, which takes it to find out -- is not mistaken for somebody running.
+//
+// The moment ends on a timer, which a loaded runner under -race can fire after every try is
+// spent; a round like that shows nothing either way, and is run again. The failure is a
+// lock freed before the last try that TryAcquire still gave up on.
 func TestTryAcquireOutlastsAQuestion(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "x.lock")
 
-	unlock, err := Acquire(path)
-	if err != nil {
-		t.Fatal(err)
+	for round := 1; ; round++ {
+		unlock, err := Acquire(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var freedAt atomic.Int64
+
+		freed := make(chan struct{})
+
+		time.AfterFunc(5*time.Millisecond, func() {
+			unlock()
+			freedAt.Store(time.Now().UnixNano())
+			close(freed)
+		})
+
+		release, ok, err := TryAcquire(path)
+		returned := time.Now()
+
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		<-freed
+
+		if ok {
+			release()
+
+			return
+		}
+
+		if early := returned.Sub(time.Unix(0, freedAt.Load())); early > time.Millisecond {
+			t.Fatalf("TryAcquire gave up on a lock freed %v before it answered", early)
+		}
+
+		if round == 20 {
+			t.Fatalf("in %d rounds the moment outlasted every try TryAcquire makes", round)
+		}
 	}
-
-	time.AfterFunc(15*time.Millisecond, unlock)
-
-	release, ok, err := TryAcquire(path)
-	if err != nil || !ok {
-		t.Fatalf("TryAcquire beside a lock held a moment = ok %v, err %v; want it taken", ok, err)
-	}
-
-	release()
 }

@@ -544,14 +544,6 @@ func secure(dir string) error {
 		case err != nil:
 			return err
 		case who == "":
-			// Taken as conflux's, a link leads where one of conflux's could: to a directory its volume's
-			// GUID names.
-			if root.link != nil {
-				if _, err := leadsTo(dir, root.dir); err != nil {
-					return err
-				}
-			}
-
 			if err := fill(dir, root.dir); err != nil {
 				return err
 			}
@@ -616,23 +608,19 @@ func secured(sd *windows.SECURITY_DESCRIPTOR) bool {
 
 // replaceLink makes dir, a junction or a link r holds open as itself, a junction of conflux's own
 // leading to r.dir, the directory secure judged: the one found is removed, at once though others
-// hold it open, and another made at its name through a handle of conflux's, created with
-// Restrict's ownership and DACL -- so nobody else can ever have opened it to write -- and given
-// r.dir as its reparse point through that handle. A handle somebody opened on the one found,
-// which keeps the rights it was opened with, can repoint nothing anybody reaches by the name.
-// Something made at the name before conflux makes its own is refused, naming where the junction
-// led and saying how to make it again first: with nothing at the name, the next run would make a
-// root afresh there, and the machine a new identity. So is a directory that cannot be named by its
-// volume's GUID, which a junction cannot lead to (leadsTo), before anything is removed. A failure
-// to make or point its own says the same as something made at the name; a kill in that instant
-// says nothing, and leaves nothing, or conflux's empty directory, at the name, which windows.md
-// tells an operator to remove and make the junction again in place of. r.self is the new junction
-// after.
+// hold it open, and another made at its name through a handle of conflux's, created with Restrict's
+// ownership and DACL -- so nobody else can ever have opened it to write -- and given r.dir as its
+// reparse point through that handle. A handle somebody opened on the one found, which keeps the
+// rights it was opened with, can repoint nothing anybody reaches by the name. Something made at the
+// name before conflux makes its own is refused, naming where the junction led and saying how to
+// make it again first: with nothing at the name, the next run would make a root afresh there, and
+// the machine a new identity. It leads to r.target, the directory's name by its volume's GUID,
+// which heldRoot read (leadsTo). A failure to make or point its own says the same as something made
+// at the name; a kill in that instant says nothing, and leaves nothing, or conflux's empty
+// directory, at the name, which windows.md tells an operator to remove and make the junction again
+// in place of. r.self is the new junction after.
 func replaceLink(dir string, r *held) error {
-	target, err := leadsTo(dir, r.dir)
-	if err != nil {
-		return err
-	}
+	target := r.target
 
 	shown, _ := finalPath(r.dir, volumeNameDOS) // what dir shows it leads to; nothing where it has no such name
 	shown = strings.TrimPrefix(shown, `\\?\`)
@@ -716,11 +704,12 @@ func replaceLink(dir string, r *held) error {
 // leadsTo is where dir, a junction or a link, leads, the directory h holds open, named by its
 // volume's GUID, as a junction of conflux's can lead to it; one that has no such name, which a
 // junction cannot lead to -- a network share's, which heldRoot refuses first (remote), or a local
-// volume's the mount manager does not name -- is refused.
+// volume's the mount manager does not name -- is refused, and not as a directory that is not there:
+// GetFinalPathNameByHandle says ERROR_PATH_NOT_FOUND of it.
 func leadsTo(dir string, h windows.Handle) (string, error) {
 	target, err := finalPath(h, volumeNameGUID)
 	if err != nil {
-		return "", fmt.Errorf("read where %s leads, which a junction of conflux's could lead to: %w", dir, err)
+		return "", fmt.Errorf("read where %s leads, which a junction of conflux's could lead to: %v", dir, err)
 	}
 
 	return target, nil
@@ -859,14 +848,6 @@ func Foreign(dir string) error {
 	}
 	defer root.close()
 
-	// A link leads where one of conflux's could, as secure holds one: to a directory its volume's GUID
-	// names.
-	if root.link != nil {
-		if _, err := leadsTo(dir, root.dir); err != nil {
-			return err
-		}
-	}
-
 	sd, err := security(root.dir)
 	if err != nil {
 		return fmt.Errorf("read the ownership of %s: %w", dir, err)
@@ -909,10 +890,12 @@ const readAccess = windows.READ_CONTROL | windows.FILE_READ_ATTRIBUTES
 
 // held is a root held open: itself, as the lookup of its name found it, and the directory it
 // is -- the same handle, or for a junction or a link heldLink holds, what it leads to -- and for
-// such a link, its own owner and DACL, as heldLink judged them.
+// such a link, its own owner and DACL, as heldLink judged them, and where it leads, by the
+// directory's volume's GUID (leadsTo), as replaceLink points a junction of conflux's there.
 type held struct {
 	self, dir windows.Handle
 	link      *windows.SECURITY_DESCRIPTOR
+	target    string
 }
 
 func (r *held) close() {
@@ -934,8 +917,10 @@ func (r *held) close() {
 // leading to the directory opened (replaceLink), which nobody may have held open before, unless it
 // finds it secured already (security.md's gap). Where the directory is that is not a plain
 // directory either, it is refused: there is nothing further to follow; so is one on a network
-// volume (remote). A root that could not be opened or read is refused, saying why, as is a link that
-// leads nowhere, which is refused as one conflux cannot follow, never as a root that is not there.
+// volume (remote), and, for a link, one its volume's GUID does not name, where no junction of
+// conflux's could lead (leadsTo). A root that could not be opened or read is refused, saying why,
+// as is a link that leads nowhere, which is refused as one conflux cannot follow, never as a root
+// that is not there.
 func heldRoot(dir string, access uint32) (held, error) {
 	self, err := openFile(dir, access, false)
 	if err != nil {
@@ -974,7 +959,7 @@ func heldRoot(dir string, access uint32) (held, error) {
 
 		r.link = sd
 
-		target, err := openFile(dir, access, true)
+		led, err := openFile(dir, access, true)
 		if err != nil {
 			r.close()
 
@@ -982,7 +967,7 @@ func heldRoot(dir string, access uint32) (held, error) {
 				"  Remove it, then run this again as Administrator", dir, err)
 		}
 
-		r.dir = target
+		r.dir = led
 	}
 
 	if err := notLink(dir, r.dir, "leads to a reparse point conflux cannot follow"); err != nil {
@@ -995,6 +980,14 @@ func heldRoot(dir string, access uint32) (held, error) {
 		r.close()
 
 		return held{}, err
+	}
+
+	if r.link != nil {
+		if r.target, err = leadsTo(dir, r.dir); err != nil {
+			r.close()
+
+			return held{}, err
+		}
 	}
 
 	return r, nil

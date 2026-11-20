@@ -154,7 +154,9 @@ removed, and one made in its place through conflux's own handle, with the root's
 from the moment it exists, and pointed through that handle at the directory conflux judged. A
 junction can lead only to a directory named by its volume's GUID, so a link root leading to a local
 volume that has no such name is refused, whether conflux would replace it or finds it its own
-already, and passed over by every reader of an ephemeral root. Something made at that name in
+already, and passed over by every reader of an ephemeral root; so is such a link at the nearest
+directory there above a `CONFLUX_DIR` not made yet, which conflux holds as it holds a root before it
+makes anything. Something made at that name in
 between is refused, naming where the junction led and the commands that make it again (below),
 which come before conflux is run again: with nothing at the name, conflux would make a new root
 there, and the machine a new identity. A failure to make or point its own junction says the same.

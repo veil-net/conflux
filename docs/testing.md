@@ -223,9 +223,13 @@ A fourth node, D, runs **ephemeral** ([ephemeral.md](ephemeral.md)), and enrols 
   anywhere in its root, and its anchord running as `conflux-ephemeral` with
   `CAP_NET_ADMIN` alone. SIGTERM must leave no anchord, no root and no interface, and the
   account, which is kept.
-- `proxy --ephemeral --manifest -`, from an alpha manifest piped in, is killed with SIGKILL,
-  and its anchord must go with it: the parent-death signal it was started with. Started again
-  on the same credential, the run clears what the killed one left and comes up.
+- `proxy --ephemeral --manifest -`, from an alpha manifest piped in, must have
+  `conflux uninstall` refused while it runs, since uninstall removes the account its anchord
+  runs as, and nothing changed. Killed with SIGKILL, its anchord must go with it: the
+  parent-death signal it was started with. Started again on the same credential, the run
+  clears what the killed one left and comes up. Killed once more, what it leaves — its root
+  under `/run/conflux-ephemeral` — is removed by `uninstall`, with the `conflux-ephemeral`
+  account.
 
 Note what discovery cannot do, and anchor's own `docs/discovery.md` is the reference:
 the probe is sealed under the realm's **root public key**, which a node only holds after

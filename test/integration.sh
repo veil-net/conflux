@@ -359,7 +359,8 @@ fi
 
 # D runs ephemeral: an anchor from a credential held in memory, in the foreground, that
 # writes nothing of the machine's and leaves nothing when it stops -- first enrolled in
-# memory, then from an alpha manifest piped in, killed outright and started again.
+# memory, then from an alpha manifest piped in, killed outright and started again, and killed
+# once more for uninstall to clear up after.
 
 # pids_of is the processes on NODE whose executable matches PATTERN, as a case pattern.
 pids_of() { # NODE PATTERN
@@ -425,6 +426,15 @@ docker exec cfx-d id conflux-ephemeral >/dev/null \
 docker exec cfx-d grep -q 'Nothing of the run remains' /tmp/ephemeral.log \
   || { docker exec cfx-d cat /tmp/ephemeral.log >&2; echo "D did not say it stopped cleanly" >&2; exit 1; }
 
+# killed SIGKILLs NODE's ephemeral run and waits for its anchord to go with it: the
+# parent-death signal it was started with.
+killed() { # NODE
+  for pid in $(pids_of "$1" /usr/local/bin/conflux); do docker exec "$1" sh -c "kill -KILL $pid"; done
+  for _ in $(seq 10); do [ -z "$(pids_of "$1" '*/conflux-ephemeral/bin/*/anchord')" ] && return 0; sleep 1; done
+  echo "a killed ephemeral run left anchord running" >&2
+  return 1
+}
+
 say "D runs ephemeral from a manifest piped in; killed outright, its anchord goes with it"
 manifest=$(curl -fsS -X POST -H 'Accept: application/json' -H 'Content-Type: application/json' \
   -d "{\"taints\":[\"$TAINT\"]}" --max-time 30 "$API/ghosts/alpha" |
@@ -435,19 +445,44 @@ printf '%s' "$manifest" | docker exec -i cfx-d conflux proxy --ephemeral --manif
   8080=127.0.0.1:1 >"$log" 2>&1 &
 for _ in $(seq 60); do eph_running cfx-d && break; sleep 1; done
 eph_running cfx-d || { cat "$log" >&2; echo "D's piped ephemeral anchor never came up" >&2; exit 1; }
-for pid in $(pids_of cfx-d /usr/local/bin/conflux); do docker exec cfx-d sh -c "kill -KILL $pid"; done
-for _ in $(seq 10); do [ -z "$(pids_of cfx-d '*/conflux-ephemeral/bin/*/anchord')" ] && break; sleep 1; done
-[ -z "$(pids_of cfx-d '*/conflux-ephemeral/bin/*/anchord')" ] \
-  || { echo "a killed ephemeral run left anchord running" >&2; exit 1; }
+# uninstall removes the account the run's anchord runs as, so it is refused while one runs,
+# and changes nothing.
+code=0
+out=$(docker exec cfx-d conflux uninstall --yes 2>&1) || code=$?
+if [ "$code" != 2 ] || ! grep -q 'an ephemeral anchor is running' <<<"$out"; then
+  echo "uninstall beside a running ephemeral anchor exited $code, and was to be refused: $out" >&2
+  exit 1
+fi
+eph_running cfx-d || { cat "$log" >&2; echo "a refused uninstall stopped the ephemeral run" >&2; exit 1; }
+docker exec cfx-d id conflux-ephemeral >/dev/null \
+  || { echo "a refused uninstall removed the ephemeral account" >&2; exit 1; }
+killed cfx-d
 
 say "the same credential again: what the killed run left is cleared, and it comes up"
 printf '%s' "$manifest" | docker exec -i cfx-d conflux proxy --ephemeral --manifest - --no-ipv4 \
   8080=127.0.0.1:1 >"$log" 2>&1 &
-unset manifest
 for _ in $(seq 60); do eph_running cfx-d && break; sleep 1; done
 eph_running cfx-d || { cat "$log" >&2; echo "D did not come up again after a kill" >&2; exit 1; }
 for pid in $(pids_of cfx-d /usr/local/bin/conflux); do docker exec cfx-d sh -c "kill -INT $pid"; done
 eph_gone cfx-d "an interrupted ephemeral run"
+
+# What a killed run leaves -- its root, which nothing ended with it -- is uninstall's to clear,
+# with the account the run's anchord ran as.
+say "uninstall clears what a killed ephemeral run left, and its account"
+printf '%s' "$manifest" | docker exec -i cfx-d conflux proxy --ephemeral --manifest - --no-ipv4 \
+  8080=127.0.0.1:1 >"$log" 2>&1 &
+unset manifest
+for _ in $(seq 60); do eph_running cfx-d && break; sleep 1; done
+eph_running cfx-d || { cat "$log" >&2; echo "D did not come up a third time" >&2; exit 1; }
+killed cfx-d
+docker exec cfx-d test -e /run/conflux-ephemeral \
+  || { echo "the killed run left no root, so uninstall's removal of one goes untested" >&2; exit 1; }
+docker exec cfx-d conflux uninstall --yes
+eph_gone cfx-d "a killed ephemeral run, after uninstall,"
+if docker exec cfx-d id conflux-ephemeral >/dev/null 2>&1; then
+  echo "uninstall left the conflux-ephemeral account" >&2
+  exit 1
+fi
 wait
 rm -f "$log"
 

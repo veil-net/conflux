@@ -586,7 +586,15 @@ Two kinds of command need nothing of conflux's: usage (`help`, or a help flag), 
 no daemon, and one naming a socket of your own (`-socket`, or `ANCHOR_SOCKET`), which reaches a
 daemon conflux does not manage. Both run `anchorctl` as a child, from the extraction already
 there or a temporary copy removed afterwards, and make no directory and extract nothing, so an
-account that cannot write conflux's directories still reaches its own daemon.
+account that cannot write conflux's directories still reaches its own daemon. A SIGTERM, SIGHUP
+or SIGINT sent to conflux is passed on to that child, so nothing outlives conflux, and conflux
+ends as the child ends: with its exit code, or by the same signal. The copy goes either way.
+
+On Windows every pass-through runs `anchorctl` as a child, since there is no replacing a
+process. Nothing is passed on there, and nothing needs to be: what a console sends — Ctrl+C,
+Ctrl+Break, its closing, a logoff or a shutdown — reaches every process attached to it, and the
+child shares conflux's. A process ended outright (`taskkill /F`, `Stop-Process`) is the one
+case it misses.
 
 conflux supplies the connection details through the environment (`ANCHOR_SOCKET`,
 `ANCHORD_TOKEN`) rather than injecting flags, and only where they are not already set.

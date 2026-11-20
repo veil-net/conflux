@@ -93,18 +93,21 @@ func connectionDetails(d paths.Dirs, args []string) (string, int) {
 	return token, ExitOK
 }
 
+// detachedAnchorctl is where runDetached takes its anchorctl from, and what a test points at a
+// stand-in.
+var detachedAnchorctl = libexec.ForUsage
+
 // runDetached runs anchorctl for what needs nothing of conflux's -- usage, which reaches no
 // daemon, or a daemon the user named -- and makes nothing: its anchorctl is an extraction
 // already there, or a copy in a temporary directory, which goes once the run, a child that is
-// waited for, ends.
+// waited for, ends, however it ends.
 func runDetached(args []string) int {
-	bin, done, err := libexec.ForUsage(paths.Default())
+	bin, done, err := detachedAnchorctl(paths.Default())
 	if err != nil {
 		return fail(err)
 	}
-	defer done()
 
-	return runAnchorctl(bin, args, os.Environ())
+	return runAnchorctl(bin, args, os.Environ(), done)
 }
 
 // wantsUsage reports whether this invocation is only asking what a command takes: help

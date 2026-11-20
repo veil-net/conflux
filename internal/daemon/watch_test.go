@@ -713,7 +713,8 @@ func TestACorruptStateRefusesTheStart(t *testing.T) {
 // refuse, for good and naming the file (TestACorruptStateRefusesTheStart), so the supervisor's
 // clearing of the anchor given up on, which reads it as well, says nothing of it: not as the
 // service starts, nor each time the restart loop is to start anchord again, until the refusals
-// end the loop.
+// end the loop. Any other failure to clear the record is warned of, one that cannot be read
+// among them.
 func TestACorruptStateIsLeftToTheStartToRefuse(t *testing.T) {
 	corrupt := func(t *testing.T, d paths.Dirs) {
 		t.Helper()
@@ -734,24 +735,31 @@ func TestACorruptStateIsLeftToTheStartToRefuse(t *testing.T) {
 		}
 	}
 
-	t.Run("as the service starts", func(t *testing.T) {
+	// starts starts the service on the state spoil leaves, and on a configuration conflux refuses,
+	// which Run reads once it has cleared the record and before it extracts anything.
+	starts := func(t *testing.T, spoil func(*testing.T, paths.Dirs)) *recorder {
+		t.Helper()
+
 		s, _ := supervised(t, "1")
 
 		r := &recorder{}
 		s.Reporter = r
 
-		// A configuration conflux refuses, which Run reads before it extracts anything.
 		if err := os.WriteFile(s.Dirs.ConfigFile(), []byte(`{"version":1,"mode":"neither"}`), 0o600); err != nil {
 			t.Fatal(err)
 		}
 
-		corrupt(t, s.Dirs)
+		spoil(t, s.Dirs)
 
 		if err := s.Run(t.Context()); !Permanent(err) {
 			t.Fatalf("Run = %v, want the configuration refused for good", err)
 		}
 
-		quiet(t, r, "as the service started")
+		return r
+	}
+
+	t.Run("as the service starts", func(t *testing.T) {
+		quiet(t, starts(t, corrupt), "as the service started")
 	})
 
 	t.Run("as the restart loop starts anchord again", func(t *testing.T) {
@@ -782,6 +790,22 @@ func TestACorruptStateIsLeftToTheStartToRefuse(t *testing.T) {
 		}
 
 		quiet(t, r, "as the loop restarted anchord")
+	})
+
+	t.Run("a state.json that cannot be read, warned of", func(t *testing.T) {
+		r := starts(t, func(t *testing.T, d paths.Dirs) {
+			t.Helper()
+
+			// A directory in its place, which no read of the file gets past.
+			if err := os.Mkdir(d.StateFile(), 0o700); err != nil {
+				t.Fatal(err)
+			}
+		})
+
+		_, warns := r.said()
+		if !slices.ContainsFunc(warns, func(w string) bool { return strings.Contains(w, "could not clear") }) {
+			t.Errorf("a state.json that cannot be read went unsaid as the service started: %q", warns)
+		}
 	})
 }
 

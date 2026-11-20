@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"golang.org/x/sys/unix"
+	"github.com/veil-net/conflux/internal/paths"
 )
 
 // cannotExecute names the two things that stop a 0700 file owned by the caller from
@@ -16,8 +16,7 @@ import (
 func cannotExecute(bin string) string {
 	msg := fmt.Sprintf("the anchor binaries were extracted to %s but will not run from there.", bin)
 
-	var st unix.Statfs_t
-	if err := unix.Statfs(bin, &st); err == nil && st.Flags&unix.MS_NOEXEC != 0 {
+	if ok, err := paths.MountAllowsExec(bin); err == nil && !ok {
 		return msg + "\n  that filesystem is mounted noexec.\n" +
 			"  set CONFLUX_DIR to a directory on a filesystem that allows execution."
 	}

@@ -117,7 +117,7 @@ func ephemeralIn(candidates []string) (Dirs, error) {
 // filesystem holding the nearest of root and its parents that exists is mounted to allow it.
 func executable(root string) (bool, error) {
 	for dir := root; ; dir = filepath.Dir(dir) {
-		ok, err := mountAllowsExec(dir)
+		ok, err := MountAllowsExec(dir)
 		if err == nil {
 			return ok, nil
 		}

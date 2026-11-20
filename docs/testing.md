@@ -296,9 +296,10 @@ same runner image and would otherwise share setup-go's one. The container
 suites run on a hosted runner instead, because the third integration node reaches the
 realm through its manifest's bootstrap node over UDP, and from veilnet-dev no handshake
 gets through to it. Every CI job refuses a fork's pull request — a machine that survives the job does not run
-a stranger's code, and the hosted jobs need the anchor credential a fork is not given —
-so a fork's pull request runs nothing but `branch-flow`, which reads the repository on a hosted
-runner and holds no secret. No checkout leaves its token in `.git/config`,
+a stranger's code, and the hosted jobs need the anchor credential a fork is not given — and a
+job skipped that way reads as passing. So `branch-flow`, which runs for a fork's pull request
+since it reads the repository on a hosted runner and holds no secret, fails one: its branch is
+tested by pushing it here and opening the pull request from there. No checkout leaves its token in `.git/config`,
 and every action outside this repository is pinned to its release's commit, with the
 tag beside it in a comment.
 
@@ -331,8 +332,9 @@ persists no token: the script gives the workflow's to git through git's environm
 push alone.
 
 **`branch-flow.yml` holds the branches to that** (`scripts/branch-flow.sh`), on every pull
-request and every edit of one — moving a pull request's base fires only `edited`: one into
-`version3` whose head is not this repository's `dev` fails; one into `dev` whose merge does not
+request and every edit of one — moving a pull request's base fires only `edited`: one from a
+fork fails, whatever its base, since CI runs nothing for it; one into `version3` whose head is
+not `dev` fails; one into `dev` whose merge does not
 hold `version3`'s tip — a back-merge that did not land — fails; one into any other base fails.
 On a hosted runner, since it reads the repository and holds no secret.
 

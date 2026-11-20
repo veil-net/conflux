@@ -112,6 +112,25 @@ Running them directly would stop an anchor conflux believes is running, or build
 its configuration does not describe, and the next reboot would silently disagree. The
 refusal names `down` and `start` and the escape hatch.
 
+## A root another account could change
+
+`status`, `start`, `down`, `renew`, `uninstall`, `update` with the boot service installed, and a
+pass-through to conflux's daemon read what is in a root by its name — the configuration, the pid
+record, the token, the socket — so each holds the root to the
+[readers' check](security.md#the-file-and-the-directory-around-it) first: its owner root or the
+account running conflux, and nobody else able to write it or point it elsewhere. A root that fails
+is refused, exit 1, naming it and who else could change it, and nothing in it is read, run, stopped
+or removed: `uninstall` leaves the boot service registered and the root where it is, identity and
+all; `down` stops nothing; `start` starts nothing; `update` downloads and replaces nothing. Nothing
+is narrowed either. That is for `up`, `proxy`, `observe`, `install` and `enrol`, which make the
+roots: they narrow one of conflux's own and refuse one another account owns. A root that is not
+there is a machine with nothing installed, and read as one.
+
+Help is the exception, since it needs nothing of the machine's: it runs the `anchorctl` extracted
+in the root only where the root passes that check and a whole extraction is there, and otherwise
+— the root refused, or not there — a private temporary copy, reading nothing in the root
+([Pass-through](#pass-through)).
+
 ## `conflux up`
 
 ```
@@ -448,6 +467,10 @@ with Ctrl-C where it runs. The root a killed run left behind — its extracted p
 socket — it removes, stopping the anchord the run left, under the root's lock, so a run
 starting at that moment keeps its own.
 
+A root another account could change it refuses, exit 1, before anything is stopped or removed:
+the boot service stays registered and the root where it is
+([above](#a-root-another-account-could-change)).
+
 ## `conflux status`
 
 conflux's state — service, mode, exit, taint, AnchorID, credential expiry, API, the
@@ -602,8 +625,10 @@ translation.
 Two kinds of command need nothing of conflux's: usage (`help`, or a help flag), which reaches
 no daemon, and one naming a socket of your own (`-socket`, or `ANCHOR_SOCKET`), which reaches a
 daemon conflux does not manage. Both run `anchorctl` as a child, from the extraction already
-there or a temporary copy removed afterwards, and extract nothing and make none of conflux's
-directories, so an account that cannot write them still reaches its own daemon. The copy goes
+there, where the root passes the [readers' check](#a-root-another-account-could-change) and a whole
+one is, or otherwise — the root refused, or not there — a private temporary copy removed afterwards,
+reading nothing in the root. They extract nothing and make none of conflux's directories, so an
+account that cannot write them still reaches its own daemon. The copy goes
 in the system's temporary directory, which must exist, or, where that is mounted noexec, in
 your cache directory, which is made if it is not there yet; no other directory is. A SIGTERM, SIGHUP
 or SIGINT sent to conflux is passed on to that child, so nothing outlives conflux, and conflux

@@ -617,6 +617,40 @@ func TestThreeRefusalsEndTheService(t *testing.T) {
 	}
 }
 
+// TestAHealthyRunStartsTheBackoffOver: a daemon that ran healthily for a while and then died is
+// not in a crash loop, so the restart loop starts its backoff over rather than doubling it.
+func TestAHealthyRunStartsTheBackoffOver(t *testing.T) {
+	healthy := healthyRun
+	healthyRun = 0
+
+	t.Cleanup(func() { healthyRun = healthy })
+
+	// A daemon that dies at once, after a run every one of which is healthy now.
+	s, _ := supervised(t, "1")
+
+	r := &recorder{}
+	s.Reporter = r
+
+	restarts := func() []string {
+		steps, _ := r.said()
+
+		return slices.DeleteFunc(steps, func(s string) bool { return !strings.HasPrefix(s, "restarting in") })
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	ended := make(chan error, 1)
+
+	go func() { ended <- s.loop(ctx) }()
+
+	eventually(t, "two restarts", func() bool { return len(restarts()) >= 2 })
+	cancel()
+	<-ended
+
+	if got, want := restarts()[:2], []string{"restarting in 1s", "restarting in 1s"}; !slices.Equal(got, want) {
+		t.Errorf("the loop said %q, want %q", got, want)
+	}
+}
+
 // TestTheKeeperBacksOff: a failed try holds the next off for the backoff, which doubles
 // between the keeper's bounds -- the restart loop's from a second to thirty, the watcher's from
 // its look to rebuildBackoffMax -- and a try that works starts it over; only tries refused for

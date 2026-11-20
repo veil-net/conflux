@@ -13,7 +13,8 @@ import (
 
 // TestAnchordIsStartedWithAConfig is the one-line regression this whole file is
 // about. Without -config an export configured anywhere but over the live socket is
-// never applied, and one configured over the socket dies with the daemon.
+// never applied, and one configured over the socket dies with the daemon. An ephemeral
+// run's anchord is the exception, started with none: nothing of the run is written.
 func TestAnchordIsStartedWithAConfig(t *testing.T) {
 	d := dirs(t)
 
@@ -26,6 +27,10 @@ func TestAnchordIsStartedWithAConfig(t *testing.T) {
 
 	if got := args[i+1]; got != d.DaemonConfigFile() {
 		t.Errorf("-config %s, want %s", got, d.DaemonConfigFile())
+	}
+
+	if args := (&Supervisor{Dirs: d, ephemeral: true}).anchordArgs(); slices.Contains(args, "-config") {
+		t.Errorf("an ephemeral run's anchord is started with %v, where nothing of the run is written", args)
 	}
 }
 

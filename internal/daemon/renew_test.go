@@ -839,6 +839,52 @@ func TestAPartStartedAgainKeepsTheWindowOfWhatRunsOn(t *testing.T) {
 	}
 }
 
+// TestARenewalThePartRunningOnRefusesStaysDue: a renewal made on the way to starting one part,
+// which the part running on would not take, is kept on disk for the next start, while the state
+// goes on describing the chain that part still holds, due again, and says why -- as RenewNow
+// leaves one it could not install -- rather than the renewed window, which would have the timer
+// sleep while the part running on held the old chain past its expiry.
+func TestARenewalThePartRunningOnRefusesStaysDue(t *testing.T) {
+	is := newIssuer(t)
+	d := machine(t, is, time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour))
+
+	cfg := configOf(t, d)
+	cfg.Observer = &config.Observer{}
+
+	if err := config.Save(d, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	old := stored(t, d)
+	if err := config.SaveState(d, &config.State{AnchorID: renewTestAnchor, IssuedAt: old.IssuedAt(), NotAfter: old.NotAfter()}); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv(fakeAnchorctlFailEnv, "renew")
+
+	if _, err := bringUp(t.Context(), d, fakeCtl(t), nopReporter{}, d.RootAnchorDir(), false, parts{observer: true}); err != nil {
+		t.Fatalf("bringUp: %v", err)
+	}
+
+	if !stored(t, d).NotAfter().After(old.NotAfter()) {
+		t.Error("the renewed chain was not kept for the next start")
+	}
+
+	st, err := config.LoadState(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !st.IssuedAt.Equal(old.IssuedAt()) || !st.NotAfter.Equal(old.NotAfter()) || !dueAt(st.IssuedAt, st.NotAfter, time.Now()) {
+		t.Errorf("the state reads %v to %v, want the window the anchor holds, %v to %v, still due",
+			st.IssuedAt, st.NotAfter, old.IssuedAt(), old.NotAfter())
+	}
+
+	if !strings.Contains(st.LastRenewalError, "refused") {
+		t.Errorf("LastRenewalError = %q, want the anchor's refusal", st.LastRenewalError)
+	}
+}
+
 // TestARenewalWhileTheAnchorIsNotRunningIsNotDueAgain: REASON_NOT_RUNNING is no failed install
 // either -- the renewed chain is saved, and the watcher's rebuild starts the anchor from it -- so
 // the renewal stands, recorded, rather than staying due and drawing a fresh credential from the

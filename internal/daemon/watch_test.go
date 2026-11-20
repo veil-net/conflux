@@ -485,6 +485,78 @@ func TestASwitchedOffFarEndIsReopenedLessAndLessOften(t *testing.T) {
 	}
 }
 
+// TestALinkThatCarriesHasWorked: a rebuilt link that then carries something has worked, so found
+// ended again later it is rebuilt as any ended link is, rather than taken for a rebuild that
+// brought nothing and held off for the backoff.
+func TestALinkThatCarriesHasWorked(t *testing.T) {
+	t.Setenv(fakeAnchorctlStatusEnv, "running")
+	t.Setenv(fakeAnchorctlIdleEnv, "1")
+
+	grace := linkGrace
+	linkGrace = 300 * time.Millisecond
+
+	t.Cleanup(func() { linkGrace = grace })
+
+	s, log := supervised(t, "1")
+	s.priv.Dir = s.Dirs.RootAnchorDir()
+
+	r := &recorder{}
+	s.Reporter = r
+
+	device := filepath.Join(t.TempDir(), "ttyUSB0")
+	if err := os.WriteFile(device, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, Uplink: device}
+	if err := config.Save(s.Dirs, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	credentialed(t, s.Dirs)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+
+	go func() {
+		s.watch(ctx, cfg, brought{anchor: true}, time.Millisecond)
+		close(done)
+	}()
+
+	defer func() {
+		cancel()
+		<-done
+	}()
+
+	count := func(cmd string) int {
+		n := 0
+
+		for _, c := range ran(t, log) {
+			if c == cmd {
+				n++
+			}
+		}
+
+		return n
+	}
+
+	eventually(t, "the idle link rebuilt", func() bool { return count("start") == 1 })
+
+	// Carrying something, inside the grace the rebuilt link is given: looked at twice, so at
+	// least once by a stand-in started after the change.
+	t.Setenv(fakeAnchorctlIdleEnv, "")
+
+	looked := count("metrics")
+	eventually(t, "the link seen carrying", func() bool { return count("metrics") >= looked+2 })
+
+	t.Setenv(fakeAnchorctlIdleEnv, "1")
+	eventually(t, "the link rebuilt once it ended again", func() bool { return count("start") == 2 })
+
+	if _, warns := r.said(); slices.ContainsFunc(warns, func(w string) bool { return strings.Contains(w, "carried nothing since it was rebuilt") }) {
+		t.Errorf("a link that carried something was taken for one that brought nothing: %q", warns)
+	}
+}
+
 // TestAnObserverThatDidNotStartBesideAnAnchorIsStartedAgain: beside an anchor, an observer whose
 // start failed is the watcher's to start again, as one whose capture ended is, rather than left
 // for the daemon's life because status reads it as one never started.
@@ -537,6 +609,11 @@ func TestAGoneDeviceIsWaitedFor(t *testing.T) {
 
 	credentialed(t, s.Dirs)
 
+	// An anchor that was up, as the bring-up said.
+	if err := MarkReady(s.Dirs, fakeAnchorID); err != nil {
+		t.Fatal(err)
+	}
+
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
 
@@ -551,6 +628,11 @@ func TestAGoneDeviceIsWaitedFor(t *testing.T) {
 	}()
 
 	eventually(t, "the anchor on the gone device stopped", func() bool { return slices.Contains(ran(t, log), "stop") })
+
+	if IsReady(s.Dirs) {
+		t.Error("the readiness marker still says an anchor is up, with the anchor stopped")
+	}
+
 	time.Sleep(200 * time.Millisecond)
 
 	if cmds := ran(t, log); slices.Contains(cmds, "start") || len(cmds) != 1 {

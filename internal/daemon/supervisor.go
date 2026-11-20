@@ -245,6 +245,10 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	return s.loop(ctx)
 }
 
+// healthyRun is how long a cycle must have run for the restart loop to start its backoff over
+// once it ends: a variable only so a test can wait less than this.
+var healthyRun = 5 * time.Minute
+
 // loop is spawn, bring up, watch, back off, repeat: one keeper, as the watcher holds for
 // what it keeps running, for the daemon.
 func (s *Supervisor) loop(ctx context.Context) error {
@@ -261,7 +265,7 @@ func (s *Supervisor) loop(ctx context.Context) error {
 
 		// A daemon that ran healthily for a while and then died is not in a crash
 		// loop; start its backoff over.
-		if time.Since(startedAt) > 5*time.Minute {
+		if time.Since(startedAt) > healthyRun {
 			k.backoff = k.least
 		}
 

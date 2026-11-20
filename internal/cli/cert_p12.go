@@ -7,8 +7,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
-	"os"
 
 	"github.com/veil-net/conflux/internal/pki"
 	"github.com/veil-net/conflux/internal/ui"
@@ -286,21 +284,8 @@ func runP12Import(ctx context.Context, args []string) int {
 
 // readAll reads a whole file, - being stdin, up to 16 MiB: no bundle comes near it.
 func readAll(path string) ([]byte, error) {
-	r := io.Reader(os.Stdin)
-
-	if path != "-" {
-		f, err := os.Open(path)
-		if err != nil {
-			return nil, err
-		}
-
-		defer f.Close()
-
-		r = f
-	}
-
-	b, err := io.ReadAll(io.LimitReader(r, 16<<20+1))
-	if err == nil && len(b) > 16<<20 {
+	b, err := pki.ReadInput(path, 16<<20)
+	if errors.Is(err, pki.ErrTooLarge) {
 		return nil, fmt.Errorf("%s is larger than 16 MiB, which no bundle is", path)
 	}
 

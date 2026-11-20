@@ -6,8 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
-	"os"
 	"strings"
 	"time"
 
@@ -15,6 +13,7 @@ import (
 	"github.com/veil-net/conflux/internal/enrol"
 	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/pki"
 	"github.com/veil-net/conflux/internal/ui"
 )
 
@@ -280,27 +279,15 @@ func describeExpiry(notAfter time.Time) string {
 // same thing the same way -- `-manifest -` -- so the two tools do not disagree
 // about a convention an operator has already learned.
 func readEnvelope(path string) (config.Envelope, error) {
-	in := os.Stdin
-
-	if path != "-" {
-		f, err := os.Open(path)
-		if err != nil {
-			return nil, fmt.Errorf("read the manifest: %w", err)
-		}
-		defer f.Close()
-
-		in = f
-	}
-
 	// One bound for both, and refused rather than cut: a document cut short is a decode
 	// error that names everything but the size.
-	b, err := io.ReadAll(io.LimitReader(in, maxManifest+1))
-	if err != nil {
-		return nil, fmt.Errorf("read the manifest: %w", err)
+	b, err := pki.ReadInput(path, maxManifest)
+	if errors.Is(err, pki.ErrTooLarge) {
+		return nil, fmt.Errorf("the manifest is over %d KiB, and no manifest is that large", maxManifest>>10)
 	}
 
-	if len(b) > maxManifest {
-		return nil, fmt.Errorf("the manifest is over %d KiB, and no manifest is that large", maxManifest>>10)
+	if err != nil {
+		return nil, fmt.Errorf("read the manifest: %w", err)
 	}
 
 	env := config.Envelope(strings.TrimSpace(string(b)))

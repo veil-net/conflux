@@ -4,6 +4,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -107,5 +108,27 @@ func TestWriteKeepsKeys(t *testing.T) {
 
 	if err := Write("-", key, false, false); err == nil || !strings.Contains(err.Error(), "terminal") {
 		t.Errorf("a key to a terminal: %v", err)
+	}
+}
+
+// TestReadInputRefusesRatherThanCuts: up to the limit is read whole, and one byte past it
+// is ErrTooLarge, never the first limit bytes.
+func TestReadInputRefusesRatherThanCuts(t *testing.T) {
+	dir := t.TempDir()
+
+	for n, want := range map[int]error{8: nil, 9: ErrTooLarge} {
+		p := filepath.Join(dir, strings.Repeat("x", n))
+		if err := os.WriteFile(p, []byte(strings.Repeat("A", n)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		b, err := ReadInput(p, 8)
+		if !errors.Is(err, want) || (want == nil && len(b) != n) {
+			t.Errorf("ReadInput of %d bytes, limit 8: %d bytes, %v; want %v", n, len(b), err, want)
+		}
+	}
+
+	if _, err := ReadInput(filepath.Join(dir, "missing"), 8); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("ReadInput of a missing file: %v", err)
 	}
 }

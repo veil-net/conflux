@@ -59,29 +59,47 @@ func (o Object) Secret() bool { return o.Kind == KindPrivateKey }
 // path to a disk image does not fill memory.
 const maxInput = 16 << 20
 
-// ReadFile reads every object path holds, PEM or DER; - is stdin.
-func ReadFile(path string) ([]Object, error) {
-	var (
-		b   []byte
-		err error
-	)
+// ErrTooLarge is ReadInput's refusal of more than its limit, which each caller puts in its
+// own words.
+var ErrTooLarge = errors.New("larger than the limit")
 
-	if path == "-" {
-		b, err = io.ReadAll(io.LimitReader(os.Stdin, maxInput+1))
-	} else {
-		var f *os.File
-		if f, err = os.Open(path); err == nil {
-			b, err = io.ReadAll(io.LimitReader(f, maxInput+1))
-			f.Close()
+// ReadInput reads the whole of path, - being stdin, up to limit bytes. More is refused
+// rather than cut short: a document cut short is a parse error that names everything but
+// the size.
+func ReadInput(path string, limit int64) ([]byte, error) {
+	r := io.Reader(os.Stdin)
+
+	if path != "-" {
+		f, err := os.Open(path)
+		if err != nil {
+			return nil, err
 		}
+		defer f.Close()
+
+		r = f
 	}
 
+	b, err := io.ReadAll(io.LimitReader(r, limit+1))
 	if err != nil {
 		return nil, err
 	}
 
-	if len(b) > maxInput {
+	if int64(len(b)) > limit {
+		return nil, ErrTooLarge
+	}
+
+	return b, nil
+}
+
+// ReadFile reads every object path holds, PEM or DER; - is stdin.
+func ReadFile(path string) ([]Object, error) {
+	b, err := ReadInput(path, maxInput)
+	if errors.Is(err, ErrTooLarge) {
 		return nil, fmt.Errorf("%s is larger than %d MiB, which no certificate, request, list or key is", path, maxInput>>20)
+	}
+
+	if err != nil {
+		return nil, err
 	}
 
 	objs, err := Parse(b)

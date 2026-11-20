@@ -130,7 +130,13 @@ func RestrictToOwner(path string, dir bool) error {
 func Trusted(path string) bool {
 	owner, _, err := ownership(path)
 
-	return err == nil && (owner.Equals(sidSystem) || owner.Equals(sidAdmins) || isCurrentUser(owner))
+	return err == nil && trusted(owner)
+}
+
+// trusted is SYSTEM, Administrators or the account running conflux: somebody who could have
+// written anything conflux did.
+func trusted(sid *windows.SID) bool {
+	return sid.Equals(sidSystem) || sid.Equals(sidAdmins) || isCurrentUser(sid)
 }
 
 func ownership(path string) (*windows.SID, windows.SECURITY_DESCRIPTOR_CONTROL, error) {
@@ -203,18 +209,16 @@ func secure(dir string) error {
 // ownerRefusal is secure's refusal of dir for owner, or nil where owner is SYSTEM, the
 // Administrators or the account running conflux.
 func ownerRefusal(dir string, owner *windows.SID) error {
-	if owner.Equals(sidSystem) || owner.Equals(sidAdmins) || isCurrentUser(owner) {
+	if trusted(owner) {
 		return nil
 	}
 
-	account, domain, _, _ := owner.LookupAccount("")
-
 	return fmt.Errorf(
-		"%s belongs to %s\\%s (%s), not to SYSTEM or the Administrators, so conflux did not create it and "+
+		"%s belongs to %s, not to SYSTEM or the Administrators, so conflux did not create it and "+
 			"will not use what is in it.\n  Remove it, then run this again as Administrator. If conflux left it, "+
 			"run elevated by that same account, running any conflux command that way once repairs it; an "+
 			"account that is not an administrator cannot",
-		dir, domain, account, owner)
+		dir, accountName(owner))
 }
 
 // Foreign is what secure would refuse dir with for its owner, before anything is made, or
@@ -340,11 +344,10 @@ func mover(dacl *windows.ACL) *windows.SID {
 	return nil
 }
 
-// trustedOwner is SYSTEM, Administrators, TrustedInstaller or the account running conflux:
-// somebody who could change anything on the machine, or this conflux itself.
+// trustedOwner is whom trusted names, or TrustedInstaller: somebody who could change anything
+// on the machine, or this conflux itself.
 func trustedOwner(sid *windows.SID) bool {
-	return sid.Equals(sidSystem) || sid.Equals(sidAdmins) ||
-		(sidTrustedInstaller != nil && sid.Equals(sidTrustedInstaller)) || isCurrentUser(sid)
+	return trusted(sid) || sidTrustedInstaller != nil && sid.Equals(sidTrustedInstaller)
 }
 
 // accountName is sid as DOMAIN\account (SID), or the SID alone where it names nobody.

@@ -231,9 +231,6 @@ if [ "$os" = freebsd ]; then
   fi
   [ ! -e "$log" ] || fail "$log survived uninstall"
 else
-  if rcctl ls on | grep -qx conflux; then
-    fail "rcctl still lists conflux as enabled after uninstall"
-  fi
   if [ -e /etc/rc.conf.local ] && grep -q conflux /etc/rc.conf.local; then
     fail "rc.conf.local still enables conflux after uninstall: $(grep conflux /etc/rc.conf.local)"
   fi

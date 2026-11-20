@@ -38,7 +38,17 @@ func TestCheckHoldsARootAsAReaderNeeds(t *testing.T) {
 		t.Errorf("Check changed %s: %v, %v", mine, fi.Mode(), err)
 	}
 
-	if err := checkRootAs(mine, euid+1); err == nil || !strings.Contains(err.Error(), mine+" belongs to uid") {
+	// Another uid's root: this account's, judged for another; or, for root, whose roots every reader
+	// trusts, one given to another account.
+	theirs, as := mine, euid+1
+	if euid == 0 {
+		theirs, as = foundRoot(t), 0
+		if err := os.Chown(theirs, 65534, 65534); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := checkRootAs(theirs, as); err == nil || !strings.Contains(err.Error(), theirs+" belongs to uid") {
 		t.Errorf("checkRootAs(a root another uid owns) = %v, want a refusal naming it", err)
 	}
 
@@ -87,5 +97,33 @@ func TestCheckHoldsARootAsAReaderNeeds(t *testing.T) {
 
 	if err := (Dirs{Config: mine, State: absent, Run: filepath.Join(t.TempDir(), "run")}).Check(); err != nil {
 		t.Errorf("Check(one root of three there) = %v", err)
+	}
+}
+
+// TestAReaderHoldsALinkedRootToTheOwnerOfWhereItLeads: a root that is a link is held to the owner of
+// the link and of where it leads, so a link root owns that leads to a directory another account
+// owns is refused, naming it: /dev/fd, root's, leading to /proc/self/fd, this account's, judged for
+// another; or, for root, a link of its own to a directory given to another account.
+func TestAReaderHoldsALinkedRootToTheOwnerOfWhereItLeads(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", "")
+
+	link, as := "/dev/fd", os.Geteuid()+1
+
+	if os.Geteuid() == 0 {
+		theirs := foundRoot(t)
+		if err := os.Chown(theirs, 65534, 65534); err != nil {
+			t.Fatal(err)
+		}
+
+		link, as = filepath.Join(t.TempDir(), "conflux"), 0
+		if err := os.Symlink(theirs, link); err != nil {
+			t.Fatal(err)
+		}
+	} else if fi, err := os.Lstat(link); err != nil || !isLink(fi) {
+		t.Skipf("%s is no link root owns here (%v), and only root can make one", link, err)
+	}
+
+	if err := checkRootAs(link, as); err == nil || !strings.Contains(err.Error(), link+" belongs to uid") {
+		t.Errorf("checkRootAs(a link root owns to a directory another uid owns) = %v, want a refusal naming it", err)
 	}
 }

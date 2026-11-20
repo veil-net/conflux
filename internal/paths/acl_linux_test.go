@@ -5,6 +5,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"golang.org/x/sys/unix"
@@ -130,5 +131,27 @@ func TestARootsACLCannotRefuseItHere(t *testing.T) {
 	if who := judgeRoot(os.ModeDir|0o777, 0, writers, aclGroup, os.Geteuid()); who != "" {
 		t.Errorf("a root found at 0777 whose POSIX ACL lets uid 65534, its group and everybody write: "+
 			"judgeRoot = %q, want nobody", who)
+	}
+}
+
+// TestAReaderReadsALinkedRootsACLWhereItLeads: a link's own ACL says nothing, so a root that is a
+// link is judged by the ACL where it leads: a link of this account's to a directory of its own whose
+// POSIX ACL lets uid 65534 write it is refused by checkRoot, every reader's, naming that uid.
+func TestAReaderReadsALinkedRootsACLWhereItLeads(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", "")
+
+	target := foundRoot(t)
+	if err := unix.Setxattr(target, "system.posix_acl_access", anotherMayWrite, 0); err != nil {
+		t.Fatalf("give %s an ACL: %v", target, err)
+	}
+
+	link := filepath.Join(t.TempDir(), "conflux")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := checkRootAs(link, os.Geteuid()); err == nil || !strings.Contains(err.Error(), "uid 65534") {
+		t.Errorf("checkRootAs(a link to a directory whose ACL lets uid 65534 write it) = %v, want a refusal naming "+
+			"that uid", err)
 	}
 }

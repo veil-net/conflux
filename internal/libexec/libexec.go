@@ -275,10 +275,14 @@ func writeExecutable(path string, content []byte, oneRun bool) error {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 
-	if err := f.Sync(); err != nil {
-		f.Close()
+	// A set outlives this process, so it is on disk before it is renamed into place. The
+	// copy for one run is gone before anything could need it to survive a power cut.
+	if !oneRun {
+		if err := f.Sync(); err != nil {
+			f.Close()
 
-		return fmt.Errorf("sync %s: %w", path, err)
+			return fmt.Errorf("sync %s: %w", path, err)
+		}
 	}
 
 	if err := f.Close(); err != nil {

@@ -69,10 +69,7 @@ func TestEnsureAllReadsAPOSIXACL(t *testing.T) {
 // the root is made at, and that root is accepted too.
 func TestEnsureAllLeavesTheRootsPOSIXACLToTheNarrowing(t *testing.T) {
 	t.Run("on the root", func(t *testing.T) {
-		root := filepath.Join(t.TempDir(), "conflux")
-		if err := os.Mkdir(root, 0o700); err != nil {
-			t.Fatal(err)
-		}
+		root := foundRoot(t)
 
 		if err := unix.Setxattr(root, "system.posix_acl_access", anotherMayWrite, 0); err != nil {
 			t.Fatalf("give %s an ACL: %v", root, err)

@@ -262,7 +262,7 @@ func TestSecureRefusesAJunctionRootMadeAgain(t *testing.T) {
 
 	replacing = was
 
-	if !strings.EqualFold(filepath.VolumeName(os.Getenv("ProgramFiles")), filepath.VolumeName(root)) {
+	if !sameVolumeAsProgramFiles(root) {
 		t.Skipf("%%ProgramFiles%% is not on the volume %s is on, so the commands cannot move a junction into place", root)
 	}
 
@@ -343,9 +343,13 @@ func TestSecureSaysHowToRemakeAJunctionRootItCannotReplace(t *testing.T) {
 
 // remakeCommands are the commands a refusal to replace the junction root, which led to target, says
 // make it again: target named as Windows reads it back, its long names in place of %TEMP%'s short
-// ones, and the junction made in %ProgramFiles%.
+// ones, and the junction made in %ProgramFiles%; none where %ProgramFiles% is not on root's volume.
 func remakeCommands(t *testing.T, root, target string) []string {
 	t.Helper()
+
+	if !sameVolumeAsProgramFiles(root) {
+		return nil
+	}
 
 	h, err := openFile(target, readAccess, false)
 	if err != nil {
@@ -364,6 +368,30 @@ func remakeCommands(t *testing.T, root, target string) []string {
 		`rmdir "` + root + `"`,
 		`mklink /J "` + stage + `" "` + strings.TrimPrefix(shown, `\\?\`) + `"`,
 		`move "` + stage + `" "` + root + `"`,
+	}
+}
+
+// sameVolumeAsProgramFiles reports whether dir is on the volume %ProgramFiles% is on, by its drive.
+func sameVolumeAsProgramFiles(dir string) bool {
+	return strings.EqualFold(filepath.VolumeName(os.Getenv("ProgramFiles")), filepath.VolumeName(dir))
+}
+
+// TestRemakingAJunctionRootOnAnotherVolume: the commands a refusal gives to make a junction root again
+// make it in %ProgramFiles% and move it into place, which move cannot do from one volume to another,
+// so for a root on a volume %ProgramFiles% is not on none are given: the refusal says, naming the
+// volume, to choose a folder there that only SYSTEM and the Administrators may write. Windows-only,
+// so it runs in CI's platforms job alone.
+func TestRemakingAJunctionRootOnAnotherVolume(t *testing.T) {
+	other := "Q:"
+	if sameVolumeAsProgramFiles(other) {
+		other = "R:"
+	}
+
+	said := remakeJunction(other+`\conflux`, `D:\conflux`)
+
+	if commands := commandsIn(errors.New(said)); len(commands) != 0 ||
+		!strings.Contains(said, "%ProgramFiles% is not on "+other+", so choose such a folder there") {
+		t.Errorf("remakeJunction(a root on %s) = %q, want no commands and a folder there to choose", other, said)
 	}
 }
 
@@ -705,19 +733,6 @@ func TestSecureJudgesWhatTheRootGainsBeforeItIsRestricted(t *testing.T) {
 	if err := secure(root); err == nil || !strings.Contains(err.Error(), planted) {
 		t.Errorf("secure(the restricted root still holding that folder) = %v, want a refusal naming it", err)
 	}
-}
-
-// foundRoot is a root as secure finds one already there: a folder named conflux, made in a
-// temporary directory of the test's with what that passes on.
-func foundRoot(t *testing.T) string {
-	t.Helper()
-
-	root := filepath.Join(t.TempDir(), "conflux")
-	if err := os.Mkdir(root, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	return root
 }
 
 // mountPoint turns the empty directory dir into a junction leading to target, in place, as an

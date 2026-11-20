@@ -244,10 +244,7 @@ func TestEnsureAllRefusesARootAnotherAccountCanMove(t *testing.T) {
 	// A parent that belongs to another account is that account's to open up whenever it
 	// likes, whatever its mode says now.
 	t.Run("another account owns it", func(t *testing.T) {
-		root := filepath.Join(t.TempDir(), "conflux")
-		if err := os.Mkdir(root, 0o700); err != nil {
-			t.Fatal(err)
-		}
+		root := foundRoot(t)
 
 		err := parentsAs(root, os.Geteuid()+1)
 		if err == nil || !strings.Contains(err.Error(), "belongs to uid") {

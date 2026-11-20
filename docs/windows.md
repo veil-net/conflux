@@ -184,9 +184,9 @@ mklink /J "%ProgramFiles%\conflux.junction" "D:\conflux"
 move "%ProgramFiles%\conflux.junction" "C:\ProgramData\conflux"
 ```
 
-For a `CONFLUX_DIR` on another volume, where `move` cannot take a junction from `%ProgramFiles%`,
-make it in a directory on that volume that only SYSTEM and the Administrators can write, then move
-it into place the same way.
+For a root on a volume `%ProgramFiles%` is not on, where `move` cannot take a junction from there,
+the refusal gives no commands: it names the volume, and says to make the junction in a folder on
+it that only SYSTEM and the Administrators can write, then move it into place the same way.
 
 A root, its `run\`, and the junction conflux puts in place of a junction root, are made through a
 handle on the folder each goes in: the name is looked up there and nowhere else, and not followed. The create

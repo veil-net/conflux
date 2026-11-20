@@ -154,19 +154,19 @@ func makeRoot(dir string) error {
 // this machine or nowhere, or that another account may point elsewhere, judged as itself before
 // anything follows it. It is nil where none of them is there.
 func remoteAbove(dir string) error {
-	for p := dir; ; p = filepath.Dir(p) {
+	err := nearest(dir, func(p string) error {
 		r, err := heldRoot(p, readAccess)
-		switch {
-		case err == nil:
+		if err == nil {
 			r.close()
-
-			return nil
-		case !errors.Is(err, fs.ErrNotExist):
-			return err
-		case filepath.Dir(p) == p:
-			return nil
 		}
+
+		return err
+	})
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
 	}
+
+	return err
 }
 
 // offMachineLinks refuses dir, where whoever set CONFLUX_DIR chose it (chosen), where a link on the
@@ -625,29 +625,14 @@ func replaceLink(dir string, r *held) error {
 	shown, _ := finalPath(r.dir, volumeNameDOS) // what dir shows it leads to; nothing where it has no such name
 	shown = strings.TrimPrefix(shown, `\\?\`)
 
-	// The way on from a refusal once the junction found is gone: the junction made again, to where
-	// it led, by its drive letter where it has one, before conflux runs again. Made at the name, a
-	// junction carries what the folder it is in passes on -- in %ProgramData%, Users' right to write
-	// its attributes, enough to point it elsewhere -- which the next run refuses (heldLink). So it is
-	// made in %ProgramFiles%, which passes a right to write on to nobody but SYSTEM, the
-	// Administrators and TrustedInstaller, and moved into place, which on one volume keeps the DACL
-	// it was made with: unprotected, so the next run replaces it with conflux's own. In cmd, where
-	// mklink is, and whose rmdir removes a junction without going into where it leads.
+	// Where the junction led, as a refusal names it to make it again: by its drive letter where it has
+	// one.
 	leads := shown
 	if leads == "" {
 		leads = target
 	}
 
-	stage := `%ProgramFiles%\` + filepath.Base(dir) + ".junction"
-	remake := "Remove whatever is at its name, and make the junction again before conflux runs, or it would make " +
-		"a new root there, and the machine a new identity. Made at its name, the junction would carry what the " +
-		"folder it is in passes on, in %ProgramData% Users' right to write its attributes, and be refused; so " +
-		"make it in a folder only SYSTEM and the Administrators may write, on the same volume, and move it into " +
-		"place. In cmd, not PowerShell, as Administrator:\n" +
-		`    rmdir "` + dir + `"` + "\n" +
-		`    mklink /J "` + stage + `" "` + leads + `"` + "\n" +
-		`    move "` + stage + `" "` + dir + `"` + "\n" +
-		"  then run this again"
+	remake := remakeJunction(dir, leads)
 
 	parent, err := openFile(filepath.Dir(dir), windows.FILE_READ_ATTRIBUTES, true)
 	if err != nil {
@@ -699,6 +684,38 @@ func replaceLink(dir string, r *held) error {
 	}
 
 	return nil
+}
+
+// remakeJunction is the way on from a refusal once the junction at dir, which led to leads, is gone:
+// the junction made again, before conflux runs again. Made at the name, a junction carries what the
+// folder it is in passes on -- in %ProgramData%, Users' right to write its attributes, enough to
+// point it elsewhere -- which the next run refuses (heldLink). So it is made in a folder only
+// SYSTEM, the Administrators and TrustedInstaller may write, on dir's volume, and moved into place,
+// which on one volume keeps the DACL it was made with: unprotected, so the next run replaces it with
+// conflux's own. The commands that do it, in cmd, where mklink is, and whose rmdir removes a junction
+// without going into where it leads, make it in %ProgramFiles%, and are given only where that is on
+// dir's volume, since move cannot take a junction from one volume to another; elsewhere the folder
+// is the operator's to choose, and the refusal says so, naming the volume.
+func remakeJunction(dir, leads string) string {
+	remake := "Remove whatever is at its name, and make the junction again before conflux runs, or it would make " +
+		"a new root there, and the machine a new identity. Made at its name, the junction would carry what the " +
+		"folder it is in passes on, in %ProgramData% Users' right to write its attributes, and be refused; so " +
+		"make it in a folder only SYSTEM and the Administrators may write, on the same volume, and move it into " +
+		"place."
+
+	if vol := filepath.VolumeName(dir); !strings.EqualFold(filepath.VolumeName(os.Getenv("ProgramFiles")), vol) {
+		return remake + " %ProgramFiles% is not on " + vol + ", so choose such a folder there; then, in cmd, not " +
+			`PowerShell, as Administrator, remove "` + dir + `" with rmdir, make the junction to "` + leads +
+			`" in that folder with mklink /J, move it to "` + dir + `", and run this again`
+	}
+
+	stage := `%ProgramFiles%\` + filepath.Base(dir) + ".junction"
+
+	return remake + " In cmd, not PowerShell, as Administrator:\n" +
+		`    rmdir "` + dir + `"` + "\n" +
+		`    mklink /J "` + stage + `" "` + leads + `"` + "\n" +
+		`    move "` + stage + `" "` + dir + `"` + "\n" +
+		"  then run this again"
 }
 
 // leadsTo is where dir, a junction or a link, leads, the directory h holds open, named by its

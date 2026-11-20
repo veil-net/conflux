@@ -1,6 +1,7 @@
 package paths
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -38,4 +39,17 @@ func TestALogDirectoryOnlyWhereThePlatformHasOne(t *testing.T) {
 	case platform != "" && d.Log != filepath.Join(root, "logs"):
 		t.Errorf("Log = %q, want it under the root", d.Log)
 	}
+}
+
+// foundRoot is a root as secure finds one already there: a folder named conflux, made at 0700 in a
+// temporary directory of the test's, with what that passes on.
+func foundRoot(t *testing.T) string {
+	t.Helper()
+
+	root := filepath.Join(t.TempDir(), "conflux")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	return root
 }

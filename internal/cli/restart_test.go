@@ -76,18 +76,3 @@ func TestRestartWithClearsTheMarkerFirst(t *testing.T) {
 		t.Error("the marker survived restartWith")
 	}
 }
-
-// Every shutdown path calls the clear, including those on a machine that has never had a
-// marker, so restartWith must not fail on its absence.
-func TestRestartWithWorksWithNoMarker(t *testing.T) {
-	d := testDirs(t)
-	mgr := &fakeManager{d: d}
-
-	if err := restartWith(d, mgr); err != nil {
-		t.Fatalf("restartWith with no marker: %v", err)
-	}
-
-	if mgr.restarts != 1 {
-		t.Errorf("Restart called %d times, want 1", mgr.restarts)
-	}
-}

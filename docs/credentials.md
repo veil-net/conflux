@@ -245,7 +245,11 @@ credential installed
   taint         site-alpha
   bootstrap     genesis-1.example.gov:4700, genesis-2.example.gov:4700
 
-Next: sudo conflux up
+Next, one of:
+
+  conflux up                          join with a network interface
+  conflux proxy 8080=127.0.0.1:3000   publish a port, no interface needed
+  conflux observe                     inventory this host's traffic, with no anchor
 ```
 
 The document is the same format — anchor's, `formatVersion: 1`, `kind: "anchor"` — and
@@ -342,7 +346,13 @@ credential installed
   bootstrap     anchor…@203.0.113.10:4701, genesis.veilnet.com.au:4700
   exit          commissioned as one; conflux serves an exit only when told to
 
-Next: sudo conflux up --serve-exit
+Next, one of:
+
+  conflux up                          join with a network interface
+  conflux proxy 8080=127.0.0.1:3000   publish a port, no interface needed
+  conflux observe                     inventory this host's traffic, with no anchor
+
+--serve-exit, on up or proxy, serves the exit it was commissioned as.
 ```
 
 What conflux does differently:

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/base64"
 	"io"
 	"os"
@@ -520,6 +521,40 @@ func TestEnrolInstallsAGhostRealmNode(t *testing.T) {
 
 	if cfg.ServeExit {
 		t.Error("serveExit was inherited from the document; an exit is conflux's to decide")
+	}
+}
+
+// TestEnrolNamesWhatTheCredentialRuns: an installed credential is what an anchor runs under,
+// with an interface or in userspace, and what the observer alone runs under, so enrol's closing
+// hint names all three; for one commissioned as an exit, it says how to serve that.
+func TestEnrolNamesWhatTheCredentialRuns(t *testing.T) {
+	for name, tc := range map[string]struct {
+		doc, api string
+		exit     bool
+	}{
+		"a guardian's": {guardianDoc, guardianAPI, false},
+		"an exit's":    {ghostNodeDoc, "", true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			d, path := site(t, tc.doc)
+
+			var said bytes.Buffer
+			ui.Out = &said // site puts it back
+
+			if err := importCredential(d, path, tc.api, ""); err != nil {
+				t.Fatalf("importCredential: %v", err)
+			}
+
+			for _, want := range []string{"conflux up", "conflux proxy", "conflux observe"} {
+				if !strings.Contains(said.String(), want) {
+					t.Errorf("enrol does not name %q next:\n%s", want, said.String())
+				}
+			}
+
+			if strings.Contains(said.String(), "--serve-exit") != tc.exit {
+				t.Errorf("enrol names --serve-exit for an exit, and only for one; it said:\n%s", said.String())
+			}
+		})
 	}
 }
 

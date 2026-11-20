@@ -17,8 +17,8 @@ post-quantum, from every boot, under the machine's own credential, enrolled as `
 It also runs against a **self-hosted guardian**: an operator running their own control
 plane and their own subtree of the realm tree. That deployment is the opposite shape —
 machines are commissioned in advance and there is no enrolment route at all, so
-`conflux enrol --manifest FILE --api URL` installs the credential and `conflux up`
-starts from it. Renewal then authenticates, and revocation exists, because there is
+`conflux enrol --manifest FILE --api URL` installs the credential and `conflux up`, `proxy`
+or `observe` starts from it. Renewal then authenticates, and revocation exists, because there is
 somebody keeping a record. See [credentials.md](docs/credentials.md).
 
 ## Quick start

@@ -68,7 +68,7 @@ func runEnrol(_ context.Context, args []string) int {
 			"  conflux enrol --manifest FILE [--api URL] [--ipv4 ADDRESS]\n\n" +
 			"For a machine commissioned somewhere else: a self-hosted guardian mints the\n" +
 			"identity, signs the credential and hands you one file. This installs it, and\n" +
-			"then `conflux up` starts from it without enrolling.\n\n" +
+			"then `conflux up`, `proxy` or `observe` starts from it without enrolling.\n\n" +
 			"The file is enough on its own. A guardian document names its own renewal URL,\n" +
 			"the overlay address the guardian allocated and the taints it granted this\n" +
 			"machine. The taints are the credential's and are taken as they are; the two\n" +
@@ -249,14 +249,17 @@ func importCredential(d paths.Dirs, manifestPath, apiBase, ipv4Flag string) erro
 
 	// Said rather than obeyed: conflux passes -serve-exit itself on every start, so
 	// the issuer's word is only worth repeating to the person who decides.
-	if m.Exit() && !cfg.ServeExit {
+	exit := m.Exit() && !cfg.ServeExit
+	if exit {
 		ui.Field("exit", "commissioned as one; conflux serves an exit only when told to")
-		ui.Printf("\nNext: sudo conflux up --serve-exit\n")
-
-		return nil
 	}
 
-	ui.Printf("\nNext: sudo conflux up\n")
+	// What runs under it: an anchor, with an interface or in userspace, or the observer alone.
+	ui.Printf("\nNext, one of:\n\n%s\n", configureHint)
+
+	if exit {
+		ui.Printf("\n--serve-exit, on up or proxy, serves the exit it was commissioned as.\n")
+	}
 
 	return nil
 }

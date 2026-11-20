@@ -377,8 +377,8 @@ credential and no renewal route. It installs with no `--api`, prints `renewal: n
 and is refused only if it has already expired, because nothing will ever bring it back.
 A document that names a `renewalAuth` but no `renewalUrl` is still refused: it says how
 to authenticate a renewal but not where to send it. If the document says `exit: true`,
-the closing hint is `conflux up --serve-exit`. conflux still serves an exit only when
-it is told to. See [credentials.md](credentials.md#a-credential-that-does-not-renew).
+the closing hint adds that `--serve-exit`, on `up` or `proxy`, serves it. conflux still serves
+an exit only when it is told to. See [credentials.md](credentials.md#a-credential-that-does-not-renew).
 
 Two fields are copied out of the document **once** and into `conflux.json`, where
 `conflux status` shows them and you can change them: `ipv4`, the overlay address the
@@ -388,7 +388,9 @@ inherit at all — an exit flag would go on deciding what this machine does for 
 people, and these are a suggestion made once at commissioning time. `--ipv4` overrides
 the document.
 
-Then `sudo conflux up`, which finds the manifest and starts from it without enrolling.
+Then, as root, `conflux up`, `conflux proxy` or `conflux observe`, which the closing hint
+names: each finds the manifest and starts from it without enrolling, an anchor with an
+interface or in userspace, or the observer alone, which runs under the same credential.
 
 Needs root.
 

@@ -83,7 +83,7 @@ func Ephemeral() (Dirs, error) { return ephemeralIn(EphemeralCandidates()) }
 
 // ephemeralIn is Ephemeral among candidates.
 func ephemeralIn(candidates []string) (Dirs, error) {
-	root, err := FirstExecutable(candidates, foreign)
+	root, err := FirstExecutable(candidates, Foreign)
 	if errors.Is(err, ErrNoExec) {
 		return Dirs{}, fmt.Errorf("every place an ephemeral run is kept is on a filesystem mounted noexec, "+
 			"so the anchord it extracts could not run: %v.\n  Set CONFLUX_DIR to a directory on one that is not", candidates)

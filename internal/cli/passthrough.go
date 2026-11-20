@@ -222,11 +222,22 @@ func liveEphemeral() (paths.Dirs, bool) {
 	return paths.Dirs{}, false
 }
 
+// foreignRoot is paths.Foreign, which a test points at a root it made.
+var foreignRoot = paths.Foreign
+
 // ephemeralRuns is what the ephemeral roots hold, read in one pass: the root of the run that is
 // running, whose lock is held, and the root a run that was killed left behind, its lock there
 // with nobody holding it -- the first of each, or nil.
+//
+// A root another account made is neither, whatever it holds: a run is never kept in one
+// (paths.Ephemeral), and /tmp lets anybody make the name first and put a held lock, a marker
+// and an anchorctl of their own in it, which a reader taking it for a run would run.
 func ephemeralRuns() (live, stale *paths.Dirs) {
 	for _, root := range paths.EphemeralCandidates() {
+		if foreignRoot(root) != nil {
+			continue
+		}
+
 		d := paths.EphemeralDirs(root)
 		if _, err := os.Stat(d.ServeLockFile()); err != nil {
 			continue

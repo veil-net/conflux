@@ -99,9 +99,11 @@ func ownedAs(dir string, euid int) (os.FileInfo, error) {
 	return fi, nil
 }
 
-// foreign is what secure would refuse dir with for its owner, before anything is made, or
-// nil where dir is this account's or is not there yet.
-func foreign(dir string) error {
+// Foreign is what secure would refuse dir with for its owner, before anything is made, or
+// nil where dir is this account's or is not there yet. A directory another account made is
+// none of conflux's to use, and whoever reads one -- an ephemeral run's root, which /tmp lets
+// anybody make first -- holds it to this as the conflux that makes one does.
+func Foreign(dir string) error {
 	if _, err := os.Lstat(dir); err != nil {
 		return nil
 	}

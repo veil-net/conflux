@@ -145,3 +145,28 @@ func TestAReaderTakesAnEphemeralRunsPairAsItIs(t *testing.T) {
 		t.Errorf("an installed root: %v", err)
 	}
 }
+
+// TestAReaderPassesOverARootAnotherAccountMade: /tmp lets anybody make the name a user's
+// ephemeral root has, and fill it with a held lock, a readiness marker and an anchorctl of
+// their own. A root another account made is no run's -- a run will not be kept in one -- so
+// status, pass-through and uninstall pass it over, and nothing runs what it holds.
+func TestAReaderPassesOverARootAnotherAccountMade(t *testing.T) {
+	d := startingEphemeral(t)
+
+	if err := daemon.MarkReady(d, "anchorx"); err != nil {
+		t.Fatal(err)
+	}
+
+	defer func(was func(string) error) { foreignRoot = was }(foreignRoot)
+	foreignRoot = func(root string) error {
+		if root == d.State {
+			return errors.New(root + " belongs to another account")
+		}
+
+		return nil
+	}
+
+	if live, stale := ephemeralRuns(); live != nil || stale != nil {
+		t.Errorf("a root another account made, with a held lock and a marker, was taken for a run: live %v, stale %v", live, stale)
+	}
+}

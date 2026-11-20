@@ -19,7 +19,7 @@ func TestARedirectToPlainHTTPIsRefused(t *testing.T) {
 	t.Setenv(InsecureEnv, "")
 
 	req, _ := http.NewRequest(http.MethodGet, "http://objects.example.com/conflux", nil)
-	if err := Client.CheckRedirect(req, nil); err == nil {
+	if err := client.CheckRedirect(req, nil); err == nil {
 		t.Error("a redirect to plain http was followed")
 	}
 }

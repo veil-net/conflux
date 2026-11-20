@@ -353,7 +353,7 @@ func TestFetchRefusesAWrongDigest(t *testing.T) {
 	_, src := f.serve(t, testPin, 1)
 
 	err := Fetch(context.Background(), src, []string{"anchord-linux-amd64"}, t.TempDir(), quiet)
-	if err == nil || !strings.Contains(err.Error(), "sha256") {
+	if err == nil || !strings.Contains(err.Error(), "SHA-256") {
 		t.Fatalf("want a digest refusal, got %v", err)
 	}
 }
@@ -554,7 +554,7 @@ func TestARefusedTokenSaysSo(t *testing.T) {
 // binary is redirected to, which is sent no token, is the signed link's, and saying the token
 // lacks a permission there would send somebody to fix the wrong thing.
 func TestA403SaysWhoRefused(t *testing.T) {
-	src := Source{API: "https://api.github.com", Repo: "veil-net/anchor", Tag: "latest"}
+	src := ghrelease.Source{API: "https://api.github.com", Repo: "veil-net/anchor", Tag: "latest"}
 
 	for host, want := range map[string]string{
 		"api.github.com":                       "Contents: read",

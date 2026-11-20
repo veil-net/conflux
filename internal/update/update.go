@@ -28,7 +28,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/veil-net/conflux/internal/ghrelease"
 )
@@ -39,15 +38,10 @@ const (
 	// is the pre-release `dev-latest`, which nothing here asks for, so an update always
 	// lands on a release, a dev build's included.
 	DefaultRepo = "veil-net/conflux"
-
-	// maxBinary bounds one download. A conflux is 45 to 75 MB (the size gate in `make
-	// dist`), so 200 MB is far above anything real.
-	maxBinary = 200 << 20
-
-	binaryTimeout = 10 * time.Minute
 )
 
-// Source is where an update comes from. Zero fields take the defaults above.
+// Source is where an update comes from. Zero fields take DefaultRepo and ghrelease's
+// defaults.
 type Source struct {
 	API       string
 	Repo      string
@@ -55,23 +49,16 @@ type Source struct {
 	UserAgent string
 }
 
-func (s Source) withDefaults() Source {
-	d := ghrelease.Source{API: s.API, Repo: s.Repo, Tag: s.Tag}.WithDefaults(DefaultRepo)
-	s.API, s.Repo, s.Tag = d.API, d.Repo, d.Tag
-
-	return s
-}
-
-// client is the release s names, as ghrelease reads it: this conflux's User-Agent on
-// every request, and this package's sentences for a refusal.
+// client is the release s names, as ghrelease reads it: the defaults filled in, this
+// conflux's User-Agent on every request, and this package's sentences for a refusal.
 func (s Source) client() ghrelease.Source {
-	src := ghrelease.Source{API: s.API, Repo: s.Repo, Tag: s.Tag, Status: func(resp *http.Response) error {
-		return statusErr(resp, s)
-	}}
+	src := ghrelease.Source{API: s.API, Repo: s.Repo, Tag: s.Tag}.WithDefaults(DefaultRepo)
 
 	if s.UserAgent != "" {
 		src.Header = http.Header{"User-Agent": {s.UserAgent}}
 	}
+
+	src.Status = func(resp *http.Response) error { return statusErr(resp, src) }
 
 	return src
 }
@@ -90,7 +77,7 @@ type Release struct {
 	SHA256 string
 	Bytes  int64
 
-	src Source
+	src ghrelease.Source
 	id  int64
 }
 
@@ -105,8 +92,8 @@ func AssetName(goos, goarch string) string {
 }
 
 // Latest reads the release at the source's tag and picks the platform's asset from it.
-func Latest(ctx context.Context, src Source, goos, goarch string) (*Release, error) {
-	src = src.withDefaults()
+func Latest(ctx context.Context, s Source, goos, goarch string) (*Release, error) {
+	src := s.client()
 
 	if err := ghrelease.CheckScheme(src.API, ""); err != nil {
 		return nil, err
@@ -124,7 +111,7 @@ func Latest(ctx context.Context, src Source, goos, goarch string) (*Release, err
 		} `json:"assets"`
 	}
 
-	if err := src.client().Lookup(ctx, &doc); err != nil {
+	if err := src.Lookup(ctx, &doc); err != nil {
 		return nil, err
 	}
 
@@ -174,71 +161,20 @@ func (r *Release) Is(path string) (bool, error) {
 	return hex.EncodeToString(sum.Sum(nil)) == r.SHA256, nil
 }
 
-// Download writes the release's binary into dir as a temporary file, executable and
-// verified, and returns its path. The caller renames it into place or removes it.
+// Download writes the release's binary into dir as a temporary file, executable, verified
+// and synced to disk, and returns its path. The caller renames it into place or removes it.
 //
 // In dir because the rename that puts it in place must not cross a filesystem. Named with
 // the platform's executable suffix, since Windows will not run a file without one.
 func (r *Release) Download(ctx context.Context, dir string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, binaryTimeout)
-	defer cancel()
+	a := ghrelease.Asset{ID: r.id, Bytes: r.Bytes, SHA256: r.SHA256}
 
-	u := fmt.Sprintf("%s/repos/%s/releases/assets/%d", r.src.API, strings.Trim(r.src.Repo, "/"), r.id)
-
-	resp, err := do(ctx, r.src, u, "application/octet-stream")
-	if err != nil {
-		return "", fmt.Errorf("downloading %s: %w", r.Asset, err)
-	}
-	defer resp.Body.Close()
-
-	if err := statusErr(resp, r.src); err != nil {
-		return "", err
-	}
-
-	tmp, err := os.CreateTemp(dir, ".conflux-update-*"+filepath.Ext(r.Asset))
-	if err != nil {
-		return "", err
-	}
-
-	kept := false
-
-	defer func() {
-		if !kept {
-			tmp.Close()
-			os.Remove(tmp.Name())
-		}
-	}()
-
-	sum := sha256.New()
-
-	n, err := io.Copy(io.MultiWriter(tmp, sum), io.LimitReader(resp.Body, maxBinary))
+	tmp, err := r.src.Download(ctx, a, dir, ".conflux-update-*"+filepath.Ext(r.Asset), true)
 	if err != nil {
 		return "", fmt.Errorf("downloading %s: %w", r.Asset, err)
 	}
 
-	if r.Bytes != 0 && n != r.Bytes {
-		return "", fmt.Errorf("downloading %s: got %d bytes, the release says %d", r.Asset, n, r.Bytes)
-	}
-
-	if got := hex.EncodeToString(sum.Sum(nil)); got != r.SHA256 {
-		return "", fmt.Errorf("downloading %s: its SHA-256 is %s, the release says %s", r.Asset, got, r.SHA256)
-	}
-
-	if err := tmp.Chmod(0o755); err != nil {
-		return "", err
-	}
-
-	if err := tmp.Sync(); err != nil {
-		return "", err
-	}
-
-	if err := tmp.Close(); err != nil {
-		return "", err
-	}
-
-	kept = true
-
-	return tmp.Name(), nil
+	return tmp, nil
 }
 
 // Replace renames the file at src over dst, which is this conflux.
@@ -269,24 +205,8 @@ func Replace(src, dst string) error {
 	return nil
 }
 
-func do(ctx context.Context, src Source, u, accept string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("Accept", accept)
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-
-	if src.UserAgent != "" {
-		req.Header.Set("User-Agent", src.UserAgent)
-	}
-
-	return ghrelease.Client.Do(req)
-}
-
 // statusErr turns the codes this meets into a sentence somebody can act on.
-func statusErr(resp *http.Response, src Source) error {
+func statusErr(resp *http.Response, src ghrelease.Source) error {
 	switch resp.StatusCode {
 	case http.StatusOK:
 		return nil

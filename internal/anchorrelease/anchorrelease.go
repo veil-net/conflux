@@ -45,7 +45,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/veil-net/conflux/internal/ghrelease"
 )
@@ -74,18 +73,12 @@ const (
 	// internal/enrol applies to a manifest it does not recognise.
 	formatVersion = 1
 
-	// maxManifest bounds the JSON; maxBinary bounds one download. An anchord is about
-	// 30 MB and anchorctl about 14, so 200 MB is far above anything real and far below
-	// anything that could fill a disk before the write fails.
+	// maxManifest bounds the manifest, which describes fourteen files.
 	maxManifest = 1 << 20
-	maxBinary   = 200 << 20
-
-	releaseTimeout = 30 * time.Second
-	binaryTimeout  = 10 * time.Minute
 )
 
-// Source is where the binaries come from. Zero fields take the defaults above, except
-// Token, which has none.
+// Source is where the binaries come from. Zero fields take DefaultRepo and ghrelease's
+// defaults, except Token, which has none.
 type Source struct {
 	API   string
 	Repo  string
@@ -93,23 +86,14 @@ type Source struct {
 	Token string
 }
 
-func (s Source) withDefaults() Source {
-	d := ghrelease.Source{API: s.API, Repo: s.Repo, Tag: s.Tag}.WithDefaults(DefaultRepo)
-	s.API, s.Repo, s.Tag = d.API, d.Repo, d.Tag
-
-	return s
-}
-
-// client is the release s names, as ghrelease reads it: the token on every request, and
-// this package's sentences for a refusal.
+// client is the release s names, as ghrelease reads it: the defaults filled in, the token
+// on every request, and this package's sentences for a refusal.
 func (s Source) client() ghrelease.Source {
-	return ghrelease.Source{
-		API:    s.API,
-		Repo:   s.Repo,
-		Tag:    s.Tag,
-		Header: http.Header{"Authorization": {"Bearer " + s.Token}},
-		Status: func(resp *http.Response) error { return statusErr(resp, s) },
-	}
+	src := ghrelease.Source{API: s.API, Repo: s.Repo, Tag: s.Tag}.WithDefaults(DefaultRepo)
+	src.Header = http.Header{"Authorization": {"Bearer " + s.Token}}
+	src.Status = func(resp *http.Response) error { return statusErr(resp, src) }
+
+	return src
 }
 
 // Binary is one entry in the manifest.
@@ -150,14 +134,14 @@ type release struct {
 // want is the set of file names conflux embeds -- "anchord-linux-amd64" and the other
 // thirteen. It is passed in rather than derived here so that the list of targets stays in
 // one place, scripts/anchor-bins.sh, which is also what prunes the directory.
-func Fetch(ctx context.Context, src Source, want []string, dir string, log func(string, ...any)) error {
-	src = src.withDefaults()
+func Fetch(ctx context.Context, s Source, want []string, dir string, log func(string, ...any)) error {
+	src := s.client()
 
 	if err := ghrelease.CheckScheme(src.API, ""); err != nil {
 		return err
 	}
 
-	if src.Token == "" {
+	if s.Token == "" {
 		return fmt.Errorf("no token: set %s to a GitHub token with Contents: read on %s", TokenEnv, src.Repo)
 	}
 
@@ -166,7 +150,7 @@ func Fetch(ctx context.Context, src Source, want []string, dir string, log func(
 	}
 
 	var rel release
-	if err := src.client().Lookup(ctx, &rel); err != nil {
+	if err := src.Lookup(ctx, &rel); err != nil {
 		return err
 	}
 
@@ -274,7 +258,8 @@ func Fetch(ctx context.Context, src Source, want []string, dir string, log func(
 
 			if !matches(dest, b) {
 				how = "fetched"
-				tmp, err = download(ctx, src, assets[name], b, dest)
+				a := ghrelease.Asset{ID: assets[name].ID, Bytes: b.Bytes, SHA256: b.SHA256}
+				tmp, err = src.Download(ctx, a, filepath.Dir(dest), ".anchor-fetch-*", false)
 			}
 
 			mu.Lock()
@@ -329,7 +314,7 @@ func matches(path string, b Binary) bool {
 	return strings.EqualFold(hex.EncodeToString(sum.Sum(nil)), b.SHA256)
 }
 
-func manifest(ctx context.Context, src Source, assets map[string]asset) (*Manifest, error) {
+func manifest(ctx context.Context, src ghrelease.Source, assets map[string]asset) (*Manifest, error) {
 	a, ok := assets[manifestName]
 	if !ok {
 		names := make([]string, 0, len(assets))
@@ -343,20 +328,7 @@ func manifest(ctx context.Context, src Source, assets map[string]asset) (*Manife
 			src.Tag, manifestName, len(names), strings.Join(names, ", "))
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, releaseTimeout)
-	defer cancel()
-
-	resp, err := do(ctx, src, assetURL(src, a), "application/octet-stream")
-	if err != nil {
-		return nil, fmt.Errorf("fetching %s: %w", manifestName, err)
-	}
-	defer resp.Body.Close()
-
-	if err := statusErr(resp, src); err != nil {
-		return nil, err
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxManifest))
+	body, err := src.Read(ctx, a.ID, maxManifest)
 	if err != nil {
 		return nil, fmt.Errorf("fetching %s: %w", manifestName, err)
 	}
@@ -381,87 +353,11 @@ func manifest(ctx context.Context, src Source, assets map[string]asset) (*Manife
 	return &m, nil
 }
 
-// download writes one binary, verifying its digest before it is put in place.
-//
-// Into a temporary file next to the target and renamed, so an interrupted fetch cannot
-// leave a half-written file that is a real binary of nearly the right size -- which is
-// exactly the shape neither the size gate in `make dist` nor the header check in
-// anchor.TestPairIsRealExecutables would catch.
-func download(ctx context.Context, src Source, a asset, b Binary, dest string) (staged string, err error) {
-	ctx, cancel := context.WithTimeout(ctx, binaryTimeout)
-	defer cancel()
-
-	resp, err := do(ctx, src, assetURL(src, a), "application/octet-stream")
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if err := statusErr(resp, src); err != nil {
-		return "", err
-	}
-
-	tmp, err := os.CreateTemp(filepath.Dir(dest), ".anchor-fetch-*")
-	if err != nil {
-		return "", err
-	}
-
-	defer func() {
-		tmp.Close()
-
-		if err != nil {
-			os.Remove(tmp.Name())
-		}
-	}()
-
-	sum := sha256.New()
-
-	n, err := io.Copy(io.MultiWriter(tmp, sum), io.LimitReader(resp.Body, maxBinary))
-	if err != nil {
-		return "", err
-	}
-
-	if b.Bytes != 0 && n != b.Bytes {
-		return "", fmt.Errorf("got %d bytes, the manifest says %d", n, b.Bytes)
-	}
-
-	if got := hex.EncodeToString(sum.Sum(nil)); !strings.EqualFold(got, b.SHA256) {
-		return "", fmt.Errorf("sha256 is %s, the manifest says %s", got, b.SHA256)
-	}
-
-	if err := tmp.Chmod(0o755); err != nil {
-		return "", err
-	}
-
-	if err := tmp.Close(); err != nil {
-		return "", err
-	}
-
-	return tmp.Name(), nil
-}
-
-func assetURL(src Source, a asset) string {
-	return fmt.Sprintf("%s/repos/%s/releases/assets/%d", src.API, strings.Trim(src.Repo, "/"), a.ID)
-}
-
-func do(ctx context.Context, src Source, u, accept string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("Authorization", "Bearer "+src.Token)
-	req.Header.Set("Accept", accept)
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-
-	return ghrelease.Client.Do(req)
-}
-
 // statusErr turns the codes this actually meets into the sentence somebody can act on.
 // A bare "404 Not Found" against a private repository is the least informative true
 // statement available: it is what GitHub returns both for a tag that does not exist and
 // for a token that cannot see the repository at all.
-func statusErr(resp *http.Response, src Source) error {
+func statusErr(resp *http.Response, src ghrelease.Source) error {
 	switch resp.StatusCode {
 	case http.StatusOK:
 		return nil

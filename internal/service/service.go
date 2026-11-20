@@ -1,9 +1,9 @@
 // Package service registers conflux with the platform's boot manager: systemd,
 // launchd, rc on the BSDs, or the Windows service control manager.
 //
-// One rule shapes the whole interface: Install registers and does not start. That is
-// what lets `conflux install` put the service in place on a machine that has no
-// configuration yet, so that a later `up` has somewhere to land.
+// One rule shapes the whole interface: Install registers, and starts nothing that is not
+// running. That is what lets `conflux install` put the service in place on a machine that
+// has no configuration yet, so that a later `up` has somewhere to land.
 package service
 
 import (
@@ -35,8 +35,12 @@ const (
 
 // Manager is one platform's boot manager.
 type Manager interface {
-	// Install registers the service to start at boot. Idempotent, and it neither starts
-	// anything nor stops what is running.
+	// Install registers the service to start at boot. Idempotent, and it starts nothing that
+	// is not running and leaves nothing stopped that is. A definition already as it would
+	// write it is left as it is. launchd's, whose loaded job runs from the definition it was
+	// loaded with, unloads a stopped job whose definition changed and loads a running one
+	// again, which restarts it on the new one; the Restart that follows from the same manager
+	// then starts nothing.
 	Install(exe string, args ...string) error
 
 	// Remove deregisters it and deletes what registering it wrote, its log included.

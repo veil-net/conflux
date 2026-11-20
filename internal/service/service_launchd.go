@@ -78,10 +78,11 @@ type launchdJob struct {
 
 func (j launchdJob) target() string { return "system/" + j.label }
 
-// install writes plist as the job and loads nothing new, which is the whole of what
-// registration means here. Loading a job that was not loaded would start it -- bootstrap
-// honours RunAtLoad -- and Install starts nothing, so the caller's Restart is the one
-// start. Nor does it stop anything: a job that was running is running when it returns.
+// install writes plist as the job, which is the whole of what registration means here, and
+// never loads a job that was not loaded: loading starts it -- bootstrap honours RunAtLoad --
+// and Install starts nothing that is not running, so the caller's Restart is the one start.
+// Nor does it leave stopped what was running: a running job whose plist changed is loaded
+// again, which starts it again on the new one, and the Restart after it starts nothing.
 //
 // Nothing about a reboot depends on loading it here. launchd bootstraps everything in
 // /Library/LaunchDaemons at boot, so the plist on disk *is* the registration -- with its

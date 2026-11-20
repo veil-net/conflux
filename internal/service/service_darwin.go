@@ -34,7 +34,8 @@ type launchd struct{ launchdManager }
 
 func newManager() Manager { return &launchd{} }
 
-// Install writes the job and loads nothing new; see launchdJob.install.
+// Install writes the job, and loads it again only where it runs and its plist changed; see
+// launchdJob.install.
 func (l *launchd) Install(exe string, args ...string) error {
 	return l.install(job(), []byte(launchdPlist(Label(), append([]string{exe}, withLog(args)...), logFile())))
 }

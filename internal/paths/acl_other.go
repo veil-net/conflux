@@ -38,7 +38,9 @@ func Trusted(string) bool { return true }
 // the binary root runs at boot where that user can replace it. The owner decides, as on
 // Windows: one that is not the account running conflux did not get its directory from
 // conflux, and whatever it put there is not used. A CONFLUX_DIR is held to its parents
-// as well (see parentsAs). Every refusal comes before any change.
+// as well (see parentsAs). Every refusal comes before secure changes anything; a root that
+// was not there EnsureAll has made by then, and a refusal leaves it, empty and this
+// account's.
 func secure(dir string) error { return secureAs(dir, os.Geteuid()) }
 
 // secureAs is secure for a given effective uid, so the refusals can be tested without

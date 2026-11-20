@@ -266,17 +266,29 @@ is `Interactive` rather than the `Background` daemons default to, because `Backg
 brings a low-priority I/O class and App Nap eligibility, and a networking daemon the
 scheduler throttles is a support ticket nobody can diagnose.
 
-**`install` writes the plist and loads nothing.** That is what registration means here:
-launchd bootstraps everything in `/Library/LaunchDaemons` at boot, so the file on disk is
-the registration and nothing about coming back after a reboot depends on loading it now.
-Loading would also start it — `bootstrap` honours `RunAtLoad`, and `launchd.plist(5)`
-says `KeepAlive` implies it — so `install` leaving the job unloaded is what makes the
-caller's restart the one start.
+**`install` writes the plist and starts nothing that is not running.** That is what
+registration means here: launchd bootstraps everything in `/Library/LaunchDaemons` at boot,
+so the file on disk is the registration and nothing about coming back after a reboot depends
+on loading it now. Loading would also start it — `bootstrap` honours `RunAtLoad`, and
+`launchd.plist(5)` says `KeepAlive` implies it — so `install` never loads a job that was not
+loaded. A loaded job runs from the plist it was loaded with, though, not from the file, so
+where `install` changed the plist — an upgrade moving the executable, say — a loaded job is
+unloaded, and one that was running is loaded again at once, which restarts it on the new
+plist rather than leaving it stopped. A plist already exactly as `install` would write it is
+left alone, and the job with it, loaded or not.
 
-So `restart` asks first whether the job is loaded:
+| The job, where the plist changed | `install` |
+|---|---|
+| not loaded | writes the plist |
+| loaded, stopped | `bootout` |
+| loaded, running | `bootout`, then `bootstrap` — a restart |
+
+So `restart` asks first whether the `install` before it has just started the job, and then
+whether the job is loaded:
 
 | State | `restart` |
 |---|---|
+| started by the `install` before it | nothing |
 | not loaded | `bootstrap` — loading is the start |
 | loaded | `kickstart -k` |
 

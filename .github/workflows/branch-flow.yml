@@ -10,9 +10,11 @@ name: branch-flow
 # suite every time a title or a description changed. Here an edit costs a checkout.
 #
 # Required on dev and on version3 alike, beside ci.yml's checks. It always runs and fails rather
-# than skips, since a skipped required check counts as passing. On a hosted runner, fork or
-# not: it reads the repository and holds no secret. ci.yml runs nothing for a fork's pull
-# request, every job of it skipped, so this is the check that fails one.
+# than skips, since a skipped required check counts as passing. On a hosted runner: it reads
+# the repository and holds no secret. A fork's pull request runs nothing until a maintainer
+# approves it, which none does (docs/testing.md); failing one here is a second line behind that
+# setting, for a run approved by mistake, since a fork's pull request runs its own copies of
+# this file and the script, and could have edited the refusal out.
 on:
   pull_request:
     types: [opened, synchronize, reopened, edited]

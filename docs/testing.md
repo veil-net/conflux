@@ -309,13 +309,21 @@ run where the suite itself takes seconds. The hosted jobs start empty and do use
 same runner image and would otherwise share setup-go's one. The container
 suites run on a hosted runner instead, because the third integration node reaches the
 realm through its manifest's bootstrap node over UDP, and from veilnet-dev no handshake
-gets through to it. Every CI job refuses a fork's pull request — a machine that survives the job does not run
-a stranger's code, and the hosted jobs need the anchor credential a fork is not given — and a
-job skipped that way reads as passing. So `branch-flow`, which runs for a fork's pull request
-since it reads the repository on a hosted runner and holds no secret, fails one: its branch is
-tested by pushing it here and opening the pull request from there. No checkout leaves its token in `.git/config`,
-and every action outside this repository is pinned to its release's commit, with the
-tag beside it in a comment.
+gets through to it. No checkout leaves its token in `.git/config`, and every action outside
+this repository is pinned to its release's commit, with the tag beside it in a comment.
+
+**A fork's pull request runs nothing until a maintainer approves it, and none ever does.**
+That is the fork guard: the repository's setting that every run for a pull request from an
+outside contributor waits for a maintainer's approval (`approval_policy:
+all_external_contributors`, under Settings, Actions, General). A machine that survives the job
+does not run a stranger's code, and the hosted jobs need the anchor credential a fork is not
+given, so a fork's run is never approved: its branch is pushed here instead and tested from
+there. Unapproved, the run never starts, so the required checks never report and the pull
+request cannot merge. The setting stays as it is; a change to it is a change to the threat
+model. The refusals in the workflows — each job's `if:` in `ci.yml`, and `branch-flow`, which
+fails a fork's pull request — are a second line, for a run approved by mistake: a fork's pull
+request runs its own copies of the workflows and of `scripts/branch-flow.sh`, and could have
+edited the refusals out, which is why the setting is the guard and they are not.
 
 ### Branches
 
@@ -347,10 +355,10 @@ push alone.
 
 **`branch-flow.yml` holds the branches to that** (`scripts/branch-flow.sh`), on every pull
 request and every edit of one — moving a pull request's base fires only `edited`: one from a
-fork fails, whatever its base, since CI runs nothing for it; one into `version3` whose head is
-not `dev` fails; one into `dev` whose merge does not
-hold `version3`'s tip — a back-merge that did not land — fails; one into any other base fails.
-On a hosted runner, since it reads the repository and holds no secret.
+fork fails, whatever its base, as the second line behind the approval setting above; one into
+`version3` whose head is not `dev` fails; one into `dev` whose merge does not hold `version3`'s
+tip — a back-merge that did not land — fails; one into any other base fails. On a hosted
+runner, since it reads the repository and holds no secret.
 
 **Branch protection, on `dev` and on `version3` alike:** require a pull request, require CI's
 checks and `branch-flow`, and require the branch to be up to date before merging. And on `dev`,

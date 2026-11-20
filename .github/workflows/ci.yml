@@ -50,10 +50,12 @@ jobs:
   # of the anchor binaries.
   #
   # **This repository is public.** A self-hosted runner is a machine that survives the
-  # job, and `pull_request` runs the workflow from the head of the PR, so without this
-  # guard a fork could run its own code on veilnet-dev beside a Docker socket. GitHub
-  # passes no secrets to a fork's pull request, which is the mechanism; this refusal is
-  # the belt beside it. The only credential here is the read-only anchor GitHub App.
+  # job, and `pull_request` runs the workflow from the head of the PR, so a fork's run would
+  # be its own code on veilnet-dev beside a Docker socket. The guard is the repository's
+  # setting that a fork's run waits for a maintainer's approval, which none gives
+  # (docs/testing.md); GitHub passes a fork's run no secret either. This refusal is a second
+  # line, for a run approved by mistake: a fork could have edited it out, which is why the
+  # setting is the guard. The only credential here is the read-only anchor GitHub App.
   linux:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux]

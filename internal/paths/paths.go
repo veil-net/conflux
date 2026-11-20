@@ -296,7 +296,8 @@ func (d Dirs) roots() iter.Seq2[string, bool] {
 // which must be nobody -- on Windows by the DACL a secured root keeps (secure), and no link on the
 // way to it that leads off this machine; on Unix by its mode and its ACL as found, the sticky bit
 // letting nothing through. A CONFLUX_DIR is held to its parents too, as EnsureAll holds them. What
-// a root holds is not judged: EnsureAll and Foreign go into it, and this does not.
+// a root holds is not judged: EnsureAll goes into it, and Foreign, which is this and that, and
+// this does not.
 //
 // Where none of d's roots is there, nothing of conflux's is installed, and Check is an error that
 // is fs.ErrNotExist: each caller then takes its own way for that, reading nothing, since what a
@@ -323,6 +324,24 @@ func (d Dirs) Check() error {
 	}
 
 	return nil
+}
+
+// Foreign is what a reader of a root another process keeps -- an ephemeral run's, which
+// %ProgramData% or /tmp lets anybody make first -- refuses it with, before it reads, runs or
+// signals anything in it, or nil where dir is not there or passes: the root held as Check holds
+// every root (checkRoot), and, where a root's own DACL is not the whole of who may change what it
+// holds -- on Windows, where an entry keeps the owner and the DACL it was made with -- anything in
+// it another account may change (contents). A directory another account made, or could have
+// planted something in, is none of conflux's to use, and nothing is run from one.
+func Foreign(dir string) error {
+	switch err := checkRoot(dir); {
+	case errors.Is(err, fs.ErrNotExist):
+		return nil
+	case err != nil:
+		return err
+	}
+
+	return contents(dir)
 }
 
 // chosen reports whether dir is the CONFLUX_DIR root or inside it: a directory whoever set

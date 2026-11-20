@@ -432,8 +432,8 @@ func mayNotAddFolders(t *testing.T, dir string) {
 // as a link is on Unix to its owner: %ProgramData% lets any user make one where conflux's root
 // is not yet, leading into a directory of SYSTEM's, whose owner would answer for it. One whose
 // own DACL lets Users write its attributes, enough to rewrite its target, is refused by secure
-// and by Foreign, naming it; one only this account and the system may change is accepted by
-// both. A root of the platform's, so no CONFLUX_DIR: no parents are read. Windows-only, so it
+// and by checkRoot, every reader's, naming it; one only this account and the system may change is
+// accepted by both. A root of the platform's, so no CONFLUX_DIR: no parents are read. Windows-only, so it
 // runs in CI's platforms job alone.
 func TestSecureHoldsAJunctionRoot(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
@@ -441,8 +441,8 @@ func TestSecureHoldsAJunctionRoot(t *testing.T) {
 	open := mklinkJ(t, filepath.Join(t.TempDir(), "j"), t.TempDir())
 	grantLink(t, open, windows.FILE_WRITE_ATTRIBUTES)
 
-	if err := Foreign(open); err == nil || !strings.Contains(err.Error(), open) {
-		t.Errorf("Foreign(a junction Users may point elsewhere) = %v, want a refusal naming it", err)
+	if err := checkRoot(open); err == nil || !strings.Contains(err.Error(), open) {
+		t.Errorf("checkRoot(a junction Users may point elsewhere) = %v, want a refusal naming it", err)
 	}
 
 	if err := secure(open); err == nil || !strings.Contains(err.Error(), open) {
@@ -451,8 +451,8 @@ func TestSecureHoldsAJunctionRoot(t *testing.T) {
 
 	held := mklinkJ(t, filepath.Join(t.TempDir(), "j"), t.TempDir())
 
-	if err := Foreign(held); err != nil {
-		t.Errorf("Foreign(a junction only this account and the system may change) = %v", err)
+	if err := checkRoot(held); err != nil {
+		t.Errorf("checkRoot(a junction only this account and the system may change) = %v", err)
 	}
 
 	if err := secure(held); err != nil {
@@ -462,7 +462,7 @@ func TestSecureHoldsAJunctionRoot(t *testing.T) {
 
 // TestARootOnANetworkVolumeIsRefused: who owns what a network volume holds, and whom its DACLs
 // grant, are the accounts of the machine serving it, which this one cannot judge, so a root on
-// one is refused by secure and by Foreign alike, naming it and the network volume, as the device
+// one is refused by secure and by checkRoot alike, naming it and the network volume, as the device
 // its handle is open on says and not as it is spelled: reached by its UNC path, through a drive
 // mapped to the share, or through a link leading to that drive. Nothing is made there: secure
 // refuses it before it fills it, and a CONFLUX_DIR there that is not made yet is refused by
@@ -488,7 +488,7 @@ func TestARootOnANetworkVolumeIsRefused(t *testing.T) {
 	}
 
 	for _, root := range []string{unc, filepath.Join(drive, "conflux"), link} {
-		for name, judge := range map[string]func(string) error{"Foreign": Foreign, "secure": secure} {
+		for name, judge := range map[string]func(string) error{"checkRoot": checkRoot, "secure": secure} {
 			if err := judge(root); err == nil || !strings.Contains(err.Error(), root+" is on a network volume") {
 				t.Errorf("%s(%s) = %v, want a refusal naming it and the network volume", name, root, err)
 			}
@@ -529,8 +529,8 @@ func TestARootOnANetworkVolumeIsRefused(t *testing.T) {
 // TestALinkLeadingOffThisMachineOrNowhereIsRefused: a link at a root's name, or on the way to a
 // CONFLUX_DIR, that names a share is read for where it leads off the link itself, and refused before
 // anything follows it, which would sign this machine in to whoever serves the share: by secure and
-// Foreign for a root of the platform's, as itself (heldRoot), and for a CONFLUX_DIR that is the
-// link or inside it by EnsureAll and Foreign, as a link on the way to it (offMachineLinks), before
+// checkRoot for a root of the platform's, as itself (heldRoot), and for a CONFLUX_DIR that is the
+// link or inside it by EnsureAll and checkRoot, as a link on the way to it (ancestors), before
 // either looks anything up there. The share is 192.0.2.1's, TEST-NET-1, which nothing answers: a
 // lookup that followed the link would fail slowly, saying the network path was not found, not as
 // these refusals say. A link leading to nothing is refused by them too, as a link conflux cannot
@@ -545,7 +545,7 @@ func TestALinkLeadingOffThisMachineOrNowhereIsRefused(t *testing.T) {
 	nowhere := filepath.Join(t.TempDir(), "nowhere")
 	dangling := dirSymlink(t, filepath.Join(t.TempDir(), "conflux"), nowhere)
 
-	for name, judge := range map[string]func(string) error{"Foreign": Foreign, "secure": secure} {
+	for name, judge := range map[string]func(string) error{"checkRoot": checkRoot, "secure": secure} {
 		if err := judge(away); err == nil || !strings.Contains(err.Error(), away+" is a link conflux will not follow") ||
 			!strings.Contains(err.Error(), `\??\UNC\192.0.2.1\share\conflux`) {
 			t.Errorf("%s(a link to %s) = %v, want a refusal naming it and where it leads", name, unc, err)
@@ -557,7 +557,7 @@ func TestALinkLeadingOffThisMachineOrNowhereIsRefused(t *testing.T) {
 	}
 
 	// For a CONFLUX_DIR, by offMachineLinks, which reads the link off itself before anything looks up
-	// a name through it: makeRoot's for EnsureAll, and Foreign's own for a reader of a root there.
+	// a name through it: makeRoot's for EnsureAll, and parents' in checkRoot for a reader of a root there.
 	refusal := func(dir string) string { return "resolve " + dir + ": " + away + " is a link conflux cannot follow" }
 
 	for _, root := range []string{away, filepath.Join(away, "conflux")} {
@@ -570,9 +570,9 @@ func TestALinkLeadingOffThisMachineOrNowhereIsRefused(t *testing.T) {
 		}
 
 		for _, dir := range []string{root, filepath.Join(root, "ephemeral")} {
-			if err := Foreign(dir); err == nil || !strings.Contains(err.Error(), refusal(dir)) ||
+			if err := checkRoot(dir); err == nil || !strings.Contains(err.Error(), refusal(dir)) ||
 				!strings.Contains(err.Error(), "may be on another machine") {
-				t.Errorf("Foreign(%s), CONFLUX_DIR %s, = %v, want %q, saying it may be on another machine", dir, root,
+				t.Errorf("checkRoot(%s), CONFLUX_DIR %s, = %v, want %q, saying it may be on another machine", dir, root,
 					err, refusal(dir))
 			}
 		}
@@ -868,7 +868,9 @@ func TestSecureSaysWhyItCannotFillARoot(t *testing.T) {
 }
 
 // TestSecureHoldsWhatTheRootHolds: what a root found unrestricted holds is judged, by secure before
-// it restricts the root and by Foreign, by its own owner and DACL, read without following it, and
+// it restricts the root and by Foreign, after the check every reader makes of the root itself -- which
+// refuses first a root that passes a grant on, as one whose folder only inherits it does -- by its
+// own owner and DACL, read without following it, and
 // held to who may write it, move it or point it elsewhere: a junction, which conflux makes none of
 // there, whoever may point it elsewhere, though where it leads is nobody else's; a folder Users may
 // delete, or write the attributes of, enough to make a junction of it while it is empty, or add
@@ -888,22 +890,26 @@ func TestSecureHoldsWhatTheRootHolds(t *testing.T) {
 	for _, c := range []struct {
 		name string
 		make func(t *testing.T, root string) string
+
+		// atRoot: the root itself passes the grant on, so Foreign refuses it for its own DACL, as
+		// every reader does (checkRoot), before it looks inside.
+		atRoot bool
 	}{
 		{"a junction Users may point elsewhere", func(t *testing.T, root string) string {
 			j := mklinkJ(t, filepath.Join(root, "run"), t.TempDir())
 			grantLink(t, j, windows.FILE_WRITE_ATTRIBUTES)
 
 			return j
-		}},
+		}, false},
 		{"a junction only this account and the system may change", func(t *testing.T, root string) string {
 			return mklinkJ(t, filepath.Join(root, "run"), t.TempDir())
-		}},
+		}, false},
 		{"a folder Users may delete", func(t *testing.T, root string) string {
 			return grantedFolder(t, filepath.Join(root, "logs"), windows.DELETE)
-		}},
+		}, false},
 		{"a folder Users may make a junction of", func(t *testing.T, root string) string {
 			return grantedFolder(t, filepath.Join(root, "logs"), windows.FILE_WRITE_ATTRIBUTES)
-		}},
+		}, false},
 		{"a folder that only inherits Users' right to write its attributes", func(t *testing.T, root string) string {
 			privtest.GrantUsers(t, root, windows.FILE_WRITE_ATTRIBUTES, windows.SUB_CONTAINERS_ONLY_INHERIT)
 
@@ -913,7 +919,7 @@ func TestSecureHoldsWhatTheRootHolds(t *testing.T) {
 			}
 
 			return dir
-		}},
+		}, true},
 		{"a folder that passes Users full control of the files made in it", func(t *testing.T, root string) string {
 			dir := filepath.Join(root, "logs")
 			if err := os.Mkdir(dir, 0o700); err != nil {
@@ -923,30 +929,35 @@ func TestSecureHoldsWhatTheRootHolds(t *testing.T) {
 			privtest.GrantUsers(t, dir, fileAllAccess, windows.SUB_OBJECTS_ONLY_INHERIT|windows.INHERIT_ONLY)
 
 			return dir
-		}},
+		}, false},
 		{"a folder Users may add folders to", func(t *testing.T, root string) string {
 			return grantedFolder(t, filepath.Join(root, "logs"), windows.FILE_APPEND_DATA)
-		}},
+		}, false},
 		{"a folder Users may write the extended attributes of", func(t *testing.T, root string) string {
 			return grantedFolder(t, filepath.Join(root, "logs"), windows.FILE_WRITE_EA)
-		}},
+		}, false},
 		{"a folder named anchor that another account owns", func(t *testing.T, root string) string {
 			dir := anchordFolder(t, filepath.Join(root, "anchor"), "")
 			ownBy(t, dir, privtest.Users)
 
 			return dir
-		}},
+		}, false},
 		{"a folder granting anchord that lets Users add to it", func(t *testing.T, root string) string {
 			return anchordFolder(t, filepath.Join(root, "anchor"), "(A;;0x2;;;BU)")
-		}},
+		}, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			root := foundRoot(t)
 
 			held := c.make(t, root)
 
-			if err := Foreign(root); err == nil || !strings.Contains(err.Error(), held) {
-				t.Errorf("Foreign(a root holding %s) = %v, want a refusal naming it", c.name, err)
+			names := held
+			if c.atRoot {
+				names = root + " grants "
+			}
+
+			if err := Foreign(root); err == nil || !strings.Contains(err.Error(), names) {
+				t.Errorf("Foreign(a root holding %s) = %v, want a refusal naming %s", c.name, err, names)
 			}
 
 			if err := secure(root); err == nil || !strings.Contains(err.Error(), held) {
@@ -1073,8 +1084,8 @@ func ownBy(t *testing.T, path string, sid *windows.SID) {
 // TestSecureRefusesARootWhoseDACLLetsAnotherMoveWhatIsInIt: fill keeps a handle opened under a
 // found root's old DACL from making a junction of it only while nobody else may take out what fill
 // puts there, so a root whose DACL lets Users delete what is in it is refused, naming the grant,
-// and left as it was, and passed over by Foreign too; one that only inherits %ProgramData%'s grant
-// to Users, to add to a folder and write its attributes, passes. Windows-only, so it runs in CI's
+// and left as it was; one that only inherits %ProgramData%'s grant to Users, to add to a folder and
+// write its attributes, passes, and is restricted. (A reader refuses both: TestCheckHoldsARootAsAReaderNeeds.) Windows-only, so it runs in CI's
 // platforms job alone.
 func TestSecureRefusesARootWhoseDACLLetsAnotherMoveWhatIsInIt(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
@@ -1082,10 +1093,6 @@ func TestSecureRefusesARootWhoseDACLLetsAnotherMoveWhatIsInIt(t *testing.T) {
 	root := foundRoot(t)
 
 	privtest.GrantUsers(t, root, fileDeleteChild, windows.NO_INHERITANCE)
-
-	if err := Foreign(root); err == nil || !strings.Contains(err.Error(), root) || !strings.Contains(err.Error(), privtest.Users.String()) {
-		t.Errorf("Foreign(a root whose DACL lets Users delete what is in it) = %v, want a refusal naming it and Users", err)
-	}
 
 	if err := secure(root); err == nil || !strings.Contains(err.Error(), root) || !strings.Contains(err.Error(), privtest.Users.String()) {
 		t.Errorf("secure(a root whose DACL lets Users delete what is in it) = %v, want a refusal naming it and Users", err)
@@ -1178,8 +1185,8 @@ func setSecurity(t *testing.T, path, sddl string) {
 }
 
 // TestSecureRefusesARootWithNoDACL: a root with no DACL at all grants anybody everything, so a root
-// conflux could repair by its owner, this account's, is refused, naming it, by secure and by Foreign
-// alike. Windows-only, so it runs in CI's platforms job alone.
+// conflux could repair by its owner, this account's, is refused, naming it, by secure and by
+// checkRoot alike. Windows-only, so it runs in CI's platforms job alone.
 func TestSecureRefusesARootWithNoDACL(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
@@ -1187,8 +1194,8 @@ func TestSecureRefusesARootWithNoDACL(t *testing.T) {
 
 	setSecurity(t, root, "O:"+currentUser().String()+"D:NO_ACCESS_CONTROL")
 
-	if err := Foreign(root); err == nil || !strings.Contains(err.Error(), root+" has no DACL") {
-		t.Errorf("Foreign(a root with no DACL) = %v, want a refusal naming it", err)
+	if err := checkRoot(root); err == nil || !strings.Contains(err.Error(), root+" has no DACL") {
+		t.Errorf("checkRoot(a root with no DACL) = %v, want a refusal naming it", err)
 	}
 
 	if err := secure(root); err == nil || !strings.Contains(err.Error(), root+" has no DACL") {
@@ -1196,14 +1203,17 @@ func TestSecureRefusesARootWithNoDACL(t *testing.T) {
 	}
 }
 
-// TestForeignRefusesARootItCannotRead: %ProgramData% lets any account make conflux-ephemeral where no
-// run has made it yet, and give it a DACL denying everybody the right to read it, so only a root that
-// is not there, or under a directory that is not, passes Foreign unread: one this account may not
-// open is refused, naming it and the denial -- not its owner, which ownerRefusal would refuse too,
-// had Foreign read it -- rather than taken for a run's. Owned by the Guests, a group this
-// process's token does not hold: an owner is let read a DACL whatever the DACL says, and an
-// Administrator's token holds Users. Windows-only, so it runs in CI's platforms job alone.
-func TestForeignRefusesARootItCannotRead(t *testing.T) {
+// TestAReaderRefusesARootItCannotRead: %ProgramData% lets any account make conflux-ephemeral where
+// no run has made it yet, and give it a DACL denying everybody the right to read it, so only a root
+// that is not there, or under a directory that is not, passes Foreign unread: one this account may
+// not open is refused by the check every reader makes (checkRoot), naming it and the denial -- not
+// its owner, which ownerRefusal would refuse too, had it been read -- rather than taken for a run's.
+// Owned by the Guests, a group this process's token does not hold: an owner is let read a DACL
+// whatever the DACL says, and an Administrator's token holds Users. Windows-only, so it runs in CI's
+// platforms job alone.
+func TestAReaderRefusesARootItCannotRead(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", "")
+
 	root := foundRoot(t)
 
 	if err := privtest.WithRestore(t, func() error {
@@ -1214,8 +1224,8 @@ func TestForeignRefusesARootItCannotRead(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := Foreign(root); !errors.Is(err, windows.ERROR_ACCESS_DENIED) || !strings.Contains(err.Error(), root) {
-		t.Errorf("Foreign(a root whose DACL denies everybody the right to read it) = %v, want %v, naming it", err,
+	if err := checkRoot(root); !errors.Is(err, windows.ERROR_ACCESS_DENIED) || !strings.Contains(err.Error(), root) {
+		t.Errorf("checkRoot(a root whose DACL denies everybody the right to read it) = %v, want %v, naming it", err,
 			windows.ERROR_ACCESS_DENIED)
 	}
 
@@ -1231,8 +1241,10 @@ func TestForeignRefusesARootItCannotRead(t *testing.T) {
 // TestCheckHoldsARootAsAReaderNeeds: Check holds each root that is there to its owner and to who
 // else may write it, retarget it or change who may, on itself or on what is made in it, as found
 // and changing nothing: a root EnsureAll made passes, and one this account owns that grants Users
-// the right to add a file to it is refused, naming it and Users, and left with that grant. Where no
-// root is there Check is fs.ErrNotExist. Windows-only, so it runs in CI's platforms job alone.
+// the right to add a file to it is refused, naming it and Users, and left with that grant, by Foreign
+// too, which is this check before it looks inside; so is one that only inherits %ProgramData%'s
+// grant to Users, which conflux never leaves a root with, though secure restricts it. Where no root
+// is there Check is fs.ErrNotExist. Windows-only, so it runs in CI's platforms job alone.
 func TestCheckHoldsARootAsAReaderNeeds(t *testing.T) {
 	made := filepath.Join(t.TempDir(), "conflux")
 	t.Setenv("CONFLUX_DIR", made)
@@ -1252,6 +1264,22 @@ func TestCheckHoldsARootAsAReaderNeeds(t *testing.T) {
 
 	if err := checkRoot(open); err == nil || !strings.Contains(err.Error(), open) || !strings.Contains(err.Error(), "Users") {
 		t.Errorf("checkRoot(a root Users may add a file to) = %v, want a refusal naming it and Users", err)
+	}
+
+	if err := Foreign(open); err == nil || !strings.Contains(err.Error(), open+" grants ") {
+		t.Errorf("Foreign(a root Users may add a file to) = %v, want checkRoot's refusal", err)
+	}
+
+	parent := t.TempDir()
+	privtest.ProgramDataGrant(t, parent)
+
+	inherits := filepath.Join(parent, "conflux")
+	if err := os.Mkdir(inherits, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := checkRoot(inherits); err == nil || !strings.Contains(err.Error(), inherits) || !strings.Contains(err.Error(), "Users") {
+		t.Errorf("checkRoot(a root inheriting %%ProgramData%%'s grant to Users) = %v, want a refusal naming it and Users", err)
 	}
 
 	users := wellKnown(windows.WinBuiltinUsersSid)

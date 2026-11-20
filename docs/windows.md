@@ -100,33 +100,33 @@ anything is written into it.
 A root on a network volume — a share reached by its UNC path, a drive mapped to one, or a link
 leading to either, as the volume conflux holds it open on says, not as it is spelled — is refused
 before anything is made or put there, one not made yet by the nearest directory above it that is
-there, and passed over by every reader of an ephemeral root: who owns what is there, and whom its
+there, and refused by the readers' check (below): who owns what is there, and whom its
 DACL grants, are accounts of the machine serving it, which this one cannot judge. A link naming
 anything but a drive letter or a volume of this machine's — a share by its UNC path, or a WebDAV
 server's — or a relative link that names a volume itself, which a lookup starts from rather than
 from the link's folder, is refused before anything follows it, by where the link itself says it
 leads, so that conflux never signs this machine in to whoever serves it: at a root's name, and for a
-`CONFLUX_DIR` at every step of the way to it, by every command that makes a root, every reader of
-an ephemeral root, and every command that reads the machine's own (below) — `status`, a
-pass-through, `help`'s `anchorctl`, `renew`, `start`, `down`, `uninstall` and `update` — before it
-looks anything up there. So is a link that leads nowhere, with nothing made where it leads.
+`CONFLUX_DIR` at every step of the way to it, by every command that makes a root and by the
+readers' check (below), before anything is looked up there. So is a link that leads nowhere, with nothing made where it leads.
 A root not made yet is made through a handle on the folder it goes in, so a link somebody plants at
 its name meanwhile is found there, and judged as itself, rather than followed. For a `CONFLUX_DIR`,
 the folders on the way to it that are there are held, before conflux makes any of the rest by their
 names, to the rule the way to one is held to ([security.md](security.md#the-extracted-binaries)):
 nobody else may move what is in them, so nobody else can make a junction where the next is to go.
 
-A command that reads the machine's root, or acts on what it holds, rather than making it — `status`,
-a pass-through and `help`'s `anchorctl`, `renew`, `start`, `down`, `uninstall`, and `update` asking
-whether the anchor runs — holds the root first, before it reads anything in it by its name: through
-one handle, a junction or a link judged as itself as above, it must be SYSTEM's, the
-Administrators' or the account running conflux's, and its DACL must grant nobody else the right to
-write it, add to it, move it, point it elsewhere or change who may, nor pass such a right on to what
-is made in it, which is what a root conflux secured keeps; a `CONFLUX_DIR`'s way is held as it is
-when the root is made. Nothing is changed and nothing inside is judged: a root that fails is
-refused, saying why, with nothing in it read, run, stopped or removed, and one not there is a
-machine with nothing installed, of which nothing is read either, since whoever made the name first
-would answer for what is at it.
+Every command that reads a root, or acts on what it holds, rather than making it — `status`, a
+pass-through and `help`'s `anchorctl`, `renew`, `start`, `down`, `uninstall`, `update` asking
+whether the anchor runs, and every reader of an ephemeral run's root — holds it to one check first,
+the readers' check, before it reads anything in it by its name: through one handle, a junction or a
+link judged as itself as above, it must be SYSTEM's, the Administrators' or the account running
+conflux's, and its DACL must grant nobody else the right to write it, add to it, move it, point it
+elsewhere or change who may, nor pass such a right on to what is made in it, which is what a root
+conflux secured keeps — so one that only inherits `%ProgramData%`'s grant to `Users` is refused
+too; a `CONFLUX_DIR`'s way is held as it is when the root is made. Nothing is changed: a root that
+fails is refused, saying why, with nothing in it read, run, stopped or removed, and one not there is
+a machine with nothing installed, of which nothing is read either, since whoever made the name
+first would answer for what is at it. A reader of an ephemeral root, which another process keeps,
+then judges what it holds as below.
 
 A root found already there is judged and restricted through one handle, opened on the directory
 itself and never looked up by its name again. Before anything in it is judged, it is made to hold
@@ -135,9 +135,9 @@ it exists, since a reparse point cannot be set on a directory that is not empty:
 opened on the root while its old DACL let them write it, which keeps that right, can no longer make
 a junction of it, whatever conflux then decides, a refusal included. That holds only while nobody
 else may take `run\` out again, so a root whose DACL, as found, lets another account delete or
-rename what is in it, or change who may, is refused before `run\` is made, and passed over by every
-reader of an ephemeral root; `%ProgramData%`'s own grant to `Users`, to add to a folder and write
-its attributes, is not that. Then it is read once more through the handle: one that became a
+rename what is in it, or change who may, is refused before `run\` is made; `%ProgramData%`'s own
+grant to `Users`, to add to a folder and write its attributes, is not that, though the readers'
+check, which restricts nothing, refuses it. Then it is read once more through the handle: one that became a
 junction meanwhile is refused, and one whose DACL, as found, does not let conflux create `run\` in
 it is refused, saying so. A root already secured — the Administrators' or SYSTEM's, under a
 protected DACL that lets nobody else write it, add to it, move it or change who may, nor passes such
@@ -147,8 +147,8 @@ opened before, and what it holds is judged again, so that a folder refused once 
 protected one that grants more, or passes more on — to `logs\`, which conflux then makes in it by
 its name — is judged and restricted as any other, and one with no DACL at all, which grants anybody
 everything, is refused. A root some other account created is refused rather than taken over: whoever made it
-could have filled it first. So is one conflux may not open or read, by every reader of an ephemeral
-root too, rather than taken for one that is not there: whoever made it can deny conflux that as
+could have filled it first. So is one conflux may not open or read, by the readers' check too,
+rather than taken for one that is not there: whoever made it can deny conflux that as
 easily. So is one that holds anything another account may change, each thing in
 it judged by its own owner and DACL rather than by what it leads to, before the root is restricted,
 what it inherits from the root included, and again once it is, so that a folder another account
@@ -158,22 +158,22 @@ attributes or extended attributes of, among them, the attributes enough to make 
 while it is empty — or, for a folder, passes such a right on to what is made in it. `anchord`'s own account, `NT SERVICE\conflux`, is conflux's: what a DACL grants
 it is not held against the thing granted, though what it owns is, and a folder whose DACL lets it
 write — `anchor\` and `run\anchord\` — is not looked inside, since only SYSTEM, the Administrators
-and `anchord` may write there and conflux reads what `anchord` writes as untrusted. Every reader of
-an ephemeral root holds what it holds to the same, so nothing is run from one whose contents
-another account could have planted. So is a root that is a junction another account may point
+and `anchord` may write there and conflux reads what `anchord` writes as untrusted. A reader of
+an ephemeral root holds what it holds to the same, after the readers' check, so nothing is run from
+one whose contents another account could have planted. So is a root that is a junction another account may point
 elsewhere: `%ProgramData%` lets any user make one where `%ProgramData%\conflux` or
 `%ProgramData%\conflux-ephemeral` is not yet, leading into a directory of SYSTEM's, and point it at
 a directory of their own once conflux has filled it. A junction root is held as a symlinked root is
 on Unix: used only when it belongs to SYSTEM, the Administrators, TrustedInstaller or the account
 running conflux, and its DACL grants nobody else the right to write its data, attributes or
-extended attributes, add to it, delete it, or change its DACL or owner; an ephemeral root that
-fails this is passed over by every reader too. Then, since a handle somebody opened on it while its
+extended attributes, add to it, delete it, or change its DACL or owner, as the readers' check
+holds one too. Then, since a handle somebody opened on it while its
 DACL let them write it could still repoint it in place, conflux replaces it: the junction is
 removed, and one made in its place through conflux's own handle, with the root's ownership and DACL
 from the moment it exists, and pointed through that handle at the directory conflux judged. A
 junction can lead only to a directory named by its volume's GUID, so a link root leading to a local
 volume that has no such name is refused, whether conflux would replace it or finds it its own
-already, and passed over by every reader of an ephemeral root; so is such a link at the nearest
+already, and by the readers' check; so is such a link at the nearest
 directory there above a `CONFLUX_DIR` not made yet, which conflux holds as it holds a root before it
 makes anything. Something made at that name in
 between is refused, naming where the junction led and the commands that make it again (below),

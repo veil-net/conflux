@@ -56,19 +56,22 @@ host can read, and when the run stops there is nothing at all.
   beneath it, so conflux gives its root to SYSTEM and Administrators — owner, and a
   protected DACL everything beneath inherits, set as the root is made — and refuses a root
   another account made. See [windows.md](windows.md#file-permissions).
-- A command that reads a root, or acts on what it holds, without making it — `status`, a
-  pass-through and `help`'s `anchorctl`, `renew`, `start`, `down`, `uninstall`, and `update` asking
-  whether the anchor runs — holds every root first, on every platform, before it reads anything in
-  it by its name: whoever could have put a configuration, a pid record, a token or a binary there
-  would otherwise have conflux read, signal or run theirs. The root's owner must be root (SYSTEM or
-  the Administrators on Windows) or the account running conflux, a link at its name included, and
+- Every command that reads a root, or acts on what it holds, without making it — `status`, a
+  pass-through and `help`'s `anchorctl`, `renew`, `start`, `down`, `uninstall`, `update` asking
+  whether the anchor runs, and every reader of an ephemeral run's root — holds it to one check
+  first, the readers' check, on every platform, before it reads anything in it by its name:
+  whoever could have put a configuration, a pid record, a token or a binary there would otherwise
+  have conflux read, signal or run theirs. The root's owner must be root (SYSTEM or the
+  Administrators on Windows) or the account running conflux, a link at its name included, and
   nobody else may write it or point it elsewhere: by its mode and ACL as found on Unix, the sticky
   bit letting nothing through, and on Windows by the DACL a root conflux secured keeps, with no
   link on the way leading off the machine. A `CONFLUX_DIR`'s parents are held as when it is made.
-  Nothing is narrowed and nothing inside is judged: a root that fails is refused, saying why, with
-  nothing in it read, run, stopped or removed, and with none there the command says nothing is
-  installed, reading nothing, since what is at a name that was not there a moment ago is whoever
-  made it first's.
+  Nothing is narrowed: a root that fails is refused, saying why, with nothing in it read, run,
+  stopped or removed, and with none there the command says nothing is installed, reading nothing,
+  since what is at a name that was not there a moment ago is whoever made it first's. Every root
+  conflux makes passes it. On Windows a reader of an ephemeral root, which another process keeps,
+  then judges what the root holds too, each thing by its own owner and DACL, since what is in a
+  root keeps the owner and DACL it was made with whatever the root's says.
 - Never in an argv. It travels on stdin to `anchorctl start -manifest -`, and to
   `anchorctl observe -start -manifest -` for the observer, which runs under it too, becomes an
   inline secret on the wire, and is never named as a path in the request — so it never
@@ -105,26 +108,23 @@ The boot service is held to the same rule. It runs as root (SYSTEM on Windows) a
 whatever file it names at every boot, so it names a copy of conflux in the same state directory,
 which `up`, `proxy`, `install` and `start` refresh, and never the file conflux was run from — a
 home directory or a download that another account could swap for a program of its own, to be run
-as root at the next start. On Windows the root's DACL is set as the first conflux command that
-creates it makes it, extraction included, so it never carries `%ProgramData%`'s grant to
-`Users`, not even for an instant. A root found already there is judged and restricted through
-one handle on the directory itself, never by its name again, refused where its DACL lets another
-account move what is in it, made to hold its `run\` directory through that handle before anything
-in it is judged, so that no handle opened on it earlier can make a junction of it whatever conflux
-then decides, a refusal included, and refused if it became one meanwhile; a root already secured
-is made to hold it too. One that holds anything another account may change — that it owns, or
-that it may write, move or point elsewhere, `anchord`'s own account aside, judged as found, again
-once the root is restricted, and on every run after — is refused rather than repaired around, by
-every reader of an ephemeral root too, as is a junction in it, and a root that is itself a
-junction another account may point elsewhere; one nobody else may is replaced with a junction
-conflux makes, through its own handle, leading to the directory it judged (see
-[windows.md](windows.md#file-permissions)). A root on a network volume, however it is reached, is
-refused, by every reader of an ephemeral root too, as the volume conflux holds it open on says;
-a link naming a share, at a root's name or on the way to a `CONFLUX_DIR`, is refused before conflux
-follows it, by where the link itself says it leads: by every command that makes a root, every
-reader of an ephemeral root, and every command that reads the machine's own — `status`, a
-pass-through, `help`'s `anchorctl`, `renew`, `start`, `down`, `uninstall` and `update` — before it
-looks anything up there (below).
+as root at the next start. On Windows the root's DACL is set as the first conflux command that creates it makes it, extraction
+included, so it never carries `%ProgramData%`'s grant to `Users`, not even for an instant. A root
+found already there is judged and restricted through one handle on the directory itself, never by
+its name again, refused where its DACL lets another account move what is in it, made to hold its
+`run\` directory through that handle before anything in it is judged, so that no handle opened on it
+earlier can make a junction of it whatever conflux then decides, a refusal included, and refused if
+it became one meanwhile; a root already secured is made to hold it too. One that holds anything
+another account may change — that it owns, or that it may write, move or point elsewhere,
+`anchord`'s own account aside, judged as found, again once the root is restricted, and on every run
+after — is refused rather than repaired around, by every reader of an ephemeral root too, after the
+readers' check, as is a junction in it, and a root that is itself a junction another account may
+point elsewhere; one nobody else may is replaced with a junction conflux makes, through its own
+handle, leading to the directory it judged (see [windows.md](windows.md#file-permissions)). A root
+on a network volume, however it is reached, is refused, by the readers' check too, as the volume
+conflux holds it open on says; a link naming a share, at a root's name or on the way to a
+`CONFLUX_DIR`, is refused before conflux follows it, by where the link itself says it leads, by
+every command that makes a root and by the readers' check, before anything is looked up there.
 
 On Windows two gaps are left. The first is a class: a handle keeps every right it was opened with,
 and conflux judges a DACL as it finds it, so where an administrator tightened a DACL after another

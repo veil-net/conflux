@@ -831,79 +831,16 @@ func ownerRefusal(dir string, owner *windows.SID) error {
 		dir, accountName(owner))
 }
 
-// Foreign is what secure would refuse dir with for its owner, for a network volume it is on or
-// leads to (remote), for a junction another account may point elsewhere, or one leading where no
-// junction of conflux's could (leadsTo), for a DACL that lets another account move what is in it,
-// or for anything in it another account may change (contents), before anything is made, or nil
-// where dir is this account's or is not there yet. A directory another account made, or could have
-// planted something in, is none of conflux's to use, and whoever reads one -- an ephemeral run's
-// root, which %ProgramData% lets anybody make first -- holds it to this as the conflux that makes
-// one does, through one handle as secure does, and reading alone: nothing is run from a root whose
-// contents another account could have planted or can point elsewhere. A CONFLUX_DIR's is held to the
-// links on the way to it first (offMachineLinks). Only a root that is not there
-// (ERROR_FILE_NOT_FOUND, or ERROR_PATH_NOT_FOUND where a directory above it is not either) passes
-// unread: one this account may not open or read is refused, since whoever made it can deny conflux
-// the right to read its owner and DACL as easily as they can make it.
-func Foreign(dir string) error {
-	if _, err := offMachineLinks(dir); err != nil {
-		return err
-	}
-
-	root, sd, err := ownedRoot(dir)
-	switch {
-	case errors.Is(err, windows.ERROR_FILE_NOT_FOUND), errors.Is(err, windows.ERROR_PATH_NOT_FOUND):
-		return nil
-	case err != nil:
-		return err
-	}
-	defer root.close()
-
-	if err := moverRefusal(dir, sd,
-		"take out what is in it and put something of their own in its place"); err != nil {
-		return err
-	}
-
-	return contents(dir)
-}
-
-// ownedRoot is dir held open to read, as heldRoot holds a root, with its owner and DACL, once its
-// owner is shown to be SYSTEM, the Administrators or the account running conflux (ownerRefusal):
-// what Foreign and checkRoot judge the rest of a root by.
-func ownedRoot(dir string) (held, *windows.SECURITY_DESCRIPTOR, error) {
-	root, err := heldRoot(dir, readAccess)
-	if err != nil {
-		return held{}, nil, err
-	}
-
-	sd, err := security(root.dir)
-	if err != nil {
-		root.close()
-
-		return held{}, nil, fmt.Errorf("read the ownership of %s: %w", dir, err)
-	}
-
-	owner, _, err := sd.Owner()
-	if err != nil {
-		root.close()
-
-		return held{}, nil, fmt.Errorf("read the owner of %s: %w", dir, err)
-	}
-
-	if err := ownerRefusal(dir, owner); err != nil {
-		root.close()
-
-		return held{}, nil, err
-	}
-
-	return root, sd, nil
-}
-
-// checkRoot is Check's judgement of the root dir: held as Foreign holds it (ownedRoot), and refused
-// where its DACL lets an account other than those trustedOwner names write it, add to it, move it,
-// point it elsewhere or change who may, on itself or on what is made in it -- the rule secure keeps
-// a root it finds secured already to -- since a reader goes into it by name without judging what it
-// holds. A CONFLUX_DIR is held to its parents first (parents), which also refuses a link on the way
-// to it that leads off this machine before anything is looked up through it.
+// checkRoot is Check's judgement of the root dir, here: held open, as itself where it is a junction
+// or a link, and to read alone (heldRoot), so that a link leading off this machine or nowhere, one
+// another account may point elsewhere, and a root on a network volume are refused; then refused
+// where its owner is not SYSTEM, the Administrators or the account running conflux (ownerRefusal),
+// or where its DACL lets another account write it, add to it, move it, point it elsewhere or change
+// who may, on itself or on what is made in it -- the rule secure keeps a root it finds secured
+// already to. A CONFLUX_DIR is held to its parents first (parents), which also refuses a link on
+// the way to it that leads off this machine before anything is looked up through it. A root this
+// account may not open or read is refused, since whoever made it can deny conflux the right to read
+// its owner and DACL as easily as they can make it.
 func checkRoot(dir string) error {
 	if chosen(dir) {
 		if err := parents(dir); err != nil {
@@ -911,11 +848,25 @@ func checkRoot(dir string) error {
 		}
 	}
 
-	root, sd, err := ownedRoot(dir)
+	root, err := heldRoot(dir, readAccess)
 	if err != nil {
 		return err
 	}
 	defer root.close()
+
+	sd, err := security(root.dir)
+	if err != nil {
+		return fmt.Errorf("read the ownership of %s: %w", dir, err)
+	}
+
+	owner, _, err := sd.Owner()
+	if err != nil {
+		return fmt.Errorf("read the owner of %s: %w", dir, err)
+	}
+
+	if err := ownerRefusal(dir, owner); err != nil {
+		return err
+	}
 
 	switch who, _, err := changerIn(dir, sd, retargets, "write it or what is made in it", nil, true); {
 	case err != nil:
@@ -1296,8 +1247,8 @@ func security(h windows.Handle) (*windows.SECURITY_DESCRIPTOR, error) {
 // is in it, whatever that grants.
 const fileDeleteChild = 0x40
 
-// moves is what an ACE on a directory above a root, or on a root's own DACL as secure and Foreign
-// find it, must not grant another account: to delete or rename what is in it, to delete or rename
+// moves is what an ACE on a directory above a root, or on a root's own DACL as secure finds it,
+// must not grant another account: to delete or rename what is in it, to delete or rename
 // the directory itself, or to change who may. Above a root, whoever may could move it aside and put
 // another in its place; on the root, a handle opened under such a grant keeps it once the root is
 // restricted, and could take out what fill puts there. Creating folders in it is not among them:

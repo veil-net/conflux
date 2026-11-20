@@ -141,23 +141,13 @@ func ownedAs(dir string, link os.FileInfo, euid int) (os.FileInfo, error) {
 // readLink is where the link p leads, as ancestors follows it.
 func readLink(p string) (string, error) { return os.Readlink(p) }
 
-// Foreign is what secure would refuse dir with for its owner, before anything is made, or
-// nil where dir is this account's or is not there yet. A directory another account made is
-// none of conflux's to use, and whoever reads one -- an ephemeral run's root, which /tmp lets
-// anybody make first -- holds it to this as the conflux that makes one does.
-func Foreign(dir string) error {
-	link, err := os.Lstat(dir)
-	if err != nil {
-		return nil
-	}
-
-	_, err = ownedAs(dir, link, os.Geteuid())
-
-	return err
-}
-
 // checkRoot is Check's judgement of the root dir: checkRootAs for this process's effective uid.
 func checkRoot(dir string) error { return checkRootAs(dir, os.Geteuid()) }
+
+// contents is nothing here: what a root holds is judged by the root's own mode and ACL, which
+// checkRoot holds to letting nobody else write it, and nothing in it is another account's unless
+// one could.
+func contents(string) error { return nil }
 
 // checkRootAs refuses the root dir, for a command run as euid about to read what is in it by name,
 // where another account could have put something there: one owned, or reached through a link

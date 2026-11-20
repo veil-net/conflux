@@ -60,3 +60,40 @@ func TestExecutableLooksAboveARootNotMadeYet(t *testing.T) {
 		t.Error("a root under the test's own directory reads as noexec")
 	}
 }
+
+// TestTheRootsConfluxMakesPassTheReadersCheck: a reader holds every root to Check, and an ephemeral
+// run's to Foreign, so each root EnsureAll makes passes them, on every platform: a CONFLUX_DIR
+// installation's, the ephemeral root inside it, and an ephemeral root of the platform's kind,
+// outside any CONFLUX_DIR.
+func TestTheRootsConfluxMakesPassTheReadersCheck(t *testing.T) {
+	passes := func(d Dirs, what string, ephemeral bool) {
+		t.Helper()
+
+		if err := d.EnsureAll(); err != nil {
+			t.Fatalf("EnsureAll(%s): %v", what, err)
+		}
+
+		if err := d.Check(); err != nil {
+			t.Errorf("Check(%s, which EnsureAll made) = %v", what, err)
+		}
+
+		if err := Foreign(d.State); ephemeral && err != nil {
+			t.Errorf("Foreign(%s, which EnsureAll made) = %v", what, err)
+		}
+	}
+
+	t.Setenv("CONFLUX_DIR", filepath.Join(t.TempDir(), "conflux"))
+
+	passes(Default(), "a CONFLUX_DIR installation's root", false)
+
+	inside, err := Ephemeral()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	passes(inside, "the ephemeral root inside it", true)
+
+	t.Setenv("CONFLUX_DIR", "")
+
+	passes(EphemeralDirs(filepath.Join(t.TempDir(), ephemeralName)), "an ephemeral root outside any CONFLUX_DIR", true)
+}

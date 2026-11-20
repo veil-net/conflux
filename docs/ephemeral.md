@@ -106,8 +106,9 @@ One fixed directory per user, made when the run starts and removed when it ends:
 
 It holds the lock that makes it the only ephemeral run for that user, the bearer token and
 the socket, the record of the anchord it started and what that runs as, and the extracted
-pair: never a credential, a configuration or a state. A root that another account owns is
-refused, so the next in the table is used: `/tmp` lets anybody make
+pair: never a credential, a configuration or a state. A root the readers' check refuses — one
+another account owns, or may write ([security.md](security.md#the-file-and-the-directory-around-it))
+— is passed over, so the next in the table is used: `/tmp` lets anybody make
 `/tmp/conflux-ephemeral-UID` first, and only its owner can remove it. A run is not refused because an installed conflux is running: that one is never
 read, written, stopped or re-registered. Two anchors with a TUN on one host do contend for
 the overlay's routes, so `conflux down` first where that matters.
@@ -120,8 +121,8 @@ starting, and asks it nothing: the run may still be clearing what a killed one l
 another conflux reaching into its root then would get in its way. A killed run's word that
 it was up is not taken for the next run's: it counts only while the conflux that wrote it
 runs. Neither `status` nor
-pass-through ever writes into a run's root, and a root another account made is no run's to
-them, whatever lock, marker or binaries it holds: they pass it over, as `uninstall` does,
+pass-through ever writes into a run's root, and a root the readers' check refuses is no run's
+to them, whatever lock, marker or binaries it holds: they pass it over, as `uninstall` does,
 looking at nothing inside it and following no link there. Pass-through — `conflux peers`,
 `conflux blocks`, every anchorctl command — reaches the ephemeral anchor when it is the
 only one running, once it is up.

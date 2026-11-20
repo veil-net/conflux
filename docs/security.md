@@ -122,7 +122,13 @@ protected DACL granting nobody else the right to write it, add to it, move it or
 conflux leaves the one it makes, since conflux then takes it as its own and does not replace it.
 What conflux makes, it makes with its DACL set as it is created, which nobody can have opened
 before; what an administrator tightens by hand is safe from such a handle once nobody else can hold
-one: after a restart, or made again rather than tightened.
+one: after a restart, or made again rather than tightened. The same class takes in a drive letter
+that stands for a folder rather than a volume — one `SUBST` or `DefineDosDevice` defined: conflux
+judges a `CONFLUX_DIR`'s way from the top of its drive, `X:\`, so the folders above the one the
+letter stands for are not judged, and whoever may move one of them could put another root in its
+place. Only an administrator can define a letter the service's account or an elevated conflux
+sees, and conflux does not refuse one: a `CONFLUX_DIR` on such a letter is held only as far as its
+folder's own parents are kept to SYSTEM and the Administrators by whoever defined it.
 
 `CONFLUX_DIR` can point the extraction somewhere else, which is a knob worth knowing
 about: it lets a caller choose the directory a root daemon executes from. It exists

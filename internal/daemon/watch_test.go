@@ -704,6 +704,82 @@ func TestACorruptStateRefusesTheStart(t *testing.T) {
 	}
 }
 
+// TestACorruptStateIsLeftToTheStartToRefuse: a state.json that does not parse is the start's to
+// refuse, for good and naming the file (TestACorruptStateRefusesTheStart), so the supervisor's
+// clearing of the anchor given up on, which reads it as well, says nothing of it: not as the
+// service starts, nor each time the restart loop is to start anchord again, until the refusals
+// end the loop.
+func TestACorruptStateIsLeftToTheStartToRefuse(t *testing.T) {
+	corrupt := func(t *testing.T, d paths.Dirs) {
+		t.Helper()
+
+		if err := os.WriteFile(d.StateFile(), []byte(`{"anchorId": "`+fakeAnchorID), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	quiet := func(t *testing.T, r *recorder, when string) {
+		t.Helper()
+
+		_, warns := r.said()
+		for _, w := range warns {
+			if strings.Contains(w, "could not clear") {
+				t.Errorf("%s, the supervisor warned: %s", when, w)
+			}
+		}
+	}
+
+	t.Run("as the service starts", func(t *testing.T) {
+		s, _ := supervised(t, "1")
+
+		r := &recorder{}
+		s.Reporter = r
+
+		// A configuration conflux refuses, which Run reads before it extracts anything.
+		if err := os.WriteFile(s.Dirs.ConfigFile(), []byte(`{"version":1,"mode":"neither"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		corrupt(t, s.Dirs)
+
+		if err := s.Run(t.Context()); !Permanent(err) {
+			t.Fatalf("Run = %v, want the configuration refused for good", err)
+		}
+
+		quiet(t, r, "as the service started")
+	})
+
+	t.Run("as the restart loop starts anchord again", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("a console control event needs the console this test shares")
+		}
+
+		t.Setenv(fakeAnchorctlStatusEnv, "none")
+		t.Setenv(fakeAnchordListenEnv, "1")
+
+		s, _ := supervised(t, "serve")
+
+		r := &recorder{}
+		s.Reporter = r
+
+		corrupt(t, s.Dirs)
+
+		ended := make(chan error, 1)
+		go func() { ended <- s.loop(t.Context()) }()
+
+		select {
+		case err := <-ended:
+			if !Permanent(err) || !strings.Contains(err.Error(), s.Dirs.StateFile()) {
+				t.Errorf("the loop ended with %v, want the corrupt %s refused for good", err, s.Dirs.StateFile())
+			}
+		case <-time.After(15 * time.Second):
+			t.Fatal("the restart loop went on starting on a corrupt state.json")
+		}
+
+		quiet(t, r, "as the loop restarted anchord")
+	})
+}
+
 // TestTheWatcherStartsAFailedObserverAgain: an observer whose capture ended is started
 // again; one stopped by hand, or never started, is left as it is.
 func TestTheWatcherStartsAFailedObserverAgain(t *testing.T) {

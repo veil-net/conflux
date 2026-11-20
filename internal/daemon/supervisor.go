@@ -402,9 +402,10 @@ func (s *Supervisor) recordRefusal(refusal error) {
 // cycle has ended and the restart loop is to start the daemon again (loop), before it waits, which
 // covers a daemon that never reached a bring-up and spares the first start a second read. Kept,
 // the record would have status say the anchor was given up on, and that conflux start tries it
-// again, while this is about to.
+// again, while this is about to. A state.json that does not parse goes unsaid here: the start
+// refuses it itself, for good and naming it (bringUp).
 func (s *Supervisor) forgetRefusal() {
-	if err := ForgetRefusal(s.Dirs); err != nil {
+	if err := ForgetRefusal(s.Dirs); err != nil && !errors.Is(err, config.ErrStateCorrupt) {
 		s.report().Warn("could not clear the record of the anchor given up on: %v", err)
 	}
 }

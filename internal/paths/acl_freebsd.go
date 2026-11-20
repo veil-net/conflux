@@ -14,6 +14,10 @@ const (
 	aclTypeNFS4   = 4
 )
 
+// rootACLMayRefuse is whether a root's own ACL can refuse it once secure has narrowed it: here
+// an NFSv4 ACL sits beside the mode and keeps what chmod does not rewrite (judgeRoot).
+const rootACLMayRefuse = true
+
 // extendedWriters is who p's ACL lets write it besides its owner and everybody, and whether the
 // ACL rather than the mode says what its group may: here the NFSv4 ACL a filesystem keeps them
 // in (ZFS, UFS with nfsv4acls), which sits beside the mode, or else the POSIX.1e access ACL

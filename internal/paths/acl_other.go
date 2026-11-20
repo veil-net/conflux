@@ -69,24 +69,27 @@ func secureAs(dir string, euid int) error {
 	// CONFLUX_DIR. An extended ACL (macOS's, FreeBSD's NFSv4) sits beside the mode and keeps
 	// it through the narrowing, so it is refused, but for the NFSv4 entries that are the mode
 	// itself, which chmod rewrites (judgeRoot); a POSIX.1e ACL's mask is the mode's group bits,
-	// which the narrowing takes every entry's write away with (judge). A link's own ACL says
+	// which the narrowing takes every entry's write away with (judge), so where every ACL is one
+	// of those, or there is none, it is not read (rootACLMayRefuse). A link's own ACL says
 	// nothing, so it is read where the link leads.
-	acl := dir
-	if isLink(link) {
-		if acl, err = filepath.EvalSymlinks(dir); err != nil {
-			return fmt.Errorf("read %s: %w", dir, err)
+	if rootACLMayRefuse {
+		acl := dir
+		if isLink(link) {
+			if acl, err = filepath.EvalSymlinks(dir); err != nil {
+				return fmt.Errorf("read %s: %w", dir, err)
+			}
 		}
-	}
 
-	writers, aclGroup, err := extendedWriters(acl)
-	if err != nil {
-		return fmt.Errorf("read the ACL of %s: %w", acl, err)
-	}
+		writers, aclGroup, err := extendedWriters(acl)
+		if err != nil {
+			return fmt.Errorf("read the ACL of %s: %w", acl, err)
+		}
 
-	if who := judgeRoot(fi.Mode(), fi.Sys().(*syscall.Stat_t).Gid, writers, aclGroup, euid); who != "" {
-		return fmt.Errorf("%s is not conflux's alone: %s could put what it likes in it, or move it aside, "+
-			"for conflux to run.\n  Remove that entry from its ACL, and from the directory above that passed "+
-			"it on, if one did; then run this again", dir, who)
+		if who := judgeRoot(fi.Mode(), fi.Sys().(*syscall.Stat_t).Gid, writers, aclGroup, euid); who != "" {
+			return fmt.Errorf("%s is not conflux's alone: %s could put what it likes in it, or move it aside, "+
+				"for conflux to run.\n  Remove that entry from its ACL, and from the directory above that passed "+
+				"it on, if one did; then run this again", dir, who)
+		}
 	}
 
 	if chosen(dir) {

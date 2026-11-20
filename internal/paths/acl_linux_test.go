@@ -118,3 +118,27 @@ func TestEnsureAllLeavesTheRootsPOSIXACLToTheNarrowing(t *testing.T) {
 		ensureAllRefuses(t, "a root made under a default ACL that lets another account write", "")
 	})
 }
+
+// TestARootsACLCannotRefuseItHere: secure leaves a root's own ACL unread on Linux
+// (rootACLMayRefuse), because every ACL extendedWriters reads here is a POSIX.1e one, which says
+// what the group may by its mask, and judgeRoot judges a root at the 0700 the narrowing leaves,
+// which takes every entry's write away. Held here: an ACL letting another account write, read as
+// one whose mask is the group bits, and judged at any mode found as letting nobody.
+func TestARootsACLCannotRefuseItHere(t *testing.T) {
+	const none = 1<<32 - 1
+
+	dir := t.TempDir()
+	if err := unix.Setxattr(dir, "system.posix_acl_access", posixACL([3]uint32{0x01, 7, none},
+		[3]uint32{0x02, 7, 65534}, [3]uint32{0x04, 7, none}, [3]uint32{0x10, 7, none}, [3]uint32{0x20, 7, none}), 0); err != nil {
+		t.Fatalf("give %s an ACL: %v", dir, err)
+	}
+
+	writers, aclGroup, err := extendedWriters(dir)
+	if err != nil || len(writers) == 0 || !aclGroup {
+		t.Fatalf("extendedWriters = %+v, %v, %v; want writers, by an ACL whose mask is the group bits", writers, aclGroup, err)
+	}
+
+	if who := judgeRoot(os.ModeDir|0o777, 0, writers, aclGroup, os.Geteuid()); who != "" {
+		t.Errorf("a root found at 0777 whose POSIX ACL lets uid 65534 write: judgeRoot = %q, want nobody", who)
+	}
+}

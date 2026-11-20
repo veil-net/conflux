@@ -147,8 +147,8 @@ above passed on lands there, though that directory was let through itself, and a
 sits beside the mode and keeps its entries through the narrowing, so one that lets another
 account write the root or move it is refused. A POSIX ACL's mask is the mode's group bits, so
 narrowing the root to `0700` sets the mask to nothing and takes the write from every entry: a
-root's POSIX ACL, one passed on by a default ACL above it among them, is left to the narrowing.
-So is the part of an NFSv4 ACL that is the mode itself — the trivial `owner@`, `group@` and
+root's POSIX ACL, one passed on by a default ACL above it among them, is left to the narrowing,
+and on Linux, whose ACLs are all POSIX ones, the root's is not read at all. So is the part of an NFSv4 ACL that is the mode itself — the trivial `owner@`, `group@` and
 `everyone@` entries ZFS, and UFS with `nfsv4acls`, keep it in, which `chmod` rewrites with the
 mode — where it grants the write the mode shows and nothing past it, passing nothing on: a root
 of conflux's found at `0775` or `0777` on ZFS is narrowed, not refused. Every other entry is

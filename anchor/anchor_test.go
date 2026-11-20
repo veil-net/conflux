@@ -11,10 +11,6 @@ import (
 	"testing"
 )
 
-// minSize is well under the smallest real binary (anchorctl-linux-arm64, ~13 MB)
-// and far above anything that is not one.
-const minSize = 5 << 20
-
 // TestPairIsRealExecutables is the tripwire for the two ways this package breaks
 // silently rather than loudly.
 //
@@ -29,13 +25,6 @@ func TestPairIsRealExecutables(t *testing.T) {
 	}
 
 	for name, b := range map[string][]byte{"anchord": Anchord(), "anchorctl": Anchorctl()} {
-		if len(b) < minSize {
-			t.Errorf("%s is %d bytes: an LFS pointer, a truncated checkout, or the wrong file — not a binary",
-				name, len(b))
-
-			continue
-		}
-
 		if err := checkFormat(b); err != nil {
 			t.Errorf("%s: %v", name, err)
 		}
@@ -90,7 +79,7 @@ func checkFormat(b []byte) error {
 func wantMachine(got uint64, by map[string]uint64) error {
 	want, ok := by[runtime.GOARCH]
 	if !ok {
-		return nil // an arch this test has no constant for; the size check stands
+		return nil // an arch this test has no constant for; Supported's size check stands
 	}
 
 	if got != want {

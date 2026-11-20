@@ -35,6 +35,7 @@ a daemon or a network. Most of conflux can be.
 | `internal/flock` | a held lock reported as held, not waited for, and one held for 25 ms outlasting the tries a TryAcquire makes; asked without trusting the file — a symlink (on Windows, a reparse point), a FIFO and a second name for another file refused |
 | `internal/logfile` | each line stamped once however the writes are cut, a full log moved aside at a line's start, placed over the standard streams as the service's is, both files removed, and what the runtime writes to stderr itself landing in the log, on Windows as on Unix |
 | `internal/privcheck` | a command repeated for the shell it is pasted into, each word quoted where that shell would read it |
+| `internal/wintun` | a redirect of the download off HTTPS, to another host, or past the tenth request refused |
 
 ## The tests worth knowing about
 

@@ -29,7 +29,7 @@ LocalSystem process. conflux:
 
 1. checks whether the DLL is already in place, and does nothing if it is;
 2. downloads over HTTPS with a 90-second timeout and a 10 MiB cap, refusing any
-   redirect that changes host;
+   redirect that leaves HTTPS or changes host, and stopping after 10 requests;
 3. verifies the **archive** digest against the pin, and aborts printing both digests if
    it disagrees;
 4. extracts `wintun/bin/<arch>/wintun.dll` and only then writes it, atomically, into

@@ -359,7 +359,7 @@ func secure(dir string) error {
 	// else may take out what fill puts in the root, and a handle keeps what it was opened with
 	// once the DACL is replaced. %ProgramData%'s grant to Users -- to add to a folder and write its
 	// attributes -- moves nothing, so a root that only inherits it passes.
-	switch who, _, err := changer(dir, root.dir, moves, "move it or what is in it", nil); {
+	switch who, _, err := changerIn(dir, sd, moves, "move it or what is in it", nil); {
 	case err != nil:
 		return err
 	case who != "":
@@ -745,10 +745,7 @@ func mayChange(p string, rights windows.ACCESS_MASK, what string) (string, error
 	return who, err
 }
 
-// changer is who besides SYSTEM, the Administrators, TrustedInstaller and the account running
-// conflux may change p, held open as itself by h, as a refusal names them, or "": its owner, who
-// may grant itself anything, or anybody but anchord, where it is given, its DACL grants one of
-// rights, which lets them what. anchords is whether the DACL grants anchord one of them.
+// changer is changerIn of p, held open as itself by h, over the owner and DACL read through h.
 func changer(p string, h windows.Handle, rights windows.ACCESS_MASK, what string,
 	anchord *windows.SID) (who string, anchords bool, err error) {
 	sd, err := security(h)
@@ -756,6 +753,15 @@ func changer(p string, h windows.Handle, rights windows.ACCESS_MASK, what string
 		return "", false, fmt.Errorf("read the ownership of %s: %w", p, err)
 	}
 
+	return changerIn(p, sd, rights, what, anchord)
+}
+
+// changerIn is who besides SYSTEM, the Administrators, TrustedInstaller and the account running
+// conflux may change p, whose owner and DACL sd holds, as a refusal names them, or "": its owner,
+// who may grant itself anything, or anybody but anchord, where it is given, its DACL grants one of
+// rights, which lets them what. anchords is whether the DACL grants anchord one of them.
+func changerIn(p string, sd *windows.SECURITY_DESCRIPTOR, rights windows.ACCESS_MASK, what string,
+	anchord *windows.SID) (who string, anchords bool, err error) {
 	owner, _, err := sd.Owner()
 	if err != nil {
 		return "", false, fmt.Errorf("read the owner of %s: %w", p, err)

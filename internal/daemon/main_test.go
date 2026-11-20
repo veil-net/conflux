@@ -336,10 +336,6 @@ func fakeCtl(tb testing.TB) *anchorctl.Ctl {
 }
 
 // dirs roots a test's every path in a directory of its own, and makes the roots.
-//
-// Under /tmp on macOS rather than the test's own directory: a Unix socket's path is 104 bytes
-// at most there, and TMPDIR is long enough that a stand-in anchord could not listen on the
-// socket the supervisor probes.
 func dirs(tb testing.TB) paths.Dirs {
 	tb.Helper()
 

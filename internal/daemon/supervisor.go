@@ -42,8 +42,10 @@ const (
 	// on it. Generous, because a loaded Raspberry Pi is slower than it looks.
 	readyTimeout = 30 * time.Second
 
-	// stopTimeout bounds closing the anchor over the socket, where that is how it is
-	// closed: a daemon no signal reaches, and an uplink being reopened.
+	// stopTimeout bounds a call to a running daemon that should answer at once: closing the
+	// anchor (and the observer) over the socket, where that is how it is closed -- a daemon no
+	// signal reaches, an anchor being rebuilt, one whose link's device has gone -- and the
+	// observer's start, and the watcher's status and metrics.
 	stopTimeout = 20 * time.Second
 
 	// killTimeout is how long after SIGTERM before SIGKILL. The same budget as the
@@ -786,10 +788,10 @@ func (s *Supervisor) renewLoop(ctx context.Context) {
 	}
 }
 
-// freshToken writes a new bearer token for this daemon's lifetime.
+// freshToken writes a new bearer token for this Run, which every daemon it starts is handed.
 //
-// Fresh on every start rather than persisted: it authenticates a socket that is
-// recreated anyway, rotating it costs nothing, and it means a token left behind by
+// Fresh on every start of the supervisor rather than persisted: it authenticates a socket
+// that is recreated anyway, rotating it costs nothing, and it means a token left behind by
 // a crashed run can never authenticate against a new daemon.
 func (s *Supervisor) freshToken() (string, error) {
 	b := make([]byte, 32)

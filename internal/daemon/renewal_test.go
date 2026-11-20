@@ -93,9 +93,9 @@ func TestSleepIsClamped(t *testing.T) {
 	}
 }
 
-// TestSleepIsNeverNegative guards the arithmetic against a clock that moved
-// backwards, which would otherwise produce a time.After of a negative duration and
-// a hot loop.
+// TestSleepIsNeverNegative guards the arithmetic at its edges: a clock past the renewal
+// point gives a negative wait, which would be a time.After that fires at once and a hot
+// loop, and one that moved backwards a wait longer than the clamp. Neither comes back.
 func TestSleepIsNeverNegative(t *testing.T) {
 	for _, now := range []time.Time{
 		expires.Add(time.Hour),

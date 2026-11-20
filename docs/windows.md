@@ -90,49 +90,50 @@ carries `%ProgramData%`'s grant to `Users` — enough to turn an empty directory
 junction — not even for an instant. Every secret file gets the same, explicitly, before
 anything is written into it.
 
-A root found already there is judged and restricted through one handle, opened on the
-directory itself and never looked up by its name again. Once restricted, it is made to hold
-its `run\` directory, created through that handle with the same ownership and DACL, since a
-reparse point cannot be set on a directory that is not empty: a handle somebody opened on the
-root while its old DACL let them write it, which keeps that right, can no longer make a junction
-of it. That holds only while nobody else may take `run\` out again, so a root whose DACL, as
-found, lets another account delete or rename what is in it, or change who may, is refused before
-it is restricted, and passed over by every reader of an ephemeral root; `%ProgramData%`'s own grant to `Users`, to add to a folder and write its
-attributes, is not that. Then it is read once more through the handle: one that became a junction meanwhile is
-refused. A root already secured — the Administrators' or SYSTEM's, under a protected DACL that
-lets nobody else write it, add to it, move it or change who may — is not restricted again, but
-what it holds is judged again, so that a folder refused once stays refused; a protected
-one that grants more is judged and restricted as any other, and one with no DACL at all, which
-grants anybody everything, is refused. A root some other account created is refused rather than
-taken over: whoever made it could have filled it first. So is one that holds anything another account may change, each
-thing in it judged by its own owner and DACL rather than by what it leads to, before the root is
-restricted, what it inherits from the root included, and again once it is, before `run\` is made,
-so that a folder another account added in between is judged too: anything another
-account owns, whatever its name, or that its DACL lets another account write, move or point
-elsewhere — a folder they may add to, or write the attributes or extended attributes of, among
-them, the attributes enough to make a junction of it while it is empty. `anchord`'s own account, `NT SERVICE\conflux`, is conflux's: what
-a DACL grants it is not held against the thing granted, though what it owns is, and a folder
-whose DACL lets it write — `anchor\` and `run\anchord\` — is not looked inside, since only
-SYSTEM, the Administrators and `anchord` may write there and conflux reads what `anchord` writes
-as untrusted. Every reader of an ephemeral root holds what it holds to the same, so nothing is run
-from one whose contents another account could have planted. So is a root that is a junction
-another account may point elsewhere: `%ProgramData%` lets any user make one where
-`%ProgramData%\conflux` or `%ProgramData%\conflux-ephemeral` is not yet, leading into a
-directory of SYSTEM's, and point it at a directory of their own once conflux has filled it. A
-junction root is held as a symlinked root is on Unix: used only when it belongs to SYSTEM, the
-Administrators, TrustedInstaller or the account running conflux, and its DACL grants nobody else
-the right to write its data, attributes or extended attributes, add to it, delete it, or change
-its DACL or owner; an ephemeral root that fails this is passed over by every reader too. Then,
-since a handle somebody opened on it while its DACL let them write it could still repoint it in
-place, conflux replaces it: the junction is removed, and one made in its place through conflux's
-own handle, with the root's ownership and DACL from the moment it exists, and pointed through
-that handle at the directory conflux judged. Something made at that name in between is refused. A
-junction or a link inside a root, anywhere conflux looks, is refused whoever may change it, since
-conflux makes none there; `anchor\` and `run\anchord\`, which `anchord` writes, are not looked
-inside. And the two binaries the service runs as SYSTEM, and
-`wintun.dll` beside them, are run only if Administrators, SYSTEM or the account running
-conflux owns them — a set directory is named for content anybody can compute, so one
-made by somebody else is extracted again rather than trusted.
+A root found already there is judged and restricted through one handle, opened on the directory
+itself and never looked up by its name again. Once restricted, it is made to hold its `run\`
+directory, created through that handle with the same ownership and DACL, since a reparse point
+cannot be set on a directory that is not empty: a handle somebody opened on the root while its
+old DACL let them write it, which keeps that right, can no longer make a junction of it. That
+holds only while nobody else may take `run\` out again, so a root whose DACL, as found, lets
+another account delete or rename what is in it, or change who may, is refused before it is
+restricted, and passed over by every reader of an ephemeral root; `%ProgramData%`'s own grant to
+`Users`, to add to a folder and write its attributes, is not that. Then it is read once more
+through the handle: one that became a junction meanwhile is refused. A root already secured —
+the Administrators' or SYSTEM's, under a protected DACL that lets nobody else write it, add to
+it, move it or change who may — is not restricted again, but what it holds is judged again, so
+that a folder refused once stays refused; a protected one that grants more is judged and
+restricted as any other, and one with no DACL at all, which grants anybody everything, is
+refused. A root some other account created is refused rather than taken over: whoever made it
+could have filled it first. So is one that holds anything another account may change, each thing
+in it judged by its own owner and DACL rather than by what it leads to, before the root is
+restricted, what it inherits from the root included, and again once it is, before `run\` is
+made, so that a folder another account added in between is judged too: anything another account
+owns, whatever its name, or that its DACL lets another account write, move or point elsewhere —
+a folder they may add to, or write the attributes or extended attributes of, among them, the
+attributes enough to make a junction of it while it is empty. `anchord`'s own account,
+`NT SERVICE\conflux`, is conflux's: what a DACL grants it is not held against the thing granted,
+though what it owns is, and a folder whose DACL lets it write — `anchor\` and `run\anchord\` —
+is not looked inside, since only SYSTEM, the Administrators and `anchord` may write there and
+conflux reads what `anchord` writes as untrusted. Every reader of an ephemeral root holds what
+it holds to the same, so nothing is run from one whose contents another account could have
+planted. So is a root that is a junction another account may point elsewhere: `%ProgramData%`
+lets any user make one where `%ProgramData%\conflux` or `%ProgramData%\conflux-ephemeral` is not
+yet, leading into a directory of SYSTEM's, and point it at a directory of their own once conflux
+has filled it. A junction root is held as a symlinked root is on Unix: used only when it belongs
+to SYSTEM, the Administrators, TrustedInstaller or the account running conflux, and its DACL
+grants nobody else the right to write its data, attributes or extended attributes, add to it,
+delete it, or change its DACL or owner; an ephemeral root that fails this is passed over by
+every reader too. Then, since a handle somebody opened on it while its DACL let them write it
+could still repoint it in place, conflux replaces it: the junction is removed, and one made in
+its place through conflux's own handle, with the root's ownership and DACL from the moment it
+exists, and pointed through that handle at the directory conflux judged. Something made at that
+name in between is refused. A junction or a link inside a root, anywhere conflux looks, is
+refused whoever may change it, since conflux makes none there; `anchor\` and `run\anchord\`,
+which `anchord` writes, are not looked inside. And the two binaries the service runs as SYSTEM,
+and `wintun.dll` beside them, are run only if Administrators, SYSTEM or the account running
+conflux owns them — a set directory is named for content anybody can compute, so one made by
+somebody else is extracted again rather than trusted.
 
 Where `anchord` runs as `LOCAL SERVICE` (below), the service's own SID,
 `NT SERVICE\conflux`, is added to exactly what it needs: read and execute on its set

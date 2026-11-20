@@ -88,24 +88,22 @@ shape, and it is worth being honest about how it is bounded:
 - `conflux version` prints both SHA-256s, so what is on disk can be checked against a
   release note.
 
-The boot service is held to the same rule. It runs as root (SYSTEM on Windows) and
-starts whatever file it names at every boot, so it names a copy of conflux in the same
-state directory, which `up`, `proxy`, `install` and `start` refresh, and never the file
-conflux was run from — a home directory or a download that another account could swap
-for a program of its own, to be run as root at the next start. On Windows the root's
-DACL is set as the first conflux command that creates it makes it, extraction included, so
-it never carries `%ProgramData%`'s grant to `Users`, not even for an instant. A root found
-already there is judged and restricted through one handle on the directory itself, never by
-its name again, refused where its DACL lets another account move what is in it, made to hold
-its `run\` directory through that handle so that no handle opened on it earlier can make a
-junction of it, and refused if it became one meanwhile; one that holds
-anything another account may change — that it owns, or that it may write, move or point
-elsewhere, `anchord`'s own account aside, judged as found, again once the root is restricted,
-and on every run after —
-is refused rather than repaired around, by every
-reader of an ephemeral root too, as is a junction in it, and a root that is itself a junction
-another account may point elsewhere; one nobody else may is replaced with a junction conflux
-makes, through its own handle, leading to the directory it judged (see
+The boot service is held to the same rule. It runs as root (SYSTEM on Windows) and starts
+whatever file it names at every boot, so it names a copy of conflux in the same state directory,
+which `up`, `proxy`, `install` and `start` refresh, and never the file conflux was run from — a
+home directory or a download that another account could swap for a program of its own, to be run
+as root at the next start. On Windows the root's DACL is set as the first conflux command that
+creates it makes it, extraction included, so it never carries `%ProgramData%`'s grant to
+`Users`, not even for an instant. A root found already there is judged and restricted through
+one handle on the directory itself, never by its name again, refused where its DACL lets another
+account move what is in it, made to hold its `run\` directory through that handle so that no
+handle opened on it earlier can make a junction of it, and refused if it became one meanwhile;
+one that holds anything another account may change — that it owns, or that it may write, move or
+point elsewhere, `anchord`'s own account aside, judged as found, again once the root is
+restricted, and on every run after — is refused rather than repaired around, by every reader of
+an ephemeral root too, as is a junction in it, and a root that is itself a junction another
+account may point elsewhere; one nobody else may is replaced with a junction conflux makes,
+through its own handle, leading to the directory it judged (see
 [windows.md](windows.md#file-permissions)). One gap is left: a junction root already SYSTEM's or
 the Administrators' under a protected DACL granting nobody else anything, as conflux leaves the
 one it makes, is taken as conflux's and not replaced, so where an administrator tightened a
@@ -163,17 +161,17 @@ of conflux's found at `0775` or `0777` on ZFS is narrowed, not refused. A root's
 read, and only those entries are left to the narrowing: every other one is judged — a named
 user's or group's, one passed on or passing on, and one granting more than the mode's write. On
 Linux, where conflux reads POSIX ACLs alone, the root's own is not read at all.
-On Windows it is any directory
-on the way owned by an account other than SYSTEM, the Administrators, TrustedInstaller and the
-one running conflux, or one whose DACL grants another account — by any entry that allows, a
-conditional one included — the right to delete or rename what is in it, to delete or rename the directory itself, or to change its DACL or owner; the
+On Windows it is any directory on the way owned by an account other than SYSTEM, the
+Administrators, TrustedInstaller and the one running conflux, or one whose DACL grants another
+account — by any entry that allows, a conditional one included — the right to delete or rename
+what is in it, to delete or rename the directory itself, or to change its DACL or owner; the
 right to create folders in it, which `C:\` gives every user, is not one of them. A link or
 junction on the way is held as well to whoever may point it elsewhere or write it: the right to
 write its data or its attributes is enough to rewrite where a junction leads. A compound entry
-counts as one that allows, for its client, and a DACL holding an entry of a type Windows does not
-document is refused rather than read as granting nobody. The root
-is used as an absolute path, so the service registered under it runs from where it was
-installed whatever the working directory was.
+counts as one that allows, for its client, and a DACL holding an entry of a type Windows does
+not document is refused rather than read as granting nobody. The root is used as an absolute
+path, so the service registered under it runs from where it was installed whatever the working
+directory was.
 
 ## What anchord runs as
 

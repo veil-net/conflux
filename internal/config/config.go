@@ -2,8 +2,8 @@
 //
 // Three files, three lifetimes, deliberately not one:
 //
-//   - conflux.json  what the operator asked for. Written by up, proxy and observe.
-//   - state.json    what conflux derived. Written by the supervisor.
+//   - conflux.json  what the operator asked for. Written by up, proxy, observe and enrol.
+//   - state.json    what conflux derived. Written by the supervisor, renew and enrol.
 //   - manifest.b64  the identity. Written once, at enrolment, and never replaced
 //     except to splice in a renewed chain.
 //

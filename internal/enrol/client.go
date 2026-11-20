@@ -346,7 +346,8 @@ func (c *Client) do(ctx context.Context, method, u string, body []byte, auth Aut
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		// Cut at 4 KiB, and a rune the cut went through dropped.
+		// Cut at 4 KiB, and every invalid UTF-8 sequence in what is kept dropped, a rune the cut
+		// went through among them.
 		return &HTTPError{Status: resp.StatusCode, Body: strings.ToValidUTF8(string(b[:min(len(b), 4096)]), "")}
 	}
 

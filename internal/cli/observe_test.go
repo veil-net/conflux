@@ -296,6 +296,44 @@ func TestObserveChecksTheTaintBeforeItAsks(t *testing.T) {
 	}
 }
 
+// TestObservingAgainAsksNothing: a machine that already observes runs no anchor, so conflux
+// observe run again stops none and asks nothing -- off a terminal, without --yes -- and goes
+// on to start the observer as it is told to now.
+func TestObservingAgainAsksNothing(t *testing.T) {
+	if ui.IsTerminal() {
+		t.Skip("this test's stdin is a terminal")
+	}
+
+	rootOnLinux(t)
+
+	d := pathstest.Dirs(t)
+
+	if err := config.Save(d, &config.Config{Mode: config.ModeObserve, Observer: &config.Observer{},
+		Taints: []string{"brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := config.SaveManifest(d, config.Envelope(base64.StdEncoding.EncodeToString([]byte(alphaDoc)))); err != nil {
+		t.Fatal(err)
+	}
+
+	standInService(t, &fakeManager{d: d, restartErr: errStartsNothing})
+
+	_, errOut, code := capture(t, "observe", "--loopback")
+
+	if code != ExitError || !strings.Contains(errOut, errStartsNothing.Error()) {
+		t.Errorf("conflux observe on a machine observing exited %d, saying:\n%s\nwant the stand-in's Restart refused", code, errOut)
+	}
+
+	if strings.Contains(errOut, "Observing alone stops it") {
+		t.Errorf("conflux observe asked to stop an anchor on a machine that runs none:\n%s", errOut)
+	}
+
+	if cfg, err := config.Load(d); err != nil || cfg.Observer == nil || !cfg.Observer.Loopback {
+		t.Errorf("conflux observe --loopback saved %+v (%v), want the loopback observed", cfg, err)
+	}
+}
+
 // TestObserveAsksBeforeItMints: a machine running an anchor with no credential and no taint
 // configured has one minted for it by observe, and printed to be shared; asked to stop the
 // anchor first, a "no" -- off a terminal, no --yes -- leaves nothing minted, printed or saved.

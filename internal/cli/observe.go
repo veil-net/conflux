@@ -76,7 +76,8 @@ func runObserve(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	// The mode this replaces: an anchor, unless the machine was never configured.
+	// The mode this replaces: an anchor, unless the machine was never configured or observes
+	// already.
 	was := cfg.Mode
 	if was == config.ModeObserve {
 		was = ""

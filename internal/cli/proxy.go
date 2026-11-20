@@ -220,19 +220,6 @@ func newProxyFlags() *proxyFlags {
 	return f
 }
 
-// lookup finds the flag a dash-prefixed argument names, in any spelling Go's flag
-// package accepts. help is true for a help flag, which the package answers without its
-// being registered.
-func (f *proxyFlags) lookup(arg string) (fl *flag.Flag, help bool) {
-	if isHelpFlag(arg) {
-		return nil, true
-	}
-
-	name, _, _ := strings.Cut(strings.TrimLeft(arg, "-"), "=")
-
-	return f.fs.Lookup(name), false
-}
-
 // split separates the specs from the flags, so that they may be written in any order
 // -- `conflux proxy --taint x 8080=…` and the reverse both work, which Go's flag
 // package on its own does not allow -- and finds the first dash-prefixed argument that
@@ -254,7 +241,7 @@ func (f *proxyFlags) split(args []string) (positional, flags []string, unknown s
 		case strings.HasPrefix(a, "-"):
 			flags = append(flags, a)
 
-			fl, help := f.lookup(a)
+			_, fl, help := lookupFlag(f.fs, a)
 			if fl == nil && !help && unknown == "" {
 				unknown = a
 			}

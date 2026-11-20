@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/fips140"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -142,6 +143,19 @@ func isHelpFlag(arg string) bool {
 	}
 
 	return false
+}
+
+// lookupFlag finds the flag a dash-prefixed argument names in fs, in any spelling Go's flag
+// package accepts, and returns the name it was looked up by. help is true for a help flag,
+// which the package answers without its being registered.
+func lookupFlag(fs *flag.FlagSet, arg string) (name string, fl *flag.Flag, help bool) {
+	name, _, _ = strings.Cut(strings.TrimLeft(arg, "-"), "=")
+
+	if isHelpFlag(arg) {
+		return name, nil, true
+	}
+
+	return name, fs.Lookup(name), false
 }
 
 // fipsRefusal refuses a conflux built to run in FIPS 140-3 mode whose mode has been switched

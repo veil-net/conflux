@@ -22,6 +22,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/veil-net/conflux/internal/anchortest"
+	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
 )
@@ -402,6 +403,9 @@ func TestAFirstSignalStopsAnEphemeralRun(t *testing.T) {
 			exited := make(chan error, 1)
 			go func() { exited <- conflux.Wait() }()
 
+			// A test that fails kills conflux, then stops the anchord it recorded, which off Linux,
+			// with no parent-death signal, would run on past it.
+			t.Cleanup(func() { _, _ = daemon.ReapOrphan(d) })
 			t.Cleanup(func() { _ = conflux.Process.Kill() })
 
 			select {

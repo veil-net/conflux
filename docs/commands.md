@@ -607,7 +607,9 @@ your cache directory, which is made if it is not there yet; no other directory i
 or SIGINT sent to conflux is passed on to that child, so nothing outlives conflux, and conflux
 ends as the child ends: with its exit code, or by the same signal. The copy goes either way. A
 SIGHUP or SIGINT conflux was started ignoring, as `nohup` starts it ignoring SIGHUP, stays
-ignored, by conflux and the child alike.
+ignored by conflux, and the child starts with it ignored, as it would from your shell; a
+command of anchorctl's that watches (`status -watch`, `events`, `subscribe`) takes SIGINT for
+itself either way.
 
 On Windows every pass-through runs `anchorctl` as a child, since there is no replacing a
 process. Nothing is passed on there, and nothing needs to be: what a console sends — Ctrl+C,

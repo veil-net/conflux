@@ -46,7 +46,12 @@ func secure(dir string) error { return secureAs(dir, os.Geteuid()) }
 // secureAs is secure for a given effective uid, so the refusals can be tested without
 // another account.
 func secureAs(dir string, euid int) error {
-	fi, err := ownedAs(dir, euid)
+	link, err := os.Lstat(dir)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", dir, err)
+	}
+
+	fi, err := ownedAs(dir, link, euid)
 	if err != nil {
 		return err
 	}
@@ -72,20 +77,16 @@ func secureAs(dir string, euid int) error {
 	return nil
 }
 
-// ownedAs is dir as it resolves, once it is shown to be euid's. A root that is a symlink
-// is held to the same rule as what it points at: one another account planted would
-// otherwise lead straight past the check into a directory of theirs, or of the system's.
-func ownedAs(dir string, euid int) (os.FileInfo, error) {
-	link, err := os.Lstat(dir)
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", dir, err)
-	}
-
+// ownedAs is dir as it resolves, once it is shown to be euid's; link is what Lstat said of
+// dir. A root that is a symlink is held to the same rule as what it points at: one another
+// account planted would otherwise lead straight past the check into a directory of theirs, or
+// of the system's.
+func ownedAs(dir string, link os.FileInfo, euid int) (os.FileInfo, error) {
 	if err := ownedBy(dir, link, euid); err != nil {
 		return nil, err
 	}
 
-	if link.Mode()&os.ModeSymlink == 0 {
+	if !isLink(link) {
 		return link, nil
 	}
 
@@ -106,11 +107,12 @@ func ownedAs(dir string, euid int) (os.FileInfo, error) {
 // none of conflux's to use, and whoever reads one -- an ephemeral run's root, which /tmp lets
 // anybody make first -- holds it to this as the conflux that makes one does.
 func Foreign(dir string) error {
-	if _, err := os.Lstat(dir); err != nil {
+	link, err := os.Lstat(dir)
+	if err != nil {
 		return nil
 	}
 
-	_, err := ownedAs(dir, os.Geteuid())
+	_, err = ownedAs(dir, link, os.Geteuid())
 
 	return err
 }
@@ -127,10 +129,12 @@ func parentsAs(dir string, euid int) error {
 		return err
 	}
 
-	for _, p := range above {
-		fi, err := os.Lstat(p)
-		if err != nil {
-			return fmt.Errorf("read %s: %w", p, err)
+	for _, s := range above {
+		p, fi := s.path, s.fi
+		if fi == nil {
+			if fi, err = os.Lstat(p); err != nil {
+				return fmt.Errorf("read %s: %w", p, err)
+			}
 		}
 
 		st, ok := fi.Sys().(*syscall.Stat_t)

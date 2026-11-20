@@ -407,6 +407,7 @@ func TestEnsureAllTakesAGroupOfItsOwn(t *testing.T) {
 // TestAncestorsFollowsEveryLink: the lookup is followed as the kernel makes it, a link's
 // target read from the directory the link is in, ".." included, and each directory a name is
 // looked up in is there once, the links with them, and not the directory the root resolves to.
+// What the lookup read of each name it looked up goes with it, a link read as one.
 func TestAncestorsFollowsEveryLink(t *testing.T) {
 	base, err := filepath.EvalSymlinks(t.TempDir()) // under /private/var on macOS
 	if err != nil {
@@ -428,9 +429,20 @@ func TestAncestorsFollowsEveryLink(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := ancestors(filepath.Join(base, "a", "l"))
+	steps, err := ancestors(filepath.Join(base, "a", "l"))
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	var got []string
+
+	for _, s := range steps {
+		got = append(got, s.path)
+
+		link := s.path == filepath.Join(base, "a", "l") || s.path == filepath.Join(base, "d", "m")
+		if s.fi != nil && (s.fi.Name() != filepath.Base(s.path) || isLink(s.fi) != link) || s.fi == nil && link {
+			t.Errorf("ancestors read %s as %v", s.path, s.fi)
+		}
 	}
 
 	for _, want := range []string{"/", base, filepath.Join(base, "a"), filepath.Join(base, "a", "l"),

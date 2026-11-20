@@ -260,7 +260,9 @@ func parents(dir string) error {
 		return err
 	}
 
-	for _, p := range above {
+	for _, s := range above {
+		p := s.path
+
 		sd, err := ownSecurity(p)
 		if err != nil {
 			return fmt.Errorf("read the ownership of %s: %w", p, err)

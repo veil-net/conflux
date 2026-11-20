@@ -273,29 +273,39 @@ func chosen(dir string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
+// step is a directory or a link ancestors meets, with what Lstat said of it as the lookup looked
+// its name up: nil for one the lookup reached without doing so -- the top of a volume, and a
+// directory ".." leads back to -- which is never a link.
+type step struct {
+	path string
+	fi   os.FileInfo
+}
+
 // ancestors is everything on the way to dir that whoever may change it can put another
 // directory where dir leads by: every directory a lookup of dir looks a name up in, and every
 // link it follows -- a junction among them on Windows (isLink) -- each once, in the order the
-// lookup meets them. That is each directory above
-// dir as it is spelled, and for each link on the way the directory it is in, the link itself --
-// an account that owns one can point it elsewhere -- and the directories above where it leads,
-// where the next link may be. The directory dir resolves to is not among them.
-func ancestors(dir string) ([]string, error) {
+// lookup meets them. That is each directory above dir as it is spelled, and for each link on
+// the way the directory it is in, the link itself -- an account that owns one can point it
+// elsewhere -- and the directories above where it leads, where the next link may be. The
+// directory dir resolves to is not among them.
+func ancestors(dir string) ([]step, error) {
 	dir, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, err
 	}
 
-	var met []string
+	var met []step
 
-	meet := func(p string) {
-		if !slices.Contains(met, p) {
-			met = append(met, p)
+	meet := func(p string, fi os.FileInfo) {
+		if !slices.ContainsFunc(met, func(s step) bool { return s.path == p }) {
+			met = append(met, step{p, fi})
 		}
 	}
 
 	vol := filepath.VolumeName(dir)
 	at, rest := vol+string(filepath.Separator), dir[len(vol):]
+
+	var atInfo os.FileInfo // at's step
 
 	for links := 0; ; {
 		var name string
@@ -307,12 +317,12 @@ func ancestors(dir string) ([]string, error) {
 		case ".":
 			continue
 		case "..":
-			at = filepath.Dir(at)
+			at, atInfo = filepath.Dir(at), nil
 
 			continue
 		}
 
-		meet(at)
+		meet(at, atInfo)
 
 		p := filepath.Join(at, name)
 
@@ -322,7 +332,7 @@ func ancestors(dir string) ([]string, error) {
 		}
 
 		if !isLink(fi) {
-			at = p
+			at, atInfo = p, fi
 
 			continue
 		}
@@ -331,7 +341,7 @@ func ancestors(dir string) ([]string, error) {
 			return nil, fmt.Errorf("resolve %s: more than 255 links", dir)
 		}
 
-		meet(p)
+		meet(p, fi)
 
 		target, err := os.Readlink(p)
 		if err != nil {
@@ -344,9 +354,9 @@ func ancestors(dir string) ([]string, error) {
 
 		switch v := filepath.VolumeName(target); {
 		case v != "":
-			at, rest = v+string(filepath.Separator), rest[len(v):]
+			at, rest, atInfo = v+string(filepath.Separator), rest[len(v):], nil
 		case target != "" && os.IsPathSeparator(target[0]):
-			at = filepath.VolumeName(at) + string(filepath.Separator)
+			at, atInfo = filepath.VolumeName(at)+string(filepath.Separator), nil
 		}
 	}
 }

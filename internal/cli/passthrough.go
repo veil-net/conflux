@@ -234,12 +234,8 @@ var foreignRoot = paths.Foreign
 // and an anchorctl of their own in it, which a reader taking it for a run would run.
 func ephemeralRuns() (live, stale *paths.Dirs) {
 	for _, root := range paths.EphemeralCandidates() {
-		if foreignRoot(root) != nil {
-			continue
-		}
-
 		d := paths.EphemeralDirs(root)
-		if _, err := os.Stat(d.ServeLockFile()); err != nil {
+		if _, err := os.Stat(d.ServeLockFile()); err != nil || foreignRoot(root) != nil {
 			continue
 		}
 

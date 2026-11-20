@@ -159,7 +159,7 @@ func ForUsage(d paths.Dirs) (bin string, done func(), err error) {
 	}
 
 	bin = filepath.Join(dir, exeName("anchorctl"))
-	if err := writeExecutable(bin, anchor.Anchorctl()); err != nil {
+	if err := writeExecutable(bin, anchor.Anchorctl(), true); err != nil {
 		_ = os.RemoveAll(dir)
 
 		return "", nil, err
@@ -210,10 +210,10 @@ func extract(root, target string, t *Tools) error {
 	)
 
 	wg.Go(func() {
-		ctlErr = writeExecutable(filepath.Join(staging, exeName("anchorctl")), anchor.Anchorctl())
+		ctlErr = writeExecutable(filepath.Join(staging, exeName("anchorctl")), anchor.Anchorctl(), false)
 	})
 
-	err = writeExecutable(filepath.Join(staging, exeName("anchord")), anchor.Anchord())
+	err = writeExecutable(filepath.Join(staging, exeName("anchord")), anchor.Anchord(), false)
 
 	wg.Wait()
 
@@ -255,12 +255,13 @@ func extract(root, target string, t *Tools) error {
 	return nil
 }
 
-// writeExecutable writes one binary and closes it before anyone can exec it.
+// writeExecutable writes one binary and closes it before anyone can exec it: one of a set's,
+// or, oneRun, the copy ForUsage runs once and removes.
 //
 // The Close is not tidiness. On Linux, exec of a file that is still open for writing
 // anywhere in the system fails with ETXTBSY, and a deferred Close inside a loop is
 // exactly how that bug is usually written.
-func writeExecutable(path string, content []byte) error {
+func writeExecutable(path string, content []byte, oneRun bool) error {
 	prefault(content)
 
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o700)
@@ -284,7 +285,7 @@ func writeExecutable(path string, content []byte) error {
 		return fmt.Errorf("close %s: %w", path, err)
 	}
 
-	if err := paths.Restrict(path, false); err != nil {
+	if err := restriction(oneRun)(path, false); err != nil {
 		return fmt.Errorf("restrict %s: %w", path, err)
 	}
 
@@ -293,6 +294,18 @@ func writeExecutable(path string, content []byte) error {
 	clearQuarantine(path)
 
 	return nil
+}
+
+// restriction is what writeExecutable restricts a binary to, which only Windows acts on. A
+// set's binaries are the machine's, SYSTEM's and the Administrators', as everything under the
+// root is. A copy for one run is the account running it as well: help may be asked by one that
+// is not an administrator, which Restrict's DACL would not let execute what it had just written.
+func restriction(oneRun bool) func(string, bool) error {
+	if oneRun {
+		return paths.RestrictToOwner
+	}
+
+	return paths.Restrict
 }
 
 // prefault reads one byte of every page of b, so the embedded binary is mapped in before

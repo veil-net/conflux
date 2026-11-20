@@ -42,7 +42,7 @@ func TestAReaderRefusesARootAnotherAccountMayWrite(t *testing.T) {
 		mode os.FileMode
 	}{
 		{"every account may write it", 0o757},
-		{"every account may write it, sticky", 0o1777},
+		{"every account may write it, sticky", 0o777 | os.ModeSticky},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			d := plantedRoot(t)

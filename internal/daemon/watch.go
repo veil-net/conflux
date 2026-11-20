@@ -67,15 +67,16 @@ var linkGrace = 90 * time.Second
 // watch keeps an anchor in the daemon, rebuilding it when it has gone or its link has
 // ended, and the observer observing, starting it again when its capture has ended or, beside
 // an anchor, its start failed (up, what the bring-up started); and reports true once it has
-// given up on what the configuration runs.
+// given up on everything the configuration runs.
 //
 // It gives up on a configuration that will not build an anchor, which a rebuild refused
 // for good rebuildRefusals times in a row is -- a conflux.json edited under a running
 // service, a credential that no longer grants its taints. Retrying that for ever, however
 // far apart, would fill the journal and change nothing; a restart of the service --
 // `conflux start`, a reboot -- tries again, as it always would. An observer the host will
-// not let capture is given up on the same way: beside an anchor the anchor is still kept,
-// and observing alone there is nothing left to keep.
+// not let capture is given up on the same way. Each is given up on alone: the other is still
+// kept, and with it the renewal timer, which a watch reporting true ends, since what runs on
+// needs its credential current. Only with neither left is there nothing to keep.
 //
 // An anchor and an observer are kept apart: each has its own backoff and its own count of
 // refusals, so one that keeps failing neither slows the other's retries nor counts against
@@ -91,7 +92,9 @@ func (s *Supervisor) watch(ctx context.Context, cfg *config.Config, up brought, 
 	device := devicePath(cfg.Uplink)
 
 	anchor, observer := newKeeper(every, rebuildBackoffMax), newKeeper(every, rebuildBackoffMax)
-	observing := cfg.Observer != nil
+
+	// What is still kept: each until it is given up on.
+	anchoring, observing := cfg.Anchor(), cfg.Observer != nil
 
 	// down is an observer the bring-up did not start: status reads it only as not observing,
 	// as it reads one stopped by hand, which is left alone.
@@ -120,7 +123,7 @@ func (s *Supervisor) watch(ctx context.Context, cfg *config.Config, up brought, 
 		// check already made; nil where none was made or it was not answered.
 		var st *anchorctl.Status
 
-		if cfg.Anchor() && anchor.due() {
+		if anchoring && anchor.due() {
 			var l look
 
 			switch {
@@ -153,7 +156,11 @@ func (s *Supervisor) watch(ctx context.Context, cfg *config.Config, up brought, 
 				case respawned:
 					return false
 				case gaveUp:
-					return true
+					if !observing {
+						return true
+					}
+
+					anchoring = false
 				case kept:
 					// Whatever the state was, it is a fresh anchor now.
 					zeroSince, unproven = time.Time{}, l.link
@@ -182,7 +189,7 @@ func (s *Supervisor) watch(ctx context.Context, cfg *config.Config, up brought, 
 			case kept:
 				down = false
 			case gaveUp:
-				if !cfg.Anchor() {
+				if !anchoring {
 					return true
 				}
 

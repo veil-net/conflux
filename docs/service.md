@@ -124,8 +124,11 @@ fails is tried again at the next look and then after twice as long each time, up
 seconds. A blocked anchor is not one of these: a realm's block leaves it running, outside the
 realm, and rebuilding it would change nothing. A rebuild refused for good three times in a row — a
 `conflux.json` edited under a running service into one that will not build an anchor,
-say — makes the watcher give up and say so in the log: the service stays up holding no
-anchor, and renews nothing, until it is started again with `conflux start` or a reboot.
+say — makes the watcher give up on the anchor and say so in the log: the service stays up
+holding no anchor until it is started again with `conflux start` or a reboot. An observer
+beside it goes on observing, and the renewal timer goes on keeping its credential current;
+the same holds the other way round for an observer the host will not let capture, beside an
+anchor. With nothing left running, the service renews nothing until it is started again.
 
 ## One machine, one service — unless CONFLUX_DIR says otherwise
 

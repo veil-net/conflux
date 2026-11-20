@@ -219,6 +219,55 @@ func TestTheWatcherGivesUpOnARefusedConfiguration(t *testing.T) {
 	}
 }
 
+// TestEachIsGivenUpOnAlone: beside an observer still observing, an anchor refused for good
+// rebuildRefusals times in a row is given up on alone -- tried no more, while the watch goes on
+// keeping the observer, and with it the renewal timer, which a watch that gives up ends -- and
+// the watch gives up only once the observer is given up on too.
+func TestEachIsGivenUpOnAlone(t *testing.T) {
+	for name, tc := range map[string]struct {
+		observer, capture string
+		gaveUp            bool
+		observes          int
+	}{
+		"beside an observer observing":   {observer: "running"},
+		"beside an observer refused too": {observer: "failed", capture: "1", gaveUp: true, observes: rebuildRefusals},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(fakeAnchorctlStatusEnv, "none")
+			t.Setenv(fakeAnchorctlObserverEnv, tc.observer)
+			t.Setenv(fakeAnchorctlCaptureEnv, tc.capture)
+			t.Setenv(fakeAnchorctlRefuseEnv, "start")
+
+			s, log := supervised(t, "1")
+			s.priv.Dir = s.Dirs.RootAnchorDir()
+
+			cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, Observer: &config.Observer{}}
+			if err := config.Save(s.Dirs, cfg); err != nil {
+				t.Fatal(err)
+			}
+
+			credentialed(t, s.Dirs)
+
+			ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+			defer cancel()
+
+			if got := s.watch(ctx, cfg, brought{anchor: true, observing: true}, time.Millisecond); got != tc.gaveUp {
+				t.Errorf("the watch gave up %v, want %v", got, tc.gaveUp)
+			}
+
+			cmds := strings.Join(ran(t, log), "\n")
+
+			if n := strings.Count(cmds, "start"); n != rebuildRefusals {
+				t.Errorf("the anchor was rebuilt %d times, want %d and then given up on", n, rebuildRefusals)
+			}
+
+			if n := strings.Count(cmds, "observe"); n != tc.observes {
+				t.Errorf("the observer was started %d times, want %d", n, tc.observes)
+			}
+		})
+	}
+}
+
 // TestTheTailHoldsTheLastWords: the output of a daemon that dies straight after
 // writing is still in the tail by the time its exit is reported. Draining the pipes
 // beside Wait, rather than through it, lost exactly this line.

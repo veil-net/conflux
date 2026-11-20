@@ -327,9 +327,10 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 	// and the watcher that keeps an anchor in the daemon -- and on a link, keeps the link
 	// carrying something -- and the observer observing. Both are finished before the daemon
 	// is shut down, so neither writes state or talks to a daemon that the next cycle has
-	// already replaced. A watcher that gives up on what this configuration runs ends both:
-	// there is nothing left to keep, or to renew a credential for, until the service is
-	// started again.
+	// already replaced. A watcher that has given up on everything this configuration runs ends
+	// both: there is nothing left to keep, or to renew a credential for, until the service is
+	// started again. One that gives up on the anchor or the observer alone keeps the other, and
+	// the timer with it.
 	loops, stopLoops := context.WithCancel(ctx)
 
 	var wg sync.WaitGroup

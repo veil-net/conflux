@@ -563,11 +563,12 @@ func TestJudgeHoldsAnACLToTheStickyBit(t *testing.T) {
 	}
 }
 
-// TestJudgeHoldsARootAsSecureLeavesIt: a root's own ACL is judged as the root will be once
-// narrowed, 0700 with no sticky bit. An extended ACL keeps its entries through that, so one
-// letting anybody add a file to the root, or an account named by its UUID add a directory, is
-// refused there; a POSIX ACL's mask becomes the narrowed group bits, so its entries let nobody
-// write, though found at 0770 one lets uid 65534.
+// TestJudgeHoldsARootAsSecureLeavesIt: secure judges a root's own ACL by the mode it finds the
+// root at (judgeRoot), as the root will be once narrowed, 0700 with no sticky bit. An extended ACL
+// keeps its entries through that, so one letting anybody add a file to a root found at 0755,
+// whose mode shows no such write, or an account named by its UUID add a directory to one found
+// at 0777, is refused; a POSIX ACL's mask becomes the narrowed group bits, so its entries let
+// nobody write, though one lets uid 65534 at the 0770 the root is found at.
 func TestJudgeHoldsARootAsSecureLeavesIt(t *testing.T) {
 	nfs4, err := freebsdACL(freebsdBuf(
 		[5]uint32{0x01, 0, 0x1ffff, nfs4Allow},
@@ -597,18 +598,18 @@ func TestJudgeHoldsARootAsSecureLeavesIt(t *testing.T) {
 		aclGroup bool
 		refused  string
 	}{
-		{"an NFSv4 entry letting anybody add a file", 0o700, nfs4, false, "anybody"},
-		{"a macOS entry letting an account add a directory", 0o700, kauth, false, "5B1E0F1C-2D3E-4F50-6172-8394A5B6C7D8"},
-		{"a POSIX entry, under the mask the narrowing gives", 0o700, posix, true, ""},
-		{"the same entry, as found at 0770", 0o770, posix, true, "uid 65534"},
+		{"an NFSv4 entry letting anybody add a file, found at 0755", 0o755, nfs4, false, "anybody"},
+		{"a macOS entry letting an account add a directory, found at 0777", 0o777, kauth, false,
+			"5B1E0F1C-2D3E-4F50-6172-8394A5B6C7D8"},
+		{"a POSIX entry letting uid 65534 write, found at 0770", 0o770, posix, true, ""},
 	} {
-		got := judge(c.mode, 0, c.acl, c.aclGroup, os.Geteuid())
+		got := judgeRoot(os.ModeDir|c.mode, 0, c.acl, c.aclGroup, os.Geteuid())
 
 		switch {
 		case c.refused != "" && !strings.Contains(got, c.refused):
-			t.Errorf("%s: judge = %q, want a refusal naming %s", c.name, got, c.refused)
+			t.Errorf("%s: judgeRoot = %q, want a refusal naming %s", c.name, got, c.refused)
 		case c.refused == "" && got != "":
-			t.Errorf("%s: judge = %q, want nothing", c.name, got)
+			t.Errorf("%s: judgeRoot = %q, want nothing", c.name, got)
 		}
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -434,20 +435,33 @@ func TestRenewNeedsAURL(t *testing.T) {
 
 // TestRedirectsStayOnOneHostAndOnHTTPS: Go keeps an Authorization header across a
 // same-host redirect, so a downgrade to plain http would hand a renewal bearer to
-// the path.
+// the path, and its refusal says why. A same-host redirect over https is followed
+// until maxRedirects requests have been made.
 func TestRedirectsStayOnOneHostAndOnHTTPS(t *testing.T) {
 	t.Setenv(httpsonly.InsecureEnv, "")
 
-	via := []*http.Request{httptest.NewRequest(http.MethodPost, "https://api.example/ghosts/alpha/renew", nil)}
+	first := httptest.NewRequest(http.MethodPost, "https://api.example/ghosts/alpha/renew", nil)
 
-	for target, ok := range map[string]bool{
-		"https://api.example/ghosts/alpha/renew2": true,
-		"http://api.example/ghosts/alpha/renew":   false,
-		"https://elsewhere.example/renew":         false,
+	for _, c := range []struct {
+		to      string
+		via     int
+		refusal string // "" for followed
+	}{
+		{"https://api.example/ghosts/alpha/renew2", 1, ""},
+		{"https://api.example/ghosts/alpha/renew2", 2, ""},
+		{"https://api.example/ghosts/alpha/renew2", 3, "stopped after 3 requests"},
+		{"http://api.example/ghosts/alpha/renew", 1, whyHTTPS},
+		{"https://elsewhere.example/renew", 1, "refusing a redirect"},
 	} {
-		err := defaultHTTP.CheckRedirect(httptest.NewRequest(http.MethodPost, target, nil), via)
-		if (err == nil) != ok {
-			t.Errorf("a redirect to %s: err = %v, want allowed = %v", target, err, ok)
+		via := slices.Repeat([]*http.Request{first}, c.via)
+
+		err := defaultHTTP.CheckRedirect(httptest.NewRequest(http.MethodPost, c.to, nil), via)
+
+		switch {
+		case c.refusal == "" && err != nil:
+			t.Errorf("a redirect to %s after %d requests: %v, want it followed", c.to, c.via, err)
+		case c.refusal != "" && (err == nil || !strings.Contains(err.Error(), c.refusal)):
+			t.Errorf("a redirect to %s after %d requests: %v, want %q", c.to, c.via, err, c.refusal)
 		}
 	}
 }

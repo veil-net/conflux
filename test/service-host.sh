@@ -5,8 +5,8 @@
 #
 # What test/service.sh is for systemd: install registers and starts nothing, status and
 # down answer for a registered service with nothing to run, a userspace anchord runs as
-# an account of its own -- _conflux on macOS, LOCAL SERVICE on Windows -- an observing one
-# captures as that account, given only what the capture needs, and uninstall leaves nothing
+# an account of its own -- _conflux on macOS, LOCAL SERVICE on Windows -- an observing one is
+# started as that account, given only what the capture needs, and uninstall leaves nothing
 # behind: launchd's disabled database, the SCM's entry, the account and the BPF devices'
 # access included. Nothing is enrolled -- the configuration names an API that answers nothing --
 # so it needs no API and no anchor, and takes seconds. It runs on the machine itself,
@@ -109,31 +109,38 @@ grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z .*en
   || { cat "$log" >&2; fail "the log's lines are not stamped with the time they were written"; }
 "$CONFLUX" down || fail "down failed on a running service"
 
-# Observing alone needs no API, so this one comes all the way up: start waits for the
-# observer as it waits for an anchor. As its own account, with the capture and nothing else:
-# on macOS the BPF devices given to its group by the supervisor, on Windows LOCAL SERVICE's
-# own leave to start the trace session.
-say "observing alone, anchord captures as its own account"
-(umask 077; printf '%s\n' '{"version":1,"mode":"observe","observer":{},"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}' > "$root/conflux.json")
+# What anchord is given to observe with is decided as it is started, before any credential: its
+# own account, with the capture and nothing else -- on macOS the BPF devices given to its group
+# by the supervisor, on Windows LOCAL SERVICE, whose own leave starts the trace session. The
+# observer itself runs under the machine's credential, and the enrolment for one waits on the
+# API that answers nothing, so it never starts here: that it runs is integration.sh's. Started
+# through the service manager, as above, since conflux start would wait for the observer.
+say "observing, anchord is started as an account of its own with the capture alone"
+(umask 077; printf '%s\n' '{"version":1,"mode":"observe","observer":{},"taints":["cfx-service-host"],"apiBaseUrl":"https://192.0.2.1:9","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}' > "$root/conflux.json")
+rm -f "$root/anchord.priv"
 if [ "$os" = darwin ]; then
-  capture=bpf
+  launchctl kickstart "system/$LABEL"
   who='_conflux, with read access to /dev/bpf*, for the observer'
 else
-  capture=etw
+  sc.exe start conflux >/dev/null
   who='NT AUTHORITY\LOCAL SERVICE, with no privilege'
 fi
-"$CONFLUX" start || { cat "$log" >&2; fail "the observer did not come up"; }
-out=$("$CONFLUX" status)
-printf '%s\n' "$out"
-case $out in
-  *"observer     $capture,"*) ;;
-  *) cat "$log" >&2; fail "status does not show the observer capturing with $capture" ;;
+priv=""
+for _ in $(seq 120); do
+  priv=$(cat "$root/anchord.priv" 2>/dev/null || true)
+  [ -n "$priv" ] && break
+  sleep 0.5
+done
+echo "  anchord: $priv"
+case $priv in
+  *'"account":true'*"$account"*) ;;
+  *) cat "$log" >&2; fail "an observing anchord did not run as its own account: ${priv:-nothing was recorded}" ;;
 esac
+out=$("$CONFLUX" status 2>&1) || true
 case $out in
   *"anchord      $who"*) ;;
-  *) fail "anchord does not observe as its own account with only the capture" ;;
+  *) printf '%s\n' "$out" >&2; fail "anchord is not started as its own account with the capture alone" ;;
 esac
-[ ! -e "$root/manifest.b64" ] || fail "observing alone enrolled"
 if [ "$os" = darwin ]; then
   bpf=$(stat -f '%Sg %Sp' /dev/bpf0)
   [ "$bpf" = "_conflux crw-r-----" ] || fail "/dev/bpf0 is $bpf while _conflux observes, want _conflux crw-r-----"

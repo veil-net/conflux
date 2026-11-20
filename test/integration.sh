@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Four conflux nodes, one taint, reaching each other over the overlay.
 #
-# This enrols five times against the live API, and renews once. That is deliberate
+# This enrols five times against the live API, and renews twice. That is deliberate
 # and cheap: the routes are anonymous, store nothing, and the taint below is random --
 # every credential is issued in it, so the nodes sit in a compartment of their own and
 # can exchange data with nobody else in the realm.
@@ -11,8 +11,8 @@
 # CI names api-dev for a pull request into dev, whose build embeds anchor's dev-latest
 # (docs/testing.md, "The genesis node").
 #
-# A and B meet by discovery on the link; the third node is its control, and joins once they
-# have. The fourth runs ephemeral.
+# A and B meet by discovery on the link; the third node is its control, joins once they have,
+# and then observes. The fourth runs ephemeral.
 set -euo pipefail
 
 # shellcheck source=test/lib.sh
@@ -20,6 +20,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 TAINT="cfx-ci-$(head -c6 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 API=${VEILNET_API:-https://api.veilnet.com.au}
+
+# The collector the observer's records are exported to: anchor's own suite runs this one.
+OTEL_IMAGE=${OTEL_IMAGE:-otel/opentelemetry-collector:0.165.0}
 
 say() { printf '\n== %s\n' "$*"; }
 
@@ -82,10 +85,11 @@ NOWHERE=192.0.2.1:4700
 # next run to collide with. `docker rm -f` shrugs at a name that is not there, so this
 # is a no-op on a clean machine.
 before=$(docker ps -aq | wc -l)
-docker rm -f cfx-a cfx-b cfx-c cfx-d >/dev/null 2>&1 || true
+docker rm -f cfx-a cfx-b cfx-c cfx-d cfx-otel >/dev/null 2>&1 || true
 echo "containers on this machine: $before before this run"
 
-trap 'docker rm -f cfx-a cfx-b cfx-c cfx-d >/dev/null 2>&1 || true' EXIT
+otelconf=$(mktemp)
+trap 'docker rm -f cfx-a cfx-b cfx-c cfx-d cfx-otel >/dev/null 2>&1 || true; rm -f "$otelconf"' EXIT
 
 say "taint for this run: $TAINT, enrolling at $API"
 
@@ -265,6 +269,87 @@ fi
 [ "$(lan_found cfx-c)" -eq 0 ] \
   || { echo "C probed the link despite --lan-discovery no: the flag did not reach anchor" >&2; exit 1; }
 echo "C has probed the link 0 times: --lan-discovery no reached anchor"
+
+# observer_row is the observer's row of NODE's status, as anchorctl writes it.
+observer_row() { docker exec "$1" conflux status | awk '$1 == "observer" && !n { $1 = ""; sub(/^ +/, ""); print; n = 1 }'; }
+
+# C's anchor has shown what it is for. Switched to observing, it runs the observer and no anchor,
+# under the credential it holds and the identity that credential names -- enrolling nothing --
+# and a renewal is installed in the observer as in an anchor: `observe -cred -`, hot. Its records
+# go to a collector as each is made, one that logs every record it is sent, in detail, which is
+# the dashboard's side of it, and stay in the inventory; the renewal's own HTTPS exchange is the
+# traffic they record, so the stage makes no call it would not make anyway.
+say "C switches to observing, on its own credential, exporting to a collector, and a renewal reaches the observer"
+cat > "$otelconf" <<'YAML'
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+exporters:
+  debug:
+    verbosity: detailed
+service:
+  pipelines:
+    logs: {receivers: [otlp], exporters: [debug]}
+    metrics: {receivers: [otlp], exporters: [debug]}
+YAML
+chmod 644 "$otelconf"
+docker run -d --name cfx-otel -v "$otelconf:/etc/otel.yaml:ro" "$OTEL_IMAGE" --config /etc/otel.yaml >/dev/null
+collector=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' cfx-otel)
+[ -n "$collector" ] || { echo "the collector has no address" >&2; docker logs cfx-otel >&2; exit 1; }
+C_ID=$(anchor_id cfx-c)
+docker exec cfx-c conflux observe --yes --export "$collector:4317" --export-insecure
+docker exec cfx-c conflux status
+if docker exec cfx-c journalctl -u conflux --no-pager | awk '/enrolling/ { n++ } END { exit n == 0 }'; then
+  echo "C enrolled to observe, rather than observing on the credential it holds" >&2
+  exit 1
+fi
+[ "$(anchor_id cfx-c)" = "$C_ID" ] && [ "$(grants cfx-c "$TAINT")" = 1 ] \
+  || { echo "observing changed C's identity or credential" >&2; exit 1; }
+before=$(observer_row cfx-c)
+case $before in
+  af_packet,*"credential valid until "*) ;;
+  *) echo "C's observer is not capturing on a credential: ${before:-no observer row}" >&2; exit 1 ;;
+esac
+# The identity it runs as is the one observe -start reports, its `as` row, which the supervisor logs.
+grep -q "observing as $C_ID;" <<<"$(docker exec cfx-c journalctl -u conflux --no-pager)" \
+  || { echo "C's observer does not run as C's own identity, $C_ID" >&2
+       docker exec cfx-c journalctl -u conflux --no-pager -n 30 >&2; exit 1; }
+grep -qE "^  identity +$C_ID\$" <<<"$(docker exec cfx-c conflux status)" \
+  || { echo "status does not name $C_ID as the identity C observes as" >&2; exit 1; }
+grep -qE "^  records +each sent to $collector:4317 " <<<"$(docker exec cfx-c conflux status)" \
+  || { echo "status does not say C's records are sent to $collector:4317" >&2; exit 1; }
+docker exec cfx-c conflux renew
+after=$(observer_row cfx-c)
+echo "  observer before the renewal: $before"
+echo "  observer after it:           $after"
+until_of() { sed -n 's/.*credential valid until \([^ ;]*\).*/\1/p' <<<"$1"; }
+case $after in
+  af_packet,*) ;;
+  *) echo "C's observer stopped across the renewal: $after" >&2; exit 1 ;;
+esac
+[[ "$(until_of "$after")" > "$(until_of "$before")" ]] \
+  || { echo "the renewal did not reach C's observer: its credential still ends $(until_of "$after")" >&2; exit 1; }
+[ "$(anchor_id cfx-c)" = "$C_ID" ] || { echo "a renewal changed C's identity" >&2; exit 1; }
+# What the observer saw of the renewal: a connection to port 443 in the inventory, and its
+# record, key exchange and all, at the collector.
+for _ in $(seq 60); do
+  grep -q ' 443/tcp ' <<<"$(docker exec cfx-c conflux inventory 2>/dev/null)" && break
+  sleep 2
+done
+grep ' 443/tcp ' <<<"$(docker exec cfx-c conflux inventory)" \
+  || { echo "C's inventory holds no connection to port 443:" >&2
+       docker exec cfx-c conflux inventory >&2 || true; exit 1; }
+for _ in $(seq 60); do
+  grep -q 'anchor.observed_flow.key_exchange' <<<"$(docker logs cfx-otel 2>&1)" && break
+  sleep 2
+done
+grep -q 'anchor.observed_flow.key_exchange' <<<"$(docker logs cfx-otel 2>&1)" \
+  || { echo "no anchor.observed_flow record from C reached the collector:" >&2
+       docker logs cfx-otel 2>&1 | tail -20 >&2
+       docker exec cfx-c journalctl -u conflux --no-pager -n 30 >&2; exit 1; }
+docker rm -f cfx-otel >/dev/null
 
 say "reboot A: it must come back by itself, same identity"
 docker restart cfx-a >/dev/null

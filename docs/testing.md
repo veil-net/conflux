@@ -178,8 +178,14 @@ capabilities, `no_new_privs` and groups from `/proc` and the reason from `status
 | stand-ins for firewalld and for legacy iptables | root, naming each |
 | a stand-in for iptables on nf_tables, no nft | the account with `CAP_NET_ADMIN` and `CAP_NET_RAW` |
 | back to userspace | the account, starting from root's state, as its own |
+| observing alone | the account with `CAP_NET_RAW` alone, `no_new_privs` |
+| the observer beside userspace, and beside a TUN | the mode's own, and `CAP_NET_RAW` |
 | `start` over a 1.0.0 unit | the unit replaced by this conflux's |
 | an account named `conflux` that conflux did not make | root, saying so; `uninstall` leaves the account |
+
+What `anchord` is given to observe with is decided as it is started, before any credential, so
+the suite takes it; the observer itself runs only under the machine's credential, so that it
+runs, is renewed, and records into the inventory and to a collector is `make integration`'s.
 
 `test/service-host.sh` is the same lifecycle against launchd and the SCM, on the machine
 itself, which is why only a CI runner that is thrown away afterwards runs it: `install`
@@ -188,8 +194,9 @@ covers a service stopping with an error — `status` exits 78 and says the servi
 installed and not running, `down` succeeds on it, a userspace configuration started
 through the service manager runs `anchord` as `_conflux` or `LOCAL SERVICE` and gets as far
 as enrolling, which it does only once `anchord` has answered on the socket it made as that
-account. An observing configuration runs `anchord` as that account too, with only what
-capturing needs — on macOS the BPF devices given to its group — and an ephemeral run killed
+account. An observing configuration starts `anchord` as that account too, with only what
+capturing needs — on macOS the BPF devices given to its group — before any credential, and so
+before the observer, which runs only under one; and an ephemeral run killed
 outright takes its `anchord` with it on Windows, in its job, and on macOS leaves it for the
 next run to stop. `uninstall` leaves no plist, no entry in launchd's disabled database, no
 `_conflux` or `_conflux-ephemeral` account, the BPF devices root's again, no SCM service, no
@@ -232,6 +239,13 @@ five times:
 - **Its discovery counter stays at zero** on the link where A and B found each other,
   which proves `--lan-discovery no` reached anchor rather than being accepted by conflux
   and dropped.
+- **Switched to `conflux observe --export`**, at a collector container that logs every record
+  it is sent, it runs the observer and no anchor on the credential it holds, enrolling nothing:
+  status shows the observer capturing, names C's identity, which the supervisor logs the
+  observer running as, and says where the records go. `conflux renew` must reach the observer,
+  its credential's expiry moving on with it still capturing — and the renewal's own HTTPS
+  exchange is what it records: a connection to port 443 in `conflux inventory`, and its record,
+  key exchange and all, at the collector.
 
 A fourth node, D, runs **ephemeral** ([ephemeral.md](ephemeral.md)), and enrols twice more:
 

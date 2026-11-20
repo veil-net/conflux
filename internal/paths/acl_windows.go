@@ -422,6 +422,13 @@ func secure(dir string) error {
 		case err != nil:
 			return err
 		case who == "":
+			// Taken as conflux's, a link leads where one of conflux's could: never to a network share.
+			if root.link != nil {
+				if _, err := leadsTo(dir, root.dir); err != nil {
+					return err
+				}
+			}
+
 			if err := fill(dir, root.dir); err != nil {
 				return err
 			}
@@ -499,9 +506,9 @@ func secured(sd *windows.SECURITY_DESCRIPTOR) bool {
 // afresh there, and the machine a new identity. So is a directory that cannot be named by its
 // volume, a network share's, which a junction cannot lead to. r.self is the new junction after.
 func replaceLink(dir string, r *held) error {
-	target, err := finalPath(r.dir, volumeNameGUID)
+	target, err := leadsTo(dir, r.dir)
 	if err != nil {
-		return fmt.Errorf("read where %s leads, which a junction of conflux's could lead to: %w", dir, err)
+		return err
 	}
 
 	shown, _ := finalPath(r.dir, volumeNameDOS) // what dir shows it leads to; nothing where it has no such name
@@ -581,6 +588,18 @@ func replaceLink(dir string, r *held) error {
 	}
 
 	return nil
+}
+
+// leadsTo is where dir, a junction or a link, leads, the directory h holds open, named by its
+// volume's GUID, as a junction of conflux's can lead to it; one that has no such name, a network
+// share's, which a junction cannot lead to, is refused.
+func leadsTo(dir string, h windows.Handle) (string, error) {
+	target, err := finalPath(h, volumeNameGUID)
+	if err != nil {
+		return "", fmt.Errorf("read where %s leads, which a junction of conflux's could lead to: %w", dir, err)
+	}
+
+	return target, nil
 }
 
 // errMadeAgain is a name somebody made something at between replaceLink's removing what was there

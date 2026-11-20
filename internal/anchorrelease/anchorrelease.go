@@ -21,13 +21,14 @@
 //
 // # Where a fetch can reach, and what vouches for what arrives
 //
-// Nothing here reads a URL out of a document. Every request is built from this package's
-// own constants -- one API host, one repository, one tag -- and binaries are resolved by
-// *asset name* within that single release. An asset download is answered with a redirect
-// to GitHub's storage, which is followed; what makes that safe is that nothing fetched
-// that way vouches for itself. The release document, which the API answers directly,
-// gives each asset's SHA-256: manifest.json is held to it, and each binary to the digest
-// manifest.json gives -- so substituted bytes anywhere past the API fail a compare.
+// Nothing here reads a URL out of a document. Every request is built from the Source -- one
+// API host, one repository, one tag: ghrelease's DefaultAPI and DefaultTag, and DefaultRepo,
+// unless a field names another -- and binaries are resolved by *asset name* within that
+// single release. An asset download is answered with a redirect to GitHub's storage, which
+// is followed; what makes that safe is that nothing fetched that way vouches for itself.
+// The release document, which the API answers directly, gives each asset's SHA-256:
+// manifest.json is held to it, and each binary to the digest manifest.json gives -- so
+// substituted bytes anywhere past the API fail a compare.
 package anchorrelease
 
 import (

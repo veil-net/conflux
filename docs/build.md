@@ -188,9 +188,11 @@ needs — the macOS and Windows CI jobs fetch their own two files and no others 
 `DEST=` puts them somewhere other than `anchor/bin`.
 
 **There is no URL anywhere.** Nothing reads a URL out of a document: every request is
-built from `internal/anchorrelease`'s own constants, and binaries are resolved by asset **name**
-within one release. The set of places a fetch can reach is fixed by conflux's
-configuration rather than by anything on the wire.
+built from one API host, one repository and one tag — `internal/ghrelease`'s `DefaultAPI` and
+`DefaultTag`, and `internal/anchorrelease`'s `DefaultRepo`, unless `ANCHOR_API`, `ANCHOR_REPO` or
+`ANCHOR_TAG` names another — and binaries are resolved by asset **name** within that one
+release. The set of places a fetch can reach is fixed by conflux's configuration rather
+than by anything on the wire.
 
 ### A clone with no anchor checkout
 

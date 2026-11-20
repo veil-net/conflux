@@ -8,9 +8,10 @@
 // The release document, which the API answers directly over TLS, gives the asset's
 // SHA-256. The binary arrives through GitHub's redirect to its storage and is held to that
 // digest before it is put anywhere it could run from, so bytes substituted past the API fail
-// a compare. Nothing reads a URL out of a document: every request is built from this
-// package's own constants, one API host, one repository and one tag, and the asset is
-// resolved by name within that one release.
+// a compare. Nothing reads a URL out of a document: every request is built from the Source,
+// one API host, one repository and one tag -- ghrelease's DefaultAPI and DefaultTag, and
+// DefaultRepo, unless a field names another -- and the asset is resolved by name within that
+// one release.
 //
 // No credential. conflux is a public repository, so its releases are readable by anyone,
 // and nothing here sends a token anywhere.

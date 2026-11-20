@@ -6,8 +6,8 @@
 // arrives to a digest from something that did not come through GitHub's storage.
 //
 // Nothing it imports embeds anything (httpsonly is its one import of conflux's, a leaf):
-// cmd/anchor-fetch reaches it through internal/anchorrelease, and has to run while
-// anchor/bin is still empty.
+// cmd/anchor-fetch imports it, for DefaultAPI and DefaultTag and through
+// internal/anchorrelease, and has to run while anchor/bin is still empty.
 package ghrelease
 
 import (

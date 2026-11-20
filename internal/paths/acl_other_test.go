@@ -693,9 +693,11 @@ func TestJudgeLeavesARootsTrivialNFSv4ACLToTheNarrowing(t *testing.T) {
 // aclGroup, which judgeRoot judges at the narrowed 0700 as letting nobody write
 // (TestARootsACLCannotRefuseItHere), or none at all. So each of its returns is no ACL, nil and
 // false, or a POSIX.1e one, true; a reader of anything else there -- an NFSv4 mount's
-// system.nfs4_acl, on Linux -- needs that file's rootACLMayRefuse true.
+// system.nfs4_acl, on Linux -- needs that file's rootACLMayRefuse true. The two are tied by the
+// file that holds them, so every file of the package is read, whatever it is named, and one that
+// holds either without the other is refused.
 func TestARootsACLIsLeftUnreadOnlyBesideAPOSIXReader(t *testing.T) {
-	names, err := filepath.Glob("acl_*.go")
+	names, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -731,15 +733,17 @@ func TestARootsACLIsLeftUnreadOnlyBesideAPOSIXReader(t *testing.T) {
 			}
 		}
 
+		if (mayRefuse == "") != (reader == nil) {
+			t.Errorf("%s holds one of rootACLMayRefuse and extendedWriters without the other, which this ties by file", name)
+
+			continue
+		}
+
 		if mayRefuse != "false" {
 			continue
 		}
 
-		if unread++; reader == nil {
-			t.Errorf("%s leaves a root's ACL unread, and holds no extendedWriters to say it reads none but POSIX.1e ones", name)
-
-			continue
-		}
+		unread++
 
 		ast.Inspect(reader.Body, func(n ast.Node) bool {
 			r, ok := n.(*ast.ReturnStmt)

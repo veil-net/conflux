@@ -812,6 +812,10 @@ func notLink(dir string, h windows.Handle, why string) error {
 // gone into: its DACL, which has just shown nobody else may write it, lets only SYSTEM, the
 // Administrators and anchord make anything inside, and what anchord makes there, which it owns,
 // conflux reads as anchord's, untrusted (OpenUntrusted, config.ReadUntrusted, copyTree).
+//
+// An entry gone between the listing and its judgement is passed over: nothing is there to judge, and
+// a live run's root -- an ephemeral one, which Foreign reads -- has its marker written and removed
+// while it runs.
 func contents(dir string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -829,13 +833,18 @@ func contents(dir string) error {
 
 	for _, e := range entries {
 		if err := filepath.WalkDir(filepath.Join(dir, e.Name()), func(p string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
+			var h windows.Handle
+			if err == nil {
+				if h, err = openFile(p, readAccess, false); err != nil {
+					err = fmt.Errorf("read %s: %w", p, err)
+				}
 			}
 
-			h, err := openFile(p, readAccess, false)
-			if err != nil {
-				return fmt.Errorf("read %s: %w", p, err)
+			switch {
+			case errors.Is(err, fs.ErrNotExist):
+				return nil // gone since it was listed, as what a live run writes and removes may be
+			case err != nil:
+				return err
 			}
 			defer windows.CloseHandle(h)
 

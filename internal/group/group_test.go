@@ -60,10 +60,11 @@ func TestUsersFrom(t *testing.T) {
 	}
 }
 
-// TestCachedReadsEachDatabaseOnce: Cached answers as Users does, and asks the system for a group's
+// TestALookupReadsEachDatabaseOnce: a Lookup answers as Users does, and asks the system for a group's
 // record once, and for the account database once, however many times and for however many groups it
-// is asked; a record that failed to be read is asked for again.
-func TestCachedReadsEachDatabaseOnce(t *testing.T) {
+// is asked; a record that failed to be read is asked for again, and a new Lookup reads everything
+// again.
+func TestALookupReadsEachDatabaseOnce(t *testing.T) {
 	if files() {
 		t.Skip("no getent or dscl here: the databases are read from their files")
 	}
@@ -101,32 +102,44 @@ func TestCachedReadsEachDatabaseOnce(t *testing.T) {
 		return was(argv...)
 	}
 
-	for range 3 {
-		for _, name := range names {
-			want, err := Users(name, "0")
-			if err != nil {
-				t.Fatal(err)
-			}
+	lookups := []*Lookup{{}, {}}
 
-			if got, err := Cached(name, "0"); err != nil || !slices.Equal(got, want) {
-				t.Errorf("Cached(%s) = %q, %v; Users = %q", name, got, err, want)
+	for _, l := range lookups {
+		for range 3 {
+			for _, name := range names {
+				want, err := Users(name, "0")
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				if got, err := l.Users(name, "0"); err != nil || !slices.Equal(got, want) {
+					t.Errorf("Lookup.Users(%s) = %q, %v; Users = %q", name, got, err, want)
+				}
 			}
 		}
 	}
 
-	// Users asks for each of them every round, and Cached once in all.
+	// Users asks for a record, and for the database, at every call; each Lookup once in all.
+	calls := 3 * len(lookups)
+
 	for command, n := range asked {
-		if want := 3 + 1; n != want && !strings.Contains(command, "passwd") && !strings.Contains(command, "/Users") ||
-			n != 3*len(names)+1 && (strings.Contains(command, "passwd") || strings.Contains(command, "/Users")) {
-			t.Errorf("%s was run %d times", command, n)
+		want := calls + len(lookups) // a group's record
+		if strings.Contains(command, "passwd") || strings.Contains(command, "/Users") {
+			want = calls*len(names) + len(lookups)
+		}
+
+		if n != want {
+			t.Errorf("%s was run %d times, want %d", command, n, want)
 		}
 	}
 
-	if _, err := Cached("nobody-yet", "4242"); err == nil {
-		t.Fatal("Cached of a group whose record could not be read answered")
+	l := &Lookup{}
+
+	if _, err := l.Users("nobody-yet", "4242"); err == nil {
+		t.Fatal("a Lookup of a group whose record could not be read answered")
 	}
 
-	if _, err := Cached("nobody-yet", "4242"); err != nil {
-		t.Errorf("Cached did not ask again for a record it failed to read: %v", err)
+	if _, err := l.Users("nobody-yet", "4242"); err != nil {
+		t.Errorf("a Lookup did not ask again for a record it failed to read: %v", err)
 	}
 }

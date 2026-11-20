@@ -30,42 +30,46 @@ func Users(name, gid string) ([]string, error) {
 	return usersFrom(runtime.GOOS, group, users, gid), nil
 }
 
-// Cached is Users for a process that asks of the same groups again and again, as every walk of a
-// directory's parents does: each group's record, and the account database behind them all, read
-// once for the process and kept, what failed to be read excepted. A change to who a group lets in
-// while the process runs is not seen by it; account, which makes such changes, asks Users.
-func Cached(name, gid string) ([]string, error) {
-	cache.Lock()
-	defer cache.Unlock()
+// A Lookup is Users for one judgement, which may ask of a group again, or of several groups: each
+// group's record, and the account database behind them all, read at most once while the Lookup is
+// kept, and gone with it, what failed to be read excepted, so that the next judgement sees who a
+// group lets in by then. Its zero value is ready, and it may be asked from several goroutines.
+type Lookup struct {
+	mu       sync.Mutex
+	records  map[string]string
+	accounts *string
+}
 
-	group, ok := cache.records[name]
+// Users is Users, from what l has read.
+func (l *Lookup) Users(name, gid string) ([]string, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	group, ok := l.records[name]
 	if !ok {
 		var err error
 		if group, err = record(name); err != nil {
 			return nil, err
 		}
 
-		cache.records[name] = group
+		if l.records == nil {
+			l.records = map[string]string{}
+		}
+
+		l.records[name] = group
 	}
 
-	if cache.accounts == nil {
+	if l.accounts == nil {
 		users, err := accounts()
 		if err != nil {
 			return nil, err
 		}
 
-		cache.accounts = &users
+		l.accounts = &users
 	}
 
-	return usersFrom(runtime.GOOS, group, *cache.accounts, gid), nil
+	return usersFrom(runtime.GOOS, group, *l.accounts, gid), nil
 }
-
-// cache is what Cached has read.
-var cache = struct {
-	sync.Mutex
-	records  map[string]string
-	accounts *string
-}{records: map[string]string{}}
 
 // record is the group name's record: dscl's on macOS, else getent's, or, where there is no getent --
 // a bare busybox has none -- its line of /etc/group.

@@ -782,3 +782,55 @@ func TestARootsACLIsLeftUnreadOnlyBesideAPOSIXReader(t *testing.T) {
 		t.Fatal("no platform's file leaves a root's ACL unread, so nothing was held")
 	}
 }
+
+// TestAJudgementDropsWhatItRead: what a judgement reads of who a group lets in is kept, and shared,
+// while it or another begun before it ended is under way, and dropped once none is, so that a
+// supervisor, which judges its roots again at every bring-up, sees who a group lets in by then:
+// EnsureAll, Check and Foreign each leave nothing kept.
+func TestAJudgementDropsWhatItRead(t *testing.T) {
+	outer := judging()
+	first := lookups.l
+
+	inner := judging()
+	if first == nil || lookups.l != first {
+		t.Errorf("a judgement begun inside another reads into %p, not the other's %p", lookups.l, first)
+	}
+
+	inner()
+
+	if lookups.l != first {
+		t.Error("a judgement's end dropped what another under way had read")
+	}
+
+	outer()
+
+	if lookups.l != nil {
+		t.Error("what the judgements read was kept once none was under way")
+	}
+
+	if done := judging(); lookups.l == first {
+		t.Error("the next judgement read into the one before's")
+	} else {
+		done()
+	}
+
+	t.Setenv("CONFLUX_DIR", filepath.Join(t.TempDir(), "conflux"))
+
+	// In this order: Check and Foreign judge the root EnsureAll made.
+	for _, c := range []struct {
+		name  string
+		judge func() error
+	}{
+		{"EnsureAll", Default().EnsureAll},
+		{"Check", Default().Check},
+		{"Foreign", func() error { return Foreign(Root()) }},
+	} {
+		if err := c.judge(); err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+
+		if lookups.l != nil || lookups.n != 0 {
+			t.Errorf("%s kept what it read, %d judgements under way", c.name, lookups.n)
+		}
+	}
+}

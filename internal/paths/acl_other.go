@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -18,10 +19,46 @@ import (
 	"github.com/veil-net/conflux/internal/group"
 )
 
-// groupUsers is who a group lets in, each group and the account database read once for the
-// process (group.Cached), since every walk of a CONFLUX_DIR's parents asks it of each one its group
-// may write; a test's stands in for the system's databases.
-var groupUsers = group.Cached
+// groupUsers is who a group lets in: within a judgement (judging), from the group.Lookup it shares,
+// since a walk of a CONFLUX_DIR's parents asks of each one its group may write, and otherwise read
+// afresh. A test's stands in for the system's databases.
+var groupUsers = func(name, gid string) ([]string, error) {
+	lookups.Lock()
+	l := lookups.l
+	lookups.Unlock()
+
+	if l == nil {
+		return group.Users(name, gid)
+	}
+
+	return l.Users(name, gid)
+}
+
+// lookups is the group.Lookup the judgements under way share, and how many are.
+var lookups struct {
+	sync.Mutex
+	n int
+	l *group.Lookup
+}
+
+// judging begins a judgement, and is what ends it: while any is under way, each group's record and
+// the account database are read at most once (lookups), and once none is they are dropped, so that a
+// supervisor, which judges its roots at every bring-up, sees who a group lets in by then.
+func judging() (done func()) {
+	lookups.Lock()
+	if lookups.n++; lookups.l == nil {
+		lookups.l = &group.Lookup{}
+	}
+	lookups.Unlock()
+
+	return func() {
+		lookups.Lock()
+		if lookups.n--; lookups.n == 0 {
+			lookups.l = nil
+		}
+		lookups.Unlock()
+	}
+}
 
 // Restrict and Trusted are Windows's. Here a mode set on the descriptor and a 0700
 // directory that belongs to whoever runs conflux are the whole of it, and secure is

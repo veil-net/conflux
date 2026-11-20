@@ -39,22 +39,18 @@ func execAnchorctl(_ context.Context, bin string, args []string, env []string) i
 // hangup -- they would otherwise end conflux, or be caught by it, and leave anchorctl running.
 var forwarded = []os.Signal{syscall.SIGTERM, syscall.SIGHUP, syscall.SIGINT}
 
-// runForwarding runs cmd to its end, passing each forwarded signal conflux is sent on to it,
+// runForwarding runs cmd to its end, passing each forwarded signal conflux catches on to it,
 // and calls done once it has ended, still forwarding, so no signal ends conflux before done
 // has run. Ctrl+C at the terminal reaches anchorctl from the terminal as well, as a second
 // SIGINT.
-//
-// One conflux was started ignoring, as nohup starts it ignoring SIGHUP, stays ignored, by
-// conflux and by anchorctl, which inherits that: caught here, it would reach anchorctl with
-// its default action in its place, and a hangup would end what nohup was holding it off.
 func runForwarding(cmd *exec.Cmd, done func()) error {
-	fwd := slices.DeleteFunc(slices.Clone(forwarded), signal.Ignored)
-
-	// Before the start, so a signal sent from here on is held until it can be passed on. Never
-	// with none named, which would relay every signal.
-	sigs := make(chan os.Signal, len(fwd))
-	if len(fwd) > 0 {
-		signal.Notify(sigs, fwd...)
+	// Before the start, so a signal sent from here on is held until it can be passed on. Each is
+	// named alone: Notify naming none would relay every signal.
+	sigs := make(chan os.Signal, len(forwarded))
+	for _, s := range forwarded {
+		if catches(s) {
+			signal.Notify(sigs, s)
+		}
 	}
 
 	defer signal.Stop(sigs)

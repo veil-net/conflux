@@ -83,6 +83,15 @@ var anchorLifecycleVerbs = map[string]string{
 	"restart": "start",
 }
 
+// catches reports whether conflux may catch s: not one it was started ignoring -- SIGHUP under
+// nohup, so that what it runs outlives the terminal, or SIGINT where a shell runs it in a
+// script's background, so that the terminal's Ctrl-C does not reach it. Caught, s would end what
+// was being kept from it: a run of conflux's, or the anchorctl conflux runs or replaces itself
+// with, which inherits the ignore and would have s's default action in its place. Go's runtime
+// keeps an inherited ignore for SIGHUP and SIGINT alone; Windows passes a process none, so there
+// every signal is caught.
+func catches(s os.Signal) bool { return !signal.Ignored(s) }
+
 // Main dispatches. It returns an exit code rather than calling os.Exit so that the
 // tests can drive it.
 func Main(argv []string) int {
@@ -92,7 +101,14 @@ func Main(argv []string) int {
 		return ExitChildFailed
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	// SIGINT unless conflux was started ignoring it (catches), and SIGTERM always: Go's runtime
+	// leaves no ignore of it standing, and naming no signal would end ctx on every one.
+	ends := []os.Signal{syscall.SIGTERM}
+	if catches(os.Interrupt) {
+		ends = append(ends, os.Interrupt)
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), ends...)
 	defer stop()
 
 	if len(argv) < 2 {

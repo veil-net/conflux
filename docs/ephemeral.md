@@ -4,9 +4,11 @@
 credential held in memory and nowhere else. Nothing of the machine's is read or written:
 no `conflux.json`, no `manifest.b64`, no `state.json`, no boot service. The credential goes
 from conflux's memory to anchorctl's stdin and from there inline to anchord, which keeps
-it in memory too. When anchord stops — on Ctrl-C, on SIGTERM, because it crashed, or
-because conflux was killed — everything is gone: the identity, the credential, the overlay
-address, and the directory the run kept its socket in.
+it in memory too. When anchord stops — on Ctrl-C, on SIGTERM, on the hangup of a terminal
+closed, because it crashed, or because conflux was killed — everything is gone: the identity,
+the credential, the overlay address, and the directory the run kept its socket in. A hangup or
+an interrupt conflux was started ignoring — under `nohup`, or in a script's background — is
+ignored still.
 
 ```console
 $ sudo conflux up --ephemeral --taint brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf --ipv4 10.128.0.9/24

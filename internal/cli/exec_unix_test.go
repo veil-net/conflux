@@ -3,10 +3,13 @@
 package cli
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -130,68 +133,139 @@ func TestASignalToConfluxReachesItsAnchorctl(t *testing.T) {
 	}
 }
 
-// TestNohupStillHoldsForItsAnchorctl: a conflux started ignoring SIGHUP, as nohup starts it,
-// leaves it ignored for itself and for the anchorctl it runs, so a hangup -- the terminal's,
-// to the whole process group -- ends neither, as it would end neither had conflux replaced
-// itself with anchorctl. What conflux is still sent is passed on.
-func TestNohupStillHoldsForItsAnchorctl(t *testing.T) {
+// TestAnIgnoredSignalStaysIgnoredForItsAnchorctl: a conflux started ignoring SIGHUP, as nohup
+// starts it, or SIGINT, as a shell starts what a script runs in the background, leaves it
+// ignored for itself and for the anchorctl it runs, so the signal -- the terminal's, to the
+// whole process group -- ends neither, as it would end neither had conflux replaced itself with
+// anchorctl. What conflux is still sent is passed on.
+func TestAnIgnoredSignalStaysIgnoredForItsAnchorctl(t *testing.T) {
 	nohup, err := exec.LookPath("nohup")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	dir, state := t.TempDir(), t.TempDir()
-	pidFile, trapFile := filepath.Join(state, "pid"), filepath.Join(state, "trapped")
-
-	conflux := exec.Command(nohup, os.Args[0], "-test.run=^TestASignalToConfluxReachesItsAnchorctl$") //nolint:gosec // this test binary
-	conflux.Env = append(os.Environ(), standInDir+"="+dir, standInPID+"="+pidFile, standInTrap+"="+trapFile)
-	conflux.Dir = state // where nohup would put nohup.out, had it a terminal to redirect
-
-	// A process group of its own, which the hangup goes to, as a terminal's does.
-	conflux.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-
-	if err := conflux.Start(); err != nil {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	exited := make(chan error, 1)
-	go func() { exited <- conflux.Wait() }()
+	for _, tc := range []struct {
+		under []string
+		sig   syscall.Signal
+	}{
+		{[]string{nohup}, syscall.SIGHUP},
+		{[]string{sh, "-c", `trap '' INT; exec "$0" "$@"`}, syscall.SIGINT},
+	} {
+		t.Run(tc.sig.String(), func(t *testing.T) {
+			dir, state := t.TempDir(), t.TempDir()
+			pidFile, trapFile := filepath.Join(state, "pid"), filepath.Join(state, "trapped")
 
-	pid := waitForPID(t, pidFile, exited)
+			argv := append(slices.Clone(tc.under), os.Args[0], "-test.run=^TestASignalToConfluxReachesItsAnchorctl$")
 
-	t.Cleanup(func() {
-		_ = syscall.Kill(pid, syscall.SIGKILL)
-		_ = conflux.Process.Kill()
-	})
+			conflux := exec.Command(argv[0], argv[1:]...) //nolint:gosec // this test binary
+			conflux.Env = append(os.Environ(), standInDir+"="+dir, standInPID+"="+pidFile, standInTrap+"="+trapFile)
+			conflux.Dir = state // where nohup would put nohup.out, had it a terminal to redirect
 
-	if err := syscall.Kill(-conflux.Process.Pid, syscall.SIGHUP); err != nil {
+			// A process group of its own, which the signal goes to, as a terminal's does.
+			conflux.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+			if err := conflux.Start(); err != nil {
+				t.Fatal(err)
+			}
+
+			exited := make(chan error, 1)
+			go func() { exited <- conflux.Wait() }()
+
+			pid := waitForPID(t, pidFile, exited)
+
+			t.Cleanup(func() {
+				_ = syscall.Kill(pid, syscall.SIGKILL)
+				_ = conflux.Process.Kill()
+			})
+
+			if err := syscall.Kill(-conflux.Process.Pid, tc.sig); err != nil {
+				t.Fatal(err)
+			}
+
+			// Long enough for a signal that was not ignored to have ended the stand-in, whose trap
+			// records it; then what ends conflux, which it passes on.
+			time.Sleep(300 * time.Millisecond)
+
+			if err := conflux.Process.Signal(syscall.SIGTERM); err != nil {
+				t.Logf("conflux could not be sent SIGTERM: %v", err)
+			}
+
+			select {
+			case <-exited:
+			case <-time.After(10 * time.Second):
+				t.Fatal("conflux was sent SIGTERM and had not ended 10s later")
+			}
+
+			if b, _ := os.ReadFile(trapFile); strings.TrimSpace(string(b)) != "TERM" {
+				t.Errorf("the stand-in recorded %q, want TERM: the %v conflux was started ignoring reached it", b, tc.sig)
+			}
+
+			if code := conflux.ProcessState.ExitCode(); code != 7 {
+				t.Errorf("conflux ended %v, want the stand-in's exit code, 7", conflux.ProcessState)
+			}
+
+			if left, _ := os.ReadDir(dir); len(left) > 0 {
+				t.Errorf("conflux left its temporary anchorctl behind: %d entries in %s", len(left), dir)
+			}
+		})
+	}
+}
+
+// hangupChild, set, makes TestNohupHoldsOffAnEphemeralRunsHangup's test binary the conflux it
+// runs: one that sends itself a hangup with an ephemeral run's context in hand, and says whether
+// the hangup ended it.
+const hangupChild = "CONFLUX_TEST_HANGUP_CHILD"
+
+// TestNohupHoldsOffAnEphemeralRunsHangup: an ephemeral run in a terminal that is closed stops
+// cleanly on the hangup, and one started under nohup, which ignores SIGHUP so that what it runs
+// outlives the terminal, is not ended by it.
+func TestNohupHoldsOffAnEphemeralRunsHangup(t *testing.T) {
+	if os.Getenv(hangupChild) != "" {
+		ctx, stop := hangupContext(context.Background())
+		defer stop()
+
+		if err := syscall.Kill(os.Getpid(), syscall.SIGHUP); err != nil {
+			fmt.Println(err)
+			os.Exit(2)
+		}
+
+		select {
+		case <-ctx.Done():
+			fmt.Println("ended")
+		case <-time.After(300 * time.Millisecond):
+			fmt.Println("held")
+		}
+
+		os.Exit(0)
+	}
+
+	nohup, err := exec.LookPath("nohup")
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Long enough for a hangup that was not ignored to have ended the stand-in, whose trap
-	// records it; then what ends conflux, which it passes on.
-	time.Sleep(300 * time.Millisecond)
+	for _, tc := range []struct {
+		under []string
+		want  string
+	}{
+		{nil, "ended"},
+		{[]string{nohup}, "held"},
+	} {
+		argv := append(tc.under, os.Args[0], "-test.run=^TestNohupHoldsOffAnEphemeralRunsHangup$")
 
-	if err := conflux.Process.Signal(syscall.SIGTERM); err != nil {
-		t.Logf("conflux could not be sent SIGTERM: %v", err)
-	}
+		conflux := exec.Command(argv[0], argv[1:]...) //nolint:gosec // this test binary
+		conflux.Env = append(os.Environ(), hangupChild+"=1")
+		conflux.Dir = t.TempDir() // where nohup would put nohup.out, had it a terminal to redirect
 
-	select {
-	case <-exited:
-	case <-time.After(10 * time.Second):
-		t.Fatal("conflux was sent SIGTERM and had not ended 10s later")
-	}
-
-	if b, _ := os.ReadFile(trapFile); strings.TrimSpace(string(b)) != "TERM" {
-		t.Errorf("the stand-in recorded %q, want TERM: the hangup nohup holds off reached it", b)
-	}
-
-	if code := conflux.ProcessState.ExitCode(); code != 7 {
-		t.Errorf("conflux ended %v, want the stand-in's exit code, 7", conflux.ProcessState)
-	}
-
-	if left, _ := os.ReadDir(dir); len(left) > 0 {
-		t.Errorf("conflux left its temporary anchorctl behind: %d entries in %s", len(left), dir)
+		out, err := conflux.Output()
+		if got := strings.TrimSpace(string(out)); err != nil || got != tc.want {
+			t.Errorf("%v: the run's context %q after a hangup (%v), want %q", tc.under, got, err, tc.want)
+		}
 	}
 }
 

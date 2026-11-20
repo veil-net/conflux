@@ -376,7 +376,8 @@ func TestSecureFillsAFoundRoot(t *testing.T) {
 // it restricts the root and by Foreign, by its own owner and DACL, read without following it, and
 // held to who may write it, move it or point it elsewhere: a junction Users may point elsewhere,
 // though where it leads is nobody else's; a folder Users may delete, or write the attributes of,
-// enough to make a junction of it while it is empty; a folder named anchor that another account
+// enough to make a junction of it while it is empty, or add folders to, or write the extended
+// attributes of; a folder named anchor that another account
 // owns, though it grants anchord what conflux grants it; and one granting anchord that also lets
 // Users add to it. conflux's own layout is let through: a junction only this account and the system
 // may change, and anchor\ and run\anchord\ granting anchord's service SID what makeAnchorDir
@@ -400,6 +401,12 @@ func TestSecureHoldsWhatTheRootHolds(t *testing.T) {
 		}},
 		{"a folder Users may make a junction of", func(t *testing.T, root string) string {
 			return grantedFolder(t, filepath.Join(root, "logs"), windows.FILE_WRITE_ATTRIBUTES)
+		}},
+		{"a folder Users may add folders to", func(t *testing.T, root string) string {
+			return grantedFolder(t, filepath.Join(root, "logs"), windows.FILE_APPEND_DATA)
+		}},
+		{"a folder Users may write the extended attributes of", func(t *testing.T, root string) string {
+			return grantedFolder(t, filepath.Join(root, "logs"), windows.FILE_WRITE_EA)
 		}},
 		{"a folder named anchor that another account owns", func(t *testing.T, root string) string {
 			dir := anchordFolder(t, filepath.Join(root, "anchor"), "")

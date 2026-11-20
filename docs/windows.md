@@ -103,8 +103,8 @@ refused. A root some other account created is refused rather than taken over: wh
 could have filled it first. So is one that holds anything another account may change, each
 thing in it judged by its own owner and DACL rather than by what it leads to: anything another
 account owns, whatever its name, or that its DACL lets another account write, move or point
-elsewhere — a folder they may write the attributes of among them, which they could make a
-junction of while it is empty. `anchord`'s own account, `NT SERVICE\conflux`, is conflux's: what
+elsewhere — a folder they may add to, or write the attributes or extended attributes of, among
+them, the attributes enough to make a junction of it while it is empty. `anchord`'s own account, `NT SERVICE\conflux`, is conflux's: what
 a DACL grants it is not held against the thing granted, though what it owns is, and a folder
 whose DACL lets it write — `anchor\` and `run\anchord\` — is not looked inside, since only
 SYSTEM, the Administrators and `anchord` may write there and conflux reads what `anchord` writes
@@ -114,8 +114,8 @@ another account may point elsewhere: `%ProgramData%` lets any user make one wher
 `%ProgramData%\conflux-ephemeral` is not yet, leading into a directory of SYSTEM's, and point
 it at a directory of their own once conflux has filled it. A junction, the root or one in it,
 is used only when it belongs to SYSTEM, the Administrators, TrustedInstaller or the account
-running conflux, and its DACL grants nobody else the right to write its data or attributes,
-delete it, or change its DACL or owner; an ephemeral root that fails this is passed over by
+running conflux, and its DACL grants nobody else the right to write its data, attributes or
+extended attributes, add to it, delete it, or change its DACL or owner; an ephemeral root that fails this is passed over by
 every reader too. And the two binaries the service runs as SYSTEM, and
 `wintun.dll` beside them, are run only if Administrators, SYSTEM or the account running
 conflux owns them — a set directory is named for content anybody can compute, so one

@@ -687,9 +687,12 @@ const fileDeleteChild = 0x40
 const moves = fileDeleteChild | windows.DELETE | windows.WRITE_DAC | windows.WRITE_OWNER | windows.GENERIC_ALL
 
 // retargets is what an ACE on a link or a junction, or on anything in a root, must not grant
-// another account: moves, or a right that rewrites where it leads -- setting a reparse point takes FILE_WRITE_DATA or
-// FILE_WRITE_ATTRIBUTES (MS-FSA 2.1.5.10.37) -- or GENERIC_WRITE, which holds both.
-const retargets = moves | windows.FILE_WRITE_DATA | windows.FILE_WRITE_ATTRIBUTES | windows.GENERIC_WRITE
+// another account: moves, or a right that writes it -- its data, or on a folder a file or a folder
+// added to it, its attributes or its extended attributes -- among them what rewrites where it leads,
+// since setting a reparse point takes FILE_WRITE_DATA or FILE_WRITE_ATTRIBUTES (MS-FSA
+// 2.1.5.10.37); or GENERIC_WRITE, which holds them all.
+const retargets = moves | windows.FILE_WRITE_DATA | windows.FILE_APPEND_DATA | windows.FILE_WRITE_ATTRIBUTES |
+	windows.FILE_WRITE_EA | windows.GENERIC_WRITE
 
 // sidTrustedInstaller is NT SERVICE\TrustedInstaller, which owns much of the system drive.
 var sidTrustedInstaller, _ = windows.StringToSid("S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464")

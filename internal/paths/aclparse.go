@@ -298,10 +298,12 @@ func kauthWriters(b []byte) ([]writer, error) {
 // its entries' count, 16 bits each, and a pad; then each ACE -- its type, its flags and its size,
 // and what its type holds -- little-endian whatever the machine.
 const (
-	aceAllowed               = 0x0 // ACCESS_ALLOWED_ACE_TYPE: rights, then a SID
-	aceAllowedObject         = 0x5 // ACCESS_ALLOWED_OBJECT_ACE_TYPE: rights, flags, the GUIDs they name, a SID
-	aceAllowedCallback       = 0x9 // ACCESS_ALLOWED_CALLBACK_ACE_TYPE: an allowed ACE, then a condition
-	aceAllowedCallbackObject = 0xb // ACCESS_ALLOWED_CALLBACK_OBJECT_ACE_TYPE: an object one, then a condition
+	aceAllowed               = 0x0  // ACCESS_ALLOWED_ACE_TYPE: rights, then a SID
+	aceAllowedCompound       = 0x4  // ACCESS_ALLOWED_COMPOUND_ACE_TYPE: rights, a kind, a pad, a server's SID, a client's
+	aceAllowedObject         = 0x5  // ACCESS_ALLOWED_OBJECT_ACE_TYPE: rights, flags, the GUIDs they name, a SID
+	aceAllowedCallback       = 0x9  // ACCESS_ALLOWED_CALLBACK_ACE_TYPE: an allowed ACE, then a condition
+	aceAllowedCallbackObject = 0xb  // ACCESS_ALLOWED_CALLBACK_OBJECT_ACE_TYPE: an object one, then a condition
+	aceLastKnown             = 0x13 // SYSTEM_SCOPED_POLICY_ID_ACE_TYPE: the last type MS-DTYP numbers
 
 	aceInheritOnly = 0x08 // INHERIT_ONLY_ACE: passed on to what is made inside, and not the object's own
 
@@ -320,9 +322,12 @@ type windowsGrant struct {
 // allowed entry counts, and its callback form, whose condition AccessCheck may find true and
 // conflux does not weigh; so do the object forms where no object type narrows them to a property
 // or a kind of child -- AccessCheck, asked of a file with no list of object types, takes one with
-// none for an allowed entry and one with a type as allowing nothing. An entry that only passes its
-// rights on does not count, nor a deny or an audit one: a deny takes nothing away from an allow
-// conflux counts.
+// none for an allowed entry and one with a type as allowing nothing -- and a compound entry, which
+// allows its rights to its client's SID while a server holding the other acts for it, counted as
+// the client's. An entry that only passes its rights on does not count, nor a deny, an audit, an
+// alarm or a label: a deny takes nothing away from an allow conflux counts. An entry of a type
+// MS-DTYP does not number is refused, as an ACL in any other shape is, rather than read as allowing
+// nobody: it may allow what conflux cannot see.
 func windowsGrants(acl []byte) ([]windowsGrant, error) {
 	if len(acl) < 8 {
 		return nil, errACL
@@ -352,6 +357,17 @@ func windowsGrants(acl []byte) ([]windowsGrant, error) {
 
 		switch kind {
 		case aceAllowed, aceAllowedCallback:
+		case aceAllowedCompound:
+			if len(ace) < 8 {
+				return nil, errACL
+			}
+
+			server, err := windowsSID(ace[8:])
+			if err != nil {
+				return nil, err
+			}
+
+			sidAt = 8 + len(server)
 		case aceAllowedObject, aceAllowedCallbackObject:
 			if len(ace) < 8 {
 				return nil, errACL
@@ -366,6 +382,10 @@ func windowsGrants(acl []byte) ([]windowsGrant, error) {
 				sidAt += 16
 			}
 		default:
+			if kind > aceLastKnown {
+				return nil, errACL
+			}
+
 			continue
 		}
 

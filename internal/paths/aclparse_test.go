@@ -270,12 +270,15 @@ func windowsSIDOf(authority byte, subs ...uint32) []byte {
 
 func le32(v uint32) []byte { return binary.LittleEndian.AppendUint32(nil, v) }
 
+func le16(v uint16) []byte { return binary.LittleEndian.AppendUint16(nil, v) }
+
 // TestWindowsGrants: what a Windows DACL allows on the object itself, read from its bytes. An
 // allowed entry counts, and so does its callback form, whose condition AccessCheck may find true,
-// and either object form with no object type to narrow it, whether or not it names a kind of child
-// to pass itself on to; one with an object type allows nothing on a file, nor does an entry that
-// only passes its rights on, a deny or an audit. An ACL in any other shape is refused rather than
-// read as allowing nobody.
+// either object form with no object type to narrow it, whether or not it names a kind of child to
+// pass itself on to, and a compound one, by its client's SID; one with an object type allows
+// nothing on a file, nor does an entry that only passes its rights on, a deny, an audit or a label.
+// An ACL in any other shape, or holding an entry of a type no Windows writes, is refused rather
+// than read as allowing nobody.
 func TestWindowsGrants(t *testing.T) {
 	users, mallory, guest := windowsSIDOf(5, 32, 545), windowsSIDOf(5, 21, 1, 2, 3, 1001), windowsSIDOf(5, 21, 1, 2, 3, 501)
 	guid := bytes.Repeat([]byte{0xab}, 16)
@@ -291,9 +294,13 @@ func TestWindowsGrants(t *testing.T) {
 		windowsACE(aceAllowedObject, 0x2, le32(0x40), le32(aceInheritedObjectType), guid, guest), // to children of a kind
 		windowsACE(aceAllowedCallbackObject, 0, le32(0x10000), le32(0), users, condition),        // delete, if
 		windowsACE(0x2, 0x40, le32(0x2), mallory),                                                // an audit
+		windowsACE(0x11, 0, le32(0x1), windowsSIDOf(16, 0x2000)),                                 // a label
+		windowsACE(0x4, 0, le32(0x40000), le16(1), le16(0), guest, mallory),                      // compound, its client's
 	)
 
-	want := []windowsGrant{{0x2, users}, {0x100, mallory}, {0x40000, guest}, {0x40, guest}, {0x10000, users}}
+	want := []windowsGrant{
+		{0x2, users}, {0x100, mallory}, {0x40000, guest}, {0x40, guest}, {0x10000, users}, {0x40000, mallory},
+	}
 
 	got, err := windowsGrants(acl)
 	if err != nil || !slices.EqualFunc(got, want, func(a, b windowsGrant) bool {
@@ -315,14 +322,21 @@ func TestWindowsGrants(t *testing.T) {
 	missing := windowsACL(windowsACE(aceAllowed, 0, le32(0x2), users))
 	binary.LittleEndian.PutUint16(missing[4:], 2) // the count of ACEs
 
+	underrun := windowsACL(windowsACE(aceAllowed, 0, le32(0x2), users))
+	binary.LittleEndian.PutUint16(underrun[10:], 2) // the ACE's size, short of its own header
+
 	for name, b := range map[string][]byte{
-		"shorter than its header":     windowsACL()[:6],
-		"longer than it is":           tooLong,
-		"an ACE past its end":         overrun,
-		"more ACEs than it holds":     missing,
-		"a SID past its ACE":          windowsACL(windowsACE(aceAllowed, 0, le32(0x2), users[:12])),
-		"a SID of another revision":   windowsACL(windowsACE(aceAllowed, 0, le32(0x2), append([]byte{2}, users[1:]...))),
-		"an object ACE without flags": windowsACL(windowsACE(aceAllowedObject, 0, le32(0x2))),
+		"shorter than its header":              windowsACL()[:6],
+		"longer than it is":                    tooLong,
+		"an ACE past its end":                  overrun,
+		"an ACE shorter than its header":       underrun,
+		"more ACEs than it holds":              missing,
+		"an allowed ACE cut inside its rights": windowsACL(windowsACE(aceAllowed, 0, []byte{2, 0})),
+		"a SID past its ACE":                   windowsACL(windowsACE(aceAllowed, 0, le32(0x2), users[:12])),
+		"a SID of another revision":            windowsACL(windowsACE(aceAllowed, 0, le32(0x2), append([]byte{2}, users[1:]...))),
+		"an object ACE without flags":          windowsACL(windowsACE(aceAllowedObject, 0, le32(0x2))),
+		"a compound ACE without its client":    windowsACL(windowsACE(0x4, 0, le32(0x2), le16(1), le16(0), guest)),
+		"an ACE of a type no Windows writes":   windowsACL(windowsACE(0x14, 0, le32(0x2), users)),
 	} {
 		if _, err := windowsGrants(b); !errors.Is(err, errACL) {
 			t.Errorf("windowsGrants(an ACL %s) = %v, want errACL", name, err)

@@ -62,8 +62,21 @@ func (c *Ctl) Env() []string {
 // daemon: the caller's, with conflux's socket, and its token only where the caller has not
 // set one, so a caller's own ANCHORD_TOKEN wins. A caller who names a socket, by -socket or
 // ANCHOR_SOCKET, is talking to a daemon conflux does not manage, and never comes here.
+//
+// Either exported empty is unset, and dropped: anchorctl, replacing conflux on Unix, reads the
+// first entry for a name, so an empty one left ahead of conflux's would be the one it read.
 func (c *Ctl) PassthroughEnv() []string {
+	// Filtered in place, as Env is.
 	env := os.Environ()
+	kept := env[:0]
+
+	for _, kv := range env {
+		if k, v, _ := strings.Cut(kv, "="); v != "" || !connection(k) {
+			kept = append(kept, kv)
+		}
+	}
+
+	env = kept
 
 	if c.Socket != "" {
 		env = append(env, SocketEnv+"="+c.Socket)
@@ -76,7 +89,8 @@ func (c *Ctl) PassthroughEnv() []string {
 	return env
 }
 
-// connection reports whether an environment variable is one of the two Env replaces. Windows
+// connection reports whether an environment variable is one of the two Env replaces, and
+// PassthroughEnv drops when empty. Windows
 // keeps names without regard to case, and so does the comparison there.
 func connection(name string) bool {
 	for _, k := range [...]string{SocketEnv, TokenEnv} {

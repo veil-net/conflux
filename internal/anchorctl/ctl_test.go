@@ -83,4 +83,18 @@ func TestConfluxsOwnCallsReachConfluxsDaemon(t *testing.T) {
 	if got := values(c.PassthroughEnv(), TokenEnv); !slices.Equal(got, []string{c.Token}) {
 		t.Errorf("pass-through with no token exported: %s = %q, want conflux's", TokenEnv, got)
 	}
+
+	// Exported empty is unset: anchorctl, replacing conflux on Unix, reads the first of two
+	// entries, so an empty one left in would be the one it read.
+	t.Setenv(SocketEnv, "")
+	t.Setenv(TokenEnv, "")
+
+	typed = c.PassthroughEnv()
+	if got := values(typed, SocketEnv); !slices.Equal(got, []string{c.Socket}) {
+		t.Errorf("pass-through with %s exported empty: %q, want only conflux's", SocketEnv, got)
+	}
+
+	if got := values(typed, TokenEnv); !slices.Equal(got, []string{c.Token}) {
+		t.Errorf("pass-through with %s exported empty: %q, want only conflux's", TokenEnv, got)
+	}
 }

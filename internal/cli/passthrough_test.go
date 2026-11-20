@@ -11,6 +11,7 @@ import (
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
 	"github.com/veil-net/conflux/internal/ui"
 )
@@ -76,6 +77,46 @@ func TestAPassThroughToANamedSocketMakesNothing(t *testing.T) {
 				t.Errorf("the pass-through made %s (%v); nothing should be on disk", root, err)
 			}
 		})
+	}
+}
+
+// TestAnEmptySocketVariableIsUnset: ANCHOR_SOCKET and ANCHORD_TOKEN exported empty name
+// nothing, so a pass-through reaches conflux's daemon as it does with neither set -- on Unix
+// as well, where anchorctl replaces conflux and reads the first of two entries for a name.
+func TestAnEmptySocketVariableIsUnset(t *testing.T) {
+	anchortest.Require(t)
+
+	root := t.TempDir()
+	if err := os.Chmod(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("CONFLUX_DIR", root)
+
+	// conflux's daemon, as far as the pass-through can tell: its socket and its token there.
+	d := paths.Default()
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.MkdirAll(d.DaemonRun(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	for path, b := range map[string]string{d.Socket(): "", d.TokenFile(): "token\n"} {
+		if err := os.WriteFile(path, []byte(b), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// The child TestAPassThroughToANamedSocketMakesNothing makes of this test binary.
+	cmd := exec.Command(os.Args[0], "-test.run=^TestAPassThroughToANamedSocketMakesNothing$") //nolint:gosec // this test binary
+	cmd.Env = append(os.Environ(), anchorctl.SocketEnv+"=", anchorctl.TokenEnv+"=", namedSocketArgs+"=peers")
+
+	// anchorctl's own answer: a dial to conflux's socket, which is a file nothing listens on.
+	if out, err := cmd.CombinedOutput(); err == nil || !strings.Contains(string(out), d.Socket()) {
+		t.Errorf("conflux peers with %s and %s exported empty did not reach %s: %v\n%s",
+			anchorctl.SocketEnv, anchorctl.TokenEnv, d.Socket(), err, out)
 	}
 }
 

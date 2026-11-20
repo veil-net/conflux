@@ -38,7 +38,8 @@ func passthrough(ctx context.Context, args []string) int {
 	// answers before anything dials. A user who named a socket is talking to a daemon conflux
 	// does not manage, so nothing of conflux's is checked, read or made for them: the
 	// installation's directories are not theirs to need, and an account that cannot write
-	// them still reaches its own daemon.
+	// them still reaches its own daemon. ANCHOR_SOCKET exported empty names no socket, as
+	// anchorctl reads it.
 	if wantsUsage(args) || namesSocket(args) || os.Getenv(anchorctl.SocketEnv) != "" {
 		return runDetached(args)
 	}

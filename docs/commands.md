@@ -602,7 +602,8 @@ child shares conflux's. A process ended outright (`taskkill /F`, `Stop-Process`)
 case it misses.
 
 conflux supplies the connection details through the environment (`ANCHOR_SOCKET`,
-`ANCHORD_TOKEN`) rather than injecting flags, and only where they are not already set.
+`ANCHORD_TOKEN`) rather than injecting flags, and only where they are not already set. One
+exported empty is unset, as anchorctl reads it, and conflux's takes its place.
 anchorctl resolves the socket as `firstNonEmpty(-socket, global -socket,
 ANCHOR_SOCKET)`, so a flag you typed still wins and conflux never rewrites an argv.
 
@@ -626,7 +627,7 @@ other refusal — passes through untouched.
 | `CONFLUX_DEBUG=1` | pass `-v` to anchord. |
 | `CONFLUX_EPHEMERAL=1` | send pass-through to the ephemeral anchor while an installed one runs too, which it otherwise reaches first. See [ephemeral.md](ephemeral.md#reaching-it-from-another-terminal). |
 | `CONFLUX_ALLOW_INSECURE_API=1` | permit a plain-http API base. For tests only. |
-| `ANCHOR_SOCKET`, `ANCHORD_TOKEN` | if already set, conflux leaves them alone and pass-through uses yours; with `ANCHOR_SOCKET` naming a daemon, pass-through makes nothing of conflux's and needs no root (see [Pass-through](#pass-through)). conflux's own calls — `up`, `status`, `renew`, an ephemeral run's start — always use conflux's daemon, whatever these say. |
+| `ANCHOR_SOCKET`, `ANCHORD_TOKEN` | if set, conflux leaves them alone and pass-through uses yours; set empty, each is unset, and conflux's is used; with `ANCHOR_SOCKET` naming a daemon, pass-through makes nothing of conflux's and needs no root (see [Pass-through](#pass-through)). conflux's own calls — `up`, `status`, `renew`, an ephemeral run's start — always use conflux's daemon, whatever these say. |
 
 ## Exit codes
 

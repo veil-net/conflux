@@ -65,8 +65,9 @@ func makeRoot(dir string) error {
 // gone into without following anything (openat, O_NOFOLLOW): not by its name, which a link or a
 // directory somebody else made there meanwhile would answer for -- in a sticky directory such as
 // /tmp, which lets anybody make a name not taken yet, or one whose owner is on the way. Where a name
-// is taken by the time conflux makes it, what is there is held to parents' rule (takenStepAs)
-// before anything is made in it, and a link is refused.
+// is taken by the time conflux makes it, a link is refused; a directory on the way is held to
+// parents' rule (takenStepAs) before anything is made in it, and one at the root's own name is the
+// root, which secure judges as it judges any root found there.
 func makeWay(dir string, euid int) error {
 	var missing []string
 
@@ -115,6 +116,9 @@ func makeWay(dir string, euid int) error {
 				"no directory (%v), which conflux will not follow.\n  Remove it, then run this again", at, dir, err)
 		case err != nil:
 			return &os.PathError{Op: "open", Path: at, Err: err}
+		case taken && i == 0:
+			// The root's own name, which secure holds a root found there to.
+			return unix.Close(next)
 		case taken:
 			if err := takenStepAs(dir, at, next, euid); err != nil {
 				unix.Close(next)

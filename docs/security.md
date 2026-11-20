@@ -163,7 +163,9 @@ anything is made on the way to it, as far as the way is there, and each director
 through the one before it and gone into without following anything (`mkdirat` and `O_NOFOLLOW` on
 Unix, a handle on Windows), never by its name: one somebody else makes at the name meanwhile — a
 sticky directory such as `/tmp`, and `C:\`, let anybody make a name not taken yet — is held to the
-same rule before anything is made in it, and a link there is refused. The way to it is every directory the
+same rule before anything is made in it, and a link there is refused. One made at the root's own
+name is the root, held to the rules a root found there is (a directory of this account's that is
+too wide is narrowed, on Unix), though a link there is still refused on Unix. The way to it is every directory the
 lookup of the root passes through: those above it as it is spelled and, for each link on the
 way — a junction among them on Windows, which the lookup follows as it does a link — the
 directory the link is in and those above where it leads, however many links are chained, with

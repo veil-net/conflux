@@ -103,3 +103,61 @@ func TestMakeRootGoesIntoNoNameTakenMeanwhile(t *testing.T) {
 		})
 	}
 }
+
+// TestMakeRootLeavesItsOwnNameTakenToSecure: where the root's own name is taken by the time conflux
+// makes it, what is there is the root, and secure's to judge as it judges a root found there -- a
+// directory of this account's every account may write is narrowed to 0700 and taken, not refused as
+// a parent would be -- but a link made there meanwhile is still refused, naming it, and nothing is
+// made where it leads.
+func TestMakeRootLeavesItsOwnNameTakenToSecure(t *testing.T) {
+	was := making
+	t.Cleanup(func() { making = was })
+
+	for _, c := range []struct {
+		name    string
+		plant   func(at, elsewhere string) error
+		refused string
+	}{
+		{"a directory of this account's every account may write", func(at, _ string) error {
+			if err := os.Mkdir(at, 0o700); err != nil {
+				return err
+			}
+
+			return os.Chmod(at, 0o777)
+		}, ""},
+		{"a link", func(at, elsewhere string) error { return os.Symlink(elsewhere, at) }, "a link"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			elsewhere := t.TempDir()
+			root := filepath.Join(t.TempDir(), "conflux")
+
+			making = func(at string) {
+				if at == root {
+					if err := c.plant(at, elsewhere); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+
+			t.Setenv("CONFLUX_DIR", root)
+
+			err := Default().EnsureAll()
+
+			switch {
+			case c.refused == "" && err != nil:
+				t.Errorf("EnsureAll, with %s made at the root's name meanwhile, = %v", c.name, err)
+			case c.refused == "" && mode(t, root) != 0o700:
+				t.Errorf("EnsureAll left the root, %s made at its name meanwhile, at %#o, want 0700", c.name,
+					mode(t, root))
+			case c.refused != "" && (err == nil || !strings.Contains(err.Error(), root) ||
+				!strings.Contains(err.Error(), c.refused)):
+				t.Errorf("EnsureAll, with %s made at the root's name meanwhile, = %v, want a refusal naming it and %q",
+					c.name, err, c.refused)
+			}
+
+			if _, err := os.Lstat(filepath.Join(elsewhere, runName)); !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("EnsureAll made %s where the link at the root's name leads (%v)", runName, err)
+			}
+		})
+	}
+}

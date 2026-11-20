@@ -38,8 +38,9 @@ import (
 // directory from one a crash left half-written.
 const completeMarker = ".complete"
 
-// smokeTimeout bounds the one-off check that the extracted binary actually runs.
-const smokeTimeout = 10 * time.Second
+// smokeTimeout bounds the one-off check that the extracted binary actually runs. A variable
+// only so a test can make that check fail.
+var smokeTimeout = 10 * time.Second
 
 // Tools are the extracted pair.
 type Tools struct {

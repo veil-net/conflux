@@ -106,8 +106,8 @@ func TestEnsureIsIdempotent(t *testing.T) {
 }
 
 // TestEnsureIsConcurrencySafe is the boot case: the service and an operator both
-// starting conflux at once. All of them must agree on one directory, and none must
-// see a half-written binary.
+// starting conflux at once. All of them must agree on one directory, and leave that one
+// set and nothing else behind them.
 func TestEnsureIsConcurrencySafe(t *testing.T) {
 	anchortest.Require(t)
 
@@ -155,16 +155,62 @@ func TestEnsureIsConcurrencySafe(t *testing.T) {
 		}
 	}
 
-	// And exactly one set directory exists, with no staging debris left behind.
+	// And exactly one directory exists, the set, with no staging debris left behind.
+	entries, err := os.ReadDir(d.Libexec())
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+
+	var sets int
+
+	for _, e := range entries {
+		switch {
+		case !e.IsDir():
+		case e.Name() == anchor.SetID():
+			sets++
+		default:
+			t.Errorf("a directory other than the set survived: %s", e.Name())
+		}
+	}
+
+	if sets != 1 {
+		t.Errorf("%d set directories, want 1", sets)
+	}
+}
+
+// TestASetThatWillNotRunIsRemoved: an extraction whose anchorctl does not run is not left in
+// place, where the next conflux would take it as whole and fail at every start with less said,
+// and the next Ensure extracts it again.
+func TestASetThatWillNotRunIsRemoved(t *testing.T) {
+	anchortest.Require(t)
+
+	d := dirs(t)
+
+	// A smoke run with no time at all fails before anchorctl starts, as one that cannot exec does.
+	old := smokeTimeout
+	smokeTimeout = 0
+
+	t.Cleanup(func() { smokeTimeout = old })
+
+	if _, err := Ensure(d); err == nil || !strings.Contains(err.Error(), "did not run") {
+		t.Fatalf("Ensure with a failing smoke run = %v, want it to say the anchorctl did not run", err)
+	}
+
 	entries, err := os.ReadDir(d.Libexec())
 	if err != nil {
 		t.Fatalf("readdir: %v", err)
 	}
 
 	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), ".staging-") {
-			t.Errorf("a staging directory survived: %s", e.Name())
+		if e.IsDir() {
+			t.Errorf("%s is left after a smoke run that failed", e.Name())
 		}
+	}
+
+	smokeTimeout = old
+
+	if _, err := Ensure(d); err != nil {
+		t.Errorf("the next Ensure did not extract the set again: %v", err)
 	}
 }
 

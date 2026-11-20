@@ -213,6 +213,11 @@ refused for good and needs a new identity. A new identity — an enrolment, or `
 enrol` — clears everything here that described the old one. The manifest, recoverable from
 nowhere, is a file of its own.
 
+A `state.json` that does not parse is refused rather than replaced, since replacing it would
+lose the AnchorID: nothing starts on it, `conflux serve` stops for good (exit 70), `conflux
+renew` and `conflux enrol --manifest` refuse it, and `conflux status` shows the error. Repair
+it, or delete it, at the cost the paragraph above describes.
+
 It is separate from `conflux.json` for a second reason: the renewal timer rewrites
 `notAfter` at every renewal from the supervisor while `up` or `proxy` may be rewriting
 `conflux.json` from a terminal, and one file would make that a lost update.

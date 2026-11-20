@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -63,8 +64,16 @@ type State struct {
 	LastLinkReopen time.Time `json:"lastLinkReopen,omitzero"`
 }
 
-// LoadState reads it. A missing file is an empty State and not an error: every
-// field is derived, so absent and unknown are the same thing.
+// ErrStateCorrupt is what LoadState's refusal of a state.json it cannot parse wraps. No
+// retry changes the file, so a start refuses it for good.
+var ErrStateCorrupt = errors.New("corrupt")
+
+// LoadState reads it. A missing file is an empty State and not an error: nothing has
+// been worked out yet, or what was is gone, and a start learns what it can again.
+//
+// A file that does not parse is refused, naming it, rather than read as an empty State:
+// that would lose the AnchorID, which a machine whose credential has expired can learn
+// from nowhere else, the next time the State was saved. The operator repairs or deletes it.
 func LoadState(d paths.Dirs) (*State, error) {
 	b, err := os.ReadFile(d.StateFile())
 	if err != nil {
@@ -77,9 +86,9 @@ func LoadState(d paths.Dirs) (*State, error) {
 
 	var s State
 	if err := json.Unmarshal(b, &s); err != nil {
-		// A corrupt derived file is not worth failing a start over -- everything
-		// in it can be worked out again.
-		return &State{Version: StateVersion}, nil //nolint:nilerr // deliberate
+		return nil, fmt.Errorf("%s is %w (%v); conflux will not start until it is repaired or deleted, "+
+			"and deleting it loses the AnchorID, which the next start learns again unless the credential has expired",
+			d.StateFile(), ErrStateCorrupt, err)
 	}
 
 	return &s, nil

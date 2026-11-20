@@ -383,7 +383,10 @@ func confirmUninstall(d paths.Dirs, yes bool) bool {
 
 	ui.Printf("\nThis deletes this machine's credential, and there is no other copy.\n\n")
 
-	if st, err := config.LoadState(d); err == nil && st.AnchorID != "" {
+	switch st, err := config.LoadState(d); {
+	case err != nil:
+		ui.Field("anchor", "unknown: "+err.Error())
+	case st.AnchorID != "":
 		ui.Field("anchor", st.AnchorID)
 	}
 

@@ -1,7 +1,9 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -61,6 +63,32 @@ func TestANewIdentityForgetsTheOldOne(t *testing.T) {
 
 	if st != (State{BinSetID: "keep"}) {
 		t.Errorf("NewIdentity left %+v; only what is not about the identity stays", st)
+	}
+}
+
+// TestACorruptStateIsRefused: a state.json that does not parse is an error naming the file
+// and what to do, never an empty State: that would lose the AnchorID, which a machine
+// whose credential has expired has nowhere else to learn.
+func TestACorruptStateIsRefused(t *testing.T) {
+	d := dirsForTest(t)
+
+	if err := os.WriteFile(d.StateFile(), []byte(`{"anchorId": "anchorx`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err := LoadState(d)
+	if err == nil {
+		t.Fatalf("LoadState read a corrupt file as %+v", st)
+	}
+
+	if !errors.Is(err, ErrStateCorrupt) {
+		t.Errorf("the refusal is not ErrStateCorrupt: %v", err)
+	}
+
+	for _, s := range []string{d.StateFile(), "repaired or deleted"} {
+		if !strings.Contains(err.Error(), s) {
+			t.Errorf("the refusal should say %q:\n%v", s, err)
+		}
 	}
 }
 

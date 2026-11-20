@@ -145,7 +145,11 @@ func bringUp(
 	}
 
 	st, err := config.LoadState(d)
-	if err != nil {
+
+	switch {
+	case errors.Is(err, config.ErrStateCorrupt):
+		return up, &permanentError{err: err} // names the file already
+	case err != nil:
 		return up, err
 	}
 

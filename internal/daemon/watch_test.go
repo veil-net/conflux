@@ -297,6 +297,46 @@ func observingAlone(t *testing.T, d paths.Dirs, cfg *config.Config) {
 	credentialed(t, d)
 }
 
+// TestACorruptStateRefusesTheStart: a state.json that does not parse stops the start for good,
+// naming the file, whatever the configuration runs -- an anchor, the observer alone, or both,
+// each under the credential the state describes -- and is left as it was for the operator to
+// repair or delete, never replaced by an empty one, which would lose the AnchorID it held.
+func TestACorruptStateRefusesTheStart(t *testing.T) {
+	for name, cfg := range map[string]*config.Config{
+		"an anchor":          {Mode: config.ModeProxy, Taints: []string{"bench"}},
+		"the observer alone": {Mode: config.ModeObserve, Observer: &config.Observer{}, Taints: []string{"bench"}},
+		"both":               {Mode: config.ModeProxy, Observer: &config.Observer{}, Taints: []string{"bench"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := benchSite(t)
+
+			if err := config.Save(d, cfg); err != nil {
+				t.Fatal(err)
+			}
+
+			corrupt := []byte(`{"anchorId": "` + fakeAnchorID)
+			if err := os.WriteFile(d.StateFile(), corrupt, 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			_, err := bringUp(t.Context(), d, fakeCtl(t), nopReporter{}, d.RootAnchorDir(), false, everything(cfg))
+
+			switch {
+			case err == nil:
+				t.Fatal("it came up on a corrupt state.json")
+			case !Permanent(err):
+				t.Errorf("a corrupt state.json is retried, though no retry changes it: %v", err)
+			case !strings.Contains(err.Error(), d.StateFile()):
+				t.Errorf("the refusal does not name %s: %v", d.StateFile(), err)
+			}
+
+			if b, _ := os.ReadFile(d.StateFile()); string(b) != string(corrupt) {
+				t.Errorf("the corrupt state.json was rewritten as %q", b)
+			}
+		})
+	}
+}
+
 // TestTheWatcherStartsAFailedObserverAgain: an observer whose capture ended is started
 // again; one stopped by hand, or never started, is left as it is.
 func TestTheWatcherStartsAFailedObserverAgain(t *testing.T) {

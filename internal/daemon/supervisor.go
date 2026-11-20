@@ -761,7 +761,7 @@ func (s *Supervisor) renewLoop(ctx context.Context) {
 
 		switch st, err := config.LoadState(s.Dirs); {
 		case err != nil:
-			s.report().Warn("could not read %s: %v", s.Dirs.StateFile(), err)
+			s.report().Warn("%v", err) // names the file, as a read error does
 		case dueAt(st.IssuedAt, st.NotAfter, time.Now()):
 			if err := RenewNow(ctx, s.Dirs, s.ctl, s.report()); errors.Is(err, enrol.ErrDoesNotRenew) {
 				s.report().Warn("%v", err)

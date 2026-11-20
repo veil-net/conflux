@@ -63,10 +63,16 @@ func runStatus(ctx context.Context, args []string) int {
 	// and the wait for them overlaps everything conflux prints of its own.
 	daemon := askDaemon(ctx, d)
 
-	st, _ := config.LoadState(d)
+	st, stErr := config.LoadState(d)
 
 	reportService()
 	reportConfig(d, cfg)
+
+	// Said rather than skipped: a corrupt one is what the next start refuses.
+	if stErr != nil {
+		ui.Field("state", "unreadable: "+stErr.Error())
+	}
+
 	reportCredential(d, cfg, st)
 
 	reportBinaries(st)

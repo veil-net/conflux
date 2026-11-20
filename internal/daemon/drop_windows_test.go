@@ -9,6 +9,7 @@ import (
 	"unsafe"
 
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/privtest"
 	"golang.org/x/sys/windows"
 )
 
@@ -201,7 +202,7 @@ func TestMakeAnchorDirSetsItsDACLAsItIsMade(t *testing.T) {
 
 	// An account's is SYSTEM's, which only a process that may name any owner can make it.
 	account := filepath.Join(parent, "anchor")
-	if err := withRestorePrivilege(t, func() error { return makeAnchorDir(account, Privilege{Account: true}) }); err != nil {
+	if err := privtest.WithRestore(t, func() error { return makeAnchorDir(account, Privilege{Account: true}) }); err != nil {
 		t.Fatalf("makeAnchorDir for anchord's account: %v", err)
 	}
 
@@ -267,34 +268,4 @@ func wellKnownSID(t *testing.T, kind windows.WELL_KNOWN_SID_TYPE) *windows.SID {
 	}
 
 	return sid
-}
-
-// withRestorePrivilege runs f with SeRestorePrivilege enabled in this process's token, as an
-// Administrator's holds it, and disabled again after: what SYSTEM, which the supervisor runs as,
-// may do without it, naming SYSTEM as an owner.
-func withRestorePrivilege(t *testing.T, f func() error) error {
-	t.Helper()
-
-	var tok windows.Token
-	if err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_ADJUST_PRIVILEGES|windows.TOKEN_QUERY,
-		&tok); err != nil {
-		t.Fatal(err)
-	}
-	defer tok.Close()
-
-	luid := privilegeLUID(t, "SeRestorePrivilege")
-
-	set := func(attributes uint32) {
-		tp := windows.Tokenprivileges{PrivilegeCount: 1}
-		tp.Privileges[0] = windows.LUIDAndAttributes{Luid: luid, Attributes: attributes}
-
-		if err := windows.AdjustTokenPrivileges(tok, false, &tp, 0, nil, nil); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	set(windows.SE_PRIVILEGE_ENABLED)
-	defer set(0)
-
-	return f()
 }

@@ -11,6 +11,7 @@ import (
 	"unicode/utf16"
 	"unsafe"
 
+	"github.com/veil-net/conflux/internal/privtest"
 	"golang.org/x/sys/windows"
 )
 
@@ -590,37 +591,10 @@ func anchordFolder(t *testing.T, dir, more string) string {
 func ownBy(t *testing.T, path string, sid *windows.SID) {
 	t.Helper()
 
-	var tok windows.Token
-	if err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_ADJUST_PRIVILEGES|windows.TOKEN_QUERY,
-		&tok); err != nil {
-		t.Fatal(err)
-	}
-	defer tok.Close()
-
-	name, err := windows.UTF16PtrFromString("SeRestorePrivilege")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var luid windows.LUID
-	if err := windows.LookupPrivilegeValue(nil, name, &luid); err != nil {
-		t.Fatal(err)
-	}
-
-	set := func(attributes uint32) {
-		tp := windows.Tokenprivileges{PrivilegeCount: 1}
-		tp.Privileges[0] = windows.LUIDAndAttributes{Luid: luid, Attributes: attributes}
-
-		if err := windows.AdjustTokenPrivileges(tok, false, &tp, 0, nil, nil); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	set(windows.SE_PRIVILEGE_ENABLED)
-	defer set(0)
-
-	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION,
-		sid, nil, nil, nil); err != nil {
+	if err := privtest.WithRestore(t, func() error {
+		return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION,
+			sid, nil, nil, nil)
+	}); err != nil {
 		t.Fatalf("give %s to %s: %v", path, sid, err)
 	}
 }

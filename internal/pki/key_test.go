@@ -182,8 +182,7 @@ func TestPBES2KnownAnswer(t *testing.T) {
 	salt := bytes.Repeat([]byte{0x11}, 16)
 	iv := bytes.Repeat([]byte{0x22}, 16)
 
-	// The PKCS#8 of the Ed25519 key whose seed is 32 bytes of 0x33.
-	p8, _ := hex.DecodeString("302e020100300506032b657004220420" + strings.Repeat("33", 32))
+	p8, _ := hex.DecodeString(pbes2KATKey)
 
 	got, err := encryptWith(p8, []byte("conflux-kat"), salt, iv)
 	if err != nil {
@@ -214,11 +213,11 @@ func TestPBES2KnownAnswer(t *testing.T) {
 
 // TestEverySHA2PRFIsRead: a key encrypted under PBKDF2 with each SHA-2 HMAC but the one conflux
 // writes, which TestPBES2KnownAnswer covers, opens to its key, its PRF named for what it is:
-// every PRF the module approves for PBKDF2 is read, each under its own hash. OpenSSL 4.1.0
-// wrote them from the known answer's key and passphrase, with `openssl pkcs8 -topk8 -v2
-// aes-256-cbc -v2prf hmacWithSHA<n> -iter 2048 -saltlen 16`.
+// every PRF prfs reads, SHA-2's four, each under its own hash. OpenSSL 4.1.0 wrote them from
+// the known answer's key and passphrase, with `openssl pkcs8 -topk8 -v2 aes-256-cbc -v2prf
+// hmacWithSHA<n> -iter 2048 -saltlen 16`.
 func TestEverySHA2PRFIsRead(t *testing.T) {
-	p8, _ := hex.DecodeString("302e020100300506032b657004220420" + strings.Repeat("33", 32))
+	p8, _ := hex.DecodeString(pbes2KATKey)
 
 	for prf, enc := range map[string]string{
 		"HMAC-SHA-224": "3081a3305f06092a864886f70d01050d3052303106092a864886f70d01050c302404109a1c1a1877b35cc29f437ea5a418d84e0202080030" +
@@ -245,7 +244,11 @@ func TestEverySHA2PRFIsRead(t *testing.T) {
 	}
 }
 
-// pbes2KAT is the known answer, frozen once OpenSSL 3.5.9 had opened it to p8.
+// pbes2KATKey is the known answer's plaintext, hex: the PKCS#8 of the Ed25519 key whose seed
+// is 32 bytes of 0x33.
+var pbes2KATKey = "302e020100300506032b657004220420" + strings.Repeat("33", 32)
+
+// pbes2KAT is the known answer, frozen once OpenSSL 3.5.9 had opened it to pbes2KATKey.
 const pbes2KAT = "3081a4306006092a864886f70d01050d3053303206092a864886f70d01050c3025041011111111111111111111111111111111" +
 	"02030927c0300c06082a864886f70d02090500301d060960864801650304012a0410222222222222222222222222222222220440" +
 	"0f31dcb426e239d1acdfff1b49f2847b3746ca256034e18d1c0b7cbbb466ce938185c53731ecfe94228a31d8de254ed315d174ce1e54ce0b1aca763a3ab8a547"

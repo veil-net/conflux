@@ -620,15 +620,15 @@ func TestTheKeeperBacksOff(t *testing.T) {
 }
 
 // TestWhatAProbeCannotRecoverFrom: a socket conflux may not reach and a token anchord refuses
-// end the wait for readiness at once, since retrying cannot change either; a daemon that does
-// not answer yet is waited for.
+// end the wait for readiness at once, and are refused for good, since no restart changes
+// either; a daemon that does not answer yet is waited for.
 func TestWhatAProbeCannotRecoverFrom(t *testing.T) {
 	for name, err := range map[string]error{
 		"a socket conflux may not reach": fmt.Errorf("dial unix /run/conflux/anchord/sock: %w", os.ErrPermission),
 		"a token anchord refuses":        &anchorctl.Error{Args: []string{"status"}, Stderr: "anchorctl: unauthenticated: bad token"},
 	} {
-		if probeIsFatal(err) == nil {
-			t.Errorf("%s is waited out as if a retry could fix it", name)
+		if err := probeIsFatal(err); !Permanent(err) {
+			t.Errorf("%s is not refused for good, so the restart loop retries it for ever: %v", name, err)
 		}
 	}
 

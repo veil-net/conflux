@@ -25,7 +25,7 @@ type Reporter interface {
 	Warn(format string, a ...any)
 }
 
-// permanentError is a file conflux refuses to start from, which no retry changes.
+// permanentError is a refusal no retry changes: mostly a file conflux refuses to start from.
 type permanentError struct {
 	path string
 	err  error

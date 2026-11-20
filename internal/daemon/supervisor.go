@@ -656,15 +656,18 @@ func (s *Supervisor) probe(ctx context.Context) error {
 	return err
 }
 
-// probeIsFatal picks out the failures that retrying cannot fix.
+// probeIsFatal picks out the failures that retrying cannot fix, refused for good: a socket this
+// process may not reach, and a token the daemon it just started with that token refuses. Every
+// start makes the socket and hands over the token the same way, so neither changes on the next.
 func probeIsFatal(err error) error {
 	if errors.Is(err, os.ErrPermission) {
-		return fmt.Errorf("cannot reach anchord's socket: %w\n  this usually means conflux is not running as root", err)
+		return &permanentError{err: fmt.Errorf(
+			"cannot reach anchord's socket: %w\n  this usually means conflux is not running as root", err)}
 	}
 
 	var e *anchorctl.Error
 	if errors.As(err, &e) && strings.Contains(strings.ToLower(e.Stderr), "token") {
-		return fmt.Errorf("anchord refused conflux's bearer token: %s", strings.TrimSpace(e.Stderr))
+		return &permanentError{err: fmt.Errorf("anchord refused conflux's bearer token: %s", strings.TrimSpace(e.Stderr))}
 	}
 
 	return nil
@@ -808,8 +811,9 @@ func (s *Supervisor) freshToken() (string, error) {
 // not meet. `conflux serve` exits on it with the status the service manager does not
 // restart.
 //
-// A file conflux itself refuses, an argument vector anchorctl refuses as a usage error,
-// and what anchor refuses that conflux cannot check beforehand: a credential under a
+// A file conflux itself refuses, a daemon's socket it may not reach or a token the daemon
+// refuses (probeIsFatal), an argument vector anchorctl refuses as a usage error, and what
+// anchor refuses that conflux cannot check beforehand: a credential under a
 // root other than the one these binaries are pinned to; a TUN the host will not give --
 // no capability, no device or no IPv6, or the name held by another interface, which an
 // --interface naming one already there meets on every start; and a host that will not be

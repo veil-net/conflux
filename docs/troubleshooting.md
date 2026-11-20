@@ -246,7 +246,8 @@ credential does not grant among them — a credential that has expired with nowh
 renew it, a credential for a realm tree other than the one
 these binaries are pinned to, a TUN the host will not give (no capability, device or
 IPv6, or the name held by another interface), a host that will not be set up to forward
-for the realm, and an argument vector anchorctl refuses outright.
+for the realm, an argument vector anchorctl refuses outright, and a daemon socket conflux
+may not reach or a token the daemon refuses.
 
 Where the logs are: `journalctl -u conflux -n 50` on Linux, `/var/log/conflux.log` on
 macOS and FreeBSD, `/var/log/daemon` on OpenBSD, and

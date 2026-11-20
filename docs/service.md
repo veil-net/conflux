@@ -107,8 +107,9 @@ A start that fails is retried with a backoff up to thirty seconds. One that no r
 changes — a configuration conflux refuses, taints the credential does not grant, an
 expired credential with nowhere to renew it or no AnchorID recorded to renew it with, a
 credential for another realm tree, a TUN the host will not give, a host that will not
-be set up to forward, an argument vector anchorctl refuses — stops the supervisor after
-three attempts with exit 70, and nothing to start at all is exit 78. Anything else the
+be set up to forward, an argument vector anchorctl refuses, a daemon socket conflux may not
+reach or a token the daemon refuses — stops the supervisor after three attempts with exit
+70, and nothing to start at all is exit 78. Anything else the
 supervisor stops on — an extraction onto a full disk, say — exits 1, which systemd,
 launchd and the Windows SCM restart. On the BSDs nothing does: FreeBSD's `daemon(8)` runs
 without `-r`, which would restart 78 and 70 as well, and OpenBSD's `rc.subr` does not

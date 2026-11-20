@@ -55,6 +55,11 @@ const (
 	// tailLines is how much of the daemon's own output to keep, so a failure can be
 	// reported in its words rather than as an exit code.
 	tailLines = 64
+
+	// restartBackoffMin and restartBackoffMax bound how fast the restart loop starts a
+	// daemon again after a cycle that failed.
+	restartBackoffMin = time.Second
+	restartBackoffMax = 30 * time.Second
 )
 
 // Supervisor runs anchord and keeps the configured anchor inside it.
@@ -236,7 +241,7 @@ func (s *Supervisor) Run(ctx context.Context) error {
 // loop is spawn, bring up, watch, back off, repeat: one keeper, as the watcher holds for
 // what it keeps running, for the daemon.
 func (s *Supervisor) loop(ctx context.Context) error {
-	k := newKeeper()
+	k := newKeeper(restartBackoffMin, restartBackoffMax)
 
 	for {
 		startedAt := time.Now()
@@ -250,7 +255,7 @@ func (s *Supervisor) loop(ctx context.Context) error {
 		// A daemon that ran healthily for a while and then died is not in a crash
 		// loop; start its backoff over.
 		if time.Since(startedAt) > 5*time.Minute {
-			k.backoff = rebuildBackoffMin
+			k.backoff = k.least
 		}
 
 		wait := k.backoff

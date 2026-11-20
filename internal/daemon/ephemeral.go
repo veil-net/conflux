@@ -350,8 +350,8 @@ func (s *Supervisor) keepEphemeral(
 		case <-c.exited:
 			return c.gone("unexpectedly", s.tail)
 		case <-watch.C:
-			if why, _, _ := s.lost(ctx, cfg.Uplink, device, &zeroSince); why != "" {
-				return fmt.Errorf("%s, and an ephemeral run does not bring one back", why)
+			if l := s.lost(ctx, cfg.Uplink, device, &zeroSince); l.why != "" {
+				return fmt.Errorf("%s, and an ephemeral run does not bring one back", l.why)
 			}
 		case <-renewal.C:
 			now := time.Now()

@@ -563,35 +563,49 @@ func TestThreeRefusalsEndTheService(t *testing.T) {
 	}
 }
 
-// TestTheKeeperBacksOff: a failed try holds the next off for the backoff, which doubles from
-// rebuildBackoffMin to rebuildBackoffMax, and a try that works starts it over; only tries
-// refused for good, rebuildRefusals of them in a row, give up, and a failure a retry may fix
-// starts that count over -- a healthy run does, for the supervisor's restart loop.
+// TestTheKeeperBacksOff: a failed try holds the next off for the backoff, which doubles
+// between the keeper's bounds -- the restart loop's from a second to thirty, the watcher's from
+// its look to rebuildBackoffMax -- and a try that works starts it over; only tries refused for
+// good, rebuildRefusals of them in a row, give up, and a failure a retry may fix starts that
+// count over -- a healthy run does, for the supervisor's restart loop.
 func TestTheKeeperBacksOff(t *testing.T) {
 	transient, refused := errors.New("connection refused"), &permanentError{err: errors.New("refused")}
 
-	k := newKeeper()
+	for name, tc := range map[string]struct {
+		k     *keeper
+		holds []time.Duration
+	}{
+		"the restart loop's": {newKeeper(restartBackoffMin, restartBackoffMax), []time.Duration{
+			time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second, 30 * time.Second, 30 * time.Second,
+		}},
+		"the watcher's on a link": {newKeeper(linkCheckInterval, rebuildBackoffMax), []time.Duration{
+			10 * time.Second, 20 * time.Second, 30 * time.Second, 30 * time.Second,
+		}},
+	} {
+		k := tc.k
 
-	for _, want := range []time.Duration{1, 2, 4, 8, 16, 30, 30} {
-		want *= time.Second
-		before := time.Now()
+		for _, want := range tc.holds {
+			before := time.Now()
 
-		if k.failed(transient) {
-			t.Fatal("gave up on a failure a retry may fix")
+			if k.failed(transient) {
+				t.Fatalf("%s: gave up on a failure a retry may fix", name)
+			}
+
+			if k.due() {
+				t.Errorf("%s: due again at once after a failure that holds the next try off for %s", name, want)
+			}
+
+			if held := k.notBefore.Sub(before); held < want || held > want+time.Second {
+				t.Errorf("%s: held the next try off for %s, want %s", name, held, want)
+			}
 		}
 
-		if k.due() {
-			t.Errorf("due again at once after a failure that holds the next try off for %s", want)
-		}
-
-		if held := k.notBefore.Sub(before); held < want || held > want+time.Second {
-			t.Errorf("held the next try off for %s, want %s", held, want)
+		if k.ok(); !k.due() || k.backoff != k.least {
+			t.Errorf("%s: a try that worked left the backoff at %s, due %v", name, k.backoff, k.due())
 		}
 	}
 
-	if k.ok(); !k.due() || k.backoff != rebuildBackoffMin {
-		t.Errorf("a try that worked left the backoff at %s, due %v", k.backoff, k.due())
-	}
+	k := newKeeper(restartBackoffMin, restartBackoffMax)
 
 	for i, want := range []bool{false, false, false, false, false, true} {
 		err := error(refused)

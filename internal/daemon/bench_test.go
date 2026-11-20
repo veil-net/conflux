@@ -64,7 +64,7 @@ func BenchmarkLinkCheck(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		if dead, _, _ := s.linkIsDead(ctx, "", &zeroSince); dead {
+		if dead, _, _, _ := s.linkIsDead(ctx, "", &zeroSince); dead {
 			b.Fatal("a link carrying a connection read as dead")
 		}
 	}
@@ -90,7 +90,7 @@ func BenchmarkLinkCheckWithDevice(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		if dead, _, _ := s.linkIsDead(ctx, device, &zeroSince); dead {
+		if dead, _, _, _ := s.linkIsDead(ctx, device, &zeroSince); dead {
 			b.Fatal("a device that is present, carrying a connection, read as dead")
 		}
 	}
@@ -151,8 +151,8 @@ func BenchmarkAnchorCheck(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		if why, _, _ := s.lost(ctx, "", "", &zeroSince); why != "" {
-			b.Fatalf("an anchor that is running read as lost: %s", why)
+		if l := s.lost(ctx, "", "", &zeroSince); l.why != "" {
+			b.Fatalf("an anchor that is running read as lost: %s", l.why)
 		}
 	}
 

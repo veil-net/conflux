@@ -117,7 +117,9 @@ What each does with 78 and 70 is below.
 
 anchord can also lose its anchor without exiting, so the supervisor asks it every thirty
 seconds whether it still holds one (every ten, through the link watcher's gauge, on an
-uplink) and rebuilds it through the same bring-up when it does not. A blocked anchor is
+uplink) and rebuilds it through the same bring-up when it does not. A rebuild that fails is
+tried again at the next look and then after twice as long each time, up to thirty seconds, as is
+an observer whose capture ended and that would not start again. A blocked anchor is
 not one of these: a realm's block leaves it running, outside the realm, and rebuilding
 it would change nothing. A rebuild refused for good three times in a row — a
 `conflux.json` edited under a running service into one that will not build an anchor,

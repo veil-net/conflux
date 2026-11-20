@@ -177,8 +177,10 @@ A link is point-to-point and carries exactly one peer, which is what makes a
 connection count of zero mean something here and nothing on the host's network. The
 recovery is `anchorctl stop` and the same bring-up every boot performs, so the daemon
 is untouched, the identity is unchanged, nothing re-enrols, and the credential is
-renewed on the way through if it was due. Repeated failures back off from one second
-to thirty.
+renewed on the way through if it was due. A rebuild that fails, or one whose link then
+carries nothing until it is called ended again, is tried again at the next look and then
+after twice as long each time — 10 seconds, 20, then 30 at most; a link that carries
+something starts that over.
 
 The 90 seconds is not arbitrary: an anchor holding no connection redials its uplink at
 once, then starts a dial at most every five seconds plus up to a second of jitter, timed
@@ -200,7 +202,11 @@ $ conflux status
 off looks exactly like a dead one, and gets restarted. That is harmless — the restart
 re-dials, and a far end that comes back is found either way — but it is a restart
 nobody asked for, which is what the grace period and the backoff are there to keep
-rare. Distinguishing the two would need anchor to report the link's own state, and it
-does not.
+rare: each restart brings no connection, so each counts as one that failed, and the next
+waits longer, up to 30 seconds after the 90-second grace has run, so a far end that stays off
+has its link reopened about every two minutes. One that comes back is not waiting on that:
+the anchor redials its link every few seconds while it holds no connection, so it is
+reconnected as soon as the far end answers. Distinguishing the two would need anchor to
+report the link's own state, and it does not.
 
 This is Unix-only, like `--uplink` itself.

@@ -74,7 +74,8 @@ $ conflux status
 Seven reopens is a cable, a connector or a far end at fault — conflux is papering over
 it, not fixing it. If it is reopening and never staying up, check the far end is
 running at all: an idle link whose far end is switched off is indistinguishable from a
-dead one, and gets restarted on the same 90-second grace.
+dead one, and gets restarted on the same 90-second grace, then 30 seconds at most after
+it, about every two minutes while it stays off.
 
 To force one by hand: `sudo conflux start`.
 

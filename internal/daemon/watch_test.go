@@ -67,7 +67,7 @@ func TestLinkIsDeadWhenTheDeviceGoes(t *testing.T) {
 
 	missing := filepath.Join(t.TempDir(), "ttyUSB0")
 
-	dead, reason, _ := s.linkIsDead(t.Context(), missing, &zeroSince)
+	dead, _, reason, _ := s.linkIsDead(t.Context(), missing, &zeroSince)
 	if !dead {
 		t.Fatal("a device that is not there should be a dead link")
 	}
@@ -154,11 +154,12 @@ func TestALostAnchorIsSeen(t *testing.T) {
 		status, failing string
 		uplink          bool
 		want            string
+		carrying        bool
 	}{
 		"an anchor running":               {status: "running"},
 		"no anchor":                       {status: "none", want: "anchord holds no anchor any more"},
 		"a daemon that does not answer":   {},
-		"a link carrying something":       {uplink: true, status: "none"},
+		"a link carrying something":       {uplink: true, status: "none", carrying: true},
 		"a link with no anchor behind it": {uplink: true, status: "none", failing: "metrics", want: "anchord holds no anchor any more"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -178,8 +179,8 @@ func TestALostAnchorIsSeen(t *testing.T) {
 
 			var zeroSince time.Time
 
-			if got, link, _ := s.lost(t.Context(), uplink, devicePath(uplink), &zeroSince); got != tc.want || link {
-				t.Errorf("lost() = %q, %v; want %q, false", got, link, tc.want)
+			if l := s.lost(t.Context(), uplink, devicePath(uplink), &zeroSince); l.why != tc.want || l.link || l.carrying != tc.carrying {
+				t.Errorf("lost() = %q, link %v, carrying %v; want %q, false, %v", l.why, l.link, l.carrying, tc.want, tc.carrying)
 			}
 		})
 	}
@@ -389,5 +390,46 @@ func TestTheWatcherGivesUpOnAnObserverTheHostRefuses(t *testing.T) {
 
 	if n := strings.Count(strings.Join(ran(t, log), "\n"), "observe"); n != rebuildRefusals {
 		t.Errorf("started %d times before giving up, want %d", n, rebuildRefusals)
+	}
+}
+
+// TestASwitchedOffFarEndIsReopenedLessAndLessOften: a link whose every rebuild works and none
+// of which brings a connection -- a far end switched off -- is a rebuild that failed each time,
+// so the watcher reopens it less and less often rather than at every grace period for ever.
+func TestASwitchedOffFarEndIsReopenedLessAndLessOften(t *testing.T) {
+	t.Setenv(fakeAnchorctlStatusEnv, "running")
+	t.Setenv(fakeAnchorctlIdleEnv, "1")
+
+	grace := linkGrace
+	linkGrace = 20 * time.Millisecond
+
+	t.Cleanup(func() { linkGrace = grace })
+
+	s, log := supervised(t, "1")
+	s.priv.Dir = s.Dirs.RootAnchorDir()
+
+	device := filepath.Join(t.TempDir(), "ttyUSB0")
+	if err := os.WriteFile(device, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, Uplink: device}
+	if err := config.Save(s.Dirs, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	credentialed(t, s.Dirs)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+
+	if s.watch(ctx, cfg, time.Millisecond) {
+		t.Fatal("the watcher gave up on a link it can rebuild")
+	}
+
+	// Each rebuild stops the anchor first. Reopened at every grace period, that is one every
+	// 20ms or so; backing off from a millisecond, a dozen at most in two seconds.
+	if n := strings.Count(strings.Join(ran(t, log), "\n"), "stop"); n < 2 || n > 12 {
+		t.Errorf("reopened the link %d times in two seconds, want it reopened, less and less often", n)
 	}
 }

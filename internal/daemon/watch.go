@@ -36,22 +36,14 @@ const (
 	// metrics -- so a link costs no second poll.
 	linkCheckInterval = 10 * time.Second
 
-	// linkGrace is how long the connection count must stay at zero before the link
-	// is called dead.
-	//
-	// Above anchor's own uplink dial timeout (45s) -- it starts a dial at most every five
-	// seconds and up to one of jitter while it holds no connection, timed from the start
-	// of the one before, so one that never answers is followed at once by the next -- so
-	// a link still dialling is never mistaken for one that has ended, and above the ~25s a realm
-	// handshake needs on a 9600-baud line -- the slowest speed conflux accepts. The cost
-	// of being wrong is one restart; the cost of being hasty is a restart that
-	// interrupts a handshake that was about to succeed.
-	linkGrace = 90 * time.Second
-
-	// rebuildBackoffMin and rebuildBackoffMax bound how fast a failed rebuild is
-	// retried, and a failed start of the daemon (Supervisor.loop). A link whose far end is
-	// simply switched off would otherwise restart every 90 seconds forever.
-	rebuildBackoffMin = 1 * time.Second
+	// rebuildBackoffMax caps how long the watcher holds off trying again what failed: a
+	// rebuild, a rebuilt link that brought no connection, an observer that would not start
+	// again. The first try waits for the next look, and each after that twice as long as the
+	// one before, up to this. On the host's network, which is looked at every 30 seconds, that
+	// is every look. On a link it is 10 seconds, then 20, then 30: a far end that is simply
+	// switched off, where every rebuild works and none brings a connection, is reopened once
+	// its 90-second grace has run and then 30 seconds at most after that, about every two
+	// minutes, while anchor's own redial, every few seconds, finds one that comes back.
 	rebuildBackoffMax = 30 * time.Second
 
 	// rebuildRefusals is how many rebuilds in a row may be refused for good before the
@@ -60,14 +52,26 @@ const (
 	rebuildRefusals = 3
 )
 
+// linkGrace is how long the connection count must stay at zero before the link is called
+// dead: a variable only so a test can wait less than this for one.
+//
+// Above anchor's own uplink dial timeout (45s) -- it starts a dial at most every five
+// seconds and up to one of jitter while it holds no connection, timed from the start
+// of the one before, so one that never answers is followed at once by the next -- so
+// a link still dialling is never mistaken for one that has ended, and above the ~25s a realm
+// handshake needs on a 9600-baud line -- the slowest speed conflux accepts. The cost
+// of being wrong is one restart; the cost of being hasty is a restart that
+// interrupts a handshake that was about to succeed.
+var linkGrace = 90 * time.Second
+
 // watch keeps an anchor in the daemon, rebuilding it when it has gone or its link has
 // ended, and the observer observing, starting it again when its capture has ended; and
 // reports true once it has given up on what the configuration runs.
 //
 // It gives up on a configuration that will not build an anchor, which a rebuild refused
 // for good rebuildRefusals times in a row is -- a conflux.json edited under a running
-// service, a credential that no longer grants its taints. Retrying that every thirty
-// seconds for ever would fill the journal and change nothing; a restart of the service --
+// service, a credential that no longer grants its taints. Retrying that for ever, however
+// far apart, would fill the journal and change nothing; a restart of the service --
 // `conflux start`, a reboot -- tries again, as it always would. An observer the host will
 // not let capture is given up on the same way: beside an anchor the anchor is still kept,
 // and observing alone there is nothing left to keep.
@@ -76,16 +80,24 @@ const (
 // refusals, so one that keeps failing neither slows the other's retries nor counts against
 // it. One status call a look answers both.
 //
-// every is how often it looks: checkInterval(cfg), which only a test shortens.
+// A link's rebuild has worked only once the link carries something: found ended again first,
+// it brought no connection, and counts as a rebuild that failed, so the next waits out the
+// backoff.
+//
+// every is how often it looks, and the least a failure holds the next try off:
+// checkInterval(cfg), which only a test shortens.
 func (s *Supervisor) watch(ctx context.Context, cfg *config.Config, every time.Duration) bool {
 	device := devicePath(cfg.Uplink)
 
-	anchor, observer := newKeeper(), newKeeper()
+	anchor, observer := newKeeper(every, rebuildBackoffMax), newKeeper(every, rebuildBackoffMax)
 	observing := cfg.Observer != nil
 
 	// zeroSince is when the connection count was first seen at zero, or the zero
 	// time when the link is carrying something.
 	var zeroSince time.Time
+
+	// unproven is a link rebuilt and not yet seen carrying anything.
+	var unproven bool
 
 	for {
 		select {
@@ -99,20 +111,29 @@ func (s *Supervisor) watch(ctx context.Context, cfg *config.Config, every time.D
 		var st *anchorctl.Status
 
 		if cfg.Anchor() && anchor.due() {
-			why, link, read := s.lost(ctx, cfg.Uplink, device, &zeroSince)
-			st = read
+			l := s.lost(ctx, cfg.Uplink, device, &zeroSince)
+			st = l.status
 
-			if why == "" {
-				anchor.backoff = rebuildBackoffMin
-			} else {
-				switch s.rebuildAnchor(ctx, why, link, anchor) {
+			switch {
+			case l.why == "" && (cfg.Uplink == "" || l.carrying):
+				// Doing its job, so whatever failed before has stopped failing.
+				anchor.backoff, unproven = anchor.least, false
+			case l.why == "":
+				// A link carrying nothing yet, inside its grace: nothing to say either way.
+			case unproven:
+				unproven = false
+				anchor.failed(errNoConnection)
+				s.report().Warn("%s, and has carried nothing since it was rebuilt; rebuilding it in %s",
+					l.why, time.Until(anchor.notBefore).Round(time.Second))
+			default:
+				switch s.rebuildAnchor(ctx, l.why, l.link, anchor) {
 				case respawned:
 					return false
 				case gaveUp:
 					return true
 				case kept:
 					// Whatever the state was, it is a fresh anchor now.
-					zeroSince = time.Time{}
+					zeroSince, unproven = time.Time{}, l.link
 				}
 
 				st = nil
@@ -151,7 +172,12 @@ const (
 	respawned                // the decision no longer fits; the cycle starts anchord again
 )
 
-// rebuildAnchor rebuilds an anchor that is lost, and says what came of it.
+// errNoConnection is a rebuilt link that ended again with nothing carried: the rebuild it
+// counts against the backoff as failed, which a retry may yet fix.
+var errNoConnection = errors.New("the rebuilt link carried no connection")
+
+// rebuildAnchor rebuilds an anchor that is lost, and says what came of it. A link rebuilt
+// keeps its backoff until it carries something (watch).
 func (s *Supervisor) rebuildAnchor(ctx context.Context, why string, link bool, k *keeper) outcome {
 	s.clearReady()
 	s.report().Warn("%s; rebuilding the anchor", why)
@@ -159,7 +185,10 @@ func (s *Supervisor) rebuildAnchor(ctx context.Context, why string, link bool, k
 	err := s.rebuild(ctx, link)
 	if err == nil {
 		s.report().Step("the anchor is back")
-		k.ok()
+
+		if k.refusals = 0; !link {
+			k.ok()
+		}
 
 		return kept
 	}
@@ -211,21 +240,24 @@ func (s *Supervisor) restartObserver(ctx context.Context, was anchorctl.Observer
 }
 
 // keeper is what the watcher holds for one thing it keeps running, and the supervisor's
-// restart loop for the daemon: how long to wait before trying it again, when it may be tried,
-// and how many tries in a row were refused for good.
+// restart loop for the daemon: how long to wait before trying it again, between least and
+// most, when it may be tried, and how many tries in a row were refused for good.
 type keeper struct {
-	backoff   time.Duration
-	refusals  int
-	notBefore time.Time
+	least, most time.Duration
+	backoff     time.Duration
+	refusals    int
+	notBefore   time.Time
 }
 
-func newKeeper() *keeper { return &keeper{backoff: rebuildBackoffMin} }
+func newKeeper(least, most time.Duration) *keeper {
+	return &keeper{least: least, most: most, backoff: least}
+}
 
 // due says whether it may be looked at and tried again now.
 func (k *keeper) due() bool { return !time.Now().Before(k.notBefore) }
 
 // ok records that it is back.
-func (k *keeper) ok() { *k = *newKeeper() }
+func (k *keeper) ok() { *k = *newKeeper(k.least, k.most) }
 
 // failed records a try that failed with err, holds the next off for the backoff, and says
 // whether the tries refused for good have reached rebuildRefusals.
@@ -237,7 +269,7 @@ func (k *keeper) failed(err error) bool {
 	}
 
 	k.notBefore = time.Now().Add(k.backoff)
-	k.backoff = min(2*k.backoff, rebuildBackoffMax)
+	k.backoff = min(2*k.backoff, k.most)
 
 	return k.refusals >= rebuildRefusals
 }
@@ -265,20 +297,33 @@ func (s *Supervisor) status(ctx context.Context) *anchorctl.Status {
 	return &st
 }
 
-// lost says why the anchor needs rebuilding, and whether its link is the reason; "" while
-// it does not. And what status said, where it was asked and answered.
+// look is what one look at the anchor found.
+type look struct {
+	// why is why the anchor needs rebuilding, and link whether its link is the reason; why is
+	// "" while it does not.
+	why  string
+	link bool
+
+	// carrying is a link that carries a connection now.
+	carrying bool
+
+	// status is what status said, where it was asked and answered.
+	status *anchorctl.Status
+}
+
+// lost looks at the anchor: whether it needs rebuilding, and why.
 //
 // A daemon that does not answer is the restart loop's business rather than this one's:
 // rebuilding an anchor over a problem with the process would fix nothing.
-func (s *Supervisor) lost(ctx context.Context, uplink, device string, zeroSince *time.Time) (string, bool, *anchorctl.Status) {
+func (s *Supervisor) lost(ctx context.Context, uplink, device string, zeroSince *time.Time) look {
 	if uplink != "" {
-		dead, reason, err := s.linkIsDead(ctx, device, zeroSince)
+		dead, carrying, reason, err := s.linkIsDead(ctx, device, zeroSince)
 		if dead {
-			return "the uplink " + uplink + " " + reason, true, nil
+			return look{why: "the uplink " + uplink + " " + reason, link: true}
 		}
 
 		if err == nil {
-			return "", false, nil
+			return look{carrying: carrying}
 		}
 	}
 
@@ -286,23 +331,24 @@ func (s *Supervisor) lost(ctx context.Context, uplink, device string, zeroSince 
 	// daemon holding no anchor answers status and nothing else.
 	st := s.status(ctx)
 	if st == nil || st.Running {
-		return "", false, st
+		return look{status: st}
 	}
 
-	return "anchord holds no anchor any more", false, st
+	return look{why: "anchord holds no anchor any more", status: st}
 }
 
-// linkIsDead decides whether the link has ended, and says why. Its error is the gauge
-// that could not be read, which says nothing about the link either way.
+// linkIsDead decides whether the link has ended, and says why, or whether it carries a
+// connection now. Its error is the gauge that could not be read, which says nothing about the
+// link either way.
 //
 // Two signals. A device that has gone from the filesystem is unambiguous and
 // immediate -- a USB serial adapter that was unplugged is simply not there any more.
 // A connection count held at zero past the grace period is the general case, and the
 // one that catches a device still present whose line has died.
-func (s *Supervisor) linkIsDead(ctx context.Context, device string, zeroSince *time.Time) (bool, string, error) {
+func (s *Supervisor) linkIsDead(ctx context.Context, device string, zeroSince *time.Time) (dead, carrying bool, why string, err error) {
 	if device != "" {
 		if _, err := os.Stat(device); errors.Is(err, fs.ErrNotExist) {
-			return true, "is gone from this machine", nil
+			return true, false, "is gone from this machine", nil
 		}
 	}
 
@@ -311,27 +357,27 @@ func (s *Supervisor) linkIsDead(ctx context.Context, device string, zeroSince *t
 
 	conns, _, err := s.ctl.Metric(probe, anchorctl.MetricConnections)
 	if err != nil {
-		return false, "", err
+		return false, false, "", err
 	}
 
 	if conns > 0 {
 		*zeroSince = time.Time{}
 
-		return false, "", nil
+		return false, true, "", nil
 	}
 
 	now := time.Now()
 	if zeroSince.IsZero() {
 		*zeroSince = now
 
-		return false, "", nil
+		return false, false, "", nil
 	}
 
 	if now.Sub(*zeroSince) < linkGrace {
-		return false, "", nil
+		return false, false, "", nil
 	}
 
-	return true, "has carried nothing for " + now.Sub(*zeroSince).Truncate(time.Second).String(), nil
+	return true, false, "has carried nothing for " + now.Sub(*zeroSince).Truncate(time.Second).String(), nil
 }
 
 // rebuild stops whatever anchor is left and builds it again from the configuration.

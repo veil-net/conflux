@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"runtime"
 	"slices"
+	"strings"
 	"syscall"
 	"testing"
 
@@ -29,6 +30,7 @@ import (
 // fakeAnchorctlObservedEnv one `observe -start` writes the manifest it was handed to, and
 // fakeAnchorctlObserverRenewedEnv one `observe -cred -` writes the chain it was handed to;
 // that refuses as REASON_NOT_OBSERVING unless the observer's row is "running".
+// fakeAnchorctlIdleEnv set makes `metrics` say the anchor holds no connection.
 const (
 	fakeAnchorctlEnv                = "CONFLUX_TEST_FAKE_ANCHORCTL"
 	fakeAnchorctlLogEnv             = "CONFLUX_TEST_FAKE_ANCHORCTL_LOG"
@@ -39,6 +41,7 @@ const (
 	fakeAnchorctlRenewedEnv         = "CONFLUX_TEST_FAKE_ANCHORCTL_RENEWED"
 	fakeAnchorctlObservedEnv        = "CONFLUX_TEST_FAKE_ANCHORCTL_OBSERVED"
 	fakeAnchorctlObserverRenewedEnv = "CONFLUX_TEST_FAKE_ANCHORCTL_OBSERVER_RENEWED"
+	fakeAnchorctlIdleEnv            = "CONFLUX_TEST_FAKE_ANCHORCTL_IDLE"
 	fakeAnchordEnv                  = "CONFLUX_TEST_FAKE_ANCHORD"
 	fakeAnchordListenEnv            = "CONFLUX_TEST_FAKE_ANCHORD_LISTEN"
 )
@@ -113,6 +116,13 @@ func fakeAnchorctl(args []string) int {
 
 		return 1
 	case "metrics":
+		if os.Getenv(fakeAnchorctlIdleEnv) != "" {
+			fmt.Print(strings.Replace(fakeMetrics, "anchor_connections                                    1",
+				"anchor_connections                                    0", 1))
+
+			break
+		}
+
 		fmt.Print(fakeMetrics)
 	case "start":
 		// The manifest arrives on stdin, as it does for the real one, and is read to the end

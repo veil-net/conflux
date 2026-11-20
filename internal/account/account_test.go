@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/veil-net/conflux/internal/privcheck"
 )
 
 // TestNameFollowsThePlatformAndTheScope: the platform's own convention for a daemon's
@@ -61,7 +63,7 @@ func TestCreateCommands(t *testing.T) {
 	} {
 		var got []string
 		for _, argv := range createCommands(c.goos, "conflux", c.useradd, c.grouped, 0) {
-			got = append(got, shell(argv))
+			got = append(got, privcheck.Command(argv...))
 		}
 
 		if !slices.Equal(got, c.want) {
@@ -75,7 +77,7 @@ func TestCreateCommands(t *testing.T) {
 	joined := make([]string, len(mac))
 
 	for i, argv := range mac {
-		joined[i] = shell(argv)
+		joined[i] = privcheck.Command(argv...)
 	}
 
 	for _, want := range []string{
@@ -103,7 +105,7 @@ func TestRemoveCommandsUndoCreate(t *testing.T) {
 	} {
 		var got []string
 		for _, argv := range removeCommands(goos, "conflux", true) {
-			got = append(got, shell(argv))
+			got = append(got, privcheck.Command(argv...))
 		}
 
 		if strings.Join(got, "; ") != want {

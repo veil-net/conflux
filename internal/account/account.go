@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/privcheck"
 )
 
 // Comment is the account's comment (GECOS on Linux and the BSDs, RealName on macOS), and
@@ -156,27 +157,12 @@ func freeID(taken map[int]bool) (int, error) {
 	return 0, errors.New("no id between 200 and 400 is free for a system account")
 }
 
-// shell renders argv as somebody would type it, for an error that says what to run.
-func shell(argv []string) string {
-	words := make([]string, len(argv))
-
-	for i, w := range argv {
-		if w == "" || strings.ContainsAny(w, " \t\"'*$\\") {
-			w = "'" + strings.ReplaceAll(w, "'", `'\''`) + "'"
-		}
-
-		words[i] = w
-	}
-
-	return strings.Join(words, " ")
-}
-
 // howToCreate is the refusal for an account conflux could not make, with the commands
 // that would.
 func howToCreate(name string, cmds [][]string, err error) error {
 	lines := make([]string, len(cmds))
 	for i, c := range cmds {
-		lines[i] = "  " + shell(c)
+		lines[i] = "  " + privcheck.Command(c...)
 	}
 
 	return fmt.Errorf("could not create the account %s that anchord runs as: %w\n"+

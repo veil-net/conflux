@@ -83,7 +83,7 @@ func connectionDetails(d paths.Dirs, args []string) (string, int) {
 	token, err := readToken(d)
 	if errors.Is(err, fs.ErrPermission) {
 		ui.Errf("%s is not readable, and anchorctl needs it to authenticate.\n  try:  %s",
-			d.TokenFile(), privcheck.Retry(typed("conflux", args...)))
+			d.TokenFile(), privcheck.Retry(privcheck.Command(append([]string{"conflux"}, args...)...)))
 
 		return "", ExitDenied
 	}

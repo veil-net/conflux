@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/veil-net/conflux/internal/privcheck"
 )
 
 // Lookup is this installation's account, or nil when there is none yet. An account or a
@@ -132,12 +134,12 @@ func groupUsers(name, gid string) ([]string, error) {
 
 	group, err := exec.Command(groupArgv[0], groupArgv[1:]...).Output() //nolint:gosec // our own argv
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", shell(groupArgv), err)
+		return nil, fmt.Errorf("%s: %w", privcheck.Command(groupArgv...), err)
 	}
 
 	users, err := exec.Command(usersArgv[0], usersArgv[1:]...).Output() //nolint:gosec // our own argv
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", shell(usersArgv), err)
+		return nil, fmt.Errorf("%s: %w", privcheck.Command(usersArgv...), err)
 	}
 
 	return groupUsersFrom(runtime.GOOS, string(group), string(users), gid), nil
@@ -298,7 +300,7 @@ func RemoveNamed(name string) error {
 func run(argv []string) error {
 	out, err := exec.Command(argv[0], argv[1:]...).CombinedOutput() //nolint:gosec // our own argv
 	if err != nil {
-		return fmt.Errorf("%s: %w: %s", shell(argv), err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("%s: %w: %s", privcheck.Command(argv...), err, strings.TrimSpace(string(out)))
 	}
 
 	return nil

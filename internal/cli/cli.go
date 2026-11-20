@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"runtime"
 	"strings"
 	"syscall"
 
@@ -198,35 +197,9 @@ type denied struct{ error }
 // invocation, flags and all. What somebody copies out of the refusal is then what they
 // typed, and not `conflux up` without the --taint that decided which network it joins.
 func needsRoot(what, verb string, args []string) error {
-	if err := privcheck.Require(what, typed("conflux", append([]string{verb}, args...)...)); err != nil {
+	if err := privcheck.Require(what, privcheck.Command(append([]string{"conflux", verb}, args...)...)); err != nil {
 		return denied{err}
 	}
 
 	return nil
-}
-
-// typed is a command as it would be typed again, each word quoted where it has to be.
-func typed(name string, args ...string) string {
-	words := []string{shellWord(name)}
-	for _, a := range args {
-		words = append(words, shellWord(a))
-	}
-
-	return strings.Join(words, " ")
-}
-
-// shellWord quotes a word for the shell the refusal will be pasted into, when it holds
-// anything but the characters every shell reads literally.
-func shellWord(w string) string {
-	if w != "" && strings.Trim(w, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_%+=:./-") == "" {
-		return w
-	}
-
-	// PowerShell, where an Administrator retries, doubles a quote; a POSIX shell closes
-	// the quoting around one.
-	if runtime.GOOS == "windows" {
-		return "'" + strings.ReplaceAll(w, "'", "''") + "'"
-	}
-
-	return "'" + strings.ReplaceAll(w, "'", `'\''`) + "'"
 }

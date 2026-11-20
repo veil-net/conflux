@@ -170,6 +170,17 @@ func (r *ephemeralRun) root(cfg *config.Config, args []string) error {
 	return nil
 }
 
+// secondSignalEnds lets the first signal stop a run cleanly, by ending ctx, and waits for no
+// second: once ctx ends the handlers go, so the next interrupt, SIGTERM or hangup ends conflux
+// at once, and anchord with it. One conflux was started ignoring (catches) is ignored still:
+// Reset puts back the ignore it found.
+func secondSignalEnds(ctx context.Context) {
+	go func() {
+		<-ctx.Done()
+		signal.Reset(os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	}()
+}
+
 // runEphemeral runs cfg in the foreground until it is stopped or anchord ends, and says so.
 func runEphemeral(ctx context.Context, cfg *config.Config, run *ephemeralRun) int {
 	if err := cfg.Validate(); err != nil {
@@ -184,12 +195,7 @@ func runEphemeral(ctx context.Context, cfg *config.Config, run *ephemeralRun) in
 	ctx, stop := hangupContext(ctx)
 	defer stop()
 
-	// The first signal stops the run cleanly; a second is not waited for. The handlers go,
-	// so it ends conflux at once, and anchord with it.
-	go func() {
-		<-ctx.Done()
-		signal.Reset(os.Interrupt, syscall.SIGTERM)
-	}()
+	secondSignalEnds(ctx)
 
 	ui.Printf("Starting an ephemeral anchor: nothing is saved, and when it stops nothing of it remains.\n")
 

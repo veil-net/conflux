@@ -22,7 +22,6 @@ import (
 	"github.com/veil-net/conflux/internal/enrol"
 	"github.com/veil-net/conflux/internal/httpsonly"
 	"github.com/veil-net/conflux/internal/paths"
-	"github.com/veil-net/conflux/internal/pathstest"
 )
 
 const renewTestAnchor = "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq"
@@ -135,7 +134,7 @@ func saveDoc(tb testing.TB, d paths.Dirs, doc map[string]any) {
 // expires at expires, renewing against is.
 func machine(t *testing.T, is *issuer, issued, expires time.Time) paths.Dirs {
 	t.Helper()
-	d := pathstest.Dirs(t)
+	d := dirs(t)
 
 	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, APIBaseURL: is.srv.URL}); err != nil {
 		t.Fatal(err)
@@ -358,7 +357,7 @@ func TestAFailedInstallIsDueAgain(t *testing.T) {
 func TestAnEnrolmentIsKeptBeforeItIsRead(t *testing.T) {
 	t.Setenv(httpsonly.InsecureEnv, "1")
 
-	d := pathstest.Dirs(t)
+	d := dirs(t)
 
 	future := base64.StdEncoding.EncodeToString([]byte(`{"formatVersion":2,"kind":"anchor"}`))
 

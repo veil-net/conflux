@@ -57,8 +57,7 @@ func TestRestrictTokenRemovesPrivileges(t *testing.T) {
 	b := tokenInfo(t, tok, windows.TokenDefaultDacl)
 	dacl := (*struct{ DefaultDacl *windows.ACL })(unsafe.Pointer(&b[0])).DefaultDacl
 
-	system, _ := windows.CreateWellKnownSid(windows.WinLocalSystemSid)
-	if !hasACE(dacl, sid) || !hasACE(dacl, system) || dacl.AceCount != 2 {
+	if !hasACE(dacl, sid) || !hasACE(dacl, privtest.System) || dacl.AceCount != 2 {
 		t.Errorf("the default DACL has %d entries, want SYSTEM and the service's SID alone", dacl.AceCount)
 	}
 }
@@ -148,11 +147,8 @@ func TestAServiceSIDNotGivenIsNotOneZeroZero(t *testing.T) {
 // as it was made. One already there is not made again. Windows-only, so it runs in CI's platforms
 // job alone.
 func TestMakeAnchorDirSetsItsDACLAsItIsMade(t *testing.T) {
-	system, admins := wellKnownSID(t, windows.WinLocalSystemSid), wellKnownSID(t, windows.WinBuiltinAdministratorsSid)
-
 	parent := t.TempDir()
-	privtest.GrantUsers(t, parent, windows.FILE_WRITE_DATA|windows.FILE_APPEND_DATA|windows.FILE_WRITE_EA|
-		windows.FILE_WRITE_ATTRIBUTES, windows.SUB_CONTAINERS_ONLY_INHERIT)
+	privtest.ProgramDataGrant(t, parent)
 	privtest.DenyOwnersTheirDACL(t, parent)
 
 	root := filepath.Join(parent, "anchor.root")
@@ -175,10 +171,13 @@ func TestMakeAnchorDirSetsItsDACLAsItIsMade(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for path, granted := range map[string][]*windows.SID{root: {system, admins}, account: {system, admins, sid}} {
+	for path, granted := range map[string][]*windows.SID{
+		root:    {privtest.System, privtest.Admins},
+		account: {privtest.System, privtest.Admins, sid},
+	} {
 		sec := privtest.ReadSecurity(t, path)
 
-		if !sec.Owner.Equals(system) && !sec.Owner.Equals(admins) {
+		if !sec.Owner.Equals(privtest.System) && !sec.Owner.Equals(privtest.Admins) {
 			t.Errorf("%s belongs to %v, want SYSTEM or the Administrators", path, sec.Owner)
 		}
 
@@ -206,15 +205,4 @@ func TestMakeAnchorDirSetsItsDACLAsItIsMade(t *testing.T) {
 	if granted, err := grantsServiceSID(root); err != nil || granted {
 		t.Errorf("grantsServiceSID(a SYSTEM anchord's directory) = %v, %v; want false", granted, err)
 	}
-}
-
-func wellKnownSID(t *testing.T, kind windows.WELL_KNOWN_SID_TYPE) *windows.SID {
-	t.Helper()
-
-	sid, err := windows.CreateWellKnownSid(kind)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return sid
 }

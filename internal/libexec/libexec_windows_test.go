@@ -59,11 +59,8 @@ func TestAUsageCopyIsItsRunners(t *testing.T) {
 		t.Fatalf("Ensure: %v", err)
 	}
 
-	system, _ := windows.CreateWellKnownSid(windows.WinLocalSystemSid)
-	admins, _ := windows.CreateWellKnownSid(windows.WinBuiltinAdministratorsSid)
-
 	for _, sid := range privtest.ReadSecurity(t, tools.Anchorctl).Grantees() {
-		if !sid.Equals(system) && !sid.Equals(admins) {
+		if !sid.Equals(privtest.System) && !sid.Equals(privtest.Admins) {
 			t.Errorf("the set's anchorctl %s grants %s, beside SYSTEM and the Administrators", tools.Anchorctl, sid)
 		}
 	}

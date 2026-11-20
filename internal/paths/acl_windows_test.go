@@ -307,10 +307,7 @@ func TestSecureHoldsAJunctionRoot(t *testing.T) {
 func TestARootIsMadeWithItsDACL(t *testing.T) {
 	parent := t.TempDir()
 
-	// %ProgramData%'s own: Users may add a file or a folder (on a folder, writing its data or
-	// appending to it), and write extended attributes and attributes, in every folder made in it.
-	privtest.GrantUsers(t, parent, windows.FILE_WRITE_DATA|windows.FILE_APPEND_DATA|windows.FILE_WRITE_EA|
-		windows.FILE_WRITE_ATTRIBUTES, windows.SUB_CONTAINERS_ONLY_INHERIT)
+	privtest.ProgramDataGrant(t, parent)
 	privtest.DenyOwnersTheirDACL(t, parent)
 
 	made := filepath.Join(parent, "made")
@@ -771,8 +768,7 @@ func TestSecureRefusesARootWhoseDACLLetsAnotherMoveWhatIsInIt(t *testing.T) {
 	}
 
 	parent := t.TempDir()
-	privtest.GrantUsers(t, parent, windows.FILE_WRITE_DATA|windows.FILE_APPEND_DATA|windows.FILE_WRITE_EA|
-		windows.FILE_WRITE_ATTRIBUTES, windows.SUB_CONTAINERS_ONLY_INHERIT)
+	privtest.ProgramDataGrant(t, parent)
 
 	inherits := filepath.Join(parent, "conflux")
 	if err := os.Mkdir(inherits, 0o700); err != nil {

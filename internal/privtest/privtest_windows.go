@@ -54,15 +54,22 @@ func LUID(tb testing.TB, name string) windows.LUID {
 	return luid
 }
 
-// Users is BUILTIN\Users, every account on the machine.
-var Users = func() *windows.SID {
-	sid, err := windows.CreateWellKnownSid(windows.WinBuiltinUsersSid)
+// Users is BUILTIN\Users, every account on the machine; System is NT AUTHORITY\SYSTEM, and Admins
+// BUILTIN\Administrators.
+var (
+	Users  = wellKnown(windows.WinBuiltinUsersSid)
+	System = wellKnown(windows.WinLocalSystemSid)
+	Admins = wellKnown(windows.WinBuiltinAdministratorsSid)
+)
+
+func wellKnown(kind windows.WELL_KNOWN_SID_TYPE) *windows.SID {
+	sid, err := windows.CreateWellKnownSid(kind)
 	if err != nil {
 		panic("privtest: " + err.Error())
 	}
 
 	return sid
-}()
+}
 
 // GrantUsers gives Users access to path, beside what its DACL grants already, passed on to what
 // path holds as inherit says: its DACL read and written by name, so through a link or a junction
@@ -70,20 +77,17 @@ var Users = func() *windows.SID {
 func GrantUsers(tb testing.TB, path string, access windows.ACCESS_MASK, inherit uint32) {
 	tb.Helper()
 
-	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
-	if err != nil {
-		tb.Fatal(err)
-	}
+	addEntry(tb, path, usersGranted(access, inherit))
+}
 
-	dacl, _, err := sd.DACL()
-	if err != nil {
-		tb.Fatal(err)
-	}
+// ProgramDataGrant gives Users, on dir and every folder made in it, what %ProgramData% gives them:
+// the right to add a file or a folder (on a folder, writing its data or appending to it), and to
+// write its extended attributes and attributes.
+func ProgramDataGrant(tb testing.TB, dir string) {
+	tb.Helper()
 
-	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION,
-		nil, nil, WithUsers(tb, dacl, access, inherit), nil); err != nil {
-		tb.Fatal(err)
-	}
+	GrantUsers(tb, dir, windows.FILE_WRITE_DATA|windows.FILE_APPEND_DATA|windows.FILE_WRITE_EA|
+		windows.FILE_WRITE_ATTRIBUTES, windows.SUB_CONTAINERS_ONLY_INHERIT)
 }
 
 // WithUsers is dacl with access granted to Users on the object itself, and passed on as inherit
@@ -91,7 +95,12 @@ func GrantUsers(tb testing.TB, path string, access windows.ACCESS_MASK, inherit 
 func WithUsers(tb testing.TB, dacl *windows.ACL, access windows.ACCESS_MASK, inherit uint32) *windows.ACL {
 	tb.Helper()
 
-	acl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{{
+	return withEntry(tb, dacl, usersGranted(access, inherit))
+}
+
+// usersGranted is an entry granting Users access, passed on as inherit says.
+func usersGranted(access windows.ACCESS_MASK, inherit uint32) windows.EXPLICIT_ACCESS {
+	return windows.EXPLICIT_ACCESS{
 		AccessPermissions: access,
 		AccessMode:        windows.GRANT_ACCESS,
 		Inheritance:       inherit,
@@ -100,12 +109,7 @@ func WithUsers(tb testing.TB, dacl *windows.ACL, access windows.ACCESS_MASK, inh
 			TrusteeType:  windows.TRUSTEE_IS_GROUP,
 			TrusteeValue: windows.TrusteeValueFromSID(Users),
 		},
-	}}, dacl)
-	if err != nil {
-		tb.Fatal(err)
 	}
-
-	return acl
 }
 
 // DenyOwnersTheirDACL passes on to everything made in dir, and gives dir itself, an entry denying
@@ -120,7 +124,23 @@ func DenyOwnersTheirDACL(tb testing.TB, dir string) {
 		tb.Fatal(err)
 	}
 
-	sd, err := windows.GetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	addEntry(tb, dir, windows.EXPLICIT_ACCESS{
+		AccessPermissions: windows.WRITE_DAC,
+		AccessMode:        windows.DENY_ACCESS,
+		Inheritance:       windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT,
+		Trustee: windows.TRUSTEE{
+			TrusteeForm:  windows.TRUSTEE_IS_SID,
+			TrusteeType:  windows.TRUSTEE_IS_WELL_KNOWN_GROUP,
+			TrusteeValue: windows.TrusteeValueFromSID(ownerRights),
+		},
+	})
+}
+
+// addEntry merges e into path's DACL, read and written by name.
+func addEntry(tb testing.TB, path string, e windows.EXPLICIT_ACCESS) {
+	tb.Helper()
+
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -130,24 +150,22 @@ func DenyOwnersTheirDACL(tb testing.TB, dir string) {
 		tb.Fatal(err)
 	}
 
-	acl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{{
-		AccessPermissions: windows.WRITE_DAC,
-		AccessMode:        windows.DENY_ACCESS,
-		Inheritance:       windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT,
-		Trustee: windows.TRUSTEE{
-			TrusteeForm:  windows.TRUSTEE_IS_SID,
-			TrusteeType:  windows.TRUSTEE_IS_WELL_KNOWN_GROUP,
-			TrusteeValue: windows.TrusteeValueFromSID(ownerRights),
-		},
-	}}, dacl)
+	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION,
+		nil, nil, withEntry(tb, dacl, e), nil); err != nil {
+		tb.Fatal(err)
+	}
+}
+
+// withEntry is dacl with e merged in, as SetEntriesInAcl merges an entry.
+func withEntry(tb testing.TB, dacl *windows.ACL, e windows.EXPLICIT_ACCESS) *windows.ACL {
+	tb.Helper()
+
+	acl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{e}, dacl)
 	if err != nil {
 		tb.Fatal(err)
 	}
 
-	if err := windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION,
-		nil, nil, acl, nil); err != nil {
-		tb.Fatal(err)
-	}
+	return acl
 }
 
 // Security is what a file's security descriptor says of who holds it.

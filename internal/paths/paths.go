@@ -300,7 +300,8 @@ type step struct {
 // lookup meets them. That is each directory above dir as it is spelled, and for each link on
 // the way the directory it is in, the link itself -- an account that owns one can point it
 // elsewhere -- and the directories above where it leads, where the next link may be. The
-// directory dir resolves to is not among them.
+// directory dir resolves to is not among them. Each link is read as itself (readLink), and on
+// Windows one that may lead off this machine is refused before anything is looked up through it.
 func ancestors(dir string) ([]step, error) {
 	dir, err := filepath.Abs(dir)
 	if err != nil {
@@ -356,7 +357,7 @@ func ancestors(dir string) ([]step, error) {
 
 		meet(p, fi)
 
-		target, err := os.Readlink(p)
+		target, err := readLink(p)
 		if err != nil {
 			return nil, fmt.Errorf("resolve %s: %s is a link conflux cannot follow: %w", dir, p, err)
 		}

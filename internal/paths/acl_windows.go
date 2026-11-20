@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"unicode/utf16"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -105,51 +104,111 @@ func restrictInfo(owner *windows.SID) windows.SECURITY_INFORMATION {
 }
 
 // makeRoot creates the root dir where it is not there yet, with Restrict's ownership and DACL
-// set as it is made (MakeRestricted), so that it never carries what %ProgramData% passes on --
-// Users' right to create in it, enough to turn an empty directory into a junction -- not even for
-// an instant. The directories above it are made as MkdirAll makes them. One already there is
-// secure's. Before anything is made, a Windows older than conflux runs on is refused (tooOld), and
-// the nearest of dir and the directories above it that is there is held to remote, as secure holds
-// a root: a CONFLUX_DIR on a network volume is refused with nothing made there.
+// set as it is made, so that it never carries what %ProgramData% passes on -- Users' right to
+// create in it, enough to turn an empty directory into a junction -- not even for an instant, and
+// through a handle on its parent (makeIn), so that a link somebody plants at its name meanwhile is
+// found there rather than followed. The directories above it are made as MkdirAll makes them.
+// Anything already at its name, a link included, is secure's, whose heldRoot judges a link as
+// itself before it follows it. Before anything is made, a Windows older than conflux runs on is
+// refused (tooOld); so is a CONFLUX_DIR with a link on the way to it that leads off this machine
+// (offMachineLinks), and the nearest directory above dir that is there is held as heldRoot holds a
+// root (remoteAbove): a CONFLUX_DIR on a network volume is refused with nothing made there.
 func makeRoot(dir string) error {
 	if err := tooOld(); err != nil {
 		return err
 	}
 
-	if err := remoteAbove(dir); err != nil {
+	if err := offMachineLinks(dir); err != nil {
 		return err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
+	if _, err := os.Lstat(dir); err == nil {
+		return nil
+	}
+
+	parent := filepath.Dir(dir)
+
+	if err := remoteAbove(parent); err != nil {
 		return err
 	}
 
-	if err := MakeRestricted(dir); err != nil && !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		return err
+	}
+
+	h, err := openFile(parent, windows.FILE_READ_ATTRIBUTES, true)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", parent, err)
+	}
+	defer windows.CloseHandle(h)
+
+	if err := makeIn(h, filepath.Base(dir)); err != nil && !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
 		return err
 	}
 
 	return nil
 }
 
-// remoteAbove is remote of the nearest of dir and the directories above it that is there, opened by
-// following its name, or nil where none of them is.
+// remoteAbove holds the nearest of dir and the directories above it that is there as heldRoot
+// holds a root, refusing it where heldRoot does: one on a network volume, and a link that leads off
+// this machine or nowhere, or that another account may point elsewhere, judged as itself before
+// anything follows it. It is nil where none of them is there.
 func remoteAbove(dir string) error {
 	for p := dir; ; p = filepath.Dir(p) {
-		h, err := openFile(p, windows.FILE_READ_ATTRIBUTES, true)
+		r, err := heldRoot(p, readAccess)
 		switch {
-		case errors.Is(err, windows.ERROR_FILE_NOT_FOUND), errors.Is(err, windows.ERROR_PATH_NOT_FOUND):
-			if filepath.Dir(p) == p {
-				return nil
-			}
+		case err == nil:
+			r.close()
 
-			continue
-		case err != nil:
-			return fmt.Errorf("read %s: %w", p, err)
+			return nil
+		case !errors.Is(err, fs.ErrNotExist):
+			return err
+		case filepath.Dir(p) == p:
+			return nil
 		}
-		defer windows.CloseHandle(h)
-
-		return remote(dir, h)
 	}
+}
+
+// offMachineLinks refuses dir, where whoever set CONFLUX_DIR chose it (chosen), where a link on the
+// way to it leads off this machine (windowsLinkTarget), as ancestors reads each link it meets before
+// it looks anything up through it, as far as the way is there. A lookup of dir by its name follows
+// every link on the way, so this comes before any.
+func offMachineLinks(dir string) error {
+	if !chosen(dir) {
+		return nil
+	}
+
+	if _, err := ancestors(dir); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+
+	return nil
+}
+
+// readLink is where the link p, opened as itself, leads (linkTarget), as ancestors follows it.
+func readLink(p string) (string, error) {
+	h, err := openFile(p, windows.FILE_READ_ATTRIBUTES, false)
+	if err != nil {
+		return "", err
+	}
+	defer windows.CloseHandle(h)
+
+	return linkTarget(h)
+}
+
+// linkTarget is where the symbolic link or junction h holds open as itself leads, read off the link
+// (FSCTL_GET_REPARSE_POINT) and not by following it (windowsLinkTarget): one that may lead off this
+// machine is refused unfollowed.
+func linkTarget(h windows.Handle) (string, error) {
+	b := make([]byte, windows.MAXIMUM_REPARSE_DATA_BUFFER_SIZE)
+
+	var n uint32
+	if err := windows.DeviceIoControl(h, windows.FSCTL_GET_REPARSE_POINT, nil, 0, &b[0], uint32(len(b)), &n,
+		nil); err != nil {
+		return "", err
+	}
+
+	return windowsLinkTarget(b[:n])
 }
 
 // MakeRestricted is makeDir with Restrict's ownership and DACL: Administrators', or the creating
@@ -186,10 +245,10 @@ func anchordDirSDDL(sid *windows.SID) string {
 
 // makeDir creates the directory path, which must not be there yet, in a parent that is, with sd as
 // its security descriptor, set as it is created: it is never anything else, not even for an
-// instant, as one made and then given its security would be, under what its parent passes on. A
-// root (makeRoot, through MakeRestricted), libexec's staging directory (MakeRestricted) and the
-// directories anchord is given (daemon's makeAnchorDir: MakeRestricted, or MakeAnchordDir for its
-// account) are made so.
+// instant, as one made and then given its security would be, under what its parent passes on.
+// libexec's staging directory (MakeRestricted) and the directories anchord is given (daemon's
+// makeAnchorDir: MakeRestricted, or MakeAnchordDir for its account) are made so; a root and its
+// run directory are made the same way through a handle on their parent (makeIn).
 func makeDir(path string, sd *windows.SECURITY_DESCRIPTOR) error {
 	name, err := windows.UTF16PtrFromString(path)
 	if err != nil {
@@ -246,14 +305,7 @@ func restrictedDir(create func(sd *windows.SECURITY_DESCRIPTOR) error) error {
 func fill(dir string, h windows.Handle) error {
 	filling(dir)
 
-	filled := restrictedDir(func(sd *windows.SECURITY_DESCRIPTOR) error {
-		child, err := createDir(h, runName, sd, windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES)
-		if err != nil {
-			return err
-		}
-
-		return windows.CloseHandle(child)
-	})
+	filled := makeIn(h, runName)
 
 	if err := notLink(dir, h, "became a junction or a link while conflux secured it"); err != nil {
 		return err
@@ -270,6 +322,20 @@ func fill(dir string, h windows.Handle) error {
 	}
 
 	return fmt.Errorf("create %s in %s: %w", runName, dir, filled)
+}
+
+// makeIn makes the directory name in the one parent holds open, with Restrict's ownership and
+// DACL set as it is created (restrictedDir), through parent (createDir): ERROR_ALREADY_EXISTS where
+// anything is at the name, a link included, which is not followed.
+func makeIn(parent windows.Handle, name string) error {
+	return restrictedDir(func(sd *windows.SECURITY_DESCRIPTOR) error {
+		h, err := createDir(parent, name, sd, windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES)
+		if err != nil {
+			return err
+		}
+
+		return windows.CloseHandle(h)
+	})
 }
 
 // filling is called before secure fills a root: nothing, but where a test turns the root into a
@@ -733,23 +799,10 @@ func sameFile(a, b windows.Handle) (bool, error) {
 }
 
 // setMountPoint makes the empty directory h holds a junction leading to substitute, an NT path
-// (\??\C:\x, \??\Volume{...}\x), shown as display: FSCTL_SET_REPARSE_POINT with REPARSE_DATA_BUFFER's
-// MountPointReparseBuffer -- the two names, each counted in bytes without its NUL, in one buffer
-// after the lengths. h must have been opened to write its data or its attributes.
+// (\??\C:\x, \??\Volume{...}\x), shown as display: FSCTL_SET_REPARSE_POINT with mountPointData. h
+// must have been opened to write its data or its attributes.
 func setMountPoint(h windows.Handle, substitute, display string) error {
-	sub, shown := utf16.Encode([]rune(substitute)), utf16.Encode([]rune(display))
-
-	b := binary.LittleEndian.AppendUint32(nil, windows.IO_REPARSE_TAG_MOUNT_POINT)
-	b = binary.LittleEndian.AppendUint16(b, uint16(8+2*(len(sub)+1)+2*(len(shown)+1)))
-	b = binary.LittleEndian.AppendUint16(b, 0)
-	b = binary.LittleEndian.AppendUint16(b, 0)
-	b = binary.LittleEndian.AppendUint16(b, uint16(2*len(sub)))
-	b = binary.LittleEndian.AppendUint16(b, uint16(2*(len(sub)+1)))
-	b = binary.LittleEndian.AppendUint16(b, uint16(2*len(shown)))
-
-	for _, c := range append(append(sub, 0), append(shown, 0)...) {
-		b = binary.LittleEndian.AppendUint16(b, c)
-	}
+	b := mountPointData(substitute, display)
 
 	var n uint32
 
@@ -787,11 +840,16 @@ func ownerRefusal(dir string, owner *windows.SID) error {
 // planted something in, is none of conflux's to use, and whoever reads one -- an ephemeral run's
 // root, which %ProgramData% lets anybody make first -- holds it to this as the conflux that makes
 // one does, through one handle as secure does, and reading alone: nothing is run from a root whose
-// contents another account could have planted or can point elsewhere. Only a root that is not there
+// contents another account could have planted or can point elsewhere. A CONFLUX_DIR's is held to the
+// links on the way to it first (offMachineLinks). Only a root that is not there
 // (ERROR_FILE_NOT_FOUND, or ERROR_PATH_NOT_FOUND where a directory above it is not either) passes
 // unread: one this account may not open or read is refused, since whoever made it can deny conflux
 // the right to read its owner and DACL as easily as they can make it.
 func Foreign(dir string) error {
+	if err := offMachineLinks(dir); err != nil {
+		return err
+	}
+
 	root, err := heldRoot(dir, readAccess)
 	switch {
 	case errors.Is(err, windows.ERROR_FILE_NOT_FOUND), errors.Is(err, windows.ERROR_PATH_NOT_FOUND):
@@ -866,6 +924,8 @@ func (r *held) close() {
 }
 
 // heldRoot opens dir for access, as itself and never by its name again. A junction or a link is
+// read for where it leads first, off the link and not by following it, and refused where that may
+// be another machine (linkTarget), so that following it never signs this one in there; then it is
 // held to who may point it elsewhere (heldLink), as a link is on Unix to its owner, and judged
 // through the handle that found it; where it is held, what it leads to is opened by following it,
 // and that directory, held open, is what is judged after. A handle somebody opened on the link
@@ -874,8 +934,8 @@ func (r *held) close() {
 // leading to the directory opened (replaceLink), which nobody may have held open before, unless it
 // finds it secured already (security.md's gap). Where the directory is that is not a plain
 // directory either, it is refused: there is nothing further to follow; so is one on a network
-// volume (remote). A root that could not be opened or read, or whose link leads nowhere, is refused,
-// saying why.
+// volume (remote). A root that could not be opened or read is refused, saying why, as is a link that
+// leads nowhere, which is refused as one conflux cannot follow, never as a root that is not there.
 func heldRoot(dir string, access uint32) (held, error) {
 	self, err := openFile(dir, access, false)
 	if err != nil {
@@ -892,6 +952,13 @@ func heldRoot(dir string, access uint32) (held, error) {
 	}
 
 	if link {
+		if _, err := linkTarget(self); err != nil && !errors.Is(err, errNotLink) {
+			r.close()
+
+			return held{}, fmt.Errorf("%s is a link conflux will not follow, so conflux will not use it: %v.\n"+
+				"  Point it at a folder on a volume of this machine's own, then run this again as Administrator", dir, err)
+		}
+
 		sd, err := security(self)
 		if err != nil {
 			r.close()
@@ -911,7 +978,8 @@ func heldRoot(dir string, access uint32) (held, error) {
 		if err != nil {
 			r.close()
 
-			return held{}, fmt.Errorf("read %s: %w", dir, err)
+			return held{}, fmt.Errorf("%s is a link conflux cannot follow (%v), so conflux will not use it.\n"+
+				"  Remove it, then run this again as Administrator", dir, err)
 		}
 
 		r.dir = target

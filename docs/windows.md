@@ -101,7 +101,13 @@ A root on a network volume — a share reached by its UNC path, a drive mapped t
 leading to either, as the volume conflux holds it open on says, not as it is spelled — is refused
 before anything is made or put there, one not made yet by the nearest directory above it that is
 there, and passed over by every reader of an ephemeral root: who owns what is there, and whom its
-DACL grants, are accounts of the machine serving it, which this one cannot judge.
+DACL grants, are accounts of the machine serving it, which this one cannot judge. A link naming
+anything but a drive letter or a volume of this machine's — a share by its UNC path, or a WebDAV
+server's — is refused before anything follows it, by where the link itself says it leads, so that
+conflux never signs this machine in to whoever serves it: at a root's name, and for a `CONFLUX_DIR`
+at every step of the way to it. So is a link that leads nowhere, with nothing made where it leads.
+A root not made yet is made through a handle on the folder it goes in, so a link somebody plants at
+its name meanwhile is found there, and judged as itself, rather than followed.
 
 A root found already there is judged and restricted through one handle, opened on the directory
 itself and never looked up by its name again. Before anything in it is judged, it is made to hold
@@ -180,8 +186,8 @@ For a `CONFLUX_DIR` on another volume, where `move` cannot take a junction from 
 make it in a directory on that volume that only SYSTEM and the Administrators can write, then move
 it into place the same way.
 
-`run\`, and the junction conflux puts in place of a junction root, are made through a handle on the
-folder each goes in: the name is looked up there and nowhere else, and not followed. The create
+A root, its `run\`, and the junction conflux puts in place of a junction root, are made through a
+handle on the folder each goes in: the name is looked up there and nowhere else, and not followed. The create
 also carries a flag that keeps it from being reparsed anywhere a junction leads (`OBJ_DONT_REPARSE`):
 defence in depth, guarding a case not shown to happen, since a create relative to a folder conflux
 holds is not known to be taken through a junction that folder became without it. The other folders

@@ -106,7 +106,9 @@ every reader of an ephemeral root too, as is a junction in it, and a root that i
 junction another account may point elsewhere; one nobody else may is replaced with a junction
 conflux makes, through its own handle, leading to the directory it judged (see
 [windows.md](windows.md#file-permissions)). A root on a network volume, however it is reached, is
-refused, by every reader of an ephemeral root too, as the volume conflux holds it open on says.
+refused, by every reader of an ephemeral root too, as the volume conflux holds it open on says;
+a link naming a share, at a root's name or on the way to a `CONFLUX_DIR`, is refused before conflux
+follows it, by where the link itself says it leads.
 
 On Windows one gap is left, and it is a class: a handle keeps every right it was opened with, and
 conflux judges a DACL as it finds it, so where an administrator tightened a DACL after another

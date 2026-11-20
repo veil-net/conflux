@@ -138,6 +138,9 @@ func ownedAs(dir string, link os.FileInfo, euid int) (os.FileInfo, error) {
 	return fi, nil
 }
 
+// readLink is where the link p leads, as ancestors follows it.
+func readLink(p string) (string, error) { return os.Readlink(p) }
+
 // Foreign is what secure would refuse dir with for its owner, before anything is made, or
 // nil where dir is this account's or is not there yet. A directory another account made is
 // none of conflux's to use, and whoever reads one -- an ephemeral run's root, which /tmp lets

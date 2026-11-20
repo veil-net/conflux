@@ -405,11 +405,13 @@ func TestSecureHoldsAJunctionRoot(t *testing.T) {
 // grant, are the accounts of the machine serving it, which this one cannot judge, so a root on
 // one is refused by secure and by Foreign alike, naming it and the network volume, as the device
 // its handle is open on says and not as it is spelled: reached by its UNC path, through a drive
-// mapped to the share, or through a link leading to it. Nothing is made there: secure refuses it
-// before it fills it, and a CONFLUX_DIR there that is not made yet is refused by EnsureAll before
-// it makes the root or anything above it. The share is a folder of this machine's, reached through
-// its own server. Windows-only, so it runs in CI's platforms job alone, and skipped where the
-// machine will not share a folder.
+// mapped to the share, or through a link leading to that drive. (A link naming the share itself is
+// refused before anything follows it: TestALinkLeadingOffThisMachineOrNowhereIsRefused.) Nothing is
+// made there: secure refuses it before it fills it, and a CONFLUX_DIR there that is not made yet is
+// refused by EnsureAll before it makes the root or anything above it, naming the directory there
+// that is on the network volume. The share is a folder of this machine's, reached through its own
+// server. Windows-only, so it runs in CI's platforms job alone, and skipped where the machine will
+// not share a folder.
 func TestARootOnANetworkVolumeIsRefused(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
@@ -421,12 +423,12 @@ func TestARootOnANetworkVolumeIsRefused(t *testing.T) {
 	share := privtest.Share(t, dir)
 	unc := filepath.Join(share, "conflux")
 
+	drive := privtest.MapDrive(t, share)
+
 	link := filepath.Join(t.TempDir(), "link")
-	if err := os.Symlink(unc, link); err != nil {
+	if err := os.Symlink(filepath.Join(drive, "conflux"), link); err != nil {
 		t.Fatal(err)
 	}
-
-	drive := privtest.MapDrive(t, share)
 
 	for _, root := range []string{unc, filepath.Join(drive, "conflux"), link} {
 		for name, judge := range map[string]func(string) error{"Foreign": Foreign, "secure": secure} {
@@ -443,7 +445,8 @@ func TestARootOnANetworkVolumeIsRefused(t *testing.T) {
 	for _, root := range []string{filepath.Join(share, "made", "conflux"), filepath.Join(drive, "made", "conflux")} {
 		t.Setenv("CONFLUX_DIR", root)
 
-		if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), root+" is on a network volume") {
+		if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), root) ||
+			!strings.Contains(err.Error(), " is on a network volume") {
 			t.Errorf("EnsureAll(a CONFLUX_DIR of %s) = %v, want a refusal naming it and the network volume", root, err)
 		}
 	}
@@ -475,6 +478,79 @@ func TestAWindowsTooOldIsRefusedBeforeAnythingIsMade(t *testing.T) {
 	if _, err := os.Lstat(above); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("EnsureAll made %s on a Windows it refused (%v)", above, err)
 	}
+}
+
+// TestALinkLeadingOffThisMachineOrNowhereIsRefused: a link at a root's name, or on the way to a
+// CONFLUX_DIR, that names a share is read for where it leads off the link itself, and refused before
+// anything follows it, which would sign this machine in to whoever serves the share: by secure and
+// Foreign for a root of the platform's, and by EnsureAll for a CONFLUX_DIR that is the link or
+// inside it. The share is 192.0.2.1's, TEST-NET-1, which nothing answers: a lookup that followed the
+// link would fail slowly, saying the network path was not found, not as these refusals say. A link
+// leading to nothing is refused by them too, as a link conflux cannot follow rather than as a root
+// that is not there, and nothing is made where it leads. Windows-only, so it runs in CI's platforms
+// job alone.
+func TestALinkLeadingOffThisMachineOrNowhereIsRefused(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", "")
+
+	const unc = `\\192.0.2.1\share\conflux`
+
+	away := dirSymlink(t, filepath.Join(t.TempDir(), "conflux"), unc)
+	nowhere := filepath.Join(t.TempDir(), "nowhere")
+	dangling := dirSymlink(t, filepath.Join(t.TempDir(), "conflux"), nowhere)
+
+	for name, judge := range map[string]func(string) error{"Foreign": Foreign, "secure": secure} {
+		if err := judge(away); err == nil || !strings.Contains(err.Error(), away+" is a link conflux will not follow") ||
+			!strings.Contains(err.Error(), `\??\UNC\192.0.2.1\share\conflux`) {
+			t.Errorf("%s(a link to %s) = %v, want a refusal naming it and where it leads", name, unc, err)
+		}
+
+		if err := judge(dangling); err == nil || !strings.Contains(err.Error(), dangling+" is a link conflux cannot follow") {
+			t.Errorf("%s(a link to nothing) = %v, want a refusal naming it", name, err)
+		}
+	}
+
+	for _, root := range []string{away, filepath.Join(away, "conflux")} {
+		t.Setenv("CONFLUX_DIR", root)
+
+		if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), away+" is a link") ||
+			!strings.Contains(err.Error(), "may be on another machine") {
+			t.Errorf("EnsureAll(a CONFLUX_DIR of %s) = %v, want a refusal naming the link to %s", root, err, unc)
+		}
+	}
+
+	for _, root := range []string{dangling, filepath.Join(dangling, "conflux")} {
+		t.Setenv("CONFLUX_DIR", root)
+
+		if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), dangling+" is a link conflux cannot follow") {
+			t.Errorf("EnsureAll(a CONFLUX_DIR of %s) = %v, want a refusal naming the link to nothing", root, err)
+		}
+	}
+
+	if _, err := os.Lstat(nowhere); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("EnsureAll made %s, where a link it refused leads (%v)", nowhere, err)
+	}
+}
+
+// dirSymlink makes a directory symbolic link at link naming target, and is link. The target is not
+// looked at: os.Symlink stats it to learn whether it is a directory, which for a share reaches for it.
+func dirSymlink(t *testing.T, link, target string) string {
+	t.Helper()
+
+	l, err := windows.UTF16PtrFromString(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	to, err := windows.UTF16PtrFromString(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := windows.CreateSymbolicLink(l, to, windows.SYMBOLIC_LINK_FLAG_DIRECTORY); err != nil {
+		t.Fatalf("make a link at %s to %s: %v", link, target, err)
+	}
+
+	return link
 }
 
 // TestARootIsMadeWithItsDACL: %ProgramData% passes Users the right to create in what is made in it,

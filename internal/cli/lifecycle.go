@@ -135,8 +135,9 @@ func install(ctx context.Context, d paths.Dirs, standalone bool) int {
 	return startFromConfig(ctx, d, mgr, cfg, "install")
 }
 
-// newService is the boot manager install registers with, startAndReport restarts and names,
-// status names, down stops, and update asks about; a test's stands in for it.
+// newService is the boot manager install registers with, start and update ask about,
+// startAndReport restarts and names, status names, down stops, and uninstall removes; a test's
+// stands in for it.
 var newService = service.New
 
 // register names exe, the copy Place made, as the boot service, defined as this conflux
@@ -362,7 +363,7 @@ func runUninstall(_ context.Context, args []string) int {
 	// Each step tolerates its own failure: a half-removed installation must always
 	// be finishable, so nothing stops at the first complaint. Remove stops the service
 	// on every platform before it deregisters it.
-	errs := []error{service.New().Remove()}
+	errs := []error{newService().Remove()}
 
 	// Whatever anchord a supervisor that died left running out of the state directory,
 	// once the service's own supervisor has let go of it.

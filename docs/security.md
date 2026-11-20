@@ -165,7 +165,12 @@ drive, `X:\`, so the folders above the one the letter stands for are not judged,
 move one of them could put another root in its place. Only an administrator can define a letter the
 service's account or an elevated conflux sees, and conflux does not refuse one: a `CONFLUX_DIR` on
 such a letter is held only as far as its folder's own parents are kept to SYSTEM and the
-Administrators by whoever defined it.
+Administrators by whoever defined it. A link on a `CONFLUX_DIR`'s way that leads to such a letter is
+followed the same way, and judged from the top of what the letter stands for; so is one leading to a
+local volume the mount manager names by no GUID, which only a letter defined the same way, outside
+the mount manager, can reach, since a link conflux follows names a drive letter or a volume's GUID.
+A root that is itself such a link is refused, as no junction of conflux's could lead there
+([windows.md](windows.md#file-permissions)).
 
 `CONFLUX_DIR` can point the extraction somewhere else, which is a knob worth knowing
 about: it lets a caller choose the directory a root daemon executes from. It exists
@@ -178,8 +183,17 @@ conflux in it for the boot service to run as root. The way is walked from the to
 a name at a time, each directory held open and judged before the next name is looked up in it, and
 that name looked up in the directory held and nowhere else, never followed (`openat` with
 `O_NOFOLLOW` on Unix, `NtCreateFile` relative to a handle on Windows): a link is read where it is,
-judged, and gone on from where it leads, so nothing on the way is looked up by its name after it was
-judged, or used before. A root not made yet is held to this before anything is made, as far as the
+judged, and gone on from where it leads, so nothing on the way is looked up afresh after it was
+judged, the one case below aside, or used before. On macOS and the BSDs conflux holds a directory
+by opening it to read, so one this account may only search, not read, is held instead by its name in
+the directory held before it, and the names after it are looked up through that name. That opens no
+way in: the directory the name is in was judged before the name was looked up, so only root and the
+account running conflux may change where the name leads — or, in a sticky directory, the name's own
+owner, whom the judgement of the directory itself, before anything is looked up in it, holds to root
+and that account as well — and those two could change the way anyway. On a way conflux does not
+judge, a platform root's, nothing is judged at all, and a lookup through the name is the lookup by
+name any program makes there. Linux holds every directory open as a path (`O_PATH`), which needs
+only the right to search. A root not made yet is held to this before anything is made, as far as the
 way is there, and each directory missing is made in the last one held and held open in turn, never
 by its name: one somebody else makes at the name meanwhile — a sticky directory such as `/tmp`, and
 `C:\`, let anybody make a name not taken yet — is held to the same rule before anything is made in

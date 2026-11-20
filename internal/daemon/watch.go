@@ -49,13 +49,14 @@ const (
 	linkGrace = 90 * time.Second
 
 	// rebuildBackoffMin and rebuildBackoffMax bound how fast a failed rebuild is
-	// retried. A link whose far end is simply switched off would otherwise restart every
-	// 90 seconds forever.
+	// retried, and a failed start of the daemon (Supervisor.loop). A link whose far end is
+	// simply switched off would otherwise restart every 90 seconds forever.
 	rebuildBackoffMin = 1 * time.Second
 	rebuildBackoffMax = 30 * time.Second
 
 	// rebuildRefusals is how many rebuilds in a row may be refused for good before the
-	// watcher stops: the supervisor's own allowance for a start, for the same reason.
+	// watcher stops, and how many starts of the daemon before the supervisor does: a
+	// configuration that will not build an anchor is refused again on every try.
 	rebuildRefusals = 3
 )
 
@@ -209,8 +210,9 @@ func (s *Supervisor) restartObserver(ctx context.Context, was anchorctl.Observer
 	return false
 }
 
-// keeper is what the watcher holds for one thing it keeps running: how long to wait before
-// trying it again, when it may be tried, and how many tries in a row were refused for good.
+// keeper is what the watcher holds for one thing it keeps running, and the supervisor's
+// restart loop for the daemon: how long to wait before trying it again, when it may be tried,
+// and how many tries in a row were refused for good.
 type keeper struct {
 	backoff   time.Duration
 	refusals  int

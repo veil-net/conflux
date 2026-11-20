@@ -233,13 +233,10 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	return s.loop(ctx)
 }
 
-// loop is spawn, bring up, watch, back off, repeat.
+// loop is spawn, bring up, watch, back off, repeat: one keeper, as the watcher holds for
+// what it keeps running, for the daemon.
 func (s *Supervisor) loop(ctx context.Context) error {
-	backoff := time.Second
-
-	const maxBackoff = 30 * time.Second
-
-	var permanentFailures int
+	k := newKeeper()
 
 	for {
 		startedAt := time.Now()
@@ -250,41 +247,31 @@ func (s *Supervisor) loop(ctx context.Context) error {
 			return nil
 		}
 
+		// A daemon that ran healthily for a while and then died is not in a crash
+		// loop; start its backoff over.
+		if time.Since(startedAt) > 5*time.Minute {
+			k.backoff = rebuildBackoffMin
+		}
+
+		wait := k.backoff
+
 		// A configuration anchor itself refuses will be refused again in five
 		// seconds and in five hours. Give up after a few so the service manager
 		// shows a failed unit rather than a hot loop nobody is watching.
-		if Permanent(err) {
-			permanentFailures++
-			if permanentFailures >= 3 {
-				return fmt.Errorf("anchord will not start with this configuration: %w", err)
-			}
-		} else {
-			permanentFailures = 0
+		if k.failed(err) {
+			return fmt.Errorf("anchord will not start with this configuration: %w", err)
 		}
 
 		if err != nil {
 			s.report().Warn("%v", err)
 		}
 
-		// A daemon that ran healthily for a while and then died is not in a crash
-		// loop; start its backoff over.
-		if time.Since(startedAt) > 5*time.Minute {
-			backoff = time.Second
-		}
-
-		s.report().Step("restarting in %s", backoff)
+		s.report().Step("restarting in %s", wait)
 
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(backoff):
-		}
-
-		if backoff < maxBackoff {
-			backoff *= 2
-			if backoff > maxBackoff {
-				backoff = maxBackoff
-			}
+		case <-time.After(wait):
 		}
 	}
 }

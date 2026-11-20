@@ -31,6 +31,7 @@ a daemon or a network. Most of conflux can be.
 | `internal/service` | the systemd unit, its `ExecStart=` quoted against splitting and expansion; the launchd plist carrying any path, and what registering it asks of launchd: nothing for a plist already in place, a changed one reaching a loaded job, a running job left running, a disabled label lifted; the rc scripts the BSDs get, rendered and parsed by `sh`, and a root they could not match refused; the copy the service runs; the service's scope, the same for every spelling of a root |
 | `internal/paths` | the root absolute and clean, and a log directory only where the platform has one; on Unix, a root another account owns refused before anything is changed, a symlinked one followed only to its owner's directory, our own narrowed to `0700`, and the shared `/var/log` left alone; on Windows, the root made Administrators', and files restricted to them trusted; an ephemeral root inside `CONFLUX_DIR` and nowhere else, and a root not made yet judged by the filesystem it would be made on |
 | `internal/flock` | a held lock reported as held, not waited for |
+| `internal/logfile` | each line stamped once however the writes are cut, a full log moved aside at a line's start, both files removed, and what the runtime writes to stderr itself landing in the log, on Windows as on Unix |
 | `internal/privcheck` | a command repeated for the shell it is pasted into, each word quoted where that shell would read it |
 
 ## The tests worth knowing about

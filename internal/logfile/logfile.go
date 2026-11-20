@@ -35,6 +35,10 @@ type File struct {
 
 	// mid is a last write that ended part-way through a line, whose rest is not stamped.
 	mid bool
+
+	// buf is where a line is put together with its stamp, kept between writes under mu so
+	// that one is not allocated for every line.
+	buf []byte
 }
 
 // Open appends to the log at path, made 0600 if it is not there, and places it over the
@@ -86,7 +90,7 @@ func (w *File) Write(p []byte) (int, error) {
 			line = p[:i+1]
 		}
 
-		var b []byte
+		b := w.buf[:0]
 
 		if !w.mid {
 			if w.size >= w.max {
@@ -103,6 +107,7 @@ func (w *File) Write(p []byte) (int, error) {
 		}
 
 		b = append(b, line...)
+		w.buf = b
 
 		n, err := w.f.Write(b)
 		w.size += int64(n)

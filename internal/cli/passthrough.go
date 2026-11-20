@@ -44,9 +44,9 @@ func passthrough(ctx context.Context, args []string) int {
 		return runDetached(args)
 	}
 
-	d := activeDirs()
+	d, checked := activeDirs()
 
-	token, code := connectionDetails(d, args)
+	token, code := connectionDetails(d, checked, args)
 	if code != ExitOK {
 		return code
 	}
@@ -65,27 +65,42 @@ func passthrough(ctx context.Context, args []string) int {
 	return execAnchorctl(ctx, tools.Anchorctl, args, env)
 }
 
-// connectionDetails reads the token, and intercepts the one failure anchorctl
-// cannot advise on.
+// connectionDetails reads the token, once d has passed paths' check (checked: an error that is
+// fs.ErrNotExist where nothing of conflux's is there, and a refusal where d is not conflux's to
+// read), and intercepts the one failure anchorctl cannot advise on.
 //
 // Its own answer to a socket with no daemon behind it asks whether anchord is running
 // there, which is right for anchor and no help to somebody holding conflux, who never
 // started anchord and is not meant to. Everything else, including anchorctl's
 // genuinely good explanations of every other refusal, passes through untouched.
-func connectionDetails(d paths.Dirs, args []string) (string, int) {
-	if _, err := os.Stat(d.Socket()); errors.Is(err, fs.ErrNotExist) {
+func connectionDetails(d paths.Dirs, checked error, args []string) (string, int) {
+	retry := privcheck.Retry(privcheck.Command(append([]string{"conflux"}, args...)...))
+
+	if checked == nil {
+		if _, err := os.Stat(d.Socket()); errors.Is(err, fs.ErrNotExist) {
+			checked = err
+		}
+	}
+
+	switch {
+	case errors.Is(checked, fs.ErrNotExist):
 		ui.Errf("nothing is running here.\n\n"+
 			"  conflux start                       start from a configuration that already exists\n"+
 			configureHint+"\n\n"+
 			"  (the control socket would be %s)", d.Socket())
 
 		return "", ExitUnavailable
+	case errors.Is(checked, fs.ErrPermission):
+		ui.Errf("%v\n  try:  %s", checked, retry)
+
+		return "", ExitDenied
+	case checked != nil:
+		return "", fail(checked)
 	}
 
 	token, err := readToken(d)
 	if errors.Is(err, fs.ErrPermission) {
-		ui.Errf("%s is not readable, and anchorctl needs it to authenticate.\n  try:  %s",
-			d.TokenFile(), privcheck.Retry(privcheck.Command(append([]string{"conflux"}, args...)...)))
+		ui.Errf("%s is not readable, and anchorctl needs it to authenticate.\n  try:  %s", d.TokenFile(), retry)
 
 		return "", ExitDenied
 	}
@@ -193,23 +208,30 @@ const ephemeralEnv = "CONFLUX_EPHEMERAL"
 // activeDirs is the root whose anchor the pass-through reaches: the machine's own, or an
 // ephemeral run's. The ephemeral one only when it is the one running, or when asked for by
 // CONFLUX_EPHEMERAL=1: a command never switches anchors because one was started beside it.
-func activeDirs() paths.Dirs {
+// The machine's own is held to paths' check before anything in it is looked at by name, and
+// what the check said comes back with it (Dirs.Check): fs.ErrNotExist where it is not there, which
+// the ephemeral run's answers for where one is running, and a refusal, which nothing answers for.
+// An ephemeral run's was judged as its readers judge one (ephemeralRuns).
+func activeDirs() (paths.Dirs, error) {
 	installed := paths.Default()
 
 	eph, live := liveEphemeral()
-	if !live {
-		return installed
+	if live && os.Getenv(ephemeralEnv) == "1" {
+		return eph, nil
 	}
 
-	if os.Getenv(ephemeralEnv) == "1" {
-		return eph
+	switch err := installed.Check(); {
+	case live && errors.Is(err, fs.ErrNotExist):
+		return eph, nil
+	case err != nil, !live:
+		return installed, err
 	}
 
 	if _, err := os.Stat(installed.Socket()); err == nil {
-		return installed
+		return installed, nil
 	}
 
-	return eph
+	return eph, nil
 }
 
 // liveEphemeral is the root of the ephemeral run that is running, if one is: the one whose

@@ -17,7 +17,10 @@
 package paths
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
+	"iter"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -243,15 +246,8 @@ func (d Dirs) ReadyFile() string { return filepath.Join(d.Run, "ready") }
 // (makeRoot), and what is created beneath it inherits that. The system's shared log
 // directory is not conflux's, and is left alone.
 func (d Dirs) EnsureAll() error {
-	dirs := []string{d.Config, d.State, d.Run, d.Log}
-
-	for i, dir := range dirs {
-		// Config and State are one directory on macOS, Windows and under CONFLUX_DIR.
-		if dir == "" || dir == sharedLog || slices.Contains(dirs[:i], dir) {
-			continue
-		}
-
-		if within(dir, dirs) {
+	for dir, inside := range d.roots() {
+		if inside {
 			if err := os.MkdirAll(dir, 0o700); err != nil {
 				return fmt.Errorf("create %s: %w", dir, err)
 			}
@@ -266,6 +262,64 @@ func (d Dirs) EnsureAll() error {
 		if err := secure(dir); err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+// roots is each of d's directories that is conflux's, once: every one set but the system's shared
+// log directory -- Config and State are one directory on macOS, Windows and under CONFLUX_DIR --
+// and whether it sits inside another of them, which holds it.
+func (d Dirs) roots() iter.Seq2[string, bool] {
+	return func(yield func(string, bool) bool) {
+		dirs := []string{d.Config, d.State, d.Run, d.Log}
+
+		for i, dir := range dirs {
+			if dir == "" || dir == sharedLog || slices.Contains(dirs[:i], dir) {
+				continue
+			}
+
+			if !yield(dir, within(dir, dirs)) {
+				return
+			}
+		}
+	}
+}
+
+// Check holds each of d's roots that is there -- each EnsureAll secures, which holds the rest -- to
+// what a command needs of it before it reads, runs or removes anything in it by its name: a
+// lookup by name follows whatever is at the name, and whoever could plant a configuration, a pid
+// record, a token or a binary there would have this conflux act on theirs. It is lighter than
+// EnsureAll, and changes nothing: a root that fails is refused, saying why, and none is made or
+// narrowed. Each is held, as itself where it is a link, to its owner, which must be root, SYSTEM,
+// the Administrators or the account running conflux, and to who else may retarget or write it,
+// which must be nobody -- on Windows by the DACL a secured root keeps (secure), and no link on the
+// way to it that leads off this machine; on Unix by its mode and its ACL as found, the sticky bit
+// letting nothing through. A CONFLUX_DIR is held to its parents too, as EnsureAll holds them. What
+// a root holds is not judged: EnsureAll and Foreign go into it, and this does not.
+//
+// Where none of d's roots is there, nothing of conflux's is installed, and Check is an error that
+// is fs.ErrNotExist: each caller then takes its own way for that, reading nothing, since what a
+// lookup by name would find at a name that was not there a moment ago is whoever made it first's.
+func (d Dirs) Check() error {
+	there := false
+
+	for dir, inside := range d.roots() {
+		if inside {
+			continue
+		}
+
+		switch err := checkRoot(dir); {
+		case errors.Is(err, fs.ErrNotExist):
+		case err != nil:
+			return err
+		default:
+			there = true
+		}
+	}
+
+	if !there {
+		return fmt.Errorf("conflux is not installed in %s: %w", d.State, fs.ErrNotExist)
 	}
 
 	return nil

@@ -106,12 +106,27 @@ anything but a drive letter or a volume of this machine's — a share by its UNC
 server's — or a relative link that names a volume itself, which a lookup starts from rather than
 from the link's folder, is refused before anything follows it, by where the link itself says it
 leads, so that conflux never signs this machine in to whoever serves it: at a root's name, and for a
-`CONFLUX_DIR` at every step of the way to it. So is a link that leads nowhere, with nothing made where it leads.
+`CONFLUX_DIR` at every step of the way to it, by every command that makes a root, every reader of
+an ephemeral root, and every command that reads the machine's own (below) — `status`, a
+pass-through, `help`'s `anchorctl`, `renew`, `start`, `down`, `uninstall` and `update` — before it
+looks anything up there. So is a link that leads nowhere, with nothing made where it leads.
 A root not made yet is made through a handle on the folder it goes in, so a link somebody plants at
 its name meanwhile is found there, and judged as itself, rather than followed. For a `CONFLUX_DIR`,
 the folders on the way to it that are there are held, before conflux makes any of the rest by their
 names, to the rule the way to one is held to ([security.md](security.md#the-extracted-binaries)):
 nobody else may move what is in them, so nobody else can make a junction where the next is to go.
+
+A command that reads the machine's root, or acts on what it holds, rather than making it — `status`,
+a pass-through and `help`'s `anchorctl`, `renew`, `start`, `down`, `uninstall`, and `update` asking
+whether the anchor runs — holds the root first, before it reads anything in it by its name: through
+one handle, a junction or a link judged as itself as above, it must be SYSTEM's, the
+Administrators' or the account running conflux's, and its DACL must grant nobody else the right to
+write it, add to it, move it, point it elsewhere or change who may, nor pass such a right on to what
+is made in it, which is what a root conflux secured keeps; a `CONFLUX_DIR`'s way is held as it is
+when the root is made. Nothing is changed and nothing inside is judged: a root that fails is
+refused, saying why, with nothing in it read, run, stopped or removed, and one not there is a
+machine with nothing installed, of which nothing is read either, since whoever made the name first
+would answer for what is at it.
 
 A root found already there is judged and restricted through one handle, opened on the directory
 itself and never looked up by its name again. Before anything in it is judged, it is made to hold

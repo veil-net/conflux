@@ -133,8 +133,9 @@ func Extracted(d paths.Dirs) (*Tools, error) {
 }
 
 // ForUsage is an anchorctl to ask what a command takes, for help that must leave nothing
-// behind: this build's, extracted under d, where a whole extraction is there and readable,
-// and otherwise a copy in a private temporary directory, which done removes -- in the
+// behind: this build's, extracted under d, where d's roots pass paths' check (Dirs.Check), which
+// a binary run from them by name needs, and a whole extraction is there and readable, and
+// otherwise a copy in a private temporary directory, which done removes -- in the
 // system's temporary directory, or, where that one is mounted noexec as /tmp is on a hardened
 // host, in the user's cache directory, made if it is not there yet. No other directory is
 // made, and never d's own. Making them for help remade, after an uninstall, what it had
@@ -142,11 +143,14 @@ func Extracted(d paths.Dirs) (*Tools, error) {
 // administrator, it left %ProgramData%\conflux owned by that account, which every later
 // install then refused.
 func ForUsage(d paths.Dirs) (bin string, done func(), err error) {
-	switch t, err := Extracted(d); {
-	case err == nil:
-		return t.Anchorctl, func() {}, nil
-	case !errors.Is(err, ErrNotExtracted):
-		return "", nil, err
+	if !anchor.Supported {
+		return "", nil, errUnsupported
+	}
+
+	if d.Check() == nil {
+		if t := toolsIn(d); t.complete() {
+			return t.Anchorctl, func() {}, nil
+		}
 	}
 
 	candidates := []string{os.TempDir()}

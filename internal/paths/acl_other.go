@@ -156,6 +156,77 @@ func Foreign(dir string) error {
 	return err
 }
 
+// checkRoot is Check's judgement of the root dir: checkRootAs for this process's effective uid.
+func checkRoot(dir string) error { return checkRootAs(dir, os.Geteuid()) }
+
+// checkRootAs refuses the root dir, for a command run as euid about to read what is in it by name,
+// where another account could have put something there: one owned, or reached through a link
+// owned, by an account other than root and euid, or whose mode or ACL, as found, lets another
+// account write it (judge), the sticky bit letting nothing through, since a name not taken yet is
+// anybody's in a sticky directory. A CONFLUX_DIR is held to its parents first (parentsAs). Nothing
+// is narrowed, as secure would narrow it: a reader changes nothing.
+func checkRootAs(dir string, euid int) error {
+	if chosen(dir) {
+		if err := parentsAs(dir, euid); err != nil {
+			return err
+		}
+	}
+
+	link, err := os.Lstat(dir)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", dir, err)
+	}
+
+	if err := readerOwns(dir, link, euid); err != nil {
+		return err
+	}
+
+	fi, acl := link, dir
+	if isLink(link) {
+		if fi, err = os.Stat(dir); err != nil {
+			return fmt.Errorf("read %s: %w", dir, err)
+		}
+
+		if err := readerOwns(dir, fi, euid); err != nil {
+			return err
+		}
+
+		if acl, err = filepath.EvalSymlinks(dir); err != nil {
+			return fmt.Errorf("read %s: %w", dir, err)
+		}
+	}
+
+	writers, aclGroup, err := aclOf(acl)
+	if err != nil {
+		return err
+	}
+
+	if who := judge(fi.Mode()&^os.ModeSticky, fi.Sys().(*syscall.Stat_t).Gid, writers, aclGroup, euid); who != "" {
+		return fmt.Errorf("%s is not conflux's alone: %s could put what it likes in it for conflux to read or "+
+			"run, so conflux will not use it.\n  Narrow it to 0700, and remove that entry from its ACL; then run "+
+			"this again", dir, who)
+	}
+
+	return nil
+}
+
+// readerOwns refuses dir, of which fi is what Lstat or Stat said, where it belongs to an account
+// other than root and euid: one root's is root's to have made, and a reader trusts it as it trusts
+// root.
+func readerOwns(dir string, fi os.FileInfo, euid int) error {
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("read the owner of %s: no ownership on this filesystem", dir)
+	}
+
+	if owner := int(st.Uid); owner != 0 && owner != euid {
+		return fmt.Errorf("%s belongs to uid %d, not to root or uid %d, which conflux runs as, so conflux did not "+
+			"create it and will not use what is in it.\n  Remove it, then run this again", dir, owner, euid)
+	}
+
+	return nil
+}
+
 // parentsAs refuses dir where another account may write a directory above it: one whose
 // owner is neither root nor euid, who can always give itself the right, or one whose mode or
 // ACL lets another account write it (aclOf, judge). Whoever may write a parent can move dir

@@ -158,7 +158,20 @@ func moveService(ctx context.Context, exe string) int {
 		return ExitOK
 	}
 
-	a := askDaemon(ctx, paths.Default(), false)
+	// Whether the anchor runs is asked of the root's socket, by its name, so the roots pass paths'
+	// check first; with none there, nothing runs.
+	d := paths.Default()
+
+	checked := d.Check()
+	if checked != nil && !errors.Is(checked, os.ErrNotExist) {
+		return fail(checked)
+	}
+
+	a := &daemonAnswers{}
+	if checked == nil {
+		a = askDaemon(ctx, d, false)
+	}
+
 	a.wg.Wait()
 
 	if a.asked && a.statErr == nil {

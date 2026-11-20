@@ -41,7 +41,15 @@ func runStatus(ctx context.Context, args []string) int {
 
 	ephemeral := reportEphemeralRun(ctx)
 
-	cfg, err := config.Load(d)
+	// Nothing of the machine's is read by its name until its roots pass paths' check; one not
+	// there is a machine never configured, with nothing read.
+	err := d.Check()
+
+	var cfg *config.Config
+	if err == nil {
+		cfg, err = config.Load(d)
+	}
+
 	if err != nil {
 		// An installed machine's configuration is root's alone, so another account is refused
 		// as every verb needing privilege refuses it: exit 13, and the command to run again.
@@ -51,7 +59,7 @@ func runStatus(ctx context.Context, args []string) int {
 			}
 		}
 
-		if !os.IsNotExist(err) {
+		if !errors.Is(err, fs.ErrNotExist) {
 			return fail(err)
 		}
 

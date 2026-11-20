@@ -56,6 +56,19 @@ host can read, and when the run stops there is nothing at all.
   beneath it, so conflux gives its root to SYSTEM and Administrators — owner, and a
   protected DACL everything beneath inherits, set as the root is made — and refuses a root
   another account made. See [windows.md](windows.md#file-permissions).
+- A command that reads a root, or acts on what it holds, without making it — `status`, a
+  pass-through and `help`'s `anchorctl`, `renew`, `start`, `down`, `uninstall`, and `update` asking
+  whether the anchor runs — holds every root first, on every platform, before it reads anything in
+  it by its name: whoever could have put a configuration, a pid record, a token or a binary there
+  would otherwise have conflux read, signal or run theirs. The root's owner must be root (SYSTEM or
+  the Administrators on Windows) or the account running conflux, a link at its name included, and
+  nobody else may write it or point it elsewhere: by its mode and ACL as found on Unix, the sticky
+  bit letting nothing through, and on Windows by the DACL a root conflux secured keeps, with no
+  link on the way leading off the machine. A `CONFLUX_DIR`'s parents are held as when it is made.
+  Nothing is narrowed and nothing inside is judged: a root that fails is refused, saying why, with
+  nothing in it read, run, stopped or removed, and with none there the command says nothing is
+  installed, reading nothing, since what is at a name that was not there a moment ago is whoever
+  made it first's.
 - Never in an argv. It travels on stdin to `anchorctl start -manifest -`, and to
   `anchorctl observe -start -manifest -` for the observer, which runs under it too, becomes an
   inline secret on the wire, and is never named as a path in the request — so it never
@@ -108,7 +121,10 @@ conflux makes, through its own handle, leading to the directory it judged (see
 [windows.md](windows.md#file-permissions)). A root on a network volume, however it is reached, is
 refused, by every reader of an ephemeral root too, as the volume conflux holds it open on says;
 a link naming a share, at a root's name or on the way to a `CONFLUX_DIR`, is refused before conflux
-follows it, by where the link itself says it leads.
+follows it, by where the link itself says it leads: by every command that makes a root, every
+reader of an ephemeral root, and every command that reads the machine's own — `status`, a
+pass-through, `help`'s `anchorctl`, `renew`, `start`, `down`, `uninstall` and `update` — before it
+looks anything up there (below).
 
 On Windows two gaps are left. The first is a class: a handle keeps every right it was opened with,
 and conflux judges a DACL as it finds it, so where an administrator tightened a DACL after another

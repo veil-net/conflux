@@ -1227,3 +1227,41 @@ func TestForeignRefusesARootItCannotRead(t *testing.T) {
 		}
 	}
 }
+
+// TestCheckHoldsARootAsAReaderNeeds: Check holds each root that is there to its owner and to who
+// else may write it, retarget it or change who may, on itself or on what is made in it, as found
+// and changing nothing: a root EnsureAll made passes, and one this account owns that grants Users
+// the right to add a file to it is refused, naming it and Users, and left with that grant. Where no
+// root is there Check is fs.ErrNotExist. Windows-only, so it runs in CI's platforms job alone.
+func TestCheckHoldsARootAsAReaderNeeds(t *testing.T) {
+	made := filepath.Join(t.TempDir(), "conflux")
+	t.Setenv("CONFLUX_DIR", made)
+
+	if err := Default().EnsureAll(); err != nil {
+		t.Fatalf("EnsureAll: %v", err)
+	}
+
+	if err := Default().Check(); err != nil {
+		t.Errorf("Check(a root EnsureAll made) = %v", err)
+	}
+
+	t.Setenv("CONFLUX_DIR", "")
+
+	open := foundRoot(t)
+	privtest.GrantUsers(t, open, windows.FILE_WRITE_DATA, windows.NO_INHERITANCE)
+
+	if err := checkRoot(open); err == nil || !strings.Contains(err.Error(), open) || !strings.Contains(err.Error(), "Users") {
+		t.Errorf("checkRoot(a root Users may add a file to) = %v, want a refusal naming it and Users", err)
+	}
+
+	users := wellKnown(windows.WinBuiltinUsersSid)
+	if !slices.ContainsFunc(privtest.ReadSecurity(t, open).Grantees(), users.Equals) {
+		t.Errorf("Check took Users' grant from %s, which it only judges", open)
+	}
+
+	absent := filepath.Join(t.TempDir(), "absent")
+	if err := (Dirs{Config: absent, State: absent, Run: filepath.Join(absent, runName)}).Check(); !errors.Is(err,
+		os.ErrNotExist) {
+		t.Errorf("Check(no root there) = %v, want %v", err, os.ErrNotExist)
+	}
+}

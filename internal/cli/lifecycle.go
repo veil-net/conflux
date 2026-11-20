@@ -239,10 +239,15 @@ func runStart(ctx context.Context, args []string) int {
 	}
 
 	// The same 78 the supervisor exits with, and for the same reason: there is a
-	// service here and nothing for it to run.
-	cfg, err := config.Load(d)
+	// service here and nothing for it to run. Nothing of the machine's is read by its name, or
+	// placed there, until its roots pass paths' check; one not there holds no configuration.
+	var cfg *config.Config
+	if err = d.Check(); err == nil {
+		cfg, err = config.Load(d)
+	}
+
 	if err != nil {
-		if !os.IsNotExist(err) {
+		if !errors.Is(err, os.ErrNotExist) {
 			return fail(err)
 		}
 
@@ -288,6 +293,15 @@ func runDown(_ context.Context, args []string) int {
 		return fail(err)
 	}
 
+	// The record of an anchor given up on is cleared by its name in the state directory, so the
+	// roots pass paths' check first; one not there holds no record.
+	d := paths.Default()
+
+	checked := d.Check()
+	if checked != nil && !errors.Is(checked, os.ErrNotExist) {
+		return fail(checked)
+	}
+
 	mgr := newService()
 
 	installed, err := mgr.Installed()
@@ -312,8 +326,10 @@ func runDown(_ context.Context, args []string) int {
 
 	// An anchor stopped by hand is not one the supervisor gave up on, so status says no more of
 	// that than of anything else the stopped service ran.
-	if err := daemon.ForgetRefusal(paths.Default()); err != nil {
-		ui.Errf("could not clear the record of the anchor the supervisor gave up on: %v", err)
+	if checked == nil {
+		if err := daemon.ForgetRefusal(d); err != nil {
+			ui.Errf("could not clear the record of the anchor the supervisor gave up on: %v", err)
+		}
 	}
 
 	ui.Printf("Stopped. The boot service is still registered and the configuration is intact,\n" +
@@ -347,6 +363,15 @@ func runUninstall(_ context.Context, args []string) int {
 
 	d := paths.Default()
 
+	// Before anything is stopped, read or removed: what is in a root is read, signalled and
+	// removed by its name -- the manifest, the pid record anchord is stopped by, the lock, the
+	// roots themselves -- so they pass paths' check first, and one that fails leaves everything as
+	// it is. One not there has nothing in it to read or remove.
+	checked := d.Check()
+	if checked != nil && !errors.Is(checked, os.ErrNotExist) {
+		return fail(checked)
+	}
+
 	// Its account goes with the installation's, and nothing may be running as it when it does:
 	// the run ends itself, with its anchor, when it is stopped.
 	if e, live := liveEphemeral(); live {
@@ -356,7 +381,7 @@ func runUninstall(_ context.Context, args []string) int {
 		return ExitUsage
 	}
 
-	if !confirmUninstall(d, *yes) {
+	if checked == nil && !confirmUninstall(d, *yes) {
 		return ExitUsage
 	}
 
@@ -367,7 +392,9 @@ func runUninstall(_ context.Context, args []string) int {
 
 	// Whatever anchord a supervisor that died left running out of the state directory,
 	// once the service's own supervisor has let go of it.
-	daemon.Reap(d, 35*time.Second)
+	if checked == nil {
+		daemon.Reap(d, 35*time.Second)
+	}
 
 	// And what an ephemeral run that was killed left: its anchord, where nothing ended it with
 	// the run (macOS and the BSDs), and its root -- the extracted pair and the token -- which
@@ -377,8 +404,10 @@ func runUninstall(_ context.Context, args []string) int {
 		errs = append(errs, removeEphemeralRoot(*e))
 	}
 
-	for _, dir := range []string{d.Run, d.State, d.Config} {
-		errs = append(errs, os.RemoveAll(dir))
+	if checked == nil {
+		for _, dir := range []string{d.Run, d.State, d.Config} {
+			errs = append(errs, os.RemoveAll(dir))
+		}
 	}
 
 	// The account anchord ran as, once nothing runs as it, if conflux made it.

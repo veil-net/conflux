@@ -74,23 +74,35 @@ func runRenew(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	// An ephemeral run renews itself, in memory, and nothing outside it holds its credential
-	// to renew it with.
-	if e, live := liveEphemeral(); live && !config.HasManifest(paths.Default()) {
-		ui.Errf("the anchor running is ephemeral, from %s, and renews itself in memory: nothing\n"+
-			"  outside it holds its credential, so there is nothing here to renew", e.State)
-
-		return ExitUnavailable
-	}
-
 	return renewNow(ctx, paths.Default())
 }
 
 // renewNow is the body, split out so the test can drive it against a temporary
 // CONFLUX_DIR without going through privcheck.
 func renewNow(ctx context.Context, d paths.Dirs) int {
+	// Nothing of the machine's is read by its name until its roots pass paths' check; one not
+	// there has never been configured.
+	checked := d.Check()
+	if checked != nil && !errors.Is(checked, fs.ErrNotExist) {
+		return fail(checked)
+	}
+
+	// An ephemeral run renews itself, in memory, and nothing outside it holds its credential
+	// to renew it with.
+	if e, live := liveEphemeral(); live && (checked != nil || !config.HasManifest(d)) {
+		ui.Errf("the anchor running is ephemeral, from %s, and renews itself in memory: nothing\n"+
+			"  outside it holds its credential, so there is nothing here to renew", e.State)
+
+		return ExitUnavailable
+	}
+
 	// What it runs is RenewNow's to read, under the lock; here only whether there is any.
-	if _, err := config.Load(d); err != nil {
+	err := checked
+	if err == nil {
+		_, err = config.Load(d)
+	}
+
+	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			ui.Errf("this machine has never been configured, so there is no credential to renew.\n\n" + configureHint)
 

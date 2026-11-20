@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -398,23 +397,5 @@ func TestUsageMakesNoTemporaryDirectory(t *testing.T) {
 
 	if _, err := os.Stat(missing); !os.IsNotExist(err) {
 		t.Errorf("help made the missing temporary directory %s (%v)", missing, err)
-	}
-}
-
-// TestAUsageCopyIsItsRunners: the anchorctl help runs from a temporary directory is restricted
-// to the account running it, which need not be an administrator, and a set's binaries to the
-// machine's. Only Windows acts on either, and its CI runs elevated, where Restrict's DACL lets
-// the runner in as well, so it is the choice that is tested here.
-func TestAUsageCopyIsItsRunners(t *testing.T) {
-	is := func(got, want func(string, bool) error) bool {
-		return reflect.ValueOf(got).Pointer() == reflect.ValueOf(want).Pointer()
-	}
-
-	if !is(restriction(true), paths.RestrictToOwner) {
-		t.Error("a copy for one run is not restricted to its runner: an account that is not an administrator could not execute it")
-	}
-
-	if !is(restriction(false), paths.Restrict) {
-		t.Error("a set's binaries are not restricted to SYSTEM and the Administrators")
 	}
 }

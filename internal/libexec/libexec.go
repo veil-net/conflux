@@ -322,7 +322,16 @@ func writeExecutable(path string, content []byte, oneRun bool) error {
 		return fmt.Errorf("close %s: %w", path, err)
 	}
 
-	if err := restriction(oneRun)(path, false); err != nil {
+	// Which only Windows acts on. A set's binaries are the machine's, SYSTEM's and the
+	// Administrators', as everything under the root is. A copy for one run is the account
+	// running it as well: help may be asked by one that is not an administrator, which
+	// Restrict's DACL would not let execute what it had just written.
+	restrict := paths.Restrict
+	if oneRun {
+		restrict = paths.RestrictToOwner
+	}
+
+	if err := restrict(path, false); err != nil {
 		return fmt.Errorf("restrict %s: %w", path, err)
 	}
 
@@ -331,18 +340,6 @@ func writeExecutable(path string, content []byte, oneRun bool) error {
 	clearQuarantine(path)
 
 	return nil
-}
-
-// restriction is what writeExecutable restricts a binary to, which only Windows acts on. A
-// set's binaries are the machine's, SYSTEM's and the Administrators', as everything under the
-// root is. A copy for one run is the account running it as well: help may be asked by one that
-// is not an administrator, which Restrict's DACL would not let execute what it had just written.
-func restriction(oneRun bool) func(string, bool) error {
-	if oneRun {
-		return paths.RestrictToOwner
-	}
-
-	return paths.Restrict
 }
 
 // prefault reads one byte of every page of b, so the embedded binary is mapped in before

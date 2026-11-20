@@ -28,13 +28,15 @@ func job() launchdJob {
 	}}
 }
 
-type launchd struct{}
+// launchd remembers, between an Install and the Restart after it, whether the Install
+// started the job; see launchdManager.
+type launchd struct{ launchdManager }
 
-func newManager() Manager { return launchd{} }
+func newManager() Manager { return &launchd{} }
 
-// Install writes the job and loads nothing; see launchdJob.install.
-func (launchd) Install(exe string, args ...string) error {
-	return job().install([]byte(launchdPlist(Label(), append([]string{exe}, withLog(args)...), logFile())))
+// Install writes the job and loads nothing new; see launchdJob.install.
+func (l *launchd) Install(exe string, args ...string) error {
+	return l.install(job(), []byte(launchdPlist(Label(), append([]string{exe}, withLog(args)...), logFile())))
 }
 
 // Remove deregisters the job and deletes its plist and its log, and deliberately
@@ -43,7 +45,7 @@ func (launchd) Install(exe string, args ...string) error {
 // longer exists.
 //
 // Each step tolerates its own failure, so a half-removed service can always be finished off.
-func (l launchd) Remove() error {
+func (l *launchd) Remove() error {
 	j := job()
 	errs := []error{j.ctl.run("bootout", j.target())}
 
@@ -60,22 +62,9 @@ func (l launchd) Remove() error {
 	return nil
 }
 
-// Restart asks first whether the job is loaded, and that is the question that keeps a
-// Mac from starting twice.
-//
-// A job that is not loaded is started by loading it: bootstrap plus RunAtLoad is a start,
-// and a kickstart on top of it would kill the instance launchd had just made. A job that
-// is already loaded cannot be bootstrapped again -- that fails with "37: Operation already
-// in progress" -- so it is kickstarted with -k, which starts a stopped job and restarts a
-// running one.
-func (l launchd) Restart() error {
-	j := job()
-	if _, loaded := j.print(); !loaded {
-		return j.load()
-	}
-
-	return j.ctl.run("kickstart", "-k", j.target())
-}
+// Restart starts the job, or starts it again, unless the Install before it just did; see
+// launchdManager and launchdJob.restart.
+func (l *launchd) Restart() error { return l.restart(job()) }
 
 // Stop kills the process and leaves the job loaded, which is exactly the semantics
 // `conflux down` needs: stopped now, back at the next boot.
@@ -87,7 +76,7 @@ func (l launchd) Restart() error {
 //
 // launchctl kill returns at once, so Stop waits for the job to go, as systemctl stop does,
 // within the plist's ExitTimeOut and a little more.
-func (l launchd) Stop() error {
+func (l *launchd) Stop() error {
 	j := job()
 	if !j.running() {
 		return nil
@@ -106,15 +95,15 @@ func (l launchd) Stop() error {
 	return nil
 }
 
-func (launchd) Installed() (bool, error) { return exists(plistPath()) }
+func (*launchd) Installed() (bool, error) { return exists(plistPath()) }
 
 // running asks launchd rather than inferring it from Installed, which is the honest answer
 // and the one Describe needs.
 func (j launchdJob) running() bool { return jobRunning(j.print()) }
 
-func (launchd) LogHint() string { return "tail -n 50 " + logFile() }
+func (*launchd) LogHint() string { return "tail -n 50 " + logFile() }
 
-func (l launchd) Describe() string {
+func (l *launchd) Describe() string {
 	installed, _ := l.Installed()
 	if !installed {
 		return "not installed"

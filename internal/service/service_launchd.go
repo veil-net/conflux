@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync/atomic"
 
 	"github.com/veil-net/conflux/internal/config"
 )
@@ -85,19 +86,21 @@ func (j launchdJob) target() string { return "system/" + j.label }
 // Nothing about a reboot depends on loading it here. launchd bootstraps everything in
 // /Library/LaunchDaemons at boot, so the plist on disk *is* the registration -- with its
 // label enabled -- and Start and Restart load it when there is something to run.
-func (j launchdJob) install(plist []byte) error {
+//
+// started is whether it bootstrapped the job, which is a start.
+func (j launchdJob) install(plist []byte) (started bool, err error) {
 	j.enableIfDisabled()
 
 	// Registered exactly so already, which is every re-run of up and proxy: a read, and
 	// the job left as it is, loaded from this same plist or not loaded at all.
 	if cur, err := os.ReadFile(j.plistPath); err == nil && bytes.Equal(cur, plist) {
-		return nil
+		return false, nil
 	}
 
 	// 0644 whatever was there before: launchd refuses a job whose plist is group- or
 	// world-writable, for a reason nothing in its error names.
 	if err := config.WriteFileAtomic(j.plistPath, plist, 0o644); err != nil {
-		return err
+		return false, err
 	}
 
 	// A job already loaded is loaded from the plist it was bootstrapped with, not from the
@@ -108,18 +111,65 @@ func (j launchdJob) install(plist []byte) error {
 	// stopped until somebody starts it.
 	out, loaded := j.print()
 	if !loaded {
-		return nil
+		return false, nil
 	}
 
 	if err := j.ctl.run("bootout", j.target()); err != nil {
-		return err
+		return false, err
 	}
 
 	if !jobRunning(out, loaded) {
+		return false, nil
+	}
+
+	if err := j.load(); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// launchdManager is what one launchd manager keeps between its calls: whether its
+// Install has just started the job.
+type launchdManager struct {
+	// started is set by an install that bootstrapped the job -- a running job whose plist
+	// changed, loaded again so it keeps running -- and taken by the restart that follows from
+	// the same caller, which then starts nothing: a kickstart -k there would kill the
+	// instance launchd had just made, and start it a second time.
+	started atomic.Bool
+}
+
+func (m *launchdManager) install(j launchdJob, plist []byte) error {
+	started, err := j.install(plist)
+	if started {
+		m.started.Store(true)
+	}
+
+	return err
+}
+
+func (m *launchdManager) restart(j launchdJob) error {
+	if m.started.Swap(false) {
 		return nil
 	}
 
-	return j.load()
+	return j.restart()
+}
+
+// restart asks first whether the job is loaded, and that is the question that keeps a Mac
+// from starting twice.
+//
+// A job that is not loaded is started by loading it: bootstrap plus RunAtLoad is a start,
+// and a kickstart on top of it would kill the instance launchd had just made. A job that
+// is already loaded cannot be bootstrapped again -- that fails with "37: Operation already
+// in progress" -- so it is kickstarted with -k, which starts a stopped job and restarts a
+// running one.
+func (j launchdJob) restart() error {
+	if _, loaded := j.print(); !loaded {
+		return j.load()
+	}
+
+	return j.ctl.run("kickstart", "-k", j.target())
 }
 
 // enableIfDisabled lifts a disable on the label, and does nothing to one that has none.

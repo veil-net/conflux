@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/update"
@@ -58,8 +59,12 @@ type Manager interface {
 	LogHint() string
 }
 
-// New returns this platform's manager.
-func New() Manager { return newManager() }
+// New returns this platform's manager: the same one for the life of the process, so the
+// Restart that follows an Install knows what the Install did, whichever caller asked for
+// each. Only launchd's has anything to know (launchdManager).
+func New() Manager { return manager() }
+
+var manager = sync.OnceValue(newManager)
 
 // Place copies this conflux to where the boot service runs it from, and returns that
 // path.

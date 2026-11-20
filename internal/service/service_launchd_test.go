@@ -70,6 +70,8 @@ func (f *fakeLaunchd) ctl() launchctl {
 				f.loaded, f.running = true, !f.disabled
 			case "enable":
 				f.disabled = false
+			case "kickstart":
+				f.loaded, f.running = true, true
 			}
 
 			return nil
@@ -143,7 +145,7 @@ func TestInstallLeavesTheJobAsItFoundIt(t *testing.T) {
 
 			f := &fakeLaunchd{label: label, loaded: c.loaded, running: c.running, disabled: c.disabled}
 
-			if err := (launchdJob{label: label, plistPath: path, ctl: f.ctl()}).install(plist); err != nil {
+			if _, err := (launchdJob{label: label, plistPath: path, ctl: f.ctl()}).install(plist); err != nil {
 				t.Fatalf("install: %v", err)
 			}
 
@@ -166,6 +168,60 @@ func TestInstallLeavesTheJobAsItFoundIt(t *testing.T) {
 
 			if got, err := os.ReadFile(path); err != nil || string(got) != string(plist) {
 				t.Errorf("the plist on disk is %q (%v), want the one installed", got, err)
+			}
+		})
+	}
+}
+
+// TestAnUpStartsTheJobOnce: `up`, `install` and `start` register and then restart, and a
+// Mac starts the job once for the two, whatever Install found: a restart that follows an
+// Install which has just bootstrapped the job -- a start -- starts nothing more, where a
+// kickstart -k would kill the instance launchd had just made.
+func TestAnUpStartsTheJobOnce(t *testing.T) {
+	const label = "org.veilnet.conflux"
+
+	plist := []byte(launchdPlist(label, []string{"/x/conflux", "serve"}, "/var/log/conflux.log"))
+
+	for _, c := range []struct {
+		name            string
+		before          []byte
+		loaded, running bool
+	}{
+		{name: "changed and running", before: []byte("an older plist"), loaded: true, running: true},
+		{name: "changed and stopped", before: []byte("an older plist"), loaded: true},
+		{name: "unchanged and running", before: plist, loaded: true, running: true},
+		{name: "unchanged and not loaded", before: plist},
+		{name: "new", before: nil},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), label+".plist")
+			if c.before != nil {
+				if err := os.WriteFile(path, c.before, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			f := &fakeLaunchd{label: label, loaded: c.loaded, running: c.running}
+			j := launchdJob{label: label, plistPath: path, ctl: f.ctl()}
+			m := &launchdManager{}
+
+			if err := m.install(j, plist); err != nil {
+				t.Fatalf("install: %v", err)
+			}
+
+			if err := m.restart(j); err != nil {
+				t.Fatalf("restart: %v", err)
+			}
+
+			starts := 0
+			for _, ch := range f.changes {
+				if strings.HasPrefix(ch, "bootstrap ") || strings.HasPrefix(ch, "kickstart ") {
+					starts++
+				}
+			}
+
+			if starts != 1 || !f.running {
+				t.Errorf("install and restart asked launchctl for %q: %d starts, running %v; want one start", f.changes, starts, f.running)
 			}
 		})
 	}

@@ -53,8 +53,7 @@ type Tools struct {
 // paths. Idempotent, atomic, and safe against another conflux doing the same thing.
 func Ensure(d paths.Dirs) (*Tools, error) {
 	if !anchor.Supported {
-		return nil, fmt.Errorf(
-			"this conflux was built for %s/%s and carries no anchor binaries for it", runtime.GOOS, runtime.GOARCH)
+		return nil, errUnsupported
 	}
 
 	root := d.Libexec()
@@ -89,7 +88,7 @@ func Ensure(d paths.Dirs) (*Tools, error) {
 		return t, nil
 	}
 
-	if err := extract(root, t.Dir, t); err != nil {
+	if err := extract(t); err != nil {
 		return nil, err
 	}
 
@@ -120,13 +119,16 @@ func toolsIn(d paths.Dirs) *Tools {
 // ErrNotExtracted is a pair Extracted did not find whole.
 var ErrNotExtracted = errors.New("the anchor binaries are not extracted there")
 
+// errUnsupported is a build that carries no anchor pair, as a placeholder build does.
+var errUnsupported = errors.New(
+	"this conflux was built for " + runtime.GOOS + "/" + runtime.GOARCH + " and carries no anchor binaries for it")
+
 // Extracted is this build's pair under d when a whole extraction of it is there, and
 // writes nothing: for a root another process owns -- an ephemeral run's -- which a reader
 // must not fill while its owner may be clearing it.
 func Extracted(d paths.Dirs) (*Tools, error) {
 	if !anchor.Supported {
-		return nil, fmt.Errorf(
-			"this conflux was built for %s/%s and carries no anchor binaries for it", runtime.GOOS, runtime.GOARCH)
+		return nil, errUnsupported
 	}
 
 	t := toolsIn(d)
@@ -144,13 +146,11 @@ func Extracted(d paths.Dirs) (*Tools, error) {
 // of binaries in it; and on Windows, asked by an account that is not an administrator, it
 // left %ProgramData%\conflux owned by that account, which every later install then refused.
 func ForUsage(d paths.Dirs) (bin string, done func(), err error) {
-	if t, err := Extracted(d); err == nil {
+	switch t, err := Extracted(d); {
+	case err == nil:
 		return t.Anchorctl, func() {}, nil
-	}
-
-	if !anchor.Supported {
-		return "", nil, fmt.Errorf(
-			"this conflux was built for %s/%s and carries no anchor binaries for it", runtime.GOOS, runtime.GOARCH)
+	case !errors.Is(err, ErrNotExtracted):
+		return "", nil, err
 	}
 
 	dir, err := os.MkdirTemp("", "conflux-usage-")
@@ -190,7 +190,11 @@ func ours(path string, size int) bool {
 	return err == nil && fi.Size() == int64(size) && paths.Trusted(path)
 }
 
-func extract(root, target string, t *Tools) error {
+// extract writes t's pair into a staging directory beside its set directory, and renames it
+// into place.
+func extract(t *Tools) error {
+	root, target := filepath.Dir(t.Dir), t.Dir
+
 	staging, err := os.MkdirTemp(root, ".staging-*")
 	if err != nil {
 		return fmt.Errorf("create a staging directory in %s: %w", root, err)

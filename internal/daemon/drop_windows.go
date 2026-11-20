@@ -344,14 +344,12 @@ func (s *Supervisor) freshDaemonRun(p Privilege) error {
 func (s *Supervisor) killLeftovers() {}
 
 // makeAnchorDir creates path for p's identity, with its security descriptor set as it is
-// created.
+// created (paths.MakeDir): SYSTEM's and Administrators' for a SYSTEM anchord, as Restrict makes
+// a directory, and the service SID's for its account, never for an instant what the state
+// directory passes on.
 func makeAnchorDir(path string, p Privilege) error {
 	if !p.Account {
-		if err := os.Mkdir(path, 0o700); err != nil {
-			return err
-		}
-
-		return paths.Restrict(path, true)
+		return paths.MakeRestricted(path)
 	}
 
 	ssid, err := ourServiceSID()
@@ -368,15 +366,7 @@ func makeAnchorDir(path string, p Privilege) error {
 		return err
 	}
 
-	name, err := windows.UTF16PtrFromString(path)
-	if err != nil {
-		return err
-	}
-
-	return windows.CreateDirectory(name, &windows.SecurityAttributes{
-		Length:             uint32(unsafe.Sizeof(windows.SecurityAttributes{})),
-		SecurityDescriptor: sd,
-	})
+	return paths.MakeDir(path, sd)
 }
 
 // legacyAnchorDir reports an anchor directory at the account's name that the service SID

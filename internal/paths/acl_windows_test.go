@@ -578,7 +578,7 @@ func anchordFolder(t *testing.T, dir, more string) string {
 		t.Fatal(err)
 	}
 
-	if err := makeDir(dir, sd); err != nil {
+	if err := MakeDir(dir, sd); err != nil {
 		t.Fatal(err)
 	}
 

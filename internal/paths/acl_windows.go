@@ -103,7 +103,7 @@ func restrictInfo(owner *windows.SID) windows.SECURITY_INFORMATION {
 }
 
 // makeRoot creates the root dir where it is not there yet, with Restrict's ownership and DACL
-// set as it is made (makeRestricted), so that it never carries what %ProgramData% passes on --
+// set as it is made (MakeRestricted), so that it never carries what %ProgramData% passes on --
 // Users' right to create in it, enough to turn an empty directory into a junction -- not even for
 // an instant. The directories above it are made as MkdirAll makes them. One already there is
 // secure's.
@@ -112,31 +112,33 @@ func makeRoot(dir string) error {
 		return err
 	}
 
-	if err := makeRestricted(dir); err != nil && !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+	if err := MakeRestricted(dir); err != nil && !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
 		return err
 	}
 
 	return nil
 }
 
-// makeRestricted is makeDir with Restrict's ownership and DACL: Administrators', or the creating
+// MakeRestricted is MakeDir with Restrict's ownership and DACL: Administrators', or the creating
 // token's where it may not name them, under a protected DACL granting SYSTEM and Administrators
-// full control, inherited by what it holds.
-func makeRestricted(path string) error {
+// full control, inherited by what it holds. A root (makeRoot), and an anchor directory a SYSTEM
+// anchord is given, are made so.
+func MakeRestricted(path string) error {
 	return restrictWith(true, func(owner *windows.SID, dacl *windows.ACL) error {
 		sd, err := restrictedSD(owner, dacl)
 		if err != nil {
 			return err
 		}
 
-		return makeDir(path, sd)
+		return MakeDir(path, sd)
 	})
 }
 
-// makeDir creates the directory path, which must not be there yet, in a parent that is, with sd as
+// MakeDir creates the directory path, which must not be there yet, in a parent that is, with sd as
 // its security descriptor, set as it is created: it is never anything else, not even for an
 // instant, as one made and then given its security would be, under what its parent passes on.
-func makeDir(path string, sd *windows.SECURITY_DESCRIPTOR) error {
+// Every directory conflux makes with security of its own is made so.
+func MakeDir(path string, sd *windows.SECURITY_DESCRIPTOR) error {
 	name, err := windows.UTF16PtrFromString(path)
 	if err != nil {
 		return err

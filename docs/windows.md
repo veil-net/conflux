@@ -128,7 +128,7 @@ are made with their security set as they are created — full control for that S
 is inside them, no `WRITE_DAC`, `WRITE_OWNER` or `DELETE` on the directories themselves,
 and an `OWNER RIGHTS` entry so that owning a file grants nothing — and are never
 propagated over afterwards. A SYSTEM `anchord` has `anchor.root\` and a `run\anchord\` of
-SYSTEM's and Administrators' instead.
+SYSTEM's and Administrators' instead, made the same way, with that security as they are created.
 
 ## An ephemeral run
 

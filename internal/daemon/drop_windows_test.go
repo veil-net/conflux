@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"errors"
+	"io/fs"
+	"path/filepath"
 	"strings"
 	"testing"
 	"unsafe"
@@ -145,4 +147,154 @@ func TestAServiceSIDNotGivenIsNotOneZeroZero(t *testing.T) {
 	if legacy, err := legacyAnchorDir(t.TempDir()); !legacy || err != nil {
 		t.Errorf("legacyAnchorDir = %v, %v for a directory the service SID was never given; want 1.0.0's", legacy, err)
 	}
+}
+
+// TestMakeAnchorDirSetsItsDACLAsItIsMade: an anchor directory is made with its security set as it
+// is created (paths.MakeDir), never holding what its parent passes on -- here Users' right to add
+// to and write the attributes of every folder made in it, as %ProgramData% passes on: a SYSTEM
+// anchord's SYSTEM's and the Administrators' alone, as Restrict makes one, and an account's
+// granting the service SID besides. One already there is not made again. Windows-only, so it runs
+// in CI's platforms job alone.
+func TestMakeAnchorDirSetsItsDACLAsItIsMade(t *testing.T) {
+	system, admins, users := wellKnownSID(t, windows.WinLocalSystemSid), wellKnownSID(t, windows.WinBuiltinAdministratorsSid),
+		wellKnownSID(t, windows.WinBuiltinUsersSid)
+
+	parent := t.TempDir()
+
+	sd, err := windows.GetNamedSecurityInfo(parent, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	passed, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{{
+		AccessPermissions: windows.FILE_WRITE_DATA | windows.FILE_APPEND_DATA | windows.FILE_WRITE_ATTRIBUTES,
+		AccessMode:        windows.GRANT_ACCESS,
+		Inheritance:       windows.SUB_CONTAINERS_ONLY_INHERIT,
+		Trustee: windows.TRUSTEE{
+			TrusteeForm:  windows.TRUSTEE_IS_SID,
+			TrusteeType:  windows.TRUSTEE_IS_GROUP,
+			TrusteeValue: windows.TrusteeValueFromSID(users),
+		},
+	}}, dacl)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := windows.SetNamedSecurityInfo(parent, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION,
+		nil, nil, passed, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	root := filepath.Join(parent, "anchor.root")
+	if err := makeAnchorDir(root, Privilege{}); err != nil {
+		t.Fatalf("makeAnchorDir for a SYSTEM anchord: %v", err)
+	}
+
+	if err := makeAnchorDir(root, Privilege{}); !errors.Is(err, fs.ErrExist) {
+		t.Errorf("makeAnchorDir of a directory already there = %v, want it refused as there", err)
+	}
+
+	// An account's is SYSTEM's, which only a process that may name any owner can make it.
+	account := filepath.Join(parent, "anchor")
+	if err := withRestorePrivilege(t, func() error { return makeAnchorDir(account, Privilege{Account: true}) }); err != nil {
+		t.Fatalf("makeAnchorDir for anchord's account: %v", err)
+	}
+
+	sid, err := ourServiceSID()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for path, granted := range map[string][]*windows.SID{root: {system, admins}, account: {system, admins, sid}} {
+		sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+			windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if owner, _, err := sd.Owner(); err != nil || !owner.Equals(system) && !owner.Equals(admins) {
+			t.Errorf("%s belongs to %v (%v), want SYSTEM or the Administrators", path, owner, err)
+		}
+
+		if control, _, err := sd.Control(); err != nil || control&windows.SE_DACL_PROTECTED == 0 {
+			t.Errorf("the DACL of %s is not protected (%v)", path, err)
+		}
+
+		dacl, _, err := sd.DACL()
+		if err != nil || dacl == nil {
+			t.Fatalf("the DACL of %s: %v, %v", path, dacl, err)
+		}
+
+		seen := map[string]bool{}
+
+		for i := range uint32(dacl.AceCount) {
+			var ace *windows.ACCESS_ALLOWED_ACE
+			if err := windows.GetAce(dacl, i, &ace); err != nil {
+				t.Fatal(err)
+			}
+
+			who := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
+			if who.Equals(users) {
+				t.Errorf("the DACL of %s grants Users what its parent passes on", path)
+			}
+
+			seen[who.String()] = true
+		}
+
+		for _, want := range granted {
+			if !seen[want.String()] {
+				t.Errorf("the DACL of %s does not grant %s", path, want)
+			}
+		}
+	}
+
+	if granted, err := grantsServiceSID(root); err != nil || granted {
+		t.Errorf("grantsServiceSID(a SYSTEM anchord's directory) = %v, %v; want false", granted, err)
+	}
+}
+
+func wellKnownSID(t *testing.T, kind windows.WELL_KNOWN_SID_TYPE) *windows.SID {
+	t.Helper()
+
+	sid, err := windows.CreateWellKnownSid(kind)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return sid
+}
+
+// withRestorePrivilege runs f with SeRestorePrivilege enabled in this process's token, as an
+// Administrator's holds it, and disabled again after: what SYSTEM, which the supervisor runs as,
+// may do without it, naming SYSTEM as an owner.
+func withRestorePrivilege(t *testing.T, f func() error) error {
+	t.Helper()
+
+	var tok windows.Token
+	if err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_ADJUST_PRIVILEGES|windows.TOKEN_QUERY,
+		&tok); err != nil {
+		t.Fatal(err)
+	}
+	defer tok.Close()
+
+	luid := privilegeLUID(t, "SeRestorePrivilege")
+
+	set := func(attributes uint32) {
+		tp := windows.Tokenprivileges{PrivilegeCount: 1}
+		tp.Privileges[0] = windows.LUIDAndAttributes{Luid: luid, Attributes: attributes}
+
+		if err := windows.AdjustTokenPrivileges(tok, false, &tp, 0, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	set(windows.SE_PRIVILEGE_ENABLED)
+	defer set(0)
+
+	return f()
 }

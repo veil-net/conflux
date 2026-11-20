@@ -38,7 +38,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -116,20 +115,6 @@ type Manifest struct {
 	Binaries      []Binary `json:"binaries"`
 }
 
-type asset struct {
-	ID    int64  `json:"id"`
-	Name  string `json:"name"`
-	State string `json:"state"`
-
-	// Digest is GitHub's "sha256:<hex>" of the asset, from the release document itself.
-	Digest string `json:"digest"`
-}
-
-type release struct {
-	TargetCommitish string  `json:"target_commitish"`
-	Assets          []asset `json:"assets"`
-}
-
 // Fetch downloads every binary named by want into dir, verifying each against the digest
 // the manifest gives for it.
 //
@@ -151,14 +136,14 @@ func Fetch(ctx context.Context, s Source, want []string, dir string, log func(st
 		return fmt.Errorf("%q is not an owner/name repository", src.Repo)
 	}
 
-	var rel release
-	if err := src.Lookup(ctx, &rel); err != nil {
+	doc, err := src.Lookup(ctx)
+	if err != nil {
 		return err
 	}
 
-	assets := map[string]asset{}
+	assets := map[string]ghrelease.Listing{}
 
-	for _, a := range rel.Assets {
+	for _, a := range doc.Assets {
 		// anchoradmin can mint realm roots. It has no business in a release and
 		// certainly none in anchor/bin, every file of which is a candidate for being
 		// embedded into every conflux a user runs. Refused on sight of it in the
@@ -168,7 +153,7 @@ func Fetch(ctx context.Context, s Source, want []string, dir string, log func(st
 			return fmt.Errorf("the release carries %q, which mints realm roots and must never be published", a.Name)
 		}
 
-		if a.State != "" && a.State != "uploaded" {
+		if !a.Uploaded() {
 			return fmt.Errorf("the asset %q is in state %q, so the release is not finished", a.Name, a.State)
 		}
 
@@ -200,7 +185,7 @@ func Fetch(ctx context.Context, s Source, want []string, dir string, log func(st
 	}
 
 	log("release: %s @ %s", src.Repo, src.Tag)
-	log("commit:  %s", rel.TargetCommitish)
+	log("commit:  %s", doc.Commit)
 	log("realm:   %s", m.Pin)
 
 	var missing []string
@@ -256,11 +241,11 @@ func Fetch(ctx context.Context, s Source, want []string, dir string, log func(st
 			var (
 				tmp string
 				err error
+				a   = ghrelease.Asset{ID: assets[name].ID, Bytes: b.Bytes, SHA256: b.SHA256}
 			)
 
-			if !matches(dest, b) {
+			if ok, _ := a.Matches(dest); !ok {
 				how = "fetched"
-				a := ghrelease.Asset{ID: assets[name].ID, Bytes: b.Bytes, SHA256: b.SHA256}
 				tmp, err = src.Download(ctx, a, filepath.Dir(dest), ".anchor-fetch-*", false)
 			}
 
@@ -296,27 +281,7 @@ func Fetch(ctx context.Context, s Source, want []string, dir string, log func(st
 	return first
 }
 
-// matches reports whether path already holds exactly the binary b describes.
-func matches(path string, b Binary) bool {
-	f, err := os.Open(path)
-	if err != nil {
-		return false
-	}
-	defer f.Close()
-
-	if fi, err := f.Stat(); err != nil || (b.Bytes != 0 && fi.Size() != b.Bytes) {
-		return false
-	}
-
-	sum := sha256.New()
-	if _, err := io.Copy(sum, f); err != nil {
-		return false
-	}
-
-	return strings.EqualFold(hex.EncodeToString(sum.Sum(nil)), b.SHA256)
-}
-
-func manifest(ctx context.Context, src ghrelease.Source, assets map[string]asset) (*Manifest, error) {
+func manifest(ctx context.Context, src ghrelease.Source, assets map[string]ghrelease.Listing) (*Manifest, error) {
 	a, ok := assets[manifestName]
 	if !ok {
 		names := make([]string, 0, len(assets))
@@ -338,7 +303,7 @@ func manifest(ctx context.Context, src ghrelease.Source, assets map[string]asset
 	// The digests every binary is checked against are only as good as this one: it came
 	// through the same redirect as the binaries, so it is held to the digest the release
 	// document gives, which did not.
-	want, ok := strings.CutPrefix(a.Digest, "sha256:")
+	want, ok := a.SHA256()
 	if !ok {
 		return nil, fmt.Errorf("the release gives no SHA-256 for %s, so nothing vouches for the digests in it", manifestName)
 	}

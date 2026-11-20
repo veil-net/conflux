@@ -19,16 +19,12 @@ package update
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 
 	"github.com/veil-net/conflux/internal/ghrelease"
 	"github.com/veil-net/conflux/internal/httpsonly"
@@ -101,19 +97,8 @@ func Latest(ctx context.Context, s Source, goos, goarch string) (*Release, error
 		return nil, err
 	}
 
-	var doc struct {
-		Name            string `json:"name"`
-		TargetCommitish string `json:"target_commitish"`
-		Assets          []struct {
-			ID     int64  `json:"id"`
-			Name   string `json:"name"`
-			Size   int64  `json:"size"`
-			State  string `json:"state"`
-			Digest string `json:"digest"`
-		} `json:"assets"`
-	}
-
-	if err := src.Lookup(ctx, &doc); err != nil {
+	doc, err := src.Lookup(ctx)
+	if err != nil {
 		return nil, err
 	}
 
@@ -124,20 +109,20 @@ func Latest(ctx context.Context, s Source, goos, goarch string) (*Release, error
 			continue
 		}
 
-		if a.State != "" && a.State != "uploaded" {
+		if !a.Uploaded() {
 			return nil, fmt.Errorf("%s is in state %q on the %s release, so the release is not finished; try again shortly", a.Name, a.State, src.Tag)
 		}
 
-		sum, ok := strings.CutPrefix(a.Digest, "sha256:")
-		if !ok || len(sum) != sha256.Size*2 {
+		sum, ok := a.SHA256()
+		if !ok {
 			return nil, fmt.Errorf("the %s release gives no SHA-256 for %s, so nothing would vouch for what arrives", src.Tag, a.Name)
 		}
 
 		return &Release{
 			Name:   doc.Name,
-			Commit: doc.TargetCommitish,
+			Commit: doc.Commit,
 			Asset:  a.Name,
-			SHA256: strings.ToLower(sum),
+			SHA256: sum,
 			Bytes:  a.Size,
 			src:    src,
 			id:     a.ID,
@@ -149,18 +134,7 @@ func Latest(ctx context.Context, s Source, goos, goarch string) (*Release, error
 
 // Is reports whether the file at path is this release's binary, byte for byte.
 func (r *Release) Is(path string) (bool, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return false, err
-	}
-	defer f.Close()
-
-	sum := sha256.New()
-	if _, err := io.Copy(sum, f); err != nil {
-		return false, err
-	}
-
-	return hex.EncodeToString(sum.Sum(nil)) == r.SHA256, nil
+	return r.asset().Matches(path)
 }
 
 // Download writes the release's binary into dir as a temporary file, executable, verified
@@ -169,14 +143,17 @@ func (r *Release) Is(path string) (bool, error) {
 // In dir because the rename that puts it in place must not cross a filesystem. Named with
 // the platform's executable suffix, since Windows will not run a file without one.
 func (r *Release) Download(ctx context.Context, dir string) (string, error) {
-	a := ghrelease.Asset{ID: r.id, Bytes: r.Bytes, SHA256: r.SHA256}
-
-	tmp, err := r.src.Download(ctx, a, dir, ".conflux-update-*"+filepath.Ext(r.Asset), true)
+	tmp, err := r.src.Download(ctx, r.asset(), dir, ".conflux-update-*"+filepath.Ext(r.Asset), true)
 	if err != nil {
 		return "", fmt.Errorf("downloading %s: %w", r.Asset, err)
 	}
 
 	return tmp, nil
+}
+
+// asset is the release's binary as ghrelease asks for it and holds it to.
+func (r *Release) asset() ghrelease.Asset {
+	return ghrelease.Asset{ID: r.id, Bytes: r.Bytes, SHA256: r.SHA256}
 }
 
 // Replace renames the file at src over dst, which is this conflux.

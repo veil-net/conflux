@@ -79,12 +79,47 @@ func (s Source) WithDefaults(repo string) Source {
 	return s
 }
 
-// Lookup reads the release document at the tag into doc, which is the caller's own shape
-// of it. Plain http is the caller's to refuse first (httpsonly.Check), in its own order.
+// Document is what a release document says that conflux reads: the release's title, the
+// commit it was built from, and its assets.
+type Document struct {
+	Name   string    `json:"name"`
+	Commit string    `json:"target_commitish"`
+	Assets []Listing `json:"assets"`
+}
+
+// Listing is one asset as the release document lists it: its id, by which it is asked for,
+// its name, size and state, and GitHub's own digest of it, "sha256:<hex>".
+type Listing struct {
+	ID     int64  `json:"id"`
+	Name   string `json:"name"`
+	Size   int64  `json:"size"`
+	State  string `json:"state"`
+	Digest string `json:"digest"`
+}
+
+// Uploaded reports whether the asset is all there: in state "uploaded", or in none. Any
+// other is a release still being published, or one whose publishing failed part way.
+func (l Listing) Uploaded() bool {
+	return l.State == "" || l.State == "uploaded"
+}
+
+// SHA256 is the asset's SHA-256 from its digest, lower-case hex, and false when the digest
+// gives none: not "sha256:", or not the length of one.
+func (l Listing) SHA256() (string, bool) {
+	sum, ok := strings.CutPrefix(l.Digest, "sha256:")
+	if !ok || len(sum) != sha256.Size*2 {
+		return "", false
+	}
+
+	return strings.ToLower(sum), true
+}
+
+// Lookup reads the release document at the tag. Plain http is the caller's to refuse first
+// (httpsonly.Check), in its own order.
 //
 // By tag rather than by GitHub's "latest", which is a heuristic over publication dates that
 // a release cut by hand would win. A tag is exact.
-func (s Source) Lookup(ctx context.Context, doc any) error {
+func (s Source) Lookup(ctx context.Context) (*Document, error) {
 	ctx, cancel := context.WithTimeout(ctx, documentTimeout)
 	defer cancel()
 
@@ -92,19 +127,20 @@ func (s Source) Lookup(ctx context.Context, doc any) error {
 
 	resp, err := s.get(ctx, u, "application/vnd.github+json")
 	if err != nil {
-		return fmt.Errorf("looking up the %s release of %s: %w", s.Tag, s.Repo, err)
+		return nil, fmt.Errorf("looking up the %s release of %s: %w", s.Tag, s.Repo, err)
 	}
 	defer resp.Body.Close()
 
 	if err := s.Status(resp); err != nil {
-		return err
+		return nil, err
 	}
 
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxDocument)).Decode(doc); err != nil {
-		return fmt.Errorf("the release is not the JSON this expects: %w", err)
+	var doc Document
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxDocument)).Decode(&doc); err != nil {
+		return nil, fmt.Errorf("the release is not the JSON this expects: %w", err)
 	}
 
-	return nil
+	return &doc, nil
 }
 
 // Asset is one file of the release, by its id in the release document, and what vouches
@@ -114,6 +150,48 @@ type Asset struct {
 	ID     int64
 	Bytes  int64
 	SHA256 string
+}
+
+// Matches reports whether the file at path holds exactly this asset, its size and its
+// SHA-256. The error is one opening or reading the file.
+func (a Asset) Matches(path string) (bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil {
+		return false, err
+	}
+
+	// A file of another size is not read.
+	if a.Bytes != 0 && fi.Size() != a.Bytes {
+		return false, nil
+	}
+
+	sum := sha256.New()
+
+	n, err := io.Copy(sum, f)
+	if err != nil {
+		return false, err
+	}
+
+	return a.check(n, sum.Sum(nil)) == nil, nil
+}
+
+// check holds n bytes whose SHA-256 is sum to the asset, saying which of the two differs.
+func (a Asset) check(n int64, sum []byte) error {
+	if a.Bytes != 0 && n != a.Bytes {
+		return fmt.Errorf("got %d bytes, not the %d listed", n, a.Bytes)
+	}
+
+	if got := hex.EncodeToString(sum); !strings.EqualFold(got, a.SHA256) {
+		return fmt.Errorf("its SHA-256 is %s, not the %s listed", got, a.SHA256)
+	}
+
+	return nil
 }
 
 // Download writes the asset into a new temporary file in dir, named by pattern as
@@ -157,12 +235,8 @@ func (s Source) Download(ctx context.Context, a Asset, dir, pattern string, sync
 		return "", err
 	}
 
-	if a.Bytes != 0 && n != a.Bytes {
-		return "", fmt.Errorf("got %d bytes, not the %d listed", n, a.Bytes)
-	}
-
-	if got := hex.EncodeToString(sum.Sum(nil)); !strings.EqualFold(got, a.SHA256) {
-		return "", fmt.Errorf("its SHA-256 is %s, not the %s listed", got, a.SHA256)
+	if err := a.check(n, sum.Sum(nil)); err != nil {
+		return "", err
 	}
 
 	if err := tmp.Chmod(0o755); err != nil {

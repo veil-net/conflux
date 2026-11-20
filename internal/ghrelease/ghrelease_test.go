@@ -7,6 +7,9 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -99,4 +102,65 @@ func TestTheRedirectPolicy(t *testing.T) {
 			t.Errorf("storage was sent Authorization %q, want none, once", toStorage)
 		}
 	})
+}
+
+// TestWhatTheDocumentVouchesFor: an asset is finished in state "uploaded" or in none, and
+// its SHA-256 is GitHub's "sha256:" digest of the right length, read in lower case; any
+// other digest gives none.
+func TestWhatTheDocumentVouchesFor(t *testing.T) {
+	hexSum := strings.Repeat("ab", sha256.Size)
+
+	for state, want := range map[string]bool{"": true, "uploaded": true, "starter": false, "open": false} {
+		if got := (Listing{State: state}).Uploaded(); got != want {
+			t.Errorf("state %q: Uploaded() = %v, want %v", state, got, want)
+		}
+	}
+
+	for digest, want := range map[string]string{
+		"sha256:" + hexSum:                  hexSum,
+		"sha256:" + strings.ToUpper(hexSum): hexSum,
+		"":                                  "",
+		hexSum:                              "",
+		"sha512:" + hexSum:                  "",
+		"sha256:" + hexSum[:len(hexSum)-1]:  "",
+		"sha256:" + hexSum + "ab":           "",
+	} {
+		got, ok := (Listing{Digest: digest}).SHA256()
+		if got != want || ok != (want != "") {
+			t.Errorf("digest %q: SHA256() = %q, %v, want %q", digest, got, ok, want)
+		}
+	}
+}
+
+// TestMatchesHoldsAFileToTheAsset: a file is the asset only with its size, where known, and
+// its SHA-256, in either case; a missing file is an error, not a mismatch.
+func TestMatchesHoldsAFileToTheAsset(t *testing.T) {
+	body := []byte("a binary")
+	sum := sha256.Sum256(body)
+	hexSum := hex.EncodeToString(sum[:])
+
+	path := filepath.Join(t.TempDir(), "asset")
+	if err := os.WriteFile(path, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, c := range []struct {
+		name string
+		a    Asset
+		want bool
+	}{
+		{"the asset", Asset{Bytes: int64(len(body)), SHA256: hexSum}, true},
+		{"its size unknown", Asset{SHA256: hexSum}, true},
+		{"its digest in upper case", Asset{Bytes: int64(len(body)), SHA256: strings.ToUpper(hexSum)}, true},
+		{"another size", Asset{Bytes: int64(len(body)) + 1, SHA256: hexSum}, false},
+		{"another digest", Asset{Bytes: int64(len(body)), SHA256: strings.Repeat("0", len(hexSum))}, false},
+	} {
+		if got, err := c.a.Matches(path); err != nil || got != c.want {
+			t.Errorf("%s: Matches = %v, %v, want %v", c.name, got, err, c.want)
+		}
+	}
+
+	if _, err := (Asset{SHA256: hexSum}).Matches(path + ".gone"); err == nil {
+		t.Error("Matches on a missing file gave no error")
+	}
 }

@@ -152,12 +152,8 @@ func (j launchdJob) enableIfDisabled() {
 // loaded, and the two need different starts.
 func (j launchdJob) print() (string, bool) { return j.ctl.query("print", j.target()) }
 
-// running asks launchd rather than inferring it from Installed. A job that is not
-// loaded -- registered but never started in this boot -- prints nothing and is not
-// running, which is the honest answer and the one Describe needs.
-func (j launchdJob) running() bool { return jobRunning(j.print()) }
-
-// jobRunning reads print's answer.
+// jobRunning reads print's answer: a job that is not loaded -- registered but never
+// started in this boot -- prints nothing and is not running.
 func jobRunning(out string, loaded bool) bool {
 	return loaded && strings.Contains(out, "state = running")
 }

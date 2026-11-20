@@ -108,6 +108,10 @@ func (l launchd) Stop() error {
 
 func (launchd) Installed() (bool, error) { return exists(plistPath()) }
 
+// running asks launchd rather than inferring it from Installed, which is the honest answer
+// and the one Describe needs.
+func (j launchdJob) running() bool { return jobRunning(j.print()) }
+
 func (launchd) LogHint() string { return "tail -n 50 " + logFile() }
 
 func (l launchd) Describe() string {

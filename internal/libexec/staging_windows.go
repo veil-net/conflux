@@ -16,7 +16,7 @@ import (
 // on. A name taken is drawn again, as often as os.MkdirTemp would.
 func makeStaging(root string) (string, error) {
 	for try := 0; ; try++ {
-		dir := filepath.Join(root, ".staging-"+strconv.FormatUint(uint64(rand.Uint32()), 10))
+		dir := filepath.Join(root, stagingPrefix+strconv.FormatUint(uint64(rand.Uint32()), 10))
 
 		if err := paths.MakeRestricted(dir); !errors.Is(err, fs.ErrExist) || try == 9999 {
 			return dir, err

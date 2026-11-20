@@ -212,6 +212,10 @@ func ours(path string, size int) bool {
 	return err == nil && fi.Size() == int64(size) && paths.Trusted(path)
 }
 
+// stagingPrefix begins the name of every staging directory makeStaging makes, which Sweep tells
+// from a set by it.
+const stagingPrefix = ".staging-"
+
 // extract writes t's pair into a staging directory beside its set directory, runs it there,
 // and only then renames it into place.
 func extract(t *Tools) error {
@@ -418,7 +422,7 @@ func Sweep(t *Tools) {
 		}
 
 		// A staging directory older than an hour is the debris of a crash.
-		if strings.HasPrefix(e.Name(), ".staging-") {
+		if strings.HasPrefix(e.Name(), stagingPrefix) {
 			if info.ModTime().Before(time.Now().Add(-time.Hour)) {
 				os.RemoveAll(filepath.Join(root, e.Name()))
 			}

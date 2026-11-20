@@ -771,11 +771,14 @@ func (r *held) close() {
 
 // heldRoot opens dir for access, as itself and never by its name again. A junction or a link is
 // held to who may point it elsewhere (heldLink), as a link is on Unix to its owner, and judged
-// through the handle that found it; where it is held, what it leads to is opened by following
-// it, which nobody else may change meanwhile, and secure replaces it with one of its own
-// (replaceLink), which nobody may have held open before. Where the directory is that is not a plain
-// directory either, it is refused: there is nothing further to follow. A root that could not be
-// opened or read, or whose link leads nowhere, is refused as unopened.
+// through the handle that found it; where it is held, what it leads to is opened by following it,
+// and that directory, held open, is what is judged after. A handle somebody opened on the link
+// while its DACL let them write it may still repoint it between the judgement and that open, so
+// where the link led as it was judged answers for nothing; secure replaces it with one of its own
+// leading to the directory opened (replaceLink), which nobody may have held open before. Where the
+// directory is that is not a plain directory either, it is refused: there is nothing further to
+// follow. A root that could not be opened or read, or whose link leads nowhere, is refused as
+// unopened.
 func heldRoot(dir string, access uint32) (held, error) {
 	self, err := openFile(dir, access, false)
 	if err != nil {

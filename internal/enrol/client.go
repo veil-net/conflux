@@ -10,11 +10,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/ghrelease"
 	"github.com/veil-net/conflux/internal/ui"
 	"github.com/veil-net/conflux/internal/version"
 )
@@ -37,9 +37,10 @@ const (
 	maxRedirects = 3
 )
 
-// insecureEnv permits a plain-http base URL. Set only by tests, which point the
-// client at an httptest server.
-const insecureEnv = "CONFLUX_ALLOW_INSECURE_API"
+// httpsOnly is what a refusal of plain http says: a base URL, a renewal URL or a redirect
+// there is refused unless ghrelease.InsecureEnv is 1, which tests set to point the client
+// at an httptest server.
+const httpsOnly = "credentials are only fetched over https"
 
 // defaultHTTP is the client every Client shares unless given its own: Go's default
 // transport, which keeps idle connections for a bounded time and honours a proxy in
@@ -56,7 +57,7 @@ var defaultHTTP = &http.Client{
 			return fmt.Errorf("refusing a redirect from %s to %s", via[0].URL.Host, req.URL.Host)
 		}
 
-		if err := checkScheme(req.URL.String()); err != nil {
+		if err := ghrelease.CheckScheme(req.URL.String(), httpsOnly); err != nil {
 			return err
 		}
 
@@ -195,7 +196,7 @@ func (c *Client) Enrol(ctx context.Context, taints []string) (config.Envelope, e
 
 	u := c.base() + enrolPath
 
-	if err := checkScheme(u); err != nil {
+	if err := ghrelease.CheckScheme(u, httpsOnly); err != nil {
 		return nil, err
 	}
 
@@ -249,7 +250,7 @@ func (c *Client) Renew(ctx context.Context, renewalURL, anchorID string, taints 
 		return Renewal{}, errors.New("renew: the credential names no renewal URL, so there is nowhere to renew it")
 	}
 
-	if err := checkScheme(renewalURL); err != nil {
+	if err := ghrelease.CheckScheme(renewalURL, httpsOnly); err != nil {
 		return Renewal{}, err
 	}
 
@@ -406,27 +407,6 @@ func (e *HTTPError) said() string {
 	}
 
 	return status + ": " + e.Body
-}
-
-func checkScheme(raw string) error {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return fmt.Errorf("%q is not a URL: %w", raw, err)
-	}
-
-	switch u.Scheme {
-	case "https":
-		return nil
-	case "http":
-		if os.Getenv(insecureEnv) == "1" {
-			return nil
-		}
-
-		return fmt.Errorf("%s is plain http; credentials are only fetched over https (set %s=1 to override, for tests)",
-			raw, insecureEnv)
-	default:
-		return fmt.Errorf("%s has scheme %q, want https", raw, u.Scheme)
-	}
 }
 
 // SameHost is the check that a stored field cannot redirect a POST.

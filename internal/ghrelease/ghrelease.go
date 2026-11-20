@@ -20,8 +20,8 @@ const (
 	DefaultAPI = "https://api.github.com"
 	DefaultTag = "latest"
 
-	// InsecureEnv permits a plain-http URL, for a test server. The same override
-	// internal/enrol reads.
+	// InsecureEnv permits a plain-http URL, for a test server, in every client conflux has
+	// (CheckScheme).
 	InsecureEnv = "CONFLUX_ALLOW_INSECURE_API"
 )
 
@@ -63,7 +63,7 @@ func (s Source) WithDefaults(repo string) Source {
 // the bytes to anyone on the path, and a chain past five requests.
 var Client = &http.Client{
 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		if err := CheckScheme(req.URL.String()); err != nil {
+		if err := CheckScheme(req.URL.String(), ""); err != nil {
 			return err
 		}
 
@@ -76,8 +76,9 @@ var Client = &http.Client{
 }
 
 // CheckScheme refuses a URL that is not https. Plain http passes where InsecureEnv is 1,
-// for a test server.
-func CheckScheme(raw string) error {
+// for a test server; otherwise its refusal gives why, a caller's own reason, when there is
+// one. internal/enrol's client keeps this rule as well, with its own reason.
+func CheckScheme(raw, why string) error {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return fmt.Errorf("%q is not a URL: %w", raw, err)
@@ -91,7 +92,11 @@ func CheckScheme(raw string) error {
 			return nil
 		}
 
-		return fmt.Errorf("%s is plain http (set %s=1 to override, for tests)", raw, InsecureEnv)
+		if why != "" {
+			why = "; " + why
+		}
+
+		return fmt.Errorf("%s is plain http%s (set %s=1 to override, for tests)", raw, why, InsecureEnv)
 	default:
 		return fmt.Errorf("%s has scheme %q, want https", raw, u.Scheme)
 	}

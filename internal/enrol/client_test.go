@@ -14,6 +14,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/veil-net/conflux/internal/ghrelease"
 )
 
 // server stands in for the enrolment API. Every test that touches the network
@@ -21,7 +23,7 @@ import (
 // that draws one on every run is a test suite that litters.
 func server(t *testing.T, h http.HandlerFunc) (*Client, *httptest.Server) {
 	t.Helper()
-	t.Setenv(insecureEnv, "1")
+	t.Setenv(ghrelease.InsecureEnv, "1")
 
 	s := httptest.NewServer(h)
 	t.Cleanup(s.Close)
@@ -361,7 +363,7 @@ func TestRenewRefusesBadInput(t *testing.T) {
 // TestPlainHTTPIsRefused: the override exists for tests, and its absence must be
 // what stops a credential going over the wire in the clear.
 func TestPlainHTTPIsRefused(t *testing.T) {
-	t.Setenv(insecureEnv, "")
+	t.Setenv(ghrelease.InsecureEnv, "")
 
 	c := &Client{BaseURL: "http://api.example"}
 
@@ -433,7 +435,7 @@ func TestRenewNeedsAURL(t *testing.T) {
 // same-host redirect, so a downgrade to plain http would hand a renewal bearer to
 // the path.
 func TestRedirectsStayOnOneHostAndOnHTTPS(t *testing.T) {
-	t.Setenv(insecureEnv, "")
+	t.Setenv(ghrelease.InsecureEnv, "")
 
 	via := []*http.Request{httptest.NewRequest(http.MethodPost, "https://api.example/ghosts/alpha/renew", nil)}
 

@@ -8,7 +8,7 @@ import (
 func TestOnlyHTTPSIsAccepted(t *testing.T) {
 	t.Setenv(InsecureEnv, "")
 
-	if err := CheckScheme("ftp://example.com"); err == nil {
+	if err := CheckScheme("ftp://example.com", ""); err == nil {
 		t.Error("CheckScheme accepted ftp")
 	}
 }

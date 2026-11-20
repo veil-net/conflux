@@ -98,7 +98,7 @@ func AssetName(goos, goarch string) string {
 func Latest(ctx context.Context, src Source, goos, goarch string) (*Release, error) {
 	src = src.withDefaults()
 
-	if err := ghrelease.CheckScheme(src.API); err != nil {
+	if err := ghrelease.CheckScheme(src.API, ""); err != nil {
 		return nil, err
 	}
 

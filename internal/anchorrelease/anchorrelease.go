@@ -141,7 +141,7 @@ type release struct {
 func Fetch(ctx context.Context, src Source, want []string, dir string, log func(string, ...any)) error {
 	src = src.withDefaults()
 
-	if err := ghrelease.CheckScheme(src.API); err != nil {
+	if err := ghrelease.CheckScheme(src.API, ""); err != nil {
 		return err
 	}
 

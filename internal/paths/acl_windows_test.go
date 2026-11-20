@@ -1292,6 +1292,37 @@ func TestAReaderRefusesARootItCannotRead(t *testing.T) {
 	}
 }
 
+// TestAReaderTakesCreatorOwnerAsSecureDoes: an inherit-only CREATOR OWNER entry, which %ProgramData%
+// passes on and a root an administrator tightened by hand may keep, grants the root itself nothing,
+// and what is made in it whoever made that: where only SYSTEM, the Administrators and this account
+// may add to the root, nobody else. So checkRoot, every reader's, takes such a root, as secure does,
+// and Foreign with it; one that also lets Users add a file to it is refused by both, naming Users.
+// Windows-only, so it runs in CI's platforms job alone.
+func TestAReaderTakesCreatorOwnerAsSecureDoes(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", "")
+
+	const tightened = "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICIIO;FA;;;CO)"
+
+	root := foundRoot(t)
+	setSecurity(t, root, tightened)
+
+	for name, judge := range map[string]func(string) error{"checkRoot": checkRoot, "Foreign": Foreign, "secure": secure} {
+		if err := judge(root); err != nil {
+			t.Errorf("%s(a root passing CREATOR OWNER full control of what is made in it) = %v", name, err)
+		}
+	}
+
+	open := foundRoot(t)
+	setSecurity(t, open, tightened+"(A;;0x2;;;BU)")
+
+	for name, judge := range map[string]func(string) error{"checkRoot": checkRoot, "secure": secure} {
+		if err := judge(open); err == nil || !strings.Contains(err.Error(), "Users") {
+			t.Errorf("%s(a root passing CREATOR OWNER full control of what is made in it, Users may add a file to) "+
+				"= %v, want a refusal naming Users", name, err)
+		}
+	}
+}
+
 // TestCheckHoldsARootAsAReaderNeeds: Check holds each root that is there to its owner and to who
 // else may write it, retarget it or change who may, on itself or on what is made in it, as found
 // and changing nothing: a root EnsureAll made passes, and one this account owns that grants Users

@@ -1260,6 +1260,14 @@ const moves = fileDeleteChild | windows.DELETE | windows.WRITE_DAC | windows.WRI
 const retargets = moves | windows.FILE_WRITE_DATA | windows.FILE_APPEND_DATA | windows.FILE_WRITE_ATTRIBUTES |
 	windows.FILE_WRITE_EA | windows.GENERIC_WRITE
 
+// sidCreatorOwner is CREATOR OWNER, which an entry passed on grants whoever makes what it is passed
+// to, and which grants nobody anything on the object itself.
+var sidCreatorOwner = wellKnown(windows.WinCreatorOwnerSid)
+
+// creates is the right to add a file (FILE_WRITE_DATA on a directory) and a folder
+// (FILE_APPEND_DATA) to a directory.
+const creates = windows.FILE_WRITE_DATA | windows.FILE_APPEND_DATA
+
 // sidTrustedInstaller is NT SERVICE\TrustedInstaller, which owns much of the system drive.
 var sidTrustedInstaller, _ = windows.StringToSid("S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464")
 
@@ -1342,7 +1350,9 @@ func changerIn(p string, sd *windows.SECURITY_DESCRIPTOR, rights windows.ACCESS_
 // mover is the first account dacl grants one of rights on the object itself, or, where passedOn,
 // on what is made in it too, other than those trustedOwner names and anchord, where it is given, or
 // nil; and whether it grants anchord one of them before it: each entry that allows rights there, as
-// windowsGrants reads them.
+// windowsGrants reads them. CREATOR OWNER is not one where rights holds the right to add a file and a
+// folder to the object (creates): it is nobody on the object itself, and passed on, whoever made what
+// it is passed to, whom this same judgement holds to the accounts trustedOwner names.
 func mover(dacl *windows.ACL, rights windows.ACCESS_MASK, anchord *windows.SID,
 	passedOn bool) (*windows.SID, bool, error) {
 	header := unsafe.Slice((*byte)(unsafe.Pointer(dacl)), 8)
@@ -1363,6 +1373,9 @@ func mover(dacl *windows.ACL, rights windows.ACCESS_MASK, anchord *windows.SID,
 		switch sid := (*windows.SID)(unsafe.Pointer(&g.sid[0])); {
 		case anchord != nil && sid.Equals(anchord):
 			anchords = true
+		case sid.Equals(sidCreatorOwner) && rights&creates == creates:
+			// Nobody on the object itself, and on what it is passed to whoever made that: where rights
+			// holds the right to add to the object, an account this refuses, unless a trusted one.
 		case !trustedOwner(sid):
 			return sid, anchords, nil
 		}

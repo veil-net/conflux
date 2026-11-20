@@ -26,18 +26,7 @@ func TestEnsureAllGivesTheRootToAdministrators(t *testing.T) {
 		t.Fatalf("EnsureAll: %v", err)
 	}
 
-	owner, control, err := ownership(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if control&windows.SE_DACL_PROTECTED == 0 {
-		t.Error("the root's DACL is not protected, so the parent's grants still apply")
-	}
-
-	if !Trusted(root) {
-		t.Errorf("the root is owned by %s", owner)
-	}
+	onlyTheSystems(t, root)
 
 	// Idempotent: a second call finds it already done.
 	if err := d.EnsureAll(); err != nil {
@@ -557,8 +546,8 @@ func TestSecureRefusesARootWhoseDACLLetsAnotherMoveWhatIsInIt(t *testing.T) {
 		t.Errorf("secure(a root whose DACL lets Users delete what is in it) = %v, want a refusal naming it and Users", err)
 	}
 
-	if _, control, err := ownership(root); err != nil || control&windows.SE_DACL_PROTECTED != 0 {
-		t.Errorf("the refused root was restricted (%v); a refusal must change nothing", err)
+	if privtest.ReadSecurity(t, root).Protected {
+		t.Error("the refused root was restricted; a refusal must change nothing")
 	}
 
 	parent := t.TempDir()

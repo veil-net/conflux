@@ -277,7 +277,12 @@ func RestrictToOwner(path string, dir bool) error {
 // account's file, and whoever owns a file can grant themselves the right to change it:
 // a binary about to run as SYSTEM, found with such an owner, is not run.
 func Trusted(path string) bool {
-	owner, _, err := ownership(path)
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
+	if err != nil {
+		return false
+	}
+
+	owner, _, err := sd.Owner()
 
 	return err == nil && trusted(owner)
 }
@@ -286,23 +291,6 @@ func Trusted(path string) bool {
 // written anything conflux did.
 func trusted(sid *windows.SID) bool {
 	return sid.Equals(sidSystem) || sid.Equals(sidAdmins) || isCurrentUser(sid)
-}
-
-func ownership(path string) (*windows.SID, windows.SECURITY_DESCRIPTOR_CONTROL, error) {
-	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
-		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	owner, _, err := sd.Owner()
-	if err != nil {
-		return nil, 0, err
-	}
-
-	control, _, err := sd.Control()
-
-	return owner, control, err
 }
 
 // secure gives a conflux root its ownership and DACL, once, and refuses one another

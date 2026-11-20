@@ -67,7 +67,7 @@ LDFLAGS := -s -w \
 
 # STAMP defines `stamp os-arch[.exe]`, which prints the -X flags that hand a build the
 # SHA-256s of the two files that target's //go:embed names, so a released conflux
-# never reads forty-odd megabytes to learn which pair it carries (anchor/anchor.go,
+# never reads tens of megabytes to learn which pair it carries (anchor/anchor.go,
 # Digests). Hashed in the recipe that links them, from the same paths, so a stamp
 # cannot describe other bytes than the ones embedded; a plain `go build` stamps nothing
 # and computes them instead. sha256sum, or shasum on macOS.
@@ -116,8 +116,8 @@ IMAGE ?= conflux-systemd-test
 all: fmtcheck lint tidycheck docscheck test cross dist
 
 # anchor-bins puts the anchor binaries where //go:embed can find them. They are not in
-# git -- fourteen release builds are about 300 MB -- so a fresh clone runs this once
-# before its first build.
+# git -- fourteen release builds are hundreds of megabytes -- so a fresh clone runs this
+# once before its first build.
 #
 # Three sources in order: a local release/ (pinned), a local dist/ (unpinned, taken
 # loudly), then with FETCH=1 anchor's `latest` release, which serves the pinned build and
@@ -259,7 +259,7 @@ dist:
 		fi; \
 		if [ $$mb -gt $(MAX_MB) ]; then \
 			echo "  FAIL $$out is $${mb} MB, over $(MAX_MB) MB"; \
-			echo "       one anchor pair is ~45 MB; check that anchor/*.go names two files and not the directory"; \
+			echo "       check that anchor/*.go embeds its two files by name, not the directory"; \
 			exit 1; \
 		fi; \
 		want=$$(fips $$os); got=$$($(GO) version -m $$out | awk '$$1 == "build" && $$2 ~ /^GOFIPS140=/ { sub(/^GOFIPS140=/, "", $$2); print $$2 }'); \

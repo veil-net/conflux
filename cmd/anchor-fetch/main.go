@@ -4,9 +4,9 @@
 // the state CI is in and the state a fresh clone starts in.
 //
 // Go rather than shell, and a program rather than curl piped into a JSON parser, because
-// docs/build.md promises "Go 1.27.3 or newer, and nothing else" and a fresh clone should
-// not need python or jq to become buildable. It also puts the digest check, the redirect
-// rules and the atomic write somewhere they can be tested.
+// docs/build.md promises Go, at the version go.mod names, and nothing else, and a fresh
+// clone should not need python or jq to become buildable. It also puts the digest check,
+// the redirect rules and the atomic write somewhere they can be tested.
 //
 // Deliberately imports no package that embeds anything. `go run ./cmd/anchor-fetch` has
 // to work when anchor/bin is empty -- that is the only moment it is ever wanted -- so a

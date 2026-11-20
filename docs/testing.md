@@ -264,7 +264,7 @@ why it is nonetheless contained.
 `linux` is one job because veilnet-dev is one machine with one runner process: separate
 jobs would queue anyway, each paying a checkout and a fetch. Its fetch goes through the
 runner's tool cache, which survives between runs, so an unchanged release costs a read of
-the files the fetcher already holds rather than three hundred megabytes. For the same
+the files the fetcher already holds rather than hundreds of megabytes. For the same
 reason the Go build and module caches are not restored or saved there: the machine keeps
 its own on disk, and round-tripping them through the Actions cache cost ten minutes a
 run where the suite itself takes seconds. The hosted jobs start empty and do use it,

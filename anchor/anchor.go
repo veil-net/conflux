@@ -19,8 +19,8 @@ import (
 	"sync"
 )
 
-// minReal is well under the smallest real binary (anchorctl for linux/arm64, about
-// 13 MB) and far above any placeholder.
+// minReal is well under any real binary (the smallest, an anchorctl, is over 10 MB) and
+// far above any placeholder.
 const minReal = 5 << 20
 
 // Supported reports whether this build carries a usable anchor pair.
@@ -50,7 +50,7 @@ var anchordSHA256, anchorctlSHA256 string
 //
 // Stamped at build time, because every conflux invocation asks -- for SetID, before a
 // pass-through or a status can do anything -- and reading the pair costs a pass over
-// forty-odd megabytes: paged in from disk on a cold start, and a quarter of a second of
+// tens of megabytes: paged in from disk on a cold start, and a quarter of a second of
 // SHA-256 on a core without SHA extensions. Computed, side by side, only where nothing
 // stamped them.
 var Digests = sync.OnceValues(func() (anchordSHA, anchorctlSHA string) {

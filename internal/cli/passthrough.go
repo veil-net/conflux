@@ -51,8 +51,9 @@ func passthrough(ctx context.Context, args []string) int {
 	}
 
 	// Only once there is something to talk to. Extracting first made the directories
-	// uninstall had removed, and 45 MB in them, on a machine with nothing running, and
-	// failed for an account that cannot write them before saying what was wrong.
+	// uninstall had removed, and tens of megabytes in them, on a machine with nothing
+	// running, and failed for an account that cannot write them before saying what was
+	// wrong.
 	tools, err := toolsFor(d)
 	if err != nil {
 		return fail(err)

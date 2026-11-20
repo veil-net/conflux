@@ -1,7 +1,7 @@
 // Package anchorrelease fetches the anchor binaries from a release of the anchor repository.
 //
-// The binaries are not in git -- fourteen release builds are about 330 MB -- so a machine
-// with no anchor checkout, which is every CI runner, fetches them from here.
+// The binaries are not in git -- fourteen release builds are hundreds of megabytes -- so a
+// machine with no anchor checkout, which is every CI runner, fetches them from here.
 //
 // What is fetched is the *pinned* build. An anchor pinned to the genesis realm refuses to
 // handshake with any other tree, which is the property worth having and the one a local

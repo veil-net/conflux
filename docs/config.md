@@ -241,7 +241,7 @@ read still reaches an `anchord` that is not root.
 `anchord` and `anchorctl`, extracted from the conflux binary, in a directory named for
 their contents: a hash of the two SHA-256s `conflux version` prints, and the platform.
 `make build` and `make dist` stamp those digests into the binary from the very files it
-embeds, so a released conflux knows its set without reading forty-odd megabytes at every
+embeds, so a released conflux knows its set without reading tens of megabytes at every
 invocation; a plain `go build` stamps nothing and computes them once per process instead.
 
 Content-addressed rather than a fixed path, and that one decision removes four
@@ -249,7 +249,7 @@ problems at once. An upgraded conflux writes a *new* directory instead of over t
 a running anchord has open, so there is no `ETXTBSY` on Unix and no sharing violation
 on Windows. Two conflux processes racing agree on the path. A stale set is
 identifiable and sweepable. And "is it already extracted" is two stats rather than a
-read of forty-odd megabytes: a set is only ever renamed to its name whole, so both
+read of tens of megabytes: a set is only ever renamed to its name whole, so both
 binaries there at their sizes are a finished extraction.
 
 A set is written into a staging directory beside it, and `anchorctl help` is run there

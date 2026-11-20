@@ -11,14 +11,13 @@ import (
 	"testing"
 )
 
-// TestPairIsRealExecutables is the tripwire for the two ways this package breaks
-// silently rather than loudly.
-//
-// The first is Git LFS: the Go module proxy serves pointer files, so a build from
-// the proxy would embed 130 bytes of text and ship a "anchord" that is not one.
-// The second is a Windows checkout with core.autocrlf=true and no .gitattributes,
-// which rewrites CRLF inside a binary and corrupts it. Neither fails the build;
-// both fail on a user's machine, at exec, with nothing useful to say.
+// TestPairIsRealExecutables is the tripwire for a pair that builds, links and ships but
+// cannot run where it is embedded: a file in bin/ under this platform's name that is not
+// this platform's executable -- another target's build, copied or fetched in under it.
+// Nothing else notices. Supported weighs the pair, the size gate in `make dist` weighs the
+// artifact, and the fetcher holds each file to the digest anchor's manifest gives for that
+// name; a darwin/arm64 anchord under the linux/arm64 name passes all three, and fails on a
+// user's machine, at exec, with nothing useful to say.
 func TestPairIsRealExecutables(t *testing.T) {
 	if !Supported {
 		t.Skipf("no anchor pair for %s/%s -- run `make anchor-bins`", runtime.GOOS, runtime.GOARCH)

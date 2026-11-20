@@ -4,11 +4,12 @@
 $ git clone https://github.com/veil-net/conflux && cd conflux
 $ make anchor-bins            # populate anchor/bin -- see below; a bare clone has none
 $ make build
-  50.1 MB  bin/conflux
+  60.6 MB  bin/conflux
 ```
 
-Go 1.27.3 or newer, and nothing else. The only dependency is `golang.org/x/sys`. The
-Makefile builds against the FIPS 140-3 Go Cryptographic Module; see [FIPS 140-3](#fips-140-3).
+Go, at the version `go.mod` names or newer, and nothing else. The only dependency is
+`golang.org/x/sys`. The Makefile builds against the FIPS 140-3 Go Cryptographic Module; see
+[FIPS 140-3](#fips-140-3).
 
 `make anchor-bins` is the one step a fresh clone needs and does not get for free. It
 looks in `../anchor` by default. Without it, `//go:embed` has nothing to embed and the
@@ -16,8 +17,8 @@ build fails.
 
 ## Where the anchor binaries come from
 
-**They are not in git.** Fourteen release builds are about 300 MB, and committing that
-costs it permanently — on every clone, for every contributor, every time they are
+**They are not in git.** Fourteen release builds are hundreds of megabytes, and committing
+that costs it permanently — on every clone, for every contributor, every time they are
 refreshed. So `anchor/bin/` is ignored, and a build populates it:
 
 ```console
@@ -74,7 +75,7 @@ $ make anchor-bins FETCH=1
 anchor-fetch: release: veil-net/anchor @ latest
 anchor-fetch: commit:  0e68ba25f3019fdfc331cd8763f40fbdd641538a
 anchor-fetch: realm:   realmtglwuedqqa33e364nv73p46jk3kwi67lxjmnntz2mv3mb3mklasq
-anchor-fetch:   ok   anchord-linux-amd64           29.7 MB  06cc7917c8fc  fetched
+anchor-fetch:   ok   anchord-linux-amd64           36.1 MB  06cc7917c8fc  fetched
   …
 anchor-fetch: 14/14 in place, digests verified
 ```
@@ -116,9 +117,9 @@ it, embed anchor's `latest`; conflux's `dev`, and every pull request into it, em
 ([testing.md](testing.md#branches)).
 
 `ANCHOR_REPO=`, `ANCHOR_TAG=` and `ANCHOR_API=` point it elsewhere. The fetcher is
-`cmd/anchor-fetch` over `internal/anchorrelease` — Go rather than curl and a JSON parser, because
-the promise at the top of this page is "Go 1.27.3 or newer, and nothing else", and a fresh
-clone should not have to acquire anything else to become buildable.
+`cmd/anchor-fetch` over `internal/anchorrelease` — Go rather than curl and a JSON parser,
+because the promise at the top of this page is Go and nothing else, and a fresh clone
+should not have to acquire anything else to become buildable.
 
 #### The token
 
@@ -219,7 +220,8 @@ skip, and `make dist` refuses:
 
 ### Why not committed, or LFS
 
-**Committed**, the fourteen cost about 300 MB per refresh, permanently, on every clone.
+**Committed**, the fourteen cost hundreds of megabytes per refresh, permanently, on every
+clone.
 
 **Git LFS** is worse than it looks. The Go module proxy serves LFS *pointer files*, so
 `go install github.com/veil-net/conflux@latest` would embed 130 bytes of text and ship
@@ -271,7 +273,7 @@ $ make cross
   ok   linux/amd64
   …
 $ make dist
-  ok   dist/conflux-linux-amd64  62 MB  GOFIPS140=v1.26.0
+  ok   dist/conflux-linux-amd64  60 MB  GOFIPS140=v1.26.0
   …
   wrote dist/SHA256SUMS
 ```

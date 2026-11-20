@@ -93,6 +93,18 @@ var anchorLifecycleVerbs = map[string]string{
 // and changes nothing.
 func catches(s os.Signal) bool { return !signal.Ignored(s) }
 
+// signalContext is the context Main runs a command on, ended by SIGINT unless conflux was
+// started ignoring it (catches), and by SIGTERM always: Go's runtime leaves no ignore of it
+// standing, and naming no signal would end the context on every one.
+func signalContext() (context.Context, context.CancelFunc) {
+	ends := []os.Signal{syscall.SIGTERM}
+	if catches(os.Interrupt) {
+		ends = append(ends, os.Interrupt)
+	}
+
+	return signal.NotifyContext(context.Background(), ends...)
+}
+
 // Main dispatches. It returns an exit code rather than calling os.Exit so that the
 // tests can drive it.
 func Main(argv []string) int {
@@ -102,14 +114,7 @@ func Main(argv []string) int {
 		return ExitChildFailed
 	}
 
-	// SIGINT unless conflux was started ignoring it (catches), and SIGTERM always: Go's runtime
-	// leaves no ignore of it standing, and naming no signal would end ctx on every one.
-	ends := []os.Signal{syscall.SIGTERM}
-	if catches(os.Interrupt) {
-		ends = append(ends, os.Interrupt)
-	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), ends...)
+	ctx, stop := signalContext()
 	defer stop()
 
 	if len(argv) < 2 {

@@ -30,11 +30,16 @@ import (
 // and nothing left in `ps` pretending to be a wrapper. What needs nothing of conflux's runs as
 // a child instead; see runDetached.
 func passthrough(ctx context.Context, args []string) int {
-	// A user who named a socket themselves is talking to a daemon conflux does not manage, so
-	// nothing of conflux's is checked, read or made for them: the installation's directories
-	// are not theirs to need, and an account that cannot write them still reaches its own
-	// daemon.
-	if namesSocket(args) || os.Getenv(anchorctl.SocketEnv) != "" {
+	// Neither usage nor a socket the user named needs conflux's daemon, so each is answered
+	// before anything is asked of the machine. Usage needs nothing running: anchorctl groups
+	// keygen, issue and inspect under "no anchor needed", but that means no *anchor* -- they
+	// are still RPCs to the daemon, which mints the identity and derives the id -- and asking
+	// for help is the only thing that genuinely reaches no socket, because Go's flag package
+	// answers before anything dials. A user who named a socket is talking to a daemon conflux
+	// does not manage, so nothing of conflux's is checked, read or made for them: the
+	// installation's directories are not theirs to need, and an account that cannot write
+	// them still reaches its own daemon.
+	if wantsUsage(args) || namesSocket(args) || os.Getenv(anchorctl.SocketEnv) != "" {
 		return runDetached(args)
 	}
 
@@ -43,10 +48,6 @@ func passthrough(ctx context.Context, args []string) int {
 	token, code := connectionDetails(d, args)
 	if code != ExitOK {
 		return code
-	}
-
-	if wantsUsage(args) {
-		return runDetached(args)
 	}
 
 	// Only once there is something to talk to. Extracting first made the directories
@@ -70,15 +71,6 @@ func passthrough(ctx context.Context, args []string) int {
 // started anchord and is not meant to. Everything else, including anchorctl's
 // genuinely good explanations of every other refusal, passes through untouched.
 func connectionDetails(d paths.Dirs, args []string) (string, int) {
-	// Usage needs nothing running. anchorctl groups keygen, issue and inspect
-	// under "no anchor needed", but that means no *anchor*: they are still RPCs to
-	// the daemon, which mints the identity and derives the id. Asking for help is
-	// the only thing that genuinely reaches no socket, because Go's flag package
-	// answers before anything dials.
-	if wantsUsage(args) {
-		return "", ExitOK
-	}
-
 	if _, err := os.Stat(d.Socket()); errors.Is(err, fs.ErrNotExist) {
 		ui.Errf("nothing is running here.\n\n"+
 			"  conflux start                       start from a configuration that already exists\n"+

@@ -219,44 +219,64 @@ func TestAnIgnoredSignalStaysIgnoredForItsAnchorctl(t *testing.T) {
 	}
 }
 
-// hangupChild, set, makes TestNohupHoldsOffAnEphemeralRunsHangup's test binary the conflux it
-// runs: one that sends itself a hangup with an ephemeral run's context in hand, and says whether
-// the hangup ended it; then another, and says if it lived on.
+// hangupChild, set to a signal's number, makes TestNohupHoldsOffAnEphemeralRunsHangup's test
+// binary the conflux it runs: an ephemeral run's, on a context Main's signals end, that sends
+// itself a hangup and says whether the hangup ended the run, ends it by SIGTERM where it did not,
+// as Main's ctx is ended, and then sends itself the signal named and says if it lived on.
 const hangupChild = "CONFLUX_TEST_HANGUP_CHILD"
 
 // TestNohupHoldsOffAnEphemeralRunsHangup: an ephemeral run in a terminal that is closed stops
-// cleanly on the hangup, and a second hangup, not waited for, ends conflux at once, as a second
-// interrupt does. One started under nohup, which ignores SIGHUP so that what it runs outlives
-// the terminal, is ended by neither.
+// cleanly on the hangup, and a second signal, not waited for -- a hangup, SIGTERM or an
+// interrupt, each of which ended the run's context until then -- ends conflux at once. One
+// started under nohup, which ignores SIGHUP so that what it runs outlives the terminal, is ended
+// by neither hangup; stopped by SIGTERM, it is ended at once by a second SIGTERM or interrupt, as
+// any run is.
 func TestNohupHoldsOffAnEphemeralRunsHangup(t *testing.T) {
-	if os.Getenv(hangupChild) != "" {
-		parent, other := context.WithCancel(context.Background())
+	if second := os.Getenv(hangupChild); second != "" {
+		n, err := strconv.Atoi(second)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(2)
+		}
+
+		// Main's ctx: SIGTERM, and SIGINT, which this child was started catching (defaultSignals).
+		parent, stopParent := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+		defer stopParent()
+
 		ctx, stop := hangupContext(parent)
 		defer stop()
 
 		secondSignalEnds(ctx)
 
-		hangup := func() {
-			if err := syscall.Kill(os.Getpid(), syscall.SIGHUP); err != nil {
+		send := func(sig syscall.Signal) {
+			if err := syscall.Kill(os.Getpid(), sig); err != nil {
 				fmt.Println(err)
 				os.Exit(2)
 			}
 		}
 
-		hangup()
+		send(syscall.SIGHUP)
 
 		select {
 		case <-ctx.Done():
 			fmt.Println("ended")
 		case <-time.After(300 * time.Millisecond):
 			fmt.Println("held")
+
+			// Held off, the run ends by another signal, as Main's ctx does.
+			send(syscall.SIGTERM)
+
+			select {
+			case <-ctx.Done():
+			case <-time.After(10 * time.Second):
+				fmt.Println("and not ended by SIGTERM")
+				os.Exit(2)
+			}
 		}
 
-		// Held off, the run ends by another signal, as Main's ctx does; then, once the handlers
-		// have gone, the next hangup.
-		other()
+		// Then, once the handlers have gone, the second signal.
 		time.Sleep(100 * time.Millisecond)
-		hangup()
+		send(syscall.Signal(n))
 		time.Sleep(300 * time.Millisecond)
 		fmt.Println("lived on")
 
@@ -271,27 +291,33 @@ func TestNohupHoldsOffAnEphemeralRunsHangup(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		under []string
-		want  string
-		ended bool // by the second hangup
+		under  []string
+		second syscall.Signal
+		want   string
+		ended  bool // by the second signal
 	}{
-		{nil, "ended", true},
-		{[]string{nohup}, "held\nlived on", false},
+		{nil, syscall.SIGHUP, "ended", true},
+		{nil, syscall.SIGTERM, "ended", true},
+		{nil, syscall.SIGINT, "ended", true},
+		{[]string{nohup}, syscall.SIGHUP, "held\nlived on", false},
+		{[]string{nohup}, syscall.SIGTERM, "held", true},
+		{[]string{nohup}, syscall.SIGINT, "held", true},
 	} {
 		argv := append(tc.under, os.Args[0], "-test.run=^TestNohupHoldsOffAnEphemeralRunsHangup$")
 
 		conflux := exec.Command(argv[0], argv[1:]...) //nolint:gosec // this test binary
-		conflux.Env = append(os.Environ(), hangupChild+"=1")
+		conflux.Env = append(os.Environ(), hangupChild+"="+strconv.Itoa(int(tc.second)))
 		conflux.Dir = t.TempDir() // where nohup would put nohup.out, had it a terminal to redirect
 
 		out, err := conflux.Output()
 		if got := strings.TrimSpace(string(out)); got != tc.want {
-			t.Errorf("%v: the run said %q after two hangups (%v), want %q", tc.under, got, err, tc.want)
+			t.Errorf("%v, %s second: the run said %q (%v), want %q", tc.under, signalName(tc.second), got, err, tc.want)
 		}
 
 		ws, _ := conflux.ProcessState.Sys().(syscall.WaitStatus)
-		if hung := ws.Signaled() && ws.Signal() == syscall.SIGHUP; hung != tc.ended || (!hung && err != nil) {
-			t.Errorf("%v: conflux ended %v, want ended by the second hangup: %v", tc.under, conflux.ProcessState, tc.ended)
+		if ended := ws.Signaled() && ws.Signal() == tc.second; ended != tc.ended || (!ended && err != nil) {
+			t.Errorf("%v, %s second: conflux ended %v, want ended by it: %v", tc.under, signalName(tc.second),
+				conflux.ProcessState, tc.ended)
 		}
 	}
 }

@@ -135,12 +135,12 @@ func Extracted(d paths.Dirs) (*Tools, error) {
 // ForUsage is an anchorctl to ask what a command takes, for help that must leave nothing
 // behind: this build's, extracted under d, where a whole extraction is there and readable,
 // and otherwise a copy in a private temporary directory, which done removes -- in the
-// system's temporary directory, or the user's cache directory, made if it is not there yet,
-// where that one is mounted noexec, as /tmp is on a hardened host. No other directory is
-// made, and never d's own. Making them for help
-// remade, after an uninstall, what it had removed, with tens of megabytes in it; and on
-// Windows, asked by an account that is not an administrator, it left %ProgramData%\conflux
-// owned by that account, which every later install then refused.
+// system's temporary directory, or, where that one is mounted noexec as /tmp is on a hardened
+// host, in the user's cache directory, made if it is not there yet. No other directory is
+// made, and never d's own. Making them for help remade, after an uninstall, what it had
+// removed, with tens of megabytes in it; and on Windows, asked by an account that is not an
+// administrator, it left %ProgramData%\conflux owned by that account, which every later
+// install then refused.
 func ForUsage(d paths.Dirs) (bin string, done func(), err error) {
 	switch t, err := Extracted(d); {
 	case err == nil:
@@ -322,10 +322,10 @@ func writeExecutable(path string, content []byte, oneRun bool) error {
 		return fmt.Errorf("close %s: %w", path, err)
 	}
 
-	// Which only Windows acts on. A set's binaries are the machine's, SYSTEM's and the
-	// Administrators', as everything under the root is. A copy for one run is the account
-	// running it as well: help may be asked by one that is not an administrator, which
-	// Restrict's DACL would not let execute what it had just written.
+	// Only Windows restricts a file; elsewhere both are no-ops. A set's binaries are the
+	// machine's, SYSTEM's and the Administrators', as everything under the root is. A copy for
+	// one run is the account running it as well: help may be asked by one that is not an
+	// administrator, which Restrict's DACL would not let execute what it had just written.
 	restrict := paths.Restrict
 	if oneRun {
 		restrict = paths.RestrictToOwner

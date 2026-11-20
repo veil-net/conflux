@@ -248,8 +248,9 @@ Content-addressed rather than a fixed path, and that one decision removes four
 problems at once. An upgraded conflux writes a *new* directory instead of over the file
 a running anchord has open, so there is no `ETXTBSY` on Unix and no sharing violation
 on Windows. Two conflux processes racing agree on the path. A stale set is
-identifiable and sweepable. And "is it already extracted" is three stats rather than a
-read of forty-odd megabytes.
+identifiable and sweepable. And "is it already extracted" is two stats rather than a
+read of forty-odd megabytes: a set is only ever renamed to its name whole, so both
+binaries there at their sizes are a finished extraction.
 
 A set is written into a staging directory beside it, and `anchorctl help` is run there
 once; only a set that runs is renamed to its name. So nothing finds a set there that has

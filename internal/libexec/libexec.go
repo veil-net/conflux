@@ -5,7 +5,7 @@
 // once. An upgraded conflux writes a new directory instead of over the file a
 // running anchord has open, so there is no ETXTBSY on Unix and no sharing violation
 // on Windows. Two conflux processes racing produce the same path. A stale set is
-// identifiable and sweepable. And "is it already extracted" is three stats rather
+// identifiable and sweepable. And "is it already extracted" is two stats rather
 // than a read of forty megabytes on every invocation: setID is stamped at build time
 // (anchor.Digests).
 //
@@ -34,10 +34,6 @@ import (
 	"github.com/veil-net/conflux/internal/paths"
 )
 
-// completeMarker is written last. Its presence is what distinguishes a finished
-// directory from one a crash left half-written.
-const completeMarker = ".complete"
-
 // smokeTimeout bounds the one-off check that the extracted binary actually runs.
 const smokeTimeout = 10 * time.Second
 
@@ -60,7 +56,7 @@ func Ensure(d paths.Dirs) (*Tools, error) {
 	t := toolsIn(d)
 
 	// The hot path: every conflux invocation reaches here, including a bare
-	// pass-through, so it is three stats and nothing more.
+	// pass-through, so it is two stats and nothing more.
 	if t.complete() {
 		return t, nil
 	}
@@ -160,19 +156,19 @@ func ForUsage(d paths.Dirs) (bin string, done func(), err error) {
 	return bin, func() { _ = os.RemoveAll(dir) }, nil
 }
 
-// complete reports whether the directory holds a finished extraction of exactly
-// this pair. The sizes are checked as well as the marker, because a truncated write
-// that still managed to place the marker is the one failure a marker alone misses.
+// complete reports whether the directory holds a finished extraction of exactly this
+// pair: both binaries, each at its size.
+//
+// Their presence is enough because a set directory only ever appears whole: extract
+// renames it in from a staging directory once both binaries in it were written, synced
+// and run. The sizes catch a binary truncated or replaced since, and a name a power cut
+// lost from the directory, whose own entries are not synced.
 //
 // And on Windows, that a trusted owner wrote them -- this account, SYSTEM or the
 // Administrators -- since a set directory is named for content anybody can compute, and
-// one another account made first, marker and sizes and all, would otherwise be run as
-// SYSTEM. One that fails any of this is extracted again.
+// one another account made first, sizes and all, would otherwise be run as SYSTEM. One
+// that fails any of this is extracted again.
 func (t *Tools) complete() bool {
-	if _, err := os.Stat(filepath.Join(t.Dir, completeMarker)); err != nil {
-		return false
-	}
-
 	return ours(t.Anchord, len(anchor.Anchord())) && ours(t.Anchorctl, len(anchor.Anchorctl()))
 }
 
@@ -217,11 +213,6 @@ func extract(t *Tools) error {
 		return err
 	}
 
-	marker := fmt.Sprintf("setID %s\nplatform %s/%s\n", t.SetID, runtime.GOOS, runtime.GOARCH)
-	if err := os.WriteFile(filepath.Join(staging, completeMarker), []byte(marker), 0o600); err != nil {
-		return fmt.Errorf("write the completion marker: %w", err)
-	}
-
 	// Run before it takes its name, and so only once: whatever finds a set under its name takes
 	// it as whole and never runs it, so one that will not run -- or whose run was interrupted --
 	// would otherwise fail every start with a bare "permission denied", where this says why.
@@ -245,10 +236,11 @@ func extract(t *Tools) error {
 			return nil
 		}
 
-		// Or the target exists and is incomplete -- a power cut mid-write, or a
-		// truncated binary. Rename will not replace a non-empty directory, so the
-		// debris has to go first. Safe here because we hold the lock, and because
-		// an incomplete set is by definition one nothing is running from.
+		// Or the target exists and is incomplete: a binary truncated or removed since,
+		// one another account owns on Windows, or a power cut that kept the rename and
+		// lost a name inside the directory. Rename will not replace a non-empty
+		// directory, so the debris has to go first. Safe here because we hold the lock,
+		// and because an incomplete set is by definition one nothing is running from.
 		if _, statErr := os.Stat(target); statErr == nil {
 			if rmErr := os.RemoveAll(target); rmErr != nil {
 				return fmt.Errorf("replace the incomplete extraction at %s: %w", target, rmErr)

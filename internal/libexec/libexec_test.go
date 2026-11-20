@@ -250,9 +250,9 @@ func TestASetTakesItsNameOnlyOnceItHasRun(t *testing.T) {
 	}
 }
 
-// TestEnsureRepairsATruncatedExtraction: a marker alone is not proof. A power cut
-// mid-write can leave a short binary, and re-running must fix it rather than trust
-// the marker and hand back a corpse.
+// TestEnsureRepairsATruncatedExtraction: a set under its name is taken as whole only
+// at its sizes. A binary cut short since it was extracted -- by a damaged disk, or by
+// hand -- is extracted again rather than handed back as a corpse.
 func TestEnsureRepairsATruncatedExtraction(t *testing.T) {
 	anchortest.Require(t)
 

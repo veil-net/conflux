@@ -26,10 +26,6 @@ type scm struct{}
 
 func newManager() Manager { return scm{} }
 
-// ServiceName is the SCM entry conflux registers: paths.ServiceName, which the service SID
-// anchord's files are granted to is Windows's for, so the two can never name different services.
-func ServiceName() string { return paths.ServiceName() }
-
 func (scm) Install(exe string, args ...string) error {
 	m, err := connect(windows.SC_MANAGER_ALL_ACCESS)
 	if err != nil {
@@ -50,7 +46,7 @@ func (scm) Install(exe string, args ...string) error {
 	}
 
 	// Already there is not a failure; it is an upgrade.
-	if existing, err := m.OpenService(ServiceName()); err == nil {
+	if existing, err := m.OpenService(paths.ServiceName()); err == nil {
 		defer existing.Close()
 
 		// Composed the way CreateService composes it below, so an upgrade registers the
@@ -65,7 +61,7 @@ func (scm) Install(exe string, args ...string) error {
 	}
 
 	// CreateService appends the arguments -- `serve`, and the root of a CONFLUX_DIR run.
-	s, err := m.CreateService(ServiceName(), exe, cfg, args...)
+	s, err := m.CreateService(paths.ServiceName(), exe, cfg, args...)
 	if err != nil {
 		return fmt.Errorf("create the service: %w", err)
 	}
@@ -112,7 +108,7 @@ func withService(scAccess, access uint32, f func(*mgr.Service) error) error {
 	}
 	defer m.Disconnect()
 
-	name := ServiceName()
+	name := paths.ServiceName()
 
 	h, err := windows.OpenService(m.Handle, windows.StringToUTF16Ptr(name), access)
 	if err != nil {
@@ -248,10 +244,10 @@ func (scm) Describe() string {
 	var described string
 
 	err := withService(windows.SC_MANAGER_CONNECT, windows.SERVICE_QUERY_STATUS, func(s *mgr.Service) error {
-		described = fmt.Sprintf("installed, not running (service: %s, automatic at boot)", ServiceName())
+		described = fmt.Sprintf("installed, not running (service: %s, automatic at boot)", paths.ServiceName())
 
 		if status, err := s.Query(); err == nil && (status.State == svc.Running || status.State == svc.StartPending) {
-			described = fmt.Sprintf("running (service: %s, automatic at boot)", ServiceName())
+			described = fmt.Sprintf("running (service: %s, automatic at boot)", paths.ServiceName())
 		}
 
 		return nil

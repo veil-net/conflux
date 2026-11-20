@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -207,9 +208,11 @@ func parentsRuleAs(dir string, euid int) judgement {
 // the binary root runs at boot where that user can replace it. The owner decides, as on
 // Windows: one that is not the account running conflux did not get its directory from
 // conflux, and whatever it put there is not used. A CONFLUX_DIR is held to its parents
-// first (see parentsAs), before anything at its name is read. Every refusal comes before secure
-// changes anything; a root that was not there EnsureAll has made by then, and a refusal leaves
-// it, empty and this account's.
+// first (see parentsAs), before anything at its name is read. What a root holds is held to the
+// same, before the root is narrowed and again after (contentsAs), as on Windows: whatever another
+// account put in it while it was wider is refused, not adopted. Every refusal but the last comes
+// before secure changes anything; a root that was not there EnsureAll has made by then, and a
+// refusal leaves it, empty and this account's.
 func secure(dir string) error { return secureAs(dir, os.Geteuid()) }
 
 // secureAs is secure for a given effective uid, so the refusals can be tested without
@@ -244,7 +247,7 @@ func secureAs(dir string, euid int) error {
 			}
 		}
 
-		writers, aclGroup, err := aclOf(acl)
+		writers, aclGroup, err := aclOf(acl, -1)
 		if err != nil {
 			return err
 		}
@@ -254,6 +257,12 @@ func secureAs(dir string, euid int) error {
 				"for conflux to run.\n  Remove that entry from its ACL, and from the directory above that passed "+
 				"it on, if one did; then run this again", dir, who)
 		}
+	}
+
+	// What the root holds, as found: a root wider than it is left let anybody put anything there,
+	// which narrowing it takes nothing out of.
+	if err := contentsAs(dir, euid); err != nil {
+		return err
 	}
 
 	// 0710 -- its group may pass through and list nothing -- is how the supervisor lets
@@ -268,8 +277,15 @@ func secureAs(dir string, euid int) error {
 		return fmt.Errorf("narrow %s to 0700: %w", dir, err)
 	}
 
-	return nil
+	narrowed(dir)
+
+	// And again: whatever was put there before the narrowing, since it was judged.
+	return contentsAs(dir, euid)
 }
+
+// narrowed is called once secure has narrowed a root, before it judges what the root holds again:
+// nothing, but where a test adds to the root meanwhile.
+var narrowed = func(string) {}
 
 // ownedAs is what Lstat says of dir, and what dir resolves to, the same where it is not a link,
 // once owns has held each to euid: secure's rule (ownedBy) or a reader's (readerOwns). A root that
@@ -312,10 +328,215 @@ func ownedRoot(dir string) error {
 // checkRoot is Check's judgement of the root dir: checkRootAs for this process's effective uid.
 func checkRoot(dir string) error { return checkRootAs(dir, os.Geteuid()) }
 
-// contents is nothing here: what a root holds is judged by the root's own mode and ACL, which
-// checkRoot holds to letting nobody else write it, and nothing in it is another account's unless
-// one could.
-func contents(string) error { return nil }
+// contents refuses the root dir where anything in it another account could have put there, or may
+// change: contentsAs for this process's effective uid.
+func contents(dir string) error { return contentsAs(dir, os.Geteuid()) }
+
+// contentsAs refuses the root dir, for euid, where anything in it another account could have put
+// there, or may change, as Windows's contents does: a root left wider than conflux leaves one let
+// anybody put what they liked in it -- a link for the service to write its log through as root, a
+// configuration, a pid record -- and narrowing the root takes none of it out. Each entry is judged,
+// as found, and each directory gone into, from the root held open (judgeIn): by what fstatat says of
+// its name in the directory held, never followed, and its ACL read through a descriptor opened on it
+// there, never by its name. A link is refused, whoever may change it: conflux makes none in a root.
+// So is anything but a file, a directory or a socket; an entry another account owns, whatever its
+// name; a file with a second name, a hard link that would lead root's writes to wherever that is;
+// and anything another account may write -- a file's content, or a directory's names, which is how
+// whoever may write it would retarget what it holds -- by its mode, the sticky bit letting nothing
+// through, or its ACL (judge).
+//
+// anchord's own account (anchordAccount) is conflux's, as the account anchord runs as is on
+// Windows: the supervisor gives it its -dir, anchor (made as anchor.new), its -config,
+// anchord.json, written through a .tmp- file beside it, and its run directory, anchord in Run --
+// run/anchord in a root that holds Run (anchordPlace). One of those that account owns is held to
+// who else may write it, and a directory of them is not gone into: only root and anchord may make
+// anything in it, and conflux reads what anchord makes there as anchord's, untrusted
+// (OpenUntrusted, config.ReadUntrusted, copyTree). That account can make nothing elsewhere in a
+// root, so what it owns anywhere else is refused as any other account's is.
+//
+// The root is opened by its name once, which secure and checkRoot have just held, a link at it
+// included, to its owner, and refused unless it is the directory they judged.
+func contentsAs(dir string, euid int) error {
+	fi, err := os.Stat(dir)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", dir, err)
+	}
+
+	var fd int
+	if err := ignoringEINTR(func() (err error) {
+		fd, err = unix.Open(dir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+
+		return err
+	}); err != nil {
+		return &os.PathError{Op: "open", Path: dir, Err: err}
+	}
+	defer unix.Close(fd)
+
+	var st unix.Stat_t
+	if err := unix.Fstat(fd, &st); err != nil {
+		return &os.PathError{Op: "stat", Path: dir, Err: err}
+	}
+
+	if was := fi.Sys().(*syscall.Stat_t); uint64(was.Dev) != uint64(st.Dev) || uint64(was.Ino) != uint64(st.Ino) {
+		return fmt.Errorf("%s changed while conflux judged it, so conflux will not use it.\n  Run this again", dir)
+	}
+
+	return judgeIn(dir, fd, "", euid, map[uint32]bool{})
+}
+
+// judgeIn is contentsAs's judgement of what is in the directory fd holds open, rel within the root
+// dir; anchords keeps what anchordAccount said of each uid it was asked of.
+func judgeIn(dir string, fd int, rel string, euid int, anchords map[uint32]bool) error {
+	names, err := namesIn(fd)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", filepath.Join(dir, rel), err)
+	}
+
+	for _, name := range names {
+		if err := judgeEntry(dir, fd, filepath.Join(rel, name), name, euid, anchords); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// judgeEntry is judgeIn's judgement of name, in the directory fd holds open, rel within the root dir,
+// and, where it is a directory to go into, of what it holds. One gone since it was listed is passed
+// over: nothing is there to judge, and a live run's root has its marker written and removed while
+// it runs.
+func judgeEntry(dir string, fd int, rel, name string, euid int, anchords map[uint32]bool) error {
+	p := filepath.Join(dir, rel)
+
+	var st unix.Stat_t
+
+	switch err := ignoringEINTR(func() error { return unix.Fstatat(fd, name, &st, unix.AT_SYMLINK_NOFOLLOW) }); {
+	case errors.Is(err, unix.ENOENT):
+		return nil
+	case err != nil:
+		return &os.PathError{Op: "stat", Path: p, Err: err}
+	}
+
+	kind := st.Mode & unix.S_IFMT
+
+	switch kind {
+	case unix.S_IFLNK:
+		return fmt.Errorf("%s, a link, is in %s, where conflux makes none, so conflux will not use it.\n  Remove it, "+
+			"then run this again", p, dir)
+	case unix.S_IFDIR, unix.S_IFREG, unix.S_IFSOCK:
+	default:
+		return fmt.Errorf("%s, which is no file or directory conflux makes, is in %s, so conflux will not use it.\n  "+
+			"Remove it, then run this again", p, dir)
+	}
+
+	theirs := st.Uid != 0 && int(st.Uid) != euid
+	anchord := theirs && anchordPlace(rel) && anchordAccount(st.Uid, anchords)
+
+	switch {
+	case theirs && !anchord:
+		return fmt.Errorf("%s, which belongs to uid %d, is in %s, so conflux did not make it and will not use it.\n  "+
+			"Remove it, then run this again", p, st.Uid, dir)
+	case kind == unix.S_IFREG && st.Nlink > 1:
+		return fmt.Errorf("%s, which has another name, is in %s, where conflux makes no file of two names, so "+
+			"conflux will not use it.\n  Remove it, then run this again", p, dir)
+	}
+
+	// A socket is not opened -- anchord's is in a directory of its own -- and is held to its mode.
+	var acl []writer
+
+	aclGroup, sub := false, -1
+
+	if kind != unix.S_IFSOCK {
+		flags := unix.O_RDONLY | unix.O_NOFOLLOW | unix.O_NONBLOCK | unix.O_CLOEXEC
+		if kind == unix.S_IFDIR {
+			flags |= unix.O_DIRECTORY
+		}
+
+		var held unix.Stat_t
+
+		err := ignoringEINTR(func() (err error) {
+			sub, err = unix.Openat(fd, name, flags, 0)
+
+			return err
+		})
+		if err == nil {
+			defer unix.Close(sub)
+
+			err = unix.Fstat(sub, &held)
+		}
+
+		switch {
+		case err != nil:
+			return &os.PathError{Op: "open", Path: p, Err: err}
+		case held.Dev != st.Dev || held.Ino != st.Ino:
+			return fmt.Errorf("%s changed while conflux judged it, so conflux will not use it.\n  Run this again", p)
+		}
+
+		if acl, aclGroup, err = aclOf(p, sub); err != nil {
+			return err
+		}
+	}
+
+	if who := judge(os.FileMode(st.Mode&0o777), st.Gid, acl, aclGroup, euid); who != "" {
+		return fmt.Errorf("%s, which %s could change, is in %s, so conflux will not use it.\n  Remove it, then "+
+			"run this again", p, who, dir)
+	}
+
+	if kind != unix.S_IFDIR || anchord {
+		return nil
+	}
+
+	return judgeIn(dir, sub, rel, euid, anchords)
+}
+
+// namesIn is what the directory fd holds open, freshly, lists, "." and ".." aside.
+func namesIn(fd int) ([]string, error) {
+	var names []string
+
+	b := make([]byte, 8192)
+
+	for {
+		var n int
+		if err := ignoringEINTR(func() (err error) {
+			n, err = unix.ReadDirent(fd, b)
+
+			return err
+		}); err != nil {
+			return nil, err
+		}
+
+		if n <= 0 {
+			return names, nil
+		}
+
+		_, _, names = unix.ParseDirent(b[:n], -1, names)
+	}
+}
+
+// anchordPlace reports whether rel, within a root, is where the supervisor gives anchord's own
+// account what it needs (contentsAs).
+func anchordPlace(rel string) bool {
+	switch rel {
+	case "anchor", "anchor.new", "anchord.json", "anchord", filepath.Join(runName, "anchord"):
+		return true
+	}
+
+	return !strings.ContainsRune(rel, filepath.Separator) && strings.HasPrefix(rel, ".tmp-")
+}
+
+// anchordAccount reports whether uid is an account anchord runs as here, the installation's or an
+// ephemeral run's (AccountName), as the account database names it; known keeps each answer.
+func anchordAccount(uid uint32, known map[uint32]bool) bool {
+	if is, ok := known[uid]; ok {
+		return is
+	}
+
+	u, err := user.LookupId(strconv.FormatUint(uint64(uid), 10))
+	is := err == nil && (u.Username == AccountName("conflux") || u.Username == AccountName("conflux-ephemeral"))
+	known[uid] = is
+
+	return is
+}
 
 // checkRootAs refuses the root dir, for a command run as euid about to read what is in it by name,
 // where another account could have put something there: one owned, or reached through a link
@@ -342,7 +563,7 @@ func checkRootAs(dir string, euid int) error {
 		}
 	}
 
-	writers, aclGroup, err := aclOf(acl)
+	writers, aclGroup, err := aclOf(acl, -1)
 	if err != nil {
 		return err
 	}
@@ -389,7 +610,7 @@ func writerOf(p string, uid, gid uint32, mode os.FileMode, link bool, euid int) 
 		return "", nil
 	}
 
-	acl, aclGroup, err := aclOf(p)
+	acl, aclGroup, err := aclOf(p, -1)
 	if err != nil {
 		return "", err
 	}
@@ -406,9 +627,10 @@ func parentRefusal(dir, where, p, who string, euid int) error {
 }
 
 // aclOf is who p's ACL lets write it, and whether that ACL says what p's group may
-// (extendedWriters), for judge, or judgeRoot, to hold beside p's mode; a failure names p.
-func aclOf(p string) ([]writer, bool, error) {
-	acl, aclGroup, err := extendedWriters(p)
+// (extendedWriters), for judge, or judgeRoot, to hold beside p's mode: read through fd where it is
+// open on p, else at p; a failure names p.
+func aclOf(p string, fd int) ([]writer, bool, error) {
+	acl, aclGroup, err := extendedWriters(p, fd)
 	if err != nil {
 		return nil, false, fmt.Errorf("read the ACL of %s: %w", p, err)
 	}

@@ -22,21 +22,26 @@ const rootACLMayRefuse = true
 // ACL rather than the mode says what its group may: here the NFSv4 ACL a filesystem keeps them
 // in (ZFS, UFS with nfsv4acls), which sits beside the mode, or else the POSIX.1e access ACL
 // (UFS with acls), whose mask the mode's group bits are. They are asked of __acl_get_link, for
-// p itself, by the call's number: x/sys/unix does not wrap it. A filesystem refuses the kind
-// it does not keep with EINVAL, and one that keeps neither refuses both, with EINVAL or
-// EOPNOTSUPP, and has none.
-func extendedWriters(p string) ([]writer, bool, error) {
-	name, err := unix.BytePtrFromString(p)
-	if err != nil {
-		return nil, false, err
+// p itself, or of __acl_get_fd, where fd is open on p, by the call's number: x/sys/unix wraps
+// neither. A filesystem refuses the kind it does not keep with EINVAL, and one that keeps neither
+// refuses both, with EINVAL or EOPNOTSUPP, and has none.
+func extendedWriters(p string, fd int) ([]writer, bool, error) {
+	call, of := uintptr(unix.SYS___ACL_GET_FD), uintptr(fd)
+
+	if fd < 0 {
+		name, err := unix.BytePtrFromString(p)
+		if err != nil {
+			return nil, false, err
+		}
+
+		call, of = unix.SYS___ACL_GET_LINK, uintptr(unsafe.Pointer(name))
 	}
 
 	for _, kind := range []int{aclTypeNFS4, aclTypeAccess} {
 		b := make([]byte, freebsdACLSize)
 		binary.NativeEndian.PutUint32(b, freebsdMaxEntries)
 
-		_, _, errno := unix.Syscall(unix.SYS___ACL_GET_LINK, uintptr(unsafe.Pointer(name)), uintptr(kind),
-			uintptr(unsafe.Pointer(&b[0])))
+		_, _, errno := unix.Syscall(call, of, uintptr(kind), uintptr(unsafe.Pointer(&b[0])))
 
 		switch {
 		case errno == 0:

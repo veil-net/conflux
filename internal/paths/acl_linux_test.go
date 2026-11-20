@@ -123,7 +123,7 @@ func TestARootsACLCannotRefuseItHere(t *testing.T) {
 		t.Fatalf("give %s an ACL: %v", dir, err)
 	}
 
-	writers, aclGroup, err := extendedWriters(dir)
+	writers, aclGroup, err := extendedWriters(dir, -1)
 	if err != nil || len(writers) == 0 || !aclGroup {
 		t.Fatalf("extendedWriters = %+v, %v, %v; want writers, by an ACL whose mask is the group bits", writers, aclGroup, err)
 	}

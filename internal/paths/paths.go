@@ -330,10 +330,11 @@ func (d Dirs) Check() error {
 // Foreign is what a reader of a root another process keeps -- an ephemeral run's, which
 // %ProgramData% or /tmp lets anybody make first -- refuses it with, before it reads, runs or
 // signals anything in it, or nil where it passes: the root held as Check holds every root
-// (checkRoot), and, where a root's own DACL is not the whole of who may change what it holds -- on
-// Windows, where an entry keeps the owner and the DACL it was made with -- anything in it another
-// account may change (contents). A directory another account made, or could have planted something
-// in, is none of conflux's to use, and nothing is run from one. Where dir is not there it is an
+// (checkRoot), and anything in it another account could have put there or may change (contents),
+// since a root's own owner, mode and DACL are not the whole of that: on Windows an entry keeps the
+// owner and DACL it was made with, and on Unix narrowing a root takes nothing out of it. A
+// directory another account made, or could have planted something in, is none of conflux's to
+// use, and nothing is run from one. Where dir is not there it is an
 // error that is fs.ErrNotExist, which a reader takes as no root, reading nothing at its name: what
 // is there by the time it looks again is whoever made it first's.
 func Foreign(dir string) error {

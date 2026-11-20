@@ -51,7 +51,19 @@ host can read, and when the run stops there is nothing at all.
   replaced. A directory that already exists is held to the same: one of conflux's own left
   wider is narrowed to `0700`, and one another account owns, or whose own extended ACL (macOS,
   NFSv4) lets another account write or move it past what the narrowing rewrites, is refused
-  rather than used, since whatever that account put in it is not conflux's.
+  rather than used, since whatever that account put in it is not conflux's. Narrowing takes
+  nothing out of a root that was wider, so what it holds is judged as well, before the narrowing
+  and again after, as on Windows: everything in it, each directory gone into, read from the root
+  held open by `fstatat` and `openat` and never by a name, an entry's ACL through its own
+  descriptor. A link is refused, wherever it leads: conflux makes none in a root, and one at
+  `logs/conflux.log` would have the service write its log through it as root. So is anything but a
+  file, a directory or a socket, an entry another account owns, a file with a second name, and
+  anything another account may write by its mode, the sticky bit letting nothing through, or its
+  ACL. `anchord`'s own account is conflux's: what the supervisor gives it — `anchor/`,
+  `anchord.json` and the run directory's `anchord/` — it may own, and its directories are not gone
+  into, since conflux reads what `anchord` writes there as untrusted; anything else it owns is
+  refused, as it can make nothing elsewhere in a root. Every reader of an ephemeral run's root
+  judges what the root holds the same way.
 - On Windows, mode bits mean nothing and `%ProgramData%` lets `Users` read and create
   beneath it, so conflux gives its root to SYSTEM and Administrators — owner, and a
   protected DACL everything beneath inherits, set as the root is made — and refuses a root
@@ -73,9 +85,9 @@ host can read, and when the run stops there is nothing at all.
   root's name, or on a `CONFLUX_DIR`'s way, that leads nowhere is refused, not taken for none. Every root
   conflux makes passes it. `help`'s `anchorctl` runs from the extraction in a root only where the
   root passes it, and otherwise from a private copy in a temporary directory: a root that fails is
-  not refused for help, and nothing in it is read. On Windows a reader of an ephemeral root, which another process keeps,
-  then judges what the root holds too, each thing by its own owner and DACL, since what is in a
-  root keeps the owner and DACL it was made with whatever the root's says.
+  not refused for help, and nothing in it is read. A reader of an ephemeral root, which another
+  process keeps, then judges what the root holds too, each thing by its own owner and its mode and
+  ACL, or DACL, as above and in [windows.md](windows.md#file-permissions).
 - Never in an argv. It travels on stdin to `anchorctl start -manifest -`, and to
   `anchorctl observe -start -manifest -` for the observer, which runs under it too, becomes an
   inline secret on the wire, and is never named as a path in the request — so it never

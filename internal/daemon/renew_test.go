@@ -777,6 +777,29 @@ func TestARenewalBeforeAStartReachesWhatAlreadyRuns(t *testing.T) {
 	}
 }
 
+// dueBesideTheObserver is a machine running an anchor and an observer, both started on its
+// stored chain, which is due for renewal: the state describes that chain, as their starts left
+// it. It returns the chain.
+func dueBesideTheObserver(t *testing.T) (paths.Dirs, *enrol.Manifest) {
+	t.Helper()
+
+	d := machine(t, newIssuer(t), time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour))
+
+	cfg := configOf(t, d)
+	cfg.Observer = &config.Observer{}
+
+	if err := config.Save(d, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	old := stored(t, d)
+	if err := config.SaveState(d, &config.State{AnchorID: renewTestAnchor, IssuedAt: old.IssuedAt(), NotAfter: old.NotAfter()}); err != nil {
+		t.Fatal(err)
+	}
+
+	return d, old
+}
+
 // TestAPartStartedAgainKeepsTheWindowOfWhatRunsOn: a renewal one part would not take leaves the
 // state describing the chain that part still holds, due again; the watcher starting the other
 // part on the manifest the renewed chain is in leaves it so, rather than moving the window onto
@@ -793,21 +816,7 @@ func TestAPartStartedAgainKeepsTheWindowOfWhatRunsOn(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv(fakeAnchorctlObserverEnv, "running")
 
-			is := newIssuer(t)
-			d := machine(t, is, time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour))
-
-			cfg := configOf(t, d)
-			cfg.Observer = &config.Observer{}
-
-			if err := config.Save(d, cfg); err != nil {
-				t.Fatal(err)
-			}
-
-			// What both parts started on.
-			old := stored(t, d)
-			if err := config.SaveState(d, &config.State{AnchorID: renewTestAnchor, IssuedAt: old.IssuedAt(), NotAfter: old.NotAfter()}); err != nil {
-				t.Fatal(err)
-			}
+			d, _ := dueBesideTheObserver(t)
 
 			t.Setenv(fakeAnchorctlFailEnv, tc.refusing)
 
@@ -845,20 +854,7 @@ func TestAPartStartedAgainKeepsTheWindowOfWhatRunsOn(t *testing.T) {
 // leaves one it could not install -- rather than the renewed window, which would have the timer
 // sleep while the part running on held the old chain past its expiry.
 func TestARenewalThePartRunningOnRefusesStaysDue(t *testing.T) {
-	is := newIssuer(t)
-	d := machine(t, is, time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour))
-
-	cfg := configOf(t, d)
-	cfg.Observer = &config.Observer{}
-
-	if err := config.Save(d, cfg); err != nil {
-		t.Fatal(err)
-	}
-
-	old := stored(t, d)
-	if err := config.SaveState(d, &config.State{AnchorID: renewTestAnchor, IssuedAt: old.IssuedAt(), NotAfter: old.NotAfter()}); err != nil {
-		t.Fatal(err)
-	}
+	d, old := dueBesideTheObserver(t)
 
 	t.Setenv(fakeAnchorctlFailEnv, "renew")
 

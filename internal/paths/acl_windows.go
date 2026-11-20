@@ -174,9 +174,11 @@ func remoteAbove(dir string) error {
 
 // offMachineLinks refuses dir, where whoever set CONFLUX_DIR chose it (chosen), where a link on the
 // way to it leads off this machine (windowsLinkTarget), as ancestors reads each link it meets before
-// it looks anything up through it, as far as the way is there; and is what ancestors met, for makeRoot
-// to judge before it makes anything on the way. A lookup of dir by its name follows every link on the
-// way, so this comes before any.
+// it looks anything up through it, as far as the way is there; and is what ancestors met, for
+// makeRoot to judge before it makes anything on the way. Every other error ancestors meets refuses
+// dir too -- a link it cannot read, more than 255 links, a name on the way Lstat is denied -- but a
+// name that is not there, which only ends the way. A lookup of dir by its name follows every link on
+// the way, so this comes before any.
 func offMachineLinks(dir string) ([]step, error) {
 	if !chosen(dir) {
 		return nil, nil

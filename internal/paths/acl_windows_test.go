@@ -339,6 +339,36 @@ func TestSecureRefusesAJunctionRootMadeAgain(t *testing.T) {
 	}
 }
 
+// TestSecureSaysHowToRemakeAJunctionRootItCannotReplace: once secure has removed a junction root, a
+// failure to make its own at the name -- here a parent that no longer lets this account create a
+// folder in it -- is refused, naming the root and the commands that make the junction again, as
+// something made at the name is: with nothing there, the next run would make a root afresh.
+// Windows-only, so it runs in CI's platforms job alone.
+func TestSecureSaysHowToRemakeAJunctionRootItCannotReplace(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", "")
+
+	root := mklinkJ(t, filepath.Join(t.TempDir(), "j"), t.TempDir())
+
+	was := replacing
+	t.Cleanup(func() { replacing = was })
+
+	// Full control but FILE_ADD_SUBDIRECTORY (0x4), for this account alone.
+	me := currentUser().String()
+	replacing = func(dir string) { setSecurity(t, filepath.Dir(dir), "O:"+me+"D:P(A;;0x1f01fb;;;"+me+")") }
+
+	err := secure(root)
+	if err == nil || !strings.Contains(err.Error(), "make a junction of conflux's own at "+root) {
+		t.Fatalf("secure(a junction root it cannot make its own at) = %v, want a refusal naming it", err)
+	}
+
+	for _, command := range []string{`rmdir "` + root + `"`, `mklink /J "%ProgramFiles%\j.junction" "`,
+		`move "%ProgramFiles%\j.junction" "` + root + `"`} {
+		if !strings.Contains(err.Error(), "\n    "+command) {
+			t.Errorf("secure(a junction root it cannot make its own at) = %v, want it to say %s", err, command)
+		}
+	}
+}
+
 // TestSecureHoldsAJunctionRoot: a root that is a junction is held to who may point it elsewhere,
 // as a link is on Unix to its owner: %ProgramData% lets any user make one where conflux's root
 // is not yet, leading into a directory of SYSTEM's, whose owner would answer for it. One whose

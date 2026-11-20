@@ -1,5 +1,14 @@
 # Windows
 
+## Which Windows
+
+Windows 10 version 1607 (build 14393) or later, Windows 11, and Windows Server 2016 (the same
+build) or later. conflux makes the folders it keeps in a root through a handle on the root, with a
+flag that stops the create being taken anywhere a junction leads (`OBJ_DONT_REPARSE`), which
+Windows 10's first release, build 10240, does not know, and 1607 is the oldest known to take; on an
+older build that refuses it, conflux stops, saying the build is too old, rather than make them
+without it.
+
 ## `wintun.dll` is downloaded, never embedded
 
 A TUN interface on Windows needs Wintun, and conflux does not ship it. Two reasons,

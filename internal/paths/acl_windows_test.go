@@ -410,7 +410,9 @@ func onlyTheSystems(t *testing.T, dir string) {
 // so once its DACL is replaced, and one secured already may have been restricted while such a
 // handle was open. So the root is read again, through the handle it was judged through, once it
 // is filled, and refused where it became one meanwhile -- here just before secure fills it, found
-// unrestricted and secured already alike. Windows-only, so it runs in CI's platforms job alone.
+// unrestricted and secured already alike -- and the run directory it fills the root with, made
+// through that handle, is not made where the junction leads either. Windows-only, so it runs in
+// CI's platforms job alone.
 func TestSecureRefusesARootThatBecomesAJunction(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
@@ -436,6 +438,11 @@ func TestSecureRefusesARootThatBecomesAJunction(t *testing.T) {
 		if err := secure(root); err == nil || !strings.Contains(err.Error(), root+" became a junction") {
 			t.Errorf("secure(a root, secured already %v, that became a junction before it was filled) = %v, "+
 				"want a refusal naming it", secured, err)
+		}
+
+		if _, err := os.Lstat(filepath.Join(elsewhere, runName)); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("secure made %s in %s, where the root it filled leads once it became a junction (secured "+
+				"already %v): %v", runName, elsewhere, secured, err)
 		}
 
 		filling = was

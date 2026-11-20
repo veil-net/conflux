@@ -94,12 +94,17 @@ func Ensure(d paths.Dirs) (*Tools, error) {
 // toolsIn is where this build's pair is, or would be, extracted under d.
 func toolsIn(d paths.Dirs) *Tools {
 	setID := anchor.SetID()
-	target := filepath.Join(d.Libexec(), setID)
 
+	return toolsAt(filepath.Join(d.Libexec(), setID), setID)
+}
+
+// toolsAt is set setID's pair laid out in dir: its set directory, or the staging directory a
+// set is written in before it takes that name.
+func toolsAt(dir, setID string) *Tools {
 	return &Tools{
-		Dir:       target,
-		Anchord:   filepath.Join(target, exeName("anchord")),
-		Anchorctl: filepath.Join(target, exeName("anchorctl")),
+		Dir:       dir,
+		Anchord:   filepath.Join(dir, exeName("anchord")),
+		Anchorctl: filepath.Join(dir, exeName("anchorctl")),
 		SetID:     setID,
 	}
 }
@@ -223,6 +228,10 @@ func extract(t *Tools) error {
 		return fmt.Errorf("restrict %s: %w", staging, err)
 	}
 
+	// The set directory under another name: the same binaries, modes, owner and DACL,
+	// quarantine cleared, which the rename keeps.
+	staged := toolsAt(staging, t.SetID)
+
 	// Side by side: each is its own file and its own fsync, and on a real disk the
 	// fsync is most of what an extraction costs.
 	var (
@@ -231,10 +240,10 @@ func extract(t *Tools) error {
 	)
 
 	wg.Go(func() {
-		ctlErr = writeExecutable(filepath.Join(staging, exeName("anchorctl")), anchor.Anchorctl(), false)
+		ctlErr = writeExecutable(staged.Anchorctl, anchor.Anchorctl(), false)
 	})
 
-	err = writeExecutable(filepath.Join(staging, exeName("anchord")), anchor.Anchord(), false)
+	err = writeExecutable(staged.Anchord, anchor.Anchord(), false)
 
 	wg.Wait()
 
@@ -245,15 +254,6 @@ func extract(t *Tools) error {
 	// Run before it takes its name, and so only once: whatever finds a set under its name takes
 	// it as whole and never runs it, so one that will not run -- or whose run was interrupted --
 	// would otherwise fail every start with a bare "permission denied", where this says why.
-	// The staging directory is the set directory under another name: the same binaries, modes,
-	// owner and DACL, quarantine cleared, which the rename keeps.
-	staged := &Tools{
-		Dir:       staging,
-		Anchord:   filepath.Join(staging, exeName("anchord")),
-		Anchorctl: filepath.Join(staging, exeName("anchorctl")),
-		SetID:     t.SetID,
-	}
-
 	if err := smokeRun(staged); err != nil {
 		return err
 	}

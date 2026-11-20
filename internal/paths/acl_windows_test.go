@@ -649,6 +649,58 @@ func TestARootIsMadeWithItsDACL(t *testing.T) {
 	onlyTheSystems(t, root)
 }
 
+// TestTheWayConfluxMakesIsItsOwn: the folders conflux makes on the way to a CONFLUX_DIR are made as
+// the root is, theirs from the moment they exist -- the Administrators', under a protected DACL
+// granting SYSTEM and the Administrators full control and Users the right to read and traverse them --
+// rather than with what the folder above passes on, which in C:\ lets Authenticated Users delete
+// them, and owned by whichever administrator ran conflux, whom the SYSTEM service does not trust. So
+// x and y, made for <temp>\x\y\conflux, pass parents' rule for the service, SYSTEM, as for the
+// account that made them. Windows-only, so it runs in CI's platforms job alone.
+func TestTheWayConfluxMakesIsItsOwn(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "x", "y", "conflux")
+	t.Setenv("CONFLUX_DIR", root)
+
+	if err := Default().EnsureAll(); err != nil {
+		t.Fatalf("EnsureAll: %v", err)
+	}
+
+	way := []string{filepath.Join(base, "x"), filepath.Join(base, "x", "y")}
+
+	for _, dir := range way {
+		s := privtest.ReadSecurity(t, dir)
+
+		if !s.Owner.Equals(sidAdmins) || !s.Protected {
+			t.Errorf("%s belongs to %v, its DACL protected %v; want the Administrators', protected", dir, s.Owner,
+				s.Protected)
+		}
+
+		for _, e := range s.Entries {
+			if !e.SID.Equals(sidSystem) && !e.SID.Equals(sidAdmins) && !e.SID.Equals(privtest.Users) {
+				t.Errorf("the DACL of %s grants %s", dir, e.SID)
+			}
+		}
+	}
+
+	was := currentUser
+	t.Cleanup(func() { currentUser = was })
+
+	currentUser = func() *windows.SID { return sidSystem }
+
+	for _, dir := range way {
+		h, err := openFile(dir, readAccess, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if err := parentsRule(root)(dir, step{h}, false); err != nil {
+			t.Errorf("parents' rule, for SYSTEM, of %s, which conflux made on the way to %s = %v", dir, root, err)
+		}
+
+		windows.CloseHandle(h)
+	}
+}
+
 // onlyTheSystems fails t unless dir belongs to SYSTEM, the Administrators or this account, under a
 // protected DACL whose every entry is SYSTEM's or the Administrators'.
 func onlyTheSystems(t *testing.T, dir string) {

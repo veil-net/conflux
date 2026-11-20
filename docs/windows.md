@@ -115,8 +115,14 @@ never followed, and a junction or a link read off itself and gone on from where 
 `CONFLUX_DIR`, each folder there is held, before a name is looked up in it, to the rule the way to
 one is held to ([security.md](security.md#the-extracted-binaries)): nobody else may move what is in
 it. The folders missing are made from the last one held, each through a handle on the one before,
-with what that one passes on: never by their names, since `C:\` lets every user make a folder where
-the next is to go, and the owner of a folder on the way may make anything in it. One somebody else
+never by their names, since `C:\` lets every user make a folder where the next is to go, and the
+owner of a folder on the way may make anything in it. Each is made as the root is, the
+Administrators' from the moment it exists, under a protected DACL granting SYSTEM and the
+Administrators full control and `Users` the right to read and traverse it, rather than with what the
+folder above passes on — in `C:\` `Authenticated Users`' right to delete it — and owned by the
+administrator who ran conflux, whom the service, running as SYSTEM, would not trust: the way conflux
+makes is its own, as the `0700` directories it makes on Unix are, and passes the rule for the
+service as for the account that made it. One somebody else
 makes at a name meanwhile is opened as itself and held to the same rule before anything is made in
 it, and a junction or a link there is refused.
 

@@ -23,6 +23,7 @@ import (
 var (
 	sidSystem = wellKnown(windows.WinLocalSystemSid)
 	sidAdmins = wellKnown(windows.WinBuiltinAdministratorsSid)
+	sidUsers  = wellKnown(windows.WinBuiltinUsersSid)
 )
 
 func wellKnown(t windows.WELL_KNOWN_SID_TYPE) *windows.SID {
@@ -45,23 +46,24 @@ func wellKnown(t windows.WELL_KNOWN_SID_TYPE) *windows.SID {
 // the DACL. Protected is the half that matters for the DACL: without it the parent's ACEs
 // are merged back in and the restriction is cosmetic.
 func Restrict(path string, dir bool) error {
-	return restrictWith(dir, func(owner *windows.SID, dacl *windows.ACL) error {
+	return restrictWith(dir, 0, func(owner *windows.SID, dacl *windows.ACL) error {
 		return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, restrictInfo(owner), owner, nil, dacl, nil)
 	})
 }
 
 // restrictWith gives something Restrict's security through set, handed the owner --
 // Administrators, or nil to leave the owner as it is where the token may not name them -- and
-// the DACL, which set protects.
-func restrictWith(dir bool, set func(owner *windows.SID, dacl *windows.ACL) error) error {
+// the DACL, which set protects: SYSTEM and the Administrators full control, and Users users, where
+// that is not 0.
+func restrictWith(dir bool, users windows.ACCESS_MASK, set func(owner *windows.SID, dacl *windows.ACL) error) error {
 	inherit := uint32(windows.NO_INHERITANCE)
 	if dir {
 		inherit = windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT
 	}
 
-	grant := func(sid *windows.SID, kind windows.TRUSTEE_TYPE) windows.EXPLICIT_ACCESS {
+	grant := func(sid *windows.SID, kind windows.TRUSTEE_TYPE, access windows.ACCESS_MASK) windows.EXPLICIT_ACCESS {
 		return windows.EXPLICIT_ACCESS{
-			AccessPermissions: fileAllAccess,
+			AccessPermissions: access,
 			AccessMode:        windows.GRANT_ACCESS,
 			Inheritance:       inherit,
 			Trustee: windows.TRUSTEE{
@@ -72,10 +74,16 @@ func restrictWith(dir bool, set func(owner *windows.SID, dacl *windows.ACL) erro
 		}
 	}
 
-	dacl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{
-		grant(sidSystem, windows.TRUSTEE_IS_USER),
-		grant(sidAdmins, windows.TRUSTEE_IS_GROUP),
-	}, nil)
+	entries := []windows.EXPLICIT_ACCESS{
+		grant(sidSystem, windows.TRUSTEE_IS_USER, fileAllAccess),
+		grant(sidAdmins, windows.TRUSTEE_IS_GROUP, fileAllAccess),
+	}
+
+	if users != 0 {
+		entries = append(entries, grant(sidUsers, windows.TRUSTEE_IS_GROUP, users))
+	}
+
+	dacl, err := windows.ACLFromEntries(entries, nil)
 	if err != nil {
 		return err
 	}
@@ -165,24 +173,20 @@ func lookUp(parent step, name string) (step, bool, error) {
 func readLink(s step) (string, error) { return linkTarget(s.h) }
 
 // makeStep makes the folder name in the one parent holds open, and holds it open: through parent
-// (createDir), looked up there and nowhere else and never followed, the root with Restrict's
-// ownership and DACL set as it is created (createIn), and a folder on the way with nothing set but
-// what the one before passes on. ERROR_ALREADY_EXISTS is anything already at the name, a link
-// included.
+// (createIn), looked up there and nowhere else and never followed, with Restrict's ownership and
+// DACL set as it is created -- and, for a folder on the way to the root, Users' right to read and
+// traverse it (wayUsers) -- rather than what the one before passes on: in C:\ Authenticated Users'
+// right to delete it, and its owner the administrator who ran conflux, whom the SYSTEM service does
+// not trust. The way conflux makes is then its own, as the 0700 directories it makes on Unix are,
+// and passes parents' rule for the service as for whoever made it. ERROR_ALREADY_EXISTS is anything
+// already at the name, a link included.
 func makeStep(parent step, name string, root bool) (step, bool, error) {
-	const access = windows.SYNCHRONIZE | windows.FILE_READ_ATTRIBUTES
-
-	var (
-		h   windows.Handle
-		err error
-	)
-
+	users := windows.ACCESS_MASK(wayUsers)
 	if root {
-		h, err = createIn(parent.h, name, access)
-	} else {
-		h, err = createDir(parent.h, name, nil, access)
+		users = 0
 	}
 
+	h, err := createIn(parent.h, name, windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES, users)
 	if err != nil {
 		return step{}, false, err
 	}
@@ -209,8 +213,12 @@ func linkTarget(h windows.Handle) (string, error) {
 // token's where it may not name them, under a protected DACL granting SYSTEM and Administrators
 // full control, inherited by what it holds.
 func MakeRestricted(path string) error {
-	return restrictedDir(func(sd *windows.SECURITY_DESCRIPTOR) error { return makeDir(path, sd) })
+	return restrictedDir(0, func(sd *windows.SECURITY_DESCRIPTOR) error { return makeDir(path, sd) })
 }
+
+// wayUsers is what a folder conflux makes on the way to a root grants Users: to read and traverse it,
+// as 0755 lets others on Unix, and nothing that moves or changes it.
+const wayUsers = windows.FILE_GENERIC_READ | windows.FILE_GENERIC_EXECUTE
 
 // MakeAnchordDir is makeDir with anchordDirSDDL: a directory anchord's account, the service SID sid,
 // is given -- anchor\ and run\anchord\ where anchord runs as that account.
@@ -256,12 +264,13 @@ func makeDir(path string, sd *windows.SECURITY_DESCRIPTOR) error {
 }
 
 // restrictedDir makes a directory through create, handed the security descriptor to create it
-// with: Restrict's ownership and DACL -- restrictWith's owner, where one is given, and its DACL,
-// protected -- and, where the token may not name Administrators as its owner, again without one.
+// with: Restrict's ownership and DACL, with Users granted users where it is not 0 -- restrictWith's
+// owner, where one is given, and its DACL, protected -- and, where the token may not name
+// Administrators as its owner, again without one.
 // What create fails with is returned as it is, ERROR_ALREADY_EXISTS for a name already taken
 // among it.
-func restrictedDir(create func(sd *windows.SECURITY_DESCRIPTOR) error) error {
-	return restrictWith(true, func(owner *windows.SID, dacl *windows.ACL) error {
+func restrictedDir(users windows.ACCESS_MASK, create func(sd *windows.SECURITY_DESCRIPTOR) error) error {
+	return restrictWith(true, users, func(owner *windows.SID, dacl *windows.ACL) error {
 		sd, err := windows.NewSecurityDescriptor()
 		if err != nil {
 			return err
@@ -299,7 +308,7 @@ func restrictedDir(create func(sd *windows.SECURITY_DESCRIPTOR) error) error {
 func fill(dir string, h windows.Handle) error {
 	filling(dir)
 
-	run, filled := createIn(h, runName, windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES)
+	run, filled := createIn(h, runName, windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES, 0)
 	if filled == nil {
 		filled = windows.CloseHandle(run)
 	}
@@ -322,13 +331,13 @@ func fill(dir string, h windows.Handle) error {
 }
 
 // createIn creates the directory name in the one parent holds open, with Restrict's ownership and
-// DACL set as it is created (restrictedDir), through parent (createDir), and holds it open for
-// access: ERROR_ALREADY_EXISTS where anything is at the name, a link included, which is not
-// followed.
-func createIn(parent windows.Handle, name string, access uint32) (windows.Handle, error) {
+// DACL, Users granted users where it is not 0, set as it is created (restrictedDir), through parent
+// (createDir), and holds it open for access: ERROR_ALREADY_EXISTS where anything is at the name, a
+// link included, which is not followed.
+func createIn(parent windows.Handle, name string, access uint32, users windows.ACCESS_MASK) (windows.Handle, error) {
 	var h windows.Handle
 
-	err := restrictedDir(func(sd *windows.SECURITY_DESCRIPTOR) (err error) {
+	err := restrictedDir(users, func(sd *windows.SECURITY_DESCRIPTOR) (err error) {
 		h, err = createDir(parent, name, sd, access)
 
 		return err
@@ -571,7 +580,7 @@ func secure(dir string) error {
 		return err
 	}
 
-	if err := restrictWith(true, func(owner *windows.SID, dacl *windows.ACL) error {
+	if err := restrictWith(true, 0, func(owner *windows.SID, dacl *windows.ACL) error {
 		return windows.SetSecurityInfo(root.dir, windows.SE_FILE_OBJECT, restrictInfo(owner), owner, nil, dacl, nil)
 	}); err != nil {
 		return fmt.Errorf("restrict %s: %w", dir, err)
@@ -639,7 +648,7 @@ func replaceLink(dir string, r *held) error {
 	replacing(dir)
 
 	link, err := createIn(parent, filepath.Base(dir),
-		windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES|windows.FILE_WRITE_ATTRIBUTES|windows.FILE_WRITE_DATA)
+		windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES|windows.FILE_WRITE_ATTRIBUTES|windows.FILE_WRITE_DATA, 0)
 
 	switch {
 	case errors.Is(err, windows.ERROR_ALREADY_EXISTS):

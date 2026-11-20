@@ -294,7 +294,8 @@ func TestARebuildMakesAGoneAnchorDirectoryAgain(t *testing.T) {
 	// anchords is an identity this process can give an anchor directory to: on Unix an account,
 	// its own uid, so the directory goes through makeAnchorDir's chown and rename; on Windows,
 	// where an account's is the service SID's, the supervisor's. unmakeable is one it cannot: on
-	// Unix another uid, which only root can give it to, and on Windows a path below a file.
+	// Unix another uid, which only root can give it to, so the case is skipped as root, and on
+	// Windows a path below a file.
 	anchords := func(t *testing.T, d paths.Dirs) Privilege {
 		if runtime.GOOS == "windows" {
 			return Privilege{Dir: d.RootAnchorDir()}
@@ -324,6 +325,10 @@ func TestARebuildMakesAGoneAnchorDirectoryAgain(t *testing.T) {
 		"one that cannot be made": {unmakeable, false},
 	} {
 		t.Run(name, func(t *testing.T) {
+			if !tc.made && runtime.GOOS != "windows" && os.Geteuid() == 0 {
+				t.Skip("root can give the directory to any account, so it is made")
+			}
+
 			s, log := supervised(t, "1")
 			s.respawn = make(chan struct{}, 1)
 			s.priv = tc.priv(t, s.Dirs)

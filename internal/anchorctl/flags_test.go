@@ -36,6 +36,7 @@ func TestEveryFlagWeUseExists(t *testing.T) {
 		"renew":         anchorctl.RenewArgs(),
 		"stop":          anchorctl.StopArgs(),
 		"status":        anchorctl.StatusArgs(),
+		"export-status": anchorctl.ExportStatusArgs(),
 		"metrics":       anchorctl.MetricsArgs(),
 		"observe-renew": anchorctl.ObserveRenewArgs(),
 		"observe-stop":  anchorctl.ObserveStopArgs(),

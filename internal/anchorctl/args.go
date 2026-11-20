@@ -237,6 +237,10 @@ func ExportArgs(endpoint string, insecure bool, signals []string) []string {
 // StatusArgs asks what is running.
 func StatusArgs() []string { return []string{"status"} }
 
+// ExportStatusArgs asks where the running daemon's export points, and which of its surfaces
+// set it: conflux.json at start or a SIGHUP, or a call to anchorctl export.
+func ExportStatusArgs() []string { return []string{"export"} }
+
 // MetricsArgs asks for the counters and gauges.
 //
 // conflux reads exactly one of them, anchor_connections, to tell a link that has

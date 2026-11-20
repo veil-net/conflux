@@ -147,7 +147,7 @@ func askDaemon(ctx context.Context, d paths.Dirs, export bool) *daemonAnswers {
 	a.wg.Go(func() { a.status, a.statErr = runQuiet(ctx, ctl.Bin, env, anchorctl.StatusArgs()) })
 
 	if export {
-		a.wg.Go(func() { a.export, a.expErr = runQuiet(ctx, ctl.Bin, env, []string{"export"}) })
+		a.wg.Go(func() { a.export, a.expErr = runQuiet(ctx, ctl.Bin, env, anchorctl.ExportStatusArgs()) })
 	}
 
 	return a

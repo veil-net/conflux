@@ -38,7 +38,8 @@ func symlinkData(substitute, display string, relative bool) []byte {
 // TestWindowsLinkTarget: a symbolic link's or a junction's target is read from its reparse data as
 // os.Readlink names it -- by its drive letter or its volume's GUID, or as a relative link writes it
 // -- and one that may be another machine's, a share by its UNC path or a WebDAV server's, or a
-// device by its NT name, or a relative one written as a UNC path, is refused, naming it. A reparse
+// device by its NT name, or a relative one naming a volume of its own, as filepath.VolumeName reads
+// one in either separator -- a UNC, device or NT path, or a drive -- is refused, naming it. A reparse
 // point of another kind is no link, and data in no shape a file system returns is refused.
 func TestWindowsLinkTarget(t *testing.T) {
 	const volume = `\??\Volume{6a2f4c1e-0b7d-4e55-9c3a-2f1d8e7b6a90}\conflux`
@@ -73,6 +74,23 @@ func TestWindowsLinkTarget(t *testing.T) {
 		{"a link to a device", `\Device\Mup\192.0.2.1\share`, symlinkData(`\Device\Mup\192.0.2.1\share`, "", false)},
 		{"a link to a drive's device", `\??\C:`, symlinkData(`\??\C:`, "", false)},
 		{"a relative link written as a UNC path", `\\192.0.2.1\share`, symlinkData(`\\192.0.2.1\share`, "", true)},
+		{"a relative link written as a UNC path, separators mixed", `/\192.0.2.1\share`,
+			symlinkData(`/\192.0.2.1\share`, "", true)},
+		{"a relative link written as an NT path", `\??\UNC\192.0.2.1\share\conflux`,
+			symlinkData(`\??\UNC\192.0.2.1\share\conflux`, "", true)},
+		{"a relative link written as an NT path with slashes", `/??/UNC/192.0.2.1/share/conflux`,
+			symlinkData(`/??/UNC/192.0.2.1/share/conflux`, "", true)},
+		{"a relative link written as an NT path, separators mixed", `\??/UNC/192.0.2.1/share`,
+			symlinkData(`\??/UNC/192.0.2.1/share`, "", true)},
+		{"a relative link written as the NT namespace alone", `\??`, symlinkData(`\??`, "", true)},
+		{"a relative link written as a local device path", `\\.\UNC\192.0.2.1\share`,
+			symlinkData(`\\.\UNC\192.0.2.1\share`, "", true)},
+		{"a relative link written as a local device path with slashes", `//./UNC/192.0.2.1/share`,
+			symlinkData(`//./UNC/192.0.2.1/share`, "", true)},
+		{"a relative link written as a root local device path", `\\?\UNC\192.0.2.1\share`,
+			symlinkData(`\\?\UNC\192.0.2.1\share`, "", true)},
+		{"a relative link written with a drive", `Z:\conflux`, symlinkData(`Z:\conflux`, "", true)},
+		{"a relative link written relative to a drive", `Z:conflux`, symlinkData(`Z:conflux`, "", true)},
 	} {
 		got, err := windowsLinkTarget(c.data)
 		if err == nil || !strings.Contains(err.Error(), c.target) || !strings.Contains(err.Error(), "another machine") {

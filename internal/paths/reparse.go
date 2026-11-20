@@ -32,10 +32,11 @@ var errReparse = errors.New("reparse data conflux cannot read")
 // an absolute one's or a junction's, an NT path, by its drive letter (C:\x) or by its volume's GUID
 // (\\?\Volume{...}\x). An NT path naming anything else -- a share by \??\UNC\, which a link to a
 // UNC path or a WebDAV server's holds, or a device by its NT name -- is refused, as is a relative
-// target that begins as a UNC path does: it may be another machine's, which following the link
-// would sign this one in to, and this one could not judge what is there either (remote). A drive
-// letter or a volume GUID is looked up in the device map of the account conflux runs as, which only
-// an administrator or SYSTEM changes.
+// target that names a volume of its own (namesVolume), which a lookup starts from rather than from
+// the link's folder: it may be another machine's, which following the link would sign this one in
+// to, and this one could not judge what is there either (remote). A drive letter or a volume GUID
+// is looked up in the device map of the account conflux runs as, which only an administrator or
+// SYSTEM changes.
 func windowsLinkTarget(b []byte) (string, error) {
 	if len(b) < 8 {
 		return "", errReparse
@@ -80,11 +81,14 @@ func windowsLinkTarget(b []byte) (string, error) {
 	target := string(utf16.Decode(u))
 
 	switch rest, nt := strings.CutPrefix(target, `\??\`); {
-	case relative && !isUNC(target):
+	case relative && !namesVolume(target):
 		return target, nil
-	case !relative && nt && len(rest) >= 3 && isDriveLetter(rest[0]) && rest[1] == ':' && rest[2] == '\\':
+	case relative:
+		return "", fmt.Errorf("it is a relative link leading to %s, which names a volume of its own, and may be "+
+			"on another machine, which following it would sign this one in to", target)
+	case nt && len(rest) >= 3 && isDriveLetter(rest[0]) && rest[1] == ':' && rest[2] == '\\':
 		return rest, nil
-	case !relative && nt && len(rest) >= len("Volume{") && strings.EqualFold(rest[:len("Volume{")], "Volume{"):
+	case nt && len(rest) >= len("Volume{") && strings.EqualFold(rest[:len("Volume{")], "Volume{"):
 		return `\\?\` + rest, nil
 	}
 
@@ -95,9 +99,16 @@ func windowsLinkTarget(b []byte) (string, error) {
 // isDriveLetter reports whether c is a letter a drive may be named by.
 func isDriveLetter(c byte) bool { return 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' }
 
-// isUNC reports whether p begins as a UNC path does, with two separators.
-func isUNC(p string) bool {
-	return len(p) >= 2 && (p[0] == '\\' || p[0] == '/') && (p[1] == '\\' || p[1] == '/')
+// namesVolume reports whether p begins with a volume of its own, as filepath.VolumeName reads one
+// on Windows, either separator serving for the other: a drive, the colon second (Z:\x, and Z:x,
+// relative to Z:'s folder); two separators, a UNC path (\\host\share) or a device path (\\.\,
+// \\?\); or the NT namespace, \??\ or \?? alone. Whatever follows: one filepath.VolumeName takes
+// for no volume, since it would hold a "..", is refused too.
+func namesVolume(p string) bool {
+	sep := func(i int) bool { return i < len(p) && (p[i] == '\\' || p[i] == '/') }
+
+	return len(p) >= 2 && p[1] == ':' || sep(0) && sep(1) ||
+		sep(0) && len(p) >= 3 && p[1] == '?' && p[2] == '?' && (len(p) == 3 || sep(3))
 }
 
 // mountPointData is the reparse data of a junction leading to substitute, an NT path (\??\C:\x,

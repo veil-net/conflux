@@ -103,9 +103,10 @@ before anything is made or put there, one not made yet by the nearest directory 
 there, and passed over by every reader of an ephemeral root: who owns what is there, and whom its
 DACL grants, are accounts of the machine serving it, which this one cannot judge. A link naming
 anything but a drive letter or a volume of this machine's — a share by its UNC path, or a WebDAV
-server's — is refused before anything follows it, by where the link itself says it leads, so that
-conflux never signs this machine in to whoever serves it: at a root's name, and for a `CONFLUX_DIR`
-at every step of the way to it. So is a link that leads nowhere, with nothing made where it leads.
+server's — or a relative link that names a volume itself, which a lookup starts from rather than
+from the link's folder, is refused before anything follows it, by where the link itself says it
+leads, so that conflux never signs this machine in to whoever serves it: at a root's name, and for a
+`CONFLUX_DIR` at every step of the way to it. So is a link that leads nowhere, with nothing made where it leads.
 A root not made yet is made through a handle on the folder it goes in, so a link somebody plants at
 its name meanwhile is found there, and judged as itself, rather than followed.
 

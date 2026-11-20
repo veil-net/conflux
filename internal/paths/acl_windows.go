@@ -916,12 +916,12 @@ func (r *held) close() {
 // while its DACL let them write it may still repoint it between the judgement and that open, so
 // where the link led as it was judged answers for nothing; secure replaces it with one of its own
 // leading to the directory opened (replaceLink), which nobody may have held open before, unless it
-// finds it secured already (security.md's gap). Where the directory is that is not a plain
-// directory either, it is refused: there is nothing further to follow; so is one on a network
-// volume (remote), and, for a link, one its volume's GUID does not name, where no junction of
-// conflux's could lead (leadsTo). A root that could not be opened or read is refused, saying why,
-// as is a link that leads nowhere, which is refused as one conflux cannot follow, never as a root
-// that is not there.
+// finds it secured already (security.md's first gap, a kept handle). Where the directory is that is
+// not a plain directory either, it is refused: there is nothing further to follow; so is one on a
+// network volume (remote), and, for a link, one its volume's GUID does not name, where no junction
+// of conflux's could lead (leadsTo). A root that could not be opened or read is refused, saying
+// why, as is a link that leads nowhere, which is refused as one conflux cannot follow, never as a
+// root that is not there.
 func heldRoot(dir string, access uint32) (held, error) {
 	self, err := openFile(dir, access, false)
 	if err != nil {

@@ -522,10 +522,7 @@ func TestSecureRefusesARootThatBecomesAJunction(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
 	for _, secured := range []bool{false, true} {
-		root := filepath.Join(t.TempDir(), "conflux")
-		if err := os.Mkdir(root, 0o700); err != nil {
-			t.Fatal(err)
-		}
+		root := foundRoot(t)
 
 		if secured {
 			if err := Restrict(root, true); err != nil {
@@ -563,10 +560,7 @@ func TestSecureRefusesARootThatBecomesAJunction(t *testing.T) {
 func TestSecureJudgesWhatTheRootGainsBeforeItIsRestricted(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
-	root := filepath.Join(t.TempDir(), "conflux")
-	if err := os.Mkdir(root, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	root := foundRoot(t)
 
 	planted := filepath.Join(root, "logs")
 
@@ -590,6 +584,19 @@ func TestSecureJudgesWhatTheRootGainsBeforeItIsRestricted(t *testing.T) {
 	if err := secure(root); err == nil || !strings.Contains(err.Error(), planted) {
 		t.Errorf("secure(the restricted root still holding that folder) = %v, want a refusal naming it", err)
 	}
+}
+
+// foundRoot is a root as secure finds one already there: a folder named conflux, made in a
+// temporary directory of the test's with what that passes on.
+func foundRoot(t *testing.T) string {
+	t.Helper()
+
+	root := filepath.Join(t.TempDir(), "conflux")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	return root
 }
 
 // mountPoint turns the empty directory dir into a junction leading to target, in place, as an
@@ -650,10 +657,7 @@ func TestSecureFillsTheRoot(t *testing.T) {
 		{"secured already, holding a folder Users own", true, true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			root := filepath.Join(t.TempDir(), "conflux")
-			if err := os.Mkdir(root, 0o700); err != nil {
-				t.Fatal(err)
-			}
+			root := foundRoot(t)
 
 			early := openToWrite(t, root)
 			defer windows.CloseHandle(early)
@@ -704,10 +708,7 @@ func TestSecureFillsTheRoot(t *testing.T) {
 func TestSecureSaysWhyItCannotFillARoot(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
-	root := filepath.Join(t.TempDir(), "conflux")
-	if err := os.Mkdir(root, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	root := foundRoot(t)
 
 	// Full control but FILE_ADD_SUBDIRECTORY (0x4), for this account alone.
 	me := currentUser().String()
@@ -782,10 +783,7 @@ func TestSecureHoldsWhatTheRootHolds(t *testing.T) {
 		}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			root := filepath.Join(t.TempDir(), "conflux")
-			if err := os.Mkdir(root, 0o700); err != nil {
-				t.Fatal(err)
-			}
+			root := foundRoot(t)
 
 			held := c.make(t, root)
 
@@ -923,10 +921,7 @@ func ownBy(t *testing.T, path string, sid *windows.SID) {
 func TestSecureRefusesARootWhoseDACLLetsAnotherMoveWhatIsInIt(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
-	root := filepath.Join(t.TempDir(), "conflux")
-	if err := os.Mkdir(root, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	root := foundRoot(t)
 
 	privtest.GrantUsers(t, root, fileDeleteChild, windows.NO_INHERITANCE)
 
@@ -980,10 +975,7 @@ func TestSecureHoldsAProtectedRootToItsDACL(t *testing.T) {
 		{"has no DACL", "O:BAD:PNO_ACCESS_CONTROL", true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			root := filepath.Join(t.TempDir(), "conflux")
-			if err := os.Mkdir(root, 0o700); err != nil {
-				t.Fatal(err)
-			}
+			root := foundRoot(t)
 
 			setSecurity(t, root, c.sddl)
 
@@ -1033,10 +1025,7 @@ func setSecurity(t *testing.T, path, sddl string) {
 func TestSecureRefusesARootWithNoDACL(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
-	root := filepath.Join(t.TempDir(), "conflux")
-	if err := os.Mkdir(root, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	root := foundRoot(t)
 
 	setSecurity(t, root, "O:"+currentUser().String()+"D:NO_ACCESS_CONTROL")
 

@@ -3,6 +3,8 @@
 package paths
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -41,5 +43,34 @@ func TestEphemeralPassesOverARootAnotherAccountMade(t *testing.T) {
 
 	if _, err := ephemeralIn([]string{theirs}); err == nil {
 		t.Error("with no candidate of its own, Ephemeral chose the one another account made")
+	}
+}
+
+// TestACandidateNotThereIsReadNoFurther: an ephemeral run's root that is not there is fs.ErrNotExist
+// to Foreign, not nil, so a reader takes it for no run and reads nothing at its name, where whoever
+// may make a name in its directory -- /tmp lets anybody -- could have made one since. Ephemeral then
+// judges where the root would be made by the directory it would be made in, and not by what is at its
+// name by then: here a link to itself, which a look at the filesystem holding it would fail on.
+func TestACandidateNotThereIsReadNoFurther(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", "")
+
+	c := filepath.Join(t.TempDir(), ephemeralName)
+
+	if err := Foreign(c); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("Foreign(%s, which is not there) = %v, want %v", c, err, fs.ErrNotExist)
+	}
+
+	got, err := FirstExecutable([]string{c}, func(c string) error {
+		err := Foreign(c)
+
+		if err := os.Symlink(c, c); err != nil {
+			t.Fatal(err)
+		}
+
+		return err
+	})
+	if err != nil || got != c {
+		t.Errorf("FirstExecutable, with a link made at %s once Foreign found nothing there, = %q, %v, want it, "+
+			"judged by where it would be made", c, got, err)
 	}
 }

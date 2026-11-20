@@ -1206,9 +1206,10 @@ func TestSecureRefusesARootWithNoDACL(t *testing.T) {
 
 // TestAReaderRefusesARootItCannotRead: %ProgramData% lets any account make conflux-ephemeral where
 // no run has made it yet, and give it a DACL denying everybody the right to read it, so only a root
-// that is not there, or under a directory that is not, passes Foreign unread: one this account may
-// not open is refused by the check every reader makes (checkRoot), naming it and the denial -- not
-// its owner, which ownerRefusal would refuse too, had it been read -- rather than taken for a run's.
+// that is not there, or under a directory that is not, is taken by Foreign for none, fs.ErrNotExist,
+// unread: one this account may not open is refused by the check every reader makes (checkRoot),
+// naming it and the denial -- not its owner, which ownerRefusal would refuse too, had it been read --
+// rather than taken for a run's or for none.
 // Owned by the Guests, a group this process's token does not hold: an owner is let read a DACL
 // whatever the DACL says, and an Administrator's token holds Users. Windows-only, so it runs in CI's
 // platforms job alone.
@@ -1233,8 +1234,8 @@ func TestAReaderRefusesARootItCannotRead(t *testing.T) {
 	absent := filepath.Join(t.TempDir(), "absent")
 
 	for _, dir := range []string{absent, filepath.Join(absent, "conflux")} {
-		if err := Foreign(dir); err != nil {
-			t.Errorf("Foreign(%s, which is not there) = %v", dir, err)
+		if err := Foreign(dir); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("Foreign(%s, which is not there) = %v, want %v", dir, err, os.ErrNotExist)
 		}
 	}
 }

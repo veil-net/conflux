@@ -77,7 +77,7 @@ func ephemeralRunBase() string {
 
 // Ephemeral is the root a new ephemeral run is kept in: the first candidate on a
 // filesystem that lets the extracted anchord run, and that another account did not make
-// first. tmpfs is often mounted noexec, and anchord extracted there would be refused at exec
+// first, or that is not there yet (Foreign). tmpfs is often mounted noexec, and anchord extracted there would be refused at exec
 // with a reason that names nothing; and /tmp lets anybody make the name a run's root would
 // have, which secure then refuses and this account cannot remove.
 func Ephemeral() (Dirs, error) { return ephemeralIn(EphemeralCandidates()) }
@@ -103,13 +103,20 @@ var ErrNoExec = errors.New("every candidate is on a filesystem mounted noexec")
 
 // FirstExecutable is the first of candidates a program extracted beneath it may run from:
 // one on a filesystem mounted to allow it, and not one refuse turns down, where refuse is
-// given. Where none will do, the first refusal is the error, or else ErrNoExec.
+// given. A candidate refuse finds not there (fs.ErrNotExist) is taken as one to make, and its
+// filesystem read where it would be made, in the directory above it: nothing at its name is read
+// once refuse has looked. Where none will do, the first refusal is the error, or else ErrNoExec.
 func FirstExecutable(candidates []string, refuse func(string) error) (string, error) {
 	var refused error
 
 	for _, c := range candidates {
+		at := c
+
 		if refuse != nil {
-			if err := refuse(c); err != nil {
+			switch err := refuse(c); {
+			case errors.Is(err, fs.ErrNotExist):
+				at = filepath.Dir(c)
+			case err != nil:
 				if refused == nil {
 					refused = err
 				}
@@ -118,7 +125,7 @@ func FirstExecutable(candidates []string, refuse func(string) error) (string, er
 			}
 		}
 
-		ok, err := executable(c)
+		ok, err := executable(at)
 		if err != nil {
 			return "", err
 		}

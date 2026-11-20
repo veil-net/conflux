@@ -102,9 +102,17 @@ func TestFreeBSDACL(t *testing.T) {
 		[5]uint32{0x08, 50, 0x8 | 0x200, allow},                            // reading writes nothing
 		[5]uint32{0x02, 1002, nfs4WriteOwner, allow},                       // past the sticky bit
 		[5]uint32{0x08, 60, nfs4Delete, allow},                             // deleting the directory itself, too
+		[5]uint32{0x02, 1003, nfs4WriteACL, allow},                         // changing its ACL, too
+		[5]uint32{0x02, 1004, nfs4DeleteChild, allow},                      // deleting what is in it, too
+		[5]uint32{0x08, 61, nfs4AddFile, allow},                            // each right to add, alone
+		[5]uint32{0x04, 0, nfs4AddSubdirectory, allow},
 	)
 
-	want := []writer{{who: everyone}, {who: aUser, id: 1002, pastSticky: true}, {who: aGroup, id: 60, pastSticky: true}}
+	want := []writer{
+		{who: everyone}, {who: aUser, id: 1002, pastSticky: true}, {who: aGroup, id: 60, pastSticky: true},
+		{who: aUser, id: 1003, pastSticky: true}, {who: aUser, id: 1004, pastSticky: true}, {who: aGroup, id: 61},
+		{who: theGroup},
+	}
 	if got, err := freebsdACL(tmp, true); err != nil || !slices.Equal(got, want) {
 		t.Errorf("freebsdACL(an NFSv4 ACL) = %+v, %v; want %+v", got, err, want)
 	}
@@ -171,6 +179,16 @@ func TestKauthWriters(t *testing.T) {
 		{"a permit to read", kauthAttrBuf(kauthEntry{someone, kauthPermit, 1<<1 | 1<<3}), nil},
 		{"a permit to add a file", kauthAttrBuf(kauthEntry{someone, kauthPermit | inherits, kauthWriteData}),
 			[]writer{{who: anAccount, uuid: "5B1E0F1C-2D3E-4F50-6172-8394A5B6C7D8"}}},
+		{"a permit to add a directory", kauthAttrBuf(kauthEntry{someone, kauthPermit, kauthAppendData}),
+			[]writer{{who: anAccount, uuid: "5B1E0F1C-2D3E-4F50-6172-8394A5B6C7D8"}}},
+		{"everybody may change its ACL", kauthAttrBuf(kauthEntry{kauthEveryone, kauthPermit, kauthWriteSecurity}),
+			[]writer{{who: everyone, pastSticky: true}}},
+		{"everybody may take it", kauthAttrBuf(kauthEntry{kauthEveryone, kauthPermit, kauthTakeOwnership}),
+			[]writer{{who: everyone, pastSticky: true}}},
+		{"everybody may do anything to it", kauthAttrBuf(kauthEntry{kauthEveryone, kauthPermit, kauthGenericAll}),
+			[]writer{{who: everyone, pastSticky: true}}},
+		{"everybody may write it, generically", kauthAttrBuf(kauthEntry{kauthEveryone, kauthPermit, kauthGenericWrite}),
+			[]writer{{who: everyone, pastSticky: true}}},
 		{"everybody may delete what is in it", kauthAttrBuf(kauthEntry{kauthEveryone, kauthPermit, kauthDeleteChild}),
 			[]writer{{who: everyone, pastSticky: true}}},
 		{"everybody may delete it", kauthAttrBuf(kauthEntry{kauthEveryone, kauthPermit, kauthDelete}),

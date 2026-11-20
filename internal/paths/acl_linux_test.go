@@ -14,7 +14,8 @@ import (
 // not show, and once there is one the mode's group bits are its mask rather than what the
 // group may do. So a CONFLUX_DIR under a parent whose ACL lets another account or group
 // write is refused, though its mode, 0770 with a group of this account's alone, would pass;
-// one whose mask takes that write away, or whose ACL names only this account, is not.
+// one whose mask takes that write away, or whose ACL names only this account, is not, and nor is
+// one whose group, with another account in it, may not write though the mask would let it.
 func TestEnsureAllReadsAPOSIXACL(t *testing.T) {
 	me, err := user.LookupId(strconv.Itoa(os.Geteuid()))
 	if err != nil {
@@ -27,24 +28,29 @@ func TestEnsureAllReadsAPOSIXACL(t *testing.T) {
 		name    string
 		acl     []byte
 		refused string
+		shared  bool // the parent's own group lets in another account too
 	}{
 		{"another account may write", posixACL(
 			[3]uint32{0x01, 7, none}, [3]uint32{0x02, 7, 65534}, [3]uint32{0x04, 5, none},
-			[3]uint32{0x10, 7, none}, [3]uint32{0x20, 0, none}), "uid 65534"},
+			[3]uint32{0x10, 7, none}, [3]uint32{0x20, 0, none}), "uid 65534", false},
 		{"another group may write", posixACL(
 			[3]uint32{0x01, 7, none}, [3]uint32{0x04, 5, none}, [3]uint32{0x08, 7, 0},
-			[3]uint32{0x10, 7, none}, [3]uint32{0x20, 0, none}), "gid 0"},
+			[3]uint32{0x10, 7, none}, [3]uint32{0x20, 0, none}), "gid 0", false},
 		{"the mask takes the write away", posixACL(
 			[3]uint32{0x01, 7, none}, [3]uint32{0x02, 7, 65534}, [3]uint32{0x04, 5, none},
-			[3]uint32{0x10, 5, none}, [3]uint32{0x20, 0, none}), ""},
+			[3]uint32{0x10, 5, none}, [3]uint32{0x20, 0, none}), "", false},
 		{"only this account may write", posixACL(
 			[3]uint32{0x01, 7, none}, [3]uint32{0x02, 7, uint32(os.Geteuid())}, [3]uint32{0x04, 7, none},
-			[3]uint32{0x10, 7, none}, [3]uint32{0x20, 0, none}), ""},
+			[3]uint32{0x10, 7, none}, [3]uint32{0x20, 0, none}), "", false},
+		{"its group may not write, though the mask would let it", posixACL(
+			[3]uint32{0x01, 7, none}, [3]uint32{0x02, 7, uint32(os.Geteuid())}, [3]uint32{0x04, 5, none},
+			[3]uint32{0x10, 7, none}, [3]uint32{0x20, 0, none}), "", true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			// The parent's own group lets in this account alone; any other lets in another.
+			// The parent's own group lets in this account alone, unless shared; any other lets
+			// in another.
 			parent := groupWritableParent(t, func(own bool) ([]string, error) {
-				if own {
+				if own && !c.shared {
 					return []string{me.Username}, nil
 				}
 

@@ -436,13 +436,9 @@ func secure(dir string) error {
 	// else may take out what fill puts in the root, and a handle keeps what it was opened with
 	// once the DACL is replaced. %ProgramData%'s grant to Users -- to add to a folder and write its
 	// attributes -- moves nothing, so a root that only inherits it passes.
-	switch who, _, err := changerIn(dir, sd, moves, "move it or what is in it", nil); {
-	case err != nil:
+	if err := moverRefusal(dir, sd, "take out what conflux puts in it, with a handle opened now that keeps the "+
+		"right once conflux restricts it"); err != nil {
 		return err
-	case who != "":
-		return fmt.Errorf("%s %s could take out what conflux puts in it, with a handle opened now that keeps the "+
-			"right once conflux restricts it, so conflux will not use it.\n  Give it a DACL that grants nobody "+
-			"else that right, then run this again as Administrator", dir, who)
 	}
 
 	// A junction is made conflux's own before what the root holds is read by its name, through it.
@@ -732,16 +728,27 @@ func Foreign(dir string) error {
 		return err
 	}
 
+	if err := moverRefusal(dir, sd,
+		"take out what is in it and put something of their own in its place"); err != nil {
+		return err
+	}
+
+	return contents(dir)
+}
+
+// moverRefusal refuses the root dir, whose owner and DACL sd holds as found, where they let an
+// account other than those trustedOwner names move it or what is in it (moves), saying what that
+// account could then do; or is nil.
+func moverRefusal(dir string, sd *windows.SECURITY_DESCRIPTOR, could string) error {
 	switch who, _, err := changerIn(dir, sd, moves, "move it or what is in it", nil); {
 	case err != nil:
 		return err
 	case who != "":
-		return fmt.Errorf("%s %s could take out what is in it and put something of their own in its place, so "+
-			"conflux will not use it.\n  Give it a DACL that grants nobody else that right, then run this again "+
-			"as Administrator", dir, who)
+		return fmt.Errorf("%s %s could %s, so conflux will not use it.\n  Give it a DACL that grants nobody else "+
+			"that right, then run this again as Administrator", dir, who, could)
 	}
 
-	return contents(dir)
+	return nil
 }
 
 // readAccess is what a handle that only reads who may change a file is opened for.

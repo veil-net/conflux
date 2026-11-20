@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"os"
 
+	"github.com/veil-net/conflux/internal/paths"
 	"golang.org/x/sys/unix"
 )
 
@@ -59,9 +61,11 @@ func lock(path string, how int) (func(), bool, error) {
 // So it is asked without trusting the file. It is opened to read and never created, and a
 // symlink, a FIFO or a device is refused rather than opened, so the question cannot be
 // turned into root creating, truncating or blocking on whatever the name was made to point
-// at. A file that is not there is held by nobody.
+// at; a second name for another file -- the supervisor's own serve.lock, held while it
+// asks -- is refused rather than taken for anchord's. A file that is not there is held by
+// nobody.
 func Held(path string) (bool, error) {
-	f, err := os.OpenFile(path, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	f, err := os.OpenFile(path, paths.OpenUntrusted, 0)
 	if errors.Is(err, fs.ErrNotExist) {
 		return false, nil
 	}
@@ -71,8 +75,8 @@ func Held(path string) (bool, error) {
 	}
 	defer f.Close()
 
-	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
-		return false, fmt.Errorf("the lock %s is not a regular file", path)
+	if fi, err := f.Stat(); err != nil || !paths.PlainFile(fi, math.MaxInt64) {
+		return false, fmt.Errorf("the lock %s is not a regular file with one name", path)
 	}
 
 	switch err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); {

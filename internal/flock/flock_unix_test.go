@@ -11,10 +11,26 @@ import (
 )
 
 // TestHeldRefusesWhatIsNotALockFile: the lock lives where anchord's own account can write,
-// so a symlink there is not followed -- the file it names is neither made nor locked -- and
-// a FIFO is refused rather than blocked on.
+// so a symlink there is not followed -- the file it names is neither made nor locked -- a
+// FIFO is refused rather than blocked on, and a second name for another file, which the
+// account can make for any file it can name -- the supervisor's own serve.lock, held while
+// it asks -- is refused rather than taken for anchord's.
 func TestHeldRefusesWhatIsNotALockFile(t *testing.T) {
 	dir := t.TempDir()
+
+	serve := filepath.Join(t.TempDir(), "serve.lock")
+	if err := os.WriteFile(serve, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	hard := filepath.Join(dir, "hard.lock")
+	if err := os.Link(serve, hard); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Held(hard); err == nil {
+		t.Error("a second name for another file was asked about as a lock")
+	}
 
 	target := filepath.Join(dir, "nologin")
 	link := filepath.Join(dir, "link.lock")

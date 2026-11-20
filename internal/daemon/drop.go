@@ -13,6 +13,7 @@ import (
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/enrol"
+	"github.com/veil-net/conflux/internal/paths"
 )
 
 // Starting anchord with what decide gave it, and nothing else.
@@ -226,14 +227,14 @@ func copyTree(from, to string, p Privilege) error {
 }
 
 func copyFile(src, dst *os.Root, name string, p Privilege) error {
-	in, err := src.OpenFile(name, openUntrusted, 0)
+	in, err := src.OpenFile(name, paths.OpenUntrusted, 0)
 	if err != nil {
 		return nil
 	}
 	defer in.Close()
 
 	fi, err := in.Stat()
-	if err != nil || !fi.Mode().IsRegular() || !oneLink(fi) || fi.Size() > copyFileMax {
+	if err != nil || !paths.PlainFile(fi, copyFileMax) {
 		return nil
 	}
 

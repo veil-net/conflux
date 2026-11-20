@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"os"
 
+	"github.com/veil-net/conflux/internal/paths"
 	"golang.org/x/sys/windows"
 )
 
@@ -53,10 +55,11 @@ func lock(path string, flags uint32) (func(), bool, error) {
 
 // Held reports whether somebody holds the lock on path, a file in a directory anchord's
 // own account may write. It is opened to read and never created, and anything but a
-// regular file is refused, so asking cannot be turned into SYSTEM creating a file
-// wherever the name was made to lead. A file that is not there is held by nobody.
+// regular file -- a reparse point among them, opened as itself -- is refused, so asking
+// cannot be turned into SYSTEM creating a file wherever the name was made to lead, or
+// locking it. A file that is not there is held by nobody.
 func Held(path string) (bool, error) {
-	f, err := os.Open(path)
+	f, err := os.OpenFile(path, paths.OpenUntrusted, 0)
 	if errors.Is(err, fs.ErrNotExist) {
 		return false, nil
 	}
@@ -66,7 +69,7 @@ func Held(path string) (bool, error) {
 	}
 	defer f.Close()
 
-	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+	if fi, err := f.Stat(); err != nil || !paths.PlainFile(fi, math.MaxInt64) {
 		return false, fmt.Errorf("the lock %s is not a regular file", path)
 	}
 

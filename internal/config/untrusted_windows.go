@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/veil-net/conflux/internal/paths"
 )
 
 // ReadUntrusted reads a file in a directory anchord's own account can write, refusing
-// anything but a regular file of no more than max bytes.
+// anything but a regular file of no more than max bytes: never through a reparse point.
 func ReadUntrusted(path string, max int64) ([]byte, error) {
-	f, err := os.Open(path)
+	f, err := os.OpenFile(path, paths.OpenUntrusted, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -20,7 +22,7 @@ func ReadUntrusted(path string, max int64) ([]byte, error) {
 		return nil, err
 	}
 
-	if !fi.Mode().IsRegular() || fi.Size() > max {
+	if !paths.PlainFile(fi, max) {
 		return nil, fmt.Errorf("%s is not a file conflux reads", path)
 	}
 

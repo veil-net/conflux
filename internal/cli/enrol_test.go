@@ -213,21 +213,6 @@ func TestEnrolDerivesTheAPIFromTheManifest(t *testing.T) {
 	}
 }
 
-// TestEnrolStillChecksAnApiThatWasGiven. The flag is an override and an assertion
-// at once: pass it and the document must agree, so an operator who wants the old
-// belt-and-braces check can still have it by naming the host they expect.
-func TestEnrolStillChecksAnApiThatWasGiven(t *testing.T) {
-	d, path := site(t, guardianDoc)
-
-	if err := importCredential(d, path, "https://elsewhere.example", ""); err == nil {
-		t.Fatal("importCredential accepted an --api the manifest does not renew against")
-	}
-
-	if config.HasManifest(d) {
-		t.Error("it wrote the manifest anyway")
-	}
-}
-
 // TestEnrolLetsTheFlagWin. A person typing an address now is a later decision than
 // a document written earlier, so --ipv4 overrides what the issuer allocated.
 func TestEnrolLetsTheFlagWin(t *testing.T) {

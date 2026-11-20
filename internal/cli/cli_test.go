@@ -40,57 +40,6 @@ func capture(t *testing.T, argv ...string) (stdout, stderr string, code int) {
 	return out.String(), errBuf.String(), code
 }
 
-// TestNoUnintendedShadowing is the guard on the whole two-surface design.
-//
-// conflux keeps a closed set of names and passes everything else through. If a
-// future anchor adds a command called "up", it would silently become unreachable --
-// conflux would answer it and the user would never learn that anchorctl had one.
-// This fails CI on that day instead.
-func TestNoUnintendedShadowing(t *testing.T) {
-	anchortest.Require(t)
-
-	t.Setenv("CONFLUX_DIR", t.TempDir())
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll: %v", err)
-	}
-
-	tools, err := libexec.Ensure(d)
-	if err != nil {
-		t.Fatalf("Ensure: %v", err)
-	}
-
-	theirs := anchorctlCommands(t, tools.Anchorctl)
-
-	// The verbs conflux is knowingly taking from anchorctl. Every one is documented in
-	// help and explains the collision in its own error text; help, which anchorctl's
-	// usage does not list, prints anchorctl's usage whole.
-	known := map[string]bool{"proxy": true, "status": true, "help": true, "renew": true, "start": true, "observe": true}
-
-	for name := range verbs() {
-		if theirs[name] && !known[name] {
-			t.Errorf("conflux's %q now shadows an anchorctl command that this build did not know about.\n"+
-				"  Either rename conflux's, or add it to the known set and resolve the collision\n"+
-				"  the way proxy and status do.", name)
-		}
-	}
-
-	for name := range anchorLifecycleVerbs {
-		if !theirs[name] {
-			t.Errorf("conflux refuses to pass %q through, but anchorctl has no such command any more", name)
-		}
-	}
-
-	// The three conflux resolves by shape and arity really are anchorctl's, or the
-	// elaborate handling in runProxy, runObserve and runStatus is dead code.
-	for _, name := range []string{"proxy", "status", "observe"} {
-		if !theirs[name] {
-			t.Errorf("conflux resolves a collision on %q that no longer exists", name)
-		}
-	}
-}
-
 var usageCommand = regexp.MustCompile(`(?m)^\s{4}([a-z][a-z-]+)\s`)
 
 func anchorctlCommands(t *testing.T, bin string) map[string]bool {
@@ -596,12 +545,16 @@ func TestLANDiscoveryTristate(t *testing.T) {
 	}
 }
 
-// TestTheCollisionsAreTheDocumentedOnes reads the set off the binary, because prose
-// that nothing checks drifts.
+// TestTheCollisionsAreTheDocumentedOnes is the guard on the whole two-surface design, and
+// reads the set off the binary, because prose that nothing checks drifts.
 //
-// The set, rather than only the count, because adding a verb that happens to
-// collide should fail here with the name in the message rather than as an
-// off-by-one.
+// conflux keeps a closed set of names and passes everything else through. If a future
+// anchor adds a command called "up", it would silently become unreachable -- conflux would
+// answer it and the user would never learn that anchorctl had one -- and if one conflux
+// resolves goes, the handling for it is dead code. This fails CI on that day instead. The
+// set, rather than only the count, so a verb that newly collides fails with its name in the
+// message rather than as an off-by-one. help, which anchorctl's usage does not list, prints
+// anchorctl's usage whole.
 func TestTheCollisionsAreTheDocumentedOnes(t *testing.T) {
 	anchortest.Require(t)
 
@@ -640,6 +593,12 @@ func TestTheCollisionsAreTheDocumentedOnes(t *testing.T) {
 	// The help text an operator reads says the same number, spelled out.
 	if !strings.HasPrefix(collisions, "Five of conflux's names") {
 		t.Errorf("the help text disagrees with the %d collisions that exist", len(want))
+	}
+
+	for name := range anchorLifecycleVerbs {
+		if !theirs[name] {
+			t.Errorf("conflux refuses to pass %q through, but anchorctl has no such command any more", name)
+		}
 	}
 }
 

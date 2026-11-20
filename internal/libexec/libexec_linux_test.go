@@ -44,3 +44,15 @@ func TestUsageRunsFromWhereExecIsAllowed(t *testing.T) {
 		t.Errorf("the temporary anchorctl did not answer help: %v\n%s", err, out)
 	}
 }
+
+// TestSELinuxHintQuotesTheDirectory: the commands SELinux's hint gives are pasted into a shell
+// as root, so a directory holding a space and a quote reaches each of them whole.
+func TestSELinuxHintQuotesTheDirectory(t *testing.T) {
+	got := selinuxHint("/srv/con flux/it's/bin")
+
+	want := `  try:  sudo semanage fcontext -a -t bin_t '/srv/con flux/it'\''s/bin(/.*)?' && ` +
+		`sudo restorecon -R '/srv/con flux/it'\''s/bin'` + "\n"
+	if !strings.Contains(got, "\n"+want) {
+		t.Errorf("selinuxHint =\n%s\nwant it to hold\n%s", got, want)
+	}
+}

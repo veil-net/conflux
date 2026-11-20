@@ -212,7 +212,7 @@ func BenchmarkDaemonLifecycle(b *testing.B) {
 
 	d := dirs(b)
 
-	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Taints: []string{"bench"}}); err != nil {
+	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Taints: []string{"bench"}, APIBaseURL: nowhere}); err != nil {
 		b.Fatal(err)
 	}
 
@@ -258,7 +258,7 @@ func benchSite(tb testing.TB) paths.Dirs {
 
 	d := dirs(tb)
 
-	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Taints: []string{"bench"}}); err != nil {
+	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Taints: []string{"bench"}, APIBaseURL: nowhere}); err != nil {
 		tb.Fatal(err)
 	}
 
@@ -268,7 +268,7 @@ func benchSite(tb testing.TB) paths.Dirs {
 
 	now := time.Now()
 	saveDoc(tb, d, manifestDoc(make([]byte, 6<<10), now, now.Add(30*24*time.Hour), []string{"bench"},
-		"https://api.veilnet.com.au/ghosts/alpha/renew"))
+		nowhere+"/ghosts/alpha/renew"))
 
 	return d
 }

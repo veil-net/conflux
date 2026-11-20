@@ -10,6 +10,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/pathstest"
 	"github.com/veil-net/conflux/internal/privtest"
 )
 
@@ -74,12 +75,7 @@ func TestAUsageCopyIsItsRunners(t *testing.T) {
 func TestAStagingDirectoryIsMadeWithItsDACL(t *testing.T) {
 	anchortest.Require(t)
 
-	t.Setenv("CONFLUX_DIR", filepath.Join(t.TempDir(), "conflux"))
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatal(err)
-	}
+	d := pathstest.DirsIn(t, filepath.Join(t.TempDir(), "conflux"))
 
 	if err := os.MkdirAll(d.Libexec(), 0o700); err != nil {
 		t.Fatal(err)

@@ -254,10 +254,8 @@ func TestEnsureAllRefusesARootAnotherAccountCanMove(t *testing.T) {
 
 	// A root that is a link is held to the directories above where it leads, too.
 	t.Run("a link into one", func(t *testing.T) {
-		open := t.TempDir()
-		if err := os.Mkdir(filepath.Join(open, "conflux"), 0o700); err != nil {
-			t.Fatal(err)
-		}
+		target := foundRoot(t)
+		open := filepath.Dir(target)
 
 		if err := os.Chmod(open, 0o777); err != nil {
 			t.Fatal(err)
@@ -269,7 +267,7 @@ func TestEnsureAllRefusesARootAnotherAccountCanMove(t *testing.T) {
 		}
 
 		link := filepath.Join(safe, "conflux")
-		if err := os.Symlink(filepath.Join(open, "conflux"), link); err != nil {
+		if err := os.Symlink(target, link); err != nil {
 			t.Fatal(err)
 		}
 

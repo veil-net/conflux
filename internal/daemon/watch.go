@@ -140,7 +140,7 @@ func (s *Supervisor) watch(ctx context.Context, cfg *config.Config, up brought, 
 				// Still not there.
 			case l.gone:
 				gone, unproven = true, false
-				s.stopLost(ctx, l.why)
+				s.stopAnchor(ctx, l.why+"; the anchor is stopped until it is back")
 			case l.why == "" && (cfg.Uplink == "" || l.carrying):
 				// Doing its job, so whatever failed before has stopped failing.
 				anchor.backoff, unproven = anchor.least, false
@@ -209,15 +209,19 @@ const (
 	respawned                // the decision no longer fits; the cycle starts anchord again
 )
 
-// stopLost stops an anchor whose link's device has gone, to be rebuilt once the device is back.
-func (s *Supervisor) stopLost(ctx context.Context, why string) {
+// stopAnchor withdraws the readiness marker, warns, and stops the anchor: one that is lost, to
+// be rebuilt, or whose link's device has gone, to be rebuilt once the device is back.
+//
+// Best effort, and nothing at all when the anchor is already gone. One holding a medium that
+// carries nothing, or a device that has gone, is not worth keeping for a stop that cannot be
+// delivered.
+func (s *Supervisor) stopAnchor(ctx context.Context, warning string) {
 	s.clearReady()
-	s.report().Warn("%s; the anchor is stopped until it is back", why)
+	s.report().Warn("%s", warning)
 
 	stop, cancel := context.WithTimeout(ctx, stopTimeout)
 	defer cancel()
 
-	// Best effort, as a rebuild's: an anchor holding a device that has gone carries nothing.
 	_ = s.ctl.Stop(stop)
 }
 
@@ -225,14 +229,21 @@ func (s *Supervisor) stopLost(ctx context.Context, why string) {
 // counts against the backoff as failed, which a retry may yet fix.
 var errNoConnection = errors.New("the rebuilt link carried no connection")
 
-// rebuildAnchor rebuilds an anchor that is lost, and says what came of it. A link rebuilt
-// keeps its backoff until it carries something (watch).
+// rebuildAnchor stops whatever is left of an anchor that is lost and builds it again from the
+// configuration, and says what came of it. A link rebuilt keeps its backoff until it carries
+// something (watch).
+//
+// bringUp rather than anything of its own: it is the path `up`, `proxy`, `observe` and every
+// boot already take, so a rebuilt anchor cannot be a subtly different one from the one a reboot
+// would start. The daemon is untouched, so this costs one anchor's sessions and not the process.
 func (s *Supervisor) rebuildAnchor(ctx context.Context, why string, link bool, k *keeper) outcome {
-	s.clearReady()
-	s.report().Warn("%s; rebuilding the anchor", why)
+	s.stopAnchor(ctx, why+"; rebuilding the anchor")
 
-	err := s.rebuild(ctx, link)
+	// An ended link's rebuild is counted in the state bringUp writes anyway, where status reads
+	// it: a machine reopening its anchor every few minutes has a failing cable.
+	up, err := bringUp(ctx, s.Dirs, s.ctl, s.report(), s.priv.Dir, link, parts{anchor: true})
 	if err == nil {
+		s.signalReady(up.id)
 		s.report().Step("the anchor is back")
 
 		if k.refusals = 0; !link {
@@ -436,33 +447,6 @@ func present(path string) bool {
 	_, err := os.Stat(path)
 
 	return !errors.Is(err, fs.ErrNotExist)
-}
-
-// rebuild stops whatever anchor is left and builds it again from the configuration.
-//
-// bringUp rather than anything of its own: it is the path `up`, `proxy`, `observe` and
-// every boot already take, so a rebuilt anchor cannot be a subtly different one from the one
-// a reboot would start. The daemon is untouched, so this costs one anchor's sessions
-// and not the process.
-func (s *Supervisor) rebuild(ctx context.Context, link bool) error {
-	stopCtx, cancel := context.WithTimeout(ctx, stopTimeout)
-	defer cancel()
-
-	// Best effort, and nothing at all when the anchor is already gone. One holding a
-	// medium that carries nothing is not worth keeping for a stop that cannot be
-	// delivered.
-	_ = s.ctl.Stop(stopCtx)
-
-	// An ended link's rebuild is counted in the state bringUp writes anyway, where status
-	// reads it: a machine reopening its anchor every few minutes has a failing cable.
-	up, err := bringUp(ctx, s.Dirs, s.ctl, s.report(), s.priv.Dir, link, parts{anchor: true})
-	if err != nil {
-		return err
-	}
-
-	s.signalReady(up.id)
-
-	return nil
 }
 
 // devicePath is the device an uplink spec names, or "" for a spec that names none.

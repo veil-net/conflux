@@ -370,6 +370,37 @@ func TestUsageMakesNothing(t *testing.T) {
 	}
 }
 
+// TestUsageMakesNoTemporaryDirectory: help's copy goes in the system's temporary directory,
+// which it never makes: one that is missing is left missing, and help says why it could not
+// run rather than leaving a directory behind.
+func TestUsageMakesNoTemporaryDirectory(t *testing.T) {
+	anchortest.Require(t)
+
+	parent := t.TempDir()
+	if err := os.Chmod(parent, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("CONFLUX_DIR", filepath.Join(parent, "never"))
+
+	missing := filepath.Join(t.TempDir(), "tmp")
+	for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(name, missing)
+	}
+
+	if bin, done, err := ForUsage(paths.Default()); err == nil {
+		done()
+
+		if strings.HasPrefix(bin, missing) {
+			t.Errorf("help ran %s, from the temporary directory it made", bin)
+		}
+	}
+
+	if _, err := os.Stat(missing); !os.IsNotExist(err) {
+		t.Errorf("help made the missing temporary directory %s (%v)", missing, err)
+	}
+}
+
 // TestAUsageCopyIsItsRunners: the anchorctl help runs from a temporary directory is restricted
 // to the account running it, which need not be an administrator, and a set's binaries to the
 // machine's. Only Windows acts on either, and its CI runs elevated, where Restrict's DACL lets

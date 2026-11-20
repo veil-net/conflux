@@ -586,8 +586,10 @@ translation.
 Two kinds of command need nothing of conflux's: usage (`help`, or a help flag), which reaches
 no daemon, and one naming a socket of your own (`-socket`, or `ANCHOR_SOCKET`), which reaches a
 daemon conflux does not manage. Both run `anchorctl` as a child, from the extraction already
-there or a temporary copy removed afterwards, and make no directory and extract nothing, so an
-account that cannot write conflux's directories still reaches its own daemon. A SIGTERM, SIGHUP
+there or a temporary copy removed afterwards, and extract nothing and make none of conflux's
+directories, so an account that cannot write them still reaches its own daemon. The copy goes
+in the system's temporary directory, which must exist, or, where that is mounted noexec, in
+your cache directory, which is made if it is not there yet; no other directory is. A SIGTERM, SIGHUP
 or SIGINT sent to conflux is passed on to that child, so nothing outlives conflux, and conflux
 ends as the child ends: with its exit code, or by the same signal. The copy goes either way. One
 conflux was started ignoring, as `nohup` starts it ignoring SIGHUP, stays ignored, by conflux and

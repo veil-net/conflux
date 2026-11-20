@@ -130,8 +130,9 @@ func Extracted(d paths.Dirs) (*Tools, error) {
 // ForUsage is an anchorctl to ask what a command takes, for help that must leave nothing
 // behind: this build's, extracted under d, where a whole extraction is there and readable,
 // and otherwise a copy in a private temporary directory, which done removes -- in the
-// system's temporary directory, or the user's cache directory where that one is mounted
-// noexec, as /tmp is on a hardened host. Never d's own directories. Making them for help
+// system's temporary directory, or the user's cache directory, made if it is not there yet,
+// where that one is mounted noexec, as /tmp is on a hardened host. No other directory is
+// made, and never d's own. Making them for help
 // remade, after an uninstall, what it had removed, with tens of megabytes in it; and on
 // Windows, asked by an account that is not an administrator, it left %ProgramData%\conflux
 // owned by that account, which every later install then refused.
@@ -144,7 +145,9 @@ func ForUsage(d paths.Dirs) (bin string, done func(), err error) {
 	}
 
 	candidates := []string{os.TempDir()}
-	if cache, err := os.UserCacheDir(); err == nil {
+
+	cache, err := os.UserCacheDir()
+	if err == nil {
 		candidates = append(candidates, cache)
 	}
 
@@ -158,8 +161,13 @@ func ForUsage(d paths.Dirs) (bin string, done func(), err error) {
 		return "", nil, err
 	}
 
-	if err := os.MkdirAll(parent, 0o700); err != nil {
-		return "", nil, err
+	// The user's cache directory is the user's own, and one a fresh account has not made yet is
+	// made. The system's temporary directory is not conflux's to make: one that is missing is
+	// an error, as it is to everything else that writes there.
+	if parent == cache {
+		if err := os.MkdirAll(parent, 0o700); err != nil {
+			return "", nil, err
+		}
 	}
 
 	dir, err := os.MkdirTemp(parent, "conflux-usage-")

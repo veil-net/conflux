@@ -13,8 +13,8 @@ import (
 
 // TestUsageRunsFromWhereExecIsAllowed: a temporary directory on a filesystem mounted noexec,
 // as /tmp is on a hardened host, cannot run the anchorctl help copies there, so the copy
-// goes to the next place that can: the user's cache directory. A TMPDIR under /proc, which
-// is noexec everywhere, stands in for one.
+// goes to the next place that can: the user's cache directory, made where a fresh account
+// has none yet. A TMPDIR under /proc, which is noexec everywhere, stands in for one.
 func TestUsageRunsFromWhereExecIsAllowed(t *testing.T) {
 	anchortest.Require(t)
 
@@ -26,7 +26,7 @@ func TestUsageRunsFromWhereExecIsAllowed(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", filepath.Join(parent, "never"))
 	t.Setenv("TMPDIR", "/proc/conflux-noexec-tmp")
 
-	cache := t.TempDir()
+	cache := filepath.Join(t.TempDir(), "cache")
 	t.Setenv("XDG_CACHE_HOME", cache)
 
 	bin, done, err := ForUsage(paths.Default())

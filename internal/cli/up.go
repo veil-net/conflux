@@ -691,11 +691,11 @@ type subnetsOrder struct {
 	At      time.Time `json:"at"`
 }
 
-// readSubnetsOrder is the order in force, or nil when none is: in the anchor directory the
-// last anchord was given, which may be one its own account writes, so it is read as a file
-// that account could have made anything of.
-func readSubnetsOrder(d paths.Dirs) (*subnetsOrder, error) {
-	path := paths.SubnetsOrderFile(daemon.ActiveAnchorDir(d))
+// readSubnetsOrder is the order in force, or nil when none is: in anchorDir, the anchor
+// directory the last anchord was given (daemon.ActiveAnchorDir), which may be one its own
+// account writes, so it is read as a file that account could have made anything of.
+func readSubnetsOrder(anchorDir string) (*subnetsOrder, error) {
+	path := paths.SubnetsOrderFile(anchorDir)
 
 	b, err := config.ReadUntrusted(path, 1<<20)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -738,7 +738,8 @@ func printable(s string) string {
 // cannot read is one it refuses to start on, and this is the command that clears it. From
 // both anchor directories, so the next one given the other does not find it there.
 func dropSubnetsOrder(d paths.Dirs) error {
-	o, readErr := readSubnetsOrder(d)
+	priv, _ := daemon.RecordedPrivilege(d)
+	o, readErr := readSubnetsOrder(daemon.ActiveAnchorDir(d, priv))
 
 	removed := false
 

@@ -71,12 +71,16 @@ func runStatus(ctx context.Context, args []string) int {
 
 	// The daemon's two answers are forks, so they are asked for first and read last,
 	// and the wait for them overlaps everything conflux prints of its own.
-	daemon := askDaemon(ctx, d)
+	answers := askDaemon(ctx, d, true)
 
 	st, stErr := config.LoadState(d)
 
+	// The last anchord's record, read once for the two things said of it: the anchor
+	// directory, where a subnets order is kept, and who anchord runs as.
+	priv, recorded := daemon.RecordedPrivilege(d)
+
 	reportService()
-	reportConfig(d, cfg)
+	reportConfig(d, priv, cfg)
 
 	// Said rather than skipped: a corrupt one is what the next start refuses.
 	if stErr != nil {
@@ -89,22 +93,22 @@ func runStatus(ctx context.Context, args []string) int {
 
 	ui.Field("api", cfg.APIBase())
 
-	daemon.wg.Wait()
+	answers.wg.Wait()
 
-	reportExport(cfg, daemon)
+	reportExport(cfg, answers)
 
 	if cfg.Observer != nil {
-		o := anchorctl.ParseStatus(daemon.status).Observer
-		if !daemon.asked || daemon.statErr != nil {
+		o := anchorctl.ParseStatus(answers.status).Observer
+		if !answers.asked || answers.statErr != nil {
 			o.Note = "not running"
 		}
 
 		reportObserver(cfg, o)
 	}
 
-	reportPrivilege(d, daemon.asked && daemon.statErr == nil)
+	reportPrivilege(priv, recorded, answers.asked && answers.statErr == nil)
 	ui.Println()
-	reportAnchor(daemon)
+	reportAnchor(answers)
 
 	return ExitOK
 }
@@ -119,14 +123,15 @@ type daemonAnswers struct {
 	expErr  error
 }
 
-// askDaemon starts `anchorctl status` and `anchorctl export`, or asks nothing when
-// there is no daemon to ask.
-func askDaemon(ctx context.Context, d paths.Dirs) *daemonAnswers {
+// askDaemon starts `anchorctl status`, and `anchorctl export` where the caller reads it, or
+// asks nothing when there is no daemon to ask.
+func askDaemon(ctx context.Context, d paths.Dirs, export bool) *daemonAnswers {
 	a := &daemonAnswers{}
 
 	// No socket, no daemon. The token outlives one where nothing clears the run directory
-	// on stop -- launchd, rc, Windows -- and asking would cost two forks for anchorctl's
-	// "is anchord running on that socket", which reads as a fault rather than a stop.
+	// on stop -- launchd, rc, Windows -- and asking would cost a fork for each answer, to
+	// hear anchorctl's "is anchord running on that socket", which reads as a fault rather
+	// than a stop.
 	if _, err := os.Stat(d.Socket()); err != nil {
 		return a
 	}
@@ -140,7 +145,10 @@ func askDaemon(ctx context.Context, d paths.Dirs) *daemonAnswers {
 	env := ctl.Env()
 
 	a.wg.Go(func() { a.status, a.statErr = runQuiet(ctx, ctl.Bin, env, []string{"status"}) })
-	a.wg.Go(func() { a.export, a.expErr = runQuiet(ctx, ctl.Bin, env, []string{"export"}) })
+
+	if export {
+		a.wg.Go(func() { a.export, a.expErr = runQuiet(ctx, ctl.Bin, env, []string{"export"}) })
+	}
 
 	return a
 }
@@ -170,30 +178,31 @@ func reportEphemeralRun(ctx context.Context) bool {
 		return true
 	}
 
-	daemon := askDaemon(ctx, d)
-	daemon.wg.Wait()
+	answers := askDaemon(ctx, d, false)
+	answers.wg.Wait()
 
 	ui.Field("running", "from "+d.State+" — in memory alone; nothing of it outlives the run")
-	reportPrivilege(d, daemon.asked && daemon.statErr == nil)
-	reportAnchor(daemon)
+
+	priv, recorded := daemon.RecordedPrivilege(d)
+	reportPrivilege(priv, recorded, answers.asked && answers.statErr == nil)
+	reportAnchor(answers)
 	ui.Println()
 
 	return true
 }
 
 // reportPrivilege says who the running anchord runs as, with what, and why it keeps what
-// it keeps: nothing for a daemon that is not running, whose record describes the last one.
-func reportPrivilege(d paths.Dirs, running bool) {
-	if !running {
-		return
-	}
-
-	if p, ok := daemon.RecordedPrivilege(d); ok {
+// it keeps, from p, its record where one is: nothing for a daemon that is not running, whose
+// record describes the last one.
+func reportPrivilege(p daemon.Privilege, recorded, running bool) {
+	if running && recorded {
 		ui.Field("anchord", p.String())
 	}
 }
 
-func reportConfig(d paths.Dirs, cfg *config.Config) {
+// reportConfig says what the configuration runs; priv is the last anchord's record, which
+// names the anchor directory a member's Subnets order is kept in.
+func reportConfig(d paths.Dirs, priv daemon.Privilege, cfg *config.Config) {
 	// Before the mode, because it is the medium the mode runs over.
 	if cfg.Uplink != "" {
 		ui.Field("uplink", cfg.Uplink+" — no host network under it")
@@ -231,7 +240,7 @@ func reportConfig(d paths.Dirs, cfg *config.Config) {
 		ui.Field("ipv4", ip)
 	}
 
-	reportSubnets(d, cfg)
+	reportSubnets(daemon.ActiveAnchorDir(d, priv), cfg)
 
 	for _, p := range cfg.Proxies {
 		ui.Field("serving", p)

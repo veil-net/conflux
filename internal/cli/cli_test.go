@@ -18,6 +18,7 @@ import (
 	"github.com/veil-net/conflux/anchor"
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/enrol"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
@@ -858,7 +859,7 @@ func TestASetListReplacesASubnetOrder(t *testing.T) {
 
 	t.Cleanup(func() { ui.Out = old })
 
-	reportSubnets(d, &config.Config{Subnets: []string{"eth1"}})
+	reportSubnets(daemon.ActiveAnchorDir(d, daemon.Privilege{}), &config.Config{Subnets: []string{"eth1"}})
 
 	if s := shown.String(); !strings.Contains(s, "10.9.0.0/24@lab") || !strings.Contains(s, "anchorordererexample") ||
 		strings.Contains(s, "eth1") || strings.Contains(s, "\x1b") {

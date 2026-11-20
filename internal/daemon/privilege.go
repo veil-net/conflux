@@ -405,10 +405,11 @@ func RecordedPrivilege(d paths.Dirs) (Privilege, bool) {
 	return p, true
 }
 
-// ActiveAnchorDir is the anchor directory the last anchord started was given, and where
-// one is not recorded, whichever of the two exists, the account's first.
-func ActiveAnchorDir(d paths.Dirs) string {
-	if p, ok := RecordedPrivilege(d); ok && (p.Dir == d.AnchorDir() || p.Dir == d.RootAnchorDir()) {
+// ActiveAnchorDir is the anchor directory the last anchord started was given, by p, its record
+// (RecordedPrivilege's, the zero Privilege where there is none), and where that names neither
+// of d's, whichever of the two exists, the account's first.
+func ActiveAnchorDir(d paths.Dirs, p Privilege) string {
+	if p.Dir == d.AnchorDir() || p.Dir == d.RootAnchorDir() {
 		return p.Dir
 	}
 

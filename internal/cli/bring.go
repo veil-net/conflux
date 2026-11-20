@@ -210,15 +210,19 @@ func report(d paths.Dirs, cfg *config.Config, st anchorctl.Status, verb string) 
 
 	ui.Println()
 
+	// The record of the anchord just started, read once for the anchor directory and who
+	// anchord runs as.
+	priv, recorded := daemon.RecordedPrivilege(d)
+
 	if cfg.Anchor() {
-		reportAnchorRows(d, cfg, st)
+		reportAnchorRows(daemon.ActiveAnchorDir(d, priv), cfg, st)
 	}
 
 	reportObserver(cfg, st.Observer)
 
 	ui.Field("service", service.New().Describe())
 
-	reportPrivilege(d, true)
+	reportPrivilege(priv, recorded, true)
 
 	ui.Println()
 
@@ -238,8 +242,9 @@ func report(d paths.Dirs, cfg *config.Config, st anchorctl.Status, verb string) 
 	}
 }
 
-// reportAnchorRows is what report says of the anchor.
-func reportAnchorRows(d paths.Dirs, cfg *config.Config, st anchorctl.Status) {
+// reportAnchorRows is what report says of the anchor; anchorDir is its directory, where a
+// member's Subnets order is kept.
+func reportAnchorRows(anchorDir string, cfg *config.Config, st anchorctl.Status) {
 	ui.Field("anchor", st.ID)
 
 	for _, a := range st.Overlay {
@@ -267,7 +272,7 @@ func reportAnchorRows(d paths.Dirs, cfg *config.Config, st anchorctl.Status) {
 		}
 	}
 
-	reportSubnets(d, cfg)
+	reportSubnets(anchorDir, cfg)
 
 	// Said whenever it is true, never when it is false. conflux goes to some trouble
 	// not to become an internet exit by accident, and a machine that is one should
@@ -331,9 +336,9 @@ func recordsNote(cfg *config.Config) string {
 }
 
 // reportSubnets says what this machine forwards: the configured list, or the one a
-// member's Subnets order set in its place.
-func reportSubnets(d paths.Dirs, cfg *config.Config) {
-	if o, err := readSubnetsOrder(d); err == nil && o != nil {
+// member's Subnets order, kept in anchorDir, set in its place.
+func reportSubnets(anchorDir string, cfg *config.Config) {
+	if o, err := readSubnetsOrder(anchorDir); err == nil && o != nil {
 		served := strings.Join(o.Subnets, ", ")
 		if served == "" {
 			served = "nothing"

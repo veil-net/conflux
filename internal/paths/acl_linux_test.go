@@ -3,10 +3,7 @@ package paths
 import (
 	"os"
 	"os/user"
-	"path/filepath"
 	"strconv"
-	"strings"
-	"syscall"
 	"testing"
 
 	"golang.org/x/sys/unix"
@@ -44,44 +41,20 @@ func TestEnsureAllReadsAPOSIXACL(t *testing.T) {
 			[3]uint32{0x10, 7, none}, [3]uint32{0x20, 0, none}), ""},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			parent := t.TempDir()
-			if err := os.Mkdir(filepath.Join(parent, "conflux"), 0o700); err != nil {
-				t.Fatal(err)
-			}
-
-			fi, err := os.Stat(parent)
-			if err != nil {
-				t.Fatal(err)
-			}
-
 			// The parent's own group lets in this account alone; any other lets in another.
-			own := strconv.FormatUint(uint64(fi.Sys().(*syscall.Stat_t).Gid), 10)
-
-			defer func(was func(string, string) ([]string, error)) { groupUsers = was }(groupUsers)
-			groupUsers = func(_, gid string) ([]string, error) {
-				if gid == own {
+			parent := groupWritableParent(t, func(own bool) ([]string, error) {
+				if own {
 					return []string{me.Username}, nil
 				}
 
 				return []string{"mallory"}, nil
-			}
-
-			if err := os.Chmod(parent, 0o770); err != nil {
-				t.Fatal(err)
-			}
+			})
 
 			if err := unix.Setxattr(parent, "system.posix_acl_access", c.acl, 0); err != nil {
 				t.Fatalf("give %s an ACL: %v", parent, err)
 			}
 
-			t.Setenv("CONFLUX_DIR", filepath.Join(parent, "conflux"))
-
-			switch err := Default().EnsureAll(); {
-			case c.refused != "" && (err == nil || !strings.Contains(err.Error(), c.refused)):
-				t.Errorf("a root under a parent whose ACL lets %s write was accepted, or not for that: %v", c.refused, err)
-			case c.refused == "" && err != nil:
-				t.Errorf("a root under a parent whose ACL lets no other account write was refused: %v", err)
-			}
+			ensureAllRefuses(t, "a root under a parent where "+c.name, c.refused)
 		})
 	}
 }

@@ -4,12 +4,14 @@ package paths
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/user"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -372,35 +374,58 @@ func TestEnsureAllTakesAGroupOfItsOwn(t *testing.T) {
 		name    string
 		users   []string
 		err     error
-		refused bool
+		refused string
 	}{
 		{name: "this account alone", users: []string{me.Username}},
 		{name: "nobody", users: nil},
-		{name: "this account and another", users: []string{me.Username, "mallory"}, refused: true},
-		{name: "an answer the database cannot give", err: errors.New("getent group: exit status 2"), refused: true},
+		{name: "this account and another", users: []string{me.Username, "mallory"}, refused: "its group"},
+		{name: "an answer the database cannot give", err: errors.New("getent group: exit status 2"), refused: "its group"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			defer func(was func(string, string) ([]string, error)) { groupUsers = was }(groupUsers)
-			groupUsers = func(string, string) ([]string, error) { return c.users, c.err }
+			groupWritableParent(t, func(bool) ([]string, error) { return c.users, c.err })
 
-			parent := t.TempDir()
-			if err := os.Mkdir(filepath.Join(parent, "conflux"), 0o700); err != nil {
-				t.Fatal(err)
-			}
-
-			if err := os.Chmod(parent, 0o770); err != nil {
-				t.Fatal(err)
-			}
-
-			t.Setenv("CONFLUX_DIR", filepath.Join(parent, "conflux"))
-
-			switch err := Default().EnsureAll(); {
-			case c.refused && (err == nil || !strings.Contains(err.Error(), "its group")):
-				t.Errorf("a root its group may write, the group letting in %q, was accepted, or not for that: %v", c.users, err)
-			case !c.refused && err != nil:
-				t.Errorf("a root its group may write, the group letting in %q, was refused: %v", c.users, err)
-			}
+			ensureAllRefuses(t, fmt.Sprintf("a root its group may write, the group letting in %q,", c.users), c.refused)
 		})
+	}
+}
+
+// groupWritableParent is a fresh directory its group may write, 0770, with CONFLUX_DIR set to
+// conflux inside it, not made yet, and groupUsers answering for any group, until the test
+// ends, with whom users names, own saying whether it is the directory's own.
+func groupWritableParent(t *testing.T, users func(own bool) ([]string, error)) string {
+	t.Helper()
+
+	parent := t.TempDir()
+	if err := os.Chmod(parent, 0o770); err != nil {
+		t.Fatal(err)
+	}
+
+	fi, err := os.Stat(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	own := strconv.FormatUint(uint64(fi.Sys().(*syscall.Stat_t).Gid), 10)
+
+	was := groupUsers
+	t.Cleanup(func() { groupUsers = was })
+	groupUsers = func(_, gid string) ([]string, error) { return users(gid == own) }
+
+	t.Setenv("CONFLUX_DIR", filepath.Join(parent, "conflux"))
+
+	return parent
+}
+
+// ensureAllRefuses is EnsureAll's answer held to refused: a refusal whose words hold it, or none
+// where it is "". root is the root as a failure describes it.
+func ensureAllRefuses(t *testing.T, root, refused string) {
+	t.Helper()
+
+	switch err := Default().EnsureAll(); {
+	case refused != "" && (err == nil || !strings.Contains(err.Error(), refused)):
+		t.Errorf("%s was accepted, or not for %s: %v", root, refused, err)
+	case refused == "" && err != nil:
+		t.Errorf("%s was refused: %v", root, err)
 	}
 }
 

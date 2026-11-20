@@ -5,6 +5,8 @@ package daemon
 import (
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"syscall"
 	"testing"
 )
@@ -139,4 +141,65 @@ func TestAFallbackIsNotARedecision(t *testing.T) {
 	if !s.redecided() {
 		t.Error("a decision that did change is not seen")
 	}
+}
+
+// TestAFailedChownLeavesNoOneZeroZeroLayout: an anchor directory at the account's name that is
+// the supervisor's reads as conflux 1.0.0's layout, which the supervisor refuses for good, so one
+// whose chown to the account fails -- an unmapped uid, a filesystem that will not -- is not left
+// there, nor anything else of it; and what an interrupted creation left does not stand in the
+// way of the next.
+func TestAFailedChownLeavesNoOneZeroZeroLayout(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can give the directory to any account, so its chown does not fail")
+	}
+
+	// left is what of the anchor directory is in the state directory, under any name.
+	left := func(t *testing.T, path string) []string {
+		t.Helper()
+
+		entries, err := os.ReadDir(filepath.Dir(path))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var names []string
+
+		for _, e := range entries {
+			if strings.HasPrefix(e.Name(), filepath.Base(path)) {
+				names = append(names, e.Name())
+			}
+		}
+
+		return names
+	}
+
+	t.Run("a chown that fails", func(t *testing.T) {
+		path := dirs(t).AnchorDir()
+
+		if err := makeAnchorDir(path, Privilege{Account: true, UID: os.Geteuid() + 1, GID: os.Getegid() + 1}); err == nil {
+			t.Fatal("the directory was given to an account this process cannot give it to")
+		}
+
+		if names := left(t, path); len(names) > 0 {
+			t.Errorf("a failed chown left %v in the state directory", names)
+		}
+	})
+
+	t.Run("an interrupted creation", func(t *testing.T) {
+		path := dirs(t).AnchorDir()
+
+		// What a supervisor that died before its chown left.
+		if err := os.Mkdir(path+".new", 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		// This process's own account, which it can give the directory to.
+		if err := makeAnchorDir(path, Privilege{Account: true, UID: os.Geteuid(), GID: os.Getegid()}); err != nil {
+			t.Fatalf("makeAnchorDir after an interrupted creation: %v", err)
+		}
+
+		if names := left(t, path); !slices.Equal(names, []string{filepath.Base(path)}) {
+			t.Errorf("the state directory holds %v, want %s alone", names, filepath.Base(path))
+		}
+	})
 }

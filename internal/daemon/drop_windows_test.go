@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"unsafe"
@@ -148,5 +149,37 @@ func TestServiceSID(t *testing.T) {
 
 	if !lower.Equals(upper) {
 		t.Error("a service's SID does not depend on how its name is cased")
+	}
+}
+
+// TestAServiceSIDNotGivenIsNeitherKeptNorOneZeroZero: a service SID Windows did not give is
+// asked again the next time rather than kept as a failure for the life of the process, and an
+// anchor directory it was wanted for reads as an error, which the next start reads again --
+// never as conflux 1.0.0's layout, which the supervisor refuses for good, naming a new identity.
+func TestAServiceSIDNotGivenIsNeitherKeptNorOneZeroZero(t *testing.T) {
+	ask := askServiceSID
+
+	t.Cleanup(func() {
+		askServiceSID = ask
+		serviceSIDKept.Store(nil)
+	})
+
+	serviceSIDKept.Store(nil)
+
+	askServiceSID = func() (*windows.SID, error) { return nil, errors.New("RtlCreateServiceSid: STATUS_NO_MEMORY") }
+
+	if legacy, err := legacyAnchorDir(t.TempDir()); legacy || err == nil {
+		t.Errorf("legacyAnchorDir = %v, %v with no service SID to read it for; want an error, not 1.0.0's", legacy, err)
+	}
+
+	askServiceSID = ask
+
+	if _, err := ourServiceSID(); err != nil {
+		t.Errorf("the service SID was not asked again once Windows gives it: %v", err)
+	}
+
+	// A directory the SID was never given, read with the SID in hand, is 1.0.0's.
+	if legacy, err := legacyAnchorDir(t.TempDir()); !legacy || err != nil {
+		t.Errorf("legacyAnchorDir = %v, %v for a directory the service SID was never given; want 1.0.0's", legacy, err)
 	}
 }

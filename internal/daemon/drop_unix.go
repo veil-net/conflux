@@ -260,16 +260,17 @@ func (s *Supervisor) killLeftovers() {
 
 // legacyAnchorDir reports an anchor directory at the account's name that is the
 // supervisor's own: conflux 1.0.0's, from before anchord ran as anything but root, which
-// the supervisor refuses to start on. One lstat.
-func legacyAnchorDir(path string) bool {
+// the supervisor refuses to start on. One lstat; makeAnchorDir never leaves one of its own
+// there.
+func legacyAnchorDir(path string) (bool, error) {
 	fi, err := os.Lstat(path)
 	if err != nil || !fi.IsDir() {
-		return false
+		return false, nil
 	}
 
 	st, ok := fi.Sys().(*syscall.Stat_t)
 
-	return ok && int(st.Uid) == os.Geteuid()
+	return ok && int(st.Uid) == os.Geteuid(), nil
 }
 
 // anchorDirFor reports whether path is a directory, not a link, of p's identity.
@@ -291,16 +292,37 @@ func anchorDirFor(path string, p Privilege) bool {
 
 // makeAnchorDir creates path for p's identity. Its parent is the state directory, which
 // only root can write, so it is given away by its name.
+//
+// The account's is made under another name and moved into place once it is the account's:
+// one at path that is still the supervisor's reads as conflux 1.0.0's (legacyAnchorDir),
+// which is refused for good, so a chown that fails -- an unmapped uid, a filesystem that will
+// not -- or a supervisor that dies before it must leave none there. What such a death left
+// under the other name is removed first.
 func makeAnchorDir(path string, p Privilege) error {
-	if err := os.Mkdir(path, 0o700); err != nil {
+	if !p.Account {
+		return os.Mkdir(path, 0o700)
+	}
+
+	made := path + ".new"
+
+	if err := os.RemoveAll(made); err != nil {
 		return err
 	}
 
-	if p.Account {
-		return os.Lchown(path, p.UID, p.GID)
+	if err := os.Mkdir(made, 0o700); err != nil {
+		return err
 	}
 
-	return nil
+	err := os.Lchown(made, p.UID, p.GID)
+	if err == nil {
+		err = os.Rename(made, path)
+	}
+
+	if err != nil {
+		_ = os.Remove(made)
+	}
+
+	return err
 }
 
 // ownFile gives an open file to p's identity, through its descriptor.

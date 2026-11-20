@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -380,14 +381,21 @@ func makeAnchorDir(path string, p Privilege) error {
 
 // legacyAnchorDir reports an anchor directory at the account's name that the service SID
 // was never given: conflux 1.0.0's, which a SYSTEM anchord used, and which the supervisor
-// refuses to start on.
-func legacyAnchorDir(path string) bool {
+// refuses to start on. A service SID or a DACL that could not be read is an error, never
+// 1.0.0's: refused for good on a read that failed, the machine would be sent to draw a new
+// identity for nothing.
+func legacyAnchorDir(path string) (bool, error) {
 	fi, err := os.Lstat(path)
 	if err != nil || !fi.IsDir() {
-		return false
+		return false, nil
 	}
 
-	return !grantsServiceSID(path)
+	granted, err := grantsServiceSID(path)
+	if err != nil {
+		return false, fmt.Errorf("could not read whom %s is given to: %w", path, err)
+	}
+
+	return !granted, nil
 }
 
 // anchorDirFor reports whether path is the directory p's identity is given.
@@ -397,23 +405,34 @@ func anchorDirFor(path string, p Privilege) bool {
 		return false
 	}
 
-	return !p.Account || grantsServiceSID(path)
+	if !p.Account {
+		return true
+	}
+
+	granted, err := grantsServiceSID(path)
+
+	return err == nil && granted
 }
 
-func grantsServiceSID(path string) bool {
+// grantsServiceSID reports whether path's DACL grants the service SID anything, and why that
+// could not be read. A directory with no DACL grants it nothing.
+func grantsServiceSID(path string) (bool, error) {
 	sid, err := ourServiceSID()
 	if err != nil {
-		return false
+		return false, err
 	}
 
 	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
 	if err != nil {
-		return false
+		return false, err
 	}
 
 	dacl, _, err := sd.DACL()
+	if err != nil && !errors.Is(err, windows.ERROR_OBJECT_NOT_FOUND) {
+		return false, err
+	}
 
-	return err == nil && hasACE(dacl, sid)
+	return hasACE(dacl, sid), nil
 }
 
 func hasACE(dacl *windows.ACL, sid *windows.SID) bool {

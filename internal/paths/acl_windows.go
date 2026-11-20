@@ -782,14 +782,16 @@ func ownerRefusal(dir string, owner *windows.SID) error {
 // planted something in, is none of conflux's to use, and whoever reads one -- an ephemeral run's
 // root, which %ProgramData% lets anybody make first -- holds it to this as the conflux that makes
 // one does, through one handle as secure does, and reading alone: nothing is run from a root whose
-// contents another account could have planted or can point elsewhere.
+// contents another account could have planted or can point elsewhere. Only a root that is not there
+// (ERROR_FILE_NOT_FOUND, or ERROR_PATH_NOT_FOUND where a directory above it is not either) passes
+// unread: one this account may not open or read is refused, since whoever made it can deny conflux
+// the right to read its owner and DACL as easily as they can make it.
 func Foreign(dir string) error {
 	root, err := heldRoot(dir, readAccess)
-	if errors.As(err, new(unopened)) {
+	switch {
+	case errors.Is(err, windows.ERROR_FILE_NOT_FOUND), errors.Is(err, windows.ERROR_PATH_NOT_FOUND):
 		return nil
-	}
-
-	if err != nil {
+	case err != nil:
 		return err
 	}
 	defer root.close()
@@ -804,12 +806,12 @@ func Foreign(dir string) error {
 
 	sd, err := security(root.dir)
 	if err != nil {
-		return nil
+		return fmt.Errorf("read the ownership of %s: %w", dir, err)
 	}
 
 	owner, _, err := sd.Owner()
 	if err != nil {
-		return nil
+		return fmt.Errorf("read the owner of %s: %w", dir, err)
 	}
 
 	if err := ownerRefusal(dir, owner); err != nil {
@@ -867,12 +869,12 @@ func (r *held) close() {
 // leading to the directory opened (replaceLink), which nobody may have held open before, unless it
 // finds it secured already (security.md's gap). Where the directory is that is not a plain
 // directory either, it is refused: there is nothing further to follow; so is one on a network
-// volume (remote). A root that could not be opened or read, or whose link leads nowhere, is refused
-// as unopened.
+// volume (remote). A root that could not be opened or read, or whose link leads nowhere, is refused,
+// saying why.
 func heldRoot(dir string, access uint32) (held, error) {
 	self, err := openFile(dir, access, false)
 	if err != nil {
-		return held{}, fmt.Errorf("read %s: %w", dir, unopened{err})
+		return held{}, fmt.Errorf("read %s: %w", dir, err)
 	}
 
 	r := held{self: self, dir: self}
@@ -881,7 +883,7 @@ func heldRoot(dir string, access uint32) (held, error) {
 	if err != nil {
 		r.close()
 
-		return held{}, fmt.Errorf("read %s: %w", dir, unopened{err})
+		return held{}, fmt.Errorf("read %s: %w", dir, err)
 	}
 
 	if link {
@@ -904,7 +906,7 @@ func heldRoot(dir string, access uint32) (held, error) {
 		if err != nil {
 			r.close()
 
-			return held{}, fmt.Errorf("read %s: %w", dir, unopened{err})
+			return held{}, fmt.Errorf("read %s: %w", dir, err)
 		}
 
 		r.dir = target
@@ -978,12 +980,6 @@ const (
 	fileDeviceDFSFileSystem     = 0x35
 	fileDeviceDFSVolume         = 0x36
 )
-
-// unopened is why heldRoot could not open or read a root: it is not there, or this account may
-// not read it.
-type unopened struct{ error }
-
-func (u unopened) Unwrap() error { return u.error }
 
 // notLink refuses dir, held open by h, where h is a reparse point -- a junction, a link, a mount
 // point -- saying it is one as why does.

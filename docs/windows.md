@@ -124,7 +124,9 @@ opened before, and what it holds is judged again, so that a folder refused once 
 protected one that grants more, or passes more on — to `logs\`, which conflux then makes in it by
 its name — is judged and restricted as any other, and one with no DACL at all, which grants anybody
 everything, is refused. A root some other account created is refused rather than taken over: whoever made it
-could have filled it first. So is one that holds anything another account may change, each thing in
+could have filled it first. So is one conflux may not open or read, by every reader of an ephemeral
+root too, rather than taken for one that is not there: whoever made it can deny conflux that as
+easily. So is one that holds anything another account may change, each thing in
 it judged by its own owner and DACL rather than by what it leads to, before the root is restricted,
 what it inherits from the root included, and again once it is, so that a folder another account
 added in between is judged too: anything another account owns, whatever its name, or that its DACL

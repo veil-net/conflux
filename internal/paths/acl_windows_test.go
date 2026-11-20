@@ -1037,3 +1037,33 @@ func TestSecureRefusesARootWithNoDACL(t *testing.T) {
 		t.Errorf("secure(a root with no DACL) = %v, want a refusal naming it", err)
 	}
 }
+
+// TestForeignRefusesARootItCannotRead: %ProgramData% lets any account make conflux-ephemeral where no
+// run has made it yet, and give it a DACL denying everybody the right to read it, so only a root that
+// is not there, or under a directory that is not, passes Foreign unread: one this account may not
+// open is refused, naming it, rather than taken for a run's. Owned by the Guests, a group this
+// process's token does not hold: an owner is let read a DACL whatever the DACL says, and an
+// Administrator's token holds Users. Windows-only, so it runs in CI's platforms job alone.
+func TestForeignRefusesARootItCannotRead(t *testing.T) {
+	root := foundRoot(t)
+
+	if err := privtest.WithRestore(t, func() error {
+		setSecurity(t, root, "O:BGD:P(D;;RC;;;WD)(A;OICI;FA;;;WD)")
+
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Foreign(root); err == nil || !strings.Contains(err.Error(), root) {
+		t.Errorf("Foreign(a root whose DACL denies everybody the right to read it) = %v, want a refusal naming it", err)
+	}
+
+	absent := filepath.Join(t.TempDir(), "absent")
+
+	for _, dir := range []string{absent, filepath.Join(absent, "conflux")} {
+		if err := Foreign(dir); err != nil {
+			t.Errorf("Foreign(%s, which is not there) = %v", dir, err)
+		}
+	}
+}

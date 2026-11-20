@@ -24,8 +24,6 @@ API=${VEILNET_API:-https://api.veilnet.com.au}
 # The collector the observer's records are exported to: anchor's own suite runs this one.
 OTEL_IMAGE=${OTEL_IMAGE:-otel/opentelemetry-collector:0.165.0}
 
-say() { printf '\n== %s\n' "$*"; }
-
 # wait_active waits for the service to say the anchor is up -- Type=notify, so active is
 # that and not merely a started process -- and fails the run if it never does.
 wait_active() {

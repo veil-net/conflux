@@ -26,8 +26,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 NAME=${NAME:-cfx}
 
-say() { printf '\n== %s\n' "$*"; }
-
 # Before as well as after. The trap below does not fire when a CI run is cancelled --
 # the runner's SIGTERM ends bash without it, and SIGKILL is not catchable at all --
 # and on a machine that is not thrown away afterwards that leaves a name the next run

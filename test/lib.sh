@@ -1,8 +1,12 @@
 # shellcheck shell=bash
 # What the container suites share, sourced by test/service.sh and test/integration.sh: the
-# container that boots systemd, and the reader of what its anchord runs with.
+# heading each step prints, the container that boots systemd, and the reader of what its
+# anchord runs with.
 
 IMAGE=${IMAGE:-conflux-systemd-test}
+
+# say prints a step's heading.
+say() { printf '\n== %s\n' "$*"; }
 
 # boot starts container NODE from $IMAGE, as both suites run it -- privileged, with the host's
 # cgroups and its TUN device, which systemd as PID 1 and an anchor's interface need -- and gives

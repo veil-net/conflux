@@ -666,7 +666,17 @@ func TestSecureHoldsWhatTheRootHolds(t *testing.T) {
 		}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			root := filepath.Join(t.TempDir(), "conflux")
+			// Under a short name of its own rather than t.TempDir's, which spells this test's name out:
+			// %TEMP% on CI's runner and that name would put the socket's path past the 107 bytes an
+			// AF_UNIX address holds. Removed after what make registers, the listener among it, is closed.
+			base, err := os.MkdirTemp("", "cfx")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			t.Cleanup(func() { os.RemoveAll(base) })
+
+			root := filepath.Join(base, "conflux")
 			if err := os.Mkdir(root, 0o700); err != nil {
 				t.Fatal(err)
 			}

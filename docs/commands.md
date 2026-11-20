@@ -598,9 +598,9 @@ directories, so an account that cannot write them still reaches its own daemon. 
 in the system's temporary directory, which must exist, or, where that is mounted noexec, in
 your cache directory, which is made if it is not there yet; no other directory is. A SIGTERM, SIGHUP
 or SIGINT sent to conflux is passed on to that child, so nothing outlives conflux, and conflux
-ends as the child ends: with its exit code, or by the same signal. The copy goes either way. One
-conflux was started ignoring, as `nohup` starts it ignoring SIGHUP, stays ignored, by conflux and
-the child alike.
+ends as the child ends: with its exit code, or by the same signal. The copy goes either way. A
+SIGHUP or SIGINT conflux was started ignoring, as `nohup` starts it ignoring SIGHUP, stays
+ignored, by conflux and the child alike.
 
 On Windows every pass-through runs `anchorctl` as a child, since there is no replacing a
 process. Nothing is passed on there, and nothing needs to be: what a console sends — Ctrl+C,

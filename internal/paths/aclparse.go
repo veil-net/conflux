@@ -64,21 +64,28 @@ func posixWriters(entries []posixEntry) []writer {
 	var ws []writer
 
 	for _, e := range entries {
-		if e.perm&mask&posixWrite == 0 {
-			continue
-		}
-
-		switch e.tag {
-		case posixUser:
-			ws = append(ws, writer{who: aUser, id: e.id})
-		case posixGroup:
-			ws = append(ws, writer{who: aGroup, id: e.id})
-		case posixGroupObj:
-			ws = append(ws, writer{who: theGroup})
+		if w, ok := posixGrantee(e.tag, e.id); ok && e.perm&mask&posixWrite != 0 {
+			ws = append(ws, w)
 		}
 	}
 
 	return ws
+}
+
+// posixGrantee is who an entry of tag names, with id, where POSIX.1e names anybody beside the
+// owner and everybody else: a user or a group by its id, or the directory's own group. FreeBSD's
+// NFSv4 ACLs number these three alike.
+func posixGrantee(tag, id uint32) (writer, bool) {
+	switch tag {
+	case posixUser:
+		return writer{who: aUser, id: id}, true
+	case posixGroup:
+		return writer{who: aGroup, id: id}, true
+	case posixGroupObj:
+		return writer{who: theGroup}, true
+	}
+
+	return writer{}, false
 }
 
 // errACL is an ACL in a shape no kernel writes.
@@ -162,21 +169,17 @@ func freebsdACL(b []byte, nfs4 bool) ([]writer, error) {
 			continue
 		}
 
-		w := writer{id: id, pastSticky: perm&nfs4PastSticky != 0}
+		w, ok := posixGrantee(tag, id)
 
-		switch tag {
-		case posixUser:
-			w.who = aUser
-		case posixGroup:
-			w.who = aGroup
-		case posixGroupObj:
-			w.who = theGroup
-		case nfs4Everyone:
-			w.who = everyone
+		switch {
+		case ok:
+		case tag == nfs4Everyone:
+			w = writer{who: everyone}
 		default:
 			return nil, errACL
 		}
 
+		w.pastSticky = perm&nfs4PastSticky != 0
 		ws = append(ws, w)
 	}
 

@@ -167,20 +167,17 @@ func parentsAs(dir string, euid int) error {
 			return fmt.Errorf("read the owner of %s: no ownership on this filesystem", p)
 		}
 
+		// A link's mode means nothing: who may change it is its owner, and whoever may write the
+		// directory it is in, which is checked as one above.
 		where, who := "inside", ""
+		if isLink(fi) {
+			where = "reached through"
+		}
 
 		switch {
-		case isLink(fi):
-			// A link's mode means nothing: who may change it is its owner, and whoever may
-			// write the directory it is in, which is checked as one above.
-			where = "reached through"
-
-			if int(st.Uid) != 0 && int(st.Uid) != euid {
-				who = fmt.Sprintf("belongs to uid %d, who", st.Uid)
-			}
 		case int(st.Uid) != 0 && int(st.Uid) != euid:
 			who = fmt.Sprintf("belongs to uid %d, who", st.Uid)
-		default:
+		case !isLink(fi):
 			if who, err = mayWrite(p, fi.Mode(), st.Gid, euid); err != nil {
 				return err
 			}

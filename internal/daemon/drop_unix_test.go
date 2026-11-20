@@ -98,3 +98,49 @@ func TestAnchorDirMovesAndCarries(t *testing.T) {
 		t.Errorf("anchorDir again = %q, %v", again, err)
 	}
 }
+
+// TestAFallbackIsNotARedecision: a start whose account's directories could not be prepared
+// runs anchord as the supervisor, and a start or a rebuild that fails after that is not taken
+// for a decision that changed -- the next spawn would decide the account again and fall back
+// again -- so a refusal for good still counts toward the exit no restart follows, rather than
+// respawning anchord every cycle. A decision that did change still is one.
+func TestAFallbackIsNotARedecision(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can give the account its directories, so nothing falls back")
+	}
+
+	s, _ := supervised(t, "serve")
+	s.Drop = true
+
+	// A host that gives the account, whose directories this process, not root, cannot give it.
+	groups := []int(nil)
+	old := giveTo
+	giveTo = func(_ *Supervisor, p *Privilege) string {
+		p.As, p.UID, p.GID, p.Groups = "conflux-test", os.Geteuid()+1, os.Getegid()+1, groups
+
+		return ""
+	}
+
+	t.Cleanup(func() { giveTo = old })
+
+	_, c, err := s.spawn(t.Context())
+	if err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+
+	defer s.shutdown(c)
+
+	if s.priv.Account {
+		t.Fatal("anchord was started as an account whose directories could not be prepared")
+	}
+
+	if s.redecided() {
+		t.Error("a start that fell back to the supervisor reads as a decision that changed")
+	}
+
+	groups = []int{4242}
+
+	if !s.redecided() {
+		t.Error("a decision that did change is not seen")
+	}
+}

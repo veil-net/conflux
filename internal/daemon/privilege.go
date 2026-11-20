@@ -421,8 +421,8 @@ func ActiveAnchorDir(d paths.Dirs, p Privilege) string {
 }
 
 // sameGrant reports whether two decisions start the same anchord: the same identity, the
-// same capabilities and groups, the same directory.
+// same capabilities and groups. The anchor directory follows from the identity.
 func sameGrant(a, b Privilege) bool {
 	return a.Account == b.Account && a.UID == b.UID && a.GID == b.GID && a.NoNewPrivs == b.NoNewPrivs &&
-		slices.Equal(a.Caps, b.Caps) && slices.Equal(a.Groups, b.Groups) && a.BPF == b.BPF && a.Dir == b.Dir
+		slices.Equal(a.Caps, b.Caps) && slices.Equal(a.Groups, b.Groups) && a.BPF == b.BPF
 }

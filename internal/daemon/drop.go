@@ -33,6 +33,10 @@ var errRespawn = errors.New("anchord needs different privilege now, so it is sta
 // are kilobytes; anything near this is not one of them.
 const copyFileMax = 16 << 20
 
+// giveTo settles whether the supervisor can hand anchord to the account (dropTo): a variable,
+// so a test can be a host that gives it one.
+var giveTo = (*Supervisor).dropTo
+
 // privilege decides who anchord runs as, and settles what the supervisor can give.
 func (s *Supervisor) privilege(cfg *config.Config) Privilege {
 	return s.privilegeFor(cfg, manifestPort(s))
@@ -53,7 +57,7 @@ func (s *Supervisor) privilegeFor(cfg *config.Config, port int) Privilege {
 	if p.Account {
 		if !s.Drop {
 			p = asSupervisor("")
-		} else if why := s.dropTo(&p); why != "" {
+		} else if why := giveTo(s, &p); why != "" {
 			p = asSupervisor(why)
 		}
 	}
@@ -298,22 +302,21 @@ func anchordEnv(p Privilege, token string) []string {
 	return env
 }
 
-// redecided reports whether anchord would now be started with something other than what
-// it was: the cycle's cue to start it again. Asked only after a start or a rebuild failed.
+// redecided reports whether anchord would now be decided something other than spawn decided
+// for it: the cycle's cue to start it again. Asked only after a start or a rebuild failed.
+//
+// Held to spawn's decision and not to what anchord was started with: a start whose account's
+// directories could not be prepared runs as the supervisor, and the next spawn would decide the
+// account again and fall back again, so that is no change -- and taken for one, every failure
+// would respawn anchord, and a refusal for good would never count toward the exit no restart
+// follows.
 func (s *Supervisor) redecided() bool {
 	cfg, err := loadConfig(s.Dirs)
 	if err != nil {
 		return false
 	}
 
-	p := s.privilege(cfg)
-
-	p.Dir = s.Dirs.RootAnchorDir()
-	if p.Account {
-		p.Dir = s.Dirs.AnchorDir()
-	}
-
-	return !sameGrant(p, s.priv)
+	return !sameGrant(s.privilege(cfg), s.decided)
 }
 
 // requestRespawn asks the cycle to end, once.

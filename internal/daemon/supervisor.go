@@ -79,8 +79,10 @@ type Supervisor struct {
 
 	// priv is what the running anchord was started with, and lastDir the anchor
 	// directory the last one was given, which the next starts from when it is given
-	// the other.
+	// the other. decided is what spawn decided for it before any fallback, which a
+	// fresh decision is held to (redecided).
 	priv    Privilege
+	decided Privilege
 	lastDir string
 
 	// respawn ends the cycle so the next starts anchord with what it now needs.
@@ -445,6 +447,7 @@ func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *child, error) 
 	}
 
 	p := s.privilege(cfg)
+	s.decided = p
 
 	// The BPF devices the account was given for an earlier observer, given back where this
 	// anchord does not read them through its own group: one that does not observe, or runs

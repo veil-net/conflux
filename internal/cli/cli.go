@@ -88,8 +88,9 @@ var anchorLifecycleVerbs = map[string]string{
 // script's background, so that the terminal's Ctrl-C does not reach it. Caught, s would end what
 // was being kept from it: a run of conflux's, or the anchorctl conflux runs or replaces itself
 // with, which inherits the ignore and would have s's default action in its place. Go's runtime
-// keeps an inherited ignore for SIGHUP and SIGINT alone; Windows passes a process none, so there
-// every signal is caught.
+// keeps an inherited ignore for SIGHUP and SIGINT alone. Windows enforces a console's inherited
+// Ctrl+C ignore itself, and the runtime reports none ignored, so there catches is always true
+// and changes nothing.
 func catches(s os.Signal) bool { return !signal.Ignored(s) }
 
 // Main dispatches. It returns an exit code rather than calling os.Exit so that the

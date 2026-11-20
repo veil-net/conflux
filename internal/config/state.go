@@ -139,5 +139,5 @@ func (s *State) NewIdentity() {
 	s.AnchorID, s.IssuedAt, s.NotAfter, s.ClockSkew = "", time.Time{}, time.Time{}, 0
 	s.LastRenewalError, s.LastRenewalTry = "", time.Time{}
 	s.LinkReopens, s.LastLinkReopen = 0, time.Time{}
-	s.AnchorRefused, s.AnchorRefusedAt = "", time.Time{}
+	s.AnchorGivenUp(nil)
 }

@@ -239,25 +239,7 @@ func TestSecureRefusesAJunctionRootMadeAgain(t *testing.T) {
 
 	target := t.TempDir()
 	root := mklinkJ(t, filepath.Join(t.TempDir(), "j"), target)
-
-	// target as Windows reads it back, its long names in place of %TEMP%'s short ones.
-	h, err := openFile(target, readAccess, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer windows.CloseHandle(h)
-
-	shown, err := finalPath(h, volumeNameDOS)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	stage := `%ProgramFiles%\j.junction`
-	want := []string{
-		`rmdir "` + root + `"`,
-		`mklink /J "` + stage + `" "` + strings.TrimPrefix(shown, `\\?\`) + `"`,
-		`move "` + stage + `" "` + root + `"`,
-	}
+	want := remakeCommands(t, root, target)
 
 	was := replacing
 	t.Cleanup(func() { replacing = was })
@@ -268,19 +250,12 @@ func TestSecureRefusesAJunctionRootMadeAgain(t *testing.T) {
 		}
 	}
 
-	err = secure(root)
+	err := secure(root)
 	if err == nil || !strings.Contains(err.Error(), root+" was made again") {
 		t.Fatalf("secure(a junction root made again as it was replaced) = %v, want a refusal naming it", err)
 	}
 
-	var commands []string
-
-	for line := range strings.Lines(err.Error()) {
-		if command, ok := strings.CutPrefix(strings.TrimRight(line, "\n"), "    "); ok {
-			commands = append(commands, command)
-		}
-	}
-
+	commands := commandsIn(err)
 	if !slices.Equal(commands, want) {
 		t.Fatalf("the refusal's commands are %q, want %q", commands, want)
 	}
@@ -347,26 +322,72 @@ func TestSecureRefusesAJunctionRootMadeAgain(t *testing.T) {
 func TestSecureSaysHowToRemakeAJunctionRootItCannotReplace(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
-	root := mklinkJ(t, filepath.Join(t.TempDir(), "j"), t.TempDir())
+	target := t.TempDir()
+	root := mklinkJ(t, filepath.Join(t.TempDir(), "j"), target)
+	want := remakeCommands(t, root, target)
 
 	was := replacing
 	t.Cleanup(func() { replacing = was })
 
-	// Full control but FILE_ADD_SUBDIRECTORY (0x4), for this account alone.
-	me := currentUser().String()
-	replacing = func(dir string) { setSecurity(t, filepath.Dir(dir), "O:"+me+"D:P(A;;0x1f01fb;;;"+me+")") }
+	replacing = func(dir string) { mayNotAddFolders(t, filepath.Dir(dir)) }
 
 	err := secure(root)
 	if err == nil || !strings.Contains(err.Error(), "make a junction of conflux's own at "+root) {
 		t.Fatalf("secure(a junction root it cannot make its own at) = %v, want a refusal naming it", err)
 	}
 
-	for _, command := range []string{`rmdir "` + root + `"`, `mklink /J "%ProgramFiles%\j.junction" "`,
-		`move "%ProgramFiles%\j.junction" "` + root + `"`} {
-		if !strings.Contains(err.Error(), "\n    "+command) {
-			t.Errorf("secure(a junction root it cannot make its own at) = %v, want it to say %s", err, command)
+	if commands := commandsIn(err); !slices.Equal(commands, want) {
+		t.Errorf("the refusal's commands are %q, want %q", commands, want)
+	}
+}
+
+// remakeCommands are the commands a refusal to replace the junction root, which led to target, says
+// make it again: target named as Windows reads it back, its long names in place of %TEMP%'s short
+// ones, and the junction made in %ProgramFiles%.
+func remakeCommands(t *testing.T, root, target string) []string {
+	t.Helper()
+
+	h, err := openFile(target, readAccess, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.CloseHandle(h)
+
+	shown, err := finalPath(h, volumeNameDOS)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stage := `%ProgramFiles%\` + filepath.Base(root) + ".junction"
+
+	return []string{
+		`rmdir "` + root + `"`,
+		`mklink /J "` + stage + `" "` + strings.TrimPrefix(shown, `\\?\`) + `"`,
+		`move "` + stage + `" "` + root + `"`,
+	}
+}
+
+// commandsIn are the lines of err's message that are commands to type, each indented by four
+// spaces.
+func commandsIn(err error) []string {
+	var commands []string
+
+	for line := range strings.Lines(err.Error()) {
+		if command, ok := strings.CutPrefix(strings.TrimRight(line, "\n"), "    "); ok {
+			commands = append(commands, command)
 		}
 	}
+
+	return commands
+}
+
+// mayNotAddFolders gives dir to this account alone, with full control of it but the right to add a
+// folder to it (FILE_ADD_SUBDIRECTORY, 0x4).
+func mayNotAddFolders(t *testing.T, dir string) {
+	t.Helper()
+
+	me := currentUser().String()
+	setSecurity(t, dir, "O:"+me+"D:P(A;;0x1f01fb;;;"+me+")")
 }
 
 // TestSecureHoldsAJunctionRoot: a root that is a junction is held to who may point it elsewhere,
@@ -415,10 +436,8 @@ func TestSecureHoldsAJunctionRoot(t *testing.T) {
 func TestARootOnANetworkVolumeIsRefused(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
-	dir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(dir, "conflux"), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	root := foundRoot(t)
+	dir := filepath.Dir(root)
 
 	share := privtest.Share(t, dir)
 	unc := filepath.Join(share, "conflux")
@@ -811,10 +830,7 @@ func TestSecureSaysWhyItCannotFillARoot(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
 	root := foundRoot(t)
-
-	// Full control but FILE_ADD_SUBDIRECTORY (0x4), for this account alone.
-	me := currentUser().String()
-	setSecurity(t, root, "O:"+me+"D:P(A;;0x1f01fb;;;"+me+")")
+	mayNotAddFolders(t, root)
 
 	if err := secure(root); err == nil || !strings.Contains(err.Error(), "could not add "+runName+" to "+root+
 		", whose DACL") {

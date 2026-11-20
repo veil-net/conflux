@@ -432,7 +432,9 @@ func ensureAllRefuses(t *testing.T, root, refused string) {
 // TestAncestorsFollowsEveryLink: the lookup is followed as the kernel makes it, a link's
 // target read from the directory the link is in, ".." included, and each directory a name is
 // looked up in is there once, the links with them, and not the directory the root resolves to.
-// What the lookup read of each name it looked up goes with it, a link read as one.
+// What the lookup read of each name it looked up goes with it, a link read as one, and only the
+// top of the volume, which it looked no name up for, goes without: a directory ".." leads back to
+// keeps what was read of it on the way down.
 func TestAncestorsFollowsEveryLink(t *testing.T) {
 	base, err := filepath.EvalSymlinks(t.TempDir()) // under /private/var on macOS
 	if err != nil {
@@ -465,7 +467,7 @@ func TestAncestorsFollowsEveryLink(t *testing.T) {
 		got = append(got, s.path)
 
 		link := s.path == filepath.Join(base, "a", "l") || s.path == filepath.Join(base, "d", "m")
-		if s.fi != nil && (s.fi.Name() != filepath.Base(s.path) || isLink(s.fi) != link) || s.fi == nil && link {
+		if s.fi != nil && (s.fi.Name() != filepath.Base(s.path) || isLink(s.fi) != link) || s.fi == nil && s.path != "/" {
 			t.Errorf("ancestors read %s as %v", s.path, s.fi)
 		}
 	}
@@ -480,6 +482,21 @@ func TestAncestorsFollowsEveryLink(t *testing.T) {
 	for i, p := range got {
 		if p == filepath.Join(base, "b", "c") || slices.Contains(got[:i], p) {
 			t.Errorf("ancestors holds %s, which is the root or met already: %q", p, got)
+		}
+	}
+
+	// a/up -> ../d: the lookup goes back up to base, and no later link meets it again.
+	if err := os.Symlink("../d", filepath.Join(base, "a", "up")); err != nil {
+		t.Fatal(err)
+	}
+
+	if steps, err = ancestors(filepath.Join(base, "a", "up")); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, s := range steps {
+		if s.fi == nil && s.path != "/" {
+			t.Errorf("ancestors read %s, which \"..\" led back to, as nothing", s.path)
 		}
 	}
 }

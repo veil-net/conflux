@@ -7,12 +7,14 @@ import (
 	"os"
 )
 
-// The ACLs a directory above a CONFLUX_DIR may carry beside its mode, read into who they let
-// write it. Untagged, and over bytes alone, so each platform's format is tested on every
-// machine that builds conflux; each platform's file reads its own (extendedWriters). An entry's
-// inheritance is not read: one the directory only passes on is inherited by the root conflux
-// makes inside it, so it counts as one that applies. Windows's DACLs are read here too, into
-// what they allow on the object itself (windowsGrants), which mover holds to who may change it.
+// The ACLs a root, or a directory above a CONFLUX_DIR, may carry beside its mode, read into who
+// they let write it. Untagged, and over bytes alone, so each platform's format is tested on every
+// machine that builds conflux; each platform's file reads its own (extendedWriters). An entry
+// counts whatever it says of inheritance: one a directory only passes on is inherited by the root
+// conflux makes inside it, so it counts as one that applies; inheritance tells only an NFSv4
+// entry that is the mode from one that is not (writer.modeBit). Windows's DACLs are read here
+// too, into what they allow on the object itself (windowsGrants), which mover holds to who may
+// change it.
 
 // grantee is who an ACL entry lets write a directory.
 type grantee int

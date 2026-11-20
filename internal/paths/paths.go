@@ -286,8 +286,9 @@ func chosen(dir string) bool {
 }
 
 // step is a directory or a link ancestors meets, with what Lstat said of it as the lookup looked
-// its name up: nil for one the lookup reached without doing so -- the top of a volume, and a
-// directory ".." leads back to -- which is never a link.
+// its name up: nil only for the top of a volume, which the lookup starts from without looking a
+// name up, and which is never a link. A directory ".." leads back to was met on the way down, and
+// keeps what Lstat said of it then.
 type step struct {
 	path string
 	fi   os.FileInfo

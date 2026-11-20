@@ -13,7 +13,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
@@ -740,23 +739,12 @@ func readSubnetsOrder(anchorDir string) (*subnetsOrder, error) {
 
 	// Printed to an operator's terminal, and written by whoever could write the file: every
 	// string in it, so an entry cannot carry escape sequences any more than the name can.
-	o.By = printable(o.By)
+	o.By = ui.Printable(o.By)
 	for i, s := range o.Subnets {
-		o.Subnets[i] = printable(s)
+		o.Subnets[i] = ui.Printable(s)
 	}
 
 	return &o, nil
-}
-
-// printable is s without its control characters, for a terminal it was not written for.
-func printable(s string) string {
-	return strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
-			return -1
-		}
-
-		return r
-	}, s)
 }
 
 // dropSubnetsOrder lets the list conflux starts with be served again: the operator just

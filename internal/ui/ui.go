@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // Out and Errw are indirected so tests can capture them.
@@ -27,6 +28,18 @@ func Println(a ...any) { fmt.Fprintln(Out, a...) }
 // one that is not fatal reads the same, and says so in its words rather than its prefix.
 func Errf(format string, a ...any) {
 	fmt.Fprintf(Errw, "conflux: "+strings.TrimSuffix(format, "\n")+"\n", a...)
+}
+
+// Printable is s without its control characters, for a terminal it was not written for:
+// what a server or another account wrote, which could otherwise carry escape sequences to it.
+func Printable(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+
+		return r
+	}, s)
 }
 
 // Field prints one aligned "key  value" row, the shape anchorctl's own status uses.

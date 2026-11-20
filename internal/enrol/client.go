@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/ui"
 	"github.com/veil-net/conflux/internal/version"
 )
 
@@ -344,7 +345,8 @@ func (c *Client) do(ctx context.Context, method, u string, body []byte, auth Aut
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return &HTTPError{Status: resp.StatusCode, Body: string(b[:min(len(b), 4096)])}
+		// Cut at 4 KiB, and a rune the cut went through dropped.
+		return &HTTPError{Status: resp.StatusCode, Body: strings.ToValidUTF8(string(b[:min(len(b), 4096)]), "")}
 	}
 
 	if err := json.Unmarshal(b, out); err != nil {
@@ -366,7 +368,7 @@ func (c *Client) recordSkew(resp *http.Response) {
 }
 
 // HTTPError is a non-2xx, with enough of the body to be diagnosable and not so much
-// that a hostile server can fill a terminal.
+// that a hostile server can fill a terminal, nor anything it could drive one with.
 type HTTPError struct {
 	Status int
 	Body   string
@@ -375,8 +377,12 @@ type HTTPError struct {
 // Error names the status and what the server said. The API answers a refusal as
 // {"message": ..., "error": ..., "statusCode": ...} -- the message a string, or a list
 // of them when a request fails validation -- so the message is what is shown when there
-// is one, and the body as it came otherwise.
-func (e *HTTPError) Error() string {
+// is one, and the body as it came otherwise. Either way without its control characters:
+// it is printed, and kept in the state as the last renewal's error.
+func (e *HTTPError) Error() string { return ui.Printable(e.said()) }
+
+// said is what Error says, as the server said it.
+func (e *HTTPError) said() string {
 	status := fmt.Sprintf("the server answered %d %s", e.Status, http.StatusText(e.Status))
 
 	var refusal struct {

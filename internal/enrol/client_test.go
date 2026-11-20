@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // server stands in for the enrolment API. Every test that touches the network
@@ -172,6 +174,37 @@ func TestHTTPErrorSaysWhatTheServerSaid(t *testing.T) {
 		if got := (&HTTPError{Status: 400, Body: body}).Error(); got != want {
 			t.Errorf("HTTPError{%q}.Error() = %q, want %q", body, got, want)
 		}
+	}
+}
+
+// TestHTTPErrorIsPrintable: what a refusal says reaches a terminal and the state's
+// LastRenewalError, so a server's control characters -- an escape sequence, raw or in a JSON
+// string -- are taken out of it, and the part of the body kept is never cut through a rune.
+func TestHTTPErrorIsPrintable(t *testing.T) {
+	for _, body := range []string{
+		"\x1b[2J\x1b]0;owned\x07upstream\r\ntimed out",
+		`{"message":"\u001b[31mmember: id: wrong length\u0007","statusCode":400}`,
+		`{"message":["\u001b[2J","anchorId\nmust start with \"anchor\""],"statusCode":400}`,
+	} {
+		if got := (&HTTPError{Status: 400, Body: body}).Error(); strings.ContainsFunc(got, unicode.IsControl) {
+			t.Errorf("HTTPError{%q}.Error() = %q, which holds a control character", body, got)
+		}
+	}
+
+	c, _ := server(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		fmt.Fprint(w, strings.Repeat("a", 4095)+"é and more")
+	})
+
+	_, err := c.Enrol(t.Context(), asked)
+
+	var he *HTTPError
+	if !errors.As(err, &he) {
+		t.Fatalf("Enrol = %v, want an *HTTPError", err)
+	}
+
+	if !utf8.ValidString(he.Body) || !utf8.ValidString(err.Error()) || strings.ContainsRune(err.Error(), utf8.RuneError) {
+		t.Errorf("the body kept was cut through a rune: it ends %q", he.Body[max(0, len(he.Body)-4):])
 	}
 }
 

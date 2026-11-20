@@ -21,7 +21,8 @@ once for its `version`, and only then renames it into place as `/usr/local/bin/c
 asking `sudo` (or `doas`) where that directory is root's. `install.ps1` does the same into
 `C:\Program Files\conflux` and adds that to the machine's PATH. Each installs the binary
 and nothing else: no boot service, no enrolment, no network joined, until you run
-`conflux up`. Run again, each replaces an older conflux and leaves the release's own alone.
+`conflux up`. Run again, each replaces any conflux there whose SHA-256 is not the release's —
+an older one, a newer one or a dev build — and leaves the release's own alone.
 
 Two settings, given to `sh` rather than `curl`:
 

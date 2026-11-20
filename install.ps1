@@ -5,7 +5,8 @@
 #
 # In PowerShell as Administrator, which conflux needs for everything after this as well. It
 # installs the binary and nothing else. No boot service, no enrolment, no network joined: that is
-# `conflux up`, which is yours to run. Run again, it replaces an older conflux with the release's;
+# `conflux up`, which is yours to run. Run again, it replaces any conflux there whose SHA-256 is not
+# the release's -- older, newer or a dev build -- and leaves the release's own alone;
 # `conflux update` does the same, and moves a running anchor onto it as well.
 #
 # Two settings, set in the session first:
@@ -120,8 +121,10 @@
 
             # Copied in beside it, not moved: a file moved from the account's temporary directory
             # keeps the ACL it was made with there, which grants that account itself full control,
-            # and the service runs this as SYSTEM. A copy made in the install directory takes that
-            # directory's, and is then renamed into place whole.
+            # so whatever it runs unelevated could change it -- and this is the conflux an
+            # Administrator runs, and the one `conflux up` copies for the service to run as SYSTEM.
+            # A copy made in the install directory takes that directory's, and is then renamed into
+            # place whole.
             $staged = "$exe.new"
             Copy-Item -LiteralPath $new -Destination $staged -Force
             try {

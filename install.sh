@@ -5,8 +5,9 @@
 #   curl -fsSL https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.sh | sh
 #
 # It installs the binary and nothing else. No boot service, no enrolment, no network joined:
-# that is `sudo conflux up`, which is yours to run. Run again, it replaces an older conflux with
-# the release's; `conflux update` does the same, and moves a running anchor onto it as well.
+# that is `sudo conflux up`, which is yours to run. Run again, it replaces any conflux there whose
+# SHA-256 is not the release's -- older, newer or a dev build -- and leaves the release's own
+# alone; `conflux update` does the same, and moves a running anchor onto it as well.
 #
 # Two settings, given to sh rather than curl (`curl -fsSL … | CONFLUX_VERSION=1.0.0 sh`):
 #

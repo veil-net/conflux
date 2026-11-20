@@ -13,7 +13,6 @@ import (
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/libexec"
-	"github.com/veil-net/conflux/internal/pathstest"
 )
 
 // flagLine matches the way Go's flag package prints a flag in a usage block:
@@ -31,14 +30,7 @@ var flagLine = regexp.MustCompile(`(?m)^\s+-([a-z0-9-]+)`)
 // Every start and observe -start conflux can make is an argv golden of its own (args_test.go),
 // so those are read from testdata/argv, all of them; what has no golden is listed here.
 func TestEveryFlagWeUseExists(t *testing.T) {
-	anchortest.Require(t)
-
-	d := pathstest.Dirs(t)
-
-	tools, err := libexec.Ensure(d)
-	if err != nil {
-		t.Fatalf("Ensure: %v", err)
-	}
+	tools := anchortest.Extracted(t, libexec.Ensure)
 
 	argvs := map[string][]string{
 		"renew":         anchorctl.RenewArgs(),

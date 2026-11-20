@@ -617,14 +617,7 @@ func TestLANDiscoveryTristate(t *testing.T) {
 // message rather than as an off-by-one. help, which anchorctl's usage does not list, prints
 // anchorctl's usage whole.
 func TestTheCollisionsAreTheDocumentedOnes(t *testing.T) {
-	anchortest.Require(t)
-
-	d := pathstest.Dirs(t)
-
-	tools, err := libexec.Ensure(d)
-	if err != nil {
-		t.Fatalf("Ensure: %v", err)
-	}
+	tools := anchortest.Extracted(t, libexec.Ensure)
 
 	theirs := anchorctlCommands(t, tools.Anchorctl)
 
@@ -735,14 +728,7 @@ func TestTheInterfaceIsWhatTheAnchorSaysItHolds(t *testing.T) {
 // embedded one through conflux unchanged, with conflux's socket and token. None of it may
 // be shadowed by a conflux verb or refused as a lifecycle command.
 func TestRealmControlPassesThrough(t *testing.T) {
-	anchortest.Require(t)
-
-	d := pathstest.Dirs(t)
-
-	tools, err := libexec.Ensure(d)
-	if err != nil {
-		t.Fatalf("Ensure: %v", err)
-	}
+	tools := anchortest.Extracted(t, libexec.Ensure)
 
 	theirs := anchorctlCommands(t, tools.Anchorctl)
 

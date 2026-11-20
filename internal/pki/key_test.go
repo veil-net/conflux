@@ -212,6 +212,39 @@ func TestPBES2KnownAnswer(t *testing.T) {
 	}
 }
 
+// TestEverySHA2PRFIsRead: a key encrypted under PBKDF2 with each SHA-2 HMAC but the one conflux
+// writes, which TestPBES2KnownAnswer covers, opens to its key, its PRF named for what it is:
+// every PRF the module approves for PBKDF2 is read, each under its own hash. OpenSSL 4.1.0
+// wrote them from the known answer's key and passphrase, with `openssl pkcs8 -topk8 -v2
+// aes-256-cbc -v2prf hmacWithSHA<n> -iter 2048 -saltlen 16`.
+func TestEverySHA2PRFIsRead(t *testing.T) {
+	p8, _ := hex.DecodeString("302e020100300506032b657004220420" + strings.Repeat("33", 32))
+
+	for prf, enc := range map[string]string{
+		"HMAC-SHA-224": "3081a3305f06092a864886f70d01050d3052303106092a864886f70d01050c302404109a1c1a1877b35cc29f437ea5a418d84e0202080030" +
+			"0c06082a864886f70d02080500301d060960864801650304012a041006629447c7131b223ac094b8149b502f04408b1558a1d2da160d69a7" +
+			"2185403dd48d3c503a7cf184da8d911d58bd2fb24b123cecdf3a49f9795c77c9c99f1bea7471f1507773252b15ae496b02aab57e6052",
+		"HMAC-SHA-384": "3081a3305f06092a864886f70d01050d3052303106092a864886f70d01050c30240410e65aee48cc257080b2c50e26d581edac0202080030" +
+			"0c06082a864886f70d020a0500301d060960864801650304012a0410a6081671b68caf825a8f6f6a6de7ad7d04400766eda726e7e34ee2b5" +
+			"7d9e5d6ca8c6e519ce8b25cd794db70d393ee6e466f03928a4016b9024f7968227b9d4276fd76c60e5a8ca27d173f2daeb518e58566f",
+		"HMAC-SHA-512": "3081a3305f06092a864886f70d01050d3052303106092a864886f70d01050c30240410b83af34c6852c641b677c892541930160202080030" +
+			"0c06082a864886f70d020b0500301d060960864801650304012a0410a7a9d9ede68bc7b725f38f7ff1e4929d04409ec84a329d8cc40eabbd" +
+			"c2eb97991819e2eb54883240bee0612c055c92e8222730742fb99d53d76cf98f58e0028ab56c56d6588267a8653de163f109847144b6",
+	} {
+		der, _ := hex.DecodeString(enc)
+
+		if s, err := parseEncrypted(der); err != nil || s.prf != prf {
+			t.Errorf("a key under PBKDF2-%s is read as %q: %v", prf, s.prf, err)
+
+			continue
+		}
+
+		if got, err := DecryptPrivateKey(der, []byte("conflux-kat")); err != nil || !bytes.Equal(got, p8) {
+			t.Errorf("a key under PBKDF2-%s does not open to its key: %v", prf, err)
+		}
+	}
+}
+
 // pbes2KAT is the known answer, frozen once OpenSSL 3.5.9 had opened it to p8.
 const pbes2KAT = "3081a4306006092a864886f70d01050d3053303206092a864886f70d01050c3025041011111111111111111111111111111111" +
 	"02030927c0300c06082a864886f70d02090500301d060960864801650304012a0410222222222222222222222222222222220440" +

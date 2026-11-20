@@ -78,7 +78,9 @@ which the module never sees; an AES block alone, which is AES-ECB; AES-CBC outsi
 `internal/pki/pbes2.go`; and the rest of the list in
 [security.md](security.md#fips-140-3-and-cmvp). Each rule's control is a file planted to
 break it. **`pki.TestPBES2KnownAnswer`** holds an encrypted key's exact bytes under a fixed
-salt and IV, which OpenSSL 3.5 opens to the same key; **`pki.TestPBMAC1KnownAnswer`** holds a
+salt and IV, which OpenSSL 3.5 opens to the same key; **`pki.TestEverySHA2PRFIsRead`** opens
+that key as OpenSSL 4.1 encrypted it under PBKDF2 with HMAC-SHA-224, -384 and -512, each PRF
+named as it is; **`pki.TestPBMAC1KnownAnswer`** holds a
 PKCS#12 MAC to the digest Python's hashlib computes independently, and its parameters to RFC
 9579's encoding; and **`pki.TestShowGoldens`** holds what
 `cert show` prints of committed certificates, a request, a list and a public key, in

@@ -104,6 +104,11 @@ func (s *Supervisor) watch(ctx context.Context, cfg *config.Config, up brought, 
 	// unproven is a link rebuilt and not yet seen carrying anything.
 	var unproven bool
 
+	// gone is a link whose device has left the filesystem. Nothing is built on a device that
+	// is not there, so the anchor on it is stopped, and only the filesystem is asked -- no
+	// bring-up, no state written -- until the device is back to be rebuilt on.
+	var gone bool
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -116,10 +121,23 @@ func (s *Supervisor) watch(ctx context.Context, cfg *config.Config, up brought, 
 		var st *anchorctl.Status
 
 		if cfg.Anchor() && anchor.due() {
-			l := s.lost(ctx, cfg.Uplink, device, &zeroSince)
+			var l look
+
+			switch {
+			case !gone:
+				l = s.lost(ctx, cfg.Uplink, device, &zeroSince)
+			case present(device):
+				gone, l = false, look{why: "the uplink " + cfg.Uplink + " is back on this machine", link: true}
+			}
+
 			st = l.status
 
 			switch {
+			case gone:
+				// Still not there.
+			case l.gone:
+				gone, unproven = true, false
+				s.stopLost(ctx, l.why)
 			case l.why == "" && (cfg.Uplink == "" || l.carrying):
 				// Doing its job, so whatever failed before has stopped failing.
 				anchor.backoff, unproven = anchor.least, false
@@ -183,6 +201,18 @@ const (
 	gaveUp                   // it has been refused for good too many times in a row
 	respawned                // the decision no longer fits; the cycle starts anchord again
 )
+
+// stopLost stops an anchor whose link's device has gone, to be rebuilt once the device is back.
+func (s *Supervisor) stopLost(ctx context.Context, why string) {
+	s.clearReady()
+	s.report().Warn("%s; the anchor is stopped until it is back", why)
+
+	stop, cancel := context.WithTimeout(ctx, stopTimeout)
+	defer cancel()
+
+	// Best effort, as a rebuild's: an anchor holding a device that has gone carries nothing.
+	_ = s.ctl.Stop(stop)
+}
 
 // errNoConnection is a rebuilt link that ended again with nothing carried: the rebuild it
 // counts against the backoff as failed, which a retry may yet fix.
@@ -316,8 +346,9 @@ type look struct {
 	why  string
 	link bool
 
-	// carrying is a link that carries a connection now.
-	carrying bool
+	// carrying is a link that carries a connection now, and gone one whose device has left
+	// the filesystem.
+	carrying, gone bool
 
 	// status is what status said, where it was asked and answered.
 	status *anchorctl.Status
@@ -331,7 +362,7 @@ func (s *Supervisor) lost(ctx context.Context, uplink, device string, zeroSince 
 	if uplink != "" {
 		dead, carrying, reason, err := s.linkIsDead(ctx, device, zeroSince)
 		if dead {
-			return look{why: "the uplink " + uplink + " " + reason, link: true}
+			return look{why: "the uplink " + uplink + " " + reason, link: true, gone: reason == deviceGone}
 		}
 
 		if err == nil {
@@ -358,10 +389,8 @@ func (s *Supervisor) lost(ctx context.Context, uplink, device string, zeroSince 
 // A connection count held at zero past the grace period is the general case, and the
 // one that catches a device still present whose line has died.
 func (s *Supervisor) linkIsDead(ctx context.Context, device string, zeroSince *time.Time) (dead, carrying bool, why string, err error) {
-	if device != "" {
-		if _, err := os.Stat(device); errors.Is(err, fs.ErrNotExist) {
-			return true, false, "is gone from this machine", nil
-		}
+	if device != "" && !present(device) {
+		return true, false, deviceGone, nil
 	}
 
 	probe, cancel := context.WithTimeout(ctx, stopTimeout)
@@ -390,6 +419,16 @@ func (s *Supervisor) linkIsDead(ctx context.Context, device string, zeroSince *t
 	}
 
 	return true, false, "has carried nothing for " + now.Sub(*zeroSince).Truncate(time.Second).String(), nil
+}
+
+// deviceGone is why a link whose device has left the filesystem has ended.
+const deviceGone = "is gone from this machine"
+
+// present reports whether the device at path is on the filesystem.
+func present(path string) bool {
+	_, err := os.Stat(path)
+
+	return !errors.Is(err, fs.ErrNotExist)
 }
 
 // rebuild stops whatever anchor is left and builds it again from the configuration.

@@ -170,7 +170,7 @@ anchor when it has ended:
 
 | Signal | |
 |---|---|
-| the device is gone from the filesystem | immediate — an unplugged adapter is not ambiguous |
+| the device is gone from the filesystem | immediate — an unplugged adapter is not ambiguous; the anchor is stopped, and rebuilt once the device is back |
 | `anchor_connections` has been zero for 90 seconds | the general case, and the one that catches a device still present whose line has died |
 
 A link is point-to-point and carries exactly one peer, which is what makes a

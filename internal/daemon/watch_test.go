@@ -469,3 +469,61 @@ func TestAnObserverThatDidNotStartBesideAnAnchorIsStartedAgain(t *testing.T) {
 		t.Errorf("the observer was started %d times, want once by the bring-up and once by the watcher", n)
 	}
 }
+
+// TestAGoneDeviceIsWaitedFor: nothing can be built on a device that has left the filesystem,
+// so the anchor on it is stopped once and nothing more is tried -- no bring-up, no state written
+// -- until the device is back, when the anchor is rebuilt on it and the reopen counted.
+func TestAGoneDeviceIsWaitedFor(t *testing.T) {
+	t.Setenv(fakeAnchorctlStatusEnv, "running")
+
+	s, log := supervised(t, "1")
+	s.priv.Dir = s.Dirs.RootAnchorDir()
+
+	device := filepath.Join(t.TempDir(), "ttyUSB0")
+
+	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, Uplink: device}
+	if err := config.Save(s.Dirs, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	credentialed(t, s.Dirs)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+
+	go func() {
+		s.watch(ctx, cfg, brought{anchor: true}, time.Millisecond)
+		close(done)
+	}()
+
+	defer func() {
+		cancel()
+		<-done
+	}()
+
+	eventually(t, "the anchor on the gone device stopped", func() bool { return slices.Contains(ran(t, log), "stop") })
+	time.Sleep(200 * time.Millisecond)
+
+	if cmds := ran(t, log); slices.Contains(cmds, "start") || len(cmds) != 1 {
+		t.Errorf("anchorctl ran %v with the device gone; want the one stop", cmds)
+	}
+
+	if _, err := os.Stat(s.Dirs.StateFile()); err == nil {
+		t.Error("the state was written with the device gone")
+	}
+
+	if err := os.WriteFile(device, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Counted in the state the bring-up writes once anchorctl's start has answered.
+	eventually(t, "the anchor rebuilt on the device back, and the reopen counted", func() bool {
+		st, err := config.LoadState(s.Dirs)
+
+		return err == nil && st.LinkReopens > 0
+	})
+
+	if st, _ := config.LoadState(s.Dirs); st.LinkReopens != 1 || !slices.Contains(ran(t, log), "start") {
+		t.Errorf("the state counts %d reopens, and anchorctl ran %v; want the one reopen, started", st.LinkReopens, ran(t, log))
+	}
+}

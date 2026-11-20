@@ -61,9 +61,9 @@ permanently on a cable stops being admitted after thirty days; `conflux status` 
 `credential EXPIRED`.
 
 **A link that ended is reopened for you.** A device is not reopened by anchor, so
-conflux watches it: a device that leaves the filesystem is acted on at once, and a
-link carrying nothing for 90 seconds is treated as ended. Either way the anchor is
-rebuilt on it. `conflux status` shows the tally, which is the thing to look at when a
+conflux watches it: a device that leaves the filesystem is acted on at once, stopping the
+anchor until the device is back, and a link carrying nothing for 90 seconds is treated as
+ended. Either way the anchor is rebuilt on it. `conflux status` shows the tally, which is the thing to look at when a
 machine seems fine but keeps losing peers:
 
 ```console

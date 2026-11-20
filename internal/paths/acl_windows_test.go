@@ -1,14 +1,13 @@
 package paths
 
 import (
-	"encoding/binary"
 	"errors"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-	"unicode/utf16"
 
 	"github.com/veil-net/conflux/internal/privtest"
 	"golang.org/x/sys/windows"
@@ -173,6 +172,79 @@ func mklinkJ(t *testing.T, link, target string) string {
 	return link
 }
 
+// TestSecureReplacesAJunctionRoot: a handle opened on a junction root while its DACL let somebody
+// write its attributes keeps that right once the DACL is tightened, and heldLink judges the DACL as
+// found, so secure replaces a junction root with one of its own, made through its own handle with
+// Restrict's ownership and DACL and leading to the directory it judged: the handle opened beforehand
+// repoints nothing the root's name leads to, and the junction there is SYSTEM's or the
+// Administrators' under a protected DACL. Windows-only, so it runs in CI's platforms job alone.
+func TestSecureReplacesAJunctionRoot(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", "")
+
+	judged := t.TempDir()
+	root := mklinkJ(t, filepath.Join(t.TempDir(), "j"), judged)
+
+	early := openToWrite(t, root)
+	defer windows.CloseHandle(early)
+
+	if err := secure(root); err != nil {
+		t.Fatalf("secure(a junction root only this account and the system may change) = %v", err)
+	}
+
+	_ = leadTo(early, t.TempDir()) // the found junction, which the name no longer leads through
+
+	led, err := os.Stat(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want, err := os.Stat(judged)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !os.SameFile(led, want) {
+		t.Errorf("%s no longer leads to %s once a handle opened on it before secure repointed it", root, judged)
+	}
+
+	h, err := openFile(root, readAccess, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.CloseHandle(h)
+
+	if link, err := nameSurrogate(h); err != nil || !link {
+		t.Errorf("%s is no junction once secure replaced it (%v)", root, err)
+	}
+
+	if sd, err := security(h); err != nil || !secured(sd) {
+		t.Errorf("the junction secure made at %s is not SYSTEM's or the Administrators' under a protected DACL (%v)",
+			root, err)
+	}
+}
+
+// TestSecureRefusesAJunctionRootMadeAgain: secure removes a junction root before it makes its own at
+// the name, and something somebody made there meanwhile is refused, naming the root. Windows-only, so
+// it runs in CI's platforms job alone.
+func TestSecureRefusesAJunctionRootMadeAgain(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", "")
+
+	root := mklinkJ(t, filepath.Join(t.TempDir(), "j"), t.TempDir())
+
+	was := replacing
+	t.Cleanup(func() { replacing = was })
+
+	replacing = func(dir string) {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := secure(root); err == nil || !strings.Contains(err.Error(), root+" was made again") {
+		t.Errorf("secure(a junction root made again as it was replaced) = %v, want a refusal naming it", err)
+	}
+}
+
 // TestSecureHoldsAJunctionRoot: a root that is a junction is held to who may point it elsewhere,
 // as a link is on Unix to its owner: %ProgramData% lets any user make one where conflux's root
 // is not yet, leading into a directory of SYSTEM's, whose owner would answer for it. One whose
@@ -333,7 +405,7 @@ func mountPoint(t *testing.T, dir, target string) {
 	h := openToWrite(t, dir)
 	defer windows.CloseHandle(h)
 
-	if err := setMountPoint(h, target); err != nil {
+	if err := leadTo(h, target); err != nil {
 		t.Fatalf("make %s a junction: %v", dir, err)
 	}
 }
@@ -357,29 +429,9 @@ func openToWrite(t *testing.T, dir string) windows.Handle {
 	return h
 }
 
-// setMountPoint sets a mount point leading to target on the directory h holds:
-// FSCTL_SET_REPARSE_POINT with REPARSE_DATA_BUFFER's MountPointReparseBuffer -- the substitute
-// name, as NT looks it up, and the name to print, each counted in bytes without its NUL, in one
-// buffer after the lengths.
-func setMountPoint(h windows.Handle, target string) error {
-	sub, print := utf16.Encode([]rune(`\??\`+target)), utf16.Encode([]rune(target))
-
-	b := binary.LittleEndian.AppendUint32(nil, windows.IO_REPARSE_TAG_MOUNT_POINT)
-	b = binary.LittleEndian.AppendUint16(b, uint16(8+2*(len(sub)+1)+2*(len(print)+1)))
-	b = binary.LittleEndian.AppendUint16(b, 0)
-	b = binary.LittleEndian.AppendUint16(b, 0)
-	b = binary.LittleEndian.AppendUint16(b, uint16(2*len(sub)))
-	b = binary.LittleEndian.AppendUint16(b, uint16(2*(len(sub)+1)))
-	b = binary.LittleEndian.AppendUint16(b, uint16(2*len(print)))
-
-	for _, c := range append(append(sub, 0), append(print, 0)...) {
-		b = binary.LittleEndian.AppendUint16(b, c)
-	}
-
-	var n uint32
-
-	return windows.DeviceIoControl(h, windows.FSCTL_SET_REPARSE_POINT, &b[0], uint32(len(b)), nil, 0, &n, nil)
-}
+// leadTo makes the empty directory h holds a junction leading to the directory target, as
+// setMountPoint makes one.
+func leadTo(h windows.Handle, target string) error { return setMountPoint(h, `\??\`+target, target) }
 
 // TestSecureFillsAFoundRoot: a handle opened on a root found unrestricted, by an account its old
 // DACL let write its attributes, keeps that right once the DACL is replaced. So secure makes the
@@ -404,7 +456,7 @@ func TestSecureFillsAFoundRoot(t *testing.T) {
 
 	onlyTheSystems(t, filepath.Join(root, runName))
 
-	if err := setMountPoint(early, t.TempDir()); !errors.Is(err, windows.ERROR_DIR_NOT_EMPTY) {
+	if err := leadTo(early, t.TempDir()); !errors.Is(err, windows.ERROR_DIR_NOT_EMPTY) {
 		t.Errorf("a handle opened on the root before secure made it a junction afterwards: %v, want %v",
 			err, windows.ERROR_DIR_NOT_EMPTY)
 	}
@@ -412,15 +464,16 @@ func TestSecureFillsAFoundRoot(t *testing.T) {
 
 // TestSecureHoldsWhatTheRootHolds: what a root found unrestricted holds is judged, by secure before
 // it restricts the root and by Foreign, by its own owner and DACL, read without following it, and
-// held to who may write it, move it or point it elsewhere: a junction Users may point elsewhere,
-// though where it leads is nobody else's; a folder Users may delete, or write the attributes of,
+// held to who may write it, move it or point it elsewhere: a junction, which conflux makes none of
+// there, whoever may point it elsewhere, though where it leads is nobody else's; a folder Users may delete, or write the attributes of,
 // enough to make a junction of it while it is empty, or add folders to, or write the extended
 // attributes of; one that only inherits the right to write its attributes, which a handle opened
 // before the restriction keeps once the restriction has replaced it; a folder named anchor that another account
 // owns, though it grants anchord what conflux grants it; and one granting anchord that also lets
-// Users add to it. conflux's own layout is let through: a junction only this account and the system
-// may change, and anchor\ and run\anchord\ granting anchord's service SID what makeAnchorDir
-// grants it, run\anchord\sock owned by that SID, which the walk does not go into. Windows-only,
+// Users add to it. conflux's own layout is let through: anchor\ and run\anchord\ granting anchord's
+// service SID what makeAnchorDir grants it, run\anchord\sock owned by that SID, which the walk does
+// not go into, and a SYSTEM anchord's socket in a run\anchord\ of SYSTEM's and the Administrators',
+// a reparse point a lookup does not follow. Windows-only,
 // so it runs in CI's platforms job alone.
 func TestSecureHoldsWhatTheRootHolds(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
@@ -434,6 +487,9 @@ func TestSecureHoldsWhatTheRootHolds(t *testing.T) {
 			grantLink(t, j, windows.FILE_WRITE_ATTRIBUTES)
 
 			return j
+		}},
+		{"a junction only this account and the system may change", func(t *testing.T, root string) string {
+			return mklinkJ(t, filepath.Join(root, "run"), t.TempDir())
 		}},
 		{"a folder Users may delete", func(t *testing.T, root string) string {
 			return grantedFolder(t, filepath.Join(root, "logs"), windows.DELETE)
@@ -489,8 +545,19 @@ func TestSecureHoldsWhatTheRootHolds(t *testing.T) {
 		name string
 		make func(t *testing.T, root string)
 	}{
-		{"a junction only this account and the system may change", func(t *testing.T, root string) {
-			mklinkJ(t, filepath.Join(root, "run"), t.TempDir())
+		{"a SYSTEM anchord's socket", func(t *testing.T, root string) {
+			for _, dir := range []string{filepath.Join(root, runName), filepath.Join(root, runName, "anchord")} {
+				if err := MakeRestricted(dir); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			l, err := net.Listen("unix", filepath.Join(root, runName, "anchord", socketName))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			t.Cleanup(func() { l.Close() })
 		}},
 		{"anchord's directories, and what anchord made in them", func(t *testing.T, root string) {
 			sid, err := ServiceSID()

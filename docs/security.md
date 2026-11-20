@@ -103,8 +103,14 @@ anything another account may change — that it owns, or that it may write, move
 elsewhere, `anchord`'s own account aside, judged as found, again once the root is restricted,
 and on every run after —
 is refused rather than repaired around, by every
-reader of an ephemeral root too, as is a root that is itself a junction another account may
-point elsewhere (see [windows.md](windows.md#file-permissions)).
+reader of an ephemeral root too, as is a junction in it, and a root that is itself a junction
+another account may point elsewhere; one nobody else may is replaced with a junction conflux
+makes, through its own handle, leading to the directory it judged (see
+[windows.md](windows.md#file-permissions)). One gap is left: a junction root already SYSTEM's or
+the Administrators' under a protected DACL granting nobody else anything, as conflux leaves the
+one it makes, is taken as conflux's and not replaced, so where an administrator tightened a
+junction to that after another account had opened it under a looser DACL, the handle that
+account kept can still point it elsewhere.
 
 `CONFLUX_DIR` can point the extraction somewhere else, which is a knob worth knowing
 about: it lets a caller choose the directory a root daemon executes from. It exists

@@ -116,13 +116,20 @@ whose DACL lets it write — `anchor\` and `run\anchord\` — is not looked insi
 SYSTEM, the Administrators and `anchord` may write there and conflux reads what `anchord` writes
 as untrusted. Every reader of an ephemeral root holds what it holds to the same, so nothing is run
 from one whose contents another account could have planted. So is a root that is a junction
-another account may point elsewhere: `%ProgramData%` lets any user make one where `%ProgramData%\conflux` or
-`%ProgramData%\conflux-ephemeral` is not yet, leading into a directory of SYSTEM's, and point
-it at a directory of their own once conflux has filled it. A junction, the root or one in it,
-is used only when it belongs to SYSTEM, the Administrators, TrustedInstaller or the account
-running conflux, and its DACL grants nobody else the right to write its data, attributes or
-extended attributes, add to it, delete it, or change its DACL or owner; an ephemeral root that fails this is passed over by
-every reader too. And the two binaries the service runs as SYSTEM, and
+another account may point elsewhere: `%ProgramData%` lets any user make one where
+`%ProgramData%\conflux` or `%ProgramData%\conflux-ephemeral` is not yet, leading into a
+directory of SYSTEM's, and point it at a directory of their own once conflux has filled it. A
+junction root is held as a symlinked root is on Unix: used only when it belongs to SYSTEM, the
+Administrators, TrustedInstaller or the account running conflux, and its DACL grants nobody else
+the right to write its data, attributes or extended attributes, add to it, delete it, or change
+its DACL or owner; an ephemeral root that fails this is passed over by every reader too. Then,
+since a handle somebody opened on it while its DACL let them write it could still repoint it in
+place, conflux replaces it: the junction is removed, and one made in its place through conflux's
+own handle, with the root's ownership and DACL from the moment it exists, and pointed through
+that handle at the directory conflux judged. Something made at that name in between is refused. A
+junction or a link inside a root, anywhere conflux looks, is refused whoever may change it, since
+conflux makes none there; `anchor\` and `run\anchord\`, which `anchord` writes, are not looked
+inside. And the two binaries the service runs as SYSTEM, and
 `wintun.dll` beside them, are run only if Administrators, SYSTEM or the account running
 conflux owns them — a set directory is named for content anybody can compute, so one
 made by somebody else is extracted again rather than trusted.

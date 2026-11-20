@@ -166,42 +166,57 @@ func parentsAs(dir string, euid int) error {
 }
 
 // mayWrite is who besides root and euid may write the directory p, as a refusal names them,
-// or "": anybody, where its mode lets anybody; its group, where the mode lets the group and the
-// group lets in another account (groupOf); and whoever its ACL lets, where it has one
-// (extendedWriters) -- whose mask a POSIX.1e ACL makes the mode's group bits, so the group is
-// then judged by the ACL's entry for it instead. A sticky directory lets nobody rename what is
-// not theirs, so what lets them write it is left out there.
+// or "": see judge, which it hands p's ACL (extendedWriters).
 func mayWrite(p string, fi os.FileInfo, gid uint32, euid int) (string, error) {
-	if fi.Mode()&os.ModeSticky != 0 {
-		return "", nil
-	}
-
 	acl, aclGroup, err := extendedWriters(p)
 	if err != nil {
 		return "", fmt.Errorf("read the ACL of %s: %w", p, err)
 	}
 
-	perm := fi.Mode().Perm()
-	if perm&0o002 != 0 {
-		return "anybody may write, and anybody", nil
-	}
+	return judge(fi.Mode(), gid, acl, aclGroup, euid), nil
+}
 
-	if !aclGroup && perm&0o020 != 0 {
-		acl = append([]writer{{who: theGroup}}, acl...)
-	}
+// judge is who besides root and euid may write a directory of mode and group gid with the ACL
+// acl, as a refusal names them, or "": anybody, where its mode or its ACL lets anybody; its
+// group, where the mode or the ACL lets the group and the group lets in another account
+// (groupOf); a user other than euid, or a group that lets in another account, that its ACL
+// names; and any account an ACL names by a UUID alone. aclGroup is an ACL whose mask the mode's
+// group bits are (POSIX.1e), which then says what the group may itself. A sticky directory lets
+// nobody rename what is not theirs, so what only lets them write it is left out there, as its
+// mode's bits are; a right the sticky bit does not hold back is not.
+func judge(mode os.FileMode, gid uint32, acl []writer, aclGroup bool, euid int) string {
+	sticky := mode&os.ModeSticky != 0
 
-	for _, w := range acl {
-		switch {
-		case w.who == aUser && int(w.id) != euid && w.id != 0:
-			return fmt.Sprintf("its ACL lets uid %d write, and that account", w.id), nil
-		case w.who == aGroup && !groupOf(w.id, euid):
-			return fmt.Sprintf("its ACL lets gid %d write, and any account in it", w.id), nil
-		case w.who == theGroup && !groupOf(gid, euid):
-			return fmt.Sprintf("its group, gid %d, may write, and any account in it", gid), nil
+	if !sticky {
+		if mode&0o002 != 0 {
+			return "anybody may write, and anybody"
+		}
+
+		if !aclGroup && mode&0o020 != 0 {
+			acl = append([]writer{{who: theGroup}}, acl...)
 		}
 	}
 
-	return "", nil
+	for _, w := range acl {
+		if sticky && !w.pastSticky {
+			continue
+		}
+
+		switch {
+		case w.who == aUser && int(w.id) != euid && w.id != 0:
+			return fmt.Sprintf("its ACL lets uid %d write, and that account", w.id)
+		case w.who == aGroup && !groupOf(w.id, euid):
+			return fmt.Sprintf("its ACL lets gid %d write, and any account in it", w.id)
+		case w.who == theGroup && !groupOf(gid, euid):
+			return fmt.Sprintf("its group, gid %d, may write, and any account in it", gid)
+		case w.who == everyone:
+			return "its ACL lets anybody write, and anybody"
+		case w.who == anAccount:
+			return fmt.Sprintf("its ACL lets the user or group %s write, and whoever that is", w.uuid)
+		}
+	}
+
+	return ""
 }
 
 // isLink reports whether fi, read without following it, is a link a lookup follows.

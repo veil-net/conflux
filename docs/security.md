@@ -107,9 +107,8 @@ conflux in it for the boot service to run as root. The way to it is every direct
 lookup of the root passes through: those above it as it is spelled and, for each link on the
 way — a junction among them on Windows, which the lookup follows as it does a link — the
 directory the link is in and those above where it leads, however many links are chained, with
-each link held to its owner too, who may point it elsewhere. On Unix that is any
-directory on the way owned by an account other than root and the one running conflux, or one
-its group or
+each link held to its owner too, who may point it elsewhere. On Unix that is any directory on
+the way owned by an account other than root and the one running conflux, or one its group or
 anybody may write, unless it is sticky, as `/tmp` is, where nobody may rename what is not
 theirs. A group that lets in no account but the one running conflux, as the group database
 answers (its members, and every account it is the primary group of) — the group of one user
@@ -122,8 +121,18 @@ is refused. macOS asks its directory service either way. On Linux the directory'
 counts as well as its mode: an entry that lets a named user other than root and the one running
 conflux write it, or a named group that lets in anybody else, once the mask has had its say, is
 refused like its mode's bits. Once a directory has an ACL its mode's group bits are the mask
-rather than what its group may do, so its group is then judged by the ACL's entry for it. On
-Windows it is any directory
+rather than what its group may do, so its group is then judged by the ACL's entry for it.
+FreeBSD's POSIX.1e ACLs (UFS) are read the same way. An extended ACL — macOS's, or FreeBSD's NFSv4 ACL
+(ZFS) — is read too, without cgo: an entry allowing anybody but the owner a right to write the
+directory (to add a file or a directory to it, to delete what is in it, or to change its ACL or
+owner) is refused, and on macOS, whose ACLs name accounts by a UUID conflux cannot map to one
+without cgo, that is every such entry, one naming the account conflux runs as included. An entry
+counts whatever it says of inheritance: one the directory only passes on is inherited by the root
+conflux makes inside it. A deny entry takes nothing away from what is counted, so it is not
+read: the `everyone deny delete` on a macOS home directory passes. A sticky directory lets
+through an entry that only lets somebody write it, as it does its mode's bits — ZFS's own ACL
+for a `1777` `/tmp` among them — but not one that lets them delete what is in it or change its
+ACL or owner, which the sticky bit does not hold back. On Windows it is any directory
 on the way owned by an account other than SYSTEM, the Administrators, TrustedInstaller and the
 one running conflux, or one whose DACL grants another account the right to delete or rename
 what is in it, to delete or rename the directory itself, or to change its DACL or owner; the

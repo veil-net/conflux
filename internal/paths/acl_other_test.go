@@ -446,3 +446,56 @@ func TestAncestorsFollowsEveryLink(t *testing.T) {
 		}
 	}
 }
+
+// TestJudgeHoldsAnACLToTheStickyBit: a sticky directory lets nobody rename what is not theirs,
+// so an ACL entry that only lets somebody write it is let through there, as its mode's bits
+// are -- ZFS's trivial ACL for a 1777 /tmp among them -- but not one that lets them delete what
+// is in it or change its ACL or owner, which the sticky bit does not hold back. Nowhere is a
+// deny entry, or the everyone-deny-delete on a macOS home directory, read as anything.
+func TestJudgeHoldsAnACLToTheStickyBit(t *testing.T) {
+	const allow, deny = nfs4Allow, 0x0200
+
+	tmp, err := freebsdACL(freebsdBuf(
+		[5]uint32{0x01, 0, 0x1ffff, allow},
+		[5]uint32{0x40, 0, nfs4AddFile | nfs4AddSubdirectory, allow}), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	deletes, err := kauthAttr(kauthAttrBuf(kauthEntry{kauthEveryone, kauthPermit, kauthDeleteChild}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	home, err := kauthAttr(kauthAttrBuf(kauthEntry{kauthEveryone, deny, 1 << 4}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sticky := os.ModeDir | os.ModeSticky | 0o777
+	euid := os.Geteuid()
+
+	for _, c := range []struct {
+		name    string
+		mode    os.FileMode
+		acl     []writer
+		refused string
+	}{
+		{"a sticky /tmp's trivial NFSv4 ACL", sticky, tmp, ""},
+		{"the same ACL without the sticky bit", sticky &^ os.ModeSticky, tmp, "anybody"},
+		{"a sticky directory everybody may delete from", sticky, deletes, "anybody"},
+		{"a home directory's deny", os.ModeDir | 0o750, home, ""},
+		{"a UUID's write", os.ModeDir | 0o755, []writer{{who: anAccount, uuid: "5B1E0F1C-2D3E-4F50-6172-8394A5B6C7D8"}},
+			"5B1E0F1C-2D3E-4F50-6172-8394A5B6C7D8"},
+		{"root's write", os.ModeDir | 0o755, []writer{{who: aUser, id: 0}}, ""},
+	} {
+		got := judge(c.mode, 0, c.acl, false, euid)
+
+		switch {
+		case c.refused != "" && !strings.Contains(got, c.refused):
+			t.Errorf("%s: judge = %q, want a refusal naming %s", c.name, got, c.refused)
+		case c.refused == "" && got != "":
+			t.Errorf("%s: judge = %q, want nothing", c.name, got)
+		}
+	}
+}

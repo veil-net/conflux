@@ -55,6 +55,48 @@ else
 fi
 rm -rf "$certs"
 
+# A CONFLUX_DIR is refused where an ACL lets another account write a directory above it, which
+# the directory's mode does not show. FreeBSD keeps two kinds, POSIX.1e (UFS mounted with acls)
+# and NFSv4 (ZFS, and UFS mounted with nfsv4acls), and conflux asks the kernel for each, so each
+# is given here on a memory disk of its own, whatever the VM booted on. enrol is the cheapest
+# command that holds a root to its parents, and with no manifest to read it goes no further:
+# refused, it names the ACL; with the ACL taken off, it gets as far as the missing manifest.
+acl_leg() { # MOUNT-OPTION SETFACL-ENTRY
+  mnt=$(mktemp -d /tmp/cfx-acl.XXXXXX)
+  md=$(mdconfig -a -t swap -s 16m)
+  newfs "/dev/$md" >/dev/null
+  mount -o "$1" "/dev/$md" "$mnt"
+  mkdir "$mnt/open"
+  setfacl -m "$2" "$mnt/open"
+
+  out=$(CONFLUX_DIR="$mnt/open/conflux" "$CONFLUX" enrol --manifest "$mnt/none" 2>&1) &&
+    fail "enrol under a directory whose $1 ACL lets nobody write succeeded"
+  case $out in
+    *"inside $mnt/open, which its ACL lets uid "*) ;;
+    *) printf '%s\n' "$out" >&2; fail "a CONFLUX_DIR under a directory whose $1 ACL lets nobody write was not refused for it" ;;
+  esac
+
+  setfacl -b "$mnt/open"
+  out=$(CONFLUX_DIR="$mnt/open/conflux" "$CONFLUX" enrol --manifest "$mnt/none" 2>&1) &&
+    fail "enrol with no manifest succeeded"
+  case $out in
+    *"its ACL"*) printf '%s\n' "$out" >&2; fail "the $1 ACL taken off, the CONFLUX_DIR is still refused for it" ;;
+    *"read the manifest"*) ;;
+    *) printf '%s\n' "$out" >&2; fail "the $1 ACL taken off, enrol did not get past the CONFLUX_DIR's parents" ;;
+  esac
+
+  umount "$mnt"
+  mdconfig -d -u "$md"
+  rmdir "$mnt"
+}
+
+if [ "$os" = freebsd ]; then
+  say "a CONFLUX_DIR under a directory whose POSIX.1e ACL lets another account write is refused"
+  acl_leg acls u:nobody:w
+  say "a CONFLUX_DIR under a directory whose NFSv4 ACL lets another account write is refused"
+  acl_leg nfsv4acls user:nobody:write_data::allow
+fi
+
 # A run cut short leaves its registration behind; a fresh VM has none to remove.
 "$CONFLUX" uninstall --yes >/dev/null 2>&1 || true
 

@@ -153,19 +153,18 @@ func (r *ephemeralRun) ipv4(cfg *config.Config, flagValue string, none bool) err
 	return nil
 }
 
-// root refuses what an ephemeral run of verb cannot do as whoever runs it. A TUN needs root
-// (Administrator on Windows), and observing needs the host's capture, which only root gives
-// here. Everything else runs as an ordinary user: userspace needs no privilege, and an
-// ephemeral run registers nothing that would. On Windows every root conflux keeps is
-// Administrators', so there an ephemeral run needs Administrator whatever its mode.
-func (r *ephemeralRun) root(verb string, cfg *config.Config, args []string) error {
+// root refuses what an ephemeral proxy cannot do as whoever runs it. Observing needs the
+// host's capture, which only root gives here. Everything else runs as an ordinary user:
+// userspace needs no privilege, and an ephemeral run registers nothing that would. On Windows
+// every root conflux keeps is Administrators', so there an ephemeral run needs Administrator
+// whatever it runs. An ephemeral up's TUN needs root too, which up asks for itself, as it does
+// for every run.
+func (r *ephemeralRun) root(cfg *config.Config, args []string) error {
 	switch {
-	case verb == "up":
-		return needsRoot("bringing up a network interface", verb, args)
 	case cfg.Observer != nil:
-		return needsRoot("observing this host's traffic", verb, args)
+		return needsRoot("observing this host's traffic", "proxy", args)
 	case runtime.GOOS == "windows":
-		return needsRoot("keeping an ephemeral run's socket and binaries", verb, args)
+		return needsRoot("keeping an ephemeral run's socket and binaries", "proxy", args)
 	}
 
 	return nil

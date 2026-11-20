@@ -105,7 +105,7 @@ func runProxy(ctx context.Context, args []string) int {
 	}
 
 	if run != nil {
-		if err := run.root("proxy", cfg, args); err != nil {
+		if err := run.root(cfg, args); err != nil {
 			return fail(err)
 		}
 	}

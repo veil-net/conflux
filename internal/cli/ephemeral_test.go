@@ -123,15 +123,15 @@ func TestAnEphemeralProxyNeedsNoRoot(t *testing.T) {
 
 	run := &ephemeralRun{}
 
-	if err := run.root("proxy", &config.Config{}, nil); (err == nil) != (runtime.GOOS != "windows") {
+	if err := run.root(&config.Config{}, nil); (err == nil) != (runtime.GOOS != "windows") {
 		t.Errorf("an unprivileged ephemeral proxy on %s: %v", runtime.GOOS, err)
 	}
 
-	if err := run.root("proxy", &config.Config{Observer: &config.Observer{}}, nil); err == nil {
+	if err := run.root(&config.Config{Observer: &config.Observer{}}, nil); err == nil {
 		t.Error("an unprivileged ephemeral proxy that observes was let through")
 	}
 
-	if err := run.root("up", &config.Config{}, nil); err == nil {
-		t.Error("an unprivileged ephemeral up was let through")
+	if _, errOut, code := capture(t, "up", "--ephemeral"); code != ExitDenied {
+		t.Errorf("an unprivileged ephemeral up exited %d, want %d:\n%s", code, ExitDenied, errOut)
 	}
 }

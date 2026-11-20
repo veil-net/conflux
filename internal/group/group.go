@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/veil-net/conflux/internal/privcheck"
 )
@@ -16,55 +17,113 @@ import (
 // Users are the accounts the group of that name, whose id is gid, lets in: the members it
 // lists, and every account it is the primary group of.
 func Users(name, gid string) ([]string, error) {
-	var groupArgv, usersArgv []string
-
-	// A bare busybox has no getent, and only the files to ask.
-	if _, err := exec.LookPath("getent"); err != nil && runtime.GOOS != "darwin" {
-		return usersFromFiles(name, gid)
-	}
-
-	if runtime.GOOS == "darwin" {
-		groupArgv = []string{"dscl", ".", "-read", "/Groups/" + name}
-		usersArgv = []string{"dscl", ".", "-list", "/Users", "PrimaryGroupID"}
-	} else {
-		groupArgv = []string{"getent", "group", name}
-		usersArgv = []string{"getent", "passwd"}
-	}
-
-	group, err := exec.Command(groupArgv[0], groupArgv[1:]...).Output() //nolint:gosec // our own argv
+	group, err := record(name)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", privcheck.Command(groupArgv...), err)
+		return nil, err
 	}
 
-	users, err := exec.Command(usersArgv[0], usersArgv[1:]...).Output() //nolint:gosec // our own argv
+	users, err := accounts()
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", privcheck.Command(usersArgv...), err)
+		return nil, err
 	}
 
-	return usersFrom(runtime.GOOS, string(group), string(users), gid), nil
+	return usersFrom(runtime.GOOS, group, users, gid), nil
 }
 
-// usersFromFiles is Users read from /etc/group and /etc/passwd.
-func usersFromFiles(name, gid string) ([]string, error) {
-	groups, err := os.ReadFile("/etc/group")
-	if err != nil {
-		return nil, err
-	}
+// Cached is Users for a process that asks of the same groups again and again, as every walk of a
+// directory's parents does: each group's record, and the account database behind them all, read
+// once for the process and kept, what failed to be read excepted. A change to who a group lets in
+// while the process runs is not seen by it; account, which makes such changes, asks Users.
+func Cached(name, gid string) ([]string, error) {
+	cache.Lock()
+	defer cache.Unlock()
 
-	users, err := os.ReadFile("/etc/passwd")
-	if err != nil {
-		return nil, err
-	}
-
-	var group string
-
-	for line := range strings.Lines(string(groups)) {
-		if strings.HasPrefix(line, name+":") {
-			group = line
+	group, ok := cache.records[name]
+	if !ok {
+		var err error
+		if group, err = record(name); err != nil {
+			return nil, err
 		}
+
+		cache.records[name] = group
 	}
 
-	return usersFrom(runtime.GOOS, group, string(users), gid), nil
+	if cache.accounts == nil {
+		users, err := accounts()
+		if err != nil {
+			return nil, err
+		}
+
+		cache.accounts = &users
+	}
+
+	return usersFrom(runtime.GOOS, group, *cache.accounts, gid), nil
+}
+
+// cache is what Cached has read.
+var cache = struct {
+	sync.Mutex
+	records  map[string]string
+	accounts *string
+}{records: map[string]string{}}
+
+// record is the group name's record: dscl's on macOS, else getent's, or, where there is no getent --
+// a bare busybox has none -- its line of /etc/group.
+func record(name string) (string, error) {
+	switch {
+	case runtime.GOOS == "darwin":
+		return output("dscl", ".", "-read", "/Groups/"+name)
+	case files():
+		groups, err := os.ReadFile("/etc/group")
+		if err != nil {
+			return "", err
+		}
+
+		var group string
+
+		for line := range strings.Lines(string(groups)) {
+			if strings.HasPrefix(line, name+":") {
+				group = line
+			}
+		}
+
+		return group, nil
+	}
+
+	return output("getent", "group", name)
+}
+
+// accounts is every account's primary group, as dscl lists them on macOS, else getent's passwd
+// database, or /etc/passwd where there is no getent.
+func accounts() (string, error) {
+	switch {
+	case runtime.GOOS == "darwin":
+		return output("dscl", ".", "-list", "/Users", "PrimaryGroupID")
+	case files():
+		users, err := os.ReadFile("/etc/passwd")
+
+		return string(users), err
+	}
+
+	return output("getent", "passwd")
+}
+
+// files reports whether the databases are read from their files: where there is no getent, outside
+// macOS.
+func files() bool {
+	_, err := exec.LookPath("getent")
+
+	return err != nil && runtime.GOOS != "darwin"
+}
+
+// output is what argv, run, prints, or why it failed, naming it.
+var output = func(argv ...string) (string, error) {
+	out, err := exec.Command(argv[0], argv[1:]...).Output() //nolint:gosec // our own argv
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", privcheck.Command(argv...), err)
+	}
+
+	return string(out), nil
 }
 
 // usersFrom reads Users' two answers: getent's group line and passwd database, or

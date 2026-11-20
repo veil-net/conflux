@@ -17,8 +17,10 @@ import (
 	"github.com/veil-net/conflux/internal/group"
 )
 
-// groupUsers is who a group lets in; a test's stands in for the system's databases.
-var groupUsers = group.Users
+// groupUsers is who a group lets in, each group and the account database read once for the
+// process (group.Cached), since every walk of a CONFLUX_DIR's parents asks it of each one its group
+// may write; a test's stands in for the system's databases.
+var groupUsers = group.Cached
 
 // Restrict and Trusted are Windows's. Here a mode set on the descriptor and a 0700
 // directory that belongs to whoever runs conflux are the whole of it, and secure is

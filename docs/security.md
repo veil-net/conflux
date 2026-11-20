@@ -118,7 +118,12 @@ that account alone, so its write is not refused; a group with anybody else in it
 database cannot answer for, is. conflux is built without cgo, so on Linux and the BSDs it
 names the directory's group and the account it runs as from `/etc/group` and `/etc/passwd`
 alone: one that is only in a network directory (LDAP, SSSD) is not found there, and the group
-is refused. macOS asks its directory service either way. On Windows it is any directory
+is refused. macOS asks its directory service either way. On Linux the directory's POSIX ACL
+counts as well as its mode: an entry that lets a named user other than root and the one running
+conflux write it, or a named group that lets in anybody else, once the mask has had its say, is
+refused like its mode's bits. Once a directory has an ACL its mode's group bits are the mask
+rather than what its group may do, so its group is then judged by the ACL's entry for it. On
+Windows it is any directory
 on the way owned by an account other than SYSTEM, the Administrators, TrustedInstaller and the
 one running conflux, or one whose DACL grants another account the right to delete or rename
 what is in it, to delete or rename the directory itself, or to change its DACL or owner; the

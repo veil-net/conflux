@@ -114,12 +114,11 @@ func Foreign(dir string) error {
 }
 
 // parentsAs refuses dir where another account may write a directory above it: one whose
-// owner is neither root nor euid, who can always give itself the right, or one its group or
-// anybody may write, unless it is sticky, where nobody may rename what is not theirs -- or, for
-// its group, unless the group lets in no account but euid's (groupOf). Whoever may write a
-// parent can move dir aside and put a directory of their own in its place, with a conflux in it
-// for the boot service to run as root. A link on the way is held to the directory it is in, to
-// those above where it leads, and to its owner, who may point it elsewhere (ancestors).
+// owner is neither root nor euid, who can always give itself the right, or one that lets
+// another account write it (mayWrite). Whoever may write a parent can move dir aside and put a
+// directory of their own in its place, with a conflux in it for the boot service to run as
+// root. A link on the way is held to the directory it is in, to those above where it leads,
+// and to its owner, who may point it elsewhere (ancestors).
 func parentsAs(dir string, euid int) error {
 	above, err := ancestors(dir)
 	if err != nil {
@@ -139,7 +138,7 @@ func parentsAs(dir string, euid int) error {
 
 		where, who := "inside", ""
 
-		switch perm := fi.Mode().Perm(); {
+		switch {
 		case isLink(fi):
 			// A link's mode means nothing: who may change it is its owner, and whoever may
 			// write the directory it is in, which is checked as one above.
@@ -150,11 +149,10 @@ func parentsAs(dir string, euid int) error {
 			}
 		case int(st.Uid) != 0 && int(st.Uid) != euid:
 			who = fmt.Sprintf("belongs to uid %d, who", st.Uid)
-		case fi.Mode()&os.ModeSticky != 0:
-		case perm&0o002 != 0:
-			who = "anybody may write, and anybody"
-		case perm&0o020 != 0 && !groupOf(st.Gid, euid):
-			who = fmt.Sprintf("its group, gid %d, may write, and any account in it", st.Gid)
+		default:
+			if who, err = mayWrite(p, fi, st.Gid, euid); err != nil {
+				return err
+			}
 		}
 
 		if who != "" {
@@ -165,6 +163,45 @@ func parentsAs(dir string, euid int) error {
 	}
 
 	return nil
+}
+
+// mayWrite is who besides root and euid may write the directory p, as a refusal names them,
+// or "": anybody, where its mode lets anybody; its group, where the mode lets the group and the
+// group lets in another account (groupOf); and whoever its ACL lets, where it has one
+// (extendedWriters) -- whose mask a POSIX.1e ACL makes the mode's group bits, so the group is
+// then judged by the ACL's entry for it instead. A sticky directory lets nobody rename what is
+// not theirs, so what lets them write it is left out there.
+func mayWrite(p string, fi os.FileInfo, gid uint32, euid int) (string, error) {
+	if fi.Mode()&os.ModeSticky != 0 {
+		return "", nil
+	}
+
+	acl, aclGroup, err := extendedWriters(p)
+	if err != nil {
+		return "", fmt.Errorf("read the ACL of %s: %w", p, err)
+	}
+
+	perm := fi.Mode().Perm()
+	if perm&0o002 != 0 {
+		return "anybody may write, and anybody", nil
+	}
+
+	if !aclGroup && perm&0o020 != 0 {
+		acl = append([]writer{{who: theGroup}}, acl...)
+	}
+
+	for _, w := range acl {
+		switch {
+		case w.who == aUser && int(w.id) != euid && w.id != 0:
+			return fmt.Sprintf("its ACL lets uid %d write, and that account", w.id), nil
+		case w.who == aGroup && !groupOf(w.id, euid):
+			return fmt.Sprintf("its ACL lets gid %d write, and any account in it", w.id), nil
+		case w.who == theGroup && !groupOf(gid, euid):
+			return fmt.Sprintf("its group, gid %d, may write, and any account in it", gid), nil
+		}
+	}
+
+	return "", nil
 }
 
 // isLink reports whether fi, read without following it, is a link a lookup follows.

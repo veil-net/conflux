@@ -454,13 +454,13 @@ func TestSecureHoldsAJunctionRoot(t *testing.T) {
 // grant, are the accounts of the machine serving it, which this one cannot judge, so a root on
 // one is refused by secure and by Foreign alike, naming it and the network volume, as the device
 // its handle is open on says and not as it is spelled: reached by its UNC path, through a drive
-// mapped to the share, or through a link leading to that drive. (A link naming the share itself is
-// refused before anything follows it: TestALinkLeadingOffThisMachineOrNowhereIsRefused.) Nothing is
-// made there: secure refuses it before it fills it, and a CONFLUX_DIR there that is not made yet is
-// refused by EnsureAll before it makes the root or anything above it, naming the directory there
-// that is on the network volume. The share is a folder of this machine's, reached through its own
-// server. Windows-only, so it runs in CI's platforms job alone, and skipped where the machine will
-// not share a folder.
+// mapped to the share, or through a link leading to that drive. Nothing is made there: secure
+// refuses it before it fills it, and a CONFLUX_DIR there that is not made yet is refused by
+// EnsureAll before it makes the root or anything above it, naming the directory there that is on
+// the network volume. A link naming the share itself, on the way to a CONFLUX_DIR, is refused as a
+// link before anything follows it (and further in TestALinkLeadingOffThisMachineOrNowhereIsRefused).
+// The share is a folder of this machine's, reached through its own server. Windows-only, so it runs
+// in CI's platforms job alone, and skipped where the machine will not share a folder.
 func TestARootOnANetworkVolumeIsRefused(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
@@ -498,6 +498,19 @@ func TestARootOnANetworkVolumeIsRefused(t *testing.T) {
 		}
 	}
 
+	// A link naming the share itself, on the way to a CONFLUX_DIR, is refused as a link before
+	// anything is looked up through it (offMachineLinks), and not as the network volume it leads to.
+	toShare := dirSymlink(t, filepath.Join(t.TempDir(), "share"), share)
+	made := filepath.Join(toShare, "conflux", "made")
+	t.Setenv("CONFLUX_DIR", made)
+
+	if err := Default().EnsureAll(); err == nil ||
+		!strings.Contains(err.Error(), "resolve "+made+": "+toShare+" is a link conflux cannot follow") ||
+		!strings.Contains(err.Error(), "another machine") {
+		t.Errorf("EnsureAll(a CONFLUX_DIR of %s) = %v, want a refusal naming the link %s and another machine", made,
+			err, toShare)
+	}
+
 	if _, err := os.Lstat(filepath.Join(dir, "made")); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("EnsureAll made the way to a CONFLUX_DIR on a network volume it refused (%v)", err)
 	}
@@ -530,12 +543,13 @@ func TestAWindowsTooOldIsRefusedBeforeAnythingIsMade(t *testing.T) {
 // TestALinkLeadingOffThisMachineOrNowhereIsRefused: a link at a root's name, or on the way to a
 // CONFLUX_DIR, that names a share is read for where it leads off the link itself, and refused before
 // anything follows it, which would sign this machine in to whoever serves the share: by secure and
-// Foreign for a root of the platform's, and by EnsureAll for a CONFLUX_DIR that is the link or
-// inside it. The share is 192.0.2.1's, TEST-NET-1, which nothing answers: a lookup that followed the
-// link would fail slowly, saying the network path was not found, not as these refusals say. A link
-// leading to nothing is refused by them too, as a link conflux cannot follow rather than as a root
-// that is not there, and nothing is made where it leads. Windows-only, so it runs in CI's platforms
-// job alone.
+// Foreign for a root of the platform's, as itself (heldRoot), and for a CONFLUX_DIR that is the
+// link or inside it by EnsureAll and Foreign, as a link on the way to it (offMachineLinks), before
+// either looks anything up there. The share is 192.0.2.1's, TEST-NET-1, which nothing answers: a
+// lookup that followed the link would fail slowly, saying the network path was not found, not as
+// these refusals say. A link leading to nothing is refused by them too, as a link conflux cannot
+// follow rather than as a root that is not there, and nothing is made where it leads. Windows-only,
+// so it runs in CI's platforms job alone.
 func TestALinkLeadingOffThisMachineOrNowhereIsRefused(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
@@ -556,12 +570,25 @@ func TestALinkLeadingOffThisMachineOrNowhereIsRefused(t *testing.T) {
 		}
 	}
 
+	// For a CONFLUX_DIR, by offMachineLinks, which reads the link off itself before anything looks up
+	// a name through it: makeRoot's for EnsureAll, and Foreign's own for a reader of a root there.
+	refusal := func(dir string) string { return "resolve " + dir + ": " + away + " is a link conflux cannot follow" }
+
 	for _, root := range []string{away, filepath.Join(away, "conflux")} {
 		t.Setenv("CONFLUX_DIR", root)
 
-		if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), away+" is a link") ||
+		if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), refusal(root)) ||
 			!strings.Contains(err.Error(), "may be on another machine") {
-			t.Errorf("EnsureAll(a CONFLUX_DIR of %s) = %v, want a refusal naming the link to %s", root, err, unc)
+			t.Errorf("EnsureAll(a CONFLUX_DIR of %s) = %v, want %q, saying it may be on another machine", root, err,
+				refusal(root))
+		}
+
+		for _, dir := range []string{root, filepath.Join(root, "ephemeral")} {
+			if err := Foreign(dir); err == nil || !strings.Contains(err.Error(), refusal(dir)) ||
+				!strings.Contains(err.Error(), "may be on another machine") {
+				t.Errorf("Foreign(%s), CONFLUX_DIR %s, = %v, want %q, saying it may be on another machine", dir, root,
+					err, refusal(dir))
+			}
 		}
 	}
 

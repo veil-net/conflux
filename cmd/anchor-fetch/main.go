@@ -23,12 +23,13 @@ import (
 	"strings"
 
 	"github.com/veil-net/conflux/internal/anchorrelease"
+	"github.com/veil-net/conflux/internal/ghrelease"
 )
 
 func main() {
-	api := flag.String("api", anchorrelease.DefaultAPI, "the GitHub API to read the release from")
+	api := flag.String("api", ghrelease.DefaultAPI, "the GitHub API to read the release from")
 	repo := flag.String("repo", anchorrelease.DefaultRepo, "the owner/name holding the release")
-	tag := flag.String("tag", anchorrelease.DefaultTag, "the release tag to fetch")
+	tag := flag.String("tag", ghrelease.DefaultTag, "the release tag to fetch")
 	dest := flag.String("dest", "anchor/bin", "where to write the binaries")
 	want := flag.String("want", "", "comma-separated file names to fetch (required)")
 

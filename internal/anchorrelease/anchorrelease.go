@@ -46,18 +46,19 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/veil-net/conflux/internal/ghrelease"
 )
 
 const (
-	// DefaultAPI, DefaultRepo and DefaultTag are the whole of the contract with anchor.
-	// The tag moves: it always names anchor's newest release build, which is the intent
-	// -- conflux ships the newest anchor, not a remembered one. anchor also releases each
-	// build at a dated tag, YYYYMMDD-HHMMSS, which stays, and each build of its dev branch
-	// as the pre-release `dev-latest`, which conflux's dev embeds; -tag fetches either. A
-	// release is asked for by its tag, so a pre-release is as reachable as any other.
-	DefaultAPI  = "https://api.github.com"
+	// DefaultRepo, at ghrelease.DefaultTag, `latest`, is the whole of the contract with
+	// anchor. The tag moves: it always names anchor's newest release build, which is the
+	// intent -- conflux ships the newest anchor, not a remembered one. anchor also releases
+	// each build at a dated tag, YYYYMMDD-HHMMSS, which stays, and each build of its dev
+	// branch as the pre-release `dev-latest`, which conflux's dev embeds; -tag fetches
+	// either. A release is asked for by its tag, so a pre-release is as reachable as any
+	// other.
 	DefaultRepo = "veil-net/anchor"
-	DefaultTag  = "latest"
 
 	// TokenEnv carries the credential. An environment variable and never a flag: a flag
 	// is visible in `ps` to every other user on the machine, and lands in any CI log
@@ -67,10 +68,6 @@ const (
 	// manifestName is the asset that describes the others. Fetched first, and the only
 	// asset whose name is known ahead of time.
 	manifestName = "manifest.json"
-
-	// insecureEnv permits a plain-http API, for a test server. Named to match
-	// internal/enrol's own override rather than inventing a second spelling.
-	insecureEnv = "CONFLUX_ALLOW_INSECURE_API"
 
 	// formatVersion is the manifest shape this understands. A future version may mean
 	// anything, so an unknown one is refused rather than guessed at -- the same rule
@@ -97,19 +94,8 @@ type Source struct {
 }
 
 func (s Source) withDefaults() Source {
-	if s.API == "" {
-		s.API = DefaultAPI
-	}
-
-	if s.Repo == "" {
-		s.Repo = DefaultRepo
-	}
-
-	if s.Tag == "" {
-		s.Tag = DefaultTag
-	}
-
-	s.API = strings.TrimSuffix(s.API, "/")
+	d := ghrelease.Source{API: s.API, Repo: s.Repo, Tag: s.Tag}.WithDefaults(DefaultRepo)
+	s.API, s.Repo, s.Tag = d.API, d.Repo, d.Tag
 
 	return s
 }
@@ -155,7 +141,7 @@ type release struct {
 func Fetch(ctx context.Context, src Source, want []string, dir string, log func(string, ...any)) error {
 	src = src.withDefaults()
 
-	if err := checkScheme(src.API); err != nil {
+	if err := ghrelease.CheckScheme(src.API); err != nil {
 		return err
 	}
 
@@ -485,7 +471,7 @@ func do(ctx context.Context, src Source, u, accept string) (*http.Response, erro
 	req.Header.Set("Accept", accept)
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
-	return httpClient.Do(req)
+	return ghrelease.Client.Do(req)
 }
 
 // statusErr turns the codes this actually meets into the sentence somebody can act on.
@@ -523,48 +509,5 @@ func statusErr(resp *http.Response, src Source) error {
 
 	default:
 		return fmt.Errorf("GitHub answered %s", resp.Status)
-	}
-}
-
-// httpClient is every request's. An asset download answers with a redirect to storage
-// on another host, so a cross-host hop is expected and cannot be refused outright.
-//
-// Two things make that safe. Go drops the Authorization header on a redirect to a
-// different host, so the token never reaches the storage host. And everything that comes
-// back is checked: manifest.json against the digest the release document gives, and each
-// binary against manifest.json's, so content substituted anywhere along the way fails a
-// compare. What is still refused is a downgrade: a redirect to plain http,
-// which would hand the bytes to anyone on the path.
-var httpClient = &http.Client{
-	CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		if err := checkScheme(req.URL.String()); err != nil {
-			return err
-		}
-
-		if len(via) >= 5 {
-			return errors.New("too many redirects")
-		}
-
-		return nil
-	},
-}
-
-func checkScheme(raw string) error {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return fmt.Errorf("%q is not a URL: %w", raw, err)
-	}
-
-	switch u.Scheme {
-	case "https":
-		return nil
-	case "http":
-		if os.Getenv(insecureEnv) == "1" {
-			return nil
-		}
-
-		return fmt.Errorf("%s is plain http (set %s=1 to override, for tests)", raw, insecureEnv)
-	default:
-		return fmt.Errorf("%s has scheme %q, want https", raw, u.Scheme)
 	}
 }

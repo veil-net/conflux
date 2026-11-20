@@ -95,8 +95,8 @@ ANCHOR_SRC ?= ../anchor
 # FETCH=1 downloads the pinned binaries from anchor's `latest` release when no local
 # anchor build is available. Opt-in, because it needs ANCHOR_RELEASE_TOKEN -- anchor is
 # private -- and a clone with neither a checkout nor a token should still build against
-# placeholders. The three below are empty by default so the values live in
-# internal/anchorrelease rather than being repeated here. ONLY=darwin-arm64 (and so on)
+# placeholders. The three below are empty by default so the values live in the fetcher
+# (cmd/anchor-fetch) rather than being repeated here. ONLY=darwin-arm64 (and so on)
 # narrows a fetch to the pairs one platform needs; DEST moves where it lands.
 FETCH ?= 0
 ANCHOR_API ?=

@@ -37,7 +37,7 @@ DEST=${DEST:-anchor/bin}
 FETCH=${FETCH:-0}
 
 # Where the release lives. Empty means the fetcher's own defaults, so the values are
-# stated once in internal/anchorrelease rather than twice. ANCHOR_API exists so this path
+# stated once, in Go, rather than twice. ANCHOR_API exists so this path
 # can be pointed at a stand-in and actually exercised.
 ANCHOR_API=${ANCHOR_API:-}
 ANCHOR_REPO=${ANCHOR_REPO:-}

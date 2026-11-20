@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	_ "github.com/veil-net/conflux/internal/apitest" // the default API answers nothing
 	"github.com/veil-net/conflux/internal/pathstest"
 )
 

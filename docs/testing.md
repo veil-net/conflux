@@ -87,6 +87,13 @@ an ML-DSA-65 issuing CA issues a server certificate, a FIPS 140-3 mode client re
 hybrid group with its authentication pqc throughout, and once revoked `verify` fails it against
 the CA's own lists; an ECDSA leaf from the same CA is classical.
 
+**No test reaches a live API.** A configuration or a client that names no API enrols at
+production's, so under `go test` the default is `https://127.0.0.1:1`, where nothing answers:
+every package whose tests link `internal/config` imports `internal/apitest`, which sets it for
+the whole test binary, and `apitest.TestEveryTestBinaryLinkingConfigImportsIt` reads the tree
+for a package that does not. A test that wants a server names one, an `httptest` stand-in's.
+Only `make integration` enrols, against `$VEILNET_API`.
+
 **`enrol.TestWithRenewalIsLossless`** renews a manifest and compares every field.
 Four are meant to change — `chain`, `notAfter`, `issuedAt` and `bootstrap`, which the
 issuer's answer refreshes — and every other must not, `taints` above all. The document

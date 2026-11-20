@@ -17,6 +17,7 @@ import (
 
 	"github.com/veil-net/conflux/anchor"
 	"github.com/veil-net/conflux/internal/anchortest"
+	_ "github.com/veil-net/conflux/internal/apitest" // the default API answers nothing
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/enrol"

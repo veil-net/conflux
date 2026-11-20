@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	_ "github.com/veil-net/conflux/internal/apitest" // the default API answers nothing
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/goldentest"
 )

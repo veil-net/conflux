@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
+	_ "github.com/veil-net/conflux/internal/apitest" // the default API answers nothing
 	"github.com/veil-net/conflux/internal/paths"
 )
 
@@ -272,11 +273,6 @@ func fakeObserveRenew(args []string) int {
 
 	return 0
 }
-
-// nowhere is an API nothing answers on, which the helpers' configurations and credentials
-// name, so a test that goes further than it meant to enrols and renews nowhere, never at the
-// API a configuration naming none falls back to.
-const nowhere = "https://127.0.0.1:1"
 
 // fakeAnchorID is the anchor the stand-in anchorctl reports running.
 const fakeAnchorID = "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq"

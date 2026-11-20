@@ -31,7 +31,7 @@ func supervised(t *testing.T, mode string) (*Supervisor, string) {
 
 	d := dirs(t)
 
-	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, APIBaseURL: nowhere}); err != nil {
+	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 

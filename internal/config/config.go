@@ -74,8 +74,9 @@ type Observer struct {
 // is what encoding/json already does correctly.
 const ConfigVersion = 1
 
-// DefaultAPIBaseURL is where enrolment happens.
-const DefaultAPIBaseURL = "https://api.veilnet.com.au"
+// DefaultAPIBaseURL is where enrolment happens. A variable only so that tests can point it at
+// nothing (internal/apitest); nothing else sets it.
+var DefaultAPIBaseURL = "https://api.veilnet.com.au"
 
 // Config is the operator's intent, and the only thing a reboot needs in order to
 // reconstruct the running state without asking anybody anything.

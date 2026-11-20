@@ -56,3 +56,35 @@ func TestSELinuxHintQuotesTheDirectory(t *testing.T) {
 		t.Errorf("selinuxHint =\n%s\nwant it to hold\n%s", got, want)
 	}
 }
+
+// TestCannotExecuteGivesTheSELinuxHint: where SELinux is enforcing, a set refused at exec on a
+// filesystem that allows it is probably labelled var_lib_t, so what cannotExecute says carries
+// the hint; where it is not, it says nothing of SELinux. The directory this test runs from is on
+// a filesystem that allows exec.
+func TestCannotExecuteGivesTheSELinuxHint(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	bin := filepath.Dir(exe)
+
+	enforce := filepath.Join(t.TempDir(), "enforce")
+
+	defer func(was string) { selinuxEnforce = was }(selinuxEnforce)
+	selinuxEnforce = enforce
+
+	for _, c := range []struct {
+		enforcing string
+		hint      bool
+	}{{"1\n", true}, {"0\n", false}} {
+		if err := os.WriteFile(enforce, []byte(c.enforcing), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		got := cannotExecute(bin)
+		if strings.Contains(got, selinuxHint(bin)) != c.hint || !c.hint && strings.Contains(got, "SELinux") {
+			t.Errorf("with SELinux's enforce %q, cannotExecute =\n%s\nwant the SELinux hint: %v", c.enforcing, got, c.hint)
+		}
+	}
+}

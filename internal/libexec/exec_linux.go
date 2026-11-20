@@ -22,12 +22,15 @@ func cannotExecute(bin string) string {
 			"  set CONFLUX_DIR to a directory on a filesystem that allows execution."
 	}
 
-	if b, err := os.ReadFile("/sys/fs/selinux/enforce"); err == nil && len(b) > 0 && b[0] == '1' {
+	if b, err := os.ReadFile(selinuxEnforce); err == nil && len(b) > 0 && b[0] == '1' {
 		return msg + "\n" + selinuxHint(bin)
 	}
 
 	return msg + "\n  check that the filesystem is not mounted noexec, and that no policy forbids execution there."
 }
+
+// selinuxEnforce is where SELinux says whether it is enforcing; a test points it at its own.
+var selinuxEnforce = "/sys/fs/selinux/enforce"
 
 // selinuxHint is what to do where SELinux is enforcing: label bin, the directory every set is
 // extracted beneath, so the next upgrade's set is not refused again, and relabel what is there,

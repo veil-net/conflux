@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -59,6 +60,8 @@ func TestASignalToConfluxReachesItsAnchorctl(t *testing.T) {
 
 		os.Exit(Main([]string{"conflux", "peers", "-socket", "unused"}))
 	}
+
+	defaultSignals(t)
 
 	for _, tc := range []struct {
 		sig  syscall.Signal
@@ -244,6 +247,8 @@ func TestNohupHoldsOffAnEphemeralRunsHangup(t *testing.T) {
 		os.Exit(0)
 	}
 
+	defaultSignals(t)
+
 	nohup, err := exec.LookPath("nohup")
 	if err != nil {
 		t.Fatal(err)
@@ -267,6 +272,20 @@ func TestNohupHoldsOffAnEphemeralRunsHangup(t *testing.T) {
 			t.Errorf("%v: the run's context %q after a hangup (%v), want %q", tc.under, got, err, tc.want)
 		}
 	}
+}
+
+// defaultSignals starts the children of the rest of the test with SIGHUP and SIGINT at their
+// defaults, whatever this test binary was started ignoring -- under nohup, or in a script's
+// background -- which they would otherwise inherit, and a test of a signal's default would then
+// see the ignore. Notify puts a handler in the ignore's place, and exec leaves no handler
+// standing; Stop puts the ignore back.
+func defaultSignals(t *testing.T) {
+	t.Helper()
+
+	sigs := make(chan os.Signal, 2)
+	signal.Notify(sigs, syscall.SIGHUP, syscall.SIGINT)
+
+	t.Cleanup(func() { signal.Stop(sigs) })
 }
 
 // waitForPID is the stand-in's PID once it has started, which is once conflux is waiting on it.

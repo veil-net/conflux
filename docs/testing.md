@@ -9,8 +9,10 @@ $ make golden      # rewrite every golden file after an intended change
 
 Most of the suite runs without the real anchor binaries — the tests that need them
 skip, each saying `no anchor pair` (`internal/anchortest`). The ones that need them are
-the pair's own header check, the extraction tests, the flag cross-check, the shadowing
-and collision checks, the supervised-lifetime benchmark, and everything under `test/`.
+the pair's own header check; the extraction tests, and help's temporary anchorctl; the flag
+cross-check; the collision and realm-control checks; a pass-through to a socket the user
+named, and help in every spelling Go's flag package answers; status and readers beside an
+ephemeral run's pair; the supervised-lifetime benchmark; and everything under `test/`.
 
 ## The split
 
@@ -186,14 +188,21 @@ covers a service stopping with an error — `status` exits 78 and says the servi
 installed and not running, `down` succeeds on it, a userspace configuration started
 through the service manager runs `anchord` as `_conflux` or `LOCAL SERVICE` and gets as far
 as enrolling, which it does only once `anchord` has answered on the socket it made as that
-account, and `uninstall` leaves no plist, no entry in launchd's disabled database, no
-`_conflux` account, no SCM service and no directory.
+account. An observing configuration runs `anchord` as that account too, with only what
+capturing needs — on macOS the BPF devices given to its group — and an ephemeral run killed
+outright takes its `anchord` with it on Windows, in its job, and on macOS leaves it for the
+next run to stop. `uninstall` leaves no plist, no entry in launchd's disabled database, no
+`_conflux` or `_conflux-ephemeral` account, the BPF devices root's again, no SCM service, no
+directory, and no root a killed ephemeral run left.
 
-`test/service-bsd.sh` is the same against `rc.subr`, in a FreeBSD and an OpenBSD VM: install,
-a userspace `anchord` running as `conflux` or `_conflux` (the record, and the process
-itself), port 80 and a TUN keeping it root with their reasons, and `uninstall` leaving no
-script, no directory, no account, nothing enabling it in `rc.conf` or `rc.conf.local`, and on
-FreeBSD no log.
+`test/service-bsd.sh` is the same against `rc.subr`, in a FreeBSD and an OpenBSD VM. First
+`conflux version` must report the FIPS 140-3 mode the build carries, and `conflux cert` make and
+verify an ML-DSA certificate on FreeBSD and refuse with 70 on OpenBSD, which runs without the
+module. Then install, a userspace `anchord` running as `conflux` or `_conflux` (the record, and
+the process itself), port 80 and a TUN keeping it root with their reasons, the observer refused
+for want of a capture, an ephemeral run killed outright leaving its `anchord` for the next run
+to stop, and `uninstall` leaving no script, no directory, neither account, nothing enabling it
+in `rc.conf` or `rc.conf.local`, and on FreeBSD no log.
 
 ### Local network discovery, the bootstrap list, and `conflux enrol`
 
@@ -416,7 +425,7 @@ $ CONFLUX_DIR=/var/lib/cfx-dev conflux status       # the dev one
   service      active (systemd: conflux-e7616592.service, enabled at boot)
 ```
 
-**The dev one runs in userspace, as above.** A host runs one TUN anchor. Two no longer
+**The dev one runs in userspace, as above.** A host runs one TUN anchor. Two do not
 collide on the interface's name, which each anchor takes from its own identity, but
 they share everything else a TUN anchor sets up on the host — its routes, forwarding and
 firewall rules, which carry fixed names — so a second's start replaces the first's and

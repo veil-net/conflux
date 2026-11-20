@@ -174,9 +174,10 @@ jobs:
   # own account in userspace and as root where its kernel keeps a TUN and a low port for
   # root, and uninstall leaves nothing, the account included. `make cross` vets both;
   # this is the one place either runs. Only the pair for the target is fetched, on the
-  # runner, which is where the anchor credential stays: the VM is given the built conflux
-  # and the script, and nothing comes back from it. A fork's pull request is not given the
-  # credential, so it does not run this.
+  # runner, which is where the anchor credential stays: the VM is given the workspace --
+  # the checkout, the fetched pair and the built conflux, never the credential -- and
+  # nothing comes back from it. A fork's pull request is not given the credential, so it
+  # does not run this.
   bsd:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     strategy:

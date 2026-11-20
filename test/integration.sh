@@ -11,8 +11,8 @@
 # CI names api-dev for a pull request into dev, whose build embeds anchor's dev-latest
 # (docs/testing.md, "The genesis node").
 #
-# The third node is the LAN-discovery control and joins late; everything before it is
-# the two-node test this file has always been.
+# A and B meet by discovery on the link; the third node is its control, and joins once they
+# have. The fourth runs ephemeral.
 set -euo pipefail
 
 # shellcheck source=test/lib.sh

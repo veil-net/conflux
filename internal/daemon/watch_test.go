@@ -200,7 +200,9 @@ func TestTheWatcherGivesUpOnARefusedConfiguration(t *testing.T) {
 	}
 
 	gaveUp := make(chan bool, 1)
-	go func() { gaveUp <- s.watch(t.Context(), &config.Config{Mode: config.ModeProxy}, time.Millisecond) }()
+	go func() {
+		gaveUp <- s.watch(t.Context(), &config.Config{Mode: config.ModeProxy}, brought{anchor: true}, time.Millisecond)
+	}()
 
 	select {
 	case got := <-gaveUp:
@@ -355,7 +357,7 @@ func TestTheWatcherStartsAFailedObserverAgain(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
 			defer cancel()
 
-			s.watch(ctx, cfg, time.Millisecond)
+			s.watch(ctx, cfg, brought{observing: true}, time.Millisecond)
 
 			if got := slices.Contains(ran(t, log), "observe"); got != want {
 				t.Errorf("an observer that is %s: started again %v, want %v", row, got, want)
@@ -377,7 +379,7 @@ func TestTheWatcherGivesUpOnAnObserverTheHostRefuses(t *testing.T) {
 	observingAlone(t, s.Dirs, cfg)
 
 	gaveUp := make(chan bool, 1)
-	go func() { gaveUp <- s.watch(t.Context(), cfg, time.Millisecond) }()
+	go func() { gaveUp <- s.watch(t.Context(), cfg, brought{observing: true}, time.Millisecond) }()
 
 	select {
 	case got := <-gaveUp:
@@ -423,7 +425,7 @@ func TestASwitchedOffFarEndIsReopenedLessAndLessOften(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 
-	if s.watch(ctx, cfg, time.Millisecond) {
+	if s.watch(ctx, cfg, brought{anchor: true}, time.Millisecond) {
 		t.Fatal("the watcher gave up on a link it can rebuild")
 	}
 
@@ -431,5 +433,39 @@ func TestASwitchedOffFarEndIsReopenedLessAndLessOften(t *testing.T) {
 	// 20ms or so; backing off from a millisecond, a dozen at most in two seconds.
 	if n := strings.Count(strings.Join(ran(t, log), "\n"), "stop"); n < 2 || n > 12 {
 		t.Errorf("reopened the link %d times in two seconds, want it reopened, less and less often", n)
+	}
+}
+
+// TestAnObserverThatDidNotStartBesideAnAnchorIsStartedAgain: beside an anchor, an observer whose
+// start failed is the watcher's to start again, as one whose capture ended is, rather than left
+// for the daemon's life because status reads it as one never started.
+func TestAnObserverThatDidNotStartBesideAnAnchorIsStartedAgain(t *testing.T) {
+	t.Setenv(fakeAnchorctlStatusEnv, "running")
+	t.Setenv(fakeAnchorctlFailEnv, "observe")
+
+	s, log := supervised(t, "1")
+	s.priv.Dir = s.Dirs.RootAnchorDir()
+
+	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, Observer: &config.Observer{}}
+	if err := config.Save(s.Dirs, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	credentialed(t, s.Dirs)
+
+	up, err := s.bringUpAll(t.Context(), cfg)
+	if err != nil || !up.anchor || up.observing {
+		t.Fatalf("the bring-up = %+v, %v; want the anchor up and the observer not", up, err)
+	}
+
+	t.Setenv(fakeAnchorctlFailEnv, "")
+
+	ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
+	defer cancel()
+
+	s.watch(ctx, cfg, up, time.Millisecond)
+
+	if n := strings.Count(strings.Join(ran(t, log), "\n"), "observe"); n != 2 {
+		t.Errorf("the observer was started %d times, want once by the bring-up and once by the watcher", n)
 	}
 }

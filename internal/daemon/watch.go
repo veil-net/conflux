@@ -65,8 +65,9 @@ const (
 var linkGrace = 90 * time.Second
 
 // watch keeps an anchor in the daemon, rebuilding it when it has gone or its link has
-// ended, and the observer observing, starting it again when its capture has ended; and
-// reports true once it has given up on what the configuration runs.
+// ended, and the observer observing, starting it again when its capture has ended or, beside
+// an anchor, its start failed (up, what the bring-up started); and reports true once it has
+// given up on what the configuration runs.
 //
 // It gives up on a configuration that will not build an anchor, which a rebuild refused
 // for good rebuildRefusals times in a row is -- a conflux.json edited under a running
@@ -86,11 +87,15 @@ var linkGrace = 90 * time.Second
 //
 // every is how often it looks, and the least a failure holds the next try off:
 // checkInterval(cfg), which only a test shortens.
-func (s *Supervisor) watch(ctx context.Context, cfg *config.Config, every time.Duration) bool {
+func (s *Supervisor) watch(ctx context.Context, cfg *config.Config, up brought, every time.Duration) bool {
 	device := devicePath(cfg.Uplink)
 
 	anchor, observer := newKeeper(every, rebuildBackoffMax), newKeeper(every, rebuildBackoffMax)
 	observing := cfg.Observer != nil
+
+	// down is an observer the bring-up did not start: status reads it only as not observing,
+	// as it reads one stopped by hand, which is left alone.
+	down := observing && !up.observing
 
 	// zeroSince is when the connection count was first seen at zero, or the zero
 	// time when the link is carrying something.
@@ -141,23 +146,30 @@ func (s *Supervisor) watch(ctx context.Context, cfg *config.Config, every time.D
 		}
 
 		if observing && observer.due() {
-			if st == nil {
-				st = s.status(ctx)
+			why := "the observer did not start"
+
+			if !down {
+				if st == nil {
+					st = s.status(ctx)
+				}
+
+				if st == nil || !st.Observer.Failed() {
+					continue
+				}
+
+				why = "the observer stopped (" + strings.TrimPrefix(st.Observer.Note, "not observing: ") + ")"
 			}
 
-			if st == nil || !st.Observer.Failed() {
-				continue
-			}
+			switch s.restartObserver(ctx, why, observer) {
+			case kept:
+				down = false
+			case gaveUp:
+				if !cfg.Anchor() {
+					return true
+				}
 
-			if !s.restartObserver(ctx, st.Observer, observer) {
-				continue
+				observing = false
 			}
-
-			if !cfg.Anchor() {
-				return true
-			}
-
-			observing = false
 		}
 	}
 }
@@ -214,29 +226,29 @@ func (s *Supervisor) rebuildAnchor(ctx context.Context, why string, link bool, k
 	return retrying
 }
 
-// restartObserver starts an observer whose capture ended again, under the credential bringUp
-// holds for it, and says whether to give up on it.
-func (s *Supervisor) restartObserver(ctx context.Context, was anchorctl.Observer, k *keeper) bool {
-	s.report().Warn("the observer stopped (%s); starting it again", strings.TrimPrefix(was.Note, "not observing: "))
+// restartObserver starts the observer again, under the credential bringUp holds for it, and
+// says what came of it. why is why it is not running.
+func (s *Supervisor) restartObserver(ctx context.Context, why string, k *keeper) outcome {
+	s.report().Warn("%s; starting it again", why)
 
 	_, err := bringUp(ctx, s.Dirs, s.ctl, s.report(), s.priv.Dir, false, parts{observer: true})
 	if err == nil {
 		s.report().Step("the observer is back")
 		k.ok()
 
-		return false
+		return kept
 	}
 
 	if k.failed(err) {
 		s.report().Warn("this host will not let anchord observe: %v\n"+
 			"  conflux stops starting the observer until the service is started again", err)
 
-		return true
+		return gaveUp
 	}
 
 	s.report().Warn("could not start the observer again: %v", err)
 
-	return false
+	return retrying
 }
 
 // keeper is what the watcher holds for one thing it keeps running, and the supervisor's

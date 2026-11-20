@@ -126,7 +126,8 @@ not given is off. Naming nothing keeps what is configured, and `--no-observe` tu
 
 The credential comes first, then the observer, then the anchor, so an anchor that cannot come up
 once the credential is held leaves the observer and its inventory running while the anchor is
-tried again.
+tried again. An observer that does not start beside an anchor leaves the anchor to start
+without it, and the watcher starts it again, as it does one whose capture ended.
 
 ## Switching
 

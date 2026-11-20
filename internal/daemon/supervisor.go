@@ -29,7 +29,7 @@ import (
 //	  └── conflux serve                  root, or SYSTEM
 //	        ├── anchord -socket … -config …   as its own account wherever that costs nothing; see privilege.go
 //	        ├── the renewal timer, for the anchor and the observer
-//	        ├── the watcher: a lost anchor, on an uplink an ended link, and an observer whose capture ended
+//	        ├── the watcher: a lost anchor, on an uplink an ended link, and an observer whose capture ended or that did not start
 //	        └── the restart loop
 //
 // Registering anchord itself as the service was the obvious alternative and does not
@@ -339,7 +339,7 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 	wg.Go(func() { s.renewLoop(loops) })
 
 	wg.Go(func() {
-		if s.watch(loops, cfg, checkInterval(cfg)) {
+		if s.watch(loops, cfg, up, checkInterval(cfg)) {
 			stopLoops()
 		}
 	})

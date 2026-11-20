@@ -10,7 +10,7 @@ systemd / launchd / rc / SCM
   └── conflux serve                     root, or SYSTEM
         ├── anchord -socket … -config …   its own account wherever that costs it nothing
         ├── the renewal timer, for the anchor and the observer
-        ├── the watcher: a lost anchor, on an uplink an ended link, and an observer whose capture ended
+        ├── the watcher: a lost anchor, on an uplink an ended link, and an observer whose capture ended or that did not start
         └── the restart loop
 ```
 
@@ -117,11 +117,11 @@ What each does with 78 and 70 is below.
 
 anchord can also lose its anchor without exiting, so the supervisor asks it every thirty
 seconds whether it still holds one (every ten, through the link watcher's gauge, on an
-uplink) and rebuilds it through the same bring-up when it does not. A rebuild that fails is
-tried again at the next look and then after twice as long each time, up to thirty seconds, as is
-an observer whose capture ended and that would not start again. A blocked anchor is
-not one of these: a realm's block leaves it running, outside the realm, and rebuilding
-it would change nothing. A rebuild refused for good three times in a row — a
+uplink) and rebuilds it through the same bring-up when it does not, and starts the observer
+again whose capture ended or whose start beside the anchor failed. A rebuild or a start that
+fails is tried again at the next look and then after twice as long each time, up to thirty
+seconds. A blocked anchor is not one of these: a realm's block leaves it running, outside the
+realm, and rebuilding it would change nothing. A rebuild refused for good three times in a row — a
 `conflux.json` edited under a running service into one that will not build an anchor,
 say — makes the watcher give up and say so in the log: the service stays up holding no
 anchor, and renews nothing, until it is started again with `conflux start` or a reboot.

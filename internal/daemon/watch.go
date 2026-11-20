@@ -464,6 +464,10 @@ func (s *Supervisor) rebuild(ctx context.Context, link bool) error {
 // watch -- and conflux refuses that form anyway, since its own supervisor is what
 // starts anchord and hands it nothing to adopt.
 func devicePath(spec string) string {
+	if spec == "" {
+		return ""
+	}
+
 	parsed, err := config.ParseUplinkSpec(spec)
 	if err != nil {
 		return ""

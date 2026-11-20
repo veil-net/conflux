@@ -5,23 +5,17 @@ package daemon
 import (
 	"os"
 	"syscall"
-
-	"github.com/veil-net/conflux/internal/config"
 )
 
 // deviceFacts is the uplink's device, or nil for a spec that names none or a device that
 // is not there yet -- decided again once it is.
 func deviceFacts(uplink string) *fileFacts {
-	if uplink == "" {
+	path := devicePath(uplink)
+	if path == "" {
 		return nil
 	}
 
-	spec, err := config.ParseUplinkSpec(uplink)
-	if err != nil || spec.Path == "" {
-		return nil
-	}
-
-	return fileAt(spec.Path)
+	return fileAt(path)
 }
 
 // fileAt is who may open the file at path, or nil when there is none.

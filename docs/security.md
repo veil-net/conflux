@@ -154,7 +154,12 @@ must belong to the account running conflux — on every platform, a root another
 owns is refused — and so must the way to it: a `CONFLUX_DIR` inside a directory another
 account can change is refused too, naming that directory and who can change it, since
 whoever can move the root aside can put a directory of their own in its place, with a
-conflux in it for the boot service to run as root. The way to it is every directory the
+conflux in it for the boot service to run as root. A root not made yet is held to this before
+anything is made on the way to it, as far as the way is there, and each directory missing is made
+through the one before it and gone into without following anything (`mkdirat` and `O_NOFOLLOW` on
+Unix, a handle on Windows), never by its name: one somebody else makes at the name meanwhile — a
+sticky directory such as `/tmp`, and `C:\`, let anybody make a name not taken yet — is held to the
+same rule before anything is made in it, and a link there is refused. The way to it is every directory the
 lookup of the root passes through: those above it as it is spelled and, for each link on the
 way — a junction among them on Windows, which the lookup follows as it does a link — the
 directory the link is in and those above where it leads, however many links are chained, with

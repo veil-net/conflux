@@ -107,14 +107,13 @@ func restrictInfo(owner *windows.SID) windows.SECURITY_INFORMATION {
 // set as it is created, so that it never carries what %ProgramData% passes on -- Users' right to
 // create in it, enough to turn an empty directory into a junction -- not even for an instant, and
 // through a handle on its parent (makeIn), so that a link somebody plants at its name meanwhile is
-// found there rather than followed. The directories above it are made as MkdirAll makes them.
-// Anything already at its name, a link included, is secure's, whose heldRoot judges a link as
-// itself before it follows it. Before anything is made, a CONFLUX_DIR with a link on the way to it
-// that leads off this machine is refused (offMachineLinks), and so is one where what is there of
-// the way to it lets another account move it (parentsRefusal): whoever may could make a junction
-// where the next directory is to go, which MkdirAll and the open of the parent would follow by
-// name. Then the nearest directory above dir that is there is held as heldRoot holds a root
-// (remoteAbove): a CONFLUX_DIR on a network volume is refused with nothing made there.
+// found there rather than followed. Anything already at its name, a link included, is secure's,
+// whose heldRoot judges a link as itself before it follows it. Before anything is made, a
+// CONFLUX_DIR with a link on the way to it that leads off this machine is refused (offMachineLinks),
+// and so is one where what is there of the way to it lets another account move it
+// (parentsRefusal). The directories missing above it are made as the root is, each through a handle
+// on the one before (makeWay), from the nearest one there, which is held as heldRoot holds a root: a
+// CONFLUX_DIR on a network volume is refused with nothing made there.
 func makeRoot(dir string) error {
 	above, err := offMachineLinks(dir)
 	if err != nil {
@@ -129,47 +128,117 @@ func makeRoot(dir string) error {
 		return err
 	}
 
-	parent := filepath.Dir(dir)
-
-	if err := remoteAbove(parent); err != nil {
-		return err
-	}
-
-	if err := os.MkdirAll(parent, 0o700); err != nil {
-		return err
-	}
-
-	h, err := openFile(parent, windows.FILE_READ_ATTRIBUTES, true)
+	parent, done, err := makeWay(dir)
 	if err != nil {
-		return fmt.Errorf("read %s: %w", parent, err)
+		return err
 	}
-	defer windows.CloseHandle(h)
+	defer done()
 
-	if err := makeIn(h, filepath.Base(dir)); err != nil && !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+	if err := makeIn(parent, filepath.Base(dir)); err != nil && !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
 		return err
 	}
 
 	return nil
 }
 
-// remoteAbove holds the nearest of dir and the directories above it that is there as heldRoot
-// holds a root, refusing it where heldRoot does: one on a network volume, and a link that leads off
-// this machine or nowhere, or that another account may point elsewhere, judged as itself before
-// anything follows it. It is nil where none of them is there.
-func remoteAbove(dir string) error {
-	err := nearest(dir, func(p string) error {
+// makeWay is dir's parent held open, made where it is not there, and done, which lets it go. The
+// nearest of the directories above dir that is there is held as heldRoot holds a root, refused
+// where heldRoot refuses one: on a network volume, or a link that leads off this machine or
+// nowhere, or that another account may point elsewhere. Each directory missing below it is made
+// through a handle on the one before (createDir), its name looked up there and nowhere else and
+// never followed, and with nothing set but what the one before passes on, as MkdirAll would have
+// made it -- not by its name, which a folder somebody else made there meanwhile would answer for:
+// where C:\ lets every user, or the owner of a directory on the way, make one. Where the name is
+// taken by the time conflux makes it, what is there is opened as itself and held to parents' rule
+// (takenStep) before anything is made in it.
+func makeWay(dir string) (windows.Handle, func(), error) {
+	var missing []string
+
+	p := filepath.Dir(dir)
+
+	for {
 		r, err := heldRoot(p, readAccess)
 		if err == nil {
-			r.close()
+			return madeBelow(dir, p, r, missing)
 		}
 
-		return err
-	})
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
+		if !errors.Is(err, fs.ErrNotExist) || filepath.Dir(p) == p {
+			return 0, nil, err
+		}
+
+		missing = append(missing, filepath.Base(p))
+		p = filepath.Dir(p)
+	}
+}
+
+// madeBelow makes missing, the names below at that are not there, last first, in r, at held open,
+// for makeWay: what makeWay is.
+func madeBelow(dir, at string, r held, missing []string) (windows.Handle, func(), error) {
+	h, done := r.dir, r.close
+
+	for i := len(missing) - 1; i >= 0; i-- {
+		name := missing[i]
+		at = filepath.Join(at, name)
+
+		making(at)
+
+		next, err := createDir(h, name, nil, windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES)
+		if errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+			next, err = takenStep(dir, at, h, name)
+		}
+
+		done()
+
+		if err != nil {
+			return 0, nil, err
+		}
+
+		h, done = next, func() { windows.CloseHandle(next) }
 	}
 
-	return err
+	return h, done, nil
+}
+
+// takenStep is at, the name in the directory parent holds open that makeWay would have made on the
+// way to dir and found taken, opened as itself and not followed (openDir), and held to parents'
+// rule before anything is made in it: a directory, which nobody but SYSTEM, the Administrators,
+// TrustedInstaller and the account running conflux owns or may move what is in -- a conflux making
+// the same root at once makes one so -- and not a junction or a link, which would have to be
+// followed by its name to go on, and was not there when the way was judged.
+func takenStep(dir, at string, parent windows.Handle, name string) (windows.Handle, error) {
+	h, err := openDir(parent, name, windows.SYNCHRONIZE|readAccess)
+	if err != nil {
+		return 0, fmt.Errorf("%s was made by somebody else while conflux made the way to %s, and is not a "+
+			"directory conflux can go into without following it (%v), so conflux will not use it.\n  Remove it, "+
+			"then run this again", at, dir, err)
+	}
+
+	switch link, err := isReparse(h); {
+	case err != nil:
+		windows.CloseHandle(h)
+
+		return 0, fmt.Errorf("read %s: %w", at, err)
+	case link:
+		windows.CloseHandle(h)
+
+		return 0, fmt.Errorf("%s, a junction or a link, was made while conflux made the way to %s, which conflux "+
+			"will not follow.\n  Remove it, then run this again", at, dir)
+	}
+
+	who, _, err := changer(at, h, moves, "move it or what is in it", nil, false)
+	if err == nil && who != "" {
+		err = fmt.Errorf("%s is inside %s, which %s could move it aside and put another in its place for conflux "+
+			"to run.\n  Choose a CONFLUX_DIR whose every parent only SYSTEM, the Administrators and this account can "+
+			"change", dir, at, who)
+	}
+
+	if err != nil {
+		windows.CloseHandle(h)
+
+		return 0, err
+	}
+
+	return h, nil
 }
 
 // offMachineLinks refuses dir, where whoever set CONFLUX_DIR chose it (chosen), where a link on the
@@ -372,6 +441,19 @@ var filling = func(string) {}
 // to, as CreateDirectory returns one -- ERROR_ALREADY_EXISTS for a name already taken -- so that
 // restrictWith tells a refused owner.
 func createDir(parent windows.Handle, name string, sd *windows.SECURITY_DESCRIPTOR, access uint32) (windows.Handle, error) {
+	return ntDir(parent, name, sd, access, windows.FILE_CREATE)
+}
+
+// openDir opens the directory name in the one parent holds open, for access, as createDir would
+// create it: looked up there and nowhere else, never followed, nor reparsed anywhere. A reparse
+// point at the name is opened as itself, or refused; anything but a directory is refused.
+func openDir(parent windows.Handle, name string, access uint32) (windows.Handle, error) {
+	return ntDir(parent, name, nil, access, windows.FILE_OPEN)
+}
+
+// ntDir is createDir and openDir: NtCreateFile of the directory name relative to parent, as
+// disposition says, with sd where it creates one.
+func ntDir(parent windows.Handle, name string, sd *windows.SECURITY_DESCRIPTOR, access, disposition uint32) (windows.Handle, error) {
 	u, err := windows.NewNTUnicodeString(name)
 	if err != nil {
 		return 0, err
@@ -392,7 +474,7 @@ func createDir(parent windows.Handle, name string, sd *windows.SECURITY_DESCRIPT
 
 	err = windows.NtCreateFile(&h, access, &oa, &iosb, nil,
 		windows.FILE_ATTRIBUTE_NORMAL, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
-		windows.FILE_CREATE, windows.FILE_DIRECTORY_FILE|windows.FILE_SYNCHRONOUS_IO_NONALERT|windows.FILE_OPEN_REPARSE_POINT,
+		disposition, windows.FILE_DIRECTORY_FILE|windows.FILE_SYNCHRONOUS_IO_NONALERT|windows.FILE_OPEN_REPARSE_POINT,
 		0, 0)
 
 	if status, ok := err.(windows.NTStatus); ok {

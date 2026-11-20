@@ -344,6 +344,10 @@ func Foreign(dir string) error {
 	return contents(dir)
 }
 
+// making is called before makeRoot makes a directory on the way to a root, and on Unix the root
+// itself: nothing, but where a test makes something at its name meanwhile.
+var making = func(string) {}
+
 // chosen reports whether dir is the CONFLUX_DIR root or inside it: a directory whoever set
 // the variable chose, rather than one of the platform's, so secure holds the directories
 // above it to account too.

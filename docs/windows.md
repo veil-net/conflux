@@ -110,9 +110,13 @@ leads, so that conflux never signs this machine in to whoever serves it: at a ro
 readers' check (below), before anything is looked up there. So is a link that leads nowhere, with nothing made where it leads.
 A root not made yet is made through a handle on the folder it goes in, so a link somebody plants at
 its name meanwhile is found there, and judged as itself, rather than followed. For a `CONFLUX_DIR`,
-the folders on the way to it that are there are held, before conflux makes any of the rest by their
-names, to the rule the way to one is held to ([security.md](security.md#the-extracted-binaries)):
-nobody else may move what is in them, so nobody else can make a junction where the next is to go.
+the folders on the way to it that are there are held, before conflux makes anything, to the rule the
+way to one is held to ([security.md](security.md#the-extracted-binaries)): nobody else may move
+what is in them. The rest are made as the root is, each through a handle on the one before, with
+what that one passes on, from the nearest one there, which is held as a root is: never by their
+names, since `C:\` lets every user make a folder where the next is to go, and the owner of a folder
+on the way may make anything in it. One somebody else makes at a name meanwhile is opened as itself
+and held to the same rule before anything is made in it, and a junction or a link there is refused.
 
 Every command that reads a root, or acts on what it holds, rather than making it — `status`, a
 pass-through and `help`'s `anchorctl`, `renew`, `start`, `down`, `uninstall`, `update` asking
@@ -207,8 +211,8 @@ For a root on a volume `%ProgramFiles%` is not on, where `move` cannot take a ju
 the refusal gives no commands: it names the volume, and says to make the junction in a folder on
 it that only SYSTEM and the Administrators can write, then move it into place the same way.
 
-A root, its `run\`, and the junction conflux puts in place of a junction root, are made through a
-handle on the folder each goes in: the name is looked up there and nowhere else, and not followed. The create
+A root, its `run\`, the folders missing on the way to a `CONFLUX_DIR`, and the junction conflux puts
+in place of a junction root, are made through a handle on the folder each goes in: the name is looked up there and nowhere else, and not followed. The create
 also carries a flag that keeps it from being reparsed anywhere a junction leads (`OBJ_DONT_REPARSE`):
 defence in depth, guarding a case not shown to happen, since a create relative to a folder conflux
 holds is not known to be taken through a junction that folder became without it. The other folders

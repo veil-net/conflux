@@ -1293,3 +1293,66 @@ func TestCheckHoldsARootAsAReaderNeeds(t *testing.T) {
 		t.Errorf("Check(no root there) = %v, want %v", err, os.ErrNotExist)
 	}
 }
+
+// TestMakeRootGoesIntoNoNameTakenMeanwhile: the folders missing on the way to a CONFLUX_DIR are
+// made each through a handle on the one before, and gone into without following anything, so what
+// somebody else makes at a name conflux is about to make -- C:\ lets every user make a folder --
+// answers for nothing: a junction is refused, naming it, and nothing is made where it leads; a folder
+// whose DACL lets Users rename what is in it is refused, naming it, and nothing is made in it; a
+// plain one, as a conflux making the same root at once makes, is gone into. Windows-only, so it runs
+// in CI's platforms job alone.
+func TestMakeRootGoesIntoNoNameTakenMeanwhile(t *testing.T) {
+	was := making
+	t.Cleanup(func() { making = was })
+
+	elsewhere := t.TempDir()
+
+	for _, c := range []struct {
+		name    string
+		plant   func(t *testing.T, at string)
+		refused bool
+	}{
+		{"a junction", func(t *testing.T, at string) { mklinkJ(t, at, elsewhere) }, true},
+		{"a folder Users may rename what is in", func(t *testing.T, at string) {
+			if err := os.Mkdir(at, 0o700); err != nil {
+				t.Fatal(err)
+			}
+
+			privtest.GrantUsers(t, at, fileDeleteChild, windows.NO_INHERITANCE)
+		}, true},
+		{"a plain folder", func(t *testing.T, at string) {
+			if err := os.Mkdir(at, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			base := t.TempDir()
+			step := filepath.Join(base, "made")
+			root := filepath.Join(step, "conflux")
+
+			making = func(at string) {
+				if at == step {
+					c.plant(t, at)
+				}
+			}
+
+			t.Setenv("CONFLUX_DIR", root)
+
+			err := Default().EnsureAll()
+
+			switch {
+			case !c.refused && err != nil:
+				t.Errorf("EnsureAll, with %s made at %s meanwhile, = %v", c.name, step, err)
+			case c.refused && (err == nil || !strings.Contains(err.Error(), step)):
+				t.Errorf("EnsureAll, with %s made at %s meanwhile, = %v, want a refusal naming it", c.name, step, err)
+			}
+
+			for _, made := range []string{filepath.Join(elsewhere, "conflux"), root} {
+				if _, err := os.Lstat(made); c.refused && !errors.Is(err, os.ErrNotExist) {
+					t.Errorf("EnsureAll made %s, with %s made at %s meanwhile (%v)", made, c.name, step, err)
+				}
+			}
+		})
+	}
+}

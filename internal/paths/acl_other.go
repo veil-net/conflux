@@ -3,13 +3,17 @@
 package paths
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/user"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"syscall"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/veil-net/conflux/internal/group"
 )
@@ -31,14 +35,157 @@ func RestrictToOwner(string, bool) error { return nil }
 func Trusted(string) bool { return true }
 
 // makeRoot creates the root dir, and the directories above it, where they are not there yet: at
-// 0700, which is all a root made here needs.
-func makeRoot(dir string) error { return os.MkdirAll(dir, 0o700) }
+// 0700, which is all a root made here needs. Anything already at its name is secure's. Before
+// anything is made, a CONFLUX_DIR where what is there of the way to it lets another account move it
+// is refused (parentsRefusalAs), as secure would refuse it once it was made; then each directory
+// missing is made through a descriptor on the one before (makeWay), never by its name.
+func makeRoot(dir string) error {
+	if _, err := os.Lstat(dir); err == nil {
+		return nil
+	}
+
+	euid := os.Geteuid()
+
+	if chosen(dir) {
+		above, err := ancestors(dir)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+
+		if err := parentsRefusalAs(dir, above, euid); err != nil {
+			return err
+		}
+	}
+
+	return makeWay(dir, euid)
+}
+
+// makeWay makes dir and each directory missing above it, at 0700, from the nearest one that is
+// there, which is opened by its name, each through a descriptor on the one before (mkdirat), and
+// gone into without following anything (openat, O_NOFOLLOW): not by its name, which a link or a
+// directory somebody else made there meanwhile would answer for -- in a sticky directory such as
+// /tmp, which lets anybody make a name not taken yet, or one whose owner is on the way. Where a name
+// is taken by the time conflux makes it, what is there is held to parents' rule (takenStepAs)
+// before anything is made in it, and a link is refused.
+func makeWay(dir string, euid int) error {
+	var missing []string
+
+	p := dir
+
+	for {
+		_, err := os.Stat(p)
+		if err == nil {
+			break
+		}
+
+		if !errors.Is(err, fs.ErrNotExist) || filepath.Dir(p) == p {
+			return err
+		}
+
+		missing = append(missing, filepath.Base(p))
+		p = filepath.Dir(p)
+	}
+
+	fd, err := openDirAt(unix.AT_FDCWD, p, false)
+	if err != nil {
+		return &os.PathError{Op: "open", Path: p, Err: err}
+	}
+
+	for i := len(missing) - 1; i >= 0; i-- {
+		name := missing[i]
+		at := filepath.Join(p, name)
+
+		making(at)
+
+		err := ignoringEINTR(func() error { return unix.Mkdirat(fd, name, 0o700) })
+		taken := errors.Is(err, unix.EEXIST)
+
+		if err != nil && !taken {
+			unix.Close(fd)
+
+			return &os.PathError{Op: "mkdir", Path: at, Err: err}
+		}
+
+		next, err := openDirAt(fd, name, true)
+		unix.Close(fd)
+
+		switch {
+		case err != nil && taken:
+			return fmt.Errorf("%s was made by somebody else while conflux made the way to %s, and is a link or "+
+				"no directory (%v), which conflux will not follow.\n  Remove it, then run this again", at, dir, err)
+		case err != nil:
+			return &os.PathError{Op: "open", Path: at, Err: err}
+		case taken:
+			if err := takenStepAs(dir, at, next, euid); err != nil {
+				unix.Close(next)
+
+				return err
+			}
+		}
+
+		fd, p = next, at
+	}
+
+	return unix.Close(fd)
+}
+
+// openDirAt opens the directory name, in the one dirfd holds open, to make things in: as itself
+// where nofollow, a link at the name refused (ELOOP) rather than followed.
+func openDirAt(dirfd int, name string, nofollow bool) (int, error) {
+	flags := unix.O_RDONLY | unix.O_DIRECTORY | unix.O_CLOEXEC
+	if nofollow {
+		flags |= unix.O_NOFOLLOW
+	}
+
+	var fd int
+
+	err := ignoringEINTR(func() (err error) {
+		fd, err = unix.Openat(dirfd, name, flags, 0)
+
+		return err
+	})
+
+	return fd, err
+}
+
+// ignoringEINTR is f, again for as long as a signal interrupts it, as the os package retries its
+// own calls.
+func ignoringEINTR(f func() error) error {
+	for {
+		if err := f(); !errors.Is(err, unix.EINTR) {
+			return err
+		}
+	}
+}
+
+// takenStepAs holds at, the directory fd holds open, which makeWay would have made on the way to dir
+// and found already made, to parents' rule for euid before anything is made in it: owned by root or
+// euid, and not one another account may write (judge) -- a conflux making the same root at once
+// makes one so.
+func takenStepAs(dir, at string, fd, euid int) error {
+	var st unix.Stat_t
+	if err := unix.Fstat(fd, &st); err != nil {
+		return &os.PathError{Op: "stat", Path: at, Err: err}
+	}
+
+	mode := os.FileMode(st.Mode & 0o777)
+	if st.Mode&unix.S_ISVTX != 0 {
+		mode |= os.ModeSticky
+	}
+
+	who, err := writerOf(at, st.Uid, st.Gid, mode, false, euid)
+	if err == nil && who != "" {
+		err = parentRefusal(dir, "inside", at, who, euid)
+	}
+
+	return err
+}
 
 // secure refuses a root another account owns, or whose extended ACL lets another account write
 // or move it, or a CONFLUX_DIR another account can move, and narrows one of conflux's own that
 // something left wider than 0700, or than the 0710 that lets anchord's account through.
 //
-// MkdirAll creates at 0700 and leaves a directory that already exists exactly as it
+// makeRoot creates at 0700 and leaves a directory that already exists exactly as it
 // found it, so without this an /etc/conflux somebody made at 0755 would hold the
 // manifest in a traversable directory, and a CONFLUX_DIR another user made would hold
 // the binary root runs at boot where that user can replace it. The owner decides, as on
@@ -229,9 +376,16 @@ func parentsAs(dir string, euid int) error {
 		return err
 	}
 
+	return parentsRefusalAs(dir, above, euid)
+}
+
+// parentsRefusalAs is parentsAs's refusal of dir over above, the steps on the way to it as
+// ancestors met them, or nil.
+func parentsRefusalAs(dir string, above []step, euid int) error {
 	for _, s := range above {
 		p, fi := s.path, s.fi
 		if fi == nil {
+			var err error
 			if fi, err = os.Lstat(p); err != nil {
 				return fmt.Errorf("read %s: %w", p, err)
 			}
@@ -244,31 +398,50 @@ func parentsAs(dir string, euid int) error {
 
 		// A link's mode means nothing: who may change it is its owner, and whoever may write the
 		// directory it is in, which is checked as one above.
-		where, who := "inside", ""
+		where := "inside"
 		if isLink(fi) {
 			where = "reached through"
 		}
 
-		switch {
-		case int(st.Uid) != 0 && int(st.Uid) != euid:
-			who = fmt.Sprintf("belongs to uid %d, who", st.Uid)
-		case !isLink(fi):
-			acl, aclGroup, err := aclOf(p)
-			if err != nil {
-				return err
-			}
-
-			who = judge(fi.Mode(), st.Gid, acl, aclGroup, euid)
+		who, err := writerOf(p, st.Uid, st.Gid, fi.Mode(), isLink(fi), euid)
+		if err == nil && who != "" {
+			err = parentRefusal(dir, where, p, who, euid)
 		}
 
-		if who != "" {
-			return fmt.Errorf("%s is %s %s, which %s could move it aside and put another in its place "+
-				"for conflux to run.\n  Choose a CONFLUX_DIR whose every parent only root and uid %d can change, "+
-				"or that sits in a sticky directory such as /tmp", dir, where, p, who, euid)
+		if err != nil {
+			return err
 		}
 	}
 
 	return nil
+}
+
+// writerOf is who besides root and euid may move what is in p, a directory or a link on the way to
+// a root owned by uid, of group gid and at mode, as a refusal names them, or "": its owner, where
+// that is neither, or, for a directory, anybody its mode or ACL lets write it (judge). A link's mode
+// means nothing.
+func writerOf(p string, uid, gid uint32, mode os.FileMode, link bool, euid int) (string, error) {
+	switch {
+	case int(uid) != 0 && int(uid) != euid:
+		return fmt.Sprintf("belongs to uid %d, who", uid), nil
+	case link:
+		return "", nil
+	}
+
+	acl, aclGroup, err := aclOf(p)
+	if err != nil {
+		return "", err
+	}
+
+	return judge(mode, gid, acl, aclGroup, euid), nil
+}
+
+// parentRefusal is the refusal of dir for p, a directory it is where of (inside, or reached
+// through), which who could change.
+func parentRefusal(dir, where, p, who string, euid int) error {
+	return fmt.Errorf("%s is %s %s, which %s could move it aside and put another in its place "+
+		"for conflux to run.\n  Choose a CONFLUX_DIR whose every parent only root and uid %d can change, "+
+		"or that sits in a sticky directory such as /tmp", dir, where, p, who, euid)
 }
 
 // aclOf is who p's ACL lets write it, and whether that ACL says what p's group may

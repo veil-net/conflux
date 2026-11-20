@@ -75,12 +75,26 @@ func ephemeralRunBase() string {
 }
 
 // Ephemeral is the root a new ephemeral run is kept in: the first candidate on a
-// filesystem that lets the extracted anchord run. tmpfs is often mounted noexec, and
-// anchord extracted there would be refused at exec with a reason that names nothing.
-func Ephemeral() (Dirs, error) {
-	candidates := EphemeralCandidates()
+// filesystem that lets the extracted anchord run, and that another account did not make
+// first. tmpfs is often mounted noexec, and anchord extracted there would be refused at exec
+// with a reason that names nothing; and /tmp lets anybody make the name a run's root would
+// have, which secure then refuses and this account cannot remove.
+func Ephemeral() (Dirs, error) { return ephemeralIn(EphemeralCandidates()) }
+
+// ephemeralIn is Ephemeral among candidates. Where none will do and one was passed over
+// for its owner, that refusal is the answer.
+func ephemeralIn(candidates []string) (Dirs, error) {
+	var refused error
 
 	for _, root := range candidates {
+		if err := foreign(root); err != nil {
+			if refused == nil {
+				refused = err
+			}
+
+			continue
+		}
+
 		ok, err := executable(root)
 		if err != nil {
 			return Dirs{}, err
@@ -89,6 +103,10 @@ func Ephemeral() (Dirs, error) {
 		if ok {
 			return EphemeralDirs(root), nil
 		}
+	}
+
+	if refused != nil {
+		return Dirs{}, refused
 	}
 
 	return Dirs{}, fmt.Errorf("every place an ephemeral run is kept is on a filesystem mounted noexec, "+

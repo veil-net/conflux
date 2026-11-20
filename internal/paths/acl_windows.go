@@ -180,15 +180,8 @@ func secure(dir string) error {
 		return nil
 	}
 
-	if !admin && !isCurrentUser(owner) {
-		account, domain, _, _ := owner.LookupAccount("")
-
-		return fmt.Errorf(
-			"%s belongs to %s\\%s (%s), not to SYSTEM or the Administrators, so conflux did not create it and "+
-				"will not use what is in it.\n  Remove it, then run this again as Administrator. If conflux left it, "+
-				"run elevated by that same account, running any conflux command that way once repairs it; an "+
-				"account that is not an administrator cannot",
-			dir, domain, account, owner)
+	if err := ownerRefusal(dir, owner); err != nil {
+		return err
 	}
 
 	if err := filepath.WalkDir(dir, func(path string, _ fs.DirEntry, err error) error {
@@ -204,6 +197,34 @@ func secure(dir string) error {
 	}
 
 	return Restrict(dir, true)
+}
+
+// ownerRefusal is secure's refusal of dir for owner, or nil where owner is SYSTEM, the
+// Administrators or the account running conflux.
+func ownerRefusal(dir string, owner *windows.SID) error {
+	if owner.Equals(sidSystem) || owner.Equals(sidAdmins) || isCurrentUser(owner) {
+		return nil
+	}
+
+	account, domain, _, _ := owner.LookupAccount("")
+
+	return fmt.Errorf(
+		"%s belongs to %s\\%s (%s), not to SYSTEM or the Administrators, so conflux did not create it and "+
+			"will not use what is in it.\n  Remove it, then run this again as Administrator. If conflux left it, "+
+			"run elevated by that same account, running any conflux command that way once repairs it; an "+
+			"account that is not an administrator cannot",
+		dir, domain, account, owner)
+}
+
+// foreign is what secure would refuse dir with for its owner, before anything is made, or
+// nil where dir is this account's or is not there yet.
+func foreign(dir string) error {
+	owner, _, err := ownership(dir)
+	if err != nil {
+		return nil
+	}
+
+	return ownerRefusal(dir, owner)
 }
 
 // fileDeleteChild is FILE_DELETE_CHILD: on a directory, the right to delete or rename what

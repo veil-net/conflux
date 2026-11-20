@@ -37,27 +37,9 @@ func secure(dir string) error { return secureAs(dir, os.Geteuid()) }
 // secureAs is secure for a given effective uid, so the refusals can be tested without
 // another account.
 func secureAs(dir string, euid int) error {
-	// A root that is a symlink is held to the same rule as what it points at: one another
-	// account planted would otherwise lead straight past the check into a directory of
-	// theirs, or of the system's.
-	link, err := os.Lstat(dir)
+	fi, err := ownedAs(dir, euid)
 	if err != nil {
-		return fmt.Errorf("read %s: %w", dir, err)
-	}
-
-	if err := ownedBy(dir, link, euid); err != nil {
 		return err
-	}
-
-	fi := link
-	if link.Mode()&os.ModeSymlink != 0 {
-		if fi, err = os.Stat(dir); err != nil {
-			return fmt.Errorf("read %s: %w", dir, err)
-		}
-
-		if err := ownedBy(dir, fi, euid); err != nil {
-			return err
-		}
 	}
 
 	if chosen(dir) {
@@ -79,6 +61,47 @@ func secureAs(dir string, euid int) error {
 	}
 
 	return nil
+}
+
+// ownedAs is dir as it resolves, once it is shown to be euid's. A root that is a symlink
+// is held to the same rule as what it points at: one another account planted would
+// otherwise lead straight past the check into a directory of theirs, or of the system's.
+func ownedAs(dir string, euid int) (os.FileInfo, error) {
+	link, err := os.Lstat(dir)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", dir, err)
+	}
+
+	if err := ownedBy(dir, link, euid); err != nil {
+		return nil, err
+	}
+
+	if link.Mode()&os.ModeSymlink == 0 {
+		return link, nil
+	}
+
+	fi, err := os.Stat(dir)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", dir, err)
+	}
+
+	if err := ownedBy(dir, fi, euid); err != nil {
+		return nil, err
+	}
+
+	return fi, nil
+}
+
+// foreign is what secure would refuse dir with for its owner, before anything is made, or
+// nil where dir is this account's or is not there yet.
+func foreign(dir string) error {
+	if _, err := os.Lstat(dir); err != nil {
+		return nil
+	}
+
+	_, err := ownedAs(dir, os.Geteuid())
+
+	return err
 }
 
 // parentsAs refuses dir where another account may write a directory above it: one whose

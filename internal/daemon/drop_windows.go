@@ -339,9 +339,9 @@ func (s *Supervisor) freshDaemonRun(p Privilege) error {
 func (s *Supervisor) killLeftovers() {}
 
 // makeAnchorDir creates path for p's identity, with its security descriptor set as it is
-// created (paths.MakeDir): SYSTEM's and Administrators' for a SYSTEM anchord, as Restrict makes
-// a directory, and the service SID's for its account (paths.MakeAnchordDir), never for an
-// instant what the state directory passes on.
+// created: SYSTEM's and Administrators' for a SYSTEM anchord, as Restrict makes a directory
+// (paths.MakeRestricted), and the service SID's for its account (paths.MakeAnchordDir), never for
+// an instant what the state directory passes on.
 func makeAnchorDir(path string, p Privilege) error {
 	if !p.Account {
 		return paths.MakeRestricted(path)

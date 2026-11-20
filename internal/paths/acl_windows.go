@@ -121,22 +121,15 @@ func makeRoot(dir string) error {
 	return nil
 }
 
-// MakeRestricted is MakeDir with Restrict's ownership and DACL: Administrators', or the creating
+// MakeRestricted is makeDir with Restrict's ownership and DACL: Administrators', or the creating
 // token's where it may not name them, under a protected DACL granting SYSTEM and Administrators
 // full control, inherited by what it holds. A root (makeRoot), an anchor directory a SYSTEM
 // anchord is given, and the staging directory libexec writes a set in, are made so.
 func MakeRestricted(path string) error {
-	return restrictWith(true, func(owner *windows.SID, dacl *windows.ACL) error {
-		sd, err := restrictedSD(owner, dacl)
-		if err != nil {
-			return err
-		}
-
-		return MakeDir(path, sd)
-	})
+	return restrictedDir(func(sd *windows.SECURITY_DESCRIPTOR) error { return makeDir(path, sd) })
 }
 
-// MakeAnchordDir is MakeDir with anchordDirSDDL: a directory anchord's account, the service SID sid,
+// MakeAnchordDir is makeDir with anchordDirSDDL: a directory anchord's account, the service SID sid,
 // is given -- anchor\ and run\anchord\ where anchord runs as that account.
 func MakeAnchordDir(path string, sid *windows.SID) error {
 	sd, err := windows.SecurityDescriptorFromString(anchordDirSDDL(sid))
@@ -144,7 +137,7 @@ func MakeAnchordDir(path string, sid *windows.SID) error {
 		return err
 	}
 
-	return MakeDir(path, sd)
+	return makeDir(path, sd)
 }
 
 // anchordDirSDDL is the security descriptor of a directory anchord's account, the service SID sid,
@@ -161,13 +154,13 @@ func anchordDirSDDL(sid *windows.SID) string {
 		"(A;OICIIO;FA;;;" + s + ")(A;OICI;RC;;;OW)"
 }
 
-// MakeDir creates the directory path, which must not be there yet, in a parent that is, with sd as
+// makeDir creates the directory path, which must not be there yet, in a parent that is, with sd as
 // its security descriptor, set as it is created: it is never anything else, not even for an
 // instant, as one made and then given its security would be, under what its parent passes on. A
 // root (makeRoot, through MakeRestricted), libexec's staging directory (MakeRestricted) and the
 // directories anchord is given (daemon's makeAnchorDir: MakeRestricted, or MakeAnchordDir for its
 // account) are made so.
-func MakeDir(path string, sd *windows.SECURITY_DESCRIPTOR) error {
+func makeDir(path string, sd *windows.SECURITY_DESCRIPTOR) error {
 	name, err := windows.UTF16PtrFromString(path)
 	if err != nil {
 		return err
@@ -179,29 +172,34 @@ func MakeDir(path string, sd *windows.SECURITY_DESCRIPTOR) error {
 	})
 }
 
-// restrictedSD is a security descriptor of owner, where one is given, and dacl, protected: what
-// restrictWith hands its set, for a directory being made.
-func restrictedSD(owner *windows.SID, dacl *windows.ACL) (*windows.SECURITY_DESCRIPTOR, error) {
-	sd, err := windows.NewSecurityDescriptor()
-	if err != nil {
-		return nil, err
-	}
-
-	if owner != nil {
-		if err := sd.SetOwner(owner, false); err != nil {
-			return nil, err
+// restrictedDir makes a directory through create, handed the security descriptor to create it
+// with: Restrict's ownership and DACL -- restrictWith's owner, where one is given, and its DACL,
+// protected -- and, where the token may not name Administrators as its owner, again without one.
+// What create fails with is returned as it is, ERROR_ALREADY_EXISTS for a name already taken
+// among it.
+func restrictedDir(create func(sd *windows.SECURITY_DESCRIPTOR) error) error {
+	return restrictWith(true, func(owner *windows.SID, dacl *windows.ACL) error {
+		sd, err := windows.NewSecurityDescriptor()
+		if err != nil {
+			return err
 		}
-	}
 
-	if err := sd.SetDACL(dacl, true, false); err != nil {
-		return nil, err
-	}
+		if owner != nil {
+			if err := sd.SetOwner(owner, false); err != nil {
+				return err
+			}
+		}
 
-	if err := sd.SetControl(windows.SE_DACL_PROTECTED, windows.SE_DACL_PROTECTED); err != nil {
-		return nil, err
-	}
+		if err := sd.SetDACL(dacl, true, false); err != nil {
+			return err
+		}
 
-	return sd, nil
+		if err := sd.SetControl(windows.SE_DACL_PROTECTED, windows.SE_DACL_PROTECTED); err != nil {
+			return err
+		}
+
+		return create(sd)
+	})
 }
 
 // fill makes the root dir, held open by h, hold something -- its run directory, which EnsureAll
@@ -216,33 +214,20 @@ func restrictedSD(owner *windows.SID, dacl *windows.ACL) (*windows.SECURITY_DESC
 func fill(dir string, h windows.Handle) error {
 	filling(dir)
 
-	filled := restrictWith(true, func(owner *windows.SID, dacl *windows.ACL) error {
-		sd, err := restrictedSD(owner, dacl)
+	filled := restrictedDir(func(sd *windows.SECURITY_DESCRIPTOR) error {
+		child, err := createDir(h, runName, sd, windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES)
 		if err != nil {
 			return err
 		}
 
-		child, err := createDir(h, runName, sd, windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES)
-
-		var status windows.NTStatus
-
-		switch {
-		case err == nil:
-			return windows.CloseHandle(child)
-		case errors.As(err, &status) && status == windows.STATUS_OBJECT_NAME_COLLISION:
-			return nil
-		case errors.As(err, &status):
-			return status.Errno() // so restrictWith tells a refused owner
-		}
-
-		return err
+		return windows.CloseHandle(child)
 	})
 
 	if err := notLink(dir, h, "became a junction or a link while conflux secured it"); err != nil {
 		return err
 	}
 
-	if filled != nil {
+	if filled != nil && !errors.Is(filled, windows.ERROR_ALREADY_EXISTS) {
 		return fmt.Errorf("create %s in %s: %w", runName, dir, filled)
 	}
 
@@ -255,7 +240,9 @@ var filling = func(string) {}
 
 // createDir creates the directory name in the one parent holds open, with sd as its security
 // descriptor, and holds it open for access: its name looked up there and nowhere else, and never
-// followed. What NtCreateFile returns is returned as it is, an NTStatus.
+// followed. A status NtCreateFile fails with is returned as the Win32 error it maps to, as
+// CreateDirectory returns one -- ERROR_ALREADY_EXISTS for a name already taken -- so that
+// restrictWith tells a refused owner.
 func createDir(parent windows.Handle, name string, sd *windows.SECURITY_DESCRIPTOR, access uint32) (windows.Handle, error) {
 	u, err := windows.NewNTUnicodeString(name)
 	if err != nil {
@@ -279,6 +266,10 @@ func createDir(parent windows.Handle, name string, sd *windows.SECURITY_DESCRIPT
 		windows.FILE_ATTRIBUTE_NORMAL, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
 		windows.FILE_CREATE, windows.FILE_DIRECTORY_FILE|windows.FILE_SYNCHRONOUS_IO_NONALERT|windows.FILE_OPEN_REPARSE_POINT,
 		0, 0)
+
+	if status, ok := err.(windows.NTStatus); ok {
+		return h, status.Errno()
+	}
 
 	return h, err
 }
@@ -541,29 +532,15 @@ func replaceLink(dir string, r *held) error {
 
 	var link windows.Handle
 
-	err = restrictWith(true, func(owner *windows.SID, dacl *windows.ACL) error {
-		sd, err := restrictedSD(owner, dacl)
-		if err != nil {
-			return err
-		}
-
+	err = restrictedDir(func(sd *windows.SECURITY_DESCRIPTOR) (err error) {
 		link, err = createDir(parent, filepath.Base(dir), sd,
 			windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES|windows.FILE_WRITE_ATTRIBUTES|windows.FILE_WRITE_DATA)
-
-		var status windows.NTStatus
-
-		switch {
-		case errors.As(err, &status) && status == windows.STATUS_OBJECT_NAME_COLLISION:
-			return errMadeAgain
-		case errors.As(err, &status):
-			return status.Errno() // so restrictWith tells a refused owner
-		}
 
 		return err
 	})
 
 	switch {
-	case errors.Is(err, errMadeAgain):
+	case errors.Is(err, windows.ERROR_ALREADY_EXISTS):
 		return fmt.Errorf("%s was made again by somebody else while conflux replaced the junction there, which led "+
 			"to %s, so conflux will not use it.\n  %s", dir, leads, remake)
 	case err != nil:
@@ -601,10 +578,6 @@ func leadsTo(dir string, h windows.Handle) (string, error) {
 
 	return target, nil
 }
-
-// errMadeAgain is a name somebody made something at between replaceLink's removing what was there
-// and its making its own.
-var errMadeAgain = errors.New("made again")
 
 // replacing is called once replaceLink has removed the junction it found, before it makes its own
 // at the name: nothing, but where a test makes something there meanwhile.

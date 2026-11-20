@@ -719,7 +719,7 @@ func anchordFolder(t *testing.T, dir, more string) string {
 		t.Fatal(err)
 	}
 
-	if err := privtest.WithRestore(t, func() error { return MakeDir(dir, sd) }); err != nil {
+	if err := privtest.WithRestore(t, func() error { return makeDir(dir, sd) }); err != nil {
 		t.Fatal(err)
 	}
 

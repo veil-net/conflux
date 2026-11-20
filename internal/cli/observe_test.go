@@ -11,6 +11,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
 	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/ui"
@@ -247,6 +248,18 @@ func TestSwitchingAnAnchorToObservingIsConfirmed(t *testing.T) {
 	}
 }
 
+// holdingAlpha makes alphaDoc d's credential, and is the taints it grants, for a configuration
+// that agrees with it.
+func holdingAlpha(t *testing.T, d paths.Dirs) []string {
+	t.Helper()
+
+	if err := config.SaveManifest(d, config.Envelope(base64.StdEncoding.EncodeToString([]byte(alphaDoc)))); err != nil {
+		t.Fatal(err)
+	}
+
+	return credentialFrom(t, alphaDoc).Taints()
+}
+
 // rootOnLinux runs conflux observe, for the rest of the test, as root on a host with a capture,
 // whoever runs the test on whichever host.
 func rootOnLinux(t *testing.T) {
@@ -270,11 +283,7 @@ func TestObserveChecksTheTaintBeforeItAsks(t *testing.T) {
 
 	d := pathstest.Dirs(t)
 
-	if err := config.Save(d, &config.Config{Mode: config.ModeTUN, Taints: []string{"brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf"}}); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := config.SaveManifest(d, config.Envelope(base64.StdEncoding.EncodeToString([]byte(alphaDoc)))); err != nil {
+	if err := config.Save(d, &config.Config{Mode: config.ModeTUN, Taints: holdingAlpha(t, d)}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -309,11 +318,7 @@ func TestObservingAgainAsksNothing(t *testing.T) {
 	d := pathstest.Dirs(t)
 
 	if err := config.Save(d, &config.Config{Mode: config.ModeObserve, Observer: &config.Observer{},
-		Taints: []string{"brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf"}}); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := config.SaveManifest(d, config.Envelope(base64.StdEncoding.EncodeToString([]byte(alphaDoc)))); err != nil {
+		Taints: holdingAlpha(t, d)}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -460,15 +465,11 @@ func TestObserveEnrolsAsUpDoes(t *testing.T) {
 // the identity it runs as -- rather than as one kept for the next anchor.
 func TestStatusReportsTheObserversCredential(t *testing.T) {
 	d := pathstest.Dirs(t)
-
-	if err := config.SaveManifest(d, config.Envelope(base64.StdEncoding.EncodeToString([]byte(alphaDoc)))); err != nil {
-		t.Fatal(err)
-	}
+	cfg := &config.Config{Mode: config.ModeObserve, Observer: &config.Observer{}, Taints: holdingAlpha(t, d)}
 
 	const id = "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq"
 
 	notAfter := time.Now().Add(20 * 24 * time.Hour).UTC().Truncate(time.Second)
-	cfg := &config.Config{Mode: config.ModeObserve, Observer: &config.Observer{}, Taints: []string{"brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf"}}
 
 	var out bytes.Buffer
 

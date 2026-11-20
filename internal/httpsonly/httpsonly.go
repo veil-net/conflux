@@ -1,7 +1,8 @@
 // Package httpsonly is the rule every client conflux has holds a URL to: https, or plain
 // http only where a test asks for it. The enrolment and renewal client (internal/enrol), the
 // GitHub-release client (internal/ghrelease) and wintun's download (internal/wintun) check
-// every redirect by it, and the first two the URL they are given.
+// every redirect by it; enrol checks the URLs it is given, and ghrelease's callers
+// (internal/update, internal/anchorrelease) the API base they hand it.
 package httpsonly
 
 import (

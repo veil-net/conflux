@@ -95,6 +95,35 @@ func TestSecureFollowsASymlinkOnlyToItsOwnersDirectory(t *testing.T) {
 	if err := secureAs(link, os.Geteuid()+1); err == nil {
 		t.Error("a link another uid owns was accepted")
 	}
+
+	// A link of our own that leads into a directory of somebody else's is held to theirs.
+	theirs := "/" // root's, for anybody else to point a link at
+	if os.Geteuid() == 0 {
+		// Root can make one that belongs to somebody else.
+		theirs = filepath.Join(t.TempDir(), "theirs")
+		if err := os.Mkdir(theirs, 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.Chown(theirs, 65534, 65534); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	before := mode(t, theirs)
+
+	into := filepath.Join(t.TempDir(), "root")
+	if err := os.Symlink(theirs, into); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := secure(into); err == nil || !strings.Contains(err.Error(), "belongs to") {
+		t.Errorf("a link of ours into a directory another account owns was not refused for its owner: %v", err)
+	}
+
+	if got := mode(t, theirs); got != before {
+		t.Errorf("the directory the refused link leads to was changed to %#o", got)
+	}
 }
 
 // TestEnsureAllLeavesTheSharedLogAlone: macOS and FreeBSD write the service's log into the

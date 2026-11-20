@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -169,4 +170,57 @@ func tree(t *testing.T, root string) []string {
 	}
 
 	return found
+}
+
+// serveArgs, set, makes TestServeOpensNoLogInARootItRefuses's test binary conflux serve with these
+// arguments, a line each: serve places its log over stdout and stderr, which here would be the
+// test binary's.
+const serveArgs = "CONFLUX_TEST_SERVE_ARGS"
+
+// TestServeOpensNoLogInARootItRefuses: serve --log opens its log by name, as root, to append to it,
+// so it does that only once EnsureAll has made the root conflux's alone. Under a root EnsureAll
+// refuses -- a CONFLUX_DIR in a directory every account may write, where anybody could have put a
+// root of their own, with a link at logs/conflux.log -- the file the link leads to gets nothing,
+// and the refusal goes where the service manager sends serve's output.
+func TestServeOpensNoLogInARootItRefuses(t *testing.T) {
+	if args := os.Getenv(serveArgs); args != "" {
+		os.Exit(Main(append([]string{"conflux", "serve"}, strings.Split(args, "\n")...)))
+	}
+
+	open := t.TempDir()
+	root := filepath.Join(open, "conflux")
+	log := filepath.Join(root, "logs", "conflux.log")
+
+	if err := os.MkdirAll(filepath.Dir(log), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	elsewhere := filepath.Join(t.TempDir(), "elsewhere")
+	if err := os.WriteFile(elsewhere, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Symlink(elsewhere, log); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Chmod(open, 0o757); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = os.Chmod(open, 0o700) })
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestServeOpensNoLogInARootItRefuses$") //nolint:gosec // this test binary
+	cmd.Env = append(os.Environ(), "NOTIFY_SOCKET=",
+		serveArgs+"="+strings.Join([]string{"--foreground", "--dir", root, "--log", log}, "\n"))
+
+	out, err := cmd.CombinedOutput()
+	if code := cmd.ProcessState.ExitCode(); code != ExitError || !strings.Contains(string(out), open) {
+		t.Errorf("serve under a root in a directory every account may write exited %d (%v), want %d saying why:\n%s",
+			code, err, ExitError, out)
+	}
+
+	if b, _ := os.ReadFile(elsewhere); len(b) > 0 {
+		t.Errorf("serve appended to %s, where a link at its log's name led:\n%s", elsewhere, b)
+	}
 }

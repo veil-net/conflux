@@ -45,9 +45,15 @@ func runServe(ctx context.Context, args []string) int {
 		}
 	}
 
+	d := paths.Default()
+
 	// Where launchd or daemon(8) was told to write it: conflux writes it itself from here on,
-	// stamping each line and moving it aside when it is full, which neither of them does.
-	if *logPath != "" {
+	// stamping each line and moving it aside when it is full, which neither of them does. Opened by
+	// its name, as root, to append to, so only once EnsureAll has made the root conflux's alone: in
+	// one another account could write, a link at that name would have conflux append wherever it
+	// led. A root EnsureAll refuses is the supervisor's to refuse, saying why where the service
+	// manager sends the output.
+	if *logPath != "" && d.EnsureAll() == nil {
 		if lf, err := logfile.Open(*logPath); err != nil {
 			ui.Errf("could not open the log %s, so the output goes where the service manager sends it: %v", *logPath, err)
 		} else {
@@ -56,8 +62,6 @@ func runServe(ctx context.Context, args []string) int {
 			ui.Out, ui.Errw = lf, lf
 		}
 	}
-
-	d := paths.Default()
 
 	sup := &daemon.Supervisor{
 		Dirs:     d,

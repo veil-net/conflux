@@ -108,7 +108,11 @@ The boot service is held to the same rule. It runs as root (SYSTEM on Windows) a
 whatever file it names at every boot, so it names a copy of conflux in the same state directory,
 which `up`, `proxy`, `install` and `start` refresh, and never the file conflux was run from — a
 home directory or a download that another account could swap for a program of its own, to be run
-as root at the next start. On Windows the root's DACL is set as the first conflux command that creates it makes it, extraction
+as root at the next start. Its log, where conflux writes it (`serve --log`, on macOS and FreeBSD), is
+opened by its name, as root, only once `EnsureAll` has made the root conflux's alone, and the service
+is registered only by a command that has held the root to that first (`EnsureAll`, or `start`'s
+readers' check), so the name launchd's `StandardErrorPath` and FreeBSD's `daemon(8)` open as root is
+in a directory only root can change. On Windows the root's DACL is set as the first conflux command that creates it makes it, extraction
 included, so it never carries `%ProgramData%`'s grant to `Users`, not even for an instant. A root
 found already there is judged and restricted through one handle on the directory itself, never by
 its name again, refused where its DACL lets another account move what is in it, made to hold its

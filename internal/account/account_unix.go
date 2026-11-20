@@ -5,15 +5,14 @@ package account
 import (
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"os/user"
 	"runtime"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/veil-net/conflux/internal/group"
 	"github.com/veil-net/conflux/internal/privcheck"
 )
 
@@ -74,7 +73,7 @@ func EnsureNamed(name string) (*Account, error) {
 	// given -- passage to anchord, and on macOS the BPF devices -- and uninstall would then
 	// delete a group they rely on.
 	if groupExists {
-		users, err := groupUsers(name, g.Gid)
+		users, err := group.Users(name, g.Gid)
 		if err != nil {
 			return nil, fmt.Errorf("read who the existing group %s lets in: %w", name, err)
 		}
@@ -112,94 +111,6 @@ func EnsureNamed(name string) (*Account, error) {
 			return nil, fmt.Errorf("%s was created and cannot be found", name)
 		}
 	}
-}
-
-// groupUsers are the accounts the group of that name lets in: the members it lists, and
-// every account it is the primary group of.
-func groupUsers(name, gid string) ([]string, error) {
-	var groupArgv, usersArgv []string
-
-	// A bare busybox has no getent, and only the files to ask.
-	if _, err := exec.LookPath("getent"); err != nil && runtime.GOOS != "darwin" {
-		return groupUsersFromFiles(name, gid)
-	}
-
-	if runtime.GOOS == "darwin" {
-		groupArgv = []string{"dscl", ".", "-read", "/Groups/" + name}
-		usersArgv = []string{"dscl", ".", "-list", "/Users", "PrimaryGroupID"}
-	} else {
-		groupArgv = []string{"getent", "group", name}
-		usersArgv = []string{"getent", "passwd"}
-	}
-
-	group, err := exec.Command(groupArgv[0], groupArgv[1:]...).Output() //nolint:gosec // our own argv
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", privcheck.Command(groupArgv...), err)
-	}
-
-	users, err := exec.Command(usersArgv[0], usersArgv[1:]...).Output() //nolint:gosec // our own argv
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", privcheck.Command(usersArgv...), err)
-	}
-
-	return groupUsersFrom(runtime.GOOS, string(group), string(users), gid), nil
-}
-
-// groupUsersFromFiles is groupUsers read from /etc/group and /etc/passwd.
-func groupUsersFromFiles(name, gid string) ([]string, error) {
-	groups, err := os.ReadFile("/etc/group")
-	if err != nil {
-		return nil, err
-	}
-
-	users, err := os.ReadFile("/etc/passwd")
-	if err != nil {
-		return nil, err
-	}
-
-	var group string
-
-	for line := range strings.Lines(string(groups)) {
-		if strings.HasPrefix(line, name+":") {
-			group = line
-		}
-	}
-
-	return groupUsersFrom(runtime.GOOS, group, string(users), gid), nil
-}
-
-// groupUsersFrom reads groupUsers' two answers: getent's group line and passwd database, or
-// dscl's group record and its list of each account's primary group.
-func groupUsersFrom(goos, group, users, gid string) []string {
-	var out []string
-
-	if goos == "darwin" {
-		for line := range strings.Lines(group) {
-			if rest, ok := strings.CutPrefix(line, "GroupMembership:"); ok {
-				out = append(out, strings.Fields(rest)...)
-			}
-		}
-
-		for line := range strings.Lines(users) {
-			if f := strings.Fields(line); len(f) == 2 && f[1] == gid {
-				out = append(out, f[0])
-			}
-		}
-	} else {
-		if f := strings.Split(strings.TrimSpace(group), ":"); len(f) == 4 && f[3] != "" {
-			out = append(out, strings.Split(f[3], ",")...)
-		}
-
-		for line := range strings.Lines(users) {
-			if f := strings.Split(line, ":"); len(f) >= 4 && f[3] == gid {
-				out = append(out, f[0])
-			}
-		}
-	}
-
-	slices.Sort(out)
-
-	return slices.Compact(out)
 }
 
 // planCreate is createCommands for this host.

@@ -106,13 +106,20 @@ whoever can move the root aside can put a directory of their own in its place, w
 conflux in it for the boot service to run as root. On Unix that is any directory above it
 owned by an account other than root and the one running conflux, or one its group or
 anybody may write, unless it is sticky, as `/tmp` is, where nobody may rename what is not
-theirs. On Windows it is any directory above it owned by an account other than SYSTEM, the
-Administrators, TrustedInstaller and the one running conflux, or one whose DACL grants
-another account the right to delete or rename what is in it, to delete or rename the
-directory itself, or to change its DACL or owner; the right to create folders in it, which
-`C:\` gives every user, is not one of them. The root is used as an absolute path, so the
-service registered under it runs from where it was installed whatever the working
-directory was.
+theirs. A group that lets in no account but the one running conflux, as the group database
+answers (its members, and every account it is the primary group of) — the group of one user
+that Ubuntu gives each, whose directories its umask of 002 leaves group-writable — writes for
+that account alone, so its write is not refused; a group with anybody else in it, or one the
+database cannot answer for, is. conflux is built without cgo, so on Linux and the BSDs it
+names the directory's group and the account it runs as from `/etc/group` and `/etc/passwd`
+alone: one that is only in a network directory (LDAP, SSSD) is not found there, and the group
+is refused. macOS asks its directory service either way. On Windows it is any directory
+above it owned by an account other than SYSTEM, the Administrators, TrustedInstaller and the
+one running conflux, or one whose DACL grants another account the right to delete or rename
+what is in it, to delete or rename the directory itself, or to change its DACL or owner; the
+right to create folders in it, which `C:\` gives every user, is not one of them. The root
+is used as an absolute path, so the service registered under it runs from where it was
+installed whatever the working directory was.
 
 ## What anchord runs as
 

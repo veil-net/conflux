@@ -5,8 +5,15 @@ package paths
 import (
 	"fmt"
 	"os"
+	"os/user"
+	"strconv"
 	"syscall"
+
+	"github.com/veil-net/conflux/internal/group"
 )
+
+// groupUsers is who a group lets in; a test's stands in for the system's databases.
+var groupUsers = group.Users
 
 // Restrict and Trusted are Windows's. Here a mode set on the descriptor and a 0700
 // directory that belongs to whoever runs conflux are the whole of it, and secure is
@@ -106,7 +113,8 @@ func foreign(dir string) error {
 
 // parentsAs refuses dir where another account may write a directory above it: one whose
 // owner is neither root nor euid, who can always give itself the right, or one its group
-// or anybody may write, unless it is sticky, where nobody may rename what is not theirs.
+// or anybody may write, unless it is sticky, where nobody may rename what is not theirs --
+// or, for its group, unless the group lets in no account but euid's (groupOf).
 // Whoever may write a parent can move dir aside and put a directory of their own in its
 // place, with a conflux in it for the boot service to run as root.
 func parentsAs(dir string, euid int) error {
@@ -134,7 +142,7 @@ func parentsAs(dir string, euid int) error {
 		case fi.Mode()&os.ModeSticky != 0:
 		case perm&0o002 != 0:
 			who = "anybody may write, and anybody"
-		case perm&0o020 != 0:
+		case perm&0o020 != 0 && !groupOf(st.Gid, euid):
 			who = fmt.Sprintf("its group, gid %d, may write, and any account in it", st.Gid)
 		}
 
@@ -146,6 +154,35 @@ func parentsAs(dir string, euid int) error {
 	}
 
 	return nil
+}
+
+// groupOf reports whether the group gid lets in no account but euid's: no member it lists,
+// and no account it is the primary group of, but that one -- a group of one user, as Ubuntu
+// gives each, whose write on a directory is that user's alone. Where the group, the account
+// or who the group lets in cannot be read, it does not.
+func groupOf(gid uint32, euid int) bool {
+	g, err := user.LookupGroupId(strconv.FormatUint(uint64(gid), 10))
+	if err != nil {
+		return false
+	}
+
+	me, err := user.LookupId(strconv.Itoa(euid))
+	if err != nil {
+		return false
+	}
+
+	users, err := groupUsers(g.Name, g.Gid)
+	if err != nil {
+		return false
+	}
+
+	for _, u := range users {
+		if u != me.Username {
+			return false
+		}
+	}
+
+	return true
 }
 
 func ownedBy(dir string, fi os.FileInfo, euid int) error {

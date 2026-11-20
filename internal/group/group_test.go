@@ -1,16 +1,17 @@
 //go:build !windows
 
-package account
+package group
 
 import (
 	"slices"
 	"testing"
 )
 
-// TestGroupUsersFrom: who an existing group of the account's name lets in, read from what
-// getent and dscl answer -- its listed members, and every account whose primary group it is --
-// so that one that lets anybody in is never adopted as the account's own.
-func TestGroupUsersFrom(t *testing.T) {
+// TestUsersFrom: who a group lets in, read from what getent and dscl answer -- its listed
+// members, and every account whose primary group it is -- so that one that lets anybody in is
+// never adopted as the account's own, nor a directory it may write taken for one nobody
+// else may.
+func TestUsersFrom(t *testing.T) {
 	for name, tc := range map[string]struct {
 		goos, group, users, gid string
 		want                    []string
@@ -47,8 +48,8 @@ func TestGroupUsersFrom(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if got := groupUsersFrom(tc.goos, tc.group, tc.users, tc.gid); !slices.Equal(got, tc.want) {
-				t.Errorf("groupUsersFrom = %q, want %q", got, tc.want)
+			if got := usersFrom(tc.goos, tc.group, tc.users, tc.gid); !slices.Equal(got, tc.want) {
+				t.Errorf("usersFrom = %q, want %q", got, tc.want)
 			}
 		})
 	}

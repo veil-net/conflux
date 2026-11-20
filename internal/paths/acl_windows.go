@@ -123,8 +123,8 @@ func makeRoot(dir string) error {
 
 // MakeRestricted is MakeDir with Restrict's ownership and DACL: Administrators', or the creating
 // token's where it may not name them, under a protected DACL granting SYSTEM and Administrators
-// full control, inherited by what it holds. A root (makeRoot), and an anchor directory a SYSTEM
-// anchord is given, are made so.
+// full control, inherited by what it holds. A root (makeRoot), an anchor directory a SYSTEM
+// anchord is given, and the staging directory libexec writes a set in, are made so.
 func MakeRestricted(path string) error {
 	return restrictWith(true, func(owner *windows.SID, dacl *windows.ACL) error {
 		sd, err := restrictedSD(owner, dacl)
@@ -164,8 +164,9 @@ func anchordDirSDDL(sid *windows.SID) string {
 // MakeDir creates the directory path, which must not be there yet, in a parent that is, with sd as
 // its security descriptor, set as it is created: it is never anything else, not even for an
 // instant, as one made and then given its security would be, under what its parent passes on. A
-// root (makeRoot, through MakeRestricted) and the directories anchord is given (daemon's
-// makeAnchorDir: MakeRestricted, or MakeAnchordDir for its account) are made so.
+// root (makeRoot, through MakeRestricted), libexec's staging directory (MakeRestricted) and the
+// directories anchord is given (daemon's makeAnchorDir: MakeRestricted, or MakeAnchordDir for its
+// account) are made so.
 func MakeDir(path string, sd *windows.SECURITY_DESCRIPTOR) error {
 	name, err := windows.UTF16PtrFromString(path)
 	if err != nil {

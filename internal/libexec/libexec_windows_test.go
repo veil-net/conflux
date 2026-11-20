@@ -1,6 +1,7 @@
 package libexec
 
 import (
+	"os"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -65,5 +66,31 @@ func TestAUsageCopyIsItsRunners(t *testing.T) {
 		if !sid.Equals(system) && !sid.Equals(admins) {
 			t.Errorf("the set's anchorctl %s grants %s, beside SYSTEM and the Administrators", tools.Anchorctl, sid)
 		}
+	}
+}
+
+// TestAStagingDirectoryIsMadeWithItsDACL: a set is written in a staging directory made with its
+// ownership and DACL set as it is created, never carrying what the directory it is made in passes
+// on: here a denial of WRITE_DAC to whoever owns what is made there, which a staging directory made
+// and then restricted would be refused its DACL by, so Ensure would fail. Windows-only, so it runs
+// in CI's platforms job alone.
+func TestAStagingDirectoryIsMadeWithItsDACL(t *testing.T) {
+	anchortest.Require(t)
+
+	t.Setenv("CONFLUX_DIR", filepath.Join(t.TempDir(), "conflux"))
+
+	d := paths.Default()
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.MkdirAll(d.Libexec(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	privtest.DenyOwnersTheirDACL(t, d.Libexec())
+
+	if _, err := Ensure(d); err != nil {
+		t.Fatalf("Ensure in a directory that refuses what is made in it a DACL given afterwards: %v", err)
 	}
 }

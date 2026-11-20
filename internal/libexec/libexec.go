@@ -217,16 +217,12 @@ func ours(path string, size int) bool {
 func extract(t *Tools) error {
 	root, target := filepath.Dir(t.Dir), t.Dir
 
-	staging, err := os.MkdirTemp(root, ".staging-*")
+	staging, err := makeStaging(root)
 	if err != nil {
 		return fmt.Errorf("create a staging directory in %s: %w", root, err)
 	}
 
 	defer os.RemoveAll(staging) // no-op once the rename has moved it
-
-	if err := paths.Restrict(staging, true); err != nil {
-		return fmt.Errorf("restrict %s: %w", staging, err)
-	}
 
 	// The set directory under another name: the same binaries, modes, owner and DACL,
 	// quarantine cleared, which the rename keeps.

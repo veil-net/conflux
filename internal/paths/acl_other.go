@@ -80,9 +80,9 @@ func secureAs(dir string, euid int) error {
 			}
 		}
 
-		writers, aclGroup, err := extendedWriters(acl)
+		writers, aclGroup, err := aclOf(acl)
 		if err != nil {
-			return fmt.Errorf("read the ACL of %s: %w", acl, err)
+			return err
 		}
 
 		if who := judgeRoot(fi.Mode(), fi.Sys().(*syscall.Stat_t).Gid, writers, aclGroup, euid); who != "" {
@@ -154,11 +154,11 @@ func Foreign(dir string) error {
 }
 
 // parentsAs refuses dir where another account may write a directory above it: one whose
-// owner is neither root nor euid, who can always give itself the right, or one that lets
-// another account write it (mayWrite). Whoever may write a parent can move dir aside and put a
-// directory of their own in its place, with a conflux in it for the boot service to run as
-// root. A link on the way is held to the directory it is in, to those above where it leads,
-// and to its owner, who may point it elsewhere (ancestors).
+// owner is neither root nor euid, who can always give itself the right, or one whose mode or
+// ACL lets another account write it (aclOf, judge). Whoever may write a parent can move dir
+// aside and put a directory of their own in its place, with a conflux in it for the boot
+// service to run as root. A link on the way is held to the directory it is in, to those above
+// where it leads, and to its owner, who may point it elsewhere (ancestors).
 func parentsAs(dir string, euid int) error {
 	above, err := ancestors(dir)
 	if err != nil {
@@ -189,9 +189,12 @@ func parentsAs(dir string, euid int) error {
 		case int(st.Uid) != 0 && int(st.Uid) != euid:
 			who = fmt.Sprintf("belongs to uid %d, who", st.Uid)
 		case !isLink(fi):
-			if who, err = mayWrite(p, fi.Mode(), st.Gid, euid); err != nil {
+			acl, aclGroup, err := aclOf(p)
+			if err != nil {
 				return err
 			}
+
+			who = judge(fi.Mode(), st.Gid, acl, aclGroup, euid)
 		}
 
 		if who != "" {
@@ -204,15 +207,15 @@ func parentsAs(dir string, euid int) error {
 	return nil
 }
 
-// mayWrite is who besides root and euid may write the directory p of mode and group gid, as a
-// refusal names them, or "": see judge, which it hands p's ACL (extendedWriters).
-func mayWrite(p string, mode os.FileMode, gid uint32, euid int) (string, error) {
+// aclOf is who p's ACL lets write it, and whether that ACL says what p's group may
+// (extendedWriters), for judge, or judgeRoot, to hold beside p's mode; a failure names p.
+func aclOf(p string) ([]writer, bool, error) {
 	acl, aclGroup, err := extendedWriters(p)
 	if err != nil {
-		return "", fmt.Errorf("read the ACL of %s: %w", p, err)
+		return nil, false, fmt.Errorf("read the ACL of %s: %w", p, err)
 	}
 
-	return judge(mode, gid, acl, aclGroup, euid), nil
+	return acl, aclGroup, nil
 }
 
 // judgeRoot is who besides root and euid may write a root found at mode, of group gid, with the ACL

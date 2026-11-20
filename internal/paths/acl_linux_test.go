@@ -68,15 +68,13 @@ func TestEnsureAllReadsAPOSIXACL(t *testing.T) {
 // parent's default ACL passes on to the root conflux makes there takes its mask from the 0700
 // the root is made at, and that root is accepted too.
 func TestEnsureAllLeavesTheRootsPOSIXACLToTheNarrowing(t *testing.T) {
-	another := anotherMayWrite
-
 	t.Run("on the root", func(t *testing.T) {
 		root := filepath.Join(t.TempDir(), "conflux")
 		if err := os.Mkdir(root, 0o700); err != nil {
 			t.Fatal(err)
 		}
 
-		if err := unix.Setxattr(root, "system.posix_acl_access", another, 0); err != nil {
+		if err := unix.Setxattr(root, "system.posix_acl_access", anotherMayWrite, 0); err != nil {
 			t.Fatalf("give %s an ACL: %v", root, err)
 		}
 
@@ -103,7 +101,7 @@ func TestEnsureAllLeavesTheRootsPOSIXACLToTheNarrowing(t *testing.T) {
 
 	t.Run("passed on by its parent", func(t *testing.T) {
 		parent := t.TempDir()
-		if err := unix.Setxattr(parent, "system.posix_acl_default", another, 0); err != nil {
+		if err := unix.Setxattr(parent, "system.posix_acl_default", anotherMayWrite, 0); err != nil {
 			t.Fatalf("give %s a default ACL: %v", parent, err)
 		}
 

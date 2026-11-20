@@ -32,9 +32,10 @@ func TestAnErrorSaysWhyNothingRan(t *testing.T) {
 }
 
 // TestConfluxsOwnCallsReachConfluxsDaemon: a shell that exports anchor's ANCHOR_SOCKET and
-// ANCHORD_TOKEN, as anchor's operations guide says to, keeps them for what is typed through
-// to anchorctl, and never for a call conflux makes for itself: a start that pipes an ephemeral
-// run's credential to the daemon the shell names would leave it there when the run ends.
+// ANCHORD_TOKEN, as anchor's operations guide says to, never has them used for a call conflux
+// makes for itself: a start that pipes an ephemeral run's credential to the daemon the shell
+// names would leave it there when the run ends. What is typed through to conflux's daemon
+// keeps the token the shell exports.
 func TestConfluxsOwnCallsReachConfluxsDaemon(t *testing.T) {
 	t.Setenv(SocketEnv, "/run/other/anchord.sock")
 	t.Setenv(TokenEnv, "theirs")
@@ -62,19 +63,24 @@ func TestConfluxsOwnCallsReachConfluxsDaemon(t *testing.T) {
 		t.Errorf("conflux's own call: %s = %q, want only %q", TokenEnv, got, c.Token)
 	}
 
+	// A pass-through reaches conflux's daemon only where the caller named no socket of their
+	// own; one who did is answered before this.
+	t.Setenv(SocketEnv, "")
+	os.Unsetenv(SocketEnv)
+
 	typed := c.PassthroughEnv()
-	if got := values(typed, SocketEnv); !slices.Equal(got, []string{"/run/other/anchord.sock"}) {
-		t.Errorf("pass-through: %s = %q, want the caller's", SocketEnv, got)
+	if got := values(typed, SocketEnv); !slices.Equal(got, []string{c.Socket}) {
+		t.Errorf("pass-through: %s = %q, want conflux's", SocketEnv, got)
 	}
 
 	if got := values(typed, TokenEnv); !slices.Equal(got, []string{"theirs"}) {
 		t.Errorf("pass-through: %s = %q, want the caller's", TokenEnv, got)
 	}
 
-	t.Setenv(SocketEnv, "")
-	os.Unsetenv(SocketEnv)
+	t.Setenv(TokenEnv, "")
+	os.Unsetenv(TokenEnv)
 
-	if got := values(c.PassthroughEnv(), SocketEnv); !slices.Equal(got, []string{c.Socket}) {
-		t.Errorf("pass-through with nothing set: %s = %q, want conflux's", SocketEnv, got)
+	if got := values(c.PassthroughEnv(), TokenEnv); !slices.Equal(got, []string{c.Token}) {
+		t.Errorf("pass-through with no token exported: %s = %q, want conflux's", TokenEnv, got)
 	}
 }

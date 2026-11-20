@@ -16,10 +16,7 @@ import (
 // Environment variables anchorctl reads for its connection details.
 //
 // Setting these rather than injecting -socket and -token-file is what keeps
-// pass-through honest. anchorctl resolves the socket as
-// firstNonEmpty(subcommand -socket, global -socket, ANCHOR_SOCKET), so a flag the
-// user typed still wins over conflux's environment, and conflux never has to
-// rewrite an argv it did not construct.
+// pass-through honest: conflux never has to rewrite an argv it did not construct.
 const (
 	SocketEnv = "ANCHOR_SOCKET"
 	TokenEnv  = "ANCHORD_TOKEN"
@@ -61,16 +58,19 @@ func (c *Ctl) Env() []string {
 	return env
 }
 
-// PassthroughEnv is the child environment for a command somebody typed: the caller's, with
-// conflux's connection details added only where the caller has not set them, so that
-// `ANCHOR_SOCKET=... conflux peers` talks to the daemon they named.
+// PassthroughEnv is the child environment for a command somebody typed for conflux's own
+// daemon: the caller's, with conflux's socket, and its token only where the caller has not
+// set one, so a caller's own ANCHORD_TOKEN wins. A caller who names a socket, by -socket or
+// ANCHOR_SOCKET, is talking to a daemon conflux does not manage, and never comes here.
 func (c *Ctl) PassthroughEnv() []string {
 	env := os.Environ()
 
-	for _, kv := range [...][2]string{{SocketEnv, c.Socket}, {TokenEnv, c.Token}} {
-		if kv[1] != "" && os.Getenv(kv[0]) == "" {
-			env = append(env, kv[0]+"="+kv[1])
-		}
+	if c.Socket != "" {
+		env = append(env, SocketEnv+"="+c.Socket)
+	}
+
+	if c.Token != "" && os.Getenv(TokenEnv) == "" {
+		env = append(env, TokenEnv+"="+c.Token)
 	}
 
 	return env

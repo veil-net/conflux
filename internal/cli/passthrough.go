@@ -21,9 +21,9 @@ import (
 // passthrough hands an argument vector to anchorctl exactly as it arrived.
 //
 // Not one token is parsed. conflux supplies the connection details through the
-// environment instead of injecting flags, because anchorctl resolves the socket as
-// firstNonEmpty(-socket, global -socket, ANCHOR_SOCKET) -- so a flag the user typed
-// still beats conflux's environment, and there is never an argv to rewrite.
+// environment instead of injecting flags, so there is never an argv to rewrite; a socket
+// the user named, by -socket or ANCHOR_SOCKET, is answered before anything of conflux's is
+// supplied, and a token the user exported is kept.
 //
 // On Unix a command for conflux's daemon replaces the process outright. That gives perfect
 // stdio, the child's exit code without translation, signals delivered to the right process,

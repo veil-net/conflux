@@ -549,12 +549,12 @@ func secured(sd *windows.SECURITY_DESCRIPTOR) bool {
 // r.dir as its reparse point through that handle. A handle somebody opened on the one found,
 // which keeps the rights it was opened with, can repoint nothing anybody reaches by the name.
 // Something made at the name before conflux makes its own is refused, naming where the junction
-// led and saying to make it again first: with nothing at the name, the next run would make a root
-// afresh there, and the machine a new identity. A failure to make or point its own says the same;
-// a kill in that instant says nothing, and leaves conflux's empty directory at the name, which
-// windows.md tells an operator to make the junction again in place of. So is a directory that
-// cannot be named by its volume's GUID, which a junction cannot lead to (leadsTo). r.self is the
-// new junction after.
+// led and saying how to make it again first: with nothing at the name, the next run would make a
+// root afresh there, and the machine a new identity. A failure to make or point its own says the
+// same; a kill in that instant says nothing, and leaves nothing, or conflux's empty directory, at
+// the name, which windows.md tells an operator to remove and make the junction again in place of.
+// So is a directory that cannot be named by its volume's GUID, which a junction cannot lead to
+// (leadsTo). r.self is the new junction after.
 func replaceLink(dir string, r *held) error {
 	target, err := leadsTo(dir, r.dir)
 	if err != nil {
@@ -565,15 +565,28 @@ func replaceLink(dir string, r *held) error {
 	shown = strings.TrimPrefix(shown, `\\?\`)
 
 	// The way on from a refusal once the junction found is gone: the junction made again, to where
-	// it led, by its drive letter where it has one.
+	// it led, by its drive letter where it has one, before conflux runs again. Made at the name, a
+	// junction carries what the folder it is in passes on -- in %ProgramData%, Users' right to write
+	// its attributes, enough to point it elsewhere -- which the next run refuses (heldLink). So it is
+	// made in %ProgramFiles%, which passes a right to write on to nobody but SYSTEM, the
+	// Administrators and TrustedInstaller, and moved into place, which on one volume keeps the DACL
+	// it was made with: unprotected, so the next run replaces it with conflux's own. In cmd, where
+	// mklink is, and whose rmdir removes a junction without going into where it leads.
 	leads := shown
 	if leads == "" {
 		leads = target
 	}
 
-	remake := `Remove whatever is at its name and make the junction again, mklink /J "` + dir + `" "` + leads +
-		`", then run this again as Administrator; with nothing there, conflux would make a new root, and the ` +
-		"machine a new identity"
+	stage := `%ProgramFiles%\` + filepath.Base(dir) + ".junction"
+	remake := "Remove whatever is at its name, and make the junction again before conflux runs, or it would make " +
+		"a new root there, and the machine a new identity. Made at its name, the junction would carry what the " +
+		"folder it is in passes on, in %ProgramData% Users' right to write its attributes, and be refused; so " +
+		"make it in a folder only SYSTEM and the Administrators may write, on the same volume, and move it into " +
+		"place. In cmd, not PowerShell, as Administrator:\n" +
+		`    rmdir "` + dir + `"` + "\n" +
+		`    mklink /J "` + stage + `" "` + leads + `"` + "\n" +
+		`    move "` + stage + `" "` + dir + `"` + "\n" +
+		"  then run this again"
 
 	parent, err := openFile(filepath.Dir(dir), windows.FILE_READ_ATTRIBUTES, true)
 	if err != nil {

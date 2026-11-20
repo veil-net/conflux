@@ -6,7 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/veil-net/conflux/internal/privtest"
@@ -224,10 +226,14 @@ func TestSecureReplacesAJunctionRoot(t *testing.T) {
 }
 
 // TestSecureRefusesAJunctionRootMadeAgain: secure removes a junction root before it makes its own
-// at the name, and something somebody made there meanwhile is refused, naming the root, and the
-// mklink /J that makes the junction again, to where it led by its drive letter: with nothing at
-// the name, the next run would make a root afresh there, and the machine a new identity.
-// Windows-only, so it runs in CI's platforms job alone.
+// at the name, and something somebody made there meanwhile is refused, naming the root and the
+// commands that make the junction again, to where it led by its drive letter: with nothing at the
+// name, the next run would make a root afresh there, and the machine a new identity. Followed in a
+// folder that passes on %ProgramData%'s grant to Users, where a junction made at the name by
+// mklink /J carries that grant and is refused, they leave a junction the next secure accepts and
+// replaces with its own, leading where the one found did. Windows-only, so it runs in CI's
+// platforms job alone; the commands make the junction in %ProgramFiles%, so they are followed only
+// where that is on the root's volume.
 func TestSecureRefusesAJunctionRootMadeAgain(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
@@ -246,7 +252,12 @@ func TestSecureRefusesAJunctionRootMadeAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	remake := `mklink /J "` + root + `" "` + strings.TrimPrefix(shown, `\\?\`) + `"`
+	stage := `%ProgramFiles%\j.junction`
+	want := []string{
+		`rmdir "` + root + `"`,
+		`mklink /J "` + stage + `" "` + strings.TrimPrefix(shown, `\\?\`) + `"`,
+		`move "` + stage + `" "` + root + `"`,
+	}
 
 	was := replacing
 	t.Cleanup(func() { replacing = was })
@@ -257,10 +268,74 @@ func TestSecureRefusesAJunctionRootMadeAgain(t *testing.T) {
 		}
 	}
 
-	if err := secure(root); err == nil || !strings.Contains(err.Error(), root+" was made again") ||
-		!strings.Contains(err.Error(), remake) {
-		t.Errorf("secure(a junction root made again as it was replaced) = %v, want a refusal naming it and %s", err,
-			remake)
+	err = secure(root)
+	if err == nil || !strings.Contains(err.Error(), root+" was made again") {
+		t.Fatalf("secure(a junction root made again as it was replaced) = %v, want a refusal naming it", err)
+	}
+
+	var commands []string
+
+	for line := range strings.Lines(err.Error()) {
+		if command, ok := strings.CutPrefix(strings.TrimRight(line, "\n"), "    "); ok {
+			commands = append(commands, command)
+		}
+	}
+
+	if !slices.Equal(commands, want) {
+		t.Fatalf("the refusal's commands are %q, want %q", commands, want)
+	}
+
+	replacing = was
+
+	if !strings.EqualFold(filepath.VolumeName(os.Getenv("ProgramFiles")), filepath.VolumeName(root)) {
+		t.Skipf("%%ProgramFiles%% is not on the volume %s is on, so the commands cannot move a junction into place", root)
+	}
+
+	t.Cleanup(func() { os.Remove(filepath.Join(os.Getenv("ProgramFiles"), "j.junction")) })
+
+	privtest.ProgramDataGrant(t, filepath.Dir(root))
+
+	if err := os.Remove(root); err != nil {
+		t.Fatal(err)
+	}
+
+	mklinkJ(t, root, target)
+
+	if err := secure(root); err == nil || !strings.Contains(err.Error(), root) {
+		t.Fatalf("secure(a junction made by mklink /J where Users are passed the right to write its attributes) = "+
+			"%v, want a refusal naming it", err)
+	}
+
+	for _, command := range commands {
+		c := exec.Command("cmd")
+		c.SysProcAttr = &syscall.SysProcAttr{CmdLine: "cmd /c " + command}
+
+		if out, err := c.CombinedOutput(); err != nil {
+			t.Fatalf("%s: %v\n%s", command, err, out)
+		}
+	}
+
+	if err := secure(root); err != nil {
+		t.Fatalf("secure(a junction made again as the refusal says) = %v", err)
+	}
+
+	led, err := os.Stat(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if was, err := os.Stat(target); err != nil || !os.SameFile(led, was) {
+		t.Errorf("%s no longer leads to %s once secure took the junction made again (%v)", root, target, err)
+	}
+
+	j, err := openFile(root, readAccess, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.CloseHandle(j)
+
+	if sd, err := security(j); err != nil || !secured(sd) {
+		t.Errorf("secure did not replace the junction made again at %s with its own (%v)", root, err)
 	}
 }
 

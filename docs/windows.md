@@ -149,17 +149,36 @@ from the moment it exists, and pointed through that handle at the directory conf
 junction can lead only to a directory named by its volume's GUID, so a link root leading to a local
 volume that has no such name is refused, whether conflux would replace it or finds it its own
 already, and passed over by every reader of an ephemeral root. Something made at that name in
-between is refused, naming where the junction led and the `mklink /J` that makes it again, which
-comes before conflux is run again: with nothing at the name, conflux would make a new root there,
-and the machine a new identity. A failure to make or point its own junction says the same. Between
-removing the junction and pointing its own, conflux holds the name with an empty directory of its
-own, so a conflux killed in that instant leaves that directory, which the next run takes as a new
-root: make the junction again (`mklink /J`) before the next `up`. A junction or a link inside a
-root, anywhere conflux looks, is refused whoever may change it, since conflux makes none there;
-`anchor\` and `run\anchord\`, which `anchord` writes, are not looked inside. And the two binaries
-the service runs as SYSTEM, and `wintun.dll` beside them, are run only if Administrators, SYSTEM or
-the account running conflux owns them — a set directory is named for content anybody can compute, so
-one made by somebody else is extracted again rather than trusted.
+between is refused, naming where the junction led and the commands that make it again (below),
+which come before conflux is run again: with nothing at the name, conflux would make a new root
+there, and the machine a new identity. A failure to make or point its own junction says the same.
+Between removing the junction and pointing its own, the name holds nothing and then an empty
+directory of conflux's, so a conflux killed then leaves either, which the next run takes as a new
+root: remove whatever is at the name and make the junction again before the next `up`. A junction
+or a link inside a root, anywhere conflux looks, is refused whoever may change it, since conflux
+makes none there; `anchor\` and `run\anchord\`, which `anchord` writes, are not looked inside. And
+the two binaries the service runs as SYSTEM, and `wintun.dll` beside them, are run only if
+Administrators, SYSTEM or the account running conflux owns them — a set directory is named for
+content anybody can compute, so one made by somebody else is extracted again rather than trusted.
+
+A junction root is made again in a folder only SYSTEM and the Administrators may write, on the
+root's volume — `%ProgramFiles%` on the system drive — and moved into place, not made at its name
+with `mklink /J`: there it would carry what the folder it is in passes on, in `%ProgramData%`
+`Users`' right to write its attributes, enough to point it elsewhere, and conflux would refuse it.
+A move on one volume keeps the DACL the junction was made with, which is not protected, so the next
+run replaces it with one of conflux's own. In `cmd` — `mklink` is one of its commands, and its
+`rmdir` removes a junction without going into where it leads — as Administrator, for
+`%ProgramData%\conflux` leading to `D:\conflux`, the refusal says:
+
+```
+rmdir "C:\ProgramData\conflux"
+mklink /J "%ProgramFiles%\conflux.junction" "D:\conflux"
+move "%ProgramFiles%\conflux.junction" "C:\ProgramData\conflux"
+```
+
+For a `CONFLUX_DIR` on another volume, where `move` cannot take a junction from `%ProgramFiles%`,
+make it in a directory on that volume that only SYSTEM and the Administrators can write, then move
+it into place the same way.
 
 Where `anchord` runs as `LOCAL SERVICE` (below), the service's own SID,
 `NT SERVICE\conflux`, is added to exactly what it needs: read and execute on its set

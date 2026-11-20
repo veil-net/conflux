@@ -193,11 +193,18 @@ func bringUp(
 		}
 	}
 
-	// What runs holds this credential now, under this identity, from these binaries.
+	// What runs holds this credential now, under this identity, from these binaries. Its window
+	// is the state's only where this starts everything the configuration runs: a part started
+	// beside one that runs on leaves the window that one holds, which a renewal on the way has
+	// moved already where it was installed in it, and leaves due where it was not (stale).
+	whole := start == everything(cfg)
+
 	running := func(id string) {
-		st.AnchorID = id
-		st.IssuedAt, st.NotAfter = h.m.IssuedAt(), h.m.NotAfter()
-		st.BinSetID = ctl.SetID
+		st.AnchorID, st.BinSetID = id, ctl.SetID
+
+		if whole {
+			st.IssuedAt, st.NotAfter = h.m.IssuedAt(), h.m.NotAfter()
+		}
 	}
 
 	if start.observer {

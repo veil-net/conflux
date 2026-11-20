@@ -777,6 +777,68 @@ func TestARenewalBeforeAStartReachesWhatAlreadyRuns(t *testing.T) {
 	}
 }
 
+// TestAPartStartedAgainKeepsTheWindowOfWhatRunsOn: a renewal one part would not take leaves the
+// state describing the chain that part still holds, due again; the watcher starting the other
+// part on the manifest the renewed chain is in leaves it so, rather than moving the window onto
+// the renewed chain, which would have the timer sleep while the part that runs on holds the old
+// one past its expiry.
+func TestAPartStartedAgainKeepsTheWindowOfWhatRunsOn(t *testing.T) {
+	for name, tc := range map[string]struct {
+		refusing string
+		start    parts
+	}{
+		"the observer started again beside an anchor on the old chain": {"renew", parts{observer: true}},
+		"the anchor rebuilt beside an observer on the old chain":       {"observe", parts{anchor: true}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(fakeAnchorctlObserverEnv, "running")
+
+			is := newIssuer(t)
+			d := machine(t, is, time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour))
+
+			cfg := configOf(t, d)
+			cfg.Observer = &config.Observer{}
+
+			if err := config.Save(d, cfg); err != nil {
+				t.Fatal(err)
+			}
+
+			// What both parts started on.
+			old := stored(t, d)
+			if err := config.SaveState(d, &config.State{AnchorID: renewTestAnchor, IssuedAt: old.IssuedAt(), NotAfter: old.NotAfter()}); err != nil {
+				t.Fatal(err)
+			}
+
+			t.Setenv(fakeAnchorctlFailEnv, tc.refusing)
+
+			if err := RenewNow(t.Context(), d, fakeCtl(t), nil); err == nil {
+				t.Fatal("RenewNow succeeded with an install one part refused")
+			}
+
+			t.Setenv(fakeAnchorctlFailEnv, "")
+
+			held, err := config.LoadState(d)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err := bringUp(t.Context(), d, fakeCtl(t), nopReporter{}, d.RootAnchorDir(), false, tc.start); err != nil {
+				t.Fatalf("bringUp: %v", err)
+			}
+
+			st, err := config.LoadState(d)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if !st.IssuedAt.Equal(held.IssuedAt) || !st.NotAfter.Equal(held.NotAfter) || !dueAt(st.IssuedAt, st.NotAfter, time.Now()) {
+				t.Errorf("the state reads %v to %v, want the window the part running on holds, %v to %v, still due",
+					st.IssuedAt, st.NotAfter, held.IssuedAt, held.NotAfter)
+			}
+		})
+	}
+}
+
 // TestARenewalWhileTheAnchorIsNotRunningIsNotDueAgain: REASON_NOT_RUNNING is no failed install
 // either -- the renewed chain is saved, and the watcher's rebuild starts the anchor from it -- so
 // the renewal stands, recorded, rather than staying due and drawing a fresh credential from the

@@ -223,11 +223,11 @@ func TestSecureReplacesAJunctionRoot(t *testing.T) {
 	}
 }
 
-// TestSecureRefusesAJunctionRootMadeAgain: secure removes a junction root before it makes its own at
-// the name, and something somebody made there meanwhile is refused, naming the root, and the
-// mklink /J that makes the junction again, to where it led by its drive letter: with nothing at the
-// name, the next run would make a root afresh there, and the machine a new identity. Windows-only, so
-// it runs in CI's platforms job alone.
+// TestSecureRefusesAJunctionRootMadeAgain: secure removes a junction root before it makes its own
+// at the name, and something somebody made there meanwhile is refused, naming the root, and the
+// mklink /J that makes the junction again, to where it led by its drive letter: with nothing at
+// the name, the next run would make a root afresh there, and the machine a new identity.
+// Windows-only, so it runs in CI's platforms job alone.
 func TestSecureRefusesAJunctionRootMadeAgain(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
@@ -548,16 +548,16 @@ func TestSecureFillsTheRoot(t *testing.T) {
 // TestSecureHoldsWhatTheRootHolds: what a root found unrestricted holds is judged, by secure before
 // it restricts the root and by Foreign, by its own owner and DACL, read without following it, and
 // held to who may write it, move it or point it elsewhere: a junction, which conflux makes none of
-// there, whoever may point it elsewhere, though where it leads is nobody else's; a folder Users may delete, or write the attributes of,
-// enough to make a junction of it while it is empty, or add folders to, or write the extended
-// attributes of; one that only inherits the right to write its attributes, which a handle opened
-// before the restriction keeps once the restriction has replaced it; a folder named anchor that another account
-// owns, though it grants anchord what conflux grants it; and one granting anchord that also lets
-// Users add to it. conflux's own layout is let through: anchor\ and run\anchord\ granting anchord's
-// service SID what MakeAnchordDir grants it, run\anchord\sock owned by that SID, which the walk does
-// not go into, and a SYSTEM anchord's socket in a run\anchord\ of SYSTEM's and the Administrators',
-// a reparse point a lookup does not follow. Windows-only,
-// so it runs in CI's platforms job alone.
+// there, whoever may point it elsewhere, though where it leads is nobody else's; a folder Users may
+// delete, or write the attributes of, enough to make a junction of it while it is empty, or add
+// folders to, or write the extended attributes of; one that only inherits the right to write its
+// attributes, which a handle opened before the restriction keeps once the restriction has replaced
+// it; a folder named anchor that another account owns, though it grants anchord what conflux
+// grants it; and one granting anchord that also lets Users add to it. conflux's own layout is let
+// through: anchor\ and run\anchord\ granting anchord's service SID what MakeAnchordDir grants it,
+// run\anchord\sock owned by that SID, which the walk does not go into, and a SYSTEM anchord's
+// socket in a run\anchord\ of SYSTEM's and the Administrators', a reparse point a lookup does not
+// follow. Windows-only, so it runs in CI's platforms job alone.
 func TestSecureHoldsWhatTheRootHolds(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 

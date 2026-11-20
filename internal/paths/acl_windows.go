@@ -123,8 +123,7 @@ func makeRoot(dir string) error {
 
 // MakeRestricted is makeDir with Restrict's ownership and DACL: Administrators', or the creating
 // token's where it may not name them, under a protected DACL granting SYSTEM and Administrators
-// full control, inherited by what it holds. A root (makeRoot), an anchor directory a SYSTEM
-// anchord is given, and the staging directory libexec writes a set in, are made so.
+// full control, inherited by what it holds.
 func MakeRestricted(path string) error {
 	return restrictedDir(func(sd *windows.SECURITY_DESCRIPTOR) error { return makeDir(path, sd) })
 }

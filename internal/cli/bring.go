@@ -60,16 +60,17 @@ func bring(ctx context.Context, d paths.Dirs, cfg *config.Config, verb string, s
 	// started it. A `conflux up` that ran its own daemon would leave two ideas of what is
 	// running -- the service manager's and ours -- and they would disagree the moment either
 	// changed.
-	if err := newService().Restart(); err != nil {
+	mgr := newService()
+	if err := mgr.Restart(); err != nil {
 		return fail(err)
 	}
 
-	started, err := waitFor(ctx, d, cfg)
+	started, err := waitFor(ctx, d, mgr, cfg)
 	if err != nil {
 		return fail(err)
 	}
 
-	report(d, cfg, started, verb)
+	report(d, mgr, cfg, started, verb)
 
 	return ExitOK
 }
@@ -84,8 +85,9 @@ func bring(ctx context.Context, d paths.Dirs, cfg *config.Config, verb string, s
 // fallback, kept at one a second because it forks anchorctl and because it is the only
 // thing that still works if a marker never arrives at all. systemd's Type=notify makes
 // `systemctl restart` return only once the anchor is up, so on Linux the first call
-// already succeeds; launchd, rc and the Windows SCM give no such signal.
-func waitFor(ctx context.Context, d paths.Dirs, cfg *config.Config) (anchorctl.Status, error) {
+// already succeeds; launchd, rc and the Windows SCM give no such signal. mgr, the service just
+// restarted, says where its output is when nothing came up.
+func waitFor(ctx context.Context, d paths.Dirs, mgr service.Manager, cfg *config.Config) (anchorctl.Status, error) {
 	ctl, err := runCtl(d)
 	if err != nil {
 		return anchorctl.Status{}, err
@@ -146,7 +148,7 @@ func waitFor(ctx context.Context, d paths.Dirs, cfg *config.Config) (anchorctl.S
 
 			return anchorctl.Status{}, fmt.Errorf(
 				"the service started but %s within 90s.\n"+
-					"  see what it said:  %s", what, service.New().LogHint())
+					"  see what it said:  %s", what, mgr.LogHint())
 		}
 
 		select {
@@ -179,8 +181,8 @@ func exitNote(cfg *config.Config) string {
 	}
 }
 
-// report is what a person sees when it worked.
-func report(d paths.Dirs, cfg *config.Config, st anchorctl.Status, verb string) {
+// report is what a person sees when it worked; mgr is the service that started it.
+func report(d paths.Dirs, mgr service.Manager, cfg *config.Config, st anchorctl.Status, verb string) {
 
 	ui.Println()
 
@@ -194,7 +196,7 @@ func report(d paths.Dirs, cfg *config.Config, st anchorctl.Status, verb string) 
 
 	reportObserver(cfg, st.Observer)
 
-	ui.Field("service", service.New().Describe())
+	ui.Field("service", mgr.Describe())
 
 	reportPrivilege(priv, recorded, true)
 

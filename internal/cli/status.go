@@ -16,7 +16,6 @@ import (
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
-	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
 	"github.com/veil-net/conflux/internal/version"
 )
@@ -154,7 +153,7 @@ func askDaemon(ctx context.Context, d paths.Dirs, export bool) *daemonAnswers {
 	return a
 }
 
-func reportService() { ui.Field("service", service.New().Describe()) }
+func reportService() { ui.Field("service", newService().Describe()) }
 
 // reportEphemeralRun says what an ephemeral run is doing, before the machine's own anchor,
 // and whether one is running: or what a killed one left behind.

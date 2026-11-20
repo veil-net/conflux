@@ -143,7 +143,9 @@ func TestUpdateReplacesTheExecutable(t *testing.T) {
 	}
 }
 
-// standInService makes the boot manager install and update use mgr.
+// standInService makes mgr the boot manager (newService) for the rest of the test: the one
+// install registers with, start and bring restart, report and status name, and update asks
+// about.
 func standInService(t *testing.T, mgr service.Manager) {
 	t.Helper()
 

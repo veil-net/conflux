@@ -135,8 +135,8 @@ func install(ctx context.Context, d paths.Dirs, standalone bool) int {
 	return startFromConfig(ctx, d, mgr, cfg, "install")
 }
 
-// newService is the boot manager install registers with, start and bring restart, and update
-// asks about; a test's stands in for it.
+// newService is the boot manager install registers with, start and bring restart, waitFor,
+// report and status name, and update asks about; a test's stands in for it.
 var newService = service.New
 
 // register names exe, the copy Place made, as the boot service, defined as this conflux
@@ -169,12 +169,12 @@ func startFromConfig(ctx context.Context, d paths.Dirs, mgr service.Manager, cfg
 		return fail(err)
 	}
 
-	st, err := waitFor(ctx, d, cfg)
+	st, err := waitFor(ctx, d, mgr, cfg)
 	if err != nil {
 		return fail(err)
 	}
 
-	report(d, cfg, st, verb)
+	report(d, mgr, cfg, st, verb)
 
 	return ExitOK
 }

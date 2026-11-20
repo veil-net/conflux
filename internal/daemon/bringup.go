@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"time"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
@@ -115,7 +114,8 @@ type brought struct {
 // observing: beside an anchor, an observer that will not start is said, and the anchor starts
 // without it; observing alone, it is the error.
 //
-// dir is the anchor directory the daemon's identity was given (see Supervisor.anchorDir).
+// dir is the anchor directory the daemon's identity was given, which prepare made at its spawn
+// (see Supervisor.anchorDir).
 // reopened counts the start as an uplink rebuilt, in the same state write as the rest,
 // once it has succeeded.
 func bringUp(
@@ -223,10 +223,6 @@ func bringUp(
 
 	if !start.anchor {
 		return up, nil
-	}
-
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return up, fmt.Errorf("create %s: %w", dir, err)
 	}
 
 	started, err := ctl.Start(ctx, h.env, anchorctl.ModeFromConfig(cfg, dir))

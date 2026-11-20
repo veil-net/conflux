@@ -37,6 +37,12 @@ func supervised(t *testing.T, mode string) (*Supervisor, string) {
 
 	s := &Supervisor{Dirs: d, tools: &libexec.Tools{Anchord: os.Args[0]}, tail: newRing(tailLines), ctl: fakeCtl(t)}
 
+	// The anchor directory anchord is given, which prepare makes at every spawn.
+	s.priv.Dir = d.RootAnchorDir()
+	if err := os.MkdirAll(s.priv.Dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
 	return s, log
 }
 

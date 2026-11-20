@@ -236,7 +236,19 @@ var errNoConnection = errors.New("the rebuilt link carried no connection")
 // bringUp rather than anything of its own: it is the path `up`, `proxy`, `observe` and every
 // boot already take, so a rebuilt anchor cannot be a subtly different one from the one a reboot
 // would start. The daemon is untouched, so this costs one anchor's sessions and not the process.
+//
+// Except where the anchor directory anchord was given has gone: prepare makes it at a spawn, as
+// the identity anchord runs as, so the cycle starts anchord again. Made here it would be the
+// supervisor's, which an account's anchord cannot write and the next start reads as conflux
+// 1.0.0's layout, refusing the machine for good.
 func (s *Supervisor) rebuildAnchor(ctx context.Context, why string, link bool, k *keeper) outcome {
+	if !exists(s.priv.Dir) {
+		s.report().Warn("%s, and %s is gone; starting anchord again, which makes it", why, s.priv.Dir)
+		s.requestRespawn()
+
+		return respawned
+	}
+
 	s.stopAnchor(ctx, why+"; rebuilding the anchor")
 
 	// An ended link's rebuild is counted in the state bringUp writes anyway, where status reads

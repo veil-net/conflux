@@ -241,7 +241,6 @@ func TestEachIsGivenUpOnAlone(t *testing.T) {
 			t.Setenv(fakeAnchorctlRefuseEnv, "start")
 
 			s, log := supervised(t, "1")
-			s.priv.Dir = s.Dirs.RootAnchorDir()
 
 			cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, Observer: &config.Observer{}}
 			if err := config.Save(s.Dirs, cfg); err != nil {
@@ -277,6 +276,41 @@ func TestEachIsGivenUpOnAlone(t *testing.T) {
 				t.Errorf("the state records the anchor refused as %q at %v, want recorded %v", st.AnchorRefused, st.AnchorRefusedAt, tc.rebuilds > 0)
 			}
 		})
+	}
+}
+
+// TestAGoneAnchorDirectoryIsTheNextSpawnsToMake: an anchor directory gone from under the running
+// service is made again by the next spawn, as the identity anchord is given, rather than by a
+// rebuild, which would make it the supervisor's: an account's anchord could not write it, and
+// the next start would take it for conflux 1.0.0's and refuse the machine for good.
+func TestAGoneAnchorDirectoryIsTheNextSpawnsToMake(t *testing.T) {
+	t.Setenv(fakeAnchorctlStatusEnv, "none")
+
+	s, log := supervised(t, "1")
+	s.respawn = make(chan struct{}, 1)
+
+	credentialed(t, s.Dirs)
+
+	if err := os.RemoveAll(s.priv.Dir); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := s.rebuildAnchor(t.Context(), "anchord holds no anchor any more", false, newKeeper(time.Millisecond, time.Millisecond)); got != respawned {
+		t.Errorf("the rebuild came to %v, want the cycle asked to start anchord again", got)
+	}
+
+	select {
+	case <-s.respawn:
+	default:
+		t.Error("the cycle was not asked to start anchord again")
+	}
+
+	if exists(s.priv.Dir) {
+		t.Errorf("the rebuild made %s itself", s.priv.Dir)
+	}
+
+	if slices.Contains(ran(t, log), "start") {
+		t.Error("an anchor was started with no directory to start it in")
 	}
 }
 
@@ -488,7 +522,6 @@ func TestASwitchedOffFarEndIsReopenedLessAndLessOften(t *testing.T) {
 	t.Cleanup(func() { linkGrace = grace })
 
 	s, log := supervised(t, "1")
-	s.priv.Dir = s.Dirs.RootAnchorDir()
 
 	device := filepath.Join(t.TempDir(), "ttyUSB0")
 	if err := os.WriteFile(device, nil, 0o600); err != nil {
@@ -529,7 +562,6 @@ func TestALinkThatCarriesHasWorked(t *testing.T) {
 	t.Cleanup(func() { linkGrace = grace })
 
 	s, log := supervised(t, "1")
-	s.priv.Dir = s.Dirs.RootAnchorDir()
 
 	r := &recorder{}
 	s.Reporter = r
@@ -596,7 +628,6 @@ func TestAnObserverThatDidNotStartBesideAnAnchorIsStartedAgain(t *testing.T) {
 	t.Setenv(fakeAnchorctlFailEnv, "observe")
 
 	s, log := supervised(t, "1")
-	s.priv.Dir = s.Dirs.RootAnchorDir()
 
 	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, Observer: &config.Observer{}}
 	if err := config.Save(s.Dirs, cfg); err != nil {
@@ -629,7 +660,6 @@ func TestAGoneDeviceIsWaitedFor(t *testing.T) {
 	t.Setenv(fakeAnchorctlStatusEnv, "running")
 
 	s, log := supervised(t, "1")
-	s.priv.Dir = s.Dirs.RootAnchorDir()
 
 	device := filepath.Join(t.TempDir(), "ttyUSB0")
 

@@ -135,8 +135,8 @@ func install(ctx context.Context, d paths.Dirs, standalone bool) int {
 	return startFromConfig(ctx, d, mgr, cfg, "install")
 }
 
-// newService is the boot manager install registers with, start and bring restart, waitFor,
-// report and status name, and update asks about; a test's stands in for it.
+// newService is the boot manager install registers with, startAndReport restarts and names,
+// status names, and update asks about; a test's stands in for it.
 var newService = service.New
 
 // register names exe, the copy Place made, as the boot service, defined as this conflux
@@ -164,19 +164,7 @@ func register(mgr service.Manager, exe string) error {
 func startFromConfig(ctx context.Context, d paths.Dirs, mgr service.Manager, cfg *config.Config, verb string) int {
 	ui.Printf("Starting from the configuration in %s.\n", d.ConfigFile())
 
-	// The marker was withdrawn by install, which every caller has just been through.
-	if err := mgr.Restart(); err != nil {
-		return fail(err)
-	}
-
-	st, err := waitFor(ctx, d, mgr, cfg)
-	if err != nil {
-		return fail(err)
-	}
-
-	report(d, mgr, cfg, st, verb)
-
-	return ExitOK
+	return startAndReport(ctx, d, mgr, cfg, verb)
 }
 
 // runStart starts the anchor now, from the configuration already on disk.

@@ -371,20 +371,23 @@ func (s *Supervisor) bringUpAll(ctx context.Context, cfg *config.Config) (brough
 	return bringUp(ctx, s.Dirs, s.ctl, s.report(), s.priv.Dir, false, everything(cfg))
 }
 
-// anchordArgs is everything anchord is started with.
+// anchordArgs is everything anchord is started with: the socket, and -config, which carries
+// conflux.json's export block into the daemon on every start (see writeDaemonConfig) -- but
+// not an ephemeral run's, since nothing of the run is written; its export, where there is
+// one, goes over the socket.
 //
-// A function rather than three lines inside spawn, so the argument vector can be
-// asserted without starting a process. -config is what carries conflux.json's export
-// block into the daemon on every start; see writeDaemonConfig. anchord serves the observer
-// always, and it observes only once asked to under a credential; what lets it capture is the
-// privilege the supervisor gives it (privilege.go), only where the configuration observes.
+// A function rather than lines inside exec, so the argument vector can be asserted without
+// starting a process. anchord serves the observer always, and it observes only once asked to
+// under a credential; what lets it capture is the privilege the supervisor gives it
+// (privilege.go), only where the configuration observes.
 //
 // No -token-file: the token arrives as ANCHORD_TOKEN (anchor's contract.Token), so the
 // file the CLI reads it from stays root's whoever anchord runs as.
-func anchordArgs(d paths.Dirs) []string {
-	args := []string{
-		"-socket", d.Socket(),
-		"-config", d.DaemonConfigFile(),
+func (s *Supervisor) anchordArgs() []string {
+	args := []string{"-socket", s.Dirs.Socket()}
+
+	if !s.ephemeral {
+		args = append(args, "-config", s.Dirs.DaemonConfigFile())
 	}
 
 	if os.Getenv("CONFLUX_DEBUG") == "1" {
@@ -474,7 +477,7 @@ func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *child, error) 
 		return nil, nil, err
 	}
 
-	c, err := s.exec(p, anchordArgs(s.Dirs), cfg.Observer != nil)
+	c, err := s.exec(p, cfg.Observer != nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -482,14 +485,14 @@ func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *child, error) 
 	return cfg, c, nil
 }
 
-// exec starts anchord with args as p says, records it, and returns it running: the part of
-// a spawn that does not depend on where its configuration came from.
-func (s *Supervisor) exec(p Privilege, args []string, observing bool) (*child, error) {
+// exec starts anchord as p says, records it, and returns it running: the part of a spawn that
+// does not depend on where its configuration came from.
+func (s *Supervisor) exec(p Privilege, observing bool) (*child, error) {
 	s.report().Step("starting anchord as %s", p)
 
 	out := s.lines()
 
-	cmd := exec.Command(s.tools.Anchord, args...) //nolint:gosec // our own extracted binary
+	cmd := exec.Command(s.tools.Anchord, s.anchordArgs()...) //nolint:gosec // our own extracted binary
 	cmd.SysProcAttr = s.procAttrFor(p)
 	cmd.Env = anchordEnv(p, s.ctl.Token)
 	cmd.Dir = workDir

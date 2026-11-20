@@ -171,7 +171,7 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 		return fmt.Errorf("prepare %s: %w", d.DaemonRun(), err)
 	}
 
-	c, err := s.exec(p, ephemeralArgs(d), e.Config.Observer != nil)
+	c, err := s.exec(p, e.Config.Observer != nil)
 	if err != nil {
 		return err
 	}
@@ -244,18 +244,6 @@ func (e *Ephemeral) report() Reporter {
 	}
 
 	return e.Reporter
-}
-
-// ephemeralArgs is what an ephemeral anchord is started with: the socket, and no -config,
-// since nothing of the run is written; the export, where there is one, goes over the socket.
-func ephemeralArgs(d paths.Dirs) []string {
-	args := []string{"-socket", d.Socket()}
-
-	if os.Getenv("CONFLUX_DEBUG") == "1" {
-		args = append(args, "-v")
-	}
-
-	return args
 }
 
 // checkHanded refuses a credential an ephemeral run was handed that has expired, since nothing

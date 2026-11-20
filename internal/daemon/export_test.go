@@ -17,7 +17,7 @@ import (
 func TestAnchordIsStartedWithAConfig(t *testing.T) {
 	d := dirs(t)
 
-	args := anchordArgs(d)
+	args := (&Supervisor{Dirs: d}).anchordArgs()
 
 	i := slices.Index(args, "-config")
 	if i < 0 {
@@ -35,7 +35,10 @@ func TestAnchordIsStartedWithAConfig(t *testing.T) {
 func TestAnchordIsAskedToAllowNothingOfTheObserver(t *testing.T) {
 	d := dirs(t)
 
-	for who, args := range map[string][]string{"the supervisor": anchordArgs(d), "an ephemeral run": ephemeralArgs(d)} {
+	for who, args := range map[string][]string{
+		"the supervisor":   (&Supervisor{Dirs: d}).anchordArgs(),
+		"an ephemeral run": (&Supervisor{Dirs: d, ephemeral: true}).anchordArgs(),
+	} {
 		if slices.Contains(args, "-allow-observer") {
 			t.Errorf("%s: anchord is started with %q, a flag it no longer has", who, args)
 		}

@@ -374,3 +374,70 @@ func ephemeralRunner(root string) int {
 
 	return 0
 }
+
+// TestARunStartingAsAnotherEndsKeepsItsRoot: a run's root is emptied while its lock is held and
+// then removed, so a run that takes the lock the moment it is let go -- one starting as another
+// ends, or as uninstall clears a killed one's root -- is not emptied out from under itself; and
+// with none, nothing of the root is left.
+func TestARunStartingAsAnotherEndsKeepsItsRoot(t *testing.T) {
+	for name, racing := range map[string]bool{"alone": false, "with a run starting": true} {
+		t.Run(name, func(t *testing.T) {
+			root := filepath.Join(dirs(t).State, "e")
+			e := paths.EphemeralDirs(root)
+
+			if err := e.EnsureAll(); err != nil {
+				t.Fatal(err)
+			}
+
+			unlock, ok, err := flock.TryAcquire(e.ServeLockFile())
+			if err != nil || !ok {
+				t.Fatalf("could not hold the lock: %v", err)
+			}
+
+			// What the ending run left.
+			if err := os.WriteFile(e.TokenFile(), []byte("the old run's"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			// The next run, which takes the lock as soon as it is let go, and makes its own.
+			letGo := func() {
+				unlock()
+
+				if !racing {
+					return
+				}
+
+				next, ok, err := flock.TryAcquire(e.ServeLockFile())
+				if err != nil || !ok {
+					t.Fatalf("the next run could not take the lock: %v", err)
+				}
+
+				t.Cleanup(next)
+
+				if err := e.EnsureAll(); err != nil {
+					t.Fatal(err)
+				}
+
+				if err := os.WriteFile(e.TokenFile(), []byte("the next run's"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			if err := RemoveEphemeral(e, letGo, nil); err != nil {
+				t.Errorf("RemoveEphemeral: %v", err)
+			}
+
+			if !racing {
+				if _, err := os.Stat(root); !os.IsNotExist(err) {
+					t.Errorf("the root is still there: %v", err)
+				}
+
+				return
+			}
+
+			if b, err := os.ReadFile(e.TokenFile()); err != nil || string(b) != "the next run's" {
+				t.Errorf("the next run's token reads %q (%v): its root was emptied under it", b, err)
+			}
+		})
+	}
+}

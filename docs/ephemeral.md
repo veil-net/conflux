@@ -135,7 +135,9 @@ says the run renews itself.
 
 The next run clears whatever a killed one left: its anchord, by the record of it, and every
 process of the ephemeral account; then the rest of its root. So does `conflux uninstall`, which
-removes the account that anchord runs as.
+removes the account that anchord runs as. A root is emptied while its lock is held, by a run as
+it ends and by uninstall, and only then is the lock let go and the empty root removed, so a run
+starting at that moment keeps everything it makes.
 
 ## What "nothing written" covers
 

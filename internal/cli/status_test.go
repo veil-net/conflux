@@ -16,13 +16,14 @@ import (
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
+	"github.com/veil-net/conflux/internal/privcheck"
 )
 
 // runningStandIn makes d's daemon look running (looksRunning), and puts a stand-in anchorctl
 // where d's extracted pair is found whole: a script that writes each command it is run with to a
-// line of log, says an anchor runs, and says the export was set by a call to anchorctl export.
-// Its anchord never runs. Each is padded to its embedded binary's size, which is what finding a
-// pair whole checks.
+// line of log, answers status with standInStatusEnv's line, or says an anchor runs, and says the
+// export was set by a call to anchorctl export. Its anchord never runs. Each is padded to its
+// embedded binary's size, which is what finding a pair whole checks.
 func runningStandIn(t *testing.T, d paths.Dirs, log string) {
 	t.Helper()
 
@@ -33,7 +34,7 @@ func runningStandIn(t *testing.T, d paths.Dirs, log string) {
 
 	script := "#!/bin/sh\necho \"$1\" >>'" + log + "'\n" +
 		"case $1 in\n" +
-		"status) echo 'anchor running' ;;\n" +
+		"status) echo \"${" + standInStatusEnv + ":-anchor running}\" ;;\n" +
 		"export) echo '  set by anchorctl export' ;;\n" +
 		"esac\nexit 0\n"
 
@@ -73,6 +74,9 @@ func looksRunning(t *testing.T, d paths.Dirs) {
 		t.Fatal(err)
 	}
 }
+
+// standInStatusEnv is the line runningStandIn's anchorctl answers status with, where it is set.
+const standInStatusEnv = "CONFLUX_TEST_STANDIN_STATUS"
 
 // TestStatusAsksWhatItReports: status asks the machine's daemon for its export, which it
 // reports, and an ephemeral run's daemon only for its status, since nothing of that run's
@@ -160,19 +164,45 @@ func TestStatusAsksWhatItReports(t *testing.T) {
 	}
 }
 
-// TestStatusSaysTheAnchorWasRefused: an anchor the supervisor gave up on for good, while the
-// observer runs on without it, is said with why and since when, and what tries again -- where
-// anchorctl's status below says only that no anchor runs. Observing alone, nothing of it is.
-func TestStatusSaysTheAnchorWasRefused(t *testing.T) {
+// TestStatusSaysTheAnchorWasGivenUp: an anchor the supervisor gave up on, refused for good, is
+// said on a `given up` line, with when and why and what tries again, wherever no anchor runs --
+// the daemon answering with none, or not answering, the service having ended on it -- where
+// anchorctl's status below says only that none runs. The line claims nothing of the observer,
+// whose own row says whether it runs. Nothing of it is said while an anchor runs, nor observing
+// alone.
+func TestStatusSaysTheAnchorWasGivenUp(t *testing.T) {
 	const why = "anchorctl: anchor: this host will not give this process a TUN device"
 
 	at := time.Date(2026, 11, 20, 3, 0, 0, 0, time.UTC)
+	line := "  given up     the anchor, at " + at.Format(time.RFC3339) + ": " + why + "\n" +
+		strings.Repeat(" ", 15) + "conflux start tries the anchor again\n"
 
-	for mode, said := range map[config.Mode]bool{config.ModeTUN: true, config.ModeObserve: false} {
-		t.Run(string(mode), func(t *testing.T) {
+	for name, tc := range map[string]struct {
+		mode   config.Mode
+		daemon string // the stand-in's answer to status, or "" for no daemon answering
+		said   bool
+	}{
+		"no daemon answering":            {config.ModeTUN, "", true},
+		"a daemon holding no anchor":     {config.ModeTUN, "no anchor is running", true},
+		"a daemon holding an anchor":     {config.ModeTUN, "anchor anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq", false},
+		"observing alone, no daemon":     {config.ModeObserve, "", false},
+		"observing alone, with a daemon": {config.ModeObserve, "no anchor is running", false},
+	} {
+		t.Run(name, func(t *testing.T) {
 			d := pathstest.Dirs(t)
 
-			if err := config.Save(d, &config.Config{Mode: mode, Observer: &config.Observer{}, Taints: []string{"t"}}); err != nil {
+			if tc.daemon != "" {
+				anchortest.Require(t)
+
+				if runtime.GOOS == "windows" {
+					t.Skip("the stand-in anchorctl is a shell script")
+				}
+
+				t.Setenv(standInStatusEnv, tc.daemon)
+				runningStandIn(t, d, filepath.Join(t.TempDir(), "log"))
+			}
+
+			if err := config.Save(d, &config.Config{Mode: tc.mode, Observer: &config.Observer{}, Taints: []string{"t"}}); err != nil {
 				t.Fatal(err)
 			}
 
@@ -185,11 +215,44 @@ func TestStatusSaysTheAnchorWasRefused(t *testing.T) {
 				t.Fatalf("status exited %d:\n%s%s", code, out, errOut)
 			}
 
-			for _, want := range []string{why, at.Format(time.RFC3339), "conflux start"} {
-				if strings.Contains(out, want) != said {
-					t.Errorf("status saying %q is %v, want %v; it said:\n%s", want, !said, said, out)
-				}
+			if tc.said && !strings.Contains(out, line) {
+				t.Errorf("status should say\n%s\nit said:\n%s", line, out)
+			}
+
+			if !tc.said && (strings.Contains(out, "given up") || strings.Contains(out, why)) {
+				t.Errorf("status said the anchor was given up on; it said:\n%s", out)
 			}
 		})
+	}
+}
+
+// TestDownForgetsWhatWasGivenUp: an anchor stopped by hand is not one the supervisor gave up on,
+// so `conflux down` clears the record, and status says nothing of it after.
+func TestDownForgetsWhatWasGivenUp(t *testing.T) {
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	d := pathstest.Dirs(t)
+
+	if err := config.Save(d, &config.Config{Mode: config.ModeTUN, Observer: &config.Observer{}, Taints: []string{"t"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := config.SaveState(d, &config.State{AnchorRefused: "refused", AnchorRefusedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	standInService(t, &fakeManager{d: d})
+
+	if out, errOut, code := capture(t, "down"); code != ExitOK {
+		t.Fatalf("down exited %d:\n%s%s", code, out, errOut)
+	}
+
+	if st, err := config.LoadState(d); err != nil || st.AnchorRefused != "" || !st.AnchorRefusedAt.IsZero() {
+		t.Errorf("down left the anchor recorded as given up on: %q at %v (%v)", st.AnchorRefused, st.AnchorRefusedAt, err)
+	}
+
+	if out, _, _ := capture(t, "status"); strings.Contains(out, "given up") {
+		t.Errorf("status after down said the anchor was given up on:\n%s", out)
 	}
 }

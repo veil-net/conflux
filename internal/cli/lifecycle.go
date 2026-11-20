@@ -136,7 +136,7 @@ func install(ctx context.Context, d paths.Dirs, standalone bool) int {
 }
 
 // newService is the boot manager install registers with, startAndReport restarts and names,
-// status names, and update asks about; a test's stands in for it.
+// status names, down stops, and update asks about; a test's stands in for it.
 var newService = service.New
 
 // register names exe, the copy Place made, as the boot service, defined as this conflux
@@ -287,7 +287,7 @@ func runDown(_ context.Context, args []string) int {
 		return fail(err)
 	}
 
-	mgr := service.New()
+	mgr := newService()
 
 	installed, err := mgr.Installed()
 	if err != nil {
@@ -307,6 +307,12 @@ func runDown(_ context.Context, args []string) int {
 
 	if err := mgr.Stop(); err != nil {
 		return fail(err)
+	}
+
+	// An anchor stopped by hand is not one the supervisor gave up on, so status says no more of
+	// that than of anything else the stopped service ran.
+	if err := daemon.ForgetRefusal(paths.Default()); err != nil {
+		ui.Errf("could not clear the record of the anchor the supervisor gave up on: %v", err)
 	}
 
 	ui.Printf("Stopped. The boot service is still registered and the configuration is intact,\n" +

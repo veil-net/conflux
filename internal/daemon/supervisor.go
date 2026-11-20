@@ -275,6 +275,12 @@ func (s *Supervisor) loop(ctx context.Context) error {
 		// seconds and in five hours. Give up after a few so the service manager
 		// shows a failed unit rather than a hot loop nobody is watching.
 		if k.failed(err) {
+			// The anchor refused for good with nothing else running: the service ends on it, and
+			// status says why.
+			if anchorRefused(err) {
+				s.recordRefusal(err)
+			}
+
 			return fmt.Errorf("anchord will not start with this configuration: %w", err)
 		}
 
@@ -325,11 +331,10 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 		// An anchor that cannot come up, beside an observer that did: the daemon is kept, and
 		// with it the observer and the inventory it holds, since an anchor that cannot come up
 		// never takes the observer down. The watcher brings the anchor up when it can, as it
-		// rebuilds one that is lost, and gives up on it alone where it is refused for good. Only
-		// with nothing else running does a refusal for good end the cycle, and count toward the
-		// exit no restart follows.
+		// rebuilds one that is lost, and gives up on it alone where it is refused for good, which
+		// is when status hears of it. Only with nothing else running does a refusal for good end
+		// the cycle, and count toward the exit no restart follows.
 		if Permanent(err) {
-			s.recordRefusal(err)
 			s.report().Warn("the anchor was refused, and the observer goes on without it: %v", err)
 		} else {
 			s.report().Warn("the anchor did not come up, and the observer goes on without it until it does: %v", err)
@@ -375,28 +380,50 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 	}
 }
 
-// recordRefusal writes down that the anchor was refused for good, why and when, where the
-// supervisor goes on with the observer alone, for status to say: nothing else outside the
-// service's log would. Under the lock, as every writer of the state is. A bring-up that starts
-// an anchor clears it.
+// recordRefusal writes down that the supervisor gave up on the anchor, refused for good, why and
+// when, for status to say: nothing else outside the service's log would. Only where it stops
+// trying it -- the watcher giving up its rebuilds, the restart loop ending on it -- and not at a
+// start's refusal beside the observer, which the watcher goes on trying.
 func (s *Supervisor) recordRefusal(refusal error) {
-	unlock, err := flock.Acquire(s.Dirs.LockFile())
-	if err != nil {
+	if err := writeGivenUp(s.Dirs, refusal); err != nil {
 		s.report().Warn("could not record the anchor's refusal: %v", err)
+	}
+}
 
-		return
+// anchorRefused reports whether err is the anchor's own start refused for good: anchorctl start's,
+// as against the observer's, the credential's or the configuration's.
+func anchorRefused(err error) bool {
+	var e *anchorctl.Error
+
+	return Permanent(err) && errors.As(err, &e) && len(e.Args) > 0 && e.Args[0] == "start"
+}
+
+// ForgetRefusal clears the record of an anchor the supervisor gave up on: `conflux down`'s, once
+// the service has stopped, since an anchor stopped by hand is not one given up on.
+func ForgetRefusal(d paths.Dirs) error { return writeGivenUp(d, nil) }
+
+// writeGivenUp records refusal in the state as the anchor the supervisor gave up on, or with nil
+// clears the record, writing nothing where there is none to clear. Under the lock, as every
+// writer of the state is.
+func writeGivenUp(d paths.Dirs, refusal error) error {
+	unlock, err := flock.Acquire(d.LockFile())
+	if err != nil {
+		return err
 	}
 	defer unlock()
 
-	st, err := config.LoadState(s.Dirs)
-	if err == nil {
-		st.AnchorRefused, st.AnchorRefusedAt = refusal.Error(), time.Now().UTC()
-		err = config.SaveState(s.Dirs, st)
+	st, err := config.LoadState(d)
+	if err != nil {
+		return err
 	}
 
-	if err != nil {
-		s.report().Warn("could not record the anchor's refusal: %v", err)
+	if refusal == nil && st.AnchorRefused == "" && st.AnchorRefusedAt.IsZero() {
+		return nil
 	}
+
+	st.AnchorGivenUp(refusal)
+
+	return config.SaveState(d, st)
 }
 
 // bringUpAll brings up everything cfg runs in the daemon, the credential first; see bringUp.

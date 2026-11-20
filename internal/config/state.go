@@ -63,11 +63,13 @@ type State struct {
 	LinkReopens    int       `json:"linkReopens,omitempty"`
 	LastLinkReopen time.Time `json:"lastLinkReopen,omitzero"`
 
-	// AnchorRefused and AnchorRefusedAt record an anchor refused for good while the observer
-	// runs on without it: why, and when the supervisor gave up on it, at a start or after the
-	// watcher's rebuilds. Cleared once an anchor comes up. Persisted for the reason the link's
-	// reopens are: the supervisor that gives up and the `conflux status` that reports it are
-	// different processes, and without it status could say only that no anchor runs.
+	// AnchorRefused and AnchorRefusedAt record the anchor the supervisor gave up on, refused for
+	// good: why, and when. Written where it stops trying it -- the watcher giving up its
+	// rebuilds, or the service ending on it with nothing else running -- and cleared when an
+	// anchor comes up, when a whole bring-up starts, at `conflux down`, and for a new identity.
+	// Persisted for the reason the link's reopens are: the supervisor that gives up and the
+	// `conflux status` that reports it are different processes, and without it status could
+	// say only that no anchor runs.
 	AnchorRefused   string    `json:"anchorRefused,omitempty"`
 	AnchorRefusedAt time.Time `json:"anchorRefusedAt,omitzero"`
 }
@@ -113,6 +115,18 @@ func SaveState(d paths.Dirs, s *State) error {
 	}
 
 	return WriteFileAtomic(d.StateFile(), append(b, '\n'), 0o600)
+}
+
+// AnchorGivenUp records that the supervisor gave up on the anchor, refused for good with
+// refusal, now; nil clears the record.
+func (s *State) AnchorGivenUp(refusal error) {
+	if refusal == nil {
+		s.AnchorRefused, s.AnchorRefusedAt = "", time.Time{}
+
+		return
+	}
+
+	s.AnchorRefused, s.AnchorRefusedAt = refusal.Error(), time.Now().UTC()
 }
 
 // NewIdentity forgets everything this state held about the identity before: what a

@@ -314,22 +314,92 @@ func TestAGoneAnchorDirectoryIsTheNextSpawnsToMake(t *testing.T) {
 	}
 }
 
-// TestAnAnchorThatComesUpClearsItsRefusal: an anchor recorded as refused for good that comes up
-// after all -- the host gave it its TUN, the service was started again -- is not reported as
-// refused any more.
-func TestAnAnchorThatComesUpClearsItsRefusal(t *testing.T) {
-	d := benchSite(t)
+// TestAWholeStartTriesTheAnchorAfresh: a bring-up of everything the configuration runs -- the
+// cycle's, at every start of the daemon -- tries the anchor afresh, so the record of one the
+// supervisor gave up on before goes before anything starts, whatever the start then comes to:
+// an anchor up, one not up yet or refused for good, beside an observer or with none, none at all
+// observing alone. A start records nothing of its own: the supervisor gives up on the anchor
+// only where it stops trying it.
+func TestAWholeStartTriesTheAnchorAfresh(t *testing.T) {
+	observer := &config.Observer{}
 
-	if err := config.SaveState(d, &config.State{AnchorRefused: "refused", AnchorRefusedAt: time.Now()}); err != nil {
+	for name, tc := range map[string]struct {
+		mode     config.Mode
+		observer *config.Observer
+		refusing string // the stand-in's refusal of the anchor's start, where it refuses one
+	}{
+		"an anchor that comes up":             {config.ModeProxy, observer, ""},
+		"an anchor that does not come up yet": {config.ModeProxy, observer, fakeAnchorctlFailEnv},
+		"an anchor refused for good":          {config.ModeProxy, observer, fakeAnchorctlRefuseEnv},
+		"refused for good with no observer":   {config.ModeProxy, nil, fakeAnchorctlRefuseEnv},
+		"observing alone":                     {config.ModeObserve, observer, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if tc.refusing != "" {
+				t.Setenv(tc.refusing, "start")
+			}
+
+			d := benchSite(t)
+
+			cfg := configOf(t, d)
+			cfg.Mode, cfg.Observer = tc.mode, tc.observer
+
+			if err := config.Save(d, cfg); err != nil {
+				t.Fatal(err)
+			}
+
+			givenUp(t, d)
+
+			_, err := bringUp(t.Context(), d, fakeCtl(t), nopReporter{}, d.RootAnchorDir(), false, everything(cfg))
+			if (err != nil) != (tc.refusing != "") {
+				t.Fatalf("bringUp = %v, with the anchor's start refused %v", err, tc.refusing != "")
+			}
+
+			if st, err := config.LoadState(d); err != nil || st.AnchorRefused != "" || !st.AnchorRefusedAt.IsZero() {
+				t.Errorf("a whole start left the anchor recorded as given up on: %q at %v (%v)", st.AnchorRefused, st.AnchorRefusedAt, err)
+			}
+		})
+	}
+}
+
+// TestARebuiltAnchorIsNotGivenUpOn: an anchor recorded as given up on that the watcher's rebuild
+// brings up after all, beside the observer, is not recorded so any more: status says it only
+// while it holds.
+func TestARebuiltAnchorIsNotGivenUpOn(t *testing.T) {
+	t.Setenv(fakeAnchorctlStatusEnv, "none")
+	t.Setenv(fakeAnchorctlObserverEnv, "running")
+
+	s, _ := supervised(t, "1")
+
+	if err := config.Save(s.Dirs, &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, Observer: &config.Observer{}}); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := bringUp(t.Context(), d, fakeCtl(t), nopReporter{}, d.RootAnchorDir(), false, parts{anchor: true}); err != nil {
+	credentialed(t, s.Dirs)
+	givenUp(t, s.Dirs)
+
+	if got := s.rebuildAnchor(t.Context(), "anchord holds no anchor any more", false, newKeeper(time.Millisecond, time.Millisecond)); got != kept {
+		t.Fatalf("the rebuild came to %v, want the anchor back", got)
+	}
+
+	if st, err := config.LoadState(s.Dirs); err != nil || st.AnchorRefused != "" || !st.AnchorRefusedAt.IsZero() {
+		t.Errorf("an anchor came up, and the state still records it given up on: %q at %v (%v)", st.AnchorRefused, st.AnchorRefusedAt, err)
+	}
+}
+
+// givenUp records in d's state, keeping the rest of it, an anchor the supervisor gave up on an
+// hour ago.
+func givenUp(t *testing.T, d paths.Dirs) {
+	t.Helper()
+
+	st, err := config.LoadState(d)
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	if st, err := config.LoadState(d); err != nil || st.AnchorRefused != "" || !st.AnchorRefusedAt.IsZero() {
-		t.Errorf("an anchor came up, and the state still records it refused: %q at %v (%v)", st.AnchorRefused, st.AnchorRefusedAt, err)
+	st.AnchorRefused, st.AnchorRefusedAt = "an earlier refusal", time.Now().Add(-time.Hour).UTC()
+	if err := config.SaveState(d, st); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -301,7 +301,8 @@ Stops the anchor now. The boot service stays registered and the configuration an
 identity stay on disk, so the next reboot brings the machine back exactly as it was,
 and `conflux start` brings it back before then. Refuses with exit 69 if conflux is not
 installed, because there would be nothing for a reboot to bring back and the word
-would be a lie.
+would be a lie. An anchor stopped by hand is not one the supervisor gave up on, so it clears
+that record, `conflux status`'s `given up` line.
 
 ## `conflux install`
 
@@ -456,10 +457,15 @@ configuration and no ephemeral run is live; with one live, it reports the run an
 An installed machine's configuration is root's alone (Administrators' on Windows), so asked by
 another account it exits 13, naming the command to run again, as every verb needing root does.
 
-A `refused` line says an anchor was refused for good while the observer runs on without it —
-the supervisor gave up on it at a start, or after the watcher's three rebuilds — with why and
-since when, where `anchorctl status` beneath says only that no anchor runs. `conflux start`
-tries it again, and the line goes once an anchor comes up.
+A `given up` line says when the supervisor gave up on the anchor, refused for good, and why,
+then that `conflux start` tries the anchor again. It is there while none runs — the daemon
+answering with no anchor, or not answering because the service ended on it — since `anchorctl
+status` beneath says only that none runs, and never on a machine that only observes. The
+supervisor records it where it stops trying the anchor: beside an observer, once the watcher
+gives up rebuilding it, and with nothing else running, once the service ends on it (exit 70).
+An anchor that comes up clears it, as do every start of everything the configuration runs
+(`conflux start`, a reboot, the supervisor's own restart), `conflux down` and a new identity.
+Whether the observer runs is its own line's to say.
 
 The `anchord` line says what it keeps and why: `conflux, with no privilege` in userspace,
 `conflux, with CAP_NET_ADMIN for its interface` for a TUN on Linux, `conflux, with CAP_NET_RAW

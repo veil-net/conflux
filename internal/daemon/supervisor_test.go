@@ -340,18 +340,17 @@ func TestObservingAloneEnrolsFirstAndStartsNoAnchor(t *testing.T) {
 // running, for the watcher to bring the anchor up later or give up on it alone, rather than
 // ending the cycle and the inventory with it. The service manager is told the unit started, or
 // systemd would fail it after TimeoutStartSec and take the observer down anyway; the marker,
-// which says an anchor is up, is not written; and a refusal for good is said to be one.
+// which says an anchor is up, is not written; and a refusal for good is said to be one, though
+// not recorded for status as given up on: the watcher goes on trying the anchor, and records it
+// only once it gives up.
 func TestTheObserverOutlivesAnAnchorThatCannotComeUp(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("a console control event needs the console this test shares")
 	}
 
-	for name, tc := range map[string]struct {
-		env, said string
-		refused   bool
-	}{
-		"for now":  {fakeAnchorctlFailEnv, "the anchor did not come up", false},
-		"for good": {fakeAnchorctlRefuseEnv, "the anchor was refused", true},
+	for name, tc := range map[string]struct{ env, said string }{
+		"for now":  {fakeAnchorctlFailEnv, "the anchor did not come up"},
+		"for good": {fakeAnchorctlRefuseEnv, "the anchor was refused"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv(fakeAnchorctlStatusEnv, "none")
@@ -409,14 +408,14 @@ func TestTheObserverOutlivesAnAnchorThatCannotComeUp(t *testing.T) {
 				t.Errorf("the supervisor warned %q, want it to say %q", warns, tc.said)
 			}
 
-			// A refusal for good is recorded for status, which otherwise sees only that no anchor runs.
+			// Still being tried, the anchor is not given up on.
 			st, err := config.LoadState(s.Dirs)
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			if refused := strings.Contains(st.AnchorRefused, "TUN device") && !st.AnchorRefusedAt.IsZero(); refused != tc.refused {
-				t.Errorf("the state records the anchor refused as %q at %v, want recorded %v", st.AnchorRefused, st.AnchorRefusedAt, tc.refused)
+			if st.AnchorRefused != "" || !st.AnchorRefusedAt.IsZero() {
+				t.Errorf("the state records the anchor given up on as %q at %v, while the watcher still tries it", st.AnchorRefused, st.AnchorRefusedAt)
 			}
 		})
 	}
@@ -424,7 +423,8 @@ func TestTheObserverOutlivesAnAnchorThatCannotComeUp(t *testing.T) {
 
 // TestAnAnchorRefusedWithNothingElseRunningEndsTheService: an anchor refused for good beside an
 // observer that did not start either leaves nothing running, so the cycle ends on it as on an
-// anchor alone, and the third in a row ends the restart loop with the error serve exits 70 on.
+// anchor alone, and the third in a row ends the restart loop with the error serve exits 70 on,
+// the refusal recorded for status.
 func TestAnAnchorRefusedWithNothingElseRunningEndsTheService(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("a console control event needs the console this test shares")
@@ -458,6 +458,12 @@ func TestAnAnchorRefusedWithNothingElseRunningEndsTheService(t *testing.T) {
 
 	if n := strings.Count(strings.Join(ran(t, log), "\n"), "start"); n != rebuildRefusals {
 		t.Errorf("the anchor was started %d times, want %d", n, rebuildRefusals)
+	}
+
+	// Given up on with nothing running, the anchor's refusal is still recorded: status says why
+	// the service ended.
+	if st, err := config.LoadState(s.Dirs); err != nil || !strings.Contains(st.AnchorRefused, "TUN device") || st.AnchorRefusedAt.IsZero() {
+		t.Errorf("the state records the anchor given up on as %q at %v (%v), want the refusal", st.AnchorRefused, st.AnchorRefusedAt, err)
 	}
 }
 
@@ -633,6 +639,11 @@ func TestThreeRefusalsEndTheService(t *testing.T) {
 	steps, _ := r.said()
 	if want := []string{"restarting in 1s", "restarting in 2s"}; !slices.Equal(steps, want) {
 		t.Errorf("the loop said %q, want %q", steps, want)
+	}
+
+	// Ended on the configuration, not on the anchor, it records no anchor given up on.
+	if st, err := config.LoadState(s.Dirs); err != nil || st.AnchorRefused != "" {
+		t.Errorf("the state records the anchor given up on as %q (%v), where the configuration was refused", st.AnchorRefused, err)
 	}
 }
 

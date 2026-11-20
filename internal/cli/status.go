@@ -87,7 +87,6 @@ func runStatus(ctx context.Context, args []string) int {
 	}
 
 	reportCredential(d, cfg, st)
-	reportRefusal(cfg, st)
 
 	reportBinaries(st)
 
@@ -95,18 +94,22 @@ func runStatus(ctx context.Context, args []string) int {
 
 	answers.wg.Wait()
 
+	answered := answers.asked && answers.statErr == nil
+	said := anchorctl.ParseStatus(answers.status)
+
+	reportGivenUp(cfg, st, answered && said.Running)
 	reportExport(cfg, answers)
 
 	if cfg.Observer != nil {
-		o := anchorctl.ParseStatus(answers.status).Observer
-		if !answers.asked || answers.statErr != nil {
+		o := said.Observer
+		if !answered {
 			o.Note = "not running"
 		}
 
 		reportObserver(cfg, o)
 	}
 
-	reportPrivilege(priv, recorded, answers.asked && answers.statErr == nil)
+	reportPrivilege(priv, recorded, answered)
 	ui.Println()
 	reportAnchor(answers)
 
@@ -322,16 +325,17 @@ func reportCredential(d paths.Dirs, cfg *config.Config, st *config.State) {
 	}
 }
 
-// reportRefusal says the anchor was refused for good, why and since when, where the supervisor
-// gave up on it and runs the observer without it: anchorctl's status beneath says only that no
-// anchor runs. Observing alone, there is no anchor to have been refused.
-func reportRefusal(cfg *config.Config, st *config.State) {
-	if st == nil || st.AnchorRefused == "" || !cfg.Anchor() {
+// reportGivenUp says when the supervisor gave up on the anchor, refused for good, and why, where
+// no anchor runs -- the daemon answering with none, or not answering, the service having ended
+// on it -- since anchorctl's status beneath says only that none runs. Whether the observer runs
+// is its own row's to say. Observing alone, there is no anchor to have given up on.
+func reportGivenUp(cfg *config.Config, st *config.State, running bool) {
+	if st == nil || st.AnchorRefused == "" || running || !cfg.Anchor() {
 		return
 	}
 
-	ui.Field("refused", "the anchor, for good, at "+st.AnchorRefusedAt.Format(time.RFC3339)+": "+st.AnchorRefused)
-	ui.Field("", "the observer runs without it; conflux start tries the anchor again")
+	ui.Field("given up", "the anchor, at "+st.AnchorRefusedAt.Format(time.RFC3339)+": "+st.AnchorRefused)
+	ui.Field("", "conflux start tries the anchor again")
 }
 
 // plural renders a count with its noun, so "1 reopen" does not read as a typo.

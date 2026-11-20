@@ -144,6 +144,10 @@ func bringUp(
 			"it changed under the running service, and no longer runs what was to be started; conflux start starts what it runs")}
 	}
 
+	// A whole bring-up starts everything the configuration runs, as the cycle's does; the
+	// watcher's starts one part beside another that runs on.
+	whole := start == everything(cfg)
+
 	st, err := config.LoadState(d)
 
 	switch {
@@ -151,6 +155,13 @@ func bringUp(
 		return up, &permanentError{err: err} // names the file already
 	case err != nil:
 		return up, err
+	}
+
+	// A whole bring-up tries everything afresh, so an anchor the supervisor gave up on before
+	// is not given up on any more, whatever this one comes to: the record goes before anything
+	// starts.
+	if whole {
+		st.AnchorGivenUp(nil)
 	}
 
 	// The window of the chain what runs holds now, and why it still holds it where a renewal
@@ -194,11 +205,9 @@ func bringUp(
 	}
 
 	// What runs holds this credential now, under this identity, from these binaries. Its window
-	// is the state's only where this starts everything the configuration runs: a part started
-	// beside one that runs on leaves the window that one holds, which a renewal on the way has
-	// moved already where it was installed in it, and leaves due where it was not (stale).
-	whole := start == everything(cfg)
-
+	// is the state's only where this starts everything the configuration runs (whole): a part
+	// started beside one that runs on leaves the window that one holds, which a renewal on the
+	// way has moved already where it was installed in it, and leaves due where it was not (stale).
 	running := func(id string) {
 		st.AnchorID, st.BinSetID = id, ctl.SetID
 
@@ -233,9 +242,8 @@ func bringUp(
 	up.id, up.anchor = started.ID, true
 	running(started.ID)
 
-	// Whatever refused an anchor before -- at a start, or the watcher's last rebuilds -- this
-	// one came up.
-	st.AnchorRefused, st.AnchorRefusedAt = "", time.Time{}
+	// An anchor that comes up -- the watcher's rebuild among them -- is not one given up on.
+	st.AnchorGivenUp(nil)
 
 	return up, nil
 }

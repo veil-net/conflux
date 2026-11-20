@@ -141,9 +141,12 @@ func TestAServiceSIDNotGivenIsNotOneZeroZero(t *testing.T) {
 // is created (paths.MakeDir), never holding what its parent passes on -- here Users' right to add
 // to, and write the attributes and extended attributes of, every folder made in it, as
 // %ProgramData% passes on, and a denial of WRITE_DAC to whoever owns it, which a directory made and
-// then given its DACL would be refused that by: a SYSTEM anchord's SYSTEM's and the Administrators'
-// alone, as Restrict makes one, and an account's granting the service SID besides. One already
-// there is not made again. Windows-only, so it runs in CI's platforms job alone.
+// then given its DACL would be refused that by. That pins a SYSTEM anchord's, SYSTEM's and the
+// Administrators' alone, as Restrict makes one. An account's, granting the service SID besides, is
+// SYSTEM's, which only a process with SeRestorePrivilege enabled may name, and that privilege grants
+// WRITE_DAC whatever the denial, so of it only the DACL it ends with is checked, not that it was set
+// as it was made. One already there is not made again. Windows-only, so it runs in CI's platforms
+// job alone.
 func TestMakeAnchorDirSetsItsDACLAsItIsMade(t *testing.T) {
 	system, admins := wellKnownSID(t, windows.WinLocalSystemSid), wellKnownSID(t, windows.WinBuiltinAdministratorsSid)
 

@@ -276,7 +276,14 @@ func TestTheCAIsGuarded(t *testing.T) {
 		t.Error("a CA was made over another")
 	}
 
-	if _, err := Open(t.TempDir()); err == nil || !strings.Contains(err.Error(), "ca.json") {
+	// 0700 whatever the umask made it: one its group may write is refused before ca.json is
+	// looked for.
+	empty := t.TempDir()
+	if err := os.Chmod(empty, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Open(empty); err == nil || !strings.Contains(err.Error(), "ca.json") {
 		t.Errorf("opening a directory with no CA: %v", err)
 	}
 

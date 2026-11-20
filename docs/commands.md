@@ -588,7 +588,9 @@ daemon conflux does not manage. Both run `anchorctl` as a child, from the extrac
 there or a temporary copy removed afterwards, and make no directory and extract nothing, so an
 account that cannot write conflux's directories still reaches its own daemon. A SIGTERM, SIGHUP
 or SIGINT sent to conflux is passed on to that child, so nothing outlives conflux, and conflux
-ends as the child ends: with its exit code, or by the same signal. The copy goes either way.
+ends as the child ends: with its exit code, or by the same signal. The copy goes either way. One
+conflux was started ignoring, as `nohup` starts it ignoring SIGHUP, stays ignored, by conflux and
+the child alike.
 
 On Windows every pass-through runs `anchorctl` as a child, since there is no replacing a
 process. Nothing is passed on there, and nothing needs to be: what a console sends — Ctrl+C,

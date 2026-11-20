@@ -45,7 +45,8 @@ func TestAnUpdateIsDownloadedVerifiedAndPutInPlace(t *testing.T) {
 		t.Fatalf("Latest: %v", err)
 	}
 
-	if rel.Asset != "conflux-linux-amd64" || rel.Name != "latest (1.1.0)" || rel.Commit == "" {
+	if rel.Asset != "conflux-linux-amd64" || rel.Name != "latest (1.1.0)" || rel.Commit == "" ||
+		rel.Bytes != int64(len(newBuild)) {
 		t.Errorf("Latest picked %+v", rel)
 	}
 

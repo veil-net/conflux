@@ -377,7 +377,7 @@ func TestFetchRefusesAReleaseWithNoManifest(t *testing.T) {
 	src := serve(t, f)
 
 	err := Fetch(context.Background(), src, []string{"anchord-linux-amd64"}, t.TempDir(), quiet)
-	if err == nil || !strings.Contains(err.Error(), manifestName) {
+	if err == nil || !strings.Contains(err.Error(), "has no "+manifestName) {
 		t.Fatalf("want a missing-manifest refusal, got %v", err)
 	}
 }
@@ -428,6 +428,7 @@ func TestAMissingTagNamesBothCauses(t *testing.T) {
 	}
 }
 
+// TestARefusedTokenSaysSo: a 401 is the token's, so the refusal names where it comes from.
 func TestARefusedTokenSaysSo(t *testing.T) {
 	f := newRelease(pair(), testPin, 1)
 	f.Status, f.Auth = http.StatusUnauthorized, "Bearer expired"
@@ -436,8 +437,8 @@ func TestARefusedTokenSaysSo(t *testing.T) {
 	src.Token = "expired"
 
 	err := Fetch(context.Background(), src, []string{"anchord-linux-amd64"}, t.TempDir(), quiet)
-	if err == nil || !strings.Contains(err.Error(), "401") {
-		t.Fatalf("want a 401 refusal, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "401") || !strings.Contains(err.Error(), TokenEnv) {
+		t.Fatalf("want a 401 refusal naming %s, got %v", TokenEnv, err)
 	}
 }
 

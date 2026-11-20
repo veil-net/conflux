@@ -21,7 +21,9 @@ set -euo pipefail
 # writing is then ended by SIGPIPE, and under pipefail that fails the line however right its
 # output was. Each answer is read whole, then searched (grep -q PATTERN <<<"$(COMMAND)").
 
-IMAGE=${IMAGE:-conflux-systemd-test}
+# shellcheck source=test/lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
 NAME=${NAME:-cfx}
 OTEL=${OTEL:-$NAME-otel}
 
@@ -38,16 +40,9 @@ docker rm -f "$NAME" "$OTEL" >/dev/null 2>&1 || true
 otelconf=$(mktemp)
 trap 'docker rm -f "$NAME" "$OTEL" >/dev/null 2>&1 || true; rm -f "$otelconf"' EXIT
 
+# One look more than integration.sh gives its nodes: the last, after the fortieth second.
 say "a container that boots systemd"
-docker run -d --name "$NAME" --privileged --cgroupns=host \
-  -v /sys/fs/cgroup:/sys/fs/cgroup:rw --device /dev/net/tun "$IMAGE" >/dev/null
-
-for _ in $(seq 40); do
-  [ "$(docker exec "$NAME" systemctl is-system-running 2>/dev/null)" = running ] && break
-  sleep 1
-done
-[ "$(docker exec "$NAME" systemctl is-system-running 2>/dev/null)" = running ] \
-  || { echo "systemd did not come up" >&2; exit 1; }
+boot "$NAME" 41
 
 say "install registers without inventing a configuration"
 docker exec "$NAME" conflux install
@@ -87,22 +82,6 @@ StandardInput=socket
 UNIT
 docker exec "$NAME" sh -c 'systemctl daemon-reload && systemctl start silent.socket'
 
-# creds is the running anchord's uid, effective capabilities, no_new_privs and
-# supplementary groups, on one line.
-put /usr/local/bin/creds 755 <<'SH'
-#!/bin/sh
-for p in /proc/[0-9]*; do
-  case "$(readlink "$p/exe" 2>/dev/null)" in
-    /var/lib/conflux/bin/*/anchord)
-      awk '/^Uid:/ { u = $2 } /^CapEff:/ { c = $2 } /^NoNewPrivs:/ { n = $2 }
-           /^Groups:/ { for (i = 2; i <= NF; i++) g = g (g ? "," : "") $i }
-           END { printf "uid=%s caps=%s nnp=%s groups=%s\n", u, c, n, g }' "$p/status"
-      exit 0 ;;
-  esac
-done
-exit 1
-SH
-
 # configure writes a configuration conflux could have written, in MODE, with any more
 # fields after it, pointed at that API.
 configure() { # MODE [FIELDS]
@@ -128,7 +107,7 @@ start() {
 expect() { # WHAT WANT ROW
   local got="" row=""
   for _ in $(seq 150); do
-    got=$(docker exec "$NAME" creds 2>/dev/null) && break
+    got=$(creds "$NAME" 2>/dev/null) && break
     sleep 0.2
   done
   for _ in $(seq 50); do

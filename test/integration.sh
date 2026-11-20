@@ -15,24 +15,13 @@
 # the two-node test this file has always been.
 set -euo pipefail
 
-IMAGE=${IMAGE:-conflux-systemd-test}
+# shellcheck source=test/lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
 TAINT="cfx-ci-$(head -c6 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 API=${VEILNET_API:-https://api.veilnet.com.au}
 
 say() { printf '\n== %s\n' "$*"; }
-
-boot() {
-  local name=$1
-  docker rm -f "$name" >/dev/null 2>&1 || true
-  docker run -d --name "$name" --privileged --cgroupns=host \
-    -v /sys/fs/cgroup:/sys/fs/cgroup:rw --device /dev/net/tun "$IMAGE" >/dev/null
-  for _ in $(seq 40); do
-    [ "$(docker exec "$name" systemctl is-system-running 2>/dev/null)" = running ] && return 0
-    sleep 1
-  done
-  echo "$name: systemd did not come up" >&2
-  return 1
-}
 
 # wait_active waits for the service to say the anchor is up -- Type=notify, so active is
 # that and not merely a started process -- and fails the run if it never does.
@@ -114,12 +103,11 @@ say "the identity is 0600 and root's alone"
 # every one after it, is conflux's own account's, holding that alone, and everything the
 # rest of this run proves -- the realm, the overlay, the pings, a reboot -- is proved of it.
 say "anchord runs as its own account, with CAP_NET_ADMIN alone"
+# Held to its uid, capabilities and no_new_privs, and not to the groups creds also reads.
 anchord_creds() { # NODE
-  docker exec "$1" sh -c 'for p in /proc/[0-9]*; do
-    case "$(readlink "$p/exe" 2>/dev/null)" in /var/lib/conflux/bin/*/anchord)
-      awk "/^Uid:/ { u = \$2 } /^CapEff:/ { c = \$2 } /^NoNewPrivs:/ { n = \$2 }
-           END { printf \"uid=%s caps=%s nnp=%s\", u, c, n }" "$p/status"; exit 0;; esac
-  done; exit 1'
+  local c
+  c=$(creds "$1") || return 1
+  echo "${c% groups=*}"
 }
 want="uid=$(docker exec cfx-a id -u conflux) caps=0000000000001000 nnp=0"
 got=$(anchord_creds cfx-a)
@@ -419,13 +407,11 @@ if [ -n "$(docker exec cfx-d sh -c 'find /run/conflux-ephemeral /var/lib/conflux
   echo "an ephemeral run wrote its credential or a configuration" >&2
   exit 1
 fi
-d_creds=$(docker exec cfx-d sh -c 'for p in /proc/[0-9]*; do
-  case "$(readlink "$p/exe" 2>/dev/null)" in */conflux-ephemeral/bin/*/anchord)
-    awk "/^Uid:/ { u = \$2 } /^CapEff:/ { c = \$2 } END { printf \"uid=%s caps=%s\", u, c }" "$p/status"; exit 0;; esac
-done; exit 1')
+# Held to its uid and capabilities alone.
+d_creds=$(creds cfx-d '*/conflux-ephemeral/bin/*/anchord')
 want="uid=$(docker exec cfx-d id -u conflux-ephemeral) caps=0000000000001000"
 echo "  anchord: $d_creds"
-[ "$d_creds" = "$want" ] || { echo "D's ephemeral anchord runs with $d_creds; want $want" >&2; exit 1; }
+[ "${d_creds%% nnp=*}" = "$want" ] || { echo "D's ephemeral anchord runs with $d_creds; want $want" >&2; exit 1; }
 D_IF=$(interface cfx-d)
 [ -n "$D_IF" ] || { echo "D's status names no interface" >&2; exit 1; }
 

@@ -313,11 +313,14 @@ func trusted(sid *windows.SID) bool {
 // meanwhile is refused. A root whose DACL, as found, lets another account move what is in it is
 // refused before that, since a handle opened under that grant could take out what fill puts there.
 //
-// What it holds is held to the same rule before it is repaired (contents). Until the root
-// has its own DACL it has %ProgramData%'s, under which Users may create folders in it, and a
-// folder another account made there keeps that owner through the new DACL -- an owner
-// can always grant itself the rest -- so the service would go on writing its log or its
-// token into a place that account controls.
+// What it holds is held to the same rule (contents): before it is repaired, as it was found, what
+// each thing inherits from the root included -- a handle opened under an inherited grant keeps it
+// once the restriction has replaced it -- and again once the root is restricted, before it is
+// filled. Until the root has its own DACL it has %ProgramData%'s, under which Users may create
+// folders in it, the moment between the first look and the restriction included, and a folder
+// another account made there keeps that owner through the new DACL -- an owner can always grant
+// itself the rest -- so the service would go on writing its log or its token into a place that
+// account controls.
 func secure(dir string) error {
 	root, err := heldRoot(dir, rootAccess)
 	if err != nil {
@@ -380,6 +383,10 @@ func secure(dir string) error {
 
 	restricted(dir)
 
+	if err := contents(dir); err != nil {
+		return err
+	}
+
 	filled := fill(root.dir)
 
 	if err := notLink(dir, root.dir, "became a junction or a link while conflux secured it"); err != nil {
@@ -393,8 +400,9 @@ func secure(dir string) error {
 	return nil
 }
 
-// restricted is called once secure has restricted a root through its handle, before it fills it
-// and reads the handle again: nothing, but where a test turns the root into a junction meanwhile.
+// restricted is called once secure has restricted a root through its handle, before it judges what
+// the root holds again, fills it and reads the handle again: nothing, but where a test turns the
+// root into a junction, or adds to it, meanwhile.
 var restricted = func(string) {}
 
 // rootAccess is what secure holds a root open for: to read its owner, DACL and attributes, and

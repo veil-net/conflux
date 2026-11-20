@@ -287,6 +287,37 @@ func TestSecureRefusesARootThatBecomesAJunction(t *testing.T) {
 	}
 }
 
+// TestSecureJudgesWhatTheRootGainsBeforeItIsRestricted: until a found root is restricted, Users may
+// add a folder to it, which keeps them as its owner through the restriction, so what the root holds
+// is judged again once it is restricted, before it is filled: here a folder Users own, added as
+// soon as secure has restricted the root, is refused, naming it. Windows-only, so it runs in CI's
+// platforms job alone.
+func TestSecureJudgesWhatTheRootGainsBeforeItIsRestricted(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", "")
+
+	root := filepath.Join(t.TempDir(), "conflux")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	planted := filepath.Join(root, "logs")
+
+	was := restricted
+	t.Cleanup(func() { restricted = was })
+
+	restricted = func(string) {
+		if err := os.Mkdir(planted, 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		ownBy(t, planted, privtest.Users)
+	}
+
+	if err := secure(root); err == nil || !strings.Contains(err.Error(), planted) {
+		t.Errorf("secure(a root Users added a folder to before it was restricted) = %v, want a refusal naming it", err)
+	}
+}
+
 // mountPoint turns the empty directory dir into a junction leading to target, in place, as an
 // account that may write its data or its attributes can.
 func mountPoint(t *testing.T, dir, target string) {
@@ -377,7 +408,8 @@ func TestSecureFillsAFoundRoot(t *testing.T) {
 // held to who may write it, move it or point it elsewhere: a junction Users may point elsewhere,
 // though where it leads is nobody else's; a folder Users may delete, or write the attributes of,
 // enough to make a junction of it while it is empty, or add folders to, or write the extended
-// attributes of; a folder named anchor that another account
+// attributes of; one that only inherits the right to write its attributes, which a handle opened
+// before the restriction keeps once the restriction has replaced it; a folder named anchor that another account
 // owns, though it grants anchord what conflux grants it; and one granting anchord that also lets
 // Users add to it. conflux's own layout is let through: a junction only this account and the system
 // may change, and anchor\ and run\anchord\ granting anchord's service SID what makeAnchorDir
@@ -401,6 +433,16 @@ func TestSecureHoldsWhatTheRootHolds(t *testing.T) {
 		}},
 		{"a folder Users may make a junction of", func(t *testing.T, root string) string {
 			return grantedFolder(t, filepath.Join(root, "logs"), windows.FILE_WRITE_ATTRIBUTES)
+		}},
+		{"a folder that only inherits Users' right to write its attributes", func(t *testing.T, root string) string {
+			privtest.GrantUsers(t, root, windows.FILE_WRITE_ATTRIBUTES, windows.SUB_CONTAINERS_ONLY_INHERIT)
+
+			dir := filepath.Join(root, "logs")
+			if err := os.Mkdir(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+
+			return dir
 		}},
 		{"a folder Users may add folders to", func(t *testing.T, root string) string {
 			return grantedFolder(t, filepath.Join(root, "logs"), windows.FILE_APPEND_DATA)

@@ -100,7 +100,8 @@ its name again, refused where its DACL lets another account move what is in it, 
 its `run\` directory through that handle so that no handle opened on it earlier can make a
 junction of it, and refused if it became one meanwhile; one that holds
 anything another account may change — that it owns, or that it may write, move or point
-elsewhere, `anchord`'s own account aside — is refused rather than repaired around, by every
+elsewhere, `anchord`'s own account aside, judged as found and again once the root is restricted —
+is refused rather than repaired around, by every
 reader of an ephemeral root too, as is a root that is itself a junction another account may
 point elsewhere (see [windows.md](windows.md#file-permissions)).
 

@@ -101,7 +101,9 @@ it is restricted; `%ProgramData%`'s own grant to `Users`, to add to a folder and
 attributes, is not that. Then it is read once more through the handle: one that became a junction meanwhile is
 refused. A root some other account created is refused rather than taken over: whoever made it
 could have filled it first. So is one that holds anything another account may change, each
-thing in it judged by its own owner and DACL rather than by what it leads to: anything another
+thing in it judged by its own owner and DACL rather than by what it leads to, before the root is
+restricted, what it inherits from the root included, and again once it is, before `run\` is made,
+so that a folder another account added in between is judged too: anything another
 account owns, whatever its name, or that its DACL lets another account write, move or point
 elsewhere — a folder they may add to, or write the attributes or extended attributes of, among
 them, the attributes enough to make a junction of it while it is empty. `anchord`'s own account, `NT SERVICE\conflux`, is conflux's: what

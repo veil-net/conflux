@@ -100,8 +100,19 @@ repaired around it.
 about: it lets a caller choose the directory a root daemon executes from. It exists
 for tests and for hosts where the default filesystem is `noexec`. The directory it names
 must belong to the account running conflux — on every platform, a root another account
-owns is refused — and it is used as an absolute path, so the service registered under it
-runs from where it was installed whatever the working directory was.
+owns is refused — and so must the way to it: a `CONFLUX_DIR` inside a directory another
+account can change is refused too, naming that directory and who can change it, since
+whoever can move the root aside can put a directory of their own in its place, with a
+conflux in it for the boot service to run as root. On Unix that is any directory above it
+owned by an account other than root and the one running conflux, or one its group or
+anybody may write, unless it is sticky, as `/tmp` is, where nobody may rename what is not
+theirs. On Windows it is any directory above it owned by an account other than SYSTEM, the
+Administrators, TrustedInstaller and the one running conflux, or one whose DACL grants
+another account the right to delete or rename what is in it, to delete or rename the
+directory itself, or to change its DACL or owner; the right to create folders in it, which
+`C:\` gives every user, is not one of them. The root is used as an absolute path, so the
+service registered under it runs from where it was installed whatever the working
+directory was.
 
 ## What anchord runs as
 

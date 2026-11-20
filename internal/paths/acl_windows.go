@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"path/filepath"
 	"sync"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -149,7 +150,7 @@ func ownership(path string) (*windows.SID, windows.SECURITY_DESCRIPTOR_CONTROL, 
 }
 
 // secure gives a conflux root its ownership and DACL, once, and refuses one another
-// account made.
+// account made, or a CONFLUX_DIR another account can move (see parents).
 //
 // A directory conflux did not create is one somebody else may have filled before it
 // looked -- with a binary for the service to run, or a manifest whose key they hold --
@@ -163,6 +164,12 @@ func ownership(path string) (*windows.SID, windows.SECURITY_DESCRIPTOR_CONTROL, 
 // can always grant itself the rest -- so the service would go on writing its log or its
 // token into a place that account controls.
 func secure(dir string) error {
+	if chosen(dir) {
+		if err := parents(dir); err != nil {
+			return err
+		}
+	}
+
 	owner, control, err := ownership(dir)
 	if err != nil {
 		return fmt.Errorf("read the ownership of %s: %w", dir, err)
@@ -197,6 +204,105 @@ func secure(dir string) error {
 	}
 
 	return Restrict(dir, true)
+}
+
+// fileDeleteChild is FILE_DELETE_CHILD: on a directory, the right to delete or rename what
+// is in it, whatever that grants.
+const fileDeleteChild = 0x40
+
+// moves is what an ACE on a directory above a root must not grant another account: to
+// delete or rename what is in it, to delete or rename the directory itself, or to change
+// who may. Creating folders in it is not among them: C:\ lets every user do that, and a
+// folder of theirs cannot take the place of one that is not, as a sticky directory's
+// cannot on Unix.
+const moves = fileDeleteChild | windows.DELETE | windows.WRITE_DAC | windows.WRITE_OWNER | windows.GENERIC_ALL
+
+// sidTrustedInstaller is NT SERVICE\TrustedInstaller, which owns much of the system drive.
+var sidTrustedInstaller, _ = windows.StringToSid("S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464")
+
+// parents refuses dir where an account other than SYSTEM, Administrators, TrustedInstaller
+// and the one running conflux may move it: one owns a directory above it, which lets it
+// grant itself anything, or is granted one of moves on it. Whoever may move a parent can
+// put a directory of their own where dir is, with a conflux in it for the service to run
+// as SYSTEM.
+func parents(dir string) error {
+	above, err := ancestors(dir)
+	if err != nil {
+		return err
+	}
+
+	for _, p := range above {
+		sd, err := windows.GetNamedSecurityInfo(p, windows.SE_FILE_OBJECT,
+			windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+		if err != nil {
+			return fmt.Errorf("read the ownership of %s: %w", p, err)
+		}
+
+		owner, _, err := sd.Owner()
+		if err != nil {
+			return fmt.Errorf("read the owner of %s: %w", p, err)
+		}
+
+		dacl, _, err := sd.DACL()
+		if err != nil {
+			return fmt.Errorf("read the DACL of %s: %w", p, err)
+		}
+
+		who := ""
+
+		switch {
+		case !trustedOwner(owner):
+			who = "belongs to " + accountName(owner) + ", who"
+		case dacl == nil:
+			who = "has no DACL, so anybody"
+		default:
+			if sid := mover(dacl); sid != nil {
+				who = "grants " + accountName(sid) + " the right to move it or what is in it, who"
+			}
+		}
+
+		if who != "" {
+			return fmt.Errorf("%s is inside %s, which %s could move it aside and put another in its place "+
+				"for conflux to run.\n  Choose a CONFLUX_DIR whose every parent only SYSTEM, the Administrators "+
+				"and this account can change", dir, p, who)
+		}
+	}
+
+	return nil
+}
+
+// mover is the first account dacl grants one of moves on the directory itself, other
+// than those trustedOwner names, or nil.
+func mover(dacl *windows.ACL) *windows.SID {
+	for i := range uint32(dacl.AceCount) {
+		var ace *windows.ACCESS_ALLOWED_ACE
+		if windows.GetAce(dacl, i, &ace) != nil || ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE ||
+			ace.Header.AceFlags&windows.INHERIT_ONLY_ACE != 0 || ace.Mask&moves == 0 {
+			continue
+		}
+
+		if sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart)); !trustedOwner(sid) {
+			return sid
+		}
+	}
+
+	return nil
+}
+
+// trustedOwner is SYSTEM, Administrators, TrustedInstaller or the account running conflux:
+// somebody who could change anything on the machine, or this conflux itself.
+func trustedOwner(sid *windows.SID) bool {
+	return sid.Equals(sidSystem) || sid.Equals(sidAdmins) ||
+		(sidTrustedInstaller != nil && sid.Equals(sidTrustedInstaller)) || isCurrentUser(sid)
+}
+
+// accountName is sid as DOMAIN\account (SID), or the SID alone where it names nobody.
+func accountName(sid *windows.SID) string {
+	if account, domain, _, err := sid.LookupAccount(""); err == nil {
+		return domain + "\\" + account + " (" + sid.String() + ")"
+	}
+
+	return sid.String()
 }
 
 func isCurrentUser(sid *windows.SID) bool {

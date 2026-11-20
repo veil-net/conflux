@@ -150,3 +150,106 @@ func TestSecureKeepsThePassThroughGroup(t *testing.T) {
 		t.Errorf("0750 is %#o after secure, want 0700", got)
 	}
 }
+
+// TestEnsureAllRefusesARootAnotherAccountCanMove: whoever may write a directory above a
+// CONFLUX_DIR can move the root aside and put a directory of their own in its place, with
+// a conflux in it for the boot service to run as root. So a root under one is refused,
+// naming the directory and who may write it, before anything is changed -- unless it is
+// sticky, as /tmp is, where nobody may move what is not theirs.
+func TestEnsureAllRefusesARootAnotherAccountCanMove(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		mode os.FileMode
+		who  string
+	}{
+		{"anybody may write it", 0o777, "anybody"},
+		{"its group may write it", 0o770, "its group"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			parent := t.TempDir()
+			root := filepath.Join(parent, "conflux")
+
+			if err := os.Mkdir(root, 0o755); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := os.Chmod(root, 0o755); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := os.Chmod(parent, c.mode); err != nil {
+				t.Fatal(err)
+			}
+
+			t.Setenv("CONFLUX_DIR", root)
+
+			err := Default().EnsureAll()
+			if err == nil {
+				t.Fatalf("a root in %s, which %s may write, was accepted", parent, c.who)
+			}
+
+			if !strings.Contains(err.Error(), parent) || !strings.Contains(err.Error(), c.who) {
+				t.Errorf("the refusal does not name %s and who may write it: %v", parent, err)
+			}
+
+			if got := mode(t, root); got != 0o755 {
+				t.Errorf("the refused root was changed to %#o; a refusal must change nothing", got)
+			}
+		})
+	}
+
+	// A parent that belongs to another account is that account's to open up whenever it
+	// likes, whatever its mode says now.
+	t.Run("another account owns it", func(t *testing.T) {
+		root := filepath.Join(t.TempDir(), "conflux")
+		if err := os.Mkdir(root, 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		err := parentsAs(root, os.Geteuid()+1)
+		if err == nil || !strings.Contains(err.Error(), "belongs to uid") {
+			t.Errorf("a root in a directory another uid owns was accepted, or the refusal does not say why: %v", err)
+		}
+	})
+
+	// A root that is a link is held to the directories above where it leads, too.
+	t.Run("a link into one", func(t *testing.T) {
+		open := t.TempDir()
+		if err := os.Mkdir(filepath.Join(open, "conflux"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.Chmod(open, 0o777); err != nil {
+			t.Fatal(err)
+		}
+
+		safe := t.TempDir()
+		if err := os.Chmod(safe, 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		link := filepath.Join(safe, "conflux")
+		if err := os.Symlink(filepath.Join(open, "conflux"), link); err != nil {
+			t.Fatal(err)
+		}
+
+		t.Setenv("CONFLUX_DIR", link)
+
+		if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), open) {
+			t.Errorf("a link into a directory anybody may write was accepted, or the refusal does not name it: %v", err)
+		}
+	})
+
+	t.Run("sticky", func(t *testing.T) {
+		parent := t.TempDir()
+		if err := os.Chmod(parent, 0o777|os.ModeSticky); err != nil {
+			t.Fatal(err)
+		}
+
+		t.Setenv("CONFLUX_DIR", filepath.Join(parent, "conflux"))
+
+		if err := Default().EnsureAll(); err != nil {
+			t.Errorf("a root in a sticky directory was refused: %v", err)
+		}
+	})
+}

@@ -23,7 +23,14 @@ import (
 func startingEphemeral(t *testing.T) paths.Dirs {
 	t.Helper()
 
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	// 0700 whatever the umask made it: the run's root is inside, and a parent its group
+	// may write is refused.
+	root := t.TempDir()
+	if err := os.Chmod(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("CONFLUX_DIR", root)
 
 	d := paths.EphemeralDirs(paths.EphemeralCandidates()[0])
 	if err := d.EnsureAll(); err != nil {

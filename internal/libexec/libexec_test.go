@@ -326,7 +326,13 @@ func TestSweepLeavesWhatMayBeInUse(t *testing.T) {
 func TestUsageMakesNothing(t *testing.T) {
 	anchortest.Require(t)
 
-	t.Setenv("CONFLUX_DIR", filepath.Join(t.TempDir(), "never"))
+	// Its parent 0700 whatever the umask made it, as a CONFLUX_DIR's parents must be.
+	parent := t.TempDir()
+	if err := os.Chmod(parent, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("CONFLUX_DIR", filepath.Join(parent, "never"))
 	t.Setenv("TMPDIR", t.TempDir())
 
 	d := paths.Default()

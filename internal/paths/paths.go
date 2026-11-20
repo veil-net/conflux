@@ -263,6 +263,45 @@ func (d Dirs) EnsureAll() error {
 	return nil
 }
 
+// chosen reports whether dir is the CONFLUX_DIR root or inside it: a directory whoever set
+// the variable chose, rather than one of the platform's, so secure holds the directories
+// above it to account too.
+func chosen(dir string) bool {
+	root := Root()
+	if root == "" {
+		return false
+	}
+
+	rel, err := filepath.Rel(root, dir)
+
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// ancestors is every directory above dir, as it is spelled and as its links resolve, each
+// once: whoever may write any of them can put another directory where dir is.
+func ancestors(dir string) ([]string, error) {
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve %s: %w", dir, err)
+	}
+
+	var above []string
+
+	for _, start := range []string{dir, resolved} {
+		for p := filepath.Dir(start); ; p = filepath.Dir(p) {
+			if !slices.Contains(above, p) {
+				above = append(above, p)
+			}
+
+			if p == filepath.Dir(p) {
+				break
+			}
+		}
+	}
+
+	return above, nil
+}
+
 // within reports whether dir sits strictly inside another of dirs.
 func within(dir string, dirs []string) bool {
 	for _, other := range dirs {

@@ -275,7 +275,8 @@ func chosen(dir string) bool {
 
 // ancestors is everything on the way to dir that whoever may change it can put another
 // directory where dir leads by: every directory a lookup of dir looks a name up in, and every
-// link it follows, each once, in the order the lookup meets them. That is each directory above
+// link it follows -- a junction among them on Windows (isLink) -- each once, in the order the
+// lookup meets them. That is each directory above
 // dir as it is spelled, and for each link on the way the directory it is in, the link itself --
 // an account that owns one can point it elsewhere -- and the directories above where it leads,
 // where the next link may be. The directory dir resolves to is not among them.
@@ -320,7 +321,7 @@ func ancestors(dir string) ([]string, error) {
 			return nil, fmt.Errorf("resolve %s: %w", dir, err)
 		}
 
-		if fi.Mode()&os.ModeSymlink == 0 {
+		if !isLink(fi) {
 			at = p
 
 			continue
@@ -334,7 +335,7 @@ func ancestors(dir string) ([]string, error) {
 
 		target, err := os.Readlink(p)
 		if err != nil {
-			return nil, fmt.Errorf("resolve %s: %w", dir, err)
+			return nil, fmt.Errorf("resolve %s: %s is a link conflux cannot follow: %w", dir, p, err)
 		}
 
 		// What the link names goes before what was left of the path, looked up from the

@@ -140,7 +140,7 @@ func parentsAs(dir string, euid int) error {
 		where, who := "inside", ""
 
 		switch perm := fi.Mode().Perm(); {
-		case fi.Mode()&os.ModeSymlink != 0:
+		case isLink(fi):
 			// A link's mode means nothing: who may change it is its owner, and whoever may
 			// write the directory it is in, which is checked as one above.
 			where = "reached through"
@@ -166,6 +166,9 @@ func parentsAs(dir string, euid int) error {
 
 	return nil
 }
+
+// isLink reports whether fi, read without following it, is a link a lookup follows.
+func isLink(fi os.FileInfo) bool { return fi.Mode()&os.ModeSymlink != 0 }
 
 // groupOf reports whether the group gid lets in no account but euid's: no member it lists,
 // and no account it is the primary group of, but that one -- a group of one user, as Ubuntu

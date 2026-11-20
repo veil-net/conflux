@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"sync"
 	"unsafe"
@@ -247,7 +248,8 @@ var sidTrustedInstaller, _ = windows.StringToSid("S-1-5-80-956008885-3418522649-
 // and the one running conflux may move it: one owns a directory above it, which lets it
 // grant itself anything, or is granted one of moves on it. Whoever may move a parent can
 // put a directory of their own where dir is, with a conflux in it for the service to run
-// as SYSTEM.
+// as SYSTEM. A link or junction on the way is held to the same, as itself, and the lookup
+// goes on where it leads (ancestors).
 func parents(dir string) error {
 	above, err := ancestors(dir)
 	if err != nil {
@@ -255,8 +257,7 @@ func parents(dir string) error {
 	}
 
 	for _, p := range above {
-		sd, err := windows.GetNamedSecurityInfo(p, windows.SE_FILE_OBJECT,
-			windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+		sd, err := ownSecurity(p)
 		if err != nil {
 			return fmt.Errorf("read the ownership of %s: %w", p, err)
 		}
@@ -292,6 +293,33 @@ func parents(dir string) error {
 	}
 
 	return nil
+}
+
+// ownSecurity is the owner and DACL of p itself: of a link or a junction, not of what it
+// leads to.
+func ownSecurity(p string) (*windows.SECURITY_DESCRIPTOR, error) {
+	name, err := windows.UTF16PtrFromString(p)
+	if err != nil {
+		return nil, err
+	}
+
+	h, err := windows.CreateFile(name, windows.READ_CONTROL,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING,
+		windows.FILE_FLAG_OPEN_REPARSE_POINT|windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer windows.CloseHandle(h)
+
+	return windows.GetSecurityInfo(h, windows.SE_FILE_OBJECT,
+		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+}
+
+// isLink reports whether fi, read without following it, is a link a lookup follows: a
+// symbolic link, or a junction or mount point, which Go reports as irregular rather than as
+// a link or a directory.
+func isLink(fi os.FileInfo) bool {
+	return fi.Mode()&os.ModeSymlink != 0 || fi.Mode()&os.ModeIrregular != 0 && !fi.IsDir()
 }
 
 // mover is the first account dacl grants one of moves on the directory itself, other

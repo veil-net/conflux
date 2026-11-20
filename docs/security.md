@@ -105,8 +105,9 @@ account can change is refused too, naming that directory and who can change it, 
 whoever can move the root aside can put a directory of their own in its place, with a
 conflux in it for the boot service to run as root. The way to it is every directory the
 lookup of the root passes through: those above it as it is spelled and, for each link on the
-way, the directory the link is in and those above where it leads, however many links are
-chained, with each link held to its owner too, who may point it elsewhere. On Unix that is any
+way — a junction among them on Windows, which the lookup follows as it does a link — the
+directory the link is in and those above where it leads, however many links are chained, with
+each link held to its owner too, who may point it elsewhere. On Unix that is any
 directory on the way owned by an account other than root and the one running conflux, or one
 its group or
 anybody may write, unless it is sticky, as `/tmp` is, where nobody may rename what is not

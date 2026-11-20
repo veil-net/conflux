@@ -2,6 +2,7 @@ package paths
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -70,8 +71,6 @@ func TestRestrictedFilesAreTrusted(t *testing.T) {
 // is refused, naming the directory. The right to create folders there is not that: C:\
 // gives it to every user, and their folder cannot take the place of one that is not theirs.
 func TestEnsureAllRefusesARootAnotherAccountCanMove(t *testing.T) {
-	users := wellKnown(windows.WinBuiltinUsersSid)
-
 	for _, c := range []struct {
 		name    string
 		access  windows.ACCESS_MASK
@@ -82,39 +81,11 @@ func TestEnsureAllRefusesARootAnotherAccountCanMove(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			parent := t.TempDir()
-
-			sd, err := windows.GetNamedSecurityInfo(parent, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			dacl, _, err := sd.DACL()
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			acl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{{
-				AccessPermissions: c.access,
-				AccessMode:        windows.GRANT_ACCESS,
-				Inheritance:       windows.NO_INHERITANCE,
-				Trustee: windows.TRUSTEE{
-					TrusteeForm:  windows.TRUSTEE_IS_SID,
-					TrusteeType:  windows.TRUSTEE_IS_GROUP,
-					TrusteeValue: windows.TrusteeValueFromSID(users),
-				},
-			}}, dacl)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			if err := windows.SetNamedSecurityInfo(parent, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION,
-				nil, nil, acl, nil); err != nil {
-				t.Fatal(err)
-			}
+			grant(t, parent, c.access)
 
 			t.Setenv("CONFLUX_DIR", filepath.Join(parent, "conflux"))
 
-			err = Default().EnsureAll()
+			err := Default().EnsureAll()
 
 			switch {
 			case c.refused && (err == nil || !strings.Contains(err.Error(), parent)):
@@ -123,5 +94,66 @@ func TestEnsureAllRefusesARootAnotherAccountCanMove(t *testing.T) {
 				t.Errorf("a root in %s was refused: %v", parent, err)
 			}
 		})
+	}
+}
+
+// grant gives Users access to dir itself, beside what its DACL grants already.
+func grant(t *testing.T, dir string, access windows.ACCESS_MASK) {
+	t.Helper()
+
+	sd, err := windows.GetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	acl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{{
+		AccessPermissions: access,
+		AccessMode:        windows.GRANT_ACCESS,
+		Inheritance:       windows.NO_INHERITANCE,
+		Trustee: windows.TRUSTEE{
+			TrusteeForm:  windows.TRUSTEE_IS_SID,
+			TrusteeType:  windows.TRUSTEE_IS_GROUP,
+			TrusteeValue: windows.TrusteeValueFromSID(wellKnown(windows.WinBuiltinUsersSid)),
+		},
+	}}, dacl)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION,
+		nil, nil, acl, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestEnsureAllFollowsAJunction: a junction is a link the lookup follows, which Go does not
+// report as one, so a root that is a junction, or that one leads to, is held to the
+// directories above where it leads too -- here one Users may rename what is in -- and a
+// junction on the way is followed rather than taken for a file.
+func TestEnsureAllFollowsAJunction(t *testing.T) {
+	open := filepath.Join(t.TempDir(), "open-to-users")
+	if err := os.MkdirAll(filepath.Join(open, "real"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	grant(t, open, fileDeleteChild)
+
+	junction := filepath.Join(t.TempDir(), "j")
+	if out, err := exec.Command("cmd", "/c", "mklink", "/J", junction, filepath.Join(open, "real")).CombinedOutput(); err != nil {
+		t.Fatalf("mklink /J: %v\n%s", err, out)
+	}
+
+	for _, root := range []string{junction, filepath.Join(junction, "conflux")} {
+		t.Setenv("CONFLUX_DIR", root)
+
+		if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), "open-to-users") {
+			t.Errorf("a root at %s, through a junction into a directory Users may rename what is in, was accepted, "+
+				"or the refusal does not name that directory: %v", root, err)
+		}
 	}
 }

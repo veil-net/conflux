@@ -302,6 +302,8 @@ type step struct {
 // elsewhere -- and the directories above where it leads, where the next link may be. The
 // directory dir resolves to is not among them. Each link is read as itself (readLink), and on
 // Windows one that may lead off this machine is refused before anything is looked up through it.
+// Where a name on the way cannot be looked up -- one that is not there among them -- what was met
+// before it comes back with the error: the way as far as it is there.
 func ancestors(dir string) ([]step, error) {
 	dir, err := filepath.Abs(dir)
 	if err != nil {
@@ -342,7 +344,7 @@ func ancestors(dir string) ([]step, error) {
 
 		fi, err := os.Lstat(p)
 		if err != nil {
-			return nil, fmt.Errorf("resolve %s: %w", dir, err)
+			return met, fmt.Errorf("resolve %s: %w", dir, err)
 		}
 
 		if !isLink(fi) {

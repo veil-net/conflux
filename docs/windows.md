@@ -108,7 +108,10 @@ from the link's folder, is refused before anything follows it, by where the link
 leads, so that conflux never signs this machine in to whoever serves it: at a root's name, and for a
 `CONFLUX_DIR` at every step of the way to it. So is a link that leads nowhere, with nothing made where it leads.
 A root not made yet is made through a handle on the folder it goes in, so a link somebody plants at
-its name meanwhile is found there, and judged as itself, rather than followed.
+its name meanwhile is found there, and judged as itself, rather than followed. For a `CONFLUX_DIR`,
+the folders on the way to it that are there are held, before conflux makes any of the rest by their
+names, to the rule the way to one is held to ([security.md](security.md#the-extracted-binaries)):
+nobody else may move what is in them, so nobody else can make a junction where the next is to go.
 
 A root found already there is judged and restricted through one handle, opened on the directory
 itself and never looked up by its name again. Before anything in it is judged, it is made to hold

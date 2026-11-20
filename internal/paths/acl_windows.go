@@ -104,26 +104,34 @@ func restrictInfo(owner *windows.SID) windows.SECURITY_INFORMATION {
 }
 
 // makeRoot creates the root dir where it is not there yet, with Restrict's ownership and DACL
-// set as it is made, so that it never carries what %ProgramData% passes on -- Users' right to
+// set as it is created, so that it never carries what %ProgramData% passes on -- Users' right to
 // create in it, enough to turn an empty directory into a junction -- not even for an instant, and
 // through a handle on its parent (makeIn), so that a link somebody plants at its name meanwhile is
 // found there rather than followed. The directories above it are made as MkdirAll makes them.
 // Anything already at its name, a link included, is secure's, whose heldRoot judges a link as
 // itself before it follows it. Before anything is made, a Windows older than conflux runs on is
 // refused (tooOld); so is a CONFLUX_DIR with a link on the way to it that leads off this machine
-// (offMachineLinks), and the nearest directory above dir that is there is held as heldRoot holds a
-// root (remoteAbove): a CONFLUX_DIR on a network volume is refused with nothing made there.
+// (offMachineLinks), and one where what is there of the way to it lets another account move it
+// (parentsRefusal): whoever may could make a junction where the next directory is to go, which
+// MkdirAll and the open of the parent would follow by name. Then the nearest directory above dir
+// that is there is held as heldRoot holds a root (remoteAbove): a CONFLUX_DIR on a network volume
+// is refused with nothing made there.
 func makeRoot(dir string) error {
 	if err := tooOld(); err != nil {
 		return err
 	}
 
-	if err := offMachineLinks(dir); err != nil {
+	above, err := offMachineLinks(dir)
+	if err != nil {
 		return err
 	}
 
 	if _, err := os.Lstat(dir); err == nil {
 		return nil
+	}
+
+	if err := parentsRefusal(dir, above); err != nil {
+		return err
 	}
 
 	parent := filepath.Dir(dir)
@@ -171,18 +179,20 @@ func remoteAbove(dir string) error {
 
 // offMachineLinks refuses dir, where whoever set CONFLUX_DIR chose it (chosen), where a link on the
 // way to it leads off this machine (windowsLinkTarget), as ancestors reads each link it meets before
-// it looks anything up through it, as far as the way is there. A lookup of dir by its name follows
-// every link on the way, so this comes before any.
-func offMachineLinks(dir string) error {
+// it looks anything up through it, as far as the way is there; and is what ancestors met, for makeRoot
+// to judge before it makes anything on the way. A lookup of dir by its name follows every link on the
+// way, so this comes before any.
+func offMachineLinks(dir string) ([]step, error) {
 	if !chosen(dir) {
-		return nil
+		return nil, nil
 	}
 
-	if _, err := ancestors(dir); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
+	above, err := ancestors(dir)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
 	}
 
-	return nil
+	return above, nil
 }
 
 // readLink is where the link p, opened as itself, leads (linkTarget), as ancestors follows it.
@@ -852,7 +862,7 @@ func ownerRefusal(dir string, owner *windows.SID) error {
 // unread: one this account may not open or read is refused, since whoever made it can deny conflux
 // the right to read its owner and DACL as easily as they can make it.
 func Foreign(dir string) error {
-	if err := offMachineLinks(dir); err != nil {
+	if _, err := offMachineLinks(dir); err != nil {
 		return err
 	}
 
@@ -1287,6 +1297,12 @@ func parents(dir string) error {
 		return err
 	}
 
+	return parentsRefusal(dir, above)
+}
+
+// parentsRefusal is parents' refusal of dir over above, the steps on the way to it as ancestors met
+// them, or nil.
+func parentsRefusal(dir string, above []step) error {
 	for _, s := range above {
 		p := s.path
 

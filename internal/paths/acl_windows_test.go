@@ -62,8 +62,11 @@ func TestRestrictedFilesAreTrusted(t *testing.T) {
 // TestEnsureAllRefusesARootAnotherAccountCanMove: an account granted the right to delete or
 // rename what is in a directory above a CONFLUX_DIR can move the root aside and put one of
 // its own in its place, with a conflux in it for the service to run as SYSTEM, so the root
-// is refused, naming the directory. The right to create folders there is not that: C:\
-// gives it to every user, and their folder cannot take the place of one that is not theirs.
+// is refused, naming the directory, and before anything is made in it -- the root, or a directory
+// on the way to it -- where that account could have made a junction for MkdirAll and makeRoot to
+// follow. The right to create folders there is not that: C:\ gives it to every user, and their
+// folder cannot take the place of one that is not theirs. Windows-only, so it runs in CI's
+// platforms job alone.
 func TestEnsureAllRefusesARootAnotherAccountCanMove(t *testing.T) {
 	for _, c := range []struct {
 		name    string
@@ -73,21 +76,28 @@ func TestEnsureAllRefusesARootAnotherAccountCanMove(t *testing.T) {
 		{"Users may rename what is in it", fileDeleteChild, true},
 		{"Users may create folders in it", 0x4, false}, // FILE_ADD_SUBDIRECTORY
 	} {
-		t.Run(c.name, func(t *testing.T) {
-			parent := t.TempDir()
-			privtest.GrantUsers(t, parent, c.access, windows.NO_INHERITANCE)
+		for _, under := range []string{"conflux", filepath.Join("made", "conflux")} {
+			t.Run(c.name+", "+under, func(t *testing.T) {
+				parent := t.TempDir()
+				privtest.GrantUsers(t, parent, c.access, windows.NO_INHERITANCE)
 
-			t.Setenv("CONFLUX_DIR", filepath.Join(parent, "conflux"))
+				t.Setenv("CONFLUX_DIR", filepath.Join(parent, under))
 
-			err := Default().EnsureAll()
+				err := Default().EnsureAll()
 
-			switch {
-			case c.refused && (err == nil || !strings.Contains(err.Error(), parent)):
-				t.Errorf("a root in %s was accepted, or the refusal does not name it: %v", parent, err)
-			case !c.refused && err != nil:
-				t.Errorf("a root in %s was refused: %v", parent, err)
-			}
-		})
+				switch {
+				case c.refused && (err == nil || !strings.Contains(err.Error(), parent)):
+					t.Errorf("a root in %s was accepted, or the refusal does not name it: %v", parent, err)
+				case !c.refused && err != nil:
+					t.Errorf("a root in %s was refused: %v", parent, err)
+				}
+
+				first := filepath.Join(parent, strings.Split(under, string(filepath.Separator))[0])
+				if _, err := os.Lstat(first); c.refused && !errors.Is(err, os.ErrNotExist) {
+					t.Errorf("EnsureAll made %s in a directory it refused (%v)", first, err)
+				}
+			})
+		}
 	}
 }
 

@@ -8,8 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/ghrelease/ghreleasetest"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/pathstest"
 	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/update"
@@ -193,21 +195,24 @@ func TestUpdateHandsAStoppedServiceToTheNewConflux(t *testing.T) {
 
 // TestRegisterStartsNothing: the step update hands a stopped service to, in the conflux it
 // put in place, places that conflux's copy and registers the service as it defines it, and
-// starts nothing.
+// starts nothing -- on a machine with a configuration to start, as every machine update
+// hands a service to has.
 func TestRegisterStartsNothing(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
 
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	d := pathstest.Dirs(t)
 
-	mgr := &fakeManager{}
+	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Proxies: []string{"8080=127.0.0.1:3000"}, Taints: []string{"t"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	mgr := &fakeManager{restartErr: errStartsNothing}
 	standInService(t, mgr)
 
 	if _, errOut, code := capture(t, "register"); code != ExitOK {
 		t.Fatalf("register exited %d: %s", code, errOut)
 	}
-
-	d := paths.Default()
 
 	want := []string{d.ServiceExecutable(), "serve", "--dir", paths.Root()}
 	if len(mgr.installs) != 1 || !slices.Equal(mgr.installs[0], want) {

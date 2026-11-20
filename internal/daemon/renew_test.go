@@ -804,7 +804,8 @@ func dueBesideTheObserver(t *testing.T) (paths.Dirs, *enrol.Manifest) {
 // state describing the chain that part still holds, due again; the watcher starting the other
 // part on the manifest the renewed chain is in leaves it so, rather than moving the window onto
 // the renewed chain, which would have the timer sleep while the part that runs on holds the old
-// one past its expiry.
+// one past its expiry. Everything started again holds the renewed chain, and the window is the
+// manifest's: left on the old chain, the timer would renew again straight after every start.
 func TestAPartStartedAgainKeepsTheWindowOfWhatRunsOn(t *testing.T) {
 	for name, tc := range map[string]struct {
 		refusing string
@@ -812,6 +813,7 @@ func TestAPartStartedAgainKeepsTheWindowOfWhatRunsOn(t *testing.T) {
 	}{
 		"the observer started again beside an anchor on the old chain": {"renew", parts{observer: true}},
 		"the anchor rebuilt beside an observer on the old chain":       {"observe", parts{anchor: true}},
+		"everything started again":                                     {"renew", parts{observer: true, anchor: true}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv(fakeAnchorctlObserverEnv, "running")
@@ -838,6 +840,15 @@ func TestAPartStartedAgainKeepsTheWindowOfWhatRunsOn(t *testing.T) {
 			st, err := config.LoadState(d)
 			if err != nil {
 				t.Fatal(err)
+			}
+
+			if tc.start.observer && tc.start.anchor {
+				if m := stored(t, d); !st.IssuedAt.Equal(m.IssuedAt()) || !st.NotAfter.Equal(m.NotAfter()) {
+					t.Errorf("the state reads %v to %v, want the manifest's window, %v to %v",
+						st.IssuedAt, st.NotAfter, m.IssuedAt(), m.NotAfter())
+				}
+
+				return
 			}
 
 			if !st.IssuedAt.Equal(held.IssuedAt) || !st.NotAfter.Equal(held.NotAfter) || !dueAt(st.IssuedAt, st.NotAfter, time.Now()) {

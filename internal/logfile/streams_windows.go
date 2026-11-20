@@ -6,8 +6,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// placed is the handle the standard streams were last given: a copy of the log's, so that
-// closing the log at a move aside leaves them a handle that is still the log's.
+// placed is the handle the standard streams were last given: a copy of the log's, so closing
+// the log never leaves them a handle Windows may give another file.
 var placed windows.Handle
 
 // standardStreams makes f the process's standard output and error. A service has none of

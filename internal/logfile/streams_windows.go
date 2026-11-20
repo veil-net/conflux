@@ -32,3 +32,18 @@ func standardStreams(f *os.File) {
 
 	placed = h
 }
+
+// unplace takes the log's copy back from the standard streams, before the log is moved aside:
+// Windows renames no file a handle is open on, and Go opens the log without the sharing that
+// would allow it, so a copy the streams held made every move fail. Until the log is placed over
+// them again the runtime's own writes go nowhere. Called under the File's lock.
+func unplace() {
+	if placed == 0 {
+		return
+	}
+
+	_ = windows.SetStdHandle(windows.STD_OUTPUT_HANDLE, windows.InvalidHandle)
+	_ = windows.SetStdHandle(windows.STD_ERROR_HANDLE, windows.InvalidHandle)
+	_ = windows.CloseHandle(placed)
+	placed = 0
+}

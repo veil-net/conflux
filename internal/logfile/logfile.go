@@ -124,12 +124,17 @@ func (w *File) Write(p []byte) (int, error) {
 	return written, nil
 }
 
-// rotate moves the file aside and starts another. Closed first, since Windows renames no
-// file that is open. Best effort: where the move fails -- somebody holds the file open on
-// Windows -- the same file is opened again and grows on, and the next line tries again.
+// rotate moves the file aside and starts another. Closed first, and taken back from the
+// standard streams where they hold a copy of it, since Windows renames no file that is open.
+// Best effort: where the move fails -- something else holds the file open on Windows -- the
+// same file is opened again and grows on, and the next line tries again.
 func (w *File) rotate() {
 	w.f.Close()
 	w.f = nil
+
+	if w.redirect {
+		unplace()
+	}
 
 	_ = os.Rename(w.path, w.path+".1")
 	_ = w.reopen() // and where it fails, the next write tries again, and says why

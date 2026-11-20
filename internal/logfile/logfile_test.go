@@ -43,7 +43,9 @@ func TestEachLineIsStamped(t *testing.T) {
 }
 
 // TestAFullLogIsMovedAside: past its size the log is moved to .1, replacing the one before,
-// at the start of a line and never in one, and what was there is kept.
+// at the start of a line and never in one, and what was there is kept -- with the log placed
+// over the standard streams, as the service's is, which on Windows hold a copy of it that no
+// move may find open.
 func TestAFullLogIsMovedAside(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "conflux.log")
@@ -52,17 +54,23 @@ func TestAFullLogIsMovedAside(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	w, err := open(path, 100, fixed, false)
+	restore := keepStandardStreams(t)
+
+	w, err := open(path, 100, fixed, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	defer w.Close()
 
 	for i := range 12 {
 		fmt.Fprintf(w, "line %d ", i)
 		fmt.Fprintf(w, "ends here\n")
 	}
+
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	restore()
 
 	entries, _ := os.ReadDir(dir)
 	if len(entries) != 2 {

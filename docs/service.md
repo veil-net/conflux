@@ -349,7 +349,8 @@ Windows also needs `wintun.dll` for TUN mode; see [windows.md](windows.md).
 Logs: a service has no console, so the supervisor writes what it and `anchord` say to
 `%ProgramData%\conflux\logs\conflux.log`, each line stamped with the time in UTC and the file
 moved aside to `conflux.log.1` past 10 MiB, as on macOS; `uninstall` removes both with the
-rest.
+rest. The file is the service's standard output and error, so a crash lands in it too; they
+let go of it for the moment it is moved aside, since Windows moves no file that is open.
 
 ## rc: FreeBSD and OpenBSD
 

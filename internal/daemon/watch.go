@@ -237,16 +237,23 @@ var errNoConnection = errors.New("the rebuilt link carried no connection")
 // boot already take, so a rebuilt anchor cannot be a subtly different one from the one a reboot
 // would start. The daemon is untouched, so this costs one anchor's sessions and not the process.
 //
-// Except where the anchor directory anchord was given has gone: prepare makes it at a spawn, as
-// the identity anchord runs as, so the cycle starts anchord again. Made here it would be the
-// supervisor's, which an account's anchord cannot write and the next start reads as conflux
-// 1.0.0's layout, refusing the machine for good.
+// An anchor directory anchord was given that has gone is made again first, by prepare's
+// makeAnchorDir, for the identity anchord runs as: never as the supervisor's, which an account's
+// anchord could not write and the next start would read as conflux 1.0.0's layout, refusing the
+// machine for good. So the anchor is rebuilt in this daemon, and the observer beside it goes on,
+// since an anchor that cannot come up never takes it down. Only one that cannot be made so is the
+// next spawn's, which starts anchord again.
 func (s *Supervisor) rebuildAnchor(ctx context.Context, why string, link bool, k *keeper) outcome {
 	if !exists(s.priv.Dir) {
-		s.report().Warn("%s, and %s is gone; starting anchord again, which makes it", why, s.priv.Dir)
-		s.requestRespawn()
+		if err := makeAnchorDir(s.priv.Dir, s.priv); err != nil {
+			s.report().Warn("%s, and %s is gone and could not be made again: %v; starting anchord again, whose start makes it",
+				why, s.priv.Dir, err)
+			s.requestRespawn()
 
-		return respawned
+			return respawned
+		}
+
+		why += ", and " + s.priv.Dir + " was gone, so it is made again"
 	}
 
 	s.stopAnchor(ctx, why+"; rebuilding the anchor")

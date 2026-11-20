@@ -281,38 +281,97 @@ func TestEachIsGivenUpOnAlone(t *testing.T) {
 	}
 }
 
-// TestAGoneAnchorDirectoryIsTheNextSpawnsToMake: an anchor directory gone from under the running
-// service is made again by the next spawn, as the identity anchord is given, rather than by a
-// rebuild, which would make it the supervisor's: an account's anchord could not write it, and
-// the next start would take it for conflux 1.0.0's and refuse the machine for good.
-func TestAGoneAnchorDirectoryIsTheNextSpawnsToMake(t *testing.T) {
+// TestARebuildMakesAGoneAnchorDirectoryAgain: an anchor directory gone from under the running
+// service is made again by the rebuild as prepare makes it at a spawn, for the identity anchord
+// runs as, and the anchor is rebuilt in the same daemon, so the observer beside it goes on,
+// neither stopped nor started again: an anchor that cannot come up never takes it down. Only one
+// that cannot be made so -- an account this process cannot give it to -- is left to the next
+// spawn, which starts anchord again, with no anchor started where there is no directory.
+func TestARebuildMakesAGoneAnchorDirectoryAgain(t *testing.T) {
 	t.Setenv(fakeAnchorctlStatusEnv, "none")
+	t.Setenv(fakeAnchorctlObserverEnv, "running")
 
-	s, log := supervised(t, "1")
-	s.respawn = make(chan struct{}, 1)
+	// anchords is an identity this process can give an anchor directory to: on Unix an account,
+	// its own uid, so the directory goes through makeAnchorDir's chown and rename; on Windows,
+	// where an account's is the service SID's, the supervisor's. unmakeable is one it cannot: on
+	// Unix another uid, which only root can give it to, and on Windows a path below a file.
+	anchords := func(t *testing.T, d paths.Dirs) Privilege {
+		if runtime.GOOS == "windows" {
+			return Privilege{Dir: d.RootAnchorDir()}
+		}
 
-	credentialed(t, s.Dirs)
-
-	if err := os.RemoveAll(s.priv.Dir); err != nil {
-		t.Fatal(err)
+		return Privilege{Account: true, UID: os.Geteuid(), GID: os.Getegid(), Dir: d.AnchorDir()}
 	}
 
-	if got := s.rebuildAnchor(t.Context(), "anchord holds no anchor any more", false, newKeeper(time.Millisecond, time.Millisecond)); got != respawned {
-		t.Errorf("the rebuild came to %v, want the cycle asked to start anchord again", got)
+	unmakeable := func(t *testing.T, d paths.Dirs) Privilege {
+		if runtime.GOOS != "windows" {
+			return Privilege{Account: true, UID: os.Geteuid() + 1, GID: os.Getegid() + 1, Dir: d.AnchorDir()}
+		}
+
+		file := filepath.Join(t.TempDir(), "file")
+		if err := os.WriteFile(file, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		return Privilege{Dir: filepath.Join(file, "anchor")}
 	}
 
-	select {
-	case <-s.respawn:
-	default:
-		t.Error("the cycle was not asked to start anchord again")
-	}
+	for name, tc := range map[string]struct {
+		priv func(*testing.T, paths.Dirs) Privilege
+		made bool
+	}{
+		"made again":              {anchords, true},
+		"one that cannot be made": {unmakeable, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, log := supervised(t, "1")
+			s.respawn = make(chan struct{}, 1)
+			s.priv = tc.priv(t, s.Dirs)
 
-	if exists(s.priv.Dir) {
-		t.Errorf("the rebuild made %s itself", s.priv.Dir)
-	}
+			if err := config.Save(s.Dirs, &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, Observer: &config.Observer{}}); err != nil {
+				t.Fatal(err)
+			}
 
-	if slices.Contains(ran(t, log), "start") {
-		t.Error("an anchor was started with no directory to start it in")
+			credentialed(t, s.Dirs)
+
+			if err := os.RemoveAll(s.priv.Dir); err != nil {
+				t.Fatal(err)
+			}
+
+			want := kept
+			if !tc.made {
+				want = respawned
+			}
+
+			if got := s.rebuildAnchor(t.Context(), "anchord holds no anchor any more", false, newKeeper(time.Millisecond, time.Millisecond)); got != want {
+				t.Errorf("the rebuild came to %v, want %v", got, want)
+			}
+
+			select {
+			case <-s.respawn:
+				if tc.made {
+					t.Error("anchord is to be started again, and the observer with it, for a directory the rebuild made")
+				}
+			default:
+				if !tc.made {
+					t.Error("the cycle was not asked to start anchord again")
+				}
+			}
+
+			cmds := ran(t, log)
+
+			if made := anchorDirFor(s.priv.Dir, s.priv); made != tc.made {
+				t.Errorf("%s is made again for anchord's identity: %v, want %v", s.priv.Dir, made, tc.made)
+			}
+
+			if started := slices.Contains(cmds, "start"); started != tc.made {
+				t.Errorf("anchorctl ran %v: an anchor started %v, want %v", cmds, started, tc.made)
+			}
+
+			if slices.Contains(cmds, "observe") {
+				t.Errorf("anchorctl ran %v: the observer was stopped or started again", cmds)
+			}
+		})
 	}
 }
 

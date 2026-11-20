@@ -196,7 +196,8 @@ func runEphemeral(ctx context.Context, cfg *config.Config, run *ephemeralRun) in
 	e := &daemon.Ephemeral{
 		Dirs:     d,
 		Config:   cfg,
-		Manifest: run.env,
+		Manifest: run.m,
+		Envelope: run.env,
 		Reporter: reporter{},
 		Drop:     runtime.GOOS != "windows",
 		Up:       func(u daemon.EphemeralUp) { reportEphemeral(d, cfg, u) },

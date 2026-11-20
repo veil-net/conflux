@@ -41,8 +41,11 @@ type Ephemeral struct {
 	// Config is what to run, built for this run and never saved.
 	Config *config.Config
 
-	// Manifest is a credential handed in, or nil to enrol in memory with Config's taints.
-	Manifest config.Envelope
+	// Manifest is a credential handed in, and Envelope what it was read from, which goes to
+	// anchorctl on stdin; both nil to enrol in memory with Config's taints. The caller has
+	// decoded it and checked its taints against Config's, as up and proxy do.
+	Manifest *enrol.Manifest
+	Envelope config.Envelope
 
 	Reporter Reporter
 
@@ -72,12 +75,6 @@ type EphemeralUp struct {
 // returns when the context is cancelled (nil) or anchord or its anchor ends (why). Either
 // way it stops anchord and removes the run's root before returning.
 func (e *Ephemeral) Run(ctx context.Context) error {
-	// Before anything is started: observing alone is the service's, and a run with no anchor
-	// would start an observer and an export only to refuse after them.
-	if !e.Config.Anchor() {
-		return &permanentError{err: errors.New("an ephemeral run is an anchor: up or proxy")}
-	}
-
 	// First, before anything holding the credential can crash: a core dump would put the
 	// identity seed on disk, which is the one thing this mode promises never happens.
 	noCoreDumps()
@@ -139,9 +136,9 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 
 	// A credential handed in is checked before anything starts, and its port read: the port
 	// decides what anchord is given.
-	env, m := e.Manifest, (*enrol.Manifest)(nil)
-	if env != nil {
-		if m, err = handedCredential(env, e.Config); err != nil {
+	env, m := e.Envelope, e.Manifest
+	if m != nil {
+		if err := checkHanded(m); err != nil {
 			return err
 		}
 	}
@@ -261,27 +258,17 @@ func ephemeralArgs(d paths.Dirs) []string {
 	return args
 }
 
-// handedCredential is a credential an ephemeral run was handed, checked as a start checks
-// one: readable, granting the taints the run asks for, and current, since nothing here could
-// renew an expired one before it starts -- a renewal names the anchor by the AnchorID it
-// reports once it has.
-func handedCredential(env config.Envelope, cfg *config.Config) (*enrol.Manifest, error) {
-	m, err := enrol.Decode(env)
-	if err != nil {
-		return nil, &permanentError{err: err}
-	}
-
-	if err := m.CheckTaints(cfg.Taints); err != nil {
-		return nil, &permanentError{err: err}
-	}
-
+// checkHanded refuses a credential an ephemeral run was handed that has expired, since nothing
+// here could renew it before it starts: a renewal names the anchor by the AnchorID it reports
+// once it has.
+func checkHanded(m *enrol.Manifest) error {
 	if !m.NotAfter().IsZero() && !m.NotAfter().After(time.Now()) {
-		return nil, &permanentError{err: fmt.Errorf(
+		return &permanentError{err: fmt.Errorf(
 			"the credential expired %s ago, and anchor will not start on an expired one; get a fresh one from its issuer",
 			time.Since(m.NotAfter()).Round(time.Minute))}
 	}
 
-	return m, nil
+	return nil
 }
 
 // enrolInMemory draws a credential in cfg's taints and keeps it here: the response is the

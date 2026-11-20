@@ -42,6 +42,22 @@ func handed(t *testing.T, is *issuer, issued, expires time.Time) config.Envelope
 	return config.Envelope(base64.StdEncoding.EncodeToString(b))
 }
 
+// decoded is env as the caller of an ephemeral run hands it over, decoded; nil for none.
+func decoded(t *testing.T, env config.Envelope) *enrol.Manifest {
+	t.Helper()
+
+	if env == nil {
+		return nil
+	}
+
+	m, err := enrol.Decode(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return m
+}
+
 // ephemeralRig is one ephemeral run against the stand-ins, started in the background.
 type ephemeralRig struct {
 	root     string
@@ -73,7 +89,8 @@ func runEphemeralOf(t *testing.T, cfg *config.Config, env config.Envelope) *ephe
 	e := &Ephemeral{
 		Dirs:       paths.EphemeralDirs(root),
 		Config:     cfg,
-		Manifest:   env,
+		Manifest:   decoded(t, env),
+		Envelope:   env,
 		Up:         func(u EphemeralUp) { r.ups <- u },
 		tools:      &libexec.Tools{Anchord: os.Args[0], Anchorctl: os.Args[0]},
 		watchEvery: 100 * time.Millisecond,
@@ -318,10 +335,12 @@ func TestASecondEphemeralRunIsRefused(t *testing.T) {
 	}
 	defer unlock()
 
+	env := handed(t, is, time.Now().Add(-time.Hour), time.Now().Add(30*24*time.Hour))
 	e := &Ephemeral{
 		Dirs:     paths.EphemeralDirs(root),
 		Config:   &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, APIBaseURL: is.srv.URL},
-		Manifest: handed(t, is, time.Now().Add(-time.Hour), time.Now().Add(30*24*time.Hour)),
+		Manifest: decoded(t, env),
+		Envelope: env,
 		tools:    &libexec.Tools{Anchord: os.Args[0], Anchorctl: os.Args[0]},
 	}
 
@@ -341,10 +360,9 @@ func TestASecondEphemeralRunIsRefused(t *testing.T) {
 func TestAnExpiredHandedCredentialIsRefused(t *testing.T) {
 	is := newIssuer(t)
 
-	_, err := handedCredential(handed(t, is, time.Now().Add(-40*24*time.Hour), time.Now().Add(-time.Hour)),
-		&config.Config{Taints: []string{"t"}})
+	err := checkHanded(decoded(t, handed(t, is, time.Now().Add(-40*24*time.Hour), time.Now().Add(-time.Hour))))
 	if err == nil || !Permanent(err) || !strings.Contains(err.Error(), "expired") {
-		t.Errorf("handedCredential(expired) = %v, want a permanent refusal", err)
+		t.Errorf("checkHanded(expired) = %v, want a permanent refusal", err)
 	}
 
 	if is.calls.Load() != 0 {
@@ -361,10 +379,18 @@ const (
 )
 
 func ephemeralRunner(root string) int {
+	env := config.Envelope(os.Getenv(ephemeralRunnerManifest))
+
+	m, err := enrol.Decode(env)
+	if err != nil {
+		return 1
+	}
+
 	e := &Ephemeral{
 		Dirs:     paths.EphemeralDirs(root),
 		Config:   &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, APIBaseURL: os.Getenv(ephemeralRunnerAPI)},
-		Manifest: config.Envelope(os.Getenv(ephemeralRunnerManifest)),
+		Manifest: m,
+		Envelope: env,
 		tools:    &libexec.Tools{Anchord: os.Args[0], Anchorctl: os.Args[0]},
 	}
 

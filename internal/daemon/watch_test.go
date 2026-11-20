@@ -3,8 +3,10 @@ package daemon
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -314,13 +316,16 @@ func TestAGoneAnchorDirectoryIsTheNextSpawnsToMake(t *testing.T) {
 	}
 }
 
-// TestAWholeStartTriesTheAnchorAfresh: a bring-up of everything the configuration runs -- the
-// cycle's, at every start of the daemon -- tries the anchor afresh, so the record of one the
-// supervisor gave up on before goes before anything starts, whatever the start then comes to:
-// an anchor up, one not up yet or refused for good, beside an observer or with none, none at all
-// observing alone. A start records nothing of its own: the supervisor gives up on the anchor
-// only where it stops trying it.
+// TestAWholeStartTriesTheAnchorAfresh: a cycle's bring-up of everything the configuration runs
+// tries the anchor afresh, so the record of one the supervisor gave up on before goes before
+// anything starts, whatever the start then comes to: an anchor up, one not up yet or refused for
+// good, beside an observer or with none, none at all observing alone. A start records nothing of
+// its own: the supervisor gives up on the anchor only where it stops trying it.
 func TestAWholeStartTriesTheAnchorAfresh(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a console control event needs the console this test shares")
+	}
+
 	observer := &config.Observer{}
 
 	for name, tc := range map[string]struct {
@@ -335,32 +340,148 @@ func TestAWholeStartTriesTheAnchorAfresh(t *testing.T) {
 		"observing alone":                     {config.ModeObserve, observer, ""},
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Setenv(fakeAnchorctlStatusEnv, "none")
+			t.Setenv(fakeAnchordListenEnv, "1")
+
 			if tc.refusing != "" {
 				t.Setenv(tc.refusing, "start")
 			}
 
-			d := benchSite(t)
+			s, _ := supervised(t, "serve")
+			s.Ready = make(chan struct{})
 
-			cfg := configOf(t, d)
-			cfg.Mode, cfg.Observer = tc.mode, tc.observer
-
-			if err := config.Save(d, cfg); err != nil {
+			if err := config.Save(s.Dirs, &config.Config{Mode: tc.mode, Observer: tc.observer, Taints: []string{"t"}}); err != nil {
 				t.Fatal(err)
 			}
 
-			givenUp(t, d)
+			credentialed(t, s.Dirs)
+			givenUp(t, s.Dirs)
 
-			_, err := bringUp(t.Context(), d, fakeCtl(t), nopReporter{}, d.RootAnchorDir(), false, everything(cfg))
-			if (err != nil) != (tc.refusing != "") {
-				t.Fatalf("bringUp = %v, with the anchor's start refused %v", err, tc.refusing != "")
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+
+			ended := make(chan error, 1)
+
+			go func() { ended <- s.cycle(ctx) }()
+
+			// The bring-up is over once the service manager is told the unit started, or, with
+			// nothing left running, once the cycle has ended on it.
+			var err error
+
+			select {
+			case <-s.Ready:
+				cancel()
+
+				err = <-ended
+			case err = <-ended:
+			case <-time.After(15 * time.Second):
+				t.Fatal("the cycle's bring-up never ended")
 			}
 
-			if st, err := config.LoadState(d); err != nil || st.AnchorRefused != "" || !st.AnchorRefusedAt.IsZero() {
+			if (err != nil) != (tc.refusing != "" && tc.observer == nil) {
+				t.Fatalf("the cycle ended with %v, with the anchor's start refused %v and the observer %v", err, tc.refusing != "", tc.observer != nil)
+			}
+
+			if st, err := config.LoadState(s.Dirs); err != nil || st.AnchorRefused != "" || !st.AnchorRefusedAt.IsZero() {
 				t.Errorf("a whole start left the anchor recorded as given up on: %q at %v (%v)", st.AnchorRefused, st.AnchorRefusedAt, err)
 			}
 		})
 	}
 }
+
+// TestEveryStartForgetsTheAnchorGivenUp: the supervisor clears the record of an anchor it gave up
+// on wherever it is to try the anchor again, whatever that try then comes to: as the service
+// starts, one that goes no further than a configuration refused for good among them, and once a
+// cycle has ended and the restart loop is to start anchord again, so the loop never waits with the
+// record standing -- one written in the backoff before, or in the cycle that ended, as its watcher
+// gave up, among them -- and a daemon that dies before any bring-up, again and again, clears it as
+// well. Kept, it would have status say the anchor was given up on while the supervisor tries it.
+func TestEveryStartForgetsTheAnchorGivenUp(t *testing.T) {
+	forgotten := func(t *testing.T, d paths.Dirs, when string) {
+		t.Helper()
+
+		if st, err := config.LoadState(d); err != nil || st.AnchorRefused != "" || !st.AnchorRefusedAt.IsZero() {
+			t.Errorf("%s, the state still records the anchor given up on: %q at %v (%v)", when, st.AnchorRefused, st.AnchorRefusedAt, err)
+		}
+	}
+
+	t.Run("a service start that goes no further", func(t *testing.T) {
+		s, _ := supervised(t, "1")
+
+		// A configuration conflux refuses, which Run reads before it extracts anything.
+		if err := os.WriteFile(s.Dirs.ConfigFile(), []byte(`{"version":1,"mode":"neither"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		givenUp(t, s.Dirs)
+
+		if err := s.Run(t.Context()); !Permanent(err) {
+			t.Fatalf("Run = %v, want the configuration refused for good", err)
+		}
+
+		forgotten(t, s.Dirs, "once Run has ended")
+	})
+
+	t.Run("a daemon that dies before any bring-up", func(t *testing.T) {
+		s, _ := supervised(t, "1") // a daemon that dies at once
+
+		credentialed(t, s.Dirs)
+		givenUp(t, s.Dirs)
+
+		record := func() {
+			if err := writeGivenUp(s.Dirs, errors.New("an earlier refusal")); err != nil {
+				t.Error(err)
+			}
+		}
+
+		// Each restart is said before the loop waits, and so before the next cycle starts. The
+		// record is written again in the backoff after the first, and in the second cycle, as its
+		// watcher would write it.
+		var starts, restarts int
+
+		waited := make(chan struct{})
+
+		s.Reporter = stepping(func(step string) {
+			switch {
+			case strings.HasPrefix(step, "starting anchord"):
+				if starts++; starts == 2 {
+					record()
+				}
+			case strings.HasPrefix(step, "restarting in"):
+				restarts++
+				forgotten(t, s.Dirs, fmt.Sprintf("as the loop waits to restart anchord a %s time", []string{"first", "second"}[min(restarts, 2)-1]))
+
+				switch restarts {
+				case 1:
+					record()
+				case 2:
+					close(waited)
+				}
+			}
+		})
+
+		ctx, cancel := context.WithCancel(t.Context())
+		ended := make(chan error, 1)
+
+		go func() { ended <- s.loop(ctx) }()
+
+		select {
+		case <-waited:
+		case <-time.After(15 * time.Second):
+			t.Error("the loop never restarted anchord a second time")
+		}
+
+		cancel()
+		<-ended
+	})
+}
+
+// stepping is a Reporter that hands each step to its function as the supervisor says it, in the
+// goroutine saying it, and drops warnings.
+type stepping func(string)
+
+func (f stepping) Step(format string, a ...any) { f(fmt.Sprintf(format, a...)) }
+func (stepping) Warn(string, ...any)            {}
 
 // TestARebuiltAnchorIsNotGivenUpOn: an anchor recorded as given up on that the watcher's rebuild
 // brings up after all, beside the observer, is not recorded so any more: status says it only

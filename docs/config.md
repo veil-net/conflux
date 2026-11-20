@@ -207,8 +207,9 @@ processes. See [credentials.md](credentials.md#clock-skew) and [uplink.md](uplin
 `anchorRefused` and `anchorRefusedAt` say why and when the supervisor gave up on the anchor,
 refused for good, for the same reason: recorded where it stops trying it — the watcher giving
 up its rebuilds, or the service ending on it with nothing else running — and cleared when an
-anchor comes up, when the supervisor next starts everything the configuration runs, by
-`conflux down`, and by a new identity.
+anchor comes up, wherever the supervisor is to try it again — as the service starts, however far
+that start gets, and once anchord has ended and is to be started again — by `conflux down`, and by
+a new identity.
 
 Everything here is derived, and most of it is re-learned by the next start: the window
 from the manifest, the AnchorID from what `anchorctl start` reports. Not on a machine

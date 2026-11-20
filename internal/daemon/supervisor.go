@@ -173,6 +173,9 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	}
 	defer unlock()
 
+	// This start tries the anchor again, however far it gets; see forgetRefusal.
+	s.forgetRefusal()
+
 	if err := s.Dirs.CheckSocketLen(); err != nil {
 		return &permanentError{err: err}
 	}
@@ -284,6 +287,10 @@ func (s *Supervisor) loop(ctx context.Context) error {
 			return fmt.Errorf("anchord will not start with this configuration: %w", err)
 		}
 
+		// The next start tries the anchor again, whatever this cycle's watcher gave up on, so the
+		// record goes now rather than as that start begins; see forgetRefusal.
+		s.forgetRefusal()
+
 		if err != nil {
 			s.report().Warn("%v", err)
 		}
@@ -390,6 +397,18 @@ func (s *Supervisor) recordRefusal(refusal error) {
 	}
 }
 
+// forgetRefusal clears the record of an anchor the supervisor gave up on, wherever it is to try the
+// anchor again: as the service starts (Run), which may end before any daemon does, and once a
+// cycle has ended and the restart loop is to start the daemon again (loop), before it waits, which
+// covers a daemon that never reached a bring-up and spares the first start a second read. Kept,
+// the record would have status say the anchor was given up on, and that conflux start tries it
+// again, while this is about to.
+func (s *Supervisor) forgetRefusal() {
+	if err := ForgetRefusal(s.Dirs); err != nil {
+		s.report().Warn("could not clear the record of the anchor given up on: %v", err)
+	}
+}
+
 // anchorRefused reports whether err is the anchor's own start refused for good: anchorctl start's,
 // as against the observer's, the credential's or the configuration's.
 func anchorRefused(err error) bool {
@@ -399,7 +418,8 @@ func anchorRefused(err error) bool {
 }
 
 // ForgetRefusal clears the record of an anchor the supervisor gave up on: `conflux down`'s, once
-// the service has stopped, since an anchor stopped by hand is not one given up on.
+// the service has stopped, since an anchor stopped by hand is not one given up on, and the
+// supervisor's as it tries the anchor again (forgetRefusal).
 func ForgetRefusal(d paths.Dirs) error { return writeGivenUp(d, nil) }
 
 // writeGivenUp records refusal in the state as the anchor the supervisor gave up on, or with nil

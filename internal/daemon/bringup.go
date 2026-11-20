@@ -159,7 +159,10 @@ func bringUp(
 
 	// A whole bring-up tries everything afresh, so an anchor the supervisor gave up on before
 	// is not given up on any more, whatever this one comes to: the record goes before anything
-	// starts.
+	// starts. For the cycle's, Run or the restart loop has cleared it already (forgetRefusal);
+	// this stays as the backstop where that write failed and this state write does not, and as
+	// the clear for a watcher's start that is everything a configuration changed under the
+	// running service runs.
 	if whole {
 		st.AnchorGivenUp(nil)
 	}

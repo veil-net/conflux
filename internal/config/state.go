@@ -66,7 +66,9 @@ type State struct {
 	// AnchorRefused and AnchorRefusedAt record the anchor the supervisor gave up on, refused for
 	// good: why, and when. Written where it stops trying it -- the watcher giving up its
 	// rebuilds, or the service ending on it with nothing else running -- and cleared when an
-	// anchor comes up, when a whole bring-up starts, at `conflux down`, and for a new identity.
+	// anchor comes up, wherever the supervisor is to try it again (as the service starts, once
+	// anchord has ended and is to be started again, and at a whole bring-up), at `conflux down`,
+	// and for a new identity.
 	// Persisted for the reason the link's reopens are: the supervisor that gives up and the
 	// `conflux status` that reports it are different processes, and without it status could
 	// say only that no anchor runs.

@@ -250,10 +250,11 @@ IPv6, or the name held by another interface), a host that will not be set up to 
 for the realm, an argument vector anchorctl refuses outright, a daemon socket conflux
 may not reach or a token the daemon refuses, and a machine still laid out as conflux 1.0.0
 left it. Once the supervisor stops trying the anchor, `conflux status`'s `given up` line says
-when, and why, until the service is started again or `conflux down` stops it. Beside an observer
-that is running, an anchor refused for good does not fail the unit: the observer goes on, the
-log says `the anchor was refused`, and the watcher rebuilds the anchor, giving up on it alone
-once its rebuilds are refused too.
+when, and why, until the supervisor is to try it again — as the service starts again, or once
+anchord has ended and is to be started again — or `conflux down` stops it. Beside an observer that
+is running, an anchor refused for good does not fail the unit: the observer goes on, the log says
+`the anchor was refused`, and the watcher rebuilds the anchor, giving up on it alone once its
+rebuilds are refused too.
 
 Where the logs are: `journalctl -u conflux -n 50` on Linux, `/var/log/conflux.log` on
 macOS and FreeBSD, `/var/log/daemon` on OpenBSD, and

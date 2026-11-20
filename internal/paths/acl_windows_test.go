@@ -224,12 +224,29 @@ func TestSecureReplacesAJunctionRoot(t *testing.T) {
 }
 
 // TestSecureRefusesAJunctionRootMadeAgain: secure removes a junction root before it makes its own at
-// the name, and something somebody made there meanwhile is refused, naming the root. Windows-only, so
+// the name, and something somebody made there meanwhile is refused, naming the root, and the
+// mklink /J that makes the junction again, to where it led by its drive letter: with nothing at the
+// name, the next run would make a root afresh there, and the machine a new identity. Windows-only, so
 // it runs in CI's platforms job alone.
 func TestSecureRefusesAJunctionRootMadeAgain(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
-	root := mklinkJ(t, filepath.Join(t.TempDir(), "j"), t.TempDir())
+	target := t.TempDir()
+	root := mklinkJ(t, filepath.Join(t.TempDir(), "j"), target)
+
+	// target as Windows reads it back, its long names in place of %TEMP%'s short ones.
+	h, err := openFile(target, readAccess, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.CloseHandle(h)
+
+	shown, err := finalPath(h, volumeNameDOS)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	remake := `mklink /J "` + root + `" "` + strings.TrimPrefix(shown, `\\?\`) + `"`
 
 	was := replacing
 	t.Cleanup(func() { replacing = was })
@@ -240,8 +257,10 @@ func TestSecureRefusesAJunctionRootMadeAgain(t *testing.T) {
 		}
 	}
 
-	if err := secure(root); err == nil || !strings.Contains(err.Error(), root+" was made again") {
-		t.Errorf("secure(a junction root made again as it was replaced) = %v, want a refusal naming it", err)
+	if err := secure(root); err == nil || !strings.Contains(err.Error(), root+" was made again") ||
+		!strings.Contains(err.Error(), remake) {
+		t.Errorf("secure(a junction root made again as it was replaced) = %v, want a refusal naming it and %s", err,
+			remake)
 	}
 }
 

@@ -130,12 +130,14 @@ every reader too. Then, since a handle somebody opened on it while its DACL let 
 could still repoint it in place, conflux replaces it: the junction is removed, and one made in
 its place through conflux's own handle, with the root's ownership and DACL from the moment it
 exists, and pointed through that handle at the directory conflux judged. Something made at that
-name in between is refused. A junction or a link inside a root, anywhere conflux looks, is
-refused whoever may change it, since conflux makes none there; `anchor\` and `run\anchord\`,
-which `anchord` writes, are not looked inside. And the two binaries the service runs as SYSTEM,
-and `wintun.dll` beside them, are run only if Administrators, SYSTEM or the account running
-conflux owns them — a set directory is named for content anybody can compute, so one made by
-somebody else is extracted again rather than trusted.
+name in between is refused, naming where the junction led and the `mklink /J` that makes it
+again, which comes before conflux is run again: with nothing at the name, conflux would make a new
+root there, and the machine a new identity. A junction or a link inside a root, anywhere conflux
+looks, is refused whoever may change it, since conflux makes none there; `anchor\` and
+`run\anchord\`, which `anchord` writes, are not looked inside. And the two binaries the service
+runs as SYSTEM, and `wintun.dll` beside them, are run only if Administrators, SYSTEM or the
+account running conflux owns them — a set directory is named for content anybody can compute, so
+one made by somebody else is extracted again rather than trusted.
 
 Where `anchord` runs as `LOCAL SERVICE` (below), the service's own SID,
 `NT SERVICE\conflux`, is added to exactly what it needs: read and execute on its set

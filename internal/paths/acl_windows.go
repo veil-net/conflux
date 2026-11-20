@@ -494,9 +494,10 @@ func secured(sd *windows.SECURITY_DESCRIPTOR) bool {
 // Restrict's ownership and DACL -- so nobody else can ever have opened it to write -- and given
 // r.dir as its reparse point through that handle. A handle somebody opened on the one found,
 // which keeps the rights it was opened with, can repoint nothing anybody reaches by the name.
-// Something made at the name before conflux makes its own is refused; so is a directory that cannot
-// be named by its volume, a network share's, which a junction cannot lead to. r.self is the new
-// junction after.
+// Something made at the name before conflux makes its own is refused, naming where the junction
+// led and saying to make it again first: with nothing at the name, the next run would make a root
+// afresh there, and the machine a new identity. So is a directory that cannot be named by its
+// volume, a network share's, which a junction cannot lead to. r.self is the new junction after.
 func replaceLink(dir string, r *held) error {
 	target, err := finalPath(r.dir, volumeNameGUID)
 	if err != nil {
@@ -504,6 +505,17 @@ func replaceLink(dir string, r *held) error {
 	}
 
 	shown, _ := finalPath(r.dir, volumeNameDOS) // what dir shows it leads to; nothing where it has no such name
+	shown = strings.TrimPrefix(shown, `\\?\`)
+
+	// The way on from a refusal once the junction found is gone: the junction made again, to where
+	// it led, by its drive letter where it has one.
+	leads := shown
+	if leads == "" {
+		leads = target
+	}
+
+	remake := `Remove it and make the junction again, mklink /J "` + dir + `" "` + leads + `", then run this ` +
+		"again as Administrator; with nothing there, conflux would make a new root, and the machine a new identity"
 
 	parent, err := openFile(filepath.Dir(dir), windows.FILE_READ_ATTRIBUTES, true)
 	if err != nil {
@@ -545,15 +557,15 @@ func replaceLink(dir string, r *held) error {
 
 	switch {
 	case errors.Is(err, errMadeAgain):
-		return fmt.Errorf("%s was made again by somebody else while conflux replaced the junction there, so conflux "+
-			"will not use it.\n  Remove it, then run this again as Administrator", dir)
+		return fmt.Errorf("%s was made again by somebody else while conflux replaced the junction there, which led "+
+			"to %s, so conflux will not use it.\n  %s", dir, leads, remake)
 	case err != nil:
 		return fmt.Errorf("make a junction of conflux's own at %s: %w", dir, err)
 	}
 
 	r.self = link
 
-	if err := setMountPoint(link, `\??\`+strings.TrimPrefix(target, `\\?\`), strings.TrimPrefix(shown, `\\?\`)); err != nil {
+	if err := setMountPoint(link, `\??\`+strings.TrimPrefix(target, `\\?\`), shown); err != nil {
 		return fmt.Errorf("point the junction %s at %s: %w", dir, target, err)
 	}
 
@@ -564,8 +576,8 @@ func replaceLink(dir string, r *held) error {
 	defer windows.CloseHandle(led)
 
 	if same, err := sameFile(led, r.dir); err != nil || !same {
-		return fmt.Errorf("%s does not lead where it did once conflux made it a junction of its own (%v), so conflux "+
-			"will not use it.\n  Remove it, then run this again as Administrator", dir, err)
+		return fmt.Errorf("%s does not lead where it did, %s, once conflux made it a junction of its own (%v), so "+
+			"conflux will not use it.\n  %s", dir, leads, err, remake)
 	}
 
 	return nil

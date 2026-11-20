@@ -68,7 +68,8 @@ host can read, and when the run stops there is nothing at all.
   link on the way leading off the machine. A `CONFLUX_DIR`'s parents are held as when it is made.
   Nothing is narrowed: a root that fails is refused, saying why, with nothing in it read, run,
   stopped or removed, and with none there the command says nothing is installed, reading nothing,
-  since what is at a name that was not there a moment ago is whoever made it first's. Every root
+  since what is at a name that was not there a moment ago is whoever made it first's; a link at a
+  root's name, or on a `CONFLUX_DIR`'s way, that leads nowhere is refused, not taken for none. Every root
   conflux makes passes it. On Windows a reader of an ephemeral root, which another process keeps,
   then judges what the root holds too, each thing by its own owner and DACL, since what is in a
   root keeps the owner and DACL it was made with whatever the root's says.

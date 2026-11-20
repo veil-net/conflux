@@ -870,6 +870,10 @@ func checkRoot(dir string) error {
 	return nil
 }
 
+// ownedRoot refuses dir where secure would for its owner: nowhere Foreign has passed it, whose
+// checkRoot holds the owner, a junction's included, to secure's rule (ownerRefusal, heldLink).
+func ownedRoot(string) error { return nil }
+
 // readAccess is what a handle that only reads who may change a file is opened for.
 const readAccess = windows.READ_CONTROL | windows.FILE_READ_ATTRIBUTES
 

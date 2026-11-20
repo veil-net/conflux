@@ -272,7 +272,8 @@ func secureAs(dir string, euid int) error {
 // ownedAs is what Lstat says of dir, and what dir resolves to, the same where it is not a link,
 // once owns has held each to euid: secure's rule (ownedBy) or a reader's (readerOwns). A root that
 // is a symlink is held to the same rule as what it points at: one another account planted would
-// otherwise lead straight past the check into a directory of theirs, or of the system's.
+// otherwise lead straight past the check into a directory of theirs, or of the system's. One that
+// leads nowhere is refused as a link conflux cannot follow, never taken for a root not there.
 func ownedAs(dir string, euid int, owns func(string, os.FileInfo, int) error) (link, fi os.FileInfo, err error) {
 	if link, err = os.Lstat(dir); err != nil {
 		return nil, nil, fmt.Errorf("read %s: %w", dir, err)
@@ -287,7 +288,8 @@ func ownedAs(dir string, euid int, owns func(string, os.FileInfo, int) error) (l
 	}
 
 	if fi, err = os.Stat(dir); err != nil {
-		return nil, nil, fmt.Errorf("read %s: %w", dir, err)
+		return nil, nil, fmt.Errorf("%s is a link conflux cannot follow, so conflux will not use it: %v.\n  Remove it, "+
+			"then run this again", dir, err)
 	}
 
 	if err := owns(dir, fi, euid); err != nil {
@@ -295,6 +297,14 @@ func ownedAs(dir string, euid int, owns func(string, os.FileInfo, int) error) (l
 	}
 
 	return link, fi, nil
+}
+
+// ownedRoot refuses dir where secure would for its owner, or a link at its name's (ownedAs, ownedBy):
+// any account's but this one's, root's among them for any other account.
+func ownedRoot(dir string) error {
+	_, _, err := ownedAs(dir, os.Geteuid(), ownedBy)
+
+	return err
 }
 
 // checkRoot is Check's judgement of the root dir: checkRootAs for this process's effective uid.

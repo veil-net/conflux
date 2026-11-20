@@ -373,14 +373,12 @@ type place struct {
 }
 
 // way is where a walk ended: the directories it holds open, the top of the volume first and the one
-// it ended in last -- the directory walked to, where that is there. Where a name was not there, left
-// is it and the names after it, missing why, and via the link the walk was following, where the name
-// is in where that leads rather than one of the directory's own.
+// it ended in last -- the directory walked to, where that is there. Where one of the directory's own
+// names was not there, left is it and the names after it, and missing why.
 type way struct {
 	places  []place
 	left    []string
 	missing error
-	via     string
 }
 
 // last is the directory the way ends in.
@@ -432,10 +430,12 @@ func (w *way) close() {
 // it elsewhere -- and the directories above where it leads, where the next link may be. The directory
 // dir leads to is held, not judged.
 //
-// At a name that is not there the walk ends, holding the directory it was to be looked up in, with
-// the names left. Anything else refuses dir: a link that cannot be read -- on Windows, one that may
-// lead off this machine (windowsLinkTarget), which nothing then follows -- a name that is not a
-// directory, more than 255 links, or a lookup the system refuses.
+// At one of dir's own names that is not there the walk ends, holding the directory it was to be
+// looked up in, with the names left. Anything else refuses dir: a link that leads nowhere -- to a
+// name not there, which is no directory dir could be made in, nor one that is not there -- or that
+// cannot be read -- on Windows, one that may lead off this machine (windowsLinkTarget), which nothing
+// then follows -- a name that is not a directory, more than 255 links, or a lookup the system
+// refuses.
 func walk(dir string, judge judgement) (*way, error) {
 	w := &way{}
 	if err := w.walk(dir, judge); err != nil {
@@ -501,14 +501,13 @@ func (w *way) walk(dir string, judge judgement) error {
 		s, link, err := lookUp(at.step, name)
 
 		switch {
+		case errors.Is(err, fs.ErrNotExist) && !own:
+			return fmt.Errorf("resolve %s: %s is a link conflux cannot follow: %v", dir, via,
+				&os.PathError{Op: "open", Path: p, Err: err})
 		case errors.Is(err, fs.ErrNotExist):
 			w.left, w.missing = []string{name}, &os.PathError{Op: "open", Path: p, Err: err}
 			for name, rest = nextName(rest); name != ""; name, rest = nextName(rest) {
 				w.left = append(w.left, name)
-			}
-
-			if !own {
-				w.via = via
 			}
 
 			return nil
@@ -584,9 +583,8 @@ func judgeWay(dir string, rule judgement) error {
 // makeRoot creates the root dir where it is not there yet, and each directory missing on the way to
 // it, from the last directory there that the walk to it holds open (makeWay). Before anything is
 // made, a CONFLUX_DIR's way is held to parents' rule as far as it is there (parentsRule), as secure
-// holds it once the root is made. Anything already at the root's name is secure's; and a way that
-// ends at a name not there in where a link leads is refused, as a link conflux cannot follow, with
-// nothing made where it leads.
+// holds it once the root is made. Anything already at the root's name is secure's; and a link that
+// leads nowhere is refused by the walk, with nothing made where it leads.
 func makeRoot(dir string) error {
 	rule := parentsRule(dir)
 
@@ -601,11 +599,8 @@ func makeRoot(dir string) error {
 	}
 	defer w.close()
 
-	switch {
-	case w.missing == nil:
+	if w.missing == nil {
 		return nil
-	case w.via != "":
-		return fmt.Errorf("resolve %s: %s is a link conflux cannot follow: %v", dir, w.via, w.missing)
 	}
 
 	return makeWay(dir, w, rule)

@@ -106,9 +106,11 @@ One fixed directory per user, made when the run starts and removed when it ends:
 
 It holds the lock that makes it the only ephemeral run for that user, the bearer token and
 the socket, the record of the anchord it started and what that runs as, and the extracted
-pair: never a credential, a configuration or a state. A root the readers' check refuses — one
-another account owns, or may write ([security.md](security.md#the-file-and-the-directory-around-it))
-— is passed over, so the next in the table is used: `/tmp` lets anybody make
+pair: never a credential, a configuration or a state. A root the run could not keep is passed
+over, so the next in the table is used: one the readers' check refuses — one another account owns,
+or may write ([security.md](security.md#the-file-and-the-directory-around-it)), or a link at its
+name that leads nowhere — and one that belongs to any account but the one starting the run, root's
+included for anybody else, as conflux refuses to keep a run in it. `/tmp` lets anybody make
 `/tmp/conflux-ephemeral-UID` first, and only its owner can remove it. A run is not refused because an installed conflux is running: that one is never
 read, written, stopped or re-registered. Two anchors with a TUN on one host do contend for
 the overlay's routes, so `conflux down` first where that matters.

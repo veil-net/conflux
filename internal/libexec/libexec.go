@@ -129,10 +129,12 @@ func Extracted(d paths.Dirs) (*Tools, error) {
 
 // ForUsage is an anchorctl to ask what a command takes, for help that must leave nothing
 // behind: this build's, extracted under d, where a whole extraction is there and readable,
-// and otherwise a copy in a private temporary directory, which done removes. Never d's own
-// directories. Making them for help remade, after an uninstall, what it had removed, with 45 MB
-// of binaries in it; and on Windows, asked by an account that is not an administrator, it
-// left %ProgramData%\conflux owned by that account, which every later install then refused.
+// and otherwise a copy in a private temporary directory, which done removes -- in the
+// system's temporary directory, or the user's cache directory where that one is mounted
+// noexec, as /tmp is on a hardened host. Never d's own directories. Making them for help
+// remade, after an uninstall, what it had removed, with 45 MB of binaries in it; and on
+// Windows, asked by an account that is not an administrator, it left %ProgramData%\conflux
+// owned by that account, which every later install then refused.
 func ForUsage(d paths.Dirs) (bin string, done func(), err error) {
 	switch t, err := Extracted(d); {
 	case err == nil:
@@ -141,7 +143,26 @@ func ForUsage(d paths.Dirs) (bin string, done func(), err error) {
 		return "", nil, err
 	}
 
-	dir, err := os.MkdirTemp("", "conflux-usage-")
+	candidates := []string{os.TempDir()}
+	if cache, err := os.UserCacheDir(); err == nil {
+		candidates = append(candidates, cache)
+	}
+
+	parent, err := paths.FirstExecutable(candidates, nil)
+	if errors.Is(err, paths.ErrNoExec) {
+		return "", nil, fmt.Errorf("every temporary directory is on a filesystem mounted noexec, so the anchorctl "+
+			"help runs could not run from it: %v.\n  Set TMPDIR to a directory on one that is not", candidates)
+	}
+
+	if err != nil {
+		return "", nil, err
+	}
+
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		return "", nil, err
+	}
+
+	dir, err := os.MkdirTemp(parent, "conflux-usage-")
 	if err != nil {
 		return "", nil, err
 	}

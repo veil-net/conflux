@@ -81,40 +81,62 @@ func ephemeralRunBase() string {
 // have, which secure then refuses and this account cannot remove.
 func Ephemeral() (Dirs, error) { return ephemeralIn(EphemeralCandidates()) }
 
-// ephemeralIn is Ephemeral among candidates. Where none will do and one was passed over
-// for its owner, that refusal is the answer.
+// ephemeralIn is Ephemeral among candidates.
 func ephemeralIn(candidates []string) (Dirs, error) {
+	root, err := FirstExecutable(candidates, foreign)
+	if errors.Is(err, ErrNoExec) {
+		return Dirs{}, fmt.Errorf("every place an ephemeral run is kept is on a filesystem mounted noexec, "+
+			"so the anchord it extracts could not run: %v.\n  Set CONFLUX_DIR to a directory on one that is not", candidates)
+	}
+
+	if err != nil {
+		return Dirs{}, err
+	}
+
+	return EphemeralDirs(root), nil
+}
+
+// ErrNoExec is FirstExecutable's answer where every candidate is on a filesystem mounted
+// noexec.
+var ErrNoExec = errors.New("every candidate is on a filesystem mounted noexec")
+
+// FirstExecutable is the first of candidates a program extracted beneath it may run from:
+// one on a filesystem mounted to allow it, and not one refuse turns down, where refuse is
+// given. Where none will do, the first refusal is the error, or else ErrNoExec.
+func FirstExecutable(candidates []string, refuse func(string) error) (string, error) {
 	var refused error
 
-	for _, root := range candidates {
-		if err := foreign(root); err != nil {
-			if refused == nil {
-				refused = err
-			}
+	for _, c := range candidates {
+		if refuse != nil {
+			if err := refuse(c); err != nil {
+				if refused == nil {
+					refused = err
+				}
 
-			continue
+				continue
+			}
 		}
 
-		ok, err := executable(root)
+		ok, err := executable(c)
 		if err != nil {
-			return Dirs{}, err
+			return "", err
 		}
 
 		if ok {
-			return EphemeralDirs(root), nil
+			return c, nil
 		}
 	}
 
 	if refused != nil {
-		return Dirs{}, refused
+		return "", refused
 	}
 
-	return Dirs{}, fmt.Errorf("every place an ephemeral run is kept is on a filesystem mounted noexec, "+
-		"so the anchord it extracts could not run: %v.\n  Set CONFLUX_DIR to a directory on one that is not", candidates)
+	return "", ErrNoExec
 }
 
 // executable reports whether a program extracted under root may run: whether the
-// filesystem holding the nearest of root and its parents that exists is mounted to allow it.
+// filesystem holding the nearest of root and its parents that exists is mounted to allow
+// it, so a root not made yet is judged by where it would be made.
 func executable(root string) (bool, error) {
 	for dir := root; ; dir = filepath.Dir(dir) {
 		ok, err := MountAllowsExec(dir)

@@ -136,6 +136,31 @@ func MakeRestricted(path string) error {
 	})
 }
 
+// MakeAnchordDir is MakeDir with anchordDirSDDL: a directory anchord's account, the service SID sid,
+// is given -- anchor\ and run\anchord\ where anchord runs as that account.
+func MakeAnchordDir(path string, sid *windows.SID) error {
+	sd, err := windows.SecurityDescriptorFromString(anchordDirSDDL(sid))
+	if err != nil {
+		return err
+	}
+
+	return MakeDir(path, sd)
+}
+
+// anchordDirSDDL is the security descriptor of a directory anchord's account, the service SID sid,
+// is given, which contents does not go into once its DACL is judged: SYSTEM's, under a protected
+// DACL granting SYSTEM and the Administrators full control of it and of what it holds; sid, on the
+// directory itself, the right to list and traverse it, create files and subdirectories in it,
+// delete what is in it and read and write its attributes -- 0x1201ff, and not DELETE, WRITE_DAC or
+// WRITE_OWNER on it -- and full control of what it holds; and an OWNER RIGHTS entry granting an
+// owner only READ_CONTROL, so that owning a file grants nothing.
+func anchordDirSDDL(sid *windows.SID) string {
+	s := sid.String()
+
+	return "O:SYG:SYD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;;0x1201ff;;;" + s + ")" +
+		"(A;OICIIO;FA;;;" + s + ")(A;OICI;RC;;;OW)"
+}
+
 // MakeDir creates the directory path, which must not be there yet, in a parent that is, with sd as
 // its security descriptor, set as it is created: it is never anything else, not even for an
 // instant, as one made and then given its security would be, under what its parent passes on.
@@ -808,7 +833,7 @@ func notLink(dir string, h windows.Handle, why string) error {
 // Administrators' grants are. Its owner is not: an entry the SID, or any account but SYSTEM, the
 // Administrators, TrustedInstaller and the one running conflux, owns is refused, whatever its name,
 // so one another account planted as anchor or run\anchord stays refused. A directory the DACL just
-// judged lets that SID write -- anchor\ and run\anchord\, as makeAnchorDir makes them -- is not
+// judged lets that SID write -- anchor\ and run\anchord\, as MakeAnchordDir makes them -- is not
 // gone into: its DACL, which has just shown nobody else may write it, lets only SYSTEM, the
 // Administrators and anchord make anything inside, and what anchord makes there, which it owns,
 // conflux reads as anchord's, untrusted (OpenUntrusted, config.ReadUntrusted, copyTree).

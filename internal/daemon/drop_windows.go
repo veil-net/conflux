@@ -51,11 +51,6 @@ const (
 	logon32LogonService    = 5 // LOGON32_LOGON_SERVICE
 	logon32ProviderDefault = 0
 	disableMaxPrivilege    = 0x1 // DISABLE_MAX_PRIVILEGE: all privileges but SeChangeNotify removed
-
-	// The account's rights on the two directories it is given, on the directory itself:
-	// list, traverse, create files and subdirectories, delete what is in it, read and
-	// write attributes -- and not DELETE, WRITE_DAC or WRITE_OWNER on it.
-	dirOwnRights = "0x1201ff"
 )
 
 // dropTo makes the token anchord runs as, and checks that anchord starts under it.
@@ -345,28 +340,19 @@ func (s *Supervisor) killLeftovers() {}
 
 // makeAnchorDir creates path for p's identity, with its security descriptor set as it is
 // created (paths.MakeDir): SYSTEM's and Administrators' for a SYSTEM anchord, as Restrict makes
-// a directory, and the service SID's for its account, never for an instant what the state
-// directory passes on.
+// a directory, and the service SID's for its account (paths.MakeAnchordDir), never for an
+// instant what the state directory passes on.
 func makeAnchorDir(path string, p Privilege) error {
 	if !p.Account {
 		return paths.MakeRestricted(path)
 	}
 
-	ssid, err := ourServiceSID()
+	sid, err := ourServiceSID()
 	if err != nil {
 		return err
 	}
 
-	sid := ssid.String()
-	sddl := "O:SYG:SYD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;;" + dirOwnRights + ";;;" + sid + ")" +
-		"(A;OICIIO;FA;;;" + sid + ")(A;OICI;RC;;;OW)"
-
-	sd, err := windows.SecurityDescriptorFromString(sddl)
-	if err != nil {
-		return err
-	}
-
-	return paths.MakeDir(path, sd)
+	return paths.MakeAnchordDir(path, sid)
 }
 
 // legacyAnchorDir reports an anchor directory at the account's name that the service SID

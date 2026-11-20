@@ -474,7 +474,7 @@ func TestSecureFillsAFoundRoot(t *testing.T) {
 // before the restriction keeps once the restriction has replaced it; a folder named anchor that another account
 // owns, though it grants anchord what conflux grants it; and one granting anchord that also lets
 // Users add to it. conflux's own layout is let through: anchor\ and run\anchord\ granting anchord's
-// service SID what makeAnchorDir grants it, run\anchord\sock owned by that SID, which the walk does
+// service SID what MakeAnchordDir grants it, run\anchord\sock owned by that SID, which the walk does
 // not go into, and a SYSTEM anchord's socket in a run\anchord\ of SYSTEM's and the Administrators',
 // a reparse point a lookup does not follow. Windows-only,
 // so it runs in CI's platforms job alone.
@@ -614,11 +614,8 @@ func grantedFolder(t *testing.T, dir string, access windows.ACCESS_MASK) string 
 	return dir
 }
 
-// anchordFolder is the folder dir, made as makeAnchorDir makes one for anchord's account --
-// SYSTEM's and the Administrators', anchord's service SID let list, add, delete what is in it
-// and write its attributes, and full control of what it holds, an OWNER RIGHTS entry granting
-// owners nothing -- with more ACEs after, and owned by the Administrators, which this process
-// may name, rather than SYSTEM.
+// anchordFolder is the folder dir, made as MakeAnchordDir makes one for anchord's account, with more
+// ACEs after: SYSTEM's, which this process may name only with SeRestorePrivilege enabled.
 func anchordFolder(t *testing.T, dir, more string) string {
 	t.Helper()
 
@@ -627,13 +624,12 @@ func anchordFolder(t *testing.T, dir, more string) string {
 		t.Fatal(err)
 	}
 
-	sd, err := windows.SecurityDescriptorFromString("O:BAG:SYD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;;0x1201ff;;;" +
-		sid.String() + ")(A;OICIIO;FA;;;" + sid.String() + ")(A;OICI;RC;;;OW)" + more)
+	sd, err := windows.SecurityDescriptorFromString(anchordDirSDDL(sid) + more)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := MakeDir(dir, sd); err != nil {
+	if err := privtest.WithRestore(t, func() error { return MakeDir(dir, sd) }); err != nil {
 		t.Fatal(err)
 	}
 

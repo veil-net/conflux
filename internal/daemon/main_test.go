@@ -348,12 +348,7 @@ func dirs(tb testing.TB) paths.Dirs {
 	tb.Helper()
 
 	// A short root rather than TempDir's: the control socket lies four levels below it.
-	tb.Setenv("CONFLUX_DIR", pathstest.ShortRoot(tb))
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		tb.Fatalf("EnsureAll: %v", err)
-	}
+	d := pathstest.DirsIn(tb, pathstest.ShortRoot(tb))
 
 	// anchord's own, which the supervisor makes afresh before each start and a test that
 	// stands in for a daemon writes its socket into.

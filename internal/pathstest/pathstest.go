@@ -15,7 +15,14 @@ import (
 // run, for the rest of the test, and makes the directories.
 func Dirs(tb testing.TB) paths.Dirs {
 	tb.Helper()
-	tb.Setenv("CONFLUX_DIR", tb.TempDir())
+
+	return DirsIn(tb, tb.TempDir())
+}
+
+// DirsIn is Dirs rooted in root.
+func DirsIn(tb testing.TB, root string) paths.Dirs {
+	tb.Helper()
+	tb.Setenv("CONFLUX_DIR", root)
 
 	d := paths.Default()
 	if err := d.EnsureAll(); err != nil {

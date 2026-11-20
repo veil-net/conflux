@@ -127,8 +127,8 @@ makes at a name meanwhile is opened as itself and held to the same rule before a
 it, and a junction or a link there is refused.
 
 Every command that reads a root, or acts on what it holds, rather than making it — `status`, a
-pass-through and `help`'s `anchorctl`, `renew`, `start`, `down`, `uninstall`, `update` asking
-whether the anchor runs, and every reader of an ephemeral run's root — holds it to one check first,
+pass-through, `renew`, `start`, `down`, `uninstall`, `update` asking whether the anchor runs, and
+every reader of an ephemeral run's root — holds it to one check first,
 the readers' check, before it reads anything in it by its name: through one handle, a junction or a
 link judged as itself as above, it must be SYSTEM's, the Administrators' or the account running
 conflux's, and its DACL must grant nobody else the right to write it, add to it, move it, point it
@@ -141,7 +141,8 @@ Administrators and the account running conflux may make anything in the root. No
 fails is refused, saying why, with nothing in it read, run, stopped or removed, and one not there is
 a machine with nothing installed, of which nothing is read either, since whoever made the name
 first would answer for what is at it. A reader of an ephemeral root, which another process keeps,
-then judges what it holds as below.
+then judges what it holds as below. `help`'s `anchorctl` runs from the extraction in a root only
+where the root passes this check, and otherwise from a private copy, reading nothing in the root.
 
 A root found already there is judged and restricted through one handle, opened on the directory
 itself and never looked up by its name again. Before anything in it is judged, it is made to hold

@@ -57,20 +57,23 @@ host can read, and when the run stops there is nothing at all.
   protected DACL everything beneath inherits, set as the root is made — and refuses a root
   another account made. See [windows.md](windows.md#file-permissions).
 - Every command that reads a root, or acts on what it holds, without making it — `status`, a
-  pass-through and `help`'s `anchorctl`, `renew`, `start`, `down`, `uninstall`, `update` asking
-  whether the anchor runs, and every reader of an ephemeral run's root — holds it to one check
+  pass-through, `renew`, `start`, `down`, `uninstall`, `update` asking whether the anchor runs,
+  and every reader of an ephemeral run's root — holds it to one check
   first, the readers' check, on every platform, before it reads anything in it by its name:
   whoever could have put a configuration, a pid record, a token or a binary there would otherwise
   have conflux read, signal or run theirs. The root's owner must be root (SYSTEM or the
   Administrators on Windows) or the account running conflux, a link at its name included, and
   nobody else may write it or point it elsewhere: by its mode and ACL as found on Unix, the sticky
-  bit letting nothing through, and on Windows by the DACL a root conflux secured keeps, with no
-  link on the way leading off the machine. A `CONFLUX_DIR`'s parents are held as when it is made.
+  bit letting nothing through, and on Windows by the DACL a root conflux secured keeps, a link at
+  its name that leads off the machine refused. A `CONFLUX_DIR`'s way is held as when it is made, a
+  link anywhere on it that leads off the machine refused.
   Nothing is narrowed: a root that fails is refused, saying why, with nothing in it read, run,
   stopped or removed, and with none there the command says nothing is installed, reading nothing,
   since what is at a name that was not there a moment ago is whoever made it first's; a link at a
   root's name, or on a `CONFLUX_DIR`'s way, that leads nowhere is refused, not taken for none. Every root
-  conflux makes passes it. On Windows a reader of an ephemeral root, which another process keeps,
+  conflux makes passes it. `help`'s `anchorctl` runs from the extraction in a root only where the
+  root passes it, and otherwise from a private copy in a temporary directory: a root that fails is
+  not refused for help, and nothing in it is read. On Windows a reader of an ephemeral root, which another process keeps,
   then judges what the root holds too, each thing by its own owner and DACL, since what is in a
   root keeps the owner and DACL it was made with whatever the root's says.
 - Never in an argv. It travels on stdin to `anchorctl start -manifest -`, and to

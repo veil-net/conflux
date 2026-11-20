@@ -293,9 +293,10 @@ func (d Dirs) roots() iter.Seq2[string, bool] {
 // EnsureAll, and changes nothing: a root that fails is refused, saying why, and none is made or
 // narrowed. Each is held, as itself where it is a link, to its owner, which must be root, SYSTEM,
 // the Administrators or the account running conflux, and to who else may retarget or write it,
-// which must be nobody -- on Windows by the DACL a secured root keeps (secure), and no link on the
-// way to it that leads off this machine; on Unix by its mode and its ACL as found, the sticky bit
-// letting nothing through. A CONFLUX_DIR is held to its parents too, as EnsureAll holds them. What
+// which must be nobody -- on Windows by the DACL a secured root keeps (secure), a link at its name
+// that leads off this machine refused; on Unix by its mode and its ACL as found, the sticky bit
+// letting nothing through. A CONFLUX_DIR is held to its parents too, as EnsureAll holds them, a link
+// anywhere on its way that leads off this machine refused on Windows (walk). What
 // a root holds is not judged: EnsureAll goes into it, and Foreign, which is this and that, and
 // this does not.
 //

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -372,19 +371,10 @@ func TestFetchRefusesAManifestWithNoPin(t *testing.T) {
 // A release with no manifest describes nothing, so nothing can be verified -- and the
 // binaries are there, which is what makes this worth refusing rather than shrugging at.
 func TestFetchRefusesAReleaseWithNoManifest(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"id": 1, "tag_name": "latest", "target_commitish": "abc",
-			"assets": []map[string]any{
-				{"id": 1, "name": "anchord-linux-amd64", "size": 4096, "state": "uploaded"},
-			},
-		})
-	}))
-	t.Cleanup(srv.Close)
+	f := newRelease(pair(), testPin, 1)
+	delete(f.Files, manifestName)
 
-	t.Setenv(httpsonly.InsecureEnv, "1")
-
-	src := Source{API: srv.URL, Repo: "veil-net/anchor", Tag: "latest", Token: "t0ken"}
+	src := serve(t, f)
 
 	err := Fetch(context.Background(), src, []string{"anchord-linux-amd64"}, t.TempDir(), quiet)
 	if err == nil || !strings.Contains(err.Error(), manifestName) {
@@ -439,14 +429,11 @@ func TestAMissingTagNamesBothCauses(t *testing.T) {
 }
 
 func TestARefusedTokenSaysSo(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	t.Cleanup(srv.Close)
+	f := newRelease(pair(), testPin, 1)
+	f.Status, f.Auth = http.StatusUnauthorized, "Bearer expired"
 
-	t.Setenv(httpsonly.InsecureEnv, "1")
-
-	src := Source{API: srv.URL, Repo: "veil-net/anchor", Tag: "latest", Token: "expired"}
+	src := serve(t, f)
+	src.Token = "expired"
 
 	err := Fetch(context.Background(), src, []string{"anchord-linux-amd64"}, t.TempDir(), quiet)
 	if err == nil || !strings.Contains(err.Error(), "401") {

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf16"
-	"unsafe"
 
 	"github.com/veil-net/conflux/internal/privtest"
 	"golang.org/x/sys/windows"
@@ -86,7 +85,7 @@ func TestEnsureAllRefusesARootAnotherAccountCanMove(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			parent := t.TempDir()
-			grant(t, parent, c.access)
+			privtest.GrantUsers(t, parent, c.access, windows.NO_INHERITANCE)
 
 			t.Setenv("CONFLUX_DIR", filepath.Join(parent, "conflux"))
 
@@ -102,30 +101,9 @@ func TestEnsureAllRefusesARootAnotherAccountCanMove(t *testing.T) {
 	}
 }
 
-// grant gives Users access to dir itself, beside what its DACL grants already.
-func grant(t *testing.T, dir string, access windows.ACCESS_MASK) {
-	t.Helper()
-
-	grantInherited(t, dir, access, windows.NO_INHERITANCE)
-}
-
-// grantInherited is grant, the entry passed on to what dir holds as inherit says.
-func grantInherited(t *testing.T, dir string, access windows.ACCESS_MASK, inherit uint32) {
-	t.Helper()
-
-	sd, err := windows.GetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION,
-		nil, nil, withUsers(t, sd, access, inherit), nil); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// grantLink is grant for a link or junction: its own DACL, opened as itself, where grant's named
-// calls would follow it and change the DACL of where it leads.
+// grantLink gives Users access to link, a link or junction, beside what its DACL grants already: its
+// own DACL, opened as itself, where privtest.GrantUsers's named calls would follow it and change the
+// DACL of where it leads.
 func grantLink(t *testing.T, link string, access windows.ACCESS_MASK) {
 	t.Helper()
 
@@ -147,37 +125,15 @@ func grantLink(t *testing.T, link string, access windows.ACCESS_MASK) {
 		t.Fatal(err)
 	}
 
-	if err := windows.SetSecurityInfo(h, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION,
-		nil, nil, withUsers(t, sd, access, windows.NO_INHERITANCE), nil); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// withUsers is sd's DACL with access granted to Users on the object itself, and passed on as
-// inherit says.
-func withUsers(t *testing.T, sd *windows.SECURITY_DESCRIPTOR, access windows.ACCESS_MASK, inherit uint32) *windows.ACL {
-	t.Helper()
-
 	dacl, _, err := sd.DACL()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	acl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{{
-		AccessPermissions: access,
-		AccessMode:        windows.GRANT_ACCESS,
-		Inheritance:       inherit,
-		Trustee: windows.TRUSTEE{
-			TrusteeForm:  windows.TRUSTEE_IS_SID,
-			TrusteeType:  windows.TRUSTEE_IS_GROUP,
-			TrusteeValue: windows.TrusteeValueFromSID(sidUsers),
-		},
-	}}, dacl)
-	if err != nil {
+	if err := windows.SetSecurityInfo(h, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION,
+		nil, nil, privtest.WithUsers(t, dacl, access, windows.NO_INHERITANCE), nil); err != nil {
 		t.Fatal(err)
 	}
-
-	return acl
 }
 
 // TestEnsureAllFollowsAJunction: a junction is a link the lookup follows, which Go does not
@@ -192,7 +148,7 @@ func TestEnsureAllFollowsAJunction(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	grant(t, open, fileDeleteChild)
+	privtest.GrantUsers(t, open, fileDeleteChild, windows.NO_INHERITANCE)
 
 	junction := mklinkJ(t, filepath.Join(t.TempDir(), "j"), filepath.Join(open, "real"))
 
@@ -260,9 +216,6 @@ func TestSecureHoldsAJunctionRoot(t *testing.T) {
 	}
 }
 
-// sidUsers is BUILTIN\Users, every account on the machine.
-var sidUsers = wellKnown(windows.WinBuiltinUsersSid)
-
 // TestARootIsMadeWithItsDACL: %ProgramData% passes Users the right to create in what is made in it,
 // enough to turn an empty directory into a junction, so a root is made with its own ownership and
 // protected DACL set as it is created, and carries that grant not even for an instant: read as
@@ -274,7 +227,7 @@ func TestARootIsMadeWithItsDACL(t *testing.T) {
 
 	// %ProgramData%'s own: Users may add a file or a folder (on a folder, writing its data or
 	// appending to it), and write extended attributes and attributes, in every folder made in it.
-	grantInherited(t, parent, windows.FILE_WRITE_DATA|windows.FILE_APPEND_DATA|windows.FILE_WRITE_EA|
+	privtest.GrantUsers(t, parent, windows.FILE_WRITE_DATA|windows.FILE_APPEND_DATA|windows.FILE_WRITE_EA|
 		windows.FILE_WRITE_ATTRIBUTES, windows.SUB_CONTAINERS_ONLY_INHERIT)
 
 	made := filepath.Join(parent, "made")
@@ -303,33 +256,19 @@ func TestARootIsMadeWithItsDACL(t *testing.T) {
 func onlyTheSystems(t *testing.T, dir string) {
 	t.Helper()
 
-	sd, err := windows.GetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT,
-		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
-	if err != nil {
-		t.Fatal(err)
+	s := privtest.ReadSecurity(t, dir)
+
+	if !trusted(s.Owner) {
+		t.Errorf("%s belongs to %v", dir, s.Owner)
 	}
 
-	if owner, _, err := sd.Owner(); err != nil || !trusted(owner) {
-		t.Errorf("%s belongs to %v (%v)", dir, owner, err)
+	if !s.Protected {
+		t.Errorf("the DACL of %s is not protected, so %s's grants flow into it", dir, filepath.Dir(dir))
 	}
 
-	if control, _, err := sd.Control(); err != nil || control&windows.SE_DACL_PROTECTED == 0 {
-		t.Errorf("the DACL of %s is not protected (%v), so %s's grants flow into it", dir, err, filepath.Dir(dir))
-	}
-
-	dacl, _, err := sd.DACL()
-	if err != nil || dacl == nil {
-		t.Fatalf("the DACL of %s: %v, %v", dir, dacl, err)
-	}
-
-	for i := range uint32(dacl.AceCount) {
-		var ace *windows.ACCESS_ALLOWED_ACE
-		if err := windows.GetAce(dacl, i, &ace); err != nil {
-			t.Fatal(err)
-		}
-
-		if sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart)); !sid.Equals(sidSystem) && !sid.Equals(sidAdmins) {
-			t.Errorf("the DACL of %s grants %s", dir, sid)
+	for _, e := range s.Entries {
+		if !e.SID.Equals(sidSystem) && !e.SID.Equals(sidAdmins) {
+			t.Errorf("the DACL of %s grants %s", dir, e.SID)
 		}
 	}
 }
@@ -475,7 +414,7 @@ func TestSecureHoldsWhatTheRootHolds(t *testing.T) {
 		}},
 		{"a folder named anchor that another account owns", func(t *testing.T, root string) string {
 			dir := anchordFolder(t, filepath.Join(root, "anchor"), "")
-			ownBy(t, dir, sidUsers)
+			ownBy(t, dir, privtest.Users)
 
 			return dir
 		}},
@@ -555,7 +494,7 @@ func grantedFolder(t *testing.T, dir string, access windows.ACCESS_MASK) string 
 		t.Fatal(err)
 	}
 
-	grant(t, dir, access)
+	privtest.GrantUsers(t, dir, access, windows.NO_INHERITANCE)
 
 	return dir
 }
@@ -612,9 +551,9 @@ func TestSecureRefusesARootWhoseDACLLetsAnotherMoveWhatIsInIt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	grant(t, root, fileDeleteChild)
+	privtest.GrantUsers(t, root, fileDeleteChild, windows.NO_INHERITANCE)
 
-	if err := secure(root); err == nil || !strings.Contains(err.Error(), root) || !strings.Contains(err.Error(), sidUsers.String()) {
+	if err := secure(root); err == nil || !strings.Contains(err.Error(), root) || !strings.Contains(err.Error(), privtest.Users.String()) {
 		t.Errorf("secure(a root whose DACL lets Users delete what is in it) = %v, want a refusal naming it and Users", err)
 	}
 
@@ -623,7 +562,7 @@ func TestSecureRefusesARootWhoseDACLLetsAnotherMoveWhatIsInIt(t *testing.T) {
 	}
 
 	parent := t.TempDir()
-	grantInherited(t, parent, windows.FILE_WRITE_DATA|windows.FILE_APPEND_DATA|windows.FILE_WRITE_EA|
+	privtest.GrantUsers(t, parent, windows.FILE_WRITE_DATA|windows.FILE_APPEND_DATA|windows.FILE_WRITE_EA|
 		windows.FILE_WRITE_ATTRIBUTES, windows.SUB_CONTAINERS_ONLY_INHERIT)
 
 	inherits := filepath.Join(parent, "conflux")

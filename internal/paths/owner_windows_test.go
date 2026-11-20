@@ -4,9 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"unsafe"
 
-	"golang.org/x/sys/windows"
+	"github.com/veil-net/conflux/internal/privtest"
 )
 
 // TestRestrictToOwnerKeepsTheOwnersAccess: a file restricted to its owner is still the
@@ -30,36 +29,20 @@ func TestRestrictToOwnerKeepsTheOwnersAccess(t *testing.T) {
 		t.Fatalf("the owner cannot write the file: %v", err)
 	}
 
-	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	control, _, err := sd.Control()
-	if err != nil || control&windows.SE_DACL_PROTECTED == 0 {
-		t.Errorf("the DACL is not protected: %v", err)
-	}
-
-	dacl, _, err := sd.DACL()
-	if err != nil {
-		t.Fatal(err)
+	s := privtest.ReadSecurity(t, path)
+	if !s.Protected {
+		t.Error("the DACL is not protected")
 	}
 
 	allowed := map[string]bool{currentUser().String(): true, sidSystem.String(): true, sidAdmins.String(): true}
 
-	for i := range uint32(dacl.AceCount) {
-		var ace *windows.ACCESS_ALLOWED_ACE
-		if err := windows.GetAce(dacl, i, &ace); err != nil {
-			t.Fatal(err)
-		}
-
-		sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
-		if !allowed[sid.String()] {
-			t.Errorf("the DACL grants %s", sid)
+	for _, e := range s.Entries {
+		if !allowed[e.SID.String()] {
+			t.Errorf("the DACL grants %s", e.SID)
 		}
 	}
 
-	if dacl.AceCount != 3 {
-		t.Errorf("the DACL has %d entries, want 3", dacl.AceCount)
+	if len(s.Entries) != 3 {
+		t.Errorf("the DACL has %d entries, want 3", len(s.Entries))
 	}
 }

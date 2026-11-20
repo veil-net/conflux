@@ -157,39 +157,11 @@ func TestAServiceSIDNotGivenIsNotOneZeroZero(t *testing.T) {
 // granting the service SID besides. One already there is not made again. Windows-only, so it runs
 // in CI's platforms job alone.
 func TestMakeAnchorDirSetsItsDACLAsItIsMade(t *testing.T) {
-	system, admins, users := wellKnownSID(t, windows.WinLocalSystemSid), wellKnownSID(t, windows.WinBuiltinAdministratorsSid),
-		wellKnownSID(t, windows.WinBuiltinUsersSid)
+	system, admins := wellKnownSID(t, windows.WinLocalSystemSid), wellKnownSID(t, windows.WinBuiltinAdministratorsSid)
 
 	parent := t.TempDir()
-
-	sd, err := windows.GetNamedSecurityInfo(parent, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dacl, _, err := sd.DACL()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	passed, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{{
-		AccessPermissions: windows.FILE_WRITE_DATA | windows.FILE_APPEND_DATA | windows.FILE_WRITE_ATTRIBUTES,
-		AccessMode:        windows.GRANT_ACCESS,
-		Inheritance:       windows.SUB_CONTAINERS_ONLY_INHERIT,
-		Trustee: windows.TRUSTEE{
-			TrusteeForm:  windows.TRUSTEE_IS_SID,
-			TrusteeType:  windows.TRUSTEE_IS_GROUP,
-			TrusteeValue: windows.TrusteeValueFromSID(users),
-		},
-	}}, dacl)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := windows.SetNamedSecurityInfo(parent, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION,
-		nil, nil, passed, nil); err != nil {
-		t.Fatal(err)
-	}
+	privtest.GrantUsers(t, parent, windows.FILE_WRITE_DATA|windows.FILE_APPEND_DATA|windows.FILE_WRITE_ATTRIBUTES,
+		windows.SUB_CONTAINERS_ONLY_INHERIT)
 
 	root := filepath.Join(parent, "anchor.root")
 	if err := makeAnchorDir(root, Privilege{}); err != nil {
@@ -212,39 +184,24 @@ func TestMakeAnchorDirSetsItsDACLAsItIsMade(t *testing.T) {
 	}
 
 	for path, granted := range map[string][]*windows.SID{root: {system, admins}, account: {system, admins, sid}} {
-		sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
-			windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
-		if err != nil {
-			t.Fatal(err)
+		sec := privtest.ReadSecurity(t, path)
+
+		if !sec.Owner.Equals(system) && !sec.Owner.Equals(admins) {
+			t.Errorf("%s belongs to %v, want SYSTEM or the Administrators", path, sec.Owner)
 		}
 
-		if owner, _, err := sd.Owner(); err != nil || !owner.Equals(system) && !owner.Equals(admins) {
-			t.Errorf("%s belongs to %v (%v), want SYSTEM or the Administrators", path, owner, err)
-		}
-
-		if control, _, err := sd.Control(); err != nil || control&windows.SE_DACL_PROTECTED == 0 {
-			t.Errorf("the DACL of %s is not protected (%v)", path, err)
-		}
-
-		dacl, _, err := sd.DACL()
-		if err != nil || dacl == nil {
-			t.Fatalf("the DACL of %s: %v, %v", path, dacl, err)
+		if !sec.Protected {
+			t.Errorf("the DACL of %s is not protected", path)
 		}
 
 		seen := map[string]bool{}
 
-		for i := range uint32(dacl.AceCount) {
-			var ace *windows.ACCESS_ALLOWED_ACE
-			if err := windows.GetAce(dacl, i, &ace); err != nil {
-				t.Fatal(err)
-			}
-
-			who := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
-			if who.Equals(users) {
+		for _, e := range sec.Entries {
+			if e.SID.Equals(privtest.Users) {
 				t.Errorf("the DACL of %s grants Users what its parent passes on", path)
 			}
 
-			seen[who.String()] = true
+			seen[e.SID.String()] = true
 		}
 
 		for _, want := range granted {

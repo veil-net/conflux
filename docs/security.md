@@ -58,7 +58,7 @@ host can read, and when the run stops there is nothing at all.
   root is kept by default (`/etc`, `/var`, `/var/lib` …), and the directory the running conflux is in
   or one above it, but for the boot service's own root where the running conflux is the copy the
   service runs from it, one file with the copy at its name there, and the root already holds this
-  installation's own state, a name conflux makes there besides the copy: then whatever the root's mode,
+  installation's own state, a name conflux makes there besides the copy and the lock files: then whatever the root's mode,
   and directly under `/` too, a state root found widened is narrowed by the service, as by any command
   that secures it, rather than refused at every start; a folder holding the running conflux and nothing
   of an installation's, as `/usr/local/bin` does, is refused, and a sticky one whatever it holds. On Windows it is a volume's root (`C:\`, `\\?\C:\`, or the volume by its

@@ -154,9 +154,9 @@ What is no root, on every command that makes or removes one
 - **The service's own root is the exception** to the running conflux's directory, and on Unix to a
   directory directly under `/`: where the conflux running is the copy the boot service runs from that
   root — one file with the copy at its name there, never followed — and the root already holds this
-  installation's own state, a name conflux makes there besides the copy (its identity, state, run
-  directory …), it is taken whatever its mode or the rest of its DACL, and a widened one is narrowed,
-  as the service narrows it at its start, rather than refused at every start. A folder holding the
+  installation's own state, a name conflux makes there besides the copy and the lock files (its
+  identity, state, run directory …), it is taken whatever its mode or the rest of its DACL, and a
+  widened one is narrowed, as the service narrows it at its start, rather than refused at every start. A folder holding the
   running conflux and nothing of an installation's — `/usr/local/bin`, or `%ProgramFiles%\conflux`,
   where `install.ps1` puts it — is refused, its conflux at the copy's name or not; and a sticky
   directory, or a folder whose DACL makes it a space other accounts share, is refused whatever it holds.

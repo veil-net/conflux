@@ -1472,8 +1472,9 @@ func TestCheckHoldsARootAsAReaderNeeds(t *testing.T) {
 // Planted at the name the walk looks up, and at each it makes: a junction is followed and judged where
 // the walk meets it, and refused, naming it, where it was made once conflux was making the name, with
 // nothing made where it leads; a folder whose DACL lets Users rename what is in it is refused, naming
-// it, before anything is made in it, but at the root's own name, which is the root, by secure; and a
-// plain one, as a conflux making the same root at once makes, is gone into. Windows-only, so it runs
+// it, with nothing made in it -- by the walk where it is looked up, and by makeWay where it is made --
+// but at the root's own name, which is the root, by secure; and a plain one, as a conflux making the
+// same root at once makes, is gone into. Windows-only, so it runs
 // in CI's platforms job alone.
 func TestMakeRootGoesIntoNoNameTakenMeanwhile(t *testing.T) {
 	was := looking
@@ -1583,6 +1584,13 @@ func TestMakeRootGoesIntoNoNameTakenMeanwhile(t *testing.T) {
 				if elsewhere != "" {
 					if entries, err := os.ReadDir(elsewhere); err != nil || len(entries) != 0 {
 						t.Errorf("EnsureAll made %v where the junction planted at %s leads (%v)", entries, at, err)
+					}
+				}
+
+				// Refused at made, nothing is made in it: the root, for secure to refuse after, least of all.
+				if at == step && len(want) != 0 && elsewhere == "" {
+					if entries, err := os.ReadDir(step); err != nil || len(entries) != 0 {
+						t.Errorf("EnsureAll made %v in %s, refused as it was %s (%v)", entries, step, phase, err)
 					}
 				}
 			})

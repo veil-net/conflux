@@ -99,13 +99,14 @@ func TestMakeRootJudgesWhatIsPlantedWhileItJudges(t *testing.T) {
 
 // TestMakeRootGoesIntoNoNameTakenMeanwhile: the way to a root is walked from /, each directory judged
 // before a name is looked up in it, and the directories missing are made each in the one held before
-// it and gone into without following anything, so what somebody else makes at a name meanwhile -- in
-// /tmp, anybody may -- answers for nothing it was not judged for. Planted at each name the walk looks
-// up, and at each it makes or goes into: a link is followed and judged where the walk meets it, and
-// refused, naming it, where it was made once conflux was making the name; a directory every account
-// may write is refused, naming it, before anything is made in it, but at the root's own name, which
-// is the root, secure's to narrow; and one of this account's own, as a conflux making the same root
-// at once makes, is gone into. Nothing is made where a link leads.
+// it and gone into without following anything, each judged before anything is made in it, so what
+// somebody else makes at a name meanwhile -- in /tmp, anybody may -- answers for nothing it was not
+// judged for. Planted at each name the walk looks up, and at each it makes or goes into: a link is
+// followed and judged where the walk meets it, and refused, naming it, where it was made once conflux
+// was making the name; a directory every account may write is refused, naming it, with nothing made
+// in it -- by the walk where it is looked up, and by makeWay where it is made or gone into -- but at
+// the root's own name, which is the root, secure's to narrow; and one of this account's own, as a
+// conflux making the same root at once makes, is gone into. Nothing is made where a link leads.
 func TestMakeRootGoesIntoNoNameTakenMeanwhile(t *testing.T) {
 	was := looking
 	t.Cleanup(func() { looking = was })
@@ -243,6 +244,13 @@ func TestMakeRootGoesIntoNoNameTakenMeanwhile(t *testing.T) {
 					entries, err := os.ReadDir(filepath.Join(open, "real"))
 					if err != nil || len(entries) != 0 {
 						t.Errorf("EnsureAll made %v where the link planted at %s leads (%v)", entries, at, err)
+					}
+				}
+
+				// Refused at made, nothing is made in it: the root, for secure to refuse after, least of all.
+				if at == step && c.refused(step, root, open)[i] != "" && open == "" {
+					if entries, err := os.ReadDir(step); err != nil || len(entries) != 0 {
+						t.Errorf("EnsureAll made %v in %s, refused as it was %s (%v)", entries, step, phase, err)
 					}
 				}
 			})

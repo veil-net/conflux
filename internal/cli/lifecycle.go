@@ -97,7 +97,7 @@ func handOver(d paths.Dirs, mgr service.Manager) (place func(paths.Dirs) (string
 		return place, finish, d.EnsureAll()
 	}
 
-	if stopped, err = tidy(d, mgr); err == nil {
+	if stopped, err = tidy(d, mgr, checked); err == nil {
 		_, err = service.PlaceAfresh(d)
 	}
 
@@ -143,7 +143,7 @@ func runRegister(ctx context.Context, args []string) int {
 	d := paths.Default()
 	mgr := newService()
 
-	stopped, err := tidy(d, mgr)
+	stopped, err := tidy(d, mgr, d.Check())
 	if err != nil {
 		return startAgain(d, mgr, stopped, fail(err))
 	}

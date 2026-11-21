@@ -28,8 +28,9 @@ import (
 //   - The service is stopped where a supervisor serves the root, asked of its serve lock through the
 //     root held (flock.HeldIn): a way to a CONFLUX_DIR that another account may change is refused
 //     there, before anything is stopped. A root paths' check refuses for anything but not being there
-//     holds no lock conflux reads, and a supervisor may serve it all the same, so the service is
-//     stopped there too, before EnsureAll makes the root afresh. A supervisor the boot service did not
+//     -- checked, what the caller's check of d said -- holds no lock conflux reads, and a supervisor may
+//     serve it all the same, so the service is stopped there too, before EnsureAll makes the root
+//     afresh. A supervisor the boot service did not
 //     start -- one run by hand -- is refused too, with nothing removed (stopServing). stopped says the
 //     service was stopped, for the caller to start it again, on this conflux, however it ends
 //     (startAgain).
@@ -53,7 +54,7 @@ import (
 // never went in place left beside it. What the next start clears again as it starts -- the orphan,
 // the run directory, a killed run's root -- it warns of where it cannot remove it, and goes on
 // (leftBehind); and what is gone, and nothing else, it lists, however far it got.
-func tidy(d paths.Dirs, mgr service.Manager) (stopped bool, err error) {
+func tidy(d paths.Dirs, mgr service.Manager, checked error) (stopped bool, err error) {
 	var removed []string
 
 	defer func() { listRemoved(removed) }()
@@ -64,7 +65,6 @@ func tidy(d paths.Dirs, mgr service.Manager) (stopped bool, err error) {
 	}
 
 	if !served {
-		checked := d.Check()
 		served = checked != nil && !errors.Is(checked, fs.ErrNotExist)
 	}
 

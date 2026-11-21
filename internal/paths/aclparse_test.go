@@ -123,9 +123,9 @@ func TestFreeBSDACL(t *testing.T) {
 	)
 
 	want := []writer{
-		{who: everyone, modeBit: 0o002}, {who: aUser, id: 1002, pastSticky: true}, {who: aGroup, id: 60, pastSticky: true},
+		{who: everyone}, {who: aUser, id: 1002, pastSticky: true}, {who: aGroup, id: 60, pastSticky: true},
 		{who: aUser, id: 1003, pastSticky: true}, {who: aUser, id: 1004, pastSticky: true}, {who: aGroup, id: 61},
-		{who: theGroup, modeBit: 0o020},
+		{who: theGroup},
 	}
 	if got, err := freebsdACL(tmp, true); err != nil || !slices.Equal(got, want) {
 		t.Errorf("freebsdACL(an NFSv4 ACL) = %+v, %v; want %+v", got, err, want)

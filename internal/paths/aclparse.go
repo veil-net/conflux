@@ -4,17 +4,15 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"os"
 )
 
 // The ACLs a root, or a directory above a CONFLUX_DIR, may carry beside its mode, read into who
 // they let write it. Untagged, and over bytes alone, so each platform's format is tested on every
 // machine that builds conflux; each platform's file reads its own (extendedWriters). An entry
 // counts whatever it says of inheritance: one a directory only passes on is inherited by the root
-// conflux makes inside it, so it counts as one that applies; inheritance tells only an NFSv4
-// entry that is the mode from one that is not (writer.modeBit). Windows's DACLs are read here
-// too, into what they allow on the object itself, or on it and on what is made in it
-// (windowsGrants), which mover holds to who may change it.
+// conflux makes inside it, so it counts as one that applies. Windows's DACLs are read here too,
+// into what they allow on the object itself, or on it and on what is made in it (windowsGrants),
+// which mover holds to who may change it.
 
 // grantee is who an ACL entry lets write a directory.
 type grantee int
@@ -38,12 +36,6 @@ type writer struct {
 	// sticky bit, or to change its ACL or owner. Writing it, all a mode's bits or a POSIX.1e ACL
 	// can grant, is held back.
 	pastSticky bool
-
-	// modeBit is the write bit of the directory's mode this entry is, where it is one of those an
-	// NFSv4 ACL keeps the mode in: group@'s or everyone@'s right to add to the directory and
-	// nothing past it, passing nothing on and passed on by nothing -- 0o020 or 0o002 -- and
-	// otherwise 0. chmod rewrites such an entry with the mode.
-	modeBit os.FileMode
 }
 
 // POSIX.1e: tags and the write bit, as Linux's system.posix_acl_access and FreeBSD's acl(9)
@@ -190,15 +182,6 @@ func freebsdACL(b []byte, nfs4 bool) ([]writer, error) {
 		}
 
 		w.pastSticky = perm&nfs4PastSticky != 0
-
-		if !w.pastSticky && binary.NativeEndian.Uint16(e[14:]) == 0 {
-			switch tag {
-			case posixGroupObj:
-				w.modeBit = 0o020
-			case nfs4Everyone:
-				w.modeBit = 0o002
-			}
-		}
 
 		ws = append(ws, w)
 	}

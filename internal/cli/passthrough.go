@@ -30,20 +30,26 @@ import (
 // the installation's extraction. That gives perfect stdio, the child's exit code without
 // translation, signals delivered to the right process, and nothing left in `ps` pretending to be
 // a wrapper. A temporary copy, which is removed once it has run, runs as a child instead
-// (runAnchorctl), as does what needs nothing of conflux's; see runDetached.
+// (runAnchorctl), as does what needs nothing of conflux's daemon; see runDetached.
 func passthrough(ctx context.Context, args []string) int {
-	// Neither usage nor a socket the user named needs conflux's daemon, so each is answered
-	// before anything is asked of the machine. Usage needs nothing running: anchorctl groups
-	// keygen, issue and inspect under "no anchor needed", but that means no *anchor* -- they
-	// are still RPCs to the daemon, which mints the identity and derives the id -- and asking
-	// for help is the only thing that genuinely reaches no socket, because Go's flag package
-	// answers before anything dials. A user who named a socket is talking to a daemon conflux
-	// does not manage, so nothing of conflux's is checked, read or made for them: the
-	// installation's directories are not theirs to need, and an account that cannot write
-	// them still reaches its own daemon. ANCHOR_SOCKET exported empty names no socket, as
-	// anchorctl reads it.
-	if wantsUsage(args) || namesSocket(args) || os.Getenv(anchorctl.SocketEnv) != "" {
-		return runDetached(ctx, args)
+	// Neither a socket the user named nor usage needs conflux's daemon, so each is answered
+	// before anything is asked of it. A user who named a socket is talking to a daemon conflux
+	// does not manage, so nothing of conflux's is checked, read or made for them -- for usage
+	// either: their anchorctl is a temporary copy, the installation's directories are not theirs
+	// to need, and an account that cannot read them still reaches its own daemon. ANCHOR_SOCKET
+	// exported empty names no socket, as anchorctl reads it. Usage needs nothing running:
+	// anchorctl groups keygen, issue and inspect under "no anchor needed", but that means no
+	// *anchor* -- they are still RPCs to the daemon, which mints the identity and derives the id --
+	// and asking for help is the only thing that genuinely reaches no socket, because Go's flag
+	// package answers before anything dials; its anchorctl is the readers' (libexec.ForUsage).
+	if namesSocket(args) || os.Getenv(anchorctl.SocketEnv) != "" {
+		return runDetached(args, paths.Dirs{}, errNamedSocket, false)
+	}
+
+	if wantsUsage(args) {
+		d := paths.Default()
+
+		return runDetached(args, d, d.Check(), extracts(ctx))
 	}
 
 	d, checked := activeDirs()
@@ -117,18 +123,22 @@ func connectionDetails(d paths.Dirs, checked error, args []string) (string, int)
 	return token, ExitOK
 }
 
+// errNamedSocket is what a pass-through to a socket the user named takes the readers' check of conflux's
+// roots to have said, checking nothing: that none of them is its business, so its anchorctl is a temporary
+// copy (libexec.ForUsage), with nothing of the installation read.
+var errNamedSocket = errors.New("a socket the user named is no daemon of conflux's")
+
 // detachedAnchorctl is where runDetached takes its anchorctl from, and what a test points at a
 // stand-in.
 var detachedAnchorctl = libexec.ForUsage
 
-// runDetached runs anchorctl for what needs nothing of conflux's -- usage, which reaches no
+// runDetached runs anchorctl for what needs nothing of conflux's daemon -- usage, which reaches no
 // daemon, or a daemon the user named -- as a child that is waited for: the readers' anchorctl
-// (libexec.ForUsage), the installation's extraction, or a copy in a temporary directory, which
-// goes once the run ends, however it ends.
-func runDetached(ctx context.Context, args []string) int {
-	d := paths.Default()
-
-	bin, done, err := detachedAnchorctl(d, d.Check(), extracts(ctx))
+// (libexec.ForUsage) for d, given checked, what the readers' check of d said, and extract, whether it
+// may extract the pair there -- the installation's extraction, or a copy in a temporary directory,
+// which goes once the run ends, however it ends.
+func runDetached(args []string, d paths.Dirs, checked error, extract bool) int {
+	bin, done, err := detachedAnchorctl(d, checked, extract)
 	if err != nil {
 		return fail(err)
 	}

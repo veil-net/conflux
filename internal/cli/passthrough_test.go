@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
 	"github.com/veil-net/conflux/internal/ui"
 )
@@ -40,8 +42,8 @@ const namedSocketArgs = "CONFLUX_TEST_NAMED_SOCKET_ARGS"
 
 // TestAPassThroughToANamedSocketMakesNothing: a socket the user named, as -socket or
 // ANCHOR_SOCKET, is a daemon conflux does not manage, so reaching it makes nothing of
-// conflux's -- no directory, no extraction -- and an account that could not make them still
-// reaches its own daemon.
+// conflux's -- no directory, no extraction, an installation there or not: its anchorctl is a
+// temporary copy -- and an account that could not make them still reaches its own daemon.
 func TestAPassThroughToANamedSocketMakesNothing(t *testing.T) {
 	anchortest.Require(t)
 
@@ -60,22 +62,38 @@ func TestAPassThroughToANamedSocketMakesNothing(t *testing.T) {
 		anchorctl.SocketEnv: {[]string{"peers"}, anchorctl.SocketEnv + "=" + sock},
 		"-socket":           {[]string{"peers", "-socket", sock}, anchorctl.SocketEnv + "="},
 	} {
-		t.Run(name, func(t *testing.T) {
-			root := filepath.Join(t.TempDir(), "conflux")
+		for _, installed := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s, installed %v", name, installed), func(t *testing.T) {
+				root := filepath.Join(t.TempDir(), "conflux")
 
-			cmd := exec.Command(os.Args[0], "-test.run=^TestAPassThroughToANamedSocketMakesNothing$") //nolint:gosec // this test binary
-			cmd.Env = append(os.Environ(), "CONFLUX_DIR="+root, anchorctl.TokenEnv+"=t", tc.env,
-				namedSocketArgs+"="+strings.Join(tc.args, "\n"))
+				var d paths.Dirs
+				if installed {
+					d = pathstest.DirsIn(t, root)
+				}
 
-			// anchorctl's own answer: a dial to the socket named, which nothing listens on.
-			if out, err := cmd.CombinedOutput(); err == nil || !strings.Contains(string(out), sock) {
-				t.Errorf("conflux %s with %s: %v\n%s", strings.Join(tc.args, " "), tc.env, err, out)
-			}
+				cmd := exec.Command(os.Args[0], "-test.run=^TestAPassThroughToANamedSocketMakesNothing$") //nolint:gosec // this test binary
+				cmd.Env = append(os.Environ(), "CONFLUX_DIR="+root, anchorctl.TokenEnv+"=t", tc.env,
+					namedSocketArgs+"="+strings.Join(tc.args, "\n"))
 
-			if _, err := os.Stat(root); !os.IsNotExist(err) {
-				t.Errorf("the pass-through made %s (%v); nothing should be on disk", root, err)
-			}
-		})
+				// anchorctl's own answer: a dial to the socket named, which nothing listens on.
+				if out, err := cmd.CombinedOutput(); err == nil || !strings.Contains(string(out), sock) {
+					t.Errorf("conflux %s with %s: %v\n%s", strings.Join(tc.args, " "), tc.env, err, out)
+				}
+
+				if !installed {
+					if _, err := os.Stat(root); !os.IsNotExist(err) {
+						t.Errorf("the pass-through made %s (%v); nothing should be on disk", root, err)
+					}
+
+					return
+				}
+
+				if left, err := os.ReadDir(d.Libexec()); err != nil || len(left) > 0 {
+					t.Errorf("the pass-through left %v (%v) in the installation's %s, which it should not touch", left,
+						err, d.Libexec())
+				}
+			})
+		}
 	}
 }
 

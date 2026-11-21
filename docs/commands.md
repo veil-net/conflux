@@ -771,14 +771,16 @@ process with it, so the stdio, the exit code and the signals are the child's wit
 translation; where its `anchorctl` is a private temporary copy — no `bin/` to extract this build's
 pair into — it runs it as a child instead, as below, and removes the copy once it has run.
 
-Two kinds of command need nothing of conflux's: usage (`help`, or a help flag), which reaches
-no daemon, and one naming a socket of your own (`-socket`, or `ANCHOR_SOCKET`), which reaches a
-daemon conflux does not manage. Both run `anchorctl` as a child, taken as `status` takes it: this
-build's extraction, where the root passes the [readers' check](#a-root-another-account-could-change),
-extracted into `bin/` first where it is not there yet and `bin/` is as conflux makes it, or otherwise
-— the root refused, or not there — a private temporary copy removed afterwards, reading nothing in
-the root. They make none of conflux's directories, so an account that cannot write them still
-reaches its own daemon. The copy goes
+Two kinds of command need nothing of conflux's daemon, and run `anchorctl` as a child. One naming
+a socket of your own (`-socket`, or `ANCHOR_SOCKET`) reaches a daemon conflux does not manage, so
+nothing of conflux's is checked, read or made for it, usage included: it runs a private temporary
+copy, removed afterwards, so an account that cannot read conflux's directories still reaches its
+own daemon. Usage (`help`, or a help flag), which reaches no daemon, takes it as `status` takes it:
+this build's extraction, where the root passes the
+[readers' check](#a-root-another-account-could-change), extracted into `bin/` first where it is not
+there yet and `bin/` is as conflux makes it, or otherwise — the root refused, or not there — a
+private temporary copy removed afterwards, reading nothing in the root; it makes none of conflux's
+directories. The copy goes
 in the system's temporary directory, which must exist, or, where that is mounted noexec, in
 your cache directory, which is made if it is not there yet; no other directory is. On Windows, run
 elevated, it goes instead in a folder of its own in `%ProgramData%`, which with the copy is SYSTEM's
@@ -822,7 +824,7 @@ other refusal — passes through untouched.
 | `CONFLUX_DEBUG=1` | pass `-v` to anchord. |
 | `CONFLUX_EPHEMERAL=1` | send pass-through to the ephemeral anchor while an installed one runs too, which it otherwise reaches first. See [ephemeral.md](ephemeral.md#reaching-it-from-another-terminal). |
 | `CONFLUX_ALLOW_INSECURE_API=1` | permit a plain-http API base. For tests only. |
-| `ANCHOR_SOCKET`, `ANCHORD_TOKEN` | if set, conflux leaves them alone and pass-through uses yours; set empty, each is unset, and conflux's is used; with `ANCHOR_SOCKET` naming a daemon, pass-through makes nothing of conflux's and needs no root (see [Pass-through](#pass-through)). conflux's own calls — `up`, `status`, `renew`, an ephemeral run's start — always use conflux's daemon, whatever these say. |
+| `ANCHOR_SOCKET`, `ANCHORD_TOKEN` | if set, conflux leaves them alone and pass-through uses yours; set empty, each is unset, and conflux's is used; with `ANCHOR_SOCKET` naming a daemon, pass-through runs a temporary copy of anchorctl, reads and makes nothing of conflux's, and needs no root (see [Pass-through](#pass-through)). conflux's own calls — `up`, `status`, `renew`, an ephemeral run's start — always use conflux's daemon, whatever these say. |
 
 ## Exit codes
 

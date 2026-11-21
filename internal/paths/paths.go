@@ -299,7 +299,7 @@ func (d Dirs) EnsureAll() error {
 // service names in the state root (ServiceExecutable): everything is judged and made as EnsureAll judges
 // and makes it but that copy, which is neither judged nor removed -- Windows will not remove a running
 // image, and one removed on Unix would leave the service nothing to start the next time; the supervisor
-// places one not as conflux makes it afresh itself, from its own image (daemon's ownCopy).
+// places one not there, or not as conflux makes it, afresh itself, from its own image (service.OwnCopy).
 func (d Dirs) EnsureServing() error {
 	d.serving = true
 

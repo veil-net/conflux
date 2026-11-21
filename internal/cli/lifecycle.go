@@ -153,15 +153,21 @@ func runRegister(ctx context.Context, args []string) int {
 }
 
 // startAgain starts the service tidy stopped, where it stopped it, once the command it stopped it for
-// has come to code, and is code: on a copy of conflux of conflux's own (ourCopy), and never on one that
-// is not. A failure to start it fails a command that had not failed, and is warned of beside one that
-// had, which leaves the service as it was found, serving the root.
+// has come to code, and is code: in roots that pass paths' check, on a copy of conflux of conflux's own
+// (service.OwnCopy) -- where tidy failed after EnsureAll removed one, or before, this conflux placed
+// afresh -- and never on one that is not, nor in roots the check refuses, where nothing is placed. A
+// failure to start it fails a command that had not failed, and is warned of beside one that had, which
+// leaves the service as it was found, serving the root.
 func startAgain(d paths.Dirs, mgr service.Manager, stopped bool, code int) int {
 	if !stopped {
 		return code
 	}
 
-	err := ourCopy(d)
+	err := d.Check()
+	if err == nil {
+		err = service.OwnCopy(d)
+	}
+
 	if err == nil {
 		err = mgr.Restart()
 	}
@@ -176,25 +182,6 @@ func startAgain(d paths.Dirs, mgr service.Manager, stopped bool, code int) int {
 	ui.Errf("the boot service, stopped to remove what earlier conflux left, did not start again: %v", err)
 
 	return code
-}
-
-// ourCopy makes sure the copy of conflux the boot service runs is as conflux makes a file of its own
-// (paths.Dirs.Ours) before the service is started again: where it is not there, or not as conflux makes
-// it -- tidy, failing after EnsureAll removed it, or before -- this conflux is placed afresh
-// (service.PlaceAfresh), in roots that pass paths' check; in roots that do not, nothing is placed, and
-// that is the error.
-func ourCopy(d paths.Dirs) error {
-	if d.Ours(d.ServiceExecutable()) == nil {
-		return nil
-	}
-
-	if err := d.Check(); err != nil {
-		return err
-	}
-
-	_, err := service.PlaceAfresh(d)
-
-	return err
 }
 
 // install places the copy of conflux the service runs, with place, and registers it. standalone

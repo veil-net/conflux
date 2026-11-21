@@ -137,8 +137,8 @@ not followed, and a fresh root is made at its name: to keep conflux's files on a
 `manifest.b64`, `anchord.priv`, `way`, the lock files and the service's copy of conflux — is judged
 as the root is, and one that is not as conflux makes it, such as a copy an earlier conflux left the
 administrator's own, is removed for what writes it to make afresh; the supervisor, which runs from the
-service's copy, leaves it as it makes the roots, and places one not as conflux makes it afresh from
-its own image, the running one moved aside. Nothing else in a root is judged: nobody else can have
+service's copy, leaves it as it makes the roots, and places one not there, or not as conflux makes it,
+afresh from its own image, the running one moved aside. Nothing else in a root is judged: nobody else can have
 put anything there. A root on a network volume, however it is reached, is refused, as the volume
 conflux holds it open on says; a link naming a share on the way to a `CONFLUX_DIR` is refused before
 anything follows it, by where the link itself says it leads.

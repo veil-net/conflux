@@ -626,11 +626,12 @@ func TestAReaderLeavesNothingInTheTemporaryDirectory(t *testing.T) {
 	}
 }
 
-// TestOurCopyPlacesNothingInARootItRefuses: before the service tidy stopped is started again, a copy of
-// conflux not as conflux makes one is placed afresh (ourCopy) only in roots that pass the readers' check:
-// in a root every account may write, where anybody could have put a copy of their own for the service to
-// run as root, nothing is placed, and the refusal is the error.
-func TestOurCopyPlacesNothingInARootItRefuses(t *testing.T) {
+// TestTheServiceStartsAgainInNoRootItRefuses: before the service tidy stopped is started again, its roots
+// are held to the readers' check, and the copy of conflux placed afresh where it is not as conflux makes
+// one (service.OwnCopy) only where they pass: in a root every account may write, where anybody could have
+// put a copy of their own for the service to run as root, nothing is placed, the service is not started,
+// and the refusal fails the command.
+func TestTheServiceStartsAgainInNoRootItRefuses(t *testing.T) {
 	d := pathstest.Dirs(t)
 
 	if err := os.Chmod(d.State, 0o757); err != nil {
@@ -639,11 +640,15 @@ func TestOurCopyPlacesNothingInARootItRefuses(t *testing.T) {
 
 	t.Cleanup(func() { _ = os.Chmod(d.State, 0o700) })
 
-	if err := ourCopy(d); err == nil || !strings.Contains(err.Error(), "anybody may write") {
-		t.Errorf("ourCopy in a root every account may write = %v, want the readers' check's refusal", err)
+	mgr := &fakeManager{d: d}
+
+	_, errOut, code := captureOf(t, func() int { return startAgain(d, mgr, true, ExitOK) })
+	if code == ExitOK || mgr.restarts > 0 || !strings.Contains(errOut, "anybody may write") {
+		t.Errorf("starting the service again in a root every account may write exited %d and started it %d times, "+
+			"want the readers' check's refusal, nothing started:\n%s", code, mgr.restarts, errOut)
 	}
 
 	if _, err := os.Lstat(d.ServiceExecutable()); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("ourCopy placed a copy in a root every account may write (Lstat %s: %v)", d.ServiceExecutable(), err)
+		t.Errorf("a copy was placed in a root every account may write (Lstat %s: %v)", d.ServiceExecutable(), err)
 	}
 }

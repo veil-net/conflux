@@ -32,6 +32,13 @@ import (
 func capture(t *testing.T, argv ...string) (stdout, stderr string, code int) {
 	t.Helper()
 
+	return captureOf(t, func() int { return Main(append([]string{"conflux"}, argv...)) })
+}
+
+// captureOf is what run prints, to conflux's output and its errors, and the exit code it returns.
+func captureOf(t *testing.T, run func() int) (stdout, stderr string, code int) {
+	t.Helper()
+
 	var out, errBuf bytes.Buffer
 
 	oldOut, oldErr := ui.Out, ui.Errw
@@ -39,7 +46,7 @@ func capture(t *testing.T, argv ...string) (stdout, stderr string, code int) {
 
 	t.Cleanup(func() { ui.Out, ui.Errw = oldOut, oldErr })
 
-	code = Main(append([]string{"conflux"}, argv...))
+	code = run()
 
 	return out.String(), errBuf.String(), code
 }

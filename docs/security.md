@@ -71,10 +71,11 @@ host can read, and when the run stops there is nothing at all.
   itself, for what writes it to make afresh: such a `manifest.b64` takes the identity with it. The
   supervisor alone leaves the copy as it makes the roots, since it runs from it — Windows will not
   remove a running image, and one removed on Unix would leave the service nothing to start — and then
-  places one not as conflux makes it afresh from its own image, written beside it and renamed over it,
-  the running one moved aside first on Windows, before it reads anything, so none survives a start; the
-  next `up`, `proxy`, `observe`, `install`, `enrol`, `start` or `update` places one afresh too, and the
-  boot service is never started again on one that is not.
+  places one not there, or not as conflux makes it, afresh from its own image, written beside it and
+  renamed over it, the running one moved aside first on Windows, before it reads anything, so none
+  survives a start; the next `up`, `proxy`, `observe`, `install`, `enrol`, `start` or `update` places one
+  afresh too, and the boot service is never started again on one that is not, nor in roots the
+  readers' check refuses.
   `anchord.json` is `anchord`'s own account's. Nothing in a root is
   kept or protected for anybody: what is in conflux's folders is conflux's to overwrite, empty or
   remove, and `uninstall` removes them whole, whatever anybody put in them.

@@ -297,7 +297,8 @@ func TestTheFolderTheRunningConfluxIsInIsNoRoot(t *testing.T) {
 // or a drive letter SUBST gives a folder -- is held as the top the walk holds, not looked up there by a
 // name it does not have, so uninstall's pre-flight refuses it as a shared root before anything is
 // removed, the boot service included: a volume's root as one (sharedRoot), and the SUBST letter, whose
-// final path is the folder, as the top of a volume nothing holds to remove it from; EnsureAll refuses
+// final path is the folder, as the top of a volume nothing holds to remove it from (ErrTopRoot, which is
+// ErrSharedRoot too); EnsureAll refuses
 // each, and RemoveRoot too, removing nothing. A folder systemFolders names, C:\Users\Public, is refused
 // as one. Windows-only, so it runs in CI's platforms job alone.
 func TestAVolumesTopIsNoRoot(t *testing.T) {
@@ -335,6 +336,11 @@ func TestAVolumesTopIsNoRoot(t *testing.T) {
 
 		if err := Default().JudgeWays(); !errors.Is(err, ErrSharedRoot) || !strings.Contains(err.Error(), why) {
 			t.Errorf("JudgeWays(a CONFLUX_DIR of %s) = %v, want a refusal of a shared root saying it is %s", root, err, why)
+		}
+
+		// The top of a volume is told apart from a shared folder, as the top it is (ErrTopRoot).
+		if err := Default().JudgeWays(); errors.Is(err, ErrTopRoot) != (root == letter+`\`) {
+			t.Errorf("JudgeWays(a CONFLUX_DIR of %s) = %v, want it ErrTopRoot %v", root, err, root == letter+`\`)
 		}
 
 		if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), why) {

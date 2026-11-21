@@ -763,7 +763,7 @@ func RemoveKilledRun(dir, keep string) ([]string, error) {
 // one (holdRoot): the way to it walked from the top of its volume and held, a CONFLUX_DIR's held to parents'
 // rule (ErrWayRefused), and a link at its name followed only where conflux would follow it in daily use
 // (follow). It is refused for what RemoveRoot and JudgeWays refuse a root for (judgeHeld), saying which:
-// a directory others keep what is theirs in, or the top of a volume (ErrSharedRoot), one holding
+// a directory others keep what is theirs in (ErrSharedRoot), the top of a volume (ErrTopRoot), one holding
 // a name conflux never makes there, but a working run's root, or a file at its name (ErrForeignRoot), and
 // what is at its name where conflux cannot look it up at all, as none of those kinds. It is refused too,
 // as ErrUnsecuredRoot, where conflux has not secured it (unsecured): a link at its name that conflux does
@@ -933,7 +933,7 @@ func (d Dirs) JudgeWays() error {
 
 // judgeHeld refuses the root dir, one of d's, as r holds it, for what RemoveRoot and JudgeWays refuse a root for,
 // saying which (refusal): a directory at its name that others keep what is theirs in (sharedStep,
-// ErrSharedRoot), and the top of a volume (topRefusal), which nothing holds to remove it from; one at its name, or where a link there that conflux follows leads, that holds a
+// ErrSharedRoot), and the top of a volume (topRefusal, ErrTopRoot), which nothing holds to remove it from; one at its name, or where a link there that conflux follows leads, that holds a
 // name conflux never makes there where conflux has not secured it (strays), and a file or anything else
 // neither a directory nor a link
 // at its name (notDir), neither of them conflux's (ErrForeignRoot). What is at its name where conflux
@@ -954,7 +954,7 @@ func (d Dirs) judgeHeld(dir string, r *rootHold) error {
 		}
 
 		if r.top {
-			return refusal{ErrSharedRoot, topRefusal(dir)}
+			return refusal{ErrTopRoot, topRefusal(dir)}
 		}
 
 		if err := d.strays(dir, "", r.dir); err != nil {
@@ -979,12 +979,14 @@ func topRefusal(dir string) error {
 }
 
 // What JudgeWays refuses a root for, which errors.Is tells apart in what it returns: its way, which
-// another account may change; the directory at its name, which others keep what is theirs in; or the
-// directory at its name or where a link there leads, which holds a name conflux never makes there, or
-// a file at its name. A way that cannot be walked is none of them.
+// another account may change; the directory at its name, which others keep what is theirs in, or which is
+// the top of a volume, a refusal that is ErrSharedRoot as well, since no folder holds it and what it holds
+// is no one account's; or the directory at its name or where a link there leads, which holds a name conflux
+// never makes there, or a file at its name. A way that cannot be walked is none of them.
 var (
 	ErrWayRefused  = errors.New("a way to a root another account may change")
 	ErrSharedRoot  = errors.New("a root that is a directory others keep what is theirs in")
+	ErrTopRoot     = fmt.Errorf("a root that is the top of a volume, %w", ErrSharedRoot)
 	ErrForeignRoot = errors.New("a root that holds what conflux never makes there")
 )
 

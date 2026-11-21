@@ -525,3 +525,18 @@ func BenchmarkStrays(b *testing.B) {
 		}
 	}
 }
+
+// TestATopRootIsASharedOne: the refusal of a volume's top is one of a shared root as well, so a caller
+// that tells only ErrSharedRoot apart still refuses it as one, and one that tells ErrTopRoot apart names
+// it as the top it is.
+func TestATopRootIsASharedOne(t *testing.T) {
+	err := refusal{ErrTopRoot, topRefusal("/")}
+
+	if !errors.Is(err, ErrTopRoot) || !errors.Is(err, ErrSharedRoot) || errors.Is(err, ErrForeignRoot) {
+		t.Errorf("the refusal of a volume's top = %v, want one that is ErrTopRoot and ErrSharedRoot alone", err)
+	}
+
+	if err := (refusal{ErrSharedRoot, errors.New("shared")}); errors.Is(err, ErrTopRoot) {
+		t.Errorf("the refusal of a shared root is ErrTopRoot, want it ErrSharedRoot alone")
+	}
+}

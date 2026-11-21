@@ -371,16 +371,23 @@ const (
 // removeKilledRun removes the ephemeral root at root where it is a killed run's -- one conflux secured
 // (notConfluxs), this account's alone (paths.Foreign), its lock held by nobody -- stopping what that run
 // left running from it first, under its lock, as a run's own clean-up does, so that one starting this
-// moment is not emptied out from under itself; and says what it found. That much is judged before the
-// lock is taken, which makes the lock file where it is not there. What conflux has not secured -- a
-// link at its name the boot service would not follow, a directory not left as conflux secures a root --
-// only paths judges, as it empties the root through the root held (daemon.RemoveEphemeral), once the
-// lock is taken and what the run left stopped: it refuses that, and what changed since, leaving the
-// root as it is, the lock with it (daemon.RootRefused). One conflux did not secure is othersRun, and the
-// error why, which the caller notes rather than fails for (leftAsOthers). Nothing is read in one
-// another account could have made or changed.
+// moment is not emptied out from under itself; and says what it found. All of it is judged before the
+// lock is taken, which makes the lock file where it is not there, and before anything the run left is
+// read or stopped: what conflux has not secured too -- a link at its name the boot service would not
+// follow, a directory not left as conflux secures a root -- as paths judges it before it empties a root
+// (paths.JudgeKilledRun). The root is then emptied through the root held (daemon.RemoveEphemeral),
+// which refuses what changed since, leaving the root as it is, the lock with it (daemon.RootRefused).
+// One conflux did not secure is othersRun, and the error why, which the caller notes rather than fails
+// for (leftAsOthers). Nothing is read in one another account could have made or changed.
 func removeKilledRun(root string) (runRoot, error) {
 	if err := notConfluxs(root); err != nil {
+		return othersRun, err
+	}
+
+	switch err := paths.JudgeKilledRun(root); {
+	case errors.Is(err, fs.ErrNotExist):
+		return noRun, nil
+	case err != nil:
 		return othersRun, err
 	}
 

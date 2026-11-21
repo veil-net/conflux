@@ -603,10 +603,11 @@ it and it holds this installation's own state, or one the readers' check refuses
 `C:\ProgramData\conflux-ephemeral` first — is not conflux's,
 whatever its name: judged with the installation's roots, before anything is asked or removed, it is
 left as it is, with a note naming it and why, and uninstall does not fail for it. Each is judged
-so again before its lock is taken, which makes the lock file where there is none, and once more as
-it is emptied, through the root held: one conflux has not secured — a link at its name the boot
-service would not follow, or a directory, there or where such a link leads, not owned and left as
-conflux secures a root — is left the same way, its lock with it.
+so again before its lock is taken, which makes the lock file where there is none, or anything the
+run left is read or stopped: one conflux has not secured — a link at its name the boot service would
+not follow, or a directory, there or where such a link leads, not owned and left as conflux secures
+a root — is left the same way, with no lock made in it. It is judged once more as it is emptied,
+through the root held, and one changed since is left as well, its lock with it.
 
 ## `conflux status`
 

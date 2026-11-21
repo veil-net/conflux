@@ -758,9 +758,9 @@ func TestTidyListsOnlyWhatItRemoved(t *testing.T) {
 
 // TestTidyLeavesAnEphemeralRootConfluxDidNotSecure: the conflux an update put in place leaves an
 // ephemeral run's root conflux did not secure as it is, with what it holds, saying so, unlisted, and
-// goes on: one holding a name conflux never makes there, judged before anything is made in it, so no
-// lock is made there either; and, on Unix, one at a mode conflux never leaves a root at, which says
-// nothing secured it, refused as it would be emptied, through the root held, its lock left with it.
+// goes on: one holding a name conflux never makes there, and, on Unix, one at a mode conflux never
+// leaves a root at, which says nothing secured it, with its lock or with none. Each is judged before
+// anything is made, read or stopped in it: no lock is made there, and nothing a run left is reaped.
 func TestTidyLeavesAnEphemeralRootConfluxDidNotSecure(t *testing.T) {
 	anchortest.Require(t) // it extracts the pair afresh
 
@@ -774,7 +774,8 @@ func TestTidyLeavesAnEphemeralRootConfluxDidNotSecure(t *testing.T) {
 	}{
 		"holding a name conflux never makes there": {mode: 0o700,
 			plant: func(e paths.Dirs) string { return filepath.Join(e.State, "notes.txt") }},
-		"at a mode conflux leaves no root at": {mode: 0o755, plant: paths.Dirs.TokenFile, locked: true},
+		"at a mode conflux leaves no root at":               {mode: 0o755, plant: paths.Dirs.TokenFile, locked: true},
+		"at a mode conflux leaves no root at, with no lock": {mode: 0o755, plant: paths.Dirs.TokenFile},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if c.mode != 0o700 && runtime.GOOS == "windows" {
@@ -806,9 +807,24 @@ func TestTidyLeavesAnEphemeralRootConfluxDidNotSecure(t *testing.T) {
 				t.Fatal(err)
 			}
 
+			var reaped []string
+
+			was := removeEphemeral
+			defer func() { removeEphemeral = was }()
+
+			removeEphemeral = func(e paths.Dirs, unlock func(), r daemon.Reporter) error {
+				reaped = append(reaped, e.State)
+
+				return was(e, unlock, r)
+			}
+
 			standInService(t, &fakeManager{d: d})
 
 			out, errOut, code := capture(t, "register")
+			if len(reaped) > 0 {
+				t.Errorf("conflux register took the lock of %q, and stopped what was left there", reaped)
+			}
+
 			if code != ExitOK || !strings.Contains(errOut, root) || !strings.Contains(errOut, "conflux did not secure it") ||
 				strings.Contains(out, "  "+root+"\n") {
 				t.Errorf("conflux register beside an ephemeral root conflux did not secure exited %d, want %d saying it "+

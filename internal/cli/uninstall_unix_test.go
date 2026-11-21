@@ -131,7 +131,7 @@ func TestUninstallRefusesAWayAnotherAccountMayChange(t *testing.T) {
 // never secured as a run's root, is not conflux's, whatever its name: uninstall leaves it as it is,
 // with what it holds, saying so, and does not fail for it, while a killed run's root beside it goes.
 // So is one at a mode conflux never leaves a root at, which says nothing secured it either, refused
-// as it would be emptied, through the root held, its lock left with it.
+// before its lock is taken, and left with the lock it holds.
 func TestUninstallLeavesAnEphemeralRootConfluxDidNotSecure(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }

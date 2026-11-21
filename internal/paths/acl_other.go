@@ -988,9 +988,13 @@ func sharedRootIn(ps systemPlaces, dir string, s step) error {
 		return nil
 	}
 
+	way := "Point it at a directory of its own, then run this again"
+	if !chosen(dir) {
+		way = "It is no directory conflux made: remove it, then run this again"
+	}
+
 	return fmt.Errorf("%s is %s, so conflux will not use it as a root: it never narrows, fills or empties a "+
-		"directory others keep what is theirs in.\n  Point it at a directory of its own, then run this again", dir,
-		why)
+		"directory others keep what is theirs in.\n  %s", dir, why, way)
 }
 
 // serviceCopy reports whether the running conflux, ps.exe, is the copy the boot service runs from the

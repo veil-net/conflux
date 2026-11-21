@@ -207,3 +207,40 @@ func TestADirectoryDirectlyUnderTheFilesystemsRootIsTheSystems(t *testing.T) {
 		t.Errorf("JudgeWays(a CONFLUX_DIR of /usr) = %v, want a refusal of a shared root", err)
 	}
 }
+
+// TestJudgeWaysSaysWhatItRefuses: uninstall's pre-flight tells a way another account may change
+// (ErrWayRefused) from one that cannot be walked at all -- a CONFLUX_DIR inside a file, whose way holds
+// no directory there -- which is none of its kinds, since nobody else need be able to change anything
+// for it; and the shared directory that is a platform's own root, which nobody chooses, is refused
+// saying it is to be removed, not pointed elsewhere.
+func TestJudgeWaysSaysWhatItRefuses(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("CONFLUX_DIR", filepath.Join(file, "conflux"))
+
+	switch err := Default().JudgeWays(); {
+	case err == nil:
+		t.Errorf("JudgeWays(a CONFLUX_DIR inside a file) = nil, want a refusal")
+	case errors.Is(err, ErrWayRefused), errors.Is(err, ErrSharedRoot), errors.Is(err, ErrForeignRoot):
+		t.Errorf("JudgeWays(a CONFLUX_DIR inside a file) = %v, want a refusal of none of its kinds", err)
+	}
+
+	shared := filepath.Join(t.TempDir(), "conflux")
+	if err := os.Mkdir(shared, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Chmod(shared, 0o777|os.ModeSticky); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("CONFLUX_DIR", "")
+
+	if err := (Dirs{Config: shared, State: shared}).JudgeWays(); !errors.Is(err, ErrSharedRoot) ||
+		!strings.Contains(err.Error(), "remove it") {
+		t.Errorf("JudgeWays(a platform root that is a sticky directory) = %v, want a refusal saying to remove it", err)
+	}
+}

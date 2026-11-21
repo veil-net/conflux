@@ -1445,8 +1445,7 @@ func sharedRoot(dir string, h windows.Handle) error {
 	}
 
 	return fmt.Errorf("%s is %s, so conflux will not use it as a root: it never fills, restricts or empties a "+
-		"folder others keep what is theirs in.\n  Point it at a folder of its own, then run this again as "+
-		"Administrator", dir, why)
+		"folder others keep what is theirs in.\n  %s", dir, why, sharedWay(dir))
 }
 
 // exePlace is the running conflux as Windows names it (exePlaceOf): the folder it is in and each
@@ -1522,6 +1521,17 @@ func serviceCopy(h windows.Handle, ex exePlace) bool {
 
 	return fi.VolumeSerialNumber == ex.file.VolumeSerialNumber && fi.FileIndexHigh == ex.file.FileIndexHigh &&
 		fi.FileIndexLow == ex.file.FileIndexLow
+}
+
+// sharedWay is the way on from the refusal of the shared folder at the root dir: a CONFLUX_DIR pointed
+// elsewhere, or, for the platform's own root, which nobody chooses, the folder removed -- somebody else
+// made it, as %ProgramData% lets any account make %ProgramData%\conflux before conflux does.
+func sharedWay(dir string) string {
+	if chosen(dir) {
+		return "Point it at a folder of its own, then run this again as Administrator"
+	}
+
+	return "Somebody else made it: remove it, then run this again as Administrator"
 }
 
 // placeOnVolume is why final, a folder's final path (finalPath), is no root by where it is on its

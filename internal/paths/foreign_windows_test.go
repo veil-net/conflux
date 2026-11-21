@@ -354,3 +354,39 @@ func substLetter(t *testing.T, folder string) string {
 
 	return ""
 }
+
+// TestJudgeWaysSaysWhatItRefuses: uninstall's pre-flight tells a way another account may change
+// (ErrWayRefused) from one that cannot be walked at all -- a CONFLUX_DIR inside a file -- which is none
+// of its kinds; and a shared folder that is the platform's own root, %ProgramData%\conflux as anybody
+// may make it before conflux does, is refused saying it is to be removed, not pointed elsewhere.
+// Windows-only, so it runs in CI's platforms job alone.
+func TestJudgeWaysSaysWhatItRefuses(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("CONFLUX_DIR", filepath.Join(file, "conflux"))
+
+	switch err := Default().JudgeWays(); {
+	case err == nil:
+		t.Errorf("JudgeWays(a CONFLUX_DIR inside a file) = nil, want a refusal")
+	case errors.Is(err, ErrWayRefused), errors.Is(err, ErrSharedRoot), errors.Is(err, ErrForeignRoot):
+		t.Errorf("JudgeWays(a CONFLUX_DIR inside a file) = %v, want a refusal of none of its kinds", err)
+	}
+
+	shared := filepath.Join(t.TempDir(), "conflux")
+	if err := os.Mkdir(shared, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	privtest.SetSecurity(t, shared, "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;CI;0x6;;;BU)(A;OICIIO;FA;;;CO)")
+
+	t.Setenv("CONFLUX_DIR", "")
+
+	if err := (Dirs{Config: shared, State: shared}).JudgeWays(); !errors.Is(err, ErrSharedRoot) ||
+		!strings.Contains(err.Error(), "remove it") {
+		t.Errorf("JudgeWays(a platform root that is a folder other accounts share) = %v, want a refusal saying to "+
+			"remove it", err)
+	}
+}

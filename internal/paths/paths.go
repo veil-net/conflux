@@ -668,14 +668,22 @@ func RemoveRoot(dir string) (bool, error) {
 
 // readersRule is the rule a command that reads or removes what is at the root dir, rather than
 // making it, holds dir's way to: parents' rule, for the account running conflux, where dir is the
-// CONFLUX_DIR root or inside it (chosen), as the readers' check holds it; none for a platform root's
-// way, the system's own, as makeRoot does not judge it either.
+// CONFLUX_DIR root or inside it (chosen), as the readers' check holds it, each refusal an
+// ErrWayRefused; none for a platform root's way, the system's own, as makeRoot does not judge it either.
 func readersRule(dir string) judgement {
-	if chosen(dir) {
-		return parentsRule(dir)
+	if !chosen(dir) {
+		return nil
 	}
 
-	return nil
+	rule := parentsRule(dir)
+
+	return func(p string, s step, link bool) error {
+		if err := rule(p, s, link); err != nil {
+			return refusal{ErrWayRefused, err}
+		}
+
+		return nil
+	}
 }
 
 // toParent is the way to the directory dir is in, walked from the top of its volume and held open
@@ -710,7 +718,8 @@ func toParent(dir string, judge judgement) (*way, error) {
 // nothing done: the way to it, walked from the top of its volume and held (toParent), a CONFLUX_DIR's
 // held to parents' rule, for the account running conflux, the directory the root is in included,
 // refused where another account may change it, since that could lead what is done there elsewhere
-// (ErrWayRefused); and the directory at the root's own name, looked up there as RemoveRoot holds it
+// (ErrWayRefused), and refused, as none of the kinds below, where it cannot be walked at all -- a name
+// on it that is not a directory, a link conflux cannot follow, a lookup the system refuses; and the directory at the root's own name, looked up there as RemoveRoot holds it
 // (holdRoot), refused where it is one others keep what is theirs in, which conflux never makes its own
 // (sharedStep, ErrSharedRoot); and the directory at the root's name, or where a link there that
 // conflux follows leads, refused where it holds a name conflux never makes there (strays), as a file,
@@ -726,7 +735,7 @@ func (d Dirs) JudgeWays() error {
 		case errors.Is(err, fs.ErrNotExist):
 			continue
 		case err != nil:
-			return refusal{ErrWayRefused, err}
+			return err
 		}
 
 		err = d.judgeHeld(dir, r)
@@ -785,7 +794,8 @@ func topRefusal(dir string) error {
 
 // What JudgeWays refuses a root for, which errors.Is tells apart in what it returns: its way, which
 // another account may change; the directory at its name, which others keep what is theirs in; or the
-// directory at its name or where a link there leads, which holds a name conflux never makes there.
+// directory at its name or where a link there leads, which holds a name conflux never makes there, or
+// a file at its name. A way that cannot be walked is none of them.
 var (
 	ErrWayRefused  = errors.New("a way to a root another account may change")
 	ErrSharedRoot  = errors.New("a root that is a directory others keep what is theirs in")

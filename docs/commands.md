@@ -834,6 +834,6 @@ other refusal — passes through untouched.
 | 3 | `conflux cert verify`, `match` or `probe`: the check ran and did not hold |
 | 13 | needs root or Administrator: a verb that changes the machine, `status` where the configuration is closed to this account, or a pass-through that cannot read the daemon's token |
 | 69 | nothing here to act on: nothing running, or no credential to renew |
-| 70 | a configuration conflux or anchor refuses for good, or a conflux built for FIPS 140-3 mode run with it switched off, or `conflux cert` where it does not run in that mode; on Windows, a build older than 1803's, and, run elevated, every command but `version`, `help` and `cert` where the Administrators could not be made the owner of what it makes ([windows.md](windows.md#file-permissions)); the systemd unit does not restart on it |
+| 70 | a configuration conflux or anchor refuses for good, or a conflux built for FIPS 140-3 mode run with it switched off, or `conflux cert` where it does not run in that mode; on Windows, a build older than 1803's, and, run elevated, every command but `version`, `help` and `cert` where the Administrators could not be made the owner of what it makes, `help` then extracting nothing ([windows.md](windows.md#file-permissions)); the systemd unit does not restart on it |
 | 78 | no configuration — the code the systemd unit keys `RestartPreventExitStatus` on |
 | other | for pass-through, anchorctl's own code, verbatim |

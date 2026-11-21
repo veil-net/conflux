@@ -112,6 +112,9 @@ default-owner policy, so each is theirs from the moment it exists. On Windows Se
 elevated administrator makes is the Administrators'; on a Windows client it is that
 administrator's own, which their unelevated processes could change for the SYSTEM service to read
 or run. A token that is not elevated, which no command making a root runs with, keeps its own.
+Where the owner cannot be set, every command that can make something in a root is refused, exit 70,
+and `help`, which runs, extracts nothing into `bin\`: it takes the anchor pair as it finds it there,
+or a temporary copy.
 
 A root conflux finds already there is its own only where it is as conflux makes one: a folder, not a
 junction or a link, owned by SYSTEM, the Administrators or TrustedInstaller, whose DACL grants nobody

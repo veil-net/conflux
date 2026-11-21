@@ -407,7 +407,7 @@ func TestUsageMakesNothing(t *testing.T) {
 
 	d := paths.Default()
 
-	bin, done, err := ForUsage(d, d.Check())
+	bin, done, err := ForUsage(d, d.Check(), true)
 	if err != nil {
 		t.Fatalf("ForUsage: %v", err)
 	}
@@ -435,7 +435,7 @@ func TestUsageMakesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if bin, done, err = ForUsage(d, d.Check()); err != nil || bin != tools.Anchorctl || done != nil {
+	if bin, done, err = ForUsage(d, d.Check(), true); err != nil || bin != tools.Anchorctl || done != nil {
 		t.Errorf("usage where %s is extracted = %s, %v, and done %v, want that, and nothing to remove",
 			tools.Anchorctl, bin, err, done != nil)
 	}
@@ -462,7 +462,7 @@ func TestAReaderExtractsIntoABinDirectoryOfConfluxs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	bin, done, err := ForUsage(d, d.Check())
+	bin, done, err := ForUsage(d, d.Check(), true)
 	if err != nil || done == nil || !strings.HasPrefix(bin, tmp+string(filepath.Separator)) {
 		t.Fatalf("a reader with no bin directory = %s, %v, want a temporary copy in %s to remove", bin, err, tmp)
 	}
@@ -480,7 +480,7 @@ func TestAReaderExtractsIntoABinDirectoryOfConfluxs(t *testing.T) {
 
 	want := toolsIn(d)
 
-	if bin, done, err := ForUsage(d, d.Check()); err != nil || bin != want.Anchorctl || done != nil || !want.complete() {
+	if bin, done, err := ForUsage(d, d.Check(), true); err != nil || bin != want.Anchorctl || done != nil || !want.complete() {
 		t.Errorf("a reader with this build's pair not extracted = %s, %v, and done %v, want %s extracted, and "+
 			"nothing to remove", bin, err, done != nil, want.Anchorctl)
 	}
@@ -505,7 +505,7 @@ func TestAReaderExtractsIntoABinDirectoryOfConfluxs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if bin, done, err := ForUsage(d, d.Check()); err != nil || bin != want.Anchorctl || done != nil {
+	if bin, done, err := ForUsage(d, d.Check(), true); err != nil || bin != want.Anchorctl || done != nil {
 		t.Errorf("a reader of the pair extracted, its anchorctl's mode changed, = %s, %v, and done %v, want %s "+
 			"as it is found", bin, err, done != nil, want.Anchorctl)
 	}
@@ -530,7 +530,7 @@ func TestAReaderExtractsNothingIntoABinDirectoryNotOfConfluxs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	bin, done, err := ForUsage(d, d.Check())
+	bin, done, err := ForUsage(d, d.Check(), true)
 	if err != nil || done == nil || !strings.HasPrefix(bin, tmp+string(filepath.Separator)) {
 		t.Fatalf("a reader of a bin directory every account may write = %s, %v, want a temporary copy in %s", bin,
 			err, tmp)
@@ -580,7 +580,7 @@ func TestUsageRunsNothingFromARootItRefuses(t *testing.T) {
 
 	t.Cleanup(func() { _ = os.Chmod(d.State, 0o700) })
 
-	bin, done, err := ForUsage(d, d.Check())
+	bin, done, err := ForUsage(d, d.Check(), true)
 	if err != nil {
 		t.Fatalf("ForUsage: %v", err)
 	}
@@ -611,7 +611,7 @@ func TestUsageMakesNoTemporaryDirectory(t *testing.T) {
 		t.Setenv(name, missing)
 	}
 
-	if bin, done, err := ForUsage(paths.Default(), paths.Default().Check()); err == nil {
+	if bin, done, err := ForUsage(paths.Default(), paths.Default().Check(), true); err == nil {
 		done()
 
 		if strings.HasPrefix(bin, missing) {

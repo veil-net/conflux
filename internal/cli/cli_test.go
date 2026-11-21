@@ -958,3 +958,51 @@ func TestAnOwnerThatCannotBeSetRefusesWhatCanMakeARoot(t *testing.T) {
 		}
 	}
 }
+
+// TestAReaderExtractsOnlyWhereTheOwnerWasSet: help runs where the Administrators could not be made the
+// owner of what conflux makes (paths.ElevatedDefaultOwner, here failing), and what it would extract
+// into the installation's bin directory would then be that account's own from the moment it exists, so
+// there it extracts nothing -- as help, nor as a pass-through for usage -- and takes the pair as it finds
+// it, or a temporary copy; where the owner was set, help extracts the pair into bin.
+func TestAReaderExtractsOnlyWhereTheOwnerWasSet(t *testing.T) {
+	anchortest.Require(t)
+
+	was := elevatedDefaultOwner
+	t.Cleanup(func() { elevatedDefaultOwner = was })
+
+	// anchorctl's usage, which a pass-through prints to the terminal itself.
+	devNull, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer devNull.Close()
+
+	stdout, stderr := os.Stdout, os.Stderr
+	t.Cleanup(func() { os.Stdout, os.Stderr = stdout, stderr })
+
+	for _, argv := range [][]string{{"help"}, {"help", "peers"}} {
+		d := pathstest.Dirs(t)
+
+		elevatedDefaultOwner = func() error { return errors.New("make the Administrators the owner: denied") }
+
+		os.Stdout, os.Stderr = devNull, devNull
+		_, errOut, code := capture(t, argv...)
+		os.Stdout, os.Stderr = stdout, stderr
+
+		if _, err := libexec.Extracted(d); code != ExitOK || !errors.Is(err, libexec.ErrNotExtracted) {
+			t.Errorf("conflux %s with an owner that cannot be set exited %d and extracted the pair into %s (%v), "+
+				"want %d, nothing extracted:\n%s", strings.Join(argv, " "), code, d.Libexec(), err, ExitOK, errOut)
+		}
+
+		elevatedDefaultOwner = func() error { return nil }
+
+		os.Stdout, os.Stderr = devNull, devNull
+		capture(t, argv...)
+		os.Stdout, os.Stderr = stdout, stderr
+
+		if _, err := libexec.Extracted(d); err != nil {
+			t.Errorf("conflux %s with the owner set did not extract the pair into %s: %v", strings.Join(argv, " "),
+				d.Libexec(), err)
+		}
+	}
+}

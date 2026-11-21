@@ -29,7 +29,7 @@ func TestUsageRunsFromWhereExecIsAllowed(t *testing.T) {
 	cache := filepath.Join(t.TempDir(), "cache")
 	t.Setenv("XDG_CACHE_HOME", cache)
 
-	bin, done, err := ForUsage(paths.Default(), paths.Default().Check())
+	bin, done, err := ForUsage(paths.Default(), paths.Default().Check(), true)
 	if err != nil {
 		t.Fatalf("ForUsage: %v", err)
 	}

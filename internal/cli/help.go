@@ -104,7 +104,7 @@ func runHelp(ctx context.Context, args []string) int {
 func printAnchorctlUsage(ctx context.Context) {
 	d := paths.Default()
 
-	bin, done, err := libexec.ForUsage(d, d.Check())
+	bin, done, err := libexec.ForUsage(d, d.Check(), extracts(ctx))
 	if err != nil {
 		return
 	}

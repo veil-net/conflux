@@ -141,18 +141,8 @@ func extractIn(d paths.Dirs) (*Tools, error) {
 	root := d.Libexec()
 	t := toolsIn(d)
 
-	_, err := os.Lstat(root)
-	made := errors.Is(err, fs.ErrNotExist)
-
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, fmt.Errorf("create %s: %w", root, err)
-	}
-
-	// The Administrators', as everything conflux makes in a root is (paths.Own).
-	if made {
-		if err := paths.Own(root); err != nil {
-			return nil, fmt.Errorf("own %s: %w", root, err)
-		}
 	}
 
 	unlock, err := flock.Acquire(filepath.Join(root, ".lock"))

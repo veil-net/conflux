@@ -8,13 +8,9 @@ package logfile
 
 import (
 	"bytes"
-	"errors"
-	"io/fs"
 	"os"
 	"sync"
 	"time"
-
-	"github.com/veil-net/conflux/internal/paths"
 )
 
 // Max is how large the file grows before it is moved aside.
@@ -59,21 +55,9 @@ func open(path string, max int64, now func() time.Time, redirect bool) (*File, e
 }
 
 func (w *File) reopen() error {
-	_, err := os.Lstat(w.path)
-	made := errors.Is(err, fs.ErrNotExist)
-
 	f, err := os.OpenFile(w.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
-	}
-
-	// On Windows, in the root: the Administrators', as everything conflux makes there is.
-	if made {
-		if err := paths.Own(w.path); err != nil {
-			f.Close()
-
-			return err
-		}
 	}
 
 	fi, err := f.Stat()

@@ -249,23 +249,15 @@ func (d Dirs) ReadyFile() string { return filepath.Join(d.Run, "ready") }
 // Windows, where a mode means nothing, each root that is not inside another is made
 // SYSTEM's and Administrators' instead, as it is created where it is not there yet
 // (makeRoot), and what is created beneath it inherits that; a root inside another, made here
-// by its name, is the Administrators' too (Own). A CONFLUX_DIR's way is held to the
+// by its name, is the Administrators' too, as everything an elevated conflux makes is
+// (ElevatedDefaultOwner). A CONFLUX_DIR's way is held to the
 // rule of whoever the root is for (wayRule). The system's shared log directory is not
 // conflux's, and is left alone.
 func (d Dirs) EnsureAll() error {
 	for dir, inside := range d.roots() {
 		if inside {
-			_, err := os.Lstat(dir)
-			made := errors.Is(err, fs.ErrNotExist)
-
 			if err := os.MkdirAll(dir, 0o700); err != nil {
 				return fmt.Errorf("create %s: %w", dir, err)
-			}
-
-			if made {
-				if err := Own(dir); err != nil {
-					return fmt.Errorf("own %s: %w", dir, err)
-				}
 			}
 
 			continue

@@ -41,9 +41,9 @@ func Restrict(string, bool) error { return nil }
 // RestrictToOwner is a no-op here: the mode set on the descriptor is the restriction.
 func RestrictToOwner(string, bool) error { return nil }
 
-// Own is a no-op here: what conflux makes is the account's that makes it, root's for an
-// installation's root, which every command making it runs as.
-func Own(string) error { return nil }
+// ElevatedDefaultOwner is a no-op here: what conflux makes is the account's that makes it, root's
+// for an installation's root, which every command making it runs as.
+func ElevatedDefaultOwner() error { return nil }
 
 // Trusted is always true here.
 func Trusted(string) bool { return true }

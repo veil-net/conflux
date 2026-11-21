@@ -98,14 +98,15 @@ junction — not even for an instant. Every secret file gets the same, explicitl
 anything is written into it.
 
 Everything else conflux makes in a root or on the way to one — `logs\`, the lock files,
-`bin\` and its lock, the service's copy of conflux, the log — it makes the Administrators' as
-well, naming them as the owner rather than leaving that to the machine's default-owner policy,
-and leaves its DACL to what it inherits. On Windows Server what an elevated administrator makes is
-the Administrators'; on a Windows client it is that administrator's own, and the service, running
-as SYSTEM, trusts no other account with anything in its root, so it would refuse, at every start,
-a root holding what the administrator's own `up` made and took. A token that may not name the
-Administrators — one that is not elevated, which no command making an installation's root is —
-keeps its own. What an installation's root holds that the administrator running conflux owns
+`bin\` and its lock, the service's copy of conflux, the log — is the Administrators' as well,
+with its DACL what it inherits: every conflux process running elevated makes them the owner its
+token gives what it makes, as the first thing it does, rather than leaving that to the machine's
+default-owner policy, so each is theirs from the moment it exists, and a `CREATOR OWNER` entry it
+inherits grants them. On Windows Server what an elevated administrator makes is the
+Administrators'; on a Windows client it is that administrator's own, and the service, running as
+SYSTEM, trusts no other account with anything in its root, so it would refuse, at every start, a
+root holding what the administrator's own `up` made. A token that is not elevated, which no
+command making a root runs with, keeps its own. What an installation's root holds that the administrator running conflux owns
 anyway — made by an earlier conflux on a client, or by hand — is given to the Administrators by
 every command that secures the root, `start` among them, which `update` hands a running service
 to, as it judges each thing, through the

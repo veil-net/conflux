@@ -105,16 +105,11 @@ func Grant(tb testing.TB, path string, sid *windows.SID, access windows.ACCESS_M
 // there yet and given so again where it is. A CONFLUX_DIR a test roots there is on a way the boot
 // service, SYSTEM, trusts, which conflux holds an installation's way to; %TEMP%, in the profile of
 // the administrator running the tests, grants that account full control, which SYSTEM does not
-// trust. And this process's token names the Administrators the owner of what it makes without
-// naming one (defaultOwner), as Windows Server's default-owner policy does for an elevated
-// administrator and a Windows client's does not, so what a test makes there -- its TempDir among it
-// -- passes the service's judgement whatever the machine's policy. A token that may not name the
-// Administrators, one that is not elevated, keeps its own owner.
+// trust. Its callers make the Administrators the owner of what the process makes first
+// (paths.ElevatedDefaultOwner), as every conflux process does as it starts, so what a test makes
+// there -- its TempDir among it -- passes the service's judgement whatever the machine's
+// default-owner policy; privtest itself imports nothing of conflux's.
 func ServiceTemp() error {
-	if err := setDefaultOwner(Admins); err != nil && !errors.Is(err, windows.ERROR_INVALID_OWNER) {
-		return fmt.Errorf("make the Administrators the owner of what this process makes: %w", err)
-	}
-
 	drive := os.Getenv("SystemDrive")
 	if drive == "" {
 		drive = "C:"
@@ -271,7 +266,10 @@ func holds(sd *windows.SECURITY_DESCRIPTOR, owner *windows.SID, dacl *windows.AC
 // CreatorOwns makes what this process makes without naming an owner its user's own -- the account
 // its token is for -- as a Windows client's default-owner policy makes it for an elevated
 // administrator, where Windows Server's makes it the Administrators', until restore, which tb's
-// cleanup runs too: what conflux makes as an administrator on a Windows client, in a test on Server.
+// cleanup runs too, gives back the owner the token gave before: the Administrators, where the test
+// binary made them so as conflux does as it starts (paths.ElevatedDefaultOwner). What an
+// administrator makes on a Windows client without conflux, or what an older conflux made there, in
+// a test on Server. Not for a parallel test: the owner is the whole process's.
 func CreatorOwns(tb testing.TB) (restore func()) {
 	tb.Helper()
 

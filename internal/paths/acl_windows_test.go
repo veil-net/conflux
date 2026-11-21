@@ -15,10 +15,15 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// These tests root what they make on a way the boot service trusts (privtest.ServiceTemp), since
+// These tests make what they make the Administrators', as every conflux process does as it starts
+// (ElevatedDefaultOwner), and root it on a way the boot service trusts (privtest.ServiceTemp), since
 // EnsureAll holds an installation's way to the rule SYSTEM holds it to, which the profile of the
 // administrator running them, where %TEMP% is, does not pass.
 func init() {
+	if err := ElevatedDefaultOwner(); err != nil {
+		panic("paths: " + err.Error())
+	}
+
 	if err := privtest.ServiceTemp(); err != nil {
 		panic("paths: " + err.Error())
 	}

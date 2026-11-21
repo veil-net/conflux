@@ -101,21 +101,36 @@ func asAdministrators(set func(owner *windows.SID) error) error {
 	return err
 }
 
-// Own gives path, which conflux has just made in a root or on the way to one -- a lock file, the
-// service's copy of conflux, a folder it made by its name -- to the Administrators, as everything
-// else it makes there is (asAdministrators), and leaves its DACL to what it inherits. By its name,
-// in a root only SYSTEM and the Administrators may change. Until it is called, what was made is the
-// token's default owner's, an administrator's own on a Windows client: a service start judging the
-// root in that instant refuses it once, and the service manager's restart takes it.
-func Own(path string) error {
-	return asAdministrators(func(owner *windows.SID) error {
-		if owner == nil {
-			return nil
-		}
+// ElevatedDefaultOwner makes the Administrators the owner this process's token gives what it makes
+// without naming one, where the token is elevated, as the first thing every conflux process does: so
+// what it makes by its name in a root or on the way to one -- logs\, the lock files, bin\ and its
+// lock, the service's copy of conflux, the log -- is the Administrators' from the moment it exists,
+// and a CREATOR OWNER entry it inherits grants them, whatever the machine's default-owner policy
+// says. That policy makes what an elevated administrator makes the Administrators' on Windows Server
+// and that administrator's own on a Windows client, and the boot service, running as SYSTEM, trusts
+// no other account with anything in its root (contents). A token that is not elevated is left as it
+// is: it may not name the Administrators, and no conflux command that makes a root runs without
+// elevation. SYSTEM's, the service's, is elevated, and holds the Administrators too.
+func ElevatedDefaultOwner() error {
+	if !windows.GetCurrentProcessToken().IsElevated() {
+		return nil
+	}
 
-		return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION, owner,
-			nil, nil, nil)
-	})
+	var tok windows.Token
+	if err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_ADJUST_DEFAULT|windows.TOKEN_QUERY,
+		&tok); err != nil {
+		return fmt.Errorf("make the Administrators the owner of what conflux makes: %w", err)
+	}
+	defer tok.Close()
+
+	owner := struct{ sid *windows.SID }{sidAdmins} // TOKEN_OWNER
+
+	if err := windows.SetTokenInformation(tok, windows.TokenOwner, (*byte)(unsafe.Pointer(&owner)),
+		uint32(unsafe.Sizeof(owner))); err != nil {
+		return fmt.Errorf("make the Administrators the owner of what conflux makes: %w", err)
+	}
+
+	return nil
 }
 
 // fileAllAccess is FILE_ALL_ACCESS, full control of a file or a directory: specific rights rather

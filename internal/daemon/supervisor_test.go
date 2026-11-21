@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -44,6 +45,47 @@ func supervised(t *testing.T, mode string) (*Supervisor, string) {
 	}
 
 	return s, log
+}
+
+// TestTheSupervisorLeavesTheCopyItRunsFrom: the supervisor makes its roots as every command does, but for
+// the copy of conflux the boot service runs, which it runs from: Windows will not remove a running image,
+// and one removed on Unix would leave the service nothing to start the next time. A copy not as conflux
+// makes it is left as it is, for the next command's hand-over to place afresh; a lock file not as conflux
+// makes it beside it is removed all the same.
+func TestTheSupervisorLeavesTheCopyItRunsFrom(t *testing.T) {
+	s, _ := supervised(t, "1")
+	d := s.Dirs
+
+	// A configuration conflux refuses, which Run reads once the roots are made, before it starts anything.
+	if err := os.WriteFile(d.ConfigFile(), []byte(`{"version":1,"mode":"neither"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, p := range []string{d.ServiceExecutable(), d.LockFile()} {
+		if err := os.WriteFile(p, []byte("an earlier conflux's"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		notAsConfluxMakesIt(t, p)
+	}
+
+	before, err := os.Stat(d.ServiceExecutable())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Run(t.Context()); !Permanent(err) {
+		t.Fatalf("Run = %v, want the configuration refused for good", err)
+	}
+
+	if after, err := os.Stat(d.ServiceExecutable()); err != nil || !os.SameFile(before, after) ||
+		d.Ours(d.ServiceExecutable()) == nil {
+		t.Errorf("the supervisor's start changed the copy of conflux it runs from (%v)", err)
+	}
+
+	if err := d.Ours(d.LockFile()); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the supervisor's start left a lock file not as conflux makes it: %v", err)
+	}
 }
 
 // returns fails the test if f has not returned within a few seconds.

@@ -13,6 +13,19 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// notAsConfluxMakesIt makes the file p this administrator's, as an earlier conflux left the service's copy
+// on a Windows client: not as conflux makes a file of its own, which the Administrators own.
+func notAsConfluxMakesIt(t *testing.T, p string) {
+	t.Helper()
+
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	privtest.SetOwner(t, p, user.User.Sid)
+}
+
 // TestRestrictTokenRemovesPrivileges: the token anchord is started with keeps no privilege
 // but SeChangeNotify -- above all not SeImpersonate, the way back to SYSTEM that LOCAL
 // SERVICE holds -- and its default DACL names SYSTEM and the service's SID alone. Asked of

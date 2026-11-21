@@ -68,9 +68,11 @@ host can read, and when the run stops there is nothing at all.
   boot service's copy of conflux — and one that is not as conflux makes it (a link, a folder, another
   account's, or one another account may change; on Windows one an administrator's process left that
   administrator's, as an earlier conflux left the service's copy on a Windows client) is removed as
-  itself, for what writes it to make afresh: such a `manifest.b64` takes the identity with it. A copy
-  removed, or found not as conflux makes it, is placed afresh by the next `up`, `proxy`, `observe`,
-  `install`, `enrol` or `start`, and the boot service is never started again on one that is not.
+  itself, for what writes it to make afresh: such a `manifest.b64` takes the identity with it. The
+  supervisor alone leaves the copy, which it runs from — Windows will not remove a running image, and
+  one removed on Unix would leave the service nothing to start — and the next `up`, `proxy`,
+  `observe`, `install`, `enrol`, `start` or `update` places one not as conflux makes it afresh; the boot
+  service is never started again on one that is not.
   `anchord.json` is `anchord`'s own account's. Nothing in a root is
   kept or protected for anybody: what is in conflux's folders is conflux's to overwrite, empty or
   remove, and `uninstall` removes them whole, whatever anybody put in them.

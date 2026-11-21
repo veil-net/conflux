@@ -158,9 +158,10 @@ func (s *Supervisor) signalStarted() {
 func (s *Supervisor) clearReady() { _ = ClearReady(s.Dirs) }
 
 // Run starts anchord, brings the anchor up, and keeps both going until the context
-// is cancelled.
+// is cancelled. The roots are made first, as every command makes them, but for the copy of conflux
+// the boot service runs, which this supervisor runs from (EnsureServing).
 func (s *Supervisor) Run(ctx context.Context) error {
-	if err := s.Dirs.EnsureAll(); err != nil {
+	if err := s.Dirs.EnsureServing(); err != nil {
 		return err
 	}
 

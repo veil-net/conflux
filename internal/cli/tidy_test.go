@@ -235,8 +235,9 @@ func TestAStartOfTheConfluxTheServiceRunsRemovesNothing(t *testing.T) {
 // TestACopyNotAsConfluxMakesItIsPlacedAfresh: a copy for the boot service that is this conflux, byte for
 // byte, but is not as conflux makes a file of its own (notAsConfluxMakesIt) -- as an earlier conflux left
 // one on a Windows client, an administrator's, which that administrator's unelevated processes could
-// change for SYSTEM to run -- is what earlier conflux left: start and install remove it with the rest
-// (tidy), an earlier set among it, and place this conflux afresh, as conflux makes it, and register that.
+// change for SYSTEM to run -- is what earlier conflux left: the supervisor, which runs from it, leaves it
+// as it makes its roots (EnsureServing), and start and install remove it with the rest (tidy), an earlier
+// set among it, and place this conflux afresh, as conflux makes it, and register that.
 func TestACopyNotAsConfluxMakesItIsPlacedAfresh(t *testing.T) {
 	anchortest.Require(t) // it extracts the pair afresh
 
@@ -252,6 +253,14 @@ func TestACopyNotAsConfluxMakesItIsPlacedAfresh(t *testing.T) {
 			}
 
 			notAsConfluxMakesIt(t, d.ServiceExecutable())
+
+			if err := d.EnsureServing(); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := d.Ours(d.ServiceExecutable()); err == nil || errors.Is(err, fs.ErrNotExist) {
+				t.Fatalf("the supervisor's making of the roots changed the copy it runs from: %v", err)
+			}
 
 			earlier := filepath.Join(d.Libexec(), "0123456789abcdef")
 			if err := os.MkdirAll(earlier, 0o700); err != nil {

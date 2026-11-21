@@ -93,7 +93,8 @@ func TestCheckHoldsARootAsConfluxMakesOne(t *testing.T) {
 // conflux's is (ours), and one that is not as conflux makes it -- a link, a folder, a file every account
 // may write -- is removed as itself, where a link leads untouched, and nothing made in its place; one as
 // conflux makes it is kept, and anchord's own configuration, which the account anchord runs as owns, is
-// not judged. Ours holds a file to the same, the copy among them, and one in a folder conflux keeps in a
+// not judged. EnsureServing, the supervisor's, which runs from the copy the boot service names, leaves
+// that copy alone and removes the rest alike. Ours holds a file to the same, the copy among them, and one in a folder conflux keeps in a
 // root, each folder on the way to it held too: nil for one as conflux makes it, fs.ErrNotExist for one
 // not there, and otherwise a refusal saying why.
 func TestEnsureAllRemovesAFileNotAsConfluxMakesIt(t *testing.T) {
@@ -139,6 +140,18 @@ func TestEnsureAllRemovesAFileNotAsConfluxMakesIt(t *testing.T) {
 
 	if err := d.Ours(d.ServiceExecutable()); err == nil || !strings.Contains(err.Error(), "anybody may write") {
 		t.Errorf("Ours(a copy every account may write) = %v, want a refusal saying so", err)
+	}
+
+	if err := d.EnsureServing(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Lstat(d.ServiceExecutable()); err != nil {
+		t.Errorf("EnsureServing removed the copy the supervisor runs from: %v", err)
+	}
+
+	if _, err := os.Lstat(d.ManifestFile()); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("EnsureServing left %s, which is not as conflux makes it (Lstat: %v)", d.ManifestFile(), err)
 	}
 
 	if err := d.EnsureAll(); err != nil {

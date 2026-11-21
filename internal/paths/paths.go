@@ -40,6 +40,10 @@ type Dirs struct {
 	// it and no service ever serves; every other Dirs is an installation's, whose roots the boot
 	// service serves, so EnsureAll holds a CONFLUX_DIR's way to the service's rule (wayRule).
 	ephemeral bool
+
+	// serving is whether these are made for the supervisor that serves them (EnsureServing), which leaves
+	// the copy of conflux it runs from alone.
+	serving bool
 }
 
 // Default is where this platform keeps them.
@@ -291,6 +295,17 @@ func (d Dirs) EnsureAll() error {
 	return err
 }
 
+// EnsureServing is EnsureAll for the supervisor that serves d, which runs from the copy of conflux the boot
+// service names in the state root (ServiceExecutable): everything is judged and made as EnsureAll judges
+// and makes it but that copy, which is neither judged nor removed -- Windows will not remove a running
+// image, and one removed on Unix would leave the service nothing to start the next time. A copy not as
+// conflux makes it is the next command's to place afresh, as its hand-over finds it so (cli's staleCopy).
+func (d Dirs) EnsureServing() error {
+	d.serving = true
+
+	return d.EnsureAll()
+}
+
 // makeRoot makes the root dir, one of d's not inside another, and the folders conflux keeps in it
 // (folders), and is the folders it made on the way to it. The way to the folder dir is in is walked
 // from the top of its volume and held (walk), a CONFLUX_DIR's held to rule, the CONFLUX_DIR included,
@@ -391,9 +406,10 @@ func ownFile(parent step, p string, installation bool) error {
 
 // files is each file conflux keeps directly in its root dir, by its name: in the configuration root the
 // configuration, and in the state root the state, the identity, the record of the anchord last started
-// and of the way, the two lock files, and the copy of conflux the boot service runs. anchord's own
-// configuration (DaemonConfigFile) is none of these: it is the account anchord runs as's, as the
-// supervisor writes it at every start, so ours would remove it each time.
+// and of the way, the two lock files, and the copy of conflux the boot service runs, but for the
+// supervisor serving d, which runs from it (EnsureServing). anchord's own configuration
+// (DaemonConfigFile) is none of these: it is the account anchord runs as's, as the supervisor writes it
+// at every start, so ours would remove it each time.
 func (d Dirs) files(dir string) []string {
 	var files []string
 
@@ -403,7 +419,11 @@ func (d Dirs) files(dir string) []string {
 
 	if dir == d.State {
 		files = append(files, d.StateFile(), d.ManifestFile(), d.PrivilegeFile(), d.WayFile(), d.LockFile(),
-			d.ServeLockFile(), d.ServiceExecutable())
+			d.ServeLockFile())
+
+		if !d.serving {
+			files = append(files, d.ServiceExecutable())
+		}
 	}
 
 	return files

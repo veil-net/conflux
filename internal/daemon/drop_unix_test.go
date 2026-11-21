@@ -11,6 +11,16 @@ import (
 	"testing"
 )
 
+// notAsConfluxMakesIt makes the file p one every account may write: not as conflux makes a file of its
+// own.
+func notAsConfluxMakesIt(t *testing.T, p string) {
+	t.Helper()
+
+	if err := os.Chmod(p, 0o757); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // TestCopyTreeTakesOnlyTheAnchorsFiles: what the account left in its directory is copied
 // for root only as regular files with one name each. A symlink, a hard link to something it
 // could name and not read, and a FIFO -- each a way to have root read, block on, or hand

@@ -120,8 +120,8 @@ func TestRemoveRootHoldsACONFLUXDIRsWay(t *testing.T) {
 
 // TestTheWayConfluxMadeIsRemovedWhenEmpty: EnsureAll records each folder it made on the way to an
 // installation's root, in the state root, once, however often it runs; Way reads the record back,
-// deepest first, keeping only folders above one of the roots, and only where the state root passes
-// the readers' check. Once the root is gone, RemoveWay removes each recorded folder that is empty,
+// deepest first, keeping only folders above one of the roots, where the readers' check refuses the
+// state root too, and refuses a record that is a link, unfollowed. Once the root is gone, RemoveWay removes each recorded folder that is empty,
 // deepest first, and leaves one holding anything else, and a link put at a recorded folder's name. An
 // ephemeral run's roots keep no record.
 func TestTheWayConfluxMadeIsRemovedWhenEmpty(t *testing.T) {
@@ -158,8 +158,33 @@ func TestTheWayConfluxMadeIsRemovedWhenEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if got, err := d.Way(); err != nil || !slices.Equal(got, way) {
+		t.Errorf("Way() of a state root the readers' check refuses = %q, %v, want %q all the same", got, err, way)
+	}
+
+	kept := filepath.Join(t.TempDir(), "kept")
+	if err := os.WriteFile(kept, []byte(a+"\n"+b+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Rename(record, record+".was"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Symlink(kept, record); err != nil {
+		t.Fatal(err)
+	}
+
 	if got, err := d.Way(); err == nil {
-		t.Errorf("Way() of a state root the readers' check refuses = %q, nil, want the refusal", got)
+		t.Errorf("Way() of a record that is a link = %q, nil, want it refused, unfollowed", got)
+	}
+
+	if err := os.Remove(record); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Rename(record+".was", record); err != nil {
+		t.Fatal(err)
 	}
 
 	other := filepath.Join(a, "other")

@@ -41,9 +41,8 @@ func plantForeign(t *testing.T, path string) {
 
 // TestUninstallRemovesTheWayConfluxMade: the folders conflux made on the way to a CONFLUX_DIR, which
 // EnsureAll records in the root, go with it once empty, deepest first, and the folder they were made
-// in stays. Where the readers' check refuses the root, the root still goes, but its record is not
-// read -- whoever could change the root could have written it -- so those folders are left, and
-// uninstall says why.
+// in stays -- where the readers' check refuses the root too: all a record somebody else wrote could
+// lead to is removing an empty folder above conflux's roots.
 func TestUninstallRemovesTheWayConfluxMade(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
@@ -72,20 +71,13 @@ func TestUninstallRemovesTheWayConfluxMade(t *testing.T) {
 			}
 
 			for _, p := range way {
-				_, err := os.Lstat(p)
-
-				switch {
-				case refused && err != nil:
-					t.Errorf("uninstall removed %s, recorded in a root the readers' check refuses: %v", p, err)
-				case !refused && !os.IsNotExist(err):
+				if _, err := os.Lstat(p); !os.IsNotExist(err) {
 					t.Errorf("uninstall left %s, which conflux made on the way to its root (Lstat: %v)", p, err)
-				case !refused && !strings.Contains(out, "  "+p+"\n"):
+				}
+
+				if !strings.Contains(out, "  "+p+"\n") {
 					t.Errorf("uninstall did not say it removed %s:\n%s", p, out)
 				}
-			}
-
-			if refused != strings.Contains(errOut, "the folders conflux made on the way to "+d.State+" were left") {
-				t.Errorf("uninstall of a root refused=%v said:\n%s", refused, errOut)
 			}
 
 			if _, err := os.Stat(above); err != nil {

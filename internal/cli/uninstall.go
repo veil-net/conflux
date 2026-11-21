@@ -55,7 +55,8 @@ func runUninstall(_ context.Context, args []string) int {
 	checked := d.Check()
 
 	// The folders conflux made on the way to the roots, recorded in the state root, which goes with
-	// the roots: read first, and only where that root passes the check (paths.Dirs.Way).
+	// the roots: read first, whatever the check says of that root (paths.Dirs.Way), since all the
+	// record can lead to is removing empty folders above the roots.
 	way, wayErr := d.Way()
 
 	// Its account goes with the installation's, and nothing may be running as it when it does:
@@ -155,8 +156,8 @@ func runUninstall(_ context.Context, args []string) int {
 		ui.Println()
 	}
 
-	// A record that could not be trusted leaves the folders it names, which are empty or hold what
-	// conflux did not make, and nothing else.
+	// A record that could not be read -- one that is a link, or behind a CONFLUX_DIR's way another
+	// account may change -- leaves the folders it names, which are empty, and nothing else.
 	if wayErr != nil {
 		ui.Errf("the folders conflux made on the way to %s were left, since the record of them was not read: %v",
 			d.State, wayErr)

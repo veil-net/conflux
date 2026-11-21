@@ -509,9 +509,10 @@ held to the rule the [readers' check](#a-root-another-account-could-change) hold
 walked, so a way another account could change cannot lead the removal elsewhere; the platform's
 own roots are on the system's way. No root is refused: one the readers' check refuses is removed
 the same way, with nothing in it read or signalled first — no identity shown in the question, no
-`anchord` stopped by its pid record — and the record of the folders made on the way to it is not
-read either, since whoever could change the root could have written it, so those folders are
-left, and `uninstall` says so. An ephemeral run's root inside a `CONFLUX_DIR` goes with it.
+`anchord` stopped by its pid record. The record of the folders made on the way to it is read all
+the same, as a file anybody may have put there, never through a link: all it can lead to is an
+empty folder above conflux's roots being removed. An ephemeral run's root inside a `CONFLUX_DIR`
+goes with it.
 
 While an [ephemeral run](ephemeral.md) is live it refuses, exit 2, before asking anything:
 the run's anchord may run as the account it would remove, so the run is stopped first,

@@ -345,13 +345,19 @@ func (d Dirs) recordWay(made []string) error {
 	return nil
 }
 
-// readWay is the record at path, a line a folder, at most wayMax bytes of it.
+// readWay is the record at path, a line a folder, at most wayMax bytes of it: opened as a file another
+// account may have put there is (OpenUntrusted), and refused unless it is a plain file (PlainFile).
 func readWay(path string) ([]string, error) {
-	f, err := os.Open(path)
+	f, err := os.OpenFile(path, OpenUntrusted, 0)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
+
+	if fi, err := f.Stat(); err != nil || !PlainFile(fi, wayMax) {
+		return nil, fmt.Errorf("%s is not a plain file of at most %d bytes, so it is not read as the record of "+
+			"the way conflux made", path, wayMax)
+	}
 
 	b, err := io.ReadAll(io.LimitReader(f, wayMax))
 	if err != nil {
@@ -366,20 +372,25 @@ const wayMax = 64 << 10
 
 // Way is the record of the folders conflux made on the way to d's roots (EnsureAll), deepest first,
 // for uninstall to read before it removes the roots, the state root holding the record among them,
-// and to hand to RemoveWay after. It is read only where d's state root passes the readers' check
-// (Check), since whoever could change the root could have written another, and only folders above one
-// of d's roots are taken from it: RemoveWay removes nothing anywhere else. Nil where there is no
-// record, or no state root, and for an ephemeral run's roots, which keep none.
+// and to hand to RemoveWay after. It is read whatever the readers' check says of the state root, so
+// that uninstall leaves nothing conflux made even there, since all it can lead to is removing: only
+// folders above one of d's roots are taken from it, and RemoveWay removes nothing anywhere else, only
+// a folder that is empty, and only through handles, never through a link. The record is read as a file
+// another account may have put there (readWay); and a CONFLUX_DIR's way is held to parents' rule first,
+// as RemoveRoot holds it, since a way another account may change could lead the read elsewhere. Nil
+// where there is no record, or no state root, and for an ephemeral run's roots, which keep none.
 func (d Dirs) Way() ([]string, error) {
 	if d.ephemeral {
 		return nil, nil
 	}
 
-	switch err := checkRoot(d.State); {
-	case errors.Is(err, fs.ErrNotExist):
-		return nil, nil
-	case err != nil:
-		return nil, err
+	if chosen(d.State) {
+		switch err := judgeWay(d.State, parentsRule(d.State)); {
+		case errors.Is(err, fs.ErrNotExist):
+			return nil, nil
+		case err != nil:
+			return nil, err
+		}
 	}
 
 	recorded, err := readWay(filepath.Join(d.State, wayName))

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/privcheck"
@@ -415,6 +416,42 @@ func TestUninstallAsksBeforeEmptyingAChosenFolder(t *testing.T) {
 	if _, err := os.Lstat(d.ConfigFile()); err != nil || mgr.removals > 0 {
 		t.Errorf("uninstall, unconfirmed, removed the boot service %d times, and %s (Lstat: %v)", mgr.removals,
 			d.ConfigFile(), err)
+	}
+}
+
+// TestUninstallSaysItRemovesTheCredentialInAChosenFolder: a CONFLUX_DIR holding an identity is a
+// folder whoever set the variable chose, with the one copy of this machine's credential in it, so
+// uninstall, off a terminal and without --yes, refuses, exit 2, saying it would remove everything in
+// that folder, the credential among it, of which there is no other copy, with nothing removed.
+func TestUninstallSaysItRemovesTheCredentialInAChosenFolder(t *testing.T) {
+	if ui.IsTerminal() {
+		t.Skip("this test's stdin is a terminal")
+	}
+
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	d := configured(t)
+
+	if err := config.SaveManifest(d, config.Envelope("bWFuaWZlc3Q=")); err != nil {
+		t.Fatal(err)
+	}
+
+	mgr := &removing{fakeManager: fakeManager{d: d}}
+	standInService(t, mgr)
+
+	want := "removes everything in " + paths.Root() + ", this machine's credential among it, and there is no other " +
+		"copy of that"
+
+	out, errOut, code := capture(t, "uninstall")
+	if code != ExitUsage || !strings.Contains(errOut, want) || !strings.Contains(errOut, "--yes") {
+		t.Errorf("uninstall of a CONFLUX_DIR holding an identity, off a terminal and without --yes, exited %d, want %d "+
+			"saying it %s and naming --yes:\n%s%s", code, ExitUsage, want, out, errOut)
+	}
+
+	if _, err := os.Lstat(d.ManifestFile()); err != nil || mgr.removals > 0 {
+		t.Errorf("uninstall, unconfirmed, removed the boot service %d times, and %s (Lstat: %v)", mgr.removals,
+			d.ManifestFile(), err)
 	}
 }
 

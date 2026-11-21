@@ -179,7 +179,7 @@ func runUninstall(_ context.Context, args []string) int {
 			break
 		}
 
-		gone, err := paths.RemoveRoot(dir)
+		gone, err := removeRoot(dir)
 		errs = append(errs, err)
 
 		if gone && err == nil {
@@ -239,6 +239,9 @@ var confirm = confirmUninstall
 
 // removeAccounts is removeAccount, which a test records.
 var removeAccounts = removeAccount
+
+// removeRoot is paths.RemoveRoot, which a test has fail with something at the root's name.
+var removeRoot = paths.RemoveRoot
 
 // ephemeralCandidates is paths.EphemeralCandidates, which a test points at roots outside the
 // installation's: under a CONFLUX_DIR every candidate is inside it.
@@ -329,7 +332,7 @@ func removeEphemeralRoot(root string) (bool, error) {
 		return errors.Is(err, fs.ErrNotExist), nil
 	}
 
-	gone, err := paths.RemoveRoot(root)
+	gone, err := removeRoot(root)
 
 	return gone && err == nil, err
 }

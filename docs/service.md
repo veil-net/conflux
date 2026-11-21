@@ -158,7 +158,7 @@ Two pairs that are easy to confuse, because both look like they turn something o
 | | Pair | What it touches |
 |---|---|---|
 | now | `conflux start` / `conflux down` | the running anchor. The registration and the configuration are untouched, so a reboot behaves the same either way. |
-| permanently | `conflux install` / `conflux uninstall` | the boot registration. `uninstall` also deletes the configuration and the identity. |
+| permanently | `conflux install` / `conflux uninstall` | the boot registration. `uninstall` also deletes the configuration, the identity and everything else conflux made ([commands.md](commands.md#conflux-uninstall)). |
 
 `down` then `start` is the restart. `install` starts a configured machine as well, but
 registration is its subject and starting is a side effect — `start` is the verb whose

@@ -119,9 +119,11 @@ pass-through to conflux's daemon read what is in a root by its name — the conf
 record, the token, the socket — so each holds the root to the
 [readers' check](security.md#the-file-and-the-directory-around-it) first: its owner root or the
 account running conflux, and nobody else able to write it or point it elsewhere. A root that fails
-is refused, exit 1, naming it and who else could change it, and nothing in it is read, run, stopped
-or removed: `uninstall` leaves the boot service registered and the root where it is, identity and
-all; `down` stops nothing; `update` downloads and replaces nothing. Nothing is narrowed either. That
+is refused, exit 1, naming it and who else could change it, and nothing in it is read, run or
+stopped: `down` stops nothing; `update` downloads and replaces nothing. `uninstall` reads and
+signals nothing in such a root either, and removes it all the same, following nothing in it
+([`conflux uninstall`](#conflux-uninstall)), but for a `CONFLUX_DIR`'s, whose way that check alone
+holds, which it refuses with nothing removed. Nothing is narrowed either. That
 is for `up`, `proxy`, `observe`, `install`, `enrol` and `start`, which make the roots, or make them
 conflux's: they narrow one of conflux's own and refuse one another account owns. A root that is not
 there is a machine with nothing installed, and read as one.
@@ -464,21 +466,47 @@ Needs root.
 
 ## `conflux uninstall`
 
-Removes the boot service, the configuration and the identity — and the account `anchord`
-ran as, and `conflux-ephemeral`, once nothing runs as either, when conflux made them; an
-account of either name that conflux did not make is left alone. Asks first, because there is
+Removes everything conflux made here, the identity included, and keeps nothing for a
+reinstall:
+
+- the boot service: the systemd unit and its `wants` link, the launchd plist (leaving nothing
+  in launchd's disabled database), the rc script and, on FreeBSD, its `rc.conf` line, or the
+  Windows service and its registry key; a `CONFLUX_DIR` installation's scoped one for that
+  installation;
+- every root and all it holds: the configuration (`conflux.json`), the credential
+  (`manifest.b64`), the state (`state.json`, the record of an anchor given up on among it,
+  `anchord.priv`, `anchord.json`), the anchor directories, the extracted anchor binaries and,
+  on Windows, `wintun.dll` beside them, the service's copy of conflux, the lock files, the run
+  directory's token, readiness marker, pid record and socket, and the log: the `logs`
+  directory on Windows and in a `CONFLUX_DIR`, `/var/log/conflux.log` and `conflux.log.1` on
+  macOS and FreeBSD, never `/var/log` itself;
+- every ephemeral run's root kept for the account running it, a killed run's once the anchord
+  it left is stopped;
+- what an update left beside this conflux: a download that never went in place, and the image
+  moved aside, `conflux.exe.old`;
+- the account `anchord` ran as, and `conflux-ephemeral`, once nothing runs as either, when
+  conflux made them (an account of either name that conflux did not make is left alone), with
+  the BPF devices given back to root on macOS first.
+
+The conflux you ran is yours, and stays. It says what it removed. Asks first, because there is
 no other copy of the credential anywhere; `--yes` skips the question, and a non-interactive
 run without `--yes` refuses rather than destroy an identity silently.
+
+Nothing in a root is followed. Each is removed through the directory holding it, a name at a
+time: a link or junction found anywhere in it, at the root's own name included, is removed as
+the link, and where it leads is never touched; a file another account planted there is removed
+as itself, never opened. A root the [readers' check](#a-root-another-account-could-change)
+refuses is removed the same way, with nothing in it read or signalled first: no identity shown
+in the question, and no anchord stopped by its pid record. A `CONFLUX_DIR` that fails that check
+is refused, exit 1, with nothing stopped or removed, since the check is what holds the way to
+it, which another account could otherwise point elsewhere.
 
 While an [ephemeral run](ephemeral.md) is live it refuses, exit 2, before asking anything:
 the run's anchord may run as the account it would remove, so the run is stopped first,
 with Ctrl-C where it runs. The root a killed run left behind — its extracted pair, token and
 socket — it removes, stopping the anchord the run left, under the root's lock, so a run
-starting at that moment keeps its own.
-
-A root another account could change it refuses, exit 1, before anything is stopped or removed:
-the boot service stays registered and the root where it is
-([above](#a-root-another-account-could-change)).
+starting at that moment keeps its own; one another account could have made or changed is
+removed reading and signalling nothing in it.
 
 ## `conflux status`
 

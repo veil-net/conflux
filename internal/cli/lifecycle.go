@@ -6,11 +6,9 @@ import (
 	"flag"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
-	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
@@ -342,126 +340,4 @@ func runDown(_ context.Context, args []string) int {
 		"  conflux uninstall  remove it permanently\n")
 
 	return ExitOK
-}
-
-// runUninstall is the reverse of install, and it destroys the identity.
-func runUninstall(_ context.Context, args []string) int {
-	fs := flag.NewFlagSet("uninstall", flag.ContinueOnError)
-	fs.SetOutput(ui.Errw)
-
-	yes := fs.Bool("yes", false, "do not ask for confirmation")
-
-	fs.Usage = func() {
-		ui.Printf("conflux uninstall — remove the boot service, the configuration and the identity\n\n" +
-			"  conflux uninstall [--yes]\n\n" +
-			"This deletes the credential, and there is no other copy of it anywhere.\n")
-	}
-
-	if err := fs.Parse(args); err != nil {
-		return ExitUsage
-	}
-
-	if err := needsRoot("removing the boot service", "uninstall", args); err != nil {
-		return fail(err)
-	}
-
-	d := paths.Default()
-
-	// Before anything is stopped, read or removed: what is in a root is read, signalled and
-	// removed by its name -- the manifest, the pid record anchord is stopped by, the lock, the
-	// roots themselves -- so they pass paths' check first, and one that fails leaves everything as
-	// it is. One not there has nothing in it to read or remove.
-	checked := d.Check()
-	if checked != nil && !errors.Is(checked, os.ErrNotExist) {
-		return fail(checked)
-	}
-
-	// Its account goes with the installation's, and nothing may be running as it when it does:
-	// the run ends itself, with its anchor, when it is stopped.
-	if e, live := liveEphemeral(); live {
-		ui.Errf("an ephemeral anchor is running from %s.\n"+
-			"  Stop it first (Ctrl-C where it runs): uninstall removes the account it runs as", e.State)
-
-		return ExitUsage
-	}
-
-	if checked == nil && !confirmUninstall(d, *yes) {
-		return ExitUsage
-	}
-
-	// Each step tolerates its own failure: a half-removed installation must always
-	// be finishable, so nothing stops at the first complaint. Remove stops the service
-	// on every platform before it deregisters it.
-	errs := []error{newService().Remove()}
-
-	// Whatever anchord a supervisor that died left running out of the state directory,
-	// once the service's own supervisor has let go of it.
-	if checked == nil {
-		daemon.Reap(d, 35*time.Second)
-	}
-
-	// And what an ephemeral run that was killed left: its anchord, where nothing ended it with
-	// the run (macOS and the BSDs), and its root -- the extracted pair and the token -- which
-	// nothing else removes. Under the root's lock, as a run's own clean-up is, so one starting
-	// now is not emptied out from under itself.
-	if _, e := ephemeralRuns(); e != nil {
-		errs = append(errs, removeEphemeralRoot(*e))
-	}
-
-	if checked == nil {
-		for _, dir := range []string{d.Run, d.State, d.Config} {
-			errs = append(errs, os.RemoveAll(dir))
-		}
-	}
-
-	// The account anchord ran as, once nothing runs as it, if conflux made it.
-	errs = append(errs, removeAccount())
-
-	if err := errors.Join(errs...); err != nil {
-		return fail(err)
-	}
-
-	ui.Printf("Removed. The boot service, the configuration and the identity are gone.\n" +
-		"conflux up here again draws a new identity and a new overlay address.\n")
-
-	return ExitOK
-}
-
-// removeEphemeralRoot stops whatever a killed ephemeral run left running from its root, and
-// removes the root, unless a run holds it by now.
-func removeEphemeralRoot(e paths.Dirs) error {
-	unlock, ok, err := flock.TryAcquire(e.ServeLockFile())
-	if err != nil || !ok {
-		return err
-	}
-
-	return daemon.RemoveEphemeral(e, unlock, nil)
-}
-
-// confirmUninstall makes the irreversible part explicit before it happens.
-func confirmUninstall(d paths.Dirs, yes bool) bool {
-	if yes || !config.HasManifest(d) {
-		return true
-	}
-
-	if !ui.IsTerminal() {
-		ui.Errf("this deletes the credential and there is no other copy.\n" +
-			"  Pass --yes to say so explicitly; a scripted uninstall will not destroy an identity by default.")
-
-		return false
-	}
-
-	ui.Printf("\nThis deletes this machine's credential, and there is no other copy.\n\n")
-
-	switch st, err := config.LoadState(d); {
-	case err != nil:
-		ui.Field("anchor", "unknown: "+err.Error())
-	case st.AnchorID != "":
-		ui.Field("anchor", st.AnchorID)
-	}
-
-	ui.Printf("\nThe identity and the overlay address are gone. conflux up afterwards draws\n" +
-		"new ones, and every machine that knew this one by its address will not find it.\n\n")
-
-	return ui.Confirm("Continue?")
 }

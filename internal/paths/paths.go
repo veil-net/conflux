@@ -497,9 +497,9 @@ func (d Dirs) RemakeOld() ([]string, error) {
 // below opened through the directory holding it and never by its name, a link or a junction in it
 // removed as itself, and what it leads to never touched. A link or a junction at dir's own name is
 // followed only where conflux would follow it (follow): its owner trusted, nobody else able to point
-// it elsewhere, and leading to a directory the readers' check would take; then what that directory
-// holds is removed through the handle held on it, and the link after, the directory itself left,
-// empty. One that fails is removed as itself, and where it leads is not touched. Nothing in a root at
+// it elsewhere, and leading to a directory owned as a root at the name itself would be; then what that
+// directory holds is removed through the handle held on it, and the link after, the directory itself
+// left, empty. One that fails is removed as itself, and where it leads is not touched. Nothing in a root at
 // dir's name itself is read or judged first, so a root the readers' check refuses is removed as safely
 // as one it takes. Where nothing is at dir's name, or on the way to it, nothing is removed.
 func RemoveRoot(dir string) (bool, error) {
@@ -596,7 +596,7 @@ func (d Dirs) JudgeWays() error {
 // OpenUntrusted opens a file, through that root held open first (holdRoot), and never by its name: the
 // way to the root walked from the top of its volume, a CONFLUX_DIR's held to parents' rule; the root's
 // own name looked up in the directory it is in, a link there followed only where conflux would follow
-// it in daily use, to a directory conflux's alone (follow); the root's owner root, SYSTEM, the
+// it in daily use (follow); the root's owner, or the owner of where that link leads, root, SYSTEM, the
 // Administrators or the account running conflux; and path's name looked up in the root and nowhere
 // else, never followed. A lookup by name of path would follow whatever is at each name on the way, the
 // root's own among them, before anything had judged it: to a directory another account controls, or,
@@ -720,9 +720,9 @@ func holdRoot(dir string) (*rootHold, error) {
 // follow (readLink) -- on Windows one that may lead off this machine, which nothing then follows --
 // or one another account may point elsewhere (heldLink); where it leads walked as walk resolves a
 // link, from the directory the link is in or the top of the volume it names, held to judge, the rule
-// dir's way is held to; and the directory it leads to held to the readers' check (ledRoot): its owner,
-// and nobody else may write it. A link to nothing, or to the directory it is in or one above it, is
-// refused too. s is let go of either way.
+// dir's way is held to; and the directory it leads to held to the owner a root at the name itself is
+// held to (ledRoot): root, SYSTEM, the Administrators or the account running conflux. A link to nothing,
+// or to the directory it is in or one above it, is refused too. s is let go of either way.
 func (r *rootHold) follow(dir string, s step, judge judgement) error {
 	target, err := readLink(s)
 	if err != nil {

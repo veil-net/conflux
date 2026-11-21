@@ -514,7 +514,7 @@ it is removed as the link, and where it leads is never touched; a file another a
 there is removed as itself, never read. A root whose own name is a link or junction — one moved to
 another disk — is followed only where conflux would follow it every day: owned by root (SYSTEM or the
 Administrators on Windows) or the account running conflux, nobody else able to point it elsewhere,
-and leading to a directory the readers' check would take. Then what that directory holds is removed
+and leading to a directory one of those owns. Then what that directory holds is removed
 through the handle held on it, and the link after, the directory itself left empty; a link that
 fails is removed as itself, and where it leads is not touched. A `CONFLUX_DIR`'s way is
 held to the rule the [readers' check](#a-root-another-account-could-change) holds it to as it is

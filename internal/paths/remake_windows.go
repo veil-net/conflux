@@ -132,7 +132,7 @@ func keptLog(name string) string { return ".conflux-kept-" + name }
 // the folder. Each is opened through a handle on the folder, looked up there and nowhere else and
 // never followed, judged as contents judges it for SYSTEM, and renamed through its own handle (moveIn);
 // one that fails, or is a junction or a link, goes with the folder, as does one whose kept name is
-// taken already. A folder that is a junction or a link is no log folder, and RemakeOld does not remove
+// taken already, by a log an earlier RemakeOld kept that no EnsureAll has moved back yet. A folder that is a junction or a link is no log folder, and RemakeOld does not remove
 // it either.
 func (d Dirs) keepLog(root windows.Handle, name, p string, anchord *windows.SID) error {
 	logs, err := ntOpen(root, name, nil, windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES, windows.FILE_OPEN,

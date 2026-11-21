@@ -1319,31 +1319,13 @@ func heldLinkRule(dir string, s step) error {
 }
 
 // ledRoot refuses the folder the junction or link at the root dir's name leads to, which s holds open
-// and p names, where it is not one conflux would use, as the readers' check judges a root (checkRoot):
-// its owner not SYSTEM, the Administrators or the account running conflux, or its DACL granting
-// another account any right, on itself or on what is made in it.
+// and p names, where its owner is not SYSTEM, the Administrators or the account running conflux
+// (ownerRefusal), as read through s: the owner a root at the name itself is held to (rootOwner). A
+// folder of conflux's own whose DACL grants more than conflux leaves is secure's to restrict, judging
+// what it holds as found, as a root at the name itself is.
 func ledRoot(dir, p string, s step) error {
-	sd, err := security(s.h)
-	if err != nil {
-		return fmt.Errorf("read the ownership of %s: %w", p, err)
-	}
-
-	owner, _, err := sd.Owner()
-	if err != nil {
-		return fmt.Errorf("read the owner of %s: %w", p, err)
-	}
-
-	if err := ownerRefusal(p, owner); err != nil {
+	if err := rootOwner(p, s); err != nil {
 		return fmt.Errorf("%s is a junction or a link to a folder conflux will not use: %w", dir, err)
-	}
-
-	switch who, _, err := changerIn(p, currentUser(), sd, anyRight, "use it or what is made in it", nil, true); {
-	case err != nil:
-		return err
-	case who != "":
-		return fmt.Errorf("%s is a junction or a link to %s, which %s could read what conflux keeps there, or put "+
-			"what they like there for conflux to read, run or remove, so conflux will not follow it.\n  Point it at "+
-			"a folder only SYSTEM and the Administrators may use, then run this again as Administrator", dir, p, who)
 	}
 
 	return nil

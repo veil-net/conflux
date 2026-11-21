@@ -74,9 +74,10 @@ func TestHeldRefusesWhatIsNotALockFile(t *testing.T) {
 
 // TestHeldInAsksThroughTheRootHeld: the serve lock tidy asks after before anything has judged the root
 // is opened through the root held (paths' OpenIn): held while somebody holds it and free once they let
-// go, where the root is this account's; nobody's where the root, or the lock, is not there; and, where
-// the root's name is a link to a directory every account may write, holding a lock somebody holds,
-// refused, naming the link, where Held by the lock's name answers that somebody holds it.
+// go, where the root is this account's; nobody's where the root, or the lock, is not there; held through
+// a link at the root's name to a directory of this account's own, holding a lock somebody holds, though
+// every account may write that directory, which EnsureAll would narrow; and refused, naming the link,
+// where the link leads nowhere, rather than taken for no lock.
 func TestHeldInAsksThroughTheRootHeld(t *testing.T) {
 	base, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -136,12 +137,20 @@ func TestHeldInAsksThroughTheRootHeld(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if held, err := Held(lock); !held || err != nil {
-		t.Fatalf("Held(%s), by its name through the link = %v, %v, want the lock there held", lock, held, err)
+	if held, err := HeldIn(d, lock); !held || err != nil {
+		t.Errorf("HeldIn, the root a link to a directory of this account's own holding a held lock = %v, %v, want "+
+			"it held", held, err)
 	}
 
-	if held, err := HeldIn(d, lock); err == nil || !strings.Contains(err.Error(), root+" is a link to "+open) {
-		t.Errorf("HeldIn, the root a link to a directory every account may write = %v, %v, want a refusal naming "+
-			"the link", held, err)
+	if err := os.Remove(root); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Symlink(filepath.Join(base, "nowhere"), root); err != nil {
+		t.Fatal(err)
+	}
+
+	if held, err := HeldIn(d, lock); err == nil || !strings.Contains(err.Error(), root+" is a link to ") {
+		t.Errorf("HeldIn, the root a link to nothing = %v, %v, want a refusal naming the link", held, err)
 	}
 }

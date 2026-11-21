@@ -819,26 +819,13 @@ func heldLinkRule(dir string, s step) error {
 }
 
 // ledRoot refuses the directory the link at the root dir's name leads to, which s holds and p names,
-// where it is not one conflux would use, as the readers' check judges a root (checkRootAs): owned by an
-// account other than root and the one running conflux, or one its mode or ACL lets another account
-// write, the sticky bit letting nothing through. Its ACL is read at p, which leads through no link, and
-// through directories the walk to it held.
+// where an account other than root and the one running conflux owns it (notReaders), as fstat read it
+// where the walk met it: the owner a root at the name itself is held to (rootOwner). A directory of
+// conflux's own left wider than conflux leaves one is EnsureAll's to narrow, judging what it holds as
+// found, as a root at the name itself is.
 func ledRoot(dir, p string, s step) error {
-	euid := os.Geteuid()
-
-	if err := notReaders(p, s.st.Uid, euid); err != nil {
+	if err := notReaders(p, s.st.Uid, os.Geteuid()); err != nil {
 		return fmt.Errorf("%s is a link to a directory conflux will not use: %w", dir, err)
-	}
-
-	acl, aclGroup, err := aclOf(p, -1)
-	if err != nil {
-		return err
-	}
-
-	if who := judge(os.FileMode(s.st.Mode&0o777), s.st.Gid, acl, aclGroup, euid); who != "" {
-		return fmt.Errorf("%s is a link to %s, which %s could put what it likes in for conflux to read, run or "+
-			"remove, so conflux will not follow it.\n  Point it at a directory only root and uid %d can write, then "+
-			"run this again", dir, p, who, euid)
 	}
 
 	return nil

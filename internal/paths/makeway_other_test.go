@@ -702,6 +702,44 @@ func TestMakeRootGoesIntoNoNameTakenMeanwhile(t *testing.T) {
 	}
 }
 
+// TestMakeRootGoesIntoNoLinkMadeOnceItIsMade: the root, once made, is looked up again in the folder it
+// is in to be held, where nothing is followed: a link put at its name in the moment since is refused,
+// naming it, and nothing is made where it leads.
+func TestMakeRootGoesIntoNoLinkMadeOnceItIsMade(t *testing.T) {
+	was := looking
+	t.Cleanup(func() { looking = was })
+
+	t.Setenv("CONFLUX_DIR", t.TempDir())
+
+	root := Default().State
+	elsewhere := t.TempDir()
+
+	n := 0
+	looking = func(p string) {
+		if p != root {
+			return
+		}
+
+		if n++; n == 2 {
+			if err := os.Remove(p); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := os.Symlink(elsewhere, p); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), root+", a link, was made") {
+		t.Errorf("EnsureAll, with a link put at the root's name once it was made, = %v, want a refusal naming it", err)
+	}
+
+	if entries, err := os.ReadDir(elsewhere); err != nil || len(entries) > 0 {
+		t.Errorf("EnsureAll made %v where the link leads (%v)", entries, err)
+	}
+}
+
 // lmode is what Lstat says of p's type and permissions.
 func lmode(t *testing.T, p string) os.FileMode {
 	t.Helper()

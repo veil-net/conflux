@@ -345,7 +345,8 @@ func (d Dirs) makeRoot(dir string) ([]string, error) {
 // or may write -- is removed as itself through parent (removeFrom), a link never followed, whatever it
 // holds, and the folder made afresh in its place (makeStep); one that cannot be is refused, saying why it
 // is not conflux's. Where nothing is there it is made where create is, and is otherwise an error that is
-// fs.ErrNotExist.
+// fs.ErrNotExist. A folder made, where makeStep holds nothing of it, is looked up again to be held, and a
+// link put at its name meanwhile is refused, never followed, as makeWay refuses one.
 func ownFolder(parent step, p string, installation, create bool) (step, error) {
 	name := filepath.Base(p)
 
@@ -395,8 +396,16 @@ func ownFolder(parent step, p string, installation, create bool) (step, error) {
 		return s, nil
 	}
 
-	if s, _, err = lookUp(parent, name); err != nil {
+	looking(p)
+
+	switch s, link, err = lookUp(parent, name); {
+	case err != nil:
 		return step{}, &os.PathError{Op: "open", Path: p, Err: err}
+	case link:
+		s.close()
+
+		return step{}, fmt.Errorf("%s, %s, was made while conflux made it, which conflux will not follow.\n"+
+			"  Remove it, then run this again", p, aLink)
 	}
 
 	return s, nil

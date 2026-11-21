@@ -492,7 +492,8 @@ func ours(dir string, s step, installation bool) (string, error) {
 // only an elevated conflux makes or can open. Never the account running conflux by its own SID: what
 // that account owns, or is granted, its processes that are not elevated may change -- a root
 // %ProgramData% let them make first, with a held lock, a readiness marker and an anchorctl of their own
-// in it -- for an elevated conflux to read and run.
+// in it -- for an elevated conflux to read and run. A CONFLUX_DIR's way, which that account chose, is
+// judged for it (parentsRule).
 func judgedFor(installation bool) *windows.SID {
 	if installation {
 		return sidSystem
@@ -653,7 +654,10 @@ const creates = windows.FILE_WRITE_DATA | windows.FILE_APPEND_DATA
 // sidTrustedInstaller is NT SERVICE\TrustedInstaller, which owns much of the system drive.
 var sidTrustedInstaller, _ = windows.StringToSid("S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464")
 
-// parentsRule is parents' rule for dir, for the account running conflux (parentsRuleFor).
+// parentsRule is parents' rule for dir, for the account running conflux (parentsRuleFor): what an ephemeral
+// run's way, and a reader's, is held to. A CONFLUX_DIR is that account's own choice, judged against other
+// accounts, and an administrator's processes that are not elevated are the same account, which chose it;
+// what conflux picks itself is judged for SYSTEM or the Administrators instead (judgedFor).
 func parentsRule(dir string) judgement { return parentsRuleFor(dir, currentUser()) }
 
 // serviceRule is parents' rule for dir as the boot service holds it at every start: for SYSTEM,

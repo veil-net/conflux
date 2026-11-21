@@ -144,8 +144,13 @@ what is in it, to delete or rename it, or to change its DACL or owner — the ri
 in it, which `C:\` gives every user, is not one of them — and a junction or a link on it to who may
 point it elsewhere. For an installation that is judged for SYSTEM, as the boot service judges it at
 every start, so a `CONFLUX_DIR` inside the profile of the administrator running conflux, which grants
-them full control, is refused by the commands that make an installation's root, naming the folder;
-an ephemeral run's is judged for the account running it.
+them full control, is refused by the commands that make an installation's root, naming the folder.
+An ephemeral run's way, and the way every command that reads a root holds it to, is judged for the
+account running conflux: a `CONFLUX_DIR` is that account's own choice, judged against other
+accounts, and the administrator's processes that are not elevated are the same account. What
+conflux picks itself — the platform's roots, an ephemeral run's root, an elevated reader's temporary
+copy of anchorctl — is judged for SYSTEM or the Administrators, never that account by its SID, so
+those processes cannot have made or changed it.
 
 Every command that reads a root without making it holds it to the same judgement first, the readers'
 check: a root that fails is refused, naming it and why, and nothing in it is read or run; one this

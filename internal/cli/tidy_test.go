@@ -21,19 +21,31 @@ import (
 	"github.com/veil-net/conflux/internal/service"
 )
 
-// oldInstall is a CONFLUX_DIR installation as earlier conflux left it, for an update to find: the
-// configuration, the identity and the state, which it keeps, and what it does not -- a set an
-// earlier conflux extracted, a staging directory a crashed extraction left, this build's own set
-// planted by somebody, its binaries padded to their sizes, stale lock files, an older copy for the
-// service with the image Windows moved aside and a copy that never went in place, an atomic write
-// that never went in place, the run directory's token, marker, pid record and socket directory, a
-// killed ephemeral run's root, and beside the conflux the update replaced what an update leaves there
-// (updatedConflux). It returns what is kept, by path, and of what is beside the conflux the update
-// replaced, what conflux removes and what it keeps.
-func oldInstall(t *testing.T) (d paths.Dirs, kept map[string][]byte, leftovers, besideKept []string) {
+// earlier is an installation as earlier conflux left it (oldInstall).
+type earlier struct {
+	d paths.Dirs
+
+	// kept is what an update keeps, by path: the configuration, the identity and the state.
+	kept map[string][]byte
+
+	// exe is the conflux an update replaced, and leftovers and besideKept what is beside it, which
+	// conflux removes as what an update left, and keeps (updatedConflux).
+	exe                   string
+	leftovers, besideKept []string
+}
+
+// oldInstall is a CONFLUX_DIR installation as earlier conflux left it, for an update or an uninstall
+// to find: the configuration, the identity and the state with a given-up record in it, and what an
+// update does not keep -- a set an earlier conflux extracted, a staging directory a crashed extraction
+// left, this build's own set planted by somebody, its binaries padded to their sizes, stale lock
+// files, an older copy for the service with the image Windows moved aside and a copy that never went
+// in place, an atomic write that never went in place, the run directory's token, marker, pid record
+// and socket directory, a killed ephemeral run's root, and beside the conflux the update replaced
+// what an update leaves there (updatedConflux).
+func oldInstall(t *testing.T) earlier {
 	t.Helper()
 
-	d = pathstest.Dirs(t)
+	d := pathstest.Dirs(t)
 
 	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Proxies: []string{"8080=127.0.0.1:3000"},
 		Taints: []string{"cfx-old"}}); err != nil {
@@ -44,12 +56,14 @@ func oldInstall(t *testing.T) (d paths.Dirs, kept map[string][]byte, leftovers, 
 		t.Fatal(err)
 	}
 
-	if err := config.SaveState(d, &config.State{AnchorID: "anchorold", IssuedAt: time.Now().Add(-time.Hour)}); err != nil {
+	if err := config.SaveState(d, &config.State{AnchorID: "anchorold", IssuedAt: time.Now().Add(-time.Hour),
+		AnchorRefused: "refused for good", AnchorRefusedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 
 	set := filepath.Join(d.Libexec(), anchor.SetID())
-	_, leftovers, besideKept = updatedConflux(t)
+	old := earlier{d: d, kept: map[string][]byte{}}
+	old.exe, old.leftovers, old.besideKept = updatedConflux(t)
 
 	for p, body := range map[string][]byte{
 		filepath.Join(d.Libexec(), "0123456789abcdef", binName("anchord")): []byte("an earlier set"),
@@ -78,18 +92,11 @@ func oldInstall(t *testing.T) (d paths.Dirs, kept map[string][]byte, leftovers, 
 		}
 	}
 
-	kept = map[string][]byte{}
-
 	for _, p := range []string{d.ConfigFile(), d.ManifestFile(), d.StateFile()} {
-		b, err := os.ReadFile(p)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		kept[p] = b
+		old.kept[p] = mustRead(t, p)
 	}
 
-	return d, kept, leftovers, besideKept
+	return old
 }
 
 // TestUpdateLeavesOnlyWhatThisConfluxMakes: update hands the service to the conflux it put in place
@@ -109,7 +116,8 @@ func TestUpdateLeavesOnlyWhatThisConfluxMakes(t *testing.T) {
 
 	for _, verb := range []string{"register", "start"} {
 		t.Run(verb, func(t *testing.T) {
-			d, kept, leftovers, besideKept := oldInstall(t)
+			old := oldInstall(t)
+			d := old.d
 
 			mgr := &fakeManager{d: d, restartErr: errStartsNothing}
 			standInService(t, mgr)
@@ -153,7 +161,7 @@ func TestUpdateLeavesOnlyWhatThisConfluxMakes(t *testing.T) {
 			}
 
 			gone := append([]string{d.ServiceExecutable() + ".old", filepath.Join(d.State, ".conflux-123"),
-				filepath.Join(d.State, ".tmp-123"), paths.EphemeralCandidates()[0]}, leftovers...)
+				filepath.Join(d.State, ".tmp-123"), paths.EphemeralCandidates()[0]}, old.leftovers...)
 
 			for _, p := range gone {
 				if _, err := os.Lstat(p); !os.IsNotExist(err) {
@@ -165,13 +173,13 @@ func TestUpdateLeavesOnlyWhatThisConfluxMakes(t *testing.T) {
 				t.Errorf("%s holds %q, which the supervisors before this conflux left", d.Run, got)
 			}
 
-			for p, was := range kept {
+			for p, was := range old.kept {
 				if b, err := os.ReadFile(p); err != nil || !bytes.Equal(b, was) {
 					t.Errorf("%s changed: %q, %v", p, b, err)
 				}
 			}
 
-			for _, p := range besideKept {
+			for _, p := range old.besideKept {
 				if _, err := os.Lstat(p); err != nil {
 					t.Errorf("conflux %s removed %s, which no update of it left there: %v", verb, p, err)
 				}
@@ -192,7 +200,8 @@ func TestAStartOfTheConfluxTheServiceRunsRemovesNothing(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
 
-	d, _, leftovers, besideKept := oldInstall(t)
+	old := oldInstall(t)
+	d := old.d
 
 	if _, err := service.Place(d); err != nil {
 		t.Fatal(err)
@@ -206,7 +215,7 @@ func TestAStartOfTheConfluxTheServiceRunsRemovesNothing(t *testing.T) {
 	}
 
 	for _, p := range append(append([]string{filepath.Join(d.Libexec(), "0123456789abcdef"), d.LockFile()},
-		leftovers...), besideKept...) {
+		old.leftovers...), old.besideKept...) {
 		if _, err := os.Lstat(p); err != nil {
 			t.Errorf("a start of the conflux the service runs removed %s: %v", p, err)
 		}

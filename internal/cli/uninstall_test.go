@@ -6,60 +6,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
-	"github.com/veil-net/conflux/internal/pathstest"
 	"github.com/veil-net/conflux/internal/privcheck"
 )
-
-// installedScratch is a CONFLUX_DIR installation in a fresh directory, holding what one does once it
-// has run: the configuration, the identity, the state with a given-up record in it, an extracted set
-// and the service's copy of conflux, the lock files, the run directory's token, readiness marker and
-// pid record, and an ephemeral run's root that a killed run left.
-func installedScratch(t *testing.T) paths.Dirs {
-	t.Helper()
-
-	d := pathstest.Dirs(t)
-
-	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Proxies: []string{"8080=127.0.0.1:3000"},
-		Taints: []string{"cfx-scratch"}}); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := config.SaveManifest(d, config.Envelope("bWFuaWZlc3Q=")); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := config.SaveState(d, &config.State{AnchorID: "anchorscratch", AnchorRefused: "refused for good",
-		AnchorRefusedAt: time.Now()}); err != nil {
-		t.Fatal(err)
-	}
-
-	for p, body := range map[string]string{
-		filepath.Join(d.Libexec(), "0123456789abcdef", "anchord"): "an old set",
-		filepath.Join(d.Libexec(), ".lock"):                       "",
-		d.ServiceExecutable():                                     "the service's copy",
-		d.LockFile():                                              "",
-		d.ServeLockFile():                                         "",
-		d.TokenFile():                                             "token",
-		d.ReadyFile():                                             "ready",
-		d.DaemonPIDFile():                                         "2147483646\n/nonexistent/anchord\n",
-		filepath.Join(paths.EphemeralCandidates()[0], "serve.lock"): "",
-	} {
-		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
-			t.Fatal(err)
-		}
-
-		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	return d
-}
 
 // TestUninstallLeavesNothingConfluxMade: uninstall removes everything conflux made, the identity,
 // configuration and state included, and keeps nothing for a reinstall; and it removes what it finds
@@ -73,7 +24,8 @@ func TestUninstallLeavesNothingConfluxMade(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
 
-	d := installedScratch(t)
+	old := oldInstall(t)
+	d := old.d
 
 	outside := t.TempDir()
 
@@ -85,9 +37,6 @@ func TestUninstallLeavesNothingConfluxMade(t *testing.T) {
 	plantLink(t, filepath.Join(d.State, "planted-link"), outside)
 	plantLink(t, filepath.Join(d.Libexec(), "0123456789abcdef", "planted-link"), outside)
 	plantForeign(t, filepath.Join(d.State, "planted-foreign"))
-
-	// The conflux an update replaced, with what that update left beside it.
-	exe, leftovers, besideKept := updatedConflux(t)
 
 	mgr := &fakeManager{d: d}
 	standInService(t, mgr)
@@ -113,19 +62,19 @@ func TestUninstallLeavesNothingConfluxMade(t *testing.T) {
 		t.Errorf("the directory a planted link led to lost what is in it: %q, %v", b, err)
 	}
 
-	for _, p := range leftovers {
+	for _, p := range old.leftovers {
 		if _, err := os.Lstat(p); !os.IsNotExist(err) {
 			t.Errorf("uninstall left %s, which an update left beside the conflux it replaced (Lstat: %v)", p, err)
 		}
 	}
 
-	for _, p := range append(besideKept, exe) {
+	for _, p := range append(old.besideKept, old.exe) {
 		if _, err := os.Lstat(p); err != nil {
 			t.Errorf("uninstall removed %s, beside the conflux it was run as, which no update of it left: %v", p, err)
 		}
 	}
 
-	for _, p := range append(leftovers, d.State) {
+	for _, p := range append(old.leftovers, d.State) {
 		if !strings.Contains(out, "  "+p+"\n") {
 			t.Errorf("uninstall did not say it removed %s:\n%s", p, out)
 		}
@@ -160,7 +109,7 @@ func TestUninstallLeavesALiveRun(t *testing.T) {
 	privcheck.Elevated = func() bool { return true }
 
 	t.Run("live as uninstall begins", func(t *testing.T) {
-		d := installedScratch(t)
+		d := oldInstall(t).d
 		e := paths.EphemeralDirs(paths.EphemeralCandidates()[0])
 		t.Cleanup(holdRoot(t, e))
 
@@ -180,7 +129,7 @@ func TestUninstallLeavesALiveRun(t *testing.T) {
 	})
 
 	t.Run("started since", func(t *testing.T) {
-		d := installedScratch(t)
+		d := oldInstall(t).d
 		e := paths.EphemeralDirs(paths.EphemeralCandidates()[0])
 
 		mgr := &removing{fakeManager: fakeManager{d: d}, then: func() { t.Cleanup(holdRoot(t, e)) }}

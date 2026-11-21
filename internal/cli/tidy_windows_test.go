@@ -80,8 +80,9 @@ func olderRoot(t *testing.T) (d paths.Dirs, old []string, plant map[string][]byt
 // service's copy -- before anything judges the root, and makes each afresh: what is there once it is
 // done is the Administrators', the plant is gone and this build's pair is in its place, and the lock
 // files, which nothing holds, are gone for whatever next takes them to make again. It says what it
-// removed. That the service's judgement then takes the root is paths' client test's
-// (TestAnUpdatedOlderRootIsOneTheServiceTakes). Windows-only, so it runs in CI's platforms job alone.
+// removed. And the service then takes the root: an elevated EnsureAll judges an installation's root,
+// its way and what it holds by the rule of the SYSTEM service, which runs from it, so the root passes
+// it once the update is done. Windows-only, so it runs in CI's platforms job alone.
 func TestUpdateRemakesWhatAnOlderConfluxLeft(t *testing.T) {
 	anchortest.Require(t)
 
@@ -123,6 +124,10 @@ func TestUpdateRemakesWhatAnOlderConfluxLeft(t *testing.T) {
 				if !strings.Contains(out, "  "+p+"\n") {
 					t.Errorf("conflux %s did not say it removed %s:\n%s", verb, p, out)
 				}
+			}
+
+			if err := d.EnsureAll(); err != nil {
+				t.Errorf("the root conflux %s made afresh is not one the service takes: %v", verb, err)
 			}
 		})
 	}

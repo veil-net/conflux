@@ -11,7 +11,6 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
 	"golang.org/x/sys/windows"
 )
@@ -473,7 +472,7 @@ func ownFile(*os.File, Privilege) error { return nil }
 // writeDaemonFile writes anchord's -config: SYSTEM's and Administrators', and readable by
 // the service SID when anchord runs as its account.
 func writeDaemonFile(path string, data []byte, p Privilege) error {
-	if err := config.WriteFileAtomic(path, data, 0o600); err != nil {
+	if err := paths.WriteAtomic(path, 0o600, -1, -1, data); err != nil {
 		return err
 	}
 

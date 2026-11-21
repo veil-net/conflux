@@ -9,7 +9,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/privcheck"
 )
@@ -58,7 +57,7 @@ func (s systemd) Install(exe string, args ...string) error {
 	}
 
 	// Readable by all, as systemd expects a unit to be; written whole or not at all.
-	if err := config.WriteFileAtomic(unitPath(), unit, 0o644); err != nil {
+	if err := paths.WriteAtomic(unitPath(), 0o644, -1, -1, unit); err != nil {
 		return err
 	}
 

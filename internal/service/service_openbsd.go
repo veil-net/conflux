@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/privcheck"
 )
 
@@ -26,7 +26,7 @@ func (openbsd) Install(exe string, args ...string) error {
 
 	// The mode base's own rc.d scripts have, whatever was there before; written whole or
 	// not at all.
-	if err := config.WriteFileAtomic(scriptPath(), []byte(script), 0o555); err != nil {
+	if err := paths.WriteAtomic(scriptPath(), 0o555, -1, -1, []byte(script)); err != nil {
 		return err
 	}
 

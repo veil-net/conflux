@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/veil-net/conflux/internal/account"
-	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/paths"
 )
 
 // dropState is what the platform keeps between starts: the grants anchord -h has run under.
@@ -352,5 +352,5 @@ func (s *Supervisor) releaseDrop() {}
 func writeDaemonFile(path string, data []byte, p Privilege) error {
 	uid, gid := owner(p)
 
-	return config.WriteFileAtomicAs(path, data, 0o600, uid, gid)
+	return paths.WriteAtomic(path, 0o600, uid, gid, data)
 }

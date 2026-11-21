@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
 )
 
@@ -29,7 +28,7 @@ import (
 func MarkReady(d paths.Dirs, anchorID string) error {
 	line := time.Now().UTC().Format(time.RFC3339Nano) + " " + anchorID + " " + strconv.Itoa(os.Getpid()) + "\n"
 
-	return config.WriteFileAtomic(d.ReadyFile(), []byte(line), 0o600)
+	return paths.WriteAtomic(d.ReadyFile(), 0o600, -1, -1, []byte(line))
 }
 
 // ClearReady withdraws it. A marker that is already gone is success, which is what every

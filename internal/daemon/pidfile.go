@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
 )
@@ -33,7 +32,7 @@ var exeOf = processExe
 
 // recordDaemon writes down the anchord just started: its pid, and the executable it runs.
 func recordDaemon(d paths.Dirs, pid int, exe string) error {
-	return config.WriteFileAtomic(d.DaemonPIDFile(), []byte(strconv.Itoa(pid)+"\n"+exe+"\n"), 0o600)
+	return paths.WriteAtomic(d.DaemonPIDFile(), 0o600, -1, -1, []byte(strconv.Itoa(pid)+"\n"+exe+"\n"))
 }
 
 // forgetDaemon removes the record, once the anchord it names has been waited for.

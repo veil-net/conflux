@@ -1,4 +1,4 @@
-package config
+package paths
 
 import (
 	"os"
@@ -7,10 +7,10 @@ import (
 	"testing"
 )
 
-// TestWriteFileAtomicNarrowsAnExistingFile is the case a plain os.WriteFile gets
+// TestWriteAtomicNarrowsAnExistingFile is the case a plain os.WriteFile gets
 // wrong: it keeps the mode of a file that already exists, so a manifest that was
 // once 0644 stays world-readable forever.
-func TestWriteFileAtomicNarrowsAnExistingFile(t *testing.T) {
+func TestWriteAtomicNarrowsAnExistingFile(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("mode bits are not meaningful on windows; the DACL is")
 	}
@@ -21,8 +21,8 @@ func TestWriteFileAtomicNarrowsAnExistingFile(t *testing.T) {
 		t.Fatalf("seed the file: %v", err)
 	}
 
-	if err := WriteFileAtomic(path, []byte("new"), 0o600); err != nil {
-		t.Fatalf("WriteFileAtomic: %v", err)
+	if err := WriteAtomic(path, 0o600, -1, -1, []byte("new")); err != nil {
+		t.Fatalf("WriteAtomic: %v", err)
 	}
 
 	fi, err := os.Stat(path)
@@ -44,15 +44,15 @@ func TestWriteFileAtomicNarrowsAnExistingFile(t *testing.T) {
 	}
 }
 
-// TestWriteFileAtomicLeavesNoTempFiles guards against the rename path leaking a
+// TestWriteAtomicLeavesNoTempFiles guards against the rename path leaking a
 // .tmp-* sibling on every write, which over a year of renewals would be thousands.
-func TestWriteFileAtomicLeavesNoTempFiles(t *testing.T) {
+func TestWriteAtomicLeavesNoTempFiles(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "conflux.json")
 
 	for range 3 {
-		if err := WriteFileAtomic(path, []byte("{}"), 0o600); err != nil {
-			t.Fatalf("WriteFileAtomic: %v", err)
+		if err := WriteAtomic(path, 0o600, -1, -1, []byte("{}")); err != nil {
+			t.Fatalf("WriteAtomic: %v", err)
 		}
 	}
 
@@ -71,21 +71,21 @@ func TestWriteFileAtomicLeavesNoTempFiles(t *testing.T) {
 	}
 }
 
-// TestWriteFileAtomicPreservesOnFailure asserts the promise the whole function
+// TestWriteAtomicPreservesOnFailure asserts the promise the whole function
 // exists for: a failed write leaves the previous content, never a truncated file.
-func TestWriteFileAtomicPreservesOnFailure(t *testing.T) {
+func TestWriteAtomicPreservesOnFailure(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "conflux.json")
 
-	if err := WriteFileAtomic(path, []byte("good"), 0o600); err != nil {
+	if err := WriteAtomic(path, 0o600, -1, -1, []byte("good")); err != nil {
 		t.Fatalf("first write: %v", err)
 	}
 
 	// A directory that cannot be written to is the reachable way to fail between
 	// "the old file exists" and "the new one is in place".
 	if runtime.GOOS != "windows" && unwritable(t, dir) {
-		if err := WriteFileAtomic(path, []byte("bad"), 0o600); err == nil {
-			t.Fatal("WriteFileAtomic succeeded into a read-only directory")
+		if err := WriteAtomic(path, 0o600, -1, -1, []byte("bad")); err == nil {
+			t.Fatal("WriteAtomic succeeded into a read-only directory")
 		}
 	}
 

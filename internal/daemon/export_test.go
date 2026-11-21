@@ -135,7 +135,7 @@ func TestTheConfigSurvivesARestart(t *testing.T) {
 // authenticate this machine to a collector. anchord warns about exactly this.
 //
 // The protection is real on both platforms and only one of them can be asserted
-// this way. writeDaemonConfig goes through config.WriteFileAtomic, which chmods
+// this way. writeDaemonConfig goes through paths.WriteAtomic, which chmods
 // the descriptor before the content and -- for any perm with no group or other
 // bits -- replaces the DACL with SYSTEM and Administrators on Windows, because a
 // Chmod(0600) there moves the read-only bit and nothing else. So the file is

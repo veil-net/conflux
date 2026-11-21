@@ -389,7 +389,7 @@ func recordPrivilege(d paths.Dirs, p Privilege) error {
 		return err
 	}
 
-	return config.WriteFileAtomic(d.PrivilegeFile(), append(b, '\n'), 0o600)
+	return paths.WriteAtomic(d.PrivilegeFile(), 0o600, -1, -1, append(b, '\n'))
 }
 
 // RecordedPrivilege is what the last anchord this root started was given, or false when

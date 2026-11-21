@@ -116,7 +116,7 @@ func SaveState(d paths.Dirs, s *State) error {
 		return fmt.Errorf("encode state: %w", err)
 	}
 
-	return WriteFileAtomic(d.StateFile(), append(b, '\n'), 0o600)
+	return paths.WriteAtomic(d.StateFile(), 0o600, -1, -1, append(b, '\n'))
 }
 
 // AnchorGivenUp records that the supervisor gave up on the anchor, refused for good with

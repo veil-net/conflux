@@ -905,7 +905,7 @@ func (s *Supervisor) freshToken() (string, error) {
 	token := hex.EncodeToString(b)
 
 	// No trailing newline: the file is read by conflux as well as by anchord.
-	if err := config.WriteFileAtomic(s.Dirs.TokenFile(), []byte(token), 0o600); err != nil {
+	if err := paths.WriteAtomic(s.Dirs.TokenFile(), 0o600, -1, -1, []byte(token)); err != nil {
 		return "", fmt.Errorf("write the control token: %w", err)
 	}
 

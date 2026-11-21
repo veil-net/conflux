@@ -16,7 +16,6 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/ui"
@@ -64,7 +63,7 @@ func Ensure(ctx context.Context, d paths.Dirs) error {
 		return offline(target, err)
 	}
 
-	if err := config.WriteFileAtomic(target, dll, 0o600); err != nil {
+	if err := paths.WriteAtomic(target, 0o600, -1, -1, dll); err != nil {
 		return fmt.Errorf("install %s: %w", target, err)
 	}
 

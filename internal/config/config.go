@@ -415,5 +415,5 @@ func Save(d paths.Dirs, c *Config) error {
 		return fmt.Errorf("encode config: %w", err)
 	}
 
-	return WriteFileAtomic(d.ConfigFile(), append(b, '\n'), 0o600)
+	return paths.WriteAtomic(d.ConfigFile(), 0o600, -1, -1, append(b, '\n'))
 }

@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/logfile"
+	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/privcheck"
 )
 
@@ -27,7 +27,7 @@ func (freebsd) Install(exe string, args ...string) error {
 	}
 
 	// Executable, whatever was there before; written whole or not at all.
-	if err := config.WriteFileAtomic(scriptPath(), []byte(script), 0o755); err != nil {
+	if err := paths.WriteAtomic(scriptPath(), 0o755, -1, -1, []byte(script)); err != nil {
 		return err
 	}
 

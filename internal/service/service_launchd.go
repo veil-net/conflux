@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/paths"
 )
 
 // The launchd job, rendered and driven here without a build tag so both are tested on the
@@ -100,7 +100,7 @@ func (j launchdJob) install(plist []byte) (started bool, err error) {
 
 	// 0644 whatever was there before: launchd refuses a job whose plist is group- or
 	// world-writable, for a reason nothing in its error names.
-	if err := config.WriteFileAtomic(j.plistPath, plist, 0o644); err != nil {
+	if err := paths.WriteAtomic(j.plistPath, 0o644, -1, -1, plist); err != nil {
 		return false, err
 	}
 

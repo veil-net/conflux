@@ -159,13 +159,20 @@ type step struct{ h windows.Handle }
 func (s step) close() { windows.CloseHandle(s.h) }
 
 // openTop holds the top of the volume vol open -- a drive (C:), a volume by its GUID, or a share
-// (\\host\share) -- to read who may change it, and refuses it where it is on a network volume
-// (remote): who owns what is there, and whom its DACLs grant, are accounts of the machine serving
-// it, which this one cannot judge, so nothing is judged, looked up or made there.
+// (\\host\share) -- to read who may change it, as itself and shared every way, so that nobody else's
+// use of it is refused for conflux's look; and refuses it where it is on a network volume (remote):
+// who owns what is there, and whom its DACLs grant, are accounts of the machine serving it, which this
+// one cannot judge, so nothing is judged, looked up or made there.
 func openTop(vol string) (step, error) {
 	top := vol + `\`
 
-	h, err := openFile(top, readAccess, false)
+	name, err := windows.UTF16PtrFromString(top)
+	if err != nil {
+		return step{}, fmt.Errorf("read %s: %w", top, err)
+	}
+
+	h, err := windows.CreateFile(name, readAccess, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		nil, windows.OPEN_EXISTING, windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
 	if err != nil {
 		return step{}, fmt.Errorf("read %s: %w", top, err)
 	}
@@ -568,37 +575,6 @@ func openIn(s step, name, p string) (*os.File, error) {
 	}
 
 	return os.NewFile(uintptr(h), p), nil
-}
-
-// openFile opens p for access: as itself, a link or a junction included, or, following, as
-// whatever the lookup of its name leads to. Shared every way, so that nobody else's use of it
-// is refused for conflux's look. A right to change the owner or the DACL that is not granted is
-// given up rather than failing the open: a token that may not take ownership -- one that is not
-// elevated, which no conflux command that makes or restricts a root runs with, though a test may --
-// may still replace its own file's DACL, and a restriction through a handle without the right fails
-// as it would by name.
-func openFile(p string, access uint32, follow bool) (windows.Handle, error) {
-	name, err := windows.UTF16PtrFromString(p)
-	if err != nil {
-		return 0, err
-	}
-
-	flags := uint32(windows.FILE_FLAG_BACKUP_SEMANTICS)
-	if !follow {
-		flags |= windows.FILE_FLAG_OPEN_REPARSE_POINT
-	}
-
-	h, err := windows.CreateFile(name, access,
-		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING, flags, 0)
-	if errors.Is(err, windows.ERROR_ACCESS_DENIED) {
-		for _, right := range []uint32{windows.WRITE_OWNER, windows.WRITE_DAC} {
-			if access&right != 0 {
-				return openFile(p, access&^right, follow)
-			}
-		}
-	}
-
-	return h, err
 }
 
 // attributeTag is what h holds open's attributes and, where it is a reparse point, its tag say

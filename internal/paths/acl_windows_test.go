@@ -640,7 +640,13 @@ func TestTheWayConfluxMakesIsItsOwn(t *testing.T) {
 	currentUser = func() *windows.SID { return sidSystem }
 
 	for _, dir := range way {
-		h, err := openFile(dir, readAccess, false)
+		name, err := windows.UTF16PtrFromString(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		h, err := windows.CreateFile(name, readAccess, windows.FILE_SHARE_READ, nil, windows.OPEN_EXISTING,
+			windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
 		if err != nil {
 			t.Fatal(err)
 		}

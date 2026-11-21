@@ -14,7 +14,6 @@ import (
 
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/config"
-	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
 	"github.com/veil-net/conflux/internal/privcheck"
@@ -250,18 +249,15 @@ func TestServeOpensNoLogInARootItRefuses(t *testing.T) {
 func TestServeWritesItsLogOnceTheRootIsJudged(t *testing.T) {
 	asServe()
 
-	d := pathstest.Dirs(t)
-	log := filepath.Join(d.State, "logs", "conflux.log")
+	t.Setenv("CONFLUX_DIR", t.TempDir())
 
+	d := paths.Default()
+	defer holdRoot(t, d)()
+
+	log := filepath.Join(d.State, "logs", "conflux.log")
 	if err := os.MkdirAll(filepath.Dir(log), 0o700); err != nil {
 		t.Fatal(err)
 	}
-
-	unlock, ok, err := flock.TryAcquire(d.ServeLockFile())
-	if err != nil || !ok {
-		t.Fatalf("hold the supervisor's lock: %v", err)
-	}
-	defer unlock()
 
 	const refusal = "another conflux supervisor is already serving"
 

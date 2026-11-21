@@ -24,26 +24,8 @@ import (
 func startingEphemeral(t *testing.T) paths.Dirs {
 	t.Helper()
 
-	// 0700 whatever the umask made it: the run's root is inside, and a parent its group
-	// may write is refused.
-	root := t.TempDir()
-	if err := os.Chmod(root, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	t.Setenv("CONFLUX_DIR", root)
-
-	d := paths.EphemeralDirs(paths.EphemeralCandidates()[0])
-	if err := d.EnsureAll(); err != nil {
-		t.Fatal(err)
-	}
-
-	unlock, ok, err := flock.TryAcquire(d.ServeLockFile())
-	if err != nil || !ok {
-		t.Fatalf("hold the run's lock: %v", err)
-	}
-
-	t.Cleanup(unlock)
+	d := ephemeralRoot(t)
+	t.Cleanup(holdRoot(t, d))
 
 	if err := os.MkdirAll(filepath.Dir(d.Socket()), 0o700); err != nil {
 		t.Fatal(err)
@@ -54,6 +36,40 @@ func startingEphemeral(t *testing.T) paths.Dirs {
 	}
 
 	return d
+}
+
+// ephemeralRoot is the root an ephemeral run is kept in under a fresh CONFLUX_DIR, set for the
+// rest of the test, not made yet.
+func ephemeralRoot(t *testing.T) paths.Dirs {
+	t.Helper()
+
+	// 0700 whatever the umask made it: the run's root is inside, and a parent its group
+	// may write is refused.
+	root := t.TempDir()
+	if err := os.Chmod(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("CONFLUX_DIR", root)
+
+	return paths.EphemeralDirs(paths.EphemeralCandidates()[0])
+}
+
+// holdRoot makes d's roots, as a supervisor or a run does, and takes the lock it holds while it
+// runs: what lets that go.
+func holdRoot(t *testing.T, d paths.Dirs) (unlock func()) {
+	t.Helper()
+
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	unlock, ok, err := flock.TryAcquire(d.ServeLockFile())
+	if err != nil || !ok {
+		t.Fatalf("take the lock a supervisor holds: %v", err)
+	}
+
+	return unlock
 }
 
 // TestStatusWritesNothingIntoAStartingEphemeralRun: status, asked while an ephemeral run is
@@ -206,16 +222,7 @@ func TestAReaderPassesOverARootAnotherAccountMade(t *testing.T) {
 func TestAReaderReadsNothingOfARootNotThere(t *testing.T) {
 	for name, held := range map[string]bool{"a run's lock held": true, "a killed run's lock left": false} {
 		t.Run(name, func(t *testing.T) {
-			// 0700 whatever the umask made it: the run's root is inside, and a parent its group
-			// may write is refused.
-			root := t.TempDir()
-			if err := os.Chmod(root, 0o700); err != nil {
-				t.Fatal(err)
-			}
-
-			t.Setenv("CONFLUX_DIR", root)
-
-			d := paths.EphemeralDirs(paths.EphemeralCandidates()[0])
+			d := ephemeralRoot(t)
 
 			looked := 0
 
@@ -257,15 +264,7 @@ func TestAReaderReadsNothingOfARootNotThere(t *testing.T) {
 func plantRun(t *testing.T, d paths.Dirs, held bool) {
 	t.Helper()
 
-	if err := d.EnsureAll(); err != nil {
-		t.Fatal(err)
-	}
-
-	unlock, ok, err := flock.TryAcquire(d.ServeLockFile())
-	if err != nil || !ok {
-		t.Fatalf("take the run's lock: %v", err)
-	}
-
+	unlock := holdRoot(t, d)
 	if held {
 		t.Cleanup(unlock)
 	} else {

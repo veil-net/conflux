@@ -120,12 +120,7 @@ func TestUpdateReplacesTheExecutable(t *testing.T) {
 
 	rootOnLinux(t)
 
-	dir := t.TempDir()
-	exe := filepath.Join(dir, "conflux")
-
-	if err := os.WriteFile(exe, []byte("#!/bin/sh\necho conflux 1.0.0 old\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	exe := olderConflux(t)
 
 	newer := []byte("#!/bin/sh\necho 'conflux 9.9.9 (0aea0f77bb77) " + runtime.GOOS + "/" + runtime.GOARCH + "'\n")
 	serveRelease(t, newer, exe)
@@ -139,9 +134,26 @@ func TestUpdateReplacesTheExecutable(t *testing.T) {
 		t.Errorf("the executable holds %q after the update", got)
 	}
 
-	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+	if entries, _ := os.ReadDir(filepath.Dir(exe)); len(entries) != 1 {
 		t.Errorf("the update left %d files where there was one", len(entries))
 	}
+}
+
+// olderScript is a conflux older than any release, a shell script answering `version` as the real
+// one does.
+const olderScript = "#!/bin/sh\necho conflux 1.0.0 old\n"
+
+// olderConflux puts olderScript in a directory of its own, as the file an update replaces, and
+// returns its path.
+func olderConflux(t *testing.T) string {
+	t.Helper()
+
+	exe := filepath.Join(t.TempDir(), "conflux")
+	if err := os.WriteFile(exe, []byte(olderScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	return exe
 }
 
 // releaseAsking stands in for an update to rel, a release whose conflux, a shell script, answers
@@ -150,11 +162,7 @@ func TestUpdateReplacesTheExecutable(t *testing.T) {
 func releaseAsking(t *testing.T) (rel *ghreleasetest.Release, exe, asked string) {
 	t.Helper()
 
-	exe = filepath.Join(t.TempDir(), "conflux")
-	if err := os.WriteFile(exe, []byte("#!/bin/sh\necho conflux 1.0.0 old\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
+	exe = olderConflux(t)
 	asked = filepath.Join(t.TempDir(), "asked")
 	rel = serveRelease(t, []byte("#!/bin/sh\ncase $1 in\n"+
 		"version) echo 'conflux 9.9.9 (0aea0f77bb77) "+runtime.GOOS+"/"+runtime.GOARCH+"' ;;\n"+
@@ -250,14 +258,7 @@ func TestUpdateRefusesABinaryThatDoesNotRun(t *testing.T) {
 
 	rootOnLinux(t)
 
-	dir := t.TempDir()
-	exe := filepath.Join(dir, "conflux")
-	old := []byte("#!/bin/sh\necho conflux 1.0.0 old\n")
-
-	if err := os.WriteFile(exe, old, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
+	exe := olderConflux(t)
 	serveRelease(t, []byte("#!/bin/sh\nexit 3\n"), exe)
 
 	_, errOut, code := capture(t, "update")
@@ -265,11 +266,11 @@ func TestUpdateRefusesABinaryThatDoesNotRun(t *testing.T) {
 		t.Errorf("update exited %d: %s", code, errOut)
 	}
 
-	if got, _ := os.ReadFile(exe); string(got) != string(old) {
+	if got, _ := os.ReadFile(exe); string(got) != olderScript {
 		t.Error("a binary that does not run replaced the executable")
 	}
 
-	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+	if entries, _ := os.ReadDir(filepath.Dir(exe)); len(entries) != 1 {
 		t.Errorf("the refused update left %d files where there was one", len(entries))
 	}
 }

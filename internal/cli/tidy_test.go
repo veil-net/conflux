@@ -550,27 +550,52 @@ func TestTidyStartsAgainHoweverTheCommandEnds(t *testing.T) {
 	}
 }
 
-// TestAnUpgradeStartsAgainTheServiceItStopped: up, proxy and observe, of a conflux put in place by
-// hand, stop the service before they make its roots afresh, and start it again however they end: by
-// their own restart, once, where they get that far, and otherwise before they exit -- here proxy
-// refusing a configuration it cannot read, its code kept.
+// TestAnUpgradeStartsAgainTheServiceItStopped: up, proxy, observe, install and start, of a conflux put in
+// place by hand, stop the service before they make its roots afresh, and start it again once however they
+// end: by their own restart where they get that far, which failing is not tried again, though the
+// service manager says the service is down after it, as systemd and launchd say of a start that failed;
+// and otherwise as they exit -- here refusing a configuration they cannot read -- their code kept. enrol,
+// which restarts nothing itself, starts it again once as it exits. (up only off Windows, where it fetches
+// wintun first.)
 func TestAnUpgradeStartsAgainTheServiceItStopped(t *testing.T) {
 	anchortest.Require(t) // it extracts the pair afresh
 
 	rootOnLinux(t)
 
-	for name, c := range map[string]struct {
+	commands := map[string][]string{
+		"proxy":   {"proxy", "8080=127.0.0.1:3000", "--taint", "t", "--no-ipv4"},
+		"observe": {"observe", "--yes"},
+		"install": {"install"},
+		"start":   {"start"},
+	}
+
+	if runtime.GOOS != "windows" {
+		commands["up"] = []string{"up", "--taint", "t", "--no-ipv4"}
+	}
+
+	unreadable := func(t *testing.T, d paths.Dirs) {
+		if err := os.WriteFile(d.ConfigFile(), []byte("{"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	type upgrade struct {
+		args []string
 		then func(*testing.T, paths.Dirs)
-		want int
 		says string
-	}{
-		"restarted by proxy": {want: ExitError, says: errStartsNothing.Error()},
-		"a configuration it cannot read": {then: func(t *testing.T, d paths.Dirs) {
-			if err := os.WriteFile(d.ConfigFile(), []byte("{"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-		}, want: ExitError, says: "parse "},
-	} {
+	}
+
+	cases := map[string]upgrade{
+		"enrol, a manifest that is not there": {args: []string{"enrol", "--manifest", filepath.Join(t.TempDir(),
+			"missing")}, says: "missing"},
+	}
+
+	for verb, args := range commands {
+		cases[verb+", its own restart failing"] = upgrade{args: args, says: errStartsNothing.Error()}
+		cases[verb+", a configuration it cannot read"] = upgrade{args: args, then: unreadable, says: "parse "}
+	}
+
+	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			d := configured(t)
 
@@ -578,28 +603,28 @@ func TestAnUpgradeStartsAgainTheServiceItStopped(t *testing.T) {
 				c.then(t, d)
 			}
 
-			mgr := &goneOnStop{stopping{fakeManager: fakeManager{d: d, restartErr: errStartsNothing}, running: true,
+			mgr := &downOnceStopped{stopping{fakeManager: fakeManager{d: d, restartErr: errStartsNothing}, running: true,
 				release: serving(t, d)}}
 			standInService(t, mgr)
 
-			out, errOut, code := capture(t, "proxy", "8080=127.0.0.1:3000", "--taint", "t", "--no-ipv4")
-			if code != c.want || mgr.stops != 1 || mgr.restarts != 1 || !strings.Contains(errOut, c.says) {
-				t.Errorf("conflux proxy of an upgraded installation exited %d, stopped the service %d times and started "+
-					"it %d, want %d, once each, saying %q:\n%s%s", code, mgr.stops, mgr.restarts, c.want, c.says, out,
-					errOut)
+			out, errOut, code := capture(t, c.args...)
+			if code != ExitError || mgr.stops != 1 || mgr.restarts != 1 || !strings.Contains(errOut, c.says) {
+				t.Errorf("conflux %s of an upgraded installation exited %d, stopped the service %d times and started "+
+					"it %d, want %d, once each, saying %q:\n%s%s", c.args[0], code, mgr.stops, mgr.restarts, ExitError,
+					c.says, out, errOut)
 			}
 		})
 	}
 }
 
-// goneOnStop is stopping whose service the service manager says runs until it is stopped, and not
-// after, until it is started again.
-type goneOnStop struct{ stopping }
+// downOnceStopped is stopping whose service the service manager says runs until it is stopped, and not
+// after, a start that failed among it.
+type downOnceStopped struct{ stopping }
 
-func (m *goneOnStop) Running() (bool, error) {
+func (m *downOnceStopped) Running() (bool, error) {
 	running, err := m.stopping.Running()
 
-	return running && (m.stops == 0 || m.restarts > 0), err
+	return running && m.stops == 0, err
 }
 
 // TestTidyStartsNothingBesideASupervisorRunByHand: a supervisor that serves the root once the boot

@@ -68,8 +68,9 @@ func runProxy(ctx context.Context, args []string) (code int) {
 	}
 
 	var (
-		d   paths.Dirs
-		cfg *config.Config
+		d     paths.Dirs
+		cfg   *config.Config
+		place func(paths.Dirs) (string, error)
 	)
 
 	if run != nil {
@@ -85,14 +86,15 @@ func runProxy(ctx context.Context, args []string) (code int) {
 		}
 
 		d = paths.Default()
-		mgr := newService()
 
-		stopped, err := handOver(d, mgr)
+		var finish func(int) int
+
+		place, finish, err = handOver(d, newService())
+		defer func() { code = finish(code) }()
+
 		if err != nil {
-			return startAgain(d, mgr, stopped, fail(err))
+			return fail(err)
 		}
-
-		defer func() { code = startAgainIfDown(d, mgr, stopped, code) }()
 
 		if cfg, err = loadOrNew(d); err != nil {
 			return fail(err)
@@ -154,7 +156,7 @@ func runProxy(ctx context.Context, args []string) (code int) {
 		return fail(err)
 	}
 
-	return launch(ctx, d, cfg, run, "proxy", f.taints, *f.ipv4, *f.noIPv4, len(f.subnets) > 0 || *f.noSubnet)
+	return launch(ctx, d, place, cfg, run, "proxy", f.taints, *f.ipv4, *f.noIPv4, len(f.subnets) > 0 || *f.noSubnet)
 }
 
 // proxyFlags is conflux proxy's flag set, and the one list of what it takes, which split

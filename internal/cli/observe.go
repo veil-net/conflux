@@ -61,14 +61,13 @@ func runObserve(ctx context.Context, args []string) (code int) {
 	}
 
 	d := paths.Default()
-	mgr := newService()
 
-	stopped, err := handOver(d, mgr)
+	place, finish, err := handOver(d, newService())
+	defer func() { code = finish(code) }()
+
 	if err != nil {
-		return startAgain(d, mgr, stopped, fail(err))
+		return fail(err)
 	}
-
-	defer func() { code = startAgainIfDown(d, mgr, stopped, code) }()
 
 	cfg, err := loadOrNew(d)
 	if err != nil {
@@ -136,7 +135,7 @@ func runObserve(ctx context.Context, args []string) (code int) {
 		}
 	}
 
-	return bring(ctx, d, cfg, "observe", false)
+	return bring(ctx, d, place, cfg, "observe", false)
 }
 
 // hostOS is the platform the observer's support is decided for: this one, outside a test of

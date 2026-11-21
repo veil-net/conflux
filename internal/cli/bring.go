@@ -26,8 +26,10 @@ import (
 // nothing.
 //
 // subnetsSet is whether the command set the served list. If it did, a list a member's
-// Subnets order set since is dropped before the restart, so the one just set is served.
-func bring(ctx context.Context, d paths.Dirs, cfg *config.Config, verb string, subnetsSet bool) int {
+// Subnets order set since is dropped before the restart, so the one just set is served. place is
+// handOver's, which install places the service's copy of conflux with.
+func bring(ctx context.Context, d paths.Dirs, place func(paths.Dirs) (string, error), cfg *config.Config, verb string,
+	subnetsSet bool) int {
 	if err := cfg.Validate(); err != nil {
 		return fail(err)
 	}
@@ -51,7 +53,7 @@ func bring(ctx context.Context, d paths.Dirs, cfg *config.Config, verb string, s
 		}
 	}
 
-	if code := install(ctx, d, false, nil); code != ExitOK {
+	if code := install(ctx, d, false, place); code != ExitOK {
 		return code
 	}
 
@@ -62,13 +64,16 @@ func bring(ctx context.Context, d paths.Dirs, cfg *config.Config, verb string, s
 
 // startAndReport restarts the boot service, mgr, waits for what cfg runs to come up, and reports
 // it: how every command that starts the anchor ends, bring's and startFromConfig's. The
-// readiness marker was withdrawn by install, which every caller has just been through.
+// readiness marker was withdrawn by install, which every caller has just been through. The restart
+// is the command's own (restarted), which handOver's finish does not repeat.
 //
 // The boot service starts the anchor, rather than this process: one supervisor, whatever
 // started it. A `conflux up` that ran its own daemon would leave two ideas of what is
 // running -- the service manager's and ours -- and they would disagree the moment either
 // changed.
 func startAndReport(ctx context.Context, d paths.Dirs, mgr service.Manager, cfg *config.Config, verb string) int {
+	restarted = true
+
 	if err := mgr.Restart(); err != nil {
 		return fail(err)
 	}

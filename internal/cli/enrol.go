@@ -94,14 +94,13 @@ func runEnrol(_ context.Context, args []string) (code int) {
 	}
 
 	d := paths.Default()
-	mgr := newService()
 
-	stopped, err := handOver(d, mgr)
+	_, finish, err := handOver(d, newService())
+	defer func() { code = finish(code) }()
+
 	if err != nil {
-		return startAgain(d, mgr, stopped, fail(err))
+		return fail(err)
 	}
-
-	defer func() { code = startAgain(d, mgr, stopped, code) }()
 
 	if err := importCredential(d, *manifest, *apiBase, *ipv4); err != nil {
 		return fail(err)

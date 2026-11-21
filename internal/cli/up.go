@@ -98,8 +98,9 @@ func runUp(ctx context.Context, args []string) (code int) {
 	}
 
 	var (
-		d   paths.Dirs
-		cfg *config.Config
+		d     paths.Dirs
+		cfg   *config.Config
+		place func(paths.Dirs) (string, error)
 	)
 
 	if run != nil {
@@ -108,14 +109,15 @@ func runUp(ctx context.Context, args []string) (code int) {
 		}
 	} else {
 		d = paths.Default()
-		mgr := newService()
 
-		stopped, err := handOver(d, mgr)
+		var finish func(int) int
+
+		place, finish, err = handOver(d, newService())
+		defer func() { code = finish(code) }()
+
 		if err != nil {
-			return startAgain(d, mgr, stopped, fail(err))
+			return fail(err)
 		}
-
-		defer func() { code = startAgainIfDown(d, mgr, stopped, code) }()
 
 		if cfg, err = loadOrNew(d); err != nil {
 			return fail(err)
@@ -168,17 +170,17 @@ func runUp(ctx context.Context, args []string) (code int) {
 		return fail(err)
 	}
 
-	return launch(ctx, d, cfg, run, "up", taints, *ipv4, *noIPv4, len(subnets) > 0 || *noSubnet)
+	return launch(ctx, d, place, cfg, run, "up", taints, *ipv4, *noIPv4, len(subnets) > 0 || *noSubnet)
 }
 
 // launch is the tail up and proxy share once each has applied the flags only it reads: the
 // taints, decided against the credential the run will hold; the served subnets checked
 // against them; then the IPv4, last, after everything typed has been checked, since it may
 // ask a question, and an answer given only to be told a flag was wrong is an answer given
-// twice; and the run, ephemeral, or brought up by the boot service. subnetsSet is whether
-// verb's command line set the served list.
-func launch(ctx context.Context, d paths.Dirs, cfg *config.Config, run *ephemeralRun, verb string,
-	taints []string, ipv4 string, noIPv4, subnetsSet bool) int {
+// twice; and the run, ephemeral, or brought up by the boot service, its copy of conflux placed with
+// place, handOver's. subnetsSet is whether verb's command line set the served list.
+func launch(ctx context.Context, d paths.Dirs, place func(paths.Dirs) (string, error), cfg *config.Config,
+	run *ephemeralRun, verb string, taints []string, ipv4 string, noIPv4, subnetsSet bool) int {
 	held, err := runCredential(run, d)
 	if err != nil {
 		return fail(err)
@@ -204,7 +206,7 @@ func launch(ctx context.Context, d paths.Dirs, cfg *config.Config, run *ephemera
 		return fail(err)
 	}
 
-	return bring(ctx, d, cfg, verb, subnetsSet)
+	return bring(ctx, d, place, cfg, verb, subnetsSet)
 }
 
 // sayLeavingObserveMode tells a machine that only observed that it now runs an anchor too,

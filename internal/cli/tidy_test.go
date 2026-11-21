@@ -103,11 +103,11 @@ func oldInstall(t *testing.T) (d paths.Dirs, kept map[string][]byte, leftovers [
 // through that conflux's register, the anchor stopped, or its start, the anchor running; and before
 // either places or registers anything, it removes what earlier conflux left everywhere conflux keeps
 // files, and makes what it removed afresh. What is left is this conflux's alone: this build's set,
-// extracted again over the one planted padded to its sizes, under a lock made again; no other set,
-// nothing staged; a copy for the service that is this conflux, nothing beside it, nor a write that
-// never went in place; an empty run
-// directory; no killed run's root; no lock file of the earlier conflux; nothing an update left beside
-// the conflux it replaced. The configuration, the identity and the state are as they were.
+// extracted again over the one planted padded to its sizes; no other set, nothing staged; a copy for
+// the service that is this conflux, nothing beside it, nor a write that never went in place; an empty
+// run directory; no killed run's root; nothing an update left beside the conflux it replaced. The
+// configuration, the identity and the state are as they were, and so, on Unix, are the lock files,
+// which Windows makes again (locksKeptOrRemade).
 func TestUpdateLeavesOnlyWhatThisConfluxMakes(t *testing.T) {
 	anchortest.Require(t)
 
@@ -142,12 +142,13 @@ func TestUpdateLeavesOnlyWhatThisConfluxMakes(t *testing.T) {
 			for p, want := range map[string][]byte{
 				filepath.Join(set, binName("anchord")):   anchor.Anchord(),
 				filepath.Join(set, binName("anchorctl")): anchor.Anchorctl(),
-				filepath.Join(d.Libexec(), ".lock"):      {},
 			} {
 				if b, err := os.ReadFile(p); err != nil || !bytes.Equal(b, want) {
 					t.Errorf("%s is not what this conflux makes (%d bytes, %v)", p, len(b), err)
 				}
 			}
+
+			locksKeptOrRemade(t, d)
 
 			this, err := service.Executable()
 			if err != nil {
@@ -164,12 +165,6 @@ func TestUpdateLeavesOnlyWhatThisConfluxMakes(t *testing.T) {
 			for _, p := range gone {
 				if _, err := os.Lstat(p); !os.IsNotExist(err) {
 					t.Errorf("%s is still there (Lstat: %v)", p, err)
-				}
-			}
-
-			for _, p := range []string{d.LockFile(), d.ServeLockFile()} {
-				if b, err := os.ReadFile(p); err == nil && len(b) > 0 {
-					t.Errorf("%s is the earlier conflux's still, holding %q", p, b)
 				}
 			}
 
@@ -214,6 +209,31 @@ func TestAStartOfTheConfluxTheServiceRunsRemovesNothing(t *testing.T) {
 	for _, p := range append([]string{filepath.Join(d.Libexec(), "0123456789abcdef"), d.LockFile()}, leftovers...) {
 		if _, err := os.Lstat(p); err != nil {
 			t.Errorf("a start of the conflux the service runs removed %s: %v", p, err)
+		}
+	}
+}
+
+// locksKeptOrRemade fails t unless the lock files oldInstall left in d, each holding "stale", are as
+// tidy leaves them: on Unix kept, the same files, since a lock taken on a file removed meanwhile is
+// one nobody else finds, so two would hold it; on Windows, which removes no file anybody has open,
+// none is the earlier conflux's still -- bin's made again, empty, and the other two gone or made so.
+func locksKeptOrRemade(t *testing.T, d paths.Dirs) {
+	t.Helper()
+
+	binLock := filepath.Join(d.Libexec(), ".lock")
+
+	for _, p := range []string{binLock, d.LockFile(), d.ServeLockFile()} {
+		b, err := os.ReadFile(p)
+
+		switch {
+		case runtime.GOOS != "windows":
+			if err != nil || string(b) != "stale" {
+				t.Errorf("%s was not kept: %q, %v", p, b, err)
+			}
+		case p == binLock && (err != nil || len(b) > 0):
+			t.Errorf("%s is not the lock this conflux makes (%q, %v)", p, b, err)
+		case err == nil && len(b) > 0:
+			t.Errorf("%s is the earlier conflux's still, holding %q", p, b)
 		}
 	}
 }

@@ -83,8 +83,11 @@ func Extract(d paths.Dirs) (*Tools, error) {
 // extraction left staged, and anything else put there -- and extracts this build's pair afresh
 // (Extract), for an update, with nothing running from any of them: so that nothing an earlier
 // conflux made there, nor anything put among it, is kept or run. Under bin's lock, which an
-// extraction in progress holds, and which is then removed too where nothing has opened it since,
-// with the directory, so both are made again as well. d's roots are secured already (EnsureAll).
+// extraction in progress holds. On Windows, which removes no file anybody has open, the lock is then
+// removed too where nothing has opened it since, with the directory, so both are made again as well;
+// on Unix it is kept, since a lock is taken on the file its name led to when it was opened, and one
+// waited for on a file removed meanwhile would be held beside one taken on the file made again at
+// its name. d's roots are secured already (EnsureAll).
 func Remake(d paths.Dirs) (*Tools, error) {
 	if !anchor.Supported {
 		return nil, errUnsupported
@@ -128,7 +131,7 @@ func Remake(d paths.Dirs) (*Tools, error) {
 
 	// Let go of first, since Windows will not delete a file that is open: a lock somebody opened
 	// meanwhile stays, and so does the directory around it, which Extract then uses as it is.
-	if os.Remove(lock) == nil {
+	if runtime.GOOS == "windows" && os.Remove(lock) == nil {
 		_ = os.Remove(root)
 	}
 

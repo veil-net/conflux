@@ -659,12 +659,15 @@ so an update works on an older install as it is:
   token, readiness marker, pid record, `anchord`'s socket directory — for the next supervisor to
   make again;
 - every extracted anchor set, the current one among them, and whatever a crashed extraction left
-  staged, are removed with the `bin` directory and its lock, and this build's pair is extracted
-  afresh, so nothing planted among them is kept or run;
+  staged, are removed, and this build's pair is extracted afresh, so nothing planted among them is
+  kept or run;
 - a killed ephemeral run's root is removed, the `anchord` it left stopped; a live run's is left;
 - where nothing holds the state's lock, what an atomic write that never went in place left in the
-  configuration and state directories goes, and the lock file with it; the supervisor's lock
-  goes too, each made again by whatever next takes it;
+  configuration and state directories goes;
+- the lock files — the state's, the supervisor's and `bin`'s — are kept on Unix, where a lock
+  waited for on a file removed meanwhile would be held beside one taken on the file made again at
+  its name; on Windows, which removes no file anybody has open, each is removed once nothing holds
+  it, with the `bin` directory, for whatever next takes it to make again;
 - the service's copy is written afresh, whatever it holds, with the image Windows moved aside
   and a copy that never went in place beside it removed;
 - what an earlier update left beside conflux goes: a download that never went in place, and

@@ -504,9 +504,11 @@ reinstall:
   conflux made them (an account of either name that conflux did not make is left alone), with
   the BPF devices given back to root on macOS first.
 
-The conflux you ran is yours, and stays. It says what it removed, however far it got. Asks first,
-because there is no other copy of the credential anywhere; `--yes` skips the question, and a
-non-interactive run without `--yes` refuses rather than destroy an identity silently.
+The conflux you ran is yours, and stays. It says what it removed, however far it got. Asks first
+where there is a credential, or may be one it cannot read, because there is no other copy of it
+anywhere; and wherever `CONFLUX_DIR` names the folder, credential or not, saying it removes
+everything in that folder, which is whatever the variable was set to. `--yes` skips the question,
+and a non-interactive run without `--yes` refuses, exit 2, rather than destroy either silently.
 
 Nothing in a root is followed. Each is removed through the directory holding it, held open from
 the top of its volume down, and a name at a time below it: a link or junction found anywhere in

@@ -394,23 +394,43 @@ func removeUpdateLeftovers(exe string) []string {
 
 // confirmUninstall makes the irreversible part explicit before it happens. checked is what paths'
 // check said of d's roots: where none is there there is nothing to destroy; where one failed, the
-// identity in it is not read, and what is asked says why.
+// identity in it is not read, and what is asked says why. It asks where an identity is there, or may
+// be, and wherever d is a CONFLUX_DIR's -- a folder whoever set the variable chose, which uninstall
+// empties whether an identity is in it or not; off a terminal, without yes, it refuses, so a scripted
+// uninstall destroys neither by default.
 func confirmUninstall(d paths.Dirs, checked error, yes bool) bool {
-	switch {
-	case yes, errors.Is(checked, fs.ErrNotExist):
-		return true
-	case checked == nil && !config.HasManifest(d):
+	if yes || errors.Is(checked, fs.ErrNotExist) {
 		return true
 	}
 
+	root := paths.Root()
+	identity := checked != nil || config.HasManifest(d)
+
+	var stakes string
+
+	switch {
+	case root == "" && !identity:
+		return true
+	case root == "":
+		stakes = "deletes this machine's credential, and there is no other copy"
+	case identity:
+		stakes = "removes everything in " + root + ", this machine's credential among it, and there is no other copy " +
+			"of that"
+	default:
+		stakes = "removes everything in " + root
+	}
+
 	if !ui.IsTerminal() {
-		ui.Errf("this deletes the credential and there is no other copy.\n" +
-			"  Pass --yes to say so explicitly; a scripted uninstall will not destroy an identity by default.")
+		ui.Errf("this %s.\n  Pass --yes to say so explicitly; a scripted uninstall destroys nothing by default.", stakes)
 
 		return false
 	}
 
-	ui.Printf("\nThis deletes this machine's credential, and there is no other copy.\n\n")
+	ui.Printf("\nThis %s.\n\n", stakes)
+
+	if !identity {
+		return ui.Confirm("Continue?")
+	}
 
 	if checked != nil {
 		ui.Field("anchor", "not read: "+checked.Error())

@@ -13,6 +13,7 @@ import (
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/privcheck"
+	"github.com/veil-net/conflux/internal/ui"
 )
 
 // TestUninstallLeavesNothingConfluxMade: uninstall removes everything conflux made, the identity,
@@ -352,5 +353,34 @@ func TestUninstallLeavesARootHoldingWhatConfluxNeverMakes(t *testing.T) {
 			t.Errorf("uninstall of a root holding what conflux never makes there removed the boot service %d times, "+
 				"and %s (Lstat: %v)", mgr.removals, p, err)
 		}
+	}
+}
+
+// TestUninstallAsksBeforeEmptyingAChosenFolder: uninstall empties a CONFLUX_DIR, a folder whoever set
+// the variable chose, so it asks first whether or not an identity is there, and off a terminal without
+// --yes refuses, exit 2, saying it would remove everything in that folder, with nothing removed.
+func TestUninstallAsksBeforeEmptyingAChosenFolder(t *testing.T) {
+	if ui.IsTerminal() {
+		t.Skip("this test's stdin is a terminal")
+	}
+
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	d := configured(t)
+
+	mgr := &removing{fakeManager: fakeManager{d: d}}
+	standInService(t, mgr)
+
+	out, errOut, code := capture(t, "uninstall")
+	if code != ExitUsage || !strings.Contains(errOut, "removes everything in "+paths.Root()) ||
+		!strings.Contains(errOut, "--yes") {
+		t.Errorf("uninstall of a CONFLUX_DIR with no identity, off a terminal and without --yes, exited %d, want %d "+
+			"saying it would remove everything in %s and naming --yes:\n%s%s", code, ExitUsage, paths.Root(), out, errOut)
+	}
+
+	if _, err := os.Lstat(d.ConfigFile()); err != nil || mgr.removals > 0 {
+		t.Errorf("uninstall, unconfirmed, removed the boot service %d times, and %s (Lstat: %v)", mgr.removals,
+			d.ConfigFile(), err)
 	}
 }

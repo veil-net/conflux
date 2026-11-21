@@ -173,11 +173,11 @@ func listRemoved(removed []string) {
 }
 
 // removeStaged removes, where nothing holds the state's lock, what an atomic write that never went
-// in place left in the configuration and state directories (config's .tmp- files), and then, once it
-// has let go of it, the lock file itself where flock.Drop does. Every writer of the manifest and the
-// state holds that lock, and nothing else writes there with the service stopped and its supervisor's
-// lock held, so none is mid-write. A lock held is in use, and kept with what it guards. It returns
-// what it removed.
+// in place left in the configuration and state directories (paths.WriteAtomic's .tmp- files), and
+// then, once it has let go of it, the lock file itself where flock.Drop does. Every writer of the
+// manifest and the state holds that lock, and nothing else writes there with the service stopped and
+// its supervisor's lock held, so none is mid-write. A lock held is in use, and kept with what it
+// guards. It returns what it removed.
 func removeStaged(d paths.Dirs) []string {
 	lock := d.LockFile()
 	if _, err := os.Lstat(lock); err != nil {

@@ -87,7 +87,7 @@ func TestUninstallRemovesTheWayConfluxMade(t *testing.T) {
 	}
 }
 
-// TestUninstallRefusesAWayAnotherAccountMayChange: the one root uninstall refuses is a CONFLUX_DIR
+// TestUninstallRefusesAWayAnotherAccountMayChange: among the roots uninstall refuses is a CONFLUX_DIR
 // whose way another account may change -- inside a directory every account may write -- since whoever
 // could change it could have put anything at the root's name, and conflux cannot know it is its own.
 // It is refused before anything is removed, the boot service included, exit 1, naming the directory

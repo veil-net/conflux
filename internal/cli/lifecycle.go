@@ -307,7 +307,8 @@ func runStart(ctx context.Context, args []string) int {
 
 	// The service tidy stopped is started again however start ends: by startFromConfig's restart, or
 	// before (startAgain). A copy Placed found to be this conflux is not compared again as it is
-	// placed.
+	// placed (keep); roots that were not there hold no configuration once made, so start ends before
+	// anything is placed.
 	stopped := false
 	place := service.PlaceAfresh
 
@@ -321,10 +322,7 @@ func runStart(ctx context.Context, args []string) int {
 			return fail(err)
 		}
 
-		place = service.Place
-		if checked == nil {
-			place = keep
-		}
+		place = keep
 	}
 
 	// The same 78 the supervisor exits with, and for the same reason: there is a

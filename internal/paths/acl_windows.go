@@ -581,8 +581,9 @@ func secure(dir string, installation bool) error {
 	// any right, to read it included, nor passes one on to what is made in it -- what a restriction
 	// leaves -- and, where the root is a junction, the junction SYSTEM's or the Administrators' under
 	// a protected DACL too, as replaceLink leaves one, that lets nobody self does not trust point it
-	// elsewhere (heldFor): heldRoot judged it for the account running conflux, and an installation's is
-	// the SYSTEM service's. It is not restricted again, but it is filled,
+	// elsewhere (linkHeldFor, for self): heldRoot judged the junction for the account running conflux, and
+	// an installation's is judged here again for the SYSTEM service. It is not restricted again, but it is
+	// filled,
 	// since one secured and empty -- as an administrator may have restricted it -- is as open to a
 	// handle opened on it before as one found unrestricted, and what it holds is judged as it is once
 	// a root is restricted: a restriction refused by that judgement is still in place, and what it
@@ -593,7 +594,7 @@ func secure(dir string, installation bool) error {
 	// is repaired, replaced or refused below as an unrestricted root is.
 	self := judgedFor(installation)
 
-	if secured(sd) && root.heldFor(dir, self) {
+	if secured(sd) && linkHeldFor(dir, root.link, self) {
 		switch who, _, err := changerIn(dir, self, sd, anyRight, "use it or what is made in it", nil, true); {
 		case err != nil:
 			return err
@@ -1017,10 +1018,6 @@ type held struct {
 	target    string
 }
 
-// heldFor reports whether the root dir, as r holds it, is no junction or link, or one held for self
-// (linkHeldFor).
-func (r *held) heldFor(dir string, self *windows.SID) bool { return linkHeldFor(dir, r.link, self) }
-
 // linkHeldFor reports whether link, the owner and DACL of the junction or link at the root dir's name,
 // or nil where there is none, is none, or one secured as replaceLink leaves one -- SYSTEM's or the
 // Administrators', under a protected DACL -- that lets nobody the judgement for self does not trust
@@ -1045,7 +1042,7 @@ type linkSecurity = *windows.SECURITY_DESCRIPTOR
 
 // serviceFollows reports whether the boot service, running as SYSTEM, which trusts no other account,
 // would follow the junction or link at the root dir's name whose own owner and DACL sec holds, as
-// secure holds an installation's (heldFor, for SYSTEM): one secured as replaceLink leaves one, which
+// secure holds an installation's (linkHeldFor, for SYSTEM): one secured as replaceLink leaves one, which
 // nobody but SYSTEM and the Administrators may point elsewhere. One an administrator made, which the
 // administrator's own processes may repoint unelevated, is not.
 func serviceFollows(dir string, sec linkSecurity) bool { return linkHeldFor(dir, sec, sidSystem) }

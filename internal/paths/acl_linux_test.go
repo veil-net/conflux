@@ -1,6 +1,8 @@
 package paths
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -65,8 +67,8 @@ func TestEnsureAllReadsAPOSIXACL(t *testing.T) {
 
 // TestARootsPOSIXACLIsJudged: an ACL can let accounts write a directory that its mode does not show.
 // A root of this account's own whose POSIX ACL lets uid 65534 write it, through a mask of rwx, is not as
-// conflux makes a root: the readers' check refuses it, naming that uid, and EnsureAll removes it and
-// makes it afresh. One a parent's default ACL passes on to the root conflux makes there takes its mask
+// conflux makes a root: the readers' check refuses it, naming that uid, and EnsureAll removes it, what it
+// held with it, and makes it afresh. One a parent's default ACL passes on to the root conflux makes there takes its mask
 // from the 0700 the root is made at, which lets nobody write it, and that root is taken.
 func TestARootsPOSIXACLIsJudged(t *testing.T) {
 	t.Run("on the root", func(t *testing.T) {
@@ -74,6 +76,11 @@ func TestARootsPOSIXACLIsJudged(t *testing.T) {
 
 		d := Default()
 		if err := d.EnsureAll(); err != nil {
+			t.Fatal(err)
+		}
+
+		planted := filepath.Join(d.State, "planted")
+		if err := os.WriteFile(planted, []byte("uid 65534's"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 
@@ -91,6 +98,10 @@ func TestARootsPOSIXACLIsJudged(t *testing.T) {
 
 		if err := d.Check(); err != nil {
 			t.Errorf("Check(the root EnsureAll made afresh) = %v", err)
+		}
+
+		if _, err := os.Lstat(planted); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("the root EnsureAll made afresh holds what was in it (Lstat: %v)", err)
 		}
 	})
 

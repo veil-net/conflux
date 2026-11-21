@@ -478,8 +478,8 @@ func TestMakeRootJudgesWhatIsPlantedWhileItJudges(t *testing.T) {
 // with nothing made in it -- by the walk where it is looked up, and by makeWay where it is made or gone
 // into; and one of this account's own, as a conflux making the same root at once makes, is gone into.
 // Planted at the root's own name as it is looked up, a link and a directory every account may write are
-// removed as themselves and the root made afresh, and one of this account's own is the root. Nothing is
-// made where a link leads.
+// removed as themselves, what the directory held with it, and the root made afresh, and one of this
+// account's own is the root. Nothing is made where a link leads.
 func TestMakeRootGoesIntoNoNameTakenMeanwhile(t *testing.T) {
 	was := looking
 	t.Cleanup(func() { looking = was })
@@ -560,6 +560,13 @@ func TestMakeRootGoesIntoNoNameTakenMeanwhile(t *testing.T) {
 					t.Fatal(err)
 				}
 
+				// At the root's name, which is made afresh, with something in it to go with it.
+				if filepath.Base(at) == DirName {
+					if err := os.WriteFile(filepath.Join(at, "planted"), []byte("anybody's"), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+
 				if err := os.Chmod(at, 0o777); err != nil {
 					t.Fatal(err)
 				}
@@ -608,6 +615,11 @@ func TestMakeRootGoesIntoNoNameTakenMeanwhile(t *testing.T) {
 				case want == "" && (lmode(t, root) != os.ModeDir|0o700):
 					t.Errorf("EnsureAll left the root %v, with %s planted at %s as it was %s, want a directory at 0700",
 						lmode(t, root), c.name, at, phase)
+				case want == "" && at == root:
+					if _, err := os.Lstat(filepath.Join(root, "planted")); !errors.Is(err, fs.ErrNotExist) {
+						t.Errorf("the root EnsureAll made afresh, with %s planted at it, holds what that held (Lstat: %v)",
+							c.name, err)
+					}
 				case want != "" && (err == nil || !strings.Contains(err.Error(), want)):
 					t.Errorf("EnsureAll, with %s planted at %s as it was %s, = %v, want %q", c.name, at, phase, err,
 						want)

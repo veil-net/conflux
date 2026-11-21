@@ -149,6 +149,49 @@ func TestRemoveRootFollowsALinkRootOnlyWhereConfluxWould(t *testing.T) {
 	}
 }
 
+// TestRemoveRootRemovesWhatGrantsTheAdministratorsNothing: what another account planted in a root,
+// owning it under a DACL that grants the Administrators nothing, is removed all the same: a file is
+// opened to delete it and read its attributes, which the root's own DACL grants, and not to read it,
+// and a folder, which must be listed, is opened with backup intent, which the privileges an
+// Administrator holds grant. Windows-only, so it runs in CI's platforms job alone.
+func TestRemoveRootRemovesWhatGrantsTheAdministratorsNothing(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "conflux")
+	t.Setenv("CONFLUX_DIR", root)
+
+	if err := Default().EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	guests, err := windows.CreateWellKnownSid(windows.WinBuiltinGuestsSid)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	folder := filepath.Join(root, "planted")
+	if err := os.Mkdir(folder, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, p := range []string{filepath.Join(root, "notes"), filepath.Join(folder, "inside"), folder} {
+		if p != folder {
+			if err := os.WriteFile(p, []byte("theirs"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		privtest.SetSecurity(t, p, "D:P(A;;FA;;;SY)")
+		privtest.SetOwner(t, p, guests)
+	}
+
+	if gone, err := RemoveRoot(root); !gone || err != nil {
+		t.Fatalf("RemoveRoot(a root holding what grants the Administrators nothing) = %v, %v, want it removed", gone, err)
+	}
+
+	if _, err := os.Lstat(root); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("%s is there once RemoveRoot removed it (%v)", root, err)
+	}
+}
+
 // TestRemoveRootHoldsACONFLUXDIRsWay: a CONFLUX_DIR's way is held to parents' rule before anything in
 // it is removed, as the readers' check holds it, since a way another account may change could lead the
 // removal elsewhere: one inside a folder whose DACL lets Users delete what is in it is refused, naming

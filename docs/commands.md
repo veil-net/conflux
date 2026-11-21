@@ -769,7 +769,8 @@ accepted and ignored.
 
 Anything else is handed to `anchorctl` verbatim. On Unix conflux replaces its own
 process with it, so the stdio, the exit code and the signals are the child's with no
-translation.
+translation; where its `anchorctl` is a private temporary copy — no `bin/` to extract this build's
+pair into — it runs it as a child instead, as below, and removes the copy once it has run.
 
 Two kinds of command need nothing of conflux's: usage (`help`, or a help flag), which reaches
 no daemon, and one naming a socket of your own (`-socket`, or `ANCHOR_SOCKET`), which reaches a

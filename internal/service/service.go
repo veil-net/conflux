@@ -88,8 +88,8 @@ var manager = sync.OnceValue(newManager)
 // a home directory, a download, C:\tools -- may be writable by somebody else, who could
 // then swap it for their own program and have it run as root at the next start. So the
 // service runs a copy in the state directory, which only root can write and `uninstall`
-// removes, and each `up`, `proxy`, `install`, `start` and `update` refreshes it: an
-// upgraded conflux reaches the service the next time one of them runs.
+// removes, and each `up`, `proxy`, `observe`, `enrol`, `install`, `start` and `update` refreshes
+// it: an upgraded conflux reaches the service the next time one of them runs.
 //
 // The copy is written beside its destination and renamed over it, so a service running
 // the old one keeps it. Windows will not replace the image of a running process but will

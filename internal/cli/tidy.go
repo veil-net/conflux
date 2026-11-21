@@ -17,23 +17,23 @@ import (
 	"github.com/veil-net/conflux/internal/ui"
 )
 
-// tidy removes what earlier conflux left in every place conflux keeps files, for the conflux an
-// update has just put in place, before its service starts: update hands the service over through this
-// conflux's `register` or `start`, and those call it in place of EnsureAll, which it runs itself; and
-// up, proxy, observe, install and enrol call it so (handOver) where the service's copy is not this
-// conflux.
-// Nothing of the machine's is touched -- the configuration, the identity, the state and the log stay
-// -- and what is removed is made again, fresh, by this conflux.
+// tidy removes what earlier conflux left in every place conflux keeps files, before the service starts
+// on this conflux, in place of EnsureAll, which it runs itself: `register`, which update has the conflux
+// it put in place run, calls it always; and up, proxy, observe, install, enrol and start call it
+// (handOver) where staleCopy finds what earlier conflux left -- the service's copy not there, not as
+// conflux makes it, or not this conflux, as after an update or a newer conflux put in place by hand or
+// by an install script, or the roots refused by paths' check for anything but not being there. Nothing
+// of the machine's is touched -- the configuration, the identity, the state and the log stay -- and what
+// is removed is made again, fresh, by this conflux.
 //
 //   - The service is stopped where a supervisor serves the root, asked of its serve lock through the
 //     root held (flock.HeldIn): a way to a CONFLUX_DIR that another account may change is refused
 //     there, before anything is stopped. A root paths' check refuses for anything but not being there
 //     -- checked, what the caller's check of d said -- holds no lock conflux reads, and a supervisor may
 //     serve it all the same, so the service is stopped there too, before EnsureAll makes the root
-//     afresh. A supervisor the boot service did not
-//     start -- one run by hand -- is refused too, with nothing removed (stopServing). stopped says the
-//     service was stopped, for the caller to start it again, on this conflux, however it ends
-//     (startAgain).
+//     afresh. A supervisor the boot service did not start -- one run by hand -- is refused too, with
+//     nothing removed (stopServing). stopped says the service was stopped, for the caller to start it
+//     again, on this conflux, however it ends (startAgain).
 //   - The roots are made as conflux makes them (EnsureAll), and the serve lock held from then on, so
 //     no supervisor starts while tidy works.
 //   - The anchord a dead supervisor left is stopped (daemon.ReapOrphan), and the run directory

@@ -66,7 +66,7 @@ $ conflux version
 **The boot service runs its own copy.** It runs as root, so the file it starts has to
 be one only root can change: a service pointed at `~/Downloads/conflux` or
 `C:\tools\conflux.exe` is one any program running as that user could swap for its own.
-So `up`, `proxy`, `install`, `start` and `update` copy the conflux they were run as into
+So `up`, `proxy`, `observe`, `enrol`, `install`, `start` and `update` copy the conflux they were run as into
 the state directory — `/var/lib/conflux/conflux` on Linux, `/var/db/conflux/conflux` on the BSDs,
 `/Library/Application Support/conflux/conflux` on macOS,
 `%ProgramData%\conflux\conflux.exe` on Windows — and register that. Where you keep the

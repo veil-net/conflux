@@ -139,7 +139,8 @@ shape, and it is worth being honest about how it is bounded:
 
 The boot service is held to the same rule. It runs as root (SYSTEM on Windows) and starts
 whatever file it names at every boot, so it names a copy of conflux in the same state directory,
-which `up`, `proxy`, `install` and `start` refresh, and never the file conflux was run from — a
+which `up`, `proxy`, `observe`, `enrol`, `install`, `start` and `update` refresh, and never the file
+conflux was run from — a
 home directory or a download that another account could swap for a program of its own, to be run
 as root at the next start. Its log, where conflux writes it (`serve --log`, on macOS and FreeBSD), is
 opened by its name, as root, only once `EnsureAll` has made the root as conflux makes one, and the

@@ -26,10 +26,11 @@ import (
 // the user named, by -socket or ANCHOR_SOCKET, is answered before anything of conflux's is
 // supplied, and a token the user exported is kept.
 //
-// On Unix a command for conflux's daemon replaces the process outright. That gives perfect
-// stdio, the child's exit code without translation, signals delivered to the right process,
-// and nothing left in `ps` pretending to be a wrapper. What needs nothing of conflux's runs as
-// a child instead; see runDetached.
+// On Unix a command for conflux's daemon replaces the process outright, where its anchorctl is
+// the installation's extraction. That gives perfect stdio, the child's exit code without
+// translation, signals delivered to the right process, and nothing left in `ps` pretending to be
+// a wrapper. A temporary copy, which is removed once it has run, runs as a child instead
+// (runAnchorctl), as does what needs nothing of conflux's; see runDetached.
 func passthrough(ctx context.Context, args []string) int {
 	// Neither usage nor a socket the user named needs conflux's daemon, so each is answered
 	// before anything is asked of the machine. Usage needs nothing running: anchorctl groups

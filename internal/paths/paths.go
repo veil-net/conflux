@@ -620,7 +620,8 @@ func (d Dirs) Way() ([]string, error) {
 // it, another installation among it. One that is not there, or is no longer a folder -- a link or a file
 // put at its name -- is left, and so is one that is, or holds, the installation's root holding anything
 // (holdsRoot): a root uninstall could not remove, or, as an ephemeral run under a CONFLUX_DIR ends, the
-// .conflux it made, which an installation has been made in since, stays with the folders that hold it.
+// .conflux it made, where anything is in it once the run's root is gone -- an installation made there
+// since, say -- stays with the folders that hold it.
 func RemoveWay(way []string) ([]string, error) {
 	var (
 		removed []string

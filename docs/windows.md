@@ -124,8 +124,13 @@ made afresh, with nothing of what was there. `run\`, `logs\`, `bin\` and `anchor
 the root is, and each that is not as conflux makes it, such as one an earlier conflux left the
 administrator's own, is removed whole and made afresh. A root that is a junction to another disk is therefore
 not followed, and a fresh root is made at its name: to keep conflux's files on another disk, use a
-`CONFLUX_DIR` there. What is in a root is conflux's, and nothing in it is judged: nobody else can
-have put anything there. A root on a network volume, however it is reached, is refused, as the volume
+`CONFLUX_DIR` there. Each file conflux keeps in a root — `conflux.json`, `state.json`,
+`manifest.b64`, `anchord.priv`, `way`, the lock files and the service's copy of conflux — is judged
+as the root is, and one that is not as conflux makes it, such as a copy an earlier conflux left the
+administrator's own, is removed for what writes it to make afresh; the supervisor, which runs from the
+service's copy, leaves it as it makes the roots, and places one not as conflux makes it afresh from
+its own image, the running one moved aside. Nothing else in a root is judged: nobody else can have
+put anything there. A root on a network volume, however it is reached, is refused, as the volume
 conflux holds it open on says; a link naming a share on the way to a `CONFLUX_DIR` is refused before
 anything follows it, by where the link itself says it leads.
 

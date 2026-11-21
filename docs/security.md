@@ -199,10 +199,11 @@ ephemeral run one in its own root, which uninstall, or the run as it ends, reads
 roots — only from a root as conflux makes one, as a file another account may have put there, never
 through a link, and through the root held open first, as `update` asks after the serve lock, for a
 `CONFLUX_DIR` once its way passes parents' rule — taking only directories above its roots, none the
-top of a volume; and then removes each whole, whatever it holds, deepest first, from the directory it
-is in as a walk of the way holds it, never through a link and never by its name, leaving any that a
-link took the place of, and any that holds a root of conflux's still holding anything: under a
-`CONFLUX_DIR` the `.conflux` an ephemeral run made on its way is the installation's root, whose
+top of a volume; and then removes each, deepest first, from the directory it is in as a walk of the
+way holds it, never through a link and never by its name, leaving any that a link took the place
+of: uninstall each whole, whatever it holds, but for one holding a root of conflux's still there; an
+ephemeral run each only where it is empty, since under a `CONFLUX_DIR` the `.conflux` it made on its
+way is the installation's root by its name, which may hold an installation made since, whose
 identity only `uninstall` removes. Each step of the way is judged once, as the root
 is made or found: what conflux then does with the root itself does not walk its way again. What is
 made at the root's own name meanwhile is judged as anything found there is; and a way that ends in

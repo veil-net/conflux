@@ -387,8 +387,9 @@ func RemoveEphemeral(e paths.Dirs, unlock func(), r Reporter) error {
 // emptyEphemeral empties an ephemeral run's root e but for its lock while the lock is held, so a run that
 // takes it the moment it is let go is never emptied out from under itself; then lets go of the lock with
 // unlock, and removes the lock file and the root, which is empty unless such a run has taken it, and,
-// once the root is gone, the folders a run made on the way to it, which it recorded there (paths.Way,
-// paths.RemoveWay): under a CONFLUX_DIR, its .conflux among them. The root is conflux's, made as conflux
+// once the root is gone, the folders a run made on the way to it, which it recorded there (paths.Way),
+// each that is empty (paths.RemoveEmptyWay): under a CONFLUX_DIR, its .conflux among them, unless an
+// installation has been made in it since. The root is conflux's, made as conflux
 // makes one, so nobody else can have put anything in it, nor a link at its name. It says why the root
 // could not be emptied, or its way read or removed.
 func emptyEphemeral(e paths.Dirs, unlock func()) error {
@@ -401,7 +402,7 @@ func emptyEphemeral(e paths.Dirs, unlock func()) error {
 	_ = os.Remove(e.ServeLockFile())
 
 	if os.Remove(e.State) == nil {
-		_, removeErr := paths.RemoveWay(way)
+		_, removeErr := paths.RemoveEmptyWay(way)
 		wayErr = errors.Join(wayErr, removeErr)
 	}
 

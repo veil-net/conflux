@@ -525,19 +525,26 @@ func (d Dirs) Way() ([]string, error) {
 // the walk to that holds it (toParent), never by its name and never following a link, a CONFLUX_DIR's
 // way held to parents' rule, and what it holds removed through it as a root is (removeFrom). A folder
 // conflux made is conflux's whole, so what anybody put in it goes with it. One that is not there, or is
-// no longer a folder -- a link or a file put at its name -- is left, and so is one that is, or holds, a
-// root of conflux's that holds anything (holdsRoot): under a CONFLUX_DIR the .conflux an ephemeral run
-// made on the way to its root is the installation's root by its name, which an installation made there
-// since has taken, and whose identity only uninstall removes; and a root uninstall could not remove, or
-// an ephemeral run's started since, stays with the folders that hold it.
-func RemoveWay(way []string) ([]string, error) {
+// no longer a folder -- a link or a file put at its name -- is left, and so is one that holds a root of
+// conflux's still there (holdsRoot): a root uninstall could not remove, or an ephemeral run's started
+// since, stays with the folders that hold it.
+func RemoveWay(way []string) ([]string, error) { return removeWay(way, true) }
+
+// RemoveEmptyWay is RemoveWay for the folders an ephemeral run made on the way to its root, as the run
+// ends or a killed run's root goes: each removed only where it is empty, so that one anything was put in
+// since -- under a CONFLUX_DIR, the .conflux the run made, which is the installation's root by its name
+// and holds an installation made there since -- is left, with every folder above it.
+func RemoveEmptyWay(way []string) ([]string, error) { return removeWay(way, false) }
+
+// removeWay is RemoveWay, removing each folder whole, or RemoveEmptyWay.
+func removeWay(way []string, whole bool) ([]string, error) {
 	var (
 		removed []string
 		errs    []error
 	)
 
 	for _, dir := range deepestFirst(slices.Clone(way)) {
-		if holdsRoot(dir) {
+		if whole && holdsRoot(dir) {
 			continue
 		}
 
@@ -546,7 +553,7 @@ func RemoveWay(way []string) ([]string, error) {
 			judge = parentsRule(dir)
 		}
 
-		gone, err := removeWayFolder(dir, judge)
+		gone, err := removeWayFolder(dir, judge, whole)
 		if err != nil {
 			errs = append(errs, err)
 		}
@@ -559,10 +566,10 @@ func RemoveWay(way []string) ([]string, error) {
 	return removed, errors.Join(errs...)
 }
 
-// removeWayFolder is RemoveWay's removal of dir, a folder, whole, from the folder it is in, held as the
-// walk judged by judge reaches it (toParent), and whether it removed it: a link or anything else at its
-// name that is no folder is left.
-func removeWayFolder(dir string, judge judgement) (bool, error) {
+// removeWayFolder is removeWay's removal of dir, a folder, from the folder it is in, held as the walk
+// judged by judge reaches it (toParent), and whether it removed it: whole where whole is, and otherwise
+// only where it is empty (removeEmpty); a link or anything else at its name that is no folder is left.
+func removeWayFolder(dir string, judge judgement, whole bool) (bool, error) {
 	w, err := toParent(dir, judge)
 	if err != nil || w == nil {
 		return false, err
@@ -570,6 +577,10 @@ func removeWayFolder(dir string, judge judgement) (bool, error) {
 	defer w.close()
 
 	at, name := w.last().step, filepath.Base(dir)
+
+	if !whole {
+		return removeEmpty(at, name, dir)
+	}
 
 	s, link, err := lookUp(at, name)
 
@@ -589,22 +600,12 @@ func removeWayFolder(dir string, judge judgement) (bool, error) {
 	return removeFrom(at, name, dir)
 }
 
-// holdsRoot reports whether dir is, or holds, a root of conflux's -- one of the installation's (Default)
-// or an ephemeral run's (EphemeralCandidates) -- that holds anything, by its name: an empty one is a way
-// folder like any other.
+// holdsRoot reports whether dir holds a root of conflux's -- one of the installation's (Default) or an
+// ephemeral run's (EphemeralCandidates) -- that is there, by its name.
 func holdsRoot(dir string) bool {
 	for _, root := range append(Default().Outer(), EphemeralCandidates()...) {
-		if root != dir && !above(dir, root) {
-			continue
-		}
-
-		if f, err := os.Open(root); err == nil {
-			names, _ := f.Readdirnames(1)
-			f.Close()
-
-			if len(names) > 0 {
-				return true
-			}
+		if _, err := os.Lstat(root); err == nil && above(dir, root) {
+			return true
 		}
 	}
 

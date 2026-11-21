@@ -174,9 +174,10 @@ func TestRemoveRootHoldsACONFLUXDIRsWay(t *testing.T) {
 
 // TestTheWayConfluxMadeIsRemovedWhole: EnsureAll records each folder it made on the way to an
 // installation's root, the CONFLUX_DIR among them, and Way reads the record back, deepest first.
-// RemoveWay leaves each folder holding a root of conflux's that holds anything, and once the root is
-// gone removes each whole, through handles, whatever it holds; a junction put at a recorded folder's
-// name is left, with where it leads untouched. Windows-only, so it runs in CI's platforms job alone.
+// RemoveWay leaves each folder holding a root of conflux's that is there, and once the root is gone
+// removes each whole, through handles, whatever it holds; a junction put at a recorded folder's name is
+// left, with where it leads untouched. RemoveEmptyWay removes only those that are empty, deepest first.
+// Windows-only, so it runs in CI's platforms job alone.
 func TestTheWayConfluxMadeIsRemovedWhole(t *testing.T) {
 	base := t.TempDir()
 	a, b := filepath.Join(base, "a"), filepath.Join(base, "a", "b")
@@ -226,6 +227,18 @@ func TestTheWayConfluxMadeIsRemovedWhole(t *testing.T) {
 
 	if _, err := os.Stat(elsewhere); err != nil {
 		t.Errorf("RemoveWay reached %s: %v", elsewhere, err)
+	}
+
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(a, "kept"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if removed, err := RemoveEmptyWay(way); err != nil || !slices.Equal(removed, []string{dir, b}) {
+		t.Errorf("RemoveEmptyWay(%q), %s holding a file = %q, %v, want %q", way, a, removed, err, []string{dir, b})
 	}
 }
 

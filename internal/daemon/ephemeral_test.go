@@ -386,6 +386,73 @@ func ephemeralRunner(root string) int {
 	return 0
 }
 
+// TestARunsWayGoesWhereItIsEmpty: the folders an ephemeral run made on the way to its root under a
+// CONFLUX_DIR -- the CONFLUX_DIR, and the installation's root, .conflux, by its name -- go with its root,
+// as a killed run's root is removed, only where each is empty by then: one anybody put anything in is
+// left, with what is above it, and so is a .conflux an installation was made in since.
+func TestARunsWayGoesWhereItIsEmpty(t *testing.T) {
+	for name, c := range map[string]struct {
+		put  func(made string) string
+		kept []string
+	}{
+		"nothing put in it": {},
+		"a file put in the CONFLUX_DIR it made": {put: func(made string) string {
+			return filepath.Join(made, "notes")
+		}, kept: []string{"made"}},
+		"an installation made in its .conflux": {put: func(made string) string {
+			return paths.Default().ConfigFile()
+		}, kept: []string{"made", filepath.Join("made", paths.DirName)}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			base := t.TempDir()
+			made := filepath.Join(base, "made")
+			t.Setenv("CONFLUX_DIR", made)
+
+			e := paths.EphemeralDirs(paths.EphemeralCandidates()[0])
+			if err := e.EnsureAll(); err != nil {
+				t.Fatal(err)
+			}
+
+			var put string
+			if c.put != nil {
+				put = c.put(made)
+				if err := os.WriteFile(put, []byte("somebody's"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			unlock, ok, err := flock.TryAcquire(e.ServeLockFile())
+			if err != nil || !ok {
+				t.Fatalf("could not hold the lock: %v", err)
+			}
+
+			if err := RemoveEphemeral(e, unlock, nil); err != nil {
+				t.Errorf("RemoveEphemeral: %v", err)
+			}
+
+			var left []string
+
+			_ = filepath.WalkDir(base, func(p string, d fs.DirEntry, err error) error {
+				if rel, _ := filepath.Rel(base, p); err == nil && d.IsDir() && rel != "." {
+					left = append(left, rel)
+				}
+
+				return nil
+			})
+
+			if !slices.Equal(left, c.kept) {
+				t.Errorf("RemoveEphemeral, %s, left %q, want %q", name, left, c.kept)
+			}
+
+			if put != "" {
+				if _, err := os.Stat(put); err != nil {
+					t.Errorf("RemoveEphemeral removed %s: %v", put, err)
+				}
+			}
+		})
+	}
+}
+
 // TestARunStartingAsAnotherEndsKeepsItsRoot: a run's root is emptied while its lock is held and
 // then removed, so a run that takes the lock the moment it is let go -- one starting as another
 // ends, or as uninstall clears a killed one's root -- is not emptied out from under itself; and

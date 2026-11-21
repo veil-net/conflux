@@ -327,7 +327,7 @@ func TestEnsureAllSaysWhyARootItCannotRemoveIsNotItsOwn(t *testing.T) {
 // naming it, with nothing made in it, since whoever may write it could move the root aside and put
 // another in its place.
 func TestEnsureAllRefusesAConfluxDirOthersMayWrite(t *testing.T) {
-	dir := t.TempDir()
+	dir := realTempDir(t)
 	if err := os.Chmod(dir, 0o777); err != nil {
 		t.Fatal(err)
 	}
@@ -372,7 +372,7 @@ func TestEnsureAllMakesItsRootInAStickyConfluxDir(t *testing.T) {
 // on the way to it: making the root by its name would follow the link and make it there, where
 // whoever may write the directory could have put a link of their own instead.
 func TestMakeRootJudgesTheWayBeforeItMakesAnything(t *testing.T) {
-	open := t.TempDir()
+	open := realTempDir(t)
 	if err := os.Chmod(open, 0o777); err != nil {
 		t.Fatal(err)
 	}
@@ -404,10 +404,7 @@ func TestMakeRootJudgesTheWayBeforeItMakesAnything(t *testing.T) {
 // where it leads, and the readers' check refuses it the same, rather than take it for nothing
 // installed.
 func TestALinkLeadingNowhereIsNoWayToMake(t *testing.T) {
-	base, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	base := realTempDir(t)
 
 	nowhere, link := filepath.Join(base, "nowhere"), filepath.Join(base, "link")
 	if err := os.Symlink(filepath.Join(nowhere, "deeper"), link); err != nil {
@@ -439,10 +436,7 @@ func TestALinkLeadingNowhereIsNoWayToMake(t *testing.T) {
 // one is made and passes the readers' check, and the directory is judged as any other: once others
 // may write it, Check refuses it, naming it.
 func TestAWayThroughADirectoryThisAccountMaySearchAlone(t *testing.T) {
-	base, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	base := realTempDir(t)
 
 	shut := filepath.Join(base, "shut")
 	if err := os.Mkdir(shut, 0o700); err != nil {
@@ -487,10 +481,7 @@ func TestMakeRootJudgesWhatIsPlantedWhileItJudges(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	open, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	open := realTempDir(t)
 
 	if err := os.Mkdir(filepath.Join(open, "real"), 0o700); err != nil {
 		t.Fatal(err)
@@ -545,10 +536,7 @@ func TestMakeRootGoesIntoNoNameTakenMeanwhile(t *testing.T) {
 
 	// fresh is a base to make made/conflux/.conflux in, with CONFLUX_DIR set to made/conflux.
 	fresh := func(t *testing.T) (step, dir, root string) {
-		base, err := filepath.EvalSymlinks(t.TempDir()) // under /private/var on macOS
-		if err != nil {
-			t.Fatal(err)
-		}
+		base := realTempDir(t) // under /private/var on macOS
 
 		step = filepath.Join(base, "made")
 		dir = filepath.Join(step, "conflux")
@@ -588,10 +576,7 @@ func TestMakeRootGoesIntoNoNameTakenMeanwhile(t *testing.T) {
 			refused func(step, dir, root, open string) []string
 		}{
 			{"a link into a directory every account may write", func(t *testing.T, at string) string {
-				open, err := filepath.EvalSymlinks(t.TempDir())
-				if err != nil {
-					t.Fatal(err)
-				}
+				open := realTempDir(t)
 
 				if err := os.Mkdir(filepath.Join(open, "real"), 0o700); err != nil {
 					t.Fatal(err)

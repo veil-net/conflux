@@ -58,7 +58,7 @@ func TestCheckHoldsARootAsConfluxMakesOne(t *testing.T) {
 		t.Errorf("Check(a link at the root's name) = %v, want a refusal naming it", err)
 	}
 
-	parent := t.TempDir()
+	parent := realTempDir(t)
 	if err := os.Chmod(parent, 0o777); err != nil {
 		t.Fatal(err)
 	}

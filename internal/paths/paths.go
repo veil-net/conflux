@@ -1180,13 +1180,22 @@ func (w *way) resolve(dir string, judge judgement) error {
 // on the way may make anything in it. A link at a name, there by the time conflux makes it or once it
 // has, is refused; each folder on the way that it goes into, made by conflux or taken, is held to rule
 // before anything is made in it, as the folder it was made in was. It is the folders it made, which
-// EnsureAll records (recordWay), those made before a refusal among them.
+// EnsureAll records (recordWay), those made before a refusal among them: each as dir, an absolute path,
+// spells it, rather than as the walk reached it through a link on the way, since that is how Way and
+// RemoveWay know them -- by the folders above the roots as d spells them.
 func makeWay(dir string, w *way, rule judgement) ([]string, error) {
 	var made []string
+
+	// The names left are the last of the folder dir is in, as dir spells it.
+	spelled := filepath.Dir(dir)
+	for range w.left {
+		spelled = filepath.Dir(spelled)
+	}
 
 	for _, name := range w.left {
 		at := w.last()
 		p := filepath.Join(at.path, name)
+		spelled = filepath.Join(spelled, name)
 
 		looking(p)
 
@@ -1198,7 +1207,7 @@ func makeWay(dir string, w *way, rule judgement) ([]string, error) {
 		}
 
 		if err == nil {
-			made = append(made, p)
+			made = append(made, spelled)
 		}
 
 		if !held {

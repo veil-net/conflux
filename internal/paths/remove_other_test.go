@@ -336,10 +336,7 @@ func TestTheWayConfluxMadeIsRemovedWhole(t *testing.T) {
 // at all, nothing in it opened; and so is a directory of this account's own every account may write, the
 // way record in it among what is not read.
 func TestARootIsHeldBeforeAnythingInItIsOpened(t *testing.T) {
-	base, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	base := realTempDir(t)
 
 	t.Setenv("CONFLUX_DIR", base)
 
@@ -477,10 +474,7 @@ func mine(t *testing.T, mode os.FileMode, plant func(dir string)) string {
 // on it, Way refuses, naming that directory, and RemoveWay refuses, naming it, and leaves the folder;
 // a folder above no CONFLUX_DIR, on a platform root's way, is not judged, and is removed.
 func TestTheWayIsJudgedBeforeItIsReadOrRemoved(t *testing.T) {
-	open, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	open := realTempDir(t)
 
 	a := filepath.Join(open, "a")
 	t.Setenv("CONFLUX_DIR", filepath.Join(a, "conflux"))

@@ -116,7 +116,11 @@ func TestEnsureAllRefusesARootAnotherAccountCanMove(t *testing.T) {
 	// A root that is a link is held to the directories above where it leads, too.
 	t.Run("a link into one", func(t *testing.T) {
 		target := foundRoot(t)
-		open := filepath.Dir(target)
+
+		open, err := filepath.EvalSymlinks(filepath.Dir(target))
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		if err := os.Chmod(open, 0o777); err != nil {
 			t.Fatal(err)
@@ -142,7 +146,7 @@ func TestEnsureAllRefusesARootAnotherAccountCanMove(t *testing.T) {
 	// And to the directory every link on the way is in, where the chain ends somewhere safe:
 	// whoever may write one can point its link anywhere.
 	t.Run("a chain of links through one", func(t *testing.T) {
-		a, open, safe := t.TempDir(), t.TempDir(), t.TempDir()
+		a, open, safe := t.TempDir(), realTempDir(t), t.TempDir()
 		for _, dir := range []string{a, safe} {
 			if err := os.Chmod(dir, 0o700); err != nil {
 				t.Fatal(err)
@@ -287,6 +291,19 @@ func groupWritableParent(t *testing.T, users func(own bool) ([]string, error)) s
 	return parent
 }
 
+// realTempDir is t.TempDir as the walk names it, no link on the way to it: a TMPDIR behind a link -- on
+// macOS /var/folders, under /private -- is named by where the link leads in what the walk refuses.
+func realTempDir(t *testing.T) string {
+	t.Helper()
+
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return dir
+}
+
 // ensureAllRefuses is EnsureAll's answer held to refused: a refusal whose words hold it, or none
 // where it is "". root is the root as a failure describes it.
 func ensureAllRefuses(t *testing.T, root, refused string) {
@@ -305,10 +322,7 @@ func ensureAllRefuses(t *testing.T, root, refused string) {
 // judged once, before the name is looked up, as is each link before it is followed, as itself, and
 // not the directory the root resolves to. A directory ".." leads back to is not judged again.
 func TestTheWalkJudgesEveryStepOnce(t *testing.T) {
-	base, err := filepath.EvalSymlinks(t.TempDir()) // under /private/var on macOS
-	if err != nil {
-		t.Fatal(err)
-	}
+	base := realTempDir(t) // under /private/var on macOS
 
 	for _, dir := range []string{"a", "b/c", "d"} {
 		if err := os.MkdirAll(filepath.Join(base, dir), 0o700); err != nil {

@@ -302,17 +302,20 @@ func secureAs(dir string, euid int) error {
 		}
 	}
 
-	// What the root holds, as found: a root wider than it is left let anybody put anything there,
-	// which narrowing it takes nothing out of.
-	if err := contentsAs(dir, euid); err != nil {
-		return err
-	}
-
 	// 0710 -- its group may pass through and list nothing -- is how the supervisor lets
 	// anchord's account reach the few things in the state and run directories that anchord
 	// runs or reads. ownedBy has just shown the directory to be this account's own, and only
 	// its owner can have given it that group and that mode, so it is left as it is.
-	if mode := fi.Mode().Perm(); mode == 0o700 || mode == 0o710 {
+	mode := fi.Mode().Perm()
+	wide := mode != 0o700 && mode != 0o710
+
+	// What the root holds, as found: a root wider than it is left let anybody put anything there,
+	// which narrowing it takes nothing out of.
+	if err := contentsAs(dir, euid, wide); err != nil {
+		return err
+	}
+
+	if !wide {
 		return nil
 	}
 
@@ -322,8 +325,9 @@ func secureAs(dir string, euid int) error {
 
 	narrowed(dir)
 
-	// And again: whatever was put there before the narrowing, since it was judged.
-	return contentsAs(dir, euid)
+	// And again: whatever was put there before the narrowing, since it was judged. Nobody but root
+	// and this account can give a file in it a second name from now on.
+	return contentsAs(dir, euid, false)
 }
 
 // narrowed is called once secure has narrowed a root, before it judges what the root holds again:
@@ -372,8 +376,9 @@ func ownedRoot(dir string) error {
 func checkRoot(dir string) error { return checkRootAs(dir, os.Geteuid()) }
 
 // contents refuses the root dir where anything in it another account could have put there, or may
-// change: contentsAs for this process's effective uid.
-func contents(dir string) error { return contentsAs(dir, os.Geteuid()) }
+// change: contentsAs for this process's effective uid, of a root a reader's check has just found
+// conflux's alone (checkRoot).
+func contents(dir string) error { return contentsAs(dir, os.Geteuid(), false) }
 
 // contentsAs refuses the root dir, for euid, where anything in it another account could have put
 // there, or may change, as Windows's contents does: a root left wider than conflux leaves one let
@@ -383,10 +388,13 @@ func contents(dir string) error { return contentsAs(dir, os.Geteuid()) }
 // its name in the directory held, never followed, and its ACL read through a descriptor opened on it
 // there, never by its name. A link is refused, whoever may change it: conflux makes none in a root.
 // So is anything but a file, a directory or a socket; an entry another account owns, whatever its
-// name; a file with a second name, a hard link that would lead root's writes to wherever that is;
-// and anything another account may write -- a file's content, or a directory's names, which is how
-// whoever may write it would retarget what it holds -- by its mode, the sticky bit letting nothing
-// through, or its ACL (judge).
+// name; and anything another account may write -- a file's content, or a directory's names, which
+// is how whoever may write it would retarget what it holds -- by its mode, the sticky bit letting
+// nothing through, or its ACL (judge). In a root found wide -- one secure is about to narrow, which
+// may have let another account write it -- so is a file with a second name, a hard link another
+// account may have made there to lead root's writes to wherever that is. Anywhere else a second name
+// is root's or this account's to have made, or anchord's account's, which may link what it can name
+// and which no refusal should send an operator to remove, a manifest among it.
 //
 // anchord's own account (anchordAccount) is conflux's, as the account anchord runs as is on
 // Windows: the supervisor gives it its -dir, anchor (made as anchor.new), its -config,
@@ -399,7 +407,7 @@ func contents(dir string) error { return contentsAs(dir, os.Geteuid()) }
 //
 // The root is opened by its name once, which secure and checkRoot have just held, a link at it
 // included, to its owner, and refused unless it is the directory they judged.
-func contentsAs(dir string, euid int) error {
+func contentsAs(dir string, euid int, wide bool) error {
 	fi, err := os.Stat(dir)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", dir, err)
@@ -424,19 +432,28 @@ func contentsAs(dir string, euid int) error {
 		return fmt.Errorf("%s changed while conflux judged it, so conflux will not use it.\n  Run this again", dir)
 	}
 
-	return judgeIn(dir, fd, "", euid, map[uint32]bool{})
+	return judgeIn(&judging{dir: dir, euid: euid, wide: wide, anchords: map[uint32]bool{}}, fd, "")
 }
 
-// judgeIn is contentsAs's judgement of what is in the directory fd holds open, rel within the root
-// dir; anchords keeps what anchordAccount said of each uid it was asked of.
-func judgeIn(dir string, fd int, rel string, euid int, anchords map[uint32]bool) error {
+// judging is contentsAs's judgement of what the root dir holds, for euid: wide is whether the root
+// was found wider than conflux leaves one, and anchords keeps what anchordAccount said of each uid
+// it was asked of.
+type judging struct {
+	dir      string
+	euid     int
+	wide     bool
+	anchords map[uint32]bool
+}
+
+// judgeIn is j's judgement of what is in the directory fd holds open, rel within the root.
+func judgeIn(j *judging, fd int, rel string) error {
 	names, err := namesIn(fd)
 	if err != nil {
-		return fmt.Errorf("read %s: %w", filepath.Join(dir, rel), err)
+		return fmt.Errorf("read %s: %w", filepath.Join(j.dir, rel), err)
 	}
 
 	for _, name := range names {
-		if err := judgeEntry(dir, fd, filepath.Join(rel, name), name, euid, anchords); err != nil {
+		if err := judgeEntry(j, fd, filepath.Join(rel, name), name); err != nil {
 			return err
 		}
 	}
@@ -444,11 +461,12 @@ func judgeIn(dir string, fd int, rel string, euid int, anchords map[uint32]bool)
 	return nil
 }
 
-// judgeEntry is judgeIn's judgement of name, in the directory fd holds open, rel within the root dir,
+// judgeEntry is judgeIn's judgement of name, in the directory fd holds open, rel within the root,
 // and, where it is a directory to go into, of what it holds. One gone since it was listed is passed
 // over: nothing is there to judge, and a live run's root has its marker written and removed while
 // it runs.
-func judgeEntry(dir string, fd int, rel, name string, euid int, anchords map[uint32]bool) error {
+func judgeEntry(j *judging, fd int, rel, name string) error {
+	dir, euid := j.dir, j.euid
 	p := filepath.Join(dir, rel)
 
 	var st unix.Stat_t
@@ -473,15 +491,19 @@ func judgeEntry(dir string, fd int, rel, name string, euid int, anchords map[uin
 	}
 
 	theirs := st.Uid != 0 && int(st.Uid) != euid
-	anchord := theirs && anchordPlace(rel) && anchordAccount(st.Uid, anchords)
+	anchord := theirs && anchordPlace(rel) && anchordAccount(st.Uid, j.anchords)
 
 	switch {
 	case theirs && !anchord:
 		return fmt.Errorf("%s, which belongs to uid %d, is in %s, so conflux did not make it and will not use it.\n  "+
 			"Remove it, then run this again", p, st.Uid, dir)
-	case kind == unix.S_IFREG && st.Nlink > 1:
-		return fmt.Errorf("%s, which has another name, is in %s, where conflux makes no file of two names, so "+
-			"conflux will not use it.\n  Remove it, then run this again", p, dir)
+	case j.wide && kind == unix.S_IFREG && st.Nlink > 1:
+		return fmt.Errorf("%s, which has another name, is in %s, where conflux makes no file of two names, and "+
+			"which conflux found wider than it leaves a root, so conflux will not use it: another account may have "+
+			"made that name.\n  Do not remove it before you "+
+			"know what it is: find its other name (find / -xdev -samefile %s). A file of the system's means it was "+
+			"put there for conflux to write to as root; a file of conflux's, the manifest among them, means "+
+			"somebody gave it a second name. Run this again once it has one", p, dir, p)
 	}
 
 	// A socket is not opened -- anchord's is in a directory of its own -- and is held to its mode.
@@ -529,7 +551,7 @@ func judgeEntry(dir string, fd int, rel, name string, euid int, anchords map[uin
 		return nil
 	}
 
-	return judgeIn(dir, sub, rel, euid, anchords)
+	return judgeIn(j, sub, rel)
 }
 
 // namesIn is what the directory fd holds open, freshly, lists, "." and ".." aside.

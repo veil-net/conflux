@@ -57,9 +57,13 @@ host can read, and when the run stops there is nothing at all.
   held open by `fstatat` and `openat` and never by a name, an entry's ACL through its own
   descriptor. A link is refused, wherever it leads: conflux makes none in a root, and one at
   `logs/conflux.log` would have the service write its log through it as root. So is anything but a
-  file, a directory or a socket, an entry another account owns, a file with a second name, and
-  anything another account may write by its mode, the sticky bit letting nothing through, or its
-  ACL. `anchord`'s own account is conflux's: what the supervisor gives it — `anchor/`,
+  file, a directory or a socket, an entry another account owns, and anything another account may
+  write by its mode, the sticky bit letting nothing through, or its ACL; and, in a root found wider
+  than conflux leaves one, which another account may have been able to write, a file with a second
+  name, which would lead root's writes wherever that name is. Anywhere else a second name is root's,
+  this account's or `anchord`'s account's to have made, and refusing it would send an operator to
+  remove a file conflux keeps, the manifest among them, so the refusal names the file and asks for
+  its other name to be found first. `anchord`'s own account is conflux's: what the supervisor gives it — `anchor/`,
   `anchord.json` and the run directory's `anchord/` — it may own, and its directories are not gone
   into, since conflux reads what `anchord` writes there as untrusted; anything else it owns is
   refused, as it can make nothing elsewhere in a root. Every reader of an ephemeral run's root

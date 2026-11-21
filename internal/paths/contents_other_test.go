@@ -77,6 +77,49 @@ func TestEnsureAllJudgesWhatAWideRootHolds(t *testing.T) {
 	}
 }
 
+// TestASecondNameIsRefusedOnlyInARootFoundWide: a file in a root with a second name would lead root's
+// writes to wherever that name is, but only an account that could write the root can have made it
+// there. So it is refused as secure finds a root wider than conflux leaves one, before narrowing it,
+// with a refusal that sends nobody to remove the file -- it may be the manifest -- and nowhere else: a
+// root already 0700, or 0710, whose manifest anchord's account, which may link what it can name, gave
+// a second name, is taken by EnsureAll and by Foreign.
+func TestASecondNameIsRefusedOnlyInARootFoundWide(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", "")
+
+	for _, mode := range []os.FileMode{0o700, 0o710, 0o750} {
+		root := foundRoot(t)
+		at := filepath.Join(root, "manifest.b64")
+
+		if err := os.WriteFile(at, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.Link(at, filepath.Join(t.TempDir(), "second")); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.Chmod(root, mode); err != nil {
+			t.Fatal(err)
+		}
+
+		err := Dirs{Config: root, State: root, Run: filepath.Join(root, runName)}.EnsureAll()
+
+		switch wide := mode == 0o750; {
+		case wide && (err == nil || !strings.Contains(err.Error(), at+", which has another name, is in ")):
+			t.Errorf("EnsureAll(a %#o root holding %s, which has a second name) = %v, want a refusal naming it", mode,
+				at, err)
+		case wide && strings.Contains(err.Error(), "Remove it"):
+			t.Errorf("the refusal of a second name sends the operator to remove the file: %v", err)
+		case !wide && err != nil:
+			t.Errorf("EnsureAll(a %#o root holding %s, which has a second name) = %v", mode, at, err)
+		case !wide:
+			if err := Foreign(root); err != nil {
+				t.Errorf("Foreign(a %#o root holding %s, which has a second name) = %v", mode, at, err)
+			}
+		}
+	}
+}
+
 // outside is a file outside any root, whose content a test checks nothing wrote to.
 func outside(t *testing.T) string {
 	t.Helper()
@@ -130,7 +173,7 @@ func TestARootHoldingAnotherAccountsFileIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	judge, owner := func() error { return contentsAs(root, os.Geteuid()+1) }, os.Geteuid()
+	judge, owner := func() error { return contentsAs(root, os.Geteuid()+1, false) }, os.Geteuid()
 
 	if os.Geteuid() == 0 {
 		if err := os.Chown(at, 65534, 65534); err != nil {

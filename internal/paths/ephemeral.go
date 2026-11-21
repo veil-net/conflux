@@ -155,7 +155,7 @@ func FirstExecutable(candidates []string, refuse func(string) error) (string, er
 // filesystem holding the nearest of root and its parents that exists is mounted to allow
 // it, so a root not made yet is judged by where it would be made. It walks up by name and
 // judges nothing: what it reads of a directory is the filesystem it is on, not who may
-// change it.
+// change it; on Windows, which mounts nothing noexec, it reads nothing (MountAllowsExec).
 func executable(root string) (bool, error) {
 	for p := root; ; p = filepath.Dir(p) {
 		ok, err := MountAllowsExec(p)

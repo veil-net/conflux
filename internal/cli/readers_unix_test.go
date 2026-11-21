@@ -17,6 +17,7 @@ import (
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
 	"github.com/veil-net/conflux/internal/privcheck"
@@ -533,5 +534,94 @@ func TestAnUpdateStopsNothingOnAWayItRefuses(t *testing.T) {
 					verb, mgr.stops, mgr.restarts, len(mgr.installs))
 			}
 		})
+	}
+}
+
+// readerArgs, set, makes TestAReaderLeavesNothingInTheTemporaryDirectory's child conflux with these
+// arguments, a line each: a pass-through to conflux's daemon replaces the process with anchorctl where
+// that is the installation's extraction, which the test binary itself must not be.
+const readerArgs = "CONFLUX_TEST_READER_ARGS"
+
+// TestAReaderLeavesNothingInTheTemporaryDirectory: a reader of an installation with this build's pair
+// not extracted -- status, with the daemon's token or without it, a pass-through to the daemon (peers),
+// and a pass-through for usage (peers -h) -- runs a temporary copy of anchorctl where there is no bin
+// directory to extract the pair into, and removes it however it ends; and where there is one, extracts
+// the pair there and writes nothing in the temporary directory at all. Either way the temporary
+// directory is left as it was found: empty.
+func TestAReaderLeavesNothingInTheTemporaryDirectory(t *testing.T) {
+	if args := os.Getenv(readerArgs); args != "" {
+		os.Exit(Main(append([]string{"conflux"}, strings.Split(args, "\n")...)))
+	}
+
+	anchortest.Require(t)
+
+	for _, bin := range []bool{false, true} {
+		for _, c := range []struct {
+			name  string
+			argv  []string
+			token bool
+		}{
+			{"status", []string{"status"}, true},
+			{"status, no token", []string{"status"}, false},
+			{"peers", []string{"peers"}, true},
+			{"peers -h", []string{"peers", "-h"}, true},
+		} {
+			t.Run(fmt.Sprintf("%s, bin %v", c.name, bin), func(t *testing.T) {
+				d := pathstest.DirsIn(t, pathstest.ShortRoot(t))
+
+				tmp := t.TempDir()
+				t.Setenv("TMPDIR", tmp)
+				t.Setenv(anchorctl.SocketEnv, "")
+				t.Setenv(anchorctl.TokenEnv, "")
+
+				if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Taints: []string{"t"},
+					APIBaseURL: "https://127.0.0.1:1"}); err != nil {
+					t.Fatal(err)
+				}
+
+				// A socket's name with nothing behind it, which a reader asks all the same.
+				if err := os.MkdirAll(d.DaemonRun(), 0o700); err != nil {
+					t.Fatal(err)
+				}
+
+				if err := os.WriteFile(d.Socket(), nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+
+				if c.token {
+					if err := os.WriteFile(d.TokenFile(), []byte("token"), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+
+				if bin {
+					if err := os.Mkdir(d.Libexec(), 0o700); err != nil {
+						t.Fatal(err)
+					}
+				}
+
+				if c.argv[0] == "status" {
+					standInService(t, &fakeManager{d: d})
+					capture(t, c.argv...)
+				} else {
+					cmd := exec.Command(os.Args[0], //nolint:gosec // this test binary
+						"-test.run=^TestAReaderLeavesNothingInTheTemporaryDirectory$")
+					cmd.Env = append(os.Environ(), readerArgs+"="+strings.Join(c.argv, "\n"))
+
+					if out, err := cmd.CombinedOutput(); cmd.ProcessState == nil {
+						t.Fatalf("run conflux %s: %v\n%s", strings.Join(c.argv, " "), err, out)
+					}
+				}
+
+				if left, _ := os.ReadDir(tmp); len(left) > 0 {
+					t.Errorf("conflux %s left %v in the temporary directory", strings.Join(c.argv, " "), left)
+				}
+
+				if _, err := libexec.Extracted(d); bin && err != nil {
+					t.Errorf("conflux %s did not extract the pair into the bin directory: %v", strings.Join(c.argv, " "),
+						err)
+				}
+			})
+		}
 	}
 }

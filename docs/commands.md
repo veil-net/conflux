@@ -122,16 +122,46 @@ account running conflux, and nobody else able to write it or point it elsewhere.
 is refused, exit 1, naming it and who else could change it, and nothing in it is read, run or
 stopped: `down` stops nothing; `update` downloads and replaces nothing. `uninstall` reads and
 signals nothing in such a root either, and removes it all the same, following nothing in it, but
-for a `CONFLUX_DIR` whose way another account may change, or that is a shared or system directory,
-which it refuses before removing anything ([`conflux uninstall`](#conflux-uninstall)). Nothing is narrowed either. That
+for a `CONFLUX_DIR` whose way another account may change, one that is a shared or system directory,
+and a root that is not conflux's, which it refuses before removing anything
+([`conflux uninstall`](#conflux-uninstall)). Nothing is narrowed either. That
 is for `up`, `proxy`, `observe`, `install`, `enrol` and `start`, which make the roots, or make them
-conflux's: they narrow one of conflux's own and refuse one another account owns. A root that is not
-there is a machine with nothing installed, and read as one.
+conflux's: they narrow one of conflux's own and refuse one another account owns, and they refuse,
+with nothing made, narrowed or filled, a root that is a shared or system directory, the top of a
+volume, a file rather than a directory, or a directory holding a name conflux never makes there,
+naming that entry. A root that is not there is a machine with nothing installed, and read as one.
 
 Help is the exception, since it needs nothing of the machine's: it runs the `anchorctl` extracted
-in the root only where the root passes that check and a whole extraction is there, and otherwise
+in the root only where the root passes the readers' check and a whole extraction is there, and otherwise
 — the root refused, or not there — a private temporary copy, reading nothing in the root
 ([Pass-through](#pass-through)).
+
+What is no root, on every command that makes or removes one
+([security.md](security.md#the-file-and-the-directory-around-it)):
+
+- **A shared or system directory**, however it is reached and whoever owns it. On Unix: a sticky
+  directory (`/tmp`), `/`, every directory directly under `/` (`/home`, `/opt`, `/srv`, `/usr` …)
+  but one conflux made a root of — its owner's, at `0700` or `0710`, holding what conflux keeps —
+  the system's log directory, a directory above where a platform root is kept by default, and the
+  directory the running conflux is in or one above it. On Windows: a volume's root (`C:\`, `\\?\C:\`,
+  or the volume by its GUID), a folder directly under one that Windows made, which TrustedInstaller
+  or SYSTEM owns (`Program Files`, `ProgramData`, `PerfLogs` …), `%ProgramData%`, `%SystemRoot%`,
+  `C:\Users`, `C:\Users\Public`, the folder the running conflux is in or one above it
+  (`%ProgramFiles%\conflux`, where `install.ps1` puts it), and a folder whose DACL makes it a space
+  other accounts share. A `CONFLUX_DIR` that names such a directory is to be pointed elsewhere; a
+  platform root that is one, which somebody else made, is to be removed.
+- **The service's own root is the exception** to the running conflux's directory: where the conflux
+  running is the copy the boot service runs from that root — one file with the copy at its name
+  there, never followed — it is taken whatever its mode or DACL, and a widened one is narrowed, as
+  the service narrows it at its start, rather than refused at every start.
+- **The top of a volume**, a `SUBST` letter's included, whose final path is the folder it stands for:
+  no folder holds it for it to be removed from.
+- **A file at a root's name**, or anything else that is neither a directory nor a link: conflux makes
+  only a directory there.
+- **A directory holding what conflux never makes there**, at the root's name or where a link there
+  that conflux follows leads — a `CONFLUX_DIR` at a folder of homes, or a link at a root's name
+  repointed at a program's folder — refused naming the first stray entry, and left as it is. An
+  empty directory, and a root conflux made, hold nothing else.
 
 ## `conflux up`
 
@@ -518,26 +548,29 @@ it is removed as the link, and where it leads is never touched; a file another a
 there is removed as itself, never read. A root whose own name is a link or junction — one moved to
 another disk — is followed only where conflux would follow it every day: owned by root (SYSTEM or the
 Administrators on Windows) or the account running conflux, nobody else able to point it elsewhere,
-and leading to a directory one of those owns, which conflux has secured as a root, as it secures
-every root at its first use (`0700` or `0710`; on Windows the Administrators' or SYSTEM's under a
-protected DACL granting nobody else anything). Then what that directory holds is removed through
-the handle held on it, and the link after, the directory itself left empty; a link that fails is
-removed as itself, and where it leads is not touched. A `CONFLUX_DIR`'s way is
+on Windows judged for the SYSTEM service, so a junction an administrator made, which their unelevated
+processes may repoint, is not gone into, and leading to a directory one of those owns, which conflux
+has secured as a root, as it secures every root at its first use (`0700` or `0710`; on Windows the
+Administrators' or SYSTEM's under a protected DACL granting nobody else anything). Then what that
+directory holds is removed through the handle held on it, and the link after, the directory itself
+left empty; a link that fails is removed as itself, and where it leads is not touched. A `CONFLUX_DIR`'s way is
 held to the rule the [readers' check](#a-root-another-account-could-change) holds it to as it is
 walked, so a way another account could change cannot lead the removal elsewhere; the platform's
 own roots are on the system's way. Three kinds of root are refused. One is a `CONFLUX_DIR` whose way
 another account may change: whoever could change it could have put anything at the root's name, so
-conflux cannot know what is there is its own. Another is a root that is a shared or system directory
-— a `CONFLUX_DIR` of `/tmp`, `/` or `C:\` — which conflux never makes its own, and so never empties
-([security.md](security.md#the-file-and-the-directory-around-it)); a link at a root's name leading
-to one is removed as itself. The third is a root that holds a name conflux never makes there, at its
-name or where a link there that conflux follows leads — a `CONFLUX_DIR` at a folder of homes —
-which is somebody else's, not conflux's. Every root is judged before anything is asked or removed,
+conflux cannot know what is there is its own. Another is a root that is a shared or system directory, or the top of a volume
+— a `CONFLUX_DIR` of `/tmp`, `/usr`, `/`, `C:\`, `C:\Program Files` or a `SUBST` letter — which conflux
+never makes its own, and so never empties ([what is no root](#a-root-another-account-could-change));
+a link at a root's name leading to one is removed as itself, unless it holds what conflux never makes
+there. The third is a root that is not conflux's: one that holds a name conflux never makes there, at
+its name or where a link there that conflux follows leads — a `CONFLUX_DIR` at a folder of homes —
+or a file at its name, as `CONFLUX_DIR=/etc/passwd` would have it, which is somebody else's. Every root is judged before anything is asked or removed,
 so each is refused, exit 1, with nothing removed, the boot service included: the first naming the
 folder that fails and saying to run `uninstall` again once nobody else can change any folder on the
 way, the second saying uninstall left everything in place, the third naming the entry conflux
-never makes and saying the same. A root that cannot be judged at all, for any other reason, stops
-uninstall there too, exit 1, saying so, before it acts. Any other root the readers' check refuses is removed the same way as one it takes, with
+never makes, or the file, and saying the same. A root that cannot be judged at all — a way that
+cannot be walked, such as a `CONFLUX_DIR` beneath a file — stops uninstall there too, exit 1, saying
+so, before it acts. Any other root the readers' check refuses is removed the same way as one it takes, with
 nothing in it read or signalled first — no identity shown in the question, no `anchord` stopped by
 its pid record. The record of the folders made on the way to it is read all the same, as a file
 anybody may have put there, never through a link: all it can lead to is an empty folder above

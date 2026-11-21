@@ -1369,8 +1369,10 @@ var systemFolders = sync.OnceValue(func() map[string]string {
 
 // sharedRoot refuses the root dir, the folder h holds open, where it is one others keep what is theirs
 // in, which conflux never fills, restricts or empties, whoever owns it: a volume's root (C:\), a folder
-// systemFolders names, a folder directly under a volume's root that Windows made (windowsOwn), or one
-// whose DACL makes it a space other accounts share (sharedSpace), as read through h.
+// systemFolders names, a folder directly under a volume's root that Windows made (windowsOwn), the
+// folder the running conflux is in or one above it (runningExe) -- the first but where the running
+// conflux is the copy the boot service runs from it (serviceCopy), the service's own root, whatever
+// its DACL -- or one whose DACL makes it a space other accounts share (sharedSpace), as read through h.
 func sharedRoot(dir string, h windows.Handle) error {
 	sd, err := security(h)
 	if err != nil {
@@ -1387,8 +1389,18 @@ func sharedRoot(dir string, h windows.Handle) error {
 			why = placeOnVolume(g, sd)
 		}
 	default:
+		folder := strings.ToLower(filepath.Clean(strings.TrimPrefix(p, `\\?\`)))
+
 		if why = placeOnVolume(p, sd); why == "" {
-			why = systemFolders()[strings.ToLower(filepath.Clean(strings.TrimPrefix(p, `\\?\`)))]
+			why = systemFolders()[folder]
+		}
+
+		switch ex := runningExe(); {
+		case why != "":
+		case ex.above[folder]:
+			why = "a folder above the one the running conflux is in"
+		case folder == ex.folder && !serviceCopy(h, ex):
+			why = "the folder the running conflux is in"
 		}
 	}
 
@@ -1419,6 +1431,81 @@ func sharedRoot(dir string, h windows.Handle) error {
 	return fmt.Errorf("%s is %s, so conflux will not use it as a root: it never fills, restricts or empties a "+
 		"folder others keep what is theirs in.\n  Point it at a folder of its own, then run this again as "+
 		"Administrator", dir, why)
+}
+
+// exePlace is the running conflux as Windows names it (exePlaceOf): the folder it is in and each
+// folder above that, by their final paths, lower-cased as systemFolders keeps them, and the file it is.
+type exePlace struct {
+	folder string
+	above  map[string]bool
+	file   windows.ByHandleFileInformation
+	known  bool
+}
+
+// runningExe is this process's exePlace, read once: the running conflux does not move while it runs.
+// A variable so a test can stand another conflux in.
+var runningExe = sync.OnceValue(func() exePlace {
+	exe, err := os.Executable()
+	if err != nil {
+		return exePlace{}
+	}
+
+	return exePlaceOf(exe)
+})
+
+// exePlaceOf is the exePlace of a conflux running exe: opened following any link, as Windows ran it,
+// its final path by its drive letter read off the handle, and the file read through it. Where it
+// cannot be opened or named so it is no place at all.
+func exePlaceOf(exe string) exePlace {
+	h, err := openFile(exe, windows.FILE_READ_ATTRIBUTES, true)
+	if err != nil {
+		return exePlace{}
+	}
+	defer windows.CloseHandle(h)
+
+	ex := exePlace{above: map[string]bool{}}
+
+	ex.known = windows.GetFileInformationByHandle(h, &ex.file) == nil
+
+	final, err := finalPath(h, volumeNameDOS)
+	if err != nil {
+		return ex
+	}
+
+	ex.folder = strings.ToLower(filepath.Dir(filepath.Clean(strings.TrimPrefix(final, `\\?\`))))
+
+	for a := filepath.Dir(ex.folder); ; a = filepath.Dir(a) {
+		ex.above[a] = true
+
+		if a == filepath.Dir(a) {
+			return ex
+		}
+	}
+}
+
+// serviceCopy reports whether the running conflux, ex, is the copy the boot service runs from the root h
+// holds open (ServiceExecutable): the file at that copy's name there, looked up there and nowhere else
+// and never followed (ntOpen), no reparse point, and one file with the running conflux (sameFile's
+// rule).
+func serviceCopy(h windows.Handle, ex exePlace) bool {
+	if !ex.known {
+		return false
+	}
+
+	c, err := ntOpen(h, filepath.Base(Dirs{}.ServiceExecutable()), nil, windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES,
+		windows.FILE_OPEN, windows.FILE_NON_DIRECTORY_FILE)
+	if err != nil {
+		return false
+	}
+	defer windows.CloseHandle(c)
+
+	var fi windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(c, &fi); err != nil || fi.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+		return false
+	}
+
+	return fi.VolumeSerialNumber == ex.file.VolumeSerialNumber && fi.FileIndexHigh == ex.file.FileIndexHigh &&
+		fi.FileIndexLow == ex.file.FileIndexLow
 }
 
 // placeOnVolume is why final, a folder's final path (finalPath), is no root by where it is on its

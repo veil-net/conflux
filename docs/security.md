@@ -60,7 +60,9 @@ host can read, and when the run stops there is nothing at all.
   refused at every start. On Windows it is a volume's root (`C:\`), a folder directly under one that
   Windows made, which TrustedInstaller or SYSTEM owns (`Program Files`, `ProgramData`, `PerfLogs` …)
   where what conflux or an administrator makes there is the Administrators' or the administrator's,
-  `%ProgramData%`, `%SystemRoot%`, `C:\Users` and `C:\Users\Public`, and any folder whose own DACL makes it a space other accounts
+  `%ProgramData%`, `%SystemRoot%`, `C:\Users` and `C:\Users\Public`, the folder the running conflux
+  is in or one above it — `%ProgramFiles%\conflux`, where `install.ps1` puts it — but for the boot
+  service's own root, as on Unix, and any folder whose own DACL makes it a space other accounts
   share, as `%ProgramData%`'s does: Users let add to it and to the folders made in it, and `CREATOR
   OWNER` passed on, so each owns what it adds. A folder that only inherits such entries, as one made
   in `%ProgramData%` does, is a root like any other, judged and restricted.

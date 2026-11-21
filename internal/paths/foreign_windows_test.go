@@ -201,3 +201,66 @@ func TestAFolderOfWindowsOwnIsNoRoot(t *testing.T) {
 			own)
 	}
 }
+
+// TestTheFolderTheRunningConfluxIsInIsNoRoot: the folder the running conflux is in, and each one above
+// it, is no root -- %ProgramFiles%\conflux, where install.ps1 puts conflux, would otherwise be restricted
+// and emptied -- refused by uninstall's pre-flight as a shared root, reading nothing in it; but where
+// the running conflux is the copy the boot service runs from that folder, its own root, which EnsureAll
+// takes, whatever its DACL, and restricts. A conflux of another name there is refused by EnsureAll,
+// naming why, and the folder above the service's root is refused all the same. Windows-only, so it runs
+// in CI's platforms job alone.
+func TestTheFolderTheRunningConfluxIsInIsNoRoot(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, dir := range []string{filepath.Dir(exe), filepath.Dir(filepath.Dir(exe))} {
+		t.Setenv("CONFLUX_DIR", dir)
+
+		if err := Default().JudgeWays(); !errors.Is(err, ErrSharedRoot) || !strings.Contains(err.Error(), "the running conflux is in") {
+			t.Errorf("JudgeWays(a CONFLUX_DIR of %s, where the running conflux is) = %v, want a refusal of a shared root "+
+				"saying so", dir, err)
+		}
+	}
+
+	root := filepath.Join(t.TempDir(), "conflux")
+	t.Setenv("CONFLUX_DIR", root)
+
+	d := Default()
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, p := range []string{d.ServiceExecutable(), filepath.Join(root, ".conflux-other.exe")} {
+		if err := os.WriteFile(p, []byte("conflux"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	was := runningExe
+	t.Cleanup(func() { runningExe = was })
+
+	runningExe = func() exePlace { return exePlaceOf(filepath.Join(root, ".conflux-other.exe")) }
+
+	if err := d.EnsureAll(); err == nil || !strings.Contains(err.Error(), "the folder the running conflux is in") {
+		t.Errorf("EnsureAll(the root a conflux of another name runs from) = %v, want a refusal saying so", err)
+	}
+
+	runningExe = func() exePlace { return exePlaceOf(d.ServiceExecutable()) }
+
+	privtest.GrantUsers(t, root, windows.FILE_WRITE_DATA, windows.NO_INHERITANCE)
+
+	if err := d.EnsureAll(); err != nil {
+		t.Errorf("EnsureAll(the service's own root, run as its copy, its DACL letting Users add to it) = %v, want it "+
+			"taken", err)
+	}
+
+	onlyTheSystems(t, root)
+
+	t.Setenv("CONFLUX_DIR", filepath.Dir(root))
+
+	if err := Default().JudgeWays(); !errors.Is(err, ErrSharedRoot) || !strings.Contains(err.Error(), "above the one") {
+		t.Errorf("JudgeWays(a CONFLUX_DIR of the folder above the service's root) = %v, want a refusal saying so", err)
+	}
+}

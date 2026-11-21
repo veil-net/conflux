@@ -129,7 +129,9 @@ No root is a folder others keep what is theirs in, however it is reached and who
 volume's root (`C:\`), a folder directly under one that Windows made — which TrustedInstaller or SYSTEM
 owns, as `Program Files`, `ProgramData` and `PerfLogs` are, where what conflux makes there, and what an
 administrator makes, is the Administrators' or the administrator's own — `%ProgramData%`,
-`%SystemRoot%`, `C:\Users`, `C:\Users\Public`, or any folder
+`%SystemRoot%`, `C:\Users`, `C:\Users\Public`, the folder the running conflux is in or one above it
+(`%ProgramFiles%\conflux`, where `install.ps1` puts it), but for the boot service's own root where
+the running conflux is the copy the service runs from it, whatever its DACL, or any folder
 whose own DACL makes it a space other accounts share, as `%ProgramData%`'s does — Users let add to it
 and to the folders made in it, `CREATOR OWNER` passed full control — is refused by every command that
 makes a root before anything is filled or restricted, and by `uninstall` before it removes

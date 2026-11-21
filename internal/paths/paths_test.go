@@ -1,6 +1,8 @@
 package paths
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -104,6 +106,31 @@ func foundRoot(t *testing.T) string {
 	}
 
 	return root
+}
+
+// TestEnsureAllMakesOnlyTheFoldersItKeeps: EnsureAll makes the run and log directories in a root where
+// they are not there, and not the folders what uses them makes -- bin/, which an extraction makes, and
+// anchor.root/, which the supervisor makes for an anchord that runs as root -- which it only judges where
+// they are there.
+func TestEnsureAllMakesOnlyTheFoldersItKeeps(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", t.TempDir())
+
+	d := Default()
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, p := range []string{d.Run, d.Log} {
+		if fi, err := os.Lstat(p); p != "" && (err != nil || !fi.IsDir()) {
+			t.Errorf("EnsureAll did not make %s: %v, %v", p, fi, err)
+		}
+	}
+
+	for _, p := range []string{d.Libexec(), d.RootAnchorDir()} {
+		if _, err := os.Lstat(p); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("EnsureAll made %s, which what uses it makes (Lstat: %v)", p, err)
+		}
+	}
 }
 
 // TestClearExceptSaysWhatItRemoved: everything in the directory but the one kept is removed, a folder

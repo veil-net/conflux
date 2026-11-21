@@ -104,9 +104,10 @@ func oldInstall(t *testing.T) earlier {
 }
 
 // TestUpdateLeavesOnlyWhatThisConfluxMakes: update hands the service to the conflux it put in place
-// through that conflux's register, the anchor stopped, or its start, the anchor running; and before
-// either places or registers anything, it removes what earlier conflux left everywhere conflux keeps
-// files, and makes what it removed afresh. What is left is this conflux's alone: this build's set,
+// through that conflux's register, the anchor stopped, or its start, the anchor running; a conflux put
+// in place by hand, or by an install script, reaches the service through its install, as through up,
+// proxy and observe, which share it; and before any of them places or registers anything, it removes
+// what earlier conflux left everywhere conflux keeps files, and makes what it removed afresh. What is left is this conflux's alone: this build's set,
 // extracted again over the one planted padded to its sizes; no other set, nothing staged; a copy for
 // the service that is this conflux, nothing beside it, nor a write that never went in place; an empty
 // run directory; no killed run's root; nothing an update left beside the conflux it replaced. The
@@ -118,7 +119,7 @@ func TestUpdateLeavesOnlyWhatThisConfluxMakes(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
 
-	for _, verb := range []string{"register", "start"} {
+	for _, verb := range []string{"register", "start", "install"} {
 		t.Run(verb, func(t *testing.T) {
 			old := oldInstall(t)
 			d := old.d
@@ -129,7 +130,7 @@ func TestUpdateLeavesOnlyWhatThisConfluxMakes(t *testing.T) {
 			out, errOut, code := capture(t, verb)
 
 			want, restarts := ExitOK, 0
-			if verb == "start" {
+			if verb != "register" {
 				want, restarts = ExitError, 1
 			}
 
@@ -360,31 +361,27 @@ func configured(t *testing.T) paths.Dirs {
 
 // TestTidyStartsAgainTheServiceItStopped: where a supervisor serves the root, the conflux an update
 // put in place stops the service before it removes what earlier conflux left, and starts it again
-// once it is done, on itself: register, which starts nothing it did not stop, restarts it; start
-// restarts it as every start does.
+// once it is done, on itself: register, which starts nothing it did not stop, restarts it; start, and
+// install, of a conflux put in place by hand, restart it as every start does.
 func TestTidyStartsAgainTheServiceItStopped(t *testing.T) {
 	anchortest.Require(t) // it extracts the pair afresh
 
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
 
-	for _, verb := range []string{"register", "start"} {
+	for _, verb := range []string{"register", "start", "install"} {
 		t.Run(verb, func(t *testing.T) {
 			d := configured(t)
 
 			mgr := &stopping{fakeManager: fakeManager{d: d}, running: true, release: serving(t, d)}
 			standInService(t, mgr)
 
-			if verb == "start" {
-				mgr.restartErr = errStartsNothing
+			want := ExitOK
+			if verb != "register" {
+				mgr.restartErr, want = errStartsNothing, ExitError
 			}
 
 			out, errOut, code := capture(t, verb)
-
-			want := ExitOK
-			if verb == "start" {
-				want = ExitError
-			}
 
 			if code != want || mgr.stops != 1 || len(mgr.installs) != 1 || mgr.restarts != 1 {
 				t.Errorf("conflux %s of a root a supervisor serves exited %d, stopped the service %d times, "+

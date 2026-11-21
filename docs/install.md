@@ -132,7 +132,8 @@ left — the anchor sets extracted before, made again for it, the run directory'
 old copy for the service — keeping the configuration, the identity, the state and the log. See
 [commands.md](commands.md#conflux-update).
 Running the install script again, or replacing the binary by hand, replaces the binary
-and leaves the service on the old one; restart it onto the new one:
+and leaves the service on the old one until the next `conflux start`, `install`, `up`, `proxy` or
+`observe`; restart it onto the new one:
 
 ```console
 $ sudo install -m 0755 conflux-linux-amd64 /usr/local/bin/conflux
@@ -140,8 +141,9 @@ $ sudo conflux start
 ```
 
 The new binary carries a different anchor pair, which extracts into its own directory
-rather than over the one the running daemon has open, and `conflux start`, finding the service's
-copy is not this conflux, removes what earlier conflux left as `update` does, copies the new one
+rather than over the one the running daemon has open, and `conflux start` (or `install`, `up`,
+`proxy` or `observe`), finding the service's copy is not this conflux, removes what earlier conflux
+left as `update` does, copies the new one
 to where the service runs it from and restarts the service onto it. Nothing is re-enrolled and the
 identity is untouched.
 

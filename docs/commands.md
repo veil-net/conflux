@@ -358,6 +358,11 @@ configuration is invented.
 `up` and `proxy` call it internally after writing their configuration, so there is one
 path for "register and run" and one for "configure, persist, then register and run".
 
+Where the service's copy is not this conflux — a newer conflux put in place by hand or by the
+install script, or a first install — `install`, and `up`, `proxy` and `observe` through it, first
+removes what earlier conflux left, as [`update`](#conflux-update) describes, the service stopped
+for it and started again however the command ends, and writes the copy afresh.
+
 Registration is the point here. To start a machine that is already registered, that is
 `conflux start` — the two share the starting, so neither can drift into starting a
 different anchor from the other.

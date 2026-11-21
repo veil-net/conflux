@@ -19,7 +19,8 @@ import (
 
 // tidy removes what earlier conflux left in every place conflux keeps files, for the conflux an
 // update has just put in place, before its service starts: update hands the service over through this
-// conflux's `register` or `start`, and those call it in place of EnsureAll, which it runs itself.
+// conflux's `register` or `start`, and those call it in place of EnsureAll, which it runs itself; and
+// install calls it, for up, proxy, observe and install, where the service's copy is not this conflux.
 // Nothing of the machine's is touched -- the configuration, the identity, the state and the log stay
 // -- and what is removed is made again, fresh, by this conflux.
 //

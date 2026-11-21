@@ -44,7 +44,7 @@ func runInstall(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	return install(ctx, d, true, service.Place)
+	return install(ctx, d, true, nil)
 }
 
 // runRegister places this conflux's copy for the boot service and registers the service
@@ -115,9 +115,14 @@ func startAgain(mgr service.Manager, stopped bool, code int) int {
 // distinguishes `conflux install` typed by a person, which reports and may start, from the
 // internal call `up`, `proxy` and `observe` make, and `start` and `register`, which is
 // silent and leaves starting to the caller. Each has its directories already. place is
-// service.Place, which copies this conflux where the copy differs; service.PlaceAfresh, which writes
-// it whatever is there, for an update, once tidy has cleared what earlier conflux left; or keep, for
-// a copy service.Placed has found to be this conflux already.
+// service.PlaceAfresh, which writes the copy whatever is there, for a caller that has cleared what
+// earlier conflux left (tidy) -- register, and start where the copy is not this conflux; keep, for a
+// copy service.Placed has found to be this conflux already; or nil, for install, up, proxy and
+// observe, which is either: keep, where the copy is this conflux, and otherwise, as start does, what
+// earlier conflux left removed first, the service stopped for it (tidy), and the copy written afresh,
+// the service tidy stopped started again however install ends (startAgain) or by its caller's restart.
+// That is how a conflux put in place by hand, or by an install script, reaches the service at the
+// command typed next.
 //
 // The readiness marker is withdrawn first, before anything that can start the service --
 // launchd's Install does, for a running job whose definition changed -- and nothing
@@ -129,6 +134,21 @@ func startAgain(mgr service.Manager, stopped bool, code int) int {
 func install(ctx context.Context, d paths.Dirs, standalone bool, place func(paths.Dirs) (string, error)) int {
 	mgr := newService()
 
+	stopped := false
+
+	if place == nil {
+		place = keep
+
+		if !service.Placed(d) {
+			var err error
+			if stopped, err = tidy(d, mgr); err != nil {
+				return startAgain(mgr, stopped, fail(err))
+			}
+
+			place = service.PlaceAfresh
+		}
+	}
+
 	if err := daemon.ClearReady(d); err != nil {
 		// Not fatal. A marker that will not go costs waitFor one status call it was going
 		// to make anyway, which is exactly what the fallback is for.
@@ -137,11 +157,11 @@ func install(ctx context.Context, d paths.Dirs, standalone bool, place func(path
 
 	exe, err := place(d)
 	if err != nil {
-		return fail(err)
+		return startAgain(mgr, stopped, fail(err))
 	}
 
 	if err := register(mgr, exe); err != nil {
-		return fail(err)
+		return startAgain(mgr, stopped, fail(err))
 	}
 
 	if !standalone {
@@ -151,7 +171,7 @@ func install(ctx context.Context, d paths.Dirs, standalone bool, place func(path
 	cfg, err := config.Load(d)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			return fail(err)
+			return startAgain(mgr, stopped, fail(err))
 		}
 
 		ui.Printf("The boot service is registered and will start at boot.\n" +
@@ -159,7 +179,7 @@ func install(ctx context.Context, d paths.Dirs, standalone bool, place func(path
 			configureHint + "\n\n" +
 			"Each writes the configuration and starts it.\n")
 
-		return ExitOK
+		return startAgain(mgr, stopped, ExitOK)
 	}
 
 	return startFromConfig(ctx, d, mgr, cfg, "install")

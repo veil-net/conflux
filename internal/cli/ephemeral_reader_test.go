@@ -169,6 +169,10 @@ func TestAReaderRemakesNothing(t *testing.T) {
 
 	d := pathstest.Dirs(t)
 
+	if err := os.Remove(d.Libexec()); err != nil {
+		t.Fatal(err)
+	}
+
 	if err := os.WriteFile(d.TokenFile(), []byte("token"), 0o600); err != nil {
 		t.Fatal(err)
 	}

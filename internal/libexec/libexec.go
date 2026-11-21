@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -47,12 +46,11 @@ type Tools struct {
 }
 
 // Extract extracts this build's pair under d if it is not already there, and returns the paths,
-// for a caller that has made d's roots already (EnsureAll) -- the supervisor and an ephemeral run
-// as they start, wintun's, which puts its DLL beside the anchord it extracts, and the wait of a
-// command that has just started the service -- or held them to the readers' check, a reader
-// extracting into a bin directory as conflux makes one (ForUsage). It makes no root. Idempotent,
-// atomic, and safe against another conflux doing the same thing; where the pair is there, two
-// stats and nothing more.
+// for a caller that has made d's roots already (EnsureAll), the bin directory with them -- the
+// supervisor and an ephemeral run as they start, wintun's, which puts its DLL beside the anchord it
+// extracts, and the wait of a command that has just started the service. It makes neither a root nor
+// the bin directory, only the set in it (extractIn). Idempotent, atomic, and safe against another
+// conflux doing the same thing; where the pair is there, two stats and nothing more.
 func Extract(d paths.Dirs) (*Tools, error) {
 	t, err := Extracted(d)
 	if !errors.Is(err, ErrNotExtracted) {
@@ -67,11 +65,11 @@ func Extract(d paths.Dirs) (*Tools, error) {
 // (Extract), for an update, with nothing running from any of them: so that nothing an earlier
 // conflux made there, nor anything put among it, is kept or run. Under bin's lock, which an
 // extraction in progress holds. On Windows, which removes no file anybody has open, the lock is then
-// removed too where nothing has opened it since, with the directory, so both are made again as well;
-// on Unix it is kept, since a lock is taken on the file its name led to when it was opened, and one
-// waited for on a file removed meanwhile would be held beside one taken on the file made again at
-// its name. d's roots are made already (EnsureAll). It is the paths of what it removed from bin,
-// however far it got (paths.ClearExcept).
+// removed too where nothing has opened it since, so it is made again as well; on Unix it is kept,
+// since a lock is taken on the file its name led to when it was opened, and one waited for on a file
+// removed meanwhile would be held beside one taken on the file made again at its name. d's roots are
+// made already (EnsureAll), the bin directory with them, which stays. It is the paths of what it
+// removed from bin, however far it got (paths.ClearExcept).
 func Remake(d paths.Dirs) ([]string, error) {
 	if !anchor.Supported {
 		return nil, errUnsupported
@@ -79,15 +77,6 @@ func Remake(d paths.Dirs) ([]string, error) {
 
 	root := d.Libexec()
 	lock := filepath.Join(root, ".lock")
-
-	switch _, err := os.Lstat(root); {
-	case errors.Is(err, fs.ErrNotExist):
-		_, err := Extract(d)
-
-		return nil, err
-	case err != nil:
-		return nil, err
-	}
 
 	unlock, ok, err := flock.TryAcquire(lock)
 	if err != nil {
@@ -107,27 +96,21 @@ func Remake(d paths.Dirs) ([]string, error) {
 	}
 
 	// Let go of first, since Windows will not delete a file that is open: a lock somebody opened
-	// meanwhile stays, and so does the directory around it, which Extract then uses as it is.
-	if flock.Drop(lock) {
-		_ = os.Remove(root)
-	}
+	// meanwhile stays, which Extract then takes as it is.
+	flock.Drop(lock)
 
 	_, err = Extract(d)
 
 	return removed, err
 }
 
-// extractIn is Extract once a look found no whole extraction under d: the set directory made,
-// beneath a bin directory made where it is not there, under bin's lock.
+// extractIn is Extract once a look found no whole extraction under d: the set directory made in the bin
+// directory, under bin's lock, and nothing else. A bin directory not there -- one uninstall removed
+// meanwhile, with its root -- is an error, and is not made again.
 func extractIn(d paths.Dirs) (*Tools, error) {
-	root := d.Libexec()
 	t := toolsIn(d)
 
-	if err := os.MkdirAll(root, 0o700); err != nil {
-		return nil, fmt.Errorf("create %s: %w", root, err)
-	}
-
-	unlock, err := flock.Acquire(filepath.Join(root, ".lock"))
+	unlock, err := flock.Acquire(filepath.Join(d.Libexec(), ".lock"))
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +174,7 @@ func Extracted(d paths.Dirs) (*Tools, error) {
 // to the readers' check first (paths.Dirs.Check), before anything in them is read by its name. Where they
 // pass, this build's pair extracted there is used (Extracted), as found: nobody else can put anything in a
 // root as conflux makes one. Where it is not extracted yet -- as once an upgrade has put a newer conflux
-// in place -- it is extracted there (Extract), into the bin directory, provided that folder is there and
+// in place -- it is extracted there (extractIn), into the bin directory, provided that folder is there and
 // as conflux makes it (paths.Dirs.OursFolder): that adds a set and removes none, so a service still
 // running an older one keeps it, and makes neither a root nor the bin directory. Anything else -- no
 // installation, roots the check refuses, a bin directory not there or not as conflux makes it, an
@@ -200,7 +183,7 @@ func ForUsage(d paths.Dirs) (bin string, done func(), err error) {
 	if d.Check() == nil {
 		t, err := Extracted(d)
 		if errors.Is(err, ErrNotExtracted) && d.OursFolder(d.Libexec()) == nil {
-			t, err = Extract(d)
+			t, err = extractIn(d)
 		}
 
 		if err == nil {

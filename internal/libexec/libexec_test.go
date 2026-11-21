@@ -57,6 +57,34 @@ func TestExtractExtractsAndRuns(t *testing.T) {
 	}
 }
 
+// TestExtractionMakesNoRootNorBinDirectory: an extraction makes the set in the bin directory and nothing
+// else. EnsureAll makes the bin directory with the roots, and one gone since -- uninstall removing the
+// root under a reader that judged it a moment before -- fails the extraction, the bin directory and the
+// root made again by nobody.
+func TestExtractionMakesNoRootNorBinDirectory(t *testing.T) {
+	anchortest.Require(t)
+
+	d := pathstest.Dirs(t)
+
+	if fi, err := os.Lstat(d.Libexec()); err != nil || !fi.IsDir() {
+		t.Errorf("EnsureAll did not make the bin directory %s (%v)", d.Libexec(), err)
+	}
+
+	for _, gone := range []string{d.Libexec(), d.State} {
+		if err := os.RemoveAll(gone); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := Extract(d); err == nil {
+			t.Errorf("Extract with %s gone succeeded", gone)
+		}
+
+		if _, err := os.Lstat(gone); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("Extract made %s again (Lstat: %v)", gone, err)
+		}
+	}
+}
+
 // TestExtractIsIdempotent asserts the hot path does no work. Every start, and every reader
 // once the pair is there, calls Extract, so a second call that rewrote the pair would make
 // the CLI feel broken.
@@ -376,6 +404,10 @@ func TestAReaderExtractsIntoABinDirectoryOfConfluxs(t *testing.T) {
 
 	d := pathstest.Dirs(t)
 
+	if err := os.Remove(d.Libexec()); err != nil {
+		t.Fatal(err)
+	}
+
 	bin, done, err := ForUsage(d)
 	if err != nil || done == nil || !strings.HasPrefix(bin, tmp+string(filepath.Separator)) {
 		t.Fatalf("a reader with no bin directory = %s, %v, want a temporary copy in %s to remove", bin, err, tmp)
@@ -439,10 +471,6 @@ func TestAReaderExtractsNothingIntoABinDirectoryNotOfConfluxs(t *testing.T) {
 	t.Setenv("TMPDIR", tmp)
 
 	d := pathstest.Dirs(t)
-
-	if err := os.Mkdir(d.Libexec(), 0o700); err != nil {
-		t.Fatal(err)
-	}
 
 	if err := os.Chmod(d.Libexec(), 0o757); err != nil {
 		t.Fatal(err)

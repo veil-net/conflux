@@ -109,9 +109,9 @@ func foundRoot(t *testing.T) string {
 }
 
 // TestEnsureAllMakesOnlyTheFoldersItKeeps: EnsureAll makes the run and log directories in a root where
-// they are not there, and not the folders what uses them makes -- bin/, which an extraction makes, and
-// anchor.root/, which the supervisor makes for an anchord that runs as root -- which it only judges where
-// they are there.
+// they are not there, and the bin directory, which an extraction makes nothing in but its set; and not
+// anchor.root/, which the supervisor makes for an anchord that runs as root, and which it only judges
+// where it is there.
 func TestEnsureAllMakesOnlyTheFoldersItKeeps(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", t.TempDir())
 
@@ -120,16 +120,14 @@ func TestEnsureAllMakesOnlyTheFoldersItKeeps(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, p := range []string{d.Run, d.Log} {
+	for _, p := range []string{d.Run, d.Log, d.Libexec()} {
 		if fi, err := os.Lstat(p); p != "" && (err != nil || !fi.IsDir()) {
 			t.Errorf("EnsureAll did not make %s: %v, %v", p, fi, err)
 		}
 	}
 
-	for _, p := range []string{d.Libexec(), d.RootAnchorDir()} {
-		if _, err := os.Lstat(p); !errors.Is(err, fs.ErrNotExist) {
-			t.Errorf("EnsureAll made %s, which what uses it makes (Lstat: %v)", p, err)
-		}
+	if _, err := os.Lstat(d.RootAnchorDir()); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("EnsureAll made %s, which the supervisor makes (Lstat: %v)", d.RootAnchorDir(), err)
 	}
 }
 

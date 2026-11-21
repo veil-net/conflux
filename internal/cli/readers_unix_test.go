@@ -594,8 +594,8 @@ func TestAReaderLeavesNothingInTheTemporaryDirectory(t *testing.T) {
 					}
 				}
 
-				if bin {
-					if err := os.Mkdir(d.Libexec(), 0o700); err != nil {
+				if !bin {
+					if err := os.Remove(d.Libexec()); err != nil {
 						t.Fatal(err)
 					}
 				}

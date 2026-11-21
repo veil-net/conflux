@@ -159,7 +159,7 @@ func TestAnEphemeralRunWritesNothingAndLeavesNothing(t *testing.T) {
 	case <-time.After(2 * time.Second):
 	}
 
-	allowed := map[string]bool{"serve.lock": true, "run": true, "anchord.priv": true}
+	allowed := map[string]bool{"serve.lock": true, "run": true, "bin": true, "anchord.priv": true}
 
 	err := filepath.WalkDir(r.root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || path == r.root {

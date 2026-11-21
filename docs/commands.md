@@ -716,7 +716,7 @@ an older install as it is:
 - the lock files — the state's, the supervisor's and `bin`'s — are kept on Unix, where a lock
   waited for on a file removed meanwhile would be held beside one taken on the file made again at
   its name; on Windows, which removes no file anybody has open, each is removed once nothing holds
-  it, with the `bin` directory, for whatever next takes it to make again;
+  it, for whatever next takes it to make again;
 - the service's copy is written afresh, whatever it holds, with the image Windows moved aside
   and a copy that never went in place beside it removed;
 - what an earlier update left beside conflux goes: a download that never went in place, and on

@@ -506,11 +506,12 @@ func ownFolder(parent step, p string, installation, create bool) (step, error) {
 }
 
 // folders is each folder conflux keeps in its root dir, by its name, and whether EnsureAll makes it where
-// it is not there: the run and log directories where they are in that root, which it makes, and in the
-// state root the directory the pairs are extracted to (Libexec) and, for an installation, the anchor
-// directory of an anchord that runs as root (RootAnchorDir), which what uses them makes. The anchor
-// directory of an anchord that runs as its own account (AnchorDir) is that account's, as the supervisor
-// makes it and holds it to be (daemon's anchorDir), and is none of these.
+// it is not there: the run and log directories where they are in that root, and in the state root the
+// directory the pairs are extracted to (Libexec), which it makes -- an extraction makes nothing but its
+// set in it -- and, for an installation, the anchor directory of an anchord that runs as root
+// (RootAnchorDir), which what uses it makes. The anchor directory of an anchord that runs as its own
+// account (AnchorDir) is that account's, as the supervisor makes it and holds it to be (daemon's
+// anchorDir), and is none of these.
 func (d Dirs) folders(dir string) iter.Seq2[string, bool] {
 	return func(yield func(string, bool) bool) {
 		for sub, inside := range d.roots() {
@@ -519,7 +520,7 @@ func (d Dirs) folders(dir string) iter.Seq2[string, bool] {
 			}
 		}
 
-		if dir != d.State || !yield(d.Libexec(), false) {
+		if dir != d.State || !yield(d.Libexec(), true) {
 			return
 		}
 

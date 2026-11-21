@@ -255,8 +255,7 @@ func TestACopyNotAsConfluxMakesItIsPlacedAfresh(t *testing.T) {
 
 			pathstest.NotAsConfluxMakesIt(t, d.ServiceExecutable())
 
-			serving := d
-			if err := serving.EnsureServing(); err != nil {
+			if err := d.EnsureServing(); err != nil {
 				t.Fatal(err)
 			}
 

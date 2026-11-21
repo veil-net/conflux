@@ -310,11 +310,13 @@ retyping eight specs correctly from memory.
 
 Before it reads the configuration, places its copy for the service or registers it, `start`
 secures the roots as the service does at every start, and as `up` and `install` do: one of
-conflux's own left wider is narrowed, and one another account owns is refused, exit 1, naming it
-— on Windows, where the service runs as SYSTEM, what the administrator running it owns in the root,
-or what grants them a right, among it, as the service would refuse it at every start
-([windows.md](windows.md#file-permissions)). With the service registered and its roots gone, they
-are made again, as the service would make them.
+conflux's own left wider is narrowed, and one another account owns is refused, exit 1, naming it.
+On Windows, where the service runs as SYSTEM, what it would refuse at every start in the root —
+what the administrator running `start` owns there, or what grants them a right — is refused too,
+naming it ([windows.md](windows.md#file-permissions)), but only once what conflux makes again by
+its name there, and finds failing that rule, has been removed, as below: what is left to refuse is
+what conflux does not make again, the identity, the configuration and the state among it. With the
+service registered and its roots gone, they are made again, as the service would make them.
 
 `update` hands a running service to the conflux it put in place through that conflux's `start`.
 Where the service's copy is not this conflux — an update, or a newer conflux put in place by hand —
@@ -322,11 +324,12 @@ or the roots fail the [readers' check](#a-root-another-account-could-change), so
 not read to find out, `start` first removes what earlier conflux left, before anything judges the
 roots, as [`update`](#conflux-update) describes, the service stopped for it, and writes the copy
 afresh. A start of the conflux the service already runs is no update, and removes nothing of what
-`update` does but this: where no supervisor serves the root, it first removes what conflux makes
-again there and an earlier conflux left failing the service's rule — on Windows, what an older
-conflux on a client left as the administrator's own — before anything judges the root, as `update`
-does, and says what it removed; with a supervisor serving it, the service has taken the root
-already.
+`update` does but this, on Windows alone: where no supervisor serves the root, it first removes
+what conflux makes again there by its name and an earlier conflux left failing the service's rule
+— what an older conflux on a client left as the administrator's own — before anything judges the
+root, as `update` does, and says what it removed; with a supervisor serving it, the service has
+taken the root already. On Unix nothing conflux made fails that rule, and a plain `start` removes
+nothing.
 
 | Situation | |
 |---|---|

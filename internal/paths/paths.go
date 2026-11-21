@@ -260,9 +260,9 @@ func (d Dirs) ReadyFile() string { return filepath.Join(d.Run, "ready") }
 // whole, and nothing in it is kept for anybody. Each folder conflux keeps in a root (folders) is judged
 // as the root is, and made afresh alike; and each file it keeps there (files) -- the configuration, the
 // state, the identity, the lock files, the copy of conflux the boot service runs -- is judged so too, and
-// removed where it is not as conflux makes it, for what writes it to make afresh. A CONFLUX_DIR itself, and everything
-// above a root, is never changed: a CONFLUX_DIR's way, the CONFLUX_DIR included, is held to the rule
-// of whoever the root is for (wayRule) before anything is made. The system's shared log directory,
+// removed where it is not as conflux makes it, for what writes it to make afresh. A CONFLUX_DIR itself,
+// and everything above a root, is never changed: a CONFLUX_DIR's way, the CONFLUX_DIR included, is held
+// to the rule of whoever the root is for (wayRule) before anything is made. The system's shared log directory,
 // which macOS and FreeBSD keep the service's log in, is not conflux's, and is left alone.
 func (d Dirs) EnsureAll() error {
 	var made []string

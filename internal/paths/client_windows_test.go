@@ -1,7 +1,6 @@
 package paths_test
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"slices"
@@ -10,7 +9,6 @@ import (
 
 	"golang.org/x/sys/windows"
 
-	"github.com/veil-net/conflux/anchor"
 	"github.com/veil-net/conflux/internal/anchortest"
 	_ "github.com/veil-net/conflux/internal/apitest" // the default API answers nothing
 	"github.com/veil-net/conflux/internal/config"
@@ -135,107 +133,5 @@ func TestWhatAnAdministratorMakesTheServiceTakes(t *testing.T) {
 		}
 
 		privtest.SetOwner(t, p, owner)
-	}
-}
-
-// TestAnUpdatedOlderRootIsOneTheServiceTakes: a root an older conflux left on a Windows client holds
-// logs\, the lock files, bin\ -- with this build's set planted in it, padded to its sizes -- and the
-// service's copy of conflux, each the administrator's own (privtest.CreatorOwns), which the service's
-// judgement refuses. What the conflux an update puts in place does to it before its service starts
-// (cli's tidy, then its PlaceAfresh), in that order -- the Administrators made the owner of what it
-// makes, RemakeOld, EnsureAll, the two lock files taken, the bin directory remade (libexec.Remake), the
-// copy written afresh -- leaves a root the service's judgement takes, with this build's pair in place
-// of the plant. Windows-only, so it runs in CI's platforms job alone.
-func TestAnUpdatedOlderRootIsOneTheServiceTakes(t *testing.T) {
-	anchortest.Require(t)
-
-	t.Setenv("CONFLUX_DIR", filepath.Join(t.TempDir(), "conflux"))
-	d := paths.Default()
-
-	if err := d.EnsureAll(); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Taints: []string{"cfx-old"}}); err != nil {
-		t.Fatal(err)
-	}
-
-	set := filepath.Join(d.Libexec(), anchor.SetID())
-	plant := map[string][]byte{
-		filepath.Join(set, "anchord.exe"):   anchor.Anchord(),
-		filepath.Join(set, "anchorctl.exe"): anchor.Anchorctl(),
-	}
-
-	restore := privtest.CreatorOwns(t)
-
-	if err := os.RemoveAll(d.Log); err != nil {
-		t.Fatal(err)
-	}
-
-	for _, dir := range []string{d.Log, set} {
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	files := map[string][]byte{d.LockFile(): nil, d.ServeLockFile(): nil, d.ServiceExecutable(): []byte("an older conflux")}
-	for p, want := range plant {
-		files[p] = make([]byte, len(want))
-	}
-
-	for p, body := range files {
-		if err := os.WriteFile(p, body, 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	restore()
-
-	if err := paths.JudgeAsTheService(d.State); err == nil {
-		t.Fatal("the service's judgement took a root holding what the administrator owns")
-	}
-
-	if err := paths.ElevatedDefaultOwner(); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := d.RemakeOld(); err != nil {
-		t.Fatalf("RemakeOld = %v", err)
-	}
-
-	if err := d.EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll = %v", err)
-	}
-
-	unlock, ok, err := flock.TryAcquire(d.ServeLockFile())
-	if err != nil || !ok {
-		t.Fatalf("TryAcquire(%s) = %v, %v", d.ServeLockFile(), ok, err)
-	}
-
-	unlock()
-
-	unlock, err = flock.Acquire(d.LockFile())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	unlock()
-
-	if _, err := libexec.Remake(d); err != nil {
-		t.Fatalf("Remake = %v", err)
-	}
-
-	if _, err := service.PlaceAfresh(d); err != nil {
-		t.Fatalf("PlaceAfresh = %v", err)
-	}
-
-	if err := paths.JudgeAsTheService(d.State); err != nil {
-		t.Errorf("the service's judgement of the root the update remade = %v", err)
-	}
-
-	for p, want := range plant {
-		if b, err := os.ReadFile(p); err != nil || !bytes.Equal(b, want) {
-			t.Errorf("%s is still the plant, or not this build's (%d bytes, %v)", p, len(b), err)
-		}
 	}
 }

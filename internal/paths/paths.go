@@ -575,17 +575,11 @@ func sameName(a, b string) bool {
 	return a == b
 }
 
-// confluxNames is each name conflux makes directly in the root dir, one of d's (ownIn): as d's, or as the
-// installation's root (Default) or an ephemeral run's kept at dir (EphemeralDirs), the two a root of
-// conflux's is, which RemoveRoot, handed a root alone, cannot tell apart.
+// confluxNames is each name conflux makes directly in the root dir, one of d's (ownIn): as d's, or as an
+// ephemeral run's kept at dir (EphemeralDirs), the two a root of conflux's is, which RemoveRoot, handed a
+// root alone and judging it as the installation's (Default), cannot tell apart.
 func (d Dirs) confluxNames(dir string) []ownName {
-	var own []ownName
-
-	for _, layout := range []Dirs{d, Default(), EphemeralDirs(dir)} {
-		own = append(own, layout.ownIn(dir)...)
-	}
-
-	return own
+	return append(d.ownIn(dir), EphemeralDirs(dir).ownIn(dir)...)
 }
 
 // strays refuses the root dir, one of d's, the directory s holds, where it holds a name conflux never

@@ -76,12 +76,14 @@ func TestRemoveRootFollowsNothing(t *testing.T) {
 // TestRemoveRootFollowsALinkRootOnlyWhereConfluxWould: a root that is itself a junction -- one moved
 // to another volume -- is gone into only where conflux would follow it in daily use, to a folder conflux
 // has secured as a root, as it has every working installation's, a platform root's and a CONFLUX_DIR's
-// alike: a junction nobody else may point elsewhere, leading to a folder the Administrators own under a
-// protected DACL granting SYSTEM and them alone, is followed, what that folder holds removed through the
-// handle held on it, a junction in it as itself, and then the junction, the folder left empty; a
-// junction to a folder Users may add to, which conflux has not secured, to one the Guests own, and to
-// the folder it is in, are removed as themselves, with where each leads left as it was. Windows-only,
-// so it runs in CI's platforms job alone.
+// alike: a junction secured as conflux secures one, which nobody but SYSTEM and the Administrators may
+// point elsewhere, leading to a folder the Administrators own under a protected DACL granting SYSTEM and
+// them alone, is followed, what that folder holds removed through the handle held on it, a junction in
+// it as itself, and then the junction, the folder left empty; a junction as mklink made it, which the
+// administrator's own processes may repoint unelevated and the SYSTEM service would not follow, to that
+// same folder, a junction to a folder Users may add to, which conflux has not secured, to one the
+// Guests own, and to the folder it is in, are removed as themselves, with where each leads left as it
+// was. Windows-only, so it runs in CI's platforms job alone.
 func TestRemoveRootFollowsALinkRootOnlyWhereConfluxWould(t *testing.T) {
 	elsewhere := t.TempDir()
 
@@ -96,16 +98,20 @@ func TestRemoveRootFollowsALinkRootOnlyWhereConfluxWould(t *testing.T) {
 	}
 
 	for _, chosen := range []bool{false, true} {
+		secured := func(t *testing.T, target string) {
+			privtest.SetSecurity(t, target, "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)")
+		}
+
 		for _, c := range []struct {
 			name   string
 			target func(t *testing.T, in string) string
 			after  func(t *testing.T, target string)
 			follow bool
 		}{
-			{"a folder conflux secured", func(t *testing.T, _ string) string { return t.TempDir() },
-				func(t *testing.T, target string) {
-					privtest.SetSecurity(t, target, "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)")
-				}, true},
+			{"a folder conflux secured", func(t *testing.T, _ string) string { return t.TempDir() }, secured, true},
+			{"a folder conflux secured, as mklink made the junction", func(t *testing.T, _ string) string {
+				return t.TempDir()
+			}, secured, false},
 			{"a folder Users may add to", func(t *testing.T, _ string) string {
 				open := t.TempDir()
 				privtest.GrantUsers(t, open, windows.FILE_WRITE_DATA, windows.NO_INHERITANCE)
@@ -138,6 +144,10 @@ func TestRemoveRootFollowsALinkRootOnlyWhereConfluxWould(t *testing.T) {
 				}
 
 				mklinkJ(t, root, target)
+
+				if c.follow {
+					setOwnSecurity(t, root, "O:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)")
+				}
 
 				if gone, err := RemoveRoot(root); !gone || err != nil {
 					t.Fatalf("RemoveRoot(a junction at a root's name to %s) = %v, %v, want it removed", c.name, gone, err)

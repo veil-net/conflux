@@ -985,22 +985,38 @@ type held struct {
 	target    string
 }
 
-// heldFor reports whether the root dir, as r holds it, is no junction or link, or one secured as
-// replaceLink leaves one -- SYSTEM's or the Administrators', under a protected DACL -- that lets nobody
-// the judgement for self does not trust point it elsewhere (changerIn, retargets).
-func (r *held) heldFor(dir string, self *windows.SID) bool {
-	if r.link == nil {
+// heldFor reports whether the root dir, as r holds it, is no junction or link, or one held for self
+// (linkHeldFor).
+func (r *held) heldFor(dir string, self *windows.SID) bool { return linkHeldFor(dir, r.link, self) }
+
+// linkHeldFor reports whether link, the owner and DACL of the junction or link at the root dir's name,
+// or nil where there is none, is none, or one secured as replaceLink leaves one -- SYSTEM's or the
+// Administrators', under a protected DACL -- that lets nobody the judgement for self does not trust
+// point it elsewhere (changerIn, retargets).
+func linkHeldFor(dir string, link *windows.SECURITY_DESCRIPTOR, self *windows.SID) bool {
+	if link == nil {
 		return true
 	}
 
-	if !secured(r.link) {
+	if !secured(link) {
 		return false
 	}
 
-	who, _, err := changerIn(dir, self, r.link, retargets, "point it elsewhere or move it", nil, false)
+	who, _, err := changerIn(dir, self, link, retargets, "point it elsewhere or move it", nil, false)
 
 	return err == nil && who == ""
 }
+
+// linkSecurity is what holdRoot keeps of a junction or a link at a root's name for a judgement after
+// follow's: its own owner and DACL.
+type linkSecurity = *windows.SECURITY_DESCRIPTOR
+
+// serviceFollows reports whether the boot service, running as SYSTEM, which trusts no other account,
+// would follow the junction or link at the root dir's name whose own owner and DACL sec holds, as
+// secure holds an installation's (heldFor, for SYSTEM): one secured as replaceLink leaves one, which
+// nobody but SYSTEM and the Administrators may point elsewhere. One an administrator made, which the
+// administrator's own processes may repoint unelevated, is not.
+func serviceFollows(dir string, sec linkSecurity) bool { return linkHeldFor(dir, sec, sidSystem) }
 
 func (r *held) close() {
 	if r.dir != r.self {
@@ -1310,14 +1326,14 @@ func rootOwner(dir string, s step) error {
 }
 
 // heldLinkRule refuses dir, the junction or link s holds open as itself, where another account may
-// point it elsewhere (heldLink), as read through s.
-func heldLinkRule(dir string, s step) error {
+// point it elsewhere (heldLink), as read through s, and is its owner and DACL.
+func heldLinkRule(dir string, s step) (linkSecurity, error) {
 	sd, err := security(s.h)
 	if err != nil {
-		return fmt.Errorf("read the ownership of %s: %w", dir, err)
+		return nil, fmt.Errorf("read the ownership of %s: %w", dir, err)
 	}
 
-	return heldLink(dir, sd)
+	return sd, heldLink(dir, sd)
 }
 
 // ledRoot refuses the folder the junction or link at the root dir's name leads to, which s holds open

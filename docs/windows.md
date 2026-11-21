@@ -114,7 +114,13 @@ they owned it keeps its rights whoever owns it after. `conflux update`, and a pl
 where no supervisor serves the root, remove what conflux makes again among it — the lock files,
 `logs\`, `run\`, `bin\`, the service's copy of conflux and the image an update moved aside,
 `anchord.json` — through handles on the root and on what it holds,
-never by a name and never through a junction, and make each afresh (`paths.RemakeOld`). What they
+never by a name and never through a junction, and make each afresh (`paths.RemakeOld`). A junction
+at the root's name is gone into for this only where the SYSTEM service would follow it, secured as
+conflux secures one (below), which nobody but SYSTEM and the Administrators may point elsewhere: one
+made as the recipe below makes it, which the administrator's own processes may repoint unelevated,
+could lead anywhere by then, so nothing is removed where it leads, and the `EnsureAll` that follows
+replaces it with conflux's own or refuses it; `uninstall` likewise removes such a junction as itself
+and nothing where it leads. What they
 remove, as what `uninstall` removes, is opened to delete it and to read its attributes alone, a
 folder to list it too, with the backup intent the privileges an Administrator holds give, so that a
 DACL granting the Administrators nothing does not keep it, and a file is never opened to be read.

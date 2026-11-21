@@ -212,3 +212,46 @@ func TestRemakeOldRemovesWhatConfluxMakesAgain(t *testing.T) {
 		t.Errorf("RemakeOld of an ephemeral run's root removed %s: %v", e.LockFile(), err)
 	}
 }
+
+// TestRemakeOldGoesIntoNoJunctionTheServiceWouldNotFollow: a junction at an installation's root that the
+// SYSTEM service would not follow -- one as mklink makes it in windows.md's recipe, which the
+// administrator's own processes may repoint unelevated, to C:\Program Files\Git as easily as to the root
+// -- leads RemakeOld to remove nothing where it leads, a lock file the administrator owns there
+// included, for EnsureAll to replace it with a junction of conflux's own; once the junction is secured
+// as conflux secures one, RemakeOld removes that lock file to make it again. Windows-only, so it runs in
+// CI's platforms job alone.
+func TestRemakeOldGoesIntoNoJunctionTheServiceWouldNotFollow(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "conflux")
+	t.Setenv("CONFLUX_DIR", target)
+
+	if err := Default().EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	restore := privtest.CreatorOwns(t)
+
+	if err := os.WriteFile(Default().LockFile(), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	restore()
+
+	root := mklinkJ(t, filepath.Join(t.TempDir(), "conflux"), target)
+	t.Setenv("CONFLUX_DIR", root)
+	d := Default()
+
+	if removed, err := d.RemakeOld(); removed != nil || err != nil {
+		t.Errorf("RemakeOld through a junction the service would not follow = %q, %v, want nothing removed", removed, err)
+	}
+
+	if _, err := os.Lstat(filepath.Join(target, filepath.Base(d.LockFile()))); err != nil {
+		t.Errorf("RemakeOld through a junction the service would not follow removed the lock file: %v", err)
+	}
+
+	setOwnSecurity(t, root, "O:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)")
+
+	if removed, err := d.RemakeOld(); err != nil || !slices.Equal(removed, []string{d.LockFile()}) {
+		t.Errorf("RemakeOld through a junction secured as conflux secures one = %q, %v, want %s removed", removed, err,
+			d.LockFile())
+	}
+}

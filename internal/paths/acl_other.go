@@ -839,14 +839,23 @@ func rootOwner(dir string, s step) error { return notReaders(dir, s.st.Uid, os.G
 // running conflux owns it, who could point it at a directory of their own -- a link's mode means
 // nothing, and whoever may write the directory it is in is judged with the way to it -- as the readers'
 // check and secure hold a link at a root's name (ownedAs).
-func heldLinkRule(dir string, s step) error {
+func heldLinkRule(dir string, s step) (linkSecurity, error) {
 	if owner := int(s.st.Uid); owner != 0 && owner != os.Geteuid() {
-		return fmt.Errorf("%s is a link that belongs to uid %d, who could point it at a directory of their own, so "+
-			"conflux will not follow it.\n  Remove it, then run this again", dir, owner)
+		return linkSecurity{}, fmt.Errorf("%s is a link that belongs to uid %d, who could point it at a directory of "+
+			"their own, so conflux will not follow it.\n  Remove it, then run this again", dir, owner)
 	}
 
-	return nil
+	return linkSecurity{}, nil
 }
+
+// linkSecurity is what holdRoot keeps of a link at a root's name for a judgement after follow's:
+// nothing here, where its owner is all heldLinkRule judges.
+type linkSecurity struct{}
+
+// serviceFollows reports whether the boot service would follow the link at a root's name that follow
+// has: it would, since it runs as root, as every command that makes, remakes or removes an
+// installation's root does, so follow's judgement, for this account, is the service's.
+func serviceFollows(string, linkSecurity) bool { return true }
 
 // ledRoot refuses the directory the link at the root dir's name leads to, which s holds and p names,
 // where an account other than root and the one running conflux owns it (notReaders), as fstat read it

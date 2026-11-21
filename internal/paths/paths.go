@@ -623,8 +623,10 @@ func (d Dirs) RemakeOld() ([]string, error) {
 // removed as itself, and what it leads to never touched. A link or a junction at dir's own name is
 // followed only where conflux would follow it (follow): its owner trusted, nobody else able to point
 // it elsewhere, and leading to a directory owned as a root at the name itself would be; and it is gone
-// into only where conflux has secured that directory as a root (securedStep), as it has every working
-// installation's at its first start. Then what that directory holds is removed through the handle held
+// into only where the boot service would follow it too, as it judges one at every start (forService)
+// -- on Windows one secured as conflux secures a junction, which the administrator's unelevated
+// processes may not repoint -- and where conflux has secured that directory as a root (securedStep),
+// as it has every working installation's at its first start. Then what that directory holds is removed through the handle held
 // on it, and the link after, the directory itself left, empty. One that fails, or leads to a directory
 // others keep what is theirs in (sharedStep), is removed as itself, and where it leads is not touched.
 // A directory at dir's name itself that others keep what is theirs in -- a CONFLUX_DIR of /tmp -- is
@@ -654,7 +656,8 @@ func RemoveRoot(dir string) (bool, error) {
 		return false, err
 	}
 
-	if r.link && r.refused == nil && sharedStep(dir, r.dir) == nil && securedStep(dir, r.led.last().path, r.dir) == nil {
+	if r.link && r.refused == nil && r.forService(dir) && sharedStep(dir, r.dir) == nil &&
+		securedStep(dir, r.led.last().path, r.dir) == nil {
 		if err := emptyIn(r.dir, dir); err != nil {
 			return true, err
 		}
@@ -831,7 +834,14 @@ type rootHold struct {
 	led     *way
 	refused error
 	notDir  bool
+	linkSec linkSecurity
 }
+
+// forService reports whether the root dir, as r holds it, is no link, or one the boot service would
+// follow, as it judges one at every start (serviceFollows): what RemakeOld and RemoveRoot hold a link
+// to before they remove anything where it leads, since a link the account running conflux trusts, and
+// follow follows, may be one that account's own processes may point elsewhere unelevated.
+func (r *rootHold) forService(dir string) bool { return !r.link || serviceFollows(dir, r.linkSec) }
 
 // close lets the root go, and every directory held on the way to it.
 func (r *rootHold) close() {
@@ -930,7 +940,7 @@ func (r *rootHold) follow(dir string, s step, judge judgement) error {
 	if err != nil {
 		err = fmt.Errorf("%s is a link conflux cannot follow, so conflux will not use it: %v", dir, err)
 	} else {
-		err = heldLinkRule(dir, s)
+		r.linkSec, err = heldLinkRule(dir, s)
 	}
 
 	s.close()

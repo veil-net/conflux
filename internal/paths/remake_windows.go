@@ -17,7 +17,8 @@ import (
 
 // remakeOld is RemakeOld for dir, a root of the installation d's. The root is held open as a reader
 // holds it (holdRoot): the way to it walked from the top of its volume, a CONFLUX_DIR's held to parents'
-// rule, and a junction at its name followed only where conflux would follow it. A root holding a name
+// rule, and a junction at its name followed only where conflux would follow it, and gone into only
+// where the SYSTEM service would follow it too (forService), else nothing is removed. A root holding a name
 // conflux never makes there is not conflux's, and nothing in it is removed (strays). It is held to what
 // secure holds a root to before it changes anything in it (unmovable): its owner SYSTEM, the
 // Administrators or the account running conflux, and nobody else let move what is in it, who could put
@@ -45,6 +46,13 @@ func remakeOld(d Dirs, dir string) ([]string, error) {
 
 	if r.refused != nil {
 		return nil, r.refused
+	}
+
+	// A junction the SYSTEM service would not follow -- one an administrator made, which their own
+	// processes may repoint unelevated -- may lead anywhere by now: nothing is removed there, and
+	// EnsureAll, which runs after, replaces it with one of conflux's own (replaceLink) or refuses it.
+	if !r.forService(dir) {
+		return nil, nil
 	}
 
 	led := ""

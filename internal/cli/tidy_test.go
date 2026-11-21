@@ -287,25 +287,22 @@ func TestACopyNotAsConfluxMakesItIsPlacedAfresh(t *testing.T) {
 }
 
 // oursAtRestart is stopping, which records at each Restart what paths' Ours says of the copy of conflux
-// the service runs, and then calls unlock, so that nothing the command does after it waits on what the
-// test holds: a conflux that went on to wait for the anchor would otherwise hang the suite.
+// the service runs.
 type oursAtRestart struct {
 	stopping
 
-	unlock func()
-	ours   []error
+	ours []error
 }
 
 func (m *oursAtRestart) Restart() error {
 	m.ours = append(m.ours, m.d.Ours(m.d.ServiceExecutable()))
-	m.unlock()
 
 	return m.stopping.Restart()
 }
 
 // TestTheServiceStartsAgainOnlyOnACopyOfConfluxsOwn: the service tidy stopped is never started again on a
 // copy of conflux that is not as conflux makes a file of its own: where tidy fails once EnsureAll has
-// removed one -- here beside an extraction in progress, which bin is not emptied under -- this conflux is
+// removed one -- here at bin's lock, a folder at its name, which nothing can take -- this conflux is
 // placed afresh before the service is started again, once, and the command's failure kept.
 func TestTheServiceStartsAgainOnlyOnACopyOfConfluxsOwn(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
@@ -319,21 +316,13 @@ func TestTheServiceStartsAgainOnlyOnACopyOfConfluxsOwn(t *testing.T) {
 
 	pathstest.NotAsConfluxMakesIt(t, d.ServiceExecutable())
 
-	if err := os.MkdirAll(d.Libexec(), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(d.Libexec(), ".lock"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-
-	held, err := flock.Acquire(filepath.Join(d.Libexec(), ".lock"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	unlock := sync.OnceFunc(held)
-	t.Cleanup(unlock)
 
 	// The restart starts nothing, so a conflux that went on to wait for the anchor stops there.
 	mgr := &oursAtRestart{stopping: stopping{fakeManager: fakeManager{d: d, restartErr: errStartsNothing}, running: true,
-		release: serving(t, d)}, unlock: unlock}
+		release: serving(t, d)}}
 	standInService(t, mgr)
 
 	out, errOut, code := capture(t, "start")
@@ -855,9 +844,9 @@ func TestTidyStartsAgainOnlyWhatItStopped(t *testing.T) {
 	}
 }
 
-// TestTidyListsOnlyWhatItRemoved: what tidy says it removed is what is gone. Where bin's lock is held
-// -- an extraction in progress -- the earlier sets in bin are not removed, nor listed, and the update
-// is refused, since a set planted among them would be kept; what it could not remove of the run
+// TestTidyListsOnlyWhatItRemoved: what tidy says it removed is what is gone. Where bin cannot be emptied
+// -- its lock a folder, which nothing can take -- the earlier sets in bin are not removed, nor listed, and
+// the update is refused, since a set planted among them would be kept; what it could not remove of the run
 // directory, which the next supervisor makes again, it warns of and goes on, listing what went; and a
 // killed ephemeral run's root that a run takes the moment its lock is let go of is that run's, kept,
 // and not listed.
@@ -867,30 +856,28 @@ func TestTidyListsOnlyWhatItRemoved(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
 
-	t.Run("bin's lock held", func(t *testing.T) {
+	t.Run("bin's lock a folder", func(t *testing.T) {
 		d := configured(t)
 
 		earlier := filepath.Join(d.Libexec(), "0123456789abcdef")
-		if err := os.MkdirAll(earlier, 0o700); err != nil {
-			t.Fatal(err)
-		}
+		lock := filepath.Join(d.Libexec(), ".lock")
 
-		unlock, err := flock.Acquire(filepath.Join(d.Libexec(), ".lock"))
-		if err != nil {
-			t.Fatal(err)
+		for _, p := range []string{earlier, lock} {
+			if err := os.MkdirAll(p, 0o700); err != nil {
+				t.Fatal(err)
+			}
 		}
-		defer unlock()
 
 		standInService(t, &fakeManager{d: d})
 
 		out, errOut, code := capture(t, "register")
-		if code != ExitError || !strings.Contains(errOut, "another conflux is extracting") {
-			t.Errorf("conflux register with bin's lock held exited %d, want %d saying why:\n%s%s", code, ExitError,
+		if code != ExitError || !strings.Contains(errOut, lock) {
+			t.Errorf("conflux register with a folder at bin's lock exited %d, want %d saying why:\n%s%s", code, ExitError,
 				out, errOut)
 		}
 
 		if _, err := os.Stat(earlier); err != nil {
-			t.Fatalf("%s went with bin's lock held: %v", earlier, err)
+			t.Fatalf("%s went with bin's lock a folder: %v", earlier, err)
 		}
 
 		if strings.Contains(out, earlier) {

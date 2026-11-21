@@ -37,6 +37,10 @@ import (
 // smokeTimeout bounds the one-off check that the extracted binary actually runs.
 const smokeTimeout = 10 * time.Second
 
+// lockWait bounds how long Remake waits for bin's lock, which an extraction in progress holds: as long as
+// that may smoke-run its set. A variable so a test can wait less.
+var lockWait = smokeTimeout
+
 // Tools are the extracted pair.
 type Tools struct {
 	Dir       string
@@ -64,12 +68,13 @@ func Extract(d paths.Dirs) (*Tools, error) {
 // extraction left staged, and anything else put there -- and extracts this build's pair afresh
 // (Extract), for an update, with nothing running from any of them: so that nothing an earlier
 // conflux made there, nor anything put among it, is kept or run. Under bin's lock, which an
-// extraction in progress holds. On Windows, which removes no file anybody has open, the lock is then
-// removed too where nothing has opened it since, so it is made again as well; on Unix it is kept,
-// since a lock is taken on the file its name led to when it was opened, and one waited for on a file
-// removed meanwhile would be held beside one taken on the file made again at its name. d's roots are
-// made already (EnsureAll), the bin directory with them, which stays. It is the paths of what it
-// removed from bin, however far it got (paths.ClearExcept).
+// extraction in progress holds, and which it waits for, up to lockWait: a reader's extraction, the
+// first after an upgrade, takes tens of milliseconds. On Windows, which removes no file anybody has
+// open, the lock is then removed too where nothing has opened it since, so it is made again as well;
+// on Unix it is kept, since a lock is taken on the file its name led to when it was opened, and one
+// waited for on a file removed meanwhile would be held beside one taken on the file made again at its
+// name. d's roots are made already (EnsureAll), the bin directory with them, which stays. It is the
+// paths of what it removed from bin, however far it got (paths.ClearExcept).
 func Remake(d paths.Dirs) ([]string, error) {
 	if !anchor.Supported {
 		return nil, errUnsupported
@@ -79,12 +84,17 @@ func Remake(d paths.Dirs) ([]string, error) {
 	lock := filepath.Join(root, ".lock")
 
 	unlock, ok, err := flock.TryAcquire(lock)
+	for deadline := time.Now().Add(lockWait); err == nil && !ok && time.Now().Before(deadline); {
+		unlock, ok, err = flock.TryAcquire(lock)
+	}
+
 	if err != nil {
 		return nil, err
 	}
 
 	if !ok {
-		return nil, fmt.Errorf("another conflux is extracting the anchor binaries in %s; run this again once it has", root)
+		return nil, fmt.Errorf("another conflux is extracting the anchor binaries in %s, and has not finished in %v; run "+
+			"this again once it has", root, lockWait)
 	}
 
 	removed, err := paths.ClearExcept(root, lock)

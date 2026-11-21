@@ -707,7 +707,7 @@ an older install as it is:
   make again;
 - every extracted anchor set, the current one among them, and whatever a crashed extraction left
   staged, are removed, and this build's pair is extracted afresh, so nothing planted among them is
-  kept or run;
+  kept or run — once an extraction in progress has finished, waited for up to ten seconds;
 - a killed ephemeral run's root is removed, the `anchord` it left stopped, as `uninstall` removes
   one, and what is at its name and is not as conflux makes a root removed as itself; a live run's is
   left;

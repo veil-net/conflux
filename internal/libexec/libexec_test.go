@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/veil-net/conflux/anchor"
 	"github.com/veil-net/conflux/internal/anchortest"
+	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
 )
@@ -82,6 +84,58 @@ func TestExtractionMakesNoRootNorBinDirectory(t *testing.T) {
 		if _, err := os.Lstat(gone); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("Extract made %s again (Lstat: %v)", gone, err)
 		}
+	}
+}
+
+// TestRemakeWaitsForAnExtractionInProgress: Remake empties bin/ under its lock, which a reader extracting
+// a set holds for as long as that takes, so it waits for the lock -- here held past TryAcquire's own
+// tries -- and then empties bin/ and extracts afresh; held past its bound (lockWait), it refuses, saying
+// another conflux is extracting, with nothing removed. The holder lets go on a timer whatever Remake
+// does, so a Remake that waited without a bound would end, and fail the test, rather than hang it.
+func TestRemakeWaitsForAnExtractionInProgress(t *testing.T) {
+	anchortest.Require(t)
+
+	d := pathstest.Dirs(t)
+	older := filepath.Join(d.Libexec(), "0123456789abcdef")
+
+	hold := func(d time.Duration) {
+		unlock, err := flock.Acquire(filepath.Join(filepath.Dir(older), ".lock"))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		release := sync.OnceFunc(unlock)
+		time.AfterFunc(d, release)
+		t.Cleanup(release)
+	}
+
+	if err := os.Mkdir(older, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	hold(200 * time.Millisecond)
+
+	if removed, err := Remake(d); err != nil || !slices.Contains(removed, older) {
+		t.Errorf("Remake beside an extraction that ends in 200 ms = %v, %v, want %s removed once it has", removed, err,
+			older)
+	}
+
+	defer func(was time.Duration) { lockWait = was }(lockWait)
+	lockWait = 100 * time.Millisecond
+
+	if err := os.Mkdir(older, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	hold(5 * time.Second)
+
+	if _, err := Remake(d); err == nil || !strings.Contains(err.Error(), "another conflux is extracting") {
+		t.Errorf("Remake beside an extraction past its bound = %v, want a refusal saying another conflux is extracting",
+			err)
+	}
+
+	if _, err := os.Stat(older); err != nil {
+		t.Errorf("Remake past its bound removed %s: %v", older, err)
 	}
 }
 

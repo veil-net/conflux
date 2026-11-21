@@ -118,3 +118,92 @@ func TestAForeignRootIsLeftAsItIs(t *testing.T) {
 		t.Errorf("RemoveRoot(a root of conflux's) = %v, %v, want it removed", gone, err)
 	}
 }
+
+// TestANonDirectoryIsNoRoot: conflux never makes anything but a directory at a root's name, so a file
+// there -- a CONFLUX_DIR of /etc/passwd's kind -- is not conflux's: EnsureAll refuses it, uninstall's
+// pre-flight refuses it as a foreign root (JudgeWays), and RemoveRoot refuses it, each naming it, and
+// the file is left as it was.
+func TestANonDirectoryIsNoRoot(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "passwd")
+	if err := os.WriteFile(file, []byte("root:x:0:0"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("CONFLUX_DIR", file)
+
+	if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), file) {
+		t.Errorf("EnsureAll(a CONFLUX_DIR of a file) = %v, want a refusal naming it", err)
+	}
+
+	if err := Default().JudgeWays(); !errors.Is(err, ErrForeignRoot) || !strings.Contains(err.Error(), file+" is not a directory") {
+		t.Errorf("JudgeWays(a CONFLUX_DIR of a file) = %v, want a refusal of a foreign root naming it", err)
+	}
+
+	if gone, err := RemoveRoot(file); gone || err == nil || !strings.Contains(err.Error(), file+" is not a directory") {
+		t.Errorf("RemoveRoot(a file) = %v, %v, want a refusal naming it", gone, err)
+	}
+
+	if b, err := os.ReadFile(file); err != nil || string(b) != "root:x:0:0" {
+		t.Errorf("the file at the root's name is %q, %v, want it as it was", b, err)
+	}
+}
+
+// TestADirectoryDirectlyUnderTheFilesystemsRootIsTheSystems: every directory directly under / is the
+// system's, whatever its name -- /home, /opt, /srv, /usr -- so no root may be one, but one conflux made
+// a root: its owner's, at 0700 or 0710, and holding something, as every root conflux made holds its
+// run directory. Judged under a stand-in for / -- an empty directory at 0755, an empty one of this
+// account's at 0700 (/lost+found's kind), and a root conflux made there, at 0700 and 0710 and widened
+// to 0755 -- and under / itself, where uninstall's pre-flight refuses a CONFLUX_DIR of /usr as a
+// shared root, reading nothing in it.
+func TestADirectoryDirectlyUnderTheFilesystemsRootIsTheSystems(t *testing.T) {
+	slash := t.TempDir()
+
+	made := func(name string, mode os.FileMode, holds ...string) string {
+		dir := filepath.Join(slash, name)
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		for _, h := range holds {
+			if err := os.Mkdir(filepath.Join(dir, h), 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		if err := os.Chmod(dir, mode); err != nil {
+			t.Fatal(err)
+		}
+
+		return dir
+	}
+
+	cases := []struct {
+		dir string
+		ok  bool
+	}{
+		{made("srv", 0o755), false},
+		{made("lost+found", 0o700), false},
+		{made("conflux", 0o700, runName), true},
+		{made("conflux2", 0o710, runName), true},
+		{made("wide", 0o755, runName), false},
+	}
+
+	ps := systemPlacesOf(slash, "", Dirs{})
+
+	for _, c := range cases {
+		err := sharedRootIn(ps, c.dir, held(t, c.dir))
+
+		switch {
+		case c.ok && err != nil:
+			t.Errorf("sharedRoot(%s, directly under the filesystem's root) = %v, want it taken", c.dir, err)
+		case !c.ok && (err == nil || !strings.Contains(err.Error(), "directly under the filesystem's root")):
+			t.Errorf("sharedRoot(%s, directly under the filesystem's root) = %v, want a refusal saying so", c.dir, err)
+		}
+	}
+
+	t.Setenv("CONFLUX_DIR", "/usr")
+
+	if err := Default().JudgeWays(); !errors.Is(err, ErrSharedRoot) || !strings.Contains(err.Error(), "/usr is ") {
+		t.Errorf("JudgeWays(a CONFLUX_DIR of /usr) = %v, want a refusal of a shared root", err)
+	}
+}

@@ -875,9 +875,11 @@ func idOf(p string) (fileID, bool) {
 }
 
 // systemPlaces are the directories no root of conflux's may be, by the file each is, and why
-// (systemPlacesOf); and the directory the running conflux is in, held apart, with its name.
+// (systemPlacesOf); those directly under the filesystem's root among them (top); and the directory the
+// running conflux is in, held apart, with its name.
 type systemPlaces struct {
 	dirs    map[fileID]string
+	top     map[fileID]bool
 	exe     fileID
 	exeName string
 }
@@ -890,15 +892,18 @@ var systemDirs = sync.OnceValue(func() systemPlaces {
 		exe = ""
 	}
 
-	return systemPlacesOf(exe, platformDirs())
+	return systemPlacesOf("/", exe, platformDirs())
 })
 
 // systemPlacesOf is the systemPlaces of a process running exe on a platform whose roots are kept in
-// platform by default: the filesystem's root; each directory above one of those roots, which are the
-// system's; the system's log directory (sharedLog); and each directory above the one exe is in, which
-// is held apart, since it is the root the boot service runs its copy of conflux from.
-func systemPlacesOf(exe string, platform Dirs) systemPlaces {
-	ps := systemPlaces{dirs: map[fileID]string{}}
+// platform by default, whose filesystem's root is slash: that root; each directory directly under it
+// that is there, a link there by the directory it leads to -- the system's own, which only root makes
+// there (top), though one may be a root conflux made (sharedRootIn); each directory above one of the
+// platform's roots, which are the system's; the system's log directory (sharedLog); and each directory
+// above the one exe is in, which is held apart, since it is the root the boot service runs its copy of
+// conflux from.
+func systemPlacesOf(slash, exe string, platform Dirs) systemPlaces {
+	ps := systemPlaces{dirs: map[fileID]string{}, top: map[fileID]bool{}}
 
 	add := func(p, why string) {
 		if id, ok := idOf(p); ok {
@@ -918,7 +923,7 @@ func systemPlacesOf(exe string, platform Dirs) systemPlaces {
 		}
 	}
 
-	add("/", "the filesystem's root")
+	add(slash, "the filesystem's root")
 	add(sharedLog, "the system's log directory")
 
 	for _, root := range []string{platform.Config, platform.State, platform.Run, platform.Log} {
@@ -933,29 +938,42 @@ func systemPlacesOf(exe string, platform Dirs) systemPlaces {
 		above(filepath.Dir(exe), "above the directory the running conflux is in")
 	}
 
+	if entries, err := os.ReadDir(slash); err == nil {
+		for _, e := range entries {
+			if id, ok := idOf(filepath.Join(slash, e.Name())); ok {
+				if _, had := ps.dirs[id]; !had {
+					ps.top[id] = true
+				}
+			}
+		}
+	}
+
 	return ps
 }
 
-// sharedRoot refuses the root dir, the directory id is, found at mode and owned by uid, for euid,
+// sharedRootIn refuses the root dir, the directory s holds, as fstat read it where the walk met it,
 // where it is a directory others keep what is theirs in, which conflux never narrows, fills or
-// empties, whoever owns it: a sticky one -- /tmp, /var/tmp, /dev/shm -- or one systemDirs names: the
+// empties, whoever owns it: a sticky one -- /tmp, /var/tmp, /dev/shm -- or one ps names: the
 // filesystem's root, a directory of the system's above where a platform root is kept by default, the
-// system's log directory, or one above the directory the running conflux is in. That directory itself
-// is refused too, but where the running conflux is the copy the boot service runs (ServiceExecutable)
-// in a root conflux has secured already, 0700 or 0710 and this account's: the boot service's own root.
-func sharedRoot(dir string, id fileID, mode, uid uint32, euid int) error {
-	return sharedRootIn(systemDirs(), dir, id, mode, uid, euid)
-}
-
-// sharedRootIn is sharedRoot over ps.
-func sharedRootIn(ps systemPlaces, dir string, id fileID, mode, uid uint32, euid int) error {
+// system's log directory, or one above the directory the running conflux is in. A directory directly
+// under the filesystem's root is the system's too, but where it is a root conflux made: owned by root
+// or the account running conflux (notReaders), at 0700 or 0710, as conflux secures a root, and
+// holding something -- every root conflux made holds its run directory, or more -- which strays then
+// holds to conflux's names. The directory the running conflux is in is refused too, but where the
+// running conflux is the copy the boot service runs (ServiceExecutable) in a root conflux has secured
+// already, 0700 or 0710 and this account's: the boot service's own root.
+func sharedRootIn(ps systemPlaces, dir string, s step) error {
+	id := fileID{uint64(s.st.Dev), uint64(s.st.Ino)}
 	why := ps.dirs[id]
+	euid := os.Geteuid()
 
-	switch perm := mode & 0o777; {
-	case mode&unix.S_ISVTX != 0:
+	switch perm := s.st.Mode & 0o777; {
+	case s.st.Mode&unix.S_ISVTX != 0:
 		why = "a sticky directory, which every account shares"
-	case why == "" && id == ps.exe && !(ps.exeName == "conflux" && int(uid) == euid && (perm == 0o700 || perm == 0o710)):
+	case why == "" && id == ps.exe && !(ps.exeName == "conflux" && int(s.st.Uid) == euid && (perm == 0o700 || perm == 0o710)):
 		why = "the directory the running conflux is in"
+	case why == "" && ps.top[id] && !madeTop(dir, s):
+		why = "a directory of the system's, directly under the filesystem's root, which conflux did not make a root"
 	}
 
 	if why == "" {
@@ -963,14 +981,26 @@ func sharedRootIn(ps systemPlaces, dir string, id fileID, mode, uid uint32, euid
 	}
 
 	return fmt.Errorf("%s is %s, so conflux will not use it as a root: it never narrows, fills or empties a "+
-		"directory others keep what is theirs in.\n  Point it at a directory of its own, then run this again", dir, why)
+		"directory others keep what is theirs in.\n  Point it at a directory of its own, then run this again", dir,
+		why)
+}
+
+// madeTop reports whether dir, a directory directly under the filesystem's root that s holds, is one
+// conflux made a root of (sharedRootIn): root's or the account running conflux's, at 0700 or 0710, and
+// holding something.
+func madeTop(dir string, s step) bool {
+	if perm := s.st.Mode & 0o7777; notReaders(dir, s.st.Uid, os.Geteuid()) != nil || perm != 0o700 && perm != 0o710 {
+		return false
+	}
+
+	names, err := namesOf(s, dir)
+
+	return err == nil && len(names) > 0
 }
 
 // sharedStep refuses the root dir, the directory s holds, where it is one others keep what is theirs in
-// (sharedRoot), as fstat read it where the walk met it.
-func sharedStep(dir string, s step) error {
-	return sharedRoot(dir, fileID{uint64(s.st.Dev), uint64(s.st.Ino)}, uint32(s.st.Mode), s.st.Uid, os.Geteuid())
-}
+// (sharedRootIn), as fstat read it where the walk met it.
+func sharedStep(dir string, s step) error { return sharedRootIn(systemDirs(), dir, s) }
 
 // securedStep refuses the directory the link at the root dir's name leads to, which s holds and p names,
 // where conflux has not secured it as a root, as it secures every root it uses at its first start: at

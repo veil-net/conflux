@@ -26,6 +26,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"syscall"
 )
 
 // Dirs are the four roots. Get one from Default, or an ephemeral run's from EphemeralDirs.
@@ -629,7 +630,8 @@ func (d Dirs) RemakeOld() ([]string, error) {
 // A directory at dir's name itself that others keep what is theirs in -- a CONFLUX_DIR of /tmp -- is
 // refused, and nothing is removed; so is one, at dir's name or where a link there that conflux follows
 // leads, that holds a name conflux never makes there (strays) -- a CONFLUX_DIR at a folder of homes --
-// the link included (judgeHeld). Nothing else in a root at dir's name is read or judged first, so a
+// the link included, and a file, or anything else neither a directory nor a link, at dir's name
+// (judgeHeld). Nothing else in a root at dir's name is read or judged first, so a
 // root the readers' check refuses is removed as safely as one it takes. Where nothing is at dir's
 // name, or on the way to it, nothing is removed.
 func RemoveRoot(dir string) (bool, error) {
@@ -708,8 +710,8 @@ func toParent(dir string, judge judgement) (*way, error) {
 // (ErrWayRefused); and the directory at the root's own name, looked up there as RemoveRoot holds it
 // (holdRoot), refused where it is one others keep what is theirs in, which conflux never makes its own
 // (sharedStep, ErrSharedRoot); and the directory at the root's name, or where a link there that
-// conflux follows leads, refused where it holds a name conflux never makes there (strays,
-// ErrForeignRoot) (judgeHeld). A link conflux does not follow is no refusal, as it is none of
+// conflux follows leads, refused where it holds a name conflux never makes there (strays), as a file,
+// or anything else neither a directory nor a link, at the name is (ErrForeignRoot) (judgeHeld). A link conflux does not follow is no refusal, as it is none of
 // RemoveRoot's, which removes it as itself; nothing in a root is read but the names it holds. Nil where
 // every root passes, and where a root, or a name on the way to it, is not there; a platform root's
 // way, the system's own, is not judged.
@@ -738,11 +740,14 @@ func (d Dirs) JudgeWays() error {
 
 // judgeHeld refuses the root dir, one of d's, as r holds it, for what RemoveRoot and JudgeWays refuse a root for,
 // saying which (refusal): a directory at its name that others keep what is theirs in (sharedStep,
-// ErrSharedRoot), and one at its name, or where a link there that conflux follows leads, that holds a
-// name conflux never makes there (strays, ErrForeignRoot). A link conflux does not follow, or anything
-// else that is not a directory, is no refusal: RemoveRoot removes it as itself.
+// ErrSharedRoot); one at its name, or where a link there that conflux follows leads, that holds a
+// name conflux never makes there (strays), and a file or anything else neither a directory nor a link
+// at its name (notDir), neither of them conflux's (ErrForeignRoot). A link conflux does not follow is
+// no refusal: RemoveRoot removes it as itself.
 func (d Dirs) judgeHeld(dir string, r *rootHold) error {
 	switch {
+	case r.notDir:
+		return refusal{ErrForeignRoot, r.refused}
 	case r.refused != nil:
 		return nil
 	case !r.link:
@@ -817,7 +822,7 @@ func (d Dirs) OpenIn(path string) (*os.File, error) {
 // in, which holds that directory last; its name there; the directory it is, what is at the name or,
 // where that is a link (link), where it leads, and led, the way the link led along, which holds it then;
 // and refused, where the name is a link conflux does not follow, or anything else that is not a
-// directory, why.
+// directory, why; notDir, where that is a file or anything else that is neither a directory nor a link.
 type rootHold struct {
 	parent  *way
 	name    string
@@ -825,6 +830,7 @@ type rootHold struct {
 	link    bool
 	led     *way
 	refused error
+	notDir  bool
 }
 
 // close lets the root go, and every directory held on the way to it.
@@ -858,8 +864,9 @@ func (r *rootHold) usable(dir string) error {
 // walked from the top of its volume and held, as a reader holds it (toParent, readersRule), and dir's
 // own name looked up in that directory and nowhere else (lookUp). A directory there is the root,
 // judged by nothing yet (usable); a link there is followed only where conflux would follow it (follow),
-// and is otherwise refused, as anything else at the name is, unfollowed and left for the caller to
-// remove as itself or refuse. Where the way to dir, or its name, is not there, it is an error that is
+// and is otherwise refused, unfollowed and left for the caller to remove as itself or refuse, as
+// anything else at the name is: a file there, or anything else neither a directory nor a link, is not
+// conflux's (notDir), which RemoveRoot and JudgeWays refuse (judgeHeld). Where the way to dir, or its name, is not there, it is an error that is
 // fs.ErrNotExist.
 func holdRoot(dir string) (*rootHold, error) {
 	dir, err := filepath.Abs(dir)
@@ -887,6 +894,16 @@ func holdRoot(dir string) (*rootHold, error) {
 		w.close()
 
 		return nil, &os.PathError{Op: "open", Path: dir, Err: err}
+	case errors.Is(err, syscall.ENOTDIR):
+		r.notDir = true
+
+		way := "Move it out of the way, then run this again"
+		if chosen(dir) {
+			way = "Point CONFLUX_DIR at a directory of its own, then run this again"
+		}
+
+		r.refused = fmt.Errorf("%s is not a directory, which conflux never makes at a root's name, so it is not "+
+			"conflux's: conflux will not use it as a root, and leaves it as it is.\n  %s", dir, way)
 	case err != nil:
 		r.refused = fmt.Errorf("%s is no directory conflux can hold, so conflux will not use it: %v", dir,
 			&os.PathError{Op: "open", Path: dir, Err: err})

@@ -126,7 +126,10 @@ else conflux does not make, and anything deeper in a folder that is right, are r
 for the operator to look at.
 
 No root is a folder others keep what is theirs in, however it is reached and whoever owns it: a
-volume's root (`C:\`), `%ProgramData%`, `%SystemRoot%`, `C:\Users`, `C:\Users\Public`, or any folder
+volume's root (`C:\`), a folder directly under one that Windows made — which TrustedInstaller or SYSTEM
+owns, as `Program Files`, `ProgramData` and `PerfLogs` are, where what conflux makes there, and what an
+administrator makes, is the Administrators' or the administrator's own — `%ProgramData%`,
+`%SystemRoot%`, `C:\Users`, `C:\Users\Public`, or any folder
 whose own DACL makes it a space other accounts share, as `%ProgramData%`'s does — Users let add to it
 and to the folders made in it, `CREATOR OWNER` passed full control — is refused by every command that
 makes a root before anything is filled or restricted, and by `uninstall` before it removes
@@ -139,7 +142,8 @@ there leads, holds any name but conflux's own — a `CONFLUX_DIR` at a folder of
 at `%ProgramData%\conflux` pointed at `C:\Program Files\Git` — is refused, naming the stray entry,
 and left as it is, by every command that makes a root, by `update` and `start` before they remove
 anything from it, and by `uninstall` before it removes anything, the boot service and the junction
-included ([security.md](security.md#the-file-and-the-directory-around-it)).
+included ([security.md](security.md#the-file-and-the-directory-around-it)). So is a file at a root's
+name, where conflux makes only a folder.
 
 A root on a network volume — a share reached by its UNC path, a drive mapped to one, or a link
 leading to either, as the volume conflux holds it open on says, not as it is spelled — is refused

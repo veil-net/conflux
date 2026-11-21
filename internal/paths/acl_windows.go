@@ -1369,32 +1369,30 @@ var systemFolders = sync.OnceValue(func() map[string]string {
 
 // sharedRoot refuses the root dir, the folder h holds open, where it is one others keep what is theirs
 // in, which conflux never fills, restricts or empties, whoever owns it: a volume's root (C:\), a folder
-// systemFolders names, or one whose DACL makes it a space other accounts share (sharedSpace), as read
-// through h.
+// systemFolders names, a folder directly under a volume's root that Windows made (windowsOwn), or one
+// whose DACL makes it a space other accounts share (sharedSpace), as read through h.
 func sharedRoot(dir string, h windows.Handle) error {
+	sd, err := security(h)
+	if err != nil {
+		return fmt.Errorf("read the ownership of %s: %w", dir, err)
+	}
+
 	why := ""
 
 	switch p, err := finalPath(h, volumeNameDOS); {
 	case err != nil:
-		// No path by a drive letter: a volume's root is still one, by its GUID.
-		if g, err := finalPath(h, volumeNameGUID); err == nil && strings.HasSuffix(g, `}\`) {
-			why = "a volume's root"
+		// No path by a drive letter: a volume's root is still one, by its GUID, and a folder directly
+		// under one.
+		if g, err := finalPath(h, volumeNameGUID); err == nil {
+			why = placeOnVolume(g, sd)
 		}
 	default:
-		p = filepath.Clean(strings.TrimPrefix(p, `\\?\`))
-		if strings.EqualFold(p, filepath.VolumeName(p)+`\`) {
-			why = "a volume's root"
-		} else {
-			why = systemFolders()[strings.ToLower(p)]
+		if why = placeOnVolume(p, sd); why == "" {
+			why = systemFolders()[strings.ToLower(filepath.Clean(strings.TrimPrefix(p, `\\?\`)))]
 		}
 	}
 
 	if why == "" {
-		sd, err := security(h)
-		if err != nil {
-			return fmt.Errorf("read the ownership of %s: %w", dir, err)
-		}
-
 		dacl, _, err := sd.DACL()
 		if err != nil {
 			return fmt.Errorf("read the DACL of %s: %w", dir, err)
@@ -1421,6 +1419,35 @@ func sharedRoot(dir string, h windows.Handle) error {
 	return fmt.Errorf("%s is %s, so conflux will not use it as a root: it never fills, restricts or empties a "+
 		"folder others keep what is theirs in.\n  Point it at a folder of its own, then run this again as "+
 		"Administrator", dir, why)
+}
+
+// placeOnVolume is why final, a folder's final path (finalPath), is no root by where it is on its
+// volume, or "": a volume's root, whose final path is the volume and a separator; or a folder directly
+// under one that Windows made (windowsOwn), its owner as sd holds it.
+func placeOnVolume(final string, sd *windows.SECURITY_DESCRIPTOR) string {
+	vol := filepath.VolumeName(final)
+	rest := strings.Trim(final[len(vol):], `\`)
+
+	switch {
+	case rest == "":
+		return "a volume's root"
+	case !strings.Contains(rest, `\`) && windowsOwn(sd):
+		return "a folder of Windows' own, directly under a volume's root"
+	}
+
+	return ""
+}
+
+// windowsOwn reports whether sd, a folder's, is owned as the folders Windows makes directly under a
+// volume's root are: by TrustedInstaller -- Windows, Program Files and Program Files (x86) -- or by
+// SYSTEM -- ProgramData, Users, PerfLogs, Recovery, $Recycle.Bin and System Volume Information. What
+// conflux makes there is the Administrators' (Restrict, ElevatedDefaultOwner), as is what an elevated
+// administrator makes under an elevated conflux's, or their own under a client's default-owner policy,
+// so none of those is taken for Windows'.
+func windowsOwn(sd *windows.SECURITY_DESCRIPTOR) bool {
+	owner, _, err := sd.Owner()
+
+	return err == nil && (owner.Equals(sidSystem) || sidTrustedInstaller != nil && owner.Equals(sidTrustedInstaller))
 }
 
 // sharedStep refuses the root dir, the folder s holds open, where it is one others keep what is theirs

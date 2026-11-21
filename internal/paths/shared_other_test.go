@@ -8,8 +8,9 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"syscall"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 // TestASharedDirectoryIsNoRoot: no root conflux narrows, fills or empties may be a directory others
@@ -139,16 +140,6 @@ func asFound(t *testing.T, dir string) (os.FileMode, []string) {
 // name there, is refused, and so is every directory above it.
 func TestTheServicesOwnRootHoldsItsConflux(t *testing.T) {
 	root := t.TempDir()
-	euid := os.Geteuid()
-
-	id := func(p string) (fileID, uint32, uint32) {
-		var st syscall.Stat_t
-		if err := syscall.Stat(p, &st); err != nil {
-			t.Fatal(err)
-		}
-
-		return fileID{uint64(st.Dev), uint64(st.Ino)}, uint32(st.Mode), st.Uid
-	}
 
 	for _, c := range []struct {
 		exe  string
@@ -164,16 +155,28 @@ func TestTheServicesOwnRootHoldsItsConflux(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		ps := systemPlacesOf(filepath.Join(root, c.exe), Dirs{})
-		at, mode, uid := id(root)
+		ps := systemPlacesOf(t.TempDir(), filepath.Join(root, c.exe), Dirs{})
 
-		if err := sharedRootIn(ps, root, at, mode, uid, euid); (err == nil) != c.ok {
+		if err := sharedRootIn(ps, root, held(t, root)); (err == nil) != c.ok {
 			t.Errorf("sharedRoot(the root %s runs from, at %v) = %v, want it taken %v", c.exe, c.mode, err, c.ok)
 		}
 
-		above, mode, uid := id(filepath.Dir(root))
-		if err := sharedRootIn(ps, filepath.Dir(root), above, mode, uid, euid); err == nil {
+		if err := sharedRootIn(ps, filepath.Dir(root), held(t, filepath.Dir(root))); err == nil {
 			t.Errorf("sharedRoot(the directory above the root %s runs from) = nil, want a refusal", c.exe)
 		}
 	}
+}
+
+// held is the directory dir held open as a walk holds one (opened), let go of when t ends.
+func held(t *testing.T, dir string) step {
+	t.Helper()
+
+	s, err := opened(unix.AT_FDCWD, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(s.close)
+
+	return s
 }

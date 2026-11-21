@@ -50,11 +50,15 @@ host can read, and when the run stops there is nothing at all.
   emptied, by every command that makes a root and by `uninstall`, which refuses it before it removes
   anything, the boot service included, or, where the root's name is a link to it, removes the link
   alone, unless it holds what conflux never makes there (below). On Unix that is a sticky directory (`/tmp`,
-  `/var/tmp`, `/dev/shm`), `/`, the system's log directory, a directory above where a platform root
-  is kept by default (`/etc`, `/var`, `/var/lib` …), and the directory the running conflux is in or
-  one above it, but for the boot service's own root, which holds the copy of conflux it runs once
-  conflux has secured it. On Windows it is a volume's root (`C:\`), `%ProgramData%`, `%SystemRoot%`,
-  `C:\Users` and `C:\Users\Public`, and any folder whose own DACL makes it a space other accounts
+  `/var/tmp`, `/dev/shm`), `/`, every directory directly under `/` (`/home`, `/opt`, `/srv`, `/usr`
+  …), which only root makes there, but one conflux made a root of — its owner's, at `0700` or `0710`,
+  holding its run directory or more — the system's log directory, a directory above where a platform
+  root is kept by default (`/etc`, `/var`, `/var/lib` …), and the directory the running conflux is in
+  or one above it, but for the boot service's own root, which holds the copy of conflux it runs once
+  conflux has secured it. On Windows it is a volume's root (`C:\`), a folder directly under one that
+  Windows made, which TrustedInstaller or SYSTEM owns (`Program Files`, `ProgramData`, `PerfLogs` …)
+  where what conflux or an administrator makes there is the Administrators' or the administrator's,
+  `%ProgramData%`, `%SystemRoot%`, `C:\Users` and `C:\Users\Public`, and any folder whose own DACL makes it a space other accounts
   share, as `%ProgramData%`'s does: Users let add to it and to the folders made in it, and `CREATOR
   OWNER` passed on, so each owns what it adds. A folder that only inherits such entries, as one made
   in `%ProgramData%` does, is a root like any other, judged and restricted.
@@ -71,6 +75,9 @@ host can read, and when the run stops there is nothing at all.
   the run and log directories and what they hold where those are the root, an ephemeral run's root
   inside a `CONFLUX_DIR`, and what an atomic write, the service's copy or an update leaves before
   its rename (`.tmp-`, `.conflux-`). An empty directory, and a root conflux made, hold nothing else.
+  Nor is a file at a root's name conflux's, nor anything else that is neither a directory nor a link:
+  conflux makes only a directory there, and `uninstall` refuses one, as it refuses such a root,
+  rather than remove it.
 - `0700` on the directory, or `0710` where `anchord`'s own account is let through it —
   which lets that account pass and list nothing, read nothing of root's and create
   nothing. A `0600` file in a directory others may write is one `rename` away from being

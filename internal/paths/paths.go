@@ -656,7 +656,7 @@ func readersRule(dir string) judgement {
 
 	return func(p string, s step, link bool) error {
 		if err := rule(p, s, link); err != nil {
-			return refusal{ErrWayRefused, err}
+			return refusal{err}
 		}
 
 		return nil
@@ -714,11 +714,11 @@ func (d Dirs) JudgeWays() error {
 // errors.Is tells apart in what it returns from a way that cannot be walked.
 var ErrWayRefused = errors.New("a way to a root another account may change")
 
-// refusal is err, which says why, refused for kind.
-type refusal struct{ kind, err error }
+// refusal is err, which says why, refused as ErrWayRefused.
+type refusal struct{ err error }
 
 func (r refusal) Error() string   { return r.err.Error() }
-func (r refusal) Unwrap() []error { return []error{r.kind, r.err} }
+func (r refusal) Unwrap() []error { return []error{ErrWayRefused, r.err} }
 
 // rootHold is a root held open: the way to the folder it is in, and the directory at its name.
 type rootHold struct {

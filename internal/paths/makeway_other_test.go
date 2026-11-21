@@ -284,6 +284,27 @@ func modeOf(fi os.FileInfo) any {
 	return fi.Mode()
 }
 
+// TestEnsureAllRefusesAConfluxDirOthersMayWrite: a CONFLUX_DIR that is there already is held to parents'
+// rule itself, not only the folders above it: one every account may write, and not sticky, is refused,
+// naming it, with nothing made in it, since whoever may write it could move the root aside and put
+// another in its place.
+func TestEnsureAllRefusesAConfluxDirOthersMayWrite(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("CONFLUX_DIR", dir)
+
+	if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), "inside "+dir+", which anybody may write") {
+		t.Errorf("EnsureAll(a CONFLUX_DIR every account may write) = %v, want a refusal naming it", err)
+	}
+
+	if entries, err := os.ReadDir(dir); err != nil || len(entries) > 0 {
+		t.Errorf("EnsureAll made %v in a CONFLUX_DIR it refused (%v)", entries, err)
+	}
+}
+
 // TestEnsureAllMakesItsRootInAStickyConfluxDir: a CONFLUX_DIR that is a sticky directory every account
 // may add to, as /tmp is, passes parents' rule, since nobody may move what is not theirs in it, and
 // conflux makes its root afresh inside it.

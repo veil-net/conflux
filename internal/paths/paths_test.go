@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -73,6 +74,22 @@ func TestAConfluxDirAtAVolumesTopIsNeverARoot(t *testing.T) {
 				t.Errorf("with CONFLUX_DIR=%s, %s is neither %s nor inside it", dir, p, own)
 			}
 		}
+	}
+}
+
+// TestCheckRefusesAFileAtARootsName: a file at a root's name is no root of conflux's: the readers'
+// check refuses it, naming it, rather than taking it for one there, and reads nothing.
+func TestCheckRefusesAFileAtARootsName(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", t.TempDir())
+
+	d := Default()
+	if err := os.WriteFile(d.State, []byte("a file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := d.Check(); err == nil || !strings.Contains(err.Error(), d.State+" is not as conflux makes") ||
+		!strings.Contains(err.Error(), "not a directory") {
+		t.Errorf("Check(a file at the root's name) = %v, want a refusal naming it", err)
 	}
 }
 

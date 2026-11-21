@@ -877,7 +877,7 @@ func dispose(h windows.Handle) error {
 	return windows.SetFileInformationByHandle(h, windows.FileDispositionInfo, &del, 1)
 }
 
-// sameFile reports whether a and b hold one file open: one volume, one file index.
+// sameFile reports whether a and b hold one file open (sameInfo).
 func sameFile(a, b windows.Handle) (bool, error) {
 	var fa, fb windows.ByHandleFileInformation
 	if err := windows.GetFileInformationByHandle(a, &fa); err != nil {
@@ -888,8 +888,14 @@ func sameFile(a, b windows.Handle) (bool, error) {
 		return false, err
 	}
 
-	return fa.VolumeSerialNumber == fb.VolumeSerialNumber && fa.FileIndexHigh == fb.FileIndexHigh &&
-		fa.FileIndexLow == fb.FileIndexLow, nil
+	return sameInfo(&fa, &fb), nil
+}
+
+// sameInfo reports whether a and b, what GetFileInformationByHandle said of two handles, are of one file:
+// one volume, one file index.
+func sameInfo(a, b *windows.ByHandleFileInformation) bool {
+	return a.VolumeSerialNumber == b.VolumeSerialNumber && a.FileIndexHigh == b.FileIndexHigh &&
+		a.FileIndexLow == b.FileIndexLow
 }
 
 // setMountPoint makes the empty directory h holds a junction leading to substitute, an NT path
@@ -1525,8 +1531,9 @@ func exePlaceOf(exe string) exePlace {
 
 // serviceCopy reports whether the running conflux, ex, is the copy the boot service runs from the root h
 // holds open (ServiceExecutable): the file at that copy's name there, looked up there and nowhere else
-// and never followed (ntOpen), no reparse point, and one file with the running conflux (sameFile's
-// rule).
+// and never followed (ntOpen), one file with the running conflux (sameInfo) -- which exePlaceOf opened
+// following any link, so a junction or a link at the copy's name, opened as itself, is never it, while a
+// copy the system keeps as a reparse point of its own, deduplicated or compressed, is.
 func serviceCopy(h windows.Handle, ex exePlace) bool {
 	if !ex.known {
 		return false
@@ -1540,12 +1547,8 @@ func serviceCopy(h windows.Handle, ex exePlace) bool {
 	defer windows.CloseHandle(c)
 
 	var fi windows.ByHandleFileInformation
-	if err := windows.GetFileInformationByHandle(c, &fi); err != nil || fi.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-		return false
-	}
 
-	return fi.VolumeSerialNumber == ex.file.VolumeSerialNumber && fi.FileIndexHigh == ex.file.FileIndexHigh &&
-		fi.FileIndexLow == ex.file.FileIndexLow
+	return windows.GetFileInformationByHandle(c, &fi) == nil && sameInfo(&fi, &ex.file)
 }
 
 // sharedWay is the way on from the refusal of the shared folder at the root dir: a CONFLUX_DIR pointed

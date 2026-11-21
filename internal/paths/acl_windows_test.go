@@ -253,7 +253,7 @@ func TestSecureReplacesAJunctionRoot(t *testing.T) {
 			root, err)
 	}
 
-	if _, err := makeRoot(root, parentsRule(root)); err != nil {
+	if _, err := EphemeralDirs(root).makeRoot(root, parentsRule(root)); err != nil {
 		t.Errorf("makeRoot(%s, the junction secure made) = %v", root, err)
 	}
 
@@ -742,13 +742,13 @@ func TestARootIsMadeWithItsDACL(t *testing.T) {
 	privtest.DenyOwnersTheirDACL(t, parent)
 
 	made := filepath.Join(parent, "made")
-	if _, err := makeRoot(made, parentsRule(made)); err != nil {
+	if _, err := EphemeralDirs(made).makeRoot(made, parentsRule(made)); err != nil {
 		t.Fatalf("makeRoot: %v", err)
 	}
 
 	onlyTheSystems(t, made)
 
-	if _, err := makeRoot(made, parentsRule(made)); err != nil {
+	if _, err := EphemeralDirs(made).makeRoot(made, parentsRule(made)); err != nil {
 		t.Errorf("makeRoot of a root already there: %v", err)
 	}
 

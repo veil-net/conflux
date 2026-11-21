@@ -17,7 +17,7 @@ import (
 
 // TestEnsureAllJudgesWhatAWideRootHolds: a root of this account's left wider than conflux leaves one
 // -- 0757 here -- let anybody put what they liked in it, which narrowing it takes nothing out of: a
-// link at logs/conflux.log, for the service to write its log through as root, or a file every account
+// link at run/token, for the supervisor to write its token through as root, or a file every account
 // may write, or one another account owns, a configuration of theirs. So EnsureAll judges what a root
 // holds, each thing by its own owner, mode and ACL, read from the root it holds open and never by its
 // name, and refuses such a root, naming what it holds, with nothing followed. A link, anything but
@@ -30,12 +30,12 @@ func TestEnsureAllJudgesWhatAWideRootHolds(t *testing.T) {
 		refused string
 		narrow  bool // refused in a 0700 root too
 	}{
-		{"a link at logs/conflux.log", func(t *testing.T, root string) string {
-			if err := os.Mkdir(filepath.Join(root, "logs"), 0o700); err != nil {
+		{"a link at run/token", func(t *testing.T, root string) string {
+			if err := os.Mkdir(filepath.Join(root, runName), 0o700); err != nil {
 				t.Fatal(err)
 			}
 
-			at := filepath.Join(root, "logs", "conflux.log")
+			at := filepath.Join(root, runName, "token")
 			if err := os.Symlink(outside(t), at); err != nil {
 				t.Fatal(err)
 			}
@@ -63,7 +63,7 @@ func TestEnsureAllJudgesWhatAWideRootHolds(t *testing.T) {
 			return at
 		}, ", which anybody may write", false},
 		{"a second name for a file outside it", func(t *testing.T, root string) string {
-			at := filepath.Join(root, "conflux.log")
+			at := filepath.Join(root, "state.json")
 			if err := os.Link(outside(t), at); err != nil {
 				t.Fatal(err)
 			}

@@ -3,6 +3,7 @@ package paths
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"testing"
 )
@@ -139,5 +140,55 @@ func TestOneTestOfWhatIsInsideWhat(t *testing.T) {
 	if way, err := d.Way(); err != nil || !slices.Equal(way, []string{base}) {
 		t.Errorf("Way() = %q, %v, want %q, and nothing above the shared log directory alone", way, err,
 			[]string{base})
+	}
+}
+
+// TestTheListHoldsWhatConfluxMakesInARoot: own, the one list of the names conflux makes at the top of a
+// root, holds every path the platform's roots, a CONFLUX_DIR's and an ephemeral run's name directly in
+// one of them -- each method of Dirs that takes nothing and is a path, so that a path added to Dirs is
+// on it, each root inside another, and an ephemeral run's root inside a CONFLUX_DIR -- and what is made
+// beside those: the anchor directories the supervisor makes and sets aside, the copy an update moves
+// aside, the log moved aside, the way record, and what an atomic write, the service's copy and an
+// update's download leave before a rename. A name conflux makes nowhere is not on it.
+func TestTheListHoldsWhatConfluxMakesInARoot(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "conflux")
+
+	layouts := map[string]Dirs{"the platform's": platformDirs(), "an ephemeral run's": EphemeralDirs(root)}
+
+	t.Setenv("CONFLUX_DIR", root)
+
+	layouts["a CONFLUX_DIR's"] = Default()
+
+	for name, d := range layouts {
+		made := append([]string{d.Config, d.State, d.Run, d.Log, filepath.Join(d.State, wayName),
+			d.AnchorDir() + ".new", d.AnchorDir() + ".old", d.RootAnchorDir() + ".old", d.ServiceExecutable() + ".old",
+			filepath.Join(d.State, ".tmp-1"), filepath.Join(d.State, ".conflux-1")}, EphemeralCandidates()...)
+
+		if d.Log != "" {
+			made = append(made, d.LogFile()+".1")
+		}
+
+		v := reflect.ValueOf(d)
+		for i := range v.NumMethod() {
+			if m := v.Method(i).Type(); m.NumIn() == 0 && m.NumOut() == 1 && m.Out(0).Kind() == reflect.String {
+				made = append(made, v.Method(i).Call(nil)[0].String())
+			}
+		}
+
+		for dir := range d.roots() {
+			for _, p := range made {
+				if p == "" || p == dir || filepath.Dir(p) != dir {
+					continue
+				}
+
+				if ours, _ := d.nameIn(dir, filepath.Base(p)); !ours {
+					t.Errorf("%s, which conflux makes in %s, a root of %s, is not on the list", filepath.Base(p), dir, name)
+				}
+			}
+
+			if ours, _ := d.nameIn(dir, "alice"); ours {
+				t.Errorf("alice, which conflux makes nowhere, is on the list of %s, a root of %s", dir, name)
+			}
+		}
 	}
 }

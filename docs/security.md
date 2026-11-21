@@ -49,7 +49,7 @@ host can read, and when the run stops there is nothing at all.
   through a link there — and whoever owns it: such a one is refused, never narrowed, filled or
   emptied, by every command that makes a root and by `uninstall`, which refuses it before it removes
   anything, the boot service included, or, where the root's name is a link to it, removes the link
-  alone. On Unix that is a sticky directory (`/tmp`,
+  alone, unless it holds what conflux never makes there (below). On Unix that is a sticky directory (`/tmp`,
   `/var/tmp`, `/dev/shm`), `/`, the system's log directory, a directory above where a platform root
   is kept by default (`/etc`, `/var`, `/var/lib` …), and the directory the running conflux is in or
   one above it, but for the boot service's own root, which holds the copy of conflux it runs once
@@ -58,6 +58,19 @@ host can read, and when the run stops there is nothing at all.
   share, as `%ProgramData%`'s does: Users let add to it and to the folders made in it, and `CREATOR
   OWNER` passed on, so each owns what it adds. A folder that only inherits such entries, as one made
   in `%ProgramData%` does, is a root like any other, judged and restricted.
+- No root holds what conflux never makes there. A root whose top level — at its name, or where a
+  link there that conflux follows leads — holds any name but conflux's own is somebody else's, a
+  `CONFLUX_DIR` at a folder of homes or a link at a root's name pointed at a program's folder, and is
+  refused and left as it is, never adopted, narrowed, filled or emptied: by every command that makes a
+  root, by `update` and `start` before they remove anything from one (Windows), and by `uninstall`,
+  which refuses it before it removes anything, the boot service and a link at its name included. The
+  refusal names the first stray entry. Conflux's names are one list (`paths.Dirs.own`): the
+  configuration, the identity and the state, the privilege record, the way record, the locks, the
+  extraction and the service's copy of conflux, with the image an update moved aside, `anchord`'s
+  `-config` and anchor directories, with the names the supervisor makes and sets them aside under,
+  the run and log directories and what they hold where those are the root, an ephemeral run's root
+  inside a `CONFLUX_DIR`, and what an atomic write, the service's copy or an update leaves before
+  its rename (`.tmp-`, `.conflux-`). An empty directory, and a root conflux made, hold nothing else.
 - `0700` on the directory, or `0710` where `anchord`'s own account is let through it —
   which lets that account pass and list nothing, read nothing of root's and create
   nothing. A `0600` file in a directory others may write is one `rename` away from being
@@ -99,8 +112,8 @@ host can read, and when the run stops there is nothing at all.
   it, through handles held from the top of its volume down, following no link but one at the root's
   own name that this check would follow to a directory conflux has secured as a root, and with a `CONFLUX_DIR`'s way held to the same rule; the
   roots it refuses, before it removes anything, are a `CONFLUX_DIR` whose way another account
-  controls, since that account could have put a directory of its own where the root is, and a root
-  that is a shared or system directory (above); see
+  controls, since that account could have put a directory of its own where the root is, a root
+  that is a shared or system directory, and one holding what conflux never makes there (above); see
   [commands.md](commands.md#conflux-uninstall)):
   whoever could have put a configuration, a pid record, a token or a binary there would otherwise
   have conflux read, signal or run theirs. The root's owner must be root (SYSTEM or the

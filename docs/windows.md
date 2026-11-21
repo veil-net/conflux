@@ -130,8 +130,16 @@ volume's root (`C:\`), `%ProgramData%`, `%SystemRoot%`, `C:\Users`, `C:\Users\Pu
 whose own DACL makes it a space other accounts share, as `%ProgramData%`'s does — Users let add to it
 and to the folders made in it, `CREATOR OWNER` passed full control — is refused by every command that
 makes a root before anything is filled or restricted, and by `uninstall` before it removes
-anything, the boot service included; a junction to it is removed as itself. A folder that only inherits such entries, as one made in
+anything, the boot service included; a junction to it is removed as itself, unless it holds what
+conflux never makes there. A folder that only inherits such entries, as one made in
 `%ProgramData%` does, is judged and restricted as any root is.
+
+No root holds what conflux never makes there: a root whose top level, at its name or where a junction
+there leads, holds any name but conflux's own — a `CONFLUX_DIR` at a folder of homes, or a junction
+at `%ProgramData%\conflux` pointed at `C:\Program Files\Git` — is refused, naming the stray entry,
+and left as it is, by every command that makes a root, by `update` and `start` before they remove
+anything from it, and by `uninstall` before it removes anything, the boot service and the junction
+included ([security.md](security.md#the-file-and-the-directory-around-it)).
 
 A root on a network volume — a share reached by its UNC path, a drive mapped to one, or a link
 leading to either, as the volume conflux holds it open on says, not as it is spelled — is refused

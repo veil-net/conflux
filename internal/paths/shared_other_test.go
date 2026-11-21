@@ -17,8 +17,9 @@ import (
 // the directory the running conflux is in, or, where conflux does not run as root, the filesystem's
 // root, is refused by EnsureAll, naming why, with its mode and what it holds as they were, and by
 // JudgeWays as a shared root, not a way; so is one whose name is a link to the sticky directory, by
-// EnsureAll, which JudgeWays takes, since RemoveRoot removes such a link as itself. RemoveRoot refuses
-// the sticky directory, removing nothing, and removes a link to it as itself, leaving it as it was.
+// EnsureAll. RemoveRoot refuses the sticky directory, removing nothing. A link to it holding what is
+// another account's is refused by JudgeWays and RemoveRoot as a foreign root, the link left; one
+// holding nothing else RemoveRoot removes as itself, leaving the directory as it was.
 func TestASharedDirectoryIsNoRoot(t *testing.T) {
 	base, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -64,8 +65,8 @@ func TestASharedDirectoryIsNoRoot(t *testing.T) {
 			mode, held := asFound(t, c.root)
 
 			switch err := Default().JudgeWays(); {
-			case c.root == link && err != nil:
-				t.Errorf("JudgeWays(a CONFLUX_DIR of %s) = %v, want it taken, the link RemoveRoot's to remove", name, err)
+			case c.root == link && (!errors.Is(err, ErrForeignRoot) || !strings.Contains(err.Error(), "holds theirs")):
+				t.Errorf("JudgeWays(a CONFLUX_DIR of %s) = %v, want a refusal of a foreign root naming theirs", name, err)
 			case c.root != link && (!errors.Is(err, ErrSharedRoot) || errors.Is(err, ErrWayRefused) ||
 				!strings.Contains(err.Error(), c.why)):
 				t.Errorf("JudgeWays(a CONFLUX_DIR of %s) = %v, want a refusal of a shared root saying it is %s", name,
@@ -91,11 +92,21 @@ func TestASharedDirectoryIsNoRoot(t *testing.T) {
 
 	t.Setenv("CONFLUX_DIR", link)
 
-	if gone, err := RemoveRoot(link); !gone || err != nil {
-		t.Errorf("RemoveRoot(a link to a sticky directory) = %v, %v, want the link removed", gone, err)
+	if gone, err := RemoveRoot(link); gone || err == nil || !strings.Contains(err.Error(), "holds theirs") {
+		t.Errorf("RemoveRoot(a link to a sticky directory holding another's) = %v, %v, want a refusal naming it", gone,
+			err)
 	}
 
-	if m, h := asFound(t, shared); m != 0o777|os.ModeSticky|os.ModeDir || !slices.Equal(h, []string{"theirs"}) {
+	if err := os.Remove(filepath.Join(shared, "theirs")); err != nil {
+		t.Fatal(err)
+	}
+
+	if gone, err := RemoveRoot(link); !gone || err != nil {
+		t.Errorf("RemoveRoot(a link to a sticky directory holding nothing else) = %v, %v, want the link removed", gone,
+			err)
+	}
+
+	if m, h := asFound(t, shared); m != 0o777|os.ModeSticky|os.ModeDir || len(h) != 0 {
 		t.Errorf("RemoveRoot left the sticky directory %v holding %q, want it as it was", m, h)
 	}
 }

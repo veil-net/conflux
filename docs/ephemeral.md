@@ -131,8 +131,8 @@ could have put there or may change, which they judge from the root held open, by
 following no link: they pass either over, reading, running and signalling nothing in it.
 `uninstall` removes every ephemeral root conflux secured, one holding what another account could
 have put there included, reading and signalling nothing in it and following nothing it holds; one
-it did not secure — a shared or system directory, or one the readers' check refuses — is not
-conflux's, and it leaves it as it is, saying so. Pass-through — `conflux peers`,
+it did not secure — a shared or system directory, one holding a name conflux never makes there, or
+one the readers' check refuses — is not conflux's, and it leaves it as it is, saying so. Pass-through — `conflux peers`,
 `conflux blocks`, every anchorctl command — reaches the ephemeral anchor when it is the
 only one running, once it is up.
 With an installed anchor running too, it reaches that one unless `CONFLUX_EPHEMERAL=1` is

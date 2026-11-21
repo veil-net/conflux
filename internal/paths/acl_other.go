@@ -193,16 +193,43 @@ func removeFrom(parent step, name, p string) (bool, error) {
 	return true, nil
 }
 
-// emptyIn removes all the directory s holds holds, p naming it: the directory opened again through s,
-// to read, and each name in it removed through that (removeAt), never followed.
-func emptyIn(s step, p string) error {
+// listing is the directory s holds, which p names, opened again through s, by no name, to be listed
+// (namesIn).
+func listing(s step, p string) (int, error) {
 	var fd int
 	if err := ignoringEINTR(func() (err error) {
 		fd, err = unix.Openat(s.fd, s.at("."), unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 
 		return err
 	}); err != nil {
-		return &os.PathError{Op: "open", Path: p, Err: err}
+		return -1, &os.PathError{Op: "open", Path: p, Err: err}
+	}
+
+	return fd, nil
+}
+
+// namesOf is what the directory s holds, which p names, lists, read through s (listing).
+func namesOf(s step, p string) ([]string, error) {
+	fd, err := listing(s, p)
+	if err != nil {
+		return nil, err
+	}
+	defer unix.Close(fd)
+
+	names, err := namesIn(fd)
+	if err != nil {
+		return nil, &os.PathError{Op: "read", Path: p, Err: err}
+	}
+
+	return names, nil
+}
+
+// emptyIn removes all the directory s holds holds, p naming it: the directory opened again through s,
+// to read (listing), and each name in it removed through that (removeAt), never followed.
+func emptyIn(s step, p string) error {
+	fd, err := listing(s, p)
+	if err != nil {
+		return err
 	}
 	defer unix.Close(fd)
 

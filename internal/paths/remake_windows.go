@@ -17,7 +17,8 @@ import (
 
 // remakeOld is RemakeOld for dir, a root of the installation d's. The root is held open as a reader
 // holds it (holdRoot): the way to it walked from the top of its volume, a CONFLUX_DIR's held to parents'
-// rule, and a junction at its name followed only where conflux would follow it. It is held to what
+// rule, and a junction at its name followed only where conflux would follow it. A root holding a name
+// conflux never makes there is not conflux's, and nothing in it is removed (strays). It is held to what
 // secure holds a root to before it changes anything in it (unmovable): its owner SYSTEM, the
 // Administrators or the account running conflux, and nobody else let move what is in it, who could put
 // back what is removed. Then each thing directly in it that conflux makes again by its name there (remadeIn) is
@@ -46,6 +47,15 @@ func remakeOld(d Dirs, dir string) ([]string, error) {
 		return nil, r.refused
 	}
 
+	led := ""
+	if r.link {
+		led = r.led.last().path
+	}
+
+	if err := d.strays(dir, led, r.dir); err != nil {
+		return nil, err
+	}
+
 	root := r.dir.h
 
 	sd, err := security(root)
@@ -57,15 +67,9 @@ func remakeOld(d Dirs, dir string) ([]string, error) {
 		return nil, err
 	}
 
-	list, err := listing(root)
+	names, err := namesOf(r.dir, dir)
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", dir, err)
-	}
-	defer windows.CloseHandle(list)
-
-	names, err := listIn(list)
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", dir, err)
+		return nil, err
 	}
 
 	anchord, err := ServiceSID()
@@ -311,21 +315,11 @@ type renameInformation struct {
 }
 
 // remadeIn reports whether name, directly in dir, a root of d's, is what conflux makes again by its
-// name there, losing nothing of the machine's identity, configuration or state: the lock files, the
-// log's folder and the run directory, the extraction, the service's copy of conflux and the image an
-// update moved aside, anchord's -config, which the supervisor writes at every spawn, and what an
-// atomic write or the service's copy leaves before its rename.
+// name there, losing nothing of the machine's identity, configuration or state (own's remade, nameIn).
 func (d Dirs) remadeIn(dir, name string) bool {
-	for _, p := range []string{d.LockFile(), d.ServeLockFile(), d.Log, d.Run, d.Libexec(), d.ServiceExecutable(),
-		d.ServiceExecutable() + ".old", d.DaemonConfigFile()} {
-		if p != "" && strings.EqualFold(filepath.Dir(p), dir) && strings.EqualFold(filepath.Base(p), name) {
-			return true
-		}
-	}
+	_, remade := d.nameIn(dir, name)
 
-	lower := strings.ToLower(name)
-
-	return strings.HasPrefix(lower, ".tmp-") || strings.HasPrefix(lower, ".conflux-")
+	return remade
 }
 
 // failsIn is who, besides SYSTEM, the Administrators, TrustedInstaller and anchord, may change name,
@@ -394,6 +388,22 @@ func emptyIn(s step, p string) error {
 func listing(h windows.Handle) (windows.Handle, error) {
 	return ntOpen(h, "", nil, windows.SYNCHRONIZE|windows.FILE_LIST_DIRECTORY, windows.FILE_OPEN,
 		windows.FILE_DIRECTORY_FILE)
+}
+
+// namesOf is what the folder s holds open, which p names, lists, read through s (listing).
+func namesOf(s step, p string) ([]string, error) {
+	h, err := listing(s.h)
+	if err != nil {
+		return nil, &os.PathError{Op: "open", Path: p, Err: err}
+	}
+	defer windows.CloseHandle(h)
+
+	names, err := listIn(h)
+	if err != nil {
+		return nil, &os.PathError{Op: "read", Path: p, Err: err}
+	}
+
+	return names, nil
 }
 
 // removeEmpty is RemoveWay's removal of name, an empty folder, in the directory parent holds open,

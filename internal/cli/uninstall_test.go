@@ -38,9 +38,9 @@ func TestUninstallLeavesNothingConfluxMade(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	plantLink(t, filepath.Join(d.State, "planted-link"), outside)
+	plantLink(t, filepath.Join(d.State, ".tmp-planted-link"), outside)
 	plantLink(t, filepath.Join(d.Libexec(), "0123456789abcdef", "planted-link"), outside)
-	plantForeign(t, filepath.Join(d.State, "planted-foreign"))
+	plantForeign(t, filepath.Join(d.State, ".tmp-planted-foreign"))
 
 	mgr := &fakeManager{d: d}
 	standInService(t, mgr)

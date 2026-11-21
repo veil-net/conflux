@@ -185,12 +185,12 @@ func TestRemoveRootRemovesWhatGrantsTheAdministratorsNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	folder := filepath.Join(root, "planted")
+	folder := Default().AnchorDir()
 	if err := os.Mkdir(folder, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
-	for _, p := range []string{filepath.Join(root, "notes"), filepath.Join(folder, "inside"), folder} {
+	for _, p := range []string{Default().ConfigFile(), filepath.Join(folder, "inside"), folder} {
 		if p != folder {
 			if err := os.WriteFile(p, []byte("theirs"), 0o600); err != nil {
 				t.Fatal(err)
@@ -375,8 +375,10 @@ func TestARootIsHeldBeforeAnythingInItIsOpened(t *testing.T) {
 // what is theirs in, whoever owns it: a CONFLUX_DIR whose DACL makes it a space other accounts share,
 // as %ProgramData%'s does -- Users let add to it and to the folders made in it, CREATOR OWNER passed
 // full control -- is refused by EnsureAll, naming why, with its DACL and what it holds as they were, and
-// so is a junction to it; RemoveRoot refuses the folder, removing nothing, and removes a junction to it
-// as itself, leaving it as it was. Windows-only, so it runs in CI's platforms job alone.
+// so is a junction to it; RemoveRoot refuses the folder, removing nothing. A junction to it holding
+// what is another account's is refused by JudgeWays and RemoveRoot as a foreign root, the junction
+// left; one holding nothing else RemoveRoot removes as itself, leaving the folder as it was.
+// Windows-only, so it runs in CI's platforms job alone.
 func TestASharedFolderIsNoRoot(t *testing.T) {
 	shared := filepath.Join(t.TempDir(), "shared")
 	if err := os.Mkdir(shared, 0o700); err != nil {
@@ -412,9 +414,9 @@ func TestASharedFolderIsNoRoot(t *testing.T) {
 		t.Setenv("CONFLUX_DIR", root)
 
 		switch err := Default().JudgeWays(); {
-		case root == junction && err != nil:
-			t.Errorf("JudgeWays(a CONFLUX_DIR of a junction to a folder other accounts share) = %v, want it taken, the "+
-				"junction RemoveRoot's to remove", err)
+		case root == junction && (!errors.Is(err, ErrForeignRoot) || !strings.Contains(err.Error(), "holds theirs")):
+			t.Errorf("JudgeWays(a CONFLUX_DIR of a junction to a folder other accounts share) = %v, want a refusal of a "+
+				"foreign root naming theirs", err)
 		case root == shared && (!errors.Is(err, ErrSharedRoot) || !strings.Contains(err.Error(), "a folder other accounts share")):
 			t.Errorf("JudgeWays(a CONFLUX_DIR of a folder other accounts share) = %v, want a refusal of a shared root", err)
 		}
@@ -438,11 +440,21 @@ func TestASharedFolderIsNoRoot(t *testing.T) {
 
 	t.Setenv("CONFLUX_DIR", junction)
 
-	if gone, err := RemoveRoot(junction); !gone || err != nil {
-		t.Errorf("RemoveRoot(a junction to a folder other accounts share) = %v, %v, want the junction removed", gone, err)
+	if gone, err := RemoveRoot(junction); gone || err == nil || !strings.Contains(err.Error(), "holds theirs") {
+		t.Errorf("RemoveRoot(a junction to a folder other accounts share holding another's) = %v, %v, want a refusal "+
+			"naming it", gone, err)
 	}
 
-	if g, h := asFound(); g != grants || !slices.Equal(h, held) {
+	if err := os.Remove(filepath.Join(shared, "theirs")); err != nil {
+		t.Fatal(err)
+	}
+
+	if gone, err := RemoveRoot(junction); !gone || err != nil {
+		t.Errorf("RemoveRoot(a junction to a folder other accounts share holding nothing else) = %v, %v, want the "+
+			"junction removed", gone, err)
+	}
+
+	if g, h := asFound(); g != grants || len(h) != 0 {
 		t.Errorf("RemoveRoot left the shared folder %d entries holding %q, want it as it was", g, h)
 	}
 }

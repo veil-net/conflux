@@ -258,6 +258,8 @@ func TestServeOpensNoLogInARootItRefuses(t *testing.T) {
 // TestServeWritesItsLogOnceTheRootIsJudged: under a root EnsureAll accepts, what serve --log says
 // from then on goes to its log and not where the service manager sends serve's output -- here a
 // second supervisor's refusal, the first thing a start can say after EnsureAll, and why serve ends.
+// The log is the root's own where the platform keeps one there (macOS, FreeBSD), and beside the root
+// elsewhere, where conflux keeps none in it.
 func TestServeWritesItsLogOnceTheRootIsJudged(t *testing.T) {
 	asServe()
 
@@ -266,7 +268,11 @@ func TestServeWritesItsLogOnceTheRootIsJudged(t *testing.T) {
 	d := paths.Default()
 	defer holdRoot(t, d)()
 
-	log := filepath.Join(d.State, "logs", "conflux.log")
+	log := d.LogFile()
+	if log == "" {
+		log = filepath.Join(t.TempDir(), "conflux.log")
+	}
+
 	if err := os.MkdirAll(filepath.Dir(log), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -318,7 +324,7 @@ func uninstallRemoves(t *testing.T, d paths.Dirs, why string) {
 			t.Fatal(err)
 		}
 
-		if err := os.Symlink(outside, filepath.Join(d.State, "planted-link")); err != nil {
+		if err := os.Symlink(outside, filepath.Join(d.State, ".tmp-planted-link")); err != nil {
 			t.Fatal(err)
 		}
 

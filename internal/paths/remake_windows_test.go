@@ -144,14 +144,14 @@ func TestRemakeOldRemovesWhatConfluxMakesAgain(t *testing.T) {
 			return identity, func() { privtest.SetOwner(t, identity, sidAdmins) }
 		}},
 		{"a file of the Guests'", func(t *testing.T) (string, func()) {
-			notes := filepath.Join(root, "notes")
-			if err := os.WriteFile(notes, nil, 0o600); err != nil {
+			state := d.StateFile()
+			if err := os.WriteFile(state, nil, 0o600); err != nil {
 				t.Fatal(err)
 			}
 
-			privtest.SetOwner(t, notes, guests)
+			privtest.SetOwner(t, state, guests)
 
-			return notes, func() { privtest.SetOwner(t, notes, sidAdmins); os.Remove(notes) }
+			return state, func() { privtest.SetOwner(t, state, sidAdmins); os.Remove(state) }
 		}},
 		{"a binary of the administrator's in an extraction of the Administrators'", func(t *testing.T) (string, func()) {
 			binary := filepath.Join(set, "anchord.exe")

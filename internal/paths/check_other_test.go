@@ -14,7 +14,9 @@ import (
 // TestCheckHoldsARootAsAReaderNeeds: Check holds each root that is there to its owner -- root or
 // this account -- and to who else may write it, as found and changing nothing: a root of this
 // account's at 0700, or at 0750, which it leaves at 0750, passes, as does a directory root owns; one
-// every account may write, sticky or not, is refused, naming it, and so is one another uid owns,
+// every account may write, sticky or not, is refused, naming it and sending the operator to let
+// conflux narrow it, which judges what it holds as it does, rather than narrow it by hand, and so is
+// one another uid owns,
 // and a link to one every account may write, named as the link. A CONFLUX_DIR inside a directory
 // every account may write is refused for it. Where no root is there Check is fs.ErrNotExist, and
 // where one of several is there, nil.
@@ -58,8 +60,14 @@ func TestCheckHoldsARootAsAReaderNeeds(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if _, err := checkRootAs(open, euid); err == nil || !strings.Contains(err.Error(), open+" is not conflux's alone") {
+		_, err := checkRootAs(open, euid)
+
+		switch {
+		case err == nil || !strings.Contains(err.Error(), open+" is not conflux's alone"):
 			t.Errorf("checkRootAs(a root at %v) = %v, want a refusal naming it", mode, err)
+		case !strings.Contains(err.Error(), "conflux start") || strings.Contains(err.Error(), "Narrow it"):
+			t.Errorf("checkRootAs(a root at %v) = %v, want it to send the operator to let conflux narrow it, which "+
+				"judges what it holds as it does, rather than narrow it by hand", mode, err)
 		}
 
 		link := filepath.Join(t.TempDir(), "conflux")

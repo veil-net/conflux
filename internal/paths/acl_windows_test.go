@@ -1512,7 +1512,8 @@ func TestAnAdministratorsRunRestrictsARootPassingCreatorOwnerOn(t *testing.T) {
 // TestCheckHoldsARootAsAReaderNeeds: Check holds each root that is there to its owner and to who
 // else may write it, retarget it or change who may, on itself or on what is made in it, as found
 // and changing nothing: a root EnsureAll made passes, and one this account owns that grants Users
-// the right to add a file to it is refused, naming it and Users, and left with that grant, by Foreign
+// the right to add a file to it is refused, naming it and Users and sending the operator to let
+// conflux restrict it rather than change its DACL by hand, and left with that grant, by Foreign
 // too, which is this check before it looks inside; so is one that only inherits %ProgramData%'s
 // grant to Users, which conflux never leaves a root with, though secure restricts it, and one whose
 // own DACL grants Users nothing on it and full control of what is made in it (inherit-only). Where
@@ -1536,6 +1537,9 @@ func TestCheckHoldsARootAsAReaderNeeds(t *testing.T) {
 
 	if err := checkRoot(open); err == nil || !strings.Contains(err.Error(), open) || !strings.Contains(err.Error(), "Users") {
 		t.Errorf("checkRoot(a root Users may add a file to) = %v, want a refusal naming it and Users", err)
+	} else if !strings.Contains(err.Error(), "conflux start") {
+		t.Errorf("checkRoot(a root Users may add a file to) = %v, want it to send the operator to let conflux "+
+			"restrict it", err)
 	}
 
 	if err := Foreign(open); err == nil || !strings.Contains(err.Error(), open+" grants ") {

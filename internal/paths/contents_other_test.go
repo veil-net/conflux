@@ -20,9 +20,9 @@ import (
 // link at logs/conflux.log, for the service to write its log through as root, or a file every account
 // may write, or one another account owns, a configuration of theirs. So EnsureAll judges what a root
 // holds, each thing by its own owner, mode and ACL, read from the root it holds open and never by its
-// name, and refuses such a root, naming what it holds, with nothing followed. A link, and anything but
-// a file, a directory or a socket -- a FIFO here -- are refused in a root already 0700 too, by
-// EnsureAll and by Foreign, since conflux makes none in a root, whoever made one.
+// name, and refuses such a root, naming what it holds, with nothing followed. A link, anything but
+// a file, a directory or a socket -- a FIFO here -- and a second name are refused in a root already
+// 0700 too, by EnsureAll and by Foreign, since conflux makes none in a root, whoever made one.
 func TestEnsureAllJudgesWhatAWideRootHolds(t *testing.T) {
 	for _, c := range []struct {
 		name    string
@@ -69,7 +69,7 @@ func TestEnsureAllJudgesWhatAWideRootHolds(t *testing.T) {
 			}
 
 			return at
-		}, ", which has another name, is in ", false},
+		}, ", which has another name, is in ", true},
 	} {
 		for _, mode := range []os.FileMode{0o757, 0o700} {
 			if mode == 0o700 && !c.narrow {
@@ -102,13 +102,15 @@ func TestEnsureAllJudgesWhatAWideRootHolds(t *testing.T) {
 	}
 }
 
-// TestASecondNameIsRefusedOnlyInARootFoundWide: a file in a root with a second name would lead root's
-// writes to wherever that name is, but only an account that could write the root can have made it
-// there. So it is refused as secure finds a root wider than conflux leaves one, before narrowing it,
-// with a refusal that sends nobody to remove the file -- it may be the manifest -- and nowhere else: a
-// root already 0700, or 0710, whose manifest anchord's account, which may link what it can name, gave
-// a second name, is taken by EnsureAll and by Foreign.
-func TestASecondNameIsRefusedOnlyInARootFoundWide(t *testing.T) {
+// TestASecondNameIsRefusedWhereOnlyAnotherAccountCouldHaveMadeIt: a file in a root with a second name
+// would lead root's writes to wherever that name is, and conflux makes no file of two names. In a root
+// anchord's account cannot search, 0700, nobody but root and this account can have made one there --
+// a wide root narrowed by hand, rather than by conflux, among them -- so it is refused, by EnsureAll and
+// by Foreign alike; so it is as secure finds a root wider than conflux leaves one, before narrowing
+// it. Each refusal sends nobody to remove the file -- it may be the manifest. A 0710 root, which lets
+// anchord's account through, and which that account, which may link what it can name, may have given
+// the manifest a second name in, is taken by EnsureAll and by Foreign.
+func TestASecondNameIsRefusedWhereOnlyAnotherAccountCouldHaveMadeIt(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
 	for _, mode := range []os.FileMode{0o700, 0o710, 0o750} {
@@ -127,20 +129,31 @@ func TestASecondNameIsRefusedOnlyInARootFoundWide(t *testing.T) {
 			t.Fatal(err)
 		}
 
+		refused := mode != 0o710
+		want := at + ", which has another name, is in "
+
 		err := Dirs{Config: root, State: root, Run: filepath.Join(root, runName)}.EnsureAll()
 
-		switch wide := mode == 0o750; {
-		case wide && (err == nil || !strings.Contains(err.Error(), at+", which has another name, is in ")):
+		switch {
+		case refused && (err == nil || !strings.Contains(err.Error(), want)):
 			t.Errorf("EnsureAll(a %#o root holding %s, which has a second name) = %v, want a refusal naming it", mode,
 				at, err)
-		case wide && strings.Contains(err.Error(), "Remove it"):
+		case refused && strings.Contains(err.Error(), "Remove it"):
 			t.Errorf("the refusal of a second name sends the operator to remove the file: %v", err)
-		case !wide && err != nil:
+		case !refused && err != nil:
 			t.Errorf("EnsureAll(a %#o root holding %s, which has a second name) = %v", mode, at, err)
-		case !wide:
-			if err := Foreign(root); err != nil {
-				t.Errorf("Foreign(a %#o root holding %s, which has a second name) = %v", mode, at, err)
-			}
+		}
+
+		if mode == 0o750 {
+			continue // the readers' check refuses the root itself first
+		}
+
+		switch err := Foreign(root); {
+		case refused && (err == nil || !strings.Contains(err.Error(), want)):
+			t.Errorf("Foreign(a %#o root holding %s, which has a second name) = %v, want a refusal naming it", mode, at,
+				err)
+		case !refused && err != nil:
+			t.Errorf("Foreign(a %#o root holding %s, which has a second name) = %v", mode, at, err)
 		}
 	}
 }

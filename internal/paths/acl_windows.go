@@ -13,6 +13,8 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/veil-net/conflux/internal/privcheck"
 )
 
 // On Windows a mode is nothing: Go maps Chmod onto the read-only attribute, and
@@ -915,8 +917,10 @@ func checkRoot(dir string) error {
 		return err
 	case who != "":
 		return fmt.Errorf("%s %s could read what conflux keeps in it, or put what they like there for conflux to "+
-			"read or run, so conflux will not use it: a root is conflux's alone.\n  Give it a DACL that grants nobody "+
-			"else any right on it, then run this again as Administrator", dir, who)
+			"read or run, so conflux will not use it: a root is conflux's alone.\n  Let conflux restrict it, which "+
+			"judges what it holds as it does, rather than changing its DACL by hand: for the machine's own, %s, or "+
+			"install; an ephemeral run's restricts its own as it starts. Then run this again", dir, who,
+			privcheck.Retry("conflux start"))
 	}
 
 	return nil

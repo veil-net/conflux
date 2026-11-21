@@ -58,12 +58,17 @@ host can read, and when the run stops there is nothing at all.
   descriptor. A link is refused, wherever it leads: conflux makes none in a root, and one at
   `logs/conflux.log` would have the service write its log through it as root. So is anything but a
   file, a directory or a socket, an entry another account owns, and anything another account may
-  write by its mode, the sticky bit letting nothing through, or its ACL; and, in a root found wider
-  than conflux leaves one, which another account may have been able to write, a file with a second
-  name, which would lead root's writes wherever that name is. Anywhere else a second name is root's,
-  this account's or `anchord`'s account's to have made, and refusing it would send an operator to
-  remove a file conflux keeps, the manifest among them, so the refusal names the file and asks for
-  its other name to be found first. `anchord`'s own account is conflux's: what the supervisor gives it — `anchor/`,
+  write by its mode, the sticky bit letting nothing through, or its ACL; and a file with a second
+  name, which would lead root's writes wherever that name is, in a root found wider than conflux
+  leaves one, which another account may have been able to write, before the narrowing and after it,
+  and in a root at `0700`, which only root and the account running conflux can search, and conflux
+  makes no file of two names. In a `0710` root a second name may be `anchord`'s account's, which may
+  link what it can name, and refusing it would send an operator to remove a file conflux keeps, the
+  manifest among them, so it is taken there; the refusal elsewhere names the file and asks for its
+  other name to be found first. That leaves a wide root narrowed by hand to `0710`, rather than by
+  conflux, holding whatever second name another account made in it while it was wide, so the
+  readers' refusal of a wide root asks for conflux to narrow it — `sudo conflux start` or
+  `install` — and not for a `chmod`. `anchord`'s own account is conflux's: what the supervisor gives it — `anchor/`,
   `anchord.json` and the run directory's `anchord/` — it may own, and its directories are not gone
   into, since conflux reads what `anchord` writes there as untrusted; anything else it owns is
   refused, as it can make nothing elsewhere in a root. Every reader of an ephemeral run's root

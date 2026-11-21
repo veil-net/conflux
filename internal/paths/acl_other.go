@@ -16,6 +16,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/veil-net/conflux/internal/group"
+	"github.com/veil-net/conflux/internal/privcheck"
 )
 
 // groups answers who a group lets in: one group.Lookup for the whole process, so that each group's
@@ -281,8 +282,8 @@ func secureAs(dir string, euid int) error {
 	wide := mode != 0o700 && mode != 0o710
 
 	// What the root holds, as found: a root wider than it is left let anybody put anything there,
-	// which narrowing it takes nothing out of.
-	if err := contentsAs(dir, fi, euid, wide); err != nil {
+	// which narrowing it takes nothing out of, a second name among it (secondNames).
+	if err := contentsAs(dir, fi, euid, wide || secondNames(fi)); err != nil {
 		return err
 	}
 
@@ -301,6 +302,16 @@ func secureAs(dir string, euid int) error {
 	// between. Nobody but root and this account can give a file in it one from now on.
 	return contentsAs(dir, fi, euid, true)
 }
+
+// secondNames reports whether a file with a second name in a root fi says is as found -- not narrowed
+// by secure -- is one only another account can have made there: in a root anchord's account cannot
+// search, 0700, nobody but root and the account running conflux could, and conflux makes no file of
+// two names, so a wide root narrowed by hand is held to it as one secure narrows is. In a 0710 root
+// anchord's account, which may link what it can name, may have made one, and no refusal should send
+// an operator to remove a file conflux keeps, the manifest among them: so a wide root narrowed by hand
+// to 0710 keeps a second name another account made in it while it was wide, which only letting
+// conflux narrow it would have refused (security.md).
+func secondNames(fi os.FileInfo) bool { return fi.Mode().Perm() == 0o700 }
 
 // narrowed is called once secure has narrowed a root, before it judges what the root holds again:
 // nothing, but where a test adds to the root meanwhile.
@@ -361,7 +372,7 @@ func foreign(dir string) error {
 		return err
 	}
 
-	return contentsAs(dir, fi, euid, false)
+	return contentsAs(dir, fi, euid, secondNames(fi))
 }
 
 // contentsAs refuses the root dir, for euid, where anything in it another account could have put
@@ -374,12 +385,12 @@ func foreign(dir string) error {
 // So is anything but a file, a directory or a socket; an entry another account owns, whatever its
 // name; and anything another account may write -- a file's content, or a directory's names, which
 // is how whoever may write it would retarget what it holds -- by its mode, the sticky bit letting
-// nothing through, or its ACL (judge). In a root found wide -- one secure narrows, which may have let
-// another account write it, judged before the narrowing and again after it -- so is a file with a
-// second name, a hard link another account may have made there to lead root's writes to wherever
-// that is. Anywhere else a second name
-// is root's or this account's to have made, or anchord's account's, which may link what it can name
-// and which no refusal should send an operator to remove, a manifest among it.
+// nothing through, or its ACL (judge). Where seconds is true so is a file with a second name, a hard
+// link another account may have made there to lead root's writes to wherever that is: in a root
+// found wide -- one secure narrows, which may have let another account write it, judged before the
+// narrowing and again after it -- and in one at 0700 (secondNames). In a 0710 root a second name is
+// root's or this account's to have made, or anchord's account's, which may link what it can name and
+// which no refusal should send an operator to remove, a manifest among it.
 //
 // anchord's own account (anchordAccount) is conflux's, as the account anchord runs as is on
 // Windows: the supervisor gives it its -dir, anchor (made as anchor.new), its -config,
@@ -392,7 +403,7 @@ func foreign(dir string) error {
 //
 // The root is opened by its name once, which secure and checkRootAs have just held, a link at it
 // included, to its owner, and refused unless it is fi, the directory they judged (ownedAs).
-func contentsAs(dir string, fi os.FileInfo, euid int, wide bool) error {
+func contentsAs(dir string, fi os.FileInfo, euid int, seconds bool) error {
 	var fd int
 	if err := ignoringEINTR(func() (err error) {
 		fd, err = unix.Open(dir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
@@ -412,16 +423,16 @@ func contentsAs(dir string, fi os.FileInfo, euid int, wide bool) error {
 		return fmt.Errorf("%s changed while conflux judged it, so conflux will not use it.\n  Run this again", dir)
 	}
 
-	return judgeIn(&judging{dir: dir, euid: euid, wide: wide, anchords: map[uint32]bool{}}, fd, "")
+	return judgeIn(&judging{dir: dir, euid: euid, seconds: seconds, anchords: map[uint32]bool{}}, fd, "")
 }
 
-// judging is contentsAs's judgement of what the root dir holds, for euid: wide is whether the root
-// was found wider than conflux leaves one, and anchords keeps what anchordAccount said of each uid
-// it was asked of.
+// judging is contentsAs's judgement of what the root dir holds, for euid: seconds is whether a file
+// with a second name is refused there, and anchords keeps what anchordAccount said of each uid it was
+// asked of.
 type judging struct {
 	dir      string
 	euid     int
-	wide     bool
+	seconds  bool
 	anchords map[uint32]bool
 }
 
@@ -477,10 +488,10 @@ func judgeEntry(j *judging, fd int, rel, name string) error {
 	case theirs && !anchord:
 		return fmt.Errorf("%s, which belongs to uid %d, is in %s, so conflux did not make it and will not use it.\n  "+
 			"Remove it, then run this again", p, st.Uid, dir)
-	case j.wide && kind == unix.S_IFREG && st.Nlink > 1:
-		return fmt.Errorf("%s, which has another name, is in %s, where conflux makes no file of two names, and "+
-			"which conflux found wider than it leaves a root, so conflux will not use it: another account may have "+
-			"made that name.\n  Do not remove it before you "+
+	case j.seconds && kind == unix.S_IFREG && st.Nlink > 1:
+		return fmt.Errorf("%s, which has another name, is in %s, where conflux makes no file of two names and no "+
+			"account it trusts could have made one, so conflux will not use it: another account may have made "+
+			"that name while the directory was wider than conflux leaves one.\n  Do not remove it before you "+
 			"know what it is: find its other name (find / -xdev -samefile %s). A file of the system's means it was "+
 			"put there for conflux to write to as root; a file of conflux's, the manifest among them, means "+
 			"somebody gave it a second name. Run this again once it has one", p, dir, p)
@@ -609,8 +620,10 @@ func checkRootAs(dir string, euid int) (os.FileInfo, error) {
 
 	if who := judge(fi.Mode()&^os.ModeSticky, fi.Sys().(*syscall.Stat_t).Gid, writers, aclGroup, euid); who != "" {
 		return nil, fmt.Errorf("%s is not conflux's alone: %s could put what it likes in it for conflux to read or "+
-			"run, so conflux will not use it.\n  Narrow it to 0700, and remove that entry from its ACL; then run "+
-			"this again", dir, who)
+			"run, so conflux will not use it.\n  Let conflux narrow it, which judges what it holds as it does, rather "+
+			"than narrowing it by hand: for the machine's own, run %s or %s; an ephemeral run's narrows its own "+
+			"as it starts. Remove that entry from its ACL first, if one lets another account write it; then run this "+
+			"again", dir, who, privcheck.Retry("conflux start"), privcheck.Retry("conflux install"))
 	}
 
 	return fi, nil

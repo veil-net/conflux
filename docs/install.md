@@ -129,7 +129,8 @@ $ sudo conflux update
 moves the boot service onto it: a running anchor is restarted on the new conflux, and a
 stopped one starts on it next time. Before it does, the new conflux removes what earlier conflux
 left — the anchor sets extracted before, made again for it, the run directory's leftovers, the
-old copy for the service — keeping the configuration, the identity, the state and the log. See [commands.md](commands.md#conflux-update).
+old copy for the service — keeping the configuration, the identity, the state and the log. See
+[commands.md](commands.md#conflux-update).
 Running the install script again, or replacing the binary by hand, replaces the binary
 and leaves the service on the old one; restart it onto the new one:
 

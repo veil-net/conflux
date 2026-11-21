@@ -526,9 +526,9 @@ removed, so it is refused, exit 1, naming the folder that fails and saying to ru
 once nobody else can change any folder on the way, with nothing removed, the boot service
 included. Any other root the readers' check refuses is removed the same way as one it takes, with
 nothing in it read or signalled first — no identity shown in the question, no `anchord` stopped by
-its pid record. The record of the folders made on the way to it is read all
-the same, as a file anybody may have put there, never through a link: all it can lead to is an
-empty folder above conflux's roots being removed. An ephemeral run's root inside a `CONFLUX_DIR`
+its pid record. The record of the folders made on the way to it is read all the same, as a file
+anybody may have put there, never through a link: all it can lead to is an empty folder above
+conflux's roots being removed. An ephemeral run's root inside a `CONFLUX_DIR`
 goes with it.
 
 While an [ephemeral run](ephemeral.md) is live — kept for the account running it, or inside a
@@ -536,10 +536,10 @@ While an [ephemeral run](ephemeral.md) is live — kept for the account running 
 and again once the question is answered, before anything is removed: the run's anchord may run as
 the account it would remove, so the run is stopped first, with Ctrl-C where it runs. A run that
 starts once uninstall has begun is left running, with its root, the root that holds it and the
-account it runs as, and uninstall says so, exit 1. The root a killed run left behind — its extracted pair, token and
-socket — it removes, stopping the anchord the run left, under the root's lock, so a run
-starting at that moment keeps its own; one another account could have made or changed is
-removed reading and signalling nothing in it.
+account it runs as, and uninstall says so, exit 1. The root a killed run left behind — its
+extracted pair, token and socket — it removes, stopping the anchord the run left, under the root's
+lock, so a run starting at that moment keeps its own; one another account could have made or
+changed is removed reading and signalling nothing in it.
 
 ## `conflux status`
 

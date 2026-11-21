@@ -3,6 +3,7 @@
 package paths
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -10,7 +11,9 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 // TestRemoveRootFollowsNothing: uninstall removes every root, one the readers' check refuses among
@@ -400,5 +403,116 @@ func TestARootIsHeldBeforeAnythingInItIsOpened(t *testing.T) {
 					err)
 			}
 		})
+	}
+}
+
+// TestTheWayIsJudgedBeforeItIsReadOrRemoved: a CONFLUX_DIR's way is held to parents' rule before the
+// record in it is read (Way) and before a folder recorded above it is removed (RemoveWay), since a way
+// another account may change could lead either elsewhere: with a directory every account may write
+// on it, Way refuses, naming that directory, and RemoveWay refuses, naming it, and leaves the folder;
+// a folder above no CONFLUX_DIR, on a platform root's way, is not judged, and is removed.
+func TestTheWayIsJudgedBeforeItIsReadOrRemoved(t *testing.T) {
+	open, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	a := filepath.Join(open, "a")
+	root := filepath.Join(a, "conflux")
+
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(root, wayName), []byte(a+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("CONFLUX_DIR", root)
+
+	if way, err := Default().Way(); err != nil || !slices.Equal(way, []string{a}) {
+		t.Fatalf("Way(), its way this account's alone = %q, %v, want %q", way, err, []string{a})
+	}
+
+	if err := os.Chmod(open, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	if way, err := Default().Way(); err == nil || !strings.Contains(err.Error(), "inside "+open) {
+		t.Errorf("Way(), a directory every account may write on its way = %q, %v, want a refusal naming it", way, err)
+	}
+
+	if err := os.RemoveAll(root); err != nil {
+		t.Fatal(err)
+	}
+
+	if removed, err := RemoveWay([]string{a}); removed != nil || err == nil || !strings.Contains(err.Error(), open) {
+		t.Errorf("RemoveWay(%s, above a CONFLUX_DIR inside a directory every account may write) = %q, %v, want a "+
+			"refusal naming it", a, removed, err)
+	}
+
+	if _, err := os.Lstat(a); err != nil {
+		t.Errorf("RemoveWay refusing the way removed %s: %v", a, err)
+	}
+
+	t.Setenv("CONFLUX_DIR", "")
+
+	if removed, err := RemoveWay([]string{a}); err != nil || !slices.Equal(removed, []string{a}) {
+		t.Errorf("RemoveWay(%s, above no CONFLUX_DIR) = %q, %v, want it removed, its way not judged", a, removed, err)
+	}
+}
+
+// TestTheRecordIsReadOnlyAsAPlainFile: the record of the way is read as a file another account may have
+// put there, and refused, unread, where it is not one plain file of at most wayMax bytes: a second name
+// for a file elsewhere, a record past the size, and a FIFO, which is not waited on.
+func TestTheRecordIsReadOnlyAsAPlainFile(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "conflux")
+
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("CONFLUX_DIR", root)
+
+	record := filepath.Join(root, wayName)
+
+	elsewhere := filepath.Join(t.TempDir(), "elsewhere")
+	if err := os.WriteFile(elsewhere, []byte(base+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, plant := range map[string]func() error{
+		"a second name":    func() error { return os.Link(elsewhere, record) },
+		"past the size":    func() error { return os.WriteFile(record, bytes.Repeat([]byte("x"), wayMax+1), 0o600) },
+		"a FIFO":           func() error { return syscall.Mkfifo(record, 0o600) },
+		"one plain record": func() error { return os.WriteFile(record, []byte(base+"\n"), 0o600) },
+	} {
+		if err := plant(); err != nil {
+			t.Fatal(err)
+		}
+
+		done := make(chan error, 1)
+
+		go func() {
+			_, err := Default().Way()
+			done <- err
+		}()
+
+		select {
+		case err := <-done:
+			switch {
+			case name == "one plain record" && err != nil:
+				t.Errorf("Way(), %s = %v", name, err)
+			case name != "one plain record" && (err == nil || !strings.Contains(err.Error(), "not a plain file")):
+				t.Errorf("Way(), the record %s = %v, want it refused, unread", name, err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("Way(), the record %s, did not return", name)
+		}
+
+		if err := os.Remove(record); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

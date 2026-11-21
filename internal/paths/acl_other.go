@@ -175,6 +175,75 @@ func makeStep(parent step, name string) (step, bool, error) {
 	return step{}, false, ignoringEINTR(func() error { return unix.Mkdirat(parent.fd, parent.at(name), 0o700) })
 }
 
+// removeFrom is RemoveRoot's removal of name, in the directory parent is, which p names (removeAt),
+// and whether anything was there.
+func removeFrom(parent step, name, p string) (bool, error) {
+	switch err := removeAt(parent.fd, parent.at(name), p); {
+	case errors.Is(err, unix.ENOENT):
+		return false, nil
+	case err != nil:
+		return true, err
+	}
+
+	return true, nil
+}
+
+// removeAt removes at, in the directory dirfd is open on, which p names, and, where it is a directory,
+// all it holds first: what fstatat says of the name, never followed; a directory opened there with
+// O_NOFOLLOW and held to what fstatat said, what it holds removed through it, then the directory by
+// unlinkat; anything else, a link among it, unlinked as itself. Something gone since its directory was
+// listed is passed over; nothing at at itself is an error that is ENOENT.
+func removeAt(dirfd int, at, p string) error {
+	var st unix.Stat_t
+	if err := ignoringEINTR(func() error { return unix.Fstatat(dirfd, at, &st, unix.AT_SYMLINK_NOFOLLOW) }); err != nil {
+		return &os.PathError{Op: "stat", Path: p, Err: err}
+	}
+
+	if st.Mode&unix.S_IFMT != unix.S_IFDIR {
+		if err := ignoringEINTR(func() error { return unix.Unlinkat(dirfd, at, 0) }); err != nil {
+			return &os.PathError{Op: "remove", Path: p, Err: err}
+		}
+
+		return nil
+	}
+
+	var fd int
+	if err := ignoringEINTR(func() (err error) {
+		fd, err = unix.Openat(dirfd, at, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+
+		return err
+	}); err != nil {
+		return &os.PathError{Op: "open", Path: p, Err: err}
+	}
+	defer unix.Close(fd)
+
+	var held unix.Stat_t
+	if err := unix.Fstat(fd, &held); err != nil {
+		return &os.PathError{Op: "stat", Path: p, Err: err}
+	}
+
+	if held.Dev != st.Dev || held.Ino != st.Ino {
+		return fmt.Errorf("%s changed while conflux removed it.\n  Run this again", p)
+	}
+
+	names, err := namesIn(fd)
+	if err != nil {
+		return &os.PathError{Op: "read", Path: p, Err: err}
+	}
+
+	for _, name := range names {
+		if err := removeAt(fd, name, filepath.Join(p, name)); err != nil && !errors.Is(err, unix.ENOENT) {
+			return err
+		}
+	}
+
+	if err := ignoringEINTR(func() error { return unix.Unlinkat(dirfd, at, unix.AT_REMOVEDIR) }); err != nil {
+		return &os.PathError{Op: "remove", Path: p, Err: err}
+	}
+
+	return nil
+}
+
 // ignoringEINTR is f, again for as long as a signal interrupts it, as the os package retries its
 // own calls.
 func ignoringEINTR(f func() error) error {

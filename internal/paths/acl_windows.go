@@ -816,21 +816,29 @@ func unlink(dir string, self windows.Handle) error {
 }
 
 // dispose removes what h holds open, opened with DELETE: with POSIX semantics where the file system
-// has them, so the name is gone at once, though somebody else holds it open, and otherwise once every
-// handle on it is closed.
+// has them, so the name is gone at once, though somebody else holds it open, read-only or not where
+// Windows lets the attribute be passed over (1809 on), and otherwise once every handle on it is
+// closed.
 func dispose(h windows.Handle) error {
-	posix := uint32(windows.FILE_DISPOSITION_DELETE | windows.FILE_DISPOSITION_POSIX_SEMANTICS)
-
-	err := windows.SetFileInformationByHandle(h, windows.FileDispositionInfoEx, (*byte)(unsafe.Pointer(&posix)),
-		uint32(unsafe.Sizeof(posix)))
-	if errors.Is(err, windows.ERROR_INVALID_PARAMETER) || errors.Is(err, windows.ERROR_INVALID_FUNCTION) ||
-		errors.Is(err, windows.ERROR_NOT_SUPPORTED) {
-		del := byte(1) // FILE_DISPOSITION_INFO's DeleteFile
-
-		err = windows.SetFileInformationByHandle(h, windows.FileDispositionInfo, &del, 1)
+	unsupported := func(err error) bool {
+		return errors.Is(err, windows.ERROR_INVALID_PARAMETER) || errors.Is(err, windows.ERROR_INVALID_FUNCTION) ||
+			errors.Is(err, windows.ERROR_NOT_SUPPORTED)
 	}
 
-	return err
+	for _, flags := range []uint32{
+		windows.FILE_DISPOSITION_DELETE | windows.FILE_DISPOSITION_POSIX_SEMANTICS |
+			windows.FILE_DISPOSITION_IGNORE_READONLY_ATTRIBUTE,
+		windows.FILE_DISPOSITION_DELETE | windows.FILE_DISPOSITION_POSIX_SEMANTICS,
+	} {
+		if err := windows.SetFileInformationByHandle(h, windows.FileDispositionInfoEx, (*byte)(unsafe.Pointer(&flags)),
+			uint32(unsafe.Sizeof(flags))); !unsupported(err) {
+			return err
+		}
+	}
+
+	del := byte(1) // FILE_DISPOSITION_INFO's DeleteFile
+
+	return windows.SetFileInformationByHandle(h, windows.FileDispositionInfo, &del, 1)
 }
 
 // sameFile reports whether a and b hold one file open: one volume, one file index.

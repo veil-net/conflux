@@ -146,10 +146,24 @@ func failsIn(parent windows.Handle, name, p string, anchord *windows.SID) (strin
 	return who, err
 }
 
+// removeFrom is RemoveRoot's removal of name, in the directory parent holds open, which p names
+// (removeIn), and whether anything was there.
+func removeFrom(parent step, name, p string) (bool, error) {
+	switch err := removeIn(parent.h, name, p); {
+	case errors.Is(err, fs.ErrNotExist):
+		return false, nil
+	case err != nil:
+		return true, err
+	}
+
+	return true, nil
+}
+
 // removeIn removes name, in the directory parent holds open, which p names, and, where it is a
 // folder, all it holds first: each opened through a handle on the one it is in, looked up there and
 // nowhere else, never followed (ntOpen), and removed through its own (dispose). A junction or a link
-// is removed as itself, and never gone into.
+// is removed as itself, and never gone into. Something gone since its folder was listed is passed
+// over; nothing at name itself is an error that is fs.ErrNotExist.
 func removeIn(parent windows.Handle, name, p string) error {
 	h, err := ntOpen(parent, name, nil,
 		windows.SYNCHRONIZE|windows.DELETE|windows.FILE_READ_ATTRIBUTES|windows.FILE_LIST_DIRECTORY, windows.FILE_OPEN, 0)
@@ -172,7 +186,7 @@ func removeIn(parent windows.Handle, name, p string) error {
 		}
 
 		for _, n := range names {
-			if err := removeIn(h, n, filepath.Join(p, n)); err != nil {
+			if err := removeIn(h, n, filepath.Join(p, n)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 				return err
 			}
 		}

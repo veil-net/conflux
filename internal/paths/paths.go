@@ -311,6 +311,49 @@ func (d Dirs) RemakeOld() ([]string, error) {
 	return removed, nil
 }
 
+// RemoveRoot removes the root dir and everything in it, and says whether anything was at its name,
+// following nothing: the way to dir walked from the top of its volume and held open a directory at a
+// time (walk), and dir removed from the directory it is in, as that walk holds it, each thing below
+// opened through the directory holding it and never by its name, a link or a junction anywhere --
+// at dir's own name included -- removed as itself, and what it leads to never touched. Nothing in
+// the root is read or judged first, so a root the readers' check refuses is removed as safely as one
+// it takes. A CONFLUX_DIR's way is held to parents' rule, for the account running conflux, as the
+// readers' check holds it, the directory dir is in included, since a way another account may change
+// could lead the removal elsewhere; a platform root's way, the system's own, is not, as it is not
+// when the root is made (makeRoot). Where nothing is at dir's name, or on the way to it, nothing is
+// removed.
+func RemoveRoot(dir string) (bool, error) {
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return false, err
+	}
+
+	judge := judgement(nil)
+	if chosen(dir) {
+		judge = parentsRule(dir)
+	}
+
+	parent := filepath.Dir(dir)
+
+	w, err := walk(parent, judge)
+	if err != nil {
+		return false, err
+	}
+	defer w.close()
+
+	if w.missing != nil {
+		return false, nil
+	}
+
+	if at := w.last(); judge != nil {
+		if err := judge(at.path, at.step, false); err != nil {
+			return false, err
+		}
+	}
+
+	return removeFrom(w.last().step, filepath.Base(dir), dir)
+}
+
 // wayRule is the rule the way to d's root dir is held to as EnsureAll makes it: the boot service's
 // (serviceRule) for an installation's root, which the service runs from at every start and judges
 // the way to as it starts, so that a command making it refuses up front what the service would

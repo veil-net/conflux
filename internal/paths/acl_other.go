@@ -246,17 +246,9 @@ func secureAs(dir string, euid int) error {
 	// it through the narrowing, so it is refused, but for the NFSv4 entries that are the mode
 	// itself, which chmod rewrites (judgeRoot); a POSIX.1e ACL's mask is the mode's group bits,
 	// which the narrowing takes every entry's write away with (judge), so where every ACL is one
-	// of those, or there is none, it is not read (rootACLMayRefuse). A link's own ACL says
-	// nothing, so it is read where the link leads.
+	// of those, or there is none, it is not read (rootACLMayRefuse).
 	if rootACLMayRefuse {
-		acl := dir
-		if isLink(link) {
-			if acl, err = filepath.EvalSymlinks(dir); err != nil {
-				return fmt.Errorf("read %s: %w", dir, err)
-			}
-		}
-
-		writers, aclGroup, err := aclOf(acl, -1)
+		writers, aclGroup, err := rootACL(dir, link)
 		if err != nil {
 			return err
 		}
@@ -595,14 +587,7 @@ func checkRootAs(dir string, euid int) (os.FileInfo, error) {
 		return nil, err
 	}
 
-	acl := dir
-	if isLink(link) {
-		if acl, err = filepath.EvalSymlinks(dir); err != nil {
-			return nil, fmt.Errorf("read %s: %w", dir, err)
-		}
-	}
-
-	writers, aclGroup, err := aclOf(acl, -1)
+	writers, aclGroup, err := rootACL(dir, link)
 	if err != nil {
 		return nil, err
 	}
@@ -663,6 +648,21 @@ func parentRefusal(dir, where, p, who string, euid int) error {
 	return fmt.Errorf("%s is %s %s, which %s could move it aside and put another in its place "+
 		"for conflux to run.\n  Choose a CONFLUX_DIR whose every parent only root and uid %d can change, "+
 		"or that sits in a sticky directory such as /tmp", dir, where, p, who, euid)
+}
+
+// rootACL is who the ACL of the root dir lets write it, and whether that ACL says what its group may
+// (aclOf), link being what Lstat said of dir: read where dir leads, since a link's own ACL says
+// nothing.
+func rootACL(dir string, link os.FileInfo) ([]writer, bool, error) {
+	acl := dir
+	if isLink(link) {
+		var err error
+		if acl, err = filepath.EvalSymlinks(dir); err != nil {
+			return nil, false, fmt.Errorf("read %s: %w", dir, err)
+		}
+	}
+
+	return aclOf(acl, -1)
 }
 
 // aclOf is who p's ACL lets write it, and whether that ACL says what p's group may

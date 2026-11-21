@@ -129,8 +129,10 @@ pass-through ever writes into a run's root, and a root the readers' check refuse
 to them, whatever lock, marker or binaries it holds, nor is one holding anything another account
 could have put there or may change, which they judge from the root held open, by no name and
 following no link: they pass either over, reading, running and signalling nothing in it.
-`uninstall` removes every ephemeral root, such a one included, reading and signalling nothing in
-it and following nothing it holds. Pass-through — `conflux peers`,
+`uninstall` removes every ephemeral root conflux secured, one holding what another account could
+have put there included, reading and signalling nothing in it and following nothing it holds; one
+it did not secure — a shared or system directory, or one the readers' check refuses — is not
+conflux's, and it leaves it as it is, saying so. Pass-through — `conflux peers`,
 `conflux blocks`, every anchorctl command — reaches the ephemeral anchor when it is the
 only one running, once it is up.
 With an installed anchor running too, it reaches that one unless `CONFLUX_EPHEMERAL=1` is

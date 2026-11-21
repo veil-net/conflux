@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -68,6 +69,10 @@ func runUninstall(_ context.Context, args []string) int {
 		return ExitError
 	}
 
+	// The ephemeral roots outside d's that conflux did not secure, which it leaves, each with a note,
+	// judged with the installation's, before anything is asked or removed (notConfluxs).
+	others := othersEphemeral(d)
+
 	// What uninstall reads or signals by a name in a root -- the identity it asks about, the pid
 	// record it stops anchord by -- it reads only where the root passes paths' check, since whoever
 	// could change the root could have put theirs there. A root that fails is removed all the same,
@@ -109,15 +114,15 @@ func runUninstall(_ context.Context, args []string) int {
 	}
 
 	// Each ephemeral run's root, but one inside the installation's -- a CONFLUX_DIR's -- which goes with
-	// it, a killed run's anchord stopped first, where the root is this account's alone. A run that
-	// started since uninstall asked is left running: its root, the installation's roots where it is
-	// inside them, and its account.
+	// it, and one conflux did not secure, left already, a killed run's anchord stopped first, where the
+	// root is this account's alone. A run that started since uninstall asked is left running: its root,
+	// the installation's roots where it is inside them, and its account.
 	var (
 		started       []string
 		startedInside bool
 	)
 
-	for _, root := range paths.EphemeralCandidates() {
+	for _, root := range ephemeralCandidates() {
 		if d.Inside(root) {
 			switch found, err := removeKilledRun(root); {
 			case err != nil:
@@ -126,6 +131,10 @@ func runUninstall(_ context.Context, args []string) int {
 				started, startedInside = append(started, root), true
 			}
 
+			continue
+		}
+
+		if slices.Contains(others, root) {
 			continue
 		}
 
@@ -209,6 +218,10 @@ func runUninstall(_ context.Context, args []string) int {
 // reap is daemon.Reap, which a test counts.
 var reap = daemon.Reap
 
+// ephemeralCandidates is paths.EphemeralCandidates, which a test points at roots outside the
+// installation's: under a CONFLUX_DIR every candidate is inside it.
+var ephemeralCandidates = paths.EphemeralCandidates
+
 // removeSharedLog removes the service's log where the platform keeps it in the system's own log
 // directory, outside d's roots, which is not conflux's: the file and the one moved aside, and never the
 // directory. One in a root goes with it.
@@ -231,6 +244,47 @@ func liveRefused() bool {
 	}
 
 	return live
+}
+
+// othersEphemeral is each of the ephemeral roots outside d's that is there and that conflux did not
+// secure (notConfluxs), which uninstall leaves as it is, and says so, naming it and why: not conflux's,
+// whatever its name, and nothing uninstall fails for.
+func othersEphemeral(d paths.Dirs) []string {
+	var others []string
+
+	for _, root := range ephemeralCandidates() {
+		if d.Inside(root) {
+			continue
+		}
+
+		if err := notConfluxs(root); err != nil {
+			what, _, _ := strings.Cut(err.Error(), "\n")
+			ui.Errf("%s\n  conflux did not secure it as an ephemeral run's root, so it is not conflux's, and uninstall "+
+				"left it as it is", what)
+
+			others = append(others, root)
+		}
+	}
+
+	return others
+}
+
+// notConfluxs is why the ephemeral root at root, outside an installation's roots, is not one conflux
+// secured, or nil where it is, or is not there: one RemoveRoot refuses -- a shared or system directory
+// (JudgeWays) -- or one the readers' check refuses, which another account owns or may change (Check).
+// %ProgramData% lets any account make the name first.
+func notConfluxs(root string) error {
+	e := paths.EphemeralDirs(root)
+
+	if err := e.JudgeWays(); err != nil {
+		return err
+	}
+
+	if err := e.Check(); !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+
+	return nil
 }
 
 // removeEphemeralRoot removes the ephemeral root at root, where one is there, and says whether it

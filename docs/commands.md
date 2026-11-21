@@ -543,8 +543,12 @@ the account it would remove, so the run is stopped first, with Ctrl-C where it r
 starts once uninstall has begun is left running, with its root, the root that holds it and the
 account it runs as, and uninstall says so, exit 1. The root a killed run left behind — its
 extracted pair, token and socket — it removes, stopping the anchord the run left, under the root's
-lock, so a run starting at that moment keeps its own; one another account could have made or
-changed is removed reading and signalling nothing in it.
+lock, so a run starting at that moment keeps its own; one holding anything another account could
+have put there is removed reading and signalling nothing in it. One conflux did not secure — a
+shared or system directory, or one the readers' check refuses, which another account owns or may
+change, as any account may make `C:\ProgramData\conflux-ephemeral` first — is not conflux's,
+whatever its name: judged with the installation's roots, before anything is asked or removed, it is
+left as it is, with a note naming it and why, and uninstall does not fail for it.
 
 ## `conflux status`
 

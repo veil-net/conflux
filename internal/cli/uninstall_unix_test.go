@@ -120,3 +120,60 @@ func TestUninstallRefusesAWayAnotherAccountMayChange(t *testing.T) {
 			d.State, err)
 	}
 }
+
+// TestUninstallLeavesAnEphemeralRootConfluxDidNotSecure: an ephemeral run's root outside the
+// installation's that is a shared directory -- sticky, as /tmp is -- or one another account may
+// write, which conflux never secured as a run's root, is not conflux's, whatever its name: uninstall
+// leaves it as it is, with what it holds, saying so, and does not fail for it, while a killed run's
+// root beside it goes.
+func TestUninstallLeavesAnEphemeralRootConfluxDidNotSecure(t *testing.T) {
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	d := configured(t)
+
+	shared := filepath.Join(t.TempDir(), "conflux-ephemeral")
+	open := filepath.Join(t.TempDir(), "conflux-ephemeral")
+	killed := filepath.Join(t.TempDir(), "conflux-ephemeral")
+
+	for root, mode := range map[string]os.FileMode{shared: 0o777 | os.ModeSticky, open: 0o777, killed: 0o700} {
+		if err := os.Mkdir(root, 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.WriteFile(filepath.Join(root, "serve.lock"), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.Chmod(root, mode); err != nil {
+			t.Fatal(err)
+		}
+
+		t.Cleanup(func() { _ = os.Chmod(root, 0o700) })
+	}
+
+	defer func(was func() []string) { ephemeralCandidates = was }(ephemeralCandidates)
+	ephemeralCandidates = func() []string { return []string{shared, open, killed} }
+
+	mgr := &removing{fakeManager: fakeManager{d: d}}
+	standInService(t, mgr)
+
+	out, errOut, code := capture(t, "uninstall", "--yes")
+	if code != ExitOK {
+		t.Errorf("uninstall beside ephemeral roots conflux did not secure exited %d, want %d:\n%s%s", code, ExitOK,
+			out, errOut)
+	}
+
+	for _, root := range []string{shared, open} {
+		if _, err := os.Lstat(filepath.Join(root, "serve.lock")); err != nil || !strings.Contains(errOut, root) ||
+			strings.Contains(out, "  "+root+"\n") {
+			t.Errorf("uninstall removed or listed %s, which conflux did not secure, or did not say it left it "+
+				"(Lstat: %v):\n%s%s", root, err, out, errOut)
+		}
+	}
+
+	if _, err := os.Lstat(killed); !os.IsNotExist(err) || !strings.Contains(out, "  "+killed+"\n") {
+		t.Errorf("uninstall left %s, a killed run's root, or did not say it removed it (Lstat: %v):\n%s", killed, err,
+			out)
+	}
+}

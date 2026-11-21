@@ -887,6 +887,8 @@ type fileID struct{ dev, ino uint64 }
 
 // idOf is the file p leads to, or false where it cannot be read.
 func idOf(p string) (fileID, bool) {
+	statting(p)
+
 	var st unix.Stat_t
 	if err := unix.Stat(p, &st); err != nil {
 		return fileID{}, false
@@ -895,14 +897,19 @@ func idOf(p string) (fileID, bool) {
 	return fileID{uint64(st.Dev), uint64(st.Ino)}, true
 }
 
+// statting is called with each path idOf reads: nothing, but where a test counts them.
+var statting = func(string) {}
+
 // systemPlaces are the directories no root of conflux's may be, by the file each is, and why
-// (systemPlacesOf); those directly under the filesystem's root among them (top); and the directory the
-// running conflux is in, held apart (exeDir), with the running conflux itself (exe).
+// (systemPlacesOf); the filesystem's root, by its path and the file it is (slash), which a directory
+// directly under it is judged by; and the directory the running conflux is in, held apart (exeDir), with
+// the running conflux itself (exe).
 type systemPlaces struct {
-	dirs   map[fileID]string
-	top    map[fileID]bool
-	exeDir fileID
-	exe    fileID
+	dirs      map[fileID]string
+	slashPath string
+	slash     fileID
+	exeDir    fileID
+	exe       fileID
 }
 
 // systemDirs are this process's systemPlaces, read once: the running conflux, the platform's places
@@ -917,14 +924,14 @@ var systemDirs = sync.OnceValue(func() systemPlaces {
 })
 
 // systemPlacesOf is the systemPlaces of a process running exe on a platform whose roots are kept in
-// platform by default, whose filesystem's root is slash: that root; each directory directly under it
-// that is there, a link there by the directory it leads to -- the system's own, which only root makes
-// there (top), though one may be a root conflux made (sharedRootIn); each directory above one of the
+// platform by default, whose filesystem's root is slash: that root; each directory above one of the
 // platform's roots, which are the system's; the system's log directory (sharedLog); and each directory
 // above the one exe is in, which is held apart, since it is the root the boot service runs its copy of
-// conflux from.
+// conflux from. Nothing else in slash is read: whether a root is directly under it is asked of that root
+// alone, as it is judged (sharedRootIn), since reading what slash holds would stat a mount whose server
+// is gone, and wait on it, in every process that makes a root.
 func systemPlacesOf(slash, exe string, platform Dirs) systemPlaces {
-	ps := systemPlaces{dirs: map[fileID]string{}, top: map[fileID]bool{}}
+	ps := systemPlaces{dirs: map[fileID]string{}, slashPath: slash}
 
 	add := func(p, why string) {
 		if id, ok := idOf(p); ok {
@@ -944,6 +951,8 @@ func systemPlacesOf(slash, exe string, platform Dirs) systemPlaces {
 		}
 	}
 
+	ps.slash, _ = idOf(slash)
+
 	add(slash, "the filesystem's root")
 	add(sharedLog, "the system's log directory")
 
@@ -957,16 +966,6 @@ func systemPlacesOf(slash, exe string, platform Dirs) systemPlaces {
 		ps.exeDir, _ = idOf(filepath.Dir(exe))
 		ps.exe, _ = idOf(exe)
 		above(filepath.Dir(exe), "above the directory the running conflux is in")
-	}
-
-	if entries, err := os.ReadDir(slash); err == nil {
-		for _, e := range entries {
-			if id, ok := idOf(filepath.Join(slash, e.Name())); ok {
-				if _, had := ps.dirs[id]; !had {
-					ps.top[id] = true
-				}
-			}
-		}
 	}
 
 	return ps
@@ -998,7 +997,7 @@ func sharedRootIn(ps systemPlaces, dir string, s step) error {
 	case service:
 	case why == "" && id == ps.exeDir:
 		why = "the directory the running conflux is in"
-	case why == "" && ps.top[id] && !madeTop(dir, s):
+	case why == "" && ps.top(dir, s) && !madeTop(dir, s):
 		why = "a directory of the system's, directly under the filesystem's root, which conflux did not make a root"
 	}
 
@@ -1013,6 +1012,24 @@ func sharedRootIn(ps systemPlaces, dir string, s step) error {
 
 	return fmt.Errorf("%s is %s, so conflux will not use it as a root: it never narrows, fills or empties a "+
 		"directory others keep what is theirs in.\n  %s", dir, why, way)
+}
+
+// top reports whether the root dir, the directory s holds, is directly under the filesystem's root:
+// its name is, or the directory it is, whose "..", as fstatat says of it through s, is that root. Where
+// that cannot be read it is taken to be, so that a refusal answers for what cannot be told.
+func (ps systemPlaces) top(dir string, s step) bool {
+	if filepath.Dir(dir) == ps.slashPath {
+		return true
+	}
+
+	var st unix.Stat_t
+	if err := ignoringEINTR(func() error {
+		return unix.Fstatat(s.fd, s.at(".."), &st, unix.AT_SYMLINK_NOFOLLOW)
+	}); err != nil {
+		return true
+	}
+
+	return (fileID{uint64(st.Dev), uint64(st.Ino)}) == ps.slash
 }
 
 // serviceCopy reports whether the running conflux, ps.exe, is the copy the boot service runs from the

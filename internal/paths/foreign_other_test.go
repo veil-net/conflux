@@ -375,3 +375,59 @@ func TestASecuredDirectoryWithoutStateIsHeldToConfluxsNames(t *testing.T) {
 			mode, was)
 	}
 }
+
+// TestOnlyTheRootJudgedIsAskedWhetherItIsDirectlyUnderSlash: whether a root is directly under the
+// filesystem's root is asked of that root alone -- its name, or the "..", of the directory it is -- and
+// nothing else there is read, since a mount there whose server is gone would hang every process that makes
+// a root: judged under a stand-in for /, holding home/, mnt/ and srv/, none of them is statted. A link
+// directly under it, to a directory elsewhere at 0755, is the system's by its name; that directory, named
+// as itself, is not.
+func TestOnlyTheRootJudgedIsAskedWhetherItIsDirectlyUnderSlash(t *testing.T) {
+	slash := t.TempDir()
+
+	for _, name := range []string{"home", "mnt", "srv"} {
+		if err := os.Mkdir(filepath.Join(slash, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	root := filepath.Join(slash, "conflux")
+	if err := os.MkdirAll(filepath.Join(root, runName), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	elsewhere := t.TempDir()
+
+	link := filepath.Join(slash, "data")
+	if err := os.Symlink(elsewhere, link); err != nil {
+		t.Fatal(err)
+	}
+
+	var statted []string
+
+	was := statting
+	t.Cleanup(func() { statting = was })
+
+	statting = func(p string) { statted = append(statted, p) }
+
+	ps := systemPlacesOf(slash, "", Dirs{})
+
+	if err := sharedRootIn(ps, root, held(t, root)); err != nil {
+		t.Errorf("sharedRootIn(a root conflux made, directly under the filesystem's root) = %v, want it taken", err)
+	}
+
+	if err := sharedRootIn(ps, link, held(t, elsewhere)); err == nil ||
+		!strings.Contains(err.Error(), "directly under the filesystem's root") {
+		t.Errorf("sharedRootIn(a link directly under the filesystem's root) = %v, want a refusal saying so", err)
+	}
+
+	if err := sharedRootIn(ps, elsewhere, held(t, elsewhere)); err != nil {
+		t.Errorf("sharedRootIn(a directory elsewhere, named as itself) = %v, want it taken", err)
+	}
+
+	for _, name := range []string{"home", "mnt", "srv", "data"} {
+		if p := filepath.Join(slash, name); slices.Contains(statted, p) {
+			t.Errorf("judging a root under the filesystem's root statted %s, which is not that root", p)
+		}
+	}
+}

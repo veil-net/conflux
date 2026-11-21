@@ -45,29 +45,15 @@ func runServe(ctx context.Context, args []string) int {
 		}
 	}
 
-	d := paths.Default()
-
-	// Where launchd or daemon(8) was told to write it: conflux writes it itself from here on,
-	// stamping each line and moving it aside when it is full, which neither of them does. Opened by
-	// its name, as root, to append to, so only once EnsureAll has made the root conflux's alone: in
-	// one another account could write, a link at that name would have conflux append wherever it
-	// led. A root EnsureAll refuses is the supervisor's to refuse, saying why where the service
-	// manager sends the output.
-	if *logPath != "" && d.EnsureAll() == nil {
-		if lf, err := logfile.Open(*logPath); err != nil {
-			ui.Errf("could not open the log %s, so the output goes where the service manager sends it: %v", *logPath, err)
-		} else {
-			defer lf.Close()
-
-			ui.Out, ui.Errw = lf, lf
-		}
-	}
-
 	sup := &daemon.Supervisor{
-		Dirs:     d,
+		Dirs:     paths.Default(),
 		Reporter: reporter{},
 		Ready:    make(chan struct{}),
 		Drop:     true,
+	}
+
+	if *logPath != "" {
+		sup.OpenLog = func() { openLog(*logPath) }
 	}
 
 	if !*foreground {
@@ -77,6 +63,29 @@ func runServe(ctx context.Context, args []string) int {
 	}
 
 	return launchdExit(runSupervisor(ctx, sup))
+}
+
+// openLog sends what serve says from here on to the log at path, where launchd or daemon(8) was
+// told to write it: conflux writes it itself, stamping each line and moving it aside when it is
+// full, which neither of them does. The file is placed over the process's stdout and stderr as
+// well, and kept for the rest of the process, so why the supervisor ended goes there too.
+//
+// The supervisor calls it once its EnsureAll has judged the roots, and not where EnsureAll refuses
+// them, which the supervisor then does itself, saying why where the service manager sends the
+// output. The log is opened by its name, as root, to append to, so a link at that name would have
+// conflux append wherever it led. Under a CONFLUX_DIR the log is in the root's logs directory,
+// which EnsureAll has just held to its way, its owner and what it holds, a link refused, so
+// no other account can have put one there since. Otherwise launchd's and FreeBSD's registrations
+// name the system's /var/log, which EnsureAll leaves alone, and only root can change.
+func openLog(path string) {
+	lf, err := logfile.Open(path)
+	if err != nil {
+		ui.Errf("could not open the log %s, so the output goes where the service manager sends it: %v", path, err)
+
+		return
+	}
+
+	ui.Out, ui.Errw = lf, lf
 }
 
 func runSupervisor(ctx context.Context, sup *daemon.Supervisor) int {

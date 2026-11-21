@@ -14,6 +14,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
 	"github.com/veil-net/conflux/internal/privcheck"
@@ -172,10 +173,34 @@ func tree(t *testing.T, root string) []string {
 	return found
 }
 
-// serveArgs, set, makes TestServeOpensNoLogInARootItRefuses's test binary conflux serve with these
-// arguments, a line each: serve places its log over stdout and stderr, which here would be the
-// test binary's.
+// serveArgs, set, makes a test that calls asServe first conflux serve, with these arguments, a line
+// each: serve places its log over stdout and stderr, which would be the test binary's, so it runs
+// in a child of that binary (serveChild).
 const serveArgs = "CONFLUX_TEST_SERVE_ARGS"
+
+// asServe is conflux serve, exiting as it does, where serveArgs is set: serveChild's child.
+func asServe() {
+	if args := os.Getenv(serveArgs); args != "" {
+		os.Exit(Main(append([]string{"conflux", "serve"}, strings.Split(args, "\n")...)))
+	}
+}
+
+// serveChild runs conflux serve with args, outside systemd, in a child of the test binary running
+// t's test, which asServe makes it: what it wrote where the service manager would read it, and
+// its exit code.
+func serveChild(t *testing.T, args ...string) (out string, code int) {
+	t.Helper()
+
+	cmd := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$") //nolint:gosec // this test binary
+	cmd.Env = append(os.Environ(), "NOTIFY_SOCKET=", serveArgs+"="+strings.Join(args, "\n"))
+
+	b, err := cmd.CombinedOutput()
+	if cmd.ProcessState == nil {
+		t.Fatalf("run serve: %v", err)
+	}
+
+	return string(b), cmd.ProcessState.ExitCode()
+}
 
 // TestServeOpensNoLogInARootItRefuses: serve --log opens its log by name, as root, to append to it,
 // so it does that only once EnsureAll has made the root conflux's alone. Under a root EnsureAll
@@ -183,9 +208,7 @@ const serveArgs = "CONFLUX_TEST_SERVE_ARGS"
 // root of their own, with a link at logs/conflux.log -- the file the link leads to gets nothing,
 // and the refusal goes where the service manager sends serve's output.
 func TestServeOpensNoLogInARootItRefuses(t *testing.T) {
-	if args := os.Getenv(serveArgs); args != "" {
-		os.Exit(Main(append([]string{"conflux", "serve"}, strings.Split(args, "\n")...)))
-	}
+	asServe()
 
 	open := t.TempDir()
 	root := filepath.Join(open, "conflux")
@@ -210,17 +233,43 @@ func TestServeOpensNoLogInARootItRefuses(t *testing.T) {
 
 	t.Cleanup(func() { _ = os.Chmod(open, 0o700) })
 
-	cmd := exec.Command(os.Args[0], "-test.run=^TestServeOpensNoLogInARootItRefuses$") //nolint:gosec // this test binary
-	cmd.Env = append(os.Environ(), "NOTIFY_SOCKET=",
-		serveArgs+"="+strings.Join([]string{"--foreground", "--dir", root, "--log", log}, "\n"))
-
-	out, err := cmd.CombinedOutput()
-	if code := cmd.ProcessState.ExitCode(); code != ExitError || !strings.Contains(string(out), open) {
-		t.Errorf("serve under a root in a directory every account may write exited %d (%v), want %d saying why:\n%s",
-			code, err, ExitError, out)
+	out, code := serveChild(t, "--foreground", "--dir", root, "--log", log)
+	if code != ExitError || !strings.Contains(out, open) {
+		t.Errorf("serve under a root in a directory every account may write exited %d, want %d saying why:\n%s",
+			code, ExitError, out)
 	}
 
 	if b, _ := os.ReadFile(elsewhere); len(b) > 0 {
 		t.Errorf("serve appended to %s, where a link at its log's name led:\n%s", elsewhere, b)
+	}
+}
+
+// TestServeWritesItsLogOnceTheRootIsJudged: under a root EnsureAll accepts, what serve --log says
+// from then on goes to its log and not where the service manager sends serve's output -- here a
+// second supervisor's refusal, the first thing a start can say after EnsureAll, and why serve ends.
+func TestServeWritesItsLogOnceTheRootIsJudged(t *testing.T) {
+	asServe()
+
+	d := pathstest.Dirs(t)
+	log := filepath.Join(d.State, "logs", "conflux.log")
+
+	if err := os.MkdirAll(filepath.Dir(log), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	unlock, ok, err := flock.TryAcquire(d.ServeLockFile())
+	if err != nil || !ok {
+		t.Fatalf("hold the supervisor's lock: %v", err)
+	}
+	defer unlock()
+
+	const refusal = "another conflux supervisor is already serving"
+
+	out, code := serveChild(t, "--foreground", "--dir", d.State, "--log", log)
+	b, _ := os.ReadFile(log)
+
+	if code != ExitError || !strings.Contains(string(b), refusal) || strings.Contains(out, refusal) {
+		t.Errorf("serve beside another supervisor exited %d, want %d, its log holding\n%s\nand its output\n%s",
+			code, ExitError, b, out)
 	}
 }

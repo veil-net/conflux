@@ -79,6 +79,11 @@ type Supervisor struct {
 	// as root makes no account.
 	Drop bool
 
+	// OpenLog, set, is called as soon as EnsureAll has judged the roots, before anything else
+	// the start does, and never where EnsureAll refuses them: serve --log opens its log there,
+	// by its name.
+	OpenLog func()
+
 	tools *libexec.Tools
 	ctl   *anchorctl.Ctl
 	tail  *ring
@@ -163,6 +168,10 @@ func (s *Supervisor) Run(ctx context.Context) error {
 
 	if err := s.Dirs.EnsureAll(); err != nil {
 		return err
+	}
+
+	if s.OpenLog != nil {
+		s.OpenLog()
 	}
 
 	// One supervisor per root, held for as long as this one runs: what it does next is stop

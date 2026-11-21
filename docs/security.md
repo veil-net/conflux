@@ -45,6 +45,18 @@ host can read, and when the run stops there is nothing at all.
 
 - `0600`, with the mode set on the descriptor before any content is written. Writing
   and then chmod'ing leaves a window at the umask's mode.
+- No root is a directory others keep what is theirs in, however it is reached — at its name or
+  through a link there — and whoever owns it: such a one is refused, never narrowed, filled or
+  emptied, by every command that makes a root and by `uninstall`, which removes nothing then, or,
+  where the root's name is a link to it, the link alone. On Unix that is a sticky directory (`/tmp`,
+  `/var/tmp`, `/dev/shm`), `/`, the system's log directory, a directory above where a platform root
+  is kept by default (`/etc`, `/var`, `/var/lib` …), and the directory the running conflux is in or
+  one above it, but for the boot service's own root, which holds the copy of conflux it runs once
+  conflux has secured it. On Windows it is a volume's root (`C:\`), `%ProgramData%`, `%SystemRoot%`,
+  `C:\Users` and `C:\Users\Public`, and any folder whose own DACL makes it a space other accounts
+  share, as `%ProgramData%`'s does: Users let add to it and to the folders made in it, and `CREATOR
+  OWNER` passed on, so each owns what it adds. A folder that only inherits such entries, as one made
+  in `%ProgramData%` does, is a root like any other, judged and restricted.
 - `0700` on the directory, or `0710` where `anchord`'s own account is let through it —
   which lets that account pass and list nothing, read nothing of root's and create
   nothing. A `0600` file in a directory others may write is one `rename` away from being

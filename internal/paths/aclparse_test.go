@@ -349,3 +349,43 @@ func TestWindowsGrants(t *testing.T) {
 		}
 	}
 }
+
+// TestSharedSpace: a DACL whose own entries let anybody -- Users, Authenticated Users, Everyone,
+// INTERACTIVE -- add to a folder and pass that on to the folders made in it, with a CREATOR OWNER entry
+// passed on, is a space other accounts share, as %ProgramData% is; one that only inherits those
+// entries, as a folder made in %ProgramData% does, or lets Users add to the folder alone, or passes no
+// CREATOR OWNER entry on, is not.
+func TestSharedSpace(t *testing.T) {
+	users, authenticated := windowsSIDOf(5, 32, 545), windowsSIDOf(5, 11)
+	system, creatorOwner := windowsSIDOf(5, 18), windowsSIDOf(3, 0)
+
+	const (
+		oi, ci, io, inherited = 0x1, 0x2, aceInheritOnly, 0x10
+		addsBoth              = 0x2 | 0x4
+	)
+
+	full := windowsACE(aceAllowed, oi|ci, le32(0x1f01ff), system)
+	owns := windowsACE(aceAllowed, oi|ci|io, le32(0x1f01ff), creatorOwner)
+
+	for _, c := range []struct {
+		name string
+		acl  []byte
+		want bool
+	}{
+		{"%ProgramData%'s", windowsACL(full, windowsACE(aceAllowed, ci, le32(addsBoth), users), owns), true},
+		{"Authenticated Users'", windowsACL(full, windowsACE(aceAllowed, ci, le32(0x4), authenticated), owns), true},
+		{"inherited", windowsACL(full, windowsACE(aceAllowed, ci|inherited, le32(addsBoth), users),
+			windowsACE(aceAllowed, oi|ci|io|inherited, le32(0x1f01ff), creatorOwner)), false},
+		{"Users adding to the folder alone", windowsACL(full, windowsACE(aceAllowed, 0, le32(0x2), users), owns), false},
+		{"no CREATOR OWNER passed on", windowsACL(full, windowsACE(aceAllowed, ci, le32(addsBoth), users)), false},
+		{"SYSTEM's alone", windowsACL(full), false},
+	} {
+		if got, err := sharedSpace(c.acl); err != nil || got != c.want {
+			t.Errorf("sharedSpace(%s) = %v, %v, want %v", c.name, got, err, c.want)
+		}
+	}
+
+	if _, err := sharedSpace([]byte{4, 0}); err == nil {
+		t.Error("sharedSpace(an ACL too short to hold its header) = nil, want it refused")
+	}
+}

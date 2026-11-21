@@ -366,3 +366,71 @@ func TestARootIsHeldBeforeAnythingInItIsOpened(t *testing.T) {
 		}
 	}
 }
+
+// TestASharedFolderIsNoRoot: no root conflux fills, restricts or empties may be a folder others keep
+// what is theirs in, whoever owns it: a CONFLUX_DIR whose DACL makes it a space other accounts share,
+// as %ProgramData%'s does -- Users let add to it and to the folders made in it, CREATOR OWNER passed
+// full control -- is refused by EnsureAll, naming why, with its DACL and what it holds as they were, and
+// so is a junction to it; RemoveRoot refuses the folder, removing nothing, and removes a junction to it
+// as itself, leaving it as it was. Windows-only, so it runs in CI's platforms job alone.
+func TestASharedFolderIsNoRoot(t *testing.T) {
+	shared := filepath.Join(t.TempDir(), "shared")
+	if err := os.Mkdir(shared, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(shared, "theirs"), []byte("theirs"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	privtest.SetSecurity(t, shared, "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;CI;0x6;;;BU)(A;OICIIO;FA;;;CO)")
+
+	junction := mklinkJ(t, filepath.Join(t.TempDir(), "conflux"), shared)
+
+	// asFound is the folder's DACL's grantees and the names it holds.
+	asFound := func() (int, []string) {
+		entries, err := os.ReadDir(shared)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+
+		return len(privtest.ReadSecurity(t, shared).Entries), names
+	}
+
+	grants, held := asFound()
+
+	for _, root := range []string{shared, junction} {
+		t.Setenv("CONFLUX_DIR", root)
+
+		if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), "a folder other accounts share") {
+			t.Errorf("EnsureAll(a CONFLUX_DIR of %s, a folder other accounts share) = %v, want a refusal saying so",
+				root, err)
+		}
+
+		if g, h := asFound(); g != grants || !slices.Equal(h, held) {
+			t.Errorf("EnsureAll(a CONFLUX_DIR of %s) left the shared folder %d entries holding %q, want %d holding %q",
+				root, g, h, grants, held)
+		}
+	}
+
+	t.Setenv("CONFLUX_DIR", shared)
+
+	if gone, err := RemoveRoot(shared); gone || err == nil || !strings.Contains(err.Error(), "a folder other accounts share") {
+		t.Errorf("RemoveRoot(a folder other accounts share) = %v, %v, want a refusal saying so", gone, err)
+	}
+
+	t.Setenv("CONFLUX_DIR", junction)
+
+	if gone, err := RemoveRoot(junction); !gone || err != nil {
+		t.Errorf("RemoveRoot(a junction to a folder other accounts share) = %v, %v, want the junction removed", gone, err)
+	}
+
+	if g, h := asFound(); g != grants || !slices.Equal(h, held) {
+		t.Errorf("RemoveRoot left the shared folder %d entries holding %q, want it as it was", g, h)
+	}
+}

@@ -499,9 +499,11 @@ func (d Dirs) RemakeOld() ([]string, error) {
 // followed only where conflux would follow it (follow): its owner trusted, nobody else able to point
 // it elsewhere, and leading to a directory owned as a root at the name itself would be; then what that
 // directory holds is removed through the handle held on it, and the link after, the directory itself
-// left, empty. One that fails is removed as itself, and where it leads is not touched. Nothing in a root at
-// dir's name itself is read or judged first, so a root the readers' check refuses is removed as safely
-// as one it takes. Where nothing is at dir's name, or on the way to it, nothing is removed.
+// left, empty. One that fails, or leads to a directory others keep what is theirs in (sharedStep), is
+// removed as itself, and where it leads is not touched. A directory at dir's name itself that others
+// keep what is theirs in -- a CONFLUX_DIR of /tmp -- is refused, and nothing is removed; nothing else in
+// a root at dir's name is read or judged first, so a root the readers' check refuses is removed as
+// safely as one it takes. Where nothing is at dir's name, or on the way to it, nothing is removed.
 func RemoveRoot(dir string) (bool, error) {
 	dir, err := filepath.Abs(dir)
 	if err != nil {
@@ -518,7 +520,13 @@ func RemoveRoot(dir string) (bool, error) {
 	}
 	defer r.close()
 
-	if r.link && r.refused == nil {
+	switch {
+	case r.refused != nil:
+	case !r.link:
+		if err := sharedStep(dir, r.dir); err != nil {
+			return false, err
+		}
+	case sharedStep(dir, r.dir) == nil:
 		if err := emptyIn(r.dir, dir); err != nil {
 			return true, err
 		}
@@ -1133,8 +1141,9 @@ func judgeWay(dir string, rule judgement) error {
 // held to rule, parents' rule for whoever the root is for (wayRule), as far as it is there, before
 // anything is made, and makeWay holds the rest to it as it goes: every directory a lookup of dir looks a name up in, and every link
 // it follows, is judged once, here and nowhere else: secure, which EnsureAll calls after it, judges
-// the root and what it holds, and not its way. Anything already at the root's name is secure's; and a link that leads nowhere is
-// refused by the walk, with nothing made where it leads.
+// the root and what it holds, and not its way. Anything already at the root's name is secure's, but a
+// directory others keep what is theirs in, which is refused here first, whatever leads to it
+// (sharedStep); and a link that leads nowhere is refused by the walk, with nothing made where it leads.
 func makeRoot(dir string, rule judgement) ([]string, error) {
 	judge := judgement(nil)
 	if chosen(dir) {
@@ -1148,7 +1157,7 @@ func makeRoot(dir string, rule judgement) ([]string, error) {
 	defer w.close()
 
 	if w.missing == nil {
-		return nil, nil
+		return nil, sharedStep(dir, w.last().step)
 	}
 
 	return makeWay(dir, w, rule)

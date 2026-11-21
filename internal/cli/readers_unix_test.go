@@ -39,9 +39,10 @@ func (m *untouched) Remove() error { m.removals++; return nil }
 // command that reads a root without making it holds it to paths' check before it reads anything in
 // it by name: one whose mode lets every account write it, sticky or not -- a name nobody has taken
 // yet is anybody's in a sticky directory -- is refused, naming it, with nothing in it read, made,
-// stopped or removed (readersRefuse); and uninstall removes it, reading and signalling nothing in
-// it and following no link it holds (uninstallRemoves). (On Linux, one whose ACL lets another
-// account write it: TestAReaderRefusesARootAnACLLetsAnotherAccountWrite.)
+// stopped or removed (readersRefuse); and uninstall removes one that is not sticky, reading and
+// signalling nothing in it and following no link it holds (uninstallRemoves), and refuses a sticky
+// one, which every account shares, leaving it and what it holds (uninstallLeaves). (On Linux, one
+// whose ACL lets another account write it: TestAReaderRefusesARootAnACLLetsAnotherAccountWrite.)
 func TestAReaderRefusesARootAnotherAccountMayWrite(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
@@ -63,7 +64,12 @@ func TestAReaderRefusesARootAnotherAccountMayWrite(t *testing.T) {
 			t.Cleanup(func() { _ = os.Chmod(d.State, 0o700) })
 
 			readersRefuse(t, d, "anybody may write")
-			uninstallRemoves(t, d, "anybody may write")
+
+			if c.mode&os.ModeSticky != 0 {
+				uninstallLeaves(t, d, "a sticky directory")
+			} else {
+				uninstallRemoves(t, d, "anybody may write")
+			}
 		})
 	}
 }
@@ -344,6 +350,31 @@ func uninstallRemoves(t *testing.T, d paths.Dirs, why string) {
 
 		if reaped > 0 {
 			t.Errorf("uninstall reaped by the pid record of a root %s %d times", why, reaped)
+		}
+	})
+}
+
+// uninstallLeaves fails t unless uninstall --yes of the root d, a directory others keep what is theirs
+// in, which no root of conflux's may be, refuses it, exit 1, saying what it is (why), and leaves it
+// with what it holds, the anchord its pid record names not looked for.
+func uninstallLeaves(t *testing.T, d paths.Dirs, why string) {
+	t.Helper()
+
+	t.Run("uninstall", func(t *testing.T) {
+		mgr := &untouched{fakeManager: fakeManager{d: d}}
+		standInService(t, mgr)
+
+		defer func(was func(paths.Dirs, time.Duration)) { reap = was }(reap)
+		reap = func(paths.Dirs, time.Duration) { t.Error("uninstall reaped by the pid record of a shared root") }
+
+		out, errOut, code := capture(t, "uninstall", "--yes")
+		if code != ExitError || !strings.Contains(errOut, why) {
+			t.Errorf("uninstall of a root that is %s exited %d, want %d saying so:\n%s%s", why, code, ExitError, out,
+				errOut)
+		}
+
+		if _, err := os.Lstat(d.ConfigFile()); err != nil {
+			t.Errorf("uninstall of a root that is %s removed %s: %v", why, d.ConfigFile(), err)
 		}
 	})
 }

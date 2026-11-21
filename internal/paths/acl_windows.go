@@ -545,6 +545,12 @@ func secure(dir string, installation bool) error {
 	}
 	defer root.close()
 
+	// A folder others keep what is theirs in is never filled or restricted, whoever owns it
+	// (sharedRoot).
+	if err := sharedRoot(dir, root.dir); err != nil {
+		return err
+	}
+
 	sd, err := security(root.dir)
 	if err != nil {
 		return fmt.Errorf("read the ownership of %s: %w", dir, err)
@@ -1330,6 +1336,100 @@ func ledRoot(dir, p string, s step) error {
 
 	return nil
 }
+
+// systemFolders are the folders no root of conflux's may be, by their final paths, lower-cased, and
+// why: %ProgramData%, %SystemRoot%, the folder the accounts' profiles are kept in (C:\Users) and Public
+// in it, as the system names them (KnownFolderPath). Read once: they do not move while conflux runs.
+var systemFolders = sync.OnceValue(func() map[string]string {
+	folders := map[string]string{}
+
+	for _, f := range []struct {
+		id  *windows.KNOWNFOLDERID
+		why string
+	}{
+		{windows.FOLDERID_ProgramData, "%ProgramData%, which every account shares"},
+		{windows.FOLDERID_Windows, "the system's own folder"},
+		{windows.FOLDERID_UserProfiles, "the folder every account's profile is kept in"},
+		{windows.FOLDERID_Public, "the folder every account shares"},
+	} {
+		p, err := windows.KnownFolderPath(f.id, windows.KF_FLAG_DEFAULT)
+		if err != nil {
+			continue
+		}
+
+		if h, err := openFile(p, windows.FILE_READ_ATTRIBUTES, true); err == nil {
+			if final, err := finalPath(h, volumeNameDOS); err == nil {
+				p = strings.TrimPrefix(final, `\\?\`)
+			}
+
+			windows.CloseHandle(h)
+		}
+
+		folders[strings.ToLower(filepath.Clean(p))] = f.why
+	}
+
+	return folders
+})
+
+// sharedRoot refuses the root dir, the folder h holds open, where it is one others keep what is theirs
+// in, which conflux never fills, restricts or empties, whoever owns it: a volume's root (C:\), a folder
+// systemFolders names, or one whose DACL makes it a space other accounts share (sharedSpace), as read
+// through h.
+func sharedRoot(dir string, h windows.Handle) error {
+	why := ""
+
+	switch p, err := finalPath(h, volumeNameDOS); {
+	case err != nil:
+		// No path by a drive letter: a volume's root is still one, by its GUID.
+		if g, err := finalPath(h, volumeNameGUID); err == nil && strings.HasSuffix(g, `}\`) {
+			why = "a volume's root"
+		}
+	default:
+		p = filepath.Clean(strings.TrimPrefix(p, `\\?\`))
+		if strings.EqualFold(p, filepath.VolumeName(p)+`\`) {
+			why = "a volume's root"
+		} else {
+			why = systemFolders()[strings.ToLower(p)]
+		}
+	}
+
+	if why == "" {
+		sd, err := security(h)
+		if err != nil {
+			return fmt.Errorf("read the ownership of %s: %w", dir, err)
+		}
+
+		dacl, _, err := sd.DACL()
+		if err != nil {
+			return fmt.Errorf("read the DACL of %s: %w", dir, err)
+		}
+
+		if dacl != nil {
+			header := unsafe.Slice((*byte)(unsafe.Pointer(dacl)), 8)
+
+			shared, err := sharedSpace(unsafe.Slice((*byte)(unsafe.Pointer(dacl)), binary.LittleEndian.Uint16(header[2:])))
+			if err != nil {
+				return fmt.Errorf("read the DACL of %s: %w", dir, err)
+			}
+
+			if shared {
+				why = "a folder other accounts share, its DACL letting them add to it and own what they add"
+			}
+		}
+	}
+
+	if why == "" {
+		return nil
+	}
+
+	return fmt.Errorf("%s is %s, so conflux will not use it as a root: it never fills, restricts or empties a "+
+		"folder others keep what is theirs in.\n  Point it at a folder of its own, then run this again as "+
+		"Administrator", dir, why)
+}
+
+// sharedStep refuses the root dir, the folder s holds open, where it is one others keep what is theirs
+// in (sharedRoot).
+func sharedStep(dir string, s step) error { return sharedRoot(dir, s.h) }
 
 // sameStep reports whether a and b hold one folder open.
 func sameStep(a, b step) bool {

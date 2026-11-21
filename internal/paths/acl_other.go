@@ -296,9 +296,10 @@ func secureAs(dir string, euid int) error {
 
 	narrowed(dir)
 
-	// And again: whatever was put there before the narrowing, since it was judged. Nobody but root
-	// and this account can give a file in it a second name from now on.
-	return contentsAs(dir, fi, euid, false)
+	// And again: whatever was put there before the narrowing, since it was judged, a second name
+	// among it, which an account that could write the root while it was still wide may have made in
+	// between. Nobody but root and this account can give a file in it one from now on.
+	return contentsAs(dir, fi, euid, true)
 }
 
 // narrowed is called once secure has narrowed a root, before it judges what the root holds again:
@@ -373,9 +374,10 @@ func foreign(dir string) error {
 // So is anything but a file, a directory or a socket; an entry another account owns, whatever its
 // name; and anything another account may write -- a file's content, or a directory's names, which
 // is how whoever may write it would retarget what it holds -- by its mode, the sticky bit letting
-// nothing through, or its ACL (judge). In a root found wide -- one secure is about to narrow, which
-// may have let another account write it -- so is a file with a second name, a hard link another
-// account may have made there to lead root's writes to wherever that is. Anywhere else a second name
+// nothing through, or its ACL (judge). In a root found wide -- one secure narrows, which may have let
+// another account write it, judged before the narrowing and again after it -- so is a file with a
+// second name, a hard link another account may have made there to lead root's writes to wherever
+// that is. Anywhere else a second name
 // is root's or this account's to have made, or anchord's account's, which may link what it can name
 // and which no refusal should send an operator to remove, a manifest among it.
 //

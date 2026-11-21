@@ -164,26 +164,39 @@ func outside(t *testing.T) string {
 }
 
 // TestSecureJudgesWhatARootGainsBeforeItIsNarrowed: until a wide root is narrowed anybody may still add
-// to it, so what it holds is judged again once it is: a link added in between is refused, naming it.
+// to it, so what it holds is judged again once it is, as it was found: a link added in between is
+// refused, naming it, and so is a second name for a file outside it, which only an account that could
+// write the root while it was wide can have made there.
 func TestSecureJudgesWhatARootGainsBeforeItIsNarrowed(t *testing.T) {
-	root := foundRoot(t)
-	if err := os.Chmod(root, 0o757); err != nil {
-		t.Fatal(err)
-	}
+	for _, c := range []struct {
+		name    string
+		plant   func(target, at string) error
+		refused string
+	}{
+		{"a link", os.Symlink, ", a link, is in "},
+		{"a second name", os.Link, ", which has another name, is in "},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			root := foundRoot(t)
+			if err := os.Chmod(root, 0o757); err != nil {
+				t.Fatal(err)
+			}
 
-	at := filepath.Join(root, "conflux.json")
+			at := filepath.Join(root, "conflux.json")
 
-	was := narrowed
-	t.Cleanup(func() { narrowed = was })
+			was := narrowed
+			t.Cleanup(func() { narrowed = was })
 
-	narrowed = func(string) {
-		if err := os.Symlink(outside(t), at); err != nil {
-			t.Fatal(err)
-		}
-	}
+			narrowed = func(string) {
+				if err := c.plant(outside(t), at); err != nil {
+					t.Fatal(err)
+				}
+			}
 
-	if err := secure(root, true); err == nil || !strings.Contains(err.Error(), at+", a link, is in ") {
-		t.Errorf("secure(a root a link was added to as it was narrowed) = %v, want a refusal naming it", err)
+			if err := secure(root, true); err == nil || !strings.Contains(err.Error(), at+c.refused) {
+				t.Errorf("secure(a root %s was added to as it was narrowed) = %v, want a refusal naming it", c.name, err)
+			}
+		})
 	}
 }
 

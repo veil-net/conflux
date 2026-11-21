@@ -575,31 +575,54 @@ func toParent(dir string, judge judgement) (*way, error) {
 	return w, nil
 }
 
-// JudgeWays holds the way to each of d's roots not inside another, as RemoveRoot and OpenIn walk it
-// (toParent), to the rule a reader holds it to (readersRule): a CONFLUX_DIR's to parents' rule, for
-// the account running conflux, the directory the root is in included, refused where another account
-// may change it, since that could lead what is done there elsewhere. Nothing at the roots' names is
-// looked up or read. Nil where every way passes, where a name on one is not there, and for the
-// platform roots, whose ways are the system's own and not judged.
+// JudgeWays holds each of d's roots not inside another to what RemoveRoot would refuse it for, so that
+// a command about to act on them -- uninstall, before it removes anything -- refuses up front, with
+// nothing done: the way to it, walked from the top of its volume and held (toParent), a CONFLUX_DIR's
+// held to parents' rule, for the account running conflux, the directory the root is in included,
+// refused where another account may change it, since that could lead what is done there elsewhere
+// (ErrWayRefused); and the directory at the root's own name, looked up there as RemoveRoot holds it
+// (holdRoot), refused where it is one others keep what is theirs in, which conflux never makes its own
+// (sharedStep, ErrSharedRoot). A link at the name is no refusal, as it is none of RemoveRoot's, which
+// removes one it does not go into as itself; nothing in a root is read. Nil where every root passes,
+// and where a root, or a name on the way to it, is not there; a platform root's way, the system's
+// own, is not judged.
 func (d Dirs) JudgeWays() error {
 	for _, dir := range d.Outer() {
-		judge := readersRule(dir)
-		if judge == nil {
+		r, err := holdRoot(dir)
+
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
 			continue
+		case err != nil:
+			return refusal{ErrWayRefused, err}
 		}
 
-		w, err := toParent(dir, judge)
+		if !r.link && r.refused == nil {
+			err = sharedStep(dir, r.dir)
+		}
+
+		r.close()
+
 		if err != nil {
-			return err
-		}
-
-		if w != nil {
-			w.close()
+			return refusal{ErrSharedRoot, err}
 		}
 	}
 
 	return nil
 }
+
+// What JudgeWays refuses a root for, which errors.Is tells apart in what it returns: its way, which
+// another account may change, or the directory at its name, which others keep what is theirs in.
+var (
+	ErrWayRefused = errors.New("a way to a root another account may change")
+	ErrSharedRoot = errors.New("a root that is a directory others keep what is theirs in")
+)
+
+// refusal is err, which says why, refused for kind, one of JudgeWays's.
+type refusal struct{ kind, err error }
+
+func (r refusal) Error() string   { return r.err.Error() }
+func (r refusal) Unwrap() []error { return []error{r.kind, r.err} }
 
 // OpenIn opens path, a file directly in one of d's roots that is not inside another, to read, as
 // OpenUntrusted opens a file, through that root held open first (holdRoot), and never by its name: the

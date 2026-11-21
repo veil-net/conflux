@@ -411,6 +411,14 @@ func TestASharedFolderIsNoRoot(t *testing.T) {
 	for _, root := range []string{shared, junction} {
 		t.Setenv("CONFLUX_DIR", root)
 
+		switch err := Default().JudgeWays(); {
+		case root == junction && err != nil:
+			t.Errorf("JudgeWays(a CONFLUX_DIR of a junction to a folder other accounts share) = %v, want it taken, the "+
+				"junction RemoveRoot's to remove", err)
+		case root == shared && (!errors.Is(err, ErrSharedRoot) || !strings.Contains(err.Error(), "a folder other accounts share")):
+			t.Errorf("JudgeWays(a CONFLUX_DIR of a folder other accounts share) = %v, want a refusal of a shared root", err)
+		}
+
 		if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), "a folder other accounts share") {
 			t.Errorf("EnsureAll(a CONFLUX_DIR of %s, a folder other accounts share) = %v, want a refusal saying so",
 				root, err)

@@ -188,8 +188,10 @@ func TestRemoveRootHoldsACONFLUXDIRsWay(t *testing.T) {
 
 	t.Setenv("CONFLUX_DIR", root)
 
-	if err := Default().JudgeWays(); err == nil || !strings.Contains(err.Error(), open) {
-		t.Errorf("JudgeWays(a CONFLUX_DIR inside a directory anybody may write) = %v, want a refusal naming it", err)
+	if err := Default().JudgeWays(); !errors.Is(err, ErrWayRefused) || errors.Is(err, ErrSharedRoot) ||
+		!strings.Contains(err.Error(), open) {
+		t.Errorf("JudgeWays(a CONFLUX_DIR inside a directory anybody may write) = %v, want a refusal of its way "+
+			"naming it", err)
 	}
 
 	if gone, err := RemoveRoot(root); gone || err == nil || !strings.Contains(err.Error(), open) {

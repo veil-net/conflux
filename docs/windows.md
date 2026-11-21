@@ -129,8 +129,8 @@ No root is a folder others keep what is theirs in, however it is reached and who
 volume's root (`C:\`), `%ProgramData%`, `%SystemRoot%`, `C:\Users`, `C:\Users\Public`, or any folder
 whose own DACL makes it a space other accounts share, as `%ProgramData%`'s does — Users let add to it
 and to the folders made in it, `CREATOR OWNER` passed full control — is refused by every command that
-makes a root before anything is filled or restricted, and by `uninstall`, which removes nothing in
-it, a junction to it removed as itself. A folder that only inherits such entries, as one made in
+makes a root before anything is filled or restricted, and by `uninstall` before it removes
+anything, the boot service included; a junction to it is removed as itself. A folder that only inherits such entries, as one made in
 `%ProgramData%` does, is judged and restricted as any root is.
 
 A root on a network volume — a share reached by its UNC path, a drive mapped to one, or a link

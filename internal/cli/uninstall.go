@@ -47,16 +47,23 @@ func runUninstall(_ context.Context, args []string) int {
 
 	d := paths.Default()
 
-	// The one root uninstall refuses: a CONFLUX_DIR whose way another account may change, held to
-	// parents' rule as the readers' check holds it (JudgeWays), since whoever could change it could
-	// have put anything at the root's name, and could lead the removal elsewhere. Judged for every root
-	// before anything is asked or removed, so nothing is half-removed; paths' advice, which is for
-	// choosing a CONFLUX_DIR, gives way to uninstall's.
+	// The roots uninstall refuses (JudgeWays): a CONFLUX_DIR whose way another account may change, held
+	// to parents' rule as the readers' check holds it, since whoever could change it could have put
+	// anything at the root's name, and could lead the removal elsewhere; and a root that is a shared or
+	// system directory -- a CONFLUX_DIR of /tmp -- which conflux never makes its own, and so never
+	// empties. Judged for every root before anything is asked or removed, so nothing is half-removed;
+	// paths' advice, which is for choosing a CONFLUX_DIR, gives way to uninstall's.
 	if err := d.JudgeWays(); err != nil {
 		what, _, _ := strings.Cut(err.Error(), "\n")
-		ui.Errf("%s\n  So conflux cannot know that what is there is its own, and uninstall removed nothing, the boot "+
-			"service included.\n  Once nobody else can change any folder on the way to it, run conflux uninstall again",
-			what)
+
+		if errors.Is(err, paths.ErrSharedRoot) {
+			ui.Errf("%s\n  It is a shared or system directory, which conflux never makes its own, so uninstall left "+
+				"everything in place, the boot service included.", what)
+		} else {
+			ui.Errf("%s\n  So conflux cannot know that what is there is its own, and uninstall removed nothing, the "+
+				"boot service included.\n  Once nobody else can change any folder on the way to it, run conflux "+
+				"uninstall again", what)
+		}
 
 		return ExitError
 	}

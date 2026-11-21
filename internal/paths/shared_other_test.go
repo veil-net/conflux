@@ -3,6 +3,7 @@
 package paths
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,9 +15,10 @@ import (
 // TestASharedDirectoryIsNoRoot: no root conflux narrows, fills or empties may be a directory others
 // keep what is theirs in, whoever owns it: a CONFLUX_DIR that is a sticky directory of this account's,
 // the directory the running conflux is in, or, where conflux does not run as root, the filesystem's
-// root, is refused by EnsureAll, naming why, with its mode and what it holds as they were; so is one
-// whose name is a link to the sticky directory. RemoveRoot refuses the sticky directory, removing
-// nothing, and removes a link to it as itself, leaving it as it was.
+// root, is refused by EnsureAll, naming why, with its mode and what it holds as they were, and by
+// JudgeWays as a shared root, not a way; so is one whose name is a link to the sticky directory, by
+// EnsureAll, which JudgeWays takes, since RemoveRoot removes such a link as itself. RemoveRoot refuses
+// the sticky directory, removing nothing, and removes a link to it as itself, leaving it as it was.
 func TestASharedDirectoryIsNoRoot(t *testing.T) {
 	base, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -60,6 +62,15 @@ func TestASharedDirectoryIsNoRoot(t *testing.T) {
 			t.Setenv("CONFLUX_DIR", c.root)
 
 			mode, held := asFound(t, c.root)
+
+			switch err := Default().JudgeWays(); {
+			case c.root == link && err != nil:
+				t.Errorf("JudgeWays(a CONFLUX_DIR of %s) = %v, want it taken, the link RemoveRoot's to remove", name, err)
+			case c.root != link && (!errors.Is(err, ErrSharedRoot) || errors.Is(err, ErrWayRefused) ||
+				!strings.Contains(err.Error(), c.why)):
+				t.Errorf("JudgeWays(a CONFLUX_DIR of %s) = %v, want a refusal of a shared root saying it is %s", name,
+					err, c.why)
+			}
 
 			if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), c.why) {
 				t.Errorf("EnsureAll(a CONFLUX_DIR of %s) = %v, want a refusal saying it is %s", name, err, c.why)

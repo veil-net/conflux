@@ -47,8 +47,9 @@ host can read, and when the run stops there is nothing at all.
   and then chmod'ing leaves a window at the umask's mode.
 - No root is a directory others keep what is theirs in, however it is reached — at its name or
   through a link there — and whoever owns it: such a one is refused, never narrowed, filled or
-  emptied, by every command that makes a root and by `uninstall`, which removes nothing then, or,
-  where the root's name is a link to it, the link alone. On Unix that is a sticky directory (`/tmp`,
+  emptied, by every command that makes a root and by `uninstall`, which refuses it before it removes
+  anything, the boot service included, or, where the root's name is a link to it, removes the link
+  alone. On Unix that is a sticky directory (`/tmp`,
   `/var/tmp`, `/dev/shm`), `/`, the system's log directory, a directory above where a platform root
   is kept by default (`/etc`, `/var`, `/var/lib` …), and the directory the running conflux is in or
   one above it, but for the boot service's own root, which holds the copy of conflux it runs once
@@ -97,8 +98,9 @@ host can read, and when the run stops there is nothing at all.
   (`uninstall` then removes a root that fails it all the same, reading and signalling nothing in
   it, through handles held from the top of its volume down, following no link but one at the root's
   own name that this check would follow to a directory conflux has secured as a root, and with a `CONFLUX_DIR`'s way held to the same rule; the
-  one root it refuses is a `CONFLUX_DIR` whose way another account controls, since that account could
-  have put a directory of its own where the root is; see
+  roots it refuses, before it removes anything, are a `CONFLUX_DIR` whose way another account
+  controls, since that account could have put a directory of its own where the root is, and a root
+  that is a shared or system directory (above); see
   [commands.md](commands.md#conflux-uninstall)):
   whoever could have put a configuration, a pid record, a token or a binary there would otherwise
   have conflux read, signal or run theirs. The root's owner must be root (SYSTEM or the

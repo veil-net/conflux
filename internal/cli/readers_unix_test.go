@@ -355,8 +355,9 @@ func uninstallRemoves(t *testing.T, d paths.Dirs, why string) {
 }
 
 // uninstallLeaves fails t unless uninstall --yes of the root d, a directory others keep what is theirs
-// in, which no root of conflux's may be, refuses it, exit 1, saying what it is (why), and leaves it
-// with what it holds, the anchord its pid record names not looked for.
+// in, which no root of conflux's may be, refuses it before it acts, exit 1, saying what it is (why) and
+// that everything was left, and leaves it with what it holds: the boot service not removed, and the
+// anchord its pid record names not looked for.
 func uninstallLeaves(t *testing.T, d paths.Dirs, why string) {
 	t.Helper()
 
@@ -368,9 +369,14 @@ func uninstallLeaves(t *testing.T, d paths.Dirs, why string) {
 		reap = func(paths.Dirs, time.Duration) { t.Error("uninstall reaped by the pid record of a shared root") }
 
 		out, errOut, code := capture(t, "uninstall", "--yes")
-		if code != ExitError || !strings.Contains(errOut, why) {
-			t.Errorf("uninstall of a root that is %s exited %d, want %d saying so:\n%s%s", why, code, ExitError, out,
-				errOut)
+		if code != ExitError || !strings.Contains(errOut, why) || !strings.Contains(errOut, "left everything in place") {
+			t.Errorf("uninstall of a root that is %s exited %d, want %d saying so, and that it left everything:\n%s%s",
+				why, code, ExitError, out, errOut)
+		}
+
+		if mgr.removals != 0 {
+			t.Errorf("uninstall of a root that is %s removed the boot service %d times before it refused, want none",
+				why, mgr.removals)
 		}
 
 		if _, err := os.Lstat(d.ConfigFile()); err != nil {

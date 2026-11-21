@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/veil-net/conflux/internal/config"
@@ -77,11 +79,8 @@ func runRegister(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
+	// tidy secures the roots (EnsureAll), once what an earlier conflux left that would fail it is gone.
 	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		return fail(err)
-	}
-
 	mgr := newService()
 
 	stopped, err := tidy(d, mgr)
@@ -257,13 +256,27 @@ func runStart(ctx context.Context, args []string) int {
 		return ExitUnavailable
 	}
 
-	// The roots made conflux's, as the service makes them at every start, before anything in them
-	// is read by its name, placed there or registered (EnsureAll): start is how update hands a
-	// running service to the conflux it put in place, so a root an earlier conflux left -- on
-	// Windows, holding what the administrator running it owns -- is one the new service takes.
-	// With a service registered, roots not there are made, as that service would make them.
-	if err := d.EnsureAll(); err != nil {
-		return fail(err)
+	// The service runs its own copy of conflux, and this one may be newer: replacing the binary and
+	// typing start is how an upgrade reaches the service -- the copy, and the definition the service
+	// is registered with, which a newer conflux may write differently -- and it is how update hands a
+	// running service over. Where the copy is not this conflux, or the roots fail the readers' check,
+	// so that it is not read to find out, what earlier conflux left goes first, before anything judges
+	// the roots, the service stopped for it (tidy), and the copy is written afresh below; the restart
+	// after starts it again, on this one.
+	//
+	// Either way the roots are made conflux's, as the service makes them at every start, before
+	// anything in them is read by its name, placed there or registered (EnsureAll, which tidy runs),
+	// so a root an earlier conflux left is one the new service takes; with a service registered,
+	// roots not there are made, as that service would make them.
+	checked := d.Check()
+	afresh := checked == nil && !service.Placed(d) || checked != nil && !errors.Is(checked, os.ErrNotExist)
+
+	if afresh {
+		if _, err := tidy(d, mgr); err != nil {
+			return fail(err)
+		}
+	} else if err := d.EnsureAll(); err != nil {
+		return fail(remakeHint(err))
 	}
 
 	// The same 78 the supervisor exits with, and for the same reason: there is a
@@ -279,19 +292,6 @@ func runStart(ctx context.Context, args []string) int {
 		return ExitNoConfig
 	}
 
-	// The service runs its own copy of conflux, and this one may be newer: replacing the
-	// binary and typing start is how an upgrade reaches the service -- the copy, and the
-	// definition the service is registered with, which a newer conflux may write
-	// differently -- and it is how update hands a running service over. Where the copy is not
-	// this conflux, what earlier conflux left goes first, the service stopped for it (tidy), and
-	// the copy is written afresh; the restart below starts it again, on this one.
-	afresh := !service.Placed(d)
-	if afresh {
-		if _, err := tidy(d, mgr); err != nil {
-			return fail(err)
-		}
-	}
-
 	if code := install(ctx, d, false, afresh); code != ExitOK {
 		return code
 	}
@@ -300,6 +300,18 @@ func runStart(ctx context.Context, args []string) int {
 	// refused a running anchor would be answering a question nobody asked -- the
 	// caller wants it up, and it ends up up.
 	return startFromConfig(ctx, d, mgr, cfg, "start")
+}
+
+// remakeHint is EnsureAll's refusal of a root for a start that does not tidy it -- one of the conflux
+// the service already runs -- with, on Windows, where what conflux makes in a root may be an older
+// conflux's that fails the service's rule, the command that removes such a thing and makes it again
+// (tidy, through the conflux an update puts in place).
+func remakeHint(err error) error {
+	if runtime.GOOS != "windows" {
+		return err
+	}
+
+	return fmt.Errorf("%w\n  Where an earlier conflux left it, conflux update removes it and makes it again, fresh", err)
 }
 
 // runDown stops the anchor now and leaves everything else alone.

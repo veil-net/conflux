@@ -17,14 +17,20 @@ import (
 )
 
 // tidy removes what earlier conflux left in every place conflux keeps files, for the conflux an
-// update has just put in place, once its roots are secured (EnsureAll) and before its service
-// starts: update hands the service over through this conflux's `register` or `start`, and those
-// call it first. Nothing of the machine's is touched -- the configuration, the identity, the state
-// and the log stay -- and what is removed is made again, fresh, by this conflux.
+// update has just put in place, before anything judges its roots and before its service starts:
+// update hands the service over through this conflux's `register` or `start`, and those call it in
+// place of EnsureAll, which it runs itself once what would fail it is gone. Nothing of the machine's
+// is touched -- the configuration, the identity, the state and the log stay -- and what is removed is
+// made again, fresh, by this conflux.
 //
-//   - The service is stopped where a supervisor serves the root (its serve lock held), and the lock
-//     is held from then on, so none starts while tidy works; stopped says it was, for a caller that
-//     starts nothing to start it again on this conflux.
+//   - The service is stopped where a supervisor serves the root, asked of its serve lock without
+//     trusting the root (flock.Held), since nothing has judged it yet; stopped says it was, for a
+//     caller that starts nothing to start it again on this conflux.
+//   - What conflux makes again by its name in an installation's root and finds failing the rule the
+//     SYSTEM service holds it to -- an older conflux's on a Windows client, the administrator's own --
+//     is removed through handles (paths' RemakeOld), and anything else failing it refused; then the
+//     roots are secured (EnsureAll), and the serve lock held from then on, so no supervisor starts
+//     while tidy works.
 //   - The anchord a dead supervisor left is stopped (daemon.ReapOrphan), and the run directory
 //     emptied: the token, the readiness marker, the pid record, anchord's socket directory, which
 //     the next supervisor makes again.
@@ -38,34 +44,46 @@ import (
 //   - What an update left beside the conflux it replaced goes (removeUpdateLeftovers).
 //
 // The service's copy is the caller's to write afresh (service.PlaceAfresh), with what a copy that
-// never went in place left beside it.
+// never went in place left beside it. What it removed it lists, however far it got.
 func tidy(d paths.Dirs, mgr service.Manager) (stopped bool, err error) {
-	unlock, ok, err := flock.TryAcquire(d.ServeLockFile())
-	if err != nil {
-		return false, err
-	}
+	var removed []string
 
-	if !ok {
+	defer func() { listRemoved(removed) }()
+
+	switch held, err := flock.Held(d.ServeLockFile()); {
+	case err != nil:
+		return false, err
+	case held:
 		if err := mgr.Stop(); err != nil {
 			return false, err
 		}
 
 		stopped = true
+	}
 
-		if unlock, ok, err = flock.TryAcquire(d.ServeLockFile()); err != nil {
-			return stopped, err
-		}
+	remade, err := d.RemakeOld()
+	if removed = remade; err != nil {
+		return stopped, err
+	}
 
-		if !ok {
-			return stopped, fmt.Errorf("a conflux supervisor still serves %s with the boot service stopped, so what "+
-				"earlier conflux left there cannot be removed.\n  Stop it, then run this again", d.State)
-		}
+	if err := d.EnsureAll(); err != nil {
+		return stopped, err
+	}
+
+	unlock, ok, err := flock.TryAcquire(d.ServeLockFile())
+
+	switch {
+	case err != nil:
+		return stopped, err
+	case !ok:
+		return stopped, fmt.Errorf("a conflux supervisor still serves %s with the boot service stopped, so what "+
+			"earlier conflux left there cannot be removed.\n  Stop it, then run this again", d.State)
 	}
 
 	_, err = daemon.ReapOrphan(d)
 	errs := []error{err}
 
-	removed := entries(d.Run, "")
+	removed = append(removed, entries(d.Run, "")...)
 	errs = append(errs, daemon.ClearExcept(d.Run, ""))
 
 	// Every set but the one Remake extracts again, and what was staged.
@@ -105,17 +123,22 @@ func tidy(d paths.Dirs, mgr service.Manager) (stopped bool, err error) {
 		removed = append(removed, removeUpdateLeftovers(exe)...)
 	}
 
-	if len(removed) > 0 {
-		ui.Printf("Removed what earlier conflux left:\n")
+	return stopped, errors.Join(errs...)
+}
 
-		for _, r := range removed {
-			ui.Printf("  %s\n", r)
-		}
-
-		ui.Println()
+// listRemoved says what tidy removed, where it removed anything.
+func listRemoved(removed []string) {
+	if len(removed) == 0 {
+		return
 	}
 
-	return stopped, errors.Join(errs...)
+	ui.Printf("Removed what earlier conflux left:\n")
+
+	for _, r := range removed {
+		ui.Printf("  %s\n", r)
+	}
+
+	ui.Println()
 }
 
 // entries are the paths of what dir holds but skip; none where it is not there.

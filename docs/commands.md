@@ -312,14 +312,18 @@ Before it reads the configuration, places its copy for the service or registers 
 secures the roots as the service does at every start, and as `up` and `install` do: one of
 conflux's own left wider is narrowed, and one another account owns is refused, exit 1, naming it
 — on Windows, where the service runs as SYSTEM, what the administrator running it owns in the root,
-or what grants them a right, among it, as the service would refuse it at every start; what an
-earlier conflux left so is removed and made again ([windows.md](windows.md#file-permissions)).
+or what grants them a right, among it, as the service would refuse it at every start
+([windows.md](windows.md#file-permissions)). With the service registered and its roots gone, they
+are made again, as the service would make them.
+
 `update` hands a running service to the conflux it put in place through that conflux's `start`.
-With the service registered and its roots gone, they are made again, as the service would make
-them. Where the service's copy is not this conflux — an update, or a newer conflux put in place by
-hand — `start` then removes what earlier conflux left, the service stopped for it, and writes the
-copy afresh, as [`update`](#conflux-update) describes; a start of the conflux the service already
-runs removes nothing.
+Where the service's copy is not this conflux — an update, or a newer conflux put in place by hand —
+or the roots fail the [readers' check](#a-root-another-account-could-change), so that the copy is
+not read to find out, `start` first removes what earlier conflux left, before anything judges the
+roots, as [`update`](#conflux-update) describes, the service stopped for it, and writes the copy
+afresh. A start of the conflux the service already runs removes nothing, so on Windows a root
+holding what an earlier conflux left as the administrator's own is refused, naming it, and the
+refusal says that `conflux update` removes it and makes it again.
 
 | Situation | |
 |---|---|
@@ -622,12 +626,22 @@ the file conflux was started from, symlinks followed, so whatever is running kee
 file it has; on Windows the running image is moved aside to `conflux.exe.old` first,
 which the new conflux removes once nothing runs it, or the next update does. No token is needed or sent: the repository is public.
 
-Before the new conflux places its copy or registers the service — through its `start` or its
-`register`, whichever the update hands the service over by — it removes what earlier conflux left
-everywhere conflux keeps files, every time, and makes afresh what it removed:
+Before the new conflux judges the roots, places its copy or registers the service — through its
+`start` or its `register`, whichever the update hands the service over by — it removes what
+earlier conflux left everywhere conflux keeps files, every time, and makes afresh what it removed,
+so an update works on an older install as it is:
 
-- the service is stopped where a supervisor still serves the root, and its lock held, so none
-  starts meanwhile; under `register`, one that was serving is started again, on the new conflux;
+- the service is stopped where a supervisor still serves the root, asked of the supervisor's lock
+  without trusting the root; under `register`, one that was serving is started again, on the new
+  conflux;
+- on Windows, what conflux makes again by its name in the root — `logs\`, `run\`, the lock files,
+  `bin\`, the service's copy and the image moved aside, `anchord.json`, and what an atomic write or
+  a copy left before its rename — that the service, running as SYSTEM, would refuse is removed
+  through handles, never through a link: what an older conflux on a Windows client left as the
+  administrator's own, which a handle opened then could still change. Anything else the service
+  would refuse — the identity, the configuration, the state — is refused, naming it, with nothing
+  removed after ([windows.md](windows.md#file-permissions)). Then the roots are secured, as at
+  every start, and the supervisor's lock held, so none starts meanwhile;
 - the `anchord` a supervisor that died left running is stopped, and the run directory emptied —
   token, readiness marker, pid record, `anchord`'s socket directory — for the next supervisor to
   make again;

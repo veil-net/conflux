@@ -45,6 +45,40 @@ func TestMakeRootJudgesTheWayBeforeItMakesAnything(t *testing.T) {
 	}
 }
 
+// TestALinkLeadingNowhereIsNoWayToMake: a CONFLUX_DIR reached through a link to a directory that is
+// not there is no way conflux can make, nor a root that is not there: making it by its name would
+// make what the link names, wherever that is. The walk refuses the link, naming it, with nothing made
+// where it leads, and the readers' check refuses it the same, rather than take it for nothing
+// installed.
+func TestALinkLeadingNowhereIsNoWayToMake(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nowhere, link := filepath.Join(base, "nowhere"), filepath.Join(base, "link")
+	if err := os.Symlink(filepath.Join(nowhere, "deeper"), link); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("CONFLUX_DIR", filepath.Join(link, "conflux"))
+
+	refused := link + " is a link conflux cannot follow"
+
+	if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), refused) {
+		t.Errorf("EnsureAll(a CONFLUX_DIR through a link to a directory not there) = %v, want %q", err, refused)
+	}
+
+	if _, err := os.Lstat(nowhere); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("EnsureAll made %s, where the link it refused leads (%v)", nowhere, err)
+	}
+
+	if err := Default().Check(); err == nil || errors.Is(err, fs.ErrNotExist) || !strings.Contains(err.Error(), refused) {
+		t.Errorf("Check(a CONFLUX_DIR through a link to a directory not there) = %v, want %q, not nothing installed",
+			err, refused)
+	}
+}
+
 // TestMakeRootJudgesWhatIsPlantedWhileItJudges: a name not there as the way to a root is judged may
 // be there by the time conflux makes it, made by whoever may make a name in the directory -- its own
 // group of one, here, whose answer is asked as the directory is judged, and plants a link there into a

@@ -155,3 +155,42 @@ func TestAReaderReadsALinkedRootsACLWhereItLeads(t *testing.T) {
 			"that uid", err)
 	}
 }
+
+// TestWhatARootHoldsIsJudgedByItsACL: an entry in a root is held to its ACL as well as its mode, read
+// through a descriptor opened on it: a file whose POSIX ACL lets uid 65534 write it is refused by
+// EnsureAll and by Foreign, naming it and that uid, though its mode, with the mask as its group bits
+// and a group of this account's alone, lets nobody else.
+func TestWhatARootHoldsIsJudgedByItsACL(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", "")
+
+	me, err := user.LookupId(strconv.Itoa(os.Geteuid()))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	was := groups
+	t.Cleanup(func() { groups = was })
+	groups = groupsFunc(func(string, string) ([]string, error) { return []string{me.Username}, nil })
+
+	root := foundRoot(t)
+	at := filepath.Join(root, "conflux.json")
+
+	if err := os.WriteFile(at, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := unix.Setxattr(at, "system.posix_acl_access", anotherMayWrite, 0); err != nil {
+		t.Fatalf("give %s an ACL: %v", at, err)
+	}
+
+	refused := at + ", which its ACL lets uid 65534 write"
+
+	if err := (Dirs{Config: root, State: root, Run: filepath.Join(root, runName)}).EnsureAll(); err == nil ||
+		!strings.Contains(err.Error(), refused) {
+		t.Errorf("EnsureAll(a root holding a file whose ACL lets uid 65534 write it) = %v, want %q", err, refused)
+	}
+
+	if err := Foreign(root); err == nil || !strings.Contains(err.Error(), refused) {
+		t.Errorf("Foreign(a root holding a file whose ACL lets uid 65534 write it) = %v, want %q", err, refused)
+	}
+}

@@ -4,12 +4,15 @@ package paths
 
 import (
 	"bytes"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 // TestEnsureAllJudgesWhatAWideRootHolds: a root of this account's left wider than conflux leaves one
@@ -17,12 +20,15 @@ import (
 // link at logs/conflux.log, for the service to write its log through as root, or a file every account
 // may write, or one another account owns, a configuration of theirs. So EnsureAll judges what a root
 // holds, each thing by its own owner, mode and ACL, read from the root it holds open and never by its
-// name, and refuses such a root, naming what it holds, with nothing followed.
+// name, and refuses such a root, naming what it holds, with nothing followed. A link, and anything but
+// a file, a directory or a socket -- a FIFO here -- are refused in a root already 0700 too, by
+// EnsureAll and by Foreign, since conflux makes none in a root, whoever made one.
 func TestEnsureAllJudgesWhatAWideRootHolds(t *testing.T) {
 	for _, c := range []struct {
 		name    string
 		plant   func(t *testing.T, root string) (at string)
 		refused string
+		narrow  bool // refused in a 0700 root too
 	}{
 		{"a link at logs/conflux.log", func(t *testing.T, root string) string {
 			if err := os.Mkdir(filepath.Join(root, "logs"), 0o700); err != nil {
@@ -35,7 +41,15 @@ func TestEnsureAllJudgesWhatAWideRootHolds(t *testing.T) {
 			}
 
 			return at
-		}, ", a link, is in "},
+		}, ", a link, is in ", true},
+		{"a FIFO", func(t *testing.T, root string) string {
+			at := filepath.Join(root, "conflux.json")
+			if err := unix.Mkfifo(at, 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			return at
+		}, ", which is no file or directory conflux makes, is in ", true},
 		{"a file every account may write", func(t *testing.T, root string) string {
 			at := filepath.Join(root, "conflux.json")
 			if err := os.WriteFile(at, nil, 0o600); err != nil {
@@ -47,7 +61,7 @@ func TestEnsureAllJudgesWhatAWideRootHolds(t *testing.T) {
 			}
 
 			return at
-		}, ", which anybody may write"},
+		}, ", which anybody may write", false},
 		{"a second name for a file outside it", func(t *testing.T, root string) string {
 			at := filepath.Join(root, "conflux.log")
 			if err := os.Link(outside(t), at); err != nil {
@@ -55,25 +69,36 @@ func TestEnsureAllJudgesWhatAWideRootHolds(t *testing.T) {
 			}
 
 			return at
-		}, ", which has another name, is in "},
+		}, ", which has another name, is in ", false},
 	} {
-		t.Run(c.name, func(t *testing.T) {
-			root := filepath.Join(t.TempDir(), "conflux")
-			if err := os.Mkdir(root, 0o700); err != nil {
-				t.Fatal(err)
+		for _, mode := range []os.FileMode{0o757, 0o700} {
+			if mode == 0o700 && !c.narrow {
+				continue
 			}
 
-			if err := os.Chmod(root, 0o757); err != nil {
-				t.Fatal(err)
-			}
+			t.Run(fmt.Sprintf("%s, %#o", c.name, mode), func(t *testing.T) {
+				root := filepath.Join(t.TempDir(), "conflux")
+				if err := os.Mkdir(root, 0o700); err != nil {
+					t.Fatal(err)
+				}
 
-			at := c.plant(t, root)
-			t.Setenv("CONFLUX_DIR", root)
+				at := c.plant(t, root)
 
-			if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), at+c.refused) {
-				t.Errorf("EnsureAll(a 0757 root holding %s) = %v, want a refusal naming it", c.name, err)
-			}
-		})
+				if err := os.Chmod(root, mode); err != nil {
+					t.Fatal(err)
+				}
+
+				t.Setenv("CONFLUX_DIR", root)
+
+				if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), at+c.refused) {
+					t.Errorf("EnsureAll(a %#o root holding %s) = %v, want a refusal naming it", mode, c.name, err)
+				}
+
+				if err := Foreign(root); mode == 0o700 && (err == nil || !strings.Contains(err.Error(), at+c.refused)) {
+					t.Errorf("Foreign(a %#o root holding %s) = %v, want a refusal naming it", mode, c.name, err)
+				}
+			})
+		}
 	}
 }
 
@@ -276,6 +301,64 @@ func TestWhatConfluxKeepsInARootPassesTheJudgement(t *testing.T) {
 
 	if err := Foreign(root); err != nil {
 		t.Errorf("Foreign(a root holding what conflux keeps there) = %v", err)
+	}
+}
+
+// TestAnchordsAccountIsLetThroughAtItsPlacesAlone: what anchord's account owns is let through only
+// where the supervisor gives it that account, and a directory of it is not gone into, since conflux
+// reads what anchord writes there as untrusted. Judged for another account -- this one's entries, for
+// one past it, or, as root, entries given to uid 65534 -- with the owner taken for anchord's: anchor
+// is let through and not gone into, though a link in it would be refused anywhere conflux looks, and
+// conflux.json is refused, naming its owner.
+func TestAnchordsAccountIsLetThroughAtItsPlacesAlone(t *testing.T) {
+	root := foundRoot(t)
+	anchor := filepath.Join(root, "anchor")
+
+	if err := os.Mkdir(anchor, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Symlink(outside(t), filepath.Join(anchor, "bootstrap.json")); err != nil {
+		t.Fatal(err)
+	}
+
+	at := filepath.Join(root, "conflux.json")
+	owner, as := os.Geteuid(), os.Geteuid()+1
+
+	if owner == 0 {
+		owner, as = 65534, 0
+	}
+
+	give := func(p string) {
+		if err := os.Lchown(p, owner, owner); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	judgeFor := func() error {
+		fd, err := unix.Open(root, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer unix.Close(fd)
+
+		return judgeIn(&judging{dir: root, euid: as, anchords: map[uint32]bool{uint32(owner): true}}, fd, "")
+	}
+
+	give(anchor)
+
+	if err := judgeFor(); err != nil {
+		t.Errorf("judgeIn(anchor/, anchord's account's, holding a link) = %v, want it let through, not gone into", err)
+	}
+
+	if err := os.WriteFile(at, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	give(at)
+
+	if err := judgeFor(); err == nil || !strings.Contains(err.Error(), at+", which belongs to uid "+strconv.Itoa(owner)) {
+		t.Errorf("judgeIn(conflux.json, anchord's account's) = %v, want a refusal naming it and its owner", err)
 	}
 }
 

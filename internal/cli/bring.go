@@ -10,6 +10,7 @@ import (
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
+	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
@@ -93,12 +94,15 @@ func startAndReport(ctx context.Context, d paths.Dirs, mgr service.Manager, cfg 
 // thing that still works if a marker never arrives at all. systemd's Type=notify makes
 // `systemctl restart` return only once the anchor is up, so on Linux the first call
 // already succeeds; launchd, rc and the Windows SCM give no such signal. mgr, the service just
-// restarted, says where its output is when nothing came up.
+// restarted, says where its output is when nothing came up. Every caller has secured d's roots
+// already (EnsureAll), before it registered the service, so the pair is only extracted here.
 func waitFor(ctx context.Context, d paths.Dirs, mgr service.Manager, cfg *config.Config) (anchorctl.Status, error) {
-	ctl, err := runCtl(d)
+	tools, err := libexec.Extract(d)
 	if err != nil {
 		return anchorctl.Status{}, err
 	}
+
+	ctl := &anchorctl.Ctl{Bin: tools.Anchorctl, Socket: d.Socket(), SetID: tools.SetID}
 
 	// tick is how often the marker is looked for; fallback is how often anchorctl is
 	// asked when it is not there.
@@ -130,8 +134,8 @@ func waitFor(ctx context.Context, d paths.Dirs, mgr service.Manager, cfg *config
 		if !time.Now().Before(nextPoll) {
 			nextPoll = time.Now().Add(fallback)
 
-			// The token is rewritten by the supervisor on every start, so re-read it
-			// rather than trusting the one runCtl picked up a moment ago.
+			// The token is rewritten by the supervisor on every start, so it is read for
+			// each call, never once for them all.
 			ctl.Token, _ = readToken(d)
 
 			st, err := ctl.Status(ctx)

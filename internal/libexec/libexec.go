@@ -46,29 +46,44 @@ type Tools struct {
 	SetID     string
 }
 
-// Ensure extracts this build's pair if it is not already there, and returns the
-// paths. Idempotent, atomic, and safe against another conflux doing the same thing.
+// Ensure is d's roots secured as they are made (EnsureAll) and this build's pair extracted there
+// (Extract), for a caller that has not secured them itself -- a pass-through or a status, which may
+// be the first conflux to run here: on Windows a root takes %ProgramData%'s DACL, which lets Users
+// create folders in it, until something gives it its own. Idempotent, atomic, and safe against
+// another conflux doing the same thing.
 func Ensure(d paths.Dirs) (*Tools, error) {
-	if !anchor.Supported {
-		return nil, errUnsupported
+	// The hot path: every conflux invocation reaches here, including a bare pass-through, so it is
+	// two stats and nothing more.
+	t, err := Extracted(d)
+	if !errors.Is(err, ErrNotExtracted) {
+		return t, err
 	}
 
-	root := d.Libexec()
-	t := toolsIn(d)
-
-	// The hot path: every conflux invocation reaches here, including a bare
-	// pass-through, so it is two stats and nothing more.
-	if t.complete() {
-		return t, nil
-	}
-
-	// The directories every other conflux command makes, secured as they are made: on
-	// Windows the root takes %ProgramData%'s DACL, which lets Users create folders in it,
-	// until something gives it its own, and a pass-through or a status may be the first
-	// conflux to run here.
 	if err := d.EnsureAll(); err != nil {
 		return nil, err
 	}
+
+	return extractIn(d)
+}
+
+// Extract extracts this build's pair under d if it is not already there, and returns the paths,
+// for a caller that has secured d's roots already (EnsureAll): the supervisor and an ephemeral run
+// as they start, and the wait of a command that has just started the service. Idempotent, atomic,
+// and safe against another conflux doing the same thing.
+func Extract(d paths.Dirs) (*Tools, error) {
+	t, err := Extracted(d)
+	if !errors.Is(err, ErrNotExtracted) {
+		return t, err
+	}
+
+	return extractIn(d)
+}
+
+// extractIn is Extract once a look found no whole extraction under d: the set directory made,
+// beneath a bin directory made where it is not there, under bin's lock.
+func extractIn(d paths.Dirs) (*Tools, error) {
+	root := d.Libexec()
+	t := toolsIn(d)
 
 	_, err := os.Lstat(root)
 	made := errors.Is(err, fs.ErrNotExist)

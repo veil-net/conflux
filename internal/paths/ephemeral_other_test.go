@@ -7,14 +7,16 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 )
 
 // TestEphemeralPassesOverARootAnotherAccountMade: /tmp lets anybody make the name an ephemeral run's
 // root would have, and a root secure would refuse is passed over for the next candidate rather than
 // taken, or none taken: one Foreign refuses -- another account's, or one another account may write --
-// one root owns, for any other account, as secure refuses it, and a link of this account's that leads
-// nowhere, which is no root that is not there.
+// one root owns, for any other account, as secure refuses it, though Foreign, every reader's, takes
+// it -- an empty directory of root's, such as /srv -- and a link of this account's that leads nowhere,
+// which is no root that is not there.
 func TestEphemeralPassesOverARootAnotherAccountMade(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
@@ -37,7 +39,12 @@ func TestEphemeralPassesOverARootAnotherAccountMade(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		candidates["root's"] = "/"
+		roots := emptyOfRoots(t)
+		if err := Foreign(roots); err != nil {
+			t.Fatalf("Foreign(%s, an empty directory of root's) = %v, so ownedRoot is not what passes it over", roots, err)
+		}
+
+		candidates["root's"] = roots
 	}
 
 	dangling := filepath.Join(t.TempDir(), "conflux-ephemeral")
@@ -63,6 +70,28 @@ func TestEphemeralPassesOverARootAnotherAccountMade(t *testing.T) {
 			t.Errorf("with no candidate of its own, Ephemeral chose %s, %s", name, c)
 		}
 	}
+}
+
+// emptyOfRoots is a directory root owns, holding nothing, that no other account may write: one of
+// those a system keeps empty, the first of them there.
+func emptyOfRoots(t *testing.T) string {
+	t.Helper()
+
+	for _, dir := range []string{"/srv", "/mnt", "/media", "/var/opt", "/var/local", "/var/empty"} {
+		fi, err := os.Stat(dir)
+		if err != nil || !fi.IsDir() || fi.Mode().Perm()&0o022 != 0 || fi.Sys().(*syscall.Stat_t).Uid != 0 {
+			continue
+		}
+
+		if names, err := os.ReadDir(dir); err == nil && len(names) == 0 {
+			return dir
+		}
+	}
+
+	t.Fatal("no empty directory of root's here: /srv, /mnt, /media, /var/opt, /var/local and /var/empty each " +
+		"hold something, belong to another account or are not there")
+
+	return ""
 }
 
 // TestACandidateNotThereIsReadNoFurther: an ephemeral run's root that is not there is fs.ErrNotExist

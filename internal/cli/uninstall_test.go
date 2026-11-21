@@ -384,3 +384,50 @@ func TestUninstallAsksBeforeEmptyingAChosenFolder(t *testing.T) {
 			d.ConfigFile(), err)
 	}
 }
+
+// TestUninstallLeavesAFolderOfHomes: a CONFLUX_DIR pointed at a folder of homes, which holds alice/ and
+// bob/ and nothing of conflux's, is not conflux's, so uninstall refuses it before it acts, asked or not
+// -- the boot service not removed -- and both homes keep what they hold.
+func TestUninstallLeavesAFolderOfHomes(t *testing.T) {
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	for _, args := range [][]string{{"uninstall", "--yes"}, {"uninstall"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			homes := t.TempDir()
+			t.Setenv("CONFLUX_DIR", homes)
+
+			kept := map[string]string{}
+
+			for _, who := range []string{"alice", "bob"} {
+				p := filepath.Join(homes, who, "notes.txt")
+				if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+					t.Fatal(err)
+				}
+
+				if err := os.WriteFile(p, []byte(who+"'s"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+
+				kept[p] = who + "'s"
+			}
+
+			mgr := &removing{fakeManager: fakeManager{d: paths.Default()}}
+			standInService(t, mgr)
+
+			out, errOut, code := capture(t, args...)
+			if code != ExitError || !strings.Contains(errOut, "alice") || mgr.removals != 0 {
+				t.Errorf("conflux %s of a folder of homes exited %d and removed the boot service %d times, want %d "+
+					"naming alice/, nothing removed:\n%s%s", strings.Join(args, " "), code, mgr.removals, ExitError,
+					out, errOut)
+			}
+
+			for p, was := range kept {
+				if b, err := os.ReadFile(p); err != nil || string(b) != was {
+					t.Errorf("conflux %s of a folder of homes left %s holding %q (%v), want %q", strings.Join(args, " "),
+						p, b, err, was)
+				}
+			}
+		})
+	}
+}

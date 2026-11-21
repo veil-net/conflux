@@ -397,8 +397,8 @@ func TestARunTakingAKilledRunsRootKeepsIt(t *testing.T) {
 	e := paths.EphemeralDirs(root)
 
 	// This account's alone, as the test makes it.
-	defer func(was func(string) error) { foreignRoot = was }(foreignRoot)
-	foreignRoot = func(string) error { return nil }
+	defer func(was func(string) error) { checkEphemeral = was }(checkEphemeral)
+	checkEphemeral = func(string) error { return nil }
 
 	if err := os.Mkdir(root, 0o700); err != nil {
 		t.Fatal(err)

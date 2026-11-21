@@ -244,10 +244,10 @@ func liveEphemeral() (paths.Dirs, bool) {
 	return paths.Dirs{}, false
 }
 
-// foreignRoot is the readers' check of the ephemeral root at root (paths.Dirs.Check), which a test
+// checkEphemeral is the readers' check of the ephemeral root at root (paths.Dirs.Check), which a test
 // points at a root it made: nil only for a root that is there as conflux makes one, an error that is
 // fs.ErrNotExist for one not there, and a refusal for any other.
-var foreignRoot = func(root string) error { return paths.EphemeralDirs(root).Check() }
+var checkEphemeral = func(root string) error { return paths.EphemeralDirs(root).Check() }
 
 // statLock is os.Stat, for a root's lock, which a test counts.
 var statLock = os.Stat
@@ -266,7 +266,7 @@ func ephemeralRuns() (live, stale *paths.Dirs) {
 		// another account put there. And a root not there (fs.ErrNotExist) holds no run, and is looked up
 		// by its name no more: what is at a name that was not there a moment ago is whoever made it
 		// first's.
-		if err := foreignRoot(root); err != nil {
+		if err := checkEphemeral(root); err != nil {
 			continue
 		}
 

@@ -189,8 +189,8 @@ func TestAReaderPassesOverARootAnotherAccountMade(t *testing.T) {
 
 	foreign := true
 
-	defer func(was func(string) error) { foreignRoot = was }(foreignRoot)
-	foreignRoot = func(root string) error {
+	defer func(was func(string) error) { checkEphemeral = was }(checkEphemeral)
+	checkEphemeral = func(root string) error {
 		if foreign && root == d.State {
 			return errors.New(root + " belongs to another account")
 		}
@@ -238,8 +238,8 @@ func TestAReaderReadsNothingOfARootNotThere(t *testing.T) {
 
 			// The readers' check's answer for a root not there, and the root made, a run's in all but who
 			// made it, the moment after.
-			defer func(was func(string) error) { foreignRoot = was }(foreignRoot)
-			foreignRoot = func(r string) error {
+			defer func(was func(string) error) { checkEphemeral = was }(checkEphemeral)
+			checkEphemeral = func(r string) error {
 				if _, err := os.Lstat(r); !errors.Is(err, fs.ErrNotExist) {
 					t.Fatalf("%s is there before it is planted (%v)", r, err)
 				}

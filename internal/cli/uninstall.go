@@ -282,13 +282,13 @@ const (
 )
 
 // removeKilledRun removes the ephemeral root at root where it is a killed run's -- as conflux makes a
-// root (foreignRoot), its lock held by nobody -- stopping what that run left running from it first,
+// root (checkEphemeral), its lock held by nobody -- stopping what that run left running from it first,
 // under its lock, as a run's own clean-up does, so that one starting this moment is not emptied out from
 // under itself (daemon.RemoveEphemeral); and says what it found. What is at the root's name and is not
 // as conflux makes a root is nothing of a run's: it is removed as itself (paths.RemoveRoot), and nothing
 // in it read or signalled.
 func removeKilledRun(root string) (runRoot, error) {
-	switch err := foreignRoot(root); {
+	switch err := checkEphemeral(root); {
 	case errors.Is(err, fs.ErrNotExist):
 		return noRun, nil
 	case err != nil:

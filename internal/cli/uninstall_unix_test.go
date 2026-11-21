@@ -297,8 +297,8 @@ func TestUninstallListsNoRootItFailedToRemove(t *testing.T) {
 	defer func(was func() []string) { ephemeralCandidates = was }(ephemeralCandidates)
 	ephemeralCandidates = func() []string { return []string{candidate} }
 
-	defer func(was func(string) error) { foreignRoot = was }(foreignRoot)
-	foreignRoot = func(string) error { return errors.New("holds what another account could have put there") }
+	defer func(was func(string) error) { checkEphemeral = was }(checkEphemeral)
+	checkEphemeral = func(string) error { return errors.New("holds what another account could have put there") }
 
 	errStuck := errors.New("the root would not empty")
 

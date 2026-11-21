@@ -16,6 +16,7 @@ import (
 	"github.com/veil-net/conflux/anchor"
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
@@ -189,6 +190,11 @@ func TestUpdateLeavesOnlyWhatThisConfluxMakes(t *testing.T) {
 
 			if !strings.Contains(out, "Removed what earlier conflux left:") {
 				t.Errorf("conflux %s did not say what it removed:\n%s", verb, out)
+			}
+
+			// This build's set is extracted again, and so is not gone.
+			if strings.Contains(out, "  "+set) {
+				t.Errorf("conflux %s listed %s, which it extracted again, as removed:\n%s", verb, set, out)
 			}
 		})
 	}
@@ -514,8 +520,10 @@ func TestTidyStartsAgainOnlyWhatItStopped(t *testing.T) {
 
 // TestTidyListsOnlyWhatItRemoved: what tidy says it removed is what is gone. Where bin's lock is held
 // -- an extraction in progress -- the earlier sets in bin are not removed, nor listed, and the update
-// is refused, since a set planted among them would be kept; and what it could not remove of the run
-// directory, which the next supervisor makes again, it warns of and goes on, listing what went.
+// is refused, since a set planted among them would be kept; what it could not remove of the run
+// directory, which the next supervisor makes again, it warns of and goes on, listing what went; and a
+// killed ephemeral run's root that a run takes the moment its lock is let go of is that run's, kept,
+// and not listed.
 func TestTidyListsOnlyWhatItRemoved(t *testing.T) {
 	anchortest.Require(t) // it extracts the pair afresh
 
@@ -589,6 +597,47 @@ func TestTidyListsOnlyWhatItRemoved(t *testing.T) {
 			if _, err := os.Lstat(p); err == nil && strings.Contains(out, "  "+p+"\n") {
 				t.Errorf("conflux register listed %s, which is still there, as removed:\n%s", p, out)
 			}
+		}
+	})
+
+	t.Run("a killed run's root a run took", func(t *testing.T) {
+		d := configured(t)
+
+		root := paths.EphemeralCandidates()[0]
+		if err := os.Mkdir(root, 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.WriteFile(filepath.Join(root, "serve.lock"), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		// The run that takes the root as the killed run's lock is let go of, and what it puts there.
+		taken := filepath.Join(root, "taken")
+
+		was := removeEphemeral
+		defer func() { removeEphemeral = was }()
+
+		removeEphemeral = func(e paths.Dirs, unlock func(), r daemon.Reporter) error {
+			return was(e, func() {
+				unlock()
+
+				if err := os.WriteFile(taken, []byte("a run's"), 0o600); err != nil {
+					t.Error(err)
+				}
+			}, r)
+		}
+
+		standInService(t, &fakeManager{d: d})
+
+		out, errOut, code := capture(t, "register")
+		if code != ExitOK {
+			t.Fatalf("conflux register exited %d:\n%s%s", code, out, errOut)
+		}
+
+		if _, err := os.Lstat(taken); err != nil || strings.Contains(out, "  "+root+"\n") {
+			t.Errorf("conflux register removed what a run put in the root it took, or listed %s as removed "+
+				"(Lstat: %v):\n%s", root, err, out)
 		}
 	})
 }

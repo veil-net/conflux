@@ -17,17 +17,20 @@ import (
 
 // remakeOld is RemakeOld for dir, a root of the installation d's. The root is held open as a reader
 // holds it (holdRoot): the way to it walked from the top of its volume, a CONFLUX_DIR's held to parents'
-// rule, a junction at its name followed only where conflux would follow it, and its owner SYSTEM, the
-// Administrators or the account running conflux (usable). It is held to what secure holds a root to
-// before it changes anything in it: nobody else let move what is in it, who could put back what is
-// removed. Then each thing directly in it that conflux makes again by its name there (remadeIn) is
+// rule, and a junction at its name followed only where conflux would follow it. It is held to what
+// secure holds a root to before it changes anything in it (unmovable): its owner SYSTEM, the
+// Administrators or the account running conflux, and nobody else let move what is in it, who could put
+// back what is removed. Then each thing directly in it that conflux makes again by its name there (remadeIn) is
 // opened through the root's handle, never followed, and judged as contents judges it for SYSTEM; one
 // that fails is removed, through handles (removeIn), the log folder once the log files in it that pass
 // are moved out into the root (keepLog). A junction or a link at such a name is not
 // conflux's, and is left to the judgement after. Last, what the root holds is judged as secure judges
 // an installation's (contents): anything left that fails -- a thing conflux does not make again, the
 // configuration, the state and the manifest among them, or one deeper in a folder that passes -- is
-// refused, naming it, and left as it is. A root that is not there holds nothing to remove.
+// refused, naming it, and left as it is: secure, which EnsureAll runs after, judges the same, but on a
+// root not secured only once it has replaced a junction at its name and filled it, and with every root
+// RemakeOld removes from first, so the judgement here keeps a refusal before any of that. A root that
+// is not there holds nothing to remove.
 func remakeOld(d Dirs, dir string) ([]string, error) {
 	r, err := holdRoot(dir)
 
@@ -39,8 +42,8 @@ func remakeOld(d Dirs, dir string) ([]string, error) {
 	}
 	defer r.close()
 
-	if err := r.usable(dir); err != nil {
-		return nil, err
+	if r.refused != nil {
+		return nil, r.refused
 	}
 
 	root := r.dir.h
@@ -50,12 +53,8 @@ func remakeOld(d Dirs, dir string) ([]string, error) {
 		return nil, fmt.Errorf("read the ownership of %s: %w", dir, err)
 	}
 
-	switch who, _, err := changerIn(dir, currentUser(), sd, moves, "move it or what is in it", nil, false); {
-	case err != nil:
+	if err := unmovable(dir, sd, "put back what conflux removes from it to make again"); err != nil {
 		return nil, err
-	case who != "":
-		return nil, fmt.Errorf("%s %s could put back what conflux removes from it to make again, so conflux will "+
-			"not.\n  Give it a DACL that grants nobody else that right, then run this again as Administrator", dir, who)
 	}
 
 	list, err := listing(root)

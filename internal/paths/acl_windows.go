@@ -550,11 +550,6 @@ func secure(dir string, installation bool) error {
 		return fmt.Errorf("read the ownership of %s: %w", dir, err)
 	}
 
-	owner, _, err := sd.Owner()
-	if err != nil {
-		return fmt.Errorf("read the owner of %s: %w", dir, err)
-	}
-
 	// Secured already: SYSTEM's or the Administrators', under a protected DACL that grants nobody else
 	// any right, to read it included, nor passes one on to what is made in it -- what a restriction
 	// leaves -- and, where the root is a junction, the junction SYSTEM's or the Administrators' under
@@ -584,21 +579,13 @@ func secure(dir string, installation bool) error {
 		}
 	}
 
-	if err := ownerRefusal(dir, owner); err != nil {
-		return err
-	}
-
-	// The root's own DACL, as found: fill holds a handle opened under it off only while nobody
-	// else may take out what fill puts in the root, and a handle keeps what it was opened with
+	// The root's owner, and its own DACL, as found: fill holds a handle opened under it off only while
+	// nobody else may take out what fill puts in the root, and a handle keeps what it was opened with
 	// once the DACL is replaced. %ProgramData%'s grant to Users -- to add to a folder and write its
 	// attributes -- moves nothing, so a root that only inherits it passes.
-	switch who, _, err := changerIn(dir, currentUser(), sd, moves, "move it or what is in it", nil, false); {
-	case err != nil:
+	if err := unmovable(dir, sd, "take out what conflux puts in it, with a handle opened now that keeps the right "+
+		"once conflux restricts it"); err != nil {
 		return err
-	case who != "":
-		return fmt.Errorf("%s %s could take out what conflux puts in it, with a handle opened now that keeps the "+
-			"right once conflux restricts it, so conflux will not use it.\n  Give it a DACL that grants nobody "+
-			"else that right, then run this again as Administrator", dir, who)
 	}
 
 	// A junction is made conflux's own before what the root holds is read by its name, through it.
@@ -627,6 +614,31 @@ func secure(dir string, installation bool) error {
 	restricted(dir)
 
 	return contents(dir, installation)
+}
+
+// unmovable refuses the root dir, whose owner and DACL sd holds, before conflux changes anything in it,
+// as secure and RemakeOld do: where its owner is not SYSTEM, the Administrators or the account running
+// conflux (ownerRefusal), or its DACL, as found, lets another account move what is in it (changerIn,
+// moves), who could then, with a handle opened now, do what why says to undo what conflux does there.
+func unmovable(dir string, sd *windows.SECURITY_DESCRIPTOR, why string) error {
+	owner, _, err := sd.Owner()
+	if err != nil {
+		return fmt.Errorf("read the owner of %s: %w", dir, err)
+	}
+
+	if err := ownerRefusal(dir, owner); err != nil {
+		return err
+	}
+
+	switch who, _, err := changerIn(dir, currentUser(), sd, moves, "move it or what is in it", nil, false); {
+	case err != nil:
+		return err
+	case who != "":
+		return fmt.Errorf("%s %s could %s, so conflux will not use it.\n  Give it a DACL that grants nobody else "+
+			"that right, then run this again as Administrator", dir, who, why)
+	}
+
+	return nil
 }
 
 // judgedFor is the account a root, and what it holds, is judged for: SYSTEM, which the boot service

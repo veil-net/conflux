@@ -45,7 +45,7 @@ func plantForeign(t *testing.T, path string) {
 }
 
 // TestUninstallRemovesTheWayConfluxMade: the folders conflux made on the way to a CONFLUX_DIR, which
-// EnsureAll records in the root, go with it once empty, deepest first, and the folder they were made
+// EnsureAll records in the root, go with it whole, deepest first, and the folder they were made
 // in stays. Where the readers' check refuses the root, the root goes, and the record in it, none of
 // conflux's, is not read: the folders it names are left.
 func TestUninstallRemovesTheWayConfluxMade(t *testing.T) {

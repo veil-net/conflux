@@ -172,13 +172,12 @@ func TestRemoveRootHoldsACONFLUXDIRsWay(t *testing.T) {
 	}
 }
 
-// TestTheWayConfluxMadeIsRemovedWhenEmpty: EnsureAll records each folder it made on the way to an
-// installation's root, the CONFLUX_DIR among them, and Way reads the record back, deepest first. Once
-// the root is gone,
-// RemoveWay removes each that is empty, through handles, and leaves one holding anything else and a
-// junction put at a recorded folder's name, with where it leads untouched. Windows-only, so it runs in
-// CI's platforms job alone.
-func TestTheWayConfluxMadeIsRemovedWhenEmpty(t *testing.T) {
+// TestTheWayConfluxMadeIsRemovedWhole: EnsureAll records each folder it made on the way to an
+// installation's root, the CONFLUX_DIR among them, and Way reads the record back, deepest first.
+// RemoveWay leaves each folder holding a root of conflux's that holds anything, and once the root is
+// gone removes each whole, through handles, whatever it holds; a junction put at a recorded folder's
+// name is left, with where it leads untouched. Windows-only, so it runs in CI's platforms job alone.
+func TestTheWayConfluxMadeIsRemovedWhole(t *testing.T) {
 	base := t.TempDir()
 	a, b := filepath.Join(base, "a"), filepath.Join(base, "a", "b")
 	dir := filepath.Join(b, "conflux")
@@ -196,6 +195,10 @@ func TestTheWayConfluxMadeIsRemovedWhenEmpty(t *testing.T) {
 		t.Fatalf("Way() = %q, %v, want %q", way, err, []string{dir, b, a})
 	}
 
+	if removed, err := RemoveWay(way); err != nil || removed != nil {
+		t.Errorf("RemoveWay(%q), the root %s there = %q, %v, want nothing removed", way, root, removed, err)
+	}
+
 	other := filepath.Join(a, "other")
 	if err := os.WriteFile(other, nil, 0o600); err != nil {
 		t.Fatal(err)
@@ -205,27 +208,20 @@ func TestTheWayConfluxMadeIsRemovedWhenEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if removed, err := RemoveWay(way); err != nil || !slices.Equal(removed, []string{dir, b}) {
-		t.Errorf("RemoveWay(%q), %s holding a file = %q, %v, want %q", way, a, removed, err, []string{dir, b})
-	}
-
-	if err := os.Remove(other); err != nil {
-		t.Fatal(err)
-	}
-
 	elsewhere := t.TempDir()
-	mklinkJ(t, b, elsewhere)
+	junction := mklinkJ(t, filepath.Join(b, "junction"), elsewhere)
 
-	if removed, err := RemoveWay(way); err != nil || removed != nil {
-		t.Errorf("RemoveWay(%q), a junction at %s = %q, %v, want nothing removed", way, b, removed, err)
+	if removed, err := RemoveWay([]string{junction}); err != nil || removed != nil {
+		t.Errorf("RemoveWay(a junction at a recorded name) = %q, %v, want nothing removed", removed, err)
 	}
 
-	if err := os.Remove(b); err != nil {
-		t.Fatal(err)
+	if removed, err := RemoveWay(way); err != nil || !slices.Equal(removed, way) {
+		t.Errorf("RemoveWay(%q), %s holding a file and %s a junction = %q, %v, want each removed", way, a, b,
+			removed, err)
 	}
 
-	if removed, err := RemoveWay(way); err != nil || !slices.Equal(removed, []string{a}) {
-		t.Errorf("RemoveWay(%q) = %q, %v, want %q", way, removed, err, []string{a})
+	if _, err := os.Lstat(a); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("RemoveWay left %s (Lstat: %v)", a, err)
 	}
 
 	if _, err := os.Stat(elsewhere); err != nil {

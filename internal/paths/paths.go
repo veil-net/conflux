@@ -251,10 +251,10 @@ func (d Dirs) ReadyFile() string { return filepath.Join(d.Run, "ready") }
 // alone, which what is made in it inherits.
 //
 // A root not there is made, with each folder missing on the way to it, and those folders recorded in
-// the state root (recordWay) for uninstall to remove once they are empty (Way, RemoveWay). Whatever is
-// at a root's name and is not as conflux makes a root -- a link, a file, a folder another account owns
-// or may write (ours) -- is removed as itself from the folder it is in, and the root made afresh: a
-// root is conflux's whole, and nothing in it is kept for anybody. Each folder conflux keeps in a root
+// the state root (recordWay) for uninstall to remove whole (Way, RemoveWay). Whatever is at a root's
+// name and is not as conflux makes a root -- a link, a file, a folder another account owns or may write
+// (ours) -- is removed as itself from the folder it is in, and the root made afresh: a root is conflux's
+// whole, and nothing in it is kept for anybody. Each folder conflux keeps in a root
 // (folders) is judged as the root is, and made afresh alike. A CONFLUX_DIR itself, and everything
 // above a root, is never changed: a CONFLUX_DIR's way, the CONFLUX_DIR included, is held to the rule
 // of whoever the root is for (wayRule) before anything is made. The system's shared log directory,
@@ -476,8 +476,9 @@ const wayMax = 64 << 10
 
 // Way is the record of the folders conflux made on the way to d's roots (EnsureAll), deepest first, for
 // uninstall, or an ephemeral run as it ends, to read before it removes the roots, the state root holding
-// the record among them, and to hand to RemoveWay after: only folders above one of d's roots are taken
-// from it. Nil where there is no record, or no state root, or a link or a file at its name.
+// the record among them, and to hand to RemoveWay after: only folders above one of d's roots, and none
+// at the top of a volume, are taken from it. Nil where there is no record, or no state root, or a link or
+// a file at its name.
 func (d Dirs) Way() ([]string, error) {
 	recorded, err := d.readWay()
 
@@ -491,7 +492,8 @@ func (d Dirs) Way() ([]string, error) {
 	var way []string
 
 	for _, p := range recorded {
-		if filepath.IsAbs(p) && filepath.Clean(p) == p && !slices.Contains(way, p) && d.aboveRoot(p) {
+		if filepath.IsAbs(p) && filepath.Clean(p) == p && filepath.Dir(p) != p && !slices.Contains(way, p) &&
+			d.aboveRoot(p) {
 			way = append(way, p)
 		}
 	}
@@ -499,11 +501,16 @@ func (d Dirs) Way() ([]string, error) {
 	return deepestFirst(way), nil
 }
 
-// RemoveWay removes each folder of way, folders conflux made on the way to its roots (Way), that is
-// empty, deepest first, and is those it removed: each removed from the folder it is in, as the walk to
-// that holds it (toParent), never by its name and never following a link, a CONFLUX_DIR's way held to
-// parents' rule. A folder that holds anything, is not there, or is no longer a folder -- a link put at
-// its name among them -- is left.
+// RemoveWay removes each folder of way, folders conflux made on the way to its roots (Way), whole,
+// whatever it holds, deepest first, and is those it removed: each removed from the folder it is in, as
+// the walk to that holds it (toParent), never by its name and never following a link, a CONFLUX_DIR's
+// way held to parents' rule, and what it holds removed through it as a root is (removeFrom). A folder
+// conflux made is conflux's whole, so what anybody put in it goes with it. One that is not there, or is
+// no longer a folder -- a link or a file put at its name -- is left, and so is one that is, or holds, a
+// root of conflux's that holds anything (holdsRoot): under a CONFLUX_DIR the .conflux an ephemeral run
+// made on the way to its root is the installation's root by its name, which an installation made there
+// since has taken, and whose identity only uninstall removes; and a root uninstall could not remove, or
+// an ephemeral run's started since, stays with the folders that hold it.
 func RemoveWay(way []string) ([]string, error) {
 	var (
 		removed []string
@@ -511,6 +518,10 @@ func RemoveWay(way []string) ([]string, error) {
 	)
 
 	for _, dir := range deepestFirst(slices.Clone(way)) {
+		if holdsRoot(dir) {
+			continue
+		}
+
 		judge := judgement(nil)
 		if root := Root(); root != "" && (dir == root || above(dir, root)) {
 			judge = parentsRule(dir)
@@ -529,8 +540,9 @@ func RemoveWay(way []string) ([]string, error) {
 	return removed, errors.Join(errs...)
 }
 
-// removeWayFolder is RemoveWay's removal of dir, an empty folder, from the folder it is in, held as the
-// walk judged by judge reaches it (toParent), and whether it removed it.
+// removeWayFolder is RemoveWay's removal of dir, a folder, whole, from the folder it is in, held as the
+// walk judged by judge reaches it (toParent), and whether it removed it: a link or anything else at its
+// name that is no folder is left.
 func removeWayFolder(dir string, judge judgement) (bool, error) {
 	w, err := toParent(dir, judge)
 	if err != nil || w == nil {
@@ -538,7 +550,46 @@ func removeWayFolder(dir string, judge judgement) (bool, error) {
 	}
 	defer w.close()
 
-	return removeEmpty(w.last().step, filepath.Base(dir), dir)
+	at, name := w.last().step, filepath.Base(dir)
+
+	s, link, err := lookUp(at, name)
+
+	switch {
+	case errors.Is(err, fs.ErrNotExist), errors.Is(err, errNotDir):
+		return false, nil
+	case err != nil:
+		return false, fmt.Errorf("read %s: %w", dir, err)
+	}
+
+	s.close()
+
+	if link {
+		return false, nil
+	}
+
+	return removeFrom(at, name, dir)
+}
+
+// holdsRoot reports whether dir is, or holds, a root of conflux's -- one of the installation's (Default)
+// or an ephemeral run's (EphemeralCandidates) -- that holds anything, by its name: an empty one is a way
+// folder like any other.
+func holdsRoot(dir string) bool {
+	for _, root := range append(Default().Outer(), EphemeralCandidates()...) {
+		if root != dir && !above(dir, root) {
+			continue
+		}
+
+		if f, err := os.Open(root); err == nil {
+			names, _ := f.Readdirnames(1)
+			f.Close()
+
+			if len(names) > 0 {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 // above reports whether dir is a folder strictly above path, by their names (filepath.Rel), neither

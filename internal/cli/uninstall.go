@@ -165,7 +165,7 @@ func runUninstall(_ context.Context, args []string) int {
 		}
 	}
 
-	// Each of those folders that is empty now, deepest first.
+	// Each of those folders, whole, deepest first.
 	madeWay, err := paths.RemoveWay(way)
 	removed = append(removed, madeWay...)
 	errs = append(errs, err)
@@ -197,7 +197,7 @@ func runUninstall(_ context.Context, args []string) int {
 	}
 
 	// A record that could not be read -- one that is a link, or behind a CONFLUX_DIR's way another
-	// account may change -- leaves the folders it names, which are empty, and nothing else.
+	// account may change -- leaves the folders it names, and nothing else.
 	if wayErr != nil {
 		ui.Errf("the folders conflux made on the way to %s were left, since the record of them was not read: %v",
 			d.State, wayErr)

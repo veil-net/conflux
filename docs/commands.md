@@ -505,8 +505,9 @@ reinstall:
 - what an update left beside this conflux: a download that never went in place, and on Windows
   the image moved aside, `conflux.exe.old` (elsewhere a file of that name is yours, and kept);
 - the folders conflux made on the way to its roots, which it records as it makes them — a
-  `CONFLUX_DIR` it made, and its parents, among them — each once it is empty, deepest first. A
-  `CONFLUX_DIR` that was there before is left as it was, with everything of yours in it;
+  `CONFLUX_DIR` it made, and its parents, among them — each whole, whatever was put in it, deepest
+  first, but for one that still holds a root it could not remove. A `CONFLUX_DIR` that was there
+  before is left as it was, with everything of yours in it;
 - the account `anchord` ran as, and `conflux-ephemeral`, once nothing runs as either, when
   conflux made them (an account of either name that conflux did not make is left alone), with
   the BPF devices given back to root on macOS first.

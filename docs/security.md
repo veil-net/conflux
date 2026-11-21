@@ -82,8 +82,9 @@ host can read, and when the run stops there is nothing at all.
   and every reader of an ephemeral run's root — holds it to one check
   first, the readers' check, on every platform, before it reads anything in it by its name
   (`uninstall` then removes a root that fails it all the same, reading and signalling nothing in
-  it, through handles held from the top of its volume down, following no link and with a
-  `CONFLUX_DIR`'s way held to the same rule; see [commands.md](commands.md#conflux-uninstall)):
+  it, through handles held from the top of its volume down, following no link but one at the root's
+  own name that this check would follow, and with a `CONFLUX_DIR`'s way held to the same rule; see
+  [commands.md](commands.md#conflux-uninstall)):
   whoever could have put a configuration, a pid record, a token or a binary there would otherwise
   have conflux read, signal or run theirs. The root's owner must be root (SYSTEM or the
   Administrators on Windows) or the account running conflux, a link at its name included, and

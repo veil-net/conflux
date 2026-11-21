@@ -530,29 +530,43 @@ func (d Dirs) RemakeOld() ([]string, error) {
 }
 
 // RemoveRoot removes the root dir and everything in it, and says whether anything was at its name,
-// following nothing: the way to dir walked from the top of its volume and held open a directory at a
-// time (toParent), and dir removed from the directory it is in, as that walk holds it, each thing below
-// opened through the directory holding it and never by its name, a link or a junction anywhere --
-// at dir's own name included -- removed as itself, and what it leads to never touched. Nothing in
-// the root is read or judged first, so a root the readers' check refuses is removed as safely as one
-// it takes. A CONFLUX_DIR's way is held to parents' rule, for the account running conflux, as the
-// readers' check holds it, the directory dir is in included, since a way another account may change
-// could lead the removal elsewhere; a platform root's way, the system's own, is not, as it is not
-// when the root is made (makeRoot). Where nothing is at dir's name, or on the way to it, nothing is
-// removed.
+// following nothing conflux would not follow in daily use: the root held as OpenIn holds it
+// (holdRoot) -- the way to it walked from the top of its volume and held open a directory at a time,
+// a CONFLUX_DIR's held to parents' rule, for the account running conflux, as the readers' check holds
+// it, the directory dir is in included, since a way another account may change could lead the
+// removal elsewhere; a platform root's way, the system's own, not judged, as it is not when the root
+// is made (makeRoot) -- and dir removed from the directory it is in, as that walk holds it, each thing
+// below opened through the directory holding it and never by its name, a link or a junction in it
+// removed as itself, and what it leads to never touched. A link or a junction at dir's own name is
+// followed only where conflux would follow it (follow): its owner trusted, nobody else able to point
+// it elsewhere, and leading to a directory the readers' check would take; then what that directory
+// holds is removed through the handle held on it, and the link after, the directory itself left,
+// empty. One that fails is removed as itself, and where it leads is not touched. Nothing in a root at
+// dir's name itself is read or judged first, so a root the readers' check refuses is removed as safely
+// as one it takes. Where nothing is at dir's name, or on the way to it, nothing is removed.
 func RemoveRoot(dir string) (bool, error) {
 	dir, err := filepath.Abs(dir)
 	if err != nil {
 		return false, err
 	}
 
-	w, err := toParent(dir, readersRule(dir))
-	if err != nil || w == nil {
+	r, err := holdRoot(dir)
+
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return false, nil
+	case err != nil:
 		return false, err
 	}
-	defer w.close()
+	defer r.close()
 
-	return removeFrom(w.last().step, filepath.Base(dir), dir)
+	if r.link && r.refused == nil {
+		if err := emptyIn(r.dir, dir); err != nil {
+			return true, err
+		}
+	}
+
+	return removeFrom(r.parent.last().step, r.name, dir)
 }
 
 // readersRule is the rule a command that reads or removes what is at the root dir, rather than

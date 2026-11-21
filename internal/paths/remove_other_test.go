@@ -4,6 +4,7 @@ package paths
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -14,10 +15,9 @@ import (
 
 // TestRemoveRootFollowsNothing: uninstall removes every root, one the readers' check refuses among
 // them, so RemoveRoot removes a root and everything in it from the directory the walk to it holds,
-// following nothing: a link in it to a directory outside, and one deeper, are removed as links, and a
-// root whose own name is a link is that link, removed as itself, with what each led to untouched. A
-// CONFLUX_DIR found 0757, which the readers' check refuses, is removed all the same. A root not there
-// is nothing removed.
+// following nothing: a link in it to a directory outside, and one deeper, are removed as links, with
+// what each led to untouched. A CONFLUX_DIR found 0757, which the readers' check refuses, is removed
+// all the same. A root not there is nothing removed.
 func TestRemoveRootFollowsNothing(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "conflux")
 	t.Setenv("CONFLUX_DIR", root)
@@ -60,26 +60,96 @@ func TestRemoveRootFollowsNothing(t *testing.T) {
 		t.Errorf("RemoveRoot reached %s through a link: %q, %v", kept, b, err)
 	}
 
-	link := filepath.Join(t.TempDir(), "conflux")
-	if err := os.Symlink(elsewhere, link); err != nil {
-		t.Fatal(err)
-	}
-
-	if gone, err := RemoveRoot(link); !gone || err != nil {
-		t.Fatalf("RemoveRoot(a link at a root's name) = %v, %v, want the link removed", gone, err)
-	}
-
-	if _, err := os.Lstat(link); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("the link at %s is there once RemoveRoot removed it (%v)", link, err)
-	}
-
-	if _, err := os.Stat(kept); err != nil {
-		t.Errorf("RemoveRoot of a link at a root's name removed where it led: %v", err)
-	}
-
 	for _, absent := range []string{root, filepath.Join(t.TempDir(), "not", "there")} {
 		if gone, err := RemoveRoot(absent); gone || err != nil {
 			t.Errorf("RemoveRoot(%s, which is not there) = %v, %v, want nothing removed", absent, gone, err)
+		}
+	}
+}
+
+// TestRemoveRootFollowsALinkRootOnlyWhereConfluxWould: a root whose own name is a link -- one moved to
+// another disk -- is followed only where conflux would follow it in daily use, a platform root's and a
+// CONFLUX_DIR's alike: a link of this account's to a directory of its own at 0700 is followed, what
+// that directory holds removed through the handle held on it, a link in it as itself, and then the
+// link, the directory left empty; a link to a directory every account may write, and one to the
+// directory it is in, are removed as themselves, with where each leads left as it was.
+func TestRemoveRootFollowsALinkRootOnlyWhereConfluxWould(t *testing.T) {
+	elsewhere := t.TempDir()
+
+	kept := filepath.Join(elsewhere, "kept")
+	if err := os.WriteFile(kept, []byte("kept"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, chosen := range []bool{false, true} {
+		for _, c := range []struct {
+			name   string
+			target func(t *testing.T, in string) string
+			follow bool
+		}{
+			{"a directory of this account's own", func(t *testing.T, _ string) string { return t.TempDir() }, true},
+			{"a directory every account may write", func(t *testing.T, _ string) string {
+				open := t.TempDir()
+				if err := os.Chmod(open, 0o777); err != nil {
+					t.Fatal(err)
+				}
+
+				return open
+			}, false},
+			{"the directory it is in", func(_ *testing.T, in string) string { return in }, false},
+		} {
+			t.Run(fmt.Sprintf("%s, a CONFLUX_DIR %v", c.name, chosen), func(t *testing.T) {
+				in, err := filepath.EvalSymlinks(t.TempDir())
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				root := filepath.Join(in, "conflux")
+
+				t.Setenv("CONFLUX_DIR", "")
+				if chosen {
+					t.Setenv("CONFLUX_DIR", root)
+				}
+
+				target := c.target(t, in)
+
+				manifest := filepath.Join(target, "manifest.b64")
+				if err := os.WriteFile(manifest, []byte("identity"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+
+				if err := os.Symlink(elsewhere, filepath.Join(target, "anchor")); err != nil {
+					t.Fatal(err)
+				}
+
+				if err := os.Symlink(target, root); err != nil {
+					t.Fatal(err)
+				}
+
+				if gone, err := RemoveRoot(root); !gone || err != nil {
+					t.Fatalf("RemoveRoot(a link at a root's name to %s) = %v, %v, want it removed", c.name, gone, err)
+				}
+
+				if _, err := os.Lstat(root); !errors.Is(err, fs.ErrNotExist) {
+					t.Errorf("the link at %s is there once RemoveRoot removed it (%v)", root, err)
+				}
+
+				entries, err := os.ReadDir(target)
+
+				switch {
+				case err != nil:
+					t.Errorf("RemoveRoot of a link to %s removed where it led: %v", c.name, err)
+				case c.follow && len(entries) != 0:
+					t.Errorf("RemoveRoot of a link to %s left %v there, want it emptied", c.name, entries)
+				case !c.follow && len(entries) != 2:
+					t.Errorf("RemoveRoot of a link to %s left %v there, want it untouched", c.name, entries)
+				}
+
+				if b, err := os.ReadFile(kept); err != nil || string(b) != "kept" {
+					t.Errorf("RemoveRoot reached %s through a link in where a link at a root's name led: %q, %v", kept,
+						b, err)
+				}
+			})
 		}
 	}
 }

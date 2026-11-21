@@ -192,6 +192,33 @@ func removeFrom(parent step, name, p string) (bool, error) {
 	return true, nil
 }
 
+// emptyIn removes all the directory s holds holds, p naming it: the directory opened again through s,
+// to read, and each name in it removed through that (removeAt), never followed.
+func emptyIn(s step, p string) error {
+	var fd int
+	if err := ignoringEINTR(func() (err error) {
+		fd, err = unix.Openat(s.fd, s.at("."), unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+
+		return err
+	}); err != nil {
+		return &os.PathError{Op: "open", Path: p, Err: err}
+	}
+	defer unix.Close(fd)
+
+	names, err := namesIn(fd)
+	if err != nil {
+		return &os.PathError{Op: "read", Path: p, Err: err}
+	}
+
+	for _, name := range names {
+		if err := removeAt(fd, name, filepath.Join(p, name)); err != nil && !errors.Is(err, unix.ENOENT) {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // removeEmpty is RemoveWay's removal of name, an empty directory, in the directory parent is, which p
 // names, by unlinkat, and whether it removed it: one holding anything, not there, or no longer a
 // directory, a link among them, is left.

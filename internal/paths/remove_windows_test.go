@@ -17,8 +17,7 @@ import (
 // TestRemoveRootFollowsNothing: uninstall removes every root, one the readers' check refuses among
 // them, so RemoveRoot removes a root and everything in it from the folder the walk to it holds,
 // following nothing: a junction in it to a folder outside, and one deeper, are removed as junctions,
-// a read-only file is removed with the rest, and a root that is itself a junction is that junction,
-// removed as itself, with what each led to untouched. A CONFLUX_DIR whose DACL lets Users add to it,
+// and a read-only file is removed with the rest, with what each junction led to untouched. A CONFLUX_DIR whose DACL lets Users add to it,
 // which the readers' check refuses, is removed all the same. A root not there is nothing removed.
 // Windows-only, so it runs in CI's platforms job alone.
 func TestRemoveRootFollowsNothing(t *testing.T) {
@@ -67,23 +66,85 @@ func TestRemoveRootFollowsNothing(t *testing.T) {
 		t.Errorf("RemoveRoot reached %s through a junction: %q, %v", kept, b, err)
 	}
 
-	junction := mklinkJ(t, filepath.Join(t.TempDir(), "conflux"), elsewhere)
-
-	if gone, err := RemoveRoot(junction); !gone || err != nil {
-		t.Fatalf("RemoveRoot(a junction at a root's name) = %v, %v, want the junction removed", gone, err)
-	}
-
-	if _, err := os.Lstat(junction); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("the junction at %s is there once RemoveRoot removed it (%v)", junction, err)
-	}
-
-	if _, err := os.Stat(kept); err != nil {
-		t.Errorf("RemoveRoot of a junction at a root's name removed where it led: %v", err)
-	}
-
 	for _, absent := range []string{root, filepath.Join(t.TempDir(), "not", "there")} {
 		if gone, err := RemoveRoot(absent); gone || err != nil {
 			t.Errorf("RemoveRoot(%s, which is not there) = %v, %v, want nothing removed", absent, gone, err)
+		}
+	}
+}
+
+// TestRemoveRootFollowsALinkRootOnlyWhereConfluxWould: a root that is itself a junction -- one moved
+// to another volume -- is followed only where conflux would follow it in daily use, a platform root's
+// and a CONFLUX_DIR's alike: a junction nobody else may point elsewhere, leading to a folder nobody
+// else may use, is followed, what that folder holds removed through the handle held on it, a junction
+// in it as itself, and then the junction, the folder left empty; a junction to a folder Users may add
+// to, and one to the folder it is in, are removed as themselves, with where each leads left as it was.
+// Windows-only, so it runs in CI's platforms job alone.
+func TestRemoveRootFollowsALinkRootOnlyWhereConfluxWould(t *testing.T) {
+	elsewhere := t.TempDir()
+
+	kept := filepath.Join(elsewhere, "kept")
+	if err := os.WriteFile(kept, []byte("kept"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, chosen := range []bool{false, true} {
+		for _, c := range []struct {
+			name   string
+			target func(t *testing.T, in string) string
+			follow bool
+		}{
+			{"a folder nobody else may use", func(t *testing.T, _ string) string { return t.TempDir() }, true},
+			{"a folder Users may add to", func(t *testing.T, _ string) string {
+				open := t.TempDir()
+				privtest.GrantUsers(t, open, windows.FILE_WRITE_DATA, windows.NO_INHERITANCE)
+
+				return open
+			}, false},
+			{"the folder it is in", func(_ *testing.T, in string) string { return in }, false},
+		} {
+			t.Run(c.name+map[bool]string{true: ", a CONFLUX_DIR"}[chosen], func(t *testing.T) {
+				in := t.TempDir()
+				root := filepath.Join(in, "conflux")
+
+				t.Setenv("CONFLUX_DIR", "")
+				if chosen {
+					t.Setenv("CONFLUX_DIR", root)
+				}
+
+				target := c.target(t, in)
+
+				if err := os.WriteFile(filepath.Join(target, "manifest.b64"), []byte("identity"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+
+				mklinkJ(t, filepath.Join(target, "anchor"), elsewhere)
+				mklinkJ(t, root, target)
+
+				if gone, err := RemoveRoot(root); !gone || err != nil {
+					t.Fatalf("RemoveRoot(a junction at a root's name to %s) = %v, %v, want it removed", c.name, gone, err)
+				}
+
+				if _, err := os.Lstat(root); !errors.Is(err, fs.ErrNotExist) {
+					t.Errorf("the junction at %s is there once RemoveRoot removed it (%v)", root, err)
+				}
+
+				entries, err := os.ReadDir(target)
+
+				switch {
+				case err != nil:
+					t.Errorf("RemoveRoot of a junction to %s removed where it led: %v", c.name, err)
+				case c.follow && len(entries) != 0:
+					t.Errorf("RemoveRoot of a junction to %s left %v there, want it emptied", c.name, entries)
+				case !c.follow && len(entries) != 2:
+					t.Errorf("RemoveRoot of a junction to %s left %v there, want it untouched", c.name, entries)
+				}
+
+				if b, err := os.ReadFile(kept); err != nil || string(b) != "kept" {
+					t.Errorf("RemoveRoot reached %s through a junction in where a junction at a root's name led: %q, %v",
+						kept, b, err)
+				}
+			})
 		}
 	}
 }

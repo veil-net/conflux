@@ -57,8 +57,7 @@ func remakeOld(d Dirs, dir string) ([]string, error) {
 			"not.\n  Give it a DACL that grants nobody else that right, then run this again as Administrator", dir, who)
 	}
 
-	list, err := ntOpen(root, "", nil, windows.SYNCHRONIZE|windows.FILE_LIST_DIRECTORY, windows.FILE_OPEN,
-		windows.FILE_DIRECTORY_FILE)
+	list, err := listing(root)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", dir, err)
 	}
@@ -373,6 +372,35 @@ func removeFrom(parent step, name, p string) (bool, error) {
 	}
 
 	return true, nil
+}
+
+// emptyIn removes all the folder s holds open holds, p naming it: the folder opened again through s, to
+// list it (listing), and each name in it removed through that (removeIn), never followed.
+func emptyIn(s step, p string) error {
+	h, err := listing(s.h)
+	if err != nil {
+		return &os.PathError{Op: "open", Path: p, Err: err}
+	}
+	defer windows.CloseHandle(h)
+
+	names, err := listIn(h)
+	if err != nil {
+		return &os.PathError{Op: "read", Path: p, Err: err}
+	}
+
+	for _, n := range names {
+		if err := removeIn(h, n, filepath.Join(p, n)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// listing is the folder h holds open, opened again through h, by no name, to be listed (listIn).
+func listing(h windows.Handle) (windows.Handle, error) {
+	return ntOpen(h, "", nil, windows.SYNCHRONIZE|windows.FILE_LIST_DIRECTORY, windows.FILE_OPEN,
+		windows.FILE_DIRECTORY_FILE)
 }
 
 // removeEmpty is RemoveWay's removal of name, an empty folder, in the directory parent holds open,

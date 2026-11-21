@@ -18,6 +18,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/ui"
 )
@@ -110,6 +111,9 @@ func signalContext() (context.Context, context.CancelFunc) {
 //
 // Before any command, a build whose FIPS 140-3 mode is off (fipsRefusal) and a Windows older
 // than conflux runs on (tooOld) are refused, exiting 70: nothing is read, made or run on either.
+// Then, where the token is elevated, what this process makes is made the Administrators' from the
+// moment it exists (paths.ElevatedDefaultOwner), and where that fails every command that can make
+// something in a root is refused, exiting 70 too (ownerRefusal).
 func Main(argv []string) int {
 	if err := fipsRefusal(fips140.Version(), fips140.Enabled()); err != nil {
 		ui.Errf("%v", err)
@@ -122,6 +126,8 @@ func Main(argv []string) int {
 
 		return ExitChildFailed
 	}
+
+	owner := elevatedDefaultOwner()
 
 	ctx, stop := signalContext()
 	defer stop()
@@ -150,6 +156,12 @@ func Main(argv []string) int {
 		}
 	}
 
+	if err := ownerRefusal(name, owner); err != nil {
+		ui.Errf("%v", err)
+
+		return ExitChildFailed
+	}
+
 	if v, ok := verbs()[name]; ok {
 		return v.run(ctx, rest)
 	}
@@ -159,6 +171,27 @@ func Main(argv []string) int {
 	}
 
 	return passthrough(ctx, argv[1:])
+}
+
+// elevatedDefaultOwner is paths.ElevatedDefaultOwner, which a test stands a failing one in for.
+var elevatedDefaultOwner = paths.ElevatedDefaultOwner
+
+// ownerRefusal refuses command name where err says the Administrators could not be made the owner
+// of what this process makes (paths.ElevatedDefaultOwner), and the command can make something in a
+// root or on the way to one: every one but version, help and cert, which make nothing there --
+// a pass-through and status among the rest, since either may be the first conflux to make a root
+// and extract into it. What an elevated administrator makes is otherwise that administrator's own on
+// a Windows client, which the boot service, running as SYSTEM, refuses at every start, and on which
+// a process of that account keeps whatever handle it opens. Only an elevated Windows token is ever
+// changed, so it is only ever there that err is anything but nil.
+func ownerRefusal(name string, err error) error {
+	if err == nil || name == "version" || name == "help" || name == "cert" {
+		return nil
+	}
+
+	return fmt.Errorf("%w, so what conflux %s makes would be this account's own, which the boot service, running "+
+		"as SYSTEM, refuses.\n  Run it again as Administrator from a new shell; conflux version, help and cert "+
+		"still run", err, name)
 }
 
 // isHelpFlag reports whether an argument is a request for usage as Go's flag package reads one,

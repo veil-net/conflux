@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
@@ -919,6 +920,41 @@ func TestFIPSRefusal(t *testing.T) {
 
 		if err != nil && !strings.Contains(err.Error(), "GODEBUG") {
 			t.Errorf("the refusal %q does not name GODEBUG, which is the way out", err)
+		}
+	}
+}
+
+// TestAnOwnerThatCannotBeSetRefusesWhatCanMakeARoot: where the Administrators cannot be made the
+// owner of what conflux makes (paths.ElevatedDefaultOwner, here failing), every command that can make
+// something in a root -- one that makes the root (enrol), one that may extract into it (status), a
+// pass-through -- is refused before it does anything, saying why and exiting 70, with nothing made;
+// version, help and cert, which make nothing there, run.
+func TestAnOwnerThatCannotBeSetRefusesWhatCanMakeARoot(t *testing.T) {
+	was := elevatedDefaultOwner
+	t.Cleanup(func() { elevatedDefaultOwner = was })
+
+	elevatedDefaultOwner = func() error { return errors.New("make the Administrators the owner of what conflux makes: denied") }
+
+	above := filepath.Join(t.TempDir(), "made")
+	t.Setenv("CONFLUX_DIR", filepath.Join(above, "conflux"))
+
+	missing := filepath.Join(t.TempDir(), "missing.b64")
+
+	for _, argv := range [][]string{{"enrol", "--manifest", missing}, {"status"}, {"peers"}} {
+		_, errOut, code := capture(t, argv...)
+		if code != ExitChildFailed || !strings.Contains(errOut, "denied") || !strings.Contains(errOut, "as Administrator") {
+			t.Errorf("conflux %s with an owner that cannot be set exited %d, want %d saying why:\n%s",
+				strings.Join(argv, " "), code, ExitChildFailed, errOut)
+		}
+	}
+
+	if _, err := os.Lstat(above); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("conflux made %s with an owner it could not set (%v)", above, err)
+	}
+
+	for _, argv := range [][]string{{"version"}, {"help"}, {"cert", "fingerprint", "--help"}} {
+		if _, errOut, code := capture(t, argv...); code == ExitChildFailed {
+			t.Errorf("conflux %s, which makes nothing in a root, was refused:\n%s", strings.Join(argv, " "), errOut)
 		}
 	}
 }

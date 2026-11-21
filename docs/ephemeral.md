@@ -116,9 +116,10 @@ it stays. The root is conflux's by its name: made as
 conflux makes one, `0700` and the account's own, and whatever is at its name that is not — a link,
 a file, a directory another account owns or may write — is removed as itself and the root made
 afresh ([security.md](security.md#the-file-and-the-directory-around-it)), by the next run that
-chooses it. Only a root the run cannot remove to make afresh is passed over, and the next in the
-table used: `/tmp` lets anybody make `/tmp/conflux-ephemeral-UID` first, and only its owner can
-remove it. A run is not refused because an installed conflux is running: that one is never
+chooses it. A candidate on a filesystem mounted `noexec` is passed over with nothing at its name
+touched, and so is one the run cannot make afresh, whatever stops it — `/tmp` lets anybody make
+`/tmp/conflux-ephemeral-UID` first, and only its owner can remove it — and the next in the table
+used. A run is not refused because an installed conflux is running: that one is never
 read, written, stopped or re-registered. Two anchors with a TUN on one host do contend for
 the overlay's routes, so `conflux down` first where that matters.
 

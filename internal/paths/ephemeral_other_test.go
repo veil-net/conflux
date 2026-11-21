@@ -113,6 +113,46 @@ func TestEphemeralRemakesARootNotAsConfluxMakesOne(t *testing.T) {
 	}
 }
 
+// TestACandidateOnANoexecFilesystemIsLeftAsItIs: a candidate whose filesystem will not let the extracted
+// anchord run is passed over before anything at its name is touched: one not as conflux makes a root is
+// not made afresh there to be left behind, empty, but left as it was, and the next candidate taken.
+func TestACandidateOnANoexecFilesystemIsLeftAsItIs(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", "")
+
+	noexec := t.TempDir()
+
+	defer func(was func(string) (bool, error)) { allowsExec = was }(allowsExec)
+	allowsExec = func(p string) (bool, error) { return p != noexec && !above(noexec, p), nil }
+
+	c := filepath.Join(noexec, "conflux-ephemeral")
+	if err := os.Mkdir(c, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	planted := filepath.Join(c, "planted")
+	if err := os.WriteFile(planted, []byte("theirs"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Chmod(c, 0o757); err != nil {
+		t.Fatal(err)
+	}
+
+	next := filepath.Join(t.TempDir(), "conflux-ephemeral")
+
+	if d, err := ephemeralIn([]string{c, next}); err != nil || d.State != next {
+		t.Errorf("Ephemeral chose %s (%v), want %s past %s, on a noexec filesystem", d.State, err, next, c)
+	}
+
+	if fi, err := os.Lstat(c); err != nil || fi.Mode().Perm() != 0o757 {
+		t.Errorf("Ephemeral changed %s, on a noexec filesystem: %v, %v", c, fi, err)
+	}
+
+	if _, err := os.Lstat(planted); err != nil {
+		t.Errorf("Ephemeral made %s, on a noexec filesystem, afresh (Lstat %s: %v)", c, planted, err)
+	}
+}
+
 // TestACandidateNotThereIsReadNoFurther: an ephemeral run's root that is not there is fs.ErrNotExist
 // to the readers' check (Check), not nil, so a reader takes it for no run and reads nothing at its name, where whoever
 // may make a name in its directory -- /tmp lets anybody -- could have made one since. Ephemeral then

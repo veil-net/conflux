@@ -80,10 +80,10 @@ func ephemeralRunBase() string {
 // Ephemeral is the root a new ephemeral run is kept in: the first candidate on a filesystem that lets
 // the extracted anchord run, and either not there yet or as conflux makes a root (Check), or made so
 // afresh: what is at a candidate's name and is not as conflux makes a root is removed as itself and the
-// root made there (EnsureAll), and only a candidate that cannot be is passed over. tmpfs is often
-// mounted noexec, and anchord extracted there would be refused at exec with a reason that names
-// nothing; and /tmp lets anybody make the name a run's root would have, which only its owner can
-// remove.
+// root made there (EnsureAll), once the folder it is in is found on such a filesystem, and only a
+// candidate that cannot be is passed over, what is at its name left as it was. tmpfs is often mounted
+// noexec, and anchord extracted there would be refused at exec with a reason that names nothing; and
+// /tmp lets anybody make the name a run's root would have, which only its owner can remove.
 func Ephemeral() (Dirs, error) { return ephemeralIn(EphemeralCandidates()) }
 
 // ephemeralIn is Ephemeral among candidates.
@@ -93,6 +93,13 @@ func ephemeralIn(candidates []string) (Dirs, error) {
 
 		if err := e.Check(); err == nil || errors.Is(err, fs.ErrNotExist) {
 			return err
+		}
+
+		switch ok, err := executable(filepath.Dir(c)); {
+		case err != nil:
+			return err
+		case !ok:
+			return fmt.Errorf("%s is on a filesystem mounted noexec: %w", c, ErrNoExec)
 		}
 
 		return e.EnsureAll()
@@ -108,6 +115,9 @@ func ephemeralIn(candidates []string) (Dirs, error) {
 
 	return EphemeralDirs(root), nil
 }
+
+// allowsExec is MountAllowsExec, which a test stands a noexec filesystem in for.
+var allowsExec = MountAllowsExec
 
 // ErrNoExec is FirstExecutable's answer where every candidate is on a filesystem mounted
 // noexec.
@@ -161,7 +171,7 @@ func FirstExecutable(candidates []string, refuse func(string) error) (string, er
 // change it; on Windows, which mounts nothing noexec, it reads nothing (MountAllowsExec).
 func executable(root string) (bool, error) {
 	for p := root; ; p = filepath.Dir(p) {
-		ok, err := MountAllowsExec(p)
+		ok, err := allowsExec(p)
 		if !errors.Is(err, fs.ErrNotExist) || filepath.Dir(p) == p {
 			if err != nil {
 				return false, fmt.Errorf("read the filesystem holding %s: %w", root, err)

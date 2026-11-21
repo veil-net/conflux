@@ -551,7 +551,12 @@ func secure(dir string, installation bool) error {
 	}
 	defer root.close()
 
-	if err := sharedStep(dir, step{root.dir}); err != nil {
+	sd, err := security(root.dir)
+	if err != nil {
+		return fmt.Errorf("read the ownership of %s: %w", dir, err)
+	}
+
+	if err := sharedRoot(dir, root.dir, sd); err != nil {
 		return err
 	}
 
@@ -570,11 +575,6 @@ func secure(dir string, installation bool) error {
 
 	if err := layout.strays(dir, led, step{root.dir}); err != nil {
 		return err
-	}
-
-	sd, err := security(root.dir)
-	if err != nil {
-		return fmt.Errorf("read the ownership of %s: %w", dir, err)
 	}
 
 	// Secured already: SYSTEM's or the Administrators', under a protected DACL that grants nobody else
@@ -1411,18 +1411,14 @@ var systemFolders = sync.OnceValue(func() map[string]string {
 // in, which conflux never fills, restricts or empties, whoever owns it: a volume's root (C:\), a folder
 // systemFolders names, a folder directly under a volume's root that Windows made (windowsOwn), the
 // folder the running conflux is in or one above it (runningExe), or one whose DACL makes it a space other
-// accounts share (sharedSpace), as read through h. The folder the running conflux is in is taken where
+// accounts share (sharedSpace), as read through h, its owner and DACL as sd holds them. The folder the
+// running conflux is in is taken where
 // it is the boot service's own root: the running conflux the copy the service runs from it (serviceCopy),
 // and the folder already holding this installation's own state (stateIn), whatever else its DACL grants,
 // which secure restricts. A folder holding the running conflux and nothing of the installation's --
 // %ProgramFiles%\conflux, where install.ps1 puts it -- is refused, the copy's name there or not; and a
 // DACL making it a space other accounts share refuses even the service's own.
-func sharedRoot(dir string, h windows.Handle) error {
-	sd, err := security(h)
-	if err != nil {
-		return fmt.Errorf("read the ownership of %s: %w", dir, err)
-	}
-
+func sharedRoot(dir string, h windows.Handle, sd *windows.SECURITY_DESCRIPTOR) error {
 	why := ""
 
 	switch p, err := finalPath(h, volumeNameDOS); {
@@ -1590,7 +1586,14 @@ func windowsOwn(sd *windows.SECURITY_DESCRIPTOR) bool {
 
 // sharedStep refuses the root dir, the folder s holds open, where it is one others keep what is theirs
 // in (sharedRoot).
-func sharedStep(dir string, s step) error { return sharedRoot(dir, s.h) }
+func sharedStep(dir string, s step) error {
+	sd, err := security(s.h)
+	if err != nil {
+		return fmt.Errorf("read the ownership of %s: %w", dir, err)
+	}
+
+	return sharedRoot(dir, s.h, sd)
+}
 
 // securedStep refuses the folder s holds open, which p names -- the root dir itself, or where a junction
 // or link at its name leads -- where conflux has not secured it as a root, as it secures every root it

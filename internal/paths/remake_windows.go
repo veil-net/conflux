@@ -56,12 +56,19 @@ func remakeOld(d Dirs, dir string) ([]string, error) {
 		return nil, nil
 	}
 
+	// The root's owner and DACL, read once, for sharedRoot and unmovable alike.
+	root := r.dir.h
+
+	sd, err := security(root)
+	if err != nil {
+		return nil, fmt.Errorf("read the ownership of %s: %w", dir, err)
+	}
+
 	// A folder others keep what is theirs in -- CONFLUX_DIR=C:\ProgramData -- is never emptied, whatever
-	// leads to it, nor the top of a volume, nor one conflux has not secured holding what conflux never
-	// makes there: refused
-	// before anything is removed, as EnsureAll, which runs after, refuses them before anything is
-	// made.
-	if err := sharedStep(dir, r.dir); err != nil {
+	// leads to it, nor the top of a volume, nor one holding what conflux never makes there but a working
+	// root: refused before anything is removed, as EnsureAll, which runs after, refuses them before
+	// anything is made.
+	if err := sharedRoot(dir, root, sd); err != nil {
 		return nil, err
 	}
 
@@ -76,13 +83,6 @@ func remakeOld(d Dirs, dir string) ([]string, error) {
 
 	if err := d.strays(dir, led, r.dir); err != nil {
 		return nil, err
-	}
-
-	root := r.dir.h
-
-	sd, err := security(root)
-	if err != nil {
-		return nil, fmt.Errorf("read the ownership of %s: %w", dir, err)
 	}
 
 	if err := unmovable(dir, sd, "put back what conflux removes from it to make again"); err != nil {

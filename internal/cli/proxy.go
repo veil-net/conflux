@@ -89,10 +89,10 @@ func runProxy(ctx context.Context, args []string) (code int) {
 
 		stopped, err := handOver(d, mgr)
 		if err != nil {
-			return startAgain(mgr, stopped, fail(err))
+			return startAgain(d, mgr, stopped, fail(err))
 		}
 
-		defer func() { code = startAgainIfDown(mgr, stopped, code) }()
+		defer func() { code = startAgainIfDown(d, mgr, stopped, code) }()
 
 		if cfg, err = loadOrNew(d); err != nil {
 			return fail(err)

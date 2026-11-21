@@ -44,22 +44,25 @@ func runInstall(ctx context.Context, args []string) (code int) {
 
 	stopped, err := handOver(d, mgr)
 	if err != nil {
-		return startAgain(mgr, stopped, fail(err))
+		return startAgain(d, mgr, stopped, fail(err))
 	}
 
-	defer func() { code = startAgainIfDown(mgr, stopped, code) }()
+	defer func() { code = startAgainIfDown(d, mgr, stopped, code) }()
 
 	return install(ctx, d, true, nil)
 }
 
 // staleCopy reports whether what earlier conflux left is to be removed before d's roots are made
-// (tidy): where the copy the boot service runs is not this conflux (service.Placed) -- an update, or a
-// newer conflux put in place by hand or by an install script -- or where the roots fail paths' check for
-// anything but not being there, so that the copy is not read to find out.
+// (tidy): where the copy the boot service runs is not there, or not as conflux makes a file of its own
+// (paths.Dirs.Ours) -- one an earlier conflux wrote as another owner, which EnsureAll removes -- or is not
+// this conflux (service.Placed) -- an update, or a newer conflux put in place by hand or by an install
+// script -- or where the roots fail paths' check for anything but not being there, so that the copy is
+// not read to find out.
 func staleCopy(d paths.Dirs) bool {
 	checked := d.Check()
 
-	return checked == nil && !service.Placed(d) || checked != nil && !errors.Is(checked, os.ErrNotExist)
+	return checked == nil && (d.Ours(d.ServiceExecutable()) != nil || !service.Placed(d)) ||
+		checked != nil && !errors.Is(checked, os.ErrNotExist)
 }
 
 // handOver makes d's roots for up, proxy, observe, install and enrol, before anything in them is read
@@ -85,14 +88,14 @@ func handOver(d paths.Dirs, mgr service.Manager) (bool, error) {
 // startAgainIfDown is startAgain for a command handOver stopped the service for that may have started it
 // again itself on its way to code -- up, proxy, observe and install, by startAndReport: the service is
 // started again only where the service manager does not say it runs by then.
-func startAgainIfDown(mgr service.Manager, stopped bool, code int) int {
+func startAgainIfDown(d paths.Dirs, mgr service.Manager, stopped bool, code int) int {
 	if stopped {
 		if running, err := mgr.Running(); err == nil && running {
 			return code
 		}
 	}
 
-	return startAgain(mgr, stopped, code)
+	return startAgain(d, mgr, stopped, code)
 }
 
 // runRegister places this conflux's copy for the boot service and registers the service
@@ -131,21 +134,25 @@ func runRegister(ctx context.Context, args []string) int {
 
 	stopped, err := tidy(d, mgr)
 	if err != nil {
-		return startAgain(mgr, stopped, fail(err))
+		return startAgain(d, mgr, stopped, fail(err))
 	}
 
-	return startAgain(mgr, stopped, install(ctx, d, false, service.PlaceAfresh))
+	return startAgain(d, mgr, stopped, install(ctx, d, false, service.PlaceAfresh))
 }
 
 // startAgain starts the service tidy stopped, where it stopped it, once the command it stopped it for
-// has come to code, and is code: a failure to start it fails a command that had not failed, and is
-// warned of beside one that had, which leaves the service as it was found, serving the root.
-func startAgain(mgr service.Manager, stopped bool, code int) int {
+// has come to code, and is code: on a copy of conflux of conflux's own (ourCopy), and never on one that
+// is not. A failure to start it fails a command that had not failed, and is warned of beside one that
+// had, which leaves the service as it was found, serving the root.
+func startAgain(d paths.Dirs, mgr service.Manager, stopped bool, code int) int {
 	if !stopped {
 		return code
 	}
 
-	err := mgr.Restart()
+	err := ourCopy(d)
+	if err == nil {
+		err = mgr.Restart()
+	}
 
 	switch {
 	case err == nil:
@@ -157,6 +164,25 @@ func startAgain(mgr service.Manager, stopped bool, code int) int {
 	ui.Errf("the boot service, stopped to remove what earlier conflux left, did not start again: %v", err)
 
 	return code
+}
+
+// ourCopy makes sure the copy of conflux the boot service runs is as conflux makes a file of its own
+// (paths.Dirs.Ours) before the service is started again: where it is not there, or not as conflux makes
+// it -- tidy, failing after EnsureAll removed it, or before -- this conflux is placed afresh
+// (service.PlaceAfresh), in roots that pass paths' check; in roots that do not, nothing is placed, and
+// that is the error.
+func ourCopy(d paths.Dirs) error {
+	if d.Ours(d.ServiceExecutable()) == nil {
+		return nil
+	}
+
+	if err := d.Check(); err != nil {
+		return err
+	}
+
+	_, err := service.PlaceAfresh(d)
+
+	return err
 }
 
 // install places the copy of conflux the service runs, with place, and registers it. standalone
@@ -352,7 +378,7 @@ func runStart(ctx context.Context, args []string) int {
 	if afresh {
 		var err error
 		if stopped, err = tidy(d, mgr); err != nil {
-			return startAgain(mgr, stopped, fail(err))
+			return startAgain(d, mgr, stopped, fail(err))
 		}
 	} else {
 		if err := d.EnsureAll(); err != nil {
@@ -367,16 +393,16 @@ func runStart(ctx context.Context, args []string) int {
 	cfg, err := config.Load(d)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
-			return startAgain(mgr, stopped, fail(err))
+			return startAgain(d, mgr, stopped, fail(err))
 		}
 
 		ui.Errf("There is no configuration on this machine, so there is nothing to start.\n\n" + configureHint)
 
-		return startAgain(mgr, stopped, ExitNoConfig)
+		return startAgain(d, mgr, stopped, ExitNoConfig)
 	}
 
 	if code := install(ctx, d, false, place); code != ExitOK {
-		return startAgain(mgr, stopped, code)
+		return startAgain(d, mgr, stopped, code)
 	}
 
 	// No check for "already running". mgr.Restart covers both, and a start that

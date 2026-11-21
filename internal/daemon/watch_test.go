@@ -735,9 +735,9 @@ func TestACorruptStateIsLeftToTheStartToRefuse(t *testing.T) {
 		}
 	}
 
-	// starts starts the service on the state spoil leaves, and on a configuration conflux refuses,
+	// starts starts the service s on the state spoil leaves, and on a configuration conflux refuses,
 	// which Run reads once it has cleared the record and before it extracts anything.
-	starts := func(t *testing.T, spoil func(*testing.T, paths.Dirs)) *recorder {
+	starts := func(t *testing.T, spoil func(*testing.T, *Supervisor)) *recorder {
 		t.Helper()
 
 		s, _ := supervised(t, "1")
@@ -749,7 +749,7 @@ func TestACorruptStateIsLeftToTheStartToRefuse(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		spoil(t, s.Dirs)
+		spoil(t, s)
 
 		if err := s.Run(t.Context()); !Permanent(err) {
 			t.Fatalf("Run = %v, want the configuration refused for good", err)
@@ -759,7 +759,7 @@ func TestACorruptStateIsLeftToTheStartToRefuse(t *testing.T) {
 	}
 
 	t.Run("as the service starts", func(t *testing.T) {
-		quiet(t, starts(t, corrupt), "as the service started")
+		quiet(t, starts(t, func(t *testing.T, s *Supervisor) { corrupt(t, s.Dirs) }), "as the service started")
 	})
 
 	t.Run("as the restart loop starts anchord again", func(t *testing.T) {
@@ -793,12 +793,15 @@ func TestACorruptStateIsLeftToTheStartToRefuse(t *testing.T) {
 	})
 
 	t.Run("a state.json that cannot be read, warned of", func(t *testing.T) {
-		r := starts(t, func(t *testing.T, d paths.Dirs) {
+		r := starts(t, func(t *testing.T, s *Supervisor) {
 			t.Helper()
 
-			// A directory in its place, which no read of the file gets past.
-			if err := os.Mkdir(d.StateFile(), 0o700); err != nil {
-				t.Fatal(err)
+			// A directory in its place, which no read of the file gets past: put there once Run's EnsureAll,
+			// which removes anything at a file's name that is not as conflux makes one, has made the roots.
+			s.OpenLog = func() {
+				if err := os.Mkdir(s.Dirs.StateFile(), 0o700); err != nil {
+					t.Error(err)
+				}
 			}
 		})
 

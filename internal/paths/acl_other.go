@@ -37,8 +37,9 @@ func Restrict(string, bool) error { return nil }
 // RestrictToOwner is a no-op here: the mode set on the descriptor is the restriction.
 func RestrictToOwner(string, bool) error { return nil }
 
-// ours is why the directory s holds, at the root dir's name, is not as conflux makes a root, or "" where
-// it is: owned by root or the account running conflux, and written by nobody else, by its mode -- the
+// ours is why what s holds -- a directory, at the root dir's name or a folder's in one, or a file in one --
+// is not as conflux makes it, or "" where it is: owned by root or the account running conflux, and written
+// by nobody else, by its mode -- the
 // sticky bit letting nothing through, since a name not taken yet is anybody's in a sticky directory --
 // or its ACL (judge), as fstat read it where the walk met it and its ACL at dir. A 0710 the supervisor
 // gives the state and run directories, so that anchord's account may pass through them, lets that
@@ -141,6 +142,27 @@ func lookUp(parent step, name string) (step, bool, error) {
 	}
 
 	return step{}, false, errNotDir
+}
+
+// lookUpFile is the file at name in the directory parent is, by its name there, never followed, with what
+// fstatat reads of it, or why what is there is no file of conflux's: a link, or anything but a plain file.
+// Nothing at the name is an error that is fs.ErrNotExist.
+func lookUpFile(parent step, name string) (step, string, error) {
+	s := step{fd: parent.fd, rel: parent.at(name)}
+	if err := ignoringEINTR(func() error {
+		return unix.Fstatat(parent.fd, s.rel, &s.st, unix.AT_SYMLINK_NOFOLLOW)
+	}); err != nil {
+		return step{}, "", err
+	}
+
+	switch s.st.Mode & unix.S_IFMT {
+	case unix.S_IFREG:
+		return s, "", nil
+	case unix.S_IFLNK:
+		return step{}, "a link", nil
+	}
+
+	return step{}, "not a file", nil
 }
 
 // opened is the directory name, in the one dirfd is open on, held open as itself (holdDir): a link

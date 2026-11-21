@@ -63,7 +63,15 @@ host can read, and when the run stops there is nothing at all.
   nothing of what it held: a root widened by hand loses the identity in it. The folders conflux
   keeps in a root — `run/` and `logs/` where they are in it, `bin/` and `anchor.root/` — are held to
   the same, and each that is not as conflux makes it is removed whole and made afresh; `anchor/`,
-  which `anchord`'s own account is given, is that account's. Nothing in a root is
+  which `anchord`'s own account is given, is that account's. So is each file conflux keeps in a root —
+  `conflux.json`, `state.json`, `manifest.b64`, `anchord.priv`, `way`, the two lock files and the
+  boot service's copy of conflux — and one that is not as conflux makes it (a link, a folder, another
+  account's, or one another account may change; on Windows one an administrator's process left that
+  administrator's, as an earlier conflux left the service's copy on a Windows client) is removed as
+  itself, for what writes it to make afresh: such a `manifest.b64` takes the identity with it. A copy
+  removed, or found not as conflux makes it, is placed afresh by the next `up`, `proxy`, `observe`,
+  `install`, `enrol` or `start`, and the boot service is never started again on one that is not.
+  `anchord.json` is `anchord`'s own account's. Nothing in a root is
   kept or protected for anybody: what is in conflux's folders is conflux's to overwrite, empty or
   remove, and `uninstall` removes them whole, whatever anybody put in them.
 - Every folder conflux did not make — a `CONFLUX_DIR` itself, and every folder above a root — is

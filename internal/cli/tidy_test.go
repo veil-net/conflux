@@ -232,6 +232,101 @@ func TestAStartOfTheConfluxTheServiceRunsRemovesNothing(t *testing.T) {
 	}
 }
 
+// TestACopyNotAsConfluxMakesItIsPlacedAfresh: a copy for the boot service that is this conflux, byte for
+// byte, but is not as conflux makes a file of its own (notAsConfluxMakesIt) -- as an earlier conflux left
+// one on a Windows client, an administrator's, which that administrator's unelevated processes could
+// change for SYSTEM to run -- is what earlier conflux left: start and install remove it with the rest
+// (tidy), an earlier set among it, and place this conflux afresh, as conflux makes it, and register that.
+func TestACopyNotAsConfluxMakesItIsPlacedAfresh(t *testing.T) {
+	anchortest.Require(t) // it extracts the pair afresh
+
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	for _, verb := range []string{"start", "install"} {
+		t.Run(verb, func(t *testing.T) {
+			d := configured(t)
+
+			if _, err := service.PlaceAfresh(d); err != nil {
+				t.Fatal(err)
+			}
+
+			notAsConfluxMakesIt(t, d.ServiceExecutable())
+
+			earlier := filepath.Join(d.Libexec(), "0123456789abcdef")
+			if err := os.MkdirAll(earlier, 0o700); err != nil {
+				t.Fatal(err)
+			}
+
+			mgr := &fakeManager{d: d, restartErr: errStartsNothing}
+			standInService(t, mgr)
+
+			out, errOut, _ := capture(t, verb)
+
+			if err := d.Ours(d.ServiceExecutable()); err != nil || len(mgr.installs) != 1 {
+				t.Errorf("conflux %s of a copy not as conflux makes it left the copy %v, and registered %d times, "+
+					"want it placed afresh and registered once:\n%s%s", verb, err, len(mgr.installs), out, errOut)
+			}
+
+			if _, err := os.Lstat(earlier); !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("conflux %s of a copy not as conflux makes it left what earlier conflux left (Lstat %s: %v)",
+					verb, earlier, err)
+			}
+		})
+	}
+}
+
+// oursAtRestart is stopping, which records at each Restart what paths' Ours says of the copy of conflux
+// the service runs.
+type oursAtRestart struct {
+	stopping
+
+	ours []error
+}
+
+func (m *oursAtRestart) Restart() error {
+	m.ours = append(m.ours, m.d.Ours(m.d.ServiceExecutable()))
+
+	return m.stopping.Restart()
+}
+
+// TestTheServiceStartsAgainOnlyOnACopyOfConfluxsOwn: the service tidy stopped is never started again on a
+// copy of conflux that is not as conflux makes a file of its own: where tidy fails once EnsureAll has
+// removed one -- here beside an extraction in progress, which bin is not emptied under -- this conflux is
+// placed afresh before the service is started again, once, and the command's failure kept.
+func TestTheServiceStartsAgainOnlyOnACopyOfConfluxsOwn(t *testing.T) {
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	d := configured(t)
+
+	if _, err := service.PlaceAfresh(d); err != nil {
+		t.Fatal(err)
+	}
+
+	notAsConfluxMakesIt(t, d.ServiceExecutable())
+
+	if err := os.MkdirAll(d.Libexec(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	unlock, err := flock.Acquire(filepath.Join(d.Libexec(), ".lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(unlock)
+
+	mgr := &oursAtRestart{stopping: stopping{fakeManager: fakeManager{d: d}, running: true, release: serving(t, d)}}
+	standInService(t, mgr)
+
+	out, errOut, code := capture(t, "start")
+	if code != ExitError || mgr.stops != 1 || len(mgr.ours) != 1 || mgr.ours[0] != nil {
+		t.Errorf("conflux start, failing once it stopped the service, exited %d, stopped it %d times and started it "+
+			"again on copies Ours said %v of, want %d, once each, on a copy of conflux's own:\n%s%s", code, mgr.stops,
+			mgr.ours, ExitError, out, errOut)
+	}
+}
+
 // locksKeptOrRemade fails t unless the lock files oldInstall left in d, each holding "stale", are as
 // tidy leaves them: on Unix kept, the same files, since a lock taken on a file removed meanwhile is
 // one nobody else finds, so two would hold it; on Windows, which removes no file anybody has open,

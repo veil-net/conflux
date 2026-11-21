@@ -87,3 +87,115 @@ func TestCheckHoldsARootAsConfluxMakesOne(t *testing.T) {
 		t.Errorf("Check(one root of three there) = %v", err)
 	}
 }
+
+// TestEnsureAllRemovesAFileNotAsConfluxMakesIt: each file conflux keeps in a root -- the configuration,
+// the state, the identity, the lock files, the copy the boot service runs -- is judged as a folder of
+// conflux's is (ours), and one that is not as conflux makes it -- a link, a folder, a file every account
+// may write -- is removed as itself, where a link leads untouched, and nothing made in its place; one as
+// conflux makes it is kept, and anchord's own configuration, which the account anchord runs as owns, is
+// not judged. Ours holds a file to the same, the copy among them, and one in a folder conflux keeps in a
+// root, each folder on the way to it held too: nil for one as conflux makes it, fs.ErrNotExist for one
+// not there, and otherwise a refusal saying why.
+func TestEnsureAllRemovesAFileNotAsConfluxMakesIt(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", t.TempDir())
+
+	d := Default()
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	elsewhere := filepath.Join(t.TempDir(), "elsewhere")
+	if err := os.WriteFile(elsewhere, []byte("not conflux's"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	file := func(p string, mode os.FileMode) {
+		if err := os.WriteFile(p, []byte("planted"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.Chmod(p, mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for p, plant := range map[string]func(string){
+		d.ConfigFile():        func(p string) { _ = os.Symlink(elsewhere, p) },
+		d.StateFile():         func(p string) { _ = os.Mkdir(p, 0o700) },
+		d.ManifestFile():      func(p string) { file(p, 0o606) },
+		d.LockFile():          func(p string) { file(p, 0o602) },
+		d.ServiceExecutable(): func(p string) { file(p, 0o757) },
+	} {
+		plant(p)
+	}
+
+	for _, p := range []string{d.ServeLockFile(), d.DaemonConfigFile()} {
+		file(p, 0o600)
+	}
+
+	if err := os.Chmod(d.DaemonConfigFile(), 0o606); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := d.Ours(d.ServiceExecutable()); err == nil || !strings.Contains(err.Error(), "anybody may write") {
+		t.Errorf("Ours(a copy every account may write) = %v, want a refusal saying so", err)
+	}
+
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, p := range []string{d.ConfigFile(), d.StateFile(), d.ManifestFile(), d.LockFile(), d.ServiceExecutable()} {
+		if _, err := os.Lstat(p); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("EnsureAll left %s, which is not as conflux makes it (Lstat: %v)", p, err)
+		}
+	}
+
+	for _, p := range []string{d.ServeLockFile(), d.DaemonConfigFile(), elsewhere} {
+		if _, err := os.Lstat(p); err != nil {
+			t.Errorf("EnsureAll removed %s: %v", p, err)
+		}
+	}
+
+	if err := d.Ours(d.ServiceExecutable()); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("Ours(no copy there) = %v, want %v", err, fs.ErrNotExist)
+	}
+
+	file(d.ServiceExecutable(), 0o700)
+
+	if err := d.Ours(d.ServiceExecutable()); err != nil {
+		t.Errorf("Ours(a copy as conflux makes it) = %v", err)
+	}
+
+	set := filepath.Join(d.Libexec(), "set")
+	if err := os.MkdirAll(set, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	bin := filepath.Join(set, "anchorctl")
+	file(bin, 0o700)
+
+	if err := d.Ours(bin); err != nil {
+		t.Errorf("Ours(%s, as conflux makes it) = %v", bin, err)
+	}
+
+	if err := os.Chmod(set, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := d.Ours(bin); err == nil || !strings.Contains(err.Error(), set+" is not as conflux makes it") {
+		t.Errorf("Ours(%s, in a folder every account may write) = %v, want a refusal naming the folder", bin, err)
+	}
+
+	if err := os.RemoveAll(set); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Symlink(t.TempDir(), set); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := d.Ours(bin); err == nil || !strings.Contains(err.Error(), "a link") {
+		t.Errorf("Ours(%s, through a link) = %v, want a refusal saying so", bin, err)
+	}
+}

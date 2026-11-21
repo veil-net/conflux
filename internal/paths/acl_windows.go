@@ -216,6 +216,35 @@ func lookUp(parent step, name string) (step, bool, error) {
 	return step{}, false, err
 }
 
+// lookUpFile is the file at name in the folder parent holds open, held open as itself to read who may
+// change it, looked up there and nowhere else, never followed, nor reparsed anywhere (ntOpen); or why what
+// is there is no file of conflux's: a junction or a link, or a folder. Nothing at the name is an error
+// that is fs.ErrNotExist.
+func lookUpFile(parent step, name string) (step, string, error) {
+	h, err := ntOpen(parent.h, name, nil, windows.SYNCHRONIZE|readAccess, windows.FILE_OPEN, 0)
+	if err != nil {
+		return step{}, "", err
+	}
+
+	attributes, tag, err := attributeTag(h)
+
+	why := ""
+
+	switch {
+	case err != nil:
+	case attributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 && tag&reparseTagNameSurrogate != 0:
+		why = aLink
+	case attributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0:
+		why = "not a file"
+	default:
+		return step{h}, "", nil
+	}
+
+	windows.CloseHandle(h)
+
+	return step{}, why, err
+}
+
 // readLink is where the junction or link s holds open leads, read off it (linkTarget): one that may
 // lead off this machine is refused unfollowed.
 func readLink(s step) (string, error) { return linkTarget(s.h) }
@@ -452,8 +481,9 @@ func trusted(sid *windows.SID) bool {
 	return sid.Equals(sidSystem) || sid.Equals(sidAdmins) || isCurrentUser(sid)
 }
 
-// ours is why the folder s holds open, at the root dir's name, is not as conflux makes a root, or ""
-// where it is: owned by SYSTEM, the Administrators or the account it is judged for, and its DACL
+// ours is why what s holds open -- a folder, at the root dir's name or a folder's in one, or a file in one
+// -- is not as conflux makes it, or "" where it is: owned by SYSTEM, the Administrators or the account it
+// is judged for, and its DACL
 // granting nobody else any right, to read it included, on it or on what is made in it (changerIn,
 // anyRight), as read through s. An installation's root, which the boot service runs from as SYSTEM,
 // trusting no other account, is judged for SYSTEM; an ephemeral run's for the account running conflux

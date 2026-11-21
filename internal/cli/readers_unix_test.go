@@ -24,6 +24,16 @@ import (
 	"github.com/veil-net/conflux/internal/ui"
 )
 
+// notAsConfluxMakesIt makes the file p one every account may write: not as conflux makes a file of its
+// own.
+func notAsConfluxMakesIt(t *testing.T, p string) {
+	t.Helper()
+
+	if err := os.Chmod(p, 0o757); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // untouched is a boot service installed here that counts what it is asked to do -- register,
 // start, stop or remove it -- for a test that nothing is.
 type untouched struct {

@@ -10,7 +10,21 @@ import (
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/privtest"
+	"golang.org/x/sys/windows"
 )
+
+// notAsConfluxMakesIt makes the file p this administrator's, as an earlier conflux left the service's copy
+// on a Windows client: not as conflux makes a file of its own, which the Administrators own.
+func notAsConfluxMakesIt(t *testing.T, p string) {
+	t.Helper()
+
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	privtest.SetOwner(t, p, user.User.Sid)
+}
 
 // TestStatusRefusesAJunctionRootToAUsersFolder: %ProgramData% lets any account make a junction
 // where conflux's root is not yet, and a CONFLUX_DIR can be one, so status holds the root, .conflux

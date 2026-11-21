@@ -98,10 +98,10 @@ func runEnrol(_ context.Context, args []string) (code int) {
 
 	stopped, err := handOver(d, mgr)
 	if err != nil {
-		return startAgain(mgr, stopped, fail(err))
+		return startAgain(d, mgr, stopped, fail(err))
 	}
 
-	defer func() { code = startAgain(mgr, stopped, code) }()
+	defer func() { code = startAgain(d, mgr, stopped, code) }()
 
 	if err := importCredential(d, *manifest, *apiBase, *ipv4); err != nil {
 		return fail(err)

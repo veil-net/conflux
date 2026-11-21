@@ -257,8 +257,10 @@ func (d Dirs) ReadyFile() string { return filepath.Join(d.Run, "ready") }
 // system's, which other programs fill too, and is not recorded. Whatever is at a root's
 // name and is not as conflux makes a root -- a link, a file, a folder another account owns or may write
 // (ours) -- is removed as itself from the folder it is in, and the root made afresh: a root is conflux's
-// whole, and nothing in it is kept for anybody. Each folder conflux keeps in a root
-// (folders) is judged as the root is, and made afresh alike. A CONFLUX_DIR itself, and everything
+// whole, and nothing in it is kept for anybody. Each folder conflux keeps in a root (folders) is judged
+// as the root is, and made afresh alike; and each file it keeps there (files) -- the configuration, the
+// state, the identity, the lock files, the copy of conflux the boot service runs -- is judged so too, and
+// removed where it is not as conflux makes it, for what writes it to make afresh. A CONFLUX_DIR itself, and everything
 // above a root, is never changed: a CONFLUX_DIR's way, the CONFLUX_DIR included, is held to the rule
 // of whoever the root is for (wayRule) before anything is made. The system's shared log directory,
 // which macOS and FreeBSD keep the service's log in, is not conflux's, and is left alone.
@@ -343,7 +345,68 @@ func (d Dirs) makeRoot(dir string) ([]string, error) {
 		}
 	}
 
+	for _, f := range d.files(dir) {
+		if err := ownFile(root, f, !d.ephemeral); err != nil {
+			return made, err
+		}
+	}
+
 	return made, nil
+}
+
+// ownFile holds what is at p's name, in the folder parent holds, to what conflux makes there, a file of
+// its own: looked up there and nowhere else, never followed (lookUpFile), and a file as conflux makes one
+// (ours) kept; anything else there -- a link, a folder, a file another account owns or may change -- is
+// removed as itself through parent (removeFrom), and nothing made in its place: whatever writes the file
+// makes it. One that cannot be removed is refused, saying why it is not conflux's. Nothing at the name is
+// nothing to do.
+func ownFile(parent step, p string, installation bool) error {
+	name := filepath.Base(p)
+
+	looking(p)
+
+	s, why, err := lookUpFile(parent, name)
+
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return nil
+	case err != nil:
+		return fmt.Errorf("read %s: %w", p, err)
+	case why == "":
+		why, err = ours(p, s, installation)
+		s.close()
+
+		if err != nil || why == "" {
+			return err
+		}
+	}
+
+	if _, err := removeFrom(parent, name, p); err != nil {
+		return fmt.Errorf("%s is not as conflux makes a file of its own (%s), and could not be removed: %w", p, why,
+			err)
+	}
+
+	return nil
+}
+
+// files is each file conflux keeps directly in its root dir, by its name: in the configuration root the
+// configuration, and in the state root the state, the identity, the record of the anchord last started
+// and of the way, the two lock files, and the copy of conflux the boot service runs. anchord's own
+// configuration (DaemonConfigFile) is none of these: it is the account anchord runs as's, as the
+// supervisor writes it at every start, so ours would remove it each time.
+func (d Dirs) files(dir string) []string {
+	var files []string
+
+	if dir == d.Config {
+		files = append(files, d.ConfigFile())
+	}
+
+	if dir == d.State {
+		files = append(files, d.StateFile(), d.ManifestFile(), d.PrivilegeFile(), d.WayFile(), d.LockFile(),
+			d.ServeLockFile(), d.ServiceExecutable())
+	}
+
+	return files
 }
 
 // ownFolder is the folder p, in the folder parent holds, made as conflux makes a folder of its own, and
@@ -858,6 +921,99 @@ func (d Dirs) OpenIn(path string) (*os.File, error) {
 	opening(dir)
 
 	return openIn(r.dir, filepath.Base(path), path)
+}
+
+// Ours holds path, a file in one of d's roots or in a folder conflux keeps beneath one, to what a command
+// needs of it before it runs it: the root held as Check holds it (holdRoot), each folder from there to
+// the file looked up in the one before and nowhere else, never followed (lookUp), and each of them, and
+// the file (lookUpFile), as conflux makes it (ours). Nil where all are; an error that is fs.ErrNotExist
+// where the root, a folder on the way or the file is not there; and otherwise why one is not as conflux
+// makes it. It changes nothing.
+func (d Dirs) Ours(path string) error {
+	path, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+
+	i := slices.IndexFunc(d.Outer(), func(root string) bool { return above(root, path) })
+	if i < 0 {
+		return fmt.Errorf("%s is not in a root of conflux's", path)
+	}
+
+	root := d.Outer()[i]
+	installation := !d.ephemeral
+
+	r, why, err := holdRoot(root, installation)
+
+	switch {
+	case err != nil:
+		return err
+	case why != "":
+		if r != nil {
+			r.close()
+		}
+
+		return notOurs(root, why, d.ephemeral)
+	}
+	defer r.close()
+
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return err
+	}
+
+	names := strings.Split(rel, string(filepath.Separator))
+	at, p := r.dir, root
+
+	for _, name := range names[:len(names)-1] {
+		p = filepath.Join(p, name)
+
+		s, link, err := lookUp(at, name)
+
+		switch {
+		case err != nil:
+			return &os.PathError{Op: "open", Path: p, Err: err}
+		case link:
+			why = "a link"
+		default:
+			why, err = ours(p, s, installation)
+		}
+
+		if err != nil || why != "" {
+			s.close()
+
+			return notOursHere(p, why, err)
+		}
+
+		defer s.close()
+
+		at = s
+	}
+
+	s, why, err := lookUpFile(at, names[len(names)-1])
+	if err == nil && why == "" {
+		why, err = ours(path, s, installation)
+		s.close()
+	}
+
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
+		return &os.PathError{Op: "open", Path: path, Err: err}
+	}
+
+	return notOursHere(path, why, err)
+}
+
+// notOursHere is Ours's answer for p: err where it is given, why p is not as conflux makes it where that
+// is, and otherwise nil.
+func notOursHere(p, why string, err error) error {
+	switch {
+	case err != nil:
+		return err
+	case why != "":
+		return fmt.Errorf("%s is not as conflux makes it (%s)", p, why)
+	}
+
+	return nil
 }
 
 // errNotDir is lookUp's refusal of what is at a name that is neither a directory nor a link, by the type

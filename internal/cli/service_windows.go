@@ -9,38 +9,27 @@ import (
 	"golang.org/x/sys/windows/svc"
 
 	"github.com/veil-net/conflux/internal/daemon"
-	"github.com/veil-net/conflux/internal/logfile"
 	"github.com/veil-net/conflux/internal/paths"
-	"github.com/veil-net/conflux/internal/ui"
 )
 
 // serveAsService hands over to the service control manager when conflux was started
 // by it, and reports false when it was started from a console.
 //
-// A service has no console to write to, so what the supervisor and anchord say goes
-// to the log file instead, where `conflux up` points when a start fails.
+// A service has no console to write to, so what the supervisor and anchord say goes to the log
+// file instead, where `conflux up` points when a start fails: the supervisor opens it as soon as
+// its EnsureAll has judged the roots (openLog). A root EnsureAll refuses ends the start as any
+// failed start ends: the SCM is told the service stopped with a service-specific error, which the
+// System event log records and the recovery actions retry. The log is in that root, so why goes
+// only to the standard error a service does not have; `conflux install`, run by hand, says it.
 func serveAsService(sup *daemon.Supervisor) (bool, int) {
 	isService, err := svc.IsWindowsService()
 	if err != nil || !isService {
 		return false, 0
 	}
 
-	// Without the directories there is no log to write to, and the SCM still has to be
-	// answered: returning without svc.Run leaves it to time the start out with nothing
-	// recorded anywhere. So the failure goes to the SCM as the service's exit instead, which
-	// the System event log records and the recovery actions retry.
-	setup := sup.Dirs.EnsureAll()
+	sup.OpenLog = func() { openLog(sup.Dirs.LogFile()) }
 
-	if setup == nil {
-		// Each line stamped, and the file moved aside to .1 when it passes 10 MiB.
-		if f, err := logfile.Open(sup.Dirs.LogFile()); err == nil {
-			defer f.Close()
-
-			ui.Out, ui.Errw = f, f
-		}
-	}
-
-	h := &handler{sup: sup, setup: setup}
+	h := &handler{sup: sup}
 
 	if err := svc.Run(paths.ServiceName(), h); err != nil {
 		return true, ExitError
@@ -50,9 +39,8 @@ func serveAsService(sup *daemon.Supervisor) (bool, int) {
 }
 
 type handler struct {
-	sup   *daemon.Supervisor
-	setup error
-	code  int
+	sup  *daemon.Supervisor
+	code int
 }
 
 // scmExit is what the SCM is told when the supervisor ends on its own. Only exit 1, a
@@ -81,12 +69,6 @@ func scmExit(code int) (svcSpecific bool, exitCode uint32) {
 // that says otherwise could arrive.
 func (h *handler) Execute(_ []string, r <-chan svc.ChangeRequest, s chan<- svc.Status) (bool, uint32) {
 	const accepted = svc.AcceptStop | svc.AcceptShutdown
-
-	if h.setup != nil {
-		h.code = ExitError
-
-		return scmExit(h.code)
-	}
 
 	s <- svc.Status{State: svc.StartPending, WaitHint: 90_000, Accepts: accepted}
 

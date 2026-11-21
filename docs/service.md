@@ -362,7 +362,10 @@ Logs: a service has no console, so the supervisor writes what it and `anchord` s
 `%ProgramData%\conflux\logs\conflux.log`, each line stamped with the time in UTC and the file
 moved aside to `conflux.log.1` past 10 MiB, as on macOS; `uninstall` removes both with the
 rest. The file is the service's standard output and error, so a crash lands in it too; they
-let go of it for the moment it is moved aside, since Windows moves no file that is open.
+let go of it for the moment it is moved aside, since Windows moves no file that is open. It is
+opened once the supervisor has judged the root, so a root it refuses gets no log: the start
+ends as any failed start does, exit 1, which the System event log records and the recovery
+actions retry, and `conflux install`, run by hand, says why.
 
 ## rc: FreeBSD and OpenBSD
 

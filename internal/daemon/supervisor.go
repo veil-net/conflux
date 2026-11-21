@@ -80,8 +80,8 @@ type Supervisor struct {
 	Drop bool
 
 	// OpenLog, set, is called as soon as EnsureAll has judged the roots, before anything else
-	// the start does, and never where EnsureAll refuses them: serve --log opens its log there,
-	// by its name.
+	// the start does, and never where EnsureAll refuses them: serve opens the boot service's log
+	// there, by its name -- serve --log's, and the Windows service's.
 	OpenLog func()
 
 	tools *libexec.Tools

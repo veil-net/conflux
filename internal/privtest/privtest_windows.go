@@ -190,12 +190,42 @@ func giveAgain(dir string, sd *windows.SECURITY_DESCRIPTOR) error {
 		return err
 	}
 
+	return setSecurity(dir, sd)
+}
+
+// SetSecurity gives path the owner, where sddl names one, and the protected DACL -- or the NULL one,
+// NO_ACCESS_CONTROL -- that sddl holds, by name.
+func SetSecurity(tb testing.TB, path, sddl string) {
+	tb.Helper()
+
+	sd, err := windows.SecurityDescriptorFromString(sddl)
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	if err := setSecurity(path, sd); err != nil {
+		tb.Fatalf("give %s %s: %v", path, sddl, err)
+	}
+}
+
+// setSecurity gives path the owner, where sd names one, and the DACL sd holds, protected, by name.
+func setSecurity(path string, sd *windows.SECURITY_DESCRIPTOR) error {
+	owner, _, err := sd.Owner()
+	if err != nil {
+		return err
+	}
+
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		return err
+	}
+
 	info := windows.SECURITY_INFORMATION(windows.DACL_SECURITY_INFORMATION | windows.PROTECTED_DACL_SECURITY_INFORMATION)
 	if owner != nil {
 		info |= windows.OWNER_SECURITY_INFORMATION
 	}
 
-	return windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, info, owner, nil, dacl, nil)
+	return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, info, owner, nil, dacl, nil)
 }
 
 // holds reports whether sd is owned by owner, where owner is given, and holds dacl, protected: the

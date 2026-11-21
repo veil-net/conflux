@@ -451,7 +451,7 @@ func mayNotAddFolders(t *testing.T, dir string) {
 	t.Helper()
 
 	me := currentUser().String()
-	setSecurity(t, dir, "O:"+me+"D:P(A;;0x1f01fb;;;"+me+")")
+	privtest.SetSecurity(t, dir, "O:"+me+"D:P(A;;0x1f01fb;;;"+me+")")
 }
 
 // TestSecureHoldsAJunctionRoot: a root that is a junction is held to who may point it elsewhere,
@@ -1270,7 +1270,7 @@ func TestSecureHoldsAProtectedRootToItsDACL(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			root := foundRoot(t)
 
-			setSecurity(t, root, c.sddl)
+			privtest.SetSecurity(t, root, c.sddl)
 
 			if err := checkRoot(root); err == nil || !strings.Contains(err.Error(), root) {
 				t.Errorf("checkRoot(a protected root that %s) = %v, want a refusal naming it", c.name, err)
@@ -1290,32 +1290,6 @@ func TestSecureHoldsAProtectedRootToItsDACL(t *testing.T) {
 	}
 }
 
-// setSecurity gives path the owner and the protected DACL -- or the NULL one, NO_ACCESS_CONTROL --
-// that sddl holds, by name.
-func setSecurity(t *testing.T, path, sddl string) {
-	t.Helper()
-
-	sd, err := windows.SecurityDescriptorFromString(sddl)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	owner, _, err := sd.Owner()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dacl, _, err := sd.DACL()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION|
-		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, owner, nil, dacl, nil); err != nil {
-		t.Fatal(err)
-	}
-}
-
 // TestSecureRefusesARootWithNoDACL: a root with no DACL at all grants anybody everything, so a root
 // conflux could repair by its owner, this account's, is refused, naming it, by secure and by
 // checkRoot alike. Windows-only, so it runs in CI's platforms job alone.
@@ -1324,7 +1298,7 @@ func TestSecureRefusesARootWithNoDACL(t *testing.T) {
 
 	root := foundRoot(t)
 
-	setSecurity(t, root, "O:"+currentUser().String()+"D:NO_ACCESS_CONTROL")
+	privtest.SetSecurity(t, root, "O:"+currentUser().String()+"D:NO_ACCESS_CONTROL")
 
 	if err := checkRoot(root); err == nil || !strings.Contains(err.Error(), root+" has no DACL") {
 		t.Errorf("checkRoot(a root with no DACL) = %v, want a refusal naming it", err)
@@ -1350,7 +1324,7 @@ func TestAReaderRefusesARootItCannotRead(t *testing.T) {
 	root := foundRoot(t)
 
 	if err := privtest.WithRestore(t, func() error {
-		setSecurity(t, root, "O:BGD:P(D;;RC;;;WD)(A;OICI;FA;;;WD)")
+		privtest.SetSecurity(t, root, "O:BGD:P(D;;RC;;;WD)(A;OICI;FA;;;WD)")
 
 		return nil
 	}); err != nil {
@@ -1387,7 +1361,7 @@ func TestAReaderTakesCreatorOwnerAsSecureDoes(t *testing.T) {
 	const tightened = "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICIIO;FA;;;CO)"
 
 	root := foundRoot(t)
-	setSecurity(t, root, tightened)
+	privtest.SetSecurity(t, root, tightened)
 
 	for name, judge := range map[string]func(string) error{"checkRoot": checkRoot, "Foreign": Foreign, "secure": secureInstallation} {
 		if err := judge(root); err != nil {
@@ -1396,7 +1370,7 @@ func TestAReaderTakesCreatorOwnerAsSecureDoes(t *testing.T) {
 	}
 
 	open := foundRoot(t)
-	setSecurity(t, open, tightened+"(A;;0x2;;;BU)")
+	privtest.SetSecurity(t, open, tightened+"(A;;0x2;;;BU)")
 
 	for name, judge := range map[string]func(string) error{"checkRoot": checkRoot, "Foreign": Foreign} {
 		if err := judge(open); err == nil || !strings.Contains(err.Error(), "Users") {
@@ -1459,7 +1433,7 @@ func TestCheckHoldsARootAsAReaderNeeds(t *testing.T) {
 	}
 
 	passes := foundRoot(t)
-	setSecurity(t, passes, "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICIIO;FA;;;BU)")
+	privtest.SetSecurity(t, passes, "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICIIO;FA;;;BU)")
 
 	if err := checkRoot(passes); err == nil || !strings.Contains(err.Error(), passes) || !strings.Contains(err.Error(), "Users") {
 		t.Errorf("checkRoot(a root passing Users full control of what is made in it) = %v, want a refusal naming it "+

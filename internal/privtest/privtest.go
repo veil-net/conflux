@@ -5,7 +5,8 @@
 // DACL holds (GrantUsers, Grant, WithUsers), %ProgramData%'s among them (ProgramDataGrant); a
 // temporary directory on a way SYSTEM trusts, whatever the default-owner policy (ServiceTemp); a
 // Windows client's default-owner policy for what this process makes (CreatorOwns), and a file's
-// owner (SetOwner); a parent that refuses what is made in it a DACL given afterwards
+// owner (SetOwner), or its owner and protected DACL as SDDL spells them (SetSecurity); a parent that
+// refuses what is made in it a DACL given afterwards
 // (DenyOwnersTheirDACL); a file's owner and DACL as a test reads them (ReadSecurity); and a folder
 // shared through this machine's own server, a network volume as Windows sees one (Share), and a
 // drive mapped to it (MapDrive).

@@ -1257,6 +1257,31 @@ func within(dir string, dirs []string) bool {
 	return false
 }
 
+// ClearExcept removes everything in dir but keep, following nothing in it (os.RemoveAll), and is the
+// paths of what it removed, however far it got: what a run killed before it could clean up left in
+// its root, which the next run starts without, and what supervisors and extractions before an update
+// left in the run and bin directories.
+func ClearExcept(dir, keep string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	var removed []string
+
+	for _, e := range entries {
+		if p := filepath.Join(dir, e.Name()); p != keep {
+			if err := os.RemoveAll(p); err != nil {
+				return removed, fmt.Errorf("clear %s: %w", p, err)
+			}
+
+			removed = append(removed, p)
+		}
+	}
+
+	return removed, nil
+}
+
 // CheckSocketLen refuses a run directory that would produce a socket path the
 // kernel cannot bind.
 //

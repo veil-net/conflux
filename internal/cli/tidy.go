@@ -84,7 +84,8 @@ func tidy(d paths.Dirs, mgr service.Manager) (stopped bool, err error) {
 	errs := []error{err}
 
 	removed = append(removed, entries(d.Run, "")...)
-	errs = append(errs, daemon.ClearExcept(d.Run, ""))
+	_, err = paths.ClearExcept(d.Run, "")
+	errs = append(errs, err)
 
 	// Every set but the one Remake extracts again, and what was staged.
 	set := filepath.Join(d.Libexec(), anchor.SetID())

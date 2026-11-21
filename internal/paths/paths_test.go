@@ -3,6 +3,7 @@ package paths
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -52,4 +53,36 @@ func foundRoot(t *testing.T) string {
 	}
 
 	return root
+}
+
+// TestClearExceptSaysWhatItRemoved: everything in the directory but the one kept is removed, a folder
+// with all it holds, and what was removed is named, for tidy to list; the one kept stays, and a
+// directory not there is an error, with nothing named.
+func TestClearExceptSaysWhatItRemoved(t *testing.T) {
+	dir := t.TempDir()
+	keep := filepath.Join(dir, "keep")
+
+	for _, p := range []string{keep, filepath.Join(dir, "a"), filepath.Join(dir, "c", "d")} {
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.WriteFile(p, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	want := []string{filepath.Join(dir, "a"), filepath.Join(dir, "c")}
+
+	if removed, err := ClearExcept(dir, keep); err != nil || !slices.Equal(removed, want) {
+		t.Errorf("ClearExcept = %q, %v, want %q", removed, err, want)
+	}
+
+	if entries, err := os.ReadDir(dir); err != nil || len(entries) != 1 || entries[0].Name() != "keep" {
+		t.Errorf("ClearExcept left %v (%v), want only what it kept", entries, err)
+	}
+
+	if removed, err := ClearExcept(filepath.Join(dir, "not-there"), ""); err == nil || removed != nil {
+		t.Errorf("ClearExcept(a directory not there) = %q, %v, want an error and nothing named", removed, err)
+	}
 }

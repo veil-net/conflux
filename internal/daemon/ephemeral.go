@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
@@ -126,7 +125,7 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 		e.report().Warn("stopped anchord (pid %d), left running by an ephemeral run that ended without stopping it", pid)
 	}
 
-	if err := ClearExcept(d.State, d.ServeLockFile()); err != nil {
+	if _, err := paths.ClearExcept(d.State, d.ServeLockFile()); err != nil {
 		return err
 	}
 
@@ -390,7 +389,7 @@ func RemoveEphemeral(e paths.Dirs, unlock func(), r Reporter) error {
 // of the lock with unlock, and removes the lock file and the root, which is empty unless such a
 // run has taken it, nothing more. It says why the root could not be emptied.
 func emptyEphemeral(e paths.Dirs, unlock func()) error {
-	err := ClearExcept(e.State, e.ServeLockFile())
+	_, err := paths.ClearExcept(e.State, e.ServeLockFile())
 
 	unlock()
 
@@ -409,24 +408,4 @@ func (s *Supervisor) reapLeftovers() (pid int, err error) {
 	s.killLeftovers()
 
 	return pid, err
-}
-
-// ClearExcept removes everything in dir but keep, following nothing in it (os.RemoveAll): what a
-// run killed before it could clean up left in its root, which the next run starts without, and
-// what supervisors before an update left in the run directory.
-func ClearExcept(dir, keep string) error {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return err
-	}
-
-	for _, e := range entries {
-		if p := filepath.Join(dir, e.Name()); p != keep {
-			if err := os.RemoveAll(p); err != nil {
-				return fmt.Errorf("clear %s: %w", p, err)
-			}
-		}
-	}
-
-	return nil
 }

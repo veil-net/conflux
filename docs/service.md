@@ -139,10 +139,10 @@ The unit, the launchd label, the rc script and the SCM entry are all named `conf
 one per machine, which is what "one configuration per machine" means in practice.
 
 A run under `CONFLUX_DIR` is the exception, because it is a separate installation and
-not the machine's own: the service takes a suffix derived from the root
+not the machine's own: the service takes a suffix derived from the directory
 (`conflux-44a6e4f4.service`, or `conflux_44a6e4f4` for rc, whose names become shell
-variables), and the root is written into the argv it is registered with, so the
-supervisor comes back to the same directory at boot. Its systemd unit also leaves out
+variables), and the directory is written into the argv it is registered with, so the
+supervisor comes back to the same `.conflux` inside it at boot. Its systemd unit also leaves out
 the `RuntimeDirectory=` and `ConfigurationDirectory=` lines: they name the machine's own
 directories, and systemd empties a unit's runtime directory whenever it stops, so stopping
 the scoped unit would otherwise clear the real installation's `/run/conflux`. Its

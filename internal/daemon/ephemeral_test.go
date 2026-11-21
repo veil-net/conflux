@@ -3,11 +3,9 @@ package daemon
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -452,49 +450,5 @@ func TestARunStartingAsAnotherEndsKeepsItsRoot(t *testing.T) {
 				t.Errorf("the next run's token reads %q (%v): its root was emptied under it", b, err)
 			}
 		})
-	}
-}
-
-// TestAKilledRunsRootConfluxDidNotSecureIsLeft: a killed run's root is emptied through the root held,
-// and one paths refuses as it is -- here at a mode conflux never leaves a root at, which says nothing
-// secured it -- is left as it is, what it holds and its lock with it, the refusal returned as one
-// (RootRefused), and nothing removed by name after the lock is let go of.
-func TestAKilledRunsRootConfluxDidNotSecureIsLeft(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("a mode says nothing of a Windows root")
-	}
-
-	root := filepath.Join(dirs(t).State, "e")
-	e := paths.EphemeralDirs(root)
-
-	if err := e.EnsureAll(); err != nil {
-		t.Fatal(err)
-	}
-
-	unlock, ok, err := flock.TryAcquire(e.ServeLockFile())
-	if err != nil || !ok {
-		t.Fatalf("could not hold the lock: %v", err)
-	}
-
-	if err := os.WriteFile(e.TokenFile(), []byte("the killed run's"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.Chmod(root, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	let := false
-
-	err = RemoveEphemeral(e, func() { let = true; unlock() }, nil)
-	if !RootRefused(err) || !errors.Is(err, paths.ErrUnsecuredRoot) || !let {
-		t.Errorf("RemoveEphemeral of a root at 0755 = %v, let go of its lock %v, want a refusal as unsecured, and the "+
-			"lock let go of", err, let)
-	}
-
-	for _, p := range []string{e.TokenFile(), e.ServeLockFile()} {
-		if _, err := os.Lstat(p); err != nil {
-			t.Errorf("RemoveEphemeral removed %s from a root conflux did not secure: %v", p, err)
-		}
 	}
 }

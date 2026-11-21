@@ -5,13 +5,10 @@ import (
 	"errors"
 	"flag"
 	"os"
-	"runtime"
-	"slices"
 	"strings"
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
-	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
@@ -80,7 +77,7 @@ func runRegister(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	// tidy secures the roots (EnsureAll), once what an earlier conflux left that would fail it is gone.
+	// tidy makes the roots as conflux makes them (EnsureAll).
 	d := paths.Default()
 	mgr := newService()
 
@@ -279,23 +276,18 @@ func runStart(ctx context.Context, args []string) int {
 	// typing start is how an upgrade reaches the service -- the copy, and the definition the service
 	// is registered with, which a newer conflux may write differently -- and it is how update hands a
 	// running service over. Where the copy is not this conflux, or the roots fail the readers' check,
-	// so that it is not read to find out, what earlier conflux left goes first, before anything judges
-	// the roots, the service stopped for it (tidy), and the copy is written afresh below; the restart
-	// after starts it again, on this one.
+	// so that it is not read to find out, what earlier conflux left goes first, the service stopped for
+	// it (tidy), and the copy is written afresh below; the restart after starts it again, on this one.
 	//
-	// Either way the roots are made conflux's, as the service makes them at every start, before
-	// anything in them is read by its name, placed there or registered (EnsureAll, which tidy runs),
-	// so a root an earlier conflux left is one the new service takes; with a service registered,
-	// roots not there are made, as that service would make them. A start of the conflux the service
-	// already runs, with no supervisor serving the root, first removes what conflux makes again there
-	// and an earlier conflux left failing the service's rule, as tidy does (paths' RemakeOld); with
-	// one serving it, the service has taken the root already.
+	// Either way the roots are made as conflux makes them, as the service makes them at every start,
+	// before anything in them is read by its name, placed there or registered (EnsureAll, which tidy
+	// runs); with a service registered, roots not there are made, as that service would make them.
 	checked := d.Check()
 	afresh := checked == nil && !service.Placed(d) || checked != nil && !errors.Is(checked, os.ErrNotExist)
 
 	// The service tidy stopped is started again however start ends: by startFromConfig's restart, or
 	// before (startAgain). A copy Placed found to be this conflux is not compared again as it is
-	// placed, unless RemakeOld removed it, to be made again.
+	// placed.
 	stopped := false
 	place := service.PlaceAfresh
 
@@ -305,20 +297,12 @@ func runStart(ctx context.Context, args []string) int {
 			return startAgain(mgr, stopped, fail(err))
 		}
 	} else {
-		removed, err := remakeUnserved(d)
-		if err != nil {
-			return fail(err)
-		}
-
 		if err := d.EnsureAll(); err != nil {
 			return fail(err)
 		}
 
-		// RemakeOld's names are as it listed them, and a Windows name is the same name in any case.
 		place = service.Place
-		if checked == nil && !slices.ContainsFunc(removed, func(p string) bool {
-			return strings.EqualFold(p, d.ServiceExecutable())
-		}) {
+		if checked == nil {
 			place = keep
 		}
 	}
@@ -344,29 +328,6 @@ func runStart(ctx context.Context, args []string) int {
 	// refused a running anchor would be answering a question nobody asked -- the
 	// caller wants it up, and it ends up up.
 	return startFromConfig(ctx, d, mgr, cfg, "start")
-}
-
-// remakeUnserved removes what conflux makes again in d's roots and an earlier conflux left failing
-// the service's rule (paths' RemakeOld), listing it, where no supervisor serves the roots: asked of
-// the serve lock through the root held (flock.HeldIn), since nothing has judged what the root holds
-// yet. It is what it removed. Nothing on Unix, where nothing conflux made fails that rule, so
-// RemakeOld removes nothing, and nothing is asked.
-func remakeUnserved(d paths.Dirs) ([]string, error) {
-	if runtime.GOOS != "windows" {
-		return nil, nil
-	}
-
-	switch held, err := flock.HeldIn(d, d.ServeLockFile()); {
-	case err != nil:
-		return nil, err
-	case held:
-		return nil, nil
-	}
-
-	removed, err := d.RemakeOld()
-	listRemoved(removed)
-
-	return removed, err
 }
 
 // runDown stops the anchor now and leaves everything else alone.

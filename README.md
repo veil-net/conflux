@@ -346,7 +346,10 @@ test.
 | socket and token | `/run/conflux/` | `/var/run/conflux/` | `%ProgramData%\conflux\run\` |
 
 One directory per machine, root-owned, with no home directory involved anywhere — the
-boot service runs as root, and a path under `$HOME` is a path it can't read. `anchord`
+boot service runs as root, and a path under `$HOME` is a path it can't read. Each of these
+folders is conflux's own: made by conflux, and removed whole by `conflux uninstall`, with
+whatever was put in it. `CONFLUX_DIR=<dir>` keeps everything in `<dir>/.conflux` instead,
+which conflux makes and removes, never changing `<dir>` itself. `anchord`
 itself runs as an account of its own wherever that costs it nothing, which reaches only
 its own corners of them. See [config.md](docs/config.md) and
 [security.md](docs/security.md#what-anchord-runs-as).

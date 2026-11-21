@@ -41,14 +41,12 @@ func plantForeign(t *testing.T, path string) {
 	privtest.SetOwner(t, path, sid)
 }
 
-// TestUninstallLeavesAnAdministratorsJunction: an ephemeral run's root outside the installation's that
-// is a junction as mklink made it -- one the administrator's own processes may point elsewhere
-// unelevated, here at a folder of SYSTEM's and the Administrators' holding an identity, as an
-// installation's root does -- is one conflux did not secure, whatever paths.Foreign says of it:
-// uninstall leaves it and where it leads as they are, saying so, unlisted, exit 0, judged before
-// anything is made, read or stopped there -- no lock made where it leads, nothing a run left reaped.
-// Windows-only, so it runs in CI's platforms job alone.
-func TestUninstallLeavesAnAdministratorsJunction(t *testing.T) {
+// TestUninstallRemovesAJunctionAtAnEphemeralRootsName: an ephemeral run's root outside the
+// installation's is conflux's by its name, so a junction there -- here to a folder of SYSTEM's and the
+// Administrators' holding an identity, as an installation's root does -- is no root of conflux's, and
+// uninstall removes it as itself, listed, exit 0: nothing where it leads read, made, stopped or
+// removed, no lock taken there. Windows-only, so it runs in CI's platforms job alone.
+func TestUninstallRemovesAJunctionAtAnEphemeralRootsName(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
 
@@ -82,8 +80,8 @@ func TestUninstallLeavesAnAdministratorsJunction(t *testing.T) {
 	recordAccounts(t)
 
 	out, errOut, code := capture(t, "uninstall", "--yes")
-	if code != ExitOK || !strings.Contains(errOut, junction) || strings.Contains(out, "  "+junction+"\n") {
-		t.Errorf("uninstall beside an administrator's junction exited %d, want %d saying it left %s, unlisted:\n%s%s",
+	if code != ExitOK || !strings.Contains(out, "  "+junction+"\n") {
+		t.Errorf("uninstall beside a junction at an ephemeral root's name exited %d, want %d listing %s:\n%s%s",
 			code, ExitOK, junction, out, errOut)
 	}
 
@@ -92,10 +90,10 @@ func TestUninstallLeavesAnAdministratorsJunction(t *testing.T) {
 	}
 
 	if held := names(t, theirs); !slices.Equal(held, []string{"manifest.b64"}) {
-		t.Errorf("uninstall left %s, where the junction leads, holding %q, want what it held alone", theirs, held)
+		t.Errorf("uninstall left %s, where the junction led, holding %q, want what it held alone", theirs, held)
 	}
 
-	if _, err := os.Lstat(junction); err != nil {
-		t.Errorf("uninstall removed the junction %s: %v", junction, err)
+	if _, err := os.Lstat(junction); !os.IsNotExist(err) {
+		t.Errorf("uninstall left the junction %s (Lstat: %v)", junction, err)
 	}
 }

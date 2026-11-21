@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -756,56 +757,57 @@ func TestTidyListsOnlyWhatItRemoved(t *testing.T) {
 	})
 }
 
-// TestTidyLeavesAnEphemeralRootConfluxDidNotSecure: the conflux an update put in place leaves an
-// ephemeral run's root conflux did not secure as it is, with what it holds, saying so, unlisted, and
-// goes on: one holding a name conflux never makes there, and, on Unix, one at a mode conflux never
-// leaves a root at, which says nothing secured it, with its lock or with none. Each is judged before
-// anything is made, read or stopped in it: no lock is made there, and nothing a run left is reaped.
-func TestTidyLeavesAnEphemeralRootConfluxDidNotSecure(t *testing.T) {
+// TestTidyRemovesAnEphemeralRootNotAsConfluxMakesOne: the conflux an update put in place removes a
+// killed run's root, as conflux's by its name, whatever is there: one not as conflux makes a root -- one
+// every account may write, holding a lock and a name of somebody's, or, on Unix, a link -- removed as
+// itself, nothing in it read and no lock in it taken, where a link leads never touched; one as conflux
+// makes a root, whatever it holds, emptied under its lock. Each is listed.
+func TestTidyRemovesAnEphemeralRootNotAsConfluxMakesOne(t *testing.T) {
 	anchortest.Require(t) // it extracts the pair afresh
 
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
 
+	elsewhere := t.TempDir()
+
+	kept := filepath.Join(elsewhere, "serve.lock")
+	if err := os.WriteFile(kept, []byte("not conflux's"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
 	for name, c := range map[string]struct {
-		mode   os.FileMode
-		plant  func(paths.Dirs) string
-		locked bool
+		plant func(t *testing.T, root string)
+		ours  bool
 	}{
-		"holding a name conflux never makes there": {mode: 0o700,
-			plant: func(e paths.Dirs) string { return filepath.Join(e.State, "notes.txt") }},
-		"at a mode conflux leaves no root at":               {mode: 0o755, plant: paths.Dirs.TokenFile, locked: true},
-		"at a mode conflux leaves no root at, with no lock": {mode: 0o755, plant: paths.Dirs.TokenFile},
-	} {
-		t.Run(name, func(t *testing.T) {
-			if c.mode != 0o700 && runtime.GOOS == "windows" {
+		"holding a name conflux never makes there": {func(t *testing.T, root string) {
+			plantIn(t, root, "notes.txt", "serve.lock")
+		}, true},
+		"every account may write": {func(t *testing.T, root string) {
+			if runtime.GOOS == "windows" {
 				t.Skip("a mode says nothing of a Windows root")
 			}
 
+			plantIn(t, root, "notes.txt", "serve.lock")
+
+			if err := os.Chmod(root, 0o777); err != nil {
+				t.Fatal(err)
+			}
+		}, false},
+		"a link": {func(t *testing.T, root string) {
+			if runtime.GOOS == "windows" {
+				t.Skip("a link at an ephemeral root's name is TestEnsureAllRemakesWhatIsNotItsOwn's there")
+			}
+
+			if err := os.Symlink(elsewhere, root); err != nil {
+				t.Fatal(err)
+			}
+		}, false},
+	} {
+		t.Run(name, func(t *testing.T) {
 			d := configured(t)
 
 			root := paths.EphemeralCandidates()[0]
-			e := paths.EphemeralDirs(root)
-			planted := c.plant(e)
-
-			files := []string{planted}
-			if c.locked {
-				files = append(files, e.ServeLockFile())
-			}
-
-			for _, p := range files {
-				if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
-					t.Fatal(err)
-				}
-
-				if err := os.WriteFile(p, []byte("somebody's"), 0o600); err != nil {
-					t.Fatal(err)
-				}
-			}
-
-			if err := os.Chmod(root, c.mode); err != nil {
-				t.Fatal(err)
-			}
+			c.plant(t, root)
 
 			var reaped []string
 
@@ -821,24 +823,38 @@ func TestTidyLeavesAnEphemeralRootConfluxDidNotSecure(t *testing.T) {
 			standInService(t, &fakeManager{d: d})
 
 			out, errOut, code := capture(t, "register")
-			if len(reaped) > 0 {
-				t.Errorf("conflux register took the lock of %q, and stopped what was left there", reaped)
+			if code != ExitOK || !strings.Contains(out, "  "+root+"\n") {
+				t.Errorf("conflux register beside a killed run's root %s exited %d, want %d listing it:\n%s%s", name, code,
+					ExitOK, out, errOut)
 			}
 
-			if code != ExitOK || !strings.Contains(errOut, root) || !strings.Contains(errOut, "conflux did not secure it") ||
-				strings.Contains(out, "  "+root+"\n") {
-				t.Errorf("conflux register beside an ephemeral root conflux did not secure exited %d, want %d saying it "+
-					"left %s, unlisted:\n%s%s", code, ExitOK, root, out, errOut)
+			if _, err := os.Lstat(root); !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("conflux register left %s (Lstat: %v)", root, err)
 			}
 
-			if b, err := os.ReadFile(planted); err != nil || string(b) != "somebody's" {
-				t.Errorf("conflux register emptied %s: %q, %v", root, b, err)
+			if c.ours != (len(reaped) == 1) {
+				t.Errorf("conflux register took the lock of %q, want it taken only in a root as conflux makes one", reaped)
 			}
 
-			if _, err := os.Lstat(e.ServeLockFile()); c.locked == os.IsNotExist(err) {
-				t.Errorf("conflux register left %s as a lock there %v, want %v (Lstat: %v)", root, !c.locked, c.locked, err)
+			if b, err := os.ReadFile(kept); err != nil || string(b) != "not conflux's" {
+				t.Errorf("where a link at the root's name led lost what is in it: %q, %v", b, err)
 			}
 		})
+	}
+}
+
+// plantIn makes the directory dir, at 0700, holding each of names, somebody's.
+func plantIn(t *testing.T, dir string, names ...string) {
+	t.Helper()
+
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, name := range names {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("somebody's"), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

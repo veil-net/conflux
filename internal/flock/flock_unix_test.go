@@ -5,7 +5,6 @@ package flock
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -72,23 +71,21 @@ func TestHeldRefusesWhatIsNotALockFile(t *testing.T) {
 	}
 }
 
-// TestHeldInAsksThroughTheRootHeld: the serve lock tidy asks after before anything has judged the root
-// is opened through the root held (paths' OpenIn): held while somebody holds it and free once they let
-// go, where the root is this account's; nobody's where the root, or the lock, is not there; held through
-// a link at the root's name to a directory of this account's own, holding a lock somebody holds, though
-// every account may write that directory, which EnsureAll would narrow; and refused, naming the link,
-// where the link leads nowhere, rather than taken for no lock.
+// TestHeldInAsksThroughTheRootHeld: the serve lock tidy asks after before anything has made the root is
+// opened through the root held (paths' OpenIn): held while somebody holds it and free once they let go,
+// where the root is this account's; nobody's where the root, or the lock, is not there; and nobody's
+// where a link is at the root's name, which is no root of conflux's, whatever it leads to -- here a
+// directory of this account's own holding a lock somebody holds, and nothing.
 func TestHeldInAsksThroughTheRootHeld(t *testing.T) {
 	base, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	root := filepath.Join(base, "conflux")
-	t.Setenv("CONFLUX_DIR", root)
+	t.Setenv("CONFLUX_DIR", filepath.Join(base, "conflux"))
 
 	d := paths.Default()
-	lock := d.ServeLockFile()
+	root, lock := d.State, d.ServeLockFile()
 
 	if held, err := HeldIn(d, lock); held || err != nil {
 		t.Errorf("HeldIn, no root there = %v, %v, want nobody's", held, err)
@@ -117,40 +114,25 @@ func TestHeldInAsksThroughTheRootHeld(t *testing.T) {
 		t.Errorf("HeldIn, the lock let go of = %v, %v, want nobody's", held, err)
 	}
 
-	open := t.TempDir()
+	elsewhere := t.TempDir()
 
-	theirs, err := Acquire(filepath.Join(open, "serve.lock"))
+	theirs, err := Acquire(filepath.Join(elsewhere, "serve.lock"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer theirs()
 
-	if err := os.Chmod(open, 0o777); err != nil {
-		t.Fatal(err)
-	}
+	for _, target := range []string{elsewhere, filepath.Join(base, "nowhere")} {
+		if err := os.RemoveAll(root); err != nil {
+			t.Fatal(err)
+		}
 
-	if err := os.RemoveAll(root); err != nil {
-		t.Fatal(err)
-	}
+		if err := os.Symlink(target, root); err != nil {
+			t.Fatal(err)
+		}
 
-	if err := os.Symlink(open, root); err != nil {
-		t.Fatal(err)
-	}
-
-	if held, err := HeldIn(d, lock); !held || err != nil {
-		t.Errorf("HeldIn, the root a link to a directory of this account's own holding a held lock = %v, %v, want "+
-			"it held", held, err)
-	}
-
-	if err := os.Remove(root); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.Symlink(filepath.Join(base, "nowhere"), root); err != nil {
-		t.Fatal(err)
-	}
-
-	if held, err := HeldIn(d, lock); err == nil || !strings.Contains(err.Error(), root+" is a link to ") {
-		t.Errorf("HeldIn, the root a link to nothing = %v, %v, want a refusal naming the link", held, err)
+		if held, err := HeldIn(d, lock); held || err != nil {
+			t.Errorf("HeldIn, the root a link to %s = %v, %v, want nobody's", target, held, err)
+		}
 	}
 }

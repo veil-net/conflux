@@ -227,7 +227,7 @@ func (s *Supervisor) Run(ctx context.Context) error {
 			"a new identity and a new overlay address", s.Dirs.AnchorDir())}
 	}
 
-	// The roots are secured already, first thing above.
+	// The roots are made already, first thing above.
 	tools, err := libexec.Extract(s.Dirs)
 	if err != nil {
 		return err

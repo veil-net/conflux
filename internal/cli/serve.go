@@ -71,14 +71,14 @@ func runServe(ctx context.Context, args []string) int {
 // launchd nor daemon(8) does. The file is placed over the process's stdout and stderr as well, and
 // kept for the rest of the process, so why the supervisor ended goes there too.
 //
-// The supervisor calls it once its EnsureAll has judged the roots, and not where EnsureAll refuses
-// them, which the supervisor then does itself, saying why where the service manager sends the
-// output. The log is opened by its name, as root or SYSTEM, to append to, so a link at that name
-// would have conflux append wherever it led. On Windows and under a CONFLUX_DIR the log is in the
-// root's logs directory, which EnsureAll has just held to its owner, to who else may change it
-// and, where it is a CONFLUX_DIR, its way, and to what it holds, a link refused, so no other
-// account can have put one there since. Otherwise launchd's and FreeBSD's registrations name the
-// system's /var/log, which EnsureAll leaves alone, and only root can change.
+// The supervisor calls it once its EnsureAll has made the roots as conflux makes them, and not where
+// EnsureAll refuses them, which the supervisor then does itself, saying why where the service manager
+// sends the output. The log is opened by its name, as root or SYSTEM, to append to, so a link at that
+// name would have conflux append wherever it led. On Windows and under a CONFLUX_DIR the log is in the
+// root's logs directory, in a root EnsureAll has just made as conflux makes one -- its own, which
+// nobody else may write -- on a way, where it is a CONFLUX_DIR, nobody else may change, so no other
+// account can have put a link there. Otherwise launchd's and FreeBSD's registrations name the system's
+// /var/log, which EnsureAll leaves alone, and only root can change.
 func openLog(path string) {
 	lf, err := logfile.Open(path)
 	if err != nil {

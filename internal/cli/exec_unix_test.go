@@ -369,9 +369,9 @@ func TestAFirstSignalStopsAnEphemeralRun(t *testing.T) {
 
 	for _, sig := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM} {
 		t.Run(unix.SignalName(sig), func(t *testing.T) {
-			// A short root rather than TempDir's: the run's control socket lies four levels below it.
+			// A short root rather than TempDir's: the run's control socket lies five levels below it.
 			root := pathstest.ShortRoot(t)
-			d := paths.EphemeralDirs(filepath.Join(root, "ephemeral")) // paths.Ephemeral, under CONFLUX_DIR
+			d := paths.EphemeralDirs(filepath.Join(root, paths.DirName, "ephemeral")) // paths.Ephemeral, under CONFLUX_DIR
 
 			// An API that takes the connection and answers nothing, so the run waits on its
 			// enrolment, which it makes once its anchord is up, until it is stopped.

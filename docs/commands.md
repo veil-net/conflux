@@ -114,65 +114,34 @@ refusal names `down` and `start` and the escape hatch.
 
 ## A root another account could change
 
+Conflux keeps everything in folders of its own, conflux's by their names: the platform's
+(`/etc/conflux`, `/var/lib/conflux`, `/run/conflux` …, `%ProgramData%\conflux`), an ephemeral run's,
+and under `CONFLUX_DIR=<dir>` the folder `<dir>/.conflux`, which conflux makes inside `<dir>` and
+keeps all of its own in. `<dir>` itself, and every folder above a root, is never changed.
+
+`up`, `proxy`, `observe`, `install`, `enrol`, `register` and `start` make the roots: each as conflux
+makes a root (`0700`; on Windows the Administrators' under a protected DACL granting SYSTEM and them
+alone), and whatever is at a root's name and is not as conflux makes one — a link, a file, a
+directory another account owns or may write — removed as itself and made afresh, with nothing of what
+it held. They refuse, with nothing made, a `CONFLUX_DIR` that another account may change, or that is
+inside a folder another account may change ([security.md](security.md#the-file-and-the-directory-around-it)).
+
 `status`, `down`, `renew`, `uninstall`, `update` with the boot service installed, and a
 pass-through to conflux's daemon read what is in a root by its name — the configuration, the pid
 record, the token, the socket — so each holds the root to the
-[readers' check](security.md#the-file-and-the-directory-around-it) first: its owner root or the
-account running conflux, and nobody else able to write it or point it elsewhere. A root that fails
-is refused, exit 1, naming it and who else could change it, and nothing in it is read, run or
-stopped: `down` stops nothing; `update` downloads and replaces nothing. `uninstall` reads and
-signals nothing in such a root either, and removes it all the same, following nothing in it, but
-for a `CONFLUX_DIR` whose way another account may change, one that is a shared or system directory,
-and a root that is not conflux's, which it refuses before removing anything
-([`conflux uninstall`](#conflux-uninstall)). Nothing is narrowed either. That
-is for `up`, `proxy`, `observe`, `install`, `enrol` and `start`, which make the roots, or make them
-conflux's: they narrow one of conflux's own and refuse one another account owns, and they refuse,
-with nothing made, narrowed or filled, a root that is a shared or system directory, the top of a
-volume, a file rather than a directory, or a directory holding a name conflux never makes there, but
-a working root, naming that entry. A root that is not there is a machine with nothing installed, and read as one.
+[readers' check](security.md#the-file-and-the-directory-around-it) first: the way to a `CONFLUX_DIR`
+held to the same rule, and the root as conflux makes one, its owner root or the account running
+conflux, and nobody else able to write it. A root that fails is refused, exit 1, naming it and why,
+and nothing in it is read, run or stopped: `down` stops nothing; `update` downloads and replaces
+nothing. `uninstall` reads and signals nothing in such a root either, and removes it all the same,
+following nothing in it, but for a `CONFLUX_DIR` whose way another account may change, which it
+refuses before removing anything ([`conflux uninstall`](#conflux-uninstall)). A root that is not there
+is a machine with nothing installed, and read as one.
 
 Help is the exception, since it needs nothing of the machine's: it runs the `anchorctl` extracted
 in the root only where the root passes the readers' check and a whole extraction is there, and otherwise
 — the root refused, or not there — a private temporary copy, reading nothing in the root
 ([Pass-through](#pass-through)).
-
-What is no root, on every command that makes or removes one
-([security.md](security.md#the-file-and-the-directory-around-it)):
-
-- **A shared or system directory**, however it is reached and whoever owns it. On Unix: a sticky
-  directory (`/tmp`), `/`, every directory directly under `/` (`/home`, `/opt`, `/srv`, `/usr` …)
-  but one conflux may have made a root of — its owner's, at `0700` or `0710`, and holding anything,
-  which is then held to conflux's names (below), so `/root` is refused for its own files —
-  the system's log directory, a directory above where a platform root is kept by default, and the
-  directory the running conflux is in or one above it. On Windows: a volume's root (`C:\`, `\\?\C:\`,
-  or the volume by its GUID), a folder directly under one that Windows made, which TrustedInstaller
-  or SYSTEM owns (`Program Files`, `ProgramData`, `PerfLogs` …), `%ProgramData%`, `%SystemRoot%`,
-  `C:\Users`, `C:\Users\Public`, the folder the running conflux is in or one above it
-  (`%ProgramFiles%\conflux`, where `install.ps1` puts it), and a folder whose DACL makes it a space
-  other accounts share. A `CONFLUX_DIR` that names such a directory is to be pointed elsewhere; a
-  platform root that is one, which somebody else made, is to be removed.
-- **The service's own root is the exception** to the running conflux's directory, and on Unix to a
-  directory directly under `/`: where the conflux running is the copy the boot service runs from that
-  root — one file with the copy at its name there, never followed — and the root already holds this
-  installation's own state, a name conflux makes there besides the copy and the lock files (its
-  identity, state, run directory …), it is taken whatever its mode or the rest of its DACL, and a
-  widened one is narrowed, as the service narrows it at its start, rather than refused at every start. A folder holding the
-  running conflux and nothing of an installation's — `/usr/local/bin`, or `%ProgramFiles%\conflux`,
-  where `install.ps1` puts it — is refused, its conflux at the copy's name or not; and a sticky
-  directory, or a folder whose DACL makes it a space other accounts share, is refused whatever it holds.
-- **The top of a volume**, a `SUBST` letter's included, whose final path is the folder it stands for:
-  no folder holds it for it to be removed from.
-- **A file at a root's name**, or anything else that is neither a directory nor a link: conflux makes
-  only a directory there.
-- **A directory holding what conflux never makes there**, at the root's name or where a link there
-  that conflux follows leads — a `CONFLUX_DIR` at a folder of homes, at `/root` or a home kept at
-  `0700`, or a link at a root's name repointed at a program's folder — refused naming the first stray
-  entry, and left as it is, an ephemeral run's root among them, which `uninstall` and `update` leave
-  with a note. An empty directory, and a root conflux made, hold nothing else. The exception is a
-  working root: one conflux has secured — its owner's at `0700` or `0710`, or SYSTEM's or the
-  Administrators' under a protected DACL — that already holds this installation's own state, a name of
-  conflux's besides the service's copy and the lock files. Nothing in it is a stray, so an editor's
-  backup beside a hand-edited `conflux.json` in a working install is fine.
 
 ## `conflux up`
 
@@ -350,27 +319,18 @@ mode and drops the proxies. A machine serving eight ports cannot be brought back
 retyping eight specs correctly from memory.
 
 Before it reads the configuration, places its copy for the service or registers it, `start`
-secures the roots as the service does at every start, and as `up` and `install` do: one of
-conflux's own left wider is narrowed, and one another account owns is refused, exit 1, naming it.
-On Windows, where the service runs as SYSTEM, what it would refuse at every start in the root —
-what the administrator running `start` owns there, or what grants them a right — is refused too,
-naming it ([windows.md](windows.md#file-permissions)), but only once what conflux makes again by
-its name there, and finds failing that rule, has been removed, as below: what is left to refuse is
-what conflux does not make again, the identity, the configuration and the state among it. With the
-service registered and its roots gone, they are made again, as the service would make them.
+makes the roots as the service does at every start, and as `up` and `install` do
+([above](#a-root-another-account-could-change)): what is at a root's name and is not as conflux makes
+one is removed and made afresh, so a root widened by hand starts with nothing in it, and `start` then
+finds no configuration. With the service registered and its roots gone, they are made again, as the
+service would make them.
 
 `update` hands a running service to the conflux it put in place through that conflux's `start`.
 Where the service's copy is not this conflux — an update, or a newer conflux put in place by hand —
 or the roots fail the [readers' check](#a-root-another-account-could-change), so that the copy is
-not read to find out, `start` first removes what earlier conflux left, before anything judges the
-roots, as [`update`](#conflux-update) describes, the service stopped for it, and writes the copy
-afresh. A start of the conflux the service already runs is no update, and removes nothing of what
-`update` does but this, on Windows alone: where no supervisor serves the root, it first removes
-what conflux makes again there by its name and an earlier conflux left failing the service's rule
-— what an older conflux on a client left as the administrator's own — before anything judges the
-root, as `update` does, and says what it removed; with a supervisor serving it, the service has
-taken the root already. On Unix nothing conflux made fails that rule, and a plain `start` removes
-nothing.
+not read to find out, `start` first removes what earlier conflux left, as [`update`](#conflux-update)
+describes, the service stopped for it, and writes the copy afresh. A start of the conflux the service
+already runs is no update, and removes nothing of what `update` does.
 
 | Situation | |
 |---|---|
@@ -528,7 +488,7 @@ reinstall:
   in launchd's disabled database), the rc script and, on FreeBSD, its `rc.conf` line, or the
   Windows service and its registry key; a `CONFLUX_DIR` installation's scoped one for that
   installation;
-- every root and all it holds: the configuration (`conflux.json`), the credential
+- every root, whole, with all it holds, whatever anybody put there: the configuration (`conflux.json`), the credential
   (`manifest.b64`), the state (`state.json`, the record of an anchor given up on among it,
   `anchord.priv`, `anchord.json`), the anchor directories, the extracted anchor binaries and,
   on Windows, `wintun.dll` beside them, the service's copy of conflux, the lock files, the run
@@ -540,54 +500,37 @@ reinstall:
 - what an update left beside this conflux: a download that never went in place, and on Windows
   the image moved aside, `conflux.exe.old` (elsewhere a file of that name is yours, and kept);
 - the folders conflux made on the way to its roots, which it records as it makes them — a
-  `CONFLUX_DIR`'s parents it made among them — each once it is empty, deepest first;
+  `CONFLUX_DIR` it made, and its parents, among them — each once it is empty, deepest first. A
+  `CONFLUX_DIR` that was there before is left as it was, with everything of yours in it;
 - the account `anchord` ran as, and `conflux-ephemeral`, once nothing runs as either, when
   conflux made them (an account of either name that conflux did not make is left alone), with
   the BPF devices given back to root on macOS first.
 
 The conflux you ran is yours, and stays. It says what it removed, however far it got, and nothing
 else: a root it could not empty, or a killed run's that a run took as it let go of it, is not
-listed. Asks first
-where there is a credential, or may be one it cannot read, because there is no other copy of it
-anywhere; and wherever `CONFLUX_DIR` names the folder, credential or not, saying it removes
-everything in that folder, which is whatever the variable was set to. `--yes` skips the question,
-and a non-interactive run without `--yes` refuses, exit 2, rather than destroy either silently.
+listed. Asks first where there is a credential, or may be one it cannot read, because there is no
+other copy of it anywhere; and wherever `CONFLUX_DIR` is set, credential or not, saying it removes
+`<dir>/.conflux` and everything in it. `--yes` skips the question, and a non-interactive run without
+`--yes` refuses, exit 2, rather than destroy either silently.
 
 Nothing in a root is followed. Each is removed through the directory holding it, held open from
 the top of its volume down, and a name at a time below it: a link or junction found anywhere in
-it is removed as the link, and where it leads is never touched; a file another account planted
-there is removed as itself, never read. A root whose own name is a link or junction — one moved to
-another disk — is followed only where conflux would follow it every day: owned by root (SYSTEM or the
-Administrators on Windows) or the account running conflux, nobody else able to point it elsewhere,
-on Windows judged for the SYSTEM service, so a junction an administrator made, which their unelevated
-processes may repoint, is not gone into, and leading to a directory one of those owns, which conflux
-has secured as a root, as it secures every root at its first use (`0700` or `0710`; on Windows the
-Administrators' or SYSTEM's under a protected DACL granting nobody else anything). Then what that
-directory holds is removed through the handle held on it, and the link after, the directory itself
-left empty; a link that fails is removed as itself, and where it leads is not touched. A `CONFLUX_DIR`'s way is
-held to the rule the [readers' check](#a-root-another-account-could-change) holds it to as it is
-walked, so a way another account could change cannot lead the removal elsewhere; the platform's
-own roots are on the system's way. Three kinds of root are refused. One is a `CONFLUX_DIR` whose way
-another account may change: whoever could change it could have put anything at the root's name, so
-conflux cannot know what is there is its own. Another is a root that is a shared or system directory, or the top of a volume
-— a `CONFLUX_DIR` of `/tmp`, `/usr`, `/`, `C:\`, `C:\Program Files` or a `SUBST` letter — which conflux
-never makes its own, and so never empties ([what is no root](#a-root-another-account-could-change));
-a link at a root's name leading to one is removed as itself, unless it holds what conflux never makes
-there. The third is a root that is not conflux's: one that holds a name conflux never makes there, at
-its name or where a link there that conflux follows leads — a `CONFLUX_DIR` at a folder of homes —
-or a file at its name, as `CONFLUX_DIR=/etc/passwd` would have it, which is somebody else's. Every root is judged before anything is asked or removed,
-so each is refused, exit 1, with nothing removed, the boot service included: the first naming the
-folder that fails and saying to run `uninstall` again once nobody else can change any folder on the
-way, the second saying it is a shared or system directory, or the top of its volume, and that
-uninstall left everything in place, the third naming the entry conflux
-never makes, or the file, and saying the same. A root that cannot be judged at all — a way that
-cannot be walked, such as a `CONFLUX_DIR` beneath a file — stops uninstall there too, exit 1, saying
-so, before it acts. Any other root the readers' check refuses is removed the same way as one it takes, with
-nothing in it read or signalled first — no identity shown in the question, no `anchord` stopped by
-its pid record. The record of the folders made on the way to it is read all the same, as a file
-anybody may have put there, never through a link: all it can lead to is an empty folder above
-conflux's roots being removed. An ephemeral run's root inside a `CONFLUX_DIR`
-goes with it.
+it, the root's own name included, is removed as the link, and where it leads is never touched; a
+file another account planted there is removed as itself, never read. A `CONFLUX_DIR`'s way, the
+`CONFLUX_DIR` included, is held to the rule the
+[readers' check](#a-root-another-account-could-change) holds it to as it is walked, so a way another
+account could change cannot lead the removal elsewhere; the platform's own roots are on the system's
+way. A `CONFLUX_DIR` whose way another account may change is refused, judged before anything is
+asked or removed, exit 1, with nothing removed, the boot service included, naming the folder that
+fails and saying to run `uninstall` again once nobody else can change any folder on the way: whoever
+could change it could have put anything at the root's name, so conflux cannot know what is there is
+its own. A way that cannot be walked at all, such as a `CONFLUX_DIR` beneath a file, stops uninstall
+there too, exit 1, saying so, before it acts. A root the readers' check refuses is removed the same
+way as one it takes, with nothing in it read or signalled first — no identity shown in the question,
+no `anchord` stopped by its pid record. The record of the folders made on the way to it is read all
+the same, as a file anybody may have put there, never through a link: all it can lead to is an empty
+folder above conflux's roots being removed. An ephemeral run's root inside a `CONFLUX_DIR` goes with
+it.
 
 While an [ephemeral run](ephemeral.md) is live — kept for the account running it, or inside a
 `CONFLUX_DIR`, whose root it would go with — it refuses, exit 2, naming it, before asking anything,
@@ -596,18 +539,10 @@ the account it would remove, so the run is stopped first, with Ctrl-C where it r
 starts once uninstall has begun is left running, with its root, the root that holds it and the
 account it runs as, and uninstall says so, exit 1. The root a killed run left behind — its
 extracted pair, token and socket — it removes, stopping the anchord the run left, under the root's
-lock, so a run starting at that moment keeps its own; one holding anything another account could
-have put there is removed reading and signalling nothing in it. One conflux did not secure — a
-shared or system directory, one holding a name conflux never makes there, unless conflux has secured
-it and it holds this installation's own state, or one the readers' check refuses, which another account owns or may change, as any account may make
-`C:\ProgramData\conflux-ephemeral` first — is not conflux's,
-whatever its name: judged with the installation's roots, before anything is asked or removed, it is
-left as it is, with a note naming it and why, and uninstall does not fail for it. Each is judged
-so again before its lock is taken, which makes the lock file where there is none, or anything the
-run left is read or stopped: one conflux has not secured — a link at its name the boot service would
-not follow, or a directory, there or where such a link leads, not owned and left as conflux secures
-a root — is left the same way, with no lock made in it. It is judged once more as it is emptied,
-through the root held, and one changed since is left as well, its lock with it.
+lock, so a run starting at that moment keeps its own. What is at an ephemeral root's name and is not
+as conflux makes a root — another account's, as any account may make
+`C:\ProgramData\conflux-ephemeral` first, one another account may write, or a link — is removed as
+itself, with nothing in it read or stopped and no lock taken in it.
 
 ## `conflux status`
 
@@ -721,15 +656,15 @@ image is the conflux handing the service over, which runs the new one's `start` 
 so it is still running as they remove what earlier conflux left; it goes with the next update,
 or `uninstall`. No token is needed or sent: the repository is public.
 
-Before the new conflux judges the roots, places its copy or registers the service — through its
-`start` or its `register`, whichever the update hands the service over by — it removes what
-earlier conflux left everywhere conflux keeps files, every time, and makes afresh what it removed,
-so an update works on an older install as it is:
+Before the new conflux places its copy or registers the service — through its `start` or its
+`register`, whichever the update hands the service over by — it removes what earlier conflux left
+everywhere conflux keeps files, every time, and makes afresh what it removed, so an update works on
+an older install as it is:
 
 - the service is stopped where a supervisor still serves the root, asked of the supervisor's lock
   through the root held, never by its name: a `CONFLUX_DIR` whose way another account may change, as
-  the [readers' check](#a-root-another-account-could-change) judges it, or a root conflux would not
-  follow or another account owns, is refused there, exit 1, naming it, with nothing stopped. It is
+  the [readers' check](#a-root-another-account-could-change) judges it, is refused there, exit 1,
+  naming it, with nothing stopped; a root not as conflux makes one holds no lock anybody serves. It is
   stopped only where the service manager says it runs — starting, running or stopping, its process
   not yet gone, so a stop under way is waited for — and only what was stopped is started again,
   on the new conflux, however the command ends: by `start`'s restart, by `register`, which starts
@@ -739,17 +674,9 @@ so an update works on an older install as it is:
   started beside it, would find it there and exit. Where the service manager cannot say whether the
   service runs (systemd or the SCM not answering), which of the two serves the root cannot be told,
   and it is refused, exit 1, saying why, with nothing stopped, removed or started;
-- on Windows, what conflux makes again by its name in the root — `logs\`, `run\`, the lock files,
-  `bin\`, the service's copy and the image moved aside, `anchord.json`, and what an atomic write or
-  a copy left before its rename — that the service, running as SYSTEM, would refuse is removed
-  through handles, never through a link: what an older conflux on a Windows client left as the
-  administrator's own, which a handle opened then could still change. Anything else the service
-  would refuse — the identity, the configuration, the state — is refused, naming it, with nothing
-  removed after ([windows.md](windows.md#file-permissions)). Then the roots are secured, as at
-  every start, and the supervisor's lock held, so none starts meanwhile. A supervisor that took the
-  root in the moment since it was asked after is refused there, exit 1, naming the root, with
-  nothing started: by then the roots are secured, and on Windows what the service would refuse is
-  gone;
+- the roots are made as at every start ([above](#a-root-another-account-could-change)), and the
+  supervisor's lock held, so none starts meanwhile. A supervisor that took the root in the moment
+  since it was asked after is refused there, exit 1, naming the root, with nothing started;
 - the `anchord` a supervisor that died left running is stopped, and the run directory emptied —
   token, readiness marker, pid record, `anchord`'s socket directory — for the next supervisor to
   make again;
@@ -757,9 +684,8 @@ so an update works on an older install as it is:
   staged, are removed, and this build's pair is extracted afresh, so nothing planted among them is
   kept or run;
 - a killed ephemeral run's root is removed, the `anchord` it left stopped, as `uninstall` removes
-  one; a live run's is left, and so is one conflux did not secure, with a note naming it and why,
-  judged as `uninstall` judges it, before anything is made, read or removed in it, and again as it
-  is emptied, through the root held;
+  one, and what is at its name and is not as conflux makes a root removed as itself; a live run's is
+  left;
 - where nothing holds the state's lock, what an atomic write that never went in place left in the
   configuration and state directories goes;
 - the lock files — the state's, the supervisor's and `bin`'s — are kept on Unix, where a lock
@@ -862,7 +788,7 @@ other refusal — passes through untouched.
 
 | Variable | Effect |
 |---|---|
-| `CONFLUX_DIR` | roots a whole separate conflux installation in one directory — config, identity, socket and the boot service, which is named after the root so it cannot replace the machine's own. What the tests use. See [testing.md](testing.md). |
+| `CONFLUX_DIR` | roots a whole separate conflux installation in `.conflux` inside the directory it names, which conflux never changes — config, identity, socket and the boot service, which is named after the directory so it cannot replace the machine's own. What the tests use. See [testing.md](testing.md). |
 | `CONFLUX_DEBUG=1` | pass `-v` to anchord. |
 | `CONFLUX_EPHEMERAL=1` | send pass-through to the ephemeral anchor while an installed one runs too, which it otherwise reaches first. See [ephemeral.md](ephemeral.md#reaching-it-from-another-terminal). |
 | `CONFLUX_ALLOW_INSECURE_API=1` | permit a plain-http API base. For tests only. |

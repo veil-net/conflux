@@ -110,24 +110,3 @@ func namesVolume(p string) bool {
 	return len(p) >= 2 && p[1] == ':' || sep(0) && sep(1) ||
 		sep(0) && len(p) >= 3 && p[1] == '?' && p[2] == '?' && (len(p) == 3 || sep(3))
 }
-
-// mountPointData is the reparse data of a junction leading to substitute, an NT path (\??\C:\x,
-// \??\Volume{...}\x), shown as display: REPARSE_DATA_BUFFER with a MountPointReparseBuffer -- the
-// two names, each counted in bytes without its NUL, in one buffer after the lengths.
-func mountPointData(substitute, display string) []byte {
-	sub, shown := utf16.Encode([]rune(substitute)), utf16.Encode([]rune(display))
-
-	b := binary.LittleEndian.AppendUint32(nil, reparseTagMountPoint)
-	b = binary.LittleEndian.AppendUint16(b, uint16(8+2*(len(sub)+1)+2*(len(shown)+1)))
-	b = binary.LittleEndian.AppendUint16(b, 0)
-	b = binary.LittleEndian.AppendUint16(b, 0)
-	b = binary.LittleEndian.AppendUint16(b, uint16(2*len(sub)))
-	b = binary.LittleEndian.AppendUint16(b, uint16(2*(len(sub)+1)))
-	b = binary.LittleEndian.AppendUint16(b, uint16(2*len(shown)))
-
-	for _, c := range append(append(sub, 0), append(shown, 0)...) {
-		b = binary.LittleEndian.AppendUint16(b, c)
-	}
-
-	return b
-}

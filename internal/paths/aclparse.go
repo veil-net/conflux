@@ -1,12 +1,10 @@
 package paths
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
-	"slices"
 )
 
 // The ACLs a root, or a directory above a CONFLUX_DIR, may carry beside its mode, read into who
@@ -409,63 +407,6 @@ func windowsGrants(acl []byte, passedOn bool) ([]windowsGrant, error) {
 	}
 
 	return grants, nil
-}
-
-// sharedSpace reports whether the Windows ACL acl is a space other accounts share, as %ProgramData%'s is:
-// entries of its own, not inherited, that let anybody -- Users, Authenticated Users, Everyone or
-// INTERACTIVE -- add a file or a folder to it and pass that right on to the folders made in it, and
-// let CREATOR OWNER have what it passes on, so each account owns what it makes there. A folder that
-// only inherits such entries, as one made in %ProgramData% does, is not one: it is a root another
-// account may have filled, which secure judges and restricts, not a space conflux shares. An ACL in a
-// shape windowsGrants refuses is refused here too.
-func sharedSpace(acl []byte) (bool, error) {
-	if _, err := windowsGrants(acl, true); err != nil {
-		return false, err
-	}
-
-	const (
-		objectInherit    = 0x01                                // OBJECT_INHERIT_ACE
-		containerInherit = 0x02                                // CONTAINER_INHERIT_ACE
-		inherited        = 0x10                                // INHERITED_ACE
-		adds             = 0x2 | 0x4 | 0x10000000 | 0x40000000 // add a file, add a folder, GENERIC_ALL, GENERIC_WRITE
-	)
-
-	anybody := [][]byte{
-		{1, 2, 0, 0, 0, 0, 0, 5, 32, 0, 0, 0, 0x21, 2, 0, 0}, // S-1-5-32-545, Users
-		{1, 1, 0, 0, 0, 0, 0, 5, 11, 0, 0, 0},                // S-1-5-11, Authenticated Users
-		{1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0},                 // S-1-1-0, Everyone
-		{1, 1, 0, 0, 0, 0, 0, 5, 4, 0, 0, 0},                 // S-1-5-4, INTERACTIVE
-	}
-	creatorOwner := []byte{1, 1, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0} // S-1-3-0
-
-	size, n := int(binary.LittleEndian.Uint16(acl[2:])), int(binary.LittleEndian.Uint16(acl[4:]))
-
-	shared, owns := false, false
-
-	for b := acl[8:size]; n > 0; n-- {
-		kind, flags, aceSize := b[0], b[1], int(binary.LittleEndian.Uint16(b[2:]))
-		ace := b[4:aceSize]
-		b = b[aceSize:]
-
-		if kind != aceAllowed || flags&inherited != 0 || len(ace) < 4 {
-			continue
-		}
-
-		sid, err := windowsSID(ace[4:])
-		if err != nil {
-			return false, err
-		}
-
-		switch rights := binary.LittleEndian.Uint32(ace); {
-		case bytes.Equal(sid, creatorOwner) && flags&(objectInherit|containerInherit) != 0:
-			owns = true
-		case rights&adds != 0 && flags&aceInheritOnly == 0 && flags&containerInherit != 0 &&
-			slices.ContainsFunc(anybody, func(a []byte) bool { return bytes.Equal(sid, a) }):
-			shared = true
-		}
-	}
-
-	return shared && owns, nil
 }
 
 // windowsSID is the SID b starts with: a revision, 1, its sub-authorities' count, a 48-bit

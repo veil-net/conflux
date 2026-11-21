@@ -1,10 +1,8 @@
 package paths_test
 
 import (
-	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 
 	"golang.org/x/sys/windows"
@@ -20,30 +18,20 @@ import (
 )
 
 // TestWhatAnAdministratorMakesTheServiceTakes: what an elevated administrator makes without naming an
-// owner is the Administrators' on Windows Server and that administrator's own on a Windows client, a
-// CREATOR OWNER entry passed on to it grants whoever owns it, and the boot service, running as SYSTEM,
-// trusts no other account with anything in its root. So every conflux process makes the Administrators
-// the owner of what it makes as it starts (paths.ElevatedDefaultOwner). Under a client's policy
-// (privtest.CreatorOwns), once that is done, in a root an administrator tightened by hand to SYSTEM,
-// the Administrators and CREATOR OWNER, what an administrator's up, install, register, enrol and renew
-// make -- EnsureAll's run\ and logs\, the two lock files, the extraction's bin\, its lock, its set and
-// binaries, the service's copy of conflux and the configuration -- is each the Administrators',
-// granting this account nothing, as its maker returns, before anything after it secures the root
-// again; the root then passes the judgement the service makes of it (paths.JudgeAsTheService), which
-// refuses each of them once it is given to the administrator. Windows-only, so it runs in CI's
-// platforms job alone.
+// owner is the Administrators' on Windows Server and that administrator's own on a Windows client, and
+// the boot service, running as SYSTEM, trusts no other account with its root. So every conflux process
+// makes the Administrators the owner of what it makes as it starts (paths.ElevatedDefaultOwner). Under a
+// client's policy (privtest.CreatorOwns), once that is done, what an administrator's up, install,
+// register, enrol and renew make -- EnsureAll's root, run\ and logs\, the two lock files, the
+// extraction's bin\, its lock, its set and binaries, the service's copy of conflux and the
+// configuration -- is each the Administrators', granting this account nothing, as its maker returns; and
+// the root passes the readers' check, which judges an installation's for SYSTEM. Windows-only, so it runs
+// in CI's platforms job alone.
 func TestWhatAnAdministratorMakesTheServiceTakes(t *testing.T) {
 	anchortest.Require(t)
 
-	root := filepath.Join(t.TempDir(), "conflux")
-	t.Setenv("CONFLUX_DIR", root) // its way made before the policy below
+	t.Setenv("CONFLUX_DIR", filepath.Join(t.TempDir(), "conflux")) // its way made before the policy below
 	d := paths.Default()
-
-	if err := os.Mkdir(root, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	privtest.SetSecurity(t, root, "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICIIO;FA;;;CO)")
 
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {
@@ -77,7 +65,7 @@ func TestWhatAnAdministratorMakesTheServiceTakes(t *testing.T) {
 		t.Fatalf("EnsureAll: %v", err)
 	}
 
-	made("EnsureAll", d.Run, d.Log)
+	made("EnsureAll", d.State, d.Run, d.Log)
 
 	unlock, err := flock.Acquire(d.LockFile())
 	if err != nil {
@@ -117,21 +105,7 @@ func TestWhatAnAdministratorMakesTheServiceTakes(t *testing.T) {
 
 	restore()
 
-	if err := paths.JudgeAsTheService(d.State); err != nil {
-		t.Fatalf("the service's judgement of a root an administrator made under a client's policy = %v", err)
-	}
-
-	for _, p := range []string{d.Run, d.Log, d.LockFile(), d.ServeLockFile(), d.Libexec(),
-		filepath.Join(d.Libexec(), ".lock"), tools.Dir, tools.Anchord, placed, d.ConfigFile()} {
-		owner := privtest.ReadSecurity(t, p).Owner
-
-		privtest.SetOwner(t, p, user.User.Sid)
-
-		if err := paths.JudgeAsTheService(d.State); err == nil || !strings.Contains(err.Error(), p+", which belongs to ") {
-			t.Errorf("the service's judgement of a root holding %s, the administrator's = %v, want a refusal naming it",
-				p, err)
-		}
-
-		privtest.SetOwner(t, p, owner)
+	if err := d.Check(); err != nil {
+		t.Errorf("the readers' check of a root an administrator made under a client's policy = %v", err)
 	}
 }

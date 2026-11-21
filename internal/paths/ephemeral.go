@@ -35,11 +35,11 @@ func EphemeralDirs(root string) Dirs {
 // mounts the first noexec. Both are looked in for a run that is live.
 //
 // Per identity, because the user running conflux decides what it may write: root's under
-// the system's run directory, anybody else's under their own. Under CONFLUX_DIR, inside it
-// and nowhere else.
+// the system's run directory, anybody else's under their own. Under CONFLUX_DIR, inside its
+// DirName and nowhere else.
 func EphemeralCandidates() []string {
 	if root := Root(); root != "" {
-		return []string{filepath.Join(root, "ephemeral")}
+		return []string{filepath.Join(root, DirName, "ephemeral")}
 	}
 
 	if runtime.GOOS == "windows" {
@@ -77,23 +77,16 @@ func ephemeralRunBase() string {
 	return "/var/run"
 }
 
-// Ephemeral is the root a new ephemeral run is kept in: the first candidate on a
-// filesystem that lets the extracted anchord run, and either not there yet or one secure would take:
-// one Foreign passes, which this account owns (ownedRoot). tmpfs is often mounted noexec, and
-// anchord extracted there would be refused at exec with a reason that names nothing; and /tmp lets
-// anybody make the name a run's root would have, which secure then refuses and this account cannot
-// remove.
+// Ephemeral is the root a new ephemeral run is kept in: the first candidate on a filesystem that lets
+// the extracted anchord run, and either not there yet or as conflux makes a root (Check). tmpfs is
+// often mounted noexec, and anchord extracted there would be refused at exec with a reason that names
+// nothing; and /tmp lets anybody make the name a run's root would have, which this account could not
+// remove to make its own.
 func Ephemeral() (Dirs, error) { return ephemeralIn(EphemeralCandidates()) }
 
 // ephemeralIn is Ephemeral among candidates.
 func ephemeralIn(candidates []string) (Dirs, error) {
-	root, err := FirstExecutable(candidates, func(c string) error {
-		if err := Foreign(c); err != nil {
-			return err
-		}
-
-		return ownedRoot(c)
-	})
+	root, err := FirstExecutable(candidates, func(c string) error { return EphemeralDirs(c).Check() })
 	if errors.Is(err, ErrNoExec) {
 		return Dirs{}, fmt.Errorf("every place an ephemeral run is kept is on a filesystem mounted noexec, "+
 			"so the anchord it extracts could not run: %v.\n  Set CONFLUX_DIR to a directory on one that is not", candidates)

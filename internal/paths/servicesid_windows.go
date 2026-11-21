@@ -21,8 +21,7 @@ func ServiceName() string { return "conflux" + Scope() }
 
 // ServiceSID is serviceSID of this installation's service, ServiceName, kept once Windows has
 // given it: its name is fixed by the root, which is fixed for the life of the process, and a start
-// needs the SID in several places -- the token, anchord's directory, the -config's grant, and the
-// check that a directory is the account's -- as the walk over a root's contents does. A failure is
+// needs the SID in several places -- the token, anchord's directory and the -config's grant. A failure is
 // not kept, so the next start asks again rather than going without the SID, or refusing, for the
 // rest of the process.
 func ServiceSID() (*windows.SID, error) {

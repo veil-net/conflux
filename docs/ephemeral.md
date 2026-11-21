@@ -102,17 +102,15 @@ One fixed directory per user, made when the run starts and removed when it ends:
 | root on macOS and the BSDs | `/var/run/conflux-ephemeral`, or beside the state directory where that is `noexec` |
 | an ordinary user | `$XDG_RUNTIME_DIR/conflux-ephemeral` (or `/tmp/conflux-ephemeral-UID`), then the user's cache directory |
 | Windows | `%ProgramData%\conflux-ephemeral` |
-| `CONFLUX_DIR` set | `$CONFLUX_DIR/ephemeral` |
+| `CONFLUX_DIR` set | `$CONFLUX_DIR/.conflux/ephemeral` |
 
 It holds the lock that makes it the only ephemeral run for that user, the bearer token and
 the socket, the record of the anchord it started and what that runs as, and the extracted
-pair: never a credential, a configuration or a state. A root the run could not keep is passed
-over, so the next in the table is used: one the readers' check refuses — one another account owns,
-or may write ([security.md](security.md#the-file-and-the-directory-around-it)), or a link at its
-name that leads nowhere — one holding anything another account could have put there or may change,
-judged from the root held open (a link, anything but a file, a directory or a socket, an entry
-another account owns or may write), and one that belongs to any account but the one starting the
-run, root's included for anybody else, as conflux refuses to keep a run in it. `/tmp` lets anybody make
+pair: never a credential, a configuration or a state. The root is conflux's by its name: made as
+conflux makes one, `0700` and the account's own, and whatever is at its name that is not — a link,
+a file, a directory another account owns or may write — is removed as itself and the root made
+afresh ([security.md](security.md#the-file-and-the-directory-around-it)). A root the run could not
+take so is passed over, and the next in the table used: `/tmp` lets anybody make
 `/tmp/conflux-ephemeral-UID` first, and only its owner can remove it. A run is not refused because an installed conflux is running: that one is never
 read, written, stopped or re-registered. Two anchors with a TUN on one host do contend for
 the overlay's routes, so `conflux down` first where that matters.
@@ -125,17 +123,12 @@ starting, and asks it nothing: the run may still be clearing what a killed one l
 another conflux reaching into its root then would get in its way. A killed run's word that
 it was up is not taken for the next run's: it counts only while the conflux that wrote it
 runs. Neither `status` nor
-pass-through ever writes into a run's root, and a root the readers' check refuses is no run's
-to them, whatever lock, marker or binaries it holds, nor is one holding anything another account
-could have put there or may change, which they judge from the root held open, by no name and
-following no link: they pass either over, reading, running and signalling nothing in it.
-`uninstall` removes every ephemeral root conflux secured, one holding what another account could
-have put there included, reading and signalling nothing in it and following nothing it holds; one
-it did not secure — a shared or system directory, one holding a name conflux never makes there
-unless conflux has secured it and it holds a run's own state, one the readers' check refuses, or one
-conflux has not secured, at a mode or owner, or under a DACL, it never leaves a root at, or behind a link
-at its name the boot service would not follow — is not conflux's, and it leaves it as it is, with a
-note naming it and why, as the conflux an update puts in place does. Pass-through — `conflux peers`,
+pass-through ever writes into a run's root, and a root the readers' check refuses — not as conflux
+makes one: a link, another account's, or one another account may write — is no run's to them,
+whatever lock, marker or binaries it holds: they pass it over, reading, running and signalling
+nothing in it. `uninstall` removes every ephemeral root, whole, a killed run's anchord stopped first;
+one the readers' check refuses it removes as itself, reading and signalling nothing in it and
+following nothing it holds, as the conflux an update puts in place does. Pass-through — `conflux peers`,
 `conflux blocks`, every anchorctl command — reaches the ephemeral anchor when it is the
 only one running, once it is up.
 With an installed anchor running too, it reaches that one unless `CONFLUX_EPHEMERAL=1` is

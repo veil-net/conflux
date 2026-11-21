@@ -5,10 +5,6 @@ package paths
 import (
 	"errors"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"go/types"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -33,142 +29,6 @@ func mode(t *testing.T, dir string) os.FileMode {
 	return fi.Mode().Perm()
 }
 
-// TestEnsureAllNarrowsAnOpenRoot: a root of conflux's own that something left at 0755 holds
-// the manifest in a directory anybody can traverse, so it is narrowed, not adopted as found.
-func TestEnsureAllNarrowsAnOpenRoot(t *testing.T) {
-	root := t.TempDir()
-	if err := os.Chmod(root, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	t.Setenv("CONFLUX_DIR", root)
-
-	if err := Default().EnsureAll(); err != nil {
-		t.Fatal(err)
-	}
-
-	if got := mode(t, root); got != 0o700 {
-		t.Errorf("the root is %#o after EnsureAll, want 0700", got)
-	}
-}
-
-// TestRemakeOldRemovesNothingHere: on Unix what root or the account running conflux owns passes
-// secure, and the service runs as root, so nothing conflux made in an installation's root fails the
-// rule RemakeOld removes by: it removes nothing, from a root made or one not there.
-func TestRemakeOldRemovesNothingHere(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "conflux")
-	t.Setenv("CONFLUX_DIR", root)
-
-	d := Default()
-
-	if removed, err := d.RemakeOld(); removed != nil || err != nil {
-		t.Errorf("RemakeOld of a root not there = %q, %v, want nothing", removed, err)
-	}
-
-	if err := d.EnsureAll(); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.WriteFile(d.LockFile(), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	if removed, err := d.RemakeOld(); removed != nil || err != nil {
-		t.Errorf("RemakeOld of a root EnsureAll made = %q, %v, want nothing", removed, err)
-	}
-
-	if _, err := os.Lstat(d.LockFile()); err != nil {
-		t.Errorf("RemakeOld removed %s: %v", d.LockFile(), err)
-	}
-}
-
-// TestSecureRefusesARootAnotherAccountOwns: whatever another account put in a directory
-// it made is not used, and the directory is left exactly as it was found.
-func TestSecureRefusesARootAnotherAccountOwns(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.Chmod(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	err := secureAs(dir, os.Geteuid()+1)
-	if err == nil {
-		t.Fatal("a root owned by another uid was accepted")
-	}
-
-	if !strings.Contains(err.Error(), "belongs to") {
-		t.Errorf("the refusal does not say why: %v", err)
-	}
-
-	if got := mode(t, dir); got != 0o755 {
-		t.Errorf("the refused root was changed to %#o; a refusal must change nothing", got)
-	}
-}
-
-// TestSecureNamesRootWhenRootOwnsIt: the common way to meet a root-owned root is to have
-// forgotten sudo, so that is what the refusal says. Safe as any user: it refuses first.
-func TestSecureNamesRootWhenRootOwnsIt(t *testing.T) {
-	err := secureAs("/", 1000)
-	if err == nil || !strings.Contains(err.Error(), "belongs to root") {
-		t.Fatalf("secureAs(\"/\", 1000) = %v, want a refusal naming root", err)
-	}
-}
-
-// TestSecureFollowsASymlinkOnlyToItsOwnersDirectory: a root that is a link is held to the
-// owner of the link and of what it points at.
-func TestSecureFollowsASymlinkOnlyToItsOwnersDirectory(t *testing.T) {
-	target := t.TempDir()
-	link := filepath.Join(t.TempDir(), "root")
-
-	if err := os.Symlink(target, link); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.Chmod(target, 0o750); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := secure(link, true); err != nil {
-		t.Fatalf("a link to a directory of our own was refused: %v", err)
-	}
-
-	if got := mode(t, target); got != 0o700 {
-		t.Errorf("the link's target is %#o, want 0700", got)
-	}
-
-	if err := secureAs(link, os.Geteuid()+1); err == nil {
-		t.Error("a link another uid owns was accepted")
-	}
-
-	// A link of our own that leads into a directory of somebody else's is held to theirs.
-	theirs := "/" // root's, for anybody else to point a link at
-	if os.Geteuid() == 0 {
-		// Root can make one that belongs to somebody else.
-		theirs = filepath.Join(t.TempDir(), "theirs")
-		if err := os.Mkdir(theirs, 0o700); err != nil {
-			t.Fatal(err)
-		}
-
-		if err := os.Chown(theirs, 65534, 65534); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	before := mode(t, theirs)
-
-	into := filepath.Join(t.TempDir(), "root")
-	if err := os.Symlink(theirs, into); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := secure(into, true); err == nil || !strings.Contains(err.Error(), "belongs to") {
-		t.Errorf("a link of ours into a directory another account owns was not refused for its owner: %v", err)
-	}
-
-	if got := mode(t, theirs); got != before {
-		t.Errorf("the directory the refused link leads to was changed to %#o", got)
-	}
-}
-
 // TestEnsureAllLeavesTheSharedLogAlone: macOS and FreeBSD write the service's log into the
 // system's /var/log, which is not conflux's to narrow.
 func TestEnsureAllLeavesTheSharedLogAlone(t *testing.T) {
@@ -189,37 +49,6 @@ func TestEnsureAllLeavesTheSharedLogAlone(t *testing.T) {
 
 	if got := mode(t, shared); got != 0o755 {
 		t.Errorf("the shared log directory became %#o; conflux must leave it as the system made it", got)
-	}
-}
-
-// TestSecureKeepsThePassThroughGroup: a root of ours at 0710 is how the supervisor lets
-// anchord's own account pass through to what it runs, and every conflux command would
-// otherwise cut a running anchord off; anything wider is still narrowed.
-func TestSecureKeepsThePassThroughGroup(t *testing.T) {
-	dir := t.TempDir()
-
-	if err := os.Chmod(dir, 0o710); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := secure(dir, true); err != nil {
-		t.Fatal(err)
-	}
-
-	if got := mode(t, dir); got != 0o710 {
-		t.Errorf("0710 was changed to %#o", got)
-	}
-
-	if err := os.Chmod(dir, 0o750); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := secure(dir, true); err != nil {
-		t.Fatal(err)
-	}
-
-	if got := mode(t, dir); got != 0o700 {
-		t.Errorf("0750 is %#o after secure, want 0700", got)
 	}
 }
 
@@ -389,6 +218,17 @@ func TestEnsureAllRefusesARootAnotherAccountCanMove(t *testing.T) {
 			t.Errorf("a root in a sticky directory was refused: %v", err)
 		}
 	})
+}
+
+// parentsAs refuses dir where its way, walked from / (walk), is not held to parents' rule for euid
+// (parentsRuleAs).
+func parentsAs(dir string, euid int) error {
+	w, err := walk(dir, parentsRuleAs(dir, euid))
+	if err == nil {
+		w.close()
+	}
+
+	return err
 }
 
 // TestEnsureAllTakesAGroupOfItsOwn: a parent its group may write lets no other account write
@@ -603,215 +443,6 @@ func TestJudgeHoldsAnACLToTheStickyBit(t *testing.T) {
 		case c.refused == "" && got != "":
 			t.Errorf("%s: judge = %q, want nothing", c.name, got)
 		}
-	}
-}
-
-// TestJudgeHoldsARootAsSecureLeavesIt: secure judges a root's own ACL by the mode it finds the
-// root at (judgeRoot), as the root will be once narrowed, 0700 with no sticky bit. An extended ACL
-// keeps its entries through that, so one letting anybody add a file to a root found at 0755,
-// whose mode shows no such write, or at 01755, whose sticky bit the narrowing takes away, or an
-// account named by its UUID add a directory to one found at 0777, is refused; a POSIX ACL's mask
-// becomes the narrowed group bits, so its entries let nobody write, though one lets uid 65534 at
-// the 0770 the root is found at.
-func TestJudgeHoldsARootAsSecureLeavesIt(t *testing.T) {
-	nfs4, err := freebsdACL(freebsdBuf(
-		[5]uint32{0x01, 0, 0x1ffff, nfs4Allow},
-		[5]uint32{0x40, 0, nfs4AddFile, nfs4Allow}), true)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	someone := [16]byte{0x5b, 0x1e, 0x0f, 0x1c, 0x2d, 0x3e, 0x4f, 0x50, 0x61, 0x72, 0x83, 0x94, 0xa5, 0xb6, 0xc7, 0xd8}
-
-	kauth, err := kauthAttr(kauthAttrBuf(kauthEntry{someone, kauthPermit, kauthAppendData}))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	entries, err := linuxACL(anotherMayWrite)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	posix := posixWriters(entries)
-
-	for _, c := range []struct {
-		name     string
-		mode     os.FileMode
-		acl      []writer
-		aclGroup bool
-		refused  string
-	}{
-		{"an NFSv4 entry letting anybody add a file, found at 0755", 0o755, nfs4, false, "anybody"},
-		{"the NFSv4 entry, found sticky at 01755", os.ModeSticky | 0o755, nfs4, false, "anybody"},
-		{"a macOS entry letting an account add a directory, found at 0777", 0o777, kauth, false,
-			"5B1E0F1C-2D3E-4F50-6172-8394A5B6C7D8"},
-		{"a POSIX entry letting uid 65534 write, found at 0770", 0o770, posix, true, ""},
-	} {
-		got := judgeRoot(os.ModeDir|c.mode, 0, c.acl, c.aclGroup, os.Geteuid())
-
-		switch {
-		case c.refused != "" && !strings.Contains(got, c.refused):
-			t.Errorf("%s: judgeRoot = %q, want a refusal naming %s", c.name, got, c.refused)
-		case c.refused == "" && got != "":
-			t.Errorf("%s: judgeRoot = %q, want nothing", c.name, got)
-		}
-	}
-}
-
-// TestJudgeLeavesARootsTrivialNFSv4ACLToTheNarrowing: an NFSv4 ACL keeps the mode in its owner@,
-// group@ and everyone@ entries -- ZFS's trivial ACL, and UFS's with nfsv4acls -- which chmod
-// rewrites with the mode. So a root found at 0775, or 0777, whose ACL is that and nothing else is
-// the narrowing's, as a POSIX ACL is: accepted, and narrowed to 0700 as any root wider is
-// (TestEnsureAllNarrowsAnOpenRoot). An entry beyond the mode is judged: a named user's, the group's
-// right to delete what is in the root, an entry passed on from a directory above or one the root
-// passes on to what is made in it, though either grants no more than the write the mode found
-// shows (chmod leaves both standing), or a grant the mode found does not show; a deny entry,
-// which the old trivial ACL had, takes nothing away.
-func TestJudgeLeavesARootsTrivialNFSv4ACLToTheNarrowing(t *testing.T) {
-	defer func(was usersOf) { groups = was }(groups)
-	groups = groupsFunc(func(string, string) ([]string, error) { return []string{"mallory"}, nil })
-
-	// What every trivial entry allows, and what read, write and search add, as FreeBSD numbers them.
-	const (
-		allow, deny = nfs4Allow, 0x0200
-		always      = 0x1000 | 0x0200 | 0x0040 | 0x8000 // read the ACL, attributes and named attributes; synchronize
-		owns        = 0x2000 | 0x4000 | 0x0400 | 0x0080 // write the ACL, the owner, attributes and named attributes
-		r, w, x     = 0x0008, nfs4AddFile | nfs4AddSubdirectory, 0x0001
-		inherited   = 0x0080
-		inherits    = 0x0001 | 0x0002 // passed on to the files and the directories made inside
-	)
-
-	trivial := func(group, everyone uint32, more ...[5]uint32) []writer {
-		t.Helper()
-
-		ws, err := freebsdACL(freebsdBuf(append([][5]uint32{
-			{0x01, 0, always | owns | r | w | x, allow},
-			{0x04, 0, always | group, allow},
-			{0x40, 0, always | everyone, allow},
-		}, more...)...), true)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		return ws
-	}
-
-	for _, c := range []struct {
-		name    string
-		mode    os.FileMode
-		acl     []writer
-		refused string
-	}{
-		{"0775's trivial ACL", 0o775, trivial(r|w|x, r|x), ""},
-		{"0777's trivial ACL", 0o777, trivial(r|w|x, r|w|x), ""},
-		{"0775's, with the old trivial ACL's deny", 0o775, trivial(r|w|x, r|x, [5]uint32{0x40, 0, w, deny}), ""},
-		{"0775's, and a named user's write", 0o775, trivial(r|w|x, r|x, [5]uint32{0x02, 1001, nfs4AddFile, allow}),
-			"uid 1001"},
-		{"0775's, its group deleting what is in it", 0o775, trivial(r|w|x|nfs4DeleteChild, r|x), "its group"},
-		{"0777's, and everybody's write passed on", 0o777,
-			trivial(r|w|x, r|w|x, [5]uint32{0x40, 0, w, allow, inherited}), "anybody"},
-		{"0777's, and everybody's write it passes on", 0o777,
-			trivial(r|w|x, r|w|x, [5]uint32{0x40, 0, w, allow, inherits}), "anybody"},
-		{"0775's, and its group's write it passes on", 0o775,
-			trivial(r|w|x, r|x, [5]uint32{0x04, 0, w, allow, inherits}), "its group"},
-		{"a group write the mode found does not show", 0o750, trivial(r|w|x, 0), "its group"},
-	} {
-		got := judgeRoot(os.ModeDir|c.mode, 0, c.acl, false, os.Geteuid())
-
-		switch {
-		case c.refused != "" && !strings.Contains(got, c.refused):
-			t.Errorf("%s: judgeRoot = %q, want a refusal naming %s", c.name, got, c.refused)
-		case c.refused == "" && got != "":
-			t.Errorf("%s: judgeRoot = %q, want nothing", c.name, got)
-		}
-	}
-}
-
-// TestARootsACLIsLeftUnreadOnlyBesideAPOSIXReader ties rootACLMayRefuse, where a platform's file
-// makes it false, to the extendedWriters beside it. secure leaves a root's own ACL unread there,
-// which loses nothing only while every ACL that reader returns is a POSIX.1e one, reported by its
-// aclGroup, which judgeRoot judges at the narrowed 0700 as letting nobody write
-// (TestARootsACLCannotRefuseItHere), or none at all. So each of its returns is no ACL, nil and
-// false, or a POSIX.1e one, true; a reader of anything else there -- an NFSv4 mount's
-// system.nfs4_acl, on Linux -- needs that file's rootACLMayRefuse true. The two are tied by the
-// file that holds them, so every file of the package is read, whatever it is named, and one that
-// holds either without the other is refused.
-func TestARootsACLIsLeftUnreadOnlyBesideAPOSIXReader(t *testing.T) {
-	names, err := filepath.Glob("*.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	fset := token.NewFileSet()
-	unread := 0
-
-	for _, name := range names {
-		if strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-
-		f, err := parser.ParseFile(fset, name, nil, parser.SkipObjectResolution)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		mayRefuse, reader := "", (*ast.FuncDecl)(nil)
-
-		for _, d := range f.Decls {
-			switch d := d.(type) {
-			case *ast.GenDecl:
-				for _, s := range d.Specs {
-					if v, ok := s.(*ast.ValueSpec); ok && len(v.Names) == 1 && v.Names[0].Name == "rootACLMayRefuse" &&
-						len(v.Values) == 1 {
-						mayRefuse = types.ExprString(v.Values[0])
-					}
-				}
-			case *ast.FuncDecl:
-				if d.Name.Name == "extendedWriters" {
-					reader = d
-				}
-			}
-		}
-
-		if (mayRefuse == "") != (reader == nil) {
-			t.Errorf("%s holds one of rootACLMayRefuse and extendedWriters without the other, which this ties by file", name)
-
-			continue
-		}
-
-		if mayRefuse != "false" {
-			continue
-		}
-
-		unread++
-
-		ast.Inspect(reader.Body, func(n ast.Node) bool {
-			r, ok := n.(*ast.ReturnStmt)
-			if !ok {
-				_, closure := n.(*ast.FuncLit)
-
-				return !closure
-			}
-
-			if len(r.Results) != 3 {
-				t.Errorf("%s: extendedWriters returns at %s what this cannot read", name, fset.Position(r.Pos()))
-
-				return true
-			}
-
-			if ws, posix := types.ExprString(r.Results[0]), types.ExprString(r.Results[1]); posix != "true" &&
-				(ws != "nil" || posix != "false") {
-				t.Errorf("%s: extendedWriters returns %s, %s at %s, an ACL it does not report as POSIX.1e, which can "+
-					"refuse a root, so rootACLMayRefuse is true there", name, ws, posix, fset.Position(r.Pos()))
-			}
-
-			return true
-		})
-	}
-
-	if unread == 0 {
-		t.Fatal("no platform's file leaves a root's ACL unread, so nothing was held")
 	}
 }
 

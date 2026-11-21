@@ -4,16 +4,11 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
-	"path/filepath"
-	"strings"
 	"sync"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
-
-	"github.com/veil-net/conflux/internal/privcheck"
 )
 
 // On Windows a mode is nothing: Go maps Chmod onto the read-only attribute, and
@@ -109,8 +104,8 @@ func asAdministrators(set func(owner *windows.SID) error) error {
 // lock, the service's copy of conflux, the log -- is the Administrators' from the moment it exists,
 // and a CREATOR OWNER entry it inherits grants them, whatever the machine's default-owner policy
 // says. That policy makes what an elevated administrator makes the Administrators' on Windows Server
-// and that administrator's own on a Windows client, and the boot service, running as SYSTEM, trusts
-// no other account with anything in its root (contents). A token that is not elevated is left as it
+// and that administrator's own on a Windows client, whose unelevated processes could then change it
+// for the boot service, running as SYSTEM, to read or run. A token that is not elevated is left as it
 // is: it may not name the Administrators, and no conflux command that makes a root runs without
 // elevation. SYSTEM's, the service's, is elevated, and holds the Administrators too.
 //
@@ -222,9 +217,8 @@ func readLink(s step) (string, error) { return linkTarget(s.h) }
 // the one before passes on: in C:\ Authenticated Users' right to delete it, and its owner the
 // administrator who ran conflux, whom the SYSTEM service does not trust. The way conflux makes is
 // then its own, as the 0700 directories it makes on Unix are, grants nobody else anything, so a
-// folder of it later taken as a root is one secure finds secured already, and passes parents' rule
-// for the service as for whoever made it. ERROR_ALREADY_EXISTS is anything already at the name, a
-// link included.
+// folder of it passes parents' rule for the service as for whoever made it, and the root it makes is
+// as conflux makes one (ours). ERROR_ALREADY_EXISTS is anything already at the name, a link included.
 func makeStep(parent step, name string) (step, bool, error) {
 	h, err := createIn(parent.h, name, windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES)
 	if err != nil {
@@ -268,7 +262,7 @@ func MakeAnchordDir(path string, sid *windows.SID) error {
 }
 
 // anchordDirSDDL is the security descriptor of a directory anchord's account, the service SID sid,
-// is given, which contents does not go into once its DACL is judged: SYSTEM's, under a protected
+// is given: SYSTEM's, under a protected
 // DACL granting SYSTEM and the Administrators full control of it and of what it holds; sid, on the
 // directory itself, the right to list and traverse it, create files and subdirectories in it,
 // delete what is in it and read and write its attributes -- 0x1201ff, and not DELETE, WRITE_DAC or
@@ -329,42 +323,6 @@ func restrictedDir(create func(sd *windows.SECURITY_DESCRIPTOR) error) error {
 	})
 }
 
-// fill makes the root dir, held open by h, hold something -- its run directory, which EnsureAll
-// makes there anyway, with Restrict's ownership and DACL set as it is created, made through h: its
-// name looked up in the directory h holds and nowhere else -- and reads h again: one that became a
-// junction or a link before then is refused. A reparse point cannot be set on a directory that is
-// not empty (FSCTL_SET_REPARSE_POINT fails with STATUS_DIRECTORY_NOT_EMPTY), so a handle somebody
-// opened on the root while its DACL let them write it, which keeps the rights it was opened with,
-// can no longer make a junction of it, and the run directory, SYSTEM's and the Administrators', is
-// not theirs to remove. Anything already there by that name does the same, and is judged with the
-// rest of what the root holds (contents). A root whose DACL does not let this account create a
-// folder in it is refused, saying so: it is filled before what the root holds is judged or the
-// root restricted, under the DACL secure found.
-func fill(dir string, h windows.Handle) error {
-	filling(dir)
-
-	run, filled := createIn(h, runName, windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES)
-	if filled == nil {
-		filled = windows.CloseHandle(run)
-	}
-
-	if err := notLink(dir, h, "became a junction or a link while conflux secured it"); err != nil {
-		return err
-	}
-
-	switch {
-	case filled == nil, errors.Is(filled, windows.ERROR_ALREADY_EXISTS):
-		return nil
-	case errors.Is(filled, windows.ERROR_ACCESS_DENIED):
-		return fmt.Errorf("conflux could not add %s to %s, whose DACL does not let this account create a folder in "+
-			"it: conflux adds %s before it judges or restricts a root, so that no handle opened on the root earlier "+
-			"can make a junction of it.\n  Give SYSTEM and the Administrators full control of %s, then run this "+
-			"again as Administrator", runName, dir, runName, dir)
-	}
-
-	return fmt.Errorf("create %s in %s: %w", runName, dir, filled)
-}
-
 // createIn creates the directory name in the one parent holds open, with Restrict's ownership and
 // DACL set as it is created (restrictedDir), and holds it open for access: its name looked up there
 // and nowhere else, and never followed (ntOpen's FILE_OPEN_REPARSE_POINT), so ERROR_ALREADY_EXISTS
@@ -385,10 +343,6 @@ func createIn(parent windows.Handle, name string, access uint32) (windows.Handle
 
 	return h, err
 }
-
-// filling is called before secure fills a root: nothing, but where a test turns the root into a
-// junction meanwhile.
-var filling = func(string) {}
 
 // ntOpen is createIn and lookUp's open: NtCreateFile of name relative to parent, as disposition
 // says, with options beside never following what is at the name, and sd where it creates one.
@@ -490,178 +444,25 @@ func trusted(sid *windows.SID) bool {
 	return sid.Equals(sidSystem) || sid.Equals(sidAdmins) || isCurrentUser(sid)
 }
 
-// secure gives a conflux root its ownership and DACL, once, and refuses one another
-// account made, or a junction another account may point elsewhere (heldLink); a CONFLUX_DIR's way
-// is makeRoot's, which secure's one caller, EnsureAll, runs first. A folder others keep what is theirs
-// in, and one conflux has not secured holding what conflux never makes there (sharedStep, strays), are
-// refused here as makeRoot refuses them, before anything is filled or restricted, but on the folder this
-// handle holds: a junction at the root's name that heldLink takes may have been pointed elsewhere since
-// makeRoot's walk followed it, by a handle opened on it while its DACL let somebody, so what that walk
-// judged answers for nothing here. The names are an installation's as every one on Windows lays out its
-// root (rootedAt), or an ephemeral run's (EphemeralDirs). A root secured already -- SYSTEM's or the
-// Administrators', under a protected DACL that grants nobody else any right, to read it included,
-// on the root or on what is made in it -- is not restricted again, but it is filled as any root is
-// (fill), and what it holds is judged again (contents), so that what a run refused once the root
-// was restricted is refused by every run after; one protected that grants more, or passes more on,
-// or has no DACL at all, is held to all of what follows, as one found unrestricted is.
-//
-// A directory conflux did not create is one somebody else may have filled before it
-// looked -- with a binary for the service to run, or a manifest whose key they hold --
-// and taking it over would adopt whatever is inside. The account running conflux is
-// accepted as well as SYSTEM and Administrators: an administrator's own directory,
-// under a policy that makes the creator its owner, is repaired rather than refused, since it
-// holds the identity and cannot be made again, as what it holds can (RemakeOld). A handle their
-// processes opened on it while they owned it keeps its rights once it is given to the
-// Administrators: security.md's first gap, the handles kept.
-//
-// The root is judged and restricted through one handle, opened on the directory itself and
-// never by its name again (heldRoot): a name looked up afresh at each step could be a junction
-// at the next, which Users may make of an empty directory they may write -- its own data or
-// attributes are enough -- and which the named calls would follow, the ownership of where it
-// leads answering for it and the restriction landing there. A root that is a junction is held as a
-// symlinked root is on Unix, to who may point it elsewhere, and replaced with a junction of
-// conflux's own leading to the directory judged (replaceLink), since a handle opened on it while
-// its DACL let somebody write it could repoint it in place. Then, before anything the root holds is
-// judged, it is made to hold something through the handle (fill), so that no handle opened on it
-// earlier can make a junction of it afterwards, whatever secure goes on to decide, a refusal
-// included, and read again through the handle: one that became a junction meanwhile is refused. A
-// root whose DACL, as found, lets another account move what is in it is refused before either,
-// since a handle opened under that grant could take out what fill puts there.
-//
-// An installation's root, which the boot service runs from as SYSTEM, trusting no other account, and
-// judges at every start, is judged for SYSTEM, as the way to it is (serviceRule): whether it is
-// secured already, and what it holds (contents), so that what an administrator's own grant lets
-// through, which the service would refuse at every start, is restricted or refused here, by the
-// command that makes it, and what the administrator owns there is refused, not taken over: a handle
-// opened while they owned it keeps its rights whoever owns it after. What an older conflux left so is
-// conflux's to remove and make again (RemakeOld). installation is false for an ephemeral run's, which
-// no service runs from, judged for the account running it.
-//
-// What it holds is held to the same rule (contents): before it is repaired, as it was found, what
-// each thing inherits from the root included -- a handle opened under an inherited grant keeps it
-// once the restriction has replaced it -- and again once the root is restricted. Until the root
-// has its own DACL it has %ProgramData%'s, under which Users may create folders in it, the moment
-// between the first look and the restriction included, and a folder another account made there
-// keeps that owner through the new DACL -- an owner can always grant itself the rest -- so the
-// service would go on writing its log or its token into a place that account controls.
-func secure(dir string, installation bool) error {
-	root, err := heldRoot(dir, rootAccess)
+// ours is why the folder s holds open, at the root dir's name, is not as conflux makes a root, or ""
+// where it is: owned by SYSTEM, the Administrators or the account it is judged for, and its DACL
+// granting nobody else any right, to read it included, on it or on what is made in it (changerIn,
+// anyRight), as read through s. An installation's root, which the boot service runs from as SYSTEM,
+// trusting no other account, is judged for SYSTEM; an ephemeral run's for the account running conflux
+// (judgedFor). %ProgramData% lets any account make a folder at a name not taken yet, which keeps that
+// account as its owner, or inherits Users' grants from it: neither is ours.
+func ours(dir string, s step, installation bool) (string, error) {
+	sd, err := security(s.h)
 	if err != nil {
-		return err
-	}
-	defer root.close()
-
-	sd, err := security(root.dir)
-	if err != nil {
-		return fmt.Errorf("read the ownership of %s: %w", dir, err)
+		return "", fmt.Errorf("read the ownership of %s: %w", dir, err)
 	}
 
-	if err := sharedRoot(dir, root.dir, sd); err != nil {
-		return err
+	who, err := changerIn(dir, judgedFor(installation), sd, anyRight, "use it or what is made in it", true)
+	if who != "" {
+		who += " could"
 	}
 
-	layout, led := EphemeralDirs(dir), ""
-	if installation {
-		layout = rootedAt(dir)
-	}
-
-	if root.link != nil {
-		if led, _ = finalPath(root.dir, volumeNameDOS); led == "" {
-			led = root.target
-		}
-
-		led = strings.TrimPrefix(led, `\\?\`)
-	}
-
-	if err := layout.strays(dir, led, step{root.dir}); err != nil {
-		return err
-	}
-
-	// Secured already: SYSTEM's or the Administrators', under a protected DACL that grants nobody else
-	// any right, to read it included, nor passes one on to what is made in it -- what a restriction
-	// leaves -- and, where the root is a junction, the junction SYSTEM's or the Administrators' under
-	// a protected DACL too, as replaceLink leaves one, that lets nobody self does not trust point it
-	// elsewhere (linkHeldFor, for self): heldRoot judged the junction for the account running conflux, and
-	// an installation's is judged here again for the SYSTEM service. It is not restricted again, but it is
-	// filled,
-	// since one secured and empty -- as an administrator may have restricted it -- is as open to a
-	// handle opened on it before as one found unrestricted, and what it holds is judged as it is once
-	// a root is restricted: a restriction refused by that judgement is still in place, and what it
-	// refused is still there. A protected DACL that grants anybody else anything, or passes anything
-	// on -- to logs\, which EnsureAll then makes in the root by its name, and the service writes in
-	// before any run judges it, and to serve.lock and conflux.lock, which an account let read could
-	// hold against the supervisor (flock.Held) -- or none at all, or a junction conflux did not make,
-	// is repaired, replaced or refused below as an unrestricted root is.
-	self := judgedFor(installation)
-
-	if secured(sd) && linkHeldFor(dir, root.link, self) {
-		switch who, _, err := changerIn(dir, self, sd, anyRight, "use it or what is made in it", nil, true); {
-		case err != nil:
-			return err
-		case who == "":
-			if err := fill(dir, root.dir); err != nil {
-				return err
-			}
-
-			return contents(dir, installation)
-		}
-	}
-
-	// The root's owner, and its own DACL, as found: fill holds a handle opened under it off only while
-	// nobody else may take out what fill puts in the root, and a handle keeps what it was opened with
-	// once the DACL is replaced. %ProgramData%'s grant to Users -- to add to a folder and write its
-	// attributes -- moves nothing, so a root that only inherits it passes.
-	if err := unmovable(dir, sd, "take out what conflux puts in it, with a handle opened now that keeps the right "+
-		"once conflux restricts it"); err != nil {
-		return err
-	}
-
-	// A junction is made conflux's own before what the root holds is read by its name, through it.
-	if root.link != nil {
-		if err := replaceLink(dir, &root); err != nil {
-			return err
-		}
-	}
-
-	// Filled before anything is judged, so that no refusal below leaves the root empty, restricted
-	// or not, for a handle opened on it earlier to make a junction of.
-	if err := fill(dir, root.dir); err != nil {
-		return err
-	}
-
-	if err := contents(dir, installation); err != nil {
-		return err
-	}
-
-	if err := restrictWith(true, func(owner *windows.SID, dacl *windows.ACL) error {
-		return windows.SetSecurityInfo(root.dir, windows.SE_FILE_OBJECT, restrictInfo(owner), owner, nil, dacl, nil)
-	}); err != nil {
-		return fmt.Errorf("restrict %s: %w", dir, err)
-	}
-
-	restricted(dir)
-
-	return contents(dir, installation)
-}
-
-// unmovable refuses the root dir, whose owner and DACL sd holds, before conflux changes anything in it,
-// as secure and RemakeOld do: where its owner is not SYSTEM, the Administrators or the account running
-// conflux (ownerRefusal), or its DACL, as found, lets another account move what is in it (changerIn,
-// moves), who could then, with a handle opened now, do what why says to undo what conflux does there.
-func unmovable(dir string, sd *windows.SECURITY_DESCRIPTOR, why string) error {
-	if err := ownerIn(dir, sd); err != nil {
-		return err
-	}
-
-	switch who, _, err := changerIn(dir, currentUser(), sd, moves, "move it or what is in it", nil, false); {
-	case err != nil:
-		return err
-	case who != "":
-		return fmt.Errorf("%s %s could %s, so conflux will not use it.\n  Give it a DACL that grants nobody else "+
-			"that right, then run this again as Administrator", dir, who, why)
-	}
-
-	return nil
+	return who, err
 }
 
 // judgedFor is the account a root, and what it holds, is judged for: SYSTEM, which the boot service
@@ -672,184 +473,6 @@ func judgedFor(installation bool) *windows.SID {
 	}
 
 	return currentUser()
-}
-
-// secured reports whether sd is owned and protected as a restriction leaves it: SYSTEM's or the
-// Administrators', its DACL protected.
-func secured(sd *windows.SECURITY_DESCRIPTOR) bool {
-	owner, _, err := sd.Owner()
-	if err != nil || !owner.Equals(sidSystem) && !owner.Equals(sidAdmins) {
-		return false
-	}
-
-	control, _, err := sd.Control()
-
-	return err == nil && control&windows.SE_DACL_PROTECTED != 0
-}
-
-// replaceLink makes dir, a junction or a link r holds open as itself, a junction of conflux's own
-// leading to r.dir, the directory secure judged: the one found is removed, at once though others
-// hold it open, and another made at its name through a handle of conflux's, created with Restrict's
-// ownership and DACL -- so nobody else can ever have opened it to write -- and given r.dir as its
-// reparse point through that handle. A handle somebody opened on the one found, which keeps the
-// rights it was opened with, can repoint nothing anybody reaches by the name. Something made at the
-// name before conflux makes its own is refused, naming where the junction led and saying how to
-// make it again first: with nothing at the name, the next run would make a root afresh there, and
-// the machine a new identity. It leads to r.target, the directory's name by its volume's GUID,
-// which heldRoot read (leadsTo). A failure to make or point its own says the same as something made
-// at the name; a kill in that instant says nothing, and leaves nothing, or conflux's empty
-// directory, at the name, which windows.md tells an operator to remove and make the junction again
-// in place of. r.self is the new junction after.
-func replaceLink(dir string, r *held) error {
-	target := r.target
-
-	shown, _ := finalPath(r.dir, volumeNameDOS) // what dir shows it leads to; nothing where it has no such name
-	shown = strings.TrimPrefix(shown, `\\?\`)
-
-	// Where the junction led, as a refusal names it to make it again: by its drive letter where it has
-	// one.
-	leads := shown
-	if leads == "" {
-		leads = target
-	}
-
-	remake := remakeJunction(dir, leads)
-
-	parent, err := openFile(filepath.Dir(dir), windows.FILE_READ_ATTRIBUTES, true)
-	if err != nil {
-		return fmt.Errorf("read %s: %w", filepath.Dir(dir), err)
-	}
-	defer windows.CloseHandle(parent)
-
-	if err := unlink(dir, r.self); err != nil {
-		return fmt.Errorf("remove the junction %s to make one of conflux's own in its place: %w", dir, err)
-	}
-
-	windows.CloseHandle(r.self)
-	r.self = r.dir
-
-	replacing(dir)
-
-	link, err := createIn(parent, filepath.Base(dir),
-		windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES|windows.FILE_WRITE_ATTRIBUTES|windows.FILE_WRITE_DATA)
-
-	switch {
-	case errors.Is(err, windows.ERROR_ALREADY_EXISTS):
-		return fmt.Errorf("%s was made again by somebody else while conflux replaced the junction there, which led "+
-			"to %s, so conflux will not use it.\n  %s", dir, leads, remake)
-	case err != nil:
-		return fmt.Errorf("make a junction of conflux's own at %s: %w\n  %s", dir, err, remake)
-	}
-
-	r.self = link
-
-	if err := setMountPoint(link, `\??\`+strings.TrimPrefix(target, `\\?\`), shown); err != nil {
-		return fmt.Errorf("point the junction %s at %s: %w\n  %s", dir, leads, err, remake)
-	}
-
-	led, err := openFile(dir, windows.FILE_READ_ATTRIBUTES, true)
-	if err != nil {
-		return fmt.Errorf("read %s: %w", dir, err)
-	}
-	defer windows.CloseHandle(led)
-
-	if same, err := sameFile(led, r.dir); err != nil || !same {
-		return fmt.Errorf("%s does not lead where it did, %s, once conflux made it a junction of its own (%v), so "+
-			"conflux will not use it.\n  %s", dir, leads, err, remake)
-	}
-
-	return nil
-}
-
-// remakeJunction is the way on from a refusal once the junction at dir, which led to leads, is gone:
-// the junction made again, before conflux runs again. Made at the name, a junction carries what the
-// folder it is in passes on -- in %ProgramData%, Users' right to write its attributes, enough to
-// point it elsewhere -- which the next run refuses (heldLink). So it is made in a folder only
-// SYSTEM, the Administrators and TrustedInstaller may write, on dir's volume, and moved into place,
-// which on one volume keeps the DACL it was made with: unprotected, so the next run replaces it with
-// conflux's own. The commands that do it, in cmd, where mklink is, and whose rmdir removes a junction
-// without going into where it leads, make it in %ProgramFiles%, and are given only where that is on
-// dir's volume, since move cannot take a junction from one volume to another; elsewhere the folder
-// is the operator's to choose, and the refusal says so, naming the volume.
-func remakeJunction(dir, leads string) string {
-	remake := "Remove whatever is at its name, and make the junction again before conflux runs, or it would make " +
-		"a new root there, and the machine a new identity. Made at its name, the junction would carry what the " +
-		"folder it is in passes on, in %ProgramData% Users' right to write its attributes, and be refused; so " +
-		"make it in a folder only SYSTEM and the Administrators may write, on the same volume, and move it into " +
-		"place."
-
-	if vol := filepath.VolumeName(dir); !strings.EqualFold(filepath.VolumeName(os.Getenv("ProgramFiles")), vol) {
-		return remake + " %ProgramFiles% is not on " + vol + ", so choose such a folder there; then, in cmd, not " +
-			`PowerShell, as Administrator, remove "` + dir + `" with rmdir, make the junction to "` + leads +
-			`" in that folder with mklink /J, move it to "` + dir + `", and run this again`
-	}
-
-	stage := `%ProgramFiles%\` + filepath.Base(dir) + ".junction"
-
-	return remake + " In cmd, not PowerShell, as Administrator:\n" +
-		`    rmdir "` + dir + `"` + "\n" +
-		`    mklink /J "` + stage + `" "` + leads + `"` + "\n" +
-		`    move "` + stage + `" "` + dir + `"` + "\n" +
-		"  then run this again"
-}
-
-// leadsTo is where dir, a junction or a link, leads, the directory h holds open, named by its
-// volume's GUID, as a junction of conflux's can lead to it; one that has no such name, which a
-// junction cannot lead to -- a network share's, which heldRoot refuses first (remote), or a local
-// volume's the mount manager does not name -- is refused, and not as a directory that is not there:
-// GetFinalPathNameByHandle says ERROR_PATH_NOT_FOUND of it.
-func leadsTo(dir string, h windows.Handle) (string, error) {
-	target, err := finalPath(h, volumeNameGUID)
-	if err != nil {
-		return "", fmt.Errorf("read where %s leads, which a junction of conflux's could lead to: %v", dir, err)
-	}
-
-	return target, nil
-}
-
-// replacing is called once replaceLink has removed the junction it found, before it makes its own
-// at the name: nothing, but where a test makes something there meanwhile.
-var replacing = func(string) {}
-
-// GetFinalPathNameByHandle's flags: the path by the volume's GUID, or by its drive letter, each
-// normalized.
-const (
-	volumeNameDOS  = 0x0
-	volumeNameGUID = 0x1
-)
-
-// finalPath is the path of what h holds open, as \\?\ and the volume named as flags says.
-func finalPath(h windows.Handle, flags uint32) (string, error) {
-	buf := make([]uint16, windows.MAX_PATH)
-
-	for {
-		n, err := windows.GetFinalPathNameByHandle(h, &buf[0], uint32(len(buf)), flags)
-		if err != nil {
-			return "", err
-		}
-
-		if int(n) < len(buf) {
-			return windows.UTF16ToString(buf[:n]), nil
-		}
-
-		buf = make([]uint16, n)
-	}
-}
-
-// unlink removes dir, the link self holds open as itself, by its name, once that name is shown to be
-// self still (dispose).
-func unlink(dir string, self windows.Handle) error {
-	h, err := openFile(dir, windows.DELETE|windows.FILE_READ_ATTRIBUTES, false)
-	if err != nil {
-		return err
-	}
-	defer windows.CloseHandle(h)
-
-	if same, err := sameFile(h, self); err != nil || !same {
-		return fmt.Errorf("it is not the junction conflux found there (%v)", err)
-	}
-
-	return dispose(h)
 }
 
 // dispose removes what h holds open, opened with DELETE: with POSIX semantics where the file system
@@ -878,276 +501,15 @@ func dispose(h windows.Handle) error {
 	return windows.SetFileInformationByHandle(h, windows.FileDispositionInfo, &del, 1)
 }
 
-// sameFile reports whether a and b hold one file open (sameInfo).
-func sameFile(a, b windows.Handle) (bool, error) {
-	var fa, fb windows.ByHandleFileInformation
-	if err := windows.GetFileInformationByHandle(a, &fa); err != nil {
-		return false, err
-	}
-
-	if err := windows.GetFileInformationByHandle(b, &fb); err != nil {
-		return false, err
-	}
-
-	return sameInfo(&fa, &fb), nil
-}
-
-// sameInfo reports whether a and b, what GetFileInformationByHandle said of two handles, are of one file:
-// one volume, one file index.
-func sameInfo(a, b *windows.ByHandleFileInformation) bool {
-	return a.VolumeSerialNumber == b.VolumeSerialNumber && a.FileIndexHigh == b.FileIndexHigh &&
-		a.FileIndexLow == b.FileIndexLow
-}
-
-// setMountPoint makes the empty directory h holds a junction leading to substitute, an NT path
-// (\??\C:\x, \??\Volume{...}\x), shown as display: FSCTL_SET_REPARSE_POINT with mountPointData. h
-// must have been opened to write its data or its attributes.
-func setMountPoint(h windows.Handle, substitute, display string) error {
-	b := mountPointData(substitute, display)
-
-	var n uint32
-
-	return windows.DeviceIoControl(h, windows.FSCTL_SET_REPARSE_POINT, &b[0], uint32(len(b)), nil, 0, &n, nil)
-}
-
-// restricted is called once secure has restricted a root through its handle, before it judges what
-// the root holds again: nothing, but where a test adds to the root meanwhile.
-var restricted = func(string) {}
-
-// rootAccess is what secure holds a root open for: to read its owner, DACL and attributes, and
-// to replace its DACL and owner.
-const rootAccess = windows.READ_CONTROL | windows.FILE_READ_ATTRIBUTES | windows.WRITE_DAC | windows.WRITE_OWNER
-
-// ownerIn is ownerRefusal of dir for the owner sd holds, the one read of a root's owner that secure,
-// RemakeOld (unmovable), the readers' check (checkRoot) and OpenIn (rootOwner) make.
-func ownerIn(dir string, sd *windows.SECURITY_DESCRIPTOR) error {
-	owner, _, err := sd.Owner()
-	if err != nil {
-		return fmt.Errorf("read the owner of %s: %w", dir, err)
-	}
-
-	return ownerRefusal(dir, owner)
-}
-
-// ownerRefusal is secure's refusal of dir for owner, or nil where owner is SYSTEM, the
-// Administrators or the account running conflux.
-func ownerRefusal(dir string, owner *windows.SID) error {
-	if trusted(owner) {
-		return nil
-	}
-
-	return fmt.Errorf(
-		"%s belongs to %s, not to SYSTEM or the Administrators, so conflux did not create it and "+
-			"will not use what is in it.\n  Remove it, then run this again as Administrator. If conflux left it, "+
-			"run conflux start elevated as that same account, which repairs it; an account that is not an "+
-			"administrator cannot",
-		dir, accountName(owner))
-}
-
-// checkRoot is Check's judgement of the root dir, here: held open, as itself where it is a junction
-// or a link, and to read alone (heldRoot), so that a link leading off this machine or nowhere, one
-// another account may point elsewhere, and a root on a network volume are refused; then refused
-// where its owner is not SYSTEM, the Administrators or the account running conflux (ownerRefusal),
-// or where its DACL grants another account any right, to read it included, on itself or on what is
-// made in it -- the rule secure keeps a root it finds secured already to, and what it restricts
-// one granting more to: a root is conflux's alone, and a reader refuses what secure would change. A
-// CONFLUX_DIR is held to its parents first (parents), which also refuses a link on the way to it
-// that leads off this machine before anything is looked up through it. A root this account may not
-// open or read is refused, since whoever made it can deny conflux the right to read its owner and
-// DACL as easily as they can make it.
-func checkRoot(dir string) error {
-	if chosen(dir) {
-		if err := parents(dir); err != nil {
-			return err
-		}
-	}
-
-	root, err := heldRoot(dir, readAccess)
-	if err != nil {
-		return err
-	}
-	defer root.close()
-
-	sd, err := security(root.dir)
-	if err != nil {
-		return fmt.Errorf("read the ownership of %s: %w", dir, err)
-	}
-
-	if err := ownerIn(dir, sd); err != nil {
-		return err
-	}
-
-	switch who, _, err := changerIn(dir, currentUser(), sd, anyRight, "use it or what is made in it", nil, true); {
-	case err != nil:
-		return err
-	case who != "":
-		return fmt.Errorf("%s %s could read what conflux keeps in it, or put what they like there for conflux to "+
-			"read or run, so conflux will not use it: a root is conflux's alone.\n  Let conflux restrict it, which "+
-			"judges what it holds as it does, rather than changing its DACL by hand: for the machine's own, %s, or "+
-			"install; an ephemeral run's restricts its own as it starts. Then run this again", dir, who,
-			privcheck.Retry("conflux start"))
-	}
-
-	return nil
-}
-
-// foreign is Foreign here: the root held to checkRoot, and what it holds to contents, through
-// handles of its own.
-func foreign(dir string) error {
-	if err := checkRoot(dir); err != nil {
-		return err
-	}
-
-	return contents(dir, false)
-}
-
-// ownedRoot refuses dir where secure would for its owner: nowhere Foreign has passed it, whose
-// checkRoot holds the owner, a junction's included, to secure's rule (ownerRefusal, heldLink).
-func ownedRoot(string) error { return nil }
-
 // readAccess is what a handle that only reads who may change a file is opened for.
 const readAccess = windows.READ_CONTROL | windows.FILE_READ_ATTRIBUTES
-
-// held is a root held open: itself, as the lookup of its name found it, and the directory it
-// is -- the same handle, or for a junction or a link heldLink holds, what it leads to -- and for
-// such a link, its own owner and DACL, as heldLink judged them, and where it leads, by the
-// directory's volume's GUID (leadsTo), as replaceLink points a junction of conflux's there.
-type held struct {
-	self, dir windows.Handle
-	link      *windows.SECURITY_DESCRIPTOR
-	target    string
-}
-
-// linkHeldFor reports whether link, the owner and DACL of the junction or link at the root dir's name,
-// or nil where there is none, is none, or one secured as replaceLink leaves one -- SYSTEM's or the
-// Administrators', under a protected DACL -- that lets nobody the judgement for self does not trust
-// point it elsewhere (changerIn, retargets).
-func linkHeldFor(dir string, link *windows.SECURITY_DESCRIPTOR, self *windows.SID) bool {
-	if link == nil {
-		return true
-	}
-
-	if !secured(link) {
-		return false
-	}
-
-	who, _, err := changerIn(dir, self, link, retargets, "point it elsewhere or move it", nil, false)
-
-	return err == nil && who == ""
-}
-
-// linkSecurity is what holdRoot keeps of a junction or a link at a root's name for a judgement after
-// follow's: its own owner and DACL.
-type linkSecurity = *windows.SECURITY_DESCRIPTOR
-
-// serviceFollows reports whether the boot service, running as SYSTEM, which trusts no other account,
-// would follow the junction or link at the root dir's name whose own owner and DACL sec holds, as
-// secure holds an installation's (linkHeldFor, for SYSTEM): one secured as replaceLink leaves one, which
-// nobody but SYSTEM and the Administrators may point elsewhere. One an administrator made, which the
-// administrator's own processes may repoint unelevated, is not.
-func serviceFollows(dir string, sec linkSecurity) bool { return linkHeldFor(dir, sec, sidSystem) }
-
-func (r *held) close() {
-	if r.dir != r.self {
-		windows.CloseHandle(r.dir)
-	}
-
-	windows.CloseHandle(r.self)
-}
-
-// heldRoot opens dir for access, as itself and never by its name again. A junction or a link is
-// read for where it leads first, off the link and not by following it, and refused where that may
-// be another machine (linkTarget), so that following it never signs this one in there; then it is
-// held to who may point it elsewhere (heldLink), as a link is on Unix to its owner, and judged
-// through the handle that found it; where it is held, what it leads to is opened by following it,
-// and that directory, held open, is what is judged after. A handle somebody opened on the link
-// while its DACL let them write it may still repoint it between the judgement and that open, so
-// where the link led as it was judged answers for nothing; secure replaces it with one of its own
-// leading to the directory opened (replaceLink), which nobody may have held open before, unless it
-// finds it secured already (security.md's first gap, a kept handle). Where the directory is that is
-// not a plain directory either, it is refused: there is nothing further to follow; so is one on a
-// network volume (remote), and, for a link, one its volume's GUID does not name, where no junction
-// of conflux's could lead (leadsTo). A root that could not be opened or read is refused, saying
-// why, as is a link that leads nowhere, which is refused as one conflux cannot follow, never as a
-// root that is not there.
-func heldRoot(dir string, access uint32) (held, error) {
-	self, err := openFile(dir, access, false)
-	if err != nil {
-		return held{}, fmt.Errorf("read %s: %w", dir, err)
-	}
-
-	r := held{self: self, dir: self}
-
-	link, err := isReparse(self)
-	if err != nil {
-		r.close()
-
-		return held{}, fmt.Errorf("read %s: %w", dir, err)
-	}
-
-	if link {
-		if _, err := linkTarget(self); err != nil && !errors.Is(err, errNotLink) {
-			r.close()
-
-			return held{}, fmt.Errorf("%s is a link conflux will not follow, so conflux will not use it: %v.\n"+
-				"  Point it at a folder on a volume of this machine's own, then run this again as Administrator", dir, err)
-		}
-
-		sd, err := security(self)
-		if err != nil {
-			r.close()
-
-			return held{}, fmt.Errorf("read the ownership of %s: %w", dir, err)
-		}
-
-		if err := heldLink(dir, sd); err != nil {
-			r.close()
-
-			return held{}, err
-		}
-
-		r.link = sd
-
-		led, err := openFile(dir, access, true)
-		if err != nil {
-			r.close()
-
-			return held{}, fmt.Errorf("%s is a link conflux cannot follow (%v), so conflux will not use it.\n"+
-				"  Remove it, then run this again as Administrator", dir, err)
-		}
-
-		r.dir = led
-
-		if err := notLink(dir, r.dir, "leads to a reparse point conflux cannot follow"); err != nil {
-			r.close()
-
-			return held{}, err
-		}
-	}
-
-	if err := remote(dir, r.dir); err != nil {
-		r.close()
-
-		return held{}, err
-	}
-
-	if r.link != nil {
-		if r.target, err = leadsTo(dir, r.dir); err != nil {
-			r.close()
-
-			return held{}, err
-		}
-	}
-
-	return r, nil
-}
 
 // remote refuses dir, whose directory h holds open, where that is on a network volume -- a share
 // reached by its UNC path, a drive mapped to one, or a link leading to either -- as the device the
 // volume is on says of itself (FILE_FS_DEVICE_INFORMATION, which GetDriveType reads DRIVE_REMOTE
 // from), and not as dir is spelled. Who owns what is there, and whom its DACL grants, are the
 // accounts of the machine serving it -- its Administrators are not this machine's -- which this one
-// cannot judge, as no junction of conflux's could lead there either (leadsTo).
+// cannot judge.
 func remote(dir string, h windows.Handle) error {
 	var (
 		info struct{ deviceType, characteristics uint32 } // FILE_FS_DEVICE_INFORMATION
@@ -1196,438 +558,6 @@ const (
 	fileDeviceDFSVolume         = 0x36
 )
 
-// notLink refuses dir, held open by h, where h is a reparse point -- a junction, a link, a mount
-// point -- saying it is one as why does.
-func notLink(dir string, h windows.Handle, why string) error {
-	link, err := isReparse(h)
-	switch {
-	case err != nil:
-		return fmt.Errorf("read %s: %w", dir, err)
-	case link:
-		return fmt.Errorf("%s %s, so conflux will not use it.\n  Remove it, then run this again as Administrator", dir, why)
-	}
-
-	return nil
-}
-
-// contents refuses the root dir where anything in it another account may change: each entry is
-// judged by its own owner and DACL, read without following it, as parentsRule reads them, and held to
-// retargets, as a junction root is. A junction or a link (nameSurrogate) is refused, and not
-// followed, whoever may change it: conflux makes none there, and one there could have been opened
-// to repoint it while its DACL let somebody. So is anything else another account may write, move or
-// point elsewhere -- a directory among them, which an account that may write its data or its
-// attributes could make a junction of while it is empty, with a handle that keeps those rights once
-// the restriction has replaced what the entry inherited -- and a directory whose DACL passes such a
-// right on to what is made in it, as an inherit-only grant on logs\ would to conflux.log, which the
-// service writes there. A reparse point a lookup does not follow, as anchord's socket in a SYSTEM
-// anchord's run\anchord\ is, is judged as any other file.
-//
-// anchord's own account, this installation's service SID (ServiceSID), is conflux's, as the account
-// anchord runs as is on Unix: what its DACL grants that SID is discounted, as SYSTEM's and the
-// Administrators' grants are, what it passes on to what is made in a directory among them --
-// MakeAnchordDir's grant to anchord of what anchor\ and run\anchord\ hold. Its owner is not: an
-// entry the SID, or any account but SYSTEM, the Administrators, TrustedInstaller and the one
-// running conflux, owns is refused, whatever its name, so one another account planted as anchor or
-// run\anchord stays refused. A directory the DACL just judged lets that SID write -- anchor\ and
-// run\anchord\, as MakeAnchordDir makes them -- is not gone into: its DACL, which has just shown
-// nobody else may write it, lets only SYSTEM, the Administrators and anchord make anything inside,
-// and what anchord makes there, which it owns, conflux reads as anchord's, untrusted
-// (OpenUntrusted, ReadUntrusted, copyTree).
-//
-// In an installation's root, which the boot service runs from as SYSTEM, trusting no other account,
-// each entry is judged for SYSTEM (judgedFor): one the account running conflux owns -- an
-// administrator's own, as a Windows client's default-owner policy leaves what an elevated
-// administrator's tools make, or as an older conflux left it -- is refused as any other account's
-// is, and so is one whose DACL grants that account a right it judges; RemakeOld removes what conflux
-// makes again of those. Elsewhere -- an ephemeral run's root, and any reader's -- each is judged for
-// the account running conflux. Nothing is changed.
-//
-// An entry gone between the listing and its judgement is passed over: nothing is there to judge,
-// and a live run's root -- an ephemeral one, which Foreign reads -- has its marker written and
-// removed while it runs.
-func contents(dir string, installation bool) error {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return fmt.Errorf("read %s: %w", dir, err)
-	}
-
-	if len(entries) == 0 {
-		return nil
-	}
-
-	anchord, err := ServiceSID()
-	if err != nil {
-		return fmt.Errorf("judge what %s holds: %w", dir, err)
-	}
-
-	judged := judgedFor(installation)
-
-	for _, e := range entries {
-		if err := filepath.WalkDir(filepath.Join(dir, e.Name()), func(p string, d fs.DirEntry, err error) error {
-			var h windows.Handle
-			if err == nil {
-				if h, err = openFile(p, readAccess, false); err != nil {
-					err = fmt.Errorf("read %s: %w", p, err)
-				}
-			}
-
-			switch {
-			case errors.Is(err, fs.ErrNotExist):
-				return nil // gone since it was listed, as what a live run writes and removes may be
-			case err != nil:
-				return err
-			}
-			defer windows.CloseHandle(h)
-
-			switch link, err := nameSurrogate(h); {
-			case err != nil:
-				return fmt.Errorf("read %s: %w", p, err)
-			case link:
-				return fmt.Errorf("%s, a junction or a link, is in %s, where conflux makes none, so conflux will not "+
-					"use it.\n  Remove it, then run this again as Administrator", p, dir)
-			}
-
-			who, anchords, err := entryChanger(p, judged, h, anchord, d.IsDir())
-			switch {
-			case err != nil:
-				return err
-			case who != "":
-				return fmt.Errorf("%s, which %s could change it, is in %s, so conflux will not use it.\n"+
-					"  Remove it, then run this again as Administrator", p, who, dir)
-			case anchords && d.IsDir():
-				return fs.SkipDir
-			}
-
-			return nil
-		}); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// entryChanger is who, besides SYSTEM, the Administrators, TrustedInstaller, self and anchord, may
-// change p, a thing in a root held open as itself by h, a folder where dir is, as contents judges each
-// thing a root holds: its owner and DACL, read through h, held to retargets, on p itself and, for a
-// folder, on what is made in it too (changer); and whether that DACL grants anchord one of them.
-func entryChanger(p string, self *windows.SID, h windows.Handle, anchord *windows.SID, dir bool) (string, bool,
-	error) {
-	what := "write it, move it or make a junction of it"
-	if dir {
-		what = "write it or what is made in it, move it or make a junction of it"
-	}
-
-	return changer(p, self, h, retargets, what, anchord, dir)
-}
-
-// heldLink refuses dir, a junction or a link whose own owner and DACL sd holds, where an account
-// other than those trustedFor names for the account running conflux may point it elsewhere: by owning it, or by a grant of
-// retargets in its DACL. Owners and DACLs read by name follow a junction, so the directory it leads
-// to would otherwise answer for it, and %ProgramData% lets any user make one where
-// %ProgramData%\conflux or conflux-ephemeral is not yet, leading into a directory of SYSTEM's,
-// and point it at one of their own once conflux has filled it, with a conflux.exe for the
-// service to run as SYSTEM. Held as a link is on Unix, by its owner, and here by its DACL too.
-func heldLink(dir string, sd *windows.SECURITY_DESCRIPTOR) error {
-	who, _, err := changerIn(dir, currentUser(), sd, retargets, "point it elsewhere or move it", nil, false)
-	if err != nil || who == "" {
-		return err
-	}
-
-	return fmt.Errorf("%s is a junction or a link, which %s could point at a directory of their own, with a "+
-		"conflux in it for the service to run.\n  Remove it, then run this again as Administrator", dir, who)
-}
-
-// rootOwner refuses the root dir, the folder s holds open, where its owner is not SYSTEM, the
-// Administrators or the account running conflux (ownerRefusal), as read through s.
-func rootOwner(dir string, s step) error {
-	sd, err := security(s.h)
-	if err != nil {
-		return fmt.Errorf("read the ownership of %s: %w", dir, err)
-	}
-
-	return ownerIn(dir, sd)
-}
-
-// heldLinkRule refuses dir, the junction or link s holds open as itself, where another account may
-// point it elsewhere (heldLink), as read through s, and is its owner and DACL.
-func heldLinkRule(dir string, s step) (linkSecurity, error) {
-	sd, err := security(s.h)
-	if err != nil {
-		return nil, fmt.Errorf("read the ownership of %s: %w", dir, err)
-	}
-
-	return sd, heldLink(dir, sd)
-}
-
-// ledRoot refuses the folder the junction or link at the root dir's name leads to, which s holds open
-// and p names, where its owner is not SYSTEM, the Administrators or the account running conflux
-// (ownerRefusal), as read through s: the owner a root at the name itself is held to (rootOwner). A
-// folder of conflux's own whose DACL grants more than conflux leaves is secure's to restrict, judging
-// what it holds as found, as a root at the name itself is.
-func ledRoot(dir, p string, s step) error {
-	if err := rootOwner(p, s); err != nil {
-		return fmt.Errorf("%s is a junction or a link to a folder conflux will not use: %w", dir, err)
-	}
-
-	return nil
-}
-
-// systemFolders are the folders no root of conflux's may be, by their final paths, lower-cased, and
-// why: %ProgramData%, %SystemRoot%, the folder the accounts' profiles are kept in (C:\Users) and Public
-// in it, as the system names them (KnownFolderPath). Read once: they do not move while conflux runs.
-var systemFolders = sync.OnceValue(func() map[string]string {
-	folders := map[string]string{}
-
-	for _, f := range []struct {
-		id  *windows.KNOWNFOLDERID
-		why string
-	}{
-		{windows.FOLDERID_ProgramData, "%ProgramData%, which every account shares"},
-		{windows.FOLDERID_Windows, "the system's own folder"},
-		{windows.FOLDERID_UserProfiles, "the folder every account's profile is kept in"},
-		{windows.FOLDERID_Public, "the folder every account shares"},
-	} {
-		p, err := windows.KnownFolderPath(f.id, windows.KF_FLAG_DEFAULT)
-		if err != nil {
-			continue
-		}
-
-		if h, err := openFile(p, windows.FILE_READ_ATTRIBUTES, true); err == nil {
-			if final, err := finalPath(h, volumeNameDOS); err == nil {
-				p = strings.TrimPrefix(final, `\\?\`)
-			}
-
-			windows.CloseHandle(h)
-		}
-
-		folders[strings.ToLower(filepath.Clean(p))] = f.why
-	}
-
-	return folders
-})
-
-// sharedRoot refuses the root dir, the folder h holds open, where it is one others keep what is theirs
-// in, which conflux never fills, restricts or empties, whoever owns it: a volume's root (C:\), a folder
-// systemFolders names, a folder directly under a volume's root that Windows made (windowsOwn), the
-// folder the running conflux is in or one above it (runningExe), or one whose DACL makes it a space other
-// accounts share (sharedSpace), as read through h, its owner and DACL as sd holds them. The folder the
-// running conflux is in is taken where
-// it is the boot service's own root: the running conflux the copy the service runs from it (serviceCopy),
-// and the folder already holding this installation's own state (stateIn), whatever else its DACL grants,
-// which secure restricts. A folder holding the running conflux and nothing of the installation's --
-// %ProgramFiles%\conflux, where install.ps1 puts it -- is refused, the copy's name there or not; and a
-// DACL making it a space other accounts share refuses even the service's own.
-func sharedRoot(dir string, h windows.Handle, sd *windows.SECURITY_DESCRIPTOR) error {
-	why := ""
-
-	switch p, err := finalPath(h, volumeNameDOS); {
-	case err != nil:
-		// No path by a drive letter: a volume's root is still one, by its GUID, and a folder directly
-		// under one.
-		if g, err := finalPath(h, volumeNameGUID); err == nil {
-			why = placeOnVolume(g, sd)
-		}
-	default:
-		folder := strings.ToLower(filepath.Clean(strings.TrimPrefix(p, `\\?\`)))
-
-		if why = placeOnVolume(p, sd); why == "" {
-			why = systemFolders()[folder]
-		}
-
-		switch ex := runningExe(); {
-		case why != "":
-		case ex.above[folder]:
-			why = "a folder above the one the running conflux is in"
-		case folder == ex.folder && !(serviceCopy(h, ex) && stateIn(dir, step{h})):
-			why = "the folder the running conflux is in"
-		}
-	}
-
-	if why == "" {
-		dacl, _, err := sd.DACL()
-		if err != nil {
-			return fmt.Errorf("read the DACL of %s: %w", dir, err)
-		}
-
-		if dacl != nil {
-			header := unsafe.Slice((*byte)(unsafe.Pointer(dacl)), 8)
-
-			shared, err := sharedSpace(unsafe.Slice((*byte)(unsafe.Pointer(dacl)), binary.LittleEndian.Uint16(header[2:])))
-			if err != nil {
-				return fmt.Errorf("read the DACL of %s: %w", dir, err)
-			}
-
-			if shared {
-				why = "a folder other accounts share, its DACL letting them add to it and own what they add"
-			}
-		}
-	}
-
-	if why == "" {
-		return nil
-	}
-
-	return fmt.Errorf("%s is %s, so conflux will not use it as a root: it never fills, restricts or empties a "+
-		"folder others keep what is theirs in.\n  %s", dir, why, sharedWay(dir))
-}
-
-// exePlace is the running conflux as Windows names it (exePlaceOf): the folder it is in and each
-// folder above that, by their final paths, lower-cased as systemFolders keeps them, and the file it is.
-type exePlace struct {
-	folder string
-	above  map[string]bool
-	file   windows.ByHandleFileInformation
-	known  bool
-}
-
-// runningExe is this process's exePlace, read once: the running conflux does not move while it runs.
-// A variable so a test can stand another conflux in.
-var runningExe = sync.OnceValue(func() exePlace {
-	exe, err := os.Executable()
-	if err != nil {
-		return exePlace{}
-	}
-
-	return exePlaceOf(exe)
-})
-
-// exePlaceOf is the exePlace of a conflux running exe: opened following any link, as Windows ran it,
-// its final path by its drive letter read off the handle, and the file read through it. Where it
-// cannot be opened or named so it is no place at all.
-func exePlaceOf(exe string) exePlace {
-	h, err := openFile(exe, windows.FILE_READ_ATTRIBUTES, true)
-	if err != nil {
-		return exePlace{}
-	}
-	defer windows.CloseHandle(h)
-
-	ex := exePlace{above: map[string]bool{}}
-
-	ex.known = windows.GetFileInformationByHandle(h, &ex.file) == nil
-
-	final, err := finalPath(h, volumeNameDOS)
-	if err != nil {
-		return ex
-	}
-
-	ex.folder = strings.ToLower(filepath.Dir(filepath.Clean(strings.TrimPrefix(final, `\\?\`))))
-
-	for a := filepath.Dir(ex.folder); ; a = filepath.Dir(a) {
-		ex.above[a] = true
-
-		if a == filepath.Dir(a) {
-			return ex
-		}
-	}
-}
-
-// serviceCopy reports whether the running conflux, ex, is the copy the boot service runs from the root h
-// holds open (ServiceExecutable): the file at that copy's name there, looked up there and nowhere else
-// and never followed (ntOpen), one file with the running conflux (sameInfo) -- which exePlaceOf opened
-// following any link, so a junction or a link at the copy's name, opened as itself, is never it, while a
-// copy the system keeps as a reparse point of its own, deduplicated or compressed, is.
-func serviceCopy(h windows.Handle, ex exePlace) bool {
-	if !ex.known {
-		return false
-	}
-
-	c, err := ntOpen(h, filepath.Base(Dirs{}.ServiceExecutable()), nil, windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES,
-		windows.FILE_OPEN, windows.FILE_NON_DIRECTORY_FILE)
-	if err != nil {
-		return false
-	}
-	defer windows.CloseHandle(c)
-
-	var fi windows.ByHandleFileInformation
-
-	return windows.GetFileInformationByHandle(c, &fi) == nil && sameInfo(&fi, &ex.file)
-}
-
-// sharedWay is the way on from the refusal of the shared folder at the root dir: a CONFLUX_DIR pointed
-// elsewhere, or, for the platform's own root, which nobody chooses, the folder removed -- somebody else
-// made it, as %ProgramData% lets any account make %ProgramData%\conflux before conflux does.
-func sharedWay(dir string) string {
-	if chosen(dir) {
-		return "Point it at a folder of its own, then run this again as Administrator"
-	}
-
-	return "Somebody else made it: remove it, then run this again as Administrator"
-}
-
-// placeOnVolume is why final, a folder's final path (finalPath), is no root by where it is on its
-// volume, or "": a volume's root, whose final path is the volume and a separator; or a folder directly
-// under one that Windows made (windowsOwn), its owner as sd holds it.
-func placeOnVolume(final string, sd *windows.SECURITY_DESCRIPTOR) string {
-	vol := filepath.VolumeName(final)
-	rest := strings.Trim(final[len(vol):], `\`)
-
-	switch {
-	case rest == "":
-		return "a volume's root"
-	case !strings.Contains(rest, `\`) && windowsOwn(sd):
-		return "a folder of Windows' own, directly under a volume's root"
-	}
-
-	return ""
-}
-
-// windowsOwn reports whether sd, a folder's, is owned as the folders Windows makes directly under a
-// volume's root are: by TrustedInstaller -- Windows, Program Files and Program Files (x86) -- or by
-// SYSTEM -- ProgramData, Users, PerfLogs, Recovery, $Recycle.Bin and System Volume Information. What
-// conflux makes there is the Administrators' (Restrict, ElevatedDefaultOwner), as is what an elevated
-// administrator makes under an elevated conflux's, or their own under a client's default-owner policy,
-// so none of those is taken for Windows'.
-func windowsOwn(sd *windows.SECURITY_DESCRIPTOR) bool {
-	owner, _, err := sd.Owner()
-
-	return err == nil && (owner.Equals(sidSystem) || sidTrustedInstaller != nil && owner.Equals(sidTrustedInstaller))
-}
-
-// sharedStep refuses the root dir, the folder s holds open, where it is one others keep what is theirs
-// in (sharedRoot).
-func sharedStep(dir string, s step) error {
-	sd, err := security(s.h)
-	if err != nil {
-		return fmt.Errorf("read the ownership of %s: %w", dir, err)
-	}
-
-	return sharedRoot(dir, s.h, sd)
-}
-
-// securedStep refuses the folder s holds open, which p names -- the root dir itself, or where a junction
-// or link at its name leads -- where conflux has not secured it as a root, as it secures every root it
-// uses at its first start: SYSTEM's or the Administrators', under a protected DACL (secured) that grants
-// nobody else any right, on it or on what is made in it (changerIn, anyRight), as read through s.
-func securedStep(dir, p string, s step) error {
-	sd, err := security(s.h)
-	if err != nil {
-		return fmt.Errorf("read the ownership of %s: %w", p, err)
-	}
-
-	who := ""
-	if !secured(sd) {
-		who = "its owner and DACL, not SYSTEM's or the Administrators' under a protected DACL, say nothing secured " +
-			"it; and whoever made it"
-	} else if who, _, err = changerIn(p, currentUser(), sd, anyRight, "use it or what is made in it", nil,
-		true); err != nil {
-		return err
-	}
-
-	if who != "" {
-		return unsecuredRefusal(dir, p, who)
-	}
-
-	return nil
-}
-
-// sameStep reports whether a and b hold one folder open.
-func sameStep(a, b step) bool {
-	same, err := sameFile(a.h, b.h)
-
-	return err == nil && same
-}
-
 // openIn opens name, a file in the folder s holds open, which p names, to read: looked up there and
 // nowhere else, never followed (ntOpen), a reparse point opened as itself, which PlainFile refuses.
 func openIn(s step, name, p string) (*os.File, error) {
@@ -1645,8 +575,8 @@ func openIn(s step, name, p string) (*os.File, error) {
 // is refused for conflux's look. A right to change the owner or the DACL that is not granted is
 // given up rather than failing the open: a token that may not take ownership -- one that is not
 // elevated, which no conflux command that makes or restricts a root runs with, though a test may --
-// may still replace its own directory's DACL, a junction secure holds is only read, and a
-// restriction through a handle without the right fails as it would by name.
+// may still replace its own file's DACL, and a restriction through a handle without the right fails
+// as it would by name.
 func openFile(p string, access uint32, follow bool) (windows.Handle, error) {
 	name, err := windows.UTF16PtrFromString(p)
 	if err != nil {
@@ -1671,15 +601,6 @@ func openFile(p string, access uint32, follow bool) (windows.Handle, error) {
 	return h, err
 }
 
-// nameSurrogate reports whether h is a reparse point a lookup follows -- a junction, a mount point
-// or a symbolic link, whose tag says it stands for another name (IsReparseTagNameSurrogate) --
-// rather than one holding something of its own, as anchord's AF_UNIX socket does.
-func nameSurrogate(h windows.Handle) (bool, error) {
-	attributes, tag, err := attributeTag(h)
-
-	return attributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 && tag&reparseTagNameSurrogate != 0, err
-}
-
 // attributeTag is what h holds open's attributes and, where it is a reparse point, its tag say
 // (FILE_ATTRIBUTE_TAG_INFO).
 func attributeTag(h windows.Handle) (attributes, tag uint32, err error) {
@@ -1695,17 +616,6 @@ func attributeTag(h windows.Handle) (attributes, tag uint32, err error) {
 // reparseTagNameSurrogate is the bit of a reparse tag that says it stands for another name.
 const reparseTagNameSurrogate = 0x20000000
 
-// isReparse reports whether h is a reparse point: a junction, a link or a mount point, as
-// itself.
-func isReparse(h windows.Handle) (bool, error) {
-	var fi windows.ByHandleFileInformation
-	if err := windows.GetFileInformationByHandle(h, &fi); err != nil {
-		return false, err
-	}
-
-	return fi.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0, nil
-}
-
 // security is the owner and DACL of what h holds open.
 func security(h windows.Handle) (*windows.SECURITY_DESCRIPTOR, error) {
 	return windows.GetSecurityInfo(h, windows.SE_FILE_OBJECT,
@@ -1716,11 +626,9 @@ func security(h windows.Handle) (*windows.SECURITY_DESCRIPTOR, error) {
 // is in it, whatever that grants.
 const fileDeleteChild = 0x40
 
-// moves is what an ACE on a directory above a root, or on a root's own DACL as secure finds it,
-// must not grant another account: to delete or rename what is in it, to delete or rename
-// the directory itself, or to change who may. Above a root, whoever may could move it aside and put
-// another in its place; on the root, a handle opened under such a grant keeps it once the root is
-// restricted, and could take out what fill puts there. Creating folders in it is not among them:
+// moves is what an ACE on a directory above a root must not grant another account: to delete or
+// rename what is in it, to delete or rename the directory itself, or to change who may. Whoever may
+// could move the root aside and put another in its place. Creating folders in it is not among them:
 // C:\ lets every user do that, and a folder of theirs cannot take the place of one that is not, as
 // a sticky directory's cannot on Unix.
 const moves = fileDeleteChild | windows.DELETE | windows.WRITE_DAC | windows.WRITE_OWNER | windows.GENERIC_ALL
@@ -1773,7 +681,13 @@ func parentsRuleFor(dir string, self *windows.SID) judgement {
 			where, what, rights = "reached through", "point it elsewhere or move it", retargets
 		}
 
-		who, _, err := changer(p, self, s.h, rights, what, nil, false)
+		sd, err := security(s.h)
+		if err != nil {
+			return fmt.Errorf("read the ownership of %s: %w", p, err)
+		}
+
+		who, err := changerIn(p, self, sd, rights, what, false)
+
 		switch {
 		case err != nil || who == "":
 		case self != nil && self.Equals(sidSystem) && !isCurrentUser(sidSystem):
@@ -1791,79 +705,58 @@ func parentsRuleFor(dir string, self *windows.SID) judgement {
 	}
 }
 
-// parents refuses dir where its way, walked from the top of its volume (walk), is not there, or is
-// not held to parents' rule (parentsRule).
-func parents(dir string) error { return judgeWay(dir, parentsRule(dir)) }
-
-// changer is changerIn of p, for self, held open as itself by h, over the owner and DACL read
-// through h, and what they allow on p itself, or, where passedOn, on what is made in it too.
-func changer(p string, self *windows.SID, h windows.Handle, rights windows.ACCESS_MASK, what string,
-	anchord *windows.SID, passedOn bool) (who string, anchords bool, err error) {
-	sd, err := security(h)
-	if err != nil {
-		return "", false, fmt.Errorf("read the ownership of %s: %w", p, err)
-	}
-
-	return changerIn(p, self, sd, rights, what, anchord, passedOn)
-}
-
 // changerIn is who besides SYSTEM, the Administrators, TrustedInstaller and self, the account the
 // judgement is made for (trustedFor), may change p, whose owner and DACL sd holds, as a refusal
-// names them, or "": its owner, who may grant itself anything, or anybody but anchord, where it is
-// given, its DACL grants one of rights -- on p itself, or, where passedOn, on what is made in it too
-// (mover) -- which lets them what. anchords is whether the DACL grants anchord one of them.
+// names them, or "": its owner, who may grant itself anything, or anybody its DACL grants one of
+// rights -- on p itself, or, where passedOn, on what is made in it too (mover) -- which lets them what.
 func changerIn(p string, self *windows.SID, sd *windows.SECURITY_DESCRIPTOR, rights windows.ACCESS_MASK,
-	what string, anchord *windows.SID, passedOn bool) (who string, anchords bool, err error) {
+	what string, passedOn bool) (string, error) {
 	owner, _, err := sd.Owner()
 	if err != nil {
-		return "", false, fmt.Errorf("read the owner of %s: %w", p, err)
+		return "", fmt.Errorf("read the owner of %s: %w", p, err)
 	}
 
 	dacl, _, err := sd.DACL()
 	if err != nil {
-		return "", false, fmt.Errorf("read the DACL of %s: %w", p, err)
+		return "", fmt.Errorf("read the DACL of %s: %w", p, err)
 	}
 
 	switch {
 	case !trustedFor(owner, self):
-		return "belongs to " + accountName(owner) + ", who", false, nil
+		return "belongs to " + accountName(owner) + ", who", nil
 	case dacl == nil:
-		return "has no DACL, so anybody", false, nil
+		return "has no DACL, so anybody", nil
 	}
 
-	sid, anchords, err := mover(dacl, self, rights, anchord, passedOn)
+	sid, err := mover(dacl, self, rights, passedOn)
 	switch {
 	case err != nil:
-		return "", false, fmt.Errorf("read the DACL of %s: %w", p, err)
+		return "", fmt.Errorf("read the DACL of %s: %w", p, err)
 	case sid != nil:
-		return "grants " + accountName(sid) + " the right to " + what + ", who", anchords, nil
+		return "grants " + accountName(sid) + " the right to " + what + ", who", nil
 	}
 
-	return "", anchords, nil
+	return "", nil
 }
 
 // mover is the first account dacl grants one of rights on the object itself, or, where passedOn,
-// on what is made in it too, other than those trustedFor names for self and anchord, where it is
-// given, or nil; and whether it grants anchord one of them before it: each entry that allows rights
-// there, as windowsGrants reads them. Where rights holds the right to add a file and a folder to the
-// object (creates), CREATOR OWNER is nobody on the object itself, and passed on, whoever made what it
-// is passed to, whom this same judgement holds to the accounts trustedFor names: so it is counted as
-// the account running conflux, the one whose making conflux can answer for -- what an administrator
-// makes is their own under a Windows client's default-owner policy -- and passes only where that
-// account is trusted for self. A judgement for SYSTEM made by an administrator's run, an
-// installation's root's, counts it as that administrator, and secure restricts such a root, taking
-// the entry and what it passed on away.
-func mover(dacl *windows.ACL, self *windows.SID, rights windows.ACCESS_MASK, anchord *windows.SID,
-	passedOn bool) (*windows.SID, bool, error) {
+// on what is made in it too, other than those trustedFor names for self, or nil: each entry that
+// allows rights there, as windowsGrants reads them. Where rights holds the right to add a file and a
+// folder to the object (creates), CREATOR OWNER is nobody on the object itself, and passed on, whoever
+// made what it is passed to, whom this same judgement holds to the accounts trustedFor names: so it is
+// counted as the account running conflux, the one whose making conflux can answer for -- what an
+// administrator makes is their own under a Windows client's default-owner policy -- and passes only
+// where that account is trusted for self. A judgement for SYSTEM made by an administrator's run, an
+// installation's root's, counts it as that administrator, so such a root is not as conflux makes one,
+// and EnsureAll makes it afresh.
+func mover(dacl *windows.ACL, self *windows.SID, rights windows.ACCESS_MASK, passedOn bool) (*windows.SID, error) {
 	header := unsafe.Slice((*byte)(unsafe.Pointer(dacl)), 8)
 
 	grants, err := windowsGrants(unsafe.Slice((*byte)(unsafe.Pointer(dacl)), binary.LittleEndian.Uint16(header[2:])),
 		passedOn)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
-
-	anchords := false
 
 	for _, g := range grants {
 		if g.rights&uint32(rights) == 0 {
@@ -1871,23 +764,21 @@ func mover(dacl *windows.ACL, self *windows.SID, rights windows.ACCESS_MASK, anc
 		}
 
 		switch sid := (*windows.SID)(unsafe.Pointer(&g.sid[0])); {
-		case anchord != nil && sid.Equals(anchord):
-			anchords = true
 		case sid.Equals(sidCreatorOwner) && rights&creates == creates:
 			// Nobody on the object itself, and on what it is passed to whoever made that: where rights
 			// holds the right to add to the object, the account running conflux, unless a trusted one.
 			switch user := currentUser(); {
 			case user == nil:
-				return sid, anchords, nil
+				return sid, nil
 			case !trustedFor(user, self):
-				return user, anchords, nil
+				return user, nil
 			}
 		case !trustedFor(sid, self):
-			return sid, anchords, nil
+			return sid, nil
 		}
 	}
 
-	return nil, anchords, nil
+	return nil, nil
 }
 
 // trustedFor is SYSTEM, the Administrators, TrustedInstaller or self, where self is known: somebody

@@ -18,10 +18,11 @@ account of its own.
 | token, anchord's pid | `/run/conflux/` | `/var/run/conflux/` | `%ProgramData%\conflux\run\` | `/var/run/conflux/` |
 | anchord's socket | `/run/conflux/anchord/sock` | `/var/run/conflux/anchord/sock` | `%ProgramData%\conflux\run\anchord\sock` | `/var/run/conflux/anchord/sock` |
 
-`CONFLUX_DIR` roots all of them in one directory, and the boot service with them — it is named after the root, so a run under it is a separate installation rather than a replacement for the machine's own. See [testing.md](testing.md). Every directory above it must be one only root (SYSTEM and the Administrators on Windows) and the account running conflux can change, or a sticky one such as `/tmp`; another is refused, named, since whoever can change it can put another root in this one's place ([security.md](security.md#the-extracted-binaries)). On Windows it must be on one of the machine's own volumes: a share, or a drive mapped to one, is refused, with nothing made there.
+`CONFLUX_DIR` roots all of them in `.conflux`, a folder conflux makes inside the directory it names and keeps everything of its own in, and the boot service with them — it is named after the directory, so a run under it is a separate installation rather than a replacement for the machine's own. See [testing.md](testing.md). The directory itself is never changed, so a folder of yours can be one; it, and every directory above it, must be one only root (SYSTEM and the Administrators on Windows) and the account running conflux can change, or a sticky one such as `/tmp`; another is refused, named, since whoever can change it can put another root in this one's place ([security.md](security.md#the-extracted-binaries)). On Windows it must be on one of the machine's own volumes: a share, or a drive mapped to one, is refused, with nothing made there.
 
-Every directory is `0700` — one found wider is narrowed, and one another account owns is refused —
-and every file conflux writes there is `0600`, apart from the programs it runs (the extracted pair
+Every directory conflux makes is `0700` — and whatever is at a root's name that is not as conflux
+makes one, a link or a directory another account owns or may write among it, is removed and made
+afresh, with nothing of what it held — and every file conflux writes there is `0600`, apart from the programs it runs (the extracted pair
 and the service's own copy of conflux, `0700`). The service definitions live where the service
 manager reads them, at the modes it expects, and on macOS and FreeBSD the log file goes in the
 system's `/var/log`.

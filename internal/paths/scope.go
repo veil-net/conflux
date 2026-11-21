@@ -32,8 +32,7 @@ func Scope() string {
 // AccountName is the account anchord runs as for base -- conflux for an installation's
 // (account.Name), conflux-ephemeral for an ephemeral run's (account.EphemeralName) -- named as
 // the platform names its own daemons' accounts, _conflux on macOS and OpenBSD, with a
-// CONFLUX_DIR installation's scope after it. Here, beside the scope, so that what a root holds
-// can be told to be that account's (contents).
+// CONFLUX_DIR installation's scope after it. Here, beside the scope, which names it.
 func AccountName(base string) string { return accountNameFor(runtime.GOOS, base, Scope()) }
 
 func accountNameFor(goos, base, scope string) string {

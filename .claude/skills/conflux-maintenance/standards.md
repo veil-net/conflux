@@ -146,11 +146,11 @@ Anchor is the reference for overlay behaviour, and the live API for the enrolmen
 **Writes and state**
 - Config and state writes are atomic, and every writer of the manifest or state holds the lock, `conflux enrol` included.
 - A new manifest, enrolled or imported, starts with no state carried over from the identity before it.
-- A Unix root owned by another account is refused before anything in it changes; one of ours is `0700`, or a root's `0710` that lets anchord's account through (the shared `/var/log` aside).
+- Every root is conflux's by its name — the platform's, an ephemeral run's, and a `CONFLUX_DIR`'s `.conflux` — made `0700` (on Windows the Administrators' under a protected DACL), and whatever is at its name that is not as conflux makes one (a link, a file, another account's, or one another account may write; a root's `0710` that lets anchord's account through passes) is removed as itself and made afresh; a `CONFLUX_DIR` itself, and every folder above a root, is never changed, only held to parents' rule (the shared `/var/log` aside).
 - The boot service runs the copy of conflux in the root-only state directory, never the file conflux was run from.
 - A re-run of `up` or `proxy` never changes an existing machine's address or identity, and the IPv4 question is asked once, a declined answer included.
 - `up` and `proxy` replace each other cleanly.
-- `uninstall` leaves nothing behind: no definition, no `wants` link, no launchd disabled-database entry, no SCM entry, no directory.
+- `uninstall` leaves nothing behind: no definition, no `wants` link, no launchd disabled-database entry, no SCM entry, no root or folder conflux made, whatever was put in them; a `CONFLUX_DIR` that was there before is left as it was.
 
 **Supervision**
 - One supervisor per root: `serve` holds `<state>/serve.lock`, and a second is refused.

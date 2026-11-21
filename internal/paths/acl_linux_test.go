@@ -63,37 +63,34 @@ func TestEnsureAllReadsAPOSIXACL(t *testing.T) {
 	}
 }
 
-// TestEnsureAllLeavesTheRootsPOSIXACLToTheNarrowing: a POSIX ACL's mask is the mode's group bits,
-// so narrowing a root to 0700 takes the write from every entry in it. One found letting another
-// account write the root is narrowed and accepted, and lets nobody write it afterwards; one a
-// parent's default ACL passes on to the root conflux makes there takes its mask from the 0700
-// the root is made at, and that root is accepted too.
-func TestEnsureAllLeavesTheRootsPOSIXACLToTheNarrowing(t *testing.T) {
+// TestARootsPOSIXACLIsJudged: an ACL can let accounts write a directory that its mode does not show.
+// A root of this account's own whose POSIX ACL lets uid 65534 write it, through a mask of rwx, is not as
+// conflux makes a root: the readers' check refuses it, naming that uid, and EnsureAll removes it and
+// makes it afresh. One a parent's default ACL passes on to the root conflux makes there takes its mask
+// from the 0700 the root is made at, which lets nobody write it, and that root is taken.
+func TestARootsPOSIXACLIsJudged(t *testing.T) {
 	t.Run("on the root", func(t *testing.T) {
-		root := foundRoot(t)
+		t.Setenv("CONFLUX_DIR", t.TempDir())
 
-		if err := unix.Setxattr(root, "system.posix_acl_access", anotherMayWrite, 0); err != nil {
-			t.Fatalf("give %s an ACL: %v", root, err)
-		}
-
-		t.Setenv("CONFLUX_DIR", root)
-		ensureAllRefuses(t, "a root whose own POSIX ACL lets another account write", "")
-
-		b := make([]byte, 256)
-
-		n, err := unix.Getxattr(root, "system.posix_acl_access", b)
-		if err != nil {
+		d := Default()
+		if err := d.EnsureAll(); err != nil {
 			t.Fatal(err)
 		}
 
-		entries, err := linuxACL(b[:n])
-		if err != nil {
+		if err := unix.Setxattr(d.State, "system.posix_acl_access", anotherMayWrite, 0); err != nil {
+			t.Fatalf("give %s an ACL: %v", d.State, err)
+		}
+
+		if err := d.Check(); err == nil || !strings.Contains(err.Error(), "uid 65534") {
+			t.Errorf("Check(a root whose POSIX ACL lets uid 65534 write it) = %v, want a refusal naming that uid", err)
+		}
+
+		if err := d.EnsureAll(); err != nil {
 			t.Fatal(err)
 		}
 
-		if got := mode(t, root); got != 0o700 || len(posixWriters(entries)) != 0 {
-			t.Errorf("the root is %#o after EnsureAll, its ACL letting %+v write; want 0700, nobody",
-				got, posixWriters(entries))
+		if err := d.Check(); err != nil {
+			t.Errorf("Check(the root EnsureAll made afresh) = %v", err)
 		}
 	})
 
@@ -105,92 +102,9 @@ func TestEnsureAllLeavesTheRootsPOSIXACLToTheNarrowing(t *testing.T) {
 
 		t.Setenv("CONFLUX_DIR", filepath.Join(parent, "conflux"))
 		ensureAllRefuses(t, "a root made under a default ACL that lets another account write", "")
+
+		if err := Default().Check(); err != nil {
+			t.Errorf("Check(a root made under a default ACL that lets another account write) = %v", err)
+		}
 	})
-}
-
-// TestARootsACLCannotRefuseItHere: secure leaves a root's own ACL unread on Linux
-// (rootACLMayRefuse), because every ACL extendedWriters reads here is a POSIX.1e one, which says
-// what the group may by its mask, and judgeRoot judges a root at the 0700 the narrowing leaves,
-// which takes every entry's write away. Held here: an ACL letting another account, the group and
-// everybody write, read as one whose mask is the group bits, and judged at any mode found as
-// letting nobody.
-func TestARootsACLCannotRefuseItHere(t *testing.T) {
-	wide := posixACL([3]uint32{0x01, 7, posixNone}, [3]uint32{0x02, 7, 65534}, [3]uint32{0x04, 7, posixNone},
-		[3]uint32{0x10, 7, posixNone}, [3]uint32{0x20, 7, posixNone})
-
-	dir := t.TempDir()
-	if err := unix.Setxattr(dir, "system.posix_acl_access", wide, 0); err != nil {
-		t.Fatalf("give %s an ACL: %v", dir, err)
-	}
-
-	writers, aclGroup, err := extendedWriters(dir, -1)
-	if err != nil || len(writers) == 0 || !aclGroup {
-		t.Fatalf("extendedWriters = %+v, %v, %v; want writers, by an ACL whose mask is the group bits", writers, aclGroup, err)
-	}
-
-	if who := judgeRoot(os.ModeDir|0o777, 0, writers, aclGroup, os.Geteuid()); who != "" {
-		t.Errorf("a root found at 0777 whose POSIX ACL lets uid 65534, its group and everybody write: "+
-			"judgeRoot = %q, want nobody", who)
-	}
-}
-
-// TestAReaderReadsALinkedRootsACLWhereItLeads: a link's own ACL says nothing, so a root that is a
-// link is judged by the ACL where it leads: a link of this account's to a directory of its own whose
-// POSIX ACL lets uid 65534 write it is refused by checkRoot, every reader's, naming that uid.
-func TestAReaderReadsALinkedRootsACLWhereItLeads(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", "")
-
-	target := foundRoot(t)
-	if err := unix.Setxattr(target, "system.posix_acl_access", anotherMayWrite, 0); err != nil {
-		t.Fatalf("give %s an ACL: %v", target, err)
-	}
-
-	link := filepath.Join(t.TempDir(), "conflux")
-	if err := os.Symlink(target, link); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := checkRootAs(link, os.Geteuid()); err == nil || !strings.Contains(err.Error(), "uid 65534") {
-		t.Errorf("checkRootAs(a link to a directory whose ACL lets uid 65534 write it) = %v, want a refusal naming "+
-			"that uid", err)
-	}
-}
-
-// TestWhatARootHoldsIsJudgedByItsACL: an entry in a root is held to its ACL as well as its mode, read
-// through a descriptor opened on it: a file whose POSIX ACL lets uid 65534 write it is refused by
-// EnsureAll and by Foreign, naming it and that uid, though its mode, with the mask as its group bits
-// and a group of this account's alone, lets nobody else.
-func TestWhatARootHoldsIsJudgedByItsACL(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", "")
-
-	me, err := user.LookupId(strconv.Itoa(os.Geteuid()))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	was := groups
-	t.Cleanup(func() { groups = was })
-	groups = groupsFunc(func(string, string) ([]string, error) { return []string{me.Username}, nil })
-
-	root := foundRoot(t)
-	at := filepath.Join(root, "conflux.json")
-
-	if err := os.WriteFile(at, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := unix.Setxattr(at, "system.posix_acl_access", anotherMayWrite, 0); err != nil {
-		t.Fatalf("give %s an ACL: %v", at, err)
-	}
-
-	refused := at + ", which its ACL lets uid 65534 write"
-
-	if err := (Dirs{Config: root, State: root, Run: filepath.Join(root, runName)}).EnsureAll(); err == nil ||
-		!strings.Contains(err.Error(), refused) {
-		t.Errorf("EnsureAll(a root holding a file whose ACL lets uid 65534 write it) = %v, want %q", err, refused)
-	}
-
-	if err := Foreign(root); err == nil || !strings.Contains(err.Error(), refused) {
-		t.Errorf("Foreign(a root holding a file whose ACL lets uid 65534 write it) = %v, want %q", err, refused)
-	}
 }

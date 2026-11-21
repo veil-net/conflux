@@ -94,7 +94,7 @@ func startAndReport(ctx context.Context, d paths.Dirs, mgr service.Manager, cfg 
 // thing that still works if a marker never arrives at all. systemd's Type=notify makes
 // `systemctl restart` return only once the anchor is up, so on Linux the first call
 // already succeeds; launchd, rc and the Windows SCM give no such signal. mgr, the service just
-// restarted, says where its output is when nothing came up. Every caller has secured d's roots
+// restarted, says where its output is when nothing came up. Every caller has made d's roots
 // already (EnsureAll), before it registered the service, so the pair is only extracted here.
 func waitFor(ctx context.Context, d paths.Dirs, mgr service.Manager, cfg *config.Config) (anchorctl.Status, error) {
 	tools, err := libexec.Extract(d)

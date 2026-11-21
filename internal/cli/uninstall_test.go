@@ -2,7 +2,6 @@ package cli
 
 import (
 	"errors"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -11,8 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
+	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/ui"
@@ -113,6 +114,156 @@ func TestUninstallLeavesNothingConfluxMade(t *testing.T) {
 			t.Errorf("uninstall did not say it removed %s:\n%s", p, out)
 		}
 	}
+}
+
+// TestUninstallLeavesNoTrace: a fresh install and its uninstall leave the tree exactly as it was. The
+// CONFLUX_DIR is either a folder conflux makes, on a way it makes, which uninstall removes with the
+// way; or a folder of the user's, holding a bin/, a .ssh/ and a file, which conflux never changes: its
+// root is .conflux inside it. Either way everything conflux made goes -- its root, with what the user
+// put in it and in its run/, bin/ and logs/, a killed ephemeral run's root -- and nothing else.
+func TestUninstallLeavesNoTrace(t *testing.T) {
+	anchortest.Require(t) // the run extracts the pair
+
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	for _, users := range []bool{false, true} {
+		name := "conflux makes the CONFLUX_DIR"
+		if users {
+			name = "the CONFLUX_DIR is the user's"
+		}
+
+		t.Run(name, func(t *testing.T) {
+			base := t.TempDir()
+			dir := filepath.Join(base, "made", "here")
+
+			if users {
+				dir = filepath.Join(base, "home")
+
+				for p, mode := range map[string]os.FileMode{
+					filepath.Join(dir, "bin", "backup.sh"): 0o755,
+					filepath.Join(dir, ".ssh", "id"):       0o600,
+					filepath.Join(dir, "notes.txt"):        0o644,
+				} {
+					if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+						t.Fatal(err)
+					}
+
+					if err := os.WriteFile(p, []byte("the user's"), mode); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+
+			before := snapshot(t, base)
+
+			t.Setenv("CONFLUX_DIR", dir)
+
+			d := paths.Default()
+			mgr := &fakeManager{d: d}
+			standInService(t, mgr)
+			recordAccounts(t)
+
+			defer func(was func(paths.Dirs, time.Duration)) { reap = was }(reap)
+			reap = func(paths.Dirs, time.Duration) {}
+
+			if out, errOut, code := capture(t, "install"); code != ExitOK {
+				t.Fatalf("install exited %d:\n%s%s", code, out, errOut)
+			}
+
+			// What a run leaves: the configuration, the identity, the state, the extracted pair, the run
+			// directory's marker, and a killed ephemeral run's root; and what the user put in conflux's.
+			if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Proxies: []string{"8080=127.0.0.1:3000"},
+				Taints: []string{"t"}}); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := config.SaveManifest(d, config.Envelope("bWFuaWZlc3Q=")); err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err := libexec.Extract(d); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := daemon.MarkReady(d, "anchorid"); err != nil {
+				t.Fatal(err)
+			}
+
+			planted := []string{filepath.Join(d.State, "mine.txt"), filepath.Join(d.Run, "mine.txt"),
+				filepath.Join(d.Libexec(), "mine.txt"), filepath.Join(paths.EphemeralCandidates()[0], "serve.lock")}
+			if d.Log != "" {
+				planted = append(planted, filepath.Join(d.Log, "mine.txt"))
+			}
+
+			for _, p := range planted {
+				if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+					t.Fatal(err)
+				}
+
+				if err := os.WriteFile(p, []byte("put there"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			if out, errOut, code := capture(t, "uninstall", "--yes"); code != ExitOK {
+				t.Fatalf("uninstall exited %d:\n%s%s", code, out, errOut)
+			}
+
+			after := snapshot(t, base)
+
+			for p, was := range before {
+				if after[p] != was {
+					t.Errorf("%s was %q before the install, and is %q after the uninstall", p, was, after[p])
+				}
+			}
+
+			for p, is := range after {
+				if _, ok := before[p]; !ok {
+					t.Errorf("the uninstall left %s (%s)", p, is)
+				}
+			}
+		})
+	}
+}
+
+// snapshot is every path under base, by its path within it, with its mode, and what a file holds or
+// where a link leads.
+func snapshot(t *testing.T, base string) map[string]string {
+	t.Helper()
+
+	found := map[string]string{}
+
+	if err := filepath.WalkDir(base, func(p string, e fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		fi, err := e.Info()
+		if err != nil {
+			return err
+		}
+
+		was := fi.Mode().String()
+
+		switch {
+		case fi.Mode()&fs.ModeSymlink != 0:
+			target, _ := os.Readlink(p)
+			was += " -> " + target
+		case fi.Mode().IsRegular():
+			b, _ := os.ReadFile(p)
+			was += " " + string(b)
+		}
+
+		rel, _ := filepath.Rel(base, p)
+		found[rel] = was
+
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	return found
 }
 
 // removing is the stand-in boot service, counting its removals and doing then as it is removed.
@@ -326,48 +477,10 @@ func TestUninstallRemovesTheSharedLog(t *testing.T) {
 	}
 }
 
-// TestUninstallLeavesARootHoldingWhatConfluxNeverMakes: a root conflux has not secured -- one at 0755 --
-// holding a name conflux never makes there is not conflux's, so uninstall refuses it before it acts, exit
-// 1, naming what it holds and saying it left everything in place, the boot service included -- not that
-// another account may change the way to it -- and the root keeps what it holds.
-func TestUninstallLeavesARootHoldingWhatConfluxNeverMakes(t *testing.T) {
-	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
-	privcheck.Elevated = func() bool { return true }
-
-	d := configured(t)
-
-	stray := filepath.Join(d.State, "notes.txt")
-	if err := os.WriteFile(stray, []byte("somebody's"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.Chmod(d.State, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	mgr := &removing{fakeManager: fakeManager{d: d}}
-	standInService(t, mgr)
-
-	out, errOut, code := capture(t, "uninstall", "--yes")
-	if code != ExitError || !strings.Contains(errOut, "notes.txt") || !strings.Contains(errOut, "left everything in place") ||
-		strings.Contains(errOut, "Once nobody else can change") {
-		t.Errorf("uninstall of a root holding what conflux never makes there exited %d, want %d naming it and "+
-			"saying it left everything:\n%s%s", code, ExitError, out, errOut)
-	}
-
-	for _, p := range []string{stray, d.ConfigFile()} {
-		if _, err := os.Lstat(p); err != nil || mgr.removals > 0 {
-			t.Errorf("uninstall of a root holding what conflux never makes there removed the boot service %d times, "+
-				"and %s (Lstat: %v)", mgr.removals, p, err)
-		}
-	}
-}
-
 // TestUninstallStopsWhereARootsWayCannotBeWalked: a CONFLUX_DIR beneath a file has a way conflux cannot
-// walk, which is none of the refusals JudgeWays tells apart -- nobody else need be able to change
-// anything for it -- so uninstall says it stopped there, before it acted, exit 1, the boot service not
-// removed, and not that another account may change the way, nor that the root is shared or foreign; the
-// file is left as it was.
+// walk, which is not JudgeWays's refusal of a way another account may change -- nobody else need be able
+// to change anything for it -- so uninstall says it stopped there, before it acted, exit 1, the boot
+// service not removed, and not that another account may change the way; the file is left as it was.
 func TestUninstallStopsWhereARootsWayCannotBeWalked(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
@@ -384,7 +497,7 @@ func TestUninstallStopsWhereARootsWayCannotBeWalked(t *testing.T) {
 
 	out, errOut, code := capture(t, "uninstall", "--yes")
 	if code != ExitError || !strings.Contains(errOut, "stopped there, before it acted") ||
-		strings.Contains(errOut, "Once nobody else can change") || strings.Contains(errOut, "left everything in place") {
+		strings.Contains(errOut, "Once nobody else can change") {
 		t.Errorf("uninstall of a CONFLUX_DIR beneath a file exited %d, want %d saying it stopped before it acted:\n%s%s",
 			code, ExitError, out, errOut)
 	}
@@ -395,9 +508,10 @@ func TestUninstallStopsWhereARootsWayCannotBeWalked(t *testing.T) {
 	}
 }
 
-// TestUninstallAsksBeforeEmptyingAChosenFolder: uninstall empties a CONFLUX_DIR, a folder whoever set
-// the variable chose, so it asks first whether or not an identity is there, and off a terminal without
-// --yes refuses, exit 2, saying it would remove everything in that folder, with nothing removed.
+// TestUninstallAsksBeforeEmptyingAChosenFolder: uninstall removes a CONFLUX_DIR's root, in a folder
+// whoever set the variable chose, so it asks first whether or not an identity is there, and off a
+// terminal without --yes refuses, exit 2, saying it would remove that root and everything in it, with
+// nothing removed.
 func TestUninstallAsksBeforeEmptyingAChosenFolder(t *testing.T) {
 	if ui.IsTerminal() {
 		t.Skip("this test's stdin is a terminal")
@@ -412,10 +526,11 @@ func TestUninstallAsksBeforeEmptyingAChosenFolder(t *testing.T) {
 	standInService(t, mgr)
 
 	out, errOut, code := capture(t, "uninstall")
-	if code != ExitUsage || !strings.Contains(errOut, "removes everything in "+paths.Root()) ||
+	if code != ExitUsage || !strings.Contains(errOut, "removes "+d.State+" and everything in it") ||
 		!strings.Contains(errOut, "--yes") {
 		t.Errorf("uninstall of a CONFLUX_DIR with no identity, off a terminal and without --yes, exited %d, want %d "+
-			"saying it would remove everything in %s and naming --yes:\n%s%s", code, ExitUsage, paths.Root(), out, errOut)
+			"saying it would remove %s and everything in it and naming --yes:\n%s%s", code, ExitUsage, d.State, out,
+			errOut)
 	}
 
 	if _, err := os.Lstat(d.ConfigFile()); err != nil || mgr.removals > 0 {
@@ -424,10 +539,10 @@ func TestUninstallAsksBeforeEmptyingAChosenFolder(t *testing.T) {
 	}
 }
 
-// TestUninstallSaysItRemovesTheCredentialInAChosenFolder: a CONFLUX_DIR holding an identity is a
-// folder whoever set the variable chose, with the one copy of this machine's credential in it, so
-// uninstall, off a terminal and without --yes, refuses, exit 2, saying it would remove everything in
-// that folder, the credential among it, of which there is no other copy, with nothing removed.
+// TestUninstallSaysItRemovesTheCredentialInAChosenFolder: a CONFLUX_DIR's root holding an identity holds
+// the one copy of this machine's credential, so uninstall, off a terminal and without --yes, refuses,
+// exit 2, saying it would remove that root and everything in it, the credential among it, of which there
+// is no other copy, with nothing removed.
 func TestUninstallSaysItRemovesTheCredentialInAChosenFolder(t *testing.T) {
 	if ui.IsTerminal() {
 		t.Skip("this test's stdin is a terminal")
@@ -445,8 +560,8 @@ func TestUninstallSaysItRemovesTheCredentialInAChosenFolder(t *testing.T) {
 	mgr := &removing{fakeManager: fakeManager{d: d}}
 	standInService(t, mgr)
 
-	want := "removes everything in " + paths.Root() + ", this machine's credential among it, and there is no other " +
-		"copy of that"
+	want := "removes " + d.State + " and everything in it, this machine's credential among it, and there is no " +
+		"other copy of that"
 
 	out, errOut, code := capture(t, "uninstall")
 	if code != ExitUsage || !strings.Contains(errOut, want) || !strings.Contains(errOut, "--yes") {
@@ -460,115 +575,31 @@ func TestUninstallSaysItRemovesTheCredentialInAChosenFolder(t *testing.T) {
 	}
 }
 
-// TestUninstallLeavesAFolderOfHomes: a CONFLUX_DIR pointed at a folder of homes, which holds alice/ and
-// bob/ and nothing of conflux's, is not conflux's, so uninstall refuses it before it acts, asked or not
-// -- the boot service not removed -- and both homes keep what they hold: at 0755, as /home is, and at
-// 0700, as /root is, which conflux would secure a root at but which holds no installation's state.
-func TestUninstallLeavesAFolderOfHomes(t *testing.T) {
+// TestUninstallTouchesOnlyItsOwnAtAVolumesTop: a CONFLUX_DIR at the top of a volume, / or C:\, is a
+// folder conflux never changes, its root .conflux inside it; with nothing of conflux's there, uninstall
+// removes nothing but the boot service, and lists nothing else.
+func TestUninstallTouchesOnlyItsOwnAtAVolumesTop(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
 
-	for _, c := range []struct {
-		args []string
-		mode os.FileMode
-	}{{[]string{"uninstall", "--yes"}, 0o755}, {[]string{"uninstall"}, 0o755}, {[]string{"uninstall", "--yes"}, 0o700}} {
-		args := c.args
+	top := filepath.VolumeName(t.TempDir()) + string(filepath.Separator)
+	t.Setenv("CONFLUX_DIR", top)
 
-		t.Run(fmt.Sprintf("%s at %#o", strings.Join(args, " "), c.mode), func(t *testing.T) {
-			homes := t.TempDir()
-			t.Setenv("CONFLUX_DIR", homes)
-
-			if err := os.Chmod(homes, c.mode); err != nil {
-				t.Fatal(err)
-			}
-
-			kept := map[string]string{}
-
-			for _, who := range []string{"alice", "bob"} {
-				p := filepath.Join(homes, who, "notes.txt")
-				if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
-					t.Fatal(err)
-				}
-
-				if err := os.WriteFile(p, []byte(who+"'s"), 0o600); err != nil {
-					t.Fatal(err)
-				}
-
-				kept[p] = who + "'s"
-			}
-
-			mgr := &removing{fakeManager: fakeManager{d: paths.Default()}}
-			standInService(t, mgr)
-
-			out, errOut, code := capture(t, args...)
-			if code != ExitError || !strings.Contains(errOut, "alice") || mgr.removals != 0 {
-				t.Errorf("conflux %s of a folder of homes exited %d and removed the boot service %d times, want %d "+
-					"naming alice/, nothing removed:\n%s%s", strings.Join(args, " "), code, mgr.removals, ExitError,
-					out, errOut)
-			}
-
-			for p, was := range kept {
-				if b, err := os.ReadFile(p); err != nil || string(b) != was {
-					t.Errorf("conflux %s of a folder of homes left %s holding %q (%v), want %q", strings.Join(args, " "),
-						p, b, err, was)
-				}
-			}
-		})
+	if _, err := os.Lstat(paths.Default().State); !errors.Is(err, fs.ErrNotExist) {
+		t.Skipf("%s is there already (%v)", paths.Default().State, err)
 	}
-}
 
-// TestUninstallLeavesAVolumesTop: a CONFLUX_DIR at the top of a volume is no root conflux empties, so
-// uninstall refuses it before it acts, exit 1, the boot service not removed, saying what paths says it
-// is. The folder a SUBST letter stands for, which need be no shared or system directory, paths refuses as
-// the top of its volume (ErrTopRoot), and uninstall says that, not that it is shared; a volume's own root,
-// / or C:\, paths refuses as a directory others keep what is theirs in, and uninstall says that, not
-// that it is a volume's top.
-func TestUninstallLeavesAVolumesTop(t *testing.T) {
-	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
-	privcheck.Elevated = func() bool { return true }
+	mgr := &removing{fakeManager: fakeManager{d: paths.Default()}}
+	standInService(t, mgr)
+	recordAccounts(t)
 
-	// Nothing is removed whatever the judging says: the question is never answered yes.
-	defer func(was func(paths.Dirs, error, bool) bool) { confirm = was }(confirm)
-	confirm = func(paths.Dirs, error, bool) bool { return false }
+	out, errOut, code := capture(t, "uninstall", "--yes")
+	if code != ExitOK || mgr.removals != 1 {
+		t.Fatalf("uninstall of a CONFLUX_DIR of %s exited %d and removed the boot service %d times, want %d and once:"+
+			"\n%s%s", top, code, mgr.removals, ExitOK, out, errOut)
+	}
 
-	const (
-		topSaid    = "It is the top of its volume"
-		sharedSaid = "It is a shared or system directory"
-	)
-
-	t.Run("a SUBST letter's folder", func(t *testing.T) {
-		d := configured(t)
-
-		// What paths' JudgeWays says of the top a SUBST letter gives a folder, which only Windows has.
-		defer func(was func(paths.Dirs) error) { judgeWays = was }(judgeWays)
-		judgeWays = func(paths.Dirs) error {
-			return fmt.Errorf("Z:\\ is the top of its volume, so conflux will not use it as a root: %w", paths.ErrTopRoot)
-		}
-
-		mgr := &removing{fakeManager: fakeManager{d: d}}
-		standInService(t, mgr)
-
-		out, errOut, code := capture(t, "uninstall")
-		if code != ExitError || !strings.Contains(errOut, topSaid) || strings.Contains(errOut, sharedSaid) ||
-			mgr.removals != 0 {
-			t.Errorf("uninstall of a SUBST letter's top exited %d and removed the boot service %d times, want %d "+
-				"saying it is the top of its volume, nothing removed:\n%s%s", code, mgr.removals, ExitError, out, errOut)
-		}
-	})
-
-	t.Run("a volume's root", func(t *testing.T) {
-		top := filepath.VolumeName(t.TempDir()) + string(filepath.Separator)
-		t.Setenv("CONFLUX_DIR", top)
-
-		mgr := &removing{fakeManager: fakeManager{d: paths.Default()}}
-		standInService(t, mgr)
-
-		out, errOut, code := capture(t, "uninstall")
-		if code != ExitError || !strings.Contains(errOut, sharedSaid) || strings.Contains(errOut, topSaid) ||
-			mgr.removals != 0 {
-			t.Errorf("uninstall of a CONFLUX_DIR of %s exited %d and removed the boot service %d times, want %d "+
-				"saying it is a shared or system directory, nothing removed:\n%s%s", top, code, mgr.removals,
-				ExitError, out, errOut)
-		}
-	})
+	if removed, _, _ := strings.Cut(out, "\n\n"); removed != "Removed:\n  the boot service" {
+		t.Errorf("uninstall of a CONFLUX_DIR of %s listed more than the boot service:\n%s", top, out)
+	}
 }

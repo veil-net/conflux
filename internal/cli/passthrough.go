@@ -244,10 +244,10 @@ func liveEphemeral() (paths.Dirs, bool) {
 	return paths.Dirs{}, false
 }
 
-// foreignRoot is paths.Foreign, which a test points at a root it made: nil only for a root that is
-// there and this account's alone, an error that is fs.ErrNotExist for one not there, and a refusal
-// for any other.
-var foreignRoot = paths.Foreign
+// foreignRoot is the readers' check of the ephemeral root at root (paths.Dirs.Check), which a test
+// points at a root it made: nil only for a root that is there as conflux makes one, an error that is
+// fs.ErrNotExist for one not there, and a refusal for any other.
+var foreignRoot = func(root string) error { return paths.EphemeralDirs(root).Check() }
 
 // statLock is os.Stat, for a root's lock, which a test counts.
 var statLock = os.Stat
@@ -256,17 +256,15 @@ var statLock = os.Stat
 // running, whose lock is held, and the root a run that was killed left behind, its lock there
 // with nobody holding it -- the first of each, or nil.
 //
-// A root another account made is neither, whatever it holds: a run is never kept in one
-// (paths.Ephemeral), and /tmp lets anybody make the name first and put a held lock, a marker
-// and an anchorctl of their own in it, which a reader taking it for a run would run.
+// A root not as conflux makes one -- another account's, or a link -- is neither, whatever it holds: a
+// run is never kept in one (paths.Ephemeral), and /tmp and %ProgramData% let anybody make the name
+// first and put a held lock, a marker and an anchorctl of their own in it, which a reader taking it
+// for a run would run.
 func ephemeralRuns() (live, stale *paths.Dirs) {
 	for _, root := range paths.EphemeralCandidates() {
-		// Who made the root first, and nothing beneath it before that: what is in a root another
-		// account made is theirs, links included, and a look at its lock would follow a link there
-		// wherever they pointed it -- on Windows to a share this account then signs in to, on Unix
-		// to an automount that hangs. And a root not there (fs.ErrNotExist) holds no run, and is
-		// looked up by its name no more -- not for its lock, nor whether one there is held, nor by
-		// uninstall's reap: what is at a name that was not there a moment ago is whoever made it
+		// The root itself, and nothing beneath it before that: a root as conflux makes one holds nothing
+		// another account put there. And a root not there (fs.ErrNotExist) holds no run, and is looked up
+		// by its name no more: what is at a name that was not there a moment ago is whoever made it
 		// first's.
 		if err := foreignRoot(root); err != nil {
 			continue

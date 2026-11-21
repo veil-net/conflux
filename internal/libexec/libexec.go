@@ -46,11 +46,10 @@ type Tools struct {
 	SetID     string
 }
 
-// Ensure is d's roots secured as they are made (EnsureAll) and this build's pair extracted there
-// (Extract), for a caller that has not secured them itself -- a pass-through or a status, which may
-// be the first conflux to run here: on Windows a root takes %ProgramData%'s DACL, which lets Users
-// create folders in it, until something gives it its own. Idempotent, atomic, and safe against
-// another conflux doing the same thing.
+// Ensure is d's roots made as conflux makes them (EnsureAll) and this build's pair extracted there
+// (Extract), for a caller that has not made them itself -- a pass-through or a status, which may be
+// the first conflux to run here, and has held d's roots to the readers' check (Dirs.Check) first.
+// Idempotent, atomic, and safe against another conflux doing the same thing.
 func Ensure(d paths.Dirs) (*Tools, error) {
 	// The hot path: every conflux invocation reaches here, including a bare pass-through, so it is
 	// two stats and nothing more.
@@ -67,7 +66,7 @@ func Ensure(d paths.Dirs) (*Tools, error) {
 }
 
 // Extract extracts this build's pair under d if it is not already there, and returns the paths,
-// for a caller that has secured d's roots already (EnsureAll): the supervisor and an ephemeral run
+// for a caller that has made d's roots already (EnsureAll): the supervisor and an ephemeral run
 // as they start, and the wait of a command that has just started the service. Idempotent, atomic,
 // and safe against another conflux doing the same thing.
 func Extract(d paths.Dirs) (*Tools, error) {
@@ -87,7 +86,7 @@ func Extract(d paths.Dirs) (*Tools, error) {
 // removed too where nothing has opened it since, with the directory, so both are made again as well;
 // on Unix it is kept, since a lock is taken on the file its name led to when it was opened, and one
 // waited for on a file removed meanwhile would be held beside one taken on the file made again at
-// its name. d's roots are secured already (EnsureAll). It is the paths of what it removed from bin,
+// its name. d's roots are made already (EnsureAll). It is the paths of what it removed from bin,
 // however far it got (paths.ClearExcept).
 func Remake(d paths.Dirs) ([]string, error) {
 	if !anchor.Supported {

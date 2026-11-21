@@ -39,10 +39,9 @@ func (m *untouched) Remove() error { m.removals++; return nil }
 // command that reads a root without making it holds it to paths' check before it reads anything in
 // it by name: one whose mode lets every account write it, sticky or not -- a name nobody has taken
 // yet is anybody's in a sticky directory -- is refused, naming it, with nothing in it read, made,
-// stopped or removed (readersRefuse); and uninstall removes one that is not sticky, reading and
-// signalling nothing in it and following no link it holds (uninstallRemoves), and refuses a sticky
-// one, which every account shares, leaving it and what it holds (uninstallLeaves). (On Linux, one
-// whose ACL lets another account write it: TestAReaderRefusesARootAnACLLetsAnotherAccountWrite.)
+// stopped or removed (readersRefuse); and uninstall removes it, reading and signalling nothing in it and
+// following no link it holds (uninstallRemoves). (On Linux, one whose ACL lets another account write it:
+// TestAReaderRefusesARootAnACLLetsAnotherAccountWrite.)
 func TestAReaderRefusesARootAnotherAccountMayWrite(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
@@ -64,12 +63,7 @@ func TestAReaderRefusesARootAnotherAccountMayWrite(t *testing.T) {
 			t.Cleanup(func() { _ = os.Chmod(d.State, 0o700) })
 
 			readersRefuse(t, d, "anybody may write")
-
-			if c.mode&os.ModeSticky != 0 {
-				uninstallLeaves(t, d, "a sticky directory")
-			} else {
-				uninstallRemoves(t, d, "anybody may write")
-			}
+			uninstallRemoves(t, d, "anybody may write")
 		})
 	}
 }
@@ -223,7 +217,7 @@ func TestServeOpensNoLogInARootItRefuses(t *testing.T) {
 
 	open := t.TempDir()
 	root := filepath.Join(open, "conflux")
-	log := filepath.Join(root, "logs", "conflux.log")
+	log := filepath.Join(root, paths.DirName, "logs", "conflux.log")
 
 	if err := os.MkdirAll(filepath.Dir(log), 0o700); err != nil {
 		t.Fatal(err)
@@ -279,7 +273,7 @@ func TestServeWritesItsLogOnceTheRootIsJudged(t *testing.T) {
 
 	const refusal = "another conflux supervisor is already serving"
 
-	out, code := serveChild(t, "--foreground", "--dir", d.State, "--log", log)
+	out, code := serveChild(t, "--foreground", "--dir", paths.Root(), "--log", log)
 	b, _ := os.ReadFile(log)
 
 	if code != ExitError || !strings.Contains(string(b), refusal) || strings.Contains(out, refusal) {
@@ -360,42 +354,11 @@ func uninstallRemoves(t *testing.T, d paths.Dirs, why string) {
 	})
 }
 
-// uninstallLeaves fails t unless uninstall --yes of the root d, a directory others keep what is theirs
-// in, which no root of conflux's may be, refuses it before it acts, exit 1, saying what it is (why) and
-// that everything was left, and leaves it with what it holds: the boot service not removed, and the
-// anchord its pid record names not looked for.
-func uninstallLeaves(t *testing.T, d paths.Dirs, why string) {
-	t.Helper()
-
-	t.Run("uninstall", func(t *testing.T) {
-		mgr := &untouched{fakeManager: fakeManager{d: d}}
-		standInService(t, mgr)
-
-		defer func(was func(paths.Dirs, time.Duration)) { reap = was }(reap)
-		reap = func(paths.Dirs, time.Duration) { t.Error("uninstall reaped by the pid record of a shared root") }
-
-		out, errOut, code := capture(t, "uninstall", "--yes")
-		if code != ExitError || !strings.Contains(errOut, why) || !strings.Contains(errOut, "left everything in place") {
-			t.Errorf("uninstall of a root that is %s exited %d, want %d saying so, and that it left everything:\n%s%s",
-				why, code, ExitError, out, errOut)
-		}
-
-		if mgr.removals != 0 {
-			t.Errorf("uninstall of a root that is %s removed the boot service %d times before it refused, want none",
-				why, mgr.removals)
-		}
-
-		if _, err := os.Lstat(d.ConfigFile()); err != nil {
-			t.Errorf("uninstall of a root that is %s removed %s: %v", why, d.ConfigFile(), err)
-		}
-	})
-}
-
-// TestAnUpdateTidiesARootTheReadersCheckRefuses: a start of the conflux the service already runs
-// reads the copy there to find that out, so where the readers' check refuses the root -- one every
-// account may write -- it is taken for an update's, the service's copy unread: what earlier conflux
-// left goes, as an update removes it, an earlier set among it.
-func TestAnUpdateTidiesARootTheReadersCheckRefuses(t *testing.T) {
+// TestAStartRemakesARootNotAsConfluxMakesOne: a root every account may write is not as conflux makes
+// one, so a start, which the readers' check sends to tidy rather than read the service's copy there,
+// removes it and makes it afresh, the configuration and an earlier set with it: with nothing left to
+// start, it exits 78, the root conflux's alone again.
+func TestAStartRemakesARootNotAsConfluxMakesOne(t *testing.T) {
 	anchortest.Require(t) // it extracts the pair afresh
 
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
@@ -420,14 +383,19 @@ func TestAnUpdateTidiesARootTheReadersCheckRefuses(t *testing.T) {
 	standInService(t, mgr)
 
 	out, errOut, code := capture(t, "start")
-	if code != ExitError || len(mgr.installs) != 1 || mgr.restarts != 1 {
-		t.Fatalf("conflux start exited %d, registered %d times and restarted %d:\n%s%s", code, len(mgr.installs),
-			mgr.restarts, out, errOut)
+	if code != ExitNoConfig {
+		t.Fatalf("conflux start of a root every account may write exited %d, want %d:\n%s%s", code, ExitNoConfig, out,
+			errOut)
 	}
 
-	if _, err := os.Lstat(earlier); !errors.Is(err, fs.ErrNotExist) || !strings.Contains(out, "  "+earlier+"\n") {
-		t.Errorf("a start of a root the readers' check refuses left %s (Lstat: %v), or did not say it removed it:\n%s",
-			earlier, err, out)
+	for _, p := range []string{earlier, d.ConfigFile()} {
+		if _, err := os.Lstat(p); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("a start of a root every account may write left %s (Lstat: %v)", p, err)
+		}
+	}
+
+	if fi, err := os.Stat(d.State); err != nil || fi.Mode().Perm() != 0o700 {
+		t.Errorf("the root a start made afresh is %v (%v), want it at 0700", fi.Mode(), err)
 	}
 }
 

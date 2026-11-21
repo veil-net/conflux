@@ -158,9 +158,9 @@ $ sudo conflux uninstall
 $ sudo rm /usr/local/bin/conflux
 ```
 
-`uninstall` removes everything conflux made, the identity included: the boot service, the
-configuration, the credential and the state, the extracted anchor binaries, the service's copy
-of conflux, the log, and the accounts `anchord` ran as
-([commands.md](commands.md#conflux-uninstall)). There is no other copy of the identity
+`uninstall` removes everything conflux made, the identity included: the boot service, every
+folder conflux keeps its files in, whole, with the configuration, the credential and the state,
+the extracted anchor binaries, the service's copy of conflux and the log in them, and the accounts
+`anchord` ran as ([commands.md](commands.md#conflux-uninstall)). Nothing conflux made is left. There is no other copy of the identity
 anywhere, so it asks first — see [credentials.md](credentials.md). The conflux you installed is
 yours to remove, as above.

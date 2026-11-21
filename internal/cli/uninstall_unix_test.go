@@ -5,6 +5,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -125,14 +126,12 @@ func TestUninstallRefusesAWayAnotherAccountMayChange(t *testing.T) {
 	}
 }
 
-// TestUninstallLeavesAnEphemeralRootConfluxDidNotSecure: an ephemeral run's root outside the
-// installation's that is a shared directory -- sticky, as /tmp is -- or one another account may
-// write, or one holding a name conflux never makes there, however narrow its mode, which conflux
-// never secured as a run's root, is not conflux's, whatever its name: uninstall leaves it as it is,
-// with what it holds, saying so, and does not fail for it, while a killed run's root beside it goes.
-// So is one at a mode conflux never leaves a root at, which says nothing secured it either, refused
-// before its lock is taken, and left with the lock it holds.
-func TestUninstallLeavesAnEphemeralRootConfluxDidNotSecure(t *testing.T) {
+// TestUninstallRemovesAnEphemeralRootNotAsConfluxMakesOne: an ephemeral run's root outside the
+// installation's is conflux's by its name, so uninstall removes whatever is there: one not as conflux
+// makes a root -- sticky, as /tmp is, one every account may write, or a link -- removed as itself,
+// nothing in it read and no lock in it taken, where a link leads never touched; and a killed run's,
+// at 0700 or at a 0755 nobody else may write, emptied under its lock. Each is listed.
+func TestUninstallRemovesAnEphemeralRootNotAsConfluxMakesOne(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
 
@@ -140,12 +139,11 @@ func TestUninstallLeavesAnEphemeralRootConfluxDidNotSecure(t *testing.T) {
 
 	shared := filepath.Join(t.TempDir(), "conflux-ephemeral")
 	open := filepath.Join(t.TempDir(), "conflux-ephemeral")
-	stray := filepath.Join(t.TempDir(), "conflux-ephemeral")
-	unsecured := filepath.Join(t.TempDir(), "conflux-ephemeral")
 	killed := filepath.Join(t.TempDir(), "conflux-ephemeral")
+	readable := filepath.Join(t.TempDir(), "conflux-ephemeral")
 
-	for root, mode := range map[string]os.FileMode{shared: 0o777 | os.ModeSticky, open: 0o777, stray: 0o700,
-		unsecured: 0o755, killed: 0o700} {
+	for root, mode := range map[string]os.FileMode{shared: 0o777 | os.ModeSticky, open: 0o777, killed: 0o700,
+		readable: 0o755} {
 		if err := os.Mkdir(root, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -157,41 +155,56 @@ func TestUninstallLeavesAnEphemeralRootConfluxDidNotSecure(t *testing.T) {
 		if err := os.Chmod(root, mode); err != nil {
 			t.Fatal(err)
 		}
-
-		t.Cleanup(func() { _ = os.Chmod(root, 0o700) })
 	}
 
-	if err := os.WriteFile(filepath.Join(stray, "notes.txt"), []byte("somebody's"), 0o600); err != nil {
+	elsewhere := t.TempDir()
+
+	kept := filepath.Join(elsewhere, "serve.lock")
+	if err := os.WriteFile(kept, []byte("not conflux's"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	link := filepath.Join(t.TempDir(), "conflux-ephemeral")
+	if err := os.Symlink(elsewhere, link); err != nil {
 		t.Fatal(err)
 	}
 
 	defer func(was func() []string) { ephemeralCandidates = was }(ephemeralCandidates)
-	ephemeralCandidates = func() []string { return []string{shared, open, stray, unsecured, killed} }
+	ephemeralCandidates = func() []string { return []string{shared, open, link, killed, readable} }
+
+	var emptied []string
+
+	wasEmpty := removeEphemeral
+	defer func() { removeEphemeral = wasEmpty }()
+
+	removeEphemeral = func(e paths.Dirs, unlock func(), r daemon.Reporter) error {
+		emptied = append(emptied, e.State)
+
+		return wasEmpty(e, unlock, r)
+	}
 
 	mgr := &removing{fakeManager: fakeManager{d: d}}
 	standInService(t, mgr)
+	recordAccounts(t)
 
 	out, errOut, code := capture(t, "uninstall", "--yes")
 	if code != ExitOK {
-		t.Errorf("uninstall beside ephemeral roots conflux did not secure exited %d, want %d:\n%s%s", code, ExitOK,
+		t.Fatalf("uninstall beside ephemeral roots not as conflux makes one exited %d, want %d:\n%s%s", code, ExitOK,
 			out, errOut)
 	}
 
-	if b, err := os.ReadFile(filepath.Join(stray, "notes.txt")); err != nil || string(b) != "somebody's" {
-		t.Errorf("uninstall emptied %s, which holds a name conflux never makes there: %q, %v", stray, b, err)
-	}
-
-	for _, root := range []string{shared, open, stray, unsecured} {
-		if _, err := os.Lstat(filepath.Join(root, "serve.lock")); err != nil || !strings.Contains(errOut, root) ||
-			strings.Contains(out, "  "+root+"\n") {
-			t.Errorf("uninstall removed or listed %s, which conflux did not secure, or did not say it left it "+
-				"(Lstat: %v):\n%s%s", root, err, out, errOut)
+	for _, root := range []string{shared, open, link, killed, readable} {
+		if _, err := os.Lstat(root); !errors.Is(err, fs.ErrNotExist) || !strings.Contains(out, "  "+root+"\n") {
+			t.Errorf("uninstall left %s, or did not say it removed it (Lstat: %v):\n%s", root, err, out)
 		}
 	}
 
-	if _, err := os.Lstat(killed); !os.IsNotExist(err) || !strings.Contains(out, "  "+killed+"\n") {
-		t.Errorf("uninstall left %s, a killed run's root, or did not say it removed it (Lstat: %v):\n%s", killed, err,
-			out)
+	if !slices.Equal(emptied, []string{killed, readable}) {
+		t.Errorf("uninstall took the lock of %q, want only the killed runs' roots, %q", emptied, []string{killed, readable})
+	}
+
+	if b, err := os.ReadFile(kept); err != nil || string(b) != "not conflux's" {
+		t.Errorf("where a link at an ephemeral root's name led lost what is in it: %q, %v", b, err)
 	}
 }
 
@@ -270,8 +283,7 @@ func TestUninstallListsNoRootItFailedToRemove(t *testing.T) {
 
 	d := configured(t)
 
-	// An ephemeral root conflux secured, holding what another account could have put there, which
-	// uninstall removes reading nothing in it.
+	// An ephemeral root the readers' check refuses, which uninstall removes reading nothing in it.
 	candidate := filepath.Join(t.TempDir(), "conflux-ephemeral")
 	if err := os.Mkdir(candidate, 0o700); err != nil {
 		t.Fatal(err)

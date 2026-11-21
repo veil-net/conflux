@@ -18,23 +18,18 @@ import (
 )
 
 // tidy removes what earlier conflux left in every place conflux keeps files, for the conflux an
-// update has just put in place, before anything judges its roots and before its service starts:
-// update hands the service over through this conflux's `register` or `start`, and those call it in
-// place of EnsureAll, which it runs itself once what would fail it is gone. Nothing of the machine's
-// is touched -- the configuration, the identity, the state and the log stay -- and what is removed is
-// made again, fresh, by this conflux.
+// update has just put in place, before its service starts: update hands the service over through this
+// conflux's `register` or `start`, and those call it in place of EnsureAll, which it runs itself.
+// Nothing of the machine's is touched -- the configuration, the identity, the state and the log stay
+// -- and what is removed is made again, fresh, by this conflux.
 //
 //   - The service is stopped where a supervisor serves the root, asked of its serve lock through the
-//     root held (flock.HeldIn), since nothing has judged the root yet: a way to a CONFLUX_DIR that
-//     another account may change, or a root conflux would refuse to follow or another account owns, is
-//     refused there, before anything is stopped. A supervisor the boot service did not start -- one
-//     run by hand -- is refused too, with nothing removed (stopServing). stopped says the service was
+//     root held (flock.HeldIn): a way to a CONFLUX_DIR that another account may change is refused
+//     there, before anything is stopped. A supervisor the boot service did not start -- one run by
+//     hand -- is refused too, with nothing removed (stopServing). stopped says the service was
 //     stopped, for the caller to start it again, on this conflux, however it ends (startAgain).
-//   - What conflux makes again by its name in an installation's root and finds failing the rule the
-//     SYSTEM service holds it to -- an older conflux's on a Windows client, the administrator's own --
-//     is removed through handles (paths' RemakeOld), and anything else failing it refused; then the
-//     roots are secured (EnsureAll), and the serve lock held from then on, so no supervisor starts
-//     while tidy works.
+//   - The roots are made as conflux makes them (EnsureAll), and the serve lock held from then on, so
+//     no supervisor starts while tidy works.
 //   - The anchord a dead supervisor left is stopped (daemon.ReapOrphan), and the run directory
 //     emptied: the token, the readiness marker, the pid record, anchord's socket directory, which
 //     the next supervisor makes again.
@@ -42,9 +37,7 @@ import (
 //     extraction left staged -- and this build's pair extracted afresh (libexec.Remake): where it
 //     cannot be, tidy fails once it has done the rest, since a set planted there would be kept.
 //   - A killed ephemeral run's root is removed, the anchord it left stopped (removeKilledRun); a
-//     live run's, and one another account could have made, are left, and so, with a note, is one
-//     conflux did not secure, as uninstall judges it, before anything is made, read or removed in it,
-//     and again as it is emptied, through the root held (leftAsOthers).
+//     live run's is left.
 //   - Where nothing holds the state's lock, what an atomic write that never went in place left in the
 //     configuration and state directories goes (removeStaged). The lock files themselves are kept on
 //     Unix, and on Windows removed once let go of, for whatever next takes them to make again
@@ -67,11 +60,6 @@ func tidy(d paths.Dirs, mgr service.Manager) (stopped bool, err error) {
 		if stopped, err = stopServing(d, mgr); err != nil {
 			return stopped, err
 		}
-	}
-
-	remade, err := d.RemakeOld()
-	if removed = remade; err != nil {
-		return stopped, err
 	}
 
 	if err := ensureAll(d); err != nil {
@@ -103,12 +91,6 @@ func tidy(d paths.Dirs, mgr service.Manager) (stopped bool, err error) {
 
 	for _, root := range paths.EphemeralCandidates() {
 		found, err := removeKilledRun(root)
-		if found == othersRun {
-			leftAsOthers(err, "conflux")
-
-			continue
-		}
-
 		leftBehind(err)
 
 		if _, err := os.Lstat(root); found == killedRun && errors.Is(err, fs.ErrNotExist) {

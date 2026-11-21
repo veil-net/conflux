@@ -7,10 +7,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// rootACLMayRefuse is whether a root's own ACL can refuse it once secure has narrowed it: here
-// the extended ACL sits beside the mode and keeps every entry through the narrowing.
-const rootACLMayRefuse = true
-
 // extendedWriters is who p's ACL lets write it besides its owner and everybody, and whether the
 // ACL rather than the mode says what its group may: here macOS's extended ACL, which sits beside
 // the mode, so the mode's group bits still count. It is asked of getattrlist, for

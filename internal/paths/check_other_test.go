@@ -89,7 +89,8 @@ func TestCheckHoldsARootAsConfluxMakesOne(t *testing.T) {
 }
 
 // TestEnsureAllRemovesAFileNotAsConfluxMakesIt: each file conflux keeps in a root -- the configuration,
-// the state, the identity, the lock files, the copy the boot service runs -- is judged as a folder of
+// the state, the identity, the record of the anchord last started and of the way, the lock files, the
+// copy the boot service runs -- is judged as a folder of
 // conflux's is (ours), and one that is not as conflux makes it -- a link, a folder, a file every account
 // may write -- is removed as itself, where a link leads untouched, and nothing made in its place; one as
 // conflux makes it is kept, and anchord's own configuration, which the account anchord runs as owns, is
@@ -124,6 +125,8 @@ func TestEnsureAllRemovesAFileNotAsConfluxMakesIt(t *testing.T) {
 		d.ConfigFile():        func(p string) { _ = os.Symlink(elsewhere, p) },
 		d.StateFile():         func(p string) { _ = os.Mkdir(p, 0o700) },
 		d.ManifestFile():      func(p string) { file(p, 0o606) },
+		d.PrivilegeFile():     func(p string) { file(p, 0o646) },
+		d.WayFile():           func(p string) { _ = os.Symlink(elsewhere, p) },
 		d.LockFile():          func(p string) { file(p, 0o602) },
 		d.ServiceExecutable(): func(p string) { file(p, 0o757) },
 	} {
@@ -159,7 +162,8 @@ func TestEnsureAllRemovesAFileNotAsConfluxMakesIt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, p := range []string{d.ConfigFile(), d.StateFile(), d.ManifestFile(), d.LockFile(), d.ServiceExecutable()} {
+	for _, p := range []string{d.ConfigFile(), d.StateFile(), d.ManifestFile(), d.PrivilegeFile(), d.WayFile(),
+		d.LockFile(), d.ServiceExecutable()} {
 		if _, err := os.Lstat(p); !errors.Is(err, fs.ErrNotExist) {
 			t.Errorf("EnsureAll left %s, which is not as conflux makes it (Lstat: %v)", p, err)
 		}

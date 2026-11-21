@@ -388,8 +388,8 @@ func TestEnsureAllRemovesAFileNotAsConfluxMakesIt(t *testing.T) {
 
 	d := Default()
 
-	for _, p := range []string{d.ConfigFile(), d.StateFile(), d.ManifestFile(), d.LockFile(), d.ServeLockFile(),
-		d.ServiceExecutable()} {
+	for _, p := range []string{d.ConfigFile(), d.StateFile(), d.ManifestFile(), d.PrivilegeFile(), d.WayFile(),
+		d.LockFile(), d.ServeLockFile(), d.ServiceExecutable()} {
 		for name, plant := range plants {
 			t.Run(filepath.Base(p)+"/"+name, func(t *testing.T) {
 				if err := d.EnsureAll(); err != nil {

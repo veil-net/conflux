@@ -499,7 +499,7 @@ func TestTidyStartsNothingBesideASupervisorRunByHand(t *testing.T) {
 }
 
 // TestTidyStartsNothingBesideASupervisorThatTookTheRoot: a supervisor that starts serving the root
-// once tidy has stopped the boot service -- here as tidy secures the roots -- is no service tidy
+// once tidy has stopped the boot service -- here as tidy makes the roots -- is no service tidy
 // stopped either: the update is refused, exit 1, naming the root, with nothing registered and nothing
 // started, the service tidy stopped included, since started beside that supervisor it would find it
 // there and exit.

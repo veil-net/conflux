@@ -166,8 +166,9 @@ func TestAReaderTakesAnEphemeralRunsPairAsItIs(t *testing.T) {
 // TestAReaderPassesOverARootAnotherAccountMade: /tmp lets anybody make the name a user's
 // ephemeral root has, and fill it with a held lock, a readiness marker and an anchorctl of
 // their own. A root another account made is no run's -- a run will not be kept in one -- so
-// status, pass-through and uninstall pass it over, and nothing runs what it holds. Nor do they
-// look inside it first: a link there could lead them anywhere its maker chose.
+// status and pass-through pass it over, and nothing runs what it holds, as uninstall removes it
+// reading nothing. Nor do they look inside it first: a link there could lead them anywhere its maker
+// chose.
 func TestAReaderPassesOverARootAnotherAccountMade(t *testing.T) {
 	d := startingEphemeral(t)
 
@@ -217,8 +218,8 @@ func TestAReaderPassesOverARootAnotherAccountMade(t *testing.T) {
 // whose it is holds no run, and nothing more is looked up at its name: /tmp lets anybody make it a
 // moment later, with a lock, held or left, a marker and an anchorctl of their own in it, and taken
 // for a run it would have a pass-through reach their daemon and run their anchorctl, and uninstall
-// stop their pid and empty what it led to. So a root made just after Foreign found none there is
-// neither the live run nor a stale one, and not looked inside.
+// stop their pid and empty what it led to. So a root made just after the readers' check found none
+// there is neither the live run nor a stale one, and not looked inside.
 func TestAReaderReadsNothingOfARootNotThere(t *testing.T) {
 	for name, held := range map[string]bool{"a run's lock held": true, "a killed run's lock left": false} {
 		t.Run(name, func(t *testing.T) {
@@ -235,8 +236,8 @@ func TestAReaderReadsNothingOfARootNotThere(t *testing.T) {
 				return os.Stat(name)
 			}
 
-			// Foreign's answer for a root not there, and the root made, a run's in all but who made
-			// it, the moment after.
+			// The readers' check's answer for a root not there, and the root made, a run's in all but who
+			// made it, the moment after.
 			defer func(was func(string) error) { foreignRoot = was }(foreignRoot)
 			foreignRoot = func(r string) error {
 				if _, err := os.Lstat(r); !errors.Is(err, fs.ErrNotExist) {

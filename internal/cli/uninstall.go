@@ -53,7 +53,7 @@ func runUninstall(_ context.Context, args []string) int {
 	// Judged for every root before anything is asked or removed, so nothing is half-removed; paths'
 	// advice, which is for choosing a CONFLUX_DIR, gives way to uninstall's. Any other failure to walk
 	// the way to a root stops uninstall there too, before it acts.
-	if err := judgeWays(d); err != nil {
+	if err := d.JudgeWays(); err != nil {
 		what, _, _ := strings.Cut(err.Error(), "\n")
 
 		if errors.Is(err, paths.ErrWayRefused) {
@@ -218,10 +218,6 @@ var confirm = confirmUninstall
 
 // removeAccounts is removeAccount, which a test records.
 var removeAccounts = removeAccount
-
-// judgeWays is paths.Dirs.JudgeWays, which a test has refuse a root as the top a SUBST letter gives a
-// folder, which only Windows has.
-var judgeWays = paths.Dirs.JudgeWays
 
 // removeRoot is paths.RemoveRoot, which a test has fail with something at the root's name.
 var removeRoot = paths.RemoveRoot

@@ -79,6 +79,48 @@ func TestALinkLeadingNowhereIsNoWayToMake(t *testing.T) {
 	}
 }
 
+// TestAWayThroughADirectoryThisAccountMaySearchAlone: a directory of this account's that it may search
+// and not read, 0311, cannot be opened to read, which is how the walk holds a directory on macOS and
+// the BSDs, so there it is held by its name in the directory held before it (lookUp), and the names
+// after it are looked up through that name; Linux opens it as a path. Either way a CONFLUX_DIR under
+// one is made and passes the readers' check, and the directory is judged as any other: once others
+// may write it, Check refuses it, naming it.
+func TestAWayThroughADirectoryThisAccountMaySearchAlone(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	shut := filepath.Join(base, "shut")
+	if err := os.Mkdir(shut, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Chmod(shut, 0o311); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { os.Chmod(shut, 0o700) }) // for TempDir to list it, to remove it
+
+	t.Setenv("CONFLUX_DIR", filepath.Join(shut, "conflux"))
+
+	if err := Default().EnsureAll(); err != nil {
+		t.Fatalf("EnsureAll(a CONFLUX_DIR under a 0311 directory of this account's) = %v", err)
+	}
+
+	if err := Default().Check(); err != nil {
+		t.Errorf("Check(a CONFLUX_DIR under a 0311 directory of this account's) = %v", err)
+	}
+
+	if err := os.Chmod(shut, 0o333); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Default().Check(); err == nil || !strings.Contains(err.Error(), "inside "+shut+", which anybody may write") {
+		t.Errorf("Check(a CONFLUX_DIR under a 0333 directory of this account's) = %v, want a refusal naming it", err)
+	}
+}
+
 // TestMakeRootJudgesWhatIsPlantedWhileItJudges: a name not there as the way to a root is judged may
 // be there by the time conflux makes it, made by whoever may make a name in the directory -- its own
 // group of one, here, whose answer is asked as the directory is judged, and plants a link there into a

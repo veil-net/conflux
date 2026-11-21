@@ -57,7 +57,7 @@ func SaveManifest(d paths.Dirs, env Envelope) error {
 	// The newline is written after it rather than appended to it: an append to the
 	// caller's slice can write into the envelope the caller still holds, and a copy to
 	// avoid that is the whole manifest again.
-	return writeAtomic(d.ManifestFile(), 0o600, b, []byte{'\n'})
+	return paths.WriteAtomic(d.ManifestFile(), 0o600, -1, -1, b, []byte{'\n'})
 }
 
 // HasManifest reports whether this machine has an identity already. The answer

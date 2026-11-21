@@ -1185,7 +1185,7 @@ func notLink(dir string, h windows.Handle, why string) error {
 // run\anchord\, as MakeAnchordDir makes them -- is not gone into: its DACL, which has just shown
 // nobody else may write it, lets only SYSTEM, the Administrators and anchord make anything inside,
 // and what anchord makes there, which it owns, conflux reads as anchord's, untrusted
-// (OpenUntrusted, config.ReadUntrusted, copyTree).
+// (OpenUntrusted, ReadUntrusted, copyTree).
 //
 // In an installation's root, which the boot service runs from as SYSTEM, trusting no other account,
 // each entry is judged for SYSTEM (judgedFor): one the account running conflux owns -- an
@@ -1240,12 +1240,7 @@ func contents(dir string, installation bool) error {
 					"use it.\n  Remove it, then run this again as Administrator", p, dir)
 			}
 
-			what := "write it, move it or make a junction of it"
-			if d.IsDir() {
-				what = "write it or what is made in it, move it or make a junction of it"
-			}
-
-			who, anchords, err := changer(p, judged, h, retargets, what, anchord, d.IsDir())
+			who, anchords, err := entryChanger(p, judged, h, anchord, d.IsDir())
 			switch {
 			case err != nil:
 				return err
@@ -1263,6 +1258,20 @@ func contents(dir string, installation bool) error {
 	}
 
 	return nil
+}
+
+// entryChanger is who, besides SYSTEM, the Administrators, TrustedInstaller, self and anchord, may
+// change p, a thing in a root held open as itself by h, a folder where dir is, as contents judges each
+// thing a root holds: its owner and DACL, read through h, held to retargets, on p itself and, for a
+// folder, on what is made in it too (changer); and whether that DACL grants anchord one of them.
+func entryChanger(p string, self *windows.SID, h windows.Handle, anchord *windows.SID, dir bool) (string, bool,
+	error) {
+	what := "write it, move it or make a junction of it"
+	if dir {
+		what = "write it or what is made in it, move it or make a junction of it"
+	}
+
+	return changer(p, self, h, retargets, what, anchord, dir)
 }
 
 // heldLink refuses dir, a junction or a link whose own owner and DACL sd holds, where an account

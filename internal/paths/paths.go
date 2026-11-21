@@ -19,7 +19,6 @@ package paths
 import (
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"iter"
 	"os"
@@ -301,8 +300,7 @@ func (d Dirs) EnsureAll() error {
 const wayName = "way"
 
 // recordWay adds made, folders makeRoot made on the way to d's roots, to the record in d's state root,
-// which EnsureAll has secured: what it held kept, each once, written to a file beside it and renamed
-// over it.
+// which EnsureAll has secured: what it held kept, each once, written atomically (WriteAtomic).
 func (d Dirs) recordWay(made []string) error {
 	record := filepath.Join(d.State, wayName)
 
@@ -317,38 +315,15 @@ func (d Dirs) recordWay(made []string) error {
 		}
 	}
 
-	tmp, err := os.CreateTemp(d.State, ".tmp-way-*")
-	if err != nil {
+	if err := WriteAtomic(record, 0o600, -1, -1, []byte(strings.Join(way, "\n")+"\n")); err != nil {
 		return fmt.Errorf("record the way to %s: %w", d.State, err)
 	}
-
-	_, err = tmp.WriteString(strings.Join(way, "\n") + "\n")
-	if err == nil {
-		err = tmp.Sync()
-	}
-
-	if cerr := tmp.Close(); err == nil {
-		err = cerr
-	}
-
-	if err == nil {
-		err = os.Rename(tmp.Name(), record)
-	}
-
-	if err != nil {
-		os.Remove(tmp.Name())
-
-		return fmt.Errorf("record the way to %s: %w", d.State, err)
-	}
-
-	SyncDir(d.State)
 
 	return nil
 }
 
 // readWay is the record in d's state root, a line a folder, at most wayMax bytes of it: opened through
-// the root held (OpenIn), as a file another account may have put there is, and refused unless it is a
-// plain file (PlainFile).
+// the root held (OpenIn), and read as a file another account may have put there (readUntrusted).
 func (d Dirs) readWay() ([]string, error) {
 	path := filepath.Join(d.State, wayName)
 
@@ -358,14 +333,9 @@ func (d Dirs) readWay() ([]string, error) {
 	}
 	defer f.Close()
 
-	if fi, err := f.Stat(); err != nil || !PlainFile(fi, wayMax) {
-		return nil, fmt.Errorf("%s is not a plain file of at most %d bytes, so it is not read as the record of "+
-			"the way conflux made", path, wayMax)
-	}
-
-	b, err := io.ReadAll(io.LimitReader(f, wayMax))
+	b, err := readUntrusted(f, path, wayMax)
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
+		return nil, err
 	}
 
 	return strings.Fields(string(b)), nil
@@ -442,23 +412,13 @@ func RemoveWay(way []string) ([]string, error) {
 }
 
 // removeWayFolder is RemoveWay's removal of dir, an empty folder, from the folder it is in, held as
-// the walk judged by judge reaches it, and whether it removed it.
+// the walk judged by judge reaches it (toParent), and whether it removed it.
 func removeWayFolder(dir string, judge judgement) (bool, error) {
-	w, err := walk(filepath.Dir(dir), judge)
-	if err != nil {
+	w, err := toParent(dir, judge)
+	if err != nil || w == nil {
 		return false, err
 	}
 	defer w.close()
-
-	if w.missing != nil {
-		return false, nil
-	}
-
-	if at := w.last(); judge != nil {
-		if err := judge(at.path, at.step, false); err != nil {
-			return false, err
-		}
-	}
 
 	return removeEmpty(w.last().step, filepath.Base(dir), dir)
 }

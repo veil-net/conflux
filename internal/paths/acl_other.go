@@ -519,7 +519,7 @@ var checked = func(string) {}
 // run/anchord in a root that holds Run (anchordPlace). One of those that account owns is held to
 // who else may write it, and a directory of them is not gone into: only root and anchord may make
 // anything in it, and conflux reads what anchord makes there as anchord's, untrusted
-// (OpenUntrusted, config.ReadUntrusted, copyTree). That account can make nothing elsewhere in a
+// (OpenUntrusted, ReadUntrusted, copyTree). That account can make nothing elsewhere in a
 // root, so what it owns anywhere else is refused as any other account's is.
 //
 // The root is opened by its name once, which secure and checkRootAs have just held, a link at it

@@ -729,7 +729,7 @@ type subnetsOrder struct {
 func readSubnetsOrder(anchorDir string) (*subnetsOrder, error) {
 	path := paths.SubnetsOrderFile(anchorDir)
 
-	b, err := config.ReadUntrusted(path, 1<<20)
+	b, err := paths.ReadUntrusted(path, 1<<20)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}

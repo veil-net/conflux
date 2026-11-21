@@ -169,8 +169,7 @@ func (d Dirs) keepLog(root windows.Handle, name, p string, anchord *windows.SID)
 				return nil
 			}
 
-			switch who, _, err := changer(f, sidSystem, h, retargets, "write it, move it or make a junction of it",
-				anchord, false); {
+			switch who, _, err := entryChanger(f, sidSystem, h, anchord, false); {
 			case err != nil:
 				return err
 			case who != "":
@@ -330,7 +329,8 @@ func (d Dirs) remadeIn(dir, name string) bool {
 }
 
 // failsIn is who, besides SYSTEM, the Administrators, TrustedInstaller and anchord, may change name,
-// in the directory parent holds open, which p names, as contents judges it for SYSTEM, or "": opened
+// in the directory parent holds open, which p names, as contents judges it for SYSTEM (entryChanger),
+// or "": opened
 // through parent, looked up there and nowhere else and never followed. A junction or a link is "",
 // left to contents, which refuses it.
 func failsIn(parent windows.Handle, name, p string, anchord *windows.SID) (string, error) {
@@ -349,14 +349,7 @@ func failsIn(parent windows.Handle, name, p string, anchord *windows.SID) (strin
 		return "", nil
 	}
 
-	dir := attributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0
-
-	what := "write it, move it or make a junction of it"
-	if dir {
-		what = "write it or what is made in it, move it or make a junction of it"
-	}
-
-	who, _, err := changer(p, sidSystem, h, retargets, what, anchord, dir)
+	who, _, err := entryChanger(p, sidSystem, h, anchord, attributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0)
 
 	return who, err
 }

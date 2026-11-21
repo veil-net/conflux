@@ -105,8 +105,9 @@ func handOver(d paths.Dirs, mgr service.Manager) (place func(paths.Dirs) (string
 }
 
 // restarted is whether the command has restarted the boot service itself (startAndReport), whether that
-// started it or not, so that handOver's finish does not start it again. A conflux process runs one
-// command, and handOver clears it as the command begins.
+// started it or not, so that handOver's finish does not start it again. A variable of the package's
+// rather than one handed down through bring and install, since a conflux process runs one command:
+// handOver clears it as that command begins, and only startAndReport sets it.
 var restarted bool
 
 // runRegister places this conflux's copy for the boot service and registers the service

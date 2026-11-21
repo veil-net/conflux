@@ -52,8 +52,9 @@ host can read, and when the run stops there is nothing at all.
   anything, the boot service included, or, where the root's name is a link to it, removes the link
   alone, unless it holds what conflux never makes there (below). On Unix that is a sticky directory (`/tmp`,
   `/var/tmp`, `/dev/shm`), `/`, every directory directly under `/` (`/home`, `/opt`, `/srv`, `/usr`
-  …), which only root makes there, but one conflux made a root of — its owner's, at `0700` or `0710`,
-  holding its run directory or more — the system's log directory, a directory above where a platform
+  …), which only root makes there, but one conflux may have made a root of — its owner's, at `0700` or
+  `0710`, and holding anything, an empty one, as `/lost+found` may be, refused; what it holds is held
+  to conflux's names (below), so `/root` is refused for its own files — the system's log directory, a directory above where a platform
   root is kept by default (`/etc`, `/var`, `/var/lib` …), and the directory the running conflux is in
   or one above it, but for the boot service's own root where the running conflux is the copy the
   service runs from it, one file with the copy at its name there, and the root already holds this

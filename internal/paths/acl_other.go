@@ -981,8 +981,9 @@ func systemPlacesOf(slash, exe string, platform Dirs) systemPlaces {
 // system's log directory, or one above the directory the running conflux is in. A directory directly
 // under the filesystem's root is the system's too, but where it is a root conflux made: owned by root
 // or the account running conflux (notReaders), at 0700 or 0710, as conflux secures a root, and
-// holding something -- every root conflux made holds its run directory, or more -- which strays then
-// holds to conflux's names. The directory the running conflux is in is refused too. The boot service's
+// holding something -- every root conflux made holds its run directory, or more, and an empty one, as
+// /lost+found may be, is no root conflux made -- which strays then holds to conflux's names, but in a
+// working root: so /root, 0700 and root's, is refused for what it holds. The directory the running conflux is in is refused too. The boot service's
 // own root is the one exception to both: where the running conflux is the copy the service runs there
 // (serviceCopy) and the root already holds this installation's own state (stateIn), it is taken whatever
 // its mode, and secure narrows it where it finds it widened, rather than refuse it at every start. A

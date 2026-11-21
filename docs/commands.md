@@ -141,7 +141,8 @@ What is no root, on every command that makes or removes one
 
 - **A shared or system directory**, however it is reached and whoever owns it. On Unix: a sticky
   directory (`/tmp`), `/`, every directory directly under `/` (`/home`, `/opt`, `/srv`, `/usr` …)
-  but one conflux made a root of — its owner's, at `0700` or `0710`, holding what conflux keeps —
+  but one conflux may have made a root of — its owner's, at `0700` or `0710`, and holding anything,
+  which is then held to conflux's names (below), so `/root` is refused for its own files —
   the system's log directory, a directory above where a platform root is kept by default, and the
   directory the running conflux is in or one above it. On Windows: a volume's root (`C:\`, `\\?\C:\`,
   or the volume by its GUID), a folder directly under one that Windows made, which TrustedInstaller

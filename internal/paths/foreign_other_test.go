@@ -198,9 +198,9 @@ func TestADirectoryDirectlyUnderTheFilesystemsRootIsTheSystems(t *testing.T) {
 
 		switch {
 		case c.ok && err != nil:
-			t.Errorf("sharedRoot(%s, directly under the filesystem's root) = %v, want it taken", c.dir, err)
+			t.Errorf("sharedRootIn(%s, directly under the filesystem's root) = %v, want it taken", c.dir, err)
 		case !c.ok && (err == nil || !strings.Contains(err.Error(), "directly under the filesystem's root")):
-			t.Errorf("sharedRoot(%s, directly under the filesystem's root) = %v, want a refusal saying so", c.dir, err)
+			t.Errorf("sharedRootIn(%s, directly under the filesystem's root) = %v, want a refusal saying so", c.dir, err)
 		}
 	}
 

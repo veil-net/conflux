@@ -98,7 +98,7 @@ func runUninstall(_ context.Context, args []string) int {
 	// Whatever anchord a supervisor that died left running out of the state directory, once the
 	// service's own supervisor has let go of it.
 	if checked == nil {
-		daemon.Reap(d, 35*time.Second)
+		reap(d, 35*time.Second)
 	}
 
 	// Each ephemeral run's root, but one inside the installation's -- a CONFLUX_DIR's -- which goes with
@@ -160,12 +160,8 @@ func runUninstall(_ context.Context, args []string) int {
 	removed = append(removed, madeWay...)
 	errs = append(errs, err)
 
-	// The service's log, where the platform keeps it in the system's own log directory, which is
-	// not conflux's: the file and the one moved aside, and never the directory. Remove has taken it
-	// already where a service was registered.
-	if f := d.LogFile(); f != "" && !d.Inside(d.Log) {
-		errs = append(errs, logfile.Remove(f))
-	}
+	// Remove has taken the service's log already where a service was registered.
+	errs = append(errs, removeSharedLog(d))
 
 	if exe, err := updateExecutable(); err == nil {
 		removed = append(removed, removeUpdateLeftovers(exe)...)
@@ -201,6 +197,20 @@ func runUninstall(_ context.Context, args []string) int {
 		"conflux made. conflux up here again draws a new identity and a new overlay address.\n")
 
 	return ExitOK
+}
+
+// reap is daemon.Reap, which a test counts.
+var reap = daemon.Reap
+
+// removeSharedLog removes the service's log where the platform keeps it in the system's own log
+// directory, outside d's roots, which is not conflux's: the file and the one moved aside, and never the
+// directory. One in a root goes with it.
+func removeSharedLog(d paths.Dirs) error {
+	if f := d.LogFile(); f != "" && !d.Inside(d.Log) {
+		return logfile.Remove(f)
+	}
+
+	return nil
 }
 
 // liveRefused refuses uninstall while an ephemeral run is live, naming its root, and says whether it

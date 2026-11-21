@@ -1,11 +1,14 @@
 package cli
 
 import (
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
@@ -18,7 +21,8 @@ import (
 // the link, and the directory it leads to, and what is in it, are untouched; a file planted there
 // that another account owns is removed as itself. What an update left beside the conflux it
 // replaced goes too, and that conflux stays, with whatever else is beside it: they are the
-// operator's. It says what it removed. (On
+// operator's. What a dead supervisor and a killed run left running is stopped first. It says what it
+// removed. (On
 // Windows, with a junction: the same test.)
 func TestUninstallLeavesNothingConfluxMade(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
@@ -41,9 +45,30 @@ func TestUninstallLeavesNothingConfluxMade(t *testing.T) {
 	mgr := &fakeManager{d: d}
 	standInService(t, mgr)
 
+	// What uninstall stops: the anchord a dead supervisor left, by the root's pid record, which passes
+	// the readers' check; and the killed ephemeral run's, by its root's, inside the installation's.
+	var reaped, emptied []string
+
+	defer func(was func(paths.Dirs, time.Duration)) { reap = was }(reap)
+	reap = func(d paths.Dirs, _ time.Duration) { reaped = append(reaped, d.State) }
+
+	wasEmpty := removeEphemeral
+	defer func() { removeEphemeral = wasEmpty }()
+
+	removeEphemeral = func(e paths.Dirs, unlock func(), r daemon.Reporter) error {
+		emptied = append(emptied, e.State)
+
+		return wasEmpty(e, unlock, r)
+	}
+
 	out, errOut, code := capture(t, "uninstall", "--yes")
 	if code != ExitOK {
 		t.Fatalf("uninstall exited %d, saying:\n%s%s", code, out, errOut)
+	}
+
+	if !slices.Equal(reaped, []string{d.State}) || !slices.Equal(emptied, []string{paths.EphemeralCandidates()[0]}) {
+		t.Errorf("uninstall reaped %q and emptied the ephemeral roots %q, want %s and the killed run's inside it, once each",
+			reaped, emptied, d.State)
 	}
 
 	if _, err := os.Lstat(d.State); !os.IsNotExist(err) {
@@ -192,5 +217,49 @@ func TestARunTakingAKilledRunsRootKeepsIt(t *testing.T) {
 
 	if b, err := os.ReadFile(taken); err != nil || string(b) != "a run's" {
 		t.Errorf("what a run put in the root it took as the killed run's lock was let go of is gone: %q, %v", b, err)
+	}
+}
+
+// TestUninstallRemovesTheSharedLog: the service's log, where the platform keeps it in the system's own
+// log directory, outside conflux's roots -- /var/log on macOS and FreeBSD -- is removed with the one
+// moved aside, and the directory, which is not conflux's, and whatever else is in it, are kept; a log
+// directory inside a root goes with the root, and is not reached for here.
+func TestUninstallRemovesTheSharedLog(t *testing.T) {
+	root := t.TempDir()
+	state := filepath.Join(root, "conflux")
+
+	for name, d := range map[string]paths.Dirs{
+		"outside the roots": {Config: state, State: state, Run: filepath.Join(state, "run"), Log: filepath.Join(root, "log")},
+		"inside a root":     {Config: state, State: state, Run: filepath.Join(state, "run"), Log: filepath.Join(state, "logs")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			other := filepath.Join(d.Log, "other.log")
+
+			for _, p := range []string{d.LogFile(), d.LogFile() + ".1", other} {
+				if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+					t.Fatal(err)
+				}
+
+				if err := os.WriteFile(p, []byte("a line"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			if err := removeSharedLog(d); err != nil {
+				t.Fatal(err)
+			}
+
+			outside := name == "outside the roots"
+
+			for _, p := range []string{d.LogFile(), d.LogFile() + ".1"} {
+				if _, err := os.Lstat(p); outside != errors.Is(err, fs.ErrNotExist) {
+					t.Errorf("%s: %s (Lstat: %v), want it removed only outside the roots", name, p, err)
+				}
+			}
+
+			if _, err := os.Lstat(other); err != nil {
+				t.Errorf("%s: removed %s, which is not conflux's: %v", name, other, err)
+			}
+		})
 	}
 }

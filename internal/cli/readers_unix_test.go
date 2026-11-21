@@ -12,12 +12,16 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
+	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
 	"github.com/veil-net/conflux/internal/privcheck"
+	"github.com/veil-net/conflux/internal/service"
+	"github.com/veil-net/conflux/internal/ui"
 )
 
 // untouched is a boot service installed here that counts what it is asked to do -- register,
@@ -273,12 +277,32 @@ func TestServeWritesItsLogOnceTheRootIsJudged(t *testing.T) {
 }
 
 // uninstallRemoves fails t unless uninstall of the root d, which the readers' check refuses saying
-// why, removes it all the same and leaves nothing of it: the boot service removed, the root gone with
-// what it holds, a link planted in it to a directory outside it removed as the link, with that
-// directory and what is in it untouched, nothing read in the root -- the identity not shown in what
-// is asked -- and the anchord its pid record names not looked for.
+// why, removes it all the same and leaves nothing of it, reading nothing in it: off a terminal and
+// without --yes refused, exit 2, with nothing removed, since it cannot say whose identity it would
+// destroy; with --yes the boot service removed, the root gone with what it holds, a link planted in it
+// to a directory outside it removed as the link, with that directory and what is in it untouched,
+// nothing in it printed, and the anchord its pid record names not looked for (reap).
 func uninstallRemoves(t *testing.T, d paths.Dirs, why string) {
 	t.Helper()
+
+	t.Run("uninstall unconfirmed", func(t *testing.T) {
+		if ui.IsTerminal() {
+			t.Skip("this test's stdin is a terminal")
+		}
+
+		mgr := &untouched{fakeManager: fakeManager{d: d}}
+		standInService(t, mgr)
+
+		out, errOut, code := capture(t, "uninstall")
+		if code != ExitUsage || !strings.Contains(errOut, "--yes") || mgr.removals > 0 {
+			t.Errorf("uninstall of a root %s off a terminal, without --yes, exited %d and removed the boot service %d "+
+				"times, want %d naming --yes, nothing removed:\n%s%s", why, code, mgr.removals, ExitUsage, out, errOut)
+		}
+
+		if _, err := os.Lstat(d.ConfigFile()); err != nil {
+			t.Errorf("uninstall, unconfirmed, removed %s: %v", d.ConfigFile(), err)
+		}
+	})
 
 	t.Run("uninstall", func(t *testing.T) {
 		outside := t.TempDir()
@@ -294,6 +318,11 @@ func uninstallRemoves(t *testing.T, d paths.Dirs, why string) {
 
 		mgr := &untouched{fakeManager: fakeManager{d: d}}
 		standInService(t, mgr)
+
+		reaped := 0
+
+		defer func(was func(paths.Dirs, time.Duration)) { reap = was }(reap)
+		reap = func(paths.Dirs, time.Duration) { reaped++ }
 
 		out, errOut, code := capture(t, "uninstall", "--yes")
 		if code != ExitOK {
@@ -312,7 +341,51 @@ func uninstallRemoves(t *testing.T, d paths.Dirs, why string) {
 			t.Errorf("uninstall removed the boot service %d times and printed, want it removed once and %s listed:\n%s",
 				mgr.removals, d.State, out)
 		}
+
+		if reaped > 0 {
+			t.Errorf("uninstall reaped by the pid record of a root %s %d times", why, reaped)
+		}
 	})
+}
+
+// TestAnUpdateTidiesARootTheReadersCheckRefuses: a start of the conflux the service already runs
+// reads the copy there to find that out, so where the readers' check refuses the root -- one every
+// account may write -- it is taken for an update's, the service's copy unread: what earlier conflux
+// left goes, as an update removes it, an earlier set among it.
+func TestAnUpdateTidiesARootTheReadersCheckRefuses(t *testing.T) {
+	anchortest.Require(t) // it extracts the pair afresh
+
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	d := configured(t)
+
+	if _, err := service.Place(d); err != nil {
+		t.Fatal(err)
+	}
+
+	earlier := filepath.Join(d.Libexec(), "0123456789abcdef")
+	if err := os.MkdirAll(earlier, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Chmod(d.State, 0o757); err != nil {
+		t.Fatal(err)
+	}
+
+	mgr := &fakeManager{d: d, restartErr: errStartsNothing}
+	standInService(t, mgr)
+
+	out, errOut, code := capture(t, "start")
+	if code != ExitError || len(mgr.installs) != 1 || mgr.restarts != 1 {
+		t.Fatalf("conflux start exited %d, registered %d times and restarted %d:\n%s%s", code, len(mgr.installs),
+			mgr.restarts, out, errOut)
+	}
+
+	if _, err := os.Lstat(earlier); !errors.Is(err, fs.ErrNotExist) || !strings.Contains(out, "  "+earlier+"\n") {
+		t.Errorf("a start of a root the readers' check refuses left %s (Lstat: %v), or did not say it removed it:\n%s",
+			earlier, err, out)
+	}
 }
 
 // TestAnUpdateStopsNothingOnAWayItRefuses: the conflux an update put in place stops a supervisor

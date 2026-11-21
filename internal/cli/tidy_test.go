@@ -486,3 +486,39 @@ func TestTidyListsOnlyWhatItRemoved(t *testing.T) {
 		}
 	})
 }
+
+// TestTidyLeavesWhatAHeldLockGuards: what an atomic write left in the state directory is removed only
+// where nothing holds the state's lock, which every writer of the manifest and the state holds; while
+// something does -- a conflux enrol, say -- what it may be writing is left, with the lock.
+func TestTidyLeavesWhatAHeldLockGuards(t *testing.T) {
+	anchortest.Require(t) // it extracts the pair afresh
+
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	d := configured(t)
+
+	staged := filepath.Join(d.State, ".tmp-123")
+	if err := os.WriteFile(staged, []byte("a write under way"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	unlock, err := flock.Acquire(d.LockFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+
+	standInService(t, &fakeManager{d: d})
+
+	out, errOut, code := capture(t, "register")
+	if code != ExitOK {
+		t.Fatalf("conflux register exited %d:\n%s%s", code, out, errOut)
+	}
+
+	for _, p := range []string{staged, d.LockFile()} {
+		if _, err := os.Lstat(p); err != nil || strings.Contains(out, "  "+p+"\n") {
+			t.Errorf("conflux register, the state's lock held, removed or listed %s (Lstat: %v):\n%s", p, err, out)
+		}
+	}
+}

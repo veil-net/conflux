@@ -194,9 +194,15 @@ the directory held before it, and the names after it are looked up through that 
 way in: the directory the name is in was judged before the name was looked up, so only root and the
 account running conflux may change where the name leads — or, in a sticky directory, the name's own
 owner, whom the judgement of the directory itself, before anything is looked up in it, holds to root
-and that account as well — and those two could change the way anyway. On a way conflux does not
-judge, a platform root's, nothing is judged at all, and a lookup through the name is the lookup by
-name any program makes there. Linux holds every directory open as a path (`O_PATH`), which needs
+and that account as well — and those two could change the way anyway. The way to a root of the
+platform's own is not judged at all, on any platform: the directories above `/etc/conflux`,
+`/var/lib/conflux` and `/run/conflux` on Linux and their counterparts on macOS and the BSDs, and
+`%ProgramData%` and `C:\` above `%ProgramData%\conflux` on Windows — and, for an ephemeral run of an
+ordinary user, that user's own runtime and cache directories, or the sticky `/tmp`. Only root or an administrator can change those directories, or
+the user their own, and whoever can could change conflux, or anything it runs, anyway; so a link or a
+junction an administrator put there is followed, as any program follows it, and a lookup through
+the name is the lookup by name any program makes there. Only a `CONFLUX_DIR`, which whoever set it
+chose, has its way judged. Linux holds every directory open as a path (`O_PATH`), which needs
 only the right to search. A root not made yet is held to this before anything is made, as far as the
 way is there, and each directory missing is made in the last one held and held open in turn, never
 by its name, and held to the same rule before anything is made in it, conflux's own or one somebody

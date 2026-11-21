@@ -52,6 +52,36 @@ func TestEnsureAllNarrowsAnOpenRoot(t *testing.T) {
 	}
 }
 
+// TestRemakeOldRemovesNothingHere: on Unix what root or the account running conflux owns passes
+// secure, and the service runs as root, so nothing conflux made in an installation's root fails the
+// rule RemakeOld removes by: it removes nothing, from a root made or one not there.
+func TestRemakeOldRemovesNothingHere(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "conflux")
+	t.Setenv("CONFLUX_DIR", root)
+
+	d := Default()
+
+	if removed, err := d.RemakeOld(); removed != nil || err != nil {
+		t.Errorf("RemakeOld of a root not there = %q, %v, want nothing", removed, err)
+	}
+
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(d.LockFile(), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if removed, err := d.RemakeOld(); removed != nil || err != nil {
+		t.Errorf("RemakeOld of a root EnsureAll made = %q, %v, want nothing", removed, err)
+	}
+
+	if _, err := os.Lstat(d.LockFile()); err != nil {
+		t.Errorf("RemakeOld removed %s: %v", d.LockFile(), err)
+	}
+}
+
 // TestSecureRefusesARootAnotherAccountOwns: whatever another account put in a directory
 // it made is not used, and the directory is left exactly as it was found.
 func TestSecureRefusesARootAnotherAccountOwns(t *testing.T) {

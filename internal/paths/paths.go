@@ -275,6 +275,42 @@ func (d Dirs) EnsureAll() error {
 	return nil
 }
 
+// RemakeOld removes from an installation's roots what conflux makes again there by its name and
+// finds not meeting the rule secure holds what a root holds to for the boot service -- owned by an
+// account other than SYSTEM and the Administrators, the administrator running conflux among them, or
+// granting such an account a right that rule refuses, as an older conflux on a Windows client, or an
+// administrator by hand, may have left it -- and is what it removed, for the caller to make again
+// fresh: EnsureAll, the extraction, the service's copy of conflux and the lock files each make theirs
+// where it is not there. A handle opened while that account could change such a thing keeps its
+// rights whoever owns it after, so it is made again rather than taken over. Each is removed through
+// handles held on the root and on what it holds, never by its name and never through a link, a folder
+// with all it holds. Anything else not meeting the rule -- what conflux does not make again, the
+// identity, configuration and state among it, or what is deeper in a folder that meets it -- is
+// refused, naming it, and left as it is; so is a root another account owns or may move what is in.
+// What conflux makes again is in use while a supervisor runs from the root, so the caller stops it
+// first: what cannot be removed is refused, naming it. An ephemeral run's roots, which no service
+// runs from, and Unix's, where nothing conflux made fails that rule, hold nothing to remove.
+func (d Dirs) RemakeOld() ([]string, error) {
+	if d.ephemeral {
+		return nil, nil
+	}
+
+	var removed []string
+
+	for dir, inside := range d.roots() {
+		if inside {
+			continue
+		}
+
+		r, err := remakeOld(d, dir)
+		if removed = append(removed, r...); err != nil {
+			return removed, err
+		}
+	}
+
+	return removed, nil
+}
+
 // wayRule is the rule the way to d's root dir is held to as EnsureAll makes it: the boot service's
 // (serviceRule) for an installation's root, which the service runs from at every start and judges
 // the way to as it starts, so that a command making it refuses up front what the service would

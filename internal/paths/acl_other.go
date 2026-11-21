@@ -41,6 +41,11 @@ func Restrict(string, bool) error { return nil }
 // RestrictToOwner is a no-op here: the mode set on the descriptor is the restriction.
 func RestrictToOwner(string, bool) error { return nil }
 
+// remakeOld is a no-op here: what root or the account running conflux owns passes secure, and the
+// service runs as root, as every command that makes an installation's root does, so nothing an
+// older conflux made fails the rule that it would make again.
+func remakeOld(Dirs, string) ([]string, error) { return nil, nil }
+
 // ElevatedDefaultOwner is a no-op here: what conflux makes is the account's that makes it, root's
 // for an installation's root, which every command making it runs as.
 func ElevatedDefaultOwner() error { return nil }
@@ -233,10 +238,9 @@ func parentsRuleAs(dir string, euid int) judgement {
 // before secure changes anything; a root that was not there EnsureAll has made by then, and a
 // refusal leaves it, empty and this account's.
 //
-// installation is Windows's, where secure gives what the account running conflux owns in an
-// installation's root to the Administrators, for the SYSTEM service; here what root or that account
-// owns passes contentsAs already, and the service runs as root, as every command that makes an
-// installation's root does, so there is nothing to give.
+// installation is Windows's, where an installation's root is judged for the SYSTEM service; here the
+// service runs as root, as every command that makes an installation's root does, so the two
+// judgements are one.
 func secure(dir string, _ bool) error { return secureAs(dir, os.Geteuid()) }
 
 // secureAs is secure for a given effective uid, so the refusals can be tested without

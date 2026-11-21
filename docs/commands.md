@@ -310,15 +310,16 @@ retyping eight specs correctly from memory.
 
 Before it reads the configuration, places its copy for the service or registers it, `start`
 secures the roots as the service does at every start, and as `up` and `install` do: one of
-conflux's own left wider is narrowed, one another account owns is refused, exit 1, naming it, and
-on Windows what the administrator running it owns in the root is given to the Administrators,
-whom the service, running as SYSTEM, trusts. `update` hands a running service to the conflux it
-put in place through that conflux's `start`, so the root an earlier conflux left is one the new
-service takes. With the service registered and its roots gone, they are made again, as the
-service would make them. Where the service's copy is not this conflux — an update, or a newer
-conflux put in place by hand — `start` then removes what earlier conflux left, the service stopped
-for it, and writes the copy afresh, as [`update`](#conflux-update) describes; a start of the
-conflux the service already runs removes nothing.
+conflux's own left wider is narrowed, and one another account owns is refused, exit 1, naming it
+— on Windows, where the service runs as SYSTEM, what the administrator running it owns in the root,
+or what grants them a right, among it, as the service would refuse it at every start; what an
+earlier conflux left so is removed and made again ([windows.md](windows.md#file-permissions)).
+`update` hands a running service to the conflux it put in place through that conflux's `start`.
+With the service registered and its roots gone, they are made again, as the service would make
+them. Where the service's copy is not this conflux — an update, or a newer conflux put in place by
+hand — `start` then removes what earlier conflux left, the service stopped for it, and writes the
+copy afresh, as [`update`](#conflux-update) describes; a start of the conflux the service already
+runs removes nothing.
 
 | Situation | |
 |---|---|

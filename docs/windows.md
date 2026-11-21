@@ -106,11 +106,17 @@ inherits grants them. On Windows Server what an elevated administrator makes is 
 Administrators'; on a Windows client it is that administrator's own, and the service, running as
 SYSTEM, trusts no other account with anything in its root, so it would refuse, at every start, a
 root holding what the administrator's own `up` made. A token that is not elevated, which no
-command making a root runs with, keeps its own. What an installation's root holds that the administrator running conflux owns
-anyway — made by an earlier conflux on a client, or by hand — is given to the Administrators by
-every command that secures the root, `start` among them, which `update` hands a running service
-to, as it judges each thing, through the
-handle it judges it by; what another account owns is refused, as below.
+command making a root runs with, keeps its own. What an installation's root holds that the
+administrator running conflux owns anyway, or that grants them a right — made by an earlier conflux
+on a client, or by hand — is refused by every command that secures the root, as what another
+account owns is (below), and not taken over: a handle the administrator's own processes opened while
+they owned it keeps its rights whoever owns it after. `conflux update` removes what conflux makes
+again among it — the lock files, `logs\`, `run\`, `bin\`, the service's copy of conflux and the
+image an update moved aside, `anchord.json` — through handles on the root and on what it holds,
+never by a name and never through a junction, and makes each afresh (`paths.RemakeOld`). The
+identity, the configuration and the state are never removed: one of them that is wrong, anything
+else conflux does not make, and anything deeper in a folder that is right, are refused, naming them,
+for the operator to look at.
 
 A root on a network volume — a share reached by its UNC path, a drive mapped to one, or a link
 leading to either, as the volume conflux holds it open on says, not as it is spelled — is refused

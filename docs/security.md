@@ -148,14 +148,16 @@ readers' check, as is a junction in it, and a root that is itself a junction ano
 point elsewhere; one nobody else may is replaced with a junction conflux makes, through its own
 handle, leading to the directory it judged (see [windows.md](windows.md#file-permissions)). What
 the account running conflux owns in an installation's root — an administrator's own, as a Windows
-client's default-owner policy leaves what an elevated administrator makes, whether an earlier
-conflux made it or the administrator did by hand — is not refused but given to the Administrators,
-on every run that secures the root, through the handle it is judged by, as a DACL found too wide is
-narrowed: the service, running as SYSTEM, trusts no other account with anything there, and
-`up`, `install`, `register` and `start`, which `update` hands a running service to, secure the
-root first, so an update simply takes such a root on. What another account owns is still refused. On Unix there is nothing to give: what root
-or the account running conflux owns passes already, and the service runs as root, as every command
-that makes an installation's root does. A root
+client's default-owner policy leaves what an elevated administrator's tools make, or as an earlier
+conflux left it — is refused there like any other account's, not given to the Administrators: a
+handle opened while the administrator owned it keeps its rights whoever owns it after. Every
+elevated conflux makes the Administrators the owner of what it makes as it starts, so nothing it
+makes is ever the administrator's; what an earlier conflux left so, `update` removes and makes
+again — the lock files, `logs\`, `run\`, `bin\`, the service's copy and its moved-aside image,
+`anchord.json` — through handles, never by a name and never through a junction, and anything else
+wrong, the identity, configuration and state among it, it refuses, naming it. On Unix there is
+nothing to remake: what root or the account running conflux owns passes already, and the service
+runs as root, as every command that makes an installation's root does. A root
 on a network volume, however it is reached, is refused, by the readers' check too, as the volume
 conflux holds it open on says; a link naming a share, at a root's name or on the way to a
 `CONFLUX_DIR`, is refused before conflux follows it, by where the link itself says it leads, by

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode/utf16"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -20,7 +21,8 @@ import (
 // before it changes anything in it: nobody else let move what is in it, who could put back what is
 // removed. Then each thing directly in it that conflux makes again by its name there (remadeIn) is
 // opened through the root's handle, never followed, and judged as contents judges it for SYSTEM; one
-// that fails is removed, through handles (removeIn). A junction or a link at such a name is not
+// that fails is removed, through handles (removeIn), the log folder once the log files in it that pass
+// are moved out into the root (keepLog). A junction or a link at such a name is not
 // conflux's, and is left to the judgement after. Last, what the root holds is judged as secure judges
 // an installation's (contents): anything left that fails -- a thing conflux does not make again, the
 // configuration, the state and the manifest among them, or one deeper in a folder that passes -- is
@@ -92,6 +94,12 @@ func remakeOld(d Dirs, dir string) ([]string, error) {
 			continue
 		}
 
+		if d.isLog(dir, name) {
+			if err := d.keepLog(root, name, p, anchord); err != nil {
+				return removed, err
+			}
+		}
+
 		if err := removeIn(root, name, p); err != nil {
 			return removed, fmt.Errorf("remove %s, which %s could change, for conflux to make again: %w", p, who, err)
 		}
@@ -100,6 +108,208 @@ func remakeOld(d Dirs, dir string) ([]string, error) {
 	}
 
 	return removed, contents(dir, true)
+}
+
+// isLog reports whether name, directly in dir, a root of d's, is d's log folder, logs\.
+func (d Dirs) isLog(dir, name string) bool {
+	return d.Log != "" && strings.EqualFold(filepath.Dir(d.Log), dir) && strings.EqualFold(filepath.Base(d.Log), name)
+}
+
+// logNames are the files the service's log is kept in, in d's log folder: the log, and the one it was
+// moved aside to (logfile).
+func (d Dirs) logNames() []string {
+	name := filepath.Base(d.LogFile())
+
+	return []string{name, name + ".1"}
+}
+
+// keptLog is the name a log file of a logs\ RemakeOld removes waits under in the root, for EnsureAll to
+// move back once it has made logs\ again (makeInside): a name conflux makes again there (remadeIn).
+func keptLog(name string) string { return ".conflux-kept-" + name }
+
+// keepLog moves each log file in name, the log folder directly in the root root holds open, which p
+// names, that the service's rule takes into the root, as keptLog names it, before RemakeOld removes the
+// folder: the log is the machine's, and what the SYSTEM service wrote there is SYSTEM's, whoever owns
+// the folder. Each is opened through a handle on the folder, looked up there and nowhere else and
+// never followed, judged as contents judges it for SYSTEM, and renamed through its own handle (moveIn);
+// one that fails, or is a junction or a link, goes with the folder, as does one whose kept name is
+// taken already. A folder that is a junction or a link is no log folder, and RemakeOld does not remove
+// it either.
+func (d Dirs) keepLog(root windows.Handle, name, p string, anchord *windows.SID) error {
+	logs, err := ntOpen(root, name, nil, windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES, windows.FILE_OPEN,
+		windows.FILE_DIRECTORY_FILE)
+	if err != nil {
+		return fmt.Errorf("keep the log in %s: %w", p, &os.PathError{Op: "open", Path: p, Err: err})
+	}
+	defer windows.CloseHandle(logs)
+
+	if link, err := nameSurrogate(logs); err != nil || link {
+		return err
+	}
+
+	for _, log := range d.logNames() {
+		f := filepath.Join(p, log)
+
+		h, err := ntOpen(logs, log, nil, windows.SYNCHRONIZE|windows.DELETE|readAccess, windows.FILE_OPEN,
+			windows.FILE_NON_DIRECTORY_FILE)
+
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			continue
+		case err != nil:
+			return fmt.Errorf("keep the log %s: %w", f, &os.PathError{Op: "open", Path: f, Err: err})
+		}
+
+		err = func() error {
+			defer windows.CloseHandle(h)
+
+			switch link, err := nameSurrogate(h); {
+			case err != nil:
+				return &os.PathError{Op: "read", Path: f, Err: err}
+			case link:
+				return nil
+			}
+
+			switch who, _, err := changer(f, sidSystem, h, retargets, "write it, move it or make a junction of it",
+				anchord, false); {
+			case err != nil:
+				return err
+			case who != "":
+				return nil
+			}
+
+			if err := moveIn(h, root, keptLog(log)); err != nil && !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+				return &os.PathError{Op: "move", Path: f, Err: err}
+			}
+
+			return nil
+		}()
+		if err != nil {
+			return fmt.Errorf("keep the log %s: %w", f, err)
+		}
+	}
+
+	return nil
+}
+
+// makeInside makes dir, a root of d's inside another, where it is not there yet; where that is d's log
+// folder, made again once RemakeOld removed it, the log files RemakeOld kept in the state root are moved
+// back into it (restoreLog).
+func (d Dirs) makeInside(dir string) error {
+	_, was := os.Lstat(dir)
+
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+
+	if dir != d.Log || d.ephemeral || !errors.Is(was, fs.ErrNotExist) {
+		return nil
+	}
+
+	return d.restoreLog()
+}
+
+// restoreLog moves each log file RemakeOld kept in the state root (keptLog) back into d's log folder,
+// under its own name: each opened through a handle on the root, looked up there and nowhere else and
+// never followed, and renamed through its own handle into the folder, held open as itself (moveIn). A
+// kept name that is a junction or a link is left, for the judgement of what the root holds to refuse.
+func (d Dirs) restoreLog() error {
+	if !strings.EqualFold(filepath.Dir(d.Log), d.State) {
+		return nil
+	}
+
+	root, err := heldRoot(d.State, readAccess|windows.SYNCHRONIZE)
+	if err != nil {
+		return err
+	}
+	defer root.close()
+
+	var logs windows.Handle
+
+	defer func() {
+		if logs != 0 {
+			windows.CloseHandle(logs)
+		}
+	}()
+
+	for _, log := range d.logNames() {
+		kept := filepath.Join(d.State, keptLog(log))
+
+		h, err := ntOpen(root.dir, keptLog(log), nil, windows.SYNCHRONIZE|windows.DELETE|windows.FILE_READ_ATTRIBUTES,
+			windows.FILE_OPEN, windows.FILE_NON_DIRECTORY_FILE)
+
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			continue
+		case err != nil:
+			return fmt.Errorf("move the log kept at %s back: %w", kept, &os.PathError{Op: "open", Path: kept, Err: err})
+		}
+
+		err = func() error {
+			defer windows.CloseHandle(h)
+
+			if link, err := nameSurrogate(h); err != nil || link {
+				return err
+			}
+
+			if logs == 0 {
+				var err error
+				if logs, err = ntOpen(root.dir, filepath.Base(d.Log), nil, windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES,
+					windows.FILE_OPEN, windows.FILE_DIRECTORY_FILE); err != nil {
+					logs = 0
+
+					return &os.PathError{Op: "open", Path: d.Log, Err: err}
+				}
+
+				if err := notLink(d.Log, logs, "is a junction or a link"); err != nil {
+					return err
+				}
+			}
+
+			return moveIn(h, logs, log)
+		}()
+		if err != nil {
+			return fmt.Errorf("move the log kept at %s back into %s: %w", kept, d.Log, err)
+		}
+	}
+
+	return nil
+}
+
+// moveIn renames what h holds open, opened with DELETE, to name in the folder dir holds open, through
+// h and dir and not by any name (FileRenameInformation, its RootDirectory dir), replacing nothing: a
+// name taken already is ERROR_ALREADY_EXISTS.
+func moveIn(h, dir windows.Handle, name string) error {
+	u, err := windows.UTF16FromString(name)
+	if err != nil {
+		return err
+	}
+
+	size := int(unsafe.Offsetof(renameInformation{}.fileName)) + 2*(len(u)-1)
+
+	b := make([]uint64, (size+2+7)/8) // aligned as the struct is, with room for the name's NUL
+	info := (*renameInformation)(unsafe.Pointer(&b[0]))
+	info.rootDirectory = dir
+	info.fileNameLength = uint32(2 * (len(u) - 1))
+	copy(unsafe.Slice(&info.fileName[0], len(u)), u)
+
+	var iosb windows.IO_STATUS_BLOCK
+
+	err = windows.NtSetInformationFile(h, &iosb, (*byte)(unsafe.Pointer(&b[0])), uint32(size),
+		windows.FileRenameInformation)
+	if status, ok := err.(windows.NTStatus); ok {
+		return status.Errno()
+	}
+
+	return err
+}
+
+// renameInformation is FILE_RENAME_INFORMATION, its file name running on past it.
+type renameInformation struct {
+	replaceIfExists uint32
+	rootDirectory   windows.Handle
+	fileNameLength  uint32
+	fileName        [1]uint16
 }
 
 // remadeIn reports whether name, directly in dir, a root of d's, is what conflux makes again by its

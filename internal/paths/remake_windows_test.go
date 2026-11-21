@@ -17,8 +17,10 @@ import (
 // logs\, the lock files, bin\ and the service's copy of conflux as the administrator's own, which the
 // SYSTEM service refuses, and which a handle opened while the administrator owned them would keep its
 // rights to whoever owned them after. RemakeOld removes each of them, a folder with all it holds -- a
-// junction in it as itself, never what it leads to -- and leaves the identity; EnsureAll then makes
-// what is its again, and the service's judgement takes the root. What RemakeOld does not make again
+// junction in it as itself, never what it leads to -- and leaves the identity, and the log: the log
+// file the service's rule takes is moved out of logs\ into the root first, and the one moved aside
+// that it refuses goes with the folder; EnsureAll then makes what is its again, the log moved back
+// into logs\, and the service's judgement takes the root. What RemakeOld does not make again
 // and finds wrong -- the manifest the administrator owns, a file of the Guests', a binary the
 // administrator owns in an extraction that is the Administrators', a junction at logs\'s name -- it
 // refuses, naming it, and leaves as it is; and an ephemeral run's root, which no service runs from, it
@@ -58,7 +60,8 @@ func TestRemakeOldRemovesWhatConfluxMakesAgain(t *testing.T) {
 		}
 	}
 
-	for _, f := range []string{d.LogFile(), d.LockFile(), filepath.Join(set, "anchord.exe"), d.ServiceExecutable()} {
+	for _, f := range []string{d.LogFile(), d.LogFile() + ".1", d.LockFile(), filepath.Join(set, "anchord.exe"),
+		d.ServiceExecutable()} {
 		if err := os.WriteFile(f, []byte("old"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -67,6 +70,10 @@ func TestRemakeOldRemovesWhatConfluxMakesAgain(t *testing.T) {
 	mklinkJ(t, filepath.Join(d.Log, "j"), outside)
 
 	restore()
+
+	// The log the service wrote is SYSTEM's, whoever owns the folder it is in; the Administrators' does
+	// as well for the service's rule.
+	privtest.SetOwner(t, d.LogFile(), sidAdmins)
 
 	if err := JudgeAsTheService(root); err == nil || !strings.Contains(err.Error(), ", which belongs to ") {
 		t.Fatalf("the service's judgement of a root holding what the administrator owns = %v, want a refusal", err)
@@ -92,14 +99,30 @@ func TestRemakeOldRemovesWhatConfluxMakesAgain(t *testing.T) {
 		}
 	}
 
-	for _, p := range []string{keep, identity} {
+	kept := filepath.Join(root, keptLog(filepath.Base(d.LogFile())))
+
+	for _, p := range []string{keep, identity, kept} {
 		if _, err := os.Lstat(p); err != nil {
 			t.Errorf("RemakeOld removed %s: %v", p, err)
 		}
 	}
 
+	if _, err := os.Lstat(kept + ".1"); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("RemakeOld kept the log moved aside, which the service's rule refuses (%v)", err)
+	}
+
 	if err := d.EnsureAll(); err != nil {
 		t.Fatalf("EnsureAll of the root RemakeOld left = %v", err)
+	}
+
+	if b, err := os.ReadFile(d.LogFile()); err != nil || string(b) != "old" {
+		t.Errorf("the log once EnsureAll made logs\\ again = %q, %v, want the one RemakeOld kept", b, err)
+	}
+
+	for _, p := range []string{kept, d.LogFile() + ".1"} {
+		if _, err := os.Lstat(p); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("%s is there once EnsureAll moved the log back (%v)", p, err)
+		}
 	}
 
 	if err := JudgeAsTheService(root); err != nil {

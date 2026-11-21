@@ -113,8 +113,11 @@ account owns is (below), and not taken over: a handle the administrator's own pr
 they owned it keeps its rights whoever owns it after. `conflux update` removes what conflux makes
 again among it — the lock files, `logs\`, `run\`, `bin\`, the service's copy of conflux and the
 image an update moved aside, `anchord.json` — through handles on the root and on what it holds,
-never by a name and never through a junction, and makes each afresh (`paths.RemakeOld`). The
-identity, the configuration and the state are never removed: one of them that is wrong, anything
+never by a name and never through a junction, and makes each afresh (`paths.RemakeOld`). The log is
+kept: each log file in a `logs\` it removes that the service would take, as what the service wrote
+there is, is moved out into the root through handles first, and back into `logs\` once that is made
+again; one the service would refuse goes with the folder. The identity, the configuration and the
+state are never removed: one of them that is wrong, anything
 else conflux does not make, and anything deeper in a folder that is right, are refused, naming them,
 for the operator to look at.
 

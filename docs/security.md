@@ -162,7 +162,8 @@ handle opened while the administrator owned it keeps its rights whoever owns it 
 elevated conflux makes the Administrators the owner of what it makes as it starts, so nothing it
 makes is ever the administrator's; what an earlier conflux left so, `update` removes and makes
 again — the lock files, `logs\`, `run\`, `bin\`, the service's copy and its moved-aside image,
-`anchord.json` — through handles, never by a name and never through a junction, and anything else
+`anchord.json` — through handles, never by a name and never through a junction, the log the service
+would take kept through handles and moved back into the `logs\` made again, and anything else
 wrong, the identity, configuration and state among it, it refuses, naming it. On Unix there is
 nothing to remake: what root or the account running conflux owns passes already, and the service
 runs as root, as every command that makes an installation's root does. A root

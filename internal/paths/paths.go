@@ -251,7 +251,8 @@ func (d Dirs) ReadyFile() string { return filepath.Join(d.Run, "ready") }
 // SYSTEM's and Administrators' instead, as it is created where it is not there yet
 // (makeRoot), and what is created beneath it inherits that; a root inside another, made here
 // by its name, is the Administrators' too, as everything an elevated conflux makes is
-// (ElevatedDefaultOwner). A CONFLUX_DIR's way is held to the
+// (ElevatedDefaultOwner); and where that is logs\ on Windows, made again once RemakeOld removed it, the
+// log files RemakeOld kept are moved back into it (makeInside). A CONFLUX_DIR's way is held to the
 // rule of whoever the root is for (wayRule). The system's shared log directory is not
 // conflux's, and is left alone. An installation's state root keeps a record of each folder makeRoot
 // made on the way to a root, once that root is secured (recordWay), for uninstall to remove (Way,
@@ -264,7 +265,7 @@ func (d Dirs) EnsureAll() error {
 	err := func() error {
 		for dir, inside := range d.roots() {
 			if inside {
-				if err := os.MkdirAll(dir, 0o700); err != nil {
+				if err := d.makeInside(dir); err != nil {
 					return fmt.Errorf("create %s: %w", dir, err)
 				}
 
@@ -501,7 +502,9 @@ func deepestFirst(way []string) []string {
 // administrator by hand, may have left it -- and is what it removed, for the caller to make again
 // fresh: EnsureAll, the extraction, the service's copy of conflux and the lock files each make theirs
 // where it is not there. A handle opened while that account could change such a thing keeps its
-// rights whoever owns it after, so it is made again rather than taken over. Each is removed through
+// rights whoever owns it after, so it is made again rather than taken over. The log is the machine's,
+// and kept: each log file in a log folder it removes that meets the rule is moved into the root first,
+// through handles, and EnsureAll moves it back once it has made the folder again (makeInside). Each is removed through
 // handles held on the root and on what it holds, never by its name and never through a link, a folder
 // with all it holds. Anything else not meeting the rule -- what conflux does not make again, the
 // identity, configuration and state among it, or what is deeper in a folder that meets it -- is

@@ -47,6 +47,10 @@ func RestrictToOwner(string, bool) error { return nil }
 // older conflux made fails the rule that it would make again.
 func remakeOld(Dirs, string) ([]string, error) { return nil, nil }
 
+// makeInside makes dir, a root of d's inside another, where it is not there yet. RemakeOld keeps no
+// log here, having nothing to remove, so there is none to move back.
+func (Dirs) makeInside(dir string) error { return os.MkdirAll(dir, 0o700) }
+
 // ElevatedDefaultOwner is a no-op here: what conflux makes is the account's that makes it, root's
 // for an installation's root, which every command making it runs as.
 func ElevatedDefaultOwner() error { return nil }

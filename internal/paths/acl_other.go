@@ -1037,7 +1037,8 @@ func (ps systemPlaces) top(dir string, s step) bool {
 
 // serviceCopy reports whether the running conflux, ps.exe, is the copy the boot service runs from the
 // root s holds (ServiceExecutable): the file at that copy's name there, as fstatat says of it, never
-// followed, one file with the running conflux.
+// followed, one file with the running conflux -- which, being run, is a regular file, so a link or
+// anything else at the name is never it.
 func serviceCopy(ps systemPlaces, s step) bool {
 	var st unix.Stat_t
 	if err := ignoringEINTR(func() error {
@@ -1046,7 +1047,7 @@ func serviceCopy(ps systemPlaces, s step) bool {
 		return false
 	}
 
-	return st.Mode&unix.S_IFMT == unix.S_IFREG && (fileID{uint64(st.Dev), uint64(st.Ino)}) == ps.exe
+	return (fileID{uint64(st.Dev), uint64(st.Ino)}) == ps.exe
 }
 
 // madeTop reports whether dir, a directory directly under the filesystem's root that s holds, is one

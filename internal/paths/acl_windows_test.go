@@ -274,6 +274,80 @@ func TestEnsureAllRemakesWhatIsNotItsOwn(t *testing.T) {
 	}
 }
 
+// TestEnsureAllRemakesAFolderOfItsOwnNotAsConfluxMakesIt: each folder conflux keeps in an installation's
+// root -- run\, logs\, bin\ and anchor.root\ -- is judged as the root is, for the SYSTEM service, and one
+// not as conflux makes it is removed as itself, whatever it held, and made afresh, SYSTEM's and the
+// Administrators' alone: a junction, where it leads never touched; a folder granting Users the right to
+// read it; and one this administrator owns, as an earlier conflux left bin\, run\ and logs\ on a Windows
+// client, whose unelevated processes could change it. Windows-only, so it runs in CI's platforms job
+// alone.
+func TestEnsureAllRemakesAFolderOfItsOwnNotAsConfluxMakesIt(t *testing.T) {
+	elsewhere := t.TempDir()
+
+	kept := filepath.Join(elsewhere, "kept")
+	if err := os.WriteFile(kept, []byte("not conflux's"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	plants := map[string]func(t *testing.T, dir string){
+		"a junction": func(t *testing.T, dir string) { mklinkJ(t, dir, elsewhere) },
+		"a folder Users may read": func(t *testing.T, dir string) {
+			grantedFolder(t, dir, windows.FILE_READ_DATA)
+		},
+		"a folder this administrator owns": func(t *testing.T, dir string) {
+			if err := os.Mkdir(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+
+			privtest.SetOwner(t, dir, currentUser())
+		},
+	}
+
+	t.Setenv("CONFLUX_DIR", t.TempDir())
+
+	d := Default()
+
+	for _, dir := range []string{d.Run, d.Log, d.Libexec(), d.RootAnchorDir()} {
+		for name, plant := range plants {
+			t.Run(filepath.Base(dir)+"/"+name, func(t *testing.T) {
+				if err := d.EnsureAll(); err != nil {
+					t.Fatal(err)
+				}
+
+				if err := os.RemoveAll(dir); err != nil {
+					t.Fatal(err)
+				}
+
+				plant(t, dir)
+
+				if name != "a junction" {
+					if err := os.WriteFile(filepath.Join(dir, "planted"), []byte("somebody's"), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+
+				if err := d.EnsureAll(); err != nil {
+					t.Fatalf("EnsureAll(%s at %s) = %v", name, dir, err)
+				}
+
+				onlyTheSystems(t, dir)
+
+				if fi, err := os.Lstat(dir); err != nil || fi.Mode()&os.ModeIrregular != 0 || !fi.IsDir() {
+					t.Errorf("%s is %v (%v), want a folder", dir, fi, err)
+				}
+
+				if _, err := os.Lstat(filepath.Join(dir, "planted")); !errors.Is(err, os.ErrNotExist) {
+					t.Errorf("%s made afresh holds what was planted (Lstat: %v)", dir, err)
+				}
+
+				if b, err := os.ReadFile(kept); err != nil || string(b) != "not conflux's" {
+					t.Errorf("where a junction at %s led lost what is in it: %q, %v", dir, b, err)
+				}
+			})
+		}
+	}
+}
+
 // TestEnsureAllLeavesTheConfluxDirAsItWas: a CONFLUX_DIR that is a folder of the user's, holding
 // files of theirs and granting Users the right to read it, is never changed: conflux keeps everything
 // in .conflux inside it, made SYSTEM's and the Administrators' alone, and the folder keeps its own

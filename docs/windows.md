@@ -118,7 +118,9 @@ right, is not conflux's either. Anything else at the name — a folder another a
 root, through a handle on the folder it is in, never followed, opened to delete it and read its
 attributes alone, a folder to list it too, with the backup intent the privileges an Administrator
 holds give, so that a DACL granting the Administrators nothing does not keep it; and the root is
-made afresh, with nothing of what was there. A root that is a junction to another disk is therefore
+made afresh, with nothing of what was there. `run\`, `logs\`, `bin\` and `anchor.root\` are judged as
+the root is, and each that is not as conflux makes it, such as one an earlier conflux left the
+administrator's own, is removed whole and made afresh. A root that is a junction to another disk is therefore
 not followed, and a fresh root is made at its name: to keep conflux's files on another disk, use a
 `CONFLUX_DIR` there. What is in a root is conflux's, and nothing in it is judged: nobody else can
 have put anything there. A root on a network volume, however it is reached, is refused, as the volume

@@ -60,7 +60,10 @@ host can read, and when the run stops there is nothing at all.
   link, a file, a directory another account owns, or whose mode or ACL lets another account write it,
   or on Windows whose DACL grants another account anything — is removed as itself from the folder it
   is in, through a handle held on that folder, never followed, and the root made afresh, with
-  nothing of what it held: a root widened by hand loses the identity in it. Nothing in a root is
+  nothing of what it held: a root widened by hand loses the identity in it. The folders conflux
+  keeps in a root — `run/` and `logs/` where they are in it, `bin/` and `anchor.root/` — are held to
+  the same, and each that is not as conflux makes it is removed whole and made afresh; `anchor/`,
+  which `anchord`'s own account is given, is that account's. Nothing in a root is
   kept or protected for anybody: what is in conflux's folders is conflux's to overwrite, empty or
   remove, and `uninstall` removes them whole, whatever anybody put in them.
 - Every folder conflux did not make — a `CONFLUX_DIR` itself, and every folder above a root — is

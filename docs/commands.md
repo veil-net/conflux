@@ -123,7 +123,7 @@ keeps all of its own in. `<dir>` itself, and every folder above a root, is never
 makes a root (`0700`; on Windows the Administrators' under a protected DACL granting SYSTEM and them
 alone), and whatever is at a root's name and is not as conflux makes one — a link, a file, a
 directory another account owns or may write — removed as itself and made afresh, with nothing of what
-it held. They refuse, with nothing made, a `CONFLUX_DIR` that another account may change, or that is
+it held, and each folder conflux keeps in a root (`run`, `logs`, `bin` and `anchor.root`) alike. They refuse, with nothing made, a `CONFLUX_DIR` that another account may change, or that is
 inside a folder another account may change ([security.md](security.md#the-file-and-the-directory-around-it)).
 
 `status`, `down`, `renew`, `uninstall`, `update` with the boot service installed, and a

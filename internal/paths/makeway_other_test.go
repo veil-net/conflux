@@ -159,6 +159,131 @@ func TestEnsureAllRemakesWhatIsNotItsOwn(t *testing.T) {
 	}
 }
 
+// TestEnsureAllRemakesAFolderOfItsOwnNotAsConfluxMakesIt: each folder conflux keeps in a root -- run/,
+// logs/ where the platform writes a log, bin/ and anchor.root/ -- is judged as the root is: what is at its
+// name and is not as conflux makes a folder of its own -- a folder others may write, a link, a file -- is
+// removed as itself, whatever it held, and the folder made afresh at 0700, where the link led untouched;
+// one that is as conflux makes it is kept with what it holds, and the run and log directories are made
+// at 0700 where they are not there.
+func TestEnsureAllRemakesAFolderOfItsOwnNotAsConfluxMakesIt(t *testing.T) {
+	elsewhere := t.TempDir()
+
+	kept := filepath.Join(elsewhere, "kept")
+	if err := os.WriteFile(kept, []byte("not conflux's"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	wide := func(dir string) error {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			return err
+		}
+
+		if err := os.WriteFile(filepath.Join(dir, "planted"), []byte("anybody's"), 0o600); err != nil {
+			return err
+		}
+
+		return os.Chmod(dir, 0o777)
+	}
+
+	plants := map[string]func(string) error{
+		"a wide folder": wide,
+		"a link":        func(dir string) error { return os.Symlink(elsewhere, dir) },
+		"a file":        func(dir string) error { return os.WriteFile(dir, []byte("a file"), 0o600) },
+	}
+
+	t.Setenv("CONFLUX_DIR", t.TempDir())
+
+	d := Default()
+
+	folders := []string{d.Run, d.Libexec(), d.RootAnchorDir()}
+	if d.Log != "" {
+		folders = append(folders, d.Log)
+	}
+
+	for _, dir := range folders {
+		for name, plant := range plants {
+			t.Run(filepath.Base(dir)+"/"+name, func(t *testing.T) {
+				if err := os.RemoveAll(d.State); err != nil {
+					t.Fatal(err)
+				}
+
+				if err := d.EnsureAll(); err != nil {
+					t.Fatal(err)
+				}
+
+				if err := os.RemoveAll(dir); err != nil {
+					t.Fatal(err)
+				}
+
+				if err := plant(dir); err != nil {
+					t.Fatal(err)
+				}
+
+				if err := d.EnsureAll(); err != nil {
+					t.Fatalf("EnsureAll(%s at %s) = %v", name, dir, err)
+				}
+
+				if fi, err := os.Lstat(dir); err != nil || !fi.IsDir() || fi.Mode().Perm() != 0o700 {
+					t.Errorf("%s is %v (%v), want a directory at 0700", dir, modeOf(fi), err)
+				}
+
+				if _, err := os.Lstat(filepath.Join(dir, "planted")); !errors.Is(err, fs.ErrNotExist) {
+					t.Errorf("%s made afresh holds what the wide folder held (Lstat: %v)", dir, err)
+				}
+
+				if b, err := os.ReadFile(kept); err != nil || string(b) != "not conflux's" {
+					t.Errorf("where a link at %s led lost what is in it: %q, %v", dir, b, err)
+				}
+			})
+		}
+	}
+
+	t.Run("as conflux makes them", func(t *testing.T) {
+		if err := os.RemoveAll(d.State); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := d.EnsureAll(); err != nil {
+			t.Fatal(err)
+		}
+
+		for _, dir := range []string{d.Run, d.Log} {
+			if fi, err := os.Lstat(dir); dir != "" && (err != nil || !fi.IsDir() || fi.Mode().Perm() != 0o700) {
+				t.Errorf("%s is %v (%v), want a directory made at 0700", dir, modeOf(fi), err)
+			}
+		}
+
+		for _, dir := range folders {
+			if err := os.MkdirAll(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := os.WriteFile(filepath.Join(dir, "kept"), []byte("conflux's"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		if err := d.EnsureAll(); err != nil {
+			t.Fatal(err)
+		}
+
+		for _, dir := range folders {
+			if b, err := os.ReadFile(filepath.Join(dir, "kept")); err != nil || string(b) != "conflux's" {
+				t.Errorf("EnsureAll changed %s, as conflux makes it: %q, %v", dir, b, err)
+			}
+		}
+	})
+}
+
+// modeOf is fi's mode, or nothing where there is no fi.
+func modeOf(fi os.FileInfo) any {
+	if fi == nil {
+		return nil
+	}
+
+	return fi.Mode()
+}
+
 // TestEnsureAllMakesItsRootInAStickyConfluxDir: a CONFLUX_DIR that is a sticky directory every account
 // may add to, as /tmp is, passes parents' rule, since nobody may move what is not theirs in it, and
 // conflux makes its root afresh inside it.

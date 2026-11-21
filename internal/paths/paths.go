@@ -254,7 +254,8 @@ func (d Dirs) ReadyFile() string { return filepath.Join(d.Run, "ready") }
 // the state root (recordWay) for uninstall to remove once they are empty (Way, RemoveWay). Whatever is
 // at a root's name and is not as conflux makes a root -- a link, a file, a folder another account owns
 // or may write (ours) -- is removed as itself from the folder it is in, and the root made afresh: a
-// root is conflux's whole, and nothing in it is kept for anybody. A CONFLUX_DIR itself, and everything
+// root is conflux's whole, and nothing in it is kept for anybody. Each folder conflux keeps in a root
+// (folders) is judged as the root is, and made afresh alike. A CONFLUX_DIR itself, and everything
 // above a root, is never changed: a CONFLUX_DIR's way, the CONFLUX_DIR included, is held to the rule
 // of whoever the root is for (wayRule) before anything is made. The system's shared log directory,
 // which macOS and FreeBSD keep the service's log in, is not conflux's, and is left alone.
@@ -264,15 +265,7 @@ func (d Dirs) EnsureAll() error {
 	state := false
 
 	err := func() error {
-		for dir, inside := range d.roots() {
-			if inside {
-				if err := os.MkdirAll(dir, 0o700); err != nil {
-					return fmt.Errorf("create %s: %w", dir, err)
-				}
-
-				continue
-			}
-
+		for _, dir := range d.Outer() {
 			m, err := d.makeRoot(dir)
 			if made = append(made, m...); err != nil {
 				return fmt.Errorf("create %s: %w", dir, err)
@@ -293,12 +286,11 @@ func (d Dirs) EnsureAll() error {
 	return err
 }
 
-// makeRoot makes the root dir, one of d's not inside another, and is the folders it made on the way to
-// it. The way to the folder dir is in is walked from the top of its volume and held (walk), a
-// CONFLUX_DIR's held to rule, the CONFLUX_DIR included, and what is missing of it made (makeWay); then
-// dir's own name is looked up in that folder and nowhere else (lookUp). A directory there that is as
-// conflux makes a root (ours) is the root; anything else there is removed as itself through that
-// folder (removeFrom), a link never followed, and the root made afresh in its place (makeStep).
+// makeRoot makes the root dir, one of d's not inside another, and the folders conflux keeps in it
+// (folders), and is the folders it made on the way to it. The way to the folder dir is in is walked
+// from the top of its volume and held (walk), a CONFLUX_DIR's held to rule, the CONFLUX_DIR included,
+// and what is missing of it made (makeWay); then the root is made in that folder as conflux makes a
+// folder of its own (ownFolder), and each of its folders in it, held.
 func (d Dirs) makeRoot(dir string) ([]string, error) {
 	rule := d.wayRule(dir)
 
@@ -318,7 +310,7 @@ func (d Dirs) makeRoot(dir string) ([]string, error) {
 		return made, err
 	}
 
-	at, name := w.last(), filepath.Base(dir)
+	at := w.last()
 
 	if judge != nil {
 		if err := judge(at.path, at.step, false); err != nil {
@@ -326,38 +318,106 @@ func (d Dirs) makeRoot(dir string) ([]string, error) {
 		}
 	}
 
-	looking(dir)
+	root, err := ownFolder(at.step, dir, !d.ephemeral, true)
+	if err != nil {
+		return made, err
+	}
+	defer root.close()
 
-	s, link, err := lookUp(at.step, name)
-	if err == nil {
-		why := "a link"
-		if !link {
-			why, err = ours(dir, s, !d.ephemeral)
-		}
-
-		s.close()
+	for sub, create := range d.folders(dir) {
+		s, err := ownFolder(root, sub, !d.ephemeral, create)
 
 		switch {
+		case errors.Is(err, fs.ErrNotExist) && !create:
 		case err != nil:
 			return made, err
-		case why == "":
-			return made, nil
+		default:
+			s.close()
 		}
-	}
-
-	if !errors.Is(err, fs.ErrNotExist) {
-		if _, err := removeFrom(at.step, name, dir); err != nil {
-			return made, err
-		}
-	}
-
-	if s, held, err := makeStep(at.step, name); err != nil {
-		return made, &os.PathError{Op: "mkdir", Path: dir, Err: err}
-	} else if held {
-		s.close()
 	}
 
 	return made, nil
+}
+
+// ownFolder is the folder p, in the folder parent holds, made as conflux makes a folder of its own, and
+// held: p's name is looked up in parent and nowhere else (lookUp), and a directory there that is as
+// conflux makes one (ours) is kept; anything else there -- a link, a file, a folder another account owns
+// or may write -- is removed as itself through parent (removeFrom), a link never followed, whatever it
+// holds, and the folder made afresh in its place (makeStep). Where nothing is there it is made where
+// create is, and is otherwise an error that is fs.ErrNotExist.
+func ownFolder(parent step, p string, installation, create bool) (step, error) {
+	name := filepath.Base(p)
+
+	looking(p)
+
+	s, link, err := lookUp(parent, name)
+
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		if !create {
+			return step{}, &os.PathError{Op: "open", Path: p, Err: err}
+		}
+	case err == nil:
+		why := "a link"
+		if !link {
+			why, err = ours(p, s, installation)
+		}
+
+		if err == nil && why == "" {
+			return s, nil
+		}
+
+		s.close()
+
+		if err != nil {
+			return step{}, err
+		}
+
+		fallthrough
+	default:
+		if _, err := removeFrom(parent, name, p); err != nil {
+			return step{}, err
+		}
+	}
+
+	s, held, err := makeStep(parent, name)
+	if err != nil {
+		return step{}, &os.PathError{Op: "mkdir", Path: p, Err: err}
+	}
+
+	if held {
+		return s, nil
+	}
+
+	if s, _, err = lookUp(parent, name); err != nil {
+		return step{}, &os.PathError{Op: "open", Path: p, Err: err}
+	}
+
+	return s, nil
+}
+
+// folders is each folder conflux keeps in its root dir, by its name, and whether EnsureAll makes it where
+// it is not there: the run and log directories where they are in that root, which it makes, and in the
+// state root the directory the pairs are extracted to (Libexec) and, for an installation, the anchor
+// directory of an anchord that runs as root (RootAnchorDir), which what uses them makes. The anchor
+// directory of an anchord that runs as its own account (AnchorDir) is that account's, as the supervisor
+// makes it and holds it to be (daemon's anchorDir), and is none of these.
+func (d Dirs) folders(dir string) iter.Seq2[string, bool] {
+	return func(yield func(string, bool) bool) {
+		for sub, inside := range d.roots() {
+			if inside && filepath.Dir(sub) == dir && !yield(sub, true) {
+				return
+			}
+		}
+
+		if dir != d.State || !yield(d.Libexec(), false) {
+			return
+		}
+
+		if !d.ephemeral {
+			yield(d.RootAnchorDir(), false)
+		}
+	}
 }
 
 // wayName is the record, in an installation's state root, of the folders conflux made on the way to

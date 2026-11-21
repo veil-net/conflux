@@ -899,8 +899,8 @@ func ownerRefusal(dir string, owner *windows.SID) error {
 	return fmt.Errorf(
 		"%s belongs to %s, not to SYSTEM or the Administrators, so conflux did not create it and "+
 			"will not use what is in it.\n  Remove it, then run this again as Administrator. If conflux left it, "+
-			"run elevated by that same account, running any conflux command that way once repairs it; an "+
-			"account that is not an administrator cannot",
+			"run conflux start elevated as that same account, which repairs it; an account that is not an "+
+			"administrator cannot",
 		dir, accountName(owner))
 }
 

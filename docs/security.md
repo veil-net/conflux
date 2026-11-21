@@ -84,7 +84,9 @@ host can read, and when the run stops there is nothing at all.
   first, the readers' check, on every platform, before it reads anything in it by its name
   (`uninstall` then removes a root that fails it all the same, reading and signalling nothing in
   it, through handles held from the top of its volume down, following no link but one at the root's
-  own name that this check would follow, and with a `CONFLUX_DIR`'s way held to the same rule; see
+  own name that this check would follow, and with a `CONFLUX_DIR`'s way held to the same rule; the
+  one root it refuses is a `CONFLUX_DIR` whose way another account controls, since that account could
+  have put a directory of its own where the root is; see
   [commands.md](commands.md#conflux-uninstall)):
   whoever could have put a configuration, a pid record, a token or a binary there would otherwise
   have conflux read, signal or run theirs. The root's owner must be root (SYSTEM or the
@@ -162,8 +164,8 @@ client's default-owner policy leaves what an elevated administrator's tools make
 conflux left it — is refused there like any other account's, not given to the Administrators: a
 handle opened while the administrator owned it keeps its rights whoever owns it after. Every
 elevated conflux makes the Administrators the owner of what it makes as it starts, so nothing it
-makes is ever the administrator's; what an earlier conflux left so, `update` removes and makes
-again — the lock files, `logs\`, `run\`, `bin\`, the service's copy and its moved-aside image,
+makes is ever the administrator's; what an earlier conflux left so, `update`, and a plain `start`
+where no supervisor serves the root, remove and make again — the lock files, `logs\`, `run\`, `bin\`, the service's copy and its moved-aside image,
 `anchord.json` — through handles, never by a name and never through a junction, the log the service
 would take kept through handles and moved back into the `logs\` made again, and anything else
 wrong, the identity, configuration and state among it, it refuses, naming it. On Unix there is

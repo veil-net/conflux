@@ -110,14 +110,15 @@ command making a root runs with, keeps its own. What an installation's root hold
 administrator running conflux owns anyway, or that grants them a right — made by an earlier conflux
 on a client, or by hand — is refused by every command that secures the root, as what another
 account owns is (below), and not taken over: a handle the administrator's own processes opened while
-they owned it keeps its rights whoever owns it after. `conflux update` removes what conflux makes
-again among it — the lock files, `logs\`, `run\`, `bin\`, the service's copy of conflux and the
-image an update moved aside, `anchord.json` — through handles on the root and on what it holds,
-never by a name and never through a junction, and makes each afresh (`paths.RemakeOld`). What it
-removes, as what `uninstall` removes, is opened to delete it and to read its attributes alone, a
+they owned it keeps its rights whoever owns it after. `conflux update`, and a plain `conflux start`
+where no supervisor serves the root, remove what conflux makes again among it — the lock files,
+`logs\`, `run\`, `bin\`, the service's copy of conflux and the image an update moved aside,
+`anchord.json` — through handles on the root and on what it holds,
+never by a name and never through a junction, and make each afresh (`paths.RemakeOld`). What they
+remove, as what `uninstall` removes, is opened to delete it and to read its attributes alone, a
 folder to list it too, with the backup intent the privileges an Administrator holds give, so that a
-DACL granting the Administrators nothing does not keep it, and a file is never opened to be read. The log is
-kept: each log file in a `logs\` it removes that the service would take, as what the service wrote
+DACL granting the Administrators nothing does not keep it, and a file is never opened to be read.
+The log is kept: each log file in a `logs\` they remove that the service would take, as what the service wrote
 there is, is moved out into the root through handles first, and back into `logs\` once that is made
 again; one the service would refuse goes with the folder. The identity, the configuration and the
 state are never removed: one of them that is wrong, anything

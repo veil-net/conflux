@@ -453,8 +453,6 @@ func deepestFirst(way []string) []string {
 	return way
 }
 
-// wayRule is the rule the way to d's root dir is held to
-
 // RemakeOld removes from an installation's roots what conflux makes again there by its name and
 // finds not meeting the rule secure holds what a root holds to for the boot service -- owned by an
 // account other than SYSTEM and the Administrators, the administrator running conflux among them, or

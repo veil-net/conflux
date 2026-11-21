@@ -288,15 +288,18 @@ func TestACopyNotAsConfluxMakesItIsPlacedAfresh(t *testing.T) {
 }
 
 // oursAtRestart is stopping, which records at each Restart what paths' Ours says of the copy of conflux
-// the service runs.
+// the service runs, and then calls unlock, so that nothing the command does after it waits on what the
+// test holds: a conflux that went on to wait for the anchor would otherwise hang the suite.
 type oursAtRestart struct {
 	stopping
 
-	ours []error
+	unlock func()
+	ours   []error
 }
 
 func (m *oursAtRestart) Restart() error {
 	m.ours = append(m.ours, m.d.Ours(m.d.ServiceExecutable()))
+	m.unlock()
 
 	return m.stopping.Restart()
 }
@@ -321,13 +324,17 @@ func TestTheServiceStartsAgainOnlyOnACopyOfConfluxsOwn(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	unlock, err := flock.Acquire(filepath.Join(d.Libexec(), ".lock"))
+	held, err := flock.Acquire(filepath.Join(d.Libexec(), ".lock"))
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	unlock := sync.OnceFunc(held)
 	t.Cleanup(unlock)
 
-	mgr := &oursAtRestart{stopping: stopping{fakeManager: fakeManager{d: d}, running: true, release: serving(t, d)}}
+	// The restart starts nothing, so a conflux that went on to wait for the anchor stops there.
+	mgr := &oursAtRestart{stopping: stopping{fakeManager: fakeManager{d: d, restartErr: errStartsNothing}, running: true,
+		release: serving(t, d)}, unlock: unlock}
 	standInService(t, mgr)
 
 	out, errOut, code := capture(t, "start")

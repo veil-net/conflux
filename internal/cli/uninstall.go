@@ -51,15 +51,22 @@ func runUninstall(_ context.Context, args []string) int {
 	// The roots uninstall refuses (JudgeWays): a CONFLUX_DIR whose way another account may change, held
 	// to parents' rule as the readers' check holds it, since whoever could change it could have put
 	// anything at the root's name, and could lead the removal elsewhere; a root that is a shared or
-	// system directory -- a CONFLUX_DIR of /tmp -- which conflux never makes its own, and so never
-	// empties; and a root that holds what conflux never makes there -- a CONFLUX_DIR at a folder of
-	// homes -- which is not conflux's. Judged for every root before anything is asked or removed, so
-	// nothing is half-removed; paths' advice, which is for choosing a CONFLUX_DIR, gives way to
-	// uninstall's. Any other failure to judge a root stops uninstall there too, before it acts.
+	// system directory -- a CONFLUX_DIR of /tmp -- or the top of a volume -- / or C:\, or the folder a
+	// SUBST letter stands for, which need be neither -- which conflux never makes its own, and so never
+	// empties, each said in its own words (a top, as paths tells one, is the one root a CONFLUX_DIR
+	// there has, so a refusal of it as shared is that root's); and a root that holds what conflux never
+	// makes there -- a CONFLUX_DIR at a folder of homes -- which is not conflux's. Judged for every root
+	// before anything is asked or removed, so nothing is half-removed; paths' advice, which is for
+	// choosing a CONFLUX_DIR, gives way to uninstall's. Any other failure to judge a root stops
+	// uninstall there too, before it acts.
 	if err := d.JudgeWays(); err != nil {
 		what, _, _ := strings.Cut(err.Error(), "\n")
 
 		switch {
+		case errors.Is(err, paths.ErrSharedRoot) &&
+			slices.ContainsFunc(d.Outer(), func(dir string) bool { return filepath.Dir(dir) == dir }):
+			ui.Errf("%s\n  It is the top of its volume, which conflux never makes its own, so uninstall left "+
+				"everything in place, the boot service included.", what)
 		case errors.Is(err, paths.ErrSharedRoot):
 			ui.Errf("%s\n  It is a shared or system directory, which conflux never makes its own, so uninstall left "+
 				"everything in place, the boot service included.", what)

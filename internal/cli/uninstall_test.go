@@ -464,3 +464,30 @@ func TestUninstallLeavesAFolderOfHomes(t *testing.T) {
 		})
 	}
 }
+
+// TestUninstallLeavesAVolumesTop: a CONFLUX_DIR at the top of a volume -- / or C:\, or the folder a
+// SUBST letter stands for -- is no root conflux empties, since no folder holds it to remove it from, so
+// uninstall refuses it before it acts, exit 1, the boot service not removed, saying it is the top of
+// its volume, which it never empties -- not that it is a shared or system directory, which a SUBST
+// letter's folder need not be.
+func TestUninstallLeavesAVolumesTop(t *testing.T) {
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	// Nothing is removed whatever the judging says: the question is never answered yes.
+	defer func(was func(paths.Dirs, error, bool) bool) { confirm = was }(confirm)
+	confirm = func(paths.Dirs, error, bool) bool { return false }
+
+	top := filepath.VolumeName(t.TempDir()) + string(filepath.Separator)
+	t.Setenv("CONFLUX_DIR", top)
+
+	mgr := &removing{fakeManager: fakeManager{d: paths.Default()}}
+	standInService(t, mgr)
+
+	out, errOut, code := capture(t, "uninstall")
+	if code != ExitError || !strings.Contains(errOut, "It is the top of its volume") ||
+		strings.Contains(errOut, "It is a shared or system directory") || mgr.removals != 0 {
+		t.Errorf("uninstall of a CONFLUX_DIR of %s exited %d and removed the boot service %d times, want %d saying "+
+			"it is the top of its volume, nothing removed:\n%s%s", top, code, mgr.removals, ExitError, out, errOut)
+	}
+}

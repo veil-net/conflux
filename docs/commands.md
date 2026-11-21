@@ -567,7 +567,8 @@ its name or where a link there that conflux follows leads — a `CONFLUX_DIR` at
 or a file at its name, as `CONFLUX_DIR=/etc/passwd` would have it, which is somebody else's. Every root is judged before anything is asked or removed,
 so each is refused, exit 1, with nothing removed, the boot service included: the first naming the
 folder that fails and saying to run `uninstall` again once nobody else can change any folder on the
-way, the second saying uninstall left everything in place, the third naming the entry conflux
+way, the second saying it is a shared or system directory, or the top of its volume, and that
+uninstall left everything in place, the third naming the entry conflux
 never makes, or the file, and saying the same. A root that cannot be judged at all — a way that
 cannot be walked, such as a `CONFLUX_DIR` beneath a file — stops uninstall there too, exit 1, saying
 so, before it acts. Any other root the readers' check refuses is removed the same way as one it takes, with

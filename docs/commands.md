@@ -121,7 +121,8 @@ record, the token, the socket — so each holds the root to the
 account running conflux, and nobody else able to write it or point it elsewhere. A root that fails
 is refused, exit 1, naming it and who else could change it, and nothing in it is read, run or
 stopped: `down` stops nothing; `update` downloads and replaces nothing. `uninstall` reads and
-signals nothing in such a root either, and removes it all the same, following nothing in it
+signals nothing in such a root either, and removes it all the same, following nothing in it, but
+for a `CONFLUX_DIR` whose way another account may change, which it refuses before removing anything
 ([`conflux uninstall`](#conflux-uninstall)). Nothing is narrowed either. That
 is for `up`, `proxy`, `observe`, `install`, `enrol` and `start`, which make the roots, or make them
 conflux's: they narrow one of conflux's own and refuse one another account owns. A root that is not
@@ -500,9 +501,9 @@ reinstall:
   conflux made them (an account of either name that conflux did not make is left alone), with
   the BPF devices given back to root on macOS first.
 
-The conflux you ran is yours, and stays. It says what it removed. Asks first, because there is
-no other copy of the credential anywhere; `--yes` skips the question, and a non-interactive
-run without `--yes` refuses rather than destroy an identity silently.
+The conflux you ran is yours, and stays. It says what it removed, however far it got. Asks first,
+because there is no other copy of the credential anywhere; `--yes` skips the question, and a
+non-interactive run without `--yes` refuses rather than destroy an identity silently.
 
 Nothing in a root is followed. Each is removed through the directory holding it, held open from
 the top of its volume down, and a name at a time below it: a link or junction found anywhere in
@@ -515,9 +516,14 @@ through the handle held on it, and the link after, the directory itself left emp
 fails is removed as itself, and where it leads is not touched. A `CONFLUX_DIR`'s way is
 held to the rule the [readers' check](#a-root-another-account-could-change) holds it to as it is
 walked, so a way another account could change cannot lead the removal elsewhere; the platform's
-own roots are on the system's way. No root is refused: one the readers' check refuses is removed
-the same way, with nothing in it read or signalled first — no identity shown in the question, no
-`anchord` stopped by its pid record. The record of the folders made on the way to it is read all
+own roots are on the system's way. The one root refused is a `CONFLUX_DIR` whose way another
+account may change: whoever could change it could have put anything at the root's name, so conflux
+cannot know what is there is its own. Every root's way is judged before anything is asked or
+removed, so it is refused, exit 1, naming the folder that fails and saying to run `uninstall` again
+once nobody else can change any folder on the way, with nothing removed, the boot service
+included. Any other root the readers' check refuses is removed the same way as one it takes, with
+nothing in it read or signalled first — no identity shown in the question, no `anchord` stopped by
+its pid record. The record of the folders made on the way to it is read all
 the same, as a file anybody may have put there, never through a link: all it can lead to is an
 empty folder above conflux's roots being removed. An ephemeral run's root inside a `CONFLUX_DIR`
 goes with it.

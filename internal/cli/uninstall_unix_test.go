@@ -86,3 +86,37 @@ func TestUninstallRemovesTheWayConfluxMade(t *testing.T) {
 		})
 	}
 }
+
+// TestUninstallRefusesAWayAnotherAccountMayChange: the one root uninstall refuses is a CONFLUX_DIR
+// whose way another account may change -- inside a directory every account may write -- since whoever
+// could change it could have put anything at the root's name, and conflux cannot know it is its own.
+// It is refused before anything is removed, the boot service included, exit 1, naming the directory
+// and saying how to uninstall, not how to choose a CONFLUX_DIR.
+func TestUninstallRefusesAWayAnotherAccountMayChange(t *testing.T) {
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	parent := t.TempDir()
+	d := pathstest.DirsIn(t, filepath.Join(parent, "conflux"))
+
+	if err := os.Chmod(parent, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = os.Chmod(parent, 0o700) })
+
+	mgr := &removing{fakeManager: fakeManager{d: d}}
+	standInService(t, mgr)
+
+	out, errOut, code := capture(t, "uninstall", "--yes")
+	if code != ExitError || !strings.Contains(errOut, parent) || !strings.Contains(errOut, "conflux uninstall") ||
+		strings.Contains(errOut, "Choose a CONFLUX_DIR") {
+		t.Errorf("uninstall of a root in a directory every account may write exited %d, want %d naming it and "+
+			"saying how to uninstall:\n%s%s", code, ExitError, out, errOut)
+	}
+
+	if _, err := os.Lstat(d.State); mgr.removals > 0 || err != nil {
+		t.Errorf("uninstall, refusing the way, removed the boot service %d times, and %s (Lstat: %v)", mgr.removals,
+			d.State, err)
+	}
+}

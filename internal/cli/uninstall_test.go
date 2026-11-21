@@ -153,7 +153,8 @@ func (m *removing) Remove() error {
 // TestUninstallLeavesALiveRun: an ephemeral run inside a CONFLUX_DIR would go with the root, so while
 // one is live uninstall refuses, exit 2, naming it, before anything is asked or removed, as it does
 // for one outside; and one that starts once uninstall has begun -- here as the boot service is
-// removed -- is left running, with the root that holds it, and uninstall says so, exit 1.
+// removed -- is left running, with the root that holds it, and uninstall says so, exit 1, listing
+// what it removed all the same.
 func TestUninstallLeavesALiveRun(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
@@ -193,6 +194,10 @@ func TestUninstallLeavesALiveRun(t *testing.T) {
 
 		if _, err := os.Lstat(e.ServeLockFile()); err != nil {
 			t.Errorf("uninstall removed the root of a live run: %v", err)
+		}
+
+		if !strings.Contains(out, "  the boot service\n") {
+			t.Errorf("uninstall, failing, did not say what it had removed:\n%s", out)
 		}
 	})
 }

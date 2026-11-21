@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/veil-net/conflux/internal/config"
@@ -46,11 +47,25 @@ func runUninstall(_ context.Context, args []string) int {
 
 	d := paths.Default()
 
+	// The one root uninstall refuses: a CONFLUX_DIR whose way another account may change, held to
+	// parents' rule as the readers' check holds it (JudgeWays), since whoever could change it could
+	// have put anything at the root's name, and could lead the removal elsewhere. Judged for every root
+	// before anything is asked or removed, so nothing is half-removed; paths' advice, which is for
+	// choosing a CONFLUX_DIR, gives way to uninstall's.
+	if err := d.JudgeWays(); err != nil {
+		what, _, _ := strings.Cut(err.Error(), "\n")
+		ui.Errf("%s\n  So conflux cannot know that what is there is its own, and uninstall removed nothing, the boot "+
+			"service included.\n  Once nobody else can change any folder on the way to it, run conflux uninstall again",
+			what)
+
+		return ExitError
+	}
+
 	// What uninstall reads or signals by a name in a root -- the identity it asks about, the pid
 	// record it stops anchord by -- it reads only where the root passes paths' check, since whoever
 	// could change the root could have put theirs there. A root that fails is removed all the same,
 	// reading nothing (paths.RemoveRoot): nothing in it is followed, and a CONFLUX_DIR's way is held
-	// to parents' rule as it is removed, so nothing can lead the removal elsewhere.
+	// to parents' rule again as it is removed, so nothing can lead the removal elsewhere.
 	checked := d.Check()
 
 	// The folders conflux made on the way to the roots, recorded in the state root, which goes with
@@ -160,10 +175,7 @@ func runUninstall(_ context.Context, args []string) int {
 	// runs' unless one started since.
 	errs = append(errs, removeAccount(len(started) == 0))
 
-	if err := errors.Join(errs...); err != nil {
-		return fail(err)
-	}
-
+	// What it removed, however far it got.
 	if len(removed) > 0 {
 		ui.Printf("Removed:\n")
 
@@ -172,6 +184,10 @@ func runUninstall(_ context.Context, args []string) int {
 		}
 
 		ui.Println()
+	}
+
+	if err := errors.Join(errs...); err != nil {
+		return fail(err)
 	}
 
 	// A record that could not be read -- one that is a link, or behind a CONFLUX_DIR's way another

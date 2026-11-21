@@ -3,6 +3,7 @@ package paths
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -263,4 +264,93 @@ func TestTheFolderTheRunningConfluxIsInIsNoRoot(t *testing.T) {
 	if err := Default().JudgeWays(); !errors.Is(err, ErrSharedRoot) || !strings.Contains(err.Error(), "above the one") {
 		t.Errorf("JudgeWays(a CONFLUX_DIR of the folder above the service's root) = %v, want a refusal saying so", err)
 	}
+}
+
+// TestAVolumesTopIsNoRoot: a CONFLUX_DIR at the top of a volume -- C:\, \\?\C:\, the volume by its GUID,
+// or a drive letter SUBST gives a folder -- is held as the top the walk holds, not looked up there by a
+// name it does not have, so uninstall's pre-flight refuses it as a shared root before anything is
+// removed, the boot service included: a volume's root as one (sharedRoot), and the SUBST letter, whose
+// final path is the folder, as the top of a volume nothing holds to remove it from; EnsureAll refuses
+// each, and RemoveRoot too, removing nothing. A folder systemFolders names, C:\Users\Public, is refused
+// as one. Windows-only, so it runs in CI's platforms job alone.
+func TestAVolumesTopIsNoRoot(t *testing.T) {
+	drive := os.Getenv("SystemDrive")
+	if drive == "" {
+		drive = "C:"
+	}
+
+	top, err := windows.UTF16PtrFromString(drive + `\`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	guid := make([]uint16, windows.MAX_PATH)
+	if err := windows.GetVolumeNameForVolumeMountPoint(top, &guid[0], uint32(len(guid))); err != nil {
+		t.Fatal(err)
+	}
+
+	folder := t.TempDir()
+	letter := substLetter(t, folder)
+
+	public, err := windows.KnownFolderPath(windows.FOLDERID_Public, windows.KF_FLAG_DEFAULT)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for root, why := range map[string]string{
+		drive + `\`:                 "a volume's root",
+		`\\?\` + drive + `\`:        "a volume's root",
+		windows.UTF16ToString(guid): "a volume's root",
+		letter + `\`:                "the top of its volume",
+		public:                      "the folder every account shares",
+	} {
+		t.Setenv("CONFLUX_DIR", root)
+
+		if err := Default().JudgeWays(); !errors.Is(err, ErrSharedRoot) || !strings.Contains(err.Error(), why) {
+			t.Errorf("JudgeWays(a CONFLUX_DIR of %s) = %v, want a refusal of a shared root saying it is %s", root, err, why)
+		}
+
+		if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), why) {
+			t.Errorf("EnsureAll(a CONFLUX_DIR of %s) = %v, want a refusal saying it is %s", root, err, why)
+		}
+
+		if gone, err := RemoveRoot(root); gone || err == nil || !strings.Contains(err.Error(), why) {
+			t.Errorf("RemoveRoot(%s) = %v, %v, want a refusal saying it is %s", root, gone, err, why)
+		}
+	}
+
+	if entries, err := os.ReadDir(folder); err != nil || len(entries) != 0 {
+		t.Errorf("the folder SUBST gave a letter holds %v (%v), want it as it was", entries, err)
+	}
+}
+
+// substLetter gives folder a drive letter of its own with SUBST, the last one free, taken away when t
+// ends, and is it (Z:).
+func substLetter(t *testing.T, folder string) string {
+	t.Helper()
+
+	drives, err := windows.GetLogicalDrives()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for c := 'Z'; c > 'D'; c-- {
+		if drives&(1<<(c-'A')) != 0 {
+			continue
+		}
+
+		letter := string(c) + ":"
+
+		if out, err := exec.Command("subst", letter, folder).CombinedOutput(); err != nil {
+			t.Fatalf("subst %s %s: %v\n%s", letter, folder, err, out)
+		}
+
+		t.Cleanup(func() { _ = exec.Command("subst", letter, "/d").Run() })
+
+		return letter
+	}
+
+	t.Fatal("no drive letter free for SUBST")
+
+	return ""
 }

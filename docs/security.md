@@ -57,7 +57,9 @@ host can read, and when the run stops there is nothing at all.
   or one above it, but for the boot service's own root where the running conflux is the copy the
   service runs from it, one file with the copy at its name there, whatever the root's mode: a state
   root found widened is narrowed by the service, as by any command that secures it, rather than
-  refused at every start. On Windows it is a volume's root (`C:\`), a folder directly under one that
+  refused at every start. On Windows it is a volume's root (`C:\`, `\\?\C:\`, or the volume by its
+  GUID), the top of any volume a drive letter reaches, a `SUBST` letter's folder among them, which no
+  folder holds for it to be removed from, a folder directly under a volume's root that
   Windows made, which TrustedInstaller or SYSTEM owns (`Program Files`, `ProgramData`, `PerfLogs` …)
   where what conflux or an administrator makes there is the Administrators' or the administrator's,
   `%ProgramData%`, `%SystemRoot%`, `C:\Users` and `C:\Users\Public`, the folder the running conflux

@@ -743,7 +743,7 @@ func (d Dirs) JudgeWays() error {
 
 // judgeHeld refuses the root dir, one of d's, as r holds it, for what RemoveRoot and JudgeWays refuse a root for,
 // saying which (refusal): a directory at its name that others keep what is theirs in (sharedStep,
-// ErrSharedRoot); one at its name, or where a link there that conflux follows leads, that holds a
+// ErrSharedRoot), and the top of a volume (topRefusal), which nothing holds to remove it from; one at its name, or where a link there that conflux follows leads, that holds a
 // name conflux never makes there (strays), and a file or anything else neither a directory nor a link
 // at its name (notDir), neither of them conflux's (ErrForeignRoot). A link conflux does not follow is
 // no refusal: RemoveRoot removes it as itself.
@@ -758,6 +758,10 @@ func (d Dirs) judgeHeld(dir string, r *rootHold) error {
 			return refusal{ErrSharedRoot, err}
 		}
 
+		if r.top {
+			return refusal{ErrSharedRoot, topRefusal(dir)}
+		}
+
 		if err := d.strays(dir, "", r.dir); err != nil {
 			return refusal{ErrForeignRoot, err}
 		}
@@ -768,6 +772,15 @@ func (d Dirs) judgeHeld(dir string, r *rootHold) error {
 	}
 
 	return nil
+}
+
+// topRefusal is the refusal of dir, the top of its volume, as a root: a drive letter SUBST gives a
+// folder passes for none of the system's places, but no directory holds it to remove it from, nor
+// would anything a volume's top holds be conflux's alone.
+func topRefusal(dir string) error {
+	return fmt.Errorf("%s is the top of its volume, so conflux will not use it as a root: it never narrows, fills "+
+		"or empties a volume's top, which no folder holds for it to be removed from.\n  Point it at a directory "+
+		"of its own, then run this again", dir)
 }
 
 // What JudgeWays refuses a root for, which errors.Is tells apart in what it returns: its way, which
@@ -835,6 +848,7 @@ type rootHold struct {
 	refused error
 	notDir  bool
 	linkSec linkSecurity
+	top     bool
 }
 
 // forService reports whether the root dir, as r holds it, is no link, or one the boot service would
@@ -843,12 +857,13 @@ type rootHold struct {
 // follow follows, may be one that account's own processes may point elsewhere unelevated.
 func (r *rootHold) forService(dir string) bool { return !r.link || serviceFollows(dir, r.linkSec) }
 
-// close lets the root go, and every directory held on the way to it.
+// close lets the root go, and every directory held on the way to it: the root itself, where it is the
+// top of its volume, among them.
 func (r *rootHold) close() {
 	switch {
 	case r.led != nil:
 		r.led.close()
-	case !r.link && r.refused == nil:
+	case !r.link && r.refused == nil && !r.top:
 		r.dir.close()
 	}
 
@@ -876,7 +891,8 @@ func (r *rootHold) usable(dir string) error {
 // judged by nothing yet (usable); a link there is followed only where conflux would follow it (follow),
 // and is otherwise refused, unfollowed and left for the caller to remove as itself or refuse, as
 // anything else at the name is: a file there, or anything else neither a directory nor a link, is not
-// conflux's (notDir), which RemoveRoot and JudgeWays refuse (judgeHeld). Where the way to dir, or its name, is not there, it is an error that is
+// conflux's (notDir), which RemoveRoot and JudgeWays refuse (judgeHeld). The top of a volume, which is
+// in no directory, is the directory the walk holds last (top). Where the way to dir, or its name, is not there, it is an error that is
 // fs.ErrNotExist.
 func holdRoot(dir string) (*rootHold, error) {
 	dir, err := filepath.Abs(dir)
@@ -893,6 +909,12 @@ func holdRoot(dir string) (*rootHold, error) {
 		return nil, err
 	case w == nil:
 		return nil, &os.PathError{Op: "open", Path: dir, Err: fs.ErrNotExist}
+	}
+
+	// The top of a volume -- / or C:\, a drive letter SUBST gives a folder, \\?\Volume{...}\ -- is in no
+	// directory: the walk holds it, and it has no name to look up.
+	if filepath.Dir(dir) == dir {
+		return &rootHold{parent: w, dir: w.last().step, top: true}, nil
 	}
 
 	r := &rootHold{parent: w, name: filepath.Base(dir)}
@@ -1346,8 +1368,8 @@ func judgeWay(dir string, rule judgement) error {
 // anything is made, and makeWay holds the rest to it as it goes: every directory a lookup of dir looks a name up in, and every link
 // it follows, is judged once, here and nowhere else: secure, which EnsureAll calls after it, judges
 // the root and what it holds, and not its way. Anything already at the root's name is secure's, but a
-// directory others keep what is theirs in, and one holding a name conflux never makes there, which are
-// refused here first, whatever leads to them (sharedStep, strays), so that secure, whose one caller,
+// directory others keep what is theirs in, the top of a volume (topRefusal), and one holding a name
+// conflux never makes there, which are refused here first, whatever leads to them (sharedStep, strays), so that secure, whose one caller,
 // EnsureAll, runs this first, adopts, narrows and fills neither; and a link that leads nowhere is
 // refused by the walk, with nothing made where it leads.
 func (d Dirs) makeRoot(dir string, rule judgement) ([]string, error) {
@@ -1367,6 +1389,10 @@ func (d Dirs) makeRoot(dir string, rule judgement) ([]string, error) {
 
 		if err := sharedStep(dir, at.step); err != nil {
 			return nil, err
+		}
+
+		if filepath.Dir(dir) == dir {
+			return nil, topRefusal(dir)
 		}
 
 		led := ""

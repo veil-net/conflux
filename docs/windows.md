@@ -132,7 +132,9 @@ else conflux does not make, and anything deeper in a folder that is right, are r
 for the operator to look at.
 
 No root is a folder others keep what is theirs in, however it is reached and whoever owns it: a
-volume's root (`C:\`), a folder directly under one that Windows made — which TrustedInstaller or SYSTEM
+volume's root (`C:\`, `\\?\C:\` or `\\?\Volume{…}\`), or the top of a volume a `SUBST` letter
+gives a folder, which no folder holds for it to be removed from, a folder directly under a volume's
+root that Windows made — which TrustedInstaller or SYSTEM
 owns, as `Program Files`, `ProgramData` and `PerfLogs` are, where what conflux makes there, and what an
 administrator makes, is the Administrators' or the administrator's own — `%ProgramData%`,
 `%SystemRoot%`, `C:\Users`, `C:\Users\Public`, the folder the running conflux is in or one above it

@@ -348,6 +348,46 @@ func setOwnSecurity(t *testing.T, path, sddl string) {
 	}
 }
 
+// TestSecureJudgesTheFolderItHoldsAsMakeRootDoes: a junction at a root's name that heldLink takes may
+// lead elsewhere by the time secure holds it than when makeRoot's walk followed it, so secure refuses,
+// on the folder its own handle holds, what makeRoot refuses: a junction to a folder of homes, which
+// conflux has not secured and which holds alice\, naming alice, and one to a folder whose DACL makes it a
+// space other accounts share, saying so; each before anything is filled or restricted, the folder left
+// holding what it held. Windows-only, so it runs in CI's platforms job alone.
+func TestSecureJudgesTheFolderItHoldsAsMakeRootDoes(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", "")
+
+	homes := t.TempDir()
+	if err := os.Mkdir(filepath.Join(homes, "alice"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	shared := t.TempDir()
+	privtest.SetSecurity(t, shared, "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;CI;0x6;;;BU)(A;OICIIO;FA;;;CO)")
+
+	for name, c := range map[string]struct{ target, says string }{
+		"a folder of homes":             {homes, "holds alice"},
+		"a folder other accounts share": {shared, "a folder other accounts share"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			was, err := os.ReadDir(c.target)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			root := mklinkJ(t, filepath.Join(t.TempDir(), "conflux"), c.target)
+
+			if err := secure(root, true); err == nil || !strings.Contains(err.Error(), c.says) {
+				t.Errorf("secure(a junction to %s) = %v, want a refusal saying %q", name, err, c.says)
+			}
+
+			if now, err := os.ReadDir(c.target); err != nil || len(now) != len(was) {
+				t.Errorf("secure(a junction to %s) left it holding %v (%v), want %v", name, now, err, was)
+			}
+		})
+	}
+}
+
 // TestSecureRefusesAJunctionRootMadeAgain: secure removes a junction root before it makes its own
 // at the name, and something somebody made there meanwhile is refused, naming the root and the
 // commands that make the junction again, to where it led by its drive letter: with nothing at the

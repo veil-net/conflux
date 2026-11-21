@@ -492,10 +492,13 @@ func trusted(sid *windows.SID) bool {
 
 // secure gives a conflux root its ownership and DACL, once, and refuses one another
 // account made, or a junction another account may point elsewhere (heldLink); a CONFLUX_DIR's way
-// is makeRoot's, which secure's one caller, EnsureAll, runs first, and so is the refusal of a folder
-// others keep what is theirs in, or one conflux has not secured holding what conflux never makes there
-// (sharedStep, strays),
-// which makeRoot holds whatever is at the root's name to before secure fills or restricts anything. A root secured already -- SYSTEM's or the
+// is makeRoot's, which secure's one caller, EnsureAll, runs first. A folder others keep what is theirs
+// in, and one conflux has not secured holding what conflux never makes there (sharedStep, strays), are
+// refused here as makeRoot refuses them, before anything is filled or restricted, but on the folder this
+// handle holds: a junction at the root's name that heldLink takes may have been pointed elsewhere since
+// makeRoot's walk followed it, by a handle opened on it while its DACL let somebody, so what that walk
+// judged answers for nothing here. The names are an installation's as every one on Windows lays out its
+// root (rootedAt), or an ephemeral run's (EphemeralDirs). A root secured already -- SYSTEM's or the
 // Administrators', under a protected DACL that grants nobody else any right, to read it included,
 // on the root or on what is made in it -- is not restricted again, but it is filled as any root is
 // (fill), and what it holds is judged again (contents), so that what a run refused once the root
@@ -547,6 +550,27 @@ func secure(dir string, installation bool) error {
 		return err
 	}
 	defer root.close()
+
+	if err := sharedStep(dir, step{root.dir}); err != nil {
+		return err
+	}
+
+	layout, led := EphemeralDirs(dir), ""
+	if installation {
+		layout = rootedAt(dir)
+	}
+
+	if root.link != nil {
+		if led, _ = finalPath(root.dir, volumeNameDOS); led == "" {
+			led = root.target
+		}
+
+		led = strings.TrimPrefix(led, `\\?\`)
+	}
+
+	if err := layout.strays(dir, led, step{root.dir}); err != nil {
+		return err
+	}
 
 	sd, err := security(root.dir)
 	if err != nil {

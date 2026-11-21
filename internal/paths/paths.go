@@ -356,8 +356,8 @@ func Foreign(dir string) error {
 var looking = func(string) {}
 
 // chosen reports whether dir is the CONFLUX_DIR root or inside it: a directory whoever set
-// the variable chose, rather than one of the platform's, so secure holds the directories
-// above it to account too.
+// the variable chose, rather than one of the platform's, so makeRoot and the readers' check
+// hold the directories above it to account too.
 func chosen(dir string) bool {
 	root := Root()
 	if root == "" {
@@ -591,10 +591,12 @@ func judgeWay(dir string, rule judgement) error {
 }
 
 // makeRoot creates the root dir where it is not there yet, and each directory missing on the way to
-// it, from the last directory there that the walk to it holds open (makeWay). Before anything is
-// made, a CONFLUX_DIR's way is held to parents' rule as far as it is there (parentsRule), as secure
-// holds it once the root is made. Anything already at the root's name is secure's; and a link that
-// leads nowhere is refused by the walk, with nothing made where it leads.
+// it, from the last directory there that the walk to it holds open (makeWay). A CONFLUX_DIR's way is
+// held to parents' rule (parentsRule) as far as it is there, before anything is made, and makeWay
+// holds the rest to it as it goes: every directory a lookup of dir looks a name up in, and every link
+// it follows, is judged once, here and nowhere else: secure, which EnsureAll calls after it, judges
+// the root and what it holds, and not its way. Anything already at the root's name is secure's; and a link that leads nowhere is
+// refused by the walk, with nothing made where it leads.
 func makeRoot(dir string) error {
 	rule := parentsRule(dir)
 
@@ -621,8 +623,9 @@ func makeRoot(dir string) error {
 // directory somebody else made at the name meanwhile would answer for that -- a sticky directory such
 // as /tmp, and C:\, let anybody make a name not taken yet, and the owner of a directory on the way
 // may make anything in it. A link at a name, there by the time conflux makes it or once it has, is
-// refused; a directory on the way that is taken is held to rule before anything is made in it; and
-// one at the root's own name is the root, which secure judges as it judges any root found there.
+// refused; each directory on the way that it goes into, made by conflux or taken, is held to rule
+// before anything is made in it, as the directory it was made in was; and the one at the root's own
+// name is the root, which secure judges as it judges any root found there.
 func makeWay(dir string, w *way, rule judgement) error {
 	for i, name := range w.left {
 		at := w.last()
@@ -656,17 +659,16 @@ func makeWay(dir string, w *way, rule judgement) error {
 			}
 		}
 
-		switch {
-		case taken && root:
+		if root {
 			s.close()
 
 			return nil
-		case taken:
-			if err := rule(p, s, false); err != nil {
-				s.close()
+		}
 
-				return err
-			}
+		if err := rule(p, s, false); err != nil {
+			s.close()
+
+			return err
 		}
 
 		w.push(s, p)

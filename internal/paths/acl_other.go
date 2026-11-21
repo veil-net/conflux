@@ -243,16 +243,16 @@ func parentsRuleAs(dir string, euid int) judgement {
 }
 
 // secure refuses a root another account owns, or whose extended ACL lets another account write
-// or move it, or a CONFLUX_DIR another account can move, and narrows one of conflux's own that
-// something left wider than 0700, or than the 0710 that lets anchord's account through.
+// or move it, and narrows one of conflux's own that something left wider than 0700, or than the
+// 0710 that lets anchord's account through. A CONFLUX_DIR's way is makeRoot's, which secure's one
+// caller, EnsureAll, runs first.
 //
 // makeRoot creates at 0700 and leaves a directory that already exists exactly as it
 // found it, so without this an /etc/conflux somebody made at 0755 would hold the
 // manifest in a traversable directory, and a CONFLUX_DIR another user made would hold
 // the binary root runs at boot where that user can replace it. The owner decides, as on
 // Windows: one that is not the account running conflux did not get its directory from
-// conflux, and whatever it put there is not used. A CONFLUX_DIR is held to its parents
-// first (see parentsAs), before anything at its name is read. What a root holds is held to the
+// conflux, and whatever it put there is not used. What a root holds is held to the
 // same, before the root is narrowed and again after (contentsAs), as on Windows: whatever another
 // account put in it while it was wider is refused, not adopted. Every refusal but the last comes
 // before secure changes anything; a root that was not there EnsureAll has made by then, and a
@@ -262,12 +262,6 @@ func secure(dir string) error { return secureAs(dir, os.Geteuid()) }
 // secureAs is secure for a given effective uid, so the refusals can be tested without
 // another account.
 func secureAs(dir string, euid int) error {
-	if chosen(dir) {
-		if err := parentsAs(dir, euid); err != nil {
-			return err
-		}
-	}
-
 	link, fi, err := ownedAs(dir, euid, ownedBy)
 	if err != nil {
 		return err

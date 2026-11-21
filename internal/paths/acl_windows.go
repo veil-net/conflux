@@ -315,14 +315,19 @@ func fill(dir string, h windows.Handle) error {
 }
 
 // createIn creates the directory name in the one parent holds open, with Restrict's ownership and
-// DACL set as it is created (restrictedDir), through parent (createDir), and holds it open for
-// access: ERROR_ALREADY_EXISTS where anything is at the name, a link included, which is not
-// followed.
+// DACL set as it is created (restrictedDir), and holds it open for access: its name looked up there
+// and nowhere else, and never followed (ntOpen's FILE_OPEN_REPARSE_POINT), so ERROR_ALREADY_EXISTS
+// is anything at the name, a link included. The create is also kept from being reparsed anywhere
+// (ntOpen's OBJ_DONT_REPARSE), so that a parent that became a junction or a mount point after it was
+// opened would fail it rather than take it to where it leads: defence in depth, guarding a case not
+// shown to happen, since a create relative to a held directory is not known to be reparsed through
+// it without the flag either. A status NtCreateFile fails with is the Win32 error it maps to, as
+// CreateDirectory returns one, so that restrictWith tells a refused owner.
 func createIn(parent windows.Handle, name string, access uint32) (windows.Handle, error) {
 	var h windows.Handle
 
 	err := restrictedDir(func(sd *windows.SECURITY_DESCRIPTOR) (err error) {
-		h, err = createDir(parent, name, sd, access)
+		h, err = ntOpen(parent, name, sd, access, windows.FILE_CREATE, windows.FILE_DIRECTORY_FILE)
 
 		return err
 	})
@@ -334,20 +339,7 @@ func createIn(parent windows.Handle, name string, access uint32) (windows.Handle
 // junction meanwhile.
 var filling = func(string) {}
 
-// createDir creates the directory name in the one parent holds open, with sd as its security
-// descriptor, and holds it open for access: its name looked up there and nowhere else, and never
-// followed (FILE_OPEN_REPARSE_POINT). The create is also kept from being reparsed anywhere
-// (OBJ_DONT_REPARSE), so that a parent that became a junction or a mount point after it was opened
-// would fail it rather than take it to where it leads: defence in depth, guarding a case not shown
-// to happen, since a create relative to a held directory is not known to be reparsed through it
-// without the flag either. A status NtCreateFile fails with is returned as the Win32 error it maps
-// to, as CreateDirectory returns one -- ERROR_ALREADY_EXISTS for a name already taken -- so that
-// restrictWith tells a refused owner.
-func createDir(parent windows.Handle, name string, sd *windows.SECURITY_DESCRIPTOR, access uint32) (windows.Handle, error) {
-	return ntOpen(parent, name, sd, access, windows.FILE_CREATE, windows.FILE_DIRECTORY_FILE)
-}
-
-// ntOpen is createDir and lookUp's open: NtCreateFile of name relative to parent, as disposition
+// ntOpen is createIn and lookUp's open: NtCreateFile of name relative to parent, as disposition
 // says, with options beside never following what is at the name, and sd where it creates one.
 func ntOpen(parent windows.Handle, name string, sd *windows.SECURITY_DESCRIPTOR, access, disposition,
 	options uint32) (windows.Handle, error) {
@@ -448,8 +440,8 @@ func trusted(sid *windows.SID) bool {
 }
 
 // secure gives a conflux root its ownership and DACL, once, and refuses one another
-// account made, a junction another account may point elsewhere (heldLink), or a CONFLUX_DIR
-// another account can move (see parents). A root secured already -- SYSTEM's or the
+// account made, or a junction another account may point elsewhere (heldLink); a CONFLUX_DIR's way
+// is makeRoot's, which secure's one caller, EnsureAll, runs first. A root secured already -- SYSTEM's or the
 // Administrators', under a protected DACL that grants nobody else any right, to read it included,
 // on the root or on what is made in it -- is not restricted again, but it is filled as any root is
 // (fill), and what it holds is judged again (contents), so that what a run refused once the root
@@ -484,12 +476,6 @@ func trusted(sid *windows.SID) bool {
 // keeps that owner through the new DACL -- an owner can always grant itself the rest -- so the
 // service would go on writing its log or its token into a place that account controls.
 func secure(dir string) error {
-	if chosen(dir) {
-		if err := parents(dir); err != nil {
-			return err
-		}
-	}
-
 	root, err := heldRoot(dir, rootAccess)
 	if err != nil {
 		return err

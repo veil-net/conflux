@@ -195,9 +195,10 @@ judge, a platform root's, nothing is judged at all, and a lookup through the nam
 name any program makes there. Linux holds every directory open as a path (`O_PATH`), which needs
 only the right to search. A root not made yet is held to this before anything is made, as far as the
 way is there, and each directory missing is made in the last one held and held open in turn, never
-by its name: one somebody else makes at the name meanwhile — a sticky directory such as `/tmp`, and
-`C:\`, let anybody make a name not taken yet — is held to the same rule before anything is made in
-it, and a link there is refused. One made at the root's own name is the root, held to the rules a
+by its name, and held to the same rule before anything is made in it, conflux's own or one somebody
+else made at the name meanwhile — a sticky directory such as `/tmp`, and `C:\`, let anybody make a
+name not taken yet — and a link there is refused. Each step of the way is judged once, as the root
+is made or found: what conflux then does with the root itself does not walk its way again. One made at the root's own name is the root, held to the rules a
 root found there is (a directory of this account's that is too wide is narrowed, on Unix), though a
 link there is still refused; and a way that ends in where a link leads, at a name not there, is
 refused, with nothing made there. The way to it is every directory the

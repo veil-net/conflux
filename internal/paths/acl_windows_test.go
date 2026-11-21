@@ -745,7 +745,7 @@ func onlyTheSystems(t *testing.T, dir string) {
 // unrestricted and secured already alike -- and the run directory it fills the root with, made
 // through that handle, is not made where the junction leads either. That last is a property of the
 // create through the handle, which is not known to fail without OBJ_DONT_REPARSE: it checks what
-// fill leaves, and is not a red test of the flag, which createDir keeps as defence in depth.
+// fill leaves, and is not a red test of the flag, which createIn keeps as defence in depth.
 // Windows-only, so it runs in CI's platforms job alone.
 func TestSecureRefusesARootThatBecomesAJunction(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")

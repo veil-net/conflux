@@ -122,9 +122,10 @@ Administrators full control and nobody else anything, rather than with what the 
 on — in `C:\` `Authenticated Users`' right to delete it — and owned by the administrator who ran
 conflux, whom the service, running as SYSTEM, would not trust: the way conflux makes is its own, as
 the `0700` directories it makes on Unix are, passes the rule for the service as for the account that
-made it, and a folder of it later taken as a root is one conflux finds secured already. One somebody else
-makes at a name meanwhile is opened as itself and held to the same rule before anything is made in
-it, and a junction or a link there is refused.
+made it, and a folder of it later taken as a root is one conflux finds secured already. Each folder
+conflux goes into on the way, one it made or one somebody else made at the name meanwhile, opened as
+itself, is held to the same rule before anything is made in it, and a junction or a link there is
+refused.
 
 Every command that reads a root, or acts on what it holds, rather than making it — `status`, a
 pass-through, `renew`, `start`, `down`, `uninstall`, `update` asking whether the anchor runs, and

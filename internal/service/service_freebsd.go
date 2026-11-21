@@ -50,8 +50,8 @@ func (f freebsd) Remove() error {
 
 // Stop succeeds on a service that is not running, which rc.subr answers "not running?"
 // and exit 1: `conflux down` twice is a stopped service, not a failure.
-func (f freebsd) Stop() error {
-	if !f.Running() {
+func (freebsd) Stop() error {
+	if !running() {
 		return nil
 	}
 
@@ -62,7 +62,10 @@ func (freebsd) Restart() error { return run("service", rcName(), "restart") }
 
 func (freebsd) Installed() (bool, error) { return exists(scriptPath()) }
 
-func (freebsd) Running() bool {
+// Running is rc.subr's answer, which status gives a service that is not running by its exit.
+func (freebsd) Running() (bool, error) { return running(), nil }
+
+func running() bool {
 	_, ok := query("service", rcName(), "status")
 
 	return ok
@@ -73,7 +76,7 @@ func (f freebsd) Describe() string {
 		return "not installed"
 	}
 
-	if f.Running() {
+	if running() {
 		return fmt.Sprintf("running (rc: %s, enabled at boot)", rcName())
 	}
 

@@ -293,24 +293,25 @@ func mustRead(t *testing.T, path string) []byte {
 }
 
 // stopping is the stand-in service manager for a supervisor serving the root, holding its serve
-// lock: running is what it says of the service, and asked, it does asked first, where it is given
-// that; Stop counts, and lets go of that lock where it is given release, as a supervisor stopping
-// does.
+// lock: running is what it says of the service, or unanswered why it cannot say, and asked, it does
+// asked first, where it is given that; Stop counts, and lets go of that lock where it is given
+// release, as a supervisor stopping does.
 type stopping struct {
 	fakeManager
 
-	running bool
-	asked   func()
-	release func()
-	stops   int
+	running    bool
+	unanswered error
+	asked      func()
+	release    func()
+	stops      int
 }
 
-func (m *stopping) Running() bool {
+func (m *stopping) Running() (bool, error) {
 	if m.asked != nil {
 		m.asked()
 	}
 
-	return m.running
+	return m.running, m.unanswered
 }
 
 func (m *stopping) Stop() error {
@@ -493,6 +494,38 @@ func TestTidyStartsNothingBesideASupervisorRunByHand(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestTidyStopsNothingWhereTheServiceManagerDoesNotAnswer: where the service manager cannot say
+// whether the boot service runs, tidy cannot tell the supervisor serving the root for the service's or
+// one run by hand, so the update is refused, saying the service manager did not answer and why, not
+// that a supervisor was run by hand, with nothing stopped, registered or started.
+func TestTidyStopsNothingWhereTheServiceManagerDoesNotAnswer(t *testing.T) {
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	unanswered := errors.New("the stand-in service manager does not answer")
+
+	for _, verb := range []string{"register", "start"} {
+		t.Run(verb, func(t *testing.T) {
+			d := configured(t)
+
+			mgr := &stopping{fakeManager: fakeManager{d: d}, running: true, unanswered: unanswered,
+				release: serving(t, d)}
+			standInService(t, mgr)
+
+			out, errOut, code := capture(t, verb)
+			if code != ExitError || !strings.Contains(errOut, unanswered.Error()) || strings.Contains(errOut, "run by hand") {
+				t.Errorf("conflux %s with the service manager not answering exited %d, want %d saying why, not that a "+
+					"supervisor was run by hand:\n%s%s", verb, code, ExitError, out, errOut)
+			}
+
+			if mgr.stops+len(mgr.installs)+mgr.restarts > 0 {
+				t.Errorf("conflux %s stopped the service %d times, registered it %d and started it %d, want none",
+					verb, mgr.stops, len(mgr.installs), mgr.restarts)
+			}
+		})
 	}
 }
 

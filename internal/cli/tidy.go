@@ -127,9 +127,16 @@ func tidy(d paths.Dirs, mgr service.Manager) (stopped bool, err error) {
 // where the service manager says it runs, Stop. Then the serve lock is asked after again: still held,
 // its holder is a supervisor the boot service did not start -- one run by hand -- which is refused,
 // naming it, before anything is removed; and nothing is started again, since the service, started,
-// would find that supervisor there and exit.
+// would find that supervisor there and exit. Where the service manager cannot say, which supervisor
+// that is cannot be told, and it is refused saying so, with nothing stopped.
 func stopServing(d paths.Dirs, mgr service.Manager) (bool, error) {
-	running := mgr.Running()
+	running, err := mgr.Running()
+	if err != nil {
+		return false, fmt.Errorf("a conflux supervisor serves %s, and the service manager could not say whether it "+
+			"is the boot service: %w.\n  Nothing was stopped, removed or started; run this again once it answers",
+			d.State, err)
+	}
+
 	if running {
 		if err := mgr.Stop(); err != nil {
 			return false, err

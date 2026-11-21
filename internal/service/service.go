@@ -51,9 +51,11 @@ type Manager interface {
 	Stop() error
 
 	// Running reports whether the service manager says the service runs: its process started, or
-	// starting, and not yet stopped. tidy asks it before it stops the service for an update, so that
-	// what it starts again after is only what it stopped.
-	Running() bool
+	// starting, and not yet stopped; or why it could not ask. tidy asks it before it stops the service
+	// for an update, so that what it starts again after is only what it stopped. launchd's print and
+	// rc's status and check answer "not running" by their exit, so only systemd's and the SCM's
+	// questions can go unanswered.
+	Running() (bool, error)
 
 	// Restart is an operator's start -- `up`, `proxy`, `start` -- and nothing else calls it,
 	// so it starts a service the manager had given up on as well.

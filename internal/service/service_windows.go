@@ -210,18 +210,26 @@ func (scm) Stop() error {
 	return notRegistered(withService(windows.SC_MANAGER_ALL_ACCESS, windows.SERVICE_ALL_ACCESS, stopService))
 }
 
-// Running asks the SCM whether the service is running or starting (runs).
-func (scm) Running() bool {
+// Running asks the SCM whether the service is running or starting (runs): a service not registered
+// is not running, and any other failure the SCM's.
+func (scm) Running() (bool, error) {
 	running := false
 
-	_ = withService(windows.SC_MANAGER_CONNECT, windows.SERVICE_QUERY_STATUS, func(s *mgr.Service) error {
+	err := withService(windows.SC_MANAGER_CONNECT, windows.SERVICE_QUERY_STATUS, func(s *mgr.Service) error {
 		status, err := s.Query()
-		running = err == nil && runs(status.State)
+		if err != nil {
+			return err
+		}
+
+		running = runs(status.State)
 
 		return nil
 	})
+	if errors.Is(err, windows.ERROR_SERVICE_DOES_NOT_EXIST) {
+		return false, nil
+	}
 
-	return running
+	return running, err
 }
 
 // runs reports whether a service in state runs, as Running and Describe tell it: running, or starting.

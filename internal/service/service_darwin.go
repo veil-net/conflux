@@ -103,7 +103,8 @@ func (*launchd) Installed() (bool, error) { return exists(plistPath()) }
 // and the one Describe needs.
 func (j launchdJob) running() bool { return jobRunning(j.print()) }
 
-func (*launchd) Running() bool { return job().running() }
+// Running is launchd's answer, which print gives a job it has not loaded by its exit.
+func (*launchd) Running() (bool, error) { return job().running(), nil }
 
 func (*launchd) LogHint() string { return privcheck.Command("tail", "-n", "50", logFile()) }
 
@@ -113,7 +114,7 @@ func (l *launchd) Describe() string {
 		return "not installed"
 	}
 
-	if l.Running() {
+	if job().running() {
 		return fmt.Sprintf("running (launchd: %s, at boot)", Label())
 	}
 

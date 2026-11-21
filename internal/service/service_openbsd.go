@@ -49,10 +49,13 @@ func (openbsd) Remove() error {
 func (openbsd) Stop() error    { return run("rcctl", "stop", rcName()) }
 func (openbsd) Restart() error { return run("rcctl", "restart", rcName()) }
 
-func (openbsd) Running() bool {
-	_, running := query("rcctl", "check", rcName())
+// Running is rcctl's answer, which check gives a service that is not running by its exit.
+func (openbsd) Running() (bool, error) { return running(), nil }
 
-	return running
+func running() bool {
+	_, ok := query("rcctl", "check", rcName())
+
+	return ok
 }
 
 func (openbsd) Installed() (bool, error) { return exists(scriptPath()) }
@@ -62,7 +65,7 @@ func (o openbsd) Describe() string {
 		return "not installed"
 	}
 
-	if o.Running() {
+	if running() {
 		return fmt.Sprintf("running (rc.d: %s, enabled at boot)", rcName())
 	}
 

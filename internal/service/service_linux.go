@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/veil-net/conflux/internal/paths"
@@ -98,12 +99,22 @@ func (systemd) Stop() error { return run("systemctl", "stop", unitName()) }
 
 // Running asks systemd for the unit's main process, which a unit starting, running or stopping has,
 // and one waiting to be restarted has not: a Type=notify unit is still activating until its supervisor
-// says it is up, and runs all that time.
-func (systemd) Running() bool {
-	out, _ := query("systemctl", "show", unitName(), "--property=MainPID")
-	pid, ok := strings.CutPrefix(out, "MainPID=")
+// says it is up, and runs all that time. systemctl show answers for a unit it does not know too, so a
+// failure is one systemd did not answer.
+func (systemd) Running() (bool, error) {
+	out, err := output("systemctl", "show", unitName(), "--property=MainPID")
+	if err != nil {
+		return false, err
+	}
 
-	return ok && pid != "" && pid != "0"
+	value, _ := strings.CutPrefix(out, "MainPID=")
+
+	pid, err := strconv.Atoi(value)
+	if err != nil {
+		return false, fmt.Errorf("systemctl show %s answered %q, naming no main process", unitName(), out)
+	}
+
+	return pid != 0, nil
 }
 
 // Restart clears a failed unit first: one started too often in a row refuses every

@@ -684,7 +684,9 @@ so an update works on an older install as it is:
   nothing it did not stop, and by either where anything after this fails. A supervisor that still
   serves the root once the service is stopped, or with no service running — one started by hand — is
   refused, exit 1, naming the root, with nothing removed and nothing started, since the service,
-  started beside it, would find it there and exit;
+  started beside it, would find it there and exit. Where the service manager cannot say whether the
+  service runs (systemd or the SCM not answering), which of the two serves the root cannot be told,
+  and it is refused, exit 1, saying why, with nothing stopped, removed or started;
 - on Windows, what conflux makes again by its name in the root — `logs\`, `run\`, the lock files,
   `bin\`, the service's copy and the image moved aside, `anchord.json`, and what an atomic write or
   a copy left before its rename — that the service, running as SYSTEM, would refuse is removed

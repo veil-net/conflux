@@ -16,22 +16,30 @@ import (
 // failure reaches the user as the service manager's explanation rather than as
 // "exit status 1".
 func run(name string, args ...string) error {
+	_, err := output(name, args...)
+
+	return err
+}
+
+// output is run for a command whose answer is wanted: what it printed, trimmed.
+func output(name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
 
 	var errBuf bytes.Buffer
 
 	cmd.Stderr = &errBuf
 
-	if err := cmd.Run(); err != nil {
+	out, err := cmd.Output()
+	if err != nil {
 		msg := strings.TrimSpace(errBuf.String())
 		if msg == "" {
-			return fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
+			return "", fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
 		}
 
-		return fmt.Errorf("%s %s: %s", name, strings.Join(args, " "), msg)
+		return "", fmt.Errorf("%s %s: %s", name, strings.Join(args, " "), msg)
 	}
 
-	return nil
+	return strings.TrimSpace(string(out)), nil
 }
 
 // query runs a command for its answer, and treats a non-zero exit as a "no" rather

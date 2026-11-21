@@ -540,3 +540,62 @@ func TestATopRootIsASharedOne(t *testing.T) {
 		t.Errorf("the refusal of a shared root is ErrTopRoot, want it ErrSharedRoot alone")
 	}
 }
+
+// TestADirectoryDirectlyUnderSlashIsTakenOnlyFromItsOwners: a directory directly under the filesystem's
+// root is one conflux may have made a root of only where root or the account running conflux owns it, as
+// fstat read it where the walk met it: judged here from a constructed step, the same directory, at 0700
+// and holding something, taken as root's and as this account's, and not as another account's.
+func TestADirectoryDirectlyUnderSlashIsTakenOnlyFromItsOwners(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "conflux")
+	if err := os.MkdirAll(filepath.Join(dir, runName), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	s := held(t, dir)
+	euid := os.Geteuid()
+
+	for uid, ok := range map[uint32]bool{0: true, uint32(euid): true, uint32(euid) + 1: false} {
+		as := s
+		as.st.Uid = uid
+
+		if got := madeTop(dir, as); got != ok {
+			t.Errorf("madeTop(a directory at 0700 holding something, owned by uid %d) = %v, want %v", uid, got, ok)
+		}
+	}
+}
+
+// TestAStrayIsRefusedSayingWhatToDo: the refusal of a root holding a name conflux never makes there says
+// what to do by what the root is: a link at the root's name is to be pointed at a directory of conflux's
+// own or removed; a CONFLUX_DIR is to be pointed at a directory of its own; and a platform's root, which
+// nobody chose, is to have the stray moved out of it.
+func TestAStrayIsRefusedSayingWhatToDo(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "conflux")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "alice"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s := held(t, dir)
+	link := filepath.Join(filepath.Dir(dir), "link")
+
+	for _, c := range []struct {
+		name, root, chosen, led, says string
+	}{
+		{"a platform's root", dir, "", "", "Move it out of " + dir + ", then run this again"},
+		{"a CONFLUX_DIR", dir, dir, "", "Point CONFLUX_DIR at a directory of its own, then run this again"},
+		{"a link at a root's name", link, "", dir, "Point the link at " + link + " at a directory of conflux's own, or " +
+			"remove it"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv("CONFLUX_DIR", c.chosen)
+
+			err := (Dirs{Config: c.root, State: c.root}).strays(c.root, c.led, s)
+			if err == nil || !strings.Contains(err.Error(), "holds alice") || !strings.Contains(err.Error(), c.says) {
+				t.Errorf("strays(%s holding alice) = %v, want a refusal naming alice and saying %q", c.name, err, c.says)
+			}
+		})
+	}
+}

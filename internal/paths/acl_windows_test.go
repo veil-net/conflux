@@ -198,7 +198,9 @@ func mklinkJ(t *testing.T, link, target string) string {
 // found, so secure replaces a junction root with one of its own, made through its own handle with
 // Restrict's ownership and DACL and leading to the directory it judged: the handle opened beforehand
 // repoints nothing the root's name leads to, and the junction there is SYSTEM's or the
-// Administrators' under a protected DACL. Windows-only, so it runs in CI's platforms job alone.
+// Administrators' under a protected DACL. That junction leads to \??\Volume{GUID}\..., which every
+// run after walks, holds and judges: makeRoot, secure and checkRoot take it. Windows-only, so it runs
+// in CI's platforms job alone.
 func TestSecureReplacesAJunctionRoot(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
@@ -241,6 +243,18 @@ func TestSecureReplacesAJunctionRoot(t *testing.T) {
 	if sd, err := security(h); err != nil || !secured(sd) {
 		t.Errorf("the junction secure made at %s is not SYSTEM's or the Administrators' under a protected DACL (%v)",
 			root, err)
+	}
+
+	if err := makeRoot(root, parentsRule(root)); err != nil {
+		t.Errorf("makeRoot(%s, the junction secure made) = %v", root, err)
+	}
+
+	if err := secure(root); err != nil {
+		t.Errorf("secure(%s, the junction secure made) = %v", root, err)
+	}
+
+	if err := checkRoot(root); err != nil {
+		t.Errorf("checkRoot(%s, the junction secure made) = %v", root, err)
 	}
 }
 

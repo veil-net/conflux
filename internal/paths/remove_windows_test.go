@@ -607,3 +607,124 @@ func TestOpenInHoldsTheRootAndAJunctionToTheirOwners(t *testing.T) {
 		})
 	}
 }
+
+// TestRemoveKilledRunEmptiesOnlyARootConfluxSecured: what a killed ephemeral run left in its root is
+// removed through the root held, the run's lock kept, and named, a junction in it removed as itself with
+// where it led untouched; and the folder a junction at the root's name leads to is emptied where conflux
+// secured both, as secure leaves a junction it made its own. A junction as mklink made it -- one the
+// administrator's own processes may point elsewhere unelevated, here at a folder of SYSTEM's and the
+// Administrators' holding an identity, as an installation's root does -- is refused (ErrUnsecuredRoot), and so is a root whose DACL as inherited grants more
+// than conflux leaves, each with nothing removed. Windows-only, so it runs in CI's platforms job alone.
+func TestRemoveKilledRunEmptiesOnlyARootConfluxSecured(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", "")
+
+	elsewhere := t.TempDir()
+
+	kept := filepath.Join(elsewhere, "kept")
+	if err := os.WriteFile(kept, []byte("kept"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// killed is a root an ephemeral run's EnsureAll made, holding a killed run's lock and token, and a
+	// junction to elsewhere.
+	killed := func(root string) Dirs {
+		e := EphemeralDirs(root)
+		if err := e.EnsureAll(); err != nil {
+			t.Fatal(err)
+		}
+
+		for _, p := range []string{e.ServeLockFile(), e.TokenFile()} {
+			if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		mklinkJ(t, e.DaemonRun(), elsewhere)
+
+		return e
+	}
+
+	names := func(t *testing.T, dir string) []string {
+		t.Helper()
+
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var held []string
+		for _, e := range entries {
+			held = append(held, e.Name())
+		}
+
+		return held
+	}
+
+	root := filepath.Join(t.TempDir(), "conflux-ephemeral")
+	e := killed(root)
+
+	if removed, err := RemoveKilledRun(root, e.ServeLockFile()); err != nil || !slices.Equal(removed, []string{e.Run}) {
+		t.Errorf("RemoveKilledRun(a killed run's root) = %q, %v, want %q", removed, err, []string{e.Run})
+	}
+
+	if held := names(t, root); !slices.Equal(held, []string{"serve.lock"}) {
+		t.Errorf("RemoveKilledRun left the root holding %q, want its lock alone", held)
+	}
+
+	if b, err := os.ReadFile(kept); err != nil || string(b) != "kept" {
+		t.Errorf("RemoveKilledRun reached %s through a junction: %q, %v", kept, b, err)
+	}
+
+	target := filepath.Join(t.TempDir(), "moved")
+	killed(target)
+
+	secured := filepath.Join(t.TempDir(), "conflux-ephemeral")
+	mklinkJ(t, secured, target)
+	setOwnSecurity(t, secured, "O:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)")
+
+	if _, err := RemoveKilledRun(secured, EphemeralDirs(secured).ServeLockFile()); err != nil {
+		t.Errorf("RemoveKilledRun(a junction conflux secured to a killed run's root) = %v", err)
+	}
+
+	if held := names(t, target); !slices.Equal(held, []string{"serve.lock"}) {
+		t.Errorf("RemoveKilledRun left where the junction leads holding %q, want its lock alone", held)
+	}
+
+	// An installation's root, say, which holds nothing but what conflux makes there.
+	theirs := t.TempDir()
+	if err := os.WriteFile(filepath.Join(theirs, "manifest.b64"), []byte("identity"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	privtest.SetSecurity(t, theirs, "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)")
+
+	asMade := mklinkJ(t, filepath.Join(t.TempDir(), "conflux-ephemeral"), theirs)
+
+	inherited := filepath.Join(t.TempDir(), "conflux-ephemeral")
+	if err := os.Mkdir(inherited, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(inherited, "serve.lock"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, c := range map[string]struct{ root, holds string }{
+		"a junction as mklink made it, to a folder of SYSTEM's and the Administrators'": {asMade, theirs},
+		"a root whose DACL is as it inherited it":                                       {inherited, inherited},
+	} {
+		t.Run(name, func(t *testing.T) {
+			was := names(t, c.holds)
+
+			removed, err := RemoveKilledRun(c.root, EphemeralDirs(c.root).ServeLockFile())
+			if len(removed) > 0 || !errors.Is(err, ErrUnsecuredRoot) || !strings.Contains(err.Error(), c.root) {
+				t.Errorf("RemoveKilledRun(%s) = %q, %v, want a refusal that is ErrUnsecuredRoot naming it", name,
+					removed, err)
+			}
+
+			if held := names(t, c.holds); !slices.Equal(held, was) {
+				t.Errorf("RemoveKilledRun(%s) left %s holding %q, want %q", name, c.holds, held, was)
+			}
+		})
+	}
+}

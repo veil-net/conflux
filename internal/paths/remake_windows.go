@@ -402,27 +402,38 @@ func removeFrom(parent step, name, p string) (bool, error) {
 	return true, nil
 }
 
-// emptyIn removes all the folder s holds open holds, p naming it: the folder opened again through s, to
-// list it (listing), and each name in it removed through that (removeIn), never followed.
-func emptyIn(s step, p string) error {
+// emptyIn removes all the folder s holds open holds, p naming it, but keep, a name in it ("" for none),
+// and is the paths of what it removed, however far it got: the folder opened again through s, to list it
+// (listing), and each name in it removed through that (removeIn), never followed.
+func emptyIn(s step, p, keep string) ([]string, error) {
 	h, err := listing(s.h)
 	if err != nil {
-		return &os.PathError{Op: "open", Path: p, Err: err}
+		return nil, &os.PathError{Op: "open", Path: p, Err: err}
 	}
 	defer windows.CloseHandle(h)
 
 	names, err := listIn(h)
 	if err != nil {
-		return &os.PathError{Op: "read", Path: p, Err: err}
+		return nil, &os.PathError{Op: "read", Path: p, Err: err}
 	}
 
+	var removed []string
+
 	for _, n := range names {
-		if err := removeIn(h, n, filepath.Join(p, n)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return err
+		if keep != "" && sameName(n, keep) {
+			continue
+		}
+
+		switch err := removeIn(h, n, filepath.Join(p, n)); {
+		case errors.Is(err, fs.ErrNotExist):
+		case err != nil:
+			return removed, err
+		default:
+			removed = append(removed, filepath.Join(p, n))
 		}
 	}
 
-	return nil
+	return removed, nil
 }
 
 // listing is the folder h holds open, opened again through h, by no name, to be listed (listIn).

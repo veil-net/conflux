@@ -1563,10 +1563,10 @@ func windowsOwn(sd *windows.SECURITY_DESCRIPTOR) bool {
 // in (sharedRoot).
 func sharedStep(dir string, s step) error { return sharedRoot(dir, s.h) }
 
-// securedStep refuses the folder the junction or link at the root dir's name leads to, which s holds
-// open and p names, where conflux has not secured it as a root, as it secures every root it uses at
-// its first start: SYSTEM's or the Administrators', under a protected DACL (secured) that grants nobody
-// else any right, on it or on what is made in it (changerIn, anyRight), as read through s.
+// securedStep refuses the folder s holds open, which p names -- the root dir itself, or where a junction
+// or link at its name leads -- where conflux has not secured it as a root, as it secures every root it
+// uses at its first start: SYSTEM's or the Administrators', under a protected DACL (secured) that grants
+// nobody else any right, on it or on what is made in it (changerIn, anyRight), as read through s.
 func securedStep(dir, p string, s step) error {
 	sd, err := security(s.h)
 	if err != nil {
@@ -1583,8 +1583,7 @@ func securedStep(dir, p string, s step) error {
 	}
 
 	if who != "" {
-		return fmt.Errorf("%s is a junction or a link to %s, which conflux has not secured as a root: %s could have "+
-			"put what they like there, so conflux will not go into it", dir, p, who)
+		return unsecuredRefusal(dir, p, who)
 	}
 
 	return nil

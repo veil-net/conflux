@@ -224,27 +224,38 @@ func namesOf(s step, p string) ([]string, error) {
 	return names, nil
 }
 
-// emptyIn removes everything in the directory s holds, p naming it: the directory opened again through s,
-// to read (listing), and each name in it removed through that (removeAt), never followed.
-func emptyIn(s step, p string) error {
+// emptyIn removes everything in the directory s holds, p naming it, but keep, a name in it ("" for none),
+// and is the paths of what it removed, however far it got: the directory opened again through s, to read
+// (listing), and each name in it removed through that (removeAt), never followed.
+func emptyIn(s step, p, keep string) ([]string, error) {
 	fd, err := listing(s, p)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer unix.Close(fd)
 
 	names, err := namesIn(fd)
 	if err != nil {
-		return &os.PathError{Op: "read", Path: p, Err: err}
+		return nil, &os.PathError{Op: "read", Path: p, Err: err}
 	}
 
+	var removed []string
+
 	for _, name := range names {
-		if err := removeAt(fd, name, filepath.Join(p, name)); err != nil && !errors.Is(err, unix.ENOENT) {
-			return err
+		if keep != "" && name == keep {
+			continue
+		}
+
+		switch err := removeAt(fd, name, filepath.Join(p, name)); {
+		case errors.Is(err, unix.ENOENT):
+		case err != nil:
+			return removed, err
+		default:
+			removed = append(removed, filepath.Join(p, name))
 		}
 	}
 
-	return nil
+	return removed, nil
 }
 
 // removeEmpty is RemoveWay's removal of name, an empty directory, in the directory parent is, which p
@@ -1028,31 +1039,36 @@ func madeTop(dir string, s step) bool {
 // (sharedRootIn), as fstat read it where the walk met it.
 func sharedStep(dir string, s step) error { return sharedRootIn(systemDirs(), dir, s) }
 
-// securedStep refuses the directory the link at the root dir's name leads to, which s holds and p names,
-// where conflux has not secured it as a root, as it secures every root it uses at its first start: at
-// 0700 or the 0710 that lets anchord's account through, and no ACL letting another account write it
-// (judge), as fstat read it where the walk met it and its ACL at p, which leads through no link. Its
-// owner, root or the account running conflux, is follow's to hold (ledRoot), which holds the link
-// before RemoveRoot asks this.
+// securedStep refuses the directory s holds, which p names -- the root dir itself, or where a link at
+// its name leads -- where conflux has not secured it as a root, as it secures every root it uses at its
+// first start: owned by root or the account running conflux, at 0700 or the 0710 that lets anchord's
+// account through, and no ACL letting another account write it (judge), as fstat read it where the walk
+// met it and its ACL at p, which leads through no link.
 func securedStep(dir, p string, s step) error {
 	euid := os.Geteuid()
 
-	acl, aclGroup, err := aclOf(p, -1)
-	if err != nil {
-		return err
+	who := ""
+	if owner := int(s.st.Uid); owner != 0 && owner != euid {
+		who = fmt.Sprintf("uid %d, which owns it,", owner)
 	}
 
-	mode := os.FileMode(s.st.Mode & 0o7777)
+	if who == "" {
+		acl, aclGroup, err := aclOf(p, -1)
+		if err != nil {
+			return err
+		}
 
-	who := judge(mode&0o777, s.st.Gid, acl, aclGroup, euid)
-	if who == "" && mode != 0o700 && mode != 0o710 {
-		who = fmt.Sprintf("its mode, %#o, not one conflux leaves a root at, says nothing secured it; and whoever "+
-			"made it", uint32(mode))
+		mode := os.FileMode(s.st.Mode & 0o7777)
+
+		who = judge(mode&0o777, s.st.Gid, acl, aclGroup, euid)
+		if who == "" && mode != 0o700 && mode != 0o710 {
+			who = fmt.Sprintf("its mode, %#o, not one conflux leaves a root at, says nothing secured it; and whoever "+
+				"made it", uint32(mode))
+		}
 	}
 
 	if who != "" {
-		return fmt.Errorf("%s is a link to %s, which conflux has not secured as a root: %s could have put what it "+
-			"likes there, so conflux will not go into it", dir, p, who)
+		return unsecuredRefusal(dir, p, who)
 	}
 
 	return nil

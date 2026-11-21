@@ -732,3 +732,173 @@ func TestALinkIsGoneIntoOnlyWhereConfluxSecuredWhereItLeads(t *testing.T) {
 
 // asMode is m as a Stat_t's mode, whose type is the platform's, like is.
 func asMode[T ~uint16 | ~uint32](like T, m uint32) T { return T(m) }
+
+// TestRemoveKilledRunEmptiesOnlyARootConfluxSecured: what a killed ephemeral run left in its root is
+// removed through the root held, the run's lock kept, and named: a killed run's root as its EnsureAll left
+// it, a link in it removed as itself with where it led untouched, and the directory a link at a root's name
+// leads to where conflux secured that directory, the link and the lock left. Refused, with nothing removed,
+// and saying which: a link to a directory of this account's at 0755, and a directory at the root's name at
+// 0755, neither a mode conflux leaves a root at (ErrUnsecuredRoot); a file at the root's name and a 0755
+// directory holding a name conflux never makes there (ErrForeignRoot); a sticky directory (ErrSharedRoot);
+// and a root inside a CONFLUX_DIR whose way another account may change (ErrWayRefused). A root not there is
+// an error that is fs.ErrNotExist.
+func TestRemoveKilledRunEmptiesOnlyARootConfluxSecured(t *testing.T) {
+	elsewhere := t.TempDir()
+
+	kept := filepath.Join(elsewhere, "kept")
+	if err := os.WriteFile(kept, []byte("kept"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// killed is a root an ephemeral run's EnsureAll made, holding what a killed run leaves: its lock, its
+	// token, its pid record and socket directory, its extraction, and a link to elsewhere.
+	killed := func(root string) Dirs {
+		e := EphemeralDirs(root)
+		if err := e.EnsureAll(); err != nil {
+			t.Fatal(err)
+		}
+
+		for _, p := range []string{e.ServeLockFile(), e.TokenFile(), e.DaemonPIDFile(),
+			filepath.Join(e.Libexec(), "set", "anchord")} {
+			if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		if err := os.Symlink(elsewhere, e.DaemonRun()); err != nil {
+			t.Fatal(err)
+		}
+
+		return e
+	}
+
+	// held is what dir holds, or, for a file, what it says.
+	held := func(t *testing.T, dir string) []string {
+		t.Helper()
+
+		if b, err := os.ReadFile(dir); err == nil {
+			return []string{string(b)}
+		}
+
+		_, names := asFound(t, dir)
+
+		return names
+	}
+
+	root := filepath.Join(t.TempDir(), "conflux-ephemeral")
+	e := killed(root)
+
+	removed, err := RemoveKilledRun(root, e.ServeLockFile())
+	slices.Sort(removed)
+
+	if want := []string{e.Libexec(), e.Run}; err != nil || !slices.Equal(removed, want) {
+		t.Errorf("RemoveKilledRun(a killed run's root) = %q, %v, want %q", removed, err, want)
+	}
+
+	if names := held(t, root); !slices.Equal(names, []string{filepath.Base(e.ServeLockFile())}) {
+		t.Errorf("RemoveKilledRun left the root holding %q, want its lock alone", names)
+	}
+
+	if b, err := os.ReadFile(kept); err != nil || string(b) != "kept" {
+		t.Errorf("RemoveKilledRun reached %s through a link: %q, %v", kept, b, err)
+	}
+
+	target := filepath.Join(t.TempDir(), "moved")
+	link := filepath.Join(t.TempDir(), "conflux-ephemeral")
+
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+
+	killed(target)
+
+	if _, err := RemoveKilledRun(link, EphemeralDirs(link).ServeLockFile()); err != nil {
+		t.Errorf("RemoveKilledRun(a link to a killed run's root conflux secured) = %v", err)
+	}
+
+	if names := held(t, target); !slices.Equal(names, []string{"serve.lock"}) {
+		t.Errorf("RemoveKilledRun left where the link leads holding %q, want its lock alone", names)
+	}
+
+	if _, err := os.Lstat(link); err != nil {
+		t.Errorf("RemoveKilledRun removed the link at the root's name: %v", err)
+	}
+
+	file := filepath.Join(t.TempDir(), "conflux-ephemeral")
+	if err := os.WriteFile(file, []byte("theirs"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	sticky := t.TempDir()
+	if err := os.Chmod(sticky, 0o777|os.ModeSticky); err != nil {
+		t.Fatal(err)
+	}
+
+	wide := filepath.Join(t.TempDir(), "conflux-ephemeral")
+	killed(wide)
+
+	stray := filepath.Join(t.TempDir(), "conflux-ephemeral")
+	killed(stray)
+
+	if err := os.WriteFile(filepath.Join(stray, "notes.txt"), []byte("somebody's"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	unsecured := filepath.Join(t.TempDir(), "conflux-ephemeral")
+	if err := os.Symlink(ours(t, 0o755, func(dir string) { killed(dir) }), unsecured); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, dir := range []string{wide, stray} {
+		if err := os.Chmod(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	changeable := t.TempDir()
+	if err := os.Chmod(changeable, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	chosen := filepath.Join(changeable, "conflux")
+	killed(filepath.Join(chosen, "ephemeral"))
+
+	for _, c := range []struct {
+		name, root, says string
+		kind             error
+	}{
+		{"a link to a directory of this account's at 0755", unsecured, "has not secured", ErrUnsecuredRoot},
+		{"a directory at 0755", wide, "has not secured", ErrUnsecuredRoot},
+		{"a file", file, "is not a directory", ErrForeignRoot},
+		{"a directory at 0755 holding a name conflux never makes there", stray, "holds notes.txt", ErrForeignRoot},
+		{"a sticky directory", sticky, "a sticky directory", ErrSharedRoot},
+		{"a root inside a CONFLUX_DIR whose way another account may change", filepath.Join(chosen, "ephemeral"),
+			changeable, ErrWayRefused},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if c.kind == ErrWayRefused {
+				t.Setenv("CONFLUX_DIR", chosen)
+			}
+
+			was := held(t, c.root)
+
+			removed, err := RemoveKilledRun(c.root, EphemeralDirs(c.root).ServeLockFile())
+			if len(removed) > 0 || !errors.Is(err, c.kind) || !strings.Contains(err.Error(), c.says) {
+				t.Errorf("RemoveKilledRun(%s) = %q, %v, want a refusal that is %v saying %q", c.name, removed, err,
+					c.kind, c.says)
+			}
+
+			if names := held(t, c.root); !slices.Equal(names, was) {
+				t.Errorf("RemoveKilledRun(%s) left it holding %q, want %q", c.name, names, was)
+			}
+		})
+	}
+
+	if _, err := RemoveKilledRun(filepath.Join(t.TempDir(), "not-there"), ""); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("RemoveKilledRun(a root not there) = %v, want an error that is fs.ErrNotExist", err)
+	}
+}

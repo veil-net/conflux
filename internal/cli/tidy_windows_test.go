@@ -186,3 +186,49 @@ func TestAPlainStartRemakesAnOlderRootWithTheServiceStopped(t *testing.T) {
 		}
 	}
 }
+
+// TestAPlainStartPlacesAgainTheCopyRemakeOldRemoved: a start that finds the service's copy is this
+// conflux, byte for byte, does not compare it again as it places it -- unless RemakeOld removed it
+// first, as it removes a copy the administrator owns, when it is placed again: the copy is there once
+// start registers the service, this conflux, and the Administrators'. Windows-only, so it runs in CI's
+// platforms job alone.
+func TestAPlainStartPlacesAgainTheCopyRemakeOldRemoved(t *testing.T) {
+	anchortest.Require(t)
+
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	d, _, _ := olderRoot(t)
+
+	this, err := service.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// This conflux's bytes in the copy the administrator owns, which keeps its owner.
+	if err := os.WriteFile(d.ServiceExecutable(), mustRead(t, this), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	mgr := &fakeManager{d: d, restartErr: errStartsNothing}
+	standInService(t, mgr)
+
+	out, errOut, code := capture(t, "start")
+	if code != ExitError || len(mgr.installs) != 1 || mgr.restarts != 1 {
+		t.Fatalf("conflux start exited %d, registered %d times and restarted %d:\n%s%s", code, len(mgr.installs),
+			mgr.restarts, out, errOut)
+	}
+
+	if !strings.Contains(out, "  "+d.ServiceExecutable()+"\n") {
+		t.Errorf("conflux start did not say it removed %s:\n%s", d.ServiceExecutable(), out)
+	}
+
+	if b, err := os.ReadFile(d.ServiceExecutable()); err != nil || !bytes.Equal(b, mustRead(t, this)) {
+		t.Fatalf("%s is not this conflux once start registered the service (%d bytes, %v)", d.ServiceExecutable(),
+			len(b), err)
+	}
+
+	if owner := privtest.ReadSecurity(t, d.ServiceExecutable()).Owner; !owner.Equals(privtest.Admins) {
+		t.Errorf("%s belongs to %v once start placed it again, not the Administrators", d.ServiceExecutable(), owner)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/veil-net/conflux/internal/config"
@@ -45,7 +46,7 @@ func runInstall(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	return install(ctx, d, true, false)
+	return install(ctx, d, true, service.Place)
 }
 
 // runRegister places this conflux's copy for the boot service and registers the service
@@ -87,7 +88,7 @@ func runRegister(ctx context.Context, args []string) int {
 		return startAgain(mgr, stopped, fail(err))
 	}
 
-	return startAgain(mgr, stopped, install(ctx, d, false, true))
+	return startAgain(mgr, stopped, install(ctx, d, false, service.PlaceAfresh))
 }
 
 // startAgain starts the service tidy stopped, where it stopped it, once the command it stopped it for
@@ -112,12 +113,13 @@ func startAgain(mgr service.Manager, stopped bool, code int) int {
 	return code
 }
 
-// install places the copy of conflux the service runs, and registers it. standalone
+// install places the copy of conflux the service runs, with place, and registers it. standalone
 // distinguishes `conflux install` typed by a person, which reports and may start, from the
 // internal call `up`, `proxy` and `observe` make, and `start` and `register`, which is
-// silent and leaves starting to the caller. Each has its directories already. afresh writes the
-// copy whatever is there (service.PlaceAfresh), for an update, once tidy has cleared what earlier
-// conflux left.
+// silent and leaves starting to the caller. Each has its directories already. place is
+// service.Place, which copies this conflux where the copy differs; service.PlaceAfresh, which writes
+// it whatever is there, for an update, once tidy has cleared what earlier conflux left; or keep, for
+// a copy service.Placed has found to be this conflux already.
 //
 // The readiness marker is withdrawn first, before anything that can start the service --
 // launchd's Install does, for a running job whose definition changed -- and nothing
@@ -126,18 +128,13 @@ func startAgain(mgr service.Manager, stopped bool, code int) int {
 // since: one the outgoing supervisor left would let it report an anchor seconds from being
 // torn down, and one withdrawn after a start would leave it nothing to see but a status
 // call once a second.
-func install(ctx context.Context, d paths.Dirs, standalone, afresh bool) int {
+func install(ctx context.Context, d paths.Dirs, standalone bool, place func(paths.Dirs) (string, error)) int {
 	mgr := newService()
 
 	if err := daemon.ClearReady(d); err != nil {
 		// Not fatal. A marker that will not go costs waitFor one status call it was going
 		// to make anyway, which is exactly what the fallback is for.
 		ui.Errf("could not clear the readiness marker: %v", err)
-	}
-
-	place := service.Place
-	if afresh {
-		place = service.PlaceAfresh
 	}
 
 	exe, err := place(d)
@@ -169,6 +166,10 @@ func install(ctx context.Context, d paths.Dirs, standalone, afresh bool) int {
 
 	return startFromConfig(ctx, d, mgr, cfg, "install")
 }
+
+// keep is install's place for a copy service.Placed has found to be this conflux, which is not
+// compared again (service.Keep).
+func keep(d paths.Dirs) (string, error) { return service.Keep(d), nil }
 
 // newService is the boot manager install registers with, start and update ask about,
 // startAndReport restarts and names, status names, down stops, and uninstall removes; a test's
@@ -292,8 +293,10 @@ func runStart(ctx context.Context, args []string) int {
 	afresh := checked == nil && !service.Placed(d) || checked != nil && !errors.Is(checked, os.ErrNotExist)
 
 	// The service tidy stopped is started again however start ends: by startFromConfig's restart, or
-	// before (startAgain).
+	// before (startAgain). A copy Placed found to be this conflux is not compared again as it is
+	// placed, unless RemakeOld removed it, to be made again.
 	stopped := false
+	place := service.PlaceAfresh
 
 	if afresh {
 		var err error
@@ -301,12 +304,21 @@ func runStart(ctx context.Context, args []string) int {
 			return startAgain(mgr, stopped, fail(err))
 		}
 	} else {
-		if err := remakeUnserved(d); err != nil {
+		removed, err := remakeUnserved(d)
+		if err != nil {
 			return fail(err)
 		}
 
 		if err := d.EnsureAll(); err != nil {
 			return fail(err)
+		}
+
+		// RemakeOld's names are as it listed them, and a Windows name is the same name in any case.
+		place = service.Place
+		if checked == nil && !slices.ContainsFunc(removed, func(p string) bool {
+			return strings.EqualFold(p, d.ServiceExecutable())
+		}) {
+			place = keep
 		}
 	}
 
@@ -323,7 +335,7 @@ func runStart(ctx context.Context, args []string) int {
 		return startAgain(mgr, stopped, ExitNoConfig)
 	}
 
-	if code := install(ctx, d, false, afresh); code != ExitOK {
+	if code := install(ctx, d, false, place); code != ExitOK {
 		return startAgain(mgr, stopped, code)
 	}
 
@@ -335,19 +347,20 @@ func runStart(ctx context.Context, args []string) int {
 
 // remakeUnserved removes what conflux makes again in d's roots and an earlier conflux left failing
 // the service's rule (paths' RemakeOld), listing it, where no supervisor serves the roots: asked of
-// the serve lock without trusting the root (flock.Held), since nothing has judged it yet.
-func remakeUnserved(d paths.Dirs) error {
+// the serve lock without trusting the root (flock.Held), since nothing has judged it yet. It is what
+// it removed.
+func remakeUnserved(d paths.Dirs) ([]string, error) {
 	switch held, err := flock.Held(d.ServeLockFile()); {
 	case err != nil:
-		return err
+		return nil, err
 	case held:
-		return nil
+		return nil, nil
 	}
 
 	removed, err := d.RemakeOld()
 	listRemoved(removed)
 
-	return err
+	return removed, err
 }
 
 // runDown stops the anchor now and leaves everything else alone.

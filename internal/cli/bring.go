@@ -51,7 +51,7 @@ func bring(ctx context.Context, d paths.Dirs, cfg *config.Config, verb string, s
 		}
 	}
 
-	if code := install(ctx, d, false, false); code != ExitOK {
+	if code := install(ctx, d, false, service.Place); code != ExitOK {
 		return code
 	}
 

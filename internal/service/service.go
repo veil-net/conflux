@@ -100,6 +100,15 @@ func Placed(d paths.Dirs) bool {
 	return err == nil && sameFile(src, d.ServiceExecutable())
 }
 
+// Keep is Place for a copy Placed has just found to be this conflux, which it does not compare again:
+// what Place removes beside the copy it removes, and it returns the copy's path.
+func Keep(d paths.Dirs) string {
+	dst := d.ServiceExecutable()
+	removeBeside(dst, false)
+
+	return dst
+}
+
 // place is Place, and afresh PlaceAfresh.
 func place(d paths.Dirs, afresh bool) (string, error) {
 	src, err := Executable()
@@ -108,21 +117,7 @@ func place(d paths.Dirs, afresh bool) (string, error) {
 	}
 
 	dst := d.ServiceExecutable()
-
-	// A copy a service ran until the last Place, which only Windows moves aside; still
-	// running is fine.
-	if runtime.GOOS == "windows" || afresh {
-		_ = os.Remove(dst + ".old")
-	}
-
-	// A copy that never went in place: copyExecutable's file beside it, which its own removal
-	// missed in a crash.
-	if afresh {
-		leftovers, _ := filepath.Glob(filepath.Join(filepath.Dir(dst), copyPrefix+"*"))
-		for _, p := range leftovers {
-			_ = os.Remove(p)
-		}
-	}
+	removeBeside(dst, afresh)
 
 	if !afresh && (src == dst || sameFile(src, dst)) {
 		return dst, nil
@@ -133,6 +128,23 @@ func place(d paths.Dirs, afresh bool) (string, error) {
 	}
 
 	return dst, nil
+}
+
+// removeBeside removes what an earlier copy left beside dst, the copy the service runs: the copy a
+// service ran until the last Place, which only Windows moves aside, still running being fine; and,
+// afresh, for an update, that too whatever the platform, and what a copy that never went in place
+// left, copyExecutable's file beside it, which its own removal missed in a crash.
+func removeBeside(dst string, afresh bool) {
+	if runtime.GOOS == "windows" || afresh {
+		_ = os.Remove(dst + ".old")
+	}
+
+	if afresh {
+		leftovers, _ := filepath.Glob(filepath.Join(filepath.Dir(dst), copyPrefix+"*"))
+		for _, p := range leftovers {
+			_ = os.Remove(p)
+		}
+	}
 }
 
 // Executable is the file this process runs, symlinks followed: the file Place copies,

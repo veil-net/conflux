@@ -3,7 +3,6 @@ package paths
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"runtime"
 )
 
 // Scope is what distinguishes a service registered against a CONFLUX_DIR from the
@@ -27,18 +26,4 @@ func Scope() string {
 	sum := sha256.Sum256([]byte(root))
 
 	return "-" + hex.EncodeToString(sum[:4])
-}
-
-// AccountName is the account anchord runs as for base -- conflux for an installation's
-// (account.Name), conflux-ephemeral for an ephemeral run's (account.EphemeralName) -- named as
-// the platform names its own daemons' accounts, _conflux on macOS and OpenBSD, with a
-// CONFLUX_DIR installation's scope after it. Here, beside the scope, which names it.
-func AccountName(base string) string { return accountNameFor(runtime.GOOS, base, Scope()) }
-
-func accountNameFor(goos, base, scope string) string {
-	if goos == "darwin" || goos == "openbsd" {
-		base = "_" + base
-	}
-
-	return base + scope
 }

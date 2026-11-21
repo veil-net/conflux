@@ -72,21 +72,3 @@ func TestScopeIsTheSameForEverySpellingOfARoot(t *testing.T) {
 		}
 	}
 }
-
-// TestAccountNameFollowsThePlatformAndTheScope: the platform's own convention for a daemon's
-// account, and a CONFLUX_DIR installation's never the machine's.
-func TestAccountNameFollowsThePlatformAndTheScope(t *testing.T) {
-	for _, c := range []struct{ goos, base, scope, want string }{
-		{"linux", "conflux", "", "conflux"},
-		{"freebsd", "conflux", "", "conflux"},
-		{"darwin", "conflux", "", "_conflux"},
-		{"openbsd", "conflux", "-44a6e4f4", "_conflux-44a6e4f4"},
-		{"linux", "conflux", "-44a6e4f4", "conflux-44a6e4f4"},
-		{"linux", "conflux-ephemeral", "", "conflux-ephemeral"},
-		{"darwin", "conflux-ephemeral", "-44a6e4f4", "_conflux-ephemeral-44a6e4f4"},
-	} {
-		if got := accountNameFor(c.goos, c.base, c.scope); got != c.want {
-			t.Errorf("accountNameFor(%q, %q, %q) = %q, want %q", c.goos, c.base, c.scope, got, c.want)
-		}
-	}
-}

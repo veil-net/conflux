@@ -10,8 +10,8 @@ import (
 )
 
 // TestTheEphemeralAccountIsNeverTheInstallations: whatever the scope, an ephemeral anchord running as
-// the installation's account is one its supervisor would end. How each is named is paths.AccountName's
-// (TestAccountNameFollowsThePlatformAndTheScope).
+// the installation's account is one its supervisor would end. How each is named is nameFor's
+// (TestNameFollowsThePlatformAndTheScope).
 func TestTheEphemeralAccountIsNeverTheInstallations(t *testing.T) {
 	if Name() == EphemeralName() {
 		t.Errorf("the ephemeral account is the installation's, %s", Name())
@@ -122,6 +122,24 @@ func TestHowToCreateSaysWhatToRun(t *testing.T) {
 	for _, want := range []string{"no useradd", "  groupadd --system conflux\n", "--comment 'conflux anchord' conflux"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal has no %q:\n%v", want, err)
+		}
+	}
+}
+
+// TestNameFollowsThePlatformAndTheScope: the platform's own convention for a daemon's
+// account, and a CONFLUX_DIR installation's never the machine's.
+func TestNameFollowsThePlatformAndTheScope(t *testing.T) {
+	for _, c := range []struct{ goos, base, scope, want string }{
+		{"linux", "conflux", "", "conflux"},
+		{"freebsd", "conflux", "", "conflux"},
+		{"darwin", "conflux", "", "_conflux"},
+		{"openbsd", "conflux", "-44a6e4f4", "_conflux-44a6e4f4"},
+		{"linux", "conflux", "-44a6e4f4", "conflux-44a6e4f4"},
+		{"linux", "conflux-ephemeral", "", "conflux-ephemeral"},
+		{"darwin", "conflux-ephemeral", "-44a6e4f4", "_conflux-ephemeral-44a6e4f4"},
+	} {
+		if got := nameFor(c.goos, c.base, c.scope); got != c.want {
+			t.Errorf("nameFor(%q, %q, %q) = %q, want %q", c.goos, c.base, c.scope, got, c.want)
 		}
 	}
 }

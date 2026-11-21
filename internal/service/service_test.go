@@ -9,11 +9,12 @@ import (
 	"github.com/veil-net/conflux/internal/pathstest"
 )
 
-// TestPlaceCopiesWhatTheServiceRuns: the boot service runs a copy in the state
-// directory, which only root can write, and not wherever conflux was run from. The copy
-// is this executable byte for byte, left alone while it still is, and replaced when it
-// is not -- an upgraded conflux reaches the service at its next install.
-func TestPlaceCopiesWhatTheServiceRuns(t *testing.T) {
+// TestPlaceAfreshCopiesWhatTheServiceRuns: the boot service runs a copy in the state directory,
+// which only root can write, and not wherever conflux was run from. PlaceAfresh writes it, this
+// executable byte for byte, which Placed then finds it is, and Keep leaves alone; and a copy that is no
+// longer this conflux, Placed finds is not, and PlaceAfresh replaces -- an upgraded conflux reaches the
+// service at its next install.
+func TestPlaceAfreshCopiesWhatTheServiceRuns(t *testing.T) {
 	d := pathstest.Dirs(t)
 
 	src, err := Executable()
@@ -26,9 +27,9 @@ func TestPlaceCopiesWhatTheServiceRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	placed, err := Place(d)
+	placed, err := PlaceAfresh(d)
 	if err != nil {
-		t.Fatalf("Place: %v", err)
+		t.Fatalf("PlaceAfresh: %v", err)
 	}
 
 	if placed != d.ServiceExecutable() {
@@ -36,18 +37,18 @@ func TestPlaceCopiesWhatTheServiceRuns(t *testing.T) {
 	}
 
 	got, err := os.ReadFile(placed)
-	if err != nil || !bytes.Equal(got, want) {
-		t.Fatalf("the placed copy is not this executable (%v)", err)
+	if err != nil || !bytes.Equal(got, want) || !Placed(d) {
+		t.Fatalf("the placed copy is not this executable (Placed: %v, %v)", Placed(d), err)
 	}
 
 	before, _ := os.Stat(placed)
 
-	if _, err := Place(d); err != nil {
-		t.Fatalf("Place again: %v", err)
+	if kept := Keep(d); kept != placed {
+		t.Errorf("Keep = %s, want %s", kept, placed)
 	}
 
 	if after, _ := os.Stat(placed); !os.SameFile(before, after) {
-		t.Error("an identical copy was written again")
+		t.Error("Keep wrote the copy again")
 	}
 
 	// A copy that is no longer this conflux is replaced: an older one, and one somebody
@@ -61,8 +62,12 @@ func TestPlaceCopiesWhatTheServiceRuns(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if _, err := Place(d); err != nil {
-			t.Fatalf("Place over %s: %v", name, err)
+		if Placed(d) {
+			t.Errorf("Placed took %s for this conflux", name)
+		}
+
+		if _, err := PlaceAfresh(d); err != nil {
+			t.Fatalf("PlaceAfresh over %s: %v", name, err)
 		}
 
 		if got, _ := os.ReadFile(placed); !bytes.Equal(got, want) {

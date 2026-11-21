@@ -368,7 +368,7 @@ func TestAStartRemakesARootNotAsConfluxMakesOne(t *testing.T) {
 
 	d := configured(t)
 
-	if _, err := service.Place(d); err != nil {
+	if _, err := service.PlaceAfresh(d); err != nil {
 		t.Fatal(err)
 	}
 

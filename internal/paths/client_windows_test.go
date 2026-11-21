@@ -90,12 +90,12 @@ func TestWhatAnAdministratorMakesTheServiceTakes(t *testing.T) {
 
 	made("libexec.Ensure", d.Libexec(), filepath.Join(d.Libexec(), ".lock"), tools.Dir, tools.Anchord)
 
-	placed, err := service.Place(d)
+	placed, err := service.PlaceAfresh(d)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	made("service.Place", placed)
+	made("service.PlaceAfresh", placed)
 
 	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Taints: []string{"cfx-owner"}}); err != nil {
 		t.Fatal(err)

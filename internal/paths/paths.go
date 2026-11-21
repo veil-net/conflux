@@ -172,7 +172,7 @@ func SubnetsOrderFile(dir string) string { return filepath.Join(dir, "subnets.js
 
 // ServiceExecutable is the copy of conflux the boot service runs: inside the state
 // directory, which only root (Administrators and SYSTEM on Windows) can write, rather
-// than wherever conflux happened to be run from. See service.Place.
+// than wherever conflux happened to be run from. See service.PlaceAfresh.
 func (d Dirs) ServiceExecutable() string {
 	if runtime.GOOS == "windows" {
 		return filepath.Join(d.State, "conflux.exe")

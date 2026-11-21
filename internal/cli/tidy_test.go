@@ -213,7 +213,7 @@ func TestAStartOfTheConfluxTheServiceRunsRemovesNothing(t *testing.T) {
 	old := oldInstall(t)
 	d := old.d
 
-	if _, err := service.Place(d); err != nil {
+	if _, err := service.PlaceAfresh(d); err != nil {
 		t.Fatal(err)
 	}
 

@@ -77,8 +77,11 @@ func New() Manager { return manager() }
 
 var manager = sync.OnceValue(newManager)
 
-// Place copies this conflux to where the boot service runs it from, and returns that
-// path.
+// PlaceAfresh copies this conflux to where the boot service runs it from, and returns that
+// path: the copy written again whatever it holds, so that no file an earlier conflux made there,
+// nor a handle anybody opened on one, outlives the copy, and what a copy that never went in place
+// left beside it goes first. Where Placed finds the copy is this conflux already, it is kept
+// instead (Keep).
 //
 // The service runs as root (SYSTEM on Windows) and starts whatever file it names at every
 // boot, so that file must be one only root can change. Wherever conflux was run from --
@@ -90,13 +93,23 @@ var manager = sync.OnceValue(newManager)
 //
 // The copy is written beside its destination and renamed over it, so a service running
 // the old one keeps it. Windows will not replace the image of a running process but will
-// rename it, so there the old copy is moved aside first and removed by a later Place.
-func Place(d paths.Dirs) (string, error) { return place(d, false) }
+// rename it, so there the old copy is moved aside first and removed by the next PlaceAfresh or
+// Keep.
+func PlaceAfresh(d paths.Dirs) (string, error) {
+	src, err := Executable()
+	if err != nil {
+		return "", err
+	}
 
-// PlaceAfresh is Place for an update, with no service running: the copy is written again whatever
-// it holds, so that no file an earlier conflux made there, nor a handle anybody opened on one,
-// outlives the update, and what a copy that never went in place left beside it goes first.
-func PlaceAfresh(d paths.Dirs) (string, error) { return place(d, true) }
+	dst := d.ServiceExecutable()
+	removeBeside(dst, true)
+
+	if err := copyExecutable(src, dst); err != nil {
+		return "", fmt.Errorf("place this conflux at %s for the boot service: %w", dst, err)
+	}
+
+	return dst, nil
+}
 
 // Placed reports whether the copy the boot service runs is this conflux, byte for byte: what every
 // re-run of the same conflux finds, and an update, or a newer conflux put in place by hand, does
@@ -107,8 +120,9 @@ func Placed(d paths.Dirs) bool {
 	return err == nil && sameFile(src, d.ServiceExecutable())
 }
 
-// Keep is Place for a copy Placed has just found to be this conflux, which it does not compare again:
-// what Place removes beside the copy it removes, and it returns the copy's path.
+// Keep is PlaceAfresh for a copy Placed has just found to be this conflux, which it does not compare
+// again or write: it removes the copy a service ran until the last PlaceAfresh, which only Windows
+// moves aside (removeBeside), and returns the copy's path.
 func Keep(d paths.Dirs) string {
 	dst := d.ServiceExecutable()
 	removeBeside(dst, false)
@@ -116,31 +130,10 @@ func Keep(d paths.Dirs) string {
 	return dst
 }
 
-// place is Place, and afresh PlaceAfresh.
-func place(d paths.Dirs, afresh bool) (string, error) {
-	src, err := Executable()
-	if err != nil {
-		return "", err
-	}
-
-	dst := d.ServiceExecutable()
-	removeBeside(dst, afresh)
-
-	if !afresh && (src == dst || sameFile(src, dst)) {
-		return dst, nil
-	}
-
-	if err := copyExecutable(src, dst); err != nil {
-		return "", fmt.Errorf("place this conflux at %s for the boot service: %w", dst, err)
-	}
-
-	return dst, nil
-}
-
 // removeBeside removes what an earlier copy left beside dst, the copy the service runs: the copy a
-// service ran until the last Place, which only Windows moves aside, still running being fine; and,
-// afresh, for an update, that too whatever the platform, and what a copy that never went in place
-// left, copyExecutable's file beside it, which its own removal missed in a crash.
+// service ran until the last PlaceAfresh, which only Windows moves aside, still running being fine;
+// and, afresh, as PlaceAfresh writes the copy, that too whatever the platform, and what a copy that
+// never went in place left, copyExecutable's file beside it, which its own removal missed in a crash.
 func removeBeside(dst string, afresh bool) {
 	if runtime.GOOS == "windows" || afresh {
 		_ = os.Remove(dst + ".old")
@@ -154,7 +147,7 @@ func removeBeside(dst string, afresh bool) {
 	}
 }
 
-// Executable is the file this process runs, symlinks followed: the file Place copies,
+// Executable is the file this process runs, symlinks followed: the file PlaceAfresh copies,
 // and the one `conflux update` replaces, rather than the link somebody put on their PATH.
 func Executable() (string, error) {
 	exe, err := os.Executable()

@@ -116,7 +116,7 @@ func TestClearExceptSaysWhatItRemoved(t *testing.T) {
 		t.Errorf("ClearExcept left %v (%v), want only what it kept", entries, err)
 	}
 
-	if removed, err := ClearExcept(filepath.Join(dir, "not-there"), ""); err == nil || removed != nil {
+	if removed, err := ClearExcept(filepath.Join(dir, "not-there")); err == nil || removed != nil {
 		t.Errorf("ClearExcept(a directory not there) = %q, %v, want an error and nothing named", removed, err)
 	}
 }

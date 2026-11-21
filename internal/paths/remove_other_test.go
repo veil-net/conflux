@@ -160,7 +160,7 @@ func TestRemoveRootHoldsACONFLUXDIRsWay(t *testing.T) {
 // roots, where the readers' check refuses the state root too, and refuses a record that is a link,
 // unfollowed. Once the root is gone, RemoveWay removes each recorded folder that is empty, deepest
 // first, and leaves one holding anything else, and a link put at a recorded folder's name. An ephemeral
-// run's roots keep no record.
+// run's root keeps the record of the folders made on the way to it alike.
 func TestTheWayConfluxMadeIsRemovedWhenEmpty(t *testing.T) {
 	base := t.TempDir()
 	a, b := filepath.Join(base, "a"), filepath.Join(base, "a", "b")
@@ -266,13 +266,15 @@ func TestTheWayConfluxMadeIsRemovedWhenEmpty(t *testing.T) {
 		t.Errorf("RemoveWay reached %s: %v", elsewhere, err)
 	}
 
-	e := EphemeralDirs(filepath.Join(base, "x", "conflux-ephemeral"))
+	x := filepath.Join(base, "x")
+
+	e := EphemeralDirs(filepath.Join(x, "conflux-ephemeral"))
 	if err := e.EnsureAll(); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := os.Lstat(filepath.Join(e.State, wayName)); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("EnsureAll of an ephemeral run's roots kept a record of its way (%v)", err)
+	if got, err := e.Way(); err != nil || !slices.Equal(got, []string{x}) {
+		t.Errorf("Way() of an ephemeral run's root = %q, %v, want %q", got, err, []string{x})
 	}
 }
 

@@ -277,7 +277,7 @@ func (d Dirs) EnsureAll() error {
 		return nil
 	}()
 
-	if len(made) > 0 && state && !d.ephemeral {
+	if len(made) > 0 && state {
 		if recorded := d.recordWay(made); err == nil {
 			err = recorded
 		}
@@ -420,14 +420,17 @@ func (d Dirs) folders(dir string) iter.Seq2[string, bool] {
 	}
 }
 
-// wayName is the record, in an installation's state root, of the folders conflux made on the way to
-// its roots: one absolute path a line.
+// wayName is the record, in a state root, of the folders conflux made on the way to its roots -- an
+// installation's, or an ephemeral run's: one absolute path a line.
 const wayName = "way"
+
+// WayFile is the record in d's state root of the folders conflux made on the way to d's roots (Way).
+func (d Dirs) WayFile() string { return filepath.Join(d.State, wayName) }
 
 // recordWay adds made, folders makeRoot made on the way to d's roots, to the record in d's state root:
 // what it held kept, each once, written atomically (WriteAtomic).
 func (d Dirs) recordWay(made []string) error {
-	record := filepath.Join(d.State, wayName)
+	record := d.WayFile()
 
 	way, err := d.readWay()
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -452,7 +455,7 @@ func (d Dirs) recordWay(made []string) error {
 // removing empty folders above the roots (RemoveWay), and it is read as a file another account may have
 // put there (readUntrusted).
 func (d Dirs) readWay() ([]string, error) {
-	path := filepath.Join(d.State, wayName)
+	path := d.WayFile()
 
 	f, err := d.openIn(path, true)
 	if err != nil {
@@ -472,15 +475,10 @@ func (d Dirs) readWay() ([]string, error) {
 const wayMax = 64 << 10
 
 // Way is the record of the folders conflux made on the way to d's roots (EnsureAll), deepest first, for
-// uninstall to read before it removes the roots, the state root holding the record among them, and to
-// hand to RemoveWay after: only folders above one of d's roots are taken from it. Nil where there is no
-// record, or no state root, or a link or a file at its name, and for an ephemeral run's roots, which keep
-// none.
+// uninstall, or an ephemeral run as it ends, to read before it removes the roots, the state root holding
+// the record among them, and to hand to RemoveWay after: only folders above one of d's roots are taken
+// from it. Nil where there is no record, or no state root, or a link or a file at its name.
 func (d Dirs) Way() ([]string, error) {
-	if d.ephemeral {
-		return nil, nil
-	}
-
 	recorded, err := d.readWay()
 
 	switch {
@@ -1193,7 +1191,7 @@ func within(dir string, dirs []string) bool {
 // paths of what it removed, however far it got: what a run killed before it could clean up left in
 // its root, which the next run starts without, and what supervisors and extractions before an update
 // left in the run and bin directories.
-func ClearExcept(dir, keep string) ([]string, error) {
+func ClearExcept(dir string, keep ...string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
@@ -1202,7 +1200,7 @@ func ClearExcept(dir, keep string) ([]string, error) {
 	var removed []string
 
 	for _, e := range entries {
-		if p := filepath.Join(dir, e.Name()); p != keep {
+		if p := filepath.Join(dir, e.Name()); !slices.Contains(keep, p) {
 			if err := os.RemoveAll(p); err != nil {
 				return removed, fmt.Errorf("clear %s: %w", p, err)
 			}

@@ -91,7 +91,7 @@ func tidy(d paths.Dirs, mgr service.Manager) (stopped bool, err error) {
 	_, err = daemon.ReapOrphan(d)
 	leftBehind(err)
 
-	cleared, err := paths.ClearExcept(d.Run, "")
+	cleared, err := paths.ClearExcept(d.Run)
 	leftBehind(err)
 	removed = append(removed, cleared...)
 

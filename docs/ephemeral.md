@@ -105,8 +105,10 @@ One fixed directory per user, made when the run starts and removed when it ends:
 | `CONFLUX_DIR` set | `$CONFLUX_DIR/.conflux/ephemeral` |
 
 It holds the lock that makes it the only ephemeral run for that user, the bearer token and
-the socket, the record of the anchord it started and what that runs as, and the extracted
-pair: never a credential, a configuration or a state. The root is conflux's by its name: made as
+the socket, the record of the anchord it started and what that runs as, the extracted pair,
+and the record of the folders the run made on the way to it — under `CONFLUX_DIR`, the
+`.conflux` it made there — which go with the root when the run ends: never a credential, a
+configuration or a state. The root is conflux's by its name: made as
 conflux makes one, `0700` and the account's own, and whatever is at its name that is not — a link,
 a file, a directory another account owns or may write — is removed as itself and the root made
 afresh ([security.md](security.md#the-file-and-the-directory-around-it)), by the next run that

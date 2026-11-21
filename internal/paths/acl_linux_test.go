@@ -150,7 +150,7 @@ func TestAReaderReadsALinkedRootsACLWhereItLeads(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := checkRootAs(link, os.Geteuid()); err == nil || !strings.Contains(err.Error(), "uid 65534") {
+	if _, err := checkRootAs(link, os.Geteuid()); err == nil || !strings.Contains(err.Error(), "uid 65534") {
 		t.Errorf("checkRootAs(a link to a directory whose ACL lets uid 65534 write it) = %v, want a refusal naming "+
 			"that uid", err)
 	}

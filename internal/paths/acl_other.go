@@ -311,7 +311,7 @@ func secureAs(dir string, euid int) error {
 
 	// What the root holds, as found: a root wider than it is left let anybody put anything there,
 	// which narrowing it takes nothing out of.
-	if err := contentsAs(dir, euid, wide); err != nil {
+	if err := contentsAs(dir, fi, euid, wide); err != nil {
 		return err
 	}
 
@@ -327,7 +327,7 @@ func secureAs(dir string, euid int) error {
 
 	// And again: whatever was put there before the narrowing, since it was judged. Nobody but root
 	// and this account can give a file in it a second name from now on.
-	return contentsAs(dir, euid, false)
+	return contentsAs(dir, fi, euid, false)
 }
 
 // narrowed is called once secure has narrowed a root, before it judges what the root holds again:
@@ -373,12 +373,24 @@ func ownedRoot(dir string) error {
 }
 
 // checkRoot is Check's judgement of the root dir: checkRootAs for this process's effective uid.
-func checkRoot(dir string) error { return checkRootAs(dir, os.Geteuid()) }
+func checkRoot(dir string) error {
+	_, err := checkRootAs(dir, os.Geteuid())
 
-// contents refuses the root dir where anything in it another account could have put there, or may
-// change: contentsAs for this process's effective uid, of a root a reader's check has just found
-// conflux's alone (checkRoot).
-func contents(dir string) error { return contentsAs(dir, os.Geteuid(), false) }
+	return err
+}
+
+// foreign is Foreign here, for this process's effective uid: the root held to checkRootAs, and what
+// it holds to contentsAs, the root it opens held to the directory checkRootAs judged.
+func foreign(dir string) error {
+	euid := os.Geteuid()
+
+	fi, err := checkRootAs(dir, euid)
+	if err != nil {
+		return err
+	}
+
+	return contentsAs(dir, fi, euid, false)
+}
 
 // contentsAs refuses the root dir, for euid, where anything in it another account could have put
 // there, or may change, as Windows's contents does: a root left wider than conflux leaves one let
@@ -405,14 +417,9 @@ func contents(dir string) error { return contentsAs(dir, os.Geteuid(), false) }
 // (OpenUntrusted, config.ReadUntrusted, copyTree). That account can make nothing elsewhere in a
 // root, so what it owns anywhere else is refused as any other account's is.
 //
-// The root is opened by its name once, which secure and checkRoot have just held, a link at it
-// included, to its owner, and refused unless it is the directory they judged.
-func contentsAs(dir string, euid int, wide bool) error {
-	fi, err := os.Stat(dir)
-	if err != nil {
-		return fmt.Errorf("read %s: %w", dir, err)
-	}
-
+// The root is opened by its name once, which secure and checkRootAs have just held, a link at it
+// included, to its owner, and refused unless it is fi, the directory they judged (ownedAs).
+func contentsAs(dir string, fi os.FileInfo, euid int, wide bool) error {
 	var fd int
 	if err := ignoringEINTR(func() (err error) {
 		fd, err = unix.Open(dir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
@@ -608,38 +615,39 @@ func anchordAccount(uid uint32, known map[uint32]bool) bool {
 // owned, by an account other than root and euid (ownedAs, readerOwns), or whose mode or ACL, as
 // found, lets another account write it (judge), the sticky bit letting nothing through, since a
 // name not taken yet is anybody's in a sticky directory. A CONFLUX_DIR is held to its parents first
-// (parentsAs). Nothing is narrowed, as secure would narrow it: a reader changes nothing.
-func checkRootAs(dir string, euid int) error {
+// (parentsAs). Nothing is narrowed, as secure would narrow it: a reader changes nothing. Where it
+// passes, it is what dir resolves to, as ownedAs found it.
+func checkRootAs(dir string, euid int) (os.FileInfo, error) {
 	if chosen(dir) {
 		if err := parentsAs(dir, euid); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	link, fi, err := ownedAs(dir, euid, readerOwns)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	acl := dir
 	if isLink(link) {
 		if acl, err = filepath.EvalSymlinks(dir); err != nil {
-			return fmt.Errorf("read %s: %w", dir, err)
+			return nil, fmt.Errorf("read %s: %w", dir, err)
 		}
 	}
 
 	writers, aclGroup, err := aclOf(acl, -1)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if who := judge(fi.Mode()&^os.ModeSticky, fi.Sys().(*syscall.Stat_t).Gid, writers, aclGroup, euid); who != "" {
-		return fmt.Errorf("%s is not conflux's alone: %s could put what it likes in it for conflux to read or "+
+		return nil, fmt.Errorf("%s is not conflux's alone: %s could put what it likes in it for conflux to read or "+
 			"run, so conflux will not use it.\n  Narrow it to 0700, and remove that entry from its ACL; then run "+
 			"this again", dir, who)
 	}
 
-	return nil
+	return fi, nil
 }
 
 // readerOwns refuses dir, of which fi is what Lstat or Stat said, where it belongs to an account

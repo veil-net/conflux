@@ -852,6 +852,16 @@ func checkRoot(dir string) error {
 	return nil
 }
 
+// foreign is Foreign here: the root held to checkRoot, and what it holds to contents, through
+// handles of its own.
+func foreign(dir string) error {
+	if err := checkRoot(dir); err != nil {
+		return err
+	}
+
+	return contents(dir)
+}
+
 // Judging begins a judgement, and done ends it: here nothing read of the system is kept between
 // what it judges, and there is nothing to end.
 func Judging() (done func()) { return func() {} }

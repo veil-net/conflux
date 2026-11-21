@@ -162,6 +162,35 @@ func TestSecureJudgesWhatARootGainsBeforeItIsNarrowed(t *testing.T) {
 	}
 }
 
+// TestARootReplacedAsItIsJudgedIsRefused: what a root holds is judged through the root opened by its
+// name, and that is held to the directory secure judged the owner and mode of, not to one looked up
+// again beside the open: a root another directory took the place of once secure had narrowed it is
+// refused, though the one at the name by then is empty and this account's, rather than judged in its
+// stead.
+func TestARootReplacedAsItIsJudgedIsRefused(t *testing.T) {
+	root := foundRoot(t)
+	if err := os.Chmod(root, 0o757); err != nil {
+		t.Fatal(err)
+	}
+
+	was := narrowed
+	t.Cleanup(func() { narrowed = was })
+
+	narrowed = func(string) {
+		if err := os.Rename(root, root+".judged"); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.Mkdir(root, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := secure(root); err == nil || !strings.Contains(err.Error(), root+" changed while conflux judged it") {
+		t.Errorf("secure(a root replaced once it was narrowed) = %v, want a refusal naming it", err)
+	}
+}
+
 // TestARootHoldingAnotherAccountsFileIsRefused: a file another account owns is theirs, whatever its
 // name and mode, and refused, naming the owner: given to uid 65534, as root, by EnsureAll; and
 // otherwise this account's own, judged for another.
@@ -173,7 +202,14 @@ func TestARootHoldingAnotherAccountsFileIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	judge, owner := func() error { return contentsAs(root, os.Geteuid()+1, false) }, os.Geteuid()
+	judge, owner := func() error {
+		fi, err := os.Stat(root)
+		if err != nil {
+			return err
+		}
+
+		return contentsAs(root, fi, os.Geteuid()+1, false)
+	}, os.Geteuid()
 
 	if os.Geteuid() == 0 {
 		if err := os.Chown(at, 65534, 65534); err != nil {

@@ -29,7 +29,7 @@ func TestCheckHoldsARootAsAReaderNeeds(t *testing.T) {
 	}
 
 	for _, dir := range []string{mine, "/"} {
-		if err := checkRootAs(dir, euid); err != nil {
+		if _, err := checkRootAs(dir, euid); err != nil {
 			t.Errorf("checkRootAs(%s) = %v", dir, err)
 		}
 	}
@@ -48,7 +48,7 @@ func TestCheckHoldsARootAsAReaderNeeds(t *testing.T) {
 		}
 	}
 
-	if err := checkRootAs(theirs, as); err == nil || !strings.Contains(err.Error(), theirs+" belongs to uid") {
+	if _, err := checkRootAs(theirs, as); err == nil || !strings.Contains(err.Error(), theirs+" belongs to uid") {
 		t.Errorf("checkRootAs(a root another uid owns) = %v, want a refusal naming it", err)
 	}
 
@@ -58,7 +58,7 @@ func TestCheckHoldsARootAsAReaderNeeds(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if err := checkRootAs(open, euid); err == nil || !strings.Contains(err.Error(), open+" is not conflux's alone") {
+		if _, err := checkRootAs(open, euid); err == nil || !strings.Contains(err.Error(), open+" is not conflux's alone") {
 			t.Errorf("checkRootAs(a root at %v) = %v, want a refusal naming it", mode, err)
 		}
 
@@ -67,7 +67,7 @@ func TestCheckHoldsARootAsAReaderNeeds(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if err := checkRootAs(link, euid); err == nil || !strings.Contains(err.Error(), link+" is not conflux's alone") {
+		if _, err := checkRootAs(link, euid); err == nil || !strings.Contains(err.Error(), link+" is not conflux's alone") {
 			t.Errorf("checkRootAs(a link to a root at %v) = %v, want a refusal naming it", mode, err)
 		}
 	}
@@ -123,7 +123,7 @@ func TestAReaderHoldsALinkedRootToTheOwnerOfWhereItLeads(t *testing.T) {
 		t.Skipf("%s is no link root owns here (%v), and only root can make one", link, err)
 	}
 
-	if err := checkRootAs(link, as); err == nil || !strings.Contains(err.Error(), link+" belongs to uid") {
+	if _, err := checkRootAs(link, as); err == nil || !strings.Contains(err.Error(), link+" belongs to uid") {
 		t.Errorf("checkRootAs(a link root owns to a directory another uid owns) = %v, want a refusal naming it", err)
 	}
 }

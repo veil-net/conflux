@@ -363,11 +363,7 @@ func (d Dirs) Check() error {
 func Foreign(dir string) error {
 	defer Judging()()
 
-	if err := checkRoot(dir); err != nil {
-		return err
-	}
-
-	return contents(dir)
+	return foreign(dir)
 }
 
 // looking is called with the path of each name before a walk looks it up, and before makeWay makes

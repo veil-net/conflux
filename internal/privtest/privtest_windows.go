@@ -325,7 +325,9 @@ func defaultOwner() (*windows.SID, error) {
 }
 
 // setDefaultOwner makes owner -- the token's user, or a group it holds that may own -- the owner this
-// process's token gives what it makes without naming one.
+// process's token gives what it makes without naming one. paths.ElevatedDefaultOwner writes the
+// same for the Administrators, but privtest imports nothing of conflux's -- paths' own tests import
+// it, and an import of paths would be a cycle -- so CreatorOwns, which names the user, has this.
 func setDefaultOwner(owner *windows.SID) error {
 	var tok windows.Token
 	if err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_ADJUST_DEFAULT|windows.TOKEN_QUERY,

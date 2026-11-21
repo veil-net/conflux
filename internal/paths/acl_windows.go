@@ -114,6 +114,10 @@ func asAdministrators(set func(owner *windows.SID) error) error {
 // no other account with anything in its root (contents). A token that is not elevated is left as it
 // is: it may not name the Administrators, and no conflux command that makes a root runs without
 // elevation. SYSTEM's, the service's, is elevated, and holds the Administrators too.
+//
+// privtest writes the token's owner itself as well (setDefaultOwner, for CreatorOwns, which names
+// the token's user): it imports nothing of conflux's, since paths' own tests import it, so it cannot
+// call this.
 func ElevatedDefaultOwner() error {
 	if !windows.GetCurrentProcessToken().IsElevated() {
 		return nil

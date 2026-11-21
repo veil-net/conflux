@@ -11,7 +11,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -19,52 +18,17 @@ import (
 	"github.com/veil-net/conflux/internal/group"
 )
 
-// groupUsers is who a group lets in: within a judgement (Judging), from the group.Lookup it shares,
-// since a walk of a CONFLUX_DIR's parents asks of each one its group may write, and otherwise read
-// afresh. A test's stands in for the system's databases.
-var groupUsers = func(name, gid string) ([]string, error) {
-	lookups.Lock()
-	l := lookups.l
-	lookups.Unlock()
+// groups answers who a group lets in: one group.Lookup for the whole process, so that each group's
+// record and the account database are read at most once, however many roots and ways it judges -- a
+// walk of a CONFLUX_DIR's parents asks of each one its group may write. A supervisor judges its roots
+// as it starts, once in its process, and every other command is over long before a group's members
+// change under it. A test sets its own: a new Lookup, to read afresh, or one standing in for the
+// system's databases.
+var groups usersOf = new(group.Lookup)
 
-	if l == nil {
-		return group.Users(name, gid)
-	}
-
-	return l.Users(name, gid)
-}
-
-// lookups is the group.Lookup the judgements under way share, and how many are.
-var lookups struct {
-	sync.Mutex
-	n int
-	l *group.Lookup
-}
-
-// Judging begins a judgement, and done ends it, however often it is called: while any is under
-// way, each group's record and the account database are read at most once, however many roots and
-// ways are judged (lookups), and once none is they are dropped. EnsureAll, Check, Foreign and each
-// walk are judgements of their own; a command is one, in which those it makes share what they read;
-// and a supervisor's start is one, which ends before it keeps the anchor up, so that the next start
-// sees who a group lets in by then.
-func Judging() (done func()) {
-	lookups.Lock()
-	if lookups.n++; lookups.l == nil {
-		lookups.l = &group.Lookup{}
-	}
-	lookups.Unlock()
-
-	var once sync.Once
-
-	return func() {
-		once.Do(func() {
-			lookups.Lock()
-			if lookups.n--; lookups.n == 0 {
-				lookups.l = nil
-			}
-			lookups.Unlock()
-		})
-	}
+// usersOf is what groups is: who the group of that name, whose id is gid, lets in.
+type usersOf interface {
+	Users(name, gid string) ([]string, error)
 }
 
 // Restrict and Trusted are Windows's. Here a mode set on the descriptor and a 0700
@@ -788,7 +752,7 @@ func groupOf(gid uint32, euid int) bool {
 		return false
 	}
 
-	users, err := groupUsers(g.Name, g.Gid)
+	users, err := groups.Users(g.Name, g.Gid)
 	if err != nil {
 		return false
 	}

@@ -160,12 +160,6 @@ func (s *Supervisor) clearReady() { _ = ClearReady(s.Dirs) }
 // Run starts anchord, brings the anchor up, and keeps both going until the context
 // is cancelled.
 func (s *Supervisor) Run(ctx context.Context) error {
-	// The start's judgement of the roots, EnsureAll's and the extraction's: what it reads of who a
-	// group lets in is read once, and dropped before the anchor is kept up, so the next start reads
-	// it again (paths.Judging). Nothing the loop does judges a root.
-	judged := paths.Judging()
-	defer judged()
-
 	if err := s.Dirs.EnsureAll(); err != nil {
 		return err
 	}
@@ -237,8 +231,6 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-
-	judged()
 
 	// This supervisor is the one running the service now, so no other set is in use by it.
 	// Beside the start, which it need not delay, and finished before Run returns.

@@ -862,10 +862,6 @@ func foreign(dir string) error {
 	return contents(dir)
 }
 
-// Judging begins a judgement, and done ends it: here nothing read of the system is kept between
-// what it judges, and there is nothing to end.
-func Judging() (done func()) { return func() {} }
-
 // ownedRoot refuses dir where secure would for its owner: nowhere Foreign has passed it, whose
 // checkRoot holds the owner, a junction's included, to secure's rule (ownerRefusal, heldLink).
 func ownedRoot(string) error { return nil }

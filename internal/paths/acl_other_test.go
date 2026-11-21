@@ -18,6 +18,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/veil-net/conflux/internal/group"
 )
 
 func mode(t *testing.T, dir string) os.FileMode {
@@ -206,8 +208,8 @@ func TestEnsureAllRefusesARootAnotherAccountCanMove(t *testing.T) {
 		{"its group, with another account in it, may write it", 0o770, "its group"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			defer func(was func(string, string) ([]string, error)) { groupUsers = was }(groupUsers)
-			groupUsers = func(string, string) ([]string, error) { return []string{"mallory"}, nil }
+			defer func(was usersOf) { groups = was }(groups)
+			groups = groupsFunc(func(string, string) ([]string, error) { return []string{"mallory"}, nil })
 
 			parent := t.TempDir()
 			root := filepath.Join(parent, "conflux")
@@ -389,7 +391,7 @@ func TestEnsureAllTakesAGroupOfItsOwn(t *testing.T) {
 }
 
 // groupWritableParent is a fresh directory its group may write, 0770, with CONFLUX_DIR set to
-// conflux inside it, not made yet, and groupUsers answering for any group, until the test
+// conflux inside it, not made yet, and groups answering for any group, until the test
 // ends, with whom users names, own saying whether it is the directory's own.
 func groupWritableParent(t *testing.T, users func(own bool) ([]string, error)) string {
 	t.Helper()
@@ -406,9 +408,9 @@ func groupWritableParent(t *testing.T, users func(own bool) ([]string, error)) s
 
 	own := strconv.FormatUint(uint64(fi.Sys().(*syscall.Stat_t).Gid), 10)
 
-	was := groupUsers
-	t.Cleanup(func() { groupUsers = was })
-	groupUsers = func(_, gid string) ([]string, error) { return users(gid == own) }
+	was := groups
+	t.Cleanup(func() { groups = was })
+	groups = groupsFunc(func(_, gid string) ([]string, error) { return users(gid == own) })
 
 	t.Setenv("CONFLUX_DIR", filepath.Join(parent, "conflux"))
 
@@ -637,8 +639,8 @@ func TestJudgeHoldsARootAsSecureLeavesIt(t *testing.T) {
 // shows (chmod leaves both standing), or a grant the mode found does not show; a deny entry,
 // which the old trivial ACL had, takes nothing away.
 func TestJudgeLeavesARootsTrivialNFSv4ACLToTheNarrowing(t *testing.T) {
-	defer func(was func(string, string) ([]string, error)) { groupUsers = was }(groupUsers)
-	groupUsers = func(string, string) ([]string, error) { return []string{"mallory"}, nil }
+	defer func(was usersOf) { groups = was }(groups)
+	groups = groupsFunc(func(string, string) ([]string, error) { return []string{"mallory"}, nil })
 
 	// What every trivial entry allows, and what read, write and search add, as FreeBSD numbers them.
 	const (
@@ -783,55 +785,50 @@ func TestARootsACLIsLeftUnreadOnlyBesideAPOSIXReader(t *testing.T) {
 	}
 }
 
-// TestAJudgementDropsWhatItRead: what a judgement reads of who a group lets in is kept, and shared,
-// while it or another begun before it ended is under way, and dropped once none is, so that a
-// supervisor, which judges its roots again at every start, sees who a group lets in by then; a
-// judgement ended twice ends once; and EnsureAll, Check and Foreign each leave nothing kept.
-func TestAJudgementDropsWhatItRead(t *testing.T) {
-	outer := Judging()
-	first := lookups.l
+// groupsFunc stands in for groups: who it says each group lets in.
+type groupsFunc func(name, gid string) ([]string, error)
 
-	inner := Judging()
-	if first == nil || lookups.l != first {
-		t.Errorf("a judgement begun inside another reads into %p, not the other's %p", lookups.l, first)
+func (f groupsFunc) Users(name, gid string) ([]string, error) { return f(name, gid) }
+
+// TestAGroupIsAskedOfTheProcesssLookup: who a group lets in is asked of groups, which is one
+// group.Lookup for the whole process, so that each group's record is read once however many
+// directories a command or a supervisor's start judges: groupOf asks it at every judgement of a
+// directory its group may write, and nothing else.
+func TestAGroupIsAskedOfTheProcesssLookup(t *testing.T) {
+	if _, ok := groups.(*group.Lookup); !ok {
+		t.Fatalf("groups is %T, not one group.Lookup for the process", groups)
 	}
 
-	inner()
-	inner()
-
-	if lookups.l != first {
-		t.Error("a judgement's end, twice, dropped what another under way had read")
+	me, err := user.LookupId(strconv.Itoa(os.Geteuid()))
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	outer()
-
-	if lookups.l != nil {
-		t.Error("what the judgements read was kept once none was under way")
+	g, err := user.LookupGroupId(me.Gid)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	if done := Judging(); lookups.l == first {
-		t.Error("the next judgement read into the one before's")
-	} else {
-		done()
-	}
+	was := groups
+	t.Cleanup(func() { groups = was })
 
-	t.Setenv("CONFLUX_DIR", filepath.Join(t.TempDir(), "conflux"))
+	var asked []string
 
-	// In this order: Check and Foreign judge the root EnsureAll made.
-	for _, c := range []struct {
-		name  string
-		judge func() error
-	}{
-		{"EnsureAll", Default().EnsureAll},
-		{"Check", Default().Check},
-		{"Foreign", func() error { return Foreign(Root()) }},
-	} {
-		if err := c.judge(); err != nil {
-			t.Fatalf("%s: %v", c.name, err)
+	groups = groupsFunc(func(name, gid string) ([]string, error) {
+		asked = append(asked, name+":"+gid)
+
+		return []string{me.Username}, nil
+	})
+
+	gid, _ := strconv.ParseUint(g.Gid, 10, 32)
+
+	for range 2 {
+		if !groupOf(uint32(gid), os.Geteuid()) {
+			t.Errorf("groupOf(%s), its one member this account, = false", g.Name)
 		}
+	}
 
-		if lookups.l != nil || lookups.n != 0 {
-			t.Errorf("%s kept what it read, %d judgements under way", c.name, lookups.n)
-		}
+	if want := []string{g.Name + ":" + g.Gid, g.Name + ":" + g.Gid}; !slices.Equal(asked, want) {
+		t.Errorf("groupOf asked groups %q, want %q", asked, want)
 	}
 }

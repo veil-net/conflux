@@ -252,8 +252,6 @@ func (d Dirs) ReadyFile() string { return filepath.Join(d.Run, "ready") }
 // rule of whoever the root is for (wayRule). The system's shared log directory is not
 // conflux's, and is left alone.
 func (d Dirs) EnsureAll() error {
-	defer Judging()()
-
 	for dir, inside := range d.roots() {
 		if inside {
 			if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -325,8 +323,6 @@ func (d Dirs) roots() iter.Seq2[string, bool] {
 // is fs.ErrNotExist: each caller then takes its own way for that, reading nothing, since what a
 // lookup by name would find at a name that was not there a moment ago is whoever made it first's.
 func (d Dirs) Check() error {
-	defer Judging()()
-
 	there := false
 
 	for dir, inside := range d.roots() {
@@ -361,8 +357,6 @@ func (d Dirs) Check() error {
 // error that is fs.ErrNotExist, which a reader takes as no root, reading nothing at its name: what
 // is there by the time it looks again is whoever made it first's.
 func Foreign(dir string) error {
-	defer Judging()()
-
 	return foreign(dir)
 }
 
@@ -460,8 +454,6 @@ func (w *way) close() {
 // then follows -- a name that is not a directory, more than 255 links, or a lookup the system
 // refuses.
 func walk(dir string, judge judgement) (*way, error) {
-	defer Judging()()
-
 	w := &way{}
 	if err := w.walk(dir, judge); err != nil {
 		w.close()

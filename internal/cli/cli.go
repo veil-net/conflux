@@ -18,7 +18,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/ui"
 )
@@ -126,13 +125,6 @@ func Main(argv []string) int {
 
 	ctx, stop := signalContext()
 	defer stop()
-
-	// One judgement for the command: the roots and the ways to them it holds to account share what
-	// they read of who a group lets in, which is read once (paths.Judging). Not serve's: the
-	// supervisor runs for good, and judges its roots as a judgement of their own each time it starts.
-	if len(argv) < 2 || argv[1] != "serve" {
-		defer paths.Judging()()
-	}
 
 	if len(argv) < 2 {
 		return runHelp(ctx, nil)

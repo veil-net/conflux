@@ -60,10 +60,10 @@ func TestUsersFrom(t *testing.T) {
 	}
 }
 
-// TestALookupReadsEachDatabaseOnce: a Lookup answers as Users does, and asks the system for a group's
-// record once, and for the account database once, however many times and for however many groups it
-// is asked; a record that failed to be read is asked for again, and a new Lookup reads everything
-// again.
+// TestALookupReadsEachDatabaseOnce: a Lookup kept answers as a new one does, and asks the system for a
+// group's record once, and for the account database once, however many times and for however many
+// groups it is asked, where a new one asks for both at every question; a record that failed to be read
+// is asked for again, and a new Lookup reads everything again.
 func TestALookupReadsEachDatabaseOnce(t *testing.T) {
 	if files() {
 		t.Skip("no getent or dscl here: the databases are read from their files")
@@ -107,19 +107,19 @@ func TestALookupReadsEachDatabaseOnce(t *testing.T) {
 	for _, l := range lookups {
 		for range 3 {
 			for _, name := range names {
-				want, err := Users(name, "0")
+				want, err := new(Lookup).Users(name, "0")
 				if err != nil {
 					t.Fatal(err)
 				}
 
 				if got, err := l.Users(name, "0"); err != nil || !slices.Equal(got, want) {
-					t.Errorf("Lookup.Users(%s) = %q, %v; Users = %q", name, got, err, want)
+					t.Errorf("a kept Lookup's Users(%s) = %q, %v; a new one's = %q", name, got, err, want)
 				}
 			}
 		}
 	}
 
-	// Users asks for a record, and for the database, at every call; each Lookup once in all.
+	// A new Lookup asks for a record, and for the database, at every call; each kept one once in all.
 	calls := 3 * len(lookups)
 
 	for command, n := range asked {

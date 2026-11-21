@@ -126,7 +126,8 @@ folder to list it too, with the backup intent the privileges an Administrator ho
 DACL granting the Administrators nothing does not keep it, and a file is never opened to be read.
 The log is kept: each log file in a `logs\` they remove that the service would take, as what the service wrote
 there is, is moved out into the root through handles first, and back into `logs\` once that is made
-again; one the service would refuse goes with the folder. The identity, the configuration and the
+again; one the service would refuse goes with the folder, and so does one with a second name, a hard
+link to a file elsewhere, whose owner and DACL it shares, the file it names left as it was. The identity, the configuration and the
 state are never removed: one of them that is wrong, anything
 else conflux does not make, and anything deeper in a folder that is right, are refused, naming them,
 for the operator to look at.

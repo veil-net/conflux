@@ -289,3 +289,52 @@ func TestRemakeOldEmptiesNoSharedFolder(t *testing.T) {
 		t.Errorf("RemakeOld refusing a shared folder removed %s: %v", d.LockFile(), err)
 	}
 }
+
+// TestRemakeOldKeepsNoLogOfTwoNames: the log in a logs\ RemakeOld removes is moved into the root and back
+// once logs\ is made again only where it is one file of one name: a hard link at conflux.log to a file
+// elsewhere carries that file's owner and DACL, which the service's rule takes, and would have the
+// service append its log there. So it goes with the folder, the name removed and the file it named left
+// as it was. Windows-only, so it runs in CI's platforms job alone.
+func TestRemakeOldKeepsNoLogOfTwoNames(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "conflux")
+	t.Setenv("CONFLUX_DIR", root)
+	d := Default()
+
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	elsewhere := filepath.Join(t.TempDir(), "elsewhere")
+	if err := os.WriteFile(elsewhere, []byte("not a log"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.RemoveAll(d.Log); err != nil {
+		t.Fatal(err)
+	}
+
+	restore := privtest.CreatorOwns(t)
+
+	if err := os.Mkdir(d.Log, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	restore()
+
+	if err := os.Link(elsewhere, d.LogFile()); err != nil {
+		t.Fatal(err)
+	}
+
+	removed, err := d.RemakeOld()
+	if err != nil || !slices.Contains(removed, d.Log) {
+		t.Fatalf("RemakeOld of a logs\\ the administrator owns = %q, %v, want it removed", removed, err)
+	}
+
+	if _, err := os.Lstat(filepath.Join(root, keptLog(filepath.Base(d.LogFile())))); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("RemakeOld kept a log of two names (%v), want it gone with the folder", err)
+	}
+
+	if b, err := os.ReadFile(elsewhere); err != nil || string(b) != "not a log" {
+		t.Errorf("the file the log's second name named is %q, %v, want it as it was", b, err)
+	}
+}

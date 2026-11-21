@@ -156,7 +156,9 @@ func keptLog(name string) string { return ".conflux-kept-" + name }
 // folder: the log is the machine's, and what the SYSTEM service wrote there is SYSTEM's, whoever owns
 // the folder. Each is opened through a handle on the folder, looked up there and nowhere else and
 // never followed, judged as contents judges it for SYSTEM, and renamed through its own handle (moveIn);
-// one that fails, or is a junction or a link, goes with the folder, as does one whose kept name is
+// one that fails, is a junction or a link, or has a second name -- a hard link to a file elsewhere,
+// whose owner and DACL it shares, for the service to write its log to -- goes with the folder, its name
+// removed and the file it is a name of left, as does one whose kept name is
 // taken already, by a log an earlier RemakeOld kept that no EnsureAll has moved back yet. A folder that is a junction or a link is no log folder, and RemakeOld does not remove
 // it either.
 func (d Dirs) keepLog(root windows.Handle, name, p string, anchord *windows.SID) error {
@@ -191,6 +193,16 @@ func (d Dirs) keepLog(root windows.Handle, name, p string, anchord *windows.SID)
 			case err != nil:
 				return &os.PathError{Op: "read", Path: f, Err: err}
 			case link:
+				return nil
+			}
+
+			// A second name shares the file's owner and DACL with whatever file it is a name of, which the
+			// service would then write its log to once the folder is made again.
+			var fi windows.ByHandleFileInformation
+			switch err := windows.GetFileInformationByHandle(h, &fi); {
+			case err != nil:
+				return &os.PathError{Op: "read", Path: f, Err: err}
+			case fi.NumberOfLinks > 1:
 				return nil
 			}
 

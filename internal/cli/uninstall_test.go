@@ -130,3 +130,68 @@ func TestUninstallLeavesNothingConfluxMade(t *testing.T) {
 		}
 	}
 }
+
+// removing is the stand-in boot service, counting its removals and doing then as it is removed.
+type removing struct {
+	fakeManager
+
+	removals int
+	then     func()
+}
+
+func (m *removing) Remove() error {
+	m.removals++
+
+	if m.then != nil {
+		m.then()
+	}
+
+	return nil
+}
+
+// TestUninstallLeavesALiveRun: an ephemeral run inside a CONFLUX_DIR would go with the root, so while
+// one is live uninstall refuses, exit 2, naming it, before anything is asked or removed, as it does
+// for one outside; and one that starts once uninstall has begun -- here as the boot service is
+// removed -- is left running, with the root that holds it, and uninstall says so, exit 1.
+func TestUninstallLeavesALiveRun(t *testing.T) {
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	t.Run("live as uninstall begins", func(t *testing.T) {
+		d := installedScratch(t)
+		e := paths.EphemeralDirs(paths.EphemeralCandidates()[0])
+		t.Cleanup(holdRoot(t, e))
+
+		mgr := &removing{fakeManager: fakeManager{d: d}}
+		standInService(t, mgr)
+
+		out, errOut, code := capture(t, "uninstall", "--yes")
+		if code != ExitUsage || !strings.Contains(errOut, e.State) {
+			t.Errorf("uninstall beside a live run exited %d, want %d naming %s:\n%s%s", code, ExitUsage, e.State,
+				out, errOut)
+		}
+
+		if _, err := os.Lstat(d.ConfigFile()); mgr.removals > 0 || err != nil {
+			t.Errorf("uninstall beside a live run removed the boot service %d times, and %s (Lstat: %v)",
+				mgr.removals, d.ConfigFile(), err)
+		}
+	})
+
+	t.Run("started since", func(t *testing.T) {
+		d := installedScratch(t)
+		e := paths.EphemeralDirs(paths.EphemeralCandidates()[0])
+
+		mgr := &removing{fakeManager: fakeManager{d: d}, then: func() { t.Cleanup(holdRoot(t, e)) }}
+		standInService(t, mgr)
+
+		out, errOut, code := capture(t, "uninstall", "--yes")
+		if code != ExitError || !strings.Contains(errOut, e.State) || !strings.Contains(errOut, "left running") {
+			t.Errorf("uninstall with a run started as it began exited %d, want %d naming %s, left running:\n%s%s",
+				code, ExitError, e.State, out, errOut)
+		}
+
+		if _, err := os.Lstat(e.ServeLockFile()); err != nil {
+			t.Errorf("uninstall removed the root of a live run: %v", err)
+		}
+	})
+}

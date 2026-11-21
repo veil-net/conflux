@@ -60,16 +60,11 @@ func runUninstall(_ context.Context, args []string) int {
 	// record can lead to is removing empty folders above the roots.
 	way, wayErr := d.Way()
 
-	// Its account goes with the installation's, and nothing may be running as it when it does:
-	// the run ends itself, with its anchor, when it is stopped.
-	if e, live := liveEphemeral(); live {
-		ui.Errf("an ephemeral anchor is running from %s.\n"+
-			"  Stop it first (Ctrl-C where it runs): uninstall removes the account it runs as", e.State)
-
-		return ExitUsage
-	}
-
-	if !confirmUninstall(d, checked, *yes) {
+	// An ephemeral run's account goes with the installation's, and nothing may be running as it when it
+	// does, nor from a root that goes, as one inside a CONFLUX_DIR would: the run ends itself, with its
+	// anchor, when it is stopped. Asked before anything is asked, and again once it is answered, before
+	// anything is removed.
+	if liveRefused() || !confirmUninstall(d, checked, *yes) || liveRefused() {
 		return ExitUsage
 	}
 
@@ -94,20 +89,29 @@ func runUninstall(_ context.Context, args []string) int {
 	}
 
 	// Each ephemeral run's root, but one inside the installation's -- a CONFLUX_DIR's -- which goes with
-	// it, a killed run's anchord stopped first, where the root is this account's alone.
+	// it, a killed run's anchord stopped first, where the root is this account's alone. A run that
+	// started since uninstall asked is left running: its root, the root that holds it, and its account.
+	var started []string
+
 	for _, root := range paths.EphemeralCandidates() {
 		if insideRoot(root, d) {
 			switch found, err := removeKilledRun(root); {
 			case err != nil:
 				errs = append(errs, err)
 			case found == liveRun:
-				errs = append(errs, fmt.Errorf("an ephemeral run started from %s while conflux was being uninstalled", root))
+				started = append(started, root)
 			}
 
 			continue
 		}
 
 		gone, err := removeEphemeralRoot(root)
+		if errors.Is(err, errStarted) {
+			started = append(started, root)
+
+			continue
+		}
+
 		errs = append(errs, err)
 
 		if gone {
@@ -115,7 +119,17 @@ func runUninstall(_ context.Context, args []string) int {
 		}
 	}
 
+	for _, root := range started {
+		errs = append(errs, fmt.Errorf("an ephemeral run started from %s while conflux was being uninstalled, and "+
+			"it was left running, with what it runs from.\n  Stop it (Ctrl-C where it runs), then run this again",
+			root))
+	}
+
 	for _, dir := range outerRoots(d) {
+		if slices.ContainsFunc(started, func(root string) bool { return strictlyIn(root, dir) }) {
+			continue
+		}
+
 		gone, err := paths.RemoveRoot(dir)
 		errs = append(errs, err)
 
@@ -140,8 +154,9 @@ func runUninstall(_ context.Context, args []string) int {
 		removed = append(removed, removeUpdateLeftovers(exe)...)
 	}
 
-	// The account anchord ran as, once nothing runs as it, if conflux made it.
-	errs = append(errs, removeAccount())
+	// The accounts anchord ran as, if conflux made them, stopping whatever runs as each: the ephemeral
+	// runs' unless one started since.
+	errs = append(errs, removeAccount(len(started) == 0))
 
 	if err := errors.Join(errs...); err != nil {
 		return fail(err)
@@ -188,31 +203,41 @@ func outerRoots(d paths.Dirs) []string {
 
 // insideRoot reports whether dir sits strictly inside one of d's Config, State and Run.
 func insideRoot(dir string, d paths.Dirs) bool {
-	for _, other := range []string{d.Config, d.State, d.Run} {
-		if other == "" || other == dir {
-			continue
-		}
+	return slices.ContainsFunc([]string{d.Config, d.State, d.Run}, func(other string) bool {
+		return other != "" && strictlyIn(dir, other)
+	})
+}
 
-		if rel, err := filepath.Rel(other, dir); err == nil && rel != "." && rel != ".." &&
-			!strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return true
-		}
+// strictlyIn reports whether p sits strictly inside dir.
+func strictlyIn(p, dir string) bool {
+	rel, err := filepath.Rel(dir, p)
+
+	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// liveRefused refuses uninstall while an ephemeral run is live, naming its root, and says whether it
+// did.
+func liveRefused() bool {
+	e, live := liveEphemeral()
+	if live {
+		ui.Errf("an ephemeral anchor is running from %s.\n"+
+			"  Stop it first (Ctrl-C where it runs): uninstall removes the account it runs as, and the root "+
+			"it runs from", e.State)
 	}
 
-	return false
+	return live
 }
 
 // removeEphemeralRoot removes the ephemeral root at root, where one is there, and says whether it
 // did: a killed run's as removeKilledRun removes it, and one another account could have made or
 // changed reading nothing in it, nor signalling anything it names (paths.RemoveRoot). A live run's,
-// which uninstall has refused already, is one that started since.
+// which uninstall has refused already, is one that started since, and is errStarted.
 func removeEphemeralRoot(root string) (bool, error) {
 	switch found, err := removeKilledRun(root); {
 	case err != nil:
 		return found != noRun, err
 	case found == liveRun:
-		return false, fmt.Errorf("an ephemeral run started from %s while conflux was being uninstalled, "+
-			"and it was left running.\n  Stop it (Ctrl-C where it runs), then run this again", root)
+		return false, errStarted
 	case found == noRun:
 		return false, nil
 	}
@@ -223,6 +248,9 @@ func removeEphemeralRoot(root string) (bool, error) {
 
 	return true, nil
 }
+
+// errStarted is an ephemeral run that started since uninstall asked whether one was live.
+var errStarted = errors.New("an ephemeral run started")
 
 // runRoot is what removeKilledRun found at an ephemeral root.
 type runRoot int

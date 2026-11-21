@@ -73,7 +73,7 @@ host can read, and when the run stops there is nothing at all.
   protected DACL everything beneath inherits, set as the root is made — and refuses a root
   another account made. See [windows.md](windows.md#file-permissions).
 - Every command that reads a root, or acts on what it holds, without making it — `status`, a
-  pass-through, `renew`, `start`, `down`, `uninstall`, `update` asking whether the anchor runs,
+  pass-through, `renew`, `down`, `uninstall`, `update` asking whether the anchor runs,
   and every reader of an ephemeral run's root — holds it to one check
   first, the readers' check, on every platform, before it reads anything in it by its name:
   whoever could have put a configuration, a pid record, a token or a binary there would otherwise
@@ -131,8 +131,8 @@ which `up`, `proxy`, `install` and `start` refresh, and never the file conflux w
 home directory or a download that another account could swap for a program of its own, to be run
 as root at the next start. Its log, where conflux writes it (`serve --log`, on macOS and FreeBSD), is
 opened by its name, as root, only once `EnsureAll` has made the root conflux's alone, and the service
-is registered only by a command that has held the root to that first (`EnsureAll`, or `start`'s
-readers' check), so the name launchd's `StandardErrorPath` and FreeBSD's `daemon(8)` open as root is
+is registered only by a command that has made it so first (`EnsureAll`: `up`, `proxy`, `observe`,
+`install`, `register` and `start`), so the name launchd's `StandardErrorPath` and FreeBSD's `daemon(8)` open as root is
 in a directory only root can change. On Windows the root's DACL is set as the first conflux command that creates it makes it, extraction
 included, so it never carries `%ProgramData%`'s grant to `Users`, not even for an instant. A root
 found already there is judged and restricted through one handle on the directory itself, never by
@@ -151,7 +151,8 @@ client's default-owner policy leaves what an elevated administrator makes, wheth
 conflux made it or the administrator did by hand — is not refused but given to the Administrators,
 on every run that secures the root, through the handle it is judged by, as a DACL found too wide is
 narrowed: the service, running as SYSTEM, trusts no other account with anything there, and
-`up`, `install` and `register` secure the root first. What another account owns is still refused. On Unix there is nothing to give: what root
+`up`, `install`, `register` and `start`, which `update` hands a running service to, secure the
+root first, so an update simply takes such a root on. What another account owns is still refused. On Unix there is nothing to give: what root
 or the account running conflux owns passes already, and the service runs as root, as every command
 that makes an installation's root does. A root
 on a network volume, however it is reached, is refused, by the readers' check too, as the volume

@@ -2,6 +2,8 @@ package cli
 
 import (
 	"errors"
+	"os"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -104,5 +106,57 @@ func TestTheMarkerIsWithdrawnBeforeAnythingStarts(t *testing.T) {
 				t.Error("the marker the supervisor Install started wrote was gone by Restart, so waitFor would fall back to status")
 			}
 		})
+	}
+}
+
+// modeAtInstall is the stand-in service manager, noting the mode of dir as Install is asked.
+type modeAtInstall struct {
+	*fakeManager
+
+	dir  string
+	mode os.FileMode
+}
+
+func (m *modeAtInstall) Install(exe string, args ...string) error {
+	if fi, err := os.Stat(m.dir); err == nil {
+		m.mode = fi.Mode().Perm()
+	}
+
+	return m.fakeManager.Install(exe, args...)
+}
+
+// TestStartSecuresTheRootFirst: start is how update hands a running service to the conflux it put in
+// place, so it makes the root conflux's, as the service does at every start (EnsureAll), before it
+// reads the configuration there, places conflux in it or registers the service: a root of conflux's
+// left wider than conflux leaves one is narrowed by the time the service is registered. On Windows,
+// where a mode means nothing, what it gives the Administrators is held by its own test.
+func TestStartSecuresTheRootFirst(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a mode means nothing on Windows")
+	}
+
+	rootOnLinux(t)
+
+	d := pathstest.Dirs(t)
+
+	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Proxies: []string{"8080=127.0.0.1:3000"},
+		Taints: []string{"t"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Chmod(d.State, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	mgr := &modeAtInstall{fakeManager: &fakeManager{d: d, restartErr: errStartsNothing}, dir: d.State}
+	standInService(t, mgr)
+
+	if _, errOut, code := capture(t, "start"); code != ExitError || !strings.Contains(errOut, errStartsNothing.Error()) {
+		t.Fatalf("conflux start exited %d, saying:\n%s\nwant the stand-in's Restart refused", code, errOut)
+	}
+
+	if len(mgr.installs) != 1 || mgr.mode != 0o700 {
+		t.Errorf("start registered the service %d times, with the root at %#o, want once, at 0700", len(mgr.installs),
+			mgr.mode)
 	}
 }

@@ -81,8 +81,8 @@ func plantedRoot(t *testing.T) paths.Dirs {
 }
 
 // readersRefuse fails t unless each command that reads the root d without making it -- status,
-// start, down, renew, update with the boot service installed, a pass-through (peers) and
-// uninstall -- refuses it, exit 1, naming its root and saying who could write it (why), and leaves
+// down, renew, update with the boot service installed, a pass-through (peers) and uninstall --
+// refuses it, exit 1, naming its root and saying who could write it (why), and leaves
 // it as it was: nothing in it read (status prints no configuration), and nothing made, changed or
 // removed there, a lock included; the boot service neither registered again, started, stopped nor
 // removed; and no conflux downloaded, put in place or asked anything by update.
@@ -115,7 +115,7 @@ func readersRefuse(t *testing.T, d paths.Dirs, why string) {
 		return have
 	}
 
-	for _, argv := range [][]string{{"status"}, {"start"}, {"down"}, {"renew"}, {"update"}, {"peers"}, {"uninstall", "--yes"}} {
+	for _, argv := range [][]string{{"status"}, {"down"}, {"renew"}, {"update"}, {"peers"}, {"uninstall", "--yes"}} {
 		t.Run(argv[0], func(t *testing.T) {
 			mgr := &untouched{fakeManager: fakeManager{d: d, restartErr: errStartsNothing}}
 			standInService(t, mgr)

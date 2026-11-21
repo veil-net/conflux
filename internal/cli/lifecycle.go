@@ -238,14 +238,18 @@ func runStart(ctx context.Context, args []string) int {
 		return ExitUnavailable
 	}
 
-	// The same 78 the supervisor exits with, and for the same reason: there is a
-	// service here and nothing for it to run. Nothing of the machine's is read by its name, or
-	// placed there, until its roots pass paths' check; one not there holds no configuration.
-	var cfg *config.Config
-	if err = d.Check(); err == nil {
-		cfg, err = config.Load(d)
+	// The roots made conflux's, as the service makes them at every start, before anything in them
+	// is read by its name, placed there or registered (EnsureAll): start is how update hands a
+	// running service to the conflux it put in place, so a root an earlier conflux left -- on
+	// Windows, holding what the administrator running it owns -- is one the new service takes.
+	// With a service registered, roots not there are made, as that service would make them.
+	if err := d.EnsureAll(); err != nil {
+		return fail(err)
 	}
 
+	// The same 78 the supervisor exits with, and for the same reason: there is a
+	// service here and nothing for it to run.
+	cfg, err := config.Load(d)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			return fail(err)

@@ -114,16 +114,16 @@ refusal names `down` and `start` and the escape hatch.
 
 ## A root another account could change
 
-`status`, `start`, `down`, `renew`, `uninstall`, `update` with the boot service installed, and a
+`status`, `down`, `renew`, `uninstall`, `update` with the boot service installed, and a
 pass-through to conflux's daemon read what is in a root by its name — the configuration, the pid
 record, the token, the socket — so each holds the root to the
 [readers' check](security.md#the-file-and-the-directory-around-it) first: its owner root or the
 account running conflux, and nobody else able to write it or point it elsewhere. A root that fails
 is refused, exit 1, naming it and who else could change it, and nothing in it is read, run, stopped
 or removed: `uninstall` leaves the boot service registered and the root where it is, identity and
-all; `down` stops nothing; `start` starts nothing; `update` downloads and replaces nothing. Nothing
-is narrowed either. That is for `up`, `proxy`, `observe`, `install` and `enrol`, which make the
-roots: they narrow one of conflux's own and refuse one another account owns. A root that is not
+all; `down` stops nothing; `update` downloads and replaces nothing. Nothing is narrowed either. That
+is for `up`, `proxy`, `observe`, `install`, `enrol` and `start`, which make the roots, or make them
+conflux's: they narrow one of conflux's own and refuse one another account owns. A root that is not
 there is a machine with nothing installed, and read as one.
 
 Help is the exception, since it needs nothing of the machine's: it runs the `anchorctl` extracted
@@ -305,6 +305,15 @@ It is mode-agnostic on purpose. `up` would do for a TUN machine, but `up` is not
 resume: it re-decides the configuration, and on a userspace machine it changes the
 mode and drops the proxies. A machine serving eight ports cannot be brought back by
 retyping eight specs correctly from memory.
+
+Before it reads the configuration, places its copy for the service or registers it, `start`
+secures the roots as the service does at every start, and as `up` and `install` do: one of
+conflux's own left wider is narrowed, one another account owns is refused, exit 1, naming it, and
+on Windows what the administrator running it owns in the root is given to the Administrators,
+whom the service, running as SYSTEM, trusts. `update` hands a running service to the conflux it
+put in place through that conflux's `start`, so the root an earlier conflux left is one the new
+service takes. With the service registered and its roots gone, they are made again, as the
+service would make them.
 
 | Situation | |
 |---|---|

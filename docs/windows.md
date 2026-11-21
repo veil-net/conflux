@@ -107,7 +107,8 @@ a root holding what the administrator's own `up` made and took. A token that may
 Administrators — one that is not elevated, which no command making an installation's root is —
 keeps its own. What an installation's root holds that the administrator running conflux owns
 anyway — made by an earlier conflux on a client, or by hand — is given to the Administrators by
-every command that secures the root as it judges each thing, through the
+every command that secures the root, `start` among them, which `update` hands a running service
+to, as it judges each thing, through the
 handle it judges it by; what another account owns is refused, as below.
 
 A root on a network volume — a share reached by its UNC path, a drive mapped to one, or a link
@@ -146,7 +147,7 @@ itself, is held to the same rule before anything is made in it, and a junction o
 refused.
 
 Every command that reads a root, or acts on what it holds, rather than making it — `status`, a
-pass-through, `renew`, `start`, `down`, `uninstall`, `update` asking whether the anchor runs, and
+pass-through, `renew`, `down`, `uninstall`, `update` asking whether the anchor runs, and
 every reader of an ephemeral run's root — holds it to one check first,
 the readers' check, before it reads anything in it by its name: through one handle, a junction or a
 link judged as itself as above, it must be SYSTEM's, the Administrators' or the account running

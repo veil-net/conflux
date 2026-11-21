@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"os"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -348,8 +349,13 @@ func runStart(ctx context.Context, args []string) int {
 // remakeUnserved removes what conflux makes again in d's roots and an earlier conflux left failing
 // the service's rule (paths' RemakeOld), listing it, where no supervisor serves the roots: asked of
 // the serve lock through the root held (flock.HeldIn), since nothing has judged what the root holds
-// yet. It is what it removed.
+// yet. It is what it removed. Nothing on Unix, where nothing conflux made fails that rule, so
+// RemakeOld removes nothing, and nothing is asked.
 func remakeUnserved(d paths.Dirs) ([]string, error) {
+	if runtime.GOOS != "windows" {
+		return nil, nil
+	}
+
 	switch held, err := flock.HeldIn(d, d.ServeLockFile()); {
 	case err != nil:
 		return nil, err

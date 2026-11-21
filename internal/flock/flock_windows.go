@@ -5,9 +5,12 @@ package flock
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/veil-net/conflux/internal/paths"
 )
 
 // Acquire takes an exclusive lock on the whole file, blocking until it is ours.
@@ -30,7 +33,7 @@ func tryAcquire(path string) (unlock func(), ok bool, err error) {
 }
 
 func lock(path string, flags uint32) (func(), bool, error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	f, err := openLock(path)
 	if err != nil {
 		return nil, false, fmt.Errorf("open the lock %s: %w", path, err)
 	}
@@ -48,6 +51,32 @@ func lock(path string, flags uint32) (func(), bool, error) {
 		_ = windows.UnlockFileEx(h, 0, 1, 0, ol)
 		f.Close()
 	}, true, nil
+}
+
+// openLock opens the lock at path to read and write, made where it is not there yet and given then
+// to the Administrators (paths.Own), as everything conflux makes in a root is: what an elevated
+// administrator makes is that administrator's on a Windows client, and the SYSTEM service refuses
+// a root holding it.
+func openLock(path string) (*os.File, error) {
+	f, err := os.OpenFile(path, os.O_RDWR, 0)
+	if !errors.Is(err, fs.ErrNotExist) {
+		return f, err
+	}
+
+	switch f, err = os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600); {
+	case errors.Is(err, fs.ErrExist):
+		return os.OpenFile(path, os.O_RDWR, 0) // made meanwhile, by whoever holds it
+	case err != nil:
+		return nil, err
+	}
+
+	if err := paths.Own(path); err != nil {
+		f.Close()
+
+		return nil, err
+	}
+
+	return f, nil
 }
 
 // plainLock is what openHeld refuses a lock for not being: a reparse point, opened as itself,

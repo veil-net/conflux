@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -69,8 +70,18 @@ func Ensure(d paths.Dirs) (*Tools, error) {
 		return nil, err
 	}
 
+	_, err := os.Lstat(root)
+	made := errors.Is(err, fs.ErrNotExist)
+
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, fmt.Errorf("create %s: %w", root, err)
+	}
+
+	// The Administrators', as everything conflux makes in a root is (paths.Own).
+	if made {
+		if err := paths.Own(root); err != nil {
+			return nil, fmt.Errorf("own %s: %w", root, err)
+		}
 	}
 
 	unlock, err := flock.Acquire(filepath.Join(root, ".lock"))

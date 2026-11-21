@@ -97,6 +97,16 @@ carries `%ProgramData%`'s grant to `Users` — enough to turn an empty directory
 junction — not even for an instant. Every secret file gets the same, explicitly, before
 anything is written into it.
 
+Everything else conflux makes in a root or on the way to one — `logs\`, the lock files,
+`bin\` and its lock, the service's copy of conflux, the log — it makes the Administrators' as
+well, naming them as the owner rather than leaving that to the machine's default-owner policy,
+and leaves its DACL to what it inherits. On Windows Server what an elevated administrator makes is
+the Administrators'; on a Windows client it is that administrator's own, and the service, running
+as SYSTEM, trusts no other account with anything in its root, so it would refuse, at every start,
+a root holding what the administrator's own `up` made and took. A token that may not name the
+Administrators — one that is not elevated, which no command making an installation's root is —
+keeps its own.
+
 A root on a network volume — a share reached by its UNC path, a drive mapped to one, or a link
 leading to either, as the volume conflux holds it open on says, not as it is spelled — is refused
 before anything is made or put there, one not made yet by the volume the walk of its way (below)

@@ -38,11 +38,11 @@ func wellKnown(t windows.WELL_KNOWN_SID_TYPE) *windows.SID {
 // it, and a protected DACL grants the two of them full control and nobody else
 // anything. A directory's grant is inherited by what it holds.
 //
-// The owner is set rather than left to the creating token, so that everything conflux
-// writes passes Trusted whatever the machine's default-owner policy says. A token that
-// may not name Administrators as an owner, or change the owner at all -- one that is not
-// elevated, which conflux never is outside a test -- keeps its own ownership and still gets
-// the DACL. Protected is the half that matters for the DACL: without it the parent's ACEs
+// The owner is set rather than left to the creating token (asAdministrators), so that
+// everything conflux writes passes Trusted, and the SYSTEM service's judgement of its root,
+// whatever the machine's default-owner policy says. A token that may not name Administrators
+// as an owner, or change the owner at all -- one that is not elevated, which conflux never is
+// outside a test -- keeps its own ownership and still gets the DACL. Protected is the half that matters for the DACL: without it the parent's ACEs
 // are merged back in and the restriction is cosmetic.
 func Restrict(path string, dir bool) error {
 	return restrictWith(dir, func(owner *windows.SID, dacl *windows.ACL) error {
@@ -81,12 +81,39 @@ func restrictWith(dir bool, set func(owner *windows.SID, dacl *windows.ACL) erro
 		return err
 	}
 
-	err = set(sidAdmins, dacl)
+	return asAdministrators(func(owner *windows.SID) error { return set(owner, dacl) })
+}
+
+// asAdministrators is how conflux names the owner of everything it makes, or restricts, in a root
+// or on the way to one: set, handed the Administrators, and, where the token may not name them --
+// one that is not elevated, which conflux making an installation's root never is, nor a test --
+// handed nil, to leave the owner as the token made it. Named rather than left to the token, whose
+// default owner for what an elevated administrator makes is the Administrators on Windows Server
+// and that administrator on a Windows client: the boot service, running as SYSTEM, trusts no other
+// account with anything in its root or on its way (changerIn, serviceRule), and would refuse at
+// every start what the administrator's own run made and took.
+func asAdministrators(set func(owner *windows.SID) error) error {
+	err := set(sidAdmins)
 	if errors.Is(err, windows.ERROR_INVALID_OWNER) || errors.Is(err, windows.ERROR_ACCESS_DENIED) {
-		err = set(nil, dacl)
+		err = set(nil)
 	}
 
 	return err
+}
+
+// Own gives path, which conflux has just made in a root or on the way to one -- a lock file, the
+// service's copy of conflux, a folder it made by its name -- to the Administrators, as everything
+// else it makes there is (asAdministrators), and leaves its DACL to what it inherits. By its name,
+// in a root only SYSTEM and the Administrators may change.
+func Own(path string) error {
+	return asAdministrators(func(owner *windows.SID) error {
+		if owner == nil {
+			return nil
+		}
+
+		return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION, owner,
+			nil, nil, nil)
+	})
 }
 
 // fileAllAccess is FILE_ALL_ACCESS, full control of a file or a directory: specific rights rather

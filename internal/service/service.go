@@ -184,6 +184,13 @@ func copyExecutable(src, dst string) error {
 
 	defer os.Remove(tmp.Name()) // nothing once it has been renamed
 
+	// The Administrators', as everything conflux makes in the state directory is (paths.Own).
+	if err := paths.Own(tmp.Name()); err != nil {
+		tmp.Close()
+
+		return err
+	}
+
 	if _, err := io.Copy(tmp, in); err != nil {
 		tmp.Close()
 

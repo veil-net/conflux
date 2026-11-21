@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -146,6 +147,92 @@ func ServiceTemp() error {
 	}
 
 	return nil
+}
+
+// CreatorOwns makes what this process makes without naming an owner its user's own -- the account
+// its token is for -- as a Windows client's default-owner policy makes it for an elevated
+// administrator, where Windows Server's makes it the Administrators', until restore, which tb's
+// cleanup runs too: what conflux makes as an administrator on a Windows client, in a test on Server.
+func CreatorOwns(tb testing.TB) (restore func()) {
+	tb.Helper()
+
+	was, err := defaultOwner()
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	if err := setDefaultOwner(user.User.Sid); err != nil {
+		tb.Fatalf("make this account the owner of what this process makes: %v", err)
+	}
+
+	var once sync.Once
+
+	restore = func() {
+		once.Do(func() {
+			if err := setDefaultOwner(was); err != nil {
+				tb.Errorf("give back the owner of what this process makes, %v: %v", was, err)
+			}
+		})
+	}
+
+	tb.Cleanup(restore)
+
+	return restore
+}
+
+// tokenOwner is TOKEN_OWNER: the owner a token gives what it makes without naming one.
+type tokenOwner struct{ owner *windows.SID }
+
+// defaultOwner is the owner this process's token gives what it makes without naming one.
+func defaultOwner() (*windows.SID, error) {
+	tok := windows.GetCurrentProcessToken()
+
+	var n uint32
+	_ = windows.GetTokenInformation(tok, windows.TokenOwner, nil, 0, &n)
+
+	if n < uint32(unsafe.Sizeof(tokenOwner{})) {
+		return nil, errors.New("read the owner this process's token gives: no answer")
+	}
+
+	b := make([]byte, n)
+	if err := windows.GetTokenInformation(tok, windows.TokenOwner, &b[0], n, &n); err != nil {
+		return nil, fmt.Errorf("read the owner this process's token gives: %w", err)
+	}
+
+	return (*tokenOwner)(unsafe.Pointer(&b[0])).owner.Copy()
+}
+
+// setDefaultOwner makes owner -- the token's user, or a group it holds that may own -- the owner this
+// process's token gives what it makes without naming one.
+func setDefaultOwner(owner *windows.SID) error {
+	var tok windows.Token
+	if err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_ADJUST_DEFAULT|windows.TOKEN_QUERY,
+		&tok); err != nil {
+		return err
+	}
+	defer tok.Close()
+
+	info := tokenOwner{owner}
+
+	return windows.SetTokenInformation(tok, windows.TokenOwner, (*byte)(unsafe.Pointer(&info)),
+		uint32(unsafe.Sizeof(info)))
+}
+
+// SetOwner makes sid the owner of path, by name, and leaves its DACL as it is.
+func SetOwner(tb testing.TB, path string, sid *windows.SID) {
+	tb.Helper()
+
+	if err := WithRestore(tb, func() error {
+		return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION, sid,
+			nil, nil, nil)
+	}); err != nil {
+		tb.Fatalf("make %v the owner of %s: %v", sid, path, err)
+	}
 }
 
 // ProgramDataGrant gives Users, on dir and every folder made in it, what %ProgramData% gives them:

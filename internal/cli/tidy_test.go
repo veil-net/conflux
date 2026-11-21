@@ -497,6 +497,87 @@ func TestTidyStartsNothingBesideASupervisorRunByHand(t *testing.T) {
 	}
 }
 
+// TestTidyStartsNothingBesideASupervisorThatTookTheRoot: a supervisor that starts serving the root
+// once tidy has stopped the boot service -- here as tidy secures the roots -- is no service tidy
+// stopped either: the update is refused, exit 1, naming the root, with nothing registered and nothing
+// started, the service tidy stopped included, since started beside that supervisor it would find it
+// there and exit.
+func TestTidyStartsNothingBesideASupervisorThatTookTheRoot(t *testing.T) {
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	for _, verb := range []string{"register", "start"} {
+		t.Run(verb, func(t *testing.T) {
+			d := configured(t)
+
+			mgr := &stopping{fakeManager: fakeManager{d: d}, running: true, release: serving(t, d)}
+			standInService(t, mgr)
+
+			was := ensureAll
+			defer func() { ensureAll = was }()
+
+			ensureAll = func(d paths.Dirs) error {
+				err := was(d)
+				serving(t, d)
+
+				return err
+			}
+
+			out, errOut, code := capture(t, verb)
+			if code != ExitError || !strings.Contains(errOut, "started serving "+d.State) {
+				t.Errorf("conflux %s beside a supervisor that took the root once the service was stopped exited %d, "+
+					"want %d naming it:\n%s%s", verb, code, ExitError, out, errOut)
+			}
+
+			if mgr.stops != 1 || len(mgr.installs) != 0 || mgr.restarts != 0 {
+				t.Errorf("conflux %s stopped the service %d times, registered it %d and started it %d, want it "+
+					"stopped once, and nothing registered or started", verb, mgr.stops, len(mgr.installs), mgr.restarts)
+			}
+		})
+	}
+}
+
+// TestTidyStartsAgainWhatItStoppedWhereTheLockCannotBeAsked: where the serve lock cannot be asked
+// after once the boot service is stopped -- here no plain file is at its name any more -- which
+// supervisor serves the root cannot be told, and the update is refused, exit 1, saying why, with
+// nothing registered; and the service tidy stopped is started again, as it was found.
+func TestTidyStartsAgainWhatItStoppedWhereTheLockCannotBeAsked(t *testing.T) {
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	for _, verb := range []string{"register", "start"} {
+		t.Run(verb, func(t *testing.T) {
+			d := configured(t)
+			release := serving(t, d)
+
+			mgr := &stopping{fakeManager: fakeManager{d: d}, running: true, release: func() {
+				release()
+
+				if err := os.Remove(d.ServeLockFile()); err != nil {
+					t.Error(err)
+				}
+
+				if err := os.Mkdir(d.ServeLockFile(), 0o700); err != nil {
+					t.Error(err)
+				}
+			}}
+			standInService(t, mgr)
+
+			out, errOut, code := capture(t, verb)
+			if code != ExitError || !strings.Contains(errOut, d.ServeLockFile()) || strings.Contains(errOut, "run by hand") {
+				t.Errorf("conflux %s with the serve lock unaskable once the service was stopped exited %d, want %d "+
+					"naming the lock, not a supervisor run by hand:\n%s%s", verb, code, ExitError, out, errOut)
+			}
+
+			if mgr.stops != 1 || len(mgr.installs) != 0 || mgr.restarts != 1 {
+				t.Errorf("conflux %s stopped the service %d times, registered it %d and started it %d, want it "+
+					"stopped and started again once each, and nothing registered", verb, mgr.stops,
+					len(mgr.installs), mgr.restarts)
+			}
+		})
+	}
+}
+
 // TestTidyStopsNothingWhereTheServiceManagerDoesNotAnswer: where the service manager cannot say
 // whether the boot service runs, tidy cannot tell the supervisor serving the root for the service's or
 // one run by hand, so the update is refused, saying the service manager did not answer and why, not

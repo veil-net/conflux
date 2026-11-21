@@ -72,7 +72,7 @@ func tidy(d paths.Dirs, mgr service.Manager) (stopped bool, err error) {
 		return stopped, err
 	}
 
-	if err := d.EnsureAll(); err != nil {
+	if err := ensureAll(d); err != nil {
 		return stopped, err
 	}
 
@@ -122,6 +122,9 @@ func tidy(d paths.Dirs, mgr service.Manager) (stopped bool, err error) {
 
 	return stopped, remakeErr
 }
+
+// ensureAll is paths.Dirs.EnsureAll, after which a test has a supervisor take the root.
+var ensureAll = paths.Dirs.EnsureAll
 
 // stopServing stops the boot service, for a root a supervisor serves, and says whether it stopped it:
 // where the service manager says it runs, Stop. Then the serve lock is asked after again: still held,

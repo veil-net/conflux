@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"slices"
 	"strings"
@@ -203,7 +204,10 @@ func updatedConflux(t *testing.T) (exe string, leftovers, kept []string) {
 	return exe, leftovers, kept
 }
 
-// standInService makes mgr what newService answers, for the rest of the test.
+// standInService makes mgr what newService answers, for the rest of the test; and where the test has
+// not pointed updateExecutable at a conflux of its own, points it at one in a directory of the test's,
+// so that what tidy and uninstall remove beside the conflux an update replaced
+// (removeUpdateLeftovers) is looked for there, never beside the test binary.
 func standInService(t *testing.T, mgr service.Manager) {
 	t.Helper()
 
@@ -211,6 +215,15 @@ func standInService(t *testing.T, mgr service.Manager) {
 	t.Cleanup(func() { newService = was })
 
 	newService = func() service.Manager { return mgr }
+
+	if reflect.ValueOf(updateExecutable).Pointer() == reflect.ValueOf(service.Executable).Pointer() {
+		exe := filepath.Join(t.TempDir(), "conflux")
+
+		wasExe := updateExecutable
+		t.Cleanup(func() { updateExecutable = wasExe })
+
+		updateExecutable = func() (string, error) { return exe, nil }
+	}
 }
 
 // TestUpdateHandsAStoppedServiceToTheNewConflux: with the boot service installed and the

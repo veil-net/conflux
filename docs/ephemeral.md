@@ -106,10 +106,13 @@ One fixed directory per user, made when the run starts and removed when it ends:
 
 It holds the lock that makes it the only ephemeral run for that user, the bearer token and
 the socket, the record of the anchord it started and what that runs as, the extracted pair,
-and the record of the folders the run made on the way to it — under `CONFLUX_DIR`, the
-`.conflux` it made there — which go with the root when the run ends, each where it is empty by
-then, so that an installation made in that `.conflux` since is left: never a credential, a
-configuration or a state. The root is conflux's by its name: made as
+and, under `CONFLUX_DIR`, the record of the folders the run made on the way to it — the
+`.conflux` it made there, and the `CONFLUX_DIR` where it made that too — which go with the root
+when the run ends, whole, whatever was put in them, but for a `.conflux` an installation has been
+made in since, which is left with the `CONFLUX_DIR` holding it: never a credential, a configuration
+or a state. A folder the run had to make on the way to a root anywhere else — the user's cache or
+runtime directory, say — is the system's, which other programs fill too: it is not recorded, and
+it stays. The root is conflux's by its name: made as
 conflux makes one, `0700` and the account's own, and whatever is at its name that is not — a link,
 a file, a directory another account owns or may write — is removed as itself and the root made
 afresh ([security.md](security.md#the-file-and-the-directory-around-it)), by the next run that

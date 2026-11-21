@@ -159,11 +159,12 @@ func TestRemoveRootHoldsACONFLUXDIRsWay(t *testing.T) {
 // it made that too; Way reads the record back, deepest first, keeping only folders above one of the
 // roots and none at the top of a volume, reads none where the readers' check refuses the state root,
 // whose record is none of conflux's either, and refuses a record that is a link, unfollowed. RemoveWay
-// leaves each folder holding a root of conflux's that is there, and once the root is gone removes each
-// recorded folder whole, deepest first, whatever it holds, the folder they were made in kept; a link
-// put at a recorded folder's name is left, and where it leads untouched. An ephemeral run's root keeps
-// the record of the folders made on the way to it alike, and RemoveEmptyWay removes a .conflux it made,
-// the installation's root by its name, where it is empty, and leaves it where it holds an installation.
+// leaves each folder holding the installation's root while that holds anything, and once the root is
+// gone removes each recorded folder whole, deepest first, whatever it holds, the folder they were made in
+// kept; a link put at a recorded folder's name is left, and where it leads untouched. A folder made on
+// the way to an ephemeral run's root outside any CONFLUX_DIR -- a user's cache or runtime directory -- is
+// the system's, and not recorded; under one, the .conflux a run made is, and RemoveWay leaves it while an
+// installation made there since holds anything, and removes it once it holds nothing.
 func TestTheWayConfluxMadeIsRemovedWhole(t *testing.T) {
 	base := t.TempDir()
 	a, b := filepath.Join(base, "a"), filepath.Join(base, "a", "b")
@@ -281,6 +282,8 @@ func TestTheWayConfluxMadeIsRemovedWhole(t *testing.T) {
 		t.Errorf("RemoveWay reached %s: %v", elsewhere, err)
 	}
 
+	t.Setenv("CONFLUX_DIR", "")
+
 	x := filepath.Join(base, "x")
 
 	e := EphemeralDirs(filepath.Join(x, "conflux-ephemeral"))
@@ -288,8 +291,8 @@ func TestTheWayConfluxMadeIsRemovedWhole(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got, err := e.Way(); err != nil || !slices.Equal(got, []string{x}) {
-		t.Errorf("Way() of an ephemeral run's root = %q, %v, want %q", got, err, []string{x})
+	if got, err := e.Way(); err != nil || got != nil {
+		t.Errorf("Way() of an ephemeral run's root made in %s, which it made too = %q, %v, want no record", x, got, err)
 	}
 
 	t.Setenv("CONFLUX_DIR", t.TempDir())
@@ -315,16 +318,16 @@ func TestTheWayConfluxMadeIsRemovedWhole(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if removed, err := RemoveEmptyWay(eway); err != nil || removed != nil {
-		t.Errorf("RemoveEmptyWay(%q), an installation made there = %q, %v, want nothing removed", eway, removed, err)
+	if removed, err := RemoveWay(eway); err != nil || removed != nil {
+		t.Errorf("RemoveWay(%q), an installation made there = %q, %v, want nothing removed", eway, removed, err)
 	}
 
 	if err := os.Remove(installation.ConfigFile()); err != nil {
 		t.Fatal(err)
 	}
 
-	if removed, err := RemoveEmptyWay(eway); err != nil || !slices.Equal(removed, eway) {
-		t.Errorf("RemoveEmptyWay(%q), empty = %q, %v, want it removed", eway, removed, err)
+	if removed, err := RemoveWay(eway); err != nil || !slices.Equal(removed, eway) {
+		t.Errorf("RemoveWay(%q), empty = %q, %v, want it removed", eway, removed, err)
 	}
 }
 

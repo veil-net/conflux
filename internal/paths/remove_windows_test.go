@@ -174,10 +174,10 @@ func TestRemoveRootHoldsACONFLUXDIRsWay(t *testing.T) {
 
 // TestTheWayConfluxMadeIsRemovedWhole: EnsureAll records each folder it made on the way to an
 // installation's root, the CONFLUX_DIR among them, and Way reads the record back, deepest first.
-// RemoveWay leaves each folder holding a root of conflux's that is there, and once the root is gone
-// removes each whole, through handles, whatever it holds; a junction put at a recorded folder's name is
-// left, with where it leads untouched. RemoveEmptyWay removes only those that are empty, deepest first.
-// Windows-only, so it runs in CI's platforms job alone.
+// RemoveWay leaves each folder holding the installation's root while that holds anything, and once the
+// root is gone, or holds nothing, removes each whole, through handles, whatever it holds; a junction put
+// at a recorded folder's name is left, with where it leads untouched. Windows-only, so it runs in CI's
+// platforms job alone.
 func TestTheWayConfluxMadeIsRemovedWhole(t *testing.T) {
 	base := t.TempDir()
 	a, b := filepath.Join(base, "a"), filepath.Join(base, "a", "b")
@@ -229,16 +229,25 @@ func TestTheWayConfluxMadeIsRemovedWhole(t *testing.T) {
 		t.Errorf("RemoveWay reached %s: %v", elsewhere, err)
 	}
 
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := os.MkdirAll(root, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := os.WriteFile(filepath.Join(a, "kept"), nil, 0o600); err != nil {
+	if err := os.WriteFile(d.ConfigFile(), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	if removed, err := RemoveEmptyWay(way); err != nil || !slices.Equal(removed, []string{dir, b}) {
-		t.Errorf("RemoveEmptyWay(%q), %s holding a file = %q, %v, want %q", way, a, removed, err, []string{dir, b})
+	if removed, err := RemoveWay(way); err != nil || removed != nil {
+		t.Errorf("RemoveWay(%q), an installation made in %s since = %q, %v, want nothing removed", way, root, removed,
+			err)
+	}
+
+	if err := os.Remove(d.ConfigFile()); err != nil {
+		t.Fatal(err)
+	}
+
+	if removed, err := RemoveWay(way); err != nil || !slices.Equal(removed, way) {
+		t.Errorf("RemoveWay(%q), %s holding nothing = %q, %v, want each removed", way, root, removed, err)
 	}
 }
 

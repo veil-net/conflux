@@ -194,17 +194,20 @@ way is there, and each directory missing is made in the last one held and held o
 by its name, and held to the same rule before anything is made in it, conflux's own or one somebody
 else made at the name meanwhile — a sticky directory such as `/tmp`, and `C:\`, let anybody make a
 name not taken yet — and a link there is refused. An installation keeps a record of the directories
-it made on the way, in its state root (`way`), a `CONFLUX_DIR` conflux made among them, and an
-ephemeral run one in its own root, which uninstall, or the run as it ends, reads before it removes the
+it made on the way to a `CONFLUX_DIR`'s root, in its state root (`way`), a `CONFLUX_DIR` conflux made
+among them, and an ephemeral run under a `CONFLUX_DIR` one in its own root, with the `.conflux` it made
+there; a directory conflux had to make on the way to a platform's root or an ephemeral run's
+elsewhere — a user's cache or runtime directory, a home — is the system's, which other programs fill
+too, and is not recorded. Uninstall, or the run as it ends, reads the record before it removes the
 roots — only from a root as conflux makes one, as a file another account may have put there, never
 through a link, and through the root held open first, as `update` asks after the serve lock, for a
 `CONFLUX_DIR` once its way passes parents' rule — taking only directories above its roots, none the
 top of a volume; and then removes each, deepest first, from the directory it is in as a walk of the
 way holds it, never through a link and never by its name, leaving any that a link took the place
-of: uninstall each whole, whatever it holds, but for one holding a root of conflux's still there; an
-ephemeral run each only where it is empty, since under a `CONFLUX_DIR` the `.conflux` it made on its
-way is the installation's root by its name, which may hold an installation made since, whose
-identity only `uninstall` removes. Each step of the way is judged once, as the root
+of: each whole, whatever it holds, but for one that is, or holds, the installation's root while that
+holds anything — a root uninstall could not remove, or, as an ephemeral run ends, the `.conflux` it
+made on its way, which is the installation's root by its name and may hold an installation made
+since, whose identity only `uninstall` removes. Each step of the way is judged once, as the root
 is made or found: what conflux then does with the root itself does not walk its way again. What is
 made at the root's own name meanwhile is judged as anything found there is; and a way that ends in
 where a link leads, at a name not there, is refused, with nothing made there. The way to it is every directory the

@@ -386,11 +386,11 @@ func ephemeralRunner(root string) int {
 	return 0
 }
 
-// TestARunsWayGoesWhereItIsEmpty: the folders an ephemeral run made on the way to its root under a
+// TestARunsWayGoesWithItsRoot: the folders an ephemeral run made on the way to its root under a
 // CONFLUX_DIR -- the CONFLUX_DIR, and the installation's root, .conflux, by its name -- go with its root,
-// as a killed run's root is removed, only where each is empty by then: one anybody put anything in is
-// left, with what is above it, and so is a .conflux an installation was made in since.
-func TestARunsWayGoesWhereItIsEmpty(t *testing.T) {
+// as a killed run's root is removed, whole, whatever anybody put in them; but a .conflux an installation
+// was made in since stays, with the CONFLUX_DIR that holds it.
+func TestARunsWayGoesWithItsRoot(t *testing.T) {
 	for name, c := range map[string]struct {
 		put  func(made string) string
 		kept []string
@@ -398,7 +398,7 @@ func TestARunsWayGoesWhereItIsEmpty(t *testing.T) {
 		"nothing put in it": {},
 		"a file put in the CONFLUX_DIR it made": {put: func(made string) string {
 			return filepath.Join(made, "notes")
-		}, kept: []string{"made"}},
+		}},
 		"an installation made in its .conflux": {put: func(made string) string {
 			return paths.Default().ConfigFile()
 		}, kept: []string{"made", filepath.Join("made", paths.DirName)}},
@@ -444,10 +444,9 @@ func TestARunsWayGoesWhereItIsEmpty(t *testing.T) {
 				t.Errorf("RemoveEphemeral, %s, left %q, want %q", name, left, c.kept)
 			}
 
-			if put != "" {
-				if _, err := os.Stat(put); err != nil {
-					t.Errorf("RemoveEphemeral removed %s: %v", put, err)
-				}
+			if _, err := os.Stat(put); put != "" && (err == nil) != (c.kept != nil) {
+				t.Errorf("RemoveEphemeral, %s, left %s %v, want it kept only with the installation (Stat: %v)", name,
+					put, err == nil, err)
 			}
 		})
 	}

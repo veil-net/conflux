@@ -250,8 +250,11 @@ func (d Dirs) ReadyFile() string { return filepath.Join(d.Run, "ready") }
 // and on Windows the Administrators' under a protected DACL granting SYSTEM and the Administrators
 // alone, which what is made in it inherits.
 //
-// A root not there is made, with each folder missing on the way to it, and those folders recorded in
-// the state root (recordWay) for uninstall to remove whole (Way, RemoveWay). Whatever is at a root's
+// A root not there is made, with each folder missing on the way to it, and those on a CONFLUX_DIR's way
+// (chosenWay) recorded in the state root (recordWay) for uninstall, or an ephemeral run as it ends, to
+// remove whole (Way, RemoveWay). Any other folder made on the way -- one a platform's root, or an
+// ephemeral run's, is made in, such as a user's cache or runtime directory, or a home -- is the
+// system's, which other programs fill too, and is not recorded. Whatever is at a root's
 // name and is not as conflux makes a root -- a link, a file, a folder another account owns or may write
 // (ours) -- is removed as itself from the folder it is in, and the root made afresh: a root is conflux's
 // whole, and nothing in it is kept for anybody. Each folder conflux keeps in a root
@@ -267,7 +270,7 @@ func (d Dirs) EnsureAll() error {
 	err := func() error {
 		for _, dir := range d.Outer() {
 			m, err := d.makeRoot(dir)
-			if made = append(made, m...); err != nil {
+			if made = append(made, slices.DeleteFunc(m, func(p string) bool { return !chosenWay(p) })...); err != nil {
 				return fmt.Errorf("create %s: %w", dir, err)
 			}
 
@@ -523,38 +526,29 @@ func (d Dirs) Way() ([]string, error) {
 // RemoveWay removes each folder of way, folders conflux made on the way to its roots (Way), whole,
 // whatever it holds, deepest first, and is those it removed: each removed from the folder it is in, as
 // the walk to that holds it (toParent), never by its name and never following a link, the way to one
-// that is a CONFLUX_DIR, inside it or above it held to parents' rule, and what it holds removed through
-// it as a root is (removeFrom). A folder
-// conflux made is conflux's whole, so what anybody put in it goes with it. One that is not there, or is
-// no longer a folder -- a link or a file put at its name -- is left, and so is one that holds a root of
-// conflux's still there (holdsRoot): a root uninstall could not remove, or an ephemeral run's started
-// since, stays with the folders that hold it.
-func RemoveWay(way []string) ([]string, error) { return removeWay(way, true) }
-
-// RemoveEmptyWay is RemoveWay for the folders an ephemeral run made on the way to its root, as the run
-// ends or a killed run's root goes: each removed only where it is empty, so that one anything was put in
-// since -- under a CONFLUX_DIR, the .conflux the run made, which is the installation's root by its name
-// and holds an installation made there since -- is left, with every folder above it.
-func RemoveEmptyWay(way []string) ([]string, error) { return removeWay(way, false) }
-
-// removeWay is RemoveWay, removing each folder whole, or RemoveEmptyWay.
-func removeWay(way []string, whole bool) ([]string, error) {
+// on a CONFLUX_DIR's way (chosenWay) held to parents' rule, and what it holds removed through it as a
+// root is (removeFrom). A folder conflux made is conflux's whole, so what anybody put in it goes with
+// it, another installation among it. One that is not there, or is no longer a folder -- a link or a file
+// put at its name -- is left, and so is one that is, or holds, the installation's root holding anything
+// (holdsRoot): a root uninstall could not remove, or, as an ephemeral run under a CONFLUX_DIR ends, the
+// .conflux it made, which an installation has been made in since, stays with the folders that hold it.
+func RemoveWay(way []string) ([]string, error) {
 	var (
 		removed []string
 		errs    []error
 	)
 
 	for _, dir := range deepestFirst(slices.Clone(way)) {
-		if whole && holdsRoot(dir) {
+		if holdsRoot(dir) {
 			continue
 		}
 
 		judge := judgement(nil)
-		if root := Root(); chosen(dir) || root != "" && above(dir, root) {
+		if chosenWay(dir) {
 			judge = parentsRule(dir)
 		}
 
-		gone, err := removeWayFolder(dir, judge, whole)
+		gone, err := removeWayFolder(dir, judge)
 		if err != nil {
 			errs = append(errs, err)
 		}
@@ -567,10 +561,10 @@ func removeWay(way []string, whole bool) ([]string, error) {
 	return removed, errors.Join(errs...)
 }
 
-// removeWayFolder is removeWay's removal of dir, a folder, from the folder it is in, held as the walk
-// judged by judge reaches it (toParent), and whether it removed it: whole where whole is, and otherwise
-// only where it is empty (removeEmpty); a link or anything else at its name that is no folder is left.
-func removeWayFolder(dir string, judge judgement, whole bool) (bool, error) {
+// removeWayFolder is RemoveWay's removal of dir, a folder, whole, from the folder it is in, held as the
+// walk judged by judge reaches it (toParent), and whether it removed it; a link or anything else at its
+// name that is no folder is left.
+func removeWayFolder(dir string, judge judgement) (bool, error) {
 	w, err := toParent(dir, judge)
 	if err != nil || w == nil {
 		return false, err
@@ -578,10 +572,6 @@ func removeWayFolder(dir string, judge judgement, whole bool) (bool, error) {
 	defer w.close()
 
 	at, name := w.last().step, filepath.Base(dir)
-
-	if !whole {
-		return removeEmpty(at, name, dir)
-	}
 
 	s, link, err := lookUp(at, name)
 
@@ -601,16 +591,40 @@ func removeWayFolder(dir string, judge judgement, whole bool) (bool, error) {
 	return removeFrom(at, name, dir)
 }
 
-// holdsRoot reports whether dir holds a root of conflux's -- one of the installation's (Default) or an
-// ephemeral run's (EphemeralCandidates) -- that is there, by its name.
+// holdsRoot reports whether dir is, or holds, one of the installation's roots (Default) that holds
+// anything, by its name. An ephemeral run's root is only ever recorded under a CONFLUX_DIR, inside the
+// installation's.
 func holdsRoot(dir string) bool {
-	for _, root := range append(Default().Outer(), EphemeralCandidates()...) {
-		if _, err := os.Lstat(root); err == nil && above(dir, root) {
+	for _, root := range Default().Outer() {
+		if (dir == root || above(dir, root)) && holdsAnything(root) {
 			return true
 		}
 	}
 
 	return false
+}
+
+// holdsAnything reports whether the directory dir lists anything.
+func holdsAnything(dir string) bool {
+	f, err := os.Open(dir)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	names, _ := f.Readdirnames(1)
+
+	return len(names) > 0
+}
+
+// chosenWay reports whether dir is on the way to a CONFLUX_DIR's root: the CONFLUX_DIR, a folder above
+// it, or one inside it (chosen) -- of which conflux makes, on the way to a root, only the .conflux an
+// ephemeral run's root is made in. The folders made on the way that EnsureAll records, and those whose
+// way RemoveWay holds to parents' rule.
+func chosenWay(dir string) bool {
+	root := Root()
+
+	return chosen(dir) || root != "" && above(dir, root)
 }
 
 // above reports whether dir is a folder strictly above path, by their names (filepath.Rel), neither

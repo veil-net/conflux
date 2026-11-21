@@ -97,14 +97,15 @@ func tidy(d paths.Dirs, mgr service.Manager) (stopped bool, err error) {
 
 	// Every set but the one Remake extracts again, and what was staged.
 	set := filepath.Join(d.Libexec(), anchor.SetID())
-	was := entries(d.Libexec(), set, filepath.Join(d.Libexec(), ".lock"))
-	_, remakeErr := libexec.Remake(d)
-	removed = append(removed, gone(was)...)
+	emptied, remakeErr := libexec.Remake(d)
+	removed = append(removed, slices.DeleteFunc(emptied, func(p string) bool { return p == set })...)
 
 	for _, root := range paths.EphemeralCandidates() {
 		found, err := removeKilledRun(root)
-		if leftBehind(err); found == killedRun {
-			removed = append(removed, gone([]string{root})...)
+		leftBehind(err)
+
+		if _, err := os.Lstat(root); found == killedRun && errors.Is(err, fs.ErrNotExist) {
+			removed = append(removed, root)
 		}
 	}
 
@@ -145,34 +146,6 @@ func listRemoved(removed []string) {
 	}
 
 	ui.Println()
-}
-
-// gone is those of was that are not there.
-func gone(was []string) []string {
-	var found []string
-
-	for _, p := range was {
-		if _, err := os.Lstat(p); errors.Is(err, fs.ErrNotExist) {
-			found = append(found, p)
-		}
-	}
-
-	return found
-}
-
-// entries are the paths of what dir holds but skip; none where it is not there.
-func entries(dir string, skip ...string) []string {
-	list, _ := os.ReadDir(dir)
-
-	var found []string
-
-	for _, e := range list {
-		if p := filepath.Join(dir, e.Name()); !slices.Contains(skip, p) {
-			found = append(found, p)
-		}
-	}
-
-	return found
 }
 
 // removeStaged removes, where nothing holds the state's lock, what an atomic write that never went

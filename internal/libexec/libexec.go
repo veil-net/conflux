@@ -87,8 +87,9 @@ func Extract(d paths.Dirs) (*Tools, error) {
 // removed too where nothing has opened it since, with the directory, so both are made again as well;
 // on Unix it is kept, since a lock is taken on the file its name led to when it was opened, and one
 // waited for on a file removed meanwhile would be held beside one taken on the file made again at
-// its name. d's roots are secured already (EnsureAll).
-func Remake(d paths.Dirs) (*Tools, error) {
+// its name. d's roots are secured already (EnsureAll). It is the paths of what it removed from bin,
+// however far it got (paths.ClearExcept).
+func Remake(d paths.Dirs) ([]string, error) {
 	if !anchor.Supported {
 		return nil, errUnsupported
 	}
@@ -98,7 +99,9 @@ func Remake(d paths.Dirs) (*Tools, error) {
 
 	switch _, err := os.Lstat(root); {
 	case errors.Is(err, fs.ErrNotExist):
-		return Extract(d)
+		_, err := Extract(d)
+
+		return nil, err
 	case err != nil:
 		return nil, err
 	}
@@ -112,21 +115,12 @@ func Remake(d paths.Dirs) (*Tools, error) {
 		return nil, fmt.Errorf("another conflux is extracting the anchor binaries in %s; run this again once it has", root)
 	}
 
-	entries, err := os.ReadDir(root)
-	if err == nil {
-		for _, e := range entries {
-			if p := filepath.Join(root, e.Name()); p != lock {
-				if err = os.RemoveAll(p); err != nil {
-					break
-				}
-			}
-		}
-	}
+	removed, err := paths.ClearExcept(root, lock)
 
 	unlock()
 
 	if err != nil {
-		return nil, fmt.Errorf("empty %s: %w", root, err)
+		return removed, fmt.Errorf("empty %s: %w", root, err)
 	}
 
 	// Let go of first, since Windows will not delete a file that is open: a lock somebody opened
@@ -135,7 +129,9 @@ func Remake(d paths.Dirs) (*Tools, error) {
 		_ = os.Remove(root)
 	}
 
-	return Extract(d)
+	_, err = Extract(d)
+
+	return removed, err
 }
 
 // extractIn is Extract once a look found no whole extraction under d: the set directory made,

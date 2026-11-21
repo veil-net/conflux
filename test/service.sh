@@ -262,6 +262,27 @@ configure tun '"observer":{}'
 start
 expect "tun and observing" "uid=$uid caps=$(caps 0x3000) nnp=0 groups=" "CAP_NET_RAW to copy"
 
+# A copy that is not this conflux is how an update finds a running service: start stops the
+# service where systemd says it runs -- the unit, activating still, has its main process --
+# before it removes what earlier conflux left, places this conflux and starts it again. Taken
+# for one not running, the supervisor still serving the root after would be called one run by
+# hand, and nothing replaced. The copy is changed through a name of the kind conflux's own
+# placing writes beside it, renamed over the running image as conflux renames.
+say "start, with the unit running a changed copy, stops it and starts this conflux"
+[ "$(docker exec "$NAME" systemctl show -p MainPID --value conflux.service)" != 0 ] \
+  || { echo "the unit has no main process to stop" >&2; journal; exit 1; }
+docker exec "$NAME" sh -c 'cd /var/lib/conflux && cp conflux .conflux-changed &&
+  printf x >> .conflux-changed && mv .conflux-changed conflux'
+# systemctl restart waits for a readiness the silent API never lets come.
+out=$(docker exec "$NAME" timeout 30 conflux start 2>&1) || true
+case $out in
+  *"Starting from the configuration"*) ;;
+  *) echo "start did not get past what earlier conflux left:" >&2; echo "$out" >&2; exit 1 ;;
+esac
+docker exec "$NAME" sh -c 'set -- $(sha256sum /usr/local/bin/conflux /var/lib/conflux/conflux) && [ "$1" = "$3" ]' \
+  || { echo "start left the changed copy in place:" >&2; echo "$out" >&2; exit 1; }
+expect "started again on this conflux" "uid=$uid caps=$(caps 0x3000) nnp=0 groups=" "CAP_NET_RAW to copy"
+
 # An upgraded conflux brings its own unit, and start is how an upgrade reaches the
 # service: an older unit, with a capability line, is replaced.
 say "start registers the unit this conflux writes"

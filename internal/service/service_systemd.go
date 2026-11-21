@@ -2,11 +2,13 @@ package service
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
 // The systemd unit, rendered here without a build tag -- as the rc scripts are -- so
-// its quoting is tested on every machine that builds conflux rather than only on Linux.
+// its quoting is tested on every machine that builds conflux rather than only on Linux;
+// and the one answer of systemd's that Running reads (mainPID), for the same reason.
 
 // unitTemplate is the unit conflux writes.
 //
@@ -135,4 +137,18 @@ func quoteExec(w string) string {
 	b.WriteByte('"')
 
 	return b.String()
+}
+
+// mainPID reads out, systemctl show's answer for a unit's MainPID property, and says whether it
+// names a main process: one a unit starting, running or stopping has, and one waiting to be
+// restarted has not (MainPID=0). An answer naming no number is none systemd gives, and an error.
+func mainPID(out string) (bool, error) {
+	value, _ := strings.CutPrefix(out, "MainPID=")
+
+	pid, err := strconv.Atoi(value)
+	if err != nil {
+		return false, fmt.Errorf("answered %q, naming no main process", out)
+	}
+
+	return pid != 0, nil
 }

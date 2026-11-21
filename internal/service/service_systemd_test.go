@@ -59,3 +59,26 @@ func TestSystemdUnitQuotesAnything(t *testing.T) {
 		t.Errorf("the unit has no\n  %s\n%s", want, unit)
 	}
 }
+
+// TestMainPIDIsWhetherTheUnitRuns: systemctl show's MainPID names the unit's main process, which a
+// unit starting, running or stopping has -- the supervisor tidy stops for an update -- and one
+// waiting to be restarted has not, MainPID=0. An answer naming no number, empty or with no value, is
+// none systemd gives, and an error naming it, never a "no".
+func TestMainPIDIsWhetherTheUnitRuns(t *testing.T) {
+	for _, c := range []struct {
+		out      string
+		running  bool
+		refusing bool
+	}{
+		{out: "MainPID=0"},
+		{out: "MainPID=42", running: true},
+		{out: "", refusing: true},
+		{out: "MainPID=", refusing: true},
+	} {
+		running, err := mainPID(c.out)
+		if running != c.running || (err != nil) != c.refusing || err != nil && !strings.Contains(err.Error(), `"`+c.out+`"`) {
+			t.Errorf("mainPID(%q) = %v, %v, want %v, refused %v naming the answer", c.out, running, err, c.running,
+				c.refusing)
+		}
+	}
+}

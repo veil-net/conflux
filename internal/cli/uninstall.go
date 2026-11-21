@@ -295,9 +295,10 @@ func othersEphemeral(d paths.Dirs) []string {
 }
 
 // notConfluxs is why the ephemeral root at root, outside an installation's roots, is not one conflux
-// secured, or nil where it is, or is not there: one RemoveRoot refuses -- a shared or system directory
-// (JudgeWays) -- or one the readers' check refuses, which another account owns or may change (Check).
-// %ProgramData% lets any account make the name first.
+// secured, or nil where it is, or is not there: one RemoveRoot refuses (JudgeWays) -- a shared or
+// system directory, or one holding a name conflux never makes there, however narrow its mode -- or one
+// the readers' check refuses, which another account owns or may change (Check). %ProgramData% lets any
+// account make the name first.
 func notConfluxs(root string) error {
 	e := paths.EphemeralDirs(root)
 

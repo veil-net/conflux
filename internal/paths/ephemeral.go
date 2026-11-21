@@ -127,7 +127,8 @@ var ErrNoExec = errors.New("every candidate is on a filesystem mounted noexec")
 // one on a filesystem mounted to allow it, and not one refuse turns down, where refuse is
 // given. A candidate refuse finds not there (fs.ErrNotExist) is taken as one to make, and its
 // filesystem read where it would be made, in the directory above it: nothing at its name is read
-// once refuse has looked. Where none will do, the first refusal is the error, or else ErrNoExec.
+// once refuse has looked. One refuse turns down for its filesystem alone (ErrNoExec) is passed over
+// as a noexec one is. Where none will do, the first other refusal is the error, or else ErrNoExec.
 func FirstExecutable(candidates []string, refuse func(string) error) (string, error) {
 	var refused error
 
@@ -138,6 +139,8 @@ func FirstExecutable(candidates []string, refuse func(string) error) (string, er
 			switch err := refuse(c); {
 			case errors.Is(err, fs.ErrNotExist):
 				at = filepath.Dir(c)
+			case errors.Is(err, ErrNoExec):
+				continue
 			case err != nil:
 				if refused == nil {
 					refused = err

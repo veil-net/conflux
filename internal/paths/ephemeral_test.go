@@ -2,6 +2,7 @@ package paths
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"testing"
 )
@@ -45,6 +46,33 @@ func TestFirstExecutableSaysWhyItRefused(t *testing.T) {
 	})
 	if !errors.Is(err, refusal) {
 		t.Errorf("FirstExecutable with every candidate refused = %v, want the first refusal", err)
+	}
+}
+
+// TestANoexecRefusalNeverHidesTheRealOne: a candidate refused for its filesystem alone (ErrNoExec) is
+// passed over as one on a noexec filesystem is, so a later candidate's refusal for anything else is the
+// answer, and not "every place is noexec", which would send the user to their mount options for a
+// candidate that failed for another reason.
+func TestANoexecRefusalNeverHidesTheRealOne(t *testing.T) {
+	first, second := filepath.Join(t.TempDir(), "a"), filepath.Join(t.TempDir(), "b")
+	refusal := errors.New(second + " could not be removed")
+
+	_, err := FirstExecutable([]string{first, second}, func(c string) error {
+		if c == first {
+			return fmt.Errorf("%s is on a filesystem mounted noexec: %w", c, ErrNoExec)
+		}
+
+		return refusal
+	})
+	if !errors.Is(err, refusal) || errors.Is(err, ErrNoExec) {
+		t.Errorf("FirstExecutable, the first candidate noexec and the second refused = %v, want the second's refusal",
+			err)
+	}
+
+	if _, err := FirstExecutable([]string{first}, func(c string) error {
+		return fmt.Errorf("%s is on a filesystem mounted noexec: %w", c, ErrNoExec)
+	}); !errors.Is(err, ErrNoExec) {
+		t.Errorf("FirstExecutable, every candidate noexec = %v, want %v", err, ErrNoExec)
 	}
 }
 

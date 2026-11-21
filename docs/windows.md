@@ -142,7 +142,8 @@ administrator makes, is the Administrators' or the administrator's own — `%Pro
 the running conflux is the copy the service runs from it, whatever its DACL, or any folder
 whose own DACL makes it a space other accounts share, as `%ProgramData%`'s does — Users let add to it
 and to the folders made in it, `CREATOR OWNER` passed full control — is refused by every command that
-makes a root before anything is filled or restricted, and by `uninstall` before it removes
+makes a root before anything is filled or restricted, by `update` and `start` before they remove
+anything from it, and by `uninstall` before it removes
 anything, the boot service included; a junction to it is removed as itself, unless it holds what
 conflux never makes there. A folder that only inherits such entries, as one made in
 `%ProgramData%` does, is judged and restricted as any root is.

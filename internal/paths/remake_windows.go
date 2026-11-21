@@ -18,8 +18,9 @@ import (
 // remakeOld is RemakeOld for dir, a root of the installation d's. The root is held open as a reader
 // holds it (holdRoot): the way to it walked from the top of its volume, a CONFLUX_DIR's held to parents'
 // rule, and a junction at its name followed only where conflux would follow it, and gone into only
-// where the SYSTEM service would follow it too (forService), else nothing is removed. A root holding a name
-// conflux never makes there is not conflux's, and nothing in it is removed (strays). It is held to what
+// where the SYSTEM service would follow it too (forService), else nothing is removed. A root that is a
+// folder others keep what is theirs in (sharedStep), the top of a volume (topRefusal), or one holding a
+// name conflux never makes there (strays), is not conflux's, and is refused with nothing removed. It is held to what
 // secure holds a root to before it changes anything in it (unmovable): its owner SYSTEM, the
 // Administrators or the account running conflux, and nobody else let move what is in it, who could put
 // back what is removed. Then each thing directly in it that conflux makes again by its name there (remadeIn) is
@@ -53,6 +54,18 @@ func remakeOld(d Dirs, dir string) ([]string, error) {
 	// EnsureAll, which runs after, replaces it with one of conflux's own (replaceLink) or refuses it.
 	if !r.forService(dir) {
 		return nil, nil
+	}
+
+	// A folder others keep what is theirs in -- CONFLUX_DIR=C:\ProgramData -- is never emptied, whatever
+	// leads to it, nor the top of a volume, nor one holding what conflux never makes there: refused
+	// before anything is removed, as EnsureAll, which runs after, refuses them before anything is
+	// made.
+	if err := sharedStep(dir, r.dir); err != nil {
+		return nil, err
+	}
+
+	if r.top {
+		return nil, topRefusal(dir)
 	}
 
 	led := ""

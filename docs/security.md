@@ -47,7 +47,8 @@ host can read, and when the run stops there is nothing at all.
   and then chmod'ing leaves a window at the umask's mode.
 - No root is a directory others keep what is theirs in, however it is reached — at its name or
   through a link there — and whoever owns it: such a one is refused, never narrowed, filled or
-  emptied, by every command that makes a root and by `uninstall`, which refuses it before it removes
+  emptied, by every command that makes a root, by `update` and `start` before they remove anything
+  from one (Windows), and by `uninstall`, which refuses it before it removes
   anything, the boot service included, or, where the root's name is a link to it, removes the link
   alone, unless it holds what conflux never makes there (below). On Unix that is a sticky directory (`/tmp`,
   `/var/tmp`, `/dev/shm`), `/`, every directory directly under `/` (`/home`, `/opt`, `/srv`, `/usr`

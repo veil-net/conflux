@@ -255,3 +255,37 @@ func TestRemakeOldGoesIntoNoJunctionTheServiceWouldNotFollow(t *testing.T) {
 			d.LockFile())
 	}
 }
+
+// TestRemakeOldEmptiesNoSharedFolder: RemakeOld removes what fails the service's rule only from a root
+// of conflux's, so a CONFLUX_DIR of a folder other accounts share, as %ProgramData% is -- Users let add
+// to it, CREATOR OWNER passed full control -- holding a lock file the administrator owns, which
+// RemakeOld would make again in a root of conflux's, is refused, saying why, before anything is
+// removed, and the lock file is left. Windows-only, so it runs in CI's platforms job alone.
+func TestRemakeOldEmptiesNoSharedFolder(t *testing.T) {
+	shared := filepath.Join(t.TempDir(), "shared")
+	if err := os.Mkdir(shared, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	privtest.SetSecurity(t, shared, "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;CI;0x6;;;BU)(A;OICIIO;FA;;;CO)")
+
+	t.Setenv("CONFLUX_DIR", shared)
+	d := Default()
+
+	restore := privtest.CreatorOwns(t)
+
+	if err := os.WriteFile(d.LockFile(), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	restore()
+
+	if removed, err := d.RemakeOld(); removed != nil || err == nil || !strings.Contains(err.Error(), "a folder other accounts share") {
+		t.Errorf("RemakeOld(a CONFLUX_DIR of a folder other accounts share) = %q, %v, want a refusal saying so, nothing "+
+			"removed", removed, err)
+	}
+
+	if _, err := os.Lstat(d.LockFile()); err != nil {
+		t.Errorf("RemakeOld refusing a shared folder removed %s: %v", d.LockFile(), err)
+	}
+}

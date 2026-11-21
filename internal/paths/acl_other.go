@@ -86,8 +86,10 @@ func openTop(string) (step, error) {
 // open as itself (opened), or by its name where this account may search it and not read it; or a
 // link, by its name, never followed. Anything else at the name is refused, and nothing at it is an
 // error that is fs.ErrNotExist. What fstatat reads of the name, once the open has refused it, is
-// what is there by then: the directory parent is has been judged, and only root and this account
-// may change what is in it -- or, in a sticky one, whoever owns that name.
+// what is there by then: on a way the walk judges, the directory parent is has been judged, and only
+// root and this account may change what is in it -- or, in a sticky one, whoever owns that name; on
+// one it does not, a platform root's, which only root, or the user it is for, may change, it is the
+// lookup by name any program makes there.
 func lookUp(parent step, name string) (step, bool, error) {
 	at := parent.at(name)
 

@@ -81,8 +81,9 @@ host can read, and when the run stops there is nothing at all.
   Administrators on Windows) or the account running conflux, a link at its name included, and
   nobody else may write it or point it elsewhere: by its mode and ACL as found on Unix, the sticky
   bit letting nothing through, and on Windows by the DACL a root conflux secured keeps, which grants
-  nobody else any right, to read it included, a link at its name that leads off the machine refused. A `CONFLUX_DIR`'s way is held as when it is made, a
-  link anywhere on it that leads off the machine refused.
+  nobody else any right, to read it included, a link at its name that leads off the machine refused.
+  A `CONFLUX_DIR`'s way is held to the rule it is made by, for the account reading it, and on Windows
+  a link anywhere on it that leads off the machine is refused.
   Nothing is narrowed: a root that fails is refused, saying why, with nothing in it read, run,
   stopped or removed, and with none there the command says nothing is installed, reading nothing,
   since what is at a name that was not there a moment ago is whoever made it first's; a link at a

@@ -109,8 +109,10 @@ the socket, the record of the anchord it started and what that runs as, and the 
 pair: never a credential, a configuration or a state. A root the run could not keep is passed
 over, so the next in the table is used: one the readers' check refuses — one another account owns,
 or may write ([security.md](security.md#the-file-and-the-directory-around-it)), or a link at its
-name that leads nowhere — and one that belongs to any account but the one starting the run, root's
-included for anybody else, as conflux refuses to keep a run in it. `/tmp` lets anybody make
+name that leads nowhere — one holding anything another account could have put there or may change,
+judged from the root held open (a link, anything but a file, a directory or a socket, an entry
+another account owns or may write), and one that belongs to any account but the one starting the
+run, root's included for anybody else, as conflux refuses to keep a run in it. `/tmp` lets anybody make
 `/tmp/conflux-ephemeral-UID` first, and only its owner can remove it. A run is not refused because an installed conflux is running: that one is never
 read, written, stopped or re-registered. Two anchors with a TUN on one host do contend for
 the overlay's routes, so `conflux down` first where that matters.
@@ -124,8 +126,10 @@ another conflux reaching into its root then would get in its way. A killed run's
 it was up is not taken for the next run's: it counts only while the conflux that wrote it
 runs. Neither `status` nor
 pass-through ever writes into a run's root, and a root the readers' check refuses is no run's
-to them, whatever lock, marker or binaries it holds: they pass it over, as `uninstall` does,
-looking at nothing inside it and following no link there. Pass-through — `conflux peers`,
+to them, whatever lock, marker or binaries it holds, nor is one holding anything another account
+could have put there or may change, which they judge from the root held open, by no name and
+following no link: they pass either over, as `uninstall` does, reading, running and signalling
+nothing in it. Pass-through — `conflux peers`,
 `conflux blocks`, every anchorctl command — reaches the ephemeral anchor when it is the
 only one running, once it is up.
 With an installed anchor running too, it reaches that one unless `CONFLUX_EPHEMERAL=1` is

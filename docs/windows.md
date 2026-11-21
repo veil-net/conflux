@@ -140,10 +140,11 @@ link judged as itself as above, it must be SYSTEM's, the Administrators' or the 
 conflux's, and its DACL must grant nobody else any right, to read it included, nor pass one on to
 what is made in it, which is what a root conflux secured keeps: a root is conflux's alone, and one
 granting more is one conflux would restrict — so one that only inherits `%ProgramData%`'s grant to
-`Users` is refused too, and so is one that lets them read it; a `CONFLUX_DIR`'s way is held as it is when the root is made. A `CREATOR OWNER` entry passed
-on, as an administrator tightening a root by hand may keep `%ProgramData%`'s, is no such grant here,
-nor when conflux secures a root: it grants whoever made what it is passed to, and only SYSTEM, the
-Administrators and the account running conflux may make anything in the root. Nothing is changed: a root that
+`Users` is refused too, and so is one that lets them read it; a `CONFLUX_DIR`'s way is held to the
+rule it is made by, for the account reading it. A `CREATOR OWNER` entry passed on, as an
+administrator tightening a root by hand may keep `%ProgramData%`'s, is no such grant here, nor when
+conflux secures a root: it grants whoever made what it is passed to, and only SYSTEM, the
+Administrators, TrustedInstaller and the account running conflux may make anything in the root. Nothing is changed: a root that
 fails is refused, saying why, with nothing in it read, run, stopped or removed, and one not there is
 a machine with nothing installed, of which nothing is read either, since whoever made the name
 first would answer for what is at it. A reader of an ephemeral root, which another process keeps,

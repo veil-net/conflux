@@ -13,7 +13,8 @@ import (
 // which only root can write, and not wherever conflux was run from. PlaceAfresh writes it, this
 // executable byte for byte, which Placed then finds it is, and Keep leaves alone; and a copy that is no
 // longer this conflux, Placed finds is not, and PlaceAfresh replaces -- an upgraded conflux reaches the
-// service at its next install.
+// service at its next install. PlaceAfresh writes even a copy that is this conflux again, a new file, so
+// that no handle on the one before outlives it.
 func TestPlaceAfreshCopiesWhatTheServiceRuns(t *testing.T) {
 	d := pathstest.Dirs(t)
 
@@ -49,6 +50,14 @@ func TestPlaceAfreshCopiesWhatTheServiceRuns(t *testing.T) {
 
 	if after, _ := os.Stat(placed); !os.SameFile(before, after) {
 		t.Error("Keep wrote the copy again")
+	}
+
+	if _, err := PlaceAfresh(d); err != nil {
+		t.Fatalf("PlaceAfresh over this conflux: %v", err)
+	}
+
+	if after, _ := os.Stat(placed); os.SameFile(before, after) {
+		t.Error("PlaceAfresh kept a copy that is this conflux, rather than writing it afresh")
 	}
 
 	// A copy that is no longer this conflux is replaced: an older one, and one somebody

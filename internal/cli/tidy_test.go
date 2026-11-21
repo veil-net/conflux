@@ -327,6 +327,42 @@ func TestTheServiceStartsAgainOnlyOnACopyOfConfluxsOwn(t *testing.T) {
 	}
 }
 
+// TestTheCopyIsPlacedOnceIntoAFreshInstallation: up into a CONFLUX_DIR with nothing of conflux's in it
+// places this conflux as the boot service's copy, and registers that; up again, install and start, each
+// finding the copy there and this conflux, keep that same file, writing nothing. (proxy in up's place
+// on Windows, where up fetches wintun first.)
+func TestTheCopyIsPlacedOnceIntoAFreshInstallation(t *testing.T) {
+	rootOnLinux(t)
+
+	t.Setenv("CONFLUX_DIR", t.TempDir())
+
+	d := paths.Default()
+
+	mgr := &fakeManager{d: d, restartErr: errStartsNothing}
+	standInService(t, mgr)
+
+	first := []string{"up", "--taint", "t", "--no-ipv4"}
+	if runtime.GOOS == "windows" {
+		first = []string{"proxy", "8080=127.0.0.1:3000", "--taint", "t", "--no-ipv4"}
+	}
+
+	out, errOut, _ := capture(t, first...)
+
+	placed, err := os.Stat(d.ServiceExecutable())
+	if err != nil || !service.Placed(d) || len(mgr.installs) != 1 || mgr.installs[0][0] != d.ServiceExecutable() {
+		t.Fatalf("conflux %s into a fresh CONFLUX_DIR left the copy %v (Placed: %v) and registered %q, want this "+
+			"conflux placed and registered:\n%s%s", first[0], err, service.Placed(d), mgr.installs, out, errOut)
+	}
+
+	for _, args := range [][]string{first, {"install"}, {"start"}} {
+		out, errOut, _ := capture(t, args...)
+
+		if again, err := os.Stat(d.ServiceExecutable()); err != nil || !os.SameFile(placed, again) {
+			t.Errorf("conflux %s, the copy this conflux already, wrote it again (%v):\n%s%s", args[0], err, out, errOut)
+		}
+	}
+}
+
 // locksKeptOrRemade fails t unless the lock files oldInstall left in d, each holding "stale", are as
 // tidy leaves them: on Unix kept, the same files, since a lock taken on a file removed meanwhile is
 // one nobody else finds, so two would hold it; on Windows, which removes no file anybody has open,

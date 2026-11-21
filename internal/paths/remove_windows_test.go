@@ -238,9 +238,8 @@ func TestTheWayConfluxMadeIsRemovedWhenEmpty(t *testing.T) {
 // (OpenIn), never by its name, and only where what is at the root's name is as conflux makes a root
 // (ours): one EnsureAll made is read; a junction at the name -- to a folder of this account's own, the
 // folder it is in, or nothing -- is none of conflux's, taken as no root at all, nothing in it opened,
-// and so is a folder whose DACL lets Users add to it, or that the Guests own, but for the way record,
-// which all it can lead to is removing empty folders above the roots. Windows-only, so it runs in CI's
-// platforms job alone.
+// and so is a folder whose DACL lets Users add to it, or that the Guests own, the way record in it among
+// what is not read. Windows-only, so it runs in CI's platforms job alone.
 func TestARootIsHeldBeforeAnythingInItIsOpened(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("CONFLUX_DIR", base)
@@ -278,11 +277,11 @@ func TestARootIsHeldBeforeAnythingInItIsOpened(t *testing.T) {
 		{"one Users may add to", func(t *testing.T) {
 			ensured(t)
 			privtest.GrantUsers(t, root, windows.FILE_WRITE_DATA, windows.NO_INHERITANCE)
-		}, false, true},
+		}, false, false},
 		{"one the Guests own", func(t *testing.T) {
 			ensured(t)
 			privtest.SetOwner(t, root, guests)
-		}, false, true},
+		}, false, false},
 		{"a junction to a folder of this account's own", func(t *testing.T) {
 			target := t.TempDir()
 			plant(t, target)

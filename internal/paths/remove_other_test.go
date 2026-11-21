@@ -157,8 +157,8 @@ func TestRemoveRootHoldsACONFLUXDIRsWay(t *testing.T) {
 // TestTheWayConfluxMadeIsRemovedWhenEmpty: EnsureAll records each folder it made on the way to an
 // installation's root, in the state root, once, however often it runs, the CONFLUX_DIR among them where
 // it made that too; Way reads the record back, deepest first, keeping only folders above one of the
-// roots, where the readers' check refuses the state root too, and refuses a record that is a link,
-// unfollowed. Once the root is gone, RemoveWay removes each recorded folder that is empty, deepest
+// roots, reads none where the readers' check refuses the state root, whose record is none of conflux's
+// either, and refuses a record that is a link, unfollowed. Once the root is gone, RemoveWay removes each recorded folder that is empty, deepest
 // first, and leaves one holding anything else, and a link put at a recorded folder's name. An ephemeral
 // run's root keeps the record of the folders made on the way to it alike.
 func TestTheWayConfluxMadeIsRemovedWhenEmpty(t *testing.T) {
@@ -196,8 +196,12 @@ func TestTheWayConfluxMadeIsRemovedWhenEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got, err := d.Way(); err != nil || !slices.Equal(got, way) {
-		t.Errorf("Way() of a state root the readers' check refuses = %q, %v, want %q all the same", got, err, way)
+	if got, err := d.Way(); err != nil || got != nil {
+		t.Errorf("Way() of a state root the readers' check refuses = %q, %v, want no record", got, err)
+	}
+
+	if err := os.Chmod(root, 0o700); err != nil {
+		t.Fatal(err)
 	}
 
 	kept := filepath.Join(t.TempDir(), "kept")
@@ -283,8 +287,8 @@ func TestTheWayConfluxMadeIsRemovedWhenEmpty(t *testing.T) {
 // (OpenIn), never by its name, and only where what is at the root's name is as conflux makes a root
 // (ours): a directory of this account's own at 0700 is read, and a link at the name -- to a directory of
 // this account's own, the directory it is in, or nothing -- is none of conflux's, and taken as no root
-// at all, nothing in it opened; so is a directory of this account's own every account may write, but for
-// the way record, which all it can lead to is removing empty folders above the roots.
+// at all, nothing in it opened; and so is a directory of this account's own every account may write, the
+// way record in it among what is not read.
 func TestARootIsHeldBeforeAnythingInItIsOpened(t *testing.T) {
 	base, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -326,7 +330,7 @@ func TestARootIsHeldBeforeAnythingInItIsOpened(t *testing.T) {
 			if err := os.Chmod(root, 0o777); err != nil {
 				t.Fatal(err)
 			}
-		}, false, true},
+		}, false, false},
 		{"a link to a directory of this account's own", func(t *testing.T) {
 			if err := os.Symlink(mine(t, 0o700, plant), root); err != nil {
 				t.Fatal(err)

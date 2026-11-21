@@ -451,13 +451,13 @@ func (d Dirs) recordWay(made []string) error {
 }
 
 // readWay is the record in d's state root, a line a folder, at most wayMax bytes of it, opened through
-// the root held (openIn), whatever the readers' check says of that root: all the record can lead to is
-// removing empty folders above the roots (RemoveWay), and it is read as a file another account may have
-// put there (readUntrusted).
+// the root held (OpenIn), and only from a root as conflux makes one: the record in a root that is not is
+// none of conflux's either, and taken as not there. It is read as a file another account may have put
+// there all the same (readUntrusted).
 func (d Dirs) readWay() ([]string, error) {
 	path := d.WayFile()
 
-	f, err := d.openIn(path, true)
+	f, err := d.OpenIn(path)
 	if err != nil {
 		return nil, err
 	}
@@ -743,11 +743,7 @@ func notOurs(dir, why string, ephemeral bool) error {
 // name looked up in the root and nowhere else, never followed. A root that is not as conflux makes one is
 // none of conflux's, and is taken as not there. Where the root, or path's name in it, is not there, it is
 // an error that is fs.ErrNotExist.
-func (d Dirs) OpenIn(path string) (*os.File, error) { return d.openIn(path, false) }
-
-// openIn is OpenIn, a root not as conflux makes one taken all the same where any, but for one that is
-// not a directory, which holds nothing.
-func (d Dirs) openIn(path string, any bool) (*os.File, error) {
+func (d Dirs) OpenIn(path string) (*os.File, error) {
 	path, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
@@ -764,7 +760,7 @@ func (d Dirs) openIn(path string, any bool) (*os.File, error) {
 		return nil, err
 	}
 
-	if r == nil || why != "" && !any {
+	if r == nil || why != "" {
 		if r != nil {
 			r.close()
 		}

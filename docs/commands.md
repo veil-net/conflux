@@ -532,10 +532,9 @@ could change it could have put anything at the root's name, so conflux cannot kn
 its own. A way that cannot be walked at all, such as a `CONFLUX_DIR` beneath a file, stops uninstall
 there too, exit 1, saying so, before it acts. A root the readers' check refuses is removed the same
 way as one it takes, with nothing in it read or signalled first — no identity shown in the question,
-no `anchord` stopped by its pid record. The record of the folders made on the way to it is read all
-the same, as a file anybody may have put there, never through a link: all it can lead to is an empty
-folder above conflux's roots being removed. An ephemeral run's root inside a `CONFLUX_DIR` goes with
-it.
+no `anchord` stopped by its pid record, and not the record of the folders made on the way to it,
+which is none of conflux's either: those folders are left. An ephemeral run's root inside a
+`CONFLUX_DIR` goes with it.
 
 While an [ephemeral run](ephemeral.md) is live — kept for the account running it, or inside a
 `CONFLUX_DIR`, whose root it would go with — it refuses, exit 2, naming it, before asking anything,

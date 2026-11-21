@@ -75,8 +75,7 @@ func runUninstall(_ context.Context, args []string) int {
 	checked := d.Check()
 
 	// The folders conflux made on the way to the roots, recorded in the state root, which goes with
-	// the roots: read first (paths.Dirs.Way); all the record can lead to is removing empty folders
-	// above the roots.
+	// the roots: read first, and only from a root as conflux makes one (paths.Dirs.Way).
 	way, wayErr := d.Way()
 
 	// An ephemeral run's account goes with the installation's, and nothing may be running as it when it

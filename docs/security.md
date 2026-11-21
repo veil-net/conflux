@@ -178,9 +178,14 @@ attributes, can make a junction of it; and one on a junction root, opened to wri
 can point it elsewhere once the junction is tightened to SYSTEM's or the Administrators' under a
 protected DACL granting nobody else the right to write it, add to it, move it or change who may, as
 conflux leaves the one it makes, since conflux then takes it as its own and does not replace it.
-What conflux makes, it makes with its DACL set as it is created, which nobody can have opened
-before; what an administrator tightens by hand is safe from such a handle once nobody else can hold
-one: after a restart, or made again rather than tightened. The second is a way to a root that
+An owner always holds the right to read and change a DACL, so the same goes for a root the
+administrator running conflux owns, which conflux never makes but repairs rather than refuses,
+since it holds the identity and cannot be made again: a handle the administrator's own processes,
+elevated or not, opened on it while they owned it keeps those rights once conflux has given it to
+the Administrators and restricted it, and can change its DACL after. What conflux makes, it makes
+with its DACL set as it is created, and the Administrators' from that moment, which nobody can have
+opened before; what an administrator tightens or owns by hand is safe from such a handle once
+nobody else can hold one: after a restart, or made again rather than tightened. The second is a way to a root that
 conflux does not judge whole: a drive letter that stands for a folder rather than a volume — one
 `SUBST` or `DefineDosDevice` defined. conflux judges a `CONFLUX_DIR`'s way from the top of its
 drive, `X:\`, so the folders above the one the letter stands for are not judged, and whoever may

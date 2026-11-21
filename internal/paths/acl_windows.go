@@ -499,7 +499,10 @@ func trusted(sid *windows.SID) bool {
 // looked -- with a binary for the service to run, or a manifest whose key they hold --
 // and taking it over would adopt whatever is inside. The account running conflux is
 // accepted as well as SYSTEM and Administrators: an administrator's own directory,
-// under a policy that makes the creator its owner, is repaired rather than refused.
+// under a policy that makes the creator its owner, is repaired rather than refused, since it
+// holds the identity and cannot be made again, as what it holds can (RemakeOld). A handle their
+// processes opened on it while they owned it keeps its rights once it is given to the
+// Administrators: security.md's first gap, the handles kept.
 //
 // The root is judged and restricted through one handle, opened on the directory itself and
 // never by its name again (heldRoot): a name looked up afresh at each step could be a junction

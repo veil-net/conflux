@@ -36,10 +36,10 @@ func EphemeralDirs(root string) Dirs {
 //
 // Per identity, because the user running conflux decides what it may write: root's under
 // the system's run directory, anybody else's under their own. Under CONFLUX_DIR, inside its
-// DirName and nowhere else.
+// installation's root, DirName, and nowhere else.
 func EphemeralCandidates() []string {
-	if root := Root(); root != "" {
-		return []string{filepath.Join(root, DirName, "ephemeral")}
+	if Root() != "" {
+		return []string{filepath.Join(Default().State, "ephemeral")}
 	}
 
 	if runtime.GOOS == "windows" {

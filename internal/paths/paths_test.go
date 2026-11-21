@@ -86,3 +86,58 @@ func TestClearExceptSaysWhatItRemoved(t *testing.T) {
 		t.Errorf("ClearExcept(a directory not there) = %q, %v, want an error and nothing named", removed, err)
 	}
 }
+
+// TestOneTestOfWhatIsInsideWhat: the roots conflux holds and removes are those inside no other, each
+// once, the system's shared log directory never among them; a directory is inside a root only below
+// it, a name that merely starts with ".." included; and the folders Way takes from the record are
+// those above a root of conflux's, never one above the shared log directory alone, which conflux does
+// not make.
+func TestOneTestOfWhatIsInsideWhat(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "conflux")
+	shared := filepath.Join(base, "log", "shared")
+
+	was := sharedLog
+	t.Cleanup(func() { sharedLog = was })
+
+	sharedLog = shared
+
+	d := Dirs{Config: root, State: root, Run: filepath.Join(root, "run"), Log: shared}
+	if got := d.Outer(); !slices.Equal(got, []string{root}) {
+		t.Errorf("Outer() = %q, want %q", got, []string{root})
+	}
+
+	apart := Dirs{Config: filepath.Join(base, "etc"), State: filepath.Join(base, "lib"), Run: filepath.Join(base, "run")}
+	if got := apart.Outer(); !slices.Equal(got, []string{apart.Config, apart.State, apart.Run}) {
+		t.Errorf("Outer() of three roots apart = %q, want each", got)
+	}
+
+	for dir, want := range map[string]bool{
+		filepath.Join(root, "ephemeral"): true,
+		filepath.Join(root, "..x"):       true,
+		root:                             false,
+		filepath.Join(base, "other"):     false,
+		filepath.Join(shared, "x"):       false,
+	} {
+		if got := d.Inside(dir); got != want {
+			t.Errorf("Inside(%s) = %v, want %v", dir, got, want)
+		}
+	}
+
+	if !within(filepath.Join(root, "..x"), []string{root}) {
+		t.Errorf("within(%s, %s) = false, want it inside", filepath.Join(root, "..x"), root)
+	}
+
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(root, wayName), []byte(base+"\n"+filepath.Dir(shared)+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if way, err := d.Way(); err != nil || !slices.Equal(way, []string{base}) {
+		t.Errorf("Way() = %q, %v, want %q, and nothing above the shared log directory alone", way, err,
+			[]string{base})
+	}
+}

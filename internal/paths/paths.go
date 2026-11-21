@@ -401,10 +401,7 @@ func (d Dirs) Way() ([]string, error) {
 	var way []string
 
 	for _, p := range recorded {
-		if filepath.IsAbs(p) && filepath.Clean(p) == p && !slices.Contains(way, p) &&
-			slices.ContainsFunc([]string{d.Config, d.State, d.Run, d.Log}, func(root string) bool {
-				return root != "" && above(p, root)
-			}) {
+		if filepath.IsAbs(p) && filepath.Clean(p) == p && !slices.Contains(way, p) && d.aboveRoot(p) {
 			way = append(way, p)
 		}
 	}
@@ -465,11 +462,25 @@ func removeWayFolder(dir string, judge judgement) (bool, error) {
 	return removeEmpty(w.last().step, filepath.Base(dir), dir)
 }
 
-// above reports whether dir is a folder strictly above path.
+// above reports whether dir is a folder strictly above path, by their names (filepath.Rel), neither
+// taken through a link: the one test of whether a path is inside another, which within, chosen,
+// Inside and aboveRoot make.
 func above(dir, path string) bool {
 	rel, err := filepath.Rel(dir, path)
 
 	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// aboveRoot reports whether dir is a folder strictly above one of d's roots (roots), the system's
+// shared log directory not among them.
+func (d Dirs) aboveRoot(dir string) bool {
+	for root := range d.roots() {
+		if above(dir, root) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // deepestFirst sorts way, folders, those with the most names first, and is it.
@@ -505,11 +516,7 @@ func (d Dirs) RemakeOld() ([]string, error) {
 
 	var removed []string
 
-	for dir, inside := range d.roots() {
-		if inside {
-			continue
-		}
-
+	for _, dir := range d.Outer() {
 		r, err := remakeOld(d, dir)
 		if removed = append(removed, r...); err != nil {
 			return removed, err
@@ -591,9 +598,9 @@ func toParent(dir string, judge judgement) (*way, error) {
 // looked up or read. Nil where every way passes, where a name on one is not there, and for the
 // platform roots, whose ways are the system's own and not judged.
 func (d Dirs) JudgeWays() error {
-	for dir, inside := range d.roots() {
+	for _, dir := range d.Outer() {
 		judge := readersRule(dir)
-		if inside || judge == nil {
+		if judge == nil {
 			continue
 		}
 
@@ -629,12 +636,7 @@ func (d Dirs) OpenIn(path string) (*os.File, error) {
 
 	dir := filepath.Dir(path)
 
-	outer := false
-	for root, inside := range d.roots() {
-		outer = outer || !inside && root == dir
-	}
-
-	if !outer {
+	if !slices.Contains(d.Outer(), dir) {
 		return nil, fmt.Errorf("%s is not directly in a root of conflux's", path)
 	}
 
@@ -814,6 +816,33 @@ func (d Dirs) wayRule(dir string) judgement {
 	return serviceRule(dir)
 }
 
+// Outer is each of d's roots that sits inside no other (roots), once: the ones conflux holds, judges
+// and removes, taking those inside with them -- run and logs on Windows and in a CONFLUX_DIR. The
+// system's shared log directory, which macOS and FreeBSD keep the service's log in, is never one.
+func (d Dirs) Outer() []string {
+	var outer []string
+
+	for dir, inside := range d.roots() {
+		if !inside {
+			outer = append(outer, dir)
+		}
+	}
+
+	return outer
+}
+
+// Inside reports whether dir sits strictly inside one of d's roots (roots, above): an ephemeral run's
+// root inside a CONFLUX_DIR, or a log directory inside the state root, which goes with it.
+func (d Dirs) Inside(dir string) bool {
+	for root := range d.roots() {
+		if above(root, dir) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // roots is each of d's directories that is conflux's, once: every one set but the system's shared
 // log directory -- Config and State are one directory on macOS, Windows and under CONFLUX_DIR --
 // and whether it sits inside another of them, which holds it.
@@ -854,11 +883,7 @@ func (d Dirs) roots() iter.Seq2[string, bool] {
 func (d Dirs) Check() error {
 	there := false
 
-	for dir, inside := range d.roots() {
-		if inside {
-			continue
-		}
-
+	for _, dir := range d.Outer() {
 		switch err := checkRoot(dir); {
 		case errors.Is(err, fs.ErrNotExist):
 		case err != nil:
@@ -898,13 +923,8 @@ var looking = func(string) {}
 // hold the directories above it to account too.
 func chosen(dir string) bool {
 	root := Root()
-	if root == "" {
-		return false
-	}
 
-	rel, err := filepath.Rel(root, dir)
-
-	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	return root != "" && (filepath.Clean(dir) == root || above(root, dir))
 }
 
 // judgement is what a walk holds the way to a directory to: each directory it looks a name up in,
@@ -1242,19 +1262,9 @@ func nextName(path string) (name, rest string) {
 	return path[i:j], path[j:]
 }
 
-// within reports whether dir sits strictly inside another of dirs.
+// within reports whether dir sits strictly inside another of dirs (above).
 func within(dir string, dirs []string) bool {
-	for _, other := range dirs {
-		if other == "" || other == dir {
-			continue
-		}
-
-		if rel, err := filepath.Rel(other, dir); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
-			return true
-		}
-	}
-
-	return false
+	return slices.ContainsFunc(dirs, func(other string) bool { return other != "" && above(other, dir) })
 }
 
 // ClearExcept removes everything in dir but keep, following nothing in it (os.RemoveAll), and is the

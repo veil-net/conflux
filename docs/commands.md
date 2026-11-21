@@ -650,7 +650,10 @@ earlier conflux left everywhere conflux keeps files, every time, and makes afres
 so an update works on an older install as it is:
 
 - the service is stopped where a supervisor still serves the root, asked of the supervisor's lock
-  without trusting the root, and started again, on the new conflux, however the command ends: by
+  through the root held, never by its name: a `CONFLUX_DIR` whose way another account may change, as
+  the [readers' check](#a-root-another-account-could-change) judges it, or a root conflux would not
+  follow or another account owns, is refused there, exit 1, naming it, with nothing stopped. One that
+  was serving is started again, on the new conflux, however the command ends: by
   `start`'s restart, by `register`, which starts nothing it did not stop, and by either where
   anything after this fails. A supervisor that still serves the root with the service stopped —
   one started by hand — is refused, exit 1, naming the root, with nothing removed;

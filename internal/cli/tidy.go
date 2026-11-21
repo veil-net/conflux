@@ -25,9 +25,11 @@ import (
 // is touched -- the configuration, the identity, the state and the log stay -- and what is removed is
 // made again, fresh, by this conflux.
 //
-//   - The service is stopped where a supervisor serves the root, asked of its serve lock without
-//     trusting the root (flock.Held), since nothing has judged it yet; stopped says it was, for the
-//     caller to start it again, on this conflux, however it ends (startAgain).
+//   - The service is stopped where a supervisor serves the root, asked of its serve lock through the
+//     root held (flock.HeldIn), since nothing has judged the root yet: a way to a CONFLUX_DIR that
+//     another account may change, or a root conflux would refuse to follow or another account owns, is
+//     refused there, before anything is stopped. stopped says it was, for the caller to start it
+//     again, on this conflux, however it ends (startAgain).
 //   - What conflux makes again by its name in an installation's root and finds failing the rule the
 //     SYSTEM service holds it to -- an older conflux's on a Windows client, the administrator's own --
 //     is removed through handles (paths' RemakeOld), and anything else failing it refused; then the
@@ -56,7 +58,7 @@ func tidy(d paths.Dirs, mgr service.Manager) (stopped bool, err error) {
 
 	defer func() { listRemoved(removed) }()
 
-	switch held, err := flock.Held(d.ServeLockFile()); {
+	switch held, err := flock.HeldIn(d, d.ServeLockFile()); {
 	case err != nil:
 		return false, err
 	case held:

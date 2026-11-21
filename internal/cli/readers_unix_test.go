@@ -314,3 +314,40 @@ func uninstallRemoves(t *testing.T, d paths.Dirs, why string) {
 		}
 	})
 }
+
+// TestAnUpdateStopsNothingOnAWayItRefuses: the conflux an update put in place stops a supervisor
+// serving the root before it removes what earlier conflux left, but only once it has judged the way to
+// a CONFLUX_DIR, as the readers' check does: a root inside a directory every account may write, which
+// it will refuse, is refused, naming that directory, with the service neither stopped nor started.
+func TestAnUpdateStopsNothingOnAWayItRefuses(t *testing.T) {
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	for _, verb := range []string{"register", "start"} {
+		t.Run(verb, func(t *testing.T) {
+			parent := t.TempDir()
+			d := pathstest.DirsIn(t, filepath.Join(parent, "conflux"))
+			serving(t, d)
+
+			if err := os.Chmod(parent, 0o777); err != nil {
+				t.Fatal(err)
+			}
+
+			t.Cleanup(func() { _ = os.Chmod(parent, 0o700) })
+
+			mgr := &stopping{fakeManager: fakeManager{d: d}}
+			standInService(t, mgr)
+
+			out, errOut, code := capture(t, verb)
+			if code != ExitError || !strings.Contains(errOut, parent) {
+				t.Errorf("conflux %s of a root in a directory every account may write exited %d, want %d naming it:\n%s%s",
+					verb, code, ExitError, out, errOut)
+			}
+
+			if mgr.stops+mgr.restarts+len(mgr.installs) > 0 {
+				t.Errorf("conflux %s stopped the service %d times, started it %d and registered it %d, on a way it refuses",
+					verb, mgr.stops, mgr.restarts, len(mgr.installs))
+			}
+		})
+	}
+}

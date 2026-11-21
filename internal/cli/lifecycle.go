@@ -347,10 +347,10 @@ func runStart(ctx context.Context, args []string) int {
 
 // remakeUnserved removes what conflux makes again in d's roots and an earlier conflux left failing
 // the service's rule (paths' RemakeOld), listing it, where no supervisor serves the roots: asked of
-// the serve lock without trusting the root (flock.Held), since nothing has judged it yet. It is what
-// it removed.
+// the serve lock through the root held (flock.HeldIn), since nothing has judged what the root holds
+// yet. It is what it removed.
 func remakeUnserved(d paths.Dirs) ([]string, error) {
-	switch held, err := flock.Held(d.ServeLockFile()); {
+	switch held, err := flock.HeldIn(d, d.ServeLockFile()); {
 	case err != nil:
 		return nil, err
 	case held:

@@ -282,8 +282,8 @@ installation's root, the one the boot service runs from, the account running con
 those trusted: the service runs as SYSTEM, which trusts no other account, and holds the way to its
 root to that at every start, so a way an administrator's own grant lets through — the folders of
 their profile grant them full control — would be refused there, every time, once the service was
-registered; `up`, `proxy`, `observe`, `enrol`, `install` and `register` hold it to the service's
-rule instead, and refuse it up front, naming the folder. An ephemeral run's root, which no service
+registered; `up`, `proxy`, `observe`, `enrol`, `install`, `register` and `start` hold it to the
+service's rule instead, and refuse it up front, naming the folder. An ephemeral run's root, which no service
 serves, is held for the account running it. conflux tells the two apart by the directories it was
 handed: an ephemeral run's are its own (`paths.EphemeralDirs`), and every other set is an
 installation's. On Unix the service runs as root, as every command that makes an installation's

@@ -40,12 +40,12 @@ func wellKnown(t windows.WELL_KNOWN_SID_TYPE) *windows.SID {
 // it, and a protected DACL grants the two of them full control and nobody else
 // anything. A directory's grant is inherited by what it holds.
 //
-// The owner is set rather than left to the creating token (asAdministrators), so that
-// everything conflux writes passes Trusted, and the SYSTEM service's judgement of its root,
-// whatever the machine's default-owner policy says. A token that may not name Administrators
-// as an owner, or change the owner at all -- one that is not elevated, which conflux never is
-// outside a test -- keeps its own ownership and still gets the DACL. Protected is the half that matters for the DACL: without it the parent's ACEs
-// are merged back in and the restriction is cosmetic.
+// The owner is set rather than left as it is (asAdministrators), so that everything conflux writes
+// passes Trusted, and the SYSTEM service's judgement of its root, whoever made it. A token that may
+// not name Administrators as an owner, or change the owner at all -- one that is not elevated, which
+// no conflux command that makes or restricts a root runs with, though a test may -- keeps its own
+// ownership and still gets the DACL. Protected is the half that matters for the DACL: without it the
+// parent's ACEs are merged back in and the restriction is cosmetic.
 func Restrict(path string, dir bool) error {
 	return restrictWith(dir, func(owner *windows.SID, dacl *windows.ACL) error {
 		return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, restrictInfo(owner), owner, nil, dacl, nil)
@@ -86,14 +86,15 @@ func restrictWith(dir bool, set func(owner *windows.SID, dacl *windows.ACL) erro
 	return asAdministrators(func(owner *windows.SID) error { return set(owner, dacl) })
 }
 
-// asAdministrators is how conflux names the owner of everything it makes, or restricts, in a root
-// or on the way to one: set, handed the Administrators, and, where the token may not name them --
-// one that is not elevated, which conflux making an installation's root never is, nor a test --
-// handed nil, to leave the owner as the token made it. Named rather than left to the token, whose
-// default owner for what an elevated administrator makes is the Administrators on Windows Server
-// and that administrator on a Windows client: the boot service, running as SYSTEM, trusts no other
-// account with anything in its root or on its way (changerIn, serviceRule), and would refuse at
-// every start what the administrator's own run made and took.
+// asAdministrators is how conflux names the owner of everything it makes with a descriptor of its
+// own, or restricts, in a root or on the way to one: set, handed the Administrators, and, where the
+// token may not name them -- one that is not elevated, which no conflux command that makes or
+// restricts a root runs with, though a test may -- handed nil, to leave the owner as the token made
+// it. Named rather than left to the token: what is restricted -- a root found there, a file made
+// before it is restricted -- keeps the owner it has unless one is named, and the boot service,
+// running as SYSTEM, trusts no account but the Administrators with anything in its root or on its
+// way (changerIn, serviceRule). What is made is the Administrators' either way where the token is
+// elevated (ElevatedDefaultOwner).
 func asAdministrators(set func(owner *windows.SID) error) error {
 	err := set(sidAdmins)
 	if errors.Is(err, windows.ERROR_INVALID_OWNER) || errors.Is(err, windows.ERROR_ACCESS_DENIED) {
@@ -1239,8 +1240,9 @@ func heldLink(dir string, sd *windows.SECURITY_DESCRIPTOR) error {
 // whatever the lookup of its name leads to. Shared every way, so that nobody else's use of it
 // is refused for conflux's look. A right to change the owner or the DACL that is not granted is
 // given up rather than failing the open: a token that may not take ownership -- one that is not
-// elevated, outside a test -- may still replace its own directory's DACL, a junction secure holds
-// is only read, and a restriction through a handle without the right fails as it would by name.
+// elevated, which no conflux command that makes or restricts a root runs with, though a test may --
+// may still replace its own directory's DACL, a junction secure holds is only read, and a
+// restriction through a handle without the right fails as it would by name.
 func openFile(p string, access uint32, follow bool) (windows.Handle, error) {
 	name, err := windows.UTF16PtrFromString(p)
 	if err != nil {
@@ -1350,7 +1352,7 @@ func parentsRule(dir string) judgement { return parentsRuleFor(dir, currentUser(
 // serviceRule is parents' rule for dir as the boot service holds it at every start: for SYSTEM,
 // which it runs as (parentsRuleFor). An administrator's run trusts its own account as well, and the
 // folders of its profile grant it full control, so a way it took the service would refuse at every
-// start; held to this, up, install and register refuse such a way up front, naming why.
+// start; held to this, up, install, register and start refuse such a way up front, naming why.
 func serviceRule(dir string) judgement { return parentsRuleFor(dir, sidSystem) }
 
 // parentsRuleFor is parents' rule for dir, for the account self: a folder on the way to it is refused

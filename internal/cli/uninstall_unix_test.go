@@ -130,6 +130,8 @@ func TestUninstallRefusesAWayAnotherAccountMayChange(t *testing.T) {
 // write, or one holding a name conflux never makes there, however narrow its mode, which conflux
 // never secured as a run's root, is not conflux's, whatever its name: uninstall leaves it as it is,
 // with what it holds, saying so, and does not fail for it, while a killed run's root beside it goes.
+// So is one at a mode conflux never leaves a root at, which says nothing secured it either, refused
+// as it would be emptied, through the root held, its lock left with it.
 func TestUninstallLeavesAnEphemeralRootConfluxDidNotSecure(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
@@ -139,10 +141,11 @@ func TestUninstallLeavesAnEphemeralRootConfluxDidNotSecure(t *testing.T) {
 	shared := filepath.Join(t.TempDir(), "conflux-ephemeral")
 	open := filepath.Join(t.TempDir(), "conflux-ephemeral")
 	stray := filepath.Join(t.TempDir(), "conflux-ephemeral")
+	unsecured := filepath.Join(t.TempDir(), "conflux-ephemeral")
 	killed := filepath.Join(t.TempDir(), "conflux-ephemeral")
 
 	for root, mode := range map[string]os.FileMode{shared: 0o777 | os.ModeSticky, open: 0o777, stray: 0o700,
-		killed: 0o700} {
+		unsecured: 0o755, killed: 0o700} {
 		if err := os.Mkdir(root, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -163,7 +166,7 @@ func TestUninstallLeavesAnEphemeralRootConfluxDidNotSecure(t *testing.T) {
 	}
 
 	defer func(was func() []string) { ephemeralCandidates = was }(ephemeralCandidates)
-	ephemeralCandidates = func() []string { return []string{shared, open, stray, killed} }
+	ephemeralCandidates = func() []string { return []string{shared, open, stray, unsecured, killed} }
 
 	mgr := &removing{fakeManager: fakeManager{d: d}}
 	standInService(t, mgr)
@@ -178,7 +181,7 @@ func TestUninstallLeavesAnEphemeralRootConfluxDidNotSecure(t *testing.T) {
 		t.Errorf("uninstall emptied %s, which holds a name conflux never makes there: %q, %v", stray, b, err)
 	}
 
-	for _, root := range []string{shared, open, stray} {
+	for _, root := range []string{shared, open, stray, unsecured} {
 		if _, err := os.Lstat(filepath.Join(root, "serve.lock")); err != nil || !strings.Contains(errOut, root) ||
 			strings.Contains(out, "  "+root+"\n") {
 			t.Errorf("uninstall removed or listed %s, which conflux did not secure, or did not say it left it "+

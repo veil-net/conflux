@@ -42,7 +42,9 @@ import (
 //     extraction left staged -- and this build's pair extracted afresh (libexec.Remake): where it
 //     cannot be, tidy fails once it has done the rest, since a set planted there would be kept.
 //   - A killed ephemeral run's root is removed, the anchord it left stopped (removeKilledRun); a
-//     live run's, and one another account could have made, are left.
+//     live run's, and one another account could have made, are left, and so, with a note, is one
+//     conflux did not secure, as uninstall judges it, before anything is made, read or removed in it,
+//     and again as it is emptied, through the root held (leftAsOthers).
 //   - Where nothing holds the state's lock, what an atomic write that never went in place left in the
 //     configuration and state directories goes (removeStaged). The lock files themselves are kept on
 //     Unix, and on Windows removed once let go of, for whatever next takes them to make again
@@ -101,6 +103,12 @@ func tidy(d paths.Dirs, mgr service.Manager) (stopped bool, err error) {
 
 	for _, root := range paths.EphemeralCandidates() {
 		found, err := removeKilledRun(root)
+		if found == othersRun {
+			leftAsOthers(err, "conflux")
+
+			continue
+		}
+
 		leftBehind(err)
 
 		if _, err := os.Lstat(root); found == killedRun && errors.Is(err, fs.ErrNotExist) {

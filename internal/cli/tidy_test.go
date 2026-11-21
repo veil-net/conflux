@@ -756,6 +756,76 @@ func TestTidyListsOnlyWhatItRemoved(t *testing.T) {
 	})
 }
 
+// TestTidyLeavesAnEphemeralRootConfluxDidNotSecure: the conflux an update put in place leaves an
+// ephemeral run's root conflux did not secure as it is, with what it holds, saying so, unlisted, and
+// goes on: one holding a name conflux never makes there, judged before anything is made in it, so no
+// lock is made there either; and, on Unix, one at a mode conflux never leaves a root at, which says
+// nothing secured it, refused as it would be emptied, through the root held, its lock left with it.
+func TestTidyLeavesAnEphemeralRootConfluxDidNotSecure(t *testing.T) {
+	anchortest.Require(t) // it extracts the pair afresh
+
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	for name, c := range map[string]struct {
+		mode   os.FileMode
+		plant  func(paths.Dirs) string
+		locked bool
+	}{
+		"holding a name conflux never makes there": {mode: 0o700,
+			plant: func(e paths.Dirs) string { return filepath.Join(e.State, "notes.txt") }},
+		"at a mode conflux leaves no root at": {mode: 0o755, plant: paths.Dirs.TokenFile, locked: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if c.mode != 0o700 && runtime.GOOS == "windows" {
+				t.Skip("a mode says nothing of a Windows root")
+			}
+
+			d := configured(t)
+
+			root := paths.EphemeralCandidates()[0]
+			e := paths.EphemeralDirs(root)
+			planted := c.plant(e)
+
+			files := []string{planted}
+			if c.locked {
+				files = append(files, e.ServeLockFile())
+			}
+
+			for _, p := range files {
+				if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+					t.Fatal(err)
+				}
+
+				if err := os.WriteFile(p, []byte("somebody's"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			if err := os.Chmod(root, c.mode); err != nil {
+				t.Fatal(err)
+			}
+
+			standInService(t, &fakeManager{d: d})
+
+			out, errOut, code := capture(t, "register")
+			if code != ExitOK || !strings.Contains(errOut, root) || !strings.Contains(errOut, "conflux did not secure it") ||
+				strings.Contains(out, "  "+root+"\n") {
+				t.Errorf("conflux register beside an ephemeral root conflux did not secure exited %d, want %d saying it "+
+					"left %s, unlisted:\n%s%s", code, ExitOK, root, out, errOut)
+			}
+
+			if b, err := os.ReadFile(planted); err != nil || string(b) != "somebody's" {
+				t.Errorf("conflux register emptied %s: %q, %v", root, b, err)
+			}
+
+			if _, err := os.Lstat(e.ServeLockFile()); c.locked == os.IsNotExist(err) {
+				t.Errorf("conflux register left %s as a lock there %v, want %v (Lstat: %v)", root, !c.locked, c.locked, err)
+			}
+		})
+	}
+}
+
 // TestTidyLeavesWhatAHeldLockGuards: what an atomic write left in the state directory is removed only
 // where nothing holds the state's lock, which every writer of the manifest and the state holds; while
 // something does -- a conflux enrol, say -- what it may be writing is left, with the lock.

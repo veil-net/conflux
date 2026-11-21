@@ -375,28 +375,45 @@ func untilRenewal(m *enrol.Manifest) time.Duration {
 	return min(max(time.Until(at), 0), maxSleep)
 }
 
-// RemoveEphemeral removes a killed ephemeral run's root e, as uninstall clears it, whose lock the
-// caller holds and lets go of with unlock: whatever the run left running is stopped first, and
-// then the root is emptied and removed (emptyEphemeral).
+// RemoveEphemeral removes a killed ephemeral run's root e, as tidy and uninstall clear it, whose lock
+// the caller holds and lets go of with unlock: whatever the run left running is stopped first, and
+// then the root is emptied and removed (emptyEphemeral), or left as it is where paths refuses it
+// (RootRefused).
 func RemoveEphemeral(e paths.Dirs, unlock func(), r Reporter) error {
 	_, reapErr := (&Supervisor{Dirs: e, Reporter: r, ephemeral: true}).reapLeftovers()
 
 	return errors.Join(reapErr, emptyEphemeral(e, unlock))
 }
 
-// emptyEphemeral empties an ephemeral run's root e but for its lock while the lock is held, so a
-// run that takes it the moment it is let go is never emptied out from under itself; then lets go
-// of the lock with unlock, and removes the lock file and the root, which is empty unless such a
-// run has taken it, nothing more. It says why the root could not be emptied.
+// emptyEphemeral empties an ephemeral run's root e but for its lock while the lock is held, through
+// the root held (paths.RemoveKilledRun), so a run that takes it the moment it is let go is never
+// emptied out from under itself, and neither a way nor a link at the root's name changed since can
+// lead the emptying elsewhere; then lets go of the lock with unlock, and removes the lock file and the
+// root -- a link at its name as itself -- which is empty unless such a run has taken it, nothing more.
+// A root paths refuses (RootRefused) is left as it is, the lock with it, and the refusal returned. It
+// says why the root could not be emptied.
 func emptyEphemeral(e paths.Dirs, unlock func()) error {
-	_, err := paths.ClearExcept(e.State, e.ServeLockFile())
+	_, err := paths.RemoveKilledRun(e.State, e.ServeLockFile())
 
 	unlock()
+
+	if RootRefused(err) {
+		return err
+	}
 
 	_ = os.Remove(e.ServeLockFile())
 	_ = os.Remove(e.State)
 
 	return err
+}
+
+// RootRefused reports whether err is paths' refusal of a killed ephemeral run's root
+// (paths.RemoveKilledRun), which removed nothing: a way another account may change, a shared or system
+// directory or a volume's top, one holding a name conflux never makes there or a file at its name, or
+// one conflux has not secured.
+func RootRefused(err error) bool {
+	return errors.Is(err, paths.ErrWayRefused) || errors.Is(err, paths.ErrSharedRoot) ||
+		errors.Is(err, paths.ErrForeignRoot) || errors.Is(err, paths.ErrUnsecuredRoot)
 }
 
 // reapLeftovers stops what a run killed before it could clean up left running from the root --

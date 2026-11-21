@@ -131,8 +131,9 @@ func runUninstall(_ context.Context, args []string) int {
 
 	// Each ephemeral run's root, but one inside the installation's -- a CONFLUX_DIR's -- which goes with
 	// it, and one conflux did not secure, left already, a killed run's anchord stopped first, where the
-	// root is this account's alone. A run that started since uninstall asked is left running: its root,
-	// the installation's roots where it is inside them, and its account.
+	// root is this account's alone. One judged so again as it is emptied (removeKilledRun) is left the
+	// same way, with a note. A run that started since uninstall asked is left running: its root, the
+	// installation's roots where it is inside them, and its account.
 	var (
 		started       []string
 		startedInside bool
@@ -141,6 +142,9 @@ func runUninstall(_ context.Context, args []string) int {
 	for _, root := range ephemeralCandidates() {
 		if d.Inside(root) {
 			switch found, err := removeKilledRun(root); {
+			case found == othersRun:
+				// Not emptied, nor anything in it stopped: it goes with the installation's root, reading
+				// nothing in it.
 			case err != nil:
 				errs = append(errs, err)
 			case found == liveRun:
@@ -283,9 +287,7 @@ func othersEphemeral(d paths.Dirs) []string {
 		}
 
 		if err := notConfluxs(root); err != nil {
-			what, _, _ := strings.Cut(err.Error(), "\n")
-			ui.Errf("%s\n  conflux did not secure it as an ephemeral run's root, so it is not conflux's, and uninstall "+
-				"left it as it is", what)
+			leftAsOthers(err, "uninstall")
 
 			others = append(others, root)
 		}
@@ -294,11 +296,19 @@ func othersEphemeral(d paths.Dirs) []string {
 	return others
 }
 
-// notConfluxs is why the ephemeral root at root, outside an installation's roots, is not one conflux
-// secured, or nil where it is, or is not there: one RemoveRoot refuses (JudgeWays) -- a shared or
-// system directory, or one holding a name conflux never makes there, however narrow its mode -- or one
-// the readers' check refuses, which another account owns or may change (Check). %ProgramData% lets any
-// account make the name first.
+// leftAsOthers notes the ephemeral root err says conflux did not secure (notConfluxs, or paths refusing
+// it as it was to be emptied), which by -- uninstall, or the conflux an update put in place (tidy) --
+// left as it is: not conflux's, whatever its name, and nothing to fail for.
+func leftAsOthers(err error, by string) {
+	what, _, _ := strings.Cut(err.Error(), "\n")
+	ui.Errf("%s\n  conflux did not secure it as an ephemeral run's root, so it is not conflux's, and %s left it as it is",
+		what, by)
+}
+
+// notConfluxs is why the ephemeral root at root is not one conflux secured, or nil where it is, or is
+// not there: one RemoveRoot refuses (JudgeWays) -- a shared or system directory, or one holding a name
+// conflux never makes there, however narrow its mode -- or one the readers' check refuses, which
+// another account owns or may change (Check). %ProgramData% lets any account make the name first.
 func notConfluxs(root string) error {
 	e := paths.EphemeralDirs(root)
 
@@ -317,10 +327,15 @@ func notConfluxs(root string) error {
 // is gone, which one it failed to empty is not: a killed run's as removeKilledRun removes it, under its
 // lock, and nothing after, so a run that takes it the moment the lock is let go of keeps it, and it is
 // not gone; and one holding what another account could have put there reading nothing in it, nor
-// signalling anything it names (paths.RemoveRoot). A live run's, which uninstall has refused already,
-// is one that started since, and is errStarted.
+// signalling anything it names (paths.RemoveRoot). One removeKilledRun finds conflux did not secure is
+// left, with a note. A live run's, which uninstall has refused already, is one that started since, and
+// is errStarted.
 func removeEphemeralRoot(root string) (bool, error) {
 	switch found, err := removeKilledRun(root); {
+	case found == othersRun:
+		leftAsOthers(err, "uninstall")
+
+		return false, nil
 	case err != nil:
 		return false, err
 	case found == liveRun:
@@ -348,15 +363,26 @@ const (
 	noRun      runRoot = iota // nothing there
 	killedRun                 // a killed run's, removed
 	liveRun                   // a live run's, its lock held, left as it is
-	foreignRun                // one another account could have made or changed, left as it is
+	foreignRun                // one holding what another account could have put there, left as it is
+	othersRun                 // one conflux did not secure, left as it is, the error saying why
 )
 
-// removeKilledRun removes the ephemeral root at root where it is a killed run's -- this account's
-// alone (paths.Foreign), its lock held by nobody -- stopping what that run left running from it
-// first, under its lock, as a run's own clean-up does, so that one starting this moment is not
-// emptied out from under itself; and says what it found. Nothing is read in one another account
-// could have made or changed.
+// removeKilledRun removes the ephemeral root at root where it is a killed run's -- one conflux secured
+// (notConfluxs), this account's alone (paths.Foreign), its lock held by nobody -- stopping what that run
+// left running from it first, under its lock, as a run's own clean-up does, so that one starting this
+// moment is not emptied out from under itself; and says what it found. That much is judged before the
+// lock is taken, which makes the lock file where it is not there. What conflux has not secured -- a
+// link at its name the boot service would not follow, a directory not left as conflux secures a root --
+// only paths judges, as it empties the root through the root held (daemon.RemoveEphemeral), once the
+// lock is taken and what the run left stopped: it refuses that, and what changed since, leaving the
+// root as it is, the lock with it (daemon.RootRefused). One conflux did not secure is othersRun, and the
+// error why, which the caller notes rather than fails for (leftAsOthers). Nothing is read in one
+// another account could have made or changed.
 func removeKilledRun(root string) (runRoot, error) {
+	if err := notConfluxs(root); err != nil {
+		return othersRun, err
+	}
+
 	switch err := foreignRoot(root); {
 	case errors.Is(err, fs.ErrNotExist):
 		return noRun, nil
@@ -375,7 +401,12 @@ func removeKilledRun(root string) (runRoot, error) {
 		return liveRun, nil
 	}
 
-	return killedRun, removeEphemeral(e, unlock, nil)
+	err = removeEphemeral(e, unlock, nil)
+	if daemon.RootRefused(err) {
+		return othersRun, err
+	}
+
+	return killedRun, err
 }
 
 // removeEphemeral is daemon.RemoveEphemeral, which a test points at one that lets a run take the root

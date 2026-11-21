@@ -591,7 +591,11 @@ shared or system directory, one holding a name conflux never makes there, howeve
 or one the readers' check refuses, which another account owns or may change, as any account may make
 `C:\ProgramData\conflux-ephemeral` first — is not conflux's,
 whatever its name: judged with the installation's roots, before anything is asked or removed, it is
-left as it is, with a note naming it and why, and uninstall does not fail for it.
+left as it is, with a note naming it and why, and uninstall does not fail for it. Each is judged
+so again before its lock is taken, which makes the lock file where there is none, and once more as
+it is emptied, through the root held: one conflux has not secured — a link at its name the boot
+service would not follow, or a directory, there or where such a link leads, not owned and left as
+conflux secures a root — is left the same way, its lock with it.
 
 ## `conflux status`
 
@@ -740,7 +744,10 @@ so an update works on an older install as it is:
 - every extracted anchor set, the current one among them, and whatever a crashed extraction left
   staged, are removed, and this build's pair is extracted afresh, so nothing planted among them is
   kept or run;
-- a killed ephemeral run's root is removed, the `anchord` it left stopped; a live run's is left;
+- a killed ephemeral run's root is removed, the `anchord` it left stopped, as `uninstall` removes
+  one; a live run's is left, and so is one conflux did not secure, with a note naming it and why,
+  judged as `uninstall` judges it, before anything is made, read or removed in it, and again as it
+  is emptied, through the root held;
 - where nothing holds the state's lock, what an atomic write that never went in place left in the
   configuration and state directories goes;
 - the lock files — the state's, the supervisor's and `bin`'s — are kept on Unix, where a lock

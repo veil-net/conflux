@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -114,5 +115,100 @@ func TestRemoveRootHoldsACONFLUXDIRsWay(t *testing.T) {
 
 	if gone, err := RemoveRoot(root); !gone || err != nil {
 		t.Errorf("RemoveRoot(a platform root inside a directory anybody may write) = %v, %v, want it removed", gone, err)
+	}
+}
+
+// TestTheWayConfluxMadeIsRemovedWhenEmpty: EnsureAll records each folder it made on the way to an
+// installation's root, in the state root, once, however often it runs; Way reads the record back,
+// deepest first, keeping only folders above one of the roots, and only where the state root passes
+// the readers' check. Once the root is gone, RemoveWay removes each recorded folder that is empty,
+// deepest first, and leaves one holding anything else, and a link put at a recorded folder's name. An
+// ephemeral run's roots keep no record.
+func TestTheWayConfluxMadeIsRemovedWhenEmpty(t *testing.T) {
+	base := t.TempDir()
+	a, b := filepath.Join(base, "a"), filepath.Join(base, "a", "b")
+	root := filepath.Join(b, "conflux")
+
+	t.Setenv("CONFLUX_DIR", root)
+	d := Default()
+
+	for range 2 {
+		if err := d.EnsureAll(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	record := filepath.Join(d.State, wayName)
+
+	if got, err := readWay(record); err != nil || !slices.Equal(got, []string{a, b}) {
+		t.Fatalf("the record EnsureAll kept = %q, %v, want %q, each once", got, err, []string{a, b})
+	}
+
+	elsewhere := t.TempDir()
+	if err := os.WriteFile(record, []byte(a+"\n"+b+"\n"+elsewhere+"\nrelative\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	way, err := d.Way()
+	if err != nil || !slices.Equal(way, []string{b, a}) {
+		t.Fatalf("Way() = %q, %v, want %q, deepest first, and nothing not above a root", way, err, []string{b, a})
+	}
+
+	if err := os.Chmod(root, 0o757); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, err := d.Way(); err == nil {
+		t.Errorf("Way() of a state root the readers' check refuses = %q, nil, want the refusal", got)
+	}
+
+	other := filepath.Join(a, "other")
+	if err := os.WriteFile(other, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := RemoveRoot(root); err != nil {
+		t.Fatal(err)
+	}
+
+	if removed, err := RemoveWay(way); err != nil || !slices.Equal(removed, []string{b}) {
+		t.Errorf("RemoveWay(%q), %s holding a file = %q, %v, want %q", way, a, removed, err, []string{b})
+	}
+
+	if err := os.Remove(other); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Symlink(elsewhere, b); err != nil {
+		t.Fatal(err)
+	}
+
+	if removed, err := RemoveWay(way); err != nil || removed != nil {
+		t.Errorf("RemoveWay(%q), a link at %s = %q, %v, want nothing removed", way, b, removed, err)
+	}
+
+	if _, err := os.Lstat(b); err != nil {
+		t.Errorf("RemoveWay removed the link at %s: %v", b, err)
+	}
+
+	if err := os.Remove(b); err != nil {
+		t.Fatal(err)
+	}
+
+	if removed, err := RemoveWay(way); err != nil || !slices.Equal(removed, []string{a}) {
+		t.Errorf("RemoveWay(%q) = %q, %v, want %q", way, removed, err, []string{a})
+	}
+
+	if _, err := os.Stat(elsewhere); err != nil {
+		t.Errorf("RemoveWay reached %s: %v", elsewhere, err)
+	}
+
+	e := EphemeralDirs(filepath.Join(base, "x", "conflux-ephemeral"))
+	if err := e.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Lstat(filepath.Join(e.State, wayName)); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("EnsureAll of an ephemeral run's roots kept a record of its way (%v)", err)
 	}
 }

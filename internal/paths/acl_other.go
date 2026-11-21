@@ -188,6 +188,21 @@ func removeFrom(parent step, name, p string) (bool, error) {
 	return true, nil
 }
 
+// removeEmpty is RemoveWay's removal of name, an empty directory, in the directory parent is, which p
+// names, by unlinkat, and whether it removed it: one holding anything, not there, or no longer a
+// directory, a link among them, is left.
+func removeEmpty(parent step, name, p string) (bool, error) {
+	switch err := ignoringEINTR(func() error { return unix.Unlinkat(parent.fd, parent.at(name), unix.AT_REMOVEDIR) }); {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, unix.ENOENT), errors.Is(err, unix.ENOTEMPTY), errors.Is(err, unix.EEXIST),
+		errors.Is(err, unix.ENOTDIR):
+		return false, nil
+	default:
+		return false, &os.PathError{Op: "remove", Path: p, Err: err}
+	}
+}
+
 // removeAt removes at, in the directory dirfd is open on, which p names, and, where it is a directory,
 // all it holds first: what fstatat says of the name, never followed; a directory opened there with
 // O_NOFOLLOW and held to what fstatat said, what it holds removed through it, then the directory by

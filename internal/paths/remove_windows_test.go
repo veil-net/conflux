@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -117,5 +118,64 @@ func TestRemoveRootHoldsACONFLUXDIRsWay(t *testing.T) {
 	if gone, err := RemoveRoot(root); !gone || err != nil {
 		t.Errorf("RemoveRoot(a platform root inside a folder Users may delete from) = %v, %v, want it removed", gone,
 			err)
+	}
+}
+
+// TestTheWayConfluxMadeIsRemovedWhenEmpty: EnsureAll records each folder it made on the way to an
+// installation's CONFLUX_DIR, and Way reads the record back, deepest first. Once the root is gone,
+// RemoveWay removes each that is empty, through handles, and leaves one holding anything else and a
+// junction put at a recorded folder's name, with where it leads untouched. Windows-only, so it runs in
+// CI's platforms job alone.
+func TestTheWayConfluxMadeIsRemovedWhenEmpty(t *testing.T) {
+	base := t.TempDir()
+	a, b := filepath.Join(base, "a"), filepath.Join(base, "a", "b")
+	root := filepath.Join(b, "conflux")
+
+	t.Setenv("CONFLUX_DIR", root)
+	d := Default()
+
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	way, err := d.Way()
+	if err != nil || !slices.Equal(way, []string{b, a}) {
+		t.Fatalf("Way() = %q, %v, want %q", way, err, []string{b, a})
+	}
+
+	other := filepath.Join(a, "other")
+	if err := os.WriteFile(other, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := RemoveRoot(root); err != nil {
+		t.Fatal(err)
+	}
+
+	if removed, err := RemoveWay(way); err != nil || !slices.Equal(removed, []string{b}) {
+		t.Errorf("RemoveWay(%q), %s holding a file = %q, %v, want %q", way, a, removed, err, []string{b})
+	}
+
+	if err := os.Remove(other); err != nil {
+		t.Fatal(err)
+	}
+
+	elsewhere := t.TempDir()
+	mklinkJ(t, b, elsewhere)
+
+	if removed, err := RemoveWay(way); err != nil || removed != nil {
+		t.Errorf("RemoveWay(%q), a junction at %s = %q, %v, want nothing removed", way, b, removed, err)
+	}
+
+	if err := os.Remove(b); err != nil {
+		t.Fatal(err)
+	}
+
+	if removed, err := RemoveWay(way); err != nil || !slices.Equal(removed, []string{a}) {
+		t.Errorf("RemoveWay(%q) = %q, %v, want %q", way, removed, err, []string{a})
+	}
+
+	if _, err := os.Stat(elsewhere); err != nil {
+		t.Errorf("RemoveWay reached %s: %v", elsewhere, err)
 	}
 }

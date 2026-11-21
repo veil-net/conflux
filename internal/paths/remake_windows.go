@@ -159,6 +159,48 @@ func removeFrom(parent step, name, p string) (bool, error) {
 	return true, nil
 }
 
+// removeEmpty is RemoveWay's removal of name, an empty folder, in the directory parent holds open,
+// which p names, and whether it removed it: opened through parent, looked up there and nowhere else
+// and never followed, and removed through its own handle (dispose) once it lists nothing. One holding
+// anything, not there, or no longer a folder, a junction or a link among them, is left.
+func removeEmpty(parent step, name, p string) (bool, error) {
+	h, err := ntOpen(parent.h, name, nil,
+		windows.SYNCHRONIZE|windows.DELETE|windows.FILE_READ_ATTRIBUTES|windows.FILE_LIST_DIRECTORY, windows.FILE_OPEN,
+		windows.FILE_DIRECTORY_FILE)
+
+	switch {
+	case errors.Is(err, fs.ErrNotExist), errors.Is(err, windows.ERROR_DIRECTORY):
+		return false, nil
+	case err != nil:
+		return false, &os.PathError{Op: "open", Path: p, Err: err}
+	}
+	defer windows.CloseHandle(h)
+
+	attributes, _, err := attributeTag(h)
+	if err != nil {
+		return false, &os.PathError{Op: "read", Path: p, Err: err}
+	}
+
+	if attributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+		return false, nil
+	}
+
+	names, err := listIn(h)
+
+	switch {
+	case err != nil:
+		return false, &os.PathError{Op: "read", Path: p, Err: err}
+	case len(names) > 0:
+		return false, nil
+	}
+
+	if err := dispose(h); err != nil {
+		return false, &os.PathError{Op: "remove", Path: p, Err: err}
+	}
+
+	return true, nil
+}
+
 // removeIn removes name, in the directory parent holds open, which p names, and, where it is a
 // folder, all it holds first: each opened through a handle on the one it is in, looked up there and
 // nowhere else, never followed (ntOpen), and removed through its own (dispose). A junction or a link

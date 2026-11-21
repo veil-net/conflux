@@ -19,6 +19,7 @@ package paths
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"iter"
 	"os"
@@ -252,28 +253,228 @@ func (d Dirs) ReadyFile() string { return filepath.Join(d.Run, "ready") }
 // by its name, is the Administrators' too, as everything an elevated conflux makes is
 // (ElevatedDefaultOwner). A CONFLUX_DIR's way is held to the
 // rule of whoever the root is for (wayRule). The system's shared log directory is not
-// conflux's, and is left alone.
+// conflux's, and is left alone. An installation's state root keeps a record of each folder makeRoot
+// made on the way to a root, once that root is secured (recordWay), for uninstall to remove (Way,
+// RemoveWay); one made by an EnsureAll that failed before its state root was secured is not recorded.
 func (d Dirs) EnsureAll() error {
-	for dir, inside := range d.roots() {
-		if inside {
-			if err := os.MkdirAll(dir, 0o700); err != nil {
+	var made []string
+
+	state := false
+
+	err := func() error {
+		for dir, inside := range d.roots() {
+			if inside {
+				if err := os.MkdirAll(dir, 0o700); err != nil {
+					return fmt.Errorf("create %s: %w", dir, err)
+				}
+
+				continue
+			}
+
+			m, err := makeRoot(dir, d.wayRule(dir))
+			if made = append(made, m...); err != nil {
 				return fmt.Errorf("create %s: %w", dir, err)
 			}
 
-			continue
+			if err := secure(dir, !d.ephemeral); err != nil {
+				return err
+			}
+
+			state = state || dir == d.State
 		}
 
-		if err := makeRoot(dir, d.wayRule(dir)); err != nil {
-			return fmt.Errorf("create %s: %w", dir, err)
-		}
+		return nil
+	}()
 
-		if err := secure(dir, !d.ephemeral); err != nil {
-			return err
+	if len(made) > 0 && state && !d.ephemeral {
+		if recorded := d.recordWay(made); err == nil {
+			err = recorded
 		}
 	}
 
+	return err
+}
+
+// wayName is the record, in an installation's state root, of the folders conflux made on the way to
+// its roots: one absolute path a line.
+const wayName = "way"
+
+// recordWay adds made, folders makeRoot made on the way to d's roots, to the record in d's state root,
+// which EnsureAll has secured: what it held kept, each once, written to a file beside it and renamed
+// over it.
+func (d Dirs) recordWay(made []string) error {
+	record := filepath.Join(d.State, wayName)
+
+	way, err := readWay(record)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+
+	for _, p := range made {
+		if !slices.Contains(way, p) {
+			way = append(way, p)
+		}
+	}
+
+	tmp, err := os.CreateTemp(d.State, ".tmp-way-*")
+	if err != nil {
+		return fmt.Errorf("record the way to %s: %w", d.State, err)
+	}
+
+	_, err = tmp.WriteString(strings.Join(way, "\n") + "\n")
+	if err == nil {
+		err = tmp.Sync()
+	}
+
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+
+	if err == nil {
+		err = os.Rename(tmp.Name(), record)
+	}
+
+	if err != nil {
+		os.Remove(tmp.Name())
+
+		return fmt.Errorf("record the way to %s: %w", d.State, err)
+	}
+
+	SyncDir(d.State)
+
 	return nil
 }
+
+// readWay is the record at path, a line a folder, at most wayMax bytes of it.
+func readWay(path string) ([]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	b, err := io.ReadAll(io.LimitReader(f, wayMax))
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+
+	return strings.Fields(string(b)), nil
+}
+
+// wayMax is as much of the way record as is read: far more than any way conflux makes.
+const wayMax = 64 << 10
+
+// Way is the record of the folders conflux made on the way to d's roots (EnsureAll), deepest first,
+// for uninstall to read before it removes the roots, the state root holding the record among them,
+// and to hand to RemoveWay after. It is read only where d's state root passes the readers' check
+// (Check), since whoever could change the root could have written another, and only folders above one
+// of d's roots are taken from it: RemoveWay removes nothing anywhere else. Nil where there is no
+// record, or no state root, and for an ephemeral run's roots, which keep none.
+func (d Dirs) Way() ([]string, error) {
+	if d.ephemeral {
+		return nil, nil
+	}
+
+	switch err := checkRoot(d.State); {
+	case errors.Is(err, fs.ErrNotExist):
+		return nil, nil
+	case err != nil:
+		return nil, err
+	}
+
+	recorded, err := readWay(filepath.Join(d.State, wayName))
+
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return nil, nil
+	case err != nil:
+		return nil, err
+	}
+
+	var way []string
+
+	for _, p := range recorded {
+		if filepath.IsAbs(p) && filepath.Clean(p) == p && !slices.Contains(way, p) &&
+			slices.ContainsFunc([]string{d.Config, d.State, d.Run, d.Log}, func(root string) bool {
+				return root != "" && above(p, root)
+			}) {
+			way = append(way, p)
+		}
+	}
+
+	return deepestFirst(way), nil
+}
+
+// RemoveWay removes each folder of way, folders conflux made on the way to its roots (Way), that is
+// empty, deepest first, and is those it removed: each removed from the folder it is in, as the walk
+// to that holds it (walk), never by its name and never following a link, a folder above a CONFLUX_DIR
+// on a way held to parents' rule, as RemoveRoot holds a CONFLUX_DIR's, and one on a platform root's
+// way not judged. A folder that holds anything, is not there, or is no longer a folder -- a link put at
+// its name among them -- is left.
+func RemoveWay(way []string) ([]string, error) {
+	var (
+		removed []string
+		errs    []error
+	)
+
+	for _, dir := range deepestFirst(slices.Clone(way)) {
+		judge := judgement(nil)
+		if root := Root(); root != "" && above(dir, root) {
+			judge = parentsRule(dir)
+		}
+
+		gone, err := removeWayFolder(dir, judge)
+		if err != nil {
+			errs = append(errs, err)
+		}
+
+		if gone {
+			removed = append(removed, dir)
+		}
+	}
+
+	return removed, errors.Join(errs...)
+}
+
+// removeWayFolder is RemoveWay's removal of dir, an empty folder, from the folder it is in, held as
+// the walk judged by judge reaches it, and whether it removed it.
+func removeWayFolder(dir string, judge judgement) (bool, error) {
+	w, err := walk(filepath.Dir(dir), judge)
+	if err != nil {
+		return false, err
+	}
+	defer w.close()
+
+	if w.missing != nil {
+		return false, nil
+	}
+
+	if at := w.last(); judge != nil {
+		if err := judge(at.path, at.step, false); err != nil {
+			return false, err
+		}
+	}
+
+	return removeEmpty(w.last().step, filepath.Base(dir), dir)
+}
+
+// above reports whether dir is a folder strictly above path.
+func above(dir, path string) bool {
+	rel, err := filepath.Rel(dir, path)
+
+	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// deepestFirst sorts way, folders, those with the most names first, and is it.
+func deepestFirst(way []string) []string {
+	depth := func(p string) int { return strings.Count(filepath.Clean(p), string(filepath.Separator)) }
+
+	slices.SortStableFunc(way, func(a, b string) int { return depth(b) - depth(a) })
+
+	return way
+}
+
+// wayRule is the rule the way to d's root dir is held to
 
 // RemakeOld removes from an installation's roots what conflux makes again there by its name and
 // finds not meeting the rule secure holds what a root holds to for the boot service -- owned by an
@@ -685,7 +886,7 @@ func judgeWay(dir string, rule judgement) error {
 // it follows, is judged once, here and nowhere else: secure, which EnsureAll calls after it, judges
 // the root and what it holds, and not its way. Anything already at the root's name is secure's; and a link that leads nowhere is
 // refused by the walk, with nothing made where it leads.
-func makeRoot(dir string, rule judgement) error {
+func makeRoot(dir string, rule judgement) ([]string, error) {
 	judge := judgement(nil)
 	if chosen(dir) {
 		judge = rule
@@ -693,12 +894,12 @@ func makeRoot(dir string, rule judgement) error {
 
 	w, err := walk(dir, judge)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer w.close()
 
 	if w.missing == nil {
-		return nil
+		return nil, nil
 	}
 
 	return makeWay(dir, w, rule)
@@ -711,8 +912,12 @@ func makeRoot(dir string, rule judgement) error {
 // may make anything in it. A link at a name, there by the time conflux makes it or once it has, is
 // refused; each directory on the way that it goes into, made by conflux or taken, is held to rule
 // before anything is made in it, as the directory it was made in was; and the one at the root's own
-// name is the root, which secure judges as it judges any root found there.
-func makeWay(dir string, w *way, rule judgement) error {
+// name is the root, which secure judges as it judges any root found there. It is the folders on the
+// way it made, the root aside, which EnsureAll records (recordWay), those made before a refusal
+// among them.
+func makeWay(dir string, w *way, rule judgement) ([]string, error) {
+	var made []string
+
 	for i, name := range w.left {
 		at := w.last()
 		p, root := filepath.Join(at.path, name), i == len(w.left)-1
@@ -723,7 +928,11 @@ func makeWay(dir string, w *way, rule judgement) error {
 
 		taken := errors.Is(err, fs.ErrExist)
 		if err != nil && !taken {
-			return &os.PathError{Op: "mkdir", Path: p, Err: err}
+			return made, &os.PathError{Op: "mkdir", Path: p, Err: err}
+		}
+
+		if err == nil && !root {
+			made = append(made, p)
 		}
 
 		if !held {
@@ -733,14 +942,14 @@ func makeWay(dir string, w *way, rule judgement) error {
 
 			switch s, link, err = lookUp(at.step, name); {
 			case err != nil && taken:
-				return fmt.Errorf("%s was made by somebody else while conflux made the way to %s, and is not a "+
+				return made, fmt.Errorf("%s was made by somebody else while conflux made the way to %s, and is not a "+
 					"directory conflux can go into (%v).\n  Remove it, then run this again", p, dir, err)
 			case err != nil:
-				return &os.PathError{Op: "open", Path: p, Err: err}
+				return made, &os.PathError{Op: "open", Path: p, Err: err}
 			case link:
 				s.close()
 
-				return fmt.Errorf("%s, %s, was made while conflux made the way to %s, which conflux will not "+
+				return made, fmt.Errorf("%s, %s, was made while conflux made the way to %s, which conflux will not "+
 					"follow.\n  Remove it, then run this again", p, aLink, dir)
 			}
 		}
@@ -748,19 +957,19 @@ func makeWay(dir string, w *way, rule judgement) error {
 		if root {
 			s.close()
 
-			return nil
+			return made, nil
 		}
 
 		if err := rule(p, s, false); err != nil {
 			s.close()
 
-			return err
+			return made, err
 		}
 
 		w.push(s, p)
 	}
 
-	return nil
+	return made, nil
 }
 
 // nextName is the first name in path and what follows it, separators around it dropped: "" when

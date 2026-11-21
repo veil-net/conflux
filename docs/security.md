@@ -230,7 +230,12 @@ only the right to search. A root not made yet is held to this before anything is
 way is there, and each directory missing is made in the last one held and held open in turn, never
 by its name, and held to the same rule before anything is made in it, conflux's own or one somebody
 else made at the name meanwhile — a sticky directory such as `/tmp`, and `C:\`, let anybody make a
-name not taken yet — and a link there is refused. Each step of the way is judged once, as the root
+name not taken yet — and a link there is refused. An installation keeps a record of the directories
+it made on the way, in its state root (`way`), which uninstall reads, only where that root passes
+the readers' check and only for directories above its roots, before it removes the roots, and then
+removes each that is empty, deepest first, from the directory it is in as a walk of the way holds
+it, never through a link and never by its name, leaving any that holds something or that a link
+took the place of. Each step of the way is judged once, as the root
 is made or found: what conflux then does with the root itself does not walk its way again. One made at the root's own name is the root, held to the rules a
 root found there is (a directory of this account's that is too wide is narrowed, on Unix), though a
 link there is still refused; and a way that ends in where a link leads, at a name not there, is

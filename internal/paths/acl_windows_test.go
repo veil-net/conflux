@@ -24,6 +24,9 @@ func init() {
 	}
 }
 
+// secureInstallation is secure of an installation's root, for a table of judgements of one root.
+func secureInstallation(dir string) error { return secure(dir, true) }
+
 // TestEnsureAllGivesTheRootToAdministrators: the root is made SYSTEM's and
 // Administrators', with a DACL %ProgramData%'s grants to Users cannot flow back into,
 // and what is created beneath it afterwards inherits that.
@@ -210,7 +213,7 @@ func TestSecureReplacesAJunctionRoot(t *testing.T) {
 	early := openToWrite(t, root)
 	defer windows.CloseHandle(early)
 
-	if err := secure(root); err != nil {
+	if err := secure(root, true); err != nil {
 		t.Fatalf("secure(a junction root only this account and the system may change) = %v", err)
 	}
 
@@ -249,7 +252,7 @@ func TestSecureReplacesAJunctionRoot(t *testing.T) {
 		t.Errorf("makeRoot(%s, the junction secure made) = %v", root, err)
 	}
 
-	if err := secure(root); err != nil {
+	if err := secure(root, true); err != nil {
 		t.Errorf("secure(%s, the junction secure made) = %v", root, err)
 	}
 
@@ -283,7 +286,7 @@ func TestSecureRefusesAJunctionRootMadeAgain(t *testing.T) {
 		}
 	}
 
-	err := secure(root)
+	err := secure(root, true)
 	if err == nil || !strings.Contains(err.Error(), root+" was made again") {
 		t.Fatalf("secure(a junction root made again as it was replaced) = %v, want a refusal naming it", err)
 	}
@@ -309,7 +312,7 @@ func TestSecureRefusesAJunctionRootMadeAgain(t *testing.T) {
 
 	mklinkJ(t, root, target)
 
-	if err := secure(root); err == nil || !strings.Contains(err.Error(), root) {
+	if err := secure(root, true); err == nil || !strings.Contains(err.Error(), root) {
 		t.Fatalf("secure(a junction made by mklink /J where Users are passed the right to write its attributes) = "+
 			"%v, want a refusal naming it", err)
 	}
@@ -323,7 +326,7 @@ func TestSecureRefusesAJunctionRootMadeAgain(t *testing.T) {
 		}
 	}
 
-	if err := secure(root); err != nil {
+	if err := secure(root, true); err != nil {
 		t.Fatalf("secure(a junction made again as the refusal says) = %v", err)
 	}
 
@@ -364,7 +367,7 @@ func TestSecureSaysHowToRemakeAJunctionRootItCannotReplace(t *testing.T) {
 
 	replacing = func(dir string) { mayNotAddFolders(t, filepath.Dir(dir)) }
 
-	err := secure(root)
+	err := secure(root, true)
 	if err == nil || !strings.Contains(err.Error(), "make a junction of conflux's own at "+root) {
 		t.Fatalf("secure(a junction root it cannot make its own at) = %v, want a refusal naming it", err)
 	}
@@ -468,7 +471,7 @@ func TestSecureHoldsAJunctionRoot(t *testing.T) {
 		t.Errorf("checkRoot(a junction Users may point elsewhere) = %v, want a refusal naming it", err)
 	}
 
-	if err := secure(open); err == nil || !strings.Contains(err.Error(), open) {
+	if err := secure(open, true); err == nil || !strings.Contains(err.Error(), open) {
 		t.Errorf("secure(a junction Users may point elsewhere) = %v, want a refusal naming it", err)
 	}
 
@@ -478,7 +481,7 @@ func TestSecureHoldsAJunctionRoot(t *testing.T) {
 		t.Errorf("checkRoot(a junction only this account and the system may change) = %v", err)
 	}
 
-	if err := secure(held); err != nil {
+	if err := secure(held, true); err != nil {
 		t.Errorf("secure(a junction only this account and the system may change) = %v", err)
 	}
 }
@@ -511,7 +514,7 @@ func TestARootOnANetworkVolumeIsRefused(t *testing.T) {
 	}
 
 	for _, root := range []string{unc, filepath.Join(drive, "conflux"), link} {
-		for name, judge := range map[string]func(string) error{"checkRoot": checkRoot, "secure": secure} {
+		for name, judge := range map[string]func(string) error{"checkRoot": checkRoot, "secure": secureInstallation} {
 			if err := judge(root); err == nil || !strings.Contains(err.Error(), root+" is on a network volume") {
 				t.Errorf("%s(%s) = %v, want a refusal naming it and the network volume", name, root, err)
 			}
@@ -568,7 +571,7 @@ func TestALinkLeadingOffThisMachineOrNowhereIsRefused(t *testing.T) {
 	nowhere := filepath.Join(t.TempDir(), "nowhere")
 	dangling := dirSymlink(t, filepath.Join(t.TempDir(), "conflux"), nowhere)
 
-	for name, judge := range map[string]func(string) error{"checkRoot": checkRoot, "secure": secure} {
+	for name, judge := range map[string]func(string) error{"checkRoot": checkRoot, "secure": secureInstallation} {
 		if err := judge(away); err == nil || !strings.Contains(err.Error(), away+" is a link conflux will not follow") ||
 			!strings.Contains(err.Error(), `\??\UNC\192.0.2.1\share\conflux`) {
 			t.Errorf("%s(a link to %s) = %v, want a refusal naming it and where it leads", name, unc, err)
@@ -832,7 +835,7 @@ func TestSecureRefusesARootThatBecomesAJunction(t *testing.T) {
 
 		filling = func(dir string) { mountPoint(t, dir, elsewhere) }
 
-		if err := secure(root); err == nil || !strings.Contains(err.Error(), root+" became a junction") {
+		if err := secure(root, true); err == nil || !strings.Contains(err.Error(), root+" became a junction") {
 			t.Errorf("secure(a root, secured already %v, that became a junction before it was filled) = %v, "+
 				"want a refusal naming it", secured, err)
 		}
@@ -867,16 +870,16 @@ func TestSecureJudgesWhatTheRootGainsBeforeItIsRestricted(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		ownBy(t, planted, privtest.Users)
+		privtest.SetOwner(t, planted, privtest.Users)
 	}
 
-	if err := secure(root); err == nil || !strings.Contains(err.Error(), planted) {
+	if err := secure(root, true); err == nil || !strings.Contains(err.Error(), planted) {
 		t.Errorf("secure(a root Users added a folder to before it was restricted) = %v, want a refusal naming it", err)
 	}
 
 	restricted = was
 
-	if err := secure(root); err == nil || !strings.Contains(err.Error(), planted) {
+	if err := secure(root, true); err == nil || !strings.Contains(err.Error(), planted) {
 		t.Errorf("secure(the restricted root still holding that folder) = %v, want a refusal naming it", err)
 	}
 }
@@ -951,7 +954,7 @@ func TestSecureFillsTheRoot(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				ownBy(t, planted, privtest.Users)
+				privtest.SetOwner(t, planted, privtest.Users)
 			}
 
 			if c.secured {
@@ -960,7 +963,7 @@ func TestSecureFillsTheRoot(t *testing.T) {
 				}
 			}
 
-			switch err := secure(root); {
+			switch err := secure(root, true); {
 			case c.planted && (err == nil || !strings.Contains(err.Error(), planted)):
 				t.Fatalf("secure(a root %s) = %v, want a refusal naming %s", c.name, err, planted)
 			case !c.planted && err != nil:
@@ -993,7 +996,7 @@ func TestSecureSaysWhyItCannotFillARoot(t *testing.T) {
 	root := foundRoot(t)
 	mayNotAddFolders(t, root)
 
-	if err := secure(root); err == nil || !strings.Contains(err.Error(), "could not add "+runName+" to "+root+
+	if err := secure(root, true); err == nil || !strings.Contains(err.Error(), "could not add "+runName+" to "+root+
 		", whose DACL") {
 		t.Errorf("secure(a root this account may not create a folder in) = %v, want a refusal saying it could not "+
 			"add %s to it, and why", err, runName)
@@ -1071,7 +1074,7 @@ func TestSecureHoldsWhatTheRootHolds(t *testing.T) {
 		}, false},
 		{"a folder named anchor that another account owns", func(t *testing.T, root string) string {
 			dir := anchordFolder(t, filepath.Join(root, "anchor"), "")
-			ownBy(t, dir, privtest.Users)
+			privtest.SetOwner(t, dir, privtest.Users)
 
 			return dir
 		}, false},
@@ -1093,7 +1096,7 @@ func TestSecureHoldsWhatTheRootHolds(t *testing.T) {
 				t.Errorf("Foreign(a root holding %s) = %v, want a refusal naming %s", c.name, err, names)
 			}
 
-			if err := secure(root); err == nil || !strings.Contains(err.Error(), held) {
+			if err := secure(root, true); err == nil || !strings.Contains(err.Error(), held) {
 				t.Errorf("secure(a root holding %s) = %v, want a refusal naming it", c.name, err)
 			}
 		})
@@ -1134,7 +1137,7 @@ func TestSecureHoldsWhatTheRootHolds(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			ownBy(t, sock, sid)
+			privtest.SetOwner(t, sock, sid)
 		}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -1159,7 +1162,7 @@ func TestSecureHoldsWhatTheRootHolds(t *testing.T) {
 				t.Errorf("Foreign(a root holding %s) = %v", c.name, err)
 			}
 
-			if err := secure(root); err != nil {
+			if err := secure(root, true); err != nil {
 				t.Errorf("secure(a root holding %s) = %v", c.name, err)
 			}
 		})
@@ -1201,19 +1204,6 @@ func anchordFolder(t *testing.T, dir, more string) string {
 	return dir
 }
 
-// ownBy makes sid the owner of path, as only a process with SeRestorePrivilege enabled may name
-// an owner it does not carry: this one, an Administrator's, for the moment it takes.
-func ownBy(t *testing.T, path string, sid *windows.SID) {
-	t.Helper()
-
-	if err := privtest.WithRestore(t, func() error {
-		return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION,
-			sid, nil, nil, nil)
-	}); err != nil {
-		t.Fatalf("give %s to %s: %v", path, sid, err)
-	}
-}
-
 // TestSecureRefusesARootWhoseDACLLetsAnotherMoveWhatIsInIt: fill keeps a handle opened under a
 // found root's old DACL from making a junction of it only while nobody else may take out what fill
 // puts there, so a root whose DACL lets Users delete what is in it is refused, naming the grant,
@@ -1227,7 +1217,7 @@ func TestSecureRefusesARootWhoseDACLLetsAnotherMoveWhatIsInIt(t *testing.T) {
 
 	privtest.GrantUsers(t, root, fileDeleteChild, windows.NO_INHERITANCE)
 
-	if err := secure(root); err == nil || !strings.Contains(err.Error(), root) || !strings.Contains(err.Error(), privtest.Users.String()) {
+	if err := secure(root, true); err == nil || !strings.Contains(err.Error(), root) || !strings.Contains(err.Error(), privtest.Users.String()) {
 		t.Errorf("secure(a root whose DACL lets Users delete what is in it) = %v, want a refusal naming it and Users", err)
 	}
 
@@ -1247,7 +1237,7 @@ func TestSecureRefusesARootWhoseDACLLetsAnotherMoveWhatIsInIt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := secure(inherits); err != nil {
+	if err := secure(inherits, true); err != nil {
 		t.Errorf("secure(a root inheriting %%ProgramData%%'s grant to Users) = %v", err)
 	}
 }
@@ -1286,7 +1276,7 @@ func TestSecureHoldsAProtectedRootToItsDACL(t *testing.T) {
 				t.Errorf("checkRoot(a protected root that %s) = %v, want a refusal naming it", c.name, err)
 			}
 
-			err := secure(root)
+			err := secure(root, true)
 
 			switch {
 			case c.refused && (err == nil || !strings.Contains(err.Error(), root)):
@@ -1340,7 +1330,7 @@ func TestSecureRefusesARootWithNoDACL(t *testing.T) {
 		t.Errorf("checkRoot(a root with no DACL) = %v, want a refusal naming it", err)
 	}
 
-	if err := secure(root); err == nil || !strings.Contains(err.Error(), root+" has no DACL") {
+	if err := secure(root, true); err == nil || !strings.Contains(err.Error(), root+" has no DACL") {
 		t.Errorf("secure(a root with no DACL) = %v, want a refusal naming it", err)
 	}
 }
@@ -1399,7 +1389,7 @@ func TestAReaderTakesCreatorOwnerAsSecureDoes(t *testing.T) {
 	root := foundRoot(t)
 	setSecurity(t, root, tightened)
 
-	for name, judge := range map[string]func(string) error{"checkRoot": checkRoot, "Foreign": Foreign, "secure": secure} {
+	for name, judge := range map[string]func(string) error{"checkRoot": checkRoot, "Foreign": Foreign, "secure": secureInstallation} {
 		if err := judge(root); err != nil {
 			t.Errorf("%s(a root passing CREATOR OWNER full control of what is made in it) = %v", name, err)
 		}
@@ -1415,7 +1405,7 @@ func TestAReaderTakesCreatorOwnerAsSecureDoes(t *testing.T) {
 		}
 	}
 
-	if err := secure(open); err != nil {
+	if err := secure(open, true); err != nil {
 		t.Errorf("secure(a root passing CREATOR OWNER full control of what is made in it, Users may add a file to) "+
 			"= %v, want it repaired", err)
 	}

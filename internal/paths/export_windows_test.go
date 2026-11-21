@@ -11,5 +11,5 @@ func JudgeAsTheService(dir string) error {
 
 	currentUser = func() *windows.SID { return sidSystem }
 
-	return secure(dir)
+	return secure(dir, true)
 }

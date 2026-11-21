@@ -232,7 +232,12 @@ func parentsRuleAs(dir string, euid int) judgement {
 // account put in it while it was wider is refused, not adopted. Every refusal but the last comes
 // before secure changes anything; a root that was not there EnsureAll has made by then, and a
 // refusal leaves it, empty and this account's.
-func secure(dir string) error { return secureAs(dir, os.Geteuid()) }
+//
+// installation is Windows's, where secure gives what the account running conflux owns in an
+// installation's root to the Administrators, for the SYSTEM service; here what root or that account
+// owns passes contentsAs already, and the service runs as root, as every command that makes an
+// installation's root does, so there is nothing to give.
+func secure(dir string, _ bool) error { return secureAs(dir, os.Geteuid()) }
 
 // secureAs is secure for a given effective uid, so the refusals can be tested without
 // another account.

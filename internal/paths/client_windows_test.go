@@ -1,6 +1,7 @@
 package paths_test
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -94,5 +95,112 @@ func TestWhatAnAdministratorMakesTheServiceTakes(t *testing.T) {
 		}
 
 		privtest.SetOwner(t, p, owner)
+	}
+}
+
+// TestAnInstallationsRootIsGivenToTheAdministrators: a root an earlier conflux, or an administrator
+// by hand, left holding what that administrator owns -- logs\, the lock files, bin\ and its lock,
+// made under a Windows client's default-owner policy -- is one the SYSTEM service refuses at every
+// start, trusting no other account. The administrator's EnsureAll of an installation's root, which
+// up, install and register run first, gives each to the Administrators as it judges it, through the
+// handle it judges it by, and the service's judgement then takes the root. One owned by another account, the
+// Guests here, is still refused, naming it, and left as it was; and an ephemeral run's root, which no
+// service runs from, is left as it is found. Windows-only, so it runs in CI's platforms job alone.
+func TestAnInstallationsRootIsGivenToTheAdministrators(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", filepath.Join(t.TempDir(), "conflux"))
+	d := paths.Default()
+
+	if err := d.EnsureAll(); err != nil {
+		t.Fatalf("EnsureAll: %v", err)
+	}
+
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dirs := []string{d.Log, d.Libexec()}
+	files := []string{d.LockFile(), d.ServeLockFile(), filepath.Join(d.Libexec(), ".lock")}
+
+	restore := privtest.CreatorOwns(t)
+
+	for _, dir := range dirs {
+		if err := os.RemoveAll(dir); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, f := range files {
+		if err := os.WriteFile(f, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	restore()
+
+	old := append(dirs, files...)
+
+	for _, p := range old {
+		if owner := privtest.ReadSecurity(t, p).Owner; !owner.Equals(user.User.Sid) {
+			t.Fatalf("%s, made under a client's policy, belongs to %v, not this account", p, owner)
+		}
+	}
+
+	if err := paths.JudgeAsTheService(d.State); err == nil || !strings.Contains(err.Error(), ", which belongs to ") {
+		t.Errorf("the service's judgement of a root holding what the administrator owns = %v, want a refusal", err)
+	}
+
+	if err := d.EnsureAll(); err != nil {
+		t.Fatalf("EnsureAll of an installation's root holding what the administrator owns = %v", err)
+	}
+
+	for _, p := range old {
+		if owner := privtest.ReadSecurity(t, p).Owner; !owner.Equals(privtest.Admins) {
+			t.Errorf("%s belongs to %v once EnsureAll secured the root, not the Administrators", p, owner)
+		}
+	}
+
+	if err := paths.JudgeAsTheService(d.State); err != nil {
+		t.Errorf("the service's judgement of the root EnsureAll secured = %v", err)
+	}
+
+	guests, err := windows.CreateWellKnownSid(windows.WinBuiltinGuestsSid)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	privtest.SetOwner(t, d.LockFile(), guests)
+
+	if err := d.EnsureAll(); err == nil || !strings.Contains(err.Error(), d.LockFile()+", which belongs to ") {
+		t.Errorf("EnsureAll of a root holding a file the Guests own = %v, want a refusal naming it", err)
+	}
+
+	if owner := privtest.ReadSecurity(t, d.LockFile()).Owner; !owner.Equals(guests) {
+		t.Errorf("EnsureAll gave %s, the Guests', to %v", d.LockFile(), owner)
+	}
+
+	e := paths.EphemeralDirs(filepath.Join(t.TempDir(), "conflux-ephemeral"))
+	if err := e.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	restore = privtest.CreatorOwns(t)
+
+	if err := os.WriteFile(e.LockFile(), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	restore()
+
+	if err := e.EnsureAll(); err != nil {
+		t.Errorf("EnsureAll of an ephemeral run's root holding a file of this account's = %v", err)
+	}
+
+	if owner := privtest.ReadSecurity(t, e.LockFile()).Owner; !owner.Equals(user.User.Sid) {
+		t.Errorf("EnsureAll of an ephemeral run's root gave %s to %v", e.LockFile(), owner)
 	}
 }

@@ -105,7 +105,10 @@ the Administrators'; on a Windows client it is that administrator's own, and the
 as SYSTEM, trusts no other account with anything in its root, so it would refuse, at every start,
 a root holding what the administrator's own `up` made and took. A token that may not name the
 Administrators — one that is not elevated, which no command making an installation's root is —
-keeps its own.
+keeps its own. What an installation's root holds that the administrator running conflux owns
+anyway — made by an earlier conflux on a client, or by hand — is given to the Administrators by
+every command that secures the root as it judges each thing, through the
+handle it judges it by; what another account owns is refused, as below.
 
 A root on a network volume — a share reached by its UNC path, a drive mapped to one, or a link
 leading to either, as the volume conflux holds it open on says, not as it is spelled — is refused

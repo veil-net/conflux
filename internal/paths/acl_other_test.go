@@ -97,7 +97,7 @@ func TestSecureFollowsASymlinkOnlyToItsOwnersDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := secure(link); err != nil {
+	if err := secure(link, true); err != nil {
 		t.Fatalf("a link to a directory of our own was refused: %v", err)
 	}
 
@@ -130,7 +130,7 @@ func TestSecureFollowsASymlinkOnlyToItsOwnersDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := secure(into); err == nil || !strings.Contains(err.Error(), "belongs to") {
+	if err := secure(into, true); err == nil || !strings.Contains(err.Error(), "belongs to") {
 		t.Errorf("a link of ours into a directory another account owns was not refused for its owner: %v", err)
 	}
 
@@ -172,7 +172,7 @@ func TestSecureKeepsThePassThroughGroup(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := secure(dir); err != nil {
+	if err := secure(dir, true); err != nil {
 		t.Fatal(err)
 	}
 
@@ -184,7 +184,7 @@ func TestSecureKeepsThePassThroughGroup(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := secure(dir); err != nil {
+	if err := secure(dir, true); err != nil {
 		t.Fatal(err)
 	}
 

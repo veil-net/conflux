@@ -275,7 +275,7 @@ func (d Dirs) EnsureAll() error {
 			return fmt.Errorf("create %s: %w", dir, err)
 		}
 
-		if err := secure(dir); err != nil {
+		if err := secure(dir, !d.ephemeral); err != nil {
 			return err
 		}
 	}

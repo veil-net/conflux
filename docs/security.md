@@ -145,7 +145,15 @@ another account may change — that it owns, or that it may write, move or point
 after — is refused rather than repaired around, by every reader of an ephemeral root too, after the
 readers' check, as is a junction in it, and a root that is itself a junction another account may
 point elsewhere; one nobody else may is replaced with a junction conflux makes, through its own
-handle, leading to the directory it judged (see [windows.md](windows.md#file-permissions)). A root
+handle, leading to the directory it judged (see [windows.md](windows.md#file-permissions)). What
+the account running conflux owns in an installation's root — an administrator's own, as a Windows
+client's default-owner policy leaves what an elevated administrator makes, whether an earlier
+conflux made it or the administrator did by hand — is not refused but given to the Administrators,
+on every run that secures the root, through the handle it is judged by, as a DACL found too wide is
+narrowed: the service, running as SYSTEM, trusts no other account with anything there, and
+`up`, `install` and `register` secure the root first. What another account owns is still refused. On Unix there is nothing to give: what root
+or the account running conflux owns passes already, and the service runs as root, as every command
+that makes an installation's root does. A root
 on a network volume, however it is reached, is refused, by the readers' check too, as the volume
 conflux holds it open on says; a link naming a share, at a root's name or on the way to a
 `CONFLUX_DIR`, is refused before conflux follows it, by where the link itself says it leads, by

@@ -182,7 +182,7 @@ func TestSecureJudgesWhatARootGainsBeforeItIsNarrowed(t *testing.T) {
 		}
 	}
 
-	if err := secure(root); err == nil || !strings.Contains(err.Error(), at+", a link, is in ") {
+	if err := secure(root, true); err == nil || !strings.Contains(err.Error(), at+", a link, is in ") {
 		t.Errorf("secure(a root a link was added to as it was narrowed) = %v, want a refusal naming it", err)
 	}
 }
@@ -211,7 +211,7 @@ func TestARootReplacedAsItIsJudgedIsRefused(t *testing.T) {
 		}
 	}
 
-	if err := secure(root); err == nil || !strings.Contains(err.Error(), root+" changed while conflux judged it") {
+	if err := secure(root, true); err == nil || !strings.Contains(err.Error(), root+" changed while conflux judged it") {
 		t.Errorf("secure(a root replaced once it was narrowed) = %v, want a refusal naming it", err)
 	}
 }

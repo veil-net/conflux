@@ -495,6 +495,10 @@ func trusted(sid *windows.SID) bool {
 // root whose DACL, as found, lets another account move what is in it is refused before either,
 // since a handle opened under that grant could take out what fill puts there.
 //
+// In an installation's root, which the SYSTEM service runs from, what the account running conflux
+// owns is given to the Administrators as it is judged (contents), as a DACL too wide is narrowed,
+// since the service trusts no other account; installation is false for an ephemeral run's.
+//
 // What it holds is held to the same rule (contents): before it is repaired, as it was found, what
 // each thing inherits from the root included -- a handle opened under an inherited grant keeps it
 // once the restriction has replaced it -- and again once the root is restricted. Until the root
@@ -502,7 +506,7 @@ func trusted(sid *windows.SID) bool {
 // between the first look and the restriction included, and a folder another account made there
 // keeps that owner through the new DACL -- an owner can always grant itself the rest -- so the
 // service would go on writing its log or its token into a place that account controls.
-func secure(dir string) error {
+func secure(dir string, installation bool) error {
 	root, err := heldRoot(dir, rootAccess)
 	if err != nil {
 		return err
@@ -541,7 +545,7 @@ func secure(dir string) error {
 				return err
 			}
 
-			return contents(dir)
+			return contents(dir, installation)
 		}
 	}
 
@@ -575,7 +579,7 @@ func secure(dir string) error {
 		return err
 	}
 
-	if err := contents(dir); err != nil {
+	if err := contents(dir, installation); err != nil {
 		return err
 	}
 
@@ -587,7 +591,7 @@ func secure(dir string) error {
 
 	restricted(dir)
 
-	return contents(dir)
+	return contents(dir, installation)
 }
 
 // secured reports whether sd is owned and protected as a restriction leaves it: SYSTEM's or the
@@ -886,7 +890,7 @@ func foreign(dir string) error {
 		return err
 	}
 
-	return contents(dir)
+	return contents(dir, false)
 }
 
 // ownedRoot refuses dir where secure would for its owner: nowhere Foreign has passed it, whose
@@ -1093,10 +1097,18 @@ func notLink(dir string, h windows.Handle, why string) error {
 // and what anchord makes there, which it owns, conflux reads as anchord's, untrusted
 // (OpenUntrusted, config.ReadUntrusted, copyTree).
 //
+// In an installation's root, which the boot service runs from as SYSTEM, trusting no other account,
+// an entry the account running conflux owns -- an administrator's own, as a Windows client's
+// default-owner policy leaves what an elevated administrator makes, or something made there by hand
+// -- is given to the Administrators as it is met, through the handle it is judged by (handOver), as
+// secure narrows a DACL it finds too wide, whatever conflux made it; an entry another account owns
+// is still refused. Where take is false -- an ephemeral run's root, and any reader's -- nothing is
+// changed.
+//
 // An entry gone between the listing and its judgement is passed over: nothing is there to judge,
 // and a live run's root -- an ephemeral one, which Foreign reads -- has its marker written and
 // removed while it runs.
-func contents(dir string) error {
+func contents(dir string, take bool) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", dir, err)
@@ -1111,11 +1123,21 @@ func contents(dir string) error {
 		return fmt.Errorf("judge what %s holds: %w", dir, err)
 	}
 
+	// Nothing to give where conflux runs as an account the service trusts already: SYSTEM, the
+	// service itself.
+	self := currentUser()
+	take = take && self != nil && !trustedFor(self, sidSystem)
+
+	access := uint32(readAccess)
+	if take {
+		access |= windows.WRITE_OWNER
+	}
+
 	for _, e := range entries {
 		if err := filepath.WalkDir(filepath.Join(dir, e.Name()), func(p string, d fs.DirEntry, err error) error {
 			var h windows.Handle
 			if err == nil {
-				if h, err = openFile(p, readAccess, false); err != nil {
+				if h, err = openFile(p, access, false); err != nil {
 					err = fmt.Errorf("read %s: %w", p, err)
 				}
 			}
@@ -1134,6 +1156,12 @@ func contents(dir string) error {
 			case link:
 				return fmt.Errorf("%s, a junction or a link, is in %s, where conflux makes none, so conflux will not "+
 					"use it.\n  Remove it, then run this again as Administrator", p, dir)
+			}
+
+			if take {
+				if err := handOver(p, h, self); err != nil {
+					return err
+				}
 			}
 
 			what := "write it, move it or make a junction of it"
@@ -1156,6 +1184,32 @@ func contents(dir string) error {
 		}); err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+// handOver gives p, which h holds open as itself, to the Administrators where self, the account
+// running conflux, owns it, through h: nothing is looked up by its name again.
+func handOver(p string, h windows.Handle, self *windows.SID) error {
+	sd, err := security(h)
+	if err != nil {
+		return fmt.Errorf("read the ownership of %s: %w", p, err)
+	}
+
+	owner, _, err := sd.Owner()
+	if err != nil {
+		return fmt.Errorf("read the owner of %s: %w", p, err)
+	}
+
+	if !owner.Equals(self) {
+		return nil
+	}
+
+	if err := windows.SetSecurityInfo(h, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION, sidAdmins, nil,
+		nil, nil); err != nil {
+		return fmt.Errorf("give %s, which belongs to %s, who runs conflux, to the Administrators: %w", p,
+			accountName(owner), err)
 	}
 
 	return nil

@@ -144,25 +144,26 @@ func lookUp(parent step, name string) (step, bool, error) {
 	return step{}, false, errNotDir
 }
 
-// lookUpFile is the file at name in the directory parent is, by its name there, never followed, with what
-// fstatat reads of it, or why what is there is no file of conflux's: a link, or anything but a plain file.
-// Nothing at the name is an error that is fs.ErrNotExist.
-func lookUpFile(parent step, name string) (step, string, error) {
+// lookAt is what is at name in the directory parent is, and its kind: by its name there, never followed,
+// with what fstatat reads of it. Nothing at the name is an error that is fs.ErrNotExist.
+func lookAt(parent step, name string) (step, kind, error) {
 	s := step{fd: parent.fd, rel: parent.at(name)}
 	if err := ignoringEINTR(func() error {
 		return unix.Fstatat(parent.fd, s.rel, &s.st, unix.AT_SYMLINK_NOFOLLOW)
 	}); err != nil {
-		return step{}, "", err
+		return step{}, isOther, err
 	}
 
 	switch s.st.Mode & unix.S_IFMT {
 	case unix.S_IFREG:
-		return s, "", nil
+		return s, isFile, nil
+	case unix.S_IFDIR:
+		return s, isFolder, nil
 	case unix.S_IFLNK:
-		return step{}, "a link", nil
+		return s, isLink, nil
 	}
 
-	return step{}, "not a file", nil
+	return s, isOther, nil
 }
 
 // opened is the directory name, in the one dirfd is open on, held open as itself (holdDir): a link

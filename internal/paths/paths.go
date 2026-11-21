@@ -370,7 +370,7 @@ func (d Dirs) makeRoot(dir string) ([]string, error) {
 }
 
 // ownFile holds what is at p's name, in the folder parent holds, to what conflux makes there, a file of
-// its own: looked up there and nowhere else, never followed (lookUpFile), and a file as conflux makes one
+// its own: looked up there and nowhere else, never followed (lookAt), and a file as conflux makes one
 // (ours) kept; anything else there -- a link, a folder, a file another account owns or may change -- is
 // removed as itself through parent (removeFrom), and nothing made in its place: whatever writes the file
 // makes it. One that cannot be removed is refused, saying why it is not conflux's. Nothing at the name is
@@ -380,20 +380,24 @@ func ownFile(parent step, p string, installation bool) error {
 
 	looking(p)
 
-	s, why, err := lookUpFile(parent, name)
+	s, k, err := lookAt(parent, name)
 
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		return nil
 	case err != nil:
 		return fmt.Errorf("read %s: %w", p, err)
-	case why == "":
-		why, err = ours(p, s, installation)
-		s.close()
+	}
 
-		if err != nil || why == "" {
-			return err
-		}
+	why := k.notAFile()
+	if k == isFile {
+		why, err = ours(p, s, installation)
+	}
+
+	s.close()
+
+	if err != nil || why == "" {
+		return err
 	}
 
 	if _, err := removeFrom(parent, name, p); err != nil {
@@ -946,7 +950,7 @@ func (d Dirs) OpenIn(path string) (*os.File, error) {
 // Ours holds path, a file in one of d's roots or in a folder conflux keeps beneath one, to what a command
 // needs of it before it runs it: the root held as Check holds it (holdRoot), each folder from there to
 // the file looked up in the one before and nowhere else, never followed (lookUp), and each of them, and
-// the file (lookUpFile), as conflux makes it (ours). Nil where all are; an error that is fs.ErrNotExist
+// the file (lookAt), as conflux makes it (ours). Nil where all are; an error that is fs.ErrNotExist
 // where the root, a folder on the way or the file is not there; and otherwise why one is not as conflux
 // makes it. It changes nothing.
 func (d Dirs) Ours(path string) error {
@@ -1010,9 +1014,13 @@ func (d Dirs) Ours(path string) error {
 		at = s
 	}
 
-	s, why, err := lookUpFile(at, names[len(names)-1])
-	if err == nil && why == "" {
-		why, err = ours(path, s, installation)
+	s, k, err := lookAt(at, names[len(names)-1])
+	if err == nil {
+		why = k.notAFile()
+		if k == isFile {
+			why, err = ours(path, s, installation)
+		}
+
 		s.close()
 	}
 
@@ -1034,6 +1042,29 @@ func notOursHere(p, why string, err error) error {
 	}
 
 	return nil
+}
+
+// kind is what lookAt finds at a name: a file, a folder, a link (on Windows a junction or a link), or
+// anything else.
+type kind uint8
+
+const (
+	isFile kind = iota
+	isFolder
+	isLink
+	isOther
+)
+
+// notAFile is why what lookAt found, of kind k, is no file of conflux's, or "" for a file.
+func (k kind) notAFile() string {
+	switch k {
+	case isFile:
+		return ""
+	case isLink:
+		return aLink
+	}
+
+	return "not a file"
 }
 
 // errNotDir is lookUp's refusal of what is at a name that is neither a directory nor a link, by the type

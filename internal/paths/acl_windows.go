@@ -188,61 +188,44 @@ func openTop(vol string) (step, error) {
 	return step{h}, nil
 }
 
-// lookUp is what is at name in the folder parent holds open, held open as itself to read who may
-// change it, and whether it is a junction or a link (a name surrogate, as nameSurrogate reads one):
-// looked up there and nowhere else, never followed, nor reparsed anywhere (ntOpen). Anything else
-// that is not a folder, by its attributes, is refused as errNotDir, and nothing at the name is an error
-// that is fs.ErrNotExist.
-func lookUp(parent step, name string) (step, bool, error) {
+// lookAt is what is at name in the folder parent holds open, held open as itself to read who may change
+// it, and its kind -- a junction or a link (a name surrogate, as nameSurrogate reads one), a folder, or
+// anything else, a file -- by its attributes: looked up there and nowhere else, never followed, nor
+// reparsed anywhere (ntOpen). Nothing at the name is an error that is fs.ErrNotExist.
+func lookAt(parent step, name string) (step, kind, error) {
 	h, err := ntOpen(parent.h, name, nil, windows.SYNCHRONIZE|readAccess, windows.FILE_OPEN, 0)
 	if err != nil {
-		return step{}, false, err
+		return step{}, isOther, err
 	}
 
 	attributes, tag, err := attributeTag(h)
 
 	switch {
 	case err != nil:
+		windows.CloseHandle(h)
+
+		return step{}, isOther, err
 	case attributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 && tag&reparseTagNameSurrogate != 0:
-		return step{h}, true, nil
-	case attributes&windows.FILE_ATTRIBUTE_DIRECTORY == 0:
-		err = errNotDir
-	default:
-		return step{h}, false, nil
+		return step{h}, isLink, nil
+	case attributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0:
+		return step{h}, isFolder, nil
 	}
 
-	windows.CloseHandle(h)
-
-	return step{}, false, err
+	return step{h}, isFile, nil
 }
 
-// lookUpFile is the file at name in the folder parent holds open, held open as itself to read who may
-// change it, looked up there and nowhere else, never followed, nor reparsed anywhere (ntOpen); or why what
-// is there is no file of conflux's: a junction or a link, or a folder. Nothing at the name is an error
-// that is fs.ErrNotExist.
-func lookUpFile(parent step, name string) (step, string, error) {
-	h, err := ntOpen(parent.h, name, nil, windows.SYNCHRONIZE|readAccess, windows.FILE_OPEN, 0)
-	if err != nil {
-		return step{}, "", err
+// lookUp is the folder, or the junction or link, at name in the folder parent holds open (lookAt), and
+// whether it is a junction or a link. Anything else there is refused as errNotDir, and nothing at the
+// name is an error that is fs.ErrNotExist.
+func lookUp(parent step, name string) (step, bool, error) {
+	s, k, err := lookAt(parent, name)
+	if err == nil && k == isFile {
+		s.close()
+
+		return step{}, false, errNotDir
 	}
 
-	attributes, tag, err := attributeTag(h)
-
-	why := ""
-
-	switch {
-	case err != nil:
-	case attributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 && tag&reparseTagNameSurrogate != 0:
-		why = aLink
-	case attributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0:
-		why = "not a file"
-	default:
-		return step{h}, "", nil
-	}
-
-	windows.CloseHandle(h)
-
-	return step{}, why, err
+	return s, k == isLink, err
 }
 
 // readLink is where the junction or link s holds open leads, read off it (linkTarget): one that may

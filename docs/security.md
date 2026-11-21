@@ -130,7 +130,8 @@ host can read, and when the run stops there is nothing at all.
   has secured as a root, and with a `CONFLUX_DIR`'s way held to the same rule; the
   roots it refuses, before it removes anything, are a `CONFLUX_DIR` whose way another account
   controls, since that account could have put a directory of its own where the root is, a root
-  that is a shared or system directory, and one holding what conflux never makes there (above); see
+  that is a shared or system directory, one holding what conflux never makes there (above), and one
+  whose name it cannot look up at all, which nothing has judged; see
   [commands.md](commands.md#conflux-uninstall)):
   whoever could have put a configuration, a pid record, a token or a binary there would otherwise
   have conflux read, signal or run theirs. The root's owner must be root (SYSTEM or the

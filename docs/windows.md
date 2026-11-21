@@ -124,7 +124,10 @@ and nothing where it leads. What they
 judge is opened to read its owner, DACL and attributes alone, and what they remove, as what
 `uninstall` removes, to delete it and read its attributes alone, a folder to list it too, each with
 the backup intent the privileges an Administrator holds give, so that a DACL granting the
-Administrators nothing does not keep it, and a file is never opened to be read.
+Administrators nothing does not keep it, and a file is never opened to be read. A root whose own
+name cannot be looked up — a folder whose DACL denies the Administrators the right to read who owns it
+— is judged by nothing, so `uninstall` refuses it before it removes anything, and that backup intent
+never reaches it.
 The log is kept: each log file in a `logs\` they remove that the service would take, as what the service wrote
 there is, is moved out into the root through handles first, and back into `logs\` once that is made
 again; one the service would refuse goes with the folder, and so does one with a second name, a hard

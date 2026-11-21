@@ -728,3 +728,49 @@ func TestRemoveKilledRunEmptiesOnlyARootConfluxSecured(t *testing.T) {
 		})
 	}
 }
+
+// TestARootConfluxCannotLookUpIsRefused: a root whose name conflux cannot open in the folder it is in --
+// a folder the Guests own whose DACL grants SYSTEM alone, which denies the Administrators the right to read
+// who owns it -- is not judged, so uninstall's pre-flight (JudgeWays) refuses it, as none of its kinds,
+// and RemoveRoot refuses it and removes nothing, though its backup intent could have removed it all.
+// Windows-only, so it runs in CI's platforms job alone.
+func TestARootConfluxCannotLookUpIsRefused(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "conflux")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "manifest.b64"), []byte("identity"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	guests, err := windows.CreateWellKnownSid(windows.WinBuiltinGuestsSid)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	privtest.SetSecurity(t, root, "D:P(A;OICI;FA;;;SY)")
+	privtest.SetOwner(t, root, guests)
+
+	t.Cleanup(func() {
+		privtest.SetOwner(t, root, privtest.Admins)
+		privtest.SetSecurity(t, root, "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)")
+	})
+
+	t.Setenv("CONFLUX_DIR", root)
+
+	switch err := Default().JudgeWays(); {
+	case err == nil:
+		t.Errorf("JudgeWays(a CONFLUX_DIR conflux cannot look up) = nil, want a refusal")
+	case errors.Is(err, ErrWayRefused), errors.Is(err, ErrSharedRoot), errors.Is(err, ErrForeignRoot):
+		t.Errorf("JudgeWays(a CONFLUX_DIR conflux cannot look up) = %v, want a refusal of none of its kinds", err)
+	}
+
+	if gone, err := RemoveRoot(root); gone || err == nil {
+		t.Errorf("RemoveRoot(a root conflux cannot look up) = %v, %v, want a refusal, nothing removed", gone, err)
+	}
+
+	if _, err := os.Lstat(root); err != nil {
+		t.Errorf("RemoveRoot removed a root conflux cannot look up: %v", err)
+	}
+}

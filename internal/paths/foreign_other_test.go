@@ -244,3 +244,27 @@ func TestJudgeWaysSaysWhatItRefuses(t *testing.T) {
 		t.Errorf("JudgeWays(a platform root that is a sticky directory) = %v, want a refusal saying to remove it", err)
 	}
 }
+
+// TestARootConfluxCannotLookUpIsRefused: what is at a root's name where conflux cannot look it up in the
+// directory it is in -- here a name longer than a directory may hold -- is not judged, so it is refused,
+// as none of the kinds uninstall's pre-flight tells apart, by JudgeWays, and by RemoveRoot and
+// RemoveKilledRun, which remove nothing: nothing unjudged is removed.
+func TestARootConfluxCannotLookUpIsRefused(t *testing.T) {
+	root := filepath.Join(t.TempDir(), strings.Repeat("c", 300))
+	t.Setenv("CONFLUX_DIR", root)
+
+	switch err := Default().JudgeWays(); {
+	case err == nil:
+		t.Errorf("JudgeWays(a CONFLUX_DIR conflux cannot look up) = nil, want a refusal")
+	case errors.Is(err, ErrWayRefused), errors.Is(err, ErrSharedRoot), errors.Is(err, ErrForeignRoot):
+		t.Errorf("JudgeWays(a CONFLUX_DIR conflux cannot look up) = %v, want a refusal of none of its kinds", err)
+	}
+
+	if gone, err := RemoveRoot(root); gone || err == nil {
+		t.Errorf("RemoveRoot(a root conflux cannot look up) = %v, %v, want a refusal, nothing removed", gone, err)
+	}
+
+	if removed, err := RemoveKilledRun(root, ""); len(removed) > 0 || err == nil {
+		t.Errorf("RemoveKilledRun(a root conflux cannot look up) = %q, %v, want a refusal, nothing removed", removed, err)
+	}
+}

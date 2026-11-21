@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/veil-net/conflux/internal/privcheck"
 )
 
 // TestCheckHoldsARootAsAReaderNeeds: Check holds each root that is there to its owner -- root or
@@ -93,6 +95,26 @@ func TestCheckHoldsARootAsAReaderNeeds(t *testing.T) {
 
 	if err := Default().Check(); err == nil || !strings.Contains(err.Error(), "inside "+parent) {
 		t.Errorf("Check(a CONFLUX_DIR in a directory every account may write) = %v, want a refusal naming it", err)
+	}
+
+	// A CONFLUX_DIR every account may write, whose name needs quoting: the way to let conflux narrow it
+	// hands CONFLUX_DIR on through sudo, which keeps none of the environment it is run from.
+	t.Setenv("CONFLUX_DIR", filepath.Join(t.TempDir(), "it's conflux"))
+
+	if err := os.Mkdir(Root(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Chmod(Root(), 0o757); err != nil {
+		t.Fatal(err)
+	}
+
+	env := "env CONFLUX_DIR='" + strings.ReplaceAll(Root(), "'", `'\''`) + "' conflux "
+
+	if err := Default().Check(); err == nil || !strings.Contains(err.Error(), privcheck.Retry(env+"start")) ||
+		!strings.Contains(err.Error(), privcheck.Retry(env+"up")) {
+		t.Errorf("Check(a CONFLUX_DIR every account may write) = %v, want it to name %q, and %q where no service is "+
+			"registered", err, privcheck.Retry(env+"start"), privcheck.Retry(env+"up"))
 	}
 
 	t.Setenv("CONFLUX_DIR", "")

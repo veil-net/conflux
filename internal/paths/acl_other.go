@@ -742,12 +742,41 @@ func checkRootAs(dir string, euid int) (os.FileInfo, error) {
 	if who := judge(fi.Mode()&^os.ModeSticky, fi.Sys().(*syscall.Stat_t).Gid, writers, aclGroup, euid); who != "" {
 		return nil, fmt.Errorf("%s is not conflux's alone: %s could put what it likes in it for conflux to read or "+
 			"run, so conflux will not use it.\n  Let conflux narrow it, which judges what it holds as it does, rather "+
-			"than narrowing it by hand: for the machine's own, run %s or %s; an ephemeral run's narrows its own "+
-			"as it starts. Remove that entry from its ACL first, if one lets another account write it; then run this "+
-			"again", dir, who, privcheck.Retry("conflux start"), privcheck.Retry("conflux install"))
+			"than narrowing it by hand: %s; an ephemeral run's narrows its own as it starts. Remove that entry from "+
+			"its ACL first, if one lets another account write it; then run this again", dir, who, narrowing(dir))
 	}
 
 	return fi, nil
+}
+
+// narrowing is the way to let conflux narrow the root dir, as the readers' check advises it: for the
+// machine's own, its start or install as root; for a CONFLUX_DIR's, the same start with CONFLUX_DIR
+// handed on by name, since sudo, and doas, start a command with an environment of their own that keeps
+// no CONFLUX_DIR, and would act on the machine's own; or up, where that installation has no service
+// registered for start to start.
+func narrowing(dir string) string {
+	if !chosen(dir) {
+		return "for the machine's own, run " + privcheck.Retry("conflux start") + " or " +
+			privcheck.Retry("conflux install")
+	}
+
+	env := "env CONFLUX_DIR=" + shellWord(Root()) + " conflux "
+
+	return "for this CONFLUX_DIR, run " + privcheck.Retry(env+"start") + ", or, where it has no service " +
+		"registered, " + privcheck.Retry(env+"up")
+}
+
+// shellWord is s as one word a POSIX shell reads back as s: as it is where it holds nothing a shell
+// treats specially, and otherwise in single quotes, a quote in it closed, escaped and opened again.
+func shellWord(s string) string {
+	plain := s != "" && strings.IndexFunc(s, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("/._-+,:@%", r))
+	}) < 0
+	if plain {
+		return s
+	}
+
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // readerOwns refuses dir, of which fi is what Lstat or Stat said, where it belongs to an account

@@ -68,7 +68,8 @@ host can read, and when the run stops there is nothing at all.
   other name to be found first. That leaves a wide root narrowed by hand to `0710`, rather than by
   conflux, holding whatever second name another account made in it while it was wide, so the
   readers' refusal of a wide root asks for conflux to narrow it — `sudo conflux start` or
-  `install` — and not for a `chmod`. `anchord`'s own account is conflux's: what the supervisor gives it — `anchor/`,
+  `install`, and for a `CONFLUX_DIR`'s `sudo env CONFLUX_DIR=<dir> conflux start`, or `up` where it
+  has no service registered, since `sudo` keeps no `CONFLUX_DIR` of its own — and not for a `chmod`. `anchord`'s own account is conflux's: what the supervisor gives it — `anchor/`,
   `anchord.json` and the run directory's `anchord/` — it may own, and its directories are not gone
   into, since conflux reads what `anchord` writes there as untrusted; anything else it owns is
   refused, as it can make nothing elsewhere in a root. Every reader of an ephemeral run's root

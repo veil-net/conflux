@@ -175,7 +175,7 @@ func runUninstall(_ context.Context, args []string) int {
 		gone, err := paths.RemoveRoot(dir)
 		errs = append(errs, err)
 
-		if gone {
+		if gone && err == nil {
 			removed = append(removed, dir)
 		}
 	}
@@ -303,25 +303,28 @@ func notConfluxs(root string) error {
 }
 
 // removeEphemeralRoot removes the ephemeral root at root, where one is there, and says whether it
-// did: a killed run's as removeKilledRun removes it, under its lock, and nothing after, so a run that
-// takes it the moment the lock is let go of keeps it; and one another account could have made or
-// changed reading nothing in it, nor signalling anything it names (paths.RemoveRoot). A live run's,
-// which uninstall has refused already, is one that started since, and is errStarted.
+// is gone, which one it failed to empty is not: a killed run's as removeKilledRun removes it, under its
+// lock, and nothing after, so a run that takes it the moment the lock is let go of keeps it, and it is
+// not gone; and one holding what another account could have put there reading nothing in it, nor
+// signalling anything it names (paths.RemoveRoot). A live run's, which uninstall has refused already,
+// is one that started since, and is errStarted.
 func removeEphemeralRoot(root string) (bool, error) {
 	switch found, err := removeKilledRun(root); {
 	case err != nil:
-		return found != noRun, err
+		return false, err
 	case found == liveRun:
 		return false, errStarted
 	case found == noRun:
 		return false, nil
 	case found == killedRun:
-		return true, nil
+		_, err := os.Lstat(root)
+
+		return errors.Is(err, fs.ErrNotExist), nil
 	}
 
-	_, err := paths.RemoveRoot(root)
+	gone, err := paths.RemoveRoot(root)
 
-	return true, err
+	return gone && err == nil, err
 }
 
 // errStarted is an ephemeral run that started since uninstall asked whether one was live.

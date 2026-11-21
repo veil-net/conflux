@@ -237,7 +237,8 @@ func TestUninstallLeavesALiveRun(t *testing.T) {
 
 // TestARunTakingAKilledRunsRootKeepsIt: uninstall removes a killed run's root under its lock, as a
 // run's own clean-up does, so a run that takes the root the moment the lock is let go of keeps it,
-// and what it has put there: nothing removes the root again once its lock is let go of.
+// and what it has put there: nothing removes the root again once its lock is let go of, and the root,
+// still there, is not one uninstall says is gone.
 func TestARunTakingAKilledRunsRootKeepsIt(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "ephemeral")
 	e := paths.EphemeralDirs(root)
@@ -270,8 +271,8 @@ func TestARunTakingAKilledRunsRootKeepsIt(t *testing.T) {
 		}, r)
 	}
 
-	if _, err := removeEphemeralRoot(root); err != nil {
-		t.Fatalf("removeEphemeralRoot = %v", err)
+	if gone, err := removeEphemeralRoot(root); gone || err != nil {
+		t.Fatalf("removeEphemeralRoot = %v, %v, want the root a run took not gone", gone, err)
 	}
 
 	if b, err := os.ReadFile(taken); err != nil || string(b) != "a run's" {

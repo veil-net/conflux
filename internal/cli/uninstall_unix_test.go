@@ -3,12 +3,15 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/veil-net/conflux/internal/daemon"
+	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
 	"github.com/veil-net/conflux/internal/privcheck"
 )
@@ -175,5 +178,71 @@ func TestUninstallLeavesAnEphemeralRootConfluxDidNotSecure(t *testing.T) {
 	if _, err := os.Lstat(killed); !os.IsNotExist(err) || !strings.Contains(out, "  "+killed+"\n") {
 		t.Errorf("uninstall left %s, a killed run's root, or did not say it removed it (Lstat: %v):\n%s", killed, err,
 			out)
+	}
+}
+
+// TestUninstallListsOnlyWhatIsGone: uninstall lists a root, or an ephemeral run's, as removed only
+// where it is gone: not one it could not empty -- a folder in it whose mode lets its owner remove
+// nothing, or a killed run's that would not empty -- which it names in the failure instead, exit 1.
+func TestUninstallListsOnlyWhatIsGone(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("a folder whose mode lets its owner remove nothing in it holds nothing back from root")
+	}
+
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	d := configured(t)
+
+	stuck := filepath.Join(d.Libexec(), "0123456789abcdef")
+	if err := os.MkdirAll(stuck, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(stuck, "anchord"), []byte("an earlier set"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Chmod(stuck, 0o500); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = os.Chmod(stuck, 0o700) })
+
+	killed := filepath.Join(t.TempDir(), "conflux-ephemeral")
+	if err := os.Mkdir(killed, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(killed, "serve.lock"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	defer func(was func() []string) { ephemeralCandidates = was }(ephemeralCandidates)
+	ephemeralCandidates = func() []string { return []string{killed} }
+
+	errStuck := errors.New("the killed run's root would not empty")
+
+	wasEmpty := removeEphemeral
+	defer func() { removeEphemeral = wasEmpty }()
+
+	removeEphemeral = func(_ paths.Dirs, unlock func(), _ daemon.Reporter) error {
+		unlock()
+
+		return errStuck
+	}
+
+	standInService(t, &fakeManager{d: d})
+
+	out, errOut, code := capture(t, "uninstall", "--yes")
+	if code != ExitError || !strings.Contains(errOut, stuck) || !strings.Contains(errOut, errStuck.Error()) {
+		t.Errorf("uninstall of roots it could not empty exited %d, want %d naming why:\n%s%s", code, ExitError, out,
+			errOut)
+	}
+
+	for _, root := range []string{d.State, killed} {
+		if _, err := os.Lstat(root); err != nil || strings.Contains(out, "  "+root+"\n") {
+			t.Errorf("uninstall listed %s, which is still there, as removed (Lstat: %v):\n%s", root, err, out)
+		}
 	}
 }

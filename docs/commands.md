@@ -504,7 +504,9 @@ reinstall:
   conflux made them (an account of either name that conflux did not make is left alone), with
   the BPF devices given back to root on macOS first.
 
-The conflux you ran is yours, and stays. It says what it removed, however far it got. Asks first
+The conflux you ran is yours, and stays. It says what it removed, however far it got, and nothing
+else: a root it could not empty, or a killed run's that a run took as it let go of it, is not
+listed. Asks first
 where there is a credential, or may be one it cannot read, because there is no other copy of it
 anywhere; and wherever `CONFLUX_DIR` names the folder, credential or not, saying it removes
 everything in that folder, which is whatever the variable was set to. `--yes` skips the question,

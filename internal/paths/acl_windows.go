@@ -492,7 +492,9 @@ func trusted(sid *windows.SID) bool {
 
 // secure gives a conflux root its ownership and DACL, once, and refuses one another
 // account made, or a junction another account may point elsewhere (heldLink); a CONFLUX_DIR's way
-// is makeRoot's, which secure's one caller, EnsureAll, runs first. A root secured already -- SYSTEM's or the
+// is makeRoot's, which secure's one caller, EnsureAll, runs first, and so is the refusal of a folder
+// others keep what is theirs in, or one holding what conflux never makes there (sharedStep, strays),
+// which makeRoot holds whatever is at the root's name to before secure fills or restricts anything. A root secured already -- SYSTEM's or the
 // Administrators', under a protected DACL that grants nobody else any right, to read it included,
 // on the root or on what is made in it -- is not restricted again, but it is filled as any root is
 // (fill), and what it holds is judged again (contents), so that what a run refused once the root
@@ -544,12 +546,6 @@ func secure(dir string, installation bool) error {
 		return err
 	}
 	defer root.close()
-
-	// A folder others keep what is theirs in is never filled or restricted, whoever owns it
-	// (sharedRoot).
-	if err := sharedRoot(dir, root.dir); err != nil {
-		return err
-	}
 
 	sd, err := security(root.dir)
 	if err != nil {

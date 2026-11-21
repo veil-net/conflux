@@ -369,7 +369,9 @@ func parentsRuleAs(dir string, euid int) judgement {
 // secure refuses a root another account owns, or whose extended ACL lets another account write
 // or move it, and narrows one of conflux's own that something left wider than 0700, or than the
 // 0710 that lets anchord's account through. A CONFLUX_DIR's way is makeRoot's, which secure's one
-// caller, EnsureAll, runs first.
+// caller, EnsureAll, runs first, and so is the refusal of a directory others keep what is theirs in,
+// or one holding what conflux never makes there (sharedStep, strays), which makeRoot holds whatever
+// is at the root's name to before secure narrows anything.
 //
 // makeRoot creates at 0700 and leaves a directory that already exists exactly as it
 // found it, so without this an /etc/conflux somebody made at 0755 would hold the
@@ -392,12 +394,6 @@ func secure(dir string, _ bool) error { return secureAs(dir, os.Geteuid()) }
 func secureAs(dir string, euid int) error {
 	link, fi, err := ownedAs(dir, euid, ownedBy)
 	if err != nil {
-		return err
-	}
-
-	// A directory others keep what is theirs in is never narrowed, whoever owns it (sharedRoot).
-	st := fi.Sys().(*syscall.Stat_t)
-	if err := sharedRoot(dir, fileID{uint64(st.Dev), uint64(st.Ino)}, uint32(st.Mode), st.Uid, euid); err != nil {
 		return err
 	}
 

@@ -51,20 +51,18 @@ func runUninstall(_ context.Context, args []string) int {
 	// The roots uninstall refuses (JudgeWays): a CONFLUX_DIR whose way another account may change, held
 	// to parents' rule as the readers' check holds it, since whoever could change it could have put
 	// anything at the root's name, and could lead the removal elsewhere; a root that is a shared or
-	// system directory -- a CONFLUX_DIR of /tmp -- or the top of a volume -- / or C:\, or the folder a
-	// SUBST letter stands for, which need be neither -- which conflux never makes its own, and so never
-	// empties, each said in its own words (a top, as paths tells one, is the one root a CONFLUX_DIR
-	// there has, so a refusal of it as shared is that root's); and a root that holds what conflux never
-	// makes there -- a CONFLUX_DIR at a folder of homes -- which is not conflux's. Judged for every root
-	// before anything is asked or removed, so nothing is half-removed; paths' advice, which is for
-	// choosing a CONFLUX_DIR, gives way to uninstall's. Any other failure to judge a root stops
-	// uninstall there too, before it acts.
-	if err := d.JudgeWays(); err != nil {
+	// system directory -- a CONFLUX_DIR of /tmp, or of a volume's own root, / or C:\ -- or the top of a
+	// volume a SUBST letter gives a folder, which need be neither (ErrTopRoot, which is ErrSharedRoot as
+	// well), which conflux never makes its own, and so never empties, each said in its own words; and a
+	// root that holds what conflux never makes there -- a CONFLUX_DIR at a folder of homes -- which is
+	// not conflux's. Judged for every root before anything is asked or removed, so nothing is
+	// half-removed; paths' advice, which is for choosing a CONFLUX_DIR, gives way to uninstall's. Any
+	// other failure to judge a root stops uninstall there too, before it acts.
+	if err := judgeWays(d); err != nil {
 		what, _, _ := strings.Cut(err.Error(), "\n")
 
 		switch {
-		case errors.Is(err, paths.ErrSharedRoot) &&
-			slices.ContainsFunc(d.Outer(), func(dir string) bool { return filepath.Dir(dir) == dir }):
+		case errors.Is(err, paths.ErrTopRoot):
 			ui.Errf("%s\n  It is the top of its volume, which conflux never makes its own, so uninstall left "+
 				"everything in place, the boot service included.", what)
 		case errors.Is(err, paths.ErrSharedRoot):
@@ -243,6 +241,10 @@ var confirm = confirmUninstall
 
 // removeAccounts is removeAccount, which a test records.
 var removeAccounts = removeAccount
+
+// judgeWays is paths.Dirs.JudgeWays, which a test has refuse a root as the top a SUBST letter gives a
+// folder, which only Windows has.
+var judgeWays = paths.Dirs.JudgeWays
 
 // removeRoot is paths.RemoveRoot, which a test has fail with something at the root's name.
 var removeRoot = paths.RemoveRoot

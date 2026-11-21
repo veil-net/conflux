@@ -517,11 +517,12 @@ func TestUninstallLeavesAFolderOfHomes(t *testing.T) {
 	}
 }
 
-// TestUninstallLeavesAVolumesTop: a CONFLUX_DIR at the top of a volume -- / or C:\, or the folder a
-// SUBST letter stands for -- is no root conflux empties, since no folder holds it to remove it from, so
-// uninstall refuses it before it acts, exit 1, the boot service not removed, saying it is the top of
-// its volume, which it never empties -- not that it is a shared or system directory, which a SUBST
-// letter's folder need not be.
+// TestUninstallLeavesAVolumesTop: a CONFLUX_DIR at the top of a volume is no root conflux empties, so
+// uninstall refuses it before it acts, exit 1, the boot service not removed, saying what paths says it
+// is. The folder a SUBST letter stands for, which need be no shared or system directory, paths refuses as
+// the top of its volume (ErrTopRoot), and uninstall says that, not that it is shared; a volume's own root,
+// / or C:\, paths refuses as a directory others keep what is theirs in, and uninstall says that, not
+// that it is a volume's top.
 func TestUninstallLeavesAVolumesTop(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
@@ -530,16 +531,44 @@ func TestUninstallLeavesAVolumesTop(t *testing.T) {
 	defer func(was func(paths.Dirs, error, bool) bool) { confirm = was }(confirm)
 	confirm = func(paths.Dirs, error, bool) bool { return false }
 
-	top := filepath.VolumeName(t.TempDir()) + string(filepath.Separator)
-	t.Setenv("CONFLUX_DIR", top)
+	const (
+		topSaid    = "It is the top of its volume"
+		sharedSaid = "It is a shared or system directory"
+	)
 
-	mgr := &removing{fakeManager: fakeManager{d: paths.Default()}}
-	standInService(t, mgr)
+	t.Run("a SUBST letter's folder", func(t *testing.T) {
+		d := configured(t)
 
-	out, errOut, code := capture(t, "uninstall")
-	if code != ExitError || !strings.Contains(errOut, "It is the top of its volume") ||
-		strings.Contains(errOut, "It is a shared or system directory") || mgr.removals != 0 {
-		t.Errorf("uninstall of a CONFLUX_DIR of %s exited %d and removed the boot service %d times, want %d saying "+
-			"it is the top of its volume, nothing removed:\n%s%s", top, code, mgr.removals, ExitError, out, errOut)
-	}
+		// What paths' JudgeWays says of the top a SUBST letter gives a folder, which only Windows has.
+		defer func(was func(paths.Dirs) error) { judgeWays = was }(judgeWays)
+		judgeWays = func(paths.Dirs) error {
+			return fmt.Errorf("Z:\\ is the top of its volume, so conflux will not use it as a root: %w", paths.ErrTopRoot)
+		}
+
+		mgr := &removing{fakeManager: fakeManager{d: d}}
+		standInService(t, mgr)
+
+		out, errOut, code := capture(t, "uninstall")
+		if code != ExitError || !strings.Contains(errOut, topSaid) || strings.Contains(errOut, sharedSaid) ||
+			mgr.removals != 0 {
+			t.Errorf("uninstall of a SUBST letter's top exited %d and removed the boot service %d times, want %d "+
+				"saying it is the top of its volume, nothing removed:\n%s%s", code, mgr.removals, ExitError, out, errOut)
+		}
+	})
+
+	t.Run("a volume's root", func(t *testing.T) {
+		top := filepath.VolumeName(t.TempDir()) + string(filepath.Separator)
+		t.Setenv("CONFLUX_DIR", top)
+
+		mgr := &removing{fakeManager: fakeManager{d: paths.Default()}}
+		standInService(t, mgr)
+
+		out, errOut, code := capture(t, "uninstall")
+		if code != ExitError || !strings.Contains(errOut, sharedSaid) || strings.Contains(errOut, topSaid) ||
+			mgr.removals != 0 {
+			t.Errorf("uninstall of a CONFLUX_DIR of %s exited %d and removed the boot service %d times, want %d "+
+				"saying it is a shared or system directory, nothing removed:\n%s%s", top, code, mgr.removals,
+				ExitError, out, errOut)
+		}
+	})
 }

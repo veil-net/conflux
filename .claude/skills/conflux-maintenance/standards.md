@@ -159,7 +159,7 @@ Anchor is the reference for overlay behaviour, and the live API for the enrolmen
 - A supervisor that exits 1 is restarted by systemd, launchd and the SCM; on the BSDs nothing does, and the docs say so. One that exits 78 or 70 is restarted by none: systemd names them in `RestartPreventExitStatus`, launchd is told 0 (`cli.launchdExit`), and the SCM a clean stop (`scmExit`).
 - Readiness: the service manager is told the unit started once the anchor is up, or, beside an anchor that cannot come up yet, once the observer is (`signalStarted`), so a start timeout never takes the observer down; the marker waits for the anchor.
 - Where conflux writes the service log itself (macOS, FreeBSD, Windows), each line is stamped and the file moved aside to `.1` past 10 MiB; the journal and OpenBSD's syslog keep their own.
-- conflux's own anchorctl calls reach conflux's daemon whatever the shell exports (`Ctl.Env`); only pass-through defers to `ANCHOR_SOCKET`/`ANCHORD_TOKEN`. Help and usage make nothing: no directory and no extraction (`libexec.ForUsage`).
+- conflux's own anchorctl calls reach conflux's daemon whatever the shell exports (`Ctl.Env`); only pass-through defers to `ANCHOR_SOCKET`/`ANCHORD_TOKEN`. Help, usage and every reader (status, renew, a pass-through) make nothing: no directory and no extraction (`libexec.ForUsage`, `toolsFor`), an extraction not as conflux makes it run from a private temporary copy instead.
 
 **Ephemeral runs**
 - `uninstall` refuses a live run and removes a killed run's root, stopping the anchord it left, under the root's lock.

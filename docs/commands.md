@@ -141,7 +141,9 @@ and nothing in it is read, run or stopped: `down` stops nothing; `update` downlo
 nothing. `uninstall` reads and signals nothing in such a root either, and removes it all the same,
 following nothing in it, but for a `CONFLUX_DIR` whose way another account may change, which it
 refuses before removing anything ([`conflux uninstall`](#conflux-uninstall)). A root that is not there
-is a machine with nothing installed, and read as one.
+is a machine with nothing installed, and read as one. None of them makes anything in a root: the
+`anchorctl` `status`, `renew` and a pass-through run is the extraction there for this build, where it
+is as conflux makes it, and otherwise a private copy in a temporary directory, removed once it has run.
 
 Help is the exception, since it needs nothing of the machine's: it runs the `anchorctl` extracted
 in the root only where the root passes the readers' check and a whole extraction is there, and otherwise

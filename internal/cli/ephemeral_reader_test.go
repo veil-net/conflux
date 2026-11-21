@@ -16,6 +16,7 @@ import (
 	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/pathstest"
 )
 
 // startingEphemeral is an ephemeral root as a run that has just taken its lock finds it
@@ -112,7 +113,7 @@ func TestAKilledRunsMarkerIsNotTheNextRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := toolsFor(d); !errors.Is(err, errEphemeralStarting) {
+	if _, _, err := toolsFor(d); !errors.Is(err, errEphemeralStarting) {
 		t.Errorf("a reader, with the killed run's marker beside the new run's lock: %v, want errEphemeralStarting", err)
 	}
 
@@ -129,7 +130,7 @@ func TestAReaderTakesAnEphemeralRunsPairAsItIs(t *testing.T) {
 
 	d := startingEphemeral(t)
 
-	if _, err := toolsFor(d); !errors.Is(err, errEphemeralStarting) {
+	if _, _, err := toolsFor(d); !errors.Is(err, errEphemeralStarting) {
 		t.Errorf("before the run is up: %v, want errEphemeralStarting", err)
 	}
 
@@ -137,7 +138,7 @@ func TestAReaderTakesAnEphemeralRunsPairAsItIs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := toolsFor(d); !errors.Is(err, libexec.ErrNotExtracted) {
+	if _, _, err := toolsFor(d); !errors.Is(err, libexec.ErrNotExtracted) {
 		t.Errorf("a run with no pair: %v, want ErrNotExtracted", err)
 	}
 
@@ -150,16 +151,56 @@ func TestAReaderTakesAnEphemeralRunsPairAsItIs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := toolsFor(d)
-	if err != nil || got.Anchorctl != extracted.Anchorctl {
-		t.Errorf("a run that is up: %+v, %v; want %s", got, err, extracted.Anchorctl)
+	got, done, err := toolsFor(d)
+	if err != nil || got != extracted.Anchorctl || done != nil {
+		t.Errorf("a run that is up: %s, %v; want %s, and nothing to remove", got, err, extracted.Anchorctl)
+	}
+}
+
+// TestAReaderRemakesNothing: a reader -- status, renew, a pass-through -- makes nothing in the
+// installation's roots, which a service may be running from: where this build's pair is not extracted
+// there, as once an upgrade has put a newer conflux in place, it runs a private temporary copy of
+// anchorctl, which done removes, and leaves the roots as they are -- a run directory not as conflux
+// makes it among them, which EnsureAll would make afresh, the token in it with it. Where the pair is
+// there and as conflux makes it, the reader runs that, with nothing to remove.
+func TestAReaderRemakesNothing(t *testing.T) {
+	anchortest.Require(t)
+
+	d := pathstest.Dirs(t)
+
+	if err := os.WriteFile(d.TokenFile(), []byte("token"), 0o600); err != nil {
+		t.Fatal(err)
 	}
 
-	// An installed root is the reader's own to extract into, as it always was.
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	notAsConfluxMakesIt(t, d.Run)
 
-	if _, err := toolsFor(paths.Default()); err != nil {
-		t.Errorf("an installed root: %v", err)
+	bin, done, err := toolsFor(d)
+	if err != nil || done == nil || strings.HasPrefix(bin, d.State) {
+		t.Fatalf("a reader of an installation with no pair extracted = %s, %v, want a temporary copy to remove", bin, err)
+	}
+
+	if _, err := os.Stat(d.TokenFile()); err != nil {
+		t.Errorf("a reader remade the installation's run directory, the token in it with it: %v", err)
+	}
+
+	if _, err := os.Lstat(d.Libexec()); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("a reader extracted into the installation (Lstat %s: %v)", d.Libexec(), err)
+	}
+
+	done()
+
+	if _, err := os.Lstat(bin); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("done left the temporary copy %s (Lstat: %v)", bin, err)
+	}
+
+	extracted, err := libexec.Extract(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if bin, done, err := toolsFor(d); err != nil || bin != extracted.Anchorctl || done != nil {
+		t.Errorf("a reader of an installation with the pair extracted = %s, %v, want %s, and nothing to remove", bin,
+			err, extracted.Anchorctl)
 	}
 }
 

@@ -128,10 +128,11 @@ func renewNow(ctx context.Context, d paths.Dirs) int {
 		return ExitUnavailable
 	}
 
-	ctl, err := runCtl(d)
+	ctl, done, err := runCtl(d)
 	if err != nil {
 		return fail(err)
 	}
+	defer done()
 
 	if ctl.Token == "" {
 		return fail(fmt.Errorf("could not read %s, which anchorctl authenticates with", d.TokenFile()))

@@ -47,8 +47,8 @@ type Tools struct {
 }
 
 // Ensure is d's roots made as conflux makes them (EnsureAll) and this build's pair extracted there
-// (Extract), for a caller that has not made them itself -- a pass-through or a status, which may be
-// the first conflux to run here, and has held d's roots to the readers' check (Dirs.Check) first.
+// (Extract): wintun's, which puts its DLL beside the anchord it extracts. A reader -- help, status,
+// renew, a pass-through -- makes nothing, and takes its anchorctl from Installed or Temporary instead.
 // Idempotent, atomic, and safe against another conflux doing the same thing.
 func Ensure(d paths.Dirs) (*Tools, error) {
 	// The hot path: every conflux invocation reaches here, including a bare pass-through, so it is
@@ -202,26 +202,46 @@ func Extracted(d paths.Dirs) (*Tools, error) {
 	return t, nil
 }
 
-// ForUsage is an anchorctl to ask what a command takes, for help that must leave nothing
-// behind: this build's, extracted under d, where d's roots pass paths' check (Dirs.Check), which
-// a binary run from them by name needs, and a whole extraction is there and readable (Extracted),
-// and otherwise -- a root refused, or none there -- a copy in a private temporary directory, with
-// nothing in d read, which done removes -- in the
-// system's temporary directory, or, where that one is mounted noexec as /tmp is on a hardened
-// host, in the user's cache directory, made if it is not there yet. No other directory is
-// made, and never d's own. Making them for help remade, after an uninstall, what it had
-// removed, with tens of megabytes in it; and on Windows, asked by an account that is not an
-// administrator, it left %ProgramData%\conflux owned by that account, which every later
-// install then refused.
+// ForUsage is an anchorctl to ask what a command takes, for help that must leave nothing behind:
+// the installed extraction of this build's pair (Installed), or else a copy in a private temporary
+// directory (Temporary), which done removes.
 func ForUsage(d paths.Dirs) (bin string, done func(), err error) {
-	if !anchor.Supported {
-		return "", nil, errUnsupported
+	if t, err := Installed(d); err == nil {
+		return t.Anchorctl, func() {}, nil
 	}
 
-	if d.Check() == nil {
-		if t, err := Extracted(d); err == nil {
-			return t.Anchorctl, func() {}, nil
-		}
+	return Temporary()
+}
+
+// Installed is this build's pair extracted under d, for a reader that makes nothing there -- help, a
+// status, a renew, a pass-through: a whole extraction (Extracted) whose anchorctl, and each folder from
+// the state root to it, the root included, is as conflux makes it (paths.Dirs.Ours), which a binary run
+// from there by its name needs. Anything else is an error, ErrNotExtracted where no whole one is there.
+// Remaking the roots for a reader removed, under a service that ran from them, its run directory, the
+// token and the socket among it.
+func Installed(d paths.Dirs) (*Tools, error) {
+	t, err := Extracted(d)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := d.Ours(t.Anchorctl); err != nil {
+		return nil, err
+	}
+
+	return t, nil
+}
+
+// Temporary is a copy of this build's anchorctl in a private temporary directory, with nothing of any
+// root's read, which done removes: in the system's temporary directory, or, where that one is mounted
+// noexec as /tmp is on a hardened host, in the user's cache directory, made if it is not there yet. No
+// other directory is made, and never a root of conflux's. Making them for help remade, after an
+// uninstall, what it had removed, with tens of megabytes in it; and on Windows, asked by an account
+// that is not an administrator, it left %ProgramData%\conflux owned by that account, which every later
+// install then refused.
+func Temporary() (bin string, done func(), err error) {
+	if !anchor.Supported {
+		return "", nil, errUnsupported
 	}
 
 	candidates := []string{os.TempDir()}
@@ -234,7 +254,7 @@ func ForUsage(d paths.Dirs) (bin string, done func(), err error) {
 	parent, err := paths.FirstExecutable(candidates, nil)
 	if errors.Is(err, paths.ErrNoExec) {
 		return "", nil, fmt.Errorf("every temporary directory is on a filesystem mounted noexec, so the anchorctl "+
-			"help runs could not run from it: %v.\n  Set TMPDIR to a directory on one that is not", candidates)
+			"conflux runs could not run from it: %v.\n  Set TMPDIR to a directory on one that is not", candidates)
 	}
 
 	if err != nil {

@@ -93,8 +93,10 @@ host can read, and when the run stops there is nothing at all.
   is whoever made it first's. Nothing in a root that passes is judged: nobody else can have put anything there. The
   one place conflux reads what another account may write is `anchord`'s own: its anchor directory,
   `anchord.json` and the run directory's `anchord/`, read as untrusted, never through a link nor
-  blocking on a FIFO. `help`'s `anchorctl` runs from the extraction in a root only where the root
-  passes the check, and otherwise from a private copy in a temporary directory.
+  blocking on a FIFO. `help`'s `anchorctl`, and that of `status`, `renew` and a pass-through, runs
+  from the extraction in a root only where it, and each folder from the root to it, is as conflux
+  makes it, and otherwise from a private copy in a temporary directory, removed once it has run: a
+  reader makes nothing in a root, which a service may be running from.
 - Never in an argv. It travels on stdin to `anchorctl start -manifest -`, and to
   `anchorctl observe -start -manifest -` for the observer, which runs under it too, becomes an
   inline secret on the wire, and is never named as a path in the request — so it never

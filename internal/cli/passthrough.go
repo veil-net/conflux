@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/veil-net/conflux/anchor"
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/flock"
@@ -55,14 +56,19 @@ func passthrough(ctx context.Context, args []string) int {
 	// uninstall had removed, and tens of megabytes in them, on a machine with nothing
 	// running, and failed for an account that cannot write them before saying what was
 	// wrong.
-	tools, err := toolsFor(d)
+	bin, done, err := toolsFor(d)
 	if err != nil {
 		return fail(err)
 	}
 
 	env := (&anchorctl.Ctl{Socket: d.Socket(), Token: token}).PassthroughEnv()
 
-	return execAnchorctl(ctx, tools.Anchorctl, args, env)
+	// A temporary copy is removed once the run ends, which a process replaced by it cannot do.
+	if done != nil {
+		return runAnchorctl(bin, args, env, done)
+	}
+
+	return execAnchorctl(ctx, bin, args, env)
 }
 
 // connectionDetails reads the token, once d has passed paths' check (checked: an error that is
@@ -165,22 +171,27 @@ func runEscapeHatch(ctx context.Context, args []string) int {
 	return passthrough(ctx, args)
 }
 
-// runCtl builds a Ctl for conflux's own use, against conflux's own daemon. Its token
-// is empty when there is none to read, which is a daemon that is not running.
-func runCtl(d paths.Dirs) (*anchorctl.Ctl, error) {
-	tools, err := toolsFor(d)
+// runCtl builds a Ctl for conflux's own use, against conflux's own daemon, and done, which removes
+// the temporary copy of anchorctl it runs, where it runs one, once the caller is done with it. Its
+// token is empty when there is none to read, which is a daemon that is not running.
+func runCtl(d paths.Dirs) (*anchorctl.Ctl, func(), error) {
+	bin, done, err := toolsFor(d)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+
+	if done == nil {
+		done = func() {}
 	}
 
 	token, _ := readToken(d)
 
 	return &anchorctl.Ctl{
-		Bin:    tools.Anchorctl,
+		Bin:    bin,
 		Socket: d.Socket(),
 		Token:  token,
-		SetID:  tools.SetID,
-	}, nil
+		SetID:  anchor.SetID(),
+	}, done, nil
 }
 
 // readToken is the daemon's bearer token; "" with the error when it cannot be read.
@@ -290,19 +301,31 @@ func ephemeralRuns() (live, stale *paths.Dirs) {
 // errEphemeralStarting is an ephemeral run asked for before it is up.
 var errEphemeralStarting = errors.New("the ephemeral run is still starting; ask again once it is up")
 
-// toolsFor is the anchor pair to reach d's daemon with. An ephemeral run's root is the run's
-// own: a reader takes the pair it finds there and writes nothing, and reads nothing until the
-// run has marked itself up, since before that the run may still be clearing what a killed one
-// left -- and a reader that refilled what it was clearing, or held one of its binaries open,
-// would stop it.
-func toolsFor(d paths.Dirs) (*libexec.Tools, error) {
+// toolsFor is the anchorctl to reach d's daemon with, and done, which removes it once it has run,
+// where it is a temporary copy. A reader makes nothing: for the installation's daemon it takes the
+// extraction for this build where it is there and as conflux makes it (libexec.Installed), and
+// otherwise a private temporary copy (libexec.Temporary), leaving the roots to the next command that
+// makes them. An ephemeral run's root is the run's own: a reader takes the pair it finds there and
+// writes nothing, and reads nothing until the run has marked itself up, since before that the run may
+// still be clearing what a killed one left -- and a reader that refilled what it was clearing, or held
+// one of its binaries open, would stop it.
+func toolsFor(d paths.Dirs) (string, func(), error) {
 	if !slices.Contains(paths.EphemeralCandidates(), d.State) {
-		return libexec.Ensure(d)
+		if t, err := libexec.Installed(d); err == nil {
+			return t.Anchorctl, nil, nil
+		}
+
+		return libexec.Temporary()
 	}
 
 	if !daemon.IsLiveReady(d) {
-		return nil, errEphemeralStarting
+		return "", nil, errEphemeralStarting
 	}
 
-	return libexec.Extracted(d)
+	t, err := libexec.Extracted(d)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return t.Anchorctl, nil, nil
 }

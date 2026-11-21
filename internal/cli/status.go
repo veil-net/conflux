@@ -147,19 +147,33 @@ func askDaemon(ctx context.Context, d paths.Dirs, export bool) *daemonAnswers {
 		return a
 	}
 
-	ctl, err := runCtl(d)
-	if err != nil || ctl.Token == "" {
+	ctl, done, err := runCtl(d)
+	if err != nil {
+		return a
+	}
+
+	if ctl.Token == "" {
+		done()
+
 		return a
 	}
 
 	a.asked = true
 	env := ctl.Env()
 
-	a.wg.Go(func() { a.status, a.statErr = runQuiet(ctx, ctl.Bin, env, anchorctl.StatusArgs()) })
+	// Both at once, and the anchorctl they run removed once both have, where it is a temporary copy,
+	// before wg lets the caller go on.
+	a.wg.Go(func() {
+		defer done()
 
-	if export {
-		a.wg.Go(func() { a.export, a.expErr = runQuiet(ctx, ctl.Bin, env, anchorctl.ExportStatusArgs()) })
-	}
+		var exported sync.WaitGroup
+		if export {
+			exported.Go(func() { a.export, a.expErr = runQuiet(ctx, ctl.Bin, env, anchorctl.ExportStatusArgs()) })
+		}
+
+		a.status, a.statErr = runQuiet(ctx, ctl.Bin, env, anchorctl.StatusArgs())
+		exported.Wait()
+	})
 
 	return a
 }

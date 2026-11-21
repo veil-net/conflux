@@ -210,8 +210,8 @@ func (scm) Stop() error {
 	return notRegistered(withService(windows.SC_MANAGER_ALL_ACCESS, windows.SERVICE_ALL_ACCESS, stopService))
 }
 
-// Running asks the SCM whether the service is running or starting (runs): a service not registered
-// is not running, and any other failure the SCM's.
+// Running asks the SCM whether the service's process is there (runs): a service not registered is not
+// running, and any other failure the SCM's.
 func (scm) Running() (bool, error) {
 	running := false
 
@@ -232,8 +232,13 @@ func (scm) Running() (bool, error) {
 	return running, err
 }
 
-// runs reports whether a service in state runs, as Running and Describe tell it: running, or starting.
-func runs(state svc.State) bool { return state == svc.Running || state == svc.StartPending }
+// runs reports whether a service in state runs, as Running and Describe tell it: running, starting, or
+// stopping, its process not yet gone. One stopping still holds what it serves, so tidy stops it, which
+// waits for the stop to finish (stopService), rather than taking the supervisor still there for one run
+// by hand.
+func runs(state svc.State) bool {
+	return state == svc.Running || state == svc.StartPending || state == svc.StopPending
+}
 
 func (scm) Restart() error {
 	return notRegistered(withService(windows.SC_MANAGER_ALL_ACCESS, windows.SERVICE_ALL_ACCESS, func(s *mgr.Service) error {

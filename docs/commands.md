@@ -712,7 +712,8 @@ so an update works on an older install as it is:
   through the root held, never by its name: a `CONFLUX_DIR` whose way another account may change, as
   the [readers' check](#a-root-another-account-could-change) judges it, or a root conflux would not
   follow or another account owns, is refused there, exit 1, naming it, with nothing stopped. It is
-  stopped only where the service manager says it runs, and only what was stopped is started again,
+  stopped only where the service manager says it runs — starting, running or stopping, its process
+  not yet gone, so a stop under way is waited for — and only what was stopped is started again,
   on the new conflux, however the command ends: by `start`'s restart, by `register`, which starts
   nothing it did not stop, and by either where anything after this fails. A supervisor that still
   serves the root once the service is stopped, or with no service running — one started by hand — is

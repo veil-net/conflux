@@ -154,6 +154,57 @@ func TestRemoveRootHoldsACONFLUXDIRsWay(t *testing.T) {
 	}
 }
 
+// TestTheWayIsRecordedAsTheConfluxDirIsSpelled: the folders conflux makes on the way to a CONFLUX_DIR are
+// recorded by the names the CONFLUX_DIR is spelled with, not those the walk resolved its links to: Way
+// takes from the record only folders above a root, by their names, so a record of the resolved names
+// would be read back as nothing, and uninstall would leave every folder it made. Here the CONFLUX_DIR is
+// spelled through a link the test makes, as macOS's TMPDIR is reached through /var: the record is read
+// back whole, and once the root is gone RemoveWay removes each folder, the link and where it leads kept.
+func TestTheWayIsRecordedAsTheConfluxDirIsSpelled(t *testing.T) {
+	base := t.TempDir()
+
+	real := filepath.Join(base, "real")
+	if err := os.Mkdir(real, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+
+	a, b := filepath.Join(link, "a"), filepath.Join(link, "a", "b")
+	dir := filepath.Join(b, "conflux")
+
+	t.Setenv("CONFLUX_DIR", dir)
+	d := Default()
+
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	way, err := d.Way()
+	if err != nil || !slices.Equal(way, []string{dir, b, a}) {
+		t.Fatalf("Way() of a CONFLUX_DIR spelled through a link = %q, %v, want %q", way, err, []string{dir, b, a})
+	}
+
+	if _, err := RemoveRoot(d.State); err != nil {
+		t.Fatal(err)
+	}
+
+	if removed, err := RemoveWay(way); err != nil || !slices.Equal(removed, way) {
+		t.Errorf("RemoveWay(%q) = %q, %v, want each removed", way, removed, err)
+	}
+
+	if _, err := os.Lstat(filepath.Join(real, "a")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the folders conflux made through the link are still where it led (Lstat: %v)", err)
+	}
+
+	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("the link the CONFLUX_DIR was spelled through is %v (%v), want it kept", fi, err)
+	}
+}
+
 // TestTheWayConfluxMadeIsRemovedWhole: EnsureAll records each folder it made on the way to an
 // installation's root, in the state root, once, however often it runs, the CONFLUX_DIR among them where
 // it made that too; Way reads the record back, deepest first, keeping only folders above one of the

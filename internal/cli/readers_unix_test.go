@@ -625,3 +625,25 @@ func TestAReaderLeavesNothingInTheTemporaryDirectory(t *testing.T) {
 		}
 	}
 }
+
+// TestOurCopyPlacesNothingInARootItRefuses: before the service tidy stopped is started again, a copy of
+// conflux not as conflux makes one is placed afresh (ourCopy) only in roots that pass the readers' check:
+// in a root every account may write, where anybody could have put a copy of their own for the service to
+// run as root, nothing is placed, and the refusal is the error.
+func TestOurCopyPlacesNothingInARootItRefuses(t *testing.T) {
+	d := pathstest.Dirs(t)
+
+	if err := os.Chmod(d.State, 0o757); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = os.Chmod(d.State, 0o700) })
+
+	if err := ourCopy(d); err == nil || !strings.Contains(err.Error(), "anybody may write") {
+		t.Errorf("ourCopy in a root every account may write = %v, want the readers' check's refusal", err)
+	}
+
+	if _, err := os.Lstat(d.ServiceExecutable()); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("ourCopy placed a copy in a root every account may write (Lstat %s: %v)", d.ServiceExecutable(), err)
+	}
+}

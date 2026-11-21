@@ -172,6 +172,37 @@ func releaseAsking(t *testing.T) (rel *ghreleasetest.Release, exe, asked string)
 	return rel, exe, asked
 }
 
+// updatedConflux is a conflux an update replaced, exe, in a directory of the test's, which
+// updateExecutable answers for the rest of the test, beside what an update leaves there: a download
+// that never went in place, and exe.old, the image an update moves aside on Windows. leftovers are
+// those conflux removes as what an update left, and kept those it keeps: exe.old is an update's on
+// Windows alone, and elsewhere a file of the operator's.
+func updatedConflux(t *testing.T) (exe string, leftovers, kept []string) {
+	t.Helper()
+
+	exe = filepath.Join(t.TempDir(), "conflux")
+	leftovers = []string{filepath.Join(filepath.Dir(exe), ".conflux-update-123")}
+
+	if runtime.GOOS == "windows" {
+		leftovers = append(leftovers, exe+".old")
+	} else {
+		kept = []string{exe + ".old"}
+	}
+
+	for _, p := range append(append([]string{exe}, leftovers...), kept...) {
+		if err := os.WriteFile(p, []byte("a conflux"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	was := updateExecutable
+	t.Cleanup(func() { updateExecutable = was })
+
+	updateExecutable = func() (string, error) { return exe, nil }
+
+	return exe, leftovers, kept
+}
+
 // standInService makes mgr what newService answers, for the rest of the test.
 func standInService(t *testing.T, mgr service.Manager) {
 	t.Helper()

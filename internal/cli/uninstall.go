@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -262,14 +263,20 @@ func removeKilledRun(root string) (runRoot, error) {
 
 // removeUpdateLeftovers removes what an update left beside exe, the conflux it replaced: a download
 // that never went in place (update.Download's .conflux-update-*), and on Windows the image it moved
-// aside (exe.old), which nothing runs once the service has gone. Best effort: one still running is
-// left. It returns what it removed.
+// aside (exe.old, which update.Replace makes there alone: elsewhere a file of that name is the
+// operator's). Best effort: one still running is left -- on Windows the conflux an update ran from,
+// which runs the new one's start or register, so its image goes at the next update, or uninstall.
+// It returns what it removed.
 func removeUpdateLeftovers(exe string) []string {
 	var removed []string
 
 	matches, _ := filepath.Glob(filepath.Join(filepath.Dir(exe), ".conflux-update-*"))
 
-	for _, p := range append(matches, exe+".old") {
+	if runtime.GOOS == "windows" {
+		matches = append(matches, exe+".old")
+	}
+
+	for _, p := range matches {
 		if err := os.Remove(p); err == nil {
 			removed = append(removed, p)
 		}

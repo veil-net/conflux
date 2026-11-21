@@ -65,7 +65,8 @@ func installedScratch(t *testing.T) paths.Dirs {
 // there without following it. A link planted in a root -- to a directory outside it -- is removed as
 // the link, and the directory it leads to, and what is in it, are untouched; a file planted there
 // that another account owns is removed as itself. What an update left beside the conflux it
-// replaced goes too, and that conflux stays: it is the operator's. It says what it removed. (On
+// replaced goes too, and that conflux stays, with whatever else is beside it: they are the
+// operator's. It says what it removed. (On
 // Windows, with a junction: the same test.)
 func TestUninstallLeavesNothingConfluxMade(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
@@ -84,19 +85,8 @@ func TestUninstallLeavesNothingConfluxMade(t *testing.T) {
 	plantLink(t, filepath.Join(d.Libexec(), "0123456789abcdef", "planted-link"), outside)
 	plantForeign(t, filepath.Join(d.State, "planted-foreign"))
 
-	// The conflux an update replaced, with what that update left beside it: a download that never
-	// went in place, and the image it moved aside.
-	exe := filepath.Join(t.TempDir(), "conflux")
-	leftovers := []string{filepath.Join(filepath.Dir(exe), ".conflux-update-123"), exe + ".old"}
-
-	for _, p := range append(leftovers, exe) {
-		if err := os.WriteFile(p, []byte("a conflux"), 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	defer func(was func() (string, error)) { updateExecutable = was }(updateExecutable)
-	updateExecutable = func() (string, error) { return exe, nil }
+	// The conflux an update replaced, with what that update left beside it.
+	exe, leftovers, besideKept := updatedConflux(t)
 
 	mgr := &fakeManager{d: d}
 	standInService(t, mgr)
@@ -128,8 +118,10 @@ func TestUninstallLeavesNothingConfluxMade(t *testing.T) {
 		}
 	}
 
-	if _, err := os.Stat(exe); err != nil {
-		t.Errorf("uninstall removed the conflux it was run as: %v", err)
+	for _, p := range append(besideKept, exe) {
+		if _, err := os.Lstat(p); err != nil {
+			t.Errorf("uninstall removed %s, beside the conflux it was run as, which no update of it left: %v", p, err)
+		}
 	}
 
 	for _, p := range append(leftovers, d.State) {

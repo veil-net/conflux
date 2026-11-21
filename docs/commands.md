@@ -492,8 +492,8 @@ reinstall:
   macOS and FreeBSD, never `/var/log` itself;
 - every ephemeral run's root kept for the account running it, a killed run's once the anchord
   it left is stopped;
-- what an update left beside this conflux: a download that never went in place, and the image
-  moved aside, `conflux.exe.old`;
+- what an update left beside this conflux: a download that never went in place, and on Windows
+  the image moved aside, `conflux.exe.old` (elsewhere a file of that name is yours, and kept);
 - the folders conflux made on the way to its roots, which it records as it makes them — a
   `CONFLUX_DIR`'s parents it made among them — each once it is empty, deepest first;
 - the account `anchord` ran as, and `conflux-ephemeral`, once nothing runs as either, when
@@ -636,8 +636,10 @@ API answers directly; the binary comes through GitHub's redirect to its storage 
 compared before it is put anywhere it could run from. Then the new conflux is run once,
 for its `version`, and only a conflux that answers replaces this one. It is renamed over
 the file conflux was started from, symlinks followed, so whatever is running keeps the
-file it has; on Windows the running image is moved aside to `conflux.exe.old` first,
-which the new conflux removes once nothing runs it, or the next update does. No token is needed or sent: the repository is public.
+file it has; on Windows the running image is moved aside to `conflux.exe.old` first. That
+image is the conflux handing the service over, which runs the new one's `start` or `register`,
+so it is still running as they remove what earlier conflux left; it goes with the next update,
+or `uninstall`. No token is needed or sent: the repository is public.
 
 Before the new conflux judges the roots, places its copy or registers the service — through its
 `start` or its `register`, whichever the update hands the service over by — it removes what
@@ -672,8 +674,9 @@ so an update works on an older install as it is:
   it, with the `bin` directory, for whatever next takes it to make again;
 - the service's copy is written afresh, whatever it holds, with the image Windows moved aside
   and a copy that never went in place beside it removed;
-- what an earlier update left beside conflux goes: a download that never went in place, and
-  `conflux.exe.old`.
+- what an earlier update left beside conflux goes: a download that never went in place, and on
+  Windows an earlier update's `conflux.exe.old` (elsewhere a file of that name is yours, and
+  kept).
 
 The configuration, the identity, the state, the anchor directories and the log are kept. It
 lists what it removed, and nothing it did not. What the next start clears again as it starts —

@@ -29,7 +29,7 @@ import (
 // -socket -- is answered with where it belongs rather than guessed at. Bare, it is
 // conflux's, which is the one shape that matters: an anchorctl user typing it for a report
 // would stop an anchor this machine runs, so that switch is confirmed first.
-func runObserve(ctx context.Context, args []string) int {
+func runObserve(ctx context.Context, args []string) (code int) {
 	f := newObserveFlags()
 
 	if hint := f.anchorctls(args); hint != "" {
@@ -61,9 +61,14 @@ func runObserve(ctx context.Context, args []string) int {
 	}
 
 	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		return fail(err)
+	mgr := newService()
+
+	stopped, err := handOver(d, mgr)
+	if err != nil {
+		return startAgain(mgr, stopped, fail(err))
 	}
+
+	defer func() { code = startAgainIfDown(mgr, stopped, code) }()
 
 	cfg, err := loadOrNew(d)
 	if err != nil {

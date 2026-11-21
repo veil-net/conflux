@@ -455,6 +455,58 @@ func TestTidyStartsAgainHoweverTheCommandEnds(t *testing.T) {
 	}
 }
 
+// TestAnUpgradeStartsAgainTheServiceItStopped: up, proxy and observe, of a conflux put in place by
+// hand, stop the service before they make its roots afresh, and start it again however they end: by
+// their own restart, once, where they get that far, and otherwise before they exit -- here proxy
+// refusing a configuration it cannot read, its code kept.
+func TestAnUpgradeStartsAgainTheServiceItStopped(t *testing.T) {
+	anchortest.Require(t) // it extracts the pair afresh
+
+	rootOnLinux(t)
+
+	for name, c := range map[string]struct {
+		then func(*testing.T, paths.Dirs)
+		want int
+		says string
+	}{
+		"restarted by proxy": {want: ExitError, says: errStartsNothing.Error()},
+		"a configuration it cannot read": {then: func(t *testing.T, d paths.Dirs) {
+			if err := os.WriteFile(d.ConfigFile(), []byte("{"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}, want: ExitError, says: "parse "},
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := configured(t)
+
+			if c.then != nil {
+				c.then(t, d)
+			}
+
+			mgr := &goneOnStop{stopping{fakeManager: fakeManager{d: d, restartErr: errStartsNothing}, running: true,
+				release: serving(t, d)}}
+			standInService(t, mgr)
+
+			out, errOut, code := capture(t, "proxy", "8080=127.0.0.1:3000", "--taint", "t", "--no-ipv4")
+			if code != c.want || mgr.stops != 1 || mgr.restarts != 1 || !strings.Contains(errOut, c.says) {
+				t.Errorf("conflux proxy of an upgraded installation exited %d, stopped the service %d times and started "+
+					"it %d, want %d, once each, saying %q:\n%s%s", code, mgr.stops, mgr.restarts, c.want, c.says, out,
+					errOut)
+			}
+		})
+	}
+}
+
+// goneOnStop is stopping whose service the service manager says runs until it is stopped, and not
+// after, until it is started again.
+type goneOnStop struct{ stopping }
+
+func (m *goneOnStop) Running() (bool, error) {
+	running, err := m.stopping.Running()
+
+	return running && (m.stops == 0 || m.restarts > 0), err
+}
+
 // TestTidyStartsNothingBesideASupervisorRunByHand: a supervisor that serves the root once the boot
 // service is stopped, or that serves it with no service running, is one the boot service did not start
 // -- one run by hand -- which leaves what earlier conflux left in use: the update is refused, naming

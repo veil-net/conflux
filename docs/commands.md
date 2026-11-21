@@ -361,9 +361,10 @@ configuration is invented.
 path for "register and run" and one for "configure, persist, then register and run".
 
 Where the service's copy is not this conflux — a newer conflux put in place by hand or by the
-install script, or a first install — `install`, and `up`, `proxy` and `observe` through it, first
-removes what earlier conflux left, as [`update`](#conflux-update) describes, the service stopped
-for it and started again however the command ends, and writes the copy afresh.
+install script — `install`, `up`, `proxy`, `observe` and `enrol` first remove what earlier conflux
+left, as [`update`](#conflux-update) describes, before they make the roots: the service is stopped
+for it, so nothing it runs from is made afresh under it, and started again however the command
+ends, and the copy is written afresh.
 
 Registration is the point here. To start a machine that is already registered, that is
 `conflux start` — the two share the starting, so neither can drift into starting a

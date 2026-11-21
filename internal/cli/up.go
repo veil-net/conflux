@@ -28,7 +28,7 @@ type repeated []string
 func (r *repeated) String() string     { return strings.Join(*r, ",") }
 func (r *repeated) Set(v string) error { *r = append(*r, v); return nil }
 
-func runUp(ctx context.Context, args []string) int {
+func runUp(ctx context.Context, args []string) (code int) {
 	fs := flag.NewFlagSet("up", flag.ContinueOnError)
 	fs.SetOutput(ui.Errw)
 
@@ -108,9 +108,14 @@ func runUp(ctx context.Context, args []string) int {
 		}
 	} else {
 		d = paths.Default()
-		if err := d.EnsureAll(); err != nil {
-			return fail(err)
+		mgr := newService()
+
+		stopped, err := handOver(d, mgr)
+		if err != nil {
+			return startAgain(mgr, stopped, fail(err))
 		}
+
+		defer func() { code = startAgainIfDown(mgr, stopped, code) }()
 
 		if cfg, err = loadOrNew(d); err != nil {
 			return fail(err)

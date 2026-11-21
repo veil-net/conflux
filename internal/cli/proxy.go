@@ -19,7 +19,7 @@ import (
 // and Go's flag package treats -x and --x identically, so the double dash carries no
 // signal. A rule that is sometimes right is worse here than one that always explains
 // itself.
-func runProxy(ctx context.Context, args []string) int {
+func runProxy(ctx context.Context, args []string) (code int) {
 	if len(args) == 0 {
 		ui.Errf("conflux proxy publishes a local service on the overlay, and needs at least one spec:\n\n" +
 			"    conflux proxy 8080=127.0.0.1:3000\n" +
@@ -85,9 +85,14 @@ func runProxy(ctx context.Context, args []string) int {
 		}
 
 		d = paths.Default()
-		if err := d.EnsureAll(); err != nil {
-			return fail(err)
+		mgr := newService()
+
+		stopped, err := handOver(d, mgr)
+		if err != nil {
+			return startAgain(mgr, stopped, fail(err))
 		}
+
+		defer func() { code = startAgainIfDown(mgr, stopped, code) }()
 
 		if cfg, err = loadOrNew(d); err != nil {
 			return fail(err)

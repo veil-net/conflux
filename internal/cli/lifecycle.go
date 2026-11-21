@@ -21,7 +21,7 @@ import (
 // "configure, persist, then register and run". Run on its own with no configuration
 // it registers the service, says plainly that there is nothing to start, and exits
 // zero -- it did what it was asked. No configuration is invented.
-func runInstall(ctx context.Context, args []string) int {
+func runInstall(ctx context.Context, args []string) (code int) {
 	fs := flag.NewFlagSet("install", flag.ContinueOnError)
 	fs.SetOutput(ui.Errw)
 	fs.Usage = func() {
@@ -40,11 +40,59 @@ func runInstall(ctx context.Context, args []string) int {
 	}
 
 	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		return fail(err)
+	mgr := newService()
+
+	stopped, err := handOver(d, mgr)
+	if err != nil {
+		return startAgain(mgr, stopped, fail(err))
 	}
 
+	defer func() { code = startAgainIfDown(mgr, stopped, code) }()
+
 	return install(ctx, d, true, nil)
+}
+
+// staleCopy reports whether what earlier conflux left is to be removed before d's roots are made
+// (tidy): where the copy the boot service runs is not this conflux (service.Placed) -- an update, or a
+// newer conflux put in place by hand or by an install script -- or where the roots fail paths' check for
+// anything but not being there, so that the copy is not read to find out.
+func staleCopy(d paths.Dirs) bool {
+	checked := d.Check()
+
+	return checked == nil && !service.Placed(d) || checked != nil && !errors.Is(checked, os.ErrNotExist)
+}
+
+// handOver makes d's roots for up, proxy, observe, install and enrol, before anything in them is read
+// by its name, and says whether it stopped the boot service: where staleCopy, as start does, what
+// earlier conflux left goes first, the service stopped for it before anything it runs from is made
+// afresh (tidy), and this conflux is written as the copy the service runs (service.PlaceAfresh);
+// otherwise the roots are made as conflux makes them (EnsureAll). So a conflux put in place by hand or
+// by an install script reaches the service at the next of these, as at the next start. The service it
+// stopped is the caller's to start again however it ends (startAgainIfDown).
+func handOver(d paths.Dirs, mgr service.Manager) (bool, error) {
+	if !staleCopy(d) {
+		return false, d.EnsureAll()
+	}
+
+	stopped, err := tidy(d, mgr)
+	if err == nil {
+		_, err = service.PlaceAfresh(d)
+	}
+
+	return stopped, err
+}
+
+// startAgainIfDown is startAgain for a command handOver stopped the service for that may have started it
+// again itself on its way to code -- up, proxy, observe and install, by startAndReport: the service is
+// started again only where the service manager does not say it runs by then.
+func startAgainIfDown(mgr service.Manager, stopped bool, code int) int {
+	if stopped {
+		if running, err := mgr.Running(); err == nil && running {
+			return code
+		}
+	}
+
+	return startAgain(mgr, stopped, code)
 }
 
 // runRegister places this conflux's copy for the boot service and registers the service
@@ -117,12 +165,9 @@ func startAgain(mgr service.Manager, stopped bool, code int) int {
 // silent and leaves starting to the caller. Each has its directories already. place is
 // service.PlaceAfresh, which writes the copy whatever is there, for a caller that has cleared what
 // earlier conflux left (tidy) -- register, and start where the copy is not this conflux; keep, for a
-// copy service.Placed has found to be this conflux already; or nil, for install, up, proxy and
-// observe, which is either: keep, where the copy is this conflux, and otherwise, as start does, what
-// earlier conflux left removed first, the service stopped for it (tidy), and the copy written afresh,
-// the service tidy stopped started again however install ends (startAgain) or by its caller's restart.
-// That is how a conflux put in place by hand, or by an install script, reaches the service at the
-// command typed next.
+// copy service.Placed has found to be this conflux already; or nil, for install, up, proxy and observe,
+// whose roots handOver has made, so that a copy there is this conflux: keep where one is, and
+// PlaceAfresh where none is yet.
 //
 // The readiness marker is withdrawn first, before anything that can start the service --
 // launchd's Install does, for a running job whose definition changed -- and nothing
@@ -134,17 +179,10 @@ func startAgain(mgr service.Manager, stopped bool, code int) int {
 func install(ctx context.Context, d paths.Dirs, standalone bool, place func(paths.Dirs) (string, error)) int {
 	mgr := newService()
 
-	stopped := false
-
 	if place == nil {
 		place = keep
 
-		if !service.Placed(d) {
-			var err error
-			if stopped, err = tidy(d, mgr); err != nil {
-				return startAgain(mgr, stopped, fail(err))
-			}
-
+		if _, err := os.Lstat(d.ServiceExecutable()); err != nil {
 			place = service.PlaceAfresh
 		}
 	}
@@ -157,11 +195,11 @@ func install(ctx context.Context, d paths.Dirs, standalone bool, place func(path
 
 	exe, err := place(d)
 	if err != nil {
-		return startAgain(mgr, stopped, fail(err))
+		return fail(err)
 	}
 
 	if err := register(mgr, exe); err != nil {
-		return startAgain(mgr, stopped, fail(err))
+		return fail(err)
 	}
 
 	if !standalone {
@@ -171,7 +209,7 @@ func install(ctx context.Context, d paths.Dirs, standalone bool, place func(path
 	cfg, err := config.Load(d)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			return startAgain(mgr, stopped, fail(err))
+			return fail(err)
 		}
 
 		ui.Printf("The boot service is registered and will start at boot.\n" +
@@ -179,7 +217,7 @@ func install(ctx context.Context, d paths.Dirs, standalone bool, place func(path
 			configureHint + "\n\n" +
 			"Each writes the configuration and starts it.\n")
 
-		return startAgain(mgr, stopped, ExitOK)
+		return ExitOK
 	}
 
 	return startFromConfig(ctx, d, mgr, cfg, "install")
@@ -302,8 +340,7 @@ func runStart(ctx context.Context, args []string) int {
 	// Either way the roots are made as conflux makes them, as the service makes them at every start,
 	// before anything in them is read by its name, placed there or registered (EnsureAll, which tidy
 	// runs); with a service registered, roots not there are made, as that service would make them.
-	checked := d.Check()
-	afresh := checked == nil && !service.Placed(d) || checked != nil && !errors.Is(checked, os.ErrNotExist)
+	afresh := staleCopy(d)
 
 	// The service tidy stopped is started again however start ends: by startFromConfig's restart, or
 	// before (startAgain). A copy Placed found to be this conflux is not compared again as it is

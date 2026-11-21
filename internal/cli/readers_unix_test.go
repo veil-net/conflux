@@ -438,6 +438,67 @@ func TestAnUpdateStopsTheServiceServingARootNotAsConfluxMakesOne(t *testing.T) {
 	}
 }
 
+// TestAnUpgradeStopsTheServiceBeforeTheRootsAreMade: a conflux put in place by hand or by an install
+// script, whose copy for the service is not yet this one, removes what earlier conflux left at the
+// first up or proxy, as start does: the service stopped before anything in its roots is made afresh --
+// here a bin/ every account may write, which EnsureAll removes and makes again -- and that made afresh
+// once it is stopped, the copy this conflux.
+func TestAnUpgradeStopsTheServiceBeforeTheRootsAreMade(t *testing.T) {
+	anchortest.Require(t) // it extracts the pair afresh
+
+	rootOnLinux(t)
+
+	for name, args := range map[string][]string{
+		"up":    {"up", "--taint", "t", "--no-ipv4"},
+		"proxy": {"proxy", "8080=127.0.0.1:3000", "--taint", "t", "--no-ipv4"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := configured(t)
+
+			planted := filepath.Join(d.Libexec(), "planted")
+			if err := os.MkdirAll(d.Libexec(), 0o700); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := os.WriteFile(planted, []byte("an earlier conflux's"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := os.Chmod(d.Libexec(), 0o777); err != nil {
+				t.Fatal(err)
+			}
+
+			mgr := &stopping{fakeManager: fakeManager{d: d, restartErr: errStartsNothing}, running: true,
+				release: serving(t, d)}
+			standInService(t, mgr)
+
+			// Asked first as the service is stopped, and after that as whether it still has to be started.
+			intact, asked := false, false
+			mgr.asked = func() {
+				if !asked {
+					_, err := os.Lstat(planted)
+					intact, asked = err == nil, true
+				}
+			}
+
+			out, errOut, code := capture(t, args...)
+			if mgr.stops != 1 || !intact {
+				t.Fatalf("conflux %s of an upgraded installation exited %d and stopped the service %d times (before "+
+					"%s was made afresh: %v), want once, first:\n%s%s", name, code, mgr.stops, d.Libexec(), intact, out,
+					errOut)
+			}
+
+			if _, err := os.Lstat(planted); !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("conflux %s left %s, which EnsureAll makes afresh (Lstat: %v)", name, planted, err)
+			}
+
+			if !service.Placed(d) {
+				t.Errorf("conflux %s did not write this conflux as the service's copy", name)
+			}
+		})
+	}
+}
+
 // TestAnUpdateStopsNothingOnAWayItRefuses: the conflux an update put in place stops a supervisor
 // serving the root before it removes what earlier conflux left, but only once it has judged the way to
 // a CONFLUX_DIR, as the readers' check does: a root inside a directory every account may write, which

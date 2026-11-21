@@ -54,8 +54,10 @@ host can read, and when the run stops there is nothing at all.
   …), which only root makes there, but one conflux made a root of — its owner's, at `0700` or `0710`,
   holding its run directory or more — the system's log directory, a directory above where a platform
   root is kept by default (`/etc`, `/var`, `/var/lib` …), and the directory the running conflux is in
-  or one above it, but for the boot service's own root, which holds the copy of conflux it runs once
-  conflux has secured it. On Windows it is a volume's root (`C:\`), a folder directly under one that
+  or one above it, but for the boot service's own root where the running conflux is the copy the
+  service runs from it, one file with the copy at its name there, whatever the root's mode: a state
+  root found widened is narrowed by the service, as by any command that secures it, rather than
+  refused at every start. On Windows it is a volume's root (`C:\`), a folder directly under one that
   Windows made, which TrustedInstaller or SYSTEM owns (`Program Files`, `ProgramData`, `PerfLogs` …)
   where what conflux or an administrator makes there is the Administrators' or the administrator's,
   `%ProgramData%`, `%SystemRoot%`, `C:\Users` and `C:\Users\Public`, and any folder whose own DACL makes it a space other accounts

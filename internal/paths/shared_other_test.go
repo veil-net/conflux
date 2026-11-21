@@ -135,35 +135,101 @@ func asFound(t *testing.T, dir string) (os.FileMode, []string) {
 }
 
 // TestTheServicesOwnRootHoldsItsConflux: the directory the running conflux is in is no root, but where
-// that conflux is the copy the boot service runs, in a root conflux has secured already -- 0700 or 0710
-// and this account's -- which is the boot service's own root; one left wider, or a conflux of another
-// name there, is refused, and so is every directory above it.
+// that conflux is the copy the boot service runs there -- the file at the copy's name, conflux, never
+// followed -- whatever the root's mode: 0700, 0710 or widened to 0755. A conflux of another name there,
+// or a link at the copy's name to the running one, is refused, and so is every directory above it.
 func TestTheServicesOwnRootHoldsItsConflux(t *testing.T) {
 	root := t.TempDir()
 
+	for _, name := range []string{"conflux2", "real"} {
+		if err := os.WriteFile(filepath.Join(root, name), nil, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := os.Link(filepath.Join(root, "conflux2"), filepath.Join(root, "conflux")); err != nil {
+		t.Fatal(err)
+	}
+
+	link := t.TempDir()
+	if err := os.Symlink("real", filepath.Join(link, "conflux")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Rename(filepath.Join(root, "real"), filepath.Join(link, "real")); err != nil {
+		t.Fatal(err)
+	}
+
 	for _, c := range []struct {
-		exe  string
-		mode os.FileMode
-		ok   bool
+		root, exe string
+		mode      os.FileMode
+		ok        bool
 	}{
-		{"conflux", 0o700, true},
-		{"conflux", 0o710, true},
-		{"conflux", 0o755, false},
-		{"other", 0o700, false},
+		{root, "conflux", 0o700, true},
+		{root, "conflux", 0o710, true},
+		{root, "conflux", 0o755, true},
+		{root, "conflux2", 0o700, true}, // a second name of the copy is the copy
+		{link, "real", 0o700, false},
 	} {
-		if err := os.Chmod(root, c.mode); err != nil {
+		if err := os.Chmod(c.root, c.mode); err != nil {
 			t.Fatal(err)
 		}
 
-		ps := systemPlacesOf(t.TempDir(), filepath.Join(root, c.exe), Dirs{})
+		ps := systemPlacesOf(t.TempDir(), filepath.Join(c.root, c.exe), Dirs{})
 
-		if err := sharedRootIn(ps, root, held(t, root)); (err == nil) != c.ok {
+		if err := sharedRootIn(ps, c.root, held(t, c.root)); (err == nil) != c.ok {
 			t.Errorf("sharedRoot(the root %s runs from, at %v) = %v, want it taken %v", c.exe, c.mode, err, c.ok)
 		}
 
-		if err := sharedRootIn(ps, filepath.Dir(root), held(t, filepath.Dir(root))); err == nil {
+		if err := sharedRootIn(ps, filepath.Dir(c.root), held(t, filepath.Dir(c.root))); err == nil {
 			t.Errorf("sharedRoot(the directory above the root %s runs from) = nil, want a refusal", c.exe)
 		}
+	}
+
+	other := filepath.Join(t.TempDir(), "conflux")
+	if err := os.WriteFile(other, nil, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	ps := systemPlacesOf(t.TempDir(), filepath.Join(filepath.Dir(other), "other"), Dirs{})
+
+	if err := sharedRootIn(ps, filepath.Dir(other), held(t, filepath.Dir(other))); err == nil {
+		t.Errorf("sharedRoot(the root a conflux of another name runs from, a conflux beside it) = nil, want a refusal")
+	}
+}
+
+// TestTheServiceNarrowsItsOwnWidenedRoot: the boot service runs the copy of conflux in its state root,
+// and that root is the directory the running conflux is in, which is no root but for the service's
+// own: so a state root found widened to 0755 is taken, whatever its mode, and EnsureAll narrows it to
+// 0700, as it narrows any root of conflux's, rather than refuse it at every start.
+func TestTheServiceNarrowsItsOwnWidenedRoot(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "conflux")
+	t.Setenv("CONFLUX_DIR", root)
+
+	d := Default()
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(d.ServiceExecutable(), []byte("conflux"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Chmod(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	was := systemDirs
+	t.Cleanup(func() { systemDirs = was })
+
+	systemDirs = func() systemPlaces { return systemPlacesOf("/", d.ServiceExecutable(), platformDirs()) }
+
+	if err := d.EnsureAll(); err != nil {
+		t.Fatalf("EnsureAll(the service's own root at 0755, run as its copy) = %v, want it taken", err)
+	}
+
+	if fi, err := os.Stat(root); err != nil || fi.Mode().Perm() != 0o700 {
+		t.Errorf("the service's own root once EnsureAll took it = %v, %v, want it narrowed to 0700", fi.Mode(), err)
 	}
 }
 

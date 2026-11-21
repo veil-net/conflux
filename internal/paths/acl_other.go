@@ -876,12 +876,12 @@ func idOf(p string) (fileID, bool) {
 
 // systemPlaces are the directories no root of conflux's may be, by the file each is, and why
 // (systemPlacesOf); those directly under the filesystem's root among them (top); and the directory the
-// running conflux is in, held apart, with its name.
+// running conflux is in, held apart (exeDir), with the running conflux itself (exe).
 type systemPlaces struct {
-	dirs    map[fileID]string
-	top     map[fileID]bool
-	exe     fileID
-	exeName string
+	dirs   map[fileID]string
+	top    map[fileID]bool
+	exeDir fileID
+	exe    fileID
 }
 
 // systemDirs are this process's systemPlaces, read once: the running conflux, the platform's places
@@ -933,8 +933,8 @@ func systemPlacesOf(slash, exe string, platform Dirs) systemPlaces {
 	}
 
 	if exe != "" {
-		ps.exe, _ = idOf(filepath.Dir(exe))
-		ps.exeName = filepath.Base(exe)
+		ps.exeDir, _ = idOf(filepath.Dir(exe))
+		ps.exe, _ = idOf(exe)
 		above(filepath.Dir(exe), "above the directory the running conflux is in")
 	}
 
@@ -960,17 +960,16 @@ func systemPlacesOf(slash, exe string, platform Dirs) systemPlaces {
 // or the account running conflux (notReaders), at 0700 or 0710, as conflux secures a root, and
 // holding something -- every root conflux made holds its run directory, or more -- which strays then
 // holds to conflux's names. The directory the running conflux is in is refused too, but where the
-// running conflux is the copy the boot service runs (ServiceExecutable) in a root conflux has secured
-// already, 0700 or 0710 and this account's: the boot service's own root.
+// running conflux is the copy the boot service runs there (serviceCopy), whatever the root's mode:
+// the boot service's own root, which secure narrows where it finds it widened.
 func sharedRootIn(ps systemPlaces, dir string, s step) error {
 	id := fileID{uint64(s.st.Dev), uint64(s.st.Ino)}
 	why := ps.dirs[id]
-	euid := os.Geteuid()
 
-	switch perm := s.st.Mode & 0o777; {
+	switch {
 	case s.st.Mode&unix.S_ISVTX != 0:
 		why = "a sticky directory, which every account shares"
-	case why == "" && id == ps.exe && !(ps.exeName == "conflux" && int(s.st.Uid) == euid && (perm == 0o700 || perm == 0o710)):
+	case why == "" && id == ps.exeDir && !serviceCopy(ps, s):
 		why = "the directory the running conflux is in"
 	case why == "" && ps.top[id] && !madeTop(dir, s):
 		why = "a directory of the system's, directly under the filesystem's root, which conflux did not make a root"
@@ -983,6 +982,20 @@ func sharedRootIn(ps systemPlaces, dir string, s step) error {
 	return fmt.Errorf("%s is %s, so conflux will not use it as a root: it never narrows, fills or empties a "+
 		"directory others keep what is theirs in.\n  Point it at a directory of its own, then run this again", dir,
 		why)
+}
+
+// serviceCopy reports whether the running conflux, ps.exe, is the copy the boot service runs from the
+// root s holds (ServiceExecutable): the file at that copy's name there, as fstatat says of it, never
+// followed, one file with the running conflux.
+func serviceCopy(ps systemPlaces, s step) bool {
+	var st unix.Stat_t
+	if err := ignoringEINTR(func() error {
+		return unix.Fstatat(s.fd, s.at(filepath.Base(Dirs{}.ServiceExecutable())), &st, unix.AT_SYMLINK_NOFOLLOW)
+	}); err != nil {
+		return false
+	}
+
+	return st.Mode&unix.S_IFMT == unix.S_IFREG && (fileID{uint64(st.Dev), uint64(st.Ino)}) == ps.exe
 }
 
 // madeTop reports whether dir, a directory directly under the filesystem's root that s holds, is one

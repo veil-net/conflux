@@ -356,8 +356,8 @@ func TestEnsureAllRemakesAFolderOfItsOwnNotAsConfluxMakesIt(t *testing.T) {
 // conflux left the service's copy and the lock files on a Windows client, writing them in an
 // administrator's process, where that administrator's unelevated processes could change them for SYSTEM
 // to read or run -- one Users may read, or a junction, is removed as itself, where the junction leads
-// untouched, and nothing made in its place. One as conflux makes it is kept. Ours refuses a copy this
-// administrator owns, and holds one conflux made. Windows-only, so it runs in CI's platforms job alone.
+// untouched, and nothing made in its place. One as conflux makes it is kept. Ours refuses each, saying who
+// could do what, and holds one conflux made. Windows-only, so it runs in CI's platforms job alone.
 func TestEnsureAllRemovesAFileNotAsConfluxMakesIt(t *testing.T) {
 	elsewhere := t.TempDir()
 
@@ -402,8 +402,11 @@ func TestEnsureAllRemovesAFileNotAsConfluxMakesIt(t *testing.T) {
 
 				plant(t, p)
 
-				if err := d.Ours(p); err == nil {
+				switch err := d.Ours(p); {
+				case err == nil:
 					t.Errorf("Ours(%s at %s) = nil, want a refusal", name, p)
+				case name != "a junction" && !strings.Contains(err.Error(), ", who could change it or read what is in it)"):
+					t.Errorf("Ours(%s at %s) = %v, want a refusal saying who could do what", name, p, err)
 				}
 
 				if err := d.EnsureAll(); err != nil {

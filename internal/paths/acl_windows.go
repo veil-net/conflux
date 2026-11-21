@@ -482,10 +482,9 @@ func trusted(sid *windows.SID) bool {
 }
 
 // ours is why what s holds open -- a folder, at the root dir's name or a folder's in one, or a file in one
-// -- is not as conflux makes it, or "" where it is: owned by SYSTEM, the Administrators or the account it
-// is judged for, and its DACL
-// granting nobody else any right, to read it included, on it or on what is made in it (changerIn,
-// anyRight), as read through s. An installation's root, which the boot service runs from as SYSTEM,
+// -- is not as conflux makes it, or "" where it is: owned by SYSTEM, the Administrators, TrustedInstaller
+// or the account it is judged for, and its DACL granting nobody else any right, to read it included, on it
+// or on what is made in it (changerIn, anyRight), as read through s. An installation's root, which the boot service runs from as SYSTEM,
 // trusting no other account, is judged for SYSTEM; an ephemeral run's for the account running conflux
 // (judgedFor). %ProgramData% lets any account make a folder at a name not taken yet, which keeps that
 // account as its owner, or inherits Users' grants from it: neither is ours.
@@ -497,7 +496,7 @@ func ours(dir string, s step, installation bool) (string, error) {
 
 	who, err := changerIn(dir, judgedFor(installation), sd, anyRight, "use it or what is made in it", true)
 	if who != "" {
-		who += " could"
+		who += " could change it or read what is in it"
 	}
 
 	return who, err

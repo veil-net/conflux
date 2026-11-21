@@ -979,17 +979,23 @@ func systemPlacesOf(slash, exe string, platform Dirs) systemPlaces {
 // under the filesystem's root is the system's too, but where it is a root conflux made: owned by root
 // or the account running conflux (notReaders), at 0700 or 0710, as conflux secures a root, and
 // holding something -- every root conflux made holds its run directory, or more -- which strays then
-// holds to conflux's names. The directory the running conflux is in is refused too, but where the
-// running conflux is the copy the boot service runs there (serviceCopy), whatever the root's mode:
-// the boot service's own root, which secure narrows where it finds it widened.
+// holds to conflux's names. The directory the running conflux is in is refused too. The boot service's
+// own root is the one exception to both: where the running conflux is the copy the service runs there
+// (serviceCopy) and the root already holds this installation's own state (stateIn), it is taken whatever
+// its mode, and secure narrows it where it finds it widened, rather than refuse it at every start. A
+// folder holding the running conflux and nothing of the installation's -- /usr/local/bin, where conflux
+// was installed -- is refused, the copy's name there or not; and a sticky one is refused whatever it holds.
 func sharedRootIn(ps systemPlaces, dir string, s step) error {
 	id := fileID{uint64(s.st.Dev), uint64(s.st.Ino)}
 	why := ps.dirs[id]
 
+	service := why == "" && id == ps.exeDir && serviceCopy(ps, s) && stateIn(dir, s)
+
 	switch {
 	case s.st.Mode&unix.S_ISVTX != 0:
 		why = "a sticky directory, which every account shares"
-	case why == "" && id == ps.exeDir && !serviceCopy(ps, s):
+	case service:
+	case why == "" && id == ps.exeDir:
 		why = "the directory the running conflux is in"
 	case why == "" && ps.top[id] && !madeTop(dir, s):
 		why = "a directory of the system's, directly under the filesystem's root, which conflux did not make a root"

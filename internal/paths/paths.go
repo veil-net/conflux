@@ -49,25 +49,58 @@ type Dirs struct {
 // rooted in, its boot service included; see Root. It changes where conflux keeps
 // things and not what it needs: the verbs that change anything still need root.
 func Default() Dirs {
-	d := platformDirs()
-
 	if root := Root(); root != "" {
-		// A log directory of its own only where the platform writes the service's output
-		// to a file at all: where journald or syslog keeps it, nothing would write there.
-		log := ""
-		if d.Log != "" {
-			log = filepath.Join(root, "logs")
+		return rootedAt(root)
+	}
+
+	return platformDirs()
+}
+
+// rootedAt is the Dirs of an installation rooted in the one directory root, as a CONFLUX_DIR's is: the
+// configuration and the state in it, and the run and log directories inside it -- a log directory of its
+// own only where the platform writes the service's output to a file at all: where journald or syslog keeps
+// it, nothing would write there.
+func rootedAt(root string) Dirs {
+	log := ""
+	if platformDirs().Log != "" {
+		log = filepath.Join(root, "logs")
+	}
+
+	return Dirs{
+		Config: root,
+		State:  root,
+		Run:    filepath.Join(root, runName),
+		Log:    log,
+	}
+}
+
+// stateIn reports whether the root dir, the directory s holds, already holds this installation's own
+// state: a name conflux makes in an installation's state root (own, as rootedAt lays one out), but the
+// service's copy of conflux and the image an update moved aside beside it, which the folder conflux was
+// installed into holds as well. What is left before a rename (ownPrefixes), an update's download beside
+// that folder's conflux among it, is no state either.
+func stateIn(dir string, s step) bool {
+	names, err := namesOf(s, dir)
+	if err != nil {
+		return false
+	}
+
+	d := rootedAt(dir)
+	exe := filepath.Base(d.ServiceExecutable())
+
+	for _, name := range names {
+		if sameName(name, exe) || sameName(name, exe+".old") {
+			continue
 		}
 
-		return Dirs{
-			Config: root,
-			State:  root,
-			Run:    filepath.Join(root, runName),
-			Log:    log,
+		for _, p := range d.own() {
+			if p.path != "" && sameName(filepath.Dir(p.path), dir) && sameName(filepath.Base(p.path), name) {
+				return true
+			}
 		}
 	}
 
-	return d
+	return false
 }
 
 // runName is the run directory's name inside a root that holds it: a CONFLUX_DIR's, an

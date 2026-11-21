@@ -206,10 +206,12 @@ func TestAFolderOfWindowsOwnIsNoRoot(t *testing.T) {
 // TestTheFolderTheRunningConfluxIsInIsNoRoot: the folder the running conflux is in, and each one above
 // it, is no root -- %ProgramFiles%\conflux, where install.ps1 puts conflux, would otherwise be restricted
 // and emptied -- refused by uninstall's pre-flight as a shared root, reading nothing in it; but where
-// the running conflux is the copy the boot service runs from that folder, its own root, which EnsureAll
-// takes, whatever its DACL, and restricts. A conflux of another name there is refused by EnsureAll,
-// naming why, and the folder above the service's root is refused all the same. Windows-only, so it runs
-// in CI's platforms job alone.
+// the running conflux is the copy the boot service runs from that folder and the folder already holds the
+// installation's own state, its own root, which EnsureAll takes, whatever its DACL, and restricts. A
+// conflux of another name there is refused by EnsureAll, naming why; so is a folder holding the running
+// conflux alone at the copy's name, as install.ps1 leaves %ProgramFiles%\conflux, as found, its DACL
+// inherited; and the folder above the service's root is refused all the same. Windows-only, so it runs in
+// CI's platforms job alone.
 func TestTheFolderTheRunningConfluxIsInIsNoRoot(t *testing.T) {
 	exe, err := os.Executable()
 	if err != nil {
@@ -258,6 +260,31 @@ func TestTheFolderTheRunningConfluxIsInIsNoRoot(t *testing.T) {
 	}
 
 	onlyTheSystems(t, root)
+
+	installed := filepath.Join(t.TempDir(), "conflux")
+	if err := os.Mkdir(installed, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(installed, "conflux.exe"), []byte("conflux"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	runningExe = func() exePlace { return exePlaceOf(filepath.Join(installed, "conflux.exe")) }
+
+	t.Setenv("CONFLUX_DIR", installed)
+
+	if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), "the folder the running conflux is in") {
+		t.Errorf("EnsureAll(a folder holding the running conflux alone, at the copy's name) = %v, want a refusal "+
+			"saying so", err)
+	}
+
+	if entries, err := os.ReadDir(installed); err != nil || len(entries) != 1 {
+		t.Errorf("EnsureAll(a folder holding the running conflux alone) left it holding %v (%v), want it as it was",
+			entries, err)
+	}
+
+	runningExe = func() exePlace { return exePlaceOf(d.ServiceExecutable()) }
 
 	t.Setenv("CONFLUX_DIR", filepath.Dir(root))
 

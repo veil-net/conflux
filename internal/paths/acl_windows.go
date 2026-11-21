@@ -1382,9 +1382,13 @@ var systemFolders = sync.OnceValue(func() map[string]string {
 // sharedRoot refuses the root dir, the folder h holds open, where it is one others keep what is theirs
 // in, which conflux never fills, restricts or empties, whoever owns it: a volume's root (C:\), a folder
 // systemFolders names, a folder directly under a volume's root that Windows made (windowsOwn), the
-// folder the running conflux is in or one above it (runningExe) -- the first but where the running
-// conflux is the copy the boot service runs from it (serviceCopy), the service's own root, whatever
-// its DACL -- or one whose DACL makes it a space other accounts share (sharedSpace), as read through h.
+// folder the running conflux is in or one above it (runningExe), or one whose DACL makes it a space other
+// accounts share (sharedSpace), as read through h. The folder the running conflux is in is taken where
+// it is the boot service's own root: the running conflux the copy the service runs from it (serviceCopy),
+// and the folder already holding this installation's own state (stateIn), whatever else its DACL grants,
+// which secure restricts. A folder holding the running conflux and nothing of the installation's --
+// %ProgramFiles%\conflux, where install.ps1 puts it -- is refused, the copy's name there or not; and a
+// DACL making it a space other accounts share refuses even the service's own.
 func sharedRoot(dir string, h windows.Handle) error {
 	sd, err := security(h)
 	if err != nil {
@@ -1411,7 +1415,7 @@ func sharedRoot(dir string, h windows.Handle) error {
 		case why != "":
 		case ex.above[folder]:
 			why = "a folder above the one the running conflux is in"
-		case folder == ex.folder && !serviceCopy(h, ex):
+		case folder == ex.folder && !(serviceCopy(h, ex) && stateIn(dir, step{h})):
 			why = "the folder the running conflux is in"
 		}
 	}

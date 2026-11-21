@@ -140,9 +140,11 @@ root that Windows made — which TrustedInstaller or SYSTEM
 owns, as `Program Files`, `ProgramData` and `PerfLogs` are, where what conflux makes there, and what an
 administrator makes, is the Administrators' or the administrator's own — `%ProgramData%`,
 `%SystemRoot%`, `C:\Users`, `C:\Users\Public`, the folder the running conflux is in or one above it
-(`%ProgramFiles%\conflux`, where `install.ps1` puts it), but for the boot service's own root where
-the running conflux is the copy the service runs from it, whatever its DACL, or any folder
-whose own DACL makes it a space other accounts share, as `%ProgramData%`'s does — Users let add to it
+(`%ProgramFiles%\conflux`, where `install.ps1` puts it, holding conflux alone), but for the boot
+service's own root where the running conflux is the copy the service runs from it and the folder already
+holds this installation's own state, a name conflux makes there besides the copy, whatever else its DACL
+grants short of making it a space other accounts share; or any folder
+whose own DACL makes it one, as `%ProgramData%`'s does — Users let add to it
 and to the folders made in it, `CREATOR OWNER` passed full control — is refused by every command that
 makes a root before anything is filled or restricted, by `update` and `start` before they remove
 anything from it, and by `uninstall` before it removes

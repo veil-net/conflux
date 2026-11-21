@@ -136,12 +136,15 @@ func asFound(t *testing.T, dir string) (os.FileMode, []string) {
 
 // TestTheServicesOwnRootHoldsItsConflux: the directory the running conflux is in is no root, but where
 // that conflux is the copy the boot service runs there -- the file at the copy's name, conflux, never
-// followed -- whatever the root's mode: 0700, 0710 or widened to 0755. A conflux of another name there,
-// or a link at the copy's name to the running one, is refused, and so is every directory above it.
+// followed -- and the root already holds this installation's own state, here its identity: then whatever
+// the root's mode, 0700, 0710 or widened to 0755. A folder holding the running conflux and nothing of an
+// installation's -- /usr/local/bin, where conflux was installed, an image an update moved aside and an
+// update's download beside it -- is refused, at 0755 or 0700, though its conflux is at the copy's name; so
+// are a conflux of another name, a link at the copy's name to the running one, and every directory above.
 func TestTheServicesOwnRootHoldsItsConflux(t *testing.T) {
 	root := t.TempDir()
 
-	for _, name := range []string{"conflux2", "real"} {
+	for _, name := range []string{"conflux2", "real", "manifest.b64"} {
 		if err := os.WriteFile(filepath.Join(root, name), nil, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -160,6 +163,13 @@ func TestTheServicesOwnRootHoldsItsConflux(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	installed := t.TempDir()
+	for _, name := range []string{"conflux", "conflux.old", ".conflux-update-1"} {
+		if err := os.WriteFile(filepath.Join(installed, name), nil, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	for _, c := range []struct {
 		root, exe string
 		mode      os.FileMode
@@ -170,6 +180,8 @@ func TestTheServicesOwnRootHoldsItsConflux(t *testing.T) {
 		{root, "conflux", 0o755, true},
 		{root, "conflux2", 0o700, true}, // a second name of the copy is the copy
 		{link, "real", 0o700, false},
+		{installed, "conflux", 0o755, false},
+		{installed, "conflux", 0o700, false},
 	} {
 		if err := os.Chmod(c.root, c.mode); err != nil {
 			t.Fatal(err)
@@ -178,11 +190,11 @@ func TestTheServicesOwnRootHoldsItsConflux(t *testing.T) {
 		ps := systemPlacesOf(t.TempDir(), filepath.Join(c.root, c.exe), Dirs{})
 
 		if err := sharedRootIn(ps, c.root, held(t, c.root)); (err == nil) != c.ok {
-			t.Errorf("sharedRoot(the root %s runs from, at %v) = %v, want it taken %v", c.exe, c.mode, err, c.ok)
+			t.Errorf("sharedRootIn(the root %s runs from, at %v) = %v, want it taken %v", c.exe, c.mode, err, c.ok)
 		}
 
 		if err := sharedRootIn(ps, filepath.Dir(c.root), held(t, filepath.Dir(c.root))); err == nil {
-			t.Errorf("sharedRoot(the directory above the root %s runs from) = nil, want a refusal", c.exe)
+			t.Errorf("sharedRootIn(the directory above the root %s runs from) = nil, want a refusal", c.exe)
 		}
 	}
 
@@ -194,16 +206,20 @@ func TestTheServicesOwnRootHoldsItsConflux(t *testing.T) {
 	ps := systemPlacesOf(t.TempDir(), filepath.Join(filepath.Dir(other), "other"), Dirs{})
 
 	if err := sharedRootIn(ps, filepath.Dir(other), held(t, filepath.Dir(other))); err == nil {
-		t.Errorf("sharedRoot(the root a conflux of another name runs from, a conflux beside it) = nil, want a refusal")
+		t.Errorf("sharedRootIn(the root a conflux of another name runs from, a conflux beside it) = nil, want a refusal")
 	}
 }
 
 // TestTheServiceNarrowsItsOwnWidenedRoot: the boot service runs the copy of conflux in its state root,
 // and that root is the directory the running conflux is in, which is no root but for the service's
 // own: so a state root found widened to 0755 is taken, whatever its mode, and EnsureAll narrows it to
-// 0700, as it narrows any root of conflux's, rather than refuse it at every start.
+// 0700, as it narrows any root of conflux's, rather than refuse it at every start -- one directly under
+// the filesystem's root too, here a stand-in for it, where a directory not at 0700 or 0710 is otherwise
+// the system's.
 func TestTheServiceNarrowsItsOwnWidenedRoot(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "conflux")
+	slash := t.TempDir()
+
+	root := filepath.Join(slash, "conflux")
 	t.Setenv("CONFLUX_DIR", root)
 
 	d := Default()
@@ -222,10 +238,11 @@ func TestTheServiceNarrowsItsOwnWidenedRoot(t *testing.T) {
 	was := systemDirs
 	t.Cleanup(func() { systemDirs = was })
 
-	systemDirs = func() systemPlaces { return systemPlacesOf("/", d.ServiceExecutable(), platformDirs()) }
+	systemDirs = func() systemPlaces { return systemPlacesOf(slash, d.ServiceExecutable(), platformDirs()) }
 
 	if err := d.EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll(the service's own root at 0755, run as its copy) = %v, want it taken", err)
+		t.Fatalf("EnsureAll(the service's own root at 0755, directly under the filesystem's root, run as its "+
+			"copy) = %v, want it taken", err)
 	}
 
 	if fi, err := os.Stat(root); err != nil || fi.Mode().Perm() != 0o700 {

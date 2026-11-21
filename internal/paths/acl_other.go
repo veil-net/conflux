@@ -973,16 +973,13 @@ func sharedStep(dir string, s step) error {
 }
 
 // securedStep refuses the directory the link at the root dir's name leads to, which s holds and p names,
-// where conflux has not secured it as a root, as it secures every root it uses at its first start:
-// owned by root or the account running conflux (notReaders), at 0700 or the 0710 that lets anchord's
-// account through, and no ACL letting another account write it (judge), as fstat read it where the
-// walk met it and its ACL at p, which leads through no link.
+// where conflux has not secured it as a root, as it secures every root it uses at its first start: at
+// 0700 or the 0710 that lets anchord's account through, and no ACL letting another account write it
+// (judge), as fstat read it where the walk met it and its ACL at p, which leads through no link. Its
+// owner, root or the account running conflux, is follow's to hold (ledRoot), which holds the link
+// before RemoveRoot asks this.
 func securedStep(dir, p string, s step) error {
 	euid := os.Geteuid()
-
-	if err := notReaders(p, s.st.Uid, euid); err != nil {
-		return fmt.Errorf("%s is a link to a directory conflux will not go into: %w", dir, err)
-	}
 
 	acl, aclGroup, err := aclOf(p, -1)
 	if err != nil {

@@ -324,6 +324,10 @@ func (d Dirs) makeRoot(dir string) ([]string, error) {
 	}
 	defer root.close()
 
+	// Each folder conflux keeps in the root is judged as the root is (ours). The anchor directory of an
+	// anchord that runs as its own account (AnchorDir) is not among them: that account owns it, as the
+	// supervisor makes it, so ours would remove it, and the anchor's state with it, at every start; the
+	// supervisor holds it to that account instead (daemon's anchorDirFor), and makes it afresh otherwise.
 	for sub, create := range d.folders(dir) {
 		s, err := ownFolder(root, sub, !d.ephemeral, create)
 

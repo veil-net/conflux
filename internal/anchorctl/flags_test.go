@@ -30,7 +30,7 @@ var flagLine = regexp.MustCompile(`(?m)^\s+-([a-z0-9-]+)`)
 // Every start and observe -start conflux can make is an argv golden of its own (args_test.go),
 // so those are read from testdata/argv, all of them; what has no golden is listed here.
 func TestEveryFlagWeUseExists(t *testing.T) {
-	tools := anchortest.Extracted(t, libexec.Ensure)
+	tools := anchortest.Extracted(t, libexec.Extract)
 
 	argvs := map[string][]string{
 		"renew":         anchorctl.RenewArgs(),

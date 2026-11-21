@@ -46,29 +46,13 @@ type Tools struct {
 	SetID     string
 }
 
-// Ensure is d's roots made as conflux makes them (EnsureAll) and this build's pair extracted there
-// (Extract): wintun's, which puts its DLL beside the anchord it extracts. A reader -- help, status,
-// renew, a pass-through -- makes no root, and takes its anchorctl from ForUsage instead.
-// Idempotent, atomic, and safe against another conflux doing the same thing.
-func Ensure(d paths.Dirs) (*Tools, error) {
-	// The hot path: every conflux invocation reaches here, including a bare pass-through, so it is
-	// two stats and nothing more.
-	t, err := Extracted(d)
-	if !errors.Is(err, ErrNotExtracted) {
-		return t, err
-	}
-
-	if err := d.EnsureAll(); err != nil {
-		return nil, err
-	}
-
-	return extractIn(d)
-}
-
 // Extract extracts this build's pair under d if it is not already there, and returns the paths,
-// for a caller that has made d's roots already (EnsureAll): the supervisor and an ephemeral run
-// as they start, and the wait of a command that has just started the service. Idempotent, atomic,
-// and safe against another conflux doing the same thing.
+// for a caller that has made d's roots already (EnsureAll) -- the supervisor and an ephemeral run
+// as they start, wintun's, which puts its DLL beside the anchord it extracts, and the wait of a
+// command that has just started the service -- or held them to the readers' check, a reader
+// extracting into a bin directory as conflux makes one (ForUsage). It makes no root. Idempotent,
+// atomic, and safe against another conflux doing the same thing; where the pair is there, two
+// stats and nothing more.
 func Extract(d paths.Dirs) (*Tools, error) {
 	t, err := Extracted(d)
 	if !errors.Is(err, ErrNotExtracted) {

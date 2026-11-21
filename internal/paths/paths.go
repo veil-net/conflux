@@ -41,8 +41,8 @@ type Dirs struct {
 	// service serves, so EnsureAll holds a CONFLUX_DIR's way to the service's rule (wayRule).
 	ephemeral bool
 
-	// serving is whether these are made for the supervisor that serves them (EnsureServing), which leaves
-	// the copy of conflux it runs from alone.
+	// serving is whether these are the supervisor's that serves them, as EnsureServing makes them, whose
+	// every making of them leaves the copy of conflux it runs from alone.
 	serving bool
 }
 
@@ -298,9 +298,10 @@ func (d Dirs) EnsureAll() error {
 // EnsureServing is EnsureAll for the supervisor that serves d, which runs from the copy of conflux the boot
 // service names in the state root (ServiceExecutable): everything is judged and made as EnsureAll judges
 // and makes it but that copy, which is neither judged nor removed -- Windows will not remove a running
-// image, and one removed on Unix would leave the service nothing to start the next time. A copy not as
-// conflux makes it is the next command's to place afresh, as its hand-over finds it so (cli's staleCopy).
-func (d Dirs) EnsureServing() error {
+// image, and one removed on Unix would leave the service nothing to start the next time. d is the
+// supervisor's from then on, and so is every copy of it: each later EnsureAll of it leaves the copy alone
+// too, however deep in the supervisor it is made.
+func (d *Dirs) EnsureServing() error {
 	d.serving = true
 
 	return d.EnsureAll()

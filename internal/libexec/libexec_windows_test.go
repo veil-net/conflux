@@ -101,7 +101,7 @@ func TestAUsageCopyIsGuardedForWhoRunsIt(t *testing.T) {
 // TestAStagingDirectoryIsMadeWithItsDACL: a set is written in a staging directory made with its
 // ownership and DACL set as it is created, never carrying what the directory it is made in passes
 // on: here a denial of WRITE_DAC to whoever owns what is made there, which a staging directory made
-// and then restricted would be refused its DACL by, so Ensure would fail. Windows-only, so it runs
+// and then restricted would be refused its DACL by, so Extract would fail. Windows-only, so it runs
 // in CI's platforms job alone.
 func TestAStagingDirectoryIsMadeWithItsDACL(t *testing.T) {
 	anchortest.Require(t)
@@ -114,7 +114,7 @@ func TestAStagingDirectoryIsMadeWithItsDACL(t *testing.T) {
 
 	privtest.DenyOwnersTheirDACL(t, d.Libexec())
 
-	if _, err := Ensure(d); err != nil {
-		t.Fatalf("Ensure in a directory that refuses what is made in it a DACL given afterwards: %v", err)
+	if _, err := Extract(d); err != nil {
+		t.Fatalf("Extract in a directory that refuses what is made in it a DACL given afterwards: %v", err)
 	}
 }

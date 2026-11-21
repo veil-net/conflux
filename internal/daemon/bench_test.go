@@ -218,7 +218,7 @@ func BenchmarkDaemonLifecycle(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	tools, err := libexec.Ensure(d)
+	tools, err := libexec.Extract(d)
 	if err != nil {
 		b.Fatal(err)
 	}

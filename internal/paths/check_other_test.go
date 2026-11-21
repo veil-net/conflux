@@ -142,7 +142,8 @@ func TestEnsureAllRemovesAFileNotAsConfluxMakesIt(t *testing.T) {
 		t.Errorf("Ours(a copy every account may write) = %v, want a refusal saying so", err)
 	}
 
-	if err := d.EnsureServing(); err != nil {
+	serving := d
+	if err := serving.EnsureServing(); err != nil {
 		t.Fatal(err)
 	}
 

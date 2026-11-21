@@ -146,7 +146,7 @@ func TestAReaderTakesAnEphemeralRunsPairAsItIs(t *testing.T) {
 		t.Errorf("a reader wrote %d entries into the run's %s", len(entries), d.Libexec())
 	}
 
-	extracted, err := libexec.Ensure(d) // as the run does
+	extracted, err := libexec.Extract(d) // as the run does
 	if err != nil {
 		t.Fatal(err)
 	}

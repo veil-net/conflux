@@ -36,11 +36,12 @@ const (
 // directory, so an upgraded anchor pair fetches it again into its own directory,
 // which is correct: the driver belongs next to the binary that loads it.
 //
-// The pair is extracted first. A set directory holding anything but a finished
-// extraction is debris to libexec, which clears it before extracting into it -- the DLL
-// with it, had it been put there first.
+// The pair is extracted first (libexec.Extract), into the roots every caller has made as
+// conflux makes them already -- up's, the supervisor's, an ephemeral run's -- and no root is
+// made here. A set directory holding anything but a finished extraction is debris to libexec,
+// which clears it before extracting into it -- the DLL with it, had it been put there first.
 func Ensure(ctx context.Context, d paths.Dirs) error {
-	tools, err := libexec.Ensure(d)
+	tools, err := libexec.Extract(d)
 	if err != nil {
 		return err
 	}

@@ -51,7 +51,8 @@ func supervised(t *testing.T, mode string) (*Supervisor, string) {
 // the copy of conflux the boot service runs, which it runs from: Windows will not remove a running image,
 // and one removed on Unix would leave the service nothing to start the next time. A copy not as conflux
 // makes it is left as it is, for the next command's hand-over to place afresh; a lock file not as conflux
-// makes it beside it is removed all the same.
+// makes it beside it is removed all the same. Its roots are the supervisor's from then on: a later making
+// of them in the supervisor leaves the copy alike.
 func TestTheSupervisorLeavesTheCopyItRunsFrom(t *testing.T) {
 	s, _ := supervised(t, "1")
 	d := s.Dirs
@@ -85,6 +86,14 @@ func TestTheSupervisorLeavesTheCopyItRunsFrom(t *testing.T) {
 
 	if err := d.Ours(d.LockFile()); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("the supervisor's start left a lock file not as conflux makes it: %v", err)
+	}
+
+	if err := s.Dirs.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	if after, err := os.Stat(d.ServiceExecutable()); err != nil || !os.SameFile(before, after) {
+		t.Errorf("a later making of the supervisor's roots changed the copy of conflux it runs from (%v)", err)
 	}
 }
 

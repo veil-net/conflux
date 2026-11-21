@@ -254,7 +254,8 @@ func TestACopyNotAsConfluxMakesItIsPlacedAfresh(t *testing.T) {
 
 			notAsConfluxMakesIt(t, d.ServiceExecutable())
 
-			if err := d.EnsureServing(); err != nil {
+			serving := d
+			if err := serving.EnsureServing(); err != nil {
 				t.Fatal(err)
 			}
 

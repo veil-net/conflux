@@ -83,12 +83,12 @@ func TestWhatAnAdministratorMakesTheServiceTakes(t *testing.T) {
 	unlock()
 	made("flock.TryAcquire", d.ServeLockFile())
 
-	tools, err := libexec.Ensure(d)
+	tools, err := libexec.Extract(d)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	made("libexec.Ensure", d.Libexec(), filepath.Join(d.Libexec(), ".lock"), tools.Dir, tools.Anchord)
+	made("libexec.Extract", d.Libexec(), filepath.Join(d.Libexec(), ".lock"), tools.Dir, tools.Anchord)
 
 	placed, err := service.PlaceAfresh(d)
 	if err != nil {

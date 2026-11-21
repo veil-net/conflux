@@ -17,14 +17,14 @@ import (
 	"github.com/veil-net/conflux/internal/pathstest"
 )
 
-func TestEnsureExtractsAndRuns(t *testing.T) {
+func TestExtractExtractsAndRuns(t *testing.T) {
 	anchortest.Require(t)
 
 	d := pathstest.Dirs(t)
 
-	tools, err := Ensure(d)
+	tools, err := Extract(d)
 	if err != nil {
-		t.Fatalf("Ensure: %v", err)
+		t.Fatalf("Extract: %v", err)
 	}
 
 	if tools.SetID != anchor.SetID() {
@@ -57,17 +57,17 @@ func TestEnsureExtractsAndRuns(t *testing.T) {
 	}
 }
 
-// TestEnsureIsIdempotent asserts the hot path does no work. Every conflux
-// invocation calls Ensure, including a bare pass-through, so a second call that
-// rewrote the pair would make the CLI feel broken.
-func TestEnsureIsIdempotent(t *testing.T) {
+// TestExtractIsIdempotent asserts the hot path does no work. Every start, and every reader
+// once the pair is there, calls Extract, so a second call that rewrote the pair would make
+// the CLI feel broken.
+func TestExtractIsIdempotent(t *testing.T) {
 	anchortest.Require(t)
 
 	d := pathstest.Dirs(t)
 
-	first, err := Ensure(d)
+	first, err := Extract(d)
 	if err != nil {
-		t.Fatalf("first Ensure: %v", err)
+		t.Fatalf("first Extract: %v", err)
 	}
 
 	before, err := os.Stat(first.Anchord)
@@ -75,13 +75,13 @@ func TestEnsureIsIdempotent(t *testing.T) {
 		t.Fatalf("stat: %v", err)
 	}
 
-	second, err := Ensure(d)
+	second, err := Extract(d)
 	if err != nil {
-		t.Fatalf("second Ensure: %v", err)
+		t.Fatalf("second Extract: %v", err)
 	}
 
 	if second.Dir != first.Dir {
-		t.Errorf("second Ensure chose %s, first chose %s", second.Dir, first.Dir)
+		t.Errorf("second Extract chose %s, first chose %s", second.Dir, first.Dir)
 	}
 
 	after, err := os.Stat(second.Anchord)
@@ -90,14 +90,14 @@ func TestEnsureIsIdempotent(t *testing.T) {
 	}
 
 	if !before.ModTime().Equal(after.ModTime()) {
-		t.Error("the second Ensure rewrote the binary; it should have been a stat and nothing else")
+		t.Error("the second Extract rewrote the binary; it should have been a stat and nothing else")
 	}
 }
 
-// TestEnsureIsConcurrencySafe is the boot case: the service and an operator both
+// TestExtractIsConcurrencySafe is the boot case: the service and an operator both
 // starting conflux at once. All of them must agree on one directory, and leave that one
 // set and nothing else behind them.
-func TestEnsureIsConcurrencySafe(t *testing.T) {
+func TestExtractIsConcurrencySafe(t *testing.T) {
 	anchortest.Require(t)
 
 	d := pathstest.Dirs(t)
@@ -117,7 +117,7 @@ func TestEnsureIsConcurrencySafe(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			tools, err := Ensure(d)
+			tools, err := Extract(d)
 
 			mu.Lock()
 			defer mu.Unlock()
@@ -135,7 +135,7 @@ func TestEnsureIsConcurrencySafe(t *testing.T) {
 	wg.Wait()
 
 	if len(errs) > 0 {
-		t.Fatalf("%d of %d concurrent Ensure calls failed: %v", len(errs), n, errs[0])
+		t.Fatalf("%d of %d concurrent Extract calls failed: %v", len(errs), n, errs[0])
 	}
 
 	for _, p := range paths {
@@ -169,7 +169,7 @@ func TestEnsureIsConcurrencySafe(t *testing.T) {
 
 // TestASetThatWillNotRunIsRemoved: an extraction whose anchorctl does not run is not left in
 // place, under its name or in staging, where the next conflux would take it as whole and fail
-// at every start with less said, and the next Ensure extracts it again.
+// at every start with less said, and the next Extract extracts it again.
 func TestASetThatWillNotRunIsRemoved(t *testing.T) {
 	anchortest.Require(t)
 
@@ -180,8 +180,8 @@ func TestASetThatWillNotRunIsRemoved(t *testing.T) {
 	smokeRun = func(*Tools) error { return refused }
 	t.Cleanup(func() { smokeRun = smoke })
 
-	if _, err := Ensure(d); !errors.Is(err, refused) {
-		t.Fatalf("Ensure with a failing smoke run = %v, want its refusal", err)
+	if _, err := Extract(d); !errors.Is(err, refused) {
+		t.Fatalf("Extract with a failing smoke run = %v, want its refusal", err)
 	}
 
 	entries, err := os.ReadDir(d.Libexec())
@@ -197,13 +197,13 @@ func TestASetThatWillNotRunIsRemoved(t *testing.T) {
 
 	smokeRun = smoke
 
-	if _, err := Ensure(d); err != nil {
-		t.Errorf("the next Ensure did not extract the set again: %v", err)
+	if _, err := Extract(d); err != nil {
+		t.Errorf("the next Extract did not extract the set again: %v", err)
 	}
 }
 
 // TestASetTakesItsNameOnlyOnceItHasRun: nothing is under a set's name until its smoke run has
-// passed. Otherwise another conflux's Ensure, finding it there meanwhile, takes it as whole
+// passed. Otherwise another conflux's Extract, finding it there meanwhile, takes it as whole
 // unrun, and so does every later one when the run is interrupted -- conflux killed, the power
 // cut -- since a whole set is never run again.
 func TestASetTakesItsNameOnlyOnceItHasRun(t *testing.T) {
@@ -229,8 +229,8 @@ func TestASetTakesItsNameOnlyOnceItHasRun(t *testing.T) {
 	}
 	t.Cleanup(func() { smokeRun = smoke })
 
-	if _, err := Ensure(d); err != nil {
-		t.Fatalf("Ensure: %v", err)
+	if _, err := Extract(d); err != nil {
+		t.Fatalf("Extract: %v", err)
 	}
 
 	if smoked != 1 {
@@ -238,26 +238,26 @@ func TestASetTakesItsNameOnlyOnceItHasRun(t *testing.T) {
 	}
 }
 
-// TestEnsureRepairsATruncatedExtraction: a set under its name is taken as whole only
+// TestExtractRepairsATruncatedExtraction: a set under its name is taken as whole only
 // at its sizes. A binary cut short since it was extracted -- by a damaged disk, or by
 // hand -- is extracted again rather than handed back as a corpse.
-func TestEnsureRepairsATruncatedExtraction(t *testing.T) {
+func TestExtractRepairsATruncatedExtraction(t *testing.T) {
 	anchortest.Require(t)
 
 	d := pathstest.Dirs(t)
 
-	tools, err := Ensure(d)
+	tools, err := Extract(d)
 	if err != nil {
-		t.Fatalf("Ensure: %v", err)
+		t.Fatalf("Extract: %v", err)
 	}
 
 	if err := os.WriteFile(tools.Anchord, []byte("truncated"), 0o700); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
 
-	again, err := Ensure(d)
+	again, err := Extract(d)
 	if err != nil {
-		t.Fatalf("second Ensure: %v", err)
+		t.Fatalf("second Extract: %v", err)
 	}
 
 	fi, err := os.Stat(again.Anchord)
@@ -348,7 +348,7 @@ func TestUsageMakesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tools, err := Ensure(d)
+	tools, err := Extract(d)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -483,8 +483,11 @@ func TestUsageRunsNothingFromARootItRefuses(t *testing.T) {
 	t.Setenv("TMPDIR", tmp)
 
 	d := paths.Default()
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
 
-	planted, err := Ensure(d)
+	planted, err := Extract(d)
 	if err != nil {
 		t.Fatal(err)
 	}

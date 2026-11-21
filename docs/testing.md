@@ -65,8 +65,10 @@ On Windows the tests root what they make, every `CONFLUX_DIR` among it, in
 (`privtest.ServiceTemp`, which `paths`' tests and every test linking `pathstest` set up first),
 rather than in `%TEMP%`: an installation's way is held to the rule the service, running as SYSTEM,
 holds it to, and the profile of the administrator running the tests grants that account full
-control, which SYSTEM does not trust. What a test makes there is owned as the token's policy says,
-by the Administrators on the Windows Server CI runs; `privtest.CreatorOwns` gives a test a
+control, which SYSTEM does not trust. The folder is made, or given again, as the Administrators'
+by name, and the test process's token names them the owner of what it makes without naming one,
+as Windows Server's default-owner policy does and a Windows client's does not, so the tests' own
+folders pass the service's judgement under either; `privtest.CreatorOwns` gives a test a
 client's policy, the administrator's own, for a while.
 
 **The argv goldens**, in `internal/anchorctl/testdata/argv/`, hold one file per

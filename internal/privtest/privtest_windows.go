@@ -99,14 +99,21 @@ func Grant(tb testing.TB, path string, sid *windows.SID, access windows.ACCESS_M
 
 // ServiceTemp points this process's temporary directory -- TMP and TEMP, which os.TempDir, and so
 // a test's TempDir, read -- at conflux-tests on the system drive, a folder only SYSTEM and the
-// Administrators may change: the Administrators', under a protected DACL granting the two of them
-// full control and nobody else anything, as conflux makes a root, made so where it is not there
-// yet, and kept for the next run. A CONFLUX_DIR a test roots there is on a way the boot service,
-// SYSTEM, trusts, which conflux holds an installation's way to; %TEMP%, in the profile of the
-// administrator running the tests, grants that account full control, which SYSTEM does not trust.
-// What a test makes there inherits that DACL, and is owned as the token's policy says: on Windows
-// Server, which CI runs, by the Administrators.
+// Administrators may change: the Administrators', named so, under a protected DACL granting the two
+// of them full control and nobody else anything, as conflux makes a root, made so where it is not
+// there yet and given so again where it is. A CONFLUX_DIR a test roots there is on a way the boot
+// service, SYSTEM, trusts, which conflux holds an installation's way to; %TEMP%, in the profile of
+// the administrator running the tests, grants that account full control, which SYSTEM does not
+// trust. And this process's token names the Administrators the owner of what it makes without
+// naming one (defaultOwner), as Windows Server's default-owner policy does for an elevated
+// administrator and a Windows client's does not, so what a test makes there -- its TempDir among it
+// -- passes the service's judgement whatever the machine's policy. A token that may not name the
+// Administrators, one that is not elevated, keeps its own owner.
 func ServiceTemp() error {
+	if err := setDefaultOwner(Admins); err != nil && !errors.Is(err, windows.ERROR_INVALID_OWNER) {
+		return fmt.Errorf("make the Administrators the owner of what this process makes: %w", err)
+	}
+
 	drive := os.Getenv("SystemDrive")
 	if drive == "" {
 		drive = "C:"
@@ -119,7 +126,9 @@ func ServiceTemp() error {
 		return err
 	}
 
-	for _, sddl := range []string{"O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)", "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"} {
+	const protected = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+
+	for _, sddl := range []string{"O:BA" + protected, protected} {
 		sd, err := windows.SecurityDescriptorFromString(sddl)
 		if err != nil {
 			return err
@@ -129,11 +138,15 @@ func ServiceTemp() error {
 			Length:             uint32(unsafe.Sizeof(windows.SecurityAttributes{})),
 			SecurityDescriptor: sd,
 		})
+		if errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+			err = giveAgain(dir, sd)
+		}
+
 		if errors.Is(err, windows.ERROR_INVALID_OWNER) {
 			continue // a token that may not name the Administrators its owner: its own, then
 		}
 
-		if err != nil && !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+		if err != nil {
 			return fmt.Errorf("make %s: %w", dir, err)
 		}
 
@@ -147,6 +160,27 @@ func ServiceTemp() error {
 	}
 
 	return nil
+}
+
+// giveAgain gives dir, there already, the owner, where sd names one, and the protected DACL sd holds:
+// a run before may have left it another owner, under another policy or another ServiceTemp.
+func giveAgain(dir string, sd *windows.SECURITY_DESCRIPTOR) error {
+	owner, _, err := sd.Owner()
+	if err != nil {
+		return err
+	}
+
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		return err
+	}
+
+	info := windows.SECURITY_INFORMATION(windows.DACL_SECURITY_INFORMATION | windows.PROTECTED_DACL_SECURITY_INFORMATION)
+	if owner != nil {
+		info |= windows.OWNER_SECURITY_INFORMATION
+	}
+
+	return windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, info, owner, nil, dacl, nil)
 }
 
 // CreatorOwns makes what this process makes without naming an owner its user's own -- the account

@@ -1,6 +1,7 @@
 package privtest
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -163,7 +164,11 @@ func ServiceTemp() error {
 }
 
 // giveAgain gives dir, there already, the owner, where sd names one, and the protected DACL sd holds:
-// a run before may have left it another owner, under another policy or another ServiceTemp.
+// a run before may have left it another owner, under another policy or another ServiceTemp. Read
+// first, and written only where it differs: every test binary calls this as it starts, and go test
+// runs them side by side, and a DACL written by name is passed on to every folder below that does not
+// protect its own -- the TempDirs other binaries are using among them, which some give a DACL of
+// their own while this one rewrites theirs.
 func giveAgain(dir string, sd *windows.SECURITY_DESCRIPTOR) error {
 	owner, _, err := sd.Owner()
 	if err != nil {
@@ -175,12 +180,62 @@ func giveAgain(dir string, sd *windows.SECURITY_DESCRIPTOR) error {
 		return err
 	}
 
+	was, err := windows.GetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT,
+		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return err
+	}
+
+	if same, err := holds(was, owner, dacl); err != nil || same {
+		return err
+	}
+
 	info := windows.SECURITY_INFORMATION(windows.DACL_SECURITY_INFORMATION | windows.PROTECTED_DACL_SECURITY_INFORMATION)
 	if owner != nil {
 		info |= windows.OWNER_SECURITY_INFORMATION
 	}
 
 	return windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, info, owner, nil, dacl, nil)
+}
+
+// holds reports whether sd is owned by owner, where owner is given, and holds dacl, protected: the
+// same entries, in the same order.
+func holds(sd *windows.SECURITY_DESCRIPTOR, owner *windows.SID, dacl *windows.ACL) (bool, error) {
+	if owner != nil {
+		has, _, err := sd.Owner()
+		if err != nil || !has.Equals(owner) {
+			return false, err
+		}
+	}
+
+	control, _, err := sd.Control()
+	if err != nil || control&windows.SE_DACL_PROTECTED == 0 {
+		return false, err
+	}
+
+	has, _, err := sd.DACL()
+	if err != nil || has == nil || dacl == nil || has.AceCount != dacl.AceCount {
+		return false, err
+	}
+
+	for i := range uint32(dacl.AceCount) {
+		var a, b *windows.ACCESS_ALLOWED_ACE
+		if err := windows.GetAce(has, i, &a); err != nil {
+			return false, err
+		}
+
+		if err := windows.GetAce(dacl, i, &b); err != nil {
+			return false, err
+		}
+
+		size := a.Header.AceSize
+		if size != b.Header.AceSize || !bytes.Equal(unsafe.Slice((*byte)(unsafe.Pointer(a)), size),
+			unsafe.Slice((*byte)(unsafe.Pointer(b)), size)) {
+			return false, nil
+		}
+	}
+
+	return true, nil
 }
 
 // CreatorOwns makes what this process makes without naming an owner its user's own -- the account

@@ -343,8 +343,9 @@ func (d Dirs) makeRoot(dir string) ([]string, error) {
 // held: p's name is looked up in parent and nowhere else (lookUp), and a directory there that is as
 // conflux makes one (ours) is kept; anything else there -- a link, a file, a folder another account owns
 // or may write -- is removed as itself through parent (removeFrom), a link never followed, whatever it
-// holds, and the folder made afresh in its place (makeStep). Where nothing is there it is made where
-// create is, and is otherwise an error that is fs.ErrNotExist.
+// holds, and the folder made afresh in its place (makeStep); one that cannot be is refused, saying why it
+// is not conflux's. Where nothing is there it is made where create is, and is otherwise an error that is
+// fs.ErrNotExist.
 func ownFolder(parent step, p string, installation, create bool) (step, error) {
 	name := filepath.Base(p)
 
@@ -352,13 +353,15 @@ func ownFolder(parent step, p string, installation, create bool) (step, error) {
 
 	s, link, err := lookUp(parent, name)
 
+	why := ""
+
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		if !create {
 			return step{}, &os.PathError{Op: "open", Path: p, Err: err}
 		}
 	case err == nil:
-		why := "a link"
+		why = "a link"
 		if !link {
 			why, err = ours(p, s, installation)
 		}
@@ -372,11 +375,14 @@ func ownFolder(parent step, p string, installation, create bool) (step, error) {
 		if err != nil {
 			return step{}, err
 		}
-
-		fallthrough
 	default:
+		why = err.Error()
+	}
+
+	if why != "" {
 		if _, err := removeFrom(parent, name, p); err != nil {
-			return step{}, err
+			return step{}, fmt.Errorf("%s is not as conflux makes a folder of its own (%s), and could not be removed "+
+				"to be made afresh: %w", p, why, err)
 		}
 	}
 

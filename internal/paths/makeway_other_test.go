@@ -284,6 +284,44 @@ func modeOf(fi os.FileInfo) any {
 	return fi.Mode()
 }
 
+// TestEnsureAllSaysWhyARootItCannotRemoveIsNotItsOwn: a root not as conflux makes one that EnsureAll
+// cannot remove, to make it afresh, is refused saying why it is not conflux's as well as why the removal
+// failed: here a folder every account may write, holding a folder whose mode lets its owner remove
+// nothing in it.
+func TestEnsureAllSaysWhyARootItCannotRemoveIsNotItsOwn(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("a folder whose mode lets its owner remove nothing in it holds nothing back from root")
+	}
+
+	t.Setenv("CONFLUX_DIR", t.TempDir())
+
+	root := Default().State
+	stuck := filepath.Join(root, "stuck")
+
+	if err := os.MkdirAll(stuck, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(stuck, "kept"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for p, mode := range map[string]os.FileMode{stuck: 0o500, root: 0o777} {
+		if err := os.Chmod(p, mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Cleanup(func() { _ = os.Chmod(stuck, 0o700) })
+
+	err := Default().EnsureAll()
+	if err == nil || !strings.Contains(err.Error(), root+" is not as conflux makes a folder of its own (anybody may write") ||
+		!strings.Contains(err.Error(), "permission denied") {
+		t.Errorf("EnsureAll(a root every account may write that it cannot remove) = %v, want a refusal saying why "+
+			"it is not conflux's and why it could not be removed", err)
+	}
+}
+
 // TestEnsureAllRefusesAConfluxDirOthersMayWrite: a CONFLUX_DIR that is there already is held to parents'
 // rule itself, not only the folders above it: one every account may write, and not sticky, is refused,
 // naming it, with nothing made in it, since whoever may write it could move the root aside and put

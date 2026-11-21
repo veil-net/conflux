@@ -65,6 +65,7 @@ func TestUninstallRemovesTheWayConfluxMade(t *testing.T) {
 			}
 
 			standInService(t, &fakeManager{d: d})
+			recordAccounts(t)
 
 			out, errOut, code := capture(t, "uninstall", "--yes")
 			if code != ExitOK {
@@ -260,6 +261,7 @@ func TestUninstallListsOnlyWhatIsGone(t *testing.T) {
 	}
 
 	standInService(t, &fakeManager{d: d})
+	recordAccounts(t)
 
 	out, errOut, code := capture(t, "uninstall", "--yes")
 	if code != ExitError || !strings.Contains(errOut, stuck) || !strings.Contains(errOut, errStuck.Error()) {

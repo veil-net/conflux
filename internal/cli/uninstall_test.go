@@ -574,32 +574,3 @@ func TestUninstallSaysItRemovesTheCredentialInAChosenFolder(t *testing.T) {
 			d.ManifestFile(), err)
 	}
 }
-
-// TestUninstallTouchesOnlyItsOwnAtAVolumesTop: a CONFLUX_DIR at the top of a volume, / or C:\, is a
-// folder conflux never changes, its root .conflux inside it; with nothing of conflux's there, uninstall
-// removes nothing but the boot service, and lists nothing else.
-func TestUninstallTouchesOnlyItsOwnAtAVolumesTop(t *testing.T) {
-	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
-	privcheck.Elevated = func() bool { return true }
-
-	top := filepath.VolumeName(t.TempDir()) + string(filepath.Separator)
-	t.Setenv("CONFLUX_DIR", top)
-
-	if _, err := os.Lstat(paths.Default().State); !errors.Is(err, fs.ErrNotExist) {
-		t.Skipf("%s is there already (%v)", paths.Default().State, err)
-	}
-
-	mgr := &removing{fakeManager: fakeManager{d: paths.Default()}}
-	standInService(t, mgr)
-	recordAccounts(t)
-
-	out, errOut, code := capture(t, "uninstall", "--yes")
-	if code != ExitOK || mgr.removals != 1 {
-		t.Fatalf("uninstall of a CONFLUX_DIR of %s exited %d and removed the boot service %d times, want %d and once:"+
-			"\n%s%s", top, code, mgr.removals, ExitOK, out, errOut)
-	}
-
-	if removed, _, _ := strings.Cut(out, "\n\n"); removed != "Removed:\n  the boot service" {
-		t.Errorf("uninstall of a CONFLUX_DIR of %s listed more than the boot service:\n%s", top, out)
-	}
-}

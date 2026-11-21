@@ -311,6 +311,8 @@ func uninstallRemoves(t *testing.T, d paths.Dirs, why string) {
 	})
 
 	t.Run("uninstall", func(t *testing.T) {
+		recordAccounts(t)
+
 		outside := t.TempDir()
 
 		kept := filepath.Join(outside, "kept")

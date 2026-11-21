@@ -3,6 +3,7 @@ package paths
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 )
@@ -39,6 +40,39 @@ func TestALogDirectoryOnlyWhereThePlatformHasOne(t *testing.T) {
 		t.Errorf("Log = %q, but nothing on this platform writes a log file", d.Log)
 	case platform != "" && d.Log != filepath.Join(root, "logs"):
 		t.Errorf("Log = %q, want it under the root", d.Log)
+	}
+}
+
+// TestAConfluxDirAtAVolumesTopIsNeverARoot: a CONFLUX_DIR at the top of a volume, / or C:\, is a folder
+// conflux never changes: the one root conflux makes, judges and removes there is .conflux inside it, and
+// every root, and every ephemeral candidate, is that folder or inside it, none the top itself. Asserted of
+// the names alone, so nothing is made or removed outside the test's own directories.
+func TestAConfluxDirAtAVolumesTopIsNeverARoot(t *testing.T) {
+	tops := map[string]string{string(filepath.Separator): string(filepath.Separator)}
+	if runtime.GOOS == "windows" {
+		wd, err := os.Getwd()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		tops = map[string]string{`C:\`: `C:\`, `\`: filepath.VolumeName(wd) + `\`}
+	}
+
+	for dir, top := range tops {
+		t.Setenv("CONFLUX_DIR", dir)
+
+		d := Default()
+		own := top + DirName
+
+		if got := d.Outer(); !slices.Equal(got, []string{own}) {
+			t.Errorf("Outer() with CONFLUX_DIR=%s = %q, want %q", dir, got, []string{own})
+		}
+
+		for _, p := range append([]string{d.Config, d.State, d.Run, d.Log}, EphemeralCandidates()...) {
+			if p != "" && (p != own && !above(own, p) || !above(top, p)) {
+				t.Errorf("with CONFLUX_DIR=%s, %s is neither %s nor inside it", dir, p, own)
+			}
+		}
 	}
 }
 

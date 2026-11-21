@@ -108,11 +108,11 @@ administrator's own, which their unelevated processes could change for the SYSTE
 or run. A token that is not elevated, which no command making a root runs with, keeps its own.
 
 A root conflux finds already there is its own only where it is as conflux makes one: a folder, not a
-junction or a link, owned by SYSTEM, the Administrators or TrustedInstaller — or, for an ephemeral
-run's, the account running conflux where it is not elevated — whose DACL grants nobody else any right,
-to read it included, on it or on what is made in it. An elevated conflux judges an ephemeral run's root
-for the Administrators, never for its own account by its SID, whose processes that are not elevated
-could have made one first in `%ProgramData%` and filled it. An installation's root, which the boot service runs from as SYSTEM, trusting no other
+junction or a link, owned by SYSTEM, the Administrators or TrustedInstaller, whose DACL grants nobody
+else any right, to read it included, on it or on what is made in it. An ephemeral run's root, which
+only an elevated conflux makes or can open, is judged for the Administrators, never for the account
+running conflux by its SID, whose processes that are not elevated could have made one first in
+`%ProgramData%` and filled it. An installation's root, which the boot service runs from as SYSTEM, trusting no other
 account, is judged for SYSTEM, so one the administrator running conflux owns, or that grants them a
 right, is not conflux's either. Anything else at the name — a folder another account made, as
 `%ProgramData%` lets any account make `conflux` or `conflux-ephemeral` first, one that inherits

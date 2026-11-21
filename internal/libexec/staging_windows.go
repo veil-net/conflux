@@ -7,9 +7,8 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"golang.org/x/sys/windows"
-
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/privcheck"
 )
 
 // makeStaging makes a directory in root under a name beginning prefix, drawn as os.MkdirTemp draws one,
@@ -36,7 +35,7 @@ func makeStaging(root, prefix string) (string, error) {
 // directory (usersTemporaryDir), the copy granted to the account (paths.RestrictToOwner), since a copy
 // Restrict guards is one it could not run.
 func temporaryDir() (string, func(string, bool) error, error) {
-	if !windows.GetCurrentProcessToken().IsElevated() {
+	if !privcheck.Elevated() {
 		dir, err := usersTemporaryDir()
 
 		return dir, paths.RestrictToOwner, err

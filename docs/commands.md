@@ -137,8 +137,7 @@ pass-through to conflux's daemon read what is in a root by its name — the conf
 record, the token, the socket — so each holds the root to the
 [readers' check](security.md#the-file-and-the-directory-around-it) first: the way to a `CONFLUX_DIR`
 held to the same rule, and the root as conflux makes one, its owner root or the account running
-conflux (on Windows SYSTEM, the Administrators or TrustedInstaller, or, for an ephemeral run's, the
-account running conflux where it is not elevated), and nobody else able to write it. A root that fails is refused, exit 1,
+conflux (on Windows SYSTEM, the Administrators or TrustedInstaller), and nobody else able to write it. A root that fails is refused, exit 1,
 naming it and why,
 and nothing in it is read, run or stopped: `down` stops nothing; `update` downloads and replaces
 nothing. `uninstall` reads and signals nothing in such a root either, and removes it all the same,

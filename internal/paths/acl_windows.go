@@ -9,6 +9,8 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/veil-net/conflux/internal/privcheck"
 )
 
 // On Windows a mode is nothing: Go maps Chmod onto the read-only attribute, and
@@ -115,7 +117,7 @@ func asAdministrators(set func(owner *windows.SID) error) error {
 // the token's user): it imports nothing of conflux's, since paths' own tests import it, so it cannot
 // call this.
 func ElevatedDefaultOwner() error {
-	if !windows.GetCurrentProcessToken().IsElevated() {
+	if !privcheck.Elevated() {
 		return nil
 	}
 
@@ -469,9 +471,8 @@ func trusted(sid *windows.SID) bool {
 // or the account it is judged for, and its DACL granting nobody else any right, to read it included, on it
 // or on what is made in it (changerIn, anyRight), as read through s. An installation's root, which the
 // boot service runs from as SYSTEM, trusting no other account, is judged for SYSTEM; an ephemeral run's
-// for the Administrators where conflux runs elevated, and otherwise for the account running it
-// (judgedFor). %ProgramData% lets any account make a folder at a name not taken yet, which keeps that
-// account as its owner, or inherits Users' grants from it: neither is ours.
+// for the Administrators (judgedFor). %ProgramData% lets any account make a folder at a name not taken
+// yet, which keeps that account as its owner, or inherits Users' grants from it: neither is ours.
 func ours(dir string, s step, installation bool) (string, error) {
 	sd, err := security(s.h)
 	if err != nil {
@@ -487,24 +488,18 @@ func ours(dir string, s step, installation bool) (string, error) {
 }
 
 // judgedFor is the account a root, and what it holds, is judged for: SYSTEM, which the boot service
-// runs as, for an installation's (installation); for any other the Administrators where this process
-// is elevated, and otherwise the account running conflux. An elevated conflux never trusts the account
-// it runs as by its own SID: what that account owns, or is granted, its processes that are not elevated
-// may change -- a root %ProgramData% let them make first, with a held lock, a readiness marker and an
-// anchorctl of their own in it -- for the elevated one to read and run.
+// runs as, for an installation's (installation), and the Administrators for an ephemeral run's, which
+// only an elevated conflux makes or can open. Never the account running conflux by its own SID: what
+// that account owns, or is granted, its processes that are not elevated may change -- a root
+// %ProgramData% let them make first, with a held lock, a readiness marker and an anchorctl of their own
+// in it -- for an elevated conflux to read and run.
 func judgedFor(installation bool) *windows.SID {
-	switch {
-	case installation:
+	if installation {
 		return sidSystem
-	case elevated():
-		return sidAdmins
 	}
 
-	return currentUser()
+	return sidAdmins
 }
-
-// elevated is whether this process's token is elevated, read once.
-var elevated = sync.OnceValue(func() bool { return windows.GetCurrentProcessToken().IsElevated() })
 
 // dispose removes what h holds open, opened with DELETE: with POSIX semantics where the file system
 // has them, so the name is gone at once, though somebody else holds it open, read-only or not where

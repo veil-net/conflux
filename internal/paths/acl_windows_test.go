@@ -825,18 +825,14 @@ func grantedFolder(t *testing.T, dir string, access windows.ACCESS_MASK) string 
 	return dir
 }
 
-// TestAnElevatedConfluxJudgesAnEphemeralRootForTheAdministrators: %ProgramData% lets any account make
+// TestAnEphemeralRootIsJudgedForTheAdministrators: %ProgramData% lets any account make
 // conflux-ephemeral first, and the administrator's own processes that are not elevated could make one and
 // fill it with a held lock, a readiness marker and an anchorctl of their own, for an elevated reader to
-// take for a run and run. So an elevated conflux judges an ephemeral run's root for the Administrators,
-// never the account it runs as by its own SID: one that account owns, or one granting it anything, is
-// refused, naming it, and EnsureAll makes it afresh, the Administrators', which then passes. Windows-only,
-// so it runs in CI's platforms job alone, which runs elevated.
-func TestAnElevatedConfluxJudgesAnEphemeralRootForTheAdministrators(t *testing.T) {
-	if !windows.GetCurrentProcessToken().IsElevated() {
-		t.Skip("judged for the account running conflux where it is not elevated")
-	}
-
+// take for a run and run. So an ephemeral run's root is judged for the Administrators, never the account
+// conflux runs as by its own SID: one that account owns, or one granting it anything, is refused, naming
+// it, and EnsureAll makes it afresh, the Administrators', which then passes. Windows-only, so it runs in
+// CI's platforms job alone, which runs elevated.
+func TestAnEphemeralRootIsJudgedForTheAdministrators(t *testing.T) {
 	user := currentUser().String()
 
 	for what, sddl := range map[string]string{

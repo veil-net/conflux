@@ -52,7 +52,7 @@ func ours(dir string, s step, _ bool) (string, error) {
 		return fmt.Sprintf("uid %d owns it", owner), nil
 	}
 
-	acl, aclGroup, err := aclOf(dir, -1)
+	acl, aclGroup, err := aclOf(dir)
 	if err != nil {
 		return "", err
 	}
@@ -363,7 +363,7 @@ func writerOf(p string, uid, gid uint32, mode os.FileMode, link bool, euid int) 
 		return "", nil
 	}
 
-	acl, aclGroup, err := aclOf(p, -1)
+	acl, aclGroup, err := aclOf(p)
 	if err != nil {
 		return "", err
 	}
@@ -380,10 +380,9 @@ func parentRefusal(dir, where, p, who string, euid int) error {
 }
 
 // aclOf is who p's ACL lets write it, and whether that ACL says what p's group may
-// (extendedWriters), for judge, or judgeRoot, to hold beside p's mode: read through fd where it is
-// open on p, else at p; a failure names p.
-func aclOf(p string, fd int) ([]writer, bool, error) {
-	acl, aclGroup, err := extendedWriters(p, fd)
+// (extendedWriters), for judge to hold beside p's mode: read at p, never followed; a failure names p.
+func aclOf(p string) ([]writer, bool, error) {
+	acl, aclGroup, err := extendedWriters(p)
 	if err != nil {
 		return nil, false, fmt.Errorf("read the ACL of %s: %w", p, err)
 	}

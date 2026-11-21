@@ -12,15 +12,9 @@ const posixACLName = "system.posix_acl_access"
 // extendedWriters is who p's ACL lets write it besides its owner and everybody, and whether
 // the ACL rather than the mode says what its group may: here a POSIX.1e access ACL, whose
 // mask the mode's group bits are once there is one. A filesystem that keeps none has none. It is
-// read through fd, where that is open on p, and otherwise at p, never followed.
-func extendedWriters(p string, fd int) ([]writer, bool, error) {
-	get := func(b []byte) (int, error) {
-		if fd >= 0 {
-			return unix.Fgetxattr(fd, posixACLName, b)
-		}
-
-		return unix.Lgetxattr(p, posixACLName, b)
-	}
+// read at p, never followed.
+func extendedWriters(p string) ([]writer, bool, error) {
+	get := func(b []byte) (int, error) { return unix.Lgetxattr(p, posixACLName, b) }
 
 	for {
 		n, err := get(nil)

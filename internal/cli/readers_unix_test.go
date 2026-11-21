@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -34,8 +35,9 @@ func (m *untouched) Remove() error { m.removals++; return nil }
 // command that reads a root without making it holds it to paths' check before it reads anything in
 // it by name: one whose mode lets every account write it, sticky or not -- a name nobody has taken
 // yet is anybody's in a sticky directory -- is refused, naming it, with nothing in it read, made,
-// stopped or removed (readersRefuse). (On Linux, one whose ACL lets another account write it:
-// TestAReaderRefusesARootAnACLLetsAnotherAccountWrite.)
+// stopped or removed (readersRefuse); and uninstall removes it, reading and signalling nothing in
+// it and following no link it holds (uninstallRemoves). (On Linux, one whose ACL lets another
+// account write it: TestAReaderRefusesARootAnACLLetsAnotherAccountWrite.)
 func TestAReaderRefusesARootAnotherAccountMayWrite(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
@@ -57,13 +59,14 @@ func TestAReaderRefusesARootAnotherAccountMayWrite(t *testing.T) {
 			t.Cleanup(func() { _ = os.Chmod(d.State, 0o700) })
 
 			readersRefuse(t, d, "anybody may write")
+			uninstallRemoves(t, d, "anybody may write")
 		})
 	}
 }
 
 // plantedRoot is a root holding what a reader would read and act on by its name: a configuration
 // naming a taint status would print, and a pid record, for a process that is not running, which
-// uninstall's reap would take its lock for and then remove.
+// uninstall's reap would take its lock for and stop.
 func plantedRoot(t *testing.T) paths.Dirs {
 	t.Helper()
 
@@ -81,8 +84,7 @@ func plantedRoot(t *testing.T) paths.Dirs {
 }
 
 // readersRefuse fails t unless each command that reads the root d without making it -- status,
-// down, renew, update with the boot service installed, a pass-through (peers) and uninstall --
-// refuses it, exit 1, naming its root and saying who could write it (why), and leaves
+// down, renew, update with the boot service installed and a pass-through (peers) -- refuses it, exit 1, naming its root and saying who could write it (why), and leaves
 // it as it was: nothing in it read (status prints no configuration), and nothing made, changed or
 // removed there, a lock included; the boot service neither registered again, started, stopped nor
 // removed; and no conflux downloaded, put in place or asked anything by update.
@@ -115,7 +117,7 @@ func readersRefuse(t *testing.T, d paths.Dirs, why string) {
 		return have
 	}
 
-	for _, argv := range [][]string{{"status"}, {"down"}, {"renew"}, {"update"}, {"peers"}, {"uninstall", "--yes"}} {
+	for _, argv := range [][]string{{"status"}, {"down"}, {"renew"}, {"update"}, {"peers"}} {
 		t.Run(argv[0], func(t *testing.T) {
 			mgr := &untouched{fakeManager: fakeManager{d: d, restartErr: errStartsNothing}}
 			standInService(t, mgr)
@@ -268,4 +270,47 @@ func TestServeWritesItsLogOnceTheRootIsJudged(t *testing.T) {
 		t.Errorf("serve beside another supervisor exited %d, want %d, its log holding\n%s\nand its output\n%s",
 			code, ExitError, b, out)
 	}
+}
+
+// uninstallRemoves fails t unless uninstall of the root d, which the readers' check refuses saying
+// why, removes it all the same and leaves nothing of it: the boot service removed, the root gone with
+// what it holds, a link planted in it to a directory outside it removed as the link, with that
+// directory and what is in it untouched, nothing read in the root -- the identity not shown in what
+// is asked -- and the anchord its pid record names not looked for.
+func uninstallRemoves(t *testing.T, d paths.Dirs, why string) {
+	t.Helper()
+
+	t.Run("uninstall", func(t *testing.T) {
+		outside := t.TempDir()
+
+		kept := filepath.Join(outside, "kept")
+		if err := os.WriteFile(kept, []byte("not conflux's"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.Symlink(outside, filepath.Join(d.State, "planted-link")); err != nil {
+			t.Fatal(err)
+		}
+
+		mgr := &untouched{fakeManager: fakeManager{d: d}}
+		standInService(t, mgr)
+
+		out, errOut, code := capture(t, "uninstall", "--yes")
+		if code != ExitOK {
+			t.Fatalf("uninstall of a root %s exited %d, want it removed:\n%s%s", why, code, out, errOut)
+		}
+
+		if _, err := os.Lstat(d.State); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("uninstall left %s, a root %s (Lstat: %v)", d.State, why, err)
+		}
+
+		if b, err := os.ReadFile(kept); err != nil || string(b) != "not conflux's" {
+			t.Errorf("the directory a link planted in the root led to lost what is in it: %q, %v", b, err)
+		}
+
+		if mgr.removals != 1 || !strings.Contains(out, "  "+d.State+"\n") || strings.Contains(out, "planted") {
+			t.Errorf("uninstall removed the boot service %d times and printed, want it removed once and %s listed:\n%s",
+				mgr.removals, d.State, out)
+		}
+	})
 }

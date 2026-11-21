@@ -122,8 +122,7 @@ account running conflux, and nobody else able to write it or point it elsewhere.
 is refused, exit 1, naming it and who else could change it, and nothing in it is read, run or
 stopped: `down` stops nothing; `update` downloads and replaces nothing. `uninstall` reads and
 signals nothing in such a root either, and removes it all the same, following nothing in it
-([`conflux uninstall`](#conflux-uninstall)), but for a `CONFLUX_DIR`'s, whose way that check alone
-holds, which it refuses with nothing removed. Nothing is narrowed either. That
+([`conflux uninstall`](#conflux-uninstall)). Nothing is narrowed either. That
 is for `up`, `proxy`, `observe`, `install`, `enrol` and `start`, which make the roots, or make them
 conflux's: they narrow one of conflux's own and refuse one another account owns. A root that is not
 there is a machine with nothing installed, and read as one.
@@ -492,6 +491,8 @@ reinstall:
   it left is stopped;
 - what an update left beside this conflux: a download that never went in place, and the image
   moved aside, `conflux.exe.old`;
+- the folders conflux made on the way to its roots, which it records as it makes them — a
+  `CONFLUX_DIR`'s parents it made among them — each once it is empty, deepest first;
 - the account `anchord` ran as, and `conflux-ephemeral`, once nothing runs as either, when
   conflux made them (an account of either name that conflux did not make is left alone), with
   the BPF devices given back to root on macOS first.
@@ -500,14 +501,17 @@ The conflux you ran is yours, and stays. It says what it removed. Asks first, be
 no other copy of the credential anywhere; `--yes` skips the question, and a non-interactive
 run without `--yes` refuses rather than destroy an identity silently.
 
-Nothing in a root is followed. Each is removed through the directory holding it, a name at a
-time: a link or junction found anywhere in it, at the root's own name included, is removed as
-the link, and where it leads is never touched; a file another account planted there is removed
-as itself, never opened. A root the [readers' check](#a-root-another-account-could-change)
-refuses is removed the same way, with nothing in it read or signalled first: no identity shown
-in the question, and no anchord stopped by its pid record. A `CONFLUX_DIR` that fails that check
-is refused, exit 1, with nothing stopped or removed, since the check is what holds the way to
-it, which another account could otherwise point elsewhere.
+Nothing in a root is followed. Each is removed through the directory holding it, held open from
+the top of its volume down, and a name at a time below it: a link or junction found anywhere in
+it, at the root's own name included, is removed as the link, and where it leads is never touched;
+a file another account planted there is removed as itself, never opened. A `CONFLUX_DIR`'s way is
+held to the rule the [readers' check](#a-root-another-account-could-change) holds it to as it is
+walked, so a way another account could change cannot lead the removal elsewhere; the platform's
+own roots are on the system's way. No root is refused: one the readers' check refuses is removed
+the same way, with nothing in it read or signalled first — no identity shown in the question, no
+`anchord` stopped by its pid record — and the record of the folders made on the way to it is not
+read either, since whoever could change the root could have written it, so those folders are
+left, and `uninstall` says so. An ephemeral run's root inside a `CONFLUX_DIR` goes with it.
 
 While an [ephemeral run](ephemeral.md) is live it refuses, exit 2, before asking anything:
 the run's anchord may run as the account it would remove, so the run is stopped first,

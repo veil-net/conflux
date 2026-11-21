@@ -80,7 +80,10 @@ host can read, and when the run stops there is nothing at all.
 - Every command that reads a root, or acts on what it holds, without making it — `status`, a
   pass-through, `renew`, `down`, `uninstall`, `update` asking whether the anchor runs,
   and every reader of an ephemeral run's root — holds it to one check
-  first, the readers' check, on every platform, before it reads anything in it by its name:
+  first, the readers' check, on every platform, before it reads anything in it by its name
+  (`uninstall` then removes a root that fails it all the same, reading and signalling nothing in
+  it, through handles held from the top of its volume down, following no link and with a
+  `CONFLUX_DIR`'s way held to the same rule; see [commands.md](commands.md#conflux-uninstall)):
   whoever could have put a configuration, a pid record, a token or a binary there would otherwise
   have conflux read, signal or run theirs. The root's owner must be root (SYSTEM or the
   Administrators on Windows) or the account running conflux, a link at its name included, and
@@ -89,8 +92,8 @@ host can read, and when the run stops there is nothing at all.
   nobody else any right, to read it included, a link at its name that leads off the machine refused.
   A `CONFLUX_DIR`'s way is held to the rule it is made by, for the account reading it, and on Windows
   a link anywhere on it that leads off the machine is refused.
-  Nothing is narrowed: a root that fails is refused, saying why, with nothing in it read, run,
-  stopped or removed, and with none there the command says nothing is installed, reading nothing,
+  Nothing is narrowed: a root that fails is refused, saying why, with nothing in it read, run or
+  stopped, and with none there the command says nothing is installed, reading nothing,
   since what is at a name that was not there a moment ago is whoever made it first's; a link at a
   root's name, or on a `CONFLUX_DIR`'s way, that leads nowhere is refused, not taken for none. Every root
   conflux makes passes it. `help`'s `anchorctl` runs from the extraction in a root only where the

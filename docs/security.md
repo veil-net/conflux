@@ -106,10 +106,10 @@ shape, and it is worth being honest about how it is bounded:
 
 - The path is content-addressed under the state directory — root-owned, and writable by
   nobody else, on a filesystem the administrator chose. Not `/tmp`, which is world-writable and, under
-  `PrivateTmp=`, is not even the same directory the service sees. On Windows, where the
-  name of a set directory is computable and `%ProgramData%` would let anybody create it,
-  a set is run only if Administrators, SYSTEM or the account running conflux owns it,
-  and extracted again otherwise.
+  `PrivateTmp=`, is not even the same directory the service sees. A set is run, and on Windows
+  `wintun.dll` beside it loaded, only from a root conflux has just made as it makes one, or held to
+  the readers' check, in the same process: nobody else can have put anything there, so who wrote a
+  set is not asked again, and one not whole at its sizes is extracted again.
 - The bytes come from inside the conflux binary. There is no download and no network
   path into them; verifying conflux verifies them.
 - `conflux version` prints both SHA-256s, so what is on disk can be checked against a

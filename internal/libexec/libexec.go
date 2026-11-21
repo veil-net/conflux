@@ -271,20 +271,18 @@ func ForUsage(d paths.Dirs) (bin string, done func(), err error) {
 // Their presence is enough because a set directory only ever appears whole: extract
 // renames it in from a staging directory once both binaries in it were written, synced
 // and run. The sizes catch a binary truncated or replaced since, and a name a power cut
-// lost from the directory, whose own entries are not synced.
-//
-// And on Windows, that a trusted owner wrote them -- this account, SYSTEM or the
-// Administrators -- since a set directory is named for content anybody can compute, and
-// one another account made first, sizes and all, would otherwise be run as SYSTEM. One
-// that fails any of this is extracted again.
+// lost from the directory, whose own entries are not synced. One that fails is extracted
+// again. Who wrote them is not asked: every caller has made d's roots (EnsureAll) or held
+// them to the readers' check (Dirs.Check) first, and nobody else can put anything in a
+// root as conflux makes one.
 func (t *Tools) complete() bool {
-	return ours(t.Anchord, len(anchor.Anchord())) && ours(t.Anchorctl, len(anchor.Anchorctl()))
+	return whole(t.Anchord, len(anchor.Anchord())) && whole(t.Anchorctl, len(anchor.Anchorctl()))
 }
 
-func ours(path string, size int) bool {
+func whole(path string, size int) bool {
 	fi, err := os.Stat(path)
 
-	return err == nil && fi.Size() == int64(size) && paths.Trusted(path)
+	return err == nil && fi.Size() == int64(size)
 }
 
 // stagingPrefix begins the name of every staging directory makeStaging makes, which Sweep tells

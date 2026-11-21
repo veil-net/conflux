@@ -73,12 +73,13 @@ func Ensure(ctx context.Context, d paths.Dirs) error {
 }
 
 // present reports whether the DLL conflux placed is there. Not re-hashed on the hot
-// path -- the archive digest is what was verified -- but it must be conflux's: a
-// library another account put here first would be loaded by anchord as SYSTEM.
+// path -- the archive digest is what was verified -- nor asked who wrote it: it is in a
+// root every caller has made as conflux makes one (EnsureAll), where nobody else can put
+// anything for anchord to load as SYSTEM.
 func present(path string) bool {
 	fi, err := os.Stat(path)
 
-	return err == nil && fi.Size() > 0 && paths.Trusted(path)
+	return err == nil && fi.Size() > 0
 }
 
 func download(ctx context.Context) ([]byte, error) {

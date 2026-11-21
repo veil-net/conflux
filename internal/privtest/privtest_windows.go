@@ -184,10 +184,13 @@ type Security struct {
 	Entries []Entry
 }
 
-// Entry is one ACE: its type, and the SID it names.
+// Entry is one ACE: its type, its flags (how it is passed on), the rights it names, and the SID it
+// names them for.
 type Entry struct {
-	Type byte
-	SID  *windows.SID
+	Type  byte
+	Flags byte
+	Mask  windows.ACCESS_MASK
+	SID   *windows.SID
 }
 
 // Grantees are the SIDs the allowed entries name.
@@ -237,7 +240,8 @@ func ReadSecurity(tb testing.TB, path string) Security {
 			tb.Fatal(err)
 		}
 
-		s.Entries = append(s.Entries, Entry{ace.Header.AceType, (*windows.SID)(unsafe.Pointer(&ace.SidStart))})
+		s.Entries = append(s.Entries, Entry{Type: ace.Header.AceType, Flags: ace.Header.AceFlags, Mask: ace.Mask,
+			SID: (*windows.SID)(unsafe.Pointer(&ace.SidStart))})
 	}
 
 	return s

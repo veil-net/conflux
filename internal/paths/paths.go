@@ -630,7 +630,7 @@ func makeWay(dir string, w *way, rule judgement) error {
 
 		looking(p)
 
-		s, held, err := makeStep(at.step, name, root)
+		s, held, err := makeStep(at.step, name)
 
 		taken := errors.Is(err, fs.ErrExist)
 		if err != nil && !taken {

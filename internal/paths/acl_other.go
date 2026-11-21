@@ -195,7 +195,7 @@ func readLink(s step) (string, error) {
 
 // makeStep makes the directory name, at 0700, in the one parent is (mkdirat), and holds nothing:
 // makeWay goes into it as a walk would (lookUp). The root is made as any other.
-func makeStep(parent step, name string, _ bool) (step, bool, error) {
+func makeStep(parent step, name string) (step, bool, error) {
 	return step{}, false, ignoringEINTR(func() error { return unix.Mkdirat(parent.fd, parent.at(name), 0o700) })
 }
 

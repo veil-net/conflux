@@ -23,7 +23,6 @@ import (
 var (
 	sidSystem = wellKnown(windows.WinLocalSystemSid)
 	sidAdmins = wellKnown(windows.WinBuiltinAdministratorsSid)
-	sidUsers  = wellKnown(windows.WinBuiltinUsersSid)
 )
 
 func wellKnown(t windows.WELL_KNOWN_SID_TYPE) *windows.SID {
@@ -46,16 +45,16 @@ func wellKnown(t windows.WELL_KNOWN_SID_TYPE) *windows.SID {
 // the DACL. Protected is the half that matters for the DACL: without it the parent's ACEs
 // are merged back in and the restriction is cosmetic.
 func Restrict(path string, dir bool) error {
-	return restrictWith(dir, 0, func(owner *windows.SID, dacl *windows.ACL) error {
+	return restrictWith(dir, func(owner *windows.SID, dacl *windows.ACL) error {
 		return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, restrictInfo(owner), owner, nil, dacl, nil)
 	})
 }
 
 // restrictWith gives something Restrict's security through set, handed the owner --
 // Administrators, or nil to leave the owner as it is where the token may not name them -- and
-// the DACL, which set protects: SYSTEM and the Administrators full control, and Users users, where
-// that is not 0.
-func restrictWith(dir bool, users windows.ACCESS_MASK, set func(owner *windows.SID, dacl *windows.ACL) error) error {
+// the DACL, which set protects: SYSTEM and the Administrators full control, and nobody else
+// anything.
+func restrictWith(dir bool, set func(owner *windows.SID, dacl *windows.ACL) error) error {
 	inherit := uint32(windows.NO_INHERITANCE)
 	if dir {
 		inherit = windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT
@@ -74,16 +73,10 @@ func restrictWith(dir bool, users windows.ACCESS_MASK, set func(owner *windows.S
 		}
 	}
 
-	entries := []windows.EXPLICIT_ACCESS{
+	dacl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{
 		grant(sidSystem, windows.TRUSTEE_IS_USER, fileAllAccess),
 		grant(sidAdmins, windows.TRUSTEE_IS_GROUP, fileAllAccess),
-	}
-
-	if users != 0 {
-		entries = append(entries, grant(sidUsers, windows.TRUSTEE_IS_GROUP, users))
-	}
-
-	dacl, err := windows.ACLFromEntries(entries, nil)
+	}, nil)
 	if err != nil {
 		return err
 	}
@@ -174,19 +167,15 @@ func readLink(s step) (string, error) { return linkTarget(s.h) }
 
 // makeStep makes the folder name in the one parent holds open, and holds it open: through parent
 // (createIn), looked up there and nowhere else and never followed, with Restrict's ownership and
-// DACL set as it is created -- and, for a folder on the way to the root, Users' right to read and
-// traverse it (wayUsers) -- rather than what the one before passes on: in C:\ Authenticated Users'
-// right to delete it, and its owner the administrator who ran conflux, whom the SYSTEM service does
-// not trust. The way conflux makes is then its own, as the 0700 directories it makes on Unix are,
-// and passes parents' rule for the service as for whoever made it. ERROR_ALREADY_EXISTS is anything
-// already at the name, a link included.
-func makeStep(parent step, name string, root bool) (step, bool, error) {
-	users := windows.ACCESS_MASK(wayUsers)
-	if root {
-		users = 0
-	}
-
-	h, err := createIn(parent.h, name, windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES, users)
+// DACL set as it is created, a folder on the way to the root exactly as the root, rather than what
+// the one before passes on: in C:\ Authenticated Users' right to delete it, and its owner the
+// administrator who ran conflux, whom the SYSTEM service does not trust. The way conflux makes is
+// then its own, as the 0700 directories it makes on Unix are, grants nobody else anything, so a
+// folder of it later taken as a root is one secure finds secured already, and passes parents' rule
+// for the service as for whoever made it. ERROR_ALREADY_EXISTS is anything already at the name, a
+// link included.
+func makeStep(parent step, name string) (step, bool, error) {
+	h, err := createIn(parent.h, name, windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES)
 	if err != nil {
 		return step{}, false, err
 	}
@@ -213,12 +202,8 @@ func linkTarget(h windows.Handle) (string, error) {
 // token's where it may not name them, under a protected DACL granting SYSTEM and Administrators
 // full control, inherited by what it holds.
 func MakeRestricted(path string) error {
-	return restrictedDir(0, func(sd *windows.SECURITY_DESCRIPTOR) error { return makeDir(path, sd) })
+	return restrictedDir(func(sd *windows.SECURITY_DESCRIPTOR) error { return makeDir(path, sd) })
 }
-
-// wayUsers is what a folder conflux makes on the way to a root grants Users: to read and traverse it,
-// as 0755 lets others on Unix, and nothing that moves or changes it.
-const wayUsers = windows.FILE_GENERIC_READ | windows.FILE_GENERIC_EXECUTE
 
 // MakeAnchordDir is makeDir with anchordDirSDDL: a directory anchord's account, the service SID sid,
 // is given -- anchor\ and run\anchord\ where anchord runs as that account.
@@ -264,13 +249,12 @@ func makeDir(path string, sd *windows.SECURITY_DESCRIPTOR) error {
 }
 
 // restrictedDir makes a directory through create, handed the security descriptor to create it
-// with: Restrict's ownership and DACL, with Users granted users where it is not 0 -- restrictWith's
-// owner, where one is given, and its DACL, protected -- and, where the token may not name
-// Administrators as its owner, again without one.
+// with: Restrict's ownership and DACL -- restrictWith's owner, where one is given, and its DACL,
+// protected -- and, where the token may not name Administrators as its owner, again without one.
 // What create fails with is returned as it is, ERROR_ALREADY_EXISTS for a name already taken
 // among it.
-func restrictedDir(users windows.ACCESS_MASK, create func(sd *windows.SECURITY_DESCRIPTOR) error) error {
-	return restrictWith(true, users, func(owner *windows.SID, dacl *windows.ACL) error {
+func restrictedDir(create func(sd *windows.SECURITY_DESCRIPTOR) error) error {
+	return restrictWith(true, func(owner *windows.SID, dacl *windows.ACL) error {
 		sd, err := windows.NewSecurityDescriptor()
 		if err != nil {
 			return err
@@ -308,7 +292,7 @@ func restrictedDir(users windows.ACCESS_MASK, create func(sd *windows.SECURITY_D
 func fill(dir string, h windows.Handle) error {
 	filling(dir)
 
-	run, filled := createIn(h, runName, windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES, 0)
+	run, filled := createIn(h, runName, windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES)
 	if filled == nil {
 		filled = windows.CloseHandle(run)
 	}
@@ -331,13 +315,13 @@ func fill(dir string, h windows.Handle) error {
 }
 
 // createIn creates the directory name in the one parent holds open, with Restrict's ownership and
-// DACL, Users granted users where it is not 0, set as it is created (restrictedDir), through parent
-// (createDir), and holds it open for access: ERROR_ALREADY_EXISTS where anything is at the name, a
-// link included, which is not followed.
-func createIn(parent windows.Handle, name string, access uint32, users windows.ACCESS_MASK) (windows.Handle, error) {
+// DACL set as it is created (restrictedDir), through parent (createDir), and holds it open for
+// access: ERROR_ALREADY_EXISTS where anything is at the name, a link included, which is not
+// followed.
+func createIn(parent windows.Handle, name string, access uint32) (windows.Handle, error) {
 	var h windows.Handle
 
-	err := restrictedDir(users, func(sd *windows.SECURITY_DESCRIPTOR) (err error) {
+	err := restrictedDir(func(sd *windows.SECURITY_DESCRIPTOR) (err error) {
 		h, err = createDir(parent, name, sd, access)
 
 		return err
@@ -466,11 +450,11 @@ func trusted(sid *windows.SID) bool {
 // secure gives a conflux root its ownership and DACL, once, and refuses one another
 // account made, a junction another account may point elsewhere (heldLink), or a CONFLUX_DIR
 // another account can move (see parents). A root secured already -- SYSTEM's or the
-// Administrators', under a protected DACL that grants nobody else a right retargets names, on the
-// root or on what is made in it -- is not restricted again, but it is filled as any root is (fill),
-// and what it holds is judged again (contents), so that what a run refused once the root was
-// restricted is refused by every run after; one protected that grants more, or passes more on, or
-// has no DACL at all, is held to all of what follows, as one found unrestricted is.
+// Administrators', under a protected DACL that grants nobody else any right, to read it included,
+// on the root or on what is made in it -- is not restricted again, but it is filled as any root is
+// (fill), and what it holds is judged again (contents), so that what a run refused once the root
+// was restricted is refused by every run after; one protected that grants more, or passes more on,
+// or has no DACL at all, is held to all of what follows, as one found unrestricted is.
 //
 // A directory conflux did not create is one somebody else may have filled before it
 // looked -- with a binary for the service to run, or a manifest whose key they hold --
@@ -522,19 +506,20 @@ func secure(dir string) error {
 		return fmt.Errorf("read the owner of %s: %w", dir, err)
 	}
 
-	// Secured already: SYSTEM's or the Administrators', under a protected DACL that lets nobody else
-	// write it, move it or change who may, nor passes such a right on to what is made in it -- what a
-	// restriction leaves -- and, where the root is a junction, the junction SYSTEM's or the
-	// Administrators' under a protected DACL too, as replaceLink leaves one. It is not restricted
-	// again, but it is filled, since one secured and empty -- as an administrator may have restricted
-	// it -- is as open to a handle opened on it before as one found unrestricted, and what it holds is
-	// judged as it is once a root is restricted: a restriction refused by that judgement is still in
-	// place, and what it refused is still there. A protected DACL that grants more, or passes more on
-	// -- to logs\, which EnsureAll then makes in the root by its name, and the service writes in
-	// before any run judges it -- or none at all, or a junction conflux did not make, is repaired,
-	// replaced or refused below as an unrestricted root is.
+	// Secured already: SYSTEM's or the Administrators', under a protected DACL that grants nobody else
+	// any right, to read it included, nor passes one on to what is made in it -- what a restriction
+	// leaves -- and, where the root is a junction, the junction SYSTEM's or the Administrators' under
+	// a protected DACL too, as replaceLink leaves one. It is not restricted again, but it is filled,
+	// since one secured and empty -- as an administrator may have restricted it -- is as open to a
+	// handle opened on it before as one found unrestricted, and what it holds is judged as it is once
+	// a root is restricted: a restriction refused by that judgement is still in place, and what it
+	// refused is still there. A protected DACL that grants anybody else anything, or passes anything
+	// on -- to logs\, which EnsureAll then makes in the root by its name, and the service writes in
+	// before any run judges it, and to serve.lock and conflux.lock, which an account let read could
+	// hold against the supervisor (flock.Held) -- or none at all, or a junction conflux did not make,
+	// is repaired, replaced or refused below as an unrestricted root is.
 	if secured(sd) && (root.link == nil || secured(root.link)) {
-		switch who, _, err := changerIn(dir, sd, retargets, "write it or what is made in it", nil, true); {
+		switch who, _, err := changerIn(dir, sd, anyRight, "use it or what is made in it", nil, true); {
 		case err != nil:
 			return err
 		case who == "":
@@ -580,7 +565,7 @@ func secure(dir string) error {
 		return err
 	}
 
-	if err := restrictWith(true, 0, func(owner *windows.SID, dacl *windows.ACL) error {
+	if err := restrictWith(true, func(owner *windows.SID, dacl *windows.ACL) error {
 		return windows.SetSecurityInfo(root.dir, windows.SE_FILE_OBJECT, restrictInfo(owner), owner, nil, dacl, nil)
 	}); err != nil {
 		return fmt.Errorf("restrict %s: %w", dir, err)
@@ -648,7 +633,7 @@ func replaceLink(dir string, r *held) error {
 	replacing(dir)
 
 	link, err := createIn(parent, filepath.Base(dir),
-		windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES|windows.FILE_WRITE_ATTRIBUTES|windows.FILE_WRITE_DATA, 0)
+		windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES|windows.FILE_WRITE_ATTRIBUTES|windows.FILE_WRITE_DATA)
 
 	switch {
 	case errors.Is(err, windows.ERROR_ALREADY_EXISTS):
@@ -834,12 +819,13 @@ func ownerRefusal(dir string, owner *windows.SID) error {
 // or a link, and to read alone (heldRoot), so that a link leading off this machine or nowhere, one
 // another account may point elsewhere, and a root on a network volume are refused; then refused
 // where its owner is not SYSTEM, the Administrators or the account running conflux (ownerRefusal),
-// or where its DACL lets another account write it, add to it, move it, point it elsewhere or change
-// who may, on itself or on what is made in it -- the rule secure keeps a root it finds secured
-// already to. A CONFLUX_DIR is held to its parents first (parents), which also refuses a link on
-// the way to it that leads off this machine before anything is looked up through it. A root this
-// account may not open or read is refused, since whoever made it can deny conflux the right to read
-// its owner and DACL as easily as they can make it.
+// or where its DACL grants another account any right, to read it included, on itself or on what is
+// made in it -- the rule secure keeps a root it finds secured already to, and what it restricts
+// one granting more to: a root is conflux's alone, and a reader refuses what secure would change. A
+// CONFLUX_DIR is held to its parents first (parents), which also refuses a link on the way to it
+// that leads off this machine before anything is looked up through it. A root this account may not
+// open or read is refused, since whoever made it can deny conflux the right to read its owner and
+// DACL as easily as they can make it.
 func checkRoot(dir string) error {
 	if chosen(dir) {
 		if err := parents(dir); err != nil {
@@ -867,13 +853,13 @@ func checkRoot(dir string) error {
 		return err
 	}
 
-	switch who, _, err := changerIn(dir, sd, retargets, "write it or what is made in it", nil, true); {
+	switch who, _, err := changerIn(dir, sd, anyRight, "use it or what is made in it", nil, true); {
 	case err != nil:
 		return err
 	case who != "":
-		return fmt.Errorf("%s %s could put what they like in it for conflux to read or run, so conflux will not "+
-			"use it.\n  Give it a DACL that grants nobody else that right, then run this again as Administrator",
-			dir, who)
+		return fmt.Errorf("%s %s could read what conflux keeps in it, or put what they like there for conflux to "+
+			"read or run, so conflux will not use it: a root is conflux's alone.\n  Give it a DACL that grants nobody "+
+			"else any right on it, then run this again as Administrator", dir, who)
 	}
 
 	return nil
@@ -1255,6 +1241,12 @@ const fileDeleteChild = 0x40
 // C:\ lets every user do that, and a folder of theirs cannot take the place of one that is not, as
 // a sticky directory's cannot on Unix.
 const moves = fileDeleteChild | windows.DELETE | windows.WRITE_DAC | windows.WRITE_OWNER | windows.GENERIC_ALL
+
+// anyRight is every right an entry may grant: what a root, conflux's alone, grants nobody but
+// SYSTEM, the Administrators and the account running conflux, on itself or on what is made in it --
+// to read it among them, since what it holds inherits that: a lock file an account let read may
+// hold against the supervisor (flock.Held), and the service's log.
+const anyRight = ^windows.ACCESS_MASK(0)
 
 // retargets is what an ACE on a link or a junction, or on anything in a root, must not grant
 // another account: moves, or a right that writes it -- its data, or on a folder a file or a folder

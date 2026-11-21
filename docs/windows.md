@@ -116,13 +116,13 @@ never followed, and a junction or a link read off itself and gone on from where 
 one is held to ([security.md](security.md#the-extracted-binaries)): nobody else may move what is in
 it. The folders missing are made from the last one held, each through a handle on the one before,
 never by their names, since `C:\` lets every user make a folder where the next is to go, and the
-owner of a folder on the way may make anything in it. Each is made as the root is, the
+owner of a folder on the way may make anything in it. Each is made exactly as the root is, the
 Administrators' from the moment it exists, under a protected DACL granting SYSTEM and the
-Administrators full control and `Users` the right to read and traverse it, rather than with what the
-folder above passes on — in `C:\` `Authenticated Users`' right to delete it — and owned by the
-administrator who ran conflux, whom the service, running as SYSTEM, would not trust: the way conflux
-makes is its own, as the `0700` directories it makes on Unix are, and passes the rule for the
-service as for the account that made it. One somebody else
+Administrators full control and nobody else anything, rather than with what the folder above passes
+on — in `C:\` `Authenticated Users`' right to delete it — and owned by the administrator who ran
+conflux, whom the service, running as SYSTEM, would not trust: the way conflux makes is its own, as
+the `0700` directories it makes on Unix are, passes the rule for the service as for the account that
+made it, and a folder of it later taken as a root is one conflux finds secured already. One somebody else
 makes at a name meanwhile is opened as itself and held to the same rule before anything is made in
 it, and a junction or a link there is refused.
 
@@ -131,10 +131,10 @@ pass-through, `renew`, `start`, `down`, `uninstall`, `update` asking whether the
 every reader of an ephemeral run's root — holds it to one check first,
 the readers' check, before it reads anything in it by its name: through one handle, a junction or a
 link judged as itself as above, it must be SYSTEM's, the Administrators' or the account running
-conflux's, and its DACL must grant nobody else the right to write it, add to it, move it, point it
-elsewhere or change who may, nor pass such a right on to what is made in it, which is what a root
-conflux secured keeps — so one that only inherits `%ProgramData%`'s grant to `Users` is refused
-too; a `CONFLUX_DIR`'s way is held as it is when the root is made. A `CREATOR OWNER` entry passed
+conflux's, and its DACL must grant nobody else any right, to read it included, nor pass one on to
+what is made in it, which is what a root conflux secured keeps: a root is conflux's alone, and one
+granting more is one conflux would restrict — so one that only inherits `%ProgramData%`'s grant to
+`Users` is refused too, and so is one that lets them read it; a `CONFLUX_DIR`'s way is held as it is when the root is made. A `CREATOR OWNER` entry passed
 on, as an administrator tightening a root by hand may keep `%ProgramData%`'s, is no such grant here,
 nor when conflux secures a root: it grants whoever made what it is passed to, and only SYSTEM, the
 Administrators and the account running conflux may make anything in the root. Nothing is changed: a root that
@@ -156,12 +156,13 @@ grant to `Users`, to add to a folder and write its attributes, is not that, thou
 check, which restricts nothing, refuses it. Then it is read once more through the handle: one that became a
 junction meanwhile is refused, and one whose DACL, as found, does not let conflux create `run\` in
 it is refused, saying so. A root already secured — the Administrators' or SYSTEM's, under a
-protected DACL that lets nobody else write it, add to it, move it or change who may, nor passes such
-a right on to what is made in it — is not restricted again, but it is made to hold `run\` and read
+protected DACL that grants nobody else any right, to read it included, nor passes one on to what is
+made in it — is not restricted again, but it is made to hold `run\` and read
 again the same way, since one an administrator restricted while it was empty is as open to a handle
 opened before, and what it holds is judged again, so that a folder refused once stays refused; a
 protected one that grants more, or passes more on — to `logs\`, which conflux then makes in it by
-its name — is judged and restricted as any other, and one with no DACL at all, which grants anybody
+its name, and to `serve.lock` and `conflux.lock`, which an account let read them could hold against
+the supervisor — is judged and restricted as any other, and one with no DACL at all, which grants anybody
 everything, is refused. A root some other account created is refused rather than taken over: whoever made it
 could have filled it first. So is one conflux may not open or read, by the readers' check too,
 rather than taken for one that is not there: whoever made it can deny conflux that as

@@ -649,13 +649,14 @@ func TestARootIsMadeWithItsDACL(t *testing.T) {
 	onlyTheSystems(t, root)
 }
 
-// TestTheWayConfluxMakesIsItsOwn: the folders conflux makes on the way to a CONFLUX_DIR are made as
-// the root is, theirs from the moment they exist -- the Administrators', under a protected DACL
-// granting SYSTEM and the Administrators full control and Users the right to read and traverse them --
-// rather than with what the folder above passes on, which in C:\ lets Authenticated Users delete
-// them, and owned by whichever administrator ran conflux, whom the SYSTEM service does not trust. So
-// x and y, made for <temp>\x\y\conflux, pass parents' rule for the service, SYSTEM, as for the
-// account that made them. Windows-only, so it runs in CI's platforms job alone.
+// TestTheWayConfluxMakesIsItsOwn: the folders conflux makes on the way to a CONFLUX_DIR are made
+// exactly as the root is, theirs from the moment they exist -- the Administrators', under a protected
+// DACL granting SYSTEM and the Administrators full control, passed on to all they hold, and nobody
+// else anything -- rather than with what the folder above passes on, which in C:\ lets Authenticated
+// Users delete them, and owned by whichever administrator ran conflux, whom the SYSTEM service does
+// not trust. So x and y, made for <temp>\x\y\conflux, pass parents' rule for the service, SYSTEM, as
+// for the account that made them, and y, taken as a root itself, passes checkRoot, whose rule is the
+// one secure finds a root secured already by. Windows-only, so it runs in CI's platforms job alone.
 func TestTheWayConfluxMakesIsItsOwn(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "x", "y", "conflux")
@@ -675,11 +676,24 @@ func TestTheWayConfluxMakesIsItsOwn(t *testing.T) {
 				s.Protected)
 		}
 
+		const passedOn = windows.OBJECT_INHERIT_ACE | windows.CONTAINER_INHERIT_ACE
+
+		if len(s.Entries) != 2 {
+			t.Errorf("the DACL of %s holds %d entries, want SYSTEM's and the Administrators': %+v", dir, len(s.Entries),
+				s.Entries)
+		}
+
 		for _, e := range s.Entries {
-			if !e.SID.Equals(sidSystem) && !e.SID.Equals(sidAdmins) && !e.SID.Equals(privtest.Users) {
-				t.Errorf("the DACL of %s grants %s", dir, e.SID)
+			if e.Type != windows.ACCESS_ALLOWED_ACE_TYPE || e.Flags != passedOn || e.Mask != fileAllAccess ||
+				!e.SID.Equals(sidSystem) && !e.SID.Equals(sidAdmins) {
+				t.Errorf("the DACL of %s grants %s %#x, flags %#x, type %d; want SYSTEM and the Administrators "+
+					"full control, passed on", dir, e.SID, e.Mask, e.Flags, e.Type)
 			}
 		}
+	}
+
+	if err := checkRoot(way[1]); err != nil {
+		t.Errorf("checkRoot(%s, which conflux made on the way to %s) = %v", way[1], root, err)
 	}
 
 	was := currentUser
@@ -1173,13 +1187,14 @@ func TestSecureRefusesARootWhoseDACLLetsAnotherMoveWhatIsInIt(t *testing.T) {
 }
 
 // TestSecureHoldsAProtectedRootToItsDACL: a root already the Administrators' under a protected DACL
-// is one conflux secured only where that DACL lets nobody else write it, move it or change who may,
-// nor passes such a right on to what is made in it, as logs\ is made by its name; otherwise it is
-// held to what a root found unrestricted is. One granting Users the right to write its attributes,
-// or passing them full control of what is made in it, is repaired, left SYSTEM's and the
-// Administrators' alone; one granting them the right to delete what is in it, or with no DACL at
-// all, which grants anybody everything, is refused, naming it. Windows-only, so it runs in CI's
-// platforms job alone.
+// is one conflux secured only where that DACL grants nobody else any right, to read it included, nor
+// passes one on to what is made in it, as logs\, serve.lock and conflux.lock are made by their names;
+// otherwise it is held to what a root found unrestricted is. One granting Users the right to write its
+// attributes, or to read and traverse it and what is made in it, as a folder an earlier conflux made
+// on the way to a CONFLUX_DIR did, or passing them full control of what is made in it, is repaired,
+// left SYSTEM's and the Administrators' alone, and checkRoot, which restricts nothing, refuses it
+// first; one granting them the right to delete what is in it, or with no DACL at all, which grants
+// anybody everything, is refused, naming it. Windows-only, so it runs in CI's platforms job alone.
 func TestSecureHoldsAProtectedRootToItsDACL(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
@@ -1188,6 +1203,10 @@ func TestSecureHoldsAProtectedRootToItsDACL(t *testing.T) {
 		refused    bool
 	}{
 		{"grants Users the right to write its attributes", "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;;0x100;;;BU)", false},
+		{"grants Users the right to read and traverse it and what is made in it",
+			"O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)", false},
+		{"passes Users the right to read what is made in it",
+			"O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICIIO;FR;;;BU)", false},
 		{"passes Users full control of what is made in it", "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICIIO;FA;;;BU)", false},
 		{"grants Users the right to delete what is in it", "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;;0x40;;;BU)", true},
 		{"has no DACL", "O:BAD:PNO_ACCESS_CONTROL", true},
@@ -1196,6 +1215,10 @@ func TestSecureHoldsAProtectedRootToItsDACL(t *testing.T) {
 			root := foundRoot(t)
 
 			setSecurity(t, root, c.sddl)
+
+			if err := checkRoot(root); err == nil || !strings.Contains(err.Error(), root) {
+				t.Errorf("checkRoot(a protected root that %s) = %v, want a refusal naming it", c.name, err)
+			}
 
 			err := secure(root)
 

@@ -521,15 +521,19 @@ the handle held on it, and the link after, the directory itself left empty; a li
 removed as itself, and where it leads is not touched. A `CONFLUX_DIR`'s way is
 held to the rule the [readers' check](#a-root-another-account-could-change) holds it to as it is
 walked, so a way another account could change cannot lead the removal elsewhere; the platform's
-own roots are on the system's way. Two roots are refused. One is a `CONFLUX_DIR` whose way another
-account may change: whoever could change it could have put anything at the root's name, so conflux
-cannot know what is there is its own. The other is a root that is a shared or system directory —
-a `CONFLUX_DIR` of `/tmp`, `/` or `C:\` — which conflux never makes its own, and so never empties
+own roots are on the system's way. Three kinds of root are refused. One is a `CONFLUX_DIR` whose way
+another account may change: whoever could change it could have put anything at the root's name, so
+conflux cannot know what is there is its own. Another is a root that is a shared or system directory
+— a `CONFLUX_DIR` of `/tmp`, `/` or `C:\` — which conflux never makes its own, and so never empties
 ([security.md](security.md#the-file-and-the-directory-around-it)); a link at a root's name leading
-to one is removed as itself. Every root is judged before anything is asked or removed, so either is
-refused, exit 1, with nothing removed, the boot service included: the first naming the folder that
-fails and saying to run `uninstall` again once nobody else can change any folder on the way, the
-second saying uninstall left everything in place. Any other root the readers' check refuses is removed the same way as one it takes, with
+to one is removed as itself. The third is a root that holds a name conflux never makes there, at its
+name or where a link there that conflux follows leads — a `CONFLUX_DIR` at a folder of homes —
+which is somebody else's, not conflux's. Every root is judged before anything is asked or removed,
+so each is refused, exit 1, with nothing removed, the boot service included: the first naming the
+folder that fails and saying to run `uninstall` again once nobody else can change any folder on the
+way, the second saying uninstall left everything in place, the third naming the entry conflux
+never makes and saying the same. A root that cannot be judged at all, for any other reason, stops
+uninstall there too, exit 1, saying so, before it acts. Any other root the readers' check refuses is removed the same way as one it takes, with
 nothing in it read or signalled first — no identity shown in the question, no `anchord` stopped by
 its pid record. The record of the folders made on the way to it is read all the same, as a file
 anybody may have put there, never through a link: all it can lead to is an empty folder above

@@ -321,3 +321,36 @@ func TestUninstallRemovesTheSharedLog(t *testing.T) {
 		})
 	}
 }
+
+// TestUninstallLeavesARootHoldingWhatConfluxNeverMakes: a root holding a name conflux never makes there
+// is not conflux's, so uninstall refuses it before it acts, exit 1, naming what it holds and saying it
+// left everything in place, the boot service included -- not that another account may change the way
+// to it -- and the root keeps what it holds.
+func TestUninstallLeavesARootHoldingWhatConfluxNeverMakes(t *testing.T) {
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	d := configured(t)
+
+	stray := filepath.Join(d.State, "notes.txt")
+	if err := os.WriteFile(stray, []byte("somebody's"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	mgr := &removing{fakeManager: fakeManager{d: d}}
+	standInService(t, mgr)
+
+	out, errOut, code := capture(t, "uninstall", "--yes")
+	if code != ExitError || !strings.Contains(errOut, "notes.txt") || !strings.Contains(errOut, "left everything in place") ||
+		strings.Contains(errOut, "Once nobody else can change") {
+		t.Errorf("uninstall of a root holding what conflux never makes there exited %d, want %d naming it and "+
+			"saying it left everything:\n%s%s", code, ExitError, out, errOut)
+	}
+
+	for _, p := range []string{stray, d.ConfigFile()} {
+		if _, err := os.Lstat(p); err != nil || mgr.removals > 0 {
+			t.Errorf("uninstall of a root holding what conflux never makes there removed the boot service %d times, "+
+				"and %s (Lstat: %v)", mgr.removals, p, err)
+		}
+	}
+}

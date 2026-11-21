@@ -539,17 +539,19 @@ func removeTree(parent windows.Handle, name, p string) error {
 // folder to list as well, and anything else, which listing would ask to read, not (ERROR_DIRECTORY).
 // Looked up in parent and nowhere else, and never followed (ntOpen).
 func openToRemove(parent windows.Handle, name string) (windows.Handle, error) {
-	const access = windows.SYNCHRONIZE | windows.DELETE | windows.FILE_READ_ATTRIBUTES
-
-	h, err := ntOpen(parent, name, nil, access|windows.FILE_LIST_DIRECTORY, windows.FILE_OPEN,
+	h, err := ntOpen(parent, name, nil, removeAccess|windows.FILE_LIST_DIRECTORY, windows.FILE_OPEN,
 		windows.FILE_DIRECTORY_FILE|windows.FILE_OPEN_FOR_BACKUP_INTENT)
 	if errors.Is(err, windows.ERROR_DIRECTORY) {
-		h, err = ntOpen(parent, name, nil, access, windows.FILE_OPEN,
+		h, err = ntOpen(parent, name, nil, removeAccess, windows.FILE_OPEN,
 			windows.FILE_NON_DIRECTORY_FILE|windows.FILE_OPEN_FOR_BACKUP_INTENT)
 	}
 
 	return h, err
 }
+
+// removeAccess is what openToRemove opens a thing to remove for: to delete it and read its attributes,
+// and never to read what it holds.
+const removeAccess = windows.SYNCHRONIZE | windows.DELETE | windows.FILE_READ_ATTRIBUTES
 
 // withBackup runs f with SeBackupPrivilege and SeRestorePrivilege enabled -- held, disabled, by an
 // elevated administrator's token and SYSTEM's -- so that what f opens with backup intent is opened for

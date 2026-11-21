@@ -841,8 +841,14 @@ func (d Dirs) OpenIn(path string) (*os.File, error) {
 		return nil, err
 	}
 
+	opening(dir)
+
 	return openIn(r.dir, filepath.Base(path), path)
 }
+
+// opening is called once OpenIn holds the root dir, before it opens anything in it: nothing, but where
+// a test puts another root at the name meanwhile.
+var opening = func(string) {}
 
 // rootHold is a root held open as a directory, through no link: the way to the directory its name is
 // in, which holds that directory last; its name there; the directory it is, what is at the name or,

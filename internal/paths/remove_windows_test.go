@@ -2,6 +2,7 @@ package paths
 
 import (
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -81,9 +82,10 @@ func TestRemoveRootFollowsNothing(t *testing.T) {
 // them alone, is followed, what that folder holds removed through the handle held on it, a junction in
 // it as itself, and then the junction, the folder left empty; a junction as mklink made it, which the
 // administrator's own processes may repoint unelevated and the SYSTEM service would not follow, to that
-// same folder, a junction to a folder Users may add to, which conflux has not secured, to one the
-// Guests own, and to the folder it is in, are removed as themselves, with where each leads left as it
-// was. Windows-only, so it runs in CI's platforms job alone.
+// same folder, and a junction secured so to a folder Users may add to, or to one of this account's
+// own whose DACL is as it inherited it, neither of which conflux has secured, to one the Guests own,
+// and to the folder it is in, under a DACL as conflux secures a root's, are removed as themselves, with
+// where each leads left as it was. Windows-only, so it runs in CI's platforms job alone.
 func TestRemoveRootFollowsALinkRootOnlyWhereConfluxWould(t *testing.T) {
 	elsewhere := t.TempDir()
 
@@ -102,25 +104,32 @@ func TestRemoveRootFollowsALinkRootOnlyWhereConfluxWould(t *testing.T) {
 			privtest.SetSecurity(t, target, "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)")
 		}
 
+		// asMade is a case whose junction is left as mklink made it; every other's is secured as conflux
+		// secures one, so that what is judged of where it leads is all that keeps it from being gone into.
 		for _, c := range []struct {
 			name   string
 			target func(t *testing.T, in string) string
 			after  func(t *testing.T, target string)
+			asMade bool
 			follow bool
 		}{
-			{"a folder conflux secured", func(t *testing.T, _ string) string { return t.TempDir() }, secured, true},
+			{"a folder conflux secured", func(t *testing.T, _ string) string { return t.TempDir() }, secured, false,
+				true},
 			{"a folder conflux secured, as mklink made the junction", func(t *testing.T, _ string) string {
 				return t.TempDir()
-			}, secured, false},
+			}, secured, true, false},
 			{"a folder Users may add to", func(t *testing.T, _ string) string {
 				open := t.TempDir()
 				privtest.GrantUsers(t, open, windows.FILE_WRITE_DATA, windows.NO_INHERITANCE)
 
 				return open
-			}, nil, false},
+			}, nil, false, false},
+			{"a folder of this account's own its DACL as inherited", func(t *testing.T, _ string) string {
+				return t.TempDir()
+			}, nil, false, false},
 			{"a folder the Guests own", func(t *testing.T, _ string) string { return t.TempDir() },
-				func(t *testing.T, target string) { privtest.SetOwner(t, target, guests) }, false},
-			{"the folder it is in", func(_ *testing.T, in string) string { return in }, nil, false},
+				func(t *testing.T, target string) { privtest.SetOwner(t, target, guests) }, false, false},
+			{"the folder it is in", func(_ *testing.T, in string) string { return in }, secured, false, false},
 		} {
 			t.Run(c.name+map[bool]string{true: ", a CONFLUX_DIR"}[chosen], func(t *testing.T) {
 				in := t.TempDir()
@@ -145,7 +154,7 @@ func TestRemoveRootFollowsALinkRootOnlyWhereConfluxWould(t *testing.T) {
 
 				mklinkJ(t, root, target)
 
-				if c.follow {
+				if !c.asMade {
 					setOwnSecurity(t, root, "O:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)")
 				}
 
@@ -180,8 +189,9 @@ func TestRemoveRootFollowsALinkRootOnlyWhereConfluxWould(t *testing.T) {
 // TestRemoveRootRemovesWhatGrantsTheAdministratorsNothing: what another account planted in a root,
 // owning it under a DACL that grants the Administrators nothing, is removed all the same: a file is
 // opened to delete it and read its attributes, which the root's own DACL grants, and not to read it,
-// and a folder, which must be listed, is opened with backup intent, which the privileges an
-// Administrator holds grant. Windows-only, so it runs in CI's platforms job alone.
+// as the access it is opened for says, and a folder, which must be listed, is opened with backup
+// intent, which the privileges an Administrator holds grant. Windows-only, so it runs in CI's platforms
+// job alone.
 func TestRemoveRootRemovesWhatGrantsTheAdministratorsNothing(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "conflux")
 	t.Setenv("CONFLUX_DIR", root)
@@ -217,6 +227,14 @@ func TestRemoveRootRemovesWhatGrantsTheAdministratorsNothing(t *testing.T) {
 
 	if _, err := os.Lstat(root); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("%s is there once RemoveRoot removed it (%v)", root, err)
+	}
+
+	// Backup intent would grant a read too, so that a file is never opened to be read is what the open
+	// asks for, not what it is granted.
+	const reads = windows.FILE_READ_DATA | windows.FILE_READ_EA | windows.GENERIC_READ | windows.GENERIC_ALL |
+		windows.MAXIMUM_ALLOWED
+	if removeAccess&reads != 0 {
+		t.Errorf("a file is opened to be removed for %#x, which reads it", removeAccess&reads)
 	}
 }
 
@@ -316,9 +334,10 @@ func TestTheWayConfluxMadeIsRemovedWhenEmpty(t *testing.T) {
 // the way record uninstall reads, the serve lock tidy asks after -- is opened through the root held
 // (OpenIn), never by its name: a CONFLUX_DIR that is a junction to a folder the Guests own is refused,
 // naming the junction, before anything in that folder is opened, though nobody else may point the
-// junction elsewhere; one leading to a folder of this account's own is followed, and what is in it
-// read, whether nobody else may use it or its DACL lets Users add to it, which secure would restrict,
-// as it restricts a root at the name itself. Windows-only, so it runs in CI's platforms job alone.
+// junction elsewhere, and so are one to the folder it is in and one to nothing; one leading to a folder
+// of this account's own is followed, and what is in it read, whether nobody else may use it or its DACL
+// lets Users add to it, which secure would restrict, as it restricts a root at the name itself.
+// Windows-only, so it runs in CI's platforms job alone.
 func TestARootIsHeldBeforeAnythingInItIsOpened(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "conflux")
@@ -332,33 +351,46 @@ func TestARootIsHeldBeforeAnythingInItIsOpened(t *testing.T) {
 	}
 
 	for _, c := range []struct {
-		name  string
-		after func(t *testing.T, target string)
-		ok    bool
+		name   string
+		target func(t *testing.T) string
+		after  func(t *testing.T, target string)
+		ok     bool
 	}{
-		{"a folder nobody else may use", func(*testing.T, string) {}, true},
-		{"a folder Users may add to", func(t *testing.T, target string) {
+		{"a folder nobody else may use", nil, func(*testing.T, string) {}, true},
+		{"a folder Users may add to", nil, func(t *testing.T, target string) {
 			privtest.GrantUsers(t, target, windows.FILE_WRITE_DATA, windows.NO_INHERITANCE)
 		}, true},
-		{"a folder the Guests own", func(t *testing.T, target string) { privtest.SetOwner(t, target, guests) }, false},
+		{"a folder the Guests own", nil, func(t *testing.T, target string) { privtest.SetOwner(t, target, guests) },
+			false},
+		{"the folder it is in", func(*testing.T) string { return base }, func(*testing.T, string) {}, false},
+		{"nothing", func(t *testing.T) string { return filepath.Join(t.TempDir(), "missing") }, nil, false},
 	} {
 		target := t.TempDir()
-
-		for name, body := range map[string]string{wayName: base + "\n", "serve.lock": ""} {
-			if err := os.WriteFile(filepath.Join(target, name), []byte(body), 0o600); err != nil {
-				t.Fatal(err)
-			}
+		if c.target != nil {
+			target = c.target(t)
 		}
 
-		c.after(t, target)
+		if c.after != nil {
+			for name, body := range map[string]string{wayName: base + "\n", "serve.lock": ""} {
+				if err := os.WriteFile(filepath.Join(target, name), []byte(body), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			c.after(t, target)
+		}
+
 		mklinkJ(t, root, target)
 
-		refused := root + " is a junction or a link to "
+		// refused reports whether err refuses the junction, naming it and where it leads.
+		refused := func(err error) bool {
+			return err != nil && strings.Contains(err.Error(), root+" is a ") && strings.Contains(err.Error(), "link to ")
+		}
 
 		switch way, err := d.Way(); {
 		case c.ok && (err != nil || !slices.Equal(way, []string{base})):
 			t.Errorf("Way(), the root a junction to %s = %q, %v, want it read through it", c.name, way, err)
-		case !c.ok && (err == nil || !strings.Contains(err.Error(), refused)):
+		case !c.ok && !refused(err):
 			t.Errorf("Way(), the root a junction to %s = %q, %v, want a refusal naming the junction", c.name, way, err)
 		}
 
@@ -370,7 +402,7 @@ func TestARootIsHeldBeforeAnythingInItIsOpened(t *testing.T) {
 		switch {
 		case c.ok && err != nil:
 			t.Errorf("OpenIn(the serve lock), the root a junction to %s = %v", c.name, err)
-		case !c.ok && (err == nil || !strings.Contains(err.Error(), refused)):
+		case !c.ok && !refused(err):
 			t.Errorf("OpenIn(the serve lock), the root a junction to %s = %v, want a refusal naming the junction",
 				c.name, err)
 		}
@@ -466,5 +498,112 @@ func TestASharedFolderIsNoRoot(t *testing.T) {
 
 	if g, h := asFound(); g != grants || len(h) != 0 {
 		t.Errorf("RemoveRoot left the shared folder %d entries holding %q, want it as it was", g, h)
+	}
+}
+
+// TestOpenInReadsThroughTheRootHeld: what OpenIn opens is looked up in the root it holds, and not by its
+// name, so a root put at the name once OpenIn holds the one there -- the one held moved aside, another
+// made in its place holding a lock of its own -- answers for nothing: what is read is the held root's.
+// Windows-only, so it runs in CI's platforms job alone.
+func TestOpenInReadsThroughTheRootHeld(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "conflux")
+	t.Setenv("CONFLUX_DIR", root)
+
+	d := Default()
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(d.ServeLockFile(), []byte("held"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	was := opening
+	t.Cleanup(func() { opening = was })
+
+	opening = func(dir string) {
+		if err := os.Rename(dir, dir+".was"); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.WriteFile(d.ServeLockFile(), []byte("put there"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	f, err := d.OpenIn(d.ServeLockFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	if b, err := io.ReadAll(f); err != nil || string(b) != "held" {
+		t.Errorf("OpenIn(the serve lock), another root put at the name once it held the one there, read %q, %v, want "+
+			"the held root's", b, err)
+	}
+}
+
+// TestOpenInHoldsTheRootAndAJunctionToTheirOwners: OpenIn reads nothing in a root at the name that an
+// account other than SYSTEM, the Administrators and this one owns -- here the Guests' -- nor through a
+// junction there that the Guests own, who could point it at a folder of their own, though it leads to a
+// folder of this account's; each refusal names the root and the owner. Windows-only, so it runs in CI's
+// platforms job alone.
+func TestOpenInHoldsTheRootAndAJunctionToTheirOwners(t *testing.T) {
+	guests, err := windows.CreateWellKnownSid(windows.WinBuiltinGuestsSid)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	root := filepath.Join(t.TempDir(), "conflux")
+	t.Setenv("CONFLUX_DIR", root)
+
+	d := Default()
+
+	for name, plant := range map[string]func(t *testing.T){
+		"a folder the Guests own": func(t *testing.T) {
+			if err := os.Mkdir(root, 0o700); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := os.WriteFile(d.ServeLockFile(), nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			privtest.SetOwner(t, root, guests)
+		},
+		"a junction the Guests own": func(t *testing.T) {
+			target := t.TempDir()
+			if err := os.WriteFile(filepath.Join(target, "serve.lock"), nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			mklinkJ(t, root, target)
+
+			if err := privtest.WithRestore(t, func() error {
+				setOwnSecurity(t, root, "O:BGD:P(A;;FA;;;SY)(A;;FA;;;BA)")
+
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			plant(t)
+			t.Cleanup(func() { os.RemoveAll(root) })
+
+			f, err := d.OpenIn(d.ServeLockFile())
+			if err == nil {
+				f.Close()
+			}
+
+			if err == nil || !strings.Contains(err.Error(), root) || !strings.Contains(err.Error(), guests.String()) {
+				t.Errorf("OpenIn(the serve lock), the root %s = %v, want a refusal naming it and its owner", name, err)
+			}
+		})
 	}
 }

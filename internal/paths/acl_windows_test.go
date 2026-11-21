@@ -787,15 +787,15 @@ func TestAnInstallationsWayIsJudgedAsTheServiceJudgesIt(t *testing.T) {
 	}
 }
 
-// onlyTheSystems fails t unless dir belongs to SYSTEM, the Administrators or this account, under a
-// protected DACL whose every entry is SYSTEM's or the Administrators'.
+// onlyTheSystems fails t unless dir belongs to the Administrators, as everything conflux makes does,
+// under a protected DACL whose every entry is SYSTEM's or the Administrators'.
 func onlyTheSystems(t *testing.T, dir string) {
 	t.Helper()
 
 	s := privtest.ReadSecurity(t, dir)
 
-	if !trusted(s.Owner) {
-		t.Errorf("%s belongs to %v", dir, s.Owner)
+	if !s.Owner.Equals(sidAdmins) {
+		t.Errorf("%s belongs to %v, want the Administrators", dir, s.Owner)
 	}
 
 	if !s.Protected {

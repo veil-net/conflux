@@ -132,8 +132,10 @@ following no link: they pass either over, reading, running and signalling nothin
 `uninstall` removes every ephemeral root conflux secured, one holding what another account could
 have put there included, reading and signalling nothing in it and following nothing it holds; one
 it did not secure — a shared or system directory, one holding a name conflux never makes there
-unless conflux has secured it and it holds a run's own state, or one the readers' check refuses — is
-not conflux's, and it leaves it as it is, saying so. Pass-through — `conflux peers`,
+unless conflux has secured it and it holds a run's own state, one the readers' check refuses, or one
+conflux has not secured, at a mode or owner, or under a DACL, it never leaves a root at, or behind a link
+at its name the boot service would not follow — is not conflux's, and it leaves it as it is, with a
+note naming it and why, as the conflux an update puts in place does. Pass-through — `conflux peers`,
 `conflux blocks`, every anchorctl command — reaches the ephemeral anchor when it is the
 only one running, once it is up.
 With an installed anchor running too, it reaches that one unless `CONFLUX_EPHEMERAL=1` is

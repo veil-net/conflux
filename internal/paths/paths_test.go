@@ -181,12 +181,12 @@ func TestTheListHoldsWhatConfluxMakesInARoot(t *testing.T) {
 					continue
 				}
 
-				if ours, _ := d.nameIn(dir, filepath.Base(p)); !ours {
+				if ours, _ := nameIn(d.ownIn(dir), filepath.Base(p)); !ours {
 					t.Errorf("%s, which conflux makes in %s, a root of %s, is not on the list", filepath.Base(p), dir, name)
 				}
 			}
 
-			if ours, _ := d.nameIn(dir, "alice"); ours {
+			if ours, _ := nameIn(d.ownIn(dir), "alice"); ours {
 				t.Errorf("alice, which conflux makes nowhere, is on the list of %s, a root of %s", dir, name)
 			}
 		}

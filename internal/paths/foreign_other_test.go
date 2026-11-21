@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 // TestAForeignRootIsLeftAsItIs: a root whose top level holds a name conflux never makes there is
@@ -468,5 +470,54 @@ func TestASocketAtARootsNameIsNoRoot(t *testing.T) {
 
 	if fi, err := os.Lstat(sock); err != nil || fi.Mode()&os.ModeSocket == 0 {
 		t.Errorf("the socket at the root's name is %v, %v, want it as it was", fi, err)
+	}
+}
+
+// BenchmarkStrays is the strays check of a root conflux has not secured -- one widened to 0755 -- holding
+// what an installation's state root holds, every name of which is conflux's, so each is looked up in the
+// list of conflux's names; and the judgement of whether the service's own root holds its state
+// (stateIn), which looks names up in the same list.
+func BenchmarkStrays(b *testing.B) {
+	root := filepath.Join(b.TempDir(), "conflux")
+	b.Setenv("CONFLUX_DIR", root)
+
+	d := Default()
+	if err := d.EnsureAll(); err != nil {
+		b.Fatal(err)
+	}
+
+	for _, p := range []string{d.ConfigFile(), d.StateFile(), d.ManifestFile(), d.PrivilegeFile(), d.LockFile(),
+		d.ServeLockFile(), d.DaemonConfigFile(), d.ServiceExecutable(), filepath.Join(d.State, wayName)} {
+		if err := os.WriteFile(p, nil, 0o600); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	for _, dir := range []string{d.AnchorDir(), d.Libexec()} {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	if err := os.Chmod(root, 0o755); err != nil {
+		b.Fatal(err)
+	}
+
+	s, err := opened(unix.AT_FDCWD, root)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.close()
+
+	b.ReportAllocs()
+
+	for b.Loop() {
+		if err := d.strays(root, "", s); err != nil {
+			b.Fatal(err)
+		}
+
+		if !stateIn(root, s) {
+			b.Fatal("stateIn(a root holding its state) = false")
+		}
 	}
 }

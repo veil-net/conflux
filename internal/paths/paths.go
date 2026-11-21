@@ -79,15 +79,15 @@ func rootedAt(root string) Dirs {
 func stateIn(dir string, s step) bool {
 	names, err := namesOf(s, dir)
 
-	return err == nil && heldState(dir, names, rootedAt(dir))
+	return err == nil && heldState(names, rootedAt(dir).ownIn(dir))
 }
 
-// heldState reports whether names, what the root dir holds, hold this installation's own state: a name
-// one of layouts makes directly in dir (own), but the service's copy of conflux and the image an update
-// moved aside beside it, which the folder conflux was installed into holds as well, and the lock files,
-// which hold nothing and which a lock taken in a directory leaves there. What is left before a rename
-// (ownPrefixes), an update's download beside an installed conflux among it, is no state either.
-func heldState(dir string, names []string, layouts ...Dirs) bool {
+// heldState reports whether names, what a root holds, hold this installation's own state: a name on own,
+// the list of conflux's names in that root (ownIn), but the service's copy of conflux and the image an
+// update moved aside beside it, which the folder conflux was installed into holds as well, and the lock
+// files, which hold nothing and which a lock taken in a directory leaves there. What is left before a
+// rename (ownPrefixes), an update's download beside an installed conflux among it, is no state either.
+func heldState(names []string, own []ownName) bool {
 	var none Dirs
 
 	exe := filepath.Base(none.ServiceExecutable())
@@ -98,12 +98,8 @@ func heldState(dir string, names []string, layouts ...Dirs) bool {
 			continue
 		}
 
-		for _, d := range layouts {
-			for _, p := range d.own() {
-				if p.path != "" && sameName(filepath.Dir(p.path), dir) && sameName(filepath.Base(p.path), name) {
-					return true
-				}
-			}
+		if slices.ContainsFunc(own, func(o ownName) bool { return sameName(o.name, name) }) {
+			return true
 		}
 	}
 
@@ -493,7 +489,7 @@ type ownPath struct {
 }
 
 // own is every path conflux makes directly in one of d's roots, by its name there: the one list of
-// conflux's names at the top of a root. RemakeOld removes only what is remade (remadeIn): what conflux
+// conflux's names at the top of a root. RemakeOld removes only what is remade (nameIn): what conflux
 // makes again by its name there, losing nothing of the machine's identity, configuration or state --
 // the lock files, the log's folder and the run directory, the extraction, the service's copy of conflux
 // and the image an update moved aside, and anchord's -config, which the supervisor writes at every
@@ -530,12 +526,33 @@ func (d Dirs) own() []ownPath {
 // download. Each is made again, losing nothing.
 var ownPrefixes = []string{".tmp-", ".conflux-"}
 
-// nameIn reports whether name, directly in dir, one of d's roots, is conflux's there (own, ownPrefixes),
-// and whether RemakeOld may remove it for conflux to make again.
-func (d Dirs) nameIn(dir, name string) (ours, remade bool) {
+// ownName is a name conflux makes directly in a root (own), and whether RemakeOld may remove it.
+type ownName struct {
+	name   string
+	remade bool
+}
+
+// ownIn is each name conflux makes directly in dir, one of d's roots (own): the list nameIn looks names
+// up in, built once by a caller for all it looks up.
+func (d Dirs) ownIn(dir string) []ownName {
+	var own []ownName
+
 	for _, p := range d.own() {
-		if p.path != "" && sameName(filepath.Dir(p.path), dir) && sameName(filepath.Base(p.path), name) {
-			return true, p.remade
+		if p.path != "" && sameName(filepath.Dir(p.path), dir) {
+			own = append(own, ownName{filepath.Base(p.path), p.remade})
+		}
+	}
+
+	return own
+}
+
+// nameIn reports whether name, directly in a root, is conflux's there -- on own, the list of conflux's
+// names there (ownIn), or begun as what conflux leaves before a rename is (ownPrefixes) -- and whether
+// RemakeOld may remove it for conflux to make again.
+func nameIn(own []ownName, name string) (ours, remade bool) {
+	for _, o := range own {
+		if sameName(o.name, name) {
+			return true, o.remade
 		}
 	}
 
@@ -558,22 +575,21 @@ func sameName(a, b string) bool {
 	return a == b
 }
 
-// confluxName reports whether name, directly in the root dir, one of d's, is one conflux makes there
-// (nameIn): as d's, or as the installation's root (Default) or an ephemeral run's kept at dir
-// (EphemeralDirs), the two a root of conflux's is, which RemoveRoot, handed a root alone, cannot tell
-// apart.
-func (d Dirs) confluxName(dir, name string) bool {
+// confluxNames is each name conflux makes directly in the root dir, one of d's (ownIn): as d's, or as the
+// installation's root (Default) or an ephemeral run's kept at dir (EphemeralDirs), the two a root of
+// conflux's is, which RemoveRoot, handed a root alone, cannot tell apart.
+func (d Dirs) confluxNames(dir string) []ownName {
+	var own []ownName
+
 	for _, layout := range []Dirs{d, Default(), EphemeralDirs(dir)} {
-		if ours, _ := layout.nameIn(dir, name); ours {
-			return true
-		}
+		own = append(own, layout.ownIn(dir)...)
 	}
 
-	return false
+	return own
 }
 
 // strays refuses the root dir, one of d's, the directory s holds, where it holds a name conflux never
-// makes there (confluxName), naming it, unless it is a working installation's or run's root: one conflux
+// makes there (confluxNames, nameIn), naming it, unless it is a working installation's or run's root: one conflux
 // has secured, owned and left as it secures a root (securedStep), that already holds this installation's
 // own state (heldState). A directory that holds a stray otherwise is somebody else's -- a CONFLUX_DIR at a
 // folder of homes, /root or a home kept at 0700, or a link at a root's name pointed at one -- which conflux
@@ -589,19 +605,21 @@ func (d Dirs) strays(dir, led string, s step) error {
 		return err
 	}
 
+	own := d.confluxNames(dir)
+
 	p := dir
 	if led != "" {
 		p = led
 	}
 
-	if heldState(dir, names, d, Default(), EphemeralDirs(dir)) && securedStep(dir, p, s) == nil {
+	if heldState(names, own) && securedStep(dir, p, s) == nil {
 		return nil
 	}
 
 	slices.Sort(names)
 
 	for _, name := range names {
-		if d.confluxName(dir, name) {
+		if ours, _ := nameIn(own, name); ours {
 			continue
 		}
 

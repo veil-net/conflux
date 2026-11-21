@@ -23,7 +23,7 @@ import (
 // name conflux never makes there where conflux has not secured it (strays), is not conflux's, and is refused with nothing removed. It is held to what
 // secure holds a root to before it changes anything in it (unmovable): its owner SYSTEM, the
 // Administrators or the account running conflux, and nobody else let move what is in it, who could put
-// back what is removed. Then each thing directly in it that conflux makes again by its name there (remadeIn) is
+// back what is removed. Then each thing directly in it that conflux makes again by its name there (own's remade, nameIn) is
 // opened through the root's handle, never followed, and judged as contents judges it for SYSTEM; one
 // that fails is removed, through handles (removeIn), the log folder once the log files in it that pass
 // are moved out into the root (keepLog). A junction or a link at such a name is not
@@ -101,8 +101,10 @@ func remakeOld(d Dirs, dir string) ([]string, error) {
 
 	var removed []string
 
+	own := d.ownIn(dir)
+
 	for _, name := range names {
-		if !d.remadeIn(dir, name) {
+		if _, remade := nameIn(own, name); !remade {
 			continue
 		}
 
@@ -149,7 +151,7 @@ func (d Dirs) logNames() []string {
 }
 
 // keptLog is the name a log file of a logs\ RemakeOld removes waits under in the root, for EnsureAll to
-// move back once it has made logs\ again (makeInside): a name conflux makes again there (remadeIn).
+// move back once it has made logs\ again (makeInside): a name conflux makes again there (own's remade, nameIn).
 func keptLog(name string) string { return ".conflux-kept-" + name }
 
 // keepLog moves each log file in name, the log folder directly in the root root holds open, which p
@@ -346,14 +348,6 @@ type renameInformation struct {
 	rootDirectory   windows.Handle
 	fileNameLength  uint32
 	fileName        [1]uint16
-}
-
-// remadeIn reports whether name, directly in dir, a root of d's, is what conflux makes again by its
-// name there, losing nothing of the machine's identity, configuration or state (own's remade, nameIn).
-func (d Dirs) remadeIn(dir, name string) bool {
-	_, remade := d.nameIn(dir, name)
-
-	return remade
 }
 
 // failsIn is who, besides SYSTEM, the Administrators, TrustedInstaller and anchord, may change name,

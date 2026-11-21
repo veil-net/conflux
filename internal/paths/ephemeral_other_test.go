@@ -39,12 +39,19 @@ func TestEphemeralPassesOverARootAnotherAccountMade(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		roots := emptyOfRoots(t)
-		if err := Foreign(roots); err != nil {
-			t.Fatalf("Foreign(%s, an empty directory of root's) = %v, so ownedRoot is not what passes it over", roots, err)
-		}
+		if roots := emptyOfRoots(t); roots != "" {
+			if err := Foreign(roots); err != nil {
+				t.Fatalf("Foreign(%s, an empty directory of root's) = %v, so ownedRoot is not what passes it over", roots,
+					err)
+			}
 
-		candidates["root's"] = roots
+			candidates["root's"] = roots
+		} else {
+			t.Run("root's", func(t *testing.T) {
+				t.Skip("no empty directory of root's here: /srv, /mnt, /media, /var/opt, /var/local and /var/empty " +
+					"each hold something, belong to another account or are not there")
+			})
+		}
 	}
 
 	dangling := filepath.Join(t.TempDir(), "conflux-ephemeral")
@@ -73,7 +80,8 @@ func TestEphemeralPassesOverARootAnotherAccountMade(t *testing.T) {
 }
 
 // emptyOfRoots is a directory root owns, holding nothing, that no other account may write: one of
-// those a system keeps empty, the first of them there.
+// those a system keeps empty, the first of them there, or "" where none is, as on a macOS or BSD
+// host without /var/empty may be.
 func emptyOfRoots(t *testing.T) string {
 	t.Helper()
 
@@ -87,9 +95,6 @@ func emptyOfRoots(t *testing.T) string {
 			return dir
 		}
 	}
-
-	t.Fatal("no empty directory of root's here: /srv, /mnt, /media, /var/opt, /var/local and /var/empty each " +
-		"hold something, belong to another account or are not there")
 
 	return ""
 }

@@ -249,7 +249,17 @@ On Windows it is any directory on the way owned by an account other than SYSTEM,
 Administrators, TrustedInstaller and the one running conflux, or one whose DACL grants another
 account — by any entry that allows, a conditional one included — the right to delete or rename
 what is in it, to delete or rename the directory itself, or to change its DACL or owner; the
-right to create folders in it, which `C:\` gives every user, is not one of them. A link or
+right to create folders in it, which `C:\` gives every user, is not one of them. For an
+installation's root, the one the boot service runs from, the account running conflux is not among
+those trusted: the service runs as SYSTEM, which trusts no other account, and holds the way to its
+root to that at every start, so a way an administrator's own grant lets through — the folders of
+their profile grant them full control — would be refused there, every time, once the service was
+registered; `up`, `proxy`, `observe`, `enrol`, `install` and `register` hold it to the service's
+rule instead, and refuse it up front, naming the folder. An ephemeral run's root, which no service
+serves, is held for the account running it. conflux tells the two apart by the directories it was
+handed: an ephemeral run's are its own (`paths.EphemeralDirs`), and every other set is an
+installation's. On Unix the service runs as root, as every command that makes an installation's
+root must, so the two rules are one. A link or
 junction on the way is held as well to whoever may point it elsewhere or write it: the right to
 write its data or its attributes is enough to rewrite where a junction leads. A compound entry
 counts as one that allows, for its client, and a DACL holding an entry of a type Windows does

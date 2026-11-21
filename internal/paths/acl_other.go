@@ -212,6 +212,11 @@ func ignoringEINTR(f func() error) error {
 // parentsRule is parents' rule for dir, for the account this process runs as (parentsRuleAs).
 func parentsRule(dir string) judgement { return parentsRuleAs(dir, os.Geteuid()) }
 
+// serviceRule is parents' rule for dir as the boot service holds it at every start: root's, which
+// here is the account every command that makes an installation's root runs as, since each of them
+// needs root -- parentsRule's.
+func serviceRule(dir string) judgement { return parentsRule(dir) }
+
 // parentsRuleAs is parents' rule for dir, for euid: a directory on the way to it is refused where
 // another account may write it -- one whose owner is neither root nor euid, who can always give
 // itself the right, or one whose mode or ACL lets another account write it (writerOf) -- and a link

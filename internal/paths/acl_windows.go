@@ -505,7 +505,8 @@ func secure(dir string) error {
 	// hold against the supervisor (flock.Held) -- or none at all, or a junction conflux did not make,
 	// is repaired, replaced or refused below as an unrestricted root is.
 	if secured(sd) && (root.link == nil || secured(root.link)) {
-		switch who, _, err := changerIn(dir, sd, anyRight, "use it or what is made in it", nil, true); {
+		switch who, _, err := changerIn(dir, currentUser(), sd, anyRight, "use it or what is made in it", nil,
+			true); {
 		case err != nil:
 			return err
 		case who == "":
@@ -525,7 +526,7 @@ func secure(dir string) error {
 	// else may take out what fill puts in the root, and a handle keeps what it was opened with
 	// once the DACL is replaced. %ProgramData%'s grant to Users -- to add to a folder and write its
 	// attributes -- moves nothing, so a root that only inherits it passes.
-	switch who, _, err := changerIn(dir, sd, moves, "move it or what is in it", nil, false); {
+	switch who, _, err := changerIn(dir, currentUser(), sd, moves, "move it or what is in it", nil, false); {
 	case err != nil:
 		return err
 	case who != "":
@@ -839,7 +840,7 @@ func checkRoot(dir string) error {
 		return err
 	}
 
-	switch who, _, err := changerIn(dir, sd, anyRight, "use it or what is made in it", nil, true); {
+	switch who, _, err := changerIn(dir, currentUser(), sd, anyRight, "use it or what is made in it", nil, true); {
 	case err != nil:
 		return err
 	case who != "":
@@ -1107,7 +1108,7 @@ func contents(dir string) error {
 				what = "write it or what is made in it, move it or make a junction of it"
 			}
 
-			who, anchords, err := changer(p, h, retargets, what, anchord, d.IsDir())
+			who, anchords, err := changer(p, currentUser(), h, retargets, what, anchord, d.IsDir())
 			switch {
 			case err != nil:
 				return err
@@ -1128,14 +1129,14 @@ func contents(dir string) error {
 }
 
 // heldLink refuses dir, a junction or a link whose own owner and DACL sd holds, where an account
-// other than those trustedOwner names may point it elsewhere: by owning it, or by a grant of
+// other than those trustedFor names for the account running conflux may point it elsewhere: by owning it, or by a grant of
 // retargets in its DACL. Owners and DACLs read by name follow a junction, so the directory it leads
 // to would otherwise answer for it, and %ProgramData% lets any user make one where
 // %ProgramData%\conflux or conflux-ephemeral is not yet, leading into a directory of SYSTEM's,
 // and point it at one of their own once conflux has filled it, with a conflux.exe for the
 // service to run as SYSTEM. Held as a link is on Unix, by its owner, and here by its DACL too.
 func heldLink(dir string, sd *windows.SECURITY_DESCRIPTOR) error {
-	who, _, err := changerIn(dir, sd, retargets, "point it elsewhere or move it", nil, false)
+	who, _, err := changerIn(dir, currentUser(), sd, retargets, "point it elsewhere or move it", nil, false)
 	if err != nil || who == "" {
 		return err
 	}
@@ -1253,22 +1254,38 @@ const creates = windows.FILE_WRITE_DATA | windows.FILE_APPEND_DATA
 // sidTrustedInstaller is NT SERVICE\TrustedInstaller, which owns much of the system drive.
 var sidTrustedInstaller, _ = windows.StringToSid("S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464")
 
-// parentsRule is parents' rule for dir: a folder on the way to it is refused where an account other
-// than SYSTEM, Administrators, TrustedInstaller and the one running conflux owns it, which lets it
-// grant itself anything, or is granted one of moves on it -- whoever may move a parent can put a
+// parentsRule is parents' rule for dir, for the account running conflux (parentsRuleFor).
+func parentsRule(dir string) judgement { return parentsRuleFor(dir, currentUser()) }
+
+// serviceRule is parents' rule for dir as the boot service holds it at every start: for SYSTEM,
+// which it runs as (parentsRuleFor). An administrator's run trusts its own account as well, and the
+// folders of its profile grant it full control, so a way it took the service would refuse at every
+// start; held to this, up, install and register refuse such a way up front, naming why.
+func serviceRule(dir string) judgement { return parentsRuleFor(dir, sidSystem) }
+
+// parentsRuleFor is parents' rule for dir, for the account self: a folder on the way to it is refused
+// where an account other than SYSTEM, Administrators, TrustedInstaller and self owns it, which lets
+// it grant itself anything, or is granted one of moves on it -- whoever may move a parent can put a
 // directory of their own where dir is, with a conflux in it for the service to run as SYSTEM -- and
 // a link or a junction is held to the same, as itself, and to retargets, since whoever may point it
 // elsewhere may as well. Each is judged by the owner and DACL read through the handle the walk holds
 // it by.
-func parentsRule(dir string) judgement {
+func parentsRuleFor(dir string, self *windows.SID) judgement {
 	return func(p string, s step, link bool) error {
 		where, what, rights := "inside", "move it or what is in it", windows.ACCESS_MASK(moves)
 		if link {
 			where, what, rights = "reached through", "point it elsewhere or move it", retargets
 		}
 
-		who, _, err := changer(p, s.h, rights, what, nil, false)
-		if err == nil && who != "" {
+		who, _, err := changer(p, self, s.h, rights, what, nil, false)
+		switch {
+		case err != nil || who == "":
+		case self != nil && self.Equals(sidSystem) && !isCurrentUser(sidSystem):
+			err = fmt.Errorf("%s is %s %s, which %s could move it aside and put another in its place for conflux "+
+				"to run: the boot service runs as SYSTEM, which trusts nobody else with that, and would refuse it at "+
+				"every start.\n  Choose a CONFLUX_DIR whose every parent only SYSTEM, the Administrators and "+
+				"TrustedInstaller can change, such as one whose way conflux makes", dir, where, p, who)
+		default:
 			err = fmt.Errorf("%s is %s %s, which %s could move it aside and put another in its place for conflux "+
 				"to run.\n  Choose a CONFLUX_DIR whose every parent only SYSTEM, the Administrators and this account "+
 				"can change", dir, where, p, who)
@@ -1282,25 +1299,25 @@ func parentsRule(dir string) judgement {
 // not held to parents' rule (parentsRule).
 func parents(dir string) error { return judgeWay(dir, parentsRule(dir)) }
 
-// changer is changerIn of p, held open as itself by h, over the owner and DACL read through h, and
-// what they allow on p itself, or, where passedOn, on what is made in it too.
-func changer(p string, h windows.Handle, rights windows.ACCESS_MASK, what string,
+// changer is changerIn of p, for self, held open as itself by h, over the owner and DACL read
+// through h, and what they allow on p itself, or, where passedOn, on what is made in it too.
+func changer(p string, self *windows.SID, h windows.Handle, rights windows.ACCESS_MASK, what string,
 	anchord *windows.SID, passedOn bool) (who string, anchords bool, err error) {
 	sd, err := security(h)
 	if err != nil {
 		return "", false, fmt.Errorf("read the ownership of %s: %w", p, err)
 	}
 
-	return changerIn(p, sd, rights, what, anchord, passedOn)
+	return changerIn(p, self, sd, rights, what, anchord, passedOn)
 }
 
-// changerIn is who besides SYSTEM, the Administrators, TrustedInstaller and the account running
-// conflux may change p, whose owner and DACL sd holds, as a refusal names them, or "": its owner,
-// who may grant itself anything, or anybody but anchord, where it is given, its DACL grants one of
-// rights -- on p itself, or, where passedOn, on what is made in it too (mover) -- which lets them
-// what. anchords is whether the DACL grants anchord one of them.
-func changerIn(p string, sd *windows.SECURITY_DESCRIPTOR, rights windows.ACCESS_MASK, what string,
-	anchord *windows.SID, passedOn bool) (who string, anchords bool, err error) {
+// changerIn is who besides SYSTEM, the Administrators, TrustedInstaller and self, the account the
+// judgement is made for (trustedFor), may change p, whose owner and DACL sd holds, as a refusal
+// names them, or "": its owner, who may grant itself anything, or anybody but anchord, where it is
+// given, its DACL grants one of rights -- on p itself, or, where passedOn, on what is made in it too
+// (mover) -- which lets them what. anchords is whether the DACL grants anchord one of them.
+func changerIn(p string, self *windows.SID, sd *windows.SECURITY_DESCRIPTOR, rights windows.ACCESS_MASK,
+	what string, anchord *windows.SID, passedOn bool) (who string, anchords bool, err error) {
 	owner, _, err := sd.Owner()
 	if err != nil {
 		return "", false, fmt.Errorf("read the owner of %s: %w", p, err)
@@ -1312,13 +1329,13 @@ func changerIn(p string, sd *windows.SECURITY_DESCRIPTOR, rights windows.ACCESS_
 	}
 
 	switch {
-	case !trustedOwner(owner):
+	case !trustedFor(owner, self):
 		return "belongs to " + accountName(owner) + ", who", false, nil
 	case dacl == nil:
 		return "has no DACL, so anybody", false, nil
 	}
 
-	sid, anchords, err := mover(dacl, rights, anchord, passedOn)
+	sid, anchords, err := mover(dacl, self, rights, anchord, passedOn)
 	switch {
 	case err != nil:
 		return "", false, fmt.Errorf("read the DACL of %s: %w", p, err)
@@ -1330,12 +1347,12 @@ func changerIn(p string, sd *windows.SECURITY_DESCRIPTOR, rights windows.ACCESS_
 }
 
 // mover is the first account dacl grants one of rights on the object itself, or, where passedOn,
-// on what is made in it too, other than those trustedOwner names and anchord, where it is given, or
-// nil; and whether it grants anchord one of them before it: each entry that allows rights there, as
-// windowsGrants reads them. CREATOR OWNER is not one where rights holds the right to add a file and a
-// folder to the object (creates): it is nobody on the object itself, and passed on, whoever made what
-// it is passed to, whom this same judgement holds to the accounts trustedOwner names.
-func mover(dacl *windows.ACL, rights windows.ACCESS_MASK, anchord *windows.SID,
+// on what is made in it too, other than those trustedFor names for self and anchord, where it is
+// given, or nil; and whether it grants anchord one of them before it: each entry that allows rights
+// there, as windowsGrants reads them. CREATOR OWNER is not one where rights holds the right to add a
+// file and a folder to the object (creates): it is nobody on the object itself, and passed on,
+// whoever made what it is passed to, whom this same judgement holds to the accounts trustedFor names.
+func mover(dacl *windows.ACL, self *windows.SID, rights windows.ACCESS_MASK, anchord *windows.SID,
 	passedOn bool) (*windows.SID, bool, error) {
 	header := unsafe.Slice((*byte)(unsafe.Pointer(dacl)), 8)
 
@@ -1358,7 +1375,7 @@ func mover(dacl *windows.ACL, rights windows.ACCESS_MASK, anchord *windows.SID,
 		case sid.Equals(sidCreatorOwner) && rights&creates == creates:
 			// Nobody on the object itself, and on what it is passed to whoever made that: where rights
 			// holds the right to add to the object, an account this refuses, unless a trusted one.
-		case !trustedOwner(sid):
+		case !trustedFor(sid, self):
 			return sid, anchords, nil
 		}
 	}
@@ -1366,10 +1383,12 @@ func mover(dacl *windows.ACL, rights windows.ACCESS_MASK, anchord *windows.SID,
 	return nil, anchords, nil
 }
 
-// trustedOwner is whom trusted names, or TrustedInstaller: somebody who could change anything
-// on the machine, or this conflux itself.
-func trustedOwner(sid *windows.SID) bool {
-	return trusted(sid) || sidTrustedInstaller != nil && sid.Equals(sidTrustedInstaller)
+// trustedFor is SYSTEM, the Administrators, TrustedInstaller or self, where self is known: somebody
+// who could change anything on the machine, or the account a judgement is made for -- the one
+// running conflux (currentUser), or SYSTEM, the boot service's (serviceRule).
+func trustedFor(sid, self *windows.SID) bool {
+	return sid.Equals(sidSystem) || sid.Equals(sidAdmins) || self != nil && sid.Equals(self) ||
+		sidTrustedInstaller != nil && sid.Equals(sidTrustedInstaller)
 }
 
 // accountName is sid as DOMAIN\account (SID), or the SID alone where it names nobody.

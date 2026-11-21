@@ -15,6 +15,15 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// These tests root what they make on a way the boot service trusts (privtest.ServiceTemp), since
+// EnsureAll holds an installation's way to the rule SYSTEM holds it to, which the profile of the
+// administrator running them, where %TEMP% is, does not pass.
+func init() {
+	if err := privtest.ServiceTemp(); err != nil {
+		panic("paths: " + err.Error())
+	}
+}
+
 // TestEnsureAllGivesTheRootToAdministrators: the root is made SYSTEM's and
 // Administrators', with a DACL %ProgramData%'s grants to Users cannot flow back into,
 // and what is created beneath it afterwards inherits that.
@@ -629,13 +638,13 @@ func TestARootIsMadeWithItsDACL(t *testing.T) {
 	privtest.DenyOwnersTheirDACL(t, parent)
 
 	made := filepath.Join(parent, "made")
-	if err := makeRoot(made); err != nil {
+	if err := makeRoot(made, parentsRule(made)); err != nil {
 		t.Fatalf("makeRoot: %v", err)
 	}
 
 	onlyTheSystems(t, made)
 
-	if err := makeRoot(made); err != nil {
+	if err := makeRoot(made, parentsRule(made)); err != nil {
 		t.Errorf("makeRoot of a root already there: %v", err)
 	}
 
@@ -712,6 +721,49 @@ func TestTheWayConfluxMakesIsItsOwn(t *testing.T) {
 		}
 
 		windows.CloseHandle(h)
+	}
+}
+
+// TestAnInstallationsWayIsJudgedAsTheServiceJudgesIt: the boot service runs as SYSTEM, and holds the
+// way to its root, at every start, to parents' rule for SYSTEM, which trusts no other account; so
+// EnsureAll holds an installation's way to that rule, whoever runs it. A CONFLUX_DIR inside a folder
+// granting this account full control, as the profile of the administrator running conflux does, is
+// refused, naming the folder and the service, with nothing made in it, though this account's own
+// rule takes it; an ephemeral run's root inside that CONFLUX_DIR, which no service serves, is made
+// there, and passes the readers' check, which judges for the account reading. Windows-only, so it
+// runs in CI's platforms job alone.
+func TestAnInstallationsWayIsJudgedAsTheServiceJudgesIt(t *testing.T) {
+	profile := filepath.Join(t.TempDir(), "profile")
+	if err := os.Mkdir(profile, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	privtest.Grant(t, profile, currentUser(), fileAllAccess, windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT)
+
+	root := filepath.Join(profile, "conflux")
+	t.Setenv("CONFLUX_DIR", root)
+
+	if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), root+" is inside "+profile+", which grants ") ||
+		!strings.Contains(err.Error(), "the boot service runs as SYSTEM") {
+		t.Errorf("EnsureAll(an installation inside a folder granting this account full control) = %v, want a refusal "+
+			"naming the folder and the service", err)
+	}
+
+	if _, err := os.Lstat(root); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("EnsureAll made %s on a way it refused (%v)", root, err)
+	}
+
+	d, err := Ephemeral()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := d.EnsureAll(); err != nil {
+		t.Errorf("EnsureAll(an ephemeral run's root inside %s) = %v", root, err)
+	}
+
+	if err := Foreign(d.State); err != nil {
+		t.Errorf("Foreign(an ephemeral run's root EnsureAll made inside %s) = %v", root, err)
 	}
 }
 

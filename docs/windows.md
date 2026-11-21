@@ -114,7 +114,12 @@ it is walked from the top of its volume, each folder held open through a handle 
 never followed, and a junction or a link read off itself and gone on from where it leads; for a
 `CONFLUX_DIR`, each folder there is held, before a name is looked up in it, to the rule the way to
 one is held to ([security.md](security.md#the-extracted-binaries)): nobody else may move what is in
-it. The folders missing are made from the last one held, each through a handle on the one before,
+it. For an installation's root that is the rule the service, running as SYSTEM, holds the way to at
+every start, which trusts no account but SYSTEM, the Administrators and TrustedInstaller: the folders
+of an administrator's profile, which grant them full control, pass that administrator's own rule
+and not the service's, so a `CONFLUX_DIR` there is refused by the commands that make an
+installation's root, before the service is registered to refuse it at every start; an ephemeral
+run's root is held for the account running it. The folders missing are made from the last one held, each through a handle on the one before,
 never by their names, since `C:\` lets every user make a folder where the next is to go, and the
 owner of a folder on the way may make anything in it. Each is made exactly as the root is, the
 Administrators' from the moment it exists, under a protected DACL granting SYSTEM and the

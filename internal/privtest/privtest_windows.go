@@ -1,6 +1,7 @@
 package privtest
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sync/atomic"
@@ -82,6 +83,69 @@ func GrantUsers(tb testing.TB, path string, access windows.ACCESS_MASK, inherit 
 	tb.Helper()
 
 	addEntry(tb, path, usersGranted(access, inherit))
+}
+
+// Grant gives the account sid access to path, as GrantUsers gives Users: the folder of an
+// administrator's profile, which grants that account full control, among what it stands for.
+func Grant(tb testing.TB, path string, sid *windows.SID, access windows.ACCESS_MASK, inherit uint32) {
+	tb.Helper()
+
+	e := usersGranted(access, inherit)
+	e.Trustee.TrusteeType, e.Trustee.TrusteeValue = windows.TRUSTEE_IS_USER, windows.TrusteeValueFromSID(sid)
+
+	addEntry(tb, path, e)
+}
+
+// ServiceTemp points this process's temporary directory -- TMP and TEMP, which os.TempDir, and so
+// a test's TempDir, read -- at conflux-tests on the system drive, a folder only SYSTEM and the
+// Administrators may change: the Administrators', under a protected DACL granting the two of them
+// full control and nobody else anything, as conflux makes a root, made so where it is not there
+// yet, and kept for the next run. A CONFLUX_DIR a test roots there is on a way the boot service,
+// SYSTEM, trusts, which conflux holds an installation's way to; %TEMP%, in the profile of the
+// administrator running the tests, grants that account full control, which SYSTEM does not trust.
+// What a test makes there inherits that DACL, and is owned as the token's policy says: on Windows
+// Server, which CI runs, by the Administrators.
+func ServiceTemp() error {
+	drive := os.Getenv("SystemDrive")
+	if drive == "" {
+		drive = "C:"
+	}
+
+	dir := drive + `\conflux-tests`
+
+	name, err := windows.UTF16PtrFromString(dir)
+	if err != nil {
+		return err
+	}
+
+	for _, sddl := range []string{"O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)", "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"} {
+		sd, err := windows.SecurityDescriptorFromString(sddl)
+		if err != nil {
+			return err
+		}
+
+		err = windows.CreateDirectory(name, &windows.SecurityAttributes{
+			Length:             uint32(unsafe.Sizeof(windows.SecurityAttributes{})),
+			SecurityDescriptor: sd,
+		})
+		if errors.Is(err, windows.ERROR_INVALID_OWNER) {
+			continue // a token that may not name the Administrators its owner: its own, then
+		}
+
+		if err != nil && !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+			return fmt.Errorf("make %s: %w", dir, err)
+		}
+
+		break
+	}
+
+	for _, v := range []string{"TMP", "TEMP"} {
+		if err := os.Setenv(v, dir); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // ProgramDataGrant gives Users, on dir and every folder made in it, what %ProgramData% gives them:

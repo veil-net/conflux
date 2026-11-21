@@ -1,6 +1,8 @@
 // Package pathstest is for tests that need conflux's directories, and only for tests.
 //
-// It imports paths alone, so any package's tests can use it, config's and libexec's among them.
+// It imports paths alone, and on Windows privtest, which imports nothing of conflux's, so any
+// package's tests can use it, config's and libexec's among them. On Windows every test linking it
+// roots what it makes on a way the boot service trusts (pathstest_windows.go).
 package pathstest
 
 import (

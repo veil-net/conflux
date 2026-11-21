@@ -28,12 +28,17 @@ import (
 	"strings"
 )
 
-// Dirs are the four roots. Get one from Default.
+// Dirs are the four roots. Get one from Default, or an ephemeral run's from EphemeralDirs.
 type Dirs struct {
 	Config string
 	State  string
 	Run    string
 	Log    string
+
+	// ephemeral is whether these are an ephemeral run's (EphemeralDirs), which runs as whoever starts
+	// it and no service ever serves; every other Dirs is an installation's, whose roots the boot
+	// service serves, so EnsureAll holds a CONFLUX_DIR's way to the service's rule (wayRule).
+	ephemeral bool
 }
 
 // Default is where this platform keeps them.
@@ -243,8 +248,9 @@ func (d Dirs) ReadyFile() string { return filepath.Join(d.Run, "ready") }
 // lets that account create nothing. On
 // Windows, where a mode means nothing, each root that is not inside another is made
 // SYSTEM's and Administrators' instead, as it is created where it is not there yet
-// (makeRoot), and what is created beneath it inherits that. The system's shared log
-// directory is not conflux's, and is left alone.
+// (makeRoot), and what is created beneath it inherits that. A CONFLUX_DIR's way is held to the
+// rule of whoever the root is for (wayRule). The system's shared log directory is not
+// conflux's, and is left alone.
 func (d Dirs) EnsureAll() error {
 	defer Judging()()
 
@@ -257,7 +263,7 @@ func (d Dirs) EnsureAll() error {
 			continue
 		}
 
-		if err := makeRoot(dir); err != nil {
+		if err := makeRoot(dir, d.wayRule(dir)); err != nil {
 			return fmt.Errorf("create %s: %w", dir, err)
 		}
 
@@ -267,6 +273,18 @@ func (d Dirs) EnsureAll() error {
 	}
 
 	return nil
+}
+
+// wayRule is the rule the way to d's root dir is held to as EnsureAll makes it: the boot service's
+// (serviceRule) for an installation's root, which the service runs from at every start and judges
+// the way to as it starts, so that a command making it refuses up front what the service would
+// refuse; parents' for the account running conflux (parentsRule) for an ephemeral run's.
+func (d Dirs) wayRule(dir string) judgement {
+	if d.ephemeral {
+		return parentsRule(dir)
+	}
+
+	return serviceRule(dir)
 }
 
 // roots is each of d's directories that is conflux's, once: every one set but the system's shared
@@ -295,9 +313,10 @@ func (d Dirs) roots() iter.Seq2[string, bool] {
 // EnsureAll, and changes nothing: a root that fails is refused, saying why, and none is made or
 // narrowed. Each is held, as itself where it is a link, to its owner, which must be root, SYSTEM,
 // the Administrators or the account running conflux, and to who else may retarget or write it,
-// which must be nobody -- on Windows by the DACL a secured root keeps (secure), a link at its name
-// that leads off this machine refused; on Unix by its mode and its ACL as found, the sticky bit
-// letting nothing through. A CONFLUX_DIR is held to its parents too, as EnsureAll holds them, a link
+// which must be nobody -- on Windows by the DACL a secured root keeps (secure), which grants nobody
+// else anything, a link at its name that leads off this machine refused; on Unix by its mode and its
+// ACL as found, the sticky bit letting nothing through. A CONFLUX_DIR is held to its parents too, by
+// the rule EnsureAll makes its way by, for the account running conflux (parentsRule), a link
 // anywhere on its way that leads off this machine refused on Windows (walk). What
 // a root holds is not judged: EnsureAll goes into it, and Foreign, which is this and that, and
 // this does not.
@@ -592,14 +611,12 @@ func judgeWay(dir string, rule judgement) error {
 
 // makeRoot creates the root dir where it is not there yet, and each directory missing on the way to
 // it, from the last directory there that the walk to it holds open (makeWay). A CONFLUX_DIR's way is
-// held to parents' rule (parentsRule) as far as it is there, before anything is made, and makeWay
-// holds the rest to it as it goes: every directory a lookup of dir looks a name up in, and every link
+// held to rule, parents' rule for whoever the root is for (wayRule), as far as it is there, before
+// anything is made, and makeWay holds the rest to it as it goes: every directory a lookup of dir looks a name up in, and every link
 // it follows, is judged once, here and nowhere else: secure, which EnsureAll calls after it, judges
 // the root and what it holds, and not its way. Anything already at the root's name is secure's; and a link that leads nowhere is
 // refused by the walk, with nothing made where it leads.
-func makeRoot(dir string) error {
-	rule := parentsRule(dir)
-
+func makeRoot(dir string, rule judgement) error {
 	judge := judgement(nil)
 	if chosen(dir) {
 		judge = rule

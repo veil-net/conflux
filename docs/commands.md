@@ -669,8 +669,9 @@ an older install as it is:
 - the service is stopped where a supervisor still serves the root, asked of the supervisor's lock
   through the root held, never by its name: a `CONFLUX_DIR` whose way another account may change, as
   the [readers' check](#a-root-another-account-could-change) judges it, is refused there, exit 1,
-  naming it, with nothing stopped; a root not as conflux makes one holds no lock anybody serves. It is
-  stopped only where the service manager says it runs — starting, running or stopping, its process
+  naming it, with nothing stopped; a root not as conflux makes one holds no lock conflux reads, and a
+  supervisor may still serve it, so the service is stopped there too, before the root is made
+  afresh. It is stopped only where the service manager says it runs — starting, running or stopping, its process
   not yet gone, so a stop under way is waited for — and only what was stopped is started again,
   on the new conflux, however the command ends: by `start`'s restart, by `register`, which starts
   nothing it did not stop, and by either where anything after this fails. A supervisor that still

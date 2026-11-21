@@ -401,6 +401,43 @@ func TestAStartRemakesARootNotAsConfluxMakesOne(t *testing.T) {
 	}
 }
 
+// TestAnUpdateStopsTheServiceServingARootNotAsConfluxMakesOne: a root a supervisor serves that is not as
+// conflux makes one -- every account may write it -- holds no serve lock conflux reads, yet the
+// supervisor still runs from it, so the conflux an update put in place stops the service before it
+// removes the root and makes it afresh, and starts it again once it is done.
+func TestAnUpdateStopsTheServiceServingARootNotAsConfluxMakesOne(t *testing.T) {
+	anchortest.Require(t) // it extracts the pair afresh
+
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	for _, verb := range []string{"register", "start"} {
+		t.Run(verb, func(t *testing.T) {
+			d := configured(t)
+
+			mgr := &stopping{fakeManager: fakeManager{d: d}, running: true, release: serving(t, d)}
+			standInService(t, mgr)
+
+			if err := os.Chmod(d.State, 0o777); err != nil {
+				t.Fatal(err)
+			}
+
+			stoppedFirst := false
+			mgr.asked = func() {
+				_, err := os.Lstat(d.ConfigFile())
+				stoppedFirst = err == nil
+			}
+
+			out, errOut, code := capture(t, verb)
+			if mgr.stops != 1 || !stoppedFirst || mgr.restarts != 1 {
+				t.Errorf("conflux %s of a root every account may write that a supervisor serves exited %d, stopped the "+
+					"service %d times (before the root was made afresh: %v) and started it %d, want once each, the "+
+					"stop first:\n%s%s", verb, code, mgr.stops, stoppedFirst, mgr.restarts, out, errOut)
+			}
+		})
+	}
+}
+
 // TestAnUpdateStopsNothingOnAWayItRefuses: the conflux an update put in place stops a supervisor
 // serving the root before it removes what earlier conflux left, but only once it has judged the way to
 // a CONFLUX_DIR, as the readers' check does: a root inside a directory every account may write, which

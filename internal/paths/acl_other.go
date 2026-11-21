@@ -28,9 +28,8 @@ type usersOf interface {
 	Users(name, gid string) ([]string, error)
 }
 
-// Restrict and Trusted are Windows's. Here a mode set on the descriptor and a 0700
-// directory that belongs to whoever runs conflux are the whole of it, and EnsureAll is
-// what makes sure of the second.
+// Restrict is Windows's. Here a mode set on the descriptor and a 0700 directory that belongs to
+// whoever runs conflux are the whole of it, and EnsureAll is what makes sure of the second.
 
 // Restrict is a no-op here.
 func Restrict(string, bool) error { return nil }
@@ -67,9 +66,6 @@ func ours(dir string, s step, _ bool) (string, error) {
 // ElevatedDefaultOwner is a no-op here: what conflux makes is the account's that makes it, root's
 // for an installation's root, which every command making it runs as.
 func ElevatedDefaultOwner() error { return nil }
-
-// Trusted is always true here.
-func Trusted(string) bool { return true }
 
 // aLink is what makeWay calls a link made where it was making a directory.
 const aLink = "a link"

@@ -103,6 +103,8 @@ func (*launchd) Installed() (bool, error) { return exists(plistPath()) }
 // and the one Describe needs.
 func (j launchdJob) running() bool { return jobRunning(j.print()) }
 
+func (*launchd) Running() bool { return job().running() }
+
 func (*launchd) LogHint() string { return privcheck.Command("tail", "-n", "50", logFile()) }
 
 func (l *launchd) Describe() string {
@@ -111,7 +113,7 @@ func (l *launchd) Describe() string {
 		return "not installed"
 	}
 
-	if job().running() {
+	if l.Running() {
 		return fmt.Sprintf("running (launchd: %s, at boot)", Label())
 	}
 

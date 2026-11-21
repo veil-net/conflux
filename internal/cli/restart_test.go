@@ -47,6 +47,7 @@ func (m *fakeManager) Install(exe string, args ...string) error {
 
 func (m *fakeManager) Remove() error            { return nil }
 func (m *fakeManager) Stop() error              { return nil }
+func (m *fakeManager) Running() bool            { return false }
 func (m *fakeManager) Installed() (bool, error) { return true, nil }
 func (m *fakeManager) Describe() string         { return "fake" }
 func (m *fakeManager) LogHint() string          { return "fake" }

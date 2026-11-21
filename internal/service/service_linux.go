@@ -96,6 +96,16 @@ func (s systemd) Remove() error {
 
 func (systemd) Stop() error { return run("systemctl", "stop", unitName()) }
 
+// Running asks systemd for the unit's main process, which a unit starting, running or stopping has,
+// and one waiting to be restarted has not: a Type=notify unit is still activating until its supervisor
+// says it is up, and runs all that time.
+func (systemd) Running() bool {
+	out, _ := query("systemctl", "show", unitName(), "--property=MainPID")
+	pid, ok := strings.CutPrefix(out, "MainPID=")
+
+	return ok && pid != "" && pid != "0"
+}
+
 // Restart clears a failed unit first: one started too often in a row refuses every
 // start until its interval has passed, and an operator's start is not one of a loop.
 func (systemd) Restart() error {

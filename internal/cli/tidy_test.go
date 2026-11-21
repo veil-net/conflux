@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -285,13 +286,24 @@ func mustRead(t *testing.T, path string) []byte {
 }
 
 // stopping is the stand-in service manager for a supervisor serving the root, holding its serve
-// lock: Stop counts, and lets go of that lock where it is given release, as a supervisor stopping
+// lock: running is what it says of the service, and asked, it does asked first, where it is given
+// that; Stop counts, and lets go of that lock where it is given release, as a supervisor stopping
 // does.
 type stopping struct {
 	fakeManager
 
+	running bool
+	asked   func()
 	release func()
 	stops   int
+}
+
+func (m *stopping) Running() bool {
+	if m.asked != nil {
+		m.asked()
+	}
+
+	return m.running
 }
 
 func (m *stopping) Stop() error {
@@ -351,7 +363,7 @@ func TestTidyStartsAgainTheServiceItStopped(t *testing.T) {
 		t.Run(verb, func(t *testing.T) {
 			d := configured(t)
 
-			mgr := &stopping{fakeManager: fakeManager{d: d}, release: serving(t, d)}
+			mgr := &stopping{fakeManager: fakeManager{d: d}, running: true, release: serving(t, d)}
 			standInService(t, mgr)
 
 			if verb == "start" {
@@ -374,35 +386,65 @@ func TestTidyStartsAgainTheServiceItStopped(t *testing.T) {
 	}
 }
 
-// TestTidyStartsAgainWhatItStoppedWhenItFails: a supervisor that still serves the root once the boot
-// service is stopped -- one started by hand -- leaves what earlier conflux left in use, and the update
-// is refused, saying so, with nothing removed or registered; and the service it stopped is started
-// again, left as it was found.
-func TestTidyStartsAgainWhatItStoppedWhenItFails(t *testing.T) {
+// TestTidyStartsNothingBesideASupervisorRunByHand: a supervisor that serves the root once the boot
+// service is stopped, or that serves it with no service running, is one the boot service did not start
+// -- one run by hand -- which leaves what earlier conflux left in use: the update is refused, naming
+// it, with nothing removed or registered, and nothing is started, since a service started beside it
+// would find it there and exit. A service the service manager says is not running is not stopped.
+func TestTidyStartsNothingBesideASupervisorRunByHand(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
 
 	for _, verb := range []string{"register", "start"} {
-		t.Run(verb, func(t *testing.T) {
-			d := configured(t)
-			serving(t, d)
+		for _, running := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/running=%v", verb, running), func(t *testing.T) {
+				d := configured(t)
+				serving(t, d)
 
-			mgr := &stopping{fakeManager: fakeManager{d: d}}
-			standInService(t, mgr)
+				mgr := &stopping{fakeManager: fakeManager{d: d}, running: running}
+				standInService(t, mgr)
 
-			out, errOut, code := capture(t, verb)
+				out, errOut, code := capture(t, verb)
 
-			if code != ExitError || !strings.Contains(errOut, "still serves "+d.State) {
-				t.Errorf("conflux %s beside a supervisor that still serves the root exited %d, want %d saying so:\n%s%s",
-					verb, code, ExitError, out, errOut)
-			}
+				if code != ExitError || !strings.Contains(errOut, d.State) || !strings.Contains(errOut, "run by hand") {
+					t.Errorf("conflux %s beside a supervisor run by hand exited %d, want %d naming it:\n%s%s",
+						verb, code, ExitError, out, errOut)
+				}
 
-			if mgr.stops != 1 || len(mgr.installs) != 0 || mgr.restarts != 1 {
-				t.Errorf("conflux %s stopped the service %d times, registered it %d and started it %d, "+
-					"want it stopped, nothing registered, and started again", verb, mgr.stops, len(mgr.installs),
-					mgr.restarts)
-			}
-		})
+				stops := 0
+				if running {
+					stops = 1
+				}
+
+				if mgr.stops != stops || len(mgr.installs) != 0 || mgr.restarts != 0 {
+					t.Errorf("conflux %s stopped the service %d times, registered it %d and started it %d, "+
+						"want it stopped %d times, and nothing registered or started", verb, mgr.stops,
+						len(mgr.installs), mgr.restarts, stops)
+				}
+			})
+		}
+	}
+}
+
+// TestTidyStartsAgainOnlyWhatItStopped: a supervisor serving the root that the service manager says
+// is not the boot service's -- one run by hand, gone as it is asked -- is not stopped, and the boot
+// service is not started after: register, which starts nothing it did not stop, starts nothing.
+func TestTidyStartsAgainOnlyWhatItStopped(t *testing.T) {
+	anchortest.Require(t) // it extracts the pair afresh
+
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	d := configured(t)
+
+	mgr := &stopping{fakeManager: fakeManager{d: d}, asked: serving(t, d)}
+	standInService(t, mgr)
+
+	out, errOut, code := capture(t, "register")
+	if code != ExitOK || mgr.stops != 0 || len(mgr.installs) != 1 || mgr.restarts != 0 {
+		t.Errorf("conflux register beside a supervisor gone as the service manager was asked exited %d, stopped "+
+			"the service %d times, registered it %d and started it %d, want %d, registered once and nothing "+
+			"else:\n%s%s", code, mgr.stops, len(mgr.installs), mgr.restarts, ExitOK, out, errOut)
 	}
 }
 

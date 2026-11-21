@@ -50,6 +50,11 @@ type Manager interface {
 
 	Stop() error
 
+	// Running reports whether the service manager says the service runs: its process started, or
+	// starting, and not yet stopped. tidy asks it before it stops the service for an update, so that
+	// what it starts again after is only what it stopped.
+	Running() bool
+
 	// Restart is an operator's start -- `up`, `proxy`, `start` -- and nothing else calls it,
 	// so it starts a service the manager had given up on as well.
 	Restart() error

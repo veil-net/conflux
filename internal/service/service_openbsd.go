@@ -49,6 +49,12 @@ func (openbsd) Remove() error {
 func (openbsd) Stop() error    { return run("rcctl", "stop", rcName()) }
 func (openbsd) Restart() error { return run("rcctl", "restart", rcName()) }
 
+func (openbsd) Running() bool {
+	_, running := query("rcctl", "check", rcName())
+
+	return running
+}
+
 func (openbsd) Installed() (bool, error) { return exists(scriptPath()) }
 
 func (o openbsd) Describe() string {
@@ -56,7 +62,7 @@ func (o openbsd) Describe() string {
 		return "not installed"
 	}
 
-	if _, running := query("rcctl", "check", rcName()); running {
+	if o.Running() {
 		return fmt.Sprintf("running (rc.d: %s, enabled at boot)", rcName())
 	}
 

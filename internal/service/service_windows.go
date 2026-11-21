@@ -210,6 +210,23 @@ func (scm) Stop() error {
 	return notRegistered(withService(windows.SC_MANAGER_ALL_ACCESS, windows.SERVICE_ALL_ACCESS, stopService))
 }
 
+// Running asks the SCM whether the service is running or starting (runs).
+func (scm) Running() bool {
+	running := false
+
+	_ = withService(windows.SC_MANAGER_CONNECT, windows.SERVICE_QUERY_STATUS, func(s *mgr.Service) error {
+		status, err := s.Query()
+		running = err == nil && runs(status.State)
+
+		return nil
+	})
+
+	return running
+}
+
+// runs reports whether a service in state runs, as Running and Describe tell it: running, or starting.
+func runs(state svc.State) bool { return state == svc.Running || state == svc.StartPending }
+
 func (scm) Restart() error {
 	return notRegistered(withService(windows.SC_MANAGER_ALL_ACCESS, windows.SERVICE_ALL_ACCESS, func(s *mgr.Service) error {
 		_ = stopService(s)
@@ -246,7 +263,7 @@ func (scm) Describe() string {
 	err := withService(windows.SC_MANAGER_CONNECT, windows.SERVICE_QUERY_STATUS, func(s *mgr.Service) error {
 		described = fmt.Sprintf("installed, not running (service: %s, automatic at boot)", paths.ServiceName())
 
-		if status, err := s.Query(); err == nil && (status.State == svc.Running || status.State == svc.StartPending) {
+		if status, err := s.Query(); err == nil && runs(status.State) {
 			described = fmt.Sprintf("running (service: %s, automatic at boot)", paths.ServiceName())
 		}
 

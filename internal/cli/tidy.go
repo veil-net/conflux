@@ -28,8 +28,9 @@ import (
 //   - The service is stopped where a supervisor serves the root, asked of its serve lock through the
 //     root held (flock.HeldIn), since nothing has judged the root yet: a way to a CONFLUX_DIR that
 //     another account may change, or a root conflux would refuse to follow or another account owns, is
-//     refused there, before anything is stopped. stopped says it was, for the caller to start it
-//     again, on this conflux, however it ends (startAgain).
+//     refused there, before anything is stopped. A supervisor the boot service did not start -- one
+//     run by hand -- is refused too, with nothing removed (stopServing). stopped says the service was
+//     stopped, for the caller to start it again, on this conflux, however it ends (startAgain).
 //   - What conflux makes again by its name in an installation's root and finds failing the rule the
 //     SYSTEM service holds it to -- an older conflux's on a Windows client, the administrator's own --
 //     is removed through handles (paths' RemakeOld), and anything else failing it refused; then the
@@ -62,11 +63,9 @@ func tidy(d paths.Dirs, mgr service.Manager) (stopped bool, err error) {
 	case err != nil:
 		return false, err
 	case held:
-		if err := mgr.Stop(); err != nil {
-			return false, err
+		if stopped, err = stopServing(d, mgr); err != nil {
+			return stopped, err
 		}
-
-		stopped = true
 	}
 
 	remade, err := d.RemakeOld()
@@ -78,14 +77,15 @@ func tidy(d paths.Dirs, mgr service.Manager) (stopped bool, err error) {
 		return stopped, err
 	}
 
+	// One that took the root since is no service tidy stopped either, and nothing is started beside it.
 	unlock, ok, err := flock.TryAcquire(d.ServeLockFile())
 
 	switch {
 	case err != nil:
 		return stopped, err
 	case !ok:
-		return stopped, fmt.Errorf("a conflux supervisor still serves %s with the boot service stopped, so what "+
-			"earlier conflux left there cannot be removed.\n  Stop it, then run this again", d.State)
+		return false, fmt.Errorf("a conflux supervisor started serving %s as what earlier conflux left there was "+
+			"being removed, so the rest cannot be, and nothing was started.\n  Stop it, then run this again", d.State)
 	}
 
 	_, err = daemon.ReapOrphan(d)
@@ -122,6 +122,31 @@ func tidy(d paths.Dirs, mgr service.Manager) (stopped bool, err error) {
 	}
 
 	return stopped, remakeErr
+}
+
+// stopServing stops the boot service, for a root a supervisor serves, and says whether it stopped it:
+// where the service manager says it runs, Stop. Then the serve lock is asked after again: still held,
+// its holder is a supervisor the boot service did not start -- one run by hand -- which is refused,
+// naming it, before anything is removed; and nothing is started again, since the service, started,
+// would find that supervisor there and exit.
+func stopServing(d paths.Dirs, mgr service.Manager) (bool, error) {
+	running := mgr.Running()
+	if running {
+		if err := mgr.Stop(); err != nil {
+			return false, err
+		}
+	}
+
+	switch held, err := flock.HeldIn(d, d.ServeLockFile()); {
+	case err != nil:
+		return running, err
+	case held:
+		return false, fmt.Errorf("a conflux supervisor the boot service did not start -- one run by hand -- serves "+
+			"%s, so what earlier conflux left there cannot be removed, and nothing was started.\n  Stop it, then "+
+			"run this again", d.State)
+	}
+
+	return running, nil
 }
 
 // leftBehind warns of err, what tidy could not remove of what the next supervisor or ephemeral run

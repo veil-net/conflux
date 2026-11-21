@@ -666,11 +666,13 @@ so an update works on an older install as it is:
 - the service is stopped where a supervisor still serves the root, asked of the supervisor's lock
   through the root held, never by its name: a `CONFLUX_DIR` whose way another account may change, as
   the [readers' check](#a-root-another-account-could-change) judges it, or a root conflux would not
-  follow or another account owns, is refused there, exit 1, naming it, with nothing stopped. One that
-  was serving is started again, on the new conflux, however the command ends: by
-  `start`'s restart, by `register`, which starts nothing it did not stop, and by either where
-  anything after this fails. A supervisor that still serves the root with the service stopped —
-  one started by hand — is refused, exit 1, naming the root, with nothing removed;
+  follow or another account owns, is refused there, exit 1, naming it, with nothing stopped. It is
+  stopped only where the service manager says it runs, and only what was stopped is started again,
+  on the new conflux, however the command ends: by `start`'s restart, by `register`, which starts
+  nothing it did not stop, and by either where anything after this fails. A supervisor that still
+  serves the root once the service is stopped, or with no service running — one started by hand — is
+  refused, exit 1, naming the root, with nothing removed and nothing started, since the service,
+  started beside it, would find it there and exit;
 - on Windows, what conflux makes again by its name in the root — `logs\`, `run\`, the lock files,
   `bin\`, the service's copy and the image moved aside, `anchord.json`, and what an atomic write or
   a copy left before its rename — that the service, running as SYSTEM, would refuse is removed
@@ -678,7 +680,10 @@ so an update works on an older install as it is:
   administrator's own, which a handle opened then could still change. Anything else the service
   would refuse — the identity, the configuration, the state — is refused, naming it, with nothing
   removed after ([windows.md](windows.md#file-permissions)). Then the roots are secured, as at
-  every start, and the supervisor's lock held, so none starts meanwhile;
+  every start, and the supervisor's lock held, so none starts meanwhile. A supervisor that took the
+  root in the moment since it was asked after is refused there, exit 1, naming the root, with
+  nothing started: by then the roots are secured, and on Windows what the service would refuse is
+  gone;
 - the `anchord` a supervisor that died left running is stopped, and the run directory emptied —
   token, readiness marker, pid record, `anchord`'s socket directory — for the next supervisor to
   make again;

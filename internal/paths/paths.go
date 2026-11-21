@@ -986,6 +986,11 @@ func (d Dirs) OpenIn(path string) (*os.File, error) {
 	return openIn(r.dir, filepath.Base(path), path)
 }
 
+// errNotDir is lookUp's refusal of what is at a name that is neither a directory nor a link, by the type
+// the system read of it rather than the error an open of it failed with; it is syscall.ENOTDIR to
+// errors.Is, as the walk's refusals say.
+var errNotDir = fmt.Errorf("%w", syscall.ENOTDIR)
+
 // opening is called once OpenIn holds the root dir, before it opens anything in it: nothing, but where
 // a test puts another root at the name meanwhile.
 var opening = func(string) {}
@@ -1083,7 +1088,7 @@ func holdRoot(dir string) (*rootHold, error) {
 		w.close()
 
 		return nil, &os.PathError{Op: "open", Path: dir, Err: err}
-	case errors.Is(err, syscall.ENOTDIR):
+	case errors.Is(err, errNotDir):
 		r.notDir = true
 
 		way := "Move it out of the way, then run this again"

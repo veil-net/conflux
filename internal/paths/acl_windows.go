@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -188,7 +187,8 @@ func openTop(vol string) (step, error) {
 // lookUp is what is at name in the folder parent holds open, held open as itself to read who may
 // change it, and whether it is a junction or a link (a name surrogate, as nameSurrogate reads one):
 // looked up there and nowhere else, never followed, nor reparsed anywhere (ntOpen). Anything else
-// that is not a folder is refused, and nothing at the name is an error that is fs.ErrNotExist.
+// that is not a folder, by its attributes, is refused as errNotDir, and nothing at the name is an error
+// that is fs.ErrNotExist.
 func lookUp(parent step, name string) (step, bool, error) {
 	h, err := ntOpen(parent.h, name, nil, windows.SYNCHRONIZE|readAccess, windows.FILE_OPEN, 0)
 	if err != nil {
@@ -202,7 +202,7 @@ func lookUp(parent step, name string) (step, bool, error) {
 	case attributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 && tag&reparseTagNameSurrogate != 0:
 		return step{h}, true, nil
 	case attributes&windows.FILE_ATTRIBUTE_DIRECTORY == 0:
-		err = syscall.ENOTDIR
+		err = errNotDir
 	default:
 		return step{h}, false, nil
 	}

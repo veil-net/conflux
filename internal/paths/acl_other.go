@@ -99,8 +99,9 @@ func openTop(string) (step, error) {
 
 // lookUp is what is at name in the directory parent is, and whether it is a link: a directory, held
 // open as itself (opened), or by its name where this account may search it and not read it; or a
-// link, by its name, never followed. Anything else at the name is refused, and nothing at it is an
-// error that is fs.ErrNotExist. What fstatat reads of the name, once the open has refused it, is
+// link, by its name, never followed. Anything else at the name is refused, by the type fstatat reads of it
+// and not by the error the open failed with -- which for a socket is EOPNOTSUPP on macOS and OpenBSD --
+// as errNotDir, and nothing at it is an error that is fs.ErrNotExist. What fstatat reads of the name, once the open has refused it, is
 // what is there by then: on a way the walk judges, the directory parent is has been judged, and only
 // root and this account may change what is in it -- or, in a sticky one, whoever owns that name; on
 // one it does not, a platform root's, which only root, or the user it is for, may change, it is the
@@ -127,9 +128,11 @@ func lookUp(parent step, name string) (step, bool, error) {
 		if errors.Is(err, unix.EACCES) {
 			return byName, false, nil
 		}
+
+		return step{}, false, err
 	}
 
-	return step{}, false, err
+	return step{}, false, errNotDir
 }
 
 // opened is the directory name, in the one dirfd is open on, held open as itself (holdDir): a link

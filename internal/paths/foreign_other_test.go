@@ -4,6 +4,7 @@ package paths
 
 import (
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"slices"
@@ -429,5 +430,43 @@ func TestOnlyTheRootJudgedIsAskedWhetherItIsDirectlyUnderSlash(t *testing.T) {
 		if p := filepath.Join(slash, name); slices.Contains(statted, p) {
 			t.Errorf("judging a root under the filesystem's root statted %s, which is not that root", p)
 		}
+	}
+}
+
+// TestASocketAtARootsNameIsNoRoot: conflux makes only a directory at a root's name, so a socket there is
+// not conflux's, by the type the lookup read of it and not by the error opening it as a directory fails
+// with, which on macOS and OpenBSD is no ENOTDIR: uninstall's pre-flight refuses it as a foreign root
+// (JudgeWays), and RemoveRoot refuses it, each naming it, and the socket is left as it was.
+func TestASocketAtARootsNameIsNoRoot(t *testing.T) {
+	// Under a short name of its own rather than t.TempDir's, which spells this test's name out, past what
+	// a socket's address holds on macOS.
+	base, err := os.MkdirTemp("", "cfx")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { os.RemoveAll(base) })
+
+	sock := filepath.Join(base, "conflux")
+
+	l, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { l.Close() })
+
+	t.Setenv("CONFLUX_DIR", sock)
+
+	if err := Default().JudgeWays(); !errors.Is(err, ErrForeignRoot) || !strings.Contains(err.Error(), sock+" is not a directory") {
+		t.Errorf("JudgeWays(a CONFLUX_DIR of a socket) = %v, want a refusal of a foreign root naming it", err)
+	}
+
+	if gone, err := RemoveRoot(sock); gone || err == nil || !strings.Contains(err.Error(), sock+" is not a directory") {
+		t.Errorf("RemoveRoot(a socket) = %v, %v, want a refusal naming it", gone, err)
+	}
+
+	if fi, err := os.Lstat(sock); err != nil || fi.Mode()&os.ModeSocket == 0 {
+		t.Errorf("the socket at the root's name is %v, %v, want it as it was", fi, err)
 	}
 }

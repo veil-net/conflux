@@ -79,6 +79,62 @@ func Extract(d paths.Dirs) (*Tools, error) {
 	return extractIn(d)
 }
 
+// Remake empties d's bin directory -- every set, this build's among them, whatever a crashed
+// extraction left staged, and anything else put there -- and extracts this build's pair afresh
+// (Extract), for an update, with nothing running from any of them: so that nothing an earlier
+// conflux made there, nor anything put among it, is kept or run. Under bin's lock, which an
+// extraction in progress holds, and which is then removed too where nothing has opened it since,
+// with the directory, so both are made again as well. d's roots are secured already (EnsureAll).
+func Remake(d paths.Dirs) (*Tools, error) {
+	if !anchor.Supported {
+		return nil, errUnsupported
+	}
+
+	root := d.Libexec()
+	lock := filepath.Join(root, ".lock")
+
+	switch _, err := os.Lstat(root); {
+	case errors.Is(err, fs.ErrNotExist):
+		return Extract(d)
+	case err != nil:
+		return nil, err
+	}
+
+	unlock, ok, err := flock.TryAcquire(lock)
+	if err != nil {
+		return nil, err
+	}
+
+	if !ok {
+		return nil, fmt.Errorf("another conflux is extracting the anchor binaries in %s; run this again once it has", root)
+	}
+
+	entries, err := os.ReadDir(root)
+	if err == nil {
+		for _, e := range entries {
+			if p := filepath.Join(root, e.Name()); p != lock {
+				if err = os.RemoveAll(p); err != nil {
+					break
+				}
+			}
+		}
+	}
+
+	unlock()
+
+	if err != nil {
+		return nil, fmt.Errorf("empty %s: %w", root, err)
+	}
+
+	// Let go of first, since Windows will not delete a file that is open: a lock somebody opened
+	// meanwhile stays, and so does the directory around it, which Extract then uses as it is.
+	if os.Remove(lock) == nil {
+		_ = os.Remove(root)
+	}
+
+	return Extract(d)
+}
+
 // extractIn is Extract once a look found no whole extraction under d: the set directory made,
 // beneath a bin directory made where it is not there, under bin's lock.
 func extractIn(d paths.Dirs) (*Tools, error) {

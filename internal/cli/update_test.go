@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/ghrelease/ghreleasetest"
 	"github.com/veil-net/conflux/internal/paths"
@@ -216,6 +217,8 @@ func TestUpdateHandsAStoppedServiceToTheNewConflux(t *testing.T) {
 // starts nothing -- on a machine with a configuration to start, as every machine update
 // hands a service to has.
 func TestRegisterStartsNothing(t *testing.T) {
+	anchortest.Require(t) // it extracts the pair afresh
+
 	rootOnLinux(t)
 
 	d := pathstest.Dirs(t)

@@ -315,7 +315,10 @@ on Windows what the administrator running it owns in the root is given to the Ad
 whom the service, running as SYSTEM, trusts. `update` hands a running service to the conflux it
 put in place through that conflux's `start`, so the root an earlier conflux left is one the new
 service takes. With the service registered and its roots gone, they are made again, as the
-service would make them.
+service would make them. Where the service's copy is not this conflux — an update, or a newer
+conflux put in place by hand — `start` then removes what earlier conflux left, the service stopped
+for it, and writes the copy afresh, as [`update`](#conflux-update) describes; a start of the
+conflux the service already runs removes nothing.
 
 | Situation | |
 |---|---|
@@ -616,13 +619,37 @@ compared before it is put anywhere it could run from. Then the new conflux is ru
 for its `version`, and only a conflux that answers replaces this one. It is renamed over
 the file conflux was started from, symlinks followed, so whatever is running keeps the
 file it has; on Windows the running image is moved aside to `conflux.exe.old` first,
-and the next update removes it. No token is needed or sent: the repository is public.
+which the new conflux removes once nothing runs it, or the next update does. No token is needed or sent: the repository is public.
+
+Before the new conflux places its copy or registers the service — through its `start` or its
+`register`, whichever the update hands the service over by — it removes what earlier conflux left
+everywhere conflux keeps files, every time, and makes afresh what it removed:
+
+- the service is stopped where a supervisor still serves the root, and its lock held, so none
+  starts meanwhile; under `register`, one that was serving is started again, on the new conflux;
+- the `anchord` a supervisor that died left running is stopped, and the run directory emptied —
+  token, readiness marker, pid record, `anchord`'s socket directory — for the next supervisor to
+  make again;
+- every extracted anchor set, the current one among them, and whatever a crashed extraction left
+  staged, are removed with the `bin` directory and its lock, and this build's pair is extracted
+  afresh, so nothing planted among them is kept or run;
+- a killed ephemeral run's root is removed, the `anchord` it left stopped; a live run's is left;
+- where nothing holds the state's lock, what an atomic write that never went in place left in the
+  configuration and state directories goes, and the lock file with it; the supervisor's lock
+  goes too, each made again by whatever next takes it;
+- the service's copy is written afresh, whatever it holds, with the image Windows moved aside
+  and a copy that never went in place beside it removed;
+- what an earlier update left beside conflux goes: a download that never went in place, and
+  `conflux.exe.old`.
+
+The configuration, the identity, the state, the anchor directories and the log are kept. It
+lists what it removed.
 
 | Situation | |
 |---|---|
 | this is the latest release | says so, exit 0, nothing changed |
 | the anchor is running | the new conflux's `start` restarts it on the new version, and its exit code is `update`'s |
-| installed, not running | left stopped, as `down` left it; the new conflux registers the boot service itself, its copy and its definition, through a hidden `register` that starts nothing, so it starts on the new version next time; its exit code is `update`'s |
+| installed, not running | left stopped, as `down` left it; the new conflux removes what earlier conflux left and registers the boot service itself, its copy and its definition, through a hidden `register` that starts nothing, so it starts on the new version next time; its exit code is `update`'s |
 | not installed | the file is replaced, and that is all |
 | installed, its root refused by the [readers' check](security.md#the-file-and-the-directory-around-it) | exit 1, naming the root and why, before anything is downloaded: nothing changed, the service left on the conflux it runs |
 | the release has no build for this platform, lists no digest, or is still uploading | refused, nothing changed |

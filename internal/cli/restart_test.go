@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
@@ -76,6 +77,10 @@ func TestTheMarkerIsWithdrawnBeforeAnythingStarts(t *testing.T) {
 		"proxy": {"proxy", "8080=127.0.0.1:3000", "--taint", "t", "--no-ipv4"},
 	} {
 		t.Run(name, func(t *testing.T) {
+			if name == "start" {
+				anchortest.Require(t) // it extracts the pair afresh, as the service's copy is not this conflux
+			}
+
 			d := pathstest.Dirs(t)
 
 			// What start starts; proxy writes its own over it.
@@ -141,6 +146,8 @@ func TestStartSecuresTheRootFirst(t *testing.T) {
 	rootOnLinux(t)
 
 	t.Run("a root left wider", func(t *testing.T) {
+		anchortest.Require(t) // it extracts the pair afresh, as the service's copy is not this conflux
+
 		d := pathstest.Dirs(t)
 
 		if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Proxies: []string{"8080=127.0.0.1:3000"},

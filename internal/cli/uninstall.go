@@ -201,31 +201,18 @@ func removeRoot(dir string) (bool, error) {
 }
 
 // removeEphemeralRoot removes the ephemeral root at root, where one is there, and says whether it
-// did. One that is this account's alone (paths.Foreign) is a killed run's -- a live one uninstall has
-// refused already -- and what that run left running from it is stopped first, under its lock, as a
-// run's own clean-up is, so that one starting this moment is not emptied out from under itself.
-// One another account could have made or changed is removed reading nothing in it, nor signalling
-// anything it names (removeRoot).
+// did: a killed run's as removeKilledRun removes it, and one another account could have made or
+// changed reading nothing in it, nor signalling anything it names (removeRoot). A live run's,
+// which uninstall has refused already, is one that started since.
 func removeEphemeralRoot(root string) (bool, error) {
-	switch err := foreignRoot(root); {
-	case errors.Is(err, fs.ErrNotExist):
+	switch found, err := removeKilledRun(root); {
+	case err != nil:
+		return found != noRun, err
+	case found == liveRun:
+		return false, fmt.Errorf("an ephemeral run started from %s while conflux was being uninstalled, "+
+			"and it was left running.\n  Stop it (Ctrl-C where it runs), then run this again", root)
+	case found == noRun:
 		return false, nil
-	case err == nil:
-		e := paths.EphemeralDirs(root)
-
-		unlock, ok, err := flock.TryAcquire(e.ServeLockFile())
-		if err != nil {
-			return false, err
-		}
-
-		if !ok {
-			return false, fmt.Errorf("an ephemeral run started from %s while conflux was being uninstalled, "+
-				"and it was left running.\n  Stop it (Ctrl-C where it runs), then run this again", root)
-		}
-
-		if err := daemon.RemoveEphemeral(e, unlock, nil); err != nil {
-			return true, err
-		}
 	}
 
 	if _, err := removeRoot(root); err != nil {
@@ -233,6 +220,43 @@ func removeEphemeralRoot(root string) (bool, error) {
 	}
 
 	return true, nil
+}
+
+// runRoot is what removeKilledRun found at an ephemeral root.
+type runRoot int
+
+const (
+	noRun      runRoot = iota // nothing there
+	killedRun                 // a killed run's, removed
+	liveRun                   // a live run's, its lock held, left as it is
+	foreignRun                // one another account could have made or changed, left as it is
+)
+
+// removeKilledRun removes the ephemeral root at root where it is a killed run's -- this account's
+// alone (paths.Foreign), its lock held by nobody -- stopping what that run left running from it
+// first, under its lock, as a run's own clean-up does, so that one starting this moment is not
+// emptied out from under itself; and says what it found. Nothing is read in one another account
+// could have made or changed.
+func removeKilledRun(root string) (runRoot, error) {
+	switch err := foreignRoot(root); {
+	case errors.Is(err, fs.ErrNotExist):
+		return noRun, nil
+	case err != nil:
+		return foreignRun, nil
+	}
+
+	e := paths.EphemeralDirs(root)
+
+	unlock, ok, err := flock.TryAcquire(e.ServeLockFile())
+
+	switch {
+	case err != nil:
+		return killedRun, err
+	case !ok:
+		return liveRun, nil
+	}
+
+	return killedRun, daemon.RemoveEphemeral(e, unlock, nil)
 }
 
 // removeUpdateLeftovers removes what an update left beside exe, the conflux it replaced: a download

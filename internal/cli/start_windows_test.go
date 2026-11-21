@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/pathstest"
 	"github.com/veil-net/conflux/internal/privcheck"
@@ -15,10 +16,13 @@ import (
 // conflux it put in place through that conflux's start, so start secures the root as the service
 // does at every start before it places or registers anything: a root an earlier conflux left on a
 // Windows client, its logs\ and lock file the administrator's own, as that client's default-owner
-// policy made them, is given to the Administrators -- what the SYSTEM service takes (paths'
-// TestAnInstallationsRootIsGivenToTheAdministrators) -- by the time the service is registered.
-// Windows-only, so it runs in CI's platforms job alone.
+// policy made them, holds neither by the time the service is registered: logs\ is the
+// Administrators' -- what the SYSTEM service takes -- and the lock file, which nothing holds, is
+// gone, for whatever next takes it to make again (tidy). Windows-only, so it runs in CI's platforms
+// job alone.
 func TestStartGivesTheAdministratorsWhatTheAdministratorOwns(t *testing.T) {
+	anchortest.Require(t)
+
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
 
@@ -60,10 +64,13 @@ func TestStartGivesTheAdministratorsWhatTheAdministratorOwns(t *testing.T) {
 		t.Fatalf("conflux start exited %d, saying:\n%s\nwant the stand-in's Restart refused", code, errOut)
 	}
 
-	for _, p := range old {
-		if owner := privtest.ReadSecurity(t, p).Owner; !owner.Equals(privtest.Admins) {
-			t.Errorf("%s belongs to %v once start secured the root, not the Administrators", p, owner)
-		}
+	if owner := privtest.ReadSecurity(t, d.Log).Owner; !owner.Equals(privtest.Admins) {
+		t.Errorf("%s belongs to %v once start secured the root, not the Administrators", d.Log, owner)
+	}
+
+	if _, err := os.Lstat(d.LockFile()); !os.IsNotExist(err) {
+		t.Errorf("%s, the administrator's and held by nothing, is still there once start secured the root (Lstat: %v)",
+			d.LockFile(), err)
 	}
 
 	if len(mgr.installs) != 1 {

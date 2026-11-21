@@ -84,7 +84,24 @@ var manager = sync.OnceValue(newManager)
 // The copy is written beside its destination and renamed over it, so a service running
 // the old one keeps it. Windows will not replace the image of a running process but will
 // rename it, so there the old copy is moved aside first and removed by a later Place.
-func Place(d paths.Dirs) (string, error) {
+func Place(d paths.Dirs) (string, error) { return place(d, false) }
+
+// PlaceAfresh is Place for an update, with no service running: the copy is written again whatever
+// it holds, so that no file an earlier conflux made there, nor a handle anybody opened on one,
+// outlives the update, and what a copy that never went in place left beside it goes first.
+func PlaceAfresh(d paths.Dirs) (string, error) { return place(d, true) }
+
+// Placed reports whether the copy the boot service runs is this conflux, byte for byte: what every
+// re-run of the same conflux finds, and an update, or a newer conflux put in place by hand, does
+// not.
+func Placed(d paths.Dirs) bool {
+	src, err := Executable()
+
+	return err == nil && sameFile(src, d.ServiceExecutable())
+}
+
+// place is Place, and afresh PlaceAfresh.
+func place(d paths.Dirs, afresh bool) (string, error) {
 	src, err := Executable()
 	if err != nil {
 		return "", err
@@ -94,11 +111,20 @@ func Place(d paths.Dirs) (string, error) {
 
 	// A copy a service ran until the last Place, which only Windows moves aside; still
 	// running is fine.
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == "windows" || afresh {
 		_ = os.Remove(dst + ".old")
 	}
 
-	if src == dst || sameFile(src, dst) {
+	// A copy that never went in place: copyExecutable's file beside it, which its own removal
+	// missed in a crash.
+	if afresh {
+		leftovers, _ := filepath.Glob(filepath.Join(filepath.Dir(dst), copyPrefix+"*"))
+		for _, p := range leftovers {
+			_ = os.Remove(p)
+		}
+	}
+
+	if !afresh && (src == dst || sameFile(src, dst)) {
 		return dst, nil
 	}
 
@@ -169,6 +195,10 @@ func sameFile(a, b string) bool {
 	}
 }
 
+// copyPrefix begins the name of the file copyExecutable writes beside the copy before it renames it
+// into place.
+const copyPrefix = ".conflux-"
+
 // copyExecutable writes src to dst through a file beside it, renamed into place.
 func copyExecutable(src, dst string) error {
 	in, err := os.Open(src)
@@ -177,7 +207,7 @@ func copyExecutable(src, dst string) error {
 	}
 	defer in.Close()
 
-	tmp, err := os.CreateTemp(filepath.Dir(dst), ".conflux-*")
+	tmp, err := os.CreateTemp(filepath.Dir(dst), copyPrefix+"*")
 	if err != nil {
 		return err
 	}

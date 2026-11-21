@@ -133,8 +133,9 @@ func runUpdate(ctx context.Context, args []string) int {
 		}
 	}
 
-	// A Windows image an earlier update moved aside, which nothing runs any more.
-	_ = os.Remove(exe + ".old")
+	// What an earlier update left beside this conflux: a download that never went in place, and a
+	// Windows image it moved aside, which nothing runs any more.
+	removeUpdateLeftovers(exe)
 
 	tmp, err := rel.Download(ctx, filepath.Dir(exe))
 	if err != nil {
@@ -167,11 +168,12 @@ func runUpdate(ctx context.Context, args []string) int {
 // roots were held to paths' check before anything was replaced, and checked is what it said: nil,
 // or, with none of them there, an error that is fs.ErrNotExist, and nothing runs.
 //
-// The new conflux does it, so its code decides how its service is defined and started. A
-// running anchor is restarted by the new conflux's own `start`, which places the copy the
-// service runs, registers it and restarts it. A stopped one is left stopped, as `down` left
-// it: the new conflux's hidden `register` places the copy and registers it, starting
-// nothing, so whatever starts it next starts the new one under the new definition.
+// The new conflux does it, so its code decides how its service is defined and started, and what
+// it removes of what earlier conflux left first (tidy). A running anchor is restarted by the new
+// conflux's own `start`, which places the copy the service runs, registers it and restarts it. A
+// stopped one is left stopped, as `down` left it: the new conflux's hidden `register` places the
+// copy and registers it, starting nothing, so whatever starts it next starts the new one under the
+// new definition.
 func moveService(ctx context.Context, exe string, d paths.Dirs, checked error) int {
 	a := &daemonAnswers{}
 	if checked == nil {

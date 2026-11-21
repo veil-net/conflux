@@ -44,13 +44,16 @@ func runInstall(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	return install(ctx, d, true)
+	return install(ctx, d, true, false)
 }
 
 // runRegister places this conflux's copy for the boot service and registers the service
 // as this conflux defines it, and starts nothing: install's silent half, which `update` has
 // the conflux it put in place run when the anchor is stopped, so the new conflux writes
-// its own definition, as the new conflux's `start` does when the anchor is running.
+// its own definition, as the new conflux's `start` does when the anchor is running. Before it
+// places anything it removes what earlier conflux left (tidy), and writes the copy afresh; a
+// supervisor that still served the root without an anchor, which tidy stops, is started
+// again, on this conflux.
 func runRegister(ctx context.Context, args []string) int {
 	fs := flag.NewFlagSet("register", flag.ContinueOnError)
 	fs.SetOutput(ui.Errw)
@@ -79,13 +82,26 @@ func runRegister(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	return install(ctx, d, false)
+	mgr := newService()
+
+	stopped, err := tidy(d, mgr)
+	if err != nil {
+		return fail(err)
+	}
+
+	if code := install(ctx, d, false, true); code != ExitOK || !stopped {
+		return code
+	}
+
+	return fail(mgr.Restart())
 }
 
 // install places the copy of conflux the service runs, and registers it. standalone
 // distinguishes `conflux install` typed by a person, which reports and may start, from the
 // internal call `up`, `proxy` and `observe` make, and `start` and `register`, which is
-// silent and leaves starting to the caller. Each has its directories already.
+// silent and leaves starting to the caller. Each has its directories already. afresh writes the
+// copy whatever is there (service.PlaceAfresh), for an update, once tidy has cleared what earlier
+// conflux left.
 //
 // The readiness marker is withdrawn first, before anything that can start the service --
 // launchd's Install does, for a running job whose definition changed -- and nothing
@@ -94,7 +110,7 @@ func runRegister(ctx context.Context, args []string) int {
 // since: one the outgoing supervisor left would let it report an anchor seconds from being
 // torn down, and one withdrawn after a start would leave it nothing to see but a status
 // call once a second.
-func install(ctx context.Context, d paths.Dirs, standalone bool) int {
+func install(ctx context.Context, d paths.Dirs, standalone, afresh bool) int {
 	mgr := newService()
 
 	if err := daemon.ClearReady(d); err != nil {
@@ -103,7 +119,12 @@ func install(ctx context.Context, d paths.Dirs, standalone bool) int {
 		ui.Errf("could not clear the readiness marker: %v", err)
 	}
 
-	exe, err := service.Place(d)
+	place := service.Place
+	if afresh {
+		place = service.PlaceAfresh
+	}
+
+	exe, err := place(d)
 	if err != nil {
 		return fail(err)
 	}
@@ -261,8 +282,17 @@ func runStart(ctx context.Context, args []string) int {
 	// The service runs its own copy of conflux, and this one may be newer: replacing the
 	// binary and typing start is how an upgrade reaches the service -- the copy, and the
 	// definition the service is registered with, which a newer conflux may write
-	// differently.
-	if code := install(ctx, d, false); code != ExitOK {
+	// differently -- and it is how update hands a running service over. Where the copy is not
+	// this conflux, what earlier conflux left goes first, the service stopped for it (tidy), and
+	// the copy is written afresh; the restart below starts it again, on this one.
+	afresh := !service.Placed(d)
+	if afresh {
+		if _, err := tidy(d, mgr); err != nil {
+			return fail(err)
+		}
+	}
+
+	if code := install(ctx, d, false, afresh); code != ExitOK {
 		return code
 	}
 

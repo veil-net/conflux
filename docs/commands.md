@@ -334,9 +334,11 @@ service would make them.
 
 `update` hands a running service to the conflux it put in place through that conflux's `start`.
 Where the service's copy is not this conflux — an update, or a newer conflux put in place by hand —
-or the roots fail the [readers' check](#a-root-another-account-could-change), so that the copy is
-not read to find out, `start` first removes what earlier conflux left, as [`update`](#conflux-update)
-describes, the service stopped for it, and writes the copy afresh. A start of the conflux the service
+or is not there, or not as conflux makes a file of its own, or the roots fail the
+[readers' check](#a-root-another-account-could-change), so that the copy is not read to find out,
+`start` first removes what earlier conflux left, as [`update`](#conflux-update) describes, the
+service stopped for it, and writes the copy afresh, before it reads the configuration; so a start
+that fails after starts the service again on this conflux. A start of the conflux the service
 already runs is no update, and removes nothing of what `update` does.
 
 | Situation | |
@@ -366,10 +368,13 @@ configuration is invented.
 path for "register and run" and one for "configure, persist, then register and run".
 
 Where the service's copy is not this conflux — a newer conflux put in place by hand or by the
-install script — `install`, `up`, `proxy`, `observe` and `enrol` first remove what earlier conflux
-left, as [`update`](#conflux-update) describes, before they make the roots: the service is stopped
-for it, so nothing it runs from is made afresh under it, and started again however the command
-ends, and the copy is written afresh.
+install script — or is not there, or not as conflux makes a file of its own, or the roots fail the
+[readers' check](#a-root-another-account-could-change), so that the copy is not read to find out,
+`install`, `up`, `proxy`, `observe` and `enrol` first remove what earlier conflux left, as
+[`update`](#conflux-update) describes, before they make the roots, as `start` does: the service is
+stopped for it, so nothing it runs from is made afresh under it, and the copy is written afresh. The
+service is started again once however the command ends: by the command's own restart where it gets
+that far, which is not tried again where it fails, and otherwise as it exits.
 
 Registration is the point here. To start a machine that is already registered, that is
 `conflux start` — the two share the starting, so neither can drift into starting a

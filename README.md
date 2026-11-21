@@ -47,8 +47,8 @@ platform-specific notes.
 
 Where you keep it is up to you: the boot service runs a copy conflux places in its
 own state directory (`/var/lib/conflux/conflux` on Linux), which only root can
-change, and `up`, `proxy`, `install`, `start` and `update` keep that copy current. To
-build from source instead, see [build.md](docs/build.md)
+change, and `up`, `proxy`, `observe`, `install`, `enrol`, `start` and `update` keep that
+copy current. To build from source instead, see [build.md](docs/build.md)
 (`make anchor-bins && make build`).
 
 ### 2. Bring up the first machine

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -381,6 +382,69 @@ func TestTidyStartsAgainTheServiceItStopped(t *testing.T) {
 				t.Errorf("conflux %s of a root a supervisor serves exited %d, stopped the service %d times, "+
 					"registered it %d and started it %d, want %d, once each:\n%s%s", verb, code, mgr.stops,
 					len(mgr.installs), mgr.restarts, want, out, errOut)
+			}
+		})
+	}
+}
+
+// TestTidyStartsAgainHoweverTheCommandEnds: the service tidy stopped is started again however the
+// command it stopped it for ends, and the command's code is kept: start refusing a configuration it
+// cannot read, finding none, or failing to register the service. A failure to start it fails a command
+// that had not failed -- register, which registered the service -- and is warned of beside one that
+// had.
+func TestTidyStartsAgainHoweverTheCommandEnds(t *testing.T) {
+	anchortest.Require(t) // it extracts the pair afresh
+
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	errRegister := errors.New("the stand-in service manager registers nothing")
+
+	unreadable := func(t *testing.T, d paths.Dirs, _ *stopping) {
+		if err := os.WriteFile(d.ConfigFile(), []byte("{"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	unconfigured := func(t *testing.T, d paths.Dirs, _ *stopping) {
+		if err := os.Remove(d.ConfigFile()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for name, c := range map[string]struct {
+		verb    string
+		then    func(*testing.T, paths.Dirs, *stopping)
+		restart error
+		want    int
+		says    string
+	}{
+		"start, a configuration it cannot read": {verb: "start", then: unreadable, want: ExitError, says: "parse "},
+		"start, no configuration": {verb: "start", then: unconfigured, want: ExitNoConfig,
+			says: "no configuration"},
+		"start, registering failing": {verb: "start", then: func(_ *testing.T, _ paths.Dirs, m *stopping) {
+			m.installErr = errRegister
+		}, want: ExitError, says: errRegister.Error()},
+		"register, starting again failing": {verb: "register", restart: errStartsNothing, want: ExitError,
+			says: errStartsNothing.Error()},
+		"start, no configuration, starting again failing": {verb: "start", then: unconfigured,
+			restart: errStartsNothing, want: ExitNoConfig, says: "did not start again: " + errStartsNothing.Error()},
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := configured(t)
+
+			mgr := &stopping{fakeManager: fakeManager{d: d, restartErr: c.restart}, running: true,
+				release: serving(t, d)}
+			standInService(t, mgr)
+
+			if c.then != nil {
+				c.then(t, d, mgr)
+			}
+
+			out, errOut, code := capture(t, c.verb)
+			if code != c.want || mgr.stops != 1 || mgr.restarts != 1 || !strings.Contains(errOut, c.says) {
+				t.Errorf("conflux %s exited %d, stopped the service %d times and started it %d, want %d, once each, "+
+					"saying %q:\n%s%s", c.verb, code, mgr.stops, mgr.restarts, c.want, c.says, out, errOut)
 			}
 		})
 	}

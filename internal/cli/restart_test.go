@@ -20,12 +20,14 @@ import (
 // fakeManager records what it was asked and reports what the marker looked like at the
 // moment Install and Restart were called. startsOnInstall makes its Install start the
 // service, as launchd's does for a running job whose plist changed, with a supervisor that
-// marks itself ready at once. restartErr is what Restart answers: a stand-in that starts
-// nothing, so nothing waits for what it started.
+// marks itself ready at once. installErr is what Install answers, once it has recorded what it was
+// asked; restartErr is what Restart answers: a stand-in that starts nothing, so nothing waits for what
+// it started.
 type fakeManager struct {
 	d paths.Dirs
 
 	startsOnInstall bool
+	installErr      error
 	restartErr      error
 
 	installs        [][]string
@@ -37,6 +39,10 @@ type fakeManager struct {
 func (m *fakeManager) Install(exe string, args ...string) error {
 	m.installs = append(m.installs, append([]string{exe}, args...))
 	m.markedAtInstall = daemon.IsReady(m.d)
+
+	if m.installErr != nil {
+		return m.installErr
+	}
 
 	if m.startsOnInstall {
 		return daemon.MarkReady(m.d, "anchorstartedbyinstall")

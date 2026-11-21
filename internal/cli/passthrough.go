@@ -126,7 +126,9 @@ var detachedAnchorctl = libexec.ForUsage
 // (libexec.ForUsage), the installation's extraction, or a copy in a temporary directory, which
 // goes once the run ends, however it ends.
 func runDetached(args []string) int {
-	bin, done, err := detachedAnchorctl(paths.Default())
+	d := paths.Default()
+
+	bin, done, err := detachedAnchorctl(d, d.Check())
 	if err != nil {
 		return fail(err)
 	}
@@ -304,16 +306,17 @@ var errEphemeralStarting = errors.New("the ephemeral run is still starting; ask 
 
 // toolsFor is the anchorctl to reach d's daemon with, and done, which removes it once it has run,
 // where it is a temporary copy, and is nil where it is not. For the installation's daemon it is the
-// readers' anchorctl (libexec.ForUsage): its roots held to the readers' check first, this build's pair
-// extracted there taken as it is found, or extracted into a bin directory as conflux makes one where it
-// is not there yet, and otherwise a private temporary copy; neither a root nor the bin directory is
+// readers' anchorctl (libexec.ForUsage), its roots held to the readers' check first -- by every caller,
+// which comes here only where the check passed, reading nothing between but files in them: this build's
+// pair extracted there taken as it is found, or extracted into a bin directory as conflux makes one where
+// it is not there yet, and otherwise a private temporary copy; neither a root nor the bin directory is
 // made. An ephemeral run's root is the run's own: a reader takes the pair it finds there and writes
 // nothing, and reads nothing until the run has marked itself up, since before that the run may still be
 // clearing what a killed one left -- and a reader that refilled what it was clearing, or held one of its
 // binaries open, would stop it.
 func toolsFor(d paths.Dirs) (string, func(), error) {
 	if !slices.Contains(paths.EphemeralCandidates(), d.State) {
-		return libexec.ForUsage(d)
+		return libexec.ForUsage(d, nil)
 	}
 
 	if !daemon.IsLiveReady(d) {

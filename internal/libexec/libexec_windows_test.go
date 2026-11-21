@@ -39,7 +39,7 @@ func TestAUsageCopyIsGuardedForWhoRunsIt(t *testing.T) {
 	user := tu.User.Sid
 	d := paths.Default()
 
-	bin, done, err := ForUsage(d)
+	bin, done, err := ForUsage(d, d.Check())
 	if err != nil || done == nil {
 		t.Fatalf("ForUsage = %s, %v, want a temporary copy to remove", bin, err)
 	}

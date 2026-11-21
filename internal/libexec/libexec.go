@@ -180,17 +180,18 @@ func Extracted(d paths.Dirs) (*Tools, error) {
 }
 
 // ForUsage is the anchorctl a reader runs -- help, a status, a renew, a pass-through -- and done, which
-// removes it where it is a temporary copy, and is nil where it is not. The installation's roots are held
-// to the readers' check first (paths.Dirs.Check), before anything in them is read by its name. Where they
-// pass, this build's pair extracted there is used (Extracted), as found: nobody else can put anything in a
-// root as conflux makes one. Where it is not extracted yet -- as once an upgrade has put a newer conflux
-// in place -- it is extracted there (extractIn), into the bin directory, provided that folder is there and
-// as conflux makes it (paths.Dirs.OursFolder): that adds a set and removes none, so a service still
-// running an older one keeps it, and makes neither a root nor the bin directory. Anything else -- no
-// installation, roots the check refuses, a bin directory not there or not as conflux makes it, an
-// extraction that fails -- runs a copy in a private temporary directory (Temporary).
-func ForUsage(d paths.Dirs) (bin string, done func(), err error) {
-	if d.Check() == nil {
+// removes it where it is a temporary copy, and is nil where it is not. checked is the readers' check of
+// the installation's roots d (paths.Dirs.Check), which the caller holds, before anything in them is read
+// by its name. Where it passed, this build's pair extracted there is used (Extracted), as found: nobody
+// else can put anything in a root as conflux makes one. Where it is not extracted yet -- as once an
+// upgrade has put a newer conflux in place -- it is extracted there (extractIn), into the bin directory,
+// provided that folder is there and as conflux makes it (paths.Dirs.OursFolder): that adds a set and
+// removes none, so a service still running an older one keeps it, and makes neither a root nor the bin
+// directory. Anything else -- no installation, roots the check refused, a bin directory not there or not
+// as conflux makes it, an extraction that fails -- runs a copy in a private temporary directory
+// (temporary), with nothing in d read.
+func ForUsage(d paths.Dirs, checked error) (bin string, done func(), err error) {
+	if checked == nil {
 		t, err := Extracted(d)
 		if errors.Is(err, ErrNotExtracted) && d.OursFolder(d.Libexec()) == nil {
 			t, err = extractIn(d)
@@ -201,17 +202,17 @@ func ForUsage(d paths.Dirs) (bin string, done func(), err error) {
 		}
 	}
 
-	return Temporary()
+	return temporary()
 }
 
-// Temporary is a copy of this build's anchorctl in a private temporary directory, with nothing of any
+// temporary is a copy of this build's anchorctl in a private temporary directory, with nothing of any
 // root's read, which done removes, the directory with it: made where temporaryDir makes it -- for an
 // elevated process on Windows a folder of its own in %ProgramData%, and otherwise in the user's temporary
 // directory (usersTemporaryDir) -- and restricted as it says. Never a root of conflux's, nor a folder in
 // one. Making them for help remade, after an uninstall, what it had removed, with tens of megabytes in
 // it; and on Windows, asked by an account that is not an administrator, it left %ProgramData%\conflux
 // owned by that account, which every later install then refused.
-func Temporary() (bin string, done func(), err error) {
+func temporary() (bin string, done func(), err error) {
 	if !anchor.Supported {
 		return "", nil, errUnsupported
 	}
@@ -231,10 +232,10 @@ func Temporary() (bin string, done func(), err error) {
 	return bin, func() { _ = os.RemoveAll(dir) }, nil
 }
 
-// temporaryPrefix begins the name of the directory Temporary makes.
+// temporaryPrefix begins the name of the directory temporary makes.
 const temporaryPrefix = "conflux-usage-"
 
-// usersTemporaryDir makes the directory Temporary writes in, as the account running conflux: in the
+// usersTemporaryDir makes the directory temporary writes in, as the account running conflux: in the
 // system's temporary directory, or, where that one is mounted noexec as /tmp is on a hardened host, in
 // the user's cache directory, made if it is not there yet. No other directory is made.
 func usersTemporaryDir() (string, error) {
@@ -365,7 +366,7 @@ func extract(t *Tools) error {
 }
 
 // writeExecutable writes one binary, restricts it with restrict, and closes it before anyone can
-// exec it: one of a set's, or, oneRun, the copy Temporary makes to run once and remove.
+// exec it: one of a set's, or, oneRun, the copy temporary makes to run once and remove.
 //
 // The Close is not tidiness. On Linux, exec of a file that is still open for writing
 // anywhere in the system fails with ETXTBSY, and a deferred Close inside a loop is

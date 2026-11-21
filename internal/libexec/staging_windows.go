@@ -26,7 +26,7 @@ func makeStaging(root, prefix string) (string, error) {
 	}
 }
 
-// temporaryDir makes the directory Temporary writes its copy in, and is how the copy is restricted. An
+// temporaryDir makes the directory temporary writes its copy in, and is how the copy is restricted. An
 // elevated process -- an administrator's, or SYSTEM's -- makes a folder of its own in %ProgramData%,
 // SYSTEM's and the Administrators' from the moment it exists (makeStaging), which Users may make nothing
 // in nor remove, and restricts the copy to them alike (paths.Restrict): the account's own %TEMP%, and a

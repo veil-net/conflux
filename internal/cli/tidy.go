@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 
 	"github.com/veil-net/conflux/anchor"
@@ -47,7 +46,7 @@ import (
 //   - Where nothing holds the state's lock, what an atomic write that never went in place left in the
 //     configuration and state directories goes (removeStaged). The lock files themselves are kept on
 //     Unix, and on Windows removed once let go of, for whatever next takes them to make again
-//     (dropLock).
+//     (flock.Drop).
 //   - What an update left beside the conflux it replaced goes (removeUpdateLeftovers).
 //
 // The service's copy is the caller's to write afresh (service.PlaceAfresh), with what a copy that
@@ -113,7 +112,7 @@ func tidy(d paths.Dirs, mgr service.Manager) (stopped bool, err error) {
 
 	unlock()
 
-	if dropLock(d.ServeLockFile()) {
+	if flock.Drop(d.ServeLockFile()) {
 		removed = append(removed, d.ServeLockFile())
 	}
 
@@ -175,7 +174,7 @@ func listRemoved(removed []string) {
 
 // removeStaged removes, where nothing holds the state's lock, what an atomic write that never went
 // in place left in the configuration and state directories (config's .tmp- files), and then, once it
-// has let go of it, the lock file itself where dropLock does. Every writer of the manifest and the
+// has let go of it, the lock file itself where flock.Drop does. Every writer of the manifest and the
 // state holds that lock, and nothing else writes there with the service stopped and its supervisor's
 // lock held, so none is mid-write. A lock held is in use, and kept with what it guards. It returns
 // what it removed.
@@ -203,17 +202,9 @@ func removeStaged(d paths.Dirs) []string {
 
 	unlock()
 
-	if dropLock(lock) {
+	if flock.Drop(lock) {
 		removed = append(removed, lock)
 	}
 
 	return removed
-}
-
-// dropLock removes the lock file at path, which nothing holds now, where the system removes no file
-// anybody has open (Windows), so whatever takes it next makes it again; and says whether it did. On
-// Unix it is kept: a lock is taken on the file its name led to when it was opened, so one waited for
-// on a file removed meanwhile would be held beside one taken on the file made again at its name.
-func dropLock(path string) bool {
-	return runtime.GOOS == "windows" && os.Remove(path) == nil
 }

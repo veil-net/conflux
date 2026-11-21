@@ -15,6 +15,7 @@ import (
 	"io/fs"
 	"math"
 	"os"
+	"runtime"
 	"time"
 
 	"github.com/veil-net/conflux/internal/paths"
@@ -59,6 +60,14 @@ func Held(path string) (bool, error) {
 // is refused.
 func HeldIn(d paths.Dirs, path string) (bool, error) {
 	return held(path, func() (*os.File, error) { return d.OpenIn(path) })
+}
+
+// Drop removes the lock file at path, which nothing holds now, where the system removes no file
+// anybody has open (Windows), so whatever takes it next makes it again; and says whether it did. On
+// Unix it is kept: a lock is taken on the file its name led to when it was opened, so one waited for
+// on a file removed meanwhile would be held beside one taken on the file made again at its name.
+func Drop(path string) bool {
+	return runtime.GOOS == "windows" && os.Remove(path) == nil
 }
 
 // held is whether somebody holds the lock at path, opened by open (openHeld): nobody, where there is

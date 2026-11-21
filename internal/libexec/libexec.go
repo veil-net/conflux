@@ -125,7 +125,7 @@ func Remake(d paths.Dirs) ([]string, error) {
 
 	// Let go of first, since Windows will not delete a file that is open: a lock somebody opened
 	// meanwhile stays, and so does the directory around it, which Extract then uses as it is.
-	if runtime.GOOS == "windows" && os.Remove(lock) == nil {
+	if flock.Drop(lock) {
 		_ = os.Remove(root)
 	}
 

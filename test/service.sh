@@ -189,11 +189,12 @@ start
 expect "tun" "uid=$uid caps=$(caps 0x1000) nnp=0 groups=" "CAP_NET_ADMIN for its interface"
 
 # What the account leaves in its directory for root to carry: a file of its own, and a
-# symlink and a hard link to a file of root's, which a copy must not follow, take or touch.
-docker exec "$NAME" sh -c 'cd /var/lib/conflux &&
-  umask 077 && echo secret > secret &&
+# symlink and a hard link to a file of root's elsewhere on the machine, which a copy must not
+# follow, take or touch.
+docker exec "$NAME" sh -c 'umask 077 && echo secret > /var/lib/conflux-secret &&
+  cd /var/lib/conflux &&
   su -s /bin/sh conflux -c "echo carried > anchor/carried" &&
-  ln -s /var/lib/conflux/secret anchor/link && ln secret anchor/hard'
+  ln -s /var/lib/conflux-secret anchor/link && ln /var/lib/conflux-secret anchor/hard'
 
 say "a host that keeps /dev/net/tun root's keeps anchord root, in a directory of its own"
 docker exec "$NAME" chmod 600 /dev/net/tun
@@ -205,7 +206,7 @@ for name in link hard; do
   docker exec "$NAME" test ! -e "/var/lib/conflux/anchor.root/$name" \
     || { echo "the copy to root's directory took the account's $name" >&2; exit 1; }
 done
-check_mode /var/lib/conflux/secret "600 root root"
+check_mode /var/lib/conflux-secret "600 root root"
 
 # anchor runs the host's firewall commands with a TUN, and some answer only root. They are
 # stood in for by scripts that answer the question conflux asks: whether firewalld runs,

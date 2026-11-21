@@ -298,7 +298,8 @@ func (d Dirs) EnsureAll() error {
 // EnsureServing is EnsureAll for the supervisor that serves d, which runs from the copy of conflux the boot
 // service names in the state root (ServiceExecutable): everything is judged and made as EnsureAll judges
 // and makes it but that copy, which is neither judged nor removed -- Windows will not remove a running
-// image, and one removed on Unix would leave the service nothing to start the next time. d is the
+// image, and one removed on Unix would leave the service nothing to start the next time; the supervisor
+// places one not as conflux makes it afresh itself, from its own image (daemon's ownCopy). d is the
 // supervisor's from then on, and so is every copy of it: each later EnsureAll of it leaves the copy alone
 // too, however deep in the supervisor it is made.
 func (d *Dirs) EnsureServing() error {

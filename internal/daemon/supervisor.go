@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"os"
 	"os/exec"
@@ -20,6 +21,7 @@ import (
 	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/wintun"
 )
 
@@ -122,6 +124,27 @@ func (s *Supervisor) report() Reporter {
 	return s.Reporter
 }
 
+// ownCopy places the copy of conflux the boot service runs afresh from this supervisor's own image
+// (service.PlaceAfresh), where a copy is there and is not as conflux makes it (paths.Dirs.Ours) -- as an
+// earlier conflux left one an administrator's on a Windows client, which that administrator's processes
+// that are not elevated could change, once no process runs it, for the next start to run as SYSTEM. The
+// copy is written beside it and renamed over it, so this process keeps the image it runs; on Windows,
+// which will not replace a running image, that is moved aside first (update.Replace), and the next
+// placing removes it. One that is not there is the next command's to place.
+func (s *Supervisor) ownCopy() error {
+	switch err := s.Dirs.Ours(s.Dirs.ServiceExecutable()); {
+	case err == nil, errors.Is(err, fs.ErrNotExist):
+		return nil
+	}
+
+	if _, err := service.PlaceAfresh(s.Dirs); err != nil {
+		return fmt.Errorf("the boot service's copy of conflux is not as conflux makes it, and could not be placed "+
+			"afresh: %w", err)
+	}
+
+	return nil
+}
+
 // signalReady records that an anchor is up, for the two things that need to know.
 //
 // The channel is closed once, because that is what the service integrations want: launchd
@@ -159,7 +182,8 @@ func (s *Supervisor) clearReady() { _ = ClearReady(s.Dirs) }
 
 // Run starts anchord, brings the anchor up, and keeps both going until the context
 // is cancelled. The roots are made first, as every command makes them, but for the copy of conflux
-// the boot service runs, which this supervisor runs from (EnsureServing).
+// the boot service runs, which this supervisor runs from (EnsureServing), and which it then places
+// afresh where it is not as conflux makes it (ownCopy).
 func (s *Supervisor) Run(ctx context.Context) error {
 	if err := s.Dirs.EnsureServing(); err != nil {
 		return err
@@ -182,6 +206,11 @@ func (s *Supervisor) Run(ctx context.Context) error {
 			"stop it first (conflux down)", s.Dirs.State)
 	}
 	defer unlock()
+
+	// Before anything is read, so that no start leaves a copy that is not conflux's.
+	if err := s.ownCopy(); err != nil {
+		return err
+	}
 
 	// This start tries the anchor again, however far it gets; see forgetRefusal.
 	s.forgetRefusal()

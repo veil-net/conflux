@@ -236,8 +236,9 @@ func TestAStartOfTheConfluxTheServiceRunsRemovesNothing(t *testing.T) {
 // byte, but is not as conflux makes a file of its own (notAsConfluxMakesIt) -- as an earlier conflux left
 // one on a Windows client, an administrator's, which that administrator's unelevated processes could
 // change for SYSTEM to run -- is what earlier conflux left: the supervisor, which runs from it, leaves it
-// as it makes its roots (EnsureServing), and start and install remove it with the rest (tidy), an earlier
-// set among it, and place this conflux afresh, as conflux makes it, and register that.
+// as it makes its roots (EnsureServing), placing it afresh after, and start and install remove it with
+// the rest (tidy), an earlier set among it, and place this conflux afresh, as conflux makes it, and
+// register that.
 func TestACopyNotAsConfluxMakesItIsPlacedAfresh(t *testing.T) {
 	anchortest.Require(t) // it extracts the pair afresh
 

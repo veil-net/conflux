@@ -227,7 +227,11 @@ extended attributes, add to it, delete it, or change its DACL or owner, as the r
 holds one too. Then, since a handle somebody opened on it while its
 DACL let them write it could still repoint it in place, conflux replaces it: the junction is
 removed, and one made in its place through conflux's own handle, with the root's ownership and DACL
-from the moment it exists, and pointed through that handle at the directory conflux judged. A
+from the moment it exists, and pointed through that handle at the directory conflux judged. One found
+the way conflux leaves its own — SYSTEM's or the Administrators', under a protected DACL — is kept
+only where that DACL also lets nobody the root is judged for not trust point it elsewhere: for an
+installation's root, SYSTEM, which trusts not even the administrator running conflux, so a grant to
+that administrator has it replaced too. A
 junction can lead only to a directory named by its volume's GUID, so a link root leading to a local
 volume that has no such name is refused, whether conflux would replace it or finds it its own
 already, and by the readers' check. Something made at that name in

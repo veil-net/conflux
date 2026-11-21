@@ -558,7 +558,9 @@ func secure(dir string, installation bool) error {
 	// Secured already: SYSTEM's or the Administrators', under a protected DACL that grants nobody else
 	// any right, to read it included, nor passes one on to what is made in it -- what a restriction
 	// leaves -- and, where the root is a junction, the junction SYSTEM's or the Administrators' under
-	// a protected DACL too, as replaceLink leaves one. It is not restricted again, but it is filled,
+	// a protected DACL too, as replaceLink leaves one, that lets nobody self does not trust point it
+	// elsewhere (heldFor): heldRoot judged it for the account running conflux, and an installation's is
+	// the SYSTEM service's. It is not restricted again, but it is filled,
 	// since one secured and empty -- as an administrator may have restricted it -- is as open to a
 	// handle opened on it before as one found unrestricted, and what it holds is judged as it is once
 	// a root is restricted: a restriction refused by that judgement is still in place, and what it
@@ -569,7 +571,7 @@ func secure(dir string, installation bool) error {
 	// is repaired, replaced or refused below as an unrestricted root is.
 	self := judgedFor(installation)
 
-	if secured(sd) && (root.link == nil || secured(root.link)) {
+	if secured(sd) && root.heldFor(dir, self) {
 		switch who, _, err := changerIn(dir, self, sd, anyRight, "use it or what is made in it", nil, true); {
 		case err != nil:
 			return err
@@ -967,6 +969,23 @@ type held struct {
 	self, dir windows.Handle
 	link      *windows.SECURITY_DESCRIPTOR
 	target    string
+}
+
+// heldFor reports whether the root dir, as r holds it, is no junction or link, or one secured as
+// replaceLink leaves one -- SYSTEM's or the Administrators', under a protected DACL -- that lets nobody
+// the judgement for self does not trust point it elsewhere (changerIn, retargets).
+func (r *held) heldFor(dir string, self *windows.SID) bool {
+	if r.link == nil {
+		return true
+	}
+
+	if !secured(r.link) {
+		return false
+	}
+
+	who, _, err := changerIn(dir, self, r.link, retargets, "point it elsewhere or move it", nil, false)
+
+	return err == nil && who == ""
 }
 
 func (r *held) close() {

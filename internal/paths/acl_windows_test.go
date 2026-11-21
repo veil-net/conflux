@@ -266,6 +266,88 @@ func TestSecureReplacesAJunctionRoot(t *testing.T) {
 	}
 }
 
+// TestSecureJudgesASecuredJunctionForTheService: a junction root secured as replaceLink leaves one --
+// the Administrators', under a protected DACL -- that also lets the administrator running conflux
+// write its attributes, enough to point it elsewhere, passes heldLink, which judges it for that
+// administrator; but an installation's root is the SYSTEM service's, which trusts no other account, so
+// secure of it judges the junction for SYSTEM and replaces it with one of its own that grants the
+// administrator nothing. An ephemeral run's root, judged for the account running it, keeps the one
+// found. Windows-only, so it runs in CI's platforms job alone.
+func TestSecureJudgesASecuredJunctionForTheService(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", "")
+
+	for _, installation := range []bool{true, false} {
+		judged := t.TempDir()
+		if err := secure(judged, installation); err != nil {
+			t.Fatal(err)
+		}
+
+		root := mklinkJ(t, filepath.Join(t.TempDir(), "j"), judged)
+		setOwnSecurity(t, root, "O:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;0x100;;;"+currentUser().String()+")")
+
+		if err := secure(root, installation); err != nil {
+			t.Fatalf("secure(a secured junction root granting the administrator its attributes, an installation's "+
+				"%v) = %v", installation, err)
+		}
+
+		h, err := openFile(root, readAccess, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		sd, err := security(h)
+		windows.CloseHandle(h)
+
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		who, _, err := changerIn(root, sidSystem, sd, retargets, "point it elsewhere or move it", nil, false)
+
+		switch {
+		case err != nil:
+			t.Fatal(err)
+		case installation && who != "":
+			t.Errorf("the junction at an installation's root, once secured, %s could point it elsewhere: want it "+
+				"replaced with conflux's own", who)
+		case !installation && who == "":
+			t.Errorf("the junction at an ephemeral run's root was replaced, want the one found kept")
+		}
+	}
+}
+
+// setOwnSecurity gives the junction or link at path the owner and DACL sddl says, as itself, not what it
+// leads to.
+func setOwnSecurity(t *testing.T, path, sddl string) {
+	t.Helper()
+
+	sd, err := windows.SecurityDescriptorFromString(sddl)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	owner, _, err := sd.Owner()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	h, err := openFile(path, windows.READ_CONTROL|windows.WRITE_DAC|windows.WRITE_OWNER, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.CloseHandle(h)
+
+	if err := windows.SetSecurityInfo(h, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION|
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, owner, nil, dacl, nil); err != nil {
+		t.Fatalf("set the security of %s itself: %v", path, err)
+	}
+}
+
 // TestSecureRefusesAJunctionRootMadeAgain: secure removes a junction root before it makes its own
 // at the name, and something somebody made there meanwhile is refused, naming the root and the
 // commands that make the junction again, to where it led by its drive letter: with nothing at the

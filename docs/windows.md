@@ -155,13 +155,17 @@ anything, the boot service included; a junction to it is removed as itself, unle
 conflux never makes there. A folder that only inherits such entries, as one made in
 `%ProgramData%` does, is judged and restricted as any root is.
 
-No root holds what conflux never makes there: a root whose top level, at its name or where a junction
-there leads, holds any name but conflux's own — a `CONFLUX_DIR` at a folder of homes, or a junction
-at `%ProgramData%\conflux` pointed at `C:\Program Files\Git` — is refused, naming the stray entry,
+No root holds what conflux never makes there, but a working one: a root whose top level, at its name
+or where a junction there leads, holds any name but conflux's own — a `CONFLUX_DIR` at a folder of
+homes, or a junction at `%ProgramData%\conflux` pointed at `C:\Program Files\Git` — is refused,
+naming the stray entry,
 and left as it is, by every command that makes a root, by `update` and `start` before they remove
 anything from it, and by `uninstall` before it removes anything, the boot service and the junction
-included ([security.md](security.md#the-file-and-the-directory-around-it)). So is a file at a root's
-name, where conflux makes only a folder.
+included ([security.md](security.md#the-file-and-the-directory-around-it)). The exception is a working
+root, secured as conflux secures one — SYSTEM's or the Administrators', under a protected DACL granting
+nobody else anything — and already holding this installation's own state: nothing in it is a stray, and
+an editor's backup beside a hand-edited `conflux.json` in a working install is fine. A file at a root's
+name is refused, where conflux makes only a folder.
 
 A root on a network volume — a share reached by its UNC path, a drive mapped to one, or a link
 leading to either, as the volume conflux holds it open on says, not as it is spelled — is refused

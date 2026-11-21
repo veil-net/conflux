@@ -2,6 +2,7 @@ package cli
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -325,10 +326,10 @@ func TestUninstallRemovesTheSharedLog(t *testing.T) {
 	}
 }
 
-// TestUninstallLeavesARootHoldingWhatConfluxNeverMakes: a root holding a name conflux never makes there
-// is not conflux's, so uninstall refuses it before it acts, exit 1, naming what it holds and saying it
-// left everything in place, the boot service included -- not that another account may change the way
-// to it -- and the root keeps what it holds.
+// TestUninstallLeavesARootHoldingWhatConfluxNeverMakes: a root conflux has not secured -- one at 0755 --
+// holding a name conflux never makes there is not conflux's, so uninstall refuses it before it acts, exit
+// 1, naming what it holds and saying it left everything in place, the boot service included -- not that
+// another account may change the way to it -- and the root keeps what it holds.
 func TestUninstallLeavesARootHoldingWhatConfluxNeverMakes(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
@@ -337,6 +338,10 @@ func TestUninstallLeavesARootHoldingWhatConfluxNeverMakes(t *testing.T) {
 
 	stray := filepath.Join(d.State, "notes.txt")
 	if err := os.WriteFile(stray, []byte("somebody's"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Chmod(d.State, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -457,15 +462,25 @@ func TestUninstallSaysItRemovesTheCredentialInAChosenFolder(t *testing.T) {
 
 // TestUninstallLeavesAFolderOfHomes: a CONFLUX_DIR pointed at a folder of homes, which holds alice/ and
 // bob/ and nothing of conflux's, is not conflux's, so uninstall refuses it before it acts, asked or not
-// -- the boot service not removed -- and both homes keep what they hold.
+// -- the boot service not removed -- and both homes keep what they hold: at 0755, as /home is, and at
+// 0700, as /root is, which conflux would secure a root at but which holds no installation's state.
 func TestUninstallLeavesAFolderOfHomes(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
 
-	for _, args := range [][]string{{"uninstall", "--yes"}, {"uninstall"}} {
-		t.Run(strings.Join(args, " "), func(t *testing.T) {
+	for _, c := range []struct {
+		args []string
+		mode os.FileMode
+	}{{[]string{"uninstall", "--yes"}, 0o755}, {[]string{"uninstall"}, 0o755}, {[]string{"uninstall", "--yes"}, 0o700}} {
+		args := c.args
+
+		t.Run(fmt.Sprintf("%s at %#o", strings.Join(args, " "), c.mode), func(t *testing.T) {
 			homes := t.TempDir()
 			t.Setenv("CONFLUX_DIR", homes)
+
+			if err := os.Chmod(homes, c.mode); err != nil {
+				t.Fatal(err)
+			}
 
 			kept := map[string]string{}
 

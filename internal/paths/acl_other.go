@@ -381,7 +381,8 @@ func parentsRuleAs(dir string, euid int) judgement {
 // or move it, and narrows one of conflux's own that something left wider than 0700, or than the
 // 0710 that lets anchord's account through. A CONFLUX_DIR's way is makeRoot's, which secure's one
 // caller, EnsureAll, runs first, and so is the refusal of a directory others keep what is theirs in,
-// or one holding what conflux never makes there (sharedStep, strays), which makeRoot holds whatever
+// or one conflux has not secured holding what conflux never makes there (sharedStep, strays), which
+// makeRoot holds whatever
 // is at the root's name to before secure narrows anything.
 //
 // makeRoot creates at 0700 and leaves a directory that already exists exactly as it

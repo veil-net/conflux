@@ -268,3 +268,110 @@ func TestARootConfluxCannotLookUpIsRefused(t *testing.T) {
 		t.Errorf("RemoveKilledRun(a root conflux cannot look up) = %q, %v, want a refusal, nothing removed", removed, err)
 	}
 }
+
+// TestNothingInASecuredRootIsAStray: a working installation's root -- one conflux has secured, this
+// account's at 0700, holding the installation's own state -- is conflux's already, so what an editor
+// leaves beside a hand-edited conflux.json is no stray there: EnsureAll, which the supervisor runs at
+// every start, takes it, uninstall's pre-flight (JudgeWays) passes it and RemoveRoot removes it, and a
+// killed ephemeral run's root holding its run directory and a note is emptied (RemoveKilledRun). The same
+// root widened to 0755 by hand is no longer one conflux secured, and is refused naming the first stray,
+// as a directory conflux would adopt is.
+func TestNothingInASecuredRootIsAStray(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "conflux")
+	t.Setenv("CONFLUX_DIR", root)
+
+	d := Default()
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, name := range []string{"conflux.json", "conflux.json.bak", "conflux.json~", ".conflux.json.swp"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := d.EnsureAll(); err != nil {
+		t.Errorf("EnsureAll(a secured root holding an editor's backups) = %v, want it taken", err)
+	}
+
+	if err := d.JudgeWays(); err != nil {
+		t.Errorf("JudgeWays(a secured root holding an editor's backups) = %v", err)
+	}
+
+	if err := os.Chmod(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := d.EnsureAll(); err == nil || !strings.Contains(err.Error(), "holds .conflux.json.swp") {
+		t.Errorf("EnsureAll(that root widened to 0755) = %v, want a refusal naming .conflux.json.swp", err)
+	}
+
+	if err := d.JudgeWays(); !errors.Is(err, ErrForeignRoot) || !strings.Contains(err.Error(), "holds .conflux.json.swp") {
+		t.Errorf("JudgeWays(that root widened to 0755) = %v, want a refusal of a foreign root naming .conflux.json.swp",
+			err)
+	}
+
+	if err := os.Chmod(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if gone, err := RemoveRoot(root); !gone || err != nil {
+		t.Errorf("RemoveRoot(a secured root holding an editor's backups) = %v, %v, want it removed", gone, err)
+	}
+
+	e := EphemeralDirs(filepath.Join(t.TempDir(), "conflux-ephemeral"))
+	if err := e.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	note := filepath.Join(e.State, "notes.txt")
+	if err := os.WriteFile(note, []byte("mine"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if removed, err := RemoveKilledRun(e.State, e.ServeLockFile()); err != nil || !slices.Contains(removed, note) {
+		t.Errorf("RemoveKilledRun(a killed run's secured root holding a note) = %q, %v, want the note removed", removed,
+			err)
+	}
+}
+
+// TestASecuredDirectoryWithoutStateIsHeldToConfluxsNames: a directory this account owns at 0700 is
+// secured as conflux secures a root, but one holding nothing of an installation's -- /root, a home kept
+// at 0700, a folder an operator made, here holding .profile and notes.txt and the lock a lock taken in it
+// left -- is no working root, so a CONFLUX_DIR at it is refused naming the first stray: by EnsureAll, by
+// uninstall's pre-flight (JudgeWays, as a foreign root) and by RemoveRoot, which leaves it as it was.
+func TestASecuredDirectoryWithoutStateIsHeldToConfluxsNames(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "root")
+	if err := os.Mkdir(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, name := range []string{".profile", "notes.txt", "serve.lock"} {
+		if err := os.WriteFile(filepath.Join(home, name), []byte("mine"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Setenv("CONFLUX_DIR", home)
+
+	mode, was := asFound(t, home)
+
+	if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), "holds .profile") {
+		t.Errorf("EnsureAll(a CONFLUX_DIR at a 0700 directory holding no state) = %v, want a refusal naming .profile", err)
+	}
+
+	if err := Default().JudgeWays(); !errors.Is(err, ErrForeignRoot) || !strings.Contains(err.Error(), "holds .profile") {
+		t.Errorf("JudgeWays(a CONFLUX_DIR at a 0700 directory holding no state) = %v, want a refusal of a foreign root "+
+			"naming .profile", err)
+	}
+
+	if gone, err := RemoveRoot(home); gone || err == nil || !strings.Contains(err.Error(), "holds .profile") {
+		t.Errorf("RemoveRoot(a 0700 directory holding no state) = %v, %v, want a refusal naming .profile", gone, err)
+	}
+
+	if m, h := asFound(t, home); m != mode || !slices.Equal(h, was) {
+		t.Errorf("a CONFLUX_DIR at a 0700 directory holding no state was left %v holding %q, want %v holding %q", m, h,
+			mode, was)
+	}
+}

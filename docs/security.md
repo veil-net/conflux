@@ -71,10 +71,11 @@ host can read, and when the run stops there is nothing at all.
   share, as `%ProgramData%`'s does: Users let add to it and to the folders made in it, and `CREATOR
   OWNER` passed on, so each owns what it adds. A folder that only inherits such entries, as one made
   in `%ProgramData%` does, is a root like any other, judged and restricted.
-- No root holds what conflux never makes there. A root whose top level — at its name, or where a
-  link there that conflux follows leads — holds any name but conflux's own is somebody else's, a
-  `CONFLUX_DIR` at a folder of homes or a link at a root's name pointed at a program's folder, and is
-  refused and left as it is, never adopted, narrowed, filled or emptied: by every command that makes a
+- No root holds what conflux never makes there, but a working one. A root whose top level — at its
+  name, or where a link there that conflux follows leads — holds any name but conflux's own is
+  somebody else's, a `CONFLUX_DIR` at a folder of homes, at `/root` or a home kept at `0700`, or a link
+  at a root's name pointed at a program's folder, and is refused and left as it is, never adopted,
+  narrowed, filled or emptied: by every command that makes a
   root, by `update` and `start` before they remove anything from one (Windows), and by `uninstall`,
   which refuses it before it removes anything, the boot service and a link at its name included. The
   refusal names the first stray entry. Conflux's names are one list (`paths.Dirs.own`): the
@@ -84,6 +85,15 @@ host can read, and when the run stops there is nothing at all.
   the run and log directories and what they hold where those are the root, an ephemeral run's root
   inside a `CONFLUX_DIR`, and what an atomic write, the service's copy or an update leaves before
   its rename (`.tmp-`, `.conflux-`). An empty directory, and a root conflux made, hold nothing else.
+  The one exception is a working installation's or run's root: one conflux has secured — root's or the
+  account running conflux's at `0700` or `0710` with no ACL letting another account write it, or on
+  Windows SYSTEM's or the Administrators' under a protected DACL granting nobody else anything — that
+  already holds this installation's own state, a name of conflux's there besides the service's copy,
+  the image an update moved aside and the lock files. Nothing in it is a stray, since only an account
+  conflux trusts could have put it there: an editor's backup beside a hand-edited `conflux.json`
+  (`conflux.json.bak`, `conflux.json~`, `.conflux.json.swp`) in a working install is fine. The same
+  root widened by hand, and a secured directory holding nothing of an installation's, are held to
+  conflux's names, as any directory conflux would adopt is.
   Nor is a file at a root's name conflux's, nor anything else that is neither a directory nor a link:
   conflux makes only a directory there, and `uninstall` refuses one, as it refuses such a root,
   rather than remove it.

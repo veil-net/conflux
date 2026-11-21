@@ -75,27 +75,34 @@ func rootedAt(root string) Dirs {
 }
 
 // stateIn reports whether the root dir, the directory s holds, already holds this installation's own
-// state: a name conflux makes in an installation's state root (own, as rootedAt lays one out), but the
-// service's copy of conflux and the image an update moved aside beside it, which the folder conflux was
-// installed into holds as well. What is left before a rename (ownPrefixes), an update's download beside
-// that folder's conflux among it, is no state either.
+// state (heldState), as an installation's state root is laid out (rootedAt).
 func stateIn(dir string, s step) bool {
 	names, err := namesOf(s, dir)
-	if err != nil {
-		return false
-	}
 
-	d := rootedAt(dir)
-	exe := filepath.Base(d.ServiceExecutable())
+	return err == nil && heldState(dir, names, rootedAt(dir))
+}
+
+// heldState reports whether names, what the root dir holds, hold this installation's own state: a name
+// one of layouts makes directly in dir (own), but the service's copy of conflux and the image an update
+// moved aside beside it, which the folder conflux was installed into holds as well, and the lock files,
+// which hold nothing and which a lock taken in a directory leaves there. What is left before a rename
+// (ownPrefixes), an update's download beside an installed conflux among it, is no state either.
+func heldState(dir string, names []string, layouts ...Dirs) bool {
+	var none Dirs
+
+	exe := filepath.Base(none.ServiceExecutable())
+	not := []string{exe, exe + ".old", filepath.Base(none.LockFile()), filepath.Base(none.ServeLockFile())}
 
 	for _, name := range names {
-		if sameName(name, exe) || sameName(name, exe+".old") {
+		if slices.ContainsFunc(not, func(n string) bool { return sameName(n, name) }) {
 			continue
 		}
 
-		for _, p := range d.own() {
-			if p.path != "" && sameName(filepath.Dir(p.path), dir) && sameName(filepath.Base(p.path), name) {
-				return true
+		for _, d := range layouts {
+			for _, p := range d.own() {
+				if p.path != "" && sameName(filepath.Dir(p.path), dir) && sameName(filepath.Base(p.path), name) {
+					return true
+				}
 			}
 		}
 	}
@@ -490,7 +497,7 @@ type ownPath struct {
 // makes again by its name there, losing nothing of the machine's identity, configuration or state --
 // the lock files, the log's folder and the run directory, the extraction, the service's copy of conflux
 // and the image an update moved aside, and anchord's -config, which the supervisor writes at every
-// spawn. A root holding any other name is not conflux's (strays). Beside it, what an atomic write
+// spawn. A root conflux has not secured that holds any other name is not conflux's (strays). Beside it, what an atomic write
 // (WriteAtomic's .tmp-) and the service's copy, the log RemakeOld keeps and an update's download
 // (.conflux-) leave before a rename (ownPrefixes); the anchor directory's names as the supervisor
 // makes, and sets aside, the account's and root's (.new, .old); the log moved aside (logfile's .1);
@@ -566,15 +573,29 @@ func (d Dirs) confluxName(dir, name string) bool {
 }
 
 // strays refuses the root dir, one of d's, the directory s holds, where it holds a name conflux never
-// makes there (confluxName), naming it: a directory that is somebody else's -- a CONFLUX_DIR at a folder of homes, or
-// a link at a root's name pointed at one -- which conflux never adopts, narrows, fills or empties, and
-// leaves as it is. led is where a link at dir's name leads, the directory s holds, or "" where dir is no
-// link. What it holds is listed through s and nowhere else, and nothing is judged: an empty directory,
-// and a root of conflux's, hold nothing else. The first stray by its name is the one named.
+// makes there (confluxName), naming it, unless it is a working installation's or run's root: one conflux
+// has secured, owned and left as it secures a root (securedStep), that already holds this installation's
+// own state (heldState). A directory that holds a stray otherwise is somebody else's -- a CONFLUX_DIR at a
+// folder of homes, /root or a home kept at 0700, or a link at a root's name pointed at one -- which conflux
+// never adopts, narrows, fills or empties, and leaves as it is. In a working root a stray is only what an
+// account conflux trusts put there -- an editor's backup beside a hand-edited conflux.json, say -- and
+// conflux adopted that root when it secured it. led is where a link at dir's name leads, the directory s
+// holds, or "" where dir is no link. What it holds is listed through s and nowhere else, and nothing in it
+// is judged: an empty directory, and a root of conflux's, hold nothing else. The first stray by its name
+// is the one named.
 func (d Dirs) strays(dir, led string, s step) error {
 	names, err := namesOf(s, dir)
 	if err != nil {
 		return err
+	}
+
+	p := dir
+	if led != "" {
+		p = led
+	}
+
+	if heldState(dir, names, d, Default(), EphemeralDirs(dir)) && securedStep(dir, p, s) == nil {
+		return nil
 	}
 
 	slices.Sort(names)
@@ -624,7 +645,8 @@ func deepestFirst(way []string) []string {
 // with all it holds. Anything else not meeting the rule -- what conflux does not make again, the
 // identity, configuration and state among it, or what is deeper in a folder that meets it -- is
 // refused, naming it, and left as it is; so is a root another account owns or may move what is in, and
-// one holding a name conflux never makes there, which is not conflux's at all (strays).
+// one conflux has not secured holding a name conflux never makes there, which is not conflux's at all
+// (strays).
 // What conflux makes again is in use while a supervisor runs from the root, so the caller stops it
 // first: what cannot be removed is refused, naming it. An ephemeral run's roots, which no service
 // runs from, and Unix's, where nothing conflux made fails that rule, hold nothing to remove.
@@ -664,7 +686,8 @@ func (d Dirs) RemakeOld() ([]string, error) {
 // others keep what is theirs in (sharedStep), is removed as itself, and where it leads is not touched.
 // A directory at dir's name itself that others keep what is theirs in -- a CONFLUX_DIR of /tmp -- is
 // refused, and nothing is removed; so is one, at dir's name or where a link there that conflux follows
-// leads, that holds a name conflux never makes there (strays) -- a CONFLUX_DIR at a folder of homes --
+// leads, that conflux has not secured and that holds a name conflux never makes there (strays) -- a
+// CONFLUX_DIR at a folder of homes --
 // the link included, and a file, or anything else neither a directory nor a link, at dir's name
 // (judgeHeld), and anything at dir's name conflux cannot look up at all. Nothing else in a root at dir's
 // name is read or judged first, so a root the readers' check refuses is removed as safely as one it takes.
@@ -705,7 +728,7 @@ func RemoveRoot(dir string) (bool, error) {
 // parents' rule, and a link at its name followed only where conflux would follow it in daily use (follow).
 // It is refused, with nothing removed, for what RemoveRoot and JudgeWays refuse a root for (judgeHeld),
 // saying which: a directory others keep what is theirs in, the top of a volume, one holding a name conflux
-// never makes there, or a file at its name. It is refused too, as ErrUnsecuredRoot, where conflux has not
+// never makes there where conflux has not secured it, or a file at its name. It is refused too, as ErrUnsecuredRoot, where conflux has not
 // secured it (unsecured): a link at its name that conflux does not follow, or that the boot service would
 // not, which on Windows the processes of the administrator who made it may point elsewhere unelevated; or
 // the directory, at its name or where such a link leads, not owned and left as conflux secures a root
@@ -831,7 +854,8 @@ func toParent(dir string, judge judgement) (*way, error) {
 // on it that is not a directory, a link conflux cannot follow, a lookup the system refuses; and the directory at the root's own name, looked up there as RemoveRoot holds it
 // (holdRoot), refused where it is one others keep what is theirs in, which conflux never makes its own
 // (sharedStep, ErrSharedRoot); and the directory at the root's name, or where a link there that
-// conflux follows leads, refused where it holds a name conflux never makes there (strays), as a file,
+// conflux follows leads, refused where conflux has not secured it and it holds a name conflux never makes
+// there (strays), as a file,
 // or anything else neither a directory nor a link, at the name is (ErrForeignRoot); and what is at the
 // root's name refused, as none of the kinds, where conflux cannot look it up at all (judgeHeld). A link
 // conflux does not follow is no refusal, as it is none of RemoveRoot's, which removes it as itself;
@@ -864,7 +888,8 @@ func (d Dirs) JudgeWays() error {
 // judgeHeld refuses the root dir, one of d's, as r holds it, for what RemoveRoot and JudgeWays refuse a root for,
 // saying which (refusal): a directory at its name that others keep what is theirs in (sharedStep,
 // ErrSharedRoot), and the top of a volume (topRefusal), which nothing holds to remove it from; one at its name, or where a link there that conflux follows leads, that holds a
-// name conflux never makes there (strays), and a file or anything else neither a directory nor a link
+// name conflux never makes there where conflux has not secured it (strays), and a file or anything else
+// neither a directory nor a link
 // at its name (notDir), neither of them conflux's (ErrForeignRoot). What is at its name where conflux
 // cannot look it up at all -- on Windows a folder whose DACL denies the Administrators the right to read
 // who owns it -- is refused too, as none of those kinds, since none of it can be judged and nothing
@@ -1501,7 +1526,8 @@ func judgeWay(dir string, rule judgement) error {
 // it follows, is judged once, here and nowhere else: secure, which EnsureAll calls after it, judges
 // the root and what it holds, and not its way. Anything already at the root's name is secure's, but a
 // directory others keep what is theirs in, the top of a volume (topRefusal), and one holding a name
-// conflux never makes there, which are refused here first, whatever leads to them (sharedStep, strays), so that secure, whose one caller,
+// conflux never makes there where conflux has not secured it, which are refused here first, whatever leads
+// to them (sharedStep, strays), so that secure, whose one caller,
 // EnsureAll, runs this first, adopts, narrows and fills neither; and a link that leads nowhere is
 // refused by the walk, with nothing made where it leads.
 func (d Dirs) makeRoot(dir string, rule judgement) ([]string, error) {

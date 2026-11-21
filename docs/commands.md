@@ -128,8 +128,8 @@ and a root that is not conflux's, which it refuses before removing anything
 is for `up`, `proxy`, `observe`, `install`, `enrol` and `start`, which make the roots, or make them
 conflux's: they narrow one of conflux's own and refuse one another account owns, and they refuse,
 with nothing made, narrowed or filled, a root that is a shared or system directory, the top of a
-volume, a file rather than a directory, or a directory holding a name conflux never makes there,
-naming that entry. A root that is not there is a machine with nothing installed, and read as one.
+volume, a file rather than a directory, or a directory holding a name conflux never makes there, but
+a working root, naming that entry. A root that is not there is a machine with nothing installed, and read as one.
 
 Help is the exception, since it needs nothing of the machine's: it runs the `anchorctl` extracted
 in the root only where the root passes the readers' check and a whole extraction is there, and otherwise
@@ -164,9 +164,14 @@ What is no root, on every command that makes or removes one
 - **A file at a root's name**, or anything else that is neither a directory nor a link: conflux makes
   only a directory there.
 - **A directory holding what conflux never makes there**, at the root's name or where a link there
-  that conflux follows leads — a `CONFLUX_DIR` at a folder of homes, or a link at a root's name
-  repointed at a program's folder — refused naming the first stray entry, and left as it is. An
-  empty directory, and a root conflux made, hold nothing else.
+  that conflux follows leads — a `CONFLUX_DIR` at a folder of homes, at `/root` or a home kept at
+  `0700`, or a link at a root's name repointed at a program's folder — refused naming the first stray
+  entry, and left as it is, an ephemeral run's root among them, which `uninstall` and `update` leave
+  with a note. An empty directory, and a root conflux made, hold nothing else. The exception is a
+  working root: one conflux has secured — its owner's at `0700` or `0710`, or SYSTEM's or the
+  Administrators' under a protected DACL — that already holds this installation's own state, a name of
+  conflux's besides the service's copy and the lock files. Nothing in it is a stray, so an editor's
+  backup beside a hand-edited `conflux.json` in a working install is fine.
 
 ## `conflux up`
 
@@ -592,8 +597,8 @@ account it runs as, and uninstall says so, exit 1. The root a killed run left be
 extracted pair, token and socket — it removes, stopping the anchord the run left, under the root's
 lock, so a run starting at that moment keeps its own; one holding anything another account could
 have put there is removed reading and signalling nothing in it. One conflux did not secure — a
-shared or system directory, one holding a name conflux never makes there, however narrow its mode,
-or one the readers' check refuses, which another account owns or may change, as any account may make
+shared or system directory, one holding a name conflux never makes there, unless conflux has secured
+it and it holds this installation's own state, or one the readers' check refuses, which another account owns or may change, as any account may make
 `C:\ProgramData\conflux-ephemeral` first — is not conflux's,
 whatever its name: judged with the installation's roots, before anything is asked or removed, it is
 left as it is, with a note naming it and why, and uninstall does not fail for it. Each is judged

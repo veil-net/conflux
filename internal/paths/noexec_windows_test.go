@@ -12,7 +12,7 @@ import (
 )
 
 // TestMountAllowsExecReadsNothing: Windows mounts nothing noexec, so MountAllowsExec says so of any
-// path, and reads nothing at it: Ephemeral asks it where Foreign found a candidate's way missing,
+// path, and reads nothing at it: Ephemeral asks it where Check found a candidate's way missing,
 // and a lookup by name there would follow what any user may make in C:\ meanwhile -- a link to a
 // share, which following signs this machine in to -- or find nothing. That nothing is read is pinned
 // by a named pipe of the test's own at the name: any look at a pipe's name, an open or a stat of it,

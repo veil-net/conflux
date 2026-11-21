@@ -901,9 +901,10 @@ func (d Dirs) roots() iter.Seq2[string, bool] {
 // Check holds each of d's roots that is there to what a command needs of it before it reads, runs or
 // signals anything in it by its name (holdRoot): the way to a CONFLUX_DIR's held to parents' rule, the
 // CONFLUX_DIR included, and the directory at each root's name as conflux makes a root (ours) -- not a
-// link, owned by root, SYSTEM, the Administrators or the account running conflux, and written by nobody
-// else. Nothing else can have put anything in such a root, so what it holds is not judged. It changes
-// nothing: a root that fails is refused, saying why.
+// link, owned by root or the account running conflux, and written by nobody else; on Windows owned by
+// SYSTEM or the Administrators -- or the account running conflux, for an ephemeral run's -- and
+// granting nobody else anything. Nothing else can have put anything in such a root, so what it holds is
+// not judged. It changes nothing: a root that fails is refused, saying why.
 //
 // Where none of d's roots is there, nothing of conflux's is installed, and Check is an error that is
 // fs.ErrNotExist: each caller then takes its own way for that, reading nothing.

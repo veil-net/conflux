@@ -32,14 +32,16 @@ func wellKnown(t windows.WELL_KNOWN_SID_TYPE) *windows.SID {
 
 // Restrict makes path belong to SYSTEM and Administrators alone: Administrators own
 // it, and a protected DACL grants the two of them full control and nobody else
-// anything. A directory's grant is inherited by what it holds.
+// anything. A directory's grant is inherited by what it holds. WriteAtomic gives it to every
+// private file it writes, while the file is still empty.
 //
-// The owner is set rather than left as it is (asAdministrators), so that everything conflux writes
-// passes Trusted, and the SYSTEM service's judgement of its root, whoever made it. A token that may
-// not name Administrators as an owner, or change the owner at all -- one that is not elevated, which
-// no conflux command that makes or restricts a root runs with, though a test may -- keeps its own
-// ownership and still gets the DACL. Protected is the half that matters for the DACL: without it the
-// parent's ACEs are merged back in and the restriction is cosmetic.
+// The owner is set rather than left as it is (asAdministrators), so that a file conflux writes is the
+// Administrators' whichever administrator's token wrote it, and no process of theirs that is not
+// elevated can change it for the SYSTEM service to read. A token that may not name Administrators as
+// an owner, or change the owner at all -- one that is not elevated, which no conflux command that
+// writes in a root runs with, though a test may -- keeps its own ownership and still gets the DACL.
+// Protected is the half that matters for the DACL: without it the parent's ACEs are merged back in
+// and the restriction is cosmetic.
 func Restrict(path string, dir bool) error {
 	return restrictWith(dir, func(owner *windows.SID, dacl *windows.ACL) error {
 		return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, restrictInfo(owner), owner, nil, dacl, nil)
@@ -80,15 +82,15 @@ func restrictWith(dir bool, set func(owner *windows.SID, dacl *windows.ACL) erro
 	return asAdministrators(func(owner *windows.SID) error { return set(owner, dacl) })
 }
 
-// asAdministrators is how conflux names the owner of everything it makes with a descriptor of its
-// own, or restricts, in a root or on the way to one: set, handed the Administrators, and, where the
-// token may not name them -- one that is not elevated, which no conflux command that makes or
-// restricts a root runs with, though a test may -- handed nil, to leave the owner as the token made
-// it. Named rather than left to the token: what is restricted -- a root found there, a file made
-// before it is restricted -- keeps the owner it has unless one is named, and the boot service,
-// running as SYSTEM, trusts no account but the Administrators with anything in its root or on its
-// way (changerIn, serviceRule). What is made is the Administrators' either way where the token is
-// elevated (ElevatedDefaultOwner).
+// asAdministrators is how conflux names the owner of what it makes with a descriptor of its own -- a
+// root, a folder in one, a folder on the way to one -- or restricts, a file it writes (Restrict): set,
+// handed the Administrators, and, where the token may not name them -- one that is not elevated,
+// which no conflux command that makes a root runs with, though a test may -- handed nil, to leave the
+// owner as the token made it. Named rather than left to the token: a file made before it is
+// restricted keeps the owner it has unless one is named, and the boot service, running as SYSTEM,
+// trusts no account but the Administrators with its roots, the folders in them, or their way (ours,
+// serviceRule). What is made is the Administrators' either way where the token is elevated
+// (ElevatedDefaultOwner).
 func asAdministrators(set func(owner *windows.SID) error) error {
 	err := set(sidAdmins)
 	if errors.Is(err, windows.ERROR_INVALID_OWNER) || errors.Is(err, windows.ERROR_ACCESS_DENIED) {
@@ -100,8 +102,8 @@ func asAdministrators(set func(owner *windows.SID) error) error {
 
 // ElevatedDefaultOwner makes the Administrators the owner this process's token gives what it makes
 // without naming one, where the token is elevated, as the first thing every conflux process does: so
-// what it makes by its name in a root or on the way to one -- logs\, the lock files, bin\ and its
-// lock, the service's copy of conflux, the log -- is the Administrators' from the moment it exists,
+// what it makes by its name in a root -- the lock files, bin\ and its lock, the service's copy of
+// conflux, the log -- is the Administrators' from the moment it exists,
 // and a CREATOR OWNER entry it inherits grants them, whatever the machine's default-owner policy
 // says. That policy makes what an elevated administrator makes the Administrators' on Windows Server
 // and that administrator's own on a Windows client, whose unelevated processes could then change it
@@ -430,10 +432,9 @@ func RestrictToOwner(path string, dir bool) error {
 }
 
 // Trusted reports whether path is owned by SYSTEM, Administrators or the account
-// running conflux -- by somebody who could have written it anyway. Restrict makes
-// Administrators the owner of everything conflux writes, so another owner is another
-// account's file, and whoever owns a file can grant themselves the right to change it:
-// a binary about to run as SYSTEM, found with such an owner, is not run.
+// running conflux -- by somebody who could have written it anyway. Whoever else owns it
+// can grant themselves the right to change it: a CA directory (pki/ca) found with such an
+// owner is not used.
 func Trusted(path string) bool {
 	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
 	if err != nil {
@@ -615,7 +616,7 @@ const moves = fileDeleteChild | windows.DELETE | windows.WRITE_DAC | windows.WRI
 // hold against the supervisor (flock.Held), and the service's log.
 const anyRight = ^windows.ACCESS_MASK(0)
 
-// retargets is what an ACE on a link or a junction, or on anything in a root, must not grant
+// retargets is what an ACE on a link or a junction on the way to a root must not grant
 // another account: moves, or a right that writes it -- its data, or on a folder a file or a folder
 // added to it, its attributes or its extended attributes -- among them what rewrites where it leads,
 // since setting a reparse point takes FILE_WRITE_DATA or FILE_WRITE_ATTRIBUTES (MS-FSA
@@ -780,8 +781,9 @@ func isCurrentUser(sid *windows.SID) bool {
 	return user != nil && user.Equals(sid)
 }
 
-// currentUser is the account this process runs as, read from its token once: Trusted asks
-// for every file it checks, and the answer cannot change while the process runs.
+// currentUser is the account this process runs as, read from its token once: the judgements of
+// roots and their ways ask for it of each folder and link they hold, and the answer cannot
+// change while the process runs.
 var currentUser = sync.OnceValue(func() *windows.SID {
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {

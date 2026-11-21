@@ -363,9 +363,11 @@ Logs: a service has no console, so the supervisor writes what it and `anchord` s
 moved aside to `conflux.log.1` past 10 MiB, as on macOS; `uninstall` removes both with the
 rest. The file is the service's standard output and error, so a crash lands in it too; they
 let go of it for the moment it is moved aside, since Windows moves no file that is open. It is
-opened once the supervisor has judged the root, so a root it refuses gets no log: the start
-ends as any failed start does, exit 1, which the System event log records and the recovery
-actions retry, and `conflux install`, run by hand, says why.
+opened once the supervisor has made the root as conflux makes one, `logs\` with it, each made
+afresh where it was not; a root it refuses — one whose way the boot service would not trust, or one
+it could not remove to make afresh — gets no log: the start ends as any failed start does, exit 1,
+which the System event log records and the recovery actions retry, and `conflux install`, run by
+hand, says why.
 
 ## rc: FreeBSD and OpenBSD
 

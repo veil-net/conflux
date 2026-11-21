@@ -181,17 +181,17 @@ var elevatedDefaultOwner = paths.ElevatedDefaultOwner
 // root or on the way to one: every one but version, help and cert, which make nothing there --
 // a pass-through and status among the rest, since either may be the first conflux to make a root
 // and extract into it. What an elevated administrator makes is otherwise that administrator's own on
-// a Windows client, which the boot service, running as SYSTEM, refuses at every start, and on which
-// a process of that account keeps whatever handle it opens. Only an elevated Windows token is ever
-// changed, so it is only ever there that err is anything but nil.
+// a Windows client, which their processes that are not elevated could change for the boot service,
+// running as SYSTEM, to read or run. Only an elevated Windows token is ever changed, so it is only
+// ever there that err is anything but nil.
 func ownerRefusal(name string, err error) error {
 	if err == nil || name == "version" || name == "help" || name == "cert" {
 		return nil
 	}
 
-	return fmt.Errorf("%w, so what conflux %s makes would be this account's own, which the boot service, running "+
-		"as SYSTEM, refuses.\n  Run it again as Administrator from a new shell; conflux version, help and cert "+
-		"still run", err, name)
+	return fmt.Errorf("%w, so what conflux %s makes would be this account's own, which its processes that are not "+
+		"elevated could change for the boot service, running as SYSTEM, to read or run.\n  Run it again as "+
+		"Administrator from a new shell; conflux version, help and cert still run", err, name)
 }
 
 // isHelpFlag reports whether an argument is a request for usage as Go's flag package reads one,

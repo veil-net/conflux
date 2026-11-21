@@ -792,7 +792,8 @@ func TestTidyRemovesAnEphemeralRootNotAsConfluxMakesOne(t *testing.T) {
 		}, false},
 		"a link": {func(t *testing.T, root string) {
 			if runtime.GOOS == "windows" {
-				t.Skip("a link at an ephemeral root's name is TestEnsureAllRemakesWhatIsNotItsOwn's there")
+				t.Skip("a junction at an ephemeral root's name is " +
+					"TestUninstallRemovesAJunctionAtAnEphemeralRootsName's there")
 			}
 
 			if err := os.Symlink(elsewhere, root); err != nil {

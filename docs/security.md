@@ -77,11 +77,12 @@ host can read, and when the run stops there is nothing at all.
   holds it to the same judgement first, the readers' check, before it reads, runs or signals anything
   in it by its name: the way to a `CONFLUX_DIR`'s held to parents' rule for the account reading it,
   the `CONFLUX_DIR` included, and the directory at the root's own name, looked up in the folder held
-  and never followed, as conflux makes a root — owned by root (SYSTEM or the Administrators on
-  Windows) or the account running conflux, and written by nobody else. A root that fails is refused,
-  saying why, with nothing in it read, run or stopped; with none there the command says nothing is
-  installed, reading nothing, since what is at a name that was not there a moment ago is whoever made
-  it first's. Nothing in a root that passes is judged: nobody else can have put anything there. The
+  and never followed, as conflux makes a root — owned by root or the account running conflux, and
+  written by nobody else; on Windows owned by SYSTEM, the Administrators or TrustedInstaller — or the
+  account running conflux, for an ephemeral run's — and granting nobody else anything. A root that
+  fails is refused, saying why, with nothing in it read, run or stopped; with none there the command
+  says nothing is installed, reading nothing, since what is at a name that was not there a moment ago
+  is whoever made it first's. Nothing in a root that passes is judged: nobody else can have put anything there. The
   one place conflux reads what another account may write is `anchord`'s own: its anchor directory,
   `anchord.json` and the run directory's `anchord/`, read as untrusted, never through a link nor
   blocking on a FIFO. `help`'s `anchorctl` runs from the extraction in a root only where the root

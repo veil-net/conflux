@@ -30,7 +30,7 @@ func mode(t *testing.T, dir string) os.FileMode {
 }
 
 // TestEnsureAllLeavesTheSharedLogAlone: macOS and FreeBSD write the service's log into the
-// system's /var/log, which is not conflux's to narrow.
+// system's /var/log, which is not conflux's to change.
 func TestEnsureAllLeavesTheSharedLogAlone(t *testing.T) {
 	shared := t.TempDir()
 	if err := os.Chmod(shared, 0o755); err != nil {

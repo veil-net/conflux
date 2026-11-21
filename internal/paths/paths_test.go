@@ -93,7 +93,7 @@ func TestCheckRefusesAFileAtARootsName(t *testing.T) {
 	}
 }
 
-// foundRoot is a root as secure finds one already there: a folder named conflux, made at 0700 in a
+// foundRoot is a root as EnsureAll finds one already there: a folder named conflux, made at 0700 in a
 // temporary directory of the test's, with what that passes on.
 func foundRoot(t *testing.T) string {
 	t.Helper()

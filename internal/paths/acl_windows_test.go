@@ -1385,9 +1385,11 @@ func TestAReaderRefusesARootItCannotRead(t *testing.T) {
 
 // TestAReaderTakesCreatorOwnerAsSecureDoes: an inherit-only CREATOR OWNER entry, which %ProgramData%
 // passes on and a root an administrator tightened by hand may keep, grants the root itself nothing,
-// and what is made in it whoever made that: where only SYSTEM, the Administrators and this account
-// may add to the root, nobody else. So checkRoot, every reader's, takes such a root, as secure does,
-// and Foreign with it; one that also lets Users add a file to it is refused by both, naming Users.
+// and what is made in it whoever made that: where only SYSTEM, the Administrators, TrustedInstaller
+// and this account may add to the root, nobody else. So checkRoot, every reader's, takes such a root,
+// as secure does, and Foreign with it. One that also lets Users add a file to it is refused, naming
+// Users, by checkRoot and Foreign, which change nothing, and then repaired by secure, which restricts
+// it, as it would any root granting more, and leaves it SYSTEM's and the Administrators' alone.
 // Windows-only, so it runs in CI's platforms job alone.
 func TestAReaderTakesCreatorOwnerAsSecureDoes(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
@@ -1406,12 +1408,19 @@ func TestAReaderTakesCreatorOwnerAsSecureDoes(t *testing.T) {
 	open := foundRoot(t)
 	setSecurity(t, open, tightened+"(A;;0x2;;;BU)")
 
-	for name, judge := range map[string]func(string) error{"checkRoot": checkRoot, "secure": secure} {
+	for name, judge := range map[string]func(string) error{"checkRoot": checkRoot, "Foreign": Foreign} {
 		if err := judge(open); err == nil || !strings.Contains(err.Error(), "Users") {
 			t.Errorf("%s(a root passing CREATOR OWNER full control of what is made in it, Users may add a file to) "+
 				"= %v, want a refusal naming Users", name, err)
 		}
 	}
+
+	if err := secure(open); err != nil {
+		t.Errorf("secure(a root passing CREATOR OWNER full control of what is made in it, Users may add a file to) "+
+			"= %v, want it repaired", err)
+	}
+
+	onlyTheSystems(t, open)
 }
 
 // TestCheckHoldsARootAsAReaderNeeds: Check holds each root that is there to its owner and to who

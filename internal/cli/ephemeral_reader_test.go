@@ -157,13 +157,13 @@ func TestAReaderTakesAnEphemeralRunsPairAsItIs(t *testing.T) {
 	}
 }
 
-// TestAReaderRemakesNothing: a reader -- status, renew, a pass-through -- makes no root or folder in the
-// installation, which a service may be running from, and leaves its roots as they are -- a run directory
-// not as conflux makes it among them, which EnsureAll would make afresh, the token in it with it. Where
-// this build's pair is not extracted there, as once an upgrade has put a newer conflux in place, and
-// there is no bin directory to extract it into, it runs a private temporary copy of anchorctl, which done
-// removes; where the bin directory is there, as conflux makes it, the pair is extracted into it, and the
-// reader runs that, with nothing to remove, as it does once the pair is there.
+// TestAReaderRemakesNothing: a reader -- status, renew, a pass-through -- makes neither a root nor the bin
+// directory in the installation, which a service may be running from, and leaves its roots as they are
+// -- a run directory not as conflux makes it among them, which EnsureAll would make afresh, the token in
+// it with it. Where this build's pair is not extracted there, as once an upgrade has put a newer conflux
+// in place, and there is no bin directory to extract it into, it runs a private temporary copy of
+// anchorctl, which done removes; where the bin directory is there, as conflux makes it, the pair is
+// extracted into it, and the reader runs that, with nothing to remove, as it does once the pair is there.
 func TestAReaderRemakesNothing(t *testing.T) {
 	anchortest.Require(t)
 

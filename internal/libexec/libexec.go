@@ -193,9 +193,9 @@ func Extracted(d paths.Dirs) (*Tools, error) {
 // root as conflux makes one. Where it is not extracted yet -- as once an upgrade has put a newer conflux
 // in place -- it is extracted there (Extract), into the bin directory, provided that folder is there and
 // as conflux makes it (paths.Dirs.OursFolder): that adds a set and removes none, so a service still
-// running an older one keeps it, and no root or folder is made. Anything else -- no installation, roots
-// the check refuses, a bin directory not there or not as conflux makes it, an extraction that fails --
-// runs a copy in a private temporary directory (Temporary).
+// running an older one keeps it, and makes neither a root nor the bin directory. Anything else -- no
+// installation, roots the check refuses, a bin directory not there or not as conflux makes it, an
+// extraction that fails -- runs a copy in a private temporary directory (Temporary).
 func ForUsage(d paths.Dirs) (bin string, done func(), err error) {
 	if d.Check() == nil {
 		t, err := Extracted(d)

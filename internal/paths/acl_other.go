@@ -224,7 +224,7 @@ func namesOf(s step, p string) ([]string, error) {
 	return names, nil
 }
 
-// emptyIn removes all the directory s holds holds, p naming it: the directory opened again through s,
+// emptyIn removes everything in the directory s holds, p naming it: the directory opened again through s,
 // to read (listing), and each name in it removed through that (removeAt), never followed.
 func emptyIn(s step, p string) error {
 	fd, err := listing(s, p)
@@ -836,13 +836,13 @@ func notReaders(dir string, uid uint32, euid int) error {
 func rootOwner(dir string, s step) error { return notReaders(dir, s.st.Uid, os.Geteuid()) }
 
 // heldLinkRule refuses dir, the link s holds by its name, where an account other than root and the one
-// running conflux owns it, who could point it at a directory of their own -- a link's mode means
-// nothing, and whoever may write the directory it is in is judged with the way to it -- as the readers'
-// check and secure hold a link at a root's name (ownedAs).
+// running conflux owns it (notReaders), who could point it at a directory of their own -- a link's mode
+// means nothing, and whoever may write the directory it is in is judged with the way to it -- as the
+// readers' check and secure hold a link at a root's name (ownedAs).
 func heldLinkRule(dir string, s step) (linkSecurity, error) {
-	if owner := int(s.st.Uid); owner != 0 && owner != os.Geteuid() {
-		return linkSecurity{}, fmt.Errorf("%s is a link that belongs to uid %d, who could point it at a directory of "+
-			"their own, so conflux will not follow it.\n  Remove it, then run this again", dir, owner)
+	if err := notReaders(dir, s.st.Uid, os.Geteuid()); err != nil {
+		return linkSecurity{}, fmt.Errorf("%s is a link whose owner could point it at a directory of their own, so "+
+			"conflux will not follow it: %w", dir, err)
 	}
 
 	return linkSecurity{}, nil

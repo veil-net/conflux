@@ -623,12 +623,7 @@ func secure(dir string, installation bool) error {
 // conflux (ownerRefusal), or its DACL, as found, lets another account move what is in it (changerIn,
 // moves), who could then, with a handle opened now, do what why says to undo what conflux does there.
 func unmovable(dir string, sd *windows.SECURITY_DESCRIPTOR, why string) error {
-	owner, _, err := sd.Owner()
-	if err != nil {
-		return fmt.Errorf("read the owner of %s: %w", dir, err)
-	}
-
-	if err := ownerRefusal(dir, owner); err != nil {
+	if err := ownerIn(dir, sd); err != nil {
 		return err
 	}
 
@@ -891,6 +886,17 @@ var restricted = func(string) {}
 // to replace its DACL and owner.
 const rootAccess = windows.READ_CONTROL | windows.FILE_READ_ATTRIBUTES | windows.WRITE_DAC | windows.WRITE_OWNER
 
+// ownerIn is ownerRefusal of dir for the owner sd holds, the one read of a root's owner that secure,
+// RemakeOld (unmovable), the readers' check (checkRoot) and OpenIn (rootOwner) make.
+func ownerIn(dir string, sd *windows.SECURITY_DESCRIPTOR) error {
+	owner, _, err := sd.Owner()
+	if err != nil {
+		return fmt.Errorf("read the owner of %s: %w", dir, err)
+	}
+
+	return ownerRefusal(dir, owner)
+}
+
 // ownerRefusal is secure's refusal of dir for owner, or nil where owner is SYSTEM, the
 // Administrators or the account running conflux.
 func ownerRefusal(dir string, owner *windows.SID) error {
@@ -935,12 +941,7 @@ func checkRoot(dir string) error {
 		return fmt.Errorf("read the ownership of %s: %w", dir, err)
 	}
 
-	owner, _, err := sd.Owner()
-	if err != nil {
-		return fmt.Errorf("read the owner of %s: %w", dir, err)
-	}
-
-	if err := ownerRefusal(dir, owner); err != nil {
+	if err := ownerIn(dir, sd); err != nil {
 		return err
 	}
 
@@ -1317,12 +1318,7 @@ func rootOwner(dir string, s step) error {
 		return fmt.Errorf("read the ownership of %s: %w", dir, err)
 	}
 
-	owner, _, err := sd.Owner()
-	if err != nil {
-		return fmt.Errorf("read the owner of %s: %w", dir, err)
-	}
-
-	return ownerRefusal(dir, owner)
+	return ownerIn(dir, sd)
 }
 
 // heldLinkRule refuses dir, the junction or link s holds open as itself, where another account may

@@ -446,7 +446,7 @@ func ours(t *testing.T, mode os.FileMode, plant func(dir string)) string {
 }
 
 // theirs is a directory another account owns, made, planted (plant) and given to nobody (65534), which
-// only root can do: theirsCase includes it in a test's cases only where the test runs as root, and
+// only root can do: a test includes it in its cases only where it runs as root (asRoot), and
 // TestLedRootHoldsWhereALinkLeadsToItsOwner judges another account's owner for every account.
 func theirs(t *testing.T, plant func(dir string)) string {
 	t.Helper()

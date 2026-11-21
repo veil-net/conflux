@@ -522,8 +522,9 @@ func (d Dirs) Way() ([]string, error) {
 
 // RemoveWay removes each folder of way, folders conflux made on the way to its roots (Way), whole,
 // whatever it holds, deepest first, and is those it removed: each removed from the folder it is in, as
-// the walk to that holds it (toParent), never by its name and never following a link, a CONFLUX_DIR's
-// way held to parents' rule, and what it holds removed through it as a root is (removeFrom). A folder
+// the walk to that holds it (toParent), never by its name and never following a link, the way to one
+// that is a CONFLUX_DIR, inside it or above it held to parents' rule, and what it holds removed through
+// it as a root is (removeFrom). A folder
 // conflux made is conflux's whole, so what anybody put in it goes with it. One that is not there, or is
 // no longer a folder -- a link or a file put at its name -- is left, and so is one that holds a root of
 // conflux's still there (holdsRoot): a root uninstall could not remove, or an ephemeral run's started
@@ -549,7 +550,7 @@ func removeWay(way []string, whole bool) ([]string, error) {
 		}
 
 		judge := judgement(nil)
-		if root := Root(); root != "" && (dir == root || above(dir, root)) {
+		if root := Root(); chosen(dir) || root != "" && above(dir, root) {
 			judge = parentsRule(dir)
 		}
 

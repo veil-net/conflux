@@ -469,10 +469,11 @@ func mine(t *testing.T, mode os.FileMode, plant func(dir string)) string {
 }
 
 // TestTheWayIsJudgedBeforeItIsReadOrRemoved: a CONFLUX_DIR's way is held to parents' rule before the
-// record in it is read (Way) and before a folder recorded above it is removed (RemoveWay), since a way
+// record in it is read (Way) and before a folder recorded on it is removed (RemoveWay), since a way
 // another account may change could lead either elsewhere: with a directory every account may write
-// on it, Way refuses, naming that directory, and RemoveWay refuses, naming it, and leaves the folder;
-// a folder above no CONFLUX_DIR, on a platform root's way, is not judged, and is removed.
+// on it, Way refuses, naming that directory, and RemoveWay refuses, naming it, and leaves the folder --
+// one above the CONFLUX_DIR, and one inside it, as an ephemeral run records the .conflux it made; a
+// folder above no CONFLUX_DIR, on a platform root's way, is not judged, and is removed.
 func TestTheWayIsJudgedBeforeItIsReadOrRemoved(t *testing.T) {
 	open := realTempDir(t)
 
@@ -498,6 +499,19 @@ func TestTheWayIsJudgedBeforeItIsReadOrRemoved(t *testing.T) {
 
 	if way, err := Default().Way(); err == nil || !strings.Contains(err.Error(), "inside "+open) {
 		t.Errorf("Way(), a directory every account may write on its way = %q, %v, want a refusal naming it", way, err)
+	}
+
+	if err := os.Remove(filepath.Join(root, wayName)); err != nil {
+		t.Fatal(err)
+	}
+
+	if removed, err := RemoveWay([]string{root}); removed != nil || err == nil || !strings.Contains(err.Error(), open) {
+		t.Errorf("RemoveWay(%s, inside a CONFLUX_DIR inside a directory every account may write) = %q, %v, want a "+
+			"refusal naming it", root, removed, err)
+	}
+
+	if _, err := os.Lstat(root); err != nil {
+		t.Errorf("RemoveWay refusing the way removed %s: %v", root, err)
 	}
 
 	if err := os.RemoveAll(Root()); err != nil {

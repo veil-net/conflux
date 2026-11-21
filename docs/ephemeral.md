@@ -128,8 +128,9 @@ runs. Neither `status` nor
 pass-through ever writes into a run's root, and a root the readers' check refuses is no run's
 to them, whatever lock, marker or binaries it holds, nor is one holding anything another account
 could have put there or may change, which they judge from the root held open, by no name and
-following no link: they pass either over, as `uninstall` does, reading, running and signalling
-nothing in it. Pass-through — `conflux peers`,
+following no link: they pass either over, reading, running and signalling nothing in it.
+`uninstall` removes every ephemeral root, such a one included, reading and signalling nothing in
+it and following nothing it holds. Pass-through — `conflux peers`,
 `conflux blocks`, every anchorctl command — reaches the ephemeral anchor when it is the
 only one running, once it is up.
 With an installed anchor running too, it reaches that one unless `CONFLUX_EPHEMERAL=1` is

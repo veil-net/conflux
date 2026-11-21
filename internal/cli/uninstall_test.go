@@ -45,6 +45,8 @@ func TestUninstallLeavesNothingConfluxMade(t *testing.T) {
 	mgr := &fakeManager{d: d}
 	standInService(t, mgr)
 
+	accounts := recordAccounts(t)
+
 	// What uninstall stops: the anchord a dead supervisor left, by the root's pid record, which passes
 	// the readers' check; and the killed ephemeral run's, by its root's, inside the installation's.
 	var reaped, emptied []string
@@ -64,6 +66,10 @@ func TestUninstallLeavesNothingConfluxMade(t *testing.T) {
 	out, errOut, code := capture(t, "uninstall", "--yes")
 	if code != ExitOK {
 		t.Fatalf("uninstall exited %d, saying:\n%s%s", code, out, errOut)
+	}
+
+	if !slices.Equal(*accounts, []bool{true}) {
+		t.Errorf("uninstall removed the accounts anchord ran as %v, want once, the ephemeral run's with them", *accounts)
 	}
 
 	if !slices.Equal(reaped, []string{d.State}) || !slices.Equal(emptied, []string{paths.EphemeralCandidates()[0]}) {
@@ -124,11 +130,31 @@ func (m *removing) Remove() error {
 	return nil
 }
 
+// recordAccounts records each removal of the accounts anchord ran as uninstall asks for, by whether the
+// ephemeral run's account goes too, removing none.
+func recordAccounts(t *testing.T) *[]bool {
+	t.Helper()
+
+	var asked []bool
+
+	was := removeAccounts
+	t.Cleanup(func() { removeAccounts = was })
+
+	removeAccounts = func(ephemeral bool) error {
+		asked = append(asked, ephemeral)
+
+		return nil
+	}
+
+	return &asked
+}
+
 // TestUninstallLeavesALiveRun: an ephemeral run inside a CONFLUX_DIR would go with the root, so while
 // one is live uninstall refuses, exit 2, naming it, before anything is asked or removed, as it does
-// for one outside; and one that starts once uninstall has begun -- here as the boot service is
-// removed -- is left running, with the root that holds it, and uninstall says so, exit 1, listing
-// what it removed all the same.
+// for one outside, and again once the question is answered, for one started as it was asked; and one
+// that starts once uninstall has begun -- here as the boot service is removed -- is left running, with
+// the root that holds it and the account it runs as, and uninstall says so, exit 1, listing what it
+// removed all the same.
 func TestUninstallLeavesALiveRun(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
@@ -153,12 +179,40 @@ func TestUninstallLeavesALiveRun(t *testing.T) {
 		}
 	})
 
+	t.Run("live once asked", func(t *testing.T) {
+		d := oldInstall(t).d
+		e := paths.EphemeralDirs(paths.EphemeralCandidates()[0])
+
+		defer func(was func(paths.Dirs, error, bool) bool) { confirm = was }(confirm)
+		confirm = func(paths.Dirs, error, bool) bool {
+			t.Cleanup(holdRoot(t, e))
+
+			return true
+		}
+
+		mgr := &removing{fakeManager: fakeManager{d: d}}
+		standInService(t, mgr)
+
+		out, errOut, code := capture(t, "uninstall", "--yes")
+		if code != ExitUsage || !strings.Contains(errOut, e.State) {
+			t.Errorf("uninstall beside a run started as it asked exited %d, want %d naming %s:\n%s%s", code, ExitUsage,
+				e.State, out, errOut)
+		}
+
+		if _, err := os.Lstat(d.ConfigFile()); mgr.removals > 0 || err != nil {
+			t.Errorf("uninstall beside a run started as it asked removed the boot service %d times, and %s (Lstat: %v)",
+				mgr.removals, d.ConfigFile(), err)
+		}
+	})
+
 	t.Run("started since", func(t *testing.T) {
 		d := oldInstall(t).d
 		e := paths.EphemeralDirs(paths.EphemeralCandidates()[0])
 
 		mgr := &removing{fakeManager: fakeManager{d: d}, then: func() { t.Cleanup(holdRoot(t, e)) }}
 		standInService(t, mgr)
+
+		accounts := recordAccounts(t)
 
 		out, errOut, code := capture(t, "uninstall", "--yes")
 		if code != ExitError || !strings.Contains(errOut, e.State) || !strings.Contains(errOut, "left running") {
@@ -172,6 +226,10 @@ func TestUninstallLeavesALiveRun(t *testing.T) {
 
 		if !strings.Contains(out, "  the boot service\n") {
 			t.Errorf("uninstall, failing, did not say what it had removed:\n%s", out)
+		}
+
+		if !slices.Equal(*accounts, []bool{false}) {
+			t.Errorf("uninstall removed the accounts anchord ran as %v, want once, the ephemeral run's kept", *accounts)
 		}
 	})
 }

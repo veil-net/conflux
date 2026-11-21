@@ -89,7 +89,7 @@ func runUninstall(_ context.Context, args []string) int {
 	// does, nor from a root that goes, as one inside a CONFLUX_DIR would: the run ends itself, with its
 	// anchor, when it is stopped. Asked before anything is asked, and again once it is answered, before
 	// anything is removed.
-	if liveRefused() || !confirmUninstall(d, checked, *yes) || liveRefused() {
+	if liveRefused() || !confirm(d, checked, *yes) || liveRefused() {
 		return ExitUsage
 	}
 
@@ -185,7 +185,7 @@ func runUninstall(_ context.Context, args []string) int {
 
 	// The accounts anchord ran as, if conflux made them, stopping whatever runs as each: the ephemeral
 	// runs' unless one started since.
-	errs = append(errs, removeAccount(len(started) == 0))
+	errs = append(errs, removeAccounts(len(started) == 0))
 
 	// What it removed, however far it got.
 	if len(removed) > 0 {
@@ -217,6 +217,12 @@ func runUninstall(_ context.Context, args []string) int {
 
 // reap is daemon.Reap, which a test counts.
 var reap = daemon.Reap
+
+// confirm is confirmUninstall, which a test answers, starting an ephemeral run as it is asked.
+var confirm = confirmUninstall
+
+// removeAccounts is removeAccount, which a test records.
+var removeAccounts = removeAccount
 
 // ephemeralCandidates is paths.EphemeralCandidates, which a test points at roots outside the
 // installation's: under a CONFLUX_DIR every candidate is inside it.

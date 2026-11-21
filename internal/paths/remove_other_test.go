@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // TestRemoveRootFollowsNothing: uninstall removes every root, one the readers' check refuses among
@@ -76,8 +78,8 @@ func TestRemoveRootFollowsNothing(t *testing.T) {
 // alike: a link of this account's to a directory of its own at 0700 is followed, what that directory
 // holds removed through the handle held on it, a link in it as itself, and then the link, the
 // directory left empty; a link to a directory of this account's own at 0777, which conflux has not
-// secured, to one another account owns, and to the directory it is in, are removed as themselves, with
-// where each leads left as it was.
+// secured, to one another account owns -- run as root, which alone can make one -- and to the directory
+// it is in, are removed as themselves, with where each leads left as it was.
 func TestRemoveRootFollowsALinkRootOnlyWhereConfluxWould(t *testing.T) {
 	elsewhere := t.TempDir()
 
@@ -97,21 +99,27 @@ func TestRemoveRootFollowsALinkRootOnlyWhereConfluxWould(t *testing.T) {
 	}
 
 	for _, chosen := range []bool{false, true} {
-		for _, c := range []struct {
+		type linkCase struct {
 			name   string
-			target func(t *testing.T, in string) (string, bool)
+			target func(t *testing.T, in string) string
 			follow bool
-		}{
-			{"a directory of this account's own", func(t *testing.T, _ string) (string, bool) {
-				return ours(t, 0o700, plant), true
-			}, true},
-			{"a directory of this account's own every account may write", func(t *testing.T, _ string) (string, bool) {
-				return ours(t, 0o777, plant), true
+		}
+
+		cases := []linkCase{
+			{"a directory of this account's own", func(t *testing.T, _ string) string { return ours(t, 0o700, plant) },
+				true},
+			{"a directory of this account's own every account may write", func(t *testing.T, _ string) string {
+				return ours(t, 0o777, plant)
 			}, false},
-			{"a directory another account owns", func(t *testing.T, _ string) (string, bool) { return theirs(t, plant) },
-				false},
-			{"the directory it is in", func(_ *testing.T, in string) (string, bool) { plant(in); return in, true }, false},
-		} {
+			{"the directory it is in", func(_ *testing.T, in string) string { plant(in); return in }, false},
+		}
+		if asRoot() {
+			cases = append(cases, linkCase{"a directory another account owns", func(t *testing.T, _ string) string {
+				return theirs(t, plant)
+			}, false})
+		}
+
+		for _, c := range cases {
 			t.Run(fmt.Sprintf("%s, a CONFLUX_DIR %v", c.name, chosen), func(t *testing.T) {
 				in, err := filepath.EvalSymlinks(t.TempDir())
 				if err != nil {
@@ -125,7 +133,7 @@ func TestRemoveRootFollowsALinkRootOnlyWhereConfluxWould(t *testing.T) {
 					t.Setenv("CONFLUX_DIR", root)
 				}
 
-				target, planted := c.target(t, in)
+				target := c.target(t, in)
 
 				if err := os.Symlink(target, root); err != nil {
 					t.Fatal(err)
@@ -143,15 +151,13 @@ func TestRemoveRootFollowsALinkRootOnlyWhereConfluxWould(t *testing.T) {
 					t.Fatalf("RemoveRoot of a link to %s removed where it led: %v", c.name, err)
 				}
 
-				if entries, err := os.ReadDir(target); planted {
-					switch {
-					case err != nil:
-						t.Errorf("read %s: %v", target, err)
-					case c.follow && len(entries) != 0:
-						t.Errorf("RemoveRoot of a link to %s left %v there, want it emptied", c.name, entries)
-					case !c.follow && len(entries) != 2:
-						t.Errorf("RemoveRoot of a link to %s left %v there, want it untouched", c.name, entries)
-					}
+				switch entries, err := os.ReadDir(target); {
+				case err != nil:
+					t.Errorf("read %s: %v", target, err)
+				case c.follow && len(entries) != 0:
+					t.Errorf("RemoveRoot of a link to %s left %v there, want it emptied", c.name, entries)
+				case !c.follow && len(entries) != 2:
+					t.Errorf("RemoveRoot of a link to %s left %v there, want it untouched", c.name, entries)
 				}
 
 				if b, err := os.ReadFile(kept); err != nil || string(b) != "kept" {
@@ -348,9 +354,10 @@ func TestTheWayConfluxMadeIsRemovedWhenEmpty(t *testing.T) {
 // the way record uninstall reads, the serve lock tidy asks after -- is opened through the root held
 // (OpenIn), never by its name: a CONFLUX_DIR whose name is a link to a directory another account owns
 // is refused, naming the link, before anything in that directory is opened, though the link is this
-// account's and the way to it passes; one leading to a directory of this account's own is followed,
-// and what is in it read, at 0700 and at a 0777 EnsureAll would narrow, as it narrows a root at the
-// name itself.
+// account's and the way to it passes -- run as root, which alone can make one; ledRoot's owner rule is
+// TestLedRootHoldsWhereALinkLeadsToItsOwner's -- and one leading to a directory of this account's own
+// is followed, and what is in it read, at 0700 and at a 0777 EnsureAll would narrow, as it narrows a
+// root at the name itself.
 func TestARootIsHeldBeforeAnythingInItIsOpened(t *testing.T) {
 	base, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -370,17 +377,25 @@ func TestARootIsHeldBeforeAnythingInItIsOpened(t *testing.T) {
 		}
 	}
 
-	for _, c := range []struct {
+	type holdCase struct {
 		name   string
 		target func(t *testing.T) string
 		ok     bool
-	}{
+	}
+
+	cases := []holdCase{
 		{"a directory of this account's own", func(t *testing.T) string { return ours(t, 0o700, plant) }, true},
 		{"a directory of this account's own every account may write", func(t *testing.T) string {
 			return ours(t, 0o777, plant)
 		}, true},
-		{"a directory another account owns", func(t *testing.T) string { dir, _ := theirs(t, plant); return dir }, false},
-	} {
+	}
+	if asRoot() {
+		cases = append(cases, holdCase{"a directory another account owns", func(t *testing.T) string {
+			return theirs(t, plant)
+		}, false})
+	}
+
+	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			target := c.target(t)
 
@@ -428,64 +443,54 @@ func ours(t *testing.T, mode os.FileMode, plant func(dir string)) string {
 	return dir
 }
 
-// theirs is a directory another account owns, and whether plant was called on it: where this test runs
-// as root, one made, planted and given to nobody (65534); otherwise one already there, in a directory
-// root owns that nobody else may write, planted with nothing. The test is skipped where there is none.
-func theirs(t *testing.T, plant func(dir string)) (string, bool) {
+// theirs is a directory another account owns, made, planted (plant) and given to nobody (65534), which
+// only root can do: theirsCase includes it in a test's cases only where the test runs as root, and
+// TestLedRootHoldsWhereALinkLeadsToItsOwner judges another account's owner for every account.
+func theirs(t *testing.T, plant func(dir string)) string {
 	t.Helper()
 
-	euid := os.Geteuid()
-
-	if euid == 0 {
-		dir := filepath.Join(t.TempDir(), "theirs")
-		if err := os.Mkdir(dir, 0o700); err != nil {
-			t.Fatal(err)
-		}
-
-		plant(dir)
-
-		if err := filepath.WalkDir(dir, func(p string, _ fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-
-			return os.Lchown(p, 65534, 65534)
-		}); err != nil {
-			t.Fatal(err)
-		}
-
-		return dir, true
+	dir := filepath.Join(t.TempDir(), "theirs")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
 	}
 
-	owner := func(p string) (uint32, os.FileInfo, bool) {
-		fi, err := os.Lstat(p)
+	plant(dir)
+
+	if err := filepath.WalkDir(dir, func(p string, _ fs.DirEntry, err error) error {
 		if err != nil {
-			return 0, nil, false
+			return err
 		}
 
-		st, ok := fi.Sys().(*syscall.Stat_t)
-
-		return st.Uid, fi, ok
+		return os.Lchown(p, 65534, 65534)
+	}); err != nil {
+		t.Fatal(err)
 	}
 
-	for _, parent := range []string{"/var/lib", "/var/cache", "/var/spool", "/var/db", "/home", "/Users"} {
-		if uid, fi, ok := owner(parent); !ok || uid != 0 || !fi.IsDir() || fi.Mode().Perm()&0o022 != 0 {
-			continue
-		}
+	return dir
+}
 
-		entries, _ := os.ReadDir(parent)
-		for _, e := range entries {
-			p := filepath.Join(parent, e.Name())
-			if uid, fi, ok := owner(p); ok && fi.IsDir() && uid != 0 && int(uid) != euid {
-				return p, false
-			}
+// asRoot reports whether this test runs as root, which alone can give a directory to another account.
+func asRoot() bool { return os.Geteuid() == 0 }
+
+// TestLedRootHoldsWhereALinkLeadsToItsOwner: the directory a link at a root's name leads to is held to
+// the owner a root at the name itself is: one root or this account owns is taken, and one another
+// account owns refused, naming the link and the owner -- judged here from what fstat says of it, an
+// owner of this test's making, so on every machine and as every account.
+func TestLedRootHoldsWhereALinkLeadsToItsOwner(t *testing.T) {
+	euid := os.Geteuid()
+	link, to := filepath.Join(t.TempDir(), "conflux"), t.TempDir()
+
+	for uid, ok := range map[uint32]bool{0: true, uint32(euid): true, uint32(euid) + 1: false} {
+		err := ledRoot(link, to, step{st: unix.Stat_t{Uid: uid}})
+
+		switch {
+		case ok && err != nil:
+			t.Errorf("ledRoot(a directory uid %d owns) = %v, want it taken", uid, err)
+		case !ok && (err == nil || !strings.Contains(err.Error(), link+" is a link to ") ||
+			!strings.Contains(err.Error(), fmt.Sprintf("belongs to uid %d", uid))):
+			t.Errorf("ledRoot(a directory uid %d owns) = %v, want a refusal naming the link and the owner", uid, err)
 		}
 	}
-
-	t.Skip("no directory another account owns is here in a directory only root may write, and only root can " +
-		"make one")
-
-	return "", false
 }
 
 // TestTheWayIsJudgedBeforeItIsReadOrRemoved: a CONFLUX_DIR's way is held to parents' rule before the

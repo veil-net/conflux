@@ -27,9 +27,10 @@ func init() {
 	}
 }
 
-// TestEnsureAllGivesTheRootToAdministrators: the root is made SYSTEM's and
-// Administrators', with a DACL %ProgramData%'s grants to Users cannot flow back into,
-// and what is created beneath it afterwards inherits that.
+// TestEnsureAllGivesTheRootToAdministrators: the root is made SYSTEM's and Administrators', owned
+// by the Administrators, with a DACL %ProgramData%'s grants to Users cannot flow back into, and what
+// is created beneath it afterwards inherits that and is the Administrators' too. Windows-only, so it
+// runs in CI's platforms job alone.
 func TestEnsureAllGivesTheRootToAdministrators(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "conflux")
 	t.Setenv("CONFLUX_DIR", root)
@@ -51,8 +52,10 @@ func TestEnsureAllGivesTheRootToAdministrators(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !Trusted(f) {
-		t.Error("a file created beneath the root is not trusted")
+	for _, p := range []string{d.State, d.Run, f} {
+		if owner := privtest.ReadSecurity(t, p).Owner; !owner.Equals(sidAdmins) {
+			t.Errorf("%s belongs to %v, want the Administrators", p, owner)
+		}
 	}
 }
 

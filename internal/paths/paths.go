@@ -735,38 +735,18 @@ func RemoveRoot(dir string) (bool, error) {
 }
 
 // RemoveKilledRun empties dir, the root a killed ephemeral run left, but for keep, the root's lock, which
-// the caller holds, and is the paths of what it removed, however far it got. The root is held as RemoveRoot
-// holds one (holdRoot): the way to it walked from the top of its volume and held, a CONFLUX_DIR's held to
-// parents' rule, and a link at its name followed only where conflux would follow it in daily use (follow).
-// It is refused, with nothing removed, for what RemoveRoot and JudgeWays refuse a root for (judgeHeld),
-// saying which: a directory others keep what is theirs in, the top of a volume, one holding a name conflux
-// never makes there where conflux has not secured it, or a file at its name. It is refused too, as ErrUnsecuredRoot, where conflux has not
-// secured it (unsecured): a link at its name that conflux does not follow, or that the boot service would
-// not, which on Windows the processes of the administrator who made it may point elsewhere unelevated; or
-// the directory, at its name or where such a link leads, not owned and left as conflux secures a root
-// (securedStep). Then each thing in the directory held, keep aside, is removed through it, never by its
-// name, a link in it removed as itself and where it leads never touched. A link at dir's name, and dir and
-// keep themselves, are the caller's to remove once it lets go of the lock. Where nothing is at dir's name,
-// or on the way to it, it is an error that is fs.ErrNotExist.
+// the caller holds, and is the paths of what it removed, however far it got: the root held and judged as
+// JudgeKilledRun holds and judges it, refused with nothing removed where that refuses it, and then each
+// thing in the directory held, keep aside, removed through it, never by its name, a link in it removed as
+// itself and where it leads never touched. A link at dir's name, and dir and keep themselves, are the
+// caller's to remove once it lets go of the lock. Where nothing is at dir's name, or on the way to it, it
+// is an error that is fs.ErrNotExist.
 func RemoveKilledRun(dir, keep string) ([]string, error) {
-	dir, err := filepath.Abs(dir)
-	if err != nil {
-		return nil, err
-	}
-
-	r, err := holdRoot(dir)
+	dir, r, err := holdKilledRun(dir)
 	if err != nil {
 		return nil, err
 	}
 	defer r.close()
-
-	if err := EphemeralDirs(dir).judgeHeld(dir, r); err != nil {
-		return nil, err
-	}
-
-	if err := r.unsecured(dir); err != nil {
-		return nil, refusal{ErrUnsecuredRoot, err}
-	}
 
 	name := ""
 	if keep != "" && sameName(filepath.Dir(keep), dir) {
@@ -776,7 +756,61 @@ func RemoveKilledRun(dir, keep string) ([]string, error) {
 	return emptyIn(r.dir, dir, name)
 }
 
-// ErrUnsecuredRoot is RemoveKilledRun's refusal of a root conflux has not secured, which errors.Is tells
+// JudgeKilledRun refuses dir, the root a killed ephemeral run may have left, for what RemoveKilledRun
+// refuses it for before it removes anything, or is nil where that would empty it, reading nothing in it
+// but the names it holds and making nothing there: so that a caller asks it before it takes the root's
+// lock, which would make a lock file there, or reads anything in it. The root is held as RemoveRoot holds
+// one (holdRoot): the way to it walked from the top of its volume and held, a CONFLUX_DIR's held to parents'
+// rule (ErrWayRefused), and a link at its name followed only where conflux would follow it in daily use
+// (follow). It is refused for what RemoveRoot and JudgeWays refuse a root for (judgeHeld), saying which:
+// a directory others keep what is theirs in, or the top of a volume (ErrSharedRoot), one holding
+// a name conflux never makes there, but a working run's root, or a file at its name (ErrForeignRoot), and
+// what is at its name where conflux cannot look it up at all, as none of those kinds. It is refused too,
+// as ErrUnsecuredRoot, where conflux has not secured it (unsecured): a link at its name that conflux does
+// not follow, or that the boot service would not, which on Windows the processes of the administrator who
+// made it may point elsewhere unelevated; or the directory, at its name or where such a link leads, not
+// owned and left as conflux secures a root (securedStep). Where nothing is at dir's name, or on the way to
+// it, it is an error that is fs.ErrNotExist.
+func JudgeKilledRun(dir string) error {
+	_, r, err := holdKilledRun(dir)
+	if err != nil {
+		return err
+	}
+
+	r.close()
+
+	return nil
+}
+
+// holdKilledRun is dir made absolute and the root there held (holdRoot), once JudgeKilledRun's judgement
+// has passed it, for the caller to let go of.
+func holdKilledRun(dir string) (string, *rootHold, error) {
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return "", nil, err
+	}
+
+	r, err := holdRoot(dir)
+	if err != nil {
+		return "", nil, err
+	}
+
+	if err := EphemeralDirs(dir).judgeHeld(dir, r); err != nil {
+		r.close()
+
+		return "", nil, err
+	}
+
+	if err := r.unsecured(dir); err != nil {
+		r.close()
+
+		return "", nil, refusal{ErrUnsecuredRoot, err}
+	}
+
+	return dir, r, nil
+}
+
+// ErrUnsecuredRoot is JudgeKilledRun's and RemoveKilledRun's refusal of a root conflux has not secured, which errors.Is tells
 // apart in what it returns, as it tells JudgeWays's kinds.
 var ErrUnsecuredRoot = errors.New("a root conflux has not secured")
 

@@ -734,10 +734,11 @@ func TestALinkIsGoneIntoOnlyWhereConfluxSecuredWhereItLeads(t *testing.T) {
 func asMode[T ~uint16 | ~uint32](like T, m uint32) T { return T(m) }
 
 // TestRemoveKilledRunEmptiesOnlyARootConfluxSecured: what a killed ephemeral run left in its root is
-// removed through the root held, the run's lock kept, and named: a killed run's root as its EnsureAll left
+// removed through the root held, the run's lock kept, and named, once JudgeKilledRun, which changes
+// nothing, has passed it: a killed run's root as its EnsureAll left
 // it, a link in it removed as itself with where it led untouched, and the directory a link at a root's name
-// leads to where conflux secured that directory, the link and the lock left. Refused, with nothing removed,
-// and saying which: a link to a directory of this account's at 0755, and a directory at the root's name at
+// leads to where conflux secured that directory, the link and the lock left. Refused by JudgeKilledRun and
+// RemoveKilledRun alike, with nothing removed, and saying which: a link to a directory of this account's at 0755, and a directory at the root's name at
 // 0755, neither a mode conflux leaves a root at (ErrUnsecuredRoot); a file at the root's name and a 0755
 // directory holding a name conflux never makes there (ErrForeignRoot); a sticky directory (ErrSharedRoot);
 // and a root inside a CONFLUX_DIR whose way another account may change (ErrWayRefused). A root not there is
@@ -791,6 +792,16 @@ func TestRemoveKilledRunEmptiesOnlyARootConfluxSecured(t *testing.T) {
 
 	root := filepath.Join(t.TempDir(), "conflux-ephemeral")
 	e := killed(root)
+
+	was := held(t, root)
+
+	if err := JudgeKilledRun(root); err != nil {
+		t.Errorf("JudgeKilledRun(a killed run's root) = %v", err)
+	}
+
+	if names := held(t, root); !slices.Equal(names, was) {
+		t.Errorf("JudgeKilledRun left a killed run's root holding %q, want %q", names, was)
+	}
 
 	removed, err := RemoveKilledRun(root, e.ServeLockFile())
 	slices.Sort(removed)
@@ -886,6 +897,10 @@ func TestRemoveKilledRunEmptiesOnlyARootConfluxSecured(t *testing.T) {
 
 			was := held(t, c.root)
 
+			if err := JudgeKilledRun(c.root); !errors.Is(err, c.kind) || !strings.Contains(err.Error(), c.says) {
+				t.Errorf("JudgeKilledRun(%s) = %v, want a refusal that is %v saying %q", c.name, err, c.kind, c.says)
+			}
+
 			removed, err := RemoveKilledRun(c.root, EphemeralDirs(c.root).ServeLockFile())
 			if len(removed) > 0 || !errors.Is(err, c.kind) || !strings.Contains(err.Error(), c.says) {
 				t.Errorf("RemoveKilledRun(%s) = %q, %v, want a refusal that is %v saying %q", c.name, removed, err,
@@ -900,5 +915,9 @@ func TestRemoveKilledRunEmptiesOnlyARootConfluxSecured(t *testing.T) {
 
 	if _, err := RemoveKilledRun(filepath.Join(t.TempDir(), "not-there"), ""); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("RemoveKilledRun(a root not there) = %v, want an error that is fs.ErrNotExist", err)
+	}
+
+	if err := JudgeKilledRun(filepath.Join(t.TempDir(), "not-there")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("JudgeKilledRun(a root not there) = %v, want an error that is fs.ErrNotExist", err)
 	}
 }

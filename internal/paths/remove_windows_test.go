@@ -663,6 +663,10 @@ func TestRemoveKilledRunEmptiesOnlyARootConfluxSecured(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "conflux-ephemeral")
 	e := killed(root)
 
+	if err := JudgeKilledRun(root); err != nil {
+		t.Errorf("JudgeKilledRun(a killed run's root) = %v", err)
+	}
+
 	if removed, err := RemoveKilledRun(root, e.ServeLockFile()); err != nil || !slices.Equal(removed, []string{e.Run}) {
 		t.Errorf("RemoveKilledRun(a killed run's root) = %q, %v, want %q", removed, err, []string{e.Run})
 	}
@@ -715,6 +719,10 @@ func TestRemoveKilledRunEmptiesOnlyARootConfluxSecured(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			was := names(t, c.holds)
+
+			if err := JudgeKilledRun(c.root); !errors.Is(err, ErrUnsecuredRoot) || !strings.Contains(err.Error(), c.root) {
+				t.Errorf("JudgeKilledRun(%s) = %v, want a refusal that is ErrUnsecuredRoot naming it", name, err)
+			}
 
 			removed, err := RemoveKilledRun(c.root, EphemeralDirs(c.root).ServeLockFile())
 			if len(removed) > 0 || !errors.Is(err, ErrUnsecuredRoot) || !strings.Contains(err.Error(), c.root) {

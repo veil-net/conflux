@@ -104,7 +104,9 @@ func asAdministrators(set func(owner *windows.SID) error) error {
 // Own gives path, which conflux has just made in a root or on the way to one -- a lock file, the
 // service's copy of conflux, a folder it made by its name -- to the Administrators, as everything
 // else it makes there is (asAdministrators), and leaves its DACL to what it inherits. By its name,
-// in a root only SYSTEM and the Administrators may change.
+// in a root only SYSTEM and the Administrators may change. Until it is called, what was made is the
+// token's default owner's, an administrator's own on a Windows client: a service start judging the
+// root in that instant refuses it once, and the service manager's restart takes it.
 func Own(path string) error {
 	return asAdministrators(func(owner *windows.SID) error {
 		if owner == nil {

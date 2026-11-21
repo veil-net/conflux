@@ -726,11 +726,17 @@ func holdRoot(dir string, installation bool) (*rootHold, string, error) {
 	return nil, why, err
 }
 
-// notOurs is the refusal of the root dir for why, what holdRoot found at its name: nothing of conflux's to
-// read, which the next EnsureAll makes afresh.
-func notOurs(dir, why string) error {
+// notOurs is the refusal of the root dir, an ephemeral run's where ephemeral is, for why, what holdRoot
+// found at its name: nothing of conflux's to read, which the next EnsureAll makes afresh -- an
+// installation's at the next command that makes its roots, an ephemeral run's at the next ephemeral run.
+func notOurs(dir, why string, ephemeral bool) error {
+	next := "the next up, proxy, install or start"
+	if ephemeral {
+		next = "the next up --ephemeral or proxy --ephemeral"
+	}
+
 	return fmt.Errorf("%s is not as conflux makes a folder of its own (%s), so conflux will not use what is in it: "+
-		"the next up, proxy, install or start removes it and makes it afresh", dir, why)
+		"%s removes it and makes it afresh", dir, why, next)
 }
 
 // OpenIn opens path, a file directly in one of d's roots that is not inside another, to read, through
@@ -866,7 +872,7 @@ func (d Dirs) Check() error {
 		}
 
 		if why != "" {
-			return notOurs(dir, why)
+			return notOurs(dir, why, d.ephemeral)
 		}
 
 		there = true

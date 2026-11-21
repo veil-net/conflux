@@ -7,20 +7,26 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-// TestEphemeralPassesOverARootAnotherAccountMade: /tmp lets anybody make the name an ephemeral run's
-// root would have, and what is at a candidate's name and is not as conflux makes a root (Check) is passed
-// over for the next candidate rather than taken, or none taken: another account's, or one another
-// account may write, which this account could not remove to make its own; a link of this account's that
-// leads nowhere; and one to a directory of this account's own.
-func TestEphemeralPassesOverARootAnotherAccountMade(t *testing.T) {
+// TestEphemeralRemakesARootNotAsConfluxMakesOne: what is at a candidate's name and is not as conflux
+// makes a root (Check) is removed as itself and the root made afresh there (EnsureAll), the candidate
+// then taken: another account's, or one another account may write; a link that leads nowhere; and one to
+// a directory of this account's own, which is left as it was. Only a candidate it cannot remake is passed
+// over for the next, or none taken: one in a directory this account may not remove anything from, as
+// /tmp lets anybody make the name first and only its owner remove it.
+func TestEphemeralRemakesARootNotAsConfluxMakesOne(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
 
 	theirs := filepath.Join(t.TempDir(), "conflux-ephemeral-1000")
 
 	if err := os.Mkdir(theirs, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(theirs, "planted"), []byte("theirs"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -36,9 +42,11 @@ func TestEphemeralPassesOverARootAnotherAccountMade(t *testing.T) {
 
 	candidates := map[string]string{"another account's": theirs}
 
+	own := t.TempDir()
+
 	for name, target := range map[string]string{
 		"a link leading nowhere":                      filepath.Join(t.TempDir(), "nowhere"),
-		"a link to a directory of this account's own": t.TempDir(),
+		"a link to a directory of this account's own": own,
 	} {
 		link := filepath.Join(t.TempDir(), "conflux-ephemeral")
 		if err := os.Symlink(target, link); err != nil {
@@ -49,20 +57,59 @@ func TestEphemeralPassesOverARootAnotherAccountMade(t *testing.T) {
 	}
 
 	for name, c := range candidates {
+		if err := EphemeralDirs(c).Check(); err == nil || !strings.Contains(err.Error(), "next up --ephemeral") {
+			t.Errorf("Check(%s, %s) = %v, want a refusal saying the next ephemeral run makes it afresh", name, c, err)
+		}
+
 		next := filepath.Join(t.TempDir(), "conflux-ephemeral")
 
 		d, err := ephemeralIn([]string{c, next})
-		if err != nil {
-			t.Fatal(err)
+		if err != nil || d.State != c {
+			t.Errorf("Ephemeral past %s, %s, chose %s (%v), want it made afresh", name, c, d.State, err)
 		}
 
-		if d.State != next {
-			t.Errorf("Ephemeral chose %s, want %s past %s, %s", d.State, next, name, c)
+		if err := d.Check(); err != nil {
+			t.Errorf("Check(%s, which Ephemeral made afresh) = %v", c, err)
 		}
 
-		if _, err := ephemeralIn([]string{c}); err == nil {
-			t.Errorf("with no candidate of its own, Ephemeral chose %s, %s", name, c)
+		if _, err := os.Lstat(filepath.Join(c, "planted")); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("%s made afresh holds what was planted (Lstat: %v)", c, err)
 		}
+	}
+
+	if names, err := os.ReadDir(own); err != nil || len(names) > 0 {
+		t.Errorf("where a link at a candidate's name led changed: %v, %v", names, err)
+	}
+
+	if os.Geteuid() == 0 {
+		return // root may remove anything from any directory
+	}
+
+	shut := t.TempDir()
+	stuck := filepath.Join(shut, "conflux-ephemeral")
+
+	if err := os.Mkdir(stuck, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Chmod(stuck, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Chmod(shut, 0o500); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = os.Chmod(shut, 0o700) })
+
+	next := filepath.Join(t.TempDir(), "conflux-ephemeral")
+
+	if d, err := ephemeralIn([]string{stuck, next}); err != nil || d.State != next {
+		t.Errorf("Ephemeral chose %s (%v), want %s past %s, which it cannot remove", d.State, err, next, stuck)
+	}
+
+	if _, err := ephemeralIn([]string{stuck}); err == nil || !strings.Contains(err.Error(), stuck) {
+		t.Errorf("with no candidate it can make, Ephemeral = %v, want a refusal naming %s", err, stuck)
 	}
 }
 

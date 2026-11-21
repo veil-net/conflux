@@ -109,9 +109,10 @@ the socket, the record of the anchord it started and what that runs as, and the 
 pair: never a credential, a configuration or a state. The root is conflux's by its name: made as
 conflux makes one, `0700` and the account's own, and whatever is at its name that is not — a link,
 a file, a directory another account owns or may write — is removed as itself and the root made
-afresh ([security.md](security.md#the-file-and-the-directory-around-it)). A root the run could not
-take so is passed over, and the next in the table used: `/tmp` lets anybody make
-`/tmp/conflux-ephemeral-UID` first, and only its owner can remove it. A run is not refused because an installed conflux is running: that one is never
+afresh ([security.md](security.md#the-file-and-the-directory-around-it)), by the next run that
+chooses it. Only a root the run cannot remove to make afresh is passed over, and the next in the
+table used: `/tmp` lets anybody make `/tmp/conflux-ephemeral-UID` first, and only its owner can
+remove it. A run is not refused because an installed conflux is running: that one is never
 read, written, stopped or re-registered. Two anchors with a TUN on one host do contend for
 the overlay's routes, so `conflux down` first where that matters.
 

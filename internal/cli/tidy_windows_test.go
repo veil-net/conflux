@@ -14,6 +14,7 @@ import (
 	"github.com/veil-net/conflux/internal/pathstest"
 	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/privtest"
+	"github.com/veil-net/conflux/internal/service"
 )
 
 // olderRoot is an installation's root as an older conflux left it on a Windows client, where what an
@@ -124,5 +125,64 @@ func TestUpdateRemakesWhatAnOlderConfluxLeft(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestAPlainStartRemakesAnOlderRootWithTheServiceStopped: a start of the conflux the service already
+// runs is no update and tidies nothing, but where no supervisor serves the root it removes what an
+// older conflux left there as the administrator's own -- logs\, the lock files, bin\ with the set
+// planted in it -- before anything judges the root, as tidy does, and EnsureAll makes logs\ again, the
+// Administrators'; the plant is gone with bin\, for the next extraction to make afresh, and the
+// service's copy, this conflux and the Administrators', stays. It says what it removed. With a
+// supervisor serving the root the service has taken it already, so a start changes nothing of it.
+// Windows-only, so it runs in CI's platforms job alone.
+func TestAPlainStartRemakesAnOlderRootWithTheServiceStopped(t *testing.T) {
+	anchortest.Require(t)
+
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	d, old, plant := olderRoot(t)
+
+	// The copy the service runs is this conflux, placed as an elevated conflux places it.
+	if err := os.Remove(d.ServiceExecutable()); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := service.Place(d); err != nil {
+		t.Fatal(err)
+	}
+
+	mgr := &fakeManager{d: d, restartErr: errStartsNothing}
+	standInService(t, mgr)
+
+	out, errOut, code := capture(t, "start")
+	if code != ExitError || len(mgr.installs) != 1 || mgr.restarts != 1 {
+		t.Fatalf("conflux start exited %d, registered %d times and restarted %d:\n%s%s", code, len(mgr.installs),
+			mgr.restarts, out, errOut)
+	}
+
+	for p := range plant {
+		if b, err := os.ReadFile(p); err == nil && !bytes.Equal(b, plant[p]) {
+			t.Errorf("%s is still the plant", p)
+		}
+	}
+
+	for _, p := range []string{d.Log, d.ServiceExecutable()} {
+		if owner := privtest.ReadSecurity(t, p).Owner; !owner.Equals(privtest.Admins) {
+			t.Errorf("%s belongs to %v once start made the root conflux's, not the Administrators", p, owner)
+		}
+	}
+
+	for _, p := range []string{d.LockFile(), d.ServeLockFile()} {
+		if _, err := os.Lstat(p); !os.IsNotExist(err) {
+			t.Errorf("%s, the administrator's and held by nothing, is still there (Lstat: %v)", p, err)
+		}
+	}
+
+	for _, p := range old {
+		if p != d.ServiceExecutable() && !strings.Contains(out, "  "+p+"\n") {
+			t.Errorf("conflux start did not say it removed %s:\n%s", p, out)
+		}
 	}
 }

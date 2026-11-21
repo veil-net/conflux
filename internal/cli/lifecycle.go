@@ -4,13 +4,12 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"fmt"
 	"os"
-	"runtime"
 	"strings"
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
+	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
@@ -267,7 +266,10 @@ func runStart(ctx context.Context, args []string) int {
 	// Either way the roots are made conflux's, as the service makes them at every start, before
 	// anything in them is read by its name, placed there or registered (EnsureAll, which tidy runs),
 	// so a root an earlier conflux left is one the new service takes; with a service registered,
-	// roots not there are made, as that service would make them.
+	// roots not there are made, as that service would make them. A start of the conflux the service
+	// already runs, with no supervisor serving the root, first removes what conflux makes again there
+	// and an earlier conflux left failing the service's rule, as tidy does (paths' RemakeOld); with
+	// one serving it, the service has taken the root already.
 	checked := d.Check()
 	afresh := checked == nil && !service.Placed(d) || checked != nil && !errors.Is(checked, os.ErrNotExist)
 
@@ -275,8 +277,14 @@ func runStart(ctx context.Context, args []string) int {
 		if _, err := tidy(d, mgr); err != nil {
 			return fail(err)
 		}
-	} else if err := d.EnsureAll(); err != nil {
-		return fail(remakeHint(err))
+	} else {
+		if err := remakeUnserved(d); err != nil {
+			return fail(err)
+		}
+
+		if err := d.EnsureAll(); err != nil {
+			return fail(err)
+		}
 	}
 
 	// The same 78 the supervisor exits with, and for the same reason: there is a
@@ -302,16 +310,21 @@ func runStart(ctx context.Context, args []string) int {
 	return startFromConfig(ctx, d, mgr, cfg, "start")
 }
 
-// remakeHint is EnsureAll's refusal of a root for a start that does not tidy it -- one of the conflux
-// the service already runs -- with, on Windows, where what conflux makes in a root may be an older
-// conflux's that fails the service's rule, the command that removes such a thing and makes it again
-// (tidy, through the conflux an update puts in place).
-func remakeHint(err error) error {
-	if runtime.GOOS != "windows" {
+// remakeUnserved removes what conflux makes again in d's roots and an earlier conflux left failing
+// the service's rule (paths' RemakeOld), listing it, where no supervisor serves the roots: asked of
+// the serve lock without trusting the root (flock.Held), since nothing has judged it yet.
+func remakeUnserved(d paths.Dirs) error {
+	switch held, err := flock.Held(d.ServeLockFile()); {
+	case err != nil:
 		return err
+	case held:
+		return nil
 	}
 
-	return fmt.Errorf("%w\n  Where an earlier conflux left it, conflux update removes it and makes it again, fresh", err)
+	removed, err := d.RemakeOld()
+	listRemoved(removed)
+
+	return err
 }
 
 // runDown stops the anchor now and leaves everything else alone.

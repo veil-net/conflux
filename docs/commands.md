@@ -320,9 +320,12 @@ Where the service's copy is not this conflux — an update, or a newer conflux p
 or the roots fail the [readers' check](#a-root-another-account-could-change), so that the copy is
 not read to find out, `start` first removes what earlier conflux left, before anything judges the
 roots, as [`update`](#conflux-update) describes, the service stopped for it, and writes the copy
-afresh. A start of the conflux the service already runs removes nothing, so on Windows a root
-holding what an earlier conflux left as the administrator's own is refused, naming it, and the
-refusal says that `conflux update` removes it and makes it again.
+afresh. A start of the conflux the service already runs is no update, and removes nothing of what
+`update` does but this: where no supervisor serves the root, it first removes what conflux makes
+again there and an earlier conflux left failing the service's rule — on Windows, what an older
+conflux on a client left as the administrator's own — before anything judges the root, as `update`
+does, and says what it removed; with a supervisor serving it, the service has taken the root
+already.
 
 | Situation | |
 |---|---|

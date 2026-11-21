@@ -19,6 +19,7 @@ import (
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/pathstest"
 )
 
 // supervised is a supervisor over the stand-in anchord in the given mode, with the
@@ -71,7 +72,7 @@ func TestTheSupervisorPlacesItsOwnCopyAfresh(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		notAsConfluxMakesIt(t, p)
+		pathstest.NotAsConfluxMakesIt(t, p)
 	}
 
 	own, err := os.Stat(os.Args[0])
@@ -101,7 +102,7 @@ func TestTheSupervisorPlacesItsOwnCopyAfresh(t *testing.T) {
 		t.Errorf("the supervisor's start placed afresh a copy as conflux makes it (%v)", err)
 	}
 
-	notAsConfluxMakesIt(t, d.ServiceExecutable())
+	pathstest.NotAsConfluxMakesIt(t, d.ServiceExecutable())
 
 	if err := s.Dirs.EnsureAll(); err != nil {
 		t.Fatal(err)

@@ -173,7 +173,7 @@ func TestAReaderRemakesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	notAsConfluxMakesIt(t, d.Run)
+	pathstest.NotAsConfluxMakesIt(t, d.Run)
 
 	bin, done, err := toolsFor(d)
 	if err != nil || done == nil || strings.HasPrefix(bin, d.State) {

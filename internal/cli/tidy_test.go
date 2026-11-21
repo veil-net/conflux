@@ -233,7 +233,7 @@ func TestAStartOfTheConfluxTheServiceRunsRemovesNothing(t *testing.T) {
 }
 
 // TestACopyNotAsConfluxMakesItIsPlacedAfresh: a copy for the boot service that is this conflux, byte for
-// byte, but is not as conflux makes a file of its own (notAsConfluxMakesIt) -- as an earlier conflux left
+// byte, but is not as conflux makes a file of its own (pathstest.NotAsConfluxMakesIt) -- as an earlier conflux left
 // one on a Windows client, an administrator's, which that administrator's unelevated processes could
 // change for SYSTEM to run -- is what earlier conflux left: the supervisor, which runs from it, leaves it
 // as it makes its roots (EnsureServing), placing it afresh after, and start and install remove it with
@@ -253,7 +253,7 @@ func TestACopyNotAsConfluxMakesItIsPlacedAfresh(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			notAsConfluxMakesIt(t, d.ServiceExecutable())
+			pathstest.NotAsConfluxMakesIt(t, d.ServiceExecutable())
 
 			serving := d
 			if err := serving.EnsureServing(); err != nil {
@@ -315,7 +315,7 @@ func TestTheServiceStartsAgainOnlyOnACopyOfConfluxsOwn(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	notAsConfluxMakesIt(t, d.ServiceExecutable())
+	pathstest.NotAsConfluxMakesIt(t, d.ServiceExecutable())
 
 	if err := os.MkdirAll(d.Libexec(), 0o700); err != nil {
 		t.Fatal(err)

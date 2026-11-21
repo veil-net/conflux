@@ -3,8 +3,9 @@
 package paths
 
 import (
-	"os"
 	"path/filepath"
+
+	"golang.org/x/sys/windows"
 )
 
 // sizeof(sockaddr_un.sun_path) on Windows, and the limit anchord refuses past.
@@ -27,11 +28,25 @@ func platformDirs() Dirs {
 }
 
 // ProgramData is %ProgramData%, which the platform's roots, an ephemeral run's and an elevated reader's
-// temporary copy of anchorctl (libexec's Temporary) are kept in.
-func ProgramData() string {
-	if root := os.Getenv("ProgramData"); root != "" {
-		return root
+// temporary copy of anchorctl (libexec's Temporary) are kept in, as the system has it
+// (systemProgramData). A variable so a test can keep what conflux keeps there in a folder of its own
+// (pathstest).
+var ProgramData = systemProgramData
+
+// systemProgramData is \ProgramData on the volume the system's Windows directory is on, which Windows
+// supports no other place for, and C: where that cannot be read: never the environment's ProgramData. An
+// elevated process's environment is built from the user's registry, HKCU\Environment among it, which that
+// user's processes that are not elevated may write, and a ProgramData of theirs would lead the roots an
+// elevated conflux makes, and the anchorctl it runs, into a folder they own. GetSystemWindowsDirectory
+// reads no environment: it is the system root the kernel publishes, read-only, in the page of shared user
+// data every process maps, and kernel32 is loaded from the system directory, never the search path.
+func systemProgramData() string {
+	dir, err := windows.GetSystemWindowsDirectory()
+
+	vol := filepath.VolumeName(dir)
+	if err != nil || vol == "" {
+		vol = "C:"
 	}
 
-	return `C:\ProgramData`
+	return vol + `\ProgramData`
 }

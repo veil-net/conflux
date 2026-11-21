@@ -87,6 +87,12 @@ protection as the likely cause rather than reporting a bare permission error.
 
 ## File permissions
 
+`%ProgramData%` is the system's: `\ProgramData` on the volume Windows is installed on, read from the
+system, never the `ProgramData` variable. An elevated process's environment is built from the user's
+registry, which that user's processes that are not elevated may write, and a `ProgramData` of theirs
+would otherwise lead the roots an elevated conflux makes, and the anchorctl it runs, into a folder
+they own.
+
 Mode bits do not exist on Windows in the sense Go's `Chmod` implies — a call to
 `Chmod(0600)` sets the read-only attribute and nothing else — and `%ProgramData%` lets
 `Users` read everything below it and create files and folders in it. So conflux makes

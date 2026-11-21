@@ -1,6 +1,7 @@
 package pathstest
 
 import (
+	"os"
 	"testing"
 
 	"golang.org/x/sys/windows"
@@ -13,7 +14,9 @@ import (
 // does as it starts (paths.ElevatedDefaultOwner), and roots it, its CONFLUX_DIRs among it, on a way
 // the boot service trusts (privtest.ServiceTemp): EnsureAll holds an installation's way to the rule
 // SYSTEM holds it to at every start, which the administrator's own profile, where %TEMP% is, does
-// not pass.
+// not pass. What conflux keeps in %ProgramData% -- an elevated reader's temporary anchorctl, and the
+// platform's roots where no CONFLUX_DIR is set -- it keeps in the process's temporary directory too
+// (paths.ProgramData): there, or in a test's own where the test points TMP and TEMP at one.
 func init() {
 	if err := paths.ElevatedDefaultOwner(); err != nil {
 		panic("pathstest: " + err.Error())
@@ -22,6 +25,8 @@ func init() {
 	if err := privtest.ServiceTemp(); err != nil {
 		panic("pathstest: " + err.Error())
 	}
+
+	paths.ProgramData = os.TempDir
 }
 
 // NotAsConfluxMakesIt makes p, a file or a folder in one of conflux's roots, this administrator's, as an

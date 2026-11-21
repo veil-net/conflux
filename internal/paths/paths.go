@@ -497,9 +497,10 @@ func (d Dirs) RemakeOld() ([]string, error) {
 // below opened through the directory holding it and never by its name, a link or a junction in it
 // removed as itself, and what it leads to never touched. A link or a junction at dir's own name is
 // followed only where conflux would follow it (follow): its owner trusted, nobody else able to point
-// it elsewhere, and leading to a directory owned as a root at the name itself would be; then what that
-// directory holds is removed through the handle held on it, and the link after, the directory itself
-// left, empty. One that fails, or leads to a directory others keep what is theirs in (sharedStep), is
+// it elsewhere, and leading to a directory owned as a root at the name itself would be; and it is gone
+// into only where conflux has secured that directory as a root (securedStep), as it has every working
+// installation's at its first start. Then what that directory holds is removed through the handle held
+// on it, and the link after, the directory itself left, empty. One that fails, or leads to a directory others keep what is theirs in (sharedStep), is
 // removed as itself, and where it leads is not touched. A directory at dir's name itself that others
 // keep what is theirs in -- a CONFLUX_DIR of /tmp -- is refused, and nothing is removed; nothing else in
 // a root at dir's name is read or judged first, so a root the readers' check refuses is removed as
@@ -526,7 +527,7 @@ func RemoveRoot(dir string) (bool, error) {
 		if err := sharedStep(dir, r.dir); err != nil {
 			return false, err
 		}
-	case sharedStep(dir, r.dir) == nil:
+	case sharedStep(dir, r.dir) == nil && securedStep(dir, r.led.last().path, r.dir) == nil:
 		if err := emptyIn(r.dir, dir); err != nil {
 			return true, err
 		}

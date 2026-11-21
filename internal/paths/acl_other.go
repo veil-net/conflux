@@ -949,6 +949,39 @@ func sharedStep(dir string, s step) error {
 	return sharedRoot(dir, fileID{uint64(s.st.Dev), uint64(s.st.Ino)}, uint32(s.st.Mode), s.st.Uid, os.Geteuid())
 }
 
+// securedStep refuses the directory the link at the root dir's name leads to, which s holds and p names,
+// where conflux has not secured it as a root, as it secures every root it uses at its first start:
+// owned by root or the account running conflux (notReaders), at 0700 or the 0710 that lets anchord's
+// account through, and no ACL letting another account write it (judge), as fstat read it where the
+// walk met it and its ACL at p, which leads through no link.
+func securedStep(dir, p string, s step) error {
+	euid := os.Geteuid()
+
+	if err := notReaders(p, s.st.Uid, euid); err != nil {
+		return fmt.Errorf("%s is a link to a directory conflux will not go into: %w", dir, err)
+	}
+
+	acl, aclGroup, err := aclOf(p, -1)
+	if err != nil {
+		return err
+	}
+
+	mode := os.FileMode(s.st.Mode & 0o7777)
+
+	who := judge(mode&0o777, s.st.Gid, acl, aclGroup, euid)
+	if who == "" && mode != 0o700 && mode != 0o710 {
+		who = fmt.Sprintf("its mode, %#o, not one conflux leaves a root at, says nothing secured it; and whoever "+
+			"made it", uint32(mode))
+	}
+
+	if who != "" {
+		return fmt.Errorf("%s is a link to %s, which conflux has not secured as a root: %s could have put what it "+
+			"likes there, so conflux will not go into it", dir, p, who)
+	}
+
+	return nil
+}
+
 // sameStep reports whether a and b are one directory, as fstat read them where the walk met each.
 func sameStep(a, b step) bool { return a.st.Dev == b.st.Dev && a.st.Ino == b.st.Ino }
 

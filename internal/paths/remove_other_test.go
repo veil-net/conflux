@@ -71,12 +71,13 @@ func TestRemoveRootFollowsNothing(t *testing.T) {
 }
 
 // TestRemoveRootFollowsALinkRootOnlyWhereConfluxWould: a root whose own name is a link -- one moved to
-// another disk -- is followed only where conflux would follow it in daily use, a platform root's and a
-// CONFLUX_DIR's alike: a link of this account's to a directory of its own, at 0700 or at a 0777 conflux
-// would narrow, is followed, what that directory holds removed through the handle held on it, a link
-// in it as itself, and then the link, the directory left empty; a link to a directory another account
-// owns, and one to the directory it is in, are removed as themselves, with where each leads left as it
-// was.
+// another disk -- is gone into only where conflux would follow it in daily use, to a directory conflux
+// has secured as a root, as it has every working installation's, a platform root's and a CONFLUX_DIR's
+// alike: a link of this account's to a directory of its own at 0700 is followed, what that directory
+// holds removed through the handle held on it, a link in it as itself, and then the link, the
+// directory left empty; a link to a directory of this account's own at 0777, which conflux has not
+// secured, to one another account owns, and to the directory it is in, are removed as themselves, with
+// where each leads left as it was.
 func TestRemoveRootFollowsALinkRootOnlyWhereConfluxWould(t *testing.T) {
 	elsewhere := t.TempDir()
 
@@ -106,7 +107,7 @@ func TestRemoveRootFollowsALinkRootOnlyWhereConfluxWould(t *testing.T) {
 			}, true},
 			{"a directory of this account's own every account may write", func(t *testing.T, _ string) (string, bool) {
 				return ours(t, 0o777, plant), true
-			}, true},
+			}, false},
 			{"a directory another account owns", func(t *testing.T, _ string) (string, bool) { return theirs(t, plant) },
 				false},
 			{"the directory it is in", func(_ *testing.T, in string) (string, bool) { plant(in); return in, true }, false},

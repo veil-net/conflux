@@ -1431,6 +1431,33 @@ func sharedRoot(dir string, h windows.Handle) error {
 // in (sharedRoot).
 func sharedStep(dir string, s step) error { return sharedRoot(dir, s.h) }
 
+// securedStep refuses the folder the junction or link at the root dir's name leads to, which s holds
+// open and p names, where conflux has not secured it as a root, as it secures every root it uses at
+// its first start: SYSTEM's or the Administrators', under a protected DACL (secured) that grants nobody
+// else any right, on it or on what is made in it (changerIn, anyRight), as read through s.
+func securedStep(dir, p string, s step) error {
+	sd, err := security(s.h)
+	if err != nil {
+		return fmt.Errorf("read the ownership of %s: %w", p, err)
+	}
+
+	who := ""
+	if !secured(sd) {
+		who = "its owner and DACL, not SYSTEM's or the Administrators' under a protected DACL, say nothing secured " +
+			"it; and whoever made it"
+	} else if who, _, err = changerIn(p, currentUser(), sd, anyRight, "use it or what is made in it", nil,
+		true); err != nil {
+		return err
+	}
+
+	if who != "" {
+		return fmt.Errorf("%s is a junction or a link to %s, which conflux has not secured as a root: %s could have "+
+			"put what they like there, so conflux will not go into it", dir, p, who)
+	}
+
+	return nil
+}
+
 // sameStep reports whether a and b hold one folder open.
 func sameStep(a, b step) bool {
 	same, err := sameFile(a.h, b.h)

@@ -74,13 +74,14 @@ func TestRemoveRootFollowsNothing(t *testing.T) {
 }
 
 // TestRemoveRootFollowsALinkRootOnlyWhereConfluxWould: a root that is itself a junction -- one moved
-// to another volume -- is followed only where conflux would follow it in daily use, a platform root's
-// and a CONFLUX_DIR's alike: a junction nobody else may point elsewhere, leading to a folder of this
-// account's own, nobody else let use it or Users let add to it, which secure would restrict, is
-// followed, what that folder holds removed through the handle held on it, a junction in it as itself,
-// and then the junction, the folder left empty; a junction to a folder the Guests own, and one to the
-// folder it is in, are removed as themselves, with where each leads left as it was. Windows-only, so it
-// runs in CI's platforms job alone.
+// to another volume -- is gone into only where conflux would follow it in daily use, to a folder conflux
+// has secured as a root, as it has every working installation's, a platform root's and a CONFLUX_DIR's
+// alike: a junction nobody else may point elsewhere, leading to a folder the Administrators own under a
+// protected DACL granting SYSTEM and them alone, is followed, what that folder holds removed through the
+// handle held on it, a junction in it as itself, and then the junction, the folder left empty; a
+// junction to a folder Users may add to, which conflux has not secured, to one the Guests own, and to
+// the folder it is in, are removed as themselves, with where each leads left as it was. Windows-only,
+// so it runs in CI's platforms job alone.
 func TestRemoveRootFollowsALinkRootOnlyWhereConfluxWould(t *testing.T) {
 	elsewhere := t.TempDir()
 
@@ -101,13 +102,16 @@ func TestRemoveRootFollowsALinkRootOnlyWhereConfluxWould(t *testing.T) {
 			after  func(t *testing.T, target string)
 			follow bool
 		}{
-			{"a folder nobody else may use", func(t *testing.T, _ string) string { return t.TempDir() }, nil, true},
+			{"a folder conflux secured", func(t *testing.T, _ string) string { return t.TempDir() },
+				func(t *testing.T, target string) {
+					privtest.SetSecurity(t, target, "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)")
+				}, true},
 			{"a folder Users may add to", func(t *testing.T, _ string) string {
 				open := t.TempDir()
 				privtest.GrantUsers(t, open, windows.FILE_WRITE_DATA, windows.NO_INHERITANCE)
 
 				return open
-			}, nil, true},
+			}, nil, false},
 			{"a folder the Guests own", func(t *testing.T, _ string) string { return t.TempDir() },
 				func(t *testing.T, target string) { privtest.SetOwner(t, target, guests) }, false},
 			{"the folder it is in", func(_ *testing.T, in string) string { return in }, nil, false},

@@ -197,7 +197,12 @@ attributes or extended attributes of, among them, the attributes enough to make 
 while it is empty — or, for a folder, passes such a right on to what is made in it. `anchord`'s own account, `NT SERVICE\conflux`, is conflux's: what a DACL grants
 it is not held against the thing granted, though what it owns is, and a folder whose DACL lets it
 write — `anchor\` and `run\anchord\` — is not looked inside, since only SYSTEM, the Administrators
-and `anchord` may write there and conflux reads what `anchord` writes as untrusted. A reader of
+and `anchord` may write there and conflux reads what `anchord` writes as untrusted. An
+installation's root, which the service runs from as SYSTEM and judges at every start, is judged for
+SYSTEM — whether it is secured already, and what it holds — as its way is, so "another account"
+there includes the administrator running conflux: a root whose DACL grants that administrator
+anything is restricted, and a thing in it that grants them a right is refused, as the service would
+refuse them at every start. An ephemeral run's root is judged for the account running it. A reader of
 an ephemeral root holds what it holds to the same, after the readers' check, so nothing is run from
 one whose contents another account could have planted. So is a root that is a junction another account may point
 elsewhere: `%ProgramData%` lets any user make one where `%ProgramData%\conflux` or

@@ -512,9 +512,13 @@ func trusted(sid *windows.SID) bool {
 // root whose DACL, as found, lets another account move what is in it is refused before either,
 // since a handle opened under that grant could take out what fill puts there.
 //
-// In an installation's root, which the SYSTEM service runs from, what the account running conflux
-// owns is given to the Administrators as it is judged (contents), as a DACL too wide is narrowed,
-// since the service trusts no other account; installation is false for an ephemeral run's.
+// An installation's root, which the boot service runs from as SYSTEM, trusting no other account, and
+// judges at every start, is judged for SYSTEM, as the way to it is (serviceRule): whether it is
+// secured already, and what it holds (contents), so that what an administrator's own grant lets
+// through, which the service would refuse at every start, is restricted or refused here, by the
+// command that makes it. In an installation's root, what the account running conflux owns is given
+// to the Administrators as it is judged (contents), as a DACL too wide is narrowed. installation is
+// false for an ephemeral run's, which no service runs from, judged for the account running it.
 //
 // What it holds is held to the same rule (contents): before it is repaired, as it was found, what
 // each thing inherits from the root included -- a handle opened under an inherited grant keeps it
@@ -552,9 +556,10 @@ func secure(dir string, installation bool) error {
 	// before any run judges it, and to serve.lock and conflux.lock, which an account let read could
 	// hold against the supervisor (flock.Held) -- or none at all, or a junction conflux did not make,
 	// is repaired, replaced or refused below as an unrestricted root is.
+	self := judgedFor(installation)
+
 	if secured(sd) && (root.link == nil || secured(root.link)) {
-		switch who, _, err := changerIn(dir, currentUser(), sd, anyRight, "use it or what is made in it", nil,
-			true); {
+		switch who, _, err := changerIn(dir, self, sd, anyRight, "use it or what is made in it", nil, true); {
 		case err != nil:
 			return err
 		case who == "":
@@ -609,6 +614,16 @@ func secure(dir string, installation bool) error {
 	restricted(dir)
 
 	return contents(dir, installation)
+}
+
+// judgedFor is the account a root, and what it holds, is judged for: SYSTEM, which the boot service
+// runs as, for an installation's (installation), and the account running conflux for any other.
+func judgedFor(installation bool) *windows.SID {
+	if installation {
+		return sidSystem
+	}
+
+	return currentUser()
 }
 
 // secured reports whether sd is owned and protected as a restriction leaves it: SYSTEM's or the
@@ -1114,13 +1129,14 @@ func notLink(dir string, h windows.Handle, why string) error {
 // and what anchord makes there, which it owns, conflux reads as anchord's, untrusted
 // (OpenUntrusted, config.ReadUntrusted, copyTree).
 //
-// In an installation's root, which the boot service runs from as SYSTEM, trusting no other account,
-// an entry the account running conflux owns -- an administrator's own, as a Windows client's
-// default-owner policy leaves what an elevated administrator makes, or something made there by hand
-// -- is given to the Administrators as it is met, through the handle it is judged by (handOver), as
-// secure narrows a DACL it finds too wide, whatever conflux made it; an entry another account owns
-// is still refused. Where take is false -- an ephemeral run's root, and any reader's -- nothing is
-// changed.
+// In an installation's root (take), which the boot service runs from as SYSTEM, trusting no other
+// account, each entry is judged for SYSTEM (judgedFor), and an entry the account running conflux owns
+// -- an administrator's own, as a Windows client's default-owner policy leaves what an elevated
+// administrator makes, or something made there by hand -- is given to the Administrators as it is
+// met, through the handle it is judged by (handOver), as secure narrows a DACL it finds too wide,
+// whatever conflux made it; an entry another account owns is still refused, as is one whose DACL
+// grants the account running conflux a right it judges. Where take is false -- an ephemeral run's
+// root, and any reader's -- each is judged for the account running conflux, and nothing is changed.
 //
 // An entry gone between the listing and its judgement is passed over: nothing is there to judge,
 // and a live run's root -- an ephemeral one, which Foreign reads -- has its marker written and
@@ -1139,6 +1155,8 @@ func contents(dir string, take bool) error {
 	if err != nil {
 		return fmt.Errorf("judge what %s holds: %w", dir, err)
 	}
+
+	judged := judgedFor(take)
 
 	// Nothing to give where conflux runs as an account the service trusts already: SYSTEM, the
 	// service itself.
@@ -1186,7 +1204,7 @@ func contents(dir string, take bool) error {
 				what = "write it or what is made in it, move it or make a junction of it"
 			}
 
-			who, anchords, err := changer(p, currentUser(), h, retargets, what, anchord, d.IsDir())
+			who, anchords, err := changer(p, judged, h, retargets, what, anchord, d.IsDir())
 			switch {
 			case err != nil:
 				return err

@@ -142,7 +142,8 @@ earlier can make a junction of it whatever conflux then decides, a refusal inclu
 it became one meanwhile; a root already secured is made to hold it too. One that holds anything
 another account may change — that it owns, or that it may write, move or point elsewhere,
 `anchord`'s own account aside, judged as found, again once the root is restricted, and on every run
-after — is refused rather than repaired around, by every reader of an ephemeral root too, after the
+after, and in an installation's root for SYSTEM, as the service judges it, so the administrator
+running conflux counts as another account there — is refused rather than repaired around, by every reader of an ephemeral root too, after the
 readers' check, as is a junction in it, and a root that is itself a junction another account may
 point elsewhere; one nobody else may is replaced with a junction conflux makes, through its own
 handle, leading to the directory it judged (see [windows.md](windows.md#file-permissions)). What

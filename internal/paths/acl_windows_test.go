@@ -1295,6 +1295,61 @@ func TestSecureHoldsAProtectedRootToItsDACL(t *testing.T) {
 	}
 }
 
+// TestAnInstallationsRootIsJudgedForTheService: the boot service runs from an installation's root as
+// SYSTEM, which trusts no other account, and judges it so at every start (JudgeAsTheService), so
+// secure judges such a root for SYSTEM too, as it judges the way to it: a root of the Administrators'
+// under a protected DACL that also grants this account, an administrator's, full control of it and of
+// what is made in it is not taken as secured already but restricted, left SYSTEM's and the
+// Administrators' alone; and a folder in a secured root whose DACL lets this account write it is
+// refused, naming it. An ephemeral run's root, which no service runs from, is judged for the account
+// running it: the same root keeps its grant, and the same folder is taken. Windows-only, so it runs
+// in CI's platforms job alone.
+func TestAnInstallationsRootIsJudgedForTheService(t *testing.T) {
+	t.Setenv("CONFLUX_DIR", "")
+
+	me := currentUser()
+	grants := "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;" + me.String() + ")"
+
+	installation := foundRoot(t)
+	privtest.SetSecurity(t, installation, grants)
+
+	if err := secure(installation, true); err != nil {
+		t.Fatalf("secure(an installation's root granting this account full control) = %v", err)
+	}
+
+	onlyTheSystems(t, installation)
+
+	ephemeral := foundRoot(t)
+	privtest.SetSecurity(t, ephemeral, grants)
+
+	if err := secure(ephemeral, false); err != nil {
+		t.Fatalf("secure(an ephemeral run's root granting this account full control) = %v", err)
+	}
+
+	if !slices.ContainsFunc(privtest.ReadSecurity(t, ephemeral).Grantees(), me.Equals) {
+		t.Errorf("secure restricted an ephemeral run's root granting only the account running it besides the system")
+	}
+
+	held := foundRoot(t)
+	privtest.SetSecurity(t, held, "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)")
+
+	logs := filepath.Join(held, "logs")
+	if err := os.Mkdir(logs, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	privtest.Grant(t, logs, me, windows.FILE_WRITE_DATA, windows.NO_INHERITANCE)
+
+	if err := secure(held, true); err == nil || !strings.Contains(err.Error(), logs) {
+		t.Errorf("secure(an installation's root holding a folder this account may write) = %v, want a refusal naming it",
+			err)
+	}
+
+	if err := secure(held, false); err != nil {
+		t.Errorf("secure(an ephemeral run's root holding a folder this account may write) = %v", err)
+	}
+}
+
 // TestSecureRefusesARootWithNoDACL: a root with no DACL at all grants anybody everything, so a root
 // conflux could repair by its owner, this account's, is refused, naming it, by secure and by
 // checkRoot alike. Windows-only, so it runs in CI's platforms job alone.

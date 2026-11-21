@@ -294,7 +294,9 @@ func TestRemakeOldEmptiesNoSharedFolder(t *testing.T) {
 // once logs\ is made again only where it is one file of one name: a hard link at conflux.log to a file
 // elsewhere carries that file's owner and DACL, which the service's rule takes, and would have the
 // service append its log there. So it goes with the folder, the name removed and the file it named left
-// as it was. Windows-only, so it runs in CI's platforms job alone.
+// as it was. That file is the Administrators', under a protected DACL granting SYSTEM and the
+// Administrators alone, which the service's rule takes, so its second name is all that keeps the log from
+// being kept. Windows-only, so it runs in CI's platforms job alone.
 func TestRemakeOldKeepsNoLogOfTwoNames(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "conflux")
 	t.Setenv("CONFLUX_DIR", root)
@@ -308,6 +310,8 @@ func TestRemakeOldKeepsNoLogOfTwoNames(t *testing.T) {
 	if err := os.WriteFile(elsewhere, []byte("not a log"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+
+	privtest.SetSecurity(t, elsewhere, "O:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)")
 
 	if err := os.RemoveAll(d.Log); err != nil {
 		t.Fatal(err)

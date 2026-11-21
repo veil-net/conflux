@@ -720,20 +720,86 @@ func checkRootAs(dir string, euid int) (os.FileInfo, error) {
 }
 
 // readerOwns refuses dir, of which fi is what Lstat or Stat said, where it belongs to an account
-// other than root and euid: one root's is root's to have made, and a reader trusts it as it trusts
-// root.
+// other than root and euid (notReaders).
 func readerOwns(dir string, fi os.FileInfo, euid int) error {
 	st, ok := fi.Sys().(*syscall.Stat_t)
 	if !ok {
 		return fmt.Errorf("read the owner of %s: no ownership on this filesystem", dir)
 	}
 
-	if owner := int(st.Uid); owner != 0 && owner != euid {
+	return notReaders(dir, st.Uid, euid)
+}
+
+// notReaders refuses dir, owned by uid, where that is an account other than root and euid: one root's
+// is root's to have made, and a reader trusts it as it trusts root.
+func notReaders(dir string, uid uint32, euid int) error {
+	if owner := int(uid); owner != 0 && owner != euid {
 		return fmt.Errorf("%s belongs to uid %d, not to root or uid %d, which conflux runs as, so conflux did not "+
 			"create it and will not use what is in it.\n  Remove it, then run this again", dir, owner, euid)
 	}
 
 	return nil
+}
+
+// rootOwner refuses the root dir, the directory s holds, where an account other than root and the one
+// running conflux owns it (notReaders), as fstat read it where the walk met it.
+func rootOwner(dir string, s step) error { return notReaders(dir, s.st.Uid, os.Geteuid()) }
+
+// heldLinkRule refuses dir, the link s holds by its name, where an account other than root and the one
+// running conflux owns it, who could point it at a directory of their own -- a link's mode means
+// nothing, and whoever may write the directory it is in is judged with the way to it -- as the readers'
+// check and secure hold a link at a root's name (ownedAs).
+func heldLinkRule(dir string, s step) error {
+	if owner := int(s.st.Uid); owner != 0 && owner != os.Geteuid() {
+		return fmt.Errorf("%s is a link that belongs to uid %d, who could point it at a directory of their own, so "+
+			"conflux will not follow it.\n  Remove it, then run this again", dir, owner)
+	}
+
+	return nil
+}
+
+// ledRoot refuses the directory the link at the root dir's name leads to, which s holds and p names,
+// where it is not one conflux would use, as the readers' check judges a root (checkRootAs): owned by an
+// account other than root and the one running conflux, or one its mode or ACL lets another account
+// write, the sticky bit letting nothing through. Its ACL is read at p, which leads through no link, and
+// through directories the walk to it held.
+func ledRoot(dir, p string, s step) error {
+	euid := os.Geteuid()
+
+	if err := notReaders(p, s.st.Uid, euid); err != nil {
+		return fmt.Errorf("%s is a link to a directory conflux will not use: %w", dir, err)
+	}
+
+	acl, aclGroup, err := aclOf(p, -1)
+	if err != nil {
+		return err
+	}
+
+	if who := judge(os.FileMode(s.st.Mode&0o777), s.st.Gid, acl, aclGroup, euid); who != "" {
+		return fmt.Errorf("%s is a link to %s, which %s could put what it likes in for conflux to read, run or "+
+			"remove, so conflux will not follow it.\n  Point it at a directory only root and uid %d can write, then "+
+			"run this again", dir, p, who, euid)
+	}
+
+	return nil
+}
+
+// sameStep reports whether a and b are one directory, as fstat read them where the walk met each.
+func sameStep(a, b step) bool { return a.st.Dev == b.st.Dev && a.st.Ino == b.st.Ino }
+
+// openIn opens name, a file in the directory s holds, which p names, as OpenUntrusted opens one: looked
+// up there and nowhere else (openat), never followed.
+func openIn(s step, name, p string) (*os.File, error) {
+	var fd int
+	if err := ignoringEINTR(func() (err error) {
+		fd, err = unix.Openat(s.fd, s.at(name), OpenUntrusted|unix.O_CLOEXEC, 0)
+
+		return err
+	}); err != nil {
+		return nil, &os.PathError{Op: "open", Path: p, Err: err}
+	}
+
+	return os.NewFile(uintptr(fd), p), nil
 }
 
 // parentsAs refuses dir where its way, walked from / (walk), is not there, or is not held to

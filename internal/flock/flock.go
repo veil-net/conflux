@@ -41,12 +41,44 @@ func TryAcquire(path string) (unlock func(), ok bool, err error) {
 	}
 }
 
-// openHeld opens the lock at path for Held, without trusting it: to read and never created, as
-// paths.OpenUntrusted opens a file -- never through a symlink or, on Windows, a reparse point,
-// never blocking on a FIFO -- and kept only where it is plainLock. Neither file nor error where
-// there is no file at all.
-func openHeld(path string) (*os.File, error) {
-	f, err := os.OpenFile(path, paths.OpenUntrusted, 0)
+// Held reports whether somebody holds the lock on path, a file in a directory another account may
+// write: anchor's lock beside a socket that anchord, running as its own account, made. It is opened
+// without trusting the file (openHeld), by its name, so the question cannot be turned into root
+// (SYSTEM) creating, truncating, locking or blocking on whatever the name was made to point at. A file
+// that is not there is held by nobody.
+func Held(path string) (bool, error) {
+	return held(path, func() (*os.File, error) { return os.OpenFile(path, paths.OpenUntrusted, 0) })
+}
+
+// HeldIn is Held for the lock at path, a file directly in one of d's roots, asked before anything has
+// judged the root -- the serve lock, before conflux decides to stop the service: opened through the
+// root held as paths' OpenIn holds it, the way to it judged as a reader judges it and a link at its
+// name followed only where conflux would follow it, and never by its name, so that neither a way nor a
+// link another account may change can lead the question to a lock of theirs, or on Windows sign this
+// machine in to a share. A root or a lock that is not there is held by nobody; a root OpenIn refuses
+// is refused.
+func HeldIn(d paths.Dirs, path string) (bool, error) {
+	return held(path, func() (*os.File, error) { return d.OpenIn(path) })
+}
+
+// held is whether somebody holds the lock at path, opened by open (openHeld): nobody, where there is
+// no file at all.
+func held(path string, open func() (*os.File, error)) (bool, error) {
+	f, err := openHeld(path, open)
+	if f == nil {
+		return false, err
+	}
+	defer f.Close()
+
+	return heldFile(f, path)
+}
+
+// openHeld opens the lock at path through open, without trusting it: to read and never created, as
+// paths.OpenUntrusted opens a file -- never through a symlink or, on Windows, a reparse point, never
+// blocking on a FIFO -- and kept only where it is plainLock. Neither file nor error where there is no
+// file at all.
+func openHeld(path string, open func() (*os.File, error)) (*os.File, error) {
+	f, err := open()
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}

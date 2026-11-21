@@ -179,3 +179,61 @@ func TestTheWayConfluxMadeIsRemovedWhenEmpty(t *testing.T) {
 		t.Errorf("RemoveWay reached %s: %v", elsewhere, err)
 	}
 }
+
+// TestARootIsHeldBeforeAnythingInItIsOpened: what is read in a root before anything has judged it --
+// the way record uninstall reads, the serve lock tidy asks after -- is opened through the root held
+// (OpenIn), never by its name: a CONFLUX_DIR that is a junction to a folder whose DACL lets Users add
+// to it is refused, naming the junction, before anything in that folder is opened, though nobody else
+// may point the junction elsewhere; one leading to a folder nobody else may use is followed, and what
+// is in it read. Windows-only, so it runs in CI's platforms job alone.
+func TestARootIsHeldBeforeAnythingInItIsOpened(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "conflux")
+	t.Setenv("CONFLUX_DIR", root)
+
+	d := Default()
+
+	for _, open := range []bool{true, false} {
+		target := t.TempDir()
+
+		for name, body := range map[string]string{wayName: base + "\n", "serve.lock": ""} {
+			if err := os.WriteFile(filepath.Join(target, name), []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		if open {
+			privtest.GrantUsers(t, target, windows.FILE_WRITE_DATA, windows.NO_INHERITANCE)
+		}
+
+		mklinkJ(t, root, target)
+
+		refused := root + " is a junction or a link to "
+
+		switch way, err := d.Way(); {
+		case !open && (err != nil || !slices.Equal(way, []string{base})):
+			t.Errorf("Way(), the root a junction to a folder nobody else may use = %q, %v, want it read through it",
+				way, err)
+		case open && (err == nil || !strings.Contains(err.Error(), refused)):
+			t.Errorf("Way(), the root a junction to a folder Users may add to = %q, %v, want a refusal naming the "+
+				"junction", way, err)
+		}
+
+		f, err := d.OpenIn(d.ServeLockFile())
+		if err == nil {
+			f.Close()
+		}
+
+		switch {
+		case !open && err != nil:
+			t.Errorf("OpenIn(the serve lock), the root a junction to a folder nobody else may use = %v", err)
+		case open && (err == nil || !strings.Contains(err.Error(), refused)):
+			t.Errorf("OpenIn(the serve lock), the root a junction to a folder Users may add to = %v, want a refusal "+
+				"naming the junction", err)
+		}
+
+		if err := os.Remove(root); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

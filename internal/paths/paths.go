@@ -305,7 +305,7 @@ const wayName = "way"
 func (d Dirs) recordWay(made []string) error {
 	record := filepath.Join(d.State, wayName)
 
-	way, err := readWay(record)
+	way, err := d.readWay()
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
@@ -345,10 +345,13 @@ func (d Dirs) recordWay(made []string) error {
 	return nil
 }
 
-// readWay is the record at path, a line a folder, at most wayMax bytes of it: opened as a file another
-// account may have put there is (OpenUntrusted), and refused unless it is a plain file (PlainFile).
-func readWay(path string) ([]string, error) {
-	f, err := os.OpenFile(path, OpenUntrusted, 0)
+// readWay is the record in d's state root, a line a folder, at most wayMax bytes of it: opened through
+// the root held (OpenIn), as a file another account may have put there is, and refused unless it is a
+// plain file (PlainFile).
+func (d Dirs) readWay() ([]string, error) {
+	path := filepath.Join(d.State, wayName)
+
+	f, err := d.OpenIn(path)
 	if err != nil {
 		return nil, err
 	}
@@ -372,28 +375,21 @@ const wayMax = 64 << 10
 
 // Way is the record of the folders conflux made on the way to d's roots (EnsureAll), deepest first,
 // for uninstall to read before it removes the roots, the state root holding the record among them,
-// and to hand to RemoveWay after. It is read whatever the readers' check says of the state root, so
-// that uninstall leaves nothing conflux made even there, since all it can lead to is removing: only
-// folders above one of d's roots are taken from it, and RemoveWay removes nothing anywhere else, only
-// a folder that is empty, and only through handles, never through a link. The record is read as a file
-// another account may have put there (readWay); and a CONFLUX_DIR's way is held to parents' rule first,
-// as RemoveRoot holds it, since a way another account may change could lead the read elsewhere. Nil
-// where there is no record, or no state root, and for an ephemeral run's roots, which keep none.
+// and to hand to RemoveWay after. It is read whatever the readers' check says of what the state root
+// holds, so that uninstall leaves nothing conflux made even there, since all it can lead to is
+// removing: only folders above one of d's roots are taken from it, and RemoveWay removes nothing
+// anywhere else, only a folder that is empty, and only through handles, never through a link. The
+// record is read through the state root held as OpenIn holds it, a CONFLUX_DIR's way held to parents'
+// rule and a link at the root's name followed only where conflux would follow it, since a way or a link
+// another account may change could lead the read elsewhere, and as a file another account may have put
+// there (readWay). Nil where there is no record, or no state root, and for an ephemeral run's roots,
+// which keep none.
 func (d Dirs) Way() ([]string, error) {
 	if d.ephemeral {
 		return nil, nil
 	}
 
-	if chosen(d.State) {
-		switch err := judgeWay(d.State, parentsRule(d.State)); {
-		case errors.Is(err, fs.ErrNotExist):
-			return nil, nil
-		case err != nil:
-			return nil, err
-		}
-	}
-
-	recorded, err := readWay(filepath.Join(d.State, wayName))
+	recorded, err := d.readWay()
 
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
@@ -525,7 +521,7 @@ func (d Dirs) RemakeOld() ([]string, error) {
 
 // RemoveRoot removes the root dir and everything in it, and says whether anything was at its name,
 // following nothing: the way to dir walked from the top of its volume and held open a directory at a
-// time (walk), and dir removed from the directory it is in, as that walk holds it, each thing below
+// time (toParent), and dir removed from the directory it is in, as that walk holds it, each thing below
 // opened through the directory holding it and never by its name, a link or a junction anywhere --
 // at dir's own name included -- removed as itself, and what it leads to never touched. Nothing in
 // the root is read or judged first, so a root the readers' check refuses is removed as safely as one
@@ -540,30 +536,270 @@ func RemoveRoot(dir string) (bool, error) {
 		return false, err
 	}
 
-	judge := judgement(nil)
-	if chosen(dir) {
-		judge = parentsRule(dir)
-	}
-
-	parent := filepath.Dir(dir)
-
-	w, err := walk(parent, judge)
-	if err != nil {
+	w, err := toParent(dir, readersRule(dir))
+	if err != nil || w == nil {
 		return false, err
 	}
 	defer w.close()
 
+	return removeFrom(w.last().step, filepath.Base(dir), dir)
+}
+
+// readersRule is the rule a command that reads or removes what is at the root dir, rather than
+// making it, holds dir's way to: parents' rule, for the account running conflux, where dir is the
+// CONFLUX_DIR root or inside it (chosen), as the readers' check holds it; none for a platform root's
+// way, the system's own, as makeRoot does not judge it either.
+func readersRule(dir string) judgement {
+	if chosen(dir) {
+		return parentsRule(dir)
+	}
+
+	return nil
+}
+
+// toParent is the way to the directory dir is in, walked from the top of its volume and held open
+// (walk), held to judge where it is given -- that directory included, since whoever may change it could
+// put another dir in its place, and no name is looked up in it on the walk -- or nil where a name on it
+// is not there.
+func toParent(dir string, judge judgement) (*way, error) {
+	w, err := walk(filepath.Dir(dir), judge)
+	if err != nil {
+		return nil, err
+	}
+
 	if w.missing != nil {
-		return false, nil
+		w.close()
+
+		return nil, nil
 	}
 
 	if at := w.last(); judge != nil {
 		if err := judge(at.path, at.step, false); err != nil {
-			return false, err
+			w.close()
+
+			return nil, err
 		}
 	}
 
-	return removeFrom(w.last().step, filepath.Base(dir), dir)
+	return w, nil
+}
+
+// JudgeWays holds the way to each of d's roots not inside another, as RemoveRoot and OpenIn walk it
+// (toParent), to the rule a reader holds it to (readersRule): a CONFLUX_DIR's to parents' rule, for
+// the account running conflux, the directory the root is in included, refused where another account
+// may change it, since that could lead what is done there elsewhere. Nothing at the roots' names is
+// looked up or read. Nil where every way passes, where a name on one is not there, and for the
+// platform roots, whose ways are the system's own and not judged.
+func (d Dirs) JudgeWays() error {
+	for dir, inside := range d.roots() {
+		judge := readersRule(dir)
+		if inside || judge == nil {
+			continue
+		}
+
+		w, err := toParent(dir, judge)
+		if err != nil {
+			return err
+		}
+
+		if w != nil {
+			w.close()
+		}
+	}
+
+	return nil
+}
+
+// OpenIn opens path, a file directly in one of d's roots that is not inside another, to read, as
+// OpenUntrusted opens a file, through that root held open first (holdRoot), and never by its name: the
+// way to the root walked from the top of its volume, a CONFLUX_DIR's held to parents' rule; the root's
+// own name looked up in the directory it is in, a link there followed only where conflux would follow
+// it in daily use, to a directory conflux's alone (follow); the root's owner root, SYSTEM, the
+// Administrators or the account running conflux; and path's name looked up in the root and nowhere
+// else, never followed. A lookup by name of path would follow whatever is at each name on the way, the
+// root's own among them, before anything had judged it: to a directory another account controls, or,
+// on Windows, a share that signs this machine in. A file another account may have put there is still
+// the caller's to judge (PlainFile). Where the root, or path's name in it, is not there, it is an error
+// that is fs.ErrNotExist.
+func (d Dirs) OpenIn(path string) (*os.File, error) {
+	path, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+
+	dir := filepath.Dir(path)
+
+	outer := false
+	for root, inside := range d.roots() {
+		outer = outer || !inside && root == dir
+	}
+
+	if !outer {
+		return nil, fmt.Errorf("%s is not directly in a root of conflux's", path)
+	}
+
+	r, err := holdRoot(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer r.close()
+
+	if err := r.usable(dir); err != nil {
+		return nil, err
+	}
+
+	return openIn(r.dir, filepath.Base(path), path)
+}
+
+// rootHold is a root held open as a directory, through no link: the way to the directory its name is
+// in, which holds that directory last; its name there; the directory it is, what is at the name or,
+// where that is a link (link), where it leads, and led, the way the link led along, which holds it then;
+// and refused, where the name is a link conflux does not follow, or anything else that is not a
+// directory, why.
+type rootHold struct {
+	parent  *way
+	name    string
+	dir     step
+	link    bool
+	led     *way
+	refused error
+}
+
+// close lets the root go, and every directory held on the way to it.
+func (r *rootHold) close() {
+	switch {
+	case r.led != nil:
+		r.led.close()
+	case !r.link && r.refused == nil:
+		r.dir.close()
+	}
+
+	r.parent.close()
+}
+
+// usable refuses the root dir, as r holds it, where nothing in it is to be read or changed: a name
+// that is a link conflux does not follow, or that is not a directory (refused), or a directory at the
+// name itself that an account other than root, SYSTEM, the Administrators and the account running
+// conflux owns (rootOwner). A directory a link leads to is judged as the link is followed (follow).
+func (r *rootHold) usable(dir string) error {
+	switch {
+	case r.refused != nil:
+		return r.refused
+	case !r.link:
+		return rootOwner(dir, r.dir)
+	}
+
+	return nil
+}
+
+// holdRoot holds the root dir open as a directory, through no link: the way to the directory it is in
+// walked from the top of its volume and held, as a reader holds it (toParent, readersRule), and dir's
+// own name looked up in that directory and nowhere else (lookUp). A directory there is the root,
+// judged by nothing yet (usable); a link there is followed only where conflux would follow it (follow),
+// and is otherwise refused, as anything else at the name is, unfollowed and left for the caller to
+// remove as itself or refuse. Where the way to dir, or its name, is not there, it is an error that is
+// fs.ErrNotExist.
+func holdRoot(dir string) (*rootHold, error) {
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	judge := readersRule(dir)
+
+	w, err := toParent(dir, judge)
+
+	switch {
+	case err != nil:
+		return nil, err
+	case w == nil:
+		return nil, &os.PathError{Op: "open", Path: dir, Err: fs.ErrNotExist}
+	}
+
+	r := &rootHold{parent: w, name: filepath.Base(dir)}
+
+	s, link, err := lookUp(w.last().step, r.name)
+
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		w.close()
+
+		return nil, &os.PathError{Op: "open", Path: dir, Err: err}
+	case err != nil:
+		r.refused = fmt.Errorf("%s is no directory conflux can hold, so conflux will not use it: %v", dir,
+			&os.PathError{Op: "open", Path: dir, Err: err})
+	case link:
+		r.link = true
+		r.refused = r.follow(dir, s, judge)
+	default:
+		r.dir = s
+	}
+
+	return r, nil
+}
+
+// follow holds the directory the link s, at the root dir's name, leads to as r.dir, and is nil, or
+// refuses it, saying why, as conflux refuses to follow such a link in daily use: one the walk cannot
+// follow (readLink) -- on Windows one that may lead off this machine, which nothing then follows --
+// or one another account may point elsewhere (heldLink); where it leads walked as walk resolves a
+// link, from the directory the link is in or the top of the volume it names, held to judge, the rule
+// dir's way is held to; and the directory it leads to held to the readers' check (ledRoot): its owner,
+// and nobody else may write it. A link to nothing, or to the directory it is in or one above it, is
+// refused too. s is let go of either way.
+func (r *rootHold) follow(dir string, s step, judge judgement) error {
+	target, err := readLink(s)
+	if err != nil {
+		err = fmt.Errorf("%s is a link conflux cannot follow, so conflux will not use it: %v", dir, err)
+	} else {
+		err = heldLinkRule(dir, s)
+	}
+
+	s.close()
+
+	if err != nil {
+		return err
+	}
+
+	in := r.parent.last().path
+
+	led := target
+	if filepath.VolumeName(target) == "" {
+		if target != "" && os.IsPathSeparator(target[0]) {
+			led = filepath.VolumeName(in) + target
+		} else {
+			led = in + string(filepath.Separator) + target
+		}
+	}
+
+	r.led = &way{}
+	if err := r.led.resolve(led, judge); err != nil {
+		r.led.close()
+		r.led = nil
+
+		return err
+	}
+
+	if r.led.missing != nil {
+		return fmt.Errorf("%s is a link to %s, which is not there, so conflux will not use it: %v", dir, target,
+			r.led.missing)
+	}
+
+	at := r.led.last()
+
+	for _, above := range r.parent.places {
+		if sameStep(above.step, at.step) {
+			return fmt.Errorf("%s is a link to %s, the directory it is in or one above it, so conflux will not "+
+				"follow it", dir, at.path)
+		}
+	}
+
+	if err := ledRoot(dir, at.path, at.step); err != nil {
+		return err
+	}
+
+	r.dir = at.step
+
+	return nil
 }
 
 // wayRule is the rule the way to d's root dir is held to as EnsureAll makes it: the boot service's
@@ -764,6 +1000,13 @@ func (w *way) walk(dir string, judge judgement) error {
 		return err
 	}
 
+	return w.resolve(dir, judge)
+}
+
+// resolve is walk of dir, an absolute path, as it is spelled rather than cleaned: a ".." in it goes back
+// to the directory held before, as the system resolves one after a link, so that where a link leads is
+// walked exactly as a lookup of it would go.
+func (w *way) resolve(dir string, judge judgement) error {
 	vol := filepath.VolumeName(dir)
 	if err := w.top(vol); err != nil {
 		return err

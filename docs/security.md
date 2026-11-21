@@ -235,9 +235,13 @@ by its name, and held to the same rule before anything is made in it, conflux's 
 else made at the name meanwhile — a sticky directory such as `/tmp`, and `C:\`, let anybody make a
 name not taken yet — and a link there is refused. An installation keeps a record of the directories
 it made on the way, in its state root (`way`), which uninstall reads before it removes the roots —
-where the readers' check refuses that root too, as a file another account may have put there, never
-through a link, and, for a `CONFLUX_DIR`, once its way passes parents' rule — taking only directories
-above its roots, since all a record somebody else wrote could lead to is removing; and then
+where the readers' check refuses what that root holds too, as a file another account may have put
+there, never through a link, and through the root held open first, as `update` asks after the serve
+lock: for a `CONFLUX_DIR`, once its way passes parents' rule, the root's owner root, SYSTEM, the
+Administrators or the account running conflux, and a link at the root's name followed only where its
+owner is one of those, nobody else may point it elsewhere, and it leads to a directory the readers'
+check would take — taking only directories above its roots, since all a record somebody else wrote
+could lead to is removing; and then
 removes each that is empty, deepest first, from the directory it is in as a walk of the way holds
 it, never through a link and never by its name, leaving any that holds something or that a link
 took the place of. Each step of the way is judged once, as the root

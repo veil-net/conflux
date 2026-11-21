@@ -1251,6 +1251,83 @@ func heldLink(dir string, sd *windows.SECURITY_DESCRIPTOR) error {
 		"conflux in it for the service to run.\n  Remove it, then run this again as Administrator", dir, who)
 }
 
+// rootOwner refuses the root dir, the folder s holds open, where its owner is not SYSTEM, the
+// Administrators or the account running conflux (ownerRefusal), as read through s.
+func rootOwner(dir string, s step) error {
+	sd, err := security(s.h)
+	if err != nil {
+		return fmt.Errorf("read the ownership of %s: %w", dir, err)
+	}
+
+	owner, _, err := sd.Owner()
+	if err != nil {
+		return fmt.Errorf("read the owner of %s: %w", dir, err)
+	}
+
+	return ownerRefusal(dir, owner)
+}
+
+// heldLinkRule refuses dir, the junction or link s holds open as itself, where another account may
+// point it elsewhere (heldLink), as read through s.
+func heldLinkRule(dir string, s step) error {
+	sd, err := security(s.h)
+	if err != nil {
+		return fmt.Errorf("read the ownership of %s: %w", dir, err)
+	}
+
+	return heldLink(dir, sd)
+}
+
+// ledRoot refuses the folder the junction or link at the root dir's name leads to, which s holds open
+// and p names, where it is not one conflux would use, as the readers' check judges a root (checkRoot):
+// its owner not SYSTEM, the Administrators or the account running conflux, or its DACL granting
+// another account any right, on itself or on what is made in it.
+func ledRoot(dir, p string, s step) error {
+	sd, err := security(s.h)
+	if err != nil {
+		return fmt.Errorf("read the ownership of %s: %w", p, err)
+	}
+
+	owner, _, err := sd.Owner()
+	if err != nil {
+		return fmt.Errorf("read the owner of %s: %w", p, err)
+	}
+
+	if err := ownerRefusal(p, owner); err != nil {
+		return fmt.Errorf("%s is a junction or a link to a folder conflux will not use: %w", dir, err)
+	}
+
+	switch who, _, err := changerIn(p, currentUser(), sd, anyRight, "use it or what is made in it", nil, true); {
+	case err != nil:
+		return err
+	case who != "":
+		return fmt.Errorf("%s is a junction or a link to %s, which %s could read what conflux keeps there, or put "+
+			"what they like there for conflux to read, run or remove, so conflux will not follow it.\n  Point it at "+
+			"a folder only SYSTEM and the Administrators may use, then run this again as Administrator", dir, p, who)
+	}
+
+	return nil
+}
+
+// sameStep reports whether a and b hold one folder open.
+func sameStep(a, b step) bool {
+	same, err := sameFile(a.h, b.h)
+
+	return err == nil && same
+}
+
+// openIn opens name, a file in the folder s holds open, which p names, to read: looked up there and
+// nowhere else, never followed (ntOpen), a reparse point opened as itself, which PlainFile refuses.
+func openIn(s step, name, p string) (*os.File, error) {
+	h, err := ntOpen(s.h, name, nil, windows.GENERIC_READ|windows.SYNCHRONIZE, windows.FILE_OPEN,
+		windows.FILE_NON_DIRECTORY_FILE)
+	if err != nil {
+		return nil, &os.PathError{Op: "open", Path: p, Err: err}
+	}
+
+	return os.NewFile(uintptr(h), p), nil
+}
+
 // openFile opens p for access: as itself, a link or a junction included, or, following, as
 // whatever the lookup of its name leads to. Shared every way, so that nobody else's use of it
 // is refused for conflux's look. A right to change the owner or the DACL that is not granted is

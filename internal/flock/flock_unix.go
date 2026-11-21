@@ -55,18 +55,9 @@ func lock(path string, how int) (func(), bool, error) {
 // the supervisor's own serve.lock, held while it asks -- is not taken for anchord's.
 const plainLock = "a regular file with one name"
 
-// Held reports whether somebody holds the lock on path, a file in a directory another
-// account may write: anchor's lock beside a socket that anchord, running as its own
-// account, made. It is opened without trusting the file (openHeld), so the question cannot
-// be turned into root creating, truncating or blocking on whatever the name was made to
-// point at. A file that is not there is held by nobody.
-func Held(path string) (bool, error) {
-	f, err := openHeld(path)
-	if f == nil {
-		return false, err
-	}
-	defer f.Close()
-
+// heldFile reports whether somebody holds the lock f, at path, holds open: whether it could be taken
+// at once, let go of again where it was.
+func heldFile(f *os.File, path string) (bool, error) {
 	switch err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); {
 	case errors.Is(err, unix.EWOULDBLOCK):
 		return true, nil

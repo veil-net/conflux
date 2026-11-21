@@ -87,8 +87,9 @@ func TestRemoveRootFollowsNothing(t *testing.T) {
 // TestRemoveRootHoldsACONFLUXDIRsWay: a CONFLUX_DIR's way is held to parents' rule before anything in
 // it is removed, as the readers' check holds it, since a way another account may change could lead the
 // removal elsewhere: one inside a directory every account may write is refused, naming that
-// directory, and left. A platform root's way is not judged, as it is not when the root is made, and
-// the root is removed.
+// directory, and left, and JudgeWays, the same judgement with nothing removed, refuses it alike, and
+// takes it once the directory is this account's alone. A platform root's way is not judged, as it is
+// not when the root is made, and the root is removed.
 func TestRemoveRootHoldsACONFLUXDIRsWay(t *testing.T) {
 	open := t.TempDir()
 	if err := os.Chmod(open, 0o777); err != nil {
@@ -102,9 +103,31 @@ func TestRemoveRootHoldsACONFLUXDIRsWay(t *testing.T) {
 
 	t.Setenv("CONFLUX_DIR", root)
 
+	if err := Default().JudgeWays(); err == nil || !strings.Contains(err.Error(), open) {
+		t.Errorf("JudgeWays(a CONFLUX_DIR inside a directory anybody may write) = %v, want a refusal naming it", err)
+	}
+
 	if gone, err := RemoveRoot(root); gone || err == nil || !strings.Contains(err.Error(), open) {
 		t.Errorf("RemoveRoot(a CONFLUX_DIR inside a directory anybody may write) = %v, %v, want a refusal naming it",
 			gone, err)
+	}
+
+	if err := os.Chmod(open, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Default().JudgeWays(); err != nil {
+		t.Errorf("JudgeWays(a CONFLUX_DIR whose way is this account's alone) = %v", err)
+	}
+
+	if err := os.Chmod(open, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("CONFLUX_DIR", filepath.Join(t.TempDir(), "not", "there", "conflux"))
+
+	if err := Default().JudgeWays(); err != nil {
+		t.Errorf("JudgeWays(a CONFLUX_DIR whose way is not there) = %v", err)
 	}
 
 	if _, err := os.Lstat(root); err != nil {
@@ -112,6 +135,10 @@ func TestRemoveRootHoldsACONFLUXDIRsWay(t *testing.T) {
 	}
 
 	t.Setenv("CONFLUX_DIR", "")
+
+	if err := (Dirs{Config: root, State: root}).JudgeWays(); err != nil {
+		t.Errorf("JudgeWays(a platform root inside a directory anybody may write) = %v, want its way not judged", err)
+	}
 
 	if gone, err := RemoveRoot(root); !gone || err != nil {
 		t.Errorf("RemoveRoot(a platform root inside a directory anybody may write) = %v, %v, want it removed", gone, err)
@@ -140,7 +167,7 @@ func TestTheWayConfluxMadeIsRemovedWhenEmpty(t *testing.T) {
 
 	record := filepath.Join(d.State, wayName)
 
-	if got, err := readWay(record); err != nil || !slices.Equal(got, []string{a, b}) {
+	if got, err := d.readWay(); err != nil || !slices.Equal(got, []string{a, b}) {
 		t.Fatalf("the record EnsureAll kept = %q, %v, want %q, each once", got, err, []string{a, b})
 	}
 
@@ -235,5 +262,73 @@ func TestTheWayConfluxMadeIsRemovedWhenEmpty(t *testing.T) {
 
 	if _, err := os.Lstat(filepath.Join(e.State, wayName)); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("EnsureAll of an ephemeral run's roots kept a record of its way (%v)", err)
+	}
+}
+
+// TestARootIsHeldBeforeAnythingInItIsOpened: what is read in a root before anything has judged it --
+// the way record uninstall reads, the serve lock tidy asks after -- is opened through the root held
+// (OpenIn), never by its name: a CONFLUX_DIR whose name is a link to a directory every account may
+// write is refused, naming the link, before anything in that directory is opened, though the link is
+// this account's and the way to it passes; one leading to a directory of this account's own at 0700
+// is followed, and what is in it read.
+func TestARootIsHeldBeforeAnythingInItIsOpened(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	root := filepath.Join(base, "conflux")
+	t.Setenv("CONFLUX_DIR", root)
+
+	d := Default()
+
+	for _, c := range []struct {
+		name string
+		mode os.FileMode
+		ok   bool
+	}{
+		{"a directory every account may write", 0o777, false},
+		{"a directory of this account's own", 0o700, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			target := t.TempDir()
+
+			for name, body := range map[string]string{wayName: base + "\n", "serve.lock": ""} {
+				if err := os.WriteFile(filepath.Join(target, name), []byte(body), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			if err := os.Chmod(target, c.mode); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := os.Symlink(target, root); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { os.Remove(root) })
+
+			way, err := d.Way()
+
+			switch {
+			case c.ok && (err != nil || !slices.Equal(way, []string{base})):
+				t.Errorf("Way(), the root a link to %s = %q, %v, want it read through the link", c.name, way, err)
+			case !c.ok && (err == nil || !strings.Contains(err.Error(), root+" is a link to "+target)):
+				t.Errorf("Way(), the root a link to %s = %q, %v, want a refusal naming the link", c.name, way, err)
+			}
+
+			f, err := d.OpenIn(d.ServeLockFile())
+			if err == nil {
+				f.Close()
+			}
+
+			switch {
+			case c.ok && err != nil:
+				t.Errorf("OpenIn(the serve lock), the root a link to %s = %v, want it opened", c.name, err)
+			case !c.ok && (err == nil || !strings.Contains(err.Error(), root+" is a link to "+target)):
+				t.Errorf("OpenIn(the serve lock), the root a link to %s = %v, want a refusal naming the link", c.name,
+					err)
+			}
+		})
 	}
 }

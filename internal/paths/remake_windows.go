@@ -13,9 +13,11 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// remakeOld is RemakeOld for dir, a root of the installation d's. The root is held open, as itself
-// where it is a junction (heldRoot), and held to what secure holds a root to before it changes
-// anything in it: its owner, and nobody else let move what is in it, who could put back what is
+// remakeOld is RemakeOld for dir, a root of the installation d's. The root is held open as a reader
+// holds it (holdRoot): the way to it walked from the top of its volume, a CONFLUX_DIR's held to parents'
+// rule, a junction at its name followed only where conflux would follow it, and its owner SYSTEM, the
+// Administrators or the account running conflux (usable). It is held to what secure holds a root to
+// before it changes anything in it: nobody else let move what is in it, who could put back what is
 // removed. Then each thing directly in it that conflux makes again by its name there (remadeIn) is
 // opened through the root's handle, never followed, and judged as contents judges it for SYSTEM; one
 // that fails is removed, through handles (removeIn). A junction or a link at such a name is not
@@ -24,7 +26,7 @@ import (
 // configuration, the state and the manifest among them, or one deeper in a folder that passes -- is
 // refused, naming it, and left as it is. A root that is not there holds nothing to remove.
 func remakeOld(d Dirs, dir string) ([]string, error) {
-	root, err := heldRoot(dir, readAccess|windows.FILE_LIST_DIRECTORY|windows.SYNCHRONIZE)
+	r, err := holdRoot(dir)
 
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
@@ -32,20 +34,17 @@ func remakeOld(d Dirs, dir string) ([]string, error) {
 	case err != nil:
 		return nil, err
 	}
-	defer root.close()
+	defer r.close()
 
-	sd, err := security(root.dir)
+	if err := r.usable(dir); err != nil {
+		return nil, err
+	}
+
+	root := r.dir.h
+
+	sd, err := security(root)
 	if err != nil {
 		return nil, fmt.Errorf("read the ownership of %s: %w", dir, err)
-	}
-
-	owner, _, err := sd.Owner()
-	if err != nil {
-		return nil, fmt.Errorf("read the owner of %s: %w", dir, err)
-	}
-
-	if err := ownerRefusal(dir, owner); err != nil {
-		return nil, err
 	}
 
 	switch who, _, err := changerIn(dir, currentUser(), sd, moves, "move it or what is in it", nil, false); {
@@ -56,7 +55,14 @@ func remakeOld(d Dirs, dir string) ([]string, error) {
 			"not.\n  Give it a DACL that grants nobody else that right, then run this again as Administrator", dir, who)
 	}
 
-	names, err := listIn(root.dir)
+	list, err := ntOpen(root, "", nil, windows.SYNCHRONIZE|windows.FILE_LIST_DIRECTORY, windows.FILE_OPEN,
+		windows.FILE_DIRECTORY_FILE)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", dir, err)
+	}
+	defer windows.CloseHandle(list)
+
+	names, err := listIn(list)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", dir, err)
 	}
@@ -75,7 +81,7 @@ func remakeOld(d Dirs, dir string) ([]string, error) {
 
 		p := filepath.Join(dir, name)
 
-		who, err := failsIn(root.dir, name, p, anchord)
+		who, err := failsIn(root, name, p, anchord)
 
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
@@ -86,7 +92,7 @@ func remakeOld(d Dirs, dir string) ([]string, error) {
 			continue
 		}
 
-		if err := removeIn(root.dir, name, p); err != nil {
+		if err := removeIn(root, name, p); err != nil {
 			return removed, fmt.Errorf("remove %s, which %s could change, for conflux to make again: %w", p, who, err)
 		}
 

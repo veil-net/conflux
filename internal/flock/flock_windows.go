@@ -54,17 +54,9 @@ func lock(path string, flags uint32) (func(), bool, error) {
 // is not one.
 const plainLock = "a regular file"
 
-// Held reports whether somebody holds the lock on path, a file in a directory anchord's
-// own account may write. It is opened without trusting the file (openHeld), so asking cannot
-// be turned into SYSTEM creating a file wherever the name was made to lead, or locking it. A
-// file that is not there is held by nobody.
-func Held(path string) (bool, error) {
-	f, err := openHeld(path)
-	if f == nil {
-		return false, err
-	}
-	defer f.Close()
-
+// heldFile reports whether somebody holds the lock f, at path, holds open: whether it could be taken
+// at once, let go of again where it was.
+func heldFile(f *os.File, path string) (bool, error) {
 	h := windows.Handle(f.Fd())
 	ol := new(windows.Overlapped)
 

@@ -645,8 +645,10 @@ earlier conflux left everywhere conflux keeps files, every time, and makes afres
 so an update works on an older install as it is:
 
 - the service is stopped where a supervisor still serves the root, asked of the supervisor's lock
-  without trusting the root; under `register`, one that was serving is started again, on the new
-  conflux;
+  without trusting the root, and started again, on the new conflux, however the command ends: by
+  `start`'s restart, by `register`, which starts nothing it did not stop, and by either where
+  anything after this fails. A supervisor that still serves the root with the service stopped —
+  one started by hand — is refused, exit 1, naming the root, with nothing removed;
 - on Windows, what conflux makes again by its name in the root — `logs\`, `run\`, the lock files,
   `bin\`, the service's copy and the image moved aside, `anchord.json`, and what an atomic write or
   a copy left before its rename — that the service, running as SYSTEM, would refuse is removed
@@ -674,7 +676,10 @@ so an update works on an older install as it is:
   `conflux.exe.old`.
 
 The configuration, the identity, the state, the anchor directories and the log are kept. It
-lists what it removed.
+lists what it removed, and nothing it did not. What the next start clears again as it starts —
+the `anchord` a dead supervisor left, the run directory, a killed ephemeral run's root — it warns
+of where it cannot remove it, and goes on; any other failure, the `bin` directory not emptied among
+them, fails it, the service it stopped started again.
 
 | Situation | |
 |---|---|

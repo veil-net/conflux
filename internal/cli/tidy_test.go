@@ -7,12 +7,14 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/veil-net/conflux/anchor"
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
 	"github.com/veil-net/conflux/internal/privcheck"
@@ -273,4 +275,207 @@ func mustRead(t *testing.T, path string) []byte {
 	}
 
 	return b
+}
+
+// stopping is the stand-in service manager for a supervisor serving the root, holding its serve
+// lock: Stop counts, and lets go of that lock where it is given release, as a supervisor stopping
+// does.
+type stopping struct {
+	fakeManager
+
+	release func()
+	stops   int
+}
+
+func (m *stopping) Stop() error {
+	m.stops++
+
+	if m.release != nil {
+		m.release()
+		m.release = nil
+	}
+
+	return nil
+}
+
+// serving holds d's serve lock, as a supervisor serving the root does, until the test ends or the
+// function it returns is called, whichever is first.
+func serving(t *testing.T, d paths.Dirs) func() {
+	t.Helper()
+
+	unlock, err := flock.Acquire(d.ServeLockFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var once sync.Once
+
+	release := func() { once.Do(unlock) }
+	t.Cleanup(release)
+
+	return release
+}
+
+// configured is a CONFLUX_DIR installation with a configuration to start, and nothing else.
+func configured(t *testing.T) paths.Dirs {
+	t.Helper()
+
+	d := pathstest.Dirs(t)
+
+	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Proxies: []string{"8080=127.0.0.1:3000"},
+		Taints: []string{"t"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	return d
+}
+
+// TestTidyStartsAgainTheServiceItStopped: where a supervisor serves the root, the conflux an update
+// put in place stops the service before it removes what earlier conflux left, and starts it again
+// once it is done, on itself: register, which starts nothing it did not stop, restarts it; start
+// restarts it as every start does.
+func TestTidyStartsAgainTheServiceItStopped(t *testing.T) {
+	anchortest.Require(t) // it extracts the pair afresh
+
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	for _, verb := range []string{"register", "start"} {
+		t.Run(verb, func(t *testing.T) {
+			d := configured(t)
+
+			mgr := &stopping{fakeManager: fakeManager{d: d}, release: serving(t, d)}
+			standInService(t, mgr)
+
+			if verb == "start" {
+				mgr.restartErr = errStartsNothing
+			}
+
+			out, errOut, code := capture(t, verb)
+
+			want := ExitOK
+			if verb == "start" {
+				want = ExitError
+			}
+
+			if code != want || mgr.stops != 1 || len(mgr.installs) != 1 || mgr.restarts != 1 {
+				t.Errorf("conflux %s of a root a supervisor serves exited %d, stopped the service %d times, "+
+					"registered it %d and started it %d, want %d, once each:\n%s%s", verb, code, mgr.stops,
+					len(mgr.installs), mgr.restarts, want, out, errOut)
+			}
+		})
+	}
+}
+
+// TestTidyStartsAgainWhatItStoppedWhenItFails: a supervisor that still serves the root once the boot
+// service is stopped -- one started by hand -- leaves what earlier conflux left in use, and the update
+// is refused, saying so, with nothing removed or registered; and the service it stopped is started
+// again, left as it was found.
+func TestTidyStartsAgainWhatItStoppedWhenItFails(t *testing.T) {
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	for _, verb := range []string{"register", "start"} {
+		t.Run(verb, func(t *testing.T) {
+			d := configured(t)
+			serving(t, d)
+
+			mgr := &stopping{fakeManager: fakeManager{d: d}}
+			standInService(t, mgr)
+
+			out, errOut, code := capture(t, verb)
+
+			if code != ExitError || !strings.Contains(errOut, "still serves "+d.State) {
+				t.Errorf("conflux %s beside a supervisor that still serves the root exited %d, want %d saying so:\n%s%s",
+					verb, code, ExitError, out, errOut)
+			}
+
+			if mgr.stops != 1 || len(mgr.installs) != 0 || mgr.restarts != 1 {
+				t.Errorf("conflux %s stopped the service %d times, registered it %d and started it %d, "+
+					"want it stopped, nothing registered, and started again", verb, mgr.stops, len(mgr.installs),
+					mgr.restarts)
+			}
+		})
+	}
+}
+
+// TestTidyListsOnlyWhatItRemoved: what tidy says it removed is what is gone. Where bin's lock is held
+// -- an extraction in progress -- the earlier sets in bin are not removed, nor listed, and the update
+// is refused, since a set planted among them would be kept; and what it could not remove of the run
+// directory, which the next supervisor makes again, it warns of and goes on, listing what went.
+func TestTidyListsOnlyWhatItRemoved(t *testing.T) {
+	anchortest.Require(t) // it extracts the pair afresh
+
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	t.Run("bin's lock held", func(t *testing.T) {
+		d := configured(t)
+
+		earlier := filepath.Join(d.Libexec(), "0123456789abcdef")
+		if err := os.MkdirAll(earlier, 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		unlock, err := flock.Acquire(filepath.Join(d.Libexec(), ".lock"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer unlock()
+
+		standInService(t, &fakeManager{d: d})
+
+		out, errOut, code := capture(t, "register")
+		if code != ExitError || !strings.Contains(errOut, "another conflux is extracting") {
+			t.Errorf("conflux register with bin's lock held exited %d, want %d saying why:\n%s%s", code, ExitError,
+				out, errOut)
+		}
+
+		if _, err := os.Stat(earlier); err != nil {
+			t.Fatalf("%s went with bin's lock held: %v", earlier, err)
+		}
+
+		if strings.Contains(out, earlier) {
+			t.Errorf("conflux register listed %s, which is still there, as removed:\n%s", earlier, out)
+		}
+	})
+
+	t.Run("the run directory", func(t *testing.T) {
+		if os.Geteuid() == 0 || runtime.GOOS == "windows" {
+			t.Skip("a folder whose mode lets its owner remove nothing in it holds nothing back from root, or on Windows")
+		}
+
+		d := configured(t)
+
+		stuck := filepath.Join(d.Run, "anchord")
+		for p, body := range map[string]string{filepath.Join(stuck, "kept"): "", d.TokenFile(): "token"} {
+			if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		if err := os.Chmod(stuck, 0o500); err != nil {
+			t.Fatal(err)
+		}
+
+		t.Cleanup(func() { _ = os.Chmod(stuck, 0o700) })
+
+		standInService(t, &fakeManager{d: d})
+
+		out, errOut, code := capture(t, "register")
+		if code != ExitOK || !strings.Contains(errOut, stuck) {
+			t.Errorf("conflux register exited %d, want %d warning of %s, which it could not remove:\n%s%s", code,
+				ExitOK, stuck, out, errOut)
+		}
+
+		for _, p := range []string{stuck, d.TokenFile()} {
+			if _, err := os.Lstat(p); err == nil && strings.Contains(out, "  "+p+"\n") {
+				t.Errorf("conflux register listed %s, which is still there, as removed:\n%s", p, out)
+			}
+		}
+	})
 }

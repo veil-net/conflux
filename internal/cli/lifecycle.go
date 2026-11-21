@@ -54,7 +54,7 @@ func runInstall(ctx context.Context, args []string) int {
 // its own definition, as the new conflux's `start` does when the anchor is running. Before it
 // places anything it removes what earlier conflux left (tidy), and writes the copy afresh; a
 // supervisor that still served the root without an anchor, which tidy stops, is started
-// again, on this conflux.
+// again, on this conflux, however register ends (startAgain).
 func runRegister(ctx context.Context, args []string) int {
 	fs := flag.NewFlagSet("register", flag.ContinueOnError)
 	fs.SetOutput(ui.Errw)
@@ -84,14 +84,32 @@ func runRegister(ctx context.Context, args []string) int {
 
 	stopped, err := tidy(d, mgr)
 	if err != nil {
-		return fail(err)
+		return startAgain(mgr, stopped, fail(err))
 	}
 
-	if code := install(ctx, d, false, true); code != ExitOK || !stopped {
+	return startAgain(mgr, stopped, install(ctx, d, false, true))
+}
+
+// startAgain starts the service tidy stopped, where it stopped it, once the command it stopped it for
+// has come to code, and is code: a failure to start it fails a command that had not failed, and is
+// warned of beside one that had, which leaves the service as it was found, serving the root.
+func startAgain(mgr service.Manager, stopped bool, code int) int {
+	if !stopped {
 		return code
 	}
 
-	return fail(mgr.Restart())
+	err := mgr.Restart()
+
+	switch {
+	case err == nil:
+		return code
+	case code == ExitOK:
+		return fail(err)
+	}
+
+	ui.Errf("the boot service, stopped to remove what earlier conflux left, did not start again: %v", err)
+
+	return code
 }
 
 // install places the copy of conflux the service runs, and registers it. standalone
@@ -273,9 +291,14 @@ func runStart(ctx context.Context, args []string) int {
 	checked := d.Check()
 	afresh := checked == nil && !service.Placed(d) || checked != nil && !errors.Is(checked, os.ErrNotExist)
 
+	// The service tidy stopped is started again however start ends: by startFromConfig's restart, or
+	// before (startAgain).
+	stopped := false
+
 	if afresh {
-		if _, err := tidy(d, mgr); err != nil {
-			return fail(err)
+		var err error
+		if stopped, err = tidy(d, mgr); err != nil {
+			return startAgain(mgr, stopped, fail(err))
 		}
 	} else {
 		if err := remakeUnserved(d); err != nil {
@@ -292,16 +315,16 @@ func runStart(ctx context.Context, args []string) int {
 	cfg, err := config.Load(d)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
-			return fail(err)
+			return startAgain(mgr, stopped, fail(err))
 		}
 
 		ui.Errf("There is no configuration on this machine, so there is nothing to start.\n\n" + configureHint)
 
-		return ExitNoConfig
+		return startAgain(mgr, stopped, ExitNoConfig)
 	}
 
 	if code := install(ctx, d, false, afresh); code != ExitOK {
-		return code
+		return startAgain(mgr, stopped, code)
 	}
 
 	// No check for "already running". mgr.Restart covers both, and a start that

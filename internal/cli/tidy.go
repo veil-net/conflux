@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -25,8 +26,8 @@ import (
 // made again, fresh, by this conflux.
 //
 //   - The service is stopped where a supervisor serves the root, asked of its serve lock without
-//     trusting the root (flock.Held), since nothing has judged it yet; stopped says it was, for a
-//     caller that starts nothing to start it again on this conflux.
+//     trusting the root (flock.Held), since nothing has judged it yet; stopped says it was, for the
+//     caller to start it again, on this conflux, however it ends (startAgain).
 //   - What conflux makes again by its name in an installation's root and finds failing the rule the
 //     SYSTEM service holds it to -- an older conflux's on a Windows client, the administrator's own --
 //     is removed through handles (paths' RemakeOld), and anything else failing it refused; then the
@@ -36,7 +37,8 @@ import (
 //     emptied: the token, the readiness marker, the pid record, anchord's socket directory, which
 //     the next supervisor makes again.
 //   - The bin directory is emptied -- every set, this build's among them, and what a crashed
-//     extraction left staged -- and this build's pair extracted afresh (libexec.Remake).
+//     extraction left staged -- and this build's pair extracted afresh (libexec.Remake): where it
+//     cannot be, tidy fails once it has done the rest, since a set planted there would be kept.
 //   - A killed ephemeral run's root is removed, the anchord it left stopped (removeKilledRun); a
 //     live run's, and one another account could have made, are left.
 //   - Where nothing holds the state's lock, what an atomic write that never went in place left in the
@@ -46,7 +48,9 @@ import (
 //   - What an update left beside the conflux it replaced goes (removeUpdateLeftovers).
 //
 // The service's copy is the caller's to write afresh (service.PlaceAfresh), with what a copy that
-// never went in place left beside it. What it removed it lists, however far it got.
+// never went in place left beside it. What the next start clears again as it starts -- the orphan,
+// the run directory, a killed run's root -- it warns of where it cannot remove it, and goes on
+// (leftBehind); and what is gone, and nothing else, it lists, however far it got.
 func tidy(d paths.Dirs, mgr service.Manager) (stopped bool, err error) {
 	var removed []string
 
@@ -83,26 +87,22 @@ func tidy(d paths.Dirs, mgr service.Manager) (stopped bool, err error) {
 	}
 
 	_, err = daemon.ReapOrphan(d)
-	errs := []error{err}
+	leftBehind(err)
 
-	removed = append(removed, entries(d.Run, "")...)
-	_, err = paths.ClearExcept(d.Run, "")
-	errs = append(errs, err)
+	cleared, err := paths.ClearExcept(d.Run, "")
+	leftBehind(err)
+	removed = append(removed, cleared...)
 
 	// Every set but the one Remake extracts again, and what was staged.
 	set := filepath.Join(d.Libexec(), anchor.SetID())
-	removed = append(removed, entries(d.Libexec(), set, filepath.Join(d.Libexec(), ".lock"))...)
-
-	if _, err := libexec.Remake(d); err != nil {
-		errs = append(errs, err)
-	}
+	was := entries(d.Libexec(), set, filepath.Join(d.Libexec(), ".lock"))
+	_, remakeErr := libexec.Remake(d)
+	removed = append(removed, gone(was)...)
 
 	for _, root := range paths.EphemeralCandidates() {
-		switch found, err := removeKilledRun(root); {
-		case err != nil:
-			errs = append(errs, err)
-		case found == killedRun:
-			removed = append(removed, root)
+		found, err := removeKilledRun(root)
+		if leftBehind(err); found == killedRun {
+			removed = append(removed, gone([]string{root})...)
 		}
 	}
 
@@ -118,7 +118,16 @@ func tidy(d paths.Dirs, mgr service.Manager) (stopped bool, err error) {
 		removed = append(removed, removeUpdateLeftovers(exe)...)
 	}
 
-	return stopped, errors.Join(errs...)
+	return stopped, remakeErr
+}
+
+// leftBehind warns of err, what tidy could not remove of what the next supervisor or ephemeral run
+// clears again as it starts -- an anchord a dead supervisor left, the run directory, a killed run's
+// root -- which it goes on without.
+func leftBehind(err error) {
+	if err != nil {
+		ui.Errf("what earlier conflux left was not all removed, and the next start clears the rest: %v", err)
+	}
 }
 
 // listRemoved says what tidy removed, where it removed anything.
@@ -134,6 +143,19 @@ func listRemoved(removed []string) {
 	}
 
 	ui.Println()
+}
+
+// gone is those of was that are not there.
+func gone(was []string) []string {
+	var found []string
+
+	for _, p := range was {
+		if _, err := os.Lstat(p); errors.Is(err, fs.ErrNotExist) {
+			found = append(found, p)
+		}
+	}
+
+	return found
 }
 
 // entries are the paths of what dir holds but skip; none where it is not there.

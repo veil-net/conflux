@@ -9,8 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"slices"
-	"strings"
 	"time"
 
 	"github.com/veil-net/conflux/internal/config"
@@ -90,16 +88,20 @@ func runUninstall(_ context.Context, args []string) int {
 
 	// Each ephemeral run's root, but one inside the installation's -- a CONFLUX_DIR's -- which goes with
 	// it, a killed run's anchord stopped first, where the root is this account's alone. A run that
-	// started since uninstall asked is left running: its root, the root that holds it, and its account.
-	var started []string
+	// started since uninstall asked is left running: its root, the installation's roots where it is
+	// inside them, and its account.
+	var (
+		started       []string
+		startedInside bool
+	)
 
 	for _, root := range paths.EphemeralCandidates() {
-		if insideRoot(root, d) {
+		if d.Inside(root) {
 			switch found, err := removeKilledRun(root); {
 			case err != nil:
 				errs = append(errs, err)
 			case found == liveRun:
-				started = append(started, root)
+				started, startedInside = append(started, root), true
 			}
 
 			continue
@@ -125,9 +127,9 @@ func runUninstall(_ context.Context, args []string) int {
 			root))
 	}
 
-	for _, dir := range outerRoots(d) {
-		if slices.ContainsFunc(started, func(root string) bool { return strictlyIn(root, dir) }) {
-			continue
+	for _, dir := range d.Outer() {
+		if startedInside {
+			break
 		}
 
 		gone, err := paths.RemoveRoot(dir)
@@ -146,7 +148,7 @@ func runUninstall(_ context.Context, args []string) int {
 	// The service's log, where the platform keeps it in the system's own log directory, which is
 	// not conflux's: the file and the one moved aside, and never the directory. Remove has taken it
 	// already where a service was registered.
-	if f := d.LogFile(); f != "" && !insideRoot(d.Log, d) {
+	if f := d.LogFile(); f != "" && !d.Inside(d.Log) {
 		errs = append(errs, logfile.Remove(f))
 	}
 
@@ -183,36 +185,6 @@ func runUninstall(_ context.Context, args []string) int {
 		"conflux made. conflux up here again draws a new identity and a new overlay address.\n")
 
 	return ExitOK
-}
-
-// outerRoots are d's roots that are conflux's and not inside another of them, each once: the ones
-// uninstall removes, taking those inside with them -- run\ and logs\ on Windows and in a
-// CONFLUX_DIR. The system's shared log directory, which macOS and FreeBSD keep the service's log
-// in, is never one: it is inside no root, and it is not conflux's.
-func outerRoots(d paths.Dirs) []string {
-	var outer []string
-
-	for _, dir := range []string{d.Config, d.State, d.Run} {
-		if dir != "" && !insideRoot(dir, d) && !slices.Contains(outer, dir) {
-			outer = append(outer, dir)
-		}
-	}
-
-	return outer
-}
-
-// insideRoot reports whether dir sits strictly inside one of d's Config, State and Run.
-func insideRoot(dir string, d paths.Dirs) bool {
-	return slices.ContainsFunc([]string{d.Config, d.State, d.Run}, func(other string) bool {
-		return other != "" && strictlyIn(dir, other)
-	})
-}
-
-// strictlyIn reports whether p sits strictly inside dir.
-func strictlyIn(p, dir string) bool {
-	rel, err := filepath.Rel(dir, p)
-
-	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // liveRefused refuses uninstall while an ephemeral run is live, naming its root, and says whether it

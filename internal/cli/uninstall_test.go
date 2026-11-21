@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
 	"github.com/veil-net/conflux/internal/privcheck"
@@ -194,4 +195,48 @@ func TestUninstallLeavesALiveRun(t *testing.T) {
 			t.Errorf("uninstall removed the root of a live run: %v", err)
 		}
 	})
+}
+
+// TestARunTakingAKilledRunsRootKeepsIt: uninstall removes a killed run's root under its lock, as a
+// run's own clean-up does, so a run that takes the root the moment the lock is let go of keeps it,
+// and what it has put there: nothing removes the root again once its lock is let go of.
+func TestARunTakingAKilledRunsRootKeepsIt(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "ephemeral")
+	e := paths.EphemeralDirs(root)
+
+	// This account's alone, as the test makes it.
+	defer func(was func(string) error) { foreignRoot = was }(foreignRoot)
+	foreignRoot = func(string) error { return nil }
+
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(e.ServeLockFile(), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// The run that takes the root as the killed run's lock is let go of, and what it puts there.
+	taken := filepath.Join(root, "taken")
+
+	was := removeEphemeral
+	defer func() { removeEphemeral = was }()
+
+	removeEphemeral = func(e paths.Dirs, unlock func(), r daemon.Reporter) error {
+		return was(e, func() {
+			unlock()
+
+			if err := os.WriteFile(taken, []byte("a run's"), 0o600); err != nil {
+				t.Error(err)
+			}
+		}, r)
+	}
+
+	if _, err := removeEphemeralRoot(root); err != nil {
+		t.Fatalf("removeEphemeralRoot = %v", err)
+	}
+
+	if b, err := os.ReadFile(taken); err != nil || string(b) != "a run's" {
+		t.Errorf("what a run put in the root it took as the killed run's lock was let go of is gone: %q, %v", b, err)
+	}
 }

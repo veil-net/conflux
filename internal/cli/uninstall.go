@@ -229,7 +229,8 @@ func liveRefused() bool {
 }
 
 // removeEphemeralRoot removes the ephemeral root at root, where one is there, and says whether it
-// did: a killed run's as removeKilledRun removes it, and one another account could have made or
+// did: a killed run's as removeKilledRun removes it, under its lock, and nothing after, so a run that
+// takes it the moment the lock is let go of keeps it; and one another account could have made or
 // changed reading nothing in it, nor signalling anything it names (paths.RemoveRoot). A live run's,
 // which uninstall has refused already, is one that started since, and is errStarted.
 func removeEphemeralRoot(root string) (bool, error) {
@@ -240,13 +241,13 @@ func removeEphemeralRoot(root string) (bool, error) {
 		return false, errStarted
 	case found == noRun:
 		return false, nil
+	case found == killedRun:
+		return true, nil
 	}
 
-	if _, err := paths.RemoveRoot(root); err != nil {
-		return true, err
-	}
+	_, err := paths.RemoveRoot(root)
 
-	return true, nil
+	return true, err
 }
 
 // errStarted is an ephemeral run that started since uninstall asked whether one was live.
@@ -286,8 +287,12 @@ func removeKilledRun(root string) (runRoot, error) {
 		return liveRun, nil
 	}
 
-	return killedRun, daemon.RemoveEphemeral(e, unlock, nil)
+	return killedRun, removeEphemeral(e, unlock, nil)
 }
+
+// removeEphemeral is daemon.RemoveEphemeral, which a test points at one that lets a run take the root
+// as it lets go of the root's lock.
+var removeEphemeral = daemon.RemoveEphemeral
 
 // removeUpdateLeftovers removes what an update left beside exe, the conflux it replaced: a download
 // that never went in place (update.Download's .conflux-update-*), and on Windows the image it moved

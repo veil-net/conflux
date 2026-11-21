@@ -157,12 +157,13 @@ func TestAReaderTakesAnEphemeralRunsPairAsItIs(t *testing.T) {
 	}
 }
 
-// TestAReaderRemakesNothing: a reader -- status, renew, a pass-through -- makes nothing in the
-// installation's roots, which a service may be running from: where this build's pair is not extracted
-// there, as once an upgrade has put a newer conflux in place, it runs a private temporary copy of
-// anchorctl, which done removes, and leaves the roots as they are -- a run directory not as conflux
-// makes it among them, which EnsureAll would make afresh, the token in it with it. Where the pair is
-// there and as conflux makes it, the reader runs that, with nothing to remove.
+// TestAReaderRemakesNothing: a reader -- status, renew, a pass-through -- makes no root or folder in the
+// installation, which a service may be running from, and leaves its roots as they are -- a run directory
+// not as conflux makes it among them, which EnsureAll would make afresh, the token in it with it. Where
+// this build's pair is not extracted there, as once an upgrade has put a newer conflux in place, and
+// there is no bin directory to extract it into, it runs a private temporary copy of anchorctl, which done
+// removes; where the bin directory is there, as conflux makes it, the pair is extracted into it, and the
+// reader runs that, with nothing to remove, as it does once the pair is there.
 func TestAReaderRemakesNothing(t *testing.T) {
 	anchortest.Require(t)
 
@@ -176,7 +177,8 @@ func TestAReaderRemakesNothing(t *testing.T) {
 
 	bin, done, err := toolsFor(d)
 	if err != nil || done == nil || strings.HasPrefix(bin, d.State) {
-		t.Fatalf("a reader of an installation with no pair extracted = %s, %v, want a temporary copy to remove", bin, err)
+		t.Fatalf("a reader of an installation with no bin directory = %s, %v, want a temporary copy to remove", bin,
+			err)
 	}
 
 	if _, err := os.Stat(d.TokenFile()); err != nil {
@@ -184,7 +186,7 @@ func TestAReaderRemakesNothing(t *testing.T) {
 	}
 
 	if _, err := os.Lstat(d.Libexec()); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("a reader extracted into the installation (Lstat %s: %v)", d.Libexec(), err)
+		t.Errorf("a reader made the installation's bin directory (Lstat %s: %v)", d.Libexec(), err)
 	}
 
 	done()
@@ -193,14 +195,20 @@ func TestAReaderRemakesNothing(t *testing.T) {
 		t.Errorf("done left the temporary copy %s (Lstat: %v)", bin, err)
 	}
 
-	extracted, err := libexec.Extract(d)
-	if err != nil {
+	if err := os.Mkdir(d.Libexec(), 0o700); err != nil {
 		t.Fatal(err)
 	}
 
-	if bin, done, err := toolsFor(d); err != nil || bin != extracted.Anchorctl || done != nil {
-		t.Errorf("a reader of an installation with the pair extracted = %s, %v, want %s, and nothing to remove", bin,
-			err, extracted.Anchorctl)
+	bin, done, err = toolsFor(d)
+
+	extracted, extractErr := libexec.Extracted(d)
+	if err != nil || extractErr != nil || bin != extracted.Anchorctl || done != nil {
+		t.Errorf("a reader of an installation with a bin directory and no pair extracted = %s, %v, want the pair "+
+			"extracted there (%v), and nothing to remove", bin, err, extractErr)
+	}
+
+	if _, err := os.Stat(d.TokenFile()); err != nil {
+		t.Errorf("a reader's extraction remade the installation's run directory, the token in it with it: %v", err)
 	}
 }
 

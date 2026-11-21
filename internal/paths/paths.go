@@ -389,7 +389,7 @@ func ownFile(parent step, p string, installation bool) error {
 		return fmt.Errorf("read %s: %w", p, err)
 	}
 
-	why := k.notAFile()
+	why := k.not(isFile)
 	if k == isFile {
 		why, err = ours(p, s, installation)
 	}
@@ -953,7 +953,14 @@ func (d Dirs) OpenIn(path string) (*os.File, error) {
 // the file (lookAt), as conflux makes it (ours). Nil where all are; an error that is fs.ErrNotExist
 // where the root, a folder on the way or the file is not there; and otherwise why one is not as conflux
 // makes it. It changes nothing.
-func (d Dirs) Ours(path string) error {
+func (d Dirs) Ours(path string) error { return d.oursAs(path, isFile) }
+
+// OursFolder is Ours for a folder in one of d's roots or beneath one, such as the bin directory a reader
+// extracts into (libexec's ForUsage): the folder judged as each one on the way to it is.
+func (d Dirs) OursFolder(path string) error { return d.oursAs(path, isFolder) }
+
+// oursAs is Ours of path, what is there taken as conflux's only where it is of kind want.
+func (d Dirs) oursAs(path string, want kind) error {
 	path, err := filepath.Abs(path)
 	if err != nil {
 		return err
@@ -1016,8 +1023,8 @@ func (d Dirs) Ours(path string) error {
 
 	s, k, err := lookAt(at, names[len(names)-1])
 	if err == nil {
-		why = k.notAFile()
-		if k == isFile {
+		why = k.not(want)
+		if k == want {
 			why, err = ours(path, s, installation)
 		}
 
@@ -1055,13 +1062,16 @@ const (
 	isOther
 )
 
-// notAFile is why what lookAt found, of kind k, is no file of conflux's, or "" for a file.
-func (k kind) notAFile() string {
-	switch k {
-	case isFile:
+// not is why what lookAt found, of kind k, is not the kind want conflux keeps at its name -- a file or a
+// folder -- or "" where it is.
+func (k kind) not(want kind) string {
+	switch {
+	case k == want:
 		return ""
-	case isLink:
+	case k == isLink:
 		return aLink
+	case want == isFolder:
+		return "not a directory"
 	}
 
 	return "not a file"

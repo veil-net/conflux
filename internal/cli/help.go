@@ -106,7 +106,10 @@ func printAnchorctlUsage(ctx context.Context) {
 	if err != nil {
 		return
 	}
-	defer done()
+
+	if done != nil {
+		defer done()
+	}
 
 	out, err := runQuiet(ctx, bin, os.Environ(), []string{"help"})
 	if err != nil && out == "" {

@@ -48,7 +48,7 @@ type Tools struct {
 
 // Ensure is d's roots made as conflux makes them (EnsureAll) and this build's pair extracted there
 // (Extract): wintun's, which puts its DLL beside the anchord it extracts. A reader -- help, status,
-// renew, a pass-through -- makes nothing, and takes its anchorctl from Installed or Temporary instead.
+// renew, a pass-through -- makes no root, and takes its anchorctl from ForUsage instead.
 // Idempotent, atomic, and safe against another conflux doing the same thing.
 func Ensure(d paths.Dirs) (*Tools, error) {
 	// The hot path: every conflux invocation reaches here, including a bare pass-through, so it is
@@ -202,34 +202,29 @@ func Extracted(d paths.Dirs) (*Tools, error) {
 	return t, nil
 }
 
-// ForUsage is an anchorctl to ask what a command takes, for help that must leave nothing behind:
-// the installed extraction of this build's pair (Installed), or else a copy in a private temporary
-// directory (Temporary), which done removes.
+// ForUsage is the anchorctl a reader runs -- help, a status, a renew, a pass-through -- and done, which
+// removes it where it is a temporary copy, and is nil where it is not. The installation's roots are held
+// to the readers' check first (paths.Dirs.Check), before anything in them is read by its name. Where they
+// pass, this build's pair extracted there is used (Extracted), as found: nobody else can put anything in a
+// root as conflux makes one. Where it is not extracted yet -- as once an upgrade has put a newer conflux
+// in place -- it is extracted there (Extract), into the bin directory, provided that folder is there and
+// as conflux makes it (paths.Dirs.OursFolder): that adds a set and removes none, so a service still
+// running an older one keeps it, and no root or folder is made. Anything else -- no installation, roots
+// the check refuses, a bin directory not there or not as conflux makes it, an extraction that fails --
+// runs a copy in a private temporary directory (Temporary).
 func ForUsage(d paths.Dirs) (bin string, done func(), err error) {
-	if t, err := Installed(d); err == nil {
-		return t.Anchorctl, func() {}, nil
+	if d.Check() == nil {
+		t, err := Extracted(d)
+		if errors.Is(err, ErrNotExtracted) && d.OursFolder(d.Libexec()) == nil {
+			t, err = Extract(d)
+		}
+
+		if err == nil {
+			return t.Anchorctl, nil, nil
+		}
 	}
 
 	return Temporary()
-}
-
-// Installed is this build's pair extracted under d, for a reader that makes nothing there -- help, a
-// status, a renew, a pass-through: a whole extraction (Extracted) whose anchorctl, and each folder from
-// the state root to it, the root included, is as conflux makes it (paths.Dirs.Ours), which a binary run
-// from there by its name needs. Anything else is an error, ErrNotExtracted where no whole one is there.
-// Remaking the roots for a reader removed, under a service that ran from them, its run directory, the
-// token and the socket among it.
-func Installed(d paths.Dirs) (*Tools, error) {
-	t, err := Extracted(d)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := d.Ours(t.Anchorctl); err != nil {
-		return nil, err
-	}
-
-	return t, nil
 }
 
 // Temporary is a copy of this build's anchorctl in a private temporary directory, with nothing of any
@@ -293,8 +288,9 @@ func Temporary() (bin string, done func(), err error) {
 // and run. The sizes catch a binary truncated or replaced since, and a name a power cut
 // lost from the directory, whose own entries are not synced. One that fails is extracted
 // again. Who wrote them is not asked: every caller has made d's roots (EnsureAll) or held
-// them to the readers' check (Dirs.Check) first, and nobody else can put anything in a
-// root as conflux makes one.
+// them to the readers' check (Dirs.Check) first -- ForUsage, and an ephemeral run's reader,
+// which checks the run's root before it takes the pair there -- and nobody else can put
+// anything in a root as conflux makes one.
 func (t *Tools) complete() bool {
 	return whole(t.Anchord, len(anchor.Anchord())) && whole(t.Anchorctl, len(anchor.Anchorctl()))
 }

@@ -35,9 +35,9 @@ func execAnchorctl(_ context.Context, bin string, args []string, env []string) i
 }
 
 // runForwarding runs cmd to its end, passing each forwarded signal conflux catches on to it,
-// and calls done once it has ended, still forwarding, so no signal ends conflux before done
-// has run. Ctrl+C at the terminal reaches anchorctl from the terminal as well, as a second
-// SIGINT.
+// and calls done, where it is given, once it has ended, still forwarding, so no signal ends
+// conflux before done has run. Ctrl+C at the terminal reaches anchorctl from the terminal as
+// well, as a second SIGINT.
 func runForwarding(cmd *exec.Cmd, done func()) error {
 	// Before the start, so a signal sent from here on is held until it can be passed on. Each is
 	// named alone: Notify naming none would relay every signal.
@@ -49,7 +49,10 @@ func runForwarding(cmd *exec.Cmd, done func()) error {
 	}
 
 	defer signal.Stop(sigs)
-	defer done()
+
+	if done != nil {
+		defer done()
+	}
 
 	if err := cmd.Start(); err != nil {
 		return err

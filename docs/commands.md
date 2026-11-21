@@ -142,13 +142,15 @@ and nothing in it is read, run or stopped: `down` stops nothing; `update` downlo
 nothing. `uninstall` reads and signals nothing in such a root either, and removes it all the same,
 following nothing in it, but for a `CONFLUX_DIR` whose way another account may change, which it
 refuses before removing anything ([`conflux uninstall`](#conflux-uninstall)). A root that is not there
-is a machine with nothing installed, and read as one. None of them makes anything in a root: the
-`anchorctl` `status`, `renew` and a pass-through run is the extraction there for this build, where it
-is as conflux makes it, and otherwise a private copy in a temporary directory, removed once it has run.
+is a machine with nothing installed, and read as one. None of them makes a root or a folder: the
+`anchorctl` `status`, `renew` and a pass-through run is this build's extraction in a root that passes
+the check, taken as it is found; where it is not extracted yet, as just after an upgrade, it is
+extracted into `bin/`, where that is there and as conflux makes it, beside the set a service still
+running an older conflux runs, which stays; and otherwise — no `bin/`, or one not as conflux makes
+it — a private copy in a temporary directory, removed once it has run.
 
-Help is the exception, since it needs nothing of the machine's: it runs the `anchorctl` extracted
-in the root only where the root passes the readers' check and a whole extraction is there, and otherwise
-— the root refused, or not there — a private temporary copy, reading nothing in the root
+Help takes its `anchorctl` the same way, and needs nothing of the machine's: where the root is
+refused, or not there, it runs a private temporary copy, reading nothing in the root
 ([Pass-through](#pass-through)).
 
 ## `conflux up`
@@ -769,11 +771,12 @@ translation.
 
 Two kinds of command need nothing of conflux's: usage (`help`, or a help flag), which reaches
 no daemon, and one naming a socket of your own (`-socket`, or `ANCHOR_SOCKET`), which reaches a
-daemon conflux does not manage. Both run `anchorctl` as a child, from the extraction already
-there, where the root passes the [readers' check](#a-root-another-account-could-change) and a whole
-one is, or otherwise — the root refused, or not there — a private temporary copy removed afterwards,
-reading nothing in the root. They extract nothing and make none of conflux's directories, so an
-account that cannot write them still reaches its own daemon. The copy goes
+daemon conflux does not manage. Both run `anchorctl` as a child, taken as `status` takes it: this
+build's extraction, where the root passes the [readers' check](#a-root-another-account-could-change),
+extracted into `bin/` first where it is not there yet and `bin/` is as conflux makes it, or otherwise
+— the root refused, or not there — a private temporary copy removed afterwards, reading nothing in
+the root. They make none of conflux's directories, so an account that cannot write them still
+reaches its own daemon. The copy goes
 in the system's temporary directory, which must exist, or, where that is mounted noexec, in
 your cache directory, which is made if it is not there yet; no other directory is. A SIGTERM, SIGHUP
 or SIGINT sent to conflux is passed on to that child, so nothing outlives conflux, and conflux

@@ -96,7 +96,7 @@ func TestCheckHoldsARootAsConfluxMakesOne(t *testing.T) {
 // not judged. EnsureServing, the supervisor's, which runs from the copy the boot service names, leaves
 // that copy alone and removes the rest alike. Ours holds a file to the same, the copy among them, and one in a folder conflux keeps in a
 // root, each folder on the way to it held too: nil for one as conflux makes it, fs.ErrNotExist for one
-// not there, and otherwise a refusal saying why.
+// not there, and otherwise a refusal saying why; and OursFolder a folder, the bin directory.
 func TestEnsureAllRemovesAFileNotAsConfluxMakesIt(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", t.TempDir())
 
@@ -210,5 +210,48 @@ func TestEnsureAllRemovesAFileNotAsConfluxMakesIt(t *testing.T) {
 
 	if err := d.Ours(bin); err == nil || !strings.Contains(err.Error(), "a link") {
 		t.Errorf("Ours(%s, through a link) = %v, want a refusal saying so", bin, err)
+	}
+
+	// OursFolder holds a folder to the same: the bin directory a reader extracts into.
+	if err := d.OursFolder(d.Libexec()); err != nil {
+		t.Errorf("OursFolder(%s, as conflux makes it) = %v", d.Libexec(), err)
+	}
+
+	if err := d.Ours(d.Libexec()); err == nil || !strings.Contains(err.Error(), "not a file") {
+		t.Errorf("Ours(%s, a folder) = %v, want a refusal saying it is no file", d.Libexec(), err)
+	}
+
+	if err := os.Chmod(d.Libexec(), 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := d.OursFolder(d.Libexec()); err == nil || !strings.Contains(err.Error(), "anybody may write") {
+		t.Errorf("OursFolder(%s, every account may write it) = %v, want a refusal saying so", d.Libexec(), err)
+	}
+
+	if err := os.RemoveAll(d.Libexec()); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := d.OursFolder(d.Libexec()); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("OursFolder(no folder there) = %v, want %v", err, fs.ErrNotExist)
+	}
+
+	if err := os.Symlink(t.TempDir(), d.Libexec()); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := d.OursFolder(d.Libexec()); err == nil || !strings.Contains(err.Error(), "a link") {
+		t.Errorf("OursFolder(a link) = %v, want a refusal saying so", err)
+	}
+
+	if err := os.Remove(d.Libexec()); err != nil {
+		t.Fatal(err)
+	}
+
+	file(d.Libexec(), 0o700)
+
+	if err := d.OursFolder(d.Libexec()); err == nil || !strings.Contains(err.Error(), "not a directory") {
+		t.Errorf("OursFolder(a file) = %v, want a refusal saying it is no folder", err)
 	}
 }

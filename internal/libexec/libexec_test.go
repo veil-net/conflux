@@ -353,19 +353,111 @@ func TestUsageMakesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	bin, done, err = ForUsage(d)
-	if err != nil {
-		t.Fatal(err)
+	if bin, done, err = ForUsage(d); err != nil || bin != tools.Anchorctl || done != nil {
+		t.Errorf("usage where %s is extracted = %s, %v, and done %v, want that, and nothing to remove",
+			tools.Anchorctl, bin, err, done != nil)
+	}
+}
+
+// TestAReaderExtractsIntoABinDirectoryOfConfluxs: a reader -- help, a status, a renew, a pass-through --
+// of an installation whose roots pass the readers' check, with this build's pair not extracted, as once
+// an upgrade has put a newer conflux in place, extracts it into the bin directory where that is there and
+// as conflux makes it, beside the set an older conflux may be running, which it leaves; and runs it, with
+// nothing to remove and nothing written to the temporary directory. Where there is no bin directory, it
+// makes none, and runs a temporary copy it removes. Once extracted, the pair is taken as it is found:
+// nothing in a root as conflux makes one is anybody else's, so its files are not judged.
+func TestAReaderExtractsIntoABinDirectoryOfConfluxs(t *testing.T) {
+	anchortest.Require(t)
+
+	tmp := t.TempDir()
+	for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(name, tmp)
+	}
+
+	d := pathstest.Dirs(t)
+
+	bin, done, err := ForUsage(d)
+	if err != nil || done == nil || !strings.HasPrefix(bin, tmp+string(filepath.Separator)) {
+		t.Fatalf("a reader with no bin directory = %s, %v, want a temporary copy in %s to remove", bin, err, tmp)
 	}
 
 	done()
 
-	if bin != tools.Anchorctl {
-		t.Errorf("usage ran %s where %s is extracted", bin, tools.Anchorctl)
+	if _, err := os.Lstat(d.Libexec()); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a reader made the bin directory (Lstat %s: %v)", d.Libexec(), err)
 	}
 
-	if _, err := os.Stat(bin); err != nil {
-		t.Errorf("done removed the extracted anchorctl: %v", err)
+	older := filepath.Join(d.Libexec(), "0123456789abcdef")
+	if err := os.MkdirAll(older, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	want := toolsIn(d)
+
+	if bin, done, err := ForUsage(d); err != nil || bin != want.Anchorctl || done != nil || !want.complete() {
+		t.Errorf("a reader with this build's pair not extracted = %s, %v, and done %v, want %s extracted, and "+
+			"nothing to remove", bin, err, done != nil, want.Anchorctl)
+	}
+
+	if _, err := os.Stat(older); err != nil {
+		t.Errorf("a reader's extraction removed the set an older conflux runs: %v", err)
+	}
+
+	if left, _ := os.ReadDir(tmp); len(left) > 0 {
+		t.Errorf("a reader left %v in the temporary directory", left)
+	}
+
+	if runtime.GOOS == "windows" {
+		return // a mode bit makes nothing another account's there
+	}
+
+	if _, err := Extract(d); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Chmod(want.Anchorctl, 0o757); err != nil {
+		t.Fatal(err)
+	}
+
+	if bin, done, err := ForUsage(d); err != nil || bin != want.Anchorctl || done != nil {
+		t.Errorf("a reader of the pair extracted, its anchorctl's mode changed, = %s, %v, and done %v, want %s "+
+			"as it is found", bin, err, done != nil, want.Anchorctl)
+	}
+}
+
+// TestAReaderExtractsNothingIntoABinDirectoryNotOfConfluxs: where the bin directory is not as conflux makes
+// a folder of its own -- another account may write it -- a reader extracts nothing there, and runs a
+// temporary copy it removes.
+func TestAReaderExtractsNothingIntoABinDirectoryNotOfConfluxs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a mode bit refuses nothing on Windows")
+	}
+
+	anchortest.Require(t)
+
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+
+	d := pathstest.Dirs(t)
+
+	if err := os.Mkdir(d.Libexec(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Chmod(d.Libexec(), 0o757); err != nil {
+		t.Fatal(err)
+	}
+
+	bin, done, err := ForUsage(d)
+	if err != nil || done == nil || !strings.HasPrefix(bin, tmp+string(filepath.Separator)) {
+		t.Fatalf("a reader of a bin directory every account may write = %s, %v, want a temporary copy in %s", bin,
+			err, tmp)
+	}
+
+	done()
+
+	if left, _ := os.ReadDir(d.Libexec()); len(left) > 0 {
+		t.Errorf("a reader extracted %v into a bin directory every account may write", left)
 	}
 }
 

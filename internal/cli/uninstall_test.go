@@ -357,6 +357,38 @@ func TestUninstallLeavesARootHoldingWhatConfluxNeverMakes(t *testing.T) {
 	}
 }
 
+// TestUninstallStopsWhereARootsWayCannotBeWalked: a CONFLUX_DIR beneath a file has a way conflux cannot
+// walk, which is none of the refusals JudgeWays tells apart -- nobody else need be able to change
+// anything for it -- so uninstall says it stopped there, before it acted, exit 1, the boot service not
+// removed, and not that another account may change the way, nor that the root is shared or foreign; the
+// file is left as it was.
+func TestUninstallStopsWhereARootsWayCannotBeWalked(t *testing.T) {
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, []byte("somebody's"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("CONFLUX_DIR", filepath.Join(file, "conflux"))
+
+	mgr := &removing{fakeManager: fakeManager{d: paths.Default()}}
+	standInService(t, mgr)
+
+	out, errOut, code := capture(t, "uninstall", "--yes")
+	if code != ExitError || !strings.Contains(errOut, "stopped there, before it acted") ||
+		strings.Contains(errOut, "Once nobody else can change") || strings.Contains(errOut, "left everything in place") {
+		t.Errorf("uninstall of a CONFLUX_DIR beneath a file exited %d, want %d saying it stopped before it acted:\n%s%s",
+			code, ExitError, out, errOut)
+	}
+
+	if b, err := os.ReadFile(file); err != nil || string(b) != "somebody's" || mgr.removals > 0 {
+		t.Errorf("uninstall of a CONFLUX_DIR beneath a file removed the boot service %d times, and left the file %q, "+
+			"%v", mgr.removals, b, err)
+	}
+}
+
 // TestUninstallAsksBeforeEmptyingAChosenFolder: uninstall empties a CONFLUX_DIR, a folder whoever set
 // the variable chose, so it asks first whether or not an identity is there, and off a terminal without
 // --yes refuses, exit 2, saying it would remove everything in that folder, with nothing removed.

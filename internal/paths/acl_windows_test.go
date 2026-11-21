@@ -825,6 +825,47 @@ func grantedFolder(t *testing.T, dir string, access windows.ACCESS_MASK) string 
 	return dir
 }
 
+// TestAnElevatedConfluxJudgesAnEphemeralRootForTheAdministrators: %ProgramData% lets any account make
+// conflux-ephemeral first, and the administrator's own processes that are not elevated could make one and
+// fill it with a held lock, a readiness marker and an anchorctl of their own, for an elevated reader to
+// take for a run and run. So an elevated conflux judges an ephemeral run's root for the Administrators,
+// never the account it runs as by its own SID: one that account owns, or one granting it anything, is
+// refused, naming it, and EnsureAll makes it afresh, the Administrators', which then passes. Windows-only,
+// so it runs in CI's platforms job alone, which runs elevated.
+func TestAnElevatedConfluxJudgesAnEphemeralRootForTheAdministrators(t *testing.T) {
+	if !windows.GetCurrentProcessToken().IsElevated() {
+		t.Skip("judged for the account running conflux where it is not elevated")
+	}
+
+	user := currentUser().String()
+
+	for what, sddl := range map[string]string{
+		"owned by the administrator's own account": "O:" + user + "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)",
+		"granting the administrator's own account": "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;" + user + ")",
+	} {
+		t.Run(what, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), ephemeralName)
+			if err := os.Mkdir(root, 0o700); err != nil {
+				t.Fatal(err)
+			}
+
+			privtest.SetSecurity(t, root, sddl)
+
+			if err := EphemeralDirs(root).Check(); err == nil || !strings.Contains(err.Error(), root+" is not as conflux makes") {
+				t.Errorf("Check(an ephemeral root %s) = %v, want a refusal naming it", what, err)
+			}
+
+			if err := EphemeralDirs(root).EnsureAll(); err != nil {
+				t.Fatalf("EnsureAll(an ephemeral root %s) = %v", what, err)
+			}
+
+			if err := EphemeralDirs(root).Check(); err != nil {
+				t.Errorf("Check(the ephemeral root EnsureAll made afresh) = %v", err)
+			}
+		})
+	}
+}
+
 // TestAReaderRefusesARootItCannotRead: %ProgramData% lets any account make conflux-ephemeral where
 // no run has made it yet, and give it a DACL denying everybody the right to read it, so only a root
 // that is not there, or under a directory that is not, is taken by the readers' check for none,

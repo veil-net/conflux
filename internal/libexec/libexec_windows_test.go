@@ -14,14 +14,15 @@ import (
 	"github.com/veil-net/conflux/internal/privtest"
 )
 
-// TestAUsageCopyIsItsRunners: the anchorctl help runs from a temporary directory is granted to
-// the account running it, which need not be an administrator, and a set's binaries to SYSTEM
-// and the Administrators alone: a copy restricted as a set is could not be executed by such an
-// account. CI runs elevated, where a set's DACL would let the runner in all the same, so it is
-// the grants themselves that are checked, on the copy ForUsage made and the set Ensure made;
-// and the copy's DACL is checked to be its own, protected, since the one %TEMP% passes on
-// grants the runner already.
-func TestAUsageCopyIsItsRunners(t *testing.T) {
+// TestAUsageCopyIsGuardedForWhoRunsIt: the anchorctl a reader runs from a temporary directory is guarded
+// for the account running it. Elevated, as CI runs, it is in a folder of its own in %ProgramData%, never
+// the account's own %TEMP%, and the folder and the copy are SYSTEM's and the Administrators' alone, under
+// a protected DACL granting the account nothing by its own SID, whose processes that are not elevated
+// could otherwise change it between its write and its run; done removes both. Not elevated, the copy is
+// granted to the account, which need not be an administrator, under a DACL of its own, since the one
+// %TEMP% passes on grants the runner already. A set's binaries are SYSTEM's and the Administrators'
+// alone, read from the DACL its extraction wrote.
+func TestAUsageCopyIsGuardedForWhoRunsIt(t *testing.T) {
 	anchortest.Require(t)
 
 	t.Setenv("CONFLUX_DIR", filepath.Join(t.TempDir(), "conflux"))
@@ -39,25 +40,55 @@ func TestAUsageCopyIsItsRunners(t *testing.T) {
 	d := paths.Default()
 
 	bin, done, err := ForUsage(d)
+	if err != nil || done == nil {
+		t.Fatalf("ForUsage = %s, %v, want a temporary copy to remove", bin, err)
+	}
+
+	dir := filepath.Dir(bin)
+
+	if windows.GetCurrentProcessToken().IsElevated() {
+		if filepath.Dir(dir) != paths.ProgramData() {
+			t.Errorf("an elevated reader's temporary anchorctl is %s, want it in a folder of its own in %s", bin,
+				paths.ProgramData())
+		}
+
+		for _, p := range []string{dir, bin} {
+			s := privtest.ReadSecurity(t, p)
+			if !s.Protected {
+				t.Errorf("%s keeps the DACL its folder passed on, not one of its own", p)
+			}
+
+			for _, sid := range s.Grantees() {
+				if !sid.Equals(privtest.System) && !sid.Equals(privtest.Admins) {
+					t.Errorf("%s, an elevated reader's, grants %s, beside SYSTEM and the Administrators", p, sid)
+				}
+			}
+		}
+	} else {
+		copied := privtest.ReadSecurity(t, bin)
+		if !slices.ContainsFunc(copied.Grantees(), user.Equals) {
+			t.Errorf("the temporary anchorctl %s grants nothing to %s, the account that ran it: one that is not an "+
+				"administrator could not execute it", bin, user)
+		}
+
+		if !copied.Protected {
+			t.Errorf("the temporary anchorctl %s keeps the DACL its directory passed on, not one of its own", bin)
+		}
+	}
+
+	done()
+
+	if _, err := os.Lstat(dir); !os.IsNotExist(err) {
+		t.Errorf("done left the temporary anchorctl's folder %s (Lstat: %v)", dir, err)
+	}
+
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	tools, err := Extract(d)
 	if err != nil {
-		t.Fatalf("ForUsage: %v", err)
-	}
-
-	defer done()
-
-	copied := privtest.ReadSecurity(t, bin)
-	if !slices.ContainsFunc(copied.Grantees(), user.Equals) {
-		t.Errorf("the temporary anchorctl %s grants nothing to %s, the account that ran it: one that is not an "+
-			"administrator could not execute it", bin, user)
-	}
-
-	if !copied.Protected {
-		t.Errorf("the temporary anchorctl %s keeps the DACL its directory passed on, not one of its own", bin)
-	}
-
-	tools, err := Ensure(d)
-	if err != nil {
-		t.Fatalf("Ensure: %v", err)
+		t.Fatalf("Extract: %v", err)
 	}
 
 	for _, sid := range privtest.ReadSecurity(t, tools.Anchorctl).Grantees() {

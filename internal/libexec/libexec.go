@@ -228,17 +228,39 @@ func ForUsage(d paths.Dirs) (bin string, done func(), err error) {
 }
 
 // Temporary is a copy of this build's anchorctl in a private temporary directory, with nothing of any
-// root's read, which done removes: in the system's temporary directory, or, where that one is mounted
-// noexec as /tmp is on a hardened host, in the user's cache directory, made if it is not there yet. No
-// other directory is made, and never a root of conflux's. Making them for help remade, after an
-// uninstall, what it had removed, with tens of megabytes in it; and on Windows, asked by an account
-// that is not an administrator, it left %ProgramData%\conflux owned by that account, which every later
-// install then refused.
+// root's read, which done removes, the directory with it: made where temporaryDir makes it -- for an
+// elevated process on Windows a folder of its own in %ProgramData%, and otherwise in the user's temporary
+// directory (usersTemporaryDir) -- and restricted as it says. Never a root of conflux's, nor a folder in
+// one. Making them for help remade, after an uninstall, what it had removed, with tens of megabytes in
+// it; and on Windows, asked by an account that is not an administrator, it left %ProgramData%\conflux
+// owned by that account, which every later install then refused.
 func Temporary() (bin string, done func(), err error) {
 	if !anchor.Supported {
 		return "", nil, errUnsupported
 	}
 
+	dir, restrict, err := temporaryDir()
+	if err != nil {
+		return "", nil, err
+	}
+
+	bin = filepath.Join(dir, exeName("anchorctl"))
+	if err := writeExecutable(bin, anchor.Anchorctl(), true, restrict); err != nil {
+		_ = os.RemoveAll(dir)
+
+		return "", nil, err
+	}
+
+	return bin, func() { _ = os.RemoveAll(dir) }, nil
+}
+
+// temporaryPrefix begins the name of the directory Temporary makes.
+const temporaryPrefix = "conflux-usage-"
+
+// usersTemporaryDir makes the directory Temporary writes in, as the account running conflux: in the
+// system's temporary directory, or, where that one is mounted noexec as /tmp is on a hardened host, in
+// the user's cache directory, made if it is not there yet. No other directory is made.
+func usersTemporaryDir() (string, error) {
 	candidates := []string{os.TempDir()}
 
 	cache, err := os.UserCacheDir()
@@ -248,12 +270,12 @@ func Temporary() (bin string, done func(), err error) {
 
 	parent, err := paths.FirstExecutable(candidates, nil)
 	if errors.Is(err, paths.ErrNoExec) {
-		return "", nil, fmt.Errorf("every temporary directory is on a filesystem mounted noexec, so the anchorctl "+
+		return "", fmt.Errorf("every temporary directory is on a filesystem mounted noexec, so the anchorctl "+
 			"conflux runs could not run from it: %v.\n  Set TMPDIR to a directory on one that is not", candidates)
 	}
 
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
 
 	// The user's cache directory is the user's own, and one a fresh account has not made yet is
@@ -261,23 +283,11 @@ func Temporary() (bin string, done func(), err error) {
 	// an error, as it is to everything else that writes there.
 	if parent == cache {
 		if err := os.MkdirAll(parent, 0o700); err != nil {
-			return "", nil, err
+			return "", err
 		}
 	}
 
-	dir, err := os.MkdirTemp(parent, "conflux-usage-")
-	if err != nil {
-		return "", nil, err
-	}
-
-	bin = filepath.Join(dir, exeName("anchorctl"))
-	if err := writeExecutable(bin, anchor.Anchorctl(), true); err != nil {
-		_ = os.RemoveAll(dir)
-
-		return "", nil, err
-	}
-
-	return bin, func() { _ = os.RemoveAll(dir) }, nil
+	return os.MkdirTemp(parent, temporaryPrefix+"*")
 }
 
 // complete reports whether the directory holds a finished extraction of exactly this
@@ -310,7 +320,7 @@ const stagingPrefix = ".staging-"
 func extract(t *Tools) error {
 	root, target := filepath.Dir(t.Dir), t.Dir
 
-	staging, err := makeStaging(root)
+	staging, err := makeStaging(root, stagingPrefix)
 	if err != nil {
 		return fmt.Errorf("create a staging directory in %s: %w", root, err)
 	}
@@ -329,10 +339,10 @@ func extract(t *Tools) error {
 	)
 
 	wg.Go(func() {
-		ctlErr = writeExecutable(staged.Anchorctl, anchor.Anchorctl(), false)
+		ctlErr = writeExecutable(staged.Anchorctl, anchor.Anchorctl(), false, paths.Restrict)
 	})
 
-	err = writeExecutable(staged.Anchord, anchor.Anchord(), false)
+	err = writeExecutable(staged.Anchord, anchor.Anchord(), false, paths.Restrict)
 
 	wg.Wait()
 
@@ -377,13 +387,13 @@ func extract(t *Tools) error {
 	return nil
 }
 
-// writeExecutable writes one binary and closes it before anyone can exec it: one of a set's,
-// or, oneRun, the copy ForUsage runs once and removes.
+// writeExecutable writes one binary, restricts it with restrict, and closes it before anyone can
+// exec it: one of a set's, or, oneRun, the copy Temporary makes to run once and remove.
 //
 // The Close is not tidiness. On Linux, exec of a file that is still open for writing
 // anywhere in the system fails with ETXTBSY, and a deferred Close inside a loop is
 // exactly how that bug is usually written.
-func writeExecutable(path string, content []byte, oneRun bool) error {
+func writeExecutable(path string, content []byte, oneRun bool, restrict func(string, bool) error) error {
 	prefault(content)
 
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o700)
@@ -411,15 +421,9 @@ func writeExecutable(path string, content []byte, oneRun bool) error {
 		return fmt.Errorf("close %s: %w", path, err)
 	}
 
-	// Only Windows restricts a file; elsewhere both are no-ops. A set's binaries are the
-	// machine's, SYSTEM's and the Administrators', as everything under the root is. A copy for
-	// one run is the account running it as well: help may be asked by one that is not an
-	// administrator, which Restrict's DACL would not let execute what it had just written.
-	restrict := paths.Restrict
-	if oneRun {
-		restrict = paths.RestrictToOwner
-	}
-
+	// Only Windows restricts a file; elsewhere it is a no-op. A set's binaries are the machine's,
+	// SYSTEM's and the Administrators', as everything under the root is (paths.Restrict); a copy for
+	// one run is restricted as temporaryDir says.
 	if err := restrict(path, false); err != nil {
 		return fmt.Errorf("restrict %s: %w", path, err)
 	}

@@ -16,12 +16,7 @@ const sockPathMax = 108
 // -- so the protection comes from the ownership and DACL EnsureAll gives the root and
 // everything beneath it inherits; see acl_windows.go.
 func platformDirs() Dirs {
-	root := os.Getenv("ProgramData")
-	if root == "" {
-		root = `C:\ProgramData`
-	}
-
-	root = filepath.Join(root, "conflux")
+	root := filepath.Join(ProgramData(), "conflux")
 
 	return Dirs{
 		Config: root,
@@ -29,4 +24,14 @@ func platformDirs() Dirs {
 		Run:    filepath.Join(root, runName),
 		Log:    filepath.Join(root, "logs"),
 	}
+}
+
+// ProgramData is %ProgramData%, which the platform's roots, an ephemeral run's and an elevated reader's
+// temporary copy of anchorctl (libexec's Temporary) are kept in.
+func ProgramData() string {
+	if root := os.Getenv("ProgramData"); root != "" {
+		return root
+	}
+
+	return `C:\ProgramData`
 }

@@ -135,8 +135,8 @@ pass-through to conflux's daemon read what is in a root by its name — the conf
 record, the token, the socket — so each holds the root to the
 [readers' check](security.md#the-file-and-the-directory-around-it) first: the way to a `CONFLUX_DIR`
 held to the same rule, and the root as conflux makes one, its owner root or the account running
-conflux (on Windows SYSTEM, the Administrators or TrustedInstaller, or the account running conflux
-for an ephemeral run's), and nobody else able to write it. A root that fails is refused, exit 1,
+conflux (on Windows SYSTEM, the Administrators or TrustedInstaller, or, for an ephemeral run's, the
+account running conflux where it is not elevated), and nobody else able to write it. A root that fails is refused, exit 1,
 naming it and why,
 and nothing in it is read, run or stopped: `down` stops nothing; `update` downloads and replaces
 nothing. `uninstall` reads and signals nothing in such a root either, and removes it all the same,
@@ -778,7 +778,10 @@ extracted into `bin/` first where it is not there yet and `bin/` is as conflux m
 the root. They make none of conflux's directories, so an account that cannot write them still
 reaches its own daemon. The copy goes
 in the system's temporary directory, which must exist, or, where that is mounted noexec, in
-your cache directory, which is made if it is not there yet; no other directory is. A SIGTERM, SIGHUP
+your cache directory, which is made if it is not there yet; no other directory is. On Windows, run
+elevated, it goes instead in a folder of its own in `%ProgramData%`, which with the copy is SYSTEM's
+and the Administrators' alone from the moment it exists, since what your own `%TEMP%` holds your
+processes that are not elevated could change before it runs; both go once it has run. A SIGTERM, SIGHUP
 or SIGINT sent to conflux is passed on to that child, so nothing outlives conflux, and conflux
 ends as the child ends: with its exit code, or by the same signal. The copy goes either way. A
 SIGHUP or SIGINT conflux was started ignoring, as `nohup` starts it ignoring SIGHUP, stays

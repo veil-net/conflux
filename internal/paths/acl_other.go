@@ -372,8 +372,14 @@ func foreign(dir string) error {
 		return err
 	}
 
+	checked(dir)
+
 	return contentsAs(dir, fi, euid, secondNames(fi))
 }
+
+// checked is called once Foreign has held a root to the readers' check, before it judges what the
+// root holds: nothing, but where a test replaces the root meanwhile.
+var checked = func(string) {}
 
 // contentsAs refuses the root dir, for euid, where anything in it another account could have put
 // there, or may change, as Windows's contents does: a root left wider than conflux leaves one let

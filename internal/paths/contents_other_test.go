@@ -242,6 +242,31 @@ func TestARootReplacedAsItIsJudgedIsRefused(t *testing.T) {
 	}
 }
 
+// TestForeignJudgesTheRootItChecked: a reader judges what a root holds through the root opened by its
+// name, and holds that to the directory the readers' check judged, not to one looked up afresh: a root
+// another directory took the place of once Foreign had checked it is refused, though the one at the
+// name by then is empty and this account's, rather than judged in its stead.
+func TestForeignJudgesTheRootItChecked(t *testing.T) {
+	root := foundRoot(t)
+
+	was := checked
+	t.Cleanup(func() { checked = was })
+
+	checked = func(string) {
+		if err := os.Rename(root, root+".checked"); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.Mkdir(root, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := Foreign(root); err == nil || !strings.Contains(err.Error(), root+" changed while conflux judged it") {
+		t.Errorf("Foreign(a root replaced once it was checked) = %v, want a refusal naming it", err)
+	}
+}
+
 // TestARootHoldingAnotherAccountsFileIsRefused: a file another account owns is theirs, whatever its
 // name and mode, and refused, naming the owner: given to uid 65534, as root, by EnsureAll; and
 // otherwise this account's own, judged for another.

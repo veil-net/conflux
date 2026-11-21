@@ -121,9 +121,10 @@ made as the recipe below makes it, which the administrator's own processes may r
 could lead anywhere by then, so nothing is removed where it leads, and the `EnsureAll` that follows
 replaces it with conflux's own or refuses it; `uninstall` likewise removes such a junction as itself
 and nothing where it leads. What they
-remove, as what `uninstall` removes, is opened to delete it and to read its attributes alone, a
-folder to list it too, with the backup intent the privileges an Administrator holds give, so that a
-DACL granting the Administrators nothing does not keep it, and a file is never opened to be read.
+judge is opened to read its owner, DACL and attributes alone, and what they remove, as what
+`uninstall` removes, to delete it and read its attributes alone, a folder to list it too, each with
+the backup intent the privileges an Administrator holds give, so that a DACL granting the
+Administrators nothing does not keep it, and a file is never opened to be read.
 The log is kept: each log file in a `logs\` they remove that the service would take, as what the service wrote
 there is, is moved out into the root through handles first, and back into `logs\` once that is made
 again; one the service would refuse goes with the folder, and so does one with a second name, a hard

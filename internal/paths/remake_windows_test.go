@@ -338,3 +338,34 @@ func TestRemakeOldKeepsNoLogOfTwoNames(t *testing.T) {
 		t.Errorf("the file the log's second name named is %q, %v, want it as it was", b, err)
 	}
 }
+
+// TestRemakeOldRemovesWhatGrantsTheAdministratorsNothing: a lock file RemakeOld makes again, planted by
+// another account under a DACL that grants the Administrators nothing, is read for its owner and DACL
+// with the backup intent an Administrator's privileges give, judged, and removed, as uninstall removes
+// one, rather than failing the command it runs in. Windows-only, so it runs in CI's platforms job alone.
+func TestRemakeOldRemovesWhatGrantsTheAdministratorsNothing(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "conflux")
+	t.Setenv("CONFLUX_DIR", root)
+	d := Default()
+
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	guests, err := windows.CreateWellKnownSid(windows.WinBuiltinGuestsSid)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(d.LockFile(), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	privtest.SetSecurity(t, d.LockFile(), "D:P(A;;FA;;;SY)")
+	privtest.SetOwner(t, d.LockFile(), guests)
+
+	if removed, err := d.RemakeOld(); err != nil || !slices.Equal(removed, []string{d.LockFile()}) {
+		t.Errorf("RemakeOld of a root holding a lock file that grants the Administrators nothing = %q, %v, want it "+
+			"removed", removed, err)
+	}
+}

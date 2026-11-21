@@ -357,12 +357,20 @@ func (d Dirs) remadeIn(dir, name string) bool {
 
 // failsIn is who, besides SYSTEM, the Administrators, TrustedInstaller and anchord, may change name,
 // in the directory parent holds open, which p names, as contents judges it for SYSTEM (entryChanger),
-// or "": opened
-// through parent, looked up there and nowhere else and never followed. A junction or a link is "",
-// left to contents, which refuses it.
+// or "": opened through parent, looked up there and nowhere else and never followed, to read its owner,
+// DACL and attributes alone, with backup intent on a thread whose token has the privileges that give
+// it (withBackup), so that a DACL granting the Administrators nothing, which fails the rule, does not
+// keep RemakeOld from reading as much and removing it. A junction or a link is "", left to contents,
+// which refuses it.
 func failsIn(parent windows.Handle, name, p string, anchord *windows.SID) (string, error) {
-	h, err := ntOpen(parent, name, nil, windows.SYNCHRONIZE|readAccess, windows.FILE_OPEN, 0)
-	if err != nil {
+	var h windows.Handle
+
+	if err := withBackup(func() (err error) {
+		h, err = ntOpen(parent, name, nil, windows.SYNCHRONIZE|readAccess, windows.FILE_OPEN,
+			windows.FILE_OPEN_FOR_BACKUP_INTENT)
+
+		return err
+	}); err != nil {
 		return "", &os.PathError{Op: "open", Path: p, Err: err}
 	}
 	defer windows.CloseHandle(h)

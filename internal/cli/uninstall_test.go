@@ -508,11 +508,10 @@ func TestUninstallStopsWhereARootsWayCannotBeWalked(t *testing.T) {
 	}
 }
 
-// TestUninstallAsksBeforeEmptyingAChosenFolder: uninstall removes a CONFLUX_DIR's root, in a folder
-// whoever set the variable chose, so it asks first whether or not an identity is there, and off a
-// terminal without --yes refuses, exit 2, saying it would remove that root and everything in it, with
-// nothing removed.
-func TestUninstallAsksBeforeEmptyingAChosenFolder(t *testing.T) {
+// TestUninstallAsksNothingWithoutAnIdentity: where no identity is there, uninstall has nothing
+// irreversible to ask about, in a CONFLUX_DIR as on the platform's roots: off a terminal and without
+// --yes it removes the root, exit 0.
+func TestUninstallAsksNothingWithoutAnIdentity(t *testing.T) {
 	if ui.IsTerminal() {
 		t.Skip("this test's stdin is a terminal")
 	}
@@ -524,18 +523,16 @@ func TestUninstallAsksBeforeEmptyingAChosenFolder(t *testing.T) {
 
 	mgr := &removing{fakeManager: fakeManager{d: d}}
 	standInService(t, mgr)
+	recordAccounts(t)
 
 	out, errOut, code := capture(t, "uninstall")
-	if code != ExitUsage || !strings.Contains(errOut, "removes "+d.State+" and everything in it") ||
-		!strings.Contains(errOut, "--yes") {
-		t.Errorf("uninstall of a CONFLUX_DIR with no identity, off a terminal and without --yes, exited %d, want %d "+
-			"saying it would remove %s and everything in it and naming --yes:\n%s%s", code, ExitUsage, d.State, out,
-			errOut)
+	if code != ExitOK || mgr.removals != 1 {
+		t.Errorf("uninstall of a CONFLUX_DIR with no identity, off a terminal and without --yes, exited %d and "+
+			"removed the boot service %d times, want %d and once:\n%s%s", code, mgr.removals, ExitOK, out, errOut)
 	}
 
-	if _, err := os.Lstat(d.ConfigFile()); err != nil || mgr.removals > 0 {
-		t.Errorf("uninstall, unconfirmed, removed the boot service %d times, and %s (Lstat: %v)", mgr.removals,
-			d.ConfigFile(), err)
+	if _, err := os.Lstat(d.State); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("uninstall left %s (Lstat: %v)", d.State, err)
 	}
 }
 

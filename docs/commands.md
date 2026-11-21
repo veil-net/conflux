@@ -515,9 +515,9 @@ reinstall:
 The conflux you ran is yours, and stays. It says what it removed, however far it got, and nothing
 else: a root it could not empty, or a killed run's that a run took as it let go of it, is not
 listed. Asks first where there is a credential, or may be one it cannot read, because there is no
-other copy of it anywhere; and wherever `CONFLUX_DIR` is set, credential or not, saying it removes
-`<dir>/.conflux` and everything in it. `--yes` skips the question, and a non-interactive run without
-`--yes` refuses, exit 2, rather than destroy either silently.
+other copy of it anywhere, saying, where `CONFLUX_DIR` is set, that it removes `<dir>/.conflux` and
+everything in it; where there is none it asks nothing. `--yes` skips the question, and a
+non-interactive run without `--yes` refuses, exit 2, rather than destroy the credential silently.
 
 Nothing in a root is followed. Each is removed through the directory holding it, held open from
 the top of its volume down, and a name at a time below it: a link or junction found anywhere in

@@ -339,32 +339,20 @@ func removeUpdateLeftovers(exe string) []string {
 	return removed
 }
 
-// confirmUninstall makes the irreversible part explicit before it happens. checked is what paths'
-// check said of d's roots: where none is there there is nothing to destroy; where one failed, the
-// identity in it is not read, and what is asked says why. It asks where an identity is there, or may
-// be, and wherever d is a CONFLUX_DIR's -- whose root, inside a folder whoever set the variable chose,
-// uninstall removes whether an identity is in it or not; off a terminal, without yes, it refuses, so a
-// scripted uninstall destroys neither by default.
+// confirmUninstall makes the irreversible part explicit before it happens: the identity. checked is
+// what paths' check said of d's roots: where none is there there is nothing to destroy; where one
+// failed, the identity in it is not read, and what is asked says why. It asks only where an identity is
+// there, or may be; off a terminal, without yes, it refuses, so a scripted uninstall destroys none by
+// default.
 func confirmUninstall(d paths.Dirs, checked error, yes bool) bool {
-	if yes || errors.Is(checked, fs.ErrNotExist) {
+	if yes || errors.Is(checked, fs.ErrNotExist) || checked == nil && !config.HasManifest(d) {
 		return true
 	}
 
-	root := paths.Root()
-	identity := checked != nil || config.HasManifest(d)
-
-	var stakes string
-
-	switch {
-	case root == "" && !identity:
-		return true
-	case root == "":
-		stakes = "deletes this machine's credential, and there is no other copy"
-	case identity:
+	stakes := "deletes this machine's credential, and there is no other copy"
+	if paths.Root() != "" {
 		stakes = "removes " + d.State + " and everything in it, this machine's credential among it, and there is no " +
 			"other copy of that"
-	default:
-		stakes = "removes " + d.State + " and everything in it"
 	}
 
 	if !ui.IsTerminal() {
@@ -374,10 +362,6 @@ func confirmUninstall(d paths.Dirs, checked error, yes bool) bool {
 	}
 
 	ui.Printf("\nThis %s.\n\n", stakes)
-
-	if !identity {
-		return ui.Confirm("Continue?")
-	}
 
 	if checked != nil {
 		ui.Field("anchor", "not read: "+checked.Error())

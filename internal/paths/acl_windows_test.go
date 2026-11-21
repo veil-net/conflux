@@ -1407,27 +1407,45 @@ func TestAReaderRefusesARootItCannotRead(t *testing.T) {
 	}
 }
 
+// tightened is a root as an administrator tightening %ProgramData%'s DACL by hand leaves it, following
+// conflux's refusal: the Administrators', under a protected DACL granting SYSTEM and the Administrators
+// full control, and passing CREATOR OWNER full control on to what is made in it.
+const tightened = "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICIIO;FA;;;CO)"
+
 // TestAReaderTakesCreatorOwnerAsSecureDoes: an inherit-only CREATOR OWNER entry, which %ProgramData%
 // passes on and a root an administrator tightened by hand may keep, grants the root itself nothing,
-// and what is made in it whoever made that: where only SYSTEM, the Administrators, TrustedInstaller
-// and this account may add to the root, nobody else. So checkRoot, every reader's, takes such a root,
-// as secure does, and Foreign with it. One that also lets Users add a file to it is refused, naming
-// Users, by checkRoot and Foreign, which change nothing, and then repaired by secure, which restricts
-// it, as it would any root granting more, and leaves it SYSTEM's and the Administrators' alone.
-// Windows-only, so it runs in CI's platforms job alone.
+// and what is made in it whoever made that, which conflux counts as the account running it: where
+// only SYSTEM, the Administrators, TrustedInstaller and this account may add to the root, nobody else.
+// So checkRoot, every reader's, takes such a root, as secure does an ephemeral run's, and Foreign with
+// it, and so does the service's judgement of an installation's, for SYSTEM. An administrator's secure
+// of an installation's root, judged for SYSTEM, counts the entry as the administrator's and restricts
+// the root, leaving it SYSTEM's and the Administrators' alone. One that also lets Users add a file to
+// it is refused, naming Users, by checkRoot and Foreign, which change nothing, and then repaired by
+// secure, which restricts it, as it would any root granting more. Windows-only, so it runs in CI's
+// platforms job alone.
 func TestAReaderTakesCreatorOwnerAsSecureDoes(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", "")
-
-	const tightened = "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICIIO;FA;;;CO)"
 
 	root := foundRoot(t)
 	privtest.SetSecurity(t, root, tightened)
 
-	for name, judge := range map[string]func(string) error{"checkRoot": checkRoot, "Foreign": Foreign, "secure": secureInstallation} {
+	for name, judge := range map[string]func(string) error{"checkRoot": checkRoot, "Foreign": Foreign,
+		"secure (an ephemeral run's)": func(dir string) error { return secure(dir, false) },
+		"the service's judgement":     JudgeAsTheService} {
 		if err := judge(root); err != nil {
 			t.Errorf("%s(a root passing CREATOR OWNER full control of what is made in it) = %v", name, err)
 		}
+
+		if !slices.ContainsFunc(privtest.ReadSecurity(t, root).Grantees(), sidCreatorOwner.Equals) {
+			t.Fatalf("%s restricted a root passing CREATOR OWNER full control of what is made in it", name)
+		}
 	}
+
+	if err := secure(root, true); err != nil {
+		t.Errorf("secure(an installation's root passing CREATOR OWNER full control of what is made in it) = %v", err)
+	}
+
+	onlyTheSystems(t, root)
 
 	open := foundRoot(t)
 	privtest.SetSecurity(t, open, tightened+"(A;;0x2;;;BU)")
@@ -1445,6 +1463,50 @@ func TestAReaderTakesCreatorOwnerAsSecureDoes(t *testing.T) {
 	}
 
 	onlyTheSystems(t, open)
+}
+
+// TestAnAdministratorsRunRestrictsARootPassingCreatorOwnerOn: under a Windows client's default-owner
+// policy (privtest.CreatorOwns), what an administrator makes is their own, and a CREATOR OWNER entry
+// passed on to it grants them; the boot service trusts them with nothing. A conflux process makes the
+// Administrators the owner of what it makes as it starts (ElevatedDefaultOwner), and its EnsureAll of
+// an installation's CONFLUX_DIR an administrator tightened by hand to SYSTEM, the Administrators and
+// CREATOR OWNER restricts that root, so nothing in it is passed CREATOR OWNER's grant after -- logs\,
+// which EnsureAll makes in it by its name, grants nobody else anything -- and the service's judgement
+// takes the root. Windows-only, so it runs in CI's platforms job alone.
+func TestAnAdministratorsRunRestrictsARootPassingCreatorOwnerOn(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "conflux")
+	t.Setenv("CONFLUX_DIR", root)
+	d := Default()
+
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	privtest.SetSecurity(t, root, tightened)
+
+	restore := privtest.CreatorOwns(t)
+
+	if err := ElevatedDefaultOwner(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := d.EnsureAll(); err != nil {
+		t.Fatalf("EnsureAll of a CONFLUX_DIR passing CREATOR OWNER full control of what is made in it = %v", err)
+	}
+
+	restore()
+
+	onlyTheSystems(t, root)
+
+	for _, e := range privtest.ReadSecurity(t, d.Log).Entries {
+		if !e.SID.Equals(sidSystem) && !e.SID.Equals(sidAdmins) {
+			t.Errorf("%s, made by EnsureAll, grants %s", d.Log, e.SID)
+		}
+	}
+
+	if err := JudgeAsTheService(root); err != nil {
+		t.Errorf("the service's judgement of the root EnsureAll restricted = %v", err)
+	}
 }
 
 // TestCheckHoldsARootAsAReaderNeeds: Check holds each root that is there to its owner and to who

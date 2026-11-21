@@ -158,8 +158,12 @@ granting more is one conflux would restrict — so one that only inherits `%Prog
 `Users` is refused too, and so is one that lets them read it; a `CONFLUX_DIR`'s way is held to the
 rule it is made by, for the account reading it. A `CREATOR OWNER` entry passed on, as an
 administrator tightening a root by hand may keep `%ProgramData%`'s, is no such grant here, nor when
-conflux secures a root: it grants whoever made what it is passed to, and only SYSTEM, the
-Administrators, TrustedInstaller and the account running conflux may make anything in the root. Nothing is changed: a root that
+conflux secures an ephemeral run's root, nor to the service: it grants whoever made what it is
+passed to, which conflux counts as the account running it, and only SYSTEM, the Administrators,
+TrustedInstaller and that account may make anything in the root. An administrator's command
+securing an installation's root, which it judges for SYSTEM, counts it as that administrator's —
+what a Windows client's default-owner policy leaves an administrator's tools making is their own —
+and restricts the root, taking the entry, and what it passed on, away. Nothing is changed: a root that
 fails is refused, saying why, with nothing in it read, run, stopped or removed, and one not there is
 a machine with nothing installed, of which nothing is read either, since whoever made the name
 first would answer for what is at it. A reader of an ephemeral root, which another process keeps,

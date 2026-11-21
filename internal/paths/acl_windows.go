@@ -1471,9 +1471,14 @@ func changerIn(p string, self *windows.SID, sd *windows.SECURITY_DESCRIPTOR, rig
 // mover is the first account dacl grants one of rights on the object itself, or, where passedOn,
 // on what is made in it too, other than those trustedFor names for self and anchord, where it is
 // given, or nil; and whether it grants anchord one of them before it: each entry that allows rights
-// there, as windowsGrants reads them. CREATOR OWNER is not one where rights holds the right to add a
-// file and a folder to the object (creates): it is nobody on the object itself, and passed on,
-// whoever made what it is passed to, whom this same judgement holds to the accounts trustedFor names.
+// there, as windowsGrants reads them. Where rights holds the right to add a file and a folder to the
+// object (creates), CREATOR OWNER is nobody on the object itself, and passed on, whoever made what it
+// is passed to, whom this same judgement holds to the accounts trustedFor names: so it is counted as
+// the account running conflux, the one whose making conflux can answer for -- what an administrator
+// makes is their own under a Windows client's default-owner policy -- and passes only where that
+// account is trusted for self. A judgement for SYSTEM made by an administrator's run, an
+// installation's root's, counts it as that administrator, and secure restricts such a root, taking
+// the entry and what it passed on away.
 func mover(dacl *windows.ACL, self *windows.SID, rights windows.ACCESS_MASK, anchord *windows.SID,
 	passedOn bool) (*windows.SID, bool, error) {
 	header := unsafe.Slice((*byte)(unsafe.Pointer(dacl)), 8)
@@ -1496,7 +1501,13 @@ func mover(dacl *windows.ACL, self *windows.SID, rights windows.ACCESS_MASK, anc
 			anchords = true
 		case sid.Equals(sidCreatorOwner) && rights&creates == creates:
 			// Nobody on the object itself, and on what it is passed to whoever made that: where rights
-			// holds the right to add to the object, an account this refuses, unless a trusted one.
+			// holds the right to add to the object, the account running conflux, unless a trusted one.
+			switch user := currentUser(); {
+			case user == nil:
+				return sid, anchords, nil
+			case !trustedFor(user, self):
+				return user, anchords, nil
+			}
 		case !trustedFor(sid, self):
 			return sid, anchords, nil
 		}

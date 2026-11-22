@@ -16,7 +16,7 @@ const childProgramData = "CONFLUX_TEST_PROGRAMDATA"
 // that links it, keeps it in the temporary directory: what conflux itself reads %ProgramData% through.
 var programDataAtInit = ProgramData
 
-// TestProgramDataIsTheSystems: %ProgramData%, where the platform's roots, an ephemeral run's and an
+// TestProgramDataIsTheSystems: %ProgramData%, where the default root, an ephemeral run's and an
 // elevated reader's temporary anchorctl are kept, is the system's (systemProgramData), never the
 // environment's, which an elevated process takes from the user's registry, and that user's processes that
 // are not elevated may write: ProgramData, ALLUSERSPROFILE, SystemDrive, SystemRoot and windir naming

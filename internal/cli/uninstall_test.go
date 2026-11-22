@@ -472,7 +472,7 @@ func TestUninstallStopsWhereARootsWayCannotBeWalked(t *testing.T) {
 }
 
 // TestUninstallAsksNothingWithoutAnIdentity: where no identity is there, uninstall has nothing
-// irreversible to ask about, in a CONFLUX_DIR as on the platform's roots: off a terminal and without
+// irreversible to ask about, in a CONFLUX_DIR as at the default root: off a terminal and without
 // --yes it removes the root, exit 0.
 func TestUninstallAsksNothingWithoutAnIdentity(t *testing.T) {
 	if ui.IsTerminal() {

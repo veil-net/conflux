@@ -92,7 +92,7 @@ func TestExecutableLooksAboveARootNotMadeYet(t *testing.T) {
 
 // TestTheRootsConfluxMakesPassTheReadersCheck: a reader holds every root to Check, so each root
 // EnsureAll makes passes it, on every platform: a CONFLUX_DIR installation's, the ephemeral root inside
-// it, and an ephemeral root of the platform's kind, outside any CONFLUX_DIR.
+// it, and an ephemeral root of an ordinary user's kind, outside any CONFLUX_DIR.
 func TestTheRootsConfluxMakesPassTheReadersCheck(t *testing.T) {
 	passes := func(d Dirs, what string) {
 		t.Helper()

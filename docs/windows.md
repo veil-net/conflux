@@ -158,7 +158,7 @@ a `CONFLUX_DIR` is the user's responsibility, and one another account can change
 lets that account put a root of its own where conflux's was. conflux owns `.conflux` inside it, and
 remakes it as it makes it. The way to a root is walked from the top of its volume, each folder held
 open through a handle on the one before, never followed, and a junction or a link read off itself and
-gone on from where it leads. What conflux picks itself — the platform's roots, an ephemeral run's
+gone on from where it leads. What conflux picks itself — the default root, an ephemeral run's
 root, an elevated reader's temporary copy of anchorctl — is judged for SYSTEM or the Administrators,
 never the account running conflux by its SID, so that account's processes that are not elevated
 cannot have made or changed it.

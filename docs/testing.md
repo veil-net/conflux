@@ -70,7 +70,7 @@ that account full control. The folder is made, or given again where it differs, 
 Administrators' by name, and the test process first makes them the owner of what it makes without
 naming one, as every conflux process does as it starts (`paths.ElevatedDefaultOwner`);
 `privtest.CreatorOwns` gives a test a client's policy, the administrator's own, for a while. What
-conflux keeps in `%ProgramData%` — an elevated reader's temporary anchorctl, and the platform's roots
+conflux keeps in `%ProgramData%` — an elevated reader's temporary anchorctl, and the default root
 where no `CONFLUX_DIR` is set — every test linking `pathstest` keeps in that temporary directory as
 well (`paths.ProgramData`, which the system's `\ProgramData` is otherwise), or in a test's own where
 it points `TMP` and `TEMP` at one; a test asserting what goes there, and what is removed from there,

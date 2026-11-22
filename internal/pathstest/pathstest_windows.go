@@ -14,7 +14,7 @@ import (
 // does as it starts (paths.ElevatedDefaultOwner), and roots it, its CONFLUX_DIRs among it, in a folder
 // only SYSTEM and the Administrators may change (privtest.ServiceTemp), rather than in the
 // administrator's own profile, where %TEMP% is. What conflux keeps in %ProgramData% -- an elevated reader's temporary anchorctl, and the
-// platform's roots where no CONFLUX_DIR is set -- it keeps in the process's temporary directory too
+// default root where no CONFLUX_DIR is set -- it keeps in the process's temporary directory too
 // (paths.ProgramData): there, in a test's own where the test points TMP and TEMP at one, or in a folder
 // of its own a test gives it (ProgramData).
 func init() {

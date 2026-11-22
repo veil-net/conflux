@@ -61,6 +61,13 @@ This context is authoritative. Docs describe the design but may be wrong: where 
 11. `anchoradmin` never enters conflux: not in `anchor/bin/`, not embedded, not in a release artifact.
 12. This repository is public. Never commit anchor source, tokens, keys, manifests (including ones enrolled during the run), or any private material. Never weaken the fork guard on self-hosted jobs.
 13. The skill maintains itself to the same standard as the code: accurate, concise, no dead steps, no report files. The Project Context and these Rules change only when the user explicitly says so.
+14. The host may run its own conflux, installed with its service and its anchord. Nothing a run does may affect it, and that holds for every auditor and fixer the run starts:
+    - never run anything as root on the host (no sudo, su or doas);
+    - never install, uninstall, register, start or stop a conflux service there, or call its service manager for one;
+    - never touch the default location or the installation's files;
+    - never stop a process you did not start, and stop your own only by PID.
+
+    Whatever needs root, a service manager, the default location or a device (TUN) runs in a container, such as the systemd image `test/service.sh` builds. Unit tests and non-root runs under a scratch `CONFLUX_DIR` may run on the host, with the config's `apiBaseUrl` set to an unreachable address (`https://127.0.0.1:1`) before any real binary runs.
 
 ## Workflow
 

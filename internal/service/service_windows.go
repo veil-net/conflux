@@ -27,8 +27,8 @@ type scm struct{}
 func newManager() Manager { return scm{} }
 
 // Install registers exe, run with args, as the service, or updates the registration already there. The
-// SCM keeps the command line as REG_EXPAND_SZ and expands every %NAME% in it at each start, which every
-// command that registers refuses a root for before it makes anything (cli's refusePercent).
+// SCM keeps the command line as REG_EXPAND_SZ and expands every %NAME% in it at each start: exe is the
+// service's copy, <system ProgramData>\.conflux\conflux.exe, read from the system, which holds none.
 func (scm) Install(exe string, args ...string) error {
 	m, err := connect(windows.SC_MANAGER_ALL_ACCESS)
 	if err != nil {

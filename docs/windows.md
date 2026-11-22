@@ -192,11 +192,8 @@ Registered as `conflux`, displayed as `VeilNet Conflux`, running as `LocalSystem
 [service.md](service.md).
 
 The SCM keeps the service's command line as one to expand, and replaces each `%NAME%` in it from
-the system's environment at every start, so every command that registers the service — `install`,
-`up`, `proxy`, `observe`, `enrol`, `start`, and the `register` an update runs — refuses, before it
-makes anything, a path for the service's copy of conflux that holds a `%`, which SYSTEM would expand
-into the path of another file than the one conflux placed. The copy's path is
-`<system ProgramData>\.conflux\conflux.exe`, read from the system, which holds none.
+the system's environment at every start. The command line is the service's copy of conflux,
+`<system ProgramData>\.conflux\conflux.exe`, read from the system, and `serve`, which hold none.
 
 `anchord` itself runs as SYSTEM only for a TUN, which wintun needs. In userspace mode the
 supervisor logs `LOCAL SERVICE` on for it with `LogonUserExExW`, the service's SID and a

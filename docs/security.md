@@ -108,7 +108,8 @@ host can read, and when the run stops there is nothing at all.
   is not extracted yet it is extracted into `bin/`, where that is there and as conflux makes it,
   adding a set and removing none, and otherwise it runs from a private copy in a temporary
   directory, removed once it has run: a reader makes neither a root nor `bin/`, and removes nothing
-  from one a service may be running from.
+  from one a service may be running from. A pass-through to a socket the user named runs the
+  private copy always, reading nothing of conflux's.
 - Never in an argv. It travels on stdin to `anchorctl start -manifest -`, and to
   `anchorctl observe -start -manifest -` for the observer, which runs under it too, becomes an
   inline secret on the wire, and is never named as a path in the request — so it never

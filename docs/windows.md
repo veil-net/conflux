@@ -85,6 +85,16 @@ be flagged, and know the mitigations:
 If the extracted binaries will not run at all, conflux says so and names endpoint
 protection as the likely cause rather than reporting a bare permission error.
 
+A reader — help, `status`, `renew`, a pass-through — that finds no extraction it may use, and
+a pass-through to a socket you named, run a temporary copy of `anchorctl` instead. Elevated, the
+copy goes in a folder of its own in `%ProgramData%`, `conflux-usage-<n>`, which with the copy is
+SYSTEM's and the Administrators' from the moment it exists, never your own `%TEMP%`, which your
+processes that are not elevated could change between the write and the run; not elevated, it goes
+in your `%TEMP%`, granted to you. The folder goes once the copy has run, and one a reader killed
+before then left goes at the next `uninstall`, or the next command that removes what earlier
+conflux left ([commands.md](commands.md#conflux-uninstall)); one whose copy is running is passed
+over.
+
 ## File permissions
 
 `%ProgramData%` is the system's: `\ProgramData` on the volume Windows is installed on, read from the

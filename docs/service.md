@@ -19,8 +19,10 @@ is configured with nothing and holds no anchor until something calls `start` ove
 socket. Something has to make that call, and it may as well be the thing the service
 manager watches.
 
-At every boot the supervisor takes the root's `serve.lock` — one supervisor per root —
-stops any `anchord` a supervisor that died left running (below), reads `conflux.json`,
+At every boot the supervisor makes its roots as every command makes them, but for the copy of
+conflux it runs from, takes the root's `serve.lock` — one supervisor per root — places that copy
+afresh from its own image where it is not there or not as conflux makes it, failing the start where
+it cannot, stops any `anchord` a supervisor that died left running (below), reads `conflux.json`,
 extracts the anchor pair if it is not already on disk, writes a fresh bearer token,
 decides what `anchord` runs as — its own account, with exactly the capabilities its mode
 needs, wherever that costs it nothing; see [security.md](security.md#what-anchord-runs-as)

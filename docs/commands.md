@@ -138,9 +138,9 @@ pass-through to conflux's daemon read what is in a root by its name — the conf
 record, the token, the socket — so each holds the root to the
 [readers' check](security.md#the-file-and-the-directory-around-it) first: the way to a `CONFLUX_DIR`
 held to the same rule, and the root as conflux makes one, its owner root or the account running
-conflux (on Windows SYSTEM, the Administrators or TrustedInstaller), and nobody else able to write it. A root that fails is refused, exit 1,
-naming it and why,
-and nothing in it is read, run or stopped: `down` stops nothing; `update` downloads and replaces
+conflux (on Windows SYSTEM, the Administrators or TrustedInstaller), and nobody else able to write
+it. A root that fails is refused, exit 1, naming it and why, and nothing in it is read, run or
+stopped: `down` stops nothing; `update` downloads and replaces
 nothing. `uninstall` reads and signals nothing in such a root either, and removes it all the same,
 following nothing in it, but for a `CONFLUX_DIR` whose way another account may change, which it
 refuses before removing anything ([`conflux uninstall`](#conflux-uninstall)). A root that is not there
@@ -152,7 +152,8 @@ running an older conflux runs, which stays; and otherwise — no `bin/`, or one 
 it — a private copy in a temporary directory, removed once it has run.
 
 Help takes its `anchorctl` the same way, and needs nothing of the machine's: where the root is
-refused, or not there, it runs a private temporary copy, reading nothing in the root
+refused, or not there, it runs a private temporary copy, reading nothing in the root; and a
+pass-through to a socket you named takes a temporary copy always, reading nothing of conflux's
 ([Pass-through](#pass-through)).
 
 ## `conflux up`

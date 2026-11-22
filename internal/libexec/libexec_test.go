@@ -18,6 +18,7 @@ import (
 	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
+	"github.com/veil-net/conflux/internal/privcheck"
 )
 
 func TestExtractExtractsAndRuns(t *testing.T) {
@@ -552,7 +553,8 @@ func TestUsageRunsNothingFromARootItRefuses(t *testing.T) {
 // of anchorctl leaves the folder it made there for good, so uninstall and tidy remove every folder named as
 // Temporary names one, everywhere a copy may be made for the account running them -- the temporary
 // directory, and the user's cache directory, where one goes on a host whose temporary directory is mounted
-// noexec, elevated on Windows as well -- and say which; anything else there is left, and so is a folder that
+// noexec, elevated on Windows as well, and there %ProgramData% besides, which the test keeps apart from
+// them (pathstest.ProgramData) -- and say which; anything else there is left, and so is a folder that
 // will not go -- a reader's copy running from it, which Windows removes no file of -- passed over while the
 // rest go. Each place is taken by its name as it is, never as a pattern: a temporary directory named x[1]
 // leaves what is in x1. A link at such a name, to a folder or to a file, goes as itself, what it names left.
@@ -573,6 +575,11 @@ func TestRemoveTemporaryRemovesWhatAKilledReaderLeft(t *testing.T) {
 
 		left = append(left, filepath.Join(cache, temporaryPrefix+"4"))
 	}
+
+	if programData := pathstest.ProgramData(t, t.TempDir()); programData != "" && privcheck.Elevated() {
+		left = append(left, filepath.Join(programData, temporaryPrefix+"0"))
+	}
+
 	inUse := filepath.Join(parent, temporaryPrefix+"3")
 	others := []string{filepath.Join(parent, "conflux-other"), filepath.Join(filepath.Dir(parent), "x1", temporaryPrefix+"5")}
 

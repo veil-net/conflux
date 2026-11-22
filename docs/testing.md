@@ -60,9 +60,11 @@ anchor pair" has lost them, and saying so is the difference between a gate and a
 decoration. On macOS and Windows, where other tests skip for the platform, the gate
 looks for that reason rather than a list of names a new test would be missing from.
 
-On Windows the tests root what they make, every `CONFLUX_DIR` among it, in
-`%SystemDrive%\conflux-tests`, a folder only SYSTEM and the Administrators may change
-(`privtest.ServiceTemp`, which `paths`' tests and every test linking `pathstest` set up first),
+On Windows the tests root what they make, every `CONFLUX_DIR` among it, in `conflux-tests` on the
+volume Windows is installed on, read from the system rather than `SystemDrive`, a folder only SYSTEM
+and the Administrators may change (`privtest.ServiceTemp`, which `paths`' tests and every test linking
+`pathstest` set up first, and which leaves a `TMP` or `TEMP` already beneath that folder as it is, so a
+child of a test binary keeps its test's),
 rather than in `%TEMP%`: an installation's way is held to the rule the service, running as SYSTEM,
 holds it to, and the profile of the administrator running the tests grants that account full
 control, which SYSTEM does not trust. The folder is made, or given again where it differs, as
@@ -73,7 +75,9 @@ the tests' own folders pass the service's judgement whatever the machine's defau
 conflux keeps in `%ProgramData%` — an elevated reader's temporary anchorctl, and the platform's roots
 where no `CONFLUX_DIR` is set — every test linking `pathstest` keeps in that temporary directory as
 well (`paths.ProgramData`, which the system's `\ProgramData` is otherwise), or in a test's own where
-it points `TMP` and `TEMP` at one.
+it points `TMP` and `TEMP` at one; a test asserting what goes there, and what is removed from there,
+gives it a folder of its own apart from them (`pathstest.ProgramData`). `paths`' test of the system's
+`\ProgramData` asks `systemProgramData` itself, which nothing stands in for.
 
 Wherever a reader's temporary anchorctl is made, a test that makes one roots every place it may be
 made in a directory of its own first (`pathstest.Temporary`: `TMPDIR`, `TMP` and `TEMP`, and the

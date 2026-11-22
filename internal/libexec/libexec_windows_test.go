@@ -15,9 +15,9 @@ import (
 )
 
 // TestAUsageCopyIsGuardedForWhoRunsIt: the anchorctl a reader runs from a temporary directory is guarded
-// for the account running it. Elevated, as CI runs, it is in a folder of its own in %ProgramData% (which a
-// test keeps in its own temporary directory: pathstest), never the account's own %TEMP%, and the folder
-// and the copy are SYSTEM's and the Administrators' alone, under
+// for the account running it. Elevated, as CI runs, it is in a folder of its own in %ProgramData% (which
+// the test keeps in a folder of its own, apart from its temporary directory: pathstest.ProgramData), never
+// the account's own %TEMP%, and the folder and the copy are SYSTEM's and the Administrators' alone, under
 // a protected DACL granting the account nothing by its own SID, whose processes that are not elevated
 // could otherwise change it between its write and its run; done removes both. Not elevated, the copy is
 // granted to the account, which need not be an administrator, under a DACL of its own, since the one
@@ -28,6 +28,7 @@ func TestAUsageCopyIsGuardedForWhoRunsIt(t *testing.T) {
 
 	t.Setenv("CONFLUX_DIR", filepath.Join(t.TempDir(), "conflux"))
 	pathstest.Temporary(t, t.TempDir())
+	programData := pathstest.ProgramData(t, t.TempDir())
 
 	tu, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {
@@ -45,9 +46,9 @@ func TestAUsageCopyIsGuardedForWhoRunsIt(t *testing.T) {
 	dir := filepath.Dir(bin)
 
 	if windows.GetCurrentProcessToken().IsElevated() {
-		if filepath.Dir(dir) != paths.ProgramData() {
+		if filepath.Dir(dir) != programData {
 			t.Errorf("an elevated reader's temporary anchorctl is %s, want it in a folder of its own in %s", bin,
-				paths.ProgramData())
+				programData)
 		}
 
 		for _, p := range []string{dir, bin} {

@@ -16,7 +16,8 @@ import (
 // SYSTEM holds it to at every start, which the administrator's own profile, where %TEMP% is, does
 // not pass. What conflux keeps in %ProgramData% -- an elevated reader's temporary anchorctl, and the
 // platform's roots where no CONFLUX_DIR is set -- it keeps in the process's temporary directory too
-// (paths.ProgramData): there, or in a test's own where the test points TMP and TEMP at one.
+// (paths.ProgramData): there, in a test's own where the test points TMP and TEMP at one, or in a folder
+// of its own a test gives it (ProgramData).
 func init() {
 	if err := paths.ElevatedDefaultOwner(); err != nil {
 		panic("pathstest: " + err.Error())
@@ -27,6 +28,19 @@ func init() {
 	}
 
 	paths.ProgramData = os.TempDir
+}
+
+// ProgramData keeps what conflux keeps in %ProgramData% in dir for the rest of the test, apart from the
+// temporary directory, and is dir: for a test that asserts what goes there and what does not.
+func ProgramData(tb testing.TB, dir string) string {
+	tb.Helper()
+
+	was := paths.ProgramData
+	paths.ProgramData = func() string { return dir }
+
+	tb.Cleanup(func() { paths.ProgramData = was })
+
+	return dir
 }
 
 // NotAsConfluxMakesIt makes p, a root of conflux's, or a file or a folder in one, this administrator's, as

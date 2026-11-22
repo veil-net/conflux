@@ -105,7 +105,7 @@ func TestRemakeWaitsForAnExtractionInProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	unlock, err := flock.Acquire(filepath.Join(d.Libexec(), ".lock"))
+	unlock, err := flock.AcquireContext(t.Context(), filepath.Join(d.Libexec(), ".lock"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

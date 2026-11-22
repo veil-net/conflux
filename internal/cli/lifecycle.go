@@ -395,7 +395,7 @@ func runStart(ctx context.Context, args []string) (code int) {
 // The whole distinction from uninstall is in what it does not touch: the boot
 // registration stays, the configuration stays, the identity stays. The next reboot
 // brings the machine back exactly as it was, with nothing typed.
-func runDown(_ context.Context, args []string) int {
+func runDown(ctx context.Context, args []string) int {
 	fs := flag.NewFlagSet("down", flag.ContinueOnError)
 	fs.SetOutput(ui.Errw)
 	fs.Usage = func() {
@@ -447,7 +447,7 @@ func runDown(_ context.Context, args []string) int {
 	// An anchor stopped by hand is not one the supervisor gave up on, so status says no more of
 	// that than of anything else the stopped service ran.
 	if checked == nil {
-		if err := daemon.ForgetRefusal(d); err != nil {
+		if err := daemon.ForgetRefusal(ctx, d); err != nil {
 			ui.Errf("could not clear the record of the anchor the supervisor gave up on: %v", err)
 		}
 	}

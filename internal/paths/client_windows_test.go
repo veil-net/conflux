@@ -67,13 +67,13 @@ func TestWhatAnAdministratorMakesTheServiceTakes(t *testing.T) {
 
 	made("EnsureAll", d.State, d.Run, d.Log)
 
-	unlock, err := flock.Acquire(d.LockFile())
+	unlock, err := flock.AcquireContext(t.Context(), d.LockFile(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	unlock()
-	made("flock.Acquire", d.LockFile())
+	made("flock.AcquireContext", d.LockFile())
 
 	unlock, ok, err := flock.TryAcquire(d.ServeLockFile())
 	if err != nil || !ok {

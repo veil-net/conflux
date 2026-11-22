@@ -63,7 +63,7 @@ func site(t *testing.T, doc string) (paths.Dirs, string) {
 func TestEnrolInstallsWhatItWasGiven(t *testing.T) {
 	d, path := site(t, guardianDoc)
 
-	if err := importCredential(d, path, guardianAPI, ""); err != nil {
+	if err := importCredential(t.Context(), d, path, guardianAPI, ""); err != nil {
 		t.Fatalf("importCredential: %v", err)
 	}
 
@@ -106,7 +106,7 @@ func TestEnrolInstallsWhatItWasGiven(t *testing.T) {
 func TestEnrolWillNotReplaceAnIdentity(t *testing.T) {
 	d, path := site(t, guardianDoc)
 
-	if err := importCredential(d, path, guardianAPI, ""); err != nil {
+	if err := importCredential(t.Context(), d, path, guardianAPI, ""); err != nil {
 		t.Fatalf("the first import: %v", err)
 	}
 
@@ -115,7 +115,7 @@ func TestEnrolWillNotReplaceAnIdentity(t *testing.T) {
 		t.Fatalf("LoadManifest: %v", err)
 	}
 
-	err = importCredential(d, path, guardianAPI, "")
+	err = importCredential(t.Context(), d, path, guardianAPI, "")
 	if err == nil {
 		t.Fatal("importCredential replaced an existing identity")
 	}
@@ -164,7 +164,7 @@ func TestEnrolRefusesBeforeWriting(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			d, path := site(t, tc.doc)
 
-			err := importCredential(d, path, tc.api, "")
+			err := importCredential(t.Context(), d, path, tc.api, "")
 			if err == nil {
 				t.Fatalf("importCredential accepted %s", name)
 			}
@@ -195,7 +195,7 @@ func TestEnrolReplacesACorruptState(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := importCredential(d, path, guardianAPI, ""); err != nil {
+	if err := importCredential(t.Context(), d, path, guardianAPI, ""); err != nil {
 		t.Errorf("importCredential refused a corrupt state.json with no identity held: %v", err)
 	}
 
@@ -213,7 +213,7 @@ func TestEnrolReplacesACorruptState(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := importCredential(d, path, guardianAPI, ""); err == nil {
+	if err := importCredential(t.Context(), d, path, guardianAPI, ""); err == nil {
 		t.Fatal("importCredential accepted a state.json it cannot read")
 	}
 
@@ -232,7 +232,7 @@ func TestEnrolReplacesACorruptState(t *testing.T) {
 func TestEnrolDerivesTheAPIFromTheManifest(t *testing.T) {
 	d, path := site(t, guardianDoc)
 
-	if err := importCredential(d, path, "", ""); err != nil {
+	if err := importCredential(t.Context(), d, path, "", ""); err != nil {
 		t.Fatalf("importCredential with no --api: %v", err)
 	}
 
@@ -251,7 +251,7 @@ func TestEnrolDerivesTheAPIFromTheManifest(t *testing.T) {
 func TestEnrolLetsTheFlagWin(t *testing.T) {
 	d, path := site(t, guardianDoc)
 
-	if err := importCredential(d, path, guardianAPI, "10.99.0.3/24"); err != nil {
+	if err := importCredential(t.Context(), d, path, guardianAPI, "10.99.0.3/24"); err != nil {
 		t.Fatalf("importCredential: %v", err)
 	}
 
@@ -273,7 +273,7 @@ func TestEnrolTakesTheTaintsTheGuardianChose(t *testing.T) {
 	doc := strings.Replace(guardianDoc, `"taints": []`, `"taints": ["site-alpha", "tier-2"]`, 1)
 	d, path := site(t, doc)
 
-	if err := importCredential(d, path, "", ""); err != nil {
+	if err := importCredential(t.Context(), d, path, "", ""); err != nil {
 		t.Fatalf("importCredential: %v", err)
 	}
 
@@ -307,7 +307,7 @@ func TestEnrolRefusesATaintItCannotRepresent(t *testing.T) {
 		doc := strings.Replace(guardianDoc, `"taints": []`, `"taints": [`+bad+`]`, 1)
 		d, path := site(t, doc)
 
-		if err := importCredential(d, path, "", ""); err == nil {
+		if err := importCredential(t.Context(), d, path, "", ""); err == nil {
 			t.Errorf("importCredential accepted the taint %s", bad)
 		}
 
@@ -327,7 +327,7 @@ func TestEnrolTakesTheIssuersEmptySet(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := importCredential(d, path, "", ""); err != nil {
+	if err := importCredential(t.Context(), d, path, "", ""); err != nil {
 		t.Fatalf("importCredential: %v", err)
 	}
 
@@ -347,7 +347,7 @@ func TestEnrolTakesTheIssuersEmptySet(t *testing.T) {
 func TestEnrolRefusesAnAlphaCredentialInTheCommons(t *testing.T) {
 	d, path := site(t, strings.Replace(alphaDoc, `["brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf"]`, "[]", 1))
 
-	err := importCredential(d, path, "https://api.veilnet.com.au", "")
+	err := importCredential(t.Context(), d, path, "https://api.veilnet.com.au", "")
 	if err == nil || !strings.Contains(err.Error(), "shared compartment") {
 		t.Fatalf("importCredential = %v, want a refusal naming the shared compartment", err)
 	}
@@ -363,7 +363,7 @@ func TestEnrolRefusesAnAlphaCredentialInTheCommons(t *testing.T) {
 func TestEnrolAcceptsAnAlphaManifest(t *testing.T) {
 	d, path := site(t, alphaDoc)
 
-	if err := importCredential(d, path, "https://api.veilnet.com.au", ""); err != nil {
+	if err := importCredential(t.Context(), d, path, "https://api.veilnet.com.au", ""); err != nil {
 		t.Fatalf("importCredential: %v", err)
 	}
 
@@ -426,7 +426,7 @@ const exportDoc = `{
 func TestEnrolSeedsTheExportBlock(t *testing.T) {
 	d, path := site(t, exportDoc)
 
-	if err := importCredential(d, path, guardianAPI, ""); err != nil {
+	if err := importCredential(t.Context(), d, path, guardianAPI, ""); err != nil {
 		t.Fatalf("importCredential: %v", err)
 	}
 
@@ -466,7 +466,7 @@ func TestEnrolRefusesAnExportBlockThatWouldDoNothing(t *testing.T) {
 
 			d, path := site(t, doc)
 
-			if err := importCredential(d, path, guardianAPI, ""); err == nil {
+			if err := importCredential(t.Context(), d, path, guardianAPI, ""); err == nil {
 				t.Errorf("importCredential accepted an export block with %s", name)
 			} else if !strings.Contains(err.Error(), "export") {
 				t.Errorf("the refusal does not say it is about export: %v", err)
@@ -491,7 +491,7 @@ func TestEnrolDoesNotOverwriteAnExportBlockTheOperatorWrote(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	if err := importCredential(d, path, guardianAPI, ""); err != nil {
+	if err := importCredential(t.Context(), d, path, guardianAPI, ""); err != nil {
 		t.Fatalf("importCredential: %v", err)
 	}
 
@@ -530,7 +530,7 @@ const ghostNodeDoc = `{
 func TestEnrolInstallsAGhostRealmNode(t *testing.T) {
 	d, path := site(t, ghostNodeDoc)
 
-	if err := importCredential(d, path, "", ""); err != nil {
+	if err := importCredential(t.Context(), d, path, "", ""); err != nil {
 		t.Fatalf("importCredential: %v", err)
 	}
 
@@ -573,7 +573,7 @@ func TestEnrolNamesWhatTheCredentialRuns(t *testing.T) {
 			var said bytes.Buffer
 			ui.Out = &said // site puts it back
 
-			if err := importCredential(d, path, tc.api, ""); err != nil {
+			if err := importCredential(t.Context(), d, path, tc.api, ""); err != nil {
 				t.Fatalf("importCredential: %v", err)
 			}
 
@@ -600,7 +600,7 @@ func TestEnrolRefusesAnOversizedManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := importCredential(d, path, guardianAPI, "")
+	err := importCredential(t.Context(), d, path, guardianAPI, "")
 	if err == nil || !strings.Contains(err.Error(), "KiB") {
 		t.Fatalf("an oversized manifest gave %v, want a refusal naming its size", err)
 	}

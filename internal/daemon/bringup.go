@@ -123,7 +123,7 @@ func bringUp(
 ) (up brought, err error) {
 	// Against `conflux renew` and the renewal timer, which read and rewrite the same
 	// manifest and state this does.
-	unlock, err := flock.Acquire(d.LockFile())
+	unlock, err := flock.AcquireContext(ctx, d.LockFile(), nil)
 	if err != nil {
 		return up, err
 	}

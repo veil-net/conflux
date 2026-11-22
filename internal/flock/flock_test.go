@@ -15,7 +15,7 @@ import (
 func TestTryAcquireReportsAHeldLock(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "x.lock")
 
-	unlock, err := Acquire(path)
+	unlock, err := AcquireContext(t.Context(), path, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestHeldAsksWithoutCreating(t *testing.T) {
 		t.Fatalf("asking made the lock file (%v)", err)
 	}
 
-	unlock, err := Acquire(path)
+	unlock, err := AcquireContext(t.Context(), path, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestTryAcquireOutlastsAQuestion(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "x.lock")
 
 	for round := 1; ; round++ {
-		unlock, err := Acquire(path)
+		unlock, err := AcquireContext(t.Context(), path, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -121,7 +121,7 @@ func TestTryAcquireOutlastsAQuestion(t *testing.T) {
 func TestAcquireContextWaitsUntilToldNotTo(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "x.lock")
 
-	unlock, err := Acquire(path)
+	unlock, err := AcquireContext(t.Context(), path, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

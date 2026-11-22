@@ -481,7 +481,7 @@ func (m *stopping) Stop() error {
 func serving(t *testing.T, d paths.Dirs) func() {
 	t.Helper()
 
-	unlock, err := flock.Acquire(d.ServeLockFile())
+	unlock, err := flock.AcquireContext(t.Context(), d.ServeLockFile(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1096,7 +1096,7 @@ func TestTidyLeavesWhatAHeldLockGuards(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	unlock, err := flock.Acquire(d.LockFile())
+	unlock, err := flock.AcquireContext(t.Context(), d.LockFile(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

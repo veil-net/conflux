@@ -1,9 +1,9 @@
 // Package flock takes exclusive advisory locks on files.
 //
-// libexec serialises the extraction of the embedded anchor pair with one, waited for
-// until the caller stops waiting (AcquireContext), and the daemon everything that
-// rewrites the manifest and the state -- a bring-up, a renewal, the uplink watcher's
-// count, `conflux enrol` -- with another (Acquire). A third keeps one
+// libexec serialises the extraction of the embedded anchor pair with one, and the daemon
+// everything that rewrites the manifest and the state -- a bring-up, a renewal, the
+// uplink watcher's count, `conflux enrol` -- with another, each waited for until the
+// caller stops waiting (AcquireContext). A third keeps one
 // supervisor per root, and Held on anchord's own socket lock says whether a daemon is
 // serving there. The primitive is three lines of platform
 // code either way, which is exactly the size of thing that gets copied rather than
@@ -46,7 +46,9 @@ func TryAcquire(path string) (unlock func(), ok bool, err error) {
 
 // AcquireContext takes an exclusive lock on path, waiting for whoever holds it until ctx ends, and is what
 // releases it and closes the file. It asks again every 10 ms rather than block, so a lock let go of is
-// taken within that, and a wait ctx ends -- Ctrl+C -- ends at once, with its error. waiting, where it is
+// taken within that, and a wait ctx ends -- Ctrl+C, the service stopping -- ends at once, with its error.
+// Waiting rather than failing: the contended case is two conflux processes at once -- the service and
+// an operator -- and the second should wait a moment and then find the work done. waiting, where it is
 // not nil, is called once, after a second, where the lock is still held, for the caller to say what it
 // waits for.
 func AcquireContext(ctx context.Context, path string, waiting func()) (func(), error) {

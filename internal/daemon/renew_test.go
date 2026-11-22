@@ -20,6 +20,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/enrol"
+	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/httpsonly"
 	"github.com/veil-net/conflux/internal/paths"
 )
@@ -1019,5 +1020,47 @@ func TestTheTimerWaitsQuietlyForAnAnchorID(t *testing.T) {
 
 	if n := is.calls.Load(); n != 0 {
 		t.Errorf("the issuer was asked %d times, want none", n)
+	}
+}
+
+// TestAWaitForTheStateLockEndsWithItsContext: every writer of the manifest and the state -- a bring-up, a
+// renewal, the record of an anchor the supervisor gave up on -- waits for the state's lock while another
+// holds it, and stops waiting, with its context's error, once that context ends: the supervisor's as the
+// service stops, the watcher's and the renewal timer's as their cycle ends, and renew's, enrol's and
+// down's on Ctrl+C.
+func TestAWaitForTheStateLockEndsWithItsContext(t *testing.T) {
+	d := dirs(t)
+	ctl := fakeCtl(t)
+
+	unlock, err := flock.AcquireContext(t.Context(), d.LockFile(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+
+	for name, write := range map[string]func(context.Context) error{
+		"a bring-up": func(ctx context.Context) error {
+			_, err := bringUp(ctx, d, ctl, nopReporter{}, d.RootAnchorDir(), false, parts{anchor: true})
+
+			return err
+		},
+		"a renewal":               func(ctx context.Context) error { return RenewNow(ctx, d, ctl, nil) },
+		"the record of a refusal": func(ctx context.Context) error { return ForgetRefusal(ctx, d) },
+	} {
+		ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+
+		returned := make(chan error, 1)
+		go func() { returned <- write(ctx) }()
+
+		select {
+		case err := <-returned:
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Errorf("%s, waiting for the state's lock, ended %v, want its context's deadline", name, err)
+			}
+		case <-time.After(10 * time.Second):
+			t.Errorf("%s, waiting for the state's lock, had not stopped 10s after its context ended", name)
+		}
+
+		cancel()
 	}
 }

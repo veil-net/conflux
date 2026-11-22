@@ -102,7 +102,7 @@ func runEnrol(ctx context.Context, args []string) (code int) {
 		return fail(err)
 	}
 
-	if err := importCredential(d, *manifest, *apiBase, *ipv4); err != nil {
+	if err := importCredential(ctx, d, *manifest, *apiBase, *ipv4); err != nil {
 		return fail(err)
 	}
 
@@ -115,7 +115,7 @@ func runEnrol(ctx context.Context, args []string) (code int) {
 // owns the terminal -- flags, privilege, exit codes -- and this owns the decision,
 // so the refusals below are reachable from a test rather than only from a root
 // shell. Every one of them is a refusal somebody will eventually hit.
-func importCredential(d paths.Dirs, manifestPath, apiBase, ipv4Flag string) error {
+func importCredential(ctx context.Context, d paths.Dirs, manifestPath, apiBase, ipv4Flag string) error {
 	// Read before the lock is taken, not under it: stdin may be a person, or a pipe from a
 	// slow fetch, and the supervisor's bring-up, renewals and shutdown all wait on this
 	// lock. Its verdict waits for the check below.
@@ -124,7 +124,7 @@ func importCredential(d paths.Dirs, manifestPath, apiBase, ipv4Flag string) erro
 	// Held from the check that no manifest exists to the write of this one, like every
 	// other writer of it: a supervisor enrolling under the lock at the same moment would
 	// otherwise leave one identity running and another on disk.
-	unlock, err := flock.Acquire(d.LockFile())
+	unlock, err := flock.AcquireContext(ctx, d.LockFile(), nil)
 	if err != nil {
 		return err
 	}

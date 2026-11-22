@@ -99,7 +99,7 @@ func TestHeldInAsksThroughTheRootHeld(t *testing.T) {
 		t.Errorf("HeldIn, no lock there = %v, %v, want nobody's", held, err)
 	}
 
-	unlock, err := Acquire(lock)
+	unlock, err := AcquireContext(t.Context(), lock, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestHeldInAsksThroughTheRootHeld(t *testing.T) {
 
 	elsewhere := t.TempDir()
 
-	theirs, err := Acquire(filepath.Join(elsewhere, "serve.lock"))
+	theirs, err := AcquireContext(t.Context(), filepath.Join(elsewhere, "serve.lock"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

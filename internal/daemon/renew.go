@@ -140,7 +140,7 @@ func RenewNow(ctx context.Context, dirs paths.Dirs, ctl *anchorctl.Ctl, rep Repo
 	// Against the supervisor's own timer and a bring-up, either of which may be doing
 	// exactly this. Two renewals cost a credential each and can install them out of
 	// order, which shows up later as an expiry moving backwards.
-	unlock, err := flock.Acquire(dirs.LockFile())
+	unlock, err := flock.AcquireContext(ctx, dirs.LockFile(), nil)
 	if err != nil {
 		return err
 	}

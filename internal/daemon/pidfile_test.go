@@ -202,7 +202,7 @@ func TestReapWithoutAnExePathNeedsTheSocketLock(t *testing.T) {
 
 	cmd, exited := orphan(t, d, "serve", os.Args[0])
 
-	unlock, err := flock.Acquire(d.Socket() + ".lock")
+	unlock, err := flock.AcquireContext(t.Context(), d.Socket()+".lock", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +222,7 @@ func TestReapWithoutAnExePathNeedsTheSocketLock(t *testing.T) {
 func TestASecondSupervisorIsRefused(t *testing.T) {
 	d := dirs(t)
 
-	unlock, err := flock.Acquire(d.ServeLockFile())
+	unlock, err := flock.AcquireContext(t.Context(), d.ServeLockFile(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

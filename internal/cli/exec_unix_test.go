@@ -560,7 +560,7 @@ func TestCtrlCEndsARemakeWaitingOnAnExtraction(t *testing.T) {
 	mgr := &fakeManager{d: d}
 	standInService(t, mgr)
 
-	unlock, err := flock.Acquire(filepath.Join(d.Libexec(), ".lock"))
+	unlock, err := flock.AcquireContext(t.Context(), filepath.Join(d.Libexec(), ".lock"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

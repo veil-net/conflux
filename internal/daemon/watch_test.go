@@ -493,7 +493,7 @@ func TestEveryStartForgetsTheAnchorGivenUp(t *testing.T) {
 		givenUp(t, s.Dirs)
 
 		record := func() {
-			if err := writeGivenUp(s.Dirs, errors.New("an earlier refusal")); err != nil {
+			if err := writeGivenUp(t.Context(), s.Dirs, errors.New("an earlier refusal")); err != nil {
 				t.Error(err)
 			}
 		}

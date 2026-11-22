@@ -192,7 +192,7 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	}
 
 	// This start tries the anchor again, however far it gets; see forgetRefusal.
-	s.forgetRefusal()
+	s.forgetRefusal(ctx)
 
 	if err := s.Dirs.CheckSocketLen(); err != nil {
 		return &permanentError{err: err}
@@ -300,7 +300,7 @@ func (s *Supervisor) loop(ctx context.Context) error {
 			// The anchor refused for good with nothing else running: the service ends on it, and
 			// status says why.
 			if anchorRefused(err) {
-				s.recordRefusal(err)
+				s.recordRefusal(ctx, err)
 			}
 
 			return fmt.Errorf("anchord will not start with this configuration: %w", err)
@@ -308,7 +308,7 @@ func (s *Supervisor) loop(ctx context.Context) error {
 
 		// The next start tries the anchor again, whatever this cycle's watcher gave up on, so the
 		// record goes now rather than as that start begins; see forgetRefusal.
-		s.forgetRefusal()
+		s.forgetRefusal(ctx)
 
 		if err != nil {
 			s.report().Warn("%v", err)
@@ -410,8 +410,8 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 // when, for status to say: nothing else outside the service's log would. Only where it stops
 // trying it -- the watcher giving up its rebuilds, the restart loop ending on it -- and not at a
 // start's refusal beside the observer, which the watcher goes on trying.
-func (s *Supervisor) recordRefusal(refusal error) {
-	if err := writeGivenUp(s.Dirs, refusal); err != nil {
+func (s *Supervisor) recordRefusal(ctx context.Context, refusal error) {
+	if err := writeGivenUp(ctx, s.Dirs, refusal); err != nil {
 		s.report().Warn("could not record the anchor's refusal: %v", err)
 	}
 }
@@ -423,8 +423,8 @@ func (s *Supervisor) recordRefusal(refusal error) {
 // the record would have status say the anchor was given up on, and that conflux start tries it
 // again, while this is about to. A state.json that does not parse goes unsaid here: the start
 // refuses it itself, for good and naming it (bringUp).
-func (s *Supervisor) forgetRefusal() {
-	if err := ForgetRefusal(s.Dirs); err != nil && !errors.Is(err, config.ErrStateCorrupt) {
+func (s *Supervisor) forgetRefusal(ctx context.Context) {
+	if err := ForgetRefusal(ctx, s.Dirs); err != nil && !errors.Is(err, config.ErrStateCorrupt) {
 		s.report().Warn("could not clear the record of the anchor given up on: %v", err)
 	}
 }
@@ -440,13 +440,13 @@ func anchorRefused(err error) bool {
 // ForgetRefusal clears the record of an anchor the supervisor gave up on: `conflux down`'s, once
 // the service has stopped, since an anchor stopped by hand is not one given up on, and the
 // supervisor's as it tries the anchor again (forgetRefusal).
-func ForgetRefusal(d paths.Dirs) error { return writeGivenUp(d, nil) }
+func ForgetRefusal(ctx context.Context, d paths.Dirs) error { return writeGivenUp(ctx, d, nil) }
 
 // writeGivenUp records refusal in the state as the anchor the supervisor gave up on, or with nil
 // clears the record, writing nothing where there is none to clear. Under the lock, as every
-// writer of the state is.
-func writeGivenUp(d paths.Dirs, refusal error) error {
-	unlock, err := flock.Acquire(d.LockFile())
+// writer of the state is, waited for until ctx ends.
+func writeGivenUp(ctx context.Context, d paths.Dirs, refusal error) error {
+	unlock, err := flock.AcquireContext(ctx, d.LockFile(), nil)
 	if err != nil {
 		return err
 	}

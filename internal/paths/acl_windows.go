@@ -435,9 +435,8 @@ func trusted(sid *windows.SID) bool {
 // ours is why what s holds open -- a folder, at the root dir's name or a folder's in one, or a file in one
 // -- is not as conflux makes it, or "" where it is: owned by SYSTEM, the Administrators or
 // TrustedInstaller, and its DACL granting nobody else any right, to read it included, on it or on what is
-// made in it (changerIn), as read through s. Never the account running conflux by its own SID, an
-// installation's root, which the boot service runs from as SYSTEM, and an ephemeral run's, which only an
-// elevated conflux makes or can open, alike: what that account owns, or is granted, its processes that
+// made in it (changerIn), as read through s. Never the account running conflux by its own SID, since the
+// boot service runs from the root as SYSTEM: what that account owns, or is granted, its processes that
 // are not elevated may change -- a root %ProgramData% let them make first, with a held lock, a readiness
 // marker and an anchorctl of their own in it -- for an elevated conflux to read and run. %ProgramData%
 // lets any account make a folder at a name not taken yet, which keeps that account as its owner, or

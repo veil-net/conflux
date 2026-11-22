@@ -3,17 +3,13 @@
 package paths
 
 import (
-	"errors"
-	"fmt"
 	"os"
 	"os/user"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
-	"time"
 
 	"github.com/veil-net/conflux/internal/group"
 )
@@ -52,247 +48,8 @@ func TestEnsureAllLeavesTheSharedLogAlone(t *testing.T) {
 	}
 }
 
-// TestEnsureAllRefusesARootAnotherAccountCanMove: whoever may write a directory above a
-// CONFLUX_DIR can move the root aside and put a directory of their own in its place, with
-// a conflux in it for the boot service to run as root. So a root under one is refused,
-// naming the directory and who may write it, before anything is changed -- unless it is
-// sticky, as /tmp is, where nobody may move what is not theirs.
-func TestEnsureAllRefusesARootAnotherAccountCanMove(t *testing.T) {
-	for _, c := range []struct {
-		name string
-		mode os.FileMode
-		who  string
-	}{
-		{"anybody may write it", 0o777, "anybody"},
-		{"its group, with another account in it, may write it", 0o770, "its group"},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			defer func(was usersOf) { groups = was }(groups)
-			groups = groupsFunc(func(string, string) ([]string, error) { return []string{"mallory"}, nil })
-
-			parent := t.TempDir()
-			root := filepath.Join(parent, "conflux")
-
-			if err := os.Mkdir(root, 0o755); err != nil {
-				t.Fatal(err)
-			}
-
-			if err := os.Chmod(root, 0o755); err != nil {
-				t.Fatal(err)
-			}
-
-			if err := os.Chmod(parent, c.mode); err != nil {
-				t.Fatal(err)
-			}
-
-			t.Setenv("CONFLUX_DIR", root)
-
-			err := Default().EnsureAll()
-			if err == nil {
-				t.Fatalf("a root in %s, which %s may write, was accepted", parent, c.who)
-			}
-
-			if !strings.Contains(err.Error(), parent) || !strings.Contains(err.Error(), c.who) {
-				t.Errorf("the refusal does not name %s and who may write it: %v", parent, err)
-			}
-
-			if got := mode(t, root); got != 0o755 {
-				t.Errorf("the refused root was changed to %#o; a refusal must change nothing", got)
-			}
-		})
-	}
-
-	// A parent that belongs to another account is that account's to open up whenever it
-	// likes, whatever its mode says now.
-	t.Run("another account owns it", func(t *testing.T) {
-		root := foundRoot(t)
-
-		err := parentsAs(root, os.Geteuid()+1)
-		if err == nil || !strings.Contains(err.Error(), "belongs to uid") {
-			t.Errorf("a root in a directory another uid owns was accepted, or the refusal does not say why: %v", err)
-		}
-	})
-
-	// A root that is a link is held to the directories above where it leads, too.
-	t.Run("a link into one", func(t *testing.T) {
-		target := foundRoot(t)
-
-		open, err := filepath.EvalSymlinks(filepath.Dir(target))
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if err := os.Chmod(open, 0o777); err != nil {
-			t.Fatal(err)
-		}
-
-		safe := t.TempDir()
-		if err := os.Chmod(safe, 0o700); err != nil {
-			t.Fatal(err)
-		}
-
-		link := filepath.Join(safe, "conflux")
-		if err := os.Symlink(target, link); err != nil {
-			t.Fatal(err)
-		}
-
-		t.Setenv("CONFLUX_DIR", link)
-
-		if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), open) {
-			t.Errorf("a link into a directory anybody may write was accepted, or the refusal does not name it: %v", err)
-		}
-	})
-
-	// And to the directory every link on the way is in, where the chain ends somewhere safe:
-	// whoever may write one can point its link anywhere.
-	t.Run("a chain of links through one", func(t *testing.T) {
-		a, open, safe := t.TempDir(), realTempDir(t), t.TempDir()
-		for _, dir := range []string{a, safe} {
-			if err := os.Chmod(dir, 0o700); err != nil {
-				t.Fatal(err)
-			}
-		}
-
-		real := filepath.Join(safe, "real")
-		if err := os.Mkdir(real, 0o700); err != nil {
-			t.Fatal(err)
-		}
-
-		l2 := filepath.Join(open, "l2")
-		if err := os.Symlink(real, l2); err != nil {
-			t.Fatal(err)
-		}
-
-		if err := os.Chmod(open, 0o777); err != nil {
-			t.Fatal(err)
-		}
-
-		l1 := filepath.Join(a, "l1")
-		if err := os.Symlink(l2, l1); err != nil {
-			t.Fatal(err)
-		}
-
-		t.Setenv("CONFLUX_DIR", l1)
-
-		if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), open) {
-			t.Errorf("a root reached through a link in a directory anybody may write was accepted, or the refusal does not name it: %v", err)
-		}
-	})
-
-	// A link on the way that belongs to another account is that account's to point elsewhere,
-	// even in a sticky directory, where nobody else may rename it. /tmp is root's and sticky,
-	// and the link leads to /, so only the link is another account's: this one's, held to
-	// another uid -- or, for root, a link given to another account.
-	t.Run("a link another account owns", func(t *testing.T) {
-		tmp, err := filepath.EvalSymlinks("/tmp") // /private/tmp on macOS
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		link := filepath.Join(tmp, "conflux-link-"+strconv.FormatInt(time.Now().UnixNano(), 36))
-		if err := os.Symlink("/", link); err != nil {
-			t.Fatal(err)
-		}
-
-		t.Cleanup(func() { os.Remove(link) })
-
-		euid := os.Geteuid() + 1
-		if os.Geteuid() == 0 {
-			euid = 0
-			if err := os.Lchown(link, 65534, 65534); err != nil {
-				t.Fatal(err)
-			}
-		}
-
-		err = parentsAs(filepath.Join(link, "tmp"), euid)
-		if err == nil || !strings.Contains(err.Error(), "reached through "+link) {
-			t.Errorf("a root reached through a link another uid owns was accepted, or the refusal does not name it: %v", err)
-		}
-	})
-
-	t.Run("sticky", func(t *testing.T) {
-		parent := t.TempDir()
-		if err := os.Chmod(parent, 0o777|os.ModeSticky); err != nil {
-			t.Fatal(err)
-		}
-
-		t.Setenv("CONFLUX_DIR", filepath.Join(parent, "conflux"))
-
-		if err := Default().EnsureAll(); err != nil {
-			t.Errorf("a root in a sticky directory was refused: %v", err)
-		}
-	})
-}
-
-// parentsAs refuses dir where its way, walked from / (walk), is not held to parents' rule for euid
-// (parentsRuleAs).
-func parentsAs(dir string, euid int) error {
-	w, err := walk(dir, parentsRuleAs(dir, euid))
-	if err == nil {
-		w.close()
-	}
-
-	return err
-}
-
-// TestEnsureAllTakesAGroupOfItsOwn: a parent its group may write lets no other account write
-// it when the group lets in nobody but the account conflux runs as -- Ubuntu's group of one
-// user, under its umask of 002 -- so a CONFLUX_DIR under it is accepted. One that lets
-// anybody else in, or that the group database cannot answer for, is still refused.
-func TestEnsureAllTakesAGroupOfItsOwn(t *testing.T) {
-	me, err := user.LookupId(strconv.Itoa(os.Geteuid()))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	for _, c := range []struct {
-		name    string
-		users   []string
-		err     error
-		refused string
-	}{
-		{name: "this account alone", users: []string{me.Username}},
-		{name: "nobody", users: nil},
-		{name: "this account and another", users: []string{me.Username, "mallory"}, refused: "its group"},
-		{name: "an answer the database cannot give", err: errors.New("getent group: exit status 2"), refused: "its group"},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			groupWritableParent(t, func(bool) ([]string, error) { return c.users, c.err })
-
-			ensureAllRefuses(t, fmt.Sprintf("a root its group may write, the group letting in %q,", c.users), c.refused)
-		})
-	}
-}
-
-// groupWritableParent is a fresh directory its group may write, 0770, with CONFLUX_DIR set to
-// conflux inside it, not made yet, and groups answering for any group, until the test
-// ends, with whom users names, own saying whether it is the directory's own.
-func groupWritableParent(t *testing.T, users func(own bool) ([]string, error)) string {
-	t.Helper()
-
-	parent := t.TempDir()
-	if err := os.Chmod(parent, 0o770); err != nil {
-		t.Fatal(err)
-	}
-
-	fi, err := os.Stat(parent)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	own := strconv.FormatUint(uint64(fi.Sys().(*syscall.Stat_t).Gid), 10)
-
-	was := groups
-	t.Cleanup(func() { groups = was })
-	groups = groupsFunc(func(_, gid string) ([]string, error) { return users(gid == own) })
-
-	t.Setenv("CONFLUX_DIR", filepath.Join(parent, "conflux"))
-
-	return parent
-}
-
 // realTempDir is t.TempDir as the walk names it, no link on the way to it: a TMPDIR behind a link -- on
-// macOS /var/folders, under /private -- is named by where the link leads in what the walk refuses.
+// macOS /var/folders, under /private -- is named by where the link leads in what the walk names.
 func realTempDir(t *testing.T) string {
 	t.Helper()
 
@@ -304,24 +61,10 @@ func realTempDir(t *testing.T) string {
 	return dir
 }
 
-// ensureAllRefuses is EnsureAll's answer held to refused: a refusal whose words hold it, or none
-// where it is "". root is the root as a failure describes it.
-func ensureAllRefuses(t *testing.T, root, refused string) {
-	t.Helper()
-
-	switch err := Default().EnsureAll(); {
-	case refused != "" && (err == nil || !strings.Contains(err.Error(), refused)):
-		t.Errorf("%s was accepted, or not for %s: %v", root, refused, err)
-	case refused == "" && err != nil:
-		t.Errorf("%s was refused: %v", root, err)
-	}
-}
-
-// TestTheWalkJudgesEveryStepOnce: the way is walked as the kernel looks dir up, a link's target read
-// from the directory the link is in, ".." included, and each directory a name is looked up in is
-// judged once, before the name is looked up, as is each link before it is followed, as itself, and
-// not the directory the root resolves to. A directory ".." leads back to is not judged again.
-func TestTheWalkJudgesEveryStepOnce(t *testing.T) {
+// TestTheWalkGoesAsTheKernelLooksUp: the way is walked as the kernel looks dir up, a link's target read
+// from the directory the link is in, ".." included, an absolute one from the top of the volume, and
+// ends at the directory dir leads to.
+func TestTheWalkGoesAsTheKernelLooksUp(t *testing.T) {
 	base := realTempDir(t) // under /private/var on macOS
 
 	for _, dir := range []string{"a", "b/c", "d"} {
@@ -339,62 +82,23 @@ func TestTheWalkJudgesEveryStepOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var judged []string
-
-	links := map[string]bool{}
-	record := func(p string, s step, link bool) error {
-		if fileLink := s.st.Mode&syscall.S_IFMT == syscall.S_IFLNK; link != fileLink {
-			t.Errorf("the walk judged %s as a link %v, but what it holds is %#o", p, link, s.st.Mode)
-		}
-
-		judged, links[p] = append(judged, p), link
-
-		return nil
-	}
-
-	w, err := walk(filepath.Join(base, "a", "l"), record)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if w.missing != nil || w.last().path != filepath.Join(base, "b", "c") {
-		t.Errorf("the walk ended at %s, %v, want %s, there", w.last().path, w.missing, filepath.Join(base, "b", "c"))
-	}
-
-	w.close()
-
-	for _, want := range []string{"/", base, filepath.Join(base, "a"), filepath.Join(base, "a", "l"),
-		filepath.Join(base, "d"), filepath.Join(base, "d", "m"), filepath.Join(base, "b")} {
-		if !slices.Contains(judged, want) {
-			t.Errorf("the walk did not judge %s: %q", want, judged)
-		}
-	}
-
-	for i, p := range judged {
-		if p == filepath.Join(base, "b", "c") || slices.Contains(judged[:i], p) {
-			t.Errorf("the walk judged %s, which is the root or judged already: %q", p, judged)
-		}
-
-		if link := p == filepath.Join(base, "a", "l") || p == filepath.Join(base, "d", "m"); links[p] != link {
-			t.Errorf("the walk judged %s as a link %v", p, links[p])
-		}
-	}
-
-	// a/up -> ../d: the walk goes back up to base, which it judged on the way down, and on into d.
+	// a/up -> ../d: the walk goes back up to base, and on into d, and through m to b/c.
 	if err := os.Symlink("../d", filepath.Join(base, "a", "up")); err != nil {
 		t.Fatal(err)
 	}
 
-	judged = nil
+	for _, dir := range []string{filepath.Join(base, "a", "l"), filepath.Join(base, "a", "up", "m")} {
+		w, err := walk(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	if w, err = walk(filepath.Join(base, "a", "up", "m"), record); err != nil {
-		t.Fatal(err)
-	}
+		if w.missing != nil || w.last().path != filepath.Join(base, "b", "c") {
+			t.Errorf("the walk to %s ended at %s, %v, want %s, there", dir, w.last().path, w.missing,
+				filepath.Join(base, "b", "c"))
+		}
 
-	w.close()
-
-	if i := slices.Index(judged, filepath.Join(base, "d")); i < 0 || slices.Contains(judged[i+1:], base) {
-		t.Errorf("the walk did not judge d, or judged base again after going back up to it: %q", judged)
+		w.close()
 	}
 }
 

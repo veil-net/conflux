@@ -80,25 +80,20 @@ host can read, and when the run stops there is nothing at all.
   kept or protected for anybody: what is in conflux's folders is conflux's to overwrite, empty or
   remove, and `uninstall` removes them whole, whatever anybody put in them.
 - Every folder conflux did not make — a `CONFLUX_DIR` itself, and every folder above a root — is
-  never changed, only judged: a `CONFLUX_DIR`, and each folder and link on the way to it, is refused
-  where another account may change it (below), since whoever could could put another root in its
-  place. A sticky `CONFLUX_DIR`, as `/tmp` is, passes, since nobody may move what is not theirs in it:
-  conflux makes `.conflux` there, and takes another account's `.conflux` there for none of its own,
-  removing it as above where it may.
+  never changed and never judged. A `CONFLUX_DIR` is the user's choice, and choosing it is the
+  user's responsibility: whoever can change it, or a folder above it, can put a root of their own
+  where conflux's was. conflux owns `.conflux` inside it, and remakes it as it makes it: another
+  account's `.conflux` there is none of conflux's, removed as above where it may be.
 - Every command that reads a root without making it — `status`, a pass-through, `renew`, `down`,
   `uninstall`, `update` asking whether the anchor runs, and every reader of an ephemeral run's root —
   holds it to the same judgement first, the readers' check, before it reads, runs or signals anything
-  in it by its name: the way to a `CONFLUX_DIR`'s held to parents' rule for the account reading it,
-  the `CONFLUX_DIR` included, and the directory at the root's own name, looked up in the folder held
-  and never followed, as conflux makes a root — owned by root or the account running conflux, and
+  in it by its name: the directory at the root's own name, looked up in the folder held and never
+  followed, as conflux makes a root — owned by root or the account running conflux, and
   written by nobody else; on Windows owned by SYSTEM, the Administrators or TrustedInstaller, and
   granting nobody else anything. What conflux picks itself — the platform's roots, an ephemeral run's,
   an elevated reader's temporary copy of anchorctl — an elevated conflux never trusts its own account
   with by its SID: its processes that are not elevated could have made and filled what that account
-  owns or is granted. A `CONFLUX_DIR` is the user's own choice, and its way is judged for the account
-  running conflux, against other accounts: that account's processes that are not elevated are the
-  same account, which chose it. A root that
-  fails is refused, saying why, with nothing in it read, run or stopped; with none there the command
+  owns or is granted. Nothing above a root is judged. A root that fails is refused, saying why, with nothing in it read, run or stopped; with none there the command
   says nothing is installed, reading nothing, since what is at a name that was not there a moment ago
   is whoever made it first's. Nothing in a root that passes is judged: nobody else can have put anything there. The
   one place conflux reads what another account may write is `anchord`'s own: its anchor directory,
@@ -164,132 +159,75 @@ says; a link naming a share on the way to a `CONFLUX_DIR` is refused before conf
 where the link itself says it leads, by every command that makes a root and by the readers' check,
 before anything is looked up there.
 
-On Windows two gaps are left. The first is a class: a handle keeps every right it was opened with,
-and conflux judges a DACL as it finds it, so where an administrator tightened a DACL after another
-account had opened what it guards under a looser one, the handle that account kept outlives the
-tightening, and conflux cannot see it. So a handle on a directory above a `CONFLUX_DIR`, opened to
-rename what is in it, can move the root aside and put another in its place, and a root an
-administrator tightened by hand to SYSTEM's and the Administrators' alone, which conflux takes as its
-own, can still be changed through a handle opened on it before. What conflux makes, it makes with
-its DACL set as it is created, and the Administrators' from that moment, which nobody can have
-opened before; what an administrator tightens by hand is safe from such a handle once nobody else can
-hold one: after a restart, or made again rather than tightened. The second is a way to a root that
-conflux does not judge whole: a drive letter that stands for a folder rather than a volume — one
-`SUBST` or `DefineDosDevice` defined. conflux judges a `CONFLUX_DIR`'s way from the top of its
-drive, `X:\`, so the folders above the one the letter stands for are not judged, and whoever may
-move one of them could put another root in its place. Only an administrator can define a letter the
-service's account or an elevated conflux sees, and conflux does not refuse one: a `CONFLUX_DIR` on
-such a letter is held only as far as its folder's own parents are kept to SYSTEM and the
-Administrators by whoever defined it. A link on a `CONFLUX_DIR`'s way that leads to such a letter is
-followed the same way, and judged from the top of what the letter stands for; so is one leading to a
-local volume the mount manager names by no GUID, which only a letter defined the same way, outside
-the mount manager, can reach, since a link conflux follows names a drive letter or a volume's GUID.
-A link at a root's own name is never followed ([windows.md](windows.md#file-permissions)).
+On Windows one gap is left, a class: a handle keeps every right it was opened with, and conflux
+judges a DACL as it finds it, so where an administrator tightened a DACL after another account had
+opened what it guards under a looser one, the handle that account kept outlives the tightening, and
+conflux cannot see it. So a root an administrator tightened by hand to SYSTEM's and the
+Administrators' alone, which conflux takes as its own, can still be changed through a handle opened
+on it before. What conflux makes, it makes with its DACL set as it is created, and the
+Administrators' from that moment, which nobody can have opened before; what an administrator
+tightens by hand is safe from such a handle once nobody else can hold one: after a restart, or made
+again rather than tightened. A link at a root's own name is never followed ([windows.md](windows.md#file-permissions)).
 
 `CONFLUX_DIR` can point the extraction somewhere else, which is a knob worth knowing
 about: it lets a caller choose the directory a root daemon executes from. It exists
-for tests and for hosts where the default filesystem is `noexec`. Conflux keeps everything in
-`.conflux` inside the directory it names, which it never changes, and the way to that directory, the
-directory itself included, is held to parents' rule: a `CONFLUX_DIR` that another account can change,
-or that is inside one, is refused, naming that directory and who can change it, since whoever can
-move the root aside can put a directory of their own in its place, with a conflux in it for the boot
-service to run as root. The way is walked from the top of its volume,
-a name at a time, each directory held open and judged before the next name is looked up in it, and
-that name looked up in the directory held and nowhere else, never followed (`openat` with
-`O_NOFOLLOW` on Unix, `NtCreateFile` relative to a handle on Windows): a link is read where it is,
-judged, and gone on from where it leads, so nothing on the way is looked up afresh after it was
-judged, the one case below aside, or used before. On macOS and the BSDs conflux holds a directory
-by opening it to read, so one this account may only search, not read, is held instead by its name in
-the directory held before it, and the names after it are looked up through that name. That opens no
-way in: the directory the name is in was judged before the name was looked up, so only root and the
-account running conflux may change where the name leads — or, in a sticky directory, the name's own
-owner, whom the judgement of the directory itself, before anything is looked up in it, holds to root
-and that account as well — and those two could change the way anyway. The way to a root of the
-platform's own is not judged at all, on any platform: the directories above `/etc/conflux`,
-`/var/lib/conflux` and `/run/conflux` on Linux and their counterparts on macOS and the BSDs, and
-`%ProgramData%` and `C:\` above `%ProgramData%\conflux` on Windows — and, for an ephemeral run of an
-ordinary user, that user's own runtime and cache directories, or the sticky `/tmp`. Only root or an administrator can change those directories, or
-the user their own, and whoever can could change conflux, or anything it runs, anyway; so a link or a
-junction an administrator put there is followed, as any program follows it, and a lookup through
-the name is the lookup by name any program makes there. Only a `CONFLUX_DIR`, which whoever set it
-chose, has its way judged. Linux holds every directory open as a path (`O_PATH`), which needs
-only the right to search. A root not made yet is held to this before anything is made, as far as the
-way is there, and each directory missing is made in the last one held and held open in turn, never
-by its name, and held to the same rule before anything is made in it, conflux's own or one somebody
-else made at the name meanwhile — a sticky directory such as `/tmp`, and `C:\`, let anybody make a
-name not taken yet — and a link there is refused. An installation keeps a record of the directories
-it made on the way to a `CONFLUX_DIR`'s root, in its state root (`way`), a `CONFLUX_DIR` conflux made
-among them, and an ephemeral run under a `CONFLUX_DIR` one in its own root, with the `.conflux` it made
-there; a directory conflux had to make on the way to a platform's root or an ephemeral run's
-elsewhere — a user's cache or runtime directory, a home — is the system's, which other programs fill
-too, and is not recorded. Uninstall, or the run as it ends, reads the record before it removes the
-roots — only from a root as conflux makes one, as a file another account may have put there, never
-through a link, and through the root held open first, as `update` asks after the serve lock, for a
-`CONFLUX_DIR` once its way passes parents' rule — taking only directories above its roots, none the
-top of a volume; and then removes each, deepest first, from the directory it is in as a walk of the
-way holds it, never through a link and never by its name, leaving any that a link took the place
-of: each whole, whatever it holds, but for one that is, or holds, the installation's root while that
+for tests and for hosts where the default filesystem is `noexec`. A `CONFLUX_DIR` is never
+judged: choosing it is the user's responsibility, as choosing where root runs any program from is.
+conflux owns `.conflux` inside it, and remakes it as it makes it; the directory itself, and every
+folder above it, is never changed and never judged, so a `CONFLUX_DIR` another account can change,
+or one inside such a directory, lets that account put a root of its own where conflux's was, with a
+conflux in it for the boot service to run as root. The way to a root is walked from the top of its
+volume, a name at a time, each directory held open and the next name looked up in it and nowhere
+else, never followed (`openat` with `O_NOFOLLOW` on Unix, `NtCreateFile` relative to a handle on
+Windows): a link is read where it is and gone on from where it leads, as the system's own lookup
+goes, and the root's own name is looked up in the last directory held. On macOS and the BSDs
+conflux holds a directory by opening it to read, so one this account may only search, not read, is
+held instead by its name in the directory held before it, and the names after it are looked up
+through that name; Linux holds every directory open as a path (`O_PATH`), which needs only the
+right to search. A root not made yet is made in the last directory held, and each directory
+missing on the way is made in the one held before it and held open in turn, never by its name,
+conflux's own or one somebody else made at the name meanwhile — a sticky directory such as `/tmp`,
+and `C:\`, let anybody make a name not taken yet — and a link there is refused. An installation
+keeps a record of the directories it made on the way to a `CONFLUX_DIR`'s root, in its state root
+(`way`), a `CONFLUX_DIR` conflux made among them, and an ephemeral run under a `CONFLUX_DIR` one in
+its own root, with the `.conflux` it made there; a directory conflux had to make on the way to a
+platform's root or an ephemeral run's elsewhere — a user's cache or runtime directory, a home — is
+the system's, which other programs fill too, and is not recorded. Uninstall, or the run as it ends,
+reads the record before it removes the roots — only from a root as conflux makes one, as a file
+another account may have put there, never through a link, and through the root held open first, as
+`update` asks after the serve lock — taking only directories above its roots, none the top of a
+volume; and then removes each, deepest first, from the directory it is in as a walk of the way
+holds it, never through a link and never by its name, leaving any that a link took the place of:
+each whole, whatever it holds, but for one that is, or holds, the installation's root while that
 holds anything — a root uninstall could not remove, or, as an ephemeral run ends, the `.conflux` it
 made on its way, which is the installation's root by its name and may hold an installation made
-since, whose identity only `uninstall` removes. Each step of the way is judged once, as the root
-is made or found: what conflux then does with the root itself does not walk its way again. What is
-made at the root's own name meanwhile is judged as anything found there is; and a way that ends in
-where a link leads, at a name not there, is refused, with nothing made there. The way to it is every directory the
-lookup of the root passes through: those above it as it is spelled and, for each link on the
-way — a junction among them on Windows, which the lookup follows as it does a link — the
-directory the link is in and those above where it leads, however many links are chained, with
-each link held to its owner too, who may point it elsewhere. On Unix that is any directory on
-the way owned by an account other than root and the one running conflux, or one its group or
-anybody may write, unless it is sticky, as `/tmp` is, where nobody may rename what is not
-theirs. A group that lets in no account but the one running conflux, as the group database
-answers (its members, and every account it is the primary group of) — the group of one user
-that Ubuntu gives each, whose directories its umask of 002 leaves group-writable — writes for
-that account alone, so its write is not refused; a group with anybody else in it, or one the
-database cannot answer for, is. conflux is built without cgo, so on Linux and the BSDs it
-names the directory's group and the account it runs as from `/etc/group` and `/etc/passwd`
-alone: one that is only in a network directory (LDAP, SSSD) is not found there, and the group
-is refused. macOS asks its directory service either way. On Linux the directory's POSIX ACL
-counts as well as its mode: an entry that lets a named user other than root and the one running
-conflux write it, or a named group that lets in anybody else, once the mask has had its say, is
-refused like its mode's bits. Once a directory has an ACL its mode's group bits are the mask
-rather than what its group may do, so its group is then judged by the ACL's entry for it.
-FreeBSD's POSIX.1e ACLs (UFS) are read the same way. An extended ACL — macOS's, or FreeBSD's NFSv4 ACL
-(ZFS) — is read too, without cgo: an entry allowing anybody but the owner a right to write the
-directory (to add a file or a directory to it, to delete what is in it or the directory itself,
-or to change its ACL or owner) is refused, and on macOS, whose ACLs name accounts by a UUID
-conflux cannot map to one without cgo, that is every such entry, one naming the account conflux
-runs as included. An entry counts whatever it says of inheritance: one the directory only passes
-on is inherited by the root conflux makes inside it. A deny entry takes nothing away from what is
-counted, so it is not read: the `everyone deny delete` on a macOS home directory passes. A sticky
-directory lets through an entry that only lets somebody write it, as it does its mode's bits —
-ZFS's own ACL for a `1777` `/tmp` among them — but not one that lets them delete what is in it,
-delete the directory, or change its ACL or owner, which the sticky bit does not hold back. The
-same rules, with no sticky bit to let anything through, are what a root itself is held to as conflux
-makes one: its mode and ACL may let nobody but root and the account running conflux write it.
-On Windows it is any directory on the way owned by an account other than SYSTEM, the
-Administrators, TrustedInstaller and the one running conflux, or one whose DACL grants another
-account — by any entry that allows, a conditional one included — the right to delete or rename
-what is in it, to delete or rename the directory itself, or to change its DACL or owner; the
-right to create folders in it, which `C:\` gives every user, is not one of them. For an
-installation's root, the one the boot service runs from, the account running conflux is not among
-those trusted: the service runs as SYSTEM, which trusts no other account, and holds the way to its
-root to that at every start, so a way an administrator's own grant lets through — the folders of
-their profile grant them full control — would be refused there, every time, once the service was
-registered; `up`, `proxy`, `observe`, `enrol`, `install`, `register` and `start` hold it to the
-service's rule instead, and refuse it up front, naming the folder. An ephemeral run's root, which no service
-serves, is held for the account running it. conflux tells the two apart by the directories it was
-handed: an ephemeral run's are its own (`paths.EphemeralDirs`), and every other set is an
-installation's. On Unix the service runs as root, as every command that makes an installation's
-root must, so the two rules are one. A link or
-junction on the way is held as well to whoever may point it elsewhere or write it: the right to
-write its data or its attributes is enough to rewrite where a junction leads. A compound entry
-counts as one that allows, for its client, and a DACL holding an entry of a type Windows does
-not document is refused rather than read as granting nobody. A `CONFLUX_DIR` on a network
-volume — a share, a drive mapped to one, or a link leading to either — is refused, before anything
-is made there, whatever the directories above it allow, since their owners and DACLs, and its own,
-name accounts of the machine serving it, which this one cannot judge. The root is used as an
-absolute path, so the service registered under it runs from where it was installed whatever the
-working directory was.
+since, whose identity only `uninstall` removes. A way that ends in where a link leads, at a name
+not there, is refused, with nothing made there, and so is one that cannot be walked: `uninstall`
+walks every root's way before it acts, and stops there, nothing removed, where one cannot be.
+
+What a root, and each folder and file conflux keeps in it, is held to is its own owner, mode and
+ACL: owned by root or the account running conflux, and written by nobody else. On Unix that is its
+mode's bits; a group that lets in no account but the one running conflux, as the group database
+answers (its members, and every account it is the primary group of), writes for that account
+alone. conflux is built without cgo, so on Linux and the BSDs it names the group and the account it
+runs as from `/etc/group` and `/etc/passwd` alone, and macOS asks its directory service. On Linux the
+root's POSIX ACL counts as well as its mode: an entry that lets a named user other than root and the
+one running conflux write it, or a named group that lets in anybody else, once the mask has had its
+say, is refused like its mode's bits; once a directory has an ACL its mode's group bits are the
+mask rather than what its group may do, so its group is then judged by the ACL's entry for it.
+FreeBSD's POSIX.1e ACLs (UFS) are read the same way. An extended ACL — macOS's, or FreeBSD's NFSv4
+ACL (ZFS) — is read too, without cgo: an entry allowing anybody but the owner a right to write the
+root (to add a file or a directory to it, to delete what is in it or the root itself, or to change
+its ACL or owner) is refused, and on macOS, whose ACLs name accounts by a UUID conflux cannot map to
+one without cgo, that is every such entry, one naming the account conflux runs as included. An
+entry counts whatever it says of inheritance, and one the `CONFLUX_DIR` passes on lands on the
+`.conflux` conflux makes inside it, which is then not as conflux makes a root. A deny entry takes
+nothing away from what is counted, so it is not read. On Windows a root is held to its owner and
+DACL (above). A `CONFLUX_DIR` on a network volume — a share, a drive mapped to one, or a link
+leading to either — is refused, before anything is made there, since the owner and DACL of the root
+conflux would make there name accounts of the machine serving it, which this one cannot judge. The
+root is used as an absolute path, so the service registered under it runs from where it was
+installed whatever the working directory was.
 
 ## What anchord runs as
 

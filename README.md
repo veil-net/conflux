@@ -349,7 +349,8 @@ One directory per machine, root-owned, with no home directory involved anywhere 
 boot service runs as root, and a path under `$HOME` is a path it can't read. Each of these
 folders is conflux's own: made by conflux, and removed whole by `conflux uninstall`, with
 whatever was put in it. `CONFLUX_DIR=<dir>` keeps everything in `<dir>/.conflux` instead,
-which conflux makes and removes, never changing `<dir>` itself. `anchord`
+which conflux owns, makes and remakes as it makes it, and removes; `<dir>` itself, and every folder
+above it, is never changed and never judged: choosing it is your responsibility. `anchord`
 itself runs as an account of its own wherever that costs it nothing, which reaches only
 its own corners of them. See [config.md](docs/config.md) and
 [security.md](docs/security.md#what-anchord-runs-as).

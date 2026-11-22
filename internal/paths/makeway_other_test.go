@@ -6,10 +6,8 @@ import (
 	"errors"
 	"io/fs"
 	"os"
-	"os/user"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 )
@@ -322,79 +320,110 @@ func TestEnsureAllSaysWhyARootItCannotRemoveIsNotItsOwn(t *testing.T) {
 	}
 }
 
-// TestEnsureAllRefusesAConfluxDirOthersMayWrite: a CONFLUX_DIR that is there already is held to parents'
-// rule itself, not only the folders above it: one every account may write, and not sticky, is refused,
-// naming it, with nothing made in it, since whoever may write it could move the root aside and put
-// another in its place.
-func TestEnsureAllRefusesAConfluxDirOthersMayWrite(t *testing.T) {
-	dir := realTempDir(t)
-	if err := os.Chmod(dir, 0o777); err != nil {
-		t.Fatal(err)
-	}
+// TestEnsureAllJudgesNoFolderAboveARoot: a CONFLUX_DIR, and every folder above its root, is the user's
+// choice, never judged and never changed: one every account may write, sticky or not, one under a
+// parent anybody or another account's group may write, and one reached through a link, or a chain of
+// links, into a directory anybody may write, each has its root made, 0700, where it leads, and passes the
+// readers' check and uninstall's walk, with no group asked who it lets in and the folders above left as
+// they were.
+func TestEnsureAllJudgesNoFolderAboveARoot(t *testing.T) {
+	was := groups
+	t.Cleanup(func() { groups = was })
 
-	t.Setenv("CONFLUX_DIR", dir)
+	groups = groupsFunc(func(name, gid string) ([]string, error) {
+		t.Errorf("who group %s (%s) lets in was asked, for a folder above a root", name, gid)
 
-	if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), "inside "+dir+", which anybody may write") {
-		t.Errorf("EnsureAll(a CONFLUX_DIR every account may write) = %v, want a refusal naming it", err)
-	}
+		return []string{"mallory"}, nil
+	})
 
-	if entries, err := os.ReadDir(dir); err != nil || len(entries) > 0 {
-		t.Errorf("EnsureAll made %v in a CONFLUX_DIR it refused (%v)", entries, err)
-	}
-}
+	for _, c := range []struct {
+		name string
+		// plant makes what CONFLUX_DIR names, under base, and is it and the folder whose mode must stay.
+		plant func(t *testing.T, base string) (dir, open string)
+	}{
+		{"the CONFLUX_DIR every account may write", func(t *testing.T, base string) (string, string) {
+			return base, base
+		}},
+		{"the CONFLUX_DIR every account may write, sticky", func(t *testing.T, base string) (string, string) {
+			return base, base
+		}},
+		{"a parent every account may write", func(t *testing.T, base string) (string, string) {
+			return filepath.Join(base, "conflux"), base
+		}},
+		{"a parent its group, with another account in it, may write", func(t *testing.T, base string) (string, string) {
+			return filepath.Join(base, "conflux"), base
+		}},
+		{"a link into a directory every account may write", func(t *testing.T, base string) (string, string) {
+			if err := os.Mkdir(filepath.Join(base, "real"), 0o700); err != nil {
+				t.Fatal(err)
+			}
 
-// TestEnsureAllMakesItsRootInAStickyConfluxDir: a CONFLUX_DIR that is a sticky directory every account
-// may add to, as /tmp is, passes parents' rule, since nobody may move what is not theirs in it, and
-// conflux makes its root afresh inside it.
-func TestEnsureAllMakesItsRootInAStickyConfluxDir(t *testing.T) {
-	sticky := t.TempDir()
-	if err := os.Chmod(sticky, 0o777|os.ModeSticky); err != nil {
-		t.Fatal(err)
-	}
+			link := filepath.Join(realTempDir(t), "link")
+			if err := os.Symlink(filepath.Join(base, "real"), link); err != nil {
+				t.Fatal(err)
+			}
 
-	t.Setenv("CONFLUX_DIR", sticky)
+			return filepath.Join(link, "conflux"), base
+		}},
+		{"a chain of links through a directory every account may write", func(t *testing.T, base string) (string, string) {
+			real := filepath.Join(realTempDir(t), "real")
+			if err := os.Mkdir(real, 0o700); err != nil {
+				t.Fatal(err)
+			}
 
-	if err := Default().EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll(a sticky CONFLUX_DIR) = %v", err)
-	}
+			if err := os.Symlink(real, filepath.Join(base, "l2")); err != nil {
+				t.Fatal(err)
+			}
 
-	if fi, err := os.Lstat(filepath.Join(sticky, ".conflux")); err != nil || !fi.IsDir() || fi.Mode().Perm() != 0o700 {
-		t.Errorf("the root in a sticky CONFLUX_DIR is %v (%v), want a directory at 0700", fi, err)
-	}
+			l1 := filepath.Join(realTempDir(t), "l1")
+			if err := os.Symlink(filepath.Join(base, "l2"), l1); err != nil {
+				t.Fatal(err)
+			}
 
-	if fi, err := os.Lstat(sticky); err != nil || fi.Mode()&os.ModeSticky == 0 || fi.Mode().Perm() != 0o777 {
-		t.Errorf("the sticky CONFLUX_DIR changed: %v (%v)", fi, err)
-	}
-}
+			return l1, base
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			base := realTempDir(t)
+			dir, open := c.plant(t, base)
 
-// TestMakeRootJudgesTheWayBeforeItMakesAnything: a CONFLUX_DIR not made yet, reached through a link
-// into a directory every account may write, is refused for that directory before anything is made
-// on the way to it: making the root by its name would follow the link and make it there, where
-// whoever may write the directory could have put a link of their own instead.
-func TestMakeRootJudgesTheWayBeforeItMakesAnything(t *testing.T) {
-	open := realTempDir(t)
-	if err := os.Chmod(open, 0o777); err != nil {
-		t.Fatal(err)
-	}
+			perm := os.FileMode(0o777)
+			switch {
+			case strings.HasSuffix(c.name, "sticky"):
+				perm |= os.ModeSticky
+			case strings.Contains(c.name, "its group"):
+				perm = 0o770
+			}
 
-	if err := os.Mkdir(filepath.Join(open, "real"), 0o700); err != nil {
-		t.Fatal(err)
-	}
+			if err := os.Chmod(open, perm); err != nil {
+				t.Fatal(err)
+			}
 
-	link := filepath.Join(t.TempDir(), "made")
-	if err := os.Symlink(filepath.Join(open, "real"), link); err != nil {
-		t.Fatal(err)
-	}
+			before := lmode(t, open)
 
-	t.Setenv("CONFLUX_DIR", filepath.Join(link, "conflux"))
+			t.Setenv("CONFLUX_DIR", dir)
 
-	if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), "inside "+open) {
-		t.Errorf("EnsureAll(a CONFLUX_DIR through a link into a directory every account may write) = %v, want a "+
-			"refusal naming %s", err, open)
-	}
+			d := Default()
+			if err := d.EnsureAll(); err != nil {
+				t.Fatalf("EnsureAll(%s) = %v", c.name, err)
+			}
 
-	if _, err := os.Lstat(filepath.Join(open, "real", "conflux")); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("EnsureAll made the root where the link it refused leads (%v)", err)
+			if got := mode(t, d.State); got != 0o700 {
+				t.Errorf("the root under %s is %v, want 0700", c.name, got)
+			}
+
+			if err := d.Check(); err != nil {
+				t.Errorf("Check(a root under %s) = %v", c.name, err)
+			}
+
+			if err := d.WalkWays(); err != nil {
+				t.Errorf("WalkWays(a root under %s) = %v", c.name, err)
+			}
+
+			if got := lmode(t, open); got != before {
+				t.Errorf("%s became %v, was %v: a folder above a root is never changed", open, got, before)
+			}
+		})
 	}
 }
 
@@ -433,8 +462,8 @@ func TestALinkLeadingNowhereIsNoWayToMake(t *testing.T) {
 // and not read, 0311, cannot be opened to read, which is how the walk holds a directory on macOS and
 // the BSDs, so there it is held by its name in the directory held before it (lookUp), and the names
 // after it are looked up through that name; Linux opens it as a path. Either way a CONFLUX_DIR under
-// one is made and passes the readers' check, and the directory is judged as any other: once others
-// may write it, Check refuses it, naming it.
+// one is made and passes the readers' check, and, as every folder above a root, is not judged: once
+// others may write it, Check still takes the root.
 func TestAWayThroughADirectoryThisAccountMaySearchAlone(t *testing.T) {
 	base := realTempDir(t)
 
@@ -463,73 +492,21 @@ func TestAWayThroughADirectoryThisAccountMaySearchAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := Default().Check(); err == nil || !strings.Contains(err.Error(), "inside "+shut+", which anybody may write") {
-		t.Errorf("Check(a CONFLUX_DIR under a 0333 directory of this account's) = %v, want a refusal naming it", err)
+	if err := Default().Check(); err != nil {
+		t.Errorf("Check(a CONFLUX_DIR under a 0333 directory of this account's) = %v", err)
 	}
 }
 
-// TestMakeRootJudgesWhatIsPlantedWhileItJudges: a name not there as the way to a root is judged may
-// be there by the time conflux makes it, made by whoever may make a name in the directory -- its own
-// group of one, here, whose answer is asked as the directory is judged, and plants a link there into a
-// directory every account may write. The way is walked as it is judged, each name looked up only once
-// the directory it is in is judged, so the link is met, judged and followed, and the directory it
-// leads into refused, naming it, with nothing made there: not taken for the directory the root goes
-// in, looked up by its name once the way was judged.
-func TestMakeRootJudgesWhatIsPlantedWhileItJudges(t *testing.T) {
-	me, err := user.LookupId(strconv.Itoa(os.Geteuid()))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	open := realTempDir(t)
-
-	if err := os.Mkdir(filepath.Join(open, "real"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.Chmod(open, 0o777); err != nil {
-		t.Fatal(err)
-	}
-
-	var made string
-
-	parent := groupWritableParent(t, func(bool) ([]string, error) {
-		if _, err := os.Lstat(made); errors.Is(err, fs.ErrNotExist) {
-			if err := os.Symlink(filepath.Join(open, "real"), made); err != nil {
-				t.Fatal(err)
-			}
-		}
-
-		return []string{me.Username}, nil
-	})
-
-	made = filepath.Join(parent, "made")
-	t.Setenv("CONFLUX_DIR", filepath.Join(made, "conflux"))
-
-	root := Default().State
-
-	if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), root+" is inside "+open+
-		", which anybody may write") {
-		t.Errorf("EnsureAll, with a link into %s planted as the way was judged, = %v, want a refusal naming it", open, err)
-	}
-
-	if _, err := os.Lstat(filepath.Join(open, "real", "conflux")); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("EnsureAll made the root where the link planted as the way was judged leads (%v)", err)
-	}
-}
-
-// TestMakeRootGoesIntoNoNameTakenMeanwhile: the way to a root is walked from /, each directory judged
-// before a name is looked up in it, and the directories missing -- made, and the CONFLUX_DIR in it -- are
-// made each in the one held before it and gone into without following anything, each judged before
-// anything is made in it, so what somebody else makes at a name meanwhile -- in /tmp, anybody may --
-// answers for nothing it was not judged for. Planted at each name the walk looks up, and at each it makes
-// or goes into: a link is followed and judged where the walk meets it, and refused, naming it, where it
-// was made once conflux was making the name; a directory every account may write is refused, naming it,
-// with nothing made in it -- by the walk where it is looked up, and by makeWay where it is made or gone
-// into; and one of this account's own, as a conflux making the same root at once makes, is gone into.
-// Planted at the root's own name as it is looked up, a link and a directory every account may write are
-// removed as themselves, what the directory held with it, and the root made afresh, and one of this
-// account's own is the root. Nothing is made where a link leads.
+// TestMakeRootGoesIntoNoNameTakenMeanwhile: the way to a root is walked from /, and the directories
+// missing -- made, and the CONFLUX_DIR in it -- are made each in the one held before it and gone into
+// without following anything, so what somebody else makes at a name meanwhile -- in /tmp, anybody may --
+// is never followed where conflux made the name. Planted at each name the walk looks up, and at each it
+// makes or goes into: a link is followed where the walk meets it, as any link on the way is, and refused,
+// naming it, where it was made once conflux was making the name, with nothing made where it leads; a
+// directory, every account's to write or this account's own, as a conflux making the same root at once
+// makes, is gone into, unjudged, as every folder above a root is. Planted at the root's own name as it is
+// looked up, a link and a directory every account may write are removed as themselves, what the
+// directory held with it, and the root made afresh, and one of this account's own is the root.
 func TestMakeRootGoesIntoNoNameTakenMeanwhile(t *testing.T) {
 	was := looking
 	t.Cleanup(func() { looking = was })
@@ -571,8 +548,8 @@ func TestMakeRootGoesIntoNoNameTakenMeanwhile(t *testing.T) {
 		for _, c := range []struct {
 			name  string
 			plant func(t *testing.T, at string) (open string)
-			// refused is the refusal for the plant by its phase: the path it names (the directory every
-			// account may write, or the link), and why; "" where the root is made.
+			// refused is the refusal for the plant by its phase: the link it names, and why; "" where the
+			// root is made.
 			refused func(step, dir, root, open string) []string
 		}{
 			{"a link into a directory every account may write", func(t *testing.T, at string) string {
@@ -596,8 +573,7 @@ func TestMakeRootGoesIntoNoNameTakenMeanwhile(t *testing.T) {
 					return at + ", a link, was made while conflux made the way to " + root
 				}
 
-				return []string{root + " is inside " + open + ", which anybody may write", made(step), made(step),
-					made(dir), made(dir), ""}
+				return []string{"", made(step), made(step), made(dir), made(dir), ""}
 			}},
 			{"a directory every account may write", func(t *testing.T, at string) string {
 				if err := os.Mkdir(at, 0o700); err != nil {
@@ -616,11 +592,7 @@ func TestMakeRootGoesIntoNoNameTakenMeanwhile(t *testing.T) {
 				}
 
 				return ""
-			}, func(step, dir, root, _ string) []string {
-				inside := func(at string) string { return root + " is inside " + at + ", which anybody may write" }
-
-				return []string{inside(step), inside(step), inside(step), inside(dir), inside(dir), ""}
-			}},
+			}, func(string, string, string, string) []string { return make([]string, len(phases)) }},
 			{"a directory of this account's own", func(t *testing.T, at string) string {
 				if err := os.Mkdir(at, 0o700); err != nil {
 					t.Fatal(err)
@@ -656,7 +628,7 @@ func TestMakeRootGoesIntoNoNameTakenMeanwhile(t *testing.T) {
 				switch want := c.refused(step, dir, root, open)[i]; {
 				case want == "" && err != nil:
 					t.Errorf("EnsureAll, with %s planted at %s as it was %s, = %v", c.name, at, phase, err)
-				case want == "" && (lmode(t, root) != os.ModeDir|0o700):
+				case want == "" && mode(t, root) != 0o700:
 					t.Errorf("EnsureAll left the root %v, with %s planted at %s as it was %s, want a directory at 0700",
 						lmode(t, root), c.name, at, phase)
 				case want == "" && at == root:
@@ -669,17 +641,10 @@ func TestMakeRootGoesIntoNoNameTakenMeanwhile(t *testing.T) {
 						want)
 				}
 
-				if open != "" {
+				if open != "" && c.refused(step, dir, root, open)[i] != "" {
 					entries, err := os.ReadDir(filepath.Join(open, "real"))
 					if err != nil || len(entries) != 0 {
 						t.Errorf("EnsureAll made %v where the link planted at %s leads (%v)", entries, at, err)
-					}
-				}
-
-				// Refused at made, nothing is made in it.
-				if at == step && c.refused(step, dir, root, open)[i] != "" && open == "" {
-					if entries, err := os.ReadDir(step); err != nil || len(entries) != 0 {
-						t.Errorf("EnsureAll made %v in %s, refused as it was %s (%v)", entries, step, phase, err)
 					}
 				}
 			})

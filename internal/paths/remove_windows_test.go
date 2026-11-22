@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 
 	"golang.org/x/sys/windows"
@@ -139,12 +138,10 @@ func TestRemoveRootRemovesWhatGrantsTheAdministratorsNothing(t *testing.T) {
 	}
 }
 
-// TestRemoveRootHoldsACONFLUXDIRsWay: a CONFLUX_DIR's way is held to parents' rule before anything in
-// it is removed, as the readers' check holds it, since a way another account may change could lead the
-// removal elsewhere: one inside a folder whose DACL lets Users delete what is in it is refused, naming
-// that folder, and left. A platform root's way is not judged, as it is not when the root is made, and
-// the root is removed. Windows-only, so it runs in CI's platforms job alone.
-func TestRemoveRootHoldsACONFLUXDIRsWay(t *testing.T) {
+// TestRemoveRootJudgesNoFolderAboveIt: nothing on a CONFLUX_DIR's way is judged before what is in it is
+// removed, as nothing is when it is made: one inside a folder whose DACL lets Users delete what is in it
+// passes uninstall's walk, and is removed. Windows-only, so it runs in CI's platforms job alone.
+func TestRemoveRootJudgesNoFolderAboveIt(t *testing.T) {
 	open := t.TempDir()
 	privtest.GrantUsers(t, open, fileDeleteChild, windows.NO_INHERITANCE)
 
@@ -155,20 +152,12 @@ func TestRemoveRootHoldsACONFLUXDIRsWay(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if gone, err := RemoveRoot(root); gone || err == nil || !strings.Contains(err.Error(), open) {
-		t.Errorf("RemoveRoot(a CONFLUX_DIR inside a folder Users may delete from) = %v, %v, want a refusal naming it",
-			gone, err)
+	if err := Default().WalkWays(); err != nil {
+		t.Errorf("WalkWays(a CONFLUX_DIR inside a folder Users may delete from) = %v", err)
 	}
-
-	if _, err := os.Lstat(root); err != nil {
-		t.Errorf("RemoveRoot refusing a CONFLUX_DIR's way removed it: %v", err)
-	}
-
-	t.Setenv("CONFLUX_DIR", "")
 
 	if gone, err := RemoveRoot(root); !gone || err != nil {
-		t.Errorf("RemoveRoot(a platform root inside a folder Users may delete from) = %v, %v, want it removed", gone,
-			err)
+		t.Errorf("RemoveRoot(a CONFLUX_DIR inside a folder Users may delete from) = %v, %v, want it removed", gone, err)
 	}
 }
 

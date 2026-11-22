@@ -104,6 +104,9 @@ One fixed directory per user, made when the run starts and removed when it ends:
 | Windows | `%ProgramData%\conflux-ephemeral` |
 | `CONFLUX_DIR` set | `$CONFLUX_DIR/.conflux/ephemeral` |
 
+A `CONFLUX_DIR`, and every folder above a root, is never changed and never judged: choosing it is
+your responsibility, and conflux owns `.conflux` inside it, which it remakes as it makes it.
+
 It holds the lock that makes it the only ephemeral run for that user, the bearer token and
 the socket, the record of the anchord it started and what that runs as, the extracted pair,
 and, under `CONFLUX_DIR`, the record of the folders the run made on the way to it — the

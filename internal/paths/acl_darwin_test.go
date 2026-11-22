@@ -4,21 +4,19 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 // TestEnsureAllReadsTheRootsOwnACL: an entry a directory passes on lands on the root conflux makes
-// inside it. A sticky directory whose ACL lets everybody add to it is let through, as its mode's
-// bits would be, since nobody may move out of it what is not theirs; but the root made there
-// inherits the entry, and everybody's right to put what they like in the root with it, so the
-// root is refused. So is one a CONFLUX_DIR leads to through a symlink, whose ACL is read where
-// the link leads: the link's own holds nothing. Read through getattrlist, so it runs on macOS
-// alone: in CI's platforms job.
+// inside it. The CONFLUX_DIR, and every folder above it, is the user's choice and not judged, so a
+// directory whose ACL lets everybody add to what is made in it is taken, and the root made; but the
+// root inherits the entry, and everybody's right to put what they like in it with it, so it is not as
+// conflux makes a root, and the readers' check refuses it. So is one a CONFLUX_DIR leads to through a
+// symlink, whose ACL is read where the link leads: the link's own holds nothing. Read through
+// getattrlist, so it runs on macOS alone: in CI's platforms job.
 func TestEnsureAllReadsTheRootsOwnACL(t *testing.T) {
 	parent := t.TempDir()
-	if err := os.Chmod(parent, 0o700|os.ModeSticky); err != nil {
-		t.Fatal(err)
-	}
 
 	if out, err := exec.Command("/bin/chmod", "+a",
 		"everyone allow add_file,add_subdirectory,file_inherit,directory_inherit", parent).CombinedOutput(); err != nil {
@@ -27,7 +25,7 @@ func TestEnsureAllReadsTheRootsOwnACL(t *testing.T) {
 
 	t.Setenv("CONFLUX_DIR", filepath.Join(parent, "conflux"))
 
-	ensureAllRefuses(t, "a root that inherited everybody's right to add to it", "anybody")
+	checkRefuses(t, "a root that inherited everybody's right to add to it")
 
 	t.Run("through a symlink", func(t *testing.T) {
 		real := filepath.Join(parent, "real")
@@ -42,6 +40,19 @@ func TestEnsureAllReadsTheRootsOwnACL(t *testing.T) {
 
 		t.Setenv("CONFLUX_DIR", link)
 
-		ensureAllRefuses(t, "a root reached through a symlink, which inherited everybody's right to add to it", "anybody")
+		checkRefuses(t, "a root reached through a symlink, which inherited everybody's right to add to it")
 	})
+}
+
+// checkRefuses is EnsureAll making root, and the readers' check refusing it for what everybody may do.
+func checkRefuses(t *testing.T, root string) {
+	t.Helper()
+
+	if err := Default().EnsureAll(); err != nil {
+		t.Fatalf("EnsureAll(%s) = %v", root, err)
+	}
+
+	if err := Default().Check(); err == nil || !strings.Contains(err.Error(), "anybody") {
+		t.Errorf("Check(%s) = %v, want a refusal naming anybody", root, err)
+	}
 }

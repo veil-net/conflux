@@ -90,8 +90,8 @@ func restrictWith(dir bool, set func(owner *windows.SID, dacl *windows.ACL) erro
 // which no conflux command that makes a root runs with, though a test may -- handed nil, to leave the
 // owner as the token made it. Named rather than left to the token: a file made before it is
 // restricted keeps the owner it has unless one is named, and the boot service, running as SYSTEM,
-// trusts no account but the Administrators with its roots, the folders in them, or their way (ours,
-// serviceRule). What is made is the Administrators' either way where the token is elevated
+// trusts no account but the Administrators with its roots or the folders in them (ours). What is made
+// is the Administrators' either way where the token is elevated
 // (ElevatedDefaultOwner).
 func asAdministrators(set func(owner *windows.SID) error) error {
 	err := set(sidAdmins)
@@ -239,9 +239,8 @@ func readLink(s step) (string, error) { return linkTarget(s.h) }
 // DACL set as it is created, a folder on the way to the root exactly as the root, rather than what
 // the one before passes on: in C:\ Authenticated Users' right to delete it, and its owner the
 // administrator who ran conflux, whom the SYSTEM service does not trust. The way conflux makes is
-// then its own, as the 0700 directories it makes on Unix are, grants nobody else anything, so a
-// folder of it passes parents' rule for the service as for whoever made it, and the root it makes is
-// as conflux makes one (ours). ERROR_ALREADY_EXISTS is anything already at the name, a link included.
+// then its own, as the 0700 directories it makes on Unix are, and grants nobody else anything, and the
+// root it makes is as conflux makes one (ours). ERROR_ALREADY_EXISTS is anything already at the name, a link included.
 func makeStep(parent step, name string) (step, bool, error) {
 	h, err := createIn(parent.h, name, windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES)
 	if err != nil {
@@ -469,7 +468,7 @@ func trusted(sid *windows.SID) bool {
 // ours is why what s holds open -- a folder, at the root dir's name or a folder's in one, or a file in one
 // -- is not as conflux makes it, or "" where it is: owned by SYSTEM, the Administrators, TrustedInstaller
 // or the account it is judged for, and its DACL granting nobody else any right, to read it included, on it
-// or on what is made in it (changerIn, anyRight), as read through s. An installation's root, which the
+// or on what is made in it (changerIn), as read through s. An installation's root, which the
 // boot service runs from as SYSTEM, trusting no other account, is judged for SYSTEM; an ephemeral run's
 // for the Administrators (judgedFor). %ProgramData% lets any account make a folder at a name not taken
 // yet, which keeps that account as its owner, or inherits Users' grants from it: neither is ours.
@@ -479,7 +478,7 @@ func ours(dir string, s step, installation bool) (string, error) {
 		return "", fmt.Errorf("read the ownership of %s: %w", dir, err)
 	}
 
-	who, err := changerIn(dir, judgedFor(installation), sd, anyRight, "use it or what is made in it", true)
+	who, err := changerIn(dir, judgedFor(installation), sd)
 	if who != "" {
 		who += " could change it or read what is in it"
 	}
@@ -492,8 +491,7 @@ func ours(dir string, s step, installation bool) (string, error) {
 // only an elevated conflux makes or can open. Never the account running conflux by its own SID: what
 // that account owns, or is granted, its processes that are not elevated may change -- a root
 // %ProgramData% let them make first, with a held lock, a readiness marker and an anchorctl of their own
-// in it -- for an elevated conflux to read and run. A CONFLUX_DIR's way, which that account chose, is
-// judged for it (parentsRule).
+// in it -- for an elevated conflux to read and run.
 func judgedFor(installation bool) *windows.SID {
 	if installation {
 		return sidSystem
@@ -618,98 +616,20 @@ func security(h windows.Handle) (*windows.SECURITY_DESCRIPTOR, error) {
 		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
 }
 
-// fileDeleteChild is FILE_DELETE_CHILD: on a directory, the right to delete or rename what
-// is in it, whatever that grants.
-const fileDeleteChild = 0x40
-
-// moves is what an ACE on a directory above a root must not grant another account: to delete or
-// rename what is in it, to delete or rename the directory itself, or to change who may. Whoever may
-// could move the root aside and put another in its place. Creating folders in it is not among them:
-// C:\ lets every user do that, and a folder of theirs cannot take the place of one that is not, as
-// a sticky directory's cannot on Unix.
-const moves = fileDeleteChild | windows.DELETE | windows.WRITE_DAC | windows.WRITE_OWNER | windows.GENERIC_ALL
-
-// anyRight is every right an entry may grant: what a root, conflux's alone, grants nobody but
-// SYSTEM, the Administrators and the account running conflux, on itself or on what is made in it --
-// to read it among them, since what it holds inherits that: a lock file an account let read may
-// hold against the supervisor (flock.Held), and the service's log.
-const anyRight = ^windows.ACCESS_MASK(0)
-
-// retargets is what an ACE on a link or a junction on the way to a root must not grant
-// another account: moves, or a right that writes it -- its data, or on a folder a file or a folder
-// added to it, its attributes or its extended attributes -- among them what rewrites where it leads,
-// since setting a reparse point takes FILE_WRITE_DATA or FILE_WRITE_ATTRIBUTES (MS-FSA
-// 2.1.5.10.37); or GENERIC_WRITE, which holds them all.
-const retargets = moves | windows.FILE_WRITE_DATA | windows.FILE_APPEND_DATA | windows.FILE_WRITE_ATTRIBUTES |
-	windows.FILE_WRITE_EA | windows.GENERIC_WRITE
-
 // sidCreatorOwner is CREATOR OWNER, which an entry passed on grants whoever makes what it is passed
 // to, and which grants nobody anything on the object itself.
 var sidCreatorOwner = wellKnown(windows.WinCreatorOwnerSid)
 
-// creates is the right to add a file (FILE_WRITE_DATA on a directory) and a folder
-// (FILE_APPEND_DATA) to a directory.
-const creates = windows.FILE_WRITE_DATA | windows.FILE_APPEND_DATA
-
 // sidTrustedInstaller is NT SERVICE\TrustedInstaller, which owns much of the system drive.
 var sidTrustedInstaller, _ = windows.StringToSid("S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464")
 
-// parentsRule is parents' rule for dir, for the account running conflux (parentsRuleFor): what an ephemeral
-// run's way, and a reader's, is held to. A CONFLUX_DIR is that account's own choice, judged against other
-// accounts, and an administrator's processes that are not elevated are the same account, which chose it;
-// what conflux picks itself is judged for SYSTEM or the Administrators instead (judgedFor).
-func parentsRule(dir string) judgement { return parentsRuleFor(dir, currentUser()) }
-
-// serviceRule is parents' rule for dir as the boot service holds it at every start: for SYSTEM,
-// which it runs as (parentsRuleFor). An administrator's run trusts its own account as well, and the
-// folders of its profile grant it full control, so a way it took the service would refuse at every
-// start; held to this, up, install, register and start refuse such a way up front, naming why.
-func serviceRule(dir string) judgement { return parentsRuleFor(dir, sidSystem) }
-
-// parentsRuleFor is parents' rule for dir, for the account self: a folder on the way to it is refused
-// where an account other than SYSTEM, Administrators, TrustedInstaller and self owns it, which lets
-// it grant itself anything, or is granted one of moves on it -- whoever may move a parent can put a
-// directory of their own where dir is, with a conflux in it for the service to run as SYSTEM -- and
-// a link or a junction is held to the same, as itself, and to retargets, since whoever may point it
-// elsewhere may as well. Each is judged by the owner and DACL read through the handle the walk holds
-// it by.
-func parentsRuleFor(dir string, self *windows.SID) judgement {
-	return func(p string, s step, link bool) error {
-		where, what, rights := "inside", "move it or what is in it", windows.ACCESS_MASK(moves)
-		if link {
-			where, what, rights = "reached through", "point it elsewhere or move it", retargets
-		}
-
-		sd, err := security(s.h)
-		if err != nil {
-			return fmt.Errorf("read the ownership of %s: %w", p, err)
-		}
-
-		who, err := changerIn(p, self, sd, rights, what, false)
-
-		switch {
-		case err != nil || who == "":
-		case self != nil && self.Equals(sidSystem) && !isCurrentUser(sidSystem):
-			err = fmt.Errorf("%s is %s %s, which %s could move it aside and put another in its place for conflux "+
-				"to run: the boot service runs as SYSTEM, which trusts nobody else with that, and would refuse it at "+
-				"every start.\n  Choose a CONFLUX_DIR whose every parent only SYSTEM, the Administrators and "+
-				"TrustedInstaller can change, such as one whose way conflux makes", dir, where, p, who)
-		default:
-			err = fmt.Errorf("%s is %s %s, which %s could move it aside and put another in its place for conflux "+
-				"to run.\n  Choose a CONFLUX_DIR whose every parent only SYSTEM, the Administrators and this account "+
-				"can change", dir, where, p, who)
-		}
-
-		return err
-	}
-}
-
 // changerIn is who besides SYSTEM, the Administrators, TrustedInstaller and self, the account the
 // judgement is made for (trustedFor), may change p, whose owner and DACL sd holds, as a refusal
-// names them, or "": its owner, who may grant itself anything, or anybody its DACL grants one of
-// rights -- on p itself, or, where passedOn, on what is made in it too (mover) -- which lets them what.
-func changerIn(p string, self *windows.SID, sd *windows.SECURITY_DESCRIPTOR, rights windows.ACCESS_MASK,
-	what string, passedOn bool) (string, error) {
+// names them, or "": its owner, who may grant itself anything, or anybody its DACL grants any right,
+// on p itself or on what is made in it (mover) -- to read it among them, since what it holds inherits
+// that: a lock file an account let read may hold against the supervisor (flock.Held), and the
+// service's log.
+func changerIn(p string, self *windows.SID, sd *windows.SECURITY_DESCRIPTOR) (string, error) {
 	owner, _, err := sd.Owner()
 	if err != nil {
 		return "", fmt.Errorf("read the owner of %s: %w", p, err)
@@ -727,45 +647,43 @@ func changerIn(p string, self *windows.SID, sd *windows.SECURITY_DESCRIPTOR, rig
 		return "has no DACL, so anybody", nil
 	}
 
-	sid, err := mover(dacl, self, rights, passedOn)
+	sid, err := mover(dacl, self)
 	switch {
 	case err != nil:
 		return "", fmt.Errorf("read the DACL of %s: %w", p, err)
 	case sid != nil:
-		return "grants " + accountName(sid) + " the right to " + what + ", who", nil
+		return "grants " + accountName(sid) + " the right to use it or what is made in it, who", nil
 	}
 
 	return "", nil
 }
 
-// mover is the first account dacl grants one of rights on the object itself, or, where passedOn,
-// on what is made in it too, other than those trustedFor names for self, or nil: each entry that
-// allows rights there, as windowsGrants reads them. Where rights holds the right to add a file and a
-// folder to the object (creates), CREATOR OWNER is nobody on the object itself, and passed on, whoever
-// made what it is passed to, whom this same judgement holds to the accounts trustedFor names: so it is
+// mover is the first account dacl grants any right on the object itself or on what is made in it,
+// other than those trustedFor names for self, or nil: each entry that allows a right there, as
+// windowsGrants reads them. CREATOR OWNER is nobody on the object itself, and passed on, whoever made
+// what it is passed to, whom this same judgement holds to the accounts trustedFor names: so it is
 // counted as the account running conflux, the one whose making conflux can answer for -- what an
 // administrator makes is their own under a Windows client's default-owner policy -- and passes only
 // where that account is trusted for self. A judgement for SYSTEM made by an administrator's run, an
 // installation's root's, counts it as that administrator, so such a root is not as conflux makes one,
 // and EnsureAll makes it afresh.
-func mover(dacl *windows.ACL, self *windows.SID, rights windows.ACCESS_MASK, passedOn bool) (*windows.SID, error) {
+func mover(dacl *windows.ACL, self *windows.SID) (*windows.SID, error) {
 	header := unsafe.Slice((*byte)(unsafe.Pointer(dacl)), 8)
 
-	grants, err := windowsGrants(unsafe.Slice((*byte)(unsafe.Pointer(dacl)), binary.LittleEndian.Uint16(header[2:])),
-		passedOn)
+	grants, err := windowsGrants(unsafe.Slice((*byte)(unsafe.Pointer(dacl)), binary.LittleEndian.Uint16(header[2:])))
 	if err != nil {
 		return nil, err
 	}
 
 	for _, g := range grants {
-		if g.rights&uint32(rights) == 0 {
+		if g.rights == 0 {
 			continue
 		}
 
 		switch sid := (*windows.SID)(unsafe.Pointer(&g.sid[0])); {
-		case sid.Equals(sidCreatorOwner) && rights&creates == creates:
-			// Nobody on the object itself, and on what it is passed to whoever made that: where rights
-			// holds the right to add to the object, the account running conflux, unless a trusted one.
+		case sid.Equals(sidCreatorOwner):
+			// Nobody on the object itself, and on what it is passed to whoever made that: the account
+			// running conflux, unless a trusted one.
 			switch user := currentUser(); {
 			case user == nil:
 				return sid, nil
@@ -781,8 +699,7 @@ func mover(dacl *windows.ACL, self *windows.SID, rights windows.ACCESS_MASK, pas
 }
 
 // trustedFor is SYSTEM, the Administrators, TrustedInstaller or self, where self is known: somebody
-// who could change anything on the machine, or the account a judgement is made for -- the one
-// running conflux (currentUser), or SYSTEM, the boot service's (serviceRule).
+// who could change anything on the machine, or the account a judgement is made for (judgedFor).
 func trustedFor(sid, self *windows.SID) bool {
 	return sid.Equals(sidSystem) || sid.Equals(sidAdmins) || self != nil && sid.Equals(self) ||
 		sidTrustedInstaller != nil && sid.Equals(sidTrustedInstaller)
@@ -804,8 +721,8 @@ func isCurrentUser(sid *windows.SID) bool {
 }
 
 // currentUser is the account this process runs as, read from its token once: the judgements of
-// roots and their ways ask for it of each folder and link they hold, and the answer cannot
-// change while the process runs.
+// roots ask for it of each folder and file they hold, and the answer cannot change while the
+// process runs.
 var currentUser = sync.OnceValue(func() *windows.SID {
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {

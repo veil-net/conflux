@@ -105,13 +105,11 @@ func Grant(tb testing.TB, path string, sid *windows.SID, access windows.ACCESS_M
 // on, read from the system and never from SystemDrive, which a test may change: a folder only SYSTEM and
 // the Administrators may change, the Administrators', named so, under a protected DACL granting the two
 // of them full control and nobody else anything, as conflux makes a root, made so where it is not
-// there yet and given so again where it is. A CONFLUX_DIR a test roots there is on a way the boot
-// service, SYSTEM, trusts, which conflux holds an installation's way to; %TEMP%, in the profile of
-// the administrator running the tests, grants that account full control, which SYSTEM does not
-// trust. Its callers make the Administrators the owner of what the process makes first
-// (paths.ElevatedDefaultOwner), as every conflux process does as it starts, so what a test makes
-// there -- its TempDir among it -- passes the service's judgement whatever the machine's
-// default-owner policy; privtest itself imports nothing of conflux's. A variable already naming a
+// there yet and given so again where it is: a CONFLUX_DIR a test roots there is in a folder of the
+// system's, as the platform's own roots are, rather than in %TEMP%, deep in the profile of the
+// administrator running the tests, which grants that account full control. Its callers make the
+// Administrators the owner of what the process makes first (paths.ElevatedDefaultOwner), as every
+// conflux process does as it starts; privtest itself imports nothing of conflux's. A variable already naming a
 // folder beneath conflux-tests is left as it is: a child of a test binary keeps the temporary
 // directory its test gave it.
 func ServiceTemp() error {

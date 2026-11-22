@@ -14,8 +14,9 @@ import (
 // TestCheckHoldsARootAsConfluxMakesOne: Check holds each root that is there to what conflux makes a root
 // as, changing nothing: a root of this account's at 0700, or at 0750, which it leaves at 0750, passes;
 // one every account may write, sticky or not, is refused, naming it, and so is a link at its name, even
-// to a directory of this account's own. A CONFLUX_DIR inside a directory every account may write is
-// refused for it. Where no root is there Check is fs.ErrNotExist, and where one of several is there, nil.
+// to a directory of this account's own. A CONFLUX_DIR inside a directory every account may write passes:
+// nothing above a root is judged. Where no root is there Check is fs.ErrNotExist, and where one of
+// several is there, nil.
 func TestCheckHoldsARootAsConfluxMakesOne(t *testing.T) {
 	t.Setenv("CONFLUX_DIR", t.TempDir())
 
@@ -69,8 +70,8 @@ func TestCheckHoldsARootAsConfluxMakesOne(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := Default().Check(); err == nil || !strings.Contains(err.Error(), "inside "+parent) {
-		t.Errorf("Check(a CONFLUX_DIR in a directory every account may write) = %v, want a refusal naming it", err)
+	if err := Default().Check(); err != nil {
+		t.Errorf("Check(a CONFLUX_DIR in a directory every account may write) = %v", err)
 	}
 
 	t.Setenv("CONFLUX_DIR", "")

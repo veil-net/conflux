@@ -92,65 +92,60 @@ func TestRemoveRootFollowsNothing(t *testing.T) {
 	}
 }
 
-// TestRemoveRootHoldsACONFLUXDIRsWay: a CONFLUX_DIR's way is held to parents' rule before anything in
-// it is removed, as the readers' check holds it, since a way another account may change could lead the
-// removal elsewhere: one inside a directory every account may write is refused, naming that
-// directory, and left, and JudgeWays, the same judgement with nothing removed, refuses it alike, and
-// takes it once the directory is this account's alone. A platform root's way is not judged, as it is
-// not when the root is made, and the root is removed.
-func TestRemoveRootHoldsACONFLUXDIRsWay(t *testing.T) {
-	open := t.TempDir()
+// TestRemoveRootJudgesNoFolderAboveIt: nothing on a CONFLUX_DIR's way is judged before what is in it is
+// read or removed, as nothing is when it is made: with a directory every account may write above it,
+// WalkWays takes the way, Way reads the record, RemoveWay removes the folders recorded -- one inside the
+// CONFLUX_DIR, as an ephemeral run records the .conflux it made, and one above it -- and RemoveRoot
+// removes the root. A way not there is nothing to walk.
+func TestRemoveRootJudgesNoFolderAboveIt(t *testing.T) {
+	open := realTempDir(t)
 	if err := os.Chmod(open, 0o777); err != nil {
 		t.Fatal(err)
 	}
 
-	t.Setenv("CONFLUX_DIR", filepath.Join(open, "conflux"))
+	a := filepath.Join(open, "a")
+	t.Setenv("CONFLUX_DIR", filepath.Join(a, "conflux"))
 
 	root := Default().State
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := Default().JudgeWays(); !errors.Is(err, ErrWayRefused) || !strings.Contains(err.Error(), open) {
-		t.Errorf("JudgeWays(a CONFLUX_DIR inside a directory anybody may write) = %v, want a refusal of its way "+
-			"naming it", err)
-	}
-
-	if gone, err := RemoveRoot(root); gone || err == nil || !strings.Contains(err.Error(), open) {
-		t.Errorf("RemoveRoot(a CONFLUX_DIR inside a directory anybody may write) = %v, %v, want a refusal naming it",
-			gone, err)
-	}
-
-	if err := os.Chmod(open, 0o700); err != nil {
+	if err := os.WriteFile(filepath.Join(root, wayName), []byte(a+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := Default().JudgeWays(); err != nil {
-		t.Errorf("JudgeWays(a CONFLUX_DIR whose way is this account's alone) = %v", err)
+	if err := Default().WalkWays(); err != nil {
+		t.Errorf("WalkWays(a CONFLUX_DIR inside a directory anybody may write) = %v", err)
 	}
 
-	if err := os.Chmod(open, 0o777); err != nil {
+	if way, err := Default().Way(); err != nil || !slices.Equal(way, []string{a}) {
+		t.Errorf("Way(), a directory every account may write on its way = %q, %v, want %q", way, err, []string{a})
+	}
+
+	inside := filepath.Join(root, "ephemeral")
+	if err := os.Mkdir(inside, 0o700); err != nil {
 		t.Fatal(err)
+	}
+
+	if removed, err := RemoveWay([]string{inside}); err != nil || !slices.Equal(removed, []string{inside}) {
+		t.Errorf("RemoveWay(%s, inside a CONFLUX_DIR inside a directory every account may write) = %q, %v, want it "+
+			"removed", inside, removed, err)
+	}
+
+	if gone, err := RemoveRoot(root); !gone || err != nil {
+		t.Errorf("RemoveRoot(a CONFLUX_DIR inside a directory anybody may write) = %v, %v, want it removed", gone, err)
+	}
+
+	if removed, err := RemoveWay([]string{a}); err != nil || !slices.Equal(removed, []string{a}) {
+		t.Errorf("RemoveWay(%s, above a CONFLUX_DIR inside a directory every account may write) = %q, %v, want it "+
+			"removed", a, removed, err)
 	}
 
 	t.Setenv("CONFLUX_DIR", filepath.Join(t.TempDir(), "not", "there", "conflux"))
 
-	if err := Default().JudgeWays(); err != nil {
-		t.Errorf("JudgeWays(a CONFLUX_DIR whose way is not there) = %v", err)
-	}
-
-	if _, err := os.Lstat(root); err != nil {
-		t.Errorf("RemoveRoot refusing a CONFLUX_DIR's way removed it: %v", err)
-	}
-
-	t.Setenv("CONFLUX_DIR", "")
-
-	if err := (Dirs{Config: root, State: root}).JudgeWays(); err != nil {
-		t.Errorf("JudgeWays(a platform root inside a directory anybody may write) = %v, want its way not judged", err)
-	}
-
-	if gone, err := RemoveRoot(root); !gone || err != nil {
-		t.Errorf("RemoveRoot(a platform root inside a directory anybody may write) = %v, %v, want it removed", gone, err)
+	if err := Default().WalkWays(); err != nil {
+		t.Errorf("WalkWays(a CONFLUX_DIR whose way is not there) = %v", err)
 	}
 }
 
@@ -520,72 +515,6 @@ func mine(t *testing.T, mode os.FileMode, plant func(dir string)) string {
 	}
 
 	return dir
-}
-
-// TestTheWayIsJudgedBeforeItIsReadOrRemoved: a CONFLUX_DIR's way is held to parents' rule before the
-// record in it is read (Way) and before a folder recorded on it is removed (RemoveWay), since a way
-// another account may change could lead either elsewhere: with a directory every account may write
-// on it, Way refuses, naming that directory, and RemoveWay refuses, naming it, and leaves the folder --
-// one above the CONFLUX_DIR, and one inside it, as an ephemeral run records the .conflux it made; a
-// folder above no CONFLUX_DIR, on a platform root's way, is not judged, and is removed.
-func TestTheWayIsJudgedBeforeItIsReadOrRemoved(t *testing.T) {
-	open := realTempDir(t)
-
-	a := filepath.Join(open, "a")
-	t.Setenv("CONFLUX_DIR", filepath.Join(a, "conflux"))
-
-	root := Default().State
-	if err := os.MkdirAll(root, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.WriteFile(filepath.Join(root, wayName), []byte(a+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	if way, err := Default().Way(); err != nil || !slices.Equal(way, []string{a}) {
-		t.Fatalf("Way(), its way this account's alone = %q, %v, want %q", way, err, []string{a})
-	}
-
-	if err := os.Chmod(open, 0o777); err != nil {
-		t.Fatal(err)
-	}
-
-	if way, err := Default().Way(); err == nil || !strings.Contains(err.Error(), "inside "+open) {
-		t.Errorf("Way(), a directory every account may write on its way = %q, %v, want a refusal naming it", way, err)
-	}
-
-	if err := os.Remove(filepath.Join(root, wayName)); err != nil {
-		t.Fatal(err)
-	}
-
-	if removed, err := RemoveWay([]string{root}); removed != nil || err == nil || !strings.Contains(err.Error(), open) {
-		t.Errorf("RemoveWay(%s, inside a CONFLUX_DIR inside a directory every account may write) = %q, %v, want a "+
-			"refusal naming it", root, removed, err)
-	}
-
-	if _, err := os.Lstat(root); err != nil {
-		t.Errorf("RemoveWay refusing the way removed %s: %v", root, err)
-	}
-
-	if err := os.RemoveAll(Root()); err != nil {
-		t.Fatal(err)
-	}
-
-	if removed, err := RemoveWay([]string{a}); removed != nil || err == nil || !strings.Contains(err.Error(), open) {
-		t.Errorf("RemoveWay(%s, above a CONFLUX_DIR inside a directory every account may write) = %q, %v, want a "+
-			"refusal naming it", a, removed, err)
-	}
-
-	if _, err := os.Lstat(a); err != nil {
-		t.Errorf("RemoveWay refusing the way removed %s: %v", a, err)
-	}
-
-	t.Setenv("CONFLUX_DIR", "")
-
-	if removed, err := RemoveWay([]string{a}); err != nil || !slices.Equal(removed, []string{a}) {
-		t.Errorf("RemoveWay(%s, above no CONFLUX_DIR) = %q, %v, want it removed, its way not judged", a, removed, err)
-	}
 }
 
 // TestTheRecordIsReadOnlyAsAPlainFile: the record of the way is read as a file another account may have

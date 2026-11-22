@@ -24,8 +24,7 @@ const ephemeralName = "conflux-ephemeral"
 // EphemeralDirs are the four roots of an ephemeral run kept in root: Config and State the
 // root itself, though nothing is ever written as either, Run beneath it, and no log
 // directory, since an ephemeral run's output goes to the terminal it runs in. They are an
-// ephemeral run's, which no service serves, so the way to a root inside a CONFLUX_DIR is held to
-// the rule for the account running conflux rather than the boot service's (wayRule).
+// ephemeral run's, which no service serves.
 func EphemeralDirs(root string) Dirs {
 	return Dirs{Config: root, State: root, Run: filepath.Join(root, runName), ephemeral: true}
 }

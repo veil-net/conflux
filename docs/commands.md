@@ -112,12 +112,14 @@ Running them directly would stop an anchor conflux believes is running, or build
 its configuration does not describe, and the next reboot would silently disagree. The
 refusal names `down` and `start` and the escape hatch.
 
-## A root another account could change
+## A root conflux keeps
 
 Conflux keeps everything in folders of its own, conflux's by their names: the platform's
 (`/etc/conflux`, `/var/lib/conflux`, `/run/conflux` …, `%ProgramData%\conflux`), an ephemeral run's,
 and under `CONFLUX_DIR=<dir>` the folder `<dir>/.conflux`, which conflux makes inside `<dir>` and
-keeps all of its own in. `<dir>` itself, and every folder above a root, is never changed.
+keeps all of its own in. `<dir>` itself, and every folder above a root, is never changed and never
+judged: choosing a `CONFLUX_DIR` is your responsibility, and conflux owns `<dir>/.conflux`, which it
+remakes as it makes it.
 
 `up`, `proxy`, `observe`, `install`, `enrol`, `register` and `start` make the roots: each as conflux
 makes a root (`0700`; on Windows the Administrators' under a protected DACL granting SYSTEM and them
@@ -130,20 +132,16 @@ of conflux removed or found so is placed afresh. The supervisor, which makes the
 every start, leaves the copy it runs from as it makes them, and then places one not there, or not as
 conflux makes it, afresh from its own image, the running one moved aside first on Windows, so none
 survives a start; one it cannot place fails the start, for the service manager to start again.
-They refuse, with nothing made, a `CONFLUX_DIR` that another account may change, or that is inside a
-folder another account may change ([security.md](security.md#the-file-and-the-directory-around-it)).
 
 `status`, `down`, `renew`, `uninstall`, `update` with the boot service installed, and a
 pass-through to conflux's daemon read what is in a root by its name — the configuration, the pid
 record, the token, the socket — so each holds the root to the
-[readers' check](security.md#the-file-and-the-directory-around-it) first: the way to a `CONFLUX_DIR`
-held to the same rule, and the root as conflux makes one, its owner root or the account running
-conflux (on Windows SYSTEM, the Administrators or TrustedInstaller), and nobody else able to write
+[readers' check](security.md#the-file-and-the-directory-around-it) first: the root as conflux makes
+one, its owner root or the account running conflux (on Windows SYSTEM, the Administrators or TrustedInstaller), and nobody else able to write
 it. A root that fails is refused, exit 1, naming it and why, and nothing in it is read, run or
 stopped: `down` stops nothing; `update` downloads and replaces
 nothing. `uninstall` reads and signals nothing in such a root either, and removes it all the same,
-following nothing in it, but for a `CONFLUX_DIR` whose way another account may change, which it
-refuses before removing anything ([`conflux uninstall`](#conflux-uninstall)). A root that is not there
+following nothing in it ([`conflux uninstall`](#conflux-uninstall)). A root that is not there
 is a machine with nothing installed, and read as one. None of them makes a root, or `bin/`: the
 `anchorctl` `status`, `renew` and a pass-through run is this build's extraction in a root that passes
 the check, taken as it is found; where it is not extracted yet, as just after an upgrade, it is
@@ -332,7 +330,7 @@ retyping eight specs correctly from memory.
 
 Before it reads the configuration, places its copy for the service or registers it, `start`
 makes the roots as the service does at every start, and as `up` and `install` do
-([above](#a-root-another-account-could-change)): what is at a root's name and is not as conflux makes
+([above](#a-root-conflux-keeps)): what is at a root's name and is not as conflux makes
 one is removed and made afresh, so a root widened by hand starts with nothing in it, and `start` then
 finds no configuration. With the service registered and its roots gone, they are made again, as the
 service would make them.
@@ -340,7 +338,7 @@ service would make them.
 `update` hands a running service to the conflux it put in place through that conflux's `start`.
 Where the service's copy is not this conflux — an update, or a newer conflux put in place by hand —
 or is not there, or not as conflux makes a file of its own, or the roots fail the
-[readers' check](#a-root-another-account-could-change), so that the copy is not read to find out,
+[readers' check](#a-root-conflux-keeps), so that the copy is not read to find out,
 `start` first removes what earlier conflux left, as [`update`](#conflux-update) describes, the
 service stopped for it, and writes the copy afresh, before it reads the configuration; so a start
 that fails after starts the service again on this conflux. A start of the conflux the service
@@ -374,7 +372,7 @@ path for "register and run" and one for "configure, persist, then register and r
 
 Where the service's copy is not this conflux — a newer conflux put in place by hand or by the
 install script — or is not there, or not as conflux makes a file of its own, or the roots fail the
-[readers' check](#a-root-another-account-could-change), so that the copy is not read to find out,
+[readers' check](#a-root-conflux-keeps), so that the copy is not read to find out,
 `install`, `up`, `proxy`, `observe` and `enrol` first remove what earlier conflux left, as
 [`update`](#conflux-update) describes, before they make the roots, as `start` does: the service is
 stopped for it, so nothing it runs from is made afresh under it, and the copy is written afresh. The
@@ -549,16 +547,10 @@ non-interactive run without `--yes` refuses, exit 2, rather than destroy the cre
 Nothing in a root is followed. Each is removed through the directory holding it, held open from
 the top of its volume down, and a name at a time below it: a link or junction found anywhere in
 it, the root's own name included, is removed as the link, and where it leads is never touched; a
-file another account planted there is removed as itself, never read. A `CONFLUX_DIR`'s way, the
-`CONFLUX_DIR` included, is held to the rule the
-[readers' check](#a-root-another-account-could-change) holds it to as it is walked, so a way another
-account could change cannot lead the removal elsewhere; the platform's own roots are on the system's
-way. A `CONFLUX_DIR` whose way another account may change is refused, judged before anything is
-asked or removed, exit 1, with nothing removed, the boot service included, naming the folder that
-fails and saying to run `uninstall` again once nobody else can change any folder on the way: whoever
-could change it could have put anything at the root's name, so conflux cannot know what is there is
-its own. A way that cannot be walked at all, such as a `CONFLUX_DIR` beneath a file, stops uninstall
-there too, exit 1, saying so, before it acts. A root the readers' check refuses is removed the same
+file another account planted there is removed as itself, never read. Nothing on the way to a root
+is judged: a `CONFLUX_DIR`, and every folder above it, is your choice. A way that cannot be walked,
+such as a `CONFLUX_DIR` beneath a file, stops uninstall there, exit 1, saying so, before it acts,
+with nothing removed, the boot service included. A root the readers' check refuses is removed the same
 way as one it takes, with nothing in it read or signalled first — no identity shown in the question,
 no `anchord` stopped by its pid record, and not the record of the folders made on the way to it,
 which is none of conflux's either: those folders are left. An ephemeral run's root inside a
@@ -698,9 +690,7 @@ everywhere conflux keeps files, every time, and makes afresh what it removed, so
 an older install as it is:
 
 - the service is stopped where a supervisor still serves the root, asked of the supervisor's lock
-  through the root held, never by its name: a `CONFLUX_DIR` whose way another account may change, as
-  the [readers' check](#a-root-another-account-could-change) judges it, is refused there, exit 1,
-  naming it, with nothing stopped; a root not as conflux makes one holds no lock conflux reads, and a
+  through the root held, never by its name; a root not as conflux makes one holds no lock conflux reads, and a
   supervisor may still serve it, so the service is stopped there too, before the root is made
   afresh. It is stopped only where the service manager says it runs — starting, running or stopping, its process
   not yet gone, so a stop under way is waited for — and only what was stopped is started again,
@@ -711,7 +701,7 @@ an older install as it is:
   started beside it, would find it there and exit. Where the service manager cannot say whether the
   service runs (systemd or the SCM not answering), which of the two serves the root cannot be told,
   and it is refused, exit 1, saying why, with nothing stopped, removed or started;
-- the roots are made as at every start ([above](#a-root-another-account-could-change)), and the
+- the roots are made as at every start ([above](#a-root-conflux-keeps)), and the
   supervisor's lock held, so none starts meanwhile. A supervisor that took the root in the moment
   since it was asked after is refused there, exit 1, naming the root, with nothing started;
 - the `anchord` a supervisor that died left running is stopped, and the run directory emptied —
@@ -792,7 +782,7 @@ Two kinds of command need nothing of conflux's daemon, and run `anchorctl` with 
 alone: one naming a socket of your own (`-socket`, or `ANCHOR_SOCKET`), which reaches a daemon conflux
 does not manage, and usage (`help`, or a help flag), which reaches no daemon. Each takes it as
 `status` takes it, and nothing of the installation stands in its way: this build's extraction,
-where the root passes the [readers' check](#a-root-another-account-could-change), extracted into
+where the root passes the [readers' check](#a-root-conflux-keeps), extracted into
 `bin/` first where it is not there yet and `bin/` is as conflux makes it (an extraction in progress
 there is waited for, and Ctrl-C ends the wait and the command, running nothing), or otherwise — the root
 refused, or not there — a private temporary copy removed afterwards, reading nothing in the root, so

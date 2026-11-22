@@ -487,9 +487,8 @@ func TestUninstallRemovesTheSharedLog(t *testing.T) {
 }
 
 // TestUninstallStopsWhereARootsWayCannotBeWalked: a CONFLUX_DIR beneath a file has a way conflux cannot
-// walk, which is not JudgeWays's refusal of a way another account may change -- nobody else need be able
-// to change anything for it -- so uninstall says it stopped there, before it acted, exit 1, the boot
-// service not removed, and not that another account may change the way; the file is left as it was.
+// walk (WalkWays), so uninstall says it stopped there, before it acted, exit 1, the boot service not
+// removed; the file is left as it was.
 func TestUninstallStopsWhereARootsWayCannotBeWalked(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
@@ -505,8 +504,7 @@ func TestUninstallStopsWhereARootsWayCannotBeWalked(t *testing.T) {
 	standInService(t, mgr)
 
 	out, errOut, code := capture(t, "uninstall", "--yes")
-	if code != ExitError || !strings.Contains(errOut, "stopped there, before it acted") ||
-		strings.Contains(errOut, "Once nobody else can change") {
+	if code != ExitError || !strings.Contains(errOut, "stopped there, before it acted") {
 		t.Errorf("uninstall of a CONFLUX_DIR beneath a file exited %d, want %d saying it stopped before it acted:\n%s%s",
 			code, ExitError, out, errOut)
 	}

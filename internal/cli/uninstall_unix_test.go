@@ -96,12 +96,10 @@ func TestUninstallRemovesTheWayConfluxMade(t *testing.T) {
 	}
 }
 
-// TestUninstallRefusesAWayAnotherAccountMayChange: among the roots uninstall refuses is a CONFLUX_DIR
-// whose way another account may change -- inside a directory every account may write -- since whoever
-// could change it could have put anything at the root's name, and conflux cannot know it is its own.
-// It is refused before anything is removed, the boot service included, exit 1, naming the directory
-// and saying how to uninstall, not how to choose a CONFLUX_DIR.
-func TestUninstallRefusesAWayAnotherAccountMayChange(t *testing.T) {
+// TestUninstallJudgesNoFolderAboveARoot: a CONFLUX_DIR, and every folder above its root, is the user's
+// choice and not judged: uninstall of a root inside a directory every account may write removes it, the
+// boot service with it, exit 0, and leaves the directory as it was.
+func TestUninstallJudgesNoFolderAboveARoot(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
 
@@ -116,17 +114,20 @@ func TestUninstallRefusesAWayAnotherAccountMayChange(t *testing.T) {
 
 	mgr := &removing{fakeManager: fakeManager{d: d}}
 	standInService(t, mgr)
+	recordAccounts(t)
 
 	out, errOut, code := capture(t, "uninstall", "--yes")
-	if code != ExitError || !strings.Contains(errOut, parent) || !strings.Contains(errOut, "conflux uninstall") ||
-		strings.Contains(errOut, "Choose a CONFLUX_DIR") {
-		t.Errorf("uninstall of a root in a directory every account may write exited %d, want %d naming it and "+
-			"saying how to uninstall:\n%s%s", code, ExitError, out, errOut)
+	if code != ExitOK || mgr.removals != 1 {
+		t.Errorf("uninstall of a root in a directory every account may write exited %d and removed the boot service "+
+			"%d times, want %d and once:\n%s%s", code, mgr.removals, ExitOK, out, errOut)
 	}
 
-	if _, err := os.Lstat(d.State); mgr.removals > 0 || err != nil {
-		t.Errorf("uninstall, refusing the way, removed the boot service %d times, and %s (Lstat: %v)", mgr.removals,
-			d.State, err)
+	if _, err := os.Lstat(d.State); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("uninstall left %s (Lstat: %v)", d.State, err)
+	}
+
+	if fi, err := os.Stat(parent); err != nil || fi.Mode().Perm() != 0o777 {
+		t.Errorf("uninstall changed %s, which conflux did not make: %v, %v", parent, fi, err)
 	}
 }
 

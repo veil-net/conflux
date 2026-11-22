@@ -3,7 +3,7 @@
 // the supervisor runs as, may do without asking, and the id a privilege is known by (LUID); the
 // SIDs of Users, SYSTEM and the Administrators; a grant to Users, or to any account, beside what a
 // DACL holds (GrantUsers, Grant, WithUsers), %ProgramData%'s among them (ProgramDataGrant); a
-// temporary directory on a way SYSTEM trusts (ServiceTemp); a Windows client's default-owner policy
+// temporary directory only SYSTEM and the Administrators may change (ServiceTemp); a Windows client's default-owner policy
 // for what this process makes, in place of the one conflux sets as it starts (CreatorOwns), and a
 // file's owner (SetOwner), or its owner and protected DACL as SDDL spells them (SetSecurity); a
 // parent that refuses what is made in it a DACL given afterwards

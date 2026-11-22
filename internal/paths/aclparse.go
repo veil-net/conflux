@@ -6,13 +6,12 @@ import (
 	"fmt"
 )
 
-// The ACLs a root, or a directory above a CONFLUX_DIR, may carry beside its mode, read into who
-// they let write it. Untagged, and over bytes alone, so each platform's format is tested on every
-// machine that builds conflux; each platform's file reads its own (extendedWriters). An entry
-// counts whatever it says of inheritance: one a directory only passes on is inherited by the root
-// conflux makes inside it, so it counts as one that applies. Windows's DACLs are read here too,
-// into what they allow on the object itself, or on it and on what is made in it (windowsGrants),
-// which mover holds to who may change it.
+// The ACLs a folder or a file of conflux's may carry beside its mode, read into who they let write
+// it. Untagged, and over bytes alone, so each platform's format is tested on every machine that
+// builds conflux; each platform's file reads its own (extendedWriters). An entry counts whatever it
+// says of inheritance: one a root only passes on is inherited by what conflux makes inside it, so it
+// counts as one that applies. Windows's DACLs are read here too, into what they allow on the object
+// itself and on what is made in it (windowsGrants), which mover holds to who may change it.
 
 // grantee is who an ACL entry lets write a directory.
 type grantee int
@@ -288,31 +287,29 @@ const (
 	aceAllowedCallbackObject = 0xb  // ACCESS_ALLOWED_CALLBACK_OBJECT_ACE_TYPE: an object one, then a condition
 	aceLastKnown             = 0x13 // SYSTEM_SCOPED_POLICY_ID_ACE_TYPE: the last type MS-DTYP numbers
 
-	aceInheritOnly = 0x08 // INHERIT_ONLY_ACE: passed on to what is made inside, and not the object's own
-
 	aceObjectType          = 0x1 // ACE_OBJECT_TYPE_PRESENT
 	aceInheritedObjectType = 0x2 // ACE_INHERITED_OBJECT_TYPE_PRESENT
 )
 
-// windowsGrant is an entry of a Windows ACL that allows rights on the object it is on: the rights,
-// and the SID they are allowed to, as the ACL holds it.
+// windowsGrant is an entry of a Windows ACL that allows rights on the object it is on, or on what is
+// made in it: the rights, and the SID they are allowed to, as the ACL holds it.
 type windowsGrant struct {
 	rights uint32
 	sid    []byte
 }
 
-// windowsGrants is each entry of the Windows ACL acl that allows rights on the object itself, or,
-// where passedOn, on what is made in it too. An allowed entry counts, and its callback form, whose
+// windowsGrants is each entry of the Windows ACL acl that allows rights on the object itself or on
+// what is made in it. An allowed entry counts, and its callback form, whose
 // condition AccessCheck may find true and conflux does not weigh; so do the object forms where no
 // object type narrows them to a property or a kind of child -- AccessCheck, asked of a file with no
 // list of object types, takes one with none for an allowed entry and one with a type as allowing
 // nothing -- and a compound entry, which allows its rights to its client's SID while a server
 // holding the other acts for it, counted as the client's. An entry that only passes its rights on
-// counts only where passedOn; a deny, an audit, an alarm or a label never does: a deny takes nothing
+// counts too; a deny, an audit, an alarm or a label never does: a deny takes nothing
 // away from an allow conflux counts. An entry of a type MS-DTYP does not number is refused, as an
 // ACL in any other shape is, rather than read as allowing nobody: it may allow what conflux cannot
 // see.
-func windowsGrants(acl []byte, passedOn bool) ([]windowsGrant, error) {
+func windowsGrants(acl []byte) ([]windowsGrant, error) {
 	if len(acl) < 8 {
 		return nil, errACL
 	}
@@ -329,7 +326,7 @@ func windowsGrants(acl []byte, passedOn bool) ([]windowsGrant, error) {
 			return nil, errACL
 		}
 
-		kind, flags, aceSize := b[0], b[1], int(binary.LittleEndian.Uint16(b[2:]))
+		kind, aceSize := b[0], int(binary.LittleEndian.Uint16(b[2:]))
 		if aceSize < 4 || aceSize > len(b) {
 			return nil, errACL
 		}
@@ -370,10 +367,6 @@ func windowsGrants(acl []byte, passedOn bool) ([]windowsGrant, error) {
 				return nil, errACL
 			}
 
-			continue
-		}
-
-		if flags&aceInheritOnly != 0 && !passedOn {
 			continue
 		}
 

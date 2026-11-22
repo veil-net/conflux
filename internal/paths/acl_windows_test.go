@@ -14,9 +14,9 @@ import (
 )
 
 // These tests make what they make the Administrators', as every conflux process does as it starts
-// (ElevatedDefaultOwner), and root it on a way the boot service trusts (privtest.ServiceTemp), since
-// EnsureAll holds an installation's way to the rule SYSTEM holds it to, which the profile of the
-// administrator running them, where %TEMP% is, does not pass.
+// (ElevatedDefaultOwner), and root it in a folder only SYSTEM and the Administrators may change
+// (privtest.ServiceTemp), rather than in the profile of the administrator running them, where %TEMP%
+// is.
 func init() {
 	if err := ElevatedDefaultOwner(); err != nil {
 		panic("paths: " + err.Error())
@@ -74,46 +74,69 @@ func TestRestrictedFilesAreTrusted(t *testing.T) {
 	}
 }
 
-// TestEnsureAllRefusesARootAnotherAccountCanMove: an account granted the right to delete or
-// rename what is in a directory above a CONFLUX_DIR can move the root aside and put one of
-// its own in its place, with a conflux in it for the service to run as SYSTEM, so the root
-// is refused, naming the directory, and before anything is made in it -- the root, or a directory
-// on the way to it -- where that account could have made a junction for MkdirAll and makeRoot to
-// follow. The right to create folders there is not that: C:\ gives it to every user, and their
-// folder cannot take the place of one that is not theirs. Windows-only, so it runs in CI's
-// platforms job alone.
-func TestEnsureAllRefusesARootAnotherAccountCanMove(t *testing.T) {
-	for _, c := range []struct {
-		name    string
-		access  windows.ACCESS_MASK
-		refused bool
-	}{
-		{"Users may rename what is in it", fileDeleteChild, true},
-		{"Users may create folders in it", 0x4, false}, // FILE_ADD_SUBDIRECTORY
-	} {
-		for _, under := range []string{"conflux", filepath.Join("made", "conflux")} {
-			t.Run(c.name+", "+under, func(t *testing.T) {
-				parent := t.TempDir()
-				privtest.GrantUsers(t, parent, c.access, windows.NO_INHERITANCE)
+// fileDeleteChild is FILE_DELETE_CHILD: on a directory, the right to delete or rename what is in it.
+const fileDeleteChild = 0x40
 
-				t.Setenv("CONFLUX_DIR", filepath.Join(parent, under))
+// TestEnsureAllJudgesNoFolderAboveARoot: a CONFLUX_DIR, and every folder above its root, is the user's
+// choice, never judged: one inside a folder whose DACL lets Users rename what is in it, directly or with a
+// folder made on the way, one reached through a junction into such a folder, and one through a junction
+// Users may point elsewhere -- a junction followed, never taken for a file -- each has its root made where
+// it leads, the Administrators' under SYSTEM's and their DACL alone, and passes the readers' check and
+// uninstall's walk. Windows-only, so it runs in CI's platforms job alone.
+func TestEnsureAllJudgesNoFolderAboveARoot(t *testing.T) {
+	made := func(t *testing.T, dir string) {
+		t.Helper()
 
-				err := Default().EnsureAll()
+		t.Setenv("CONFLUX_DIR", dir)
 
-				switch {
-				case c.refused && (err == nil || !strings.Contains(err.Error(), parent)):
-					t.Errorf("a root in %s was accepted, or the refusal does not name it: %v", parent, err)
-				case !c.refused && err != nil:
-					t.Errorf("a root in %s was refused: %v", parent, err)
-				}
+		d := Default()
+		if err := d.EnsureAll(); err != nil {
+			t.Fatalf("EnsureAll(a root at %s) = %v", dir, err)
+		}
 
-				first := filepath.Join(parent, strings.Split(under, string(filepath.Separator))[0])
-				if _, err := os.Lstat(first); c.refused && !errors.Is(err, os.ErrNotExist) {
-					t.Errorf("EnsureAll made %s in a directory it refused (%v)", first, err)
-				}
-			})
+		onlyTheSystems(t, d.State)
+
+		if err := d.Check(); err != nil {
+			t.Errorf("Check(a root at %s) = %v", dir, err)
+		}
+
+		if err := d.WalkWays(); err != nil {
+			t.Errorf("WalkWays(a root at %s) = %v", dir, err)
 		}
 	}
+
+	for _, under := range []string{"conflux", filepath.Join("made", "conflux")} {
+		t.Run("Users may rename what is in a folder above, "+under, func(t *testing.T) {
+			parent := t.TempDir()
+			privtest.GrantUsers(t, parent, fileDeleteChild, windows.NO_INHERITANCE)
+
+			made(t, filepath.Join(parent, under))
+		})
+	}
+
+	t.Run("a junction into a folder Users may rename what is in", func(t *testing.T) {
+		open := filepath.Join(t.TempDir(), "open-to-users")
+		if err := os.MkdirAll(filepath.Join(open, "real"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		privtest.GrantUsers(t, open, fileDeleteChild, windows.NO_INHERITANCE)
+
+		junction := mklinkJ(t, filepath.Join(t.TempDir(), "j"), filepath.Join(open, "real"))
+
+		made(t, filepath.Join(junction, "conflux"))
+
+		if _, err := os.Lstat(filepath.Join(open, "real", "conflux", DirName)); err != nil {
+			t.Errorf("the root was not made where the junction leads: %v", err)
+		}
+	})
+
+	t.Run("a junction Users may point elsewhere", func(t *testing.T) {
+		retargeted := mklinkJ(t, filepath.Join(t.TempDir(), "j"), t.TempDir())
+		grantLink(t, retargeted, windows.FILE_WRITE_ATTRIBUTES)
+
+		made(t, filepath.Join(retargeted, "conflux"))
+	})
 }
 
 // grantLink gives Users access to link, a link or junction, beside what its DACL grants already: its
@@ -148,43 +171,6 @@ func grantLink(t *testing.T, link string, access windows.ACCESS_MASK) {
 	if err := windows.SetSecurityInfo(h, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION,
 		nil, nil, privtest.WithUsers(t, dacl, access, windows.NO_INHERITANCE), nil); err != nil {
 		t.Fatal(err)
-	}
-}
-
-// TestEnsureAllFollowsAJunction: a junction is a link the lookup follows, which Go does not
-// report as one, so a root that is a junction, or that one leads to, is held to the
-// directories above where it leads too -- here one Users may rename what is in -- and a
-// junction on the way is followed rather than taken for a file. A junction is held as well to
-// who may point it elsewhere: here Users, granted the right to write its attributes, which
-// is enough to rewrite its target, though where it leads is nobody else's.
-func TestEnsureAllFollowsAJunction(t *testing.T) {
-	open := filepath.Join(t.TempDir(), "open-to-users")
-	if err := os.MkdirAll(filepath.Join(open, "real"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	privtest.GrantUsers(t, open, fileDeleteChild, windows.NO_INHERITANCE)
-
-	junction := mklinkJ(t, filepath.Join(t.TempDir(), "j"), filepath.Join(open, "real"))
-
-	for _, root := range []string{junction, filepath.Join(junction, "conflux")} {
-		t.Setenv("CONFLUX_DIR", root)
-
-		if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), "open-to-users") {
-			t.Errorf("a root at %s, through a junction into a directory Users may rename what is in, was accepted, "+
-				"or the refusal does not name that directory: %v", root, err)
-		}
-	}
-
-	retargeted := mklinkJ(t, filepath.Join(t.TempDir(), "j"), t.TempDir())
-	grantLink(t, retargeted, windows.FILE_WRITE_ATTRIBUTES)
-
-	root := filepath.Join(retargeted, "conflux")
-	t.Setenv("CONFLUX_DIR", root)
-
-	if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), retargeted) {
-		t.Errorf("a root at %s, through a junction Users may point elsewhere, was accepted, or the refusal does not "+
-			"name the junction: %v", root, err)
 	}
 }
 
@@ -679,9 +665,9 @@ func TestARootIsMadeWithItsDACL(t *testing.T) {
 // DACL granting SYSTEM and the Administrators full control, passed on to all they hold, and nobody
 // else anything -- rather than with what the folder above passes on, which in C:\ lets Authenticated
 // Users delete them, and owned by whichever administrator ran conflux, whom the SYSTEM service does
-// not trust. So x, y and the CONFLUX_DIR, made for <temp>\x\y\conflux, pass parents' rule for the
-// service, SYSTEM, as for the account that made them, and y, taken as a root itself, passes the
-// readers' check. Windows-only, so it runs in CI's platforms job alone.
+// not trust. So x, y and the CONFLUX_DIR, made for <temp>\x\y\conflux, are SYSTEM's and the
+// Administrators' alone, and y, taken as a root itself, passes the readers' check. Windows-only, so it
+// runs in CI's platforms job alone.
 func TestTheWayConfluxMakesIsItsOwn(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "x", "y", "conflux")
@@ -720,41 +706,14 @@ func TestTheWayConfluxMakesIsItsOwn(t *testing.T) {
 	if err := EphemeralDirs(way[1]).Check(); err != nil {
 		t.Errorf("Check(%s, which conflux made on the way to %s) = %v", way[1], root, err)
 	}
-
-	was := currentUser
-	t.Cleanup(func() { currentUser = was })
-
-	currentUser = func() *windows.SID { return sidSystem }
-
-	for _, dir := range way {
-		name, err := windows.UTF16PtrFromString(dir)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		h, err := windows.CreateFile(name, readAccess, windows.FILE_SHARE_READ, nil, windows.OPEN_EXISTING,
-			windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if err := parentsRule(root)(dir, step{h}, false); err != nil {
-			t.Errorf("parents' rule, for SYSTEM, of %s, which conflux made on the way to %s = %v", dir, root, err)
-		}
-
-		windows.CloseHandle(h)
-	}
 }
 
-// TestAnInstallationsWayIsJudgedAsTheServiceJudgesIt: the boot service runs as SYSTEM, and holds the
-// way to its root, at every start, to parents' rule for SYSTEM, which trusts no other account; so
-// EnsureAll holds an installation's way to that rule, whoever runs it. A CONFLUX_DIR inside a folder
-// granting this account full control, as the profile of the administrator running conflux does, is
-// refused, naming the folder and the service, with nothing made in it, though this account's own
-// rule takes it; an ephemeral run's root inside that CONFLUX_DIR, which no service serves, is made
-// there, and passes the readers' check, which judges for the account reading. Windows-only, so it
-// runs in CI's platforms job alone.
-func TestAnInstallationsWayIsJudgedAsTheServiceJudgesIt(t *testing.T) {
+// TestAnInstallationInAProfileIsMade: the boot service runs as SYSTEM, which trusts no other account
+// with its root, but the way to the root is the user's choice and not judged: a CONFLUX_DIR inside a
+// folder granting this account full control, as the profile of the administrator running conflux does,
+// has its root made, SYSTEM's and the Administrators' alone, which passes the readers' check, and so has
+// an ephemeral run's root inside that CONFLUX_DIR. Windows-only, so it runs in CI's platforms job alone.
+func TestAnInstallationInAProfileIsMade(t *testing.T) {
 	profile := filepath.Join(t.TempDir(), "profile")
 	if err := os.Mkdir(profile, 0o700); err != nil {
 		t.Fatal(err)
@@ -765,15 +724,14 @@ func TestAnInstallationsWayIsJudgedAsTheServiceJudgesIt(t *testing.T) {
 	root := filepath.Join(profile, "conflux")
 	t.Setenv("CONFLUX_DIR", root)
 
-	if err := Default().EnsureAll(); err == nil ||
-		!strings.Contains(err.Error(), Default().State+" is inside "+profile+", which grants ") ||
-		!strings.Contains(err.Error(), "the boot service runs as SYSTEM") {
-		t.Errorf("EnsureAll(an installation inside a folder granting this account full control) = %v, want a refusal "+
-			"naming the folder and the service", err)
+	if err := Default().EnsureAll(); err != nil {
+		t.Fatalf("EnsureAll(an installation inside a folder granting this account full control) = %v", err)
 	}
 
-	if _, err := os.Lstat(root); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("EnsureAll made %s on a way it refused (%v)", root, err)
+	onlyTheSystems(t, Default().State)
+
+	if err := Default().Check(); err != nil {
+		t.Errorf("Check(an installation inside a folder granting this account full control) = %v", err)
 	}
 
 	d, err := Ephemeral()
@@ -962,17 +920,16 @@ func TestCheckHoldsARootAsConfluxMakesOne(t *testing.T) {
 }
 
 // TestMakeRootGoesIntoNoNameTakenMeanwhile: the way to a root in a CONFLUX_DIR is walked from the top of
-// its volume, each folder judged before a name is looked up in it, and the folders missing -- made, and
-// the CONFLUX_DIR in it -- are made each through a handle on the one before and held open as they are
-// made, so what somebody else makes at a name meanwhile -- C:\ lets every user make a folder -- answers
-// for nothing it was not judged for. Planted at the name the walk looks up, and at each it makes: a
-// junction is followed and judged where the walk meets it, and refused, naming it, where it was made
-// once conflux was making the name, with nothing made where it leads; a folder whose DACL lets Users
-// rename what is in it is refused, naming it, with nothing made in it -- by the walk where it is looked
-// up, and by makeWay where it is made; and a plain one, as a conflux making the same root at once
-// makes, is gone into. Planted at the root's own name as it is looked up, a junction and a folder Users
-// may rename what is in are removed as themselves, and the root made afresh. Windows-only, so it runs
-// in CI's platforms job alone.
+// its volume, and the folders missing -- made, and the CONFLUX_DIR in it -- are made each through a
+// handle on the one before and held open as they are made, so what somebody else makes at a name
+// meanwhile -- C:\ lets every user make a folder -- is never followed where conflux made the name.
+// Planted at the name the walk looks up, and at each it makes: a junction is followed where the walk
+// meets it, as any on the way is, and refused, naming it, where it was made once conflux was making the
+// name, with nothing made where it leads; a folder, whether its DACL lets Users rename what is in it or
+// it is a plain one, as a conflux making the same root at once makes, is gone into, unjudged, as every
+// folder above a root is. Planted at the root's own name as it is looked up, a junction and a folder
+// Users may rename what is in are removed as themselves, and the root made afresh. Windows-only, so it
+// runs in CI's platforms job alone.
 func TestMakeRootGoesIntoNoNameTakenMeanwhile(t *testing.T) {
 	was := looking
 	t.Cleanup(func() { looking = was })
@@ -1027,17 +984,13 @@ func TestMakeRootGoesIntoNoNameTakenMeanwhile(t *testing.T) {
 					return []string{at + ", a junction or a link, was made while conflux made the way to " + root}
 				}
 
-				return [][]string{{root + " is inside ", `open-to-users, which grants `}, made(step), made(dir), nil}
+				return [][]string{nil, made(step), made(dir), nil}
 			}},
 			{"a folder Users may rename what is in", func(t *testing.T, at string) string {
 				grantedFolder(t, at, fileDeleteChild)
 
 				return ""
-			}, func(step, dir, root string) [][]string {
-				inside := func(at string) []string { return []string{root + " is inside " + at + ", which grants "} }
-
-				return [][]string{inside(step), inside(step), inside(dir), nil}
-			}},
+			}, func(string, string, string) [][]string { return make([][]string, len(phases)) }},
 			{"a plain folder", func(t *testing.T, at string) string {
 				if err := os.Mkdir(at, 0o700); err != nil {
 					t.Fatal(err)
@@ -1081,16 +1034,9 @@ func TestMakeRootGoesIntoNoNameTakenMeanwhile(t *testing.T) {
 					}
 				}
 
-				if elsewhere != "" {
+				if elsewhere != "" && len(want) != 0 {
 					if entries, err := os.ReadDir(elsewhere); err != nil || len(entries) != 0 {
 						t.Errorf("EnsureAll made %v where the junction planted at %s leads (%v)", entries, at, err)
-					}
-				}
-
-				// Refused at made, nothing is made in it.
-				if at == step && len(want) != 0 && elsewhere == "" {
-					if entries, err := os.ReadDir(step); err != nil || len(entries) != 0 {
-						t.Errorf("EnsureAll made %v in %s, refused as it was %s (%v)", entries, step, phase, err)
 					}
 				}
 			})

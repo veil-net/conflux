@@ -191,17 +191,16 @@ func serveChild(t *testing.T, args ...string) (out string, code int) {
 
 // TestServeOpensNoLogInARootItRefuses: serve --log opens its log by name, as root, to append to it,
 // so it does that only once EnsureAll has made the root conflux's alone. Under a root EnsureAll
-// refuses -- a CONFLUX_DIR in a directory every account may write, where anybody could have put a
-// root of their own, with a link at logs/conflux.log -- the file the link leads to gets nothing,
-// and the refusal goes where the service manager sends serve's output.
+// refuses -- a CONFLUX_DIR beneath a file, whose way cannot be walked -- the file a link at the log's
+// name leads to gets nothing, and the refusal goes where the service manager sends serve's output.
 func TestServeOpensNoLogInARootItRefuses(t *testing.T) {
-	open := t.TempDir()
-	root := filepath.Join(open, "conflux")
-	log := filepath.Join(root, paths.DirName, "logs", "conflux.log")
-
-	if err := os.MkdirAll(filepath.Dir(log), 0o700); err != nil {
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
+
+	root := filepath.Join(file, "conflux")
+	log := filepath.Join(t.TempDir(), "conflux.log")
 
 	elsewhere := filepath.Join(t.TempDir(), "elsewhere")
 	if err := os.WriteFile(elsewhere, nil, 0o600); err != nil {
@@ -212,16 +211,9 @@ func TestServeOpensNoLogInARootItRefuses(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := os.Chmod(open, 0o757); err != nil {
-		t.Fatal(err)
-	}
-
-	t.Cleanup(func() { _ = os.Chmod(open, 0o700) })
-
 	out, code := serveChild(t, "--foreground", "--dir", root, "--log", log)
-	if code != ExitError || !strings.Contains(out, open) {
-		t.Errorf("serve under a root in a directory every account may write exited %d, want %d saying why:\n%s",
-			code, ExitError, out)
+	if code != ExitError || !strings.Contains(out, file) {
+		t.Errorf("serve under a root beneath a file exited %d, want %d saying why:\n%s", code, ExitError, out)
 	}
 
 	if b, _ := os.ReadFile(elsewhere); len(b) > 0 {
@@ -470,43 +462,6 @@ func TestAnUpgradeStopsTheServiceBeforeTheRootsAreMade(t *testing.T) {
 
 			if !service.Placed(d) {
 				t.Errorf("conflux %s did not write this conflux as the service's copy", name)
-			}
-		})
-	}
-}
-
-// TestAnUpdateStopsNothingOnAWayItRefuses: the conflux an update put in place stops a supervisor
-// serving the root before it removes what earlier conflux left, but only once it has judged the way to
-// a CONFLUX_DIR, as the readers' check does: a root inside a directory every account may write, which
-// it will refuse, is refused, naming that directory, with the service neither stopped nor started.
-func TestAnUpdateStopsNothingOnAWayItRefuses(t *testing.T) {
-	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
-	privcheck.Elevated = func() bool { return true }
-
-	for _, verb := range []string{"register", "start"} {
-		t.Run(verb, func(t *testing.T) {
-			parent := t.TempDir()
-			d := pathstest.DirsIn(t, filepath.Join(parent, "conflux"))
-			serving(t, d)
-
-			if err := os.Chmod(parent, 0o777); err != nil {
-				t.Fatal(err)
-			}
-
-			t.Cleanup(func() { _ = os.Chmod(parent, 0o700) })
-
-			mgr := &stopping{fakeManager: fakeManager{d: d}}
-			standInService(t, mgr)
-
-			out, errOut, code := capture(t, verb)
-			if code != ExitError || !strings.Contains(errOut, parent) {
-				t.Errorf("conflux %s of a root in a directory every account may write exited %d, want %d naming it:\n%s%s",
-					verb, code, ExitError, out, errOut)
-			}
-
-			if mgr.stops+mgr.restarts+len(mgr.installs) > 0 {
-				t.Errorf("conflux %s stopped the service %d times, started it %d and registered it %d, on a way it refuses",
-					verb, mgr.stops, mgr.restarts, len(mgr.installs))
 			}
 		})
 	}

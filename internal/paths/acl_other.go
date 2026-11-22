@@ -16,11 +16,10 @@ import (
 )
 
 // groups answers who a group lets in: one group.Lookup for the whole process, so that each group's
-// record and the account database are read at most once, however many roots and ways it judges -- a
-// walk of a CONFLUX_DIR's parents asks of each one its group may write. A supervisor judges its roots
-// as it starts, once in its process, and every other command is over long before a group's members
-// change under it. A test sets its own: a new Lookup, to read afresh, or one standing in for the
-// system's databases.
+// record and the account database are read at most once, however many roots, folders and files of
+// conflux's it judges. A supervisor judges its roots as it starts, once in its process, and every other
+// command is over long before a group's members change under it. A test sets its own: a new Lookup, to
+// read afresh, or one standing in for the system's databases.
 var groups usersOf = new(group.Lookup)
 
 // usersOf is what groups is: who the group of that name, whose id is gid, lets in.
@@ -110,11 +109,8 @@ func openTop(string) (step, error) {
 // open as itself (opened), or by its name where this account may search it and not read it; or a
 // link, by its name, never followed. Anything else at the name is refused, by the type fstatat reads of it
 // and not by the error the open failed with -- which for a socket is EOPNOTSUPP on macOS and OpenBSD --
-// as errNotDir, and nothing at it is an error that is fs.ErrNotExist. What fstatat reads of the name, once the open has refused it, is
-// what is there by then: on a way the walk judges, the directory parent is has been judged, and only
-// root and this account may change what is in it -- or, in a sticky one, whoever owns that name; on
-// one it does not, a platform root's, which only root, or the user it is for, may change, it is the
-// lookup by name any program makes there.
+// as errNotDir, and nothing at it is an error that is fs.ErrNotExist. What fstatat reads of the name,
+// once the open has refused it, is what is there by then: the lookup by name any program makes there.
 func lookUp(parent step, name string) (step, bool, error) {
 	at := parent.at(name)
 
@@ -293,44 +289,6 @@ func ignoringEINTR(f func() error) error {
 	}
 }
 
-// parentsRule is parents' rule for dir, for the account this process runs as (parentsRuleAs).
-func parentsRule(dir string) judgement { return parentsRuleAs(dir, os.Geteuid()) }
-
-// serviceRule is parents' rule for dir as the boot service holds it at every start: root's, which
-// here is the account every command that makes an installation's root runs as, since each of them
-// needs root -- parentsRule's.
-func serviceRule(dir string) judgement { return parentsRule(dir) }
-
-// parentsRuleAs is parents' rule for dir, for euid: a directory on the way to it is refused where
-// another account may write it -- one whose owner is neither root nor euid, who can always give
-// itself the right, or one whose mode or ACL lets another account write it (writerOf) -- and a link
-// where another account owns it, who may point it elsewhere: its mode means nothing, and whoever may
-// write the directory it is in is held as one above. Whoever may write a directory above dir can
-// move dir aside and put a directory of their own in its place, with a conflux in it for the boot
-// service to run as root. Owner, group and mode are as fstat read them where the walk met each one;
-// a directory's ACL is read at its path, which leads through directories already judged, and so
-// only root and euid may change where it leads.
-func parentsRuleAs(dir string, euid int) judgement {
-	return func(p string, s step, link bool) error {
-		where := "inside"
-		if link {
-			where = "reached through"
-		}
-
-		mode := os.FileMode(s.st.Mode & 0o777)
-		if s.st.Mode&unix.S_ISVTX != 0 {
-			mode |= os.ModeSticky
-		}
-
-		who, err := writerOf(p, s.st.Uid, s.st.Gid, mode, link, euid)
-		if err == nil && who != "" {
-			err = parentRefusal(dir, where, p, who, euid)
-		}
-
-		return err
-	}
-}
-
 // namesIn is what the directory fd holds open, freshly, lists, "." and ".." aside.
 func namesIn(fd int) ([]string, error) {
 	var names []string
@@ -368,34 +326,6 @@ func openIn(s step, name, p string) (*os.File, error) {
 	}
 
 	return os.NewFile(uintptr(fd), p), nil
-}
-
-// writerOf is who besides root and euid may move what is in p, a directory or a link on the way to
-// a root owned by uid, of group gid and at mode, as a refusal names them, or "": its owner, where
-// that is neither, or, for a directory, anybody its mode or ACL lets write it (judge). A link's mode
-// means nothing.
-func writerOf(p string, uid, gid uint32, mode os.FileMode, link bool, euid int) (string, error) {
-	switch {
-	case int(uid) != 0 && int(uid) != euid:
-		return fmt.Sprintf("belongs to uid %d, who", uid), nil
-	case link:
-		return "", nil
-	}
-
-	acl, aclGroup, err := aclOf(p)
-	if err != nil {
-		return "", err
-	}
-
-	return judge(mode, gid, acl, aclGroup, euid), nil
-}
-
-// parentRefusal is the refusal of dir for p, a directory it is where of (inside, or reached
-// through), which who could change.
-func parentRefusal(dir, where, p, who string, euid int) error {
-	return fmt.Errorf("%s is %s %s, which %s could move it aside and put another in its place "+
-		"for conflux to run.\n  Choose a CONFLUX_DIR whose every parent only root and uid %d can change, "+
-		"or that sits in a sticky directory such as /tmp", dir, where, p, who, euid)
 }
 
 // aclOf is who p's ACL lets write it, and whether that ACL says what p's group may

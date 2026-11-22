@@ -31,33 +31,39 @@ LABEL=org.veilnet.conflux
 # A run cut short leaves its registration behind; a fresh runner has none to remove.
 "$CONFLUX" uninstall --yes >/dev/null 2>&1 || true
 
-# A CONFLUX_DIR is refused where an extended ACL lets another account write a directory above
-# it, which the directory's mode does not show, and conflux asks the kernel for it. enrol is the
-# cheapest command that holds a root to its parents, and with no manifest to read it goes no
-# further: refused, it names the ACL; with only a deny entry left, as a home directory carries,
-# it gets as far as the missing manifest.
+# A root conflux keeps is refused where an extended ACL lets another account write it, which its
+# mode does not show, and conflux asks the kernel for it; a CONFLUX_DIR, and every folder above a
+# root, is never judged. enrol makes the roots and, with no manifest to read, goes no further, under
+# a directory whose ACL lets another account write it as anywhere; status, the readers' check, then
+# refuses the root once it carries such an entry, naming the ACL, and takes it with only a deny entry
+# left, as a home directory carries.
 if [ "$os" = darwin ]; then
-  say "a CONFLUX_DIR under a directory whose ACL lets another account write is refused"
+  say "a root whose ACL lets another account write is refused, and nothing above it is judged"
   acl=$(mktemp -d /tmp/cfx-acl.XXXXXX)
   acl=$(cd "$acl" && pwd -P) # /private/tmp, as the refusal names it
-  mkdir -m 700 "$acl/open"
-  chmod +a "nobody allow write,add_file" "$acl/open"
+  chmod +a "nobody allow write,add_file" "$acl"
 
-  out=$(CONFLUX_DIR="$acl/open/conflux" "$CONFLUX" enrol --manifest "$acl/none" 2>&1) &&
-    fail "enrol under a directory whose ACL lets nobody write succeeded"
-  case $out in
-    *"inside $acl/open, which its ACL lets "*) ;;
-    *) printf '%s\n' "$out" >&2; fail "a CONFLUX_DIR under a directory whose ACL lets nobody write was not refused for it" ;;
-  esac
-
-  chmod -N "$acl/open"
-  chmod +a "everyone deny delete" "$acl/open"
-  out=$(CONFLUX_DIR="$acl/open/conflux" "$CONFLUX" enrol --manifest "$acl/none" 2>&1) &&
+  out=$(CONFLUX_DIR="$acl/conflux" "$CONFLUX" enrol --manifest "$acl/none" 2>&1) &&
     fail "enrol with no manifest succeeded"
   case $out in
-    *"its ACL"*) printf '%s\n' "$out" >&2; fail "a deny entry alone, the CONFLUX_DIR is still refused for the ACL" ;;
     *"read the manifest"*) ;;
-    *) printf '%s\n' "$out" >&2; fail "with a deny entry alone, enrol did not get past the CONFLUX_DIR's parents" ;;
+    *) printf '%s\n' "$out" >&2; fail "under a directory whose ACL lets nobody write, enrol did not make its root" ;;
+  esac
+
+  root="$acl/conflux/.conflux"
+  chmod +a "nobody allow write,add_file" "$root"
+  out=$(CONFLUX_DIR="$acl/conflux" "$CONFLUX" status 2>&1) &&
+    fail "status of a root whose ACL lets nobody write succeeded"
+  case $out in
+    *"$root is not as conflux makes"*"its ACL lets "*) ;;
+    *) printf '%s\n' "$out" >&2; fail "a root whose ACL lets nobody write was not refused for it" ;;
+  esac
+
+  chmod -N "$root"
+  chmod +a "everyone deny delete" "$root"
+  out=$(CONFLUX_DIR="$acl/conflux" "$CONFLUX" status 2>&1) || true
+  case $out in
+    *"its ACL"*) printf '%s\n' "$out" >&2; fail "a deny entry alone, the root is still refused for its ACL" ;;
   esac
 
   rm -rf "$acl"

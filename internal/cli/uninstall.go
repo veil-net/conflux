@@ -49,23 +49,13 @@ func runUninstall(_ context.Context, args []string) int {
 
 	d := paths.Default()
 
-	// The roots uninstall refuses (JudgeWays): a CONFLUX_DIR whose way another account may change, the
-	// CONFLUX_DIR included, held to parents' rule as the readers' check holds it, since whoever could
-	// change it could have put anything at the root's name, and could lead the removal elsewhere.
-	// Judged for every root before anything is asked or removed, so nothing is half-removed; paths'
-	// advice, which is for choosing a CONFLUX_DIR, gives way to uninstall's. Any other failure to walk
-	// the way to a root stops uninstall there too, before it acts.
-	if err := d.JudgeWays(); err != nil {
+	// A way to a root that cannot be walked (WalkWays) stops uninstall there, before it acts: walked for
+	// every root before anything is asked or removed, so nothing is half-removed. Nothing on a way is
+	// judged: a CONFLUX_DIR, and every folder above it, is the user's choice.
+	if err := d.WalkWays(); err != nil {
 		what, _, _ := strings.Cut(err.Error(), "\n")
 
-		if errors.Is(err, paths.ErrWayRefused) {
-			ui.Errf("%s\n  So conflux cannot know that what is there is its own, and uninstall removed nothing, the "+
-				"boot service included.\n  Once nobody else can change any folder on the way to it, run conflux "+
-				"uninstall again", what)
-		} else {
-			ui.Errf("%s\n  uninstall stopped there, before it acted: nothing was removed, the boot service included.",
-				what)
-		}
+		ui.Errf("%s\n  uninstall stopped there, before it acted: nothing was removed, the boot service included.", what)
 
 		return ExitError
 	}
@@ -196,8 +186,8 @@ func runUninstall(_ context.Context, args []string) int {
 		return fail(err)
 	}
 
-	// A record that could not be read -- one that is a link, or behind a CONFLUX_DIR's way another
-	// account may change -- leaves the folders it names, and nothing else.
+	// A record that could not be read -- one that is a link, or behind a way that cannot be walked --
+	// leaves the folders it names, and nothing else.
 	if wayErr != nil {
 		ui.Errf("the folders conflux made on the way to %s were left, since the record of them was not read: %v",
 			d.State, wayErr)

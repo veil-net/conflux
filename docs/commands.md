@@ -524,9 +524,10 @@ reinstall:
 - what an update left beside this conflux: a download that never went in place, and on Windows
   the image moved aside, `conflux.exe.old` (elsewhere a file of that name is yours, and kept);
 - the temporary copies of `anchorctl` a reader killed before it removed its own left: every
-  `conflux-usage-*` folder wherever readers run by the account uninstalling may make them — the
-  system's temporary directory and your cache directory, or on Windows, elevated, `%ProgramData%` —
-  but one in use, which is passed over, and on Unix one another account owns, whose reader's it is;
+  `conflux-usage-*` folder, whoever made it, wherever a copy may be made for the account uninstalling
+  — the system's temporary directory and that account's cache directory, and on Windows, elevated,
+  `%ProgramData%` besides. On Windows one whose copy is running is passed over; on Unix it goes too,
+  and the copy runs on;
 - the folders conflux made on the way to a `CONFLUX_DIR`'s root, which it records as it makes them —
   a `CONFLUX_DIR` it made, and its parents, among them — each whole, deepest first, with whatever was
   put in it since, another installation of conflux included: `CONFLUX_DIR=/srv/a/b`, where conflux
@@ -728,8 +729,8 @@ an older install as it is:
 - what an earlier update left beside conflux goes: a download that never went in place, and on
   Windows an earlier update's `conflux.exe.old` (elsewhere a file of that name is yours, and
   kept);
-- the temporary copies of `anchorctl` killed readers left go, as `uninstall` removes them, one in
-  use passed over.
+- the temporary copies of `anchorctl` killed readers left go, as `uninstall` removes them, on
+  Windows one in use passed over.
 
 The configuration, the identity, the state, the anchor directories and the log are kept. It
 lists what it removed, and nothing it did not. What the next start clears again as it starts —

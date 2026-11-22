@@ -447,7 +447,7 @@ func TestUsageMakesNothing(t *testing.T) {
 func forUsage(t *testing.T, d paths.Dirs) (string, func(), error) {
 	t.Helper()
 
-	bin, done, err := ForUsage(d, d.Check(), true)
+	bin, done, err := ForUsage(d, d.Check())
 	if done != nil {
 		t.Cleanup(done)
 	}

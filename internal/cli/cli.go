@@ -113,8 +113,7 @@ func signalContext() (context.Context, context.CancelFunc) {
 // than conflux runs on (tooOld) are refused, exiting 70: nothing is read, made or run on either.
 // Then, where the token is elevated, what this process makes is made the Administrators' from the
 // moment it exists (paths.ElevatedDefaultOwner), and where that fails every command that can make
-// something in a root is refused, exiting 70 too (ownerRefusal), and help, which runs, extracts
-// nothing (extracts).
+// something in a root is refused, exiting 70 too (ownerRefusal).
 func Main(argv []string) int {
 	if err := fipsRefusal(fips140.Version(), fips140.Enabled()); err != nil {
 		ui.Errf("%v", err)
@@ -133,15 +132,10 @@ func Main(argv []string) int {
 	ctx, stop := signalContext()
 	defer stop()
 
-	if owner != nil {
-		ctx = context.WithValue(ctx, ownerUnset{}, owner)
+	name, rest := "help", []string(nil)
+	if len(argv) > 1 {
+		name, rest = argv[1], argv[2:]
 	}
-
-	if len(argv) < 2 {
-		return runHelp(ctx, nil)
-	}
-
-	name, rest := argv[1], argv[2:]
 
 	// Nothing is forwarded from the first position. "conflux -socket X status"
 	// would otherwise be ambiguous with conflux's own status, and a rule that is
@@ -149,7 +143,7 @@ func Main(argv []string) int {
 	if strings.HasPrefix(name, "-") {
 		switch {
 		case isHelpFlag(name):
-			return runHelp(ctx, rest)
+			name = "help"
 		case name == "-v" || name == "--version" || name == "-version":
 			return runVersion(ctx, rest)
 		default:
@@ -183,30 +177,21 @@ var elevatedDefaultOwner = paths.ElevatedDefaultOwner
 
 // ownerRefusal refuses command name where err says the Administrators could not be made the owner
 // of what this process makes (paths.ElevatedDefaultOwner), and the command can make something in a
-// root or on the way to one: every one but version, help and cert -- a pass-through and status among
-// the rest, since either may be the first conflux to make a root and extract into it. Help makes
-// nothing there either, since it then extracts nothing (extracts). What an elevated administrator
-// makes is otherwise that administrator's own on a Windows client, which their processes that are not
-// elevated could change for the boot service, running as SYSTEM, to read or run. Only an elevated
-// Windows token is ever changed, so it is only ever there that err is anything but nil.
+// root or on the way to one: every one but version and cert -- help, status and a pass-through among
+// the rest, since a reader extracts this build's pair into bin/ where it is not there yet
+// (libexec.ForUsage). What an elevated administrator makes is otherwise that administrator's own on a
+// Windows client, which their processes that are not elevated could change for the boot service,
+// running as SYSTEM, to read or run. Only an elevated Windows token is ever changed, so it is only ever
+// there that err is anything but nil.
 func ownerRefusal(name string, err error) error {
-	if err == nil || name == "version" || name == "help" || name == "cert" {
+	if err == nil || name == "version" || name == "cert" {
 		return nil
 	}
 
 	return fmt.Errorf("%w, so what conflux %s makes would be this account's own, which its processes that are not "+
 		"elevated could change for the boot service, running as SYSTEM, to read or run.\n  Run it again as "+
-		"Administrator from a new shell; conflux version, help and cert still run", err, name)
+		"Administrator from a new shell; conflux version and cert still run", err, name)
 }
-
-// ownerUnset is the key Main keeps paths.ElevatedDefaultOwner's failure under in the context a command
-// runs on.
-type ownerUnset struct{}
-
-// extracts reports whether a reader running on ctx may extract this build's pair into the installation's
-// bin directory (libexec.ForUsage): only where the Administrators were made the owner of what this
-// process makes, since otherwise what it makes there would be this account's own until it is restricted.
-func extracts(ctx context.Context) bool { return ctx.Value(ownerUnset{}) == nil }
 
 // isHelpFlag reports whether an argument is a request for usage as Go's flag package reads one,
 // which answers -h and -help, with one dash or two and with a value or none, whenever neither

@@ -1011,9 +1011,9 @@ func TestFIPSRefusal(t *testing.T) {
 
 // TestAnOwnerThatCannotBeSetRefusesWhatCanMakeARoot: where the Administrators cannot be made the
 // owner of what conflux makes (paths.ElevatedDefaultOwner, here failing), every command that can make
-// something in a root -- one that makes the root (enrol), one that may extract into it (status), a
-// pass-through -- is refused before it does anything, saying why and exiting 70, with nothing made;
-// version, help and cert, which make nothing there, run.
+// something in a root -- one that makes the root (enrol), a reader, which may extract this build's pair
+// into bin/ (status, a pass-through, help however it is asked for) -- is refused before it does anything,
+// saying why and exiting 70, with nothing made; version and cert, which make nothing there, run.
 func TestAnOwnerThatCannotBeSetRefusesWhatCanMakeARoot(t *testing.T) {
 	was := elevatedDefaultOwner
 	t.Cleanup(func() { elevatedDefaultOwner = was })
@@ -1025,7 +1025,9 @@ func TestAnOwnerThatCannotBeSetRefusesWhatCanMakeARoot(t *testing.T) {
 
 	missing := filepath.Join(t.TempDir(), "missing.b64")
 
-	for _, argv := range [][]string{{"enrol", "--manifest", missing}, {"status"}, {"peers"}} {
+	for _, argv := range [][]string{
+		{"enrol", "--manifest", missing}, {"status"}, {"peers"}, {"peers", "-h"}, {"help"}, {"help", "peers"}, {"-h"}, {},
+	} {
 		_, errOut, code := capture(t, argv...)
 		if code != ExitChildFailed || !strings.Contains(errOut, "denied") || !strings.Contains(errOut, "as Administrator") {
 			t.Errorf("conflux %s with an owner that cannot be set exited %d, want %d saying why:\n%s",
@@ -1037,57 +1039,9 @@ func TestAnOwnerThatCannotBeSetRefusesWhatCanMakeARoot(t *testing.T) {
 		t.Errorf("conflux made %s with an owner it could not set (%v)", above, err)
 	}
 
-	for _, argv := range [][]string{{"version"}, {"help"}, {"cert", "fingerprint", "--help"}} {
+	for _, argv := range [][]string{{"version"}, {"-v"}, {"cert", "fingerprint", "--help"}} {
 		if _, errOut, code := capture(t, argv...); code == ExitChildFailed {
 			t.Errorf("conflux %s, which makes nothing in a root, was refused:\n%s", strings.Join(argv, " "), errOut)
-		}
-	}
-}
-
-// TestAReaderExtractsOnlyWhereTheOwnerWasSet: help runs where the Administrators could not be made the
-// owner of what conflux makes (paths.ElevatedDefaultOwner, here failing), and what it would extract
-// into the installation's bin directory would then be that account's own from the moment it exists, so
-// there it extracts nothing -- as help, nor as a pass-through for usage -- and takes the pair as it finds
-// it, or a temporary copy; where the owner was set, help extracts the pair into bin.
-func TestAReaderExtractsOnlyWhereTheOwnerWasSet(t *testing.T) {
-	anchortest.Require(t)
-
-	was := elevatedDefaultOwner
-	t.Cleanup(func() { elevatedDefaultOwner = was })
-
-	// anchorctl's usage, which a pass-through prints to the terminal itself.
-	devNull, err := os.Open(os.DevNull)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer devNull.Close()
-
-	stdout, stderr := os.Stdout, os.Stderr
-	t.Cleanup(func() { os.Stdout, os.Stderr = stdout, stderr })
-
-	for _, argv := range [][]string{{"help"}, {"help", "peers"}} {
-		d := pathstest.Dirs(t)
-
-		elevatedDefaultOwner = func() error { return errors.New("make the Administrators the owner: denied") }
-
-		os.Stdout, os.Stderr = devNull, devNull
-		_, errOut, code := capture(t, argv...)
-		os.Stdout, os.Stderr = stdout, stderr
-
-		if _, err := libexec.Extracted(d); code != ExitOK || !errors.Is(err, libexec.ErrNotExtracted) {
-			t.Errorf("conflux %s with an owner that cannot be set exited %d and extracted the pair into %s (%v), "+
-				"want %d, nothing extracted:\n%s", strings.Join(argv, " "), code, d.Libexec(), err, ExitOK, errOut)
-		}
-
-		elevatedDefaultOwner = func() error { return nil }
-
-		os.Stdout, os.Stderr = devNull, devNull
-		capture(t, argv...)
-		os.Stdout, os.Stderr = stdout, stderr
-
-		if _, err := libexec.Extracted(d); err != nil {
-			t.Errorf("conflux %s with the owner set did not extract the pair into %s: %v", strings.Join(argv, " "),
-				d.Libexec(), err)
 		}
 	}
 }

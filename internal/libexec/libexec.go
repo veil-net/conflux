@@ -185,16 +185,15 @@ func Extracted(d paths.Dirs) (*Tools, error) {
 // by its name. Where it passed, this build's pair extracted there is used (Extracted), as found: nobody
 // else can put anything in a root as conflux makes one. Where it is not extracted yet -- as once an
 // upgrade has put a newer conflux in place -- it is extracted there (extractIn), into the bin directory,
-// where extract says the caller may make something there and provided that folder is there and as
-// conflux makes it (paths.Dirs.OursFolder): that adds a set and removes none, so a service still running
-// an older one keeps it, and makes neither a root nor the bin directory. Anything else -- no
-// installation, roots the check refused, a pair not extracted where extract is false, a bin directory
-// not there or not as conflux makes it, an extraction that fails -- runs a copy in a private temporary
-// directory (Temporary), with nothing in d read.
-func ForUsage(d paths.Dirs, checked error, extract bool) (bin string, done func(), err error) {
+// provided that folder is there and as conflux makes it (paths.Dirs.OursFolder): that adds a set and
+// removes none, so a service still running an older one keeps it, and makes neither a root nor the bin
+// directory. Anything else -- no installation, roots the check refused, a bin directory not there or not
+// as conflux makes it, an extraction that fails -- runs a copy in a private temporary directory
+// (Temporary), with nothing in d read.
+func ForUsage(d paths.Dirs, checked error) (bin string, done func(), err error) {
 	if checked == nil {
 		t, err := Extracted(d)
-		if extract && errors.Is(err, ErrNotExtracted) && d.OursFolder(d.Libexec()) == nil {
+		if errors.Is(err, ErrNotExtracted) && d.OursFolder(d.Libexec()) == nil {
 			t, err = extractIn(d)
 		}
 

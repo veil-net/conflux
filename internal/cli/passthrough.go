@@ -50,7 +50,7 @@ func passthrough(ctx context.Context, args []string) int {
 
 	if wantsUsage(args) {
 		d := paths.Default()
-		bin, done, err := libexec.ForUsage(d, d.Check(), extracts(ctx))
+		bin, done, err := libexec.ForUsage(d, d.Check())
 
 		return runDetached(args, bin, done, err)
 	}
@@ -322,7 +322,7 @@ var errEphemeralStarting = errors.New("the ephemeral run is still starting; ask 
 // binaries open, would stop it.
 func toolsFor(d paths.Dirs) (string, func(), error) {
 	if !slices.Contains(paths.EphemeralCandidates(), d.State) {
-		return libexec.ForUsage(d, nil, true)
+		return libexec.ForUsage(d, nil)
 	}
 
 	if !daemon.IsLiveReady(d) {

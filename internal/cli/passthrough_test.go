@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/veil-net/conflux/anchor"
@@ -129,9 +130,33 @@ func plantSet(t *testing.T, d paths.Dirs, line string) {
 	}
 
 	script := []byte("#!/bin/sh\n" + line + "\n")
-	planted := append(script, bytes.Repeat([]byte("#"), len(anchor.Anchorctl())-len(script))...)
+	writeScript(t, tools.Anchorctl, append(script, bytes.Repeat([]byte("#"), len(anchor.Anchorctl())-len(script))...), 0)
+}
 
-	if err := os.WriteFile(tools.Anchorctl, planted, 0o700); err != nil {
+// writeScript puts content at path, an executable file of its own, extended to size bytes where that
+// is more: written under a name beside it while no child can be forked (syscall.ForkLock), so that no
+// child forked meanwhile holds the descriptor open past the write -- an exec of the script while one
+// does fails with ETXTBSY -- and then renamed over whatever is at path, so that a binary run there a
+// moment before, such as an extraction's smoke run, which the kernel may still refuse to open for
+// writing (ETXTBSY again), is never written.
+func writeScript(t *testing.T, path string, content []byte, size int64) {
+	t.Helper()
+
+	staged := path + ".writing"
+
+	syscall.ForkLock.Lock()
+	err := os.WriteFile(staged, content, 0o700)
+	syscall.ForkLock.Unlock()
+
+	if err == nil && size > int64(len(content)) {
+		err = os.Truncate(staged, size)
+	}
+
+	if err == nil {
+		err = os.Rename(staged, path)
+	}
+
+	if err != nil {
 		t.Fatal(err)
 	}
 }

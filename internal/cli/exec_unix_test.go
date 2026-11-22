@@ -147,9 +147,7 @@ func standInScript(t *testing.T) string {
 	t.Helper()
 
 	script := filepath.Join(t.TempDir(), "anchorctl")
-	if err := os.WriteFile(script, []byte(standIn), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	writeScript(t, script, []byte(standIn), 0)
 
 	return script
 }
@@ -172,9 +170,7 @@ func TestOnlyATemporaryCopyRunsAsAChild(t *testing.T) {
 	line := "echo $PPID > '" + parent + "'"
 
 	script := filepath.Join(t.TempDir(), "anchorctl")
-	if err := os.WriteFile(script, []byte("#!/bin/sh\n"+line+"\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	writeScript(t, script, []byte("#!/bin/sh\n"+line+"\n"), 0)
 
 	for _, c := range []struct {
 		name      string

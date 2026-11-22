@@ -41,13 +41,7 @@ func runningStandIn(t *testing.T, d paths.Dirs, log string) {
 		filepath.Join(dir, "anchorctl"): {script, len(anchor.Anchorctl())},
 		filepath.Join(dir, "anchord"):   {"", len(anchor.Anchord())},
 	} {
-		if err := os.WriteFile(path, []byte(f.content), 0o700); err != nil {
-			t.Fatal(err)
-		}
-
-		if err := os.Truncate(path, int64(f.size)); err != nil {
-			t.Fatal(err)
-		}
+		writeScript(t, path, []byte(f.content), int64(f.size))
 	}
 
 	looksRunning(t, d)

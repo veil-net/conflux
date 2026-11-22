@@ -32,7 +32,7 @@ import (
 )
 
 // childArgs, set, makes the test binary conflux, with these arguments, a line each, as TestMain starts:
-// confluxChild's child.
+// confluxChild's child, and the run a signal test starts to signal.
 const childArgs = "CONFLUX_TEST_ARGS"
 
 // childDeadline is how long confluxChild waits for its child before it kills it and fails the test.

@@ -357,20 +357,12 @@ func TestNohupHoldsOffAnEphemeralRunsHangup(t *testing.T) {
 	}
 }
 
-// firstSignalAPI, set, makes TestAFirstSignalStopsAnEphemeralRun's test binary the conflux it
-// runs: an ephemeral proxy, through Main, enrolling at the API it names.
-const firstSignalAPI = "CONFLUX_TEST_FIRST_SIGNAL_API"
-
 // TestAFirstSignalStopsAnEphemeralRun: an interrupt, which Ctrl-C sends, or a SIGTERM, sent to an
 // ephemeral run's conflux -- here while it enrols, with its anchord up -- ends Main's ctx, and the
 // run with it, cleanly: conflux says it stopped and exits 0, the anchord it started is stopped and
 // waited for, not left running, and the run's root is gone, with the .conflux it made in the
 // CONFLUX_DIR, which is as it was.
 func TestAFirstSignalStopsAnEphemeralRun(t *testing.T) {
-	if api := os.Getenv(firstSignalAPI); api != "" {
-		os.Exit(Main([]string{"conflux", "proxy", "8080=127.0.0.1:3000", "--ephemeral", "--taint", "t", "--api", api}))
-	}
-
 	anchortest.Require(t)
 
 	if os.Geteuid() == 0 {
@@ -404,8 +396,12 @@ func TestAFirstSignalStopsAnEphemeralRun(t *testing.T) {
 
 			var out bytes.Buffer
 
-			conflux := exec.Command(os.Args[0], "-test.run=^TestAFirstSignalStopsAnEphemeralRun$") //nolint:gosec // this test binary
-			conflux.Env = append(os.Environ(), "CONFLUX_DIR="+root, firstSignalAPI+"=https://"+api.Addr().String())
+			// An ephemeral proxy enrolling at that API, run by TestMain (childArgs).
+			args := []string{"proxy", "8080=127.0.0.1:3000", "--ephemeral", "--taint", "t", "--api",
+				"https://" + api.Addr().String()}
+
+			conflux := exec.Command(os.Args[0], "-test.run=^$") //nolint:gosec // this test binary
+			conflux.Env = append(os.Environ(), "CONFLUX_DIR="+root, childArgs+"="+strings.Join(args, "\n"))
 			conflux.Stdout, conflux.Stderr = &out, &out
 
 			if err := conflux.Start(); err != nil {

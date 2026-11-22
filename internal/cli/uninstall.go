@@ -23,9 +23,9 @@ import (
 
 // runUninstall is the reverse of everything conflux did here, and it destroys the identity: the
 // boot service, every root -- configuration, identity, state, the extracted pairs, the service's copy
-// of conflux, the log -- the ephemeral runs' roots, what an update left beside this conflux, the
-// temporary copies of anchorctl killed readers left (libexec.RemoveTemporary), and the accounts anchord
-// ran as. Nothing is kept for a reinstall.
+// of conflux, the log -- the ephemeral runs' roots, what an update left beside this conflux and the
+// temporary copies of anchorctl killed readers left (removeLeftovers), and the accounts anchord ran as.
+// Nothing is kept for a reinstall.
 func runUninstall(_ context.Context, args []string) int {
 	flags := flag.NewFlagSet("uninstall", flag.ContinueOnError)
 	flags.SetOutput(ui.Errw)
@@ -175,11 +175,7 @@ func runUninstall(_ context.Context, args []string) int {
 	// Remove has taken the service's log already where a service was registered.
 	errs = append(errs, removeSharedLog(d))
 
-	if exe, err := updateExecutable(); err == nil {
-		removed = append(removed, removeUpdateLeftovers(exe)...)
-	}
-
-	removed = append(removed, libexec.RemoveTemporary()...)
+	removed = append(removed, removeLeftovers()...)
 
 	// The accounts anchord ran as, if conflux made them, stopping whatever runs as each: the ephemeral
 	// runs' unless one started since.
@@ -318,6 +314,19 @@ func removeKilledRun(root string) (runRoot, error) {
 // removeEphemeral is daemon.RemoveEphemeral, which a test points at one that lets a run take the root
 // as it lets go of the root's lock.
 var removeEphemeral = daemon.RemoveEphemeral
+
+// removeLeftovers removes what earlier conflux left outside its roots, uninstall's and tidy's alike, and
+// is what it removed: what an update left beside this conflux (removeUpdateLeftovers), and the temporary
+// copies of anchorctl readers killed before they removed them left (libexec.RemoveTemporary).
+func removeLeftovers() []string {
+	var removed []string
+
+	if exe, err := updateExecutable(); err == nil {
+		removed = removeUpdateLeftovers(exe)
+	}
+
+	return append(removed, libexec.RemoveTemporary()...)
+}
 
 // removeUpdateLeftovers removes what an update left beside exe, the conflux it replaced: a download
 // that never went in place (update.Download's .conflux-update-*), and on Windows the image it moved

@@ -577,9 +577,15 @@ func TestUsageRunsNothingFromARootItRefuses(t *testing.T) {
 // directory, and the user's cache directory, where one goes on a host whose temporary directory is mounted
 // noexec, elevated on Windows as well -- and say which; anything else there is left, and so is a folder that
 // will not go -- a reader's copy running from it, which Windows removes no file of -- passed over while the
-// rest go.
+// rest go. Each place is taken by its name as it is, never as a pattern: a temporary directory named x[1]
+// leaves what is in x1.
 func TestRemoveTemporaryRemovesWhatAKilledReaderLeft(t *testing.T) {
-	parent := pathstest.Temporary(t, t.TempDir())
+	parent := filepath.Join(t.TempDir(), "x[1]")
+	if err := os.Mkdir(parent, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	pathstest.Temporary(t, parent)
 
 	left := []string{filepath.Join(parent, temporaryPrefix+"1"), filepath.Join(parent, temporaryPrefix+"2")}
 
@@ -591,10 +597,10 @@ func TestRemoveTemporaryRemovesWhatAKilledReaderLeft(t *testing.T) {
 		left = append(left, filepath.Join(cache, temporaryPrefix+"4"))
 	}
 	inUse := filepath.Join(parent, temporaryPrefix+"3")
-	other := filepath.Join(parent, "conflux-other")
+	others := []string{filepath.Join(parent, "conflux-other"), filepath.Join(filepath.Dir(parent), "x1", temporaryPrefix+"5")}
 
-	for _, dir := range append(slices.Clone(left), inUse, other) {
-		if err := os.Mkdir(dir, 0o700); err != nil {
+	for _, dir := range append(slices.Concat(left, others), inUse) {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
 
@@ -635,8 +641,10 @@ func TestRemoveTemporaryRemovesWhatAKilledReaderLeft(t *testing.T) {
 		}
 	}
 
-	if _, err := os.Lstat(other); err != nil || slices.Contains(removed, other) {
-		t.Errorf("RemoveTemporary removed %s, which is not one of temporary's (Lstat: %v): %q", other, err, removed)
+	for _, other := range others {
+		if _, err := os.Lstat(other); err != nil || slices.Contains(removed, other) {
+			t.Errorf("RemoveTemporary removed %s, which is not one of temporary's (Lstat: %v): %q", other, err, removed)
+		}
 	}
 
 	if _, err := os.Lstat(inUse); held && (err != nil || slices.Contains(removed, inUse)) {

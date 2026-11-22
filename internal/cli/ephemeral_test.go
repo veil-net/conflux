@@ -1,35 +1,13 @@
 package cli
 
 import (
-	"encoding/base64"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
-	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/pathstest"
-	"github.com/veil-net/conflux/internal/privcheck"
 )
-
-// handedRun is an ephemeral run prepared from doc, as `--ephemeral --manifest FILE` reads one.
-func handedRun(t *testing.T, doc string) *ephemeralRun {
-	t.Helper()
-
-	path := filepath.Join(t.TempDir(), "manifest.b64")
-	if err := os.WriteFile(path, []byte(base64.StdEncoding.EncodeToString([]byte(doc))), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	on := true
-	run, err := ephemeralFlags{on: &on, manifest: &path}.prepare()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return run
-}
 
 // TestManifestIsForAnEphemeralRun: a credential named without --ephemeral is one to keep,
 // which is conflux enrol's, and the refusal says so before anything of the machine's is read.
@@ -48,113 +26,24 @@ func TestManifestIsForAnEphemeralRun(t *testing.T) {
 	}
 }
 
-// TestAnEphemeralRunTakesTheHandedCredentialsAPIAndTaints: as enrol takes them, but into a
-// configuration nothing saves -- the API the credential renews against, and the taints it
-// grants -- and an --api naming another host is refused, as enrol refuses it.
-func TestAnEphemeralRunTakesTheHandedCredentialsAPIAndTaints(t *testing.T) {
-	run := handedRun(t, alphaDoc)
-
-	cfg, err := run.fresh("")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if cfg.APIBaseURL != "https://api.veilnet.com.au" {
-		t.Errorf("APIBaseURL = %q, want the credential's own", cfg.APIBaseURL)
-	}
-
-	if want := []string{"brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf"}; !slices.Equal(cfg.Taints, want) {
-		t.Errorf("Taints = %v, want the credential's %v", cfg.Taints, want)
-	}
-
-	if _, err := run.fresh("https://elsewhere.example"); err == nil {
-		t.Error("an --api naming another host than the credential renews against was taken")
-	}
-}
-
-// TestAnEphemeralRunAsksNothing: the IPv4 is decided by the flags, then the credential, then
-// nothing -- never by a question, since an ephemeral run is as often started by a script.
-func TestAnEphemeralRunAsksNothing(t *testing.T) {
-	alpha := handedRun(t, alphaDoc)
-	enrolling := &ephemeralRun{}
-
-	for _, c := range []struct {
-		name  string
-		run   *ephemeralRun
-		flag  string
-		none  bool
-		want  string
-		error bool
-	}{
-		{"the flag", enrolling, "10.128.0.9/24", false, "10.128.0.9/24", false},
-		{"none", enrolling, "", true, "", false},
-		{"nothing given", enrolling, "", false, "", false},
-		{"a credential with none", alpha, "", false, "", false},
-		{"both", enrolling, "10.128.0.9", true, "", true},
-		{"a bad one", enrolling, "not an address", false, "", true},
-	} {
-		cfg := &config.Config{}
-
-		err := c.run.ipv4(cfg, c.flag, c.none)
-		if (err != nil) != c.error {
-			t.Errorf("%s: err = %v, want error %v", c.name, err, c.error)
-
-			continue
-		}
-
-		if c.error {
-			continue
-		}
-
-		if cfg.IPv4 == nil || *cfg.IPv4 != c.want {
-			t.Errorf("%s: IPv4 = %v, want %q, decided", c.name, cfg.IPv4, c.want)
-		}
-	}
-}
-
-// TestAnEphemeralProxyNeedsNoRoot: userspace needs no privilege, and an ephemeral run registers
-// nothing that would, so proxy runs as anybody; a TUN, and observing, still need root.
-func TestAnEphemeralProxyNeedsNoRoot(t *testing.T) {
-	was, wasOS := privcheck.Elevated, hostOS
-	privcheck.Elevated, hostOS = func() bool { return false }, "linux"
-
-	t.Cleanup(func() { privcheck.Elevated, hostOS = was, wasOS })
-
-	run := &ephemeralRun{}
-
-	if err := run.root(&config.Config{}, nil); err != nil {
-		t.Errorf("an unprivileged ephemeral proxy: %v", err)
-	}
-
-	if err := run.root(&config.Config{Observer: &config.Observer{}}, nil); err == nil {
-		t.Error("an unprivileged ephemeral proxy that observes was let through")
-	}
-
-	if _, errOut, code := capture(t, "up", "--ephemeral"); code != ExitDenied {
-		t.Errorf("an unprivileged ephemeral up exited %d, want %d:\n%s", code, ExitDenied, errOut)
-	}
-}
-
-// TestEphemeralIsLinuxAlone: an ephemeral run is Linux's alone, so up and proxy refuse --ephemeral
-// everywhere else, exit 2, saying so, before anything is read -- the credential --manifest names among
-// it -- or asked for, root included.
+// TestEphemeralIsLinuxAlone: an ephemeral run is Linux's alone, so where there is none to run
+// (ephemeral nil: everywhere but Linux) up and proxy refuse --ephemeral, exit 2, saying so, before
+// anything is read -- the credential --manifest names among it -- or asked for, root included.
 func TestEphemeralIsLinuxAlone(t *testing.T) {
-	was := hostOS
-	t.Cleanup(func() { hostOS = was })
+	was := ephemeral
+	ephemeral = nil
+
+	t.Cleanup(func() { ephemeral = was })
 
 	manifest := filepath.Join(t.TempDir(), "not-there.b64")
 
-	for _, goos := range []string{"darwin", "freebsd", "openbsd", "windows"} {
-		hostOS = goos
-
-		for _, args := range [][]string{
-			{"up", "--ephemeral"},
-			{"proxy", "8080=127.0.0.1:3000", "--ephemeral", "--manifest", manifest},
-		} {
-			if _, errOut, code := capture(t, args...); code != ExitUsage || !strings.Contains(errOut, "Linux") {
-				t.Errorf("%s on %s exited %d, want %d saying it is Linux's alone:\n%s", strings.Join(args, " "), goos,
-					code, ExitUsage, errOut)
-			}
+	for _, args := range [][]string{
+		{"up", "--ephemeral"},
+		{"proxy", "8080=127.0.0.1:3000", "--ephemeral", "--manifest", manifest},
+	} {
+		if _, errOut, code := capture(t, args...); code != ExitUsage || !strings.Contains(errOut, "Linux") {
+			t.Errorf("%s with no ephemeral runs exited %d, want %d saying it is Linux's alone:\n%s",
+				strings.Join(args, " "), code, ExitUsage, errOut)
 		}
 	}
 }

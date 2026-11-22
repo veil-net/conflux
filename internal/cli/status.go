@@ -39,7 +39,7 @@ func runStatus(ctx context.Context, args []string) int {
 	ui.Field("fips140", version.FIPS())
 	ui.Println()
 
-	ephemeral := reportEphemeralRun(ctx)
+	eph := ephemeral != nil && ephemeral.report(ctx)
 
 	// Nothing of the machine's is read by its name until its root passes paths' check; one not
 	// there is a machine never configured, with nothing read.
@@ -69,7 +69,7 @@ func runStatus(ctx context.Context, args []string) int {
 		ui.Printf("%s\n", configureHint)
 
 		// What runs is the ephemeral anchor, which needs no configuration to be running.
-		if ephemeral {
+		if eph {
 			return ExitOK
 		}
 
@@ -179,45 +179,6 @@ func askDaemon(ctx context.Context, d paths.Dirs, export bool) *daemonAnswers {
 }
 
 func reportService() { ui.Field("service", newService().Describe()) }
-
-// reportEphemeralRun says what an ephemeral run is doing, before the machine's own anchor,
-// and whether one is running: or what a killed one left behind.
-func reportEphemeralRun(ctx context.Context) bool {
-	live, stale := ephemeralRuns()
-
-	if stale != nil {
-		ui.Field("ephemeral", "none running; "+stale.Root+" was left by one that was killed, and the next "+
-			"ephemeral run clears it and stops any anchord it left")
-		ui.Println()
-	}
-
-	if live == nil {
-		return false
-	}
-
-	d := *live
-
-	ui.Println("ephemeral:")
-
-	if !daemon.IsLiveReady(d) {
-		ui.Field("running", "starting, from "+d.Root+" — in memory alone; nothing of it outlives the run")
-		ui.Println()
-
-		return true
-	}
-
-	answers := askDaemon(ctx, d, false)
-	answers.wg.Wait()
-
-	ui.Field("running", "from "+d.Root+" — in memory alone; nothing of it outlives the run")
-
-	priv, recorded := daemon.RecordedPrivilege(d)
-	reportPrivilege(priv, recorded, answers.asked && answers.statErr == nil)
-	reportAnchor(answers)
-	ui.Println()
-
-	return true
-}
 
 // reportPrivilege says who the running anchord runs as, with what, and why it keeps what
 // it keeps, from p, its record where one is: nothing for a daemon that is not running, whose

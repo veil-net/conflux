@@ -87,14 +87,10 @@ func runUp(ctx context.Context, args []string) (code int) {
 		return ExitUsage
 	}
 
-	if eph.refused() {
-		return ExitUsage
-	}
-
 	// An ephemeral run reads its credential first, and touches nothing of the machine's.
-	run, err := eph.prepare()
-	if err != nil {
-		return fail(err)
+	run, code := eph.prepare()
+	if code != ExitOK {
+		return code
 	}
 
 	if err := needsRoot("bringing up a network interface", "up", args); err != nil {
@@ -105,6 +101,7 @@ func runUp(ctx context.Context, args []string) (code int) {
 		d     paths.Dirs
 		cfg   *config.Config
 		place func(paths.Dirs) (string, error)
+		err   error
 	)
 
 	if run != nil {
@@ -184,7 +181,7 @@ func runUp(ctx context.Context, args []string) (code int) {
 // twice; and the run, ephemeral, or brought up by the boot service, its copy of conflux placed with
 // place, handOver's. subnetsSet is whether verb's command line set the served list.
 func launch(ctx context.Context, d paths.Dirs, place func(paths.Dirs) (string, error), cfg *config.Config,
-	run *ephemeralRun, verb string, taints []string, ipv4 string, noIPv4, subnetsSet bool) int {
+	run ephemeralRun, verb string, taints []string, ipv4 string, noIPv4, subnetsSet bool) int {
 	held, err := runCredential(run, d)
 	if err != nil {
 		return fail(err)
@@ -203,7 +200,7 @@ func launch(ctx context.Context, d paths.Dirs, place func(paths.Dirs) (string, e
 			return fail(err)
 		}
 
-		return runEphemeral(ctx, cfg, run)
+		return run.run(ctx, cfg)
 	}
 
 	if err := chooseIPv4(cfg, ipv4, noIPv4); err != nil {

@@ -43,6 +43,14 @@ type Dirs struct {
 	serving bool
 }
 
+// RuntimeFolder is the folder this account's ephemeral run keeps its root in, or why there is none:
+// Linux's alone (ephemeral_linux.go), the one platform that runs one, and nil elsewhere. A variable so a
+// test can keep it in a folder of its own (pathstest).
+var RuntimeFolder func() (string, error)
+
+// IsEphemeral reports whether d are an ephemeral run's (EphemeralDirs, on Linux).
+func (d Dirs) IsEphemeral() bool { return d.ephemeral }
+
 // Default is where conflux keeps them: DirName, in the system's data folder (SystemData).
 func Default() Dirs { return rootedAt(filepath.Join(SystemData(), DirName)) }
 

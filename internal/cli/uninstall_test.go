@@ -26,8 +26,7 @@ import (
 // the link, and the directory it leads to, and what is in it, are untouched; a file planted there
 // that another account owns is removed as itself. What an update left beside the conflux it
 // replaced goes too, and that conflux stays, with whatever else is beside it: they are the
-// operator's. What a dead supervisor left running is stopped first. A killed ephemeral run's root, in
-// the runtime folder, is not touched. It says what it removed. (On Windows, with a junction: the same
+// operator's. What a dead supervisor left running is stopped first. It says what it removed. (On Windows, with a junction: the same
 // test.)
 func TestUninstallLeavesNothingConfluxMade(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
@@ -70,11 +69,6 @@ func TestUninstallLeavesNothingConfluxMade(t *testing.T) {
 
 	if !slices.Equal(reaped, []string{d.Root}) {
 		t.Errorf("uninstall reaped %q, want %s, once", reaped, d.Root)
-	}
-
-	if _, err := os.Lstat(filepath.Join(old.ephemeral, "serve.lock")); err != nil {
-		t.Errorf("uninstall touched %s, a killed ephemeral run's root, which the system empties at boot: %v",
-			old.ephemeral, err)
 	}
 
 	if _, err := os.Lstat(d.Root); !os.IsNotExist(err) {
@@ -287,90 +281,6 @@ func recordAccounts(t *testing.T) *[]bool {
 	}
 
 	return &asked
-}
-
-// TestUninstallLeavesALiveRun: a live ephemeral run as root runs as the account uninstall removes, so
-// while one is live uninstall refuses, exit 2, naming it, before anything is asked or removed, and again
-// once the question is answered, for one started as it was asked; and one that starts once uninstall has
-// begun -- here as the boot service is removed -- is left running, with its root and the account it runs
-// as, and uninstall says so, exit 1, listing what it removed all the same.
-func TestUninstallLeavesALiveRun(t *testing.T) {
-	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
-	privcheck.Elevated = func() bool { return true }
-
-	t.Run("live as uninstall begins", func(t *testing.T) {
-		d := oldInstall(t).d
-		e := ephemeralRoot(t)
-		t.Cleanup(holdRoot(t, e))
-
-		mgr := &removing{fakeManager: fakeManager{d: d}}
-		standInService(t, mgr)
-
-		out, errOut, code := capture(t, "uninstall", "--yes")
-		if code != ExitUsage || !strings.Contains(errOut, e.Root) {
-			t.Errorf("uninstall beside a live run exited %d, want %d naming %s:\n%s%s", code, ExitUsage, e.Root,
-				out, errOut)
-		}
-
-		if _, err := os.Lstat(d.ConfigFile()); mgr.removals > 0 || err != nil {
-			t.Errorf("uninstall beside a live run removed the boot service %d times, and %s (Lstat: %v)",
-				mgr.removals, d.ConfigFile(), err)
-		}
-	})
-
-	t.Run("live once asked", func(t *testing.T) {
-		d := oldInstall(t).d
-		e := ephemeralRoot(t)
-
-		defer func(was func(paths.Dirs, error, bool) bool) { confirm = was }(confirm)
-		confirm = func(paths.Dirs, error, bool) bool {
-			t.Cleanup(holdRoot(t, e))
-
-			return true
-		}
-
-		mgr := &removing{fakeManager: fakeManager{d: d}}
-		standInService(t, mgr)
-
-		out, errOut, code := capture(t, "uninstall", "--yes")
-		if code != ExitUsage || !strings.Contains(errOut, e.Root) {
-			t.Errorf("uninstall beside a run started as it asked exited %d, want %d naming %s:\n%s%s", code, ExitUsage,
-				e.Root, out, errOut)
-		}
-
-		if _, err := os.Lstat(d.ConfigFile()); mgr.removals > 0 || err != nil {
-			t.Errorf("uninstall beside a run started as it asked removed the boot service %d times, and %s (Lstat: %v)",
-				mgr.removals, d.ConfigFile(), err)
-		}
-	})
-
-	t.Run("started since", func(t *testing.T) {
-		d := oldInstall(t).d
-		e := ephemeralRoot(t)
-
-		mgr := &removing{fakeManager: fakeManager{d: d}, then: func() { t.Cleanup(holdRoot(t, e)) }}
-		standInService(t, mgr)
-
-		accounts := recordAccounts(t)
-
-		out, errOut, code := capture(t, "uninstall", "--yes")
-		if code != ExitError || !strings.Contains(errOut, e.Root) || !strings.Contains(errOut, "left running") {
-			t.Errorf("uninstall with a run started as it began exited %d, want %d naming %s, left running:\n%s%s",
-				code, ExitError, e.Root, out, errOut)
-		}
-
-		if _, err := os.Lstat(e.ServeLockFile()); err != nil {
-			t.Errorf("uninstall removed the root of a live run: %v", err)
-		}
-
-		if !strings.Contains(out, "  the boot service\n") {
-			t.Errorf("uninstall, failing, did not say what it had removed:\n%s", out)
-		}
-
-		if !slices.Equal(*accounts, []bool{false}) {
-			t.Errorf("uninstall removed the accounts anchord ran as %v, want once, the ephemeral run's kept", *accounts)
-		}
-	})
 }
 
 // TestUninstallAsksNothingWithoutAnIdentity: where no identity is there, uninstall has nothing

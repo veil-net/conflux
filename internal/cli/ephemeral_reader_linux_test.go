@@ -13,7 +13,6 @@ import (
 
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/daemon"
-	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
@@ -52,23 +51,6 @@ func ephemeralRoot(t *testing.T) paths.Dirs {
 	}
 
 	return d
-}
-
-// holdRoot makes d's root, as a supervisor or a run does, and takes the lock it holds while it
-// runs: what lets that go.
-func holdRoot(t *testing.T, d paths.Dirs) (unlock func()) {
-	t.Helper()
-
-	if err := d.EnsureAll(); err != nil {
-		t.Fatal(err)
-	}
-
-	unlock, ok, err := flock.TryAcquire(d.ServeLockFile())
-	if err != nil || !ok {
-		t.Fatalf("take the lock a supervisor holds: %v", err)
-	}
-
-	return unlock
 }
 
 // TestStatusWritesNothingIntoAStartingEphemeralRun: status, asked while an ephemeral run is

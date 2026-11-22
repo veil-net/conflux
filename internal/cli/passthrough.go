@@ -11,8 +11,6 @@ import (
 
 	"github.com/veil-net/conflux/anchor"
 	"github.com/veil-net/conflux/internal/anchorctl"
-	"github.com/veil-net/conflux/internal/daemon"
-	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/privcheck"
@@ -258,51 +256,16 @@ func liveEphemeral() (paths.Dirs, bool) {
 	return paths.Dirs{}, false
 }
 
-// checkEphemeral is the readers' check of an ephemeral run's root (paths.Dirs.Check), which a test
-// stands in for: nil only for a root that is there as conflux makes one, an error that is
-// fs.ErrNotExist for one not there, and a refusal for any other.
-var checkEphemeral = paths.Dirs.Check
-
-// statLock is os.Stat, for a root's lock, which a test counts.
-var statLock = os.Stat
-
-// ephemeralRuns is what this account's ephemeral root holds (paths.EphemeralDirs), read in one pass:
-// the root of the run that is running, whose lock is held, or the root a run that was killed left
-// behind, its lock there with nobody holding it -- or nil for each, as where this account has no
-// ephemeral root at all, on any platform but Linux among them.
-//
-// A root not as conflux makes one -- another account's, or a link -- is neither, whatever it holds: a
-// run is never kept in one (paths.Ephemeral), and a reader taking the lock, the marker and the anchorctl
-// in it for a run's would run that anchorctl.
+// ephemeralRuns is what this account's ephemeral root holds, read in one pass: the root of the run that
+// is running, whose lock is held, or the root a run that was killed left behind -- or nil for each,
+// as wherever there is no ephemeral run at all, off Linux among them (ephemeral).
 func ephemeralRuns() (live, stale *paths.Dirs) {
-	d, err := paths.EphemeralDirs()
-	if err != nil {
+	if ephemeral == nil {
 		return nil, nil
 	}
 
-	// The root itself, and nothing beneath it before that: a root as conflux makes one holds nothing
-	// another account put there. And a root not there (fs.ErrNotExist) holds no run, and is looked up by
-	// its name no more: what is at a name that was not there a moment ago is whoever made it first's.
-	if err := checkEphemeral(d); err != nil {
-		return nil, nil
-	}
-
-	if _, err := statLock(d.ServeLockFile()); err != nil {
-		return nil, nil
-	}
-
-	switch held, err := flock.Held(d.ServeLockFile()); {
-	case err != nil:
-		return nil, nil
-	case held:
-		return &d, nil
-	}
-
-	return nil, &d
+	return ephemeral.runs()
 }
-
-// errEphemeralStarting is an ephemeral run asked for before it is up.
-var errEphemeralStarting = errors.New("the ephemeral run is still starting; ask again once it is up")
 
 // toolsFor is the anchorctl to reach d's daemon with, and done, which removes it once it has run,
 // where it is a temporary copy, and is nil where it is not. For the installation's daemon it is the
@@ -316,18 +279,9 @@ var errEphemeralStarting = errors.New("the ephemeral run is still starting; ask 
 // clearing what a killed one left -- and a reader that refilled what it was clearing, or held one of its
 // binaries open, would stop it.
 func toolsFor(ctx context.Context, d paths.Dirs) (string, func(), error) {
-	if !d.IsEphemeral() {
+	if ephemeral == nil || !d.IsEphemeral() {
 		return libexec.ForUsage(ctx, d, nil)
 	}
 
-	if !daemon.IsLiveReady(d) {
-		return "", nil, errEphemeralStarting
-	}
-
-	t, err := libexec.Extracted(d)
-	if err != nil {
-		return "", nil, err
-	}
-
-	return t.Anchorctl, nil, nil
+	return ephemeral.tools(d)
 }

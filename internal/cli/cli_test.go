@@ -49,6 +49,10 @@ const (
 func childEnv(args ...string) []string {
 	env := append(os.Environ(), childArgs+"="+strings.Join(args, "\n"), childData+"="+paths.SystemData())
 
+	if paths.RuntimeFolder == nil { // no ephemeral runs here
+		return env
+	}
+
 	if folder, err := paths.RuntimeFolder(); err == nil {
 		env = append(env, childRuntime+"="+folder)
 	}

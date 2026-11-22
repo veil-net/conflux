@@ -61,14 +61,10 @@ func runProxy(ctx context.Context, args []string) (code int) {
 		parsed[i] = spec.String()
 	}
 
-	if f.eph.refused() {
-		return ExitUsage
-	}
-
 	// An ephemeral run reads its credential first, and touches nothing of the machine's.
-	run, err := f.eph.prepare()
-	if err != nil {
-		return fail(err)
+	run, code := f.eph.prepare()
+	if code != ExitOK {
+		return code
 	}
 
 	var (

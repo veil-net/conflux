@@ -107,12 +107,18 @@ func withCaps(attr *syscall.SysProcAttr, caps []string) {
 // the child and then returns without unlocking -- and a goroutine that ends locked takes
 // its thread with it, so nothing else in the supervisor is ever run under it.
 //
-// A parent-death signal is the forking thread's too: it is sent when that thread ends,
-// not when the process does. So where cmd asks for one (hold given), the child is started
-// from a locked thread that waits on hold before it ends -- closed once the child has gone
-// -- and the signal comes only when this process ends while the child still runs. Started
-// from the locked thread of no_new_privs and let go, it would come at once.
+// Where hold is given -- an ephemeral run's anchord, which ends with this process -- the child is
+// started with a parent-death signal, SIGTERM rather than SIGKILL, so anchord still closes its anchor
+// and takes its interface and host rules down with it. That signal is the forking thread's too: it is
+// sent when that thread ends, not when the process does. So the child is started from a locked thread
+// that waits on hold before it ends -- closed once the child has gone -- and the signal comes only when
+// this process ends while the child still runs. Started from the locked thread of no_new_privs and let
+// go, it would come at once.
 func startProcess(cmd *exec.Cmd, p Privilege, hold <-chan struct{}) error {
+	if hold != nil && cmd.SysProcAttr != nil {
+		cmd.SysProcAttr.Pdeathsig = syscall.SIGTERM
+	}
+
 	noNewPrivs := p.NoNewPrivs && (p.Account || hold != nil)
 	if !noNewPrivs && hold == nil {
 		return cmd.Start()

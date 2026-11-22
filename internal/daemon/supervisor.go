@@ -598,13 +598,11 @@ func (s *Supervisor) exec(p Privilege, observing bool) (*child, error) {
 
 	c := &child{cmd: cmd, exited: make(chan struct{})}
 
-	// A parent-death signal is the forking thread's, not the process's: the thread that
-	// starts anchord is held until anchord has gone, so the signal comes only when this
-	// process ends.
+	// An ephemeral run's anchord ends with this process: started with a parent-death signal,
+	// which is the forking thread's, not the process's, from a thread held until anchord has
+	// gone (startProcess, on Linux, the one platform that runs one).
 	var hold <-chan struct{}
 	if s.ephemeral {
-		setParentDeath(cmd.SysProcAttr)
-
 		hold = c.exited
 	}
 

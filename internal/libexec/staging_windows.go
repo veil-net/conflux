@@ -34,7 +34,7 @@ func makeStaging(root, prefix string) (string, error) {
 // copy granted to it, are what its processes that are not elevated may change, between the write and
 // the run, for the elevated one to run. One that is not elevated writes in the account's own temporary
 // directory, the copy granted to the account (paths.RestrictToOwner), since a copy Restrict guards is one
-// it could not run. Windows mounts nothing noexec (paths.MountAllowsExec), so there is no other place to
+// it could not run. Windows mounts nothing noexec, so there is no other place to
 // fall back on.
 func temporaryDir() (string, func(string, bool) error, error) {
 	if !privcheck.Elevated() {

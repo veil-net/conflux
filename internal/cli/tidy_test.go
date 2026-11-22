@@ -38,9 +38,6 @@ type earlier struct {
 
 	// temporary is the folder a reader killed before it removed its temporary anchorctl left.
 	temporary string
-
-	// ephemeral is a killed ephemeral run's root, which no installation touches.
-	ephemeral string
 }
 
 // oldInstall is an installation as earlier conflux left it, for an update or an uninstall
@@ -74,8 +71,7 @@ func oldInstall(t *testing.T) earlier {
 	}
 
 	set := filepath.Join(d.Libexec(), anchor.SetID())
-	old := earlier{d: d, kept: map[string][]byte{}, temporary: filepath.Join(tmp, "conflux-usage-123"),
-		ephemeral: ephemeralRoot(t).Root}
+	old := earlier{d: d, kept: map[string][]byte{}, temporary: filepath.Join(tmp, "conflux-usage-123")}
 	old.exe, old.leftovers, old.besideKept = updatedConflux(t)
 
 	for p, body := range map[string][]byte{
@@ -94,7 +90,6 @@ func oldInstall(t *testing.T) earlier {
 		d.ReadyFile():                                                      []byte("ready"),
 		d.DaemonPIDFile():                                                  []byte("2147483646\n/nonexistent/anchord\n"),
 		filepath.Join(d.DaemonRun(), "sock.lock"):                          nil,
-		filepath.Join(old.ephemeral, "serve.lock"):                         nil,
 		filepath.Join(old.temporary, binName("anchorctl")):                 []byte("a killed reader's"),
 	} {
 		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
@@ -120,8 +115,7 @@ func oldInstall(t *testing.T) earlier {
 // what earlier conflux left everywhere conflux keeps files, and makes what it removed afresh. What is left is this conflux's alone: this build's set,
 // extracted again over the one planted padded to its sizes; no other set, nothing staged; a copy for
 // the service that is this conflux, nothing beside it, nor a write that never went in place; an empty
-// run directory; nothing an update left beside the conflux it replaced. A killed ephemeral run's root,
-// in the runtime folder, is not the installation's, and is left as it was. The
+// run directory; nothing an update left beside the conflux it replaced. The
 // configuration, the identity and the state are as they were, and so, on Unix, are the lock files,
 // which Windows makes again (locksKeptOrRemade).
 func TestUpdateLeavesOnlyWhatThisConfluxMakes(t *testing.T) {
@@ -198,11 +192,6 @@ func TestUpdateLeavesOnlyWhatThisConfluxMakes(t *testing.T) {
 				if b, err := os.ReadFile(p); err != nil || !bytes.Equal(b, was) {
 					t.Errorf("%s changed: %q, %v", p, b, err)
 				}
-			}
-
-			if _, err := os.Lstat(filepath.Join(old.ephemeral, "serve.lock")); err != nil {
-				t.Errorf("conflux %s removed %s, a killed ephemeral run's root, which no installation touches: %v",
-					verb, old.ephemeral, err)
 			}
 
 			for _, p := range old.besideKept {

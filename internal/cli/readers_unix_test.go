@@ -16,6 +16,7 @@ import (
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
@@ -575,4 +576,21 @@ func TestTheServiceStartsAgainInNoRootItRefuses(t *testing.T) {
 	if _, err := os.Lstat(d.ServiceExecutable()); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("a copy was placed in a root every account may write (Lstat %s: %v)", d.ServiceExecutable(), err)
 	}
+}
+
+// holdRoot makes d's root, as a supervisor or a run does, and takes the lock it holds while it
+// runs: what lets that go.
+func holdRoot(t *testing.T, d paths.Dirs) (unlock func()) {
+	t.Helper()
+
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	unlock, ok, err := flock.TryAcquire(d.ServeLockFile())
+	if err != nil || !ok {
+		t.Fatalf("take the lock a supervisor holds: %v", err)
+	}
+
+	return unlock
 }

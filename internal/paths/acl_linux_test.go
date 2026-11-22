@@ -18,7 +18,7 @@ import (
 // from the 0700 the root is made at, which lets nobody write it, and that root is taken.
 func TestARootsPOSIXACLIsJudged(t *testing.T) {
 	t.Run("on the root", func(t *testing.T) {
-		t.Setenv("CONFLUX_DIR", t.TempDir())
+		inData(t, t.TempDir())
 
 		d := Default()
 		if err := d.EnsureAll(); err != nil {
@@ -57,7 +57,7 @@ func TestARootsPOSIXACLIsJudged(t *testing.T) {
 			t.Fatalf("give %s a default ACL: %v", parent, err)
 		}
 
-		t.Setenv("CONFLUX_DIR", filepath.Join(parent, "conflux"))
+		inData(t, parent)
 		if err := Default().EnsureAll(); err != nil {
 			t.Errorf("EnsureAll(a root made under a default ACL that lets another account write) = %v", err)
 		}

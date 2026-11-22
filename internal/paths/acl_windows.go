@@ -85,7 +85,7 @@ func restrictWith(dir bool, set func(owner *windows.SID, dacl *windows.ACL) erro
 }
 
 // asAdministrators is how conflux names the owner of what it makes with a descriptor of its own -- a
-// root, a folder in one, a folder on the way to one -- or restricts, a file it writes (Restrict): set,
+// root or a folder in one -- or restricts, a file it writes (Restrict): set,
 // handed the Administrators, and, where the token may not name them -- one that is not elevated,
 // which no conflux command that makes a root runs with, though a test may -- handed nil, to leave the
 // owner as the token made it. Named rather than left to the token: a file made before it is
@@ -154,7 +154,7 @@ func restrictInfo(owner *windows.SID) windows.SECURITY_INFORMATION {
 	return info
 }
 
-// aLink is what makeWay calls a link made where it was making a folder.
+// aLink is what ownFolder calls a link made where it was making a folder.
 const aLink = "a junction or a link"
 
 // step is a folder, or a junction or a link, a walk holds open as itself.
@@ -236,11 +236,10 @@ func readLink(s step) (string, error) { return linkTarget(s.h) }
 
 // makeStep makes the folder name in the one parent holds open, and holds it open: through parent
 // (createIn), looked up there and nowhere else and never followed, with Restrict's ownership and
-// DACL set as it is created, a folder on the way to the root exactly as the root, rather than what
-// the one before passes on: in C:\ Authenticated Users' right to delete it, and its owner the
-// administrator who ran conflux, whom the SYSTEM service does not trust. The way conflux makes is
-// then its own, as the 0700 directories it makes on Unix are, and grants nobody else anything, and the
-// root it makes is as conflux makes one (ours). ERROR_ALREADY_EXISTS is anything already at the name, a link included.
+// DACL set as it is created, rather than what the one before passes on -- in %ProgramData% Users'
+// grants, and its owner the administrator who ran conflux, whom the SYSTEM service does not trust -- so
+// that it is its own, as the 0700 directories it makes on Unix are, grants nobody else anything, and is
+// as conflux makes one (ours). ERROR_ALREADY_EXISTS is anything already at the name, a link included.
 func makeStep(parent step, name string) (step, bool, error) {
 	h, err := createIn(parent.h, name, windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES)
 	if err != nil {

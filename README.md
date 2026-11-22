@@ -351,10 +351,8 @@ the service's log in its `logs/` where conflux writes one (macOS, FreeBSD, Windo
 syslog keep it on Linux and OpenBSD). One folder per machine, root-owned, with no home directory
 involved anywhere — the boot service runs as root, and a path under `$HOME` is a path it can't
 read. It is conflux's own: made by conflux, remade as conflux makes it, and removed whole by
-`conflux uninstall`, with whatever was put in it. `CONFLUX_DIR=<dir>` keeps the same layout in
-`<dir>/.conflux` instead,
-which conflux owns, makes and remakes as it makes it, and removes; `<dir>` itself, and every folder
-above it, is never changed and never judged: choosing it is your responsibility. `anchord`
+`conflux uninstall`, with whatever was put in it; the folder it is in is the system's, never
+changed and never judged. `anchord`
 itself runs as an account of its own wherever that costs it nothing, which reaches only
 its own corners of them. See [config.md](docs/config.md) and
 [security.md](docs/security.md#what-anchord-runs-as).

@@ -116,11 +116,10 @@ refusal names `down` and `start` and the escape hatch.
 
 Conflux keeps everything in one folder of its own, `.conflux`, conflux's by its name: in the
 system's data folder (`/var/lib/.conflux`, `/var/db/.conflux` on the BSDs, `/Library/Application
-Support/.conflux`, `%ProgramData%\.conflux`), and under `CONFLUX_DIR=<dir>` in `<dir>/.conflux`
-instead, the same layout; an [ephemeral run](ephemeral.md)'s root, on Linux, is `.conflux` in the
-runtime folder, `/run` or `$XDG_RUNTIME_DIR`, and never inside it. `<dir>` itself, and every folder above a root, is never changed and never
-judged: choosing a `CONFLUX_DIR` is your responsibility, and conflux owns `<dir>/.conflux`, which it
-remakes as it makes it.
+Support/.conflux`, `%ProgramData%\.conflux`); an [ephemeral run](ephemeral.md)'s root, on Linux, is
+`.conflux` in the runtime folder, `/run` or `$XDG_RUNTIME_DIR`. The folder a root is in, and every
+folder above, is the system's, never changed and never judged; one that is not there is refused, with
+nothing made on the way to it.
 
 `up`, `proxy`, `observe`, `install`, `enrol`, `register` and `start` make the roots: each as conflux
 makes a root (`0700`; on Windows the Administrators' under a protected DACL granting SYSTEM and them
@@ -508,8 +507,7 @@ reinstall:
 
 - the boot service: the systemd unit and its `wants` link, the launchd plist (leaving nothing
   in launchd's disabled database), the rc script and, on FreeBSD, its `rc.conf` line, or the
-  Windows service and its registry key; a `CONFLUX_DIR` installation's scoped one for that
-  installation;
+  Windows service and its registry key;
 - every root, whole, with all it holds, whatever anybody put there: the configuration (`conflux.json`), the credential
   (`manifest.b64`), the state (`state.json`, the record of an anchor given up on among it,
   `anchord.priv`, `anchord.json`), the anchor directories, the extracted anchor binaries and,
@@ -524,32 +522,22 @@ reinstall:
   and the copy runs on. On macOS the temporary directory is each account's own (`/var/folders/…/T`),
   and `sudo` drops `TMPDIR`, so `sudo conflux uninstall` looks in `/tmp` and not in yours: a copy a
   killed reader of yours left there is yours to remove;
-- the folders conflux made on the way to a `CONFLUX_DIR`'s root, which it records as it makes them —
-  a `CONFLUX_DIR` it made, and its parents, among them — each whole, deepest first, with whatever was
-  put in it since, another installation of conflux included: `CONFLUX_DIR=/srv/a/b`, where conflux
-  made `/srv/a`, removes `/srv/a/c/.conflux` with it. Only one that still holds the root it could not
-  remove is left. A `CONFLUX_DIR` that was there before is left as it was, with everything of yours in
-  it, and so is the system's data folder;
 - the account `anchord` ran as, and `conflux-ephemeral`, once nothing runs as either, when
   conflux made them (an account of either name that conflux did not make is left alone), with
   the BPF devices given back to root on macOS first.
 
 The conflux you ran is yours, and stays. It says what it removed, however far it got, and nothing
 else: a root it could not empty is not listed. Asks first where there is a credential, or may be one it cannot read, because there is no
-other copy of it anywhere, saying, where `CONFLUX_DIR` is set, that it removes `<dir>/.conflux` and
-everything in it; where there is none it asks nothing. `--yes` skips the question, and a
+other copy of it anywhere; where there is none it asks nothing. `--yes` skips the question, and a
 non-interactive run without `--yes` refuses, exit 2, rather than destroy the credential silently.
 
 Nothing in a root is followed. Each is removed through the directory holding it, held open from
 the top of its volume down, and a name at a time below it: a link or junction found anywhere in
 it, the root's own name included, is removed as the link, and where it leads is never touched; a
 file another account planted there is removed as itself, never read. Nothing on the way to a root
-is judged: a `CONFLUX_DIR`, and every folder above it, is your choice. A way that cannot be walked,
-such as a `CONFLUX_DIR` beneath a file, stops uninstall there, exit 1, saying so, before it acts,
-with nothing removed, the boot service included. A root the readers' check refuses is removed the same
-way as one it takes, with nothing in it read or signalled first — no identity shown in the question,
-no `anchord` stopped by its pid record, and not the record of the folders made on the way to it,
-which is none of conflux's either: those folders are left.
+is judged, and the system's data folder it is in is left as it was. A root the readers' check
+refuses is removed the same way as one it takes, with nothing in it read or signalled first — no
+identity shown in the question, and no `anchord` stopped by its pid record.
 
 While an [ephemeral run](ephemeral.md) is live it refuses, exit 2, naming it, before asking
 anything, and again once the question is answered, before anything is removed: the run's anchord
@@ -816,7 +804,6 @@ other refusal — passes through untouched.
 
 | Variable | Effect |
 |---|---|
-| `CONFLUX_DIR` | roots a whole separate conflux installation in `.conflux` inside the directory it names, which conflux never changes — config, identity, socket and the boot service, which is named after the directory so it cannot replace the machine's own. What the tests use. See [testing.md](testing.md). |
 | `CONFLUX_DEBUG=1` | pass `-v` to anchord. |
 | `CONFLUX_EPHEMERAL=1` | send pass-through to the ephemeral anchor while an installed one runs too, which it otherwise reaches first. See [ephemeral.md](ephemeral.md#reaching-it-from-another-terminal). |
 | `CONFLUX_ALLOW_INSECURE_API=1` | permit a plain-http API base. For tests only. |

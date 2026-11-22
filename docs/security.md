@@ -55,8 +55,8 @@ host can read, and when the run stops there is nothing at all.
   [windows.md](windows.md#file-permissions).
 - Conflux's folders are conflux's by their names: its one root, `.conflux`, in the system's data
   folder (`/var/lib/.conflux` on Linux, `/var/db/.conflux` on the BSDs, `/Library/Application
-  Support/.conflux` on macOS, `%ProgramData%\.conflux` on Windows), or under `CONFLUX_DIR=<dir>` in
-  `<dir>/.conflux` instead, the same layout, everything of conflux's in it; and an ephemeral run's
+  Support/.conflux` on macOS, `%ProgramData%\.conflux` on Windows), everything of the installation's
+  in it; and an ephemeral run's
   root, on Linux, `.conflux` in the runtime folder (`/run/.conflux` as root,
   `$XDG_RUNTIME_DIR/.conflux` otherwise), which is never inside the installation's. Conflux
   makes each as above, and whatever is at one of those names and is not as conflux makes a root — a
@@ -67,7 +67,7 @@ host can read, and when the run stops there is nothing at all.
   keeps in a root — `run/` and `logs/` where they are in it, `bin/` and `anchor.root/` — are held to
   the same, and each that is not as conflux makes it is removed whole and made afresh; `anchor/`,
   which `anchord`'s own account is given, is that account's. So is each file conflux keeps in a root —
-  `conflux.json`, `state.json`, `manifest.b64`, `anchord.priv`, `way`, the two lock files and the
+  `conflux.json`, `state.json`, `manifest.b64`, `anchord.priv`, the two lock files and the
   boot service's copy of conflux — and one that is not as conflux makes it (a link, a folder, another
   account's, or one another account may change; on Windows one an administrator's process left that
   administrator's, as an earlier conflux left the service's copy on a Windows client) is removed as
@@ -82,11 +82,10 @@ host can read, and when the run stops there is nothing at all.
   `anchord.json` is `anchord`'s own account's. Nothing in a root is
   kept or protected for anybody: what is in conflux's folders is conflux's to overwrite, empty or
   remove, and `uninstall` removes them whole, whatever anybody put in them.
-- Every folder conflux did not make — a `CONFLUX_DIR` itself, and every folder above a root — is
-  never changed and never judged. A `CONFLUX_DIR` is the user's choice, and choosing it is the
-  user's responsibility: whoever can change it, or a folder above it, can put a root of their own
-  where conflux's was. conflux owns `.conflux` inside it, and remakes it as it makes it: another
-  account's `.conflux` there is none of conflux's, removed as above where it may be.
+- Every folder conflux did not make — the system's data folder or runtime folder a root is in, and
+  every folder above — is the system's, never changed and never judged; one that is not there is
+  refused, with nothing made on the way to it. Another account's `.conflux` there is none of
+  conflux's, removed as above where it may be.
 - Every command that reads a root without making it — `status`, a pass-through, `renew`, `down`,
   `uninstall`, `update` asking whether the anchor runs, and every reader of an ephemeral run's root —
   holds it to the same judgement first, the readers' check, before it reads, runs or signals anything
@@ -154,13 +153,13 @@ DACL set as it is created, so it never carries `%ProgramData%`'s grant to `Users
 instant, and everything an elevated conflux makes is the Administrators' from the moment it exists
 (`ElevatedDefaultOwner`), never the administrator's own, whose unelevated processes could change it.
 A root found there that is not as conflux makes one — another account's, as `%ProgramData%` lets any
-account make `conflux` first, one granting another account anything, or a junction — is removed as
+account make `.conflux` first, one granting another account anything, or a junction — is removed as
 itself, through handles, with backup intent so that a DACL granting the Administrators nothing does
 not keep it, and made afresh: never adopted, restricted or followed. A root on a network volume,
 however it is reached, is refused, by the readers' check too, as the volume conflux holds it open on
-says; a link naming a share on the way to a `CONFLUX_DIR` is refused before conflux follows it, by
-where the link itself says it leads, by every command that makes a root and by the readers' check,
-before anything is looked up there.
+says; a link naming a share on the way to a root is refused before conflux follows it, by where the
+link itself says it leads, by every command that makes a root and by the readers' check, before
+anything is looked up there.
 
 On Windows one gap is left, a class: a handle keeps every right it was opened with, and conflux
 judges a DACL as it finds it, so where an administrator tightened a DACL after another account had
@@ -172,37 +171,19 @@ Administrators' from that moment, which nobody can have opened before; what an a
 tightens by hand is safe from such a handle once nobody else can hold one: after a restart, or made
 again rather than tightened. A link at a root's own name is never followed ([windows.md](windows.md#file-permissions)).
 
-`CONFLUX_DIR` can point the extraction somewhere else, which is a knob worth knowing
-about: it lets a caller choose the directory a root daemon executes from. It exists
-for tests and for hosts where the default filesystem is `noexec`. A `CONFLUX_DIR` is never
-judged: choosing it is the user's responsibility, as choosing where root runs any program from is.
-conflux owns `.conflux` inside it, and remakes it as it makes it; the directory itself, and every
-folder above it, is never changed and never judged, so a `CONFLUX_DIR` another account can change,
-or one inside such a directory, lets that account put a root of its own where conflux's was, with a
-conflux in it for the boot service to run as root. The way to a root is walked from the top of its
-volume, a name at a time, each directory held open and the next name looked up in it and nowhere
+The extraction is always in a root conflux makes in the system's data folder, or in an ephemeral
+run's runtime folder: no setting points it anywhere else. The way to a root is walked from the top of
+its volume, a name at a time, each directory held open and the next name looked up in it and nowhere
 else, never followed (`openat` with `O_NOFOLLOW` on Unix, `NtCreateFile` relative to a handle on
 Windows): a link is read where it is and gone on from where it leads, as the system's own lookup
 goes, and the root's own name is looked up in the last directory held. On macOS and the BSDs
 conflux holds a directory by opening it to read, so one this account may only search, not read, is
 held instead by its name in the directory held before it, and the names after it are looked up
 through that name; Linux holds every directory open as a path (`O_PATH`), which needs only the
-right to search. A root not made yet is made in the last directory held, and each directory
-missing on the way is made in the one held before it and held open in turn, never by its name,
-conflux's own or one somebody else made at the name meanwhile — a sticky directory such as `/tmp`,
-and `C:\`, let anybody make a name not taken yet — and a link there is refused. An installation
-keeps a record of the directories it made on the way to a `CONFLUX_DIR`'s root, in its state root
-(`way`), a `CONFLUX_DIR` conflux made among them; the system's data folder is the system's, and is
-not recorded. An ephemeral run's root is made in a runtime folder that is there, and nothing on the
-way to it is made. Uninstall reads the record before it removes the roots — only from a root as conflux makes one, as a file
-another account may have put there, never through a link, and through the root held open first, as
-`update` asks after the serve lock — taking only directories above its roots, none the top of a
-volume; and then removes each, deepest first, from the directory it is in as a walk of the way
-holds it, never through a link and never by its name, leaving any that a link took the place of:
-each whole, whatever it holds, but for one that is, or holds, the installation's root while that
-holds anything, a root uninstall could not remove. A way that ends in where a link leads, at a name
-not there, is refused, with nothing made there, and so is one that cannot be walked: `uninstall`
-walks every root's way before it acts, and stops there, nothing removed, where one cannot be.
+right to search. A root not made yet is made in the last directory held, and held open as itself,
+never by its name: a link put at its name once conflux has made it is refused. The folder a root is
+in must be there: nothing on the way to it is made, and a way that ends in where a link leads, at a
+name not there, is refused, with nothing made there.
 
 What a root, and each folder and file conflux keeps in it, is held to is its own owner, mode and
 ACL: owned by root or the account running conflux, and written by nobody else. On Unix that is its
@@ -219,14 +200,10 @@ ACL (ZFS) — is read too, without cgo: an entry allowing anybody but the owner 
 root (to add a file or a directory to it, to delete what is in it or the root itself, or to change
 its ACL or owner) is refused, and on macOS, whose ACLs name accounts by a UUID conflux cannot map to
 one without cgo, that is every such entry, one naming the account conflux runs as included. An
-entry counts whatever it says of inheritance, and one the `CONFLUX_DIR` passes on lands on the
+entry counts whatever it says of inheritance, and one the folder a root is in passes on lands on the
 `.conflux` conflux makes inside it, which is then not as conflux makes a root. A deny entry takes
 nothing away from what is counted, so it is not read. On Windows a root is held to its owner and
-DACL (above). A `CONFLUX_DIR` on a network volume — a share, a drive mapped to one, or a link
-leading to either — is refused, before anything is made there, since the owner and DACL of the root
-conflux would make there name accounts of the machine serving it, which this one cannot judge. The
-root is used as an absolute path, so the service registered under it runs from where it was
-installed whatever the working directory was.
+DACL (above).
 
 ## What anchord runs as
 
@@ -294,7 +271,7 @@ What changes that, and why:
   capabilities (dropping needs `CAP_SETUID`, `CAP_SETGID`, `CAP_CHOWN`, `CAP_FOWNER`,
   `CAP_DAC_OVERRIDE` and `CAP_KILL`), the account cannot be made (no `useradd` or `adduser`),
   an account of that name exists that conflux did not make, the account cannot run `anchord`
-  here (a `CONFLUX_DIR` it cannot pass through, `noexec`, a user namespace with no uid for
+  here (a folder above the root it cannot pass through, `noexec`, a user namespace with no uid for
   it), or Windows will not log `LOCAL SERVICE` on for it — `anchord` runs as the supervisor
   does, which is never more than it had before, and says why.
 
@@ -383,7 +360,7 @@ which is every target conflux ships but OpenBSD's.
 
 | Service | Standard | Used for | How it is kept approved |
 |---|---|---|---|
-| SHA-256 | FIPS 180-4 | the digests of the embedded anchor binaries, of a release `conflux update` installs, of anchor's release files and of wintun's archive; a `CONFLUX_DIR` installation's scope | — |
+| SHA-256 | FIPS 180-4 | the digests of the embedded anchor binaries, of a release `conflux update` installs, of anchor's release files and of wintun's archive | — |
 | CTR_DRBG | SP 800-90A | every random byte, through `crypto/rand`: the bearer token anchord is started with, a minted taint | — |
 | TLS 1.3 and 1.2, as a client and a server | SP 800-52r2, with the module's KDFs (SP 800-135 for 1.2, HKDF for 1.3), and ML-KEM (FIPS 203) in the hybrid groups | HTTPS to the enrolment API, to GitHub for `conflux update` and for anchor's release files, and to wintun.net; `conflux cert probe` and `serve` | `crypto/tls` in FIPS 140-3 mode offers and accepts only approved parameters: AES-GCM suites (and AES-CBC with SHA-256 on 1.2); P-256, P-384, P-521, the ML-KEM hybrids and ML-KEM-1024; ML-DSA, ECDSA, RSA and Ed25519 signatures; the Extended Master Secret on 1.2 |
 | ECDSA, RSA and EdDSA verification | FIPS 186-5 | the server certificate chains of those connections, on Linux and the BSDs; `conflux cert`'s checks of certificates, requests and revocation lists | — |

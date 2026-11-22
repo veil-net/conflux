@@ -42,67 +42,15 @@ func plantForeign(t *testing.T, path string) {
 	}
 }
 
-// TestUninstallRemovesTheWayConfluxMade: the folders conflux made on the way to a CONFLUX_DIR, which
-// EnsureAll records in the root, go with it whole, deepest first, and the folder they were made
-// in stays. Where the readers' check refuses the root, the root goes, and the record in it, none of
-// conflux's, is not read: the folders it names are left.
-func TestUninstallRemovesTheWayConfluxMade(t *testing.T) {
-	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
-	privcheck.Elevated = func() bool { return true }
-
-	for _, refused := range []bool{false, true} {
-		t.Run(fmt.Sprintf("refused=%v", refused), func(t *testing.T) {
-			above := t.TempDir()
-			way := []string{filepath.Join(above, "made"), filepath.Join(above, "made", "by")}
-			d := pathstest.DirsIn(t, filepath.Join(way[1], "conflux"))
-
-			if refused {
-				if err := os.Chmod(d.State, 0o757); err != nil {
-					t.Fatal(err)
-				}
-			}
-
-			standInService(t, &fakeManager{d: d})
-			recordAccounts(t)
-
-			out, errOut, code := capture(t, "uninstall", "--yes")
-			if code != ExitOK {
-				t.Fatalf("uninstall exited %d:\n%s%s", code, out, errOut)
-			}
-
-			if _, err := os.Lstat(d.State); !os.IsNotExist(err) {
-				t.Errorf("uninstall left %s (Lstat: %v)", d.State, err)
-			}
-
-			for _, p := range way {
-				_, err := os.Lstat(p)
-
-				switch {
-				case refused && err != nil:
-					t.Errorf("uninstall removed %s, named only by the record in a root it refused (Lstat: %v)", p, err)
-				case !refused && !os.IsNotExist(err):
-					t.Errorf("uninstall left %s, which conflux made on the way to its root (Lstat: %v)", p, err)
-				case !refused && !strings.Contains(out, "  "+p+"\n"):
-					t.Errorf("uninstall did not say it removed %s:\n%s", p, out)
-				}
-			}
-
-			if _, err := os.Stat(above); err != nil {
-				t.Errorf("uninstall removed %s, which conflux did not make: %v", above, err)
-			}
-		})
-	}
-}
-
-// TestUninstallJudgesNoFolderAboveARoot: a CONFLUX_DIR, and every folder above its root, is the user's
-// choice and not judged: uninstall of a root inside a directory every account may write removes it, the
+// TestUninstallJudgesNoFolderAboveARoot: the folder the root is in, and every folder above it, is the
+// system's and not judged: uninstall of a root inside a directory every account may write removes it, the
 // boot service with it, exit 0, and leaves the directory as it was.
 func TestUninstallJudgesNoFolderAboveARoot(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
 
 	parent := t.TempDir()
-	d := pathstest.DirsIn(t, filepath.Join(parent, "conflux"))
+	d := pathstest.DirsIn(t, parent)
 
 	if err := os.Chmod(parent, 0o777); err != nil {
 		t.Fatal(err)

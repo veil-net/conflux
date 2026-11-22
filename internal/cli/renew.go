@@ -77,8 +77,8 @@ func runRenew(ctx context.Context, args []string) int {
 	return renewNow(ctx, paths.Default())
 }
 
-// renewNow is the body, split out so the test can drive it against a temporary
-// CONFLUX_DIR without going through privcheck.
+// renewNow is the body, split out so the test can drive it against a temporary root
+// without going through privcheck.
 func renewNow(ctx context.Context, d paths.Dirs) int {
 	// Nothing of the machine's is read by its name until its roots pass paths' check; one not
 	// there has never been configured.

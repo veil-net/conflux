@@ -11,95 +11,47 @@ import (
 	"testing"
 )
 
-// TestRootIsAbsoluteAndClean: the root is written into the service definition and hashed
-// into its name, so every spelling of one directory has to come out the same.
-func TestRootIsAbsoluteAndClean(t *testing.T) {
-	cwd := t.TempDir()
-	t.Chdir(cwd)
+// inData keeps the installation's root in dir, as the system's data folder (SystemData), for the rest of
+// the test.
+func inData(t *testing.T, dir string) {
+	t.Helper()
 
-	t.Setenv("CONFLUX_DIR", filepath.Join("rel", "x")+string(filepath.Separator))
+	was := SystemData
+	SystemData = func() string { return dir }
 
-	if got, want := Root(), filepath.Join(cwd, "rel", "x"); got != want {
-		t.Errorf("Root() = %q, want %q", got, want)
-	}
-
-	t.Setenv("CONFLUX_DIR", "")
-
-	if got := Root(); got != "" {
-		t.Errorf("Root() = %q with no CONFLUX_DIR, want \"\"", got)
-	}
+	t.Cleanup(func() { SystemData = was })
 }
 
-// TestOneLayoutWithOrWithoutAConfluxDir: the installation is one folder, DirName, in the system's
-// data folder where no CONFLUX_DIR is set and in the CONFLUX_DIR where one is: the configuration and the
-// state the folder itself, the run directory inside it, and a log directory inside it only on a
-// platform that writes the service's output to a file. The same layout either way.
-func TestOneLayoutWithOrWithoutAConfluxDir(t *testing.T) {
-	data := map[string]string{"linux": "/var/lib", "freebsd": "/var/db", "openbsd": "/var/db",
+// TestTheInstallationIsOneFolderInTheSystemsDataFolder: the installation is one folder, DirName, in the
+// system's data folder: the configuration and the state the folder itself, the run directory inside it,
+// and a log directory inside it only on a platform that writes the service's output to a file.
+func TestTheInstallationIsOneFolderInTheSystemsDataFolder(t *testing.T) {
+	want := map[string]string{"linux": "/var/lib", "freebsd": "/var/db", "openbsd": "/var/db",
 		"darwin": "/Library/Application Support"}[runtime.GOOS]
-	if runtime.GOOS == "windows" {
-		data = systemData() // %ProgramData%, as the system has it, or a test's own (pathstest)
+	if got := systemData(); runtime.GOOS != "windows" && got != want {
+		t.Errorf("systemData() = %q, want %q", got, want)
 	}
 
-	for name, dir := range map[string]string{"unset": "", "set": t.TempDir()} {
-		t.Setenv("CONFLUX_DIR", dir)
+	data := t.TempDir()
+	inData(t, data)
 
-		in := dir
-		if dir == "" {
-			in = data
-		}
+	root := filepath.Join(data, DirName)
+	d := Default()
 
-		root := filepath.Join(in, DirName)
-		d := Default()
-
-		log := ""
-		if runtime.GOOS != "linux" && runtime.GOOS != "openbsd" {
-			log = filepath.Join(root, "logs")
-		}
-
-		if d.Config != root || d.State != root || d.Run != filepath.Join(root, "run") || d.Log != log {
-			t.Errorf("Default(), CONFLUX_DIR %s = %+v, want everything in %s, the log in %q", name, d, root, log)
-		}
-	}
-}
-
-// TestAConfluxDirAtAVolumesTopIsNeverARoot: a CONFLUX_DIR at the top of a volume, / or C:\, is a folder
-// conflux never changes: the one root conflux makes, judges and removes there is .conflux inside it, and
-// every root is that folder or inside it, none the top itself. Asserted of
-// the names alone, so nothing is made or removed outside the test's own directories.
-func TestAConfluxDirAtAVolumesTopIsNeverARoot(t *testing.T) {
-	tops := map[string]string{string(filepath.Separator): string(filepath.Separator)}
-	if runtime.GOOS == "windows" {
-		wd, err := os.Getwd()
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		tops = map[string]string{`C:\`: `C:\`, `\`: filepath.VolumeName(wd) + `\`}
+	log := ""
+	if runtime.GOOS != "linux" && runtime.GOOS != "openbsd" {
+		log = filepath.Join(root, "logs")
 	}
 
-	for dir, top := range tops {
-		t.Setenv("CONFLUX_DIR", dir)
-
-		d := Default()
-		own := top + DirName
-
-		if got := d.Outer(); !slices.Equal(got, []string{own}) {
-			t.Errorf("Outer() with CONFLUX_DIR=%s = %q, want %q", dir, got, []string{own})
-		}
-
-		for _, p := range []string{d.Config, d.State, d.Run, d.Log} {
-			if p != "" && (p != own && !above(own, p) || !above(top, p)) {
-				t.Errorf("with CONFLUX_DIR=%s, %s is neither %s nor inside it", dir, p, own)
-			}
-		}
+	if d.Config != root || d.State != root || d.Run != filepath.Join(root, "run") || d.Log != log {
+		t.Errorf("Default() = %+v, want everything in %s, the log in %q", d, root, log)
 	}
 }
 
 // TestCheckRefusesAFileAtARootsName: a file at a root's name is no root of conflux's: the readers'
 // check refuses it, naming it, rather than taking it for one there, and reads nothing.
 func TestCheckRefusesAFileAtARootsName(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	inData(t, t.TempDir())
 
 	d := Default()
 	if err := os.WriteFile(d.State, []byte("a file"), 0o600); err != nil {
@@ -130,7 +82,7 @@ func foundRoot(t *testing.T) string {
 // anchor.root/, which the supervisor makes for an anchord that runs as root, and which it only judges
 // where it is there.
 func TestEnsureAllMakesOnlyTheFoldersItKeeps(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	inData(t, t.TempDir())
 
 	d := Default()
 	if err := d.EnsureAll(); err != nil {
@@ -181,8 +133,7 @@ func TestClearExceptSaysWhatItRemoved(t *testing.T) {
 }
 
 // TestOneTestOfWhatIsInsideWhat: the roots conflux holds and removes are those inside no other, each
-// once; a directory is inside a root only below it, a name that merely starts with ".." included; and the
-// folders Way takes from the record are those above a root of conflux's.
+// once; a directory is inside a root only below it, a name that merely starts with ".." included.
 func TestOneTestOfWhatIsInsideWhat(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "conflux")
@@ -213,16 +164,19 @@ func TestOneTestOfWhatIsInsideWhat(t *testing.T) {
 	if !within(filepath.Join(root, "..x"), []string{root}) {
 		t.Errorf("within(%s, %s) = false, want it inside", filepath.Join(root, "..x"), root)
 	}
+}
 
-	if err := os.Mkdir(root, 0o700); err != nil {
-		t.Fatal(err)
+// TestTheRootsConfluxMakesPassTheReadersCheck: a reader holds every root to Check, so the installation's
+// root EnsureAll makes passes it, on every platform.
+func TestTheRootsConfluxMakesPassTheReadersCheck(t *testing.T) {
+	inData(t, t.TempDir())
+
+	d := Default()
+	if err := d.EnsureAll(); err != nil {
+		t.Fatalf("EnsureAll: %v", err)
 	}
 
-	if err := os.WriteFile(filepath.Join(root, wayName), []byte(base+"\n"+filepath.Dir(elsewhere)+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	if way, err := d.Way(); err != nil || !slices.Equal(way, []string{base}) {
-		t.Errorf("Way() = %q, %v, want %q, and nothing above no root", way, err, []string{base})
+	if err := d.Check(); err != nil {
+		t.Errorf("Check(the installation's root, which EnsureAll made) = %v", err)
 	}
 }

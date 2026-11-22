@@ -29,10 +29,7 @@ func shParses(t *testing.T, script string) {
 }
 
 func TestFreeBSDScript(t *testing.T) {
-	script, err := freebsdScript("conflux", "/var/db/.conflux/conflux", []string{"serve"}, "/var/db/.conflux/logs/conflux.log")
-	if err != nil {
-		t.Fatal(err)
-	}
+	script := freebsdScript("/var/db/.conflux/conflux", []string{"serve"}, "/var/db/.conflux/logs/conflux.log")
 
 	for _, want := range []string{
 		"# PROVIDE: conflux",
@@ -56,14 +53,11 @@ func TestFreeBSDScript(t *testing.T) {
 }
 
 func TestOpenBSDScript(t *testing.T) {
-	script, err := openbsdScript("/var/db/.conflux/conflux", []string{"serve", "--dir", "/srv/conflux-dev"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	script := openbsdScript("/var/db/.conflux/conflux", []string{"serve"})
 
 	for _, want := range []string{
 		"daemon=/var/db/.conflux/conflux\n",
-		`daemon_flags="serve --dir /srv/conflux-dev"`,
+		`daemon_flags="serve"`,
 		"daemon_logger=daemon.info",
 		". /etc/rc.d/rc.subr",
 		"rc_bg=YES",
@@ -75,30 +69,4 @@ func TestOpenBSDScript(t *testing.T) {
 	}
 
 	shParses(t, script)
-}
-
-// TestAnRCScriptRefusesWhatItCannotMatch: both rc.subr implementations find the running
-// service by matching its command line unquoted, and OpenBSD's runs it through a shell,
-// so a word either would read differently is refused rather than written into a service
-// that starts and can then be neither stopped nor asked about.
-func TestAnRCScriptRefusesWhatItCannotMatch(t *testing.T) {
-	for _, root := range []string{"/srv/my dir", "/srv/$HOME", "/srv/a;b", "/srv/it's", "/srv/[x]", "/srv/a*"} {
-		args := []string{"serve", "--dir", root}
-
-		if _, err := openbsdScript(root+"/conflux", args); err == nil {
-			t.Errorf("an OpenBSD script was written for the root %q", root)
-		}
-
-		if _, err := freebsdScript("conflux_1a2b3c4d", root+"/conflux", args, root+"/logs/conflux.log"); err == nil {
-			t.Errorf("a FreeBSD script was written for the root %q", root)
-		}
-	}
-}
-
-func TestRCNameIsAShellWord(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", "/tmp/somewhere")
-
-	if name := rcName(); strings.ContainsAny(name, "-/ .") || !strings.HasPrefix(name, "conflux_") {
-		t.Errorf("rcName() = %q, which rc.subr cannot build %s_enable from", name, name)
-	}
 }

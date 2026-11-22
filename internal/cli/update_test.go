@@ -14,7 +14,6 @@ import (
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/ghrelease/ghreleasetest"
-	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
 	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/service"
@@ -36,7 +35,7 @@ func serveRelease(t *testing.T, body []byte, exe string) *ghreleasetest.Release 
 
 	api := f.Serve(t)
 
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	pathstest.RootedIn(t, t.TempDir())
 
 	was, wasExe := updateFrom, updateExecutable
 	t.Cleanup(func() { updateFrom, updateExecutable = was, wasExe })
@@ -287,7 +286,7 @@ func TestRegisterStartsNothing(t *testing.T) {
 		t.Fatalf("register exited %d: %s", code, errOut)
 	}
 
-	want := []string{d.ServiceExecutable(), "serve", "--dir", paths.Root()}
+	want := []string{d.ServiceExecutable(), "serve"}
 	if len(mgr.installs) != 1 || !slices.Equal(mgr.installs[0], want) {
 		t.Errorf("register registered %q, want %q once", mgr.installs, want)
 	}

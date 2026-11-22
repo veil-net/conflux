@@ -12,7 +12,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// removeFrom is RemoveRoot's, ownFolder's and RemoveWay's removal of name, in the directory parent
+// removeFrom is RemoveRoot's, ownFile's and ownFolder's removal of name, in the directory parent
 // holds open, which p names (removeIn), and whether anything was there.
 func removeFrom(parent step, name, p string) (bool, error) {
 	switch err := removeIn(parent.h, name, p); {

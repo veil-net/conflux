@@ -43,7 +43,7 @@ type earlier struct {
 	ephemeral string
 }
 
-// oldInstall is a CONFLUX_DIR installation as earlier conflux left it, for an update or an uninstall
+// oldInstall is an installation as earlier conflux left it, for an update or an uninstall
 // to find: the configuration, the identity and the state with a given-up record in it, and what an
 // update does not keep -- a set an earlier conflux extracted, a staging directory a crashed extraction
 // left, this build's own set planted by somebody, its binaries padded to their sizes, stale lock
@@ -354,14 +354,14 @@ func TestTheServiceStartsAgainOnlyOnACopyOfConfluxsOwn(t *testing.T) {
 	}
 }
 
-// TestTheCopyIsPlacedOnceIntoAFreshInstallation: up into a CONFLUX_DIR with nothing of conflux's in it
+// TestTheCopyIsPlacedOnceIntoAFreshInstallation: up into a root with nothing of conflux's in it
 // places this conflux as the boot service's copy, and registers that; up again, install and start, each
 // finding the copy there and this conflux, keep that same file, writing nothing. (proxy in up's place
 // on Windows, where up fetches wintun first.)
 func TestTheCopyIsPlacedOnceIntoAFreshInstallation(t *testing.T) {
 	rootOnLinux(t)
 
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	pathstest.RootedIn(t, t.TempDir())
 
 	d := paths.Default()
 
@@ -377,7 +377,7 @@ func TestTheCopyIsPlacedOnceIntoAFreshInstallation(t *testing.T) {
 
 	placed, err := os.Stat(d.ServiceExecutable())
 	if err != nil || !service.Placed(d) || len(mgr.installs) != 1 || mgr.installs[0][0] != d.ServiceExecutable() {
-		t.Fatalf("conflux %s into a fresh CONFLUX_DIR left the copy %v (Placed: %v) and registered %q, want this "+
+		t.Fatalf("conflux %s into a fresh root left the copy %v (Placed: %v) and registered %q, want this "+
 			"conflux placed and registered:\n%s%s", first[0], err, service.Placed(d), mgr.installs, out, errOut)
 	}
 
@@ -503,7 +503,7 @@ func serving(t *testing.T, d paths.Dirs) func() {
 	return release
 }
 
-// configured is a CONFLUX_DIR installation with a configuration to start, and nothing else.
+// configured is an installation with a configuration to start, and nothing else.
 func configured(t *testing.T) paths.Dirs {
 	t.Helper()
 

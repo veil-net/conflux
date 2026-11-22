@@ -22,8 +22,7 @@ import (
 // installed, or uninstalled -- a pass-through says so and leaves the disk as it found it,
 // rather than extracting the anchor pair into directories uninstall removed.
 func TestAPassThroughWithNothingRunningMakesNothing(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "conflux")
-	t.Setenv("CONFLUX_DIR", root)
+	root := pathstest.RootedIn(t, t.TempDir()).State
 	t.Setenv(anchorctl.SocketEnv, "")
 
 	_, errOut, code := capture(t, "peers")
@@ -66,8 +65,8 @@ func TestAPassThroughToANamedSocketTakesTheReadersAnchorctl(t *testing.T) {
 	} {
 		for _, root := range []string{"none", "installed", "refused"} {
 			t.Run(fmt.Sprintf("%s, %s", name, root), func(t *testing.T) {
-				conflux := filepath.Join(t.TempDir(), "conflux")
-				t.Setenv("CONFLUX_DIR", conflux)
+				data := t.TempDir()
+				conflux := pathstest.RootedIn(t, data).State
 				t.Setenv(anchorctl.TokenEnv, "t")
 				t.Setenv(anchorctl.SocketEnv, tc.env)
 
@@ -75,7 +74,7 @@ func TestAPassThroughToANamedSocketTakesTheReadersAnchorctl(t *testing.T) {
 
 				var d paths.Dirs
 				if root != "none" {
-					d = pathstest.DirsIn(t, conflux)
+					d = pathstest.DirsIn(t, data)
 				}
 
 				if root == "refused" {
@@ -180,7 +179,7 @@ func TestHelpIsACommandOrAFlag(t *testing.T) {
 func TestEveryHelpFlagIsHelp(t *testing.T) {
 	anchortest.Require(t)
 
-	t.Setenv("CONFLUX_DIR", filepath.Join(t.TempDir(), "conflux"))
+	pathstest.RootedIn(t, t.TempDir())
 	t.Setenv(anchorctl.SocketEnv, "")
 
 	// anchorctl's usage, which a pass-through prints to the terminal itself.

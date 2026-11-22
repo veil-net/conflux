@@ -258,18 +258,7 @@ var newService = service.New
 // register names exe, the copy install placed, as the boot service, defined as this conflux
 // defines it: an upgraded conflux's definition reaches the service the next time it is
 // placed. Nothing at all when the definition is the one already there.
-func register(mgr service.Manager, exe string) error {
-	// A CONFLUX_DIR run registers a service that has to come back to that same
-	// directory. Passed as an argument rather than an environment variable because
-	// none of the three service managers carries the operator's environment into
-	// what it starts.
-	serveArgs := []string{"serve"}
-	if root := paths.Root(); root != "" {
-		serveArgs = append(serveArgs, "--dir", root)
-	}
-
-	return mgr.Install(exe, serveArgs...)
-}
+func register(mgr service.Manager, exe string) error { return mgr.Install(exe, "serve") }
 
 // startFromConfig starts the anchor this machine is already configured for.
 //

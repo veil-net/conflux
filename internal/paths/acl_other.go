@@ -65,7 +65,7 @@ func ours(dir string, s step) (string, error) {
 // for an installation's root, which every command making it runs as.
 func ElevatedDefaultOwner() error { return nil }
 
-// aLink is what makeWay calls a link made where it was making a directory.
+// aLink is what ownFolder calls a link made where it was making a directory.
 const aLink = "a link"
 
 // step is a directory or a link a walk holds: open as itself on fd, or, where it is a link, or a
@@ -203,12 +203,12 @@ func readLink(s step) (string, error) {
 }
 
 // makeStep makes the directory name, at 0700, in the one parent is (mkdirat), and holds nothing:
-// makeWay goes into it as a walk would (lookUp). The root is made as any other.
+// ownFolder goes into it as a walk would (lookUp).
 func makeStep(parent step, name string) (step, bool, error) {
 	return step{}, false, ignoringEINTR(func() error { return unix.Mkdirat(parent.fd, parent.at(name), 0o700) })
 }
 
-// removeFrom is RemoveRoot's, ownFolder's and RemoveWay's removal of name, in the directory parent is,
+// removeFrom is RemoveRoot's, ownFile's and ownFolder's removal of name, in the directory parent is,
 // which p names (removeAt), and whether anything was there.
 func removeFrom(parent step, name, p string) (bool, error) {
 	switch err := removeAt(parent.fd, parent.at(name), p); {

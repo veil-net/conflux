@@ -9,21 +9,17 @@ import (
 	"time"
 
 	"github.com/veil-net/conflux/internal/logfile"
-	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/privcheck"
 )
 
 // Label is the launchd job's label, which launchd hands what it starts as XPC_SERVICE_NAME.
-//
-// Functions and not constants because a run rooted in a CONFLUX_DIR is a separate
-// installation and must not be registered over the machine's own; see scope.
-func Label() string { return "org.veilnet.conflux" + paths.Scope() }
+const Label = "org.veilnet.conflux"
 
-func plistPath() string { return "/Library/LaunchDaemons/" + Label() + ".plist" }
+const plistPath = "/Library/LaunchDaemons/" + Label + ".plist"
 
 // job is this installation's job, driven by the real launchctl.
 func job() launchdJob {
-	return launchdJob{label: Label(), plistPath: plistPath(), ctl: launchctl{
+	return launchdJob{label: Label, plistPath: plistPath, ctl: launchctl{
 		run:   func(args ...string) error { return run("launchctl", args...) },
 		query: func(args ...string) (string, bool) { return query("launchctl", args...) },
 	}}
@@ -38,7 +34,7 @@ func newManager() Manager { return &launchd{} }
 // Install writes the job, and loads it again only where it runs and its plist changed; see
 // launchdJob.install.
 func (l *launchd) Install(exe string, args ...string) error {
-	return l.install(job(), []byte(launchdPlist(Label(), append([]string{exe}, withLog(args)...), logFile())))
+	return l.install(job(), []byte(launchdPlist(Label, append([]string{exe}, withLog(args)...), logFile())))
 }
 
 // Remove deregisters the job and deletes its plist and its log, and deliberately
@@ -51,7 +47,7 @@ func (l *launchd) Remove() error {
 	j := job()
 	errs := []error{j.ctl.run("bootout", j.target())}
 
-	if err := os.Remove(plistPath()); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(plistPath); err != nil && !os.IsNotExist(err) {
 		errs = append(errs, err)
 	}
 
@@ -97,7 +93,7 @@ func (l *launchd) Stop() error {
 	return nil
 }
 
-func (*launchd) Installed() (bool, error) { return exists(plistPath()) }
+func (*launchd) Installed() (bool, error) { return exists(plistPath) }
 
 // running asks launchd rather than inferring it from Installed, which is the honest answer
 // and the one Describe needs.
@@ -115,8 +111,8 @@ func (l *launchd) Describe() string {
 	}
 
 	if job().running() {
-		return fmt.Sprintf("running (launchd: %s, at boot)", Label())
+		return fmt.Sprintf("running (launchd: %s, at boot)", Label)
 	}
 
-	return fmt.Sprintf("installed, not running (launchd: %s, at boot)", Label())
+	return fmt.Sprintf("installed, not running (launchd: %s, at boot)", Label)
 }

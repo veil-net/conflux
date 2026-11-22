@@ -82,7 +82,10 @@ func TestHeldInAsksThroughTheRootHeld(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Setenv("CONFLUX_DIR", filepath.Join(base, "conflux"))
+	was := paths.SystemData
+	paths.SystemData = func() string { return base }
+
+	t.Cleanup(func() { paths.SystemData = was })
 
 	d := paths.Default()
 	root, lock := d.State, d.ServeLockFile()

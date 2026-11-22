@@ -43,7 +43,7 @@ func temporaryDir() (string, func(string, bool) error, error) {
 		return dir, paths.RestrictToOwner, err
 	}
 
-	dir, err := makeStaging(paths.ProgramData(), temporaryPrefix)
+	dir, err := makeStaging(paths.SystemData(), temporaryPrefix)
 
 	return dir, paths.Restrict, err
 }
@@ -53,7 +53,7 @@ func temporaryDir() (string, func(string, bool) error, error) {
 // elevated make them, and, for an elevated process, which makes its own in %ProgramData%, that first.
 func temporaryParents() []string {
 	if privcheck.Elevated() {
-		return []string{paths.ProgramData(), os.TempDir()}
+		return []string{paths.SystemData(), os.TempDir()}
 	}
 
 	return []string{os.TempDir()}

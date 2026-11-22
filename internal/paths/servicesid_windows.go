@@ -14,14 +14,12 @@ var rtlCreateServiceSid = ntdll.NewProc("RtlCreateServiceSid")
 // securityMaxSIDSize is SECURITY_MAX_SID_SIZE, room for any SID.
 const securityMaxSIDSize = 68
 
-// ServiceName is the name this installation's service is registered under, and its SID
-// (ServiceSID) is Windows's for: conflux and the root's Scope, so that a run rooted in a CONFLUX_DIR,
-// a separate installation, is never registered over the machine's own.
-func ServiceName() string { return "conflux" + Scope() }
+// ServiceName is the name the installation's service is registered under, and its SID (ServiceSID)
+// is Windows's for.
+const ServiceName = "conflux"
 
-// ServiceSID is serviceSID of this installation's service, ServiceName, kept once Windows has
-// given it: its name is fixed by the root, which is fixed for the life of the process, and a start
-// needs the SID in several places -- the token, anchord's directory and the -config's grant. A failure is
+// ServiceSID is serviceSID of the installation's service, ServiceName, kept once Windows has
+// given it: its name is fixed, and a start needs the SID in several places -- the token, anchord's directory and the -config's grant. A failure is
 // not kept, so the next start asks again rather than going without the SID, or refusing, for the
 // rest of the process.
 func ServiceSID() (*windows.SID, error) {
@@ -43,7 +41,7 @@ func ServiceSID() (*windows.SID, error) {
 var serviceSIDKept atomic.Pointer[windows.SID]
 
 // askServiceSID asks Windows for the SID: a variable, so a test can be a host whose answer fails.
-var askServiceSID = func() (*windows.SID, error) { return serviceSID(ServiceName()) }
+var askServiceSID = func() (*windows.SID, error) { return serviceSID(ServiceName) }
 
 // serviceSID is NT SERVICE\name, the SID of conflux's own service, which nothing but this
 // installation's anchord is ever given on Windows: the one identity its files and its

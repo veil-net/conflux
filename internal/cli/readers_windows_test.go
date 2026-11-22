@@ -9,15 +9,15 @@ import (
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/pathstest"
 	"github.com/veil-net/conflux/internal/privtest"
 )
 
-// TestStatusRefusesAJunctionRootToAUsersFolder: %ProgramData% lets any account make a junction
-// where conflux's root is not yet, and a CONFLUX_DIR can be one, so status holds the root, .conflux
-// inside it, to paths' check before it reads anything in it by name: a root reached through a junction
-// to a folder Users may add files and folders to, which passes their grant on to it -- one they could
-// have put a configuration in -- is refused, naming the root and Users, and the configuration there is
-// not read. Windows-only, so it runs in CI's platforms job alone.
+// TestStatusRefusesAJunctionRootToAUsersFolder: status holds the root, .conflux in the system's data
+// folder, to paths' check before it reads anything in it by name: a root in a data folder reached through
+// a junction to a folder Users may add files and folders to, which passes their grant on to it -- one
+// they could have put a configuration in -- is refused, naming the root and Users, and the configuration
+// there is not read. Windows-only, so it runs in CI's platforms job alone.
 func TestStatusRefusesAJunctionRootToAUsersFolder(t *testing.T) {
 	folder := t.TempDir()
 	privtest.ProgramDataGrant(t, folder)
@@ -37,9 +37,7 @@ func TestStatusRefusesAJunctionRootToAUsersFolder(t *testing.T) {
 		t.Fatalf("mklink /J: %v\n%s", err, out)
 	}
 
-	t.Setenv("CONFLUX_DIR", dir)
-
-	root := paths.Default().State
+	root := pathstest.RootedIn(t, dir).State
 
 	out, errOut, code := capture(t, "status")
 	if code != ExitError || !strings.Contains(errOut, root+" is not as conflux makes") ||

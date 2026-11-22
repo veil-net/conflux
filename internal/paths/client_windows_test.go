@@ -30,7 +30,13 @@ import (
 func TestWhatAnAdministratorMakesTheServiceTakes(t *testing.T) {
 	anchortest.Require(t)
 
-	t.Setenv("CONFLUX_DIR", filepath.Join(t.TempDir(), "conflux")) // its way made before the policy below
+	data := t.TempDir() // made before the policy below
+
+	was := paths.SystemData
+	paths.SystemData = func() string { return data }
+
+	t.Cleanup(func() { paths.SystemData = was })
+
 	d := paths.Default()
 
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()

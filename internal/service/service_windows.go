@@ -49,7 +49,7 @@ func (scm) Install(exe string, args ...string) error {
 	}
 
 	// Already there is not a failure; it is an upgrade.
-	if existing, err := m.OpenService(paths.ServiceName()); err == nil {
+	if existing, err := m.OpenService(paths.ServiceName); err == nil {
 		defer existing.Close()
 
 		// Composed the way CreateService composes it below, so an upgrade registers the
@@ -63,8 +63,8 @@ func (scm) Install(exe string, args ...string) error {
 		return recovery(existing)
 	}
 
-	// CreateService appends the arguments -- `serve`, and the root of a CONFLUX_DIR run.
-	s, err := m.CreateService(paths.ServiceName(), exe, cfg, args...)
+	// CreateService appends the arguments: `serve`.
+	s, err := m.CreateService(paths.ServiceName, exe, cfg, args...)
 	if err != nil {
 		return fmt.Errorf("create the service: %w", err)
 	}
@@ -111,7 +111,7 @@ func withService(scAccess, access uint32, f func(*mgr.Service) error) error {
 	}
 	defer m.Disconnect()
 
-	name := paths.ServiceName()
+	name := paths.ServiceName
 
 	h, err := windows.OpenService(m.Handle, windows.StringToUTF16Ptr(name), access)
 	if err != nil {
@@ -277,10 +277,10 @@ func (scm) Describe() string {
 	var described string
 
 	err := withService(windows.SC_MANAGER_CONNECT, windows.SERVICE_QUERY_STATUS, func(s *mgr.Service) error {
-		described = fmt.Sprintf("installed, not running (service: %s, automatic at boot)", paths.ServiceName())
+		described = fmt.Sprintf("installed, not running (service: %s, automatic at boot)", paths.ServiceName)
 
 		if status, err := s.Query(); err == nil && runs(status.State) {
-			described = fmt.Sprintf("running (service: %s, automatic at boot)", paths.ServiceName())
+			described = fmt.Sprintf("running (service: %s, automatic at boot)", paths.ServiceName)
 		}
 
 		return nil

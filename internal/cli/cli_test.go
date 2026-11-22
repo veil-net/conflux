@@ -36,6 +36,26 @@ import (
 // confluxChild's child, and the run a signal test starts to signal.
 const childArgs = "CONFLUX_TEST_ARGS"
 
+// childData and childRuntime carry the folders a test keeps the installation and an ephemeral run's root
+// in (paths.SystemData, paths.RuntimeFolder) to a conflux it runs as a child (childEnv), whose TestMain
+// keeps them there too.
+const (
+	childData    = "CONFLUX_TEST_DATA"
+	childRuntime = "CONFLUX_TEST_RUNTIME"
+)
+
+// childEnv is the test's environment for a conflux it runs as a child with args (childArgs), the folders
+// it keeps the installation and an ephemeral run's root in among it (childData, childRuntime).
+func childEnv(args ...string) []string {
+	env := append(os.Environ(), childArgs+"="+strings.Join(args, "\n"), childData+"="+paths.SystemData())
+
+	if folder, err := paths.RuntimeFolder(); err == nil {
+		env = append(env, childRuntime+"="+folder)
+	}
+
+	return env
+}
+
 // standInAnchorctl, set to a script, makes the anchorctl that conflux run by TestMain (childArgs) takes
 // for help, usage and a socket the user named a temporary copy of that script, in a directory of its own
 // in the temporary directory, which done removes, as libexec.Temporary makes one: in place of the
@@ -85,7 +105,7 @@ func confluxChild(t *testing.T, args ...string) (out string, code int) {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^$") //nolint:gosec // this test binary
-	cmd.Env = append(os.Environ(), childArgs+"="+strings.Join(args, "\n"))
+	cmd.Env = childEnv(args...)
 	cmd.WaitDelay = 5 * time.Second
 
 	b, err := cmd.CombinedOutput()
@@ -106,7 +126,8 @@ func confluxChild(t *testing.T, args ...string) (out string, code int) {
 // of the test binary's that one of them runs, which keeps the temporary directory its test gave it.
 const testTemp = "CONFLUX_TEST_TEMP"
 
-// TestMain is conflux where childArgs is set (confluxChild). Otherwise it runs the tests with every place
+// TestMain is conflux where childArgs is set (confluxChild), keeping the installation and an ephemeral
+// run's root where its test keeps them (childEnv). Otherwise it runs the tests with every place
 // a reader's temporary anchorctl may be made rooted in a temporary directory of their own
 // (pathstest.SetTemporary) -- the temporary directory, which on Windows every test linking pathstest
 // keeps %ProgramData%'s in as well, and on Unix the user's cache directory -- so that what tidy and
@@ -114,6 +135,14 @@ const testTemp = "CONFLUX_TEST_TEMP"
 // own readers, or another package's tests, may be running one.
 func TestMain(m *testing.M) {
 	if args := os.Getenv(childArgs); args != "" {
+		if data := os.Getenv(childData); data != "" {
+			paths.SystemData = func() string { return data }
+		}
+
+		if folder := os.Getenv(childRuntime); folder != "" {
+			paths.RuntimeFolder = func() (string, error) { return folder, nil }
+		}
+
 		if script := os.Getenv(standInAnchorctl); script != "" {
 			readersAnchorctl = func(context.Context) (string, func(), error) { return temporaryCopy(script) }
 		}
@@ -317,7 +346,7 @@ func TestTopLevelFlagIsNotForwarded(t *testing.T) {
 }
 
 func TestHelpListsEveryVisibleVerb(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	pathstest.RootedIn(t, t.TempDir())
 
 	out, _, code := capture(t, "help")
 	if code != ExitOK {
@@ -370,7 +399,7 @@ func TestVersionNamesTheAnchorBuild(t *testing.T) {
 // RestartPreventExitStatus on, so a registered service with no configuration stops
 // rather than restarting forever.
 func TestStatusWithNoConfigExits78(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	pathstest.RootedIn(t, t.TempDir())
 
 	_, _, code := capture(t, "status")
 	if code != ExitNoConfig {
@@ -1088,8 +1117,7 @@ func TestAnOwnerThatCannotBeSetRefusesWhatCanMakeARoot(t *testing.T) {
 
 	elevatedDefaultOwner = func() error { return errors.New("make the Administrators the owner of what conflux makes: denied") }
 
-	above := filepath.Join(t.TempDir(), "made")
-	t.Setenv("CONFLUX_DIR", filepath.Join(above, "conflux"))
+	d := pathstest.RootedIn(t, t.TempDir())
 
 	missing := filepath.Join(t.TempDir(), "missing.b64")
 
@@ -1103,8 +1131,8 @@ func TestAnOwnerThatCannotBeSetRefusesWhatCanMakeARoot(t *testing.T) {
 		}
 	}
 
-	if _, err := os.Lstat(above); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("conflux made %s with an owner it could not set (%v)", above, err)
+	if _, err := os.Lstat(d.State); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("conflux made %s with an owner it could not set (%v)", d.State, err)
 	}
 
 	for _, argv := range [][]string{{"version"}, {"-v"}, {"cert", "fingerprint", "--help"}} {

@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
 	"testing"
 
 	"golang.org/x/sys/windows"
@@ -19,11 +18,11 @@ import (
 // following nothing: a junction in it to a folder outside, and one deeper, are removed as junctions,
 // and a read-only file is removed with the rest, with what each junction led to untouched, and so is a
 // junction at the root's own name. A root whose DACL lets Users add to it, which the readers' check
-// refuses, is removed all the same, and the CONFLUX_DIR it is in is left. A root not there is nothing
+// refuses, is removed all the same, and the folder it is in is left. A root not there is nothing
 // removed. Windows-only, so it runs in CI's platforms job alone.
 func TestRemoveRootFollowsNothing(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "conflux")
-	t.Setenv("CONFLUX_DIR", dir)
+	dir := t.TempDir()
+	inData(t, dir)
 
 	d := Default()
 	if err := d.EnsureAll(); err != nil {
@@ -54,7 +53,7 @@ func TestRemoveRootFollowsNothing(t *testing.T) {
 	privtest.GrantUsers(t, root, windows.FILE_WRITE_DATA, windows.NO_INHERITANCE)
 
 	if err := d.Check(); err == nil {
-		t.Fatal("Check(a CONFLUX_DIR Users may add to) = nil, want the readers' refusal this is about")
+		t.Fatal("Check(a root Users may add to) = nil, want the readers' refusal this is about")
 	}
 
 	if gone, err := RemoveRoot(root); !gone || err != nil {
@@ -66,7 +65,7 @@ func TestRemoveRootFollowsNothing(t *testing.T) {
 	}
 
 	if _, err := os.Lstat(dir); err != nil {
-		t.Errorf("RemoveRoot removed the CONFLUX_DIR %s its root was in: %v", dir, err)
+		t.Errorf("RemoveRoot removed the folder %s its root was in: %v", dir, err)
 	}
 
 	mklinkJ(t, root, elsewhere)
@@ -93,7 +92,7 @@ func TestRemoveRootFollowsNothing(t *testing.T) {
 // intent, which the privileges an Administrator holds grant. Windows-only, so it runs in CI's platforms
 // job alone.
 func TestRemoveRootRemovesWhatGrantsTheAdministratorsNothing(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", filepath.Join(t.TempDir(), "conflux"))
+	inData(t, t.TempDir())
 
 	root := Default().State
 	if err := Default().EnsureAll(); err != nil {
@@ -138,118 +137,34 @@ func TestRemoveRootRemovesWhatGrantsTheAdministratorsNothing(t *testing.T) {
 	}
 }
 
-// TestRemoveRootJudgesNoFolderAboveIt: nothing on a CONFLUX_DIR's way is judged before what is in it is
-// removed, as nothing is when it is made: one inside a folder whose DACL lets Users delete what is in it
-// passes uninstall's walk, and is removed. Windows-only, so it runs in CI's platforms job alone.
+// TestRemoveRootJudgesNoFolderAboveIt: nothing above a root is judged before it is removed, as nothing
+// is when it is made: a root in a folder whose DACL lets Users delete what is in it is removed.
+// Windows-only, so it runs in CI's platforms job alone.
 func TestRemoveRootJudgesNoFolderAboveIt(t *testing.T) {
 	open := t.TempDir()
 	privtest.GrantUsers(t, open, fileDeleteChild, windows.NO_INHERITANCE)
 
-	t.Setenv("CONFLUX_DIR", filepath.Join(open, "conflux"))
+	inData(t, open)
 
 	root := Default().State
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := Default().WalkWays(); err != nil {
-		t.Errorf("WalkWays(a CONFLUX_DIR inside a folder Users may delete from) = %v", err)
-	}
-
 	if gone, err := RemoveRoot(root); !gone || err != nil {
-		t.Errorf("RemoveRoot(a CONFLUX_DIR inside a folder Users may delete from) = %v, %v, want it removed", gone, err)
-	}
-}
-
-// TestTheWayConfluxMadeIsRemovedWhole: EnsureAll records each folder it made on the way to an
-// installation's root, the CONFLUX_DIR among them, and Way reads the record back, deepest first.
-// RemoveWay leaves each folder holding the installation's root while that holds anything, and once the
-// root is gone, or holds nothing, removes each whole, through handles, whatever it holds; a junction put
-// at a recorded folder's name is left, with where it leads untouched. Windows-only, so it runs in CI's
-// platforms job alone.
-func TestTheWayConfluxMadeIsRemovedWhole(t *testing.T) {
-	base := t.TempDir()
-	a, b := filepath.Join(base, "a"), filepath.Join(base, "a", "b")
-	dir := filepath.Join(b, "conflux")
-
-	t.Setenv("CONFLUX_DIR", dir)
-	d := Default()
-	root := d.State
-
-	if err := d.EnsureAll(); err != nil {
-		t.Fatal(err)
-	}
-
-	way, err := d.Way()
-	if err != nil || !slices.Equal(way, []string{dir, b, a}) {
-		t.Fatalf("Way() = %q, %v, want %q", way, err, []string{dir, b, a})
-	}
-
-	if removed, err := RemoveWay(way); err != nil || removed != nil {
-		t.Errorf("RemoveWay(%q), the root %s there = %q, %v, want nothing removed", way, root, removed, err)
-	}
-
-	other := filepath.Join(a, "other")
-	if err := os.WriteFile(other, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := RemoveRoot(root); err != nil {
-		t.Fatal(err)
-	}
-
-	elsewhere := t.TempDir()
-	junction := mklinkJ(t, filepath.Join(b, "junction"), elsewhere)
-
-	if removed, err := RemoveWay([]string{junction}); err != nil || removed != nil {
-		t.Errorf("RemoveWay(a junction at a recorded name) = %q, %v, want nothing removed", removed, err)
-	}
-
-	if removed, err := RemoveWay(way); err != nil || !slices.Equal(removed, way) {
-		t.Errorf("RemoveWay(%q), %s holding a file and %s a junction = %q, %v, want each removed", way, a, b,
-			removed, err)
-	}
-
-	if _, err := os.Lstat(a); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("RemoveWay left %s (Lstat: %v)", a, err)
-	}
-
-	if _, err := os.Stat(elsewhere); err != nil {
-		t.Errorf("RemoveWay reached %s: %v", elsewhere, err)
-	}
-
-	if err := os.MkdirAll(root, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.WriteFile(d.ConfigFile(), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	if removed, err := RemoveWay(way); err != nil || removed != nil {
-		t.Errorf("RemoveWay(%q), an installation made in %s since = %q, %v, want nothing removed", way, root, removed,
-			err)
-	}
-
-	if err := os.Remove(d.ConfigFile()); err != nil {
-		t.Fatal(err)
-	}
-
-	if removed, err := RemoveWay(way); err != nil || !slices.Equal(removed, way) {
-		t.Errorf("RemoveWay(%q), %s holding nothing = %q, %v, want each removed", way, root, removed, err)
+		t.Errorf("RemoveRoot(a root in a folder Users may delete from) = %v, %v, want it removed", gone, err)
 	}
 }
 
 // TestARootIsHeldBeforeAnythingInItIsOpened: what is read in a root by a command that has not made it --
-// the way record uninstall reads, the serve lock tidy asks after -- is opened through the root held
-// (OpenIn), never by its name, and only where what is at the root's name is as conflux makes a root
-// (ours): one EnsureAll made is read; a junction at the name -- to a folder of this account's own, the
-// folder it is in, or nothing -- is none of conflux's, taken as no root at all, nothing in it opened,
-// and so is a folder whose DACL lets Users add to it, or that the Guests own, the way record in it among
-// what is not read. Windows-only, so it runs in CI's platforms job alone.
+// the serve lock tidy asks after -- is opened through the root held (OpenIn), never by its name, and only
+// where what is at the root's name is as conflux makes a root (ours): one EnsureAll made is read; a
+// junction at the name -- to a folder of this account's own, the folder it is in, or nothing -- is none
+// of conflux's, taken as no root at all, nothing in it opened, and so is a folder whose DACL lets Users
+// add to it, or that the Guests own. Windows-only, so it runs in CI's platforms job alone.
 func TestARootIsHeldBeforeAnythingInItIsOpened(t *testing.T) {
 	base := t.TempDir()
-	t.Setenv("CONFLUX_DIR", base)
+	inData(t, base)
 
 	d := Default()
 	root := d.State
@@ -260,10 +175,8 @@ func TestARootIsHeldBeforeAnythingInItIsOpened(t *testing.T) {
 	}
 
 	plant := func(t *testing.T, dir string) {
-		for name, body := range map[string]string{wayName: base + "\n", "serve.lock": ""} {
-			if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
-				t.Fatal(err)
-			}
+		if err := os.WriteFile(filepath.Join(dir, "serve.lock"), nil, 0o600); err != nil {
+			t.Fatal(err)
 		}
 	}
 
@@ -276,31 +189,31 @@ func TestARootIsHeldBeforeAnythingInItIsOpened(t *testing.T) {
 	}
 
 	for _, c := range []struct {
-		name    string
-		make    func(t *testing.T)
-		ok, way bool
+		name string
+		make func(t *testing.T)
+		ok   bool
 	}{
-		{"one EnsureAll made", ensured, true, true},
+		{"one EnsureAll made", ensured, true},
 		{"one Users may add to", func(t *testing.T) {
 			ensured(t)
 			privtest.GrantUsers(t, root, windows.FILE_WRITE_DATA, windows.NO_INHERITANCE)
-		}, false, false},
+		}, false},
 		{"one the Guests own", func(t *testing.T) {
 			ensured(t)
 			privtest.SetOwner(t, root, guests)
-		}, false, false},
+		}, false},
 		{"a junction to a folder of this account's own", func(t *testing.T) {
 			target := t.TempDir()
 			plant(t, target)
 			mklinkJ(t, root, target)
-		}, false, false},
+		}, false},
 		{"a junction to the folder it is in", func(t *testing.T) {
 			plant(t, base)
 			mklinkJ(t, root, base)
-		}, false, false},
+		}, false},
 		{"a junction to nothing", func(t *testing.T) {
 			mklinkJ(t, root, filepath.Join(t.TempDir(), "missing"))
-		}, false, false},
+		}, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			c.make(t)
@@ -309,13 +222,6 @@ func TestARootIsHeldBeforeAnythingInItIsOpened(t *testing.T) {
 					t.Error(err)
 				}
 			})
-
-			switch way, err := d.Way(); {
-			case c.way && (err != nil || !slices.Equal(way, []string{base})):
-				t.Errorf("Way(), the root %s = %q, %v, want it read", c.name, way, err)
-			case !c.way && (err != nil || way != nil):
-				t.Errorf("Way(), the root %s = %q, %v, want no record", c.name, way, err)
-			}
 
 			f, err := d.OpenIn(d.ServeLockFile())
 			if err == nil {
@@ -337,7 +243,7 @@ func TestARootIsHeldBeforeAnythingInItIsOpened(t *testing.T) {
 // made in its place holding a lock of its own -- answers for nothing: what is read is the held root's.
 // Windows-only, so it runs in CI's platforms job alone.
 func TestOpenInReadsThroughTheRootHeld(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", filepath.Join(t.TempDir(), "conflux"))
+	inData(t, t.TempDir())
 
 	d := Default()
 	if err := d.EnsureAll(); err != nil {

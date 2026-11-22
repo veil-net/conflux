@@ -55,55 +55,6 @@ else
 fi
 rm -rf "$certs"
 
-# A root conflux keeps is refused where an ACL lets another account write it, which its mode does
-# not show; a CONFLUX_DIR, and every folder above a root, is never judged. FreeBSD keeps two kinds,
-# POSIX.1e (UFS mounted with acls) and NFSv4 (ZFS, and UFS mounted with nfsv4acls), and conflux asks
-# the kernel for each, so each is given here on a memory disk of its own, whatever the VM booted on.
-# enrol makes the roots and, with no manifest to read, goes no further, under a directory whose ACL
-# lets another account write it as anywhere; status, the readers' check, then refuses the root once
-# it carries such an entry, naming the ACL, and takes it once the ACL is taken off.
-acl_leg() { # MOUNT-OPTION SETFACL-ENTRY
-  mnt=$(mktemp -d /tmp/cfx-acl.XXXXXX)
-  md=$(mdconfig -a -t swap -s 16m)
-  newfs "/dev/$md" >/dev/null
-  mount -o "$1" "/dev/$md" "$mnt"
-  mkdir "$mnt/open"
-  setfacl -m "$2" "$mnt/open"
-
-  out=$(CONFLUX_DIR="$mnt/open/conflux" "$CONFLUX" enrol --manifest "$mnt/none" 2>&1) &&
-    fail "enrol with no manifest succeeded"
-  case $out in
-    *"read the manifest"*) ;;
-    *) printf '%s\n' "$out" >&2; fail "under a directory whose $1 ACL lets nobody write, enrol did not make its root" ;;
-  esac
-
-  root="$mnt/open/conflux/.conflux"
-  setfacl -m "$2" "$root"
-  out=$(CONFLUX_DIR="$mnt/open/conflux" "$CONFLUX" status 2>&1) &&
-    fail "status of a root whose $1 ACL lets nobody write succeeded"
-  case $out in
-    *"$root is not as conflux makes"*"its ACL lets uid "*) ;;
-    *) printf '%s\n' "$out" >&2; fail "a root whose $1 ACL lets nobody write was not refused for it" ;;
-  esac
-
-  setfacl -b "$root"
-  out=$(CONFLUX_DIR="$mnt/open/conflux" "$CONFLUX" status 2>&1) || true
-  case $out in
-    *"its ACL"*) printf '%s\n' "$out" >&2; fail "the $1 ACL taken off, the root is still refused for it" ;;
-  esac
-
-  umount "$mnt"
-  mdconfig -d -u "$md"
-  rmdir "$mnt"
-}
-
-if [ "$os" = freebsd ]; then
-  say "a root whose POSIX.1e ACL lets another account write is refused, and nothing above it is judged"
-  acl_leg acls u:nobody:w
-  say "a root whose NFSv4 ACL lets another account write is refused, and nothing above it is judged"
-  acl_leg nfsv4acls user:nobody:write_data::allow
-fi
-
 # A run cut short leaves its registration behind; a fresh VM has none to remove.
 "$CONFLUX" uninstall --yes >/dev/null 2>&1 || true
 

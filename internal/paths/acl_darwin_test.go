@@ -9,11 +9,11 @@ import (
 )
 
 // TestEnsureAllReadsTheRootsOwnACL: an entry a directory passes on lands on the root conflux makes
-// inside it. The CONFLUX_DIR, and every folder above it, is the user's choice and not judged, so a
-// directory whose ACL lets everybody add to what is made in it is taken, and the root made; but the
-// root inherits the entry, and everybody's right to put what they like in it with it, so it is not as
-// conflux makes a root, and the readers' check refuses it. So is one a CONFLUX_DIR leads to through a
-// symlink, whose ACL is read where the link leads: the link's own holds nothing. Read through
+// inside it. The folder the root is in, and every folder above it, is not judged, so a directory whose
+// ACL lets everybody add to what is made in it is taken, and the root made; but the root inherits the
+// entry, and everybody's right to put what they like in it with it, so it is not as conflux makes a root,
+// and the readers' check refuses it. So is one in a folder reached through a symlink, whose ACL is read
+// where the link leads: the link's own holds nothing. Read through
 // getattrlist, so it runs on macOS alone: in CI's platforms job.
 func TestEnsureAllReadsTheRootsOwnACL(t *testing.T) {
 	parent := t.TempDir()
@@ -23,7 +23,7 @@ func TestEnsureAllReadsTheRootsOwnACL(t *testing.T) {
 		t.Fatalf("chmod +a: %v\n%s", err, out)
 	}
 
-	t.Setenv("CONFLUX_DIR", filepath.Join(parent, "conflux"))
+	inData(t, parent)
 
 	checkRefuses(t, "a root that inherited everybody's right to add to it")
 
@@ -38,7 +38,7 @@ func TestEnsureAllReadsTheRootsOwnACL(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		t.Setenv("CONFLUX_DIR", link)
+		inData(t, link)
 
 		checkRefuses(t, "a root reached through a symlink, which inherited everybody's right to add to it")
 	})

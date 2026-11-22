@@ -6,9 +6,8 @@
 // service cannot read, and a home directory is wrong under a unit with User=, wrong
 // under ProtectHome=, and wrong for anyone who ran conflux with sudo -H.
 //
-// One folder, DirName, holds all of it, on every platform: in the system's data folder
-// (systemData) by default, and in a CONFLUX_DIR where one is set. Four directories inside it,
-// because they have four lifetimes:
+// One folder, DirName, holds all of it, on every platform, in the system's data folder
+// (SystemData). Four directories inside it, because they have four lifetimes:
 //
 //   - Config  what the operator asked for. Survives everything but uninstall. The root itself.
 //   - State   what conflux derived, plus the identity. Survives a reboot. The root itself.
@@ -48,30 +47,17 @@ type Dirs struct {
 	serving bool
 }
 
-// Default is where conflux keeps them: DirName, in the folder base names -- a CONFLUX_DIR, or the
-// system's data folder.
-//
-// CONFLUX_DIR moves all of it at once, the same layout in another folder. That is what the tests use,
-// and what a second installation beside the machine's own is rooted in, its boot service included; see
-// Root. It changes where conflux keeps things and not what it needs: the verbs that change anything
-// still need root.
-func Default() Dirs { return rootedAt(filepath.Join(base(), DirName)) }
+// Default is where conflux keeps them: DirName, in the system's data folder (SystemData).
+func Default() Dirs { return rootedAt(filepath.Join(SystemData(), DirName)) }
 
-// base is the folder the installation's root, DirName, is in: the CONFLUX_DIR (Root), or else the
-// system's data folder (systemData) -- /var/lib on Linux, /var/db on the BSDs, /Library/Application
-// Support on macOS, %ProgramData% on Windows. Either is never changed and never judged: the system's is
-// the system's, and a CONFLUX_DIR is the user's choice.
-func base() string {
-	if root := Root(); root != "" {
-		return root
-	}
+// SystemData is the folder the installation's root, DirName, is in (systemData): /var/lib on Linux,
+// /var/db on the BSDs, /Library/Application Support on macOS, %ProgramData% on Windows, which is the
+// system's, never changed and never judged. A variable so a test can keep an installation in a folder of
+// its own (pathstest).
+var SystemData = systemData
 
-	return systemData()
-}
-
-// DirName is the folder conflux makes in the system's data folder, or inside a CONFLUX_DIR, and keeps
-// all of its own in: the configuration and the state, and its run and log directories inside it. The
-// folder it is in is never changed, so a folder of the user's -- their home, say -- can be a CONFLUX_DIR.
+// DirName is the folder conflux makes in the system's data folder and keeps all of its own in: the
+// configuration and the state, and its run and log directories inside it.
 const DirName = ".conflux"
 
 // rootedAt is the Dirs of an installation rooted in the one directory root: the configuration and the
@@ -100,31 +86,6 @@ const runName = "run"
 // the <run>/anchord.sock it replaced: sun_path is 104 bytes on macOS, and a test root
 // under /var/folders is already most of that.
 const socketName = "sock"
-
-// Root is the CONFLUX_DIR override, or "" when this is the machine's own installation.
-//
-// Exported because the boot service has to know. A run rooted somewhere else is a
-// separate installation of conflux, not the machine's own, and registering it under
-// the machine's own service name would replace a real node with a test one -- so the
-// service package names itself after this, and passes it on to the supervisor it
-// registers, which would otherwise come back at boot reading the machine's own.
-//
-// Absolute and clean, whatever was typed: it is written into the service definition as
-// the --dir the supervisor comes back with, and hashed into the service's name, so
-// "run/x" or a trailing slash would otherwise register a service that runs from / and
-// that the same root, spelled differently, could not find to remove.
-func Root() string {
-	root := os.Getenv("CONFLUX_DIR")
-	if root == "" {
-		return ""
-	}
-
-	if abs, err := filepath.Abs(root); err == nil {
-		return abs
-	}
-
-	return filepath.Clean(root)
-}
 
 // ConfigFile holds the operator's intent: mode, taints, addresses, proxies.
 func (d Dirs) ConfigFile() string { return filepath.Join(d.Config, "conflux.json") }
@@ -255,42 +216,23 @@ func (d Dirs) ReadyFile() string { return filepath.Join(d.Run, "ready") }
 // and on Windows the Administrators' under a protected DACL granting SYSTEM and the Administrators
 // alone, which what is made in it inherits.
 //
-// A root not there is made, with each folder missing on the way to the installation's root, recorded in
-// the state root (recordWay) for uninstall to remove whole (Way, RemoveWay); an ephemeral run's root is
-// made in its runtime folder, and a runtime folder not there is refused, nothing made. Whatever is at a root's
+// A root not there is made in the folder it is in -- the system's data folder, or an ephemeral run's
+// runtime folder -- which is the system's, and refused where that is not there, nothing made. Whatever is at a root's
 // name and is not as conflux makes a root -- a link, a file, a folder another account owns or may write
 // (ours) -- is removed as itself from the folder it is in, and the root made afresh: a root is conflux's
 // whole, and nothing in it is kept for anybody. Each folder conflux keeps in a root (folders) is judged
 // as the root is, and made afresh alike; and each file it keeps there (files) -- the configuration, the
 // state, the identity, the lock files, the copy of conflux the boot service runs -- is judged so too, and
-// removed where it is not as conflux makes it, for what writes it to make afresh. A CONFLUX_DIR itself,
-// and every folder above a root, is never changed and never judged: choosing a CONFLUX_DIR is the
-// user's.
+// removed where it is not as conflux makes it, for what writes it to make afresh. The folder a root is
+// in, and every folder above it, is never changed and never judged.
 func (d Dirs) EnsureAll() error {
-	var made []string
-
-	state := false
-
-	err := func() error {
-		for _, dir := range d.Outer() {
-			m, err := d.makeRoot(dir)
-			if made = append(made, slices.DeleteFunc(m, func(p string) bool { return !chosenWay(p) })...); err != nil {
-				return fmt.Errorf("create %s: %w", dir, err)
-			}
-
-			state = state || dir == d.State
-		}
-
-		return nil
-	}()
-
-	if len(made) > 0 && state {
-		if recorded := d.recordWay(made); err == nil {
-			err = recorded
+	for _, dir := range d.Outer() {
+		if err := d.makeRoot(dir); err != nil {
+			return fmt.Errorf("create %s: %w", dir, err)
 		}
 	}
 
-	return err
+	return nil
 }
 
 // EnsureServing is EnsureAll for the supervisor that serves d, which runs from the copy of conflux the boot
@@ -305,29 +247,23 @@ func (d Dirs) EnsureServing() error {
 }
 
 // makeRoot makes the root dir, one of d's not inside another, and the folders conflux keeps in it
-// (folders), and is the folders it made on the way to it. The way to the folder dir is in is walked
-// from the top of its volume and held (walk), and what is missing of it made (makeWay); then the root
-// is made in that folder as conflux makes a folder of its own (ownFolder), and each of its folders in
-// it, held.
-func (d Dirs) makeRoot(dir string) ([]string, error) {
+// (folders). The way to the folder dir is in is walked from the top of its volume and held (walk), and
+// refused where any of it is not there; then the root is made in that folder as conflux makes a folder
+// of its own (ownFolder), and each of its folders in it, held.
+func (d Dirs) makeRoot(dir string) error {
 	w, err := walk(filepath.Dir(dir))
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer w.close()
 
-	if d.ephemeral && w.missing != nil {
-		return nil, w.missing
-	}
-
-	made, err := makeWay(dir, w)
-	if err != nil {
-		return made, err
+	if w.missing != nil {
+		return w.missing
 	}
 
 	root, err := ownFolder(w.last().step, dir, true)
 	if err != nil {
-		return made, err
+		return err
 	}
 	defer root.close()
 
@@ -341,7 +277,7 @@ func (d Dirs) makeRoot(dir string) ([]string, error) {
 		switch {
 		case errors.Is(err, fs.ErrNotExist) && !create:
 		case err != nil:
-			return made, err
+			return err
 		default:
 			s.close()
 		}
@@ -349,11 +285,11 @@ func (d Dirs) makeRoot(dir string) ([]string, error) {
 
 	for _, f := range d.files(dir) {
 		if err := ownFile(root, f); err != nil {
-			return made, err
+			return err
 		}
 	}
 
-	return made, nil
+	return nil
 }
 
 // ownFile holds what is at p's name, in the folder parent holds, to what conflux makes there, a file of
@@ -396,8 +332,8 @@ func ownFile(parent step, p string) error {
 }
 
 // files is each file conflux keeps directly in its root dir, by its name: in the configuration root the
-// configuration, and in the state root the state, the identity, the record of the anchord last started
-// and of the way, the two lock files, and the copy of conflux the boot service runs, but for the
+// configuration, and in the state root the state, the identity, the record of the anchord last started,
+// the two lock files, and the copy of conflux the boot service runs, but for the
 // supervisor serving d, which runs from it (EnsureServing). anchord's own configuration
 // (DaemonConfigFile) is none of these: it is the account anchord runs as's, as the supervisor writes it
 // at every start, so ours would remove it each time.
@@ -409,8 +345,7 @@ func (d Dirs) files(dir string) []string {
 	}
 
 	if dir == d.State {
-		files = append(files, d.StateFile(), d.ManifestFile(), d.PrivilegeFile(), d.WayFile(), d.LockFile(),
-			d.ServeLockFile())
+		files = append(files, d.StateFile(), d.ManifestFile(), d.PrivilegeFile(), d.LockFile(), d.ServeLockFile())
 
 		if !d.serving {
 			files = append(files, d.ServiceExecutable())
@@ -427,7 +362,7 @@ func (d Dirs) files(dir string) []string {
 // holds, and the folder made afresh in its place (makeStep); one that cannot be is refused, saying why it
 // is not conflux's. Where nothing is there it is made where create is, and is otherwise an error that is
 // fs.ErrNotExist. A folder made, where makeStep holds nothing of it, is looked up again to be held, and a
-// link put at its name meanwhile is refused, never followed, as makeWay refuses one.
+// link put at its name meanwhile is refused, never followed.
 func ownFolder(parent step, p string, create bool) (step, error) {
 	name := filepath.Base(p)
 
@@ -517,214 +452,12 @@ func (d Dirs) folders(dir string) iter.Seq2[string, bool] {
 	}
 }
 
-// wayName is the record, in a state root, of the folders conflux made on the way to its roots -- an
-// installation's, or an ephemeral run's: one absolute path a line.
-const wayName = "way"
-
-// WayFile is the record in d's state root of the folders conflux made on the way to d's roots (Way).
-func (d Dirs) WayFile() string { return filepath.Join(d.State, wayName) }
-
-// recordWay adds made, folders makeRoot made on the way to d's roots, to the record in d's state root:
-// what it held kept, each once, written atomically (WriteAtomic).
-func (d Dirs) recordWay(made []string) error {
-	record := d.WayFile()
-
-	way, err := d.readWay()
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-
-	for _, p := range made {
-		if !slices.Contains(way, p) {
-			way = append(way, p)
-		}
-	}
-
-	if err := WriteAtomic(record, 0o600, -1, -1, []byte(strings.Join(way, "\n")+"\n")); err != nil {
-		return fmt.Errorf("record the way to %s: %w", d.State, err)
-	}
-
-	return nil
-}
-
-// readWay is the record in d's state root, a line a folder, at most wayMax bytes of it, opened through
-// the root held (OpenIn), and only from a root as conflux makes one: the record in a root that is not is
-// none of conflux's either, and taken as not there. It is read as a file another account may have put
-// there all the same (readUntrusted).
-func (d Dirs) readWay() ([]string, error) {
-	path := d.WayFile()
-
-	f, err := d.OpenIn(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	b, err := readUntrusted(f, path, wayMax)
-	if err != nil {
-		return nil, err
-	}
-
-	return strings.Fields(string(b)), nil
-}
-
-// wayMax is as much of the way record as is read: far more than any way conflux makes.
-const wayMax = 64 << 10
-
-// Way is the record of the folders conflux made on the way to d's roots (EnsureAll), deepest first, for
-// uninstall, or an ephemeral run as it ends, to read before it removes the roots, the state root holding
-// the record among them, and to hand to RemoveWay after: only folders above one of d's roots, and none
-// at the top of a volume, are taken from it. Nil where there is no record, or no state root, or a link or
-// a file at its name.
-func (d Dirs) Way() ([]string, error) {
-	recorded, err := d.readWay()
-
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-		return nil, nil
-	case err != nil:
-		return nil, err
-	}
-
-	var way []string
-
-	for _, p := range recorded {
-		if filepath.IsAbs(p) && filepath.Clean(p) == p && filepath.Dir(p) != p && !slices.Contains(way, p) &&
-			d.aboveRoot(p) {
-			way = append(way, p)
-		}
-	}
-
-	return deepestFirst(way), nil
-}
-
-// RemoveWay removes each folder of way, folders conflux made on the way to its roots (Way), whole,
-// whatever it holds, deepest first, and is those it removed: each removed from the folder it is in, as
-// the walk to that holds it (toParent), never by its name and never following a link, and what it holds
-// removed through it as a root is (removeFrom). A folder conflux made is conflux's whole, so what anybody
-// put in it goes with
-// it, another installation among it. One that is not there, or is no longer a folder -- a link or a file
-// put at its name -- is left, and so is one that is, or holds, the installation's root holding anything
-// (holdsRoot): a root uninstall could not remove, or, as an ephemeral run under a CONFLUX_DIR ends, the
-// .conflux it made, where anything is in it once the run's root is gone -- an installation made there
-// since, say -- stays with the folders that hold it.
-func RemoveWay(way []string) ([]string, error) {
-	var (
-		removed []string
-		errs    []error
-	)
-
-	for _, dir := range deepestFirst(slices.Clone(way)) {
-		if holdsRoot(dir) {
-			continue
-		}
-
-		gone, err := removeWayFolder(dir)
-		if err != nil {
-			errs = append(errs, err)
-		}
-
-		if gone {
-			removed = append(removed, dir)
-		}
-	}
-
-	return removed, errors.Join(errs...)
-}
-
-// removeWayFolder is RemoveWay's removal of dir, a folder, whole, from the folder it is in, held as the
-// walk reaches it (toParent), and whether it removed it; a link or anything else at its name that is no
-// folder is left.
-func removeWayFolder(dir string) (bool, error) {
-	w, err := toParent(dir)
-	if err != nil || w == nil {
-		return false, err
-	}
-	defer w.close()
-
-	at, name := w.last().step, filepath.Base(dir)
-
-	s, link, err := lookUp(at, name)
-
-	switch {
-	case errors.Is(err, fs.ErrNotExist), errors.Is(err, errNotDir):
-		return false, nil
-	case err != nil:
-		return false, fmt.Errorf("read %s: %w", dir, err)
-	}
-
-	s.close()
-
-	if link {
-		return false, nil
-	}
-
-	return removeFrom(at, name, dir)
-}
-
-// holdsRoot reports whether dir is, or holds, one of the installation's roots (Default) that holds
-// anything, by its name. An ephemeral run's root is only ever recorded under a CONFLUX_DIR, inside the
-// installation's.
-func holdsRoot(dir string) bool {
-	for _, root := range Default().Outer() {
-		if (dir == root || above(dir, root)) && holdsAnything(root) {
-			return true
-		}
-	}
-
-	return false
-}
-
-// holdsAnything reports whether the directory dir lists anything.
-func holdsAnything(dir string) bool {
-	f, err := os.Open(dir)
-	if err != nil {
-		return false
-	}
-	defer f.Close()
-
-	names, _ := f.Readdirnames(1)
-
-	return len(names) > 0
-}
-
-// chosenWay reports whether dir is on the way to the installation's root and conflux's to remove once
-// it made it: one inside the folder that root is in (base) -- the .conflux an ephemeral run's root is
-// made in -- and, under a CONFLUX_DIR, the CONFLUX_DIR and every folder above it. The system's data
-// folder, and what is above it, is the system's, recorded never, whoever made it. The folders made on
-// the way that EnsureAll records.
-func chosenWay(dir string) bool {
-	b := base()
-
-	return above(b, dir) || Root() != "" && (filepath.Clean(dir) == b || above(dir, b))
-}
-
 // above reports whether dir is a folder strictly above path, by their names (filepath.Rel), neither
 // taken through a link: the one test of whether a path is inside another.
 func above(dir, path string) bool {
 	rel, err := filepath.Rel(dir, path)
 
 	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
-}
-
-// aboveRoot reports whether dir is a folder strictly above one of d's roots (roots).
-func (d Dirs) aboveRoot(dir string) bool {
-	for root := range d.roots() {
-		if above(dir, root) {
-			return true
-		}
-	}
-
-	return false
-}
-
-// deepestFirst sorts way, folders, those with the most names first, and is it.
-func deepestFirst(way []string) []string {
-	depth := func(p string) int { return strings.Count(filepath.Clean(p), string(filepath.Separator)) }
-
-	slices.SortStableFunc(way, func(a, b string) int { return depth(b) - depth(a) })
-
-	return way
 }
 
 // RemoveRoot removes the root dir, a folder conflux's by its name, with everything in it, and says
@@ -762,25 +495,6 @@ func toParent(dir string) (*way, error) {
 	}
 
 	return w, nil
-}
-
-// WalkWays refuses d's roots where the way to one cannot be walked (walk): so that a command about to
-// remove them -- uninstall -- refuses up front, with nothing done. Nil where every way can be, and where
-// a name on one is not there. Nothing on a way is judged: a CONFLUX_DIR, and every folder above a root,
-// is the user's choice.
-func (d Dirs) WalkWays() error {
-	for _, dir := range d.Outer() {
-		w, err := toParent(dir)
-		if err != nil {
-			return err
-		}
-
-		if w != nil {
-			w.close()
-		}
-	}
-
-	return nil
 }
 
 // rootHold is a root held open: the way to the folder it is in, and the directory at its name.
@@ -1107,8 +821,8 @@ func (d Dirs) Check() error {
 	return nil
 }
 
-// looking is called with the path of each name before a walk looks it up, and before makeWay and
-// makeRoot make it or look it up: nothing, but where a test makes something at the name meanwhile.
+// looking is called with the path of each name before a walk looks it up, and before makeRoot makes it
+// or looks it up: nothing, but where a test makes something at the name meanwhile.
 var looking = func(string) {}
 
 // place is a directory a walk holds open, and its path, through no link.
@@ -1119,10 +833,9 @@ type place struct {
 
 // way is where a walk ended: the directories it holds open, the top of the volume first and the one
 // it ended in last -- the directory walked to, where that is there. Where one of the directory's own
-// names was not there, left is it and the names after it, and missing why.
+// names was not there, missing is why.
 type way struct {
 	places  []place
-	left    []string
 	missing error
 }
 
@@ -1167,11 +880,11 @@ func (w *way) close() {
 // goes: each name looked up in the directory held before it and nowhere else, never following what
 // is there (lookUp). A directory is held, and gone on from; a link is read as itself (readLink) and
 // gone on from where it leads -- the top of the volume it names, the top of this one, or the
-// directory it is in -- up to 255 links. Nothing on the way is judged: where the folder dir names
-// leads is the user's choice.
+// directory it is in -- up to 255 links. Nothing on the way is judged: every folder above a root is
+// the system's.
 //
 // At one of dir's own names that is not there the walk ends, holding the directory it was to be
-// looked up in, with the names left. Anything else refuses dir: a link that leads nowhere -- to a
+// looked up in. Anything else refuses dir: a link that leads nowhere -- to a
 // name not there, which is no directory dir could be made in, nor one that is not there -- or that
 // cannot be read -- on Windows, one that may lead off this machine (windowsLinkTarget), which nothing
 // then follows -- a name that is not a directory, more than 255 links, or a lookup the system
@@ -1237,10 +950,7 @@ func (w *way) resolve(dir string) error {
 			return fmt.Errorf("resolve %s: %s is a link conflux cannot follow: %v", dir, via,
 				&os.PathError{Op: "open", Path: p, Err: err})
 		case errors.Is(err, fs.ErrNotExist):
-			w.left, w.missing = []string{name}, &os.PathError{Op: "open", Path: p, Err: err}
-			for name, rest = nextName(rest); name != ""; name, rest = nextName(rest) {
-				w.left = append(w.left, name)
-			}
+			w.missing = &os.PathError{Op: "open", Path: p, Err: err}
 
 			return nil
 		case err != nil:
@@ -1285,70 +995,6 @@ func (w *way) resolve(dir string) error {
 			}
 		}
 	}
-}
-
-// makeWay makes the names w was left with, the folders missing on the way to the root dir, each in the
-// directory held before it and nowhere else (makeStep), and holds each open as itself, never by its
-// name: a link or a directory somebody else made at the name meanwhile would answer for that -- a sticky
-// directory such as /tmp, and C:\, let anybody make a name not taken yet, and the owner of a directory
-// on the way may make anything in it. A link at a name, there by the time conflux makes it or once it
-// has, is refused; a folder somebody else made at a name first is gone into as it is, as every folder
-// above a root is, unjudged. It is the folders it made, which
-// EnsureAll records (recordWay), those made before a refusal among them: each as dir, an absolute path,
-// spells it, rather than as the walk reached it through a link on the way, since that is how Way and
-// RemoveWay know them -- by the folders above the roots as d spells them.
-func makeWay(dir string, w *way) ([]string, error) {
-	var made []string
-
-	// The names left are the last of the folder dir is in, as dir spells it.
-	spelled := filepath.Dir(dir)
-	for range w.left {
-		spelled = filepath.Dir(spelled)
-	}
-
-	for _, name := range w.left {
-		at := w.last()
-		p := filepath.Join(at.path, name)
-		spelled = filepath.Join(spelled, name)
-
-		looking(p)
-
-		s, held, err := makeStep(at.step, name)
-
-		taken := errors.Is(err, fs.ErrExist)
-		if err != nil && !taken {
-			return made, &os.PathError{Op: "mkdir", Path: p, Err: err}
-		}
-
-		if err == nil {
-			made = append(made, spelled)
-		}
-
-		if !held {
-			looking(p)
-
-			var link bool
-
-			switch s, link, err = lookUp(at.step, name); {
-			case err != nil && taken:
-				return made, fmt.Errorf("%s was made by somebody else while conflux made the way to %s, and is not a "+
-					"directory conflux can go into (%v).\n  Remove it, then run this again", p, dir, err)
-			case err != nil:
-				return made, &os.PathError{Op: "open", Path: p, Err: err}
-			case link:
-				s.close()
-
-				return made, fmt.Errorf("%s, %s, was made while conflux made the way to %s, which conflux will not "+
-					"follow.\n  Remove it, then run this again", p, aLink, dir)
-			}
-		}
-
-		w.push(s, p)
-	}
-
-	w.left, w.missing = nil, nil
-
-	return made, nil
 }
 
 // nextName is the first name in path and what follows it, separators around it dropped: "" when
@@ -1420,9 +1066,9 @@ func RemovePrefixed(dir, prefix string, remove func(string) error) []string {
 // kernel cannot bind.
 //
 // A sockaddr_un holds 104 bytes of path on macOS and the BSDs and 108 on Linux,
-// and anchord refuses a longer one. The defaults are far inside that; CONFLUX_DIR
-// can break it. The error belongs here, with the remedy in it, rather than
-// arriving from a child process as a number.
+// and anchord refuses a longer one. An installation's is far inside that; a runtime
+// directory named at length can break an ephemeral run's. The error belongs here
+// rather than arriving from a child process as a number.
 func (d Dirs) CheckSocketLen() error {
 	sock := d.Socket()
 	if len(sock) < sockPathMax {
@@ -1430,7 +1076,7 @@ func (d Dirs) CheckSocketLen() error {
 	}
 
 	return fmt.Errorf(
-		"the control socket path is %d bytes and the kernel allows %d:\n  %s\nset CONFLUX_DIR to something shorter",
+		"the control socket path is %d bytes and the kernel allows %d:\n  %s",
 		len(sock), sockPathMax-1, sock)
 }
 

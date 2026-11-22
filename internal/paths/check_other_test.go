@@ -14,11 +14,11 @@ import (
 // TestCheckHoldsARootAsConfluxMakesOne: Check holds each root that is there to what conflux makes a root
 // as, changing nothing: a root of this account's at 0700, or at 0750, which it leaves at 0750, passes;
 // one every account may write, sticky or not, is refused, naming it, and so is a link at its name, even
-// to a directory of this account's own. A CONFLUX_DIR inside a directory every account may write passes:
-// nothing above a root is judged. Where no root is there Check is fs.ErrNotExist, and where one of
-// several is there, nil.
+// to a directory of this account's own. A root in a directory every account may write passes: nothing
+// above a root is judged. Where no root is there Check is fs.ErrNotExist, and where one of several is
+// there, nil.
 func TestCheckHoldsARootAsConfluxMakesOne(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	inData(t, t.TempDir())
 
 	d := Default()
 	if err := d.EnsureAll(); err != nil {
@@ -64,17 +64,15 @@ func TestCheckHoldsARootAsConfluxMakesOne(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Setenv("CONFLUX_DIR", filepath.Join(parent, "conflux"))
+	inData(t, parent)
 
 	if err := os.MkdirAll(Default().State, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
 	if err := Default().Check(); err != nil {
-		t.Errorf("Check(a CONFLUX_DIR in a directory every account may write) = %v", err)
+		t.Errorf("Check(a root in a directory every account may write) = %v", err)
 	}
-
-	t.Setenv("CONFLUX_DIR", "")
 
 	mine := foundRoot(t)
 	absent := filepath.Join(t.TempDir(), "absent")
@@ -90,8 +88,8 @@ func TestCheckHoldsARootAsConfluxMakesOne(t *testing.T) {
 }
 
 // TestEnsureAllRemovesAFileNotAsConfluxMakesIt: each file conflux keeps in a root -- the configuration,
-// the state, the identity, the record of the anchord last started and of the way, the lock files, the
-// copy the boot service runs -- is judged as a folder of
+// the state, the identity, the record of the anchord last started, the lock files, the copy the boot
+// service runs -- is judged as a folder of
 // conflux's is (ours), and one that is not as conflux makes it -- a link, a folder, a file every account
 // may write -- is removed as itself, where a link leads untouched, and nothing made in its place; one as
 // conflux makes it is kept, and anchord's own configuration, which the account anchord runs as owns, is
@@ -100,7 +98,7 @@ func TestCheckHoldsARootAsConfluxMakesOne(t *testing.T) {
 // root, each folder on the way to it held too: nil for one as conflux makes it, fs.ErrNotExist for one
 // not there, and otherwise a refusal saying why; and OursFolder a folder, the bin directory.
 func TestEnsureAllRemovesAFileNotAsConfluxMakesIt(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	inData(t, t.TempDir())
 
 	d := Default()
 	if err := d.EnsureAll(); err != nil {
@@ -127,7 +125,6 @@ func TestEnsureAllRemovesAFileNotAsConfluxMakesIt(t *testing.T) {
 		d.StateFile():         func(p string) { _ = os.Mkdir(p, 0o700) },
 		d.ManifestFile():      func(p string) { file(p, 0o606) },
 		d.PrivilegeFile():     func(p string) { file(p, 0o646) },
-		d.WayFile():           func(p string) { _ = os.Symlink(elsewhere, p) },
 		d.LockFile():          func(p string) { file(p, 0o602) },
 		d.ServiceExecutable(): func(p string) { file(p, 0o757) },
 	} {
@@ -162,8 +159,8 @@ func TestEnsureAllRemovesAFileNotAsConfluxMakesIt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, p := range []string{d.ConfigFile(), d.StateFile(), d.ManifestFile(), d.PrivilegeFile(), d.WayFile(),
-		d.LockFile(), d.ServiceExecutable()} {
+	for _, p := range []string{d.ConfigFile(), d.StateFile(), d.ManifestFile(), d.PrivilegeFile(), d.LockFile(),
+		d.ServiceExecutable()} {
 		if _, err := os.Lstat(p); !errors.Is(err, fs.ErrNotExist) {
 			t.Errorf("EnsureAll left %s, which is not as conflux makes it (Lstat: %v)", p, err)
 		}

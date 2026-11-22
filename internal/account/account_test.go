@@ -126,20 +126,17 @@ func TestHowToCreateSaysWhatToRun(t *testing.T) {
 	}
 }
 
-// TestNameFollowsThePlatformAndTheScope: the platform's own convention for a daemon's
-// account, and a CONFLUX_DIR installation's never the machine's.
-func TestNameFollowsThePlatformAndTheScope(t *testing.T) {
-	for _, c := range []struct{ goos, base, scope, want string }{
-		{"linux", "conflux", "", "conflux"},
-		{"freebsd", "conflux", "", "conflux"},
-		{"darwin", "conflux", "", "_conflux"},
-		{"openbsd", "conflux", "-44a6e4f4", "_conflux-44a6e4f4"},
-		{"linux", "conflux", "-44a6e4f4", "conflux-44a6e4f4"},
-		{"linux", "conflux-ephemeral", "", "conflux-ephemeral"},
-		{"darwin", "conflux-ephemeral", "-44a6e4f4", "_conflux-ephemeral-44a6e4f4"},
+// TestNameFollowsThePlatform: the platform's own convention for a daemon's account.
+func TestNameFollowsThePlatform(t *testing.T) {
+	for _, c := range []struct{ goos, base, want string }{
+		{"linux", "conflux", "conflux"},
+		{"freebsd", "conflux", "conflux"},
+		{"darwin", "conflux", "_conflux"},
+		{"openbsd", "conflux", "_conflux"},
+		{"linux", "conflux-ephemeral", "conflux-ephemeral"},
 	} {
-		if got := nameFor(c.goos, c.base, c.scope); got != c.want {
-			t.Errorf("nameFor(%q, %q, %q) = %q, want %q", c.goos, c.base, c.scope, got, c.want)
+		if got := nameFor(c.goos, c.base); got != c.want {
+			t.Errorf("nameFor(%q, %q) = %q, want %q", c.goos, c.base, got, c.want)
 		}
 	}
 }

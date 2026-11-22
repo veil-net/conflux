@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/veil-net/conflux/internal/pathstest"
 )
 
 // TestAWindowsTooOldIsRefusedBeforeAnythingIsMade: anchord's control socket is an AF_UNIX socket,
@@ -21,8 +23,7 @@ func TestAWindowsTooOldIsRefusedBeforeAnythingIsMade(t *testing.T) {
 
 	windowsBuild = func() uint32 { return 16299 }
 
-	above := filepath.Join(t.TempDir(), "made")
-	t.Setenv("CONFLUX_DIR", filepath.Join(above, "conflux"))
+	above := pathstest.RootedIn(t, t.TempDir()).State
 
 	missing := filepath.Join(t.TempDir(), "missing.b64")
 

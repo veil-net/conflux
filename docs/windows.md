@@ -111,10 +111,9 @@ it, and a protected DACL grants the two of them full control and nobody else any
 inherited by everything beneath. Both are set as the directory is created, so it never
 carries `%ProgramData%`'s grant to `Users` — enough to turn an empty directory into a
 junction — not even for an instant. Every secret file gets the same, explicitly, before
-anything is written into it. A `CONFLUX_DIR`'s root, `.conflux` inside the folder it names, and the
-folders conflux makes on the way to a `CONFLUX_DIR` are made the same.
+anything is written into it.
 
-Everything else conflux makes in a root or on the way to one — `logs\`, the lock files,
+Everything else conflux makes in a root — `logs\`, the lock files,
 `bin\` and its lock, the service's copy of conflux, the log — is the Administrators' as well,
 with its DACL what it inherits: every conflux process running elevated makes them the owner its
 token gives what it makes, as the first thing it does, rather than leaving that to the machine's
@@ -141,23 +140,20 @@ holds give, so that a DACL granting the Administrators nothing does not keep it;
 made afresh, with nothing of what was there. `run\`, `logs\`, `bin\` and `anchor.root\` are judged as
 the root is, and each that is not as conflux makes it, such as one an earlier conflux left the
 administrator's own, is removed whole and made afresh. A root that is a junction to another disk is therefore
-not followed, and a fresh root is made at its name: to keep conflux's files on another disk, use a
-`CONFLUX_DIR` there. Each file conflux keeps in a root — `conflux.json`, `state.json`,
-`manifest.b64`, `anchord.priv`, `way`, the lock files and the service's copy of conflux — is judged
+not followed, and a fresh root is made at its name. Each file conflux keeps in a root — `conflux.json`,
+`state.json`, `manifest.b64`, `anchord.priv`, the lock files and the service's copy of conflux — is judged
 as the root is, and one that is not as conflux makes it, such as a copy an earlier conflux left the
 administrator's own, is removed for what writes it to make afresh; the supervisor, which runs from the
 service's copy, leaves it as it makes the roots, and places one not there, or not as conflux makes it,
 afresh from its own image, the running one moved aside. Nothing else in a root is judged: nobody else can have
 put anything there. A root on a network volume, however it is reached, is refused, as the volume
-conflux holds it open on says; a link naming a share on the way to a `CONFLUX_DIR` is refused before
-anything follows it, by where the link itself says it leads.
+conflux holds it open on says; a link naming a share on the way to a root is refused before anything
+follows it, by where the link itself says it leads.
 
-A `CONFLUX_DIR` itself, and every folder above a root, is never changed and never judged: choosing
-a `CONFLUX_DIR` is the user's responsibility, and one another account can change, or a folder above it,
-lets that account put a root of its own where conflux's was. conflux owns `.conflux` inside it, and
-remakes it as it makes it. The way to a root is walked from the top of its volume, each folder held
+`%ProgramData%`, and every folder above a root, is the system's, never changed and never judged.
+The way to a root is walked from the top of its volume, each folder held
 open through a handle on the one before, never followed, and a junction or a link read off itself and
-gone on from where it leads. What conflux picks itself — the default root, an elevated reader's
+gone on from where it leads. What conflux picks itself — the installation's root, an elevated reader's
 temporary copy of anchorctl — is judged for SYSTEM or the Administrators,
 never the account running conflux by its SID, so that account's processes that are not elevated
 cannot have made or changed it.
@@ -167,8 +163,8 @@ check: a root that fails is refused, naming it and why, and nothing in it is rea
 account may not open or read is refused too, since whoever made it can deny conflux the right to read
 its owner and DACL as easily as they can make it. Nothing is changed.
 
-A root, and the folders missing on the way to a `CONFLUX_DIR`, are made through a handle on the
-folder each goes in: the name is looked up there and nowhere else, and not followed. The create
+A root is made through a handle on the folder it goes in: the name is looked up there and nowhere
+else, and not followed. The create
 also carries a flag that keeps it from being reparsed anywhere a junction leads (`OBJ_DONT_REPARSE`):
 defence in depth, guarding a case not shown to happen, since a create relative to a folder conflux
 holds is not known to be taken through a junction that folder became without it. The other folders
@@ -198,9 +194,9 @@ Registered as `conflux`, displayed as `VeilNet Conflux`, running as `LocalSystem
 The SCM keeps the service's command line as one to expand, and replaces each `%NAME%` in it from
 the system's environment at every start, so every command that registers the service — `install`,
 `up`, `proxy`, `observe`, `enrol`, `start`, and the `register` an update runs — refuses, before it
-makes anything, a `CONFLUX_DIR` holding a `%`, or a copy's path holding one: with `C:\%OS%`, SYSTEM
-would run `C:\Windows_NT\.conflux\conflux.exe`, in a folder any account may make. Choose a
-`CONFLUX_DIR` without one.
+makes anything, a path for the service's copy of conflux that holds a `%`, which SYSTEM would expand
+into the path of another file than the one conflux placed. The copy's path is
+`<system ProgramData>\.conflux\conflux.exe`, read from the system, which holds none.
 
 `anchord` itself runs as SYSTEM only for a TUN, which wintun needs. In userspace mode the
 supervisor logs `LOCAL SERVICE` on for it with `LogonUserExExW`, the service's SID and a

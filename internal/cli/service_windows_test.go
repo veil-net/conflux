@@ -9,13 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/pathstest"
 	"github.com/veil-net/conflux/internal/privcheck"
-	"github.com/veil-net/conflux/internal/privtest"
 	"github.com/veil-net/conflux/internal/ui"
 )
 
@@ -35,10 +34,10 @@ func TestOnlyATransientExitAsksForARestart(t *testing.T) {
 // TestTheServiceReportsStoppedOnce: Execute leaves Stopped to svc.Run, which reports it
 // with the exit Execute returns. Reported here as well, the SCM read the service as
 // stopped cleanly before the exit code that said otherwise arrived. A service with nothing to
-// start stops cleanly; one whose EnsureAll refuses its root -- in a directory Users may rename
-// what is in -- ends as any failed start does, a failure the SCM restarts, saying why.
+// start stops cleanly; one whose EnsureAll refuses its root -- its data folder beneath a file --
+// ends as any failed start does, a failure the SCM restarts, saying why.
 func TestTheServiceReportsStoppedOnce(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	pathstest.RootedIn(t, t.TempDir())
 
 	h := &handler{sup: &daemon.Supervisor{Dirs: paths.Default(), Ready: make(chan struct{})}}
 
@@ -51,9 +50,12 @@ func TestTheServiceReportsStoppedOnce(t *testing.T) {
 		t.Errorf("a service with nothing to start returned %v, %d (code %d); want a clean stop, 78 in the log", specific, exitCode, h.code)
 	}
 
-	parent := t.TempDir()
-	privtest.GrantUsers(t, parent, 0x40, windows.NO_INHERITANCE) // FILE_DELETE_CHILD
-	t.Setenv("CONFLUX_DIR", filepath.Join(parent, "conflux"))
+	parent := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(parent, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	pathstest.RootedIn(t, filepath.Join(parent, "data"))
 
 	var errBuf bytes.Buffer
 
@@ -89,18 +91,21 @@ func execute(h *handler) (states []svc.State, specific bool, exitCode uint32) {
 }
 
 // TestAPercentIsNeverRegistered: the SCM expands every %NAME% in a service's command line at each start, so
-// a CONFLUX_DIR holding a % -- C:\%OS% -- would have SYSTEM run another file than the one conflux placed and
-// judged, in a folder any account may make. Every command that registers the service refuses it before it
-// makes anything (refusePercent): those that go through handOver, and register. Each exits 1 naming the %
-// and a CONFLUX_DIR without one, with nothing made and the service manager, the test's stand-in, asked
-// nothing. Elevated, as CI's platforms job runs it, and as the commands are told they are here, so that
+// a service executable's path holding a % would have SYSTEM run another file than the one conflux placed
+// and judged. Every command that registers the service refuses it before it makes anything
+// (refusePercent): those that go through handOver, and register. Each exits 1 naming the %, with nothing
+// made and the service manager, the test's stand-in, asked nothing. Elevated, as CI's platforms job runs it, and as the commands are told they are here, so that
 // nothing but the refusal stops them. Windows-only, so it runs in that job alone.
 func TestAPercentIsNeverRegistered(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
 
-	parent := t.TempDir()
-	t.Setenv("CONFLUX_DIR", filepath.Join(parent, "%OS%"))
+	parent := filepath.Join(t.TempDir(), "%OS%")
+	if err := os.Mkdir(parent, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	pathstest.RootedIn(t, parent)
 
 	manifest := filepath.Join(t.TempDir(), "manifest.b64")
 	if err := os.WriteFile(manifest, []byte("e30="), 0o600); err != nil {
@@ -116,9 +121,9 @@ func TestAPercentIsNeverRegistered(t *testing.T) {
 	} {
 		_, errOut, code := capture(t, args...)
 
-		if code != ExitError || !strings.Contains(errOut, "%") || !strings.Contains(errOut, "CONFLUX_DIR") {
-			t.Errorf("conflux %s exited %d, saying\n%s\nwant it refused, exit 1, naming the %% and a CONFLUX_DIR "+
-				"without one", strings.Join(args, " "), code, errOut)
+		if code != ExitError || !strings.Contains(errOut, "%") {
+			t.Errorf("conflux %s exited %d, saying\n%s\nwant it refused, exit 1, naming the %%",
+				strings.Join(args, " "), code, errOut)
 		}
 
 		if left, err := os.ReadDir(parent); err != nil || len(left) > 0 {

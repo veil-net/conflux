@@ -70,10 +70,7 @@ So `up`, `proxy`, `observe`, `enrol`, `install`, `start` and `update` copy the c
 its root — `/var/lib/.conflux/conflux` on Linux, `/var/db/.conflux/conflux` on the BSDs,
 `/Library/Application Support/.conflux/conflux` on macOS,
 `%ProgramData%\.conflux\conflux.exe` on Windows — and register that. Where you keep the
-binary you type is up to you; `uninstall` removes the copy with the rest. Under
-`CONFLUX_DIR=<dir>` everything is kept in `<dir>/.conflux` instead, which conflux owns and remakes as
-it makes it; `<dir>` itself, and every folder above it, is never changed and never judged, so
-choosing it is your responsibility.
+binary you type is up to you; `uninstall` removes the copy with the rest.
 
 Seven platforms are built: linux/amd64, linux/arm64, darwin/arm64, windows/amd64,
 windows/arm64, freebsd/amd64, openbsd/amd64. Each is about 50 MB, because each

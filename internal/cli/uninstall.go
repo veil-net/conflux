@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/veil-net/conflux/internal/config"
@@ -47,26 +46,11 @@ func runUninstall(_ context.Context, args []string) int {
 
 	d := paths.Default()
 
-	// A way to a root that cannot be walked (WalkWays) stops uninstall there, before it acts: walked for
-	// every root before anything is asked or removed, so nothing is half-removed. Nothing on a way is
-	// judged: a CONFLUX_DIR, and every folder above it, is the user's choice.
-	if err := d.WalkWays(); err != nil {
-		what, _, _ := strings.Cut(err.Error(), "\n")
-
-		ui.Errf("%s\n  uninstall stopped there, before it acted: nothing was removed, the boot service included.", what)
-
-		return ExitError
-	}
-
 	// What uninstall reads or signals by a name in a root -- the identity it asks about, the pid
 	// record it stops anchord by -- it reads only where the root passes paths' check, as conflux makes
 	// a root. A root that fails is removed all the same, reading nothing (paths.RemoveRoot), as itself
 	// where it is a link.
 	checked := d.Check()
-
-	// The folders conflux made on the way to the roots, recorded in the state root, which goes with
-	// the roots: read first, and only from a root as conflux makes one (paths.Dirs.Way).
-	way, wayErr := d.Way()
 
 	// An ephemeral run's account goes with the installation's, and nothing may be running as it when it
 	// does: the run ends itself, with its anchor, when it is stopped. Asked before anything is asked, and
@@ -105,11 +89,6 @@ func runUninstall(_ context.Context, args []string) int {
 		}
 	}
 
-	// Each of those folders, whole, deepest first.
-	madeWay, err := paths.RemoveWay(way)
-	removed = append(removed, madeWay...)
-	errs = append(errs, err)
-
 	removed = append(removed, removeLeftovers()...)
 
 	// The accounts anchord ran as, if conflux made them, stopping whatever runs as each: the ephemeral
@@ -136,13 +115,6 @@ func runUninstall(_ context.Context, args []string) int {
 
 	if err := errors.Join(errs...); err != nil {
 		return fail(err)
-	}
-
-	// A record that could not be read -- one that is a link, or behind a way that cannot be walked --
-	// leaves the folders it names, and nothing else.
-	if wayErr != nil {
-		ui.Errf("the folders conflux made on the way to %s were left, since the record of them was not read: %v",
-			d.State, wayErr)
 	}
 
 	ui.Printf("The boot service, the configuration, the identity and the state are gone, with everything else\n" +
@@ -215,10 +187,6 @@ func confirmUninstall(d paths.Dirs, checked error, yes bool) bool {
 	}
 
 	stakes := "deletes this machine's credential, and there is no other copy"
-	if paths.Root() != "" {
-		stakes = "removes " + d.State + " and everything in it, this machine's credential among it, and there is no " +
-			"other copy of that"
-	}
 
 	if !ui.IsTerminal() {
 		ui.Errf("this %s.\n  Pass --yes to say so explicitly; a scripted uninstall destroys nothing by default.", stakes)

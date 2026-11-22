@@ -11,12 +11,12 @@ import (
 )
 
 // Every test linking this package makes what it makes the Administrators', as every conflux process
-// does as it starts (paths.ElevatedDefaultOwner), and roots it, its CONFLUX_DIRs among it, in a folder
-// only SYSTEM and the Administrators may change (privtest.ServiceTemp), rather than in the
-// administrator's own profile, where %TEMP% is. What conflux keeps in %ProgramData% -- an elevated reader's temporary anchorctl, and the
-// default root where no CONFLUX_DIR is set -- it keeps in the process's temporary directory too
-// (paths.ProgramData): there, in a test's own where the test points TMP and TEMP at one, or in a folder
-// of its own a test gives it (ProgramData).
+// does as it starts (paths.ElevatedDefaultOwner), and roots it in a folder only SYSTEM and the
+// Administrators may change (privtest.ServiceTemp), rather than in the administrator's own profile, where
+// %TEMP% is. What conflux keeps in %ProgramData% -- an elevated reader's temporary anchorctl, and the
+// installation's root -- it keeps in the process's temporary directory too (paths.SystemData): there, in
+// a test's own where the test points TMP and TEMP at one, or in a folder of its own a test gives it
+// (ProgramData, Dirs).
 func init() {
 	if err := paths.ElevatedDefaultOwner(); err != nil {
 		panic("pathstest: " + err.Error())
@@ -26,7 +26,7 @@ func init() {
 		panic("pathstest: " + err.Error())
 	}
 
-	paths.ProgramData = os.TempDir
+	paths.SystemData = os.TempDir
 }
 
 // ProgramData keeps what conflux keeps in %ProgramData% in dir for the rest of the test, apart from the
@@ -34,10 +34,10 @@ func init() {
 func ProgramData(tb testing.TB, dir string) string {
 	tb.Helper()
 
-	was := paths.ProgramData
-	paths.ProgramData = func() string { return dir }
+	was := paths.SystemData
+	paths.SystemData = func() string { return dir }
 
-	tb.Cleanup(func() { paths.ProgramData = was })
+	tb.Cleanup(func() { paths.SystemData = was })
 
 	return dir
 }

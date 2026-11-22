@@ -31,27 +31,6 @@ func TestSystemdUnit(t *testing.T) {
 	}
 }
 
-// TestSystemdUnitQuotesAnything: a CONFLUX_DIR run registers its root, a path may hold
-// any character, and systemd splits an ExecStart= on whitespace and expands a % and a $
-// wherever they are.
-func TestSystemdUnitQuotesAnything(t *testing.T) {
-	unit := systemdUnit("/opt/my tools/conflux", []string{"serve", "--dir", `/srv/it's "odd" $HOME 100%\x`})
-
-	want := `ExecStart="/opt/my tools/conflux" serve --dir "/srv/it's \"odd\" $$HOME 100%%\\x"` + "\n"
-	if !strings.Contains(unit, want) {
-		t.Errorf("the unit has no\n  %s\n%s", want, unit)
-	}
-
-	// A line break would end the line, and systemd reads the rest as a setting of its own;
-	// every control character goes in as its C escape, which systemd reads back inside quotes.
-	unit = systemdUnit("/opt/conflux", []string{"serve", "--dir", "/srv/a\nRestart=no\tb\x01\x7f"})
-
-	want = `ExecStart=/opt/conflux serve --dir "/srv/a\nRestart=no\tb\x01\x7f"` + "\n"
-	if !strings.Contains(unit, want) || strings.Contains(unit, "\nRestart=no") {
-		t.Errorf("the unit has no\n  %s\n%s", want, unit)
-	}
-}
-
 // TestMainPIDIsWhetherTheUnitRuns: systemctl show's MainPID names the unit's main process, which a
 // unit starting, running or stopping has -- the supervisor tidy stops for an update -- and one
 // waiting to be restarted has not, MainPID=0. An answer naming no number, empty or with no value, is

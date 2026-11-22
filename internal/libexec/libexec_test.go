@@ -404,16 +404,8 @@ func TestSweepLeavesWhatMayBeInUse(t *testing.T) {
 func TestUsageMakesNothing(t *testing.T) {
 	anchortest.Require(t)
 
-	// Its parent 0700 whatever the umask made it, as a CONFLUX_DIR's parents must be.
-	parent := t.TempDir()
-	if err := os.Chmod(parent, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	t.Setenv("CONFLUX_DIR", filepath.Join(parent, "never"))
+	d := pathstest.RootedIn(t, t.TempDir())
 	pathstest.Temporary(t, t.TempDir())
-
-	d := paths.Default()
 
 	bin, done, err := forUsage(t, d)
 	if err != nil {
@@ -430,7 +422,7 @@ func TestUsageMakesNothing(t *testing.T) {
 		t.Errorf("the temporary anchorctl's directory is still there after done (%v)", err)
 	}
 
-	if _, err := os.Stat(os.Getenv("CONFLUX_DIR")); !os.IsNotExist(err) {
+	if _, err := os.Stat(d.State); !os.IsNotExist(err) {
 		t.Errorf("asking for usage made the installation's directories (%v)", err)
 	}
 
@@ -547,16 +539,9 @@ func TestAReaderExtractsNothingIntoABinDirectoryNotOfConfluxs(t *testing.T) {
 func TestUsageRunsNothingFromARootItRefuses(t *testing.T) {
 	anchortest.Require(t)
 
-	parent := t.TempDir()
-	if err := os.Chmod(parent, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	t.Setenv("CONFLUX_DIR", filepath.Join(parent, "conflux"))
-
 	tmp := pathstest.Temporary(t, t.TempDir())
 
-	d := paths.Default()
+	d := pathstest.RootedIn(t, t.TempDir())
 	if err := d.EnsureAll(); err != nil {
 		t.Fatal(err)
 	}
@@ -739,16 +724,10 @@ func TestRemoveTemporaryRemovesWhatAKilledReaderLeft(t *testing.T) {
 func TestUsageMakesNoTemporaryDirectory(t *testing.T) {
 	anchortest.Require(t)
 
-	parent := t.TempDir()
-	if err := os.Chmod(parent, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	t.Setenv("CONFLUX_DIR", filepath.Join(parent, "never"))
-
+	d := pathstest.RootedIn(t, t.TempDir())
 	missing := pathstest.Temporary(t, filepath.Join(t.TempDir(), "tmp"))
 
-	if bin, _, err := forUsage(t, paths.Default()); err == nil && strings.HasPrefix(bin, missing) {
+	if bin, _, err := forUsage(t, d); err == nil && strings.HasPrefix(bin, missing) {
 		t.Errorf("help ran %s, from the temporary directory it made", bin)
 	}
 

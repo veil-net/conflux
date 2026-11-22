@@ -257,8 +257,7 @@ func anchordEnv(p Privilege, token string) []string {
 		k, _, _ := strings.Cut(kv, "=")
 
 		switch k {
-		case "NOTIFY_SOCKET", "LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES", "CONFLUX_DIR",
-			anchorctl.SocketEnv, anchorctl.TokenEnv:
+		case "NOTIFY_SOCKET", "LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES", anchorctl.SocketEnv, anchorctl.TokenEnv:
 			continue
 		case "HOME", "USER", "LOGNAME":
 			if p.Account && runtime.GOOS != "windows" {

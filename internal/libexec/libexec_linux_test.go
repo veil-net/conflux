@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/veil-net/conflux/internal/anchortest"
-	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
 )
 
@@ -19,18 +18,13 @@ import (
 func TestUsageRunsFromWhereExecIsAllowed(t *testing.T) {
 	anchortest.Require(t)
 
-	parent := t.TempDir()
-	if err := os.Chmod(parent, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	t.Setenv("CONFLUX_DIR", filepath.Join(parent, "never"))
+	d := pathstest.RootedIn(t, t.TempDir())
 	pathstest.Temporary(t, "/proc/conflux-noexec-tmp")
 
 	cache := filepath.Join(t.TempDir(), "cache")
 	t.Setenv("XDG_CACHE_HOME", cache)
 
-	bin, _, err := forUsage(t, paths.Default())
+	bin, _, err := forUsage(t, d)
 	if err != nil {
 		t.Fatalf("ForUsage: %v", err)
 	}
@@ -50,8 +44,8 @@ func TestSELinuxHintQuotesTheDirectory(t *testing.T) {
 	got := selinuxHint("/srv/con flux/it's/bin")
 
 	want := `  try:  sudo semanage fcontext -a -t bin_t '/srv/con flux/it'\''s/bin(/.*)?' && ` +
-		`sudo restorecon -R '/srv/con flux/it'\''s/bin'` + "\n"
-	if !strings.Contains(got, "\n"+want) {
+		`sudo restorecon -R '/srv/con flux/it'\''s/bin'`
+	if !strings.HasSuffix(got, "\n"+want) {
 		t.Errorf("selinuxHint =\n%s\nwant it to hold\n%s", got, want)
 	}
 }

@@ -25,7 +25,7 @@ beneath it, and most of what follows is a way of reading that output.
 | two machines up, cannot reach each other | almost always taints | see below |
 | `subnet … is not a private network` | a public prefix | anchor forwards private networks only |
 | `subnet … has host bits set` | `192.168.1.7/24` | write the network, `192.168.1.0/24` |
-| `the control socket path is N bytes` | `CONFLUX_DIR` is too deep | use a shorter one; the kernel's limit is 104–108 bytes |
+| `the control socket path is N bytes` | an ephemeral run's `$XDG_RUNTIME_DIR` is named at length | the kernel's limit is 108 bytes; an installation's socket is far inside it |
 | `fd:3 adopts a descriptor …` | `--uplink fd:N` | conflux's supervisor hands anchord no descriptors; name the device, or use `conflux anchorctl start` |
 | `anchor has no way to open a link on Windows` | `--uplink` on Windows | anchor opens a link on unix only; see [uplink.md](uplink.md) |
 | an uplink machine is up and reaches nothing | usually the far end, the line speed, or an enrolment that never happened | see below |
@@ -157,8 +157,7 @@ design, and there are only two causes. conflux detects both and names them:
 
 ```
 conflux: the anchor binaries were extracted to /var/lib/.conflux/bin but will not run from there.
-  that filesystem is mounted noexec.
-  set CONFLUX_DIR to a directory on a filesystem that allows execution.
+  that filesystem is mounted noexec: conflux runs anchord from there, so it must allow execution.
 ```
 
 or

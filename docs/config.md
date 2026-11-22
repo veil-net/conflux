@@ -21,13 +21,13 @@ layout everywhere:
 | In the root | |
 |---|---|
 | `conflux.json` | the configuration |
-| `manifest.b64`, `state.json`, `anchord.json`, `anchord.priv`, `way`, the lock files, `conflux` (`conflux.exe`) | the identity, the state, and the copy of conflux the boot service runs |
+| `manifest.b64`, `state.json`, `anchord.json`, `anchord.priv`, the lock files, `conflux` (`conflux.exe`) | the identity, the state, and the copy of conflux the boot service runs |
 | `bin/` | the extracted anchor pairs |
 | `anchor/`, `anchor.root/` | what the anchor keeps |
 | `run/` | the token, anchord's pid, the readiness marker, and `run/anchord/sock`, anchord's socket |
 | `logs/` | the service's log, on macOS, FreeBSD and Windows; journald and syslog keep it on Linux and OpenBSD |
 
-`CONFLUX_DIR` keeps the same layout in `.conflux` inside the directory it names instead, and the boot service with it — it is named after the directory, so a run under it is a separate installation rather than a replacement for the machine's own. See [testing.md](testing.md). The directory itself, and every directory above it, is never changed and never judged, so a folder of yours can be one: choosing it is your responsibility, since whoever can change it can put another root in this one's place ([security.md](security.md#the-extracted-binaries)). conflux owns `.conflux` inside it, and remakes it as it makes it. On Windows it must be on one of the machine's own volumes: a share, or a drive mapped to one, is refused, with nothing made there.
+The place is fixed: there is one installation per machine, and no setting moves it. The folder it is in, and every folder above, is the system's, never changed and never judged; one that is not there is refused, with nothing made on the way to it. conflux owns `.conflux`, and remakes it as it makes it.
 
 Every directory conflux makes is `0700` — and whatever is at a root's name that is not as conflux
 makes one, a link or a directory another account owns or may write among it, is removed and made

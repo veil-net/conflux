@@ -3,18 +3,14 @@
 package paths
 
 import (
-	"bytes"
 	"errors"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
-	"slices"
 	"strings"
-	"syscall"
 	"testing"
-	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -23,11 +19,11 @@ import (
 // them, so RemoveRoot removes a root and everything in it from the directory the walk to it holds,
 // following nothing: a link in it to a directory outside, and one deeper, are removed as links, with
 // what each led to untouched, and so is a link at the root's own name. A root found 0757, which the
-// readers' check refuses, is removed all the same, and the CONFLUX_DIR it is in is left. A root not
-// there is nothing removed.
+// readers' check refuses, is removed all the same, and the folder it is in is left. A root not there is
+// nothing removed.
 func TestRemoveRootFollowsNothing(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "conflux")
-	t.Setenv("CONFLUX_DIR", dir)
+	dir := t.TempDir()
+	inData(t, dir)
 
 	d := Default()
 	if err := d.EnsureAll(); err != nil {
@@ -66,7 +62,7 @@ func TestRemoveRootFollowsNothing(t *testing.T) {
 	}
 
 	if _, err := os.Lstat(dir); err != nil {
-		t.Errorf("RemoveRoot removed the CONFLUX_DIR %s its root was in: %v", dir, err)
+		t.Errorf("RemoveRoot removed the folder %s its root was in: %v", dir, err)
 	}
 
 	if err := os.Symlink(elsewhere, root); err != nil {
@@ -92,267 +88,50 @@ func TestRemoveRootFollowsNothing(t *testing.T) {
 	}
 }
 
-// TestRemoveRootJudgesNoFolderAboveIt: nothing on a CONFLUX_DIR's way is judged before what is in it is
-// read or removed, as nothing is when it is made: with a directory every account may write above it,
-// WalkWays takes the way, Way reads the record, RemoveWay removes the folders recorded -- one inside the
-// CONFLUX_DIR, as an ephemeral run records the .conflux it made, and one above it -- and RemoveRoot
-// removes the root. A way not there is nothing to walk.
+// TestRemoveRootJudgesNoFolderAboveIt: nothing above a root is judged before it is removed, as nothing is
+// when it is made: with a directory every account may write above it, RemoveRoot removes the root.
 func TestRemoveRootJudgesNoFolderAboveIt(t *testing.T) {
 	open := realTempDir(t)
 	if err := os.Chmod(open, 0o777); err != nil {
 		t.Fatal(err)
 	}
 
-	a := filepath.Join(open, "a")
-	t.Setenv("CONFLUX_DIR", filepath.Join(a, "conflux"))
+	inData(t, made(t, filepath.Join(open, "a")))
 
 	root := Default().State
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := os.WriteFile(filepath.Join(root, wayName), []byte(a+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := Default().WalkWays(); err != nil {
-		t.Errorf("WalkWays(a CONFLUX_DIR inside a directory anybody may write) = %v", err)
-	}
-
-	if way, err := Default().Way(); err != nil || !slices.Equal(way, []string{a}) {
-		t.Errorf("Way(), a directory every account may write on its way = %q, %v, want %q", way, err, []string{a})
-	}
-
-	inside := filepath.Join(root, "ephemeral")
-	if err := os.Mkdir(inside, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	if removed, err := RemoveWay([]string{inside}); err != nil || !slices.Equal(removed, []string{inside}) {
-		t.Errorf("RemoveWay(%s, inside a CONFLUX_DIR inside a directory every account may write) = %q, %v, want it "+
-			"removed", inside, removed, err)
-	}
-
 	if gone, err := RemoveRoot(root); !gone || err != nil {
-		t.Errorf("RemoveRoot(a CONFLUX_DIR inside a directory anybody may write) = %v, %v, want it removed", gone, err)
-	}
-
-	if removed, err := RemoveWay([]string{a}); err != nil || !slices.Equal(removed, []string{a}) {
-		t.Errorf("RemoveWay(%s, above a CONFLUX_DIR inside a directory every account may write) = %q, %v, want it "+
-			"removed", a, removed, err)
-	}
-
-	t.Setenv("CONFLUX_DIR", filepath.Join(t.TempDir(), "not", "there", "conflux"))
-
-	if err := Default().WalkWays(); err != nil {
-		t.Errorf("WalkWays(a CONFLUX_DIR whose way is not there) = %v", err)
-	}
-}
-
-// TestTheWayIsRecordedAsTheConfluxDirIsSpelled: the folders conflux makes on the way to a CONFLUX_DIR are
-// recorded by the names the CONFLUX_DIR is spelled with, not those the walk resolved its links to: Way
-// takes from the record only folders above a root, by their names, so a record of the resolved names
-// would be read back as nothing, and uninstall would leave every folder it made. Here the CONFLUX_DIR is
-// spelled through a link the test makes, as macOS's TMPDIR is reached through /var: the record is read
-// back whole, and once the root is gone RemoveWay removes each folder, the link and where it leads kept.
-func TestTheWayIsRecordedAsTheConfluxDirIsSpelled(t *testing.T) {
-	base := t.TempDir()
-
-	real := filepath.Join(base, "real")
-	if err := os.Mkdir(real, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	link := filepath.Join(base, "link")
-	if err := os.Symlink(real, link); err != nil {
-		t.Fatal(err)
-	}
-
-	a, b := filepath.Join(link, "a"), filepath.Join(link, "a", "b")
-	dir := filepath.Join(b, "conflux")
-
-	t.Setenv("CONFLUX_DIR", dir)
-	d := Default()
-
-	if err := d.EnsureAll(); err != nil {
-		t.Fatal(err)
-	}
-
-	way, err := d.Way()
-	if err != nil || !slices.Equal(way, []string{dir, b, a}) {
-		t.Fatalf("Way() of a CONFLUX_DIR spelled through a link = %q, %v, want %q", way, err, []string{dir, b, a})
-	}
-
-	if _, err := RemoveRoot(d.State); err != nil {
-		t.Fatal(err)
-	}
-
-	if removed, err := RemoveWay(way); err != nil || !slices.Equal(removed, way) {
-		t.Errorf("RemoveWay(%q) = %q, %v, want each removed", way, removed, err)
-	}
-
-	if _, err := os.Lstat(filepath.Join(real, "a")); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("the folders conflux made through the link are still where it led (Lstat: %v)", err)
-	}
-
-	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
-		t.Errorf("the link the CONFLUX_DIR was spelled through is %v (%v), want it kept", fi, err)
-	}
-}
-
-// TestTheWayConfluxMadeIsRemovedWhole: EnsureAll records each folder it made on the way to an
-// installation's root, in the state root, once, however often it runs, the CONFLUX_DIR among them where
-// it made that too; Way reads the record back, deepest first, keeping only folders above one of the
-// roots and none at the top of a volume, reads none where the readers' check refuses the state root,
-// whose record is none of conflux's either, and refuses a record that is a link, unfollowed. RemoveWay
-// leaves each folder holding the installation's root while that holds anything, and once the root is
-// gone removes each recorded folder whole, deepest first, whatever it holds, the folder they were made in
-// kept; a link put at a recorded folder's name is left, and where it leads untouched.
-func TestTheWayConfluxMadeIsRemovedWhole(t *testing.T) {
-	base := t.TempDir()
-	a, b := filepath.Join(base, "a"), filepath.Join(base, "a", "b")
-	dir := filepath.Join(b, "conflux")
-
-	t.Setenv("CONFLUX_DIR", dir)
-	d := Default()
-	root := d.State
-
-	for range 2 {
-		if err := d.EnsureAll(); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	record := filepath.Join(d.State, wayName)
-
-	if got, err := d.readWay(); err != nil || !slices.Equal(got, []string{a, b, dir}) {
-		t.Fatalf("the record EnsureAll kept = %q, %v, want %q, each once", got, err, []string{a, b, dir})
-	}
-
-	elsewhere := t.TempDir()
-	if err := os.WriteFile(record, []byte("/\n"+a+"\n"+b+"\n"+dir+"\n"+elsewhere+"\nrelative\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	way, err := d.Way()
-	if err != nil || !slices.Equal(way, []string{dir, b, a}) {
-		t.Fatalf("Way() = %q, %v, want %q, deepest first, and nothing not above a root", way, err, []string{dir, b, a})
-	}
-
-	if err := os.Chmod(root, 0o757); err != nil {
-		t.Fatal(err)
-	}
-
-	if got, err := d.Way(); err != nil || got != nil {
-		t.Errorf("Way() of a state root the readers' check refuses = %q, %v, want no record", got, err)
-	}
-
-	if err := os.Chmod(root, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	kept := filepath.Join(t.TempDir(), "kept")
-	if err := os.WriteFile(kept, []byte(a+"\n"+b+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.Rename(record, record+".was"); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.Symlink(kept, record); err != nil {
-		t.Fatal(err)
-	}
-
-	if got, err := d.Way(); err == nil {
-		t.Errorf("Way() of a record that is a link = %q, nil, want it refused, unfollowed", got)
-	}
-
-	if err := os.Remove(record); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.Rename(record+".was", record); err != nil {
-		t.Fatal(err)
-	}
-
-	if removed, err := RemoveWay(way); err != nil || removed != nil {
-		t.Errorf("RemoveWay(%q), the root %s there = %q, %v, want nothing removed", way, root, removed, err)
-	}
-
-	other := filepath.Join(a, "other")
-	if err := os.WriteFile(other, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := RemoveRoot(root); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.Symlink(elsewhere, dir+".link"); err != nil {
-		t.Fatal(err)
-	}
-
-	if removed, err := RemoveWay([]string{dir + ".link"}); err != nil || removed != nil {
-		t.Errorf("RemoveWay(a link at a recorded name) = %q, %v, want nothing removed", removed, err)
-	}
-
-	if _, err := os.Lstat(dir + ".link"); err != nil {
-		t.Errorf("RemoveWay removed the link at %s: %v", dir+".link", err)
-	}
-
-	if err := os.Remove(dir + ".link"); err != nil {
-		t.Fatal(err)
-	}
-
-	if removed, err := RemoveWay(way); err != nil || !slices.Equal(removed, way) {
-		t.Errorf("RemoveWay(%q), %s holding a file = %q, %v, want each removed", way, a, removed, err)
-	}
-
-	if _, err := os.Lstat(a); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("RemoveWay left %s, which holds a file (Lstat: %v)", a, err)
-	}
-
-	if _, err := os.Stat(base); err != nil {
-		t.Errorf("RemoveWay removed %s, which conflux did not make: %v", base, err)
-	}
-
-	if _, err := os.Stat(elsewhere); err != nil {
-		t.Errorf("RemoveWay reached %s: %v", elsewhere, err)
+		t.Errorf("RemoveRoot(a root inside a directory anybody may write) = %v, %v, want it removed", gone, err)
 	}
 }
 
 // TestARootIsHeldBeforeAnythingInItIsOpened: what is read in a root by a command that has not made it --
-// the way record uninstall reads, the serve lock tidy asks after -- is opened through the root held
-// (OpenIn), never by its name, and only where what is at the root's name is as conflux makes a root
-// (ours): a directory of this account's own at 0700 is read, and a link at the name -- to a directory of
-// this account's own, the directory it is in, or nothing -- is none of conflux's, and taken as no root
-// at all, nothing in it opened; and so is a directory of this account's own every account may write, the
-// way record in it among what is not read.
+// the serve lock tidy asks after -- is opened through the root held (OpenIn), never by its name, and only
+// where what is at the root's name is as conflux makes a root (ours): a directory of this account's own at
+// 0700 is read, and a link at the name -- to a directory of this account's own, the directory it is in, or
+// nothing -- is none of conflux's, and taken as no root at all, nothing in it opened; and so is a
+// directory of this account's own every account may write.
 func TestARootIsHeldBeforeAnythingInItIsOpened(t *testing.T) {
 	base := realTempDir(t)
 
-	t.Setenv("CONFLUX_DIR", base)
+	inData(t, base)
 
 	d := Default()
 	root := d.State
 
 	plant := func(dir string) {
-		for name, body := range map[string]string{wayName: base + "\n", "serve.lock": ""} {
-			if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
-				t.Fatal(err)
-			}
+		if err := os.WriteFile(filepath.Join(dir, "serve.lock"), nil, 0o600); err != nil {
+			t.Fatal(err)
 		}
 	}
 
 	for _, c := range []struct {
-		name    string
-		make    func(t *testing.T)
-		ok, way bool
+		name string
+		make func(t *testing.T)
+		ok   bool
 	}{
 		{"a directory of this account's own", func(t *testing.T) {
 			if err := os.Mkdir(root, 0o700); err != nil {
@@ -360,7 +139,7 @@ func TestARootIsHeldBeforeAnythingInItIsOpened(t *testing.T) {
 			}
 
 			plant(root)
-		}, true, true},
+		}, true},
 		{"a directory of this account's own every account may write", func(t *testing.T) {
 			if err := os.Mkdir(root, 0o700); err != nil {
 				t.Fatal(err)
@@ -371,37 +150,28 @@ func TestARootIsHeldBeforeAnythingInItIsOpened(t *testing.T) {
 			if err := os.Chmod(root, 0o777); err != nil {
 				t.Fatal(err)
 			}
-		}, false, false},
+		}, false},
 		{"a link to a directory of this account's own", func(t *testing.T) {
 			if err := os.Symlink(mine(t, 0o700, plant), root); err != nil {
 				t.Fatal(err)
 			}
-		}, false, false},
+		}, false},
 		{"a link to the directory it is in", func(t *testing.T) {
 			plant(base)
 
 			if err := os.Symlink(base, root); err != nil {
 				t.Fatal(err)
 			}
-		}, false, false},
+		}, false},
 		{"a link to nothing", func(t *testing.T) {
 			if err := os.Symlink(filepath.Join(base, "missing"), root); err != nil {
 				t.Fatal(err)
 			}
-		}, false, false},
+		}, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			c.make(t)
 			t.Cleanup(func() { os.RemoveAll(root) })
-
-			way, err := d.Way()
-
-			switch {
-			case c.way && (err != nil || !slices.Equal(way, []string{base})):
-				t.Errorf("Way(), the root %s = %q, %v, want it read", c.name, way, err)
-			case !c.way && (err != nil || way != nil):
-				t.Errorf("Way(), the root %s = %q, %v, want no record", c.name, way, err)
-			}
 
 			f, err := d.OpenIn(d.ServeLockFile())
 			if err == nil {
@@ -466,66 +236,11 @@ func mine(t *testing.T, mode os.FileMode, plant func(dir string)) string {
 	return dir
 }
 
-// TestTheRecordIsReadOnlyAsAPlainFile: the record of the way is read as a file another account may have
-// put there, and refused, unread, where it is not one plain file of at most wayMax bytes: a second name
-// for a file elsewhere, a record past the size, and a FIFO, which is not waited on.
-func TestTheRecordIsReadOnlyAsAPlainFile(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("CONFLUX_DIR", filepath.Join(base, "conflux"))
-
-	root := Default().State
-	if err := os.MkdirAll(root, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	record := filepath.Join(root, wayName)
-
-	elsewhere := filepath.Join(t.TempDir(), "elsewhere")
-	if err := os.WriteFile(elsewhere, []byte(base+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	for name, plant := range map[string]func() error{
-		"a second name":    func() error { return os.Link(elsewhere, record) },
-		"past the size":    func() error { return os.WriteFile(record, bytes.Repeat([]byte("x"), wayMax+1), 0o600) },
-		"a FIFO":           func() error { return syscall.Mkfifo(record, 0o600) },
-		"one plain record": func() error { return os.WriteFile(record, []byte(base+"\n"), 0o600) },
-	} {
-		if err := plant(); err != nil {
-			t.Fatal(err)
-		}
-
-		done := make(chan error, 1)
-
-		go func() {
-			_, err := Default().Way()
-			done <- err
-		}()
-
-		select {
-		case err := <-done:
-			switch {
-			case name == "one plain record" && err != nil:
-				t.Errorf("Way(), %s = %v", name, err)
-			case name != "one plain record" && (err == nil || !strings.Contains(err.Error(), "not a plain file")):
-				t.Errorf("Way(), the record %s = %v, want it refused, unread", name, err)
-			}
-		case <-time.After(5 * time.Second):
-			t.Fatalf("Way(), the record %s, did not return", name)
-		}
-
-		if err := os.Remove(record); err != nil {
-			t.Fatal(err)
-		}
-	}
-}
-
 // TestOpenInReadsThroughTheRootHeld: what OpenIn opens is looked up in the root it holds, and not by its
 // name, so a root put at the name once OpenIn holds the one there -- the one held moved aside, another
 // made in its place holding a lock of its own -- answers for nothing: what is read is the held root's.
 func TestOpenInReadsThroughTheRootHeld(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "conflux")
-	t.Setenv("CONFLUX_DIR", root)
+	inData(t, t.TempDir())
 
 	d := Default()
 	if err := d.EnsureAll(); err != nil {

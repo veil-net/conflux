@@ -15,27 +15,40 @@ import (
 	"github.com/veil-net/conflux/internal/paths"
 )
 
-// Dirs roots every conflux path in a fresh temporary directory, as CONFLUX_DIR roots a dev
-// run, for the rest of the test, and makes the directories.
+// Dirs roots every conflux path in a fresh temporary directory, for the rest of the test, and makes the
+// directories.
 func Dirs(tb testing.TB) paths.Dirs {
 	tb.Helper()
 
 	return DirsIn(tb, tb.TempDir())
 }
 
-// DirsIn is Dirs rooted in root, with an ephemeral run's runtime folder in a fresh temporary directory
-// of its own too (Runtime), so that nothing the test runs reaches the system's.
+// DirsIn is Dirs rooted in root (RootedIn).
 func DirsIn(tb testing.TB, root string) paths.Dirs {
 	tb.Helper()
-	tb.Setenv("CONFLUX_DIR", root)
-	Runtime(tb, tb.TempDir())
 
-	d := paths.Default()
+	d := RootedIn(tb, root)
 	if err := d.EnsureAll(); err != nil {
 		tb.Fatalf("EnsureAll: %v", err)
 	}
 
 	return d
+}
+
+// RootedIn roots every conflux path in dir for the rest of the test, and makes nothing: the installation's
+// root, DirName, kept in dir as the system's data folder (paths.SystemData), and an ephemeral run's in a
+// runtime folder of its own (Runtime), so that nothing the test runs reaches the system's. It is the
+// installation's Dirs.
+func RootedIn(tb testing.TB, dir string) paths.Dirs {
+	tb.Helper()
+
+	was := paths.SystemData
+	paths.SystemData = func() string { return dir }
+
+	tb.Cleanup(func() { paths.SystemData = was })
+	Runtime(tb, tb.TempDir())
+
+	return paths.Default()
 }
 
 // Runtime keeps an ephemeral run's root in dir, as the runtime folder (paths.RuntimeFolder), for the rest

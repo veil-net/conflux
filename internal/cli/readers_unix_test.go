@@ -97,9 +97,9 @@ func readersRefuse(t *testing.T, d paths.Dirs, why string) {
 
 	// The release update reads, whose conflux notes what it is asked in asked; and no socket of
 	// the caller's, which a pass-through would take instead of d's.
-	root := paths.Root()
+	data, runtimeFolder := paths.SystemData, paths.RuntimeFolder
 	rel, exe, asked := releaseAsking(t)
-	t.Setenv("CONFLUX_DIR", root)
+	paths.SystemData, paths.RuntimeFolder = data, runtimeFolder
 	t.Setenv(anchorctl.SocketEnv, "")
 
 	// What each command finds, which it leaves as it was: the root, the file update replaces, the
@@ -191,15 +191,15 @@ func serveChild(t *testing.T, args ...string) (out string, code int) {
 
 // TestServeOpensNoLogInARootItRefuses: serve --log opens its log by name, as root, to append to it,
 // so it does that only once EnsureAll has made the root conflux's alone. Under a root EnsureAll
-// refuses -- a CONFLUX_DIR beneath a file, whose way cannot be walked -- the file a link at the log's
-// name leads to gets nothing, and the refusal goes where the service manager sends serve's output.
+// refuses -- one whose data folder is beneath a file, which cannot be walked -- the file a link at the
+// log's name leads to gets nothing, and the refusal goes where the service manager sends serve's output.
 func TestServeOpensNoLogInARootItRefuses(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "file")
 	if err := os.WriteFile(file, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	root := filepath.Join(file, "conflux")
+	pathstest.RootedIn(t, filepath.Join(file, "data"))
 	log := filepath.Join(t.TempDir(), "conflux.log")
 
 	elsewhere := filepath.Join(t.TempDir(), "elsewhere")
@@ -211,7 +211,7 @@ func TestServeOpensNoLogInARootItRefuses(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out, code := serveChild(t, "--foreground", "--dir", root, "--log", log)
+	out, code := serveChild(t, "--foreground", "--log", log)
 	if code != ExitError || !strings.Contains(out, file) {
 		t.Errorf("serve under a root beneath a file exited %d, want %d saying why:\n%s", code, ExitError, out)
 	}
@@ -227,7 +227,7 @@ func TestServeOpensNoLogInARootItRefuses(t *testing.T) {
 // The log is the root's own where the platform keeps one there (macOS, FreeBSD), and beside the root
 // elsewhere, where conflux keeps none in it.
 func TestServeWritesItsLogOnceTheRootIsJudged(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	pathstest.RootedIn(t, t.TempDir())
 
 	d := paths.Default()
 	defer holdRoot(t, d)()
@@ -243,7 +243,7 @@ func TestServeWritesItsLogOnceTheRootIsJudged(t *testing.T) {
 
 	const refusal = "another conflux supervisor is already serving"
 
-	out, code := serveChild(t, "--foreground", "--dir", paths.Root(), "--log", log)
+	out, code := serveChild(t, "--foreground", "--log", log)
 	b, _ := os.ReadFile(log)
 
 	if code != ExitError || !strings.Contains(string(b), refusal) || strings.Contains(out, refusal) {

@@ -135,20 +135,12 @@ beside it goes on observing, and the renewal timer goes on keeping its credentia
 the same holds the other way round for an observer the host will not let capture, beside an
 anchor. With nothing left running, the service renews nothing until it is started again.
 
-## One machine, one service — unless CONFLUX_DIR says otherwise
+## One machine, one service
 
-The unit, the launchd label, the rc script and the SCM entry are all named `conflux`,
-one per machine, which is what "one configuration per machine" means in practice.
-
-A run under `CONFLUX_DIR` is the exception, because it is a separate installation and
-not the machine's own: the service takes a suffix derived from the directory
-(`conflux-44a6e4f4.service`, or `conflux_44a6e4f4` for rc, whose names become shell
-variables), and the directory is written into the argv it is registered with, so the
-supervisor comes back to the same `.conflux` inside it at boot. Its
-`anchord` runs as an account of its own too, `conflux-44a6e4f4`, so a test root's daemon
-never shares an identity with the machine's. None of this happens without `CONFLUX_DIR`, so an ordinary install is
-byte-for-byte what it always was.
-See [testing.md](testing.md).
+The unit (`conflux.service`), the launchd label (`org.veilnet.conflux`), the rc script and the
+SCM entry are all named `conflux`, one per machine, which is what "one configuration per machine"
+means in practice. Each runs the copy of conflux in the installation's root as `serve`, and that
+is the whole of its command line: the root is fixed, so nothing about it is passed.
 
 ## The four verbs, and which pair is which
 
@@ -387,10 +379,9 @@ that is not running succeeds rather than passing on `rc.subr`'s "not running?".
 
 Both find the running service again by matching its command line, unquoted — FreeBSD's
 `rc.subr` the first word `ps` prints against `procname`, OpenBSD's `rcctl` the whole of it
-as a pattern — and OpenBSD's runs it through a shell as well, so no quoting survives: a
-`CONFLUX_DIR` root holding a space, or a shell or pattern character, is refused at
-`install` rather than registered as a service that starts and can then be neither stopped
-nor asked about.
+as a pattern — and OpenBSD's runs it through a shell as well. The command line is
+`/var/db/.conflux/conflux serve` (with `--log` and the log's path on FreeBSD), which needs no
+quoting.
 
 On both, `install` enables and starts nothing, and `restart` starts a service that was
 not running. One platform note: OpenBSD's `tunN` device persists after close, so

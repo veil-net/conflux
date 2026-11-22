@@ -15,16 +15,13 @@ import (
 
 // unitName is used everywhere, suffix included: systemd appends .service to a bare
 // name, and relying on that breaks the day a conflux.socket appears beside it.
-//
-// A function and not a constant because a run rooted in a CONFLUX_DIR is a separate
-// installation and must not be registered over the machine's own; see scope.
-func unitName() string { return "conflux" + paths.Scope() + ".service" }
+const unitName = "conflux.service"
 
-func unitPath() string { return "/etc/systemd/system/" + unitName() }
+const unitPath = "/etc/systemd/system/" + unitName
 
 // wantsPath is the link `systemctl enable` makes for the unit's WantedBy=, and what
 // enabled means on disk.
-func wantsPath() string { return "/etc/systemd/system/multi-user.target.wants/" + unitName() }
+func wantsPath() string { return "/etc/systemd/system/multi-user.target.wants/" + unitName }
 
 type systemd struct{}
 
@@ -50,14 +47,14 @@ func (s systemd) Install(exe string, args ...string) error {
 	// Registered exactly so already, which is every re-run of up and proxy: a read and a
 	// stat, rather than a daemon-reload and an enable that would change nothing and cost
 	// most of what the restart that follows does.
-	if cur, err := os.ReadFile(unitPath()); err == nil && bytes.Equal(cur, unit) {
+	if cur, err := os.ReadFile(unitPath); err == nil && bytes.Equal(cur, unit) {
 		if _, err := os.Lstat(wantsPath()); err == nil {
 			return nil
 		}
 	}
 
 	// Readable by all, as systemd expects a unit to be; written whole or not at all.
-	if err := paths.WriteAtomic(unitPath(), 0o644, -1, -1, unit); err != nil {
+	if err := paths.WriteAtomic(unitPath, 0o644, -1, -1, unit); err != nil {
 		return err
 	}
 
@@ -68,23 +65,23 @@ func (s systemd) Install(exe string, args ...string) error {
 	// Enable, and deliberately not start. Starting is the caller's decision, and
 	// `conflux install` on a machine with no configuration must register without
 	// starting anything.
-	return run("systemctl", "enable", unitName())
+	return run("systemctl", "enable", unitName)
 }
 
 func (s systemd) Remove() error {
 	// Every step tolerates its own failure, so a unit file already deleted does not
 	// stop the rest from being undone.
-	errs := []error{run("systemctl", "disable", "--now", unitName())}
+	errs := []error{run("systemctl", "disable", "--now", unitName)}
 
 	// Gone with a disable that worked, and left dangling by one that did not.
-	for _, path := range []string{wantsPath(), unitPath()} {
+	for _, path := range []string{wantsPath(), unitPath} {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			errs = append(errs, err)
 		}
 	}
 
 	errs = append(errs, run("systemctl", "daemon-reload"))
-	_ = run("systemctl", "reset-failed", unitName())
+	_ = run("systemctl", "reset-failed", unitName)
 
 	if installed, _ := s.Installed(); installed {
 		return errors.Join(errs...)
@@ -94,20 +91,20 @@ func (s systemd) Remove() error {
 	return nil
 }
 
-func (systemd) Stop() error { return run("systemctl", "stop", unitName()) }
+func (systemd) Stop() error { return run("systemctl", "stop", unitName) }
 
 // Running asks systemd for the unit's main process (mainPID): a Type=notify unit is still activating
 // until its supervisor says it is up, and runs all that time. systemctl show answers for a unit it does
 // not know too, so a failure is one systemd did not answer.
 func (systemd) Running() (bool, error) {
-	out, err := output("systemctl", "show", unitName(), "--property=MainPID")
+	out, err := output("systemctl", "show", unitName, "--property=MainPID")
 	if err != nil {
 		return false, err
 	}
 
 	running, err := mainPID(out)
 	if err != nil {
-		return false, fmt.Errorf("systemctl show %s %w", unitName(), err)
+		return false, fmt.Errorf("systemctl show %s %w", unitName, err)
 	}
 
 	return running, nil
@@ -116,14 +113,14 @@ func (systemd) Running() (bool, error) {
 // Restart clears a failed unit first: one started too often in a row refuses every
 // start until its interval has passed, and an operator's start is not one of a loop.
 func (systemd) Restart() error {
-	_ = run("systemctl", "reset-failed", unitName())
+	_ = run("systemctl", "reset-failed", unitName)
 
-	return run("systemctl", "restart", unitName())
+	return run("systemctl", "restart", unitName)
 }
 
 // Installed is a stat rather than `systemctl list-unit-files`: cheaper, and it
 // answers correctly on a machine where systemd is not currently running.
-func (systemd) Installed() (bool, error) { return exists(unitPath()) }
+func (systemd) Installed() (bool, error) { return exists(unitPath) }
 
 // Describe asks systemd once for both answers it gives.
 func (s systemd) Describe() string {
@@ -132,7 +129,7 @@ func (s systemd) Describe() string {
 		return "not installed"
 	}
 
-	out, _ := query("systemctl", "show", unitName(), "--property=ActiveState,UnitFileState")
+	out, _ := query("systemctl", "show", unitName, "--property=ActiveState,UnitFileState")
 
 	state, enabled := "unknown", "unknown"
 
@@ -148,7 +145,7 @@ func (s systemd) Describe() string {
 		}
 	}
 
-	return fmt.Sprintf("%s (systemd: %s, %s at boot)", state, unitName(), enabled)
+	return fmt.Sprintf("%s (systemd: %s, %s at boot)", state, unitName, enabled)
 }
 
-func (systemd) LogHint() string { return privcheck.Command("journalctl", "-u", unitName(), "-n", "50") }
+func (systemd) LogHint() string { return privcheck.Command("journalctl", "-u", unitName, "-n", "50") }

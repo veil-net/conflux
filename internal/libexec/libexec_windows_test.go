@@ -26,7 +26,6 @@ import (
 func TestAUsageCopyIsGuardedForWhoRunsIt(t *testing.T) {
 	anchortest.Require(t)
 
-	t.Setenv("CONFLUX_DIR", filepath.Join(t.TempDir(), "conflux"))
 	pathstest.Temporary(t, t.TempDir())
 	programData := pathstest.ProgramData(t, t.TempDir())
 
@@ -105,7 +104,7 @@ func TestAUsageCopyIsGuardedForWhoRunsIt(t *testing.T) {
 func TestAStagingDirectoryIsMadeWithItsDACL(t *testing.T) {
 	anchortest.Require(t)
 
-	d := pathstest.DirsIn(t, filepath.Join(t.TempDir(), "conflux"))
+	d := pathstest.DirsIn(t, t.TempDir())
 
 	if err := os.MkdirAll(d.Libexec(), 0o700); err != nil {
 		t.Fatal(err)

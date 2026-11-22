@@ -28,8 +28,7 @@ import (
 // is removed is made again, fresh, by this conflux.
 //
 //   - The service is stopped where a supervisor serves the root, asked of its serve lock through the
-//     root held (flock.HeldIn): a way to a CONFLUX_DIR that another account may change is refused
-//     there, before anything is stopped. A root paths' check refuses for anything but not being there
+//     root held (flock.HeldIn). A root paths' check refuses for anything but not being there
 //     -- checked, what the caller's check of d said -- holds no lock conflux reads, and a supervisor may
 //     serve it all the same, so the service is stopped there too, before EnsureAll makes the root
 //     afresh. A supervisor the boot service did not start -- one run by hand -- is refused too, with

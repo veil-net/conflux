@@ -8,8 +8,8 @@ import (
 )
 
 // WriteAtomic replaces path with chunks, written one after another, or leaves what was there: the one
-// atomic write conflux has, for the configuration, the state, the manifest, the record of the way
-// (recordWay), and what the daemon and the boot services write.
+// atomic write conflux has, for the configuration, the state, the manifest, and what the daemon and
+// the boot services write.
 //
 // A crash, a full disk or a kill between the open and the write must not produce a truncated
 // conflux.json or -- far worse -- a truncated manifest.b64, which would destroy an identity that has

@@ -18,8 +18,7 @@ func cannotExecute(bin string) string {
 	msg := fmt.Sprintf("the anchor binaries were extracted to %s but will not run from there.", bin)
 
 	if ok, err := paths.MountAllowsExec(bin); err == nil && !ok {
-		return msg + "\n  that filesystem is mounted noexec.\n" +
-			"  set CONFLUX_DIR to a directory on a filesystem that allows execution."
+		return msg + "\n  that filesystem is mounted noexec: conflux runs anchord from there, so it must allow execution."
 	}
 
 	if b, err := os.ReadFile(selinuxEnforce); err == nil && len(b) > 0 && b[0] == '1' {
@@ -38,6 +37,5 @@ var selinuxEnforce = "/sys/fs/selinux/enforce"
 func selinuxHint(bin string) string {
 	return "  SELinux is enforcing, and a binary under this path is probably labelled var_lib_t.\n" +
 		"  try:  " + privcheck.Retry(privcheck.Command("semanage", "fcontext", "-a", "-t", "bin_t", bin+"(/.*)?")) +
-		" && " + privcheck.Retry(privcheck.Command("restorecon", "-R", bin)) + "\n" +
-		"  or set CONFLUX_DIR to a directory execution is permitted from."
+		" && " + privcheck.Retry(privcheck.Command("restorecon", "-R", bin))
 }

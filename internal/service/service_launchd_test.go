@@ -11,11 +11,11 @@ import (
 	"testing"
 )
 
-// TestThePlistCarriesAnyPath: a CONFLUX_DIR may hold any character a path can, and the
-// characters XML gives meaning to must arrive in ProgramArguments as themselves.
+// TestThePlistCarriesAnyPath: the characters XML gives meaning to must arrive in ProgramArguments as
+// themselves, and a space -- the default root is in /Library/Application Support -- as itself.
 func TestThePlistCarriesAnyPath(t *testing.T) {
-	argv := []string{"/Library/Application Support/.conflux/conflux", "serve", "--dir", "/tmp/a&b <c>"}
-	plist := launchdPlist("org.veilnet.conflux-1a2b3c4d", argv, "/tmp/a&b <c>/logs/conflux.log")
+	argv := []string{"/tmp/a&b <c>/.conflux/conflux", "serve"}
+	plist := launchdPlist("org.veilnet.conflux", argv, "/tmp/a&b <c>/.conflux/logs/conflux.log")
 
 	dec := xml.NewDecoder(strings.NewReader(plist))
 
@@ -41,8 +41,8 @@ func TestThePlistCarriesAnyPath(t *testing.T) {
 		}
 	}
 
-	want := append([]string{"org.veilnet.conflux-1a2b3c4d"}, argv...)
-	want = append(want, "Interactive", "/tmp/a&b <c>/logs/conflux.log", "/tmp/a&b <c>/logs/conflux.log")
+	want := append([]string{"org.veilnet.conflux"}, argv...)
+	want = append(want, "Interactive", "/tmp/a&b <c>/.conflux/logs/conflux.log", "/tmp/a&b <c>/.conflux/logs/conflux.log")
 
 	if strings.Join(strs, "|") != strings.Join(want, "|") {
 		t.Errorf("the plist's strings are\n  %q\nwant\n  %q", strs, want)

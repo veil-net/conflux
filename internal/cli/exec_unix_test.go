@@ -159,7 +159,7 @@ func standInScript(t *testing.T) string {
 // standInEnv is the environment conflux is run in, by TestMain, as a pass-through to a socket the user
 // named, with a temporary copy of script for its anchorctl (standInAnchorctl), made in dir.
 func standInEnv(script, dir string) []string {
-	return append(os.Environ(), childArgs+"=peers\n-socket\nunused", standInAnchorctl+"="+script, "TMPDIR="+dir)
+	return append(childEnv("peers", "-socket", "unused"), standInAnchorctl+"="+script, "TMPDIR="+dir)
 }
 
 // TestOnlyATemporaryCopyRunsAsAChild: a pass-through whose anchorctl is the installation's extraction --

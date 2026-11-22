@@ -75,6 +75,16 @@ where no `CONFLUX_DIR` is set — every test linking `pathstest` keeps in that t
 well (`paths.ProgramData`, which the system's `\ProgramData` is otherwise), or in a test's own where
 it points `TMP` and `TEMP` at one.
 
+Wherever a reader's temporary anchorctl is made, a test that makes one points the temporary
+directory at a directory of its own first (`pathstest.Temporary`: `TMPDIR`, `TMP` and `TEMP`), and
+removes the copy once it ends however it ends, before it asserts anything of it; `cli`'s tests run
+with a temporary directory of their own besides (`TestMain`), so that the uninstalls and tidies they
+run, which remove what killed readers left there, never look in the machine's. A test that runs
+conflux as a child of its own binary — a pass-through, which on Unix replaces the process, or
+`serve`, which puts its log over its output — goes through `confluxChild`, which kills the child past
+thirty seconds and fails the test, and fails it on a panic too, so no conflux that never ends can
+hang the suite.
+
 **The argv goldens**, in `internal/anchorctl/testdata/argv/`, hold one file per
 scenario, one argument per line. Argv construction is where a wrapper's bugs live and
 it is invisible in a review diff — anchor's flag is `-serve-subnets`, plural — so a

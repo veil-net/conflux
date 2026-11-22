@@ -35,6 +35,20 @@ func DirsIn(tb testing.TB, root string) paths.Dirs {
 	return d
 }
 
+// Temporary makes dir the process's temporary directory for the rest of the test -- TMPDIR, and TMP and
+// TEMP, which on Windows a test linking this package keeps %ProgramData%'s in too -- and is dir: where a
+// reader's temporary anchorctl is made, whether conflux runs elevated or not, so that what a test makes
+// there is rooted in a directory of its own.
+func Temporary(tb testing.TB, dir string) string {
+	tb.Helper()
+
+	for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
+		tb.Setenv(name, dir)
+	}
+
+	return dir
+}
+
 // ShortRoot is a fresh directory with a short name, removed when the test ends, for a root a
 // control socket lies below: TempDir's is named after the test, and a unix socket's path has
 // room for 103 bytes on macOS and 107 on Linux and Windows. A test named at length under

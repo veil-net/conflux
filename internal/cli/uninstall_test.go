@@ -15,6 +15,7 @@ import (
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/pathstest"
 	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/ui"
 )
@@ -157,13 +158,9 @@ func TestUninstallLeavesNoTrace(t *testing.T) {
 			}
 
 			// Where a reader keeps its temporary anchorctl, which a killed one leaves.
-			tmp := filepath.Join(base, "tmp")
+			tmp := pathstest.Temporary(t, filepath.Join(base, "tmp"))
 			if err := os.Mkdir(tmp, 0o700); err != nil {
 				t.Fatal(err)
-			}
-
-			for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
-				t.Setenv(name, tmp)
 			}
 
 			before := snapshot(t, base)

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/veil-net/conflux/anchor"
 	"github.com/veil-net/conflux/internal/anchortest"
@@ -29,15 +31,57 @@ import (
 	"github.com/veil-net/conflux/internal/ui"
 )
 
+// childArgs, set, makes the test binary conflux, with these arguments, a line each, as TestMain starts:
+// confluxChild's child.
+const childArgs = "CONFLUX_TEST_ARGS"
+
+// childDeadline is how long confluxChild waits for its child before it kills it and fails the test.
+const childDeadline = 30 * time.Second
+
+// confluxChild runs conflux with args, in the test's environment, in a child of the test binary
+// (TestMain): conflux on Unix replaces itself with anchorctl for a pass-through to its daemon, and serve
+// puts its log over its output, neither of which the test binary may. It is what the child wrote, to its
+// output and its errors, and its exit code. A child that panics fails the test, and so does one still
+// running past childDeadline, which is killed, whatever it left running given WaitDelay to let go of the
+// output.
+func confluxChild(t *testing.T, args ...string) (out string, code int) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(t.Context(), childDeadline)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^$") //nolint:gosec // this test binary
+	cmd.Env = append(os.Environ(), childArgs+"="+strings.Join(args, "\n"))
+	cmd.WaitDelay = 5 * time.Second
+
+	b, err := cmd.CombinedOutput()
+
+	switch {
+	case ctx.Err() != nil:
+		t.Fatalf("conflux %s was still running after %v:\n%s", strings.Join(args, " "), childDeadline, b)
+	case cmd.ProcessState == nil:
+		t.Fatalf("run conflux %s: %v\n%s", strings.Join(args, " "), err, b)
+	case strings.Contains(string(b), "panic:"):
+		t.Errorf("conflux %s panicked:\n%s", strings.Join(args, " "), b)
+	}
+
+	return string(b), cmd.ProcessState.ExitCode()
+}
+
 // testTemp names the temporary directory TestMain gave the tests, in their environment, and so in a child
 // of the test binary's that one of them runs, which keeps the temporary directory its test gave it.
 const testTemp = "CONFLUX_TEST_TEMP"
 
-// TestMain runs the tests with a temporary directory of their own -- TMPDIR, and TMP and TEMP, which on
-// Windows every test linking pathstest keeps %ProgramData%'s in as well -- so that what tidy and
-// uninstall remove where a reader keeps its temporary anchorctl (libexec.RemoveTemporary) is looked for
-// there, never in the machine's, where its own readers, or another package's tests, may be running one.
+// TestMain is conflux where childArgs is set (confluxChild). Otherwise it runs the tests with a
+// temporary directory of their own -- TMPDIR, and TMP and TEMP, which on Windows every test linking
+// pathstest keeps %ProgramData%'s in as well -- so that what tidy and uninstall remove where a reader
+// keeps its temporary anchorctl (libexec.RemoveTemporary) is looked for there, never in the machine's,
+// where its own readers, or another package's tests, may be running one.
 func TestMain(m *testing.M) {
+	if args := os.Getenv(childArgs); args != "" {
+		os.Exit(Main(append([]string{"conflux"}, strings.Split(args, "\n")...)))
+	}
+
 	if os.Getenv(testTemp) != "" {
 		os.Exit(m.Run())
 	}

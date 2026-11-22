@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -179,33 +178,15 @@ func tree(t *testing.T, root string) []string {
 	return found
 }
 
-// serveArgs, set, makes a test that calls asServe first conflux serve, with these arguments, a line
-// each: serve places its log over stdout and stderr, which would be the test binary's, so it runs
-// in a child of that binary (serveChild).
-const serveArgs = "CONFLUX_TEST_SERVE_ARGS"
-
-// asServe is conflux serve, exiting as it does, where serveArgs is set: serveChild's child.
-func asServe() {
-	if args := os.Getenv(serveArgs); args != "" {
-		os.Exit(Main(append([]string{"conflux", "serve"}, strings.Split(args, "\n")...)))
-	}
-}
-
-// serveChild runs conflux serve with args, outside systemd, in a child of the test binary running
-// t's test, which asServe makes it: what it wrote where the service manager would read it, and
-// its exit code.
+// serveChild runs conflux serve with args, outside systemd, in a child of the test binary (confluxChild),
+// which puts its log over its output: what it wrote where the service manager would read it, and its
+// exit code.
 func serveChild(t *testing.T, args ...string) (out string, code int) {
 	t.Helper()
 
-	cmd := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$") //nolint:gosec // this test binary
-	cmd.Env = append(os.Environ(), "NOTIFY_SOCKET=", serveArgs+"="+strings.Join(args, "\n"))
+	t.Setenv("NOTIFY_SOCKET", "")
 
-	b, err := cmd.CombinedOutput()
-	if cmd.ProcessState == nil {
-		t.Fatalf("run serve: %v", err)
-	}
-
-	return string(b), cmd.ProcessState.ExitCode()
+	return confluxChild(t, append([]string{"serve"}, args...)...)
 }
 
 // TestServeOpensNoLogInARootItRefuses: serve --log opens its log by name, as root, to append to it,
@@ -214,8 +195,6 @@ func serveChild(t *testing.T, args ...string) (out string, code int) {
 // root of their own, with a link at logs/conflux.log -- the file the link leads to gets nothing,
 // and the refusal goes where the service manager sends serve's output.
 func TestServeOpensNoLogInARootItRefuses(t *testing.T) {
-	asServe()
-
 	open := t.TempDir()
 	root := filepath.Join(open, "conflux")
 	log := filepath.Join(root, paths.DirName, "logs", "conflux.log")
@@ -256,8 +235,6 @@ func TestServeOpensNoLogInARootItRefuses(t *testing.T) {
 // The log is the root's own where the platform keeps one there (macOS, FreeBSD), and beside the root
 // elsewhere, where conflux keeps none in it.
 func TestServeWritesItsLogOnceTheRootIsJudged(t *testing.T) {
-	asServe()
-
 	t.Setenv("CONFLUX_DIR", t.TempDir())
 
 	d := paths.Default()
@@ -378,9 +355,7 @@ func TestAStartRemakesARootNotAsConfluxMakesOne(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := os.Chmod(d.State, 0o757); err != nil {
-		t.Fatal(err)
-	}
+	pathstest.NotAsConfluxMakesIt(t, d.State)
 
 	mgr := &fakeManager{d: d, restartErr: errStartsNothing}
 	standInService(t, mgr)
@@ -537,22 +512,14 @@ func TestAnUpdateStopsNothingOnAWayItRefuses(t *testing.T) {
 	}
 }
 
-// readerArgs, set, makes TestAReaderLeavesNothingInTheTemporaryDirectory's child conflux with these
-// arguments, a line each: a pass-through to conflux's daemon replaces the process with anchorctl where
-// that is the installation's extraction, which the test binary itself must not be.
-const readerArgs = "CONFLUX_TEST_READER_ARGS"
-
 // TestAReaderLeavesNothingInTheTemporaryDirectory: a reader of an installation with this build's pair
 // not extracted -- status, with the daemon's token or without it, a pass-through to the daemon (peers),
-// and a pass-through for usage (peers -h) -- runs a temporary copy of anchorctl where there is no bin
-// directory to extract the pair into, and removes it however it ends; and where there is one, extracts
-// the pair there and writes nothing in the temporary directory at all. Either way the temporary
-// directory is left as it was found: empty.
+// a pass-through for usage (peers -h) and help -- runs a temporary copy of anchorctl where there is no
+// bin directory to extract the pair into, and removes it however it ends; and where there is one,
+// extracts the pair there and writes nothing in the temporary directory at all. Either way the temporary
+// directory is left as it was found, empty, and the reader ends as anchorctl did -- usage and help 0,
+// the pass-through anchorctl's own refusal of a socket nothing listens on, 1 -- never by a panic.
 func TestAReaderLeavesNothingInTheTemporaryDirectory(t *testing.T) {
-	if args := os.Getenv(readerArgs); args != "" {
-		os.Exit(Main(append([]string{"conflux"}, strings.Split(args, "\n")...)))
-	}
-
 	anchortest.Require(t)
 
 	for _, bin := range []bool{false, true} {
@@ -560,17 +527,19 @@ func TestAReaderLeavesNothingInTheTemporaryDirectory(t *testing.T) {
 			name  string
 			argv  []string
 			token bool
+			code  int
+			said  string
 		}{
-			{"status", []string{"status"}, true},
-			{"status, no token", []string{"status"}, false},
-			{"peers", []string{"peers"}, true},
-			{"peers -h", []string{"peers", "-h"}, true},
+			{"status", []string{"status"}, true, ExitOK, ""},
+			{"status, no token", []string{"status"}, false, ExitOK, ""},
+			{"peers", []string{"peers"}, true, 1, "anchorctl:"},
+			{"peers -h", []string{"peers", "-h"}, true, ExitOK, ""},
+			{"help", []string{"help"}, true, ExitOK, "anchorctl"},
 		} {
 			t.Run(fmt.Sprintf("%s, bin %v", c.name, bin), func(t *testing.T) {
 				d := pathstest.DirsIn(t, pathstest.ShortRoot(t))
 
-				tmp := t.TempDir()
-				t.Setenv("TMPDIR", tmp)
+				tmp := pathstest.Temporary(t, t.TempDir())
 				t.Setenv(anchorctl.SocketEnv, "")
 				t.Setenv(anchorctl.TokenEnv, "")
 
@@ -600,17 +569,21 @@ func TestAReaderLeavesNothingInTheTemporaryDirectory(t *testing.T) {
 					}
 				}
 
+				var (
+					out  string
+					code int
+				)
+
 				if c.argv[0] == "status" {
 					standInService(t, &fakeManager{d: d})
-					capture(t, c.argv...)
+					out, _, code = capture(t, c.argv...)
 				} else {
-					cmd := exec.Command(os.Args[0], //nolint:gosec // this test binary
-						"-test.run=^TestAReaderLeavesNothingInTheTemporaryDirectory$")
-					cmd.Env = append(os.Environ(), readerArgs+"="+strings.Join(c.argv, "\n"))
+					out, code = confluxChild(t, c.argv...)
+				}
 
-					if out, err := cmd.CombinedOutput(); cmd.ProcessState == nil {
-						t.Fatalf("run conflux %s: %v\n%s", strings.Join(c.argv, " "), err, out)
-					}
+				if code != c.code || !strings.Contains(out, c.said) {
+					t.Errorf("conflux %s exited %d, want %d, saying %q:\n%s", strings.Join(c.argv, " "), code, c.code,
+						c.said, out)
 				}
 
 				if left, _ := os.ReadDir(tmp); len(left) > 0 {
@@ -634,11 +607,7 @@ func TestAReaderLeavesNothingInTheTemporaryDirectory(t *testing.T) {
 func TestTheServiceStartsAgainInNoRootItRefuses(t *testing.T) {
 	d := pathstest.Dirs(t)
 
-	if err := os.Chmod(d.State, 0o757); err != nil {
-		t.Fatal(err)
-	}
-
-	t.Cleanup(func() { _ = os.Chmod(d.State, 0o700) })
+	pathstest.NotAsConfluxMakesIt(t, d.State)
 
 	mgr := &fakeManager{d: d}
 

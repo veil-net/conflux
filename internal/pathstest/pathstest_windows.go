@@ -29,9 +29,9 @@ func init() {
 	paths.ProgramData = os.TempDir
 }
 
-// NotAsConfluxMakesIt makes p, a file or a folder in one of conflux's roots, this administrator's, as an
-// earlier conflux left the service's copy on a Windows client: not as conflux makes one of its own, which
-// the Administrators own.
+// NotAsConfluxMakesIt makes p, a root of conflux's, or a file or a folder in one, this administrator's, as
+// an earlier conflux left the service's copy on a Windows client: not as conflux makes one of its own,
+// which the Administrators own.
 func NotAsConfluxMakesIt(tb testing.TB, p string) {
 	tb.Helper()
 

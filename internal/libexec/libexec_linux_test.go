@@ -9,6 +9,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/pathstest"
 )
 
 // TestUsageRunsFromWhereExecIsAllowed: a temporary directory on a filesystem mounted noexec,
@@ -24,17 +25,15 @@ func TestUsageRunsFromWhereExecIsAllowed(t *testing.T) {
 	}
 
 	t.Setenv("CONFLUX_DIR", filepath.Join(parent, "never"))
-	t.Setenv("TMPDIR", "/proc/conflux-noexec-tmp")
+	pathstest.Temporary(t, "/proc/conflux-noexec-tmp")
 
 	cache := filepath.Join(t.TempDir(), "cache")
 	t.Setenv("XDG_CACHE_HOME", cache)
 
-	bin, done, err := ForUsage(paths.Default(), paths.Default().Check(), true)
+	bin, _, err := forUsage(t, paths.Default())
 	if err != nil {
 		t.Fatalf("ForUsage: %v", err)
 	}
-
-	defer done()
 
 	if !strings.HasPrefix(bin, cache+string(filepath.Separator)) {
 		t.Errorf("the temporary anchorctl is %s, want it in the cache directory %s", bin, cache)

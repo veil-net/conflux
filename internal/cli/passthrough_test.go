@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -36,10 +35,6 @@ func TestAPassThroughWithNothingRunningMakesNothing(t *testing.T) {
 	}
 }
 
-// namedSocketArgs, set, makes TestAPassThroughToANamedSocketMakesNothing's test binary the
-// conflux it runs: these arguments, one to a line.
-const namedSocketArgs = "CONFLUX_TEST_NAMED_SOCKET_ARGS"
-
 // TestAPassThroughToANamedSocketMakesNothing: a socket the user named, as -socket or
 // ANCHOR_SOCKET, is a daemon conflux does not manage, so reaching it makes nothing of
 // conflux's -- no directory, no extraction, an installation there or not: its anchorctl is a
@@ -47,37 +42,32 @@ const namedSocketArgs = "CONFLUX_TEST_NAMED_SOCKET_ARGS"
 func TestAPassThroughToANamedSocketMakesNothing(t *testing.T) {
 	anchortest.Require(t)
 
-	// Run as a child: on Unix a pass-through to conflux's own daemon replaces the process,
-	// which here would be the test binary.
-	if args := os.Getenv(namedSocketArgs); args != "" {
-		os.Exit(Main(append([]string{"conflux"}, strings.Split(args, "\n")...)))
-	}
-
 	sock := filepath.Join(t.TempDir(), "sock")
 
 	for name, tc := range map[string]struct {
 		args []string
 		env  string
 	}{
-		anchorctl.SocketEnv: {[]string{"peers"}, anchorctl.SocketEnv + "=" + sock},
-		"-socket":           {[]string{"peers", "-socket", sock}, anchorctl.SocketEnv + "="},
+		anchorctl.SocketEnv: {[]string{"peers"}, sock},
+		"-socket":           {[]string{"peers", "-socket", sock}, ""},
 	} {
 		for _, installed := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s, installed %v", name, installed), func(t *testing.T) {
 				root := filepath.Join(t.TempDir(), "conflux")
+				t.Setenv("CONFLUX_DIR", root)
+				t.Setenv(anchorctl.TokenEnv, "t")
+				t.Setenv(anchorctl.SocketEnv, tc.env)
 
 				var d paths.Dirs
 				if installed {
 					d = pathstest.DirsIn(t, root)
 				}
 
-				cmd := exec.Command(os.Args[0], "-test.run=^TestAPassThroughToANamedSocketMakesNothing$") //nolint:gosec // this test binary
-				cmd.Env = append(os.Environ(), "CONFLUX_DIR="+root, anchorctl.TokenEnv+"=t", tc.env,
-					namedSocketArgs+"="+strings.Join(tc.args, "\n"))
-
-				// anchorctl's own answer: a dial to the socket named, which nothing listens on.
-				if out, err := cmd.CombinedOutput(); err == nil || !strings.Contains(string(out), sock) {
-					t.Errorf("conflux %s with %s: %v\n%s", strings.Join(tc.args, " "), tc.env, err, out)
+				// Run as a child: on Unix a pass-through to conflux's own daemon replaces the process. What
+				// it says is anchorctl's own answer: a dial to the socket named, which nothing listens on.
+				if out, code := confluxChild(t, tc.args...); code == ExitOK || !strings.Contains(out, sock) {
+					t.Errorf("conflux %s with %s=%s exited %d:\n%s", strings.Join(tc.args, " "), anchorctl.SocketEnv,
+						tc.env, code, out)
 				}
 
 				if !installed {
@@ -106,14 +96,13 @@ func TestAnEmptySocketVariableIsUnset(t *testing.T) {
 	d := pathstest.Dirs(t)
 	looksRunning(t, d)
 
-	// The child TestAPassThroughToANamedSocketMakesNothing makes of this test binary.
-	cmd := exec.Command(os.Args[0], "-test.run=^TestAPassThroughToANamedSocketMakesNothing$") //nolint:gosec // this test binary
-	cmd.Env = append(os.Environ(), anchorctl.SocketEnv+"=", anchorctl.TokenEnv+"=", namedSocketArgs+"=peers")
+	t.Setenv(anchorctl.SocketEnv, "")
+	t.Setenv(anchorctl.TokenEnv, "")
 
 	// anchorctl's own answer: a dial to conflux's socket, which is a file nothing listens on.
-	if out, err := cmd.CombinedOutput(); err == nil || !strings.Contains(string(out), d.Socket()) {
-		t.Errorf("conflux peers with %s and %s exported empty did not reach %s: %v\n%s",
-			anchorctl.SocketEnv, anchorctl.TokenEnv, d.Socket(), err, out)
+	if out, code := confluxChild(t, "peers"); code == ExitOK || !strings.Contains(out, d.Socket()) {
+		t.Errorf("conflux peers with %s and %s exported empty exited %d, and did not reach %s:\n%s",
+			anchorctl.SocketEnv, anchorctl.TokenEnv, code, d.Socket(), out)
 	}
 }
 

@@ -55,10 +55,7 @@ func oldInstall(t *testing.T) earlier {
 
 	d := pathstest.Dirs(t)
 
-	tmp := t.TempDir()
-	for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
-		t.Setenv(name, tmp)
-	}
+	tmp := pathstest.Temporary(t, t.TempDir())
 
 	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Proxies: []string{"8080=127.0.0.1:3000"},
 		Taints: []string{"cfx-old"}}); err != nil {

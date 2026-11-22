@@ -403,11 +403,11 @@ func TestUsageMakesNothing(t *testing.T) {
 	}
 
 	t.Setenv("CONFLUX_DIR", filepath.Join(parent, "never"))
-	t.Setenv("TMPDIR", t.TempDir())
+	pathstest.Temporary(t, t.TempDir())
 
 	d := paths.Default()
 
-	bin, done, err := ForUsage(d, d.Check(), true)
+	bin, done, err := forUsage(t, d)
 	if err != nil {
 		t.Fatalf("ForUsage: %v", err)
 	}
@@ -435,10 +435,23 @@ func TestUsageMakesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if bin, done, err = ForUsage(d, d.Check(), true); err != nil || bin != tools.Anchorctl || done != nil {
+	if bin, done, err = forUsage(t, d); err != nil || bin != tools.Anchorctl || done != nil {
 		t.Errorf("usage where %s is extracted = %s, %v, and done %v, want that, and nothing to remove",
 			tools.Anchorctl, bin, err, done != nil)
 	}
+}
+
+// forUsage is ForUsage of the installation d, its readers' check held first, the temporary copy it makes,
+// where it makes one, removed once the test ends however it ends: before anything of it is asserted.
+func forUsage(t *testing.T, d paths.Dirs) (string, func(), error) {
+	t.Helper()
+
+	bin, done, err := ForUsage(d, d.Check(), true)
+	if done != nil {
+		t.Cleanup(done)
+	}
+
+	return bin, done, err
 }
 
 // TestAReaderExtractsIntoABinDirectoryOfConfluxs: a reader -- help, a status, a renew, a pass-through --
@@ -451,18 +464,14 @@ func TestUsageMakesNothing(t *testing.T) {
 func TestAReaderExtractsIntoABinDirectoryOfConfluxs(t *testing.T) {
 	anchortest.Require(t)
 
-	tmp := t.TempDir()
-	for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
-		t.Setenv(name, tmp)
-	}
-
+	tmp := pathstest.Temporary(t, t.TempDir())
 	d := pathstest.Dirs(t)
 
 	if err := os.Remove(d.Libexec()); err != nil {
 		t.Fatal(err)
 	}
 
-	bin, done, err := ForUsage(d, d.Check(), true)
+	bin, done, err := forUsage(t, d)
 	if err != nil || done == nil || !strings.HasPrefix(bin, tmp+string(filepath.Separator)) {
 		t.Fatalf("a reader with no bin directory = %s, %v, want a temporary copy in %s to remove", bin, err, tmp)
 	}
@@ -480,7 +489,7 @@ func TestAReaderExtractsIntoABinDirectoryOfConfluxs(t *testing.T) {
 
 	want := toolsIn(d)
 
-	if bin, done, err := ForUsage(d, d.Check(), true); err != nil || bin != want.Anchorctl || done != nil || !want.complete() {
+	if bin, done, err := forUsage(t, d); err != nil || bin != want.Anchorctl || done != nil || !want.complete() {
 		t.Errorf("a reader with this build's pair not extracted = %s, %v, and done %v, want %s extracted, and "+
 			"nothing to remove", bin, err, done != nil, want.Anchorctl)
 	}
@@ -493,65 +502,41 @@ func TestAReaderExtractsIntoABinDirectoryOfConfluxs(t *testing.T) {
 		t.Errorf("a reader left %v in the temporary directory", left)
 	}
 
-	if runtime.GOOS == "windows" {
-		return // a mode bit makes nothing another account's there
-	}
+	pathstest.NotAsConfluxMakesIt(t, want.Anchorctl)
 
-	if _, err := Extract(d); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.Chmod(want.Anchorctl, 0o757); err != nil {
-		t.Fatal(err)
-	}
-
-	if bin, done, err := ForUsage(d, d.Check(), true); err != nil || bin != want.Anchorctl || done != nil {
-		t.Errorf("a reader of the pair extracted, its anchorctl's mode changed, = %s, %v, and done %v, want %s "+
-			"as it is found", bin, err, done != nil, want.Anchorctl)
+	if bin, done, err := forUsage(t, d); err != nil || bin != want.Anchorctl || done != nil {
+		t.Errorf("a reader of the pair extracted, its anchorctl not as conflux makes it, = %s, %v, and done %v, "+
+			"want %s as it is found", bin, err, done != nil, want.Anchorctl)
 	}
 }
 
 // TestAReaderExtractsNothingIntoABinDirectoryNotOfConfluxs: where the bin directory is not as conflux makes
-// a folder of its own -- another account may write it -- a reader extracts nothing there, and runs a
+// a folder of its own (pathstest.NotAsConfluxMakesIt) a reader extracts nothing there, and runs a
 // temporary copy it removes.
 func TestAReaderExtractsNothingIntoABinDirectoryNotOfConfluxs(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("a mode bit refuses nothing on Windows")
-	}
-
 	anchortest.Require(t)
 
-	tmp := t.TempDir()
-	t.Setenv("TMPDIR", tmp)
-
+	tmp := pathstest.Temporary(t, t.TempDir())
 	d := pathstest.Dirs(t)
 
-	if err := os.Chmod(d.Libexec(), 0o757); err != nil {
-		t.Fatal(err)
-	}
+	pathstest.NotAsConfluxMakesIt(t, d.Libexec())
 
-	bin, done, err := ForUsage(d, d.Check(), true)
+	bin, done, err := forUsage(t, d)
 	if err != nil || done == nil || !strings.HasPrefix(bin, tmp+string(filepath.Separator)) {
-		t.Fatalf("a reader of a bin directory every account may write = %s, %v, want a temporary copy in %s", bin,
+		t.Fatalf("a reader of a bin directory not as conflux makes it = %s, %v, want a temporary copy in %s", bin,
 			err, tmp)
 	}
 
-	done()
-
 	if left, _ := os.ReadDir(d.Libexec()); len(left) > 0 {
-		t.Errorf("a reader extracted %v into a bin directory every account may write", left)
+		t.Errorf("a reader extracted %v into a bin directory not as conflux makes it", left)
 	}
 }
 
 // TestUsageRunsNothingFromARootItRefuses: whoever may write a root could have put an anchorctl of
 // their own where a set is extracted, with the set's name and sizes, so help runs an extraction
-// only from a root that passes paths' check: in one every account may write, it runs a private
-// temporary copy, though a whole extraction is there.
+// only from a root that passes paths' check: in one not as conflux makes one
+// (pathstest.NotAsConfluxMakesIt), it runs a private temporary copy, though a whole extraction is there.
 func TestUsageRunsNothingFromARootItRefuses(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("a mode bit refuses nothing on Windows")
-	}
-
 	anchortest.Require(t)
 
 	parent := t.TempDir()
@@ -561,8 +546,7 @@ func TestUsageRunsNothingFromARootItRefuses(t *testing.T) {
 
 	t.Setenv("CONFLUX_DIR", filepath.Join(parent, "conflux"))
 
-	tmp := t.TempDir()
-	t.Setenv("TMPDIR", tmp)
+	tmp := pathstest.Temporary(t, t.TempDir())
 
 	d := paths.Default()
 	if err := d.EnsureAll(); err != nil {
@@ -574,21 +558,15 @@ func TestUsageRunsNothingFromARootItRefuses(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := os.Chmod(d.State, 0o757); err != nil {
-		t.Fatal(err)
-	}
+	pathstest.NotAsConfluxMakesIt(t, d.State)
 
-	t.Cleanup(func() { _ = os.Chmod(d.State, 0o700) })
-
-	bin, done, err := ForUsage(d, d.Check(), true)
+	bin, _, err := forUsage(t, d)
 	if err != nil {
 		t.Fatalf("ForUsage: %v", err)
 	}
 
-	defer done()
-
 	if !strings.HasPrefix(bin, tmp+string(filepath.Separator)) {
-		t.Errorf("help ran %s from a root every account may write, where %s is extracted; want a copy in %s",
+		t.Errorf("help ran %s from a root not as conflux makes one, where %s is extracted; want a copy in %s",
 			bin, planted.Anchorctl, tmp)
 	}
 }
@@ -599,10 +577,7 @@ func TestUsageRunsNothingFromARootItRefuses(t *testing.T) {
 // there is left, and so is a folder that will not go -- a reader's copy running from it, which Windows
 // removes no file of -- passed over while the rest go.
 func TestRemoveTemporaryRemovesWhatAKilledReaderLeft(t *testing.T) {
-	parent := t.TempDir()
-	for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
-		t.Setenv(name, parent)
-	}
+	parent := pathstest.Temporary(t, t.TempDir())
 
 	left := []string{filepath.Join(parent, temporaryPrefix+"1"), filepath.Join(parent, temporaryPrefix+"2")}
 	inUse := filepath.Join(parent, temporaryPrefix+"3")
@@ -672,17 +647,10 @@ func TestUsageMakesNoTemporaryDirectory(t *testing.T) {
 
 	t.Setenv("CONFLUX_DIR", filepath.Join(parent, "never"))
 
-	missing := filepath.Join(t.TempDir(), "tmp")
-	for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
-		t.Setenv(name, missing)
-	}
+	missing := pathstest.Temporary(t, filepath.Join(t.TempDir(), "tmp"))
 
-	if bin, done, err := ForUsage(paths.Default(), paths.Default().Check(), true); err == nil {
-		done()
-
-		if strings.HasPrefix(bin, missing) {
-			t.Errorf("help ran %s, from the temporary directory it made", bin)
-		}
+	if bin, _, err := forUsage(t, paths.Default()); err == nil && strings.HasPrefix(bin, missing) {
+		t.Errorf("help ran %s, from the temporary directory it made", bin)
 	}
 
 	if _, err := os.Stat(missing); !os.IsNotExist(err) {

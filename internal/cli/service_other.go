@@ -7,11 +7,16 @@ import (
 
 	"github.com/veil-net/conflux/internal/account"
 	"github.com/veil-net/conflux/internal/daemon"
+	"github.com/veil-net/conflux/internal/paths"
 )
 
 // serveAsService is a Windows concern: systemd and launchd run an ordinary process
 // and read its exit code, which is what runSupervisor already is.
 func serveAsService(*daemon.Supervisor) (handled bool, code int) { return false, 0 }
+
+// refusePercent is the SCM's concern alone, which expands a %NAME% in a service's command line: no
+// other service manager reads one there.
+func refusePercent(paths.Dirs) error { return nil }
 
 // removeAccount deletes the accounts anchord ran as -- the installation's, and, with ephemeral, the
 // one an ephemeral run gives it -- when conflux made them, stopping whatever runs as each. The BPF

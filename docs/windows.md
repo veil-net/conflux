@@ -207,9 +207,10 @@ Registered as `conflux`, displayed as `VeilNet Conflux`, running as `LocalSystem
 [service.md](service.md).
 
 The SCM keeps the service's command line as one to expand, and replaces each `%NAME%` in it from
-the system's environment at every start, so registering the service is refused where the copy's path
-or an argument holds a `%`: a `CONFLUX_DIR` of `C:\%OS%` is made and judged as it is spelt, and SYSTEM
-would then run `C:\Windows_NT\.conflux\conflux.exe`, in a folder any account may make. Choose a
+the system's environment at every start, so every command that registers the service — `install`,
+`up`, `proxy`, `observe`, `enrol`, `start`, and the `register` an update runs — refuses, before it
+makes anything, a `CONFLUX_DIR` holding a `%`, or a copy's path holding one: with `C:\%OS%`, SYSTEM
+would run `C:\Windows_NT\.conflux\conflux.exe`, in a folder any account may make. Choose a
 `CONFLUX_DIR` without one.
 
 `anchord` itself runs as SYSTEM only for a TUN, which wintun needs. In userspace mode the

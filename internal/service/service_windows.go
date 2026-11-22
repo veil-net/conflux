@@ -5,7 +5,6 @@ package service
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"golang.org/x/sys/windows"
@@ -28,19 +27,9 @@ type scm struct{}
 func newManager() Manager { return scm{} }
 
 // Install registers exe, run with args, as the service, or updates the registration already there. The
-// SCM keeps the command line as REG_EXPAND_SZ and expands every %NAME% in it at each start, from the
-// system's environment, so an exe or an argument holding a % -- a CONFLUX_DIR such as C:\%OS%, made and
-// judged as it is spelt -- would have SYSTEM run another file than the one conflux placed and judged, in a
-// folder any account may make (C:\Windows_NT): refused, before the SCM is asked anything.
+// SCM keeps the command line as REG_EXPAND_SZ and expands every %NAME% in it at each start, which every
+// command that registers refuses a root for before it makes anything (cli's refusePercent).
 func (scm) Install(exe string, args ...string) error {
-	for _, a := range append([]string{exe}, args...) {
-		if strings.Contains(a, "%") {
-			return fmt.Errorf("%s holds a %%, which the service manager would read as a variable to expand at "+
-				"every start, running another file than the one conflux placed.\n  Choose a CONFLUX_DIR "+
-				"without one", a)
-		}
-	}
-
 	m, err := connect(windows.SC_MANAGER_ALL_ACCESS)
 	if err != nil {
 		return err

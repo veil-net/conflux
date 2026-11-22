@@ -4,6 +4,8 @@ package cli
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"golang.org/x/sys/windows/svc"
@@ -120,3 +122,21 @@ func (h *handler) Execute(_ []string, r <-chan svc.ChangeRequest, s chan<- svc.S
 // removeAccount has nothing to remove on Windows: anchord runs as LOCAL SERVICE, which is
 // the system's, and the service SID it is given goes with the service.
 func removeAccount(bool) error { return nil }
+
+// refusePercent refuses d's installation where the command line its service would be registered with --
+// the copy of conflux placed for it, and the CONFLUX_DIR it is handed back -- holds a %. The SCM keeps the
+// line as REG_EXPAND_SZ and expands every %NAME% in it at each start, from the system's environment, so a
+// CONFLUX_DIR such as C:\%OS% would have SYSTEM run another file than the one conflux placed and judged, in
+// a folder any account may make (C:\Windows_NT). Every command that registers the service asks it before
+// it makes anything: those that go through handOver, and register.
+func refusePercent(d paths.Dirs) error {
+	for _, s := range []string{d.ServiceExecutable(), paths.Root()} {
+		if strings.Contains(s, "%") {
+			return fmt.Errorf("%s holds a %%, which the service manager would read as a variable to expand at "+
+				"every start, running another file than the one conflux placed.\n  Choose a CONFLUX_DIR "+
+				"without one", s)
+		}
+	}
+
+	return nil
+}

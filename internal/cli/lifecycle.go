@@ -63,7 +63,8 @@ func staleCopy(d paths.Dirs, checked error) bool {
 }
 
 // handOver makes d's roots for up, proxy, observe, install, enrol and start, before anything in them is
-// read by its name, and is place, which the command's install places the copy of conflux the boot
+// read by its name -- once refusePercent has passed them, before anything is made -- and is place,
+// which the command's install places the copy of conflux the boot
 // service runs with, and finish, which the command's code goes through as it ends, the error it failed
 // with among it. Where staleCopy, what earlier conflux left goes first, the service stopped for it
 // before anything it runs from is made afresh (tidy), and this conflux is written as the copy the
@@ -84,6 +85,10 @@ func handOver(d paths.Dirs, mgr service.Manager) (place func(paths.Dirs) (string
 		}
 
 		return startAgain(d, mgr, stopped, code)
+	}
+
+	if err := refusePercent(d); err != nil {
+		return nil, finish, err
 	}
 
 	checked := d.Check()
@@ -140,8 +145,12 @@ func runRegister(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	// tidy makes the roots as conflux makes them (EnsureAll).
+	// tidy makes the roots as conflux makes them (EnsureAll), once refusePercent has passed them.
 	d := paths.Default()
+	if err := refusePercent(d); err != nil {
+		return fail(err)
+	}
+
 	mgr := newService()
 
 	stopped, err := tidy(d, mgr, d.Check())

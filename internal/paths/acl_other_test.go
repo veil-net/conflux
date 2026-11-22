@@ -4,14 +4,9 @@ package paths
 
 import (
 	"os"
-	"os/user"
 	"path/filepath"
-	"slices"
-	"strconv"
 	"strings"
 	"testing"
-
-	"github.com/veil-net/conflux/internal/group"
 )
 
 func mode(t *testing.T, dir string) os.FileMode {
@@ -128,53 +123,5 @@ func TestJudgeReadsAnACLBesideTheMode(t *testing.T) {
 		case c.refused == "" && got != "":
 			t.Errorf("%s: judge = %q, want nothing", c.name, got)
 		}
-	}
-}
-
-// groupsFunc stands in for groups: who it says each group lets in.
-type groupsFunc func(name, gid string) ([]string, error)
-
-func (f groupsFunc) Users(name, gid string) ([]string, error) { return f(name, gid) }
-
-// TestAGroupIsAskedOfTheProcesssLookup: who a group lets in is asked of groups, which is one
-// group.Lookup for the whole process, so that each group's record is read once however many
-// directories a command or a supervisor's start judges: groupOf asks it at every judgement of a
-// directory its group may write, and nothing else.
-func TestAGroupIsAskedOfTheProcesssLookup(t *testing.T) {
-	if _, ok := groups.(*group.Lookup); !ok {
-		t.Fatalf("groups is %T, not one group.Lookup for the process", groups)
-	}
-
-	me, err := user.LookupId(strconv.Itoa(os.Geteuid()))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	g, err := user.LookupGroupId(me.Gid)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	was := groups
-	t.Cleanup(func() { groups = was })
-
-	var asked []string
-
-	groups = groupsFunc(func(name, gid string) ([]string, error) {
-		asked = append(asked, name+":"+gid)
-
-		return []string{me.Username}, nil
-	})
-
-	gid, _ := strconv.ParseUint(g.Gid, 10, 32)
-
-	for range 2 {
-		if !groupOf(uint32(gid), os.Geteuid()) {
-			t.Errorf("groupOf(%s), its one member this account, = false", g.Name)
-		}
-	}
-
-	if want := []string{g.Name + ":" + g.Gid, g.Name + ":" + g.Gid}; !slices.Equal(asked, want) {
-		t.Errorf("groupOf asked groups %q, want %q", asked, want)
 	}
 }

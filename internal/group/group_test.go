@@ -3,12 +3,7 @@
 package group
 
 import (
-	"errors"
-	"os"
-	"os/user"
 	"slices"
-	"strconv"
-	"strings"
 	"testing"
 )
 
@@ -57,89 +52,5 @@ func TestUsersFrom(t *testing.T) {
 				t.Errorf("usersFrom = %q, want %q", got, tc.want)
 			}
 		})
-	}
-}
-
-// TestALookupReadsEachDatabaseOnce: a Lookup kept answers as a new one does, and asks the system for a
-// group's record once, and for the account database once, however many times and for however many
-// groups it is asked, where a new one asks for both at every question; a record that failed to be read
-// is asked for again, and a new Lookup reads everything again.
-func TestALookupReadsEachDatabaseOnce(t *testing.T) {
-	if files() {
-		t.Skip("no getent or dscl here: the databases are read from their files")
-	}
-
-	var names []string
-
-	for _, gid := range []string{"0", strconv.Itoa(os.Getgid())} {
-		g, err := user.LookupGroupId(gid)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		names = append(names, g.Name)
-	}
-
-	names = slices.Compact(names) // one, as root
-
-	was := output
-	t.Cleanup(func() { output = was })
-
-	asked := map[string]int{}
-
-	output = func(argv ...string) (string, error) {
-		command := strings.Join(argv, " ")
-		asked[command]++
-
-		if strings.HasSuffix(command, "nobody-yet") {
-			if asked[command] == 1 {
-				return "", errors.New("exit status 2")
-			}
-
-			return "nobody-yet:x:4242:\n", nil
-		}
-
-		return was(argv...)
-	}
-
-	lookups := []*Lookup{{}, {}}
-
-	for _, l := range lookups {
-		for range 3 {
-			for _, name := range names {
-				want, err := new(Lookup).Users(name, "0")
-				if err != nil {
-					t.Fatal(err)
-				}
-
-				if got, err := l.Users(name, "0"); err != nil || !slices.Equal(got, want) {
-					t.Errorf("a kept Lookup's Users(%s) = %q, %v; a new one's = %q", name, got, err, want)
-				}
-			}
-		}
-	}
-
-	// A new Lookup asks for a record, and for the database, at every call; each kept one once in all.
-	calls := 3 * len(lookups)
-
-	for command, n := range asked {
-		want := calls + len(lookups) // a group's record
-		if strings.Contains(command, "passwd") || strings.Contains(command, "/Users") {
-			want = calls*len(names) + len(lookups)
-		}
-
-		if n != want {
-			t.Errorf("%s was run %d times, want %d", command, n, want)
-		}
-	}
-
-	l := &Lookup{}
-
-	if _, err := l.Users("nobody-yet", "4242"); err == nil {
-		t.Fatal("a Lookup of a group whose record could not be read answered")
-	}
-
-	if _, err := l.Users("nobody-yet", "4242"); err != nil {
-		t.Errorf("a Lookup did not ask again for a record it failed to read: %v", err)
 	}
 }

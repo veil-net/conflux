@@ -187,13 +187,10 @@ name not there, is refused, with nothing made there.
 
 What a root, and each folder and file conflux keeps in it, is held to is its own owner, mode and
 ACL: owned by root or the account running conflux, and written by nobody else. On Unix that is its
-mode's bits; a group that lets in no account but the one running conflux, as the group database
-answers (its members, and every account it is the primary group of), writes for that account
-alone. conflux is built without cgo, so on Linux and the BSDs it names the group and the account it
-runs as from `/etc/group` and `/etc/passwd` alone, and macOS asks its directory service. On Linux the
-root's POSIX ACL counts as well as its mode: an entry that lets a named user other than root and the
-one running conflux write it, or a named group that lets in anybody else, once the mask has had its
-say, is refused like its mode's bits; once a directory has an ACL its mode's group bits are the
+mode's bits, its group's write among them, whichever group it is: conflux makes nothing its group may
+write, so one that is is not as conflux makes it, and is made afresh. On Linux the root's POSIX ACL
+counts as well as its mode: an entry that lets a named user other than root and the one running
+conflux write it, or any named group, once the mask has had its say, is refused like its mode's bits; once a directory has an ACL its mode's group bits are the
 mask rather than what its group may do, so its group is then judged by the ACL's entry for it.
 FreeBSD's POSIX.1e ACLs (UFS) are read the same way. An extended ACL — macOS's, or FreeBSD's NFSv4
 ACL (ZFS) — is read too, without cgo: an entry allowing anybody but the owner a right to write the

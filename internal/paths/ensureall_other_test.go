@@ -234,17 +234,8 @@ func TestEnsureAllSaysWhyARootItCannotRemoveIsNotItsOwn(t *testing.T) {
 // system's, never judged and never changed: one every account may write, sticky or not, one under a
 // parent anybody or another account's group may write, and one reached through a link, or a chain of
 // links, into a directory anybody may write, each has its root made, 0700, where it leads, and passes the
-// readers' check, with no group asked who it lets in and the folders above left as they were.
+// readers' check, with the folders above left as they were.
 func TestEnsureAllJudgesNoFolderAboveARoot(t *testing.T) {
-	was := groups
-	t.Cleanup(func() { groups = was })
-
-	groups = groupsFunc(func(name, gid string) ([]string, error) {
-		t.Errorf("who group %s (%s) lets in was asked, for a folder above a root", name, gid)
-
-		return []string{"mallory"}, nil
-	})
-
 	for _, c := range []struct {
 		name string
 		// plant makes the folder the root is in, under base, and is it and the folder whose mode must stay.

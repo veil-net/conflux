@@ -6,26 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/user"
 	"path/filepath"
-	"strconv"
 
 	"golang.org/x/sys/unix"
-
-	"github.com/veil-net/conflux/internal/group"
 )
-
-// groups answers who a group lets in: one group.Lookup for the whole process, so that each group's
-// record and the account database are read at most once, however many roots, folders and files of
-// conflux's it judges. A supervisor judges its roots as it starts, once in its process, and every other
-// command is over long before a group's members change under it. A test sets its own: a new Lookup, to
-// read afresh, or one standing in for the system's databases.
-var groups usersOf = new(group.Lookup)
-
-// usersOf is what groups is: who the group of that name, whose id is gid, lets in.
-type usersOf interface {
-	Users(name, gid string) ([]string, error)
-}
 
 // Restrict is Windows's. Here a mode set on the descriptor and a 0700 directory that belongs to
 // whoever runs conflux are the whole of it, and EnsureAll is what makes sure of the second.
@@ -339,9 +323,8 @@ func aclOf(p string) ([]writer, bool, error) {
 
 // judge is who besides root and euid may write a directory of mode and group gid with the ACL
 // acl, as a refusal names them, or "": anybody, where its mode or its ACL lets anybody; its
-// group, where the mode or the ACL lets the group and the group lets in another account
-// (groupOf); a user other than euid, or a group that lets in another account, that its ACL
-// names; and any account an ACL names by a UUID alone. aclGroup is an ACL whose mask the mode's
+// group, where the mode or the ACL lets the group, whichever group it is; a user other than euid,
+// or a group, that its ACL names; and any account an ACL names by a UUID alone. aclGroup is an ACL whose mask the mode's
 // group bits are (POSIX.1e), which then says what the group may itself, and lets nobody write
 // where those bits do not: a directory's own are its mask already.
 func judge(mode os.FileMode, gid uint32, acl []writer, aclGroup bool, euid int) string {
@@ -361,9 +344,9 @@ func judge(mode os.FileMode, gid uint32, acl []writer, aclGroup bool, euid int) 
 		switch {
 		case w.who == aUser && int(w.id) != euid && w.id != 0:
 			return fmt.Sprintf("its ACL lets uid %d write, and that account", w.id)
-		case w.who == aGroup && !groupOf(w.id, euid):
+		case w.who == aGroup:
 			return fmt.Sprintf("its ACL lets gid %d write, and any account in it", w.id)
-		case w.who == theGroup && !groupOf(gid, euid):
+		case w.who == theGroup:
 			return fmt.Sprintf("its group, gid %d, may write, and any account in it", gid)
 		case w.who == everyone:
 			return "its ACL lets anybody write, and anybody"
@@ -373,33 +356,4 @@ func judge(mode os.FileMode, gid uint32, acl []writer, aclGroup bool, euid int) 
 	}
 
 	return ""
-}
-
-// groupOf reports whether the group gid lets in no account but euid's: no member it lists,
-// and no account it is the primary group of, but that one -- a group of one user, as Ubuntu
-// gives each, whose write on a directory is that user's alone. Where the group, the account
-// or who the group lets in cannot be read, it does not.
-func groupOf(gid uint32, euid int) bool {
-	g, err := user.LookupGroupId(strconv.FormatUint(uint64(gid), 10))
-	if err != nil {
-		return false
-	}
-
-	me, err := user.LookupId(strconv.Itoa(euid))
-	if err != nil {
-		return false
-	}
-
-	users, err := groups.Users(g.Name, g.Gid)
-	if err != nil {
-		return false
-	}
-
-	for _, u := range users {
-		if u != me.Username {
-			return false
-		}
-	}
-
-	return true
 }

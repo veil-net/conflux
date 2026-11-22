@@ -257,3 +257,54 @@ func TestEnsureAllRemovesAFileNotAsConfluxMakesIt(t *testing.T) {
 		t.Errorf("OursFolder(a file) = %v, want a refusal saying it is no folder", err)
 	}
 }
+
+// TestARootItsGroupMayWriteIsRemade: a root, or a folder or a file conflux keeps in one, that its group
+// may write -- by its mode or by an ACL entry for a group -- is not as conflux makes it, whatever the group
+// is, a group of this account alone among them: the readers' check refuses it, naming the group, and
+// EnsureAll removes it as itself and makes it afresh. Here the group is this account's own.
+func TestARootItsGroupMayWriteIsRemade(t *testing.T) {
+	inData(t, t.TempDir())
+
+	d := Default()
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	planted := filepath.Join(d.State, "planted")
+	if err := os.WriteFile(planted, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Chmod(d.State, 0o770); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := d.Check(); err == nil || !strings.Contains(err.Error(), d.State+" is not as conflux makes") ||
+		!strings.Contains(err.Error(), "its group") {
+		t.Errorf("Check(a root its group may write) = %v, want a refusal naming it and its group", err)
+	}
+
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := mode(t, d.State); got != 0o700 {
+		t.Errorf("EnsureAll left the root %v, want it made afresh at 0700", got)
+	}
+
+	if _, err := os.Lstat(planted); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the root made afresh holds what the one its group could write held (Lstat: %v)", err)
+	}
+
+	if err := os.WriteFile(d.ManifestFile(), nil, 0o660); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Chmod(d.ManifestFile(), 0o660); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := d.Ours(d.ManifestFile()); err == nil || !strings.Contains(err.Error(), "its group") {
+		t.Errorf("Ours(a manifest its group may write) = %v, want a refusal naming its group", err)
+	}
+}

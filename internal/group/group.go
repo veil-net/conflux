@@ -9,52 +9,24 @@ import (
 	"runtime"
 	"slices"
 	"strings"
-	"sync"
 
 	"github.com/veil-net/conflux/internal/privcheck"
 )
 
-// A Lookup answers who a group lets in (Users), and keeps what it read: each group's record, and the
-// account database behind them all, read at most once while the Lookup is kept, what failed to be
-// read excepted, and gone with it. A new one reads afresh: account's, at each question it asks; paths
-// keeps one for its whole process. Its zero value is ready, and it may be asked from several
-// goroutines.
-type Lookup struct {
-	mu       sync.Mutex
-	records  map[string]string
-	accounts *string
-}
-
 // Users are the accounts the group of that name, whose id is gid, lets in: the members it lists,
-// and every account it is the primary group of, from what l has read, reading what it has not.
-func (l *Lookup) Users(name, gid string) ([]string, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	group, ok := l.records[name]
-	if !ok {
-		var err error
-		if group, err = record(name); err != nil {
-			return nil, err
-		}
-
-		if l.records == nil {
-			l.records = map[string]string{}
-		}
-
-		l.records[name] = group
+// and every account it is the primary group of, read afresh from the system's databases.
+func Users(name, gid string) ([]string, error) {
+	group, err := record(name)
+	if err != nil {
+		return nil, err
 	}
 
-	if l.accounts == nil {
-		users, err := accounts()
-		if err != nil {
-			return nil, err
-		}
-
-		l.accounts = &users
+	users, err := accounts()
+	if err != nil {
+		return nil, err
 	}
 
-	return usersFrom(runtime.GOOS, group, *l.accounts, gid), nil
+	return usersFrom(runtime.GOOS, group, users, gid), nil
 }
 
 // record is the group name's record: dscl's on macOS, else getent's, or, where there is no getent --
@@ -107,7 +79,7 @@ func files() bool {
 }
 
 // output is what argv, run, prints, or why it failed, naming it.
-var output = func(argv ...string) (string, error) {
+func output(argv ...string) (string, error) {
 	out, err := exec.Command(argv[0], argv[1:]...).Output() //nolint:gosec // our own argv
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", privcheck.Command(argv...), err)
@@ -116,7 +88,7 @@ var output = func(argv ...string) (string, error) {
 	return string(out), nil
 }
 
-// usersFrom reads a Lookup's two answers: getent's group line and passwd database, or
+// usersFrom reads Users's two answers: getent's group line and passwd database, or
 // dscl's group record and its list of each account's primary group.
 func usersFrom(goos, group, users, gid string) []string {
 	var out []string

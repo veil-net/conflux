@@ -73,7 +73,7 @@ func EnsureNamed(name string) (*Account, error) {
 	// given -- passage to anchord, and on macOS the BPF devices -- and uninstall would then
 	// delete a group they rely on.
 	if groupExists {
-		users, err := new(group.Lookup).Users(name, g.Gid)
+		users, err := group.Users(name, g.Gid)
 		if err != nil {
 			return nil, fmt.Errorf("read who the existing group %s lets in: %w", name, err)
 		}

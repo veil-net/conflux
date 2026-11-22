@@ -4,7 +4,6 @@ import (
 	"errors"
 	"io/fs"
 	"math/rand/v2"
-	"os"
 	"path/filepath"
 	"strconv"
 
@@ -36,24 +35,26 @@ func makeStaging(root, prefix string) (string, error) {
 // directory (usersTemporaryDir), the copy granted to the account (paths.RestrictToOwner), since a copy
 // Restrict guards is one it could not run.
 func temporaryDir() (string, func(string, bool) error, error) {
+	parents := temporaryParents()
+
 	if !privcheck.Elevated() {
-		dir, err := usersTemporaryDir()
+		dir, err := usersTemporaryDir(parents)
 
 		return dir, paths.RestrictToOwner, err
 	}
 
-	dir, err := makeStaging(temporaryParent(), temporaryPrefix)
+	dir, err := makeStaging(parents[0], temporaryPrefix)
 
 	return dir, paths.Restrict, err
 }
 
-// temporaryParent is where Temporary makes its directories, which RemoveTemporary looks in: for an
-// elevated process %ProgramData% (temporaryDir), and otherwise the system's temporary directory, the
-// account's own.
-func temporaryParent() string {
+// temporaryParents are where Temporary may make its directories, which temporaryDir chooses among and
+// RemoveTemporary looks in: for an elevated process %ProgramData% alone, and otherwise the account's own
+// (usersTemporaryParents).
+func temporaryParents() []string {
 	if privcheck.Elevated() {
-		return paths.ProgramData()
+		return []string{paths.ProgramData()}
 	}
 
-	return os.TempDir()
+	return usersTemporaryParents()
 }

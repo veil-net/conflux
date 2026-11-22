@@ -8,6 +8,7 @@ package pathstest
 
 import (
 	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 
@@ -35,18 +36,49 @@ func DirsIn(tb testing.TB, root string) paths.Dirs {
 	return d
 }
 
-// Temporary makes dir the process's temporary directory for the rest of the test -- TMPDIR, and TMP and
-// TEMP, which on Windows a test linking this package keeps %ProgramData%'s in too -- and is dir: where a
-// reader's temporary anchorctl is made, whether conflux runs elevated or not, so that what a test makes
-// there is rooted in a directory of its own.
+// Temporary roots, for the rest of the test, every place a reader's temporary anchorctl may be made in
+// dir (temporaryIn), and is dir: so that what a test makes there, and what an uninstall or a tidy it runs
+// removes there, is in a directory of its own.
 func Temporary(tb testing.TB, dir string) string {
 	tb.Helper()
 
-	for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
-		tb.Setenv(name, dir)
-	}
+	temporaryIn(dir, tb.Setenv)
 
 	return dir
+}
+
+// SetTemporary roots every place a reader's temporary anchorctl may be made in dir (temporaryIn) for the
+// rest of the process: for a package's TestMain.
+func SetTemporary(dir string) error {
+	var err error
+
+	temporaryIn(dir, func(name, value string) {
+		if e := os.Setenv(name, value); e != nil {
+			err = e
+		}
+	})
+
+	return err
+}
+
+// temporaryIn sets, through set, every variable that says where a reader's temporary anchorctl may be
+// made: the temporary directory, dir -- TMPDIR, and TMP and TEMP, which on Windows a test linking this
+// package keeps %ProgramData%'s in too, where an elevated reader makes it -- and the user's cache
+// directory, where one goes on a host whose temporary directory is mounted noexec, in dir as well:
+// XDG_CACHE_HOME, macOS's HOME, beneath which it is Library/Caches, or Windows's LocalAppData.
+func temporaryIn(dir string, set func(name, value string)) {
+	for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
+		set(name, dir)
+	}
+
+	switch runtime.GOOS {
+	case "darwin":
+		set("HOME", filepath.Join(dir, "home"))
+	case "windows":
+		set("LocalAppData", filepath.Join(dir, "cache"))
+	default:
+		set("XDG_CACHE_HOME", filepath.Join(dir, "cache"))
+	}
 }
 
 // ShortRoot is a fresh directory with a short name, removed when the test ends, for a root a

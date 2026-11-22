@@ -72,11 +72,12 @@ func confluxChild(t *testing.T, args ...string) (out string, code int) {
 // of the test binary's that one of them runs, which keeps the temporary directory its test gave it.
 const testTemp = "CONFLUX_TEST_TEMP"
 
-// TestMain is conflux where childArgs is set (confluxChild). Otherwise it runs the tests with a
-// temporary directory of their own -- TMPDIR, and TMP and TEMP, which on Windows every test linking
-// pathstest keeps %ProgramData%'s in as well -- so that what tidy and uninstall remove where a reader
-// keeps its temporary anchorctl (libexec.RemoveTemporary) is looked for there, never in the machine's,
-// where its own readers, or another package's tests, may be running one.
+// TestMain is conflux where childArgs is set (confluxChild). Otherwise it runs the tests with every place
+// a reader's temporary anchorctl may be made rooted in a temporary directory of their own
+// (pathstest.SetTemporary) -- the temporary directory, which on Windows every test linking pathstest
+// keeps %ProgramData%'s in as well, and the user's cache directory -- so that what tidy and uninstall
+// remove there (libexec.RemoveTemporary) is looked for there, never in the machine's, where its own
+// readers, or another package's tests, may be running one.
 func TestMain(m *testing.M) {
 	if args := os.Getenv(childArgs); args != "" {
 		os.Exit(Main(append([]string{"conflux"}, strings.Split(args, "\n")...)))
@@ -91,10 +92,12 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
-	for _, name := range []string{testTemp, "TMPDIR", "TMP", "TEMP"} {
-		if err := os.Setenv(name, tmp); err != nil {
-			panic(err)
-		}
+	if err := os.Setenv(testTemp, tmp); err != nil {
+		panic(err)
+	}
+
+	if err := pathstest.SetTemporary(tmp); err != nil {
+		panic(err)
 	}
 
 	code := m.Run()

@@ -524,9 +524,9 @@ reinstall:
 - what an update left beside this conflux: a download that never went in place, and on Windows
   the image moved aside, `conflux.exe.old` (elsewhere a file of that name is yours, and kept);
 - the temporary copies of `anchorctl` a reader killed before it removed its own left: every
-  `conflux-usage-*` folder where readers run by the account uninstalling make them — the system's
-  temporary directory, and on Windows, elevated, `%ProgramData%` — but one in use, which is passed
-  over;
+  `conflux-usage-*` folder wherever readers run by the account uninstalling may make them — the
+  system's temporary directory and your cache directory, or on Windows, elevated, `%ProgramData%` —
+  but one in use, which is passed over;
 - the folders conflux made on the way to a `CONFLUX_DIR`'s root, which it records as it makes them —
   a `CONFLUX_DIR` it made, and its parents, among them — each whole, deepest first, with whatever was
   put in it since, another installation of conflux included: `CONFLUX_DIR=/srv/a/b`, where conflux

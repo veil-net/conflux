@@ -17,6 +17,7 @@ import (
 	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
+	"github.com/veil-net/conflux/internal/privcheck"
 )
 
 func TestExtractExtractsAndRuns(t *testing.T) {
@@ -573,13 +574,23 @@ func TestUsageRunsNothingFromARootItRefuses(t *testing.T) {
 
 // TestRemoveTemporaryRemovesWhatAKilledReaderLeft: a reader killed before it removed its temporary copy
 // of anchorctl leaves the folder it made there for good, so uninstall and tidy remove every folder named as
-// temporary names one, where it makes them for the account running them, and say which; anything else
-// there is left, and so is a folder that will not go -- a reader's copy running from it, which Windows
-// removes no file of -- passed over while the rest go.
+// Temporary names one, everywhere it may make them for the account running them -- the temporary directory,
+// and, not elevated, the user's cache directory, where one goes on a host whose temporary directory is
+// mounted noexec -- and say which; anything else there is left, and so is a folder that will not go -- a
+// reader's copy running from it, which Windows removes no file of -- passed over while the rest go.
 func TestRemoveTemporaryRemovesWhatAKilledReaderLeft(t *testing.T) {
 	parent := pathstest.Temporary(t, t.TempDir())
 
 	left := []string{filepath.Join(parent, temporaryPrefix+"1"), filepath.Join(parent, temporaryPrefix+"2")}
+
+	// An elevated process on Windows makes them in %ProgramData% alone.
+	if cache, err := os.UserCacheDir(); err == nil && (runtime.GOOS != "windows" || !privcheck.Elevated()) {
+		if err := os.MkdirAll(cache, 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		left = append(left, filepath.Join(cache, temporaryPrefix+"4"))
+	}
 	inUse := filepath.Join(parent, temporaryPrefix+"3")
 	other := filepath.Join(parent, "conflux-other")
 

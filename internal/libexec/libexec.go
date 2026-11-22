@@ -237,34 +237,42 @@ func Temporary() (bin string, done func(), err error) {
 // temporaryPrefix begins the name of the directory Temporary makes.
 const temporaryPrefix = "conflux-usage-"
 
-// RemoveTemporary removes the directories Temporary makes, where it makes them for the account running
-// this (temporaryParent) -- what a reader killed before it could remove its copy left there for good --
-// and is those it removed. conflux's by their name, each goes whole; one that will not go -- a reader's
-// copy running from it, of which Windows removes no file -- is passed over.
+// RemoveTemporary removes the directories Temporary makes, everywhere it may make them for the account
+// running this (temporaryParents) -- what a reader killed before it could remove its copy left there for
+// good -- and is those it removed. conflux's by their name, each goes whole; one that will not go -- a
+// reader's copy running from it, of which Windows removes no file -- is passed over.
 func RemoveTemporary() []string {
 	var removed []string
 
-	left, _ := filepath.Glob(filepath.Join(temporaryParent(), temporaryPrefix+"*"))
-	for _, dir := range left {
-		if os.RemoveAll(dir) == nil {
-			removed = append(removed, dir)
+	for _, parent := range temporaryParents() {
+		left, _ := filepath.Glob(filepath.Join(parent, temporaryPrefix+"*"))
+		for _, dir := range left {
+			if os.RemoveAll(dir) == nil {
+				removed = append(removed, dir)
+			}
 		}
 	}
 
 	return removed
 }
 
-// usersTemporaryDir makes the directory Temporary writes in, as the account running conflux: in the
-// system's temporary directory, or, where that one is mounted noexec as /tmp is on a hardened host, in
-// the user's cache directory, made if it is not there yet. No other directory is made.
-func usersTemporaryDir() (string, error) {
-	candidates := []string{os.TempDir()}
+// usersTemporaryParents are where the account running conflux makes the directory Temporary writes in,
+// in the order one is chosen (usersTemporaryDir): the system's temporary directory, and the user's cache
+// directory, for a host that mounts the first noexec, as /tmp is on a hardened one.
+func usersTemporaryParents() []string {
+	parents := []string{os.TempDir()}
 
-	cache, err := os.UserCacheDir()
-	if err == nil {
-		candidates = append(candidates, cache)
+	if cache, err := os.UserCacheDir(); err == nil {
+		parents = append(parents, cache)
 	}
 
+	return parents
+}
+
+// usersTemporaryDir makes the directory Temporary writes in, as the account running conflux: in the first
+// of candidates (usersTemporaryParents) on a filesystem that lets it run, the user's cache directory made
+// if it is not there yet. No other directory is made.
+func usersTemporaryDir(candidates []string) (string, error) {
 	parent, err := paths.FirstExecutable(candidates, nil)
 	if errors.Is(err, paths.ErrNoExec) {
 		return "", fmt.Errorf("every temporary directory is on a filesystem mounted noexec, so the anchorctl "+
@@ -278,7 +286,7 @@ func usersTemporaryDir() (string, error) {
 	// The user's cache directory is the user's own, and one a fresh account has not made yet is
 	// made. The system's temporary directory is not conflux's to make: one that is missing is
 	// an error, as it is to everything else that writes there.
-	if parent == cache {
+	if parent != candidates[0] {
 		if err := os.MkdirAll(parent, 0o700); err != nil {
 			return "", err
 		}

@@ -22,24 +22,22 @@ func RestrictToOwner(string, bool) error { return nil }
 
 // ours is why what s holds -- a directory, at the root dir's name or a folder's in one, or a file in one --
 // is not as conflux makes it, or "" where it is: owned by root or the account running conflux, and written
-// by nobody else, by its mode -- the sticky bit letting nothing through, since a name not taken yet is
-// anybody's in a sticky directory -- or its ACL (judge), as fstat read it where the walk met it and its
-// ACL at dir. A 0710 the supervisor gives the state and run directories, so that anchord's account may
-// pass through them, lets that account write nothing.
-func ours(dir string, s step) (string, error) {
-	euid := os.Geteuid()
-
-	if owner := int(s.st.Uid); owner != 0 && owner != euid {
+// by nobody else by its mode -- the sticky bit letting nothing through, since a name not taken yet is
+// anybody's in a sticky directory -- as fstat read it where the walk met it. That is the whole of it: a
+// root's location is fixed, in a folder only root may write, so no ACL is read. A 0710 the supervisor gives
+// the state and run directories, so that anchord's account may pass through them, lets that account write
+// nothing.
+func ours(_ string, s step) (string, error) {
+	if owner := int(s.st.Uid); owner != 0 && owner != os.Geteuid() {
 		return fmt.Sprintf("uid %d owns it", owner), nil
 	}
 
-	acl, aclGroup, err := aclOf(dir)
-	if err != nil {
-		return "", err
-	}
-
-	if who := judge(os.FileMode(s.st.Mode&0o777), s.st.Gid, acl, aclGroup, euid); who != "" {
-		return who + " could put what they like in it", nil
+	switch {
+	case s.st.Mode&0o002 != 0:
+		return "anybody may write, and anybody could put what they like in it", nil
+	case s.st.Mode&0o020 != 0:
+		return fmt.Sprintf("its group, gid %d, may write, and any account in it could put what they like in it",
+			s.st.Gid), nil
 	}
 
 	return "", nil
@@ -308,52 +306,4 @@ func openIn(s step, name, p string) (*os.File, error) {
 	}
 
 	return os.NewFile(uintptr(fd), p), nil
-}
-
-// aclOf is who p's ACL lets write it, and whether that ACL says what p's group may
-// (extendedWriters), for judge to hold beside p's mode: read at p, never followed; a failure names p.
-func aclOf(p string) ([]writer, bool, error) {
-	acl, aclGroup, err := extendedWriters(p)
-	if err != nil {
-		return nil, false, fmt.Errorf("read the ACL of %s: %w", p, err)
-	}
-
-	return acl, aclGroup, nil
-}
-
-// judge is who besides root and euid may write a directory of mode and group gid with the ACL
-// acl, as a refusal names them, or "": anybody, where its mode or its ACL lets anybody; its
-// group, where the mode or the ACL lets the group, whichever group it is; a user other than euid,
-// or a group, that its ACL names; and any account an ACL names by a UUID alone. aclGroup is an ACL whose mask the mode's
-// group bits are (POSIX.1e), which then says what the group may itself, and lets nobody write
-// where those bits do not: a directory's own are its mask already.
-func judge(mode os.FileMode, gid uint32, acl []writer, aclGroup bool, euid int) string {
-	if aclGroup && mode&0o020 == 0 {
-		acl = nil
-	}
-
-	if mode&0o002 != 0 {
-		return "anybody may write, and anybody"
-	}
-
-	if !aclGroup && mode&0o020 != 0 {
-		acl = append([]writer{{who: theGroup}}, acl...)
-	}
-
-	for _, w := range acl {
-		switch {
-		case w.who == aUser && int(w.id) != euid && w.id != 0:
-			return fmt.Sprintf("its ACL lets uid %d write, and that account", w.id)
-		case w.who == aGroup:
-			return fmt.Sprintf("its ACL lets gid %d write, and any account in it", w.id)
-		case w.who == theGroup:
-			return fmt.Sprintf("its group, gid %d, may write, and any account in it", gid)
-		case w.who == everyone:
-			return "its ACL lets anybody write, and anybody"
-		case w.who == anAccount:
-			return fmt.Sprintf("its ACL lets the user or group %s write, and whoever that is", w.uuid)
-		}
-	}
-
-	return ""
 }

@@ -41,8 +41,7 @@ func (m *untouched) Remove() error { m.removals++; return nil }
 // it by name: one whose mode lets every account write it, sticky or not -- a name nobody has taken
 // yet is anybody's in a sticky directory -- is refused, naming it, with nothing in it read, made,
 // stopped or removed (readersRefuse); and uninstall removes it, reading and signalling nothing in it and
-// following no link it holds (uninstallRemoves). (On Linux, one whose ACL lets another account write it:
-// TestAReaderRefusesARootAnACLLetsAnotherAccountWrite.)
+// following no link it holds (uninstallRemoves).
 func TestAReaderRefusesARootAnotherAccountMayWrite(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }

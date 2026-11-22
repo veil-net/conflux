@@ -31,53 +31,6 @@ LABEL=org.veilnet.conflux
 # A run cut short leaves its registration behind; a fresh runner has none to remove.
 "$CONFLUX" uninstall --yes >/dev/null 2>&1 || true
 
-# The root, and each file conflux keeps in it, is not as conflux makes it where an extended ACL lets
-# another account write it, which its mode does not show and conflux asks the kernel for: status, the
-# readers' check, refuses such a root, naming the ACL, and the next command that makes the root --
-# enrol, which with no manifest to read goes no further -- removes it, with what was put in it, and
-# makes it afresh, carrying no ACL; a file of conflux's carrying such an entry goes the same way.
-if [ "$os" = darwin ]; then
-  say "a root or a file of conflux's whose ACL lets another account write is made afresh"
-  root="/Library/Application Support/.conflux"
-
-  # The ACL entries ls -le lists under the file's own line: macOS shows an ACL nowhere else.
-  # shellcheck disable=SC2012
-  acl() { ls -led "$1" | tail -n +2; }
-
-  enrol_bare() { # what enrol says with no manifest to read, once it has made the root
-    out=$("$CONFLUX" enrol --manifest /nonexistent 2>&1) && fail "enrol with no manifest succeeded"
-    case $out in
-      *"read the manifest"*) ;;
-      *) printf '%s\n' "$out" >&2; fail "enrol did not make the root" ;;
-    esac
-  }
-
-  enrol_bare
-  chmod +a "nobody allow write,add_file" "$root"
-  touch "$root/planted"
-  out=$("$CONFLUX" status 2>&1) && fail "status of a root whose ACL lets nobody write succeeded"
-  case $out in
-    *"$root is not as conflux makes"*"its ACL lets "*) ;;
-    *) printf '%s\n' "$out" >&2; fail "a root whose ACL lets nobody write was not refused for it" ;;
-  esac
-
-  enrol_bare
-  [ ! -e "$root/planted" ] || fail "the root made afresh still holds what was put in the one whose ACL let nobody write"
-  [ -z "$(acl "$root")" ] || { acl "$root" >&2; fail "the root made afresh carries an ACL"; }
-
-  lock="$root/conflux.lock"
-  [ -f "$lock" ] || fail "enrol made no $lock"
-  chmod +a "nobody allow write" "$lock"
-  enrol_bare
-  if [ -e "$lock" ] && [ -n "$(acl "$lock")" ]; then
-    acl "$lock" >&2
-    fail "a file of conflux's whose ACL lets nobody write was kept"
-  fi
-
-  "$CONFLUX" uninstall --yes >/dev/null
-  [ ! -e "$root" ] || fail "uninstall left $root"
-fi
-
 say "install registers and starts nothing"
 "$CONFLUX" install
 

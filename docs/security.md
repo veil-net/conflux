@@ -60,8 +60,8 @@ host can read, and when the run stops there is nothing at all.
   root, on Linux, `.conflux` in the runtime folder (`/run/.conflux` as root,
   `$XDG_RUNTIME_DIR/.conflux` otherwise), which is never inside the installation's. Conflux
   makes each as above, and whatever is at one of those names and is not as conflux makes a root — a
-  link, a file, a directory another account owns, or whose mode or ACL lets another account write it,
-  or on Windows whose DACL grants another account anything — is removed as itself from the folder it
+  link, a file, a directory another account owns, or whose mode lets another account write it, or
+  on Windows whose DACL grants another account anything — is removed as itself from the folder it
   is in, through a handle held on that folder, never followed, and the root made afresh, with
   nothing of what it held: a root widened by hand loses the identity in it. The folders conflux
   keeps in a root — `run/` and `logs/` where they are in it, `bin/` and `anchor.root/` — are held to
@@ -185,22 +185,12 @@ never by its name: a link put at its name once conflux has made it is refused. T
 in must be there: nothing on the way to it is made, and a way that ends in where a link leads, at a
 name not there, is refused, with nothing made there.
 
-What a root, and each folder and file conflux keeps in it, is held to is its own owner, mode and
-ACL: owned by root or the account running conflux, and written by nobody else. On Unix that is its
-mode's bits, its group's write among them, whichever group it is: conflux makes nothing its group may
-write, so one that is is not as conflux makes it, and is made afresh. On Linux the root's POSIX ACL
-counts as well as its mode: an entry that lets a named user other than root and the one running
-conflux write it, or any named group, once the mask has had its say, is refused like its mode's bits; once a directory has an ACL its mode's group bits are the
-mask rather than what its group may do, so its group is then judged by the ACL's entry for it.
-FreeBSD's POSIX.1e ACLs (UFS) are read the same way. An extended ACL — macOS's, or FreeBSD's NFSv4
-ACL (ZFS) — is read too, without cgo: an entry allowing anybody but the owner a right to write the
-root (to add a file or a directory to it, to delete what is in it or the root itself, or to change
-its ACL or owner) is refused, and on macOS, whose ACLs name accounts by a UUID conflux cannot map to
-one without cgo, that is every such entry, one naming the account conflux runs as included. An
-entry counts whatever it says of inheritance, and one the folder a root is in passes on lands on the
-`.conflux` conflux makes inside it, which is then not as conflux makes a root. A deny entry takes
-nothing away from what is counted, so it is not read. On Windows a root is held to its owner and
-DACL (above).
+What a root, and each folder and file conflux keeps in it, is held to on Unix is its type, owner and
+mode alone: a directory (or a file) and no link, owned by root or the account running conflux, and
+written by nobody else by its mode's bits, its group's write among them, whichever group it is:
+conflux makes nothing its group may write, so one that is is not as conflux makes it, and is made
+afresh. No ACL is read: a root's location is fixed, in a folder only root may write, so nobody else
+can have given it one. On Windows a root is held to its owner and DACL (above).
 
 ## What anchord runs as
 

@@ -88,15 +88,22 @@ in a temporary directory of their own besides (`TestMain`, `pathstest.SetTempora
 uninstalls and tidies they run, which remove what killed readers left there, never look in the
 machine's.
 
-No conflux `cli`'s tests run can hang the suite: each is bounded. `Main` run in the test's own process
-(`capture`, `captureOf`), as help and usage are, with the anchorctl they wait on, runs on a goroutine
-of its own, and one that has not returned past thirty seconds fails the test. A conflux run as a
-child of the test binary — a pass-through, which on Unix replaces the process, or `serve`, which puts
-its log over its output — goes through `confluxChild`, which kills the child past thirty seconds and
-fails the test, and fails it on a panic too. The signal tests (`exec_unix_test.go`), which start their
-children themselves so as to signal them, wait a bounded time for each — ten seconds for what a signal
-does, thirty for a run to end, sixty for an ephemeral run to reach its enrolment — fail the test past
-it, and kill what they started as they end.
+No conflux `cli`'s tests run can hang the suite, nor keep it waiting past one bound. `Main` run in the
+test's own process, as help and usage are, runs on a goroutine of its own (`capture`, `captureOf`, and
+the test of Ctrl+C ending a wait for `bin/`), and one that has not returned within thirty seconds
+(`childDeadline`) fails the test. A conflux run as a child of the test binary — a pass-through, which
+on Unix replaces the process, or `serve`, which puts its log over its output — goes through
+`confluxChild`, which kills the child past thirty seconds, gives what it left five more to let go of
+its output (`WaitDelay`), and fails the test, and fails it on a panic too. The signal tests
+(`exec_unix_test.go`), which start their children themselves so as to signal them, wait a bounded
+time for each — ten seconds for what a signal does, thirty for a run to end, sixty for an ephemeral run
+to reach its enrolment — fail the test past it, and kill what they started as they end, with
+`WaitDelay` where they read its output. The first run to pass its bound marks the suite (`overrun`):
+one still running may hold what the next needs, a lock or a goroutine that never returns, so every run
+after it, in the process or a child, fails at once (`bounded`), and the suite ends within one bound of
+the first, its temporary directories removed, rather than at `go test`'s timeout with them left behind.
+`libexec`'s test of `Remake` waiting for an extraction runs it on a goroutine under thirty seconds of
+its own, on the test's context, which ends the wait as the test ends.
 
 **The argv goldens**, in `internal/anchorctl/testdata/argv/`, hold one file per
 scenario, one argument per line. Argv construction is where a wrapper's bugs live and

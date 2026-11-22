@@ -15,6 +15,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -44,14 +45,39 @@ const standInAnchorctl = "CONFLUX_TEST_STAND_IN"
 // childDeadline is how long confluxChild waits for its child before it kills it and fails the test.
 const childDeadline = 30 * time.Second
 
+// overran is set once a conflux a test runs, in this process or as a child, outlives the bound the test
+// gives it (overrun): one still running may hold what the next needs -- a lock, a goroutine that never
+// returns -- and every run after it would wait out its own bound in turn. From then on every run fails at
+// once (bounded), so the suite ends within one bound of the first that overran, its temporary directories
+// removed, never at go test's timeout.
+var overran atomic.Bool
+
+// bounded fails the test at once where an earlier run in the suite has outlived its bound (overran).
+func bounded(t *testing.T) {
+	t.Helper()
+
+	if overran.Load() {
+		t.Fatal("an earlier conflux run in this suite outlived its bound, so this one is not run")
+	}
+}
+
+// overrun fails the test for a conflux that outlived its bound, and every run after it (overran).
+func overrun(t *testing.T, format string, args ...any) {
+	t.Helper()
+
+	overran.Store(true)
+	t.Fatalf(format, args...)
+}
+
 // confluxChild runs conflux with args, in the test's environment, in a child of the test binary
 // (TestMain): conflux on Unix replaces itself with anchorctl for a pass-through to its daemon, and serve
 // puts its log over its output, neither of which the test binary may. It is what the child wrote, to its
 // output and its errors, and its exit code. A child that panics fails the test, and so does one still
 // running past childDeadline, which is killed, whatever it left running given WaitDelay to let go of the
-// output.
+// output, and which every run after it fails for at once (overrun).
 func confluxChild(t *testing.T, args ...string) (out string, code int) {
 	t.Helper()
+	bounded(t)
 
 	ctx, cancel := context.WithTimeout(t.Context(), childDeadline)
 	defer cancel()
@@ -64,7 +90,7 @@ func confluxChild(t *testing.T, args ...string) (out string, code int) {
 
 	switch {
 	case ctx.Err() != nil:
-		t.Fatalf("conflux %s was still running after %v:\n%s", strings.Join(args, " "), childDeadline, b)
+		overrun(t, "conflux %s was still running after %v:\n%s", strings.Join(args, " "), childDeadline, b)
 	case cmd.ProcessState == nil:
 		t.Fatalf("run conflux %s: %v\n%s", strings.Join(args, " "), err, b)
 	case strings.Contains(string(b), "panic:"):
@@ -144,9 +170,11 @@ func capture(t *testing.T, argv ...string) (stdout, stderr string, code int) {
 // captureOf is what run prints, to conflux's output and its errors, and the exit code it returns. run
 // goes on a goroutine of its own, and one that has not returned past childDeadline -- conflux in-process
 // waiting on an anchorctl it runs for help or usage, say, that it never stops waiting on -- fails the
-// test, as confluxChild fails one for a child, rather than hanging the suite.
+// test, and every run after it at once (overrun), as confluxChild fails one for a child, rather than
+// hanging the suite.
 func captureOf(t *testing.T, run func() int) (stdout, stderr string, code int) {
 	t.Helper()
+	bounded(t)
 
 	var out, errBuf bytes.Buffer
 
@@ -161,7 +189,7 @@ func captureOf(t *testing.T, run func() int) (stdout, stderr string, code int) {
 	select {
 	case code = <-returned:
 	case <-time.After(childDeadline):
-		t.Fatalf("conflux, run in this process, had not returned after %v", childDeadline)
+		overrun(t, "conflux, run in this process, had not returned after %v", childDeadline)
 	}
 
 	return out.String(), errBuf.String(), code

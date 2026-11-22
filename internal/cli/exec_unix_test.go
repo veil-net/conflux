@@ -83,6 +83,8 @@ func TestASignalToConfluxReachesItsAnchorctl(t *testing.T) {
 
 	for _, tc := range append(cases, signalCase{syscall.SIGTERM, false}) {
 		t.Run(tc.sig.String()+map[bool]string{true: ", trapped", false: ", not trapped"}[tc.trap], func(t *testing.T) {
+			bounded(t)
+
 			dir, state := t.TempDir(), t.TempDir()
 			pidFile, trapFile := filepath.Join(state, "pid"), ""
 
@@ -117,7 +119,7 @@ func TestASignalToConfluxReachesItsAnchorctl(t *testing.T) {
 			select {
 			case <-exited:
 			case <-time.After(10 * time.Second):
-				t.Fatalf("conflux was sent %v and had not ended 10s later", tc.sig)
+				overrun(t, "conflux was sent %v and had not ended 10s later", tc.sig)
 			}
 
 			ws, _ := conflux.ProcessState.Sys().(syscall.WaitStatus)
@@ -248,6 +250,8 @@ func TestAnIgnoredSignalStaysIgnoredForItsAnchorctl(t *testing.T) {
 		{[]string{sh, "-c", `trap '' INT; exec "$0" "$@"`}, syscall.SIGINT},
 	} {
 		t.Run(tc.sig.String(), func(t *testing.T) {
+			bounded(t)
+
 			dir, state := t.TempDir(), t.TempDir()
 			pidFile, trapFile := filepath.Join(state, "pid"), filepath.Join(state, "trapped")
 
@@ -289,7 +293,7 @@ func TestAnIgnoredSignalStaysIgnoredForItsAnchorctl(t *testing.T) {
 			select {
 			case <-exited:
 			case <-time.After(10 * time.Second):
-				t.Fatal("conflux was sent SIGTERM and had not ended 10s later")
+				overrun(t, "conflux was sent SIGTERM and had not ended 10s later")
 			}
 
 			if b, _ := os.ReadFile(trapFile); strings.TrimSpace(string(b)) != "TERM" {
@@ -397,6 +401,8 @@ func TestNohupHoldsOffAnEphemeralRunsHangup(t *testing.T) {
 				want += "\nlived on"
 			}
 
+			bounded(t)
+
 			argv := append(slices.Clone(tc.under), os.Args[0], "-test.run=^TestNohupHoldsOffAnEphemeralRunsHangup$")
 
 			ctx, cancel := context.WithTimeout(t.Context(), childDeadline)
@@ -412,7 +418,7 @@ func TestNohupHoldsOffAnEphemeralRunsHangup(t *testing.T) {
 			cancel()
 
 			if late {
-				t.Fatalf("%v, %v second: the run was still going after %v:\n%s", tc.under, second, childDeadline, out)
+				overrun(t, "%v, %v second: the run was still going after %v:\n%s", tc.under, second, childDeadline, out)
 			}
 			if got := strings.TrimSpace(string(out)); got != want {
 				t.Errorf("%v, %v second: the run said %q (%v), want %q", tc.under, second, got, err, want)
@@ -442,6 +448,8 @@ func TestAFirstSignalStopsAnEphemeralRun(t *testing.T) {
 
 	for _, sig := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM} {
 		t.Run(unix.SignalName(sig), func(t *testing.T) {
+			bounded(t)
+
 			// A short root rather than TempDir's: the run's control socket lies five levels below it.
 			root := pathstest.ShortRoot(t)
 			d := paths.EphemeralDirs(filepath.Join(root, paths.DirName, "ephemeral")) // paths.Ephemeral, under CONFLUX_DIR
@@ -472,6 +480,7 @@ func TestAFirstSignalStopsAnEphemeralRun(t *testing.T) {
 			conflux := exec.Command(os.Args[0], "-test.run=^$") //nolint:gosec // this test binary
 			conflux.Env = append(os.Environ(), "CONFLUX_DIR="+root, childArgs+"="+strings.Join(args, "\n"))
 			conflux.Stdout, conflux.Stderr = &out, &out
+			conflux.WaitDelay = 5 * time.Second
 
 			if err := conflux.Start(); err != nil {
 				t.Fatal(err)
@@ -491,7 +500,7 @@ func TestAFirstSignalStopsAnEphemeralRun(t *testing.T) {
 			case err := <-exited:
 				t.Fatalf("the run ended before it enrolled: %v\n%s", err, &out)
 			case <-time.After(60 * time.Second):
-				t.Fatal("the run had not enrolled 60s after it started")
+				overrun(t, "the run had not enrolled 60s after it started")
 			}
 
 			b, err := os.ReadFile(d.DaemonPIDFile())
@@ -511,7 +520,7 @@ func TestAFirstSignalStopsAnEphemeralRun(t *testing.T) {
 			select {
 			case <-exited:
 			case <-time.After(30 * time.Second):
-				t.Fatalf("the run was sent %v and had not ended 30s later", sig)
+				overrun(t, "the run was sent %v and had not ended 30s later", sig)
 			}
 
 			if code := conflux.ProcessState.ExitCode(); code != ExitOK || !strings.Contains(out.String(), "Stopped.") {
@@ -543,6 +552,7 @@ func TestAFirstSignalStopsAnEphemeralRun(t *testing.T) {
 // of, and nothing registered or started.
 func TestCtrlCEndsARemakeWaitingOnAnExtraction(t *testing.T) {
 	anchortest.Require(t)
+	bounded(t)
 	rootOnLinux(t)
 	defaultSignals(t) // Main catches SIGINT whatever this test binary was started ignoring
 
@@ -578,7 +588,7 @@ func TestCtrlCEndsARemakeWaitingOnAnExtraction(t *testing.T) {
 		}
 
 		if time.Now().After(deadline) {
-			t.Fatalf("register had not said %q 10s after it started:\n%s", waiting, said)
+			overrun(t, "register had not said %q 10s after it started:\n%s", waiting, said)
 		}
 	}
 
@@ -592,7 +602,7 @@ func TestCtrlCEndsARemakeWaitingOnAnExtraction(t *testing.T) {
 			t.Errorf("register, interrupted waiting for the extraction, exited 0:\n%s", said)
 		}
 	case <-time.After(childDeadline):
-		t.Fatalf("register was sent SIGINT and had not returned %v later:\n%s", childDeadline, said)
+		overrun(t, "register was sent SIGINT and had not returned %v later:\n%s", childDeadline, said)
 	}
 
 	release, ok, err := flock.TryAcquire(d.ServeLockFile())

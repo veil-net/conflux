@@ -246,7 +246,12 @@ the suite takes it; the observer itself runs only under the machine's credential
 runs, is renewed, and records into the inventory and to a collector is `make integration`'s.
 
 `test/service-host.sh` is the same lifecycle against launchd and the SCM, on the machine
-itself, which is why only a CI runner that is thrown away afterwards runs it. `install`
+itself, which is why only a CI runner that is thrown away afterwards runs it. On macOS it first
+gives the root at the default location, `/Library/Application Support/.conflux`, an ACL entry
+letting `nobody` write it, which its mode does not show: `status` refuses the root, naming the
+ACL, and the next `enrol` makes it afresh, with no ACL and nothing that was put in it; a file of
+conflux's in it given such an entry goes the same way. FreeBSD's VM boots on a UFS root its image
+mounts without ACLs, so `/var/db` takes no entry, and `test/service-bsd.sh` has no such leg. `install`
 registers and starts nothing — on Windows with the three restarts and recovery that
 covers a service stopping with an error — `status` exits 78 and says the service is
 installed and not running, `down` succeeds on it, a userspace configuration started

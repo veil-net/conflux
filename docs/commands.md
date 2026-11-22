@@ -684,7 +684,11 @@ the file conflux was started from, symlinks followed, so whatever is running kee
 file it has; on Windows the running image is moved aside to `conflux.exe.old` first. That
 image is the conflux handing the service over, which runs the new one's `start` or `register`,
 so it is still running as they remove what earlier conflux left; it goes with the next update,
-or `uninstall`. No token is needed or sent: the repository is public.
+or `uninstall`. No token is needed or sent: the repository is public. Ctrl-C while the new conflux
+hands the service over reaches it too, and `update` waits for it — passing on, on Unix, as SIGTERM,
+which conflux takes as it takes Ctrl-C, whatever ends `update` itself — so the new conflux stops what
+it is doing and starts again what it stopped, and `update` ends with its exit code. One still running
+two minutes later is killed.
 
 Before the new conflux places its copy or registers the service — through its `start` or its
 `register`, whichever the update hands the service over by — it removes what earlier conflux left
@@ -713,7 +717,9 @@ an older install as it is:
   make again;
 - every extracted anchor set, the current one among them, and whatever a crashed extraction left
   staged, are removed, and this build's pair is extracted afresh, so nothing planted among them is
-  kept or run — once an extraction in progress has finished, waited for up to ten seconds;
+  kept or run — once an extraction in progress has finished, which takes tens of milliseconds. One
+  stopped where it stands is waited for until Ctrl-C, saying after a second that it waits for another
+  conflux extracting there; Ctrl-C ends the command, exit 1, with the supervisor's lock let go of;
 - a killed ephemeral run's root is removed, the `anchord` it left stopped, as `uninstall` removes
   one, and what is at its name and is not as conflux makes a root removed as itself; a live run's is
   left;

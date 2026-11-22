@@ -128,7 +128,7 @@ func renewNow(ctx context.Context, d paths.Dirs) int {
 		return ExitUnavailable
 	}
 
-	ctl, done, err := runCtl(d)
+	ctl, done, err := runCtl(ctx, d)
 	if err != nil {
 		return fail(err)
 	}

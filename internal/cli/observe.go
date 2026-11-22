@@ -62,7 +62,7 @@ func runObserve(ctx context.Context, args []string) (code int) {
 
 	d := paths.Default()
 
-	place, finish, err := handOver(d, newService())
+	place, finish, err := handOver(ctx, d, newService())
 	defer func() { code = finish(code) }()
 
 	if err != nil {

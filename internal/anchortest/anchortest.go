@@ -2,6 +2,7 @@
 package anchortest
 
 import (
+	"context"
 	"runtime"
 	"testing"
 
@@ -27,12 +28,12 @@ func Require(tb testing.TB) {
 // carries none, and otherwise extracted by extract into a fresh CONFLUX_DIR whose roots
 // pathstest.Dirs makes. extract is libexec.Extract, passed in because libexec's own tests import
 // this package.
-func Extracted[T any](tb testing.TB, extract func(paths.Dirs) (T, error)) T {
+func Extracted[T any](tb testing.TB, extract func(context.Context, paths.Dirs) (T, error)) T {
 	tb.Helper()
 
 	Require(tb)
 
-	tools, err := extract(pathstest.Dirs(tb))
+	tools, err := extract(tb.Context(), pathstest.Dirs(tb))
 	if err != nil {
 		tb.Fatalf("extract: %v", err)
 	}

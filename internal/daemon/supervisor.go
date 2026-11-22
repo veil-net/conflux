@@ -237,7 +237,7 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	}
 
 	// The roots are made already, first thing above.
-	tools, err := libexec.Extract(s.Dirs)
+	tools, err := libexec.Extract(ctx, s.Dirs)
 	if err != nil {
 		return err
 	}

@@ -102,7 +102,7 @@ func startAndReport(ctx context.Context, d paths.Dirs, mgr service.Manager, cfg 
 // restarted, says where its output is when nothing came up. Every caller has made d's roots
 // already (EnsureAll), before it registered the service, so the pair is only extracted here.
 func waitFor(ctx context.Context, d paths.Dirs, mgr service.Manager, cfg *config.Config) (anchorctl.Status, error) {
-	tools, err := libexec.Extract(d)
+	tools, err := libexec.Extract(ctx, d)
 	if err != nil {
 		return anchorctl.Status{}, err
 	}

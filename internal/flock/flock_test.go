@@ -1,6 +1,8 @@
 package flock
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -111,4 +113,41 @@ func TestTryAcquireOutlastsAQuestion(t *testing.T) {
 			t.Fatalf("in %d rounds the moment outlasted every try TryAcquire makes", round)
 		}
 	}
+}
+
+// TestAcquireContextWaitsUntilToldNotTo: a held lock is waited for, the caller told once, after a second,
+// that it waits, and taken once its holder lets go; and a wait whose context ends -- Ctrl+C -- ends then,
+// with the context's error and nothing held, the lock still its holder's.
+func TestAcquireContextWaitsUntilToldNotTo(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "x.lock")
+
+	unlock, err := Acquire(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var told atomic.Int32
+
+	time.AfterFunc(1500*time.Millisecond, unlock)
+
+	start := time.Now()
+
+	release, err := AcquireContext(t.Context(), path, func() { told.Add(1) })
+	if err != nil {
+		t.Fatalf("AcquireContext on a lock let go of after 1.5 s = %v", err)
+	}
+
+	if took := time.Since(start); took < time.Second || told.Load() != 1 {
+		t.Errorf("AcquireContext took the lock after %v, saying it waited %d times; want after its holder let go, "+
+			"once", took, told.Load())
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+
+	if _, err := AcquireContext(ctx, path, nil); !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("AcquireContext on a held lock, its context ended = %v, want the context's error", err)
+	}
+
+	release()
 }

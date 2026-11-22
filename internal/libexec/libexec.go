@@ -32,6 +32,7 @@ import (
 	"github.com/veil-net/conflux/anchor"
 	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/ui"
 )
 
 // smokeTimeout bounds the one-off check that the extracted binary actually runs.
@@ -49,29 +50,31 @@ type Tools struct {
 // for a caller that has made d's roots already (EnsureAll), the bin directory with them -- the
 // supervisor and an ephemeral run as they start, wintun's, which puts its DLL beside the anchord it
 // extracts, and the wait of a command that has just started the service. It makes neither a root nor
-// the bin directory, only the set in it (extractIn). Idempotent, atomic, and safe against another
-// conflux doing the same thing; where the pair is there, two stats and nothing more.
-func Extract(d paths.Dirs) (*Tools, error) {
+// the bin directory, only the set in it (extractIn), waiting for another extraction there until ctx
+// ends. Idempotent, atomic, and safe against another conflux doing the same thing; where the pair is
+// there, two stats and nothing more.
+func Extract(ctx context.Context, d paths.Dirs) (*Tools, error) {
 	t, err := Extracted(d)
 	if !errors.Is(err, ErrNotExtracted) {
 		return t, err
 	}
 
-	return extractIn(d)
+	return extractIn(ctx, d)
 }
 
 // Remake empties d's bin directory -- every set, this build's among them, whatever a crashed
 // extraction left staged, and anything else put there -- and extracts this build's pair afresh
 // (Extract), for an update, with nothing running from any of them: so that nothing an earlier
 // conflux made there, nor anything put among it, is kept or run. Under bin's lock, which an
-// extraction in progress holds, and which it waits for, as extractIn does: a reader's extraction, the
-// first after an upgrade, takes tens of milliseconds, its smoke run bounded (smokeTimeout). On Windows,
+// extraction in progress holds, and which it waits for, as extractIn does (lockBin), until ctx ends: a
+// reader's extraction, the first after an upgrade, takes tens of milliseconds, its smoke run bounded
+// (smokeTimeout), and one stopped where it stands holds the lock until Ctrl+C ends the wait. On Windows,
 // which removes no file anybody has open, the lock is then removed too where nothing has opened it
 // since, so it is made again as well; on Unix it is kept, since a lock is taken on the file its name led
 // to when it was opened, and one waited for on a file removed meanwhile would be held beside one taken
 // on the file made again at its name. d's roots are made already (EnsureAll), the bin directory with
 // them, which stays. It is the paths of what it removed from bin, however far it got (paths.ClearExcept).
-func Remake(d paths.Dirs) ([]string, error) {
+func Remake(ctx context.Context, d paths.Dirs) ([]string, error) {
 	if !anchor.Supported {
 		return nil, errUnsupported
 	}
@@ -79,7 +82,7 @@ func Remake(d paths.Dirs) ([]string, error) {
 	root := d.Libexec()
 	lock := filepath.Join(root, ".lock")
 
-	unlock, err := flock.Acquire(lock)
+	unlock, err := lockBin(ctx, d)
 	if err != nil {
 		return nil, err
 	}
@@ -96,18 +99,28 @@ func Remake(d paths.Dirs) ([]string, error) {
 	// meanwhile stays, which Extract then takes as it is.
 	flock.Drop(lock)
 
-	_, err = Extract(d)
+	_, err = Extract(ctx, d)
 
 	return removed, err
 }
 
+// lockBin takes d's bin lock, which an extraction holds for as long as it takes, waiting for one in
+// progress until ctx ends, and saying once, after a second, that it waits (flock.AcquireContext).
+func lockBin(ctx context.Context, d paths.Dirs) (func(), error) {
+	bin := d.Libexec()
+
+	return flock.AcquireContext(ctx, filepath.Join(bin, ".lock"), func() {
+		ui.Errf("waiting for another conflux extracting in %s", bin)
+	})
+}
+
 // extractIn is Extract once a look found no whole extraction under d: the set directory made in the bin
-// directory, under bin's lock, and nothing else. A bin directory not there -- one uninstall removed
-// meanwhile, with its root -- is an error, and is not made again.
-func extractIn(d paths.Dirs) (*Tools, error) {
+// directory, under bin's lock (lockBin), and nothing else. A bin directory not there -- one uninstall
+// removed meanwhile, with its root -- is an error, and is not made again.
+func extractIn(ctx context.Context, d paths.Dirs) (*Tools, error) {
 	t := toolsIn(d)
 
-	unlock, err := flock.Acquire(filepath.Join(d.Libexec(), ".lock"))
+	unlock, err := lockBin(ctx, d)
 	if err != nil {
 		return nil, err
 	}
@@ -175,13 +188,13 @@ func Extracted(d paths.Dirs) (*Tools, error) {
 // provided that folder is there and as conflux makes it (paths.Dirs.OursFolder): that adds a set and
 // removes none, so a service still running an older one keeps it, and makes neither a root nor the bin
 // directory. Anything else -- no installation, roots the check refused, a bin directory not there or not
-// as conflux makes it, an extraction that fails -- runs a copy in a private temporary directory
-// (Temporary), with nothing in d read.
-func ForUsage(d paths.Dirs, checked error) (bin string, done func(), err error) {
+// as conflux makes it, an extraction that fails or is waited for until ctx ends -- runs a copy in a
+// private temporary directory (Temporary), with nothing in d read.
+func ForUsage(ctx context.Context, d paths.Dirs, checked error) (bin string, done func(), err error) {
 	if checked == nil {
 		t, err := Extracted(d)
 		if errors.Is(err, ErrNotExtracted) && d.OursFolder(d.Libexec()) == nil {
-			t, err = extractIn(d)
+			t, err = extractIn(ctx, d)
 		}
 
 		if err == nil {

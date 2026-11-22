@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/veil-net/conflux/internal/paths"
@@ -213,21 +214,28 @@ func versionOf(ctx context.Context, path string) (string, error) {
 	return line, nil
 }
 
-// runChild runs exe with args on this terminal and returns its exit code.
+// childFinish is how long runChild's child is given to end once it has been told to: long enough for the
+// new conflux to start again a service it stopped, as systemd gives a unit 30 s to stop and 90 to start.
+var childFinish = 2 * time.Minute
+
+// runChild runs exe with args on this terminal and returns its exit code. Where ctx ends first -- Ctrl+C,
+// which a terminal sends the child as well, or a SIGTERM to update alone -- the child is sent SIGTERM,
+// which every conflux command takes as it takes Ctrl+C (signalContext), whatever it was started ignoring,
+// and is waited for: it ends as it ends on one, through its own finish, which starts again what it
+// stopped (startAgain). One still running childFinish later is killed. Windows has no SIGTERM to send,
+// and the console's Ctrl+C reaches the child itself.
 func runChild(ctx context.Context, exe string, args ...string) int {
 	cmd := exec.CommandContext(ctx, exe, args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+	cmd.WaitDelay = childFinish
 
-	if err := cmd.Run(); err != nil {
-		var exit *exec.ExitError
-		if errors.As(err, &exit) {
-			return exit.ExitCode()
-		}
-
-		return fail(err)
+	err := cmd.Run()
+	if cmd.ProcessState != nil {
+		return cmd.ProcessState.ExitCode()
 	}
 
-	return ExitOK
+	return fail(err)
 }
 
 func short(commit string) string {

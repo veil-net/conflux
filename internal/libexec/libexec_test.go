@@ -26,7 +26,7 @@ func TestExtractExtractsAndRuns(t *testing.T) {
 
 	d := pathstest.Dirs(t)
 
-	tools, err := Extract(d)
+	tools, err := Extract(t.Context(), d)
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestExtractionMakesNoRootNorBinDirectory(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if _, err := Extract(d); err == nil {
+		if _, err := Extract(t.Context(), d); err == nil {
 			t.Errorf("Extract with %s gone succeeded", gone)
 		}
 
@@ -111,7 +111,7 @@ func TestRemakeWaitsForAnExtractionInProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if removed, err := Remake(d); err != nil || !slices.Contains(removed, older) {
+	if removed, err := Remake(t.Context(), d); err != nil || !slices.Contains(removed, older) {
 		t.Errorf("Remake beside an extraction that ends in 200 ms = %v, %v, want %s removed once it has", removed, err,
 			older)
 	}
@@ -125,7 +125,7 @@ func TestExtractIsIdempotent(t *testing.T) {
 
 	d := pathstest.Dirs(t)
 
-	first, err := Extract(d)
+	first, err := Extract(t.Context(), d)
 	if err != nil {
 		t.Fatalf("first Extract: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestExtractIsIdempotent(t *testing.T) {
 		t.Fatalf("stat: %v", err)
 	}
 
-	second, err := Extract(d)
+	second, err := Extract(t.Context(), d)
 	if err != nil {
 		t.Fatalf("second Extract: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestExtractIsConcurrencySafe(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			tools, err := Extract(d)
+			tools, err := Extract(t.Context(), d)
 
 			mu.Lock()
 			defer mu.Unlock()
@@ -240,7 +240,7 @@ func TestASetThatWillNotRunIsRemoved(t *testing.T) {
 	smokeRun = func(*Tools) error { return refused }
 	t.Cleanup(func() { smokeRun = smoke })
 
-	if _, err := Extract(d); !errors.Is(err, refused) {
+	if _, err := Extract(t.Context(), d); !errors.Is(err, refused) {
 		t.Fatalf("Extract with a failing smoke run = %v, want its refusal", err)
 	}
 
@@ -257,7 +257,7 @@ func TestASetThatWillNotRunIsRemoved(t *testing.T) {
 
 	smokeRun = smoke
 
-	if _, err := Extract(d); err != nil {
+	if _, err := Extract(t.Context(), d); err != nil {
 		t.Errorf("the next Extract did not extract the set again: %v", err)
 	}
 }
@@ -289,7 +289,7 @@ func TestASetTakesItsNameOnlyOnceItHasRun(t *testing.T) {
 	}
 	t.Cleanup(func() { smokeRun = smoke })
 
-	if _, err := Extract(d); err != nil {
+	if _, err := Extract(t.Context(), d); err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
 
@@ -306,7 +306,7 @@ func TestExtractRepairsATruncatedExtraction(t *testing.T) {
 
 	d := pathstest.Dirs(t)
 
-	tools, err := Extract(d)
+	tools, err := Extract(t.Context(), d)
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -315,7 +315,7 @@ func TestExtractRepairsATruncatedExtraction(t *testing.T) {
 		t.Fatalf("truncate: %v", err)
 	}
 
-	again, err := Extract(d)
+	again, err := Extract(t.Context(), d)
 	if err != nil {
 		t.Fatalf("second Extract: %v", err)
 	}
@@ -408,7 +408,7 @@ func TestUsageMakesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tools, err := Extract(d)
+	tools, err := Extract(t.Context(), d)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -424,7 +424,7 @@ func TestUsageMakesNothing(t *testing.T) {
 func forUsage(t *testing.T, d paths.Dirs) (string, func(), error) {
 	t.Helper()
 
-	bin, done, err := ForUsage(d, d.Check())
+	bin, done, err := ForUsage(t.Context(), d, d.Check())
 	if done != nil {
 		t.Cleanup(done)
 	}
@@ -531,7 +531,7 @@ func TestUsageRunsNothingFromARootItRefuses(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	planted, err := Extract(d)
+	planted, err := Extract(t.Context(), d)
 	if err != nil {
 		t.Fatal(err)
 	}

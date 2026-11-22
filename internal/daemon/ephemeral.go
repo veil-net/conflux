@@ -145,7 +145,7 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 	// Into the root just made again above.
 	tools := e.tools
 	if tools == nil {
-		if tools, err = libexec.Extract(d); err != nil {
+		if tools, err = libexec.Extract(ctx, d); err != nil {
 			return err
 		}
 	}

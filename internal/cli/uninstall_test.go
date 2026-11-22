@@ -190,7 +190,7 @@ func TestUninstallLeavesNoTrace(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if _, err := libexec.Extract(d); err != nil {
+			if _, err := libexec.Extract(t.Context(), d); err != nil {
 				t.Fatal(err)
 			}
 

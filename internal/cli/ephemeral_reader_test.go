@@ -113,7 +113,7 @@ func TestAKilledRunsMarkerIsNotTheNextRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, _, err := toolsFor(d); !errors.Is(err, errEphemeralStarting) {
+	if _, _, err := toolsFor(t.Context(), d); !errors.Is(err, errEphemeralStarting) {
 		t.Errorf("a reader, with the killed run's marker beside the new run's lock: %v, want errEphemeralStarting", err)
 	}
 
@@ -130,7 +130,7 @@ func TestAReaderTakesAnEphemeralRunsPairAsItIs(t *testing.T) {
 
 	d := startingEphemeral(t)
 
-	if _, _, err := toolsFor(d); !errors.Is(err, errEphemeralStarting) {
+	if _, _, err := toolsFor(t.Context(), d); !errors.Is(err, errEphemeralStarting) {
 		t.Errorf("before the run is up: %v, want errEphemeralStarting", err)
 	}
 
@@ -138,7 +138,7 @@ func TestAReaderTakesAnEphemeralRunsPairAsItIs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, _, err := toolsFor(d); !errors.Is(err, libexec.ErrNotExtracted) {
+	if _, _, err := toolsFor(t.Context(), d); !errors.Is(err, libexec.ErrNotExtracted) {
 		t.Errorf("a run with no pair: %v, want ErrNotExtracted", err)
 	}
 
@@ -146,12 +146,12 @@ func TestAReaderTakesAnEphemeralRunsPairAsItIs(t *testing.T) {
 		t.Errorf("a reader wrote %d entries into the run's %s", len(entries), d.Libexec())
 	}
 
-	extracted, err := libexec.Extract(d) // as the run does
+	extracted, err := libexec.Extract(t.Context(), d) // as the run does
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	got, done, err := toolsFor(d)
+	got, done, err := toolsFor(t.Context(), d)
 	if err != nil || got != extracted.Anchorctl || done != nil {
 		t.Errorf("a run that is up: %s, %v; want %s, and nothing to remove", got, err, extracted.Anchorctl)
 	}
@@ -179,7 +179,7 @@ func TestAReaderRemakesNothing(t *testing.T) {
 
 	pathstest.NotAsConfluxMakesIt(t, d.Run)
 
-	bin, done, err := toolsFor(d)
+	bin, done, err := toolsFor(t.Context(), d)
 	if err != nil || done == nil || strings.HasPrefix(bin, d.State) {
 		t.Fatalf("a reader of an installation with no bin directory = %s, %v, want a temporary copy to remove", bin,
 			err)
@@ -203,7 +203,7 @@ func TestAReaderRemakesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	bin, done, err = toolsFor(d)
+	bin, done, err = toolsFor(t.Context(), d)
 
 	extracted, extractErr := libexec.Extracted(d)
 	if err != nil || extractErr != nil || bin != extracted.Anchorctl || done != nil {

@@ -50,7 +50,7 @@ func passthrough(ctx context.Context, args []string) int {
 	)
 
 	if namesSocket(args) || os.Getenv(anchorctl.SocketEnv) != "" || wantsUsage(args) {
-		bin, done, err = readersAnchorctl()
+		bin, done, err = readersAnchorctl(ctx)
 		env = os.Environ()
 	} else {
 		d, checked := activeDirs()
@@ -64,7 +64,7 @@ func passthrough(ctx context.Context, args []string) int {
 		// uninstall had removed, and tens of megabytes in them, on a machine with nothing
 		// running, and failed for an account that cannot write them before saying what was
 		// wrong.
-		bin, done, err = toolsFor(d)
+		bin, done, err = toolsFor(ctx, d)
 		env = (&anchorctl.Ctl{Socket: d.Socket(), Token: token}).PassthroughEnv()
 	}
 
@@ -129,10 +129,10 @@ func connectionDetails(d paths.Dirs, checked error, args []string) (string, int)
 // pass-through for usage or to a socket the user named -- and done, which removes it where it is a
 // temporary copy: the readers' (libexec.ForUsage), the installation's roots held to the readers' check
 // first. A variable so that a test can point it at a stand-in.
-var readersAnchorctl = func() (string, func(), error) {
+var readersAnchorctl = func(ctx context.Context) (string, func(), error) {
 	d := paths.Default()
 
-	return libexec.ForUsage(d, d.Check())
+	return libexec.ForUsage(ctx, d, d.Check())
 }
 
 // wantsUsage reports whether this invocation is only asking what a command takes: help
@@ -176,8 +176,8 @@ func runEscapeHatch(ctx context.Context, args []string) int {
 // runCtl builds a Ctl for conflux's own use, against conflux's own daemon, and done, which removes
 // the temporary copy of anchorctl it runs, where it runs one, once the caller is done with it. Its
 // token is empty when there is none to read, which is a daemon that is not running.
-func runCtl(d paths.Dirs) (*anchorctl.Ctl, func(), error) {
-	bin, done, err := toolsFor(d)
+func runCtl(ctx context.Context, d paths.Dirs) (*anchorctl.Ctl, func(), error) {
+	bin, done, err := toolsFor(ctx, d)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -314,9 +314,9 @@ var errEphemeralStarting = errors.New("the ephemeral run is still starting; ask 
 // nothing, and reads nothing until the run has marked itself up, since before that the run may still be
 // clearing what a killed one left -- and a reader that refilled what it was clearing, or held one of its
 // binaries open, would stop it.
-func toolsFor(d paths.Dirs) (string, func(), error) {
+func toolsFor(ctx context.Context, d paths.Dirs) (string, func(), error) {
 	if !slices.Contains(paths.EphemeralCandidates(), d.State) {
-		return libexec.ForUsage(d, nil)
+		return libexec.ForUsage(ctx, d, nil)
 	}
 
 	if !daemon.IsLiveReady(d) {

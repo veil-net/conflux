@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -25,8 +27,10 @@ import (
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/daemon"
+	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
+	"github.com/veil-net/conflux/internal/ui"
 )
 
 // standInDir, set, makes the test binary the conflux TestASignalToConfluxReachesItsAnchorctl
@@ -64,7 +68,7 @@ while :; do sleep 0.05; done
 // with it.
 func TestASignalToConfluxReachesItsAnchorctl(t *testing.T) {
 	if dir := os.Getenv(standInDir); dir != "" {
-		readersAnchorctl = func() (string, func(), error) {
+		readersAnchorctl = func(context.Context) (string, func(), error) {
 			tmp, err := os.MkdirTemp(dir, "conflux-usage-")
 			if err != nil {
 				return "", nil, err
@@ -172,7 +176,7 @@ const (
 // to remove it afterwards.
 func TestOnlyATemporaryCopyRunsAsAChild(t *testing.T) {
 	if args := os.Getenv(placedArgs); args != "" {
-		readersAnchorctl = func() (string, func(), error) {
+		readersAnchorctl = func(context.Context) (string, func(), error) {
 			if os.Getenv(placedTemporary) != "" {
 				return os.Getenv(placedStandIn), func() {}, nil
 			}
@@ -534,6 +538,99 @@ func TestAFirstSignalStopsAnEphemeralRun(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCtrlCEndsARemakeWaitingOnAnExtraction: register -- tidy, which an update has the new conflux run --
+// holds the supervisor's lock while it empties bin/ under bin's lock (libexec.Remake), which an extraction
+// in progress holds, as one stopped where it stands holds it for good: here the test holds it. register
+// waits, saying after a second that it waits for another conflux extracting there, and Ctrl+C -- SIGINT,
+// to conflux, run in this process -- ends the wait and the command: exit 1, the supervisor's lock let go
+// of, and nothing registered or started.
+func TestCtrlCEndsARemakeWaitingOnAnExtraction(t *testing.T) {
+	anchortest.Require(t)
+	rootOnLinux(t)
+	defaultSignals(t) // Main catches SIGINT whatever this test binary was started ignoring
+
+	d := pathstest.Dirs(t)
+	mgr := &fakeManager{d: d}
+	standInService(t, mgr)
+
+	unlock, err := flock.Acquire(filepath.Join(d.Libexec(), ".lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+
+	said := &lockedBuffer{}
+
+	oldOut, oldErr := ui.Out, ui.Errw
+	ui.Out, ui.Errw = io.Discard, said
+
+	t.Cleanup(func() { ui.Out, ui.Errw = oldOut, oldErr })
+
+	returned := make(chan int, 1)
+	go func() { returned <- Main([]string{"conflux", "register"}) }()
+
+	waiting := "waiting for another conflux extracting in " + d.Libexec()
+
+	deadline := time.Now().Add(10 * time.Second)
+
+	for ; !strings.Contains(said.String(), waiting); time.Sleep(10 * time.Millisecond) {
+		select {
+		case code := <-returned:
+			t.Fatalf("register ended %d before it said it waited for the extraction:\n%s", code, said)
+		default:
+		}
+
+		if time.Now().After(deadline) {
+			t.Fatalf("register had not said %q 10s after it started:\n%s", waiting, said)
+		}
+	}
+
+	if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case code := <-returned:
+		if code == ExitOK {
+			t.Errorf("register, interrupted waiting for the extraction, exited 0:\n%s", said)
+		}
+	case <-time.After(childDeadline):
+		t.Fatalf("register was sent SIGINT and had not returned %v later:\n%s", childDeadline, said)
+	}
+
+	release, ok, err := flock.TryAcquire(d.ServeLockFile())
+	if err != nil || !ok {
+		t.Errorf("register, interrupted, kept the supervisor's lock %s (%v)", d.ServeLockFile(), err)
+	} else {
+		release()
+	}
+
+	if len(mgr.installs) > 0 || mgr.restarts > 0 {
+		t.Errorf("register, interrupted, registered %q and restarted the service %d times", mgr.installs, mgr.restarts)
+	}
+}
+
+// lockedBuffer is a bytes.Buffer that conflux, running on a goroutine of its own, writes while the test
+// reads it.
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	return l.b.Write(p)
+}
+
+func (l *lockedBuffer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	return l.b.String()
 }
 
 // defaultSignals starts the children of the rest of the test with SIGHUP and SIGINT at their

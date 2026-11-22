@@ -85,7 +85,7 @@ func TestAUsageCopyIsGuardedForWhoRunsIt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tools, err := Extract(d)
+	tools, err := Extract(t.Context(), d)
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestAStagingDirectoryIsMadeWithItsDACL(t *testing.T) {
 
 	privtest.DenyOwnersTheirDACL(t, d.Libexec())
 
-	if _, err := Extract(d); err != nil {
+	if _, err := Extract(t.Context(), d); err != nil {
 		t.Fatalf("Extract in a directory that refuses what is made in it a DACL given afterwards: %v", err)
 	}
 }

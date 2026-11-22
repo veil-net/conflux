@@ -83,7 +83,7 @@ func TestWhatAnAdministratorMakesTheServiceTakes(t *testing.T) {
 	unlock()
 	made("flock.TryAcquire", d.ServeLockFile())
 
-	tools, err := libexec.Extract(d)
+	tools, err := libexec.Extract(t.Context(), d)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -53,7 +53,7 @@ import (
 // have no flag: the credential commits to them, anchor starts the identity under no
 // others, and a renewal restates them, so they are the issuer's and are taken as they
 // are -- none included, which is the issuer's own realm's default compartment.
-func runEnrol(_ context.Context, args []string) (code int) {
+func runEnrol(ctx context.Context, args []string) (code int) {
 	fs := flag.NewFlagSet("enrol", flag.ContinueOnError)
 	fs.SetOutput(ui.Errw)
 
@@ -95,7 +95,7 @@ func runEnrol(_ context.Context, args []string) (code int) {
 
 	d := paths.Default()
 
-	_, finish, err := handOver(d, newService())
+	_, finish, err := handOver(ctx, d, newService())
 	defer func() { code = finish(code) }()
 
 	if err != nil {

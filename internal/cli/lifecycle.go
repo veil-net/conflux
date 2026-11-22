@@ -41,7 +41,7 @@ func runInstall(ctx context.Context, args []string) (code int) {
 
 	d := paths.Default()
 
-	place, finish, err := handOver(d, newService())
+	place, finish, err := handOver(ctx, d, newService())
 	defer func() { code = finish(code) }()
 
 	if err != nil {
@@ -74,8 +74,8 @@ func staleCopy(d paths.Dirs, checked error) bool {
 // copy there, which staleCopy has found to be this conflux, or, where nothing was installed, places one.
 // finish starts the service tidy stopped again (startAgain), unless the command restarted it itself
 // (restarted): one restart, started or not, is the command's answer.
-func handOver(d paths.Dirs, mgr service.Manager) (place func(paths.Dirs) (string, error), finish func(int) int,
-	err error) {
+func handOver(ctx context.Context, d paths.Dirs, mgr service.Manager) (place func(paths.Dirs) (string, error),
+	finish func(int) int, err error) {
 	restarted = false
 	stopped := false
 
@@ -102,7 +102,7 @@ func handOver(d paths.Dirs, mgr service.Manager) (place func(paths.Dirs) (string
 		return place, finish, d.EnsureAll()
 	}
 
-	if stopped, err = tidy(d, mgr, checked); err == nil {
+	if stopped, err = tidy(ctx, d, mgr, checked); err == nil {
 		_, err = service.PlaceAfresh(d)
 	}
 
@@ -153,7 +153,7 @@ func runRegister(ctx context.Context, args []string) int {
 
 	mgr := newService()
 
-	stopped, err := tidy(d, mgr, d.Check())
+	stopped, err := tidy(ctx, d, mgr, d.Check())
 	if err != nil {
 		return startAgain(d, mgr, stopped, fail(err))
 	}
@@ -360,7 +360,7 @@ func runStart(ctx context.Context, args []string) (code int) {
 	// them at every start, before anything in them is read by its name; with a service registered,
 	// roots not there are made, as that service would make them, and hold no configuration once made,
 	// so start ends before anything is placed.
-	place, finish, err := handOver(d, mgr)
+	place, finish, err := handOver(ctx, d, mgr)
 	defer func() { code = finish(code) }()
 
 	if err != nil {

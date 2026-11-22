@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -40,8 +41,9 @@ import (
 //     emptied: the token, the readiness marker, the pid record, anchord's socket directory, which
 //     the next supervisor makes again.
 //   - The bin directory is emptied -- every set, this build's among them, and what a crashed
-//     extraction left staged -- and this build's pair extracted afresh (libexec.Remake): where it
-//     cannot be, tidy fails once it has done the rest, since a set planted there would be kept.
+//     extraction left staged -- and this build's pair extracted afresh (libexec.Remake), an extraction
+//     in progress waited for until ctx ends: where it cannot be, tidy fails once it has done the rest,
+//     since a set planted there would be kept.
 //   - A killed ephemeral run's root is removed, the anchord it left stopped (removeKilledRun); a
 //     live run's is left.
 //   - Where nothing holds the state's lock, what an atomic write that never went in place left in the
@@ -55,7 +57,7 @@ import (
 // never went in place left beside it. What the next start clears again as it starts -- the orphan,
 // the run directory, a killed run's root -- it warns of where it cannot remove it, and goes on
 // (leftBehind); and what is gone, and nothing else, it lists, however far it got.
-func tidy(d paths.Dirs, mgr service.Manager, checked error) (stopped bool, err error) {
+func tidy(ctx context.Context, d paths.Dirs, mgr service.Manager, checked error) (stopped bool, err error) {
 	var removed []string
 
 	defer func() { listRemoved(removed) }()
@@ -99,7 +101,7 @@ func tidy(d paths.Dirs, mgr service.Manager, checked error) (stopped bool, err e
 
 	// Every set but the one Remake extracts again, and what was staged.
 	set := filepath.Join(d.Libexec(), anchor.SetID())
-	emptied, remakeErr := libexec.Remake(d)
+	emptied, remakeErr := libexec.Remake(ctx, d)
 	removed = append(removed, slices.DeleteFunc(emptied, func(p string) bool { return p == set })...)
 
 	for _, root := range paths.EphemeralCandidates() {

@@ -41,7 +41,7 @@ const (
 // made here. A set directory holding anything but a finished extraction is debris to libexec,
 // which clears it before extracting into it -- the DLL with it, had it been put there first.
 func Ensure(ctx context.Context, d paths.Dirs) error {
-	tools, err := libexec.Extract(d)
+	tools, err := libexec.Extract(ctx, d)
 	if err != nil {
 		return err
 	}

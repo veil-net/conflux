@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -8,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/config"
@@ -365,5 +367,58 @@ func TestADevBuildAsksBeforeLeaving(t *testing.T) {
 	// Asked for by name, it goes on to what any update needs: root, here refused.
 	if _, _, code := capture(t, "update", "--yes"); code != ExitDenied {
 		t.Errorf("update --yes on a dev build exited %d, want %d: root is what it needs next", code, ExitDenied)
+	}
+}
+
+// TestAnInterruptedUpdateLetsTheNewConfluxFinish: Ctrl+C, or a SIGTERM to update alone, while the conflux
+// an update put in place hands the service over -- its start or its register, which may have stopped the
+// service -- ends update's ctx. The child is sent SIGTERM, which it takes as its own Ctrl+C, and waited
+// for, so that its own finish starts again what it stopped, and update ends with its code; one that does
+// not end is killed once childFinish has passed.
+func TestAnInterruptedUpdateLetsTheNewConfluxFinish(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in conflux is a shell script")
+	}
+
+	was := childFinish
+	t.Cleanup(func() { childFinish = was })
+
+	childFinish = time.Second
+
+	for _, tc := range []struct {
+		name, trap string
+		want       int
+		finishes   bool
+	}{
+		{"finishing", `trap 'sleep 0.3; echo > "$0.finished"; exit 3' TERM`, 3, true},
+		{"never ending", `trap '' TERM`, -1, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			child := filepath.Join(t.TempDir(), "conflux")
+			if err := os.WriteFile(child, []byte("#!/bin/sh\n"+tc.trap+"\necho > \"$0.started\"\n"+
+				"while :; do sleep 0.05; done\n"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+
+			go func() {
+				for deadline := time.Now().Add(childDeadline); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+					if _, err := os.Stat(child + ".started"); err == nil {
+						break
+					}
+				}
+
+				cancel()
+			}()
+
+			code := runChild(ctx, child, "start")
+
+			if _, err := os.Stat(child + ".finished"); code != tc.want || (err == nil) != tc.finishes {
+				t.Errorf("the child, its update interrupted, ended %d, finishing %v (%v); want %d, finishing %v",
+					code, err == nil, err, tc.want, tc.finishes)
+			}
+		})
 	}
 }

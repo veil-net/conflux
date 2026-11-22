@@ -147,7 +147,7 @@ func askDaemon(ctx context.Context, d paths.Dirs, export bool) *daemonAnswers {
 		return a
 	}
 
-	ctl, done, err := runCtl(d)
+	ctl, done, err := runCtl(ctx, d)
 	if err != nil {
 		return a
 	}

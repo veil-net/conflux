@@ -17,10 +17,9 @@ import (
 var forwarded = []os.Signal{syscall.SIGTERM, syscall.SIGHUP, syscall.SIGINT}
 
 // runAnchorctl runs anchorctl as a child and ends as it ends: what Windows does in place of
-// execve, and what usage and a socket the user named do everywhere, and a pass-through whose
-// anchorctl is a temporary copy, since each may wait to remove that copy afterwards. done, where
-// it is given, is that removal, made once the child has ended, or failed to start, before
-// anything else.
+// execve, and what a pass-through whose anchorctl is a temporary copy does everywhere, since it
+// waits to remove that copy afterwards. done, where it is given, is that removal, made once the
+// child has ended, or failed to start, before anything else.
 //
 // Inherited handles, so the console is genuinely shared, and the child's exit code passed
 // back verbatim. Not tied to a context, which Ctrl+C cancels: the terminal delivers that to

@@ -22,6 +22,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
@@ -56,10 +57,11 @@ while :; do sleep 0.05; done
 `
 }()
 
-// TestASignalToConfluxReachesItsAnchorctl: the anchorctl conflux runs as a child, for usage or
-// a socket the user named, is sent what conflux's PID alone is sent -- a kill, a service
-// manager's stop, a hangup -- as it would be had conflux replaced itself with it. conflux ends
-// as anchorctl ends, by its exit code or by the signal, and its temporary copy goes with it.
+// TestASignalToConfluxReachesItsAnchorctl: the anchorctl conflux runs as a child, a temporary copy
+// (here a stand-in, for a socket the user named), is sent what conflux's PID alone is sent -- a
+// kill, a service manager's stop, a hangup -- as it would be had conflux replaced itself with it.
+// conflux ends as anchorctl ends, by its exit code or by the signal, and its temporary copy goes
+// with it.
 func TestASignalToConfluxReachesItsAnchorctl(t *testing.T) {
 	if dir := os.Getenv(standInDir); dir != "" {
 		readersAnchorctl = func() (string, func(), error) {
@@ -152,6 +154,74 @@ func TestASignalToConfluxReachesItsAnchorctl(t *testing.T) {
 				t.Errorf("conflux left its temporary anchorctl behind: %d entries in %s", len(left), dir)
 			}
 		})
+	}
+}
+
+// placedArgs, set, makes TestOnlyATemporaryCopyRunsAsAChild's test binary the conflux it runs, with
+// these arguments, a line each, its readers' anchorctl the stand-in placedStandIn names: the
+// installation's extraction, with no done, or, with placedTemporary set, a temporary copy.
+const (
+	placedArgs      = "CONFLUX_TEST_PLACED_ARGS"
+	placedStandIn   = "CONFLUX_TEST_PLACED_STAND_IN"
+	placedTemporary = "CONFLUX_TEST_PLACED_TEMPORARY"
+)
+
+// TestOnlyATemporaryCopyRunsAsAChild: a pass-through to a socket the user named, or for usage, whose
+// anchorctl is the installation's extraction replaces conflux with it, as one to conflux's daemon does --
+// the stand-in runs as conflux's own PID -- and one whose anchorctl is a temporary copy runs it as a child,
+// to remove it afterwards.
+func TestOnlyATemporaryCopyRunsAsAChild(t *testing.T) {
+	if args := os.Getenv(placedArgs); args != "" {
+		readersAnchorctl = func() (string, func(), error) {
+			if os.Getenv(placedTemporary) != "" {
+				return os.Getenv(placedStandIn), func() {}, nil
+			}
+
+			return os.Getenv(placedStandIn), nil, nil
+		}
+
+		os.Exit(Main(append([]string{"conflux"}, strings.Split(args, "\n")...)))
+	}
+
+	bin := filepath.Join(t.TempDir(), "anchorctl")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho $$ > \"$"+standInPID+"\"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, c := range []struct {
+		args   []string
+		socket string
+	}{
+		{[]string{"peers", "-socket", "unused"}, ""},
+		{[]string{"peers"}, "unused"},
+		{[]string{"peers", "-h"}, ""},
+	} {
+		for _, temporary := range []bool{false, true} {
+			pidFile := filepath.Join(t.TempDir(), "pid")
+
+			ctx, cancel := context.WithTimeout(t.Context(), childDeadline)
+
+			conflux := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestOnlyATemporaryCopyRunsAsAChild$") //nolint:gosec // this test binary
+			conflux.Env = append(os.Environ(), placedArgs+"="+strings.Join(c.args, "\n"), placedStandIn+"="+bin,
+				standInPID+"="+pidFile, anchorctl.SocketEnv+"="+c.socket)
+
+			if temporary {
+				conflux.Env = append(conflux.Env, placedTemporary+"=1")
+			}
+
+			out, err := conflux.CombinedOutput()
+
+			cancel()
+
+			b, _ := os.ReadFile(pidFile)
+			pid, _ := strconv.Atoi(strings.TrimSpace(string(b)))
+
+			if err != nil || pid == 0 || (pid == conflux.Process.Pid) == temporary {
+				t.Errorf("conflux %s with %s=%q, a temporary copy %v: ran anchorctl as pid %d, conflux being %d, want "+
+					"it in conflux's place only where it is not a temporary copy (%v):\n%s", strings.Join(c.args, " "),
+					anchorctl.SocketEnv, c.socket, temporary, pid, conflux.Process.Pid, err, out)
+			}
+		}
 	}
 }
 

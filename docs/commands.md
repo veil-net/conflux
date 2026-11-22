@@ -774,15 +774,16 @@ accepted and ignored.
 
 ## Pass-through
 
-Anything else is handed to `anchorctl` verbatim. On Unix conflux replaces its own
-process with it, so the stdio, the exit code and the signals are the child's with no
-translation; where its `anchorctl` is a private temporary copy — no `bin/` to extract this build's
-pair into — it runs it as a child instead, as below, and removes the copy once it has run.
+Anything else is handed to `anchorctl` verbatim. Where its `anchorctl` is this build's extraction,
+on Unix conflux replaces its own process with it, whatever the command reaches, so the stdio, the
+exit code and the signals are anchorctl's with no translation. Where it is a private temporary copy,
+there being no extraction it may use (below), conflux runs it as a child instead, and removes the
+copy once it has run.
 
-Two kinds of command need nothing of conflux's daemon, and run `anchorctl` as a child, with your
-environment alone: one naming a socket of your own (`-socket`, or `ANCHOR_SOCKET`), which reaches a
-daemon conflux does not manage, and usage (`help`, or a help flag), which reaches no daemon. Each takes
-it as `status` takes it, and nothing of the installation stands in its way: this build's extraction,
+Two kinds of command need nothing of conflux's daemon, and run `anchorctl` with your environment
+alone: one naming a socket of your own (`-socket`, or `ANCHOR_SOCKET`), which reaches a daemon conflux
+does not manage, and usage (`help`, or a help flag), which reaches no daemon. Each takes it as
+`status` takes it, and nothing of the installation stands in its way: this build's extraction,
 where the root passes the [readers' check](#a-root-another-account-could-change), extracted into
 `bin/` first where it is not there yet and `bin/` is as conflux makes it, or otherwise — the root
 refused, or not there — a private temporary copy removed afterwards, reading nothing in the root, so
@@ -792,9 +793,10 @@ in the system's temporary directory, which must exist, or, where that is mounted
 your cache directory, which is made if it is not there yet; no other directory is. On Windows, run
 elevated, it goes instead in a folder of its own in `%ProgramData%`, which with the copy is SYSTEM's
 and the Administrators' alone from the moment it exists, since what your own `%TEMP%` holds your
-processes that are not elevated could change before it runs; both go once it has run. A SIGTERM, SIGHUP
-or SIGINT sent to conflux is passed on to that child, so nothing outlives conflux, and conflux
-ends as the child ends: with its exit code, or by the same signal. The copy goes either way. A
+processes that are not elevated could change before it runs; both go once it has run. A SIGTERM,
+SIGHUP or SIGINT sent to conflux is passed on to the child running a temporary copy, so nothing
+outlives conflux, and conflux ends as the child ends: with its exit code, or by the same signal. The
+copy goes either way. A
 SIGHUP or SIGINT conflux was started ignoring, as `nohup` starts it ignoring SIGHUP, stays
 ignored by conflux, and the child starts with it ignored, as it would from your shell; a
 command of anchorctl's that watches (`status -watch`, `events`, `subscribe`) takes SIGINT for

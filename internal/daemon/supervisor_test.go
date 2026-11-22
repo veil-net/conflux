@@ -56,9 +56,9 @@ func supervised(t *testing.T, mode string) (*Supervisor, string) {
 // image as it starts, before it reads its configuration, so none survives a start; a lock file not as
 // conflux makes it beside it is removed. A copy as conflux makes it is left as it is, and one not there
 // -- a supervisor run by hand -- is placed. A copy that cannot be placed -- a folder holding something at
-// its name -- refuses the start, for the service manager to start again, as it does after any failure
-// but a permanent one. (On Windows, where the running image cannot be replaced, it is moved aside first,
-// as update.Replace moves one: judged by reading.)
+// its name, and another at the name Windows moves a running image aside to first (update.Replace), so that
+// neither the rename over it nor the move aside can go -- refuses the start, for the service manager to
+// start again, as it does after any failure but a permanent one.
 func TestTheSupervisorPlacesItsOwnCopyAfresh(t *testing.T) {
 	s, _ := supervised(t, "1")
 	d := s.Dirs
@@ -119,16 +119,18 @@ func TestTheSupervisorPlacesItsOwnCopyAfresh(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := os.MkdirAll(filepath.Join(d.ServiceExecutable(), "held"), 0o700); err != nil {
-		t.Fatal(err)
+	for _, p := range []string{d.ServiceExecutable(), d.ServiceExecutable() + ".old"} {
+		if err := os.MkdirAll(filepath.Join(p, "held"), 0o700); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 
 	if err := s.Run(ctx); err == nil || Permanent(err) || !strings.Contains(err.Error(), "could not be placed") {
-		t.Errorf("Run with a folder at the copy's name = %v, want a refusal saying the copy could not be placed, "+
-			"which is not permanent", err)
+		t.Errorf("Run with a folder at the copy's name, and at its .old = %v, want a refusal saying the copy could "+
+			"not be placed, which is not permanent", err)
 	}
 }
 

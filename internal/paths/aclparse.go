@@ -29,12 +29,6 @@ type writer struct {
 	who  grantee
 	id   uint32 // aUser's uid or aGroup's gid
 	uuid string // anAccount's
-
-	// pastSticky is a right the sticky bit does not hold back: to delete what is in the
-	// directory, to delete the directory itself, which the kernel grants before it looks at a
-	// sticky bit, or to change its ACL or owner. Writing it, all a mode's bits or a POSIX.1e ACL
-	// can grant, is held back.
-	pastSticky bool
 }
 
 // POSIX.1e: tags and the write bit, as Linux's system.posix_acl_access and FreeBSD's acl(9)
@@ -121,8 +115,8 @@ const (
 )
 
 // NFSv4 ACLs, as FreeBSD numbers them: the tags POSIX.1e does not have, the allow type, and the
-// rights that write a directory -- to add a file or a directory to it and, past the sticky bit, to
-// delete what is in it, to delete the directory itself, or to change its ACL or owner.
+// rights that write a directory -- to add a file or a directory to it, to delete what is in it, to
+// delete the directory itself, or to change its ACL or owner.
 const (
 	nfs4Owner    = 0x01 // owner@
 	nfs4Everyone = 0x40 // everyone@
@@ -134,7 +128,8 @@ const (
 	nfs4Delete          = 0x0800
 	nfs4WriteACL        = 0x2000
 	nfs4WriteOwner      = 0x4000
-	nfs4PastSticky      = nfs4DeleteChild | nfs4Delete | nfs4WriteACL | nfs4WriteOwner
+	nfs4Writes          = nfs4AddFile | nfs4AddSubdirectory | nfs4DeleteChild | nfs4Delete | nfs4WriteACL |
+		nfs4WriteOwner
 )
 
 // freebsdACL is who FreeBSD's struct acl lets write, read as the NFSv4 ACL or the POSIX.1e
@@ -166,7 +161,7 @@ func freebsdACL(b []byte, nfs4 bool) ([]writer, error) {
 		}
 
 		if binary.NativeEndian.Uint16(e[12:]) != nfs4Allow ||
-			perm&(nfs4AddFile|nfs4AddSubdirectory|nfs4PastSticky) == 0 || tag == nfs4Owner {
+			perm&nfs4Writes == 0 || tag == nfs4Owner {
 			continue
 		}
 
@@ -179,8 +174,6 @@ func freebsdACL(b []byte, nfs4 bool) ([]writer, error) {
 		default:
 			return nil, errACL
 		}
-
-		w.pastSticky = perm&nfs4PastSticky != 0
 
 		ws = append(ws, w)
 	}
@@ -211,9 +204,8 @@ const (
 	kauthTakeOwnership = 1 << 13
 	kauthGenericAll    = 1 << 21
 	kauthGenericWrite  = 1 << 23
-	kauthPastSticky    = kauthDeleteChild | kauthDelete | kauthWriteSecurity | kauthTakeOwnership | kauthGenericAll |
-		kauthGenericWrite
-	kauthWritesSomehow = kauthWriteData | kauthAppendData | kauthPastSticky
+	kauthWritesSomehow = kauthWriteData | kauthAppendData | kauthDeleteChild | kauthDelete | kauthWriteSecurity |
+		kauthTakeOwnership | kauthGenericAll | kauthGenericWrite
 )
 
 // kauthEveryone is the UUID macOS's ACLs name everybody by: the group everyone, gid 12.
@@ -265,7 +257,7 @@ func kauthWriters(b []byte) ([]writer, error) {
 			continue
 		}
 
-		w := writer{who: everyone, pastSticky: rights&kauthPastSticky != 0}
+		w := writer{who: everyone}
 		if [16]byte(e[:16]) != kauthEveryone {
 			w.who, w.uuid = anAccount, fmt.Sprintf("%X-%X-%X-%X-%X", e[:4], e[4:6], e[6:8], e[8:10], e[10:16])
 		}

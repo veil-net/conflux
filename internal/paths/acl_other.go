@@ -345,31 +345,21 @@ func aclOf(p string) ([]writer, bool, error) {
 // (groupOf); a user other than euid, or a group that lets in another account, that its ACL
 // names; and any account an ACL names by a UUID alone. aclGroup is an ACL whose mask the mode's
 // group bits are (POSIX.1e), which then says what the group may itself, and lets nobody write
-// where those bits do not: a directory's own are its mask already. A sticky directory lets nobody
-// rename what is not theirs, so what only lets them write it is left out there, as its mode's
-// bits are; a right the sticky bit does not hold back is not.
+// where those bits do not: a directory's own are its mask already.
 func judge(mode os.FileMode, gid uint32, acl []writer, aclGroup bool, euid int) string {
 	if aclGroup && mode&0o020 == 0 {
 		acl = nil
 	}
 
-	sticky := mode&os.ModeSticky != 0
+	if mode&0o002 != 0 {
+		return "anybody may write, and anybody"
+	}
 
-	if !sticky {
-		if mode&0o002 != 0 {
-			return "anybody may write, and anybody"
-		}
-
-		if !aclGroup && mode&0o020 != 0 {
-			acl = append([]writer{{who: theGroup}}, acl...)
-		}
+	if !aclGroup && mode&0o020 != 0 {
+		acl = append([]writer{{who: theGroup}}, acl...)
 	}
 
 	for _, w := range acl {
-		if sticky && !w.pastSticky {
-			continue
-		}
-
 		switch {
 		case w.who == aUser && int(w.id) != euid && w.id != 0:
 			return fmt.Sprintf("its ACL lets uid %d write, and that account", w.id)

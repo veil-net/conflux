@@ -90,9 +90,9 @@ func freebsdBuf(entries ...[5]uint32) []byte {
 
 // TestFreeBSDACL: who FreeBSD's ACLs let write. A POSIX.1e access ACL is read as Linux's is,
 // its trivial three entries letting nobody past the mode's bits. Of an NFSv4 ACL, each allow
-// entry that adds to the directory or, past the sticky bit, deletes from it, deletes it, or
-// changes its ACL or owner, other than owner@'s; ZFS's trivial ACL for a 1777 /tmp lets
-// everyone@ write alone, and deny entries and rights that write nothing are not read. group@'s and
+// entry that adds to the directory, deletes from it, deletes it, or changes its ACL or owner,
+// other than owner@'s; ZFS's trivial ACL for a 1777 /tmp lets everyone@ write alone, and deny
+// entries and rights that write nothing are not read. group@'s and
 // everyone@'s right only to add, passed on by nothing, is the mode's write bit.
 func TestFreeBSDACL(t *testing.T) {
 	const allow, deny = nfs4Allow, 0x0200
@@ -114,7 +114,7 @@ func TestFreeBSDACL(t *testing.T) {
 		[5]uint32{0x40, 0, nfs4AddFile | nfs4AddSubdirectory | 0x8, allow}, // everyone@: write, as 1777 gives
 		[5]uint32{0x02, 1001, nfs4WriteACL, deny},                          // a deny takes nothing away
 		[5]uint32{0x08, 50, 0x8 | 0x200, allow},                            // reading writes nothing
-		[5]uint32{0x02, 1002, nfs4WriteOwner, allow},                       // past the sticky bit
+		[5]uint32{0x02, 1002, nfs4WriteOwner, allow},                       // changing its owner
 		[5]uint32{0x08, 60, nfs4Delete, allow},                             // deleting the directory itself, too
 		[5]uint32{0x02, 1003, nfs4WriteACL, allow},                         // changing its ACL, too
 		[5]uint32{0x02, 1004, nfs4DeleteChild, allow},                      // deleting what is in it, too
@@ -123,8 +123,8 @@ func TestFreeBSDACL(t *testing.T) {
 	)
 
 	want := []writer{
-		{who: everyone}, {who: aUser, id: 1002, pastSticky: true}, {who: aGroup, id: 60, pastSticky: true},
-		{who: aUser, id: 1003, pastSticky: true}, {who: aUser, id: 1004, pastSticky: true}, {who: aGroup, id: 61},
+		{who: everyone}, {who: aUser, id: 1002}, {who: aGroup, id: 60},
+		{who: aUser, id: 1003}, {who: aUser, id: 1004}, {who: aGroup, id: 61},
 		{who: theGroup},
 	}
 	if got, err := freebsdACL(tmp, true); err != nil || !slices.Equal(got, want) {
@@ -196,17 +196,17 @@ func TestKauthWriters(t *testing.T) {
 		{"a permit to add a directory", kauthAttrBuf(kauthEntry{someone, kauthPermit, kauthAppendData}),
 			[]writer{{who: anAccount, uuid: "5B1E0F1C-2D3E-4F50-6172-8394A5B6C7D8"}}},
 		{"everybody may change its ACL", kauthAttrBuf(kauthEntry{kauthEveryone, kauthPermit, kauthWriteSecurity}),
-			[]writer{{who: everyone, pastSticky: true}}},
+			[]writer{{who: everyone}}},
 		{"everybody may take it", kauthAttrBuf(kauthEntry{kauthEveryone, kauthPermit, kauthTakeOwnership}),
-			[]writer{{who: everyone, pastSticky: true}}},
+			[]writer{{who: everyone}}},
 		{"everybody may do anything to it", kauthAttrBuf(kauthEntry{kauthEveryone, kauthPermit, kauthGenericAll}),
-			[]writer{{who: everyone, pastSticky: true}}},
+			[]writer{{who: everyone}}},
 		{"everybody may write it, generically", kauthAttrBuf(kauthEntry{kauthEveryone, kauthPermit, kauthGenericWrite}),
-			[]writer{{who: everyone, pastSticky: true}}},
+			[]writer{{who: everyone}}},
 		{"everybody may delete what is in it", kauthAttrBuf(kauthEntry{kauthEveryone, kauthPermit, kauthDeleteChild}),
-			[]writer{{who: everyone, pastSticky: true}}},
+			[]writer{{who: everyone}}},
 		{"everybody may delete it", kauthAttrBuf(kauthEntry{kauthEveryone, kauthPermit, kauthDelete}),
-			[]writer{{who: everyone, pastSticky: true}}},
+			[]writer{{who: everyone}}},
 	} {
 		if got, err := kauthAttr(c.b); err != nil || !slices.Equal(got, c.want) {
 			t.Errorf("%s: kauthAttr = %+v, %v; want %+v", c.name, got, err, c.want)

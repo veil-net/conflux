@@ -531,8 +531,8 @@ else: a root it could not empty is not listed. Asks first where there is a crede
 other copy of it anywhere; where there is none it asks nothing. `--yes` skips the question, and a
 non-interactive run without `--yes` refuses, exit 2, rather than destroy the credential silently.
 
-Nothing in a root is followed. Each is removed through the directory holding it, held open from
-the top of its volume down, and a name at a time below it: a link or junction found anywhere in
+Nothing in a root is followed. Each is removed through the directory holding it, the folder it is
+in held open, and a name at a time below it: a link or junction found anywhere in
 it, the root's own name included, is removed as the link, and where it leads is never touched; a
 file another account planted there is removed as itself, never read. Nothing on the way to a root
 is judged, and the system's data folder it is in is left as it was. A root the readers' check

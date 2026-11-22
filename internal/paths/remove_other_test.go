@@ -4,7 +4,6 @@ package paths
 
 import (
 	"errors"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -234,48 +233,4 @@ func mine(t *testing.T, mode os.FileMode, plant func(dir string)) string {
 	}
 
 	return dir
-}
-
-// TestOpenInReadsThroughTheRootHeld: what OpenIn opens is looked up in the root it holds, and not by its
-// name, so a root put at the name once OpenIn holds the one there -- the one held moved aside, another
-// made in its place holding a lock of its own -- answers for nothing: what is read is the held root's.
-func TestOpenInReadsThroughTheRootHeld(t *testing.T) {
-	inData(t, t.TempDir())
-
-	d := Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.WriteFile(d.ServeLockFile(), []byte("held"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	was := opening
-	t.Cleanup(func() { opening = was })
-
-	opening = func(dir string) {
-		if err := os.Rename(dir, dir+".was"); err != nil {
-			t.Fatal(err)
-		}
-
-		if err := os.Mkdir(dir, 0o700); err != nil {
-			t.Fatal(err)
-		}
-
-		if err := os.WriteFile(d.ServeLockFile(), []byte("put there"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	f, err := d.OpenIn(d.ServeLockFile())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-
-	if b, err := io.ReadAll(f); err != nil || string(b) != "held" {
-		t.Errorf("OpenIn(the serve lock), another root put at the name once it held the one there, read %q, %v, want "+
-			"the held root's", b, err)
-	}
 }

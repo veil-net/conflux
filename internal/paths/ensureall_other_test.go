@@ -231,9 +231,8 @@ func TestEnsureAllSaysWhyARootItCannotRemoveIsNotItsOwn(t *testing.T) {
 }
 
 // TestEnsureAllJudgesNoFolderAboveARoot: the folder the root is in, and every folder above it, is the
-// system's, never judged and never changed: one every account may write, sticky or not, one under a
-// parent anybody or another account's group may write, and one reached through a link, or a chain of
-// links, into a directory anybody may write, each has its root made, 0700, where it leads, and passes the
+// system's, never judged and never changed: one every account may write, sticky or not, and one under a
+// parent anybody or another account's group may write, each has its root made, 0700, and passes the
 // readers' check, with the folders above left as they were.
 func TestEnsureAllJudgesNoFolderAboveARoot(t *testing.T) {
 	for _, c := range []struct {
@@ -252,33 +251,6 @@ func TestEnsureAllJudgesNoFolderAboveARoot(t *testing.T) {
 		}},
 		{"a parent its group, with another account in it, may write", func(t *testing.T, base string) (string, string) {
 			return made(t, filepath.Join(base, "data")), base
-		}},
-		{"a link into a directory every account may write", func(t *testing.T, base string) (string, string) {
-			made(t, filepath.Join(base, "real", "data"))
-
-			link := filepath.Join(realTempDir(t), "link")
-			if err := os.Symlink(filepath.Join(base, "real"), link); err != nil {
-				t.Fatal(err)
-			}
-
-			return filepath.Join(link, "data"), base
-		}},
-		{"a chain of links through a directory every account may write", func(t *testing.T, base string) (string, string) {
-			real := filepath.Join(realTempDir(t), "real")
-			if err := os.Mkdir(real, 0o700); err != nil {
-				t.Fatal(err)
-			}
-
-			if err := os.Symlink(real, filepath.Join(base, "l2")); err != nil {
-				t.Fatal(err)
-			}
-
-			l1 := filepath.Join(realTempDir(t), "l1")
-			if err := os.Symlink(filepath.Join(base, "l2"), l1); err != nil {
-				t.Fatal(err)
-			}
-
-			return l1, base
 		}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -321,153 +293,6 @@ func TestEnsureAllJudgesNoFolderAboveARoot(t *testing.T) {
 	}
 }
 
-// TestALinkLeadingNowhereIsRefused: a data folder reached through a link to a directory that is not
-// there is no folder a root could be made in, nor one that is not there: making it by its name would make
-// what the link names, wherever that is. The walk refuses the link, naming it, with nothing made where it
-// leads, and the readers' check refuses it the same, rather than take it for nothing installed.
-func TestALinkLeadingNowhereIsRefused(t *testing.T) {
-	base := realTempDir(t)
-
-	nowhere, link := filepath.Join(base, "nowhere"), filepath.Join(base, "link")
-	if err := os.Symlink(filepath.Join(nowhere, "deeper"), link); err != nil {
-		t.Fatal(err)
-	}
-
-	inData(t, filepath.Join(link, "data"))
-
-	refused := link + " is a link conflux cannot follow"
-
-	if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), refused) {
-		t.Errorf("EnsureAll(a data folder through a link to a directory not there) = %v, want %q", err, refused)
-	}
-
-	if _, err := os.Lstat(nowhere); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("EnsureAll made %s, where the link it refused leads (%v)", nowhere, err)
-	}
-
-	if err := Default().Check(); err == nil || errors.Is(err, fs.ErrNotExist) || !strings.Contains(err.Error(), refused) {
-		t.Errorf("Check(a data folder through a link to a directory not there) = %v, want %q, not nothing installed",
-			err, refused)
-	}
-}
-
-// TestAWayThroughADirectoryThisAccountMaySearchAlone: a directory of this account's that it may search
-// and not read, 0311, cannot be opened to read, which is how the walk holds a directory on macOS and
-// the BSDs, so there it is held by its name in the directory held before it (lookUp), and the names
-// after it are looked up through that name; Linux opens it as a path. Either way a root under one is
-// made and passes the readers' check, and, as every folder above a root, it is not judged: once others
-// may write it, Check still takes the root.
-func TestAWayThroughADirectoryThisAccountMaySearchAlone(t *testing.T) {
-	base := realTempDir(t)
-
-	shut := filepath.Join(base, "shut")
-	made(t, filepath.Join(shut, "data"))
-
-	if err := os.Chmod(shut, 0o311); err != nil {
-		t.Fatal(err)
-	}
-
-	t.Cleanup(func() { os.Chmod(shut, 0o700) }) // for TempDir to list it, to remove it
-
-	inData(t, filepath.Join(shut, "data"))
-
-	if err := Default().EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll(a root under a 0311 directory of this account's) = %v", err)
-	}
-
-	if err := Default().Check(); err != nil {
-		t.Errorf("Check(a root under a 0311 directory of this account's) = %v", err)
-	}
-
-	if err := os.Chmod(shut, 0o333); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := Default().Check(); err != nil {
-		t.Errorf("Check(a root under a 0333 directory of this account's) = %v", err)
-	}
-}
-
-// TestMakeRootGoesIntoNoNameTakenMeanwhile: the root is looked up in the folder it is in, held, and
-// nowhere else, and made there without following anything, so what somebody else makes at its name as
-// conflux looks it up -- a link into a directory every account may write, or a directory every account
-// may write -- is removed as itself, what the directory held with it, and the root made afresh, 0700,
-// with nothing made where the link leads; one of this account's own is the root.
-func TestMakeRootGoesIntoNoNameTakenMeanwhile(t *testing.T) {
-	was := looking
-	t.Cleanup(func() { looking = was })
-
-	for name, plant := range map[string]func(t *testing.T, at string) (led string){
-		"a link into a directory every account may write": func(t *testing.T, at string) string {
-			open := realTempDir(t)
-			led := made(t, filepath.Join(open, "real"))
-
-			if err := os.Chmod(open, 0o777); err != nil {
-				t.Fatal(err)
-			}
-
-			if err := os.Symlink(led, at); err != nil {
-				t.Fatal(err)
-			}
-
-			return led
-		},
-		"a directory every account may write": func(t *testing.T, at string) string {
-			made(t, at)
-
-			if err := os.WriteFile(filepath.Join(at, "planted"), []byte("anybody's"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-
-			if err := os.Chmod(at, 0o777); err != nil {
-				t.Fatal(err)
-			}
-
-			return ""
-		},
-		"a directory of this account's own": func(t *testing.T, at string) string {
-			made(t, at)
-
-			return ""
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			inData(t, realTempDir(t)) // under /private/var on macOS
-
-			root := Default().Root
-
-			var led string
-
-			n := 0
-			looking = func(p string) {
-				if p == root {
-					if n++; n == 1 {
-						led = plant(t, p)
-					}
-				}
-			}
-
-			if err := Default().EnsureAll(); err != nil {
-				t.Fatalf("EnsureAll, with %s planted at the root's name as it was looked up, = %v", name, err)
-			}
-
-			if got := mode(t, root); got != 0o700 {
-				t.Errorf("EnsureAll left the root %v, with %s planted at it, want a directory at 0700", lmode(t, root), name)
-			}
-
-			if _, err := os.Lstat(filepath.Join(root, "planted")); !errors.Is(err, fs.ErrNotExist) {
-				t.Errorf("the root EnsureAll made afresh, with %s planted at it, holds what that held (Lstat: %v)", name, err)
-			}
-
-			if led != "" {
-				if entries, err := os.ReadDir(led); err != nil || len(entries) != 0 {
-					t.Errorf("EnsureAll made %v where the link planted at the root's name leads (%v)", entries, err)
-				}
-			}
-		})
-	}
-}
-
 // TestAMissingDataFolderIsRefused: the folder the root is in is the system's, and one that is not there
 // is refused, naming it, with nothing made: no folder on the way to it, nor the root.
 func TestAMissingDataFolderIsRefused(t *testing.T) {
@@ -493,44 +318,6 @@ func made(t *testing.T, dir string) string {
 	}
 
 	return dir
-}
-
-// TestMakeRootGoesIntoNoLinkMadeOnceItIsMade: the root, once made, is looked up again in the folder it
-// is in to be held, where nothing is followed: a link put at its name in the moment since is refused,
-// naming it, and nothing is made where it leads.
-func TestMakeRootGoesIntoNoLinkMadeOnceItIsMade(t *testing.T) {
-	was := looking
-	t.Cleanup(func() { looking = was })
-
-	inData(t, t.TempDir())
-
-	root := Default().Root
-	elsewhere := t.TempDir()
-
-	n := 0
-	looking = func(p string) {
-		if p != root {
-			return
-		}
-
-		if n++; n == 2 {
-			if err := os.Remove(p); err != nil {
-				t.Fatal(err)
-			}
-
-			if err := os.Symlink(elsewhere, p); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
-
-	if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), root+", a link, was made") {
-		t.Errorf("EnsureAll, with a link put at the root's name once it was made, = %v, want a refusal naming it", err)
-	}
-
-	if entries, err := os.ReadDir(elsewhere); err != nil || len(entries) > 0 {
-		t.Errorf("EnsureAll made %v where the link leads (%v)", entries, err)
-	}
 }
 
 // lmode is what Lstat says of p's type and permissions.

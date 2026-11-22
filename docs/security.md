@@ -155,11 +155,7 @@ instant, and everything an elevated conflux makes is the Administrators' from th
 A root found there that is not as conflux makes one — another account's, as `%ProgramData%` lets any
 account make `.conflux` first, one granting another account anything, or a junction — is removed as
 itself, through handles, with backup intent so that a DACL granting the Administrators nothing does
-not keep it, and made afresh: never adopted, restricted or followed. A root on a network volume,
-however it is reached, is refused, by the readers' check too, as the volume conflux holds it open on
-says; a link naming a share on the way to a root is refused before conflux follows it, by where the
-link itself says it leads, by every command that makes a root and by the readers' check, before
-anything is looked up there.
+not keep it, and made afresh: never adopted, restricted or followed.
 
 On Windows one gap is left, a class: a handle keeps every right it was opened with, and conflux
 judges a DACL as it finds it, so where an administrator tightened a DACL after another account had
@@ -172,18 +168,13 @@ tightens by hand is safe from such a handle once nobody else can hold one: after
 again rather than tightened. A link at a root's own name is never followed ([windows.md](windows.md#file-permissions)).
 
 The extraction is always in a root conflux makes in the system's data folder, or in an ephemeral
-run's runtime folder: no setting points it anywhere else. The way to a root is walked from the top of
-its volume, a name at a time, each directory held open and the next name looked up in it and nowhere
-else, never followed (`openat` with `O_NOFOLLOW` on Unix, `NtCreateFile` relative to a handle on
-Windows): a link is read where it is and gone on from where it leads, as the system's own lookup
-goes, and the root's own name is looked up in the last directory held. On macOS and the BSDs
-conflux holds a directory by opening it to read, so one this account may only search, not read, is
-held instead by its name in the directory held before it, and the names after it are looked up
-through that name; Linux holds every directory open as a path (`O_PATH`), which needs only the
-right to search. A root not made yet is made in the last directory held, and held open as itself,
-never by its name: a link put at its name once conflux has made it is refused. The folder a root is
-in must be there: nothing on the way to it is made, and a way that ends in where a link leads, at a
-name not there, is refused, with nothing made there.
+run's runtime folder: no setting points it anywhere else. That folder is the system's: only root may
+make anything in it, or, for an ephemeral run as another account, that account alone (on Windows any
+account may, which is why a root there is judged by its owner and DACL). So it is opened by its name
+as the system looks it up, and nothing on the way to it is judged or guarded; the root's own name is looked up in it and nowhere else, never followed (`openat` with
+`O_NOFOLLOW` on Unix, `NtCreateFile` relative to a handle on Windows), and a root not made yet is made
+there and held open as itself. The folder a root is in must be there: nothing on the way to it is
+made.
 
 What a root, and each folder and file conflux keeps in it, is held to on Unix is its type, owner and
 mode alone: a directory (or a file) and no link, owned by root or the account running conflux, and

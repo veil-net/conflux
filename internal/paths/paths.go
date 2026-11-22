@@ -245,24 +245,17 @@ func (d Dirs) EnsureServing() error {
 	return d.EnsureAll()
 }
 
-// makeRoot makes the root and the folders conflux keeps in it (folders). The way to the folder the root
-// is in is walked from the top of its volume and held (walk), and refused where any of it is not there;
-// then the root is made in that folder as conflux makes a folder of its own (ownFolder), and each of its
-// folders in it, held.
+// makeRoot makes the root and the folders conflux keeps in it (folders): the folder the root is in held
+// (openFolder), and refused where it is not there; then the root made in it as conflux makes a folder of
+// its own (ownFolder), and each of its folders in that, held.
 func (d Dirs) makeRoot() error {
-	dir := d.Root
-
-	w, err := walk(filepath.Dir(dir))
+	parent, err := openFolder(filepath.Dir(d.Root))
 	if err != nil {
 		return err
 	}
-	defer w.close()
+	defer parent.close()
 
-	if w.missing != nil {
-		return w.missing
-	}
-
-	root, err := ownFolder(w.last().step, dir, true)
+	root, err := ownFolder(parent, d.Root, true)
 	if err != nil {
 		return err
 	}
@@ -354,8 +347,7 @@ func (d Dirs) files() []string {
 // or may write -- is removed as itself through parent (removeFrom), a link never followed, whatever it
 // holds, and the folder made afresh in its place (makeStep); one that cannot be is refused, saying why it
 // is not conflux's. Where nothing is there it is made where create is, and is otherwise an error that is
-// fs.ErrNotExist. A folder made, where makeStep holds nothing of it, is looked up again to be held, and a
-// link put at its name meanwhile is refused, never followed.
+// fs.ErrNotExist.
 func ownFolder(parent step, p string, create bool) (step, error) {
 	name := filepath.Base(p)
 
@@ -396,25 +388,9 @@ func ownFolder(parent step, p string, create bool) (step, error) {
 		}
 	}
 
-	s, held, err := makeStep(parent, name)
+	s, err = makeStep(parent, name)
 	if err != nil {
 		return step{}, &os.PathError{Op: "mkdir", Path: p, Err: err}
-	}
-
-	if held {
-		return s, nil
-	}
-
-	looking(p)
-
-	switch s, link, err = lookUp(parent, name); {
-	case err != nil:
-		return step{}, &os.PathError{Op: "open", Path: p, Err: err}
-	case link:
-		s.close()
-
-		return step{}, fmt.Errorf("%s, %s, was made while conflux made it, which conflux will not follow.\n"+
-			"  Remove it, then run this again", p, aLink)
 	}
 
 	return s, nil
@@ -449,45 +425,32 @@ func above(dir, path string) bool {
 }
 
 // RemoveRoot removes the root dir, a folder conflux's by its name, with everything in it, and says
-// whether anything was at its name: from the folder it is in, held as the walk to it holds it
-// (toParent), and everything below it removed through the folder holding it, never by its name, a link
-// anywhere in it, dir's own name included, removed as itself, and where it leads never touched. Where
-// nothing is at dir's name, or on the way to it, nothing is removed.
+// whether anything was at its name: from the folder it is in, held (openFolder), and everything below it
+// removed through the folder holding it, never by its name, a link anywhere in it, dir's own name
+// included, removed as itself, and where it leads never touched. Where nothing is at dir's name, or the
+// folder it is in is not there, nothing is removed.
 func RemoveRoot(dir string) (bool, error) {
 	dir, err := filepath.Abs(dir)
 	if err != nil {
 		return false, err
 	}
 
-	w, err := toParent(dir)
-	if err != nil || w == nil {
+	parent, err := openFolder(filepath.Dir(dir))
+
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return false, nil
+	case err != nil:
 		return false, err
 	}
-	defer w.close()
+	defer parent.close()
 
-	return removeFrom(w.last().step, filepath.Base(dir), dir)
+	return removeFrom(parent, filepath.Base(dir), dir)
 }
 
-// toParent is the way to the directory dir is in, walked from the top of its volume and held open
-// (walk), or nil where a name on it is not there.
-func toParent(dir string) (*way, error) {
-	w, err := walk(filepath.Dir(dir))
-	if err != nil {
-		return nil, err
-	}
-
-	if w.missing != nil {
-		w.close()
-
-		return nil, nil
-	}
-
-	return w, nil
-}
-
-// rootHold is a root held open: the way to the folder it is in, and the directory at its name.
+// rootHold is a root held open: the folder it is in, and the directory at its name.
 type rootHold struct {
-	parent *way
+	parent step
 	dir    step
 }
 
@@ -496,23 +459,18 @@ func (r *rootHold) close() {
 	r.parent.close()
 }
 
-// holdRoot holds the root dir, an installation's or an ephemeral run's:
-// the way to the folder it is in walked and held (toParent), and the
-// directory at dir's name in that folder, looked up there and nowhere else (lookUp); and is why that is
-// not as conflux makes a root (ours), or "". A link or anything else at the name that is no directory is
-// not held, and nothing in it is read. Where the way to dir, or its name, is not there, it is an error
-// that is fs.ErrNotExist.
+// holdRoot holds the root dir, an installation's or an ephemeral run's: the folder it is in held
+// (openFolder), and the directory at dir's name in that folder, looked up there and nowhere else (lookUp);
+// and is why that is not as conflux makes a root (ours), or "". A link or anything else at the name that is
+// no directory is not held, and nothing in it is read. Where the folder dir is in, or its name, is not
+// there, it is an error that is fs.ErrNotExist.
 func holdRoot(dir string) (*rootHold, string, error) {
-	w, err := toParent(dir)
-
-	switch {
-	case err != nil:
+	parent, err := openFolder(filepath.Dir(dir))
+	if err != nil {
 		return nil, "", err
-	case w == nil:
-		return nil, "", &os.PathError{Op: "open", Path: dir, Err: fs.ErrNotExist}
 	}
 
-	s, link, err := lookUp(w.last().step, filepath.Base(dir))
+	s, link, err := lookUp(parent, filepath.Base(dir))
 
 	why := ""
 
@@ -529,13 +487,13 @@ func holdRoot(dir string) (*rootHold, string, error) {
 		why = "a link"
 	default:
 		if why, err = ours(dir, s); err == nil {
-			return &rootHold{parent: w, dir: s}, why, nil
+			return &rootHold{parent: parent, dir: s}, why, nil
 		}
 
 		s.close()
 	}
 
-	w.close()
+	parent.close()
 
 	return nil, why, err
 }
@@ -553,9 +511,9 @@ func notOurs(dir, why string, ephemeral bool) error {
 		"%s removes it and makes it afresh", dir, why, next)
 }
 
-// OpenIn opens path, a file directly in d's root, to read, through that root held (holdRoot) and never by its name: the way to the root walked from the top of its volume,
-// the root's own name looked up in the folder it is in, and path's name looked up in the root and nowhere
-// else, never followed. A root that is not as conflux makes one is
+// OpenIn opens path, a file directly in d's root, to read, through that root held (holdRoot) and never by
+// its name: the root's own name looked up in the folder it is in, and path's name looked up in the root and
+// nowhere else, never followed. A root that is not as conflux makes one is
 // none of conflux's, and is taken as not there. Where the root, or path's name in it, is not there, it is
 // an error that is fs.ErrNotExist.
 func (d Dirs) OpenIn(path string) (*os.File, error) {
@@ -583,8 +541,6 @@ func (d Dirs) OpenIn(path string) (*os.File, error) {
 		return nil, &os.PathError{Op: "open", Path: path, Err: fs.ErrNotExist}
 	}
 	defer r.close()
-
-	opening(dir)
 
 	return openIn(r.dir, filepath.Base(path), path)
 }
@@ -718,12 +674,8 @@ func (k kind) not(want kind) string {
 
 // errNotDir is lookUp's refusal of what is at a name that is neither a directory nor a link, by the type
 // the system read of it rather than the error an open of it failed with; it is syscall.ENOTDIR to
-// errors.Is, as the walk's refusals say.
+// errors.Is.
 var errNotDir = fmt.Errorf("%w", syscall.ENOTDIR)
-
-// opening is called once OpenIn holds the root dir, before it opens anything in it: nothing, but where
-// a test puts another root at the name meanwhile.
-var opening = func(string) {}
 
 // Check holds d's root, where it is there, to what a command needs of it before it reads, runs or
 // signals anything in it by its name (holdRoot): the directory at the root's name as conflux makes a
@@ -753,197 +705,9 @@ func (d Dirs) Check() error {
 	return nil
 }
 
-// looking is called with the path of each name before a walk looks it up, and before makeRoot makes it
-// or looks it up: nothing, but where a test makes something at the name meanwhile.
+// looking is called with the path of each name before makeRoot looks it up: nothing, but where a test
+// makes something at the name meanwhile.
 var looking = func(string) {}
-
-// place is a directory a walk holds open, and its path, through no link.
-type place struct {
-	step
-	path string
-}
-
-// way is where a walk ended: the directories it holds open, the top of the volume first and the one
-// it ended in last -- the directory walked to, where that is there. Where one of the directory's own
-// names was not there, missing is why.
-type way struct {
-	places  []place
-	missing error
-}
-
-// last is the directory the way ends in.
-func (w *way) last() place { return w.places[len(w.places)-1] }
-
-func (w *way) push(s step, path string) { w.places = append(w.places, place{s, path}) }
-
-// back goes to the directory the last one is in, as ".." leads: the one held before it, but at the
-// top of the volume, whose ".." is itself.
-func (w *way) back() {
-	if n := len(w.places); n > 1 {
-		w.places[n-1].close()
-		w.places = w.places[:n-1]
-	}
-}
-
-// top lets every directory go, and holds the top of the volume vol (openTop).
-func (w *way) top(vol string) error {
-	w.close()
-
-	s, err := openTop(vol)
-	if err != nil {
-		return err
-	}
-
-	w.push(s, vol+string(filepath.Separator))
-
-	return nil
-}
-
-// close lets every directory the way holds go.
-func (w *way) close() {
-	for _, p := range w.places {
-		p.close()
-	}
-
-	w.places = nil
-}
-
-// walk is the way to dir, walked a name at a time from the top of its volume and held open as it
-// goes: each name looked up in the directory held before it and nowhere else, never following what
-// is there (lookUp). A directory is held, and gone on from; a link is read as itself (readLink) and
-// gone on from where it leads -- the top of the volume it names, the top of this one, or the
-// directory it is in -- up to 255 links. Nothing on the way is judged: every folder above a root is
-// the system's.
-//
-// At one of dir's own names that is not there the walk ends, holding the directory it was to be
-// looked up in. Anything else refuses dir: a link that leads nowhere -- to a
-// name not there, which is no directory dir could be made in, nor one that is not there -- or that
-// cannot be read -- on Windows, one that may lead off this machine (windowsLinkTarget), which nothing
-// then follows -- a name that is not a directory, more than 255 links, or a lookup the system
-// refuses.
-func walk(dir string) (*way, error) {
-	dir, err := filepath.Abs(dir)
-	if err != nil {
-		return nil, err
-	}
-
-	w := &way{}
-	if err := w.resolve(dir); err != nil {
-		w.close()
-
-		return nil, err
-	}
-
-	return w, nil
-}
-
-// resolve is walk of dir, an absolute path, as it is spelled rather than cleaned: a ".." in it goes back
-// to the directory held before, as the system resolves one after a link, so that where a link leads is
-// walked exactly as a lookup of it would go.
-func (w *way) resolve(dir string) error {
-	vol := filepath.VolumeName(dir)
-	if err := w.top(vol); err != nil {
-		return err
-	}
-
-	// What is left to look up ends in what is left of dir's own names, plain long, after what the
-	// links followed put before it: while any is, via is the first of those links.
-	rest := dir[len(vol):]
-	plain, via := len(rest), ""
-
-	for links := 0; ; {
-		var name string
-		if name, rest = nextName(rest); name == "" {
-			return nil
-		}
-
-		own := len(rest) < plain
-		if own {
-			plain, via = len(rest), ""
-		}
-
-		switch name {
-		case ".":
-			continue
-		case "..":
-			w.back()
-
-			continue
-		}
-
-		at := w.last()
-		p := filepath.Join(at.path, name)
-		looking(p)
-
-		s, link, err := lookUp(at.step, name)
-
-		switch {
-		case errors.Is(err, fs.ErrNotExist) && !own:
-			return fmt.Errorf("resolve %s: %s is a link conflux cannot follow: %v", dir, via,
-				&os.PathError{Op: "open", Path: p, Err: err})
-		case errors.Is(err, fs.ErrNotExist):
-			w.missing = &os.PathError{Op: "open", Path: p, Err: err}
-
-			return nil
-		case err != nil:
-			return fmt.Errorf("resolve %s: %w", dir, &os.PathError{Op: "open", Path: p, Err: err})
-		case !link:
-			w.push(s, p)
-
-			continue
-		}
-
-		if links++; links > 255 {
-			s.close()
-
-			return fmt.Errorf("resolve %s: more than 255 links", dir)
-		}
-
-		target, err := readLink(s)
-		s.close()
-
-		if err != nil {
-			return fmt.Errorf("resolve %s: %s is a link conflux cannot follow: %v", dir, p, err)
-		}
-
-		if own {
-			via = p
-		}
-
-		// What the link names goes before what was left, looked up from the directory the link is
-		// in, or from the top of the volume it names.
-		rest = target + string(filepath.Separator) + rest
-
-		switch v := filepath.VolumeName(target); {
-		case v != "":
-			rest = rest[len(v):]
-
-			if err := w.top(v); err != nil {
-				return err
-			}
-		case target != "" && os.IsPathSeparator(target[0]):
-			for len(w.places) > 1 {
-				w.back()
-			}
-		}
-	}
-}
-
-// nextName is the first name in path and what follows it, separators around it dropped: "" when
-// none is left.
-func nextName(path string) (name, rest string) {
-	i := 0
-	for i < len(path) && os.IsPathSeparator(path[i]) {
-		i++
-	}
-
-	j := i
-	for j < len(path) && !os.IsPathSeparator(path[j]) {
-		j++
-	}
-
-	return path[i:j], path[j:]
-}
 
 // ClearExcept removes everything in dir but keep, following nothing in it (os.RemoveAll), and is the
 // paths of what it removed, however far it got: what a run killed before it could clean up left in

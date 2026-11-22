@@ -157,34 +157,25 @@ func restrictInfo(owner *windows.SID) windows.SECURITY_INFORMATION {
 // aLink is what ownFolder calls a link made where it was making a folder.
 const aLink = "a junction or a link"
 
-// step is a folder, or a junction or a link, a walk holds open as itself.
+// step is a folder, or a junction or a link, held open as itself.
 type step struct{ h windows.Handle }
 
 func (s step) close() { windows.CloseHandle(s.h) }
 
-// openTop holds the top of the volume vol open -- a drive (C:), a volume by its GUID, or a share
-// (\\host\share) -- to read who may change it, as itself and shared every way, so that nobody else's
-// use of it is refused for conflux's look; and refuses it where it is on a network volume (remote):
-// who owns what is there, and whom its DACLs grant, are accounts of the machine serving it, which this
-// one cannot judge, so nothing is judged, looked up or made there.
-func openTop(vol string) (step, error) {
-	top := vol + `\`
-
-	name, err := windows.UTF16PtrFromString(top)
+// openFolder holds the folder p open to read who may change it, shared every way, by its name as the
+// system looks it up, any junction or link on the way to it or at it followed: the folder a root is in,
+// which is the system's, so nothing about it is judged. One not there is an error that is
+// fs.ErrNotExist.
+func openFolder(p string) (step, error) {
+	name, err := windows.UTF16PtrFromString(p)
 	if err != nil {
-		return step{}, fmt.Errorf("read %s: %w", top, err)
+		return step{}, &os.PathError{Op: "open", Path: p, Err: err}
 	}
 
 	h, err := windows.CreateFile(name, readAccess, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
-		nil, windows.OPEN_EXISTING, windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+		nil, windows.OPEN_EXISTING, windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
 	if err != nil {
-		return step{}, fmt.Errorf("read %s: %w", top, err)
-	}
-
-	if err := remote(top, h); err != nil {
-		windows.CloseHandle(h)
-
-		return step{}, err
+		return step{}, &os.PathError{Op: "open", Path: p, Err: err}
 	}
 
 	return step{h}, nil
@@ -230,38 +221,19 @@ func lookUp(parent step, name string) (step, bool, error) {
 	return s, k == isLink, err
 }
 
-// readLink is where the junction or link s holds open leads, read off it (linkTarget): one that may
-// lead off this machine is refused unfollowed.
-func readLink(s step) (string, error) { return linkTarget(s.h) }
-
 // makeStep makes the folder name in the one parent holds open, and holds it open: through parent
 // (createIn), looked up there and nowhere else and never followed, with Restrict's ownership and
 // DACL set as it is created, rather than what the one before passes on -- in %ProgramData% Users'
 // grants, and its owner the administrator who ran conflux, whom the SYSTEM service does not trust -- so
 // that it is its own, as the 0700 directories it makes on Unix are, grants nobody else anything, and is
 // as conflux makes one (ours). ERROR_ALREADY_EXISTS is anything already at the name, a link included.
-func makeStep(parent step, name string) (step, bool, error) {
+func makeStep(parent step, name string) (step, error) {
 	h, err := createIn(parent.h, name, windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES)
 	if err != nil {
-		return step{}, false, err
+		return step{}, err
 	}
 
-	return step{h}, true, nil
-}
-
-// linkTarget is where the symbolic link or junction h holds open as itself leads, read off the link
-// (FSCTL_GET_REPARSE_POINT) and not by following it (windowsLinkTarget): one that may lead off this
-// machine is refused unfollowed.
-func linkTarget(h windows.Handle) (string, error) {
-	b := make([]byte, windows.MAXIMUM_REPARSE_DATA_BUFFER_SIZE)
-
-	var n uint32
-	if err := windows.DeviceIoControl(h, windows.FSCTL_GET_REPARSE_POINT, nil, 0, &b[0], uint32(len(b)), &n,
-		nil); err != nil {
-		return "", err
-	}
-
-	return windowsLinkTarget(b[:n])
+	return step{h}, nil
 }
 
 // MakeRestricted is makeDir with Restrict's ownership and DACL: Administrators', or the creating
@@ -347,12 +319,8 @@ func restrictedDir(create func(sd *windows.SECURITY_DESCRIPTOR) error) error {
 // createIn creates the directory name in the one parent holds open, with Restrict's ownership and
 // DACL set as it is created (restrictedDir), and holds it open for access: its name looked up there
 // and nowhere else, and never followed (ntOpen's FILE_OPEN_REPARSE_POINT), so ERROR_ALREADY_EXISTS
-// is anything at the name, a link included. The create is also kept from being reparsed anywhere
-// (ntOpen's OBJ_DONT_REPARSE), so that a parent that became a junction or a mount point after it was
-// opened would fail it rather than take it to where it leads: defence in depth, guarding a case not
-// shown to happen, since a create relative to a held directory is not known to be reparsed through
-// it without the flag either. A status NtCreateFile fails with is the Win32 error it maps to, as
-// CreateDirectory returns one, so that restrictWith tells a refused owner.
+// is anything at the name, a link included. A status NtCreateFile fails with is the Win32 error it
+// maps to, as CreateDirectory returns one, so that restrictWith tells a refused owner.
 func createIn(parent windows.Handle, name string, access uint32) (windows.Handle, error) {
 	var h windows.Handle
 
@@ -378,7 +346,7 @@ func ntOpen(parent windows.Handle, name string, sd *windows.SECURITY_DESCRIPTOR,
 		Length:             uint32(unsafe.Sizeof(windows.OBJECT_ATTRIBUTES{})),
 		RootDirectory:      parent,
 		ObjectName:         u,
-		Attributes:         windows.OBJ_CASE_INSENSITIVE | windows.OBJ_DONT_REPARSE,
+		Attributes:         windows.OBJ_CASE_INSENSITIVE,
 		SecurityDescriptor: sd,
 	}
 
@@ -517,59 +485,8 @@ func dispose(h windows.Handle) error {
 // readAccess is what a handle that only reads who may change a file is opened for.
 const readAccess = windows.READ_CONTROL | windows.FILE_READ_ATTRIBUTES
 
-// remote refuses dir, whose directory h holds open, where that is on a network volume -- a share
-// reached by its UNC path, a drive mapped to one, or a link leading to either -- as the device the
-// volume is on says of itself (FILE_FS_DEVICE_INFORMATION, which GetDriveType reads DRIVE_REMOTE
-// from), and not as dir is spelled. Who owns what is there, and whom its DACL grants, are the
-// accounts of the machine serving it -- its Administrators are not this machine's -- which this one
-// cannot judge.
-func remote(dir string, h windows.Handle) error {
-	var (
-		info struct{ deviceType, characteristics uint32 } // FILE_FS_DEVICE_INFORMATION
-		iosb windows.IO_STATUS_BLOCK
-	)
-
-	r, _, _ := ntQueryVolumeInformationFile.Call(uintptr(h), uintptr(unsafe.Pointer(&iosb)),
-		uintptr(unsafe.Pointer(&info)), unsafe.Sizeof(info), fileFsDeviceInformation)
-	if status := windows.NTStatus(r); status != windows.STATUS_SUCCESS {
-		return fmt.Errorf("read the volume %s is on: %w", dir, status.Errno())
-	}
-
-	switch {
-	case info.characteristics&fileRemoteDevice != 0:
-	case info.deviceType == fileDeviceNetwork, info.deviceType == fileDeviceNetworkFileSystem,
-		info.deviceType == fileDeviceMultiUNCProvider, info.deviceType == fileDeviceDFS,
-		info.deviceType == fileDeviceDFSFileSystem, info.deviceType == fileDeviceDFSVolume:
-	default:
-		return nil
-	}
-
-	return fmt.Errorf("%s is on a network volume, or leads to one, so conflux will not use it: who owns what is "+
-		"there, and whom its DACL grants, are accounts of the machine serving it, which this one cannot judge.\n"+
-		"  Keep it on a volume of this machine's own, then run this again as Administrator", dir)
-}
-
-// ntQueryVolumeInformationFile is ntdll's: what the volume a handle is open on says of itself.
-var ntQueryVolumeInformationFile = ntdll.NewProc("NtQueryVolumeInformationFile")
-
 // ntdll is the native API, whose calls x/sys does not all wrap.
 var ntdll = windows.NewLazySystemDLL("ntdll.dll")
-
-// What FILE_FS_DEVICE_INFORMATION says of a volume on another machine: FileFsDeviceInformation, the
-// class that asks for it; FILE_REMOTE_DEVICE, a characteristic of the device; and the device types
-// of a network, its redirectors, the provider of UNC names and DFS.
-const (
-	fileFsDeviceInformation = 4
-
-	fileRemoteDevice = 0x10
-
-	fileDeviceDFS               = 0x06
-	fileDeviceMultiUNCProvider  = 0x10
-	fileDeviceNetwork           = 0x12
-	fileDeviceNetworkFileSystem = 0x14
-	fileDeviceDFSFileSystem     = 0x35
-	fileDeviceDFSVolume         = 0x36
-)
 
 // openIn opens name, a file in the folder s holds open, which p names, to read: looked up there and
 // nowhere else, never followed (ntOpen), a reparse point opened as itself, which PlainFile refuses.

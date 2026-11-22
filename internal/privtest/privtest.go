@@ -7,9 +7,7 @@
 // for what this process makes, in place of the one conflux sets as it starts (CreatorOwns), and a
 // file's owner (SetOwner), or its owner and protected DACL as SDDL spells them (SetSecurity); a
 // parent that refuses what is made in it a DACL given afterwards
-// (DenyOwnersTheirDACL); a file's owner and DACL as a test reads them (ReadSecurity); and a folder
-// shared through this machine's own server, a network volume as Windows sees one (Share), and a
-// drive mapped to it (MapDrive).
+// (DenyOwnersTheirDACL); and a file's owner and DACL as a test reads them (ReadSecurity).
 //
 // It imports nothing of conflux's, so any package's tests can use it, paths' own among them.
 package privtest

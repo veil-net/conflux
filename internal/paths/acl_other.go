@@ -23,7 +23,7 @@ func RestrictToOwner(string, bool) error { return nil }
 // ours is why what s holds -- a directory, at the root dir's name or a folder's in one, or a file in one --
 // is not as conflux makes it, or "" where it is: owned by root or the account running conflux, and written
 // by nobody else by its mode -- the sticky bit letting nothing through, since a name not taken yet is
-// anybody's in a sticky directory -- as fstat read it where the walk met it. That is the whole of it: a
+// anybody's in a sticky directory -- as fstat read it where it was met. That is the whole of it: a
 // root's location is fixed, in a folder only root may write, so no ACL is read. A 0710 the supervisor gives
 // the state and run directories, so that anchord's account may pass through them, lets that account write
 // nothing.
@@ -50,9 +50,9 @@ func ElevatedDefaultOwner() error { return nil }
 // aLink is what ownFolder calls a link made where it was making a directory.
 const aLink = "a link"
 
-// step is a directory or a link a walk holds: open as itself on fd, or, where it is a link, or a
-// directory this account may search and not read (holdDir), by its name, rel, in the directory fd is
-// open on, which the walk holds too; with what fstat said of it as the walk met it.
+// step is a directory or a link held: open as itself on fd, or, where it is a link, or a directory this
+// account may search and not read (holdDir), by its name, rel, in the directory fd is open on, which is
+// held too; with what fstat said of it as it was met.
 type step struct {
 	fd  int
 	rel string
@@ -75,11 +75,17 @@ func (s step) close() {
 	}
 }
 
-// openTop holds / open.
-func openTop(string) (step, error) {
-	s, err := opened(unix.AT_FDCWD, "/")
-	if err != nil {
-		return step{}, &os.PathError{Op: "open", Path: "/", Err: err}
+// openFolder holds the folder p open (holdDir), by its name as the system looks it up, any link on the way
+// to it or at it followed: the folder a root is in, which is the system's, so nothing about it is judged.
+// One not there is an error that is fs.ErrNotExist.
+func openFolder(p string) (step, error) {
+	var s step
+	if err := ignoringEINTR(func() (err error) {
+		s.fd, err = unix.Open(p, holdDir|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+
+		return err
+	}); err != nil {
+		return step{}, &os.PathError{Op: "open", Path: p, Err: err}
 	}
 
 	return s, nil
@@ -164,30 +170,13 @@ func opened(dirfd int, name string) (step, error) {
 	return s, nil
 }
 
-// readLink is where the link s leads, read where the walk holds it.
-func readLink(s step) (string, error) {
-	for size := 256; ; size *= 2 {
-		b := make([]byte, size)
-
-		var n int
-		if err := ignoringEINTR(func() (err error) {
-			n, err = unix.Readlinkat(s.fd, s.rel, b)
-
-			return err
-		}); err != nil {
-			return "", err
-		}
-
-		if n < size {
-			return string(b[:n]), nil
-		}
+// makeStep makes the directory name, at 0700, in the one parent is (mkdirat), and holds it (opened).
+func makeStep(parent step, name string) (step, error) {
+	if err := ignoringEINTR(func() error { return unix.Mkdirat(parent.fd, parent.at(name), 0o700) }); err != nil {
+		return step{}, err
 	}
-}
 
-// makeStep makes the directory name, at 0700, in the one parent is (mkdirat), and holds nothing:
-// ownFolder goes into it as a walk would (lookUp).
-func makeStep(parent step, name string) (step, bool, error) {
-	return step{}, false, ignoringEINTR(func() error { return unix.Mkdirat(parent.fd, parent.at(name), 0o700) })
+	return opened(parent.fd, parent.at(name))
 }
 
 // removeFrom is RemoveRoot's, ownFile's and ownFolder's removal of name, in the directory parent is,

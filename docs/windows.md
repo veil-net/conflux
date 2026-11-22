@@ -146,14 +146,11 @@ as the root is, and one that is not as conflux makes it, such as a copy an earli
 administrator's own, is removed for what writes it to make afresh; the supervisor, which runs from the
 service's copy, leaves it as it makes the roots, and places one not there, or not as conflux makes it,
 afresh from its own image, the running one moved aside. Nothing else in a root is judged: nobody else can have
-put anything there. A root on a network volume, however it is reached, is refused, as the volume
-conflux holds it open on says; a link naming a share on the way to a root is refused before anything
-follows it, by where the link itself says it leads.
+put anything there.
 
-`%ProgramData%`, and every folder above a root, is the system's, never changed and never judged.
-The way to a root is walked from the top of its volume, each folder held
-open through a handle on the one before, never followed, and a junction or a link read off itself and
-gone on from where it leads. What conflux picks itself — the installation's root, an elevated reader's
+`%ProgramData%`, and every folder above a root, is the system's, never changed and never judged: it
+is opened by its name as Windows looks it up, and the root's own name looked up through a handle on
+it. What conflux picks itself — the installation's root, an elevated reader's
 temporary copy of anchorctl — is judged for SYSTEM or the Administrators,
 never the account running conflux by its SID, so that account's processes that are not elevated
 cannot have made or changed it.
@@ -164,10 +161,7 @@ account may not open or read is refused too, since whoever made it can deny conf
 its owner and DACL as easily as they can make it. Nothing is changed.
 
 A root is made through a handle on the folder it goes in: the name is looked up there and nowhere
-else, and not followed. The create
-also carries a flag that keeps it from being reparsed anywhere a junction leads (`OBJ_DONT_REPARSE`):
-defence in depth, guarding a case not shown to happen, since a create relative to a folder conflux
-holds is not known to be taken through a junction that folder became without it. The other folders
+else, and not followed. The other folders
 conflux keeps in a root — `run\`, `logs\`, `bin\` and what extraction makes in it, `anchor\`,
 `anchor.root\` and `run\anchord\` — it makes by their names.
 

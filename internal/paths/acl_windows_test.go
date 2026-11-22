@@ -77,11 +77,9 @@ func TestRestrictedFilesAreTrusted(t *testing.T) {
 const fileDeleteChild = 0x40
 
 // TestEnsureAllJudgesNoFolderAboveARoot: the folder the root is in, and every folder above it, is the
-// system's, never judged: one whose DACL lets Users rename what is in it, one inside such a folder, one
-// reached through a junction into such a folder, and one through a junction Users may point elsewhere --
-// a junction followed, never taken for a file -- each has its root made where it leads, the
-// Administrators' under SYSTEM's and their DACL alone, and passes the readers' check. Windows-only, so it
-// runs in CI's platforms job alone.
+// system's, never judged: one whose DACL lets Users rename what is in it, and one inside such a folder,
+// each has its root made, the Administrators' under SYSTEM's and their DACL alone, and passes the
+// readers' check. Windows-only, so it runs in CI's platforms job alone.
 func TestEnsureAllJudgesNoFolderAboveARoot(t *testing.T) {
 	made := func(t *testing.T, dir string) {
 		t.Helper()
@@ -112,65 +110,6 @@ func TestEnsureAllJudgesNoFolderAboveARoot(t *testing.T) {
 
 			made(t, dir)
 		})
-	}
-
-	t.Run("a junction into a folder Users may rename what is in", func(t *testing.T) {
-		open := filepath.Join(t.TempDir(), "open-to-users")
-		if err := os.MkdirAll(filepath.Join(open, "real", "data"), 0o700); err != nil {
-			t.Fatal(err)
-		}
-
-		privtest.GrantUsers(t, open, fileDeleteChild, windows.NO_INHERITANCE)
-
-		junction := mklinkJ(t, filepath.Join(t.TempDir(), "j"), filepath.Join(open, "real"))
-
-		made(t, filepath.Join(junction, "data"))
-
-		if _, err := os.Lstat(filepath.Join(open, "real", "data", DirName)); err != nil {
-			t.Errorf("the root was not made where the junction leads: %v", err)
-		}
-	})
-
-	t.Run("a junction Users may point elsewhere", func(t *testing.T) {
-		retargeted := mklinkJ(t, filepath.Join(t.TempDir(), "j"), t.TempDir())
-		grantLink(t, retargeted, windows.FILE_WRITE_ATTRIBUTES)
-
-		made(t, retargeted)
-	})
-}
-
-// grantLink gives Users access to link, a link or junction, beside what its DACL grants already: its
-// own DACL, opened as itself, where privtest.GrantUsers's named calls would follow it and change the
-// DACL of where it leads.
-func grantLink(t *testing.T, link string, access windows.ACCESS_MASK) {
-	t.Helper()
-
-	name, err := windows.UTF16PtrFromString(link)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	h, err := windows.CreateFile(name, windows.READ_CONTROL|windows.WRITE_DAC,
-		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING,
-		windows.FILE_FLAG_OPEN_REPARSE_POINT|windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer windows.CloseHandle(h)
-
-	sd, err := windows.GetSecurityInfo(h, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dacl, _, err := sd.DACL()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := windows.SetSecurityInfo(h, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION,
-		nil, nil, privtest.WithUsers(t, dacl, access, windows.NO_INHERITANCE), nil); err != nil {
-		t.Fatal(err)
 	}
 }
 
@@ -421,170 +360,6 @@ func TestEnsureAllRemovesAFileNotAsConfluxMakesIt(t *testing.T) {
 	}
 }
 
-// TestARootOnANetworkVolumeIsRefused: who owns what a network volume holds, and whom its DACLs
-// grant, are the accounts of the machine serving it, which this one cannot judge, so a root on
-// one is refused by EnsureAll and by the readers' check alike, naming the network volume, as the
-// device the top of its volume is open on says and not as it is spelled: reached by its UNC path, or
-// through a drive mapped to the share. Nothing is made there. A link to that drive at the root's name
-// is no root of conflux's: the readers' check refuses it, and EnsureAll removes it as itself, and
-// makes the root here, nothing made on the share. A data folder on the share is refused the same, and a
-// link naming the share itself, on the way to the data folder, is refused as a link before anything
-// follows it (and further in TestALinkLeadingOffThisMachineOrNowhereIsRefused). The share is a folder of
-// this machine's, reached through its own server. Windows-only, so it runs in CI's platforms job alone,
-// and skipped where the machine will not share a folder.
-func TestARootOnANetworkVolumeIsRefused(t *testing.T) {
-	root := foundRoot(t)
-	dir := filepath.Dir(root)
-
-	share := privtest.Share(t, dir)
-	unc := filepath.Join(share, "conflux")
-
-	drive := privtest.MapDrive(t, share)
-
-	link := filepath.Join(t.TempDir(), "link")
-	if err := os.Symlink(filepath.Join(drive, "conflux"), link); err != nil {
-		t.Fatal(err)
-	}
-
-	at := func(root string) Dirs { return Dirs{Root: root} }
-
-	for _, root := range []string{unc, filepath.Join(drive, "conflux")} {
-		for name, judge := range map[string]func() error{"Check": at(root).Check, "EnsureAll": at(root).EnsureAll} {
-			if err := judge(); err == nil || !strings.Contains(err.Error(), " is on a network volume") {
-				t.Errorf("%s(%s) = %v, want a refusal naming the network volume", name, root, err)
-			}
-		}
-	}
-
-	if err := at(link).Check(); err == nil || !strings.Contains(err.Error(), link+" is not as conflux makes") {
-		t.Errorf("Check(a link at the root's name to a network volume) = %v, want a refusal naming it", err)
-	}
-
-	if err := at(link).EnsureAll(); err != nil {
-		t.Errorf("EnsureAll(a link at the root's name to a network volume) = %v, want it made afresh here", err)
-	}
-
-	onlyTheSystems(t, link)
-
-	if _, err := os.Lstat(filepath.Join(dir, "conflux", "run")); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("EnsureAll made run in a root on a network volume (%v)", err)
-	}
-
-	for _, data := range []string{unc, filepath.Join(drive, "conflux")} {
-		inData(t, data)
-
-		if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), data) ||
-			!strings.Contains(err.Error(), " is on a network volume") {
-			t.Errorf("EnsureAll(a data folder of %s) = %v, want a refusal naming it and the network volume", data, err)
-		}
-	}
-
-	// A link naming the share itself, on the way to the data folder, is refused as a link before
-	// anything is looked up through it (walk), and not as the network volume it leads to.
-	toShare := dirSymlink(t, filepath.Join(t.TempDir(), "share"), share)
-	data := filepath.Join(toShare, "conflux")
-	inData(t, data)
-
-	if err := Default().EnsureAll(); err == nil ||
-		!strings.Contains(err.Error(), "resolve "+data+": "+toShare+" is a link conflux cannot follow") ||
-		!strings.Contains(err.Error(), "another machine") {
-		t.Errorf("EnsureAll(a data folder of %s) = %v, want a refusal naming the link %s and another machine", data,
-			err, toShare)
-	}
-
-	if _, err := os.Lstat(filepath.Join(dir, "conflux", DirName)); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("EnsureAll made a root in a data folder on a network volume it refused (%v)", err)
-	}
-}
-
-// TestALinkLeadingOffThisMachineOrNowhereIsRefused: a link on the way to the data folder that names a
-// share is read for where it leads off the link itself, and refused before anything follows it, which
-// would sign this machine in to whoever serves the share: by EnsureAll and the readers' check alike,
-// as a link on the way (walk), before either looks anything up there. The share is 192.0.2.1's,
-// TEST-NET-1, which nothing answers: a lookup that followed the link would fail slowly, saying the
-// network path was not found, not as these refusals say. A link leading to nothing is refused too, as
-// a link conflux cannot follow rather than as a root that is not there, and nothing is made where it
-// leads. Either link at a root's own name is no root of conflux's, and is never followed: the readers'
-// check refuses it, and EnsureAll removes it as itself and makes the root afresh. Windows-only, so it
-// runs in CI's platforms job alone.
-func TestALinkLeadingOffThisMachineOrNowhereIsRefused(t *testing.T) {
-	const unc = `\\192.0.2.1\share\conflux`
-
-	nowhere := filepath.Join(t.TempDir(), "nowhere")
-
-	for _, target := range []string{unc, nowhere} {
-		root := dirSymlink(t, filepath.Join(t.TempDir(), "conflux"), target)
-		d := Dirs{Root: root}
-
-		if err := d.Check(); err == nil || !strings.Contains(err.Error(), root+" is not as conflux makes") {
-			t.Errorf("Check(a link at the root's name to %s) = %v, want a refusal naming it", target, err)
-		}
-
-		if err := d.EnsureAll(); err != nil {
-			t.Errorf("EnsureAll(a link at the root's name to %s) = %v, want it made afresh", target, err)
-		}
-
-		onlyTheSystems(t, root)
-	}
-
-	away := dirSymlink(t, filepath.Join(t.TempDir(), "conflux"), unc)
-	dangling := dirSymlink(t, filepath.Join(t.TempDir(), "conflux"), nowhere)
-
-	refusal := func(dir string) string { return "resolve " + dir + ": " + away + " is a link conflux cannot follow" }
-
-	for _, dir := range []string{away, filepath.Join(away, "conflux")} {
-		inData(t, dir)
-
-		root := Default().Root
-
-		if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), refusal(dir)) ||
-			!strings.Contains(err.Error(), "may be on another machine") {
-			t.Errorf("EnsureAll(a data folder of %s) = %v, want %q, saying it may be on another machine", dir, err,
-				refusal(dir))
-		}
-
-		if err := Default().Check(); err == nil || !strings.Contains(err.Error(), refusal(filepath.Dir(root))) ||
-			!strings.Contains(err.Error(), "may be on another machine") {
-			t.Errorf("Check(%s), data folder %s, = %v, want %q, saying it may be on another machine", root, dir,
-				err, refusal(filepath.Dir(root)))
-		}
-	}
-
-	for _, dir := range []string{dangling, filepath.Join(dangling, "conflux")} {
-		inData(t, dir)
-
-		if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), dangling+" is a link conflux cannot follow") {
-			t.Errorf("EnsureAll(a data folder of %s) = %v, want a refusal naming the link to nothing", dir, err)
-		}
-	}
-
-	if _, err := os.Lstat(nowhere); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("EnsureAll made %s, where a link it refused leads (%v)", nowhere, err)
-	}
-}
-
-// dirSymlink makes a directory symbolic link at link naming target, and is link. The target is not
-// looked at: os.Symlink stats it to learn whether it is a directory, which for a share reaches for it.
-func dirSymlink(t *testing.T, link, target string) string {
-	t.Helper()
-
-	l, err := windows.UTF16PtrFromString(link)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	to, err := windows.UTF16PtrFromString(target)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := windows.CreateSymbolicLink(l, to, windows.SYMBOLIC_LINK_FLAG_DIRECTORY); err != nil {
-		t.Fatalf("make a link at %s to %s: %v", link, target, err)
-	}
-
-	return link
-}
-
 // TestARootIsMadeWithItsDACL: %ProgramData% passes Users the right to create in what is made in it,
 // enough to turn an empty directory into a junction, so a root is made with its own ownership and
 // protected DACL set as it is created, and carries that grant not even for an instant: read as
@@ -617,32 +392,6 @@ func TestARootIsMadeWithItsDACL(t *testing.T) {
 	}
 
 	onlyTheSystems(t, Default().Root)
-}
-
-// TestAnInstallationInAProfileIsMade: the boot service runs as SYSTEM, which trusts no other account
-// with its root, but the folder the root is in is not judged: a data folder granting this account full
-// control, passed on to what is made in it, as the profile of the administrator running conflux does, has
-// its root made, SYSTEM's and the Administrators' alone, which passes the readers' check. Windows-only,
-// so it runs in CI's platforms job alone.
-func TestAnInstallationInAProfileIsMade(t *testing.T) {
-	profile := filepath.Join(t.TempDir(), "profile")
-	if err := os.Mkdir(profile, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	privtest.Grant(t, profile, currentUser(), fileAllAccess, windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT)
-
-	inData(t, profile)
-
-	if err := Default().EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll(an installation inside a folder granting this account full control) = %v", err)
-	}
-
-	onlyTheSystems(t, Default().Root)
-
-	if err := Default().Check(); err != nil {
-		t.Errorf("Check(an installation inside a folder granting this account full control) = %v", err)
-	}
 }
 
 // onlyTheSystems fails t unless dir belongs to the Administrators, as everything conflux makes does,

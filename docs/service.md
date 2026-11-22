@@ -356,7 +356,7 @@ moved aside to `conflux.log.1` past 10 MiB, as on macOS; `uninstall` removes bot
 rest. The file is the service's standard output and error, so a crash lands in it too; they
 let go of it for the moment it is moved aside, since Windows moves no file that is open. It is
 opened once the supervisor has made the root as conflux makes one, `logs\` with it, each made
-afresh where it was not; a root it refuses — one whose way cannot be walked, or one it could not
+afresh where it was not; a root it refuses — one in a folder that is not there, or one it could not
 remove to make afresh — gets no log: the start ends as any failed start does, exit 1,
 which the System event log records and the recovery actions retry, and `conflux install`, run by
 hand, says why.

@@ -206,6 +206,12 @@ as that Administrator, in conflux's job object, so it ends however conflux does.
 Registered as `conflux`, displayed as `VeilNet Conflux`, running as `LocalSystem`. See
 [service.md](service.md).
 
+The SCM keeps the service's command line as one to expand, and replaces each `%NAME%` in it from
+the system's environment at every start, so registering the service is refused where the copy's path
+or an argument holds a `%`: a `CONFLUX_DIR` of `C:\%OS%` is made and judged as it is spelt, and SYSTEM
+would then run `C:\Windows_NT\.conflux\conflux.exe`, in a folder any account may make. Choose a
+`CONFLUX_DIR` without one.
+
 `anchord` itself runs as SYSTEM only for a TUN, which wintun needs. In userspace mode the
 supervisor logs `LOCAL SERVICE` on for it with `LogonUserExExW`, the service's SID and a
 logon SID of its own added as groups, as the SCM gives a service, and takes every

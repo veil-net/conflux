@@ -187,8 +187,8 @@ func (s *Supervisor) Run(ctx context.Context) error {
 
 	// Before anything is read, so that no start leaves a copy that is not conflux's.
 	if err := service.OwnCopy(s.Dirs); err != nil {
-		return fmt.Errorf("the boot service's copy of conflux is not as conflux makes it, and could not be placed "+
-			"afresh: %w", err)
+		return fmt.Errorf("the boot service's copy of conflux, not there or not as conflux makes it, could not be "+
+			"placed afresh: %w", err)
 	}
 
 	// This start tries the anchor again, however far it gets; see forgetRefusal.

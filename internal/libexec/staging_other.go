@@ -12,6 +12,10 @@ import (
 // the extracting account's. A set is written in one before it takes its name.
 func makeStaging(root, prefix string) (string, error) { return os.MkdirTemp(root, prefix+"*") }
 
+// temporaryParent is where temporary makes its directories, which RemoveTemporary looks in: the system's
+// temporary directory.
+func temporaryParent() string { return os.TempDir() }
+
 // temporaryDir makes the directory temporary writes its copy in, the account's own
 // (usersTemporaryDir), and is how the copy is restricted: by the mode it is written with, here.
 func temporaryDir() (string, func(string, bool) error, error) {

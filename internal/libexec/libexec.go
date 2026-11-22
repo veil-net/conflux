@@ -236,6 +236,23 @@ func temporary() (bin string, done func(), err error) {
 // temporaryPrefix begins the name of the directory temporary makes.
 const temporaryPrefix = "conflux-usage-"
 
+// RemoveTemporary removes the directories temporary makes, where it makes them for the account running
+// this (temporaryParent) -- what a reader killed before it could remove its copy left there for good --
+// and is those it removed. conflux's by their name, each goes whole; one that will not go -- a reader's
+// copy running from it, of which Windows removes no file -- is passed over.
+func RemoveTemporary() []string {
+	var removed []string
+
+	left, _ := filepath.Glob(filepath.Join(temporaryParent(), temporaryPrefix+"*"))
+	for _, dir := range left {
+		if os.RemoveAll(dir) == nil {
+			removed = append(removed, dir)
+		}
+	}
+
+	return removed
+}
+
 // usersTemporaryDir makes the directory temporary writes in, as the account running conflux: in the
 // system's temporary directory, or, where that one is mounted noexec as /tmp is on a hardened host, in
 // the user's cache directory, made if it is not there yet. No other directory is made.

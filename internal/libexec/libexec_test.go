@@ -593,6 +593,72 @@ func TestUsageRunsNothingFromARootItRefuses(t *testing.T) {
 	}
 }
 
+// TestRemoveTemporaryRemovesWhatAKilledReaderLeft: a reader killed before it removed its temporary copy
+// of anchorctl leaves the folder it made there for good, so uninstall and tidy remove every folder named as
+// temporary names one, where it makes them for the account running them, and say which; anything else
+// there is left, and so is a folder that will not go -- a reader's copy running from it, which Windows
+// removes no file of -- passed over while the rest go.
+func TestRemoveTemporaryRemovesWhatAKilledReaderLeft(t *testing.T) {
+	parent := t.TempDir()
+	for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(name, parent)
+	}
+
+	left := []string{filepath.Join(parent, temporaryPrefix+"1"), filepath.Join(parent, temporaryPrefix+"2")}
+	inUse := filepath.Join(parent, temporaryPrefix+"3")
+	other := filepath.Join(parent, "conflux-other")
+
+	for _, dir := range append(slices.Clone(left), inUse, other) {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.WriteFile(filepath.Join(dir, exeName("anchorctl")), []byte("a copy"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// A folder that will not go: a file in it held open on Windows, and on Unix one whose mode lets nothing
+	// in it be removed, which holds nothing back from root.
+	held := false
+
+	switch {
+	case runtime.GOOS == "windows":
+		f, err := os.Open(filepath.Join(inUse, exeName("anchorctl")))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		defer f.Close()
+
+		held = true
+	case os.Geteuid() != 0:
+		if err := os.Chmod(inUse, 0o500); err != nil {
+			t.Fatal(err)
+		}
+
+		t.Cleanup(func() { _ = os.Chmod(inUse, 0o700) })
+
+		held = true
+	}
+
+	removed := RemoveTemporary()
+
+	for _, dir := range left {
+		if _, err := os.Lstat(dir); !errors.Is(err, os.ErrNotExist) || !slices.Contains(removed, dir) {
+			t.Errorf("RemoveTemporary left %s (Lstat: %v), or did not say it removed it: %q", dir, err, removed)
+		}
+	}
+
+	if _, err := os.Lstat(other); err != nil || slices.Contains(removed, other) {
+		t.Errorf("RemoveTemporary removed %s, which is not one of temporary's (Lstat: %v): %q", other, err, removed)
+	}
+
+	if _, err := os.Lstat(inUse); held && (err != nil || slices.Contains(removed, inUse)) {
+		t.Errorf("RemoveTemporary removed %s, which will not go, or said it did (Lstat: %v): %q", inUse, err, removed)
+	}
+}
+
 // TestUsageMakesNoTemporaryDirectory: help's copy goes in the system's temporary directory,
 // which it never makes: one that is missing is left missing, and help says why it could not
 // run rather than leaving a directory behind.

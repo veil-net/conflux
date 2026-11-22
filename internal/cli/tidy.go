@@ -48,7 +48,9 @@ import (
 //     configuration and state directories goes (removeStaged). The lock files themselves are kept on
 //     Unix, and on Windows removed once let go of, for whatever next takes them to make again
 //     (flock.Drop).
-//   - What an update left beside the conflux it replaced goes (removeUpdateLeftovers).
+//   - What an update left beside the conflux it replaced goes (removeUpdateLeftovers), and so do the
+//     temporary copies of anchorctl readers killed before they removed them left
+//     (libexec.RemoveTemporary).
 //
 // The service's copy is the caller's to write afresh (service.PlaceAfresh), with what a copy that
 // never went in place left beside it. What the next start clears again as it starts -- the orphan,
@@ -121,6 +123,8 @@ func tidy(d paths.Dirs, mgr service.Manager, checked error) (stopped bool, err e
 	if exe, err := updateExecutable(); err == nil {
 		removed = append(removed, removeUpdateLeftovers(exe)...)
 	}
+
+	removed = append(removed, libexec.RemoveTemporary()...)
 
 	return stopped, remakeErr
 }

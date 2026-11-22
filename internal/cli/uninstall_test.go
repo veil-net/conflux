@@ -120,7 +120,8 @@ func TestUninstallLeavesNothingConfluxMade(t *testing.T) {
 // CONFLUX_DIR is either a folder conflux makes, on a way it makes, which uninstall removes with the
 // way; or a folder of the user's, holding a bin/, a .ssh/ and a file, which conflux never changes: its
 // root is .conflux inside it. Either way everything conflux made goes -- its root, with what the user
-// put in it and in its run/, bin/ and logs/, a killed ephemeral run's root -- and nothing else.
+// put in it and in its run/, bin/ and logs/, a killed ephemeral run's root, the temporary copy of
+// anchorctl a killed reader left -- and nothing else.
 func TestUninstallLeavesNoTrace(t *testing.T) {
 	anchortest.Require(t) // the run extracts the pair
 
@@ -153,6 +154,16 @@ func TestUninstallLeavesNoTrace(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
+			}
+
+			// Where a reader keeps its temporary anchorctl, which a killed one leaves.
+			tmp := filepath.Join(base, "tmp")
+			if err := os.Mkdir(tmp, 0o700); err != nil {
+				t.Fatal(err)
+			}
+
+			for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
+				t.Setenv(name, tmp)
 			}
 
 			before := snapshot(t, base)
@@ -191,7 +202,8 @@ func TestUninstallLeavesNoTrace(t *testing.T) {
 			}
 
 			planted := []string{filepath.Join(d.State, "mine.txt"), filepath.Join(d.Run, "mine.txt"),
-				filepath.Join(d.Libexec(), "mine.txt"), filepath.Join(paths.EphemeralCandidates()[0], "serve.lock")}
+				filepath.Join(d.Libexec(), "mine.txt"), filepath.Join(paths.EphemeralCandidates()[0], "serve.lock"),
+				filepath.Join(tmp, "conflux-usage-123", binName("anchorctl"))}
 			if d.Log != "" {
 				planted = append(planted, filepath.Join(d.Log, "mine.txt"))
 			}

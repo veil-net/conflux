@@ -29,6 +29,37 @@ import (
 	"github.com/veil-net/conflux/internal/ui"
 )
 
+// testTemp names the temporary directory TestMain gave the tests, in their environment, and so in a child
+// of the test binary's that one of them runs, which keeps the temporary directory its test gave it.
+const testTemp = "CONFLUX_TEST_TEMP"
+
+// TestMain runs the tests with a temporary directory of their own -- TMPDIR, and TMP and TEMP, which on
+// Windows every test linking pathstest keeps %ProgramData%'s in as well -- so that what tidy and
+// uninstall remove where a reader keeps its temporary anchorctl (libexec.RemoveTemporary) is looked for
+// there, never in the machine's, where its own readers, or another package's tests, may be running one.
+func TestMain(m *testing.M) {
+	if os.Getenv(testTemp) != "" {
+		os.Exit(m.Run())
+	}
+
+	tmp, err := os.MkdirTemp("", "conflux-cli-")
+	if err != nil {
+		panic(err)
+	}
+
+	for _, name := range []string{testTemp, "TMPDIR", "TMP", "TEMP"} {
+		if err := os.Setenv(name, tmp); err != nil {
+			panic(err)
+		}
+	}
+
+	code := m.Run()
+
+	_ = os.RemoveAll(tmp)
+
+	os.Exit(code)
+}
+
 func capture(t *testing.T, argv ...string) (stdout, stderr string, code int) {
 	t.Helper()
 

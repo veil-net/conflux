@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io/fs"
 	"math/rand/v2"
+	"os"
 	"path/filepath"
 	"strconv"
 
@@ -41,7 +42,18 @@ func temporaryDir() (string, func(string, bool) error, error) {
 		return dir, paths.RestrictToOwner, err
 	}
 
-	dir, err := makeStaging(paths.ProgramData(), temporaryPrefix)
+	dir, err := makeStaging(temporaryParent(), temporaryPrefix)
 
 	return dir, paths.Restrict, err
+}
+
+// temporaryParent is where temporary makes its directories, which RemoveTemporary looks in: for an
+// elevated process %ProgramData% (temporaryDir), and otherwise the system's temporary directory, the
+// account's own.
+func temporaryParent() string {
+	if privcheck.Elevated() {
+		return paths.ProgramData()
+	}
+
+	return os.TempDir()
 }

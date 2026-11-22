@@ -36,6 +36,9 @@ type earlier struct {
 	// conflux removes as what an update left, and keeps (updatedConflux).
 	exe                   string
 	leftovers, besideKept []string
+
+	// temporary is the folder a reader killed before it removed its temporary anchorctl left.
+	temporary string
 }
 
 // oldInstall is a CONFLUX_DIR installation as earlier conflux left it, for an update or an uninstall
@@ -44,12 +47,18 @@ type earlier struct {
 // left, this build's own set planted by somebody, its binaries padded to their sizes, stale lock
 // files, an older copy for the service with the image Windows moved aside and a copy that never went
 // in place, an atomic write that never went in place, the run directory's token, marker, pid record
-// and socket directory, a killed ephemeral run's root, and beside the conflux the update replaced
-// what an update leaves there (updatedConflux).
+// and socket directory, a killed ephemeral run's root, a killed reader's temporary anchorctl in the
+// temporary directory, which is the test's own, and beside the conflux the update replaced what an update
+// leaves there (updatedConflux).
 func oldInstall(t *testing.T) earlier {
 	t.Helper()
 
 	d := pathstest.Dirs(t)
+
+	tmp := t.TempDir()
+	for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(name, tmp)
+	}
 
 	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Proxies: []string{"8080=127.0.0.1:3000"},
 		Taints: []string{"cfx-old"}}); err != nil {
@@ -66,7 +75,7 @@ func oldInstall(t *testing.T) earlier {
 	}
 
 	set := filepath.Join(d.Libexec(), anchor.SetID())
-	old := earlier{d: d, kept: map[string][]byte{}}
+	old := earlier{d: d, kept: map[string][]byte{}, temporary: filepath.Join(tmp, "conflux-usage-123")}
 	old.exe, old.leftovers, old.besideKept = updatedConflux(t)
 
 	for p, body := range map[string][]byte{
@@ -86,6 +95,7 @@ func oldInstall(t *testing.T) earlier {
 		d.DaemonPIDFile():                                                  []byte("2147483646\n/nonexistent/anchord\n"),
 		filepath.Join(d.DaemonRun(), "sock.lock"):                          nil,
 		filepath.Join(paths.EphemeralCandidates()[0], "serve.lock"):        nil,
+		filepath.Join(old.temporary, binName("anchorctl")):                 []byte("a killed reader's"),
 	} {
 		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 			t.Fatal(err)
@@ -172,6 +182,11 @@ func TestUpdateLeavesOnlyWhatThisConfluxMakes(t *testing.T) {
 				if _, err := os.Lstat(p); !os.IsNotExist(err) {
 					t.Errorf("%s is still there (Lstat: %v)", p, err)
 				}
+			}
+
+			if _, err := os.Lstat(old.temporary); !os.IsNotExist(err) || !strings.Contains(out, "  "+old.temporary+"\n") {
+				t.Errorf("conflux %s left %s, a killed reader's temporary anchorctl (Lstat: %v), or did not list it:\n%s",
+					verb, old.temporary, err, out)
 			}
 
 			if got := names(t, d.Run); len(got) > 0 {

@@ -15,6 +15,7 @@ import (
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/flock"
+	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/logfile"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/ui"
@@ -22,8 +23,9 @@ import (
 
 // runUninstall is the reverse of everything conflux did here, and it destroys the identity: the
 // boot service, every root -- configuration, identity, state, the extracted pairs, the service's copy
-// of conflux, the log -- the ephemeral runs' roots, what an update left beside this conflux, and the
-// accounts anchord ran as. Nothing is kept for a reinstall.
+// of conflux, the log -- the ephemeral runs' roots, what an update left beside this conflux, the
+// temporary copies of anchorctl killed readers left (libexec.RemoveTemporary), and the accounts anchord
+// ran as. Nothing is kept for a reinstall.
 func runUninstall(_ context.Context, args []string) int {
 	flags := flag.NewFlagSet("uninstall", flag.ContinueOnError)
 	flags.SetOutput(ui.Errw)
@@ -176,6 +178,8 @@ func runUninstall(_ context.Context, args []string) int {
 	if exe, err := updateExecutable(); err == nil {
 		removed = append(removed, removeUpdateLeftovers(exe)...)
 	}
+
+	removed = append(removed, libexec.RemoveTemporary()...)
 
 	// The accounts anchord ran as, if conflux made them, stopping whatever runs as each: the ephemeral
 	// runs' unless one started since.

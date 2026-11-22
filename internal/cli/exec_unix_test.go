@@ -61,7 +61,7 @@ while :; do sleep 0.05; done
 // as anchorctl ends, by its exit code or by the signal, and its temporary copy goes with it.
 func TestASignalToConfluxReachesItsAnchorctl(t *testing.T) {
 	if dir := os.Getenv(standInDir); dir != "" {
-		detachedAnchorctl = func(paths.Dirs, error, bool) (string, func(), error) {
+		socketAnchorctl = func() (string, func(), error) {
 			tmp, err := os.MkdirTemp(dir, "conflux-usage-")
 			if err != nil {
 				return "", nil, err

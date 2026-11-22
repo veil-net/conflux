@@ -28,7 +28,7 @@ func platformDirs() Dirs {
 }
 
 // ProgramData is %ProgramData%, which the platform's roots, an ephemeral run's and an elevated reader's
-// temporary copy of anchorctl (libexec's ForUsage) are kept in, as the system has it
+// temporary copy of anchorctl (libexec's Temporary) are kept in, as the system has it
 // (systemProgramData). A variable so a test can keep what conflux keeps there in a folder of its own
 // (pathstest).
 var ProgramData = systemProgramData

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -91,31 +92,59 @@ func TestExtractionMakesNoRootNorBinDirectory(t *testing.T) {
 
 // TestRemakeWaitsForAnExtractionInProgress: Remake empties bin/ under its lock, which a reader extracting
 // a set holds for as long as that takes, so it waits for the lock, as an extraction does -- here held
-// 200 ms -- and then empties bin/ and extracts afresh. The holder lets go on a timer whatever Remake does.
+// 200 ms -- and only then empties bin/ and extracts afresh: what was there is still there as the holder
+// lets go, and gone once Remake returns. The holder lets go on a timer whatever Remake does, and a Remake
+// that has not returned within childDeadline fails the test, rather than the suite's timeout ending it.
 func TestRemakeWaitsForAnExtractionInProgress(t *testing.T) {
 	anchortest.Require(t)
 
 	d := pathstest.Dirs(t)
 	older := filepath.Join(d.Libexec(), "0123456789abcdef")
 
+	if err := os.Mkdir(older, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
 	unlock, err := flock.Acquire(filepath.Join(d.Libexec(), ".lock"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	release := sync.OnceFunc(unlock)
+	var keptUntilLetGo atomic.Bool
+
+	release := sync.OnceFunc(func() {
+		_, err := os.Lstat(older)
+		keptUntilLetGo.Store(err == nil)
+		unlock()
+	})
+
 	time.AfterFunc(200*time.Millisecond, release)
 	t.Cleanup(release)
 
-	if err := os.Mkdir(older, 0o700); err != nil {
-		t.Fatal(err)
+	type remade struct {
+		removed []string
+		err     error
 	}
 
-	if removed, err := Remake(t.Context(), d); err != nil || !slices.Contains(removed, older) {
-		t.Errorf("Remake beside an extraction that ends in 200 ms = %v, %v, want %s removed once it has", removed, err,
-			older)
+	returned := make(chan remade, 1)
+	go func() {
+		removed, err := Remake(t.Context(), d)
+		returned <- remade{removed, err}
+	}()
+
+	select {
+	case r := <-returned:
+		if r.err != nil || !slices.Contains(r.removed, older) || !keptUntilLetGo.Load() {
+			t.Errorf("Remake beside an extraction that ends in 200 ms = %v, %v, %s kept until it ended: %v; want it "+
+				"removed once it has, and not before", r.removed, r.err, older, keptUntilLetGo.Load())
+		}
+	case <-time.After(childDeadline):
+		t.Fatalf("Remake beside an extraction that ends in 200 ms had not returned %v later", childDeadline)
 	}
 }
+
+// childDeadline is how long a test waits for what it runs on a goroutine of its own before it fails.
+const childDeadline = 30 * time.Second
 
 // TestExtractIsIdempotent asserts the hot path does no work. Every start, and every reader
 // once the pair is there, calls Extract, so a second call that rewrote the pair would make

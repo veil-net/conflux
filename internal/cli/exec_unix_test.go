@@ -161,6 +161,30 @@ func TestASignalToConfluxReachesItsAnchorctl(t *testing.T) {
 	}
 }
 
+// TestAPassThroughToConfluxsDaemonReplacesConflux: a pass-through to conflux's own daemon runs the
+// installation's extraction in conflux's place: the anchorctl it runs, here a stand-in planted as this
+// build's set, has as its parent the test binary, which started conflux, and not conflux.
+func TestAPassThroughToConfluxsDaemonReplacesConflux(t *testing.T) {
+	anchortest.Require(t)
+
+	d := pathstest.Dirs(t)
+	looksRunning(t, d)
+
+	t.Setenv(anchorctl.SocketEnv, "")
+	t.Setenv(anchorctl.TokenEnv, "")
+
+	parent := filepath.Join(t.TempDir(), "ppid")
+	plantSet(t, d, "echo $PPID > '"+parent+"'")
+
+	out, code := confluxChild(t, "peers")
+
+	b, err := os.ReadFile(parent)
+	if ppid, _ := strconv.Atoi(strings.TrimSpace(string(b))); code != ExitOK || ppid != os.Getpid() {
+		t.Errorf("conflux peers exited %d, its anchorctl's parent %d (%v), want 0 and this test binary, %d, which "+
+			"started conflux:\n%s", code, ppid, err, os.Getpid(), out)
+	}
+}
+
 // placedArgs, set, makes TestOnlyATemporaryCopyRunsAsAChild's test binary the conflux it runs, with
 // these arguments, a line each, its readers' anchorctl the stand-in placedStandIn names: the
 // installation's extraction, with no done, or, with placedTemporary set, a temporary copy.

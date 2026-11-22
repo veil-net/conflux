@@ -114,10 +114,11 @@ refusal names `down` and `start` and the escape hatch.
 
 ## A root conflux keeps
 
-Conflux keeps everything in folders of its own, conflux's by their names: the platform's
-(`/etc/conflux`, `/var/lib/conflux`, `/run/conflux` …, `%ProgramData%\conflux`), an ephemeral run's,
-and under `CONFLUX_DIR=<dir>` the folder `<dir>/.conflux`, which conflux makes inside `<dir>` and
-keeps all of its own in. `<dir>` itself, and every folder above a root, is never changed and never
+Conflux keeps everything in one folder of its own, `.conflux`, conflux's by its name: in the
+system's data folder (`/var/lib/.conflux`, `/var/db/.conflux` on the BSDs, `/Library/Application
+Support/.conflux`, `%ProgramData%\.conflux`), and under `CONFLUX_DIR=<dir>` in `<dir>/.conflux`
+instead, the same layout; an ephemeral run's root is `ephemeral` inside it, or, for an ordinary
+user, in their own runtime or cache directory. `<dir>` itself, and every folder above a root, is never changed and never
 judged: choosing a `CONFLUX_DIR` is your responsibility, and conflux owns `<dir>/.conflux`, which it
 remakes as it makes it.
 
@@ -513,9 +514,7 @@ reinstall:
   (`manifest.b64`), the state (`state.json`, the record of an anchor given up on among it,
   `anchord.priv`, `anchord.json`), the anchor directories, the extracted anchor binaries and,
   on Windows, `wintun.dll` beside them, the service's copy of conflux, the lock files, the run
-  directory's token, readiness marker, pid record and socket, and the log: the `logs`
-  directory on Windows and in a `CONFLUX_DIR`, `/var/log/conflux.log` and `conflux.log.1` on
-  macOS and FreeBSD, never `/var/log` itself;
+  directory's token, readiness marker, pid record and socket, and the log in `logs`;
 - every ephemeral run's root kept for the account running it, a killed run's once the anchord
   it left is stopped;
 - what an update left beside this conflux: a download that never went in place, and on Windows
@@ -532,7 +531,7 @@ reinstall:
   put in it since, another installation of conflux included: `CONFLUX_DIR=/srv/a/b`, where conflux
   made `/srv/a`, removes `/srv/a/c/.conflux` with it. Only one that still holds the root it could not
   remove is left. A `CONFLUX_DIR` that was there before is left as it was, with everything of yours in
-  it, and so is a folder conflux had to make on the way to a platform's root;
+  it, and so is the system's data folder;
 - the account `anchord` ran as, and `conflux-ephemeral`, once nothing runs as either, when
   conflux made them (an account of either name that conflux did not make is left alone), with
   the BPF devices given back to root on macOS first.
@@ -565,7 +564,8 @@ account it runs as, and uninstall says so, exit 1. The root a killed run left be
 extracted pair, token and socket — it removes, stopping the anchord the run left, under the root's
 lock, so a run starting at that moment keeps its own. What is at an ephemeral root's name and is not
 as conflux makes a root — another account's, as any account may make
-`C:\ProgramData\conflux-ephemeral` first, one another account may write, or a link — is removed as
+`C:\ProgramData\.conflux\ephemeral` where the installation's root is not there yet, one another
+account may write, or a link — is removed as
 itself, with nothing in it read or stopped and no lock taken in it.
 
 ## `conflux status`

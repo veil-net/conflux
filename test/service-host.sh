@@ -100,10 +100,10 @@ say "down on a service that is not running"
 "$CONFLUX" down || fail "down failed on a service that was not running"
 
 if [ "$os" = darwin ]; then
-  root="/Library/Application Support/conflux"
+  root="/Library/Application Support/.conflux"
 else
   # Git Bash imports Windows's variables upper-cased; the fallback is Windows's default.
-  root="$(cygpath -u "${PROGRAMDATA:-C:\\ProgramData}")/conflux"
+  root="$(cygpath -u "${PROGRAMDATA:-C:\\ProgramData}")/.conflux"
 fi
 
 # A configuration conflux could have written, with an API that answers nothing: the
@@ -115,7 +115,7 @@ if [ "$os" = darwin ]; then
   launchctl bootstrap system "/Library/LaunchDaemons/$LABEL.plist"
   account='"as":"_conflux"'
   who='starting anchord as _conflux, with no privilege'
-  log=/var/log/conflux.log
+  log="$root/logs/conflux.log"
 else
   sc.exe start conflux >/dev/null
   account='LOCAL SERVICE'
@@ -189,11 +189,7 @@ fi
 # nothing can ask at the start, so it is left, and the next ephemeral run stops it. The API
 # answers nothing, so anchord is up and the run waits on its enrolment when it is killed.
 say "an ephemeral run killed outright, and what becomes of its anchord"
-if [ "$os" = darwin ]; then
-  eroot=/var/run/conflux-ephemeral
-else
-  eroot="$(cygpath -u "${PROGRAMDATA:-C:\\ProgramData}")/conflux-ephemeral"
-fi
+eroot="$root/ephemeral"
 eph_start() { # LOG
   "$CONFLUX" proxy --ephemeral --api https://192.0.2.1:9 --no-ipv4 --taint cfx-host 8080=127.0.0.1:1 >"$1" 2>&1 &
 }
@@ -245,9 +241,7 @@ if [ "$os" = darwin ]; then
     launchctl print-disabled system | grep -F "\"$LABEL\"" >&2
     fail "uninstall left the label in launchd's disabled database"
   fi
-  for path in "/Library/Application Support/conflux" /var/run/conflux /var/log/conflux.log; do
-    [ ! -e "$path" ] || fail "$path survived uninstall"
-  done
+  [ ! -e "$root" ] || fail "$root survived uninstall"
   if dscl . -read /Users/_conflux >/dev/null 2>&1; then
     fail "the _conflux account survived uninstall"
   fi

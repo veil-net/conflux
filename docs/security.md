@@ -52,10 +52,11 @@ host can read, and when the run stops there is nothing at all.
   beneath it, so conflux makes its root the Administrators' under a protected DACL granting SYSTEM
   and the Administrators alone, set as the root is made, which everything beneath inherits. See
   [windows.md](windows.md#file-permissions).
-- Conflux's folders are conflux's by their names: the platform's roots (`/etc/conflux`,
-  `/var/lib/conflux` and `/run/conflux` on Linux, their counterparts on macOS and the BSDs,
-  `%ProgramData%\conflux` on Windows), an ephemeral run's, and under `CONFLUX_DIR=<dir>` the folder
-  `<dir>/.conflux`, which conflux makes inside `<dir>` and keeps everything of its own in. Conflux
+- Conflux's folders are conflux's by their names: its one root, `.conflux`, in the system's data
+  folder (`/var/lib/.conflux` on Linux, `/var/db/.conflux` on the BSDs, `/Library/Application
+  Support/.conflux` on macOS, `%ProgramData%\.conflux` on Windows), or under `CONFLUX_DIR=<dir>` in
+  `<dir>/.conflux` instead, the same layout, everything of conflux's in it; and an ordinary user's
+  ephemeral run's root in their own runtime or cache directory. Conflux
   makes each as above, and whatever is at one of those names and is not as conflux makes a root — a
   link, a file, a directory another account owns, or whose mode or ACL lets another account write it,
   or on Windows whose DACL grants another account anything — is removed as itself from the folder it
@@ -90,7 +91,7 @@ host can read, and when the run stops there is nothing at all.
   in it by its name: the directory at the root's own name, looked up in the folder held and never
   followed, as conflux makes a root — owned by root or the account running conflux, and
   written by nobody else; on Windows owned by SYSTEM, the Administrators or TrustedInstaller, and
-  granting nobody else anything. What conflux picks itself — the platform's roots, an ephemeral run's,
+  granting nobody else anything. What conflux picks itself — the default root, an ephemeral run's,
   an elevated reader's temporary copy of anchorctl — an elevated conflux never trusts its own account
   with by its SID: its processes that are not elevated could have made and filled what that account
   owns or is granted. Nothing above a root is judged. A root that fails is refused, saying why, with nothing in it read, run or stopped; with none there the command
@@ -115,7 +116,7 @@ host can read, and when the run stops there is nothing at all.
 
 ## A backup of the state directory is the machine
 
-`/var/lib/conflux` in a backup, a VM snapshot, or a container image **is** the
+`/var/lib/.conflux` in a backup, a VM snapshot, or a container image **is** the
 identity. Restoring that backup onto a second machine while the first is still running
 makes the anchor exist twice, which anchor reports as an address conflict.
 
@@ -189,10 +190,10 @@ missing on the way is made in the one held before it and held open in turn, neve
 conflux's own or one somebody else made at the name meanwhile — a sticky directory such as `/tmp`,
 and `C:\`, let anybody make a name not taken yet — and a link there is refused. An installation
 keeps a record of the directories it made on the way to a `CONFLUX_DIR`'s root, in its state root
-(`way`), a `CONFLUX_DIR` conflux made among them, and an ephemeral run under a `CONFLUX_DIR` one in
-its own root, with the `.conflux` it made there; a directory conflux had to make on the way to a
-platform's root or an ephemeral run's elsewhere — a user's cache or runtime directory, a home — is
-the system's, which other programs fill too, and is not recorded. Uninstall, or the run as it ends,
+(`way`), a `CONFLUX_DIR` conflux made among them, and an ephemeral run inside the installation's root
+one in its own root, with the `.conflux` it made; the system's data folder is the system's, and a
+directory conflux had to make on the way to an ordinary user's ephemeral root — their cache or
+runtime directory — is the system's too, which other programs fill, and neither is recorded. Uninstall, or the run as it ends,
 reads the record before it removes the roots — only from a root as conflux makes one, as a file
 another account may have put there, never through a link, and through the root held open first, as
 `update` asks after the serve lock — taking only directories above its roots, none the top of a
@@ -303,13 +304,13 @@ What changes that, and why:
 
 | Path (Linux) | Owner | Mode |
 |---|---|---|
-| `/var/lib/conflux`, `bin/`, `bin/<set>/` | root, group `conflux` | `0710` — pass through, list nothing |
+| `/var/lib/.conflux`, `bin/`, `bin/<set>/` | root, group `conflux` | `0710` — pass through, list nothing |
 | `bin/<set>/anchord` | root, group `conflux` | `0750` (`anchorctl` stays root's alone) |
 | `anchord.json` | whoever `anchord` runs as | `0600` |
 | `anchor/` — the account's `-dir` | `conflux` | `0700` |
 | `anchor.root/` — a root anchord's `-dir` | root | `0700` |
-| `/run/conflux` | root, group `conflux` | `0710` |
-| `/run/conflux/anchord/` — the socket and its lock | whoever `anchord` runs as | `0700`, made afresh at every start |
+| `run/` | root, group `conflux` | `0710` |
+| `run/anchord/` — the socket and its lock | whoever `anchord` runs as | `0700`, made afresh at every start |
 | the configuration, the manifest, the state, the token, the pid record, the service's copy | root | unchanged |
 
 Three rules hold it together:

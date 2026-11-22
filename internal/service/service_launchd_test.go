@@ -14,7 +14,7 @@ import (
 // TestThePlistCarriesAnyPath: a CONFLUX_DIR may hold any character a path can, and the
 // characters XML gives meaning to must arrive in ProgramArguments as themselves.
 func TestThePlistCarriesAnyPath(t *testing.T) {
-	argv := []string{"/Library/Application Support/conflux/conflux", "serve", "--dir", "/tmp/a&b <c>"}
+	argv := []string{"/Library/Application Support/.conflux/conflux", "serve", "--dir", "/tmp/a&b <c>"}
 	plist := launchdPlist("org.veilnet.conflux-1a2b3c4d", argv, "/tmp/a&b <c>/logs/conflux.log")
 
 	dec := xml.NewDecoder(strings.NewReader(plist))
@@ -111,7 +111,7 @@ func (f *fakeLaunchd) ctl() launchctl {
 func TestInstallLeavesTheJobAsItFoundIt(t *testing.T) {
 	const label = "org.veilnet.conflux"
 
-	plist := []byte(launchdPlist(label, []string{"/x/conflux", "serve"}, "/var/log/conflux.log"))
+	plist := []byte(launchdPlist(label, []string{"/x/conflux", "serve"}, "/Library/Application Support/.conflux/logs/conflux.log"))
 
 	for _, c := range []struct {
 		name                      string
@@ -180,7 +180,7 @@ func TestInstallLeavesTheJobAsItFoundIt(t *testing.T) {
 func TestAnUpStartsTheJobOnce(t *testing.T) {
 	const label = "org.veilnet.conflux"
 
-	plist := []byte(launchdPlist(label, []string{"/x/conflux", "serve"}, "/var/log/conflux.log"))
+	plist := []byte(launchdPlist(label, []string{"/x/conflux", "serve"}, "/Library/Application Support/.conflux/logs/conflux.log"))
 
 	for _, c := range []struct {
 		name            string

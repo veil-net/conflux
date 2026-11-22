@@ -144,10 +144,7 @@ A run under `CONFLUX_DIR` is the exception, because it is a separate installatio
 not the machine's own: the service takes a suffix derived from the directory
 (`conflux-44a6e4f4.service`, or `conflux_44a6e4f4` for rc, whose names become shell
 variables), and the directory is written into the argv it is registered with, so the
-supervisor comes back to the same `.conflux` inside it at boot. Its systemd unit also leaves out
-the `RuntimeDirectory=` and `ConfigurationDirectory=` lines: they name the machine's own
-directories, and systemd empties a unit's runtime directory whenever it stops, so stopping
-the scoped unit would otherwise clear the real installation's `/run/conflux`. Its
+supervisor comes back to the same `.conflux` inside it at boot. Its
 `anchord` runs as an account of its own too, `conflux-44a6e4f4`, so a test root's daemon
 never shares an identity with the machine's. None of this happens without `CONFLUX_DIR`, so an ordinary install is
 byte-for-byte what it always was.
@@ -190,7 +187,7 @@ Wants=network-online.target
 [Service]
 Type=notify
 NotifyAccess=main
-ExecStart=/var/lib/conflux/conflux serve
+ExecStart=/var/lib/.conflux/conflux serve
 Restart=on-failure
 RestartSec=5
 RestartPreventExitStatus=78 70
@@ -238,11 +235,12 @@ that gives `anchord`, as an account of its own, exactly the capabilities its mod
 `AmbientCapabilities=` here would go to the supervisor, which as root has them all
 anyway, and reach nothing more.
 
-Four things are deliberately absent. `StateDirectory=`, because systemd gives a directory
-it claims back to `User=` and `Group=`, recursively, at every start once its top belongs to
-anybody else — and the state directory's group is `anchord`'s account, so every start
-would hand `anchord`'s own directory back to root. `RuntimeDirectory=` stays: systemd
-makes `/run/conflux` afresh at every start, so its top is always root's. `PrivateTmp=`
+Four things are deliberately absent. Every directory setting — conflux makes its one root,
+`.conflux`, and all it keeps in it, itself, as under every service manager — and
+`StateDirectory=` above all, because systemd gives a directory it claims back to `User=` and
+`Group=`, recursively, at every start once its top belongs to anybody else — and the root's
+group is `anchord`'s account, so every start would hand `anchord`'s own directory back to
+root. `PrivateTmp=`
 would be pointless and confusing — nothing conflux does touches `/tmp`. `ProtectSystem=strict`
 would need a `ReadWritePaths=` list. And `NoNewPrivileges=`, which would hold for a root
 `anchord` too, where the host's firewall answers only root, and stop its firewall commands'
@@ -315,8 +313,8 @@ is already in the state `down` asks for, and says so rather than passing on laun
 
 macOS needs no driver: `utun` is in the kernel and a root LaunchDaemon can open it.
 
-Logs: `/var/log/conflux.log`, which `uninstall` removes with the plist and the one moved
-aside. The plist names it, for what conflux cannot write itself, and `serve --log` is how
+Logs: `logs/conflux.log` in the root, `/Library/Application Support/.conflux/logs/conflux.log`,
+which `uninstall` removes with the plist and the one moved aside, and with the root. The plist names it, for what conflux cannot write itself, and `serve --log` is how
 conflux writes everything else there: each line stamped with the time in UTC, and the file
 moved aside to `conflux.log.1`, replacing the one before, once it passes 10 MiB. The file
 is placed over conflux's own standard output and error each time, so a crash lands in it too.
@@ -361,20 +359,20 @@ access than any account has.
 Windows also needs `wintun.dll` for TUN mode; see [windows.md](windows.md).
 
 Logs: a service has no console, so the supervisor writes what it and `anchord` say to
-`%ProgramData%\conflux\logs\conflux.log`, each line stamped with the time in UTC and the file
+`%ProgramData%\.conflux\logs\conflux.log`, each line stamped with the time in UTC and the file
 moved aside to `conflux.log.1` past 10 MiB, as on macOS; `uninstall` removes both with the
 rest. The file is the service's standard output and error, so a crash lands in it too; they
 let go of it for the moment it is moved aside, since Windows moves no file that is open. It is
 opened once the supervisor has made the root as conflux makes one, `logs\` with it, each made
-afresh where it was not; a root it refuses — one whose way the boot service would not trust, or one
-it could not remove to make afresh — gets no log: the start ends as any failed start does, exit 1,
+afresh where it was not; a root it refuses — one whose way cannot be walked, or one it could not
+remove to make afresh — gets no log: the start ends as any failed start does, exit 1,
 which the System event log records and the recovery actions retry, and `conflux install`, run by
 hand, says why.
 
 ## rc: FreeBSD and OpenBSD
 
 **FreeBSD.** Script at `/usr/local/etc/rc.d/conflux`, enabled with
-`sysrc conflux_enable=YES`. It runs `conflux serve --log /var/log/conflux.log` under
+`sysrc conflux_enable=YES`. It runs `conflux serve --log /var/db/.conflux/logs/conflux.log` under
 `daemon(8)`, which backgrounds it and records conflux's own pid, and conflux writes the log
 itself, stamped and moved aside to `conflux.log.1` past 10 MiB, as on macOS — so
 `service conflux stop` signals the supervisor, which closes the anchor before anything

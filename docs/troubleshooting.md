@@ -152,7 +152,7 @@ A "permission denied" on a `0700` file you own is the most confusing failure in 
 design, and there are only two causes. conflux detects both and names them:
 
 ```
-conflux: the anchor binaries were extracted to /var/lib/conflux/bin but will not run from there.
+conflux: the anchor binaries were extracted to /var/lib/.conflux/bin but will not run from there.
   that filesystem is mounted noexec.
   set CONFLUX_DIR to a directory on a filesystem that allows execution.
 ```
@@ -161,7 +161,7 @@ or
 
 ```
   SELinux is enforcing, and a binary under this path is probably labelled var_lib_t.
-  try:  sudo semanage fcontext -a -t bin_t '/var/lib/conflux/bin(/.*)?' && sudo restorecon -R /var/lib/conflux/bin
+  try:  sudo semanage fcontext -a -t bin_t '/var/lib/.conflux/bin(/.*)?' && sudo restorecon -R /var/lib/.conflux/bin
 ```
 
 On macOS, `killed: 9` instead means the signature was rejected — an Apple Silicon Mac
@@ -256,9 +256,9 @@ is running, an anchor refused for good does not fail the unit: the observer goes
 `the anchor was refused`, and the watcher rebuilds the anchor, giving up on it alone once its
 rebuilds are refused too.
 
-Where the logs are: `journalctl -u conflux -n 50` on Linux, `/var/log/conflux.log` on
-macOS and FreeBSD, `/var/log/daemon` on OpenBSD, and
-`%ProgramData%\conflux\logs\conflux.log` on Windows. On macOS, FreeBSD and Windows, where
+Where the logs are: `journalctl -u conflux -n 50` on Linux, `/var/log/daemon` on OpenBSD, and
+`logs/conflux.log` in the root on macOS (`/Library/Application Support/.conflux/logs/conflux.log`),
+FreeBSD (`/var/db/.conflux/logs/conflux.log`) and Windows (`%ProgramData%\.conflux\logs\conflux.log`). On macOS, FreeBSD and Windows, where
 conflux writes the file itself, past 10 MiB the older lines are in `conflux.log.1` beside it;
 syslog keeps OpenBSD's. A start that times out names the
 right one for the machine.

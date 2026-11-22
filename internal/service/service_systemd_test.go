@@ -7,13 +7,12 @@ import (
 
 // TestSystemdUnit: an ordinary install is the unit it always was, word for word.
 func TestSystemdUnit(t *testing.T) {
-	unit := systemdUnit("/usr/local/bin/conflux", []string{"serve"}, false)
+	unit := systemdUnit("/usr/local/bin/conflux", []string{"serve"})
 
 	for _, want := range []string{
 		"\nExecStart=/usr/local/bin/conflux serve\n",
 		"\nType=notify\n",
 		"\nRestartPreventExitStatus=78 70\n",
-		"\nRuntimeDirectory=conflux\nRuntimeDirectoryMode=0700\n",
 		"\nUser=root\n",
 		"\nLimitNOFILE=1048576\n",
 	} {
@@ -22,20 +21,13 @@ func TestSystemdUnit(t *testing.T) {
 		}
 	}
 
-	// The supervisor gives anchord its capabilities, and systemd must not take anchord's
-	// directory back: a StateDirectory= is re-owned at every start once its group is
-	// anchord's account.
-	for _, absent := range []string{"Capabilities=", "StateDirectory", "NoNewPrivileges"} {
+	// The supervisor gives anchord its capabilities, and conflux makes every directory it keeps
+	// itself: systemd claims none -- a StateDirectory= is re-owned at every start once its group
+	// is anchord's account.
+	for _, absent := range []string{"Capabilities=", "Directory", "NoNewPrivileges"} {
 		if strings.Contains(unit, absent) {
 			t.Errorf("the unit has %q:\n%s", absent, unit)
 		}
-	}
-
-	// A CONFLUX_DIR install's unit claims none of the machine's directories: systemd
-	// empties a RuntimeDirectory when its unit stops, whichever unit that is.
-	scoped := systemdUnit("/usr/local/bin/conflux", []string{"serve", "--dir", "/srv/x"}, true)
-	if strings.Contains(scoped, "Directory=") || !strings.Contains(scoped, "\nLimitNOFILE=1048576\n") {
-		t.Errorf("a scoped unit claims the machine's directories:\n%s", scoped)
 	}
 }
 
@@ -43,7 +35,7 @@ func TestSystemdUnit(t *testing.T) {
 // any character, and systemd splits an ExecStart= on whitespace and expands a % and a $
 // wherever they are.
 func TestSystemdUnitQuotesAnything(t *testing.T) {
-	unit := systemdUnit("/opt/my tools/conflux", []string{"serve", "--dir", `/srv/it's "odd" $HOME 100%\x`}, true)
+	unit := systemdUnit("/opt/my tools/conflux", []string{"serve", "--dir", `/srv/it's "odd" $HOME 100%\x`})
 
 	want := `ExecStart="/opt/my tools/conflux" serve --dir "/srv/it's \"odd\" $$HOME 100%%\\x"` + "\n"
 	if !strings.Contains(unit, want) {
@@ -52,7 +44,7 @@ func TestSystemdUnitQuotesAnything(t *testing.T) {
 
 	// A line break would end the line, and systemd reads the rest as a setting of its own;
 	// every control character goes in as its C escape, which systemd reads back inside quotes.
-	unit = systemdUnit("/opt/conflux", []string{"serve", "--dir", "/srv/a\nRestart=no\tb\x01\x7f"}, true)
+	unit = systemdUnit("/opt/conflux", []string{"serve", "--dir", "/srv/a\nRestart=no\tb\x01\x7f"})
 
 	want = `ExecStart=/opt/conflux serve --dir "/srv/a\nRestart=no\tb\x01\x7f"` + "\n"
 	if !strings.Contains(unit, want) || strings.Contains(unit, "\nRestart=no") {

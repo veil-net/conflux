@@ -10,16 +10,9 @@ const sockPathMax = 104 // sizeof(sockaddr_un.sun_path) on macOS
 // search and not read refuses, and the walk then holds by its name (lookUp).
 const holdDir = unix.O_RDONLY
 
-// platformDirs puts everything a system daemon owns under
-// /Library/Application Support, which is the system-wide half of the pair --
-// ~/Library is the per-user one, and conflux is per-machine.
-func platformDirs() Dirs {
-	const root = "/Library/Application Support/conflux"
+// systemData is the folder the default root, DirName, is made in: /Library/Application Support, the
+// system-wide half of the pair -- ~/Library is the per-user one, and conflux is per-machine.
+func systemData() string { return "/Library/Application Support" }
 
-	return Dirs{
-		Config: root,
-		State:  root,
-		Run:    "/var/run/conflux",
-		Log:    "/var/log",
-	}
-}
+// logsToFile is true: launchd writes the service's output to the file its plist names.
+const logsToFile = true

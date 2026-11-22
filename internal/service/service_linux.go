@@ -45,7 +45,7 @@ func (s systemd) Install(exe string, args ...string) error {
 			"conflux registers with on Linux")
 	}
 
-	unit := []byte(systemdUnit(exe, args, paths.Root() != ""))
+	unit := []byte(systemdUnit(exe, args))
 
 	// Registered exactly so already, which is every re-run of up and proxy: a read and a
 	// stat, rather than a daemon-reload and an enable that would change nothing and cost

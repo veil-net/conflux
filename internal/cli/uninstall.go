@@ -16,7 +16,6 @@ import (
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/libexec"
-	"github.com/veil-net/conflux/internal/logfile"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/ui"
 )
@@ -162,9 +161,6 @@ func runUninstall(_ context.Context, args []string) int {
 	removed = append(removed, madeWay...)
 	errs = append(errs, err)
 
-	// Remove has taken the service's log already where a service was registered.
-	errs = append(errs, removeSharedLog(d))
-
 	removed = append(removed, removeLeftovers()...)
 
 	// The accounts anchord ran as, if conflux made them, stopping whatever runs as each: the ephemeral
@@ -214,17 +210,6 @@ var removeRoot = paths.RemoveRoot
 // ephemeralCandidates is paths.EphemeralCandidates, which a test points at roots outside the
 // installation's: under a CONFLUX_DIR every candidate is inside it.
 var ephemeralCandidates = paths.EphemeralCandidates
-
-// removeSharedLog removes the service's log where the platform keeps it in the system's own log
-// directory, outside d's roots, which is not conflux's: the file and the one moved aside, and never the
-// directory. One in a root goes with it.
-func removeSharedLog(d paths.Dirs) error {
-	if f := d.LogFile(); f != "" && !d.Inside(d.Log) {
-		return logfile.Remove(f)
-	}
-
-	return nil
-}
 
 // liveRefused refuses uninstall while an ephemeral run is live, naming its root, and says whether it
 // did.

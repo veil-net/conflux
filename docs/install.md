@@ -67,9 +67,9 @@ $ conflux version
 be one only root can change: a service pointed at `~/Downloads/conflux` or
 `C:\tools\conflux.exe` is one any program running as that user could swap for its own.
 So `up`, `proxy`, `observe`, `enrol`, `install`, `start` and `update` copy the conflux they were run as into
-the state directory — `/var/lib/conflux/conflux` on Linux, `/var/db/conflux/conflux` on the BSDs,
-`/Library/Application Support/conflux/conflux` on macOS,
-`%ProgramData%\conflux\conflux.exe` on Windows — and register that. Where you keep the
+its root — `/var/lib/.conflux/conflux` on Linux, `/var/db/.conflux/conflux` on the BSDs,
+`/Library/Application Support/.conflux/conflux` on macOS,
+`%ProgramData%\.conflux\conflux.exe` on Windows — and register that. Where you keep the
 binary you type is up to you; `uninstall` removes the copy with the rest. Under
 `CONFLUX_DIR=<dir>` everything is kept in `<dir>/.conflux` instead, which conflux owns and remakes as
 it makes it; `<dir>` itself, and every folder above it, is never changed and never judged, so
@@ -87,7 +87,7 @@ needs for one from the supervisor, as an account of its own — see
 `useradd` (or busybox's `adduser`) the first time it is needed, and removed by
 `conflux uninstall`.
 
-On a host with SELinux enforcing, the extracted binaries under `/var/lib/conflux/bin`
+On a host with SELinux enforcing, the extracted binaries under `/var/lib/.conflux/bin`
 may be labelled `var_lib_t` and refused execution. conflux detects this and prints the
 `semanage`/`restorecon` commands; see [troubleshooting.md](troubleshooting.md).
 

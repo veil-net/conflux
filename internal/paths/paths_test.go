@@ -30,19 +30,36 @@ func TestRootIsAbsoluteAndClean(t *testing.T) {
 	}
 }
 
-// TestALogDirectoryOnlyWhereThePlatformHasOne: under CONFLUX_DIR the log goes beside the
-// rest only on a platform that writes the service's output to a file.
-func TestALogDirectoryOnlyWhereThePlatformHasOne(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("CONFLUX_DIR", root)
+// TestOneLayoutWithOrWithoutAConfluxDir: the installation is one folder, DirName, in the system's
+// data folder where no CONFLUX_DIR is set and in the CONFLUX_DIR where one is: the configuration and the
+// state the folder itself, the run directory inside it, and a log directory inside it only on a
+// platform that writes the service's output to a file. The same layout either way.
+func TestOneLayoutWithOrWithoutAConfluxDir(t *testing.T) {
+	data := map[string]string{"linux": "/var/lib", "freebsd": "/var/db", "openbsd": "/var/db",
+		"darwin": "/Library/Application Support"}[runtime.GOOS]
+	if runtime.GOOS == "windows" {
+		data = systemData() // %ProgramData%, as the system has it, or a test's own (pathstest)
+	}
 
-	d := Default()
+	for name, dir := range map[string]string{"unset": "", "set": t.TempDir()} {
+		t.Setenv("CONFLUX_DIR", dir)
 
-	switch platform := platformDirs().Log; {
-	case platform == "" && d.Log != "":
-		t.Errorf("Log = %q, but nothing on this platform writes a log file", d.Log)
-	case platform != "" && d.Log != filepath.Join(root, "logs"):
-		t.Errorf("Log = %q, want it under the root", d.Log)
+		in := dir
+		if dir == "" {
+			in = data
+		}
+
+		root := filepath.Join(in, DirName)
+		d := Default()
+
+		log := ""
+		if runtime.GOOS != "linux" && runtime.GOOS != "openbsd" {
+			log = filepath.Join(root, "logs")
+		}
+
+		if d.Config != root || d.State != root || d.Run != filepath.Join(root, "run") || d.Log != log {
+			t.Errorf("Default(), CONFLUX_DIR %s = %+v, want everything in %s, the log in %q", name, d, root, log)
+		}
 	}
 }
 
@@ -164,21 +181,14 @@ func TestClearExceptSaysWhatItRemoved(t *testing.T) {
 }
 
 // TestOneTestOfWhatIsInsideWhat: the roots conflux holds and removes are those inside no other, each
-// once, the system's shared log directory never among them; a directory is inside a root only below
-// it, a name that merely starts with ".." included; and the folders Way takes from the record are
-// those above a root of conflux's, never one above the shared log directory alone, which conflux does
-// not make.
+// once; a directory is inside a root only below it, a name that merely starts with ".." included; and the
+// folders Way takes from the record are those above a root of conflux's.
 func TestOneTestOfWhatIsInsideWhat(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "conflux")
-	shared := filepath.Join(base, "log", "shared")
+	elsewhere := filepath.Join(base, "log", "elsewhere")
 
-	was := sharedLog
-	t.Cleanup(func() { sharedLog = was })
-
-	sharedLog = shared
-
-	d := Dirs{Config: root, State: root, Run: filepath.Join(root, "run"), Log: shared}
+	d := Dirs{Config: root, State: root, Run: filepath.Join(root, "run"), Log: filepath.Join(root, "logs")}
 	if got := d.Outer(); !slices.Equal(got, []string{root}) {
 		t.Errorf("Outer() = %q, want %q", got, []string{root})
 	}
@@ -193,7 +203,7 @@ func TestOneTestOfWhatIsInsideWhat(t *testing.T) {
 		filepath.Join(root, "..x"):       true,
 		root:                             false,
 		filepath.Join(base, "other"):     false,
-		filepath.Join(shared, "x"):       false,
+		filepath.Join(elsewhere, "x"):    false,
 	} {
 		if got := d.Inside(dir); got != want {
 			t.Errorf("Inside(%s) = %v, want %v", dir, got, want)
@@ -208,12 +218,11 @@ func TestOneTestOfWhatIsInsideWhat(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := os.WriteFile(filepath.Join(root, wayName), []byte(base+"\n"+filepath.Dir(shared)+"\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, wayName), []byte(base+"\n"+filepath.Dir(elsewhere)+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	if way, err := d.Way(); err != nil || !slices.Equal(way, []string{base}) {
-		t.Errorf("Way() = %q, %v, want %q, and nothing above the shared log directory alone", way, err,
-			[]string{base})
+		t.Errorf("Way() = %q, %v, want %q, and nothing above no root", way, err, []string{base})
 	}
 }

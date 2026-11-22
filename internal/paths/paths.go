@@ -6,12 +6,14 @@
 // service cannot read, and a home directory is wrong under a unit with User=, wrong
 // under ProtectHome=, and wrong for anyone who ran conflux with sudo -H.
 //
-// Four roots, because they have four lifetimes:
+// One folder, DirName, holds all of it, on every platform: in the system's data folder
+// (systemData) by default, and in a CONFLUX_DIR where one is set. Four directories inside it,
+// because they have four lifetimes:
 //
-//   - Config  what the operator asked for. Survives everything but uninstall.
-//   - State   what conflux derived, plus the identity. Survives a reboot.
-//   - Run     the socket, the token and the readiness marker. Emptied by the system at
-//     boot on most platforms, and by systemd whenever the service stops.
+//   - Config  what the operator asked for. Survives everything but uninstall. The root itself.
+//   - State   what conflux derived, plus the identity. Survives a reboot. The root itself.
+//   - Run     the socket, the token and the readiness marker. The supervisor clears what a
+//     run before it left as it starts.
 //   - Log     where the boot service's output goes, on the platforms where it goes to a
 //     file: empty where the service manager keeps it (journald, syslog).
 package paths
@@ -46,32 +48,39 @@ type Dirs struct {
 	serving bool
 }
 
-// Default is where this platform keeps them.
+// Default is where conflux keeps them: DirName, in the folder base names -- a CONFLUX_DIR, or the
+// system's data folder.
 //
-// CONFLUX_DIR overrides all four at once, rooting them in one directory, DirName, which conflux
-// makes inside it. That is what the tests use, and what a second installation beside the machine's
-// own is rooted in, its boot service included; see Root. It changes where conflux keeps things and
-// not what it needs: the verbs that change anything still need root.
-func Default() Dirs {
+// CONFLUX_DIR moves all of it at once, the same layout in another folder. That is what the tests use,
+// and what a second installation beside the machine's own is rooted in, its boot service included; see
+// Root. It changes where conflux keeps things and not what it needs: the verbs that change anything
+// still need root.
+func Default() Dirs { return rootedAt(filepath.Join(base(), DirName)) }
+
+// base is the folder the installation's root, DirName, is in: the CONFLUX_DIR (Root), or else the
+// system's data folder (systemData) -- /var/lib on Linux, /var/db on the BSDs, /Library/Application
+// Support on macOS, %ProgramData% on Windows. Either is never changed and never judged: the system's is
+// the system's, and a CONFLUX_DIR is the user's choice.
+func base() string {
 	if root := Root(); root != "" {
-		return rootedAt(filepath.Join(root, DirName))
+		return root
 	}
 
-	return platformDirs()
+	return systemData()
 }
 
-// DirName is the folder conflux makes inside a CONFLUX_DIR and keeps all of its own in: the
-// configuration and the state, and its run and log directories inside it. The CONFLUX_DIR itself is
-// never changed, so a folder of the user's -- their home, say -- can be one.
+// DirName is the folder conflux makes in the system's data folder, or inside a CONFLUX_DIR, and keeps
+// all of its own in: the configuration and the state, and its run and log directories inside it. The
+// folder it is in is never changed, so a folder of the user's -- their home, say -- can be a CONFLUX_DIR.
 const DirName = ".conflux"
 
-// rootedAt is the Dirs of an installation rooted in the one directory root, as a CONFLUX_DIR's is: the
-// configuration and the state in it, and the run and log directories inside it -- a log directory of its
-// own only where the platform writes the service's output to a file at all: where journald or syslog keeps
-// it, nothing would write there.
+// rootedAt is the Dirs of an installation rooted in the one directory root: the configuration and the
+// state in it, and the run and log directories inside it -- a log directory only where the platform
+// writes the service's output to a file at all (logsToFile): where journald or syslog keeps it, nothing
+// would write there.
 func rootedAt(root string) Dirs {
 	log := ""
-	if platformDirs().Log != "" {
+	if logsToFile {
 		log = filepath.Join(root, "logs")
 	}
 
@@ -83,14 +92,8 @@ func rootedAt(root string) Dirs {
 	}
 }
 
-// runName is the run directory's name inside a root that holds it: a CONFLUX_DIR's, an
-// ephemeral run's, and Windows's own.
+// runName is the run directory's name inside a root: an installation's, and an ephemeral run's.
 const runName = "run"
-
-// sharedLog is the system's own log directory, which macOS and FreeBSD put the service's
-// log file in. conflux writes a file there and never creates, narrows or claims the
-// directory itself. A variable so a test can stand one in.
-var sharedLog = "/var/log"
 
 // socketName is anchord's control socket, an AF_UNIX socket on every platform, inside a
 // directory of anchord's own (DaemonRun). Four letters, so the path is exactly as long as
@@ -98,13 +101,13 @@ var sharedLog = "/var/log"
 // under /var/folders is already most of that.
 const socketName = "sock"
 
-// Root is the CONFLUX_DIR override, or "" when this is an ordinary system install.
+// Root is the CONFLUX_DIR override, or "" when this is the machine's own installation.
 //
 // Exported because the boot service has to know. A run rooted somewhere else is a
 // separate installation of conflux, not the machine's own, and registering it under
 // the machine's own service name would replace a real node with a test one -- so the
 // service package names itself after this, and passes it on to the supervisor it
-// registers, which would otherwise come back at boot reading /etc/conflux.
+// registers, which would otherwise come back at boot reading the machine's own.
 //
 // Absolute and clean, whatever was typed: it is written into the service definition as
 // the --dir the supervisor comes back with, and hashed into the service's name, so
@@ -213,9 +216,9 @@ func (d Dirs) PrivilegeFile() string { return filepath.Join(d.State, "anchord.pr
 // LockFile serialises everything that rewrites the manifest or the state: a bring-up,
 // the renewal timer, `conflux renew`, `conflux enrol`, and the uplink watcher's count.
 //
-// Beside the state rather than in Run, which systemd removes and makes again whenever the
-// service stops and starts: a `conflux renew` that spanned a restart would hold the old
-// file's lock while the new supervisor took the new one's, and the two would renew at once.
+// Beside the state rather than in Run, which an update empties (tidy): a `conflux renew` that
+// spanned it would hold the old file's lock while the new supervisor took the new one's, and the
+// two would renew at once.
 func (d Dirs) LockFile() string { return filepath.Join(d.State, "conflux.lock") }
 
 // ServeLockFile is held by the one supervisor serving this root for as long as it runs.
@@ -243,22 +246,20 @@ func (d Dirs) LogFile() string {
 // It is what lets `conflux up` learn the anchor is up the moment it happens; see
 // internal/daemon/ready.go.
 //
-// In Run rather than State, because a marker must not outlive the thing it describes.
-// systemd's RuntimeDirectory= clears it on stop and the BSDs and macOS clear /var/run at
-// boot -- %ProgramData%\conflux\run on Windows survives both, which is why the
-// supervisor also clears it on the way up rather than relying on the directory's
-// lifetime alone.
+// In Run rather than State, because a marker must not outlive the thing it describes. The
+// run directory survives a reboot, inside the root on disk, so the supervisor clears the
+// marker on the way up rather than relying on the directory's lifetime.
 func (d Dirs) ReadyFile() string { return filepath.Join(d.Run, "ready") }
 
 // EnsureAll makes the four roots, each a folder conflux's by its name, as conflux makes them: 0700,
 // and on Windows the Administrators' under a protected DACL granting SYSTEM and the Administrators
 // alone, which what is made in it inherits.
 //
-// A root not there is made, with each folder missing on the way to it, and those on a CONFLUX_DIR's way
-// (chosenWay) recorded in the state root (recordWay) for uninstall, or an ephemeral run as it ends, to
-// remove whole (Way, RemoveWay). Any other folder made on the way -- one a platform's root, or an
-// ephemeral run's, is made in, such as a user's cache or runtime directory, or a home -- is the
-// system's, which other programs fill too, and is not recorded. Whatever is at a root's
+// A root not there is made, with each folder missing on the way to it, and those on the way to the
+// installation's root (chosenWay) recorded in the state root (recordWay) for uninstall, or an ephemeral
+// run as it ends, to remove whole (Way, RemoveWay). Any other folder made on the way -- one an ordinary
+// user's ephemeral run's root is made in, such as their cache or runtime directory -- is the system's,
+// which other programs fill too, and is not recorded. Whatever is at a root's
 // name and is not as conflux makes a root -- a link, a file, a folder another account owns or may write
 // (ours) -- is removed as itself from the folder it is in, and the root made afresh: a root is conflux's
 // whole, and nothing in it is kept for anybody. Each folder conflux keeps in a root (folders) is judged
@@ -266,8 +267,7 @@ func (d Dirs) ReadyFile() string { return filepath.Join(d.Run, "ready") }
 // state, the identity, the lock files, the copy of conflux the boot service runs -- is judged so too, and
 // removed where it is not as conflux makes it, for what writes it to make afresh. A CONFLUX_DIR itself,
 // and every folder above a root, is never changed and never judged: choosing a CONFLUX_DIR is the
-// user's. The system's shared log directory, which macOS and FreeBSD keep the service's log in, is not
-// conflux's, and is left alone.
+// user's.
 func (d Dirs) EnsureAll() error {
 	var made []string
 
@@ -686,13 +686,15 @@ func holdsAnything(dir string) bool {
 	return len(names) > 0
 }
 
-// chosenWay reports whether dir is on the way to a CONFLUX_DIR's root: the CONFLUX_DIR, a folder above
-// it, or one inside it -- of which conflux makes, on the way to a root, only the .conflux an ephemeral
-// run's root is made in. The folders made on the way that EnsureAll records.
+// chosenWay reports whether dir is on the way to the installation's root and conflux's to remove once
+// it made it: one inside the folder that root is in (base) -- the .conflux an ephemeral run's root is
+// made in -- and, under a CONFLUX_DIR, the CONFLUX_DIR and every folder above it. The system's data
+// folder, and what is above it, is the system's, recorded never, whoever made it. The folders made on
+// the way that EnsureAll records.
 func chosenWay(dir string) bool {
-	root := Root()
+	b := base()
 
-	return root != "" && (filepath.Clean(dir) == root || above(root, dir) || above(dir, root))
+	return above(b, dir) || Root() != "" && (filepath.Clean(dir) == b || above(dir, b))
 }
 
 // above reports whether dir is a folder strictly above path, by their names (filepath.Rel), neither
@@ -703,8 +705,7 @@ func above(dir, path string) bool {
 	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-// aboveRoot reports whether dir is a folder strictly above one of d's roots (roots), the system's
-// shared log directory not among them.
+// aboveRoot reports whether dir is a folder strictly above one of d's roots (roots).
 func (d Dirs) aboveRoot(dir string) bool {
 	for root := range d.roots() {
 		if above(dir, root) {
@@ -1023,8 +1024,7 @@ var errNotDir = fmt.Errorf("%w", syscall.ENOTDIR)
 var opening = func(string) {}
 
 // Outer is each of d's roots that sits inside no other (roots), once: the ones conflux makes, judges
-// and removes, taking those inside with them -- run and logs on Windows and in a CONFLUX_DIR. The
-// system's shared log directory, which macOS and FreeBSD keep the service's log in, is never one.
+// and removes, taking those inside with them -- run and logs.
 func (d Dirs) Outer() []string {
 	var outer []string
 
@@ -1038,7 +1038,7 @@ func (d Dirs) Outer() []string {
 }
 
 // Inside reports whether dir sits strictly inside one of d's roots (roots, above): an ephemeral run's
-// root inside a CONFLUX_DIR's, or a log directory inside the state root, which goes with it.
+// root inside the installation's, or a log directory inside the state root, which goes with it.
 func (d Dirs) Inside(dir string) bool {
 	for root := range d.roots() {
 		if above(root, dir) {
@@ -1049,15 +1049,14 @@ func (d Dirs) Inside(dir string) bool {
 	return false
 }
 
-// roots is each of d's directories that is conflux's, once: every one set but the system's shared
-// log directory -- Config and State are one directory on macOS, Windows and under CONFLUX_DIR --
-// and whether it sits inside another of them, which holds it.
+// roots is each of d's directories, once -- Config and State are one directory -- and whether it sits
+// inside another of them, which holds it.
 func (d Dirs) roots() iter.Seq2[string, bool] {
 	return func(yield func(string, bool) bool) {
 		dirs := []string{d.Config, d.State, d.Run, d.Log}
 
 		for i, dir := range dirs {
-			if dir == "" || dir == sharedLog || slices.Contains(dirs[:i], dir) {
+			if dir == "" || slices.Contains(dirs[:i], dir) {
 				continue
 			}
 

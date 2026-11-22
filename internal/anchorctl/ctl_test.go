@@ -40,7 +40,7 @@ func TestConfluxsOwnCallsReachConfluxsDaemon(t *testing.T) {
 	t.Setenv(SocketEnv, "/run/other/anchord.sock")
 	t.Setenv(TokenEnv, "theirs")
 
-	c := &Ctl{Socket: "/run/conflux/anchord.sock", Token: "ours"}
+	c := &Ctl{Socket: "/var/lib/.conflux/run/anchord/sock", Token: "ours"}
 
 	values := func(env []string, name string) []string {
 		var got []string

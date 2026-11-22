@@ -2,7 +2,7 @@ start
 -manifest
 -
 -dir
-/var/lib/conflux/anchor
+/var/lib/.conflux/anchor
 -low-latency=true
 -tun=true
 -serve-exit=false

@@ -442,50 +442,6 @@ func TestARunTakingAKilledRunsRootKeepsIt(t *testing.T) {
 	}
 }
 
-// TestUninstallRemovesTheSharedLog: the service's log, where the platform keeps it in the system's own
-// log directory, outside conflux's roots -- /var/log on macOS and FreeBSD -- is removed with the one
-// moved aside, and the directory, which is not conflux's, and whatever else is in it, are kept; a log
-// directory inside a root goes with the root, and is not reached for here.
-func TestUninstallRemovesTheSharedLog(t *testing.T) {
-	root := t.TempDir()
-	state := filepath.Join(root, "conflux")
-
-	for name, d := range map[string]paths.Dirs{
-		"outside the roots": {Config: state, State: state, Run: filepath.Join(state, "run"), Log: filepath.Join(root, "log")},
-		"inside a root":     {Config: state, State: state, Run: filepath.Join(state, "run"), Log: filepath.Join(state, "logs")},
-	} {
-		t.Run(name, func(t *testing.T) {
-			other := filepath.Join(d.Log, "other.log")
-
-			for _, p := range []string{d.LogFile(), d.LogFile() + ".1", other} {
-				if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
-					t.Fatal(err)
-				}
-
-				if err := os.WriteFile(p, []byte("a line"), 0o600); err != nil {
-					t.Fatal(err)
-				}
-			}
-
-			if err := removeSharedLog(d); err != nil {
-				t.Fatal(err)
-			}
-
-			outside := name == "outside the roots"
-
-			for _, p := range []string{d.LogFile(), d.LogFile() + ".1"} {
-				if _, err := os.Lstat(p); outside != errors.Is(err, fs.ErrNotExist) {
-					t.Errorf("%s: %s (Lstat: %v), want it removed only outside the roots", name, p, err)
-				}
-			}
-
-			if _, err := os.Lstat(other); err != nil {
-				t.Errorf("%s: removed %s, which is not conflux's: %v", name, other, err)
-			}
-		})
-	}
-}
-
 // TestUninstallStopsWhereARootsWayCannotBeWalked: a CONFLUX_DIR beneath a file has a way conflux cannot
 // walk (WalkWays), so uninstall says it stopped there, before it acted, exit 1, the boot service not
 // removed; the file is left as it was.

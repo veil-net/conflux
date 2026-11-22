@@ -29,7 +29,7 @@ func shParses(t *testing.T, script string) {
 }
 
 func TestFreeBSDScript(t *testing.T) {
-	script, err := freebsdScript("conflux", "/var/db/conflux/conflux", []string{"serve"}, "/var/log/conflux.log")
+	script, err := freebsdScript("conflux", "/var/db/.conflux/conflux", []string{"serve"}, "/var/db/.conflux/logs/conflux.log")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,8 +38,8 @@ func TestFreeBSDScript(t *testing.T) {
 		"# PROVIDE: conflux",
 		"# KEYWORD: shutdown",
 		"rcvar=conflux_enable",
-		"procname=/var/db/conflux/conflux\n",
-		`command_args="-f -o /var/log/conflux.log -p ${pidfile} /var/db/conflux/conflux serve"`,
+		"procname=/var/db/.conflux/conflux\n",
+		`command_args="-f -o /var/db/.conflux/logs/conflux.log -p ${pidfile} /var/db/.conflux/conflux serve"`,
 		`: "${conflux_enable:=NO}"`,
 	} {
 		if !strings.Contains(script, want) {
@@ -56,13 +56,13 @@ func TestFreeBSDScript(t *testing.T) {
 }
 
 func TestOpenBSDScript(t *testing.T) {
-	script, err := openbsdScript("/var/db/conflux/conflux", []string{"serve", "--dir", "/srv/conflux-dev"})
+	script, err := openbsdScript("/var/db/.conflux/conflux", []string{"serve", "--dir", "/srv/conflux-dev"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	for _, want := range []string{
-		"daemon=/var/db/conflux/conflux\n",
+		"daemon=/var/db/.conflux/conflux\n",
 		`daemon_flags="serve --dir /srv/conflux-dev"`,
 		"daemon_logger=daemon.info",
 		". /etc/rc.d/rc.subr",

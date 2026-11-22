@@ -25,29 +25,6 @@ func mode(t *testing.T, dir string) os.FileMode {
 	return fi.Mode().Perm()
 }
 
-// TestEnsureAllLeavesTheSharedLogAlone: macOS and FreeBSD write the service's log into the
-// system's /var/log, which is not conflux's to change.
-func TestEnsureAllLeavesTheSharedLogAlone(t *testing.T) {
-	shared := t.TempDir()
-	if err := os.Chmod(shared, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	defer func(was string) { sharedLog = was }(sharedLog)
-	sharedLog = shared
-
-	root := t.TempDir()
-	d := Dirs{Config: root, State: root, Run: filepath.Join(root, "run"), Log: shared}
-
-	if err := d.EnsureAll(); err != nil {
-		t.Fatal(err)
-	}
-
-	if got := mode(t, shared); got != 0o755 {
-		t.Errorf("the shared log directory became %#o; conflux must leave it as the system made it", got)
-	}
-}
-
 // realTempDir is t.TempDir as the walk names it, no link on the way to it: a TMPDIR behind a link -- on
 // macOS /var/folders, under /private -- is named by where the link leads in what the walk names.
 func realTempDir(t *testing.T) string {

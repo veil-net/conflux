@@ -76,11 +76,11 @@ be flagged, and know the mitigations:
 
 - Released binaries are not Authenticode-signed, so SmartScreen has no publisher
   reputation to go on; each release carries a build-provenance attestation instead.
-- Extraction goes to a stable path under `%ProgramData%\conflux\bin`, not a random
+- Extraction goes to a stable path under `%ProgramData%\.conflux\bin`, not a random
   temporary one — reputation attaches to paths and publishers.
 - `conflux version` prints both anchor digests, so what was written can be checked
   against the release notes.
-- If you need an exclusion, `%ProgramData%\conflux\bin` is the directory.
+- If you need an exclusion, `%ProgramData%\.conflux\bin` is the directory.
 
 If the extracted binaries will not run at all, conflux says so and names endpoint
 protection as the likely cause rather than reporting a bare permission error.
@@ -106,13 +106,14 @@ they own.
 Mode bits do not exist on Windows in the sense Go's `Chmod` implies — a call to
 `Chmod(0600)` sets the read-only attribute and nothing else — and `%ProgramData%` lets
 `Users` read everything below it and create files and folders in it. So conflux makes
-`%ProgramData%\conflux` belong to SYSTEM and Administrators instead: Administrators own
+`%ProgramData%\.conflux` belong to SYSTEM and Administrators instead: Administrators own
 it, and a protected DACL grants the two of them full control and nobody else anything,
 inherited by everything beneath. Both are set as the directory is created, so it never
 carries `%ProgramData%`'s grant to `Users` — enough to turn an empty directory into a
 junction — not even for an instant. Every secret file gets the same, explicitly, before
 anything is written into it. A `CONFLUX_DIR`'s root, `.conflux` inside the folder it names, an
-ephemeral run's root, and the folders conflux makes on the way to a `CONFLUX_DIR` are made the same.
+ephemeral run's root, `ephemeral` inside the installation's, and the folders conflux makes on the way
+to a `CONFLUX_DIR` are made the same.
 
 Everything else conflux makes in a root or on the way to one — `logs\`, the lock files,
 `bin\` and its lock, the service's copy of conflux, the log — is the Administrators' as well,
@@ -133,7 +134,7 @@ never trusted by its SID, for an installation's root, which the boot service run
 trusting no other account, and an ephemeral run's, which only an elevated conflux makes or can open,
 alike: its processes that are not elevated could have made one first in `%ProgramData%` and filled
 it, so one the administrator running conflux owns, or that grants them a right, is not conflux's. Anything else at the name — a folder another account made, as
-`%ProgramData%` lets any account make `conflux` or `conflux-ephemeral` first, one that inherits
+`%ProgramData%` lets any account make `.conflux` first, one that inherits
 `%ProgramData%`'s grants, a junction, a file — is removed as itself by every command that makes a
 root, through a handle on the folder it is in, never followed, opened to delete it and read its
 attributes alone, a folder to list it too, with the backup intent the privileges an Administrator
@@ -188,7 +189,7 @@ SYSTEM's and Administrators' instead, made the same way, with that security as t
 
 `conflux up --ephemeral` and `conflux proxy --ephemeral` need Administrator on Windows,
 whatever the mode: every directory conflux keeps there, the ephemeral run's
-`%ProgramData%\conflux-ephemeral` included, is SYSTEM's and Administrators'. anchord runs
+`%ProgramData%\.conflux\ephemeral` included, is SYSTEM's and Administrators'. anchord runs
 as that Administrator, in conflux's job object, so it ends however conflux does. See
 [ephemeral.md](ephemeral.md).
 

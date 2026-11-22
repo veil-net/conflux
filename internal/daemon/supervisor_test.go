@@ -840,7 +840,7 @@ func TestTheKeeperBacksOff(t *testing.T) {
 // either; a daemon that does not answer yet is waited for.
 func TestWhatAProbeCannotRecoverFrom(t *testing.T) {
 	for name, err := range map[string]error{
-		"a socket conflux may not reach": fmt.Errorf("dial unix /run/conflux/anchord/sock: %w", os.ErrPermission),
+		"a socket conflux may not reach": fmt.Errorf("dial unix /var/lib/.conflux/run/anchord/sock: %w", os.ErrPermission),
 		"a token anchord refuses":        &anchorctl.Error{Args: []string{"status"}, Stderr: "anchorctl: unauthenticated: bad token"},
 	} {
 		if err := probeIsFatal(err); !Permanent(err) {
@@ -849,7 +849,7 @@ func TestWhatAProbeCannotRecoverFrom(t *testing.T) {
 	}
 
 	for name, err := range map[string]error{
-		"nothing listening yet": fmt.Errorf("dial unix /run/conflux/anchord/sock: %w", os.ErrNotExist),
+		"nothing listening yet": fmt.Errorf("dial unix /var/lib/.conflux/run/anchord/sock: %w", os.ErrNotExist),
 		"a status that failed":  &anchorctl.Error{Args: []string{"status"}, Stderr: "anchorctl: connection refused"},
 	} {
 		if err := probeIsFatal(err); err != nil {

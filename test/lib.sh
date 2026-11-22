@@ -39,5 +39,5 @@ creds() { # NODE [PATTERN]
             END { printf "uid=%s caps=%s nnp=%s groups=%s\n", u, c, n, g }'\'' "$p/status" ;;
       esac
     done
-    exit 1' "${2:-/var/lib/conflux/bin/*/anchord}"
+    exit 1' "${2:-/var/lib/.conflux/bin/*/anchord}"
 }

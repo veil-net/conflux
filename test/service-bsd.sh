@@ -17,16 +17,16 @@ CONFLUX=${1:?usage: test/service-bsd.sh CONFLUX}
 say() { printf '\n== %s\n' "$*"; }
 fail() { echo "$*" >&2; exit 1; }
 
+state=/var/db/.conflux
+priv=$state/anchord.priv
+
 case "$(uname -s)" in
-  FreeBSD) os=freebsd account=conflux script=/usr/local/etc/rc.d/conflux log=/var/log/conflux.log
+  FreeBSD) os=freebsd account=conflux script=/usr/local/etc/rc.d/conflux log=$state/logs/conflux.log
     fips='fips140 on, Go Cryptographic Module v1.26.0' ;;
   OpenBSD) os=openbsd account=_conflux script=/etc/rc.d/conflux log=/var/log/daemon
     fips='fips140 off, this build carries no frozen Go Cryptographic Module' ;;
   *) fail "service-bsd.sh is for FreeBSD and OpenBSD" ;;
 esac
-
-state=/var/db/conflux
-priv=$state/anchord.priv
 
 rc() { # VERB
   if [ "$os" = freebsd ]; then service conflux "$1"; else rcctl "$1" conflux; fi
@@ -137,7 +137,7 @@ configure() { # MODE [FIELDS]
   extra='"proxies":["8080=127.0.0.1:3000"],'
   [ "$1" = tun ] && extra=''
   (umask 077; printf '%s\n' "{\"version\":1,\"mode\":\"$1\",$extra${2:+$2,}\"taints\":[\"cfx-service-bsd\"],\"apiBaseUrl\":\"https://127.0.0.1:9443\",\"createdAt\":\"2026-01-01T00:00:00Z\",\"updatedAt\":\"2026-01-01T00:00:00Z\"}" \
-    > /usr/local/etc/conflux/conflux.json)
+    > "$state/conflux.json")
 }
 
 # started starts the service afresh and waits for the record of what the supervisor
@@ -182,7 +182,7 @@ done
 [ "$(stat -f '%Sp %Su %Sg' "$state")" = "drwx--x--- root $account" ] \
   || fail "the state directory is $(stat -f '%Sp %Su %Sg' "$state"), want root's with $account let through"
 [ "$(stat -f '%Su' "$state/anchor")" = "$account" ] || fail "anchord's directory is not $account's"
-[ "$(stat -f '%Sp %Su' /var/run/conflux/token)" = "-rw------- root" ] || fail "the token is not root's alone"
+[ "$(stat -f '%Sp %Su' "$state/run/token")" = "-rw------- root" ] || fail "the token is not root's alone"
 
 # A port below 1024 is root's on both, and a TUN is root's: anchord stays root for each,
 # and says why.
@@ -227,7 +227,7 @@ esac
 # start for it to end with conflux, and the next ephemeral run stops it. The API answers
 # nothing, so anchord is up and the run waits on its enrolment when it is killed.
 say "an ephemeral run killed outright: the next one stops the anchord it left"
-eroot=/var/run/conflux-ephemeral
+eroot=$state/ephemeral
 eph_start() {
   "$CONFLUX" proxy --ephemeral --api https://127.0.0.1:9443 --no-ipv4 --taint cfx-bsd 8080=127.0.0.1:1 \
     >/tmp/ephemeral.log 2>&1 &
@@ -261,16 +261,14 @@ id "$eaccount" >/dev/null 2>&1 || fail "no $eaccount account was made for the ep
 say "uninstall leaves nothing"
 "$CONFLUX" uninstall --yes
 [ ! -e "$script" ] || fail "the rc script survived uninstall"
-for path in /usr/local/etc/conflux "$state" /var/run/conflux; do
-  [ ! -e "$path" ] || fail "$path survived uninstall"
-done
+[ ! -e "$state" ] || fail "$state survived uninstall"
 if id "$eaccount" >/dev/null 2>&1; then
   fail "the $eaccount account survived uninstall"
 fi
 if id "$account" >/dev/null 2>&1; then
   fail "the $account account survived uninstall"
 fi
-# Uninstall disables the service, and on FreeBSD removes the log conflux writes there itself,
+# Uninstall disables the service, and on FreeBSD removes the log conflux writes itself, with its root,
 # ignoring what either says, so their outcome is read here. OpenBSD's rcctl lists only services
 # whose script is in /etc/rc.d, which uninstall has removed, so a disable that failed shows in
 # rc.conf.local alone.

@@ -18,7 +18,7 @@ import (
 // next run can stop an anchord a killed one left, and `conflux status` from another
 // terminal can find the socket.
 
-// ephemeralName is the root's name, beside the machine's own directories.
+// ephemeralName is the root's name in an ordinary user's own directories.
 const ephemeralName = "conflux-ephemeral"
 
 // EphemeralDirs are the four roots of an ephemeral run kept in root: Config and State the
@@ -29,27 +29,16 @@ func EphemeralDirs(root string) Dirs {
 	return Dirs{Config: root, State: root, Run: filepath.Join(root, runName), ephemeral: true}
 }
 
-// EphemeralCandidates are where an ephemeral run may be kept, in the order one is chosen:
-// a filesystem in memory where the platform has one, and then one on disk, for a host that
-// mounts the first noexec. Both are looked in for a run that is live.
+// EphemeralCandidates are where an ephemeral run may be kept, in the order one is chosen.
 //
-// Per identity, because the user running conflux decides what it may write: root's under
-// the system's run directory, anybody else's under their own. Under CONFLUX_DIR, inside its
-// installation's root, DirName, and nowhere else.
+// Per identity, because the user running conflux decides what it may write: root's, and an elevated
+// administrator's on Windows, inside the installation's root, DirName, as under a CONFLUX_DIR, which
+// every run keeps it in; anybody else's under their own runtime directory, a filesystem in memory where
+// the platform has one, and then their cache directory, for a host that mounts the first noexec. Both
+// are looked in for a run that is live.
 func EphemeralCandidates() []string {
-	if Root() != "" {
+	if Root() != "" || runtime.GOOS == "windows" || os.Geteuid() == 0 {
 		return []string{filepath.Join(Default().State, "ephemeral")}
-	}
-
-	if runtime.GOOS == "windows" {
-		return []string{filepath.Join(filepath.Dir(platformDirs().State), ephemeralName)}
-	}
-
-	if os.Geteuid() == 0 {
-		return []string{
-			filepath.Join(ephemeralRunBase(), ephemeralName),
-			platformDirs().State + "-ephemeral",
-		}
 	}
 
 	var roots []string
@@ -65,15 +54,6 @@ func EphemeralCandidates() []string {
 	}
 
 	return roots
-}
-
-// ephemeralRunBase is the system's directory of runtime files, which a reboot empties.
-func ephemeralRunBase() string {
-	if runtime.GOOS == "linux" {
-		return "/run"
-	}
-
-	return "/var/run"
 }
 
 // Ephemeral is the root a new ephemeral run is kept in: the first candidate on a filesystem that lets

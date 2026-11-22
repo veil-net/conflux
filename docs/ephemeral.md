@@ -23,7 +23,7 @@ Starting an ephemeral anchor: nothing is saved, and when it stops nothing of it 
   taint        brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf
   credential   valid until 2026-12-01T07:54:04Z (29d 23h)
   anchord      conflux-ephemeral, with CAP_NET_ADMIN for its interface
-  ephemeral    in memory alone; /run/conflux-ephemeral holds the socket and the binaries, and goes with the run
+  ephemeral    in memory alone; /var/lib/.conflux/ephemeral holds the socket and the binaries, and goes with the run
 
 Running in the foreground. Ctrl-C stops it and removes what it made; conflux status, from another terminal, reports it.
 ^C
@@ -98,10 +98,8 @@ One fixed directory per user, made when the run starts and removed when it ends:
 
 | Started as | Root |
 |---|---|
-| root on Linux | `/run/conflux-ephemeral`, or `/var/lib/conflux-ephemeral` where `/run` is mounted `noexec` |
-| root on macOS and the BSDs | `/var/run/conflux-ephemeral`, or beside the state directory where that is `noexec` |
+| root, or Administrator on Windows | `ephemeral` in the installation's root: `/var/lib/.conflux/ephemeral`, `/var/db/.conflux/ephemeral` on the BSDs, `/Library/Application Support/.conflux/ephemeral`, `%ProgramData%\.conflux\ephemeral` |
 | an ordinary user | `$XDG_RUNTIME_DIR/conflux-ephemeral` (or `/tmp/conflux-ephemeral-UID`), then the user's cache directory |
-| Windows | `%ProgramData%\conflux-ephemeral` |
 | `CONFLUX_DIR` set | `$CONFLUX_DIR/.conflux/ephemeral` |
 
 A `CONFLUX_DIR`, and every folder above a root, is never changed and never judged: choosing it is
@@ -109,11 +107,11 @@ your responsibility, and conflux owns `.conflux` inside it, which it remakes as 
 
 It holds the lock that makes it the only ephemeral run for that user, the bearer token and
 the socket, the record of the anchord it started and what that runs as, the extracted pair,
-and, under `CONFLUX_DIR`, the record of the folders the run made on the way to it — the
-`.conflux` it made there, and the `CONFLUX_DIR` where it made that too — which go with the root
-when the run ends, whole, whatever was put in them, but for a `.conflux` that holds anything once the
-run's root is gone, as one an installation has been made in since does, which is left with the
-`CONFLUX_DIR` holding it: never a credential, a configuration or a state. A folder the run had to make on the way to a root anywhere else — the user's cache or
+and, inside the installation's root, the record of the folders the run made on the way to it — the
+`.conflux` it made, and under `CONFLUX_DIR` the `CONFLUX_DIR` where it made that too — which go with
+the root when the run ends, whole, whatever was put in them, but for a `.conflux` that holds anything
+once the run's root is gone, as one an installation has been made in since does, which is left with
+the folder holding it: never a credential, a configuration or a state. A folder the run had to make on the way to a root anywhere else — the user's cache or
 runtime directory, say — is the system's, which other programs fill too: it is not recorded, and
 it stays. The root is conflux's by its name: made as
 conflux makes one, `0700` and the account's own, and whatever is at its name that is not — a link,

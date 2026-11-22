@@ -210,11 +210,9 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	}
 
 	// Before anything else can be asked about, because nothing is up yet and a marker
-	// saying otherwise is a lie the whole mechanism rests on not telling. Two of the
-	// three platforms clear the run directory for us -- systemd's RuntimeDirectory= on
-	// stop, and /var/run at boot on macOS -- and Windows does not: %ProgramData%\conflux
-	// \run survives a reboot, so a marker written before a power cut would still be
-	// there when this starts.
+	// saying otherwise is a lie the whole mechanism rests on not telling. The run
+	// directory is inside the root, on disk, and survives a reboot, so a marker written
+	// before a power cut would still be there when this starts.
 	s.clearReady()
 
 	// Nothing to supervise, or nothing it will start on, before anything is extracted.

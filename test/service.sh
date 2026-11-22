@@ -52,12 +52,12 @@ docker exec "$NAME" conflux install
 # the file conflux was run from -- here /usr/local/bin, elsewhere a download anybody
 # might be able to swap.
 say "the unit runs the root-only copy of conflux"
-docker exec "$NAME" systemctl show -p ExecStart --value conflux.service | grep 'path=/var/lib/conflux/conflux ' >/dev/null \
-  || { echo "the unit does not run /var/lib/conflux/conflux:" >&2
+docker exec "$NAME" systemctl show -p ExecStart --value conflux.service | grep 'path=/var/lib/.conflux/conflux ' >/dev/null \
+  || { echo "the unit does not run /var/lib/.conflux/conflux:" >&2
        docker exec "$NAME" systemctl show -p ExecStart --value conflux.service >&2; exit 1; }
-[ "$(docker exec "$NAME" stat -c '%a %U' /var/lib/conflux/conflux)" = "700 root" ] \
+[ "$(docker exec "$NAME" stat -c '%a %U' /var/lib/.conflux/conflux)" = "700 root" ] \
   || { echo "the service's copy is not root's alone:" >&2
-       docker exec "$NAME" stat -c '%a %U' /var/lib/conflux/conflux >&2; exit 1; }
+       docker exec "$NAME" stat -c '%a %U' /var/lib/.conflux/conflux >&2; exit 1; }
 
 # An API that answers nothing: systemd accepts each connection and hands it to a sleep, so
 # an enrolment waits out its timeout, and anchord stays up while it does. An address that
@@ -80,7 +80,7 @@ docker exec "$NAME" sh -c 'systemctl daemon-reload && systemctl start silent.soc
 configure() { # MODE [FIELDS]
   local extra=''
   [ "$1" = proxy ] && extra='"proxies":["8080=127.0.0.1:3000"],'
-  docker exec -i "$NAME" sh -c "umask 077; cat > /etc/conflux/conflux.json" <<JSON
+  docker exec -i "$NAME" sh -c "umask 077; cat > /var/lib/.conflux/conflux.json" <<JSON
 {"version":1,"mode":"$1",$extra${2:+$2,}"taints":["cfx-service-test"],"apiBaseUrl":"https://127.0.0.1:9443","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}
 JSON
 }
@@ -147,20 +147,20 @@ check_mode() { # PATH WANT
   [ "$(docker exec "$NAME" stat -c '%a %U %G' "$1")" = "$2" ] \
     || { echo "$1 is $(docker exec "$NAME" stat -c '%a %U %G' "$1"), want $2" >&2; exit 1; }
 }
-check_mode /var/lib/conflux "710 root conflux"
-check_mode /run/conflux "710 root conflux"
-check_mode /var/lib/conflux/anchor "700 conflux conflux"
-check_mode /run/conflux/anchord "700 conflux conflux"
-check_mode /var/lib/conflux/anchord.json "600 conflux conflux"
-check_mode /run/conflux/token "600 root root"
-check_mode /var/lib/conflux/conflux "700 root root"
+check_mode /var/lib/.conflux "710 root conflux"
+check_mode /var/lib/.conflux/run "710 root conflux"
+check_mode /var/lib/.conflux/anchor "700 conflux conflux"
+check_mode /var/lib/.conflux/run/anchord "700 conflux conflux"
+check_mode /var/lib/.conflux/anchord.json "600 conflux conflux"
+check_mode /var/lib/.conflux/run/token "600 root root"
+check_mode /var/lib/.conflux/conflux "700 root root"
 
 # systemd re-owns a directory it was told to make, at every start, once its group is not
 # the unit's: the state directory is not one of those, and stays as the supervisor left it.
 say "a restart leaves anchord's directory its own"
 start
 expect "restarted" "uid=$uid caps=$(caps "$bufcap") nnp=1 groups=" "$bufrow"
-check_mode /var/lib/conflux/anchor "700 conflux conflux"
+check_mode /var/lib/.conflux/anchor "700 conflux conflux"
 
 say "a port below 1024 is given CAP_NET_BIND_SERVICE, and nothing more"
 # Docker lets a container bind any port; a host keeps the first 1024 for root.
@@ -191,22 +191,22 @@ expect "tun" "uid=$uid caps=$(caps 0x1000) nnp=0 groups=" "CAP_NET_ADMIN for its
 # What the account leaves in its directory for root to carry: a file of its own, and a
 # symlink and a hard link to a file of root's elsewhere on the machine, which a copy must not
 # follow, take or touch.
-docker exec "$NAME" sh -c 'umask 077 && echo secret > /var/lib/conflux-secret &&
-  cd /var/lib/conflux &&
+docker exec "$NAME" sh -c 'umask 077 && echo secret > /var/lib/cfx-secret &&
+  cd /var/lib/.conflux &&
   su -s /bin/sh conflux -c "echo carried > anchor/carried" &&
-  ln -s /var/lib/conflux-secret anchor/link && ln /var/lib/conflux-secret anchor/hard'
+  ln -s /var/lib/cfx-secret anchor/link && ln /var/lib/cfx-secret anchor/hard'
 
 say "a host that keeps /dev/net/tun root's keeps anchord root, in a directory of its own"
 docker exec "$NAME" chmod 600 /dev/net/tun
 start
 expect "root-only tun" "uid=0 caps=* nnp=0 groups=*" "/dev/net/tun opens only for root"
-check_mode /var/lib/conflux/anchor.root "700 root root"
-check_mode /var/lib/conflux/anchor.root/carried "600 root root"
+check_mode /var/lib/.conflux/anchor.root "700 root root"
+check_mode /var/lib/.conflux/anchor.root/carried "600 root root"
 for name in link hard; do
-  docker exec "$NAME" test ! -e "/var/lib/conflux/anchor.root/$name" \
+  docker exec "$NAME" test ! -e "/var/lib/.conflux/anchor.root/$name" \
     || { echo "the copy to root's directory took the account's $name" >&2; exit 1; }
 done
-check_mode /var/lib/conflux-secret "600 root root"
+check_mode /var/lib/cfx-secret "600 root root"
 
 # anchor runs the host's firewall commands with a TUN, and some answer only root. They are
 # stood in for by scripts that answer the question conflux asks: whether firewalld runs,
@@ -241,7 +241,7 @@ say "back in userspace, the account starts from root's state, as its own"
 configure proxy
 start
 expect "userspace again" "uid=$uid caps=$(caps "$bufcap") nnp=1 groups=" "$bufrow"
-check_mode /var/lib/conflux/anchor/carried "600 conflux conflux"
+check_mode /var/lib/.conflux/anchor/carried "600 conflux conflux"
 
 # What anchord is given to observe with is decided as it is started, before any credential:
 # the observer itself runs under the machine's credential, and here the enrolment for one
@@ -271,7 +271,7 @@ expect "tun and observing" "uid=$uid caps=$(caps 0x3000) nnp=0 groups=" "CAP_NET
 say "start, with the unit running a changed copy, stops it and starts this conflux"
 [ "$(docker exec "$NAME" systemctl show -p MainPID --value conflux.service)" != 0 ] \
   || { echo "the unit has no main process to stop" >&2; journal; exit 1; }
-docker exec "$NAME" sh -c 'cd /var/lib/conflux && cp conflux .conflux-changed &&
+docker exec "$NAME" sh -c 'cd /var/lib/.conflux && cp conflux .conflux-changed &&
   printf x >> .conflux-changed && mv .conflux-changed conflux'
 # systemctl restart waits for a readiness the silent API never lets come.
 out=$(docker exec "$NAME" timeout 30 conflux start 2>&1) || true
@@ -279,7 +279,7 @@ case $out in
   *"Starting from the configuration"*) ;;
   *) echo "start did not get past what earlier conflux left:" >&2; echo "$out" >&2; exit 1 ;;
 esac
-docker exec "$NAME" sh -c 'set -- $(sha256sum /usr/local/bin/conflux /var/lib/conflux/conflux) && [ "$1" = "$3" ]' \
+docker exec "$NAME" sh -c 'set -- $(sha256sum /usr/local/bin/conflux /var/lib/.conflux/conflux) && [ "$1" = "$3" ]' \
   || { echo "start left the changed copy in place:" >&2; echo "$out" >&2; exit 1; }
 expect "started again on this conflux" "uid=$uid caps=$(caps 0x3000) nnp=0 groups=" "CAP_NET_RAW to copy"
 
@@ -295,16 +295,14 @@ if docker exec "$NAME" grep -q AmbientCapabilities /etc/systemd/system/conflux.s
 fi
 docker exec "$NAME" systemctl stop conflux.service
 
-# install made all three directories, so all three have to go -- and the account.
+# install made the one root, so it has to go -- and the account.
 say "uninstall leaves nothing"
 docker exec "$NAME" conflux uninstall --yes
 docker exec "$NAME" sh -c 'test ! -f /etc/systemd/system/conflux.service' \
   || { echo "the unit file survived uninstall" >&2; exit 1; }
 docker exec "$NAME" sh -c 'test ! -L /etc/systemd/system/multi-user.target.wants/conflux.service' \
   || { echo "the unit's wants link survived uninstall" >&2; exit 1; }
-for dir in /etc/conflux /var/lib/conflux /run/conflux; do
-  docker exec "$NAME" test ! -e "$dir" || { echo "$dir survived uninstall" >&2; exit 1; }
-done
+docker exec "$NAME" test ! -e /var/lib/.conflux || { echo "/var/lib/.conflux survived uninstall" >&2; exit 1; }
 if docker exec "$NAME" id conflux >/dev/null 2>&1; then
   echo "the conflux account survived uninstall" >&2
   exit 1

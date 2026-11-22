@@ -74,11 +74,9 @@ func runServe(ctx context.Context, args []string) int {
 // The supervisor calls it once its EnsureAll has made the roots as conflux makes them, and not where
 // EnsureAll refuses them, which the supervisor then does itself, saying why where the service manager
 // sends the output. The log is opened by its name, as root or SYSTEM, to append to, so a link at that
-// name would have conflux append wherever it led. On Windows and under a CONFLUX_DIR the log is in the
-// root's logs directory, which EnsureAll has just made as conflux makes a folder of its own, as it has
-// the root -- conflux's, which nobody else may write -- on a way, where it is a CONFLUX_DIR, nobody else
-// may change, so no other account can have put a link there. Otherwise launchd's and FreeBSD's registrations name the system's
-// /var/log, which EnsureAll leaves alone, and only root can change.
+// name would have conflux append wherever it led. The log is in the root's logs directory, which
+// EnsureAll has just made as conflux makes a folder of its own, as it has the root -- conflux's, which
+// nobody else may write -- so no other account can have put a link there.
 func openLog(path string) {
 	lf, err := logfile.Open(path)
 	if err != nil {

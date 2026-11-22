@@ -11,21 +11,30 @@ under `$HOME` is a path the service cannot read — and a `~/.config` layout als
 under a systemd unit with `User=` or `ProtectHome=`, or for an `anchord` running as an
 account of its own.
 
+Everything is in one folder, `.conflux`, which conflux makes in the system's data folder — the same
+layout everywhere:
+
 | | Linux | macOS | Windows | FreeBSD / OpenBSD |
 |---|---|---|---|---|
-| configuration | `/etc/conflux/` | `/Library/Application Support/conflux/` | `%ProgramData%\conflux\` | `/usr/local/etc/conflux/` |
-| state, identity, binaries | `/var/lib/conflux/` | `/Library/Application Support/conflux/` | `%ProgramData%\conflux\` | `/var/db/conflux/` |
-| token, anchord's pid | `/run/conflux/` | `/var/run/conflux/` | `%ProgramData%\conflux\run\` | `/var/run/conflux/` |
-| anchord's socket | `/run/conflux/anchord/sock` | `/var/run/conflux/anchord/sock` | `%ProgramData%\conflux\run\anchord\sock` | `/var/run/conflux/anchord/sock` |
+| the root | `/var/lib/.conflux/` | `/Library/Application Support/.conflux/` | `%ProgramData%\.conflux\` | `/var/db/.conflux/` |
 
-`CONFLUX_DIR` roots all of them in `.conflux`, a folder conflux makes inside the directory it names and keeps everything of its own in, and the boot service with them — it is named after the directory, so a run under it is a separate installation rather than a replacement for the machine's own. See [testing.md](testing.md). The directory itself, and every directory above it, is never changed and never judged, so a folder of yours can be one: choosing it is your responsibility, since whoever can change it can put another root in this one's place ([security.md](security.md#the-extracted-binaries)). conflux owns `.conflux` inside it, and remakes it as it makes it. On Windows it must be on one of the machine's own volumes: a share, or a drive mapped to one, is refused, with nothing made there.
+| In the root | |
+|---|---|
+| `conflux.json` | the configuration |
+| `manifest.b64`, `state.json`, `anchord.json`, `anchord.priv`, `way`, the lock files, `conflux` (`conflux.exe`) | the identity, the state, and the copy of conflux the boot service runs |
+| `bin/` | the extracted anchor pairs |
+| `anchor/`, `anchor.root/` | what the anchor keeps |
+| `run/` | the token, anchord's pid, the readiness marker, and `run/anchord/sock`, anchord's socket |
+| `logs/` | the service's log, on macOS, FreeBSD and Windows; journald and syslog keep it on Linux and OpenBSD |
+| `ephemeral/` | an ephemeral run's root, for root (Administrator on Windows) |
+
+`CONFLUX_DIR` keeps the same layout in `.conflux` inside the directory it names instead, and the boot service with it — it is named after the directory, so a run under it is a separate installation rather than a replacement for the machine's own. See [testing.md](testing.md). The directory itself, and every directory above it, is never changed and never judged, so a folder of yours can be one: choosing it is your responsibility, since whoever can change it can put another root in this one's place ([security.md](security.md#the-extracted-binaries)). conflux owns `.conflux` inside it, and remakes it as it makes it. On Windows it must be on one of the machine's own volumes: a share, or a drive mapped to one, is refused, with nothing made there.
 
 Every directory conflux makes is `0700` — and whatever is at a root's name that is not as conflux
 makes one, a link or a directory another account owns or may write among it, is removed and made
 afresh, with nothing of what it held — and every file conflux writes there is `0600`, apart from the programs it runs (the extracted pair
 and the service's own copy of conflux, `0700`). The service definitions live where the service
-manager reads them, at the modes it expects, and on macOS and FreeBSD the log file goes in the
-system's `/var/log`.
+manager reads them, at the modes it expects; the service's log is in the root's `logs/`.
 
 Where `anchord` runs as its own account, the supervisor lets that account through to what it
 needs and nothing else: the state and run directories become `0710`, root's, with the account's
@@ -294,7 +303,7 @@ window is the whole vulnerability.
 
 **On Windows, `0600` is a no-op.** A Go program that calls `Chmod(0600)` there has
 changed only the read-only bit, and `%ProgramData%` lets `Users` read and create beneath
-it. So conflux gives `%ProgramData%\conflux` to SYSTEM and Administrators — owner and a
+it. So conflux gives `%ProgramData%\.conflux` to SYSTEM and Administrators — owner and a
 protected DACL, inherited below — and does the same to each secret file before writing
 into it. See [windows.md](windows.md#file-permissions).
 

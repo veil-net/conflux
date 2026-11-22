@@ -11,24 +11,17 @@ import (
 // sizeof(sockaddr_un.sun_path) on Windows, and the limit anchord refuses past.
 const sockPathMax = 108
 
-// platformDirs uses %ProgramData%, the machine-wide counterpart to %AppData%.
-//
-// Mode bits mean nothing here -- %ProgramData% grants Users read and create by default
-// -- so the protection comes from the ownership and DACL EnsureAll gives the root and
+// systemData is the folder the default root, DirName, is made in: %ProgramData%, the machine-wide
+// counterpart to %AppData%. Mode bits mean nothing here -- %ProgramData% grants Users read and create
+// by default -- so the protection comes from the ownership and DACL EnsureAll gives the root and
 // everything beneath it inherits; see acl_windows.go.
-func platformDirs() Dirs {
-	root := filepath.Join(ProgramData(), "conflux")
+func systemData() string { return ProgramData() }
 
-	return Dirs{
-		Config: root,
-		State:  root,
-		Run:    filepath.Join(root, runName),
-		Log:    filepath.Join(root, "logs"),
-	}
-}
+// logsToFile is true: the service writes its output to a file of its own (serve --log).
+const logsToFile = true
 
-// ProgramData is %ProgramData%, which the platform's roots, an ephemeral run's and an elevated reader's
-// temporary copy of anchorctl (libexec's Temporary) are kept in, as the system has it
+// ProgramData is %ProgramData%, which the default root, an ephemeral run's inside it, and an elevated
+// reader's temporary copy of anchorctl (libexec's Temporary) are kept in, as the system has it
 // (systemProgramData). A variable so a test can keep what conflux keeps there in a folder of its own
 // (pathstest).
 var ProgramData = systemProgramData

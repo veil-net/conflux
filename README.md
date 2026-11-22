@@ -46,7 +46,7 @@ else, or download by hand, see [install.md](docs/install.md), which also has the
 platform-specific notes.
 
 Where you keep it is up to you: the boot service runs a copy conflux places in its
-own state directory (`/var/lib/conflux/conflux` on Linux), which only root can
+own folder (`/var/lib/.conflux/conflux` on Linux), which only root can
 change, and `up`, `proxy`, `observe`, `install`, `enrol`, `start` and `update` keep that
 copy current. To build from source instead, see [build.md](docs/build.md)
 (`make anchor-bins && make build`).
@@ -339,16 +339,19 @@ test.
 
 ## Where things live
 
-| | Linux | macOS | Windows |
-|---|---|---|---|
-| configuration | `/etc/conflux/` | `/Library/Application Support/conflux/` | `%ProgramData%\conflux\` |
-| identity and state | `/var/lib/conflux/` | `/Library/Application Support/conflux/` | `%ProgramData%\conflux\` |
-| socket and token | `/run/conflux/` | `/var/run/conflux/` | `%ProgramData%\conflux\run\` |
+Everything is in one folder, `.conflux`, in the system's data folder:
 
-One directory per machine, root-owned, with no home directory involved anywhere — the
-boot service runs as root, and a path under `$HOME` is a path it can't read. Each of these
-folders is conflux's own: made by conflux, and removed whole by `conflux uninstall`, with
-whatever was put in it. `CONFLUX_DIR=<dir>` keeps everything in `<dir>/.conflux` instead,
+| Linux | macOS | Windows | FreeBSD / OpenBSD |
+|---|---|---|---|
+| `/var/lib/.conflux/` | `/Library/Application Support/.conflux/` | `%ProgramData%\.conflux\` | `/var/db/.conflux/` |
+
+The configuration, the identity and the state are in it, and the socket and token in its `run/`,
+the service's log in its `logs/` where conflux writes one (macOS, FreeBSD, Windows; journald and
+syslog keep it on Linux and OpenBSD). One folder per machine, root-owned, with no home directory
+involved anywhere — the boot service runs as root, and a path under `$HOME` is a path it can't
+read. It is conflux's own: made by conflux, remade as conflux makes it, and removed whole by
+`conflux uninstall`, with whatever was put in it. `CONFLUX_DIR=<dir>` keeps the same layout in
+`<dir>/.conflux` instead,
 which conflux owns, makes and remakes as it makes it, and removes; `<dir>` itself, and every folder
 above it, is never changed and never judged: choosing it is your responsibility. `anchord`
 itself runs as an account of its own wherever that costs it nothing, which reaches only

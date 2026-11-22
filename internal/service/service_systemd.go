@@ -23,18 +23,14 @@ import (
 //
 // Restart=on-failure rather than always, so a deliberate clean exit stays exited.
 //
-// RuntimeDirectory and ConfigurationDirectory make systemd create and mode two of the
-// directories, and clean /run/conflux on stop. conflux still creates them itself, so
-// running in the foreground and on non-systemd hosts works. They name the machine's own
-// directories, so a unit for a CONFLUX_DIR install leaves them out: stopping it would
-// otherwise empty the real installation's /run/conflux.
-//
 // User=root, and no capability line: the supervisor is root, and it is the supervisor
 // that gives anchord, as its own account, exactly the capabilities its mode needs and no
 // others (internal/daemon/privilege.go). An AmbientCapabilities= here would be granted
 // to the supervisor, which has them all as root anyway, and to nothing else.
 //
-// Deliberately absent: StateDirectory, because systemd gives a directory it claims to
+// Deliberately absent: any directory setting -- conflux makes everything it keeps in its one root,
+// .conflux, itself, as it does under every service manager and in the foreground -- and
+// StateDirectory above all, because systemd gives a directory it claims to
 // User= and Group= again, recursively, at every start once its top belongs to anybody
 // else -- and the state directory's group is anchord's account, so every start would
 // hand anchord's own directory back to root. PrivateTmp, because nothing conflux does
@@ -61,28 +57,15 @@ KillMode=mixed
 KillSignal=SIGTERM
 User=root
 Group=root
-%[4]sLimitNOFILE=1048576
+LimitNOFILE=1048576
 
 [Install]
 WantedBy=multi-user.target
 `
 
-// machineDirectories are the unit's claim on the machine's own directories.
-const machineDirectories = `RuntimeDirectory=conflux
-RuntimeDirectoryMode=0700
-ConfigurationDirectory=conflux
-ConfigurationDirectoryMode=0700
-`
-
-// systemdUnit is the unit for exe run with args; scoped for a CONFLUX_DIR install, which
-// does not claim the machine's directories.
-func systemdUnit(exe string, args []string, scoped bool) string {
-	dirs := machineDirectories
-	if scoped {
-		dirs = ""
-	}
-
-	return fmt.Sprintf(unitTemplate, execLine(append([]string{exe}, args...)), ExitNoConfig, ExitChildFailed, dirs)
+// systemdUnit is the unit for exe run with args.
+func systemdUnit(exe string, args []string) string {
+	return fmt.Sprintf(unitTemplate, execLine(append([]string{exe}, args...)), ExitNoConfig, ExitChildFailed)
 }
 
 // execLine renders an ExecStart= command line, each word quoted where systemd would

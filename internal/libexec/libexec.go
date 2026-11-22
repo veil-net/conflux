@@ -194,12 +194,11 @@ func ForUsage(d paths.Dirs, checked error) (bin string, done func(), err error) 
 
 // Temporary is a copy of this build's anchorctl in a private temporary directory, with nothing of any
 // root's read, which done removes, the directory with it: what a reader runs where no extraction is one
-// it may use (ForUsage). Made where temporaryDir
-// makes it -- for an elevated process on Windows a folder of its own in %ProgramData%, and otherwise in
-// the user's temporary directory (usersTemporaryDir) -- and restricted as it says. Never a root of
-// conflux's, nor a folder in one. Making them for help remade, after an uninstall, what it had removed, with tens of megabytes in
-// it; and on Windows, asked by an account that is not an administrator, it left %ProgramData%\conflux
-// owned by that account, which every later install then refused.
+// it may use (ForUsage). Made where temporaryDir makes it -- for an elevated process on Windows a folder
+// of its own in %ProgramData%, and otherwise in the user's temporary directory (usersTemporaryDir) -- and
+// restricted as it says. Never a root of conflux's, nor a folder in one: a reader makes neither, so one
+// after an uninstall leaves nothing of an installation behind, and one run by an account that is not an
+// administrator leaves nothing of conflux's that account's.
 func Temporary() (bin string, done func(), err error) {
 	if !anchor.Supported {
 		return "", nil, errUnsupported

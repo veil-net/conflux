@@ -35,23 +35,20 @@ func makeStaging(root, prefix string) (string, error) {
 // directory (usersTemporaryDir), the copy granted to the account (paths.RestrictToOwner), since a copy
 // Restrict guards is one it could not run.
 func temporaryDir() (string, func(string, bool) error, error) {
-	parents := temporaryParents()
-
 	if !privcheck.Elevated() {
-		dir, err := usersTemporaryDir(parents)
+		dir, err := usersTemporaryDir(usersTemporaryParents())
 
 		return dir, paths.RestrictToOwner, err
 	}
 
-	dir, err := makeStaging(parents[0], temporaryPrefix)
+	dir, err := makeStaging(paths.ProgramData(), temporaryPrefix)
 
 	return dir, paths.Restrict, err
 }
 
 // temporaryParents are where Temporary may make its directories for the account running conflux, which
-// temporaryDir chooses among and RemoveTemporary looks in: the account's own (usersTemporaryParents), where
-// its processes that are not elevated make them, and, for an elevated process, which makes its own in
-// %ProgramData%, that first.
+// RemoveTemporary looks in: the account's own (usersTemporaryParents), where its processes that are not
+// elevated make them, and, for an elevated process, which makes its own in %ProgramData%, that first.
 func temporaryParents() []string {
 	if privcheck.Elevated() {
 		return append([]string{paths.ProgramData()}, usersTemporaryParents()...)

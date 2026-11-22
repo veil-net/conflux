@@ -83,9 +83,8 @@ func (d Dirs) LogDir() string {
 }
 
 // socketName is anchord's control socket, an AF_UNIX socket on every platform, inside a
-// directory of anchord's own (DaemonRun). Four letters, so the path is exactly as long as
-// the <run>/anchord.sock it replaced: sun_path is 104 bytes on macOS, and a test root
-// under /var/folders is already most of that.
+// directory of anchord's own (DaemonRun). Short, since sun_path is 104 bytes on macOS and a
+// test's root under /var/folders is already most of that.
 const socketName = "sock"
 
 // ConfigFile holds the operator's intent: mode, taints, addresses, proxies.
@@ -751,24 +750,6 @@ func RemovePrefixed(dir, prefix string, remove func(string) error) []string {
 	}
 
 	return removed
-}
-
-// CheckSocketLen refuses a run directory that would produce a socket path the
-// kernel cannot bind.
-//
-// A sockaddr_un holds 104 bytes of path on macOS and the BSDs and 108 on Linux,
-// and anchord refuses a longer one. An installation's is far inside that; a runtime
-// directory named at length can break an ephemeral run's. The error belongs here
-// rather than arriving from a child process as a number.
-func (d Dirs) CheckSocketLen() error {
-	sock := d.Socket()
-	if len(sock) < sockPathMax {
-		return nil
-	}
-
-	return fmt.Errorf(
-		"the control socket path is %d bytes and the kernel allows %d:\n  %s",
-		len(sock), sockPathMax-1, sock)
 }
 
 // SyncDir makes a name just placed in dir durable, as far as the platform lets it: what an

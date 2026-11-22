@@ -74,3 +74,21 @@ func runtimeFolder() (string, error) {
 
 	return xdg, nil
 }
+
+// sockPathMax is sizeof(sockaddr_un.sun_path) on Linux, and the limit anchord refuses past.
+const sockPathMax = 108
+
+// CheckSocketLen refuses an ephemeral run's root whose control socket the kernel could not bind: the
+// runtime folder is $XDG_RUNTIME_DIR for anybody but root, which the environment names, at any length.
+// The error belongs here rather than arriving from a child process as a number. An installation's
+// socket, in the system's data folder, is far inside the limit everywhere.
+func (d Dirs) CheckSocketLen() error {
+	sock := d.Socket()
+	if len(sock) < sockPathMax {
+		return nil
+	}
+
+	return fmt.Errorf(
+		"the control socket path is %d bytes and the kernel allows %d:\n  %s",
+		len(sock), sockPathMax-1, sock)
+}

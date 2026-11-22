@@ -8,9 +8,6 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// sizeof(sockaddr_un.sun_path) on Windows, and the limit anchord refuses past.
-const sockPathMax = 108
-
 // logsToFile is true: the service writes its output to a file of its own (serve --log).
 const logsToFile = true
 

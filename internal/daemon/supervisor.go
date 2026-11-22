@@ -193,10 +193,6 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	// This start tries the anchor again, however far it gets; see forgetRefusal.
 	s.forgetRefusal(ctx)
 
-	if err := s.Dirs.CheckSocketLen(); err != nil {
-		return &permanentError{err: err}
-	}
-
 	switch pid, err := ReapOrphan(s.Dirs); {
 	case err != nil:
 		s.report().Warn("%v", err)

@@ -105,8 +105,12 @@ There is no other place. An ordinary user's run is refused where `XDG_RUNTIME_DI
 or is not an absolute path — run it from a login session that sets it (systemd-logind does), or
 as root. A runtime folder that is not there, or is on a filesystem mounted `noexec`, where the
 anchord the run extracts could not run, refuses the run, with nothing made and nothing at the
-root's name touched. The root is never inside an installation's root, nor an installation's
-inside it.
+root's name touched. So a host whose `/run` is mounted `noexec`, as some hardened ones mount it,
+refuses every ephemeral run as root, by design: there is no fallback to a folder that outlives a
+reboot. Mount `/run` without `noexec` to run one there, or run `proxy --ephemeral` as an ordinary
+user, whose runtime directory (`/run/user/UID` under systemd-logind) is a mount of its own, judged by
+its own options. The root is never inside an installation's
+root, nor an installation's inside it.
 
 It holds the lock that makes it the only ephemeral run for that user, the bearer token and
 the socket, the record of the anchord it started and what that runs as, and the extracted

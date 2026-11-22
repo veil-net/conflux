@@ -143,7 +143,8 @@ route — is anchor's to fix, and worth reporting there with that output attache
 - **"…, where an ephemeral run keeps its root, is not there"**, or **"… is on a filesystem
   mounted noexec, so the anchord it extracts could not run there"**: the run extracts anchord
   into its root, in the runtime folder, and there is no other place; conflux makes nothing on the
-  way to it. Mount it without `noexec`, or run from a session whose runtime directory is there.
+  way to it. Mount it without `noexec`, or run from a session whose runtime directory is there. A
+  host whose `/run` is mounted `noexec` refuses every ephemeral run as root, by design.
 - **`conflux status` says a root was left behind**: an ephemeral run was killed before it
   could clean up. The next ephemeral run stops any anchord it left and clears the root; so does
   a reboot, with the filesystem it is on.

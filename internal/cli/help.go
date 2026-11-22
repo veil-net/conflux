@@ -6,8 +6,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/veil-net/conflux/internal/libexec"
-	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/ui"
 	"github.com/veil-net/conflux/internal/version"
 )
@@ -102,9 +100,7 @@ func runHelp(ctx context.Context, args []string) int {
 // printAnchorctlUsage appends the embedded anchorctl's own help, under a rule. Best
 // effort: a machine where no anchorctl can be run still gets conflux's half.
 func printAnchorctlUsage(ctx context.Context) {
-	d := paths.Default()
-
-	bin, done, err := libexec.ForUsage(d, d.Check())
+	bin, done, err := readersAnchorctl()
 	if err != nil {
 		return
 	}

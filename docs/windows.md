@@ -85,8 +85,8 @@ be flagged, and know the mitigations:
 If the extracted binaries will not run at all, conflux says so and names endpoint
 protection as the likely cause rather than reporting a bare permission error.
 
-A reader — help, `status`, `renew`, a pass-through — that finds no extraction it may use, and
-a pass-through to a socket you named, run a temporary copy of `anchorctl` instead. Elevated, the
+A reader — help, `status`, `renew`, a pass-through, one to a socket you named among them — that
+finds no extraction it may use runs a temporary copy of `anchorctl` instead. Elevated, the
 copy goes in a folder of its own in `%ProgramData%`, `conflux-usage-<n>`, which with the copy is
 SYSTEM's and the Administrators' from the moment it exists, never your own `%TEMP%`, which your
 processes that are not elevated could change between the write and the run; not elevated, it goes

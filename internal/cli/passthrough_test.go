@@ -11,6 +11,7 @@ import (
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
 	"github.com/veil-net/conflux/internal/ui"
@@ -35,11 +36,14 @@ func TestAPassThroughWithNothingRunningMakesNothing(t *testing.T) {
 	}
 }
 
-// TestAPassThroughToANamedSocketMakesNothing: a socket the user named, as -socket or
-// ANCHOR_SOCKET, is a daemon conflux does not manage, so reaching it makes nothing of
-// conflux's -- no directory, no extraction, an installation there or not: its anchorctl is a
-// temporary copy -- and an account that could not make them still reaches its own daemon.
-func TestAPassThroughToANamedSocketMakesNothing(t *testing.T) {
+// TestAPassThroughToANamedSocketTakesTheReadersAnchorctl: a socket the user named, as -socket or
+// ANCHOR_SOCKET, is a daemon conflux does not manage, which the installation never stands in the way of:
+// its anchorctl is the readers' -- with no installation a temporary copy, removed, and nothing of
+// conflux's made; with one whose roots pass the readers' check, this build's set, extracted into bin/
+// where it is not there yet, and nothing written to the temporary directory; with a root the check
+// refuses, a temporary copy, nothing extracted there -- and what it says is anchorctl's own dial to the
+// socket named, which nothing listens on, never that nothing of conflux's runs.
+func TestAPassThroughToANamedSocketTakesTheReadersAnchorctl(t *testing.T) {
 	anchortest.Require(t)
 
 	sock := filepath.Join(t.TempDir(), "sock")
@@ -51,36 +55,45 @@ func TestAPassThroughToANamedSocketMakesNothing(t *testing.T) {
 		anchorctl.SocketEnv: {[]string{"peers"}, sock},
 		"-socket":           {[]string{"peers", "-socket", sock}, ""},
 	} {
-		for _, installed := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s, installed %v", name, installed), func(t *testing.T) {
-				root := filepath.Join(t.TempDir(), "conflux")
-				t.Setenv("CONFLUX_DIR", root)
+		for _, root := range []string{"none", "installed", "refused"} {
+			t.Run(fmt.Sprintf("%s, %s", name, root), func(t *testing.T) {
+				conflux := filepath.Join(t.TempDir(), "conflux")
+				t.Setenv("CONFLUX_DIR", conflux)
 				t.Setenv(anchorctl.TokenEnv, "t")
 				t.Setenv(anchorctl.SocketEnv, tc.env)
 
+				tmp := pathstest.Temporary(t, t.TempDir())
+
 				var d paths.Dirs
-				if installed {
-					d = pathstest.DirsIn(t, root)
+				if root != "none" {
+					d = pathstest.DirsIn(t, conflux)
 				}
 
-				// Run as a child: on Unix a pass-through to conflux's own daemon replaces the process. What
-				// it says is anchorctl's own answer: a dial to the socket named, which nothing listens on.
+				if root == "refused" {
+					pathstest.NotAsConfluxMakesIt(t, d.State)
+				}
+
+				// Run as a child: on Unix a pass-through to conflux's own daemon replaces the process.
 				if out, code := confluxChild(t, tc.args...); code == ExitOK || !strings.Contains(out, sock) {
-					t.Errorf("conflux %s with %s=%s exited %d:\n%s", strings.Join(tc.args, " "), anchorctl.SocketEnv,
-						tc.env, code, out)
+					t.Errorf("conflux %s with %s=%s exited %d, not saying anchorctl could not reach %s:\n%s",
+						strings.Join(tc.args, " "), anchorctl.SocketEnv, tc.env, code, sock, out)
 				}
 
-				if !installed {
-					if _, err := os.Stat(root); !os.IsNotExist(err) {
-						t.Errorf("the pass-through made %s (%v); nothing should be on disk", root, err)
+				if left, _ := os.ReadDir(tmp); len(left) > 0 {
+					t.Errorf("the pass-through left %v in the temporary directory", left)
+				}
+
+				if root == "none" {
+					if _, err := os.Stat(conflux); !os.IsNotExist(err) {
+						t.Errorf("the pass-through made %s (%v); nothing should be on disk", conflux, err)
 					}
 
 					return
 				}
 
-				if left, err := os.ReadDir(d.Libexec()); err != nil || len(left) > 0 {
-					t.Errorf("the pass-through left %v (%v) in the installation's %s, which it should not touch", left,
-						err, d.Libexec())
+				if _, err := libexec.Extracted(d); (err == nil) != (root == "installed") {
+					t.Errorf("the pass-through, with a root %s, left this build's set in %s extracted %v (%v), want %v",
+						root, d.Libexec(), err == nil, err, root == "installed")
 				}
 			})
 		}

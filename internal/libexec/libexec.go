@@ -194,7 +194,7 @@ func ForUsage(d paths.Dirs, checked error) (bin string, done func(), err error) 
 
 // Temporary is a copy of this build's anchorctl in a private temporary directory, with nothing of any
 // root's read, which done removes, the directory with it: what a reader runs where no extraction is one
-// it may use (ForUsage), and a pass-through to a socket the user named always. Made where temporaryDir
+// it may use (ForUsage). Made where temporaryDir
 // makes it -- for an elevated process on Windows a folder of its own in %ProgramData%, and otherwise in
 // the user's temporary directory (usersTemporaryDir) -- and restricted as it says. Never a root of
 // conflux's, nor a folder in one. Making them for help remade, after an uninstall, what it had removed, with tens of megabytes in

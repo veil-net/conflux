@@ -293,10 +293,10 @@ func usersTemporaryDir(candidates []string) (string, error) {
 // renames it in from a staging directory once both binaries in it were written, synced
 // and run. The sizes catch a binary truncated or replaced since, and a name a power cut
 // lost from the directory, whose own entries are not synced. One that fails is extracted
-// again. Who wrote them is not asked: every caller has made d's roots (EnsureAll) or held
-// them to the readers' check (Dirs.Check) first -- ForUsage, and an ephemeral run's reader,
-// which checks the run's root before it takes the pair there -- and nobody else can put
-// anything in a root as conflux makes one.
+// again. Who wrote them is not asked: every caller has made d's roots (EnsureAll), or holds
+// them to the readers' check (Dirs.Check) first -- ForUsage's callers, which hand it what the
+// check said, and an ephemeral run's reader, which checks the run's root before it takes the
+// pair there -- and nobody else can put anything in a root as conflux makes one.
 func (t *Tools) complete() bool {
 	return whole(t.Anchord, len(anchor.Anchord())) && whole(t.Anchorctl, len(anchor.Anchorctl()))
 }

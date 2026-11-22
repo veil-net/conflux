@@ -269,7 +269,10 @@ killed mid-check — and one that will not run is removed with its reason named 
 
 Old sets are swept after 24 hours, by the supervisor once it has started on its own
 set — never by another conflux command, which might be standing beside a supervisor
-still running an older set. `conflux uninstall` removes the tree.
+still running an older set. Where conflux removes what an earlier conflux left, as an
+update has it do, `bin/` is emptied, every set in it, the service serving it stopped first,
+and this build's extracted afresh ([commands.md](commands.md#conflux-update)).
+`conflux uninstall` removes the tree.
 
 Emphatically **not** `/tmp`: systemd's `PrivateTmp=` would give the service a
 different `/tmp` than your shell, `/tmp` is `noexec` on hardened hosts,

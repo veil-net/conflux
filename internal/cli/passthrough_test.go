@@ -42,18 +42,23 @@ func TestAPassThroughWithNothingRunningMakesNothing(t *testing.T) {
 // conflux's made; with one whose roots pass the readers' check, this build's set, extracted into bin/
 // where it is not there yet, and nothing written to the temporary directory; with a root the check
 // refuses, a temporary copy, nothing extracted there -- and what it says is anchorctl's own dial to the
-// socket named, which nothing listens on, never that nothing of conflux's runs.
+// socket named, which nothing listens on, never that nothing of conflux's runs. Usage asked for beside
+// the socket named takes the same anchorctl, and is anchorctl's usage, exit 0: a named socket and usage
+// are one way to anchorctl, neither going before the other.
 func TestAPassThroughToANamedSocketTakesTheReadersAnchorctl(t *testing.T) {
 	anchortest.Require(t)
 
 	sock := filepath.Join(t.TempDir(), "sock")
 
 	for name, tc := range map[string]struct {
-		args []string
-		env  string
+		args  []string
+		env   string
+		usage bool
 	}{
-		anchorctl.SocketEnv: {[]string{"peers"}, sock},
-		"-socket":           {[]string{"peers", "-socket", sock}, ""},
+		anchorctl.SocketEnv:             {[]string{"peers"}, sock, false},
+		"-socket":                       {[]string{"peers", "-socket", sock}, "", false},
+		anchorctl.SocketEnv + ", usage": {[]string{"peers", "-h"}, sock, true},
+		"-socket, usage":                {[]string{"peers", "-h", "-socket", sock}, "", true},
 	} {
 		for _, root := range []string{"none", "installed", "refused"} {
 			t.Run(fmt.Sprintf("%s, %s", name, root), func(t *testing.T) {
@@ -74,7 +79,13 @@ func TestAPassThroughToANamedSocketTakesTheReadersAnchorctl(t *testing.T) {
 				}
 
 				// Run as a child: on Unix a pass-through to conflux's own daemon replaces the process.
-				if out, code := confluxChild(t, tc.args...); code == ExitOK || !strings.Contains(out, sock) {
+				out, code := confluxChild(t, tc.args...)
+
+				switch {
+				case tc.usage && (code != ExitOK || !strings.Contains(out, "anchorctl peers")):
+					t.Errorf("conflux %s with %s=%s exited %d, not printing anchorctl's usage of peers:\n%s",
+						strings.Join(tc.args, " "), anchorctl.SocketEnv, tc.env, code, out)
+				case !tc.usage && (code == ExitOK || !strings.Contains(out, sock)):
 					t.Errorf("conflux %s with %s=%s exited %d, not saying anchorctl could not reach %s:\n%s",
 						strings.Join(tc.args, " "), anchorctl.SocketEnv, tc.env, code, sock, out)
 				}

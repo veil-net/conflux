@@ -26,7 +26,6 @@ beneath it, and most of what follows is a way of reading that output.
 | `subnet … is not a private network` | a public prefix | anchor forwards private networks only |
 | `subnet … has host bits set` | `192.168.1.7/24` | write the network, `192.168.1.0/24` |
 | `the control socket path is N bytes` | `CONFLUX_DIR` is too deep | use a shorter one; the kernel's limit is 104–108 bytes |
-| `… is conflux 1.0.0's anchor directory`, and the service stops | the machine is still laid out as conflux 1.0.0 left it: a root `anchord` kept its state under the account's name, `anchor/`, root's own. This conflux does not take that over | `sudo conflux uninstall --yes`, then `sudo conflux up` (or `proxy`, or `observe`): a new identity and a new overlay address, since the old credential goes with the uninstall |
 | `fd:3 adopts a descriptor …` | `--uplink fd:N` | conflux's supervisor hands anchord no descriptors; name the device, or use `conflux anchorctl start` |
 | `anchor has no way to open a link on Windows` | `--uplink` on Windows | anchor opens a link on unix only; see [uplink.md](uplink.md) |
 | an uplink machine is up and reaches nothing | usually the far end, the line speed, or an enrolment that never happened | see below |
@@ -248,8 +247,7 @@ renew it, a credential for a realm tree other than the one
 these binaries are pinned to, a TUN the host will not give (no capability, device or
 IPv6, or the name held by another interface), a host that will not be set up to forward
 for the realm, an argument vector anchorctl refuses outright, a daemon socket conflux
-may not reach or a token the daemon refuses, and a machine still laid out as conflux 1.0.0
-left it. Once the supervisor stops trying the anchor, `conflux status`'s `given up` line says
+may not reach or a token the daemon refuses. Once the supervisor stops trying the anchor, `conflux status`'s `given up` line says
 when, and why, until the supervisor is to try it again — as the service starts again, or once
 anchord has ended and is to be started again — or `conflux down` stops it. Beside an observer that
 is running, an anchor refused for good does not fail the unit: the observer goes on, the log says

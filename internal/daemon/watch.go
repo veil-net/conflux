@@ -239,8 +239,7 @@ var errNoConnection = errors.New("the rebuilt link carried no connection")
 //
 // An anchor directory anchord was given that has gone is made again first, by prepare's
 // makeAnchorDir, for the identity anchord runs as: never as the supervisor's, which an account's
-// anchord could not write and the next start would read as conflux 1.0.0's layout, refusing the
-// machine for good. So the anchor is rebuilt in this daemon, and the observer beside it goes on,
+// anchord could not write. So the anchor is rebuilt in this daemon, and the observer beside it goes on,
 // since an anchor that cannot come up never takes it down. Only one that cannot be made so is the
 // next spawn's, which starts anchord again.
 func (s *Supervisor) rebuildAnchor(ctx context.Context, why string, link bool, k *keeper) outcome {

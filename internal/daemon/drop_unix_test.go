@@ -143,12 +143,11 @@ func TestAFallbackIsNotARedecision(t *testing.T) {
 	}
 }
 
-// TestAFailedChownLeavesNoOneZeroZeroLayout: an anchor directory at the account's name that is
-// the supervisor's reads as conflux 1.0.0's layout, which the supervisor refuses for good, so one
-// whose chown to the account fails -- an unmapped uid, a filesystem that will not -- is not left
-// there, nor anything else of it; and what an interrupted creation left does not stand in the
-// way of the next.
-func TestAFailedChownLeavesNoOneZeroZeroLayout(t *testing.T) {
+// TestAFailedChownLeavesNoAnchorDir: an anchor directory at the account's name is the account's or
+// nothing, so one whose chown to the account fails -- an unmapped uid, a filesystem that will not --
+// is not left there, nor anything else of it; and what an interrupted creation left does not stand
+// in the way of the next.
+func TestAFailedChownLeavesNoAnchorDir(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root can give the directory to any account, so its chown does not fail")
 	}

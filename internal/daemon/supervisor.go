@@ -222,18 +222,6 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		return err
 	}
 
-	// Nor on a machine laid out as conflux 1.0.0 left it, which this conflux does not take
-	// over; told once, with the way on. A directory that could not be read is the next
-	// start's to read again.
-	switch legacy, err := legacyAnchorDir(s.Dirs.AnchorDir()); {
-	case err != nil:
-		return err
-	case legacy:
-		return &permanentError{err: fmt.Errorf("%s is conflux 1.0.0's anchor directory, and this conflux does not "+
-			"take over a machine laid out as 1.0.0 left it.\n  Run conflux uninstall, then conflux up, which draws "+
-			"a new identity and a new overlay address", s.Dirs.AnchorDir())}
-	}
-
 	// The roots are made already, first thing above.
 	tools, err := libexec.Extract(ctx, s.Dirs)
 	if err != nil {

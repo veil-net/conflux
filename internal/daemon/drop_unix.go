@@ -258,21 +258,6 @@ func (s *Supervisor) killLeftovers() {
 	}
 }
 
-// legacyAnchorDir reports an anchor directory at the account's name that is the
-// supervisor's own: conflux 1.0.0's, from before anchord ran as anything but root, which
-// the supervisor refuses to start on. One lstat; makeAnchorDir never leaves one of its own
-// there.
-func legacyAnchorDir(path string) (bool, error) {
-	fi, err := os.Lstat(path)
-	if err != nil || !fi.IsDir() {
-		return false, nil
-	}
-
-	st, ok := fi.Sys().(*syscall.Stat_t)
-
-	return ok && int(st.Uid) == os.Geteuid(), nil
-}
-
 // anchorDirFor reports whether path is a directory, not a link, of p's identity.
 func anchorDirFor(path string, p Privilege) bool {
 	fi, err := os.Lstat(path)
@@ -293,11 +278,10 @@ func anchorDirFor(path string, p Privilege) bool {
 // makeAnchorDir creates path for p's identity. Its parent is the state directory, which
 // only root can write, so it is given away by its name.
 //
-// The account's is made under another name and moved into place once it is the account's:
-// one at path that is still the supervisor's reads as conflux 1.0.0's (legacyAnchorDir),
-// which is refused for good, so a chown that fails -- an unmapped uid, a filesystem that will
-// not -- or a supervisor that dies before it must leave none there. What such a death left
-// under the other name is removed first.
+// The account's is made under another name and moved into place once it is the account's, so
+// what is at path is the account's or nothing: a chown that fails -- an unmapped uid, a
+// filesystem that will not -- or a supervisor that dies before it leaves none there. What such
+// a death left under the other name is removed first.
 func makeAnchorDir(path string, p Privilege) error {
 	if !p.Account {
 		return os.Mkdir(path, 0o700)

@@ -534,7 +534,7 @@ func TestAReaderLeavesNothingInTheTemporaryDirectory(t *testing.T) {
 			{"status, no token", []string{"status"}, false, ExitOK, ""},
 			{"peers", []string{"peers"}, true, 1, "anchorctl:"},
 			{"peers -h", []string{"peers", "-h"}, true, ExitOK, ""},
-			{"help", []string{"help"}, true, ExitOK, "anchorctl"},
+			{"help", []string{"help"}, true, ExitOK, strings.Repeat("─", 72)}, // the rule above anchorctl's half
 		} {
 			t.Run(fmt.Sprintf("%s, bin %v", c.name, bin), func(t *testing.T) {
 				d := pathstest.DirsIn(t, pathstest.ShortRoot(t))

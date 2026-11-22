@@ -568,13 +568,17 @@ func TestRemoveTemporaryRemovesWhatAKilledReaderLeft(t *testing.T) {
 
 	left := []string{filepath.Join(parent, temporaryPrefix+"1"), filepath.Join(parent, temporaryPrefix+"2")}
 
-	if cache, err := os.UserCacheDir(); err == nil {
-		if err := os.MkdirAll(cache, 0o700); err != nil {
-			t.Fatal(err)
-		}
-
-		left = append(left, filepath.Join(cache, temporaryPrefix+"4"))
+	// The user's cache directory, which pathstest.Temporary roots in parent too: never the machine's.
+	cache, err := os.UserCacheDir()
+	if err != nil || !strings.HasPrefix(cache, parent+string(filepath.Separator)) {
+		t.Fatalf("the user's cache directory is %s (%v), want it in the test's own %s", cache, err, parent)
 	}
+
+	if err := os.MkdirAll(cache, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	left = append(left, filepath.Join(cache, temporaryPrefix+"4"))
 
 	if programData := pathstest.ProgramData(t, t.TempDir()); programData != "" && privcheck.Elevated() {
 		left = append(left, filepath.Join(programData, temporaryPrefix+"0"))

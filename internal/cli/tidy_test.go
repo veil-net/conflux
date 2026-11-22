@@ -17,7 +17,6 @@ import (
 	"github.com/veil-net/conflux/anchor"
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/config"
-	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
@@ -39,6 +38,9 @@ type earlier struct {
 
 	// temporary is the folder a reader killed before it removed its temporary anchorctl left.
 	temporary string
+
+	// ephemeral is a killed ephemeral run's root, which no installation touches.
+	ephemeral string
 }
 
 // oldInstall is a CONFLUX_DIR installation as earlier conflux left it, for an update or an uninstall
@@ -72,7 +74,8 @@ func oldInstall(t *testing.T) earlier {
 	}
 
 	set := filepath.Join(d.Libexec(), anchor.SetID())
-	old := earlier{d: d, kept: map[string][]byte{}, temporary: filepath.Join(tmp, "conflux-usage-123")}
+	old := earlier{d: d, kept: map[string][]byte{}, temporary: filepath.Join(tmp, "conflux-usage-123"),
+		ephemeral: ephemeralRoot(t).State}
 	old.exe, old.leftovers, old.besideKept = updatedConflux(t)
 
 	for p, body := range map[string][]byte{
@@ -91,7 +94,7 @@ func oldInstall(t *testing.T) earlier {
 		d.ReadyFile():                                                      []byte("ready"),
 		d.DaemonPIDFile():                                                  []byte("2147483646\n/nonexistent/anchord\n"),
 		filepath.Join(d.DaemonRun(), "sock.lock"):                          nil,
-		filepath.Join(paths.EphemeralCandidates()[0], "serve.lock"):        nil,
+		filepath.Join(old.ephemeral, "serve.lock"):                         nil,
 		filepath.Join(old.temporary, binName("anchorctl")):                 []byte("a killed reader's"),
 	} {
 		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
@@ -117,7 +120,8 @@ func oldInstall(t *testing.T) earlier {
 // what earlier conflux left everywhere conflux keeps files, and makes what it removed afresh. What is left is this conflux's alone: this build's set,
 // extracted again over the one planted padded to its sizes; no other set, nothing staged; a copy for
 // the service that is this conflux, nothing beside it, nor a write that never went in place; an empty
-// run directory; no killed run's root; nothing an update left beside the conflux it replaced. The
+// run directory; nothing an update left beside the conflux it replaced. A killed ephemeral run's root,
+// in the runtime folder, is not the installation's, and is left as it was. The
 // configuration, the identity and the state are as they were, and so, on Unix, are the lock files,
 // which Windows makes again (locksKeptOrRemade).
 func TestUpdateLeavesOnlyWhatThisConfluxMakes(t *testing.T) {
@@ -173,7 +177,7 @@ func TestUpdateLeavesOnlyWhatThisConfluxMakes(t *testing.T) {
 			}
 
 			gone := append([]string{d.ServiceExecutable() + ".old", filepath.Join(d.State, ".conflux-123"),
-				filepath.Join(d.State, ".tmp-123"), paths.EphemeralCandidates()[0]}, old.leftovers...)
+				filepath.Join(d.State, ".tmp-123")}, old.leftovers...)
 
 			for _, p := range gone {
 				if _, err := os.Lstat(p); !os.IsNotExist(err) {
@@ -194,6 +198,11 @@ func TestUpdateLeavesOnlyWhatThisConfluxMakes(t *testing.T) {
 				if b, err := os.ReadFile(p); err != nil || !bytes.Equal(b, was) {
 					t.Errorf("%s changed: %q, %v", p, b, err)
 				}
+			}
+
+			if _, err := os.Lstat(filepath.Join(old.ephemeral, "serve.lock")); err != nil {
+				t.Errorf("conflux %s removed %s, a killed ephemeral run's root, which no installation touches: %v",
+					verb, old.ephemeral, err)
 			}
 
 			for _, p := range old.besideKept {
@@ -935,149 +944,6 @@ func TestTidyListsOnlyWhatItRemoved(t *testing.T) {
 			}
 		}
 	})
-
-	t.Run("a killed run's root a run took", func(t *testing.T) {
-		d := configured(t)
-
-		root := paths.EphemeralCandidates()[0]
-		if err := os.Mkdir(root, 0o700); err != nil {
-			t.Fatal(err)
-		}
-
-		if err := os.WriteFile(filepath.Join(root, "serve.lock"), nil, 0o600); err != nil {
-			t.Fatal(err)
-		}
-
-		// The run that takes the root as the killed run's lock is let go of, and what it puts there.
-		taken := filepath.Join(root, "taken")
-
-		was := removeEphemeral
-		defer func() { removeEphemeral = was }()
-
-		removeEphemeral = func(e paths.Dirs, unlock func(), r daemon.Reporter) error {
-			return was(e, func() {
-				unlock()
-
-				if err := os.WriteFile(taken, []byte("a run's"), 0o600); err != nil {
-					t.Error(err)
-				}
-			}, r)
-		}
-
-		standInService(t, &fakeManager{d: d})
-
-		out, errOut, code := capture(t, "register")
-		if code != ExitOK {
-			t.Fatalf("conflux register exited %d:\n%s%s", code, out, errOut)
-		}
-
-		if _, err := os.Lstat(taken); err != nil || strings.Contains(out, "  "+root+"\n") {
-			t.Errorf("conflux register removed what a run put in the root it took, or listed %s as removed "+
-				"(Lstat: %v):\n%s", root, err, out)
-		}
-	})
-}
-
-// TestTidyRemovesAnEphemeralRootNotAsConfluxMakesOne: the conflux an update put in place removes a
-// killed run's root, as conflux's by its name, whatever is there: one not as conflux makes a root -- one
-// every account may write, holding a lock and a name of somebody's, or, on Unix, a link -- removed as
-// itself, nothing in it read and no lock in it taken, where a link leads never touched; one as conflux
-// makes a root, whatever it holds, emptied under its lock. Each is listed.
-func TestTidyRemovesAnEphemeralRootNotAsConfluxMakesOne(t *testing.T) {
-	anchortest.Require(t) // it extracts the pair afresh
-
-	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
-	privcheck.Elevated = func() bool { return true }
-
-	elsewhere := t.TempDir()
-
-	kept := filepath.Join(elsewhere, "serve.lock")
-	if err := os.WriteFile(kept, []byte("not conflux's"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	for name, c := range map[string]struct {
-		plant func(t *testing.T, root string)
-		ours  bool
-	}{
-		"holding a name conflux never makes there": {func(t *testing.T, root string) {
-			plantIn(t, root, "notes.txt", "serve.lock")
-		}, true},
-		"every account may write": {func(t *testing.T, root string) {
-			if runtime.GOOS == "windows" {
-				t.Skip("a mode says nothing of a Windows root")
-			}
-
-			plantIn(t, root, "notes.txt", "serve.lock")
-
-			if err := os.Chmod(root, 0o777); err != nil {
-				t.Fatal(err)
-			}
-		}, false},
-		"a link": {func(t *testing.T, root string) {
-			if runtime.GOOS == "windows" {
-				t.Skip("a junction at an ephemeral root's name is " +
-					"TestUninstallRemovesAJunctionAtAnEphemeralRootsName's there")
-			}
-
-			if err := os.Symlink(elsewhere, root); err != nil {
-				t.Fatal(err)
-			}
-		}, false},
-	} {
-		t.Run(name, func(t *testing.T) {
-			d := configured(t)
-
-			root := paths.EphemeralCandidates()[0]
-			c.plant(t, root)
-
-			var reaped []string
-
-			was := removeEphemeral
-			defer func() { removeEphemeral = was }()
-
-			removeEphemeral = func(e paths.Dirs, unlock func(), r daemon.Reporter) error {
-				reaped = append(reaped, e.State)
-
-				return was(e, unlock, r)
-			}
-
-			standInService(t, &fakeManager{d: d})
-
-			out, errOut, code := capture(t, "register")
-			if code != ExitOK || !strings.Contains(out, "  "+root+"\n") {
-				t.Errorf("conflux register beside a killed run's root %s exited %d, want %d listing it:\n%s%s", name, code,
-					ExitOK, out, errOut)
-			}
-
-			if _, err := os.Lstat(root); !errors.Is(err, fs.ErrNotExist) {
-				t.Errorf("conflux register left %s (Lstat: %v)", root, err)
-			}
-
-			if c.ours != (len(reaped) == 1) {
-				t.Errorf("conflux register took the lock of %q, want it taken only in a root as conflux makes one", reaped)
-			}
-
-			if b, err := os.ReadFile(kept); err != nil || string(b) != "not conflux's" {
-				t.Errorf("where a link at the root's name led lost what is in it: %q, %v", b, err)
-			}
-		})
-	}
-}
-
-// plantIn makes the directory dir, at 0700, holding each of names, somebody's.
-func plantIn(t *testing.T, dir string, names ...string) {
-	t.Helper()
-
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	for _, name := range names {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("somebody's"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
 }
 
 // TestTidyLeavesWhatAHeldLockGuards: what an atomic write left in the state directory is removed only

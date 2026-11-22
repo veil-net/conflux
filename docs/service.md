@@ -403,7 +403,7 @@ the node itself is the platform's, not conflux's.
 $ sudo conflux serve --foreground
 ```
 
-Not to be confused with an ephemeral run (`conflux up --ephemeral`,
+Not to be confused with an ephemeral run (`conflux up --ephemeral`, on Linux,
 [ephemeral.md](ephemeral.md)), which is in the foreground too but registers no service,
 reads no configuration and keeps nothing, and does not come back when anchord ends.
 

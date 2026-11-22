@@ -1,6 +1,6 @@
-//go:build !linux && !windows
+//go:build !linux
 
 package daemon
 
-// notDumpable is Linux's; RLIMIT_CORE is the whole of it here.
-func notDumpable() {}
+// noCoreDumps is Linux's, the one platform an ephemeral run, which asks for it, runs on.
+func noCoreDumps() {}

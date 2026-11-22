@@ -1064,3 +1064,11 @@ func TestAWaitForTheStateLockEndsWithItsContext(t *testing.T) {
 		cancel()
 	}
 }
+
+// handed is a credential handed in -- installed, or an ephemeral run's -- issued and expiring when
+// asked, renewing against is.
+func handed(t *testing.T, is *issuer, issued, expires time.Time) config.Envelope {
+	t.Helper()
+
+	return envelope(manifestDoc([]byte("the first chain"), issued, expires, []string{"t"}, is.srv.URL+"/ghosts/alpha/renew"))
+}

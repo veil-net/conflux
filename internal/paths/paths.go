@@ -255,11 +255,9 @@ func (d Dirs) ReadyFile() string { return filepath.Join(d.Run, "ready") }
 // and on Windows the Administrators' under a protected DACL granting SYSTEM and the Administrators
 // alone, which what is made in it inherits.
 //
-// A root not there is made, with each folder missing on the way to it, and those on the way to the
-// installation's root (chosenWay) recorded in the state root (recordWay) for uninstall, or an ephemeral
-// run as it ends, to remove whole (Way, RemoveWay). Any other folder made on the way -- one an ordinary
-// user's ephemeral run's root is made in, such as their cache or runtime directory -- is the system's,
-// which other programs fill too, and is not recorded. Whatever is at a root's
+// A root not there is made, with each folder missing on the way to the installation's root, recorded in
+// the state root (recordWay) for uninstall to remove whole (Way, RemoveWay); an ephemeral run's root is
+// made in its runtime folder, and a runtime folder not there is refused, nothing made. Whatever is at a root's
 // name and is not as conflux makes a root -- a link, a file, a folder another account owns or may write
 // (ours) -- is removed as itself from the folder it is in, and the root made afresh: a root is conflux's
 // whole, and nothing in it is kept for anybody. Each folder conflux keeps in a root (folders) is judged
@@ -317,6 +315,10 @@ func (d Dirs) makeRoot(dir string) ([]string, error) {
 		return nil, err
 	}
 	defer w.close()
+
+	if d.ephemeral && w.missing != nil {
+		return nil, w.missing
+	}
 
 	made, err := makeWay(dir, w)
 	if err != nil {

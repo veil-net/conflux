@@ -207,10 +207,7 @@ func TestTheWayIsRecordedAsTheConfluxDirIsSpelled(t *testing.T) {
 // whose record is none of conflux's either, and refuses a record that is a link, unfollowed. RemoveWay
 // leaves each folder holding the installation's root while that holds anything, and once the root is
 // gone removes each recorded folder whole, deepest first, whatever it holds, the folder they were made in
-// kept; a link put at a recorded folder's name is left, and where it leads untouched. A folder made on
-// the way to an ephemeral run's root outside any CONFLUX_DIR -- a user's cache or runtime directory -- is
-// the system's, and not recorded; under one, the .conflux a run made is, and RemoveWay leaves it while an
-// installation made there since holds anything, and removes it once it holds nothing.
+// kept; a link put at a recorded folder's name is left, and where it leads untouched.
 func TestTheWayConfluxMadeIsRemovedWhole(t *testing.T) {
 	base := t.TempDir()
 	a, b := filepath.Join(base, "a"), filepath.Join(base, "a", "b")
@@ -326,54 +323,6 @@ func TestTheWayConfluxMadeIsRemovedWhole(t *testing.T) {
 
 	if _, err := os.Stat(elsewhere); err != nil {
 		t.Errorf("RemoveWay reached %s: %v", elsewhere, err)
-	}
-
-	t.Setenv("CONFLUX_DIR", "")
-
-	x := filepath.Join(base, "x")
-
-	e := EphemeralDirs(filepath.Join(x, "conflux-ephemeral"))
-	if err := e.EnsureAll(); err != nil {
-		t.Fatal(err)
-	}
-
-	if got, err := e.Way(); err != nil || got != nil {
-		t.Errorf("Way() of an ephemeral run's root made in %s, which it made too = %q, %v, want no record", x, got, err)
-	}
-
-	t.Setenv("CONFLUX_DIR", t.TempDir())
-
-	installation := Default()
-
-	e = EphemeralDirs(filepath.Join(installation.State, "ephemeral"))
-	if err := e.EnsureAll(); err != nil {
-		t.Fatal(err)
-	}
-
-	eway, err := e.Way()
-	if err != nil || !slices.Equal(eway, []string{installation.State}) {
-		t.Fatalf("Way() of an ephemeral run's root in a CONFLUX_DIR = %q, %v, want %q", eway, err,
-			[]string{installation.State})
-	}
-
-	if _, err := RemoveRoot(e.State); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.WriteFile(installation.ConfigFile(), []byte("{}"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	if removed, err := RemoveWay(eway); err != nil || removed != nil {
-		t.Errorf("RemoveWay(%q), an installation made there = %q, %v, want nothing removed", eway, removed, err)
-	}
-
-	if err := os.Remove(installation.ConfigFile()); err != nil {
-		t.Fatal(err)
-	}
-
-	if removed, err := RemoveWay(eway); err != nil || !slices.Equal(removed, eway) {
-		t.Errorf("RemoveWay(%q), empty = %q, %v, want it removed", eway, removed, err)
 	}
 }
 

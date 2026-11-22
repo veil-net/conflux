@@ -111,9 +111,8 @@ it, and a protected DACL grants the two of them full control and nobody else any
 inherited by everything beneath. Both are set as the directory is created, so it never
 carries `%ProgramData%`'s grant to `Users` — enough to turn an empty directory into a
 junction — not even for an instant. Every secret file gets the same, explicitly, before
-anything is written into it. A `CONFLUX_DIR`'s root, `.conflux` inside the folder it names, an
-ephemeral run's root, `ephemeral` inside the installation's, and the folders conflux makes on the way
-to a `CONFLUX_DIR` are made the same.
+anything is written into it. A `CONFLUX_DIR`'s root, `.conflux` inside the folder it names, and the
+folders conflux makes on the way to a `CONFLUX_DIR` are made the same.
 
 Everything else conflux makes in a root or on the way to one — `logs\`, the lock files,
 `bin\` and its lock, the service's copy of conflux, the log — is the Administrators' as well,
@@ -130,10 +129,10 @@ extract the anchor pair into `bin\` where it is not there yet.
 A root conflux finds already there is its own only where it is as conflux makes one: a folder, not a
 junction or a link, owned by SYSTEM, the Administrators or TrustedInstaller, whose DACL grants nobody
 else any right, to read it included, on it or on what is made in it. The account running conflux is
-never trusted by its SID, for an installation's root, which the boot service runs from as SYSTEM,
-trusting no other account, and an ephemeral run's, which only an elevated conflux makes or can open,
-alike: its processes that are not elevated could have made one first in `%ProgramData%` and filled
-it, so one the administrator running conflux owns, or that grants them a right, is not conflux's. Anything else at the name — a folder another account made, as
+never trusted by its SID for an installation's root, which the boot service runs from as SYSTEM,
+trusting no other account: its processes that are not elevated could have made one first in
+`%ProgramData%` and filled it, so one the administrator running conflux owns, or that grants them a
+right, is not conflux's. Anything else at the name — a folder another account made, as
 `%ProgramData%` lets any account make `.conflux` first, one that inherits
 `%ProgramData%`'s grants, a junction, a file — is removed as itself by every command that makes a
 root, through a handle on the folder it is in, never followed, opened to delete it and read its
@@ -158,8 +157,8 @@ a `CONFLUX_DIR` is the user's responsibility, and one another account can change
 lets that account put a root of its own where conflux's was. conflux owns `.conflux` inside it, and
 remakes it as it makes it. The way to a root is walked from the top of its volume, each folder held
 open through a handle on the one before, never followed, and a junction or a link read off itself and
-gone on from where it leads. What conflux picks itself — the default root, an ephemeral run's
-root, an elevated reader's temporary copy of anchorctl — is judged for SYSTEM or the Administrators,
+gone on from where it leads. What conflux picks itself — the default root, an elevated reader's
+temporary copy of anchorctl — is judged for SYSTEM or the Administrators,
 never the account running conflux by its SID, so that account's processes that are not elevated
 cannot have made or changed it.
 
@@ -187,11 +186,9 @@ SYSTEM's and Administrators' instead, made the same way, with that security as t
 
 ## An ephemeral run
 
-`conflux up --ephemeral` and `conflux proxy --ephemeral` need Administrator on Windows,
-whatever the mode: every directory conflux keeps there, the ephemeral run's
-`%ProgramData%\.conflux\ephemeral` included, is SYSTEM's and Administrators'. anchord runs
-as that Administrator, in conflux's job object, so it ends however conflux does. See
-[ephemeral.md](ephemeral.md).
+There is none on Windows: `conflux up --ephemeral` and `conflux proxy --ephemeral` are refused,
+exit 2, before anything is read. An ephemeral run is kept in a filesystem in memory that the
+system empties at boot, which only Linux gives it. See [ephemeral.md](ephemeral.md).
 
 ## The service
 

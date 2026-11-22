@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -113,18 +112,17 @@ func TestAnEphemeralRunAsksNothing(t *testing.T) {
 }
 
 // TestAnEphemeralProxyNeedsNoRoot: userspace needs no privilege, and an ephemeral run registers
-// nothing that would, so proxy runs as anybody; a TUN, and observing, still need root, and on
-// Windows every root conflux keeps is Administrators'.
+// nothing that would, so proxy runs as anybody; a TUN, and observing, still need root.
 func TestAnEphemeralProxyNeedsNoRoot(t *testing.T) {
-	was := privcheck.Elevated
-	privcheck.Elevated = func() bool { return false }
+	was, wasOS := privcheck.Elevated, hostOS
+	privcheck.Elevated, hostOS = func() bool { return false }, "linux"
 
-	t.Cleanup(func() { privcheck.Elevated = was })
+	t.Cleanup(func() { privcheck.Elevated, hostOS = was, wasOS })
 
 	run := &ephemeralRun{}
 
-	if err := run.root(&config.Config{}, nil); (err == nil) != (runtime.GOOS != "windows") {
-		t.Errorf("an unprivileged ephemeral proxy on %s: %v", runtime.GOOS, err)
+	if err := run.root(&config.Config{}, nil); err != nil {
+		t.Errorf("an unprivileged ephemeral proxy: %v", err)
 	}
 
 	if err := run.root(&config.Config{Observer: &config.Observer{}}, nil); err == nil {
@@ -133,5 +131,29 @@ func TestAnEphemeralProxyNeedsNoRoot(t *testing.T) {
 
 	if _, errOut, code := capture(t, "up", "--ephemeral"); code != ExitDenied {
 		t.Errorf("an unprivileged ephemeral up exited %d, want %d:\n%s", code, ExitDenied, errOut)
+	}
+}
+
+// TestEphemeralIsLinuxAlone: an ephemeral run is Linux's alone, so up and proxy refuse --ephemeral
+// everywhere else, exit 2, saying so, before anything is read -- the credential --manifest names among
+// it -- or asked for, root included.
+func TestEphemeralIsLinuxAlone(t *testing.T) {
+	was := hostOS
+	t.Cleanup(func() { hostOS = was })
+
+	manifest := filepath.Join(t.TempDir(), "not-there.b64")
+
+	for _, goos := range []string{"darwin", "freebsd", "openbsd", "windows"} {
+		hostOS = goos
+
+		for _, args := range [][]string{
+			{"up", "--ephemeral"},
+			{"proxy", "8080=127.0.0.1:3000", "--ephemeral", "--manifest", manifest},
+		} {
+			if _, errOut, code := capture(t, args...); code != ExitUsage || !strings.Contains(errOut, "Linux") {
+				t.Errorf("%s on %s exited %d, want %d saying it is Linux's alone:\n%s", strings.Join(args, " "), goos,
+					code, ExitUsage, errOut)
+			}
+		}
 	}
 }

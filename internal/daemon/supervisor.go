@@ -105,11 +105,10 @@ type Supervisor struct {
 	// before it kills a daemon it cannot signal.
 	observing bool
 
-	// ephemeral is set by an ephemeral run, which uses the process plumbing below and none
-	// of the persistence: anchord is handed to the ephemeral account rather than the
-	// installation's, ends with this process however this process ends, where the platform
-	// can say so at the start (Linux; Windows ends it with its job anyway), and leaves the
-	// macOS BPF devices to the installation. See ephemeral.go.
+	// ephemeral is set by an ephemeral run, Linux's alone, which uses the process plumbing below
+	// and none of the persistence: anchord is handed to the ephemeral account rather than the
+	// installation's, and ends with this process however this process ends, by a parent-death
+	// signal. See ephemeral.go.
 	ephemeral bool
 
 	drop dropState

@@ -34,7 +34,7 @@ func temporaryParents() []string {
 func temporaryDir() (string, func(string, bool) error, error) {
 	candidates := temporaryParents()
 
-	parent, err := paths.FirstExecutable(candidates, nil)
+	parent, err := paths.FirstExecutable(candidates)
 	if errors.Is(err, paths.ErrNoExec) {
 		return "", nil, fmt.Errorf("every temporary directory is on a filesystem mounted noexec, so the anchorctl "+
 			"conflux runs could not run from it: %v.\n  Set TMPDIR to a directory on one that is not", candidates)

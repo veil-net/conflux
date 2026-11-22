@@ -38,7 +38,8 @@ lapse now happens, and that the window is the operator's to choose.
 **Or there is no file.** An ephemeral run (`--ephemeral`, [ephemeral.md](ephemeral.md))
 holds the identity in memory alone, from the enrolment response or the manifest handed in
 straight through to anchord, and writes it nowhere; core dumps are off for it and its
-anchord. What is left to steal is the memory of a running process, which only root on that
+anchord. It runs on Linux alone, in a root of its own in the runtime folder, a filesystem in
+memory the system empties at boot. What is left to steal is the memory of a running process, which only root on that
 host can read, and when the run stops there is nothing at all.
 
 ## The file, and the directory around it
@@ -55,8 +56,9 @@ host can read, and when the run stops there is nothing at all.
 - Conflux's folders are conflux's by their names: its one root, `.conflux`, in the system's data
   folder (`/var/lib/.conflux` on Linux, `/var/db/.conflux` on the BSDs, `/Library/Application
   Support/.conflux` on macOS, `%ProgramData%\.conflux` on Windows), or under `CONFLUX_DIR=<dir>` in
-  `<dir>/.conflux` instead, the same layout, everything of conflux's in it; and an ordinary user's
-  ephemeral run's root in their own runtime or cache directory. Conflux
+  `<dir>/.conflux` instead, the same layout, everything of conflux's in it; and an ephemeral run's
+  root, on Linux, `.conflux` in the runtime folder (`/run/.conflux` as root,
+  `$XDG_RUNTIME_DIR/.conflux` otherwise), which is never inside the installation's. Conflux
   makes each as above, and whatever is at one of those names and is not as conflux makes a root — a
   link, a file, a directory another account owns, or whose mode or ACL lets another account write it,
   or on Windows whose DACL grants another account anything — is removed as itself from the folder it
@@ -91,8 +93,8 @@ host can read, and when the run stops there is nothing at all.
   in it by its name: the directory at the root's own name, looked up in the folder held and never
   followed, as conflux makes a root — owned by root or the account running conflux, and
   written by nobody else; on Windows owned by SYSTEM, the Administrators or TrustedInstaller, and
-  granting nobody else anything. What conflux picks itself — the default root, an ephemeral run's,
-  an elevated reader's temporary copy of anchorctl — an elevated conflux never trusts its own account
+  granting nobody else anything. What conflux picks itself — the default root, an elevated reader's
+  temporary copy of anchorctl — an elevated conflux never trusts its own account
   with by its SID: its processes that are not elevated could have made and filled what that account
   owns or is granted. Nothing above a root is judged. A root that fails is refused, saying why, with nothing in it read, run or stopped; with none there the command
   says nothing is installed, reading nothing, since what is at a name that was not there a moment ago
@@ -190,19 +192,15 @@ missing on the way is made in the one held before it and held open in turn, neve
 conflux's own or one somebody else made at the name meanwhile — a sticky directory such as `/tmp`,
 and `C:\`, let anybody make a name not taken yet — and a link there is refused. An installation
 keeps a record of the directories it made on the way to a `CONFLUX_DIR`'s root, in its state root
-(`way`), a `CONFLUX_DIR` conflux made among them, and an ephemeral run inside the installation's root
-one in its own root, with the `.conflux` it made; the system's data folder is the system's, and a
-directory conflux had to make on the way to an ordinary user's ephemeral root — their cache or
-runtime directory — is the system's too, which other programs fill, and neither is recorded. Uninstall, or the run as it ends,
-reads the record before it removes the roots — only from a root as conflux makes one, as a file
+(`way`), a `CONFLUX_DIR` conflux made among them; the system's data folder is the system's, and is
+not recorded. An ephemeral run's root is made in a runtime folder that is there, and nothing on the
+way to it is made. Uninstall reads the record before it removes the roots — only from a root as conflux makes one, as a file
 another account may have put there, never through a link, and through the root held open first, as
 `update` asks after the serve lock — taking only directories above its roots, none the top of a
 volume; and then removes each, deepest first, from the directory it is in as a walk of the way
 holds it, never through a link and never by its name, leaving any that a link took the place of:
 each whole, whatever it holds, but for one that is, or holds, the installation's root while that
-holds anything — a root uninstall could not remove, or, as an ephemeral run ends, the `.conflux` it
-made on its way, which is the installation's root by its name and may hold an installation made
-since, whose identity only `uninstall` removes. A way that ends in where a link leads, at a name
+holds anything, a root uninstall could not remove. A way that ends in where a link leads, at a name
 not there, is refused, with nothing made there, and so is one that cannot be walked: `uninstall`
 walks every root's way before it acts, and stops there, nothing removed, where one cannot be.
 
@@ -237,8 +235,8 @@ confining. The rule: **it runs as root, or with a capability, only where the hos
 configuration needs that** — and wherever giving something up would cost an operation or a
 function, it keeps it, and `conflux status` says why:
 
-An ephemeral run started as root holds its anchord to the same rule under an account of
-its own, `conflux-ephemeral`, which the installed supervisor never touches; started as an
+An ephemeral run, on Linux, started as root holds its anchord to the same rule under an account
+of its own, `conflux-ephemeral`, which the installed supervisor never touches; started as an
 ordinary user, anchord runs as that user. See [ephemeral.md](ephemeral.md#who-runs-it-and-as-what).
 
 ```

@@ -87,6 +87,10 @@ func runUp(ctx context.Context, args []string) (code int) {
 		return ExitUsage
 	}
 
+	if eph.refused() {
+		return ExitUsage
+	}
+
 	// An ephemeral run reads its credential first, and touches nothing of the machine's.
 	run, err := eph.prepare()
 	if err != nil {

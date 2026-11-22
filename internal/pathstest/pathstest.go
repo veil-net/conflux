@@ -23,10 +23,12 @@ func Dirs(tb testing.TB) paths.Dirs {
 	return DirsIn(tb, tb.TempDir())
 }
 
-// DirsIn is Dirs rooted in root.
+// DirsIn is Dirs rooted in root, with an ephemeral run's runtime folder in a fresh temporary directory
+// of its own too (Runtime), so that nothing the test runs reaches the system's.
 func DirsIn(tb testing.TB, root string) paths.Dirs {
 	tb.Helper()
 	tb.Setenv("CONFLUX_DIR", root)
+	Runtime(tb, tb.TempDir())
 
 	d := paths.Default()
 	if err := d.EnsureAll(); err != nil {
@@ -34,6 +36,19 @@ func DirsIn(tb testing.TB, root string) paths.Dirs {
 	}
 
 	return d
+}
+
+// Runtime keeps an ephemeral run's root in dir, as the runtime folder (paths.RuntimeFolder), for the rest
+// of the test, and is dir.
+func Runtime(tb testing.TB, dir string) string {
+	tb.Helper()
+
+	was := paths.RuntimeFolder
+	paths.RuntimeFolder = func() (string, error) { return dir, nil }
+
+	tb.Cleanup(func() { paths.RuntimeFolder = was })
+
+	return dir
 }
 
 // Temporary roots, for the rest of the test, every place a reader's temporary anchorctl may be made in

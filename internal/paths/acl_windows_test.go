@@ -582,12 +582,10 @@ func TestALinkLeadingOffThisMachineOrNowhereIsRefused(t *testing.T) {
 				refusal(dir))
 		}
 
-		for _, d := range []Dirs{Default(), EphemeralDirs(filepath.Join(root, "ephemeral"))} {
-			if err := d.Check(); err == nil || !strings.Contains(err.Error(), refusal(filepath.Dir(d.State))) ||
-				!strings.Contains(err.Error(), "may be on another machine") {
-				t.Errorf("Check(%s), CONFLUX_DIR %s, = %v, want %q, saying it may be on another machine", d.State, dir,
-					err, refusal(filepath.Dir(d.State)))
-			}
+		if err := Default().Check(); err == nil || !strings.Contains(err.Error(), refusal(filepath.Dir(root))) ||
+			!strings.Contains(err.Error(), "may be on another machine") {
+			t.Errorf("Check(%s), CONFLUX_DIR %s, = %v, want %q, saying it may be on another machine", root, dir,
+				err, refusal(filepath.Dir(root)))
 		}
 	}
 
@@ -641,13 +639,13 @@ func TestARootIsMadeWithItsDACL(t *testing.T) {
 	privtest.DenyOwnersTheirDACL(t, parent)
 
 	made := filepath.Join(parent, "made")
-	if _, err := EphemeralDirs(made).makeRoot(made); err != nil {
+	if _, err := rootAt(made).makeRoot(made); err != nil {
 		t.Fatalf("makeRoot: %v", err)
 	}
 
 	onlyTheSystems(t, made)
 
-	if _, err := EphemeralDirs(made).makeRoot(made); err != nil {
+	if _, err := rootAt(made).makeRoot(made); err != nil {
 		t.Errorf("makeRoot of a root already there: %v", err)
 	}
 
@@ -703,7 +701,7 @@ func TestTheWayConfluxMakesIsItsOwn(t *testing.T) {
 		}
 	}
 
-	if err := EphemeralDirs(way[1]).Check(); err != nil {
+	if err := rootAt(way[1]).Check(); err != nil {
 		t.Errorf("Check(%s, which conflux made on the way to %s) = %v", way[1], root, err)
 	}
 }
@@ -711,8 +709,8 @@ func TestTheWayConfluxMakesIsItsOwn(t *testing.T) {
 // TestAnInstallationInAProfileIsMade: the boot service runs as SYSTEM, which trusts no other account
 // with its root, but the way to the root is the user's choice and not judged: a CONFLUX_DIR inside a
 // folder granting this account full control, as the profile of the administrator running conflux does,
-// has its root made, SYSTEM's and the Administrators' alone, which passes the readers' check, and so has
-// an ephemeral run's root inside that CONFLUX_DIR. Windows-only, so it runs in CI's platforms job alone.
+// has its root made, SYSTEM's and the Administrators' alone, which passes the readers' check.
+// Windows-only, so it runs in CI's platforms job alone.
 func TestAnInstallationInAProfileIsMade(t *testing.T) {
 	profile := filepath.Join(t.TempDir(), "profile")
 	if err := os.Mkdir(profile, 0o700); err != nil {
@@ -734,18 +732,6 @@ func TestAnInstallationInAProfileIsMade(t *testing.T) {
 		t.Errorf("Check(an installation inside a folder granting this account full control) = %v", err)
 	}
 
-	d, err := Ephemeral()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := d.EnsureAll(); err != nil {
-		t.Errorf("EnsureAll(an ephemeral run's root inside %s) = %v", root, err)
-	}
-
-	if err := d.Check(); err != nil {
-		t.Errorf("Check(an ephemeral run's root EnsureAll made inside %s) = %v", root, err)
-	}
 }
 
 // onlyTheSystems fails t unless dir belongs to the Administrators, as everything conflux makes does,
@@ -783,45 +769,8 @@ func grantedFolder(t *testing.T, dir string, access windows.ACCESS_MASK) string 
 	return dir
 }
 
-// TestAnEphemeralRootIsJudgedForTheAdministrators: %ProgramData% lets any account make
-// conflux-ephemeral first, and the administrator's own processes that are not elevated could make one and
-// fill it with a held lock, a readiness marker and an anchorctl of their own, for an elevated reader to
-// take for a run and run. So an ephemeral run's root is judged for the Administrators, never the account
-// conflux runs as by its own SID: one that account owns, or one granting it anything, is refused, naming
-// it, and EnsureAll makes it afresh, the Administrators', which then passes. Windows-only, so it runs in
-// CI's platforms job alone, which runs elevated.
-func TestAnEphemeralRootIsJudgedForTheAdministrators(t *testing.T) {
-	user := currentUser().String()
-
-	for what, sddl := range map[string]string{
-		"owned by the administrator's own account": "O:" + user + "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)",
-		"granting the administrator's own account": "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;" + user + ")",
-	} {
-		t.Run(what, func(t *testing.T) {
-			root := filepath.Join(t.TempDir(), ephemeralName)
-			if err := os.Mkdir(root, 0o700); err != nil {
-				t.Fatal(err)
-			}
-
-			privtest.SetSecurity(t, root, sddl)
-
-			if err := EphemeralDirs(root).Check(); err == nil || !strings.Contains(err.Error(), root+" is not as conflux makes") {
-				t.Errorf("Check(an ephemeral root %s) = %v, want a refusal naming it", what, err)
-			}
-
-			if err := EphemeralDirs(root).EnsureAll(); err != nil {
-				t.Fatalf("EnsureAll(an ephemeral root %s) = %v", what, err)
-			}
-
-			if err := EphemeralDirs(root).Check(); err != nil {
-				t.Errorf("Check(the ephemeral root EnsureAll made afresh) = %v", err)
-			}
-		})
-	}
-}
-
-// TestAReaderRefusesARootItCannotRead: %ProgramData% lets any account make conflux-ephemeral where
-// no run has made it yet, and give it a DACL denying everybody the right to read it, so only a root
+// TestAReaderRefusesARootItCannotRead: %ProgramData% lets any account make .conflux where conflux has
+// not made it yet, and give it a DACL denying everybody the right to read it, so only a root
 // that is not there, or under a directory that is not, is taken by the readers' check for none,
 // fs.ErrNotExist, unread: one this account may not open is refused, naming it and the denial, rather
 // than taken for a run's or for none; and EnsureAll, which may remove it whatever its DACL says, makes
@@ -841,12 +790,12 @@ func TestAReaderRefusesARootItCannotRead(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := EphemeralDirs(root).Check(); !errors.Is(err, windows.ERROR_ACCESS_DENIED) || !strings.Contains(err.Error(), root) {
+	if err := rootAt(root).Check(); !errors.Is(err, windows.ERROR_ACCESS_DENIED) || !strings.Contains(err.Error(), root) {
 		t.Errorf("Check(a root whose DACL denies everybody the right to read it) = %v, want %v, naming it", err,
 			windows.ERROR_ACCESS_DENIED)
 	}
 
-	if err := EphemeralDirs(root).EnsureAll(); err != nil {
+	if err := rootAt(root).EnsureAll(); err != nil {
 		t.Errorf("EnsureAll(a root whose DACL denies everybody the right to read it) = %v, want it made afresh", err)
 	}
 
@@ -855,7 +804,7 @@ func TestAReaderRefusesARootItCannotRead(t *testing.T) {
 	absent := filepath.Join(t.TempDir(), "absent")
 
 	for _, dir := range []string{absent, filepath.Join(absent, "conflux")} {
-		if err := EphemeralDirs(dir).Check(); !errors.Is(err, os.ErrNotExist) {
+		if err := rootAt(dir).Check(); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("Check(%s, which is not there) = %v, want %v", dir, err, os.ErrNotExist)
 		}
 	}
@@ -900,7 +849,7 @@ func TestCheckHoldsARootAsConfluxMakesOne(t *testing.T) {
 		"a root inheriting %ProgramData%'s grant to Users":        inherits,
 		"a root passing Users full control of what is made in it": passes,
 	} {
-		err := EphemeralDirs(root).Check()
+		err := rootAt(root).Check()
 		if err == nil || !strings.Contains(err.Error(), root+" is not as conflux makes") ||
 			!strings.Contains(err.Error(), "Users") {
 			t.Errorf("Check(%s) = %v, want a refusal naming it and Users", what, err)
@@ -1042,4 +991,10 @@ func TestMakeRootGoesIntoNoNameTakenMeanwhile(t *testing.T) {
 			})
 		}
 	}
+}
+
+// rootAt is the Dirs of a root at root, the configuration and the state in it and the run directory
+// inside it: for a test that judges or makes a root there.
+func rootAt(root string) Dirs {
+	return Dirs{Config: root, State: root, Run: filepath.Join(root, runName)}
 }

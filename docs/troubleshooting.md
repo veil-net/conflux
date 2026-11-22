@@ -136,12 +136,17 @@ route — is anchor's to fix, and worth reporting there with that output attache
 
 - **"an ephemeral anchor is already running from …"**: one ephemeral run per user at a time.
   `conflux status` reports the one that is running; stop it where it runs (Ctrl-C).
-- **"every place an ephemeral run is kept is on a filesystem mounted noexec"**: the run
-  extracts anchord into its root, and every candidate refused execution. Set `CONFLUX_DIR`
-  to a directory on a filesystem that allows it.
+- **"--ephemeral runs on Linux alone"**: macOS, the BSDs and Windows have no ephemeral run.
+- **"… XDG_RUNTIME_DIR does not name one"**: an ordinary user's run is kept in their runtime
+  directory, which their login session names. Run it from a session that sets it
+  (systemd-logind does), or as root, in `/run`.
+- **"…, where an ephemeral run keeps its root, is not there"**, or **"… is on a filesystem
+  mounted noexec, so the anchord it extracts could not run there"**: the run extracts anchord
+  into its root, in the runtime folder, and there is no other place; conflux makes nothing on the
+  way to it. Mount it without `noexec`, or run from a session whose runtime directory is there.
 - **`conflux status` says a root was left behind**: an ephemeral run was killed before it
-  could clean up, which on macOS and the BSDs can leave its anchord running. The next
-  ephemeral run stops it and clears the root; so does a reboot.
+  could clean up. The next ephemeral run stops any anchord it left and clears the root; so does
+  a reboot, with the filesystem it is on.
 
 See [ephemeral.md](ephemeral.md).
 

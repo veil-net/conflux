@@ -26,7 +26,6 @@ layout everywhere:
 | `anchor/`, `anchor.root/` | what the anchor keeps |
 | `run/` | the token, anchord's pid, the readiness marker, and `run/anchord/sock`, anchord's socket |
 | `logs/` | the service's log, on macOS, FreeBSD and Windows; journald and syslog keep it on Linux and OpenBSD |
-| `ephemeral/` | an ephemeral run's root, for root (Administrator on Windows) |
 
 `CONFLUX_DIR` keeps the same layout in `.conflux` inside the directory it names instead, and the boot service with it — it is named after the directory, so a run under it is a separate installation rather than a replacement for the machine's own. See [testing.md](testing.md). The directory itself, and every directory above it, is never changed and never judged, so a folder of yours can be one: choosing it is your responsibility, since whoever can change it can put another root in this one's place ([security.md](security.md#the-extracted-binaries)). conflux owns `.conflux` inside it, and remakes it as it makes it. On Windows it must be on one of the machine's own volumes: a share, or a drive mapped to one, is refused, with nothing made there.
 
@@ -320,7 +319,8 @@ into it. See [windows.md](windows.md#file-permissions).
 | the service's log file (macOS, FreeBSD, Windows) | kept | appended | appended | deleted |
 | extracted binaries | kept | kept | kept | deleted |
 
-An ephemeral run is outside this table: it reads and writes none of these files, and keeps
-its socket and its extracted binaries in a root of its own that goes when the run does. The
-one thing of it that outlives a run is the `conflux-ephemeral` account, which `uninstall`
-removes with the installation's. See [ephemeral.md](ephemeral.md).
+An ephemeral run, on Linux, is outside this table: it reads and writes none of these files, and
+keeps its socket and its extracted binaries in a root of its own, `/run/.conflux` or
+`$XDG_RUNTIME_DIR/.conflux`, never in the installation's, that goes when the run does. The one
+thing of it that outlives a run is the `conflux-ephemeral` account, which `uninstall` removes with
+the installation's. See [ephemeral.md](ephemeral.md).

@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -13,14 +12,13 @@ import (
 	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
-	"github.com/veil-net/conflux/internal/wintun"
 )
 
 // An ephemeral run is one anchor, in the foreground, from a credential held only in memory.
 //
 //	conflux up --ephemeral                    the terminal, or whatever started it
-//	  └── anchord -socket …                   no -config; ends with conflux (Linux: a
-//	                                          parent-death signal; Windows: its job)
+//	  └── anchord -socket …                   no -config; ends with conflux, by a
+//	                                          parent-death signal
 //
 // It is the Supervisor's opposite at every point the Supervisor exists for. Nothing is read
 // from the machine's configuration and nothing is written to it: the enrolment response, or
@@ -32,7 +30,8 @@ import (
 // spawn, the wait for readiness, the shutdown, the account anchord is handed to -- its own,
 // conflux-ephemeral, which the installed supervisor never touches.
 
-// Ephemeral runs one anchor until the context is cancelled or anchord ends.
+// Ephemeral runs one anchor until the context is cancelled or anchord ends: on Linux alone, which up
+// and proxy hold an ephemeral run to.
 type Ephemeral struct {
 	// Dirs is the run's root (paths.Ephemeral), made and removed by Run.
 	Dirs paths.Dirs
@@ -125,7 +124,7 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 		e.report().Warn("stopped anchord (pid %d), left running by an ephemeral run that ended without stopping it", pid)
 	}
 
-	if _, err := paths.ClearExcept(d.State, d.ServeLockFile(), d.WayFile()); err != nil {
+	if _, err := paths.ClearExcept(d.State, d.ServeLockFile()); err != nil {
 		return err
 	}
 
@@ -199,13 +198,6 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 	if x := e.Config.Export; x != nil && x.Enabled {
 		if err := s.ctl.Export(ctx, x.Endpoint, x.Insecure, x.Signals()); err != nil {
 			return fmt.Errorf("pointing the export at %s: %w", x.Endpoint, err)
-		}
-	}
-
-	// Windows needs the driver beside anchord before an interface can exist.
-	if e.Config.Mode == config.ModeTUN {
-		if err := wintun.Ensure(ctx, d); err != nil {
-			return err
 		}
 	}
 
@@ -375,43 +367,25 @@ func untilRenewal(m *enrol.Manifest) time.Duration {
 	return min(max(time.Until(at), 0), maxSleep)
 }
 
-// RemoveEphemeral removes a killed ephemeral run's root e, as tidy and uninstall clear it, whose lock
-// the caller holds and lets go of with unlock: whatever the run left running is stopped first, and
-// then the root is emptied and removed (emptyEphemeral).
-func RemoveEphemeral(e paths.Dirs, unlock func(), r Reporter) error {
-	_, reapErr := (&Supervisor{Dirs: e, Reporter: r, ephemeral: true}).reapLeftovers()
-
-	return errors.Join(reapErr, emptyEphemeral(e, unlock))
-}
-
 // emptyEphemeral empties an ephemeral run's root e but for its lock while the lock is held, so a run that
 // takes it the moment it is let go is never emptied out from under itself; then lets go of the lock with
-// unlock, and removes the lock file and the root, which is empty unless such a run has taken it, and,
-// once the root is gone, the folders a run made on the way to it, which it recorded there (paths.Way),
-// whole (paths.RemoveWay): under a CONFLUX_DIR, the .conflux it made and the CONFLUX_DIR where it made
-// that, unless the .conflux holds anything by then, as one an installation has been made in since does. The root is conflux's, made as
-// conflux makes one, so nobody else can have put anything in it, nor a link at its name. It says why the
-// root could not be emptied, or its way read or removed.
+// unlock, and removes the lock file and the root, which is empty unless such a run has taken it. The root
+// is conflux's, made as conflux makes one, so nobody else can have put anything in it, nor a link at its
+// name. It says why the root could not be emptied.
 func emptyEphemeral(e paths.Dirs, unlock func()) error {
-	way, wayErr := e.Way()
-
 	_, err := paths.ClearExcept(e.State, e.ServeLockFile())
 
 	unlock()
 
 	_ = os.Remove(e.ServeLockFile())
+	_ = os.Remove(e.State)
 
-	if os.Remove(e.State) == nil {
-		_, removeErr := paths.RemoveWay(way)
-		wayErr = errors.Join(wayErr, removeErr)
-	}
-
-	return errors.Join(err, wayErr)
+	return err
 }
 
-// reapLeftovers stops what a run killed before it could clean up left running from the root --
-// its anchord, where nothing ended it with that run (macOS and the BSDs), and whatever runs as
-// the ephemeral account -- and says which anchord it stopped, or why it could not.
+// reapLeftovers stops what a run killed before it could clean up left running from the root -- its
+// anchord, where its parent-death signal has not ended it yet, and whatever runs as the ephemeral account
+// -- and says which anchord it stopped, or why it could not.
 func (s *Supervisor) reapLeftovers() (pid int, err error) {
 	pid, err = ReapOrphan(s.Dirs)
 

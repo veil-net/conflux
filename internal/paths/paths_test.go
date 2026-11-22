@@ -65,7 +65,7 @@ func TestOneLayoutWithOrWithoutAConfluxDir(t *testing.T) {
 
 // TestAConfluxDirAtAVolumesTopIsNeverARoot: a CONFLUX_DIR at the top of a volume, / or C:\, is a folder
 // conflux never changes: the one root conflux makes, judges and removes there is .conflux inside it, and
-// every root, and every ephemeral candidate, is that folder or inside it, none the top itself. Asserted of
+// every root is that folder or inside it, none the top itself. Asserted of
 // the names alone, so nothing is made or removed outside the test's own directories.
 func TestAConfluxDirAtAVolumesTopIsNeverARoot(t *testing.T) {
 	tops := map[string]string{string(filepath.Separator): string(filepath.Separator)}
@@ -88,7 +88,7 @@ func TestAConfluxDirAtAVolumesTopIsNeverARoot(t *testing.T) {
 			t.Errorf("Outer() with CONFLUX_DIR=%s = %q, want %q", dir, got, []string{own})
 		}
 
-		for _, p := range append([]string{d.Config, d.State, d.Run, d.Log}, EphemeralCandidates()...) {
+		for _, p := range []string{d.Config, d.State, d.Run, d.Log} {
 			if p != "" && (p != own && !above(own, p) || !above(top, p)) {
 				t.Errorf("with CONFLUX_DIR=%s, %s is neither %s nor inside it", dir, p, own)
 			}

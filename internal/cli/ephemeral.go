@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"os/signal"
-	"runtime"
 	"strings"
 
 	"github.com/veil-net/conflux/internal/config"
@@ -29,6 +28,21 @@ const (
 type ephemeralFlags struct {
 	on       *bool
 	manifest *string
+}
+
+// refused refuses --ephemeral where an ephemeral run is not to be had, saying so, and reports whether it
+// did: everywhere but Linux, whose runtime folder, a filesystem in memory the system empties at boot, is
+// what keeps nothing of the run past it. Before anything is read, the credential --manifest names
+// among it.
+func (f ephemeralFlags) refused() bool {
+	if *f.on && hostOS != "linux" {
+		ui.Errf("--ephemeral runs on Linux alone, which keeps the run in a filesystem in memory that goes at boot; "+
+			"this is %s", hostOS)
+
+		return true
+	}
+
+	return false
 }
 
 func registerEphemeral(fs *flag.FlagSet) ephemeralFlags {
@@ -153,16 +167,11 @@ func (r *ephemeralRun) ipv4(cfg *config.Config, flagValue string, none bool) err
 
 // root refuses what an ephemeral proxy cannot do as whoever runs it. Observing needs the
 // host's capture, which only root gives here. Everything else runs as an ordinary user:
-// userspace needs no privilege, and an ephemeral run registers nothing that would. On Windows
-// every root conflux keeps is Administrators', so there an ephemeral run needs Administrator
-// whatever it runs. An ephemeral up's TUN needs root too, which up asks for itself, as it does
-// for every run.
+// userspace needs no privilege, and an ephemeral run registers nothing that would. An ephemeral
+// up's TUN needs root too, which up asks for itself, as it does for every run.
 func (r *ephemeralRun) root(cfg *config.Config, args []string) error {
-	switch {
-	case cfg.Observer != nil:
+	if cfg.Observer != nil {
 		return needsRoot("observing this host's traffic", "proxy", args)
-	case runtime.GOOS == "windows":
-		return needsRoot("keeping an ephemeral run's socket and binaries", "proxy", args)
 	}
 
 	return nil
@@ -203,7 +212,7 @@ func runEphemeral(ctx context.Context, cfg *config.Config, run *ephemeralRun) in
 		Manifest: run.m,
 		Envelope: run.env,
 		Reporter: reporter{},
-		Drop:     runtime.GOOS != "windows",
+		Drop:     true,
 		Up:       func(u daemon.EphemeralUp) { reportEphemeral(d, cfg, u) },
 	}
 

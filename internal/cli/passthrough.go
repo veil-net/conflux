@@ -258,47 +258,47 @@ func liveEphemeral() (paths.Dirs, bool) {
 	return paths.Dirs{}, false
 }
 
-// checkEphemeral is the readers' check of the ephemeral root at root (paths.Dirs.Check), which a test
-// points at a root it made: nil only for a root that is there as conflux makes one, an error that is
+// checkEphemeral is the readers' check of an ephemeral run's root (paths.Dirs.Check), which a test
+// stands in for: nil only for a root that is there as conflux makes one, an error that is
 // fs.ErrNotExist for one not there, and a refusal for any other.
-var checkEphemeral = func(root string) error { return paths.EphemeralDirs(root).Check() }
+var checkEphemeral = paths.Dirs.Check
 
 // statLock is os.Stat, for a root's lock, which a test counts.
 var statLock = os.Stat
 
-// ephemeralRuns is what the ephemeral roots hold, read in one pass: the root of the run that is
-// running, whose lock is held, and the root a run that was killed left behind, its lock there
-// with nobody holding it -- the first of each, or nil.
+// ephemeralRuns is what this account's ephemeral root holds (paths.EphemeralDirs), read in one pass:
+// the root of the run that is running, whose lock is held, or the root a run that was killed left
+// behind, its lock there with nobody holding it -- or nil for each, as where this account has no
+// ephemeral root at all, on any platform but Linux among them.
 //
 // A root not as conflux makes one -- another account's, or a link -- is neither, whatever it holds: a
-// run is never kept in one (paths.Ephemeral), and /tmp and %ProgramData% let anybody make the name
-// first and put a held lock, a marker and an anchorctl of their own in it, which a reader taking it
-// for a run would run.
+// run is never kept in one (paths.Ephemeral), and a reader taking the lock, the marker and the anchorctl
+// in it for a run's would run that anchorctl.
 func ephemeralRuns() (live, stale *paths.Dirs) {
-	for _, root := range paths.EphemeralCandidates() {
-		// The root itself, and nothing beneath it before that: a root as conflux makes one holds nothing
-		// another account put there. And a root not there (fs.ErrNotExist) holds no run, and is looked up
-		// by its name no more: what is at a name that was not there a moment ago is whoever made it
-		// first's.
-		if err := checkEphemeral(root); err != nil {
-			continue
-		}
-
-		d := paths.EphemeralDirs(root)
-		if _, err := statLock(d.ServeLockFile()); err != nil {
-			continue
-		}
-
-		switch held, err := flock.Held(d.ServeLockFile()); {
-		case err != nil:
-		case held && live == nil:
-			live = &d
-		case !held && stale == nil:
-			stale = &d
-		}
+	d, err := paths.EphemeralDirs()
+	if err != nil {
+		return nil, nil
 	}
 
-	return live, stale
+	// The root itself, and nothing beneath it before that: a root as conflux makes one holds nothing
+	// another account put there. And a root not there (fs.ErrNotExist) holds no run, and is looked up by
+	// its name no more: what is at a name that was not there a moment ago is whoever made it first's.
+	if err := checkEphemeral(d); err != nil {
+		return nil, nil
+	}
+
+	if _, err := statLock(d.ServeLockFile()); err != nil {
+		return nil, nil
+	}
+
+	switch held, err := flock.Held(d.ServeLockFile()); {
+	case err != nil:
+		return nil, nil
+	case held:
+		return &d, nil
+	}
+
+	return nil, &d
 }
 
 // errEphemeralStarting is an ephemeral run asked for before it is up.
@@ -316,7 +316,7 @@ var errEphemeralStarting = errors.New("the ephemeral run is still starting; ask 
 // clearing what a killed one left -- and a reader that refilled what it was clearing, or held one of its
 // binaries open, would stop it.
 func toolsFor(ctx context.Context, d paths.Dirs) (string, func(), error) {
-	if !slices.Contains(paths.EphemeralCandidates(), d.State) {
+	if !d.IsEphemeral() {
 		return libexec.ForUsage(ctx, d, nil)
 	}
 

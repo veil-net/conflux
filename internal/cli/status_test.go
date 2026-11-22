@@ -92,6 +92,8 @@ func TestStatusAsksWhatItReports(t *testing.T) {
 	logs := t.TempDir()
 	machineLog, ephemeralLog := filepath.Join(logs, "machine"), filepath.Join(logs, "ephemeral")
 
+	d := pathstest.Dirs(t)
+
 	// A live ephemeral run beside the machine's own anchor: its lock held, and marked up by a
 	// process that runs -- this one.
 	e := startingEphemeral(t)
@@ -100,12 +102,6 @@ func TestStatusAsksWhatItReports(t *testing.T) {
 	}
 
 	runningStandIn(t, e, ephemeralLog)
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatal(err)
-	}
-
 	runningStandIn(t, d, machineLog)
 
 	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Proxies: []string{"8080=127.0.0.1:3000"}, Taints: []string{"t"},

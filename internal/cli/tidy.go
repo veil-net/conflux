@@ -44,8 +44,6 @@ import (
 //     extraction left staged -- and this build's pair extracted afresh (libexec.Remake), an extraction
 //     in progress waited for until ctx ends: where it cannot be, tidy fails once it has done the rest,
 //     since a set planted there would be kept.
-//   - A killed ephemeral run's root is removed, the anchord it left stopped (removeKilledRun); a
-//     live run's is left.
 //   - Where nothing holds the state's lock, what an atomic write that never went in place left in the
 //     configuration and state directories goes (removeStaged). The lock files themselves are kept on
 //     Unix, and on Windows removed once let go of, for whatever next takes them to make again
@@ -55,7 +53,7 @@ import (
 //
 // The service's copy is the caller's to write afresh (service.PlaceAfresh), with what a copy that
 // never went in place left beside it. What the next start clears again as it starts -- the orphan,
-// the run directory, a killed run's root -- it warns of where it cannot remove it, and goes on
+// the run directory -- it warns of where it cannot remove it, and goes on
 // (leftBehind); and what is gone, and nothing else, it lists, however far it got.
 func tidy(ctx context.Context, d paths.Dirs, mgr service.Manager, checked error) (stopped bool, err error) {
 	var removed []string
@@ -103,15 +101,6 @@ func tidy(ctx context.Context, d paths.Dirs, mgr service.Manager, checked error)
 	set := filepath.Join(d.Libexec(), anchor.SetID())
 	emptied, remakeErr := libexec.Remake(ctx, d)
 	removed = append(removed, slices.DeleteFunc(emptied, func(p string) bool { return p == set })...)
-
-	for _, root := range paths.EphemeralCandidates() {
-		found, err := removeKilledRun(root)
-		leftBehind(err)
-
-		if _, err := os.Lstat(root); found == killedRun && errors.Is(err, fs.ErrNotExist) {
-			removed = append(removed, root)
-		}
-	}
 
 	removed = append(removed, removeStaged(d)...)
 
@@ -161,9 +150,8 @@ func stopServing(d paths.Dirs, mgr service.Manager) (bool, error) {
 	return running, nil
 }
 
-// leftBehind warns of err, what tidy could not remove of what the next supervisor or ephemeral run
-// clears again as it starts -- an anchord a dead supervisor left, the run directory, a killed run's
-// root -- which it goes on without.
+// leftBehind warns of err, what tidy could not remove of what the next supervisor clears again as it
+// starts -- an anchord a dead supervisor left, the run directory -- which it goes on without.
 func leftBehind(err error) {
 	if err != nil {
 		ui.Errf("what earlier conflux left was not all removed, and the next start clears the rest: %v", err)

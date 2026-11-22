@@ -12,8 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/veil-net/conflux/internal/daemon"
-	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/pathstest"
 	"github.com/veil-net/conflux/internal/privcheck"
 )
@@ -131,91 +129,9 @@ func TestUninstallJudgesNoFolderAboveARoot(t *testing.T) {
 	}
 }
 
-// TestUninstallRemovesAnEphemeralRootNotAsConfluxMakesOne: an ephemeral run's root outside the
-// installation's is conflux's by its name, so uninstall removes whatever is there: one not as conflux
-// makes a root -- sticky, as /tmp is, one every account may write, or a link -- removed as itself,
-// nothing in it read and no lock in it taken, where a link leads never touched; and a killed run's,
-// at 0700 or at a 0755 nobody else may write, emptied under its lock. Each is listed.
-func TestUninstallRemovesAnEphemeralRootNotAsConfluxMakesOne(t *testing.T) {
-	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
-	privcheck.Elevated = func() bool { return true }
-
-	d := configured(t)
-
-	shared := filepath.Join(t.TempDir(), "conflux-ephemeral")
-	open := filepath.Join(t.TempDir(), "conflux-ephemeral")
-	killed := filepath.Join(t.TempDir(), "conflux-ephemeral")
-	readable := filepath.Join(t.TempDir(), "conflux-ephemeral")
-
-	for root, mode := range map[string]os.FileMode{shared: 0o777 | os.ModeSticky, open: 0o777, killed: 0o700,
-		readable: 0o755} {
-		if err := os.Mkdir(root, 0o700); err != nil {
-			t.Fatal(err)
-		}
-
-		if err := os.WriteFile(filepath.Join(root, "serve.lock"), nil, 0o600); err != nil {
-			t.Fatal(err)
-		}
-
-		if err := os.Chmod(root, mode); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	elsewhere := t.TempDir()
-
-	kept := filepath.Join(elsewhere, "serve.lock")
-	if err := os.WriteFile(kept, []byte("not conflux's"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	link := filepath.Join(t.TempDir(), "conflux-ephemeral")
-	if err := os.Symlink(elsewhere, link); err != nil {
-		t.Fatal(err)
-	}
-
-	defer func(was func() []string) { ephemeralCandidates = was }(ephemeralCandidates)
-	ephemeralCandidates = func() []string { return []string{shared, open, link, killed, readable} }
-
-	var emptied []string
-
-	wasEmpty := removeEphemeral
-	defer func() { removeEphemeral = wasEmpty }()
-
-	removeEphemeral = func(e paths.Dirs, unlock func(), r daemon.Reporter) error {
-		emptied = append(emptied, e.State)
-
-		return wasEmpty(e, unlock, r)
-	}
-
-	mgr := &removing{fakeManager: fakeManager{d: d}}
-	standInService(t, mgr)
-	recordAccounts(t)
-
-	out, errOut, code := capture(t, "uninstall", "--yes")
-	if code != ExitOK {
-		t.Fatalf("uninstall beside ephemeral roots not as conflux makes one exited %d, want %d:\n%s%s", code, ExitOK,
-			out, errOut)
-	}
-
-	for _, root := range []string{shared, open, link, killed, readable} {
-		if _, err := os.Lstat(root); !errors.Is(err, fs.ErrNotExist) || !strings.Contains(out, "  "+root+"\n") {
-			t.Errorf("uninstall left %s, or did not say it removed it (Lstat: %v):\n%s", root, err, out)
-		}
-	}
-
-	if !slices.Equal(emptied, []string{killed, readable}) {
-		t.Errorf("uninstall took the lock of %q, want only the killed runs' roots, %q", emptied, []string{killed, readable})
-	}
-
-	if b, err := os.ReadFile(kept); err != nil || string(b) != "not conflux's" {
-		t.Errorf("where a link at an ephemeral root's name led lost what is in it: %q, %v", b, err)
-	}
-}
-
-// TestUninstallListsOnlyWhatIsGone: uninstall lists a root, or an ephemeral run's, as removed only
-// where it is gone: not one it could not empty -- a folder in it whose mode lets its owner remove
-// nothing, or a killed run's that would not empty -- which it names in the failure instead, exit 1.
+// TestUninstallListsOnlyWhatIsGone: uninstall lists a root as removed only where it is gone: not one it
+// could not empty -- a folder in it whose mode lets its owner remove nothing -- which it names in the
+// failure instead, exit 1.
 func TestUninstallListsOnlyWhatIsGone(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("a folder whose mode lets its owner remove nothing in it holds nothing back from root")
@@ -241,65 +157,27 @@ func TestUninstallListsOnlyWhatIsGone(t *testing.T) {
 
 	t.Cleanup(func() { _ = os.Chmod(stuck, 0o700) })
 
-	killed := filepath.Join(t.TempDir(), "conflux-ephemeral")
-	if err := os.Mkdir(killed, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.WriteFile(filepath.Join(killed, "serve.lock"), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	defer func(was func() []string) { ephemeralCandidates = was }(ephemeralCandidates)
-	ephemeralCandidates = func() []string { return []string{killed} }
-
-	errStuck := errors.New("the killed run's root would not empty")
-
-	wasEmpty := removeEphemeral
-	defer func() { removeEphemeral = wasEmpty }()
-
-	removeEphemeral = func(_ paths.Dirs, unlock func(), _ daemon.Reporter) error {
-		unlock()
-
-		return errStuck
-	}
-
 	standInService(t, &fakeManager{d: d})
 	recordAccounts(t)
 
 	out, errOut, code := capture(t, "uninstall", "--yes")
-	if code != ExitError || !strings.Contains(errOut, stuck) || !strings.Contains(errOut, errStuck.Error()) {
-		t.Errorf("uninstall of roots it could not empty exited %d, want %d naming why:\n%s%s", code, ExitError, out,
+	if code != ExitError || !strings.Contains(errOut, stuck) {
+		t.Errorf("uninstall of a root it could not empty exited %d, want %d naming why:\n%s%s", code, ExitError, out,
 			errOut)
 	}
 
-	for _, root := range []string{d.State, killed} {
-		if _, err := os.Lstat(root); err != nil || strings.Contains(out, "  "+root+"\n") {
-			t.Errorf("uninstall listed %s, which is still there, as removed (Lstat: %v):\n%s", root, err, out)
-		}
+	if _, err := os.Lstat(d.State); err != nil || strings.Contains(out, "  "+d.State+"\n") {
+		t.Errorf("uninstall listed %s, which is still there, as removed (Lstat: %v):\n%s", d.State, err, out)
 	}
 }
 
-// TestUninstallListsNoRootItFailedToRemove: a root, or an ephemeral run's that it removes reading
-// nothing in it, that uninstall found something at the name of but could not remove is not listed as
-// removed, whoever runs it: the failure names why instead, exit 1.
+// TestUninstallListsNoRootItFailedToRemove: a root that uninstall found something at the name of but
+// could not remove is not listed as removed, whoever runs it: the failure names why instead, exit 1.
 func TestUninstallListsNoRootItFailedToRemove(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
 
 	d := configured(t)
-
-	// An ephemeral root the readers' check refuses, which uninstall removes reading nothing in it.
-	candidate := filepath.Join(t.TempDir(), "conflux-ephemeral")
-	if err := os.Mkdir(candidate, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	defer func(was func() []string) { ephemeralCandidates = was }(ephemeralCandidates)
-	ephemeralCandidates = func() []string { return []string{candidate} }
-
-	defer func(was func(string) error) { checkEphemeral = was }(checkEphemeral)
-	checkEphemeral = func(string) error { return errors.New("holds what another account could have put there") }
 
 	errStuck := errors.New("the root would not empty")
 
@@ -321,10 +199,8 @@ func TestUninstallListsNoRootItFailedToRemove(t *testing.T) {
 			errOut)
 	}
 
-	for _, root := range []string{candidate, d.State} {
-		if !slices.Contains(asked, root) || strings.Contains(out, "  "+root+"\n") {
-			t.Errorf("uninstall listed %s, which it could not remove, as removed, or did not remove it (asked %q):\n%s",
-				root, asked, out)
-		}
+	if !slices.Contains(asked, d.State) || strings.Contains(out, "  "+d.State+"\n") {
+		t.Errorf("uninstall listed %s, which it could not remove, as removed, or did not remove it (asked %q):\n%s",
+			d.State, asked, out)
 	}
 }

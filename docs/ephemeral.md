@@ -1,7 +1,9 @@
 # Ephemeral: an anchor that keeps nothing
 
 `--ephemeral` on `conflux up` or `conflux proxy` runs one anchor in the foreground from a
-credential held in memory and nowhere else. Nothing of the machine's is read or written:
+credential held in memory and nowhere else, on Linux alone. On macOS, FreeBSD, OpenBSD and
+Windows both refuse `--ephemeral`, exit 2, before anything is read: the run is kept in a
+filesystem in memory that the system empties at boot, which only Linux gives it. Nothing of the machine's is read or written:
 no `conflux.json`, no `manifest.b64`, no `state.json`, no boot service. The credential goes
 from conflux's memory to anchorctl's stdin and from there inline to anchord, which keeps
 it in memory too. When anchord stops — on Ctrl-C, on SIGTERM, on the hangup of a terminal
@@ -23,7 +25,7 @@ Starting an ephemeral anchor: nothing is saved, and when it stops nothing of it 
   taint        brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf
   credential   valid until 2026-12-01T07:54:04Z (29d 23h)
   anchord      conflux-ephemeral, with CAP_NET_ADMIN for its interface
-  ephemeral    in memory alone; /var/lib/.conflux/ephemeral holds the socket and the binaries, and goes with the run
+  ephemeral    in memory alone; /run/.conflux holds the socket and the binaries, and goes with the run
 
 Running in the foreground. Ctrl-C stops it and removes what it made; conflux status, from another terminal, reports it.
 ^C
@@ -81,48 +83,42 @@ anchor says so as it starts.
 
 | Started as | `up --ephemeral` (TUN) | `proxy --ephemeral` (userspace) |
 |---|---|---|
-| root | anchord as `conflux-ephemeral`, with what an installed node's would hold: on Linux `CAP_NET_ADMIN` alone, root where `decide` keeps an installed one root; root on macOS and the BSDs | anchord as `conflux-ephemeral`, with no capability and `no_new_privs` on Linux |
+| root | anchord as `conflux-ephemeral`, with what an installed node's would hold: `CAP_NET_ADMIN` alone, root where `decide` keeps an installed one root | anchord as `conflux-ephemeral`, with no capability and `no_new_privs` |
 | an ordinary user | refused: a TUN needs root | anchord as that user, with nothing; no root needed at all |
-| Administrator on Windows | anchord as that Administrator | the same |
 
-`conflux-ephemeral` (`_conflux-ephemeral` on macOS and OpenBSD) is an account of its own,
-made the first time a root ephemeral run needs it and kept, as the installation's `conflux`
-is, until `conflux uninstall` removes both. It is not the installation's: the installed
-supervisor ends every process of its own account each time it starts anchord, and an
-ephemeral anchord running as that account would go with them. On macOS an ephemeral observer
-runs as root, since the BPF devices are the installation's to grant.
+`conflux-ephemeral` is an account of its own, made the first time a root ephemeral run needs
+it and kept, as the installation's `conflux` is, until `conflux uninstall` removes both. It is
+not the installation's: the installed supervisor ends every process of its own account each
+time it starts anchord, and an ephemeral anchord running as that account would go with them.
 
 ## Where it keeps its socket
 
-One fixed directory per user, made when the run starts and removed when it ends:
+One fixed directory per user, `.conflux` in the system's runtime folder, a filesystem in memory
+the system empties at boot, made when the run starts and removed when it ends:
 
 | Started as | Root |
 |---|---|
-| root, or Administrator on Windows | `ephemeral` in the installation's root: `/var/lib/.conflux/ephemeral`, `/var/db/.conflux/ephemeral` on the BSDs, `/Library/Application Support/.conflux/ephemeral`, `%ProgramData%\.conflux\ephemeral` |
-| an ordinary user | `$XDG_RUNTIME_DIR/conflux-ephemeral` (or `/tmp/conflux-ephemeral-UID`), then the user's cache directory |
-| `CONFLUX_DIR` set | `$CONFLUX_DIR/.conflux/ephemeral` |
+| root | `/run/.conflux` |
+| an ordinary user | `$XDG_RUNTIME_DIR/.conflux` |
 
-A `CONFLUX_DIR`, and every folder above a root, is never changed and never judged: choosing it is
-your responsibility, and conflux owns `.conflux` inside it, which it remakes as it makes it.
+There is no other place. An ordinary user's run is refused where `XDG_RUNTIME_DIR` is not set,
+or is not an absolute path — run it from a login session that sets it (systemd-logind does), or
+as root. A runtime folder that is not there, or is on a filesystem mounted `noexec`, where the
+anchord the run extracts could not run, refuses the run, with nothing made and nothing at the
+root's name touched. The root is never inside an installation's root, nor an installation's
+inside it.
 
 It holds the lock that makes it the only ephemeral run for that user, the bearer token and
-the socket, the record of the anchord it started and what that runs as, the extracted pair,
-and, inside the installation's root, the record of the folders the run made on the way to it — the
-`.conflux` it made, and under `CONFLUX_DIR` the `CONFLUX_DIR` where it made that too — which go with
-the root when the run ends, whole, whatever was put in them, but for a `.conflux` that holds anything
-once the run's root is gone, as one an installation has been made in since does, which is left with
-the folder holding it: never a credential, a configuration or a state. A folder the run had to make on the way to a root anywhere else — the user's cache or
-runtime directory, say — is the system's, which other programs fill too: it is not recorded, and
-it stays. The root is conflux's by its name: made as
-conflux makes one, `0700` and the account's own, and whatever is at its name that is not — a link,
-a file, a directory another account owns or may write — is removed as itself and the root made
-afresh ([security.md](security.md#the-file-and-the-directory-around-it)), by the next run that
-chooses it. A candidate on a filesystem mounted `noexec` is passed over with nothing at its name
-touched, and so is one the run cannot make afresh, whatever stops it — `/tmp` lets anybody make
-`/tmp/conflux-ephemeral-UID` first, and only its owner can remove it — and the next in the table
-used. A run is not refused because an installed conflux is running: that one is never
-read, written, stopped or re-registered. Two anchors with a TUN on one host do contend for
-the overlay's routes, so `conflux down` first where that matters.
+the socket, the record of the anchord it started and what that runs as, and the extracted
+pair: never a credential, a configuration or a state. The root is conflux's by its name: made
+as conflux makes one, `0700` and the account's own, and whatever is at its name that is not — a
+link, a file, a directory another account owns or may write — is removed as itself and the root
+made afresh ([security.md](security.md#the-file-and-the-directory-around-it)), by the next run.
+One the run cannot remove refuses it, naming it. A run is not refused because an installed
+conflux is running: that one is never read, written, stopped or re-registered, and no command
+of the installation's — `update`, `install`, `uninstall` and the rest — touches the run's root.
+Two anchors with a TUN on one host do contend for the overlay's routes, so `conflux down` first
+where that matters.
 
 ## Reaching it from another terminal
 
@@ -135,37 +131,36 @@ runs. Neither `status` nor
 pass-through ever writes into a run's root, and a root the readers' check refuses — not as conflux
 makes one: a link, another account's, or one another account may write — is no run's to them,
 whatever lock, marker or binaries it holds: they pass it over, reading, running and signalling
-nothing in it. `uninstall` removes every ephemeral root, whole, a killed run's anchord stopped first;
-one the readers' check refuses it removes as itself, reading and signalling nothing in it and
-following nothing it holds, as the conflux an update puts in place does. Pass-through — `conflux peers`,
+nothing in it. Pass-through — `conflux peers`,
 `conflux blocks`, every anchorctl command — reaches the ephemeral anchor when it is the
 only one running, once it is up.
 With an installed anchor running too, it reaches that one unless `CONFLUX_EPHEMERAL=1` is
 set, so a command never switches anchors because one was started beside it. `conflux renew`
-says the run renews itself.
+says the run renews itself. `conflux uninstall` refuses while a run is live, since it removes
+the account the run's anchord runs as, and leaves one that starts while it works running, with
+that account, saying so.
 
 ## When conflux itself is killed
 
-| Platform | conflux killed with SIGKILL |
-|---|---|
-| Linux | anchord is started with a parent-death signal, and gets SIGTERM: it closes its anchor and takes its interface down |
-| Windows | anchord is in conflux's job object, which kills it however conflux ends |
-| macOS, the BSDs | nothing can ask at the start, so anchord goes on until the next ephemeral run stops it, a reboot ends it, or it is killed. `conflux status` says a root was left behind |
+anchord is started with a parent-death signal, from a thread held for anchord's life, so
+conflux killed with SIGKILL has the kernel send anchord SIGTERM: it closes its anchor and
+takes its interface down. The root the killed run left — its lock, the record of its anchord —
+goes at the next boot, with the filesystem it is on, and `conflux status` says a root was left
+behind until then.
 
-The next run clears whatever a killed one left: its anchord, by the record of it, and every
-process of the ephemeral account; then the rest of its root. So does `conflux uninstall`, which
-removes the account that anchord runs as. A root is emptied while its lock is held, by a run as
-it ends and by uninstall, and only then is the lock let go and the empty root removed, so a run
-starting at that moment keeps everything it makes.
+The next run clears whatever a killed one left: the anchord it started, by the record of it,
+should its parent-death signal not have ended it yet, and every process of the ephemeral
+account; then the rest of its root. A root is emptied while its lock is held, by a run as it
+ends, and only then is the lock let go and the empty root removed, so a run starting at that
+moment keeps everything it makes.
 
 ## What "nothing written" covers
 
 What conflux and anchor write: no file holds the identity, the credential or the chain at
 any point. And core dumps: the run sets `RLIMIT_CORE` to 0 before it starts anchord, which
-inherits it, and on Linux marks conflux itself not dumpable, so the kernel writes no core
-for it even to a `core_pattern` pipe.
+inherits it, and marks conflux itself not dumpable, so the kernel writes no core for it even
+to a `core_pattern` pipe.
 
-Not swap, which is the operating system's to encrypt; not Windows Error Reporting, which
-writes dumps by the machine's settings; and not root on a live machine, which can read any
-process's memory. An ephemeral run keeps the credential off disk; it does not keep it from
-the host's administrator.
+Not swap, which is the operating system's to encrypt; and not root on a live machine, which
+can read any process's memory. An ephemeral run keeps the credential off disk; it does not keep
+it from the host's administrator.

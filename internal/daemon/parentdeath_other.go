@@ -4,7 +4,5 @@ package daemon
 
 import "syscall"
 
-// setParentDeath is Linux's: nothing else can ask at the start. Windows ends anchord with
-// its job object however this process ends; macOS and the BSDs leave it, for the next
-// ephemeral run to stop.
+// setParentDeath is Linux's, the one platform an ephemeral run, which asks for it, runs on.
 func setParentDeath(*syscall.SysProcAttr) {}

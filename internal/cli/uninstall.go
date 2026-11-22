@@ -14,7 +14,6 @@ import (
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
-	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/ui"
@@ -22,9 +21,9 @@ import (
 
 // runUninstall is the reverse of everything conflux did here, and it destroys the identity: the
 // boot service, every root -- configuration, identity, state, the extracted pairs, the service's copy
-// of conflux, the log -- the ephemeral runs' roots, what an update left beside this conflux and the
-// temporary copies of anchorctl killed readers left (removeLeftovers), and the accounts anchord ran as.
-// Nothing is kept for a reinstall.
+// of conflux, the log -- what an update left beside this conflux and the temporary copies of anchorctl
+// killed readers left (removeLeftovers), and the accounts anchord ran as. Nothing is kept for a
+// reinstall.
 func runUninstall(_ context.Context, args []string) int {
 	flags := flag.NewFlagSet("uninstall", flag.ContinueOnError)
 	flags.SetOutput(ui.Errw)
@@ -70,9 +69,9 @@ func runUninstall(_ context.Context, args []string) int {
 	way, wayErr := d.Way()
 
 	// An ephemeral run's account goes with the installation's, and nothing may be running as it when it
-	// does, nor from a root that goes, as one inside a CONFLUX_DIR would: the run ends itself, with its
-	// anchor, when it is stopped. Asked before anything is asked, and again once it is answered, before
-	// anything is removed.
+	// does: the run ends itself, with its anchor, when it is stopped. Asked before anything is asked, and
+	// again once it is answered, before anything is removed. Nothing else of an ephemeral run's is
+	// touched: its root is in the runtime folder, which the system empties at boot.
 	if liveRefused() || !confirm(d, checked, *yes) || liveRefused() {
 		return ExitUsage
 	}
@@ -97,57 +96,7 @@ func runUninstall(_ context.Context, args []string) int {
 		reap(d, 35*time.Second)
 	}
 
-	// Each ephemeral run's root, a killed run's anchord stopped first, where the root is as conflux makes
-	// one: one inside the installation's -- a CONFLUX_DIR's -- is emptied, and goes with it, and where
-	// the installation's root failed the readers' check goes with it unread. A run that started since
-	// uninstall asked is left running: its root, the installation's roots where it is inside them, and
-	// its account.
-	var (
-		started       []string
-		startedInside bool
-	)
-
-	for _, root := range ephemeralCandidates() {
-		if d.Inside(root) {
-			if checked != nil {
-				continue
-			}
-
-			switch found, err := removeKilledRun(root); {
-			case err != nil:
-				errs = append(errs, err)
-			case found == liveRun:
-				started, startedInside = append(started, root), true
-			}
-
-			continue
-		}
-
-		gone, err := removeEphemeralRoot(root)
-		if errors.Is(err, errStarted) {
-			started = append(started, root)
-
-			continue
-		}
-
-		errs = append(errs, err)
-
-		if gone {
-			removed = append(removed, root)
-		}
-	}
-
-	for _, root := range started {
-		errs = append(errs, fmt.Errorf("an ephemeral run started from %s while conflux was being uninstalled, and "+
-			"it was left running, with what it runs from.\n  Stop it (Ctrl-C where it runs), then run this again",
-			root))
-	}
-
 	for _, dir := range d.Outer() {
-		if startedInside {
-			break
-		}
-
 		gone, err := removeRoot(dir)
 		errs = append(errs, err)
 
@@ -164,8 +113,15 @@ func runUninstall(_ context.Context, args []string) int {
 	removed = append(removed, removeLeftovers()...)
 
 	// The accounts anchord ran as, if conflux made them, stopping whatever runs as each: the ephemeral
-	// runs' unless one started since.
-	errs = append(errs, removeAccounts(len(started) == 0))
+	// run's unless one started since uninstall asked, which keeps it.
+	e, started := liveEphemeral()
+	if started {
+		errs = append(errs, fmt.Errorf("an ephemeral run started from %s while conflux was being uninstalled, and "+
+			"it was left running, with the account it runs as.\n  Stop it (Ctrl-C where it runs), then run this again",
+			e.State))
+	}
+
+	errs = append(errs, removeAccounts(!started))
 
 	// What it removed, however far it got.
 	if len(removed) > 0 {
@@ -207,88 +163,17 @@ var removeAccounts = removeAccount
 // removeRoot is paths.RemoveRoot, which a test has fail with something at the root's name.
 var removeRoot = paths.RemoveRoot
 
-// ephemeralCandidates is paths.EphemeralCandidates, which a test points at roots outside the
-// installation's: under a CONFLUX_DIR every candidate is inside it.
-var ephemeralCandidates = paths.EphemeralCandidates
-
 // liveRefused refuses uninstall while an ephemeral run is live, naming its root, and says whether it
 // did.
 func liveRefused() bool {
 	e, live := liveEphemeral()
 	if live {
 		ui.Errf("an ephemeral anchor is running from %s.\n"+
-			"  Stop it first (Ctrl-C where it runs): uninstall removes the account it runs as, and the root "+
-			"it runs from", e.State)
+			"  Stop it first (Ctrl-C where it runs): uninstall removes the account it runs as", e.State)
 	}
 
 	return live
 }
-
-// removeEphemeralRoot removes the ephemeral root at root, where one is there, and says whether it is
-// gone, which one it failed to empty is not: a killed run's as removeKilledRun removes it, under its
-// lock, and nothing after, so a run that takes it the moment the lock is let go of keeps it, and it is
-// not gone. A live run's, which uninstall has refused already, is one that started since, and is
-// errStarted.
-func removeEphemeralRoot(root string) (bool, error) {
-	switch found, err := removeKilledRun(root); {
-	case err != nil:
-		return false, err
-	case found == liveRun:
-		return false, errStarted
-	case found == noRun:
-		return false, nil
-	}
-
-	_, err := os.Lstat(root)
-
-	return errors.Is(err, fs.ErrNotExist), nil
-}
-
-// errStarted is an ephemeral run that started since uninstall asked whether one was live.
-var errStarted = errors.New("an ephemeral run started")
-
-// runRoot is what removeKilledRun found at an ephemeral root.
-type runRoot int
-
-const (
-	noRun     runRoot = iota // nothing there
-	killedRun                // a killed run's, or one not as conflux makes a root, removed
-	liveRun                  // a live run's, its lock held, left as it is
-)
-
-// removeKilledRun removes the ephemeral root at root where it is a killed run's -- as conflux makes a
-// root (checkEphemeral), its lock held by nobody -- stopping what that run left running from it first,
-// under its lock, as a run's own clean-up does, so that one starting this moment is not emptied out from
-// under itself (daemon.RemoveEphemeral); and says what it found. What is at the root's name and is not
-// as conflux makes a root is nothing of a run's: it is removed as itself (paths.RemoveRoot), and nothing
-// in it read or signalled.
-func removeKilledRun(root string) (runRoot, error) {
-	switch err := checkEphemeral(root); {
-	case errors.Is(err, fs.ErrNotExist):
-		return noRun, nil
-	case err != nil:
-		_, err := removeRoot(root)
-
-		return killedRun, err
-	}
-
-	e := paths.EphemeralDirs(root)
-
-	unlock, ok, err := flock.TryAcquire(e.ServeLockFile())
-
-	switch {
-	case err != nil:
-		return killedRun, err
-	case !ok:
-		return liveRun, nil
-	}
-
-	return killedRun, removeEphemeral(e, unlock, nil)
-}
-
-// removeEphemeral is daemon.RemoveEphemeral, which a test points at one that lets a run take the root
-// as it lets go of the root's lock.
-var removeEphemeral = daemon.RemoveEphemeral
 
 // removeLeftovers removes what earlier conflux left outside its roots, uninstall's and tidy's alike, and
 // is what it removed: what an update left beside this conflux (removeUpdateLeftovers), and the temporary

@@ -26,9 +26,9 @@ import (
 // the link, and the directory it leads to, and what is in it, are untouched; a file planted there
 // that another account owns is removed as itself. What an update left beside the conflux it
 // replaced goes too, and that conflux stays, with whatever else is beside it: they are the
-// operator's. What a dead supervisor and a killed run left running is stopped first. It says what it
-// removed. (On
-// Windows, with a junction: the same test.)
+// operator's. What a dead supervisor left running is stopped first. A killed ephemeral run's root, in
+// the runtime folder, is not touched. It says what it removed. (On Windows, with a junction: the same
+// test.)
 func TestUninstallLeavesNothingConfluxMade(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
@@ -53,20 +53,11 @@ func TestUninstallLeavesNothingConfluxMade(t *testing.T) {
 	accounts := recordAccounts(t)
 
 	// What uninstall stops: the anchord a dead supervisor left, by the root's pid record, which passes
-	// the readers' check; and the killed ephemeral run's, by its root's, inside the installation's.
-	var reaped, emptied []string
+	// the readers' check.
+	var reaped []string
 
 	defer func(was func(paths.Dirs, time.Duration)) { reap = was }(reap)
 	reap = func(d paths.Dirs, _ time.Duration) { reaped = append(reaped, d.State) }
-
-	wasEmpty := removeEphemeral
-	defer func() { removeEphemeral = wasEmpty }()
-
-	removeEphemeral = func(e paths.Dirs, unlock func(), r daemon.Reporter) error {
-		emptied = append(emptied, e.State)
-
-		return wasEmpty(e, unlock, r)
-	}
 
 	out, errOut, code := capture(t, "uninstall", "--yes")
 	if code != ExitOK {
@@ -77,9 +68,13 @@ func TestUninstallLeavesNothingConfluxMade(t *testing.T) {
 		t.Errorf("uninstall removed the accounts anchord ran as %v, want once, the ephemeral run's with them", *accounts)
 	}
 
-	if !slices.Equal(reaped, []string{d.State}) || !slices.Equal(emptied, []string{paths.EphemeralCandidates()[0]}) {
-		t.Errorf("uninstall reaped %q and emptied the ephemeral roots %q, want %s and the killed run's inside it, once each",
-			reaped, emptied, d.State)
+	if !slices.Equal(reaped, []string{d.State}) {
+		t.Errorf("uninstall reaped %q, want %s, once", reaped, d.State)
+	}
+
+	if _, err := os.Lstat(filepath.Join(old.ephemeral, "serve.lock")); err != nil {
+		t.Errorf("uninstall touched %s, a killed ephemeral run's root, which the system empties at boot: %v",
+			old.ephemeral, err)
 	}
 
 	if _, err := os.Lstat(d.State); !os.IsNotExist(err) {
@@ -121,8 +116,8 @@ func TestUninstallLeavesNothingConfluxMade(t *testing.T) {
 // CONFLUX_DIR is either a folder conflux makes, on a way it makes, which uninstall removes with the
 // way; or a folder of the user's, holding a bin/, a .ssh/ and a file, which conflux never changes: its
 // root is .conflux inside it. Either way everything conflux made goes -- its root, with what the user
-// put in it and in its run/, bin/ and logs/, a killed ephemeral run's root, the temporary copy of
-// anchorctl a killed reader left -- and nothing else.
+// put in it and in its run/, bin/ and logs/, the temporary copy of anchorctl a killed reader left -- and
+// nothing else.
 func TestUninstallLeavesNoTrace(t *testing.T) {
 	anchortest.Require(t) // the run extracts the pair
 
@@ -166,6 +161,7 @@ func TestUninstallLeavesNoTrace(t *testing.T) {
 			before := snapshot(t, base)
 
 			t.Setenv("CONFLUX_DIR", dir)
+			pathstest.Runtime(t, t.TempDir())
 
 			d := paths.Default()
 			mgr := &fakeManager{d: d}
@@ -179,8 +175,8 @@ func TestUninstallLeavesNoTrace(t *testing.T) {
 				t.Fatalf("install exited %d:\n%s%s", code, out, errOut)
 			}
 
-			// What a run leaves: the configuration, the identity, the state, the extracted pair, the run
-			// directory's marker, and a killed ephemeral run's root; and what the user put in conflux's.
+			// What a run leaves: the configuration, the identity, the state, the extracted pair and the run
+			// directory's marker; and what the user put in conflux's.
 			if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Proxies: []string{"8080=127.0.0.1:3000"},
 				Taints: []string{"t"}}); err != nil {
 				t.Fatal(err)
@@ -199,8 +195,7 @@ func TestUninstallLeavesNoTrace(t *testing.T) {
 			}
 
 			planted := []string{filepath.Join(d.State, "mine.txt"), filepath.Join(d.Run, "mine.txt"),
-				filepath.Join(d.Libexec(), "mine.txt"), filepath.Join(paths.EphemeralCandidates()[0], "serve.lock"),
-				filepath.Join(tmp, "conflux-usage-123", binName("anchorctl"))}
+				filepath.Join(d.Libexec(), "mine.txt"), filepath.Join(tmp, "conflux-usage-123", binName("anchorctl"))}
 			if d.Log != "" {
 				planted = append(planted, filepath.Join(d.Log, "mine.txt"))
 			}
@@ -312,19 +307,18 @@ func recordAccounts(t *testing.T) *[]bool {
 	return &asked
 }
 
-// TestUninstallLeavesALiveRun: an ephemeral run inside a CONFLUX_DIR would go with the root, so while
-// one is live uninstall refuses, exit 2, naming it, before anything is asked or removed, as it does
-// for one outside, and again once the question is answered, for one started as it was asked; and one
-// that starts once uninstall has begun -- here as the boot service is removed -- is left running, with
-// the root that holds it and the account it runs as, and uninstall says so, exit 1, listing what it
-// removed all the same.
+// TestUninstallLeavesALiveRun: a live ephemeral run as root runs as the account uninstall removes, so
+// while one is live uninstall refuses, exit 2, naming it, before anything is asked or removed, and again
+// once the question is answered, for one started as it was asked; and one that starts once uninstall has
+// begun -- here as the boot service is removed -- is left running, with its root and the account it runs
+// as, and uninstall says so, exit 1, listing what it removed all the same.
 func TestUninstallLeavesALiveRun(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return true }
 
 	t.Run("live as uninstall begins", func(t *testing.T) {
 		d := oldInstall(t).d
-		e := paths.EphemeralDirs(paths.EphemeralCandidates()[0])
+		e := ephemeralRoot(t)
 		t.Cleanup(holdRoot(t, e))
 
 		mgr := &removing{fakeManager: fakeManager{d: d}}
@@ -344,7 +338,7 @@ func TestUninstallLeavesALiveRun(t *testing.T) {
 
 	t.Run("live once asked", func(t *testing.T) {
 		d := oldInstall(t).d
-		e := paths.EphemeralDirs(paths.EphemeralCandidates()[0])
+		e := ephemeralRoot(t)
 
 		defer func(was func(paths.Dirs, error, bool) bool) { confirm = was }(confirm)
 		confirm = func(paths.Dirs, error, bool) bool {
@@ -370,7 +364,7 @@ func TestUninstallLeavesALiveRun(t *testing.T) {
 
 	t.Run("started since", func(t *testing.T) {
 		d := oldInstall(t).d
-		e := paths.EphemeralDirs(paths.EphemeralCandidates()[0])
+		e := ephemeralRoot(t)
 
 		mgr := &removing{fakeManager: fakeManager{d: d}, then: func() { t.Cleanup(holdRoot(t, e)) }}
 		standInService(t, mgr)
@@ -395,51 +389,6 @@ func TestUninstallLeavesALiveRun(t *testing.T) {
 			t.Errorf("uninstall removed the accounts anchord ran as %v, want once, the ephemeral run's kept", *accounts)
 		}
 	})
-}
-
-// TestARunTakingAKilledRunsRootKeepsIt: uninstall removes a killed run's root under its lock, as a
-// run's own clean-up does, so a run that takes the root the moment the lock is let go of keeps it,
-// and what it has put there: nothing removes the root again once its lock is let go of, and the root,
-// still there, is not one uninstall says is gone.
-func TestARunTakingAKilledRunsRootKeepsIt(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "ephemeral")
-	e := paths.EphemeralDirs(root)
-
-	// This account's alone, as the test makes it.
-	defer func(was func(string) error) { checkEphemeral = was }(checkEphemeral)
-	checkEphemeral = func(string) error { return nil }
-
-	if err := os.Mkdir(root, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.WriteFile(e.ServeLockFile(), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	// The run that takes the root as the killed run's lock is let go of, and what it puts there.
-	taken := filepath.Join(root, "taken")
-
-	was := removeEphemeral
-	defer func() { removeEphemeral = was }()
-
-	removeEphemeral = func(e paths.Dirs, unlock func(), r daemon.Reporter) error {
-		return was(e, func() {
-			unlock()
-
-			if err := os.WriteFile(taken, []byte("a run's"), 0o600); err != nil {
-				t.Error(err)
-			}
-		}, r)
-	}
-
-	if gone, err := removeEphemeralRoot(root); gone || err != nil {
-		t.Fatalf("removeEphemeralRoot = %v, %v, want the root a run took not gone", gone, err)
-	}
-
-	if b, err := os.ReadFile(taken); err != nil || string(b) != "a run's" {
-		t.Errorf("what a run put in the root it took as the killed run's lock was let go of is gone: %q, %v", b, err)
-	}
 }
 
 // TestUninstallStopsWhereARootsWayCannotBeWalked: a CONFLUX_DIR beneath a file has a way conflux cannot

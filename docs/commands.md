@@ -117,8 +117,8 @@ refusal names `down` and `start` and the escape hatch.
 Conflux keeps everything in one folder of its own, `.conflux`, conflux's by its name: in the
 system's data folder (`/var/lib/.conflux`, `/var/db/.conflux` on the BSDs, `/Library/Application
 Support/.conflux`, `%ProgramData%\.conflux`), and under `CONFLUX_DIR=<dir>` in `<dir>/.conflux`
-instead, the same layout; an ephemeral run's root is `ephemeral` inside it, or, for an ordinary
-user, in their own runtime or cache directory. `<dir>` itself, and every folder above a root, is never changed and never
+instead, the same layout; an [ephemeral run](ephemeral.md)'s root, on Linux, is `.conflux` in the
+runtime folder, `/run` or `$XDG_RUNTIME_DIR`, and never inside it. `<dir>` itself, and every folder above a root, is never changed and never
 judged: choosing a `CONFLUX_DIR` is your responsibility, and conflux owns `<dir>/.conflux`, which it
 remakes as it makes it.
 
@@ -195,7 +195,7 @@ configuration, and registers the boot service.
 | `--no-observe` | stop observing. |
 | `--export HOST:PORT` | send telemetry, each record the observer makes and each circuit the anchor relays, to the OTLP/gRPC collector there: the export on, that endpoint, `flows` and `metrics` on, and everything else `conflux.json`'s `export` block says kept — headers and TLS above all, which no command line takes. See [config.md](config.md#export--where-telemetry-goes). |
 | `--export-insecure` | reach that collector without TLS. |
-| `--ephemeral` | run in the foreground and keep nothing: the credential is held in memory, nothing is written or registered, and when anchord stops, or on Ctrl-C, everything is gone. Asks nothing; with neither `--ipv4` nor `--no-ipv4`, the IPv4 is the handed credential's or none. See [ephemeral.md](ephemeral.md). |
+| `--ephemeral` | run in the foreground and keep nothing: the credential is held in memory, nothing is written or registered, and when anchord stops, or on Ctrl-C, everything is gone. Asks nothing; with neither `--ipv4` nor `--no-ipv4`, the IPv4 is the handed credential's or none. Linux alone: refused elsewhere, exit 2, before anything is read. See [ephemeral.md](ephemeral.md). |
 | `--manifest FILE`, `--manifest -` | with `--ephemeral`, run on this issued credential, read from FILE or stdin and never written, rather than enrolling. Without `--ephemeral` it is refused: a credential to keep is `conflux enrol`'s. |
 
 An anchor listens on **every** interface, so `--port` is a port and not an address:
@@ -515,8 +515,6 @@ reinstall:
   `anchord.priv`, `anchord.json`), the anchor directories, the extracted anchor binaries and,
   on Windows, `wintun.dll` beside them, the service's copy of conflux, the lock files, the run
   directory's token, readiness marker, pid record and socket, and the log in `logs`;
-- every ephemeral run's root kept for the account running it, a killed run's once the anchord
-  it left is stopped;
 - what an update left beside this conflux: a download that never went in place, and on Windows
   the image moved aside, `conflux.exe.old` (elsewhere a file of that name is yours, and kept);
 - the temporary copies of `anchorctl` a reader killed before it removed its own left: every
@@ -537,8 +535,7 @@ reinstall:
   the BPF devices given back to root on macOS first.
 
 The conflux you ran is yours, and stays. It says what it removed, however far it got, and nothing
-else: a root it could not empty, or a killed run's that a run took as it let go of it, is not
-listed. Asks first where there is a credential, or may be one it cannot read, because there is no
+else: a root it could not empty is not listed. Asks first where there is a credential, or may be one it cannot read, because there is no
 other copy of it anywhere, saying, where `CONFLUX_DIR` is set, that it removes `<dir>/.conflux` and
 everything in it; where there is none it asks nothing. `--yes` skips the question, and a
 non-interactive run without `--yes` refuses, exit 2, rather than destroy the credential silently.
@@ -552,21 +549,15 @@ such as a `CONFLUX_DIR` beneath a file, stops uninstall there, exit 1, saying so
 with nothing removed, the boot service included. A root the readers' check refuses is removed the same
 way as one it takes, with nothing in it read or signalled first — no identity shown in the question,
 no `anchord` stopped by its pid record, and not the record of the folders made on the way to it,
-which is none of conflux's either: those folders are left. An ephemeral run's root inside a
-`CONFLUX_DIR` goes with it.
+which is none of conflux's either: those folders are left.
 
-While an [ephemeral run](ephemeral.md) is live — kept for the account running it, or inside a
-`CONFLUX_DIR`, whose root it would go with — it refuses, exit 2, naming it, before asking anything,
-and again once the question is answered, before anything is removed: the run's anchord may run as
-the account it would remove, so the run is stopped first, with Ctrl-C where it runs. A run that
-starts once uninstall has begun is left running, with its root, the root that holds it and the
-account it runs as, and uninstall says so, exit 1. The root a killed run left behind — its
-extracted pair, token and socket — it removes, stopping the anchord the run left, under the root's
-lock, so a run starting at that moment keeps its own. What is at an ephemeral root's name and is not
-as conflux makes a root — another account's, as any account may make
-`C:\ProgramData\.conflux\ephemeral` where the installation's root is not there yet, one another
-account may write, or a link — is removed as
-itself, with nothing in it read or stopped and no lock taken in it.
+While an [ephemeral run](ephemeral.md) is live it refuses, exit 2, naming it, before asking
+anything, and again once the question is answered, before anything is removed: the run's anchord
+may run as the account it would remove, so the run is stopped first, with Ctrl-C where it runs. A
+run that starts once uninstall has begun is left running, with the account it runs as, and
+uninstall says so, exit 1. Nothing else of an ephemeral run's is touched: its root is in the
+runtime folder, which the system empties at boot, and the next run clears what a killed one left
+there.
 
 ## `conflux status`
 
@@ -712,9 +703,6 @@ an older install as it is:
   kept or run — once an extraction in progress has finished, which takes tens of milliseconds. One
   stopped where it stands is waited for until Ctrl-C, saying after a second that it waits for another
   conflux extracting there; Ctrl-C ends the command, exit 1, with the supervisor's lock let go of;
-- a killed ephemeral run's root is removed, the `anchord` it left stopped, as `uninstall` removes
-  one, and what is at its name and is not as conflux makes a root removed as itself; a live run's is
-  left;
 - where nothing holds the state's lock, what an atomic write that never went in place left in the
   configuration and state directories goes;
 - the lock files — the state's, the supervisor's and `bin`'s — are kept on Unix, where a lock
@@ -731,7 +719,7 @@ an older install as it is:
 
 The configuration, the identity, the state, the anchor directories and the log are kept. It
 lists what it removed, and nothing it did not. What the next start clears again as it starts —
-the `anchord` a dead supervisor left, the run directory, a killed ephemeral run's root — it warns
+the `anchord` a dead supervisor left, the run directory — it warns
 of where it cannot remove it, and goes on; any other failure, the `bin` directory not emptied among
 them, fails it, the service it stopped started again.
 

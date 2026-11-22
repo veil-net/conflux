@@ -39,21 +39,19 @@ func startingEphemeral(t *testing.T) paths.Dirs {
 	return d
 }
 
-// ephemeralRoot is the root an ephemeral run is kept in under a fresh CONFLUX_DIR, set for the
-// rest of the test, not made yet.
+// ephemeralRoot is the root an ephemeral run is kept in, in a runtime folder of the test's own
+// (pathstest.Runtime), not made yet.
 func ephemeralRoot(t *testing.T) paths.Dirs {
 	t.Helper()
 
-	// 0700 whatever the umask made it: the run's root is inside, and a parent its group
-	// may write is refused.
-	root := t.TempDir()
-	if err := os.Chmod(root, 0o700); err != nil {
+	pathstest.Runtime(t, t.TempDir())
+
+	d, err := paths.EphemeralDirs()
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	t.Setenv("CONFLUX_DIR", root)
-
-	return paths.EphemeralDirs(paths.EphemeralCandidates()[0])
+	return d
 }
 
 // holdRoot makes d's roots, as a supervisor or a run does, and takes the lock it holds while it
@@ -80,6 +78,8 @@ func holdRoot(t *testing.T, d paths.Dirs) (unlock func()) {
 func TestStatusWritesNothingIntoAStartingEphemeralRun(t *testing.T) {
 	anchortest.Require(t)
 
+	pathstest.Dirs(t) // the installation status reads too, beside the run
+
 	d := startingEphemeral(t)
 
 	if _, live := liveEphemeral(); !live {
@@ -100,6 +100,8 @@ func TestStatusWritesNothingIntoAStartingEphemeralRun(t *testing.T) {
 // emptied. Neither status nor a reader takes it for the new run's.
 func TestAKilledRunsMarkerIsNotTheNextRuns(t *testing.T) {
 	anchortest.Require(t)
+
+	pathstest.Dirs(t) // the installation status reads too, beside the run
 
 	d := startingEphemeral(t)
 
@@ -216,12 +218,10 @@ func TestAReaderRemakesNothing(t *testing.T) {
 	}
 }
 
-// TestAReaderPassesOverARootAnotherAccountMade: /tmp lets anybody make the name a user's
-// ephemeral root has, and fill it with a held lock, a readiness marker and an anchorctl of
-// their own. A root another account made is no run's -- a run will not be kept in one -- so
-// status and pass-through pass it over, and nothing runs what it holds, as uninstall removes it
-// reading nothing. Nor do they look inside it first: a link there could lead them anywhere its maker
-// chose.
+// TestAReaderPassesOverARootAnotherAccountMade: a root another account made, with a held lock, a
+// readiness marker and an anchorctl of its own in it, is no run's -- a run will not be kept in one -- so
+// status and pass-through pass it over, and nothing runs what it holds. Nor do they look inside it
+// first: a link there could lead them anywhere its maker chose.
 func TestAReaderPassesOverARootAnotherAccountMade(t *testing.T) {
 	d := startingEphemeral(t)
 
@@ -242,10 +242,10 @@ func TestAReaderPassesOverARootAnotherAccountMade(t *testing.T) {
 
 	foreign := true
 
-	defer func(was func(string) error) { checkEphemeral = was }(checkEphemeral)
-	checkEphemeral = func(root string) error {
-		if foreign && root == d.State {
-			return errors.New(root + " belongs to another account")
+	defer func(was func(paths.Dirs) error) { checkEphemeral = was }(checkEphemeral)
+	checkEphemeral = func(e paths.Dirs) error {
+		if foreign && e.State == d.State {
+			return errors.New(e.State + " belongs to another account")
 		}
 
 		return nil
@@ -268,11 +268,11 @@ func TestAReaderPassesOverARootAnotherAccountMade(t *testing.T) {
 }
 
 // TestAReaderReadsNothingOfARootNotThere: an ephemeral root that is not there when a reader asks
-// whose it is holds no run, and nothing more is looked up at its name: /tmp lets anybody make it a
-// moment later, with a lock, held or left, a marker and an anchorctl of their own in it, and taken
-// for a run it would have a pass-through reach their daemon and run their anchorctl, and uninstall
-// stop their pid and empty what it led to. So a root made just after the readers' check found none
-// there is neither the live run nor a stale one, and not looked inside.
+// whose it is holds no run, and nothing more is looked up at its name: whatever is made there a moment
+// later, with a lock, held or left, a marker and an anchorctl in it, is whoever made it first's, and taken
+// for a run it would have a pass-through reach their daemon and run their anchorctl. So a root made just
+// after the readers' check found none there is neither the live run nor a stale one, and not looked
+// inside.
 func TestAReaderReadsNothingOfARootNotThere(t *testing.T) {
 	for name, held := range map[string]bool{"a run's lock held": true, "a killed run's lock left": false} {
 		t.Run(name, func(t *testing.T) {
@@ -291,15 +291,15 @@ func TestAReaderReadsNothingOfARootNotThere(t *testing.T) {
 
 			// The readers' check's answer for a root not there, and the root made, a run's in all but who
 			// made it, the moment after.
-			defer func(was func(string) error) { checkEphemeral = was }(checkEphemeral)
-			checkEphemeral = func(r string) error {
-				if _, err := os.Lstat(r); !errors.Is(err, fs.ErrNotExist) {
-					t.Fatalf("%s is there before it is planted (%v)", r, err)
+			defer func(was func(paths.Dirs) error) { checkEphemeral = was }(checkEphemeral)
+			checkEphemeral = func(e paths.Dirs) error {
+				if _, err := os.Lstat(e.State); !errors.Is(err, fs.ErrNotExist) {
+					t.Fatalf("%s is there before it is planted (%v)", e.State, err)
 				}
 
 				plantRun(t, d, held)
 
-				return fmt.Errorf("%s: %w", r, fs.ErrNotExist)
+				return fmt.Errorf("%s: %w", e.State, fs.ErrNotExist)
 			}
 
 			if live, stale := ephemeralRuns(); live != nil || stale != nil {

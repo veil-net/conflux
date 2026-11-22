@@ -203,12 +203,7 @@ func removeStaged(d paths.Dirs) []string {
 	var removed []string
 
 	for _, dir := range slices.Compact([]string{d.Config, d.State}) {
-		staged, _ := filepath.Glob(filepath.Join(dir, ".tmp-*"))
-		for _, p := range staged {
-			if os.Remove(p) == nil {
-				removed = append(removed, p)
-			}
-		}
+		removed = append(removed, paths.RemovePrefixed(dir, ".tmp-", os.Remove)...)
 	}
 
 	unlock()

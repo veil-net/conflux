@@ -151,17 +151,15 @@ func Keep(d paths.Dirs) string {
 // removeBeside removes what an earlier copy left beside dst, the copy the service runs: the copy a
 // service ran until the last PlaceAfresh, which only Windows moves aside, still running being fine;
 // and, afresh, as PlaceAfresh writes the copy, that too whatever the platform, and what a copy that
-// never went in place left, copyExecutable's file beside it, which its own removal missed in a crash.
+// never went in place left, copyExecutable's file beside it, which its own removal missed in a crash
+// (paths.RemovePrefixed).
 func removeBeside(dst string, afresh bool) {
 	if runtime.GOOS == "windows" || afresh {
 		_ = os.Remove(dst + ".old")
 	}
 
 	if afresh {
-		leftovers, _ := filepath.Glob(filepath.Join(filepath.Dir(dst), copyPrefix+"*"))
-		for _, p := range leftovers {
-			_ = os.Remove(p)
-		}
+		paths.RemovePrefixed(filepath.Dir(dst), copyPrefix, os.Remove)
 	}
 }
 

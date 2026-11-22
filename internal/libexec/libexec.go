@@ -225,23 +225,13 @@ const temporaryPrefix = "conflux-usage-"
 // RemoveTemporary removes the directories Temporary makes, everywhere a copy may be made for the account
 // running this (temporaryParents) -- what a reader killed before it could remove its copy left there for
 // good -- and is those it removed: every one named as Temporary names one goes whole, whoever made it,
-// since the name is conflux's. On Windows one whose copy is running, which Windows removes no file of, is
-// passed over; on Unix it goes too, and the copy runs on from a file no longer named. Each place is read
-// by its name as it is, never as a pattern, which a TMPDIR holding a [ would be.
+// since the name is conflux's (paths.RemovePrefixed). On Windows one whose copy is running, which Windows
+// removes no file of, is passed over; on Unix it goes too, and the copy runs on from a file no longer named.
 func RemoveTemporary() []string {
 	var removed []string
 
 	for _, parent := range temporaryParents() {
-		entries, _ := os.ReadDir(parent)
-		for _, e := range entries {
-			if !strings.HasPrefix(e.Name(), temporaryPrefix) {
-				continue
-			}
-
-			if dir := filepath.Join(parent, e.Name()); os.RemoveAll(dir) == nil {
-				removed = append(removed, dir)
-			}
-		}
+		removed = append(removed, paths.RemovePrefixed(parent, temporaryPrefix, os.RemoveAll)...)
 	}
 
 	return removed

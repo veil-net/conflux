@@ -1523,6 +1523,25 @@ func ClearExcept(dir string, keep ...string) ([]string, error) {
 	return removed, nil
 }
 
+// RemovePrefixed removes, by remove, each entry in dir whose name begins with prefix, and is the paths of
+// those it removed: what conflux leaves under a name of its own beside what it keeps -- a reader's temporary
+// copy, a copy or a download that never went in place, a write that never did. dir is read by its name as
+// it is, never as a pattern, which one holding a [ would be, reaching into another folder the pattern
+// matches. A dir that cannot be read holds nothing to remove.
+func RemovePrefixed(dir, prefix string, remove func(string) error) []string {
+	entries, _ := os.ReadDir(dir)
+
+	var removed []string
+
+	for _, e := range entries {
+		if p := filepath.Join(dir, e.Name()); strings.HasPrefix(e.Name(), prefix) && remove(p) == nil {
+			removed = append(removed, p)
+		}
+	}
+
+	return removed
+}
+
 // CheckSocketLen refuses a run directory that would produce a socket path the
 // kernel cannot bind.
 //

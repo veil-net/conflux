@@ -335,18 +335,10 @@ func removeLeftovers() []string {
 // which runs the new one's start or register, so its image goes at the next update, or uninstall.
 // It returns what it removed.
 func removeUpdateLeftovers(exe string) []string {
-	var removed []string
+	removed := paths.RemovePrefixed(filepath.Dir(exe), ".conflux-update-", os.Remove)
 
-	matches, _ := filepath.Glob(filepath.Join(filepath.Dir(exe), ".conflux-update-*"))
-
-	if runtime.GOOS == "windows" {
-		matches = append(matches, exe+".old")
-	}
-
-	for _, p := range matches {
-		if err := os.Remove(p); err == nil {
-			removed = append(removed, p)
-		}
+	if runtime.GOOS == "windows" && os.Remove(exe+".old") == nil {
+		removed = append(removed, exe+".old")
 	}
 
 	return removed

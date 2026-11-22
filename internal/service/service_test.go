@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"testing"
 
 	_ "github.com/veil-net/conflux/internal/apitest" // the default API answers nothing
@@ -86,5 +87,35 @@ func TestPlaceAfreshCopiesWhatTheServiceRuns(t *testing.T) {
 
 	if info, _ := os.Stat(placed); info.Mode().Perm()&0o077 != 0 && os.PathSeparator == '/' {
 		t.Errorf("the placed copy is %v, want it closed to everybody but its owner", info.Mode().Perm())
+	}
+}
+
+// TestRemoveBesideTakesItsFolderByName: what a copy that never went in place left beside the service's copy
+// goes as PlaceAfresh writes the copy, and nothing else: the folder holding it is read by its name as it is,
+// never as a pattern, so a copy in a folder named x[1] leaves what is in x1, another installation's root.
+func TestRemoveBesideTakesItsFolderByName(t *testing.T) {
+	parent := t.TempDir()
+	dir, other := filepath.Join(parent, "x[1]"), filepath.Join(parent, "x1")
+
+	left, kept := filepath.Join(dir, copyPrefix+"123"), filepath.Join(other, copyPrefix+"victim")
+
+	for _, f := range []string{left, kept} {
+		if err := os.MkdirAll(filepath.Dir(f), 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.WriteFile(f, []byte("a copy"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	removeBeside(filepath.Join(dir, "conflux"), true)
+
+	if _, err := os.Lstat(left); !os.IsNotExist(err) {
+		t.Errorf("removeBeside left %s (Lstat: %v)", left, err)
+	}
+
+	if _, err := os.Lstat(kept); err != nil {
+		t.Errorf("removeBeside, for a copy in %s, removed %s: %v", dir, kept, err)
 	}
 }

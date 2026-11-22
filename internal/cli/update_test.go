@@ -173,24 +173,31 @@ func releaseAsking(t *testing.T) (rel *ghreleasetest.Release, exe, asked string)
 	return rel, exe, asked
 }
 
-// updatedConflux is a conflux an update replaced, exe, in a directory of the test's, which
+// updatedConflux is a conflux an update replaced, exe, in a directory of the test's named x[1], which
 // updateExecutable answers for the rest of the test, beside what an update leaves there: a download
 // that never went in place, and exe.old, the image an update moves aside on Windows. leftovers are
 // those conflux removes as what an update left, and kept those it keeps: exe.old is an update's on
-// Windows alone, and elsewhere a file of the operator's.
+// Windows alone, and elsewhere a file of the operator's; and a download in x1, which the folder taken
+// as a pattern, not by its name, would reach.
 func updatedConflux(t *testing.T) (exe string, leftovers, kept []string) {
 	t.Helper()
 
-	exe = filepath.Join(t.TempDir(), "conflux")
+	parent := t.TempDir()
+	exe = filepath.Join(parent, "x[1]", "conflux")
 	leftovers = []string{filepath.Join(filepath.Dir(exe), ".conflux-update-123")}
+	kept = []string{filepath.Join(parent, "x1", ".conflux-update-123")}
 
 	if runtime.GOOS == "windows" {
 		leftovers = append(leftovers, exe+".old")
 	} else {
-		kept = []string{exe + ".old"}
+		kept = append(kept, exe+".old")
 	}
 
 	for _, p := range append(append([]string{exe}, leftovers...), kept...) {
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+
 		if err := os.WriteFile(p, []byte("a conflux"), 0o700); err != nil {
 			t.Fatal(err)
 		}

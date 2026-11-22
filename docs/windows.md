@@ -128,12 +128,11 @@ extract the anchor pair into `bin\` where it is not there yet.
 
 A root conflux finds already there is its own only where it is as conflux makes one: a folder, not a
 junction or a link, owned by SYSTEM, the Administrators or TrustedInstaller, whose DACL grants nobody
-else any right, to read it included, on it or on what is made in it. An ephemeral run's root, which
-only an elevated conflux makes or can open, is judged for the Administrators, never for the account
-running conflux by its SID, whose processes that are not elevated could have made one first in
-`%ProgramData%` and filled it. An installation's root, which the boot service runs from as SYSTEM, trusting no other
-account, is judged for SYSTEM, so one the administrator running conflux owns, or that grants them a
-right, is not conflux's either. Anything else at the name — a folder another account made, as
+else any right, to read it included, on it or on what is made in it. The account running conflux is
+never trusted by its SID, for an installation's root, which the boot service runs from as SYSTEM,
+trusting no other account, and an ephemeral run's, which only an elevated conflux makes or can open,
+alike: its processes that are not elevated could have made one first in `%ProgramData%` and filled
+it, so one the administrator running conflux owns, or that grants them a right, is not conflux's. Anything else at the name — a folder another account made, as
 `%ProgramData%` lets any account make `conflux` or `conflux-ephemeral` first, one that inherits
 `%ProgramData%`'s grants, a junction, a file — is removed as itself by every command that makes a
 root, through a handle on the folder it is in, never followed, opened to delete it and read its

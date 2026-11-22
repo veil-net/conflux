@@ -38,13 +38,11 @@ func RestrictToOwner(string, bool) error { return nil }
 
 // ours is why what s holds -- a directory, at the root dir's name or a folder's in one, or a file in one --
 // is not as conflux makes it, or "" where it is: owned by root or the account running conflux, and written
-// by nobody else, by its mode -- the
-// sticky bit letting nothing through, since a name not taken yet is anybody's in a sticky directory --
-// or its ACL (judge), as fstat read it where the walk met it and its ACL at dir. A 0710 the supervisor
-// gives the state and run directories, so that anchord's account may pass through them, lets that
-// account write nothing. installation is Windows's, where an installation's root is judged for the
-// SYSTEM service; here the service runs as root, as every command that makes such a root does.
-func ours(dir string, s step, _ bool) (string, error) {
+// by nobody else, by its mode -- the sticky bit letting nothing through, since a name not taken yet is
+// anybody's in a sticky directory -- or its ACL (judge), as fstat read it where the walk met it and its
+// ACL at dir. A 0710 the supervisor gives the state and run directories, so that anchord's account may
+// pass through them, lets that account write nothing.
+func ours(dir string, s step) (string, error) {
 	euid := os.Geteuid()
 
 	if owner := int(s.st.Uid); owner != 0 && owner != euid {

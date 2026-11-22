@@ -496,7 +496,7 @@ func TestOursHoldsARootToItsOwnerAndWriters(t *testing.T) {
 		s := step{st: unix.Stat_t{Uid: c.uid}}
 		reflect.ValueOf(&s.st.Mode).Elem().SetUint(uint64(unix.S_IFDIR | c.mode)) // uint16 on macOS and the BSDs
 
-		why, err := ours(dir, s, true)
+		why, err := ours(dir, s)
 		if err != nil || (why == "") != c.ok {
 			t.Errorf("ours(uid %d, %#o) = %q, %v, want it ours: %v", c.uid, c.mode, why, err, c.ok)
 		}

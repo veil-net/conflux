@@ -323,7 +323,7 @@ func (d Dirs) makeRoot(dir string) ([]string, error) {
 		return made, err
 	}
 
-	root, err := ownFolder(w.last().step, dir, !d.ephemeral, true)
+	root, err := ownFolder(w.last().step, dir, true)
 	if err != nil {
 		return made, err
 	}
@@ -334,7 +334,7 @@ func (d Dirs) makeRoot(dir string) ([]string, error) {
 	// supervisor makes it, so ours would remove it, and the anchor's state with it, at every start; the
 	// supervisor holds it to that account instead (daemon's anchorDirFor), and makes it afresh otherwise.
 	for sub, create := range d.folders(dir) {
-		s, err := ownFolder(root, sub, !d.ephemeral, create)
+		s, err := ownFolder(root, sub, create)
 
 		switch {
 		case errors.Is(err, fs.ErrNotExist) && !create:
@@ -346,7 +346,7 @@ func (d Dirs) makeRoot(dir string) ([]string, error) {
 	}
 
 	for _, f := range d.files(dir) {
-		if err := ownFile(root, f, !d.ephemeral); err != nil {
+		if err := ownFile(root, f); err != nil {
 			return made, err
 		}
 	}
@@ -360,7 +360,7 @@ func (d Dirs) makeRoot(dir string) ([]string, error) {
 // removed as itself through parent (removeFrom), and nothing made in its place: whatever writes the file
 // makes it. One that cannot be removed is refused, saying why it is not conflux's. Nothing at the name is
 // nothing to do.
-func ownFile(parent step, p string, installation bool) error {
+func ownFile(parent step, p string) error {
 	name := filepath.Base(p)
 
 	looking(p)
@@ -376,7 +376,7 @@ func ownFile(parent step, p string, installation bool) error {
 
 	why := k.not(isFile)
 	if k == isFile {
-		why, err = ours(p, s, installation)
+		why, err = ours(p, s)
 	}
 
 	s.close()
@@ -426,7 +426,7 @@ func (d Dirs) files(dir string) []string {
 // is not conflux's. Where nothing is there it is made where create is, and is otherwise an error that is
 // fs.ErrNotExist. A folder made, where makeStep holds nothing of it, is looked up again to be held, and a
 // link put at its name meanwhile is refused, never followed, as makeWay refuses one.
-func ownFolder(parent step, p string, installation, create bool) (step, error) {
+func ownFolder(parent step, p string, create bool) (step, error) {
 	name := filepath.Base(p)
 
 	looking(p)
@@ -443,7 +443,7 @@ func ownFolder(parent step, p string, installation, create bool) (step, error) {
 	case err == nil:
 		why = "a link"
 		if !link {
-			why, err = ours(p, s, installation)
+			why, err = ours(p, s)
 		}
 
 		if err == nil && why == "" {
@@ -791,13 +791,13 @@ func (r *rootHold) close() {
 	r.parent.close()
 }
 
-// holdRoot holds the root dir, one of an installation's where installation is, or an ephemeral run's:
+// holdRoot holds the root dir, an installation's or an ephemeral run's:
 // the way to the folder it is in walked and held (toParent), and the
 // directory at dir's name in that folder, looked up there and nowhere else (lookUp); and is why that is
 // not as conflux makes a root (ours), or "". A link or anything else at the name that is no directory is
 // not held, and nothing in it is read. Where the way to dir, or its name, is not there, it is an error
 // that is fs.ErrNotExist.
-func holdRoot(dir string, installation bool) (*rootHold, string, error) {
+func holdRoot(dir string) (*rootHold, string, error) {
 	w, err := toParent(dir)
 
 	switch {
@@ -823,7 +823,7 @@ func holdRoot(dir string, installation bool) (*rootHold, string, error) {
 
 		why = "a link"
 	default:
-		if why, err = ours(dir, s, installation); err == nil {
+		if why, err = ours(dir, s); err == nil {
 			return &rootHold{parent: w, dir: s}, why, nil
 		}
 
@@ -866,7 +866,7 @@ func (d Dirs) OpenIn(path string) (*os.File, error) {
 		return nil, fmt.Errorf("%s is not directly in a root of conflux's", path)
 	}
 
-	r, why, err := holdRoot(dir, !d.ephemeral)
+	r, why, err := holdRoot(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -910,9 +910,7 @@ func (d Dirs) oursAs(path string, want kind) error {
 	}
 
 	root := d.Outer()[i]
-	installation := !d.ephemeral
-
-	r, why, err := holdRoot(root, installation)
+	r, why, err := holdRoot(root)
 
 	switch {
 	case err != nil:
@@ -945,7 +943,7 @@ func (d Dirs) oursAs(path string, want kind) error {
 		case link:
 			why = "a link"
 		default:
-			why, err = ours(p, s, installation)
+			why, err = ours(p, s)
 		}
 
 		if err != nil || why != "" {
@@ -963,7 +961,7 @@ func (d Dirs) oursAs(path string, want kind) error {
 	if err == nil {
 		why = k.not(want)
 		if k == want {
-			why, err = ours(path, s, installation)
+			why, err = ours(path, s)
 		}
 
 		s.close()
@@ -1074,7 +1072,7 @@ func (d Dirs) roots() iter.Seq2[string, bool] {
 // signals anything in it by its name (holdRoot): the directory at each root's name as conflux makes a
 // root (ours) -- not a link, owned by root or the account running conflux, and written by nobody else; on
 // Windows owned by SYSTEM, the Administrators or TrustedInstaller, and granting nobody else anything
-// (judgedFor). Nothing else can have put anything in such a root, so what it holds is not judged, and
+// (machineAccount). Nothing else can have put anything in such a root, so what it holds is not judged, and
 // nothing above it is. It changes nothing: a root that fails is refused, saying why.
 //
 // Where none of d's roots is there, nothing of conflux's is installed, and Check is an error that is
@@ -1083,7 +1081,7 @@ func (d Dirs) Check() error {
 	there := false
 
 	for _, dir := range d.Outer() {
-		r, why, err := holdRoot(dir, !d.ephemeral)
+		r, why, err := holdRoot(dir)
 
 		switch {
 		case errors.Is(err, fs.ErrNotExist):

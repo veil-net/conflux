@@ -466,38 +466,27 @@ func trusted(sid *windows.SID) bool {
 }
 
 // ours is why what s holds open -- a folder, at the root dir's name or a folder's in one, or a file in one
-// -- is not as conflux makes it, or "" where it is: owned by SYSTEM, the Administrators, TrustedInstaller
-// or the account it is judged for, and its DACL granting nobody else any right, to read it included, on it
-// or on what is made in it (changerIn), as read through s. An installation's root, which the
-// boot service runs from as SYSTEM, trusting no other account, is judged for SYSTEM; an ephemeral run's
-// for the Administrators (judgedFor). %ProgramData% lets any account make a folder at a name not taken
-// yet, which keeps that account as its owner, or inherits Users' grants from it: neither is ours.
-func ours(dir string, s step, installation bool) (string, error) {
+// -- is not as conflux makes it, or "" where it is: owned by SYSTEM, the Administrators or
+// TrustedInstaller, and its DACL granting nobody else any right, to read it included, on it or on what is
+// made in it (changerIn), as read through s. Never the account running conflux by its own SID, an
+// installation's root, which the boot service runs from as SYSTEM, and an ephemeral run's, which only an
+// elevated conflux makes or can open, alike: what that account owns, or is granted, its processes that
+// are not elevated may change -- a root %ProgramData% let them make first, with a held lock, a readiness
+// marker and an anchorctl of their own in it -- for an elevated conflux to read and run. %ProgramData%
+// lets any account make a folder at a name not taken yet, which keeps that account as its owner, or
+// inherits Users' grants from it: neither is ours.
+func ours(dir string, s step) (string, error) {
 	sd, err := security(s.h)
 	if err != nil {
 		return "", fmt.Errorf("read the ownership of %s: %w", dir, err)
 	}
 
-	who, err := changerIn(dir, judgedFor(installation), sd)
+	who, err := changerIn(dir, sd)
 	if who != "" {
 		who += " could change it or read what is in it"
 	}
 
 	return who, err
-}
-
-// judgedFor is the account a root, and what it holds, is judged for: SYSTEM, which the boot service
-// runs as, for an installation's (installation), and the Administrators for an ephemeral run's, which
-// only an elevated conflux makes or can open. Never the account running conflux by its own SID: what
-// that account owns, or is granted, its processes that are not elevated may change -- a root
-// %ProgramData% let them make first, with a held lock, a readiness marker and an anchorctl of their own
-// in it -- for an elevated conflux to read and run.
-func judgedFor(installation bool) *windows.SID {
-	if installation {
-		return sidSystem
-	}
-
-	return sidAdmins
 }
 
 // dispose removes what h holds open, opened with DELETE: with POSIX semantics where the file system
@@ -623,13 +612,12 @@ var sidCreatorOwner = wellKnown(windows.WinCreatorOwnerSid)
 // sidTrustedInstaller is NT SERVICE\TrustedInstaller, which owns much of the system drive.
 var sidTrustedInstaller, _ = windows.StringToSid("S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464")
 
-// changerIn is who besides SYSTEM, the Administrators, TrustedInstaller and self, the account the
-// judgement is made for (trustedFor), may change p, whose owner and DACL sd holds, as a refusal
+// changerIn is who besides SYSTEM, the Administrators and TrustedInstaller (machineAccount) may change p, whose owner and DACL sd holds, as a refusal
 // names them, or "": its owner, who may grant itself anything, or anybody its DACL grants any right,
 // on p itself or on what is made in it (mover) -- to read it among them, since what it holds inherits
 // that: a lock file an account let read may hold against the supervisor (flock.Held), and the
 // service's log.
-func changerIn(p string, self *windows.SID, sd *windows.SECURITY_DESCRIPTOR) (string, error) {
+func changerIn(p string, sd *windows.SECURITY_DESCRIPTOR) (string, error) {
 	owner, _, err := sd.Owner()
 	if err != nil {
 		return "", fmt.Errorf("read the owner of %s: %w", p, err)
@@ -641,13 +629,13 @@ func changerIn(p string, self *windows.SID, sd *windows.SECURITY_DESCRIPTOR) (st
 	}
 
 	switch {
-	case !trustedFor(owner, self):
+	case !machineAccount(owner):
 		return "belongs to " + accountName(owner) + ", who", nil
 	case dacl == nil:
 		return "has no DACL, so anybody", nil
 	}
 
-	sid, err := mover(dacl, self)
+	sid, err := mover(dacl)
 	switch {
 	case err != nil:
 		return "", fmt.Errorf("read the DACL of %s: %w", p, err)
@@ -659,15 +647,14 @@ func changerIn(p string, self *windows.SID, sd *windows.SECURITY_DESCRIPTOR) (st
 }
 
 // mover is the first account dacl grants any right on the object itself or on what is made in it,
-// other than those trustedFor names for self, or nil: each entry that allows a right there, as
+// other than those machineAccount names, or nil: each entry that allows a right there, as
 // windowsGrants reads them. CREATOR OWNER is nobody on the object itself, and passed on, whoever made
-// what it is passed to, whom this same judgement holds to the accounts trustedFor names: so it is
+// what it is passed to, whom this same judgement holds to the accounts machineAccount names: so it is
 // counted as the account running conflux, the one whose making conflux can answer for -- what an
 // administrator makes is their own under a Windows client's default-owner policy -- and passes only
-// where that account is trusted for self. A judgement for SYSTEM made by an administrator's run, an
-// installation's root's, counts it as that administrator, so such a root is not as conflux makes one,
-// and EnsureAll makes it afresh.
-func mover(dacl *windows.ACL, self *windows.SID) (*windows.SID, error) {
+// where that account is one of them. An administrator's run counts it as that administrator, so such
+// a root is not as conflux makes one, and EnsureAll makes it afresh.
+func mover(dacl *windows.ACL) (*windows.SID, error) {
 	header := unsafe.Slice((*byte)(unsafe.Pointer(dacl)), 8)
 
 	grants, err := windowsGrants(unsafe.Slice((*byte)(unsafe.Pointer(dacl)), binary.LittleEndian.Uint16(header[2:])))
@@ -687,10 +674,10 @@ func mover(dacl *windows.ACL, self *windows.SID) (*windows.SID, error) {
 			switch user := currentUser(); {
 			case user == nil:
 				return sid, nil
-			case !trustedFor(user, self):
+			case !machineAccount(user):
 				return user, nil
 			}
-		case !trustedFor(sid, self):
+		case !machineAccount(sid):
 			return sid, nil
 		}
 	}
@@ -698,10 +685,10 @@ func mover(dacl *windows.ACL, self *windows.SID) (*windows.SID, error) {
 	return nil, nil
 }
 
-// trustedFor is SYSTEM, the Administrators, TrustedInstaller or self, where self is known: somebody
-// who could change anything on the machine, or the account a judgement is made for (judgedFor).
-func trustedFor(sid, self *windows.SID) bool {
-	return sid.Equals(sidSystem) || sid.Equals(sidAdmins) || self != nil && sid.Equals(self) ||
+// machineAccount is SYSTEM, the Administrators or TrustedInstaller: somebody who could change
+// anything on the machine.
+func machineAccount(sid *windows.SID) bool {
+	return sid.Equals(sidSystem) || sid.Equals(sidAdmins) ||
 		sidTrustedInstaller != nil && sid.Equals(sidTrustedInstaller)
 }
 

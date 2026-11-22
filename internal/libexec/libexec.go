@@ -239,15 +239,16 @@ const temporaryPrefix = "conflux-usage-"
 
 // RemoveTemporary removes the directories Temporary makes, everywhere it may make them for the account
 // running this (temporaryParents) -- what a reader killed before it could remove its copy left there for
-// good -- and is those it removed. conflux's by their name, each goes whole; one that will not go -- a
-// reader's copy running from it, of which Windows removes no file -- is passed over.
+// good -- and is those it removed. conflux's by their name, each goes whole where it is that account's
+// (ownTemporary); one that will not go -- a reader's copy running from it, of which Windows removes no
+// file -- is passed over.
 func RemoveTemporary() []string {
 	var removed []string
 
 	for _, parent := range temporaryParents() {
 		left, _ := filepath.Glob(filepath.Join(parent, temporaryPrefix+"*"))
 		for _, dir := range left {
-			if os.RemoveAll(dir) == nil {
+			if fi, err := lstat(dir); err == nil && ownTemporary(fi) && os.RemoveAll(dir) == nil {
 				removed = append(removed, dir)
 			}
 		}
@@ -255,6 +256,9 @@ func RemoveTemporary() []string {
 
 	return removed
 }
+
+// lstat is os.Lstat, for RemoveTemporary, which a test has say another account owns a directory.
+var lstat = os.Lstat
 
 // usersTemporaryParents are where the account running conflux makes the directory Temporary writes in,
 // in the order one is chosen (usersTemporaryDir): the system's temporary directory, and the user's cache

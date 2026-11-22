@@ -48,6 +48,11 @@ func temporaryDir() (string, func(string, bool) error, error) {
 	return dir, paths.Restrict, err
 }
 
+// ownTemporary reports whether a directory named as Temporary names one is the account running
+// conflux's, for RemoveTemporary: every one is, where it looks -- %ProgramData%'s, which an elevated
+// process makes the Administrators', or the account's own temporary and cache directories.
+func ownTemporary(fs.FileInfo) bool { return true }
+
 // temporaryParents are where Temporary may make its directories, which temporaryDir chooses among and
 // RemoveTemporary looks in: for an elevated process %ProgramData% alone, and otherwise the account's own
 // (usersTemporaryParents).

@@ -519,8 +519,8 @@ func TestAFirstSignalStopsAnEphemeralRun(t *testing.T) {
 
 			select {
 			case <-exited:
-			case <-time.After(30 * time.Second):
-				overrun(t, "the run was sent %v and had not ended 30s later", sig)
+			case <-time.After(childDeadline):
+				overrun(t, "the run was sent %v and had not ended %v later", sig, childDeadline)
 			}
 
 			if code := conflux.ProcessState.ExitCode(); code != ExitOK || !strings.Contains(out.String(), "Stopped.") {

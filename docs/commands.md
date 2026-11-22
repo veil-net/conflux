@@ -526,7 +526,9 @@ reinstall:
   `conflux-usage-*` folder, whoever made it, wherever a copy may be made for the account uninstalling
   — the system's temporary directory, and on Unix that account's cache directory, on Windows,
   elevated, `%ProgramData%`. On Windows one whose copy is running is passed over; on Unix it goes too,
-  and the copy runs on;
+  and the copy runs on. On macOS the temporary directory is each account's own (`/var/folders/…/T`),
+  and `sudo` drops `TMPDIR`, so `sudo conflux uninstall` looks in `/tmp` and not in yours: a copy a
+  killed reader of yours left there is yours to remove;
 - the folders conflux made on the way to a `CONFLUX_DIR`'s root, which it records as it makes them —
   a `CONFLUX_DIR` it made, and its parents, among them — each whole, deepest first, with whatever was
   put in it since, another installation of conflux included: `CONFLUX_DIR=/srv/a/b`, where conflux

@@ -102,7 +102,7 @@ The concrete facts the workflow relies on. Step 8 of every run keeps this file t
   - `cli`: `TestNoUnintendedShadowing`, `TestTheCollisionsAreTheDocumentedOnes`, `TestRealmControlPassesThrough`
   - `daemon`: `BenchmarkDaemonLifecycle` (a benchmark; not part of the no-skip gate)
 - Platform skips, outside the real-binary gate, all on Windows: `daemon.TestShutdownSignalsARunningDaemon` and `TestSpawnRecordsTheDaemon` (a console control event), and the mode-bit tests. `TestWriteFileAtomicPreservesOnFailure` skips only where a directory cannot be made read-only.
-- On Linux with real binaries nothing in the module skips (338 top-level passes; `go test -list . ./... | grep -c ^Test`); CI's gate requires at least 150.
+- On Linux with real binaries nothing in the module skips (531 top-level passes; `go test -list . ./... | grep -c ^Test`); CI's gate requires at least 150.
 
 ## CI/CD
 

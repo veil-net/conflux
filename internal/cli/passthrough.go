@@ -26,8 +26,9 @@ import (
 // the user named, by -socket or ANCHOR_SOCKET, is answered before anything of conflux's is
 // supplied, and a token the user exported is kept.
 //
-// On Unix anchorctl replaces the process outright where it is the installation's extraction,
-// whatever the command reaches: conflux's daemon, a socket the user named, or none. That gives
+// On Unix anchorctl replaces the process outright where it is this build's extraction, the
+// installation's or an ephemeral run's, whatever the command reaches: conflux's daemon, a socket the
+// user named, or none. That gives
 // perfect stdio, the child's exit code without translation, signals delivered to the right
 // process, and nothing left in `ps` pretending to be a wrapper. A temporary copy, which is removed
 // once it has run, runs as a child instead (runAnchorctl).

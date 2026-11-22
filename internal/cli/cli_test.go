@@ -42,7 +42,9 @@ const childArgs = "CONFLUX_TEST_ARGS"
 // readers' (readersAnchorctl).
 const standInAnchorctl = "CONFLUX_TEST_STAND_IN"
 
-// childDeadline is how long confluxChild waits for its child before it kills it and fails the test.
+// childDeadline bounds a conflux a test runs: how long confluxChild waits for its child before it kills it,
+// captureOf for Main run in this process, and the signal tests for a run to end, before each fails the
+// test (overrun).
 const childDeadline = 30 * time.Second
 
 // overran is set once a conflux a test runs, in this process or as a child, outlives the bound the test

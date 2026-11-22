@@ -166,6 +166,9 @@ the extracted anchor binaries, the service's copy of conflux and the log in them
 `anchord` ran as, and the temporary copies of `anchorctl` killed readers left wherever a copy may be
 made for the account uninstalling ([commands.md](commands.md#conflux-uninstall)). One a reader run by
 another account left in that account's own cache directory, or on Windows its own `%TEMP%`, is not
-looked for. There is no other copy of the identity anywhere, so it asks first — see
+looked for. Nor, on macOS, is one in any account's own temporary directory (`/var/folders/…/T`, which
+each account has to itself): `sudo` drops `TMPDIR`, so `sudo conflux uninstall` looks in `/tmp`, and a
+`conflux-usage-*` folder a killed reader of yours left in your `$TMPDIR` is yours to remove. There is
+no other copy of the identity anywhere, so it asks first — see
 [credentials.md](credentials.md). The conflux you installed is
 yours to remove, as above.

@@ -793,7 +793,8 @@ alone: one naming a socket of your own (`-socket`, or `ANCHOR_SOCKET`), which re
 does not manage, and usage (`help`, or a help flag), which reaches no daemon. Each takes it as
 `status` takes it, and nothing of the installation stands in its way: this build's extraction,
 where the root passes the [readers' check](#a-root-another-account-could-change), extracted into
-`bin/` first where it is not there yet and `bin/` is as conflux makes it, or otherwise — the root
+`bin/` first where it is not there yet and `bin/` is as conflux makes it (an extraction in progress
+there is waited for, and Ctrl-C ends the wait and the command, running nothing), or otherwise — the root
 refused, or not there — a private temporary copy removed afterwards, reading nothing in the root, so
 an account that cannot read conflux's directories still reaches its own daemon; it makes none of
 conflux's directories. The copy goes

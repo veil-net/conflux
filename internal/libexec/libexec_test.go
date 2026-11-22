@@ -1,6 +1,7 @@
 package libexec
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -575,6 +576,38 @@ func TestUsageRunsNothingFromARootItRefuses(t *testing.T) {
 	if !strings.HasPrefix(bin, tmp+string(filepath.Separator)) {
 		t.Errorf("help ran %s from a root not as conflux makes one, where %s is extracted; want a copy in %s",
 			bin, planted.Anchorctl, tmp)
+	}
+}
+
+// TestAReaderStoppedWaitingForAnExtractionRunsNothing: a reader whose roots pass the readers' check, with
+// this build's pair not extracted yet, waits for bin's lock, which an extraction in progress holds; told to
+// stop waiting -- Ctrl+C ends its context -- it ends with the context's error, and runs nothing: no
+// temporary copy is made in its place.
+func TestAReaderStoppedWaitingForAnExtractionRunsNothing(t *testing.T) {
+	anchortest.Require(t)
+
+	tmp := pathstest.Temporary(t, t.TempDir())
+	d := pathstest.Dirs(t)
+
+	unlock, err := flock.AcquireContext(t.Context(), filepath.Join(d.Libexec(), ".lock"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+
+	bin, done, err := ForUsage(ctx, d, d.Check())
+	if done != nil {
+		done()
+	}
+
+	left, _ := os.ReadDir(tmp)
+
+	if !errors.Is(err, context.DeadlineExceeded) || bin != "" || len(left) > 0 {
+		t.Errorf("ForUsage, its wait for bin's lock ended by its context = %q, %v, leaving %v in the temporary "+
+			"directory; want the context's error, and nothing to run nor made", bin, err, left)
 	}
 }
 

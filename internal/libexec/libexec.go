@@ -187,9 +187,10 @@ func Extracted(d paths.Dirs) (*Tools, error) {
 // upgrade has put a newer conflux in place -- it is extracted there (extractIn), into the bin directory,
 // provided that folder is there and as conflux makes it (paths.Dirs.OursFolder): that adds a set and
 // removes none, so a service still running an older one keeps it, and makes neither a root nor the bin
-// directory. Anything else -- no installation, roots the check refused, a bin directory not there or not
-// as conflux makes it, an extraction that fails or is waited for until ctx ends -- runs a copy in a
-// private temporary directory (Temporary), with nothing in d read.
+// directory; an extraction in progress there is waited for, and one ctx ends the wait for -- Ctrl+C --
+// is the error, with nothing run. Anything else -- no installation, roots the check refused, a bin
+// directory not there or not as conflux makes it, an extraction that fails -- runs a copy in a private
+// temporary directory (Temporary), with nothing in d read.
 func ForUsage(ctx context.Context, d paths.Dirs, checked error) (bin string, done func(), err error) {
 	if checked == nil {
 		t, err := Extracted(d)
@@ -197,8 +198,11 @@ func ForUsage(ctx context.Context, d paths.Dirs, checked error) (bin string, don
 			t, err = extractIn(ctx, d)
 		}
 
-		if err == nil {
+		switch {
+		case err == nil:
 			return t.Anchorctl, nil, nil
+		case ctx.Err() != nil:
+			return "", nil, err
 		}
 	}
 

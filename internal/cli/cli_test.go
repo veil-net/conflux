@@ -113,7 +113,10 @@ func capture(t *testing.T, argv ...string) (stdout, stderr string, code int) {
 	return captureOf(t, func() int { return Main(append([]string{"conflux"}, argv...)) })
 }
 
-// captureOf is what run prints, to conflux's output and its errors, and the exit code it returns.
+// captureOf is what run prints, to conflux's output and its errors, and the exit code it returns. run
+// goes on a goroutine of its own, and one that has not returned past childDeadline -- conflux in-process
+// waiting on an anchorctl it runs for help or usage, say, that it never stops waiting on -- fails the
+// test, as confluxChild fails one for a child, rather than hanging the suite.
 func captureOf(t *testing.T, run func() int) (stdout, stderr string, code int) {
 	t.Helper()
 
@@ -124,7 +127,14 @@ func captureOf(t *testing.T, run func() int) (stdout, stderr string, code int) {
 
 	t.Cleanup(func() { ui.Out, ui.Errw = oldOut, oldErr })
 
-	code = run()
+	returned := make(chan int, 1)
+	go func() { returned <- run() }()
+
+	select {
+	case code = <-returned:
+	case <-time.After(childDeadline):
+		t.Fatalf("conflux, run in this process, had not returned after %v", childDeadline)
+	}
 
 	return out.String(), errBuf.String(), code
 }

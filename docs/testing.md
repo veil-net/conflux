@@ -85,11 +85,17 @@ cache directory's `XDG_CACHE_HOME`, macOS's `HOME` or Windows's `LocalAppData`),
 once it ends however it ends, before it asserts anything of it; `cli`'s tests run with those rooted
 in a temporary directory of their own besides (`TestMain`, `pathstest.SetTemporary`), so that the
 uninstalls and tidies they run, which remove what killed readers left there, never look in the
-machine's. A test that runs
-conflux as a child of its own binary — a pass-through, which on Unix replaces the process, or
-`serve`, which puts its log over its output — goes through `confluxChild`, which kills the child past
-thirty seconds and fails the test, and fails it on a panic too, so no conflux that never ends can
-hang the suite.
+machine's.
+
+No conflux `cli`'s tests run can hang the suite: each is bounded. `Main` run in the test's own process
+(`capture`, `captureOf`), as help and usage are, with the anchorctl they wait on, runs on a goroutine
+of its own, and one that has not returned past thirty seconds fails the test. A conflux run as a
+child of the test binary — a pass-through, which on Unix replaces the process, or `serve`, which puts
+its log over its output — goes through `confluxChild`, which kills the child past thirty seconds and
+fails the test, and fails it on a panic too. The signal tests (`exec_unix_test.go`), which start their
+children themselves so as to signal them, wait a bounded time for each — ten seconds for what a signal
+does, thirty for a run to end, sixty for an ephemeral run to reach its enrolment — fail the test past
+it, and kill what they started as they end.
 
 **The argv goldens**, in `internal/anchorctl/testdata/argv/`, hold one file per
 scenario, one argument per line. Argv construction is where a wrapper's bugs live and

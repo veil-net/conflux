@@ -4,6 +4,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -329,11 +330,21 @@ func TestNohupHoldsOffAnEphemeralRunsHangup(t *testing.T) {
 
 			argv := append(slices.Clone(tc.under), os.Args[0], "-test.run=^TestNohupHoldsOffAnEphemeralRunsHangup$")
 
-			conflux := exec.Command(argv[0], argv[1:]...) //nolint:gosec // this test binary
+			ctx, cancel := context.WithTimeout(t.Context(), childDeadline)
+
+			conflux := exec.CommandContext(ctx, argv[0], argv[1:]...) //nolint:gosec // this test binary
 			conflux.Env = append(os.Environ(), hangupChild+"="+strconv.Itoa(int(second)))
 			conflux.Dir = t.TempDir() // where nohup would put nohup.out, had it a terminal to redirect
+			conflux.WaitDelay = 5 * time.Second
 
 			out, err := conflux.Output()
+			late := ctx.Err() != nil
+
+			cancel()
+
+			if late {
+				t.Fatalf("%v, %v second: the run was still going after %v:\n%s", tc.under, second, childDeadline, out)
+			}
 			if got := strings.TrimSpace(string(out)); got != want {
 				t.Errorf("%v, %v second: the run said %q (%v), want %q", tc.under, second, got, err, want)
 			}

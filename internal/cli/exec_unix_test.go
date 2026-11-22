@@ -33,11 +33,9 @@ import (
 	"github.com/veil-net/conflux/internal/ui"
 )
 
-// standInDir, set, makes the test binary the conflux TestASignalToConfluxReachesItsAnchorctl
-// runs, whose anchorctl is a stand-in in a temporary directory made under it. standInTrap
-// says whether the stand-in traps the signal, and where it records which one it was sent.
+// standInTrap says whether the stand-in anchorctl traps the signal, and where it records which one it was
+// sent; standInPID where it records its PID.
 const (
-	standInDir  = "CONFLUX_TEST_STAND_IN_DIR"
 	standInTrap = "CONFLUX_TEST_STAND_IN_TRAP"
 	standInPID  = "CONFLUX_TEST_STAND_IN_PID"
 )
@@ -62,25 +60,12 @@ while :; do sleep 0.05; done
 }()
 
 // TestASignalToConfluxReachesItsAnchorctl: the anchorctl conflux runs as a child, a temporary copy
-// (here a stand-in, for a socket the user named), is sent what conflux's PID alone is sent -- a
+// (here of a stand-in, for a socket the user named), is sent what conflux's PID alone is sent -- a
 // kill, a service manager's stop, a hangup -- as it would be had conflux replaced itself with it.
 // conflux ends as anchorctl ends, by its exit code or by the signal, and its temporary copy goes
 // with it.
 func TestASignalToConfluxReachesItsAnchorctl(t *testing.T) {
-	if dir := os.Getenv(standInDir); dir != "" {
-		readersAnchorctl = func(context.Context) (string, func(), error) {
-			tmp, err := os.MkdirTemp(dir, "conflux-usage-")
-			if err != nil {
-				return "", nil, err
-			}
-
-			bin := filepath.Join(tmp, "anchorctl")
-
-			return bin, func() { _ = os.RemoveAll(tmp) }, os.WriteFile(bin, []byte(standIn), 0o700)
-		}
-
-		os.Exit(Main([]string{"conflux", "peers", "-socket", "unused"}))
-	}
+	script := standInScript(t)
 
 	defaultSignals(t)
 
@@ -101,13 +86,13 @@ func TestASignalToConfluxReachesItsAnchorctl(t *testing.T) {
 			dir, state := t.TempDir(), t.TempDir()
 			pidFile, trapFile := filepath.Join(state, "pid"), ""
 
-			env := append(os.Environ(), standInDir+"="+dir, standInPID+"="+pidFile)
+			env := append(standInEnv(script, dir), standInPID+"="+pidFile)
 			if tc.trap {
 				trapFile = filepath.Join(state, "trapped")
 				env = append(env, standInTrap+"="+trapFile)
 			}
 
-			conflux := exec.Command(os.Args[0], "-test.run=^TestASignalToConfluxReachesItsAnchorctl$") //nolint:gosec // this test binary
+			conflux := exec.Command(os.Args[0], "-test.run=^$") //nolint:gosec // this test binary
 			conflux.Env = env
 
 			if err := conflux.Start(); err != nil {
@@ -161,95 +146,79 @@ func TestASignalToConfluxReachesItsAnchorctl(t *testing.T) {
 	}
 }
 
-// TestAPassThroughToConfluxsDaemonReplacesConflux: a pass-through to conflux's own daemon runs the
-// installation's extraction in conflux's place: the anchorctl it runs, here a stand-in planted as this
-// build's set, has as its parent the test binary, which started conflux, and not conflux.
-func TestAPassThroughToConfluxsDaemonReplacesConflux(t *testing.T) {
-	anchortest.Require(t)
+// standInScript is the stand-in anchorctl (standIn), written for the test to run.
+func standInScript(t *testing.T) string {
+	t.Helper()
 
-	d := pathstest.Dirs(t)
-	looksRunning(t, d)
-
-	t.Setenv(anchorctl.SocketEnv, "")
-	t.Setenv(anchorctl.TokenEnv, "")
-
-	parent := filepath.Join(t.TempDir(), "ppid")
-	plantSet(t, d, "echo $PPID > '"+parent+"'")
-
-	out, code := confluxChild(t, "peers")
-
-	b, err := os.ReadFile(parent)
-	if ppid, _ := strconv.Atoi(strings.TrimSpace(string(b))); code != ExitOK || ppid != os.Getpid() {
-		t.Errorf("conflux peers exited %d, its anchorctl's parent %d (%v), want 0 and this test binary, %d, which "+
-			"started conflux:\n%s", code, ppid, err, os.Getpid(), out)
+	script := filepath.Join(t.TempDir(), "anchorctl")
+	if err := os.WriteFile(script, []byte(standIn), 0o700); err != nil {
+		t.Fatal(err)
 	}
+
+	return script
 }
 
-// placedArgs, set, makes TestOnlyATemporaryCopyRunsAsAChild's test binary the conflux it runs, with
-// these arguments, a line each, its readers' anchorctl the stand-in placedStandIn names: the
-// installation's extraction, with no done, or, with placedTemporary set, a temporary copy.
-const (
-	placedArgs      = "CONFLUX_TEST_PLACED_ARGS"
-	placedStandIn   = "CONFLUX_TEST_PLACED_STAND_IN"
-	placedTemporary = "CONFLUX_TEST_PLACED_TEMPORARY"
-)
+// standInEnv is the environment conflux is run in, by TestMain, as a pass-through to a socket the user
+// named, with a temporary copy of script for its anchorctl (standInAnchorctl), made in dir.
+func standInEnv(script, dir string) []string {
+	return append(os.Environ(), childArgs+"=peers\n-socket\nunused", standInAnchorctl+"="+script, "TMPDIR="+dir)
+}
 
-// TestOnlyATemporaryCopyRunsAsAChild: a pass-through to a socket the user named, or for usage, whose
-// anchorctl is the installation's extraction replaces conflux with it, as one to conflux's daemon does --
-// the stand-in runs as conflux's own PID -- and one whose anchorctl is a temporary copy runs it as a child,
-// to remove it afterwards.
+// TestOnlyATemporaryCopyRunsAsAChild: a pass-through whose anchorctl is the installation's extraction --
+// to a socket the user named, for usage, or to conflux's daemon -- replaces conflux with it, and one whose
+// anchorctl is a temporary copy runs it as a child, to remove it afterwards. The anchorctl, planted as this
+// build's set or handed in as the temporary copy (standInAnchorctl), records its parent: the test binary,
+// which started conflux, where it replaced conflux, and conflux where it is conflux's child.
 func TestOnlyATemporaryCopyRunsAsAChild(t *testing.T) {
-	if args := os.Getenv(placedArgs); args != "" {
-		readersAnchorctl = func(context.Context) (string, func(), error) {
-			if os.Getenv(placedTemporary) != "" {
-				return os.Getenv(placedStandIn), func() {}, nil
-			}
+	anchortest.Require(t)
 
-			return os.Getenv(placedStandIn), nil, nil
-		}
+	parent := filepath.Join(t.TempDir(), "ppid")
+	line := "echo $PPID > '" + parent + "'"
 
-		os.Exit(Main(append([]string{"conflux"}, strings.Split(args, "\n")...)))
-	}
-
-	bin := filepath.Join(t.TempDir(), "anchorctl")
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho $$ > \"$"+standInPID+"\"\n"), 0o700); err != nil {
+	script := filepath.Join(t.TempDir(), "anchorctl")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\n"+line+"\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 
 	for _, c := range []struct {
-		args   []string
-		socket string
+		name      string
+		args      []string
+		socket    string
+		temporary bool
 	}{
-		{[]string{"peers", "-socket", "unused"}, ""},
-		{[]string{"peers"}, "unused"},
-		{[]string{"peers", "-h"}, ""},
+		{"-socket", []string{"peers", "-socket", "unused"}, "", false},
+		{anchorctl.SocketEnv, []string{"peers"}, "unused", false},
+		{"usage", []string{"peers", "-h"}, "", false},
+		{"conflux's daemon", []string{"peers"}, "", false},
+		{"-socket, a temporary copy", []string{"peers", "-socket", "unused"}, "", true},
+		{anchorctl.SocketEnv + ", a temporary copy", []string{"peers"}, "unused", true},
+		{"usage, a temporary copy", []string{"peers", "-h"}, "", true},
 	} {
-		for _, temporary := range []bool{false, true} {
-			pidFile := filepath.Join(t.TempDir(), "pid")
+		t.Run(c.name, func(t *testing.T) {
+			_ = os.Remove(parent)
 
-			ctx, cancel := context.WithTimeout(t.Context(), childDeadline)
+			d := pathstest.Dirs(t)
+			plantSet(t, d, line)
+			looksRunning(t, d)
 
-			conflux := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestOnlyATemporaryCopyRunsAsAChild$") //nolint:gosec // this test binary
-			conflux.Env = append(os.Environ(), placedArgs+"="+strings.Join(c.args, "\n"), placedStandIn+"="+bin,
-				standInPID+"="+pidFile, anchorctl.SocketEnv+"="+c.socket)
+			t.Setenv(anchorctl.SocketEnv, c.socket)
+			t.Setenv(anchorctl.TokenEnv, "")
 
-			if temporary {
-				conflux.Env = append(conflux.Env, placedTemporary+"=1")
+			if c.temporary {
+				t.Setenv(standInAnchorctl, script)
 			}
 
-			out, err := conflux.CombinedOutput()
+			out, code := confluxChild(t, c.args...)
 
-			cancel()
+			b, err := os.ReadFile(parent)
+			ppid, _ := strconv.Atoi(strings.TrimSpace(string(b)))
 
-			b, _ := os.ReadFile(pidFile)
-			pid, _ := strconv.Atoi(strings.TrimSpace(string(b)))
-
-			if err != nil || pid == 0 || (pid == conflux.Process.Pid) == temporary {
-				t.Errorf("conflux %s with %s=%q, a temporary copy %v: ran anchorctl as pid %d, conflux being %d, want "+
-					"it in conflux's place only where it is not a temporary copy (%v):\n%s", strings.Join(c.args, " "),
-					anchorctl.SocketEnv, c.socket, temporary, pid, conflux.Process.Pid, err, out)
+			if code != ExitOK || ppid == 0 || (ppid == os.Getpid()) == c.temporary {
+				t.Errorf("conflux %s with %s=%q exited %d, its anchorctl's parent %d (%v), this test binary being %d: "+
+					"want it in conflux's place, its parent this test binary, only where it is not a temporary copy:\n%s",
+					strings.Join(c.args, " "), anchorctl.SocketEnv, c.socket, code, ppid, err, os.Getpid(), out)
 			}
-		}
+		})
 	}
 }
 
@@ -259,6 +228,8 @@ func TestOnlyATemporaryCopyRunsAsAChild(t *testing.T) {
 // whole process group -- ends neither, as it would end neither had conflux replaced itself with
 // anchorctl. What conflux is still sent is passed on.
 func TestAnIgnoredSignalStaysIgnoredForItsAnchorctl(t *testing.T) {
+	script := standInScript(t)
+
 	nohup, err := exec.LookPath("nohup")
 	if err != nil {
 		t.Fatal(err)
@@ -280,10 +251,10 @@ func TestAnIgnoredSignalStaysIgnoredForItsAnchorctl(t *testing.T) {
 			dir, state := t.TempDir(), t.TempDir()
 			pidFile, trapFile := filepath.Join(state, "pid"), filepath.Join(state, "trapped")
 
-			argv := append(slices.Clone(tc.under), os.Args[0], "-test.run=^TestASignalToConfluxReachesItsAnchorctl$")
+			argv := append(slices.Clone(tc.under), os.Args[0], "-test.run=^$")
 
 			conflux := exec.Command(argv[0], argv[1:]...) //nolint:gosec // this test binary
-			conflux.Env = append(os.Environ(), standInDir+"="+dir, standInPID+"="+pidFile, standInTrap+"="+trapFile)
+			conflux.Env = append(standInEnv(script, dir), standInPID+"="+pidFile, standInTrap+"="+trapFile)
 			conflux.Dir = state // where nohup would put nohup.out, had it a terminal to redirect
 
 			// A process group of its own, which the signal goes to, as a terminal's does.

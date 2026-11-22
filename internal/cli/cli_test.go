@@ -35,6 +35,12 @@ import (
 // confluxChild's child, and the run a signal test starts to signal.
 const childArgs = "CONFLUX_TEST_ARGS"
 
+// standInAnchorctl, set to a script, makes the anchorctl that conflux run by TestMain (childArgs) takes
+// for help, usage and a socket the user named a temporary copy of that script, in a directory of its own
+// in the temporary directory, which done removes, as libexec.Temporary makes one: in place of the
+// readers' (readersAnchorctl).
+const standInAnchorctl = "CONFLUX_TEST_STAND_IN"
+
 // childDeadline is how long confluxChild waits for its child before it kills it and fails the test.
 const childDeadline = 30 * time.Second
 
@@ -80,6 +86,10 @@ const testTemp = "CONFLUX_TEST_TEMP"
 // own readers, or another package's tests, may be running one.
 func TestMain(m *testing.M) {
 	if args := os.Getenv(childArgs); args != "" {
+		if script := os.Getenv(standInAnchorctl); script != "" {
+			readersAnchorctl = func(context.Context) (string, func(), error) { return temporaryCopy(script) }
+		}
+
 		os.Exit(Main(append([]string{"conflux"}, strings.Split(args, "\n")...)))
 	}
 
@@ -105,6 +115,24 @@ func TestMain(m *testing.M) {
 	_ = os.RemoveAll(tmp)
 
 	os.Exit(code)
+}
+
+// temporaryCopy is a copy of script in a directory of its own in the temporary directory, and what
+// removes it, the directory with it (standInAnchorctl).
+func temporaryCopy(script string) (string, func(), error) {
+	b, err := os.ReadFile(script)
+	if err != nil {
+		return "", nil, err
+	}
+
+	dir, err := os.MkdirTemp("", "conflux-usage-")
+	if err != nil {
+		return "", nil, err
+	}
+
+	bin := filepath.Join(dir, "anchorctl")
+
+	return bin, func() { _ = os.RemoveAll(dir) }, os.WriteFile(bin, b, 0o700)
 }
 
 func capture(t *testing.T, argv ...string) (stdout, stderr string, code int) {

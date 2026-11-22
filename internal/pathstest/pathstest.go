@@ -63,19 +63,18 @@ func SetTemporary(dir string) error {
 
 // temporaryIn sets, through set, every variable that says where a reader's temporary anchorctl may be
 // made: the temporary directory, dir -- TMPDIR, and TMP and TEMP, which on Windows a test linking this
-// package keeps %ProgramData%'s in too, where an elevated reader makes it -- and the user's cache
+// package keeps %ProgramData%'s in too, where an elevated reader makes it -- and on Unix the user's cache
 // directory, where one goes on a host whose temporary directory is mounted noexec, in dir as well:
-// XDG_CACHE_HOME, macOS's HOME, beneath which it is Library/Caches, or Windows's LocalAppData.
+// XDG_CACHE_HOME, or macOS's HOME, beneath which it is Library/Caches.
 func temporaryIn(dir string, set func(name, value string)) {
 	for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
 		set(name, dir)
 	}
 
 	switch runtime.GOOS {
+	case "windows": // no cache directory: Windows mounts nothing noexec
 	case "darwin":
 		set("HOME", filepath.Join(dir, "home"))
-	case "windows":
-		set("LocalAppData", filepath.Join(dir, "cache"))
 	default:
 		set("XDG_CACHE_HOME", filepath.Join(dir, "cache"))
 	}

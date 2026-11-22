@@ -524,8 +524,8 @@ reinstall:
   the image moved aside, `conflux.exe.old` (elsewhere a file of that name is yours, and kept);
 - the temporary copies of `anchorctl` a reader killed before it removed its own left: every
   `conflux-usage-*` folder, whoever made it, wherever a copy may be made for the account uninstalling
-  — the system's temporary directory and that account's cache directory, and on Windows, elevated,
-  `%ProgramData%` besides. On Windows one whose copy is running is passed over; on Unix it goes too,
+  — the system's temporary directory, and on Unix that account's cache directory, on Windows,
+  elevated, `%ProgramData%`. On Windows one whose copy is running is passed over; on Unix it goes too,
   and the copy runs on;
 - the folders conflux made on the way to a `CONFLUX_DIR`'s root, which it records as it makes them —
   a `CONFLUX_DIR` it made, and its parents, among them — each whole, deepest first, with whatever was

@@ -93,8 +93,7 @@ processes that are not elevated could change between the write and the run; not 
 in your `%TEMP%`, granted to you. The folder goes once the copy has run, and one a reader killed
 before then left goes at the next `uninstall`, or the next command that removes what earlier
 conflux left ([commands.md](commands.md#conflux-uninstall)), which, run elevated, look in
-`%ProgramData%` and in that account's own `%TEMP%` and `LocalAppData`; one whose copy is running is
-passed over.
+`%ProgramData%` and in that account's own `%TEMP%`; one whose copy is running is passed over.
 
 ## File permissions
 

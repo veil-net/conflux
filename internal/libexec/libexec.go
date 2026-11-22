@@ -195,8 +195,9 @@ func ForUsage(d paths.Dirs, checked error) (bin string, done func(), err error) 
 // Temporary is a copy of this build's anchorctl in a private temporary directory, with nothing of any
 // root's read, which done removes, the directory with it: what a reader runs where no extraction is one
 // it may use (ForUsage). Made where temporaryDir makes it -- for an elevated process on Windows a folder
-// of its own in %ProgramData%, and otherwise in the user's temporary directory (usersTemporaryDir) -- and
-// restricted as it says. Never a root of conflux's, nor a folder in one: a reader makes neither, so one
+// of its own in %ProgramData%, and otherwise in the user's temporary directory, or, on Unix, where that is
+// mounted noexec, the user's cache directory -- and restricted as it says. Never a root of conflux's,
+// nor a folder in one: a reader makes neither, so one
 // after an uninstall leaves nothing of an installation behind, and one run by an account that is not an
 // administrator leaves nothing of conflux's that account's.
 func Temporary() (bin string, done func(), err error) {
@@ -235,45 +236,6 @@ func RemoveTemporary() []string {
 	}
 
 	return removed
-}
-
-// usersTemporaryParents are where the account running conflux makes the directory Temporary writes in,
-// in the order one is chosen (usersTemporaryDir): the system's temporary directory, and the user's cache
-// directory, for a host that mounts the first noexec, as /tmp is on a hardened one.
-func usersTemporaryParents() []string {
-	parents := []string{os.TempDir()}
-
-	if cache, err := os.UserCacheDir(); err == nil {
-		parents = append(parents, cache)
-	}
-
-	return parents
-}
-
-// usersTemporaryDir makes the directory Temporary writes in, as the account running conflux: in the first
-// of candidates (usersTemporaryParents) on a filesystem that lets it run, the user's cache directory made
-// if it is not there yet. No other directory is made.
-func usersTemporaryDir(candidates []string) (string, error) {
-	parent, err := paths.FirstExecutable(candidates, nil)
-	if errors.Is(err, paths.ErrNoExec) {
-		return "", fmt.Errorf("every temporary directory is on a filesystem mounted noexec, so the anchorctl "+
-			"conflux runs could not run from it: %v.\n  Set TMPDIR to a directory on one that is not", candidates)
-	}
-
-	if err != nil {
-		return "", err
-	}
-
-	// The user's cache directory is the user's own, and one a fresh account has not made yet is
-	// made. The system's temporary directory is not conflux's to make: one that is missing is
-	// an error, as it is to everything else that writes there.
-	if parent != candidates[0] {
-		if err := os.MkdirAll(parent, 0o700); err != nil {
-			return "", err
-		}
-	}
-
-	return os.MkdirTemp(parent, temporaryPrefix+"*")
 }
 
 // complete reports whether the directory holds a finished extraction of exactly this

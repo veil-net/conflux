@@ -552,9 +552,9 @@ func TestUsageRunsNothingFromARootItRefuses(t *testing.T) {
 // TestRemoveTemporaryRemovesWhatAKilledReaderLeft: a reader killed before it removed its temporary copy
 // of anchorctl leaves the folder it made there for good, so uninstall and tidy remove every folder named as
 // Temporary names one, everywhere a copy may be made for the account running them -- the temporary
-// directory, and the user's cache directory, where one goes on a host whose temporary directory is mounted
-// noexec, elevated on Windows as well, and there %ProgramData% besides, which the test keeps apart from
-// them (pathstest.ProgramData) -- and say which; anything else there is left, and so is a folder that
+// directory, on Unix the user's cache directory, where one goes on a host whose temporary directory is
+// mounted noexec, and on Windows, elevated, %ProgramData%, which the test keeps apart from them
+// (pathstest.ProgramData) -- and say which; anything else there is left, and so is a folder that
 // will not go -- a reader's copy running from it, which Windows removes no file of -- passed over while the
 // rest go. Each place is taken by its name as it is, never as a pattern: a temporary directory named x[1]
 // leaves what is in x1. A link at such a name, to a folder or to a file, goes as itself, what it names left.
@@ -568,17 +568,19 @@ func TestRemoveTemporaryRemovesWhatAKilledReaderLeft(t *testing.T) {
 
 	left := []string{filepath.Join(parent, temporaryPrefix+"1"), filepath.Join(parent, temporaryPrefix+"2")}
 
-	// The user's cache directory, which pathstest.Temporary roots in parent too: never the machine's.
-	cache, err := os.UserCacheDir()
-	if err != nil || !strings.HasPrefix(cache, parent+string(filepath.Separator)) {
-		t.Fatalf("the user's cache directory is %s (%v), want it in the test's own %s", cache, err, parent)
-	}
+	// On Unix the user's cache directory, which pathstest.Temporary roots in parent too: never the machine's.
+	if runtime.GOOS != "windows" {
+		cache, err := os.UserCacheDir()
+		if err != nil || !strings.HasPrefix(cache, parent+string(filepath.Separator)) {
+			t.Fatalf("the user's cache directory is %s (%v), want it in the test's own %s", cache, err, parent)
+		}
 
-	if err := os.MkdirAll(cache, 0o700); err != nil {
-		t.Fatal(err)
-	}
+		if err := os.MkdirAll(cache, 0o700); err != nil {
+			t.Fatal(err)
+		}
 
-	left = append(left, filepath.Join(cache, temporaryPrefix+"4"))
+		left = append(left, filepath.Join(cache, temporaryPrefix+"4"))
+	}
 
 	if programData := pathstest.ProgramData(t, t.TempDir()); programData != "" && privcheck.Elevated() {
 		left = append(left, filepath.Join(programData, temporaryPrefix+"0"))

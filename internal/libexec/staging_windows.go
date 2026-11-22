@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io/fs"
 	"math/rand/v2"
+	"os"
 	"path/filepath"
 	"strconv"
 
@@ -32,11 +33,12 @@ func makeStaging(root, prefix string) (string, error) {
 // in nor remove, and restricts the copy to them alike (paths.Restrict): the account's own %TEMP%, and a
 // copy granted to it, are what its processes that are not elevated may change, between the write and
 // the run, for the elevated one to run. One that is not elevated writes in the account's own temporary
-// directory (usersTemporaryDir), the copy granted to the account (paths.RestrictToOwner), since a copy
-// Restrict guards is one it could not run.
+// directory, the copy granted to the account (paths.RestrictToOwner), since a copy Restrict guards is one
+// it could not run. Windows mounts nothing noexec (paths.MountAllowsExec), so there is no other place to
+// fall back on.
 func temporaryDir() (string, func(string, bool) error, error) {
 	if !privcheck.Elevated() {
-		dir, err := usersTemporaryDir(usersTemporaryParents())
+		dir, err := os.MkdirTemp(os.TempDir(), temporaryPrefix+"*")
 
 		return dir, paths.RestrictToOwner, err
 	}
@@ -47,12 +49,12 @@ func temporaryDir() (string, func(string, bool) error, error) {
 }
 
 // temporaryParents are where Temporary may make its directories for the account running conflux, which
-// RemoveTemporary looks in: the account's own (usersTemporaryParents), where its processes that are not
+// RemoveTemporary looks in: the account's own temporary directory, where its processes that are not
 // elevated make them, and, for an elevated process, which makes its own in %ProgramData%, that first.
 func temporaryParents() []string {
 	if privcheck.Elevated() {
-		return append([]string{paths.ProgramData()}, usersTemporaryParents()...)
+		return []string{paths.ProgramData(), os.TempDir()}
 	}
 
-	return usersTemporaryParents()
+	return []string{os.TempDir()}
 }

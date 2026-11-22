@@ -25,13 +25,13 @@ func TestARootsPOSIXACLIsJudged(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		planted := filepath.Join(d.State, "planted")
+		planted := filepath.Join(d.Root, "planted")
 		if err := os.WriteFile(planted, []byte("uid 65534's"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 
-		if err := unix.Setxattr(d.State, "system.posix_acl_access", anotherMayWrite, 0); err != nil {
-			t.Fatalf("give %s an ACL: %v", d.State, err)
+		if err := unix.Setxattr(d.Root, "system.posix_acl_access", anotherMayWrite, 0); err != nil {
+			t.Fatalf("give %s an ACL: %v", d.Root, err)
 		}
 
 		if err := d.Check(); err == nil || !strings.Contains(err.Error(), "uid 65534") {

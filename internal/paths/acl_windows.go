@@ -90,7 +90,7 @@ func restrictWith(dir bool, set func(owner *windows.SID, dacl *windows.ACL) erro
 // which no conflux command that makes a root runs with, though a test may -- handed nil, to leave the
 // owner as the token made it. Named rather than left to the token: a file made before it is
 // restricted keeps the owner it has unless one is named, and the boot service, running as SYSTEM,
-// trusts no account but the Administrators with its roots or the folders in them (ours). What is made
+// trusts no account but the Administrators with its root or the folders in them (ours). What is made
 // is the Administrators' either way where the token is elevated
 // (ElevatedDefaultOwner).
 func asAdministrators(set func(owner *windows.SID) error) error {

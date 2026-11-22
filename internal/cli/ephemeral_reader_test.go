@@ -54,7 +54,7 @@ func ephemeralRoot(t *testing.T) paths.Dirs {
 	return d
 }
 
-// holdRoot makes d's roots, as a supervisor or a run does, and takes the lock it holds while it
+// holdRoot makes d's root, as a supervisor or a run does, and takes the lock it holds while it
 // runs: what lets that go.
 func holdRoot(t *testing.T, d paths.Dirs) (unlock func()) {
 	t.Helper()
@@ -119,7 +119,7 @@ func TestAKilledRunsMarkerIsNotTheNextRuns(t *testing.T) {
 		t.Errorf("a reader, with the killed run's marker beside the new run's lock: %v, want errEphemeralStarting", err)
 	}
 
-	if out, _, _ := capture(t, "status"); !strings.Contains(out, "starting, from "+d.State) {
+	if out, _, _ := capture(t, "status"); !strings.Contains(out, "starting, from "+d.Root) {
 		t.Errorf("status, with the killed run's marker beside the new run's lock, does not say it is starting:\n%s", out)
 	}
 }
@@ -179,10 +179,10 @@ func TestAReaderRemakesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pathstest.NotAsConfluxMakesIt(t, d.Run)
+	pathstest.NotAsConfluxMakesIt(t, d.RunDir())
 
 	bin, done, err := toolsFor(t.Context(), d)
-	if err != nil || done == nil || strings.HasPrefix(bin, d.State) {
+	if err != nil || done == nil || strings.HasPrefix(bin, d.Root) {
 		t.Fatalf("a reader of an installation with no bin directory = %s, %v, want a temporary copy to remove", bin,
 			err)
 	}
@@ -233,7 +233,7 @@ func TestAReaderPassesOverARootAnotherAccountMade(t *testing.T) {
 
 	defer func(was func(string) (os.FileInfo, error)) { statLock = was }(statLock)
 	statLock = func(name string) (os.FileInfo, error) {
-		if strings.HasPrefix(name, d.State+string(filepath.Separator)) {
+		if strings.HasPrefix(name, d.Root+string(filepath.Separator)) {
 			looked++
 		}
 
@@ -244,8 +244,8 @@ func TestAReaderPassesOverARootAnotherAccountMade(t *testing.T) {
 
 	defer func(was func(paths.Dirs) error) { checkEphemeral = was }(checkEphemeral)
 	checkEphemeral = func(e paths.Dirs) error {
-		if foreign && e.State == d.State {
-			return errors.New(e.State + " belongs to another account")
+		if foreign && e.Root == d.Root {
+			return errors.New(e.Root + " belongs to another account")
 		}
 
 		return nil
@@ -262,8 +262,8 @@ func TestAReaderPassesOverARootAnotherAccountMade(t *testing.T) {
 	// The same root, this account's, is looked in, and is the run.
 	foreign = false
 
-	if live, _ := ephemeralRuns(); live == nil || live.State != d.State || looked == 0 {
-		t.Errorf("this account's root, looked inside %d times, gave the run %v, want %s", looked, live, d.State)
+	if live, _ := ephemeralRuns(); live == nil || live.Root != d.Root || looked == 0 {
+		t.Errorf("this account's root, looked inside %d times, gave the run %v, want %s", looked, live, d.Root)
 	}
 }
 
@@ -282,7 +282,7 @@ func TestAReaderReadsNothingOfARootNotThere(t *testing.T) {
 
 			defer func(was func(string) (os.FileInfo, error)) { statLock = was }(statLock)
 			statLock = func(name string) (os.FileInfo, error) {
-				if strings.HasPrefix(name, d.State+string(filepath.Separator)) {
+				if strings.HasPrefix(name, d.Root+string(filepath.Separator)) {
 					looked++
 				}
 
@@ -293,13 +293,13 @@ func TestAReaderReadsNothingOfARootNotThere(t *testing.T) {
 			// made it, the moment after.
 			defer func(was func(paths.Dirs) error) { checkEphemeral = was }(checkEphemeral)
 			checkEphemeral = func(e paths.Dirs) error {
-				if _, err := os.Lstat(e.State); !errors.Is(err, fs.ErrNotExist) {
-					t.Fatalf("%s is there before it is planted (%v)", e.State, err)
+				if _, err := os.Lstat(e.Root); !errors.Is(err, fs.ErrNotExist) {
+					t.Fatalf("%s is there before it is planted (%v)", e.Root, err)
 				}
 
 				plantRun(t, d, held)
 
-				return fmt.Errorf("%s: %w", e.State, fs.ErrNotExist)
+				return fmt.Errorf("%s: %w", e.Root, fs.ErrNotExist)
 			}
 
 			if live, stale := ephemeralRuns(); live != nil || stale != nil {

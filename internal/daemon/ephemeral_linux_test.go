@@ -64,7 +64,7 @@ func runEphemeralOf(t *testing.T, cfg *config.Config, env config.Envelope) *ephe
 
 	d := ephemeralDirs(t)
 
-	r := &ephemeralRig{d: d, root: d.State, ups: make(chan EphemeralUp, 1), finished: make(chan struct{})}
+	r := &ephemeralRig{d: d, root: d.Root, ups: make(chan EphemeralUp, 1), finished: make(chan struct{})}
 
 	e := &Ephemeral{
 		Dirs:       d,
@@ -305,7 +305,7 @@ func TestASecondEphemeralRunIsRefused(t *testing.T) {
 	is := newIssuer(t)
 
 	d := ephemeralDirs(t)
-	root := d.State
+	root := d.Root
 
 	if err := d.EnsureAll(); err != nil {
 		t.Fatal(err)
@@ -404,7 +404,7 @@ func TestARunStartingAsAnotherEndsKeepsItsRoot(t *testing.T) {
 	for name, racing := range map[string]bool{"alone": false, "with a run starting": true} {
 		t.Run(name, func(t *testing.T) {
 			e := ephemeralDirs(t)
-			root := e.State
+			root := e.Root
 
 			if err := e.EnsureAll(); err != nil {
 				t.Fatal(err)

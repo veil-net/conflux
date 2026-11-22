@@ -86,7 +86,7 @@ func (s *Supervisor) dropTo(p *Privilege) string {
 // nothing to it, to the one binary in them it runs. Every one is root's and sits in a
 // directory only root can write, so each is changed by its name.
 func (s *Supervisor) grantTraverse(p Privilege) error {
-	for _, dir := range []string{s.Dirs.State, s.Dirs.Libexec(), s.tools.Dir, s.Dirs.Run} {
+	for _, dir := range []string{s.Dirs.Root, s.Dirs.Libexec(), s.tools.Dir, s.Dirs.RunDir()} {
 		if err := ownAs(dir, 0, p.GID, 0o710); err != nil {
 			return err
 		}

@@ -86,13 +86,13 @@ func tidy(ctx context.Context, d paths.Dirs, mgr service.Manager, checked error)
 		return stopped, err
 	case !ok:
 		return false, fmt.Errorf("a conflux supervisor started serving %s as what earlier conflux left there was "+
-			"being removed, so the rest cannot be, and nothing was started.\n  Stop it, then run this again", d.State)
+			"being removed, so the rest cannot be, and nothing was started.\n  Stop it, then run this again", d.Root)
 	}
 
 	_, err = daemon.ReapOrphan(d)
 	leftBehind(err)
 
-	cleared, err := paths.ClearExcept(d.Run)
+	cleared, err := paths.ClearExcept(d.RunDir())
 	leftBehind(err)
 	removed = append(removed, cleared...)
 
@@ -128,7 +128,7 @@ func stopServing(d paths.Dirs, mgr service.Manager) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("a conflux supervisor serves %s, and the service manager could not say whether it "+
 			"is the boot service: %w.\n  Nothing was stopped, removed or started; run this again once it answers",
-			d.State, err)
+			d.Root, err)
 	}
 
 	if running {
@@ -143,7 +143,7 @@ func stopServing(d paths.Dirs, mgr service.Manager) (bool, error) {
 	case held:
 		return false, fmt.Errorf("a conflux supervisor the boot service did not start -- one run by hand -- serves "+
 			"%s, so what earlier conflux left there cannot be removed, and nothing was started.\n  Stop it, then "+
-			"run this again", d.State)
+			"run this again", d.Root)
 	}
 
 	return running, nil
@@ -191,7 +191,7 @@ func removeStaged(d paths.Dirs) []string {
 
 	var removed []string
 
-	for _, dir := range slices.Compact([]string{d.Config, d.State}) {
+	for _, dir := range slices.Compact([]string{d.Root, d.Root}) {
 		removed = append(removed, paths.RemovePrefixed(dir, ".tmp-", os.Remove)...)
 	}
 

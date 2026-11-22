@@ -127,8 +127,8 @@ func TestAFirstSignalStopsAnEphemeralRun(t *testing.T) {
 				_ = syscall.Kill(pid, syscall.SIGKILL)
 			}
 
-			if _, err := os.Lstat(d.State); !errors.Is(err, fs.ErrNotExist) {
-				t.Errorf("the run's root %s is still there after it ended: %v", d.State, err)
+			if _, err := os.Lstat(d.Root); !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("the run's root %s is still there after it ended: %v", d.Root, err)
 			}
 
 			if left, err := os.ReadDir(root); err != nil || len(left) > 0 {

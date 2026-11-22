@@ -89,7 +89,7 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 	}
 
 	if !ok {
-		return &permanentError{err: fmt.Errorf("an ephemeral anchor is already running from %s; stop it first", d.State)}
+		return &permanentError{err: fmt.Errorf("an ephemeral anchor is already running from %s; stop it first", d.Root)}
 	}
 
 	// A killed run's readiness marker is withdrawn before anything else: a reader that finds
@@ -105,7 +105,7 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 	// stops.
 	defer func() {
 		if err := emptyEphemeral(d, unlock); err != nil {
-			e.report().Warn("could not empty %s: %v", d.State, err)
+			e.report().Warn("could not empty %s: %v", d.Root, err)
 		}
 	}()
 
@@ -124,7 +124,7 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 		e.report().Warn("stopped anchord (pid %d), left running by an ephemeral run that ended without stopping it", pid)
 	}
 
-	if _, err := paths.ClearExcept(d.State, d.ServeLockFile()); err != nil {
+	if _, err := paths.ClearExcept(d.Root, d.ServeLockFile()); err != nil {
 		return err
 	}
 
@@ -373,12 +373,12 @@ func untilRenewal(m *enrol.Manifest) time.Duration {
 // is conflux's, made as conflux makes one, so nobody else can have put anything in it, nor a link at its
 // name. It says why the root could not be emptied.
 func emptyEphemeral(e paths.Dirs, unlock func()) error {
-	_, err := paths.ClearExcept(e.State, e.ServeLockFile())
+	_, err := paths.ClearExcept(e.Root, e.ServeLockFile())
 
 	unlock()
 
 	_ = os.Remove(e.ServeLockFile())
-	_ = os.Remove(e.State)
+	_ = os.Remove(e.Root)
 
 	return err
 }

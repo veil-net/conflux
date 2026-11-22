@@ -39,19 +39,19 @@ func TestEnsureAllGivesTheRootToAdministrators(t *testing.T) {
 		t.Fatalf("EnsureAll: %v", err)
 	}
 
-	onlyTheSystems(t, d.State)
+	onlyTheSystems(t, d.Root)
 
 	// Idempotent: a second call finds it already done.
 	if err := d.EnsureAll(); err != nil {
 		t.Fatalf("EnsureAll again: %v", err)
 	}
 
-	f := filepath.Join(d.Run, "token")
+	f := filepath.Join(d.RunDir(), "token")
 	if err := os.WriteFile(f, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	for _, p := range []string{d.State, d.Run, f} {
+	for _, p := range []string{d.Root, d.RunDir(), f} {
 		if owner := privtest.ReadSecurity(t, p).Owner; !owner.Equals(sidAdmins) {
 			t.Errorf("%s belongs to %v, want the Administrators", p, owner)
 		}
@@ -93,7 +93,7 @@ func TestEnsureAllJudgesNoFolderAboveARoot(t *testing.T) {
 			t.Fatalf("EnsureAll(a root at %s) = %v", dir, err)
 		}
 
-		onlyTheSystems(t, d.State)
+		onlyTheSystems(t, d.Root)
 
 		if err := d.Check(); err != nil {
 			t.Errorf("Check(a root at %s) = %v", dir, err)
@@ -226,15 +226,15 @@ func TestEnsureAllRemakesWhatIsNotItsOwn(t *testing.T) {
 			inData(t, t.TempDir())
 
 			d := Default()
-			plant(t, d.State)
+			plant(t, d.Root)
 
 			if name != "a junction" {
-				if err := os.WriteFile(filepath.Join(d.State, "planted"), []byte("somebody's"), 0o600); err != nil {
+				if err := os.WriteFile(filepath.Join(d.Root, "planted"), []byte("somebody's"), 0o600); err != nil {
 					t.Fatal(err)
 				}
 			}
 
-			if err := d.Check(); err == nil || !strings.Contains(err.Error(), d.State+" is not as conflux makes") {
+			if err := d.Check(); err == nil || !strings.Contains(err.Error(), d.Root+" is not as conflux makes") {
 				t.Errorf("Check(%s at the root's name) = %v, want a refusal naming it", name, err)
 			}
 
@@ -242,13 +242,13 @@ func TestEnsureAllRemakesWhatIsNotItsOwn(t *testing.T) {
 				t.Fatalf("EnsureAll(%s at the root's name) = %v", name, err)
 			}
 
-			onlyTheSystems(t, d.State)
+			onlyTheSystems(t, d.Root)
 
-			if fi, err := os.Lstat(d.State); err != nil || fi.Mode()&os.ModeIrregular != 0 || !fi.IsDir() {
+			if fi, err := os.Lstat(d.Root); err != nil || fi.Mode()&os.ModeIrregular != 0 || !fi.IsDir() {
 				t.Errorf("the root is %v (%v), want a folder", fi, err)
 			}
 
-			if _, err := os.Lstat(filepath.Join(d.State, "planted")); !errors.Is(err, os.ErrNotExist) {
+			if _, err := os.Lstat(filepath.Join(d.Root, "planted")); !errors.Is(err, os.ErrNotExist) {
 				t.Errorf("the root made afresh holds what was planted (Lstat: %v)", err)
 			}
 
@@ -296,7 +296,7 @@ func TestEnsureAllRemakesAFolderOfItsOwnNotAsConfluxMakesIt(t *testing.T) {
 
 	d := Default()
 
-	for _, dir := range []string{d.Run, d.Log, d.Libexec(), d.RootAnchorDir()} {
+	for _, dir := range []string{d.RunDir(), d.LogDir(), d.Libexec(), d.RootAnchorDir()} {
 		for name, plant := range plants {
 			t.Run(filepath.Base(dir)+"/"+name, func(t *testing.T) {
 				if err := d.EnsureAll(); err != nil {
@@ -446,7 +446,7 @@ func TestARootOnANetworkVolumeIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	at := func(root string) Dirs { return Dirs{Config: root, State: root, Run: filepath.Join(root, runName)} }
+	at := func(root string) Dirs { return Dirs{Root: root} }
 
 	for _, root := range []string{unc, filepath.Join(drive, "conflux")} {
 		for name, judge := range map[string]func() error{"Check": at(root).Check, "EnsureAll": at(root).EnsureAll} {
@@ -466,8 +466,8 @@ func TestARootOnANetworkVolumeIsRefused(t *testing.T) {
 
 	onlyTheSystems(t, link)
 
-	if _, err := os.Lstat(filepath.Join(dir, "conflux", runName)); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("EnsureAll made %s in a root on a network volume (%v)", runName, err)
+	if _, err := os.Lstat(filepath.Join(dir, "conflux", "run")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("EnsureAll made run in a root on a network volume (%v)", err)
 	}
 
 	for _, data := range []string{unc, filepath.Join(drive, "conflux")} {
@@ -514,7 +514,7 @@ func TestALinkLeadingOffThisMachineOrNowhereIsRefused(t *testing.T) {
 
 	for _, target := range []string{unc, nowhere} {
 		root := dirSymlink(t, filepath.Join(t.TempDir(), "conflux"), target)
-		d := Dirs{Config: root, State: root, Run: filepath.Join(root, runName)}
+		d := Dirs{Root: root}
 
 		if err := d.Check(); err == nil || !strings.Contains(err.Error(), root+" is not as conflux makes") {
 			t.Errorf("Check(a link at the root's name to %s) = %v, want a refusal naming it", target, err)
@@ -535,7 +535,7 @@ func TestALinkLeadingOffThisMachineOrNowhereIsRefused(t *testing.T) {
 	for _, dir := range []string{away, filepath.Join(away, "conflux")} {
 		inData(t, dir)
 
-		root := Default().State
+		root := Default().Root
 
 		if err := Default().EnsureAll(); err == nil || !strings.Contains(err.Error(), refusal(dir)) ||
 			!strings.Contains(err.Error(), "may be on another machine") {
@@ -600,13 +600,13 @@ func TestARootIsMadeWithItsDACL(t *testing.T) {
 	privtest.DenyOwnersTheirDACL(t, parent)
 
 	made := filepath.Join(parent, "made")
-	if err := rootAt(made).makeRoot(made); err != nil {
+	if err := rootAt(made).makeRoot(); err != nil {
 		t.Fatalf("makeRoot: %v", err)
 	}
 
 	onlyTheSystems(t, made)
 
-	if err := rootAt(made).makeRoot(made); err != nil {
+	if err := rootAt(made).makeRoot(); err != nil {
 		t.Errorf("makeRoot of a root already there: %v", err)
 	}
 
@@ -616,7 +616,7 @@ func TestARootIsMadeWithItsDACL(t *testing.T) {
 		t.Fatalf("EnsureAll: %v", err)
 	}
 
-	onlyTheSystems(t, Default().State)
+	onlyTheSystems(t, Default().Root)
 }
 
 // TestAnInstallationInAProfileIsMade: the boot service runs as SYSTEM, which trusts no other account
@@ -638,7 +638,7 @@ func TestAnInstallationInAProfileIsMade(t *testing.T) {
 		t.Fatalf("EnsureAll(an installation inside a folder granting this account full control) = %v", err)
 	}
 
-	onlyTheSystems(t, Default().State)
+	onlyTheSystems(t, Default().Root)
 
 	if err := Default().Check(); err != nil {
 		t.Errorf("Check(an installation inside a folder granting this account full control) = %v", err)
@@ -769,7 +769,7 @@ func TestCheckHoldsARootAsConfluxMakesOne(t *testing.T) {
 	}
 
 	absent := filepath.Join(t.TempDir(), "absent")
-	if err := (Dirs{Config: absent, State: absent, Run: filepath.Join(absent, runName)}).Check(); !errors.Is(err,
+	if err := (Dirs{Root: absent}).Check(); !errors.Is(err,
 		os.ErrNotExist) {
 		t.Errorf("Check(no root there) = %v, want %v", err, os.ErrNotExist)
 	}
@@ -814,7 +814,7 @@ func TestMakeRootGoesIntoNoNameTakenMeanwhile(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			inData(t, t.TempDir())
 
-			root := Default().State
+			root := Default().Root
 
 			var elsewhere string
 
@@ -849,5 +849,18 @@ func TestMakeRootGoesIntoNoNameTakenMeanwhile(t *testing.T) {
 // rootAt is the Dirs of a root at root, the configuration and the state in it and the run directory
 // inside it: for a test that judges or makes a root there.
 func rootAt(root string) Dirs {
-	return Dirs{Config: root, State: root, Run: filepath.Join(root, runName)}
+	return Dirs{Root: root}
+}
+
+// foundRoot is a root as EnsureAll finds one already there: a folder named conflux, made at 0700 in a
+// temporary directory of the test's, with what that passes on.
+func foundRoot(t *testing.T) string {
+	t.Helper()
+
+	root := filepath.Join(t.TempDir(), "conflux")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	return root
 }

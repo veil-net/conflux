@@ -85,7 +85,7 @@ func Held(path string) (bool, error) {
 	return held(path, func() (*os.File, error) { return os.OpenFile(path, paths.OpenUntrusted, 0) })
 }
 
-// HeldIn is Held for the lock at path, a file directly in one of d's roots, asked before anything has
+// HeldIn is Held for the lock at path, a file directly in d's root, asked before anything has
 // made the root -- the serve lock, before conflux decides to stop the service: opened through the root
 // held as paths' OpenIn holds it, the way to it judged as a reader judges it and a link at its name
 // never followed, and never by its name, so that neither a way nor a link another account may change

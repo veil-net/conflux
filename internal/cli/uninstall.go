@@ -80,13 +80,11 @@ func runUninstall(_ context.Context, args []string) int {
 		reap(d, 35*time.Second)
 	}
 
-	for _, dir := range d.Outer() {
-		gone, err := removeRoot(dir)
-		errs = append(errs, err)
+	gone, err := removeRoot(d.Root)
+	errs = append(errs, err)
 
-		if gone && err == nil {
-			removed = append(removed, dir)
-		}
+	if gone && err == nil {
+		removed = append(removed, d.Root)
 	}
 
 	removed = append(removed, removeLeftovers()...)
@@ -97,7 +95,7 @@ func runUninstall(_ context.Context, args []string) int {
 	if started {
 		errs = append(errs, fmt.Errorf("an ephemeral run started from %s while conflux was being uninstalled, and "+
 			"it was left running, with the account it runs as.\n  Stop it (Ctrl-C where it runs), then run this again",
-			e.State))
+			e.Root))
 	}
 
 	errs = append(errs, removeAccounts(!started))
@@ -141,13 +139,13 @@ func liveRefused() bool {
 	e, live := liveEphemeral()
 	if live {
 		ui.Errf("an ephemeral anchor is running from %s.\n"+
-			"  Stop it first (Ctrl-C where it runs): uninstall removes the account it runs as", e.State)
+			"  Stop it first (Ctrl-C where it runs): uninstall removes the account it runs as", e.Root)
 	}
 
 	return live
 }
 
-// removeLeftovers removes what earlier conflux left outside its roots, uninstall's and tidy's alike, and
+// removeLeftovers removes what earlier conflux left outside its root, uninstall's and tidy's alike, and
 // is what it removed: what an update left beside this conflux (removeUpdateLeftovers), and the temporary
 // copies of anchorctl readers killed before they removed them left (libexec.RemoveTemporary).
 func removeLeftovers() []string {
@@ -177,7 +175,7 @@ func removeUpdateLeftovers(exe string) []string {
 }
 
 // confirmUninstall makes the irreversible part explicit before it happens: the identity. checked is
-// what paths' check said of d's roots: where none is there there is nothing to destroy; where one
+// what paths' check said of d's root: where it is not there there is nothing to destroy; where it
 // failed, the identity in it is not read, and what is asked says why. It asks only where an identity is
 // there, or may be; off a terminal, without yes, it refuses, so a scripted uninstall destroys none by
 // default.

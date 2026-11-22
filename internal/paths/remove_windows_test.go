@@ -29,7 +29,7 @@ func TestRemoveRootFollowsNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	root := d.State
+	root := d.Root
 
 	elsewhere := t.TempDir()
 
@@ -39,7 +39,7 @@ func TestRemoveRootFollowsNothing(t *testing.T) {
 	}
 
 	mklinkJ(t, filepath.Join(root, "anchor"), elsewhere)
-	mklinkJ(t, filepath.Join(d.Run, "anchord"), elsewhere)
+	mklinkJ(t, filepath.Join(d.RunDir(), "anchord"), elsewhere)
 
 	readOnly := filepath.Join(root, "conflux.json")
 	if err := os.WriteFile(readOnly, nil, 0o600); err != nil {
@@ -94,7 +94,7 @@ func TestRemoveRootFollowsNothing(t *testing.T) {
 func TestRemoveRootRemovesWhatGrantsTheAdministratorsNothing(t *testing.T) {
 	inData(t, t.TempDir())
 
-	root := Default().State
+	root := Default().Root
 	if err := Default().EnsureAll(); err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestRemoveRootJudgesNoFolderAboveIt(t *testing.T) {
 
 	inData(t, open)
 
-	root := Default().State
+	root := Default().Root
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestARootIsHeldBeforeAnythingInItIsOpened(t *testing.T) {
 	inData(t, base)
 
 	d := Default()
-	root := d.State
+	root := d.Root
 
 	guests, err := windows.CreateWellKnownSid(windows.WinBuiltinGuestsSid)
 	if err != nil {

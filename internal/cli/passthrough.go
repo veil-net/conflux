@@ -36,7 +36,7 @@ func passthrough(ctx context.Context, args []string) int {
 	// Neither a socket the user named nor usage needs conflux's daemon, so each is answered
 	// before anything is asked of it, with the user's environment alone, and with the readers'
 	// anchorctl (readersAnchorctl), which the installation never stands in the way of: where it is
-	// not there, or its roots are refused, that is a temporary copy, so an account that cannot read
+	// not there, or its root is refused, that is a temporary copy, so an account that cannot read
 	// them still reaches its own daemon. A user who named a socket is talking to a daemon conflux does
 	// not manage; ANCHOR_SOCKET exported empty names no socket, as anchorctl reads it. Usage needs
 	// nothing running: anchorctl groups keygen, issue and inspect under "no anchor needed", but that
@@ -306,7 +306,7 @@ var errEphemeralStarting = errors.New("the ephemeral run is still starting; ask 
 
 // toolsFor is the anchorctl to reach d's daemon with, and done, which removes it once it has run,
 // where it is a temporary copy, and is nil where it is not. For the installation's daemon it is the
-// readers' anchorctl (libexec.ForUsage), its roots held to the readers' check first -- by every caller,
+// readers' anchorctl (libexec.ForUsage), its root held to the readers' check first -- by every caller,
 // which comes here only where the check passed, reading nothing between but files in them, and where the
 // owner of what it makes was set (ownerRefusal): this build's
 // pair extracted there taken as it is found, or extracted into a bin directory as conflux makes one where

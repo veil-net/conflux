@@ -22,7 +22,7 @@ import (
 // installed, or uninstalled -- a pass-through says so and leaves the disk as it found it,
 // rather than extracting the anchor pair into directories uninstall removed.
 func TestAPassThroughWithNothingRunningMakesNothing(t *testing.T) {
-	root := pathstest.RootedIn(t, t.TempDir()).State
+	root := pathstest.RootedIn(t, t.TempDir()).Root
 	t.Setenv(anchorctl.SocketEnv, "")
 
 	_, errOut, code := capture(t, "peers")
@@ -66,7 +66,7 @@ func TestAPassThroughToANamedSocketTakesTheReadersAnchorctl(t *testing.T) {
 		for _, root := range []string{"none", "installed", "refused"} {
 			t.Run(fmt.Sprintf("%s, %s", name, root), func(t *testing.T) {
 				data := t.TempDir()
-				conflux := pathstest.RootedIn(t, data).State
+				conflux := pathstest.RootedIn(t, data).Root
 				t.Setenv(anchorctl.TokenEnv, "t")
 				t.Setenv(anchorctl.SocketEnv, tc.env)
 
@@ -79,7 +79,7 @@ func TestAPassThroughToANamedSocketTakesTheReadersAnchorctl(t *testing.T) {
 
 				if root == "refused" {
 					plantSet(t, d, "echo planted")
-					pathstest.NotAsConfluxMakesIt(t, d.State)
+					pathstest.NotAsConfluxMakesIt(t, d.Root)
 				}
 
 				// Run as a child: on Unix a pass-through to conflux's own daemon replaces the process.

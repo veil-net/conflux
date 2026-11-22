@@ -180,7 +180,7 @@ func (s *Supervisor) Run(ctx context.Context) error {
 
 	if !ok {
 		return fmt.Errorf("another conflux supervisor is already serving %s; "+
-			"stop it first (conflux down)", s.Dirs.State)
+			"stop it first (conflux down)", s.Dirs.Root)
 	}
 	defer unlock()
 

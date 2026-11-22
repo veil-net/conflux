@@ -15,8 +15,7 @@ import (
 // as, changing nothing: a root of this account's at 0700, or at 0750, which it leaves at 0750, passes;
 // one every account may write, sticky or not, is refused, naming it, and so is a link at its name, even
 // to a directory of this account's own. A root in a directory every account may write passes: nothing
-// above a root is judged. Where no root is there Check is fs.ErrNotExist, and where one of several is
-// there, nil.
+// above a root is judged. Where no root is there Check is fs.ErrNotExist.
 func TestCheckHoldsARootAsConfluxMakesOne(t *testing.T) {
 	inData(t, t.TempDir())
 
@@ -25,7 +24,7 @@ func TestCheckHoldsARootAsConfluxMakesOne(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	root := d.State
+	root := d.Root
 
 	for _, c := range []struct {
 		mode os.FileMode
@@ -66,7 +65,7 @@ func TestCheckHoldsARootAsConfluxMakesOne(t *testing.T) {
 
 	inData(t, parent)
 
-	if err := os.MkdirAll(Default().State, 0o700); err != nil {
+	if err := os.MkdirAll(Default().Root, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -74,16 +73,8 @@ func TestCheckHoldsARootAsConfluxMakesOne(t *testing.T) {
 		t.Errorf("Check(a root in a directory every account may write) = %v", err)
 	}
 
-	mine := foundRoot(t)
-	absent := filepath.Join(t.TempDir(), "absent")
-
-	if err := (Dirs{Config: absent, State: absent, Run: filepath.Join(absent, "run")}).Check(); !errors.Is(err,
-		fs.ErrNotExist) {
+	if err := (Dirs{Root: filepath.Join(t.TempDir(), "absent")}).Check(); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("Check(no root there) = %v, want %v", err, fs.ErrNotExist)
-	}
-
-	if err := (Dirs{Config: mine, State: absent, Run: filepath.Join(t.TempDir(), "run")}).Check(); err != nil {
-		t.Errorf("Check(one root of three there) = %v", err)
 	}
 }
 
@@ -270,16 +261,16 @@ func TestARootItsGroupMayWriteIsRemade(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	planted := filepath.Join(d.State, "planted")
+	planted := filepath.Join(d.Root, "planted")
 	if err := os.WriteFile(planted, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := os.Chmod(d.State, 0o770); err != nil {
+	if err := os.Chmod(d.Root, 0o770); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := d.Check(); err == nil || !strings.Contains(err.Error(), d.State+" is not as conflux makes") ||
+	if err := d.Check(); err == nil || !strings.Contains(err.Error(), d.Root+" is not as conflux makes") ||
 		!strings.Contains(err.Error(), "its group") {
 		t.Errorf("Check(a root its group may write) = %v, want a refusal naming it and its group", err)
 	}
@@ -288,7 +279,7 @@ func TestARootItsGroupMayWriteIsRemade(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got := mode(t, d.State); got != 0o700 {
+	if got := mode(t, d.Root); got != 0o700 {
 		t.Errorf("EnsureAll left the root %v, want it made afresh at 0700", got)
 	}
 

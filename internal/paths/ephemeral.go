@@ -21,19 +21,16 @@ import (
 var RuntimeFolder = runtimeFolder
 
 // EphemeralDirs are the roots of this account's ephemeral run, DirName in the runtime folder
-// (RuntimeFolder), or why there are none: Config and State the root itself, though nothing is ever
-// written as either, Run beneath it, and no log directory, since an ephemeral run's output goes to
-// the terminal it runs in. They are an ephemeral run's, which no service serves. Nothing is read or
-// made.
+// (RuntimeFolder), or why there are none: no log directory (LogDir), since an ephemeral run's output
+// goes to the terminal it runs in, and no configuration, identity or state is ever written in it. They
+// are an ephemeral run's, which no service serves. Nothing is read or made.
 func EphemeralDirs() (Dirs, error) {
 	folder, err := RuntimeFolder()
 	if err != nil {
 		return Dirs{}, err
 	}
 
-	root := filepath.Join(folder, DirName)
-
-	return Dirs{Config: root, State: root, Run: filepath.Join(root, runName), ephemeral: true}, nil
+	return Dirs{Root: filepath.Join(folder, DirName), ephemeral: true}, nil
 }
 
 // IsEphemeral reports whether d are an ephemeral run's (EphemeralDirs).
@@ -49,7 +46,7 @@ func Ephemeral() (Dirs, error) {
 		return Dirs{}, err
 	}
 
-	folder := filepath.Dir(d.State)
+	folder := filepath.Dir(d.Root)
 
 	switch ok, err := allowsExec(folder); {
 	case errors.Is(err, fs.ErrNotExist):

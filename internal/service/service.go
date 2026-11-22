@@ -115,7 +115,7 @@ func PlaceAfresh(d paths.Dirs) (string, error) {
 // on it: kept where it is as conflux makes a file of its own (paths.Dirs.Ours), and otherwise -- not
 // there, or not as conflux makes it, as an earlier conflux left one an administrator's on a Windows
 // client, whose processes that are not elevated could change it for the next start to run as SYSTEM --
-// this conflux placed afresh (PlaceAfresh). The caller has made d's roots (EnsureServing), or held them
+// this conflux placed afresh (PlaceAfresh). The caller has made d's root (EnsureServing), or held it
 // to the readers' check, first. The supervisor runs it from the copy itself as it starts, which keeps the
 // image it runs: the copy is written beside it and renamed over it, and on Windows, which will not
 // replace a running image, that is moved aside first.

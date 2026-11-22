@@ -41,7 +41,7 @@ func runStatus(ctx context.Context, args []string) int {
 
 	ephemeral := reportEphemeralRun(ctx)
 
-	// Nothing of the machine's is read by its name until its roots pass paths' check; one not
+	// Nothing of the machine's is read by its name until its root passes paths' check; one not
 	// there is a machine never configured, with nothing read.
 	err := d.Check()
 
@@ -186,7 +186,7 @@ func reportEphemeralRun(ctx context.Context) bool {
 	live, stale := ephemeralRuns()
 
 	if stale != nil {
-		ui.Field("ephemeral", "none running; "+stale.State+" was left by one that was killed, and the next "+
+		ui.Field("ephemeral", "none running; "+stale.Root+" was left by one that was killed, and the next "+
 			"ephemeral run clears it and stops any anchord it left")
 		ui.Println()
 	}
@@ -200,7 +200,7 @@ func reportEphemeralRun(ctx context.Context) bool {
 	ui.Println("ephemeral:")
 
 	if !daemon.IsLiveReady(d) {
-		ui.Field("running", "starting, from "+d.State+" — in memory alone; nothing of it outlives the run")
+		ui.Field("running", "starting, from "+d.Root+" — in memory alone; nothing of it outlives the run")
 		ui.Println()
 
 		return true
@@ -209,7 +209,7 @@ func reportEphemeralRun(ctx context.Context) bool {
 	answers := askDaemon(ctx, d, false)
 	answers.wg.Wait()
 
-	ui.Field("running", "from "+d.State+" — in memory alone; nothing of it outlives the run")
+	ui.Field("running", "from "+d.Root+" — in memory alone; nothing of it outlives the run")
 
 	priv, recorded := daemon.RecordedPrivilege(d)
 	reportPrivilege(priv, recorded, answers.asked && answers.statErr == nil)

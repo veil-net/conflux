@@ -43,9 +43,9 @@ func TestUninstallLeavesNothingConfluxMade(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	plantLink(t, filepath.Join(d.State, ".tmp-planted-link"), outside)
+	plantLink(t, filepath.Join(d.Root, ".tmp-planted-link"), outside)
 	plantLink(t, filepath.Join(d.Libexec(), "0123456789abcdef", "planted-link"), outside)
-	plantForeign(t, filepath.Join(d.State, ".tmp-planted-foreign"))
+	plantForeign(t, filepath.Join(d.Root, ".tmp-planted-foreign"))
 
 	mgr := &fakeManager{d: d}
 	standInService(t, mgr)
@@ -57,7 +57,7 @@ func TestUninstallLeavesNothingConfluxMade(t *testing.T) {
 	var reaped []string
 
 	defer func(was func(paths.Dirs, time.Duration)) { reap = was }(reap)
-	reap = func(d paths.Dirs, _ time.Duration) { reaped = append(reaped, d.State) }
+	reap = func(d paths.Dirs, _ time.Duration) { reaped = append(reaped, d.Root) }
 
 	out, errOut, code := capture(t, "uninstall", "--yes")
 	if code != ExitOK {
@@ -68,8 +68,8 @@ func TestUninstallLeavesNothingConfluxMade(t *testing.T) {
 		t.Errorf("uninstall removed the accounts anchord ran as %v, want once, the ephemeral run's with them", *accounts)
 	}
 
-	if !slices.Equal(reaped, []string{d.State}) {
-		t.Errorf("uninstall reaped %q, want %s, once", reaped, d.State)
+	if !slices.Equal(reaped, []string{d.Root}) {
+		t.Errorf("uninstall reaped %q, want %s, once", reaped, d.Root)
 	}
 
 	if _, err := os.Lstat(filepath.Join(old.ephemeral, "serve.lock")); err != nil {
@@ -77,16 +77,16 @@ func TestUninstallLeavesNothingConfluxMade(t *testing.T) {
 			old.ephemeral, err)
 	}
 
-	if _, err := os.Lstat(d.State); !os.IsNotExist(err) {
+	if _, err := os.Lstat(d.Root); !os.IsNotExist(err) {
 		var left []string
 
-		_ = filepath.WalkDir(d.State, func(p string, _ fs.DirEntry, _ error) error {
+		_ = filepath.WalkDir(d.Root, func(p string, _ fs.DirEntry, _ error) error {
 			left = append(left, p)
 
 			return nil
 		})
 
-		t.Errorf("uninstall left %s (Lstat: %v), holding:\n%s", d.State, err, strings.Join(left, "\n"))
+		t.Errorf("uninstall left %s (Lstat: %v), holding:\n%s", d.Root, err, strings.Join(left, "\n"))
 	}
 
 	if b, err := os.ReadFile(kept); err != nil || string(b) != "not conflux's" {
@@ -105,7 +105,7 @@ func TestUninstallLeavesNothingConfluxMade(t *testing.T) {
 		}
 	}
 
-	for _, p := range append(old.leftovers, d.State) {
+	for _, p := range append(old.leftovers, d.Root) {
 		if !strings.Contains(out, "  "+p+"\n") {
 			t.Errorf("uninstall did not say it removed %s:\n%s", p, out)
 		}
@@ -178,10 +178,10 @@ func TestUninstallLeavesNoTrace(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	planted := []string{filepath.Join(d.State, "mine.txt"), filepath.Join(d.Run, "mine.txt"),
+	planted := []string{filepath.Join(d.Root, "mine.txt"), filepath.Join(d.RunDir(), "mine.txt"),
 		filepath.Join(d.Libexec(), "mine.txt"), filepath.Join(tmp, "conflux-usage-123", binName("anchorctl"))}
-	if d.Log != "" {
-		planted = append(planted, filepath.Join(d.Log, "mine.txt"))
+	if d.LogDir() != "" {
+		planted = append(planted, filepath.Join(d.LogDir(), "mine.txt"))
 	}
 
 	for _, p := range planted {
@@ -307,8 +307,8 @@ func TestUninstallLeavesALiveRun(t *testing.T) {
 		standInService(t, mgr)
 
 		out, errOut, code := capture(t, "uninstall", "--yes")
-		if code != ExitUsage || !strings.Contains(errOut, e.State) {
-			t.Errorf("uninstall beside a live run exited %d, want %d naming %s:\n%s%s", code, ExitUsage, e.State,
+		if code != ExitUsage || !strings.Contains(errOut, e.Root) {
+			t.Errorf("uninstall beside a live run exited %d, want %d naming %s:\n%s%s", code, ExitUsage, e.Root,
 				out, errOut)
 		}
 
@@ -333,9 +333,9 @@ func TestUninstallLeavesALiveRun(t *testing.T) {
 		standInService(t, mgr)
 
 		out, errOut, code := capture(t, "uninstall", "--yes")
-		if code != ExitUsage || !strings.Contains(errOut, e.State) {
+		if code != ExitUsage || !strings.Contains(errOut, e.Root) {
 			t.Errorf("uninstall beside a run started as it asked exited %d, want %d naming %s:\n%s%s", code, ExitUsage,
-				e.State, out, errOut)
+				e.Root, out, errOut)
 		}
 
 		if _, err := os.Lstat(d.ConfigFile()); mgr.removals > 0 || err != nil {
@@ -354,9 +354,9 @@ func TestUninstallLeavesALiveRun(t *testing.T) {
 		accounts := recordAccounts(t)
 
 		out, errOut, code := capture(t, "uninstall", "--yes")
-		if code != ExitError || !strings.Contains(errOut, e.State) || !strings.Contains(errOut, "left running") {
+		if code != ExitError || !strings.Contains(errOut, e.Root) || !strings.Contains(errOut, "left running") {
 			t.Errorf("uninstall with a run started as it began exited %d, want %d naming %s, left running:\n%s%s",
-				code, ExitError, e.State, out, errOut)
+				code, ExitError, e.Root, out, errOut)
 		}
 
 		if _, err := os.Lstat(e.ServeLockFile()); err != nil {
@@ -395,8 +395,8 @@ func TestUninstallAsksNothingWithoutAnIdentity(t *testing.T) {
 			"removed the boot service %d times, want %d and once:\n%s%s", code, mgr.removals, ExitOK, out, errOut)
 	}
 
-	if _, err := os.Lstat(d.State); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("uninstall left %s (Lstat: %v)", d.State, err)
+	if _, err := os.Lstat(d.Root); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("uninstall left %s (Lstat: %v)", d.Root, err)
 	}
 }
 

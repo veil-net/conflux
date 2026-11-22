@@ -103,15 +103,15 @@ func TestEnsureAllRemakesAFolderOfItsOwnNotAsConfluxMakesIt(t *testing.T) {
 
 	d := Default()
 
-	folders := []string{d.Run, d.Libexec(), d.RootAnchorDir()}
-	if d.Log != "" {
-		folders = append(folders, d.Log)
+	folders := []string{d.RunDir(), d.Libexec(), d.RootAnchorDir()}
+	if d.LogDir() != "" {
+		folders = append(folders, d.LogDir())
 	}
 
 	for _, dir := range folders {
 		for name, plant := range plants {
 			t.Run(filepath.Base(dir)+"/"+name, func(t *testing.T) {
-				if err := os.RemoveAll(d.State); err != nil {
+				if err := os.RemoveAll(d.Root); err != nil {
 					t.Fatal(err)
 				}
 
@@ -147,7 +147,7 @@ func TestEnsureAllRemakesAFolderOfItsOwnNotAsConfluxMakesIt(t *testing.T) {
 	}
 
 	t.Run("as conflux makes them", func(t *testing.T) {
-		if err := os.RemoveAll(d.State); err != nil {
+		if err := os.RemoveAll(d.Root); err != nil {
 			t.Fatal(err)
 		}
 
@@ -155,7 +155,7 @@ func TestEnsureAllRemakesAFolderOfItsOwnNotAsConfluxMakesIt(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		for _, dir := range []string{d.Run, d.Log} {
+		for _, dir := range []string{d.RunDir(), d.LogDir()} {
 			if fi, err := os.Lstat(dir); dir != "" && (err != nil || !fi.IsDir() || fi.Mode().Perm() != 0o700) {
 				t.Errorf("%s is %v (%v), want a directory made at 0700", dir, modeOf(fi), err)
 			}
@@ -203,7 +203,7 @@ func TestEnsureAllSaysWhyARootItCannotRemoveIsNotItsOwn(t *testing.T) {
 
 	inData(t, t.TempDir())
 
-	root := Default().State
+	root := Default().Root
 	stuck := filepath.Join(root, "stuck")
 
 	if err := os.MkdirAll(stuck, 0o700); err != nil {
@@ -306,7 +306,7 @@ func TestEnsureAllJudgesNoFolderAboveARoot(t *testing.T) {
 				t.Fatalf("EnsureAll(%s) = %v", c.name, err)
 			}
 
-			if got := mode(t, d.State); got != 0o700 {
+			if got := mode(t, d.Root); got != 0o700 {
 				t.Errorf("the root under %s is %v, want 0700", c.name, got)
 			}
 
@@ -434,7 +434,7 @@ func TestMakeRootGoesIntoNoNameTakenMeanwhile(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			inData(t, realTempDir(t)) // under /private/var on macOS
 
-			root := Default().State
+			root := Default().Root
 
 			var led string
 
@@ -504,7 +504,7 @@ func TestMakeRootGoesIntoNoLinkMadeOnceItIsMade(t *testing.T) {
 
 	inData(t, t.TempDir())
 
-	root := Default().State
+	root := Default().Root
 	elsewhere := t.TempDir()
 
 	n := 0

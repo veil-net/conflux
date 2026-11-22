@@ -30,7 +30,7 @@ func TestRemoveRootFollowsNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	root := d.State
+	root := d.Root
 
 	elsewhere := t.TempDir()
 
@@ -39,7 +39,7 @@ func TestRemoveRootFollowsNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, link := range []string{d.ConfigFile(), filepath.Join(d.Run, "anchord")} {
+	for _, link := range []string{d.ConfigFile(), filepath.Join(d.RunDir(), "anchord")} {
 		if err := os.Symlink(elsewhere, link); err != nil {
 			t.Fatal(err)
 		}
@@ -98,7 +98,7 @@ func TestRemoveRootJudgesNoFolderAboveIt(t *testing.T) {
 
 	inData(t, made(t, filepath.Join(open, "a")))
 
-	root := Default().State
+	root := Default().Root
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestARootIsHeldBeforeAnythingInItIsOpened(t *testing.T) {
 	inData(t, base)
 
 	d := Default()
-	root := d.State
+	root := d.Root
 
 	plant := func(dir string) {
 		if err := os.WriteFile(filepath.Join(dir, "serve.lock"), nil, 0o600); err != nil {

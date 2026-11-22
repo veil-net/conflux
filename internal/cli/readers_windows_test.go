@@ -27,7 +27,7 @@ func TestStatusRefusesAJunctionRootToAUsersFolder(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := config.Save(paths.Dirs{Config: planted, State: planted}, &config.Config{Mode: config.ModeProxy,
+	if err := config.Save(paths.Dirs{Root: planted}, &config.Config{Mode: config.ModeProxy,
 		Taints: []string{"planted"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestStatusRefusesAJunctionRootToAUsersFolder(t *testing.T) {
 		t.Fatalf("mklink /J: %v\n%s", err, out)
 	}
 
-	root := pathstest.RootedIn(t, dir).State
+	root := pathstest.RootedIn(t, dir).Root
 
 	out, errOut, code := capture(t, "status")
 	if code != ExitError || !strings.Contains(errOut, root+" is not as conflux makes") ||

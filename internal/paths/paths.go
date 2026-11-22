@@ -7,14 +7,11 @@
 // under ProtectHome=, and wrong for anyone who ran conflux with sudo -H.
 //
 // One folder, DirName, holds all of it, on every platform, in the system's data folder
-// (SystemData). Four directories inside it, because they have four lifetimes:
-//
-//   - Config  what the operator asked for. Survives everything but uninstall. The root itself.
-//   - State   what conflux derived, plus the identity. Survives a reboot. The root itself.
-//   - Run     the socket, the token and the readiness marker. The supervisor clears what a
-//     run before it left as it starts.
-//   - Log     where the boot service's output goes, on the platforms where it goes to a
-//     file: empty where the service manager keeps it (journald, syslog).
+// (SystemData): the root (Dirs.Root). What the operator asked for and what conflux derived, the
+// identity among it, are files in the root itself; inside it, the run directory (RunDir) holds the
+// socket, the token and the readiness marker, which the supervisor clears of what a run before it left
+// as it starts, and the log directory (LogDir) the boot service's output, on the platforms where it goes
+// to a file.
 package paths
 
 import (
@@ -30,16 +27,15 @@ import (
 	"syscall"
 )
 
-// Dirs are the four roots. Get one from Default, or an ephemeral run's from EphemeralDirs.
+// Dirs is where conflux keeps everything: one root, and every path derived from it. Get one from
+// Default, or an ephemeral run's from EphemeralDirs.
 type Dirs struct {
-	Config string
-	State  string
-	Run    string
-	Log    string
+	// Root is the one folder conflux keeps everything in, DirName.
+	Root string
 
 	// ephemeral is whether these are an ephemeral run's (EphemeralDirs), which runs as whoever starts
-	// it and no service ever serves; every other Dirs is an installation's, whose roots the boot
-	// service serves, so they are judged for it (ours).
+	// it and no service ever serves; every other Dirs is an installation's, whose root the boot
+	// service serves, so it is judged for it (ours).
 	ephemeral bool
 
 	// serving is whether EnsureServing is making these, for the supervisor that serves them, which leaves
@@ -60,26 +56,23 @@ var SystemData = systemData
 // configuration and the state, and its run and log directories inside it.
 const DirName = ".conflux"
 
-// rootedAt is the Dirs of an installation rooted in the one directory root: the configuration and the
-// state in it, and the run and log directories inside it -- a log directory only where the platform
-// writes the service's output to a file at all (logsToFile): where journald or syslog keeps it, nothing
-// would write there.
-func rootedAt(root string) Dirs {
-	log := ""
-	if logsToFile {
-		log = filepath.Join(root, "logs")
+// rootedAt is the Dirs of an installation rooted in the one directory root.
+func rootedAt(root string) Dirs { return Dirs{Root: root} }
+
+// RunDir is the run directory, inside the root: the socket, the token and the readiness marker, which the
+// supervisor clears of what a run before it left as it starts.
+func (d Dirs) RunDir() string { return filepath.Join(d.Root, "run") }
+
+// LogDir is where the boot service's output goes, inside the root, on the platforms where it goes to a
+// file (logsToFile): "" where journald or syslog keeps it, as nothing would write there, and for an
+// ephemeral run, whose output goes to the terminal it runs in.
+func (d Dirs) LogDir() string {
+	if !logsToFile || d.ephemeral {
+		return ""
 	}
 
-	return Dirs{
-		Config: root,
-		State:  root,
-		Run:    filepath.Join(root, runName),
-		Log:    log,
-	}
+	return filepath.Join(d.Root, "logs")
 }
-
-// runName is the run directory's name inside a root: an installation's, and an ephemeral run's.
-const runName = "run"
 
 // socketName is anchord's control socket, an AF_UNIX socket on every platform, inside a
 // directory of anchord's own (DaemonRun). Four letters, so the path is exactly as long as
@@ -88,19 +81,19 @@ const runName = "run"
 const socketName = "sock"
 
 // ConfigFile holds the operator's intent: mode, taints, addresses, proxies.
-func (d Dirs) ConfigFile() string { return filepath.Join(d.Config, "conflux.json") }
+func (d Dirs) ConfigFile() string { return filepath.Join(d.Root, "conflux.json") }
 
 // StateFile holds what conflux derived: the AnchorID, the credential window, which
 // extracted binary set is live. Most of it is re-learned at the next start; see
 // config.State for the one case that is not.
-func (d Dirs) StateFile() string { return filepath.Join(d.State, "state.json") }
+func (d Dirs) StateFile() string { return filepath.Join(d.Root, "state.json") }
 
 // ManifestFile holds the base64 anchor manifest, which contains the identity seed.
 //
 // This is the one file that cannot be recovered. Enrolment stores nothing on the
 // server and hands back the only copy, so losing this loses the machine's AnchorID
 // and its overlay address for good. 0600, and the directory around it 0700.
-func (d Dirs) ManifestFile() string { return filepath.Join(d.State, "manifest.b64") }
+func (d Dirs) ManifestFile() string { return filepath.Join(d.Root, "manifest.b64") }
 
 // DaemonConfigFile is anchord's own -config, rendered from conflux.json on every
 // start so the daemon comes back believing what this machine's configuration says.
@@ -113,7 +106,7 @@ func (d Dirs) ManifestFile() string { return filepath.Join(d.State, "manifest.b6
 // It carries the export headers, which are credentials, so it is 0600 and belongs to
 // whoever anchord runs as, in the directory beside the manifest rather than anywhere a
 // config file would normally live. anchord warns about exactly this.
-func (d Dirs) DaemonConfigFile() string { return filepath.Join(d.State, "anchord.json") }
+func (d Dirs) DaemonConfigFile() string { return filepath.Join(d.Root, "anchord.json") }
 
 // AnchorDir is the anchor's -dir, which `anchorctl start` names, when anchord runs as its
 // own unprivileged account: the bootstrap cache, the realm-link cache, and what the realm's
@@ -124,14 +117,14 @@ func (d Dirs) DaemonConfigFile() string { return filepath.Join(d.State, "anchord
 // restarts falls back to a chain whose delegation has since lapsed -- cut off, and
 // unable to recover in band. Every conflux anchor sits under a delegated realm, so
 // that is exactly the case anchor's warning is about.
-func (d Dirs) AnchorDir() string { return filepath.Join(d.State, "anchor") }
+func (d Dirs) AnchorDir() string { return filepath.Join(d.Root, "anchor") }
 
 // RootAnchorDir is the -dir of an anchord that runs as root (SYSTEM on Windows): a TUN on
 // macOS or the BSDs, a host whose firewall answers only root, a supervisor that cannot
 // drop. Its own, because anchor follows a symlink in its directory, and one the account
 // planted in AnchorDir would otherwise lead root's writes wherever it pointed. What the
 // anchor keeps there is copied across when the identity anchord runs as changes.
-func (d Dirs) RootAnchorDir() string { return filepath.Join(d.State, "anchor.root") }
+func (d Dirs) RootAnchorDir() string { return filepath.Join(d.Root, "anchor.root") }
 
 // SubnetsOrderFile is where an anchor with dir as its -dir keeps a list a member's Subnets
 // order set, which it serves in place of the configured one from every start until the file
@@ -143,21 +136,21 @@ func SubnetsOrderFile(dir string) string { return filepath.Join(dir, "subnets.js
 // than wherever conflux happened to be run from. See service.PlaceAfresh.
 func (d Dirs) ServiceExecutable() string {
 	if runtime.GOOS == "windows" {
-		return filepath.Join(d.State, "conflux.exe")
+		return filepath.Join(d.Root, "conflux.exe")
 	}
 
-	return filepath.Join(d.State, "conflux")
+	return filepath.Join(d.Root, "conflux")
 }
 
 // Libexec is where the embedded pair is extracted, one directory per content hash.
-func (d Dirs) Libexec() string { return filepath.Join(d.State, "bin") }
+func (d Dirs) Libexec() string { return filepath.Join(d.Root, "bin") }
 
 // DaemonRun is anchord's own run directory, which holds its control socket and the lock
 // anchor keeps beside it, and belongs to whoever anchord runs as: anchord has to create
 // the socket, and the run directory around it must stay root's, because the pid record
 // in it is what the next supervisor kills by. The supervisor makes it afresh before
 // every start.
-func (d Dirs) DaemonRun() string { return filepath.Join(d.Run, "anchord") }
+func (d Dirs) DaemonRun() string { return filepath.Join(d.RunDir(), "anchord") }
 
 // Socket is anchord's control socket. anchord creates it 0600; the 0700 directory
 // around it is the first gate and the bearer token is the second.
@@ -166,13 +159,13 @@ func (d Dirs) Socket() string { return filepath.Join(d.DaemonRun(), socketName) 
 // TokenFile holds the bearer token anchorctl authenticates with. Regenerated on
 // every supervisor start, so a token left by a crashed run authenticates nothing.
 // Root's alone: anchord is handed the token in its environment instead.
-func (d Dirs) TokenFile() string { return filepath.Join(d.Run, "token") }
+func (d Dirs) TokenFile() string { return filepath.Join(d.RunDir(), "token") }
 
 // PrivilegeFile records who the last anchord started runs as, with what, why, and which of
 // the two anchor directories it was given, for `conflux status` and for the supervisor that
 // starts the next one: when the next is given the other directory, what the anchor kept is
 // copied across. Root's alone, beside the state, because it has to outlive a reboot.
-func (d Dirs) PrivilegeFile() string { return filepath.Join(d.State, "anchord.priv") }
+func (d Dirs) PrivilegeFile() string { return filepath.Join(d.Root, "anchord.priv") }
 
 // LockFile serialises everything that rewrites the manifest or the state: a bring-up,
 // the renewal timer, `conflux renew`, `conflux enrol`, and the uplink watcher's count.
@@ -180,27 +173,27 @@ func (d Dirs) PrivilegeFile() string { return filepath.Join(d.State, "anchord.pr
 // Beside the state rather than in Run, which an update empties (tidy): a `conflux renew` that
 // spanned it would hold the old file's lock while the new supervisor took the new one's, and the
 // two would renew at once.
-func (d Dirs) LockFile() string { return filepath.Join(d.State, "conflux.lock") }
+func (d Dirs) LockFile() string { return filepath.Join(d.Root, "conflux.lock") }
 
 // ServeLockFile is held by the one supervisor serving this root for as long as it runs.
 //
 // One per root, because the supervisor stops whatever anchord the last one left
 // running, and two supervisors would each take the other's for an orphan. Beside the
 // state for the reason LockFile is.
-func (d Dirs) ServeLockFile() string { return filepath.Join(d.State, "serve.lock") }
+func (d Dirs) ServeLockFile() string { return filepath.Join(d.Root, "serve.lock") }
 
 // DaemonPIDFile names the anchord the supervisor started -- its pid and its executable --
 // for as long as it runs, so a supervisor that died without stopping it can be followed
 // by one that does. In Run, which no anchord outlives except by that kind of death.
-func (d Dirs) DaemonPIDFile() string { return filepath.Join(d.Run, "anchord.pid") }
+func (d Dirs) DaemonPIDFile() string { return filepath.Join(d.RunDir(), "anchord.pid") }
 
 // LogFile is the boot service's output, or "" where the service manager keeps it.
 func (d Dirs) LogFile() string {
-	if d.Log == "" {
+	if d.LogDir() == "" {
 		return ""
 	}
 
-	return filepath.Join(d.Log, "conflux.log")
+	return filepath.Join(d.LogDir(), "conflux.log")
 }
 
 // ReadyFile is written by the supervisor once an anchor is up, and removed when it goes.
@@ -210,11 +203,11 @@ func (d Dirs) LogFile() string {
 // In Run rather than State, because a marker must not outlive the thing it describes. The
 // run directory survives a reboot, inside the root on disk, so the supervisor clears the
 // marker on the way up rather than relying on the directory's lifetime.
-func (d Dirs) ReadyFile() string { return filepath.Join(d.Run, "ready") }
+func (d Dirs) ReadyFile() string { return filepath.Join(d.RunDir(), "ready") }
 
-// EnsureAll makes the four roots, each a folder conflux's by its name, as conflux makes them: 0700,
-// and on Windows the Administrators' under a protected DACL granting SYSTEM and the Administrators
-// alone, which what is made in it inherits.
+// EnsureAll makes the root, a folder conflux's by its name, as conflux makes it: 0700, and on Windows
+// the Administrators' under a protected DACL granting SYSTEM and the Administrators alone, which what is
+// made in it inherits.
 //
 // A root not there is made in the folder it is in -- the system's data folder, or an ephemeral run's
 // runtime folder -- which is the system's, and refused where that is not there, nothing made. Whatever is at a root's
@@ -226,17 +219,15 @@ func (d Dirs) ReadyFile() string { return filepath.Join(d.Run, "ready") }
 // removed where it is not as conflux makes it, for what writes it to make afresh. The folder a root is
 // in, and every folder above it, is never changed and never judged.
 func (d Dirs) EnsureAll() error {
-	for _, dir := range d.Outer() {
-		if err := d.makeRoot(dir); err != nil {
-			return fmt.Errorf("create %s: %w", dir, err)
-		}
+	if err := d.makeRoot(); err != nil {
+		return fmt.Errorf("create %s: %w", d.Root, err)
 	}
 
 	return nil
 }
 
 // EnsureServing is EnsureAll for the supervisor that serves d, which runs from the copy of conflux the boot
-// service names in the state root (ServiceExecutable): everything is judged and made as EnsureAll judges
+// service names in the root (ServiceExecutable): everything is judged and made as EnsureAll judges
 // and makes it but that copy, which is neither judged nor removed -- Windows will not remove a running
 // image, and one removed on Unix would leave the service nothing to start the next time; the supervisor
 // places one not there, or not as conflux makes it, afresh itself, from its own image (service.OwnCopy).
@@ -246,11 +237,13 @@ func (d Dirs) EnsureServing() error {
 	return d.EnsureAll()
 }
 
-// makeRoot makes the root dir, one of d's not inside another, and the folders conflux keeps in it
-// (folders). The way to the folder dir is in is walked from the top of its volume and held (walk), and
-// refused where any of it is not there; then the root is made in that folder as conflux makes a folder
-// of its own (ownFolder), and each of its folders in it, held.
-func (d Dirs) makeRoot(dir string) error {
+// makeRoot makes the root and the folders conflux keeps in it (folders). The way to the folder the root
+// is in is walked from the top of its volume and held (walk), and refused where any of it is not there;
+// then the root is made in that folder as conflux makes a folder of its own (ownFolder), and each of its
+// folders in it, held.
+func (d Dirs) makeRoot() error {
+	dir := d.Root
+
 	w, err := walk(filepath.Dir(dir))
 	if err != nil {
 		return err
@@ -271,7 +264,7 @@ func (d Dirs) makeRoot(dir string) error {
 	// anchord that runs as its own account (AnchorDir) is not among them: that account owns it, as the
 	// supervisor makes it, so ours would remove it, and the anchor's state with it, at every start; the
 	// supervisor holds it to that account instead (daemon's anchorDirFor), and makes it afresh otherwise.
-	for sub, create := range d.folders(dir) {
+	for sub, create := range d.folders() {
 		s, err := ownFolder(root, sub, create)
 
 		switch {
@@ -283,7 +276,7 @@ func (d Dirs) makeRoot(dir string) error {
 		}
 	}
 
-	for _, f := range d.files(dir) {
+	for _, f := range d.files() {
 		if err := ownFile(root, f); err != nil {
 			return err
 		}
@@ -331,25 +324,17 @@ func ownFile(parent step, p string) error {
 	return nil
 }
 
-// files is each file conflux keeps directly in its root dir, by its name: in the configuration root the
-// configuration, and in the state root the state, the identity, the record of the anchord last started,
-// the two lock files, and the copy of conflux the boot service runs, but for the
-// supervisor serving d, which runs from it (EnsureServing). anchord's own configuration
+// files is each file conflux keeps directly in its root, by its name: the configuration, the state, the
+// identity, the record of the anchord last started, the two lock files, and the copy of conflux the boot
+// service runs, but for the supervisor serving d, which runs from it (EnsureServing). anchord's own configuration
 // (DaemonConfigFile) is none of these: it is the account anchord runs as's, as the supervisor writes it
 // at every start, so ours would remove it each time.
-func (d Dirs) files(dir string) []string {
-	var files []string
+func (d Dirs) files() []string {
+	files := []string{d.ConfigFile(), d.StateFile(), d.ManifestFile(), d.PrivilegeFile(), d.LockFile(),
+		d.ServeLockFile()}
 
-	if dir == d.Config {
-		files = append(files, d.ConfigFile())
-	}
-
-	if dir == d.State {
-		files = append(files, d.StateFile(), d.ManifestFile(), d.PrivilegeFile(), d.LockFile(), d.ServeLockFile())
-
-		if !d.serving {
-			files = append(files, d.ServiceExecutable())
-		}
+	if !d.serving {
+		files = append(files, d.ServiceExecutable())
 	}
 
 	return files
@@ -427,23 +412,18 @@ func ownFolder(parent step, p string, create bool) (step, error) {
 	return s, nil
 }
 
-// folders is each folder conflux keeps in its root dir, by its name, and whether EnsureAll makes it where
-// it is not there: the run and log directories where they are in that root, and in the state root the
-// directory the pairs are extracted to (Libexec), which it makes -- an extraction makes nothing but its
-// set in it -- and, for an installation, the anchor directory of an anchord that runs as root
-// (RootAnchorDir), which what uses it makes. The anchor directory of an anchord that runs as its own
+// folders is each folder conflux keeps in its root, by its name, and whether EnsureAll makes it where it
+// is not there: the run and log directories, and the directory the pairs are extracted to (Libexec),
+// which it makes -- an extraction makes nothing but its set in it -- and, for an installation, the anchor
+// directory of an anchord that runs as root (RootAnchorDir), which what uses it makes. The anchor directory of an anchord that runs as its own
 // account (AnchorDir) is that account's, as the supervisor makes it and holds it to be (daemon's
 // anchorDir), and is none of these.
-func (d Dirs) folders(dir string) iter.Seq2[string, bool] {
+func (d Dirs) folders() iter.Seq2[string, bool] {
 	return func(yield func(string, bool) bool) {
-		for sub, inside := range d.roots() {
-			if inside && filepath.Dir(sub) == dir && !yield(sub, true) {
+		for _, sub := range []string{d.RunDir(), d.LogDir(), d.Libexec()} {
+			if sub != "" && !yield(sub, true) {
 				return
 			}
-		}
-
-		if dir != d.State || !yield(d.Libexec(), true) {
-			return
 		}
 
 		if !d.ephemeral {
@@ -554,7 +534,7 @@ func holdRoot(dir string) (*rootHold, string, error) {
 
 // notOurs is the refusal of the root dir, an ephemeral run's where ephemeral is, for why, what holdRoot
 // found at its name: nothing of conflux's to read, which the next EnsureAll makes afresh -- an
-// installation's at the next command that makes its roots, an ephemeral run's at the next ephemeral run.
+// installation's at the next command that makes its root, an ephemeral run's at the next ephemeral run.
 func notOurs(dir, why string, ephemeral bool) error {
 	next := "the next up, proxy, install or start"
 	if ephemeral {
@@ -565,8 +545,7 @@ func notOurs(dir, why string, ephemeral bool) error {
 		"%s removes it and makes it afresh", dir, why, next)
 }
 
-// OpenIn opens path, a file directly in one of d's roots that is not inside another, to read, through
-// that root held (holdRoot) and never by its name: the way to the root walked from the top of its volume,
+// OpenIn opens path, a file directly in d's root, to read, through that root held (holdRoot) and never by its name: the way to the root walked from the top of its volume,
 // the root's own name looked up in the folder it is in, and path's name looked up in the root and nowhere
 // else, never followed. A root that is not as conflux makes one is
 // none of conflux's, and is taken as not there. Where the root, or path's name in it, is not there, it is
@@ -579,7 +558,7 @@ func (d Dirs) OpenIn(path string) (*os.File, error) {
 
 	dir := filepath.Dir(path)
 
-	if !slices.Contains(d.Outer(), dir) {
+	if dir != d.Root {
 		return nil, fmt.Errorf("%s is not directly in a root of conflux's", path)
 	}
 
@@ -602,7 +581,7 @@ func (d Dirs) OpenIn(path string) (*os.File, error) {
 	return openIn(r.dir, filepath.Base(path), path)
 }
 
-// Ours holds path, a file in one of d's roots or in a folder conflux keeps beneath one, to what a command
+// Ours holds path, a file in d's root or in a folder conflux keeps beneath one, to what a command
 // needs of it before it runs it: the root held as Check holds it (holdRoot), each folder from there to
 // the file looked up in the one before and nowhere else, never followed (lookUp), and each of them, and
 // the file (lookAt), as conflux makes it (ours). Nil where all are; an error that is fs.ErrNotExist
@@ -610,7 +589,7 @@ func (d Dirs) OpenIn(path string) (*os.File, error) {
 // makes it. It changes nothing.
 func (d Dirs) Ours(path string) error { return d.oursAs(path, isFile) }
 
-// OursFolder is Ours for a folder in one of d's roots or beneath one, such as the bin directory a reader
+// OursFolder is Ours for a folder in d's root or beneath it, such as the bin directory a reader
 // extracts into (libexec's ForUsage): the folder judged as each one on the way to it is.
 func (d Dirs) OursFolder(path string) error { return d.oursAs(path, isFolder) }
 
@@ -621,12 +600,11 @@ func (d Dirs) oursAs(path string, want kind) error {
 		return err
 	}
 
-	i := slices.IndexFunc(d.Outer(), func(root string) bool { return above(root, path) })
-	if i < 0 {
+	root := d.Root
+	if !above(root, path) {
 		return fmt.Errorf("%s is not in a root of conflux's", path)
 	}
 
-	root := d.Outer()[i]
 	r, why, err := holdRoot(root)
 
 	switch {
@@ -739,83 +717,29 @@ var errNotDir = fmt.Errorf("%w", syscall.ENOTDIR)
 // a test puts another root at the name meanwhile.
 var opening = func(string) {}
 
-// Outer is each of d's roots that sits inside no other (roots), once: the ones conflux makes, judges
-// and removes, taking those inside with them -- run and logs.
-func (d Dirs) Outer() []string {
-	var outer []string
-
-	for dir, inside := range d.roots() {
-		if !inside {
-			outer = append(outer, dir)
-		}
-	}
-
-	return outer
-}
-
-// Inside reports whether dir sits strictly inside one of d's roots (roots, above): an ephemeral run's
-// root inside the installation's, or a log directory inside the state root, which goes with it.
-func (d Dirs) Inside(dir string) bool {
-	for root := range d.roots() {
-		if above(root, dir) {
-			return true
-		}
-	}
-
-	return false
-}
-
-// roots is each of d's directories, once -- Config and State are one directory -- and whether it sits
-// inside another of them, which holds it.
-func (d Dirs) roots() iter.Seq2[string, bool] {
-	return func(yield func(string, bool) bool) {
-		dirs := []string{d.Config, d.State, d.Run, d.Log}
-
-		for i, dir := range dirs {
-			if dir == "" || slices.Contains(dirs[:i], dir) {
-				continue
-			}
-
-			if !yield(dir, within(dir, dirs)) {
-				return
-			}
-		}
-	}
-}
-
-// Check holds each of d's roots that is there to what a command needs of it before it reads, runs or
-// signals anything in it by its name (holdRoot): the directory at each root's name as conflux makes a
+// Check holds d's root, where it is there, to what a command needs of it before it reads, runs or
+// signals anything in it by its name (holdRoot): the directory at the root's name as conflux makes a
 // root (ours) -- not a link, owned by root or the account running conflux, and written by nobody else; on
 // Windows owned by SYSTEM, the Administrators or TrustedInstaller, and granting nobody else anything
 // (machineAccount). Nothing else can have put anything in such a root, so what it holds is not judged, and
 // nothing above it is. It changes nothing: a root that fails is refused, saying why.
 //
-// Where none of d's roots is there, nothing of conflux's is installed, and Check is an error that is
+// Where the root is not there, nothing of conflux's is installed, and Check is an error that is
 // fs.ErrNotExist: each caller then takes its own way for that, reading nothing.
 func (d Dirs) Check() error {
-	there := false
+	r, why, err := holdRoot(d.Root)
 
-	for _, dir := range d.Outer() {
-		r, why, err := holdRoot(dir)
-
-		switch {
-		case errors.Is(err, fs.ErrNotExist):
-			continue
-		case err != nil:
-			return err
-		case r != nil:
-			r.close()
-		}
-
-		if why != "" {
-			return notOurs(dir, why, d.ephemeral)
-		}
-
-		there = true
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return fmt.Errorf("conflux is not installed in %s: %w", d.Root, fs.ErrNotExist)
+	case err != nil:
+		return err
+	case r != nil:
+		r.close()
 	}
 
-	if !there {
-		return fmt.Errorf("conflux is not installed in %s: %w", d.State, fs.ErrNotExist)
+	if why != "" {
+		return notOurs(d.Root, why, d.ephemeral)
 	}
 
 	return nil
@@ -1011,11 +935,6 @@ func nextName(path string) (name, rest string) {
 	}
 
 	return path[i:j], path[j:]
-}
-
-// within reports whether dir sits strictly inside another of dirs (above).
-func within(dir string, dirs []string) bool {
-	return slices.ContainsFunc(dirs, func(other string) bool { return other != "" && above(other, dir) })
 }
 
 // ClearExcept removes everything in dir but keep, following nothing in it (os.RemoveAll), and is the

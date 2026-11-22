@@ -47,7 +47,7 @@ type Tools struct {
 }
 
 // Extract extracts this build's pair under d if it is not already there, and returns the paths,
-// for a caller that has made d's roots already (EnsureAll), the bin directory with them -- the
+// for a caller that has made d's root already (EnsureAll), the bin directory in it -- the
 // supervisor and an ephemeral run as they start, wintun's, which puts its DLL beside the anchord it
 // extracts, and the wait of a command that has just started the service. It makes neither a root nor
 // the bin directory, only the set in it (extractIn), waiting for another extraction there until ctx
@@ -72,7 +72,7 @@ func Extract(ctx context.Context, d paths.Dirs) (*Tools, error) {
 // which removes no file anybody has open, the lock is then removed too where nothing has opened it
 // since, so it is made again as well; on Unix it is kept, since a lock is taken on the file its name led
 // to when it was opened, and one waited for on a file removed meanwhile would be held beside one taken
-// on the file made again at its name. d's roots are made already (EnsureAll), the bin directory with
+// on the file made again at its name. d's root are made already (EnsureAll), the bin directory with
 // them, which stays. It is the paths of what it removed from bin, however far it got (paths.ClearExcept).
 func Remake(ctx context.Context, d paths.Dirs) ([]string, error) {
 	if !anchor.Supported {
@@ -262,8 +262,8 @@ func RemoveTemporary() []string {
 // renames it in from a staging directory once both binaries in it were written, synced
 // and run. The sizes catch a binary truncated or replaced since, and a name a power cut
 // lost from the directory, whose own entries are not synced. One that fails is extracted
-// again. Who wrote them is not asked: every caller has made d's roots (EnsureAll), or holds
-// them to the readers' check (Dirs.Check) first -- ForUsage's callers, which hand it what the
+// again. Who wrote them is not asked: every caller has made d's root (EnsureAll), or holds
+// it to the readers' check (Dirs.Check) first -- ForUsage's callers, which hand it what the
 // check said, and an ephemeral run's reader, which checks the run's root before it takes the
 // pair there -- and nobody else can put anything in a root as conflux makes one.
 func (t *Tools) complete() bool {

@@ -51,7 +51,7 @@ func runInstall(ctx context.Context, args []string) (code int) {
 	return install(ctx, d, true, place)
 }
 
-// staleCopy reports whether what earlier conflux left is to be removed before d's roots are made
+// staleCopy reports whether what earlier conflux left is to be removed before d's root are made
 // (tidy): where the copy the boot service runs is not there, or not as conflux makes a file of its own
 // (paths.Dirs.Ours) -- one an earlier conflux wrote as another owner, which EnsureAll removes -- or is not
 // this conflux (service.Placed) -- an update, or a newer conflux put in place by hand or by an install
@@ -62,8 +62,8 @@ func staleCopy(d paths.Dirs, checked error) bool {
 		checked != nil && !errors.Is(checked, os.ErrNotExist)
 }
 
-// handOver makes d's roots for up, proxy, observe, install, enrol and start, before anything in them is
-// read by its name -- once refusePercent has passed them, before anything is made -- and is place,
+// handOver makes d's root for up, proxy, observe, install, enrol and start, before anything in it is
+// read by its name -- once refusePercent has passed it, before anything is made -- and is place,
 // which the command's install places the copy of conflux the boot
 // service runs with, and finish, which the command's code goes through as it ends, the error it failed
 // with among it. Where staleCopy, what earlier conflux left goes first, the service stopped for it

@@ -75,7 +75,7 @@ func oldInstall(t *testing.T) earlier {
 
 	set := filepath.Join(d.Libexec(), anchor.SetID())
 	old := earlier{d: d, kept: map[string][]byte{}, temporary: filepath.Join(tmp, "conflux-usage-123"),
-		ephemeral: ephemeralRoot(t).State}
+		ephemeral: ephemeralRoot(t).Root}
 	old.exe, old.leftovers, old.besideKept = updatedConflux(t)
 
 	for p, body := range map[string][]byte{
@@ -88,8 +88,8 @@ func oldInstall(t *testing.T) earlier {
 		d.ServeLockFile():                                                  []byte("stale"),
 		d.ServiceExecutable():                                              []byte("an earlier conflux"),
 		d.ServiceExecutable() + ".old":                                     []byte("an earlier conflux still"),
-		filepath.Join(d.State, ".conflux-123"):                             []byte("a copy that never went in place"),
-		filepath.Join(d.State, ".tmp-123"):                                 []byte("a write that never went in place"),
+		filepath.Join(d.Root, ".conflux-123"):                              []byte("a copy that never went in place"),
+		filepath.Join(d.Root, ".tmp-123"):                                  []byte("a write that never went in place"),
 		d.TokenFile():                                                      []byte("token"),
 		d.ReadyFile():                                                      []byte("ready"),
 		d.DaemonPIDFile():                                                  []byte("2147483646\n/nonexistent/anchord\n"),
@@ -176,8 +176,8 @@ func TestUpdateLeavesOnlyWhatThisConfluxMakes(t *testing.T) {
 				t.Errorf("%s is not this conflux", d.ServiceExecutable())
 			}
 
-			gone := append([]string{d.ServiceExecutable() + ".old", filepath.Join(d.State, ".conflux-123"),
-				filepath.Join(d.State, ".tmp-123")}, old.leftovers...)
+			gone := append([]string{d.ServiceExecutable() + ".old", filepath.Join(d.Root, ".conflux-123"),
+				filepath.Join(d.Root, ".tmp-123")}, old.leftovers...)
 
 			for _, p := range gone {
 				if _, err := os.Lstat(p); !os.IsNotExist(err) {
@@ -190,8 +190,8 @@ func TestUpdateLeavesOnlyWhatThisConfluxMakes(t *testing.T) {
 					verb, old.temporary, err, out)
 			}
 
-			if got := names(t, d.Run); len(got) > 0 {
-				t.Errorf("%s holds %q, which the supervisors before this conflux left", d.Run, got)
+			if got := names(t, d.RunDir()); len(got) > 0 {
+				t.Errorf("%s holds %q, which the supervisors before this conflux left", d.RunDir(), got)
 			}
 
 			for p, was := range old.kept {
@@ -257,7 +257,7 @@ func TestAStartOfTheConfluxTheServiceRunsRemovesNothing(t *testing.T) {
 // byte, but is not as conflux makes a file of its own (pathstest.NotAsConfluxMakesIt) -- as an earlier conflux left
 // one on a Windows client, an administrator's, which that administrator's unelevated processes could
 // change for SYSTEM to run -- is what earlier conflux left: the supervisor, which runs from it, leaves it
-// as it makes its roots (EnsureServing), placing it afresh after, and start and install remove it with
+// as it makes its root (EnsureServing), placing it afresh after, and start and install remove it with
 // the rest (tidy), an earlier set among it, and place this conflux afresh, as conflux makes it, and
 // register that.
 func TestACopyNotAsConfluxMakesItIsPlacedAfresh(t *testing.T) {
@@ -710,7 +710,7 @@ func TestTidyStartsNothingBesideASupervisorRunByHand(t *testing.T) {
 
 				out, errOut, code := capture(t, verb)
 
-				if code != ExitError || !strings.Contains(errOut, d.State) || !strings.Contains(errOut, "run by hand") {
+				if code != ExitError || !strings.Contains(errOut, d.Root) || !strings.Contains(errOut, "run by hand") {
 					t.Errorf("conflux %s beside a supervisor run by hand exited %d, want %d naming it:\n%s%s",
 						verb, code, ExitError, out, errOut)
 				}
@@ -757,7 +757,7 @@ func TestTidyStartsNothingBesideASupervisorThatTookTheRoot(t *testing.T) {
 			}
 
 			out, errOut, code := capture(t, verb)
-			if code != ExitError || !strings.Contains(errOut, "started serving "+d.State) {
+			if code != ExitError || !strings.Contains(errOut, "started serving "+d.Root) {
 				t.Errorf("conflux %s beside a supervisor that took the root once the service was stopped exited %d, "+
 					"want %d naming it:\n%s%s", verb, code, ExitError, out, errOut)
 			}
@@ -913,7 +913,7 @@ func TestTidyListsOnlyWhatItRemoved(t *testing.T) {
 
 		d := configured(t)
 
-		stuck := filepath.Join(d.Run, "anchord")
+		stuck := filepath.Join(d.RunDir(), "anchord")
 		for p, body := range map[string]string{filepath.Join(stuck, "kept"): "", d.TokenFile(): "token"} {
 			if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 				t.Fatal(err)
@@ -957,7 +957,7 @@ func TestTidyLeavesWhatAHeldLockGuards(t *testing.T) {
 
 	d := configured(t)
 
-	staged := filepath.Join(d.State, ".tmp-123")
+	staged := filepath.Join(d.Root, ".tmp-123")
 	if err := os.WriteFile(staged, []byte("a write under way"), 0o600); err != nil {
 		t.Fatal(err)
 	}

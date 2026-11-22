@@ -49,8 +49,8 @@ func TestSystemDataIsTheSystems(t *testing.T) {
 
 	inData(t, systemDataAtInit())
 
-	if got := Default().State; got != filepath.Join(want, DirName) {
-		t.Errorf("Default().State, with the environment naming %s, = %s, want it in %s", elsewhere, got, want)
+	if got := Default().Root; got != filepath.Join(want, DirName) {
+		t.Errorf("Default().Root, with the environment naming %s, = %s, want it in %s", elsewhere, got, want)
 	}
 
 	cmd := exec.Command(os.Args[0], "-test.run=^TestSystemDataIsTheSystems$") //nolint:gosec // this test binary

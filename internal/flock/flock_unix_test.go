@@ -88,7 +88,7 @@ func TestHeldInAsksThroughTheRootHeld(t *testing.T) {
 	t.Cleanup(func() { paths.SystemData = was })
 
 	d := paths.Default()
-	root, lock := d.State, d.ServeLockFile()
+	root, lock := d.Root, d.ServeLockFile()
 
 	if held, err := HeldIn(d, lock); held || err != nil {
 		t.Errorf("HeldIn, no root there = %v, %v, want nobody's", held, err)

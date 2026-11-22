@@ -48,7 +48,7 @@ func supervised(t *testing.T, mode string) (*Supervisor, string) {
 	return s, log
 }
 
-// TestTheSupervisorPlacesItsOwnCopyAfresh: the supervisor makes its roots as every command does, but for
+// TestTheSupervisorPlacesItsOwnCopyAfresh: the supervisor makes its root as every command does, but for
 // the copy of conflux the boot service runs, which it runs from: Windows will not remove a running image,
 // and one removed on Unix would leave the service nothing to start the next time. A copy not as conflux
 // makes it -- as an earlier conflux left one an administrator's on a Windows client, whose processes that

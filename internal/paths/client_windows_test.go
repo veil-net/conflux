@@ -71,7 +71,7 @@ func TestWhatAnAdministratorMakesTheServiceTakes(t *testing.T) {
 		t.Fatalf("EnsureAll: %v", err)
 	}
 
-	made("EnsureAll", d.State, d.Run, d.Log)
+	made("EnsureAll", d.Root, d.RunDir(), d.LogDir())
 
 	unlock, err := flock.AcquireContext(t.Context(), d.LockFile(), nil)
 	if err != nil {

@@ -23,7 +23,7 @@ func TestAWindowsTooOldIsRefusedBeforeAnythingIsMade(t *testing.T) {
 
 	windowsBuild = func() uint32 { return 16299 }
 
-	above := pathstest.RootedIn(t, t.TempDir()).State
+	above := pathstest.RootedIn(t, t.TempDir()).Root
 
 	missing := filepath.Join(t.TempDir(), "missing.b64")
 

@@ -87,9 +87,9 @@ func TestUnusableMarkersReadAsNotReady(t *testing.T) {
 func TestReadyFileIsInTheRunDirectory(t *testing.T) {
 	d := dirs(t)
 
-	if filepath.Dir(d.ReadyFile()) != d.Run {
+	if filepath.Dir(d.ReadyFile()) != d.RunDir() {
 		t.Errorf("ReadyFile is %s, which is not under Run (%s) -- a marker that survives a "+
-			"reboot is a marker that lies", d.ReadyFile(), d.Run)
+			"reboot is a marker that lies", d.ReadyFile(), d.RunDir())
 	}
 }
 

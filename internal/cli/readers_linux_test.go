@@ -31,8 +31,8 @@ func TestAReaderRefusesARootAnACLLetsAnotherAccountWrite(t *testing.T) {
 		acl = binary.LittleEndian.AppendUint32(acl, e[2])
 	}
 
-	if err := unix.Setxattr(d.State, "system.posix_acl_access", acl, 0); errors.Is(err, unix.EOPNOTSUPP) {
-		t.Skipf("the file system %s is on keeps no ACLs", d.State)
+	if err := unix.Setxattr(d.Root, "system.posix_acl_access", acl, 0); errors.Is(err, unix.EOPNOTSUPP) {
+		t.Skipf("the file system %s is on keeps no ACLs", d.Root)
 	} else if err != nil {
 		t.Fatal(err)
 	}

@@ -80,7 +80,7 @@ func runRenew(ctx context.Context, args []string) int {
 // renewNow is the body, split out so the test can drive it against a temporary root
 // without going through privcheck.
 func renewNow(ctx context.Context, d paths.Dirs) int {
-	// Nothing of the machine's is read by its name until its roots pass paths' check; one not
+	// Nothing of the machine's is read by its name until its root passes paths' check; one not
 	// there has never been configured.
 	checked := d.Check()
 	if checked != nil && !errors.Is(checked, fs.ErrNotExist) {
@@ -91,7 +91,7 @@ func renewNow(ctx context.Context, d paths.Dirs) int {
 	// to renew it with.
 	if e, live := liveEphemeral(); live && (checked != nil || !config.HasManifest(d)) {
 		ui.Errf("the anchor running is ephemeral, from %s, and renews itself in memory: nothing\n"+
-			"  outside it holds its credential, so there is nothing here to renew", e.State)
+			"  outside it holds its credential, so there is nothing here to renew", e.Root)
 
 		return ExitUnavailable
 	}

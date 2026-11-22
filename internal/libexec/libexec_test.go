@@ -76,7 +76,7 @@ func TestExtractionMakesNoRootNorBinDirectory(t *testing.T) {
 		t.Errorf("EnsureAll did not make the bin directory %s (%v)", d.Libexec(), err)
 	}
 
-	for _, gone := range []string{d.Libexec(), d.State} {
+	for _, gone := range []string{d.Libexec(), d.Root} {
 		if err := os.RemoveAll(gone); err != nil {
 			t.Fatal(err)
 		}
@@ -422,7 +422,7 @@ func TestUsageMakesNothing(t *testing.T) {
 		t.Errorf("the temporary anchorctl's directory is still there after done (%v)", err)
 	}
 
-	if _, err := os.Stat(d.State); !os.IsNotExist(err) {
+	if _, err := os.Stat(d.Root); !os.IsNotExist(err) {
 		t.Errorf("asking for usage made the installation's directories (%v)", err)
 	}
 
@@ -551,7 +551,7 @@ func TestUsageRunsNothingFromARootItRefuses(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pathstest.NotAsConfluxMakesIt(t, d.State)
+	pathstest.NotAsConfluxMakesIt(t, d.Root)
 
 	bin, _, err := forUsage(t, d)
 	if err != nil {

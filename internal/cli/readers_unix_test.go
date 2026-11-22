@@ -56,11 +56,11 @@ func TestAReaderRefusesARootAnotherAccountMayWrite(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			d := plantedRoot(t)
 
-			if err := os.Chmod(d.State, c.mode); err != nil {
+			if err := os.Chmod(d.Root, c.mode); err != nil {
 				t.Fatal(err)
 			}
 
-			t.Cleanup(func() { _ = os.Chmod(d.State, 0o700) })
+			t.Cleanup(func() { _ = os.Chmod(d.Root, 0o700) })
 
 			readersRefuse(t, d, "anybody may write")
 			uninstallRemoves(t, d, "anybody may write")
@@ -105,7 +105,7 @@ func readersRefuse(t *testing.T, d paths.Dirs, why string) {
 	// What each command finds, which it leaves as it was: the root, the file update replaces, the
 	// release's downloads and what the conflux it puts in place was asked.
 	found := func() []string {
-		have := tree(t, d.State)
+		have := tree(t, d.Root)
 
 		for _, f := range []string{exe, asked} {
 			b, _ := os.ReadFile(f)
@@ -129,7 +129,7 @@ func readersRefuse(t *testing.T, d paths.Dirs, why string) {
 			was := found()
 
 			out, errOut, code := capture(t, argv...)
-			if code != ExitError || !strings.Contains(errOut, d.State) || !strings.Contains(errOut, why) {
+			if code != ExitError || !strings.Contains(errOut, d.Root) || !strings.Contains(errOut, why) {
 				t.Errorf("conflux %s of a root %s exited %d, want %d naming it and %q:\n%s",
 					argv[0], why, code, ExitError, why, errOut)
 			}
@@ -290,7 +290,7 @@ func uninstallRemoves(t *testing.T, d paths.Dirs, why string) {
 			t.Fatal(err)
 		}
 
-		if err := os.Symlink(outside, filepath.Join(d.State, ".tmp-planted-link")); err != nil {
+		if err := os.Symlink(outside, filepath.Join(d.Root, ".tmp-planted-link")); err != nil {
 			t.Fatal(err)
 		}
 
@@ -307,17 +307,17 @@ func uninstallRemoves(t *testing.T, d paths.Dirs, why string) {
 			t.Fatalf("uninstall of a root %s exited %d, want it removed:\n%s%s", why, code, out, errOut)
 		}
 
-		if _, err := os.Lstat(d.State); !errors.Is(err, fs.ErrNotExist) {
-			t.Errorf("uninstall left %s, a root %s (Lstat: %v)", d.State, why, err)
+		if _, err := os.Lstat(d.Root); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("uninstall left %s, a root %s (Lstat: %v)", d.Root, why, err)
 		}
 
 		if b, err := os.ReadFile(kept); err != nil || string(b) != "not conflux's" {
 			t.Errorf("the directory a link planted in the root led to lost what is in it: %q, %v", b, err)
 		}
 
-		if mgr.removals != 1 || !strings.Contains(out, "  "+d.State+"\n") || strings.Contains(out, "planted") {
+		if mgr.removals != 1 || !strings.Contains(out, "  "+d.Root+"\n") || strings.Contains(out, "planted") {
 			t.Errorf("uninstall removed the boot service %d times and printed, want it removed once and %s listed:\n%s",
-				mgr.removals, d.State, out)
+				mgr.removals, d.Root, out)
 		}
 
 		if reaped > 0 {
@@ -347,7 +347,7 @@ func TestAStartRemakesARootNotAsConfluxMakesOne(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pathstest.NotAsConfluxMakesIt(t, d.State)
+	pathstest.NotAsConfluxMakesIt(t, d.Root)
 
 	mgr := &fakeManager{d: d, restartErr: errStartsNothing}
 	standInService(t, mgr)
@@ -364,7 +364,7 @@ func TestAStartRemakesARootNotAsConfluxMakesOne(t *testing.T) {
 		}
 	}
 
-	if fi, err := os.Stat(d.State); err != nil || fi.Mode().Perm() != 0o700 {
+	if fi, err := os.Stat(d.Root); err != nil || fi.Mode().Perm() != 0o700 {
 		t.Errorf("the root a start made afresh is %v (%v), want it at 0700", fi.Mode(), err)
 	}
 }
@@ -386,7 +386,7 @@ func TestAnUpdateStopsTheServiceServingARootNotAsConfluxMakesOne(t *testing.T) {
 			mgr := &stopping{fakeManager: fakeManager{d: d}, running: true, release: serving(t, d)}
 			standInService(t, mgr)
 
-			if err := os.Chmod(d.State, 0o777); err != nil {
+			if err := os.Chmod(d.Root, 0o777); err != nil {
 				t.Fatal(err)
 			}
 
@@ -562,7 +562,7 @@ func TestAReaderLeavesNothingInTheTemporaryDirectory(t *testing.T) {
 func TestTheServiceStartsAgainInNoRootItRefuses(t *testing.T) {
 	d := pathstest.Dirs(t)
 
-	pathstest.NotAsConfluxMakesIt(t, d.State)
+	pathstest.NotAsConfluxMakesIt(t, d.Root)
 
 	mgr := &fakeManager{d: d}
 

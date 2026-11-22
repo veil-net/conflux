@@ -39,8 +39,8 @@ func TestTheRuntimeFolderIsTheSystems(t *testing.T) {
 	}
 
 	d, err := EphemeralDirs()
-	if want := filepath.Join(xdg, DirName); err != nil || d.State != want || d.Config != want ||
-		d.Run != filepath.Join(want, "run") || d.Log != "" || !d.IsEphemeral() {
+	if want := filepath.Join(xdg, DirName); err != nil || d.Root != want ||
+		d.RunDir() != filepath.Join(want, "run") || d.LogDir() != "" || !d.IsEphemeral() {
 		t.Errorf("EphemeralDirs() = %+v, %v, want everything in %s and no log directory", d, err, want)
 	}
 
@@ -111,8 +111,8 @@ func TestEphemeralRemakesARootNotAsConfluxMakesOne(t *testing.T) {
 			}
 
 			d, err := Ephemeral()
-			if err != nil || d.State != root {
-				t.Fatalf("Ephemeral() past %s = %s, %v, want it made afresh", name, d.State, err)
+			if err != nil || d.Root != root {
+				t.Fatalf("Ephemeral() past %s = %s, %v, want it made afresh", name, d.Root, err)
 			}
 
 			if err := d.Check(); err != nil {

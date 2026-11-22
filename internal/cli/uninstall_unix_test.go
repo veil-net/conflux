@@ -68,8 +68,8 @@ func TestUninstallJudgesNoFolderAboveARoot(t *testing.T) {
 			"%d times, want %d and once:\n%s%s", code, mgr.removals, ExitOK, out, errOut)
 	}
 
-	if _, err := os.Lstat(d.State); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("uninstall left %s (Lstat: %v)", d.State, err)
+	if _, err := os.Lstat(d.Root); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("uninstall left %s (Lstat: %v)", d.Root, err)
 	}
 
 	if fi, err := os.Stat(parent); err != nil || fi.Mode().Perm() != 0o777 {
@@ -114,8 +114,8 @@ func TestUninstallListsOnlyWhatIsGone(t *testing.T) {
 			errOut)
 	}
 
-	if _, err := os.Lstat(d.State); err != nil || strings.Contains(out, "  "+d.State+"\n") {
-		t.Errorf("uninstall listed %s, which is still there, as removed (Lstat: %v):\n%s", d.State, err, out)
+	if _, err := os.Lstat(d.Root); err != nil || strings.Contains(out, "  "+d.Root+"\n") {
+		t.Errorf("uninstall listed %s, which is still there, as removed (Lstat: %v):\n%s", d.Root, err, out)
 	}
 }
 
@@ -147,8 +147,8 @@ func TestUninstallListsNoRootItFailedToRemove(t *testing.T) {
 			errOut)
 	}
 
-	if !slices.Contains(asked, d.State) || strings.Contains(out, "  "+d.State+"\n") {
+	if !slices.Contains(asked, d.Root) || strings.Contains(out, "  "+d.Root+"\n") {
 		t.Errorf("uninstall listed %s, which it could not remove, as removed, or did not remove it (asked %q):\n%s",
-			d.State, asked, out)
+			d.Root, asked, out)
 	}
 }

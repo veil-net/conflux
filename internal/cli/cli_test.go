@@ -1131,8 +1131,8 @@ func TestAnOwnerThatCannotBeSetRefusesWhatCanMakeARoot(t *testing.T) {
 		}
 	}
 
-	if _, err := os.Lstat(d.State); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("conflux made %s with an owner it could not set (%v)", d.State, err)
+	if _, err := os.Lstat(d.Root); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("conflux made %s with an owner it could not set (%v)", d.Root, err)
 	}
 
 	for _, argv := range [][]string{{"version"}, {"-v"}, {"cert", "fingerprint", "--help"}} {

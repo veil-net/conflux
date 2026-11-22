@@ -87,11 +87,10 @@ func Held(path string) (bool, error) {
 
 // HeldIn is Held for the lock at path, a file directly in d's root, asked before anything has
 // made the root -- the serve lock, before conflux decides to stop the service: opened through the root
-// held as paths' OpenIn holds it, the way to it judged as a reader judges it and a link at its name
-// never followed, and never by its name, so that neither a way nor a link another account may change
-// can lead the question to a lock of theirs, or on Windows sign this machine in to a share. A root or a
-// lock that is not there, or a root not as conflux makes one, is held by nobody; a way OpenIn refuses
-// is refused.
+// held as paths' OpenIn holds it, judged as a reader judges it, and a link at its name never followed,
+// so that a root another account made -- on Windows %ProgramData% lets any account make one first --
+// cannot answer with a lock of theirs. A root or a lock that is not there, or a root not as conflux
+// makes one, is held by nobody; anything else OpenIn refuses is refused.
 func HeldIn(d paths.Dirs, path string) (bool, error) {
 	return held(path, func() (*os.File, error) { return d.OpenIn(path) })
 }

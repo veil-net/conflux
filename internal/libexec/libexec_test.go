@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -578,7 +579,7 @@ func TestUsageRunsNothingFromARootItRefuses(t *testing.T) {
 // noexec, elevated on Windows as well -- and say which; anything else there is left, and so is a folder that
 // will not go -- a reader's copy running from it, which Windows removes no file of -- passed over while the
 // rest go. Each place is taken by its name as it is, never as a pattern: a temporary directory named x[1]
-// leaves what is in x1.
+// leaves what is in x1. A link at such a name, to a folder or to a file, goes as itself, what it names left.
 func TestRemoveTemporaryRemovesWhatAKilledReaderLeft(t *testing.T) {
 	parent := filepath.Join(t.TempDir(), "x[1]")
 	if err := os.Mkdir(parent, 0o700); err != nil {
@@ -607,6 +608,29 @@ func TestRemoveTemporaryRemovesWhatAKilledReaderLeft(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, exeName("anchorctl")), []byte("a copy"), 0o700); err != nil {
 			t.Fatal(err)
 		}
+	}
+
+	// Links at such names, to a folder holding a file and to a file, both elsewhere.
+	elsewhere := t.TempDir()
+	targets := []string{filepath.Join(elsewhere, "folder"), filepath.Join(elsewhere, "file")}
+
+	if err := os.Mkdir(targets[0], 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, f := range []string{filepath.Join(targets[0], exeName("anchorctl")), targets[1]} {
+		if err := os.WriteFile(f, []byte("not conflux's"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for i, target := range targets {
+		link := filepath.Join(parent, temporaryPrefix+strconv.Itoa(6+i))
+		if err := os.Symlink(target, link); err != nil {
+			t.Fatal(err)
+		}
+
+		left = append(left, link)
 	}
 
 	// A folder that will not go: a file in it held open on Windows, and on Unix one whose mode lets nothing
@@ -644,6 +668,12 @@ func TestRemoveTemporaryRemovesWhatAKilledReaderLeft(t *testing.T) {
 	for _, other := range others {
 		if _, err := os.Lstat(other); err != nil || slices.Contains(removed, other) {
 			t.Errorf("RemoveTemporary removed %s, which is not one of temporary's (Lstat: %v): %q", other, err, removed)
+		}
+	}
+
+	for _, f := range []string{filepath.Join(targets[0], exeName("anchorctl")), targets[1]} {
+		if _, err := os.Lstat(f); err != nil {
+			t.Errorf("RemoveTemporary removed %s, which a link at a temporary copy's name named: %v", f, err)
 		}
 	}
 

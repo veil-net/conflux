@@ -29,12 +29,13 @@ var (
 	updateAtTerminal = ui.IsTerminal
 )
 
-// installed says what the conflux an update replaces is, and whether it is a dev build. Nothing
-// is none. This process is this build, a dev build where version.Dev says so. Any other file is
-// what it says when run for its `version`, a dev build where it says so (devBuild), or a file
-// that does not run, which cannot say what it is, and so is none.
-func installed(ctx context.Context, exe string) (says string, dev bool) {
-	if _, err := os.Stat(exe); errors.Is(err, os.ErrNotExist) {
+// installed says what the conflux an update replaces is, and whether it is a dev build. Nothing,
+// where the caller found none there (fresh), is none. This process is this build, a dev build
+// where version.Dev says so. Any other file is what it says when run for its `version`, a dev
+// build where it says so (devBuild), or a file that does not run, which cannot say what it is,
+// and so is none.
+func installed(ctx context.Context, exe string, fresh bool) (says string, dev bool) {
+	if fresh {
 		return fmt.Sprintf("Nothing is installed at %s.", exe), false
 	}
 
@@ -169,7 +170,7 @@ func runUpdate(ctx context.Context, args []string) int {
 		return ExitOK
 	}
 
-	says, installedDev := installed(ctx, exe)
+	says, installedDev := installed(ctx, exe, fresh)
 	ui.Printf("%s\nThe newest %s is %s, built from %s.\n", says, what, rel.Name, short(rel.Commit))
 
 	if *check {

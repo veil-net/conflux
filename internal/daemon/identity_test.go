@@ -21,10 +21,13 @@ func TestALostManifestIsNotReplaced(t *testing.T) {
 	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, APIBaseURL: srv.URL}
 
 	_, _, _, err := credential(t.Context(), d, &config.State{AnchorID: fakeAnchorID}, cfg, nopReporter{})
-	// The way out: uninstall, which removes conflux too, so it is installed again; where the taints
-	// and API to enrol with are read -- conflux.json, which the uninstall removes -- and both ways
-	// to enrol with them, alpha and issued.
-	for _, want := range []string{"conflux uninstall", "install conflux again", d.ConfigFile(), "--taint", "--api", "conflux enrol --manifest"} {
+	// The way out: uninstall, which removes conflux too, so the same build is installed again (a dev
+	// build's credential is the dev tree's); where the taints and any API to enrol with are read --
+	// conflux.json, which the uninstall removes; both ways to enrol with them, alpha and issued; and
+	// where the steps are written out.
+	for _, want := range []string{
+		"conflux uninstall", "install the same build", d.ConfigFile(), "--taint", "--api", "conflux enrol --manifest", "credentials.md",
+	} {
 		if !Permanent(err) || !strings.Contains(err.Error(), want) {
 			t.Errorf("credential() = %v, want a refusal for good naming %q", err, want)
 		}

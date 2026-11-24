@@ -331,10 +331,14 @@ func reportBinaries(st *config.State) {
 // `conflux anchorctl export -endpoint ...` makes; and a SIGHUP, which re-reads the
 // file and discards the call. So a machine can be exporting somewhere its own
 // configuration does not name, until the next restart puts it back. anchor reports
-// which surface set it -- ExportSource -- for exactly this.
+// which surface set it -- ExportSource -- for exactly this, and where it exports, or that it
+// exports nothing (anchorctl export's "exporting to" and "not exporting"), which is said where
+// it is not what conflux.json names.
 func reportExport(cfg *config.Config, a *daemonAnswers) {
+	configured := cfg.Export != nil && cfg.Export.Enabled
+
 	want := "none — nothing is exported until an endpoint is set"
-	if cfg.Export != nil && cfg.Export.Enabled {
+	if configured {
 		want = cfg.Export.Endpoint + " — " + strings.Join(cfg.Export.Signals(), ", ")
 	}
 
@@ -347,7 +351,25 @@ func reportExport(cfg *config.Config, a *daemonAnswers) {
 	}
 
 	for line := range strings.SplitSeq(strings.TrimSpace(a.export), "\n") {
-		key, value, ok := strings.Cut(strings.TrimSpace(line), "set by")
+		line = strings.TrimSpace(line)
+
+		if line == "not exporting" {
+			if configured {
+				ui.Field("", "not exporting, the daemon says")
+			}
+
+			continue
+		}
+
+		if endpoint, ok := strings.CutPrefix(line, "exporting to"); ok {
+			if endpoint = strings.TrimSpace(endpoint); !configured || endpoint != cfg.Export.Endpoint {
+				ui.Field("", "the daemon exports to "+endpoint)
+			}
+
+			continue
+		}
+
+		key, value, ok := strings.Cut(line, "set by")
 		if ok && key == "" {
 			source := strings.TrimSpace(value)
 

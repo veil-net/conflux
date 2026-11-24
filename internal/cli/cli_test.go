@@ -251,6 +251,61 @@ func TestStatusUnreadableIsRefusedForPrivilege(t *testing.T) {
 	}
 }
 
+// TestStatusSaysWhereTheDaemonExports: `anchorctl export` changes the running daemon's export
+// and not conflux.json, so where the two disagree status says what the daemon is doing -- the
+// collector it exports to, or that it exports nothing -- and where they agree, nothing more.
+func TestStatusSaysWhereTheDaemonExports(t *testing.T) {
+	configured := &config.Config{Export: &config.Export{Enabled: true, Endpoint: "a.example:4317", Flows: true}}
+	none := &config.Config{}
+
+	for _, tc := range []struct {
+		name   string
+		cfg    *config.Config
+		daemon string
+		says   []string
+		not    []string
+	}{
+		{"turned off", configured, "not exporting\n", []string{"not exporting"}, nil},
+		{
+			"pointed elsewhere", configured,
+			"exporting to  b.example:4317\n  signals     flows\n  set by      anchorctl export\n",
+			[]string{"b.example:4317", "an override"}, nil,
+		},
+		{
+			"turned on", none,
+			"exporting to  b.example:4317\n  signals     flows\n  set by      anchorctl export\n",
+			[]string{"b.example:4317"}, nil,
+		},
+		{
+			"as configured", configured,
+			"exporting to  a.example:4317\n  signals     flows\n  set by      the config file\n",
+			[]string{"set by the config file"}, []string{"exports to", "not exporting"},
+		},
+		{"none, as configured", none, "not exporting\n", nil, []string{"not exporting"}},
+	} {
+		var out bytes.Buffer
+
+		old := ui.Out
+		ui.Out = &out
+
+		reportExport(tc.cfg, &daemonAnswers{asked: true, export: tc.daemon})
+
+		ui.Out = old
+
+		for _, s := range tc.says {
+			if !strings.Contains(out.String(), s) {
+				t.Errorf("%s: status should say %q:\n%s", tc.name, s, out.String())
+			}
+		}
+
+		for _, s := range tc.not {
+			if strings.Contains(out.String(), s) {
+				t.Errorf("%s: status should not say %q:\n%s", tc.name, s, out.String())
+			}
+		}
+	}
+}
+
 // TestProxyKeepsItsOwnUplinkFlag: --uplink is conflux proxy's, so the gate that
 // hands anchorctl's flags back must not catch it, and the splitter has to know it
 // takes a value -- otherwise the device path lands in the positional list and is

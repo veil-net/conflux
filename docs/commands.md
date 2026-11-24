@@ -20,7 +20,8 @@ mints a realm root, is not in that build at all, and answers as an unknown comma
 do not last equally long. `conflux anchorctl export -endpoint …` configures the running
 daemon and is discarded at the next restart or SIGHUP; the `export` block in
 `conflux.json` is rendered to anchord's config file on every start and is the durable
-one. `conflux status` says which the daemon is currently obeying. See
+one. `conflux status` says which the daemon is currently obeying, and, where that is not what
+`conflux.json` names, the collector it exports to or that it exports nothing. See
 [config.md](config.md#export--where-telemetry-goes).
 
 ### Realm control

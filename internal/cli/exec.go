@@ -19,8 +19,9 @@ var anchorctlExec, anchorctlRun = execAnchorctl, runAnchorctl
 //
 // Inherited handles, so the console is genuinely shared, and the child's exit code passed
 // back verbatim. Not tied to a context, which Ctrl+C cancels: anchorctl is given the signal
-// and ends on its own terms, as it would had it replaced this process -- by the console on
-// Windows, and on Unix by runForwarding, which passes on the SIGINT and SIGTERM conflux is sent.
+// and ends on its own terms, as it would had it replaced this process -- a Ctrl+C by the
+// console or the terminal, which give it to the child as well, and on Unix a SIGTERM by
+// runForwarding, which passes on the one conflux is sent.
 func runAnchorctl(bin string, args []string, env []string) int {
 	cmd := exec.Command(bin, args...)
 	cmd.Env = env

@@ -16,9 +16,11 @@ import (
 
 // TestAChildAnchorctlIsSentWhatConfluxIs: an anchorctl conflux runs as its child, a temporary
 // copy, is sent the SIGTERM conflux is, and ends on it, where Main's context would otherwise
-// take the signal and leave conflux waiting for a child nothing told to end.
+// take the signal and leave conflux waiting for a child nothing told to end. A SIGINT it is not
+// sent: a terminal's Ctrl-C reaches the child itself, with the whole foreground process group,
+// and passed on as well it would arrive twice. Taken, it does not end conflux before its child.
 func TestAChildAnchorctlIsSentWhatConfluxIs(t *testing.T) {
-	// As Main does, so the SIGTERM below is conflux's to take, and does not end the test.
+	// As Main does, so the signals below are conflux's to take, and do not end the test.
 	_, stop := signal.NotifyContext(t.Context(), os.Interrupt, unix.SIGTERM)
 	defer stop()
 
@@ -26,7 +28,8 @@ func TestAChildAnchorctlIsSentWhatConfluxIs(t *testing.T) {
 	ready := filepath.Join(dir, "ready")
 	bin := filepath.Join(dir, "anchorctl")
 
-	script := "#!/bin/sh\ntrap 'exit 7' TERM\necho $$ > \"$READY.tmp\" && mv \"$READY.tmp\" \"$READY\"\n" +
+	script := "#!/bin/sh\ntrap 'exit 3' INT\ntrap 'exit 7' TERM\n" +
+		"echo $$ > \"$READY.tmp\" && mv \"$READY.tmp\" \"$READY\"\n" +
 		"while :; do sleep 0.05; done\n"
 	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
@@ -44,6 +47,18 @@ func TestAChildAnchorctlIsSentWhatConfluxIs(t *testing.T) {
 		} else if time.Now().After(deadline) {
 			t.Fatal("the stand-in anchorctl never started")
 		}
+	}
+
+	// Conflux alone is sent it, as `kill -INT` would: a child that ends on it, exit 3, was sent
+	// it by conflux.
+	if err := unix.Kill(os.Getpid(), unix.SIGINT); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case c := <-code:
+		t.Fatalf("the child anchorctl exited %d on the SIGINT conflux was sent, which a terminal gives it itself", c)
+	case <-time.After(500 * time.Millisecond):
 	}
 
 	if err := unix.Kill(os.Getpid(), unix.SIGTERM); err != nil {

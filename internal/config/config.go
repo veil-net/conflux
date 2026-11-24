@@ -246,8 +246,10 @@ type Config struct {
 	// which is FreeBSD and OpenBSD.
 	Observer *Observer `json:"observer,omitempty"`
 
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	// When conflux first saved the file and when it last did. Absent in one written by hand,
+	// and left absent by the canonical form until a command saves it.
+	CreatedAt time.Time `json:"createdAt,omitzero"`
+	UpdatedAt time.Time `json:"updatedAt,omitzero"`
 }
 
 // ObserverSupported says whether anchor can observe on goos: it captures on Linux, macOS
@@ -427,23 +429,31 @@ func (c *Config) Validate() error {
 // "this machine has never been configured", which several callers treat as a state
 // rather than a failure.
 func Load(d paths.Dirs) (*Config, error) {
+	c, _, err := LoadBytes(d)
+
+	return c, err
+}
+
+// LoadBytes is Load, and the bytes it read: what the supervisor's start hands Canonical, so
+// the file is read once.
+func LoadBytes(d paths.Dirs) (*Config, []byte, error) {
 	b, err := os.ReadFile(d.ConfigFile())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var c Config
 	if err := json.Unmarshal(b, &c); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", d.ConfigFile(), err)
+		return nil, nil, fmt.Errorf("parse %s: %w", d.ConfigFile(), err)
 	}
 
 	if c.Version > ConfigVersion {
-		return nil, fmt.Errorf(
+		return nil, nil, fmt.Errorf(
 			"%s was written by a newer conflux (config version %d, this build understands %d)",
 			d.ConfigFile(), c.Version, ConfigVersion)
 	}
 
-	return &c, nil
+	return &c, b, nil
 }
 
 // Save writes it, atomically and 0600. Every caller holds d's lock: the supervisor

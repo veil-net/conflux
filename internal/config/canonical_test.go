@@ -4,7 +4,23 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/veil-net/conflux/internal/paths"
 )
+
+// canonical is what a start does: conflux.json read once, and handed to Canonical.
+func canonical(t *testing.T, d paths.Dirs) {
+	t.Helper()
+
+	c, raw, err := LoadBytes(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Canonical(d, c, raw); err != nil {
+		t.Fatal(err)
+	}
+}
 
 // TestCanonicalRewritesWhatWasEdited: the configuration and the state are written in
 // conflux's own form at every start, so a hand edit that is valid still takes effect but
@@ -23,8 +39,15 @@ func TestCanonicalRewritesWhatWasEdited(t *testing.T) {
 	saved, _ := os.ReadFile(d.ConfigFile())
 	savedState, _ := os.ReadFile(d.StateFile())
 
-	if err := Canonical(d); err != nil {
+	before, err := os.Stat(d.ConfigFile())
+	if err != nil {
 		t.Fatal(err)
+	}
+
+	canonical(t, d)
+
+	if after, err := os.Stat(d.ConfigFile()); err != nil || !os.SameFile(before, after) {
+		t.Errorf("a configuration conflux wrote was written again (%v)", err)
 	}
 
 	if b, _ := os.ReadFile(d.ConfigFile()); string(b) != string(saved) {
@@ -41,9 +64,7 @@ func TestCanonicalRewritesWhatWasEdited(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := Canonical(d); err != nil {
-		t.Fatal(err)
-	}
+	canonical(t, d)
 
 	cfg, err := Load(d)
 	if err != nil {
@@ -65,25 +86,15 @@ func TestCanonicalRewritesWhatWasEdited(t *testing.T) {
 	}
 }
 
-// TestCanonicalLeavesWhatItCannotRead: a configuration that does not parse is the
-// supervisor's to refuse, saying where, and is left exactly as it is; none at all is nothing
-// to do.
-func TestCanonicalLeavesWhatItCannotRead(t *testing.T) {
-	d := dirsForTest(t)
-
-	if err := Canonical(d); err != nil {
-		t.Errorf("Canonical with nothing configured: %v", err)
-	}
-
-	if err := os.WriteFile(d.ConfigFile(), []byte("{not json"), 0o600); err != nil {
+// TestTheCanonicalFormHasNoTimesNobodySet: a hand-written conflux.json with no createdAt or
+// updatedAt is written back with none, not with the zero time, year 1.
+func TestTheCanonicalFormHasNoTimesNobodySet(t *testing.T) {
+	b, err := encodeConfig(base(ModeProxy))
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := Canonical(d); err != nil {
-		t.Errorf("Canonical of a configuration that does not parse: %v; the supervisor refuses it as it reads it", err)
-	}
-
-	if b, _ := os.ReadFile(d.ConfigFile()); string(b) != "{not json" {
-		t.Errorf("an unreadable configuration was rewritten: %q", b)
+	if strings.Contains(string(b), "createdAt") || strings.Contains(string(b), "updatedAt") {
+		t.Errorf("a configuration nobody saved is written with times:\n%s", b)
 	}
 }

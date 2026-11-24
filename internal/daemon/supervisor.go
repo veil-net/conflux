@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io/fs"
 	"net"
 	"os"
 	"os/exec"
@@ -196,15 +195,12 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		return err
 	}
 
-	// conflux.json and state.json in conflux's own form, under the lock every writer of
-	// either holds: a hand edit that is valid takes effect, and leaves behind nothing conflux
-	// does not know. One that does not parse is loadConfig's to refuse, saying where.
-	if err := s.canonical(); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		s.report().Warn("could not write conflux.json and state.json in conflux's form: %v", err)
-	}
+	// conflux.json, read once, and refused as every reader refuses it; otherwise written back
+	// in conflux's own form, with state.json, under the lock every writer of either holds.
+	cfgErr := s.canonical()
 
-	// The registration and the copy it runs, as the root is put back: before the
-	// configuration is read, so a service with nothing to start yet still runs this conflux.
+	// The registration and the copy it runs, as the root is put back: whatever the
+	// configuration said, so a service with nothing to start yet still runs this conflux.
 	if s.Reconcile != nil {
 		s.Reconcile()
 	}
@@ -212,8 +208,8 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	// Nothing to supervise, or nothing it will start on, before anything is extracted.
 	// Distinguished from a failure so the unit can stop instead of restarting into the
 	// same answer every five seconds.
-	if _, err := loadConfig(s.Dirs); err != nil {
-		return err
+	if cfgErr != nil {
+		return cfgErr
 	}
 
 	// Held to this build's digests, not only found whole: anchord runs from here as root,
@@ -249,7 +245,10 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	return s.loop(ctx)
 }
 
-// canonical rewrites conflux.json and state.json in conflux's form, under the lock.
+// canonical reads conflux.json under the lock, as loadConfig decides, and rewrites it and
+// state.json in conflux's form: a hand edit that is valid takes effect, and leaves behind
+// nothing conflux does not know. What loadConfig refuses is returned, and never rewritten. A
+// rewrite that fails is said, and costs the start nothing: the file read is the one it runs.
 func (s *Supervisor) canonical() error {
 	unlock, err := flock.Acquire(s.Dirs.LockFile())
 	if err != nil {
@@ -257,7 +256,16 @@ func (s *Supervisor) canonical() error {
 	}
 	defer unlock()
 
-	return config.Canonical(s.Dirs)
+	cfg, raw, err := loadConfig(s.Dirs)
+	if err != nil {
+		return err
+	}
+
+	if err := config.Canonical(s.Dirs, cfg, raw); err != nil {
+		s.report().Warn("could not write conflux.json and state.json in conflux's form: %v", err)
+	}
+
+	return nil
 }
 
 // loop is spawn, bring up, watch, back off, repeat.
@@ -523,7 +531,7 @@ func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *child, error) 
 	// Validated before anchord reads any of it. A block anchord refuses is fatal to it at
 	// startup, which would otherwise read as a daemon dying before it answered and be
 	// retried for ever, where this is a file no retry changes.
-	cfg, err := loadConfig(s.Dirs)
+	cfg, _, err := loadConfig(s.Dirs)
 	if err != nil {
 		return nil, nil, err
 	}

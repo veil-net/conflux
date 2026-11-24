@@ -44,26 +44,27 @@ func (e *permanentError) Unwrap() error { return e.err }
 // same way for every reader of it: none at all is nothing to start (ErrNotConfigured); one
 // that will not parse, that this build cannot read, or that Validate refuses is refused
 // for good, since no restart changes a file; and one that could not be read at all is the
-// next attempt's to try again.
-func loadConfig(d paths.Dirs) (*config.Config, error) {
-	cfg, err := config.Load(d)
+// next attempt's to try again. It returns the bytes it read with the configuration they
+// hold, which the start hands to config.Canonical rather than reading the file again.
+func loadConfig(d paths.Dirs) (*config.Config, []byte, error) {
+	cfg, raw, err := config.LoadBytes(d)
 
 	var read *fs.PathError
 
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		return nil, ErrNotConfigured
+		return nil, nil, ErrNotConfigured
 	case errors.As(err, &read):
-		return nil, err
+		return nil, nil, err
 	case err != nil:
-		return nil, &permanentError{err: err} // names the file already
+		return nil, nil, &permanentError{err: err} // names the file already
 	}
 
 	if err := cfg.Validate(); err != nil {
-		return nil, &permanentError{path: d.ConfigFile(), err: err}
+		return nil, nil, &permanentError{path: d.ConfigFile(), err: err}
 	}
 
-	return cfg, nil
+	return cfg, raw, nil
 }
 
 type nopReporter struct{}
@@ -111,7 +112,7 @@ func bringUp(
 	}
 	defer unlock()
 
-	cfg, err := loadConfig(d)
+	cfg, _, err := loadConfig(d)
 	if err != nil {
 		return anchorctl.Started{}, err
 	}

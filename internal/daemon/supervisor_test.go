@@ -211,7 +211,7 @@ func TestAConfigAnchordWouldRefuseIsNotStarted(t *testing.T) {
 func TestAConfigurationIsReadOneWayEverywhere(t *testing.T) {
 	d := dirs(t)
 
-	if _, err := loadConfig(d); !errors.Is(err, ErrNotConfigured) {
+	if _, _, err := loadConfig(d); !errors.Is(err, ErrNotConfigured) {
 		t.Errorf("no conflux.json: %v, want ErrNotConfigured", err)
 	}
 
@@ -219,7 +219,7 @@ func TestAConfigurationIsReadOneWayEverywhere(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := loadConfig(d); !Permanent(err) {
+	if _, _, err := loadConfig(d); !Permanent(err) {
 		t.Errorf("a conflux.json that does not parse: %v, want it refused for good", err)
 	}
 
@@ -232,8 +232,36 @@ func TestAConfigurationIsReadOneWayEverywhere(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := loadConfig(d); err == nil || Permanent(err) {
+	if _, _, err := loadConfig(d); err == nil || Permanent(err) {
 		t.Errorf("a conflux.json that could not be read: %v, want it tried again", err)
+	}
+}
+
+// TestARefusedConfigurationIsLeftAsWritten: a conflux.json the start refuses -- one that does
+// not parse, one a newer conflux wrote, one Validate refuses -- is refused for good and left
+// exactly as it was written, so whoever edited it sees what they wrote; the start writes back
+// in conflux's form only what it reads and takes.
+func TestARefusedConfigurationIsLeftAsWritten(t *testing.T) {
+	for name, raw := range map[string]string{
+		"does not parse":    `{not json`,
+		"a newer conflux's": `{"version":99,"mode":"proxy","taints":["t"]}`,
+		"Validate refuses":  `{"version":1,"mode":"neither","taints":["t"],"proxys":["8080=127.0.0.1:1"]}` + "\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := dirs(t)
+
+			if err := os.WriteFile(d.ConfigFile(), []byte(raw), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := (&Supervisor{Dirs: d}).Run(t.Context()); !Permanent(err) {
+				t.Errorf("Run = %v, want a refusal for good", err)
+			}
+
+			if got, _ := os.ReadFile(d.ConfigFile()); string(got) != raw {
+				t.Errorf("the refused conflux.json was rewritten:\n%s", got)
+			}
+		})
 	}
 }
 

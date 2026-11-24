@@ -22,7 +22,7 @@ person sets moves it:
 |---|---|
 | `conflux.json`, `manifest.b64`, `state.json`, `anchord.json` | the files below |
 | `anchord.priv` | who the last `anchord` ran as, with what, and which anchor directory it was given |
-| `conflux.lock`, `serve.lock` | the lock every rewrite of the manifest or the state takes, and the one the serving supervisor holds |
+| `conflux.lock`, `serve.lock` | the lock every rewrite of `conflux.json`, the manifest or the state takes, and the one the serving supervisor holds |
 | `conflux` (`conflux.exe` on Windows) | the copy of conflux the boot service runs; see [service.md](service.md) |
 | `bin/<setID>/` | the extracted anchor pair |
 | `anchor/`, `anchor.root/` | `anchord`'s `-dir`: the first for an `anchord` running as its own account, the second for one running as root |
@@ -102,11 +102,13 @@ yet, which is retried, and TLS material under `export` that will not load. `tain
 one field an edit cannot change once the machine has enrolled: a set the credential does
 not grant is refused at every start.
 
-Every start writes the file back in conflux's own form, and `state.json` with it: an edit
-that is valid takes effect, and a key conflux does not know, or a layout of the editor's
-own, does not outlast the next start. A file already in that form is not rewritten, and one
-that does not parse is left exactly as it is, and refused. Every command that writes it
-holds the machine's lock, as the start does, so neither undoes the other.
+Every start reads the file once, under the machine's lock, and writes it back in conflux's
+own form, and `state.json` with it: an edit that is valid takes effect, and a key conflux
+does not know, or a layout of the editor's own, does not outlast the next start. A file
+already in that form is not rewritten, and one the start refuses — one that does not parse,
+that a newer conflux wrote, or that is refused on its face — is left exactly as it is. Every
+command that writes it holds the machine's lock, as the start does, so neither undoes the
+other.
 
 ### `export` — where telemetry goes
 

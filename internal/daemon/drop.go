@@ -311,7 +311,7 @@ func anchordEnv(p Privilege, token string) []string {
 // from: nothing is done again to give it -- the account's directories, the BPF devices
 // re-owned on macOS, a LOCAL SERVICE logon on Windows -- for a start that may not follow.
 func (s *Supervisor) redecided() bool {
-	cfg, err := loadConfig(s.Dirs)
+	cfg, _, err := loadConfig(s.Dirs)
 	if err != nil {
 		return false
 	}

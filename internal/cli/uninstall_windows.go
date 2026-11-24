@@ -40,35 +40,41 @@ func removeInstallation() error {
 // removeAfterExit starts a cmd.exe, detached and windowless, that waits a few seconds for
 // this process to exit and then removes dir.
 func removeAfterExit(dir string) error {
-	shell, err := cmdExe()
+	cmd, err := removalCommand(dir)
+	if err == nil {
+		err = cmd.Start()
+	}
+
 	if err != nil {
-		return fmt.Errorf("leave %s to be removed once conflux exits: %w", dir, err)
-	}
-
-	cmd := exec.Command(shell)
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		CmdLine:       fmt.Sprintf(`cmd.exe /d /c "ping -n 4 127.0.0.1 >nul & rmdir /s /q "%s""`, dir),
-		HideWindow:    true,
-		CreationFlags: windows.DETACHED_PROCESS | windows.CREATE_NEW_PROCESS_GROUP,
-	}
-
-	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("leave %s to be removed once conflux exits: %w", dir, err)
 	}
 
 	return cmd.Process.Release()
 }
 
-// cmdExe is the system's cmd.exe, in the system directory Windows reports: not under
+// removalCommand is the cmd.exe removeAfterExit leaves to remove dir, and everything it runs is
+// the system's, in the system directory Windows reports: cmd.exe itself, and the ping it waits
+// with, named by its full path, with the system directory its current one. Not under
 // %SystemRoot%, which is whatever the environment uninstall was started with says, and would
-// have an elevated conflux start a cmd.exe from anywhere it pointed.
-func cmdExe() (string, error) {
+// have an elevated conflux start a cmd.exe from anywhere it pointed; and not ping by name, nor
+// in the directory uninstall was typed in, which cmd.exe searches for a command before PATH,
+// so that a ping.exe or ping.bat left there would run as Administrator.
+func removalCommand(dir string) (*exec.Cmd, error) {
 	sys, err := windows.GetSystemDirectory()
 	if err != nil {
-		return "", fmt.Errorf("find the system directory: %w", err)
+		return nil, fmt.Errorf("find the system directory: %w", err)
 	}
 
-	return filepath.Join(sys, "cmd.exe"), nil
+	cmd := exec.Command(filepath.Join(sys, "cmd.exe"))
+	cmd.Dir = sys
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		CmdLine: fmt.Sprintf(`cmd.exe /d /c ""%s" -n 4 127.0.0.1 >nul & rmdir /s /q "%s""`,
+			filepath.Join(sys, "PING.EXE"), dir),
+		HideWindow:    true,
+		CreationFlags: windows.DETACHED_PROCESS | windows.CREATE_NEW_PROCESS_GROUP,
+	}
+
+	return cmd, nil
 }
 
 // addPathEntry puts dir on the machine's PATH, as install.ps1 does, for a conflux an update

@@ -472,3 +472,60 @@ func ephemeralRunner(root string) int {
 
 	return 0
 }
+
+// TestANextRunTakesAKilledRunsDriver: the next ephemeral run clears what a killed one left,
+// and asks for the killed TUN run's driver to go first, through the library still in its root:
+// cleared, the root would leave nothing a later uninstall could remove the driver with.
+func TestANextRunTakesAKilledRunsDriver(t *testing.T) {
+	d := paths.EphemeralDirs(filepath.Join(t.TempDir(), "killed"))
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	library := filepath.Join(d.Libexec(), "0123456789abcdef", wintun.DLLName)
+	if err := os.MkdirAll(filepath.Dir(library), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(library, []byte("MZ"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var asked int
+
+	deleteDriver = func(paths.Dirs) error {
+		asked++
+
+		if _, err := os.Stat(library); err != nil {
+			t.Errorf("the driver was asked to go after the killed run's library had: %v", err)
+		}
+
+		return nil
+	}
+	t.Cleanup(func() { deleteDriver = wintun.DeleteDriver })
+
+	if err := os.WriteFile(d.ServeLockFile(), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := clearKilled(d, &Ephemeral{Dirs: d}); err != nil {
+		t.Fatal(err)
+	}
+
+	if asked != 1 {
+		t.Errorf("the driver was asked to go %d times, want once", asked)
+	}
+
+	if _, err := os.Stat(d.Libexec()); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the killed run's bin/ is still there: %v", err)
+	}
+
+	if _, err := os.Stat(d.ServeLockFile()); err != nil {
+		t.Errorf("the run's own lock went with the rest: %v", err)
+	}
+
+	// A root with no pair in it -- a fresh one, or a Linux run's, in memory -- asks nothing.
+	if err := clearKilled(d, &Ephemeral{Dirs: d}); err != nil || asked != 1 {
+		t.Errorf("clearing a root with no bin/ asked for the driver (%d) or failed: %v", asked, err)
+	}
+}

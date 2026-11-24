@@ -152,7 +152,7 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 	s.killLeftovers()
 
 	// And the directories made again, emptied of whatever it was.
-	if err := clearExcept(d.Root, d.ServeLockFile()); err != nil {
+	if err := clearKilled(d, e); err != nil {
 		return err
 	}
 
@@ -475,6 +475,20 @@ func RemoveEphemeralRoot(d paths.Dirs, unlock func()) error {
 
 // ephemeralUnlocked is a test's seam, where RemoveEphemeralRoot has let the lock go.
 var ephemeralUnlocked = func() {}
+
+// clearKilled empties a root of what a killed run left, all but the lock this run holds. A
+// killed TUN run's driver goes first, through the library its root still holds, which nothing
+// could remove it with once the root is cleared; Windows keeps it while any adapter is in use,
+// which is said and does not stop the run. A root with no pair in it asks nothing.
+func clearKilled(d paths.Dirs, e *Ephemeral) error {
+	if _, err := os.Stat(d.Libexec()); err == nil {
+		if err := deleteDriver(d); err != nil {
+			e.report().Warn("%v", err)
+		}
+	}
+
+	return clearExcept(d.Root, d.ServeLockFile())
+}
 
 // deleteDriver is wintun.DeleteDriver, which tests replace: only Windows has a driver to remove.
 var deleteDriver = wintun.DeleteDriver

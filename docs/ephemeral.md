@@ -144,8 +144,9 @@ says the run renews itself.
 | macOS, the BSDs | nothing can ask at the start, so anchord goes on until the next ephemeral run stops it, a reboot ends it, or it is killed. `conflux status` says a root was left behind |
 
 The next run clears whatever a killed one left: its anchord, by the record of it, and every
-process of the ephemeral account; then the rest of its root. So does `conflux uninstall`, which
-removes the account that anchord runs as.
+process of the ephemeral account; on Windows the Wintun driver a killed TUN run installed,
+through the library still in its root, while no adapter uses it; then the rest of its root. So
+does `conflux uninstall`, which removes the account that anchord runs as.
 
 ## What "nothing written" covers
 

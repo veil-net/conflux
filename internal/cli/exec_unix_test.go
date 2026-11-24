@@ -18,7 +18,8 @@ import (
 // copy, is sent the SIGTERM conflux is, and ends on it, where Main's context would otherwise
 // take the signal and leave conflux waiting for a child nothing told to end. A SIGINT it is not
 // sent: a terminal's Ctrl-C reaches the child itself, with the whole foreground process group,
-// and passed on as well it would arrive twice. Taken, it does not end conflux before its child.
+// and passed on as well it would arrive twice. Main's context holds it, so it does not end
+// conflux before its child.
 func TestAChildAnchorctlIsSentWhatConfluxIs(t *testing.T) {
 	// As Main does, so the signals below are conflux's to take, and do not end the test.
 	_, stop := signal.NotifyContext(t.Context(), os.Interrupt, unix.SIGTERM)

@@ -9,7 +9,7 @@ and it is not itself the daemon:
 systemd / launchd / rc / SCM
   └── conflux serve                     root, or SYSTEM
         ├── anchord -socket … -config …   its own account wherever that costs it nothing
-        ├── the renewal timer, beside an anchor
+        ├── the renewal timer, under the credential: beside an anchor, or observing alone
         ├── the watcher: a lost anchor, on an uplink an ended link, and an observer whose capture ended
         └── the restart loop
 ```

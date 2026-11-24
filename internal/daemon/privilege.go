@@ -27,8 +27,8 @@ import (
 // capabilities it holds, a binary that runs as that account at all -- is settled after,
 // in grant, and only ever takes privilege back to what the supervisor has.
 
-// Privilege is what one anchord was started with, recorded in <state>/anchord.priv for
-// `conflux status` and for the supervisor that starts the next one.
+// Privilege is what one anchord was started with, recorded in the root's anchord.priv
+// (paths.PrivilegeFile) for `conflux status` and for the supervisor that starts the next one.
 type Privilege struct {
 	// Account is true for the installation's unprivileged account, and false for the
 	// supervisor's own identity: root, SYSTEM, or whoever ran a supervisor that is

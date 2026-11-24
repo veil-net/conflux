@@ -1,6 +1,6 @@
 // Package libexec puts the embedded anchor pair on disk so it can be run.
 //
-// The directory is content-addressed: <state>/bin/<setID>/, where setID names both
+// The directory is content-addressed: <root>/bin/<setID>/, where setID names both
 // binaries and the platform. That one decision removes four separate problems at
 // once. An upgraded conflux writes a new directory instead of over the file a
 // running anchord has open, so there is no ETXTBSY on Unix and no sharing violation
@@ -148,10 +148,10 @@ func Extracted(d paths.Dirs) (*Tools, error) {
 // otherwise one in memory, where the platform runs one from there (AnchorctlInMemory); and
 // otherwise a copy in a private temporary directory, which done removes, and which is the
 // account's that asked -- on Windows SYSTEM's and the Administrators' alone, as the extracted
-// pair is, would not run for a user who is not elevated. Never d's own directories. Making
-// them for help remade, after an uninstall, what it had removed, with 50-odd MB of binaries
-// in it; and on Windows, asked by an account that is not an administrator, it left
-// %ProgramData%\conflux owned by that account, which every later install then refused.
+// pair is, would not run for a user who is not elevated. Never d's own directories: help
+// making them would make again, after an uninstall, what it removed, 50-odd MB of binaries in
+// it, and on Windows, asked by an account that is not an administrator, would leave the root
+// that account's, which every later install refuses (EnsureAll).
 func ForUsage(d paths.Dirs) (bin string, done func(), err error) {
 	if t, err := Extracted(d); err == nil {
 		return t.Anchorctl, func() {}, nil

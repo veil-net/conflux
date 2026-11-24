@@ -59,7 +59,7 @@ func secureAs(dir string, euid int) error {
 	}
 
 	// 0710 -- its group may pass through and list nothing -- is how the supervisor lets
-	// anchord's account reach the few things in the state and run directories that anchord
+	// anchord's account reach the few things in the root and its run directory that anchord
 	// runs or reads. ownedBy has just shown the directory to be this account's own, and only
 	// its owner can have given it that group and that mode, so it is left as it is.
 	if mode := fi.Mode().Perm(); mode == 0o700 || mode == 0o710 {

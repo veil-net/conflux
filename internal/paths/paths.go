@@ -157,8 +157,10 @@ func (d Dirs) TokenFile() string { return filepath.Join(d.RunDir(), "token") }
 // copied across. Root's alone, beside the state, because it has to outlive a supervisor.
 func (d Dirs) PrivilegeFile() string { return filepath.Join(d.Root, "anchord.priv") }
 
-// LockFile serialises everything that rewrites the manifest or the state: a bring-up,
-// the renewal timer, `conflux renew`, `conflux enrol`, and the uplink watcher's count.
+// LockFile serialises everything that rewrites the configuration, the manifest or the state:
+// `up`, `proxy` and `observe` writing conflux.json, a start rewriting it and state.json in
+// conflux's form, a bring-up, the renewal timer, `conflux renew`, `conflux enrol`, and the
+// uplink watcher's count.
 //
 // Beside the state rather than in RunDir, which the supervisor empties as it starts: a
 // `conflux renew` that spanned a restart would hold the old file's lock while the new

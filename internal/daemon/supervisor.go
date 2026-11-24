@@ -28,7 +28,7 @@ import (
 //	systemd / launchd / rc / SCM
 //	  └── conflux serve                  root, or SYSTEM
 //	        ├── anchord -socket … -config …   as its own account wherever that costs nothing; see privilege.go
-//	        ├── the renewal timer, beside an anchor
+//	        ├── the renewal timer, under the credential: beside an anchor, or observing alone
 //	        ├── the watcher: a lost anchor, on an uplink an ended link, and an observer whose capture ended
 //	        └── the restart loop
 //
@@ -854,7 +854,8 @@ func (s *Supervisor) stop(c *child) {
 	<-c.exited
 }
 
-// renewLoop keeps the credential current while the anchor runs.
+// renewLoop keeps the credential current for as long as the cycle runs: beside an anchor or
+// observing alone, both run under it.
 //
 // It re-reads the state every round rather than trusting what it read before
 // sleeping, so a renewal somebody ran by hand in between moves the next one along.

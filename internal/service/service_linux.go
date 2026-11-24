@@ -105,34 +105,42 @@ func (s systemd) Install(exe string, args ...string) error {
 	return run("systemctl", "enable", unitName)
 }
 
-func (s systemd) Remove() error {
+func (systemd) Remove() error { return remove("/") }
+
+// remove is Remove for the unit's files under root, "/" but in a test.
+func remove(root string) error {
 	// Every step tolerates its own failure, so a unit file already deleted does not
 	// stop the rest from being undone. The stop is its own step for the same reason: disable
 	// --now stops nothing once the disable has failed, which it does for a unit whose file is
 	// gone, and such a unit may still be running. It answers no for a unit not loaded at all.
 	_ = run("systemctl", "stop", unitName)
 
-	errs := []error{run("systemctl", "disable", unitName)}
+	disable := run("systemctl", "disable", unitName)
 
-	// Gone with a disable that worked, and left dangling by one that did not.
+	// The wants link, gone with a disable that worked and left dangling by one that did not, the
+	// unit file, and the drop-ins. One that could not be removed is said whatever became of the
+	// rest: it is conflux, left on the machine.
+	var files []error
+
 	for _, path := range []string{wantsPath, unitPath} {
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			errs = append(errs, err)
+		if err := os.Remove(filepath.Join(root, path)); err != nil && !os.IsNotExist(err) {
+			files = append(files, err)
 		}
 	}
 
-	_, err := removeDropins("/")
-	errs = append(errs, err)
+	_, err := removeDropins(root)
+	files = append(files, err)
 
-	errs = append(errs, run("systemctl", "daemon-reload"))
+	reload := run("systemctl", "daemon-reload")
 	_ = run("systemctl", "reset-failed", unitName)
 
-	if installed, _ := s.Installed(); installed {
-		return errors.Join(errs...)
+	// systemctl's answers are forgiven once the unit file is gone, which is what was asked for:
+	// a disable fails for a unit whose file went first.
+	if installed, _ := exists(filepath.Join(root, unitPath)); installed {
+		return errors.Join(disable, errors.Join(files...), reload)
 	}
 
-	// It is gone, which is what was asked for, whatever complained on the way.
-	return nil
+	return errors.Join(files...)
 }
 
 func (systemd) Stop() error { return run("systemctl", "stop", unitName) }

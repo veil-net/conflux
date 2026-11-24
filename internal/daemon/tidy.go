@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/libexec"
@@ -141,13 +140,11 @@ func nothing(fs.DirEntry) bool { return false }
 
 // inProgress reports whether e is a temporary file another conflux may still be writing: an
 // atomic write's (config.TempPrefix), or the service copy's (service.StagedPrefix), younger
-// than one a crash left would be.
+// than one a crash left would be, by libexec.Transient, as the live set's sweep asks of its own.
 func inProgress(e fs.DirEntry) bool {
 	if !strings.HasPrefix(e.Name(), config.TempPrefix) && !strings.HasPrefix(e.Name(), service.StagedPrefix) {
 		return false
 	}
 
-	info, err := e.Info()
-
-	return err == nil && time.Since(info.ModTime()) < libexec.TransientAge
+	return libexec.Transient(e)
 }

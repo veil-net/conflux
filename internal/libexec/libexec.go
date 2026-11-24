@@ -377,6 +377,15 @@ const WintunDLL = "wintun.dll"
 // or a temporary file a write is still making, in the root or in the live set.
 const TransientAge = time.Hour
 
+// Transient reports whether e was modified within TransientAge, so may still be in use beside
+// a running supervisor rather than left by a crash: the one test of that age, for Sweep and for
+// the daemon's tidy of the root alike.
+func Transient(e os.DirEntry) bool {
+	info, err := e.Info()
+
+	return err == nil && time.Since(info.ModTime()) < TransientAge
+}
+
 // Sweep keeps the bin directory to what conflux put there: t, with nothing in it but the
 // pair, its markers, Windows' driver and a write in progress (tidySet); the extraction lock;
 // and a set or a staging directory made in the last TransientAge, which a newer conflux
@@ -394,14 +403,12 @@ func Sweep(t *Tools) {
 		return
 	}
 
-	recent := time.Now().Add(-TransientAge)
-
 	for _, e := range entries {
 		switch name := e.Name(); {
 		case name == keep:
-			tidySet(t, recent)
+			tidySet(t)
 		case name == extractionLock && e.Type().IsRegular():
-		case e.IsDir() && young(e, recent):
+		case e.IsDir() && Transient(e):
 		default:
 			_ = os.RemoveAll(filepath.Join(root, name))
 		}
@@ -409,10 +416,10 @@ func Sweep(t *Tools) {
 }
 
 // tidySet removes from t's directory everything but the pair, its markers and the driver, and
-// a temporary file modified after recent: an atomic write's in progress beside the sweep --
+// a temporary file young enough to be an atomic write's in progress beside the sweep --
 // wintun.Ensure placing the driver, which the first cycle's start does while Sweep may still
 // run -- as the daemon spares the root's.
-func tidySet(t *Tools, recent time.Time) {
+func tidySet(t *Tools) {
 	entries, err := os.ReadDir(t.Dir)
 	if err != nil {
 		return
@@ -422,18 +429,11 @@ func tidySet(t *Tools, recent time.Time) {
 		switch name := e.Name(); {
 		case name == filepath.Base(t.Anchord), name == filepath.Base(t.Anchorctl), name == completeMarker,
 			name == verifiedMarker, name == WintunDLL:
-		case strings.HasPrefix(name, config.TempPrefix) && young(e, recent):
+		case strings.HasPrefix(name, config.TempPrefix) && Transient(e):
 		default:
 			_ = os.RemoveAll(filepath.Join(t.Dir, name))
 		}
 	}
-}
-
-// young reports whether e was modified after cutoff.
-func young(e os.DirEntry, cutoff time.Time) bool {
-	info, err := e.Info()
-
-	return err == nil && info.ModTime().After(cutoff)
 }
 
 func exeName(base string) string {

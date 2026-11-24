@@ -40,7 +40,12 @@ func removeInstallation() error {
 // removeAfterExit starts a cmd.exe, detached and windowless, that waits a few seconds for
 // this process to exit and then removes dir.
 func removeAfterExit(dir string) error {
-	cmd := exec.Command(filepath.Join(os.Getenv("SystemRoot"), "System32", "cmd.exe"))
+	shell, err := cmdExe()
+	if err != nil {
+		return fmt.Errorf("leave %s to be removed once conflux exits: %w", dir, err)
+	}
+
+	cmd := exec.Command(shell)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		CmdLine:       fmt.Sprintf(`cmd.exe /d /c "ping -n 4 127.0.0.1 >nul & rmdir /s /q "%s""`, dir),
 		HideWindow:    true,
@@ -52,6 +57,18 @@ func removeAfterExit(dir string) error {
 	}
 
 	return cmd.Process.Release()
+}
+
+// cmdExe is the system's cmd.exe, in the system directory Windows reports: not under
+// %SystemRoot%, which is whatever the environment uninstall was started with says, and would
+// have an elevated conflux start a cmd.exe from anywhere it pointed.
+func cmdExe() (string, error) {
+	sys, err := windows.GetSystemDirectory()
+	if err != nil {
+		return "", fmt.Errorf("find the system directory: %w", err)
+	}
+
+	return filepath.Join(sys, "cmd.exe"), nil
 }
 
 // removePathEntry takes dir out of the machine's PATH, read unexpanded and written back as

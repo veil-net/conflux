@@ -17,7 +17,7 @@ import (
 func TestAnchordIsStartedWithAConfig(t *testing.T) {
 	d := dirs(t)
 
-	args := anchordArgs(d, &config.Config{Mode: config.ModeProxy})
+	args := anchordArgs(d)
 
 	i := slices.Index(args, "-config")
 	if i < 0 {
@@ -29,22 +29,21 @@ func TestAnchordIsStartedWithAConfig(t *testing.T) {
 	}
 }
 
-// TestTheObserverIsAllowedOnlyWhereItIsConfigured: the Observer service has the host copy
-// the start of every flow to the daemon, so a daemon not asked to observe is not started
-// able to.
-func TestTheObserverIsAllowedOnlyWhereItIsConfigured(t *testing.T) {
+// TestAnchordIsStartedWithFlagsItHas: every argument vector conflux starts anchord with,
+// installed or ephemeral, debug included, is one anchord's own flag set accepts. anchord
+// refuses a flag it does not define with exit 2, which the supervisor would retry for ever;
+// anchor serves the observer unasked, so observing adds no flag.
+func TestAnchordIsStartedWithFlagsItHas(t *testing.T) {
 	d := dirs(t)
 
-	for name, tc := range map[string]struct {
-		cfg  config.Config
-		want bool
-	}{
-		"an anchor":                  {config.Config{Mode: config.ModeTUN}, false},
-		"an anchor and the observer": {config.Config{Mode: config.ModeProxy, Observer: &config.Observer{}}, true},
-		"observing alone":            {config.Config{Mode: config.ModeObserve, Observer: &config.Observer{}}, true},
+	t.Setenv("CONFLUX_DEBUG", "1")
+
+	for kind, args := range map[string][]string{
+		"installed": anchordArgs(d),
+		"ephemeral": ephemeralArgs(d),
 	} {
-		if got := slices.Contains(anchordArgs(d, &tc.cfg), "-allow-observer"); got != tc.want {
-			t.Errorf("%s: -allow-observer %v, want %v", name, got, tc.want)
+		if err := anchordFlags().Parse(args); err != nil {
+			t.Errorf("%s: anchord %v: %v", kind, args, err)
 		}
 	}
 }

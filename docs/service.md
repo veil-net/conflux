@@ -8,7 +8,7 @@ and it is not itself the daemon:
 ```
 systemd / launchd / rc / SCM
   └── conflux serve                     root, or SYSTEM
-        ├── anchord -socket … -config … [-allow-observer]  its own account wherever that costs it nothing
+        ├── anchord -socket … -config …   its own account wherever that costs it nothing
         ├── the renewal timer, beside an anchor
         ├── the watcher: a lost anchor, on an uplink an ended link, and an observer whose capture ended
         └── the restart loop
@@ -34,9 +34,9 @@ enrolment, no realm — and is started on every start because anchord keeps none
 Observing alone, there is no anchor, credential or renewal timer at all, and the observer is
 what readiness waits for. Beside an anchor, an anchor that cannot come up for now — an
 enrolment the API does not answer — leaves the daemon running, and with it the observer and the
-inventory it holds, for the watcher to bring the anchor up when it can. `-allow-observer` is
-passed only where the configuration observes: a daemon that is not to observe is not started
-able to. See [observe.md](observe.md). A start that fails because the decision no longer fits — the first
+inventory it holds, for the watcher to bring the anchor up when it can. anchord serves the
+observer unasked, so nothing on its command line says whether it observes. See
+[observe.md](observe.md). A start that fails because the decision no longer fits — the first
 enrolment named a port below 1024, an uplink's device appeared — starts `anchord` again
 with what it now needs.
 

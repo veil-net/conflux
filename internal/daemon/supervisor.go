@@ -428,20 +428,16 @@ func (s *Supervisor) startObserver(ctx context.Context, cfg *config.Config) erro
 //
 // A function rather than three lines inside spawn, so the argument vector can be
 // asserted without starting a process. -config is what carries conflux.json's export
-// block into the daemon on every start; see writeDaemonConfig. -allow-observer only where
-// the configuration observes: the Observer service has the host copy the start of every
-// flow it carries to the daemon, and a daemon not asked to observe should not be able to.
+// block into the daemon on every start; see writeDaemonConfig. Nothing for the observer:
+// anchord serves it unasked, and what gates it is the credential it starts under and the
+// capture the host gives the account it runs as (privilege.go).
 //
 // No -token-file: the token arrives as ANCHORD_TOKEN (anchor's contract.Token), so the
 // file the CLI reads it from stays root's whoever anchord runs as.
-func anchordArgs(d paths.Dirs, cfg *config.Config) []string {
+func anchordArgs(d paths.Dirs) []string {
 	args := []string{
 		"-socket", d.Socket(),
 		"-config", d.DaemonConfigFile(),
-	}
-
-	if cfg.Observer != nil {
-		args = append(args, "-allow-observer")
 	}
 
 	if os.Getenv("CONFLUX_DEBUG") == "1" {
@@ -530,7 +526,7 @@ func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *child, error) 
 		return nil, nil, err
 	}
 
-	c, err := s.exec(p, anchordArgs(s.Dirs, cfg), cfg.Observer != nil)
+	c, err := s.exec(p, anchordArgs(s.Dirs), cfg.Observer != nil)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -172,7 +173,39 @@ const fakeAnchorID = "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq
 // easily lost.
 const fakeAnchordLastWords = "control: /run/conflux/anchord/sock is already served by a running daemon"
 
+// anchordFlags is anchord's own flag set (anchor's cmd/anchord/main.go): a stand-in started
+// with any other flag refuses it as anchord does, with exit 2.
+func anchordFlags() *flag.FlagSet {
+	fs := flag.NewFlagSet("anchord", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	for _, name := range []string{"socket", "token-file", "credentials-dir", "config"} {
+		fs.String(name, "", "")
+	}
+
+	for _, name := range []string{"allow-credentials", "allow-observability", "v"} {
+		fs.Bool(name, false, "")
+	}
+
+	return fs
+}
+
+// refusesItsFlags answers what anchord answers an argument vector it does not take.
+func refusesItsFlags() bool {
+	if err := anchordFlags().Parse(os.Args[1:]); err != nil {
+		fmt.Fprintf(os.Stderr, "anchord: %v\n", err)
+
+		return true
+	}
+
+	return false
+}
+
 func fakeAnchord() int {
+	if refusesItsFlags() {
+		return 2
+	}
+
 	fmt.Println("anchord starting")
 	fmt.Fprint(os.Stderr, fakeAnchordLastWords)
 
@@ -182,6 +215,10 @@ func fakeAnchord() int {
 // fakeServingAnchord runs until it is asked to stop, and then stops, as anchord does
 // on SIGTERM once it has closed its anchor.
 func fakeServingAnchord() int {
+	if refusesItsFlags() {
+		return 2
+	}
+
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 

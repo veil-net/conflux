@@ -177,7 +177,7 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 		return fmt.Errorf("prepare %s: %w", d.DaemonRun(), err)
 	}
 
-	c, err := s.exec(p, ephemeralArgs(d, e.Config), e.Config.Observer != nil)
+	c, err := s.exec(p, ephemeralArgs(d), e.Config.Observer != nil)
 	if err != nil {
 		return err
 	}
@@ -252,12 +252,8 @@ func (e *Ephemeral) report() Reporter {
 
 // ephemeralArgs is what an ephemeral anchord is started with: the socket, and no -config,
 // since nothing of the run is written; the export, where there is one, goes over the socket.
-func ephemeralArgs(d paths.Dirs, cfg *config.Config) []string {
+func ephemeralArgs(d paths.Dirs) []string {
 	args := []string{"-socket", d.Socket()}
-
-	if cfg.Observer != nil {
-		args = append(args, "-allow-observer")
-	}
 
 	if os.Getenv("CONFLUX_DEBUG") == "1" {
 		args = append(args, "-v")

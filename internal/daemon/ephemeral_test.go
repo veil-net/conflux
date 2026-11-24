@@ -242,6 +242,33 @@ func TestAnEphemeralRunRenewsInMemory(t *testing.T) {
 	}
 }
 
+// TestTheEphemeralTimerWaitsAfterARenewal: as the supervisor's timer does, an ephemeral run's
+// waits minSleep at least after a renewal that succeeds, so an issuer answering with a window
+// already gone is not asked again at once, and again.
+func TestTheEphemeralTimerWaitsAfterARenewal(t *testing.T) {
+	is := newIssuer(t)
+	is.lapsed = true
+
+	m, err := enrol.Decode(handed(t, is, time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, APIBaseURL: is.srv.URL}
+	s := &Supervisor{ctl: fakeCtl(t), tail: newRing(tailLines)}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+
+	if err := s.keepEphemeral(ctx, &child{exited: make(chan struct{})}, cfg, m, fakeAnchorID, time.Hour); err != nil {
+		t.Errorf("keepEphemeral = %v, want nil once cancelled", err)
+	}
+
+	if n := is.calls.Load(); n != 1 {
+		t.Errorf("the ephemeral timer renewed %d times in 500ms, want once, then minSleep", n)
+	}
+}
+
 // TestASecondEphemeralRunIsRefused: one ephemeral run per root, refused before it touches the
 // one already running.
 func TestASecondEphemeralRunIsRefused(t *testing.T) {

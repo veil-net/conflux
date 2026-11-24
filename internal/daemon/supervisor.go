@@ -832,9 +832,11 @@ func (s *Supervisor) stop(c *child) {
 //
 // It re-reads the state every round rather than trusting what it read before
 // sleeping, so a renewal somebody ran by hand in between moves the next one along.
-// A failed renewal is retried after minSleep. A credential that does not renew ends
-// the loop: the manifest cannot change while this process holds it, so asking again
-// would only say the same thing every minute.
+// After a renewal it waits minSleep, the floor of every wait, before it looks again,
+// whether the renewal succeeded or failed: one that failed is retried then, and one that
+// succeeded with a window already gone is not asked for again at once. A credential that
+// does not renew ends the loop: the manifest cannot change while this process holds it,
+// so asking again would only say the same thing every minute.
 func (s *Supervisor) renewLoop(ctx context.Context) {
 	for {
 		wait := minSleep
@@ -849,8 +851,6 @@ func (s *Supervisor) renewLoop(ctx context.Context) {
 				return
 			} else if err != nil {
 				s.report().Warn("renewal failed: %v", err)
-			} else {
-				continue
 			}
 		default:
 			wait = sleepUntilRenewal(st.IssuedAt, st.NotAfter, time.Now())

@@ -354,11 +354,13 @@ func (s *Supervisor) keepEphemeral(
 	var zeroSince time.Time
 
 	// One ticker for the watcher and one timer for the credential, each running on its own,
-	// so neither restarts the other: a renewal is not put off by every look at the anchor.
+	// so neither restarts the other: a renewal is not put off by every look at the anchor. The
+	// timer looks at once, as the supervisor's does, so a credential handed in due is renewed
+	// now, and after that sleeps as untilRenewal says.
 	watch := time.NewTicker(every)
 	defer watch.Stop()
 
-	renewal := time.NewTimer(untilRenewal(m))
+	renewal := time.NewTimer(0)
 	defer renewal.Stop()
 
 	for {
@@ -409,16 +411,17 @@ func (s *Supervisor) keepEphemeral(
 	}
 }
 
-// untilRenewal is how long until m is next due -- at two thirds of its window, or for one
-// that does not renew at its expiry -- and never longer than maxSleep, so a clock that jumps
-// is read again within hours.
+// untilRenewal is how long until m is next due, clamped as the supervisor's wait is
+// (sleepUntilRenewal): never longer than maxSleep, so a clock that jumps is read again within
+// hours, and never shorter than minSleep, so a renewal answered with a window already gone is
+// not asked for again at once. One that does not renew is due at its expiry, which ends the
+// run, and is not held off past it.
 func untilRenewal(m *enrol.Manifest) time.Duration {
-	at := renewAt(m.IssuedAt(), m.NotAfter())
 	if !m.Renews() {
-		at = m.NotAfter()
+		return min(max(time.Until(m.NotAfter()), 0), maxSleep)
 	}
 
-	return min(max(time.Until(at), 0), maxSleep)
+	return sleepUntilRenewal(m.IssuedAt(), m.NotAfter(), time.Now())
 }
 
 // clearExcept removes everything in dir but keep, which may be "": what a run killed before

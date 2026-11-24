@@ -26,12 +26,14 @@ import (
 const renewTestAnchor = "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq"
 
 // issuer stands in for the renewal route. Its Date header is the clock conflux
-// measures against, offset by skew; bootstrap is the list it answers with.
+// measures against, offset by skew; bootstrap is the list it answers with, and lapsed
+// answers with a notAfter already an hour past.
 type issuer struct {
 	srv       *httptest.Server
 	calls     atomic.Int32
 	skew      time.Duration
 	fail      bool
+	lapsed    bool
 	chain     []byte
 	bootstrap []string
 
@@ -59,9 +61,14 @@ func newIssuer(t *testing.T) *issuer {
 			return
 		}
 
+		notAfter := time.Now().Add(30 * 24 * time.Hour)
+		if is.lapsed {
+			notAfter = time.Now().Add(-time.Hour)
+		}
+
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"chain":     base64.StdEncoding.EncodeToString(is.chain),
-			"notAfter":  time.Now().Add(30 * 24 * time.Hour).UTC().Format(time.RFC3339),
+			"notAfter":  notAfter.UTC().Format(time.RFC3339),
 			"bootstrap": is.bootstrap,
 		})
 	}))
@@ -415,6 +422,25 @@ func TestARenewalWithNoAnchorRunningStands(t *testing.T) {
 
 	if n := is.calls.Load(); n != 1 {
 		t.Errorf("the issuer was asked %d times, want the one renewal", n)
+	}
+}
+
+// TestTheTimerWaitsAfterARenewal: a renewal that succeeds is followed by minSleep at least
+// before the timer looks again, as a failed one is, so an issuer answering with a window
+// already gone is not asked again at once, and again, for as long as it answers so.
+func TestTheTimerWaitsAfterARenewal(t *testing.T) {
+	is := newIssuer(t)
+	is.lapsed = true
+
+	d := machine(t, is, time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour))
+
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+
+	(&Supervisor{Dirs: d, ctl: fakeCtl(t)}).renewLoop(ctx)
+
+	if n := is.calls.Load(); n != 1 {
+		t.Errorf("the timer renewed %d times in 500ms, want once, then minSleep", n)
 	}
 }
 

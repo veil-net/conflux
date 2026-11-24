@@ -8,7 +8,7 @@
 $ curl -fsSL https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.sh | sh
 ```
 
-On Windows, in PowerShell as Administrator:
+On Windows, in 64-bit PowerShell as Administrator:
 
 ```powershell
 irm https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.ps1 | iex
@@ -112,7 +112,10 @@ $ xattr -d com.apple.quarantine conflux-darwin-arm64
 
 ## Windows
 
-Run PowerShell as Administrator, for `install.ps1` and for conflux itself. TUN mode
+Run PowerShell as Administrator, for `install.ps1` and for conflux itself. `install.ps1` wants
+64-bit PowerShell: a 32-bit one on 64-bit Windows, Windows PowerShell (x86), is given
+`Program Files (x86)` for Program Files, where `conflux update` and `conflux uninstall` never
+look, so the script refuses it before it downloads anything. TUN mode
 additionally needs `wintun.dll`, which conflux downloads and verifies when it is first
 needed — see [windows.md](windows.md). `conflux proxy` needs no driver at all.
 

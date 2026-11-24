@@ -400,11 +400,8 @@ func TestTheObserverOutlivesAnAnchorGivenUpOn(t *testing.T) {
 
 	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, Observer: &config.Observer{}}
 
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-
 	gaveUp := make(chan bool, 1)
-	go func() { gaveUp <- s.watch(ctx, cfg, time.Millisecond, nil) }()
+	stop := inBackground(t, "the watch", func(ctx context.Context) { gaveUp <- s.watch(ctx, cfg, time.Millisecond, nil) })
 
 	// The last refusal, and then the observer started again after it.
 	afterGivingUp := func() bool {
@@ -434,7 +431,7 @@ func TestTheObserverOutlivesAnAnchorGivenUpOn(t *testing.T) {
 		}
 	}
 
-	cancel()
+	stop()
 
 	if got := <-gaveUp; got {
 		t.Error("the watch reported giving up with the observer kept")
@@ -471,11 +468,8 @@ func TestTheWatcherCountsTheStartsRefusal(t *testing.T) {
 	said := &givingUp{gaveUp: make(chan struct{})}
 	s.Reporter = said
 
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-
 	watched := make(chan bool, 1)
-	go func() { watched <- s.watch(ctx, cfg, time.Millisecond, start) }()
+	stop := inBackground(t, "the watch", func(ctx context.Context) { watched <- s.watch(ctx, cfg, time.Millisecond, start) })
 
 	select {
 	case <-said.gaveUp:
@@ -495,7 +489,7 @@ func TestTheWatcherCountsTheStartsRefusal(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 	}
 
-	cancel()
+	stop()
 
 	if got := <-watched; got {
 		t.Error("the watch reported giving up with the observer kept")

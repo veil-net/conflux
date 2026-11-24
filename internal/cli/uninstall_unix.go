@@ -108,8 +108,8 @@ func ahead(found, exe string) string {
 	return fmt.Sprintf("root's PATH finds %s before %s: %s", found, filepath.Dir(exe), removeIt(exe))
 }
 
-// removeIt is the way out where what root's PATH finds in exe's place is all that stands before
-// it: that removed, or exe typed by its full path.
+// removeIt is the way out where root's PATH holds exe's directory after what it finds in exe's
+// place: that removed, or exe typed by its full path.
 func removeIt(exe string) string {
 	return fmt.Sprintf("remove it, or type %s by its full path under sudo", exe)
 }

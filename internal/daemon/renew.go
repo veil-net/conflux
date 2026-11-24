@@ -146,7 +146,7 @@ func RenewNow(ctx context.Context, dirs paths.Dirs, ctl *anchorctl.Ctl, rep Repo
 
 	st, err := config.LoadState(dirs)
 	if err != nil {
-		return err
+		return fileErr(err)
 	}
 
 	if st.AnchorID == "" {

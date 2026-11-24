@@ -98,3 +98,35 @@ func TestTheCanonicalFormHasNoTimesNobodySet(t *testing.T) {
 		t.Errorf("a configuration nobody saved is written with times:\n%s", b)
 	}
 }
+
+// TestAStateThisBuildCannotReadIsRefusedAndLeft: a state.json that does not parse, or that a
+// newer conflux wrote, is an error to read, never an empty state -- it holds the AnchorID a
+// renewal names -- and a start leaves it exactly as it is.
+func TestAStateThisBuildCannotReadIsRefusedAndLeft(t *testing.T) {
+	for name, raw := range map[string]string{
+		"a trailing comma":  `{"version":1,"anchorId":"anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq",}`,
+		"a newer conflux's": `{"version":99,"anchorId":"anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := dirsForTest(t)
+
+			if err := Save(d, base(ModeProxy)); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := os.WriteFile(d.StateFile(), []byte(raw), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			if st, err := LoadState(d); err == nil || !strings.Contains(err.Error(), d.StateFile()) {
+				t.Errorf("LoadState = %+v, %v; want an error naming the file", st, err)
+			}
+
+			canonical(t, d)
+
+			if b, _ := os.ReadFile(d.StateFile()); string(b) != raw {
+				t.Errorf("a state.json this build cannot read was rewritten:\n%s", b)
+			}
+		})
+	}
+}

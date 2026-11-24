@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"strings"
 	"time"
@@ -436,10 +437,14 @@ func saveImported(d paths.Dirs, cfg *config.Config, env config.Envelope) error {
 
 	// A state.json left from an identity removed by hand would have the next start renew
 	// this one under the old AnchorID. Before the manifest: with none on disk it describes
-	// no identity there is, so clearing it first loses nothing whichever write fails.
+	// no identity there is, so clearing it first loses nothing whichever write fails. One
+	// this build cannot read, which a start refuses, is replaced: nothing it said about the
+	// identity before would outlast NewIdentity anyway.
 	st, err := config.LoadState(d)
-	if err != nil {
+	if read := (*fs.PathError)(nil); errors.As(err, &read) {
 		return err
+	} else if err != nil {
+		st = &config.State{}
 	}
 
 	st.NewIdentity()

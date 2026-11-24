@@ -236,9 +236,12 @@ Everything here is derived, and most of it is re-learned by the next start: the 
 from the manifest, the AnchorID from what `anchorctl start` reports. Not on a machine
 whose credential has expired: a renewal names the anchor by its AnchorID, anchor will not
 start on an expired credential to report one, so with `state.json` gone that machine is
-refused for good and needs a new identity. A new identity — an enrolment, or `conflux
-enrol` — clears everything here that described the old one. The manifest, recoverable from
-nowhere, is a file of its own.
+refused for good and needs a new identity. For the same reason a `state.json` that does not
+parse, or that a newer conflux wrote, is never replaced with an empty one: every start and
+`conflux renew` refuse it for good, naming it, and leave it as it is for a person to put
+right; `conflux status` reports what it can without it. A new identity — an enrolment, or
+`conflux enrol`, which takes the place of one it cannot read — clears everything here that
+described the old one. The manifest, recoverable from nowhere, is a file of its own.
 
 It is separate from `conflux.json` for a second reason: the renewal timer rewrites
 `notAfter` at every renewal from the supervisor while `up` or `proxy` may be rewriting

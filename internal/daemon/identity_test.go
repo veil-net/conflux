@@ -1,8 +1,10 @@
 package daemon
 
 import (
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/veil-net/conflux/internal/config"
 )
@@ -25,5 +27,36 @@ func TestALostManifestIsNotReplaced(t *testing.T) {
 
 	if calls.Load() != 0 || len(*asked) != 0 || config.HasManifest(d) {
 		t.Errorf("a machine whose manifest was lost was enrolled again (%d calls)", calls.Load())
+	}
+}
+
+// TestAStateThisBuildCannotReadIsRefusedForGood: a state.json that does not parse holds what
+// nothing else gives back -- the AnchorID a renewal names -- so a start and a renewal refuse
+// it for good, naming it, and leave it exactly as it was written; neither asks the issuer
+// anything or starts on what it cannot read.
+func TestAStateThisBuildCannotReadIsRefusedForGood(t *testing.T) {
+	is := newIssuer(t)
+	d := machine(t, is, time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour))
+
+	raw := `{"version":1,"anchorId":"` + renewTestAnchor + `",}`
+	if err := os.WriteFile(d.StateFile(), []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := bringUp(t.Context(), d, fakeCtl(t), nopReporter{}, d.RootAnchorDir(), false, nil)
+	if !Permanent(err) || !strings.Contains(err.Error(), d.StateFile()) {
+		t.Errorf("bringUp = %v, want a refusal for good naming %s", err, d.StateFile())
+	}
+
+	if err := RenewNow(t.Context(), d, fakeCtl(t), nil); !Permanent(err) || !strings.Contains(err.Error(), d.StateFile()) {
+		t.Errorf("RenewNow = %v, want a refusal for good naming %s", err, d.StateFile())
+	}
+
+	if b, _ := os.ReadFile(d.StateFile()); string(b) != raw {
+		t.Errorf("the state.json this build cannot read was rewritten:\n%s", b)
+	}
+
+	if n := is.calls.Load(); n != 0 {
+		t.Errorf("the issuer was asked %d times, want none", n)
 	}
 }

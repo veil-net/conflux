@@ -49,15 +49,11 @@ func (e *permanentError) Unwrap() error { return e.err }
 func loadConfig(d paths.Dirs) (*config.Config, []byte, error) {
 	cfg, raw, err := config.LoadBytes(d)
 
-	var read *fs.PathError
-
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		return nil, nil, ErrNotConfigured
-	case errors.As(err, &read):
-		return nil, nil, err
 	case err != nil:
-		return nil, nil, &permanentError{err: err} // names the file already
+		return nil, nil, fileErr(err)
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -65,6 +61,18 @@ func loadConfig(d paths.Dirs) (*config.Config, []byte, error) {
 	}
 
 	return cfg, raw, nil
+}
+
+// fileErr is what reading one of conflux's files failed with, decided the same way for every
+// file and every reader: a read that failed is the next attempt's to try again, and anything
+// else -- a file that does not parse, or that this build cannot read -- is refused for good,
+// since no restart changes a file. err names the file already.
+func fileErr(err error) error {
+	if read := (*fs.PathError)(nil); errors.As(err, &read) {
+		return err
+	}
+
+	return &permanentError{err: err}
 }
 
 type nopReporter struct{}
@@ -117,9 +125,11 @@ func bringUp(
 		return anchorctl.Started{}, err
 	}
 
+	// One this build cannot read is refused, never started past: a start writes the state
+	// back, and the AnchorID in it is what a lapsed credential renews by.
 	st, err := config.LoadState(d)
 	if err != nil {
-		return anchorctl.Started{}, err
+		return anchorctl.Started{}, fileErr(err)
 	}
 
 	// Whatever happens below -- an enrolment, a renewal, a measured clock -- is worth

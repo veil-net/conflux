@@ -100,6 +100,25 @@ func TestEnrolInstallsWhatItWasGiven(t *testing.T) {
 	}
 }
 
+// TestEnrolReplacesAStateItCannotRead: a state.json this build cannot read is refused by a
+// start, but a credential installed here is a new identity, whose state starts empty
+// whatever the old one said, so the install goes ahead and the state is written fresh.
+func TestEnrolReplacesAStateItCannotRead(t *testing.T) {
+	d, path := site(t, guardianDoc)
+
+	if err := os.WriteFile(d.StateFile(), []byte(`{"version":1,"anchorId":"anchorold",}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := importCredential(d, path, guardianAPI, ""); err != nil {
+		t.Fatalf("importCredential over a state.json it cannot read: %v", err)
+	}
+
+	if st, err := config.LoadState(d); err != nil || st.AnchorID != "" {
+		t.Errorf("the state after the install is %+v, %v; want a fresh one", st, err)
+	}
+}
+
 // TestEnrolWillNotReplaceAnIdentity is the rule this verb exists to not break.
 //
 // `up` enrols only when there is no manifest, because a second enrolment is a

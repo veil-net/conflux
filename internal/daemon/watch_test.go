@@ -1,9 +1,9 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"errors"
-	"github.com/veil-net/conflux/internal/config"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
+	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/enrol"
 )
 
@@ -341,5 +342,39 @@ func TestTheWatcherGivesUpOnAnObserverTheHostRefuses(t *testing.T) {
 
 	if n := strings.Count(strings.Join(ran(t, log), "\n"), "observe"); n != rebuildRefusals {
 		t.Errorf("started %d times before giving up, want %d", n, rebuildRefusals)
+	}
+}
+
+// TestARebuildsRenewalReachesTheObserver: a rebuild renews a due credential before it starts
+// the anchor again, and the observer running beside it, which holds its credential apart from
+// the anchor's, is given the renewal as well, rather than going on under the chain before
+// until the renewed one is due, by when that one has lapsed.
+func TestARebuildsRenewalReachesTheObserver(t *testing.T) {
+	is := newIssuer(t)
+	d := machine(t, is, time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour))
+
+	cfg := configOf(t, d)
+	cfg.Observer = &config.Observer{}
+
+	if err := config.Save(d, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	cred := filepath.Join(t.TempDir(), "cred")
+	t.Setenv(fakeAnchorctlCredEnv, cred)
+
+	s := &Supervisor{Dirs: d, ctl: fakeCtl(t), tail: newRing(tailLines), observing: true}
+	s.priv.Dir = d.RootAnchorDir()
+
+	if err := s.rebuild(t.Context(), false); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+
+	if n := is.calls.Load(); n != 1 {
+		t.Errorf("the rebuild asked the issuer %d times, want the one renewal", n)
+	}
+
+	if got, err := os.ReadFile(cred); err != nil || !bytes.Equal(got, is.chain) {
+		t.Errorf("the observer was handed %q (%v), want the renewed chain %q", got, err, is.chain)
 	}
 }

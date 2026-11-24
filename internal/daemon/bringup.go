@@ -93,7 +93,8 @@ const MaxSkew = 10 * time.Minute
 // observer as the identity it names, and the anchor. observe starts the observer under it and
 // returns the AnchorID it observes as. Observing alone, that is all there is, and the ID is
 // what the state records for the next renewal; beside an anchor, an observer that does not
-// start is said, and the anchor starts without it.
+// start is said, and the anchor starts without it. A rebuild gives no observe: the observer the
+// cycle started runs on, and a renewal made here is installed on it.
 //
 // dir is the anchor directory the daemon's identity was given (see Supervisor.anchorDir).
 // reopened counts the start as an uplink rebuilt, in the same state write as the rest,
@@ -134,14 +135,22 @@ func bringUp(
 		}
 	}()
 
-	env, m, err := credential(ctx, d, st, cfg, r)
+	env, m, renewed, err := credential(ctx, d, st, cfg, r)
 	if err != nil {
 		return anchorctl.Started{}, err
 	}
 
 	st.BinSetID = ctl.SetID
 
-	if observe != nil {
+	switch {
+	case observe == nil && renewed != nil && cfg.Observer != nil:
+		// The observer holds its credential apart from the anchor's, so a rebuild's renewal is
+		// installed on it as the timer's is. Before the anchor starts: none runs yet to take the
+		// chain, and the one about to starts on it.
+		if err := installRenewal(ctx, ctl, cfg, renewed); err != nil {
+			r.Warn("could not install the renewed credential on the observer: %v", err)
+		}
+	case observe != nil:
 		id, err := observe(env)
 
 		switch {
@@ -177,7 +186,8 @@ func bringUp(
 	return started, nil
 }
 
-// credential returns the manifest to start from, enrolling or renewing as needed.
+// credential returns the manifest to start from, enrolling or renewing as needed, and the
+// chain it renewed to, or nil where it renewed none.
 //
 // The order matters. Renewal happens before start rather than after, so `start`
 // always receives a chain that is current -- which is why the boot path needs no
@@ -189,7 +199,7 @@ func bringUp(
 // another set -- is refused for good here, naming the way out, before it costs a call.
 func credential(
 	ctx context.Context, d paths.Dirs, st *config.State, cfg *config.Config, r Reporter,
-) (config.Envelope, *enrol.Manifest, error) {
+) (config.Envelope, *enrol.Manifest, []byte, error) {
 	client := &enrol.Client{BaseURL: cfg.APIBase()}
 
 	env, err := config.LoadManifest(d)
@@ -203,7 +213,7 @@ func credential(
 		// knew this one would have to learn. Refused for good rather than replaced; drawing
 		// a new identity is a person's decision.
 		if st.AnchorID != "" {
-			return nil, nil, &permanentError{path: d.ManifestFile(), err: fmt.Errorf(
+			return nil, nil, nil, &permanentError{path: d.ManifestFile(), err: fmt.Errorf(
 				"the credential is gone, and %s records the anchor it was, %s; enrolling again would draw "+
 					"a new identity and overlay address. Put the manifest back, or start over: conflux uninstall, "+
 					"which removes conflux as well, then install conflux again and run conflux up, proxy or observe",
@@ -213,7 +223,7 @@ func credential(
 		// Never the shared compartment. `up` and `proxy` mint a taint for a machine with
 		// none, so this is a conflux.json somebody emptied; no retry changes it.
 		if len(cfg.Taints) == 0 {
-			return nil, nil, &permanentError{path: d.ConfigFile(), err: fmt.Errorf(
+			return nil, nil, nil, &permanentError{path: d.ConfigFile(), err: fmt.Errorf(
 				"%w; run conflux up or conflux proxy, which mint one", enrol.ErrNoTaints)}
 		}
 
@@ -221,7 +231,7 @@ func credential(
 
 		env, err = client.Enrol(ctx, cfg.Taints)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 
 		// Written before anything else touches it, decoding included. Enrolment stores
@@ -230,23 +240,23 @@ func credential(
 		// or to a document this build cannot read -- costs this machine its identity
 		// permanently.
 		if err := config.SaveManifest(d, env); err != nil {
-			return nil, nil, fmt.Errorf(
+			return nil, nil, nil, fmt.Errorf(
 				"enrolled, but could not save the credential -- it is now lost and a new one must be drawn: %w", err)
 		}
 
 		// Nothing this state said about an identity holds for the new one; see NewIdentity.
 		st.NewIdentity()
 	default:
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	m, err := enrol.Decode(env)
 	if err != nil {
-		return nil, nil, &permanentError{path: d.ManifestFile(), err: err}
+		return nil, nil, nil, &permanentError{path: d.ManifestFile(), err: err}
 	}
 
 	if err := m.CheckTaints(cfg.Taints); err != nil {
-		return nil, nil, &permanentError{path: d.ManifestFile(), err: err}
+		return nil, nil, nil, &permanentError{path: d.ManifestFile(), err: err}
 	}
 
 	// Renewed when due, and also when the clock was last measured wrong: that
@@ -256,10 +266,12 @@ func credential(
 	// Except a credential that names nowhere to renew it, which is asked nothing: it
 	// runs to its notAfter, and past that anchor will not build an anchor on it, so it is
 	// refused here for good rather than retried.
+	var renewed []byte
+
 	switch {
 	case !m.Renews():
 		if lapsed := time.Since(m.NotAfter()); lapsed > 0 {
-			return nil, nil, &permanentError{path: d.ManifestFile(), err: fmt.Errorf(
+			return nil, nil, nil, &permanentError{path: d.ManifestFile(), err: fmt.Errorf(
 				"the credential expired %s ago, and anchor will not start on an expired one: %w; "+
 					"it has to be replaced", lapsed.Round(time.Minute), enrol.ErrDoesNotRenew)}
 		}
@@ -267,26 +279,27 @@ func credential(
 		// A renewal names the anchor by the AnchorID it reported when it started, and anchor
 		// will not start one on an expired credential: with none recorded, nothing here can
 		// bring this one back, however often it is tried.
-		return nil, nil, &permanentError{path: d.ManifestFile(), err: fmt.Errorf(
+		return nil, nil, nil, &permanentError{path: d.ManifestFile(), err: fmt.Errorf(
 			"the credential expired %s ago, and no AnchorID is recorded to renew it with -- "+
 				"the anchor never started on it, or %s was lost -- so it has to be replaced",
 			time.Since(m.NotAfter()).Round(time.Minute), d.StateFile())}
 	case st.AnchorID != "" && (dueAt(m.IssuedAt(), m.NotAfter(), time.Now()) || st.ClockSkew > MaxSkew):
-		env = renewBeforeStart(ctx, d, st, client, m, env, r)
+		env, renewed = renewBeforeStart(ctx, d, st, client, m, env, r)
 	}
 
 	if skew, measured := client.Skew(); measured {
 		st.ClockSkew = skew
 
 		if err := enrol.CheckSkew(skew, MaxSkew); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 
-	return env, m, nil
+	return env, m, renewed, nil
 }
 
-// renewBeforeStart replaces the chain, or explains why it could not and carries on.
+// renewBeforeStart replaces the chain, and returns the renewed envelope and its chain; or
+// explains why it could not, and carries on with env and no chain.
 //
 // A failed renewal is never fatal here and never falls back to enrolling. Enrolling
 // again draws a different identity, a different AnchorID and a different overlay
@@ -304,14 +317,14 @@ func renewBeforeStart(
 	m *enrol.Manifest,
 	env config.Envelope,
 	r Reporter,
-) config.Envelope {
+) (config.Envelope, []byte) {
 	r.Step("renewing the credential")
 
 	got, err := renewStored(ctx, d, st, client, m)
 	if err == nil {
 		*m = *got.m
 
-		return got.env
+		return got.env, got.chain
 	}
 
 	if left := time.Until(m.NotAfter()); left > 0 {
@@ -323,5 +336,5 @@ func renewBeforeStart(
 			time.Since(m.NotAfter()).Round(time.Minute), err)
 	}
 
-	return env
+	return env, nil
 }

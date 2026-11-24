@@ -130,6 +130,12 @@ func bringUp(
 	}
 	defer unlock()
 
+	// And one that came while this waited for the lock, which Acquire is not told of, ends it
+	// as soon as the lock is had, for the same reasons.
+	if err := ctx.Err(); err != nil {
+		return anchorctl.Started{}, err
+	}
+
 	cfg, _, err := loadConfig(d)
 	if err != nil {
 		return anchorctl.Started{}, err

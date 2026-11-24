@@ -651,80 +651,119 @@ func (w *warnings) Warn(format string, args ...any) {
 	w.said = append(w.said, fmt.Sprintf(format, args...))
 }
 
-// TestAStopDuringTheDriversFetchGoesNoFurther: a stop that comes while Windows' driver is
-// fetched ends the start, and a rebuild, there. Neither waits out conflux.lock behind `conflux
-// renew` for a start nothing wants any more, starts the observer under a context already
-// cancelled only to warn that it did not, or writes the state.
-func TestAStopDuringTheDriversFetchGoesNoFurther(t *testing.T) {
-	for name, b := range bringings {
-		t.Run(name, func(t *testing.T) {
-			s, log := supervised(t, "1")
-			credentialed(t, s.Dirs)
-			s.priv.Dir = s.Dirs.RootAnchorDir()
+// waitingForLock reports whether a goroutine of this process is in flock.Acquire, which takes no
+// context and says nothing while it waits for a lock another holds; its stack says where it is.
+func waitingForLock() bool {
+	buf := make([]byte, 1<<20)
 
-			w := &warnings{}
-			s.Reporter = w
+	return strings.Contains(string(buf[:runtime.Stack(buf, true)]), "/internal/flock.Acquire(")
+}
 
-			cfg := &config.Config{Mode: config.ModeTUN, Taints: []string{"t"}, Observer: &config.Observer{}}
-			if err := config.Save(s.Dirs, cfg); err != nil {
-				t.Fatal(err)
-			}
+// TestAStopOnTheWayToTheLockGoesNoFurther: a stop that comes before the start, or a rebuild, holds
+// conflux.lock ends it there: one that comes while Windows' driver is fetched, without waiting
+// out the lock behind `conflux renew` for a start nothing wants any more, and one that comes
+// while it waits for that lock, as soon as it has it. Neither starts the observer under a context
+// already cancelled only to warn that it did not, starts the anchor, or writes the state.
+func TestAStopOnTheWayToTheLockGoesNoFurther(t *testing.T) {
+	for _, waits := range []bool{false, true} {
+		when := "during the fetch"
+		if waits {
+			when = "while it waited for conflux.lock"
+		}
 
-			fetching := make(chan struct{})
+		for name, b := range bringings {
+			t.Run(name+", "+when, func(t *testing.T) {
+				s, log := supervised(t, "1")
+				credentialed(t, s.Dirs)
+				s.priv.Dir = s.Dirs.RootAnchorDir()
 
-			ensureDriver = func(ctx context.Context, _ paths.Dirs) error {
-				close(fetching)
-				<-ctx.Done()
+				w := &warnings{}
+				s.Reporter = w
 
-				return ctx.Err()
-			}
-
-			t.Cleanup(func() { ensureDriver = wintun.Ensure })
-
-			// `conflux renew`, holding conflux.lock meanwhile.
-			unlock, err := flock.Acquire(s.Dirs.LockFile())
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			ctx, cancel := context.WithCancel(t.Context())
-			done := make(chan error, 1)
-
-			go func() { done <- b.bring(ctx, s, cfg) }()
-
-			select {
-			case <-fetching:
-			case <-time.After(10 * time.Second):
-				t.Fatal("the driver was never fetched")
-			}
-
-			cancel()
-
-			select {
-			case err := <-done:
-				if err == nil {
-					t.Errorf("%s, stopped during the fetch, succeeded", name)
+				cfg := &config.Config{Mode: config.ModeTUN, Taints: []string{"t"}, Observer: &config.Observer{}}
+				if err := config.Save(s.Dirs, cfg); err != nil {
+					t.Fatal(err)
 				}
 
-				unlock()
-			case <-time.After(time.Second):
-				t.Errorf("%s, stopped during the fetch, waited for conflux.lock", name)
-				unlock()
-				<-done
-			}
+				fetching := make(chan struct{})
 
-			if len(w.said) > 0 {
-				t.Errorf("%s, stopped during the fetch, warned %q", name, w.said)
-			}
+				// Had at once where the stop is to come while the lock is waited for; held until
+				// the stop otherwise.
+				ensureDriver = func(ctx context.Context, _ paths.Dirs) error {
+					close(fetching)
 
-			if _, err := os.Stat(s.Dirs.StateFile()); !errors.Is(err, os.ErrNotExist) {
-				t.Errorf("%s, stopped during the fetch, wrote %s (%v)", name, s.Dirs.StateFile(), err)
-			}
+					if waits {
+						return nil
+					}
 
-			if cmds := ran(t, log); slices.Contains(cmds, "observe") || slices.Contains(cmds, "start") {
-				t.Errorf("%s, stopped during the fetch, went on to run anchorctl %v", name, cmds)
-			}
-		})
+					<-ctx.Done()
+
+					return ctx.Err()
+				}
+
+				t.Cleanup(func() { ensureDriver = wintun.Ensure })
+
+				// `conflux renew`, holding conflux.lock meanwhile.
+				unlock, err := flock.Acquire(s.Dirs.LockFile())
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				ctx, cancel := context.WithCancel(t.Context())
+				done := make(chan error, 1)
+
+				go func() { done <- b.bring(ctx, s, cfg) }()
+
+				select {
+				case <-fetching:
+				case <-time.After(10 * time.Second):
+					t.Fatal("the driver was never fetched")
+				}
+
+				if waits {
+					eventually(t, name+" waiting for conflux.lock", waitingForLock)
+				}
+
+				cancel()
+
+				if waits {
+					// Let go, as `conflux renew` lets go: the lock is had only now.
+					unlock()
+
+					select {
+					case err = <-done:
+					case <-time.After(10 * time.Second):
+						t.Fatalf("%s, stopped %s, did not return once it had the lock", name, when)
+					}
+				} else {
+					select {
+					case err = <-done:
+						unlock()
+					case <-time.After(time.Second):
+						t.Errorf("%s, stopped %s, waited for conflux.lock", name, when)
+						unlock()
+
+						err = <-done
+					}
+				}
+
+				if !errors.Is(err, context.Canceled) {
+					t.Errorf("%s, stopped %s, returned %v, want the stop", name, when, err)
+				}
+
+				if len(w.said) > 0 {
+					t.Errorf("%s, stopped %s, warned %q", name, when, w.said)
+				}
+
+				if _, err := os.Stat(s.Dirs.StateFile()); !errors.Is(err, os.ErrNotExist) {
+					t.Errorf("%s, stopped %s, wrote %s (%v)", name, when, s.Dirs.StateFile(), err)
+				}
+
+				if cmds := ran(t, log); slices.Contains(cmds, "observe") || slices.Contains(cmds, "start") {
+					t.Errorf("%s, stopped %s, went on to run anchorctl %v", name, when, cmds)
+				}
+			})
+		}
 	}
 }
 

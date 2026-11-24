@@ -509,21 +509,19 @@ switches FIPS 140-3 mode off; see [security.md](security.md#fips-140-3-and-cmvp)
 ```
 conflux update
 conflux update --check
-conflux update --yes
 ```
 
 Replaces the installed conflux — `/usr/local/bin/conflux`, or
 `%ProgramFiles%\conflux\conflux.exe` on Windows, whichever conflux runs the update — with the
-one the `latest` release of
-[veil-net/conflux](https://github.com/veil-net/conflux/releases/latest) holds for this
-platform, and moves the boot service onto it. Only when typed: nothing checks on a
-schedule, so a machine changes version when somebody decides it should. It reads `latest`
-alone, so a dev build installed from `dev-latest` updates to the release, never to a newer dev
-build: that is the install script's to fetch again, by name ([install.md](install.md)). And since
-a dev build's anchor is pinned to the dev tree and the release's to the production tree, where
-the credential the machine holds is not valid, `update` on a dev build says so and changes
-nothing until it is asked again with `--yes`; after that, the machine enrols again with
-`conflux up --api` naming the production API. `conflux version` says when it is a dev build.
+newest build of its own channel for this platform, and moves the boot service onto it. A
+release updates to the `latest` release of
+[veil-net/conflux](https://github.com/veil-net/conflux/releases/latest), and a dev build
+(`conflux version` says when it is one) to the newest dev build, the pre-release `dev-latest`.
+Nothing crosses from one to the other: a dev build's anchor is pinned to the dev tree and a
+release's to the production tree, and the credential the machine holds is valid in one alone.
+Moving between them is the install script's, by name ([install.md](install.md)), and a new
+identity. Only when typed: nothing checks on a schedule, so a machine changes version when
+somebody decides it should.
 
 "Up to date" is a digest rather than a version string. The installed file is the release's
 binary, byte for byte, or it is not, so a rebuild of the same version (which a merge
@@ -540,7 +538,7 @@ update removes it. No token is needed or sent: the repository is public.
 
 | Situation | |
 |---|---|
-| the installed conflux is the latest release | says so, exit 0, nothing changed |
+| the installed conflux is its channel's newest build | says so, exit 0, nothing changed |
 | the anchor is running | the new conflux's `start` restarts it on the new version, and its exit code is `update`'s |
 | installed, not running | left stopped, as `down` left it; the boot service's copy is refreshed, so it starts on the new version next time |
 | no boot service | the installed conflux is replaced, and that is all |

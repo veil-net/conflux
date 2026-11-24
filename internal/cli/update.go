@@ -22,11 +22,23 @@ import (
 // reads, and the file it replaces.
 var (
 	updateFrom       = update.Source{}
-	updateExecutable = installedExecutable
+	updateExecutable = paths.InstalledExecutable
 )
 
-// runUpdate replaces the installed conflux with the one conflux's `latest` release holds for
-// this platform, and moves the boot service onto it.
+// channel is the release this build updates to, and what to call it: the newest build of its
+// own channel, `latest` for a release and the pre-release `dev-latest` for a dev build. Never
+// the other's: a dev build's anchor is pinned to the dev tree and a release's to the production
+// tree, and the credential a machine holds is valid in one alone.
+func channel() (tag, what string) {
+	if version.Dev() {
+		return update.DevTag, "dev build"
+	}
+
+	return update.ReleaseTag, "release"
+}
+
+// runUpdate replaces the installed conflux with the one the newest build of its channel holds
+// for this platform, and moves the boot service onto it.
 //
 // Only when typed. Nothing checks on a schedule, so a machine changes version when
 // somebody decides it should, and never because a release was published.
@@ -34,24 +46,19 @@ var (
 // "Up to date" is a digest, not a version string: this file is the release's binary, byte
 // for byte, or it is not. A rebuild of the same version is an update, as release.yml
 // publishes one.
-// devUpdateNote is what a dev build is told before it moves to the release.
-const devUpdateNote = "This is a dev build: its anchor is pinned to the dev tree, and the release's to the " +
-	"production tree, where the credential this machine holds is not valid. After the update it " +
-	"enrols again: conflux up --api https://api.veilnet.com.au, or the API of the realm it is to join."
-
 func runUpdate(ctx context.Context, args []string) int {
-	fs := verbFlags("update", fmt.Sprintf("conflux update — replace the installed conflux with the latest release\n\n"+
+	fs := verbFlags("update", fmt.Sprintf("conflux update — replace the installed conflux with the newest build of its channel\n\n"+
 		"  conflux update           download it, verify it, put it in place, and move\n"+
 		"                           the boot service onto it\n"+
-		"  conflux update --check   say whether there is one, and change nothing\n"+
-		"  conflux update --yes     on a dev build, move to the release anyway\n\n"+
-		"From the `latest` release of github.com/veil-net/conflux, held to the SHA-256\n"+
-		"the release lists, into %s, where the installer puts it. A running\n"+
-		"anchor is restarted on the new conflux; a stopped one is left stopped, and\n"+
-		"starts on it next time.\n\n", paths.InstalledExecutable()))
+		"  conflux update --check   say whether there is one, and change nothing\n\n"+
+		"A release updates to the `latest` release of github.com/veil-net/conflux, and a dev\n"+
+		"build to its newest dev build, the pre-release `dev-latest`: never one to the other,\n"+
+		"since each one's anchor is pinned to its own tree. Held to the SHA-256 the release\n"+
+		"lists, into %s, where the installer puts it. A running anchor is\n"+
+		"restarted on the new conflux; a stopped one is left stopped, and starts on it next\n"+
+		"time.\n\n", paths.InstalledExecutable()))
 
 	check := fs.Bool("check", false, "say whether there is an update, and change nothing")
-	yes := fs.Bool("yes", false, "on a dev build, move to the release anyway")
 	if err := fs.Parse(args); err != nil {
 		return usageExit(err)
 	}
@@ -64,15 +71,14 @@ func runUpdate(ctx context.Context, args []string) int {
 		return ExitUsage
 	}
 
-	exe, err := updateExecutable()
-	if err != nil {
-		return fail(err)
-	}
+	exe := updateExecutable()
 
 	src := updateFrom
 	src.UserAgent = version.UserAgent()
 
-	rel, err := update.Latest(ctx, src, runtime.GOOS, runtime.GOARCH)
+	tag, what := channel()
+
+	rel, err := update.Latest(ctx, src, tag, runtime.GOOS, runtime.GOARCH)
 	if err != nil {
 		return fail(err)
 	}
@@ -81,32 +87,17 @@ func runUpdate(ctx context.Context, args []string) int {
 	if same, err := rel.Is(exe); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fail(err)
 	} else if same {
-		ui.Printf("%s is conflux's latest release: %s.\n", exe, rel.Name)
+		ui.Printf("%s is conflux's newest %s: %s.\n", exe, what, rel.Name)
 
 		return ExitOK
 	}
 
-	ui.Printf("This is %s.\nThe latest release is %s, built from %s.\n", version.String(), rel.Name, short(rel.Commit))
+	ui.Printf("This is %s.\nThe newest %s is %s, built from %s.\n", version.String(), what, rel.Name, short(rel.Commit))
 
 	if *check {
 		ui.Printf("\n  conflux update    install it\n")
 
-		if version.Dev() {
-			ui.Printf("\n%s\n", devUpdateNote)
-		}
-
 		return ExitOK
-	}
-
-	// A dev build's anchor is pinned to the dev tree and enrolled there; the release's is
-	// pinned to the production tree, which that enrolment cannot join. Moving is a choice to
-	// make knowingly, so it is asked for by name.
-	if version.Dev() && !*yes {
-		ui.Errf("%s\n\n"+
-			"  conflux update --yes       move to the release anyway\n"+
-			"  CONFLUX_VERSION=dev-latest, through the installer, for a newer dev build", devUpdateNote)
-
-		return ExitUsage
 	}
 
 	if err := needsRoot("updating conflux", "update", args); err != nil {
@@ -183,10 +174,6 @@ func moveService(ctx context.Context, exe string) int {
 
 	return ExitOK
 }
-
-// installedExecutable is where the installers put conflux, and so the file an update replaces,
-// whichever conflux runs it: one installed conflux per machine, at a place nothing moves.
-func installedExecutable() (string, error) { return paths.InstalledExecutable(), nil }
 
 // versionOf runs the binary at path and returns the line its `version` leads with.
 func versionOf(ctx context.Context, path string) (string, error) {

@@ -9,7 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/veil-net/conflux/internal/paths"
@@ -19,17 +21,35 @@ import (
 	"github.com/veil-net/conflux/internal/version"
 )
 
-// serveRelease stands in for conflux's `latest` release, holding body as this platform's
-// binary, and points `conflux update` at it and at exe as the file to replace.
-func serveRelease(t *testing.T, body []byte, exe string) {
+// serveRelease stands in for conflux's two releases, `latest` and the pre-release `dev-latest`,
+// each holding body as this platform's binary, and points `conflux update` at them and at exe
+// as the file to replace. It returns the tags an update asked for, in order.
+func serveRelease(t *testing.T, body []byte, exe string) *[]string {
 	t.Helper()
 
 	sum := sha256.Sum256(body)
 
+	var (
+		mu    sync.Mutex
+		asked []string
+	)
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("/repos/veil-net/conflux/releases/tags/latest", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/repos/veil-net/conflux/releases/tags/{tag}", func(w http.ResponseWriter, r *http.Request) {
+		tag := r.PathValue("tag")
+
+		mu.Lock()
+		asked = append(asked, tag)
+		mu.Unlock()
+
+		if tag != "latest" && tag != "dev-latest" {
+			w.WriteHeader(http.StatusNotFound)
+
+			return
+		}
+
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"name":             "latest (9.9.9)",
+			"name":             tag + " (9.9.9)",
 			"target_commitish": "0aea0f77bb77f8bbaa23c5055d9fe245d3a9bee2",
 			"assets": []map[string]any{{
 				"id": 7, "name": update.AssetName(runtime.GOOS, runtime.GOARCH), "size": len(body),
@@ -51,7 +71,9 @@ func serveRelease(t *testing.T, body []byte, exe string) {
 	t.Cleanup(func() { updateFrom, updateExecutable = was, wasExe })
 
 	updateFrom = update.Source{API: srv.URL}
-	updateExecutable = func() (string, error) { return exe, nil }
+	updateExecutable = func() string { return exe }
+
+	return &asked
 }
 
 func TestUpdateTakesNoArguments(t *testing.T) {
@@ -72,7 +94,7 @@ func TestUpdateSaysSoWhenThisIsTheRelease(t *testing.T) {
 	serveRelease(t, body, exe)
 
 	out, _, code := capture(t, "update")
-	if code != ExitOK || !strings.Contains(out, "latest release") {
+	if code != ExitOK || !strings.Contains(out, "newest release") {
 		t.Errorf("update exited %d and printed:\n%s", code, out)
 	}
 }
@@ -190,42 +212,38 @@ func TestUpdateRefusesABinaryThatDoesNotRun(t *testing.T) {
 	}
 }
 
-// TestADevBuildAsksBeforeLeaving: a dev build's anchor is pinned to the dev tree, and the
-// release's to the production one, so an update from a dev build is refused until it is asked
-// for with --yes, and changes nothing until then; --check says why, and changes nothing either.
-func TestADevBuildAsksBeforeLeaving(t *testing.T) {
+// TestAnUpdateFollowsItsChannel: a release updates to the newest `latest`, and a dev build to
+// the newest `dev-latest`, never to the other's: a dev build's anchor is pinned to the dev tree
+// and a release's to the production tree, and the credential a machine holds is valid in one
+// alone. So nothing is asked first, and no flag crosses from one to the other.
+func TestAnUpdateFollowsItsChannel(t *testing.T) {
 	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
 	privcheck.Elevated = func() bool { return false }
 
 	defer func(was string) { version.Channel = was }(version.Channel)
-	version.Channel = "dev"
 
 	exe := filepath.Join(t.TempDir(), "conflux")
-	old := []byte("\x7fELF a dev build")
-
-	if err := os.WriteFile(exe, old, 0o755); err != nil {
+	if err := os.WriteFile(exe, []byte("\x7fELF an older build"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	serveRelease(t, []byte("\x7fELF the release"), exe)
+	for channel, want := range map[string]string{"": "latest", "dev": "dev-latest"} {
+		version.Channel = channel
+		asked := serveRelease(t, []byte("\x7fELF the newest build"), exe)
 
-	_, errOut, code := capture(t, "update")
-	if code != ExitUsage || !strings.Contains(errOut, "dev build") || !strings.Contains(errOut, "--yes") {
-		t.Errorf("update on a dev build exited %d and said:\n%s", code, errOut)
+		out, _, code := capture(t, "update", "--check")
+		if code != ExitOK || !slices.Equal(*asked, []string{want}) || !strings.Contains(out, want+" (9.9.9)") {
+			t.Errorf("update --check on channel %q exited %d, reading %q:\n%s", channel, code, *asked, out)
+		}
+
+		// Nothing more to ask for: it goes on to what any update needs, root, here refused.
+		if _, errOut, code := capture(t, "update"); code != ExitDenied {
+			t.Errorf("update on channel %q exited %d, want %d:\n%s", channel, code, ExitDenied, errOut)
+		}
 	}
 
-	out, _, code := capture(t, "update", "--check")
-	if code != ExitOK || !strings.Contains(out, "dev build") {
-		t.Errorf("update --check on a dev build exited %d and printed:\n%s", code, out)
-	}
-
-	if got, _ := os.ReadFile(exe); string(got) != string(old) {
-		t.Error("a refused update changed the executable")
-	}
-
-	// Asked for by name, it goes on to what any update needs: root, here refused.
-	if _, _, code := capture(t, "update", "--yes"); code != ExitDenied {
-		t.Errorf("update --yes on a dev build exited %d, want %d: root is what it needs next", code, ExitDenied)
+	if _, _, code := capture(t, "update", "--yes"); code != ExitUsage {
+		t.Errorf("update --yes exited %d, want %d: no flag crosses channels", code, ExitUsage)
 	}
 }
 
@@ -233,8 +251,8 @@ func TestADevBuildAsksBeforeLeaving(t *testing.T) {
 // place, wherever the conflux running it was started from, and puts one there when there is
 // none yet.
 func TestUpdateWritesTheInstalledConflux(t *testing.T) {
-	if got, err := updateExecutable(); err != nil || got != paths.InstalledExecutable() {
-		t.Errorf("update replaces %q (%v), not the installed %s", got, err, paths.InstalledExecutable())
+	if got := updateExecutable(); got != paths.InstalledExecutable() {
+		t.Errorf("update replaces %q, not the installed %s", got, paths.InstalledExecutable())
 	}
 
 	if runtime.GOOS == "windows" {

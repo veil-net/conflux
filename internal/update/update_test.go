@@ -22,6 +22,9 @@ import (
 type fakeRelease struct {
 	files map[string][]byte
 
+	// tag is the one release served, ReleaseTag unless set; any other is a 404.
+	tag string
+
 	// served replaces what the asset endpoint answers, for a body that is not the one
 	// the document describes. state and noDigest change what the document says.
 	served   []byte
@@ -52,7 +55,12 @@ func (f *fakeRelease) serve(t *testing.T) Source {
 			return
 		}
 
-		if strings.TrimPrefix(r.URL.Path, "/repos/veil-net/conflux/releases/tags/") != "latest" {
+		tag := f.tag
+		if tag == "" {
+			tag = ReleaseTag
+		}
+
+		if strings.TrimPrefix(r.URL.Path, "/repos/veil-net/conflux/releases/tags/") != tag {
 			w.WriteHeader(http.StatusNotFound)
 
 			return
@@ -78,8 +86,8 @@ func (f *fakeRelease) serve(t *testing.T) Source {
 		}
 
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"name":             "latest (1.1.0)",
-			"tag_name":         "latest",
+			"name":             tag + " (1.1.0)",
+			"tag_name":         tag,
 			"target_commitish": "0aea0f77bb77f8bbaa23c5055d9fe245d3a9bee2",
 			"assets":           assets,
 		})
@@ -126,7 +134,7 @@ func TestAnUpdateIsDownloadedVerifiedAndPutInPlace(t *testing.T) {
 	}}
 	src := f.serve(t)
 
-	rel, err := Latest(context.Background(), src, "linux", "amd64")
+	rel, err := Latest(context.Background(), src, ReleaseTag, "linux", "amd64")
 	if err != nil {
 		t.Fatalf("Latest: %v", err)
 	}
@@ -169,10 +177,28 @@ func TestAnUpdateIsDownloadedVerifiedAndPutInPlace(t *testing.T) {
 	}
 }
 
+// TestLatestReadsTheTagItIsGiven: a dev build's update reads the pre-release dev-latest, and a
+// release's latest, and neither falls back to the other.
+func TestLatestReadsTheTagItIsGiven(t *testing.T) {
+	for _, tag := range []string{ReleaseTag, DevTag} {
+		f := &fakeRelease{tag: tag, files: map[string][]byte{"conflux-linux-amd64": newBuild}}
+		src := f.serve(t)
+
+		if rel, err := Latest(context.Background(), src, tag, "linux", "amd64"); err != nil || rel.Name != tag+" (1.1.0)" {
+			t.Errorf("Latest at %s: %+v, %v", tag, rel, err)
+		}
+
+		other := map[string]string{ReleaseTag: DevTag, DevTag: ReleaseTag}[tag]
+		if _, err := Latest(context.Background(), src, other, "linux", "amd64"); err == nil || !strings.Contains(err.Error(), "no release tagged") {
+			t.Errorf("Latest at %s, where only %s is: %v", other, tag, err)
+		}
+	}
+}
+
 func TestAWindowsAssetIsNamedAndDownloadedAsAnExecutable(t *testing.T) {
 	f := &fakeRelease{files: map[string][]byte{"conflux-windows-arm64.exe": []byte("MZ a newer conflux")}}
 
-	rel, err := Latest(context.Background(), f.serve(t), "windows", "arm64")
+	rel, err := Latest(context.Background(), f.serve(t), ReleaseTag, "windows", "arm64")
 	if err != nil {
 		t.Fatalf("Latest: %v", err)
 	}
@@ -193,7 +219,7 @@ func TestSubstitutedBytesAreNeverLeftBehind(t *testing.T) {
 	f := &fakeRelease{files: map[string][]byte{"conflux-linux-amd64": newBuild}}
 	src := f.serve(t)
 
-	rel, err := Latest(context.Background(), src, "linux", "amd64")
+	rel, err := Latest(context.Background(), src, ReleaseTag, "linux", "amd64")
 	if err != nil {
 		t.Fatalf("Latest: %v", err)
 	}
@@ -230,7 +256,7 @@ func TestAReleaseThatCannotBeTrustedOrUsedIsRefused(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			_, err := Latest(context.Background(), c.f.serve(t), "linux", "amd64")
+			_, err := Latest(context.Background(), c.f.serve(t), ReleaseTag, "linux", "amd64")
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Errorf("Latest: %v, want an error mentioning %q", err, c.want)
 			}
@@ -241,7 +267,7 @@ func TestAReleaseThatCannotBeTrustedOrUsedIsRefused(t *testing.T) {
 func TestPlainHTTPIsRefusedUnlessATestAsksForIt(t *testing.T) {
 	t.Setenv(insecureEnv, "")
 
-	if _, err := Latest(context.Background(), Source{API: "http://127.0.0.1:1"}, "linux", "amd64"); err == nil ||
+	if _, err := Latest(context.Background(), Source{API: "http://127.0.0.1:1"}, ReleaseTag, "linux", "amd64"); err == nil ||
 		!strings.Contains(err.Error(), "plain http") {
 		t.Errorf("Latest over plain http: %v", err)
 	}

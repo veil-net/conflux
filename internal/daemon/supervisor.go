@@ -571,6 +571,9 @@ func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *child, error) 
 func (s *Supervisor) exec(p Privilege, args []string, observing bool) (*child, error) {
 	s.report().Step("starting anchord as %s", p)
 
+	// Each anchord's last words are its own: the one before it has gone, its output drained.
+	s.tail.reset()
+
 	out := s.lines()
 
 	cmd := exec.Command(s.tools.Anchord, args...) //nolint:gosec // our own extracted binary
@@ -950,8 +953,9 @@ func Permanent(err error) bool {
 	return strings.Contains(s, "tundev: creating") && strings.Contains(s, "device or resource busy")
 }
 
-// ring keeps the last n lines of the daemon's output, in n slots allocated once:
-// every line anchord writes passes through here, and almost none is ever read.
+// ring keeps the last n lines of the daemon's output, in n slots allocated once and reused
+// for every anchord: every line anchord writes passes through here, and almost none is
+// ever read.
 type ring struct {
 	mu    sync.Mutex
 	lines []string
@@ -960,6 +964,15 @@ type ring struct {
 }
 
 func newRing(n int) *ring { return &ring{lines: make([]string, n)} }
+
+// reset empties the ring for the next anchord, in the slots it has.
+func (r *ring) reset() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	clear(r.lines)
+	r.next, r.full = 0, false
+}
 
 func (r *ring) add(line string) {
 	r.mu.Lock()

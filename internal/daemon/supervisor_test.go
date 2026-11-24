@@ -154,6 +154,26 @@ func TestTheTailKeepsTheLastLinesInOrder(t *testing.T) {
 	}
 }
 
+// TestTheTailIsEachDaemonsOwn: what a failure is reported in is the last anchord's own words,
+// not those of one that died before it under the same supervisor.
+func TestTheTailIsEachDaemonsOwn(t *testing.T) {
+	s, _ := supervised(t, "1")
+
+	for range 2 {
+		_, c, err := s.spawn(t.Context())
+		if err != nil {
+			t.Fatalf("spawn: %v", err)
+		}
+
+		<-c.exited
+		s.shutdown(c)
+	}
+
+	if got, want := s.tail.String(), "  anchord: anchord starting\n  anchord: "+fakeAnchordLastWords; got != want {
+		t.Errorf("the second anchord's tail reads\n%s\nwant\n%s", got, want)
+	}
+}
+
 // TestAConfigAnchordWouldRefuseIsNotStarted: anchord reads its -config at startup and
 // will not come up on a block it refuses. Started anyway, that is a daemon dying before
 // it answers, which the restart loop retries for ever; refused here, it is permanent,

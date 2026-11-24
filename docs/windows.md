@@ -95,7 +95,11 @@ the root, and the copy of conflux the service runs as SYSTEM, into a directory o
 choosing.
 
 A root some other account created is refused rather than taken over: whoever made it
-could have filled it first. And the two binaries the service runs as SYSTEM, and
+could have filled it first. What is in it is held to the same before its DACL is given
+back, a root whose DACL somebody widened included, all but the contents of `anchord`'s own
+directories, `anchor\`, `anchor.root\` and `run\anchord\`: its account owns what it writes
+there, and the supervisor reads that as untrusted and makes it again. The directories
+themselves must be conflux's. And the two binaries the service runs as SYSTEM, and
 `wintun.dll` beside them, are run only if Administrators, SYSTEM or the account running
 conflux owns them — a set directory is named for content anybody can compute, so one
 made by somebody else is extracted again rather than trusted.

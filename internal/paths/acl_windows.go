@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"slices"
 	"sync"
 	"unsafe"
 
@@ -162,7 +163,10 @@ func ownership(path string) (*windows.SECURITY_DESCRIPTOR, *windows.SID, error) 
 // own DACL it has %ProgramData%'s, under which Users may create folders in it, and a
 // folder another account made there keeps that owner through the new DACL -- an owner
 // can always grant itself the rest -- so the service would go on writing its token or its
-// state into a place that account controls.
+// state into a place that account controls. All but what anchord's own directories hold:
+// its account owns what it writes in them, and the supervisor reads that as untrusted and
+// makes it again -- the socket's directory afresh at every start, an anchor directory
+// copied from and never adopted by root. The directories themselves are held to the rule.
 func secure(dir string) error {
 	sd, owner, err := ownership(dir)
 	if err != nil {
@@ -190,14 +194,22 @@ func secure(dir string) error {
 			dir, domain, account, owner)
 	}
 
-	if err := filepath.WalkDir(dir, func(path string, _ fs.DirEntry, err error) error {
-		if err != nil || path == dir || Trusted(path) {
+	d := Dirs{Root: dir}
+	anchords := []string{d.AnchorDir(), d.RootAnchorDir(), d.DaemonRun()}
+
+	if err := filepath.WalkDir(dir, func(path string, e fs.DirEntry, err error) error {
+		switch {
+		case err != nil || path == dir:
 			return err
+		case !Trusted(path):
+			return fmt.Errorf(
+				"%s was made by another account before conflux secured %s, so conflux will not use it.\n"+
+					"  Remove it, then run this again as Administrator", path, dir)
+		case e.IsDir() && slices.Contains(anchords, path):
+			return fs.SkipDir
 		}
 
-		return fmt.Errorf(
-			"%s was made by another account before conflux secured %s, so conflux will not use it.\n"+
-				"  Remove it, then run this again as Administrator", path, dir)
+		return nil
 	}); err != nil {
 		return err
 	}

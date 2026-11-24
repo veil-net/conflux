@@ -55,6 +55,73 @@ func TestEnsureAllTakesBackAWidenedDACL(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	widen(t, d.Root)
+
+	if adminsAlone(d.Root) {
+		t.Fatal("a DACL granting Users reads as SYSTEM's and the Administrators' alone")
+	}
+
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	if !adminsAlone(d.Root) {
+		t.Error("EnsureAll left the root granting Users")
+	}
+}
+
+// TestAWidenedDACLIsTakenBackBesideAnchordsFiles: what anchord's own account wrote in its
+// directories is that account's, and is no reason to refuse a root whose DACL somebody
+// widened: the root is restricted again, rather than refused at every start for ever. Each of
+// those directories is still held to the rule itself.
+func TestAWidenedDACLIsTakenBackBesideAnchordsFiles(t *testing.T) {
+	d := Dirs{Root: filepath.Join(t.TempDir(), ".conflux")}
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, dir := range []string{d.AnchorDir(), d.RootAnchorDir(), d.DaemonRun()} {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// What anchord running as LOCAL SERVICE leaves in its anchor directory.
+	written := filepath.Join(d.AnchorDir(), "bootstrap.json")
+	if err := os.WriteFile(written, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	giveTo(t, written, windows.WinLocalServiceSid)
+
+	if Trusted(written) {
+		t.Fatal("a file LOCAL SERVICE owns reads as trusted")
+	}
+
+	widen(t, d.Root)
+
+	if err := d.EnsureAll(); err != nil {
+		t.Fatalf("EnsureAll beside anchord's own file: %v", err)
+	}
+
+	if !adminsAlone(d.Root) {
+		t.Error("EnsureAll left the root granting Users")
+	}
+
+	// One of those directories made by another account is refused, as anything else is.
+	giveTo(t, d.RootAnchorDir(), windows.WinLocalServiceSid)
+	widen(t, d.Root)
+
+	if err := d.EnsureAll(); err == nil {
+		t.Error("EnsureAll took a root whose anchor.root another account owns")
+	}
+}
+
+// widen gives path a protected DACL granting Users full control, as somebody with the right
+// to change it might.
+func widen(t *testing.T, path string) {
+	t.Helper()
+
 	users := wellKnown(windows.WinBuiltinUsersSid)
 
 	acl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{{
@@ -67,27 +134,53 @@ func TestEnsureAllTakesBackAWidenedDACL(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := windows.SetNamedSecurityInfo(d.Root, windows.SE_FILE_OBJECT,
+	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
 		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, acl, nil); err != nil {
 		t.Fatal(err)
 	}
+}
 
-	adminsAlone := func() bool {
-		sd, _, err := ownership(d.Root)
+// adminsAlone reports whether path's DACL grants SYSTEM and the Administrators alone.
+func adminsAlone(path string) bool {
+	sd, _, err := ownership(path)
 
-		return err == nil && onlyAdmins(sd)
+	return err == nil && onlyAdmins(sd)
+}
+
+// giveTo makes the well-known account sid the owner of path: naming an owner other than
+// oneself takes SeRestorePrivilege, which an Administrator holds and enables here for the
+// one call.
+func giveTo(t *testing.T, path string, sid windows.WELL_KNOWN_SID_TYPE) {
+	t.Helper()
+
+	var tok windows.Token
+	if err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_ADJUST_PRIVILEGES|windows.TOKEN_QUERY, &tok); err != nil {
+		t.Fatal(err)
 	}
+	defer tok.Close()
 
-	if adminsAlone() {
-		t.Fatal("a DACL granting Users reads as SYSTEM's and the Administrators' alone")
-	}
+	var luid windows.LUID
 
-	if err := d.EnsureAll(); err != nil {
+	name, _ := windows.UTF16PtrFromString("SeRestorePrivilege")
+	if err := windows.LookupPrivilegeValue(nil, name, &luid); err != nil {
 		t.Fatal(err)
 	}
 
-	if !adminsAlone() {
-		t.Error("EnsureAll left the root granting Users")
+	set := func(attrs uint32) {
+		tp := windows.Tokenprivileges{PrivilegeCount: 1}
+		tp.Privileges[0] = windows.LUIDAndAttributes{Luid: luid, Attributes: attrs}
+
+		if err := windows.AdjustTokenPrivileges(tok, false, &tp, 0, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	set(windows.SE_PRIVILEGE_ENABLED)
+	defer set(0)
+
+	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION,
+		wellKnown(sid), nil, nil, nil); err != nil {
+		t.Fatalf("give %s to another account: %v", path, err)
 	}
 }
 

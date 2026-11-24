@@ -46,6 +46,21 @@ logs() {
 # A run cut short leaves its registration behind; a fresh runner has none to remove.
 "$CONFLUX" uninstall --yes >/dev/null 2>&1 || true
 
+# Run from where the installer puts it, and on Windows on the machine's Path as install.ps1
+# puts it, so that uninstall's removal of both is seen below.
+if [ "$os" = darwin ]; then
+  installed=/usr/local/bin/conflux
+else
+  installed="$(cygpath -u "${PROGRAMFILES:-C:\\Program Files}")/conflux/conflux.exe"
+fi
+mkdir -p "$(dirname "$installed")"
+cp "$CONFLUX" "$installed"
+CONFLUX=$installed
+if [ "$os" = windows ]; then
+  # shellcheck disable=SC2016 # PowerShell's variables, for PowerShell to expand
+  powershell.exe -NoProfile -Command '$d = Join-Path $env:ProgramFiles conflux; $p = [Environment]::GetEnvironmentVariable("Path", "Machine"); if (($p -split ";") -notcontains $d) { [Environment]::SetEnvironmentVariable("Path", "$p;$d", "Machine") }'
+fi
+
 say "install registers and starts nothing"
 "$CONFLUX" install
 
@@ -238,7 +253,16 @@ else
     fail "the service's event source survived uninstall"
   fi
   [ ! -e "$root" ] || fail "$root survived uninstall"
+  # A running executable cannot delete itself, so its directory goes a few seconds after
+  # uninstall has exited.
+  dir=$(dirname "$CONFLUX")
+  for _ in $(seq 30); do [ -e "$dir" ] || break; sleep 1; done
+  [ ! -e "$dir" ] || fail "$dir, where conflux was installed, survived uninstall"
+  # shellcheck disable=SC2016 # PowerShell's variables, for PowerShell to expand
+  powershell.exe -NoProfile -Command '$d = Join-Path $env:ProgramFiles conflux; if (([Environment]::GetEnvironmentVariable("Path", "Machine") -split ";") -contains $d) { exit 1 }' \
+    || fail "uninstall left conflux's directory on the machine's Path"
 fi
+[ ! -e "$CONFLUX" ] || fail "$CONFLUX, the installed executable, survived uninstall"
 [ ! -e "$eroot" ] || fail "$eroot, a killed ephemeral run's root, survived uninstall"
 
 say "all assertions passed"

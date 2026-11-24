@@ -399,9 +399,12 @@ docker exec "$NAME" test ! -e /etc/systemd/system/conflux.service.d \
   || { echo "a start left the unit's drop-in directory" >&2; exit 1; }
 docker exec "$NAME" systemctl stop conflux.service
 
-# install made the root, so it has to go -- and the account.
+# install made the root, so it has to go -- and the account, and the executable the image
+# put where the installer puts it.
 say "uninstall leaves nothing"
 docker exec "$NAME" conflux uninstall --yes
+docker exec "$NAME" test ! -e /usr/local/bin/conflux \
+  || { echo "the installed executable survived uninstall" >&2; exit 1; }
 docker exec "$NAME" sh -c 'test ! -f /etc/systemd/system/conflux.service' \
   || { echo "the unit file survived uninstall" >&2; exit 1; }
 docker exec "$NAME" sh -c 'test ! -L /etc/systemd/system/multi-user.target.wants/conflux.service' \
@@ -415,6 +418,7 @@ fi
 # An account of that name conflux did not make is somebody else's: anchord does not run
 # as it, and uninstall leaves it where it was.
 say "an account conflux did not make is neither used nor removed"
+docker cp "$(dirname "$0")/systemd/conflux" "$NAME":/usr/local/bin/conflux
 docker exec "$NAME" useradd --system --no-create-home conflux
 docker exec "$NAME" conflux install >/dev/null
 configure proxy

@@ -16,6 +16,8 @@ import (
 	"runtime"
 	"time"
 
+	"golang.org/x/sys/windows"
+
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
@@ -166,4 +168,37 @@ func offline(target string, cause error) error {
 			"    %s\n\n"+
 			"  Or run \"conflux proxy PORT=BACKEND\", which needs no interface at all",
 		cause, Version, runtime.GOARCH, target)
+}
+
+// DeleteDriver removes the Wintun driver from the machine through the library conflux placed
+// in d's set directory, for `conflux uninstall`: WintunDeleteDriver removes it only while no
+// adapter, conflux's or another program's, is in use, so a driver another program still
+// relies on stays. Nothing when no library was ever placed.
+func DeleteDriver(d paths.Dirs) error {
+	tools, err := libexec.Extracted(d)
+	if err != nil {
+		return nil
+	}
+
+	path := filepath.Join(tools.Dir, DLLName)
+	if !present(path) {
+		return nil
+	}
+
+	dll, err := windows.LoadDLL(path)
+	if err != nil {
+		return fmt.Errorf("load %s to remove the driver: %w", path, err)
+	}
+	defer dll.Release()
+
+	proc, err := dll.FindProc("WintunDeleteDriver")
+	if err != nil {
+		return err
+	}
+
+	if ok, _, callErr := proc.Call(); ok == 0 {
+		return fmt.Errorf("remove the Wintun driver (it stays while an adapter is in use): %w", callErr)
+	}
+
+	return nil
 }

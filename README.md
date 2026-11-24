@@ -119,7 +119,7 @@ commands handed straight to `anchorctl`.
 and enabled, the credential renews itself, and the machine comes back at the same
 overlay address. `conflux down` stops the anchor now and leaves the service and
 configuration in place, `conflux start` brings it back before the next reboot, and
-`conflux uninstall` removes them.
+`conflux uninstall` removes them, and every other trace of conflux.
 
 ### Reverse proxy: publish a service without an interface
 
@@ -312,7 +312,7 @@ read by OpenSSL 3.5, and it reads OpenSSL's. See [cert.md](docs/cert.md).
 | `conflux renew` | fetch a fresh credential and install it on the running anchor, hot |
 | `conflux status` | conflux's state, and `anchorctl status` beneath it |
 | `conflux install` | register the boot service; start it if a configuration exists |
-| `conflux uninstall` | remove the boot service, the configuration and the identity |
+| `conflux uninstall` | remove everything of conflux's from the machine: the boot service, the configuration, the identity and conflux itself |
 | `conflux version` | conflux's version, and the anchor build it carries |
 | `conflux update [--check]` | replace this conflux with the latest release, verified, and restart the anchor on it |
 | `conflux cert genkey \| req \| selfsign \| sign \| verify \| show \| convert \| match \| fingerprint \| crl \| ca \| p12 \| probe \| serve` | make and check ML-DSA (and ECDSA, RSA, Ed25519) keys, certificates and revocation lists, keep a CA, bundle PKCS#12, and probe and serve TLS, in FIPS 140-3 mode; see [cert.md](docs/cert.md) |

@@ -14,6 +14,7 @@ import (
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
+	"github.com/veil-net/conflux/internal/wintun"
 )
 
 // services is the platform's boot manager, and a variable only so the tests can stand in
@@ -323,25 +324,33 @@ func runUninstall(_ context.Context, args []string) int {
 	// once the service's own supervisor has let go of it.
 	daemon.Reap(d, 35*time.Second)
 
-	// And what an ephemeral run that was killed left: its anchord, where nothing ended it with
-	// the run (macOS and the BSDs), and its root -- the extracted pair and the token -- which
-	// nothing else removes. Under the root's lock, as a run's own clean-up is, so one starting
-	// now is not emptied out from under itself.
-	if e, stale := staleEphemeral(); stale {
+	// And what every ephemeral run that was killed left: its anchord, where nothing ended it
+	// with the run (macOS and the BSDs), and its root -- the extracted pair and the token --
+	// which nothing else removes. Under the root's lock, as a run's own clean-up is, so one
+	// starting now is not emptied out from under itself.
+	for _, e := range staleEphemerals(paths.EphemeralCandidates()) {
 		errs = append(errs, removeEphemeralRoot(e))
 	}
+
+	// Windows' driver, while the set that holds the library to remove it with is still there;
+	// it stays while any adapter, anybody's, is in use.
+	errs = append(errs, wintun.DeleteDriver(d))
 
 	errs = append(errs, os.RemoveAll(d.Root))
 
 	// The account anchord ran as, once nothing runs as it, if conflux made it.
 	errs = append(errs, removeAccount())
 
+	// Last, what the install script put in place: the conflux on PATH, which may be this one.
+	errs = append(errs, removeInstallation())
+
 	if err := errors.Join(errs...); err != nil {
 		return fail(err)
 	}
 
-	ui.Printf("Removed. The boot service, the configuration and the identity are gone.\n" +
-		"conflux up here again draws a new identity and a new overlay address.\n")
+	ui.Printf("Removed. Nothing of conflux is left on this machine: the boot service, the\n" +
+		"configuration, the identity and the conflux on PATH are gone. Installing it again and\n" +
+		"running conflux up draws a new identity and a new overlay address.\n")
 
 	return ExitOK
 }

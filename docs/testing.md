@@ -149,7 +149,8 @@ udev leaves it, so this holds whatever the runner's own device is.
 All of that is `make integration`. `make service-test` is the unit on its own and enrols
 nothing: `install` registers it without starting anything, the unit runs the root-only
 copy in `/var/lib/.conflux` rather than the file conflux was run from, and `uninstall`
-leaves no unit file, no `wants` link, no `/var/lib/.conflux`, and no `conflux` account.
+leaves no unit file, no `wants` link, no `/var/lib/.conflux`, no `conflux` account and no
+`/usr/local/bin/conflux`.
 Both build the image first, and CI runs the same command a developer does.
 
 In between, it takes every branch of what `anchord` runs as, under the real unit. Its
@@ -184,11 +185,14 @@ account — read in the system's log, the unified log or the Application event l
 alone comes up under one anonymous alpha credential enrolled at `$VEILNET_API` in a random
 taint, capturing as that account, and `uninstall` leaves no plist, no entry in launchd's
 disabled database, no `_conflux` account, no SCM service, no event source and no directory.
+It runs conflux from where the installer puts it — `/usr/local/bin`, or `%ProgramFiles%\conflux`
+on the machine's `Path` — so that `uninstall` is seen to take that too, on Windows once the
+running program has exited.
 
 `test/service-bsd.sh` is the same against `rc.subr`, in a FreeBSD and an OpenBSD VM: install,
 a userspace `anchord` running as `conflux` or `_conflux` (the record, and the process
 itself), port 80 and a TUN keeping it root with their reasons, and `uninstall` leaving no
-script, no directory and no account.
+script, no `rc.conf` line, no directory, no account and no `/usr/local/bin/conflux`.
 
 ### Local network discovery, the bootstrap list, and `conflux enrol`
 

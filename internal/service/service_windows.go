@@ -232,11 +232,10 @@ func stopService(s *mgr.Service) error {
 
 func (scm) Remove() error {
 	err := withService(windows.SC_MANAGER_ALL_ACCESS, windows.SERVICE_ALL_ACCESS, func(s *mgr.Service) error {
-		// Best effort: the deletion goes ahead whatever the stop says, and a service still
-		// running is deleted once it stops.
-		_ = stopService(s)
-
-		return s.Delete()
+		// The deletion goes ahead whatever the stop says, and a service still running is
+		// deleted once it stops; but a stop that failed is said, since a supervisor still
+		// running holds files uninstall is about to remove.
+		return errors.Join(stopService(s), s.Delete())
 	})
 	if errors.Is(err, windows.ERROR_SERVICE_DOES_NOT_EXIST) {
 		err = nil // already gone, which is what was asked for

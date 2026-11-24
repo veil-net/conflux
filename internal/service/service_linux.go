@@ -91,6 +91,8 @@ func (s systemd) Remove() error {
 		}
 	}
 
+	errs = append(errs, os.RemoveAll(dropinDir))
+
 	errs = append(errs, run("systemctl", "daemon-reload"))
 	_ = run("systemctl", "reset-failed", unitName)
 

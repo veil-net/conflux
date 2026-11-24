@@ -360,6 +360,8 @@ docker exec cfx-b sh -c 'test ! -f /etc/systemd/system/conflux.service' \
 docker exec cfx-b sh -c 'test ! -L /etc/systemd/system/multi-user.target.wants/conflux.service' \
   || { echo "the unit's wants link survived uninstall" >&2; exit 1; }
 docker exec cfx-b test ! -e /var/lib/.conflux || { echo "/var/lib/.conflux survived uninstall" >&2; exit 1; }
+docker exec cfx-b test ! -e /usr/local/bin/conflux \
+  || { echo "the installed executable survived uninstall" >&2; exit 1; }
 docker exec cfx-b sh -c "! ip link show $B_IF" >/dev/null 2>&1 \
   || { echo "uninstall left the interface up" >&2; exit 1; }
 if docker exec cfx-b id conflux >/dev/null 2>&1; then

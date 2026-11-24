@@ -249,20 +249,3 @@ func toolsFor(d paths.Dirs) (*libexec.Tools, error) {
 
 	return libexec.Extracted(d)
 }
-
-// staleEphemeral is the root an ephemeral run that was killed left behind, if one did: there,
-// with nobody holding its lock.
-func staleEphemeral() (paths.Dirs, bool) {
-	for _, root := range paths.EphemeralCandidates() {
-		d := paths.EphemeralDirs(root)
-		if _, err := os.Stat(d.ServeLockFile()); err != nil {
-			continue
-		}
-
-		if held, err := flock.Held(d.ServeLockFile()); err == nil && !held {
-			return d, true
-		}
-	}
-
-	return paths.Dirs{}, false
-}

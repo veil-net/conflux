@@ -133,7 +133,7 @@ func reportService() { ui.Field("service", services().Describe()) }
 // reportEphemeralRun says what an ephemeral run is doing, before the machine's own anchor,
 // and whether one is running: or what a killed one left behind.
 func reportEphemeralRun(ctx context.Context) bool {
-	if d, stale := staleEphemeral(); stale {
+	for _, d := range staleEphemerals(paths.EphemeralCandidates()) {
 		ui.Field("ephemeral", "none running; "+d.Root+" was left by one that was killed, and the next "+
 			"ephemeral run clears it and stops any anchord it left")
 		ui.Println()

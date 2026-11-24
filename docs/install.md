@@ -147,10 +147,11 @@ Until you run `conflux start`, `conflux status` reports:
 
 ```console
 $ sudo conflux uninstall
-$ sudo rm /usr/local/bin/conflux
 ```
 
 `uninstall` removes the boot service, conflux's whole directory — the configuration and
-the identity with it — and the accounts `anchord` ran as. There is no other copy of the
+the identity with it — the accounts `anchord` ran as, and conflux itself from where the
+installer put it: nothing of conflux is left on the machine. See
+[commands.md](commands.md#conflux-uninstall) for the whole list. There is no other copy of the
 identity anywhere, so it asks first — see
 [credentials.md](credentials.md).

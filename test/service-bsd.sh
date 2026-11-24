@@ -58,6 +58,10 @@ rm -rf "$certs"
 # A run cut short leaves its registration behind; a fresh VM has none to remove.
 "$CONFLUX" uninstall --yes >/dev/null 2>&1 || true
 
+# Run from where install.sh puts it, so that uninstall's removal of it is seen below.
+cp "$CONFLUX" /usr/local/bin/conflux
+CONFLUX=/usr/local/bin/conflux
+
 # An API that accepts and never answers: the base system's nc holds each connection, so an
 # enrolment waits out its timeout and anchord stays up while it does.
 nc -k -l 127.0.0.1 9443 </dev/null >/dev/null 2>&1 &
@@ -211,6 +215,12 @@ say "uninstall leaves nothing"
 "$CONFLUX" uninstall --yes
 [ ! -e "$script" ] || fail "the rc script survived uninstall"
 [ ! -e "$state" ] || fail "$state survived uninstall"
+[ ! -e "$CONFLUX" ] || fail "$CONFLUX, the installed executable, survived uninstall"
+if [ "$os" = freebsd ]; then
+  ! grep -q '^conflux_' /etc/rc.conf || fail "uninstall left conflux in /etc/rc.conf"
+else
+  ! grep -qs '^conflux_' /etc/rc.conf.local || fail "uninstall left conflux in /etc/rc.conf.local"
+fi
 if id "$eaccount" >/dev/null 2>&1; then
   fail "the $eaccount account survived uninstall"
 fi

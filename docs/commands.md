@@ -422,13 +422,25 @@ Needs root.
 
 ## `conflux uninstall`
 
-Removes the boot service and the whole root — the configuration, the identity and
-everything else conflux keeps — with the root a killed ephemeral run left, and the accounts
-`anchord` ran as, once nothing runs as them, when conflux made them; an account of that name
-that conflux did not make is left alone. Refused while an ephemeral run is live, whose
-account goes too. Asks first, because there is no other copy of the
-credential anywhere; `--yes` skips the question, and a non-interactive run without `--yes`
-refuses rather than destroy an identity silently.
+Removes everything conflux put on the machine, and leaves no trace of it:
+
+- the boot service and its definition — systemd's unit with any drop-in, the launchd plist,
+  the rc script and its `rc.conf` line, or the SCM's entry and the event source;
+- the whole root — the configuration, the identity and everything else conflux keeps — and
+  every root a killed ephemeral run left;
+- the accounts `anchord` ran as, once nothing runs as them, when conflux made them; an account
+  of that name that conflux did not make is left alone;
+- on macOS the BPF devices' grant, and on Windows the Wintun driver, which Windows keeps only
+  while no adapter uses it, so another program's survives;
+- the installed executable: `/usr/local/bin/conflux` and the `/usr/bin/conflux` link
+  `install.sh` made to it, or `%ProgramFiles%\conflux` and its entry on the machine's `Path`.
+  A conflux running from anywhere else is not removed. On Windows the directory goes a few
+  seconds after `uninstall` exits, since a running program cannot delete itself.
+
+What the service wrote to the journal, syslog or event log stays, as the system's. Refused
+while an ephemeral run is live, whose account goes too. Asks first, because there is no other
+copy of the credential anywhere; `--yes` skips the question, and a non-interactive run without
+`--yes` refuses rather than destroy an identity silently.
 
 ## `conflux status`
 

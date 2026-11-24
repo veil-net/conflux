@@ -114,23 +114,21 @@ func rootFinds(exe string) (found string, ok bool) {
 }
 
 // missed says why root's PATH, which finds found, does not find exe through link, the link to
-// it: another conflux before the link's directory, which removed lets exe be linked by hand
-// (relink), or, where exe's own directory is on that PATH ahead of the link's, lets that PATH
-// find exe with no link at all, a link there never being reached; or, finding none, that
-// directory left out too, where only exe's full path helps. Directories are compared as files
-// (sameFile), never by how they are spelled.
+// it: another conflux found first. Where exe's own directory is on that PATH at all, before the
+// link's or after it, that conflux is ahead of it, and removing it lets the PATH find exe with
+// no link; where it is not, removing it lets exe be linked by hand (relink); and finding none,
+// that directory left out too, only exe's full path helps. Each directory on the PATH is
+// compared with exe's as a file, each stat'd once (os.SameFile), never by how it is spelled.
 func missed(found, link, exe string) error {
 	if found == "" {
 		return fmt.Errorf("root's PATH leaves %s out too: type %s by its full path under sudo", filepath.Dir(link), exe)
 	}
 
-	for _, d := range filepath.SplitList(os.Getenv("PATH")) {
-		if sameFile(d, filepath.Dir(link)) {
-			break
-		}
-
-		if sameFile(d, filepath.Dir(exe)) {
-			return fmt.Errorf("root's PATH finds %s before %s: remove it; root's PATH then finds %s", found, filepath.Dir(exe), exe)
+	if dir, err := os.Stat(filepath.Dir(exe)); err == nil {
+		for _, d := range filepath.SplitList(os.Getenv("PATH")) {
+			if fi, err := os.Stat(d); err == nil && os.SameFile(fi, dir) {
+				return fmt.Errorf("root's PATH finds %s before %s: remove it; root's PATH then finds %s", found, filepath.Dir(exe), exe)
+			}
 		}
 	}
 

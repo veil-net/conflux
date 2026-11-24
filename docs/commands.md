@@ -572,12 +572,12 @@ elsewhere, where the conflux the update's own PATH — root's, `secure_path` und
 Fedora and RHEL — finds is not that file, `/usr/local/bin` left out or another conflux found
 first, `/usr/bin/conflux` is linked to it, as `install.sh` links it, and kept only where that
 PATH, asked again, finds the file through it: where it finds another conflux before `/usr/bin`
-the link goes again, as one made before does, and the other is named, to be removed before the
+the link goes again, as one made before does, and the other is named. Where that PATH holds
+`/usr/local/bin` at all, before `/usr/bin` or after it, the other conflux is to be removed alone,
+that PATH then finding the installed file; where it does not, it is to be removed before the
 link is made by hand, with the line the update says
 (`sudo ln -s /usr/local/bin/conflux /usr/bin/conflux`), or conflux typed by its full path under
-`sudo`; and where that PATH holds `/usr/local/bin` ahead of `/usr/bin`, so that a link there
-would never be reached, to be removed alone, that PATH then finding the installed file. An
-update, finding conflux installed, makes no link, and `install.sh` run again would fetch the
+`sudo`. An update, finding conflux installed, makes no link, and `install.sh` run again would fetch the
 `latest` release, moving a dev build off its channel. A `/usr/bin/conflux` that is not that
 link is left alone, and said: where that PATH finds it in conflux's place, to be removed before
 the link is made the same way. No token is needed or sent: the repository is public.

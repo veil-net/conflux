@@ -130,7 +130,7 @@ func RestrictToOwner(path string, dir bool) error {
 func Trusted(path string) bool {
 	_, owner, err := ownership(path)
 
-	return err == nil && (owner.Equals(sidSystem) || owner.Equals(sidAdmins) || isCurrentUser(owner))
+	return err == nil && (isAdmin(owner) || isCurrentUser(owner))
 }
 
 // ownership is path's security descriptor, its owner and its DACL read in one call, and the
@@ -178,8 +178,8 @@ func secure(dir string) error {
 		return fmt.Errorf("read the ownership of %s: %w", dir, err)
 	}
 
-	admin := owner.Equals(sidSystem) || owner.Equals(sidAdmins)
-	if admin && control&windows.SE_DACL_PROTECTED != 0 && onlyAdmins(sd) {
+	admin := isAdmin(owner)
+	if admin && control&windows.SE_DACL_PROTECTED != 0 && grantsAdminsAlone(sd) {
 		return nil
 	}
 
@@ -217,10 +217,21 @@ func secure(dir string) error {
 	return Restrict(dir, true)
 }
 
-// onlyAdmins reports whether the DACL in sd grants SYSTEM and the Administrators and nobody
-// else: what Restrict gave it, rather than a grant somebody added beside theirs since, which
-// a protected DACL keeps as faithfully as it keeps conflux's.
-func onlyAdmins(sd *windows.SECURITY_DESCRIPTOR) bool {
+// OnlyAdmins reports whether path belongs to SYSTEM or the Administrators and its DACL grants
+// the two of them and nobody else: what Restrict made it, rather than a grant somebody added
+// since, or an owner who could add one.
+func OnlyAdmins(path string) bool {
+	sd, owner, err := ownership(path)
+
+	return err == nil && isAdmin(owner) && grantsAdminsAlone(sd)
+}
+
+func isAdmin(sid *windows.SID) bool { return sid.Equals(sidSystem) || sid.Equals(sidAdmins) }
+
+// grantsAdminsAlone reports whether the DACL in sd grants SYSTEM and the Administrators and
+// nobody else: what Restrict gave it, rather than a grant somebody added beside theirs since,
+// which a protected DACL keeps as faithfully as it keeps conflux's.
+func grantsAdminsAlone(sd *windows.SECURITY_DESCRIPTOR) bool {
 	dacl, _, err := sd.DACL()
 	if err != nil || dacl == nil {
 		return false

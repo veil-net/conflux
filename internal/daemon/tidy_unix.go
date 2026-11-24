@@ -4,27 +4,19 @@ package daemon
 
 import (
 	"errors"
-	"io/fs"
 	"os"
 )
 
-// restoreModes gives the root's own files back to the supervisor, at 0600, and the copy of
-// conflux the service runs at 0700, whatever they were changed to since: what holds the
-// identity, the configuration or a lock is nobody else's to read. Only regular files: the
-// root is root's alone, and what is not a file here is not conflux's.
+// restoreModes gives the root's own files (rootFiles) back to the supervisor, at their modes --
+// 0600, and 0700 for the copy of conflux the service runs -- whatever they were changed to
+// since. Only regular files: the root is root's alone, and what is not a file here is not
+// conflux's.
 func (s *Supervisor) restoreModes() error {
-	d := s.Dirs
 	uid, gid := os.Geteuid(), os.Getegid()
 
 	var errs []error
 
-	for _, f := range []struct {
-		path string
-		mode fs.FileMode
-	}{
-		{d.ConfigFile(), 0o600}, {d.StateFile(), 0o600}, {d.ManifestFile(), 0o600}, {d.PrivilegeFile(), 0o600},
-		{d.LockFile(), 0o600}, {d.ServeLockFile(), 0o600}, {d.ServiceExecutable(), 0o700},
-	} {
+	for _, f := range rootFiles(s.Dirs) {
 		if fi, err := os.Lstat(f.path); err != nil || !fi.Mode().IsRegular() {
 			continue
 		}

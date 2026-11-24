@@ -144,7 +144,7 @@ func widen(t *testing.T, path string) {
 func adminsAlone(path string) bool {
 	sd, _, err := ownership(path)
 
-	return err == nil && onlyAdmins(sd)
+	return err == nil && grantsAdminsAlone(sd)
 }
 
 // giveTo makes the well-known account sid the owner of path: naming an owner other than

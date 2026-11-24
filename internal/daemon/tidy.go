@@ -47,6 +47,22 @@ var rootNames = func() []string {
 	return out
 }()
 
+// rootFile is one of the root's own files restoreModes gives back to the supervisor, and the
+// mode it has on Unix.
+type rootFile struct {
+	path string
+	mode fs.FileMode
+}
+
+// rootFiles are the root's own files: what holds the identity, the configuration or a lock,
+// which is nobody else's to read, and the copy of conflux the service runs, as root or SYSTEM.
+func rootFiles(d paths.Dirs) []rootFile {
+	return []rootFile{
+		{d.ConfigFile(), 0o600}, {d.StateFile(), 0o600}, {d.ManifestFile(), 0o600}, {d.PrivilegeFile(), 0o600},
+		{d.LockFile(), 0o600}, {d.ServeLockFile(), 0o600}, {d.ServiceExecutable(), 0o700},
+	}
+}
+
 // tidyRoot keeps the root's own entries to what conflux and anchor put there, removing
 // everything else but a temporary file young enough to be another conflux's write in
 // progress, and gives the root's own files back their owner and modes (restoreModes). Once a

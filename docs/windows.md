@@ -86,7 +86,10 @@ Mode bits do not exist on Windows in the sense Go's `Chmod` implies — a call t
 `%ProgramData%\.conflux` belong to SYSTEM and Administrators instead: Administrators own
 it, and a protected DACL grants the two of them full control and nobody else anything,
 inherited by everything beneath. Every secret file gets the same, explicitly, before
-anything is written into it.
+anything is written into it. At every start the supervisor gives the root's own files — the
+configuration, the identity, the state, the locks, the record of what `anchord` runs as and
+the copy of conflux the service runs — back to the two of them where another account owns one
+or its DACL grants anybody else, as it gives them back their modes on Unix.
 
 `%ProgramData%` here, and `%ProgramFiles%` for the installed conflux, mean the folders Windows
 keeps under those names, which conflux asks the system for (its known folders), and not the

@@ -326,7 +326,9 @@ const maxManifest = 1 << 20
 //
 // Either way the API installed, and the renewal URL, are held to config.CheckAPIURL, as
 // every start and renewal holds them: one they refuse is refused here, while a person is
-// present, rather than installed and then refused for good at the next start.
+// present, rather than installed and then refused for good at the next start. The renewal
+// URL is parsed once, by config.ParseAPIURL, which checks it as CheckAPIURL does, and the
+// base or the host check is read off what it parsed.
 func chooseAPIBase(m *enrol.Manifest, flagValue string) (string, error) {
 	if flagValue != "" {
 		if err := config.CheckAPIURL(flagValue); err != nil {
@@ -334,27 +336,28 @@ func chooseAPIBase(m *enrol.Manifest, flagValue string) (string, error) {
 		}
 	}
 
-	url := m.RenewalURL()
+	raw := m.RenewalURL()
 
 	switch {
-	case url == "" && m.FixedTerm():
+	case raw == "" && m.FixedTerm():
 		return flagValue, nil
-	case url == "":
+	case raw == "":
 		return "", fmt.Errorf(
 			"the manifest says renewalAuth %q and carries no renewalUrl.\n"+
 				"  It says how to authenticate a renewal and not where to send one, so nothing\n"+
 				"  would ever renew it. The issuer has to set it", m.RenewalAuth())
-	case flagValue == "":
-		return enrol.BaseOf(url)
 	}
 
-	// Beside --api, which is the base, the renewal URL is only checked, so it is held to
-	// CheckAPIURL itself rather than read for a base BaseOf would check it for and discard.
-	if err := config.CheckAPIURL(url); err != nil {
+	renewal, err := config.ParseAPIURL(raw)
+	if err != nil {
 		return "", fmt.Errorf("renewalUrl: %w", err)
 	}
 
-	if err := enrol.SameHost(url, flagValue); err != nil {
+	if flagValue == "" {
+		return enrol.BaseOf(renewal), nil
+	}
+
+	if err := enrol.SameHost(renewal, flagValue); err != nil {
 		return "", fmt.Errorf("%w.\n"+
 			"  --api and the document disagree. Drop the flag to use the host the manifest\n"+
 			"  names, or get a manifest issued for the API you meant", err)

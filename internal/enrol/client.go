@@ -246,11 +246,12 @@ func (c *Client) Renew(ctx context.Context, renewalURL, anchorID string, taints 
 		return Renewal{}, errors.New("renew: the credential names no renewal URL, so there is nowhere to renew it")
 	}
 
-	if err := config.CheckAPIURL(renewalURL); err != nil {
+	target, err := config.ParseAPIURL(renewalURL)
+	if err != nil {
 		return Renewal{}, err
 	}
 
-	if err := SameHost(renewalURL, c.base()); err != nil {
+	if err := SameHost(target, c.base()); err != nil {
 		return Renewal{}, err
 	}
 
@@ -409,28 +410,24 @@ func (e *HTTPError) Error() string {
 	return status + ": " + e.Body
 }
 
-// SameHost is the check that a stored field cannot redirect a POST.
+// SameHost is the check that a stored field cannot redirect a POST: renewal, the renewal URL
+// as config.ParseAPIURL parsed it, which both callers have done to check it, on apiBase's host.
 //
 // Exported because `conflux enrol` asks it too, before anything is written: a
 // credential whose renewal URL names a host the configuration does not is one whose
 // first renewal would be refused, months later -- so the question is asked while a
 // person is present to fix it. One implementation, because two answers to one
 // question means the more permissive of them is the way in.
-func SameHost(renewalURL, apiBase string) error {
-	target, err := url.Parse(renewalURL)
-	if err != nil {
-		return fmt.Errorf("%q is not a URL: %w", renewalURL, err)
-	}
-
+func SameHost(renewal *url.URL, apiBase string) error {
 	base, err := url.Parse(apiBase)
 	if err != nil {
 		return fmt.Errorf("the API base %q is not a URL: %w", apiBase, err)
 	}
 
-	if !strings.EqualFold(target.Host, base.Host) {
+	if !strings.EqualFold(renewal.Host, base.Host) {
 		return fmt.Errorf(
 			"the stored credential names %s for renewal and this conflux is configured for %s; refusing to send it elsewhere",
-			target.Host, base.Host)
+			renewal.Host, base.Host)
 	}
 
 	return nil
@@ -444,14 +441,9 @@ func SameHost(renewalURL, apiBase string) error {
 // operator put it -- so the base is already in the document, and asking an operator
 // to retype it buys a typo rather than a check. Only the origin is kept: a renewal URL
 // is a path on an API, and treating the whole of it as a base would make every later
-// request a child of one node's credential route. The URL is held to config.CheckAPIURL,
-// which every renewal sent to it is, so a base no renewal could reach is never read: parsed
-// once, by config.ParseAPIURL, which checks it as CheckAPIURL does.
-func BaseOf(renewalURL string) (string, error) {
-	u, err := config.ParseAPIURL(renewalURL)
-	if err != nil {
-		return "", fmt.Errorf("renewalUrl: %w", err)
-	}
-
-	return u.Scheme + "://" + u.Host, nil
+// request a child of one node's credential route. renewal is the URL as config.ParseAPIURL
+// parsed it, and so held to config.CheckAPIURL, which every renewal sent to it is: a base no
+// renewal could reach is never read.
+func BaseOf(renewal *url.URL) string {
+	return renewal.Scheme + "://" + renewal.Host
 }

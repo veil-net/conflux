@@ -364,8 +364,8 @@ if replacing the identity is genuinely what you mean.
 
 Everything is checked before a byte is written — the format version, the `kind` (a
 `realm` manifest mints anchors and does not start one), the `renewalAuth`, the renewal
-host, the address and the export block. A refused import leaves the machine exactly as
-it found it.
+host, the API and the renewal URL against the rule every start holds `apiBaseUrl` to, the
+address and the export block. A refused import leaves the machine exactly as it found it.
 
 **A document with no renewal fields at all is fixed-term, not broken.** That is what
 traveller hands out for a node in one of VeilNet's own ghost realms: a century-long

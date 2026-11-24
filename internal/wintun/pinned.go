@@ -1,5 +1,7 @@
 package wintun
 
+import "github.com/veil-net/conflux/internal/libexec"
+
 // The pinned Wintun release, and the digests that make the download safe.
 //
 // This library is never embedded in conflux, for the two reasons anchor gives for
@@ -19,5 +21,6 @@ const (
 	ZipSHA256 = "07c256185d6ee3652e09fa55c0b673e2624b565e02c4b9091c79ca7d2f24ef51"
 )
 
-// DLLName is what anchor's loader looks for beside the executable.
-const DLLName = "wintun.dll"
+// DLLName is what anchor's loader looks for beside the executable, which libexec keeps in
+// the set directory it extracts the pair to.
+const DLLName = libexec.WintunDLL

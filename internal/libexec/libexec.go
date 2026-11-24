@@ -338,13 +338,19 @@ func smoke(t *Tools) error {
 		t.Dir, err, strings.TrimSpace(string(out)))
 }
 
-// Sweep removes the sets other than t, and the debris of an extraction that crashed.
+// WintunDLL is Windows' driver, which wintun.Ensure places beside anchord in the set
+// directory: the one file there that is not this package's.
+const WintunDLL = "wintun.dll"
+
+// Sweep keeps the bin directory to what conflux put there: t, with nothing in it but the
+// pair, its markers and Windows' driver; the extraction lock; and a set or a staging
+// directory made in the last hour, which a newer conflux running a command beside this
+// supervisor -- the first `status` after an upgrade -- may be using until the service
+// restarts onto it. Everything else goes: an older set, a crash's staging, and anything
+// nothing here wrote.
 //
-// Only the supervisor calls it, once it holds its own set. Any other conflux extracting
-// a set of its own -- the first `status` after an upgrade -- may be standing beside a
-// supervisor that still runs an older conflux and execs that one's anchorctl for every
-// renewal and every check; the service restarting onto the new set is what ends its use
-// of the old. Best-effort throughout: a directory that will not go is probably in use.
+// Only the supervisor calls it, once it holds its own set. Best-effort throughout: a
+// directory that will not go is probably in use.
 func Sweep(t *Tools) {
 	root, keep := filepath.Dir(t.Dir), t.SetID
 
@@ -353,31 +359,41 @@ func Sweep(t *Tools) {
 		return
 	}
 
-	cutoff := time.Now().Add(-24 * time.Hour)
+	recent := time.Now().Add(-time.Hour)
 
 	for _, e := range entries {
-		if !e.IsDir() || e.Name() == keep {
-			continue
-		}
-
-		info, err := e.Info()
-		if err != nil {
-			continue
-		}
-
-		// A staging directory older than an hour is the debris of a crash.
-		if strings.HasPrefix(e.Name(), ".staging-") {
-			if info.ModTime().Before(time.Now().Add(-time.Hour)) {
-				os.RemoveAll(filepath.Join(root, e.Name()))
-			}
-
-			continue
-		}
-
-		if info.ModTime().Before(cutoff) {
-			os.RemoveAll(filepath.Join(root, e.Name()))
+		switch name := e.Name(); {
+		case name == keep:
+			tidySet(t)
+		case name == ".lock" && e.Type().IsRegular():
+		case e.IsDir() && young(e, recent):
+		default:
+			_ = os.RemoveAll(filepath.Join(root, name))
 		}
 	}
+}
+
+// tidySet removes from t's directory everything but the pair, its markers and the driver.
+func tidySet(t *Tools) {
+	entries, err := os.ReadDir(t.Dir)
+	if err != nil {
+		return
+	}
+
+	for _, e := range entries {
+		switch e.Name() {
+		case filepath.Base(t.Anchord), filepath.Base(t.Anchorctl), completeMarker, verifiedMarker, WintunDLL:
+		default:
+			_ = os.RemoveAll(filepath.Join(t.Dir, e.Name()))
+		}
+	}
+}
+
+// young reports whether e was modified after cutoff.
+func young(e os.DirEntry, cutoff time.Time) bool {
+	info, err := e.Info()
+
+	return err == nil && info.ModTime().After(cutoff)
 }
 
 func exeName(base string) string {

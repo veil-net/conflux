@@ -199,16 +199,16 @@ func TestEnsureRepairsATruncatedExtraction(t *testing.T) {
 	}
 }
 
-// TestSweepLeavesWhatMayBeInUse: Sweep keeps its own set and any set touched in the last
-// day, which a supervisor still running an older conflux may be execing, and removes the
-// rest, and a staging directory a crash left more than an hour ago.
-func TestSweepLeavesWhatMayBeInUse(t *testing.T) {
+// TestSweepKeepsOnlyWhatIsConfluxs: Sweep keeps its own set, with nothing in it but the pair,
+// its markers and Windows' driver, and a set or a staging directory made in the last hour,
+// which a newer conflux mid-command may be using; everything else in the bin directory goes.
+func TestSweepKeepsOnlyWhatIsConfluxs(t *testing.T) {
 	root := t.TempDir()
 
 	age := map[string]time.Duration{
 		"own":            48 * time.Hour,
-		"recent":         time.Hour,
-		"old":            48 * time.Hour,
+		"recent":         30 * time.Minute,
+		"old":            2 * time.Hour,
 		".staging-fresh": time.Minute,
 		".staging-stale": 2 * time.Hour,
 	}
@@ -225,10 +225,22 @@ func TestSweepLeavesWhatMayBeInUse(t *testing.T) {
 		}
 	}
 
-	Sweep(&Tools{Dir: filepath.Join(root, "own"), SetID: "own"})
+	files := []string{".lock", "stray", "own/anchord", "own/anchorctl", "own/" + completeMarker, "own/" + verifiedMarker,
+		"own/wintun.dll", "own/stray"}
+	for _, name := range files {
+		if err := os.WriteFile(filepath.Join(root, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	own := &Tools{Dir: filepath.Join(root, "own"), SetID: "own",
+		Anchord: filepath.Join(root, "own", "anchord"), Anchorctl: filepath.Join(root, "own", "anchorctl")}
+	Sweep(own)
 
 	for name, kept := range map[string]bool{
 		"own": true, "recent": true, ".staging-fresh": true, "old": false, ".staging-stale": false,
+		".lock": true, "stray": false, "own/anchord": true, "own/anchorctl": true, "own/" + completeMarker: true,
+		"own/" + verifiedMarker: true, "own/wintun.dll": true, "own/stray": false,
 	} {
 		if _, err := os.Stat(filepath.Join(root, name)); (err == nil) != kept {
 			t.Errorf("%s: kept = %v, want %v", name, err == nil, kept)

@@ -152,7 +152,7 @@ func moveService(ctx context.Context, exe string) int {
 
 	d := paths.Default()
 
-	a := askDaemon(ctx, d)
+	a := askDaemon(ctx, d, false)
 	a.wg.Wait()
 
 	if a.asked && a.statErr == nil {

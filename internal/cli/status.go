@@ -77,7 +77,7 @@ func runStatus(ctx context.Context, args []string) int {
 
 	// The daemon's two answers are forks, so they are asked for first and read last,
 	// and the wait for them overlaps everything conflux prints of its own.
-	daemon := askDaemon(ctx, d)
+	daemon := askDaemon(ctx, d, true)
 
 	st, _ := config.LoadState(d)
 
@@ -119,9 +119,9 @@ type daemonAnswers struct {
 	expErr  error
 }
 
-// askDaemon starts `anchorctl status` and `anchorctl export`, or asks nothing when
-// there is no daemon to ask.
-func askDaemon(ctx context.Context, d paths.Dirs) *daemonAnswers {
+// askDaemon starts `anchorctl status`, and `anchorctl export` for a caller that reads it, or
+// asks nothing when there is no daemon to ask.
+func askDaemon(ctx context.Context, d paths.Dirs, export bool) *daemonAnswers {
 	a := &daemonAnswers{}
 
 	// No socket, no daemon. The token outlives one, since nothing clears the run directory
@@ -140,7 +140,10 @@ func askDaemon(ctx context.Context, d paths.Dirs) *daemonAnswers {
 	env := ctl.Env()
 
 	a.wg.Go(func() { a.status, a.statErr = runQuiet(ctx, ctl.Bin, env, []string{"status"}) })
-	a.wg.Go(func() { a.export, a.expErr = runQuiet(ctx, ctl.Bin, env, []string{"export"}) })
+
+	if export {
+		a.wg.Go(func() { a.export, a.expErr = runQuiet(ctx, ctl.Bin, env, []string{"export"}) })
+	}
 
 	return a
 }
@@ -150,14 +153,16 @@ func reportService() { ui.Field("service", services().Describe()) }
 // reportEphemeralRun says what an ephemeral run is doing, before the machine's own anchor,
 // and whether one is running: or what a killed one left behind.
 func reportEphemeralRun(ctx context.Context) bool {
-	if d, stale := staleEphemeral(paths.EphemeralRoot()); stale {
+	d, run := ephemeralAt(paths.EphemeralRoot())
+
+	switch run {
+	case noRun:
+		return false
+	case staleRun:
 		ui.Field("ephemeral", "none running; "+d.Root+" was left by one that was killed, and the next "+
 			"ephemeral run clears it and stops any anchord it left")
 		ui.Println()
-	}
 
-	d, live := liveEphemeral()
-	if !live {
 		return false
 	}
 
@@ -170,7 +175,7 @@ func reportEphemeralRun(ctx context.Context) bool {
 		return true
 	}
 
-	daemon := askDaemon(ctx, d)
+	daemon := askDaemon(ctx, d, false)
 	daemon.wg.Wait()
 
 	ui.Field("running", "from "+d.Root+" — in memory alone; nothing of it outlives the run")

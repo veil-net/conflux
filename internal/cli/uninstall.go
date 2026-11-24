@@ -6,21 +6,15 @@ import (
 	"os"
 	"strings"
 
-	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
 )
 
 // staleEphemeral is root as an ephemeral run that was killed left it, if one did: there,
 // with nobody holding its lock.
 func staleEphemeral(root string) (paths.Dirs, bool) {
-	d := paths.EphemeralDirs(root)
-	if _, err := os.Stat(d.ServeLockFile()); err != nil {
-		return paths.Dirs{}, false
-	}
+	d, run := ephemeralAt(root)
 
-	held, err := flock.Held(d.ServeLockFile())
-
-	return d, err == nil && !held
+	return d, run == staleRun
 }
 
 // removeInstalled removes the conflux the install script put at exe, and link where it is a

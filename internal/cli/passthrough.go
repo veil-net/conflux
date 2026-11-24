@@ -216,12 +216,36 @@ func activeDirs() paths.Dirs {
 // liveEphemeral is the root of the ephemeral run that is running, if one is: the one whose
 // lock is held.
 func liveEphemeral() (paths.Dirs, bool) {
-	d := paths.Ephemeral()
-	if held, err := flock.Held(d.ServeLockFile()); err == nil && held {
-		return d, true
+	d, run := ephemeralAt(paths.EphemeralRoot())
+
+	return d, run == liveRun
+}
+
+// runState is what an ephemeral root says of its run, by its lock.
+type runState int
+
+const (
+	noRun    runState = iota // no lock: no run, or none since the root was emptied
+	liveRun                  // the lock, held: a run is running
+	staleRun                 // the lock, held by nobody: a run that was killed left it
+)
+
+// ephemeralAt is the ephemeral root at root and what it says of its run, asking its lock once.
+func ephemeralAt(root string) (paths.Dirs, runState) {
+	d := paths.EphemeralDirs(root)
+
+	if _, err := os.Stat(d.ServeLockFile()); err != nil {
+		return d, noRun
 	}
 
-	return paths.Dirs{}, false
+	switch held, err := flock.Held(d.ServeLockFile()); {
+	case err != nil:
+		return d, noRun
+	case held:
+		return d, liveRun
+	default:
+		return d, staleRun
+	}
 }
 
 // errEphemeralStarting is an ephemeral run asked for before it is up.

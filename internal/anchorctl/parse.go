@@ -59,22 +59,18 @@ type Status struct {
 	Interface string
 
 	// Observer is the observer's row, which status prints whether or not an anchor
-	// runs, and only where the daemon serves the observer.
+	// runs: anchord always serves the observer.
 	Observer Observer
 }
 
 // Observer is what status said of the daemon's observer.
 type Observer struct {
-	// Served says the daemon was started with the observer allowed: status prints a row
-	// for it, running or not.
-	Served bool
-
 	// Running says it is observing now.
 	Running bool
 
 	// Note is the row as anchorctl wrote it: "af_packet, 12 flows held, 3480 packets
-	// taken", "not observing", or "not observing: " and why a capture that was running
-	// stopped.
+	// taken; credential valid until …", "not observing", or "not observing: " and why a
+	// capture that was running stopped.
 	Note string
 }
 
@@ -109,7 +105,7 @@ func ParseStatus(stdout string) Status {
 			st.WorksUntil, _ = time.Parse(time.RFC3339, f[2])
 		case len(f) >= 2 && f[0] == "observer":
 			note := strings.Join(f[1:], " ")
-			st.Observer = Observer{Served: true, Running: !strings.HasPrefix(note, notObserving), Note: note}
+			st.Observer = Observer{Running: !strings.HasPrefix(note, notObserving), Note: note}
 		}
 	}
 

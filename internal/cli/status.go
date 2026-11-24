@@ -222,22 +222,8 @@ func reportConfig(d paths.Dirs, cfg *config.Config) {
 }
 
 func reportCredential(d paths.Dirs, cfg *config.Config, st *config.State) {
+	// Observing alone as beside an anchor: the observer runs under the same credential.
 	held, err := heldCredential(d)
-
-	// Observing alone needs no credential. One held is the identity the next up or proxy
-	// comes back with, and is said to be kept rather than reported on.
-	if !cfg.Anchor() {
-		if err == nil && held != nil {
-			kept := "kept for the next up or proxy"
-			if st != nil && st.AnchorID != "" {
-				kept = st.AnchorID + " — " + kept
-			}
-
-			ui.Field("identity", kept)
-		}
-
-		return
-	}
 
 	switch {
 	case err != nil:

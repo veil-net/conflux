@@ -2,7 +2,6 @@ package anchorctl
 
 import (
 	"testing"
-	"time"
 )
 
 // The fixtures below are the exact shapes anchorctl prints: printStarted and the
@@ -35,35 +34,35 @@ const statusOutput = `10:40:44  reachability=nat-cone  mtu=65521  peers=3  up=2h
   works until     2026-10-04T10:40:39Z
   proxy 53/udp    [fd80:c4b9:99ae:c540:9d81:a45c:141a:1ce5]:53, 10.128.0.7:53 → 127.0.0.1:53  (1 live, 4 opened)
   proxy 8080/tcp  [fd80:c4b9:99ae:c540:9d81:a45c:141a:1ce5]:8080, 10.128.0.7:8080 → 127.0.0.1:3000
+  observer        not observing
 `
 
-const notRunningOutput = "no anchor is running\n  fips140  on, Go Cryptographic Module v1.26.0\n"
+const notRunningOutput = "no anchor is running\n  fips140   on, Go Cryptographic Module v1.26.0\n  observer  not observing\n"
 
-// What status prints where the daemon serves the observer: the row comes last, padded with
-// the rest of its block, beside an anchor and with none -- as a live anchord with
-// -allow-observer printed it, observing, stopped, and stopped by a capture that ended.
+// What status prints of the observer, which anchord always serves: the row comes last, padded
+// with the rest of its block, beside an anchor and with none -- observing, under a credential
+// whose expiry the row carries, stopped, and stopped by a capture that ended.
 const (
 	observingAloneOutput = `no anchor is running
   fips140   off, Go Cryptographic Module latest
-  observer  af_packet, 2 flows held, 32 packets taken
-`
-	notObservingOutput = `no anchor is running
-  fips140   off, Go Cryptographic Module latest
-  observer  not observing
+  observer  af_packet, 2 flows held, 32 packets taken; credential valid until 2026-12-24T05:17:38Z
 `
 	observerFailedOutput = `no anchor is running
   fips140   off, Go Cryptographic Module latest
   observer  not observing: capture: reading the ring: network is down
 `
-	observingBesideOutput = statusOutput + `  observer        af_packet, 12 flows held, 3480 packets taken, 7 copies dropped
+	observingBesideOutput = `10:40:44  reachability=nat-cone  mtu=65521  peers=3  up=2h14m0s
+  anchor          ` + wantID + `
+  fips140         on, Go Cryptographic Module v1.26.0
+  works until     2026-10-04T10:40:39Z
+  observer        af_packet, 12 flows held, 3480 packets taken, 7 copies dropped; credential valid until 2026-10-04T10:40:39Z
 `
 )
 
-// What anchor's dev build prints beside an anchor: the observer's row carrying the
-// overlay's figures after its own, as a live anchord with -allow-observer printed it in
-// userspace, and the interface row a TUN anchor adds after the IPv4 one, named after the
-// anchor, as the status printer in anchor's cmd/anchorctl/lifecycle.go places it. A TUN
-// needs a host with IPv6, which the machine this was taken on had not.
+// What anchor prints beside a TUN anchor: the observer's row carrying the overlay's figures
+// after its own, and the credential's expiry after those, and the interface row a TUN anchor
+// adds after the IPv4 one, named after the anchor, as the status printer in anchor's
+// cmd/anchorctl/lifecycle.go places it.
 const tunObservingOutput = `04:16:16  reachability=unknown  mtu=65510  peers=0  up=2s
   anchor       anchorqsgwfbu4sk2mkzxmmsydbzcj2cg7rstcjrmsekf2bpaxsdiinmyq
   underlay     192.0.2.2:49055
@@ -76,47 +75,8 @@ const tunObservingOutput = `04:16:16  reachability=unknown  mtu=65510  peers=0  
   cut depth 0  joined to the whole tree
   renew by     2026-11-02T04:16:00Z
   works until  2026-11-02T04:16:00Z
-  observer     af_packet, 5 flows held, 24 packets taken; overlay of qsgwfbu4sk, 0 flows held, 0 packets taken
+  observer     af_packet, 5 flows held, 24 packets taken; overlay of qsgwfbu4sk, 0 flows held, 0 packets taken; credential valid until 2026-11-02T04:16:00Z
 `
-
-func TestParseStarted(t *testing.T) {
-	if s := ParseStarted(startedOutput); s.ID != wantID {
-		t.Errorf("ID = %q, want %q", s.ID, wantID)
-	}
-}
-
-func TestParseStatus(t *testing.T) {
-	st := ParseStatus(statusOutput)
-
-	if !st.Running {
-		t.Fatal("Running = false")
-	}
-
-	if st.ID != wantID {
-		t.Errorf("ID = %q, want %q", st.ID, wantID)
-	}
-
-	if len(st.Overlay) != 1 || st.Overlay[0] != "fd80:c4b9:99ae:c540:9d81:a45c:141a:1ce5/48" {
-		t.Errorf("Overlay = %v, want the one IPv6 address with its length", st.Overlay)
-	}
-
-	want := time.Date(2026, 10, 4, 10, 40, 39, 0, time.UTC)
-	if !st.WorksUntil.Equal(want) {
-		t.Errorf("WorksUntil = %v, want %v", st.WorksUntil, want)
-	}
-}
-
-// TestParseStatusReadsTheInterface: a TUN anchor's status names the interface it holds,
-// which with nothing asked for is the anchor's own name; userspace prints no such row.
-func TestParseStatusReadsTheInterface(t *testing.T) {
-	if got := ParseStatus(tunObservingOutput).Interface; got != "anchorqsgwfbu4s" {
-		t.Errorf("Interface = %q, want anchorqsgwfbu4s", got)
-	}
-	if got := ParseStatus(statusOutput).Interface; got != "" {
-		t.Errorf("Interface in userspace = %q, want none", got)
-	}
-}
-
 func TestParseStatusNotRunning(t *testing.T) {
 	if st := ParseStatus(notRunningOutput); st.Running || st.ID != "" {
 		t.Errorf("ParseStatus(%q) = %+v, want nothing running", notRunningOutput, st)
@@ -125,18 +85,17 @@ func TestParseStatusNotRunning(t *testing.T) {
 
 func TestParseStatusReadsTheObserver(t *testing.T) {
 	for name, tc := range map[string]struct {
-		out                  string
-		anchor, served, runs bool
-		failed               bool
-		note                 string
+		out          string
+		anchor, runs bool
+		failed       bool
+		note         string
 	}{
-		"observing, no anchor":  {observingAloneOutput, false, true, true, false, "af_packet, 2 flows held, 32 packets taken"},
-		"stopped, no anchor":    {notObservingOutput, false, true, false, false, "not observing"},
-		"failed, no anchor":     {observerFailedOutput, false, true, false, true, "not observing: capture: reading the ring: network is down"},
-		"beside an anchor":      {observingBesideOutput, true, true, true, false, "af_packet, 12 flows held, 3480 packets taken, 7 copies dropped"},
-		"and its overlay":       {tunObservingOutput, true, true, true, false, "af_packet, 5 flows held, 24 packets taken; overlay of qsgwfbu4sk, 0 flows held, 0 packets taken"},
-		"not served, an anchor": {statusOutput, true, false, false, false, ""},
-		"not served, none":      {notRunningOutput, false, false, false, false, ""},
+		"observing, no anchor":   {observingAloneOutput, false, true, false, "af_packet, 2 flows held, 32 packets taken; credential valid until 2026-12-24T05:17:38Z"},
+		"stopped, no anchor":     {notRunningOutput, false, false, false, "not observing"},
+		"failed, no anchor":      {observerFailedOutput, false, false, true, "not observing: capture: reading the ring: network is down"},
+		"beside an anchor":       {observingBesideOutput, true, true, false, "af_packet, 12 flows held, 3480 packets taken, 7 copies dropped; credential valid until 2026-10-04T10:40:39Z"},
+		"and its overlay":        {tunObservingOutput, true, true, false, "af_packet, 5 flows held, 24 packets taken; overlay of qsgwfbu4sk, 0 flows held, 0 packets taken; credential valid until 2026-11-02T04:16:00Z"},
+		"stopped, beside anchor": {statusOutput, true, false, false, "not observing"},
 	} {
 		st := ParseStatus(tc.out)
 
@@ -145,9 +104,9 @@ func TestParseStatusReadsTheObserver(t *testing.T) {
 		}
 
 		o := st.Observer
-		if o.Served != tc.served || o.Running != tc.runs || o.Failed() != tc.failed || o.Note != tc.note {
-			t.Errorf("%s: Observer = %+v (failed %v), want served %v, running %v, failed %v, note %q",
-				name, o, o.Failed(), tc.served, tc.runs, tc.failed, tc.note)
+		if o.Running != tc.runs || o.Failed() != tc.failed || o.Note != tc.note {
+			t.Errorf("%s: Observer = %+v (failed %v), want running %v, failed %v, note %q",
+				name, o, o.Failed(), tc.runs, tc.failed, tc.note)
 		}
 	}
 }

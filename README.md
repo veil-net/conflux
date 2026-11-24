@@ -10,9 +10,9 @@ recognise is passed straight through to it unchanged. What conflux adds on top i
 enrolment, credential renewal, a configuration file, a boot service, `conflux update` for
 itself, and `conflux cert`, a FIPS 140-3 certificate toolkit.
 
-It can also join nothing at all: `conflux observe` runs the daemon's observer alone, an
+It can also run no anchor at all: `conflux observe` runs the daemon's observer alone, an
 inventory of which services this host's traffic reaches and whether each key exchange is
-post-quantum, from every boot, with no enrolment and no credential.
+post-quantum, from every boot, under the machine's own credential.
 
 It also runs against a **self-hosted guardian**: an operator running their own control
 plane and their own subtree of the realm tree. That deployment is the opposite shape —
@@ -216,13 +216,14 @@ $ sudo conflux observe --export collector.example:4317
   anchord      conflux, with CAP_NET_RAW to copy what the host's interfaces carry, for the observer
 
 $ conflux inventory
-SERVICE        PORT     PROTOCOL  KEY EXCHANGE  GROUP           LAGGING  ROLE    PROCESS  FLOWS
-a.example      443/tcp  tls       hybrid        X25519MLKEM768  -        client  curl     3
+SERVICE        PORT     PROTOCOL  KEY EXCHANGE  GROUP           LAGGING  ROLE    SOURCE      PROCESS  FLOWS
+a.example      443/tcp  tls       hybrid        X25519MLKEM768  -        client  interfaces  curl     3
 ```
 
 The host copies the start of every flow to the daemon, which reads each handshake and
-records it; it carries nothing, so it can slow or break nothing. It joins no realm, so
-nothing is enrolled and no credential is needed, and it runs from every boot until it is
+records it; it carries nothing, so it can slow or break nothing. It runs under the machine's
+credential, as an identity its realm admits, so a machine with none is enrolled as `up`
+enrols one — in `--taint`'s taint, or a minted one — and it runs from every boot until it is
 stopped. With `--export`, each record goes to that OpenTelemetry collector as it is made;
 without one they stay in the daemon's inventory, which `conflux inventory` prints and
 `conflux inventory -cbom` gives as a CycloneDX CBOM. `anchord` is given the capture and
@@ -268,10 +269,10 @@ does.
 | | `conflux up` | `conflux proxy` | `conflux observe` |
 |---|---|---|---|
 | What the host gets | a TUN interface: `ping`, `ssh`, everything | nothing on the host | an inventory of its own traffic's cryptography |
-| What the realm gets | this machine, at an overlay address | the named services, at overlay ports | nothing: no realm is joined |
+| What the realm gets | this machine, at an overlay address | the named services, at overlay ports | nothing: no anchor joins it |
 | Privilege to run | root, to register the boot service | root, to register the boot service | root, to register the boot service |
 | What `anchord` runs with | its own account and `CAP_NET_ADMIN` on Linux; root on macOS and the BSDs, SYSTEM on Windows | its own account and nothing else (`LOCAL SERVICE` on Windows) | its own account and the capture: `CAP_NET_RAW` on Linux, `/dev/bpf*` on macOS, `LOCAL SERVICE` on Windows |
-| Needs a credential | yes, enrolled or installed | yes, enrolled or installed | no |
+| Needs a credential | yes, enrolled or installed | yes, enrolled or installed | yes, enrolled or installed: the observer runs under it |
 | Needs `wintun.dll` on Windows | yes | no | no |
 | Can forward a subnet or serve an exit | yes, the host forwards | yes, from the anchor's own process | no |
 | Can run over an uplink | yes, `--uplink` | yes, `--uplink` | no |

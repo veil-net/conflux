@@ -87,8 +87,7 @@ func runRenew(ctx context.Context, args []string) int {
 // renewNow is the body, split out so the test can drive it against a temporary
 // CONFLUX_DIR without going through privcheck.
 func renewNow(ctx context.Context, d paths.Dirs) int {
-	cfg, err := config.Load(d)
-	if err != nil {
+	if _, err := config.Load(d); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			ui.Errf("this machine has never been configured, so there is no credential to renew.\n\n" + configureHint)
 
@@ -98,21 +97,13 @@ func renewNow(ctx context.Context, d paths.Dirs) int {
 		return fail(err)
 	}
 
-	// Unavailable, like a machine with nothing enrolled: observing runs no anchor and needs
-	// no credential, and one this machine holds is renewed by the next anchor it runs.
-	if !cfg.Anchor() {
-		ui.Errf("this machine only observes, which needs no credential, so there is nothing to renew.\n" +
-			"  The next conflux up or proxy renews the one it holds, if it is due.")
-
-		return ExitUnavailable
-	}
-
 	if !config.HasManifest(d) {
 		return neverEnrolled()
 	}
 
-	// Renewal is a hot swap into a running anchor, so "nothing is running" is the
-	// likely failure and deserves conflux's own answer rather than a dial error.
+	// Renewal is a hot swap into a running anchor or observer -- observing alone runs under
+	// the credential as an anchor does -- so "nothing is running" is the likely failure and
+	// deserves conflux's own answer rather than a dial error.
 	if _, err := os.Stat(d.Socket()); errors.Is(err, fs.ErrNotExist) {
 		ui.Errf("nothing is running here, and a credential is installed into a running anchor.\n\n"+
 			"  conflux start     start from the configuration this machine already has\n\n"+

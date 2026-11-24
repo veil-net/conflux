@@ -225,16 +225,20 @@ Needs root, only to register the boot service.
 ## `conflux observe`
 
 ```
-conflux observe [--loopback] [--hide-names] [--export HOST:PORT [--export-insecure]] [--yes]
+conflux observe [--taint T] [--api URL] [--loopback] [--hide-names] [--export HOST:PORT [--export-insecure]] [--yes]
 ```
 
 Runs the daemon's observer and no anchor, writes the configuration, and registers the boot
 service: from now and from every boot, until it is stopped. The host copies the start of every
-flow to the daemon, which records each flow's cryptography; nothing is enrolled, no credential
-is needed, and no realm is joined. See [observe.md](observe.md).
+flow to the daemon, which records each flow's cryptography. The observer runs under the
+machine's credential, as an identity its realm admits: a machine with none is enrolled as `up`
+enrols one, and the credential is renewed for the life of the identity. See
+[observe.md](observe.md).
 
 | Flag | Meaning |
 |---|---|
+| `--taint T` | the taint to enrol in, as on `up`: the request on a machine with no credential yet, minted when omitted, and checked against the credential's once one is held. |
+| `--api URL` | the enrolment API, as on `up`. |
 | `--loopback` | observe the loopback interfaces too. Windows' capture never sees them. |
 | `--hide-names` | leave every name a flow was reached by out of the records and the inventory, the server's address in its place. |
 | `--export HOST:PORT` | send each record, as it is made, and the daemon's telemetry to that collector, as on `up`. Without an export with `flows`, the records stay in the daemon's inventory, and conflux says so. |
@@ -408,11 +412,10 @@ not part of normal operation. It is for the machine whose renewals have been fai
 restarting the service and paying every session for a swap that needs none of them.
 
 It does not enrol. A machine with no manifest has nothing to renew, and drawing an
-identity here would replace the one a reboot expects; it says so and exits 69. So does a
-machine that only observes, which needs no credential: the next `up` or `proxy` renews the one
-it holds, if it is due. It also
-exits 69 when nothing is running, because a credential is installed *into* a running
-anchor, and a machine that is meant to be down renews on its next start anyway. And it
+identity here would replace the one a reboot expects; it says so and exits 69. A machine
+that only observes is renewed as one running an anchor is: the observer runs under the same
+credential. It also exits 69 when nothing is running, because a credential is installed
+*into* a running anchor or observer, and a machine that is meant to be down renews on its next start anyway. And it
 exits 69 on a [fixed-term credential](credentials.md#a-credential-that-does-not-renew),
 which names nowhere to renew it.
 

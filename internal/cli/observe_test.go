@@ -39,6 +39,28 @@ func TestObserveRefusesAnchorctlFlags(t *testing.T) {
 	}
 }
 
+// TestObservingTakesATaintAndAnAPI: the observer runs under this machine's credential, which
+// conflux observe enrols as up does where there is none -- in the taint --taint names, or a
+// minted one, at the API --api names -- so it takes both of up's flags for it, and they are
+// its own, not anchorctl's.
+func TestObservingTakesATaintAndAnAPI(t *testing.T) {
+	f := newObserveFlags()
+
+	args := []string{"--taint", "t1", "--taint", "t2", "--api", "https://api-dev.veilnet.com.au"}
+
+	if hint := f.anchorctls(args); hint != "" {
+		t.Fatalf("conflux observe answered its own flags with: %s", hint)
+	}
+
+	if err := f.fs.Parse(args); err != nil {
+		t.Fatal(err)
+	}
+
+	if !slices.Equal(f.taints, []string{"t1", "t2"}) || *f.api != "https://api-dev.veilnet.com.au" {
+		t.Errorf("parsed --taint %v and --api %q", f.taints, *f.api)
+	}
+}
+
 func TestObserveTakesNoArguments(t *testing.T) {
 	_, errOut, code := capture(t, "observe", "now")
 

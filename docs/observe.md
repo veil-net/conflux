@@ -19,8 +19,14 @@ What it has seen, by service and key exchange:  conflux inventory   (-cbom for a
 ```
 
 It **carries nothing**: what it reads is a copy, so it can slow, break or reroute no connection,
-and if it stops nothing on the host notices but the inventory. It **joins no realm**: nothing is
-enrolled, no credential is needed and none is renewed, and the enrolment API is never asked.
+and if it stops nothing on the host notices but the inventory. It **runs under the machine's
+credential**: anchor's observer runs only as an identity its realm admits, checked as an
+anchor's start is, so conflux starts it under the machine's manifest, on anchorctl's stdin
+(`observe -start -manifest -`). A machine with none is enrolled as `up` enrols one — in
+`--taint`'s taint, or a minted one — and the credential is renewed for the life of the identity
+on the observer as on an anchor (`observe -cred -`), by the AnchorID the observer reports. An
+observer whose credential lapses goes on observing and exports nothing until it is renewed;
+`conflux status`'s `observer` row says until when it is valid.
 
 ## Where the records go
 

@@ -16,10 +16,12 @@ import (
 //
 // conflux's decides what the machine runs: the daemon's observer and no anchor, inventorying
 // the cryptography of the host's own traffic -- which services it reaches, serves or passes
-// on, over which protocols, and whether each key exchange is post-quantum -- and joining no
-// realm, so with no enrolment, no credential and no taint. The observer runs until it is
-// stopped and starts again at every boot; each record of a flow is sent to the collector the
-// export names as it is made, and kept in the daemon's inventory whether or not one is.
+// on, over which protocols, and whether each key exchange is post-quantum. The observer runs
+// under this machine's credential, as an identity its realm admits, so a machine with none is
+// enrolled as up enrols one: in the taint --taint names, or a minted one, and renewed for the
+// life of the identity as an anchor's credential is. The observer runs until it is stopped
+// and starts again at every boot; each record of a flow is sent to the collector the export
+// names as it is made, and kept in the daemon's inventory whether or not one is.
 // anchorctl's observe starts and stops the observer of a running daemon, and reports on it.
 //
 // The collision is resolved by shape, as conflux proxy's is: conflux observe takes its own
@@ -90,6 +92,21 @@ func runObserve(ctx context.Context, args []string) int {
 	cfg.Mode = config.ModeObserve
 	cfg.Observer = &config.Observer{Loopback: *f.loopback, HideNames: *f.hideNames}
 
+	if *f.api != "" {
+		cfg.APIBaseURL = *f.api
+	}
+
+	// The credential the observer runs under is the machine's, decided as up decides it: the
+	// taints of the one held, or for a machine with none the --taint asked for or one minted.
+	held, err := heldCredential(d)
+	if err != nil {
+		return fail(err)
+	}
+
+	if err := chooseTaints(cfg, f.taints, held); err != nil {
+		return fail(err)
+	}
+
 	return bring(ctx, d, cfg, "observe", false)
 }
 
@@ -133,7 +150,8 @@ type observeFlags struct {
 	fs *flag.FlagSet
 
 	loopback, hideNames, exportInsecure, yes *bool
-	export                                   *string
+	export, api                              *string
+	taints                                   repeated
 }
 
 func newObserveFlags() *observeFlags {
@@ -148,15 +166,20 @@ func newObserveFlags() *observeFlags {
 	f.export = fs.String("export", "", exportUsage)
 	f.exportInsecure = fs.Bool("export-insecure", false, exportInsecureUsage)
 	f.yes = fs.Bool("yes", false, "stop the anchor this machine runs without asking: it leaves its realm, and keeps its identity and settings")
+	f.api = fs.String("api", "", "enrolment API base URL")
+	fs.Var(&f.taints, "taint", taintUsage)
 
 	fs.Usage = func() {
 		ui.Printf("conflux observe — inventory the cryptography of this host's traffic, with no anchor\n\n" +
-			"  conflux observe [--loopback] [--hide-names] [--export HOST:PORT [--export-insecure]] [--yes]\n\n" +
+			"  conflux observe [--taint T] [--loopback] [--hide-names] [--export HOST:PORT [--export-insecure]] [--yes]\n\n" +
 			"Runs the daemon's observer and nothing else. The host copies the start of every flow\n" +
 			"its interfaces carry to it, and it records which services the host reaches, serves\n" +
 			"or passes on, over which protocols, and whether each key exchange is post-quantum,\n" +
 			"hybrid, classical or none, and which side held it back. It carries nothing, so it\n" +
-			"can slow or break nothing, and it joins no realm: nothing is enrolled.\n\n" +
+			"can slow or break nothing.\n\n" +
+			"It runs under this machine's credential, as an identity its realm admits: a machine\n" +
+			"with none is enrolled as conflux up enrols one, in the taint --taint names or a\n" +
+			"minted one, and the credential is renewed for the life of the identity.\n\n" +
 			"It runs until it is stopped, and from every boot. With --export, or an export with\n" +
 			"flows in conflux.json, each record goes to that collector as it is made; either way\n" +
 			"the daemon keeps an inventory of them, which conflux inventory prints.\n\n" +

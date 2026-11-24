@@ -105,9 +105,12 @@ somewhere a reboot empties, so a run that could not clean up leaves nothing past
 |---|---|
 | root on Linux | `/run/conflux-ephemeral`, in memory |
 | root on macOS and the BSDs | `/var/run/conflux-ephemeral`, which the system empties at boot |
-| an ordinary user on Linux | `$XDG_RUNTIME_DIR/conflux-ephemeral`, in memory, or `$TMPDIR/conflux-ephemeral-UID` (`/tmp` where that is unset) |
-| an ordinary user elsewhere | `$TMPDIR/conflux-ephemeral-UID` |
+| an ordinary user on Linux, macOS or the BSDs | `$XDG_RUNTIME_DIR/conflux-ephemeral` where the session sets that (in memory on Linux), and elsewhere `$TMPDIR/conflux-ephemeral-UID` (`/tmp` where that is unset) |
 | Windows | `conflux-ephemeral` in the account's `%TEMP%` |
+
+`$TMPDIR` is the one that may outlive a boot: FreeBSD keeps `/tmp` across a reboot unless
+`clear_tmp_enable="YES"` is set in `rc.conf`, so there the root of a run an ordinary user
+with no `$XDG_RUNTIME_DIR` had killed waits for that user's next run to clear it.
 
 It holds the lock that makes it the only ephemeral run for that user, the bearer token and
 the socket, the record of the anchord it started and what that runs as, and, where the pair

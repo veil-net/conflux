@@ -24,28 +24,31 @@ const ephemeralName = "conflux-ephemeral"
 func Ephemeral() Dirs { return Dirs{Root: EphemeralRoot()} }
 
 // EphemeralRoot is where this account's ephemeral run is kept: in memory where the platform
-// keeps its runtime files there, and everywhere somewhere a reboot empties. Per account,
-// because the account running conflux decides what it may write: root's under the system's
-// runtime directory, anybody else's under their own.
+// keeps its runtime files there, and otherwise somewhere a reboot empties -- the system's
+// runtime directory, a user's own where the session names one ($XDG_RUNTIME_DIR, on any
+// Unix), or else their temporary directory, which FreeBSD keeps across a reboot unless
+// clear_tmp_enable is set. Per account, because the account running conflux decides what it
+// may write: root's under the system's runtime directory, anybody else's under their own.
 func EphemeralRoot() string {
 	if rooted {
 		return root + "-ephemeral"
 	}
 
-	return ephemeralRoot(os.Geteuid(), os.Getenv)
+	return ephemeralRoot(runtime.GOOS, os.Geteuid(), os.Getenv)
 }
 
-func ephemeralRoot(euid int, getenv func(string) string) string {
+// ephemeralRoot is EphemeralRoot on goos, for euid, with getenv's environment.
+func ephemeralRoot(goos string, euid int, getenv func(string) string) string {
 	switch {
-	case runtime.GOOS == "windows":
+	case goos == "windows":
 		return filepath.Join(os.TempDir(), ephemeralName)
-	case euid == 0 && runtime.GOOS == "linux":
+	case euid == 0 && goos == "linux":
 		return filepath.Join("/run", ephemeralName)
 	case euid == 0:
 		return filepath.Join("/var/run", ephemeralName)
 	}
 
-	if xdg := getenv("XDG_RUNTIME_DIR"); runtime.GOOS == "linux" && xdg != "" && filepath.IsAbs(xdg) {
+	if xdg := getenv("XDG_RUNTIME_DIR"); xdg != "" && filepath.IsAbs(xdg) {
 		return filepath.Join(xdg, ephemeralName)
 	}
 

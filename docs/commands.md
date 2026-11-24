@@ -557,9 +557,11 @@ elsewhere, where the conflux the update's own PATH — root's, `secure_path` und
 Fedora and RHEL — finds is not that file, `/usr/local/bin` left out or another conflux found
 first, `/usr/bin/conflux` is linked to it, as `install.sh` links it, and kept only where that
 PATH, asked again, finds the file through it: where it finds another conflux before `/usr/bin`
-the link goes again, and the other is named, as it is beside a link made before. A
-`/usr/bin/conflux` that is not that link is left alone, and said. No token is needed or sent:
-the repository is public.
+the link goes again, as one made before does, and the other is named, to be removed before
+`install.sh` is run again (an update, finding conflux installed, makes no link), or conflux
+typed by its full path under `sudo`. A `/usr/bin/conflux` that is not that link is left alone,
+and said: where that PATH finds it in conflux's place, to be removed before `install.sh` is run
+again. No token is needed or sent: the repository is public.
 
 | Situation | |
 |---|---|

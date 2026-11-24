@@ -107,8 +107,12 @@ func (s systemd) Install(exe string, args ...string) error {
 
 func (s systemd) Remove() error {
 	// Every step tolerates its own failure, so a unit file already deleted does not
-	// stop the rest from being undone.
-	errs := []error{run("systemctl", "disable", "--now", unitName)}
+	// stop the rest from being undone. The stop is its own step for the same reason: disable
+	// --now stops nothing once the disable has failed, which it does for a unit whose file is
+	// gone, and such a unit may still be running. It answers no for a unit not loaded at all.
+	_ = run("systemctl", "stop", unitName)
+
+	errs := []error{run("systemctl", "disable", unitName)}
 
 	// Gone with a disable that worked, and left dangling by one that did not.
 	for _, path := range []string{wantsPath, unitPath} {

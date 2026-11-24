@@ -139,10 +139,10 @@ func runEscapeHatch(ctx context.Context, args []string) int {
 	return passthrough(ctx, args)
 }
 
-// afterDashes is the words of a command that names another, help's or the escape hatch's,
-// with a leading "--" passed over: no command is called that, and "conflux anchorctl -- proxy
-// -add ..." is a spelling people will try, where the separator is noise once it has done its
-// job at the shell.
+// afterDashes is the words given to help or to the escape hatch, its only callers, each of which
+// takes a command to name, with a leading "--" passed over: `help -- up` is up's usage, and
+// "conflux anchorctl -- proxy -add ..." is a spelling people will try, where the separator is
+// noise once it has done its job at the shell.
 func afterDashes(args []string) []string {
 	if len(args) > 0 && args[0] == "--" {
 		return args[1:]

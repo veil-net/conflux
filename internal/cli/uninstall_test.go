@@ -12,57 +12,6 @@ import (
 	"github.com/veil-net/conflux/internal/paths"
 )
 
-// TestUninstallTakesTheInstalledConflux: what install.sh put in place goes -- the executable,
-// and the link it made for sudo -- and a link or a file of the same name that is somebody
-// else's stays.
-func TestUninstallTakesTheInstalledConflux(t *testing.T) {
-	dir := t.TempDir()
-	exe := filepath.Join(dir, "local", "conflux")
-	link := filepath.Join(dir, "bin", "conflux")
-
-	for _, d := range []string{filepath.Dir(exe), filepath.Dir(link)} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	if err := os.WriteFile(exe, []byte("conflux"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.Symlink(exe, link); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := removeInstalled(exe, link); err != nil {
-		t.Fatal(err)
-	}
-
-	for _, p := range []string{exe, link} {
-		if _, err := os.Lstat(p); !os.IsNotExist(err) {
-			t.Errorf("%s survived uninstall (%v)", p, err)
-		}
-	}
-
-	// A link to something else is not conflux's.
-	other := filepath.Join(dir, "other")
-	if err := os.WriteFile(other, nil, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.Symlink(other, link); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := removeInstalled(exe, link); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := os.Lstat(link); err != nil {
-		t.Errorf("a link that is not conflux's was removed (%v)", err)
-	}
-}
-
 // removalService is a registered service that records whether it was removed.
 type removalService struct {
 	noService

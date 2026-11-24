@@ -5,6 +5,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,6 +22,36 @@ var updateLink = paths.SudoLink
 // sudo; this process may be that conflux, and its file goes all the same.
 func removeInstallation() error {
 	return removeInstalled(paths.InstalledExecutable(), paths.SudoLink())
+}
+
+// removeInstalled removes the conflux the install script put at exe, and link where it is a
+// link to exe -- the one install.sh makes for sudo -- leaving a file or a link of that name
+// that is somebody else's.
+func removeInstalled(exe, link string) error {
+	errs := []error{removeIfThere(exe)}
+
+	if linksTo(link, exe) {
+		errs = append(errs, removeIfThere(link))
+	}
+
+	return errors.Join(errs...)
+}
+
+// linksTo reports whether link is the link for sudo to exe, as install.sh and an update make it:
+// a symbolic link whose target is exe as written, so a link of that name to anything else,
+// another spelling of exe included, is somebody else's.
+func linksTo(link, exe string) bool {
+	target, err := os.Readlink(link)
+
+	return err == nil && target == exe
+}
+
+func removeIfThere(path string) error {
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+
+	return nil
 }
 
 // putOnPath has root find exe, a conflux an update installed where there was none, by name, as

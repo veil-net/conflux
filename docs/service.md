@@ -164,8 +164,9 @@ from; see [install.md](install.md).
 
 The registration is the supervisor's to keep, as the root is: every start places the copy it
 runs again if it differs and puts the definition back to what this conflux writes — on
-systemd removing any drop-in in `conflux.service.d/`, which would change the unit that runs —
-so a unit, plist, rc script or SCM entry changed by hand lasts until the next start and no
+systemd removing every drop-in, which would change the unit that runs: `conflux.service.d/` in
+`/etc/systemd/system`, and in `system.control`, where `systemctl set-property` writes, and the
+same two under `/run` — so a unit, plist, rc script or SCM entry changed by hand lasts until the next start and no
 longer. What is already that is not written again: an unchanged unit, plist or rc script keeps
 its inode and its mtime, and the BSDs' `rc.conf` line is set only where the service is not
 enabled. On macOS the plist is rewritten without unloading the job that is running it, and

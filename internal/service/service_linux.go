@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/veil-net/conflux/internal/config"
@@ -21,9 +22,37 @@ const unitPath = "/etc/systemd/system/" + unitName
 // enabled means on disk.
 const wantsPath = "/etc/systemd/system/multi-user.target.wants/" + unitName
 
-// dropinDir is where systemd reads drop-ins that change the unit: none of them conflux's,
-// so the unit that runs is the one conflux writes.
-const dropinDir = unitPath + ".d"
+// dropinDirs are where systemd reads drop-ins that change the unit: an administrator's, and
+// systemctl set-property's (system.control), each persistent in /etc and for the boot in /run.
+// None of them conflux's, so the unit that runs is the one conflux writes.
+var dropinDirs = []string{
+	"/etc/systemd/system/" + unitName + ".d",
+	"/etc/systemd/system.control/" + unitName + ".d",
+	"/run/systemd/system/" + unitName + ".d",
+	"/run/systemd/system.control/" + unitName + ".d",
+}
+
+// removeDropins removes every drop-in directory of the unit's under root, "/" but in a test,
+// and reports whether there was one.
+func removeDropins(root string) (bool, error) {
+	var (
+		found bool
+		errs  []error
+	)
+
+	for _, dir := range dropinDirs {
+		path := filepath.Join(root, dir)
+		if _, err := os.Lstat(path); err != nil {
+			continue
+		}
+
+		found = true
+
+		errs = append(errs, os.RemoveAll(path))
+	}
+
+	return found, errors.Join(errs...)
+}
 
 type systemd struct{}
 
@@ -45,11 +74,9 @@ func (s systemd) Install(exe string, args ...string) error {
 	}
 
 	// A drop-in would make the unit that runs something other than this one.
-	_, dropins := os.Lstat(dropinDir)
-	if dropins == nil {
-		if err := os.RemoveAll(dropinDir); err != nil {
-			return err
-		}
+	dropins, err := removeDropins("/")
+	if err != nil {
+		return err
 	}
 
 	// Readable by all, as systemd expects a unit to be; written whole or not at all, and only
@@ -62,7 +89,7 @@ func (s systemd) Install(exe string, args ...string) error {
 	// Registered exactly so already, which is every re-run of up and proxy: a read and a
 	// stat, rather than a daemon-reload and an enable that would change nothing and cost
 	// most of what the restart that follows does.
-	if !wrote && dropins != nil {
+	if !wrote && !dropins {
 		if _, err := os.Lstat(wantsPath); err == nil {
 			return nil
 		}
@@ -90,7 +117,8 @@ func (s systemd) Remove() error {
 		}
 	}
 
-	errs = append(errs, os.RemoveAll(dropinDir))
+	_, err := removeDropins("/")
+	errs = append(errs, err)
 
 	errs = append(errs, run("systemctl", "daemon-reload"))
 	_ = run("systemctl", "reset-failed", unitName)
@@ -145,6 +173,6 @@ func (s systemd) Describe() string {
 
 func (systemd) LogHint() string { return "journalctl -u " + unitName + " -n 50" }
 
-// Reconcile is Install, which rewrites the unit only where it differs, removes any drop-in,
+// Reconcile is Install, which rewrites the unit only where it differs, removes every drop-in,
 // and starts nothing, so the running service may call it.
 func (systemd) Reconcile(exe string, args ...string) error { return systemd{}.Install(exe, args...) }

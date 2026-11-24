@@ -308,32 +308,30 @@ func TestAnEphemeralRootGoesWhileItsLockIsHeld(t *testing.T) {
 func TestAnEphemeralRootTakesTheDriverWithIt(t *testing.T) {
 	is := newIssuer(t)
 
-	var (
-		asked   []string
-		library string // the root's wintun.dll, which must still be there when the driver goes
-	)
+	// Recorded as wintun.DeleteDriver acts: only through a library under the root, so asking
+	// once the library had gone would be no ask at all. Windows' answer here is a failure.
+	var asked []string
 
-	inUse := errors.New("an adapter is in use")
+	failed := errors.New("the driver would not go")
 	deleteDriver = func(d paths.Dirs) error {
-		asked = append(asked, d.Root)
-
-		if library != "" {
-			if _, err := os.Stat(library); err != nil {
-				t.Errorf("the driver was asked to go after the root's library had: %v", err)
-			}
+		if driverLibraryIn(d) == "" {
+			return nil
 		}
 
-		return inUse
+		asked = append(asked, d.Root)
+
+		return failed
 	}
 	t.Cleanup(func() { deleteDriver = wintun.DeleteDriver })
 
-	// A run's end, once and not twice.
+	// A TUN run's end, once and not twice, through the library its root holds by then.
 	r := runEphemeral(t, is, handed(t, is, time.Now().Add(-time.Hour), time.Now().Add(30*24*time.Hour)))
 	r.up(t)
+	placeLibrary(t, paths.EphemeralDirs(r.root))
 	r.cancel()
 
 	if err := r.ended(t); err != nil {
-		t.Errorf("a cancelled run ended with %v, want nil: a driver kept in use is a warning", err)
+		t.Errorf("a cancelled run ended with %v, want nil: the driver's answer is a warning", err)
 	}
 
 	if len(asked) != 1 || asked[0] != r.root {
@@ -346,22 +344,15 @@ func TestAnEphemeralRootTakesTheDriverWithIt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	library = filepath.Join(d.Libexec(), "0123456789abcdef", wintun.DLLName)
-	if err := os.MkdirAll(filepath.Dir(library), 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.WriteFile(library, []byte("MZ"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	placeLibrary(t, d)
 
 	unlock, ok, err := flock.TryAcquire(d.ServeLockFile())
 	if err != nil || !ok {
 		t.Fatalf("the killed run's lock: ok %v, %v", ok, err)
 	}
 
-	if err := RemoveEphemeralRoot(d, unlock); !errors.Is(err, inUse) {
-		t.Errorf("RemoveEphemeralRoot = %v, want the driver's answer, %v", err, inUse)
+	if err := RemoveEphemeralRoot(d, unlock); !errors.Is(err, failed) {
+		t.Errorf("RemoveEphemeralRoot = %v, want the driver's answer, %v", err, failed)
 	}
 
 	if len(asked) != 2 || asked[1] != d.Root {
@@ -482,22 +473,15 @@ func TestANextRunTakesAKilledRunsDriver(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	library := filepath.Join(d.Libexec(), "0123456789abcdef", wintun.DLLName)
-	if err := os.MkdirAll(filepath.Dir(library), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	placeLibrary(t, d)
 
-	if err := os.WriteFile(library, []byte("MZ"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
+	// Counted as wintun.DeleteDriver acts: only through a library under the root, so a driver
+	// asked to go once the library had gone is not asked at all.
 	var asked int
 
-	deleteDriver = func(paths.Dirs) error {
-		asked++
-
-		if _, err := os.Stat(library); err != nil {
-			t.Errorf("the driver was asked to go after the killed run's library had: %v", err)
+	deleteDriver = func(d paths.Dirs) error {
+		if driverLibraryIn(d) != "" {
+			asked++
 		}
 
 		return nil
@@ -524,8 +508,33 @@ func TestANextRunTakesAKilledRunsDriver(t *testing.T) {
 		t.Errorf("the run's own lock went with the rest: %v", err)
 	}
 
-	// A root with no pair in it -- a fresh one, or a Linux run's, in memory -- asks nothing.
+	// A root with no pair in it -- a fresh one, or a Linux run's, in memory -- removes no driver.
 	if err := clearKilled(d, &Ephemeral{Dirs: d}); err != nil || asked != 1 {
-		t.Errorf("clearing a root with no bin/ asked for the driver (%d) or failed: %v", asked, err)
+		t.Errorf("clearing a root with no bin/ removed the driver (%d) or failed: %v", asked, err)
 	}
+}
+
+// placeLibrary puts a Wintun library in a set under d's bin, where a TUN run on Windows has one.
+func placeLibrary(t *testing.T, d paths.Dirs) {
+	t.Helper()
+
+	library := filepath.Join(d.Libexec(), "0123456789abcdef", wintun.DLLName)
+	if err := os.MkdirAll(filepath.Dir(library), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(library, []byte("MZ"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// driverLibraryIn is a Wintun library in any set under d's bin, where wintun.DeleteDriver finds
+// the one it removes the driver through, or "".
+func driverLibraryIn(d paths.Dirs) string {
+	found, _ := filepath.Glob(filepath.Join(d.Libexec(), "*", wintun.DLLName))
+	if len(found) == 0 {
+		return ""
+	}
+
+	return found[0]
 }

@@ -460,9 +460,10 @@ to copy what the host's interfaces carry, for the observer` observing on Linux, 
 reason the host needs it. See [security.md](security.md#what-anchord-runs-as).
 
 Where the observer runs, an `observer` line is its row from `anchorctl status` — `af_packet, 12
-flows held, 3480 packets taken`, or `not observing` and why a capture that was running ended —
-with its options, and a `records` line says where its records go: to the collector the export
-names, as each is made, or nowhere but the daemon's inventory. Observing alone, the mode line
+flows held, 3480 packets taken; credential valid until 2026-12-24T05:17:38Z`, or `not observing`
+and why a capture that was running ended — with its options, and a `records` line says where its
+records go: to the collector the export names, as each is made, or nowhere but the daemon's
+inventory. Observing alone, the mode line
 says so, and the anchor's settings — its taint, peers, address, served subnets and proxies — are
 left out: they are kept for the next `up` or `proxy`, and describe nothing that runs. The
 credential lines stay, since the observer runs under the machine's credential and renews it.

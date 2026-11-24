@@ -209,7 +209,7 @@ post-quantum, and which side holds the rest back, observe instead of joining:
 
 ```console
 $ sudo conflux observe --export collector.example:4317
-  observer     af_packet, 0 flows held, 0 packets taken
+  observer     af_packet, 0 flows held, 0 packets taken; credential valid until 2026-12-24T05:17:38Z
   records      each sent to collector.example:4317 as it is made, and kept in the inventory
   service      active (systemd: conflux.service, enabled at boot)
   anchord      conflux, with CAP_NET_RAW to copy what the host's interfaces carry, for the observer

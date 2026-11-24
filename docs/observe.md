@@ -10,7 +10,7 @@ account of its own, given exactly the privilege it needs.
 
 ```console
 $ sudo conflux observe
-  observer     af_packet, 0 flows held, 0 packets taken
+  observer     af_packet, 0 flows held, 0 packets taken; credential valid until 2026-12-24T05:17:38Z
   records      kept here, in the daemon's inventory until it restarts; --export HOST:PORT sends each to a collector
   service      active (systemd: conflux.service, enabled at boot)
   anchord      conflux, with CAP_NET_RAW to copy what the host's interfaces carry, for the observer
@@ -99,7 +99,7 @@ instead ([config.md](config.md#export--where-telemetry-goes)). `conflux status` 
 observer's line, once an anchor runs beside it:
 
 ```console
-  observer     af_packet, 5 flows held, 24 packets taken; overlay of 6btpa3gn6w, 2 flows held, 31 packets taken
+  observer     af_packet, 5 flows held, 24 packets taken; overlay of 6btpa3gn6w, 2 flows held, 31 packets taken; credential valid until 2026-12-24T05:17:38Z
 ```
 
 ```console

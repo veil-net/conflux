@@ -277,8 +277,9 @@ func TestRenewToleratesABootstrapItCannotUse(t *testing.T) {
 // TestRenewRefusesAnExpiryAlreadyGone: a renewal whose chain expires before now is no
 // renewal -- anchor would refuse it, and the state would record a window already over -- so
 // it is refused as a bad answer, as an unparseable one is. Now is the issuer's as far as the
-// clock was measured off it: a chain this clock sees as just gone, and the issuer's does not,
-// is taken, as a clock running ahead of the issuer's would see a fresh one.
+// clock was measured off it, ahead or behind: a chain this clock sees as just gone, and the
+// issuer's does not, is taken, as a clock running ahead of the issuer's would see a fresh
+// one; and one the issuer's clock, ahead of this one, sees as gone is refused.
 func TestRenewRefusesAnExpiryAlreadyGone(t *testing.T) {
 	local := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
 
@@ -294,6 +295,8 @@ func TestRenewRefusesAnExpiryAlreadyGone(t *testing.T) {
 		"gone, with no clock to measure":     {true, 0, -time.Second, false},
 		"gone by this clock, not the issuer": {false, -time.Minute, -30 * time.Second, true},
 		"gone by the issuer's clock too":     {false, -time.Minute, -90 * time.Second, false},
+		"gone by the issuer's, ahead":        {false, time.Minute, 30 * time.Second, false},
+		"current by the issuer's, ahead":     {false, time.Minute, 90 * time.Second, true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			c, s := server(t, func(w http.ResponseWriter, _ *http.Request) {

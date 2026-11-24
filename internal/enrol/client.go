@@ -79,7 +79,9 @@ type Client struct {
 	// Enrol ignores it: enrolment is what draws a credential, so it cannot hold one.
 	Auth Auth
 
-	skew     time.Duration
+	// offset is the issuer's clock less this one's, as the last call measured it: signed, so
+	// the issuer's now is now+offset whichever of the two is ahead.
+	offset   time.Duration
 	measured bool
 }
 
@@ -135,8 +137,8 @@ func CheckSkew(skew, limit time.Duration) error {
 }
 
 // Skew is how far this machine's clock was from the server's on this client's last
-// call, and whether that call measured it at all.
-func (c *Client) Skew() (time.Duration, bool) { return c.skew, c.measured }
+// call, in either direction, and whether that call measured it at all.
+func (c *Client) Skew() (time.Duration, bool) { return c.offset.Abs(), c.measured }
 
 func (c *Client) base() string {
 	if c.BaseURL == "" {
@@ -293,8 +295,9 @@ func (c *Client) Renew(ctx context.Context, renewalURL, anchorID string, taints 
 	// A chain that has expired already is no renewal, and as bad an answer as one that is
 	// not a timestamp: anchor would refuse it, and the state would record a window already
 	// over, due again at once. Now is taken as the issuer's clock had it, as far as this one
-	// was measured off it, so a clock running ahead of the issuer's is not refused a fresh one.
-	if !notAfter.After(c.now().Add(-c.skew)) {
+	// was measured off it, so a clock running ahead of the issuer's is not refused a fresh one,
+	// and one running behind it does not take a chain the issuer's clock has seen expire.
+	if !notAfter.After(c.now().Add(c.offset)) {
 		return Renewal{}, fmt.Errorf("renew: the returned expiry %s has passed", out.NotAfter)
 	}
 
@@ -366,7 +369,7 @@ func (c *Client) recordSkew(resp *http.Response) {
 		return
 	}
 
-	c.skew, c.measured = c.now().Sub(served).Abs(), true
+	c.offset, c.measured = served.Sub(c.now()), true
 }
 
 // HTTPError is a non-2xx, with enough of the body to be diagnosable and not so much

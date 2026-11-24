@@ -355,7 +355,7 @@ func (s *Supervisor) linkIsDead(ctx context.Context, device string, zeroSince *t
 // a reboot would start. The daemon is untouched, so this costs one anchor's sessions
 // and not the process.
 //
-// cfg is the cycle's, which decides whether Windows' driver is fetched (fetchDriver), before
+// cfg is the cycle's, which decides whether Windows' driver is fetched (FetchDriver), before
 // bringUp takes conflux.lock and reads the configuration again under it.
 func (s *Supervisor) rebuild(ctx context.Context, cfg *config.Config, link bool) error {
 	stopCtx, cancel := context.WithTimeout(ctx, stopTimeout)
@@ -366,7 +366,7 @@ func (s *Supervisor) rebuild(ctx context.Context, cfg *config.Config, link bool)
 	// delivered.
 	_ = s.ctl.Stop(stopCtx)
 
-	driver := fetchDriver(ctx, s.Dirs, cfg)
+	driver := FetchDriver(ctx, s.Dirs, cfg)
 
 	// An ended link's rebuild is counted in the state bringUp writes anyway, where status
 	// reads it: a machine reopening its anchor every few minutes has a failing cable.

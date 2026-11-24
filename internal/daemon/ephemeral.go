@@ -228,7 +228,7 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 	}
 
 	// Windows needs the driver beside anchord before an interface can exist.
-	if err := fetchDriver(ctx, d, e.Config); err != nil {
+	if err := FetchDriver(ctx, d, e.Config); err != nil {
 		return err
 	}
 

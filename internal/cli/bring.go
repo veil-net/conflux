@@ -14,7 +14,6 @@ import (
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
-	"github.com/veil-net/conflux/internal/wintun"
 )
 
 // bring is the tail `up`, `proxy` and `observe` share: validate, persist, register the
@@ -42,13 +41,10 @@ func bring(ctx context.Context, d paths.Dirs, cfg *config.Config, verb string, s
 		}
 	}
 
-	// Windows needs the driver before an interface can exist. Downloaded rather
-	// than embedded: it is GPLv2, and a driver extracted from a program's own
-	// resources is the shape of a DLL hijack.
-	if cfg.Mode == config.ModeTUN {
-		if err := wintun.Ensure(ctx, d); err != nil {
-			return fail(err)
-		}
+	// Windows needs the driver before an interface can exist: fetched here as well as by the
+	// supervisor's start, so one that cannot be had is said before the service is installed.
+	if err := daemon.FetchDriver(ctx, d, cfg); err != nil {
+		return fail(err)
 	}
 
 	if code := install(ctx, d, false); code != ExitOK {

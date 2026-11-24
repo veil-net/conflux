@@ -108,7 +108,7 @@ const MaxSkew = 10 * time.Minute
 //
 // dir is the anchor directory the daemon's identity was given (see Supervisor.anchorDir).
 // reopened counts the start as an uplink rebuilt, in the same state write as the rest,
-// once it has succeeded. driver is what fetching Windows' driver came to (fetchDriver), before
+// once it has succeeded. driver is what fetching Windows' driver came to (FetchDriver), before
 // the lock this takes: one that could not be had is the anchor's start's failure, after the
 // observer's start.
 func bringUp(
@@ -231,17 +231,20 @@ func bringUp(
 	return started, nil
 }
 
-// fetchDriver fetches Windows' driver where cfg runs an interface, and says what came of it:
+// FetchDriver fetches Windows' driver where cfg runs an interface, and says what came of it:
 // nil where it was had or none is needed. Windows needs it beside anchord before an interface
-// can exist, and it lives in the content-addressed set directory: an upgraded conflux extracts
-// a new set with no wintun.dll in it, and a boot, or a rebuild, must not need somebody to run
-// `up`. An ephemeral run asks it before its anchor's start, and the supervisor hands bringUp
-// what it came to, for the anchor's start.
+// can exist, downloaded rather than embedded: it is GPLv2, and a driver extracted from a
+// program's own resources is the shape of a DLL hijack. It lives in the content-addressed set
+// directory: an upgraded conflux extracts a new set with no wintun.dll in it, and a boot, or a
+// rebuild, must not need somebody to run `up`. The one decision of when it is fetched: the cli's
+// bring, the tail of `up`, `proxy` and `observe`, asks it before it installs the service, an
+// ephemeral run before its anchor's start, and the supervisor, at a start and at every rebuild,
+// hands bringUp what it came to, for the anchor's start.
 //
 // The supervisor's is before bringUp takes conflux.lock, never under it: a first download
 // takes up to wintun's 90-second timeout, which `conflux renew` and up's save of the
 // configuration would wait out, for a fetch that writes nothing the lock guards.
-func fetchDriver(ctx context.Context, d paths.Dirs, cfg *config.Config) error {
+func FetchDriver(ctx context.Context, d paths.Dirs, cfg *config.Config) error {
 	if cfg.Mode != config.ModeTUN {
 		return nil
 	}

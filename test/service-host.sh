@@ -17,6 +17,10 @@
 # bash 3.2, which is what a Mac has, and Git Bash on Windows.
 set -euo pipefail
 
+# Nothing here pipes a command into grep -q: grep stops at its first match, the command still
+# writing is then ended by SIGPIPE, and under pipefail that fails the line however right its
+# output was. Each answer is read whole, then searched (grep -q PATTERN <<<"$(COMMAND)").
+
 CONFLUX=${1:?usage: test/service-host.sh CONFLUX}
 
 say() { printf '\n== %s\n' "$*"; }
@@ -79,7 +83,7 @@ else
   [ "$(sc.exe qfailure conflux | grep -c RESTART)" -ge 3 ] \
     || { sc.exe qfailure conflux >&2; fail "the recovery actions are not the three restarts"; }
   # Its own SID, and nobody but SYSTEM and the Administrators allowed to start, stop or change it.
-  sc.exe qsidtype conflux | grep -q 'UNRESTRICTED' || { sc.exe qsidtype conflux >&2; fail "the service has no SID of its own"; }
+  grep -q 'UNRESTRICTED' <<<"$(sc.exe qsidtype conflux)" || { sc.exe qsidtype conflux >&2; fail "the service has no SID of its own"; }
   sd=$(sc.exe sdshow conflux | tr -d '\r\n ')
   [ "$sd" = 'D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)' ] \
     || fail "the service's DACL is $sd"
@@ -135,11 +139,11 @@ esac
 # answered an authenticated call on the socket it made, so "enrolling" after that start is
 # anchord serving as its own account, not merely started as it.
 for _ in $(seq 120); do
-  logs | grep -q 'enrolling' && break
+  grep -q 'enrolling' <<<"$(logs)" && break
   sleep 0.5
 done
-logs | grep -F "$who" >/dev/null || { logs >&2; fail "the system log does not say anchord started as its own account"; }
-logs | grep -q 'enrolling' || { logs >&2; fail "anchord never answered on its socket as its own account"; }
+grep -qF "$who" <<<"$(logs)" || { logs >&2; fail "the system log does not say anchord started as its own account"; }
+grep -q 'enrolling' <<<"$(logs)" || { logs >&2; fail "anchord never answered on its socket as its own account"; }
 "$CONFLUX" down || fail "down failed on a running service"
 
 # Observing alone comes all the way up, under the credential the observer runs as: one

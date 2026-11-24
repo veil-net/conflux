@@ -11,9 +11,9 @@ import (
 	"github.com/veil-net/conflux/anchor"
 )
 
-// Version is the release, injected at link time:
+// Version is the release, MAJOR.MINOR.PATCH, injected at link time:
 //
-//	-ldflags "-X github.com/veil-net/conflux/internal/version.Version=v0.1.0"
+//	-ldflags "-X github.com/veil-net/conflux/internal/version.Version=1.1.0"
 //
 // The default is not "dev". The VERSION file at the repository root is what this
 // tree claims to be, the Makefile stamps that same string, and a plain `go build`

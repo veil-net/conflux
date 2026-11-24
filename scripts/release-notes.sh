@@ -42,7 +42,8 @@ SERVER=${GITHUB_SERVER_URL:-https://github.com}
 API=${GITHUB_API_URL:-https://api.github.com}
 SHA=$(git rev-parse HEAD)
 
-# A version tag is MAJOR.MINOR.PATCH, a suffix allowed. A glob, as git describe takes.
+# A version tag is MAJOR.MINOR.PATCH, digits alone, as TestVersionMatchesFile holds VERSION to.
+# A glob, as git describe takes, which latest and dev-latest never match.
 VERSIONS='[0-9]*.[0-9]*.[0-9]*'
 
 # Pull requests summarised, newest first, and as many direct commits; the full diff has the rest.

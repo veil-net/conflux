@@ -33,7 +33,7 @@ platform() {
     FreeBSD) os=freebsd ;;
     OpenBSD) os=openbsd ;;
     MINGW* | MSYS* | CYGWIN*)
-      die "this is Windows. In PowerShell, as Administrator:
+      die "this is Windows. In 64-bit PowerShell, as Administrator:
   irm https://raw.githubusercontent.com/$REPO/HEAD/install.ps1 | iex" ;;
     *) die "conflux has no build for $(uname -s)" ;;
   esac

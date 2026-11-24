@@ -208,7 +208,7 @@ jobs:
             echo "curl -fsSL https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.sh | ${pick}sh"
             echo '```'
             echo
-            echo 'On Windows, in PowerShell as Administrator:'
+            echo 'On Windows, in 64-bit PowerShell as Administrator:'
             echo
             echo '```powershell'
             echo "${pickps}irm https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.ps1 | iex"

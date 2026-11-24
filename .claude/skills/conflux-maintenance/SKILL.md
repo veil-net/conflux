@@ -165,7 +165,7 @@ make fmtcheck lint tidycheck vulncheck docscheck       # the utility checks (see
 actionlint && shellcheck install.sh scripts/*.sh test/*.sh   # workflows, the actions they use, and the scripts
 ```
 
-plus what no CI job runs: the `make golden` diff review, `docker run bash:3.2` over `anchor-bins.sh` (given `TARGETS`, as make gives it) and `test/service-host.sh` if either changed, and the after numbers (sizes, extraction, benchmarks, the probe node). A check that prints `not installed; skipping` counts as a failure. An after number worse than step 5's, and worse again when run a second time, is a regression (goal 1): it is traced to its commit and made as step 6 makes a finding.
+plus what no CI job runs: the `make golden` diff review, `docker run bash:3.2` over `anchor-bins.sh` (given `TARGETS`, as make gives it), `test/service-host.sh` and `scripts/fips-check.sh` (which `make buildcheck` runs with `sh`, on macOS a bash 3.2) if any of them changed, and the after numbers (sizes, extraction, benchmarks, the probe node). A check that prints `not installed; skipping` counts as a failure. An after number worse than step 5's, and worse again when run a second time, is a regression (goal 1): it is traced to its commit and made as step 6 makes a finding.
 
 ### 8. Maintain this skill
 

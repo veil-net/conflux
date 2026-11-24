@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 
 	"github.com/veil-net/conflux/internal/paths"
 )
@@ -37,7 +36,9 @@ func WriteFileAtomic(path string, data []byte, perm fs.FileMode) error {
 // above all -- is written only where it was changed, so an unchanged file keeps its inode and
 // its mtime and nothing watching it sees a change. One that holds data with another mode, on
 // Unix, is given perm back where it is, which is no write: a registration made group- or
-// world-writable since is the service manager running whatever its writer names.
+// world-writable since is the service manager running whatever its writer names. One that
+// holds data and another account owns, on Unix, is written: its owner can make it writable or
+// write it whenever it likes, and the file written in its place is the writer's.
 func WriteFileIfChanged(path string, data []byte, perm fs.FileMode) (bool, error) {
 	switch same, err := holds(path, data, perm); {
 	case err != nil:
@@ -53,10 +54,8 @@ func WriteFileIfChanged(path string, data []byte, perm fs.FileMode) (bool, error
 	return true, nil
 }
 
-// holds reports whether path holds data already, and gives it perm back on Unix where its mode
-// is another: through the descriptor it was read from, so the file whose bytes were compared is
-// the one whose mode changes. A file that cannot be opened or read holds nothing, and is
-// written.
+// holds reports whether path holds data already, in a file that can stay (keep). A file that
+// cannot be opened or read holds nothing, and is written.
 func holds(path string, data []byte, perm fs.FileMode) (bool, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -70,24 +69,7 @@ func holds(path string, data []byte, perm fs.FileMode) (bool, error) {
 		return false, nil
 	}
 
-	if runtime.GOOS == "windows" {
-		return true, nil
-	}
-
-	fi, err := f.Stat()
-	if err != nil {
-		return false, nil
-	}
-
-	if fi.Mode()&(fs.ModePerm|fs.ModeSetuid|fs.ModeSetgid|fs.ModeSticky) == perm {
-		return true, nil
-	}
-
-	if err := f.Chmod(perm); err != nil {
-		return false, fmt.Errorf("chmod %s: %w", path, err)
-	}
-
-	return true, nil
+	return keep(f, path, perm)
 }
 
 // WriteFileAtomicAs is WriteFileAtomic for a file that belongs to uid and gid, given to

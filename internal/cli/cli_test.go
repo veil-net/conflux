@@ -173,41 +173,33 @@ func TestHelpForACommandIsThatCommands(t *testing.T) {
 	}
 }
 
-// TestAHelpFlagAsksHelpForTheWholePage: a help flag after help asks for help's own usage,
-// which is the whole page, and names no command to pass to anchorctl. Taken for one, it
-// printed anchorctl's usage alone. The pass-through is stubbed, since on Unix it would
-// replace the test binary with anchorctl.
-func TestAHelpFlagAsksHelpForTheWholePage(t *testing.T) {
-	ran := stubAnchorctl(t)
-
-	for _, help := range []string{"-h", "--h", "-help", "--help"} {
-		*ran = ranAnchorctl{}
-
-		if out, _, code := capture(t, "help", help); code != ExitOK || !strings.Contains(out, "Commands") || ran.bin != "" {
-			t.Errorf("help %s exited %d, passing %q through, and printed:\n%s", help, code, ran.bin, out)
-		}
-	}
-}
-
 // TestUsageIsOneStream: -h asks for a command's usage, so it is answered -- exit 0 -- and whole
-// on stdout, the flags with the synopsis, where a pager or grep reads it. Every word a flag set
-// takes for help asks it, --h among them, of conflux itself and of every verb: start and renew,
-// which read any other flag as anchorctl's, included.
+// on stdout, the flags with the synopsis, where a pager or grep reads it, and passed to no
+// anchorctl. Every word a flag set takes for help asks it, --h among them, of conflux itself and
+// of every verb: start and renew, which read any other flag as anchorctl's, included, and help,
+// whose own usage is the whole page, since a help flag names no command. The pass-through is
+// stubbed, since on Unix it would replace the test binary with anchorctl.
 func TestUsageIsOneStream(t *testing.T) {
 	t.Cleanup(paths.UseRoot(t.TempDir()))
 
+	ran := stubAnchorctl(t)
+
 	for _, help := range []string{"-h", "--h", "-help", "--help"} {
 		for name := range verbs() {
-			switch name {
-			case "help":
-				continue // the whole page, which TestAHelpFlagAsksHelpForTheWholePage holds it to
-			case "status", "anchorctl":
+			if name == "status" || name == "anchorctl" {
 				continue // anchorctl's usage, which its own tests cover
 			}
 
+			want := "conflux " + name
+			if name == "help" {
+				want = "Commands"
+			}
+
+			*ran = ranAnchorctl{}
+
 			out, errOut, code := capture(t, name, help)
-			if code != ExitOK || errOut != "" || !strings.Contains(out, "conflux "+name) {
-				t.Errorf("conflux %s %s exited %d, printing\n%s\nand on stderr\n%s", name, help, code, out, errOut)
+			if code != ExitOK || errOut != "" || !strings.Contains(out, want) || ran.bin != "" {
+				t.Errorf("conflux %s %s exited %d, passing %q through, printing\n%s\nand on stderr\n%s", name, help, code, ran.bin, out, errOut)
 			}
 		}
 

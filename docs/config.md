@@ -279,10 +279,9 @@ read of fifty-odd megabytes.
 
 The supervisor keeps `bin/` to what conflux put there once it has started on its own set:
 that set, with nothing in it but the pair, its markers and, on Windows, `wintun.dll`, and a
-temporary file young enough to be a write in progress there (the record of the pair, the
-driver being placed), as in the root; the extraction lock; and a set or a staging directory
-made in the last hour, which a newer conflux running a command beside it may be using until
-the service restarts onto it.
+temporary file young enough to be a write in progress there (the driver being placed), as in
+the root; the extraction lock; and a set or a staging directory made in the last hour, which a
+newer conflux running a command beside it may be using until the service restarts onto it.
 Everything else goes — an older set, a crash's staging, anything conflux did not write.
 No other conflux command removes anything there. `conflux uninstall` removes the tree.
 
@@ -298,7 +297,9 @@ On Windows this directory also holds `wintun.dll` — see [windows.md](windows.m
 Every write goes to a sibling temporary file, is fsynced, renamed over the target, and
 the directory fsynced. A crash or a full disk leaves the previous content and never a
 truncated file — which for `manifest.b64` is the difference between an inconvenience
-and a destroyed identity.
+and a destroyed identity. The extracted pair's record of itself in `bin/` is written in place
+instead: it is only ever compared whole with the pair's files, so one a crash tore matches
+nothing, and costs the next start a read of the pair.
 
 The mode is set on the file descriptor *before* any content reaches it. Writing and
 then chmod'ing leaves a window at the umask's mode, and on a shared machine that

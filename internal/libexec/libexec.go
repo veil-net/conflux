@@ -410,8 +410,8 @@ func Sweep(t *Tools) {
 
 // tidySet removes from t's directory everything but the pair, its markers and the driver, and
 // a temporary file modified after recent: an atomic write's in progress beside the sweep --
-// the supervisor's Reverified, or wintun.Ensure placing the driver -- as the daemon spares the
-// root's.
+// wintun.Ensure placing the driver, which the first cycle's start does while Sweep may still
+// run -- as the daemon spares the root's.
 func tidySet(t *Tools, recent time.Time) {
 	entries, err := os.ReadDir(t.Dir)
 	if err != nil {

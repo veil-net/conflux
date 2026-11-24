@@ -191,9 +191,9 @@ func TestEnsureRepairsATruncatedExtraction(t *testing.T) {
 
 // TestSweepKeepsOnlyWhatIsConfluxs: Sweep keeps its own set, with nothing in it but the pair,
 // its markers and Windows' driver, and a temporary file young enough to be a write in progress
-// there -- the record of the pair Reverified rewrites, the driver being placed -- and a set or a
-// staging directory made in the last hour, which a newer conflux mid-command may be using;
-// everything else in the bin directory goes, a temporary file a crash left in the set among it.
+// there -- the driver being placed -- and a set or a staging directory made in the last hour,
+// which a newer conflux mid-command may be using; everything else in the bin directory goes, a
+// temporary file a crash left in the set among it.
 func TestSweepKeepsOnlyWhatIsConfluxs(t *testing.T) {
 	root := t.TempDir()
 

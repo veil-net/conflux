@@ -11,7 +11,6 @@ import (
 	"sync"
 
 	"github.com/veil-net/conflux/anchor"
-	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
 )
@@ -64,8 +63,15 @@ func Intact(d paths.Dirs) (*Tools, error) {
 // caller that has just changed what a stat of them says and nothing of what they hold: the
 // supervisor giving anchord to its account's group, a set Intact took moments before. A
 // record that cannot be written costs the next start a read of the pair, nothing more.
+//
+// Written in place, not by an atomic write: the record is only ever compared whole with the
+// pair's identities, so one a crash tore matches nothing, and costs that same read.
 func (t *Tools) Reverified() {
-	_ = config.WriteFileAtomic(filepath.Join(t.Dir, verifiedMarker), []byte(t.identities()), 0o600)
+	path := filepath.Join(t.Dir, verifiedMarker)
+
+	if os.WriteFile(path, []byte(t.identities()), 0o600) == nil {
+		_ = paths.Restrict(path, false)
+	}
 }
 
 // verified reports whether the pair's files are the ones last held to the digests.

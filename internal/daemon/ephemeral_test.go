@@ -242,6 +242,63 @@ func TestAnEphemeralRunRenewsInMemory(t *testing.T) {
 	}
 }
 
+// TestAnEphemeralRootGoesWhileItsLockIsHeld: a run's root is cleared while the run still holds
+// its lock, so a run that starts the moment the lock is let go is not emptied out from under
+// itself: what it made, its own lock among it, is left as it is.
+func TestAnEphemeralRootGoesWhileItsLockIsHeld(t *testing.T) {
+	is := newIssuer(t)
+
+	var (
+		root string
+		next func()
+	)
+
+	// The next run, starting where the lock has just been let go.
+	ephemeralUnlocked = func() {
+		d := paths.EphemeralDirs(root)
+		if err := d.EnsureAll(); err != nil {
+			t.Errorf("the next run could not make its root: %v", err)
+
+			return
+		}
+
+		unlock, ok, err := flock.TryAcquire(d.ServeLockFile())
+		if err != nil || !ok {
+			t.Errorf("the next run could not take the lock: ok %v, %v", ok, err)
+
+			return
+		}
+
+		next = unlock
+
+		if err := os.WriteFile(filepath.Join(root, "next"), nil, 0o600); err != nil {
+			t.Error(err)
+		}
+	}
+	t.Cleanup(func() { ephemeralUnlocked = func() {} })
+
+	r := runEphemeral(t, is, handed(t, is, time.Now().Add(-time.Hour), time.Now().Add(30*24*time.Hour)))
+	root = r.root
+
+	r.up(t)
+	r.cancel()
+
+	if err := r.ended(t); err != nil {
+		t.Errorf("a cancelled run ended with %v, want nil", err)
+	}
+
+	if next == nil {
+		t.Fatal("the next run never started")
+	}
+	defer next()
+
+	for _, p := range []string{filepath.Join(root, "next"), paths.EphemeralDirs(root).ServeLockFile()} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("the ended run removed the next one's %s: %v", filepath.Base(p), err)
+		}
+	}
+}
+
 // TestTheEphemeralTimerWaitsAfterARenewal: as the supervisor's timer does, an ephemeral run's
 // waits minSleep at least after a renewal that succeeds, so an issuer answering with a window
 // already gone is not asked again at once, and again.

@@ -124,12 +124,10 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 		return err
 	}
 
-	// The root and the lock in it go last, after anchord has gone, so a second run is refused
-	// until there is nothing left of this one.
+	// The root goes last, after anchord has gone, and under the lock, so a second run is
+	// refused until there is nothing left of this one.
 	defer func() {
-		unlock()
-
-		if err := os.RemoveAll(d.Root); err != nil {
+		if err := RemoveEphemeralRoot(d, unlock); err != nil {
 			e.report().Warn("could not remove %s: %v", d.Root, err)
 		}
 	}()
@@ -423,6 +421,49 @@ func untilRenewal(m *enrol.Manifest) time.Duration {
 
 	return sleepUntilRenewal(m.IssuedAt(), m.NotAfter(), time.Now())
 }
+
+// RemoveEphemeralRoot removes the root of an ephemeral run whose lock unlock holds, and lets the
+// lock go: the run's own end, and uninstall's for a run that was killed.
+//
+// Everything but the lock goes first, while it is held, so a run starting meanwhile is refused
+// rather than emptied out from under itself. Then the lock file and the root: on Unix while the
+// lock is still held, as the file goes on being under no name, so a run starting after makes a
+// lock of its own; on Windows, where a file held open cannot be removed, once it is let go, and
+// a run that took it in between keeps both, since removing either then fails. Where something
+// will not go, the lock is kept, so the next run, or uninstall, finds a root to clear.
+func RemoveEphemeralRoot(d paths.Dirs, unlock func()) error {
+	lock := d.ServeLockFile()
+
+	if err := clearExcept(d.Root, lock); err != nil {
+		unlock()
+
+		return err
+	}
+
+	if runtime.GOOS == "windows" {
+		unlock()
+		ephemeralUnlocked()
+
+		// Failing, as it should, where a run that started meanwhile holds them.
+		_ = os.Remove(lock)
+		_ = os.Remove(d.Root)
+
+		return nil
+	}
+
+	err := os.Remove(lock)
+
+	// Failing, as it should, where a run that started once the lock had no name holds it.
+	_ = os.Remove(d.Root)
+
+	unlock()
+	ephemeralUnlocked()
+
+	return err
+}
+
+// ephemeralUnlocked is a test's seam, where RemoveEphemeralRoot has let the lock go.
+var ephemeralUnlocked = func() {}
 
 // clearExcept removes everything in dir but keep, which may be "": what a run killed before
 // it could clean up left in the root, which the next run starts without, and what the last

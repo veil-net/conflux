@@ -348,7 +348,7 @@ func runUninstall(_ context.Context, args []string) int {
 }
 
 // removeEphemeralRoot stops whatever anchord a killed ephemeral run left in its root, and
-// removes the root, unless a run holds it by now.
+// removes the root as a run removes its own, unless a run holds it by now.
 func removeEphemeralRoot(e paths.Dirs) error {
 	unlock, ok, err := flock.TryAcquire(e.ServeLockFile())
 	if err != nil || !ok {
@@ -357,9 +357,7 @@ func removeEphemeralRoot(e paths.Dirs) error {
 
 	_, reapErr := daemon.ReapOrphan(e)
 
-	unlock()
-
-	return errors.Join(reapErr, os.RemoveAll(e.Root))
+	return errors.Join(reapErr, daemon.RemoveEphemeralRoot(e, unlock))
 }
 
 // confirmUninstall makes the irreversible part explicit before it happens.

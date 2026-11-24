@@ -199,9 +199,7 @@ missed() {
 # script is run again, which decides afresh, as missed says; where it finds none, $why, and the
 # file to be removed before a run again the same way, or $exe's full path.
 notours() {
-  if [ -z "$found" ]; then
-    say "" "$sudolink is not conflux's, and $why: remove it and run the installer again, or type $exe by its full path under sudo."
-  elif [ "${found%/*}" -ef "${sudolink%/*}" ]; then
+  if [ -n "$found" ] && [ "${found%/*}" -ef "${sudolink%/*}" ]; then
     say "" "$sudolink is not conflux's, and root's PATH finds it rather than $exe: remove it and run the installer again, or type $exe by its full path under sudo."
   else
     say "" "$sudolink is not conflux's, and $why: remove it and run the installer again, or type $exe by its full path under sudo."

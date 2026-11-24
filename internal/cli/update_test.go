@@ -213,8 +213,9 @@ func TestUpdateRefusesABinaryThatDoesNotRun(t *testing.T) {
 
 // TestAPlainUpdateTakesTheRelease: conflux update replaces the installed conflux with the newest
 // release, `latest`, whatever build runs it, and asks nothing first, at a terminal too, where what
-// is installed is no dev build: a release, run by a dev build; nothing; a file that does not run,
-// which cannot say what it is; and this process, a release.
+// is installed is no dev build: a release, answering `version` as this build does as one, every
+// line after the first included, run by a dev build; nothing; a file that does not run, which
+// cannot say what it is; and this process, a release.
 func TestAPlainUpdateTakesTheRelease(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the stand-in conflux is a shell script")
@@ -226,7 +227,7 @@ func TestAPlainUpdateTakesTheRelease(t *testing.T) {
 	}
 
 	newer := []byte("#!/bin/sh\necho 'conflux 9.9.9 (0aea0f77bb77) " + runtime.GOOS + "/" + runtime.GOARCH + "'\n")
-	release := "conflux 1.0.0 (0aea0f77bb77) " + runtime.GOOS + "/" + runtime.GOARCH
+	release := versionStandIn(t, "")
 
 	for name, c := range map[string]struct {
 		running string                 // the channel of the build running the update
@@ -234,8 +235,8 @@ func TestAPlainUpdateTakesTheRelease(t *testing.T) {
 		says    string                 // what the update says of it, exe its verb
 	}{
 		"a release, run by a dev build": {"dev", func(exe string) error {
-			return os.WriteFile(exe, []byte("#!/bin/sh\necho '"+release+"'\n"), 0o755)
-		}, "%s is " + release + "."},
+			return os.WriteFile(exe, release, 0o755)
+		}, "%s is " + version.String() + "."},
 		"nothing": {"dev", func(string) error { return nil }, "Nothing is installed at %s."},
 		"a file that does not run": {"dev", func(exe string) error {
 			return os.WriteFile(exe, []byte("\x7fELF no conflux that runs"), 0o755)
@@ -269,19 +270,20 @@ func TestAPlainUpdateTakesTheRelease(t *testing.T) {
 	}
 }
 
-// devBuildStandIn is a stand-in conflux that answers `version` as this build answers it when it is
-// a dev build.
-func devBuildStandIn(t *testing.T) []byte {
+// versionStandIn is a stand-in conflux that answers `version` as this build answers it, whole, on
+// channel: "dev" for a dev build, "" for a release.
+func versionStandIn(t *testing.T, channel string) []byte {
 	t.Helper()
 
-	keepChannel(t)
+	was := version.Channel
+	version.Channel = channel
 
-	version.Channel = "dev"
 	out, _, code := capture(t, "version")
-	version.Channel = ""
 
-	if code != ExitOK || !strings.Contains(out, "\ndev build: ") {
-		t.Fatalf("version, as a dev build, exited %d:\n%s", code, out)
+	version.Channel = was
+
+	if code != ExitOK || strings.Contains(out, "\ndev build: ") != (channel == "dev") {
+		t.Fatalf("version, on channel %q, exited %d:\n%s", channel, code, out)
 	}
 
 	return []byte("#!/bin/sh\ncat <<'END'\n" + out + "END\n")
@@ -299,7 +301,7 @@ func TestAPlainUpdateOfADevBuildAsksFirst(t *testing.T) {
 		t.Skip("the stand-in conflux is a shell script")
 	}
 
-	dev := devBuildStandIn(t)
+	dev := versionStandIn(t, "dev")
 	newer := []byte("#!/bin/sh\necho 'conflux 9.9.9 (0aea0f77bb77) " + runtime.GOOS + "/" + runtime.GOARCH + "'\n")
 
 	installed := func(t *testing.T) (dir, exe string) {
@@ -423,7 +425,7 @@ func TestAPlainUpdateOfADevBuildIsRefusedOffATerminal(t *testing.T) {
 
 	asRoot(t, true)
 
-	dev := devBuildStandIn(t)
+	dev := versionStandIn(t, "dev")
 
 	was := ui.In
 	ui.In = strings.NewReader("y\n")
@@ -589,7 +591,7 @@ func TestADevUpdateAsksFirst(t *testing.T) {
 		answer(t, "y\n")
 
 		exe := filepath.Join(t.TempDir(), "conflux")
-		if err := os.WriteFile(exe, devBuildStandIn(t), 0o755); err != nil {
+		if err := os.WriteFile(exe, versionStandIn(t, "dev"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 
@@ -615,8 +617,8 @@ func TestADevUpdateWithYesAsksNothing(t *testing.T) {
 		t.Skip("the stand-in conflux is a shell script")
 	}
 
-	release := []byte("#!/bin/sh\necho conflux 1.0.0 old\n")
-	dev := devBuildStandIn(t)
+	release := versionStandIn(t, "")
+	dev := versionStandIn(t, "dev")
 	newer := []byte("#!/bin/sh\necho 'conflux 9.9.9 (0aea0f77bb77) " + runtime.GOOS + "/" + runtime.GOARCH + "'\n")
 
 	install := func(t *testing.T, body []byte) string {

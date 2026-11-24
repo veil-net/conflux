@@ -48,7 +48,7 @@ This context is authoritative. Docs describe the design but may be wrong: where 
 
 ## Rules (fixed; change only on the user's explicit instruction)
 
-1. Don't read commit history in any repo. Audit the code as it stands. Reading anchor's current tree and the live schema and diffing them against conflux is required and is not history. The exception is step 6's audit of the run's own work, which reads the run's commits to check each does what it says.
+1. Don't read commit history in any repo. Audit the code as it stands. Reading anchor's current tree and the live schema and diffing them against conflux is required and is not history. The exception is the run's own commits: step 6's audit of the run's own work reads them to check each does what it says, and step 7 traces a regression to one.
 2. Scope: the whole conflux repo, including CI/CD and `.claude/skills/conflux-maintenance/`. `anchor` is a read-only reference: never modify, commit to, or push it. Running its build (`make release`, `make dist`) is allowed, but only build output may appear, and its tracked files must be unchanged afterwards. Traveller is referenced only through its two deployments, `https://api.veilnet.com.au` and `https://api-dev.veilnet.com.au`; don't read or change the traveller repo or any other sibling project.
 3. No backward-compatibility shims or deprecation paths. `VERSION` moves on every run, by step 9's rule, and nowhere else. Breaking changes (CLI flags, config file and state layout, service definitions, output formats) are allowed and go in the summary. Never keep support for an older anchor or API contract.
 4. Don't fix defects in dependencies unless critical (workflow step 4).
@@ -151,7 +151,7 @@ The areas are [standards.md § Audit areas](standards.md#audit-areas). Auditors 
    - consolidation: repeated code and redundant mechanisms, such as one a fix added that the tree already had, a copy a later change wrote of an earlier one, and an older mechanism a change left redundant; and every consolidation the run made, proven again by goal 3's bar, and restored where it cannot be;
    - docs and comments that no longer say what the change made the code do, and tests that no longer test it.
 
-   What it finds is made as point 3 makes a finding, a design question among them asked, and the audit runs again over what that changed, until it finds nothing. A change made after it, such as a fix for a CI failure or an answer to a design question, is audited the same way before it is pushed.
+   What it finds is made as point 3 makes a finding, a design question among them asked, and the audit runs again over what that changed, until it finds nothing. A change made after it is audited the same way before it is pushed: a fix for a local check or a CI failure, a regression step 7's after numbers show, an answer to a design question, and step 8's skill updates.
 
 ### 7. Final local checks
 
@@ -162,7 +162,7 @@ make fmtcheck lint tidycheck vulncheck docscheck       # the utility checks (see
 actionlint && shellcheck install.sh scripts/*.sh test/*.sh   # workflows, the actions they use, and the scripts
 ```
 
-plus what no CI job runs: the `make golden` diff review, `docker run bash:3.2` over `anchor-bins.sh` and `test/service-host.sh` if either changed, and the after numbers (sizes, extraction, benchmarks, the probe node). A check that prints `not installed; skipping` counts as a failure.
+plus what no CI job runs: the `make golden` diff review, `docker run bash:3.2` over `anchor-bins.sh` and `test/service-host.sh` if either changed, and the after numbers (sizes, extraction, benchmarks, the probe node). A check that prints `not installed; skipping` counts as a failure. An after number worse than step 5's, and worse again when run a second time, is a regression (goal 1): it is traced to its commit and made as step 6 makes a finding.
 
 ### 8. Maintain this skill
 

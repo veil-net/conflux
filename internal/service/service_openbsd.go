@@ -63,3 +63,7 @@ func (o openbsd) Describe() string {
 }
 
 func (openbsd) LogHint() string { return "grep " + rcName + " /var/log/daemon | tail -n 50" }
+
+// Reconcile is Install, which writes the script and enables it and starts nothing, so the
+// running service may call it.
+func (openbsd) Reconcile(exe string, args ...string) error { return openbsd{}.Install(exe, args...) }

@@ -371,6 +371,26 @@ if docker exec "$NAME" grep -q AmbientCapabilities /etc/systemd/system/conflux.s
 fi
 docker exec "$NAME" systemctl stop conflux.service
 
+# The service is the supervisor's to keep: started by systemd itself, with nothing typed, it
+# puts back a unit changed by hand and removes a drop-in that would change it.
+say "a start by systemd puts the unit back and removes a drop-in"
+docker exec "$NAME" sh -c 'sed -i "s/^User=root$/User=root\nAmbientCapabilities=CAP_NET_ADMIN/" /etc/systemd/system/conflux.service &&
+  mkdir -p /etc/systemd/system/conflux.service.d &&
+  printf "[Service]\nEnvironment=HAND=1\n" > /etc/systemd/system/conflux.service.d/hand.conf && systemctl daemon-reload'
+docker exec "$NAME" timeout 20 systemctl start conflux.service >/dev/null 2>&1 || true
+for _ in $(seq 50); do
+  docker exec "$NAME" grep -q AmbientCapabilities /etc/systemd/system/conflux.service ||
+    ! docker exec "$NAME" test -e /etc/systemd/system/conflux.service.d || break
+  sleep 0.2
+done
+if docker exec "$NAME" grep -q AmbientCapabilities /etc/systemd/system/conflux.service; then
+  echo "a start left the hand-changed unit in place" >&2
+  exit 1
+fi
+docker exec "$NAME" test ! -e /etc/systemd/system/conflux.service.d \
+  || { echo "a start left the unit's drop-in directory" >&2; exit 1; }
+docker exec "$NAME" systemctl stop conflux.service
+
 # install made the root, so it has to go -- and the account.
 say "uninstall leaves nothing"
 docker exec "$NAME" conflux uninstall --yes

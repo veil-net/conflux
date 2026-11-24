@@ -13,18 +13,16 @@ import (
 // fakeManager records what it was asked and reports what the marker looked like at the
 // moment Restart was called.
 type fakeManager struct {
+	noService
+
 	d paths.Dirs
 
 	restarts     int
 	markedAtCall bool
 }
 
-func (m *fakeManager) Install(string, ...string) error { return nil }
-func (m *fakeManager) Remove() error                   { return nil }
-func (m *fakeManager) Stop() error                     { return nil }
-func (m *fakeManager) Installed() (bool, error)        { return true, nil }
-func (m *fakeManager) Describe() string                { return "fake" }
-func (m *fakeManager) LogHint() string                 { return "fake" }
+func (m *fakeManager) Stop() error              { return nil }
+func (m *fakeManager) Installed() (bool, error) { return true, nil }
 
 func (m *fakeManager) Restart() error {
 	m.restarts++

@@ -79,3 +79,7 @@ func (f freebsd) Describe() string {
 }
 
 func (freebsd) LogHint() string { return "tail -n 50 " + logFile() }
+
+// Reconcile is Install, which writes the script and enables it and starts nothing, so the
+// running service may call it.
+func (freebsd) Reconcile(exe string, args ...string) error { return freebsd{}.Install(exe, args...) }

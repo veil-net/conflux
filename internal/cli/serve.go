@@ -8,6 +8,8 @@ import (
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/logfile"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/privcheck"
+	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
 )
 
@@ -42,6 +44,8 @@ func runServe(ctx context.Context, args []string) int {
 
 	d := paths.Default()
 
+	reconcileService(d)
+
 	sup := &daemon.Supervisor{
 		Dirs:     d,
 		Reporter: reporter{},
@@ -56,6 +60,31 @@ func runServe(ctx context.Context, args []string) int {
 	}
 
 	return launchdExit(runSupervisor(ctx, sup))
+}
+
+// reconcileService puts the boot service back to what this conflux registers -- the copy it
+// runs, placed in the root, and its definition -- wherever either was changed since: the
+// service is the supervisor's to keep, as the root is. Nothing when no service is registered
+// (a supervisor run by hand), or when this is not root. A failure is said and costs no start.
+func reconcileService(d paths.Dirs) {
+	if !privcheck.Elevated() {
+		return
+	}
+
+	mgr := services()
+
+	if installed, err := mgr.Installed(); err != nil || !installed {
+		return
+	}
+
+	exe, err := service.Place(d)
+	if err == nil {
+		err = mgr.Reconcile(exe, "serve")
+	}
+
+	if err != nil {
+		ui.Errf("could not put the boot service back to what this conflux registers: %v", err)
+	}
 }
 
 func runSupervisor(ctx context.Context, sup *daemon.Supervisor) int {

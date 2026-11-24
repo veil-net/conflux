@@ -160,6 +160,13 @@ service on a machine that has no configuration yet. `ExecStart=` names the copy 
 kept in `/var/lib/.conflux`, which only root can change, never the file conflux was run
 from; see [install.md](install.md).
 
+The registration is the supervisor's to keep, as the root is: every start places the copy it
+runs again if it differs and puts the definition back to what this conflux writes — on
+systemd removing any drop-in in `conflux.service.d/`, which would change the unit that runs —
+so a unit, plist, rc script or SCM entry changed by hand lasts until the next start and no
+longer. On macOS the plist is rewritten without unloading the job that is running it, and
+takes effect at its next load.
+
 ```ini
 [Unit]
 Description=Conflux — VeilNet anchor

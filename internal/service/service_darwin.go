@@ -3,6 +3,7 @@
 package service
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -49,6 +50,19 @@ func (l launchd) Install(exe string, args ...string) error {
 	enableIfDisabled()
 
 	return nil
+}
+
+// Reconcile writes the plist where it differs from what this conflux writes, and does not
+// boot the job out as Install does: what calls it is the job, and the plist takes effect at
+// the next load.
+func (l launchd) Reconcile(exe string, args ...string) error {
+	plist := []byte(launchdPlist(Label, append([]string{exe}, withLog(args)...), logFile()))
+
+	if cur, err := os.ReadFile(plistPath); err == nil && bytes.Equal(cur, plist) {
+		return nil
+	}
+
+	return config.WriteFileAtomic(plistPath, plist, 0o644)
 }
 
 // enableIfDisabled lifts a disable on the label, and does nothing to one that has none.

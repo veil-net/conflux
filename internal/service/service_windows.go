@@ -270,3 +270,7 @@ func (scm) Describe() string {
 func (scm) LogHint() string {
 	return `Get-Content -Tail 50 "` + paths.Default().LogFile() + `"`
 }
+
+// Reconcile is Install, which updates the registered configuration and its recovery actions
+// and starts nothing, so the running service may call it.
+func (scm) Reconcile(exe string, args ...string) error { return scm{}.Install(exe, args...) }

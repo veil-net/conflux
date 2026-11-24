@@ -33,10 +33,11 @@ type noService struct{}
 
 var errNoService = os.ErrPermission
 
-func (noService) Install(string, ...string) error { return errNoService }
-func (noService) Remove() error                   { return nil }
-func (noService) Stop() error                     { return errNoService }
-func (noService) Restart() error                  { return errNoService }
-func (noService) Installed() (bool, error)        { return false, nil }
-func (noService) Describe() string                { return "not installed (a test's stand-in)" }
-func (noService) LogHint() string                 { return "nothing to read: a test's stand-in" }
+func (noService) Install(string, ...string) error   { return errNoService }
+func (noService) Remove() error                     { return nil }
+func (noService) Stop() error                       { return errNoService }
+func (noService) Restart() error                    { return errNoService }
+func (noService) Reconcile(string, ...string) error { return errNoService }
+func (noService) Installed() (bool, error)          { return false, nil }
+func (noService) Describe() string                  { return "not installed (a test's stand-in)" }
+func (noService) LogHint() string                   { return "nothing to read: a test's stand-in" }

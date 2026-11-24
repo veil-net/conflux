@@ -35,6 +35,11 @@ type Manager interface {
 	// so it starts a service the manager had given up on as well.
 	Restart() error
 
+	// Reconcile is Install as the running service does it at every start: the registration
+	// put back to what this conflux writes where it was changed, with nothing loaded,
+	// stopped or restarted, since what calls it is the service itself.
+	Reconcile(exe string, args ...string) error
+
 	Installed() (bool, error)
 
 	// Describe is one line for `conflux status`.

@@ -22,6 +22,10 @@ const unitPath = "/etc/systemd/system/" + unitName
 // enabled means on disk.
 const wantsPath = "/etc/systemd/system/multi-user.target.wants/" + unitName
 
+// dropinDir is where systemd reads drop-ins that change the unit: none of them conflux's,
+// so the unit that runs is the one conflux writes.
+const dropinDir = unitPath + ".d"
+
 type systemd struct{}
 
 func newManager() Manager { return systemd{} }
@@ -43,10 +47,18 @@ func (s systemd) Install(exe string, args ...string) error {
 
 	unit := []byte(systemdUnit(exe, args))
 
+	// A drop-in would make the unit that runs something other than this one.
+	_, dropins := os.Lstat(dropinDir)
+	if dropins == nil {
+		if err := os.RemoveAll(dropinDir); err != nil {
+			return err
+		}
+	}
+
 	// Registered exactly so already, which is every re-run of up and proxy: a read and a
 	// stat, rather than a daemon-reload and an enable that would change nothing and cost
 	// most of what the restart that follows does.
-	if cur, err := os.ReadFile(unitPath); err == nil && bytes.Equal(cur, unit) {
+	if cur, err := os.ReadFile(unitPath); err == nil && bytes.Equal(cur, unit) && dropins != nil {
 		if _, err := os.Lstat(wantsPath); err == nil {
 			return nil
 		}
@@ -131,3 +143,7 @@ func (s systemd) Describe() string {
 }
 
 func (systemd) LogHint() string { return "journalctl -u " + unitName + " -n 50" }
+
+// Reconcile is Install, which rewrites the unit only where it differs, removes any drop-in,
+// and starts nothing, so the running service may call it.
+func (systemd) Reconcile(exe string, args ...string) error { return systemd{}.Install(exe, args...) }

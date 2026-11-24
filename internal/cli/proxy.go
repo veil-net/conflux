@@ -243,22 +243,24 @@ func newProxyFlags() *proxyFlags {
 	return f
 }
 
-// lookup finds the flag a dash-prefixed argument names, in any spelling Go's flag
-// package accepts. help is true for a help flag (helpFlag), which the package answers
-// without its being registered.
-func (f *proxyFlags) lookup(arg string) (fl *flag.Flag, help bool) {
-	if helpFlag(arg) {
-		return nil, true
+// lookup finds the flag arg names, in any spelling Go's flag package accepts (flagName), and
+// says whether it is foreign: a flag that is none of conflux proxy's and asks for no usage
+// (helpFlag), which the package answers without its being registered. An argument that is no
+// flag's spelling is neither, and is left to the flag set, which refuses it as bad syntax.
+func (f *proxyFlags) lookup(arg string) (fl *flag.Flag, foreign bool) {
+	name, ok := flagName(arg)
+	if !ok || helpFlag(arg) {
+		return nil, false
 	}
 
-	name, _, _ := strings.Cut(strings.TrimLeft(arg, "-"), "=")
+	fl = f.fs.Lookup(name)
 
-	return f.fs.Lookup(name), false
+	return fl, fl == nil
 }
 
-// unknown returns the first dash-prefixed argument that is not one of conflux proxy's
-// own, or "". The value of a flag that takes one is its value whatever it looks like, as
-// split reads it: `--manifest -` names stdin, and is not a flag called "-".
+// unknown returns the first flag that is not one of conflux proxy's own (lookup), or "". The
+// value of a flag that takes one is its value whatever it looks like, as split reads it:
+// `--manifest -` names stdin, and is not a flag called "-".
 func (f *proxyFlags) unknown(args []string) string {
 	expectValue := false
 
@@ -267,8 +269,8 @@ func (f *proxyFlags) unknown(args []string) string {
 		case expectValue:
 			expectValue = false
 		case strings.HasPrefix(a, "-"):
-			fl, help := f.lookup(a)
-			if fl == nil && !help {
+			fl, foreign := f.lookup(a)
+			if foreign {
 				return a
 			}
 

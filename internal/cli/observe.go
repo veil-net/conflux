@@ -180,16 +180,13 @@ func newObserveFlags() *observeFlags {
 	return f
 }
 
-// anchorctls returns what to say about the first dash-prefixed argument that is not one of
-// conflux observe's own, or "".
+// anchorctls returns what to say about the first flag that is not one of conflux observe's
+// own, or "". An argument that is no flag's spelling (flagName) is left to the flag set: bad
+// syntax, the end of its flags, or an argument observe does not take.
 func (f *observeFlags) anchorctls(args []string) string {
 	for _, a := range args {
-		if !strings.HasPrefix(a, "-") {
-			continue
-		}
-
-		name, _, _ := strings.Cut(strings.TrimLeft(a, "-"), "=")
-		if helpFlag(a) || f.fs.Lookup(name) != nil {
+		name, ok := flagName(a)
+		if !ok || helpFlag(a) || f.fs.Lookup(name) != nil {
 			continue
 		}
 

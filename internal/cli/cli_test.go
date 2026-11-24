@@ -240,7 +240,9 @@ func TestUsageIsOneStream(t *testing.T) {
 // (TestUsageIsOneStream), and an argument given to a command that takes flags alone is
 // TestAStrayArgumentIsNamedAboveTheUsage's, but for one with its flags after it, which does not
 // make it a flag's: `sudo conflux up mynet --taint mynet` would otherwise mint a network of its
-// own. Not root, so a command that went on past its refusal is refused for privilege, not run.
+// own. A word that is no flag's spelling, ---h, is the flag set's to refuse, as bad syntax, in
+// observe and proxy too, which look at their flags first. Not root, so a command that went
+// on past its refusal is refused for privilege, not run.
 func TestAMistakeIsSaidOnStderr(t *testing.T) {
 	asRoot(t, false)
 
@@ -255,6 +257,8 @@ func TestAMistakeIsSaidOnStderr(t *testing.T) {
 		{[]string{"cert"}, "conflux cert —"},
 		{[]string{"cert", "ca"}, "conflux cert ca —"},
 		{[]string{"cert", "p12"}, "conflux cert p12 —"},
+		{[]string{"observe", "---h"}, "bad flag syntax: ---h"},
+		{[]string{"proxy", "---h", "8080=127.0.0.1:3000"}, "bad flag syntax: ---h"},
 	} {
 		out, errOut, code := capture(t, c.args...)
 		if code != ExitUsage || out != "" || !strings.Contains(errOut, c.says) || !strings.Contains(errOut, "conflux "+c.args[0]) {

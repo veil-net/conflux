@@ -231,19 +231,30 @@ func flagsAlone(fs *flag.FlagSet, args []string) (exit int, ok bool) {
 	return ExitOK, true
 }
 
-// helpFlag reports whether arg asks for a usage, as a flag set takes it: -h or -help, after one
-// dash or two, with a value or without. The one answer for conflux itself, every verb that
-// looks at its flags before its flag set does, the cert command lists, and a pass-through, so
-// none of them reads --h, which anchorctl's flag sets answer as -h, as anything else.
-func helpFlag(arg string) bool {
-	name, ok := strings.CutPrefix(arg, "-")
+// flagName is the flag arg names, as a flag set reads it: the name after one dash or two, up to
+// an "=" and its value. ok is false where arg is no flag's spelling -- a word with no dash, a dash
+// or two alone, three dashes, an empty name -- which a flag set takes for an argument, the end of
+// its flags or bad syntax, and never for a flag. The one reading for every verb that looks at its
+// flags before its flag set does, so none of them names a flag the set would not.
+func flagName(arg string) (name string, ok bool) {
+	name, ok = strings.CutPrefix(arg, "-")
 	if !ok {
-		return false
+		return "", false
 	}
 
 	name, _, _ = strings.Cut(strings.TrimPrefix(name, "-"), "=")
 
-	return name == "h" || name == "help"
+	return name, name != "" && name[0] != '-'
+}
+
+// helpFlag reports whether arg asks for a usage, as a flag set takes it: -h or -help, after one
+// dash or two, with a value or without (flagName). The one answer for conflux itself, every verb
+// that looks at its flags before its flag set does, the cert command lists, and a pass-through,
+// so none of them reads --h, which anchorctl's flag sets answer as -h, as anything else.
+func helpFlag(arg string) bool {
+	name, ok := flagName(arg)
+
+	return ok && (name == "h" || name == "help")
 }
 
 // usageExit is the exit for flags that did not parse: 0 for -h, which asked for the usage it

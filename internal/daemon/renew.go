@@ -99,7 +99,8 @@ func renewChain(
 
 // installRenewal installs a renewed chain on what runs under it: the anchor, and the observer,
 // which holds its credential apart from the anchor's and goes on observing past a lapse
-// without exporting what it sees. Observing alone there is only the observer.
+// without exporting what it sees. Observing alone there is only the observer. Either one not
+// running takes nothing, and that is no failure: it starts under the manifest on disk.
 func installRenewal(ctx context.Context, ctl *anchorctl.Ctl, cfg *config.Config, chain []byte) error {
 	var err error
 

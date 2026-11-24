@@ -209,9 +209,7 @@ func (c *Ctl) ObserveStart(ctx context.Context, env config.Envelope, o config.Ob
 // disk when it next starts.
 func (c *Ctl) ObserveRenew(ctx context.Context, chain []byte) error {
 	_, err := c.run(ctx, chain, ObserveRenewArgs()...)
-
-	var e *Error
-	if errors.As(err, &e) && strings.Contains(e.Stderr, notObservingHint) {
+	if said(err, notObservingHint) {
 		return nil
 	}
 
@@ -221,6 +219,17 @@ func (c *Ctl) ObserveRenew(ctx context.Context, chain []byte) error {
 // notObservingHint is how anchorctl explains REASON_NOT_OBSERVING: a renewal for an observer
 // that is not running.
 const notObservingHint = "the observer is not running, so it has no credential to renew"
+
+// notRunning is anchord's refusal for REASON_NOT_RUNNING, which every one of its services
+// gives in these words: a call that needs an anchor, where the daemon holds none.
+const notRunning = "no anchor is running"
+
+// said reports whether err is anchorctl refusing in words that include these.
+func said(err error, words string) bool {
+	var e *Error
+
+	return errors.As(err, &e) && strings.Contains(e.Stderr, words)
+}
 
 // ObserveStop stops the observer, which records and ends every flow it holds. Not
 // observing is not an error.
@@ -242,13 +251,18 @@ func (c *Ctl) Export(ctx context.Context, endpoint string, insecure bool, signal
 }
 
 // Renew installs a fresh credential on the running anchor, hot: SetRealmCred rather
-// than a restart, so not one session is lost.
+// than a restart, so not one session is lost. An anchor that is not running -- one that
+// cannot come up for now, or one being rebuilt -- has nothing to renew, which is not an
+// error: it starts under the manifest on disk, as ObserveRenew's observer does.
 //
 // chain is the credential itself, raw, not base64: the API sends base64 and the client
 // decodes it on the way in. Getting that backwards produces a credential the daemon
 // refuses, with nothing saying the encoding is why.
 func (c *Ctl) Renew(ctx context.Context, chain []byte) error {
 	_, err := c.run(ctx, chain, RenewArgs()...)
+	if said(err, notRunning) {
+		return nil
+	}
 
 	return err
 }

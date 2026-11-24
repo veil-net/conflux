@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -376,6 +377,44 @@ func TestAFailedInstallIsDueAgain(t *testing.T) {
 
 	if !strings.Contains(st.LastRenewalError, "refused") {
 		t.Errorf("LastRenewalError = %q, want the install's refusal", st.LastRenewalError)
+	}
+}
+
+// TestARenewalWithNoAnchorRunningStands: beside an anchor that is not running -- one that
+// cannot come up for now, or one the watcher is rebuilding -- anchord answers a renewal with
+// "no anchor is running", which leaves nothing to install: the anchor starts on the renewed
+// chain on disk. The renewal stands, the state mirrors it, and the timer's next look asks the
+// issuer nothing, rather than renewing again every minute.
+func TestARenewalWithNoAnchorRunningStands(t *testing.T) {
+	t.Setenv(fakeAnchorctlStatusEnv, "none")
+
+	is := newIssuer(t)
+	d := machine(t, is, time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour))
+	ctl := fakeCtl(t)
+
+	if err := RenewNow(t.Context(), d, ctl, nil); err != nil {
+		t.Errorf("RenewNow with no anchor running: %v", err)
+	}
+
+	m := stored(t, d)
+
+	st, err := config.LoadState(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !st.IssuedAt.Equal(m.IssuedAt()) || !st.NotAfter.Equal(m.NotAfter()) || st.LastRenewalError != "" {
+		t.Errorf("the state (%v to %v, error %q) does not mirror the renewed manifest (%v to %v)",
+			st.IssuedAt, st.NotAfter, st.LastRenewalError, m.IssuedAt(), m.NotAfter())
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+
+	(&Supervisor{Dirs: d, ctl: ctl}).renewLoop(ctx)
+
+	if n := is.calls.Load(); n != 1 {
+		t.Errorf("the issuer was asked %d times, want the one renewal", n)
 	}
 }
 

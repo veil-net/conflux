@@ -22,7 +22,8 @@ import (
 // once, and "serve" for one that runs until it is signalled. fakeAnchorctlLogEnv,
 // when set, names a file the stand-in anchorctl appends each command it ran to,
 // fakeAnchorctlFailEnv a command it refuses, and fakeAnchorctlStatusEnv what its
-// status says: "running", or "none" for a daemon holding no anchor. fakeAnchorctlObserverEnv
+// status says: "running", or "none" for a daemon holding no anchor, which refuses a renewal
+// as anchord does one with no anchor to install it on. fakeAnchorctlObserverEnv
 // is the observer's row in it -- "running", "stopped", "failed", or none at all -- and
 // fakeAnchorctlCaptureEnv set makes `observe -start` refuse as a host that will not let the
 // daemon capture does. fakeAnchorctlRenewedEnv names a file `renew` writes the chain it was
@@ -131,6 +132,15 @@ func fakeAnchorctl(args []string) int {
 		chain, err := io.ReadAll(os.Stdin)
 		if err != nil || len(chain) == 0 {
 			fmt.Fprintln(os.Stderr, "no credential on stdin")
+
+			return 1
+		}
+
+		// A daemon holding no anchor refuses a renewal with REASON_NOT_RUNNING, which
+		// anchorctl explains so.
+		if os.Getenv(fakeAnchorctlStatusEnv) == "none" {
+			fmt.Fprintln(os.Stderr, "anchorctl: no anchor is running\n"+
+				"  start one with: anchorctl start -identity FILE -root FILE -cred FILE")
 
 			return 1
 		}

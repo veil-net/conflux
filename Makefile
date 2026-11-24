@@ -121,9 +121,10 @@ all: fmtcheck lint tidycheck docscheck test cross dist
 # Three sources in order: a local release/ (pinned), a local dist/ (unpinned, taken
 # loudly), then with FETCH=1 anchor's `latest` release, which serves the pinned build and
 # needs no checkout -- but does need a token, since anchor is private. With none of them
-# it writes placeholders, which compile and are caught by the size gate in dist.
+# it writes placeholders, which compile and are caught by the size gate in dist. The
+# script takes TARGETS from here, the one list of them, and is run through this alone.
 anchor-bins:
-	@ANCHOR_SRC='$(ANCHOR_SRC)' FETCH='$(FETCH)' \
+	@TARGETS='$(subst /,-,$(TARGETS))' ANCHOR_SRC='$(ANCHOR_SRC)' FETCH='$(FETCH)' \
 		ANCHOR_API='$(ANCHOR_API)' ANCHOR_REPO='$(ANCHOR_REPO)' ANCHOR_TAG='$(ANCHOR_TAG)' \
 		./scripts/anchor-bins.sh
 

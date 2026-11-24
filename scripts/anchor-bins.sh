@@ -43,18 +43,20 @@ ANCHOR_API=${ANCHOR_API:-}
 ANCHOR_REPO=${ANCHOR_REPO:-}
 ANCHOR_TAG=${ANCHOR_TAG:-}
 
-# Every target conflux embeds a pair for; the Makefile's TARGETS, in this spelling.
-TARGETS=(linux-amd64 linux-arm64 darwin-arm64 windows-amd64 windows-arm64 freebsd-amd64 openbsd-amd64)
+# Every target conflux embeds a pair for: the Makefile's TARGETS, which `make anchor-bins` hands
+# over in this spelling, so the list is written in one place. Run through make, which is the
+# only thing that gives it.
+read -r -a targets <<<"${TARGETS:?anchor-bins.sh is run by make anchor-bins, which gives it TARGETS}"
 
 # ONLY narrows this run to some of them -- the pairs one platform's build needs, which is
 # all a macOS or Windows CI job compiles. Empty means all of them.
 read -r -a only <<<"${ONLY:-}"
-[ "${#only[@]}" -gt 0 ] || only=("${TARGETS[@]}")
+[ "${#only[@]}" -gt 0 ] || only=("${targets[@]}")
 
 for t in "${only[@]}"; do
-  case " ${TARGETS[*]} " in
+  case " ${targets[*]} " in
     *" $t "*) ;;
-    *) echo "anchor-bins: ONLY names $t, which is not a target: ${TARGETS[*]}" >&2; exit 1 ;;
+    *) echo "anchor-bins: ONLY names $t, which is not a target: ${targets[*]}" >&2; exit 1 ;;
   esac
 done
 
@@ -70,7 +72,7 @@ names() {
 }
 
 every=()
-while IFS= read -r n; do every+=("$n"); done < <(names "${TARGETS[@]}")
+while IFS= read -r n; do every+=("$n"); done < <(names "${targets[@]}")
 want=()
 while IFS= read -r n; do want+=("$n"); done < <(names "${only[@]}")
 TOTAL=${#want[@]}

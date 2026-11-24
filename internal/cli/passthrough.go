@@ -26,8 +26,15 @@ import (
 //
 // On Unix the process is replaced outright. That gives perfect stdio, the child's
 // exit code without translation, signals delivered to the right process, and
-// nothing left in `ps` pretending to be a wrapper.
+// nothing left in `ps` pretending to be a wrapper. Usage and a socket the user named run as
+// a child instead (anchorctlAside), since they make nothing of conflux's.
 func passthrough(ctx context.Context, args []string) int {
+	// A daemon the user named themselves is not conflux's: nothing of conflux's is needed to
+	// reach it, so nothing is made, and none of connectionDetails' checks apply.
+	if namesSocket(args) || os.Getenv(anchorctl.SocketEnv) != "" {
+		return anchorctlAside(args)
+	}
+
 	d := activeDirs()
 
 	token, code := connectionDetails(d, args)
@@ -35,16 +42,9 @@ func passthrough(ctx context.Context, args []string) int {
 		return code
 	}
 
-	// Usage reaches no daemon, and makes nothing: anchorctl's answer is the same from any
-	// copy, and the run waits for it, so a temporary one can be removed.
+	// Usage reaches no daemon, and makes nothing.
 	if wantsUsage(args) {
-		bin, done, err := libexec.ForUsage(paths.Default())
-		if err != nil {
-			return fail(err)
-		}
-		defer done()
-
-		return runAnchorctl(bin, args, os.Environ())
+		return anchorctlAside(args)
 	}
 
 	// Only once there is something to talk to. Extracting first made the directories
@@ -57,7 +57,20 @@ func passthrough(ctx context.Context, args []string) int {
 
 	env := (&anchorctl.Ctl{Socket: d.Socket(), Token: token}).PassthroughEnv()
 
-	return execAnchorctl(ctx, tools.Anchorctl, args, env)
+	return anchorctlExec(ctx, tools.Anchorctl, args, env)
+}
+
+// anchorctlAside runs anchorctl as a child for what needs nothing of conflux's -- usage, and a
+// daemon the user named -- from libexec.ForUsage, which makes nothing of the installation's:
+// any copy answers alike, and the run waits for it, so a temporary one can be removed.
+func anchorctlAside(args []string) int {
+	bin, done, err := libexec.ForUsage(paths.Default())
+	if err != nil {
+		return fail(err)
+	}
+	defer done()
+
+	return anchorctlRun(bin, args, os.Environ())
 }
 
 // connectionDetails reads the token, and intercepts the one failure anchorctl
@@ -68,12 +81,6 @@ func passthrough(ctx context.Context, args []string) int {
 // started anchord and is not meant to. Everything else, including anchorctl's
 // genuinely good explanations of every other refusal, passes through untouched.
 func connectionDetails(d paths.Dirs, args []string) (string, int) {
-	// A user who named a socket themselves is talking to a daemon conflux does not
-	// manage, so none of the checks below apply to them.
-	if namesSocket(args) || os.Getenv(anchorctl.SocketEnv) != "" {
-		return "", ExitOK
-	}
-
 	// Usage needs nothing running. anchorctl groups keygen, issue and inspect
 	// under "no anchor needed", but that means no *anchor*: they are still RPCs to
 	// the daemon, which mints the identity and derives the id. Asking for help is

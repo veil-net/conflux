@@ -8,6 +8,11 @@ import (
 	"github.com/veil-net/conflux/internal/ui"
 )
 
+// anchorctlExec and anchorctlRun are how a pass-through hands over to anchorctl: in place of
+// this process, or as a child it waits for. Variables, so a test drives a pass-through to its
+// end without running one.
+var anchorctlExec, anchorctlRun = execAnchorctl, runAnchorctl
+
 // runAnchorctl runs anchorctl as a child and returns its exit code: what Windows does in
 // place of execve, and what usage does everywhere, since it waits to remove a temporary
 // copy afterwards.

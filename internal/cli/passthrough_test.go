@@ -1,11 +1,15 @@
 package cli
 
 import (
+	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
 )
@@ -26,6 +30,43 @@ func TestAPassThroughWithNothingRunningMakesNothing(t *testing.T) {
 
 	if _, err := os.Stat(root); !os.IsNotExist(err) {
 		t.Errorf("the pass-through made %s (%v); nothing should be on disk", root, err)
+	}
+}
+
+// stubAnchorctl replaces the pass-through's anchorctl for the test, and returns where the one
+// it would have run is: "" for none.
+func stubAnchorctl(t *testing.T) *string {
+	t.Helper()
+
+	var ran string
+
+	wasExec, wasRun := anchorctlExec, anchorctlRun
+	anchorctlExec = func(_ context.Context, bin string, _, _ []string) int { ran = bin; return ExitOK }
+	anchorctlRun = func(bin string, _, _ []string) int { ran = bin; return ExitOK }
+
+	t.Cleanup(func() { anchorctlExec, anchorctlRun = wasExec, wasRun })
+
+	return &ran
+}
+
+// TestAPassThroughToANamedSocketMakesNothing: a daemon the user names, by ANCHOR_SOCKET or
+// -socket, is not conflux's, so reaching it makes nothing of conflux's: no root, and no pair
+// extracted into one.
+func TestAPassThroughToANamedSocketMakesNothing(t *testing.T) {
+	anchortest.Require(t)
+
+	root := filepath.Join(t.TempDir(), "conflux")
+	t.Cleanup(paths.UseRoot(root))
+	t.Setenv("ANCHOR_SOCKET", filepath.Join(t.TempDir(), "theirs.sock"))
+
+	ran := stubAnchorctl(t)
+
+	if _, errOut, code := capture(t, "peers"); code != ExitOK || *ran == "" {
+		t.Errorf("conflux peers to a named socket exited %d, running %q:\n%s", code, *ran, errOut)
+	}
+
+	if _, err := os.Stat(root); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("a pass-through to a named socket made %s (%v); nothing should be on disk", root, err)
 	}
 }
 

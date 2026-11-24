@@ -583,6 +583,11 @@ conflux supplies the connection details through the environment (`ANCHOR_SOCKET`
 anchorctl resolves the socket as `firstNonEmpty(-socket, global -socket,
 ANCHOR_SOCKET)`, so a flag you typed still wins and conflux never rewrites an argv.
 
+A command to a daemon you named yourself (`-socket`, or `ANCHOR_SOCKET` set), and a request for
+usage, need nothing of conflux's installation, and make nothing of it: they run as a child of
+conflux, from the extracted anchorctl where a whole one is readable, else one in memory where the
+platform allows it, else a temporary copy removed afterwards.
+
 A command that makes the daemon itself open a path you name — `keygen -out` and
 `priv -out`, which write "on the daemon's filesystem", or export certificates given by path
 — opens it with `anchord`'s rights, which are an account of its own's wherever its mode

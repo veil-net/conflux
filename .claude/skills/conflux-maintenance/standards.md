@@ -149,24 +149,28 @@ Anchor is the reference for overlay behaviour, and the live API for the enrolmen
 **Writes and state**
 - Config and state writes are atomic, and every writer of the manifest or state holds the lock, `conflux enrol` included.
 - A new manifest, enrolled or imported, starts with no state carried over from the identity before it.
-- A Unix root owned by another account is refused before anything in it changes; one of ours is `0700`, or a root's `0710` that lets anchord's account through (the shared `/var/log` aside).
-- The boot service runs the copy of conflux in the root-only state directory, never the file conflux was run from.
+- A Unix root owned by another account is refused before anything in it changes; one of ours is `0700`, or a root's `0710` that lets anchord's account through.
+- Everything conflux keeps is in the one `.conflux` of the platform; nothing a person sets moves it, and no older layout is read.
+- At every start the supervisor puts `.conflux` back to what conflux writes: whatever neither conflux nor anchor wrote is deleted (a write in progress spared), owners, modes and DACLs are repaired, `conflux.json` and `state.json` are rewritten in conflux's form under the lock only where their bytes differ (an invalid one is refused, never rewritten; `manifest.b64` never), a modified pair is extracted again, and the registration and the service copy are rewritten where they differ.
+- The boot service runs the copy of conflux in `.conflux`, never the file conflux was run from.
 - A re-run of `up` or `proxy` never changes an existing machine's address or identity, and the IPv4 question is asked once, a declined answer included.
 - `up` and `proxy` replace each other cleanly.
-- `uninstall` leaves nothing behind: no definition, no `wants` link, no launchd disabled-database entry, no SCM entry, no directory.
+- `uninstall` leaves no trace of conflux: no definition or drop-in, no `wants` link, no launchd disabled-database entry, no SCM entry or event source, no `rc.conf` line, no `.conflux`, no account conflux made, no stale ephemeral root, no installed executable or its `/usr/bin` link or `Path` entry, no Wintun driver; what the service wrote to the system's log stays.
 
 **Supervision**
-- One supervisor per root: `serve` holds `<state>/serve.lock`, and a second is refused.
+- One supervisor per root: `serve` holds `serve.lock`, and a second is refused.
 - anchord runs as root, or with a capability, only where the host or the configuration needs it, and keeps whatever losing would cost an operation or a function; `status` says why. Nothing is re-owned in a directory the account can write, a root anchord never works in one, and what the account wrote is read as untrusted (`flock.Held`, `config.ReadUntrusted`, `copyTree`).
 - The anchord a dead supervisor left is stopped by the next one only when it is the recorded process (its executable, or anchor's socket lock where none is reported), and `uninstall` reaps it too. On Windows anchord dies with its own job, which its supervisor holds.
 - A supervisor that exits 1 is restarted by systemd, launchd and the SCM; on the BSDs nothing does, and the docs say so. One that exits 78 or 70 is restarted by none: systemd names them in `RestartPreventExitStatus`, launchd is told 0 (`cli.launchdExit`), and the SCM a clean stop (`scmExit`).
 - Readiness: the service manager is told the unit started once the anchor is up, or, beside an anchor that cannot come up yet, once the observer is (`signalStarted`), so a start timeout never takes the observer down; the marker waits for the anchor.
-- Where conflux writes the service log itself (macOS, FreeBSD, Windows), each line is stamped and the file moved aside to `.1` past 10 MiB; the journal and OpenBSD's syslog keep their own.
+- The service's output is the system's log, and conflux writes no log file: the journal, syslog (FreeBSD's `daemon -S`, OpenBSD's rc.subr), the unified log through a `logger` child on macOS (a dead logger never takes the supervisor down), the Event Log under the `conflux` source on Windows.
+- The service has the protections its platform normally gives a system service (systemd's hardening lines, a root-owned plist and rc script, the SCM's own SID and DACL); the supervisor is privileged, anchord only where `decide` says.
 - conflux's own anchorctl calls reach conflux's daemon whatever the shell exports (`Ctl.Env`); only pass-through defers to `ANCHOR_SOCKET`/`ANCHORD_TOKEN`. Help and usage make nothing: no directory and no extraction (`libexec.ForUsage`).
 
 **Ephemeral runs**
 - `uninstall` refuses a live run and removes a killed run's root, stopping the anchord it left, under the root's lock.
-- No other conflux writes into a run's root: status and pass-through take its pair through `libexec.Extracted`, and ask it nothing before the run's `MarkReady`, which follows its anchor's start, and only while the process that wrote the marker runs (`IsLiveReady`): a killed run leaves its marker, and the next run withdraws it once it holds the lock.
+- On Linux the pair runs from sealed memory files and no file of it is on disk (integration asserts it); elsewhere, or where the kernel refuses, it is extracted into the root. The root is where a reboot empties it.
+- No other conflux writes into a run's root: status and pass-through run their own anchorctl from memory on Linux, and elsewhere take the run's pair through `libexec.Extracted`, and ask it nothing before the run's `MarkReady`, which follows its anchor's start, and only while the process that wrote the marker runs (`IsLiveReady`): a killed run leaves its marker, and the next run withdraws it once it holds the lock.
 - Nothing of the machine's is read or written: no `conflux.json`, `manifest.b64`, `state.json`, `anchord.json`, anchor directory or service; no file holds the credential or the chain at any point (the renewal goes on stdin); anchord gets no `-dir` and no `-config`.
 - The run ends when anchord does, and its root goes with it; nothing restarts or rebuilds. anchord ends with conflux on Linux (parent-death signal, started from a thread held for anchord's life) and Windows (the job); the next run reaps what a killed one left on macOS and the BSDs.
 - As root, anchord drops by the installed rules to `conflux-ephemeral`, never the installation's account; otherwise it runs as the invoking user. Core dumps are off for the run and its anchord.

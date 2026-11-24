@@ -200,7 +200,11 @@ Three rules hold it together:
   root's has its own `-dir`, and `run/anchord/` is made afresh, for the right owner, before
   every start, after everything that runs as the account has been ended.
 - **Root reads what the account wrote as untrusted.** The socket's lock, which the reaper asks
-  about, is opened to read, never created, and never through a symlink; a Subnets order's
+  about, is opened to read, never created, never through a symlink, and refused when it has a
+  second name: a hard link the account made to root's `serve.lock`, held while the supervisor
+  serves, would otherwise answer for the socket. That lock alone is: an ephemeral run's
+  `serve.lock`, which `status` and `uninstall` ask after by its own name in a root the account
+  cannot write, is answered whatever the account linked to it. A Subnets order's
   `subnets.json`, which `conflux status` prints, is read only as a regular file of one link
   and bounded size, with control characters taken out of who set it.
 

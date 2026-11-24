@@ -51,12 +51,11 @@ func lock(path string, flags uint32) (func(), bool, error) {
 	}, true, nil
 }
 
-// Held reports whether somebody holds the lock on path, a file in a directory anchord's
-// own account may write. It is opened to read and never created, and anything but a
-// regular file is refused, so asking cannot be turned into SYSTEM creating a file
-// wherever the name was made to lead. A file that is not there is held by nobody. A second
-// name is not asked after, as it is on Unix: linking a file on Windows takes write access to
-// it, so one the account made is of a lock it could write already, never of SYSTEM's.
+// Held reports whether somebody holds the lock on path, asked for by its own name: an
+// ephemeral run's serve.lock, which status, pass-through and uninstall ask after. It is
+// opened to read and never created, and anything but a regular file is refused, so asking
+// cannot be turned into SYSTEM creating a file wherever the name was made to lead. A file
+// that is not there is held by nobody.
 func Held(path string) (bool, error) {
 	f, err := os.Open(path)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -86,3 +85,9 @@ func Held(path string) (bool, error) {
 
 	return false, nil
 }
+
+// HeldUntrusted is Held for a lock in a directory anchord's own account may write: anchor's
+// lock beside its socket. It asks nothing more than Held does. The second name Unix refuses is
+// not asked after: linking a file on Windows takes write access to it, so one the account made
+// is of a lock it could write already, never of SYSTEM's.
+func HeldUntrusted(path string) (bool, error) { return Held(path) }

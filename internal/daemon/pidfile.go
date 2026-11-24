@@ -124,11 +124,12 @@ func isOurDaemon(d paths.Dirs, pid int, exe string) bool {
 // socketHeld reports whether something holds anchor's lock on this root's socket, where a
 // daemon serving it always does.
 //
-// Asked through flock.Held, never by taking the lock the way the supervisor's own locks
-// are: the lock lives in anchord's run directory, which belongs to whoever anchord ran as,
-// and opening it to create would let that account point root at any file.
+// Asked through flock.HeldUntrusted, never by taking the lock the way the supervisor's own
+// locks are: the lock lives in anchord's run directory, which belongs to whoever anchord ran
+// as, and opening it to create would let that account point root at any file, as a second
+// name there would let it hand root's own serve.lock in as the socket's.
 func socketHeld(d paths.Dirs) bool {
-	held, err := flock.Held(d.Socket() + ".lock")
+	held, err := flock.HeldUntrusted(d.Socket() + ".lock")
 
 	return err == nil && held
 }

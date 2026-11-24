@@ -170,14 +170,15 @@ jobs:
       - name: the boot service, and four nodes against the live API
         run: make -j2 -O service-test integration
 
-  # FreeBSD and OpenBSD, which no hosted runner is: each in a VM on a hosted Linux runner,
-  # against rc for real -- install registers and starts nothing, anchord runs as conflux's
-  # own account in userspace and as root where its kernel keeps a TUN and a low port for
-  # root, and uninstall leaves nothing, the account included. `make cross` vets both;
-  # this is the one place either runs. Only the pair for the target is fetched, on the
-  # runner, which is where the anchor credential stays: the VM is given the built conflux
-  # and the script, and nothing comes back from it. A fork's pull request is not given the
-  # credential, so it does not run this.
+  # FreeBSD and OpenBSD, which no hosted runner is: each in a VM on a hosted Linux runner.
+  # First install.sh, as a person runs it, against the published `latest`, with nothing to
+  # download with but the base system's fetch or ftp; then rc for real -- install registers
+  # and starts nothing, anchord runs as conflux's own account in userspace and as root where
+  # its kernel keeps a TUN and a low port for root, and uninstall leaves nothing, the account
+  # included. `make cross` vets both; this is the one place either runs. Only the pair for
+  # the target is fetched, on the runner, which is where the anchor credential stays: the VM
+  # is given the built conflux and the script, and nothing comes back from it. A fork's pull
+  # request is not given the credential, so it does not run this.
   bsd:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     strategy:

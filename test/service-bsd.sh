@@ -8,8 +8,9 @@
 # -- conflux on FreeBSD, _conflux on OpenBSD -- made the first time it is needed; a TUN and
 # a port only root may bind keep it root, saying why; and uninstall leaves nothing behind,
 # the account included. Nothing is enrolled: the configuration names an API that accepts
-# and answers nothing, so anchord stays up while the enrolment waits. POSIX sh, which is
-# what both have.
+# and answers nothing, so anchord stays up while the enrolment waits. Before all of it,
+# install.sh installs the published `latest` with the base system's own tools, as the
+# platforms legs install it elsewhere. POSIX sh, which is what both have.
 set -eu
 
 CONFLUX=${1:?usage: test/service-bsd.sh CONFLUX}
@@ -37,6 +38,37 @@ rc() { # VERB
   if [ "$os" = freebsd ]; then service conflux "$1"; else rcctl "$1" conflux; fi
 }
 
+# install.sh as a person runs it, against the published `latest`: the script on stdin, as root,
+# with root's own PATH and nothing on it to download with but the base system's client -- curl
+# and wget, where a package put them, are set aside for the leg -- so FreeBSD's fetch or
+# OpenBSD's ftp downloads, and the base system's own tool checks the digest. Run again, it
+# finds the release's conflux already there. The build under test goes over it below.
+say "install.sh installs the latest release with the base system's own tools"
+installer=$(dirname "$0")/../install.sh
+(
+  PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin
+  export PATH
+  aside=""
+  for c in curl wget; do
+    while p=$(command -v "$c"); do
+      case " $aside " in *" $p "*) fail "$p is still found after it was set aside" ;; esac
+      mv "$p" "$p.aside" || fail "could not set $p aside"
+      aside="$aside $p"
+    done
+  done
+  sh < "$installer" || fail "install.sh did not install the latest release"
+  [ "$(command -v conflux)" = /usr/local/bin/conflux ] ||
+    fail "conflux is $(command -v conflux || echo nowhere) on PATH, not /usr/local/bin/conflux"
+  conflux version || fail "the conflux install.sh installed does not run"
+  again=$(sh < "$installer") || fail "install.sh, run again, failed"
+  printf '%s\n' "$again"
+  case $again in
+    *'is already the latest release'*) ;;
+    *) fail "install.sh, run again, did not find the latest release already installed" ;;
+  esac
+  for p in $aside; do mv "$p.aside" "$p"; done
+)
+
 # FreeBSD's conflux runs the Go Cryptographic Module in FIPS 140-3 mode, here on the kernel it
 # ships for; OpenBSD's is built without it, which the module refuses to run on.
 say "conflux reports the FIPS 140-3 mode its build carries"
@@ -63,7 +95,8 @@ rm -rf "$certs"
 # A run cut short leaves its registration behind; a fresh VM has none to remove.
 "$CONFLUX" uninstall --yes >/dev/null 2>&1 || true
 
-# Run from where install.sh puts it, so that uninstall's removal of it is seen below.
+# Run from where install.sh puts it, so that uninstall's removal of it is seen below: the
+# build under test, over the release install.sh put there.
 cp "$CONFLUX" /usr/local/bin/conflux
 CONFLUX=/usr/local/bin/conflux
 

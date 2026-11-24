@@ -24,19 +24,15 @@ type launchd struct{}
 
 func newManager() Manager { return launchd{} }
 
-// Install writes the job and loads nothing, which is the whole of what registration
-// means here. Loading it would start it -- bootstrap honours RunAtLoad -- and Install
-// starts nothing, so the caller's Restart is the one start.
+// Install writes the job as Reconcile does and loads nothing, which is the whole of what
+// registration means here. Loading it would start it -- bootstrap honours RunAtLoad -- and
+// Install starts nothing, so the caller's Restart is the one start.
 //
 // Nothing about a reboot depends on loading it here. launchd bootstraps everything in
 // /Library/LaunchDaemons at boot, so the plist on disk *is* the registration, and
 // Start and Restart load it when there is something to run.
 func (l launchd) Install(exe string, args ...string) error {
-	plist := launchdPlist(Label, append([]string{exe}, args...))
-
-	// 0644 whatever was there before: launchd refuses a job whose plist is group- or
-	// world-writable, for a reason nothing in its error names.
-	if err := config.WriteFileAtomic(plistPath, []byte(plist), 0o644); err != nil {
+	if err := l.Reconcile(exe, args...); err != nil {
 		return err
 	}
 
@@ -54,6 +50,10 @@ func (l launchd) Install(exe string, args ...string) error {
 // Reconcile writes the plist where it differs from what this conflux writes, and does not
 // boot the job out as Install does: what calls it is the job, and the plist takes effect at
 // the next load.
+//
+// 0644 whatever was there before, a plist holding these bytes given its mode back: launchd
+// refuses a job whose plist is group- or world-writable, for a reason nothing in its error
+// names.
 func (l launchd) Reconcile(exe string, args ...string) error {
 	plist := []byte(launchdPlist(Label, append([]string{exe}, args...)))
 

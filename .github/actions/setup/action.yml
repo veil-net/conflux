@@ -1,5 +1,7 @@
 name: setup
-description: Go, from go.mod, with the module and build caches, and the Makefile's GOFIPS140.
+description: >-
+  Go, from go.mod, with the module and build caches, and the Makefile's GOFIPS140: setup-go's,
+  or for the release one fresh from go.dev, held to its published SHA-256.
 inputs:
   cache-key:
     description: >-
@@ -9,10 +11,19 @@ inputs:
       key is used.
     required: false
     default: ''
+  verified-go:
+    description: >-
+      'true' for the release: Go downloaded from go.dev into this job's temporary directory and
+      held to the SHA-256 go.dev publishes for it (scripts/go-toolchain.sh), in place of
+      setup-go's, which takes the toolchain the runner's tool cache holds already -- on the
+      self-hosted machine, one any earlier job there could have changed.
+    required: false
+    default: 'false'
 runs:
   using: composite
   steps:
-    - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+    - if: inputs.verified-go != 'true'
+      uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
       with:
         # From go.mod rather than pinned here, so the toolchain is stated once.
         go-version-file: go.mod
@@ -23,8 +34,24 @@ runs:
         # itself and uploading it again cost ten minutes a run and bought nothing. CI
         # builds from them there; a release does not, since anything that wrote to them
         # would be in what it publishes: release.yml points both at empty directories of
-        # its own run, and verifies the modules before it builds.
+        # its own run, and verifies the modules before it builds. Nor does it take Go from
+        # the tool cache this installs into, which survives there too (verified-go).
         cache: ${{ runner.environment != 'self-hosted' && inputs.cache-key == '' }}
+    # The release's Go, the version go.mod names as setup-go reads it, downloaded afresh and
+    # checked against go.dev's own SHA-256: the compiler, the standard library and the Go
+    # Cryptographic Module it compiles in are then nothing another job left. Its GOROOT is first
+    # on PATH, and GOTOOLCHAIN=local keeps the go command from switching to any other.
+    - name: Go from go.dev, held to its published SHA-256
+      if: inputs.verified-go == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        goroot=$(./scripts/go-toolchain.sh "$RUNNER_TEMP/go-toolchain")
+        {
+          echo "GOROOT=$goroot"
+          echo "GOTOOLCHAIN=local"
+        } >> "$GITHUB_ENV"
+        echo "$goroot/bin" >> "$GITHUB_PATH"
     # GOFIPS140 for every later step, read from the Makefile, the one place it is named: a bare
     # go command -- go test, go run -- then builds against the same Go Cryptographic Module make
     # does, and what it builds runs in FIPS 140-3 mode (docs/security.md, "FIPS 140-3 and

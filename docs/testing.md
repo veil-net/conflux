@@ -389,9 +389,13 @@ only releases: it does not re-run any of the above. A merge lands only when CI i
 on that branch protection, and is unsafe without it. It refuses to run anywhere but those two,
 fetches anchor's `dev-latest` on `dev` and its `latest` on `version3`, runs `make dist`, attests
 the artifacts and writes one set of notes. It builds on veilnet-dev, but from nothing another
-build left there: empty build and module caches of its own run, under the job's temporary
-directory, rather than the machine's shared ones, with every module downloaded afresh against
-`go.sum` and verified (`go mod download`, `go mod verify`) before anything is built. The
+build left there, all of it under the job's temporary directory: the Go toolchain `go.mod`
+names, downloaded from go.dev and held to the SHA-256 go.dev publishes for it
+(`scripts/go-toolchain.sh`) rather than taken from the runner's tool cache, so the compiler,
+the standard library and the Go Cryptographic Module it compiles in are nobody else's; and
+empty build and module caches of its own run rather than the machine's shared ones, with every
+module downloaded afresh against `go.sum` and verified (`go mod download`, `go mod verify`)
+before anything is built. The
 notes are the changes since the previous version — on `version3` the pull requests `dev`
 merged, read from the `dev` side of the release's merge — and what is inside. On `dev` it
 publishes the pre-release `dev-latest`, never Latest. On `version3` it publishes twice, with the same artifacts and notes: at the tag the `VERSION` file names,

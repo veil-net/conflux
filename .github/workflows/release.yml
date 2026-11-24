@@ -130,7 +130,12 @@ jobs:
             echo "GOMODCACHE=$RUNNER_TEMP/go-mod"
             echo "GOFLAGS=-modcacherw"
           } >> "$GITHUB_ENV"
+      # And Go itself: setup-go would take the toolchain this machine's tool cache holds, which
+      # any job here could have changed, so the release's is downloaded from go.dev into the
+      # same temporary directory and checked against go.dev's published SHA-256 first.
       - uses: ./.github/actions/setup
+        with:
+          verified-go: 'true'
 
       # Every module downloaded afresh, each held to go.sum as it arrives, and then verified
       # before anything is built: `go mod verify` alone, over an empty cache, checks nothing.

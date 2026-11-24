@@ -49,7 +49,7 @@ type Privilege struct {
 	Caps []string `json:"caps,omitempty"`
 
 	// NoNewPrivs is set where anchord runs nothing, so nothing it runs can gain what it
-	// was not given.
+	// was not given. decide alone sets it, and only for the account.
 	NoNewPrivs bool `json:"noNewPrivs,omitempty"`
 
 	// BPF is how the account reads the BPF devices on macOS, for the observer: BPFOwn where

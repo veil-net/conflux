@@ -113,8 +113,7 @@ func withCaps(attr *syscall.SysProcAttr, caps []string) {
 // -- and the signal comes only when this process ends while the child still runs. Started
 // from the locked thread of no_new_privs and let go, it would come at once.
 func startProcess(cmd *exec.Cmd, p Privilege, hold <-chan struct{}) error {
-	noNewPrivs := p.NoNewPrivs && (p.Account || hold != nil)
-	if !noNewPrivs && hold == nil {
+	if !p.NoNewPrivs && hold == nil {
 		return cmd.Start()
 	}
 
@@ -123,7 +122,7 @@ func startProcess(cmd *exec.Cmd, p Privilege, hold <-chan struct{}) error {
 	go func() {
 		runtime.LockOSThread()
 
-		if noNewPrivs {
+		if p.NoNewPrivs {
 			if err := unix.Prctl(unix.PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0); err != nil {
 				errc <- fmt.Errorf("set no_new_privs: %w", err)
 

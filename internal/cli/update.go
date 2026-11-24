@@ -19,12 +19,11 @@ import (
 	"github.com/veil-net/conflux/internal/version"
 )
 
-// updateFrom, updateExecutable and updateLink are what a test points elsewhere: the release an
-// update reads, the file it replaces, and the link it makes for sudo (none on Windows).
+// updateFrom and updateExecutable are what a test points elsewhere: the release an update reads,
+// and the file it replaces. On Unix, updateLink is the third: the link it makes for sudo.
 var (
 	updateFrom       = update.Source{}
 	updateExecutable = paths.InstalledExecutable
-	updateLink       = paths.SudoLink
 )
 
 // channel is the release a build updates to, and what to call it: the newest build of its own

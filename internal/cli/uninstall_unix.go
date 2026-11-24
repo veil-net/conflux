@@ -13,6 +13,10 @@ import (
 	"github.com/veil-net/conflux/internal/ui"
 )
 
+// updateLink is the link an update that installs conflux where there was none makes for sudo,
+// as install.sh makes it: a variable, so a test points it elsewhere.
+var updateLink = paths.SudoLink
+
 // removeInstallation removes the conflux install.sh put on PATH, and the link it made for
 // sudo; this process may be that conflux, and its file goes all the same.
 func removeInstallation() error {
@@ -40,7 +44,7 @@ func putOnPath(exe string) error {
 
 	link := updateLink()
 
-	if target, err := os.Readlink(link); err == nil && target == exe {
+	if linksTo(link, exe) {
 		return missed(found, link, exe)
 	}
 

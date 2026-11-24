@@ -8,6 +8,9 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// pointSudoLink is serveRelease's on Windows, where an update makes no link for sudo: nothing.
+func pointSudoLink(*testing.T) {}
+
 // TestUninstallLeavesTheSystemsCmd: the cmd.exe uninstall leaves behind to remove the
 // installation's directory is the system's, wherever %SystemRoot% points, and so is the ping it
 // waits with: named by its full path, and started in the system directory, so that neither a

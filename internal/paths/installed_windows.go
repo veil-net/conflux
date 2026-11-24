@@ -12,6 +12,3 @@ import (
 func InstalledExecutable() string {
 	return filepath.Join(knownFolder(windows.FOLDERID_ProgramFiles, `C:\Program Files`), "conflux", "conflux.exe")
 }
-
-// SudoLink is nothing on Windows, which has no sudo to find conflux for.
-func SudoLink() string { return "" }

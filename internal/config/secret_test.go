@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -47,6 +48,24 @@ func TestSaveManifestLeavesTheCallersEnvelope(t *testing.T) {
 
 	if got := string(backing[12:17]); got != "  XYZ" {
 		t.Errorf("SaveManifest wrote into the caller's slice: %q", got)
+	}
+}
+
+// TestHasManifestIsWhatLoadManifestReads: a machine has an identity exactly when there is a
+// manifest LoadManifest reads -- none, or one empty or of nothing but white space, is none.
+func TestHasManifestIsWhatLoadManifestReads(t *testing.T) {
+	d := dirsForTest(t)
+
+	for content, has := range map[string]bool{"": false, " \n\t\n": false, "bWFuaWZlc3Q=\n": true} {
+		if err := os.WriteFile(d.ManifestFile(), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := LoadManifest(d)
+
+		if HasManifest(d) != has || (err == nil) != has {
+			t.Errorf("a manifest of %q: HasManifest %v, LoadManifest %v; want has %v from both", content, HasManifest(d), err, has)
+		}
 	}
 }
 

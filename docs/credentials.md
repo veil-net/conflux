@@ -63,6 +63,10 @@ conflux enrols only when `manifest.b64` does not exist. In particular:
   address and orphan every peer that had it.
 - **Re-running `conflux up` does not enrol.** It reads the identity that is there.
 - **Switching modes does not enrol.** `up` after `proxy` keeps the identity.
+- **An emptied `manifest.b64` does not enrol.** One with nothing in it, or nothing but
+  white space, holds no identity, and the supervisor refuses it for good, naming it, rather
+  than retrying it or drawing a new one: what it held is a person's to find out. `conflux
+  enrol` installs a manifest in its place.
 
 ## Taints are the credential's
 

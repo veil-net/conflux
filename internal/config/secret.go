@@ -24,7 +24,9 @@ func (Envelope) String() string { return "<anchor manifest, redacted>" }
 func (Envelope) GoString() string { return "<anchor manifest, redacted>" }
 
 // LoadManifest reads the identity. A missing file means "never enrolled", which is
-// the one condition under which conflux is allowed to enrol.
+// the one condition under which conflux is allowed to enrol. One empty or of nothing but
+// white space holds no identity, and is an error naming it: no retry fills it, and what it
+// held is a person's to find out.
 func LoadManifest(d paths.Dirs) (Envelope, error) {
 	b, err := os.ReadFile(d.ManifestFile())
 	if err != nil {
@@ -60,11 +62,11 @@ func SaveManifest(d paths.Dirs, env Envelope) error {
 	return writeAtomic(d.ManifestFile(), 0o600, b, []byte{'\n'})
 }
 
-// HasManifest reports whether this machine has an identity already. The answer
-// gates enrolment, and getting it wrong in the false direction draws a new identity
-// and silently changes the machine's overlay address.
+// HasManifest reports whether this machine has an identity already: a manifest LoadManifest
+// reads, by its rule and no other. The answer gates enrolment, and getting it wrong in the
+// false direction draws a new identity and silently changes the machine's overlay address.
 func HasManifest(d paths.Dirs) bool {
-	fi, err := os.Stat(d.ManifestFile())
+	_, err := LoadManifest(d)
 
-	return err == nil && fi.Size() > 0
+	return err == nil
 }

@@ -60,3 +60,29 @@ func TestAStateThisBuildCannotReadIsRefusedForGood(t *testing.T) {
 		t.Errorf("the issuer was asked %d times, want none", n)
 	}
 }
+
+// TestAnEmptyManifestIsRefusedForGood: a manifest.b64 with nothing in it, or nothing but white
+// space, is no identity to start or renew, and no retry fills it: refused for good, naming it,
+// rather than retried for ever -- and not enrolled over, since what it held is a person's to
+// find out.
+func TestAnEmptyManifestIsRefusedForGood(t *testing.T) {
+	for name, content := range map[string]string{"zero bytes": "", "white space": " \n"} {
+		t.Run(name, func(t *testing.T) {
+			is := newIssuer(t)
+			d := machine(t, is, time.Now(), time.Now().Add(30*24*time.Hour))
+
+			if err := os.WriteFile(d.ManifestFile(), []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			_, err := bringUp(t.Context(), d, fakeCtl(t), nopReporter{}, d.RootAnchorDir(), false, nil)
+			if !Permanent(err) || !strings.Contains(err.Error(), d.ManifestFile()) {
+				t.Errorf("bringUp = %v, want a refusal for good naming %s", err, d.ManifestFile())
+			}
+
+			if b, _ := os.ReadFile(d.ManifestFile()); string(b) != content || is.calls.Load() != 0 {
+				t.Errorf("the empty manifest became %q after %d calls to the issuer", b, is.calls.Load())
+			}
+		})
+	}
+}

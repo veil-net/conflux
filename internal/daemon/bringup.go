@@ -258,7 +258,9 @@ func credential(
 		// Nothing this state said about an identity holds for the new one; see NewIdentity.
 		st.NewIdentity()
 	default:
-		return nil, nil, nil, err
+		// One that could not be read is tried again; one with nothing in it is refused for
+		// good, naming it, and not enrolled over: no retry fills it.
+		return nil, nil, nil, fileErr(err)
 	}
 
 	m, err := enrol.Decode(env)

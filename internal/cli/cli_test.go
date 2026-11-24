@@ -158,18 +158,27 @@ func TestHelpListsEveryVisibleVerb(t *testing.T) {
 
 // TestHelpForACommandIsThatCommands: `conflux help X` is X's own usage, whichever
 // binary X belongs to, except for the two of conflux's with no usage of their own to
-// print, help and status, which get the whole page, as `conflux help` does.
+// print, help and status, which get the whole page, as `conflux help` does. A leading -- is
+// no command, and is passed to no anchorctl: help -- is the whole page, and help -- up up's
+// usage. The pass-through is stubbed, since on Unix it would replace the test binary.
 func TestHelpForACommandIsThatCommands(t *testing.T) {
-	for _, name := range []string{"up", "version"} {
-		out, _, code := capture(t, "help", name)
-		if code != ExitOK || !strings.Contains(out, "conflux "+name+" —") || strings.Contains(out, "Commands") {
-			t.Errorf("help %s exited %d and printed:\n%s", name, code, out)
+	ran := stubAnchorctl(t)
+
+	for _, args := range [][]string{{"up"}, {"version"}, {"--", "up"}} {
+		name := args[len(args)-1]
+		*ran = ranAnchorctl{}
+
+		out, _, code := capture(t, append([]string{"help"}, args...)...)
+		if code != ExitOK || !strings.Contains(out, "conflux "+name+" —") || strings.Contains(out, "Commands") || ran.bin != "" {
+			t.Errorf("help %s exited %d, passing %q through, and printed:\n%s", strings.Join(args, " "), code, ran.bin, out)
 		}
 	}
 
-	for _, name := range []string{"help", "status"} {
-		if out, _, code := capture(t, "help", name); code != ExitOK || !strings.Contains(out, "Commands") {
-			t.Errorf("help %s exited %d, printing no Commands:\n%s", name, code, out)
+	for _, name := range []string{"help", "status", "--"} {
+		*ran = ranAnchorctl{}
+
+		if out, _, code := capture(t, "help", name); code != ExitOK || !strings.Contains(out, "Commands") || ran.bin != "" {
+			t.Errorf("help %s exited %d, passing %q through, printing no Commands:\n%s", name, code, ran.bin, out)
 		}
 	}
 }

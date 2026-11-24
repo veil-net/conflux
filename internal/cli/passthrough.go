@@ -135,17 +135,25 @@ func namesSocket(args []string) bool {
 // runEscapeHatch is `conflux anchorctl ...`: the always-unambiguous way to reach a
 // command conflux shadows, or one it refuses to pass through.
 func runEscapeHatch(ctx context.Context, args []string) int {
-	// "conflux anchorctl -- proxy -add ..." is a spelling people will try, and the
-	// separator is noise once it has done its job at the shell.
-	if len(args) > 0 && args[0] == "--" {
-		args = args[1:]
-	}
+	args = afterDashes(args)
 
 	if len(args) == 0 {
 		args = []string{"help"}
 	}
 
 	return passthrough(ctx, args)
+}
+
+// afterDashes is the words of a command that names another, help's or the escape hatch's,
+// with a leading "--" passed over: no command is called that, and "conflux anchorctl -- proxy
+// -add ..." is a spelling people will try, where the separator is noise once it has done its
+// job at the shell.
+func afterDashes(args []string) []string {
+	if len(args) > 0 && args[0] == "--" {
+		return args[1:]
+	}
+
+	return args
 }
 
 // runCtl builds a Ctl for conflux's own use, against conflux's own daemon. Its token

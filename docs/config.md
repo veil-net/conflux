@@ -102,13 +102,13 @@ yet, which is retried, and TLS material under `export` that will not load. `tain
 one field an edit cannot change once the machine has enrolled: a set the credential does
 not grant is refused at every start.
 
-Every start reads the file once, under the machine's lock, and writes it back in conflux's
-own form, and `state.json` with it: an edit that is valid takes effect, and a key conflux
-does not know, or a layout of the editor's own, does not outlast the next start. A file
-already in that form is not rewritten, and one the start refuses — one that does not parse,
-that a newer conflux wrote, or that is refused on its face — is left exactly as it is. Every
-command that writes it holds the machine's lock, as the start does, so neither undoes the
-other.
+Each start's canonical rewrite reads the file once, under the machine's lock, and writes it
+back in conflux's own form, and `state.json` with it: an edit that is valid takes effect, and
+a key conflux does not know, or a layout of the editor's own, does not outlast the next
+start. A file already in that form is not rewritten, and one the start refuses — one that
+does not parse, that a newer conflux wrote, or that is refused on its face — is left exactly
+as it is. Every command that writes it holds the machine's lock, as the start does, so
+neither undoes the other.
 
 ### `export` — where telemetry goes
 

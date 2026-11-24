@@ -325,6 +325,27 @@ jobs:
           again=$(sh < install.sh)
           grep 'is already the latest release' <<< "$again"
 
+      # 32-bit Windows PowerShell, which 64-bit Windows has beside its own: its Program Files is
+      # the x86 one, where conflux never looks for itself, so install.ps1 refuses there, saying to
+      # run it from 64-bit PowerShell, before anything is downloaded or made. The child prints the
+      # refusal itself, one line, which the error view would wrap; LASTEXITCODE is put back, since
+      # the step ends with it.
+      - name: install.ps1 refuses 32-bit PowerShell
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ps32 = Join-Path $env:SystemRoot 'SysWOW64\WindowsPowerShell\v1.0\powershell.exe'
+          $out = & $ps32 -NoProfile -NonInteractive -Command 'try { Get-Content install.ps1 -Raw | Invoke-Expression } catch { [Console]::Out.WriteLine($_.Exception.Message); exit 3 }'
+          $code = $LASTEXITCODE
+          $global:LASTEXITCODE = 0
+          $said = $out -join "`n"
+          Write-Host $said
+          if ($code -ne 3) { throw "install.ps1 in 32-bit PowerShell exited $code, not refusing" }
+          if ($said -notmatch 'run this from 64-bit PowerShell') { throw 'its refusal does not say to run it from 64-bit PowerShell' }
+          foreach ($d in (Join-Path ${env:ProgramFiles(x86)} 'conflux'), (Join-Path $env:ProgramFiles 'conflux')) {
+            if (Test-Path -LiteralPath $d) { throw "install.ps1 in 32-bit PowerShell made $d" }
+          }
+
       # Under Windows PowerShell 5.1, which is what a Windows machine opens, by Invoke-Expression
       # as `irm … | iex` runs it; then again from PowerShell 7, which finds it on the machine's
       # PATH and changes nothing.

@@ -15,9 +15,9 @@
 #
 #   $env:CONFLUX_VERSION = '1.0.0'        a release tag, rather than latest
 #
-# Windows PowerShell 5.1 as well as PowerShell 7. Invoke-Expression runs this in the session that
-# typed it, so nothing here exits that session: a failure throws. All of it is one script block,
-# so a download cut short runs nothing.
+# Windows PowerShell 5.1 as well as PowerShell 7, 64-bit: a 32-bit PowerShell on 64-bit Windows is
+# refused. Invoke-Expression runs this in the session that typed it, so nothing here exits that
+# session: a failure throws. All of it is one script block, so a download cut short runs nothing.
 & {
     $ErrorActionPreference = 'Stop'
 
@@ -38,6 +38,13 @@
 
     if ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows) {
         Fail 'this is not Windows: run install.sh, as https://github.com/veil-net/conflux says'
+    }
+
+    # 32-bit PowerShell on 64-bit Windows is given the x86 Program Files, Program Files (x86), where
+    # conflux never looks for itself: `conflux update` and `conflux uninstall` would not find what
+    # this put there.
+    if ([Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProcess) {
+        Fail 'this is 32-bit PowerShell, whose Program Files is Program Files (x86), where conflux never looks for itself: run this from 64-bit PowerShell (Windows PowerShell, not Windows PowerShell (x86)), as Administrator'
     }
 
     $principal = [Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()

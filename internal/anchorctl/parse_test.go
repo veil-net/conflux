@@ -77,6 +77,7 @@ const tunObservingOutput = `04:16:16  reachability=unknown  mtu=65510  peers=0  
   works until  2026-11-02T04:16:00Z
   observer     af_packet, 5 flows held, 24 packets taken; overlay of qsgwfbu4sk, 0 flows held, 0 packets taken; credential valid until 2026-11-02T04:16:00Z
 `
+
 func TestParseStatusNotRunning(t *testing.T) {
 	if st := ParseStatus(notRunningOutput); st.Running || st.ID != "" {
 		t.Errorf("ParseStatus(%q) = %+v, want nothing running", notRunningOutput, st)

@@ -1,9 +1,9 @@
 package anchorctl
 
 import (
-	"errors"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"

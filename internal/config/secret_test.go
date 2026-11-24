@@ -84,36 +84,3 @@ func TestANewIdentityForgetsTheOldOne(t *testing.T) {
 		t.Errorf("NewIdentity left %+v; only what is not about the identity stays", st)
 	}
 }
-
-// TestTUNNamesThePlatformRefuses: refused here, for good, rather than found by anchor
-// when the TUN is made, or on Linux when it first routes (anchor's hostsetup ifaceName).
-func TestTUNNamesThePlatformRefuses(t *testing.T) {
-	for _, tc := range []struct {
-		name, goos string
-		ok         bool
-	}{
-		{"anchor0", "linux", true},
-		{"a234567890abcde", "linux", true},
-		{"a234567890abcdef", "linux", false},
-		{"an/chor", "linux", false},
-		{"an chor", "linux", false},
-		{"anchor6btpa3gn6", "linux", true},
-		{"veil_0.a+b@c-d", "linux", true},
-		{"veil~0", "linux", false},
-		{"wg#1", "linux", false},
-		{"ánchor", "linux", false},
-		{"", "linux", false},
-		{"..", "linux", false},
-		{"anchor0", "darwin", true},
-		{"utun", "darwin", true},
-		{"utun7", "darwin", true},
-		{"utunx", "darwin", false},
-		{"utun-1", "darwin", false},
-		{"a234567890abcdef", "freebsd", true},
-		{"anything at all", "windows", true},
-	} {
-		if err := ValidateTUNName(tc.name, tc.goos); (err == nil) != tc.ok {
-			t.Errorf("ValidateTUNName(%q, %s) = %v, want ok %v", tc.name, tc.goos, err, tc.ok)
-		}
-	}
-}

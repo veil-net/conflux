@@ -115,6 +115,13 @@ func bringUp(
 	ctx context.Context, d paths.Dirs, ctl *anchorctl.Ctl, r Reporter, dir string, reopened bool,
 	driver error, observe func(config.Envelope) (string, error),
 ) (started anchorctl.Started, err error) {
+	// A stop that came while the driver was fetched ends the start here, rather than after
+	// waiting out the lock for a start nothing wants: an observer started under a cancelled
+	// context only to warn that it did not, and a state write.
+	if err := ctx.Err(); err != nil {
+		return anchorctl.Started{}, err
+	}
+
 	// Against `conflux renew` and the renewal timer, which read and rewrite the same
 	// manifest and state this does.
 	unlock, err := flock.Acquire(d.LockFile())

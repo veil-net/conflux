@@ -44,7 +44,8 @@ supervisor fetches it there for every start of the anchor and every rebuild — 
 an upgrade needs nothing typed. That is correct: the driver belongs beside the executable that
 loads it. The fetch comes before the start takes `conflux.lock`, so a download that hangs, up
 to its 90-second timeout, holds up neither `conflux renew` nor `up`'s save of the
-configuration, which wait for that lock. A driver that could not be fetched is an anchor that
+configuration, which wait for that lock, and a stop that comes during it ends the start there,
+without taking the lock. A driver that could not be fetched is an anchor that
 has not come up, like one whose start fails: on its own it is started again with the
 supervisor's backoff, and beside the observer, which still starts and which it never takes
 down, the watcher tries it again ([service.md](service.md)).

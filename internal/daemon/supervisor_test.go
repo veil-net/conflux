@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -541,21 +542,25 @@ func fetchingDriver(t *testing.T, log string, err error) {
 	t.Cleanup(func() { ensureDriver = wintun.Ensure })
 }
 
+// bringings are the two ways the supervisor brings an anchor up, each fetching Windows' driver
+// before it takes conflux.lock: the cycle's start, and the watcher's rebuild.
+var bringings = map[string]func(context.Context, *Supervisor, *config.Config) error{
+	"the start": func(ctx context.Context, s *Supervisor, cfg *config.Config) error {
+		_, anchorErr, err := s.up(ctx, cfg)
+
+		return errors.Join(anchorErr, err)
+	},
+	"a rebuild": func(ctx context.Context, s *Supervisor, cfg *config.Config) error {
+		return s.rebuild(ctx, cfg, false)
+	},
+}
+
 // TestTheDriverIsFetchedOutsideTheLock: Windows' driver is fetched before the start takes
 // conflux.lock, and before a rebuild does, so a first download that hangs -- up to wintun's
 // 90-second timeout -- holds back neither `conflux renew` nor up's save of the configuration,
 // which wait for that lock. The anchor starts once the driver is had.
 func TestTheDriverIsFetchedOutsideTheLock(t *testing.T) {
-	for name, bring := range map[string]func(context.Context, *Supervisor, *config.Config) error{
-		"the start": func(ctx context.Context, s *Supervisor, cfg *config.Config) error {
-			_, anchorErr, err := s.up(ctx, cfg)
-
-			return errors.Join(anchorErr, err)
-		},
-		"a rebuild": func(ctx context.Context, s *Supervisor, cfg *config.Config) error {
-			return s.rebuild(ctx, cfg, false)
-		},
-	} {
+	for name, bring := range bringings {
 		t.Run(name, func(t *testing.T) {
 			s, log := supervised(t, "1")
 			credentialed(t, s.Dirs)
@@ -613,6 +618,98 @@ func TestTheDriverIsFetchedOutsideTheLock(t *testing.T) {
 
 			if !slices.Contains(ran(t, log), "start") {
 				t.Errorf("anchorctl ran %v: the anchor was never started", ran(t, log))
+			}
+		})
+	}
+}
+
+// warnings is a reporter that keeps what it was told to warn of.
+type warnings struct {
+	nopReporter
+
+	mu   sync.Mutex
+	said []string
+}
+
+func (w *warnings) Warn(format string, args ...any) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.said = append(w.said, fmt.Sprintf(format, args...))
+}
+
+// TestAStopDuringTheDriversFetchGoesNoFurther: a stop that comes while Windows' driver is
+// fetched ends the start, and a rebuild, there. Neither waits out conflux.lock behind `conflux
+// renew` for a start nothing wants any more, starts the observer under a context already
+// cancelled only to warn that it did not, or writes the state.
+func TestAStopDuringTheDriversFetchGoesNoFurther(t *testing.T) {
+	for name, bring := range bringings {
+		t.Run(name, func(t *testing.T) {
+			s, log := supervised(t, "1")
+			credentialed(t, s.Dirs)
+			s.priv.Dir = s.Dirs.RootAnchorDir()
+
+			w := &warnings{}
+			s.Reporter = w
+
+			cfg := &config.Config{Mode: config.ModeTUN, Taints: []string{"t"}, Observer: &config.Observer{}}
+			if err := config.Save(s.Dirs, cfg); err != nil {
+				t.Fatal(err)
+			}
+
+			fetching := make(chan struct{})
+
+			ensureDriver = func(ctx context.Context, _ paths.Dirs) error {
+				close(fetching)
+				<-ctx.Done()
+
+				return ctx.Err()
+			}
+
+			t.Cleanup(func() { ensureDriver = wintun.Ensure })
+
+			// `conflux renew`, holding conflux.lock meanwhile.
+			unlock, err := flock.Acquire(s.Dirs.LockFile())
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			ctx, cancel := context.WithCancel(t.Context())
+			done := make(chan error, 1)
+
+			go func() { done <- bring(ctx, s, cfg) }()
+
+			select {
+			case <-fetching:
+			case <-time.After(10 * time.Second):
+				t.Fatal("the driver was never fetched")
+			}
+
+			cancel()
+
+			select {
+			case err := <-done:
+				if err == nil {
+					t.Errorf("%s, stopped during the fetch, succeeded", name)
+				}
+
+				unlock()
+			case <-time.After(time.Second):
+				t.Errorf("%s, stopped during the fetch, waited for conflux.lock", name)
+				unlock()
+				<-done
+			}
+
+			if len(w.said) > 0 {
+				t.Errorf("%s, stopped during the fetch, warned %q", name, w.said)
+			}
+
+			if _, err := os.Stat(s.Dirs.StateFile()); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("%s, stopped during the fetch, wrote %s (%v)", name, s.Dirs.StateFile(), err)
+			}
+
+			if cmds := ran(t, log); slices.Contains(cmds, "observe") || slices.Contains(cmds, "start") {
+				t.Errorf("%s, stopped during the fetch, went on to run anchorctl %v", name, cmds)
 			}
 		})
 	}

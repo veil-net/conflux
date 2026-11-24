@@ -39,57 +39,6 @@ func capture(t *testing.T, argv ...string) (stdout, stderr string, code int) {
 	return out.String(), errBuf.String(), code
 }
 
-// TestNoUnintendedShadowing is the guard on the whole two-surface design.
-//
-// conflux keeps a closed set of names and passes everything else through. If a
-// future anchor adds a command called "up", it would silently become unreachable --
-// conflux would answer it and the user would never learn that anchorctl had one.
-// This fails CI on that day instead.
-func TestNoUnintendedShadowing(t *testing.T) {
-	anchortest.Require(t)
-
-	t.Cleanup(paths.UseRoot(t.TempDir()))
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll: %v", err)
-	}
-
-	tools, err := libexec.Ensure(d)
-	if err != nil {
-		t.Fatalf("Ensure: %v", err)
-	}
-
-	theirs := anchorctlCommands(t, tools.Anchorctl)
-
-	// The verbs conflux is knowingly taking from anchorctl. Every one is documented in
-	// help and explains the collision in its own error text; help, which anchorctl's
-	// usage does not list, prints anchorctl's usage whole.
-	known := map[string]bool{"proxy": true, "status": true, "help": true, "renew": true, "start": true, "observe": true}
-
-	for name := range verbs() {
-		if theirs[name] && !known[name] {
-			t.Errorf("conflux's %q now shadows an anchorctl command that this build did not know about.\n"+
-				"  Either rename conflux's, or add it to the known set and resolve the collision\n"+
-				"  the way proxy and status do.", name)
-		}
-	}
-
-	for name := range anchorLifecycleVerbs {
-		if !theirs[name] {
-			t.Errorf("conflux refuses to pass %q through, but anchorctl has no such command any more", name)
-		}
-	}
-
-	// The three conflux resolves by shape and arity really are anchorctl's, or the
-	// elaborate handling in runProxy, runObserve and runStatus is dead code.
-	for _, name := range []string{"proxy", "status", "observe"} {
-		if !theirs[name] {
-			t.Errorf("conflux resolves a collision on %q that no longer exists", name)
-		}
-	}
-}
-
 var usageCommand = regexp.MustCompile(`(?m)^\s{4}([a-z][a-z-]+)\s`)
 
 func anchorctlCommands(t *testing.T, bin string) map[string]bool {
@@ -217,17 +166,10 @@ func TestHelpListsEveryVisibleVerb(t *testing.T) {
 		t.Fatalf("help exited %d", code)
 	}
 
+	// Whole rows of the listing, "  up         join...": "up" is in "update" too.
 	for name, v := range verbs() {
-		if v.hidden {
-			if strings.Contains(out, "  "+name+" ") {
-				t.Errorf("help lists the hidden verb %q", name)
-			}
-
-			continue
-		}
-
-		if !strings.Contains(out, name) {
-			t.Errorf("help does not mention %q", name)
+		if listed := strings.Contains(out, "\n  "+name+" "); listed == v.hidden {
+			t.Errorf("help lists %q: %v; it is hidden: %v", name, listed, v.hidden)
 		}
 	}
 }
@@ -615,28 +557,28 @@ func TestLANDiscoveryTristate(t *testing.T) {
 	}
 }
 
-// TestTheCollisionsAreTheDocumentedOnes reads the set off the binary, because prose
-// that nothing checks drifts.
+// TestTheCollisionsAreTheDocumentedOnes is the guard on the whole two-surface design, read off
+// the embedded anchorctl, because prose that nothing checks drifts.
 //
-// The set, rather than only the count, because adding a verb that happens to
-// collide should fail here with the name in the message rather than as an
-// off-by-one.
+// conflux keeps a closed set of names and passes everything else through. If a future anchor
+// adds a command called "up", it would silently become unreachable -- conflux would answer it
+// and the user would never learn that anchorctl had one. This fails CI on that day instead:
+// the names both have are exactly the documented collisions, each resolved in its own verb and
+// in help, as a set rather than a count, so a new one fails here with its name. The commands
+// conflux refuses to pass through are still anchorctl's, or the refusal guards nothing. And
+// anchor's realm control -- blocking a member, moving its compartments or its served networks,
+// asking how it is -- is anchorctl's and reaches it unchanged: no conflux verb shadows it and
+// none of it is refused as a lifecycle command.
 func TestTheCollisionsAreTheDocumentedOnes(t *testing.T) {
 	anchortest.Require(t)
 
-	t.Cleanup(paths.UseRoot(t.TempDir()))
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll: %v", err)
-	}
-
-	tools, err := libexec.Ensure(d)
+	bin, done, err := libexec.ForUsage(paths.Dirs{Root: t.TempDir()})
 	if err != nil {
-		t.Fatalf("Ensure: %v", err)
+		t.Fatalf("ForUsage: %v", err)
 	}
+	t.Cleanup(done)
 
-	theirs := anchorctlCommands(t, tools.Anchorctl)
+	theirs := anchorctlCommands(t, bin)
 
 	var shared []string
 
@@ -651,14 +593,39 @@ func TestTheCollisionsAreTheDocumentedOnes(t *testing.T) {
 	want := []string{"observe", "proxy", "renew", "start", "status"}
 	if !slices.Equal(shared, want) {
 		t.Errorf("conflux and anchorctl share %v, and the docs describe %v.\n"+
-			"  Resolve the new collision the way the others are, then update the count in\n"+
-			"  internal/cli/help.go, internal/cli/cli.go, docs/commands.md and README.md.",
+			"  Rename conflux's, or resolve the new collision the way the others are, then update\n"+
+			"  the count in internal/cli/help.go, internal/cli/cli.go, docs/commands.md and README.md.",
 			shared, want)
 	}
 
 	// The help text an operator reads says the same number, spelled out.
 	if !strings.HasPrefix(collisions, "Five of conflux's names") {
 		t.Errorf("the help text disagrees with the %d collisions that exist", len(want))
+	}
+
+	for name := range anchorLifecycleVerbs {
+		if !theirs[name] {
+			t.Errorf("conflux refuses to pass %q through, but anchorctl has no such command any more", name)
+		}
+	}
+
+	for _, name := range []string{"block", "unblock", "blocks", "taints", "subnets", "telemetry"} {
+		if !theirs[name] {
+			t.Errorf("anchorctl has no %q command; docs/commands.md and conflux help name it", name)
+		}
+
+		if _, ours := verbs()[name]; ours {
+			t.Errorf("conflux's %q shadows anchorctl's realm control", name)
+		}
+
+		if _, refused := anchorLifecycleVerbs[name]; refused {
+			t.Errorf("conflux refuses to pass %q through", name)
+		}
+
+		// Its usage answers with nothing running, which is where pass-through sends a -h.
+		if out, err := exec.Command(bin, name, "-h").CombinedOutput(); err != nil {
+			t.Errorf("anchorctl %s -h: %v\n%s", name, err, out)
+		}
 	}
 }
 
@@ -730,49 +697,6 @@ func TestTheInterfaceIsWhatTheAnchorSaysItHolds(t *testing.T) {
 	} {
 		if got := interfaceLine(goos, "", ""); got != want {
 			t.Errorf("%s, asked for nothing: %q, want %q", goos, got, want)
-		}
-	}
-}
-
-// TestRealmControlPassesThrough: anchor's realm control -- blocking a member, moving its
-// compartments or its served networks, asking how it is -- is anchorctl's, and reaches the
-// embedded one through conflux unchanged, with conflux's socket and token. None of it may
-// be shadowed by a conflux verb or refused as a lifecycle command.
-func TestRealmControlPassesThrough(t *testing.T) {
-	anchortest.Require(t)
-
-	t.Cleanup(paths.UseRoot(t.TempDir()))
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll: %v", err)
-	}
-
-	tools, err := libexec.Ensure(d)
-	if err != nil {
-		t.Fatalf("Ensure: %v", err)
-	}
-
-	theirs := anchorctlCommands(t, tools.Anchorctl)
-
-	for _, name := range []string{"block", "unblock", "blocks", "taints", "subnets", "telemetry"} {
-		if !theirs[name] {
-			t.Errorf("anchorctl has no %q command; docs/commands.md and conflux help name it", name)
-		}
-
-		if _, ours := verbs()[name]; ours {
-			t.Errorf("conflux's %q shadows anchorctl's realm control", name)
-		}
-
-		if _, refused := anchorLifecycleVerbs[name]; refused {
-			t.Errorf("conflux refuses to pass %q through", name)
-		}
-
-		// Its usage answers with nothing running, which is where pass-through sends a
-		// -h. Asked of the binary rather than through Main: on Unix pass-through
-		// replaces the process, which here is the test binary.
-		if out, err := exec.Command(tools.Anchorctl, name, "-h").CombinedOutput(); err != nil {
-			t.Errorf("anchorctl %s -h: %v\n%s", name, err, out)
 		}
 	}
 }

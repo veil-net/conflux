@@ -99,7 +99,7 @@ The concrete facts the workflow relies on. Step 8 of every run keeps this file t
   - `anchor`: `TestPairIsRealExecutables`
   - `libexec`: `TestEnsureExtractsAndRuns`, `TestEnsureIsIdempotent`, `TestEnsureIsConcurrencySafe`, `TestEnsureRepairsATruncatedExtraction`
   - `anchorctl`: `TestEveryFlagWeUseExists`
-  - `cli`: `TestNoUnintendedShadowing`, `TestTheCollisionsAreTheDocumentedOnes`, `TestRealmControlPassesThrough`
+  - `cli`: `TestTheCollisionsAreTheDocumentedOnes` (shadowing, the collisions, the refused lifecycle verbs and realm control, from one `libexec.ForUsage` anchorctl)
   - `daemon`: `BenchmarkDaemonLifecycle` (a benchmark; not part of the no-skip gate)
 - Platform skips, outside the real-binary gate, all on Windows: `daemon.TestShutdownSignalsARunningDaemon` and `TestSpawnRecordsTheDaemon` (a console control event), and the mode-bit tests. `TestWriteFileAtomicPreservesOnFailure` skips only where a directory cannot be made read-only.
 - On Linux with real binaries nothing in the module skips (338 top-level passes; `go test -list . ./... | grep -c ^Test`); CI's gate requires at least 150.
@@ -147,7 +147,7 @@ Paths are relative to the anchor checkout.
 
 | Surface | Anchor source of truth | Conflux consumer |
 |---|---|---|
-| realm control | `cmd/anchorctl/block.go` (`block`, `unblock`, `blocks`), `taints.go`, `subnets.go`, `telemetry.go`; capabilities `block`/`taint`/`subnets`/`telemetry` (`internal/realm/cred.go`, `internal/order/order.go`), refusals in `orders.go`; an order goes to another member of the same realm, by full AnchorID | pass-through, `TestRealmControlPassesThrough`, `conflux help`, `docs/commands.md` |
+| realm control | `cmd/anchorctl/block.go` (`block`, `unblock`, `blocks`), `taints.go`, `subnets.go`, `telemetry.go`; capabilities `block`/`taint`/`subnets`/`telemetry` (`internal/realm/cred.go`, `internal/order/order.go`), refusals in `orders.go`; an order goes to another member of the same realm, by full AnchorID | pass-through, `TestTheCollisionsAreTheDocumentedOnes`, `conflux help`, `docs/commands.md` |
 | anchorctl commands | `cmd/anchorctl/main.go` dispatch (and its error hints: `Unavailable` for a socket with no daemon, `REASON_NOT_RUNNING` for a daemon holding no anchor); `root` is built only without `lockdown` (`priv.go`), and the lockdown build adds `mint-realm`/`mint-anchor` (`manifest.go` `buildCommand`; constants in `locked.go`) ; `observe` (report, `-start [-loopback] [-hide-names]`, `-stop`) and `inventory [-cbom]` | `internal/cli` `verbs()` (`observe` shadowed, resolved by shape in `observe.go`), `internal/anchorctl` `ObserveStartArgs`/`ObserveStopArgs`,, `anchorLifecycleVerbs`, shadowing and collision tests, `docs/commands.md` |
 | start flags | `configFlags` in `cmd/anchorctl/lifecycle.go` (`describedByFile`) | `internal/anchorctl/args.go`, argv goldens, `flags_test.go` |
 | renew | `renew` in `cmd/anchorctl/lifecycle.go`: `-cred -` reads the raw chain from stdin, at most 1 MiB, always sent inline (`renewedCred`) | `RenewArgs` (`renew -cred -`), `Ctl.Renew`, the stand-in anchorctl's `renew` in `internal/daemon/main_test.go` |

@@ -21,7 +21,10 @@ manager watches.
 
 At every boot the supervisor takes the root's `serve.lock` — one supervisor per root —
 stops any `anchord` a supervisor that died left running (below), empties `run/`, reads
-`conflux.json`, extracts the anchor pair if it is not already on disk, writes a fresh bearer token,
+`conflux.json`, extracts the anchor pair if it is not already on disk and holds the one that is
+to this build's SHA-256s — a binary changed on disk is extracted again rather than run, and a
+pair whose files are as they were when last checked is taken on a stat of each, so a start
+reads it only when something touched it — writes a fresh bearer token,
 decides what `anchord` runs as — its own account, with exactly the capabilities its mode
 needs, wherever that costs it nothing; see [security.md](security.md#what-anchord-runs-as)
 — makes the account the first time, lays out the directories that identity reaches,

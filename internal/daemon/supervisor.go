@@ -194,7 +194,10 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		return err
 	}
 
-	tools, err := libexec.Ensure(s.Dirs)
+	// Held to this build's digests, not only found whole: anchord runs from here as root,
+	// or as an account root gives what it needs, and a binary changed on disk is extracted
+	// again rather than run.
+	tools, err := libexec.Intact(s.Dirs)
 	if err != nil {
 		return err
 	}

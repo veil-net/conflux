@@ -56,16 +56,11 @@ func TestTheUnitsFourDropinDirectoriesAreRemoved(t *testing.T) {
 // gone -- a disable fails for a unit whose file went first -- but a file Remove could not remove
 // is a trace of conflux left on the machine, said whatever became of the unit file.
 func TestRemoveSaysWhatItCouldNotRemove(t *testing.T) {
-	// A systemctl of the test's own, found first on PATH, which answers every call and refuses a
-	// disable as systemd does once the unit file is gone: the machine's is never asked.
-	bin := t.TempDir()
-	stub := "#!/bin/sh\n[ \"$1\" = disable ] && { echo 'Unit file conflux.service does not exist.' >&2; exit 1; }\nexit 0\n"
-
-	if err := os.WriteFile(filepath.Join(bin, "systemctl"), []byte(stub), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	t.Setenv("PATH", bin)
+	// A systemctl of the test's own, which answers every call and refuses a disable as systemd
+	// does once the unit file is gone.
+	onPath(t, map[string]string{
+		"systemctl": "#!/bin/sh\n[ \"$1\" = disable ] && { echo 'Unit file conflux.service does not exist.' >&2; exit 1; }\nexit 0\n",
+	})
 
 	const dropin = "/etc/systemd/system.control/conflux.service.d"
 

@@ -10,7 +10,8 @@ import (
 )
 
 // onPath puts commands of the test's own, each a name and its script, in a directory that is
-// all of PATH, so the machine's own are never asked.
+// all of PATH, so the machine's own are never asked: the BSDs' sysrc and rcctl here, and
+// systemd's systemctl in service_linux_test.go.
 func onPath(t *testing.T, commands map[string]string) {
 	t.Helper()
 

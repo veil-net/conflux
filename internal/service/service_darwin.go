@@ -3,7 +3,6 @@
 package service
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -58,11 +57,9 @@ func (l launchd) Install(exe string, args ...string) error {
 func (l launchd) Reconcile(exe string, args ...string) error {
 	plist := []byte(launchdPlist(Label, append([]string{exe}, args...)))
 
-	if cur, err := os.ReadFile(plistPath); err == nil && bytes.Equal(cur, plist) {
-		return nil
-	}
+	_, err := config.WriteFileIfChanged(plistPath, plist, 0o644)
 
-	return config.WriteFileAtomic(plistPath, plist, 0o644)
+	return err
 }
 
 // enableIfDisabled lifts a disable on the label, and does nothing to one that has none.

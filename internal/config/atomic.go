@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"io/fs"
 	"os"
@@ -22,6 +23,22 @@ import (
 // mode, and on a shared machine that window is the whole vulnerability.
 func WriteFileAtomic(path string, data []byte, perm fs.FileMode) error {
 	return writeAtomicAs(path, perm, -1, -1, data)
+}
+
+// WriteFileIfChanged is WriteFileAtomic, with perm, unless path holds data already, and reports
+// whether it wrote. What conflux puts back at every start -- its configuration and state, the
+// boot service's definition -- is written only where it was changed, so an unchanged file keeps
+// its inode and its mtime and nothing watching it sees a change.
+func WriteFileIfChanged(path string, data []byte, perm fs.FileMode) (bool, error) {
+	if cur, err := os.ReadFile(path); err == nil && bytes.Equal(cur, data) {
+		return false, nil
+	}
+
+	if err := WriteFileAtomic(path, data, perm); err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 // WriteFileAtomicAs is WriteFileAtomic for a file that belongs to uid and gid, given to

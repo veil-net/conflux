@@ -137,6 +137,21 @@ done
 [ "$(stat -f '%Su' "$state/anchor")" = "$account" ] || fail "anchord's directory is not $account's"
 [ "$(stat -f '%Sp %Su' /var/db/.conflux/run/token)" = "-rw------- root" ] || fail "the token is not root's alone"
 
+# Every start puts the registration back to what conflux writes, and writes none of it that
+# is that already: the rc script, and rc.conf, which is the administrator's, keep their inode
+# and their mtime across a restart.
+say "a start rewrites nothing of the registration that is already conflux's"
+rcconf=/etc/rc.conf
+[ "$os" = openbsd ] && rcconf=/etc/rc.conf.local
+kept="$script $rcconf"
+before=$(for f in $kept; do stat -f '%i %m %N' "$f"; done)
+sleep 1
+started >/dev/null
+after=$(for f in $kept; do stat -f '%i %m %N' "$f"; done)
+[ "$before" = "$after" ] || fail "a start rewrote the registration:
+$before
+$after"
+
 # A port below 1024 is root's on both, and a TUN is root's: anchord stays root for each,
 # and says why.
 say "a port only root may bind keeps anchord root"

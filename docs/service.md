@@ -166,7 +166,9 @@ The registration is the supervisor's to keep, as the root is: every start places
 runs again if it differs and puts the definition back to what this conflux writes — on
 systemd removing any drop-in in `conflux.service.d/`, which would change the unit that runs —
 so a unit, plist, rc script or SCM entry changed by hand lasts until the next start and no
-longer. On macOS the plist is rewritten without unloading the job that is running it, and
+longer. What is already that is not written again: an unchanged unit, plist or rc script keeps
+its inode and its mtime, and the BSDs' `rc.conf` line is set only where the service is not
+enabled. On macOS the plist is rewritten without unloading the job that is running it, and
 takes effect at its next load.
 
 ```ini
@@ -363,7 +365,7 @@ ProviderName='conflux'}` reads them.
 ## rc: FreeBSD and OpenBSD
 
 **FreeBSD.** Script at `/usr/local/etc/rc.d/conflux`, enabled with
-`sysrc conflux_enable=YES`. It runs `conflux serve` under `daemon(8)`, which backgrounds it,
+`sysrc conflux_enable=YES` where `service conflux enabled` says it is not. It runs `conflux serve` under `daemon(8)`, which backgrounds it,
 sends its output to syslog tagged `conflux` (`/var/log/messages`), and records conflux's own
 pid in the root, `/var/db/.conflux/rc.pid` — so `service conflux stop` signals the supervisor, which closes the anchor before anything
 is killed. `daemon(8)` is not told to restart it: conflux restarts `anchord` itself, and a
@@ -371,7 +373,8 @@ supervisor that exits 78 or 70 would only repeat the answer. `conflux down` on a
 that is not running succeeds rather than passing on `rc.subr`'s "not running?".
 `uninstall` stops it, removes the `rc.conf` line and the script.
 
-**OpenBSD.** Script at `/etc/rc.d/conflux`, enabled with `rcctl enable conflux`.
+**OpenBSD.** Script at `/etc/rc.d/conflux`, enabled with `rcctl enable conflux` where
+`rcctl get conflux status` says it is not.
 `rc.subr` backgrounds it and sends its output to syslog, so the logs are in
 `/var/log/daemon`. `uninstall` stops and disables it and removes the script.
 

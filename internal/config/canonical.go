@@ -1,7 +1,6 @@
 package config
 
 import (
-	"bytes"
 	"errors"
 	"io/fs"
 	"os"
@@ -59,9 +58,7 @@ func Canonical(d paths.Dirs) error {
 
 // rewrite writes b to path, atomically and 0600, unless path holds b already.
 func rewrite(path string, b []byte) error {
-	if cur, err := os.ReadFile(path); err == nil && bytes.Equal(cur, b) {
-		return nil
-	}
+	_, err := WriteFileIfChanged(path, b, 0o600)
 
-	return WriteFileAtomic(path, b, 0o600)
+	return err
 }

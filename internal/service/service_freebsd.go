@@ -19,16 +19,23 @@ func newManager() Manager { return freebsd{} }
 
 func scriptPath() string { return "/usr/local/etc/rc.d/" + rcName }
 
-// Install writes the script and enables it, and starts nothing.
+// Install writes the script and enables it, and starts nothing. Each only where it is not so
+// already, which is every start of the service: rc.conf is the administrator's, which sysrc
+// rewrites.
 func (freebsd) Install(exe string, args ...string) error {
 	script, err := freebsdScript(rcName, exe, args, paths.Default().RCPidFile())
 	if err != nil {
 		return err
 	}
 
-	// Executable, whatever was there before; written whole or not at all.
-	if err := config.WriteFileAtomic(scriptPath(), []byte(script), 0o755); err != nil {
+	// Executable; written whole or not at all.
+	if _, err := config.WriteFileIfChanged(scriptPath(), []byte(script), 0o755); err != nil {
 		return err
+	}
+
+	// rc.subr's own answer, which reads a YES in any of the spellings it accepts.
+	if _, enabled := query("service", rcName, "enabled"); enabled {
+		return nil
 	}
 
 	return run("sysrc", rcName+"_enable=YES")
@@ -82,6 +89,6 @@ func (f freebsd) Describe() string {
 
 func (freebsd) LogHint() string { return "grep conflux /var/log/messages | tail -n 50" }
 
-// Reconcile is Install, which writes the script and enables it and starts nothing, so the
-// running service may call it.
+// Reconcile is Install, which writes the script and enables it where either is not so, and
+// starts nothing, so the running service may call it.
 func (freebsd) Reconcile(exe string, args ...string) error { return freebsd{}.Install(exe, args...) }

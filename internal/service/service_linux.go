@@ -3,7 +3,6 @@
 package service
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -45,8 +44,6 @@ func (s systemd) Install(exe string, args ...string) error {
 			"conflux registers with on Linux")
 	}
 
-	unit := []byte(systemdUnit(exe, args))
-
 	// A drop-in would make the unit that runs something other than this one.
 	_, dropins := os.Lstat(dropinDir)
 	if dropins == nil {
@@ -55,18 +52,20 @@ func (s systemd) Install(exe string, args ...string) error {
 		}
 	}
 
+	// Readable by all, as systemd expects a unit to be; written whole or not at all, and only
+	// where it differs.
+	wrote, err := config.WriteFileIfChanged(unitPath, []byte(systemdUnit(exe, args)), 0o644)
+	if err != nil {
+		return err
+	}
+
 	// Registered exactly so already, which is every re-run of up and proxy: a read and a
 	// stat, rather than a daemon-reload and an enable that would change nothing and cost
 	// most of what the restart that follows does.
-	if cur, err := os.ReadFile(unitPath); err == nil && bytes.Equal(cur, unit) && dropins != nil {
+	if !wrote && dropins != nil {
 		if _, err := os.Lstat(wantsPath); err == nil {
 			return nil
 		}
-	}
-
-	// Readable by all, as systemd expects a unit to be; written whole or not at all.
-	if err := config.WriteFileAtomic(unitPath, unit, 0o644); err != nil {
-		return err
 	}
 
 	if err := run("systemctl", "daemon-reload"); err != nil {

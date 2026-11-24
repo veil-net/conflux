@@ -151,3 +151,40 @@ func unwritable(t *testing.T, dir string) bool {
 
 	return true
 }
+
+// TestWriteFileIfChangedLeavesTheSameBytesAlone: a start puts conflux's files back to what
+// conflux writes, and a file that already holds that is not written -- not renamed over, so
+// it keeps its inode and its mtime -- while one that differs is replaced.
+func TestWriteFileIfChangedLeavesTheSameBytesAlone(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "conflux")
+
+	if wrote, err := WriteFileIfChanged(path, []byte("one"), 0o600); err != nil || !wrote {
+		t.Fatalf("WriteFileIfChanged of a missing file = %v, %v; want it written", wrote, err)
+	}
+
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if wrote, err := WriteFileIfChanged(path, []byte("one"), 0o600); err != nil || wrote {
+		t.Fatalf("WriteFileIfChanged of the same bytes = %v, %v; want nothing written", wrote, err)
+	}
+
+	same, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !os.SameFile(before, same) || !same.ModTime().Equal(before.ModTime()) {
+		t.Error("the same bytes were written again: the file is not the one that was there")
+	}
+
+	if wrote, err := WriteFileIfChanged(path, []byte("two"), 0o600); err != nil || !wrote {
+		t.Fatalf("WriteFileIfChanged of other bytes = %v, %v; want them written", wrote, err)
+	}
+
+	if b, err := os.ReadFile(path); err != nil || string(b) != "two" {
+		t.Errorf("the file holds %q (%v), want %q", b, err, "two")
+	}
+}

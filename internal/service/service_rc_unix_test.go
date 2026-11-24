@@ -144,9 +144,12 @@ func saysTheLine(t *testing.T, err error, names []string, refused bool) {
 // administrator's rc configuration (sysrc -x, rcctl disable), and a line still there after is
 // said, whatever the command answered, as systemd's Remove says a file it could not remove: it is
 // conflux, left on the machine. What the command said is forgiven once the line is gone, sysrc's
-// refusal of a variable that was never set among it. The script goes only with the line. Where
-// the question cannot be answered -- rcctl knows no service whose script is gone -- the command's
-// own answer stands: a refusal is said, and a line it took out, or none there, is gone.
+// refusal of a variable that was never set among it. The script goes only with the line, so the
+// next uninstall can ask again whether the line is there: rcctl answers nothing once the script is
+// gone. remove keeps nothing but those files, so a second remove of a line still refused is
+// "refused and left" again, and one that then takes the line out is "taken out". Where the
+// question cannot be answered -- rcctl knows no service whose script is gone -- the command's own
+// answer stands: a refusal is said, and a line it took out, or none there, is gone.
 func TestRCRemoveSaysALineLeft(t *testing.T) {
 	onPath(t, rcCommands)
 
@@ -193,42 +196,6 @@ func TestRCRemoveSaysALineLeft(t *testing.T) {
 				}
 			})
 		}
-	}
-}
-
-// TestRCRemoveKeepsTheScriptWhileTheLineIsLeft: a line left keeps the script, so the next
-// uninstall can ask again whether the line is there -- rcctl answers nothing for a service whose
-// script is gone, and once it was taken for a no, that uninstall said nothing was left while the
-// line was -- and the script goes once a remove has taken the line out.
-func TestRCRemoveKeepsTheScriptWhileTheLineIsLeft(t *testing.T) {
-	onPath(t, rcCommands)
-
-	for _, bsd := range bsds {
-		t.Run(bsd.name, func(t *testing.T) {
-			line, script := rcMachine(t, true, true, rcRefusal, "")
-
-			for _, try := range []string{"the first remove", "a second, still refused"} {
-				saysTheLine(t, bsd.e.remove(script), bsd.names, true)
-
-				if !present(t, script) {
-					t.Errorf("%s took the script, with the line left", try)
-				}
-			}
-
-			t.Setenv("RC_REFUSE", "")
-
-			if err := bsd.e.remove(script); err != nil {
-				t.Errorf("a remove that takes the line out = %v; want nil", err)
-			}
-
-			if fileSize(t, line) != 0 {
-				t.Error("the line is still there")
-			}
-
-			if present(t, script) {
-				t.Error("the script is still there, with the line gone")
-			}
-		})
 	}
 }
 

@@ -36,6 +36,7 @@ const (
 	fakeAnchorctlCaptureEnv  = "CONFLUX_TEST_FAKE_ANCHORCTL_NO_CAPTURE"
 	fakeAnchorctlRenewedEnv  = "CONFLUX_TEST_FAKE_ANCHORCTL_RENEWED"
 	fakeAnchorctlObservedEnv = "CONFLUX_TEST_FAKE_ANCHORCTL_OBSERVED"
+	fakeAnchorctlCredEnv     = "CONFLUX_TEST_FAKE_ANCHORCTL_OBSERVER_CRED"
 	fakeAnchordEnv           = "CONFLUX_TEST_FAKE_ANCHORD"
 	fakeAnchordListenEnv     = "CONFLUX_TEST_FAKE_ANCHORD_LISTEN"
 )
@@ -158,9 +159,29 @@ func fakeAnchorctl(args []string) int {
 }
 
 // fakeObserve is anchorctl's observe as conflux uses it: -start under the manifest on stdin,
-// which is the one shape anchorctl's lockdown build takes a credential in, and -stop.
-// fakeAnchorctlObservedEnv, set, names a file what arrived on stdin is written to.
+// which is the one shape anchorctl's lockdown build takes a credential in, -cred - renewing it
+// from stdin, and -stop. fakeAnchorctlObservedEnv and fakeAnchorctlCredEnv, set, name files
+// what arrived on stdin is written to.
 func fakeObserve(args []string) int {
+	if slices.Equal(args, []string{"-cred", "-"}) {
+		chain, err := io.ReadAll(os.Stdin)
+		if err != nil || len(chain) == 0 {
+			fmt.Fprintln(os.Stderr, "anchorctl: the credential on stdin is empty")
+
+			return 1
+		}
+
+		if out := os.Getenv(fakeAnchorctlCredEnv); out != "" {
+			if err := os.WriteFile(out, chain, 0o600); err != nil {
+				return 1
+			}
+		}
+
+		fmt.Print(fakeObserving)
+
+		return 0
+	}
+
 	if len(args) == 0 || args[0] != "-start" {
 		fmt.Println("not observing")
 

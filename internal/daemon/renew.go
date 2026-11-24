@@ -97,7 +97,24 @@ func renewChain(
 	return next, got.Chain, nil
 }
 
-// RenewNow fetches a fresh chain and installs it on the running anchor.
+// installRenewal installs a renewed chain on what runs under it: the anchor, and the observer,
+// which holds its credential apart from the anchor's and goes on observing past a lapse
+// without exporting what it sees. Observing alone there is only the observer.
+func installRenewal(ctx context.Context, ctl *anchorctl.Ctl, cfg *config.Config, chain []byte) error {
+	var err error
+
+	if cfg.Anchor() {
+		err = ctl.Renew(ctx, chain)
+	}
+
+	if cfg.Observer != nil {
+		err = errors.Join(err, ctl.ObserveRenew(ctx, chain))
+	}
+
+	return err
+}
+
+// RenewNow fetches a fresh chain and installs it on the running anchor and observer.
 //
 // Hot, via anchorctl renew, which calls SetRealmCred: the identity does not change
 // and not one session is lost. A restart would cost every connection the anchor is
@@ -157,7 +174,7 @@ func RenewNow(ctx context.Context, dirs paths.Dirs, ctl *anchorctl.Ctl, rep Repo
 
 	got, err := renewStored(ctx, dirs, st, &enrol.Client{BaseURL: cfg.APIBase()}, m)
 	if err == nil {
-		if err = ctl.Renew(ctx, got.chain); err != nil {
+		if err = installRenewal(ctx, ctl, cfg, got.chain); err != nil {
 			// The renewed chain is on disk, so the next start runs on it, but the running
 			// anchor still holds the old one. The state keeps describing that one, so a
 			// renewal that was due is due again in a minute rather than three weeks after

@@ -56,7 +56,7 @@ $ fetch-credential | conflux proxy --ephemeral --manifest - 8080=127.0.0.1:3000
   IPv4 is `--ipv4`, else `--no-ipv4`, else the handed credential's own, else none.
 - **It renews in memory**, at two thirds of the credential's window, by the same body every
   renewal goes through, with the renewed chain handed to anchorctl on its stdin
-  (`anchorctl renew -cred -`). A failed renewal is tried again every minute until the
+  (`anchorctl renew -cred -`, and `observe -cred -` where the observer runs). A failed renewal is tried again every minute until the
   credential runs out, and then the run ends. A credential that names nowhere to renew it
   runs to its expiry, and the run with it.
 - **It never brings anything back.** anchord ending ends the run; so does the anchor

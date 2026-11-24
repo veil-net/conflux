@@ -116,7 +116,11 @@ Renewal happens in two places, and both go through the same arithmetic:
 
 Renewal is hot. `anchorctl renew` calls `SetRealmCred` on the running anchor: the
 identity does not change and not one session is lost. A restart would cost every
-connection the anchor is holding, for a swap that needs none of that.
+connection the anchor is holding, for a swap that needs none of that. Where the observer
+runs, under the same credential, `anchorctl observe -cred` installs the renewal on it too
+(`SetObserverCred`): anchor holds the observer's credential apart from the anchor's, and an
+observer whose credential lapses goes on observing but exports nothing until it is renewed.
+A machine that only observes renews by the AnchorID the observer reports.
 
 **The renewed chain is written to disk as well as installed**, before it is installed,
 along with its expiry and the moment it arrived. If it were only installed, the next
@@ -166,9 +170,10 @@ Three states, three behaviours:
 ## Renewing by hand
 
 `conflux renew` forces one now: it fetches a fresh chain and installs it on the
-running anchor with `anchorctl renew`, the same hot swap the timer uses. Nothing is
-restarted and no session is dropped. The chain goes to anchorctl on its stdin
-(`renew -cred -`), so a renewal writes the manifest it is spliced into and no other file.
+running anchor with `anchorctl renew`, and on the observer with `anchorctl observe -cred`,
+the same hot swap the timer uses. Nothing is restarted and no session is dropped. The chain
+goes to anchorctl on its stdin (`renew -cred -`, `observe -cred -`), so a renewal writes the
+manifest it is spliced into and no other file.
 
 It is not part of normal operation — the two automatic paths above cover every machine
 that is working. It is for the one that is not, where `renewal: failing since ...` has

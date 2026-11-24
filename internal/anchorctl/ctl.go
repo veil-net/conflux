@@ -1,6 +1,7 @@
 package anchorctl
 
 import (
+	"errors"
 	"bytes"
 	"context"
 	"fmt"
@@ -202,6 +203,24 @@ func (c *Ctl) ObserveStart(ctx context.Context, env config.Envelope, o config.Ob
 
 	return ParseObserving(out), nil
 }
+
+// ObserveRenew installs a renewed chain on the running observer, hot. An observer that is not
+// running has nothing to renew, which is not an error: it is started under the manifest on
+// disk when it next starts.
+func (c *Ctl) ObserveRenew(ctx context.Context, chain []byte) error {
+	_, err := c.run(ctx, chain, ObserveRenewArgs()...)
+
+	var e *Error
+	if errors.As(err, &e) && strings.Contains(e.Stderr, notObservingHint) {
+		return nil
+	}
+
+	return err
+}
+
+// notObservingHint is how anchorctl explains REASON_NOT_OBSERVING: a renewal for an observer
+// that is not running.
+const notObservingHint = "the observer is not running, so it has no credential to renew"
 
 // ObserveStop stops the observer, which records and ends every flow it holds. Not
 // observing is not an error.

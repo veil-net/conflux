@@ -201,6 +201,13 @@ func RenewArgs() []string {
 	return []string{"renew", "-cred", "-"}
 }
 
+// ObserveRenewArgs installs a renewed credential on the running observer, hot: anchor's
+// SetObserverCred, which holds the observer's credential apart from the anchor's. The chain
+// arrives on stdin and is sent inline, as RenewArgs's does.
+func ObserveRenewArgs() []string {
+	return []string{"observe", "-cred", "-"}
+}
+
 // StopArgs closes the anchor. The daemon stays up.
 func StopArgs() []string { return []string{"stop"} }
 

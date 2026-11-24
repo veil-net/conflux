@@ -246,6 +246,43 @@ func TestTheRenewedChainArrivesOnStdin(t *testing.T) {
 	}
 }
 
+// TestARenewalReachesTheObserver: anchor's observer holds its credential apart from the
+// anchor's, so a renewal is installed on both where both run, the chain on stdin each time,
+// and observing alone on the observer only: there is no anchor to install it on.
+func TestARenewalReachesTheObserver(t *testing.T) {
+	for name, mode := range map[string]config.Mode{"beside an anchor": config.ModeProxy, "observing alone": config.ModeObserve} {
+		t.Run(name, func(t *testing.T) {
+			is := newIssuer(t)
+			d := machine(t, is, time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour))
+
+			cfg := configOf(t, d)
+			cfg.Mode, cfg.Observer = mode, &config.Observer{}
+
+			if err := config.Save(d, cfg); err != nil {
+				t.Fatal(err)
+			}
+
+			log := filepath.Join(t.TempDir(), "anchorctl.log")
+			t.Setenv(fakeAnchorctlLogEnv, log)
+
+			cred := filepath.Join(t.TempDir(), "cred")
+			t.Setenv(fakeAnchorctlCredEnv, cred)
+
+			if err := RenewNow(t.Context(), d, fakeCtl(t), nil); err != nil {
+				t.Fatalf("RenewNow: %v", err)
+			}
+
+			if got, err := os.ReadFile(cred); err != nil || !bytes.Equal(got, is.chain) {
+				t.Errorf("the observer was handed %q (%v), want the issuer's chain %q", got, err, is.chain)
+			}
+
+			if got, want := slices.Contains(ran(t, log), "renew"), mode != config.ModeObserve; got != want {
+				t.Errorf("anchorctl renew run %v, want %v: %v", got, want, ran(t, log))
+			}
+		})
+	}
+}
+
 // TestRenewalRestatesTheGrantedTaints: the issuer keeps no record of an alpha anchor's
 // taints and the running anchor refuses a chain granting others, so a renewal asks for
 // the ones the manifest names -- never conflux.json's, whatever it says.

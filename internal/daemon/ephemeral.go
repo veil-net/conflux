@@ -368,7 +368,7 @@ func (s *Supervisor) keepEphemeral(
 
 			next, chain, err := renewChain(ctx, client, m, id)
 			if err == nil {
-				err = s.ctl.Renew(ctx, chain)
+				err = installRenewal(ctx, s.ctl, cfg, chain)
 			}
 
 			if err != nil {

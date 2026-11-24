@@ -391,10 +391,11 @@ conflux renew
 ```
 
 Fetches a fresh credential from the enrolment API and installs it on the anchor that
-is already running. Takes no arguments.
+is already running, and on the observer, which holds its credential apart from the anchor's.
+Takes no arguments. A machine that only observes renews the same way, the observer alone.
 
-The swap is hot — `anchorctl renew`, which calls `SetRealmCred` — so the identity does
-not change and not one session is dropped. It is not a restart and does not need to be
+The swap is hot — `anchorctl renew`, which calls `SetRealmCred`, and `anchorctl observe -cred`,
+which calls `SetObserverCred` — so the identity does not change and not one session is dropped. It is not a restart and does not need to be
 treated as one. The request restates the taints the manifest names, which a renewal
 cannot change. The fresh chain is written into the stored manifest, and so is the
 bootstrap list the answer carries, when it carries a usable one; `anchorctl renew`

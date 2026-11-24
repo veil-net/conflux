@@ -159,3 +159,31 @@ func TestUninstallTakesThePathEntry(t *testing.T) {
 		}
 	}
 }
+
+// TestUninstallReachesTheMachineOnlyThroughItsSeams: the two steps of uninstall that reach past
+// the root -- the accounts conflux made and the installed conflux -- go through variables a
+// test replaces, and TestMain replaces them for every test, so no test run on a real machine,
+// a CI runner's included, can remove its accounts or its conflux.
+func TestUninstallReachesTheMachineOnlyThroughItsSeams(t *testing.T) {
+	var accounts, installation bool
+
+	wasA, wasI, wasS, elevated := uninstallAccounts, uninstallInstallation, services, privcheck.Elevated
+	uninstallAccounts = func() error { accounts = true; return nil }
+	uninstallInstallation = func() error { installation = true; return nil }
+	services = func() service.Manager { return noService{} }
+	privcheck.Elevated = func() bool { return true }
+
+	t.Cleanup(func() {
+		uninstallAccounts, uninstallInstallation, services, privcheck.Elevated = wasA, wasI, wasS, elevated
+	})
+
+	t.Cleanup(paths.UseRoot(t.TempDir()))
+
+	if _, errOut, code := capture(t, "uninstall", "--yes"); code != ExitOK {
+		t.Fatalf("uninstall --yes exited %d:\n%s", code, errOut)
+	}
+
+	if !accounts || !installation {
+		t.Errorf("uninstall went past its seams: accounts %v, installation %v", accounts, installation)
+	}
+}

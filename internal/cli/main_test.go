@@ -9,8 +9,9 @@ import (
 )
 
 // TestMain roots every conflux path in a directory of the run's own before any test starts,
-// and stands in for the boot manager, so a test that does not root its own reaches nothing
-// of the machine's: neither its .conflux nor the one service a machine has.
+// and stands in for the boot manager and for uninstall's removal of the accounts and the
+// installed conflux, so a test that does not root its own reaches nothing of the machine's:
+// neither its .conflux, nor the one service a machine has, nor its accounts or its conflux.
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "conflux-test-")
 	if err != nil {
@@ -19,6 +20,8 @@ func TestMain(m *testing.M) {
 
 	restore := paths.UseRoot(dir)
 	services = func() service.Manager { return noService{} }
+	uninstallAccounts = func() error { return nil }
+	uninstallInstallation = func() error { return nil }
 
 	code := m.Run()
 

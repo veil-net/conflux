@@ -16,6 +16,15 @@ import (
 	"github.com/veil-net/conflux/internal/wintun"
 )
 
+// uninstallAccounts and uninstallInstallation are uninstall's two steps that reach past the
+// root to the machine itself -- the accounts conflux made, and the conflux the installer put
+// in place -- and variables only so that every test stands in for them (TestMain): a test run
+// on a real machine, a CI runner's included, never removes its accounts or its conflux.
+var (
+	uninstallAccounts     = removeAccount
+	uninstallInstallation = removeInstallation
+)
+
 // services is the platform's boot manager, and a variable only so the tests can stand in
 // for it: there is one service per machine, and no test may register, start or remove it.
 var services = service.New
@@ -322,10 +331,10 @@ func runUninstall(_ context.Context, args []string) int {
 	errs = append(errs, os.RemoveAll(d.Root))
 
 	// The account anchord ran as, once nothing runs as it, if conflux made it.
-	errs = append(errs, removeAccount())
+	errs = append(errs, uninstallAccounts())
 
 	// Last, what the install script put in place: the conflux on PATH, which may be this one.
-	errs = append(errs, removeInstallation())
+	errs = append(errs, uninstallInstallation())
 
 	if err := errors.Join(errs...); err != nil {
 		return fail(err)

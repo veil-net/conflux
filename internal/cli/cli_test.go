@@ -206,6 +206,24 @@ func TestUsageIsOneStream(t *testing.T) {
 	}
 }
 
+// TestAMistakeIsSaidOnStderr: a flag a command does not take, or an argument too many or too
+// few, is a mistake, said on stderr with the usage beneath it, which leaves stdout to what the
+// command was asked for. -h alone is answered on stdout (TestUsageIsOneStream).
+func TestAMistakeIsSaidOnStderr(t *testing.T) {
+	for _, c := range []struct {
+		args []string
+		says string
+	}{
+		{[]string{"down", "--bogus"}, "flag provided but not defined: -bogus"},
+		{[]string{"cert", "verify"}, "conflux cert verify —"},
+	} {
+		out, errOut, code := capture(t, c.args...)
+		if code != ExitUsage || out != "" || !strings.Contains(errOut, c.says) || !strings.Contains(errOut, "conflux "+c.args[0]) {
+			t.Errorf("conflux %s exited %d, printing\n%s\nand on stderr\n%s", strings.Join(c.args, " "), code, out, errOut)
+		}
+	}
+}
+
 func TestVersionNamesTheAnchorBuild(t *testing.T) {
 	out, _, code := capture(t, "version")
 	if code != ExitOK {

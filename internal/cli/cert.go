@@ -155,7 +155,7 @@ func certParse(fs *flag.FlagSet, args []string, want func(n int) bool) ([]string
 	case err != nil:
 		return nil, usageExit(err), false
 	case want != nil && !want(len(pos)):
-		fs.Usage()
+		usageMistake(fs)
 
 		return nil, ExitUsage, false
 	}

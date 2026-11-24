@@ -161,19 +161,47 @@ func refuseLifecycle(name, replacement string) int {
 }
 
 // verbFlags is the flag set of conflux NAME. Its usage, head and then the flags, goes whole to
-// stdout, where -h asked for it; what the flag package says of a mistake goes to stderr.
+// stdout where -h asked for it, and to stderr beneath a mistake: the flag package says what the
+// mistake was, on the set's output, before it prints the usage, and -h it answers with the
+// usage alone.
 func verbFlags(name, head string) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	fs.SetOutput(ui.Errw)
+	out := new(flagOutput)
+	fs.SetOutput(out)
 
 	fs.Usage = func() {
-		ui.Printf("%s", head)
-		fs.SetOutput(ui.Out)
+		w := ui.Out
+		if out.mistake {
+			w = ui.Errw
+		}
+
+		fmt.Fprint(w, head)
+		fs.SetOutput(w)
 		fs.PrintDefaults()
-		fs.SetOutput(ui.Errw)
+		fs.SetOutput(out)
 	}
 
 	return fs
+}
+
+// flagOutput is a verb's flag set's output: what the flag package says of a mistake, on stderr,
+// and whether it has said one, which sends the usage after it there too.
+type flagOutput struct{ mistake bool }
+
+func (o *flagOutput) Write(p []byte) (int, error) {
+	o.mistake = true
+
+	return ui.Errw.Write(p)
+}
+
+// usageMistake prints fs's usage on stderr, for a mistake the flag package did not see: an
+// argument too many or too few.
+func usageMistake(fs *flag.FlagSet) {
+	if out, ok := fs.Output().(*flagOutput); ok {
+		out.mistake = true
+	}
+
+	fs.Usage()
 }
 
 // usageExit is the exit for flags that did not parse: 0 for -h, which asked for the usage it

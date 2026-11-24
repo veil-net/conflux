@@ -77,10 +77,16 @@ func removalCommand(dir string) (*exec.Cmd, error) {
 	return cmd, nil
 }
 
-// addPathEntry puts dir on the machine's PATH, as install.ps1 does, for a conflux an update
-// installed where there was none.
-func addPathEntry(dir string) error {
-	return editMachinePath(func(path string) string { return withDir(path, dir) })
+// putOnPath puts the directory of exe, a conflux an update installed where there was none, on
+// the machine's PATH, as install.ps1 does.
+func putOnPath(exe string) error {
+	dir := filepath.Dir(exe)
+
+	if err := editMachinePath(func(path string) string { return withDir(path, dir) }); err != nil {
+		return fmt.Errorf("%s is not on the machine's PATH: %w", dir, err)
+	}
+
+	return nil
 }
 
 // removePathEntry takes dir out of the machine's PATH, as install.ps1 put it there.

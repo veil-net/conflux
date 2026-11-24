@@ -19,11 +19,12 @@ import (
 	"github.com/veil-net/conflux/internal/version"
 )
 
-// updateFrom and updateExecutable are what a test points elsewhere: the release an update
-// reads, and the file it replaces.
+// updateFrom, updateExecutable and updateLink are what a test points elsewhere: the release an
+// update reads, the file it replaces, and the link it makes for sudo (none on Windows).
 var (
 	updateFrom       = update.Source{}
 	updateExecutable = paths.InstalledExecutable
+	updateLink       = paths.SudoLink
 )
 
 // channel is the release a build updates to, and what to call it: the newest build of its own
@@ -180,11 +181,12 @@ func runUpdate(ctx context.Context, args []string) int {
 
 	ui.Printf("Updated %s: %s.\n", exe, now)
 
-	// Installed where there was none, it goes where the installer puts it on the PATH too: on
-	// Windows the machine's. Said rather than refused, since the update itself is done.
+	// Installed where there was none, it is found by name as the installer has it found: on
+	// Windows through the machine's PATH, elsewhere through the link for sudo where root's PATH
+	// leaves its directory out. Said rather than refused, since the update itself is done.
 	if fresh {
-		if err := addPathEntry(filepath.Dir(exe)); err != nil {
-			ui.Errf("%s is not on the machine's PATH: %v", filepath.Dir(exe), err)
+		if err := putOnPath(exe); err != nil {
+			ui.Errf("%v", err)
 		}
 	}
 

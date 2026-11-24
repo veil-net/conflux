@@ -21,8 +21,9 @@ import (
 )
 
 // serveRelease stands in for conflux's two releases, `latest` and the pre-release `dev-latest`,
-// each holding body as this platform's binary, and points `conflux update` at them and at exe
-// as the file to replace. It returns the tags an update asked for, in order.
+// each holding body as this platform's binary, and points `conflux update` at them, at exe as
+// the file to replace, and at a link of the test's own as the one it makes for sudo. It returns
+// the tags an update asked for, in order.
 func serveRelease(t *testing.T, body []byte, exe string) *[]string {
 	t.Helper()
 
@@ -66,11 +67,14 @@ func serveRelease(t *testing.T, body []byte, exe string) *[]string {
 	t.Setenv(config.InsecureAPIEnv, "1")
 	t.Cleanup(paths.UseRoot(t.TempDir()))
 
-	was, wasExe := updateFrom, updateExecutable
-	t.Cleanup(func() { updateFrom, updateExecutable = was, wasExe })
+	was, wasExe, wasLink := updateFrom, updateExecutable, updateLink
+	t.Cleanup(func() { updateFrom, updateExecutable, updateLink = was, wasExe, wasLink })
+
+	link := filepath.Join(t.TempDir(), "conflux")
 
 	updateFrom = update.Source{API: srv.URL}
 	updateExecutable = func() string { return exe }
+	updateLink = func() string { return link }
 
 	return &asked
 }
@@ -321,5 +325,67 @@ func TestUpdateWritesTheInstalledConflux(t *testing.T) {
 
 	if got, _ := os.ReadFile(exe); string(got) != string(newer) {
 		t.Errorf("the installed conflux holds %q after the update", got)
+	}
+}
+
+// TestAFreshUpdateLinksItForSudo: on Unix an update that installs conflux where there was none
+// makes the link install.sh makes for sudo, where the update's own PATH -- root's, under sudo --
+// leaves the installed file's directory out; and, as install.sh does, makes none where that PATH
+// holds it, and leaves a file of the link's name that is not that link alone, saying so.
+func TestAFreshUpdateLinksItForSudo(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows puts the directory on the machine's Path; TestUpdatePutsThePathEntry")
+	}
+
+	asRoot(t, true)
+
+	newer := []byte("#!/bin/sh\necho 'conflux 9.9.9 (0aea0f77bb77) " + runtime.GOOS + "/" + runtime.GOARCH + "'\n")
+
+	for _, c := range []struct {
+		name    string
+		onPath  bool
+		foreign bool
+	}{
+		{name: "a PATH that leaves it out"},
+		{name: "a PATH that holds it", onPath: true},
+		{name: "a file at the link's name", foreign: true},
+	} {
+		exe := filepath.Join(t.TempDir(), "bin", "conflux")
+		serveRelease(t, newer, exe)
+		link := updateLink()
+
+		t.Setenv("PATH", "/usr/bin:/bin")
+
+		if c.onPath {
+			t.Setenv("PATH", "/usr/bin:/bin:"+filepath.Dir(exe)+"/")
+		}
+
+		if c.foreign {
+			if err := os.WriteFile(link, []byte("somebody else's"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		out, errOut, code := capture(t, "update")
+		if code != ExitOK {
+			t.Fatalf("%s: the update exited %d:\n%s%s", c.name, code, out, errOut)
+		}
+
+		target, err := os.Readlink(link)
+
+		switch {
+		case c.foreign:
+			if got, _ := os.ReadFile(link); string(got) != "somebody else's" || !strings.Contains(errOut, link+" is not conflux's") {
+				t.Errorf("%s: the update left %q there, saying:\n%s", c.name, got, errOut)
+			}
+		case c.onPath:
+			if !os.IsNotExist(err) {
+				t.Errorf("%s: the update made %s (%v), which root's PATH does not need", c.name, link, err)
+			}
+		default:
+			if err != nil || target != exe || !strings.Contains(out, "Linked "+link) {
+				t.Errorf("%s: %s links to %q (%v), want %s, and the update said:\n%s%s", c.name, link, target, err, exe, out, errOut)
+			}
+		}
 	}
 }

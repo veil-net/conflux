@@ -21,10 +21,12 @@ once for its `version`, and only then renames it into place as `/usr/local/bin/c
 through `sudo` (or `doas`) unless it runs as root. Where root's PATH under `sudo` leaves
 `/usr/local/bin` out — `secure_path` on Fedora and RHEL — it also links `/usr/bin/conflux` to
 it, so `sudo conflux` finds it. `install.ps1` does the same into `C:\Program Files\conflux` and
-adds that to the machine's PATH. The place is fixed, so that a terminal finds conflux by name,
-`conflux update` knows what to replace and `conflux uninstall` what to remove. Each installs
-the binary and nothing else: no boot service, no enrolment, no network joined, until you run
-`conflux up`. Run again, each replaces an older conflux and leaves the release's own alone.
+adds that to the machine's PATH. `conflux update` run where neither has installed conflux puts
+it there the same way, the link or the PATH entry with it. The place is fixed, so that a
+terminal finds conflux by name, `conflux update` knows what to replace and `conflux uninstall`
+what to remove. Each installs the binary and nothing else: no boot service, no enrolment, no
+network joined, until you run `conflux up`. Run again, each replaces an older conflux and
+leaves the release's own alone.
 
 One setting, given to `sh` rather than `curl`:
 

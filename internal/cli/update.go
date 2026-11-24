@@ -191,8 +191,8 @@ func runUpdate(ctx context.Context, args []string) int {
 	var why, refused string
 
 	switch {
-	case *dev && *yes:
-		// Answered.
+	case *yes:
+		// Answered: --yes comes only with --dev, refused above otherwise.
 	case *dev:
 		why = "A dev build is the pre-release dev-latest, built from conflux's dev branch with anchor's\n" +
 			"dev build inside it. Its anchor is pinned to the dev tree (https://api-dev.veilnet.com.au),\n" +

@@ -87,12 +87,8 @@ func serveRelease(t *testing.T, body []byte, exe string) *[]string {
 }
 
 func TestUpdateSaysSoWhenThisIsTheRelease(t *testing.T) {
-	exe := filepath.Join(t.TempDir(), "conflux")
 	body := []byte("\x7fELF the release's own conflux")
-
-	if err := os.WriteFile(exe, body, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	_, exe := installedAt(t, body)
 
 	serveRelease(t, body, exe)
 
@@ -106,13 +102,8 @@ func TestUpdateSaysSoWhenThisIsTheRelease(t *testing.T) {
 func TestUpdateCheckChangesNothing(t *testing.T) {
 	asRoot(t, false)
 
-	dir := t.TempDir()
-	exe := filepath.Join(dir, "conflux")
 	old := []byte("\x7fELF an older conflux")
-
-	if err := os.WriteFile(exe, old, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	dir, exe := installedAt(t, old)
 
 	serveRelease(t, []byte("\x7fELF a newer conflux"), exe)
 
@@ -133,10 +124,7 @@ func TestUpdateCheckChangesNothing(t *testing.T) {
 func TestUpdateNeedsRoot(t *testing.T) {
 	asRoot(t, false)
 
-	exe := filepath.Join(t.TempDir(), "conflux")
-	if err := os.WriteFile(exe, []byte("\x7fELF an older conflux"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	_, exe := installedAt(t, []byte("\x7fELF an older conflux"))
 
 	serveRelease(t, []byte("\x7fELF a newer conflux"), exe)
 
@@ -154,22 +142,16 @@ func TestUpdateReplacesTheExecutable(t *testing.T) {
 
 	asRoot(t, true)
 
-	dir := t.TempDir()
-	exe := filepath.Join(dir, "conflux")
+	dir, exe := installedAt(t, []byte("#!/bin/sh\necho conflux 1.0.0 old\n"))
 
-	if err := os.WriteFile(exe, []byte("#!/bin/sh\necho conflux 1.0.0 old\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	newer := []byte("#!/bin/sh\necho 'conflux 9.9.9 (0aea0f77bb77) " + runtime.GOOS + "/" + runtime.GOARCH + "'\n")
-	serveRelease(t, newer, exe)
+	serveRelease(t, newerConflux, exe)
 
 	out, errOut, code := capture(t, "update")
 	if code != ExitOK || !strings.Contains(out, "Updated "+exe+": conflux 9.9.9") {
 		t.Fatalf("update exited %d and printed:\n%s%s", code, out, errOut)
 	}
 
-	if got, _ := os.ReadFile(exe); string(got) != string(newer) {
+	if got, _ := os.ReadFile(exe); string(got) != string(newerConflux) {
 		t.Errorf("the executable holds %q after the update", got)
 	}
 
@@ -187,13 +169,8 @@ func TestUpdateRefusesABinaryThatDoesNotRun(t *testing.T) {
 
 	asRoot(t, true)
 
-	dir := t.TempDir()
-	exe := filepath.Join(dir, "conflux")
 	old := []byte("#!/bin/sh\necho conflux 1.0.0 old\n")
-
-	if err := os.WriteFile(exe, old, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	dir, exe := installedAt(t, old)
 
 	serveRelease(t, []byte("#!/bin/sh\nexit 3\n"), exe)
 
@@ -226,7 +203,6 @@ func TestAPlainUpdateTakesTheRelease(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	newer := []byte("#!/bin/sh\necho 'conflux 9.9.9 (0aea0f77bb77) " + runtime.GOOS + "/" + runtime.GOARCH + "'\n")
 	release := versionStandIn(t, "")
 
 	for name, c := range map[string]struct {
@@ -255,7 +231,7 @@ func TestAPlainUpdateTakesTheRelease(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			asked := serveRelease(t, newer, exe)
+			asked := serveRelease(t, newerConflux, exe)
 
 			out, errOut, code := capture(t, "update")
 			if code != ExitOK || !slices.Equal(*asked, []string{"latest", "download"}) || strings.Contains(out, "[y/N]") ||
@@ -263,7 +239,7 @@ func TestAPlainUpdateTakesTheRelease(t *testing.T) {
 				t.Errorf("update exited %d, asking for %q:\n%s%s", code, *asked, out, errOut)
 			}
 
-			if got, _ := os.ReadFile(exe); string(got) != string(newer) {
+			if got, _ := os.ReadFile(exe); string(got) != string(newerConflux) {
 				t.Errorf("the executable holds %q after the update", got)
 			}
 		})
@@ -291,6 +267,10 @@ func versionStandIn(t *testing.T, channel string) []byte {
 
 // installedAt writes body where an update finds the installed conflux, the only file in a
 // directory of the test's own, and returns both.
+// newerConflux is the stand-in for the newest build a stand-in release serves: a conflux, as far
+// as the update asks it, that answers `version` as release 9.9.9 does.
+var newerConflux = []byte("#!/bin/sh\necho 'conflux 9.9.9 (0aea0f77bb77) " + runtime.GOOS + "/" + runtime.GOARCH + "'\n")
+
 func installedAt(t *testing.T, body []byte) (dir, exe string) {
 	t.Helper()
 
@@ -321,7 +301,6 @@ func TestAnUpdateAsksFirst(t *testing.T) {
 	}
 
 	release, dev := versionStandIn(t, ""), versionStandIn(t, "dev")
-	newer := []byte("#!/bin/sh\necho 'conflux 9.9.9 (0aea0f77bb77) " + runtime.GOOS + "/" + runtime.GOARCH + "'\n")
 
 	// What a plain update of a dev build says before it asks.
 	plainSays := []string{
@@ -361,7 +340,7 @@ func TestAnUpdateAsksFirst(t *testing.T) {
 				answer(t, in)
 
 				dir, exe := installedAt(t, q.installed)
-				asked := serveRelease(t, newer, exe)
+				asked := serveRelease(t, newerConflux, exe)
 
 				out, errOut, code := capture(t, q.args...)
 
@@ -374,7 +353,7 @@ func TestAnUpdateAsksFirst(t *testing.T) {
 				got, _ := os.ReadFile(exe)
 
 				if takes {
-					if code != ExitOK || !slices.Equal(*asked, []string{q.tag, "download"}) || string(got) != string(newer) ||
+					if code != ExitOK || !slices.Equal(*asked, []string{q.tag, "download"}) || string(got) != string(newerConflux) ||
 						!strings.Contains(out, "Updated "+exe+": conflux 9.9.9") {
 						t.Errorf("%s answered %q exited %d, asking for %q, the executable holding %q:\n%s%s",
 							q.name, in, code, *asked, got, out, errOut)
@@ -400,7 +379,7 @@ func TestAnUpdateAsksFirst(t *testing.T) {
 			answer(t, "y\n")
 
 			_, exe := installedAt(t, q.installed)
-			asked := serveRelease(t, newer, exe)
+			asked := serveRelease(t, newerConflux, exe)
 
 			out, errOut, code := capture(t, q.args...)
 			if code != ExitDenied || strings.Contains(out, "[y/N]") || slices.Contains(*asked, "download") ||
@@ -427,7 +406,7 @@ func TestAnUpdateAsksFirst(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		asked := serveRelease(t, newer, exe)
+		asked := serveRelease(t, newerConflux, exe)
 
 		out, errOut, code := capture(t, "update")
 
@@ -448,7 +427,7 @@ func TestAnUpdateAsksFirst(t *testing.T) {
 		answer(t, "y\n")
 
 		_, exe := installedAt(t, dev)
-		asked := serveRelease(t, newer, exe)
+		asked := serveRelease(t, newerConflux, exe)
 
 		out, errOut, code := capture(t, "update", "--check")
 		if got, _ := os.ReadFile(exe); code != ExitOK || !slices.Equal(*asked, []string{"latest"}) ||
@@ -464,12 +443,12 @@ func TestAnUpdateAsksFirst(t *testing.T) {
 		answer(t, "y\n")
 
 		_, exe := installedAt(t, dev)
-		asked := serveRelease(t, newer, exe)
+		asked := serveRelease(t, newerConflux, exe)
 
 		out, errOut, code := capture(t, "update", "--dev")
 		if got, _ := os.ReadFile(exe); code != ExitOK || strings.Count(out, "[y/N]") != 1 ||
 			!strings.Contains(out, "Install the dev build? [y/N]") ||
-			!slices.Equal(*asked, []string{"dev-latest", "download"}) || string(got) != string(newer) {
+			!slices.Equal(*asked, []string{"dev-latest", "download"}) || string(got) != string(newerConflux) {
 			t.Errorf("update --dev of an installed dev build exited %d, asking for %q:\n%s%s", code, *asked, out, errOut)
 		}
 	})
@@ -482,7 +461,6 @@ func TestAnUpdateAsksFirst(t *testing.T) {
 // off a terminal too, reading nothing of stdin. A plain update of an installed dev build has no
 // way past, and its refusal names none: --yes answers --dev's question alone.
 func TestAnUpdateThatAsksIsRefusedOffATerminal(t *testing.T) {
-	newer := []byte("#!/bin/sh\necho 'conflux 9.9.9 (0aea0f77bb77) " + runtime.GOOS + "/" + runtime.GOARCH + "'\n")
 
 	for _, c := range []struct {
 		name      string
@@ -520,7 +498,7 @@ func TestAnUpdateThatAsksIsRefusedOffATerminal(t *testing.T) {
 			t.Cleanup(func() { ui.In = was })
 
 			dir, exe := installedAt(t, c.installed)
-			asked := serveRelease(t, newer, exe)
+			asked := serveRelease(t, newerConflux, exe)
 
 			out, errOut, code := capture(t, c.args...)
 			if !slices.Equal(*asked, c.asked) || strings.Contains(out, "[y/N]") || in.Len() != len("y\n") {
@@ -530,7 +508,7 @@ func TestAnUpdateThatAsksIsRefusedOffATerminal(t *testing.T) {
 			got, _ := os.ReadFile(exe)
 
 			if c.refused == "" {
-				if code != ExitOK || string(got) != string(newer) {
+				if code != ExitOK || string(got) != string(newerConflux) {
 					t.Errorf("%s off a terminal exited %d, the executable holding %q:\n%s%s", c.name, code, got, out, errOut)
 				}
 
@@ -565,7 +543,6 @@ func TestADevUpdateWithYesAsksNothing(t *testing.T) {
 	}
 
 	release, dev := versionStandIn(t, ""), versionStandIn(t, "dev")
-	newer := []byte("#!/bin/sh\necho 'conflux 9.9.9 (0aea0f77bb77) " + runtime.GOOS + "/" + runtime.GOARCH + "'\n")
 
 	for name, body := range map[string][]byte{"a release": release, "a dev build": dev} {
 		t.Run("at a terminal, of "+name, func(t *testing.T) {
@@ -573,11 +550,11 @@ func TestADevUpdateWithYesAsksNothing(t *testing.T) {
 			answer(t, "n\n") // a question asked would be declined
 
 			_, exe := installedAt(t, body)
-			asked := serveRelease(t, newer, exe)
+			asked := serveRelease(t, newerConflux, exe)
 
 			out, errOut, code := capture(t, "update", "--dev", "--yes")
 			if got, _ := os.ReadFile(exe); code != ExitOK || !slices.Equal(*asked, []string{"dev-latest", "download"}) ||
-				string(got) != string(newer) || strings.Contains(out, "[y/N]") {
+				string(got) != string(newerConflux) || strings.Contains(out, "[y/N]") {
 				t.Errorf("update --dev --yes of %s at a terminal exited %d, asking for %q:\n%s%s", name, code, *asked, out, errOut)
 			}
 		})
@@ -588,7 +565,7 @@ func TestADevUpdateWithYesAsksNothing(t *testing.T) {
 		answer(t, "y\n") // what the plain update's question would take
 
 		_, exe := installedAt(t, dev)
-		asked := serveRelease(t, newer, exe)
+		asked := serveRelease(t, newerConflux, exe)
 
 		out, errOut, code := capture(t, "update", "--yes")
 		if got, _ := os.ReadFile(exe); code != ExitUsage || out != "" || len(*asked) != 0 || string(got) != string(dev) ||
@@ -674,15 +651,14 @@ func TestUpdateWritesTheInstalledConflux(t *testing.T) {
 	asRoot(t, true)
 
 	exe := filepath.Join(t.TempDir(), "bin", "conflux")
-	newer := []byte("#!/bin/sh\necho 'conflux 9.9.9 (0aea0f77bb77) " + runtime.GOOS + "/" + runtime.GOARCH + "'\n")
-	serveRelease(t, newer, exe)
+	serveRelease(t, newerConflux, exe)
 
 	out, errOut, code := capture(t, "update")
 	if code != ExitOK || !strings.Contains(out, "Updated "+exe+": conflux 9.9.9") {
 		t.Fatalf("update with nothing installed exited %d and printed:\n%s%s", code, out, errOut)
 	}
 
-	if got, _ := os.ReadFile(exe); string(got) != string(newer) {
+	if got, _ := os.ReadFile(exe); string(got) != string(newerConflux) {
 		t.Errorf("the installed conflux holds %q after the update", got)
 	}
 }

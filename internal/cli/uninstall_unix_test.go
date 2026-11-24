@@ -5,7 +5,6 @@ package cli
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -92,8 +91,6 @@ func TestUninstallTakesTheInstalledConflux(t *testing.T) {
 func TestAFreshUpdateLinksItForSudo(t *testing.T) {
 	asRoot(t, true)
 
-	newer := []byte("#!/bin/sh\necho 'conflux 9.9.9 (0aea0f77bb77) " + runtime.GOOS + "/" + runtime.GOARCH + "'\n")
-
 	// Two other confluxes, in directories a PATH can name before the installed file's or the
 	// link's: the one it finds, and a third behind it.
 	other, third := filepath.Join(t.TempDir(), "conflux"), filepath.Join(t.TempDir(), "conflux")
@@ -168,7 +165,7 @@ func TestAFreshUpdateLinksItForSudo(t *testing.T) {
 		},
 	} {
 		exe := filepath.Join(t.TempDir(), "bin", "conflux")
-		serveRelease(t, newer, exe)
+		serveRelease(t, newerConflux, exe)
 		link := updateLink()
 
 		// "spelt" is the link's directory by another name, as a merged /bin is /usr/bin.

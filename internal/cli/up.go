@@ -222,7 +222,7 @@ func typedFlags(fs *flag.FlagSet) map[string]bool {
 	typed := map[string]bool{}
 
 	fs.Visit(func(f *flag.Flag) {
-		if b, ok := f.Value.(interface{ IsBoolFlag() bool }); ok && b.IsBoolFlag() && f.Value.String() == "false" {
+		if isBoolFlag(f) && f.Value.String() == "false" {
 			if pos, ok := strings.CutPrefix(f.Name, "no-"); ok && fs.Lookup(pos) != nil {
 				return
 			}

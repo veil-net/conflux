@@ -63,10 +63,13 @@ func putOnPath(exe string) error {
 	return errors.Join(missed(found, link, exe), removeIfThere(link))
 }
 
-// rerun is the way out where root's PATH finds a conflux that is not exe in place of it: that
-// one removed, the installer, install.sh, links exe again, which an update, finding exe
-// installed, never does.
-const rerun = "remove it and run the installer again, or type %s by its full path under sudo"
+// relink is the way out where root's PATH finds a conflux that is not exe in place of it: that
+// one removed, link, the link for sudo, made to exe by hand, which an update, finding exe
+// installed, never makes. Not install.sh run again, as install.sh says: it fetches the latest
+// release, and would move a dev build off its channel.
+func relink(exe, link string) string {
+	return fmt.Sprintf("remove it, then link the installed conflux for sudo (sudo ln -s %s %s), or type %s by its full path under sudo", exe, link, exe)
+}
 
 // rootFinds is the conflux this process's PATH, root's, finds by name, or "" for none, and
 // whether that is exe: asked of the file, through any link, by sameFile.
@@ -87,16 +90,17 @@ func missed(found, link, exe string) error {
 		return fmt.Errorf("root's PATH leaves %s out too: type %s by its full path under sudo", filepath.Dir(link), exe)
 	}
 
-	return fmt.Errorf("root's PATH finds %s before %s: "+rerun, found, filepath.Dir(link), exe)
+	return fmt.Errorf("root's PATH finds %s before %s: %s", found, filepath.Dir(link), relink(exe, link))
 }
 
 // notOurs says that link, the name of the link for sudo, is a file conflux did not make, and why
 // root's PATH does not find exe: where what it finds is that file -- through the link's own
-// directory, however spelled, as a merged /bin is /usr/bin -- removing it lets the installer link
-// exe there; otherwise why, which another conflux found first, or exe's directory left out, keeps.
+// directory, however spelled, as a merged /bin is /usr/bin -- removing it lets exe be linked
+// there (relink); otherwise why, which another conflux found first, or exe's directory left out,
+// keeps.
 func notOurs(found, link, exe, why string) error {
 	if found != "" && sameFile(filepath.Dir(found), filepath.Dir(link)) {
-		return fmt.Errorf("%s is not conflux's, and root's PATH finds it rather than %s: "+rerun, link, exe, exe)
+		return fmt.Errorf("%s is not conflux's, and root's PATH finds it rather than %s: %s", link, exe, relink(exe, link))
 	}
 
 	return fmt.Errorf("%s is not conflux's, and %s: type %s by its full path under sudo", link, why, exe)

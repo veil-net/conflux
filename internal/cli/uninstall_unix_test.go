@@ -27,9 +27,11 @@ func pointSudoLink(t *testing.T) {
 // under sudo -- finds is not the installed file, and keeps it only where that PATH, asked again,
 // finds the installed file through it: one that leaves its directory out, or finds another
 // conflux after the link's directory. One that finds another before it would do nothing there,
-// so none is left, a link made before included, and the other is named, to be removed before
-// the installer is run again. As install.sh does, it makes none where that PATH finds the
-// installed file, and leaves a file of the link's name that is not that link alone, saying so.
+// so none is left, a link made before included, and the other is named, to be removed before the
+// link is made by hand -- the line that makes it said, not the installer, which would fetch the
+// release and move a dev build off its channel. As install.sh does, it makes none where that PATH
+// finds the installed file, and leaves a file of the link's name that is not that link alone,
+// saying so.
 // Each PATH is the test's own directories, the link's among them as /usr/bin is on every root's
 // but where a case leaves it out, so no conflux of the machine's is found.
 func TestAFreshUpdateLinksItForSudo(t *testing.T) {
@@ -44,7 +46,8 @@ func TestAFreshUpdateLinksItForSudo(t *testing.T) {
 	}
 
 	const (
-		shadowed = "root's PATH finds {other} before {dir}: remove it and run the installer again, or type {exe} by its full path under sudo"
+		relink   = "remove it, then link the installed conflux for sudo (sudo ln -s {exe} {link}), or type {exe} by its full path under sudo"
+		shadowed = "root's PATH finds {other} before {dir}: " + relink
 		leftOut  = "root's PATH leaves {dir} out too: type {exe} by its full path under sudo"
 	)
 
@@ -65,11 +68,11 @@ func TestAFreshUpdateLinksItForSudo(t *testing.T) {
 		{name: "a link made before, its directory left out", path: nil, before: "link", said: leftOut},
 		{
 			name: "a file at the link's name, which the PATH finds", path: []string{"link"}, before: "file", after: "file",
-			said: "{link} is not conflux's, and root's PATH finds it rather than {exe}: remove it and run the installer again, or type {exe} by its full path under sudo",
+			said: "{link} is not conflux's, and root's PATH finds it rather than {exe}: " + relink,
 		},
 		{
 			name: "a file at the link's name, which the PATH finds through another spelling", path: []string{"spelt"}, before: "file", after: "file",
-			said: "{link} is not conflux's, and root's PATH finds it rather than {exe}: remove it and run the installer again, or type {exe} by its full path under sudo",
+			said: "{link} is not conflux's, and root's PATH finds it rather than {exe}: " + relink,
 		},
 		{
 			name: "a file at the link's name, behind another conflux", path: []string{"other", "link"}, before: "file", after: "file",

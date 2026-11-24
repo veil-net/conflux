@@ -265,12 +265,12 @@ func versionStandIn(t *testing.T, channel string) []byte {
 	return []byte("#!/bin/sh\ncat <<'END'\n" + out + "END\n")
 }
 
-// installedAt writes body where an update finds the installed conflux, the only file in a
-// directory of the test's own, and returns both.
 // newerConflux is the stand-in for the newest build a stand-in release serves: a conflux, as far
 // as the update asks it, that answers `version` as release 9.9.9 does.
 var newerConflux = []byte("#!/bin/sh\necho 'conflux 9.9.9 (0aea0f77bb77) " + runtime.GOOS + "/" + runtime.GOARCH + "'\n")
 
+// installedAt writes body where an update finds the installed conflux, the only file in a
+// directory of the test's own, and returns both.
 func installedAt(t *testing.T, body []byte) (dir, exe string) {
 	t.Helper()
 
@@ -461,7 +461,6 @@ func TestAnUpdateAsksFirst(t *testing.T) {
 // off a terminal too, reading nothing of stdin. A plain update of an installed dev build has no
 // way past, and its refusal names none: --yes answers --dev's question alone.
 func TestAnUpdateThatAsksIsRefusedOffATerminal(t *testing.T) {
-
 	for _, c := range []struct {
 		name      string
 		args      []string

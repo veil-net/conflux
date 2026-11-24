@@ -436,7 +436,7 @@ func untilRenewal(m *enrol.Manifest) time.Duration {
 // goes on being under no name, so a run starting after makes a lock of its own; on Windows,
 // where a file held open cannot be removed, once it is let go, and a run that took it in
 // between keeps both, since removing either then fails. Where something will not go, the lock
-// is kept, so the next run, or uninstall, finds a root to clear.
+// is kept, so the next run, or uninstall, finds a root to clear, and the error names it.
 func RemoveEphemeralRoot(d paths.Dirs, unlock func()) error {
 	driver := deleteDriver(d)
 	lock := d.ServeLockFile()
@@ -444,7 +444,7 @@ func RemoveEphemeralRoot(d paths.Dirs, unlock func()) error {
 	if err := removeExcept(d.Root, named(filepath.Base(lock))); err != nil {
 		unlock()
 
-		return errors.Join(driver, fmt.Errorf("remove %s: %w", d.Root, err))
+		return errors.Join(driver, err)
 	}
 
 	if runtime.GOOS == "windows" {
@@ -466,11 +466,7 @@ func RemoveEphemeralRoot(d paths.Dirs, unlock func()) error {
 	unlock()
 	ephemeralUnlocked()
 
-	if err != nil {
-		return errors.Join(driver, fmt.Errorf("remove %s: %w", d.Root, err))
-	}
-
-	return driver
+	return errors.Join(driver, err)
 }
 
 // ephemeralUnlocked is a test's seam, where RemoveEphemeralRoot has let the lock go.

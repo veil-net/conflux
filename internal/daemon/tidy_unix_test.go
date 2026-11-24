@@ -3,7 +3,10 @@
 package daemon
 
 import (
+	"io/fs"
 	"os"
+	"path/filepath"
+	"syscall"
 	"testing"
 )
 
@@ -51,4 +54,22 @@ func restored(path string) bool {
 	fi, err := os.Stat(path)
 
 	return err == nil && fi.Mode().Perm() == 0o600
+}
+
+// stuck makes the entry at path one removeExcept cannot remove, through removeEntry: a test run
+// as root removes whatever it likes, so nothing on disk could.
+func stuck(t *testing.T, path string) {
+	t.Helper()
+
+	name := filepath.Base(path)
+
+	removeEntry = func(r *os.Root, n string) error {
+		if n == name {
+			return &fs.PathError{Op: "unlinkat", Path: n, Err: syscall.EBUSY}
+		}
+
+		return r.RemoveAll(n)
+	}
+
+	t.Cleanup(func() { removeEntry = (*os.Root).RemoveAll })
 }

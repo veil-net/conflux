@@ -4,10 +4,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/paths"
 )
 
 // TestTidyKeepsOnlyWhatIsConfluxsAndAnchors: the root, as a start puts it back, and both
@@ -132,5 +134,93 @@ func TestAStartThatStopsPutsTheRootBack(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestRemoveExcept: removeExcept keeps what keep keeps, a kept directory whole; takes a
+// directory that is not there for one holding nothing; removes a link, to outside the directory
+// or to an entry in it, as a link, what it leads to untouched; and goes on past an entry that
+// will not go, removing the rest and naming that one once, as RemoveEphemeralRoot hands it on.
+func TestRemoveExcept(t *testing.T) {
+	if err := removeExcept(filepath.Join(t.TempDir(), "missing"), nothing); err != nil {
+		t.Errorf("a missing directory: %v, want nothing to remove", err)
+	}
+
+	outside := t.TempDir()
+	secret := filepath.Join(outside, "secret")
+
+	dir := t.TempDir()
+
+	for _, sub := range []string{"keptdir", "straydir"} {
+		if err := os.Mkdir(filepath.Join(dir, sub), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	files := map[string]string{
+		secret: "outside's", filepath.Join(dir, "kept"): "kept's", filepath.Join(dir, "keptdir", "inner"): "inner's",
+		filepath.Join(dir, "stray"): "", filepath.Join(dir, "straydir", "inner"): "",
+	}
+	for path, content := range files {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for link, target := range map[string]string{
+		"out": outside, "outfile": secret, // out of the directory: a directory and a file
+		"in": "kept", // to an entry in it, which stays
+	} {
+		if err := os.Symlink(target, filepath.Join(dir, link)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := removeExcept(dir, named("kept", "keptdir")); err != nil {
+		t.Fatalf("removeExcept: %v", err)
+	}
+
+	for _, name := range []string{"stray", "straydir", "out", "outfile", "in"} {
+		if _, err := os.Lstat(filepath.Join(dir, name)); err == nil {
+			t.Errorf("%s was not removed", name)
+		}
+	}
+
+	for path, content := range files {
+		if strings.Contains(path, "stray") {
+			continue
+		}
+
+		if got, err := os.ReadFile(path); err != nil || string(got) != content {
+			t.Errorf("%s = %q, %v; want %q left as it was", path, got, err, content)
+		}
+	}
+
+	// An entry that will not go, between two that must.
+	d := paths.Dirs{Root: t.TempDir()}
+	held := filepath.Join(d.Root, "held")
+
+	for _, path := range []string{filepath.Join(d.Root, "a"), held, filepath.Join(d.Root, "z"), d.ServeLockFile()} {
+		if err := os.WriteFile(path, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	stuck(t, held)
+
+	err := removeExcept(d.Root, named(filepath.Base(d.ServeLockFile())))
+	if err == nil || strings.Count(err.Error(), held) != 1 {
+		t.Errorf("removeExcept = %v, want an error naming %s once", err, held)
+	}
+
+	for _, name := range []string{"a", "z"} {
+		if _, err := os.Lstat(filepath.Join(d.Root, name)); err == nil {
+			t.Errorf("%s was left beside the entry that would not go", name)
+		}
+	}
+
+	if err := RemoveEphemeralRoot(d, func() {}); err == nil || strings.Count(err.Error(), held) != 1 ||
+		strings.Contains(err.Error(), "remove "+d.Root+": ") {
+		t.Errorf("RemoveEphemeralRoot = %v, want removeExcept's error as it was, naming %s once", err, held)
 	}
 }

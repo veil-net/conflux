@@ -112,13 +112,17 @@ func removeExcept(dir string, keep func(fs.DirEntry) bool) error {
 			continue
 		}
 
-		if err := r.RemoveAll(e.Name()); err != nil {
+		if err := removeEntry(r, e.Name()); err != nil {
 			errs = append(errs, fmt.Errorf("remove %s: %w", filepath.Join(dir, e.Name()), err))
 		}
 	}
 
 	return errors.Join(errs...)
 }
+
+// removeEntry is (*os.Root).RemoveAll, which a test replaces on Unix, where an entry that will
+// not go cannot be made for a test that may run as root.
+var removeEntry = (*os.Root).RemoveAll
 
 // named keeps the entries called one of names.
 func named(names ...string) func(fs.DirEntry) bool {

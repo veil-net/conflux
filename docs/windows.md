@@ -102,13 +102,14 @@ choosing.
 
 A root some other account created is refused rather than taken over: whoever made it
 could have filled it first. What is in it is held to the same before its DACL is given
-back, a root whose DACL somebody widened included, all but the contents of `anchord`'s own
-directories, `anchor\`, `anchor.root\` and `run\anchord\`: its account owns what it writes
-there, and the supervisor reads that as untrusted and makes it again. The directories
-themselves must be conflux's. And the two binaries the service runs as SYSTEM, and
-`wintun.dll` beside them, are run only if Administrators, SYSTEM or the account running
-conflux owns them — a set directory is named for content anybody can compute, so one
-made by somebody else is extracted again rather than trusted.
+back, a root whose DACL somebody widened included, all but the contents of `anchor\` and
+`run\anchord\`, which `anchord`'s account writes: it owns what it writes there, and the
+supervisor reads that as untrusted and makes it again. `anchor.root\`, the directory of an
+`anchord` that runs as SYSTEM, is SYSTEM's and held to the same. The directories themselves
+must be conflux's. And the two binaries the service runs as SYSTEM, and `wintun.dll` beside
+them, are run only if Administrators, SYSTEM or the account running conflux owns them — a
+set directory is named for content anybody can compute, so one made by somebody else is
+extracted again rather than trusted.
 
 Where `anchord` runs as `LOCAL SERVICE` (below), the service's own SID,
 `NT SERVICE\conflux`, is added to exactly what it needs: read and execute on its set

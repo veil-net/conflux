@@ -228,10 +228,8 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 	}
 
 	// Windows needs the driver beside anchord before an interface can exist.
-	if e.Config.Mode == config.ModeTUN {
-		if err := ensureDriver(ctx, d); err != nil {
-			return err
-		}
+	if err := fetchDriver(ctx, d, e.Config); err != nil {
+		return err
 	}
 
 	started, err := s.ctl.Start(ctx, env, anchorctl.ModeFromConfig(e.Config, ""))

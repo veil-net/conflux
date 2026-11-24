@@ -225,15 +225,16 @@ func bringUp(
 	return started, nil
 }
 
-// fetchDriver fetches Windows' driver where cfg runs an interface, and says what came of it
-// for bringUp to hand the anchor's start: nil where it was had or none is needed. Windows needs
-// it beside anchord before an interface can exist, and it lives in the content-addressed set
-// directory: an upgraded conflux extracts a new set with no wintun.dll in it, and a boot, or a
-// rebuild, must not need somebody to run `up`.
+// fetchDriver fetches Windows' driver where cfg runs an interface, and says what came of it:
+// nil where it was had or none is needed. Windows needs it beside anchord before an interface
+// can exist, and it lives in the content-addressed set directory: an upgraded conflux extracts
+// a new set with no wintun.dll in it, and a boot, or a rebuild, must not need somebody to run
+// `up`. An ephemeral run asks it before its anchor's start, and the supervisor hands bringUp
+// what it came to, for the anchor's start.
 //
-// Before bringUp takes conflux.lock, never under it: a first download takes up to wintun's
-// 90-second timeout, which `conflux renew` and up's save of the configuration would wait out,
-// for a fetch that writes nothing the lock guards.
+// The supervisor's is before bringUp takes conflux.lock, never under it: a first download
+// takes up to wintun's 90-second timeout, which `conflux renew` and up's save of the
+// configuration would wait out, for a fetch that writes nothing the lock guards.
 func fetchDriver(ctx context.Context, d paths.Dirs, cfg *config.Config) error {
 	if cfg.Mode != config.ModeTUN {
 		return nil

@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"slices"
@@ -13,7 +12,6 @@ import (
 
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
-	"github.com/veil-net/conflux/internal/ui"
 )
 
 // TestOnlyATransientExitAsksForARestart: the SCM's recovery restarts what reports a
@@ -56,12 +54,7 @@ func TestTheServiceReportsStoppedOnce(t *testing.T) {
 
 	// What stops it is said where the service's output goes, which serveAsService makes the
 	// event log: the SCM's record of the exit says only that it failed.
-	var errw bytes.Buffer
-
-	was := ui.Errw
-	ui.Errw = &errw
-
-	t.Cleanup(func() { ui.Errw = was })
+	_, errw := captureUI(t)
 
 	failed := &handler{sup: h.sup, setup: errors.New("no disk")}
 

@@ -372,23 +372,23 @@ func smoke(t *Tools) error {
 // directory: the one file there that is not this package's.
 const WintunDLL = "wintun.dll"
 
-// TransientAge is how long something made beside a running supervisor may still be in use,
+// transientAge is how long something made beside a running supervisor may still be in use,
 // rather than left by a crash: a set or a staging directory a newer conflux extracted (Sweep),
 // or a temporary file a write is still making, in the root or in the live set.
-const TransientAge = time.Hour
+const transientAge = time.Hour
 
-// Transient reports whether e was modified within TransientAge, so may still be in use beside
+// Transient reports whether e was modified within transientAge, so may still be in use beside
 // a running supervisor rather than left by a crash: the one test of that age, for Sweep and for
 // the daemon's tidy of the root alike.
 func Transient(e os.DirEntry) bool {
 	info, err := e.Info()
 
-	return err == nil && time.Since(info.ModTime()) < TransientAge
+	return err == nil && time.Since(info.ModTime()) < transientAge
 }
 
 // Sweep keeps the bin directory to what conflux put there: t, with nothing in it but the
 // pair, its markers, Windows' driver and a write in progress (tidySet); the extraction lock;
-// and a set or a staging directory made in the last TransientAge, which a newer conflux
+// and a set or a staging directory made in the last transientAge, which a newer conflux
 // running a command beside this supervisor -- the first `status` after an upgrade -- may be
 // using until the service restarts onto it. Everything else goes: an older set, a crash's staging, and anything
 // nothing here wrote.

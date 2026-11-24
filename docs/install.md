@@ -29,9 +29,8 @@ none is left, one an earlier run
 made included, and the other is named, to be removed before `install.sh` is run again, or
 conflux typed by its full path under `sudo`. A `/usr/bin/conflux` that is not its link is left
 alone, and said: where root's PATH finds that file in conflux's place, or another conflux first,
-that one is to be removed before `install.sh` is run again, and where it finds none (the file is
-none root can run, a link to nothing, say), that file is to be removed the same way, or conflux
-typed by its full path. Run again, it decides afresh: it links conflux where root's PATH then
+that one is to be removed before `install.sh` is run again, and where it finds none, that file
+is to be removed the same way, or conflux typed by its full path. Run again, it decides afresh: it links conflux where root's PATH then
 needs the link, and makes none where that PATH finds conflux without one. Root's PATH is asked
 whether the run installs conflux or finds the release's already in place: where `sudo` (or
 `doas`) cannot answer without a password, as when nothing has asked for one yet, the script says

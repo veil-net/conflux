@@ -197,8 +197,7 @@ missed() {
 # $exe: where what it finds is that file -- through the link's own directory, however spelled,
 # as a merged /bin is /usr/bin -- or another conflux first, that it is to be removed before this
 # script is run again, which decides afresh, as missed says; where it finds none, $why, and the
-# file -- one root cannot run, a link to nothing, say -- to be removed before a run again the
-# same way, or $exe's full path.
+# file to be removed before a run again the same way, or $exe's full path.
 notours() {
   if [ -z "$found" ]; then
     say "" "$sudolink is not conflux's, and $why: remove it and run the installer again, or type $exe by its full path under sudo."

@@ -246,6 +246,22 @@ func TestAMistakeIsSaidOnStderr(t *testing.T) {
 	}
 }
 
+// TestAStrayArgumentIsNamedAboveTheUsage: every command that takes no argument refuses one the
+// same way -- the argument named on a line of its own, the usage beneath it, both on stderr --
+// whichever verb was given it.
+func TestAStrayArgumentIsNamedAboveTheUsage(t *testing.T) {
+	asRoot(t, false)
+
+	for _, verb := range []string{"up", "install", "down", "uninstall", "serve", "start", "renew", "update", "observe"} {
+		out, errOut, code := capture(t, verb, "stray")
+		if code != ExitUsage || out != "" ||
+			!strings.Contains(errOut, "conflux "+verb+" takes no arguments, and got \"stray\"") ||
+			!strings.Contains(errOut, "conflux "+verb+" —") {
+			t.Errorf("conflux %s stray exited %d, printing\n%s\nand on stderr\n%s", verb, code, out, errOut)
+		}
+	}
+}
+
 // TestTheUsageSaysWhatACommandReaches: uninstall's summary and usage say it removes conflux
 // itself; renew's usage, and its refusal with nothing running, that it renews an observer as
 // it does an anchor, which is what a machine that only observes runs; and observe's synopsis,

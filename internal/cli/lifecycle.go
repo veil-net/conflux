@@ -160,15 +160,8 @@ func runStart(ctx context.Context, args []string) int {
 		return ExitUsage
 	}
 
-	if err := fs.Parse(args); err != nil {
-		return usageExit(err)
-	}
-
-	if fs.NArg() > 0 {
-		ui.Errf("conflux start takes no arguments, and got %q.\n\n"+
-			"  conflux start", fs.Arg(0))
-
-		return ExitUsage
+	if exit, ok := flagsAlone(fs, args); !ok {
+		return exit
 	}
 
 	if err := needsRoot("starting the service", "start", args); err != nil {

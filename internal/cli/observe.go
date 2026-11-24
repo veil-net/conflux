@@ -38,14 +38,8 @@ func runObserve(ctx context.Context, args []string) int {
 		return ExitUsage
 	}
 
-	if err := f.fs.Parse(args); err != nil {
-		return usageExit(err)
-	}
-
-	if f.fs.NArg() > 0 {
-		ui.Errf("conflux observe takes no arguments, and was given %q", f.fs.Args())
-
-		return ExitUsage
+	if exit, ok := flagsAlone(f.fs, args); !ok {
+		return exit
 	}
 
 	// Before anything is asked or written: where anchor has no capture there is nothing

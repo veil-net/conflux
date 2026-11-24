@@ -51,16 +51,8 @@ func runRenew(ctx context.Context, args []string) int {
 		return ExitUsage
 	}
 
-	if err := fs.Parse(args); err != nil {
-		return usageExit(err)
-
-	}
-
-	if fs.NArg() > 0 {
-		ui.Errf("conflux renew takes no arguments, and got %q.\n\n"+
-			"  conflux renew", fs.Arg(0))
-
-		return ExitUsage
+	if exit, ok := flagsAlone(fs, args); !ok {
+		return exit
 	}
 
 	if err := needsRoot("renewing this machine's credential", "renew", args); err != nil {

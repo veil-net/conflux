@@ -112,16 +112,8 @@ func runUpdate(ctx context.Context, args []string) int {
 		"stopped, and starts on it next time.\n\n", paths.InstalledExecutable()))
 
 	check := fs.Bool("check", false, "say whether there is an update, and change nothing")
-	if err := fs.Parse(args); err != nil {
-		return usageExit(err)
-	}
-
-	if fs.NArg() > 0 {
-		ui.Errf("conflux update takes no arguments, and got %q.\n\n"+
-			"  conflux update\n"+
-			"  conflux update --check", fs.Arg(0))
-
-		return ExitUsage
+	if exit, ok := flagsAlone(fs, args); !ok {
+		return exit
 	}
 
 	exe := updateExecutable()

@@ -213,8 +213,8 @@ func usageMistake(fs *flag.FlagSet) {
 }
 
 // flagsAlone parses the arguments of a command that takes flags and nothing else, and says
-// whether it may go on. An argument left over is a mistake, said as usageMistake says one,
-// before anything is asked for or done: `sudo conflux up mynet`, its --taint forgotten, would
+// whether it may go on. An argument left over is a mistake, named on a line of its own with the
+// usage beneath it, before anything is asked for or done: `sudo conflux up mynet`, its --taint forgotten, would
 // otherwise join a network minted for it. Where it may not go on, exit is the command's status.
 func flagsAlone(fs *flag.FlagSet, args []string) (exit int, ok bool) {
 	if err := fs.Parse(args); err != nil {
@@ -222,6 +222,7 @@ func flagsAlone(fs *flag.FlagSet, args []string) (exit int, ok bool) {
 	}
 
 	if fs.NArg() > 0 {
+		ui.Errf("conflux %s takes no arguments, and got %q.\n", fs.Name(), fs.Arg(0))
 		usageMistake(fs)
 
 		return ExitUsage, false

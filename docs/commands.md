@@ -592,9 +592,10 @@ anchorctl resolves the socket as `firstNonEmpty(-socket, global -socket,
 ANCHOR_SOCKET)`, so a flag you typed still wins and conflux never rewrites an argv.
 
 A command to a daemon you named yourself (`-socket`, or `ANCHOR_SOCKET` set), and a request for
-usage, need nothing of conflux's installation, and make nothing of it: they run as a child of
-conflux, from the extracted anchorctl where a whole one is readable, else one in memory where the
-platform allows it, else a temporary copy removed afterwards.
+usage, need nothing of conflux's installation, and make nothing of it. They run the extracted
+anchorctl where a whole one is readable, else one in memory where the platform allows it, in
+place of conflux as every pass-through does; else a temporary copy, as a child of conflux, which
+passes it the `SIGINT` and `SIGTERM` conflux is sent and removes the copy once it has exited.
 
 A command that makes the daemon itself open a path you name — `keygen -out`, which writes "on
 the daemon's filesystem", or export certificates given by path — opens it with `anchord`'s

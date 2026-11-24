@@ -14,12 +14,13 @@ import (
 var anchorctlExec, anchorctlRun = execAnchorctl, runAnchorctl
 
 // runAnchorctl runs anchorctl as a child and returns its exit code: what Windows does in
-// place of execve, and what usage does everywhere, since it waits to remove a temporary
-// copy afterwards.
+// place of execve, and what a temporary copy of anchorctl does everywhere, since conflux waits
+// to remove it afterwards.
 //
 // Inherited handles, so the console is genuinely shared, and the child's exit code passed
-// back verbatim. Not tied to a context, which Ctrl+C cancels: the terminal delivers that to
-// anchorctl as well, and it ends on its own terms, as it would had it replaced this process.
+// back verbatim. Not tied to a context, which Ctrl+C cancels: anchorctl is given the signal
+// and ends on its own terms, as it would had it replaced this process -- by the console on
+// Windows, and on Unix by runForwarding, which passes on the SIGINT and SIGTERM conflux is sent.
 func runAnchorctl(bin string, args []string, env []string) int {
 	cmd := exec.Command(bin, args...)
 	cmd.Env = env
@@ -27,7 +28,7 @@ func runAnchorctl(bin string, args []string, env []string) int {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	if err := cmd.Run(); err != nil {
+	if err := runForwarding(cmd); err != nil {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
 			return ee.ExitCode()

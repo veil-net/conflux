@@ -26,8 +26,9 @@ import (
 //
 // On Unix the process is replaced outright. That gives perfect stdio, the child's
 // exit code without translation, signals delivered to the right process, and
-// nothing left in `ps` pretending to be a wrapper. Usage and a socket the user named run as
-// a child instead (anchorctlAside), since they make nothing of conflux's.
+// nothing left in `ps` pretending to be a wrapper. Usage and a socket the user named take an
+// anchorctl that makes nothing of conflux's (anchorctlAside), which is replaced by too, unless
+// it is a temporary copy.
 func passthrough(ctx context.Context, args []string) int {
 	// Usage reaches no daemon, and a daemon the user named themselves is not conflux's:
 	// nothing of conflux's is needed for either, so nothing is made, and none of
@@ -36,7 +37,7 @@ func passthrough(ctx context.Context, args []string) int {
 	// *anchor*, but are still RPCs to the daemon, which mints the identity and derives the
 	// id; help is answered by Go's flag package before anything dials.
 	if wantsUsage(args) || namesSocket(args) || os.Getenv(anchorctl.SocketEnv) != "" {
-		return anchorctlAside(args)
+		return anchorctlAside(ctx, args)
 	}
 
 	d := activeDirs()
@@ -59,17 +60,39 @@ func passthrough(ctx context.Context, args []string) int {
 	return anchorctlExec(ctx, tools.Anchorctl, args, env)
 }
 
-// anchorctlAside runs anchorctl as a child for what needs nothing of conflux's -- usage, and a
-// daemon the user named -- from libexec.ForUsage, which makes nothing of the installation's:
-// any copy answers alike, and the run waits for it, so a temporary one can be removed.
-func anchorctlAside(args []string) int {
-	bin, done, err := libexec.ForUsage(paths.Default())
+// anchorctlAside hands over to anchorctl for what needs nothing of conflux's -- usage, and a
+// daemon the user named -- from libexec.ForUsage, which makes nothing of the installation's.
+// In place of conflux, as every pass-through is, where that anchorctl outlasts this process: a
+// whole extraction, or one in memory. A temporary copy is removed once anchorctl has finished
+// with it, so that one alone runs as a child, which is passed what conflux is sent.
+func anchorctlAside(ctx context.Context, args []string) int {
+	d := paths.Default()
+
+	bin, done, err := libexec.ForUsage(d)
 	if err != nil {
 		return fail(err)
 	}
 	defer done()
 
+	if lasting(d, bin) {
+		return anchorctlExec(ctx, bin, args, os.Environ())
+	}
+
 	return anchorctlRun(bin, args, os.Environ())
+}
+
+// lasting reports whether bin, the anchorctl ForUsage gave, outlasts this process -- d's whole
+// extraction, or the one in memory, whose file the kernel opens before exec closes its
+// descriptor -- rather than being the temporary copy ForUsage's done removes. The one in memory
+// is made once, by ForUsage where it took it.
+func lasting(d paths.Dirs, bin string) bool {
+	if t, err := libexec.Extracted(d); err == nil && t.Anchorctl == bin {
+		return true
+	}
+
+	t, err := libexec.AnchorctlInMemory()
+
+	return err == nil && t.Anchorctl == bin
 }
 
 // connectionDetails reads the token, and intercepts the one failure anchorctl

@@ -80,7 +80,9 @@ func runEnrol(_ context.Context, args []string) int {
 		return usageExit(err)
 	}
 
-	if *manifest == "" {
+	// The document is --manifest's, and the verb takes no argument: one given is a mistake,
+	// said as a missing --manifest is, rather than ignored.
+	if *manifest == "" || fs.NArg() > 0 {
 		usageMistake(fs)
 
 		return ExitUsage

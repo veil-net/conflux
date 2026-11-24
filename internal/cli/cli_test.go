@@ -231,6 +231,7 @@ func TestAMistakeIsSaidOnStderr(t *testing.T) {
 		{[]string{"down", "--bogus"}, "flag provided but not defined: -bogus"},
 		{[]string{"cert", "verify"}, "conflux cert verify —"},
 		{[]string{"enrol"}, "conflux enrol —"},
+		{[]string{"enrol", "--manifest", "node.b64", "stray"}, "conflux enrol —"},
 		{[]string{"cert"}, "conflux cert —"},
 		{[]string{"cert", "ca"}, "conflux cert ca —"},
 		{[]string{"cert", "p12"}, "conflux cert p12 —"},

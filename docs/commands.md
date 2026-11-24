@@ -553,9 +553,10 @@ over that file, or put there when there is none, so whatever is running keeps th
 has; on Windows the running image is moved aside to `conflux.exe.old` first, and the next
 update removes it. Put there where there was none, it is found by name as the installers have
 it found: on Windows its directory goes on the machine's `Path`, as `install.ps1` puts it, and
-elsewhere, where the update's own PATH — root's, `secure_path` under `sudo` on Fedora and RHEL —
-leaves `/usr/local/bin` out, `/usr/bin/conflux` is linked to it, as `install.sh` links it; a
-`/usr/bin/conflux` that is not that link is left alone, and said. No token is needed or sent:
+elsewhere, where the conflux the update's own PATH — root's, `secure_path` under `sudo` on
+Fedora and RHEL — finds is not that file, `/usr/local/bin` left out or another conflux found
+first, `/usr/bin/conflux` is linked to it, as `install.sh` links it; a `/usr/bin/conflux` that
+is not that link is left alone, and said. No token is needed or sent:
 the repository is public.
 
 | Situation | |

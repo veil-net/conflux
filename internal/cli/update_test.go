@@ -330,9 +330,11 @@ func TestUpdateWritesTheInstalledConflux(t *testing.T) {
 }
 
 // TestAFreshUpdateLinksItForSudo: on Unix an update that installs conflux where there was none
-// makes the link install.sh makes for sudo, where the update's own PATH -- root's, under sudo --
-// leaves the installed file's directory out; and, as install.sh does, makes none where that PATH
-// holds it, and leaves a file of the link's name that is not that link alone, saying so.
+// makes the link install.sh makes for sudo, where the conflux the update's own PATH -- root's,
+// under sudo -- finds is not the installed file: one that leaves its directory out, or finds
+// another conflux first. As install.sh does, it makes none where that PATH finds the installed
+// file, and leaves a file of the link's name that is not that link alone, saying so. Each PATH
+// is the test's own directories alone, so no conflux of the machine's is found.
 func TestAFreshUpdateLinksItForSudo(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows puts the directory on the machine's Path; TestUpdatePutsThePathEntry")
@@ -342,24 +344,37 @@ func TestAFreshUpdateLinksItForSudo(t *testing.T) {
 
 	newer := []byte("#!/bin/sh\necho 'conflux 9.9.9 (0aea0f77bb77) " + runtime.GOOS + "/" + runtime.GOARCH + "'\n")
 
+	// Another conflux, in a directory a PATH can name before the installed file's.
+	other := filepath.Join(t.TempDir(), "conflux")
+	if err := os.WriteFile(other, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
 	for _, c := range []struct {
 		name    string
 		onPath  bool
+		another bool
 		foreign bool
 	}{
 		{name: "a PATH that leaves it out"},
 		{name: "a PATH that holds it", onPath: true},
+		{name: "a PATH that finds another conflux first", onPath: true, another: true},
 		{name: "a file at the link's name", foreign: true},
 	} {
 		exe := filepath.Join(t.TempDir(), "bin", "conflux")
 		serveRelease(t, newer, exe)
 		link := updateLink()
 
-		t.Setenv("PATH", "/usr/bin:/bin")
+		path := []string{t.TempDir()}
+		if c.another {
+			path = append(path, filepath.Dir(other))
+		}
 
 		if c.onPath {
-			t.Setenv("PATH", "/usr/bin:/bin:"+filepath.Dir(exe)+"/")
+			path = append(path, filepath.Dir(exe)+"/")
 		}
+
+		t.Setenv("PATH", strings.Join(path, string(os.PathListSeparator)))
 
 		if c.foreign {
 			if err := os.WriteFile(link, []byte("somebody else's"), 0o755); err != nil {
@@ -379,7 +394,7 @@ func TestAFreshUpdateLinksItForSudo(t *testing.T) {
 			if got, _ := os.ReadFile(link); string(got) != "somebody else's" || !strings.Contains(errOut, link+" is not conflux's") {
 				t.Errorf("%s: the update left %q there, saying:\n%s", c.name, got, errOut)
 			}
-		case c.onPath:
+		case c.onPath && !c.another:
 			if !os.IsNotExist(err) {
 				t.Errorf("%s: the update made %s (%v), which root's PATH does not need", c.name, link, err)
 			}

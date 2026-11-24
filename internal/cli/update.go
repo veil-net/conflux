@@ -73,9 +73,11 @@ func isThis(path string) bool {
 
 // sameFile reports whether a and b name one file, or one directory, by what each is rather than
 // how it is spelled: through a link, in another case, by a short name. The one way conflux asks
-// whether a path is the conflux running: update of the installed file, which it need not run
-// to ask its version where it is this one (isThis), and uninstall on Windows of the directory
-// it removes, which waits for this process to exit where its image is in it.
+// whether a path is a conflux it knows: update of the installed file, which it need not run to
+// ask its version where it is this one (isThis), and on Unix of the conflux root's PATH finds,
+// which needs no link for sudo where it is the one installed (putOnPath); and uninstall on
+// Windows of the directory it removes, which waits for this process to exit where its image is
+// in it.
 func sameFile(a, b string) bool {
 	ai, err := os.Stat(a)
 	if err != nil {

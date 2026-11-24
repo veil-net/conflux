@@ -1,6 +1,7 @@
 package libexec
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -91,5 +92,36 @@ func TestForUsageWritesNothing(t *testing.T) {
 
 	if entries, _ := os.ReadDir(tmp); len(entries) > 0 {
 		t.Errorf("help wrote %d entries into the temporary directory", len(entries))
+	}
+}
+
+// TestStartsIsExecvesAnswer: what decides whether a reader or help takes anchorctl from memory
+// is whether it can be started at all, so each of the ways execve refuses -- no permission to
+// run it, no program in it, no file at the name -- is ErrNoMemoryExec, which sends the caller
+// to its next source, and a program that starts is taken.
+func TestStartsIsExecvesAnswer(t *testing.T) {
+	dir := t.TempDir()
+
+	write := func(name, body string, mode os.FileMode) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(body), mode); err != nil {
+			t.Fatal(err)
+		}
+
+		return path
+	}
+
+	for name, path := range map[string]string{
+		"not executable": write("plain", "#!/bin/sh\nexit 0\n", 0o600),
+		"no program":     write("text", "not a program\n", 0o700),
+		"no file":        filepath.Join(dir, "missing"),
+	} {
+		if err := starts(path); !errors.Is(err, ErrNoMemoryExec) {
+			t.Errorf("%s: starts = %v, want ErrNoMemoryExec", name, err)
+		}
+	}
+
+	if err := starts(write("program", "#!/bin/sh\nexit 0\n", 0o700)); err != nil {
+		t.Errorf("a program that starts: %v", err)
 	}
 }

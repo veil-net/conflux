@@ -27,7 +27,7 @@ import (
 // ErrNoMemoryExec where the kernel will not run one: vm.memfd_noexec=2, or a policy --
 // SELinux's among them -- that refuses it, or no /proc.
 func InMemory() (*Tools, error) {
-	ctl, err := memAnchorctl()
+	ctl, err := ranInMemory()
 	if err != nil {
 		return nil, err
 	}
@@ -41,9 +41,14 @@ func InMemory() (*Tools, error) {
 }
 
 // AnchorctlInMemory is InMemory's anchorctl alone, for what only asks: a reader of an
-// ephemeral run, and help.
+// ephemeral run, help, and a pass-through to a socket the user names. It is started once and
+// ended at once, not run as InMemory's is: starting it is where a kernel that will not run a
+// program from memory says so -- execve's EACCES, ENOEXEC or ENOENT -- and then this is
+// ErrNoMemoryExec and the caller takes its next source. What only asks runs anchorctl to an
+// end anyway, and running it to an end once before that cost `conflux help` a quarter of its
+// time.
 func AnchorctlInMemory() (*Tools, error) {
-	ctl, err := memAnchorctl()
+	ctl, err := startedInMemory()
 	if err != nil {
 		return nil, err
 	}
@@ -52,19 +57,36 @@ func AnchorctlInMemory() (*Tools, error) {
 }
 
 var (
-	memAnchorctl = sync.OnceValues(func() (string, error) {
-		path, err := memfd("anchorctl", anchor.Anchorctl())
+	memAnchorctl = sync.OnceValues(func() (string, error) { return memfd("anchorctl", anchor.Anchorctl()) })
+
+	// ranInMemory is memAnchorctl run once, as an extraction is: what refuses to run it says
+	// so here, and an ephemeral run puts the pair on disk instead, rather than finding out at
+	// anchord's start.
+	ranInMemory = sync.OnceValues(func() (string, error) {
+		path, err := memAnchorctl()
 		if err != nil {
 			return "", err
 		}
 
-		// Run once, as an extraction is: what refuses to run it says so here, and the caller
-		// puts the pair on disk instead, rather than finding out at anchord's start.
 		ctx, cancel := context.WithTimeout(context.Background(), smokeTimeout)
 		defer cancel()
 
 		if out, err := exec.CommandContext(ctx, path, "help").CombinedOutput(); err != nil {
 			return "", fmt.Errorf("%w: anchorctl from memory: %v %s", ErrNoMemoryExec, err, strings.TrimSpace(string(out)))
+		}
+
+		return path, nil
+	})
+
+	// startedInMemory is memAnchorctl once it has been started (starts).
+	startedInMemory = sync.OnceValues(func() (string, error) {
+		path, err := memAnchorctl()
+		if err != nil {
+			return "", err
+		}
+
+		if err := starts(path); err != nil {
+			return "", err
 		}
 
 		return path, nil
@@ -76,6 +98,21 @@ var (
 	// path names.
 	held []*os.File
 )
+
+// starts starts the program at path, and ends it as soon as it has started, before it has
+// done anything: execve's answer is what says whether this system runs it at all, and
+// ErrNoMemoryExec where it does not.
+func starts(path string) error {
+	cmd := exec.Command(path)
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("%w: anchorctl from memory: %v", ErrNoMemoryExec, err)
+	}
+
+	_ = cmd.Process.Kill()
+	_ = cmd.Wait()
+
+	return nil
+}
 
 // memfd is a sealed, executable memory file holding content, by the name a process sees it at.
 func memfd(name string, content []byte) (string, error) {

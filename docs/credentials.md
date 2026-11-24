@@ -47,19 +47,21 @@ that is a bad enough outcome to be worth ordering the code around.
 It is also why `conflux uninstall` asks before it runs, and why a machine whose
 `manifest.b64` is gone while `state.json` still names the anchor it was is not enrolled
 again: the supervisor refuses it for good, naming the file, since drawing a new identity
-and address is a person's decision. Put the manifest back, or start over with a new
-identity:
+and address is a person's decision. Put the manifest back: from a backup, or, for a
+guardian-issued one, as its guardian downloads it again ([config.md](config.md)). For a
+credential an issuer grants, `conflux enrol --manifest FILE` installs it on the machine
+as it stands. Otherwise start over with a new identity:
 
-1. Note the taints `conflux.json` names, and its `apiBaseUrl` if it has one; none means the
-   production API.
+1. Keep a copy of `conflux.json`, which holds the machine's settings: its taints, its
+   `apiBaseUrl` if it has one (none means the production API), and its mode's own, a proxy's
+   services among them. Note whether `conflux version` shows a `dev build:` line.
 2. `conflux uninstall`, which removes conflux and `conflux.json` as well.
 3. Install the same build of conflux again: the release, or with `CONFLUX_VERSION=dev-latest`
    the dev build ([install.md](install.md)). A credential is valid in one tree alone, and the
    other build's anchor refuses it.
-4. Enrol as the machine was: `conflux up` (or `proxy`, `observe`) with `--taint` for each
-   taint, and `--api` with that `apiBaseUrl` where there was one -- without `--taint` a new
-   taint is minted, for a network of its own -- or `conflux enrol --manifest FILE` for a
-   credential an issuer granted.
+4. Run `conflux up`, `proxy` or `observe`, as the machine ran, with the copy's settings:
+   `--taint` for each taint, `--api` with its `apiBaseUrl` where it has one, and the mode's
+   own flags or specs. Without `--taint` a new taint is minted, for a network of its own.
 
 An ephemeral run turns the same fact the other way: it means the identity to be lost, so it
 writes nothing, and the one copy lives in memory for as long as the run. See

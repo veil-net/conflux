@@ -22,7 +22,8 @@ func TestALostManifestIsNotReplaced(t *testing.T) {
 
 	_, _, _, err := credential(t.Context(), d, &config.State{AnchorID: fakeAnchorID}, cfg, nopReporter{})
 	// The ways out: the manifest put back, or an issued credential enrolled as the machine stands,
-	// either then started as it is configured, the service having stopped for good (up would change
+	// either then started as it is configured, the refusal having left no anchor running, which nothing
+	// restarts (up would change
 	// a userspace or observing machine's mode); or, starting over, a copy of
 	// conflux.json kept, which the uninstall removes with conflux, the same build installed again (a
 	// dev build's credential is the dev tree's), and the verbs that take its taints and API; and

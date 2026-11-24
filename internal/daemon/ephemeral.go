@@ -90,7 +90,8 @@ type EphemeralUp struct {
 
 // Run starts anchord, brings the anchor up, keeps its credential current in memory, and
 // returns when the context is cancelled (nil) or anchord or its anchor ends (why). Either
-// way it stops anchord and removes the run's root before returning.
+// way it stops anchord, removes the Wintun driver on Windows where no adapter still uses it,
+// and removes the run's root before returning.
 func (e *Ephemeral) Run(ctx context.Context) error {
 	// Before anything is started: observing alone is the service's, and a run with no anchor
 	// would start an observer and an export only to refuse after them.
@@ -125,8 +126,15 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 	}
 
 	// The root goes last, after anchord has gone, and under the lock, so a second run is
-	// refused until there is nothing left of this one.
+	// refused until there is nothing left of this one. Before it, on Windows, the driver
+	// anchord's interface installed, through the library this run placed in its root: Wintun
+	// keeps it while any adapter is in use, so an installed conflux's interface, or another
+	// program's, keeps it.
 	defer func() {
+		if err := wintun.DeleteDriver(d); err != nil {
+			e.report().Warn("%v", err)
+		}
+
 		if err := RemoveEphemeralRoot(d, unlock); err != nil {
 			e.report().Warn("could not remove %s: %v", d.Root, err)
 		}

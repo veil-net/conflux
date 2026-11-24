@@ -6,7 +6,8 @@ no `conflux.json`, no `manifest.b64`, no `state.json`, no boot service. The cred
 from conflux's memory to anchorctl's stdin and from there inline to anchord, which keeps
 it in memory too. When anchord stops — on Ctrl-C, on SIGTERM, because it crashed, or
 because conflux was killed — everything is gone: the identity, the credential, the overlay
-address, and the directory the run kept its socket in.
+address, and the directory the run kept its socket in; and on Windows the Wintun driver its
+interface installed, unless an adapter is still using it.
 
 ```console
 $ sudo conflux up --ephemeral --taint brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf --ipv4 10.128.0.9/24
@@ -110,7 +111,10 @@ somewhere a reboot empties, so a run that could not clean up leaves nothing past
 
 It holds the lock that makes it the only ephemeral run for that user, the bearer token and
 the socket, the record of the anchord it started and what that runs as, and, where the pair
-cannot run from memory, the extracted pair: never a credential, a configuration or a state. A root that another account owns is
+cannot run from memory, the extracted pair, with `wintun.dll` beside it for a TUN on Windows:
+never a credential, a configuration or a state. On Windows a run that ends removes the Wintun
+driver through that library before the root goes. Wintun keeps the driver while any adapter
+is in use, so an installed conflux's interface, or another program's, keeps it. A root that another account owns is
 refused. A run is not refused because an installed conflux is running: that one is never
 read, written, stopped or re-registered. Two anchors with a TUN on one host do contend for
 the overlay's routes, so `conflux down` first where that matters.

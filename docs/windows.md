@@ -109,8 +109,10 @@ SYSTEM's and Administrators' instead.
 whatever the mode: every directory conflux keeps there, the ephemeral run's
 `conflux-ephemeral` in that Administrator's `%TEMP%` included, is SYSTEM's and
 Administrators'. anchord runs
-as that Administrator, in conflux's job object, so it ends however conflux does. See
-[ephemeral.md](ephemeral.md).
+as that Administrator, in conflux's job object, so it ends however conflux does. A TUN run
+fetches `wintun.dll` into its own root, and when it ends removes the Wintun driver through
+it, before the root goes: Wintun keeps the driver while any adapter is in use, so an
+installed conflux's interface is untouched. See [ephemeral.md](ephemeral.md).
 
 ## The service
 

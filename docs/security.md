@@ -53,7 +53,9 @@ host can read, and when the run stops there is nothing at all.
   since whatever that account put in it is not conflux's.
 - On Windows, mode bits mean nothing and `%ProgramData%` lets `Users` read and create
   beneath it, so conflux gives its root to SYSTEM and Administrators — owner, and a
-  protected DACL everything beneath inherits — and refuses a root another account made.
+  protected DACL everything beneath inherits — refuses a root another account made, and
+  takes back a DACL that grants anybody else, which a protected DACL keeps as faithfully as
+  it keeps conflux's.
   See [windows.md](windows.md#file-permissions).
 - Never in an argv. It travels on stdin to `anchorctl start -manifest -`, becomes an
   inline secret on the wire, and is never named as a path in the request — so it never

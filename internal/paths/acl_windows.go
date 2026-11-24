@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"path/filepath"
 	"sync"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -169,7 +170,7 @@ func secure(dir string) error {
 	}
 
 	admin := owner.Equals(sidSystem) || owner.Equals(sidAdmins)
-	if admin && control&windows.SE_DACL_PROTECTED != 0 {
+	if admin && control&windows.SE_DACL_PROTECTED != 0 && onlyAdmins(dir) {
 		return nil
 	}
 
@@ -197,6 +198,35 @@ func secure(dir string) error {
 	}
 
 	return Restrict(dir, true)
+}
+
+// onlyAdmins reports whether path's DACL grants SYSTEM and the Administrators and nobody
+// else: what Restrict gave it, rather than a grant somebody added beside theirs since, which
+// a protected DACL keeps as faithfully as it keeps conflux's.
+func onlyAdmins(path string) bool {
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return false
+	}
+
+	dacl, _, err := sd.DACL()
+	if err != nil || dacl == nil {
+		return false
+	}
+
+	for i := range uint32(dacl.AceCount) {
+		var ace *windows.ACCESS_ALLOWED_ACE
+		if windows.GetAce(dacl, i, &ace) != nil {
+			return false
+		}
+
+		sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
+		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE || (!sid.Equals(sidSystem) && !sid.Equals(sidAdmins)) {
+			return false
+		}
+	}
+
+	return true
 }
 
 func isCurrentUser(sid *windows.SID) bool {

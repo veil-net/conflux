@@ -47,6 +47,44 @@ func TestEnsureAllGivesTheRootToAdministrators(t *testing.T) {
 	}
 }
 
+// TestEnsureAllTakesBackAWidenedDACL: a root that is Administrators' and protected, but whose
+// DACL somebody gave to another account, is restricted again rather than taken as done.
+func TestEnsureAllTakesBackAWidenedDACL(t *testing.T) {
+	d := Dirs{Root: filepath.Join(t.TempDir(), ".conflux")}
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	users := wellKnown(windows.WinBuiltinUsersSid)
+
+	acl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{{
+		AccessPermissions: windows.GENERIC_ALL, AccessMode: windows.GRANT_ACCESS,
+		Inheritance: windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT,
+		Trustee: windows.TRUSTEE{TrusteeForm: windows.TRUSTEE_IS_SID, TrusteeType: windows.TRUSTEE_IS_GROUP,
+			TrusteeValue: windows.TrusteeValueFromSID(users)},
+	}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := windows.SetNamedSecurityInfo(d.Root, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, acl, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if onlyAdmins(d.Root) {
+		t.Fatal("a DACL granting Users reads as SYSTEM's and the Administrators' alone")
+	}
+
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	if !onlyAdmins(d.Root) {
+		t.Error("EnsureAll left the root granting Users")
+	}
+}
+
 func TestRestrictedFilesAreTrusted(t *testing.T) {
 	f := filepath.Join(t.TempDir(), "anchord.exe")
 	if err := os.WriteFile(f, []byte("x"), 0o600); err != nil {

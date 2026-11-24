@@ -290,6 +290,14 @@ func (c *Client) Renew(ctx context.Context, renewalURL, anchorID string, taints 
 		return Renewal{}, fmt.Errorf("renew: the returned expiry %q is not a timestamp", out.NotAfter)
 	}
 
+	// A chain that has expired already is no renewal, and as bad an answer as one that is
+	// not a timestamp: anchor would refuse it, and the state would record a window already
+	// over, due again at once. Now is taken as the issuer's clock had it, as far as this one
+	// was measured off it, so a clock running ahead of the issuer's is not refused a fresh one.
+	if !notAfter.After(c.now().Add(-c.skew)) {
+		return Renewal{}, fmt.Errorf("renew: the returned expiry %s has passed", out.NotAfter)
+	}
+
 	return Renewal{Chain: chain, NotAfter: notAfter.UTC(), Bootstrap: usableBootstrap(out.Bootstrap)}, nil
 }
 

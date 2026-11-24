@@ -378,7 +378,7 @@ func TestAnEphemeralRootTakesTheDriverWithIt(t *testing.T) {
 // already gone is not asked again at once, and again.
 func TestTheEphemeralTimerWaitsAfterARenewal(t *testing.T) {
 	is := newIssuer(t)
-	is.lapsed = true
+	is.skew, is.lapsed = time.Minute, true
 
 	m, err := enrol.Decode(handed(t, is, time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour)))
 	if err != nil {

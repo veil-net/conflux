@@ -66,7 +66,7 @@ func record(t *testing.T, reply string) (*Client, *httptest.Server, *seen) {
 // predating the field -- must produce a request with no Authorization header at
 // all. Not an empty one, not a bearer of the AnchorID: absent.
 func TestAlphaRenewIsUnauthenticated(t *testing.T) {
-	expiry := time.Date(2026, 9, 20, 4, 12, 0, 0, time.UTC)
+	expiry := time.Date(2126, 9, 20, 4, 12, 0, 0, time.UTC)
 	reply := fmt.Sprintf(`{"chain":%q,"notAfter":%q}`,
 		base64.StdEncoding.EncodeToString([]byte("chain")), expiry.Format(ManifestTime))
 

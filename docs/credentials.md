@@ -160,7 +160,9 @@ The renewal route is checked against nothing and gated on nothing:
 `POST /ghosts/alpha/renew` takes an AnchorID, which is the public half, and the taints
 the manifest names, `{"anchorId": "anchor…", "taints": ["…"]}` — the API keeps no record
 of them — and signs a fresh chain for it in those taints, answering
-`{"chain": "…", "notAfter": "…", "bootstrap": ["…"]}`. It works after expiry.
+`{"chain": "…", "notAfter": "…", "bootstrap": ["…"]}`. It works after expiry. An answer
+whose `notAfter` has already passed, allowing for the clock's measured skew, is refused as a
+bad answer, as one whose chain is not base64 is, and counts as a failed renewal.
 
 So a machine that was switched off for a month renews on its next launch and **keeps
 its AnchorID and its overlay address**. There is no window to miss. The address is

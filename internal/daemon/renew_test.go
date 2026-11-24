@@ -27,7 +27,8 @@ const renewTestAnchor = "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5d
 
 // issuer stands in for the renewal route. Its Date header is the clock conflux
 // measures against, offset by skew; bootstrap is the list it answers with, and lapsed
-// answers with a notAfter already an hour past.
+// answers with a notAfter this machine's clock sees as gone and the issuer's, skew
+// behind it, does not: a renewal that is taken, and is due again at once.
 type issuer struct {
 	srv       *httptest.Server
 	calls     atomic.Int32
@@ -63,7 +64,7 @@ func newIssuer(t *testing.T) *issuer {
 
 		notAfter := time.Now().Add(30 * 24 * time.Hour)
 		if is.lapsed {
-			notAfter = time.Now().Add(-time.Hour)
+			notAfter = time.Now().Add(-is.skew / 2)
 		}
 
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -430,7 +431,7 @@ func TestARenewalWithNoAnchorRunningStands(t *testing.T) {
 // already gone is not asked again at once, and again, for as long as it answers so.
 func TestTheTimerWaitsAfterARenewal(t *testing.T) {
 	is := newIssuer(t)
-	is.lapsed = true
+	is.skew, is.lapsed = time.Minute, true
 
 	d := machine(t, is, time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour))
 
@@ -441,6 +442,10 @@ func TestTheTimerWaitsAfterARenewal(t *testing.T) {
 
 	if n := is.calls.Load(); n != 1 {
 		t.Errorf("the timer renewed %d times in 500ms, want once, then minSleep", n)
+	}
+
+	if st, err := config.LoadState(d); err != nil || st.LastRenewalError != "" {
+		t.Errorf("the renewal did not succeed: %v %q", err, st.LastRenewalError)
 	}
 }
 

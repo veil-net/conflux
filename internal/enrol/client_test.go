@@ -196,7 +196,7 @@ func TestBodyIsBounded(t *testing.T) {
 
 func TestRenew(t *testing.T) {
 	chain := []byte("a renewed credential chain")
-	expiry := time.Date(2026, 9, 20, 4, 12, 0, 0, time.UTC)
+	expiry := time.Date(2126, 9, 20, 4, 12, 0, 0, time.UTC)
 
 	c, s := server(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != alphaRenewPath {
@@ -260,7 +260,7 @@ func TestRenewToleratesABootstrapItCannotUse(t *testing.T) {
 		"an entry anchor skips": `,"bootstrap":["genesis.veilnet.com.au:4700","not an entry"]`,
 	} {
 		c, s := server(t, func(w http.ResponseWriter, _ *http.Request) {
-			fmt.Fprintf(w, `{"chain":"YQ==","notAfter":"2026-09-20T04:12:00.000Z"%s}`, list)
+			fmt.Fprintf(w, `{"chain":"YQ==","notAfter":"2126-09-20T04:12:00.000Z"%s}`, list)
 		})
 
 		got, err := c.Renew(t.Context(), s.URL+alphaRenewPath, "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq", asked)
@@ -274,10 +274,51 @@ func TestRenewToleratesABootstrapItCannotUse(t *testing.T) {
 	}
 }
 
+// TestRenewRefusesAnExpiryAlreadyGone: a renewal whose chain expires before now is no
+// renewal -- anchor would refuse it, and the state would record a window already over -- so
+// it is refused as a bad answer, as an unparseable one is. Now is the issuer's as far as the
+// clock was measured off it: a chain this clock sees as just gone, and the issuer's does not,
+// is taken, as a clock running ahead of the issuer's would see a fresh one.
+func TestRenewRefusesAnExpiryAlreadyGone(t *testing.T) {
+	local := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	for name, tc := range map[string]struct {
+		noDate   bool
+		served   time.Duration // the issuer's Date, from local
+		notAfter time.Duration // from local
+		ok       bool
+	}{
+		"a month ahead":                      {false, 0, 30 * 24 * time.Hour, true},
+		"an hour gone":                       {false, 0, -time.Hour, false},
+		"gone this second":                   {false, 0, 0, false},
+		"gone, with no clock to measure":     {true, 0, -time.Second, false},
+		"gone by this clock, not the issuer": {false, -time.Minute, -30 * time.Second, true},
+		"gone by the issuer's clock too":     {false, -time.Minute, -90 * time.Second, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c, s := server(t, func(w http.ResponseWriter, _ *http.Request) {
+				if tc.noDate {
+					w.Header()["Date"] = nil
+				} else {
+					w.Header().Set("Date", local.Add(tc.served).Format(http.TimeFormat))
+				}
+
+				fmt.Fprintf(w, `{"chain":"YQ==","notAfter":%q}`, local.Add(tc.notAfter).Format(ManifestTime))
+			})
+			c.Now = func() time.Time { return local }
+
+			_, err := c.Renew(t.Context(), s.URL+alphaRenewPath, "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq", asked)
+			if (err == nil) != tc.ok {
+				t.Errorf("Renew = %v, want accepted %v", err, tc.ok)
+			}
+		})
+	}
+}
+
 // TestRenewRefusesAForeignHost is the check on a field conflux stores and re-reads.
 func TestRenewRefusesAForeignHost(t *testing.T) {
 	c, _ := server(t, func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, `{"chain":"YQ==","notAfter":"2026-09-20T04:12:00.000Z"}`)
+		fmt.Fprint(w, `{"chain":"YQ==","notAfter":"2126-09-20T04:12:00.000Z"}`)
 	})
 
 	_, err := c.Renew(t.Context(), "https://attacker.example/ghosts/alpha/renew", "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq", asked)
@@ -292,7 +333,7 @@ func TestRenewRefusesAForeignHost(t *testing.T) {
 
 func TestRenewRefusesBadInput(t *testing.T) {
 	c, s := server(t, func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, `{"chain":"YQ==","notAfter":"2026-09-20T04:12:00.000Z"}`)
+		fmt.Fprint(w, `{"chain":"YQ==","notAfter":"2126-09-20T04:12:00.000Z"}`)
 	})
 
 	for name, id := range map[string]string{
@@ -307,8 +348,8 @@ func TestRenewRefusesBadInput(t *testing.T) {
 	// A chain that is not base64, and a missing expiry, are both the server being
 	// wrong -- and both must fail rather than write a broken credential to disk.
 	for name, body := range map[string]string{
-		"a chain that is not base64": `{"chain":"!!!","notAfter":"2026-09-20T04:12:00.000Z"}`,
-		"an empty chain":             `{"chain":"","notAfter":"2026-09-20T04:12:00.000Z"}`,
+		"a chain that is not base64": `{"chain":"!!!","notAfter":"2126-09-20T04:12:00.000Z"}`,
+		"an empty chain":             `{"chain":"","notAfter":"2126-09-20T04:12:00.000Z"}`,
 		"no expiry":                  `{"chain":"YQ=="}`,
 		"an unparseable expiry":      `{"chain":"YQ==","notAfter":"soon"}`,
 	} {

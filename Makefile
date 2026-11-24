@@ -82,12 +82,12 @@ STAMP = sum() { { sha256sum "$$1" 2>/dev/null || shasum -a 256 "$$1"; } | cut -d
 TARGETS := linux/amd64 linux/arm64 darwin/arm64 \
            windows/amd64 windows/arm64 freebsd/amd64 openbsd/amd64
 
-# The size gate. One anchor pair is about 45 MB, so a conflux outside this range is
-# either missing its binaries -- one of the two is enough to fall under the floor, since
-# a real anchord beside a placeholder anchorctl still comes to about 40 -- or, far more
-# likely, embedded all fourteen because somebody wrote //go:embed bin instead of naming
-# the two files.
-MIN_MB := 45
+# The size gate, in MiB. A real conflux is its anchor pair, 48 to 53 MiB, and 8 or 9 of its
+# own, so the smallest is 56 MiB and the largest 62. One outside this range is either
+# missing its binaries -- one of the two is enough to fall under the floor, since a real
+# anchord beside a placeholder anchorctl comes to 45 MiB -- or, far more likely, embedded
+# all fourteen because somebody wrote //go:embed bin instead of naming the two files.
+MIN_MB := 50
 MAX_MB := 75
 
 ANCHOR_SRC ?= ../anchor
@@ -231,7 +231,7 @@ dist:
 	@# artifact left over from a target that has since been dropped would be
 	@# checksummed and published alongside the real ones.
 	@rm -f $(DIST)/conflux-* $(DIST)/SHA256SUMS
-	@# Every target at once: each is its own link of a 50 MB binary, and one after another
+	@# Every target at once: each is its own link of a 60 MB binary, and one after another
 	@# they take seven times as long for nothing. Each build's output waits in a log and the
 	@# gate reads them in TARGETS order, so a failure reads as it would have alone.
 	@rm -rf $(DIST)/.build && mkdir -p $(DIST)/.build
@@ -259,7 +259,7 @@ dist:
 		fi; \
 		if [ $$mb -gt $(MAX_MB) ]; then \
 			echo "  FAIL $$out is $${mb} MB, over $(MAX_MB) MB"; \
-			echo "       one anchor pair is ~45 MB; check that anchor/*.go names two files and not the directory"; \
+			echo "       one anchor pair is ~50 MB; check that anchor/*.go names two files and not the directory"; \
 			exit 1; \
 		fi; \
 		want=$$(fips $$os); got=$$($(GO) version -m $$out | awk '$$1 == "build" && $$2 ~ /^GOFIPS140=/ { sub(/^GOFIPS140=/, "", $$2); print $$2 }'); \

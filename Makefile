@@ -148,12 +148,12 @@ build:
 # directory for a pair it does not carry, so `version` from its fips140 line on -- the module and
 # the pair, past the lines only make stamps: the version and commit, and a dev build's channel
 # (CHANNEL=dev) -- must be what `go run`, which stamps nothing and computes the digests, prints.
-# And it runs in FIPS 140-3 mode: `version` names the module, the module's integrity check passes
-# as it starts (GODEBUG=fips140=debug says so), and with the mode switched off it refuses, exit
-# 70, rather than run without it. Each answer is read whole before it is searched. CI runs it in
-# the linux job and each platforms leg. FreeBSD's build runs only in a VM with no Go, which holds
-# it to the half that needs none, the integrity check and exit 70 (test/service-bsd.sh); OpenBSD's
-# carries no module to hold it to.
+# And it runs in FIPS 140-3 mode (scripts/fips-check.sh): `version` names the module, the module's
+# integrity check passes as it starts (GODEBUG=fips140=debug says so), and with the mode switched
+# off it refuses, exit 70, rather than run without it. Each answer is read whole before it is
+# searched. CI runs it in the linux job and each platforms leg. FreeBSD's build runs only in a VM
+# with no Go, which test/service-bsd.sh holds to that half, which needs none, through the same
+# script; OpenBSD's carries no module to hold it to.
 buildcheck: build
 	@$(FIPS); set -- $$($(GO) env GOOS GOEXE); exe=$(BIN)/conflux$$2; \
 	if [ "$$(fips $$1)" = off ]; then echo "  FAIL $$1 builds without the module, so there is nothing to check"; exit 1; fi; \
@@ -163,18 +163,7 @@ buildcheck: build
 		printf '%s\n' "  stamped:" "$$stamped" "  computed by go run:" "$$computed"; exit 1; \
 	fi; \
 	echo "  ok   the digests stamped into $$exe are the pair's own"; \
-	v=$$("$$exe" version); \
-	if ! printf '%s\n' "$$v" | grep -qx "fips140 on, Go Cryptographic Module $(GOFIPS140)"; then \
-		echo "  FAIL $$exe does not say it runs in FIPS 140-3 mode against Go Cryptographic Module $(GOFIPS140):"; \
-		printf '%s\n' "$$v"; exit 1; \
-	fi; \
-	d=$$(GODEBUG=fips140=debug "$$exe" version 2>&1); \
-	if ! printf '%s\n' "$$d" | grep -q '^fips140: verified'; then \
-		echo "  FAIL the module's integrity check did not say it verified:"; printf '%s\n' "$$d"; exit 1; \
-	fi; \
-	rc=0; GODEBUG=fips140=off "$$exe" version >/dev/null 2>&1 || rc=$$?; \
-	if [ "$$rc" != 70 ]; then echo "  FAIL with GODEBUG=fips140=off $$exe exited $$rc, not 70"; exit 1; fi; \
-	echo "  ok   $$exe runs in FIPS 140-3 mode against Go Cryptographic Module $(GOFIPS140), its integrity check verified, and exits 70 with the mode off"
+	sh scripts/fips-check.sh "$$exe"
 
 test:
 	$(GO) test $(TESTEXEC) ./...

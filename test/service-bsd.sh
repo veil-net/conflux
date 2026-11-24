@@ -18,16 +18,9 @@ CONFLUX=${1:?usage: test/service-bsd.sh CONFLUX}
 say() { printf '\n== %s\n' "$*"; }
 fail() { echo "$*" >&2; exit 1; }
 
-# The Go Cryptographic Module conflux is built against, from the Makefile, the one place it is
-# named: the VM is handed the tree.
-module=$(sed -n 's/^GOFIPS140 ?= *\([^[:space:]]*\).*/\1/p' "$(dirname "$0")/../Makefile")
-[ -n "$module" ] || fail "the Makefile names no GOFIPS140"
-
 case "$(uname -s)" in
-  FreeBSD) os=freebsd account=conflux script=/usr/local/etc/rc.d/conflux log=/var/log/messages
-    fips="fips140 on, Go Cryptographic Module $module" ;;
-  OpenBSD) os=openbsd account=_conflux script=/etc/rc.d/conflux log=/var/log/daemon
-    fips='fips140 off, this build carries no frozen Go Cryptographic Module' ;;
+  FreeBSD) os=freebsd account=conflux script=/usr/local/etc/rc.d/conflux log=/var/log/messages ;;
+  OpenBSD) os=openbsd account=_conflux script=/etc/rc.d/conflux log=/var/log/daemon ;;
   *) fail "service-bsd.sh is for FreeBSD and OpenBSD" ;;
 esac
 
@@ -70,22 +63,20 @@ installer=$(dirname "$0")/../install.sh
 )
 
 # FreeBSD's conflux runs the Go Cryptographic Module in FIPS 140-3 mode, here on the kernel it
-# ships for; OpenBSD's is built without it, which the module refuses to run on.
-say "conflux reports the FIPS 140-3 mode its build carries"
-"$CONFLUX" version | grep -qx "$fips" || fail "conflux version does not say: $fips"
-
-# FreeBSD's is held to the half of make buildcheck that needs no Go, which this VM has none of:
-# the module's integrity check passes as it starts, and with the mode switched off it refuses,
-# exit 70, rather than run without it. Each answer is read whole, then searched.
+# ships for, held to the half of make buildcheck that needs no Go, which this VM has none of, by
+# the script buildcheck runs (scripts/fips-check.sh, which reads the module from the Makefile the
+# VM is handed): `version` names the module, its integrity check passes as it starts, and with
+# the mode switched off it refuses, exit 70, rather than run without it. OpenBSD's is built
+# without it, which the module refuses to run on. Each answer is read whole, then searched.
 if [ "$os" = freebsd ]; then
-  say "conflux passes the module's integrity check, and refuses to run with the mode off"
-  debug=$(GODEBUG=fips140=debug "$CONFLUX" version 2>&1) || fail "conflux version failed under GODEBUG=fips140=debug:
-$debug"
-  printf '%s\n' "$debug" | grep -q '^fips140: verified' || fail "the module's integrity check did not say it verified:
-$debug"
-  code=0
-  GODEBUG=fips140=off "$CONFLUX" version >/dev/null 2>&1 || code=$?
-  [ "$code" = 70 ] || fail "with GODEBUG=fips140=off conflux exited $code, not 70"
+  say "conflux runs in FIPS 140-3 mode, its integrity check verified, and refuses to run with the mode off"
+  sh "$(dirname "$0")/../scripts/fips-check.sh" "$CONFLUX" || fail "conflux does not run in FIPS 140-3 mode as its build must"
+else
+  say "conflux reports that its build carries no Go Cryptographic Module"
+  v=$("$CONFLUX" version) || fail "conflux version failed"
+  printf '%s\n' "$v" | grep -qx 'fips140 off, this build carries no frozen Go Cryptographic Module' ||
+    fail "conflux version does not say its build carries no module:
+$v"
 fi
 
 # The certificate toolkit makes artifacts other people rely on, so it runs only where the

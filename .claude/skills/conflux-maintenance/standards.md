@@ -100,7 +100,7 @@ Anchor is the reference for overlay behaviour, and the live API for the enrolmen
 - `make dist` passes the size gate for every target.
 
 **FIPS 140-3**
-- Every target is built against the Go Cryptographic Module v1.26.0 (`GOFIPS140`, named once, in the Makefile, which CI's `setup` action and `test/service-bsd.sh` read) except OpenBSD's, built with it off; `make dist` holds each artifact to it, `make buildcheck` the build the `linux` job and each `platforms` leg runs, and `test/service-bsd.sh` FreeBSD's to the half that needs no Go (`fips140: verified`, exit 70 with the mode off), in a VM that has none.
+- Every target is built against the Go Cryptographic Module v1.26.0 (`GOFIPS140`, named once, in the Makefile, which CI's `setup` action and, in the BSD VM, `scripts/fips-check.sh` read) except OpenBSD's, built with it off; `make dist` holds each artifact to it, `make buildcheck` the build the `linux` job and each `platforms` leg runs, and `test/service-bsd.sh` FreeBSD's to the half that needs no Go, in a VM that has none, through the script `buildcheck` runs for it (`scripts/fips-check.sh`: the module named, `fips140: verified`, exit 70 with the mode off).
 - Every cryptographic service conflux's own code uses is approved in module v1.0.0's Security Policy (CMVP #5247), used as it approves, with ML-DSA the one exception, as docs/security.md "FIPS 140-3 and CMVP" states. No SHA-1, MD5, DES, RC4 or DSA in conflux's code; a new use goes into that section's table in the same change.
 - The tests run under `GODEBUG=fips140=only`, locally (`make test`) and in every CI job that tests.
 - A build against the module run with `GODEBUG=fips140=off` refuses every command, exit 70.

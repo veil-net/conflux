@@ -77,7 +77,7 @@ func runEnrol(_ context.Context, args []string) int {
 	ipv4 := fs.String("ipv4", "", "this machine's IPv4, overriding whatever the manifest allocated")
 
 	// The document is --manifest's, and the verb takes no argument: one given is a mistake,
-	// said as a missing --manifest is, rather than ignored.
+	// named above the usage as every verb that takes none names it, rather than ignored.
 	if exit, ok := flagsAlone(fs, args); !ok {
 		return exit
 	}

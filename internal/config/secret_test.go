@@ -51,10 +51,11 @@ func TestSaveManifestLeavesTheCallersEnvelope(t *testing.T) {
 	}
 }
 
-// TestHasManifestIsWhatLoadManifestReads: a machine has an identity exactly when there is a
-// manifest LoadManifest reads -- none, or one empty or of nothing but white space, is none,
-// and LoadManifest says which of the two it refused.
-func TestHasManifestIsWhatLoadManifestReads(t *testing.T) {
+// TestHasManifestIsNoneOnlyWithNoFileOrAnEmptyOne: a machine has no identity only where there
+// is no manifest.b64, or one empty or of nothing but white space, and LoadManifest says which of
+// the two it refused. One it reads is an identity, and so is one it cannot read
+// (TestHasManifestOnAManifestItCannotRead).
+func TestHasManifestIsNoneOnlyWithNoFileOrAnEmptyOne(t *testing.T) {
 	d := pathstest.Root(t)
 
 	if _, err := LoadManifest(d); HasManifest(d) || !errors.Is(err, fs.ErrNotExist) {

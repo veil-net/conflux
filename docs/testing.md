@@ -33,10 +33,14 @@ a daemon or a network. Most of conflux can be.
 | `internal/paths` | the machine's root an absolute path to a `.conflux`, with every file and directory conflux keeps inside it; `UseRoot` moving it and putting it back; on Unix, a root another account owns refused before anything is changed, a symlinked one followed only to its owner's directory, and our own narrowed to `0700`; on Windows, the root made Administrators', a DACL somebody widened since taken back, and files restricted to them trusted, and the root and the installed conflux in the known folders whatever `%ProgramData%` and `%ProgramFiles%` say; an ephemeral root never inside the machine's, and always somewhere a reboot empties: root's under the system's runtime directory, a user's under their runtime or temporary directory |
 | `internal/flock` | a held lock reported as held, not waited for |
 
-No test reaches the machine's `.conflux`. Every test package's `TestMain` roots conflux in a
-temporary directory of the run's own through `paths.UseRoot`, a function for tests alone that
-nothing in conflux calls and no flag or environment variable reaches, and a test that wants a
-root of its own takes one the same way.
+No test reaches the machine's `.conflux`. `anchorctl`, `cli`, `config`, `daemon`, `libexec`
+and `service` each have a `TestMain` that hands the run to `pathstest.Main` (`cli`'s once its
+stand-ins are set, `daemon`'s when the binary is not running as one of its own), which roots
+conflux in a temporary directory of the run's own through `paths.UseRoot`, a function for tests
+alone that nothing in conflux calls and no flag or environment variable reaches. A test that
+wants a root of its own takes one from `pathstest.Root`, made as `EnsureAll` makes the
+machine's and put back when the test ends, or through `paths.UseRoot` directly where it wants
+one `EnsureAll` has not made, or a shorter one for a socket's sake.
 
 ## The tests worth knowing about
 

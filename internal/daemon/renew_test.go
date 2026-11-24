@@ -21,6 +21,7 @@ import (
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/enrol"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/paths/pathstest"
 )
 
 const renewTestAnchor = "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq"
@@ -122,12 +123,8 @@ func saveDoc(t *testing.T, d paths.Dirs, doc map[string]any) {
 // expires at expires, renewing against is.
 func machine(t *testing.T, is *issuer, issued, expires time.Time) paths.Dirs {
 	t.Helper()
-	t.Cleanup(paths.UseRoot(t.TempDir()))
 
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatal(err)
-	}
+	d := pathstest.Root(t)
 
 	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, APIBaseURL: is.srv.URL}); err != nil {
 		t.Fatal(err)
@@ -452,13 +449,9 @@ func TestTheTimerWaitsAfterARenewal(t *testing.T) {
 // TestAnEnrolmentIsKeptBeforeItIsRead: a document this build cannot read is still
 // written -- it is the only copy of an identity -- and then refused, permanently.
 func TestAnEnrolmentIsKeptBeforeItIsRead(t *testing.T) {
-	t.Cleanup(paths.UseRoot(t.TempDir()))
 	t.Setenv(config.InsecureAPIEnv, "1")
 
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatal(err)
-	}
+	d := pathstest.Root(t)
 
 	future := base64.StdEncoding.EncodeToString([]byte(`{"formatVersion":2,"kind":"anchor"}`))
 

@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/veil-net/conflux/internal/flock"
-	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/paths/pathstest"
 	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
@@ -54,12 +54,7 @@ func TestServePutsTheServiceBack(t *testing.T) {
 // another holds, puts nothing of the service back -- neither the copy it runs nor its
 // registration -- since the one holding the lock is the service, and keeps it.
 func TestARefusedSupervisorChangesNothing(t *testing.T) {
-	t.Cleanup(paths.UseRoot(t.TempDir()))
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll: %v", err)
-	}
+	d := pathstest.Root(t)
 
 	unlock, ok, err := flock.TryAcquire(d.ServeLockFile())
 	if err != nil || !ok {

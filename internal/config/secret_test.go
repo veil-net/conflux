@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/paths/pathstest"
 )
 
 // TestExportMaterialIsNotPrinted: an export block's headers are credentials and a client
@@ -34,9 +34,7 @@ func TestExportMaterialIsNotPrinted(t *testing.T) {
 // TestSaveManifestLeavesTheCallersEnvelope: the newline the file ends with is the
 // file's, never written into spare capacity of the envelope the caller holds.
 func TestSaveManifestLeavesTheCallersEnvelope(t *testing.T) {
-	t.Cleanup(paths.UseRoot(t.TempDir()))
-
-	d := dirsForTest(t)
+	d := pathstest.Root(t)
 
 	backing := make([]byte, 0, 64)
 	backing = append(backing, "bWFuaWZlc3Q=  XYZ"...)
@@ -54,7 +52,7 @@ func TestSaveManifestLeavesTheCallersEnvelope(t *testing.T) {
 // TestHasManifestIsWhatLoadManifestReads: a machine has an identity exactly when there is a
 // manifest LoadManifest reads -- none, or one empty or of nothing but white space, is none.
 func TestHasManifestIsWhatLoadManifestReads(t *testing.T) {
-	d := dirsForTest(t)
+	d := pathstest.Root(t)
 
 	for content, has := range map[string]bool{"": false, " \n\t\n": false, "bWFuaWZlc3Q=\n": true} {
 		if err := os.WriteFile(d.ManifestFile(), []byte(content), 0o600); err != nil {

@@ -12,6 +12,7 @@ import (
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/paths/pathstest"
 )
 
 // TestAPassThroughWithNothingRunningMakesNothing: on a machine with no daemon -- one never
@@ -91,12 +92,7 @@ func TestHelpIsACommandOrAFlag(t *testing.T) {
 // enrolled and never started, has nothing to renew -- unavailable, as documented, not a
 // failure.
 func TestRenewWithNoCredentialIsUnavailable(t *testing.T) {
-	t.Cleanup(paths.UseRoot(t.TempDir()))
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatal(err)
-	}
+	d := pathstest.Root(t)
 
 	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}}); err != nil {
 		t.Fatal(err)

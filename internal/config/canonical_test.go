@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/paths/pathstest"
 )
 
 // canonical is what a start does: conflux.json read once, and handed to Canonical.
@@ -26,7 +27,7 @@ func canonical(t *testing.T, d paths.Dirs) {
 // conflux's own form at every start, so a hand edit that is valid still takes effect but
 // leaves no key conflux does not know, and one written by conflux is left untouched.
 func TestCanonicalRewritesWhatWasEdited(t *testing.T) {
-	d := dirsForTest(t)
+	d := pathstest.Root(t)
 
 	if err := Save(d, base(ModeProxy)); err != nil {
 		t.Fatal(err)
@@ -108,7 +109,7 @@ func TestAStateThisBuildCannotReadIsRefusedAndLeft(t *testing.T) {
 		"a newer conflux's": `{"version":99,"anchorId":"anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq"}`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			d := dirsForTest(t)
+			d := pathstest.Root(t)
 
 			if err := Save(d, base(ModeProxy)); err != nil {
 				t.Fatal(err)

@@ -20,6 +20,7 @@ import (
 	"github.com/veil-net/conflux/internal/enrol"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/paths/pathstest"
 	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/ui"
 )
@@ -851,12 +852,7 @@ func TestTaintsAreAskedForOrChecked(t *testing.T) {
 // configured list from every start, until the operator sets the list again -- the last
 // set wins -- and status says whose list is being served.
 func TestASetListReplacesASubnetOrder(t *testing.T) {
-	t.Cleanup(paths.UseRoot(t.TempDir()))
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll: %v", err)
-	}
+	d := pathstest.Root(t)
 
 	if err := os.MkdirAll(d.AnchorDir(), 0o700); err != nil {
 		t.Fatal(err)

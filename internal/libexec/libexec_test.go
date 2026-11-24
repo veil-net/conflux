@@ -13,24 +13,13 @@ import (
 	"github.com/veil-net/conflux/anchor"
 	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/paths/pathstest"
 )
-
-func dirs(t *testing.T) paths.Dirs {
-	t.Helper()
-	t.Cleanup(paths.UseRoot(t.TempDir()))
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll: %v", err)
-	}
-
-	return d
-}
 
 func TestEnsureExtractsAndRuns(t *testing.T) {
 	anchortest.Require(t)
 
-	d := dirs(t)
+	d := pathstest.Root(t)
 
 	tools, err := Ensure(d)
 	if err != nil {
@@ -73,7 +62,7 @@ func TestEnsureExtractsAndRuns(t *testing.T) {
 func TestEnsureIsIdempotent(t *testing.T) {
 	anchortest.Require(t)
 
-	d := dirs(t)
+	d := pathstest.Root(t)
 
 	first, err := Ensure(d)
 	if err != nil {
@@ -110,7 +99,7 @@ func TestEnsureIsIdempotent(t *testing.T) {
 func TestEnsureIsConcurrencySafe(t *testing.T) {
 	anchortest.Require(t)
 
-	d := dirs(t)
+	d := pathstest.Root(t)
 
 	const n = 8
 
@@ -173,7 +162,7 @@ func TestEnsureIsConcurrencySafe(t *testing.T) {
 func TestEnsureRepairsATruncatedExtraction(t *testing.T) {
 	anchortest.Require(t)
 
-	d := dirs(t)
+	d := pathstest.Root(t)
 
 	tools, err := Ensure(d)
 	if err != nil {

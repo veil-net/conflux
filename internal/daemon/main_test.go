@@ -14,6 +14,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/paths/pathstest"
 )
 
 // fakeAnchorctlEnv and fakeAnchordEnv turn this test binary into a stand-in anchorctl
@@ -59,18 +60,7 @@ func TestMain(m *testing.M) {
 
 	// Every conflux path in a directory of the run's own, so a test that does not root its own
 	// reaches nothing of the machine's .conflux.
-	dir, err := os.MkdirTemp("", "conflux-test-")
-	if err != nil {
-		panic(err)
-	}
-
-	restore := paths.UseRoot(dir)
-	code := m.Run()
-
-	restore()
-	_ = os.RemoveAll(dir)
-
-	os.Exit(code)
+	pathstest.Main(m)
 }
 
 // fakeMetrics is the head of what `anchorctl metrics` printed on a live alpha node.

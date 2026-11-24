@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/veil-net/conflux/internal/anchortest"
+	"github.com/veil-net/conflux/internal/paths/pathstest"
 )
 
 // TestIntactPutsAChangedBinaryRight: the supervisor runs the extracted anchord as root, so a
@@ -14,7 +15,7 @@ import (
 func TestIntactPutsAChangedBinaryRight(t *testing.T) {
 	anchortest.Require(t)
 
-	d := dirs(t)
+	d := pathstest.Root(t)
 
 	tools, err := Intact(d)
 	if err != nil {
@@ -55,7 +56,7 @@ func TestIntactPutsAChangedBinaryRight(t *testing.T) {
 func TestIntactTrustsWhatItVerified(t *testing.T) {
 	anchortest.Require(t)
 
-	d := dirs(t)
+	d := pathstest.Root(t)
 
 	tools, err := Ensure(d)
 	if err != nil {

@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/veil-net/conflux/internal/anchortest"
-	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/paths/pathstest"
 )
 
 // BenchmarkExtract is what a start pays for the anchor pair: cold, extracting it into a root
@@ -18,12 +18,7 @@ func BenchmarkExtract(b *testing.B) {
 		for b.Loop() {
 			b.StopTimer()
 
-			b.Cleanup(paths.UseRoot(b.TempDir()))
-
-			d := paths.Default()
-			if err := d.EnsureAll(); err != nil {
-				b.Fatal(err)
-			}
+			d := pathstest.Root(b)
 
 			b.StartTimer()
 
@@ -34,12 +29,7 @@ func BenchmarkExtract(b *testing.B) {
 	})
 
 	b.Run("warm", func(b *testing.B) {
-		b.Cleanup(paths.UseRoot(b.TempDir()))
-
-		d := paths.Default()
-		if err := d.EnsureAll(); err != nil {
-			b.Fatal(err)
-		}
+		d := pathstest.Root(b)
 
 		if _, err := Ensure(d); err != nil {
 			b.Fatal(err)

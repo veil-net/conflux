@@ -220,6 +220,13 @@ func (s *Supervisor) restartObserver(ctx context.Context, cfg *config.Config, wa
 		return false
 	}
 
+	// A start cut short by the watcher's end -- the service stopping, or the cycle ending under
+	// it -- is no failure of the observer: nothing more is said or counted, and it is not given
+	// up. The watcher returns at its next look at ctx.
+	if ctx.Err() != nil {
+		return false
+	}
+
 	if k.failed(err) {
 		s.report().Warn("this host will not let anchord observe: %v\n"+
 			"  conflux stops starting the observer until the service is started again", err)

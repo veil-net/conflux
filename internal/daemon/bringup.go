@@ -103,8 +103,9 @@ const MaxSkew = 10 * time.Minute
 // observer as the identity it names, and the anchor. observe starts the observer under it and
 // returns the AnchorID it observes as. Observing alone, that is all there is, and the ID is
 // what the state records for the next renewal; beside an anchor, an observer that does not
-// start is said, and the anchor starts without it. A rebuild gives no observe: the observer the
-// cycle started runs on, and a renewal made here is installed on it.
+// start is said, and the anchor starts without it, unless a stop cut the observer's start short,
+// which ends the start there. A rebuild gives no observe: the observer the cycle started runs
+// on, and a renewal made here is installed on it.
 //
 // dir is the anchor directory the daemon's identity was given (see Supervisor.anchorDir).
 // reopened counts the start as an uplink rebuilt, in the same state write as the rest,
@@ -198,7 +199,10 @@ func bringUp(
 			}
 
 			st.IssuedAt, st.NotAfter = m.IssuedAt(), m.NotAfter()
-		case !cfg.Anchor():
+		case !cfg.Anchor(), ctx.Err() != nil:
+			// Observing alone, the observer is all there is. Beside an anchor, an observer's
+			// start that a stop cut short ends the start there, warning of nothing: the cycle is
+			// ending, and an anchor started without the observer is a start nothing wants.
 			return anchorctl.Started{}, err
 		default:
 			r.Warn("the observer did not start, and the anchor starts without it: %v", err)

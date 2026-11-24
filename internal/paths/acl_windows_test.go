@@ -70,10 +70,11 @@ func TestEnsureAllTakesBackAWidenedDACL(t *testing.T) {
 	}
 }
 
-// TestAWidenedDACLIsTakenBackBesideAnchordsFiles: what anchord's own account wrote in its
-// directories is that account's, and is no reason to refuse a root whose DACL somebody
-// widened: the root is restricted again, rather than refused at every start for ever. Each of
-// those directories is still held to the rule itself.
+// TestAWidenedDACLIsTakenBackBesideAnchordsFiles: what anchord's own account wrote in the two
+// directories it writes, anchor\ and run\anchord\, is that account's, and is no reason to
+// refuse a root whose DACL somebody widened: the root is restricted again, rather than refused
+// at every start for ever. anchor.root\ is SYSTEM's, so a file another account owns there is
+// refused as anywhere else, and each of the three directories is still held to the rule itself.
 func TestAWidenedDACLIsTakenBackBesideAnchordsFiles(t *testing.T) {
 	d := Dirs{Root: filepath.Join(t.TempDir(), ".conflux")}
 	if err := d.EnsureAll(); err != nil {
@@ -86,26 +87,45 @@ func TestAWidenedDACLIsTakenBackBesideAnchordsFiles(t *testing.T) {
 		}
 	}
 
-	// What anchord running as LOCAL SERVICE leaves in its anchor directory.
-	written := filepath.Join(d.AnchorDir(), "bootstrap.json")
-	if err := os.WriteFile(written, []byte("{}"), 0o600); err != nil {
-		t.Fatal(err)
+	// lsFile is a file in dir that LOCAL SERVICE owns, as anchord running as that account leaves.
+	lsFile := func(dir, name string) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		giveTo(t, path, windows.WinLocalServiceSid)
+
+		if Trusted(path) {
+			t.Fatal("a file LOCAL SERVICE owns reads as trusted")
+		}
+
+		return path
 	}
 
-	giveTo(t, written, windows.WinLocalServiceSid)
-
-	if Trusted(written) {
-		t.Fatal("a file LOCAL SERVICE owns reads as trusted")
-	}
+	lsFile(d.AnchorDir(), "bootstrap.json")
+	lsFile(d.DaemonRun(), "sock.lock")
 
 	widen(t, d.Root)
 
 	if err := d.EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll beside anchord's own file: %v", err)
+		t.Fatalf("EnsureAll beside anchord's own files: %v", err)
 	}
 
 	if !adminsAlone(d.Root) {
 		t.Error("EnsureAll left the root granting Users")
+	}
+
+	// In anchor.root, which LOCAL SERVICE writes nothing in, its file is another account's.
+	foreign := lsFile(d.RootAnchorDir(), "bootstrap.json")
+	widen(t, d.Root)
+
+	if err := d.EnsureAll(); err == nil {
+		t.Error("EnsureAll took a root whose anchor.root holds a file another account owns")
+	}
+
+	if err := os.Remove(foreign); err != nil {
+		t.Fatal(err)
 	}
 
 	// One of those directories made by another account is refused, as anything else is.

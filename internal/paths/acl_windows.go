@@ -163,10 +163,12 @@ func ownership(path string) (*windows.SECURITY_DESCRIPTOR, *windows.SID, error) 
 // own DACL it has %ProgramData%'s, under which Users may create folders in it, and a
 // folder another account made there keeps that owner through the new DACL -- an owner
 // can always grant itself the rest -- so the service would go on writing its token or its
-// state into a place that account controls. All but what anchord's own directories hold:
-// its account owns what it writes in them, and the supervisor reads that as untrusted and
-// makes it again -- the socket's directory afresh at every start, an anchor directory
-// copied from and never adopted by root. The directories themselves are held to the rule.
+// state into a place that account controls. All but what the two directories anchord's
+// account writes hold, anchor\ and run\anchord\: it owns what it writes in them, and the
+// supervisor reads that as untrusted and makes it again -- the socket's directory afresh at
+// every start, the anchor directory copied from and never adopted by root. anchor.root\ is
+// SYSTEM's, a root anchord's, which that account writes nothing in, so what it holds is held
+// to the rule as the rest is. The directories themselves are held to it too.
 func secure(dir string) error {
 	sd, owner, err := ownership(dir)
 	if err != nil {
@@ -195,7 +197,7 @@ func secure(dir string) error {
 	}
 
 	d := Dirs{Root: dir}
-	anchords := []string{d.AnchorDir(), d.RootAnchorDir(), d.DaemonRun()}
+	anchords := []string{d.AnchorDir(), d.DaemonRun()}
 
 	if err := filepath.WalkDir(dir, func(path string, e fs.DirEntry, err error) error {
 		switch {

@@ -10,6 +10,11 @@ import (
 	"github.com/veil-net/conflux/internal/paths"
 )
 
+// TempPrefix begins the name of the temporary file every atomic write makes beside its target
+// and renames over it: what the supervisor's tidy spares while it is young enough to be a
+// write in progress.
+const TempPrefix = ".tmp-"
+
 // WriteFileAtomic replaces path with data, or leaves what was there.
 //
 // A crash, a full disk or a kill between the open and the write must not produce a
@@ -58,7 +63,7 @@ func writeAtomic(path string, perm fs.FileMode, chunks ...[]byte) error {
 func writeAtomicAs(path string, perm fs.FileMode, uid, gid int, chunks ...[]byte) (err error) {
 	dir := filepath.Dir(path)
 
-	tmp, err := os.CreateTemp(dir, ".tmp-*")
+	tmp, err := os.CreateTemp(dir, TempPrefix+"*")
 	if err != nil {
 		return fmt.Errorf("create temp file in %s: %w", dir, err)
 	}

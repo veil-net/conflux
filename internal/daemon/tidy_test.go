@@ -26,6 +26,7 @@ func TestTidyKeepsOnlyWhatIsConfluxsAndAnchors(t *testing.T) {
 		d.ServiceExecutable() + ".old":                      true,
 		filepath.Join(d.Root, "stray"):                      false,
 		filepath.Join(d.Root, ".tmp-123"):                   true,
+		filepath.Join(d.Root, ".conflux-123"):               true,
 		d.TokenFile():                                       true,
 		d.ReadyFile():                                       true,
 		filepath.Join(d.RunDir(), "stray"):                  false,
@@ -45,17 +46,20 @@ func TestTidyKeepsOnlyWhatIsConfluxsAndAnchors(t *testing.T) {
 		}
 	}
 
-	stale := filepath.Join(d.Root, ".tmp-old")
-	if err := os.WriteFile(stale, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	// An atomic write's and the service copy's, each left by a crash an hour and more ago.
+	for _, name := range []string{".tmp-old", ".conflux-old"} {
+		stale := filepath.Join(d.Root, name)
+		if err := os.WriteFile(stale, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
 
-	then := time.Now().Add(-2 * time.Hour)
-	if err := os.Chtimes(stale, then, then); err != nil {
-		t.Fatal(err)
-	}
+		then := time.Now().Add(-2 * time.Hour)
+		if err := os.Chtimes(stale, then, then); err != nil {
+			t.Fatal(err)
+		}
 
-	files[stale] = false
+		files[stale] = false
+	}
 
 	if err := s.tidy(); err != nil {
 		t.Fatalf("tidy: %v", err)

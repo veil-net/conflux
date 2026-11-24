@@ -8,6 +8,9 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/service"
 )
 
 // anchorFiles are what anchor keeps in its -dir: the bootstrap cache, the realm links it
@@ -18,8 +21,8 @@ import (
 var anchorFiles = []string{"bootstrap.json", "realmlinks", "knowledge", "subnets.json"}
 
 // transientAge is how long a temporary file in the root may be another conflux's write in
-// progress -- an atomic write's (.tmp-*), or the service copy's (.conflux-*) -- rather than
-// one a crash left.
+// progress -- an atomic write's (config.TempPrefix), or the service copy's
+// (service.StagedPrefix) -- rather than one a crash left.
 const transientAge = time.Hour
 
 // tidy keeps the root to what conflux and anchor put there, and removes everything else: the
@@ -95,7 +98,7 @@ func removeUnknown(dir string, known []string, transient bool) error {
 
 // inProgress reports whether e is a temporary file another conflux may still be writing.
 func inProgress(e fs.DirEntry) bool {
-	if !strings.HasPrefix(e.Name(), ".tmp-") && !strings.HasPrefix(e.Name(), ".conflux-") {
+	if !strings.HasPrefix(e.Name(), config.TempPrefix) && !strings.HasPrefix(e.Name(), service.StagedPrefix) {
 		return false
 	}
 

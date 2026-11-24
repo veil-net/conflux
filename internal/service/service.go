@@ -161,6 +161,11 @@ func sameFile(a, b string) bool {
 	}
 }
 
+// StagedPrefix begins the name of the file the service's copy of conflux is written to beside
+// it, before it is renamed into place: what the supervisor's tidy spares while it is young
+// enough to be a copy in progress.
+const StagedPrefix = ".conflux-"
+
 // copyExecutable writes src to dst through a file beside it, renamed into place.
 func copyExecutable(src, dst string) error {
 	in, err := os.Open(src)
@@ -169,7 +174,7 @@ func copyExecutable(src, dst string) error {
 	}
 	defer in.Close()
 
-	tmp, err := os.CreateTemp(filepath.Dir(dst), ".conflux-*")
+	tmp, err := os.CreateTemp(filepath.Dir(dst), StagedPrefix+"*")
 	if err != nil {
 		return err
 	}

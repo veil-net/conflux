@@ -78,11 +78,10 @@ jobs:
       # any other reason, so zero is the right number. With the module refusing what it
       # does not approve, set on the test binaries alone, as the Makefile's TESTEXEC does.
       #
-      # And every test the module defines passed: a package whose tests stop running -- a
-      # TestMain that returns before m.Run -- is green with none, so the tests that passed
-      # are held, by name, to what `go test -list` says there are, benchmarks aside. A
-      # top-level test alone, since a subtest's name holds a slash; found wherever a line
-      # holds it, since a test's own output may end without a newline.
+      # And every test the source declares for Linux passed: a package whose tests stop
+      # running -- a TestMain that returns before m.Run -- is green with none, so the tests
+      # that passed are held, by name, to the ones its test files declare (scripts/tests-ran.sh,
+      # which says why the source and not `go test -list`).
       - name: the suite under -race, with the real binaries, nothing skipped
         run: |
           set -euo pipefail
@@ -92,13 +91,7 @@ jobs:
             grep -B1 -- '--- SKIP' test.log >&2
             exit 1
           fi
-          go test -exec 'env GODEBUG=fips140=only' -race -list . ./... | grep '^Test' | LC_ALL=C sort > listed.txt
-          { grep -oE -- '--- PASS: Test[^ /]+ \(' test.log || true; } | sed -E 's/^--- PASS: //; s/ \($//' | LC_ALL=C sort > passed.txt
-          if ! diff listed.txt passed.txt >&2; then
-            echo "::error::$(($(wc -l < passed.txt))) tests passed of the $(($(wc -l < listed.txt))) go test -list names (< listed, not passed; > passed, not listed)" >&2
-            exit 1
-          fi
-          echo "$(($(wc -l < passed.txt))) tests passed, every one go test -list names, and none skipped"
+          ./scripts/tests-ran.sh test.log PASS
 
       - name: every target vets, test files included
         run: make cross
@@ -281,8 +274,8 @@ jobs:
       # tests do skip, for the platform (a mode bit Windows does not have), and that is
       # not what this checks. Every test that needs the pair skips saying "no anchor
       # pair", so the reason is what is looked for, rather than a list of names that a
-      # new test would be missing from. And, as on Linux, every test `go test -list` names
-      # here ran: passed, or skipped for the platform.
+      # new test would be missing from. And, as on Linux, every test the source declares
+      # for this platform ran: passed, or skipped for the platform.
       - name: the suite, with the real binaries
         shell: bash
         run: |
@@ -292,13 +285,7 @@ jobs:
             echo "::error::a test that needs the anchor binaries skipped" >&2
             exit 1
           fi
-          go test -exec 'env GODEBUG=fips140=only' -list . ./... | grep '^Test' | LC_ALL=C sort > listed.txt
-          { grep -oE -- '--- (PASS|SKIP): Test[^ /]+ \(' test.log || true; } | sed -E 's/^--- (PASS|SKIP): //; s/ \($//' | LC_ALL=C sort > ran.txt
-          if ! diff listed.txt ran.txt >&2; then
-            echo "::error::$(($(wc -l < ran.txt))) tests ran of the $(($(wc -l < listed.txt))) go test -list names (< listed, not run; > run, not listed)" >&2
-            exit 1
-          fi
-          echo "$(($(wc -l < ran.txt))) tests ran, passed or skipped for the platform: every one go test -list names"
+          ./scripts/tests-ran.sh test.log PASS SKIP
 
       # The conflux make build makes for this platform, held to what ships as the linux job
       # holds its own: the stamped digests the pair's, FIPS 140-3 mode with the integrity check

@@ -169,7 +169,8 @@ systemd removing every drop-in, which would change the unit that runs: `conflux.
 same two under `/run` — so a unit, plist, rc script or SCM entry changed by hand lasts until the next start and no
 longer. What is already that is not written again: an unchanged unit, plist or rc script keeps
 its inode and its mtime, and the BSDs' `rc.conf` line is set only where the service is not
-enabled. On macOS the plist is rewritten without unloading the job that is running it, and
+enabled. One whose bytes are conflux's but whose mode was widened, made group- or
+world-writable, is given its mode back. On macOS the plist is rewritten without unloading the job that is running it, and
 takes effect at its next load.
 
 ```ini

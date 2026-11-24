@@ -47,7 +47,7 @@ const (
 	DevTag     = "dev-latest"
 
 	// maxRelease bounds the release document; maxBinary one download. A conflux is
-	// 45 to 75 MB (the size gate in `make dist`), so 200 MB is far above anything real.
+	// 50 to 75 MiB (the size gate in `make dist`), so 200 MB is far above anything real.
 	maxRelease = 1 << 20
 	maxBinary  = 200 << 20
 

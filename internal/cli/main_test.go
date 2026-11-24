@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/veil-net/conflux/internal/paths/pathstest"
+	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/service"
 )
 
@@ -33,3 +34,24 @@ func (noService) Reconcile(string, ...string) error { return errNoService }
 func (noService) Installed() (bool, error)          { return false, nil }
 func (noService) Describe() string                  { return "not installed (a test's stand-in)" }
 func (noService) LogHint() string                   { return "nothing to read: a test's stand-in" }
+
+// asRoot has privcheck answer elevated, or not, for the rest of the test, whatever account
+// runs it.
+func asRoot(t *testing.T, elevated bool) {
+	t.Helper()
+
+	was := privcheck.Elevated
+	privcheck.Elevated = func() bool { return elevated }
+
+	t.Cleanup(func() { privcheck.Elevated = was })
+}
+
+// withServices makes m the boot manager for the rest of the test.
+func withServices(t *testing.T, m service.Manager) {
+	t.Helper()
+
+	was := services
+	services = func() service.Manager { return m }
+
+	t.Cleanup(func() { services = was })
+}

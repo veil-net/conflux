@@ -12,7 +12,6 @@ import (
 	"github.com/veil-net/conflux/internal/paths"
 
 	"github.com/veil-net/conflux/internal/config"
-	"github.com/veil-net/conflux/internal/privcheck"
 )
 
 // handedRun is an ephemeral run prepared from doc, as `--ephemeral --manifest FILE` reads one.
@@ -118,10 +117,7 @@ func TestAnEphemeralRunAsksNothing(t *testing.T) {
 // nothing that would, so proxy runs as anybody; a TUN, and observing, still need root, and on
 // Windows every root conflux keeps is Administrators'.
 func TestAnEphemeralProxyNeedsNoRoot(t *testing.T) {
-	was := privcheck.Elevated
-	privcheck.Elevated = func() bool { return false }
-
-	t.Cleanup(func() { privcheck.Elevated = was })
+	asRoot(t, false)
 
 	run := &ephemeralRun{}
 

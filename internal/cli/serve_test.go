@@ -11,8 +11,6 @@ import (
 
 	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths/pathstest"
-	"github.com/veil-net/conflux/internal/privcheck"
-	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
 )
 
@@ -37,11 +35,8 @@ func TestServePutsTheServiceBack(t *testing.T) {
 
 	var got []string
 
-	was, elevated := services, privcheck.Elevated
-	services = func() service.Manager { return recordingService{reconciled: &got} }
-	privcheck.Elevated = func() bool { return true }
-
-	t.Cleanup(func() { services, privcheck.Elevated = was, elevated })
+	withServices(t, recordingService{reconciled: &got})
+	asRoot(t, true)
 
 	reconcileService(d)
 
@@ -64,11 +59,8 @@ func TestARefusedSupervisorChangesNothing(t *testing.T) {
 
 	var got []string
 
-	was, elevated := services, privcheck.Elevated
-	services = func() service.Manager { return recordingService{reconciled: &got} }
-	privcheck.Elevated = func() bool { return true }
-
-	t.Cleanup(func() { services, privcheck.Elevated = was, elevated })
+	withServices(t, recordingService{reconciled: &got})
+	asRoot(t, true)
 
 	var said bytes.Buffer
 

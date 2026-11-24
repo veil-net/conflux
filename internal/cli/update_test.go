@@ -16,8 +16,6 @@ import (
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
-
-	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/update"
 	"github.com/veil-net/conflux/internal/version"
 )
@@ -102,8 +100,7 @@ func TestUpdateSaysSoWhenThisIsTheRelease(t *testing.T) {
 
 // TestUpdateCheckChangesNothing: --check reports and touches nothing, root or not.
 func TestUpdateCheckChangesNothing(t *testing.T) {
-	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
-	privcheck.Elevated = func() bool { return false }
+	asRoot(t, false)
 
 	dir := t.TempDir()
 	exe := filepath.Join(dir, "conflux")
@@ -130,8 +127,7 @@ func TestUpdateCheckChangesNothing(t *testing.T) {
 }
 
 func TestUpdateNeedsRoot(t *testing.T) {
-	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
-	privcheck.Elevated = func() bool { return false }
+	asRoot(t, false)
 
 	exe := filepath.Join(t.TempDir(), "conflux")
 	if err := os.WriteFile(exe, []byte("\x7fELF an older conflux"), 0o755); err != nil {
@@ -152,8 +148,7 @@ func TestUpdateReplacesTheExecutable(t *testing.T) {
 		t.Skip("the stand-in conflux is a shell script")
 	}
 
-	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
-	privcheck.Elevated = func() bool { return true }
+	asRoot(t, true)
 
 	dir := t.TempDir()
 	exe := filepath.Join(dir, "conflux")
@@ -186,8 +181,7 @@ func TestUpdateRefusesABinaryThatDoesNotRun(t *testing.T) {
 		t.Skip("the stand-in conflux is a shell script")
 	}
 
-	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
-	privcheck.Elevated = func() bool { return true }
+	asRoot(t, true)
 
 	dir := t.TempDir()
 	exe := filepath.Join(dir, "conflux")
@@ -218,8 +212,7 @@ func TestUpdateRefusesABinaryThatDoesNotRun(t *testing.T) {
 // and a release's to the production tree, and the credential a machine holds is valid in one
 // alone. So nothing is asked first, and no flag crosses from one to the other.
 func TestAnUpdateFollowsItsChannel(t *testing.T) {
-	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
-	privcheck.Elevated = func() bool { return false }
+	asRoot(t, false)
 
 	defer func(was string) { version.Channel = was }(version.Channel)
 
@@ -260,8 +253,7 @@ func TestUpdateWritesTheInstalledConflux(t *testing.T) {
 		t.Skip("the stand-in conflux is a shell script")
 	}
 
-	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
-	privcheck.Elevated = func() bool { return true }
+	asRoot(t, true)
 
 	exe := filepath.Join(t.TempDir(), "bin", "conflux")
 	newer := []byte("#!/bin/sh\necho 'conflux 9.9.9 (0aea0f77bb77) " + runtime.GOOS + "/" + runtime.GOARCH + "'\n")

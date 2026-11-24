@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/veil-net/conflux/internal/config"
-	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/ui"
 )
 
@@ -75,14 +74,14 @@ func TestObserveTakesNoArguments(t *testing.T) {
 func TestObserveIsRefusedWhereThereIsNoCapture(t *testing.T) {
 	for goos, refused := range map[string]bool{"freebsd": true, "openbsd": true, "linux": false, "darwin": false, "windows": false} {
 		t.Run(goos, func(t *testing.T) {
-			was, elevated := hostOS, privcheck.Elevated
+			was := hostOS
 			hostOS = goos
+
+			t.Cleanup(func() { hostOS = was })
 
 			// Refused for privilege where there is a capture, whoever runs this: the check under
 			// test is the one before it, and nothing past it may touch this host.
-			privcheck.Elevated = func() bool { return false }
-
-			t.Cleanup(func() { hostOS, privcheck.Elevated = was, elevated })
+			asRoot(t, false)
 
 			_, errOut, code := capture(t, "observe")
 

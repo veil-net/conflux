@@ -710,8 +710,7 @@ func TestTheCollisionsAreTheDocumentedOnes(t *testing.T) {
 func TestARefusalForPrivilegeRepeatsTheCommand(t *testing.T) {
 	// The account that is refused, whatever this one is: a root CI runner would otherwise
 	// skip this, and the Linux job fails on any skip.
-	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
-	privcheck.Elevated = func() bool { return false }
+	asRoot(t, false)
 
 	_, errOut, code := capture(t, "up", "--taint", "my net", "--ipv4", "10.128.0.7/24")
 

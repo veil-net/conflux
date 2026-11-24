@@ -9,8 +9,6 @@ import (
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
-	"github.com/veil-net/conflux/internal/privcheck"
-	"github.com/veil-net/conflux/internal/service"
 )
 
 // TestUninstallTakesTheInstalledConflux: what install.sh put in place goes -- the executable,
@@ -95,11 +93,8 @@ func TestUninstallIsRefusedWhileAnEphemeralRunIsLive(t *testing.T) {
 
 	var removed bool
 
-	was, elevated := services, privcheck.Elevated
-	services = func() service.Manager { return removalService{removed: &removed} }
-	privcheck.Elevated = func() bool { return true }
-
-	t.Cleanup(func() { services, privcheck.Elevated = was, elevated })
+	withServices(t, removalService{removed: &removed})
+	asRoot(t, true)
 
 	_, errOut, code := capture(t, "uninstall", "--yes")
 	if code != ExitUsage || !strings.Contains(errOut, "an ephemeral anchor is running from "+e.Root) {
@@ -167,15 +162,14 @@ func TestUninstallTakesThePathEntry(t *testing.T) {
 func TestUninstallReachesTheMachineOnlyThroughItsSeams(t *testing.T) {
 	var accounts, installation bool
 
-	wasA, wasI, wasS, elevated := uninstallAccounts, uninstallInstallation, services, privcheck.Elevated
+	wasA, wasI := uninstallAccounts, uninstallInstallation
 	uninstallAccounts = func() error { accounts = true; return nil }
 	uninstallInstallation = func() error { installation = true; return nil }
-	services = func() service.Manager { return noService{} }
-	privcheck.Elevated = func() bool { return true }
 
-	t.Cleanup(func() {
-		uninstallAccounts, uninstallInstallation, services, privcheck.Elevated = wasA, wasI, wasS, elevated
-	})
+	t.Cleanup(func() { uninstallAccounts, uninstallInstallation = wasA, wasI })
+
+	withServices(t, noService{})
+	asRoot(t, true)
 
 	t.Cleanup(paths.UseRoot(t.TempDir()))
 

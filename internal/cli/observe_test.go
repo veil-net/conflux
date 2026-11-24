@@ -255,22 +255,3 @@ func TestSwitchingAnAnchorToObservingIsConfirmed(t *testing.T) {
 		t.Error("--yes did not say so")
 	}
 }
-
-// TestProxyTakesTheObserverFlags: conflux proxy's specs and flags come in any order, and
-// --export takes a value while the observer's switches do not.
-func TestProxyTakesTheObserverFlags(t *testing.T) {
-	args := []string{"--export", "c:4317", "8080=127.0.0.1:3000", "--observe-loopback", "53/udp=127.0.0.1:53"}
-
-	flags, specs, foreign := splitFlags(newProxyFlags().fs, args)
-	if foreign != "" {
-		t.Fatalf("%q is not one of conflux proxy's", foreign)
-	}
-
-	if want := []string{"8080=127.0.0.1:3000", "53/udp=127.0.0.1:53"}; !slices.Equal(specs, want) {
-		t.Errorf("specs %v, want %v", specs, want)
-	}
-
-	if want := []string{"--export", "c:4317", "--observe-loopback"}; !slices.Equal(flags, want) {
-		t.Errorf("flags %v, want %v", flags, want)
-	}
-}

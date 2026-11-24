@@ -489,45 +489,53 @@ func TestStatusSaysWhereTheDaemonExports(t *testing.T) {
 	}
 }
 
-// TestProxyKeepsItsOwnUplinkFlag: --uplink is conflux proxy's, so the gate that
-// hands anchorctl's flags back must not catch it, and the splitter has to know it
-// takes a value -- otherwise the device path lands in the positional list and is
-// read as a port spec.
-func TestProxyKeepsItsOwnUplinkFlag(t *testing.T) {
-	for _, args := range [][]string{
-		{"--uplink", "/dev/ttyUSB0", "8080=127.0.0.1:3000"},
-		{"8080=127.0.0.1:3000", "--uplink=/dev/ttyUSB0:115200"},
-		{"--no-uplink", "8080=127.0.0.1:3000"},
+// TestProxyTellsItsFlagsFromItsSpecs: conflux proxy's specs and flags come in any order, and
+// splitFlags tells them apart as proxy's flag set does, asking it of each flag whether it takes a
+// value (isBoolFlag). A flag that does -- --uplink, --subnet, --lan-discovery, a tristate written
+// as a value, and --export -- takes the next word, so a device path, a prefix, a yes, no or auto,
+// or a collector is not read as a spec; a switch -- the negations, the exits, the observer's --
+// takes none, so a spec after it stays one. Each is proxy's own, so none is the first flag not
+// proxy's (foreign), which proxy refuses, pointing at anchorctl's proxy; and every flag, with the
+// value it takes, is left for the flag set to parse, in the order given.
+func TestProxyTellsItsFlagsFromItsSpecs(t *testing.T) {
+	const spec = "8080=127.0.0.1:3000"
+
+	for _, c := range []struct {
+		args  []string
+		specs []string // nil for spec alone
+	}{
+		{args: []string{"--uplink", "/dev/ttyUSB0", spec}},
+		{args: []string{spec, "--uplink=/dev/ttyUSB0:115200"}},
+		{args: []string{"--no-uplink", spec}},
+		{args: []string{"--subnet", "10.0.0.0/24", spec}},
+		{args: []string{spec, "--serve-exit", "--no-subnet"}},
+		{args: []string{"--use-exit", "--no-serve-exit", spec}},
+		{args: []string{"--lan-discovery", "no", spec}},
+		{args: []string{spec, "--lan-discovery=yes"}},
+		{args: []string{"--lan-discovery", "auto", spec}},
+		{
+			args:  []string{"--export", "c:4317", spec, "--observe-loopback", "53/udp=127.0.0.1:53"},
+			specs: []string{spec, "53/udp=127.0.0.1:53"},
+		},
 	} {
-		_, specs, foreign := splitFlags(newProxyFlags().fs, args)
+		if c.specs == nil {
+			c.specs = []string{spec}
+		}
+
+		flags, specs, foreign := splitFlags(newProxyFlags().fs, c.args)
 
 		if foreign != "" {
-			t.Errorf("%v: %q is not one of conflux proxy's", args, foreign)
+			t.Errorf("%v: %q is not one of conflux proxy's", c.args, foreign)
 		}
 
-		if len(specs) != 1 || specs[0] != "8080=127.0.0.1:3000" {
-			t.Errorf("%v: positional args are %v, want just the port spec", args, specs)
-		}
-	}
-}
-
-// TestProxyRoutesInUserspace: proxy takes the routing settings up does -- in userspace
-// the anchor forwards a subnet and serves an exit from its own process -- and the
-// splitter knows which of them take a value, so a prefix is not read as a port spec.
-func TestProxyRoutesInUserspace(t *testing.T) {
-	for _, args := range [][]string{
-		{"--subnet", "10.0.0.0/24", "8080=127.0.0.1:3000"},
-		{"8080=127.0.0.1:3000", "--serve-exit", "--no-subnet"},
-		{"--use-exit", "--no-serve-exit", "8080=127.0.0.1:3000"},
-	} {
-		_, specs, foreign := splitFlags(newProxyFlags().fs, args)
-
-		if foreign != "" {
-			t.Errorf("%v: %q is not one of conflux proxy's", args, foreign)
+		if !slices.Equal(specs, c.specs) {
+			t.Errorf("%v: specs %v, want %v", c.args, specs, c.specs)
 		}
 
-		if len(specs) != 1 || specs[0] != "8080=127.0.0.1:3000" {
-			t.Errorf("%v: positional args are %v, want just the port spec", args, specs)
+		// The flags are every word that is not a spec, each value after its flag.
+		want := slices.DeleteFunc(slices.Clone(c.args), func(a string) bool { return slices.Contains(c.specs, a) })
+		if !slices.Equal(flags, want) {
+			t.Errorf("%v: flags %v, want %v", c.args, flags, want)
 		}
 	}
 }
@@ -720,28 +728,6 @@ func TestIPv4IsAskedOnce(t *testing.T) {
 				t.Errorf("ipv4 = %v, want %q", cfg.IPv4, *tc.want)
 			}
 		})
-	}
-}
-
-// TestProxyKeepsItsOwnLANDiscoveryFlag: the tristate is a value flag, and proxy's
-// positional parser is the one place that has to be told so. `--lan-discovery no
-// 8080=...` reads as two positionals to a parser that thinks the flag is a boolean,
-// and the second of them is a proxy spec called "no".
-func TestProxyKeepsItsOwnLANDiscoveryFlag(t *testing.T) {
-	for _, args := range [][]string{
-		{"--lan-discovery", "no", "8080=127.0.0.1:3000"},
-		{"8080=127.0.0.1:3000", "--lan-discovery=yes"},
-		{"--lan-discovery", "auto", "8080=127.0.0.1:3000"},
-	} {
-		_, specs, foreign := splitFlags(newProxyFlags().fs, args)
-
-		if foreign != "" {
-			t.Errorf("%v: %q is not one of conflux proxy's", args, foreign)
-		}
-
-		if len(specs) != 1 || specs[0] != "8080=127.0.0.1:3000" {
-			t.Errorf("%v: positional args are %v, want just the port spec", args, specs)
-		}
 	}
 }
 

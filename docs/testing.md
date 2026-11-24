@@ -302,8 +302,9 @@ suites run on a hosted runner instead, because the third integration node reache
 realm through its manifest's bootstrap node over UDP, and from veilnet-dev no handshake
 gets through to it. Every CI job refuses a fork's pull request — a machine that survives the job does not run
 a stranger's code, and the hosted jobs need the anchor credential a fork is not given —
-so a fork's pull request runs nothing but `branch-flow`, which reads the repository on a hosted
-runner and holds no secret. No checkout leaves its token in `.git/config`,
+so a fork's pull request runs nothing but `branch-flow`, which runs the base branch's own check
+on a hosted runner, nothing of the pull request's, and holds no secret. No checkout leaves its
+token in `.git/config`,
 and every action outside this repository is pinned to its release's commit, with the
 tag beside it in a comment.
 
@@ -339,7 +340,12 @@ push alone.
 request and every edit of one — moving a pull request's base fires only `edited`: one into
 `version3` whose head is not this repository's `dev` fails; one into `dev` whose merge does not
 hold `version3`'s tip — a back-merge that did not land — fails; one into any other base fails.
-On a hosted runner, since it reads the repository and holds no secret.
+It runs on `pull_request_target`, so the workflow and the script are the base branch's own, which
+a pull request cannot rewrite to pass; it checks out the base branch, and reads the pull
+request's head as data alone — its commit, fetched for git to compare, never checked out or run.
+A commit is in the merge exactly when it is in the base or the head, so the merge is judged
+without being made. On a hosted runner, with a token that reads contents and nothing more, and
+no secret.
 
 **Branch protection, on `dev` and on `version3` alike:** require a pull request, require CI's
 checks and `branch-flow`, and require the branch to be up to date before merging. And on `dev`,

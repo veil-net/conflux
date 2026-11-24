@@ -1,42 +1,72 @@
 package paths
 
 import (
+	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 )
 
-// TestEphemeralRootIsInsideCONFLUXDIR: a run rooted elsewhere keeps its ephemeral root
-// inside that root and nowhere else, so a test, or a second installation, never touches the
-// machine's own.
-func TestEphemeralRootIsInsideCONFLUXDIR(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("CONFLUX_DIR", root)
-
-	if got := EphemeralCandidates(); len(got) != 1 || got[0] != filepath.Join(root, "ephemeral") {
-		t.Fatalf("EphemeralCandidates() = %v, want only %s", got, filepath.Join(root, "ephemeral"))
-	}
-
-	d, err := Ephemeral()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	want := filepath.Join(root, "ephemeral")
-	if d.State != want || d.Config != want || d.Run != filepath.Join(want, "run") || d.Log != "" {
-		t.Errorf("Ephemeral() = %+v, want everything in %s and no log directory", d, want)
+// TestTheEphemeralRootIsNotTheMachines: an ephemeral run is kept apart from the
+// installation, never in or under the machine's .conflux, so it touches nothing of it.
+func TestTheEphemeralRootIsNotTheMachines(t *testing.T) {
+	for _, euid := range []int{0, 1000} {
+		r := ephemeralRoot(runtime.GOOS, euid, func(string) string { return "" })
+		if rel, err := filepath.Rel(platformRoot(), r); err == nil && !strings.HasPrefix(rel, "..") {
+			t.Errorf("the ephemeral root %s is inside the machine's %s", r, platformRoot())
+		}
 	}
 }
 
-// TestExecutableLooksAboveARootNotMadeYet: a root that does not exist yet is judged by the
-// filesystem it would be made on.
-func TestExecutableLooksAboveARootNotMadeYet(t *testing.T) {
-	ok, err := executable(filepath.Join(t.TempDir(), "not", "made", "yet"))
-	if err != nil {
-		t.Fatal(err)
+// TestTheEphemeralRootIsWhatABootEmpties: root's run under the system's runtime directory, a
+// user's in their own runtime directory, on every Unix that names one, or else their temporary
+// one, and nothing anywhere a reboot keeps by design -- never a cache directory in a home. Every
+// platform's answer, on whichever host runs the test: a Unix's runtime directories are Unix
+// paths on Windows too.
+func TestTheEphemeralRootIsWhatABootEmpties(t *testing.T) {
+	xdg := func(v string) func(string) string {
+		return func(k string) string {
+			if k == "XDG_RUNTIME_DIR" {
+				return v
+			}
+
+			return ""
+		}
 	}
 
-	// The test's own directory is where `go test` ran this binary from, so it allows exec.
-	if !ok {
-		t.Error("a root under the test's own directory reads as noexec")
+	tmp := filepath.Join(os.TempDir(), "conflux-ephemeral-1000")
+	windows := filepath.Join(os.TempDir(), "conflux-ephemeral")
+
+	for _, goos := range []string{"linux", "darwin", "freebsd", "openbsd", "windows"} {
+		system := map[string]string{"linux": "/run/conflux-ephemeral", "windows": windows}[goos]
+		if system == "" {
+			system = "/var/run/conflux-ephemeral"
+		}
+
+		user := func(unix string) string {
+			if goos == "windows" {
+				return windows
+			}
+
+			return unix
+		}
+
+		for _, c := range []struct {
+			name   string
+			euid   int
+			getenv func(string) string
+			want   string
+		}{
+			{"root", 0, xdg(""), system},
+			{"root with a runtime directory", 0, xdg("/run/user/0"), system},
+			{"a user with a runtime directory", 1000, xdg("/run/user/1000"), user("/run/user/1000/conflux-ephemeral")},
+			{"a user with none", 1000, xdg(""), user(tmp)},
+			{"a relative runtime directory", 1000, xdg("run/user"), user(tmp)},
+		} {
+			if got := ephemeralRoot(goos, c.euid, c.getenv); got != c.want {
+				t.Errorf("%s, %s: the ephemeral root is %s, want %s", goos, c.name, got, c.want)
+			}
+		}
 	}
 }

@@ -10,7 +10,7 @@ account of its own, given exactly the privilege it needs.
 
 ```console
 $ sudo conflux observe
-  observer     af_packet, 0 flows held, 0 packets taken
+  observer     af_packet, 0 flows held, 0 packets taken; credential valid until 2026-12-24T05:17:38Z
   records      kept here, in the daemon's inventory until it restarts; --export HOST:PORT sends each to a collector
   service      active (systemd: conflux.service, enabled at boot)
   anchord      conflux, with CAP_NET_RAW to copy what the host's interfaces carry, for the observer
@@ -19,8 +19,14 @@ What it has seen, by service and key exchange:  conflux inventory   (-cbom for a
 ```
 
 It **carries nothing**: what it reads is a copy, so it can slow, break or reroute no connection,
-and if it stops nothing on the host notices but the inventory. It **joins no realm**: nothing is
-enrolled, no credential is needed and none is renewed, and the enrolment API is never asked.
+and if it stops nothing on the host notices but the inventory. It **runs under the machine's
+credential**: anchor's observer runs only as an identity its realm admits, checked as an
+anchor's start is, so conflux starts it under the machine's manifest, on anchorctl's stdin
+(`observe -start -manifest -`). A machine with none is enrolled as `up` enrols one — in
+`--taint`'s taint, or a minted one — and the credential is renewed for the life of the identity
+on the observer as on an anchor (`observe -cred -`), by the AnchorID the observer reports. An
+observer whose credential lapses goes on observing and exports nothing until it is renewed;
+`conflux status`'s `observer` row says until when it is valid.
 
 ## Where the records go
 
@@ -93,7 +99,7 @@ instead ([config.md](config.md#export--where-telemetry-goes)). `conflux status` 
 observer's line, once an anchor runs beside it:
 
 ```console
-  observer     af_packet, 5 flows held, 24 packets taken; overlay of 6btpa3gn6w, 2 flows held, 31 packets taken
+  observer     af_packet, 5 flows held, 24 packets taken; overlay of 6btpa3gn6w, 2 flows held, 31 packets taken; credential valid until 2026-12-24T05:17:38Z
 ```
 
 ```console
@@ -106,9 +112,12 @@ Naming the observer says what it is now, as anchorctl's `observe -start` does: `
 either option, which implies it — `--observe-loopback`, `--observe-hide-names` — and an option
 not given is off. Naming nothing keeps what is configured, and `--no-observe` turns it off.
 
-The observer starts before the anchor, and needs nothing the anchor does, so an anchor that
-cannot come up — an enrolment the API does not answer — leaves the observer and its inventory
-running while the anchor is tried again.
+The observer runs under the machine's credential, as the anchor does, so it starts once the
+credential is had and before the anchor: an anchor whose start fails, even one refused for good,
+leaves the observer and its inventory running while the anchor is tried again, and given up on
+alone if it is refused for good three times in a row, the start's refusal the first; a
+credential that cannot be had — an enrolment the API does not answer — starts neither, and the
+start is tried again. See [service.md](service.md).
 
 ## Switching
 

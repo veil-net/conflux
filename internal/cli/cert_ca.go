@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"flag"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 	"time"
@@ -35,26 +36,8 @@ func caCommands() map[string]caCommand {
 func runCertCA(ctx context.Context, args []string) int {
 	cmds := caCommands()
 
-	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
-		names := make([]string, 0, len(cmds))
-		for n := range cmds {
-			names = append(names, n)
-		}
-
-		sort.Strings(names)
-		ui.Printf("conflux cert ca — a certificate authority kept in a directory\n\n")
-
-		for _, n := range names {
-			ui.Printf("  %-8s %s\n", n, cmds[n].summary)
-		}
-
-		ui.Printf("\nconflux cert ca COMMAND -h says more of each; docs/cert.md, \"A managed CA\", has the directory.\n")
-
-		if len(args) == 0 {
-			return ExitUsage
-		}
-
-		return ExitOK
+	if code, listed := commandList(args, func(w io.Writer) { caUsage(w, cmds) }); listed {
+		return code
 	}
 
 	c, ok := cmds[args[0]]
@@ -65,6 +48,24 @@ func runCertCA(ctx context.Context, args []string) int {
 	}
 
 	return c.run(ctx, args[1:])
+}
+
+// caUsage writes cert ca's commands, each with its summary.
+func caUsage(w io.Writer, cmds map[string]caCommand) {
+	names := make([]string, 0, len(cmds))
+	for n := range cmds {
+		names = append(names, n)
+	}
+
+	sort.Strings(names)
+
+	fmt.Fprintf(w, "conflux cert ca — a certificate authority kept in a directory\n\n")
+
+	for _, n := range names {
+		fmt.Fprintf(w, "  %-8s %s\n", n, cmds[n].summary)
+	}
+
+	fmt.Fprintf(w, "\nconflux cert ca COMMAND -h says more of each; docs/cert.md, \"A managed CA\", has the directory.\n")
 }
 
 // caFlags is a cert ca subcommand's flag set.

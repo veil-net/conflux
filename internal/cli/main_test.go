@@ -1,0 +1,74 @@
+package cli
+
+import (
+	"bytes"
+	"os"
+	"testing"
+
+	"github.com/veil-net/conflux/internal/paths/pathstest"
+	"github.com/veil-net/conflux/internal/privcheck"
+	"github.com/veil-net/conflux/internal/service"
+	"github.com/veil-net/conflux/internal/ui"
+)
+
+// TestMain stands in for the boot manager and for uninstall's removal of the accounts and
+// the installed conflux, and roots every conflux path in a directory of the run's own before
+// any test starts, so a test that does not root its own reaches nothing of the machine's:
+// neither its .conflux, nor the one service a machine has, nor its accounts or its conflux.
+func TestMain(m *testing.M) {
+	services = func() service.Manager { return noService{} }
+	uninstallAccounts = func() error { return nil }
+	uninstallInstallation = func() error { return nil }
+
+	pathstest.Main(m)
+}
+
+// noService is a machine with no boot service registered, whose every change is refused.
+type noService struct{}
+
+var errNoService = os.ErrPermission
+
+func (noService) Install(string, ...string) error   { return errNoService }
+func (noService) Remove() error                     { return nil }
+func (noService) Stop() error                       { return errNoService }
+func (noService) Restart() error                    { return errNoService }
+func (noService) Reconcile(string, ...string) error { return errNoService }
+func (noService) Installed() (bool, error)          { return false, nil }
+func (noService) Describe() string                  { return "not installed (a test's stand-in)" }
+func (noService) LogHint() string                   { return "nothing to read: a test's stand-in" }
+
+// asRoot has privcheck answer elevated, or not, for the rest of the test, whatever account
+// runs it.
+func asRoot(t *testing.T, elevated bool) {
+	t.Helper()
+
+	was := privcheck.Elevated
+	privcheck.Elevated = func() bool { return elevated }
+
+	t.Cleanup(func() { privcheck.Elevated = was })
+}
+
+// captureUI points what conflux says, on stdout and on stderr, at buffers of the test's own for
+// the rest of the test, and returns them.
+func captureUI(t *testing.T) (stdout, stderr *bytes.Buffer) {
+	t.Helper()
+
+	stdout, stderr = new(bytes.Buffer), new(bytes.Buffer)
+
+	was, wasErr := ui.Out, ui.Errw
+	ui.Out, ui.Errw = stdout, stderr
+
+	t.Cleanup(func() { ui.Out, ui.Errw = was, wasErr })
+
+	return stdout, stderr
+}
+
+// withServices makes m the boot manager for the rest of the test.
+func withServices(t *testing.T, m service.Manager) {
+	t.Helper()
+
+	was := services
+	services = func() service.Manager { return m }
+
+	t.Cleanup(func() { services = was })
+}

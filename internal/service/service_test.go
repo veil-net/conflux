@@ -5,22 +5,17 @@ import (
 	"os"
 	"testing"
 
-	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/paths/pathstest"
 )
 
-// TestPlaceCopiesWhatTheServiceRuns: the boot service runs a copy in the state
-// directory, which only root can write, and not wherever conflux was run from. The copy
+// TestPlaceCopiesWhatTheServiceRuns: the boot service runs a copy in conflux's root, which
+// only root can write, and not wherever conflux was run from. The copy
 // is this executable byte for byte, left alone while it still is, and replaced when it
 // is not -- an upgraded conflux reaches the service at its next install.
 func TestPlaceCopiesWhatTheServiceRuns(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	d := pathstest.Root(t)
 
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatal(err)
-	}
-
-	src, err := executable()
+	src, err := Executable()
 	if err != nil {
 		t.Fatal(err)
 	}

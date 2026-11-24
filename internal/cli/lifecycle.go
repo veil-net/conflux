@@ -3,7 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
-	"flag"
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -14,7 +14,21 @@ import (
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
+	"github.com/veil-net/conflux/internal/wintun"
 )
+
+// uninstallAccounts and uninstallInstallation are uninstall's two steps that reach past the
+// root to the machine itself -- the accounts conflux made, and the conflux the installer put
+// in place -- and variables only so that every test stands in for them (TestMain): a test run
+// on a real machine, a CI runner's included, never removes its accounts or its conflux.
+var (
+	uninstallAccounts     = removeAccount
+	uninstallInstallation = removeInstallation
+)
+
+// services is the platform's boot manager, and a variable only so the tests can stand in
+// for it: there is one service per machine, and no test may register, start or remove it.
+var services = service.New
 
 // runInstall registers the boot service, and nothing else.
 //
@@ -24,17 +38,13 @@ import (
 // it registers the service, says plainly that there is nothing to start, and exits
 // zero -- it did what it was asked. No configuration is invented.
 func runInstall(ctx context.Context, args []string) int {
-	fs := flag.NewFlagSet("install", flag.ContinueOnError)
-	fs.SetOutput(ui.Errw)
-	fs.Usage = func() {
-		ui.Printf("conflux install — register the boot service\n\n" +
-			"  conflux install\n\n" +
-			"Registers the service so this machine rejoins at boot. If a configuration\n" +
-			"already exists it is also started; if not, nothing is invented.\n")
-	}
+	fs := verbFlags("install", "conflux install — register the boot service\n\n"+
+		"  conflux install\n\n"+
+		"Registers the service so this machine rejoins at boot. If a configuration\n"+
+		"already exists it is also started; if not, nothing is invented.\n")
 
-	if err := fs.Parse(args); err != nil {
-		return ExitUsage
+	if exit, ok := flagsAlone(fs, args); !ok {
+		return exit
 	}
 
 	if err := needsRoot("registering the boot service", "install", args); err != nil {
@@ -54,7 +64,7 @@ func runInstall(ctx context.Context, args []string) int {
 // make, which is silent and leaves starting to the caller. Either has created the
 // directories already.
 func install(ctx context.Context, d paths.Dirs, standalone bool) int {
-	mgr := service.New()
+	mgr := services()
 
 	exe, err := service.Place(d)
 	if err != nil {
@@ -90,16 +100,7 @@ func install(ctx context.Context, d paths.Dirs, standalone bool) int {
 // defines it: an upgraded conflux's definition reaches the service the next time it is
 // placed. Nothing at all when the definition is the one already there.
 func register(mgr service.Manager, exe string) error {
-	// A CONFLUX_DIR run registers a service that has to come back to that same
-	// directory. Passed as an argument rather than an environment variable because
-	// none of the three service managers carries the operator's environment into
-	// what it starts.
-	serveArgs := []string{"serve"}
-	if root := paths.Root(); root != "" {
-		serveArgs = append(serveArgs, "--dir", root)
-	}
-
-	return mgr.Install(exe, serveArgs...)
+	return mgr.Install(exe, "serve")
 }
 
 // startFromConfig starts the anchor this machine is already configured for.
@@ -139,21 +140,17 @@ func startFromConfig(ctx context.Context, d paths.Dirs, mgr service.Manager, cfg
 // drops the proxies. A machine serving eight ports cannot be brought back by retyping
 // eight specs correctly from memory.
 func runStart(ctx context.Context, args []string) int {
-	fs := flag.NewFlagSet("start", flag.ContinueOnError)
-	fs.SetOutput(ui.Errw)
-	fs.Usage = func() {
-		ui.Printf("conflux start — start the anchor now, from the saved configuration\n\n" +
-			"  conflux start\n\n" +
-			"The counterpart to conflux down. Starts whatever this machine is already\n" +
-			"configured for, in whichever mode it names, and asks nothing. Nothing is\n" +
-			"enrolled and no configuration is invented.\n")
-	}
+	fs := verbFlags("start", "conflux start — start the anchor now, from the saved configuration\n\n"+
+		"  conflux start\n\n"+
+		"The counterpart to conflux down. Starts whatever this machine is already\n"+
+		"configured for, in whichever mode it names, and asks nothing. Nothing is\n"+
+		"enrolled and no configuration is invented.\n")
 
 	// anchorctl has a start of its own, and it is the one that takes flags: it
 	// builds an anchor from arguments the caller supplies. conflux's starts the one
 	// its configuration already describes, which is the whole difference and the
 	// reason it takes none. Resolve by shape, the way renew does.
-	if hint := anchorctlFlag(args); hint != "" {
+	if hint := anchorctlFlag(fs, args); hint != "" {
 		ui.Errf("%q is anchorctl's start, not conflux's.\n\n"+
 			"  conflux start starts the anchor this machine is already configured for:\n\n"+
 			"    conflux start\n\n"+
@@ -163,15 +160,8 @@ func runStart(ctx context.Context, args []string) int {
 		return ExitUsage
 	}
 
-	if err := fs.Parse(args); err != nil {
-		return ExitUsage
-	}
-
-	if fs.NArg() > 0 {
-		ui.Errf("conflux start takes no arguments, and got %q.\n\n"+
-			"  conflux start", fs.Arg(0))
-
-		return ExitUsage
+	if exit, ok := flagsAlone(fs, args); !ok {
+		return exit
 	}
 
 	if err := needsRoot("starting the service", "start", args); err != nil {
@@ -180,7 +170,7 @@ func runStart(ctx context.Context, args []string) int {
 
 	d := paths.Default()
 
-	mgr := service.New()
+	mgr := services()
 
 	installed, err := mgr.Installed()
 	if err != nil {
@@ -236,24 +226,20 @@ func runStart(ctx context.Context, args []string) int {
 // registration stays, the configuration stays, the identity stays. The next reboot
 // brings the machine back exactly as it was, with nothing typed.
 func runDown(_ context.Context, args []string) int {
-	fs := flag.NewFlagSet("down", flag.ContinueOnError)
-	fs.SetOutput(ui.Errw)
-	fs.Usage = func() {
-		ui.Printf("conflux down — stop the anchor now; a reboot brings it back\n\n" +
-			"  conflux down\n\n" +
-			"Leaves the boot service registered and the configuration in place. To remove\n" +
-			"those as well, that is conflux uninstall.\n")
-	}
+	fs := verbFlags("down", "conflux down — stop the anchor now; a reboot brings it back\n\n"+
+		"  conflux down\n\n"+
+		"Leaves the boot service registered and the configuration in place. To remove\n"+
+		"those as well, that is conflux uninstall.\n")
 
-	if err := fs.Parse(args); err != nil {
-		return ExitUsage
+	if exit, ok := flagsAlone(fs, args); !ok {
+		return exit
 	}
 
 	if err := needsRoot("stopping the service", "down", args); err != nil {
 		return fail(err)
 	}
 
-	mgr := service.New()
+	mgr := services()
 
 	installed, err := mgr.Installed()
 	if err != nil {
@@ -285,19 +271,17 @@ func runDown(_ context.Context, args []string) int {
 
 // runUninstall is the reverse of install, and it destroys the identity.
 func runUninstall(_ context.Context, args []string) int {
-	fs := flag.NewFlagSet("uninstall", flag.ContinueOnError)
-	fs.SetOutput(ui.Errw)
+	fs := verbFlags("uninstall", "conflux uninstall — remove the boot service, the configuration, the identity and conflux itself\n\n"+
+		"  conflux uninstall [--yes]\n\n"+
+		"Nothing of conflux is left on the machine: conflux itself goes last, from where the\n"+
+		"installer put it, and stays when a step before it fails, so that this can be run\n"+
+		"again to finish. This deletes the credential, and there is no other copy of it\n"+
+		"anywhere.\n\n")
 
 	yes := fs.Bool("yes", false, "do not ask for confirmation")
 
-	fs.Usage = func() {
-		ui.Printf("conflux uninstall — remove the boot service, the configuration and the identity\n\n" +
-			"  conflux uninstall [--yes]\n\n" +
-			"This deletes the credential, and there is no other copy of it anywhere.\n")
-	}
-
-	if err := fs.Parse(args); err != nil {
-		return ExitUsage
+	if exit, ok := flagsAlone(fs, args); !ok {
+		return exit
 	}
 
 	if err := needsRoot("removing the boot service", "uninstall", args); err != nil {
@@ -310,7 +294,7 @@ func runUninstall(_ context.Context, args []string) int {
 	// the run ends itself, with its anchor, when it is stopped.
 	if e, live := liveEphemeral(); live {
 		ui.Errf("an ephemeral anchor is running from %s.\n"+
-			"  Stop it first (Ctrl-C where it runs): uninstall removes the account it runs as", e.State)
+			"  Stop it first (Ctrl-C where it runs): uninstall removes the account it runs as", e.Root)
 
 		return ExitUsage
 	}
@@ -322,39 +306,50 @@ func runUninstall(_ context.Context, args []string) int {
 	// Each step tolerates its own failure: a half-removed installation must always
 	// be finishable, so nothing stops at the first complaint. Remove stops the service
 	// on every platform before it deregisters it.
-	errs := []error{service.New().Remove()}
+	errs := []error{services().Remove()}
 
-	// Whatever anchord a supervisor that died left running out of the state directory,
+	// Whatever anchord a supervisor that died left running out of the root,
 	// once the service's own supervisor has let go of it.
 	daemon.Reap(d, 35*time.Second)
 
 	// And what an ephemeral run that was killed left: its anchord, where nothing ended it with
-	// the run (macOS and the BSDs), and its root -- the extracted pair and the token -- which
-	// nothing else removes. Under the root's lock, as a run's own clean-up is, so one starting
-	// now is not emptied out from under itself.
-	if e, stale := staleEphemeral(); stale {
+	// the run (macOS and the BSDs), and its root -- the token, and the pair where it could not
+	// run from memory -- which nothing else removes before a reboot. Under the root's lock, as
+	// a run's own clean-up is, so one starting now is not emptied out from under itself.
+	if e, stale := staleEphemeral(paths.EphemeralRoot()); stale {
 		errs = append(errs, removeEphemeralRoot(e))
 	}
 
-	for _, dir := range []string{d.Run, d.State, d.Config} {
-		errs = append(errs, os.RemoveAll(dir))
-	}
+	// Windows' driver, while the set that holds the library to remove it with is still there;
+	// it stays while any adapter, anybody's, is in use.
+	errs = append(errs, wintun.DeleteDriver(d))
+
+	errs = append(errs, os.RemoveAll(d.Root))
 
 	// The account anchord ran as, once nothing runs as it, if conflux made it.
-	errs = append(errs, removeAccount())
+	errs = append(errs, uninstallAccounts())
 
+	// conflux itself is what finishes a removal that failed part way, so it stays until
+	// everything before it is gone.
 	if err := errors.Join(errs...); err != nil {
+		return fail(fmt.Errorf("%w\n  conflux itself was kept, at %s, so that conflux uninstall can be run again to finish",
+			err, paths.InstalledExecutable()))
+	}
+
+	// Last, what the install script put in place: the conflux on PATH, which may be this one.
+	if err := uninstallInstallation(); err != nil {
 		return fail(err)
 	}
 
-	ui.Printf("Removed. The boot service, the configuration and the identity are gone.\n" +
-		"conflux up here again draws a new identity and a new overlay address.\n")
+	ui.Printf("Removed. Nothing of conflux is left on this machine: the boot service, the\n" +
+		"configuration, the identity and the conflux on PATH are gone. Installing it again and\n" +
+		"running conflux up draws a new identity and a new overlay address.\n")
 
 	return ExitOK
 }
 
 // removeEphemeralRoot stops whatever anchord a killed ephemeral run left in its root, and
-// removes the root, unless a run holds it by now.
+// removes the root as a run removes its own, unless a run holds it by now.
 func removeEphemeralRoot(e paths.Dirs) error {
 	unlock, ok, err := flock.TryAcquire(e.ServeLockFile())
 	if err != nil || !ok {
@@ -363,9 +358,7 @@ func removeEphemeralRoot(e paths.Dirs) error {
 
 	_, reapErr := daemon.ReapOrphan(e)
 
-	unlock()
-
-	return errors.Join(reapErr, os.RemoveAll(e.State))
+	return errors.Join(reapErr, daemon.RemoveEphemeralRoot(e, unlock))
 }
 
 // confirmUninstall makes the irreversible part explicit before it happens.
@@ -387,8 +380,9 @@ func confirmUninstall(d paths.Dirs, yes bool) bool {
 		ui.Field("anchor", st.AnchorID)
 	}
 
-	ui.Printf("\nThe identity and the overlay address are gone. conflux up afterwards draws\n" +
-		"new ones, and every machine that knew this one by its address will not find it.\n\n")
+	ui.Printf("\nThe identity and the overlay address are gone, and conflux with them. Installing conflux\n" +
+		"again and running conflux up draws new ones, and every machine that knew this one by its\n" +
+		"address will not find it.\n\n")
 
 	return ui.Confirm("Continue?")
 }

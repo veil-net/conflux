@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/wintun"
 )
 
 // handed is a credential an ephemeral run is handed, issued and expiring when asked, renewing
@@ -58,12 +60,12 @@ func runEphemeral(t *testing.T, is *issuer, env config.Envelope) *ephemeralRig {
 
 	fakeCtl(t) // the stand-in anchorctl's environment
 
-	root := filepath.Join(dirs(t).State, "e")
+	root := filepath.Join(dirs(t).Root, "e")
 
 	r := &ephemeralRig{root: root, ups: make(chan EphemeralUp, 1), finished: make(chan struct{})}
 
 	e := &Ephemeral{
-		Dirs:       paths.EphemeralDirs(root),
+		Dirs:       paths.Dirs{Root: root},
 		Config:     &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, APIBaseURL: is.srv.URL},
 		Manifest:   env,
 		Up:         func(u EphemeralUp) { r.ups <- u },
@@ -139,7 +141,7 @@ func TestAnEphemeralRunWritesNothingAndLeavesNothing(t *testing.T) {
 	}
 
 	// Up, and saying so to the readers that wait for it, in the root that goes with it.
-	if !IsReady(paths.EphemeralDirs(r.root)) {
+	if !IsReady(paths.Dirs{Root: r.root}) {
 		t.Error("the run is up and has not marked itself ready")
 	}
 
@@ -191,7 +193,7 @@ func TestAnEphemeralRunEndsWithItsDaemon(t *testing.T) {
 	r := runEphemeral(t, is, handed(t, is, time.Now().Add(-time.Hour), time.Now().Add(30*24*time.Hour)))
 	r.up(t)
 
-	b, err := os.ReadFile(paths.EphemeralDirs(r.root).DaemonPIDFile())
+	b, err := os.ReadFile(paths.Dirs{Root: r.root}.DaemonPIDFile())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,13 +244,160 @@ func TestAnEphemeralRunRenewsInMemory(t *testing.T) {
 	}
 }
 
+// TestAnEphemeralRootGoesWhileItsLockIsHeld: a run's root is cleared while the run still holds
+// its lock, so a run that starts the moment the lock is let go is not emptied out from under
+// itself: what it made, its own lock among it, is left as it is.
+func TestAnEphemeralRootGoesWhileItsLockIsHeld(t *testing.T) {
+	is := newIssuer(t)
+
+	var (
+		root string
+		next func()
+	)
+
+	// The next run, starting where the lock has just been let go.
+	ephemeralUnlocked = func() {
+		d := paths.Dirs{Root: root}
+		if err := d.EnsureAll(); err != nil {
+			t.Errorf("the next run could not make its root: %v", err)
+
+			return
+		}
+
+		unlock, ok, err := flock.TryAcquire(d.ServeLockFile())
+		if err != nil || !ok {
+			t.Errorf("the next run could not take the lock: ok %v, %v", ok, err)
+
+			return
+		}
+
+		next = unlock
+
+		if err := os.WriteFile(filepath.Join(root, "next"), nil, 0o600); err != nil {
+			t.Error(err)
+		}
+	}
+	t.Cleanup(func() { ephemeralUnlocked = func() {} })
+
+	r := runEphemeral(t, is, handed(t, is, time.Now().Add(-time.Hour), time.Now().Add(30*24*time.Hour)))
+	root = r.root
+
+	r.up(t)
+	r.cancel()
+
+	if err := r.ended(t); err != nil {
+		t.Errorf("a cancelled run ended with %v, want nil", err)
+	}
+
+	if next == nil {
+		t.Fatal("the next run never started")
+	}
+	defer next()
+
+	for _, p := range []string{filepath.Join(root, "next"), paths.Dirs{Root: root}.ServeLockFile()} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("the ended run removed the next one's %s: %v", filepath.Base(p), err)
+		}
+	}
+}
+
+// TestAnEphemeralRootTakesTheDriverWithIt: RemoveEphemeralRoot, which a run's end and
+// uninstall's removal of a killed run's root both go through, asks once for the Wintun driver
+// to go through the root's own library, while that library is still there, and then removes
+// the root whatever the driver's answer was, which it hands back to be said.
+func TestAnEphemeralRootTakesTheDriverWithIt(t *testing.T) {
+	is := newIssuer(t)
+
+	// Recorded as wintun.DeleteDriver acts: only through a library under the root, so asking
+	// once the library had gone would be no ask at all. Windows' answer here is a failure.
+	var asked []string
+
+	failed := errors.New("the driver would not go")
+	deleteDriver = func(d paths.Dirs) error {
+		if driverLibraryIn(d) == "" {
+			return nil
+		}
+
+		asked = append(asked, d.Root)
+
+		return failed
+	}
+	t.Cleanup(func() { deleteDriver = wintun.DeleteDriver })
+
+	// A TUN run's end, once and not twice, through the library its root holds by then.
+	r := runEphemeral(t, is, handed(t, is, time.Now().Add(-time.Hour), time.Now().Add(30*24*time.Hour)))
+	r.up(t)
+	placeLibrary(t, paths.Dirs{Root: r.root})
+	r.cancel()
+
+	if err := r.ended(t); err != nil {
+		t.Errorf("a cancelled run ended with %v, want nil: the driver's answer is a warning", err)
+	}
+
+	if len(asked) != 1 || asked[0] != r.root {
+		t.Errorf("an ended run asked for the driver to go through %q, want once through its root, %s", asked, r.root)
+	}
+
+	// uninstall's, for the root a killed TUN run left, its library still in its set.
+	d := paths.Dirs{Root: filepath.Join(t.TempDir(), "killed")}
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	placeLibrary(t, d)
+
+	unlock, ok, err := flock.TryAcquire(d.ServeLockFile())
+	if err != nil || !ok {
+		t.Fatalf("the killed run's lock: ok %v, %v", ok, err)
+	}
+
+	if err := RemoveEphemeralRoot(d, unlock); !errors.Is(err, failed) {
+		t.Errorf("RemoveEphemeralRoot = %v, want the driver's answer, %v", err, failed)
+	}
+
+	if len(asked) != 2 || asked[1] != d.Root {
+		t.Errorf("removing a killed run's root asked for the driver to go through %q, want %s after the run's", asked, d.Root)
+	}
+
+	if _, err := os.Stat(d.Root); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the killed run's root is still there with the driver kept: %v", err)
+	}
+}
+
+// TestTheEphemeralTimerWaitsAfterARenewal: as the supervisor's timer does, an ephemeral run's
+// waits minSleep at least after a renewal that succeeds, so an issuer answering with a window
+// already gone is not asked again at once, and again.
+func TestTheEphemeralTimerWaitsAfterARenewal(t *testing.T) {
+	is := newIssuer(t)
+	is.skew, is.lapsed = time.Minute, true
+
+	m, err := enrol.Decode(handed(t, is, time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, APIBaseURL: is.srv.URL}
+	s := &Supervisor{ctl: fakeCtl(t), tail: newRing(tailLines)}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+
+	if err := s.keepEphemeral(ctx, &child{exited: make(chan struct{})}, cfg, m, fakeAnchorID, time.Hour); err != nil {
+		t.Errorf("keepEphemeral = %v, want nil once cancelled", err)
+	}
+
+	if n := is.calls.Load(); n != 1 {
+		t.Errorf("the ephemeral timer renewed %d times in 500ms, want once, then minSleep", n)
+	}
+}
+
 // TestASecondEphemeralRunIsRefused: one ephemeral run per root, refused before it touches the
 // one already running.
 func TestASecondEphemeralRunIsRefused(t *testing.T) {
 	is := newIssuer(t)
 
-	root := filepath.Join(dirs(t).State, "e")
-	if err := paths.EphemeralDirs(root).EnsureAll(); err != nil {
+	root := filepath.Join(dirs(t).Root, "e")
+	if err := (paths.Dirs{Root: root}).EnsureAll(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -259,7 +408,7 @@ func TestASecondEphemeralRunIsRefused(t *testing.T) {
 	defer unlock()
 
 	e := &Ephemeral{
-		Dirs:     paths.EphemeralDirs(root),
+		Dirs:     paths.Dirs{Root: root},
 		Config:   &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, APIBaseURL: is.srv.URL},
 		Manifest: handed(t, is, time.Now().Add(-time.Hour), time.Now().Add(30*24*time.Hour)),
 		tools:    &libexec.Tools{Anchord: os.Args[0], Anchorctl: os.Args[0]},
@@ -302,7 +451,7 @@ const (
 
 func ephemeralRunner(root string) int {
 	e := &Ephemeral{
-		Dirs:     paths.EphemeralDirs(root),
+		Dirs:     paths.Dirs{Root: root},
 		Config:   &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, APIBaseURL: os.Getenv(ephemeralRunnerAPI)},
 		Manifest: config.Envelope(os.Getenv(ephemeralRunnerManifest)),
 		tools:    &libexec.Tools{Anchord: os.Args[0], Anchorctl: os.Args[0]},
@@ -313,4 +462,79 @@ func ephemeralRunner(root string) int {
 	}
 
 	return 0
+}
+
+// TestANextRunTakesAKilledRunsDriver: the next ephemeral run clears what a killed one left,
+// and asks for the killed TUN run's driver to go first, through the library still in its root:
+// cleared, the root would leave nothing a later uninstall could remove the driver with.
+func TestANextRunTakesAKilledRunsDriver(t *testing.T) {
+	d := paths.Dirs{Root: filepath.Join(t.TempDir(), "killed")}
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	placeLibrary(t, d)
+
+	// Counted as wintun.DeleteDriver acts: only through a library under the root, so a driver
+	// asked to go once the library had gone is not asked at all.
+	var asked int
+
+	deleteDriver = func(d paths.Dirs) error {
+		if driverLibraryIn(d) != "" {
+			asked++
+		}
+
+		return nil
+	}
+	t.Cleanup(func() { deleteDriver = wintun.DeleteDriver })
+
+	if err := os.WriteFile(d.ServeLockFile(), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := clearKilled(d, &Ephemeral{Dirs: d}); err != nil {
+		t.Fatal(err)
+	}
+
+	if asked != 1 {
+		t.Errorf("the driver was asked to go %d times, want once", asked)
+	}
+
+	if _, err := os.Stat(d.Libexec()); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the killed run's bin/ is still there: %v", err)
+	}
+
+	if _, err := os.Stat(d.ServeLockFile()); err != nil {
+		t.Errorf("the run's own lock went with the rest: %v", err)
+	}
+
+	// A root with no pair in it -- a fresh one, or a Linux run's, in memory -- removes no driver.
+	if err := clearKilled(d, &Ephemeral{Dirs: d}); err != nil || asked != 1 {
+		t.Errorf("clearing a root with no bin/ removed the driver (%d) or failed: %v", asked, err)
+	}
+}
+
+// placeLibrary puts a Wintun library in a set under d's bin, where a TUN run on Windows has one.
+func placeLibrary(t *testing.T, d paths.Dirs) {
+	t.Helper()
+
+	library := filepath.Join(d.Libexec(), "0123456789abcdef", wintun.DLLName)
+	if err := os.MkdirAll(filepath.Dir(library), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(library, []byte("MZ"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// driverLibraryIn is a Wintun library in any set under d's bin, where wintun.DeleteDriver finds
+// the one it removes the driver through, or "".
+func driverLibraryIn(d paths.Dirs) string {
+	found, _ := filepath.Glob(filepath.Join(d.Libexec(), "*", wintun.DLLName))
+	if len(found) == 0 {
+		return ""
+	}
+
+	return found[0]
 }

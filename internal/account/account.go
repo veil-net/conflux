@@ -1,10 +1,6 @@
 // Package account is the unprivileged account anchord runs as wherever its mode and the
-// host let it: one per installation, made by conflux the first time it is needed and
-// removed by `conflux uninstall`.
-//
-// One per installation rather than one per machine, so a CONFLUX_DIR installation beside
-// the machine's own never shares an identity with it: an anchord of a test root could
-// otherwise reach the real node's anchor directory, which that identity owns.
+// host let it: one per machine, made by conflux the first time it is needed and removed by
+// `conflux uninstall`.
 //
 // The command lines are rendered here, without a build tag, as the systemd unit and the
 // rc scripts are, so that every platform's are tested on every machine that builds
@@ -17,8 +13,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-
-	"github.com/veil-net/conflux/internal/paths"
 )
 
 // Comment is the account's comment (GECOS on Linux and the BSDs, RealName on macOS), and
@@ -37,23 +31,23 @@ type Account struct {
 // make. anchord does not run as it, and uninstall leaves it alone.
 var ErrConflict = errors.New("an account of that name exists and conflux did not make it")
 
-// Name is this installation's account: conflux, or _conflux where the platform names its
-// own daemons' accounts so, with a CONFLUX_DIR installation's scope after it.
-func Name() string { return nameFor(runtime.GOOS, "conflux", paths.Scope()) }
+// Name is the installation's account: conflux, or _conflux where the platform names its
+// own daemons' accounts so.
+func Name() string { return nameFor(runtime.GOOS, "conflux") }
 
 // EphemeralName is the account an ephemeral run's anchord runs as: conflux-ephemeral, named
 // as Name is. One of its own rather than the installation's, which it cannot share: the
 // installed supervisor ends every process of its account each time it starts anchord, and an
 // ephemeral anchord running as that account would go with them. Made the first time an
 // ephemeral run needs it and kept, as the installation's is, until `conflux uninstall`.
-func EphemeralName() string { return nameFor(runtime.GOOS, "conflux-ephemeral", paths.Scope()) }
+func EphemeralName() string { return nameFor(runtime.GOOS, "conflux-ephemeral") }
 
-func nameFor(goos, base, scope string) string {
+func nameFor(goos, base string) string {
 	if goos == "darwin" || goos == "openbsd" {
-		base = "_" + base
+		return "_" + base
 	}
 
-	return base + scope
+	return base
 }
 
 // String is the account as a person reads it.

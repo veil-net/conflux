@@ -3,10 +3,10 @@
 // libexec serialises the extraction of the embedded anchor pair with one, and the
 // daemon everything that rewrites the manifest and the state -- a bring-up, a renewal,
 // the uplink watcher's count, `conflux enrol` -- with another. A third keeps one
-// supervisor per root, and Held on anchord's own socket lock says whether a daemon is
-// serving there. The primitive is three lines of platform
-// code either way, which is exactly the size of thing that gets copied rather than
-// shared and then diverges on the platform nobody develops on.
+// supervisor per root: Held on an ephemeral run's says whether the run is live, and
+// HeldUntrusted on anchord's own socket lock whether a daemon is serving there. The
+// primitive is three lines of platform code either way, which is exactly the size of thing
+// that gets copied rather than shared and then diverges on the platform nobody develops on.
 package flock
 
 import "time"
@@ -20,7 +20,7 @@ import "time"
 // running. A holder that is there stays there; a question is gone in microseconds.
 //
 // Not for anchord's socket lock, whose directory anchord's account may write: this opens
-// with O_CREATE, and Held is the way to ask after that one.
+// with O_CREATE, and HeldUntrusted is the way to ask after that one.
 func TryAcquire(path string) (unlock func(), ok bool, err error) {
 	for tries := 1; ; tries++ {
 		unlock, ok, err = tryAcquire(path)

@@ -62,8 +62,13 @@ type State struct {
 	LastLinkReopen time.Time `json:"lastLinkReopen,omitzero"`
 }
 
-// LoadState reads it. A missing file is an empty State and not an error: every
-// field is derived, so absent and unknown are the same thing.
+// LoadState reads it. A missing file is an empty State and not an error: a machine that has
+// never started has worked nothing out.
+//
+// One that does not parse, or that a newer conflux wrote, is an error naming the file, and
+// never an empty State: not everything in it is worked out again -- the AnchorID a renewal
+// names is not, once the credential has lapsed -- so a start refuses it rather than
+// replacing it with nothing.
 func LoadState(d paths.Dirs) (*State, error) {
 	b, err := os.ReadFile(d.StateFile())
 	if err != nil {
@@ -74,11 +79,20 @@ func LoadState(d paths.Dirs) (*State, error) {
 		return nil, err
 	}
 
+	return parseState(d.StateFile(), b)
+}
+
+// parseState is the State in b, read from path.
+func parseState(path string, b []byte) (*State, error) {
 	var s State
 	if err := json.Unmarshal(b, &s); err != nil {
-		// A corrupt derived file is not worth failing a start over -- everything
-		// in it can be worked out again.
-		return &State{Version: StateVersion}, nil //nolint:nilerr // deliberate
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+
+	if s.Version > StateVersion {
+		return nil, fmt.Errorf(
+			"%s was written by a newer conflux (state version %d, this build understands %d)",
+			path, s.Version, StateVersion)
 	}
 
 	return &s, nil
@@ -87,14 +101,24 @@ func LoadState(d paths.Dirs) (*State, error) {
 // SaveState writes it, atomically and 0600. It holds no key material, but it does
 // hold the AnchorID, and there is no reason to be looser than the file beside it.
 func SaveState(d paths.Dirs, s *State) error {
+	b, err := encodeState(s)
+	if err != nil {
+		return err
+	}
+
+	return WriteFileAtomic(d.StateFile(), b, 0o600)
+}
+
+// encodeState is s in the form conflux writes it.
+func encodeState(s *State) ([]byte, error) {
 	s.Version = StateVersion
 
 	b, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
-		return fmt.Errorf("encode state: %w", err)
+		return nil, fmt.Errorf("encode state: %w", err)
 	}
 
-	return WriteFileAtomic(d.StateFile(), append(b, '\n'), 0o600)
+	return append(b, '\n'), nil
 }
 
 // NewIdentity forgets everything this state held about the identity before: what a

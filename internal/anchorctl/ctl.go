@@ -3,6 +3,7 @@ package anchorctl
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -189,12 +190,45 @@ func (c *Ctl) Stop(ctx context.Context) error {
 	return err
 }
 
-// ObserveStart starts the daemon's observer, or starts it again with o. A host that will
-// not let the daemon capture is refused, with anchorctl's own explanation on stderr.
-func (c *Ctl) ObserveStart(ctx context.Context, o config.Observer) error {
-	_, err := c.run(ctx, nil, ObserveStartArgs(o)...)
+// ObserveStart starts the daemon's observer under env, the machine's manifest, or starts it
+// again with o, and returns the AnchorID it observes as: the identity its credential names,
+// which a renewal asks for by, and which only the observer reports where no anchor runs. A
+// host that will not let the daemon capture is refused, with anchorctl's own explanation on
+// stderr.
+func (c *Ctl) ObserveStart(ctx context.Context, env config.Envelope, o config.Observer) (string, error) {
+	out, err := c.run(ctx, env, ObserveStartArgs(o)...)
+	if err != nil {
+		return "", err
+	}
+
+	return ParseObserving(out), nil
+}
+
+// ObserveRenew installs a renewed chain on the running observer, hot. An observer that is not
+// running has nothing to renew, which is not an error: it is started under the manifest on
+// disk when it next starts.
+func (c *Ctl) ObserveRenew(ctx context.Context, chain []byte) error {
+	_, err := c.run(ctx, chain, ObserveRenewArgs()...)
+	if said(err, notObservingHint) {
+		return nil
+	}
 
 	return err
+}
+
+// notObservingHint is how anchorctl explains REASON_NOT_OBSERVING: a renewal for an observer
+// that is not running.
+const notObservingHint = "the observer is not running, so it has no credential to renew"
+
+// notRunning is anchord's refusal for REASON_NOT_RUNNING, which every one of its services
+// gives in these words: a call that needs an anchor, where the daemon holds none.
+const notRunning = "no anchor is running"
+
+// said reports whether err is anchorctl refusing in words that include these.
+func said(err error, words string) bool {
+	var e *Error
+
+	return errors.As(err, &e) && strings.Contains(e.Stderr, words)
 }
 
 // ObserveStop stops the observer, which records and ends every flow it holds. Not
@@ -217,13 +251,18 @@ func (c *Ctl) Export(ctx context.Context, endpoint string, insecure bool, signal
 }
 
 // Renew installs a fresh credential on the running anchor, hot: SetRealmCred rather
-// than a restart, so not one session is lost.
+// than a restart, so not one session is lost. An anchor that is not running -- one that does
+// not come up beside the observer, or one being rebuilt or given up on -- has nothing to renew,
+// which is not an error: it starts under the manifest on disk, as ObserveRenew's observer does.
 //
 // chain is the credential itself, raw, not base64: the API sends base64 and the client
 // decodes it on the way in. Getting that backwards produces a credential the daemon
 // refuses, with nothing saying the encoding is why.
 func (c *Ctl) Renew(ctx context.Context, chain []byte) error {
 	_, err := c.run(ctx, chain, RenewArgs()...)
+	if said(err, notRunning) {
+		return nil
+	}
 
 	return err
 }

@@ -211,12 +211,12 @@ func TestCheckTaints(t *testing.T) {
 		"the granted set, repeated":    {alphaDocument, []string{alphaTaint, alphaTaint}, true, nil},
 		"a set in another order":       {two, []string{"lab", "office"}, true, nil},
 		"nothing asked: adopt":         {alphaDocument, nil, true, nil},
-		"another taint":                {alphaDocument, []string{"other"}, false, []string{`"other"`, "uninstall", "conflux up --taint other"}},
+		"another taint":                {alphaDocument, []string{"other"}, false, []string{`"other"`, "uninstall", "install conflux again", "conflux up --taint other"}},
 		"one of two":                   {two, []string{"office"}, false, []string{"uninstall"}},
 		"alpha granting none":          {commons, []string{"office"}, false, []string{"before the alpha realm granted", "conflux up --taint office"}},
 		"alpha granting none, unasked": {commons, nil, false, []string{"shared compartment", "--taint TAINT"}},
 		"issued granting none":         {guardianDocument, nil, true, nil},
-		"issued, another taint":        {guardianDocument, []string{"office"}, false, []string{"enrol --manifest"}},
+		"issued, another taint":        {guardianDocument, []string{"office"}, false, []string{"install conflux again", "enrol --manifest"}},
 		"a ghost node's own":           {ghostNodeDocument, []string{"au"}, true, nil},
 	} {
 		err := manifest(t, tc.doc).CheckTaints(tc.want)

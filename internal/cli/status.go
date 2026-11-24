@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"runtime"
 	"strconv"
@@ -14,10 +16,14 @@ import (
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
-	"github.com/veil-net/conflux/internal/service"
+	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/ui"
 	"github.com/veil-net/conflux/internal/version"
 )
+
+// statusConfig is how status reads the configuration: a variable, so a test run as root can
+// meet the refusal an account that cannot read it meets.
+var statusConfig = config.Load
 
 // runStatus resolves the collision with anchorctl's status by arity, and is
 // additive rather than replacing.
@@ -40,7 +46,17 @@ func runStatus(ctx context.Context, args []string) int {
 
 	ephemeral := reportEphemeralRun(ctx)
 
-	cfg, err := config.Load(d)
+	cfg, err := statusConfig(d)
+
+	// The root lets no account but root's in, and status reads it: asked for again with
+	// privilege, as pass-through asks for the token.
+	if errors.Is(err, fs.ErrPermission) {
+		ui.Errf("%s is not readable, and conflux status reads it.\n  try:  %s",
+			d.ConfigFile(), privcheck.Retry(typed("conflux", "status")))
+
+		return ExitDenied
+	}
+
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return fail(err)
@@ -61,7 +77,7 @@ func runStatus(ctx context.Context, args []string) int {
 
 	// The daemon's two answers are forks, so they are asked for first and read last,
 	// and the wait for them overlaps everything conflux prints of its own.
-	daemon := askDaemon(ctx, d)
+	daemon := askDaemon(ctx, d, true)
 
 	st, _ := config.LoadState(d)
 
@@ -103,13 +119,13 @@ type daemonAnswers struct {
 	expErr  error
 }
 
-// askDaemon starts `anchorctl status` and `anchorctl export`, or asks nothing when
-// there is no daemon to ask.
-func askDaemon(ctx context.Context, d paths.Dirs) *daemonAnswers {
+// askDaemon starts `anchorctl status`, and `anchorctl export` for a caller that reads it, or
+// asks nothing when there is no daemon to ask.
+func askDaemon(ctx context.Context, d paths.Dirs, export bool) *daemonAnswers {
 	a := &daemonAnswers{}
 
-	// No socket, no daemon. The token outlives one where nothing clears the run directory
-	// on stop -- launchd, rc, Windows -- and asking would cost two forks for anchorctl's
+	// No socket, no daemon. The token outlives one, since nothing clears the run directory
+	// on stop but the next supervisor, and asking would cost two forks for anchorctl's
 	// "is anchord running on that socket", which reads as a fault rather than a stop.
 	if _, err := os.Stat(d.Socket()); err != nil {
 		return a
@@ -124,40 +140,45 @@ func askDaemon(ctx context.Context, d paths.Dirs) *daemonAnswers {
 	env := ctl.Env()
 
 	a.wg.Go(func() { a.status, a.statErr = runQuiet(ctx, ctl.Bin, env, []string{"status"}) })
-	a.wg.Go(func() { a.export, a.expErr = runQuiet(ctx, ctl.Bin, env, []string{"export"}) })
+
+	if export {
+		a.wg.Go(func() { a.export, a.expErr = runQuiet(ctx, ctl.Bin, env, []string{"export"}) })
+	}
 
 	return a
 }
 
-func reportService() { ui.Field("service", service.New().Describe()) }
+func reportService() { ui.Field("service", services().Describe()) }
 
 // reportEphemeralRun says what an ephemeral run is doing, before the machine's own anchor,
 // and whether one is running: or what a killed one left behind.
 func reportEphemeralRun(ctx context.Context) bool {
-	if d, stale := staleEphemeral(); stale {
-		ui.Field("ephemeral", "none running; "+d.State+" was left by one that was killed, and the next "+
+	d, run := ephemeralAt(paths.EphemeralRoot())
+
+	switch run {
+	case noRun:
+		return false
+	case staleRun:
+		ui.Field("ephemeral", "none running; "+d.Root+" was left by one that was killed, and the next "+
 			"ephemeral run clears it and stops any anchord it left")
 		ui.Println()
-	}
 
-	d, live := liveEphemeral()
-	if !live {
 		return false
 	}
 
 	ui.Println("ephemeral:")
 
 	if !daemon.IsLiveReady(d) {
-		ui.Field("running", "starting, from "+d.State+" — in memory alone; nothing of it outlives the run")
+		ui.Field("running", "starting, from "+d.Root+" — in memory alone; nothing of it outlives the run")
 		ui.Println()
 
 		return true
 	}
 
-	daemon := askDaemon(ctx, d)
+	daemon := askDaemon(ctx, d, false)
 	daemon.wg.Wait()
 
-	ui.Field("running", "from "+d.State+" — in memory alone; nothing of it outlives the run")
+	ui.Field("running", "from "+d.Root+" — in memory alone; nothing of it outlives the run")
 	reportPrivilege(d, daemon.asked && daemon.statErr == nil)
 	reportAnchor(daemon)
 	ui.Println()
@@ -222,22 +243,8 @@ func reportConfig(d paths.Dirs, cfg *config.Config) {
 }
 
 func reportCredential(d paths.Dirs, cfg *config.Config, st *config.State) {
+	// Observing alone as beside an anchor: the observer runs under the same credential.
 	held, err := heldCredential(d)
-
-	// Observing alone needs no credential. One held is the identity the next up or proxy
-	// comes back with, and is said to be kept rather than reported on.
-	if !cfg.Anchor() {
-		if err == nil && held != nil {
-			kept := "kept for the next up or proxy"
-			if st != nil && st.AnchorID != "" {
-				kept = st.AnchorID + " — " + kept
-			}
-
-			ui.Field("identity", kept)
-		}
-
-		return
-	}
 
 	switch {
 	case err != nil:
@@ -329,10 +336,14 @@ func reportBinaries(st *config.State) {
 // `conflux anchorctl export -endpoint ...` makes; and a SIGHUP, which re-reads the
 // file and discards the call. So a machine can be exporting somewhere its own
 // configuration does not name, until the next restart puts it back. anchor reports
-// which surface set it -- ExportSource -- for exactly this.
+// which surface set it -- ExportSource -- for exactly this, and where it exports, or that it
+// exports nothing (anchorctl export's "exporting to" and "not exporting"), which is said where
+// it is not what conflux.json names.
 func reportExport(cfg *config.Config, a *daemonAnswers) {
+	configured := cfg.Export != nil && cfg.Export.Enabled
+
 	want := "none — nothing is exported until an endpoint is set"
-	if cfg.Export != nil && cfg.Export.Enabled {
+	if configured {
 		want = cfg.Export.Endpoint + " — " + strings.Join(cfg.Export.Signals(), ", ")
 	}
 
@@ -345,7 +356,25 @@ func reportExport(cfg *config.Config, a *daemonAnswers) {
 	}
 
 	for line := range strings.SplitSeq(strings.TrimSpace(a.export), "\n") {
-		key, value, ok := strings.Cut(strings.TrimSpace(line), "set by")
+		line = strings.TrimSpace(line)
+
+		if line == "not exporting" {
+			if configured {
+				ui.Field("", "not exporting, the daemon says")
+			}
+
+			continue
+		}
+
+		if endpoint, ok := strings.CutPrefix(line, "exporting to"); ok {
+			if endpoint = strings.TrimSpace(endpoint); !configured || endpoint != cfg.Export.Endpoint {
+				ui.Field("", "the daemon exports to "+endpoint)
+			}
+
+			continue
+		}
+
+		key, value, ok := strings.Cut(line, "set by")
 		if ok && key == "" {
 			source := strings.TrimSpace(value)
 

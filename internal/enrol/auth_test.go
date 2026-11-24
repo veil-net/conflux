@@ -82,7 +82,7 @@ func TestAuthResolvesTheThreeStates(t *testing.T) {
 // TestNodeSecretSendsABearer checks the header that reaches the server, because
 // that is the thing the contract is about.
 func TestNodeSecretSendsABearer(t *testing.T) {
-	expiry := time.Date(2026, 11, 13, 4, 12, 0, 0, time.UTC)
+	expiry := time.Date(2126, 11, 13, 4, 12, 0, 0, time.UTC)
 	c, s, got := record(t, fmt.Sprintf(`{"chain":%q,"notAfter":%q}`,
 		base64.StdEncoding.EncodeToString([]byte("fresh")), expiry.Format(ManifestTime)))
 

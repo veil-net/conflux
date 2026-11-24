@@ -13,9 +13,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/update"
 )
 
 // Manager is one platform's boot manager.
@@ -24,7 +24,8 @@ type Manager interface {
 	// start anything.
 	Install(exe string, args ...string) error
 
-	// Remove deregisters it and deletes what registering it wrote, its log included.
+	// Remove deregisters it and deletes what registering it wrote; what the service wrote to
+	// the system's log stays, the system's.
 	// Each step tolerates its own failure, so a half-removed service can always be
 	// finished off.
 	Remove() error
@@ -35,6 +36,11 @@ type Manager interface {
 	// so it starts a service the manager had given up on as well.
 	Restart() error
 
+	// Reconcile is Install as the running service does it at every start: the registration
+	// put back to what this conflux writes where it was changed, with nothing loaded,
+	// stopped or restarted, since what calls it is the service itself.
+	Reconcile(exe string, args ...string) error
+
 	Installed() (bool, error)
 
 	// Describe is one line for `conflux status`.
@@ -43,6 +49,10 @@ type Manager interface {
 	// LogHint says where the service's output is, as something to run or open.
 	LogHint() string
 }
+
+// openFiles is the open-file limit the service is given, where conflux sets one: systemd's
+// LimitNOFILE, and OpenBSD's login class.
+const openFiles = 1048576
 
 // New returns this platform's manager.
 func New() Manager { return newManager() }
@@ -54,7 +64,7 @@ func New() Manager { return newManager() }
 // boot, so that file must be one only root can change. Wherever conflux was run from --
 // a home directory, a download, C:\tools -- may be writable by somebody else, who could
 // then swap it for their own program and have it run as root at the next start. So the
-// service runs a copy in the state directory, which only root can write and `uninstall`
+// service runs a copy in conflux's root, which only root can write and `uninstall`
 // removes, and each `up`, `proxy`, `install`, `start` and `update` refreshes it: an
 // upgraded conflux reaches the service the next time one of them runs.
 //
@@ -62,7 +72,7 @@ func New() Manager { return newManager() }
 // the old one keeps it. Windows will not replace the image of a running process but will
 // rename it, so there the old copy is moved aside first and removed by a later Place.
 func Place(d paths.Dirs) (string, error) {
-	src, err := executable()
+	src, err := Executable()
 	if err != nil {
 		return "", err
 	}
@@ -75,24 +85,26 @@ func Place(d paths.Dirs) (string, error) {
 // reports as its executable after that is not something every platform agrees on.
 func PlaceFrom(d paths.Dirs, src string) (string, error) {
 	dst := d.ServiceExecutable()
-	aside := dst + ".old"
 
-	_ = os.Remove(aside) // a copy a service ran until the last Place; still running is fine
+	// The copy a service ran until the last Place, which Windows had moved aside; one still
+	// running is fine.
+	_ = os.Remove(dst + ".old")
 
 	if src == dst || sameFile(src, dst) {
 		return dst, nil
 	}
 
-	if err := copyExecutable(src, dst, aside); err != nil {
+	if err := copyExecutable(src, dst); err != nil {
 		return "", fmt.Errorf("place this conflux at %s for the boot service: %w", dst, err)
 	}
 
 	return dst, nil
 }
 
-// executable is the file this process runs, symlinks followed: the file a copy is
-// made of.
-func executable() (string, error) {
+// Executable is the file this process runs, symlinks followed: the file a copy is made of; the
+// one update asks whether the installed conflux is; and the one uninstall on Windows asks
+// whether the directory it removes holds.
+func Executable() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", fmt.Errorf("find this executable: %w", err)
@@ -150,15 +162,20 @@ func sameFile(a, b string) bool {
 	}
 }
 
+// StagedPrefix begins the name of the file the service's copy of conflux is written to beside
+// it, before it is renamed into place: what the supervisor's tidy spares while it is young
+// enough to be a copy in progress.
+const StagedPrefix = ".conflux-"
+
 // copyExecutable writes src to dst through a file beside it, renamed into place.
-func copyExecutable(src, dst, aside string) error {
+func copyExecutable(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
 
-	tmp, err := os.CreateTemp(filepath.Dir(dst), ".conflux-*")
+	tmp, err := os.CreateTemp(filepath.Dir(dst), StagedPrefix+"*")
 	if err != nil {
 		return err
 	}
@@ -187,21 +204,7 @@ func copyExecutable(src, dst, aside string) error {
 		return err
 	}
 
-	if err := os.Rename(tmp.Name(), dst); err == nil || runtime.GOOS != "windows" {
-		return err
-	}
-
-	// The running service's image: moved aside, which Windows allows, and replaced.
-	if err := os.Rename(dst, aside); err != nil {
-		return err
-	}
-
-	if err := os.Rename(tmp.Name(), dst); err != nil {
-		// The service is left its old copy rather than none at all.
-		_ = os.Rename(aside, dst)
-
-		return err
-	}
-
-	return nil
+	// Renamed into place, or on Windows, over the running service's image, which is moved
+	// aside first, to dst.old; the old copy is put back if the new one cannot go in.
+	return update.Replace(tmp.Name(), dst)
 }

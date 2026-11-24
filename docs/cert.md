@@ -159,10 +159,11 @@ records where the issuer's revocation list is published.
 | `probe HOST[:PORT] [--ca ROOT]... [--groups pq] [--require-pq]` | See [Probing a server](#probing-a-server). |
 | `serve --cert CHAIN --key KEY [--listen ADDR] [--client-ca ROOT]...` | See [Serving](#serving). |
 
-Flags and arguments go in any order. Everything that writes takes `--out` (`-` is stdout,
-where the commands that make a public object default to), `--der`, and `--force`. Status lines
-go to stderr, so stdout is only ever what was asked for. `conflux cert COMMAND -h` lists a
-command's flags.
+Flags and arguments go in any order. A `--` ends a command's flags: every word after it is a
+file or a name, whatever it looks like, so `conflux cert show -- -h` shows a file called `-h`.
+Everything that writes takes `--out` (`-` is stdout, where the commands that make a public
+object default to), `--der`, and `--force`. Status lines go to stderr, so stdout is only ever
+what was asked for. `conflux cert COMMAND -h` lists a command's flags.
 
 ## Verifying
 

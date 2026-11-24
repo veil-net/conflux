@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"time"
+
+	"golang.org/x/sys/windows"
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/libexec"
@@ -166,4 +169,55 @@ func offline(target string, cause error) error {
 			"    %s\n\n"+
 			"  Or run \"conflux proxy PORT=BACKEND\", which needs no interface at all",
 		cause, Version, runtime.GOARCH, target)
+}
+
+// DeleteDriver removes the Wintun driver from the machine through a library conflux placed
+// under d, for `conflux uninstall` and the removal of an ephemeral run's root. Nothing when no
+// library was ever placed.
+//
+// WintunDeleteDriver removes it only while no adapter, conflux's or another program's, is in
+// use: it uninstalls the driver's INF with SetupUninstallOEMInf, unforced, which refuses an INF
+// a device still uses with ERROR_INF_IN_USE_BY_DEVICES, and hands that back. That is a driver
+// another program still relies on, kept as it should be, and no failure.
+func DeleteDriver(d paths.Dirs) error {
+	path := driverLibrary(d)
+	if path == "" {
+		return nil
+	}
+
+	dll, err := windows.LoadDLL(path)
+	if err != nil {
+		return fmt.Errorf("load %s to remove the driver: %w", path, err)
+	}
+	defer dll.Release()
+
+	proc, err := dll.FindProc("WintunDeleteDriver")
+	if err != nil {
+		return err
+	}
+
+	if ok, _, callErr := proc.Call(); ok == 0 && !errors.Is(callErr, windows.ERROR_INF_IN_USE_BY_DEVICES) {
+		return fmt.Errorf("remove the Wintun driver: %w", callErr)
+	}
+
+	return nil
+}
+
+// driverLibrary is a library conflux placed in any set directory under d's bin, or "" where
+// there is none. Any set's, not only this build's: the conflux running uninstall may carry
+// another pair than the one the supervisor extracted -- an upgrade it has not restarted onto,
+// or none at all -- and every set's library is the one pinned release.
+func driverLibrary(d paths.Dirs) string {
+	sets, err := os.ReadDir(d.Libexec())
+	if err != nil {
+		return ""
+	}
+
+	for _, set := range sets {
+		if path := filepath.Join(d.Libexec(), set.Name(), DLLName); set.IsDir() && present(path) {
+			return path
+		}
+	}
+
+	return ""
 }

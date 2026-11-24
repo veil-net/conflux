@@ -40,9 +40,16 @@ pinned a different version from the product code would be a test of nothing.
 
 Because the DLL lands in the content-addressed set directory, upgrading conflux to a
 build with a different anchor pair needs it again in the new directory, and the
-supervisor fetches it there before it starts the anchor — a reboot after an upgrade
-needs nothing typed. That is correct: the driver belongs beside the executable that
-loads it. A start that cannot fetch it is retried with the supervisor's backoff.
+supervisor fetches it there for every start of the anchor and every rebuild — a reboot after
+an upgrade needs nothing typed. That is correct: the driver belongs beside the executable that
+loads it. The fetch comes before the start takes `conflux.lock`, so a download that hangs, up
+to its 90-second timeout, holds up neither `conflux renew` nor `up`'s save of the
+configuration, which wait for that lock, and a stop that comes during it ends the start there,
+without taking the lock; one that comes while the start waits for the lock ends it as soon as it
+has it, before anything the lock guards. A driver that could not be fetched is an anchor that
+has not come up, like one whose start fails: on its own it is started again with the
+supervisor's backoff, and beside the observer, which still starts and which it never takes
+down, the watcher tries it again ([service.md](service.md)).
 
 ## If it cannot be downloaded
 
@@ -53,7 +60,7 @@ conflux: a network interface on Windows needs wintun.dll, and it could not be fe
 
   Download wintun-0.14.1.zip from https://www.wintun.net and put
   bin\amd64\wintun.dll at:
-    C:\ProgramData\conflux\bin\998ece52739a7c74\wintun.dll
+    C:\ProgramData\.conflux\bin\998ece52739a7c74\wintun.dll
 
   Or run "conflux proxy PORT=BACKEND", which needs no interface at all
 ```
@@ -63,17 +70,17 @@ at all, userspace mode is a complete way to use the overlay.
 
 ## Defender and SmartScreen
 
-A 50 MB binary that writes a 30 MB executable to disk and immediately runs it with
+A 60 MB binary that writes a 35 MB executable to disk and immediately runs it with
 elevated privileges is, structurally, a textbook dropper. Expect the first releases to
 be flagged, and know the mitigations:
 
 - Released binaries are not Authenticode-signed, so SmartScreen has no publisher
   reputation to go on; each release carries a build-provenance attestation instead.
-- Extraction goes to a stable path under `%ProgramData%\conflux\bin`, not a random
+- Extraction goes to a stable path under `%ProgramData%\.conflux\bin`, not a random
   temporary one — reputation attaches to paths and publishers.
 - `conflux version` prints both anchor digests, so what was written can be checked
   against the release notes.
-- If you need an exclusion, `%ProgramData%\conflux\bin` is the directory.
+- If you need an exclusion, `%ProgramData%\.conflux\bin` is the directory.
 
 If the extracted binaries will not run at all, conflux says so and names endpoint
 protection as the likely cause rather than reporting a bare permission error.
@@ -83,16 +90,30 @@ protection as the likely cause rather than reporting a bare permission error.
 Mode bits do not exist on Windows in the sense Go's `Chmod` implies — a call to
 `Chmod(0600)` sets the read-only attribute and nothing else — and `%ProgramData%` lets
 `Users` read everything below it and create files and folders in it. So conflux makes
-`%ProgramData%\conflux` belong to SYSTEM and Administrators instead: Administrators own
+`%ProgramData%\.conflux` belong to SYSTEM and Administrators instead: Administrators own
 it, and a protected DACL grants the two of them full control and nobody else anything,
 inherited by everything beneath. Every secret file gets the same, explicitly, before
-anything is written into it.
+anything is written into it. At every start the supervisor gives the root's own files — the
+configuration, the identity, the state, the locks, the record of what `anchord` runs as and
+the copy of conflux the service runs — back to the two of them where another account owns one
+or its DACL grants anybody else, as it gives them back their modes on Unix.
+
+`%ProgramData%` here, and `%ProgramFiles%` for the installed conflux, mean the folders Windows
+keeps under those names, which conflux asks the system for (its known folders), and not the
+environment variables, which whoever runs conflux sets: pointed elsewhere, they would move
+the root, and the copy of conflux the service runs as SYSTEM, into a directory of their
+choosing.
 
 A root some other account created is refused rather than taken over: whoever made it
-could have filled it first. And the two binaries the service runs as SYSTEM, and
-`wintun.dll` beside them, are run only if Administrators, SYSTEM or the account running
-conflux owns them — a set directory is named for content anybody can compute, so one
-made by somebody else is extracted again rather than trusted.
+could have filled it first. What is in it is held to the same before its DACL is given
+back, a root whose DACL somebody widened included, all but the contents of `anchor\` and
+`run\anchord\`, which `anchord`'s account writes: it owns what it writes there, and the
+supervisor reads that as untrusted and makes it again. `anchor.root\`, the directory of an
+`anchord` that runs as SYSTEM, is SYSTEM's and held to the same. The directories themselves
+must be conflux's. And the two binaries the service runs as SYSTEM, and `wintun.dll` beside
+them, are run only if Administrators, SYSTEM or the account running conflux owns them — a
+set directory is named for content anybody can compute, so one made by somebody else is
+extracted again rather than trusted.
 
 Where `anchord` runs as `LOCAL SERVICE` (below), the service's own SID,
 `NT SERVICE\conflux`, is added to exactly what it needs: read and execute on its set
@@ -107,9 +128,12 @@ SYSTEM's and Administrators' instead.
 
 `conflux up --ephemeral` and `conflux proxy --ephemeral` need Administrator on Windows,
 whatever the mode: every directory conflux keeps there, the ephemeral run's
-`%ProgramData%\conflux-ephemeral` included, is SYSTEM's and Administrators'. anchord runs
-as that Administrator, in conflux's job object, so it ends however conflux does. See
-[ephemeral.md](ephemeral.md).
+`conflux-ephemeral` in that Administrator's `%TEMP%` included, is SYSTEM's and
+Administrators'. anchord runs
+as that Administrator, in conflux's job object, so it ends however conflux does. A TUN run
+fetches `wintun.dll` into its own root, and when it ends removes the Wintun driver through
+it, before the root goes: Wintun keeps the driver while any adapter is in use, so an
+installed conflux's interface is untouched. See [ephemeral.md](ephemeral.md).
 
 ## The service
 

@@ -1,10 +1,15 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/veil-net/conflux/internal/paths/pathstest"
 )
 
 // TestExportMaterialIsNotPrinted: an export block's headers are credentials and a client
@@ -31,9 +36,7 @@ func TestExportMaterialIsNotPrinted(t *testing.T) {
 // TestSaveManifestLeavesTheCallersEnvelope: the newline the file ends with is the
 // file's, never written into spare capacity of the envelope the caller holds.
 func TestSaveManifestLeavesTheCallersEnvelope(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", t.TempDir())
-
-	d := dirsForTest(t)
+	d := pathstest.Root(t)
 
 	backing := make([]byte, 0, 64)
 	backing = append(backing, "bWFuaWZlc3Q=  XYZ"...)
@@ -45,6 +48,46 @@ func TestSaveManifestLeavesTheCallersEnvelope(t *testing.T) {
 
 	if got := string(backing[12:17]); got != "  XYZ" {
 		t.Errorf("SaveManifest wrote into the caller's slice: %q", got)
+	}
+}
+
+// TestHasManifestIsNoneOnlyWithNoFileOrAnEmptyOne: a machine has no identity only where there
+// is no manifest.b64, or one empty or of nothing but white space, and LoadManifest says which of
+// the two it refused. One it reads is an identity, and so is one it cannot read
+// (TestHasManifestOnAManifestItCannotRead).
+func TestHasManifestIsNoneOnlyWithNoFileOrAnEmptyOne(t *testing.T) {
+	d := pathstest.Root(t)
+
+	if _, err := LoadManifest(d); HasManifest(d) || !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("no manifest: HasManifest %v, LoadManifest %v; want no identity, and none there", HasManifest(d), err)
+	}
+
+	for content, has := range map[string]bool{"": false, " \n\t\n": false, "bWFuaWZlc3Q=\n": true} {
+		if err := os.WriteFile(d.ManifestFile(), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := LoadManifest(d)
+
+		if HasManifest(d) != has || (err == nil) != has || !has && !errors.Is(err, ErrEmptyManifest) {
+			t.Errorf("a manifest of %q: HasManifest %v, LoadManifest %v; want has %v from both", content, HasManifest(d), err, has)
+		}
+	}
+}
+
+// TestHasManifestOnAManifestItCannotRead: a manifest.b64 there that cannot be read may hold
+// an identity, so it is one -- the false answer would draw a new identity over it (conflux
+// enrol) or skip uninstall's confirmation. A directory at its path fails the read as root
+// too.
+func TestHasManifestOnAManifestItCannotRead(t *testing.T) {
+	d := pathstest.Root(t)
+
+	if err := os.Mkdir(d.ManifestFile(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := LoadManifest(d); err == nil || !HasManifest(d) {
+		t.Errorf("a manifest.b64 that cannot be read: LoadManifest %v, HasManifest %v; want a read error, and an identity", err, HasManifest(d))
 	}
 }
 
@@ -61,38 +104,5 @@ func TestANewIdentityForgetsTheOldOne(t *testing.T) {
 
 	if st != (State{BinSetID: "keep"}) {
 		t.Errorf("NewIdentity left %+v; only what is not about the identity stays", st)
-	}
-}
-
-// TestTUNNamesThePlatformRefuses: refused here, for good, rather than found by anchor
-// when the TUN is made, or on Linux when it first routes (anchor's hostsetup ifaceName).
-func TestTUNNamesThePlatformRefuses(t *testing.T) {
-	for _, tc := range []struct {
-		name, goos string
-		ok         bool
-	}{
-		{"anchor0", "linux", true},
-		{"a234567890abcde", "linux", true},
-		{"a234567890abcdef", "linux", false},
-		{"an/chor", "linux", false},
-		{"an chor", "linux", false},
-		{"anchor6btpa3gn6", "linux", true},
-		{"veil_0.a+b@c-d", "linux", true},
-		{"veil~0", "linux", false},
-		{"wg#1", "linux", false},
-		{"ánchor", "linux", false},
-		{"", "linux", false},
-		{"..", "linux", false},
-		{"anchor0", "darwin", true},
-		{"utun", "darwin", true},
-		{"utun7", "darwin", true},
-		{"utunx", "darwin", false},
-		{"utun-1", "darwin", false},
-		{"a234567890abcdef", "freebsd", true},
-		{"anything at all", "windows", true},
-	} {
-		if err := ValidateTUNName(tc.name, tc.goos); (err == nil) != tc.ok {
-			t.Errorf("ValidateTUNName(%q, %s) = %v, want ok %v", tc.name, tc.goos, err, tc.ok)
-		}
 	}
 }

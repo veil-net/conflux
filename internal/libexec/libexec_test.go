@@ -12,25 +12,15 @@ import (
 
 	"github.com/veil-net/conflux/anchor"
 	"github.com/veil-net/conflux/internal/anchortest"
+	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/paths/pathstest"
 )
-
-func dirs(t *testing.T) paths.Dirs {
-	t.Helper()
-	t.Setenv("CONFLUX_DIR", t.TempDir())
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll: %v", err)
-	}
-
-	return d
-}
 
 func TestEnsureExtractsAndRuns(t *testing.T) {
 	anchortest.Require(t)
 
-	d := dirs(t)
+	d := pathstest.Root(t)
 
 	tools, err := Ensure(d)
 	if err != nil {
@@ -73,7 +63,7 @@ func TestEnsureExtractsAndRuns(t *testing.T) {
 func TestEnsureIsIdempotent(t *testing.T) {
 	anchortest.Require(t)
 
-	d := dirs(t)
+	d := pathstest.Root(t)
 
 	first, err := Ensure(d)
 	if err != nil {
@@ -110,7 +100,7 @@ func TestEnsureIsIdempotent(t *testing.T) {
 func TestEnsureIsConcurrencySafe(t *testing.T) {
 	anchortest.Require(t)
 
-	d := dirs(t)
+	d := pathstest.Root(t)
 
 	const n = 8
 
@@ -173,7 +163,7 @@ func TestEnsureIsConcurrencySafe(t *testing.T) {
 func TestEnsureRepairsATruncatedExtraction(t *testing.T) {
 	anchortest.Require(t)
 
-	d := dirs(t)
+	d := pathstest.Root(t)
 
 	tools, err := Ensure(d)
 	if err != nil {
@@ -199,16 +189,18 @@ func TestEnsureRepairsATruncatedExtraction(t *testing.T) {
 	}
 }
 
-// TestSweepLeavesWhatMayBeInUse: Sweep keeps its own set and any set touched in the last
-// day, which a supervisor still running an older conflux may be execing, and removes the
-// rest, and a staging directory a crash left more than an hour ago.
-func TestSweepLeavesWhatMayBeInUse(t *testing.T) {
+// TestSweepKeepsOnlyWhatIsConfluxs: Sweep keeps its own set, with nothing in it but the pair,
+// its markers and Windows' driver, and a temporary file young enough to be a write in progress
+// there -- the driver being placed -- and a set or a staging directory made in the last hour,
+// which a newer conflux mid-command may be using; everything else in the bin directory goes, a
+// temporary file a crash left in the set among it.
+func TestSweepKeepsOnlyWhatIsConfluxs(t *testing.T) {
 	root := t.TempDir()
 
 	age := map[string]time.Duration{
 		"own":            48 * time.Hour,
-		"recent":         time.Hour,
-		"old":            48 * time.Hour,
+		"recent":         30 * time.Minute,
+		"old":            2 * time.Hour,
 		".staging-fresh": time.Minute,
 		".staging-stale": 2 * time.Hour,
 	}
@@ -225,10 +217,36 @@ func TestSweepLeavesWhatMayBeInUse(t *testing.T) {
 		}
 	}
 
-	Sweep(&Tools{Dir: filepath.Join(root, "own"), SetID: "own"})
+	files := []string{extractionLock, "stray", "own/anchord", "own/anchorctl", "own/" + completeMarker, "own/" + verifiedMarker,
+		"own/wintun.dll", "own/stray"}
+	for _, name := range files {
+		if err := os.WriteFile(filepath.Join(root, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// An atomic write's, in progress, and one a crash left an hour and more ago.
+	for name, a := range map[string]time.Duration{"own/" + config.TempPrefix + "fresh": 0, "own/" + config.TempPrefix + "stale": 2 * time.Hour} {
+		path := filepath.Join(root, name)
+		if err := os.WriteFile(path, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		then := time.Now().Add(-a)
+		if err := os.Chtimes(path, then, then); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	own := &Tools{Dir: filepath.Join(root, "own"), SetID: "own",
+		Anchord: filepath.Join(root, "own", "anchord"), Anchorctl: filepath.Join(root, "own", "anchorctl")}
+	Sweep(own)
 
 	for name, kept := range map[string]bool{
 		"own": true, "recent": true, ".staging-fresh": true, "old": false, ".staging-stale": false,
+		extractionLock: true, "stray": false, "own/anchord": true, "own/anchorctl": true, "own/" + completeMarker: true,
+		"own/" + verifiedMarker: true, "own/wintun.dll": true, "own/stray": false,
+		"own/" + config.TempPrefix + "fresh": true, "own/" + config.TempPrefix + "stale": false,
 	} {
 		if _, err := os.Stat(filepath.Join(root, name)); (err == nil) != kept {
 			t.Errorf("%s: kept = %v, want %v", name, err == nil, kept)
@@ -237,20 +255,26 @@ func TestSweepLeavesWhatMayBeInUse(t *testing.T) {
 }
 
 // TestUsageMakesNothing: help, asked where nothing is extracted -- before an install, after an
-// uninstall, by an account that cannot read the installation -- runs a temporary anchorctl and
-// removes it, and makes none of the installation's directories. Where a whole extraction is
-// there it is the one used, and nothing is removed.
+// uninstall, by an account that cannot read the installation -- runs an anchorctl in memory or
+// a temporary one it removes, and makes none of the installation's directories. Where a whole
+// extraction is there it is the one used, and nothing is removed.
 func TestUsageMakesNothing(t *testing.T) {
 	anchortest.Require(t)
 
-	t.Setenv("CONFLUX_DIR", filepath.Join(t.TempDir(), "never"))
-	t.Setenv("TMPDIR", t.TempDir())
+	t.Cleanup(paths.UseRoot(filepath.Join(t.TempDir(), "never")))
+
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
 
 	d := paths.Default()
 
-	bin, done, err := ForUsage(d)
+	bin, done, temporary, err := ForUsage(d)
 	if err != nil {
 		t.Fatalf("ForUsage: %v", err)
+	}
+
+	if inMemory := strings.HasPrefix(bin, "/proc/self/fd/"); temporary == inMemory {
+		t.Errorf("ForUsage gave %s, temporary %v", bin, temporary)
 	}
 
 	if out, err := exec.Command(bin, "help").CombinedOutput(); err != nil || !strings.Contains(string(out), "anchorctl") {
@@ -259,11 +283,11 @@ func TestUsageMakesNothing(t *testing.T) {
 
 	done()
 
-	if _, err := os.Stat(filepath.Dir(bin)); !os.IsNotExist(err) {
-		t.Errorf("the temporary anchorctl's directory is still there after done (%v)", err)
+	if entries, _ := os.ReadDir(tmp); len(entries) > 0 {
+		t.Errorf("help left %d entries in the temporary directory after done", len(entries))
 	}
 
-	if _, err := os.Stat(os.Getenv("CONFLUX_DIR")); !os.IsNotExist(err) {
+	if _, err := os.Stat(d.Root); !os.IsNotExist(err) {
 		t.Errorf("asking for usage made the installation's directories (%v)", err)
 	}
 
@@ -276,15 +300,15 @@ func TestUsageMakesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	bin, done, err = ForUsage(d)
+	bin, done, temporary, err = ForUsage(d)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	done()
 
-	if bin != tools.Anchorctl {
-		t.Errorf("usage ran %s where %s is extracted", bin, tools.Anchorctl)
+	if bin != tools.Anchorctl || temporary {
+		t.Errorf("usage ran %s, temporary %v, where %s is extracted", bin, temporary, tools.Anchorctl)
 	}
 
 	if _, err := os.Stat(bin); err != nil {

@@ -10,10 +10,10 @@ import (
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
+	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
-	"github.com/veil-net/conflux/internal/wintun"
 )
 
 // bring is the tail `up`, `proxy` and `observe` share: validate, persist, register the
@@ -31,7 +31,7 @@ func bring(ctx context.Context, d paths.Dirs, cfg *config.Config, verb string, s
 		return fail(err)
 	}
 
-	if err := config.Save(d, cfg); err != nil {
+	if err := saveConfig(d, cfg); err != nil {
 		return fail(err)
 	}
 
@@ -41,13 +41,10 @@ func bring(ctx context.Context, d paths.Dirs, cfg *config.Config, verb string, s
 		}
 	}
 
-	// Windows needs the driver before an interface can exist. Downloaded rather
-	// than embedded: it is GPLv2, and a driver extracted from a program's own
-	// resources is the shape of a DLL hijack.
-	if cfg.Mode == config.ModeTUN {
-		if err := wintun.Ensure(ctx, d); err != nil {
-			return fail(err)
-		}
+	// Windows needs the driver before an interface can exist: fetched here as well as by the
+	// supervisor's start, so one that cannot be had is said before the service is installed.
+	if err := daemon.FetchDriver(ctx, d, cfg); err != nil {
+		return fail(err)
 	}
 
 	if code := install(ctx, d, false); code != ExitOK {
@@ -70,6 +67,19 @@ func bring(ctx context.Context, d paths.Dirs, cfg *config.Config, verb string, s
 	return ExitOK
 }
 
+// saveConfig writes cfg under the machine's lock, which the supervisor holds as it rewrites
+// conflux.json in its own form at a start (config.Canonical): without it, a start that read
+// the file before this write would put the old one back.
+func saveConfig(d paths.Dirs, cfg *config.Config) error {
+	unlock, err := flock.Acquire(d.LockFile())
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	return config.Save(d, cfg)
+}
+
 // restartService hands the machine to the boot service rather than running an
 // anchor from this process.
 //
@@ -77,7 +87,7 @@ func bring(ctx context.Context, d paths.Dirs, cfg *config.Config, verb string, s
 // leave two ideas of what is running -- the service manager's and ours -- and they
 // would disagree the moment either changed.
 func restartService(d paths.Dirs) error {
-	return restartWith(d, service.New())
+	return restartWith(d, services())
 }
 
 // restartWith withdraws the readiness marker and then restarts, in that order.
@@ -216,7 +226,7 @@ func report(d paths.Dirs, cfg *config.Config, st anchorctl.Status, verb string) 
 
 	reportObserver(cfg, st.Observer)
 
-	ui.Field("service", service.New().Describe())
+	ui.Field("service", services().Describe())
 
 	reportPrivilege(d, true)
 
@@ -394,5 +404,5 @@ func joinTaints(t []string) string {
 
 // journalHint names where the supervisor's output is.
 func journalHint() string {
-	return service.New().LogHint()
+	return services().LogHint()
 }

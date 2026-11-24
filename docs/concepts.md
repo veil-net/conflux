@@ -100,7 +100,7 @@ set, the credential that comes back commits to it, and anchor starts the identit
 no other. A renewal restates the set and cannot change it, so a machine's taints are
 decided once, at enrolment, for the life of its identity: a different set is a new
 identity, with a new AnchorID and a new overlay address — `conflux uninstall --yes`, then
-`conflux up --taint`. See [credentials.md](credentials.md#taints-are-the-credentials).
+install conflux again (uninstall removes it too) and `conflux up --taint`. See [credentials.md](credentials.md#taints-are-the-credentials).
 
 The realm can still move a running machine. A member whose credential grants the
 `taint` capability can send another a Taints order, which anchor keeps and reapplies at

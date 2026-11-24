@@ -1,13 +1,12 @@
 package cli
 
 import (
-	"bytes"
 	"encoding/base64"
 	"errors"
-	"io"
 	"io/fs"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
@@ -20,6 +19,7 @@ import (
 	"github.com/veil-net/conflux/internal/enrol"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/paths/pathstest"
 	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/ui"
 )
@@ -27,67 +27,11 @@ import (
 func capture(t *testing.T, argv ...string) (stdout, stderr string, code int) {
 	t.Helper()
 
-	var out, errBuf bytes.Buffer
-
-	oldOut, oldErr := ui.Out, ui.Errw
-	ui.Out, ui.Errw = &out, &errBuf
-
-	t.Cleanup(func() { ui.Out, ui.Errw = oldOut, oldErr })
+	out, errBuf := captureUI(t)
 
 	code = Main(append([]string{"conflux"}, argv...))
 
 	return out.String(), errBuf.String(), code
-}
-
-// TestNoUnintendedShadowing is the guard on the whole two-surface design.
-//
-// conflux keeps a closed set of names and passes everything else through. If a
-// future anchor adds a command called "up", it would silently become unreachable --
-// conflux would answer it and the user would never learn that anchorctl had one.
-// This fails CI on that day instead.
-func TestNoUnintendedShadowing(t *testing.T) {
-	anchortest.Require(t)
-
-	t.Setenv("CONFLUX_DIR", t.TempDir())
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll: %v", err)
-	}
-
-	tools, err := libexec.Ensure(d)
-	if err != nil {
-		t.Fatalf("Ensure: %v", err)
-	}
-
-	theirs := anchorctlCommands(t, tools.Anchorctl)
-
-	// The verbs conflux is knowingly taking from anchorctl. Every one is documented in
-	// help and explains the collision in its own error text; help, which anchorctl's
-	// usage does not list, prints anchorctl's usage whole.
-	known := map[string]bool{"proxy": true, "status": true, "help": true, "renew": true, "start": true, "observe": true}
-
-	for name := range verbs() {
-		if theirs[name] && !known[name] {
-			t.Errorf("conflux's %q now shadows an anchorctl command that this build did not know about.\n"+
-				"  Either rename conflux's, or add it to the known set and resolve the collision\n"+
-				"  the way proxy and status do.", name)
-		}
-	}
-
-	for name := range anchorLifecycleVerbs {
-		if !theirs[name] {
-			t.Errorf("conflux refuses to pass %q through, but anchorctl has no such command any more", name)
-		}
-	}
-
-	// The three conflux resolves by shape and arity really are anchorctl's, or the
-	// elaborate handling in runProxy, runObserve and runStatus is dead code.
-	for _, name := range []string{"proxy", "status", "observe"} {
-		if !theirs[name] {
-			t.Errorf("conflux resolves a collision on %q that no longer exists", name)
-		}
-	}
 }
 
 var usageCommand = regexp.MustCompile(`(?m)^\s{4}([a-z][a-z-]+)\s`)
@@ -149,19 +93,6 @@ func TestStartRefusesAnchorctlFlags(t *testing.T) {
 	}
 }
 
-// TestStartRefusesArguments: a positional is not conflux's start either.
-func TestStartRefusesArguments(t *testing.T) {
-	_, errOut, code := capture(t, "start", "somewhere")
-
-	if code != ExitUsage {
-		t.Errorf("conflux start somewhere exited %d, want %d", code, ExitUsage)
-	}
-
-	if !strings.Contains(errOut, "takes no arguments") {
-		t.Errorf("should say it takes no arguments; it said:\n%s", errOut)
-	}
-}
-
 // TestProxyRefusesAnchorctlFlags: the ambiguous case is explained, never guessed.
 func TestProxyRefusesAnchorctlFlags(t *testing.T) {
 	for _, args := range [][]string{
@@ -210,34 +141,257 @@ func TestTopLevelFlagIsNotForwarded(t *testing.T) {
 }
 
 func TestHelpListsEveryVisibleVerb(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	t.Cleanup(paths.UseRoot(t.TempDir()))
 
 	out, _, code := capture(t, "help")
 	if code != ExitOK {
 		t.Fatalf("help exited %d", code)
 	}
 
+	// Whole rows of the listing, "  up         join...": "up" is in "update" too.
 	for name, v := range verbs() {
-		if v.hidden {
-			if strings.Contains(out, "  "+name+" ") {
-				t.Errorf("help lists the hidden verb %q", name)
-			}
-
-			continue
-		}
-
-		if !strings.Contains(out, name) {
-			t.Errorf("help does not mention %q", name)
+		if listed := strings.Contains(out, "\n  "+name+" "); listed == v.hidden {
+			t.Errorf("help lists %q: %v; it is hidden: %v", name, listed, v.hidden)
 		}
 	}
 }
 
 // TestHelpForACommandIsThatCommands: `conflux help X` is X's own usage, whichever
-// binary X belongs to.
+// binary X belongs to, except for the two of conflux's with no usage of their own to
+// print, help and status, which get the whole page, as `conflux help` does. A leading -- is
+// no command, and is passed to no anchorctl: help -- is the whole page, and help -- up up's
+// usage. The pass-through is stubbed, since on Unix it would replace the test binary.
 func TestHelpForACommandIsThatCommands(t *testing.T) {
-	out, _, code := capture(t, "help", "up")
-	if code != ExitOK || !strings.Contains(out, "conflux up —") || strings.Contains(out, "Commands") {
-		t.Errorf("help up exited %d and printed:\n%s", code, out)
+	ran := stubAnchorctl(t)
+
+	for _, args := range [][]string{{"up"}, {"version"}, {"--", "up"}} {
+		name := args[len(args)-1]
+		*ran = ranAnchorctl{}
+
+		out, _, code := capture(t, append([]string{"help"}, args...)...)
+		if code != ExitOK || !strings.Contains(out, "conflux "+name+" —") || strings.Contains(out, "Commands") || ran.bin != "" {
+			t.Errorf("help %s exited %d, passing %q through, and printed:\n%s", strings.Join(args, " "), code, ran.bin, out)
+		}
+	}
+
+	for _, name := range []string{"help", "status", "--"} {
+		*ran = ranAnchorctl{}
+
+		if out, _, code := capture(t, "help", name); code != ExitOK || !strings.Contains(out, "Commands") || ran.bin != "" {
+			t.Errorf("help %s exited %d, passing %q through, printing no Commands:\n%s", name, code, ran.bin, out)
+		}
+	}
+}
+
+// TestUsageIsOneStream: -h asks for a command's usage, so it is answered -- exit 0 -- and whole
+// on stdout, the flags with the synopsis, where a pager or grep reads it, and passed to no
+// anchorctl. Every word a flag set takes for help asks it, --h among them, of conflux itself and
+// of every verb: start and renew, which read any other flag as anchorctl's, included, and help,
+// whose own usage is the whole page, since a help flag names no command. The pass-through is
+// stubbed, since on Unix it would replace the test binary with anchorctl.
+func TestUsageIsOneStream(t *testing.T) {
+	t.Cleanup(paths.UseRoot(t.TempDir()))
+
+	ran := stubAnchorctl(t)
+
+	for _, help := range []string{"-h", "--h", "-help", "--help"} {
+		for name := range verbs() {
+			if name == "status" || name == "anchorctl" {
+				continue // anchorctl's usage, which its own tests cover
+			}
+
+			want := "conflux " + name
+			if name == "help" {
+				want = "Commands"
+			}
+
+			*ran = ranAnchorctl{}
+
+			out, errOut, code := capture(t, name, help)
+			if code != ExitOK || errOut != "" || !strings.Contains(out, want) || ran.bin != "" {
+				t.Errorf("conflux %s %s exited %d, passing %q through, printing\n%s\nand on stderr\n%s", name, help, code, ran.bin, out, errOut)
+			}
+		}
+
+		if out, errOut, code := capture(t, help); code != ExitOK || errOut != "" || !strings.Contains(out, "Commands") {
+			t.Errorf("conflux %s exited %d, printing\n%s\nand on stderr\n%s", help, code, out, errOut)
+		}
+	}
+
+	if out, _, _ := capture(t, "up", "-h"); !strings.Contains(out, "enrolment API base URL") {
+		t.Errorf("conflux up -h leaves its flags off stdout:\n%s", out)
+	}
+
+	// cert and the two cert commands that have commands of their own list them, and each of them
+	// takes every word a flag set takes for help, as their commands do, and help besides.
+	for _, cmd := range [][]string{{"cert"}, {"cert", "ca"}, {"cert", "p12"}} {
+		for _, help := range []string{"help", "-h", "--h", "--help", "-help"} {
+			args := append(slices.Clone(cmd), help)
+
+			out, errOut, code := capture(t, args...)
+			if code != ExitOK || errOut != "" || !strings.Contains(out, "conflux "+strings.Join(cmd, " ")+" —") {
+				t.Errorf("conflux %s exited %d, printing\n%s\nand on stderr\n%s", strings.Join(args, " "), code, out, errOut)
+			}
+		}
+	}
+}
+
+// TestAMistakeIsSaidOnStderr: a flag a command does not take, an argument too many or too few,
+// or a flag it cannot do without -- enrol's --manifest, or update's --dev beside the --yes that
+// answers its question -- is a mistake, said on stderr with the usage beneath it, which
+// leaves stdout to what the command was asked for. -h alone is answered on stdout
+// (TestUsageIsOneStream), and an argument given to a command that takes flags alone is
+// TestAStrayArgumentIsNamedAboveTheUsage's, but for one with its flags after it, which does not
+// make it a flag's: `sudo conflux up mynet --taint mynet` would otherwise mint a network of its
+// own. A word that is no flag's spelling, ---h, is the flag set's to refuse, as bad syntax, in
+// observe, proxy, start and renew too, which look at their flags first. Not root, so a command
+// that went on past its refusal is refused for privilege, not run.
+func TestAMistakeIsSaidOnStderr(t *testing.T) {
+	asRoot(t, false)
+
+	for _, c := range []struct {
+		args []string
+		says string
+	}{
+		{[]string{"down", "--bogus"}, "flag provided but not defined: -bogus"},
+		{[]string{"cert", "verify"}, "conflux cert verify —"},
+		{[]string{"enrol"}, "conflux enrol —"},
+		{[]string{"up", "mynet", "--taint", "mynet"}, "conflux up —"},
+		{[]string{"cert"}, "conflux cert —"},
+		{[]string{"cert", "ca"}, "conflux cert ca —"},
+		{[]string{"cert", "p12"}, "conflux cert p12 —"},
+		{[]string{"observe", "---h"}, "bad flag syntax: ---h"},
+		{[]string{"proxy", "---h", "8080=127.0.0.1:3000"}, "bad flag syntax: ---h"},
+		{[]string{"start", "---x"}, "bad flag syntax: ---x"},
+		{[]string{"renew", "---h"}, "bad flag syntax: ---h"},
+		{[]string{"update", "--yes"}, "--yes answers the question --dev asks; give --dev too"},
+	} {
+		out, errOut, code := capture(t, c.args...)
+		if code != ExitUsage || out != "" || !strings.Contains(errOut, c.says) || !strings.Contains(errOut, "conflux "+c.args[0]) {
+			t.Errorf("conflux %s exited %d, printing\n%s\nand on stderr\n%s", strings.Join(c.args, " "), code, out, errOut)
+		}
+	}
+}
+
+// TestAStrayArgumentIsNamedAboveTheUsage: every command that takes no argument refuses one the
+// same way -- the argument named on a line of its own, the usage beneath it, both on stderr --
+// whichever verb was given it, and enrol given its --manifest too. A dash alone is an argument,
+// and so is any word after the -- that ends the flags, a flag's spelling included: start, renew
+// and observe, which look at their flags first, name each as every verb does, not as
+// anchorctl's. Not root, so a command that went on past its refusal is refused for privilege,
+// not run.
+func TestAStrayArgumentIsNamedAboveTheUsage(t *testing.T) {
+	asRoot(t, false)
+
+	for _, args := range [][]string{
+		{"up"}, {"install"}, {"down"}, {"uninstall"}, {"serve"}, {"start"}, {"renew"}, {"update"},
+		{"observe"}, {"version"}, {"enrol", "--manifest", "node.b64"},
+	} {
+		verb := args[0]
+
+		for _, stray := range [][]string{{"stray"}, {"-"}, {"--", "-start"}} {
+			typed := append(slices.Clone(args), stray...)
+			got := stray[len(stray)-1]
+
+			out, errOut, code := capture(t, typed...)
+			if code != ExitUsage || out != "" ||
+				!strings.Contains(errOut, "conflux "+verb+" takes no arguments, and got \""+got+"\"") ||
+				!strings.Contains(errOut, "conflux "+verb+" —") {
+				t.Errorf("conflux %s exited %d, printing\n%s\nand on stderr\n%s", strings.Join(typed, " "), code, out, errOut)
+			}
+		}
+	}
+}
+
+// TestTwoDashesEndTheFlags: -- ends the flags, as a flag set takes it, of the verbs with a flag
+// set, start, renew, observe and proxy included, which look at their flags before their flag
+// sets do, and of cert's commands. With nothing after it each of the four is the bare verb --
+// start, renew and observe refused here for privilege alone, the command typed repeated, and
+// proxy refused as bare proxy is, with no spec and no flag -- and a word after it is proxy's
+// spec, served where it is one and refused as one where it is not, whatever it looks like: never
+// a flag, and never anchorctl's.
+func TestTwoDashesEndTheFlags(t *testing.T) {
+	asRoot(t, false)
+	stubAnchorctl(t)
+
+	for _, verb := range []string{"start", "renew", "observe", "proxy"} {
+		_, bare, bareCode := capture(t, verb)
+		want := strings.Replace(bare, privcheck.Retry("conflux "+verb), privcheck.Retry("conflux "+verb+" --"), 1)
+
+		if _, errOut, code := capture(t, verb, "--"); code != bareCode || errOut != want {
+			t.Errorf("conflux %s -- exited %d, saying\n%s\nwhere bare it exits %d, saying\n%s", verb, code, errOut, bareCode, bare)
+		}
+	}
+
+	typed := []string{"proxy", "--", "8080=127.0.0.1:3000"}
+	if _, errOut, code := capture(t, typed...); code != ExitDenied || !strings.Contains(errOut, privcheck.Retry("conflux "+strings.Join(typed, " "))) {
+		t.Errorf("conflux %s exited %d, saying\n%s", strings.Join(typed, " "), code, errOut)
+	}
+
+	for _, typed := range [][]string{{"proxy", "8080=127.0.0.1:3000", "--", "--bogus"}, {"proxy", "-"}} {
+		spec := typed[len(typed)-1]
+
+		if _, errOut, code := capture(t, typed...); code != ExitError || !strings.Contains(errOut, "\""+spec+"\" is not PORT[/NETWORK]=BACKEND") {
+			t.Errorf("conflux %s exited %d, saying\n%s", strings.Join(typed, " "), code, errOut)
+		}
+	}
+
+	// A cert command's every word after -- is an argument, in the order given, not only the
+	// first: show's -h a file to show, after a.pem, which is not there, and fingerprint's --bogus
+	// a file to read, after a key that is.
+	dir := t.TempDir()
+	key := filepath.Join(dir, "k.pem")
+
+	if _, errOut, code := capture(t, "cert", "genkey", "--alg", "ed25519", "--out", key); code != ExitOK {
+		t.Fatalf("conflux cert genkey exited %d, saying\n%s", code, errOut)
+	}
+
+	for _, c := range []struct {
+		args []string
+		says string
+	}{
+		{[]string{"cert", "show", "--", filepath.Join(dir, "a.pem"), "-h"}, "a.pem"},
+		{[]string{"cert", "fingerprint", "--", key, "--bogus"}, "--bogus"},
+	} {
+		if out, errOut, code := capture(t, c.args...); code != ExitError || out != "" || !strings.Contains(errOut, c.says) {
+			t.Errorf("conflux %s exited %d, printing\n%s\nand on stderr\n%s", strings.Join(c.args, " "), code, out, errOut)
+		}
+	}
+}
+
+// TestTheUsageSaysWhatACommandReaches: uninstall's summary and usage say it removes conflux
+// itself; renew's usage, and its refusal with nothing running, that it renews an observer as
+// it does an anchor, which is what a machine that only observes runs; and observe's synopsis,
+// which lists every flag it takes, lists --api.
+func TestTheUsageSaysWhatACommandReaches(t *testing.T) {
+	if s := verbs()["uninstall"].summary; !strings.Contains(s, "conflux itself") {
+		t.Errorf("uninstall's summary leaves conflux itself out: %q", s)
+	}
+
+	for verb, want := range map[string]string{
+		"uninstall": "conflux itself",
+		"renew":     "observer",
+		"observe":   "[--api URL]",
+	} {
+		if out, _, _ := capture(t, verb, "-h"); !strings.Contains(out, want) {
+			t.Errorf("conflux %s -h does not say %q:\n%s", verb, want, out)
+		}
+	}
+
+	d := pathstest.Root(t)
+
+	if err := config.Save(d, &config.Config{Mode: config.ModeObserve, Taints: []string{"t"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := config.SaveManifest(d, config.Envelope("a manifest")); err != nil {
+		t.Fatal(err)
+	}
+
+	_, said := captureUI(t)
+
+	if code := renewNow(t.Context(), d); code != ExitUnavailable || !strings.Contains(said.String(), "observer") {
+		t.Errorf("renew with nothing running exited %d, saying nothing of the observer:\n%s", code, said.String())
 	}
 }
 
@@ -260,7 +414,7 @@ func TestVersionNamesTheAnchorBuild(t *testing.T) {
 // RestartPreventExitStatus on, so a registered service with no configuration stops
 // rather than restarting forever.
 func TestStatusWithNoConfigExits78(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	t.Cleanup(paths.UseRoot(t.TempDir()))
 
 	_, _, code := capture(t, "status")
 	if code != ExitNoConfig {
@@ -268,47 +422,122 @@ func TestStatusWithNoConfigExits78(t *testing.T) {
 	}
 }
 
-// TestProxyKeepsItsOwnUplinkFlag: --uplink is conflux proxy's, so the gate that
-// hands anchorctl's flags back must not catch it, and the splitter has to know it
-// takes a value -- otherwise the device path lands in the positional list and is
-// read as a port spec.
-func TestProxyKeepsItsOwnUplinkFlag(t *testing.T) {
-	for _, args := range [][]string{
-		{"--uplink", "/dev/ttyUSB0", "8080=127.0.0.1:3000"},
-		{"8080=127.0.0.1:3000", "--uplink=/dev/ttyUSB0:115200"},
-		{"--no-uplink", "8080=127.0.0.1:3000"},
-	} {
-		f := newProxyFlags()
+// TestStatusUnreadableIsRefusedForPrivilege: an account that cannot read the configuration is
+// told, as pass-through tells it of the token, to run status again with privilege: exit 13,
+// not a bare permission error and exit 1.
+func TestStatusUnreadableIsRefusedForPrivilege(t *testing.T) {
+	t.Cleanup(paths.UseRoot(t.TempDir()))
 
-		if hint := f.unknown(args); hint != "" {
-			t.Errorf("%v: unknown said %q", args, hint)
+	was := statusConfig
+	t.Cleanup(func() { statusConfig = was })
+
+	statusConfig = func(d paths.Dirs) (*config.Config, error) {
+		return nil, &fs.PathError{Op: "open", Path: d.ConfigFile(), Err: fs.ErrPermission}
+	}
+
+	_, errOut, code := capture(t, "status")
+	if want := privcheck.Retry("conflux status"); code != ExitDenied || !strings.Contains(errOut, want) {
+		t.Errorf("status unable to read the configuration exited %d, saying\n%s\nwant %d and %q", code, errOut, ExitDenied, want)
+	}
+}
+
+// TestStatusSaysWhereTheDaemonExports: `anchorctl export` changes the running daemon's export
+// and not conflux.json, so where the two disagree status says what the daemon is doing -- the
+// collector it exports to, or that it exports nothing -- and where they agree, nothing more.
+func TestStatusSaysWhereTheDaemonExports(t *testing.T) {
+	configured := &config.Config{Export: &config.Export{Enabled: true, Endpoint: "a.example:4317", Flows: true}}
+	none := &config.Config{}
+
+	for _, tc := range []struct {
+		name   string
+		cfg    *config.Config
+		daemon string
+		says   []string
+		not    []string
+	}{
+		{"turned off", configured, "not exporting\n", []string{"not exporting"}, nil},
+		{
+			"pointed elsewhere", configured,
+			"exporting to  b.example:4317\n  signals     flows\n  set by      anchorctl export\n",
+			[]string{"b.example:4317", "an override"}, nil,
+		},
+		{
+			"turned on", none,
+			"exporting to  b.example:4317\n  signals     flows\n  set by      anchorctl export\n",
+			[]string{"b.example:4317"}, nil,
+		},
+		{
+			"as configured", configured,
+			"exporting to  a.example:4317\n  signals     flows\n  set by      the config file\n",
+			[]string{"set by the config file"}, []string{"exports to", "not exporting"},
+		},
+		{"none, as configured", none, "not exporting\n", nil, []string{"not exporting"}},
+	} {
+		out, _ := captureUI(t)
+
+		reportExport(tc.cfg, &daemonAnswers{asked: true, export: tc.daemon})
+
+		for _, s := range tc.says {
+			if !strings.Contains(out.String(), s) {
+				t.Errorf("%s: status should say %q:\n%s", tc.name, s, out.String())
+			}
 		}
 
-		specs, _ := f.split(args)
-
-		if len(specs) != 1 || specs[0] != "8080=127.0.0.1:3000" {
-			t.Errorf("%v: positional args are %v, want just the port spec", args, specs)
+		for _, s := range tc.not {
+			if strings.Contains(out.String(), s) {
+				t.Errorf("%s: status should not say %q:\n%s", tc.name, s, out.String())
+			}
 		}
 	}
 }
 
-// TestProxyRoutesInUserspace: proxy takes the routing settings up does -- in userspace
-// the anchor forwards a subnet and serves an exit from its own process -- and the
-// splitter knows which of them take a value, so a prefix is not read as a port spec.
-func TestProxyRoutesInUserspace(t *testing.T) {
-	for _, args := range [][]string{
-		{"--subnet", "10.0.0.0/24", "8080=127.0.0.1:3000"},
-		{"8080=127.0.0.1:3000", "--serve-exit", "--no-subnet"},
-		{"--use-exit", "--no-serve-exit", "8080=127.0.0.1:3000"},
-	} {
-		f := newProxyFlags()
+// TestProxyTellsItsFlagsFromItsSpecs: conflux proxy's specs and flags come in any order, and
+// splitFlags tells them apart as proxy's flag set does, asking it of each flag whether it takes a
+// value (isBoolFlag). A flag that does -- --uplink, --subnet, --lan-discovery, a tristate written
+// as a value, and --export -- takes the next word, so a device path, a prefix, a yes, no or auto,
+// or a collector is not read as a spec; a switch -- the negations, the exits, the observer's --
+// takes none, so a spec after it stays one. Each is proxy's own, so none is the first flag not
+// proxy's (foreign), which proxy refuses, pointing at anchorctl's proxy; and every flag, with the
+// value it takes, is left for the flag set to parse, in the order given.
+func TestProxyTellsItsFlagsFromItsSpecs(t *testing.T) {
+	const spec = "8080=127.0.0.1:3000"
 
-		if hint := f.unknown(args); hint != "" {
-			t.Errorf("%v: unknown said %q", args, hint)
+	for _, c := range []struct {
+		args  []string
+		specs []string // nil for spec alone
+	}{
+		{args: []string{"--uplink", "/dev/ttyUSB0", spec}},
+		{args: []string{spec, "--uplink=/dev/ttyUSB0:115200"}},
+		{args: []string{"--no-uplink", spec}},
+		{args: []string{"--subnet", "10.0.0.0/24", spec}},
+		{args: []string{spec, "--serve-exit", "--no-subnet"}},
+		{args: []string{"--use-exit", "--no-serve-exit", spec}},
+		{args: []string{"--lan-discovery", "no", spec}},
+		{args: []string{spec, "--lan-discovery=yes"}},
+		{args: []string{"--lan-discovery", "auto", spec}},
+		{
+			args:  []string{"--export", "c:4317", spec, "--observe-loopback", "53/udp=127.0.0.1:53"},
+			specs: []string{spec, "53/udp=127.0.0.1:53"},
+		},
+	} {
+		if c.specs == nil {
+			c.specs = []string{spec}
 		}
 
-		if specs, _ := f.split(args); len(specs) != 1 || specs[0] != "8080=127.0.0.1:3000" {
-			t.Errorf("%v: positional args are %v, want just the port spec", args, specs)
+		flags, specs, foreign := splitFlags(newProxyFlags().fs, c.args)
+
+		if foreign != "" {
+			t.Errorf("%v: %q is not one of conflux proxy's", c.args, foreign)
+		}
+
+		if !slices.Equal(specs, c.specs) {
+			t.Errorf("%v: specs %v, want %v", c.args, specs, c.specs)
+		}
+
+		// The flags are every word that is not a spec, each value after its flag.
+		want := slices.DeleteFunc(slices.Clone(c.args), func(a string) bool { return slices.Contains(c.specs, a) })
+		if !slices.Equal(flags, want) {
+			t.Errorf("%v: flags %v, want %v", c.args, flags, want)
 		}
 	}
 }
@@ -409,21 +638,6 @@ func TestRenewRefusesAnchorctlFlags(t *testing.T) {
 	}
 }
 
-// TestRenewTakesNoPositional keeps the no-argument contract honest: a stray word is
-// a typo, and guessing what it meant is how a credential gets installed from a file
-// nobody named.
-func TestRenewTakesNoPositional(t *testing.T) {
-	_, errOut, code := capture(t, "renew", "somefile")
-
-	if code != ExitUsage {
-		t.Errorf("renew with a positional exited %d, want %d", code, ExitUsage)
-	}
-
-	if !strings.Contains(errOut, "takes no arguments") {
-		t.Errorf("renew should say it takes none; it said:\n%s", errOut)
-	}
-}
-
 func TestPeersFlagsContradict(t *testing.T) {
 	var cfg config.Config
 
@@ -519,30 +733,6 @@ func TestIPv4IsAskedOnce(t *testing.T) {
 	}
 }
 
-// TestProxyKeepsItsOwnLANDiscoveryFlag: the tristate is a value flag, and proxy's
-// positional parser is the one place that has to be told so. `--lan-discovery no
-// 8080=...` reads as two positionals to a parser that thinks the flag is a boolean,
-// and the second of them is a proxy spec called "no".
-func TestProxyKeepsItsOwnLANDiscoveryFlag(t *testing.T) {
-	for _, args := range [][]string{
-		{"--lan-discovery", "no", "8080=127.0.0.1:3000"},
-		{"8080=127.0.0.1:3000", "--lan-discovery=yes"},
-		{"--lan-discovery", "auto", "8080=127.0.0.1:3000"},
-	} {
-		f := newProxyFlags()
-
-		if hint := f.unknown(args); hint != "" {
-			t.Errorf("%v: unknown said %q", args, hint)
-		}
-
-		specs, _ := f.split(args)
-
-		if len(specs) != 1 || specs[0] != "8080=127.0.0.1:3000" {
-			t.Errorf("%v: positional args are %v, want just the port spec", args, specs)
-		}
-	}
-}
-
 // TestLANDiscoveryTristate covers the three answers and the two rules that are not
 // obvious from them: an absent flag keeps what is configured, because that is how
 // every other re-run of up keeps its settings, and typing auto is the way back from
@@ -593,28 +783,28 @@ func TestLANDiscoveryTristate(t *testing.T) {
 	}
 }
 
-// TestTheCollisionsAreTheDocumentedOnes reads the set off the binary, because prose
-// that nothing checks drifts.
+// TestTheCollisionsAreTheDocumentedOnes is the guard on the whole two-surface design, read off
+// the embedded anchorctl, because prose that nothing checks drifts.
 //
-// The set, rather than only the count, because adding a verb that happens to
-// collide should fail here with the name in the message rather than as an
-// off-by-one.
+// conflux keeps a closed set of names and passes everything else through. If a future anchor
+// adds a command called "up", it would silently become unreachable -- conflux would answer it
+// and the user would never learn that anchorctl had one. This fails CI on that day instead:
+// the names both have are exactly the documented collisions, each resolved in its own verb and
+// in help, as a set rather than a count, so a new one fails here with its name. The commands
+// conflux refuses to pass through are still anchorctl's, or the refusal guards nothing. And
+// anchor's realm control -- blocking a member, moving its compartments or its served networks,
+// asking how it is -- is anchorctl's and reaches it unchanged: no conflux verb shadows it and
+// none of it is refused as a lifecycle command.
 func TestTheCollisionsAreTheDocumentedOnes(t *testing.T) {
 	anchortest.Require(t)
 
-	t.Setenv("CONFLUX_DIR", t.TempDir())
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll: %v", err)
-	}
-
-	tools, err := libexec.Ensure(d)
+	bin, done, _, err := libexec.ForUsage(paths.Dirs{Root: t.TempDir()})
 	if err != nil {
-		t.Fatalf("Ensure: %v", err)
+		t.Fatalf("ForUsage: %v", err)
 	}
+	t.Cleanup(done)
 
-	theirs := anchorctlCommands(t, tools.Anchorctl)
+	theirs := anchorctlCommands(t, bin)
 
 	var shared []string
 
@@ -629,14 +819,39 @@ func TestTheCollisionsAreTheDocumentedOnes(t *testing.T) {
 	want := []string{"observe", "proxy", "renew", "start", "status"}
 	if !slices.Equal(shared, want) {
 		t.Errorf("conflux and anchorctl share %v, and the docs describe %v.\n"+
-			"  Resolve the new collision the way the others are, then update the count in\n"+
-			"  internal/cli/help.go, internal/cli/cli.go, docs/commands.md and README.md.",
+			"  Rename conflux's, or resolve the new collision the way the others are, then update\n"+
+			"  the count in internal/cli/help.go, internal/cli/cli.go, docs/commands.md and README.md.",
 			shared, want)
 	}
 
 	// The help text an operator reads says the same number, spelled out.
 	if !strings.HasPrefix(collisions, "Five of conflux's names") {
 		t.Errorf("the help text disagrees with the %d collisions that exist", len(want))
+	}
+
+	for name := range anchorLifecycleVerbs {
+		if !theirs[name] {
+			t.Errorf("conflux refuses to pass %q through, but anchorctl has no such command any more", name)
+		}
+	}
+
+	for _, name := range []string{"block", "unblock", "blocks", "taints", "subnets", "telemetry"} {
+		if !theirs[name] {
+			t.Errorf("anchorctl has no %q command; docs/commands.md and conflux help name it", name)
+		}
+
+		if _, ours := verbs()[name]; ours {
+			t.Errorf("conflux's %q shadows anchorctl's realm control", name)
+		}
+
+		if _, refused := anchorLifecycleVerbs[name]; refused {
+			t.Errorf("conflux refuses to pass %q through", name)
+		}
+
+		// Its usage answers with nothing running, which is where pass-through sends a -h.
+		if out, err := exec.Command(bin, name, "-h").CombinedOutput(); err != nil {
+			t.Errorf("anchorctl %s -h: %v\n%s", name, err, out)
+		}
 	}
 }
 
@@ -646,8 +861,7 @@ func TestTheCollisionsAreTheDocumentedOnes(t *testing.T) {
 func TestARefusalForPrivilegeRepeatsTheCommand(t *testing.T) {
 	// The account that is refused, whatever this one is: a root CI runner would otherwise
 	// skip this, and the Linux job fails on any skip.
-	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
-	privcheck.Elevated = func() bool { return false }
+	asRoot(t, false)
 
 	_, errOut, code := capture(t, "up", "--taint", "my net", "--ipv4", "10.128.0.7/24")
 
@@ -712,49 +926,6 @@ func TestTheInterfaceIsWhatTheAnchorSaysItHolds(t *testing.T) {
 	}
 }
 
-// TestRealmControlPassesThrough: anchor's realm control -- blocking a member, moving its
-// compartments or its served networks, asking how it is -- is anchorctl's, and reaches the
-// embedded one through conflux unchanged, with conflux's socket and token. None of it may
-// be shadowed by a conflux verb or refused as a lifecycle command.
-func TestRealmControlPassesThrough(t *testing.T) {
-	anchortest.Require(t)
-
-	t.Setenv("CONFLUX_DIR", t.TempDir())
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll: %v", err)
-	}
-
-	tools, err := libexec.Ensure(d)
-	if err != nil {
-		t.Fatalf("Ensure: %v", err)
-	}
-
-	theirs := anchorctlCommands(t, tools.Anchorctl)
-
-	for _, name := range []string{"block", "unblock", "blocks", "taints", "subnets", "telemetry"} {
-		if !theirs[name] {
-			t.Errorf("anchorctl has no %q command; docs/commands.md and conflux help name it", name)
-		}
-
-		if _, ours := verbs()[name]; ours {
-			t.Errorf("conflux's %q shadows anchorctl's realm control", name)
-		}
-
-		if _, refused := anchorLifecycleVerbs[name]; refused {
-			t.Errorf("conflux refuses to pass %q through", name)
-		}
-
-		// Its usage answers with nothing running, which is where pass-through sends a
-		// -h. Asked of the binary rather than through Main: on Unix pass-through
-		// replaces the process, which here is the test binary.
-		if out, err := exec.Command(tools.Anchorctl, name, "-h").CombinedOutput(); err != nil {
-			t.Errorf("anchorctl %s -h: %v\n%s", name, err, out)
-		}
-	}
-}
-
 // credentialFrom decodes a manifest document for the taint tests below.
 func credentialFrom(t *testing.T, doc string) *enrol.Manifest {
 	t.Helper()
@@ -771,10 +942,7 @@ func credentialFrom(t *testing.T, doc string) *enrol.Manifest {
 // mints one rather than ask for none; once a credential is held its taints are the
 // machine's for good, so --taint may only restate them, and conflux.json follows them.
 func TestTaintsAreAskedForOrChecked(t *testing.T) {
-	out := ui.Out
-	ui.Out = io.Discard
-
-	t.Cleanup(func() { ui.Out = out })
+	captureUI(t)
 
 	const granted = "brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf"
 
@@ -831,12 +999,7 @@ func TestTaintsAreAskedForOrChecked(t *testing.T) {
 // configured list from every start, until the operator sets the list again -- the last
 // set wins -- and status says whose list is being served.
 func TestASetListReplacesASubnetOrder(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", t.TempDir())
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll: %v", err)
-	}
+	d := pathstest.Root(t)
 
 	if err := os.MkdirAll(d.AnchorDir(), 0o700); err != nil {
 		t.Fatal(err)
@@ -850,12 +1013,7 @@ func TestASetListReplacesASubnetOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var shown bytes.Buffer
-
-	old := ui.Out
-	ui.Out = &shown
-
-	t.Cleanup(func() { ui.Out = old })
+	shown, _ := captureUI(t)
 
 	reportSubnets(d, &config.Config{Subnets: []string{"eth1"}})
 

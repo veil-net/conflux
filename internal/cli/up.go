@@ -30,8 +30,21 @@ func (r *repeated) String() string     { return strings.Join(*r, ",") }
 func (r *repeated) Set(v string) error { *r = append(*r, v); return nil }
 
 func runUp(ctx context.Context, args []string) int {
-	fs := flag.NewFlagSet("up", flag.ContinueOnError)
-	fs.SetOutput(ui.Errw)
+	fs := verbFlags("up", "conflux up — join the overlay with a network interface\n\n"+
+		"  conflux up [--taint T] [--ipv4 ADDRESS | --no-ipv4] [--subnet CIDR... | --no-subnet]\n"+
+		"             [--uplink DEV | --no-uplink] [--peers HOST:PORT | --no-peers]\n"+
+		"             [--observe | --no-observe] [--export HOST:PORT]\n"+
+		"             [--ephemeral [--manifest FILE|-]]\n\n"+
+		"Enrols this machine if it has never been, starts an anchor in TUN mode, writes\n"+
+		"the configuration, and registers the boot service so a reboot needs nothing.\n\n"+
+		"With --uplink the realm is reached over a link rather than the host's network:\n"+
+		"no socket is bound and no address is advertised. Enrolment still goes over the\n"+
+		"internet, so enrol this machine while it has one.\n\n"+
+		"With --observe the daemon observes beside the anchor: an inventory of the\n"+
+		"cryptography of this host's traffic, which conflux observe -h describes.\n\n"+
+		"With --ephemeral nothing is kept: it runs in the foreground from a credential held\n"+
+		"in memory alone, enrolled or piped in with --manifest, and registers nothing. When\n"+
+		"anchord stops, or on Ctrl-C, everything is gone; docs/ephemeral.md describes it.\n\n")
 
 	var (
 		taints   repeated
@@ -53,6 +66,7 @@ func runUp(ctx context.Context, args []string) int {
 	// Registered for the flag package and read through typedFlags, not through these
 	// values: what matters is whether they were written, not what they default to.
 	fs.Bool("no-port", false, "go back to letting the kernel pick the port")
+
 	fs.Bool("low-latency", false, "carry frames on datagrams: no head-of-line blocking, and a lost frame stays lost")
 	fs.Bool("no-low-latency", false, "go back to carrying frames on streams")
 	registerExits(fs)
@@ -64,27 +78,8 @@ func runUp(ctx context.Context, args []string) int {
 	fs.Var(&subnets, "subnet", subnetUsage)
 	fs.Var(&peers, "peers", "bootstrap entry as host:port; repeat for more. Enrolment supplies these, so this is an override")
 
-	fs.Usage = func() {
-		ui.Printf("conflux up — join the overlay with a network interface\n\n" +
-			"  conflux up [--taint T] [--ipv4 ADDRESS | --no-ipv4] [--subnet CIDR... | --no-subnet]\n" +
-			"             [--uplink DEV | --no-uplink] [--peers HOST:PORT | --no-peers]\n" +
-			"             [--observe | --no-observe] [--export HOST:PORT]\n" +
-			"             [--ephemeral [--manifest FILE|-]]\n\n" +
-			"Enrols this machine if it has never been, starts an anchor in TUN mode, writes\n" +
-			"the configuration, and registers the boot service so a reboot needs nothing.\n\n" +
-			"With --uplink the realm is reached over a link rather than the host's network:\n" +
-			"no socket is bound and no address is advertised. Enrolment still goes over the\n" +
-			"internet, so enrol this machine while it has one.\n\n" +
-			"With --observe the daemon observes beside the anchor: an inventory of the\n" +
-			"cryptography of this host's traffic, which conflux observe -h describes.\n\n" +
-			"With --ephemeral nothing is kept: it runs in the foreground from a credential held\n" +
-			"in memory alone, enrolled or piped in with --manifest, and registers nothing. When\n" +
-			"anchord stops, or on Ctrl-C, everything is gone; docs/ephemeral.md describes it.\n\n")
-		fs.PrintDefaults()
-	}
-
-	if err := fs.Parse(args); err != nil {
-		return ExitUsage
+	if exit, ok := flagsAlone(fs, args); !ok {
+		return exit
 	}
 
 	// An ephemeral run reads its credential first, and touches nothing of the machine's.
@@ -227,7 +222,7 @@ func typedFlags(fs *flag.FlagSet) map[string]bool {
 	typed := map[string]bool{}
 
 	fs.Visit(func(f *flag.Flag) {
-		if b, ok := f.Value.(interface{ IsBoolFlag() bool }); ok && b.IsBoolFlag() && f.Value.String() == "false" {
+		if isBoolFlag(f) && f.Value.String() == "false" {
 			if pos, ok := strings.CutPrefix(f.Name, "no-"); ok && fs.Lookup(pos) != nil {
 				return
 			}

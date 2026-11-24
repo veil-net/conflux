@@ -11,27 +11,48 @@ under `$HOME` is a path the service cannot read — and a `~/.config` layout als
 under a systemd unit with `User=` or `ProtectHome=`, or for an `anchord` running as an
 account of its own.
 
-| | Linux | macOS | Windows | FreeBSD / OpenBSD |
-|---|---|---|---|---|
-| configuration | `/etc/conflux/` | `/Library/Application Support/conflux/` | `%ProgramData%\conflux\` | `/usr/local/etc/conflux/` |
-| state, identity, binaries | `/var/lib/conflux/` | `/Library/Application Support/conflux/` | `%ProgramData%\conflux\` | `/var/db/conflux/` |
-| token, anchord's pid | `/run/conflux/` | `/var/run/conflux/` | `%ProgramData%\conflux\run\` | `/var/run/conflux/` |
-| anchord's socket | `/run/conflux/anchord/sock` | `/var/run/conflux/anchord/sock` | `%ProgramData%\conflux\run\anchord\sock` | `/var/run/conflux/anchord/sock` |
+| Linux | macOS | Windows | FreeBSD / OpenBSD |
+|---|---|---|---|
+| `/var/lib/.conflux/` | `/Library/Application Support/.conflux/` | `%ProgramData%\.conflux\` | `/var/db/.conflux/` |
 
-`CONFLUX_DIR` roots all of them in one directory, and the boot service with them — it is named after the root, so a run under it is a separate installation rather than a replacement for the machine's own. See [testing.md](testing.md).
+Everything conflux keeps on the machine is in that one directory, the root, and nothing a
+person sets moves it:
+
+| | |
+|---|---|
+| `conflux.json`, `manifest.b64`, `state.json`, `anchord.json` | the files below |
+| `anchord.priv` | who the last `anchord` ran as, with what, and which anchor directory it was given |
+| `conflux.lock`, `serve.lock` | the lock every rewrite of `conflux.json`, the manifest or the state takes, and the one the serving supervisor holds |
+| `conflux` (`conflux.exe` on Windows) | the copy of conflux the boot service runs; see [service.md](service.md) |
+| `bin/<setID>/` | the extracted anchor pair |
+| `anchor/`, `anchor.root/` | `anchord`'s `-dir`: the first for an `anchord` running as its own account, the second for one running as root |
+| `run/` | `token`, `ready`, `anchord.pid`, and `anchord/sock`, the control socket — what lasts as long as one supervisor, which empties it as it starts |
+| `rc.pid` | on FreeBSD, the supervisor's pid as `daemon(8)` records it for `rc.subr` |
+
+The service's log is not here: it is the system's (journald, syslog, the unified log, the
+Application event log); see [service.md](service.md).
+
+The root holds that and nothing else. At every start the supervisor empties `run/` and removes
+from the root whatever conflux or anchor did not put there, leaving only a temporary file young
+enough to be another conflux command's write in progress. Before every start of `anchord` it
+removes from both anchor directories, which `anchord`'s account writes in while it runs,
+everything but anchor's `bootstrap.json`, `realmlinks`, `knowledge/` and `subnets.json`. `bin/`
+it keeps to the live set the same way.
 
 Every directory is `0700` — one found wider is narrowed, and one another account owns is refused —
 and every file conflux writes there is `0600`, apart from the programs it runs (the extracted pair
-and the service's own copy of conflux, `0700`). The service definitions live where the service
-manager reads them, at the modes it expects, and on macOS and FreeBSD the log file goes in the
-system's `/var/log`.
+and the service's own copy of conflux, `0700`); the supervisor gives the root's own files back to
+root and those modes at every start, and on Windows back to SYSTEM and the Administrators, taking
+back whatever was granted on one since ([windows.md](windows.md)). The service definitions live
+where the service manager reads them, at the modes it expects.
 
 Where `anchord` runs as its own account, the supervisor lets that account through to what it
-needs and nothing else: the state and run directories become `0710`, root's, with the account's
-group — it may pass through them, and list or create nothing — and `anchord` itself `0750` in the
-same way. `anchor/`, anchord's `-dir`, and `run/anchord/`, which holds its socket, are the
-account's own; a root anchord is given `anchor.root/` and a `run/anchord/` of root's instead. The
-layout, and why, is in [security.md](security.md#what-anchord-runs-as).
+needs and nothing else: the root, `bin/`, the live set's directory and `run/` become `0710`,
+root's, with the account's group — it may pass through them, and list or create nothing —
+and `anchord` itself `0750` in the same way. `anchor/`, anchord's `-dir`, and `run/anchord/`,
+which holds its socket, are the account's own; a root anchord is given `anchor.root/` and a
+`run/anchord/` of root's instead. The layout, and why, is in
+[security.md](security.md#what-anchord-runs-as).
 
 ## `conflux.json` — what you asked for
 
@@ -59,9 +80,9 @@ layout, and why, is in [security.md](security.md#what-anchord-runs-as).
 |---|---|
 | `mode` | `tun`, `proxy`, or `observe`, which runs the observer and no anchor; the anchor's fields below are then kept, unused, for the next `up` or `proxy`. See [modes.md](modes.md). |
 | `observer` | `{}`, with `loopback` and `hideNames` each `true` where asked for: the daemon's observer runs, beside an anchor or, with `mode` `observe`, alone. Absent is off. Refused on FreeBSD and OpenBSD, which have no capture. Its records go out with the export's `flows`. See [observe.md](observe.md). |
-| `taints` | the compartments this machine's credential grants. Before enrolment they are the request: the one `--taint` named or `up` or `proxy` minted, which the enrolment asks for exactly. After it they mirror the grant, and every start checks them against the manifest, refusing for good when the two disagree: a credential's taints never change. Empty only for an issued credential that grants none, which is its issuer realm's default compartment. Never written from the running anchor, which a member's Taints order may have moved. See [credentials.md](credentials.md#taints-are-the-credentials). |
+| `taints` | the compartments this machine's credential grants. Before enrolment they are the request: the one `--taint` named or `up` or `proxy` minted, which the enrolment asks for exactly. After it they mirror the grant, and every start checks them against the manifest, refusing for good when the two disagree: a credential's taints never change. One emptied by hand asks for nothing, so the start takes the grant and writes it back here. Empty only for an issued credential that grants none, which is its issuer realm's default compartment. Never written from the running anchor, which a member's Taints order may have moved. See [credentials.md](credentials.md#taints-are-the-credentials). |
 | `ipv4` | this machine's IPv4, an address or `address/length`. Either mode. `""` records that the operator declined one, and absent that nobody has been asked yet — the difference is what keeps the question to once. |
-| `subnets` | interface names, private prefixes, or `*` for every private network on every interface, each optionally bound to some of this machine's taints as `SPEC@a+b`; at most 64 entries. Either mode: with an interface the host forwards, in userspace the anchor does from its own process. The list the anchor starts with: a member's Subnets order replaces it, kept by anchor in `anchor/subnets.json` under the state directory, until an `up` or `proxy` with `--subnet` or `--no-subnet` sets it again. See [modes.md](modes.md#the-last-set-wins). |
+| `subnets` | interface names, private prefixes, or `*` for every private network on every interface, each optionally bound to some of this machine's taints as `SPEC@a+b`; at most 64 entries. Either mode: with an interface the host forwards, in userspace the anchor does from its own process. The list the anchor starts with: a member's Subnets order replaces it, kept by anchor in `anchor/subnets.json` under the root, until an `up` or `proxy` with `--subnet` or `--no-subnet` sets it again. See [modes.md](modes.md#the-last-set-wins). |
 | `proxies` | `PORT[/NETWORK]=BACKEND` specs. `proxy` only. |
 | `uplink` | a device, with an optional line speed. Absent means the host's IP network, which is the usual case. Either mode. See [uplink.md](uplink.md). |
 | `peers` | bootstrap entries, `host:port` or `anchorxxx@host:port`. **Absent is the usual case and not a missing setting:** anchorctl takes the list from the manifest, which a renewal refreshes, for exactly the fields no flag named, so an empty `peers` is what keeps the issuer's own nodes in play. Present, it overrides them. |
@@ -70,7 +91,7 @@ layout, and why, is in [security.md](security.md#what-anchord-runs-as).
 | `lanDiscovery` | probe the host's own networks for anchors of this realm tree. Either mode. The one field here where **absent is not false**: it is `auto`, and it passes no flag at all, which is what leaves enrolment's own `lanDiscovery` in play. `false` and absent are different documents and `--lan-discovery no` writes the first of them. |
 | `serveExit`, `useExit` | route the public internet out of and into the overlay. Absent is false. Either mode, as `subnets`; anchor refuses the two together. |
 | `tunName` | the interface name `--interface` asked for. `tun` only. Absent is the usual case: the anchor then names the interface after itself, `anchor` and the start of its AnchorID, on Linux and Windows, and macOS and the BSDs number their own. `conflux status` names the one it holds. |
-| `apiBaseUrl` | absent means the default. |
+| `apiBaseUrl` | where enrolment and renewal are asked, as `--api` gave it: an absolute `https` URL. Absent means the default, `https://api.veilnet.com.au`. One that is not absolute, has no host name (a port alone is none), or is not `https` is refused at every start, and by `conflux enrol` before it installs one. |
 
 This file is the whole of what a reboot needs. Every `up`, `proxy` and `observe` rewrites
 it, so it is always the current desired state.
@@ -82,6 +103,14 @@ What depends on the host is anchor's to find at start: a subnet whose interface 
 yet, which is retried, and TLS material under `export` that will not load. `taints` is the
 one field an edit cannot change once the machine has enrolled: a set the credential does
 not grant is refused at every start.
+
+Each start's canonical rewrite reads the file once, under the machine's lock, and writes it
+back in conflux's own form, and `state.json` with it: an edit that is valid takes effect, and
+a key conflux does not know, or a layout of the editor's own, does not outlast the next
+start. A file already in that form is not rewritten, and one the start refuses — one that
+does not parse, that a newer conflux wrote, or that is refused on its face — is left exactly
+as it is. Every command that writes it holds the machine's lock, as the start does, so
+neither undoes the other.
 
 ### `export` — where telemetry goes
 
@@ -209,9 +238,12 @@ Everything here is derived, and most of it is re-learned by the next start: the 
 from the manifest, the AnchorID from what `anchorctl start` reports. Not on a machine
 whose credential has expired: a renewal names the anchor by its AnchorID, anchor will not
 start on an expired credential to report one, so with `state.json` gone that machine is
-refused for good and needs a new identity. A new identity — an enrolment, or `conflux
-enrol` — clears everything here that described the old one. The manifest, recoverable from
-nowhere, is a file of its own.
+refused for good and needs a new identity. For the same reason a `state.json` that does not
+parse, or that a newer conflux wrote, is never replaced with an empty one: every start and
+`conflux renew` refuse it for good, naming it, and leave it as it is for a person to put
+right; `conflux status` reports what it can without it. A new identity — an enrolment, or
+`conflux enrol`, which takes the place of one it cannot read — clears everything here that
+described the old one. The manifest, recoverable from nowhere, is a file of its own.
 
 It is separate from `conflux.json` for a second reason: the renewal timer rewrites
 `notAfter` at every renewal from the supervisor while `up` or `proxy` may be rewriting
@@ -225,18 +257,17 @@ nothing about the anchor — an anchor's configuration arrives with the `Start` 
 which is what lets conflux own the lifecycle.
 
 Editing it does nothing lasting: the next start overwrites it. `conflux.json` is the
-file with your intent in it, and this is derived from it. It is `0600` in the state
-directory rather than beside `conflux.json`, because it carries the export headers, which
-are credentials, and it belongs to whoever `anchord` runs as. TLS material `conflux.json`
-names by path is read by the supervisor and written into it whole, so a key only root can
-read still reaches an `anchord` that is not root.
+file with your intent in it, and this is derived from it. It is `0600`, because it
+carries the export headers, which are credentials, and it belongs to whoever `anchord` runs
+as. TLS material `conflux.json` names by path is read by the supervisor and written into it
+whole, so a key only root can read still reaches an `anchord` that is not root.
 
 ## `bin/<setID>/` — the extracted anchor pair
 
 `anchord` and `anchorctl`, extracted from the conflux binary, in a directory named for
 their contents: a hash of the two SHA-256s `conflux version` prints, and the platform.
 `make build` and `make dist` stamp those digests into the binary from the very files it
-embeds, so a released conflux knows its set without reading forty-odd megabytes at every
+embeds, so a released conflux knows its set without reading fifty-odd megabytes at every
 invocation; a plain `go build` stamps nothing and computes them once per process instead.
 
 Content-addressed rather than a fixed path, and that one decision removes four
@@ -244,11 +275,15 @@ problems at once. An upgraded conflux writes a *new* directory instead of over t
 a running anchord has open, so there is no `ETXTBSY` on Unix and no sharing violation
 on Windows. Two conflux processes racing agree on the path. A stale set is
 identifiable and sweepable. And "is it already extracted" is three stats rather than a
-read of forty-odd megabytes.
+read of fifty-odd megabytes.
 
-Old sets are swept after 24 hours, by the supervisor once it has started on its own
-set — never by another conflux command, which might be standing beside a supervisor
-still running an older set. `conflux uninstall` removes the tree.
+The supervisor keeps `bin/` to what conflux put there once it has started on its own set:
+that set, with nothing in it but the pair, its markers and, on Windows, `wintun.dll`, and a
+temporary file young enough to be a write in progress there (the driver being placed), as in
+the root; the extraction lock; and a set or a staging directory made in the last hour, which a
+newer conflux running a command beside it may be using until the service restarts onto it.
+Everything else goes — an older set, a crash's staging, anything conflux did not write.
+No other conflux command removes anything there. `conflux uninstall` removes the tree.
 
 Emphatically **not** `/tmp`: systemd's `PrivateTmp=` would give the service a
 different `/tmp` than your shell, `/tmp` is `noexec` on hardened hosts,
@@ -262,7 +297,9 @@ On Windows this directory also holds `wintun.dll` — see [windows.md](windows.m
 Every write goes to a sibling temporary file, is fsynced, renamed over the target, and
 the directory fsynced. A crash or a full disk leaves the previous content and never a
 truncated file — which for `manifest.b64` is the difference between an inconvenience
-and a destroyed identity.
+and a destroyed identity. The extracted pair's record of itself in `bin/` is written in place
+instead: it is only ever compared whole with the pair's files, so one a crash tore matches
+nothing, and costs the next start a read of the pair.
 
 The mode is set on the file descriptor *before* any content reaches it. Writing and
 then chmod'ing leaves a window at the umask's mode, and on a shared machine that
@@ -270,7 +307,7 @@ window is the whole vulnerability.
 
 **On Windows, `0600` is a no-op.** A Go program that calls `Chmod(0600)` there has
 changed only the read-only bit, and `%ProgramData%` lets `Users` read and create beneath
-it. So conflux gives `%ProgramData%\conflux` to SYSTEM and Administrators — owner and a
+it. So conflux gives `%ProgramData%\.conflux` to SYSTEM and Administrators — owner and a
 protected DACL, inherited below — and does the same to each secret file before writing
 into it. See [windows.md](windows.md#file-permissions).
 
@@ -284,10 +321,10 @@ into it. See [windows.md](windows.md#file-permissions).
 | `manifest.b64` | kept | kept | kept | **deleted, permanently** |
 | `state.json` | kept | kept | kept | deleted |
 | `anchord.json` | kept | rewritten | rewritten | deleted |
-| the service's log file (macOS, FreeBSD, Windows) | kept | appended | appended | deleted |
 | extracted binaries | kept | kept | kept | deleted |
 
 An ephemeral run is outside this table: it reads and writes none of these files, and keeps
-its socket and its extracted binaries in a root of its own that goes when the run does. The
+its socket in a root of its own that goes when the run does, with its binaries in memory on
+Linux and in that root elsewhere. The
 one thing of it that outlives a run is the `conflux-ephemeral` account, which `uninstall`
 removes with the installation's. See [ephemeral.md](ephemeral.md).

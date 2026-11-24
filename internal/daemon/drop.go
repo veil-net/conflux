@@ -37,28 +37,44 @@ func (s *Supervisor) privilege(cfg *config.Config) Privilege {
 	return s.privilegeFor(cfg, manifestPort(s))
 }
 
-// privilegeFor is privilege for a credential naming port, or 0 before there is one.
+// privilegeFor is privilege for a credential naming port, or 0 before there is one. The
+// decision it gives is kept, for redecided.
 func (s *Supervisor) privilegeFor(cfg *config.Config, port int) Privilege {
-	p := decide(runtime.GOOS, cfg, listenPort(cfg, port), probeHost(cfg))
-
-	// The BPF devices are the installation's to give and take back: its supervisor gives
-	// them back to root at every start that does not observe as its account, so an ephemeral
-	// observer reading them through its own group could lose them at any moment. It reads
-	// them as root instead, which needs no grant.
-	if s.ephemeral && p.Account && p.BPF == BPFOwn {
-		p = asSupervisor("an ephemeral run leaves the BPF devices to the installed conflux, so it observes as root")
-	}
+	p := s.decision(cfg, port)
+	s.decided = p
 
 	if p.Account {
-		if !s.Drop {
-			p = asSupervisor("")
-		} else if why := s.dropTo(&p); why != "" {
+		if why := s.dropTo(&p); why != "" {
 			p = asSupervisor(why)
 		}
 	}
 
 	if !p.Account {
 		p.As = supervisorName()
+	}
+
+	return p
+}
+
+// decision is who anchord is to run as with cfg and a credential naming port: decide's answer,
+// held to what this supervisor can give before anything is done to give it.
+func (s *Supervisor) decision(cfg *config.Config, port int) Privilege {
+	p := decide(runtime.GOOS, cfg, listenPort(cfg, port), probeHost(cfg))
+
+	switch {
+	case !p.Account:
+	case s.ephemeral && p.BPF == BPFOwn:
+		// The BPF devices are the installation's to give and take back: its supervisor gives
+		// them back to root at every start that does not observe as its account, so an
+		// ephemeral observer reading them through its own group could lose them at any moment.
+		// It reads them as root instead, which needs no grant.
+		p = asSupervisor("an ephemeral run leaves the BPF devices to the installed conflux, so it observes as root")
+	case !s.Drop:
+		p = asSupervisor("")
+	default:
+		if why := canDrop(&p); why != "" {
+			p = asSupervisor(why)
+		}
 	}
 
 	return p
@@ -93,6 +109,12 @@ func supervisorName() string {
 func (s *Supervisor) prepare(p *Privilege) error {
 	s.killLeftovers()
 
+	// What is in the anchor directories that is not anchor's goes, now that nothing of the
+	// account's runs: a file that will not go is said and left, and costs no start.
+	if err := s.tidyAnchorDirs(); err != nil {
+		s.report().Warn("could not remove what is not anchor's from its directories: %v", err)
+	}
+
 	if err := s.freshDaemonRun(*p); err != nil {
 		return fmt.Errorf("prepare %s: %w", s.Dirs.DaemonRun(), err)
 	}
@@ -121,20 +143,6 @@ func (s *Supervisor) anchorDir(p Privilege) (string, error) {
 	want := d.RootAnchorDir()
 	if p.Account {
 		want = d.AnchorDir()
-	}
-
-	// conflux 1.0.0 gave a root anchord the account's name for its directory, so a tree
-	// there that is root's is root's anchor's state, and takes root's name.
-	if legacyAnchorDir(d.AnchorDir()) {
-		if _, err := os.Lstat(d.RootAnchorDir()); errors.Is(err, fs.ErrNotExist) {
-			if err := os.Rename(d.AnchorDir(), d.RootAnchorDir()); err != nil {
-				return "", fmt.Errorf("move %s aside: %w", d.AnchorDir(), err)
-			}
-
-			s.lastDir = d.RootAnchorDir()
-		} else if err := os.RemoveAll(d.AnchorDir()); err != nil {
-			return "", err
-		}
 	}
 
 	from := s.lastDir
@@ -189,11 +197,10 @@ func exists(path string) bool {
 // belongs to p's identity.
 //
 // from may be a directory the account can write, so nothing in it is trusted: it is read
-// through an os.Root, which no symlink leads out of, a file is taken only when it is a
-// regular file with one link and no larger than any anchor keeps, and anything else -- a
-// symlink, a FIFO, a device, a hard link to something the account could name but not read
-// -- is left behind. Everything is written fresh, created exclusively, and owned through
-// its descriptor.
+// through an os.Root, which no symlink leads out of, a file is taken only as copyFile takes
+// it, and anything else -- a symlink, a FIFO, a device, on Unix a hard link to something the
+// account could name but not read -- is left behind. Everything is written fresh, created
+// exclusively, and owned through its descriptor.
 func copyTree(from, to string, p Privilege) error {
 	src, err := os.OpenRoot(from)
 	if err != nil {
@@ -225,15 +232,21 @@ func copyTree(from, to string, p Privilege) error {
 	})
 }
 
+// copyFile copies the file name names in src into dst, if it is one to take: a regular file
+// no larger than any anchor keeps, and on Unix of one name (config.Untrusted). It is opened by
+// that name itself, never by what a link of that name points at (config.OpenUntrusted): on
+// Windows as on Unix, a link to another file inside src is refused as one leading out of it
+// is, where the os.Root alone would follow it, so a link the account puts in a file's place
+// between the walk and the open copies nothing.
 func copyFile(src, dst *os.Root, name string, p Privilege) error {
-	in, err := src.OpenFile(name, openUntrusted, 0)
+	in, err := src.OpenFile(name, config.OpenUntrusted, 0)
 	if err != nil {
 		return nil
 	}
 	defer in.Close()
 
 	fi, err := in.Stat()
-	if err != nil || !fi.Mode().IsRegular() || !oneLink(fi) || fi.Size() > copyFileMax {
+	if err != nil || !config.Untrusted(fi, copyFileMax) {
 		return nil
 	}
 
@@ -274,7 +287,7 @@ func anchordEnv(p Privilege, token string) []string {
 		k, _, _ := strings.Cut(kv, "=")
 
 		switch k {
-		case "NOTIFY_SOCKET", "LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES", "CONFLUX_DIR",
+		case "NOTIFY_SOCKET", "LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES",
 			anchorctl.SocketEnv, anchorctl.TokenEnv:
 			continue
 		case "HOME", "USER", "LOGNAME":
@@ -298,21 +311,17 @@ func anchordEnv(p Privilege, token string) []string {
 }
 
 // redecided reports whether anchord would now be started with something other than what
-// it was: the cycle's cue to start it again. Asked only after a start or a rebuild failed.
+// it was: the cycle's cue to start it again. Asked only after a start or a rebuild failed,
+// of the decision alone, which it compares with the one the running anchord was started
+// from: nothing is done again to give it -- the account's directories, the BPF devices
+// re-owned on macOS, a LOCAL SERVICE logon on Windows -- for a start that may not follow.
 func (s *Supervisor) redecided() bool {
-	cfg, err := loadConfig(s.Dirs)
+	cfg, _, err := loadConfig(s.Dirs)
 	if err != nil {
 		return false
 	}
 
-	p := s.privilege(cfg)
-
-	p.Dir = s.Dirs.RootAnchorDir()
-	if p.Account {
-		p.Dir = s.Dirs.AnchorDir()
-	}
-
-	return !sameGrant(p, s.priv)
+	return !sameGrant(s.decision(cfg, manifestPort(s)), s.decided)
 }
 
 // requestRespawn asks the cycle to end, once.

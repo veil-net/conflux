@@ -128,7 +128,7 @@ func BenchmarkBringUp(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		if _, err := bringUp(ctx, d, ctl, nopReporter{}, d.RootAnchorDir(), false); err != nil {
+		if _, err := bringUp(ctx, d, ctl, nopReporter{}, d.RootAnchorDir(), false, nil, nil); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -162,8 +162,7 @@ func BenchmarkAnchorCheck(b *testing.B) {
 // BenchmarkRenewal is the whole of a timer renewal against a stand-in API: the lock, the
 // stored files, the POST, the splice, the writes and the hot install.
 func BenchmarkRenewal(b *testing.B) {
-	b.Setenv("CONFLUX_DIR", b.TempDir())
-	b.Setenv("CONFLUX_ALLOW_INSECURE_API", "1")
+	b.Setenv(config.InsecureAPIEnv, "1")
 
 	chain := base64.StdEncoding.EncodeToString(make([]byte, 6<<10))
 
@@ -218,8 +217,6 @@ func BenchmarkRenewal(b *testing.B) {
 // spawn, the readiness probe, and the shutdown that closes and reaps it.
 func BenchmarkDaemonLifecycle(b *testing.B) {
 	anchortest.Require(b)
-
-	b.Setenv("CONFLUX_DIR", b.TempDir())
 
 	d := dirs(b)
 

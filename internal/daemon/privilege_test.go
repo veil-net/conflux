@@ -240,13 +240,12 @@ func TestPrivilegeString(t *testing.T) {
 // conflux's own, and for the account nobody's home.
 func TestAnchordEnv(t *testing.T) {
 	t.Setenv("NOTIFY_SOCKET", "/run/systemd/notify")
-	t.Setenv("CONFLUX_DIR", "/srv/x")
 	t.Setenv("HOME", "/root")
 	t.Setenv("ANCHORD_TOKEN", "stale")
 
 	env := anchordEnv(Privilege{Account: true, As: "conflux"}, "fresh")
 
-	gone := []string{"NOTIFY_SOCKET=", "CONFLUX_DIR=", "ANCHORD_TOKEN=stale"}
+	gone := []string{"NOTIFY_SOCKET=", "ANCHORD_TOKEN=stale"}
 	if runtime.GOOS != "windows" {
 		gone = append(gone, "HOME=/root")
 	}
@@ -261,5 +260,22 @@ func TestAnchordEnv(t *testing.T) {
 
 	if !slices.Contains(env, "ANCHORD_TOKEN=fresh") {
 		t.Error("anchord's environment has no token")
+	}
+}
+
+// TestARecordedDirectoryIsOneOfTheTwo: anchord.priv names the anchor directory the last
+// anchord was given, and the next start copies from it; a record naming anything else is
+// read as naming none.
+func TestARecordedDirectoryIsOneOfTheTwo(t *testing.T) {
+	d := dirs(t)
+
+	for dir, want := range map[string]string{d.AnchorDir(): d.AnchorDir(), d.RootAnchorDir(): d.RootAnchorDir(), "/etc": ""} {
+		if err := recordPrivilege(d, Privilege{Account: true, Dir: dir}); err != nil {
+			t.Fatal(err)
+		}
+
+		if p, ok := RecordedPrivilege(d); !ok || p.Dir != want {
+			t.Errorf("a record naming %s is read as naming %q (%v), want %q", dir, p.Dir, ok, want)
+		}
 	}
 }

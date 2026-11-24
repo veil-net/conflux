@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/paths/pathstest"
 )
 
 // fakeAnchorctlEnv and fakeAnchordEnv turn this test binary into a stand-in anchorctl
@@ -20,9 +22,12 @@ import (
 // without a real daemon behind it. fakeAnchordEnv is "1" for a daemon that dies at
 // once, and "serve" for one that runs until it is signalled. fakeAnchorctlLogEnv,
 // when set, names a file the stand-in anchorctl appends each command it ran to,
-// fakeAnchorctlFailEnv a command it refuses, and fakeAnchorctlStatusEnv what its
-// status says: "running", or "none" for a daemon holding no anchor. fakeAnchorctlObserverEnv
-// is the observer's row in it -- "running", "stopped", "failed", or none at all -- and
+// fakeAnchorctlFailEnv a command it refuses, fakeAnchorctlRefuseEnv one it refuses for good, as
+// anchorctl refuses an argument vector, with exit 2, and fakeAnchorctlStatusEnv what its
+// status says: "running", or "none" for a daemon holding no anchor, which refuses a renewal
+// as anchord does one with no anchor to install it on. fakeAnchorctlObserverEnv
+// is the observer's row in it -- "running", "stopped", "failed", or none at all; stopped, it
+// refuses a renewal as anchord does one with no observer running to install it on -- and
 // fakeAnchorctlCaptureEnv set makes `observe -start` refuse as a host that will not let the
 // daemon capture does. fakeAnchorctlRenewedEnv names a file `renew` writes the chain it was
 // handed on stdin to.
@@ -30,10 +35,13 @@ const (
 	fakeAnchorctlEnv         = "CONFLUX_TEST_FAKE_ANCHORCTL"
 	fakeAnchorctlLogEnv      = "CONFLUX_TEST_FAKE_ANCHORCTL_LOG"
 	fakeAnchorctlFailEnv     = "CONFLUX_TEST_FAKE_ANCHORCTL_FAIL"
+	fakeAnchorctlRefuseEnv   = "CONFLUX_TEST_FAKE_ANCHORCTL_REFUSE"
 	fakeAnchorctlStatusEnv   = "CONFLUX_TEST_FAKE_ANCHORCTL_STATUS"
 	fakeAnchorctlObserverEnv = "CONFLUX_TEST_FAKE_ANCHORCTL_OBSERVER"
 	fakeAnchorctlCaptureEnv  = "CONFLUX_TEST_FAKE_ANCHORCTL_NO_CAPTURE"
 	fakeAnchorctlRenewedEnv  = "CONFLUX_TEST_FAKE_ANCHORCTL_RENEWED"
+	fakeAnchorctlObservedEnv = "CONFLUX_TEST_FAKE_ANCHORCTL_OBSERVED"
+	fakeAnchorctlCredEnv     = "CONFLUX_TEST_FAKE_ANCHORCTL_OBSERVER_CRED"
 	fakeAnchordEnv           = "CONFLUX_TEST_FAKE_ANCHORD"
 	fakeAnchordListenEnv     = "CONFLUX_TEST_FAKE_ANCHORD_LISTEN"
 )
@@ -53,7 +61,9 @@ func TestMain(m *testing.M) {
 		os.Exit(fakeAnchorctl(os.Args[1:]))
 	}
 
-	os.Exit(m.Run())
+	// Every conflux path in a directory of the run's own, so a test that does not root its own
+	// reaches nothing of the machine's .conflux.
+	pathstest.Main(m)
 }
 
 // fakeMetrics is the head of what `anchorctl metrics` printed on a live alpha node.
@@ -94,6 +104,10 @@ func fakeAnchorctl(args []string) int {
 		fmt.Fprintln(os.Stderr, "refused")
 
 		return 1
+	case os.Getenv(fakeAnchorctlRefuseEnv):
+		fmt.Fprintln(os.Stderr, "anchorctl: flag provided but not defined: -refused")
+
+		return 2
 	case "metrics":
 		fmt.Print(fakeMetrics)
 	case "start":
@@ -119,6 +133,15 @@ func fakeAnchorctl(args []string) int {
 			return 1
 		}
 
+		// A daemon holding no anchor refuses a renewal with REASON_NOT_RUNNING, which
+		// anchorctl explains so.
+		if os.Getenv(fakeAnchorctlStatusEnv) == "none" {
+			fmt.Fprintln(os.Stderr, "anchorctl: no anchor is running\n"+
+				"  start one with: anchorctl start -identity FILE -root FILE -cred FILE")
+
+			return 1
+		}
+
 		if out := os.Getenv(fakeAnchorctlRenewedEnv); out != "" {
 			if err := os.WriteFile(out, chain, 0o600); err != nil {
 				return 1
@@ -129,16 +152,7 @@ func fakeAnchorctl(args []string) int {
 	case "stop":
 		fmt.Println("ok")
 	case "observe":
-		// What anchorctl says of a host that will not let the daemon capture, on stderr.
-		if len(args) > 1 && args[1] == "-start" && os.Getenv(fakeAnchorctlCaptureEnv) != "" {
-			fmt.Fprintln(os.Stderr, "anchorctl: capture: not permitted: open a packet socket: operation not permitted (it needs CAP_NET_RAW)\n"+
-				"  capturing needs CAP_NET_RAW for the daemon on Linux, read access to /dev/bpf* on macOS, "+
-				"Administrators or Performance Log Users on Windows; give the daemon that, then \"anchorctl observe -start\" again")
-
-			return 1
-		}
-
-		fmt.Println("observing with  af_packet")
+		return fakeObserve(args[1:])
 	case "status":
 		switch os.Getenv(fakeAnchorctlStatusEnv) {
 		case "running":
@@ -164,6 +178,95 @@ func fakeAnchorctl(args []string) int {
 	return 0
 }
 
+// fakeObserve is anchorctl's observe as conflux uses it: -start under the manifest on stdin,
+// which is the one shape anchorctl's lockdown build takes a credential in, -cred - renewing it
+// from stdin, and -stop. fakeAnchorctlObservedEnv and fakeAnchorctlCredEnv, set, name files
+// what arrived on stdin is written to.
+func fakeObserve(args []string) int {
+	if slices.Equal(args, []string{"-cred", "-"}) {
+		chain, err := io.ReadAll(os.Stdin)
+		if err != nil || len(chain) == 0 {
+			fmt.Fprintln(os.Stderr, "anchorctl: the credential on stdin is empty")
+
+			return 1
+		}
+
+		// An observer stopped by hand has no credential to renew: anchord refuses with
+		// REASON_NOT_OBSERVING, which anchorctl explains so (anchor's cmd/anchorctl,
+		// hintForReason).
+		if os.Getenv(fakeAnchorctlObserverEnv) == "stopped" {
+			fmt.Fprintln(os.Stderr, "anchorctl: not observing, so there is no credential to renew; "+
+				"start the observer with the credential\n"+
+				"  the observer is not running, so it has no credential to renew; start it under one: "+
+				"anchorctl observe -start -identity FILE -root FILE -cred FILE")
+
+			return 1
+		}
+
+		if out := os.Getenv(fakeAnchorctlCredEnv); out != "" {
+			if err := os.WriteFile(out, chain, 0o600); err != nil {
+				return 1
+			}
+		}
+
+		fmt.Print(fakeObserving)
+
+		return 0
+	}
+
+	if len(args) == 0 || args[0] != "-start" {
+		fmt.Println("not observing")
+
+		return 0
+	}
+
+	if i := slices.Index(args, "-manifest"); i < 0 || i+1 == len(args) || args[i+1] != "-" {
+		fmt.Fprintln(os.Stderr, "anchorctl: -identity, -root, -cred: the observer runs as an identity its realm admits: "+
+			"it needs one, the realm root it pins and its credential")
+
+		return 2
+	}
+
+	env, err := io.ReadAll(os.Stdin)
+	if err != nil || len(env) == 0 {
+		fmt.Fprintln(os.Stderr, "anchorctl: the manifest on stdin is empty")
+
+		return 1
+	}
+
+	if out := os.Getenv(fakeAnchorctlObservedEnv); out != "" {
+		if err := os.WriteFile(out, env, 0o600); err != nil {
+			return 1
+		}
+	}
+
+	// What anchorctl says of a host that will not let the daemon capture, on stderr.
+	if os.Getenv(fakeAnchorctlCaptureEnv) != "" {
+		fmt.Fprintln(os.Stderr, "anchorctl: capture: not permitted: open a packet socket: operation not permitted (it needs CAP_NET_RAW)\n"+
+			"  capturing needs CAP_NET_RAW for the daemon on Linux, read access to /dev/bpf* on macOS, "+
+			"Administrators or Performance Log Users on Windows; give the daemon that, then \"anchorctl observe -start\" again")
+
+		return 1
+	}
+
+	fmt.Print(fakeObserving)
+
+	return 0
+}
+
+// fakeObserving is what `anchorctl observe -start` printed on a live anchord: the identity in
+// full, which is how a machine that only observes learns the AnchorID it renews by.
+const fakeObserving = `observing with  af_packet
+  since         0s
+  flows         0 held
+  packets       0 taken
+  overlay       no anchor running
+  records       0, in 0 inventory entries
+  as            ` + fakeAnchorID + `
+  realm         4fh2aq7xkd
+  credential    valid until 2027-11-17T00:00:00Z
+`
+
 // fakeAnchorID is the anchor the stand-in anchorctl reports running.
 const fakeAnchorID = "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq"
 
@@ -172,7 +275,39 @@ const fakeAnchorID = "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq
 // easily lost.
 const fakeAnchordLastWords = "control: /run/conflux/anchord/sock is already served by a running daemon"
 
+// anchordFlags is anchord's own flag set (anchor's cmd/anchord/main.go): a stand-in started
+// with any other flag refuses it as anchord does, with exit 2.
+func anchordFlags() *flag.FlagSet {
+	fs := flag.NewFlagSet("anchord", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	for _, name := range []string{"socket", "token-file", "credentials-dir", "config"} {
+		fs.String(name, "", "")
+	}
+
+	for _, name := range []string{"allow-credentials", "allow-observability", "v"} {
+		fs.Bool(name, false, "")
+	}
+
+	return fs
+}
+
+// refusesItsFlags answers what anchord answers an argument vector it does not take.
+func refusesItsFlags() bool {
+	if err := anchordFlags().Parse(os.Args[1:]); err != nil {
+		fmt.Fprintf(os.Stderr, "anchord: %v\n", err)
+
+		return true
+	}
+
+	return false
+}
+
 func fakeAnchord() int {
+	if refusesItsFlags() {
+		return 2
+	}
+
 	fmt.Println("anchord starting")
 	fmt.Fprint(os.Stderr, fakeAnchordLastWords)
 
@@ -182,6 +317,10 @@ func fakeAnchord() int {
 // fakeServingAnchord runs until it is asked to stop, and then stops, as anchord does
 // on SIGTERM once it has closed its anchor.
 func fakeServingAnchord() int {
+	if refusesItsFlags() {
+		return 2
+	}
+
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
@@ -251,7 +390,7 @@ func dirs(tb testing.TB) paths.Dirs {
 
 	tb.Cleanup(func() { _ = os.RemoveAll(root) })
 
-	tb.Setenv("CONFLUX_DIR", root)
+	tb.Cleanup(paths.UseRoot(root))
 
 	d := paths.Default()
 	if err := d.EnsureAll(); err != nil {

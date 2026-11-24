@@ -9,6 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"math/big"
 	"net"
 	"os"
@@ -57,14 +58,8 @@ const ExitCheckFailed = 3
 func runCert(ctx context.Context, args []string) int {
 	cmds := certCommands()
 
-	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" || args[0] == "-help" {
-		certUsage(cmds)
-
-		if len(args) == 0 {
-			return ExitUsage
-		}
-
-		return ExitOK
+	if code, listed := commandList(args, func(w io.Writer) { certUsage(w, cmds) }); listed {
+		return code
 	}
 
 	c, ok := cmds[args[0]]
@@ -92,7 +87,7 @@ func runCert(ctx context.Context, args []string) int {
 	return c.run(ctx, args[1:])
 }
 
-func certUsage(cmds map[string]certCommand) {
+func certUsage(w io.Writer, cmds map[string]certCommand) {
 	names := make([]string, 0, len(cmds))
 	for n := range cmds {
 		names = append(names, n)
@@ -100,15 +95,33 @@ func certUsage(cmds map[string]certCommand) {
 
 	sort.Strings(names)
 
-	ui.Printf("conflux cert — keys, requests, certificates and revocation lists, post-quantum first\n\n")
+	fmt.Fprintf(w, "conflux cert — keys, requests, certificates and revocation lists, post-quantum first\n\n")
 
 	for _, n := range names {
-		ui.Printf("  %-12s %s\n", n, cmds[n].summary)
+		fmt.Fprintf(w, "  %-12s %s\n", n, cmds[n].summary)
 	}
 
-	ui.Printf("\nconflux cert COMMAND -h says more of each. Everything is made and checked with the Go\n" +
-		"Cryptographic Module in FIPS 140-3 mode: ML-DSA-87 by default, and ECDSA, RSA and Ed25519\n" +
+	fmt.Fprintf(w, "\nconflux cert COMMAND -h says more of each. Everything is made and checked with the Go\n"+
+		"Cryptographic Module in FIPS 140-3 mode: ML-DSA-87 by default, and ECDSA, RSA and Ed25519\n"+
 		"beside it. Exit 3 is a check that did not hold. docs/cert.md has the whole of it.\n")
+}
+
+// commandList answers cert, or a cert command with commands of its own, where args name none of
+// them: given nothing, a usage mistake, with the list print writes on stderr and exit 2; asked
+// for the list -- help, or any word a flag set takes for help (helpFlag) -- with it on stdout
+// and exit 0. listed is false where args[0] is for the caller to look up.
+func commandList(args []string, print func(w io.Writer)) (code int, listed bool) {
+	if len(args) > 0 && args[0] != "help" && !helpFlag(args[0]) {
+		return 0, false
+	}
+
+	print(usageOut(len(args) == 0))
+
+	if len(args) == 0 {
+		return ExitUsage, true
+	}
+
+	return ExitOK, true
 }
 
 // certFlags is a cert subcommand's flag set, its usage the synopsis and the flags.
@@ -120,54 +133,22 @@ func certFlags(name string) *flag.FlagSet {
 
 // certFlagsNamed is a flag set for conflux cert NAME, its usage the synopsis and the flags.
 func certFlagsNamed(name, summary, usage string) *flag.FlagSet {
-	fs := flag.NewFlagSet("cert "+name, flag.ContinueOnError)
-	fs.SetOutput(ui.Errw)
-
-	fs.Usage = func() {
-		ui.Printf("conflux cert %s — %s\n\n  conflux cert %s\n\n", name, summary, usage)
-		fs.SetOutput(ui.Out)
-		fs.PrintDefaults()
-		fs.SetOutput(ui.Errw)
-	}
-
-	return fs
+	return verbFlags("cert "+name, fmt.Sprintf("conflux cert %s — %s\n\n  conflux cert %s\n\n", name, summary, usage))
 }
 
-// parseCert parses args, flags and arguments in any order -- `verify CERT --ca ROOT` as
-// readily as `verify --ca ROOT CERT` -- and returns the arguments. A lone -- ends the flags.
-func parseCert(fs *flag.FlagSet, args []string) ([]string, error) {
-	var positional []string
-
-	for {
-		if err := fs.Parse(args); err != nil {
-			return nil, err
-		}
-
-		args = fs.Args()
-		if len(args) == 0 {
-			return positional, nil
-		}
-
-		if args[0] == "--" {
-			return append(positional, args[1:]...), nil
-		}
-
-		positional = append(positional, args[0])
-		args = args[1:]
-	}
-}
-
-// certParse parses, and answers a usage error with its exit code: 2, or 0 for -h.
+// certParse parses args, flags and arguments in any order -- `verify CERT --ca ROOT` as
+// readily as `verify --ca ROOT CERT` -- and returns the arguments in the order given, every word
+// after the "--" that ends the flags among them, whatever it looks like (splitFlags). A usage
+// error, the arguments' count among them where want refuses it, is answered with its exit code:
+// 2, or 0 for -h.
 func certParse(fs *flag.FlagSet, args []string, want func(n int) bool) ([]string, int, bool) {
-	pos, err := parseCert(fs, args)
+	flags, pos, _ := splitFlags(fs, args)
 
-	switch {
-	case errors.Is(err, flag.ErrHelp):
-		return nil, ExitOK, false
+	switch err := fs.Parse(flags); {
 	case err != nil:
-		return nil, ExitUsage, false
+		return nil, usageExit(err), false
 	case want != nil && !want(len(pos)):
-		fs.Usage()
+		usageMistake(fs)
 
 		return nil, ExitUsage, false
 	}

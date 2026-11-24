@@ -6,12 +6,14 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/service"
 	"golang.org/x/sys/windows"
 )
 
@@ -21,19 +23,13 @@ import (
 // and the process itself, are reachable by nothing else that runs as LOCAL SERVICE. A TUN
 // needs SYSTEM, for wintun, and gets it.
 
-// openUntrusted is what a file in the account's directory is opened with.
-const openUntrusted = os.O_RDONLY
-
 // workDir leaves anchord where a service's child starts.
 const workDir = ""
 
 // dropState holds the token the next anchord is started with, from dropTo to the start,
 // and the sets anchord -h has started from under one.
 type dropState struct {
-	token windows.Token
-	// sid is the service SID the token was made for, which anchord's process and thread
-	// are opened to: asked of Windows once, by dropTo, beside the token it goes with.
-	sid    string
+	token  windows.Token
 	smoked map[string]bool
 
 	// sd is the descriptor anchord's process and thread are created with. The attributes
@@ -42,9 +38,10 @@ type dropState struct {
 	sd *windows.SECURITY_DESCRIPTOR
 }
 
-// windowsServiceName is the SCM name of this installation's service, as
-// service.ServiceName registers it: conflux, with a CONFLUX_DIR installation's scope.
-func windowsServiceName() string { return "conflux" + paths.Scope() }
+// confluxSID is the SID of the installation's own service, NT SERVICE\conflux, which the
+// token, anchord's process and thread, and the account's directories and files are made for:
+// a function of the service's name alone, asked of Windows once.
+var confluxSID = sync.OnceValues(func() (*windows.SID, error) { return serviceSID(service.ServiceName) })
 
 var (
 	advapi32                    = windows.NewLazySystemDLL("advapi32.dll")
@@ -64,9 +61,13 @@ const (
 	dirOwnRights = "0x1201ff"
 )
 
+// canDrop has nothing to check before the drop here: the supervisor is SYSTEM, and dropTo's
+// logon is what says whether LOCAL SERVICE can be given anchord.
+func canDrop(*Privilege) string { return "" }
+
 // dropTo makes the token anchord runs as, and checks that anchord starts under it.
 func (s *Supervisor) dropTo(p *Privilege) string {
-	sid, err := serviceSID(windowsServiceName())
+	sid, err := confluxSID()
 	if err != nil {
 		return "could not form the service's SID: " + err.Error()
 	}
@@ -80,7 +81,6 @@ func (s *Supervisor) dropTo(p *Privilege) string {
 
 	s.releaseDrop()
 	s.drop.token = tok
-	s.drop.sid = sid.String()
 
 	p.As = `NT AUTHORITY\LOCAL SERVICE`
 
@@ -296,8 +296,13 @@ func (s *Supervisor) procAttrFor(p Privilege) *syscall.SysProcAttr {
 	attr.Token = syscall.Token(s.drop.token)
 
 	if s.drop.sd == nil {
+		sid, err := confluxSID()
+		if err != nil {
+			return attr
+		}
+
 		sd, err := windows.SecurityDescriptorFromString(
-			"O:SYD:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;" + s.drop.sid + ")(A;;RC;;;OW)")
+			"O:SYD:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;" + sid.String() + ")(A;;RC;;;OW)")
 		if err != nil {
 			return attr
 		}
@@ -327,7 +332,7 @@ func (s *Supervisor) releaseDrop() {
 		s.drop.token = 0
 	}
 
-	s.drop.sid, s.drop.sd = "", nil
+	s.drop.sd = nil
 }
 
 func startProcess(cmd *exec.Cmd, _ Privilege, _ <-chan struct{}) error { return cmd.Start() }
@@ -360,7 +365,7 @@ func makeAnchorDir(path string, p Privilege) error {
 		return paths.Restrict(path, true)
 	}
 
-	ssid, err := serviceSID(windowsServiceName())
+	ssid, err := confluxSID()
 	if err != nil {
 		return err
 	}
@@ -385,17 +390,6 @@ func makeAnchorDir(path string, p Privilege) error {
 	})
 }
 
-// legacyAnchorDir reports an anchor directory at the account's name that the service SID
-// was never given: conflux 1.0.0's, which a SYSTEM anchord used.
-func legacyAnchorDir(path string) bool {
-	fi, err := os.Lstat(path)
-	if err != nil || !fi.IsDir() {
-		return false
-	}
-
-	return !grantsServiceSID(path)
-}
-
 // anchorDirFor reports whether path is the directory p's identity is given.
 func anchorDirFor(path string, p Privilege) bool {
 	fi, err := os.Lstat(path)
@@ -407,7 +401,7 @@ func anchorDirFor(path string, p Privilege) bool {
 }
 
 func grantsServiceSID(path string) bool {
-	sid, err := serviceSID(windowsServiceName())
+	sid, err := confluxSID()
 	if err != nil {
 		return false
 	}
@@ -481,9 +475,6 @@ func grantSID(path string, sid *windows.SID, access windows.ACCESS_MASK) error {
 // grant, and is owned by the SID the token names.
 func ownFile(*os.File, Privilege) error { return nil }
 
-// oneLink is not asked on Windows, where linking to a file takes write access to it.
-func oneLink(os.FileInfo) bool { return true }
-
 // writeDaemonFile writes anchord's -config: SYSTEM's and Administrators', and readable by
 // the service SID when anchord runs as its account.
 func writeDaemonFile(path string, data []byte, p Privilege) error {
@@ -495,7 +486,7 @@ func writeDaemonFile(path string, data []byte, p Privilege) error {
 		return nil
 	}
 
-	sid, err := serviceSID(windowsServiceName())
+	sid, err := confluxSID()
 	if err != nil {
 		return err
 	}

@@ -20,7 +20,8 @@ mints a realm root, is not in that build at all, and answers as an unknown comma
 do not last equally long. `conflux anchorctl export -endpoint …` configures the running
 daemon and is discarded at the next restart or SIGHUP; the `export` block in
 `conflux.json` is rendered to anchord's config file on every start and is the durable
-one. `conflux status` says which the daemon is currently obeying. See
+one. `conflux status` says which the daemon is currently obeying, and, where that is not what
+`conflux.json` names, the collector it exports to or that it exports nothing. See
 [config.md](config.md#export--where-telemetry-goes).
 
 ### Realm control
@@ -43,8 +44,7 @@ issuer's to grant, as taints are: an alpha credential grants none, so on an alph
 machine these orders are refused with anchor's explanation, and a guardian may grant
 them. They take a full 58-character AnchorID, `anchor…`, as `conflux status` prints it —
 not the ten-character short form in the tables `peers` and `blocks` print. For every
-private network on the member, use `subnets -set '*'`: anchorctl's help says `all`,
-which anchor does not accept.
+private network on the member, use `subnets -set '*'`.
 
 A block does not stop anything. A blocked anchor keeps running, outside the realm, and
 shows `DATA no` on every peer; nothing on the blocked machine needs to be done when the
@@ -69,7 +69,12 @@ something silently.
 only prints its usage, and conflux's prints that same usage in full, so owning the word
 loses nothing. Bare, it prints conflux's usage and then anchorctl's whole usage beneath
 a rule, so one page covers both surfaces. `conflux help COMMAND` prints that command's
-own usage instead, whichever binary it belongs to.
+own usage instead, whichever binary it belongs to, except for the two of conflux's with no
+usage of their own, which get the whole page: `help` itself, and `status`, whose arguments,
+`-h` among them, go to anchorctl's `status` (below). So does `conflux help -h`, which names
+no command and asks for help's own usage. A leading `--` names no command either, and is passed
+over, as `conflux anchorctl` passes it over: `conflux help --` prints the whole page, and
+`conflux help -- up` prints `up`'s usage.
 
 **`status`** is resolved by arity. Bare `conflux status` is conflux's, and it prints
 `anchorctl status` underneath — additive, so nothing is lost by conflux owning that
@@ -78,11 +83,21 @@ spelling. Given any argument it forwards, so `conflux status -watch 5s` and
 
 **`proxy`** is resolved by shape, and the ambiguous case is refused rather than
 guessed. Positional `PORT=BACKEND` specs and the flags `conflux proxy -h` lists —
-`--taint`, `--subnet` and the rest — are conflux's; any other dash-prefixed argument
-prints both meanings and exits 2. A "leading dash means
-anchorctl" heuristic was considered and rejected: `--taint` leads with a dash too, and
-Go's flag package treats `-x` and `--x` identically, so the double dash carries no
-signal.
+`--taint`, `--subnet` and the rest — are conflux's, in any order; any other flag prints both
+meanings and exits 2, and so does bare `conflux proxy`, with no spec and no flag. Flags are told
+from arguments as Go's flag package tells them by each verb with a flag set of its own — `up`,
+`proxy`, `observe`, `enrol`, `start`, `down`, `renew`, `install`, `uninstall`, `update`,
+`version` and `serve` — and by `cert`'s commands, and so by the look `proxy`, `start`, `renew`
+and `observe` take at their flags before their flag sets parse them. A flag that takes a value
+takes the next word for it, whatever it looks like: in `--taint --` the `--` is the taint's,
+and ends nothing. A `--` that is no flag's value ends the flags: every word after it is an
+argument, whatever it looks like — a spec here, a file or a name for `cert`'s commands, and a
+stray one the verbs that take flags alone name — and a verb with none after it is bare,
+`conflux proxy --` as `conflux proxy` is. `-` is an argument too. Any other word with a leading
+dash that is no flag's spelling, `---h`, is the package's to refuse, as bad syntax, exit 2. A
+"leading dash means anchorctl" heuristic was considered and rejected: `--taint` leads with a
+dash too, and Go's flag package treats `-x` and `--x` identically, so the double dash carries
+no signal.
 
 **`renew`** is resolved by shape, like `proxy`. conflux's takes no arguments at all:
 it fetches a fresh credential from the enrolment API and installs it. anchorctl's
@@ -126,7 +141,7 @@ configuration, and registers the boot service.
 
 | Flag | Meaning |
 |---|---|
-| `--taint T` | the taint to enrol in; repeat for more than one. On a machine with no credential yet it is the enrolment's request: the first machine of a network omits it, and conflux mints one and prints it; every other machine passes that one to join. Once a machine holds a credential its taints are fixed: the same set is accepted, and any other is refused, naming `conflux uninstall --yes` and then `conflux up --taint`, which is a new identity. See [concepts.md](concepts.md#taints) and [credentials.md](credentials.md#taints-are-the-credentials). |
+| `--taint T` | the taint to enrol in; repeat for more than one. On a machine with no credential yet it is the enrolment's request: the first machine of a network omits it, and conflux mints one and prints it; every other machine passes that one to join. Once a machine holds a credential its taints are fixed: the same set is accepted, and any other is refused, naming `conflux uninstall --yes`, installing conflux again (uninstall removes it too) and then `conflux up --taint`, which is a new identity. See [concepts.md](concepts.md#taints) and [credentials.md](credentials.md#taints-are-the-credentials). |
 | `--ipv4 ADDRESS` | this machine's IPv4: an address, or an address and the length of the range routed to peers, `10.128.0.7/24`. Any unicast address outside `198.18.0.0/15`; see below. |
 | `--no-ipv4` | no IPv4 of its own, without prompting. It still reaches IPv4 peers. |
 | `--subnet CIDR` | a network this machine forwards for the realm: an interface, a private network with no host bits set, or `'*'` for every private network on every interface, each optionally bound to some of this machine's taints as `SPEC@a+b`; repeat for more. It replaces a list a member's Subnets order set. See [modes.md](modes.md#--subnet-and-what-the-host-has-to-be). |
@@ -225,16 +240,20 @@ Needs root, only to register the boot service.
 ## `conflux observe`
 
 ```
-conflux observe [--loopback] [--hide-names] [--export HOST:PORT [--export-insecure]] [--yes]
+conflux observe [--taint T] [--api URL] [--loopback] [--hide-names] [--export HOST:PORT [--export-insecure]] [--yes]
 ```
 
 Runs the daemon's observer and no anchor, writes the configuration, and registers the boot
 service: from now and from every boot, until it is stopped. The host copies the start of every
-flow to the daemon, which records each flow's cryptography; nothing is enrolled, no credential
-is needed, and no realm is joined. See [observe.md](observe.md).
+flow to the daemon, which records each flow's cryptography. The observer runs under the
+machine's credential, as an identity its realm admits: a machine with none is enrolled as `up`
+enrols one, and the credential is renewed for the life of the identity. See
+[observe.md](observe.md).
 
 | Flag | Meaning |
 |---|---|
+| `--taint T` | the taint to enrol in, as on `up`: the request on a machine with no credential yet, minted when omitted, and checked against the credential's once one is held. |
+| `--api URL` | the enrolment API, as on `up`. |
 | `--loopback` | observe the loopback interfaces too. Windows' capture never sees them. |
 | `--hide-names` | leave every name a flow was reached by out of the records and the inventory, the server's address in its place. |
 | `--export HOST:PORT` | send each record, as it is made, and the daemon's telemetry to that collector, as on `up`. Without an export with `flows`, the records stay in the daemon's inventory, and conflux says so. |
@@ -355,13 +374,13 @@ where the complaint would come from anchor instead of from the document that cau
 **It refuses to replace an existing manifest.** `up` enrols only when there is none,
 because a second enrolment is a second AnchorID and a second overlay address with every
 peer orphaned and nothing said; a verb that writes manifests must not be the way around
-that rule. `conflux uninstall` first if replacing the identity is genuinely what you
-mean.
+that rule. `conflux uninstall` first, then install conflux again (uninstall removes it too),
+if replacing the identity is genuinely what you mean.
 
 Everything is checked before a byte is written — the format version, the `kind` (a
 `realm` manifest mints anchors and does not start one), the `renewalAuth`, the renewal
-host, the address and the export block. A refused import leaves the machine exactly as
-it found it.
+host, the API and the renewal URL against the rule every start holds `apiBaseUrl` to, the
+address and the export block. A refused import leaves the machine exactly as it found it.
 
 **A document with no renewal fields at all is fixed-term, not broken.** That is what
 traveller hands out for a node in one of VeilNet's own ghost realms: a century-long
@@ -391,10 +410,11 @@ conflux renew
 ```
 
 Fetches a fresh credential from the enrolment API and installs it on the anchor that
-is already running. Takes no arguments.
+is already running, and on the observer, which holds its credential apart from the anchor's.
+Takes no arguments. A machine that only observes renews the same way, the observer alone.
 
-The swap is hot — `anchorctl renew`, which calls `SetRealmCred` — so the identity does
-not change and not one session is dropped. It is not a restart and does not need to be
+The swap is hot — `anchorctl renew`, which calls `SetRealmCred`, and `anchorctl observe -cred`,
+which calls `SetObserverCred` — so the identity does not change and not one session is dropped. It is not a restart and does not need to be
 treated as one. The request restates the taints the manifest names, which a renewal
 cannot change. The fresh chain is written into the stored manifest, and so is the
 bootstrap list the answer carries, when it carries a usable one; `anchorctl renew`
@@ -407,11 +427,10 @@ not part of normal operation. It is for the machine whose renewals have been fai
 restarting the service and paying every session for a swap that needs none of them.
 
 It does not enrol. A machine with no manifest has nothing to renew, and drawing an
-identity here would replace the one a reboot expects; it says so and exits 69. So does a
-machine that only observes, which needs no credential: the next `up` or `proxy` renews the one
-it holds, if it is due. It also
-exits 69 when nothing is running, because a credential is installed *into* a running
-anchor, and a machine that is meant to be down renews on its next start anyway. And it
+identity here would replace the one a reboot expects; it says so and exits 69. A machine
+that only observes is renewed as one running an anchor is: the observer runs under the same
+credential. It also exits 69 when nothing is running, because a credential is installed
+*into* a running anchor or observer, and a machine that is meant to be down renews on its next start anyway. And it
 exits 69 on a [fixed-term credential](credentials.md#a-credential-that-does-not-renew),
 which names nowhere to renew it.
 
@@ -419,18 +438,42 @@ Needs root.
 
 ## `conflux uninstall`
 
-Removes the boot service, the configuration and the identity — and the account `anchord`
-ran as, once nothing runs as it, when conflux made it; an account of that name that
-conflux did not make is left alone. Asks first, because there is no other copy of the
-credential anywhere; `--yes` skips the question, and a non-interactive run without `--yes`
-refuses rather than destroy an identity silently.
+Removes everything conflux put on the machine, and leaves no trace of it:
+
+- the boot service and its definition — systemd's unit and the unit's four drop-in directories
+  in `/etc` and `/run`, the launchd plist, the rc script and its `rc.conf` line
+  (`rc.conf.local`'s on OpenBSD, with the login class `/etc/login.conf.d/conflux`), or the
+  SCM's entry and the event source;
+- the whole root — the configuration, the identity and everything else conflux keeps;
+- the root a killed ephemeral run of the account running `uninstall` left (root's, under the
+  system's runtime directory, or on Windows that Administrator's, in their `%TEMP%`), and the
+  `anchord` it left running. Another account's run keeps its root under its own, which that
+  account's next run clears, or a reboot;
+- the accounts `anchord` ran as, once nothing runs as them, when conflux made them; an account
+  of that name that conflux did not make is left alone;
+- on macOS the BPF devices' grant, and on Windows the Wintun driver, whether the installation's
+  interface or a killed ephemeral run's installed it, which Windows keeps only while no adapter
+  uses it, so another program's survives;
+- the installed executable: `/usr/local/bin/conflux` and the `/usr/bin/conflux` link
+  `install.sh` made to it, or `%ProgramFiles%\conflux` and its entry on the machine's `Path`.
+  A conflux running from anywhere else is not removed. On Windows the directory goes a few
+  seconds after `uninstall` exits, since a running program cannot delete itself. It goes last,
+  and only when every step before it succeeded: one that fails is named, exit 1, and conflux is
+  kept, so that `conflux uninstall` can be run again to finish once it is put right.
+
+What the service wrote to the journal, syslog or event log stays, as the system's. Refused
+while an ephemeral run is live, whose account goes too. Asks first, because there is no other
+copy of the credential anywhere; `--yes` skips the question, and a non-interactive run without
+`--yes` refuses rather than destroy an identity silently.
 
 ## `conflux status`
 
 conflux's state — service, mode, exit, taint, AnchorID, credential expiry, API, the
 uplink reopen tally if there is one, and while it runs, who `anchord` runs as and with
 what — and then `anchorctl status` beneath it. Exits 78 when the machine has no
-configuration and no ephemeral run is live; with one live, it reports the run and exits 0.
+configuration and no ephemeral run is live; with one live, it reports the run and exits 0. The
+configuration is root's to read, so another account is refused, exit 13, with the command to run
+again (`sudo conflux status`).
 
 The `anchord` line says what it keeps and why: `conflux, with no privilege` in userspace,
 `conflux, with CAP_NET_ADMIN for its interface` for a TUN on Linux, `conflux, with CAP_NET_RAW
@@ -438,11 +481,13 @@ to copy what the host's interfaces carry, for the observer` observing on Linux, 
 reason the host needs it. See [security.md](security.md#what-anchord-runs-as).
 
 Where the observer runs, an `observer` line is its row from `anchorctl status` — `af_packet, 12
-flows held, 3480 packets taken`, or `not observing` and why a capture that was running ended —
-with its options, and a `records` line says where its records go: to the collector the export
-names, as each is made, or nowhere but the daemon's inventory. Observing alone, the mode line
-says so, and the anchor's taint, address and credential lines are left out: they describe
-nothing that runs, and the identity is said to be kept.
+flows held, 3480 packets taken; credential valid until 2026-12-24T05:17:38Z`, or `not observing`
+and why a capture that was running ended — with its options, and a `records` line says where its
+records go: to the collector the export names, as each is made, or nowhere but the daemon's
+inventory. Observing alone, the mode line
+says so, and the anchor's settings — its taint, peers, address, served subnets and proxies — are
+left out: they are kept for the next `up` or `proxy`, and describe nothing that runs. The
+credential lines stay, since the observer runs under the machine's credential and renews it.
 
 The `taint` line is the set `conflux.json` names, which after enrolment mirrors the one
 the credential grants — `none: the realm's default compartment` for an issued
@@ -455,8 +500,9 @@ one should not need a config file read to find out.
 
 A `refused` line appears when the machine is configured for taints its credential does
 not grant, which every start refuses for good. It names the set granted and the set
-configured, and the way out: `conflux uninstall --yes`, then `conflux up --taint` (or,
-for an issued credential, `conflux enrol` with one granted in the taints wanted) — a new
+configured, and the way out: `conflux uninstall --yes`, then install conflux again (uninstall
+removes it too) and `conflux up --taint` (or, for an issued credential, `conflux enrol` with
+one granted in the taints wanted) — a new
 identity, since a credential's taints never change. The usual cause is an alpha machine
 enrolled before the realm granted taints, whose credential grants none; nothing
 re-enrols it automatically. See
@@ -473,7 +519,7 @@ member's Subnets order replaced `conflux.json`'s list there is one line, saying 
 
 conflux's version and commit, whether it runs in FIPS 140-3 mode and against which Go
 Cryptographic Module, and the SHA-256 of both embedded anchor binaries. Put this in a bug
-report; it names the exact anchor build without running it.
+report; it names the exact anchor build without running it. Takes no arguments.
 
 ```console
 $ conflux version
@@ -491,40 +537,93 @@ switches FIPS 140-3 mode off; see [security.md](security.md#fips-140-3-and-cmvp)
 
 ```
 conflux update
-conflux update --check
-conflux update --yes
+conflux update --dev [--yes]
+conflux update [--dev] --check
 ```
 
-Replaces this conflux with the one the `latest` release of
-[veil-net/conflux](https://github.com/veil-net/conflux/releases/latest) holds for this
-platform, and moves the boot service onto it. Only when typed: nothing checks on a
-schedule, so a machine changes version when somebody decides it should. It reads `latest`
-alone, so a dev build installed from `dev-latest` updates to the release, never to a newer dev
-build: that is the install script's to fetch again, by name ([install.md](install.md)). And since
-a dev build's anchor is pinned to the dev tree and the release's to the production tree, where
-the credential the machine holds is not valid, `update` on a dev build says so and changes
-nothing until it is asked again with `--yes`; after that, the machine enrols again with
-`conflux up --api` naming the production API. `conflux version` says when it is a dev build.
+Replaces the installed conflux — `/usr/local/bin/conflux`, or
+`%ProgramFiles%\conflux\conflux.exe` on Windows, whichever conflux runs the update — with the
+newest release for this platform, the `latest` release of
+[veil-net/conflux](https://github.com/veil-net/conflux/releases/latest), whatever build runs
+the update, and moves the boot service onto it. It says what is installed: what the installed
+file says it is when run for its `version`, or that nothing is, or that it does not run. Only
+when typed: nothing checks on a schedule, so a machine changes version when somebody decides it
+should.
 
-"Up to date" is a digest rather than a version string. This file is the release's
+`--dev` takes the newest dev build instead: the pre-release `dev-latest`, built from conflux's
+`dev` branch with anchor's dev build inside it. Its anchor is pinned to the dev tree
+(`https://api-dev.veilnet.com.au`), so a credential from the production tree, which a release
+enrols in, does not work with it ([testing.md](testing.md#the-genesis-node)). So `--dev` asks
+first: at a terminal it says what a dev build is and asks `Install the dev build? [y/N]`, where
+only `y` or `yes` goes on, and anything else, the end of input included, changes nothing and
+exits 2; with no terminal to ask at it is refused, exit 1, and the refusal names `--yes`. It asks
+once there is a dev build to install, named above the question, after the check for root and
+before anything is downloaded. `--yes` answers it, for scripts and CI: `conflux update --dev
+--yes` takes the dev build without asking, at a terminal or off one, and reads nothing from
+stdin.
+
+A plain update asks too where the installed conflux is a dev build: where its `version` says so,
+in its `dev build:` line, or, where it is the conflux running the update, where that one is. The
+release's anchor is pinned to the production tree, so a credential the machine holds from the
+dev tree does not work with it: the anchor will not start on it. At a terminal it says so and
+asks `Install the release? [y/N]`, in the same place as `--dev`'s question: a no changes nothing
+and exits 2, and with no terminal to ask at it is refused, exit 1. No flag gets past it: `--yes`
+answers `--dev`'s question alone, and given without `--dev` it is a usage mistake, exit 2, before
+anything is read. Nothing installed, an installed release, and a file that does not run, which
+cannot say what it is, are not asked about. `--dev` asks its own question alone, so a dev build
+updated with it is asked once, and with `--yes` not at all.
+
+Neither question moves the machine's identity: the credential stays the one tree's, and the
+other tree's anchor refuses it at every start, which the supervisor gives up on after three
+([troubleshooting.md](troubleshooting.md)). Moving a machine between a dev build and the release
+is a new identity in the other tree, with a new AnchorID and a new overlay address:
+`sudo conflux uninstall --yes`, then install conflux again, the other build (uninstall removes
+conflux too; `CONFLUX_VERSION=dev-latest` names the dev build, [install.md](install.md)), and
+`sudo conflux up --taint T`, `T` the network's taint in that tree (without it conflux mints a network of its own), with `--api https://api-dev.veilnet.com.au` for a dev build.
+
+"Up to date" is a digest rather than a version string. The installed file is the release's
 binary, byte for byte, or it is not, so a rebuild of the same version (which a merge
 that leaves `VERSION` alone publishes) is an update too. `--check` says which, names
-the release and the commit it was built from, and changes nothing.
+the release, or with `--dev` the dev build, and the commit it was built from, and changes
+nothing, so it asks nothing.
 
 An update is held to the SHA-256 the release document lists for the asset, which the
 API answers directly; the binary comes through GitHub's redirect to its storage and is
 compared before it is put anywhere it could run from. Then the new conflux is run once,
-for its `version`, and only a conflux that answers replaces this one. It is renamed over
-the file conflux was started from, symlinks followed, so whatever is running keeps the
-file it has; on Windows the running image is moved aside to `conflux.exe.old` first,
-and the next update removes it. No token is needed or sent: the repository is public.
+for its `version`, and only a conflux that answers replaces the installed one. It is renamed
+over that file, or put there when there is none, so whatever is running keeps the file it
+has; on Windows the running image is moved aside to `conflux.exe.old` first, and the next
+update removes it. Put there where there was none, it is found by name as the installers have
+it found: on Windows its directory goes on the machine's `Path`, as `install.ps1` puts it, and
+elsewhere, where the conflux the update's own PATH — root's, `secure_path` under `sudo` on
+Fedora and RHEL — finds is not that file, `/usr/local/bin` left out or another conflux found
+first, `/usr/bin/conflux` is linked to it, as `install.sh` links it, and kept only where that
+PATH, asked again, finds the file through it: where it finds another conflux instead, the link
+goes again, as one made before does, and the other is named, with the way out that PATH holds
+now. Where it holds `/usr/local/bin`, before `/usr/bin` or after it, that is the other conflux
+removed; where it holds `/usr/bin` alone, the other removed and then the link made by hand,
+with the line the update says (`sudo ln -s /usr/local/bin/conflux /usr/bin/conflux`); either way,
+or conflux typed by its full path under `sudo`, which is all it says where that PATH holds
+neither. An update, finding conflux installed, makes no link, and `install.sh` run again would
+fetch the `latest` release, in place of a dev build `--dev` put there. A `/usr/bin/conflux` that
+is not that link is left alone, and said, with the same ways out: where that PATH finds it in
+conflux's place, it is to be removed, alone where that PATH holds `/usr/local/bin` too, and
+otherwise before the link is made the same way; where that PATH finds another conflux first and holds
+`/usr/local/bin`, that one is to be removed; where that PATH finds no conflux at all, the file
+being none it can run, a link to nothing say, and holds `/usr/bin`, it is to be removed before
+the link is made the same way; and otherwise conflux is to be typed by its full path alone.
+No token is needed or sent: the repository is public.
 
 | Situation | |
 |---|---|
-| this is the latest release | says so, exit 0, nothing changed |
+| the installed conflux is the newest release, or with `--dev` the newest dev build | says so, exit 0, nothing changed, nothing asked |
+| `--dev`, or a plain update of an installed dev build, declined at the terminal | says so, exit 2, nothing changed |
+| `--dev` without `--yes`, or a plain update of an installed dev build, with no terminal to ask at | refused, exit 1, nothing changed |
+| `--dev --yes` | nothing asked, at a terminal or off one |
+| `--yes` without `--dev` | a usage mistake, said with the usage beneath it, exit 2, nothing read or changed |
 | the anchor is running | the new conflux's `start` restarts it on the new version, and its exit code is `update`'s |
 | installed, not running | left stopped, as `down` left it; the boot service's copy is refreshed, so it starts on the new version next time |
-| not installed | the file is replaced, and that is all |
+| no boot service | the installed conflux is replaced, and that is all |
 | the release has no build for this platform, lists no digest, or is still uploading | refused, nothing changed |
 
 Needs root, except `--check`.
@@ -564,10 +663,16 @@ conflux supplies the connection details through the environment (`ANCHOR_SOCKET`
 anchorctl resolves the socket as `firstNonEmpty(-socket, global -socket,
 ANCHOR_SOCKET)`, so a flag you typed still wins and conflux never rewrites an argv.
 
-A command that makes the daemon itself open a path you name — `keygen -out` and
-`priv -out`, which write "on the daemon's filesystem", or export certificates given by path
-— opens it with `anchord`'s rights, which are an account of its own's wherever its mode
-allows. A path that account cannot reach is refused by `anchord`, naming it: choose one it
+A command to a daemon you named yourself (`-socket`, or `ANCHOR_SOCKET` set), and a request for
+usage, need nothing of conflux's installation, and make nothing of it. They run the extracted
+anchorctl where a whole one is readable, else one in memory where the platform allows it, in
+place of conflux as every pass-through does; else a temporary copy, as a child of conflux, which
+passes it the `SIGTERM` conflux is sent and removes the copy once it has exited. A Ctrl-C reaches
+the copy from the terminal, as it reaches conflux, which waits for the copy to end on it.
+
+A command that makes the daemon itself open a path you name — `keygen -out`, which writes "on
+the daemon's filesystem", or export certificates given by path — opens it with `anchord`'s
+rights, which are an account of its own's wherever its mode allows. A path that account cannot reach is refused by `anchord`, naming it: choose one it
 can, or leave out `-out` and the key comes back to your terminal.
 
 One case is intercepted: when no daemon is running, conflux says so and names `start`,
@@ -580,7 +685,6 @@ other refusal — passes through untouched.
 
 | Variable | Effect |
 |---|---|
-| `CONFLUX_DIR` | roots a whole separate conflux installation in one directory — config, identity, socket and the boot service, which is named after the root so it cannot replace the machine's own. What the tests use. See [testing.md](testing.md). |
 | `CONFLUX_DEBUG=1` | pass `-v` to anchord. |
 | `CONFLUX_EPHEMERAL=1` | send pass-through to the ephemeral anchor while an installed one runs too, which it otherwise reaches first. See [ephemeral.md](ephemeral.md#reaching-it-from-another-terminal). |
 | `CONFLUX_ALLOW_INSECURE_API=1` | permit a plain-http API base. For tests only. |
@@ -592,9 +696,9 @@ other refusal — passes through untouched.
 |---|---|
 | 0 | success |
 | 1 | failure |
-| 2 | usage |
+| 2 | usage: a flag that does not parse, a command given too few or too many arguments (`cert`'s commands, `enrol` given no `--manifest`, and `update` given `--yes` without `--dev`; and a stray argument, named on a line of its own, given to `up`, `install`, `down`, `uninstall`, `serve`, `start`, `renew`, `update`, `observe`, `version` or `enrol`, which take flags and nothing else), and `cert`, `cert ca` or `cert p12` given no command, said on stderr with the usage, or the list, beneath it. And a refusal of what was typed, said on stderr in a line of its own: an option conflux does not have, a `cert` command that does not exist, anchorctl's `stop` or `restart`, a flag `start`, `renew`, `observe` or `proxy` does not have (anchorctl has commands of those names, and the line says how to reach them), `proxy` with nothing to serve, `observe` where there is no capture, `uninstall` beside a live ephemeral run, or what asks to be confirmed and was not — `uninstall` or `observe` in an anchor's place, at a terminal or, without `--yes`, off one, or at a terminal `update --dev` or `update` of an installed dev build, which off one are refused, exit 1. `-h` is a request, answered on stdout with the usage and flags, and exits 0 |
 | 3 | `conflux cert verify`, `match` or `probe`: the check ran and did not hold |
-| 13 | needs root or Administrator, or a pass-through that cannot read the daemon's token |
+| 13 | needs root or Administrator, or a `status` that cannot read the configuration, or a pass-through that cannot read the daemon's token |
 | 69 | nothing here to act on: nothing running, or no credential to renew |
 | 70 | a configuration conflux or anchor refuses for good, or a conflux built for FIPS 140-3 mode run with it switched off, or `conflux cert` where it does not run in that mode; the systemd unit does not restart on it |
 | 78 | no configuration — the code the systemd unit keys `RestartPreventExitStatus` on |

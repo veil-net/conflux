@@ -1,5 +1,5 @@
-// Package update replaces this conflux with the one conflux's `latest` release holds for
-// its platform.
+// Package update replaces the installed conflux with the newest build at a tag for its platform:
+// conflux's `latest` release, or the pre-release `dev-latest`, the newest dev build.
 //
 // Only when asked: `conflux update` is the one caller, and nothing checks on a schedule.
 //
@@ -9,7 +9,7 @@
 // SHA-256. The binary arrives through GitHub's redirect to its storage and is held to that
 // digest before it is put anywhere it could run from, so bytes substituted past the API fail
 // a compare. Nothing reads a URL out of a document: every request is built from this
-// package's own constants, one API host, one repository and one tag, and the asset is
+// package's own constants, one API host, one repository and the tag asked for, and the asset is
 // resolved by name within that one release.
 //
 // No credential. conflux is a public repository, so its releases are readable by anyone,
@@ -31,23 +31,23 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/veil-net/conflux/internal/config"
 )
 
 const (
-	// DefaultAPI, DefaultRepo and DefaultTag name the release an update comes from. The
-	// tag moves: release.yml moves `latest` to every build of version3. A dev build is the
-	// pre-release `dev-latest`, which nothing here asks for, so an update always lands on a
-	// release, a dev build's included.
+	// DefaultAPI and DefaultRepo name where an update comes from.
 	DefaultAPI  = "https://api.github.com"
 	DefaultRepo = "veil-net/conflux"
-	DefaultTag  = "latest"
 
-	// insecureEnv permits a plain-http API, for a test server. The same override
-	// internal/enrol and internal/anchorrelease read.
-	insecureEnv = "CONFLUX_ALLOW_INSECURE_API"
+	// ReleaseTag and DevTag are the two channels' tags, each of which release.yml moves to
+	// the newest build of its branch: `latest` to version3's, the pre-release `dev-latest` to
+	// dev's.
+	ReleaseTag = "latest"
+	DevTag     = "dev-latest"
 
 	// maxRelease bounds the release document; maxBinary one download. A conflux is
-	// 45 to 75 MB (the size gate in `make dist`), so 200 MB is far above anything real.
+	// 50 to 75 MiB (the size gate in `make dist`), so 200 MB is far above anything real.
 	maxRelease = 1 << 20
 	maxBinary  = 200 << 20
 
@@ -59,7 +59,6 @@ const (
 type Source struct {
 	API       string
 	Repo      string
-	Tag       string
 	UserAgent string
 }
 
@@ -70,10 +69,6 @@ func (s Source) withDefaults() Source {
 
 	if s.Repo == "" {
 		s.Repo = DefaultRepo
-	}
-
-	if s.Tag == "" {
-		s.Tag = DefaultTag
 	}
 
 	s.API = strings.TrimSuffix(s.API, "/")
@@ -96,6 +91,7 @@ type Release struct {
 	Bytes  int64
 
 	src Source
+	tag string
 	id  int64
 }
 
@@ -109,26 +105,27 @@ func AssetName(goos, goarch string) string {
 	return name
 }
 
-// Latest reads the release at the source's tag and picks the platform's asset from it.
-func Latest(ctx context.Context, src Source, goos, goarch string) (*Release, error) {
+// Latest reads the release at tag, ReleaseTag or DevTag, and picks the platform's asset from
+// it.
+func Latest(ctx context.Context, src Source, tag, goos, goarch string) (*Release, error) {
 	src = src.withDefaults()
 
-	if err := checkScheme(src.API); err != nil {
+	if err := config.CheckAPIURL(src.API); err != nil {
 		return nil, err
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, releaseTimeout)
 	defer cancel()
 
-	u := fmt.Sprintf("%s/repos/%s/releases/tags/%s", src.API, strings.Trim(src.Repo, "/"), url.PathEscape(src.Tag))
+	u := fmt.Sprintf("%s/repos/%s/releases/tags/%s", src.API, strings.Trim(src.Repo, "/"), url.PathEscape(tag))
 
 	resp, err := do(ctx, src, u, "application/vnd.github+json")
 	if err != nil {
-		return nil, fmt.Errorf("looking up conflux's %s release: %w", src.Tag, err)
+		return nil, fmt.Errorf("looking up conflux's %s release: %w", tag, err)
 	}
 	defer resp.Body.Close()
 
-	if err := statusErr(resp, src); err != nil {
+	if err := statusErr(resp, src.Repo, tag); err != nil {
 		return nil, err
 	}
 
@@ -156,12 +153,12 @@ func Latest(ctx context.Context, src Source, goos, goarch string) (*Release, err
 		}
 
 		if a.State != "" && a.State != "uploaded" {
-			return nil, fmt.Errorf("%s is in state %q on the %s release, so the release is not finished; try again shortly", a.Name, a.State, src.Tag)
+			return nil, fmt.Errorf("%s is in state %q on the %s release, so the release is not finished; try again shortly", a.Name, a.State, tag)
 		}
 
 		sum, ok := strings.CutPrefix(a.Digest, "sha256:")
 		if !ok || len(sum) != sha256.Size*2 {
-			return nil, fmt.Errorf("the %s release gives no SHA-256 for %s, so nothing would vouch for what arrives", src.Tag, a.Name)
+			return nil, fmt.Errorf("the %s release gives no SHA-256 for %s, so nothing would vouch for what arrives", tag, a.Name)
 		}
 
 		return &Release{
@@ -171,11 +168,12 @@ func Latest(ctx context.Context, src Source, goos, goarch string) (*Release, err
 			SHA256: strings.ToLower(sum),
 			Bytes:  a.Size,
 			src:    src,
+			tag:    tag,
 			id:     a.ID,
 		}, nil
 	}
 
-	return nil, fmt.Errorf("the %s release has no %s, so there is no update for %s/%s", src.Tag, want, goos, goarch)
+	return nil, fmt.Errorf("the %s release has no %s, so there is no update for %s/%s", tag, want, goos, goarch)
 }
 
 // Is reports whether the file at path is this release's binary, byte for byte.
@@ -211,7 +209,7 @@ func (r *Release) Download(ctx context.Context, dir string) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	if err := statusErr(resp, r.src); err != nil {
+	if err := statusErr(resp, r.src.Repo, r.tag); err != nil {
 		return "", err
 	}
 
@@ -306,7 +304,7 @@ func do(ctx context.Context, src Source, u, accept string) (*http.Response, erro
 }
 
 // statusErr turns the codes this meets into a sentence somebody can act on.
-func statusErr(resp *http.Response, src Source) error {
+func statusErr(resp *http.Response, repo, tag string) error {
 	switch resp.StatusCode {
 	case http.StatusOK:
 		return nil
@@ -319,7 +317,7 @@ func statusErr(resp *http.Response, src Source) error {
 		return fmt.Errorf("GitHub refused the request (%s)", resp.Status)
 
 	case http.StatusNotFound:
-		return fmt.Errorf("%s has no release tagged %q (404)", src.Repo, src.Tag)
+		return fmt.Errorf("%s has no release tagged %q (404)", repo, tag)
 
 	default:
 		return fmt.Errorf("GitHub answered %s", resp.Status)
@@ -331,7 +329,7 @@ func statusErr(resp *http.Response, src Source) error {
 // the release document gave, so the hop is safe.
 var httpClient = &http.Client{
 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		if err := checkScheme(req.URL.String()); err != nil {
+		if err := config.CheckAPIURL(req.URL.String()); err != nil {
 			return err
 		}
 
@@ -341,24 +339,4 @@ var httpClient = &http.Client{
 
 		return nil
 	},
-}
-
-func checkScheme(raw string) error {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return fmt.Errorf("%q is not a URL: %w", raw, err)
-	}
-
-	switch u.Scheme {
-	case "https":
-		return nil
-	case "http":
-		if os.Getenv(insecureEnv) == "1" {
-			return nil
-		}
-
-		return fmt.Errorf("%s is plain http (set %s=1 to override, for tests)", raw, insecureEnv)
-	default:
-		return fmt.Errorf("%s has scheme %q, want https", raw, u.Scheme)
-	}
 }

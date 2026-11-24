@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
@@ -59,6 +60,22 @@ type Ephemeral struct {
 	watchEvery time.Duration
 }
 
+// pair is the anchor pair the run starts: in memory where the platform runs a program from
+// there, so that no binary of it is ever on disk, and otherwise extracted into the run's root.
+func (e *Ephemeral) pair() (*libexec.Tools, error) {
+	t, err := libexec.InMemory()
+	if err == nil {
+		return t, nil
+	}
+
+	if runtime.GOOS == "linux" {
+		e.report().Warn("the anchor binaries cannot run from memory here, so they are extracted into %s "+
+			"for this run: %v", e.Dirs.Root, err)
+	}
+
+	return libexec.Ensure(e.Dirs)
+}
+
 // EphemeralUp is what an ephemeral run started, and what its anchor said of itself once it
 // had: the status, where the daemon answered for it.
 type EphemeralUp struct {
@@ -66,11 +83,15 @@ type EphemeralUp struct {
 	Status    anchorctl.Status
 	Manifest  *enrol.Manifest
 	Privilege Privilege
+
+	// PairInMemory is a pair run from memory, with no file of it on disk.
+	PairInMemory bool
 }
 
 // Run starts anchord, brings the anchor up, keeps its credential current in memory, and
 // returns when the context is cancelled (nil) or anchord or its anchor ends (why). Either
-// way it stops anchord and removes the run's root before returning.
+// way it stops anchord, removes the Wintun driver on Windows where no adapter still uses it,
+// and removes the run's root before returning.
 func (e *Ephemeral) Run(ctx context.Context) error {
 	// Before anything is started: observing alone is the service's, and a run with no anchor
 	// would start an observer and an export only to refuse after them.
@@ -94,7 +115,7 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 	}
 
 	if !ok {
-		return &permanentError{err: fmt.Errorf("an ephemeral anchor is already running from %s; stop it first", d.State)}
+		return &permanentError{err: fmt.Errorf("an ephemeral anchor is already running from %s; stop it first", d.Root)}
 	}
 
 	// A killed run's readiness marker is withdrawn before anything else: a reader that finds
@@ -104,13 +125,12 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 		return err
 	}
 
-	// The root and the lock in it go last, after anchord has gone, so a second run is refused
-	// until there is nothing left of this one.
+	// The root goes last, after anchord has gone, and under the lock, so a second run is
+	// refused until there is nothing left of this one; on Windows the driver anchord's
+	// interface installed goes with it (RemoveEphemeralRoot).
 	defer func() {
-		unlock()
-
-		if err := os.RemoveAll(d.State); err != nil {
-			e.report().Warn("could not remove %s: %v", d.State, err)
+		if err := RemoveEphemeralRoot(d, unlock); err != nil {
+			e.report().Warn("%v", err)
 		}
 	}()
 
@@ -132,7 +152,7 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 	s.killLeftovers()
 
 	// And the directories made again, emptied of whatever it was.
-	if err := clearExcept(d.State, d.ServeLockFile()); err != nil {
+	if err := clearKilled(d, e); err != nil {
 		return err
 	}
 
@@ -151,7 +171,7 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 
 	tools := e.tools
 	if tools == nil {
-		if tools, err = libexec.Ensure(d); err != nil {
+		if tools, err = e.pair(); err != nil {
 			return err
 		}
 	}
@@ -177,7 +197,7 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 		return fmt.Errorf("prepare %s: %w", d.DaemonRun(), err)
 	}
 
-	c, err := s.exec(p, ephemeralArgs(d, e.Config), e.Config.Observer != nil)
+	c, err := s.exec(p, ephemeralArgs(d), e.Config.Observer != nil)
 	if err != nil {
 		return err
 	}
@@ -188,8 +208,15 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 		return err
 	}
 
+	// The credential first: the observer runs under it as well as the anchor.
+	if env == nil {
+		if env, m, err = enrolInMemory(ctx, e.Config, e.report()); err != nil {
+			return err
+		}
+	}
+
 	if e.Config.Observer != nil {
-		if err := s.startObserver(ctx, e.Config); err != nil {
+		if _, err := s.startObserver(ctx, e.Config, env); err != nil {
 			return err
 		}
 	}
@@ -200,17 +227,9 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 		}
 	}
 
-	if env == nil {
-		if env, m, err = enrolInMemory(ctx, e.Config, e.report()); err != nil {
-			return err
-		}
-	}
-
 	// Windows needs the driver beside anchord before an interface can exist.
-	if e.Config.Mode == config.ModeTUN {
-		if err := wintun.Ensure(ctx, d); err != nil {
-			return err
-		}
+	if err := FetchDriver(ctx, d, e.Config); err != nil {
+		return err
 	}
 
 	started, err := s.ctl.Start(ctx, env, anchorctl.ModeFromConfig(e.Config, ""))
@@ -226,7 +245,7 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 	}
 
 	if e.Up != nil {
-		up := EphemeralUp{Started: started, Manifest: m, Privilege: p}
+		up := EphemeralUp{Started: started, Manifest: m, Privilege: p, PairInMemory: tools.Dir == ""}
 		if st := s.status(ctx); st != nil {
 			up.Status = *st
 		}
@@ -252,12 +271,8 @@ func (e *Ephemeral) report() Reporter {
 
 // ephemeralArgs is what an ephemeral anchord is started with: the socket, and no -config,
 // since nothing of the run is written; the export, where there is one, goes over the socket.
-func ephemeralArgs(d paths.Dirs, cfg *config.Config) []string {
+func ephemeralArgs(d paths.Dirs) []string {
 	args := []string{"-socket", d.Socket()}
-
-	if cfg.Observer != nil {
-		args = append(args, "-allow-observer")
-	}
 
 	if os.Getenv("CONFLUX_DEBUG") == "1" {
 		args = append(args, "-v")
@@ -337,11 +352,13 @@ func (s *Supervisor) keepEphemeral(
 	var zeroSince time.Time
 
 	// One ticker for the watcher and one timer for the credential, each running on its own,
-	// so neither restarts the other: a renewal is not put off by every look at the anchor.
+	// so neither restarts the other: a renewal is not put off by every look at the anchor. The
+	// timer looks at once, as the supervisor's does, so a credential handed in due is renewed
+	// now, and after that sleeps as untilRenewal says.
 	watch := time.NewTicker(every)
 	defer watch.Stop()
 
-	renewal := time.NewTimer(untilRenewal(m))
+	renewal := time.NewTimer(0)
 	defer renewal.Stop()
 
 	for {
@@ -371,7 +388,7 @@ func (s *Supervisor) keepEphemeral(
 
 			next, chain, err := renewChain(ctx, client, m, id)
 			if err == nil {
-				err = s.ctl.Renew(ctx, chain)
+				err = installRenewal(ctx, s.ctl, cfg, chain)
 			}
 
 			if err != nil {
@@ -392,33 +409,80 @@ func (s *Supervisor) keepEphemeral(
 	}
 }
 
-// untilRenewal is how long until m is next due -- at two thirds of its window, or for one
-// that does not renew at its expiry -- and never longer than maxSleep, so a clock that jumps
-// is read again within hours.
+// untilRenewal is how long until m is next due, clamped as the supervisor's wait is
+// (sleepUntilRenewal): never longer than maxSleep, so a clock that jumps is read again within
+// hours, and never shorter than minSleep, so a renewal answered with a window already gone is
+// not asked for again at once. One that does not renew is due at its expiry, which ends the
+// run, and is not held off past it.
 func untilRenewal(m *enrol.Manifest) time.Duration {
-	at := renewAt(m.IssuedAt(), m.NotAfter())
 	if !m.Renews() {
-		at = m.NotAfter()
+		return min(max(time.Until(m.NotAfter()), 0), maxSleep)
 	}
 
-	return min(max(time.Until(at), 0), maxSleep)
+	return sleepUntilRenewal(m.IssuedAt(), m.NotAfter(), time.Now())
 }
 
-// clearExcept removes everything in dir but keep: what a run killed before it could clean up
-// left in the root, which the next run starts without.
-func clearExcept(dir, keep string) error {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return err
+// RemoveEphemeralRoot removes the root of an ephemeral run whose lock unlock holds, and lets the
+// lock go: the run's own end, and uninstall's for a run that was killed.
+//
+// First, on Windows, the Wintun driver a TUN run's interface installed, through the library
+// that run placed in its root, while it is still there: Wintun keeps the driver while any
+// adapter is in use, so an installed conflux's interface, or another program's, keeps it, which
+// is no failure; any other answer comes back with the rest. Then everything but the lock,
+// while it is held, so a run starting meanwhile is refused rather than emptied out from under
+// itself. Then the lock file and the root: on Unix while the lock is still held, as the file
+// goes on being under no name, so a run starting after makes a lock of its own; on Windows,
+// where a file held open cannot be removed, once it is let go, and a run that took it in
+// between keeps both, since removing either then fails. Where something will not go, the lock
+// is kept, so the next run, or uninstall, finds a root to clear, and the error names it.
+func RemoveEphemeralRoot(d paths.Dirs, unlock func()) error {
+	driver := deleteDriver(d)
+	lock := d.ServeLockFile()
+
+	if err := removeExcept(d.Root, named(filepath.Base(lock))); err != nil {
+		unlock()
+
+		return errors.Join(driver, err)
 	}
 
-	for _, e := range entries {
-		if p := filepath.Join(dir, e.Name()); p != keep {
-			if err := os.RemoveAll(p); err != nil {
-				return fmt.Errorf("clear %s: %w", p, err)
-			}
-		}
+	if runtime.GOOS == "windows" {
+		unlock()
+		ephemeralUnlocked()
+
+		// Failing, as it should, where a run that started meanwhile holds them.
+		_ = os.Remove(lock)
+		_ = os.Remove(d.Root)
+
+		return driver
 	}
 
-	return nil
+	err := os.Remove(lock)
+
+	// Failing, as it should, where a run that started once the lock had no name holds it.
+	_ = os.Remove(d.Root)
+
+	unlock()
+	ephemeralUnlocked()
+
+	return errors.Join(driver, err)
 }
+
+// ephemeralUnlocked is a test's seam, where RemoveEphemeralRoot has let the lock go.
+var ephemeralUnlocked = func() {}
+
+// clearKilled empties a root of what a killed run left, all but the lock this run holds. A
+// killed TUN run's driver goes first, through the library its root still holds, which nothing
+// could remove it with once the root is cleared; Windows keeps it while any adapter is in use,
+// which is no failure, and a failure is said and does not stop the run. A root holding no
+// library removes no driver, as RemoveEphemeralRoot's does not: wintun.DeleteDriver finds
+// none to remove it through.
+func clearKilled(d paths.Dirs, e *Ephemeral) error {
+	if err := deleteDriver(d); err != nil {
+		e.report().Warn("%v", err)
+	}
+
+	return removeExcept(d.Root, named(filepath.Base(d.ServeLockFile())))
+}
+
+// deleteDriver is wintun.DeleteDriver, which tests replace: only Windows has a driver to remove.
+var deleteDriver = wintun.DeleteDriver

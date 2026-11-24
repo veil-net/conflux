@@ -3,12 +3,11 @@ package cli
 import (
 	"context"
 	"errors"
-	"flag"
-	"os"
 
 	"github.com/veil-net/conflux/internal/daemon"
-	"github.com/veil-net/conflux/internal/logfile"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/privcheck"
+	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
 )
 
@@ -18,44 +17,18 @@ import (
 // the service control manager when it detects it is running as a service, and runs
 // in the foreground otherwise.
 func runServe(ctx context.Context, args []string) int {
-	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
-	fs.SetOutput(ui.Errw)
+	fs := verbFlags("serve", "conflux serve — run the supervisor in the foreground\n\n"+
+		"  conflux serve [--foreground]\n\n"+
+		"What the boot service runs, and nothing to type: conflux start starts it.\n\n")
 
 	foreground := fs.Bool("foreground", false, "stay in the foreground even where a service manager is available")
-	dir := fs.String("dir", "", "root every conflux path here, as CONFLUX_DIR does; the service registration passes it back")
-	logPath := fs.String("log", "", "write the output to this file, each line stamped and the file moved aside to .1 past 10 MiB; "+
-		"launchd's and FreeBSD's registrations pass it")
 
-	if err := fs.Parse(args); err != nil {
-		return ExitUsage
+	if exit, ok := flagsAlone(fs, args); !ok {
+		return exit
 	}
 
-	// A service registered from a CONFLUX_DIR run has to come back to the same
-	// directory, and an environment variable does not survive the trip: systemd
-	// gives a unit a clean environment, launchd the same, and an SCM service
-	// inherits the system environment rather than the operator's. So install writes
-	// the root into the argv it registers, and this is where it is picked back up.
-	//
-	// Through the environment rather than by threading a Dirs everywhere, so that
-	// every paths.Default in this process agrees with this one. Before anything
-	// starts, so there is no goroutine to race.
-	if *dir != "" {
-		if err := os.Setenv("CONFLUX_DIR", *dir); err != nil {
-			return fail(err)
-		}
-	}
-
-	// Where launchd or daemon(8) was told to write it: conflux writes it itself from here on,
-	// stamping each line and moving it aside when it is full, which neither of them does.
-	if *logPath != "" {
-		if lf, err := logfile.Open(*logPath); err != nil {
-			ui.Errf("could not open the log %s, so the output goes where the service manager sends it: %v", *logPath, err)
-		} else {
-			defer lf.Close()
-
-			ui.Out, ui.Errw = lf, lf
-		}
-	}
+	// Where launchd started it, which keeps no output, to the system log.
+	toSystemLog()
 
 	d := paths.Default()
 
@@ -64,6 +37,9 @@ func runServe(ctx context.Context, args []string) int {
 		Reporter: reporter{},
 		Ready:    make(chan struct{}),
 		Drop:     true,
+		// Once serve.lock is held, so a second supervisor, refused, changes nothing; on
+		// Windows that is also once the output goes to the Event Log, which records a failure.
+		Reconcile: func() { reconcileService(d) },
 	}
 
 	if !*foreground {
@@ -75,6 +51,31 @@ func runServe(ctx context.Context, args []string) int {
 	return launchdExit(runSupervisor(ctx, sup))
 }
 
+// reconcileService puts the boot service back to what this conflux registers -- the copy it
+// runs, placed in the root, and its definition -- wherever either was changed since: the
+// service is the supervisor's to keep, as the root is. Nothing when no service is registered
+// (a supervisor run by hand), or when this is not root. A failure is said and costs no start.
+func reconcileService(d paths.Dirs) {
+	if !privcheck.Elevated() {
+		return
+	}
+
+	mgr := services()
+
+	if installed, err := mgr.Installed(); err != nil || !installed {
+		return
+	}
+
+	exe, err := service.Place(d)
+	if err == nil {
+		err = mgr.Reconcile(exe, "serve")
+	}
+
+	if err != nil {
+		ui.Errf("could not put the boot service back to what this conflux registers: %v", err)
+	}
+}
+
 func runSupervisor(ctx context.Context, sup *daemon.Supervisor) int {
 	notifyReadyWhen(sup.Ready)
 
@@ -83,7 +84,7 @@ func runSupervisor(ctx context.Context, sup *daemon.Supervisor) int {
 
 // supervisorExit says why the supervisor ended, and picks the exit status that tells the
 // service manager whether to start it again. Shared by the foreground run and the
-// Windows service, whose output is the log file.
+// Windows service, whose output is the Event Log.
 func supervisorExit(err error) int {
 	switch {
 	case err == nil:

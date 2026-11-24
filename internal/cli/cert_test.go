@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -163,12 +162,9 @@ func TestCertRefusesUsageMistakes(t *testing.T) {
 	dir := t.TempDir()
 
 	certIn(t, dir, ExitUsage, "frobnicate")
-	certIn(t, dir, ExitUsage)
-	certIn(t, dir, ExitOK, "help")
 	certIn(t, dir, ExitOK, "genkey", "-h")
 	certIn(t, dir, ExitError, "genkey")
 	certIn(t, dir, ExitUsage, "genkey", "--out", "k.pem", "stray")
-	certIn(t, dir, ExitUsage, "verify")
 	certIn(t, dir, ExitOK, "genkey", "--alg", "ed25519", "--out", "k.pem")
 
 	_, stderr := certIn(t, dir, ExitError, "selfsign", "--key", "k.pem", "--subject", "CN=x", "--profile", "client", "--path-len", "1")
@@ -215,12 +211,7 @@ func TestServeAnswersAndReports(t *testing.T) {
 
 	addr := freeAddr(t)
 
-	var out, errBuf bytes.Buffer
-
-	oldOut, oldErr := ui.Out, ui.Errw
-	ui.Out, ui.Errw = &out, &errBuf
-
-	t.Cleanup(func() { ui.Out, ui.Errw = oldOut, oldErr })
+	out, errBuf := captureUI(t)
 
 	code := make(chan int, 1)
 

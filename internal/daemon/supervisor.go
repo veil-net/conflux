@@ -20,7 +20,6 @@ import (
 	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
-	"github.com/veil-net/conflux/internal/wintun"
 )
 
 // The supervisor is what the service manager actually runs.
@@ -28,7 +27,7 @@ import (
 //	systemd / launchd / rc / SCM
 //	  └── conflux serve                  root, or SYSTEM
 //	        ├── anchord -socket … -config …   as its own account wherever that costs nothing; see privilege.go
-//	        ├── the renewal timer, beside an anchor
+//	        ├── the renewal timer, under the credential: beside an anchor, or observing alone
 //	        ├── the watcher: a lost anchor, on an uplink an ended link, and an observer whose capture ended
 //	        └── the restart loop
 //
@@ -63,8 +62,8 @@ type Supervisor struct {
 	Reporter Reporter
 
 	// Ready is closed once the service has started: the anchor is up, or, beside one that
-	// cannot come up for now, the observer is. The service integrations use it to tell the
-	// service manager the unit has actually started.
+	// does not come up, the observer is. The service integrations use it to tell the service
+	// manager the unit has actually started.
 	Ready chan struct{}
 
 	// Drop lets the supervisor start anchord as its own unprivileged account where its
@@ -72,15 +71,23 @@ type Supervisor struct {
 	// as root makes no account.
 	Drop bool
 
+	// Reconcile, where set, puts the boot service back to what this conflux registers. Run
+	// calls it once serve.lock is held, so a supervisor refused for another's changes nothing
+	// of the service the other keeps. The service sets it; a test and an ephemeral run leave
+	// it nil.
+	Reconcile func()
+
 	tools *libexec.Tools
 	ctl   *anchorctl.Ctl
 	tail  *ring
 	once  sync.Once
 
-	// priv is what the running anchord was started with, and lastDir the anchor
-	// directory the last one was given, which the next starts from when it is given
-	// the other.
+	// priv is what the running anchord was started with, decided what it was decided to
+	// be given before anything was done to give it that (privilegeFor), and lastDir the
+	// anchor directory the last one was given, which the next starts from when it is
+	// given the other.
 	priv    Privilege
+	decided Privilege
 	lastDir string
 
 	// respawn ends the cycle so the next starts anchord with what it now needs.
@@ -126,7 +133,7 @@ func (s *Supervisor) signalReady(id string) {
 }
 
 // signalStarted tells the service manager the unit has started, and writes no marker. It is
-// the observer's, beside an anchor that cannot come up for now: the service is doing what it
+// the observer's, beside an anchor that does not come up: the service is doing what it
 // can, and a manager still waiting for it would fail the start -- systemd after
 // TimeoutStartSec, taking the observer and its inventory down with it -- which is the one
 // thing an anchor that cannot come up must not do. The marker waits for the anchor, since
@@ -160,7 +167,7 @@ func (s *Supervisor) Run(ctx context.Context) error {
 
 	if !ok {
 		return fmt.Errorf("another conflux supervisor is already serving %s; "+
-			"stop it first (conflux down)", s.Dirs.State)
+			"stop it first (conflux down)", s.Dirs.Root)
 	}
 	defer unlock()
 
@@ -175,33 +182,47 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		s.report().Warn("stopped anchord (pid %d), left running by a supervisor that ended without stopping it", pid)
 	}
 
-	// conflux 1.0.0 kept the socket in the run directory itself. The daemon that held it
-	// is gone by now, and so the two names are nothing's.
-	if held, err := flock.Held(s.Dirs.LegacySocket() + ".lock"); err == nil && !held {
-		_ = os.Remove(s.Dirs.LegacySocket())
-		_ = os.Remove(s.Dirs.LegacySocket() + ".lock")
-	}
-
 	if p, ok := RecordedPrivilege(s.Dirs); ok {
 		s.lastDir = p.Dir
 	}
 
-	// Before anything else can be asked about, because nothing is up yet and a marker
-	// saying otherwise is a lie the whole mechanism rests on not telling. Two of the
-	// three platforms clear the run directory for us -- systemd's RuntimeDirectory= on
-	// stop, and /var/run at boot on macOS -- and Windows does not: %ProgramData%\conflux
-	// \run survives a reboot, so a marker written before a power cut would still be
-	// there when this starts.
-	s.clearReady()
+	// Emptied, now that the anchord its record named is stopped: the run directory is on
+	// disk with the rest of the root, so a marker, a token or a socket written before a
+	// crash or a power cut is still there, and nothing here is up yet. A marker saying
+	// otherwise is a lie the whole readiness mechanism rests on not telling.
+	if err := removeExcept(s.Dirs.RunDir(), nothing); err != nil {
+		return err
+	}
+
+	// conflux.json, read once, and refused as every reader refuses it; otherwise written back
+	// in conflux's own form, with state.json, under the lock every writer of either holds.
+	cfgErr := s.canonical()
+
+	// The registration and the copy it runs, and the rest of the root, put back whatever the
+	// configuration said, so a service with nothing to start yet still runs this conflux, and a
+	// start that stops leaves the root as one that runs does: what is neither conflux's nor
+	// anchor's goes, and the root's own files get their owner and modes back -- never their
+	// bytes, so a file refused for good is left as it was written. A file that will not go is
+	// said and left, and costs no start.
+	if s.Reconcile != nil {
+		s.Reconcile()
+	}
+
+	if err := s.tidyRoot(); err != nil {
+		s.report().Warn("could not put %s back to what conflux keeps there: %v", s.Dirs.Root, err)
+	}
 
 	// Nothing to supervise, or nothing it will start on, before anything is extracted.
 	// Distinguished from a failure so the unit can stop instead of restarting into the
 	// same answer every five seconds.
-	if _, err := loadConfig(s.Dirs); err != nil {
-		return err
+	if cfgErr != nil {
+		return cfgErr
 	}
 
-	tools, err := libexec.Ensure(s.Dirs)
+	// Held to this build's digests, not only found whole: anchord runs from here as root,
+	// or as an account root gives what it needs, and a binary changed on disk is extracted
+	// again rather than run.
+	tools, err := libexec.Intact(s.Dirs)
 	if err != nil {
 		return err
 	}
@@ -229,6 +250,29 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	}
 
 	return s.loop(ctx)
+}
+
+// canonical reads conflux.json under the lock, as loadConfig decides, and rewrites it and
+// state.json in conflux's form: a hand edit that is valid takes effect, and leaves behind
+// nothing conflux does not know. What loadConfig refuses is returned, and never rewritten. A
+// rewrite that fails is said, and costs the start nothing: the file read is the one it runs.
+func (s *Supervisor) canonical() error {
+	unlock, err := flock.Acquire(s.Dirs.LockFile())
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	cfg, raw, err := loadConfig(s.Dirs)
+	if err != nil {
+		return err
+	}
+
+	if err := config.Canonical(s.Dirs, cfg, raw); err != nil {
+		s.report().Warn("could not write conflux.json and state.json in conflux's form: %v", err)
+	}
+
+	return nil
 }
 
 // loop is spawn, bring up, watch, back off, repeat.
@@ -302,41 +346,28 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 		return err
 	}
 
-	// The observer before the anchor, because it needs nothing the anchor does -- no
-	// credential, no enrolment, no realm -- and an anchor that cannot come up must not keep
-	// it from observing. Observing alone, a refusal is the cycle's: there is nothing else
-	// to run. Beside an anchor it is said, and the anchor starts without it.
-	if cfg.Observer != nil {
-		if err := s.startObserver(ctx, cfg); err != nil {
-			if !cfg.Anchor() {
-				return err
-			}
-
-			s.report().Warn("the observer did not start, and the anchor starts without it: %v", err)
-		}
+	ready, anchorErr, err := s.up(ctx, cfg)
+	if err != nil {
+		return err
 	}
 
-	if cfg.Anchor() {
-		ready, err := s.anchorUp(ctx, cfg)
-		if err != nil {
-			return err
-		}
-
-		if ready != "" {
-			s.signalReady(ready)
-		} else {
-			s.signalStarted()
-		}
-	} else {
+	switch {
+	case !cfg.Anchor():
 		s.signalReady("observer")
+	case ready != "":
+		s.signalReady(ready)
+	default:
+		s.signalStarted()
 	}
 
 	// The timer, and the watcher that keeps an anchor in the daemon -- and on a link,
-	// keeps the link carrying something. Both are finished before the daemon is shut
-	// down, so neither writes state or talks to a daemon that the next cycle has already
-	// replaced. A watcher that gives up on an anchor this configuration will not build
-	// ends both: there is nothing left to keep, or to renew a credential for, until the
-	// service is started again.
+	// keeps the link carrying something -- and the observer observing. Both are finished
+	// before the daemon is shut down, so neither writes state or talks to a daemon that the
+	// next cycle has already replaced. A watcher that has given up on everything this
+	// configuration runs ends both: there is nothing left to keep, or to renew a credential
+	// for, until the service is started again. An observer outlives an anchor given up on,
+	// and keeps both going. An anchor whose start failed beside the observer is the watcher's
+	// from the start, its failure counted as a rebuild's.
 	loops, stopLoops := context.WithCancel(ctx)
 
 	var wg sync.WaitGroup
@@ -346,12 +377,11 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 		wg.Wait()
 	}()
 
-	if cfg.Anchor() {
-		wg.Go(func() { s.renewLoop(loops) })
-	}
+	// Beside an anchor and observing alone alike: both run under the credential.
+	wg.Go(func() { s.renewLoop(loops) })
 
 	wg.Go(func() {
-		if s.watch(loops, cfg, checkInterval(cfg)) {
+		if s.watch(loops, cfg, checkInterval(cfg), anchorErr) {
 			stopLoops()
 		}
 	})
@@ -366,52 +396,71 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 	}
 }
 
-// anchorUp brings the configured anchor up in the daemon, and says what readiness to
-// record: the anchor's ID, or nothing yet.
+// up brings up in the daemon what the configuration runs -- the observer, then the anchor,
+// both under the machine's credential -- and says what readiness to record: the anchor's ID,
+// or nothing yet.
 //
-// An anchor that cannot come up for now -- an enrolment the API does not answer, say -- ends
-// the cycle, unless the observer runs beside it: then the daemon is kept, and with it the
-// observer and the inventory it holds, and the watcher brings the anchor up when it can, as it
-// rebuilds one that is lost. A refusal for good ends the cycle either way.
-func (s *Supervisor) anchorUp(ctx context.Context, cfg *config.Config) (string, error) {
-	// Windows needs the driver beside anchord before an interface can exist, and it
-	// lives in the content-addressed set directory: an upgraded conflux extracts a new
-	// set with no wintun.dll in it, and a boot must not need somebody to run `up`.
-	if cfg.Mode == config.ModeTUN {
-		if err := wintun.Ensure(ctx, s.Dirs); err != nil {
-			return "", err
+// An anchor that does not come up -- a start that fails, one refused for good, or on Windows a
+// driver that cannot be had -- ends the cycle, unless the observer runs beside it: then the
+// daemon is kept, and with it the observer and the inventory it holds, and the start's failure
+// is handed back as anchorErr for the watcher, which brings the anchor up when it can, as it
+// rebuilds one that is lost, and gives it up after rebuildRefusals refusals for good in a row,
+// the start's counted among them. An anchor that cannot come up never takes the observer down.
+// A credential that could not be had ends the cycle either way: the observer runs under it too.
+func (s *Supervisor) up(ctx context.Context, cfg *config.Config) (id string, anchorErr, err error) {
+	var (
+		observe   func(config.Envelope) (string, error)
+		observing bool
+	)
+
+	if cfg.Observer != nil {
+		observe = func(env config.Envelope) (string, error) {
+			id, err := s.startObserver(ctx, cfg, env)
+			observing = err == nil
+
+			return id, err
 		}
 	}
 
-	started, err := bringUp(ctx, s.Dirs, s.ctl, s.report(), s.priv.Dir, false)
+	driver := FetchDriver(ctx, s.Dirs, cfg)
+
+	started, err := bringUp(ctx, s.Dirs, s.ctl, s.report(), s.priv.Dir, false, driver, observe)
 
 	switch {
 	case err == nil:
-		s.report().Step("anchor %s is up", started.ID)
+		if cfg.Anchor() {
+			s.report().Step("anchor %s is up", started.ID)
+		}
 
-		return started.ID, nil
+		return started.ID, nil, nil
+	case ctx.Err() != nil:
+		// A start the stop ended is no failure of it, and the cycle is ending: nothing is said,
+		// and the decision is not asked again for a next cycle there will not be.
+		return "", nil, err
 	case s.redecided():
 		// A start the decision no longer fits -- the first enrolment named a port only
 		// root may bind -- is one the next cycle makes with what it needs. Not wrapped, so a
 		// refusal for good does not count against the configuration.
-		return "", fmt.Errorf("%w: %v", errRespawn, err)
-	case cfg.Observer != nil && !Permanent(err):
-		s.report().Warn("the anchor did not come up, and the observer goes on without it until it does: %v", err)
+		return "", nil, fmt.Errorf("%w: %v", errRespawn, err)
+	case observing && cfg.Anchor():
+		s.report().Warn("the anchor did not come up, and the observer goes on without it: %v", err)
 
-		return "", nil
+		return "", err, nil
 	default:
-		return "", err
+		return "", nil, err
 	}
 }
 
-// startObserver starts the daemon's observer with what conflux.json asks of it. anchord
-// keeps no observer across a restart, so every daemon is asked afresh.
-func (s *Supervisor) startObserver(ctx context.Context, cfg *config.Config) error {
+// startObserver starts the daemon's observer with what conflux.json asks of it, under env,
+// and returns the AnchorID it observes as. anchord keeps no observer across a restart, so
+// every daemon is asked afresh.
+func (s *Supervisor) startObserver(ctx context.Context, cfg *config.Config, env config.Envelope) (string, error) {
 	start, cancel := context.WithTimeout(ctx, stopTimeout)
 	defer cancel()
 
-	if err := s.ctl.ObserveStart(start, *cfg.Observer); err != nil {
-		return fmt.Errorf("starting the observer: %w", err)
+	id, err := s.ctl.ObserveStart(start, env, *cfg.Observer)
+	if err != nil {
+		return "", fmt.Errorf("starting the observer: %w", err)
 	}
 
 	where := "kept in the daemon's inventory"
@@ -421,27 +470,23 @@ func (s *Supervisor) startObserver(ctx context.Context, cfg *config.Config) erro
 
 	s.report().Step("observing; the records are %s", where)
 
-	return nil
+	return id, nil
 }
 
 // anchordArgs is everything anchord is started with.
 //
 // A function rather than three lines inside spawn, so the argument vector can be
 // asserted without starting a process. -config is what carries conflux.json's export
-// block into the daemon on every start; see writeDaemonConfig. -allow-observer only where
-// the configuration observes: the Observer service has the host copy the start of every
-// flow it carries to the daemon, and a daemon not asked to observe should not be able to.
+// block into the daemon on every start; see writeDaemonConfig. Nothing for the observer:
+// anchord serves it unasked, and what gates it is the credential it starts under and the
+// capture the host gives the account it runs as (privilege.go).
 //
 // No -token-file: the token arrives as ANCHORD_TOKEN (anchor's contract.Token), so the
 // file the CLI reads it from stays root's whoever anchord runs as.
-func anchordArgs(d paths.Dirs, cfg *config.Config) []string {
+func anchordArgs(d paths.Dirs) []string {
 	args := []string{
 		"-socket", d.Socket(),
 		"-config", d.DaemonConfigFile(),
-	}
-
-	if cfg.Observer != nil {
-		args = append(args, "-allow-observer")
 	}
 
 	if os.Getenv("CONFLUX_DEBUG") == "1" {
@@ -493,7 +538,7 @@ func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *child, error) 
 	// Validated before anchord reads any of it. A block anchord refuses is fatal to it at
 	// startup, which would otherwise read as a daemon dying before it answered and be
 	// retried for ever, where this is a file no retry changes.
-	cfg, err := loadConfig(s.Dirs)
+	cfg, _, err := loadConfig(s.Dirs)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -530,7 +575,7 @@ func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *child, error) 
 		return nil, nil, err
 	}
 
-	c, err := s.exec(p, anchordArgs(s.Dirs, cfg), cfg.Observer != nil)
+	c, err := s.exec(p, anchordArgs(s.Dirs), cfg.Observer != nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -542,6 +587,9 @@ func (s *Supervisor) spawn(ctx context.Context) (*config.Config, *child, error) 
 // a spawn that does not depend on where its configuration came from.
 func (s *Supervisor) exec(p Privilege, args []string, observing bool) (*child, error) {
 	s.report().Step("starting anchord as %s", p)
+
+	// Each anchord's last words are its own: the one before it has gone, its output drained.
+	s.tail.reset()
 
 	out := s.lines()
 
@@ -594,7 +642,7 @@ func (s *Supervisor) exec(p Privilege, args []string, observing bool) (*child, e
 	// by the time anybody reads it.
 	go func() {
 		c.err = cmd.Wait()
-		out.flush()
+		out.Flush()
 		close(c.exited)
 	}()
 
@@ -603,17 +651,19 @@ func (s *Supervisor) exec(p Privilege, args []string, observing bool) (*child, e
 
 // lines is a writer for anchord's output, delivering it a line at a time to the tail
 // and the reporter.
-func (s *Supervisor) lines() *lineWriter {
-	return &lineWriter{emit: func(line string) {
+func (s *Supervisor) lines() *LineWriter {
+	return &LineWriter{Emit: func(line string) {
 		s.tail.add(line)
 		s.report().Step("anchord: %s", line)
 	}}
 }
 
-// lineWriter splits what is written to it into lines. os/exec copies a writer named for
-// both streams from one goroutine, so it is only ever written from one at a time.
-type lineWriter struct {
-	emit func(string)
+// LineWriter splits what is written to it into lines, and hands each to Emit without its line
+// end. It takes no lock: anchord's is named for both its streams, which os/exec copies from one
+// goroutine, so it is only ever written from one at a time. A writer that several goroutines
+// share -- the Windows service's event log, which stands in for its output -- holds its own.
+type LineWriter struct {
+	Emit func(string)
 	buf  []byte
 }
 
@@ -621,7 +671,7 @@ type lineWriter struct {
 // out rather than held.
 const maxLine = 64 << 10
 
-func (w *lineWriter) Write(p []byte) (int, error) {
+func (w *LineWriter) Write(p []byte) (int, error) {
 	w.buf = append(w.buf, p...)
 
 	start := 0
@@ -632,7 +682,7 @@ func (w *lineWriter) Write(p []byte) (int, error) {
 			break
 		}
 
-		w.emit(string(bytes.TrimRight(w.buf[start:start+i], "\r")))
+		w.Emit(string(bytes.TrimRight(w.buf[start:start+i], "\r")))
 		start += i + 1
 	}
 
@@ -641,16 +691,16 @@ func (w *lineWriter) Write(p []byte) (int, error) {
 	w.buf = w.buf[:copy(w.buf, w.buf[start:])]
 
 	if len(w.buf) >= maxLine {
-		w.flush()
+		w.Flush()
 	}
 
 	return len(p), nil
 }
 
-// flush emits whatever is left of a line that ended without a newline.
-func (w *lineWriter) flush() {
+// Flush emits whatever is left of a line that ended without a newline.
+func (w *LineWriter) Flush() {
 	if len(w.buf) > 0 {
-		w.emit(string(w.buf))
+		w.Emit(string(w.buf))
 	}
 
 	w.buf = w.buf[:0]
@@ -801,20 +851,23 @@ func (s *Supervisor) stop(c *child) {
 	<-c.exited
 }
 
-// renewLoop keeps the credential current while the anchor runs.
+// renewLoop keeps the credential current for as long as the cycle runs: beside an anchor or
+// observing alone, both run under it.
 //
 // It re-reads the state every round rather than trusting what it read before
 // sleeping, so a renewal somebody ran by hand in between moves the next one along.
-// A failed renewal is retried after minSleep. A credential that does not renew ends
-// the loop: the manifest cannot change while this process holds it, so asking again
-// would only say the same thing every minute.
+// After a renewal it waits minSleep, the floor of every wait, before it looks again,
+// whether the renewal succeeded or failed: one that failed is retried then, and one that
+// succeeded with a window already gone is not asked for again at once. A credential that
+// does not renew ends the loop: the manifest cannot change while this process holds it,
+// so asking again would only say the same thing every minute.
 func (s *Supervisor) renewLoop(ctx context.Context) {
 	for {
 		wait := minSleep
 
 		switch st, err := config.LoadState(s.Dirs); {
 		case err != nil:
-			s.report().Warn("could not read %s: %v", s.Dirs.StateFile(), err)
+			s.report().Warn("%v", err)
 		case dueAt(st.IssuedAt, st.NotAfter, time.Now()):
 			if err := RenewNow(ctx, s.Dirs, s.ctl, s.report()); errors.Is(err, enrol.ErrDoesNotRenew) {
 				s.report().Warn("%v", err)
@@ -822,8 +875,6 @@ func (s *Supervisor) renewLoop(ctx context.Context) {
 				return
 			} else if err != nil {
 				s.report().Warn("renewal failed: %v", err)
-			} else {
-				continue
 			}
 		default:
 			wait = sleepUntilRenewal(st.IssuedAt, st.NotAfter, time.Now())
@@ -867,10 +918,10 @@ func (s *Supervisor) freshToken() (string, error) {
 // and what anchor refuses that conflux cannot check beforehand: a credential under a
 // root other than the one these binaries are pinned to; a TUN the host will not give --
 // no capability, no device or no IPv6, or the name held by another interface, which an
-// --interface naming one already there meets on every start; and a host that will not be
-// set up to forward for the realm. None frees itself inside thirty seconds of
-// backoff, and failing in three puts the reason in front of somebody rather than
-// burying it in the journal under a unit timeout.
+// --interface naming one already there meets on every start; a host that will not be set
+// up to forward for the realm; and a list a Subnets order wrote that anchor cannot read.
+// None frees itself inside thirty seconds of backoff, and failing in three puts the reason
+// in front of somebody rather than burying it in the journal under a unit timeout.
 //
 // A served subnet the host is not attached to is deliberately absent. At boot that is
 // usually an interface that has not come up yet, which a retry does fix.
@@ -907,6 +958,10 @@ func Permanent(err error) bool {
 		// anchorctl's hint for REASON_CAPTURE_UNAVAILABLE, which no retry changes. The
 		// privilege is the supervisor's to give at a spawn, and it gave what it could.
 		"capturing needs cap_net_raw",
+		// A list a member's Subnets order wrote in the anchor directory that anchor cannot
+		// read: it will not start until the file goes, which `conflux up --subnet` or
+		// `--no-subnet` does (dropSubnetsOrder).
+		"the subnet list a subnets order wrote",
 	} {
 		if strings.Contains(s, phrase) {
 			return true
@@ -918,8 +973,9 @@ func Permanent(err error) bool {
 	return strings.Contains(s, "tundev: creating") && strings.Contains(s, "device or resource busy")
 }
 
-// ring keeps the last n lines of the daemon's output, in n slots allocated once:
-// every line anchord writes passes through here, and almost none is ever read.
+// ring keeps the last n lines of the daemon's output, in n slots allocated once and reused
+// for every anchord: every line anchord writes passes through here, and almost none is
+// ever read.
 type ring struct {
 	mu    sync.Mutex
 	lines []string
@@ -928,6 +984,15 @@ type ring struct {
 }
 
 func newRing(n int) *ring { return &ring{lines: make([]string, n)} }
+
+// reset empties the ring for the next anchord, in the slots it has.
+func (r *ring) reset() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	clear(r.lines)
+	r.next, r.full = 0, false
+}
 
 func (r *ring) add(line string) {
 	r.mu.Lock()

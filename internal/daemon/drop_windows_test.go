@@ -1,6 +1,8 @@
 package daemon
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"unsafe"
@@ -148,5 +150,54 @@ func TestServiceSID(t *testing.T) {
 
 	if !lower.Equals(upper) {
 		t.Error("a service's SID does not depend on how its name is cased")
+	}
+}
+
+// TestCopyTreeLeavesAnInRootLinkBehind: what the account left in its directory is copied for
+// SYSTEM only as regular files. A symbolic link to another file in the same directory, which
+// an os.Root alone would follow since it leads nowhere outside, is left behind, and copyFile,
+// handed the link's name as a link put in a file's place between the walk and the open would
+// hand it, copies nothing.
+func TestCopyTreeLeavesAnInRootLinkBehind(t *testing.T) {
+	from, to := t.TempDir(), t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(from, "bootstrap.json"), []byte("peers"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Symlink("bootstrap.json", filepath.Join(from, "realmlinks")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := copyTree(from, to, Privilege{}); err != nil {
+		t.Fatal(err)
+	}
+
+	if b, err := os.ReadFile(filepath.Join(to, "bootstrap.json")); err != nil || string(b) != "peers" {
+		t.Errorf("bootstrap.json = %q, %v; want %q", b, err, "peers")
+	}
+
+	if _, err := os.Lstat(filepath.Join(to, "realmlinks")); !os.IsNotExist(err) {
+		t.Errorf("the link was copied by the walk (%v)", err)
+	}
+
+	src, err := os.OpenRoot(from)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer src.Close()
+
+	dst, err := os.OpenRoot(to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dst.Close()
+
+	if err := copyFile(src, dst, "realmlinks", Privilege{}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Lstat(filepath.Join(to, "realmlinks")); !os.IsNotExist(err) {
+		t.Errorf("copyFile copied what the link points at (%v)", err)
 	}
 }

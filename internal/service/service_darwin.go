@@ -10,36 +10,29 @@ import (
 	"time"
 
 	"github.com/veil-net/conflux/internal/config"
-	"github.com/veil-net/conflux/internal/paths"
 )
 
-// Functions and not constants because a run rooted in a CONFLUX_DIR is a separate
-// installation and must not be registered over the machine's own; see scope.
-func label() string { return "org.veilnet.conflux" + paths.Scope() }
-
 // Label is the launchd job's label, which launchd hands what it starts as XPC_SERVICE_NAME.
-func Label() string { return label() }
+const Label = "org.veilnet.conflux"
 
-func plistPath() string { return "/Library/LaunchDaemons/" + label() + ".plist" }
-func target() string    { return "system/" + label() }
+const (
+	plistPath = "/Library/LaunchDaemons/" + Label + ".plist"
+	target    = "system/" + Label
+)
 
 type launchd struct{}
 
 func newManager() Manager { return launchd{} }
 
-// Install writes the job and loads nothing, which is the whole of what registration
-// means here. Loading it would start it -- bootstrap honours RunAtLoad -- and Install
-// starts nothing, so the caller's Restart is the one start.
+// Install writes the job as Reconcile does and loads nothing, which is the whole of what
+// registration means here. Loading it would start it -- bootstrap honours RunAtLoad -- and
+// Install starts nothing, so the caller's Restart is the one start.
 //
 // Nothing about a reboot depends on loading it here. launchd bootstraps everything in
 // /Library/LaunchDaemons at boot, so the plist on disk *is* the registration, and
 // Start and Restart load it when there is something to run.
 func (l launchd) Install(exe string, args ...string) error {
-	plist := launchdPlist(label(), append([]string{exe}, withLog(args)...), logFile())
-
-	// 0644 whatever was there before: launchd refuses a job whose plist is group- or
-	// world-writable, for a reason nothing in its error names.
-	if err := config.WriteFileAtomic(plistPath(), []byte(plist), 0o644); err != nil {
+	if err := l.Reconcile(exe, args...); err != nil {
 		return err
 	}
 
@@ -47,11 +40,26 @@ func (l launchd) Install(exe string, args ...string) error {
 	// the one just written, so an upgrade that moved the executable would keep running
 	// the old path until something unloaded it. Unloading here is also what makes the
 	// next Restart take the bootstrap branch, which is the single start.
-	_ = run("launchctl", "bootout", target())
+	_ = run("launchctl", "bootout", target)
 
 	enableIfDisabled()
 
 	return nil
+}
+
+// Reconcile writes the plist where it differs from what this conflux writes, and does not
+// boot the job out as Install does: what calls it is the job, and the plist takes effect at
+// the next load.
+//
+// 0644 whatever was there before, a plist holding these bytes given its mode back: launchd
+// refuses a job whose plist is group- or world-writable, for a reason nothing in its error
+// names.
+func (l launchd) Reconcile(exe string, args ...string) error {
+	plist := []byte(launchdPlist(Label, append([]string{exe}, args...)))
+
+	_, err := config.WriteFileIfChanged(plistPath, plist, 0o644)
+
+	return err
 }
 
 // enableIfDisabled lifts a disable on the label, and does nothing to one that has none.
@@ -67,12 +75,12 @@ func enableIfDisabled() {
 
 	for line := range strings.Lines(out) {
 		key, value, _ := strings.Cut(strings.TrimSpace(line), "=>")
-		if strings.TrimSpace(key) != `"`+label()+`"` {
+		if strings.TrimSpace(key) != `"`+Label+`"` {
 			continue
 		}
 
 		if v := strings.TrimSpace(value); v == "disabled" || v == "true" {
-			_ = run("launchctl", "enable", target())
+			_ = run("launchctl", "enable", target)
 		}
 
 		return
@@ -82,7 +90,7 @@ func enableIfDisabled() {
 // printJob is launchd's view of the job, and whether there is one in the domain at all.
 // One spelling of the command, because loaded and Running ask it the same question and
 // read different halves of the answer.
-func printJob() (string, bool) { return query("launchctl", "print", target()) }
+func printJob() (string, bool) { return query("launchctl", "print", target) }
 
 // loaded reports whether the job is bootstrapped into the system domain.
 //
@@ -107,7 +115,7 @@ func (l launchd) loaded() bool {
 func (l launchd) load() error {
 	enableIfDisabled()
 
-	if err := run("launchctl", "bootstrap", "system", plistPath()); err != nil {
+	if err := run("launchctl", "bootstrap", "system", plistPath); err != nil {
 		return fmt.Errorf("%w\n%s", err, bootstrapHint())
 	}
 
@@ -120,26 +128,24 @@ func (l launchd) load() error {
 // message an operator gets names none of the four things that actually cause it.
 func bootstrapHint() string {
 	return "  launchd reports most refusals as error 5, which names nothing. The usual causes:\n" +
-		"    - the label is disabled:  sudo launchctl enable " + target() + "\n" +
-		"    - " + plistPath() + " is not root-owned, or is group- or world-writable\n" +
-		"    - the job is already loaded:  sudo launchctl bootout " + target() + "\n" +
+		"    - the label is disabled:  sudo launchctl enable " + target + "\n" +
+		"    - " + plistPath + " is not root-owned, or is group- or world-writable\n" +
+		"    - the job is already loaded:  sudo launchctl bootout " + target + "\n" +
 		"    - the executable it names is gone, or is on a volume that is not mounted yet"
 }
 
-// Remove deregisters the job and deletes its plist and its log, and deliberately
+// Remove deregisters the job and deletes its plist, and deliberately
 // leaves nothing in launchd's disabled database: a disabled label outlives the plist and
 // stops the next install from loading, which is persistent state for a thing that no
 // longer exists.
 //
 // Each step tolerates its own failure, so a half-removed service can always be finished off.
 func (l launchd) Remove() error {
-	errs := []error{run("launchctl", "bootout", target())}
+	errs := []error{run("launchctl", "bootout", target)}
 
-	if err := os.Remove(plistPath()); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(plistPath); err != nil && !os.IsNotExist(err) {
 		errs = append(errs, err)
 	}
-
-	errs = append(errs, removeLog(logFile()))
 
 	if installed, _ := l.Installed(); installed {
 		return errors.Join(errs...)
@@ -161,7 +167,7 @@ func (l launchd) Restart() error {
 		return l.load()
 	}
 
-	return run("launchctl", "kickstart", "-k", target())
+	return run("launchctl", "kickstart", "-k", target)
 }
 
 // Stop kills the process and leaves the job loaded, which is exactly the semantics
@@ -179,7 +185,7 @@ func (l launchd) Stop() error {
 		return nil
 	}
 
-	if err := run("launchctl", "kill", "SIGTERM", target()); err != nil {
+	if err := run("launchctl", "kill", "SIGTERM", target); err != nil {
 		return err
 	}
 
@@ -192,7 +198,7 @@ func (l launchd) Stop() error {
 	return nil
 }
 
-func (launchd) Installed() (bool, error) { return exists(plistPath()) }
+func (launchd) Installed() (bool, error) { return exists(plistPath) }
 
 // running asks launchd rather than inferring it from Installed. A job that is not
 // loaded -- registered but never started in this boot -- prints nothing and is not
@@ -203,7 +209,9 @@ func running() bool {
 	return ok && strings.Contains(out, "state = running")
 }
 
-func (launchd) LogHint() string { return "tail -n 50 " + logFile() }
+func (launchd) LogHint() string {
+	return `log show --last 1h --style compact --predicate 'process == "logger"' | grep conflux`
+}
 
 func (l launchd) Describe() string {
 	installed, _ := l.Installed()
@@ -212,8 +220,8 @@ func (l launchd) Describe() string {
 	}
 
 	if running() {
-		return fmt.Sprintf("running (launchd: %s, at boot)", label())
+		return fmt.Sprintf("running (launchd: %s, at boot)", Label)
 	}
 
-	return fmt.Sprintf("installed, not running (launchd: %s, at boot)", label())
+	return fmt.Sprintf("installed, not running (launchd: %s, at boot)", Label)
 }

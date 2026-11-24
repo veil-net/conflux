@@ -3,11 +3,13 @@
 #
 # install registers the unit and does not start it; anchord runs as conflux's own account
 # with exactly what each mode and host needs, and as root only where the host demands it;
-# uninstall leaves nothing behind. Nothing enrols -- the configuration names an API that
-# answers nothing, so anchord stays up while the enrolment waits -- so this runs without
-# touching the API, which is what makes it the cheap one to run when the question is only
-# about the unit and what it starts. The observer needs no API at all: it is run alone, its
-# records read back from the inventory and from a collector, and beside each anchor.
+# uninstall leaves nothing behind. Until the observer's legs nothing enrols -- the
+# configuration names an API that answers nothing, so anchord stays up while the enrolment
+# waits -- which is what makes this the cheap one to run when the question is only about the
+# unit and what it starts. The observer runs only under a credential, so its legs enrol one
+# anonymous alpha credential at $VEILNET_API, in a random taint, as service-host.sh does, and
+# run under it: alone, its records read back from the inventory and from a collector, and
+# beside each anchor.
 #
 # The hosts it needs are made inside the container, so every branch is taken on every
 # runner: /dev/net/tun opened up or kept root's, and firewalld and iptables stood in for by
@@ -27,6 +29,12 @@ OTEL=${OTEL:-$NAME-otel}
 
 # The collector the observer's records are exported to: anchor's own suite runs this one.
 OTEL_IMAGE=${OTEL_IMAGE:-otel/opentelemetry-collector:0.162.0}
+
+# Where the observer's legs enrol their one credential, production's API when unset: it has to
+# be the tree the embedded anchord is pinned to, which CI names by the pull request's base. The
+# taint is random, so the credential reaches nobody else in the realm.
+API=${VEILNET_API:-https://api.veilnet.com.au}
+TAINT="cfx-svc-$(head -c6 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 
 say() { printf '\n== %s\n' "$*"; }
 
@@ -64,12 +72,12 @@ docker exec "$NAME" conflux install
 # the file conflux was run from -- here /usr/local/bin, elsewhere a download anybody
 # might be able to swap.
 say "the unit runs the root-only copy of conflux"
-docker exec "$NAME" systemctl show -p ExecStart --value conflux.service | grep 'path=/var/lib/conflux/conflux ' >/dev/null \
-  || { echo "the unit does not run /var/lib/conflux/conflux:" >&2
+docker exec "$NAME" systemctl show -p ExecStart --value conflux.service | grep 'path=/var/lib/.conflux/conflux ' >/dev/null \
+  || { echo "the unit does not run /var/lib/.conflux/conflux:" >&2
        docker exec "$NAME" systemctl show -p ExecStart --value conflux.service >&2; exit 1; }
-[ "$(docker exec "$NAME" stat -c '%a %U' /var/lib/conflux/conflux)" = "700 root" ] \
+[ "$(docker exec "$NAME" stat -c '%a %U' /var/lib/.conflux/conflux)" = "700 root" ] \
   || { echo "the service's copy is not root's alone:" >&2
-       docker exec "$NAME" stat -c '%a %U' /var/lib/conflux/conflux >&2; exit 1; }
+       docker exec "$NAME" stat -c '%a %U' /var/lib/.conflux/conflux >&2; exit 1; }
 
 # An API that answers nothing: systemd accepts each connection and hands it to a sleep, so
 # an enrolment waits out its timeout, and anchord stays up while it does. An address that
@@ -93,7 +101,7 @@ put /usr/local/bin/creds 755 <<'SH'
 #!/bin/sh
 for p in /proc/[0-9]*; do
   case "$(readlink "$p/exe" 2>/dev/null)" in
-    /var/lib/conflux/bin/*/anchord)
+    /var/lib/.conflux/bin/*/anchord)
       awk '/^Uid:/ { u = $2 } /^CapEff:/ { c = $2 } /^NoNewPrivs:/ { n = $2 }
            /^Groups:/ { for (i = 2; i <= NF; i++) g = g (g ? "," : "") $i }
            END { printf "uid=%s caps=%s nnp=%s groups=%s\n", u, c, n, g }' "$p/status"
@@ -104,29 +112,43 @@ exit 1
 SH
 
 # configure writes a configuration conflux could have written, in MODE, with any more
-# fields after it, pointed at that API.
-configure() { # MODE [FIELDS]
+# fields after it, in TAINT at API: by default pointed at that silent API.
+configure() { # MODE [FIELDS [TAINT API]]
   local extra=''
   [ "$1" = proxy ] && extra='"proxies":["8080=127.0.0.1:3000"],'
-  docker exec -i "$NAME" sh -c "umask 077; cat > /etc/conflux/conflux.json" <<JSON
-{"version":1,"mode":"$1",$extra${2:+$2,}"taints":["cfx-service-test"],"apiBaseUrl":"https://127.0.0.1:9443","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}
+  docker exec -i "$NAME" sh -c "umask 077; cat > /var/lib/.conflux/conflux.json" <<JSON
+{"version":1,"mode":"$1",$extra${2:+$2,}"taints":["${3:-cfx-service-test}"],"apiBaseUrl":"${4:-https://127.0.0.1:9443}","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}
 JSON
 }
 
 # start stops the service, which waits for anchord to go, and starts it without waiting
 # for an anchor that will never come up -- clearing the failure systemd records for a unit
-# started five times in ten seconds first, as conflux's own start does.
+# started five times in ten seconds first, as conflux's own start does. It notes which
+# anchord.priv, the record of what the last anchord was started as, is there before: by its
+# inode, since every start writes a new one atomically. The record stays, unlike
+# service-bsd.sh's: the supervisor reads which anchor directory the last anchor kept its
+# state in from it, and the legs that flip between anchor/ and anchor.root/ test that.
 start() {
   docker exec "$NAME" systemctl stop conflux.service
   docker exec "$NAME" systemctl reset-failed conflux.service
+  last_record=$(docker exec "$NAME" stat -c %i /var/lib/.conflux/anchord.priv 2>/dev/null || true)
   docker exec "$NAME" systemctl start --no-block conflux.service
 }
 
 # expect waits for the anchord just started and holds it to WANT, a creds line -- a
 # pattern, so a root anchord's capabilities, which are whatever this runner gives root, can
-# be left open -- and to a status row that says ROW.
+# be left open -- and to a status row that says ROW. It waits first for the start's own
+# record, written once anchord runs: until then status reads the last leg's, and creds can
+# find the `anchord -h` the supervisor tries a drop with before it starts the real one.
 expect() { # WHAT WANT ROW
-  local got="" row=""
+  local got="" row="" now=""
+  for _ in $(seq 150); do
+    now=$(docker exec "$NAME" stat -c %i /var/lib/.conflux/anchord.priv 2>/dev/null || true)
+    [ -n "$now" ] && [ "$now" != "$last_record" ] && break
+    sleep 0.2
+  done
+  [ -n "$now" ] && [ "$now" != "$last_record" ] \
+    || { echo "$1: the supervisor recorded no anchord it started" >&2; journal; exit 1; }
   for _ in $(seq 150); do
     got=$(docker exec "$NAME" creds 2>/dev/null) && break
     sleep 0.2
@@ -161,10 +183,6 @@ bufcap=0
 bufrow="with no privilege"
 [ "$bufcap" = 0x1000 ] && bufrow="CAP_NET_ADMIN to size its UDP buffers"
 
-# conflux 1.0.0 gave a root anchord the account's name for its directory: the first start
-# after the upgrade moves that state to root's own, and the account starts from a copy.
-docker exec "$NAME" sh -c 'umask 077 && mkdir -p /var/lib/conflux/anchor && echo 1.0.0 > /var/lib/conflux/anchor/legacy'
-
 say "in userspace anchord runs as its own account, with no capability"
 configure proxy
 start
@@ -179,24 +197,29 @@ check_mode() { # PATH WANT
   [ "$(docker exec "$NAME" stat -c '%a %U %G' "$1")" = "$2" ] \
     || { echo "$1 is $(docker exec "$NAME" stat -c '%a %U %G' "$1"), want $2" >&2; exit 1; }
 }
-check_mode /var/lib/conflux "710 root conflux"
-check_mode /run/conflux "710 root conflux"
-check_mode /var/lib/conflux/anchor "700 conflux conflux"
-check_mode /run/conflux/anchord "700 conflux conflux"
-check_mode /var/lib/conflux/anchord.json "600 conflux conflux"
-check_mode /run/conflux/token "600 root root"
-check_mode /var/lib/conflux/conflux "700 root root"
+check_mode /var/lib/.conflux "710 root conflux"
+check_mode /var/lib/.conflux/run "710 root conflux"
+check_mode /var/lib/.conflux/anchor "700 conflux conflux"
+check_mode /var/lib/.conflux/run/anchord "700 conflux conflux"
+check_mode /var/lib/.conflux/anchord.json "600 conflux conflux"
+check_mode /var/lib/.conflux/run/token "600 root root"
+check_mode /var/lib/.conflux/conflux "700 root root"
 
-say "the 1.0.0 anchor directory became root's, and the account's started from a copy"
-check_mode /var/lib/conflux/anchor.root/legacy "600 root root"
-check_mode /var/lib/conflux/anchor/legacy "600 conflux conflux"
+say "the unit runs with a system service's protections"
+for want in UMask=0077 PrivateTmp=yes ProtectHome=read-only ProtectHostname=yes \
+  ProtectControlGroups=yes LockPersonality=yes RestrictRealtime=yes RestrictSUIDSGID=yes \
+  ProtectClock=no DevicePolicy=auto DeviceAllow=; do
+  key=${want%%=*}
+  got=$(docker exec "$NAME" systemctl show -p "$key" --value conflux.service)
+  [ "$key=$got" = "$want" ] || { echo "the unit's $key is $got, want ${want#*=}" >&2; exit 1; }
+done
 
 # systemd re-owns a directory it was told to make, at every start, once its group is not
-# the unit's: the state directory is not one of those, and stays as the supervisor left it.
+# the unit's: the root is not one of those, and stays as the supervisor left it.
 say "a restart leaves anchord's directory its own"
 start
 expect "restarted" "uid=$uid caps=$(caps "$bufcap") nnp=1 groups=" "$bufrow"
-check_mode /var/lib/conflux/anchor "700 conflux conflux"
+check_mode /var/lib/.conflux/anchor "700 conflux conflux"
 
 say "a port below 1024 is given CAP_NET_BIND_SERVICE, and nothing more"
 # Docker lets a container bind any port; a host keeps the first 1024 for root.
@@ -226,22 +249,24 @@ expect "tun" "uid=$uid caps=$(caps 0x1000) nnp=0 groups=" "CAP_NET_ADMIN for its
 
 # What the account leaves in its directory for root to carry: a file of its own, and a
 # symlink and a hard link to a file of root's, which a copy must not follow, take or touch.
-docker exec "$NAME" sh -c 'cd /var/lib/conflux &&
-  umask 077 && echo secret > secret &&
-  su -s /bin/sh conflux -c "echo carried > anchor/carried" &&
-  ln -s /var/lib/conflux/secret anchor/link && ln secret anchor/hard'
+# In knowledge/, which is anchor's and kept whole: anything else in the directory, and at the
+# root's top level, the supervisor deletes before the spawn. Root's file is outside the root.
+docker exec "$NAME" sh -c 'umask 077 && echo secret > /var/lib/cfx-secret &&
+  cd /var/lib/.conflux &&
+  su -s /bin/sh conflux -c "mkdir -p anchor/knowledge && echo carried > anchor/knowledge/carried" &&
+  ln -s /var/lib/cfx-secret anchor/knowledge/link && ln /var/lib/cfx-secret anchor/knowledge/hard'
 
 say "a host that keeps /dev/net/tun root's keeps anchord root, in a directory of its own"
 docker exec "$NAME" chmod 600 /dev/net/tun
 start
 expect "root-only tun" "uid=0 caps=* nnp=0 groups=*" "/dev/net/tun opens only for root"
-check_mode /var/lib/conflux/anchor.root "700 root root"
-check_mode /var/lib/conflux/anchor.root/carried "600 root root"
+check_mode /var/lib/.conflux/anchor.root "700 root root"
+check_mode /var/lib/.conflux/anchor.root/knowledge/carried "600 root root"
 for name in link hard; do
-  docker exec "$NAME" test ! -e "/var/lib/conflux/anchor.root/$name" \
+  docker exec "$NAME" test ! -e "/var/lib/.conflux/anchor.root/knowledge/$name" \
     || { echo "the copy to root's directory took the account's $name" >&2; exit 1; }
 done
-check_mode /var/lib/conflux/secret "600 root root"
+check_mode /var/lib/cfx-secret "600 root root"
 
 # anchor runs the host's firewall commands with a TUN, and some answer only root. They are
 # stood in for by scripts that answer the question conflux asks: whether firewalld runs,
@@ -276,25 +301,22 @@ say "back in userspace, the account starts from root's state, as its own"
 configure proxy
 start
 expect "userspace again" "uid=$uid caps=$(caps "$bufcap") nnp=1 groups=" "$bufrow"
-check_mode /var/lib/conflux/anchor/carried "600 conflux conflux"
+check_mode /var/lib/.conflux/anchor/knowledge/carried "600 conflux conflux"
 
-# The observer, alone: no anchor, so nothing enrols, and anchord is given the capture and
-# nothing else -- CAP_NET_RAW, under no_new_privs, and no buffer capability, since no socket
-# is bound.
-say "observing alone, anchord has CAP_NET_RAW and nothing else, and enrols nothing"
-configure observe '"observer":{}'
-# Every connection to the silent API is a silent@ instance, and one is left for each, so a
-# count that grows is an enrolment tried. Taken once the last service has stopped.
-asked() { docker exec "$NAME" systemctl list-units --all --no-legend --plain 'silent@*.service' | wc -l; }
-docker exec "$NAME" systemctl stop conflux.service
-before=$(asked)
-[ "$before" -gt 0 ] || { echo "no earlier start reached the silent API, so its count proves nothing" >&2; exit 1; }
+# The observer runs only under a credential, checked as an anchor's start is, so its legs run
+# under one: anonymous, alpha, in this run's taint, enrolled at $API by the first of them, which
+# finds none, as `conflux observe` enrols one. Alone, there is no anchor, and anchord is given
+# the capture and nothing else -- CAP_NET_RAW, under no_new_privs, and no buffer capability,
+# since no socket is bound.
+say "observing alone, under a credential enrolled at $API in $TAINT, anchord has CAP_NET_RAW and nothing else"
+configure observe '"observer":{}' "$TAINT" "$API"
 start
 expect "observing" "uid=$uid caps=$(caps 0x2000) nnp=1 groups=" "CAP_NET_RAW to copy what the host's interfaces carry"
 
-# observing waits until status shows the observer capturing.
+# observing waits until status shows the observer capturing: the first time, once the enrolment
+# it starts after has answered.
 observing() {
-  for _ in $(seq 100); do
+  for _ in $(seq 300); do
     grep -q '^  observer *af_packet' <<<"$(docker exec "$NAME" conflux status 2>/dev/null)" && return 0
     sleep 0.2
   done
@@ -309,6 +331,42 @@ observing() {
 traffic() { docker exec "$NAME" sh -c 'conflux update --check >/dev/null 2>&1 || true'; }
 
 observing
+docker exec "$NAME" test -s /var/lib/.conflux/manifest.b64 \
+  || { echo "the observer is capturing, and there is no credential it runs under" >&2; exit 1; }
+
+# identity is the credential the observer's legs run under, on one line: manifest.b64's SHA-256
+# and the AnchorID state.json records for it.
+identity() {
+  local sum id
+  sum=$(docker exec "$NAME" sha256sum /var/lib/.conflux/manifest.b64) || return 1
+  id=$(docker exec "$NAME" sed -n 's/.*"anchorId": "\([^"]*\)".*/\1/p' /var/lib/.conflux/state.json) || return 1
+  printf '%s %s\n' "${sum%% *}" "$id"
+}
+
+# The observer's legs enrol once: the first, above, found no credential and enrolled one, and
+# every leg after it runs under that one, enrolling nothing. What it enrolled is the manifest's
+# bytes, and the AnchorID state.json records for it as the start that began the observer ends.
+enrolled=""
+for _ in $(seq 50); do
+  enrolled=$(identity) || enrolled=""
+  case $enrolled in *" anchor"?*) break ;; esac
+  sleep 0.2
+done
+case $enrolled in
+  *" anchor"?*) ;;
+  *) echo "state.json records no AnchorID for the credential the observer runs under: ${enrolled:-no credential}" >&2
+     journal; exit 1 ;;
+esac
+
+# enrolled_once holds the credential to the one the first observer leg enrolled.
+enrolled_once() { # AFTER
+  local now
+  now=$(identity) || now=""
+  [ "$now" = "$enrolled" ] \
+    || { echo "after $1 the credential is ${now:-gone}, not the $enrolled the first observer leg enrolled" >&2
+         journal; exit 1; }
+}
+
 traffic
 for _ in $(seq 60); do
   grep -q ' 443/tcp ' <<<"$(docker exec "$NAME" conflux inventory 2>/dev/null)" && break
@@ -319,8 +377,6 @@ docker exec "$NAME" conflux inventory | grep ' 443/tcp ' \
        docker exec "$NAME" conflux inventory >&2 || true; journal; exit 1; }
 grep -q '^  records *kept here' <<<"$(docker exec "$NAME" conflux status)" \
   || { echo "status does not say the records are kept here" >&2; exit 1; }
-[ $(( $(asked) - before )) -eq 0 ] \
-  || { echo "observing alone tried to enrol: the API was asked $(( $(asked) - before )) times" >&2; exit 1; }
 
 # Each record leaves as it is made, with no anchor: a collector that logs every record it is
 # sent, in detail, is the dashboard's side of it.
@@ -342,7 +398,7 @@ chmod 644 "$otelconf"
 docker run -d --name "$OTEL" -v "$otelconf:/etc/otel.yaml:ro" "$OTEL_IMAGE" --config /etc/otel.yaml >/dev/null
 collector=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$OTEL")
 [ -n "$collector" ] || { echo "the collector has no address" >&2; docker logs "$OTEL" >&2; exit 1; }
-configure observe "\"observer\":{},\"export\":{\"enabled\":true,\"endpoint\":\"$collector:4317\",\"insecure\":true,\"flows\":true}"
+configure observe "\"observer\":{},\"export\":{\"enabled\":true,\"endpoint\":\"$collector:4317\",\"insecure\":true,\"flows\":true}" "$TAINT" "$API"
 start
 expect "observing, exporting" "uid=$uid caps=$(caps 0x2000) nnp=1 groups=" "CAP_NET_RAW to copy what the host's interfaces carry"
 observing
@@ -355,20 +411,23 @@ grep -q 'anchor.observed_flow.key_exchange' <<<"$(docker logs "$OTEL" 2>&1)" \
   || { echo "no anchor.observed_flow record reached the collector:" >&2
        docker logs "$OTEL" 2>&1 | tail -20 >&2; journal; exit 1; }
 docker rm -f "$OTEL" >/dev/null
+enrolled_once "the export leg"
 
-# Beside an anchor, the capture is added to what the anchor's mode is given.
+# Beside an anchor, under the same credential, the capture is added to what the anchor's mode
+# is given.
 say "the observer beside an anchor adds CAP_NET_RAW to what its mode has"
-configure proxy '"observer":{}'
+configure proxy '"observer":{}' "$TAINT" "$API"
 start
 expect "userspace and observing" "uid=$uid caps=$(caps "0x2000|$bufcap") nnp=1 groups=" "CAP_NET_RAW to copy"
 observing
-configure tun '"observer":{}'
+configure tun '"observer":{}' "$TAINT" "$API"
 start
 expect "tun and observing" "uid=$uid caps=$(caps 0x3000) nnp=0 groups=" "CAP_NET_RAW to copy"
 observing
+enrolled_once "the legs beside an anchor"
 
-# An upgraded conflux brings its own unit, and start is how an upgrade reaches the
-# service: a 1.0.0 unit, with its capability line, is replaced.
+# start registers the unit this conflux writes: one changed by hand, here with a capability
+# line, is replaced.
 say "start registers the unit this conflux writes"
 docker exec "$NAME" sh -c 'sed -i "s/^User=root$/User=root\nAmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW/" /etc/systemd/system/conflux.service && systemctl daemon-reload'
 docker exec "$NAME" systemctl stop conflux.service
@@ -379,16 +438,98 @@ if docker exec "$NAME" grep -q AmbientCapabilities /etc/systemd/system/conflux.s
 fi
 docker exec "$NAME" systemctl stop conflux.service
 
-# install made all three directories, so all three have to go -- and the account.
+# The service is the supervisor's to keep: started by systemd itself, with nothing typed, it
+# puts back a unit changed by hand and removes the unit's four drop-in directories, in /etc and
+# /run, which would change it -- written by hand, or by systemctl set-property, each persistent in
+# /etc or for the boot in /run.
+say "a start by systemd puts the unit back and removes its drop-ins"
+dropins=(/etc/systemd/system/conflux.service.d /etc/systemd/system.control/conflux.service.d
+  /run/systemd/system/conflux.service.d /run/systemd/system.control/conflux.service.d)
+anydropin() { docker exec "$NAME" sh -c 'for d; do [ -e "$d" ] && exit 0; done; exit 1' sh "${dropins[@]}"; }
+docker exec "$NAME" sh -c 'sed -i "s/^User=root$/User=root\nAmbientCapabilities=CAP_NET_ADMIN/" /etc/systemd/system/conflux.service &&
+  for d in /etc/systemd/system /run/systemd/system; do
+    mkdir -p $d/conflux.service.d && printf "[Service]\nEnvironment=HAND=1\n" > $d/conflux.service.d/hand.conf
+  done &&
+  systemctl set-property conflux.service CPUWeight=50 &&
+  systemctl set-property --runtime conflux.service CPUWeight=60 && systemctl daemon-reload'
+for d in "${dropins[@]}"; do
+  docker exec "$NAME" test -d "$d" || { echo "there is no drop-in at $d for a start to remove" >&2; exit 1; }
+done
+docker exec "$NAME" timeout 20 systemctl start conflux.service >/dev/null 2>&1 || true
+for _ in $(seq 50); do
+  docker exec "$NAME" grep -q AmbientCapabilities /etc/systemd/system/conflux.service || anydropin || break
+  sleep 0.2
+done
+if docker exec "$NAME" grep -q AmbientCapabilities /etc/systemd/system/conflux.service; then
+  echo "a start left the hand-changed unit in place" >&2
+  exit 1
+fi
+for d in "${dropins[@]}"; do
+  docker exec "$NAME" test ! -e "$d" || { echo "a start left the unit's drop-in directory $d" >&2; exit 1; }
+done
+docker exec "$NAME" systemctl stop conflux.service
+enrolled_once "the starts that put the unit back"
+
+# uninstall stops the unit itself, and only then disables it: a disable fails for a unit whose
+# file is gone, which systemd may still be running. Here the file is deleted under the running
+# unit, with no daemon-reload, under the configuration the legs above left -- a TUN and the
+# observer, under the run's credential.
+say "uninstall stops a running unit whose file was deleted"
+# serving is whether a supervisor runs: a process whose command line is the unit's ExecStart.
+serving() {
+  docker exec "$NAME" sh -c 'for c in /proc/[0-9]*/cmdline; do
+    [ "$(tr "\0" " " 2>/dev/null < "$c")" = "/var/lib/.conflux/conflux serve " ] && exit 0
+  done
+  exit 1'
+}
+start
+expect "a running unit" "uid=$uid caps=$(caps 0x3000) nnp=0 groups=" "CAP_NET_RAW to copy"
+serving || { echo "no conflux serve is running for uninstall to stop" >&2; journal; exit 1; }
+docker exec "$NAME" rm /etc/systemd/system/conflux.service
+docker exec "$NAME" conflux uninstall --yes
+if serving; then
+  echo "uninstall left conflux serve running from a unit whose file was gone" >&2
+  exit 1
+fi
+docker exec "$NAME" test ! -L /etc/systemd/system/multi-user.target.wants/conflux.service \
+  || { echo "uninstall left the wants link of a unit whose file was gone" >&2; exit 1; }
+
+# Installed again, with the executable copied back where the image put it, and started once in
+# userspace, which makes the account again: the uninstall below has all of it to remove.
+docker cp "$(dirname "$0")/systemd/conflux" "$NAME":/usr/local/bin/conflux
+docker exec "$NAME" conflux install >/dev/null
+configure proxy
+start
+uid=""
+for _ in $(seq 150); do
+  uid=$(docker exec "$NAME" id -u conflux 2>/dev/null) && break
+  sleep 0.2
+done
+[ -n "$uid" ] || { echo "no conflux account was made again" >&2; exit 1; }
+expect "installed again" "uid=$uid caps=$(caps "$bufcap") nnp=1 groups=" "$bufrow"
+
+# A drop-in of systemctl set-property's, in system.control, made after the supervisor started
+# and so not removed by it: uninstall removes it with the unit.
+docker exec "$NAME" systemctl set-property conflux.service CPUQuota=50%
+docker exec "$NAME" test -d /etc/systemd/system.control/conflux.service.d \
+  || { echo "systemctl set-property made no drop-in for uninstall to remove" >&2; exit 1; }
+docker exec "$NAME" systemctl stop conflux.service
+
+# install made the root, so it has to go -- and the account, the drop-in, and the executable
+# the image put where the installer puts it.
 say "uninstall leaves nothing"
 docker exec "$NAME" conflux uninstall --yes
+docker exec "$NAME" test ! -e /usr/local/bin/conflux \
+  || { echo "the installed executable survived uninstall" >&2; exit 1; }
 docker exec "$NAME" sh -c 'test ! -f /etc/systemd/system/conflux.service' \
   || { echo "the unit file survived uninstall" >&2; exit 1; }
 docker exec "$NAME" sh -c 'test ! -L /etc/systemd/system/multi-user.target.wants/conflux.service' \
   || { echo "the unit's wants link survived uninstall" >&2; exit 1; }
-for dir in /etc/conflux /var/lib/conflux /run/conflux; do
-  docker exec "$NAME" test ! -e "$dir" || { echo "$dir survived uninstall" >&2; exit 1; }
-done
+if anydropin; then
+  echo "a drop-in directory of the unit's survived uninstall" >&2
+  exit 1
+fi
+docker exec "$NAME" test ! -e /var/lib/.conflux || { echo "/var/lib/.conflux survived uninstall" >&2; exit 1; }
 if docker exec "$NAME" id conflux >/dev/null 2>&1; then
   echo "the conflux account survived uninstall" >&2
   exit 1
@@ -397,6 +538,7 @@ fi
 # An account of that name conflux did not make is somebody else's: anchord does not run
 # as it, and uninstall leaves it where it was.
 say "an account conflux did not make is neither used nor removed"
+docker cp "$(dirname "$0")/systemd/conflux" "$NAME":/usr/local/bin/conflux
 docker exec "$NAME" useradd --system --no-create-home conflux
 docker exec "$NAME" conflux install >/dev/null
 configure proxy

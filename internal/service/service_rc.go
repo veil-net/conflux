@@ -3,26 +3,23 @@ package service
 import (
 	"fmt"
 	"strings"
-
-	"github.com/veil-net/conflux/internal/paths"
 )
 
 // The BSDs' rc scripts, rendered here without a build tag so the rendering is tested
 // on the machines that build conflux rather than only on the two that run it.
 
-// rcName is the service name an rc system knows conflux by. An underscore rather than
-// scope's hyphen: both rc.subr implementations build variable names from it --
-// conflux_enable, conflux_flags -- and a hyphen is not legal in one.
-func rcName() string { return "conflux" + strings.ReplaceAll(paths.Scope(), "-", "_") }
+// rcName is the service name an rc system knows conflux by. Both rc.subr implementations
+// build variable names from it -- conflux_enable, conflux_flags.
+const rcName = "conflux"
 
 // plainWords refuses any word an rc script cannot carry as it is.
 //
 // Both rc.subr implementations find the running conflux again by matching its command
 // line -- FreeBSD's procname against the first word ps prints, OpenBSD's rcctl against
 // the whole of it as a pattern -- and OpenBSD's also runs the command through a shell. No
-// quoting survives that, so a word with a space or a shell or pattern character in it --
-// a CONFLUX_DIR root, say -- is refused rather than registered as a service that starts
-// and can then be neither stopped nor asked about.
+// quoting survives that, so a word with a space or a shell or pattern character in it is
+// refused rather than registered as a service that starts and can then be neither stopped
+// nor asked about. The BSDs' root, /var/db/.conflux, holds none.
 func plainWords(words ...string) error {
 	for _, w := range words {
 		if w == "" || strings.Trim(w, plainWord) != "" {
@@ -37,23 +34,25 @@ func plainWords(words ...string) error {
 
 // freebsdScript is /usr/local/etc/rc.d/<name>.
 //
-// daemon(8) backgrounds conflux and appends its output to the log, and -p records
-// conflux's pid rather than its own, so `service conflux stop` signals conflux itself:
+// daemon(8) backgrounds conflux and sends its output to syslog, tagged conflux (-S -T), which
+// is why the script requires syslogd as well as the network: started before it, what conflux
+// says first would be lost. -p records conflux's pid rather than its own, in the root, so
+// `service conflux stop` signals conflux itself:
 // it closes the anchor and then anchord, and daemon(8) exits behind it. No -r: like
 // the systemd unit, a supervisor that exits with nothing to start (78) or having given
 // up (70) is left stopped rather than restarted into the same answer, and conflux
 // restarts anchord itself. Nothing restarts a supervisor that exits 1, either.
-func freebsdScript(name, exe string, args []string, logFile string) (string, error) {
+func freebsdScript(name, exe string, args []string, pidFile string) (string, error) {
 	argv := append([]string{exe}, args...)
 
-	if err := plainWords(append(argv, logFile)...); err != nil {
+	if err := plainWords(append(argv, pidFile)...); err != nil {
 		return "", err
 	}
 
 	return fmt.Sprintf(`#!/bin/sh
 #
 # PROVIDE: %[1]s
-# REQUIRE: NETWORKING
+# REQUIRE: NETWORKING syslogd
 # KEYWORD: shutdown
 #
 # Written by conflux install; conflux uninstall removes it.
@@ -64,20 +63,22 @@ name=%[1]s
 rcvar=%[1]s_enable
 desc="Conflux, a VeilNet anchor"
 
-pidfile=/var/run/%[1]s.pid
+pidfile=%[3]s
 procname=%[2]s
 command=/usr/sbin/daemon
-command_args="-f -o %[3]s -p ${pidfile} %[4]s"
+command_args="-f -S -T %[1]s -p ${pidfile} %[4]s"
 
 load_rc_config "$name"
 : "${%[1]s_enable:=NO}"
 
 run_rc_command "$1"
-`, name, exe, logFile, strings.Join(argv, " ")), nil
+`, name, exe, pidFile, strings.Join(argv, " ")), nil
 }
 
 // openbsdScript is /etc/rc.d/<name>. rc.subr backgrounds it and sends its output to
-// syslog, and rcctl matches the running process by its command line.
+// syslog, and rcctl matches the running process by its command line. It runs it through su(1)
+// under daemon_class, which the script cannot set: rc.subr holds it read-only, and sets it to
+// the login class named after the script where there is one -- openbsdClass -- or daemon.
 func openbsdScript(exe string, args []string) (string, error) {
 	if err := plainWords(append([]string{exe}, args...)...); err != nil {
 		return "", err
@@ -98,6 +99,21 @@ rc_reload=NO
 
 rc_cmd $1
 `, exe, strings.Join(args, " ")), nil
+}
+
+// openbsdClass is /etc/login.conf.d/<rcName>, the login class OpenBSD's rc.subr runs conflux
+// under, which it finds by the script's name: the daemon class, which holds a process to 1024
+// open files (128 soft), with both limits raised to systemd's LimitNOFILE, which the kernel
+// holds to kern.maxfiles. Each is named with -cur and -max: an openfiles= alone gives way to
+// the daemon class's own -cur and -max, which tc brings in. anchord starts with the
+// supervisor's limit, which Go hands a child however far it has raised its own.
+func openbsdClass() string {
+	return fmt.Sprintf(`# Written by conflux install; conflux uninstall removes it.
+%s:\
+	:openfiles-cur=%[2]d:\
+	:openfiles-max=%[2]d:\
+	:tc=daemon:
+`, rcName, openFiles)
 }
 
 // plainWord is every character a word may hold and mean the same to a shell and to a

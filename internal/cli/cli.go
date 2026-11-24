@@ -11,7 +11,9 @@ import (
 	"context"
 	"crypto/fips140"
 	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"runtime"
@@ -49,12 +51,12 @@ func verbs() map[string]verb {
 		"observe":   {run: runObserve, summary: "inventory the cryptography of this host's traffic, with no anchor"},
 		"start":     {run: runStart, summary: "start the anchor now, from the saved configuration"},
 		"down":      {run: runDown, summary: "stop the anchor now; a reboot brings it back"},
-		"renew":     {run: runRenew, summary: "install a fresh credential on the running anchor, now"},
+		"renew":     {run: runRenew, summary: "install a fresh credential on the running anchor and observer, now"},
 		"install":   {run: runInstall, summary: "register the boot service"},
-		"uninstall": {run: runUninstall, summary: "remove the boot service, the configuration and the identity"},
+		"uninstall": {run: runUninstall, summary: "remove the boot service, the configuration, the identity and conflux itself"},
 		"status":    {run: runStatus, summary: "what conflux and the anchor are doing"},
 		"version":   {run: runVersion, summary: "conflux's version, and the anchor build it carries"},
-		"update":    {run: runUpdate, summary: "replace this conflux with the latest release"},
+		"update":    {run: runUpdate, summary: "replace the installed conflux with the newest release, or dev build (--dev)"},
 		"cert":      {run: runCert, summary: "make and check post-quantum keys, certificates and revocation lists"},
 		"help":      {run: runHelp, summary: "this, and anchorctl's usage beneath it"},
 		"anchorctl": {run: runEscapeHatch, summary: "run the embedded anchorctl with these arguments, uninterpreted"},
@@ -103,10 +105,10 @@ func Main(argv []string) int {
 	// would otherwise be ambiguous with conflux's own status, and a rule that is
 	// sometimes right is worse here than one that always explains itself.
 	if strings.HasPrefix(name, "-") {
-		switch name {
-		case "-h", "--help", "-help":
+		switch {
+		case helpFlag(name):
 			return runHelp(ctx, rest)
-		case "-v", "--version", "-version":
+		case name == "-v", name == "--version", name == "-version":
 			return runVersion(ctx, rest)
 		default:
 			ui.Errf("%q is not a conflux option.\n"+
@@ -155,6 +157,166 @@ func refuseLifecycle(name, replacement string) int {
 		"  conflux anchorctl %s ...\n"+
 		"        anchorctl's own, if that is really what you want",
 		name, replacement, name)
+
+	return ExitUsage
+}
+
+// verbFlags is the flag set of conflux NAME. Its usage, head and then the flags, goes whole to
+// stdout where -h asked for it, and to stderr beneath a mistake: the flag package says what the
+// mistake was, on the set's output, before it prints the usage, and -h it answers with the
+// usage alone.
+func verbFlags(name, head string) *flag.FlagSet {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	out := new(flagOutput)
+	fs.SetOutput(out)
+
+	fs.Usage = func() {
+		w := usageOut(out.mistake)
+
+		fmt.Fprint(w, head)
+		fs.SetOutput(w)
+		fs.PrintDefaults()
+		fs.SetOutput(out)
+	}
+
+	return fs
+}
+
+// usageOut is where a usage goes, a verb's or a list of commands: stdout where it was asked
+// for, and stderr beneath a mistake, which leaves stdout to what the command was asked for.
+func usageOut(mistake bool) io.Writer {
+	if mistake {
+		return ui.Errw
+	}
+
+	return ui.Out
+}
+
+// flagOutput is a verb's flag set's output: what the flag package says of a mistake, on stderr,
+// and whether it has said one, which sends the usage after it there too.
+type flagOutput struct{ mistake bool }
+
+func (o *flagOutput) Write(p []byte) (int, error) {
+	o.mistake = true
+
+	return ui.Errw.Write(p)
+}
+
+// usageMistake prints fs's usage on stderr, for a mistake the flag package did not see: an
+// argument too many or too few, or a flag the command cannot do without.
+func usageMistake(fs *flag.FlagSet) {
+	if out, ok := fs.Output().(*flagOutput); ok {
+		out.mistake = true
+	}
+
+	fs.Usage()
+}
+
+// flagsAlone parses the arguments of a command that takes flags and nothing else, and says
+// whether it may go on. An argument left over is a mistake, named on a line of its own with the
+// usage beneath it, before anything is asked for or done: `sudo conflux up mynet`, its --taint forgotten, would
+// otherwise join a network minted for it. Where it may not go on, exit is the command's status.
+func flagsAlone(fs *flag.FlagSet, args []string) (exit int, ok bool) {
+	if err := fs.Parse(args); err != nil {
+		return usageExit(err), false
+	}
+
+	if fs.NArg() > 0 {
+		ui.Errf("conflux %s takes no arguments, and got %q.\n", fs.Name(), fs.Arg(0))
+		usageMistake(fs)
+
+		return ExitUsage, false
+	}
+
+	return ExitOK, true
+}
+
+// flagName is the flag arg names, as a flag set reads it: the name after one dash or two, up to
+// an "=" and its value. ok is false where arg is no flag's spelling, which a flag set never takes
+// for a flag: a word with no dash, or a dash alone, is an argument; two dashes alone end its
+// flags, and every word after them is an argument, whatever it looks like; three dashes, or an
+// empty name, are bad syntax. splitFlags, helpFlag, observe's anchorctls and namesSocket read a
+// flag through it.
+func flagName(arg string) (name string, ok bool) {
+	name, ok = strings.CutPrefix(arg, "-")
+	if !ok {
+		return "", false
+	}
+
+	name, _, _ = strings.Cut(strings.TrimPrefix(name, "-"), "=")
+
+	return name, name != "" && name[0] != '-'
+}
+
+// splitFlags reads args as fs reads them, but with flags and arguments in any order, where the
+// flag package alone ends the flags at the first argument. It is the one way a verb tells its
+// flags from its arguments ahead of its flag set: proxy's, and cert's commands', which take both
+// in any order, and the flag checks of start, renew and observe, which take flags alone.
+//
+// A word with a leading dash is a flag, but for a dash alone, which is an argument, and the "--"
+// that ends the flags, after which every word is an argument, whatever it looks like. A flag fs
+// defines that takes a value -- no boolean (isBoolFlag), and not written NAME=VALUE -- takes the
+// next word for it, as fs.Parse does, whatever that word looks like: `--manifest -` names stdin,
+// and `--taint --` is a taint, which ends no flags.
+//
+// flags is every flag, each with the value it takes after it, for fs.Parse, which refuses what is
+// no flag's spelling (flagName) as bad syntax; positional the arguments, in the order given; and
+// foreign the first flag fs does not define, but for a help flag (helpFlag), which fs answers
+// without its being defined, or "".
+func splitFlags(fs *flag.FlagSet, args []string) (flags, positional []string, foreign string) {
+	expectValue := false
+
+	for i, a := range args {
+		switch {
+		case expectValue:
+			flags = append(flags, a)
+			expectValue = false
+		case a == "--":
+			return flags, append(positional, args[i+1:]...), foreign
+		case a == "-" || !strings.HasPrefix(a, "-"):
+			positional = append(positional, a)
+		default:
+			flags = append(flags, a)
+
+			name, ok := flagName(a)
+			if !ok {
+				continue
+			}
+
+			if fl := fs.Lookup(name); fl != nil {
+				expectValue = !strings.Contains(a, "=") && !isBoolFlag(fl)
+			} else if foreign == "" && !helpFlag(a) {
+				foreign = a
+			}
+		}
+	}
+
+	return flags, positional, foreign
+}
+
+// isBoolFlag is how the flag package itself tells a flag that takes no value.
+func isBoolFlag(fl *flag.Flag) bool {
+	b, ok := fl.Value.(interface{ IsBoolFlag() bool })
+
+	return ok && b.IsBoolFlag()
+}
+
+// helpFlag reports whether arg asks for a usage, as a flag set takes it: -h or -help, after one
+// dash or two, with a value or without (flagName). The one answer for conflux itself, every verb
+// that looks at its flags before its flag set does, the cert command lists, and a pass-through,
+// so none of them reads --h, which anchorctl's flag sets answer as -h, as anything else.
+func helpFlag(arg string) bool {
+	name, ok := flagName(arg)
+
+	return ok && (name == "h" || name == "help")
+}
+
+// usageExit is the exit for flags that did not parse: 0 for -h, which asked for the usage it
+// was given, and 2 for a mistake.
+func usageExit(err error) int {
+	if errors.Is(err, flag.ErrHelp) {
+		return ExitOK
+	}
 
 	return ExitUsage
 }

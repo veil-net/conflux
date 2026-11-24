@@ -11,3 +11,6 @@ import (
 // Ensure is a no-op everywhere but Windows. Linux has tun in the kernel, macOS has
 // utun, and the BSDs have tun devices; none of them needs a driver fetched.
 func Ensure(context.Context, paths.Dirs) error { return nil }
+
+// DeleteDriver is nothing here: only Windows has the driver.
+func DeleteDriver(paths.Dirs) error { return nil }

@@ -48,7 +48,7 @@ runs:
     # missing tag.
     - name: mint a token that can read anchor
       id: app
-      uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+      uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
       with:
         client-id: ${{ inputs.client-id }}
         private-key: ${{ inputs.private-key }}
@@ -61,7 +61,7 @@ runs:
     # On veilnet-dev, fetched into the runner's tool cache and copied from there: that
     # directory survives between runs, and the fetcher keeps a file whose SHA-256 is the
     # one the release's manifest gives -- so an unchanged release costs a read rather than
-    # three hundred megabytes, and nothing the manifest does not describe survives. One
+    # some 370 megabytes, and nothing the manifest does not describe survives. One
     # directory a tag, so a dev job and a release job on one machine neither evict each
     # other's binaries nor write the same files at once. A hosted runner starts empty every
     # time, so it fetches straight into anchor/bin.

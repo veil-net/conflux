@@ -8,8 +8,9 @@
 # -- conflux on FreeBSD, _conflux on OpenBSD -- made the first time it is needed; a TUN and
 # a port only root may bind keep it root, saying why; and uninstall leaves nothing behind,
 # the account included. Nothing is enrolled: the configuration names an API that accepts
-# and answers nothing, so anchord stays up while the enrolment waits. POSIX sh, which is
-# what both have.
+# and answers nothing, so anchord stays up while the enrolment waits. Before all of it,
+# install.sh installs the published `latest` with the base system's own tools, as the
+# platforms legs install it elsewhere. POSIX sh, which is what both have.
 set -eu
 
 CONFLUX=${1:?usage: test/service-bsd.sh CONFLUX}
@@ -18,24 +19,65 @@ say() { printf '\n== %s\n' "$*"; }
 fail() { echo "$*" >&2; exit 1; }
 
 case "$(uname -s)" in
-  FreeBSD) os=freebsd account=conflux script=/usr/local/etc/rc.d/conflux log=/var/log/conflux.log
-    fips='fips140 on, Go Cryptographic Module v1.26.0' ;;
-  OpenBSD) os=openbsd account=_conflux script=/etc/rc.d/conflux log=/var/log/daemon
-    fips='fips140 off, this build carries no frozen Go Cryptographic Module' ;;
+  FreeBSD) os=freebsd account=conflux script=/usr/local/etc/rc.d/conflux log=/var/log/messages ;;
+  OpenBSD) os=openbsd account=_conflux script=/etc/rc.d/conflux log=/var/log/daemon ;;
   *) fail "service-bsd.sh is for FreeBSD and OpenBSD" ;;
 esac
 
-state=/var/db/conflux
+state=/var/db/.conflux
 priv=$state/anchord.priv
 
 rc() { # VERB
   if [ "$os" = freebsd ]; then service conflux "$1"; else rcctl "$1" conflux; fi
 }
 
+# install.sh as a person runs it, against the published `latest`: the script on stdin, as root,
+# with root's own PATH and nothing on it to download with but the base system's client -- curl
+# and wget, where a package put them, are set aside for the leg -- so FreeBSD's fetch or
+# OpenBSD's ftp downloads, and the base system's own tool checks the digest. Run again, it
+# finds the release's conflux already there. The build under test goes over it below.
+say "install.sh installs the latest release with the base system's own tools"
+installer=$(dirname "$0")/../install.sh
+(
+  PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin
+  export PATH
+  aside=""
+  for c in curl wget; do
+    while p=$(command -v "$c"); do
+      case " $aside " in *" $p "*) fail "$p is still found after it was set aside" ;; esac
+      mv "$p" "$p.aside" || fail "could not set $p aside"
+      aside="$aside $p"
+    done
+  done
+  sh < "$installer" || fail "install.sh did not install the latest release"
+  [ "$(command -v conflux)" = /usr/local/bin/conflux ] ||
+    fail "conflux is $(command -v conflux || echo nowhere) on PATH, not /usr/local/bin/conflux"
+  conflux version || fail "the conflux install.sh installed does not run"
+  again=$(sh < "$installer") || fail "install.sh, run again, failed"
+  printf '%s\n' "$again"
+  case $again in
+    *'is already the latest release'*) ;;
+    *) fail "install.sh, run again, did not find the latest release already installed" ;;
+  esac
+  for p in $aside; do mv "$p.aside" "$p"; done
+)
+
 # FreeBSD's conflux runs the Go Cryptographic Module in FIPS 140-3 mode, here on the kernel it
-# ships for; OpenBSD's is built without it, which the module refuses to run on.
-say "conflux reports the FIPS 140-3 mode its build carries"
-"$CONFLUX" version | grep -qx "$fips" || fail "conflux version does not say: $fips"
+# ships for, held to the half of make buildcheck that needs no Go, which this VM has none of, by
+# the script buildcheck runs (scripts/fips-check.sh, which reads the module from the Makefile the
+# VM is handed): `version` names the module, its integrity check passes as it starts, and with
+# the mode switched off it refuses, exit 70, rather than run without it. OpenBSD's is built
+# without it, which the module refuses to run on. Each answer is read whole, then searched.
+if [ "$os" = freebsd ]; then
+  say "conflux runs in FIPS 140-3 mode, its integrity check verified, and refuses to run with the mode off"
+  sh "$(dirname "$0")/../scripts/fips-check.sh" "$CONFLUX" || fail "conflux does not run in FIPS 140-3 mode as its build must"
+else
+  say "conflux reports that its build carries no Go Cryptographic Module"
+  v=$("$CONFLUX" version) || fail "conflux version failed"
+  printf '%s\n' "$v" | grep -qx 'fips140 off, this build carries no frozen Go Cryptographic Module' ||
+    fail "conflux version does not say its build carries no module:
+$v"
+fi
 
 # The certificate toolkit makes artifacts other people rely on, so it runs only where the
 # module does: FreeBSD makes and checks an ML-DSA certificate, OpenBSD refuses with 70.
@@ -57,6 +99,11 @@ rm -rf "$certs"
 
 # A run cut short leaves its registration behind; a fresh VM has none to remove.
 "$CONFLUX" uninstall --yes >/dev/null 2>&1 || true
+
+# Run from where install.sh puts it, so that uninstall's removal of it is seen below: the
+# build under test, over the release install.sh put there.
+cp "$CONFLUX" /usr/local/bin/conflux
+CONFLUX=/usr/local/bin/conflux
 
 # An API that accepts and never answers: the base system's nc holds each connection, so an
 # enrolment waits out its timeout and anchord stays up while it does.
@@ -86,7 +133,7 @@ configure() { # MODE [FIELDS]
   extra='"proxies":["8080=127.0.0.1:3000"],'
   [ "$1" = tun ] && extra=''
   (umask 077; printf '%s\n' "{\"version\":1,\"mode\":\"$1\",$extra${2:+$2,}\"taints\":[\"cfx-service-bsd\"],\"apiBaseUrl\":\"https://127.0.0.1:9443\",\"createdAt\":\"2026-01-01T00:00:00Z\",\"updatedAt\":\"2026-01-01T00:00:00Z\"}" \
-    > /usr/local/etc/conflux/conflux.json)
+    > /var/db/.conflux/conflux.json)
 }
 
 # started starts the service afresh and waits for the record of what the supervisor
@@ -131,7 +178,35 @@ done
 [ "$(stat -f '%Sp %Su %Sg' "$state")" = "drwx--x--- root $account" ] \
   || fail "the state directory is $(stat -f '%Sp %Su %Sg' "$state"), want root's with $account let through"
 [ "$(stat -f '%Su' "$state/anchor")" = "$account" ] || fail "anchord's directory is not $account's"
-[ "$(stat -f '%Sp %Su' /var/run/conflux/token)" = "-rw------- root" ] || fail "the token is not root's alone"
+[ "$(stat -f '%Sp %Su' /var/db/.conflux/run/token)" = "-rw------- root" ] || fail "the token is not root's alone"
+
+# OpenBSD's rc.subr runs conflux through su(1) under the login class named after its script,
+# which conflux writes with the daemon class's open files, 1024, raised. OpenBSD shows no other
+# process's limits, so what is asked is what that su gives: the supervisor's limit, which is
+# what anchord is started with.
+if [ "$os" = openbsd ]; then
+  say "conflux runs under a login class of its own, with its open files raised"
+  [ -f /etc/login.conf.d/conflux ] || fail "install wrote no login class at /etc/login.conf.d/conflux"
+  class=$(rcctl get conflux class)
+  [ "$class" = conflux ] || fail "rc.subr runs conflux under the $class class, not its own"
+  files=$(su -fl -c conflux -s /bin/sh root -c 'ulimit -n')
+  echo "  open files: $files"
+  [ "$files" -gt 1024 ] || fail "the conflux class gives $files open files, no more than the daemon class"
+fi
+
+# Every start puts the registration back to what conflux writes, and writes none of it that
+# is that already: the rc script, rc.conf, which is the administrator's, and OpenBSD's login
+# class keep their inode and their mtime across a restart.
+say "a start rewrites nothing of the registration that is already conflux's"
+kept="$script /etc/rc.conf"
+[ "$os" = openbsd ] && kept="$script /etc/rc.conf.local /etc/login.conf.d/conflux"
+before=$(for f in $kept; do stat -f '%i %m %N' "$f"; done)
+sleep 1
+started >/dev/null
+after=$(for f in $kept; do stat -f '%i %m %N' "$f"; done)
+[ "$before" = "$after" ] || fail "a start rewrote the registration:
+$before
+$after"
 
 # A port below 1024 is root's on both, and a TUN is root's: anchord stays root for each,
 # and says why.
@@ -210,14 +285,23 @@ id "$eaccount" >/dev/null 2>&1 || fail "no $eaccount account was made for the ep
 say "uninstall leaves nothing"
 "$CONFLUX" uninstall --yes
 [ ! -e "$script" ] || fail "the rc script survived uninstall"
-for path in /usr/local/etc/conflux "$state" /var/run/conflux; do
-  [ ! -e "$path" ] || fail "$path survived uninstall"
-done
+[ ! -e "$state" ] || fail "$state survived uninstall"
+[ ! -e "$CONFLUX" ] || fail "$CONFLUX, the installed executable, survived uninstall"
+if [ "$os" = freebsd ]; then
+  ! grep -q '^conflux_' /etc/rc.conf || fail "uninstall left conflux in /etc/rc.conf"
+else
+  ! grep -qs '^conflux_' /etc/rc.conf.local || fail "uninstall left conflux in /etc/rc.conf.local"
+fi
 if id "$eaccount" >/dev/null 2>&1; then
   fail "the $eaccount account survived uninstall"
 fi
 if id "$account" >/dev/null 2>&1; then
   fail "the $account account survived uninstall"
+fi
+
+if [ "$os" = openbsd ]; then
+  say "uninstall removes the login class"
+  [ ! -e /etc/login.conf.d/conflux ] || fail "the login class survived uninstall"
 fi
 
 say "all assertions passed"

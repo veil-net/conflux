@@ -18,8 +18,7 @@ func cannotExecute(dir string) string {
 
 	var st unix.Statfs_t
 	if err := unix.Statfs(dir, &st); err == nil && st.Flags&unix.MS_NOEXEC != 0 {
-		return msg + "\n  that filesystem is mounted noexec.\n" +
-			"  set CONFLUX_DIR to a directory on a filesystem that allows execution."
+		return msg + "\n  that filesystem is mounted noexec: conflux runs anchord from there, so it has to allow execution."
 	}
 
 	// The rule is for the bin directory every set is extracted beneath, not this set alone,
@@ -28,8 +27,7 @@ func cannotExecute(dir string) string {
 		bin := filepath.Dir(dir)
 
 		return msg + "\n  SELinux is enforcing, and a binary under this path is probably labelled var_lib_t.\n" +
-			"  try:  sudo semanage fcontext -a -t bin_t '" + bin + "(/.*)?' && sudo restorecon -R " + bin + "\n" +
-			"  or set CONFLUX_DIR to a directory execution is permitted from."
+			"  try:  sudo semanage fcontext -a -t bin_t '" + bin + "(/.*)?' && sudo restorecon -R " + bin
 	}
 
 	return msg + "\n  check that the filesystem is not mounted noexec, and that no policy forbids execution there."

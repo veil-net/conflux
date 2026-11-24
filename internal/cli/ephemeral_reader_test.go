@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -23,9 +24,9 @@ import (
 func startingEphemeral(t *testing.T) paths.Dirs {
 	t.Helper()
 
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	t.Cleanup(paths.UseRoot(t.TempDir()))
 
-	d := paths.EphemeralDirs(paths.EphemeralCandidates()[0])
+	d := paths.Ephemeral()
 	if err := d.EnsureAll(); err != nil {
 		t.Fatal(err)
 	}
@@ -46,6 +47,39 @@ func startingEphemeral(t *testing.T) paths.Dirs {
 	}
 
 	return d
+}
+
+// TestEphemeralAtSeesARunWhoseLockHasASecondName: anchord's account writes run/anchord/ and
+// can hard-link the run's serve.lock into it, as anchor's socket lock. Asked for by its own
+// name, in a root the account does not write, the lock still says whether the run is live or
+// was killed: a second name is no reason to read the root as holding no run, which would let
+// uninstall pass a live run by, and leave a killed one's root behind.
+func TestEphemeralAtSeesARunWhoseLockHasASecondName(t *testing.T) {
+	root := t.TempDir()
+	d := paths.Dirs{Root: root}
+
+	unlock, err := flock.Acquire(d.ServeLockFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.MkdirAll(d.DaemonRun(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Link(d.ServeLockFile(), d.Socket()+".lock"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, run := ephemeralAt(root); run != liveRun {
+		t.Errorf("a live run whose lock has a second name: %v, want liveRun (%v)", run, liveRun)
+	}
+
+	unlock()
+
+	if _, run := ephemeralAt(root); run != staleRun {
+		t.Errorf("a killed run whose lock has a second name: %v, want staleRun (%v)", run, staleRun)
+	}
 }
 
 // TestStatusWritesNothingIntoAStartingEphemeralRun: status, asked while an ephemeral run is
@@ -92,14 +126,15 @@ func TestAKilledRunsMarkerIsNotTheNextRuns(t *testing.T) {
 		t.Errorf("a reader, with the killed run's marker beside the new run's lock: %v, want errEphemeralStarting", err)
 	}
 
-	if out, _, _ := capture(t, "status"); !strings.Contains(out, "starting, from "+d.State) {
+	if out, _, _ := capture(t, "status"); !strings.Contains(out, "starting, from "+d.Root) {
 		t.Errorf("status, with the killed run's marker beside the new run's lock, does not say it is starting:\n%s", out)
 	}
 }
 
 // TestAReaderTakesAnEphemeralRunsPairAsItIs: before the run marks itself up, a reader is
-// told it is starting; after, it gets the pair the run extracted, and where the run has
-// none it is told so -- in neither case writing anything into the run's root.
+// told it is starting; after, on Linux it runs its own anchorctl from memory, as the run
+// does, and elsewhere it gets the pair the run extracted, and where the run has none it is
+// told so -- in no case writing anything into the run's root.
 func TestAReaderTakesAnEphemeralRunsPairAsItIs(t *testing.T) {
 	anchortest.Require(t)
 
@@ -113,7 +148,12 @@ func TestAReaderTakesAnEphemeralRunsPairAsItIs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := toolsFor(d); !errors.Is(err, libexec.ErrNotExtracted) {
+	got, err := toolsFor(d)
+	if runtime.GOOS == "linux" {
+		if err != nil || !strings.HasPrefix(got.Anchorctl, "/proc/self/fd/") {
+			t.Errorf("a run that is up, on Linux: %+v, %v; want an anchorctl in memory", got, err)
+		}
+	} else if !errors.Is(err, libexec.ErrNotExtracted) {
 		t.Errorf("a run with no pair: %v, want ErrNotExtracted", err)
 	}
 
@@ -121,18 +161,20 @@ func TestAReaderTakesAnEphemeralRunsPairAsItIs(t *testing.T) {
 		t.Errorf("a reader wrote %d entries into the run's %s", len(entries), d.Libexec())
 	}
 
-	extracted, err := libexec.Ensure(d) // as the run does
-	if err != nil {
-		t.Fatal(err)
-	}
+	if runtime.GOOS != "linux" {
+		extracted, err := libexec.Ensure(d) // as the run does
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	got, err := toolsFor(d)
-	if err != nil || got.Anchorctl != extracted.Anchorctl {
-		t.Errorf("a run that is up: %+v, %v; want %s", got, err, extracted.Anchorctl)
+		got, err := toolsFor(d)
+		if err != nil || got.Anchorctl != extracted.Anchorctl {
+			t.Errorf("a run that is up: %+v, %v; want %s", got, err, extracted.Anchorctl)
+		}
 	}
 
 	// An installed root is the reader's own to extract into, as it always was.
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	t.Cleanup(paths.UseRoot(t.TempDir()))
 
 	if _, err := toolsFor(paths.Default()); err != nil {
 		t.Errorf("an installed root: %v", err)

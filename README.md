@@ -10,9 +10,9 @@ recognise is passed straight through to it unchanged. What conflux adds on top i
 enrolment, credential renewal, a configuration file, a boot service, `conflux update` for
 itself, and `conflux cert`, a FIPS 140-3 certificate toolkit.
 
-It can also join nothing at all: `conflux observe` runs the daemon's observer alone, an
+It can also run no anchor at all: `conflux observe` runs the daemon's observer alone, an
 inventory of which services this host's traffic reaches and whether each key exchange is
-post-quantum, from every boot, with no enrolment and no credential.
+post-quantum, from every boot, under the machine's own credential.
 
 It also runs against a **self-hosted guardian**: an operator running their own control
 plane and their own subtree of the realm tree. That deployment is the opposite shape —
@@ -32,7 +32,7 @@ machine with the taint it printed. That's the whole setup.
 $ curl -fsSL https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.sh | sh
 ```
 
-On Windows, in PowerShell as Administrator:
+On Windows, in 64-bit PowerShell as Administrator:
 
 ```powershell
 irm https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.ps1 | iex
@@ -41,12 +41,10 @@ irm https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.ps1 | iex
 The script takes this machine's build from the `latest` release, checks it against the
 release's `SHA256SUMS`, and installs it as `/usr/local/bin/conflux`, or on Windows as
 `C:\Program Files\conflux\conflux.exe`, on the PATH. It starts nothing and enrols
-nothing: that is the next step, and yours to run. To pin a version, install somewhere
-else, or download by hand, see [install.md](docs/install.md), which also has the
-platform-specific notes.
+nothing: that is the next step, and yours to run. To pin a version or download by hand,
+see [install.md](docs/install.md), which also has the platform-specific notes.
 
-Where you keep it is up to you: the boot service runs a copy conflux places in its
-own state directory (`/var/lib/conflux/conflux` on Linux), which only root can
+The boot service runs a copy conflux places in its own directory (`/var/lib/.conflux/conflux` on Linux), which only root can
 change, and `up`, `proxy`, `install`, `start` and `update` keep that copy current. To
 build from source instead, see [build.md](docs/build.md)
 (`make anchor-bins && make build`).
@@ -107,19 +105,20 @@ taints are fixed, and a later `--taint` may only repeat them.
 
 ```console
 $ ping 10.128.0.1
-$ conflux status
-$ conflux peers
+$ sudo conflux status
+$ sudo conflux peers
 ```
 
 `status` prints conflux's state — mode, taint, address, credential expiry, service —
 and `anchorctl status` beneath it. `peers` isn't conflux's at all; it's one of the
-commands handed straight to `anchorctl`.
+commands handed straight to `anchorctl`. Both read what only root may: the configuration, and
+the daemon's token.
 
 **That's the whole setup.** A reboot needs nothing typed: the service is registered
 and enabled, the credential renews itself, and the machine comes back at the same
 overlay address. `conflux down` stops the anchor now and leaves the service and
 configuration in place, `conflux start` brings it back before the next reboot, and
-`conflux uninstall` removes them.
+`conflux uninstall` removes them, and every other trace of conflux.
 
 ### Reverse proxy: publish a service without an interface
 
@@ -153,8 +152,8 @@ To add or remove a proxy on an anchor that's already running, without a restart,
 decides the mode the machine boots into:
 
 ```console
-$ conflux anchorctl proxy                            # what it is serving
-$ conflux anchorctl proxy -add 9000=127.0.0.1:9000   # one more, now
+$ sudo conflux anchorctl proxy                            # what it is serving
+$ sudo conflux anchorctl proxy -add 9000=127.0.0.1:9000   # one more, now
 ```
 
 Both are listed under [Commands](#commands).
@@ -210,19 +209,20 @@ post-quantum, and which side holds the rest back, observe instead of joining:
 
 ```console
 $ sudo conflux observe --export collector.example:4317
-  observer     af_packet, 0 flows held, 0 packets taken
+  observer     af_packet, 0 flows held, 0 packets taken; credential valid until 2026-12-24T05:17:38Z
   records      each sent to collector.example:4317 as it is made, and kept in the inventory
   service      active (systemd: conflux.service, enabled at boot)
   anchord      conflux, with CAP_NET_RAW to copy what the host's interfaces carry, for the observer
 
-$ conflux inventory
-SERVICE        PORT     PROTOCOL  KEY EXCHANGE  GROUP           LAGGING  ROLE    PROCESS  FLOWS
-a.example      443/tcp  tls       hybrid        X25519MLKEM768  -        client  curl     3
+$ sudo conflux inventory
+SERVICE        PORT     PROTOCOL  KEY EXCHANGE  GROUP           LAGGING  ROLE    SOURCE      PROCESS  FLOWS
+a.example      443/tcp  tls       hybrid        X25519MLKEM768  -        client  interfaces  curl     3
 ```
 
 The host copies the start of every flow to the daemon, which reads each handshake and
-records it; it carries nothing, so it can slow or break nothing. It joins no realm, so
-nothing is enrolled and no credential is needed, and it runs from every boot until it is
+records it; it carries nothing, so it can slow or break nothing. It runs under the machine's
+credential, as an identity its realm admits, so a machine with none is enrolled as `up`
+enrols one — in `--taint`'s taint, or a minted one — and it runs from every boot until it is
 stopped. With `--export`, each record goes to that OpenTelemetry collector as it is made;
 without one they stay in the daemon's inventory, which `conflux inventory` prints and
 `conflux inventory -cbom` gives as a CycloneDX CBOM. `anchord` is given the capture and
@@ -253,8 +253,9 @@ With more than one taint the rule is containment, not overlap — see
 
 **The taint is granted, and fixed for the life of the identity.** The enrolment asks
 for it, the credential that comes back commits to it, and a renewal restates it. A
-different taint is a different identity — `conflux uninstall --yes`, then
-`conflux up --taint` — with a new AnchorID and a new overlay address. See
+different taint is a different identity — `conflux uninstall --yes`, then install conflux
+again (uninstall removes it too) and `conflux up --taint` — with a new AnchorID and a new
+overlay address. See
 [credentials.md](docs/credentials.md#taints-are-the-credentials).
 
 **`up`, `proxy` and `observe` are exclusive.** One daemon holds one anchor, and an
@@ -268,10 +269,10 @@ does.
 | | `conflux up` | `conflux proxy` | `conflux observe` |
 |---|---|---|---|
 | What the host gets | a TUN interface: `ping`, `ssh`, everything | nothing on the host | an inventory of its own traffic's cryptography |
-| What the realm gets | this machine, at an overlay address | the named services, at overlay ports | nothing: no realm is joined |
+| What the realm gets | this machine, at an overlay address | the named services, at overlay ports | nothing: no anchor joins it |
 | Privilege to run | root, to register the boot service | root, to register the boot service | root, to register the boot service |
 | What `anchord` runs with | its own account and `CAP_NET_ADMIN` on Linux; root on macOS and the BSDs, SYSTEM on Windows | its own account and nothing else (`LOCAL SERVICE` on Windows) | its own account and the capture: `CAP_NET_RAW` on Linux, `/dev/bpf*` on macOS, `LOCAL SERVICE` on Windows |
-| Needs a credential | yes, enrolled or installed | yes, enrolled or installed | no |
+| Needs a credential | yes, enrolled or installed | yes, enrolled or installed | yes, enrolled or installed: the observer runs under it |
 | Needs `wintun.dll` on Windows | yes | no | no |
 | Can forward a subnet or serve an exit | yes, the host forwards | yes, from the anchor's own process | no |
 | Can run over an uplink | yes, `--uplink` | yes, `--uplink` | no |
@@ -308,12 +309,12 @@ read by OpenSSL 3.5, and it reads OpenSSL's. See [cert.md](docs/cert.md).
 | `conflux enrol --manifest FILE [--api URL] [--ipv4 ADDRESS]` | install a credential this machine was given, instead of drawing one |
 | `conflux down` | stop the anchor now; the boot service and the configuration stay |
 | `conflux start` | start it again now, from the configuration already on disk |
-| `conflux renew` | fetch a fresh credential and install it on the running anchor, hot |
+| `conflux renew` | fetch a fresh credential and install it on the running anchor and observer, hot |
 | `conflux status` | conflux's state, and `anchorctl status` beneath it |
 | `conflux install` | register the boot service; start it if a configuration exists |
-| `conflux uninstall` | remove the boot service, the configuration and the identity |
+| `conflux uninstall` | remove everything of conflux's from the machine: the boot service, the configuration, the identity and conflux itself |
 | `conflux version` | conflux's version, and the anchor build it carries |
-| `conflux update [--check]` | replace this conflux with the latest release, verified, and restart the anchor on it |
+| `conflux update [--dev [--yes]] [--check]` | replace the installed conflux with the newest release, `latest`, once asked at a terminal where the installed one is a dev build, or with `--dev`, once asked or given `--yes` (for scripts and CI), the newest dev build, `dev-latest`; verified, and the anchor restarted on it |
 | `conflux cert genkey \| req \| selfsign \| sign \| verify \| show \| convert \| match \| fingerprint \| crl \| ca \| p12 \| probe \| serve` | make and check ML-DSA (and ECDSA, RSA, Ed25519) keys, certificates and revocation lists, keep a CA, bundle PKCS#12, and probe and serve TLS, in FIPS 140-3 mode; see [cert.md](docs/cert.md) |
 | `conflux anchorctl ARGS...` | run the embedded `anchorctl`, uninterpreted |
 | *anything else* | passed to `anchorctl` unchanged: `peers`, `routes`, `events`, `metrics`, `send`, `inspect`, … and the realm's control over its members, `block`, `taints`, `subnets`, `telemetry` |
@@ -337,16 +338,16 @@ test.
 
 ## Where things live
 
-| | Linux | macOS | Windows |
+| Linux | macOS | FreeBSD, OpenBSD | Windows |
 |---|---|---|---|
-| configuration | `/etc/conflux/` | `/Library/Application Support/conflux/` | `%ProgramData%\conflux\` |
-| identity and state | `/var/lib/conflux/` | `/Library/Application Support/conflux/` | `%ProgramData%\conflux\` |
-| socket and token | `/run/conflux/` | `/var/run/conflux/` | `%ProgramData%\conflux\run\` |
+| `/var/lib/.conflux/` | `/Library/Application Support/.conflux/` | `/var/db/.conflux/` | `%ProgramData%\.conflux\` |
 
-One directory per machine, root-owned, with no home directory involved anywhere — the
-boot service runs as root, and a path under `$HOME` is a path it can't read. `anchord`
-itself runs as an account of its own wherever that costs it nothing, which reaches only
-its own corners of them. See [config.md](docs/config.md) and
+One directory per machine — the configuration, the identity and state, the extracted
+anchor binaries, the service's copy of conflux, and in `run/` the socket and token —
+root-owned, fixed, and with no home directory involved anywhere: the boot service runs
+as root, and a path under `$HOME` is a path it can't read. `anchord` itself runs as an
+account of its own wherever that costs it nothing, which reaches only its own corners of
+it. See [config.md](docs/config.md) and
 [security.md](docs/security.md#what-anchord-runs-as).
 
 ## Documentation

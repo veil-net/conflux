@@ -13,14 +13,36 @@ import (
 // runProxy is conflux's proxy, and anchorctl has one too.
 //
 // The collision is resolved by shape, and the ambiguous case is refused rather than
-// guessed. conflux's takes positional PORT=BACKEND specs and its own flags; anything
-// else dash-prefixed gets an explanation and a non-zero exit. A "leading dash means
+// guessed. conflux's takes positional PORT=BACKEND specs and its own flags; any other
+// flag (splitFlags) gets an explanation and a non-zero exit. A "leading dash means
 // anchorctl" heuristic was considered and rejected: --taint leads with a dash too,
 // and Go's flag package treats -x and --x identically, so the double dash carries no
 // signal. A rule that is sometimes right is worse here than one that always explains
 // itself.
 func runProxy(ctx context.Context, args []string) int {
-	if len(args) == 0 {
+	f := newProxyFlags()
+
+	// Specs and flags in any order -- `conflux proxy --taint x 8080=…` and the reverse -- and a
+	// flag's value its own: --lan-discovery is a tristate written as a value, so
+	// `conflux proxy --lan-discovery no 8080=127.0.0.1:3000` has one spec and not two.
+	flags, specs, foreign := splitFlags(f.fs, args)
+
+	if foreign != "" {
+		ui.Errf("%q is not one of conflux proxy's flags.\n\n"+
+			"  conflux proxy takes port specs and the flags in conflux proxy -h:\n\n"+
+			"    conflux proxy 8080=127.0.0.1:3000 --taint mynet\n\n"+
+			"  anchorctl's proxy, which adds and removes proxies on a running anchor, is here:\n\n"+
+			"    conflux anchorctl proxy %s", foreign, strings.Join(args, " "))
+
+		return ExitUsage
+	}
+
+	if err := f.fs.Parse(flags); err != nil {
+		return usageExit(err)
+	}
+
+	// Bare, decided once the flags are parsed: no spec and no flag, so `conflux proxy --` too.
+	if len(specs) == 0 && f.fs.NFlag() == 0 {
 		ui.Errf("conflux proxy publishes a local service on the overlay, and needs at least one spec:\n\n" +
 			"    conflux proxy 8080=127.0.0.1:3000\n" +
 			"    conflux proxy 8080=127.0.0.1:3000 53/udp=127.0.0.1:53\n\n" +
@@ -31,26 +53,6 @@ func runProxy(ctx context.Context, args []string) int {
 
 		return ExitUsage
 	}
-
-	f := newProxyFlags()
-
-	if hint := f.unknown(args); hint != "" {
-		ui.Errf("%q is not one of conflux proxy's flags.\n\n"+
-			"  conflux proxy takes port specs and the flags in conflux proxy -h:\n\n"+
-			"    conflux proxy 8080=127.0.0.1:3000 --taint mynet\n\n"+
-			"  anchorctl's proxy, which adds and removes proxies on a running anchor, is here:\n\n"+
-			"    conflux anchorctl proxy %s", hint, strings.Join(args, " "))
-
-		return ExitUsage
-	}
-
-	specs, flags := f.split(args)
-
-	if err := f.fs.Parse(flags); err != nil {
-		return ExitUsage
-	}
-
-	specs = append(specs, f.fs.Args()...)
 
 	specsParsed, err := config.ValidateProxies(specs)
 	if err != nil {
@@ -179,9 +181,9 @@ func runProxy(ctx context.Context, args []string) int {
 	return bring(ctx, d, cfg, "proxy", len(f.subnets) > 0 || *f.noSubnet)
 }
 
-// proxyFlags is conflux proxy's flag set, and the one list of what it takes: the
-// check that hands anchorctl's flags back and the splitter that lets specs and flags
-// come in any order both read it, rather than each keeping a copy to drift from it.
+// proxyFlags is conflux proxy's flag set, and the one list of what it takes, which
+// splitFlags reads both to hand anchorctl's flags back and to let specs and flags come
+// in any order, rather than keeping a copy to drift from it.
 type proxyFlags struct {
 	fs *flag.FlagSet
 
@@ -193,12 +195,30 @@ type proxyFlags struct {
 }
 
 func newProxyFlags() *proxyFlags {
-	fs := flag.NewFlagSet("proxy", flag.ContinueOnError)
-	fs.SetOutput(ui.Errw)
+	fs := verbFlags("proxy", "conflux proxy — publish a local service on the overlay, without an interface\n\n"+
+		"  conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T] [--ipv4 ADDRESS | --no-ipv4]\n"+
+		"                [--subnet CIDR... | --no-subnet] [--serve-exit | --use-exit]\n"+
+		"                [--uplink DEV | --no-uplink] [--peers HOST:PORT | --no-peers]\n"+
+		"                [--observe | --no-observe] [--export HOST:PORT]\n"+
+		"                [--ephemeral [--manifest FILE|-]]\n\n"+
+		"Runs the anchor entirely in userspace, so it needs no TUN device and no\n"+
+		"CAP_NET_ADMIN. Nothing on this host can see the overlay: the way in is a\n"+
+		"service named here, and the way out a --subnet or --serve-exit, which the\n"+
+		"anchor forwards from its own process. With one of those, the port specs may\n"+
+		"be left out.\n\n"+
+		"With --uplink the realm is reached over a link rather than the host's network,\n"+
+		"which is the pair a machine with neither privilege nor an IP network needs.\n\n"+
+		"With --observe the daemon observes beside the anchor: an inventory of the\n"+
+		"cryptography of this host's traffic, which conflux observe -h describes.\n\n"+
+		"With --ephemeral nothing is kept: it runs in the foreground from a credential held\n"+
+		"in memory alone, enrolled or piped in with --manifest, registers nothing, and needs\n"+
+		"no root. When anchord stops, or on Ctrl-C, everything is gone; docs/ephemeral.md\n"+
+		"describes it.\n\n")
 
 	f := &proxyFlags{fs: fs}
 
 	f.ipv4 = fs.String("ipv4", "", ipv4Usage)
+
 	f.noIPv4 = fs.Bool("no-ipv4", false, noIPv4Usage)
 	f.uplink = fs.String("uplink", "", "carry the mesh over a link rather than the host network, e.g. /dev/ttyUSB0:115200")
 	f.noUplink = fs.Bool("no-uplink", false, "go back to the host's network on a machine configured for a link")
@@ -222,99 +242,5 @@ func newProxyFlags() *proxyFlags {
 	fs.Var(&f.subnets, "subnet", subnetUsage)
 	fs.Var(&f.peers, "peers", "bootstrap entry as host:port; repeat for more. Enrolment supplies these, so this is an override")
 
-	fs.Usage = func() {
-		ui.Printf("conflux proxy — publish a local service on the overlay, without an interface\n\n" +
-			"  conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T] [--ipv4 ADDRESS | --no-ipv4]\n" +
-			"                [--subnet CIDR... | --no-subnet] [--serve-exit | --use-exit]\n" +
-			"                [--uplink DEV | --no-uplink] [--peers HOST:PORT | --no-peers]\n" +
-			"                [--observe | --no-observe] [--export HOST:PORT]\n" +
-			"                [--ephemeral [--manifest FILE|-]]\n\n" +
-			"Runs the anchor entirely in userspace, so it needs no TUN device and no\n" +
-			"CAP_NET_ADMIN. Nothing on this host can see the overlay: the way in is a\n" +
-			"service named here, and the way out a --subnet or --serve-exit, which the\n" +
-			"anchor forwards from its own process. With one of those, the port specs may\n" +
-			"be left out.\n\n" +
-			"With --uplink the realm is reached over a link rather than the host's network,\n" +
-			"which is the pair a machine with neither privilege nor an IP network needs.\n\n" +
-			"With --observe the daemon observes beside the anchor: an inventory of the\n" +
-			"cryptography of this host's traffic, which conflux observe -h describes.\n\n" +
-			"With --ephemeral nothing is kept: it runs in the foreground from a credential held\n" +
-			"in memory alone, enrolled or piped in with --manifest, registers nothing, and needs\n" +
-			"no root. When anchord stops, or on Ctrl-C, everything is gone; docs/ephemeral.md\n" +
-			"describes it.\n\n")
-		fs.PrintDefaults()
-	}
-
 	return f
-}
-
-// lookup finds the flag a dash-prefixed argument names, in any spelling Go's flag
-// package accepts. help is true for -h and -help, which the package answers without
-// their being registered.
-func (f *proxyFlags) lookup(arg string) (fl *flag.Flag, help bool) {
-	name, _, _ := strings.Cut(strings.TrimLeft(arg, "-"), "=")
-	if name == "h" || name == "help" {
-		return nil, true
-	}
-
-	return f.fs.Lookup(name), false
-}
-
-// unknown returns the first dash-prefixed argument that is not one of conflux proxy's
-// own, or "". The value of a flag that takes one is its value whatever it looks like, as
-// split reads it: `--manifest -` names stdin, and is not a flag called "-".
-func (f *proxyFlags) unknown(args []string) string {
-	expectValue := false
-
-	for _, a := range args {
-		switch {
-		case expectValue:
-			expectValue = false
-		case strings.HasPrefix(a, "-"):
-			fl, help := f.lookup(a)
-			if fl == nil && !help {
-				return a
-			}
-
-			expectValue = fl != nil && !strings.Contains(a, "=") && !isBoolFlag(fl)
-		}
-	}
-
-	return ""
-}
-
-// split separates the specs from the flags, so that they may be written in any order
-// -- `conflux proxy --taint x 8080=…` and the reverse both work, which Go's flag
-// package on its own does not allow.
-//
-// A flag written as -taint value, rather than -taint=value, takes the next argument
-// with it unless it is a boolean. --lan-discovery is a tristate written as a value, so
-// `conflux proxy --lan-discovery no 8080=127.0.0.1:3000` has one spec and not two.
-func (f *proxyFlags) split(args []string) (positional, flags []string) {
-	expectValue := false
-
-	for _, a := range args {
-		switch {
-		case expectValue:
-			flags = append(flags, a)
-			expectValue = false
-		case strings.HasPrefix(a, "-"):
-			flags = append(flags, a)
-
-			if fl, _ := f.lookup(a); fl != nil && !strings.Contains(a, "=") && !isBoolFlag(fl) {
-				expectValue = true
-			}
-		default:
-			positional = append(positional, a)
-		}
-	}
-
-	return positional, flags
-}
-
-// isBoolFlag is how the flag package itself tells a flag that takes no value.
-func isBoolFlag(fl *flag.Flag) bool {
-	b, ok := fl.Value.(interface{ IsBoolFlag() bool })
-
-	return ok && b.IsBoolFlag()
 }

@@ -27,8 +27,8 @@ import (
 // capabilities it holds, a binary that runs as that account at all -- is settled after,
 // in grant, and only ever takes privilege back to what the supervisor has.
 
-// Privilege is what one anchord was started with, recorded in <state>/anchord.priv for
-// `conflux status` and for the supervisor that starts the next one.
+// Privilege is what one anchord was started with, recorded in the root's anchord.priv
+// (paths.PrivilegeFile) for `conflux status` and for the supervisor that starts the next one.
 type Privilege struct {
 	// Account is true for the installation's unprivileged account, and false for the
 	// supervisor's own identity: root, SYSTEM, or whoever ran a supervisor that is
@@ -49,7 +49,7 @@ type Privilege struct {
 	Caps []string `json:"caps,omitempty"`
 
 	// NoNewPrivs is set where anchord runs nothing, so nothing it runs can gain what it
-	// was not given.
+	// was not given. decide alone sets it, and only for the account.
 	NoNewPrivs bool `json:"noNewPrivs,omitempty"`
 
 	// BPF is how the account reads the BPF devices on macOS, for the observer: BPFOwn where
@@ -393,7 +393,9 @@ func recordPrivilege(d paths.Dirs, p Privilege) error {
 }
 
 // RecordedPrivilege is what the last anchord this root started was given, or false when
-// no record says.
+// no record says. A directory the record names that is not one of the two anchor
+// directories is read as none: the next start copies from it, and status reads an order
+// in it.
 func RecordedPrivilege(d paths.Dirs) (Privilege, bool) {
 	var p Privilege
 
@@ -402,13 +404,17 @@ func RecordedPrivilege(d paths.Dirs) (Privilege, bool) {
 		return Privilege{}, false
 	}
 
+	if p.Dir != d.AnchorDir() && p.Dir != d.RootAnchorDir() {
+		p.Dir = ""
+	}
+
 	return p, true
 }
 
 // ActiveAnchorDir is the anchor directory the last anchord started was given, and where
 // one is not recorded, whichever of the two exists, the account's first.
 func ActiveAnchorDir(d paths.Dirs) string {
-	if p, ok := RecordedPrivilege(d); ok && (p.Dir == d.AnchorDir() || p.Dir == d.RootAnchorDir()) {
+	if p, ok := RecordedPrivilege(d); ok && p.Dir != "" {
 		return p.Dir
 	}
 

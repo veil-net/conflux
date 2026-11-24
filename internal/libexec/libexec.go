@@ -1,12 +1,12 @@
 // Package libexec puts the embedded anchor pair on disk so it can be run.
 //
-// The directory is content-addressed: <state>/bin/<setID>/, where setID names both
+// The directory is content-addressed: <root>/bin/<setID>/, where setID names both
 // binaries and the platform. That one decision removes four separate problems at
 // once. An upgraded conflux writes a new directory instead of over the file a
 // running anchord has open, so there is no ETXTBSY on Unix and no sharing violation
 // on Windows. Two conflux processes racing produce the same path. A stale set is
 // identifiable and sweepable. And "is it already extracted" is three stats rather
-// than a read of forty megabytes on every invocation: setID is stamped at build time
+// than a read of fifty-odd megabytes on every invocation: setID is stamped at build time
 // (anchor.Digests).
 //
 // It is emphatically not os.TempDir(), which fails four ways for a service: systemd's
@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/veil-net/conflux/anchor"
+	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
 )
@@ -38,16 +39,22 @@ import (
 // directory from one a crash left half-written.
 const completeMarker = ".complete"
 
+// extractionLock, in the bin directory, is held by whatever extracts a set or discards one.
+const extractionLock = ".lock"
+
 // smokeTimeout bounds the one-off check that the extracted binary actually runs.
 const smokeTimeout = 10 * time.Second
 
-// Tools are the extracted pair.
+// Tools are the pair: extracted into Dir, or held in memory (InMemory), where Dir is "".
 type Tools struct {
 	Dir       string
 	Anchord   string
 	Anchorctl string
 	SetID     string
 }
+
+// ErrNoMemoryExec is a pair that cannot be run from memory here.
+var ErrNoMemoryExec = errors.New("this system will not run a program from memory")
 
 // Ensure extracts this build's pair if it is not already there, and returns the
 // paths. Idempotent, atomic, and safe against another conflux doing the same thing.
@@ -78,7 +85,7 @@ func Ensure(d paths.Dirs) (*Tools, error) {
 		return nil, fmt.Errorf("create %s: %w", root, err)
 	}
 
-	unlock, err := flock.Acquire(filepath.Join(root, ".lock"))
+	unlock, err := flock.Acquire(filepath.Join(root, extractionLock))
 	if err != nil {
 		return nil, err
 	}
@@ -107,12 +114,16 @@ func Ensure(d paths.Dirs) (*Tools, error) {
 // toolsIn is where this build's pair is, or would be, extracted under d.
 func toolsIn(d paths.Dirs) *Tools {
 	setID := anchor.SetID()
-	target := filepath.Join(d.Libexec(), setID)
 
+	return toolsAt(filepath.Join(d.Libexec(), setID), setID)
+}
+
+// toolsAt is the pair setID names as it is, or would be, written into dir.
+func toolsAt(dir, setID string) *Tools {
 	return &Tools{
-		Dir:       target,
-		Anchord:   filepath.Join(target, exeName("anchord")),
-		Anchorctl: filepath.Join(target, exeName("anchorctl")),
+		Dir:       dir,
+		Anchord:   filepath.Join(dir, exeName("anchord")),
+		Anchorctl: filepath.Join(dir, exeName("anchorctl")),
 		SetID:     setID,
 	}
 }
@@ -138,34 +149,46 @@ func Extracted(d paths.Dirs) (*Tools, error) {
 }
 
 // ForUsage is an anchorctl to ask what a command takes, for help that must leave nothing
-// behind: this build's, extracted under d, where a whole extraction is there and readable,
-// and otherwise a copy in a private temporary directory, which done removes. Never d's own
-// directories. Making them for help remade, after an uninstall, what it had removed, with 45 MB
-// of binaries in it; and on Windows, asked by an account that is not an administrator, it
-// left %ProgramData%\conflux owned by that account, which every later install then refused.
-func ForUsage(d paths.Dirs) (bin string, done func(), err error) {
+// behind: this build's, extracted under d, where a whole extraction is there and readable;
+// otherwise one in memory, where the platform runs one from there (AnchorctlInMemory); and
+// otherwise a copy in a private temporary directory, which done removes, and which is the
+// account's that asked -- on Windows SYSTEM's and the Administrators' alone, as the extracted
+// pair is, would not run for a user who is not elevated. Never d's own directories: help
+// making them would make again, after an uninstall, what it removed, 50-odd MB of binaries in
+// it, and on Windows, asked by an account that is not an administrator, would leave the root
+// that account's, which every later install refuses (EnsureAll).
+//
+// temporary says which it is: true for the copy, gone once done is called, so a caller must
+// wait for it to finish first; false for the extraction or the one in memory, which outlast
+// this process -- the one in memory as well, since the kernel opens its file before exec
+// closes its descriptor -- and can replace it, and where done does nothing.
+func ForUsage(d paths.Dirs) (bin string, done func(), temporary bool, err error) {
 	if t, err := Extracted(d); err == nil {
-		return t.Anchorctl, func() {}, nil
+		return t.Anchorctl, func() {}, false, nil
+	}
+
+	if t, err := AnchorctlInMemory(); err == nil {
+		return t.Anchorctl, func() {}, false, nil
 	}
 
 	if !anchor.Supported {
-		return "", nil, fmt.Errorf(
+		return "", nil, false, fmt.Errorf(
 			"this conflux was built for %s/%s and carries no anchor binaries for it", runtime.GOOS, runtime.GOARCH)
 	}
 
 	dir, err := os.MkdirTemp("", "conflux-usage-")
 	if err != nil {
-		return "", nil, err
+		return "", nil, false, err
 	}
 
 	bin = filepath.Join(dir, exeName("anchorctl"))
-	if err := writeExecutable(bin, anchor.Anchorctl()); err != nil {
+	if err := writeExecutable(bin, anchor.Anchorctl(), paths.RestrictToOwner); err != nil {
 		_ = os.RemoveAll(dir)
 
-		return "", nil, err
+		return "", nil, false, err
 	}
 
-	return bin, func() { _ = os.RemoveAll(dir) }, nil
+	return bin, func() { _ = os.RemoveAll(dir) }, true, nil
 }
 
 // complete reports whether the directory holds a finished extraction of exactly
@@ -202,6 +225,8 @@ func extract(root, target string, t *Tools) error {
 		return fmt.Errorf("restrict %s: %w", staging, err)
 	}
 
+	staged := toolsAt(staging, t.SetID)
+
 	// Side by side: each is its own file and its own fsync, and on a real disk the
 	// fsync is most of what an extraction costs.
 	var (
@@ -209,17 +234,20 @@ func extract(root, target string, t *Tools) error {
 		ctlErr error
 	)
 
-	wg.Go(func() {
-		ctlErr = writeExecutable(filepath.Join(staging, exeName("anchorctl")), anchor.Anchorctl())
-	})
+	wg.Go(func() { ctlErr = writeExecutable(staged.Anchorctl, anchor.Anchorctl(), paths.Restrict) })
 
-	err = writeExecutable(filepath.Join(staging, exeName("anchord")), anchor.Anchord())
+	err = writeExecutable(staged.Anchord, anchor.Anchord(), paths.Restrict)
 
 	wg.Wait()
 
 	if err := errors.Join(err, ctlErr); err != nil {
 		return err
 	}
+
+	// Held to this build's bytes already, which are what was just written from it: recorded as
+	// the two files are now, restricted and out of quarantine, which the rename keeps, so the
+	// supervisor's Intact takes the set on a stat rather than reading back what it wrote.
+	staged.Reverified()
 
 	marker := fmt.Sprintf("setID %s\nplatform %s/%s\n", t.SetID, runtime.GOOS, runtime.GOARCH)
 	if err := os.WriteFile(filepath.Join(staging, completeMarker), []byte(marker), 0o600); err != nil {
@@ -255,12 +283,14 @@ func extract(root, target string, t *Tools) error {
 	return nil
 }
 
-// writeExecutable writes one binary and closes it before anyone can exec it.
+// writeExecutable writes one binary and closes it before anyone can exec it, and gives it
+// to whoever restrict does: paths.Restrict for the machine's, paths.RestrictToOwner for the
+// account's.
 //
 // The Close is not tidiness. On Linux, exec of a file that is still open for writing
 // anywhere in the system fails with ETXTBSY, and a deferred Close inside a loop is
 // exactly how that bug is usually written.
-func writeExecutable(path string, content []byte) error {
+func writeExecutable(path string, content []byte, restrict func(string, bool) error) error {
 	prefault(content)
 
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o700)
@@ -284,7 +314,7 @@ func writeExecutable(path string, content []byte) error {
 		return fmt.Errorf("close %s: %w", path, err)
 	}
 
-	if err := paths.Restrict(path, false); err != nil {
+	if err := restrict(path, false); err != nil {
 		return fmt.Errorf("restrict %s: %w", path, err)
 	}
 
@@ -338,13 +368,33 @@ func smoke(t *Tools) error {
 		t.Dir, err, strings.TrimSpace(string(out)))
 }
 
-// Sweep removes the sets other than t, and the debris of an extraction that crashed.
+// WintunDLL is Windows' driver, which wintun.Ensure places beside anchord in the set
+// directory: the one file there that is not this package's.
+const WintunDLL = "wintun.dll"
+
+// transientAge is how long something made beside a running supervisor may still be in use,
+// rather than left by a crash: a set or a staging directory a newer conflux extracted (Sweep),
+// or a temporary file a write is still making, in the root or in the live set.
+const transientAge = time.Hour
+
+// Transient reports whether e was modified within transientAge, so may still be in use beside
+// a running supervisor rather than left by a crash: the one test of that age, for Sweep and for
+// the daemon's tidy of the root alike.
+func Transient(e os.DirEntry) bool {
+	info, err := e.Info()
+
+	return err == nil && time.Since(info.ModTime()) < transientAge
+}
+
+// Sweep keeps the bin directory to what conflux put there: t, with nothing in it but the
+// pair, its markers, Windows' driver and a write in progress (tidySet); the extraction lock;
+// and a set or a staging directory made in the last transientAge, which a newer conflux
+// running a command beside this supervisor -- the first `status` after an upgrade -- may be
+// using until the service restarts onto it. Everything else goes: an older set, a crash's staging, and anything
+// nothing here wrote.
 //
-// Only the supervisor calls it, once it holds its own set. Any other conflux extracting
-// a set of its own -- the first `status` after an upgrade -- may be standing beside a
-// supervisor that still runs an older conflux and execs that one's anchorctl for every
-// renewal and every check; the service restarting onto the new set is what ends its use
-// of the old. Best-effort throughout: a directory that will not go is probably in use.
+// Only the supervisor calls it, once it holds its own set. Best-effort throughout: a
+// directory that will not go is probably in use.
 func Sweep(t *Tools) {
 	root, keep := filepath.Dir(t.Dir), t.SetID
 
@@ -353,29 +403,35 @@ func Sweep(t *Tools) {
 		return
 	}
 
-	cutoff := time.Now().Add(-24 * time.Hour)
+	for _, e := range entries {
+		switch name := e.Name(); {
+		case name == keep:
+			tidySet(t)
+		case name == extractionLock && e.Type().IsRegular():
+		case e.IsDir() && Transient(e):
+		default:
+			_ = os.RemoveAll(filepath.Join(root, name))
+		}
+	}
+}
+
+// tidySet removes from t's directory everything but the pair, its markers and the driver, and
+// a temporary file young enough to be an atomic write's in progress beside the sweep --
+// wintun.Ensure placing the driver, which the first cycle's start does while Sweep may still
+// run -- as the daemon spares the root's.
+func tidySet(t *Tools) {
+	entries, err := os.ReadDir(t.Dir)
+	if err != nil {
+		return
+	}
 
 	for _, e := range entries {
-		if !e.IsDir() || e.Name() == keep {
-			continue
-		}
-
-		info, err := e.Info()
-		if err != nil {
-			continue
-		}
-
-		// A staging directory older than an hour is the debris of a crash.
-		if strings.HasPrefix(e.Name(), ".staging-") {
-			if info.ModTime().Before(time.Now().Add(-time.Hour)) {
-				os.RemoveAll(filepath.Join(root, e.Name()))
-			}
-
-			continue
-		}
-
-		if info.ModTime().Before(cutoff) {
-			os.RemoveAll(filepath.Join(root, e.Name()))
+		switch name := e.Name(); {
+		case name == filepath.Base(t.Anchord), name == filepath.Base(t.Anchorctl), name == completeMarker,
+			name == verifiedMarker, name == WintunDLL:
+		case strings.HasPrefix(name, config.TempPrefix) && Transient(e):
+		default:
+			_ = os.RemoveAll(filepath.Join(t.Dir, name))
 		}
 	}
 }

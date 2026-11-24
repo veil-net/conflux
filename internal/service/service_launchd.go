@@ -15,8 +15,9 @@ import (
 // the supervisor it starts exits 0 where it would exit 78 or 70 (cli.launchdExit), and is
 // left stopped as the systemd unit leaves it.
 //
-// StandardOutPath and StandardErrorPath name the log for what conflux cannot write itself;
-// the rest it writes there with serve --log, stamped and moved aside when full.
+// No StandardOutPath or StandardErrorPath: the log is the system's. The supervisor launchd
+// starts sends what it writes to the unified log through a logger(1) of its own
+// (cli.toSystemLog), and launchd discards what is left.
 //
 // ProcessType is Interactive rather than the Background that daemons default to,
 // because Background imposes a low-priority I/O class and App Nap eligibility, and a
@@ -34,22 +35,20 @@ const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
   <dict><key>SuccessfulExit</key> <false/></dict>
   <key>ThrottleInterval</key>  <integer>5</integer>
   <key>ProcessType</key>       <string>Interactive</string>
-  <key>StandardOutPath</key>   <string>%[3]s</string>
-  <key>StandardErrorPath</key> <string>%[3]s</string>
   <key>ExitTimeOut</key>       <integer>30</integer>
 </dict>
 </plist>
 `
 
-// launchdPlist is the job for argv, its output going to logFile.
-func launchdPlist(label string, argv []string, logFile string) string {
+// launchdPlist is the job for argv.
+func launchdPlist(label string, argv []string) string {
 	var args strings.Builder
 
 	for _, a := range argv {
 		fmt.Fprintf(&args, "    <string>%s</string>\n", escapeXML(a))
 	}
 
-	return fmt.Sprintf(plistTemplate, escapeXML(label), args.String(), escapeXML(logFile))
+	return fmt.Sprintf(plistTemplate, escapeXML(label), args.String())
 }
 
 func escapeXML(s string) string {

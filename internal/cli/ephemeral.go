@@ -177,10 +177,7 @@ func runEphemeral(ctx context.Context, cfg *config.Config, run *ephemeralRun) in
 		return fail(err)
 	}
 
-	d, err := paths.Ephemeral()
-	if err != nil {
-		return fail(err)
-	}
+	d := paths.Ephemeral()
 
 	ctx, stop := hangupContext(ctx)
 	defer stop()
@@ -203,7 +200,7 @@ func runEphemeral(ctx context.Context, cfg *config.Config, run *ephemeralRun) in
 		Up:       func(u daemon.EphemeralUp) { reportEphemeral(d, cfg, u) },
 	}
 
-	err = e.Run(ctx)
+	err := e.Run(ctx)
 
 	switch {
 	// Ctrl-C while the run is still starting ends whatever it was waiting on with the
@@ -232,7 +229,11 @@ func reportEphemeral(d paths.Dirs, cfg *config.Config, u daemon.EphemeralUp) {
 	reportAnchorRows(d, cfg, st)
 	reportObserver(cfg, st.Observer)
 	ui.Field("anchord", u.Privilege.String())
-	ui.Field("ephemeral", "in memory alone; "+d.State+" holds the socket and the binaries, and goes with the run")
+	if u.PairInMemory {
+		ui.Field("ephemeral", "in memory alone, anchord and anchorctl too; "+d.Root+" holds the socket, and goes with the run")
+	} else {
+		ui.Field("ephemeral", "in memory alone; "+d.Root+" holds the socket and the binaries, and goes with the run")
+	}
 	ui.Println()
 
 	if len(cfg.Taints) > 0 && (u.Manifest == nil || u.Manifest.Alpha()) {

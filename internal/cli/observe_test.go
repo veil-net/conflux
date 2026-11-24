@@ -8,13 +8,14 @@ import (
 	"testing"
 
 	"github.com/veil-net/conflux/internal/config"
-	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/ui"
 )
 
 // TestObserveRefusesAnchorctlFlags: conflux observe and anchorctl's share a name, and what
 // belongs to anchorctl's is answered with where it is, never guessed at -- -stop above all,
-// which a person means for the observer running now and not for every boot.
+// which a person means for the observer running now and not for every boot. A flag's value is
+// read as the flag set reads it: --taint takes the "--" after it for its value, which ends no
+// flags.
 func TestObserveRefusesAnchorctlFlags(t *testing.T) {
 	for _, tc := range []struct {
 		args []string
@@ -24,6 +25,7 @@ func TestObserveRefusesAnchorctlFlags(t *testing.T) {
 		{[]string{"observe", "-stop"}, []string{"conflux down", "--no-observe", "conflux anchorctl observe -stop"}},
 		{[]string{"observe", "-socket", "/run/x.sock"}, []string{"conflux anchorctl observe -socket /run/x.sock"}},
 		{[]string{"observe", "--loopback", "-start=true"}, []string{"conflux anchorctl observe -start"}},
+		{[]string{"observe", "--taint", "--", "-start"}, []string{"conflux anchorctl observe -start", "conflux up --observe"}},
 	} {
 		_, errOut, code := capture(t, tc.args...)
 
@@ -39,11 +41,25 @@ func TestObserveRefusesAnchorctlFlags(t *testing.T) {
 	}
 }
 
-func TestObserveTakesNoArguments(t *testing.T) {
-	_, errOut, code := capture(t, "observe", "now")
+// TestObservingTakesATaintAndAnAPI: the observer runs under this machine's credential, which
+// conflux observe enrols as up does where there is none -- in the taint --taint names, or a
+// minted one, at the API --api names -- so it takes both of up's flags for it, and they are
+// its own, not anchorctl's.
+func TestObservingTakesATaintAndAnAPI(t *testing.T) {
+	f := newObserveFlags()
 
-	if code != ExitUsage || !strings.Contains(errOut, "takes no arguments") {
-		t.Errorf("exited %d, saying:\n%s", code, errOut)
+	args := []string{"--taint", "t1", "--taint", "t2", "--api", "https://api-dev.veilnet.com.au"}
+
+	if hint := f.anchorctls(args); hint != "" {
+		t.Fatalf("conflux observe answered its own flags with: %s", hint)
+	}
+
+	if err := f.fs.Parse(args); err != nil {
+		t.Fatal(err)
+	}
+
+	if !slices.Equal(f.taints, []string{"t1", "t2"}) || *f.api != "https://api-dev.veilnet.com.au" {
+		t.Errorf("parsed --taint %v and --api %q", f.taints, *f.api)
 	}
 }
 
@@ -53,14 +69,14 @@ func TestObserveTakesNoArguments(t *testing.T) {
 func TestObserveIsRefusedWhereThereIsNoCapture(t *testing.T) {
 	for goos, refused := range map[string]bool{"freebsd": true, "openbsd": true, "linux": false, "darwin": false, "windows": false} {
 		t.Run(goos, func(t *testing.T) {
-			was, elevated := hostOS, privcheck.Elevated
+			was := hostOS
 			hostOS = goos
+
+			t.Cleanup(func() { hostOS = was })
 
 			// Refused for privilege where there is a capture, whoever runs this: the check under
 			// test is the one before it, and nothing past it may touch this host.
-			privcheck.Elevated = func() bool { return false }
-
-			t.Cleanup(func() { hostOS, privcheck.Elevated = was, elevated })
+			asRoot(t, false)
 
 			_, errOut, code := capture(t, "observe")
 
@@ -221,12 +237,7 @@ func TestSwitchingAnAnchorToObservingIsConfirmed(t *testing.T) {
 		t.Skip("this test's stdin is a terminal")
 	}
 
-	var errBuf bytes.Buffer
-
-	old := ui.Errw
-	ui.Errw = &errBuf
-
-	t.Cleanup(func() { ui.Errw = old })
+	_, errBuf := captureUI(t)
 
 	cfg := &config.Config{Mode: config.ModeTUN}
 
@@ -242,27 +253,5 @@ func TestSwitchingAnAnchorToObservingIsConfirmed(t *testing.T) {
 
 	if !confirmObserving(testDirs(t), cfg, true) {
 		t.Error("--yes did not say so")
-	}
-}
-
-// TestProxyTakesTheObserverFlags: conflux proxy's specs and flags come in any order, and
-// --export takes a value while the observer's switches do not.
-func TestProxyTakesTheObserverFlags(t *testing.T) {
-	f := newProxyFlags()
-
-	args := []string{"--export", "c:4317", "8080=127.0.0.1:3000", "--observe-loopback", "53/udp=127.0.0.1:53"}
-
-	if hint := f.unknown(args); hint != "" {
-		t.Fatalf("%q is not one of conflux proxy's", hint)
-	}
-
-	specs, flags := f.split(args)
-
-	if want := []string{"8080=127.0.0.1:3000", "53/udp=127.0.0.1:53"}; !slices.Equal(specs, want) {
-		t.Errorf("specs %v, want %v", specs, want)
-	}
-
-	if want := []string{"--export", "c:4317", "--observe-loopback"}; !slices.Equal(flags, want) {
-		t.Errorf("flags %v, want %v", flags, want)
 	}
 }

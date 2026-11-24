@@ -29,17 +29,12 @@ var flagLine = regexp.MustCompile(`(?m)^\s+-([a-z0-9-]+)`)
 func TestEveryFlagWeUseExists(t *testing.T) {
 	anchortest.Require(t)
 
-	t.Setenv("CONFLUX_DIR", t.TempDir())
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll: %v", err)
-	}
-
-	tools, err := libexec.Ensure(d)
+	// Only anchorctl's usage is asked, so the one usage asks: nothing extracted.
+	bin, done, _, err := libexec.ForUsage(paths.Dirs{Root: t.TempDir()})
 	if err != nil {
-		t.Fatalf("Ensure: %v", err)
+		t.Fatalf("ForUsage: %v", err)
 	}
+	t.Cleanup(done)
 
 	yes := true
 
@@ -77,11 +72,12 @@ func TestEveryFlagWeUseExists(t *testing.T) {
 		{"status", anchorctl.StatusArgs()},
 		{"metrics", anchorctl.MetricsArgs()},
 		{"observe", anchorctl.ObserveStartArgs(config.Observer{Loopback: true, HideNames: true})},
+		{"observe-renew", anchorctl.ObserveRenewArgs()},
 		{"observe-stop", anchorctl.ObserveStopArgs()},
 		{"export", anchorctl.ExportArgs("collector.example:4317", true, []string{"metrics", "flows"})},
 	} {
 		t.Run(sub.name, func(t *testing.T) {
-			have := supportedFlags(t, tools.Anchorctl, sub.argv[0])
+			have := supportedFlags(t, bin, sub.argv[0])
 
 			for _, tok := range sub.argv[1:] {
 				// A bare "-" is the stdin marker that -manifest takes as its

@@ -1,6 +1,6 @@
 // Package anchorrelease fetches the anchor binaries from a release of the anchor repository.
 //
-// The binaries are not in git -- fourteen release builds are about 330 MB -- so a machine
+// The binaries are not in git -- fourteen release builds are about 370 MB -- so a machine
 // with no anchor checkout, which is every CI runner, fetches them from here.
 //
 // What is fetched is the *pinned* build. An anchor pinned to the genesis realm refuses to
@@ -46,6 +46,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/veil-net/conflux/internal/config"
 )
 
 const (
@@ -68,17 +70,13 @@ const (
 	// asset whose name is known ahead of time.
 	manifestName = "manifest.json"
 
-	// insecureEnv permits a plain-http API, for a test server. Named to match
-	// internal/enrol's own override rather than inventing a second spelling.
-	insecureEnv = "CONFLUX_ALLOW_INSECURE_API"
-
 	// formatVersion is the manifest shape this understands. A future version may mean
 	// anything, so an unknown one is refused rather than guessed at -- the same rule
 	// internal/enrol applies to a manifest it does not recognise.
 	formatVersion = 1
 
 	// maxManifest bounds the JSON; maxBinary bounds one download. An anchord is about
-	// 30 MB and anchorctl about 14, so 200 MB is far above anything real and far below
+	// 37 MB and anchorctl about 16, so 200 MB is far above anything real and far below
 	// anything that could fill a disk before the write fails.
 	maxManifest = 1 << 20
 	maxBinary   = 200 << 20
@@ -155,7 +153,7 @@ type release struct {
 func Fetch(ctx context.Context, src Source, want []string, dir string, log func(string, ...any)) error {
 	src = src.withDefaults()
 
-	if err := checkScheme(src.API); err != nil {
+	if err := config.CheckAPIURL(src.API); err != nil {
 		return err
 	}
 
@@ -537,7 +535,7 @@ func statusErr(resp *http.Response, src Source) error {
 // which would hand the bytes to anyone on the path.
 var httpClient = &http.Client{
 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		if err := checkScheme(req.URL.String()); err != nil {
+		if err := config.CheckAPIURL(req.URL.String()); err != nil {
 			return err
 		}
 
@@ -547,24 +545,4 @@ var httpClient = &http.Client{
 
 		return nil
 	},
-}
-
-func checkScheme(raw string) error {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return fmt.Errorf("%q is not a URL: %w", raw, err)
-	}
-
-	switch u.Scheme {
-	case "https":
-		return nil
-	case "http":
-		if os.Getenv(insecureEnv) == "1" {
-			return nil
-		}
-
-		return fmt.Errorf("%s is plain http (set %s=1 to override, for tests)", raw, insecureEnv)
-	default:
-		return fmt.Errorf("%s has scheme %q, want https", raw, u.Scheme)
-	}
 }

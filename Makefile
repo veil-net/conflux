@@ -17,7 +17,8 @@ DIST    ?= dist
 # v1.26.0 and not v1.0.0, which is the version CMVP has certified (#5247): v1.0.0 has no
 # ML-DSA, which `conflux cert` signs with. v1.26.0 is the module in CMVP review, and the one
 # anchord is built against. docs/security.md, "FIPS 140-3 and CMVP", says what is and is
-# not claimed. The pin is also in ci.yml; keep the two equal.
+# not claimed. This is the one place the pin is named: CI's setup action and the BSD suite read
+# it from here.
 #
 # Not for OpenBSD, which the module refuses (-fexecute-only, golang/go#70880): a binary for
 # it built with fips140=on panics before main. build and dist build that target with
@@ -67,7 +68,7 @@ LDFLAGS := -s -w \
 
 # STAMP defines `stamp os-arch[.exe]`, which prints the -X flags that hand a build the
 # SHA-256s of the two files that target's //go:embed names, so a released conflux
-# never reads forty-odd megabytes to learn which pair it carries (anchor/anchor.go,
+# never reads fifty-odd megabytes to learn which pair it carries (anchor/anchor.go,
 # Digests). Hashed in the recipe that links them, from the same paths, so a stamp
 # cannot describe other bytes than the ones embedded; a plain `go build` stamps nothing
 # and computes them instead. sha256sum, or shasum on macOS.
@@ -82,12 +83,12 @@ STAMP = sum() { { sha256sum "$$1" 2>/dev/null || shasum -a 256 "$$1"; } | cut -d
 TARGETS := linux/amd64 linux/arm64 darwin/arm64 \
            windows/amd64 windows/arm64 freebsd/amd64 openbsd/amd64
 
-# The size gate. One anchor pair is about 45 MB, so a conflux outside this range is
-# either missing its binaries -- one of the two is enough to fall under the floor, since
-# a real anchord beside a placeholder anchorctl still comes to about 40 -- or, far more
-# likely, embedded all fourteen because somebody wrote //go:embed bin instead of naming
-# the two files.
-MIN_MB := 45
+# The size gate, in MiB. A real conflux is its anchor pair, 48 to 53 MiB, and 8 or 9 of its
+# own, so the smallest is 56 MiB and the largest 62. One outside this range is either
+# missing its binaries -- one of the two is enough to fall under the floor, since a real
+# anchord beside a placeholder anchorctl comes to 45 MiB -- or, far more likely, embedded
+# all fourteen because somebody wrote //go:embed bin instead of naming the two files.
+MIN_MB := 50
 MAX_MB := 75
 
 ANCHOR_SRC ?= ../anchor
@@ -107,7 +108,7 @@ ANCHOR_TAG ?=
 # on one machine does not race the first for the name.
 IMAGE ?= conflux-systemd-test
 
-.PHONY: all anchor-bins build test race vet fmt fmtcheck lint vulncheck tidycheck docscheck golden cross dist image service-test integration clean help
+.PHONY: all anchor-bins build buildcheck test race vet fmt fmtcheck lint vulncheck tidycheck docscheck golden cross dist image service-test integration clean help
 
 # Every check that needs neither Docker nor the network. The utility checks --
 # fmtcheck, lint, tidycheck, docscheck -- run here and not in CI, which verifies that
@@ -115,15 +116,16 @@ IMAGE ?= conflux-systemd-test
 all: fmtcheck lint tidycheck docscheck test cross dist
 
 # anchor-bins puts the anchor binaries where //go:embed can find them. They are not in
-# git -- fourteen release builds are about 300 MB -- so a fresh clone runs this once
+# git -- fourteen release builds are about 370 MB -- so a fresh clone runs this once
 # before its first build.
 #
 # Three sources in order: a local release/ (pinned), a local dist/ (unpinned, taken
 # loudly), then with FETCH=1 anchor's `latest` release, which serves the pinned build and
 # needs no checkout -- but does need a token, since anchor is private. With none of them
-# it writes placeholders, which compile and are caught by the size gate in dist.
+# it writes placeholders, which compile and are caught by the size gate in dist. The
+# script takes TARGETS from here, the one list of them, and is run through this alone.
 anchor-bins:
-	@ANCHOR_SRC='$(ANCHOR_SRC)' FETCH='$(FETCH)' \
+	@TARGETS='$(subst /,-,$(TARGETS))' ANCHOR_SRC='$(ANCHOR_SRC)' FETCH='$(FETCH)' \
 		ANCHOR_API='$(ANCHOR_API)' ANCHOR_REPO='$(ANCHOR_REPO)' ANCHOR_TAG='$(ANCHOR_TAG)' \
 		./scripts/anchor-bins.sh
 
@@ -140,6 +142,28 @@ build:
 	@$(STAMP); $(FIPS); set -- $$($(GO) env GOOS GOARCH GOEXE); \
 	GOFIPS140=$$(fips $$1) CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS) $$(stamp $$1-$$2$$3)" -o $(BIN)/conflux$$3 . && \
 	ls -l $(BIN)/conflux$$3 | awk '{printf "  %.1f MB  %s\n", $$5/1048576, $$NF}'
+
+# buildcheck holds the conflux `make build` makes for this machine to what ships. The digests
+# stamped into it are the pair's own: a stamp describing other bytes would name the extraction
+# directory for a pair it does not carry, so `version` from its fips140 line on -- the module and
+# the pair, past the lines only make stamps: the version and commit, and a dev build's channel
+# (CHANNEL=dev) -- must be what `go run`, which stamps nothing and computes the digests, prints.
+# And it runs in FIPS 140-3 mode (scripts/fips-check.sh): `version` names the module, the module's
+# integrity check passes as it starts (GODEBUG=fips140=debug says so), and with the mode switched
+# off it refuses, exit 70, rather than run without it. Each answer is read whole before it is
+# searched. CI runs it in the linux job and each platforms leg. FreeBSD's build runs only in a VM
+# with no Go, which test/service-bsd.sh holds to that half, which needs none, through the same
+# script; OpenBSD's carries no module to hold it to.
+buildcheck: build
+	@$(FIPS); set -- $$($(GO) env GOOS GOEXE); exe=$(BIN)/conflux$$2; \
+	if [ "$$(fips $$1)" = off ]; then echo "  FAIL $$1 builds without the module, so there is nothing to check"; exit 1; fi; \
+	stamped=$$("$$exe" version | sed -n '/^fips140 /,$$p'); computed=$$($(GO) run . version | sed -n '/^fips140 /,$$p'); \
+	if [ -z "$$stamped" ] || [ "$$stamped" != "$$computed" ]; then \
+		echo "  FAIL the digests stamped into $$exe are not the pair's own"; \
+		printf '%s\n' "  stamped:" "$$stamped" "  computed by go run:" "$$computed"; exit 1; \
+	fi; \
+	echo "  ok   the digests stamped into $$exe are the pair's own"; \
+	sh scripts/fips-check.sh "$$exe"
 
 test:
 	$(GO) test $(TESTEXEC) ./...
@@ -191,11 +215,12 @@ docscheck:
 	done; \
 	exit $$fail
 
-# golden rewrites the argv fixtures and cert show's goldens after an intended change, so a
-# change to what conflux passes anchorctl, or prints of a certificate, shows up as a
-# reviewable text diff; TestArgvGoldens and TestShowGoldens fail on any other.
+# golden rewrites the argv fixtures -- an anchor's start and the observer's -- and cert show's
+# goldens after an intended change, so a change to what conflux passes anchorctl, or prints of
+# a certificate, shows up as a reviewable text diff; TestArgvGoldens, TestObserveArgvGoldens
+# and TestShowGoldens fail on any other.
 golden:
-	$(GO) test $(TESTEXEC) ./internal/anchorctl ./internal/pki -run 'TestArgvGoldens|TestShowGoldens' -update
+	$(GO) test $(TESTEXEC) ./internal/anchorctl ./internal/pki -run 'ArgvGoldens|TestShowGoldens' -update
 
 # cross vets every target, which compiles each one's packages and test files -- `go
 # build ./...` compiles no test files, so vet is what catches a platform-specific test
@@ -203,7 +228,9 @@ golden:
 # binaries and the size gate, is dist's.
 #
 # Every target at once, like dist, each one's output held in $(XLOG) and printed in
-# TARGETS order once all have finished, so a failure reads as it would have alone.
+# TARGETS order once all have finished, so a failure reads as it would have alone. vet's
+# exit status is the verdict: non-zero for a finding or a build failure, whose output is
+# then printed whole, and zero whatever else it wrote, such as a module it downloaded.
 XLOG := $(DIST)/.cross
 cross:
 	@rm -rf $(XLOG) && mkdir -p $(XLOG)
@@ -216,8 +243,8 @@ cross:
 	fail=0; \
 	for t in $(TARGETS); do \
 		os=$${t%/*}; arch=$${t#*/}; log=$(XLOG)/$$os-$$arch; \
-		if [ "$$(cat $$log.rc)" != 0 ] || grep -qv '^#' $$log; then \
-			grep -v '^#' $$log; echo "  FAIL $$t"; fail=1; \
+		if [ "$$(cat $$log.rc)" != 0 ]; then \
+			cat $$log; echo "  FAIL $$t"; fail=1; \
 		else \
 			echo "  ok   $$t"; \
 		fi; \
@@ -230,7 +257,7 @@ dist:
 	@# artifact left over from a target that has since been dropped would be
 	@# checksummed and published alongside the real ones.
 	@rm -f $(DIST)/conflux-* $(DIST)/SHA256SUMS
-	@# Every target at once: each is its own link of a 50 MB binary, and one after another
+	@# Every target at once: each is its own link of a 60 MB binary, and one after another
 	@# they take seven times as long for nothing. Each build's output waits in a log and the
 	@# gate reads them in TARGETS order, so a failure reads as it would have alone.
 	@rm -rf $(DIST)/.build && mkdir -p $(DIST)/.build
@@ -258,7 +285,7 @@ dist:
 		fi; \
 		if [ $$mb -gt $(MAX_MB) ]; then \
 			echo "  FAIL $$out is $${mb} MB, over $(MAX_MB) MB"; \
-			echo "       one anchor pair is ~45 MB; check that anchor/*.go names two files and not the directory"; \
+			echo "       one anchor pair is ~50 MB; check that anchor/*.go names two files and not the directory"; \
 			exit 1; \
 		fi; \
 		want=$$(fips $$os); got=$$($(GO) version -m $$out | awk '$$1 == "build" && $$2 ~ /^GOFIPS140=/ { sub(/^GOFIPS140=/, "", $$2); print $$2 }'); \
@@ -281,8 +308,8 @@ image: dist
 	@echo "  built $(IMAGE) from $(DIST)/conflux-linux-amd64"
 
 # The boot service on its own: install registers without starting, uninstall leaves
-# nothing. Cheaper than `integration` and it enrols nothing, so it is the one to run
-# when the question is only about the unit.
+# nothing. Cheaper than `integration`, enrolling once, for the observer, so it is the one
+# to run when the question is only about the unit.
 service-test: image
 	@IMAGE=$(IMAGE) ./test/service.sh
 
@@ -299,6 +326,7 @@ help:
 	@echo "                   FETCH=1 to fetch the pinned binaries from anchor's release"
 	@echo "                   (needs ANCHOR_RELEASE_TOKEN; anchor is private)"
 	@echo "  make build       build for this machine, stamped, into $(BIN)/"
+	@echo "  make buildcheck  build, then hold it to what ships: its stamped digests, FIPS 140-3 mode"
 	@echo "  make test        run the tests, with the FIPS module refusing what it does not approve"
 	@echo "  make race        run them under the race detector, the same way"
 	@echo "  make vet         go vet for this machine"

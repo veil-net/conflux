@@ -18,19 +18,24 @@ beneath it, and most of what follows is a way of reading that output.
 | `taint … contains a comma` | a comma-separated list was passed to `--taint` | use `--taint` twice |
 | `taint … has '@'` (or `'+'`) | those bind a served network to compartments, `SUBNET@a+b`, so no taint may hold them | pick a name without them |
 | `this machine's credential grants …`, naming `conflux uninstall --yes` | `--taint` or `conflux.json` names a set the credential does not grant — or an alpha machine enrolled before the realm granted taints, whose credential grants none | a credential's taints never change: keep the ones it grants, or draw a new identity as the message says; see [credentials.md](credentials.md#taints-are-the-credentials) |
+| `realm root is not the pinned genesis`, from anchord, and the service stops | the credential is from the other tree than the one this build's anchor is pinned to: a dev build's credential under the release, after a plain `conflux update`, or a release's under a dev build, after `conflux update --dev`. No retry changes it, so the supervisor gives up after three in a row and exits 70, which no service manager restarts | put back the build of the credential's tree (`sudo conflux update --dev` or `sudo conflux update`, which ask first) and `sudo conflux start`; or draw a new identity in this build's tree: `sudo conflux uninstall --yes`, install this build again (uninstall removes conflux too; `CONFLUX_VERSION=dev-latest` names the dev build) and `sudo conflux up --taint T`, `T` the network's taint in that tree (without it conflux mints a network of its own), with `--api https://api-dev.veilnet.com.au` for a dev build; see [commands.md](commands.md#conflux-update) |
 | `… does not grant this anchor's taints`, from anchord | the manifest names taints its chain does not commit to: the issuer's mistake, which no retry changes, so the supervisor gives up | ask the issuer for a new credential |
+| `the credential is gone, and … records the anchor it was`, and no anchor runs: met at a start, the service stops; met by a rebuild, it runs on with none | `manifest.b64` was removed from a machine that had enrolled; conflux will not draw a new identity in its place | put the manifest back from a backup, or, for a credential an issuer grants, `conflux enrol --manifest FILE`, and then `conflux start`; or start over with a new identity and address: keep a copy of `conflux.json` outside `.conflux`, `conflux uninstall`, install the same build again, and run `conflux up`, `proxy` or `observe` with the copy's settings (`--taint`, and `--api` where it names an API) -- the steps are in [credentials.md](credentials.md#the-response-is-the-only-copy) |
 | `credential EXPIRED` in status | renewal has been failing | the next line names the error; see below |
 | `clock is … away from the server's` | bad clock | fix NTP first; nothing will connect until you do |
 | two machines up, cannot reach each other | almost always taints | see below |
 | `subnet … is not a private network` | a public prefix | anchor forwards private networks only |
+| `the subnet list a Subnets order wrote, … remove the file`, and the service stops | a member's Subnets order left a list in the anchor directory that anchor cannot read, and it will not start until the file goes, which no retry does | `conflux up --subnet …` (or `--no-subnet`, or `conflux proxy` with either) sets the list again and drops the order's file |
 | `subnet … has host bits set` | `192.168.1.7/24` | write the network, `192.168.1.0/24` |
-| `the control socket path is N bytes` | `CONFLUX_DIR` is too deep | use a shorter one; the kernel's limit is 104–108 bytes |
+| `the control socket path is N bytes` | an ephemeral run's root, under `$XDG_RUNTIME_DIR` or `$TMPDIR`, is too deep | point that at a shorter directory; the kernel's limit is 104–108 bytes |
 | `fd:3 adopts a descriptor …` | `--uplink fd:N` | conflux's supervisor hands anchord no descriptors; name the device, or use `conflux anchorctl start` |
 | `anchor has no way to open a link on Windows` | `--uplink` on Windows | anchor opens a link on unix only; see [uplink.md](uplink.md) |
 | an uplink machine is up and reaches nothing | usually the far end, the line speed, or an enrolment that never happened | see below |
 | `capturing needs CAP_NET_RAW for the daemon …`, and observing stops | the host would not let `anchord` capture | see below |
 | `"-start" is anchorctl's observe` (or `"-stop"`) | anchorctl's observe was meant | `conflux anchorctl observe -start`; or `conflux observe` to observe from every boot, `conflux down` or `--no-observe` to stop |
 | `this machine runs an anchor … Pass --yes` | `conflux observe` in a script on a machine running an anchor, which it would stop | pass `--yes` if that is meant; `conflux up --observe` observes beside it |
+| `update asks before it installs the release in place of a dev build, and there is no terminal to ask at` | `conflux update` in a script, on a machine whose installed conflux is a dev build: the release's anchor does not start on a credential from the dev tree | run it at a terminal, where it says so and asks; no flag gets past it |
+| `update --dev asks before it installs a dev build, and there is no terminal to ask at` | `conflux update --dev` in a script | pass `--yes` if that is meant: it answers the question, for scripts and CI |
 | `freebsd has no capture for anchord to observe with` | the observer on FreeBSD or OpenBSD | anchor captures on Linux, macOS and Windows only |
 | `conflux inventory` says `nothing observed` | no flow has ended or lasted a minute yet, or the daemon restarted | a record is made every minute of a flow and at its end, and the inventory lasts as long as the daemon; an export keeps them for good |
 
@@ -65,7 +70,7 @@ rebuilt on it. `conflux status` shows the tally, which is the thing to look at w
 machine seems fine but keeps losing peers:
 
 ```console
-$ conflux status
+$ sudo conflux status
   uplink       7 reopens, last 2026-09-08T11:04:12Z
 ```
 
@@ -100,7 +105,8 @@ the table in [concepts.md](concepts.md).
 `conflux status` prints the taints this machine's credential grants. Compare them,
 character for character, with the other machine's. A credential's taints cannot be
 changed, so a machine enrolled in the wrong one needs a new identity:
-`conflux uninstall --yes`, then `conflux up --taint` with the right one. A member's
+`conflux uninstall --yes`, then install conflux again (uninstall removes it too) and
+`conflux up --taint` with the right one. A member's
 Taints order may also have moved one of them, which `status` does not show.
 
 **`DATA no` on every peer** can also mean this machine is blocked: a block leaves the
@@ -133,31 +139,35 @@ route — is anchor's to fix, and worth reporting there with that output attache
 
 - **"an ephemeral anchor is already running from …"**: one ephemeral run per user at a time.
   `conflux status` reports the one that is running; stop it where it runs (Ctrl-C).
-- **"every place an ephemeral run is kept is on a filesystem mounted noexec"**: the run
-  extracts anchord into its root, and every candidate refused execution. Set `CONFLUX_DIR`
-  to a directory on a filesystem that allows it.
+- **"the anchor binaries cannot run from memory here"**: on Linux the run starts `anchord`
+  from a memory file, and this kernel refused it — `vm.memfd_noexec=2`, or a policy such as
+  SELinux's. The run carries on with the pair extracted into its root, which then has to be on
+  a filesystem that allows execution; for a user other than root, `$XDG_RUNTIME_DIR`, or
+  `$TMPDIR` where that is unset, decides where that is.
 - **`conflux status` says a root was left behind**: an ephemeral run was killed before it
   could clean up, which on macOS and the BSDs can leave its anchord running. The next
-  ephemeral run stops it and clears the root; so does a reboot.
+  ephemeral run stops it and clears the root; so does a reboot, except where the root is under
+  `$TMPDIR` on FreeBSD, whose `/tmp` outlives a reboot unless `clear_tmp_enable` is set: there
+  the next run clears it.
 
 See [ephemeral.md](ephemeral.md).
 
 ## The extracted binaries will not run
 
 A "permission denied" on a `0700` file you own is the most confusing failure in this
-design, and there are only two causes. conflux detects both and names them:
+design, and there are only two causes. conflux detects both and names them. `anchord` runs
+from the root's `bin/`, so the filesystem holding the root has to allow execution:
 
 ```
-conflux: the anchor binaries were extracted to /var/lib/conflux/bin/998ece52739a7c74 but will not run from there.
-  that filesystem is mounted noexec.
-  set CONFLUX_DIR to a directory on a filesystem that allows execution.
+conflux: the anchor binaries were extracted to /var/lib/.conflux/bin/998ece52739a7c74 but will not run from there.
+  that filesystem is mounted noexec: conflux runs anchord from there, so it has to allow execution.
 ```
 
-or
+or, where SELinux keeps it from running there:
 
 ```
   SELinux is enforcing, and a binary under this path is probably labelled var_lib_t.
-  try:  sudo semanage fcontext -a -t bin_t '/var/lib/conflux/bin(/.*)?' && sudo restorecon -R /var/lib/conflux/bin
+  try:  sudo semanage fcontext -a -t bin_t '/var/lib/.conflux/bin(/.*)?' && sudo restorecon -R /var/lib/.conflux/bin
 ```
 
 On macOS, `killed: 9` instead means the signature was rejected — an Apple Silicon Mac
@@ -245,11 +255,11 @@ these binaries are pinned to, a TUN the host will not give (no capability, devic
 IPv6, or the name held by another interface), a host that will not be set up to forward
 for the realm, and an argument vector anchorctl refuses outright.
 
-Where the logs are: `journalctl -u conflux -n 50` on Linux, `/var/log/conflux.log` on
-macOS and FreeBSD, `/var/log/daemon` on OpenBSD, and
-`%ProgramData%\conflux\logs\conflux.log` on Windows; on those last three, past 10 MiB the
-older lines are in `conflux.log.1` beside it. A start that times out names the
-right one for the machine.
+Where the logs are: the system's, everywhere. `journalctl -u conflux -n 50` on Linux,
+`/var/log/messages` on FreeBSD, `/var/log/daemon` on OpenBSD, the unified log on macOS
+(`log show --last 1h --predicate 'process == "logger"' | grep conflux`), and the
+Application event log on Windows, under the source `conflux`. A start that times out names
+the right one for the machine.
 
 ## Renewal is failing
 
@@ -277,10 +287,10 @@ and orphan every peer — see [credentials.md](credentials.md).
 
 ```console
 $ conflux version           # names the exact anchor binaries
-$ conflux status
+$ sudo conflux status
 $ sudo journalctl -u conflux -n 100 --no-pager
-$ conflux peers
-$ conflux routes
+$ sudo conflux peers
+$ sudo conflux routes
 ```
 
 `conflux version` prints both anchor SHA-256s, which is what identifies the build.

@@ -19,7 +19,8 @@ nothing and renewal is unauthenticated, so a thief renews the stolen credential
 themselves, indefinitely. The thirty-day window bounds nothing in that case.
 
 Stated plainly: **if the file leaves the machine, the only remedy is to stop using
-that identity.** `conflux uninstall --yes` and `conflux up --taint` draw a new one, and
+that identity.** `conflux uninstall --yes`, conflux installed again (uninstall removes it too),
+and `conflux up --taint` draw a new one, and
 every peer that knew the old address has to be told the new one. The stolen credential
 is still granted the old taint, and renews in it, so if the thief must not reach the
 other machines either, they move too: each draws a new identity in a new taint, since
@@ -53,7 +54,9 @@ host can read, and when the run stops there is nothing at all.
   since whatever that account put in it is not conflux's.
 - On Windows, mode bits mean nothing and `%ProgramData%` lets `Users` read and create
   beneath it, so conflux gives its root to SYSTEM and Administrators — owner, and a
-  protected DACL everything beneath inherits — and refuses a root another account made.
+  protected DACL everything beneath inherits — refuses a root another account made, and
+  takes back a DACL that grants anybody else, which a protected DACL keeps as faithfully as
+  it keeps conflux's.
   See [windows.md](windows.md#file-permissions).
 - Never in an argv. It travels on stdin to `anchorctl start -manifest -`, becomes an
   inline secret on the wire, and is never named as a path in the request — so it never
@@ -61,9 +64,9 @@ host can read, and when the run stops there is nothing at all.
 - Never in a log. The types that carry it have `String` and `GoString` methods that
   return `<anchor manifest, redacted>`, so no `%v` or `%#v` anywhere can print it.
 
-## A backup of the state directory is the machine
+## A backup of `.conflux` is the machine
 
-`/var/lib/conflux` in a backup, a VM snapshot, or a container image **is** the
+`/var/lib/.conflux` in a backup, a VM snapshot, or a container image **is** the
 identity. Restoring that backup onto a second machine while the first is still running
 makes the anchor exist twice, which anchor reports as an address conflict.
 
@@ -74,9 +77,9 @@ Treat it the way you would treat an SSH host key.
 conflux writes `anchord` and `anchorctl` to disk and executes them. That is a dropper
 shape, and it is worth being honest about how it is bounded:
 
-- The path is content-addressed under the state directory — root-owned, and writable by
-  nobody else, on a filesystem the administrator chose. Not `/tmp`, which is world-writable and, under
-  `PrivateTmp=`, is not even the same directory the service sees. On Windows, where the
+- The path is content-addressed under `.conflux` — root-owned, and writable by nobody
+  else. Not `/tmp`, which is world-writable and, under `PrivateTmp=`, is not even the
+  same directory the service sees. On Windows, where the
   name of a set directory is computable and `%ProgramData%` would let anybody create it,
   a set is run only if Administrators, SYSTEM or the account running conflux owns it,
   and extracted again otherwise.
@@ -87,19 +90,15 @@ shape, and it is worth being honest about how it is bounded:
 
 The boot service is held to the same rule. It runs as root (SYSTEM on Windows) and
 starts whatever file it names at every boot, so it names a copy of conflux in the same
-state directory, which `up`, `proxy`, `install` and `start` refresh, and never the file
+`.conflux`, which `up`, `proxy`, `install` and `start` refresh, and never the file
 conflux was run from — a home directory or a download that another account could swap
 for a program of its own, to be run as root at the next start. On Windows the root's
 DACL is set by the first conflux command that creates it, extraction included, and a
 root that holds anything another account made before then is refused rather than
 repaired around it.
 
-`CONFLUX_DIR` can point the extraction somewhere else, which is a knob worth knowing
-about: it lets a caller choose the directory a root daemon executes from. It exists
-for tests and for hosts where the default filesystem is `noexec`. The directory it names
-must belong to the account running conflux — on every platform, a root another account
-owns is refused — and it is used as an absolute path, so the service registered under it
-runs from where it was installed whatever the working directory was.
+Nothing a caller sets chooses the directory a root daemon executes from: `.conflux` is in
+the platform's place, fixed, and no flag or environment variable moves it.
 
 ## What anchord runs as
 
@@ -142,7 +141,12 @@ What changes that, and why:
   Where `nft` is missing, anchor's router falls back to `iptables -m set`, whose set match
   opens a raw socket, so `CAP_NET_RAW` is added. Where firewalld runs (it takes changes only
   from root, over D-Bus) or an installed `iptables` is on the legacy backend (its lock is in
-  `/run`, and it needs raw sockets), `anchord` stays root.
+  `/run`, and it needs raw sockets), `anchord` stays root. One thing the account cannot do:
+  anchor records the host's own forwarding settings in `/run/anchor-router` before it changes
+  them, so that a start after a crash puts back the host's and not its own, and only root may
+  create a file in `/run`. Run as the account, a routing anchor says so ("the host's own
+  settings are not recorded") and a start after a crash takes what it left as the host's own;
+  conflux does not raise it to root for that.
 - **Linux, userspace, and the UDP buffers.** quic-go sizes its socket buffers to 7 MiB,
   past `net.core.rmem_max`/`wmem_max` with `SO_RCVBUFFORCE`, which is `CAP_NET_ADMIN`'s.
   Where those limits are under 3670016 the account is given `CAP_NET_ADMIN` for it; raise
@@ -167,7 +171,7 @@ What changes that, and why:
   capabilities (dropping needs `CAP_SETUID`, `CAP_SETGID`, `CAP_CHOWN`, `CAP_FOWNER`,
   `CAP_DAC_OVERRIDE` and `CAP_KILL`), the account cannot be made (no `useradd` or `adduser`),
   an account of that name exists that conflux did not make, the account cannot run `anchord`
-  here (a `CONFLUX_DIR` it cannot pass through, `noexec`, a user namespace with no uid for
+  here (a root it cannot pass through, `noexec`, a user namespace with no uid for
   it), or Windows will not log `LOCAL SERVICE` on for it — `anchord` runs as the supervisor
   does, which is never more than it had before, and says why.
 
@@ -175,13 +179,13 @@ What changes that, and why:
 
 | Path (Linux) | Owner | Mode |
 |---|---|---|
-| `/var/lib/conflux`, `bin/`, `bin/<set>/` | root, group `conflux` | `0710` — pass through, list nothing |
+| `/var/lib/.conflux`, `bin/`, `bin/<set>/` | root, group `conflux` | `0710` — pass through, list nothing |
 | `bin/<set>/anchord` | root, group `conflux` | `0750` (`anchorctl` stays root's alone) |
 | `anchord.json` | whoever `anchord` runs as | `0600` |
 | `anchor/` — the account's `-dir` | `conflux` | `0700` |
 | `anchor.root/` — a root anchord's `-dir` | root | `0700` |
-| `/run/conflux` | root, group `conflux` | `0710` |
-| `/run/conflux/anchord/` — the socket and its lock | whoever `anchord` runs as | `0700`, made afresh at every start |
+| `run/` | root, group `conflux` | `0710` |
+| `run/anchord/` — the socket and its lock | whoever `anchord` runs as | `0700`, made afresh at every start |
 | the configuration, the manifest, the state, the token, the pid record, the service's copy | root | unchanged |
 
 Three rules hold it together:
@@ -196,7 +200,11 @@ Three rules hold it together:
   root's has its own `-dir`, and `run/anchord/` is made afresh, for the right owner, before
   every start, after everything that runs as the account has been ended.
 - **Root reads what the account wrote as untrusted.** The socket's lock, which the reaper asks
-  about, is opened to read, never created, and never through a symlink; a Subnets order's
+  about, is opened to read, never created, never through a symlink, and refused when it has a
+  second name: a hard link the account made to root's `serve.lock`, held while the supervisor
+  serves, would otherwise answer for the socket. That lock alone is: an ephemeral run's
+  `serve.lock`, which `status` and `uninstall` ask after by its own name in a root the account
+  cannot write, is answered whatever the account linked to it. A Subnets order's
   `subnets.json`, which `conflux status` prints, is read only as a regular file of one link
   and bounded size, with control characters taken out of who set it.
 
@@ -204,8 +212,8 @@ The token reaches `anchord` in its environment (`ANCHORD_TOKEN`), so the file th
 from stays root's.
 
 **One thing works differently, by design:** a path a pass-through command makes `anchord`
-open itself — `keygen -out` and `priv -out`, which write "on the daemon's filesystem", and
-export certificates set at run time by path — is opened with `anchord`'s rights. One the
+open itself — `keygen -out`, which writes "on the daemon's filesystem", and export
+certificates set at run time by path — is opened with `anchord`'s rights. One the
 account cannot reach is refused by `anchord`, naming it; leave out `-out` and the key comes
 back to your terminal instead. Paths in `conflux.json`'s export block are not affected:
 conflux reads them and hands their content over.
@@ -253,7 +261,7 @@ which is every target conflux ships but OpenBSD's.
 
 | Service | Standard | Used for | How it is kept approved |
 |---|---|---|---|
-| SHA-256 | FIPS 180-4 | the digests of the embedded anchor binaries, of a release `conflux update` installs, of anchor's release files and of wintun's archive; a `CONFLUX_DIR` installation's scope | — |
+| SHA-256 | FIPS 180-4 | the digests of the embedded anchor binaries, of a release `conflux update` installs, of anchor's release files and of wintun's archive | — |
 | CTR_DRBG | SP 800-90A | every random byte, through `crypto/rand`: the bearer token anchord is started with, a minted taint | — |
 | TLS 1.3 and 1.2, as a client and a server | SP 800-52r2, with the module's KDFs (SP 800-135 for 1.2, HKDF for 1.3), and ML-KEM (FIPS 203) in the hybrid groups | HTTPS to the enrolment API, to GitHub for `conflux update` and for anchor's release files, and to wintun.net; `conflux cert probe` and `serve` | `crypto/tls` in FIPS 140-3 mode offers and accepts only approved parameters: AES-GCM suites (and AES-CBC with SHA-256 on 1.2); P-256, P-384, P-521, the ML-KEM hybrids and ML-KEM-1024; ML-DSA, ECDSA, RSA and Ed25519 signatures; the Extended Master Secret on 1.2 |
 | ECDSA, RSA and EdDSA verification | FIPS 186-5 | the server certificate chains of those connections, on Linux and the BSDs; `conflux cert`'s checks of certificates, requests and revocation lists | — |

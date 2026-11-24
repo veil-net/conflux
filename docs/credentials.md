@@ -44,7 +44,28 @@ response — before decoding it, before starting anything. An enrolment that suc
 and then loses the bytes to a crash costs the machine its identity permanently, and
 that is a bad enough outcome to be worth ordering the code around.
 
-It is also why `conflux uninstall` asks before it runs.
+It is also why `conflux uninstall` asks before it runs, and why a machine whose
+`manifest.b64` is gone while `state.json` still names the anchor it was is not enrolled
+again: the supervisor refuses it for good, naming the file, since drawing a new identity
+and address is a person's decision. Put the manifest back -- from a backup, or, for a
+guardian-issued one, as its guardian downloads it again ([config.md](config.md)) -- or,
+for a credential an issuer grants, install it with `conflux enrol --manifest FILE` on
+the machine as it stands. Either way the refusal has left no anchor running, so `conflux
+start` then brings the machine back as it is configured -- not `conflux up`, which would
+change a userspace or observing machine's mode. Otherwise start over with a new
+identity:
+
+1. Keep a copy of `conflux.json`, outside `.conflux`, which holds the machine's settings:
+   its taints, its `apiBaseUrl` if it has one (none means the production API), and its
+   mode's own, a proxy's services among them. Note whether `conflux version` shows a
+   `dev build:` line.
+2. `conflux uninstall`, which removes conflux and `.conflux`, `conflux.json` with it.
+3. Install the same build of conflux again: the release, or with `CONFLUX_VERSION=dev-latest`
+   the dev build ([install.md](install.md)). A credential is valid in one tree alone, and the
+   other build's anchor refuses it.
+4. Run `conflux up`, `proxy` or `observe`, as the machine ran, with the copy's settings:
+   `--taint` for each taint, `--api` with its `apiBaseUrl` where it has one, and the mode's
+   own flags or specs. Without `--taint` a new taint is minted, for a network of its own.
 
 An ephemeral run turns the same fact the other way: it means the identity to be lost, so it
 writes nothing, and the one copy lives in memory for as long as the run. See
@@ -59,6 +80,10 @@ conflux enrols only when `manifest.b64` does not exist. In particular:
   address and orphan every peer that had it.
 - **Re-running `conflux up` does not enrol.** It reads the identity that is there.
 - **Switching modes does not enrol.** `up` after `proxy` keeps the identity.
+- **An emptied `manifest.b64` does not enrol.** One with nothing in it, or nothing but
+  white space, holds no identity, and the supervisor refuses it for good, naming it, rather
+  than retrying it or drawing a new one: what it held is a person's to find out. `conflux
+  enrol` installs a manifest in its place.
 
 ## Taints are the credential's
 
@@ -75,7 +100,8 @@ it in the manifest, which is where anchorctl takes them from — conflux passes 
   already holds a credential, `conflux up --taint` with the same set is accepted, and
   any other is refused.
 - **Changing them is a new identity**, with a new AnchorID and a new overlay address:
-  `conflux uninstall --yes`, then `conflux up --taint NEW`.
+  `conflux uninstall --yes`, then install conflux again (uninstall removes it too) and
+  `conflux up --taint NEW`.
 - **`conflux.json` mirrors them.** After enrolment its `taints` are the grant, and every
   start checks them against the manifest, refusing for good when the two disagree — a
   hand-edited file, say — rather than retrying something no retry changes.
@@ -116,7 +142,11 @@ Renewal happens in two places, and both go through the same arithmetic:
 
 Renewal is hot. `anchorctl renew` calls `SetRealmCred` on the running anchor: the
 identity does not change and not one session is lost. A restart would cost every
-connection the anchor is holding, for a swap that needs none of that.
+connection the anchor is holding, for a swap that needs none of that. Where the observer
+runs, under the same credential, `anchorctl observe -cred` installs the renewal on it too
+(`SetObserverCred`): anchor holds the observer's credential apart from the anchor's, and an
+observer whose credential lapses goes on observing but exports nothing until it is renewed.
+A machine that only observes renews by the AnchorID the observer reports.
 
 **The renewed chain is written to disk as well as installed**, before it is installed,
 along with its expiry and the moment it arrived. If it were only installed, the next
@@ -136,7 +166,10 @@ restated them.
 A renewed chain the running anchor will not take is a failed renewal, even though it
 is on disk: the next start runs on it, and until then the timer keeps to the schedule
 of the chain the anchor holds, so a renewal that was due is retried every minute, and
-`conflux status` names the install as what failed.
+`conflux status` names the install as what failed. An anchor that is not running — one
+that could not start beside the observer, or one being rebuilt — takes nothing, and the
+renewal stands: it starts under the chain on disk, and the timer keeps to that chain's
+schedule.
 
 ## Being offline past the expiry costs nothing but a call
 
@@ -144,7 +177,10 @@ The renewal route is checked against nothing and gated on nothing:
 `POST /ghosts/alpha/renew` takes an AnchorID, which is the public half, and the taints
 the manifest names, `{"anchorId": "anchor…", "taints": ["…"]}` — the API keeps no record
 of them — and signs a fresh chain for it in those taints, answering
-`{"chain": "…", "notAfter": "…", "bootstrap": ["…"]}`. It works after expiry.
+`{"chain": "…", "notAfter": "…", "bootstrap": ["…"]}`. It works after expiry. An answer
+whose `notAfter` has already passed by the issuer's clock — this one's, moved by the skew its
+`Date` measured, ahead or behind — is refused as a bad answer, as one whose chain is not
+base64 is, and counts as a failed renewal.
 
 So a machine that was switched off for a month renews on its next launch and **keeps
 its AnchorID and its overlay address**. There is no window to miss. The address is
@@ -166,9 +202,10 @@ Three states, three behaviours:
 ## Renewing by hand
 
 `conflux renew` forces one now: it fetches a fresh chain and installs it on the
-running anchor with `anchorctl renew`, the same hot swap the timer uses. Nothing is
-restarted and no session is dropped. The chain goes to anchorctl on its stdin
-(`renew -cred -`), so a renewal writes the manifest it is spliced into and no other file.
+running anchor with `anchorctl renew`, and on the observer with `anchorctl observe -cred`,
+the same hot swap the timer uses. Nothing is restarted and no session is dropped. The chain
+goes to anchorctl on its stdin (`renew -cred -`, `observe -cred -`), so a renewal writes the
+manifest it is spliced into and no other file.
 
 It is not part of normal operation — the two automatic paths above cover every machine
 that is working. It is for the one that is not, where `renewal: failing since ...` has
@@ -212,8 +249,8 @@ identity is `manifest.b64` and nothing else; copying it moves the machine, and c
 it *without deleting the original* makes the anchor exist twice, which is an address
 conflict rather than redundancy.
 
-If you do not need the address preserved, `conflux uninstall` and `conflux up` on the
-new machine is the whole procedure.
+If you do not need the address preserved, `conflux uninstall` on the old machine, and
+installing conflux and `conflux up` on the new one, is the whole procedure.
 
 ## A guardian-issued credential
 
@@ -304,7 +341,10 @@ for a credential granting none — and `Authorization: Bearer <renewalSecret>`, 
 back the same shape, `{"chain": "…", "notAfter": "…", "bootstrap": [...]}`. That URL is
 where the configured API base came from in the first place — enrol reads it out of the
 document — so the two agree unless `--api` was passed to say otherwise, in which case
-they are checked against each other. See [commands.md](commands.md#conflux-enrol).
+they are checked against each other. Both are held, at enrol, to the rule every start holds
+`apiBaseUrl` to — absolute, with a host, `https` — so one no renewal could reach is refused
+while a person is there to read why, not installed and refused at the next start. See
+[commands.md](commands.md#conflux-enrol).
 
 A guardian signs from its own realm root, which it holds. So its ability to renew your
 machine does not depend on it being able to reach anything upstream — if its own
@@ -343,7 +383,8 @@ Next: sudo conflux up --serve-exit
 What conflux does differently:
 
 - **`conflux enrol` installs it with no `--api`.** There is no renewal URL to read a base
-  out of. `--api` is taken as given if passed, and nothing is checked against it.
+  out of. `--api` is taken if passed, held only to the rule every start holds `apiBaseUrl`
+  to, since there is no renewal URL to check it against.
 - **An expired one is refused at enrol**, as any expired credential is. One that does
   not renew never comes back; one that does renews by the AnchorID a started anchor
   reports, and anchor will not start one on an expired chain. Installing either would

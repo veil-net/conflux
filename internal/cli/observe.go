@@ -16,17 +16,19 @@ import (
 //
 // conflux's decides what the machine runs: the daemon's observer and no anchor, inventorying
 // the cryptography of the host's own traffic -- which services it reaches, serves or passes
-// on, over which protocols, and whether each key exchange is post-quantum -- and joining no
-// realm, so with no enrolment, no credential and no taint. The observer runs until it is
-// stopped and starts again at every boot; each record of a flow is sent to the collector the
-// export names as it is made, and kept in the daemon's inventory whether or not one is.
+// on, over which protocols, and whether each key exchange is post-quantum. The observer runs
+// under this machine's credential, as an identity its realm admits, so a machine with none is
+// enrolled as up enrols one: in the taint --taint names, or a minted one, and renewed for the
+// life of the identity as an anchor's credential is. The observer runs until it is stopped
+// and starts again at every boot; each record of a flow is sent to the collector the export
+// names as it is made, and kept in the daemon's inventory whether or not one is.
 // anchorctl's observe starts and stops the observer of a running daemon, and reports on it.
 //
 // The collision is resolved by shape, as conflux proxy's is: conflux observe takes its own
-// flags and no argument, and every other dash-prefixed word -- anchorctl's -start, -stop,
-// -socket -- is answered with where it belongs rather than guessed at. Bare, it is
-// conflux's, which is the one shape that matters: an anchorctl user typing it for a report
-// would stop an anchor this machine runs, so that switch is confirmed first.
+// flags and no argument, and every other flag ahead of the "--" that ends the flags (splitFlags),
+// such as anchorctl's -start, -stop and -socket, is answered with where it belongs rather than
+// guessed at. Bare, it is conflux's, which is the one shape that matters: an anchorctl user typing it
+// for a report would stop an anchor this machine runs, so that switch is confirmed first.
 func runObserve(ctx context.Context, args []string) int {
 	f := newObserveFlags()
 
@@ -36,14 +38,8 @@ func runObserve(ctx context.Context, args []string) int {
 		return ExitUsage
 	}
 
-	if err := f.fs.Parse(args); err != nil {
-		return ExitUsage
-	}
-
-	if f.fs.NArg() > 0 {
-		ui.Errf("conflux observe takes no arguments, and was given %q", f.fs.Args())
-
-		return ExitUsage
+	if exit, ok := flagsAlone(f.fs, args); !ok {
+		return exit
 	}
 
 	// Before anything is asked or written: where anchor has no capture there is nothing
@@ -90,6 +86,21 @@ func runObserve(ctx context.Context, args []string) int {
 	cfg.Mode = config.ModeObserve
 	cfg.Observer = &config.Observer{Loopback: *f.loopback, HideNames: *f.hideNames}
 
+	if *f.api != "" {
+		cfg.APIBaseURL = *f.api
+	}
+
+	// The credential the observer runs under is the machine's, decided as up decides it: the
+	// taints of the one held, or for a machine with none the --taint asked for or one minted.
+	held, err := heldCredential(d)
+	if err != nil {
+		return fail(err)
+	}
+
+	if err := chooseTaints(cfg, f.taints, held); err != nil {
+		return fail(err)
+	}
+
 	return bring(ctx, d, cfg, "observe", false)
 }
 
@@ -133,73 +144,68 @@ type observeFlags struct {
 	fs *flag.FlagSet
 
 	loopback, hideNames, exportInsecure, yes *bool
-	export                                   *string
+	export, api                              *string
+	taints                                   repeated
 }
 
 func newObserveFlags() *observeFlags {
-	fs := flag.NewFlagSet("observe", flag.ContinueOnError)
-	fs.SetOutput(ui.Errw)
+	fs := verbFlags("observe", "conflux observe — inventory the cryptography of this host's traffic, with no anchor\n\n"+
+		"  conflux observe [--taint T] [--api URL] [--loopback] [--hide-names] [--export HOST:PORT [--export-insecure]] [--yes]\n\n"+
+		"Runs the daemon's observer and nothing else. The host copies the start of every flow\n"+
+		"its interfaces carry to it, and it records which services the host reaches, serves\n"+
+		"or passes on, over which protocols, and whether each key exchange is post-quantum,\n"+
+		"hybrid, classical or none, and which side held it back. It carries nothing, so it\n"+
+		"can slow or break nothing.\n\n"+
+		"It runs under this machine's credential, as an identity its realm admits: a machine\n"+
+		"with none is enrolled as conflux up enrols one, in the taint --taint names or a\n"+
+		"minted one, and the credential is renewed for the life of the identity.\n\n"+
+		"It runs until it is stopped, and from every boot. With --export, or an export with\n"+
+		"flows in conflux.json, each record goes to that collector as it is made; either way\n"+
+		"the daemon keeps an inventory of them, which conflux inventory prints.\n\n"+
+		"On a machine running an anchor this stops it, and asks first. To observe beside an\n"+
+		"anchor, conflux up --observe or conflux proxy --observe.\n\n")
 
 	f := &observeFlags{fs: fs}
 
 	f.loopback = fs.Bool("loopback", false, "observe the loopback interfaces too; Windows' capture never sees them")
+
 	f.hideNames = fs.Bool("hide-names", false,
 		"leave the names flows were reached by -- a server name, a DNS answer's -- out of the records and the inventory")
 	f.export = fs.String("export", "", exportUsage)
 	f.exportInsecure = fs.Bool("export-insecure", false, exportInsecureUsage)
 	f.yes = fs.Bool("yes", false, "stop the anchor this machine runs without asking: it leaves its realm, and keeps its identity and settings")
-
-	fs.Usage = func() {
-		ui.Printf("conflux observe — inventory the cryptography of this host's traffic, with no anchor\n\n" +
-			"  conflux observe [--loopback] [--hide-names] [--export HOST:PORT [--export-insecure]] [--yes]\n\n" +
-			"Runs the daemon's observer and nothing else. The host copies the start of every flow\n" +
-			"its interfaces carry to it, and it records which services the host reaches, serves\n" +
-			"or passes on, over which protocols, and whether each key exchange is post-quantum,\n" +
-			"hybrid, classical or none, and which side held it back. It carries nothing, so it\n" +
-			"can slow or break nothing, and it joins no realm: nothing is enrolled.\n\n" +
-			"It runs until it is stopped, and from every boot. With --export, or an export with\n" +
-			"flows in conflux.json, each record goes to that collector as it is made; either way\n" +
-			"the daemon keeps an inventory of them, which conflux inventory prints.\n\n" +
-			"On a machine running an anchor this stops it, and asks first. To observe beside an\n" +
-			"anchor, conflux up --observe or conflux proxy --observe.\n\n")
-		fs.PrintDefaults()
-	}
+	f.api = fs.String("api", "", "enrolment API base URL")
+	fs.Var(&f.taints, "taint", taintUsage)
 
 	return f
 }
 
-// anchorctls returns what to say about the first dash-prefixed argument that is not one of
-// conflux observe's own, or "".
+// anchorctls returns what to say about the first flag that is not one of conflux observe's
+// own, or "", as splitFlags reads the flags: a flag's value is its own, whatever it looks like,
+// and the "--" that is none ends the flags. What is no flag's spelling (flagName), and every
+// word after "--", is left to the flag set: bad syntax, or an argument observe does not take.
 func (f *observeFlags) anchorctls(args []string) string {
-	for _, a := range args {
-		if !strings.HasPrefix(a, "-") {
-			continue
-		}
-
-		name, _, _ := strings.Cut(strings.TrimLeft(a, "-"), "=")
-		if name == "h" || name == "help" || f.fs.Lookup(name) != nil {
-			continue
-		}
-
-		switch name {
-		case "start":
-			return "-start is anchorctl's observe, which starts the observer of a running daemon until it next starts.\n\n" +
-				"  conflux observe                  this machine observes, from now and from every boot\n" +
-				"  conflux up --observe             ... beside an anchor with an interface\n" +
-				"  conflux anchorctl observe -start anchorctl's own, uninterpreted"
-		case "stop":
-			return "-stop is anchorctl's observe, which stops the observer until the daemon next starts.\n\n" +
-				"  conflux down                     stop everything now; a reboot brings it back\n" +
-				"  conflux up --no-observe          keep the anchor, and stop observing for good\n" +
-				"  conflux anchorctl observe -stop  anchorctl's own, uninterpreted"
-		}
-
-		return fmt.Sprintf("%q is not one of conflux observe's flags, which conflux observe -h lists.\n\n"+
-			"  anchorctl's observe, which reports on the observer of a running daemon, is here:\n\n"+
-			"    conflux anchorctl observe %s", a, strings.Join(args, " "))
+	_, _, a := splitFlags(f.fs, args)
+	if a == "" {
+		return ""
 	}
 
-	return ""
+	switch name, _ := flagName(a); name {
+	case "start":
+		return "-start is anchorctl's observe, which starts the observer of a running daemon until it next starts.\n\n" +
+			"  conflux observe                  this machine observes, from now and from every boot\n" +
+			"  conflux up --observe             ... beside an anchor with an interface\n" +
+			"  conflux anchorctl observe -start anchorctl's own, uninterpreted"
+	case "stop":
+		return "-stop is anchorctl's observe, which stops the observer until the daemon next starts.\n\n" +
+			"  conflux down                     stop everything now; a reboot brings it back\n" +
+			"  conflux up --no-observe          keep the anchor, and stop observing for good\n" +
+			"  conflux anchorctl observe -stop  anchorctl's own, uninterpreted"
+	}
+
+	return fmt.Sprintf("%q is not one of conflux observe's flags, which conflux observe -h lists.\n\n"+
+		"  anchorctl's observe, which reports on the observer of a running daemon, is here:\n\n"+
+		"    conflux anchorctl observe %s", a, strings.Join(args, " "))
 }
 
 // The export flags' help, shared by observe, up and proxy.

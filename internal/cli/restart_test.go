@@ -1,28 +1,28 @@
 package cli
 
 import (
-	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
+	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
 )
 
 // fakeManager records what it was asked and reports what the marker looked like at the
 // moment Restart was called.
 type fakeManager struct {
+	noService
+
 	d paths.Dirs
 
 	restarts     int
 	markedAtCall bool
 }
 
-func (m *fakeManager) Install(string, ...string) error { return nil }
-func (m *fakeManager) Remove() error                   { return nil }
-func (m *fakeManager) Stop() error                     { return nil }
-func (m *fakeManager) Installed() (bool, error)        { return true, nil }
-func (m *fakeManager) Describe() string                { return "fake" }
-func (m *fakeManager) LogHint() string                 { return "fake" }
+func (m *fakeManager) Stop() error              { return nil }
+func (m *fakeManager) Installed() (bool, error) { return true, nil }
 
 func (m *fakeManager) Restart() error {
 	m.restarts++
@@ -35,7 +35,7 @@ func testDirs(t *testing.T) paths.Dirs {
 	t.Helper()
 
 	root := t.TempDir()
-	d := paths.Dirs{Config: root, State: root, Run: filepath.Join(root, "run"), Log: filepath.Join(root, "logs")}
+	d := paths.Dirs{Root: root}
 
 	if err := d.EnsureAll(); err != nil {
 		t.Fatalf("EnsureAll: %v", err)
@@ -89,5 +89,38 @@ func TestRestartWithWorksWithNoMarker(t *testing.T) {
 
 	if mgr.restarts != 1 {
 		t.Errorf("Restart called %d times, want 1", mgr.restarts)
+	}
+}
+
+// TestBringWritesTheConfigurationUnderTheLock: the supervisor rewrites conflux.json in its
+// own form as it starts, under the machine's lock, so a command's write takes the same lock
+// and is never written back over by a start that read the file before it.
+func TestBringWritesTheConfigurationUnderTheLock(t *testing.T) {
+	d := testDirs(t)
+
+	unlock, err := flock.Acquire(d.LockFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	saved := make(chan error, 1)
+
+	go func() { saved <- saveConfig(d, &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}}) }()
+
+	select {
+	case err := <-saved:
+		unlock()
+		t.Fatalf("the configuration was written while another held the lock (%v)", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	unlock()
+
+	if err := <-saved; err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := config.Load(d); err != nil {
+		t.Errorf("no configuration was written once the lock was free: %v", err)
 	}
 }

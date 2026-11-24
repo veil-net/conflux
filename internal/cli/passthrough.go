@@ -27,8 +27,20 @@ import (
 //
 // On Unix the process is replaced outright. That gives perfect stdio, the child's
 // exit code without translation, signals delivered to the right process, and
-// nothing left in `ps` pretending to be a wrapper.
+// nothing left in `ps` pretending to be a wrapper. Usage and a socket the user named take an
+// anchorctl that makes nothing of conflux's (anchorctlAside), which is replaced by too, unless
+// it is a temporary copy.
 func passthrough(ctx context.Context, args []string) int {
+	// Usage reaches no daemon, and a daemon the user named themselves is not conflux's:
+	// nothing of conflux's is needed for either, so nothing is made, and none of
+	// connectionDetails' checks apply. Usage alone of anchorctl's commands needs nothing
+	// running: keygen, issue and inspect, which it groups under "no anchor needed", need no
+	// *anchor*, but are still RPCs to the daemon, which mints the identity and derives the
+	// id; help is answered by Go's flag package before anything dials.
+	if wantsUsage(args) || namesSocket(args) || os.Getenv(anchorctl.SocketEnv) != "" {
+		return anchorctlAside(ctx, args)
+	}
+
 	d := activeDirs()
 
 	token, code := connectionDetails(d, args)
@@ -36,20 +48,8 @@ func passthrough(ctx context.Context, args []string) int {
 		return code
 	}
 
-	// Usage reaches no daemon, and makes nothing: anchorctl's answer is the same from any
-	// copy, and the run waits for it, so a temporary one can be removed.
-	if wantsUsage(args) {
-		bin, done, err := libexec.ForUsage(paths.Default())
-		if err != nil {
-			return fail(err)
-		}
-		defer done()
-
-		return runAnchorctl(bin, args, os.Environ())
-	}
-
 	// Only once there is something to talk to. Extracting first made the directories
-	// uninstall had removed, and 45 MB in them, on a machine with nothing running, and
+	// uninstall had removed, and 50-odd MB in them, on a machine with nothing running, and
 	// failed for an account that cannot write them before saying what was wrong.
 	tools, err := toolsFor(d)
 	if err != nil {
@@ -58,7 +58,26 @@ func passthrough(ctx context.Context, args []string) int {
 
 	env := (&anchorctl.Ctl{Socket: d.Socket(), Token: token}).PassthroughEnv()
 
-	return execAnchorctl(ctx, tools.Anchorctl, args, env)
+	return anchorctlExec(ctx, tools.Anchorctl, args, env)
+}
+
+// anchorctlAside hands over to anchorctl for what needs nothing of conflux's -- usage, and a
+// daemon the user named -- from libexec.ForUsage, which makes nothing of the installation's.
+// In place of conflux, as every pass-through is, where that anchorctl outlasts this process: a
+// whole extraction, or one in memory. A temporary copy is removed once anchorctl has finished
+// with it, so that one alone runs as a child, which is passed what conflux is sent.
+func anchorctlAside(ctx context.Context, args []string) int {
+	bin, done, temporary, err := libexec.ForUsage(paths.Default())
+	if err != nil {
+		return fail(err)
+	}
+	defer done()
+
+	if !temporary {
+		return anchorctlExec(ctx, bin, args, os.Environ())
+	}
+
+	return anchorctlRun(bin, args, os.Environ())
 }
 
 // connectionDetails reads the token, and intercepts the one failure anchorctl
@@ -69,21 +88,6 @@ func passthrough(ctx context.Context, args []string) int {
 // started anchord and is not meant to. Everything else, including anchorctl's
 // genuinely good explanations of every other refusal, passes through untouched.
 func connectionDetails(d paths.Dirs, args []string) (string, int) {
-	// A user who named a socket themselves is talking to a daemon conflux does not
-	// manage, so none of the checks below apply to them.
-	if namesSocket(args) || os.Getenv(anchorctl.SocketEnv) != "" {
-		return "", ExitOK
-	}
-
-	// Usage needs nothing running. anchorctl groups keygen, issue and inspect
-	// under "no anchor needed", but that means no *anchor*: they are still RPCs to
-	// the daemon, which mints the identity and derives the id. Asking for help is
-	// the only thing that genuinely reaches no socket, because Go's flag package
-	// answers before anything dials.
-	if wantsUsage(args) {
-		return "", ExitOK
-	}
-
 	if _, err := os.Stat(d.Socket()); errors.Is(err, fs.ErrNotExist) {
 		ui.Errf("nothing is running here.\n\n"+
 			"  conflux start                       start from a configuration that already exists\n"+
@@ -107,52 +111,44 @@ func connectionDetails(d paths.Dirs, args []string) (string, int) {
 }
 
 // wantsUsage reports whether this invocation is only asking what a command takes: help
-// as the command, or a help flag anywhere. Not help anywhere at all, which is as likely a
-// flag's value -- `block -target X -reason help` -- as a request.
+// as the command, or a help flag (helpFlag) anywhere. Not help anywhere at all, which is as
+// likely a flag's value -- `block -target X -reason help` -- as a request.
 func wantsUsage(args []string) bool {
-	if len(args) > 0 && args[0] == "help" {
-		return true
-	}
-
-	for _, a := range args {
-		switch a {
-		case "-h", "--help", "-help":
-			return true
-		}
-	}
-
-	return false
+	return len(args) > 0 && args[0] == "help" || slices.ContainsFunc(args, helpFlag)
 }
 
 // namesSocket reports whether the user supplied their own -socket, in any of the
-// spellings Go's flag package accepts.
+// spellings Go's flag package accepts (flagName).
 func namesSocket(args []string) bool {
-	for _, a := range args {
-		switch {
-		case a == "-socket", a == "--socket":
-			return true
-		case strings.HasPrefix(a, "-socket="), strings.HasPrefix(a, "--socket="):
-			return true
-		}
-	}
+	return slices.ContainsFunc(args, func(a string) bool {
+		n, _ := flagName(a)
 
-	return false
+		return n == "socket"
+	})
 }
 
 // runEscapeHatch is `conflux anchorctl ...`: the always-unambiguous way to reach a
 // command conflux shadows, or one it refuses to pass through.
 func runEscapeHatch(ctx context.Context, args []string) int {
-	// "conflux anchorctl -- proxy -add ..." is a spelling people will try, and the
-	// separator is noise once it has done its job at the shell.
-	if len(args) > 0 && args[0] == "--" {
-		args = args[1:]
-	}
+	args = afterDashes(args)
 
 	if len(args) == 0 {
 		args = []string{"help"}
 	}
 
 	return passthrough(ctx, args)
+}
+
+// afterDashes is the words given to help or to the escape hatch, its only callers, each of which
+// takes a command to name, with a leading "--" passed over: `help -- up` is up's usage, and
+// "conflux anchorctl -- proxy -add ..." is a spelling people will try, where the separator is
+// noise once it has done its job at the shell.
+func afterDashes(args []string) []string {
+	if len(args) > 0 && args[0] == "--" {
+		return args[1:]
+	}
+
+	return args
 }
 
 // runCtl builds a Ctl for conflux's own use, against conflux's own daemon. Its token
@@ -220,26 +216,49 @@ func activeDirs() paths.Dirs {
 // liveEphemeral is the root of the ephemeral run that is running, if one is: the one whose
 // lock is held.
 func liveEphemeral() (paths.Dirs, bool) {
-	for _, root := range paths.EphemeralCandidates() {
-		d := paths.EphemeralDirs(root)
-		if held, err := flock.Held(d.ServeLockFile()); err == nil && held {
-			return d, true
-		}
+	d, run := ephemeralAt(paths.EphemeralRoot())
+
+	return d, run == liveRun
+}
+
+// runState is what an ephemeral root says of its run, by its lock.
+type runState int
+
+const (
+	noRun    runState = iota // no lock: no run, or none since the root was emptied
+	liveRun                  // the lock, held: a run is running
+	staleRun                 // the lock, held by nobody: a run that was killed left it
+)
+
+// ephemeralAt is the ephemeral root at root and what it says of its run, asking its lock once.
+func ephemeralAt(root string) (paths.Dirs, runState) {
+	d := paths.Dirs{Root: root}
+
+	if _, err := os.Stat(d.ServeLockFile()); err != nil {
+		return d, noRun
 	}
 
-	return paths.Dirs{}, false
+	switch held, err := flock.Held(d.ServeLockFile()); {
+	case err != nil:
+		return d, noRun
+	case held:
+		return d, liveRun
+	default:
+		return d, staleRun
+	}
 }
 
 // errEphemeralStarting is an ephemeral run asked for before it is up.
 var errEphemeralStarting = errors.New("the ephemeral run is still starting; ask again once it is up")
 
 // toolsFor is the anchor pair to reach d's daemon with. An ephemeral run's root is the run's
-// own: a reader takes the pair it finds there and writes nothing, and reads nothing until the
-// run has marked itself up, since before that the run may still be clearing what a killed one
-// left -- and a reader that refilled what it was clearing, or held one of its binaries open,
-// would stop it.
+// own: a reader runs its own anchorctl from memory where the platform allows it, as the run
+// does, and otherwise takes the pair it finds there, writing nothing; and asks nothing until
+// the run has marked itself up, since before that the run may still be clearing what a killed
+// one left -- and a reader that refilled what it was clearing, or held one of its binaries
+// open, would stop it.
 func toolsFor(d paths.Dirs) (*libexec.Tools, error) {
-	if !slices.Contains(paths.EphemeralCandidates(), d.State) {
+	if d.Root != paths.EphemeralRoot() {
 		return libexec.Ensure(d)
 	}
 
@@ -247,22 +266,9 @@ func toolsFor(d paths.Dirs) (*libexec.Tools, error) {
 		return nil, errEphemeralStarting
 	}
 
-	return libexec.Extracted(d)
-}
-
-// staleEphemeral is the root an ephemeral run that was killed left behind, if one did: there,
-// with nobody holding its lock.
-func staleEphemeral() (paths.Dirs, bool) {
-	for _, root := range paths.EphemeralCandidates() {
-		d := paths.EphemeralDirs(root)
-		if _, err := os.Stat(d.ServeLockFile()); err != nil {
-			continue
-		}
-
-		if held, err := flock.Held(d.ServeLockFile()); err == nil && !held {
-			return d, true
-		}
+	if t, err := libexec.AnchorctlInMemory(); err == nil {
+		return t, nil
 	}
 
-	return paths.Dirs{}, false
+	return libexec.Extracted(d)
 }

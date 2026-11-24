@@ -28,9 +28,7 @@ func TestEnsureAllNarrowsAnOpenRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Setenv("CONFLUX_DIR", root)
-
-	if err := Default().EnsureAll(); err != nil {
+	if err := (Dirs{Root: root}).EnsureAll(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -94,29 +92,6 @@ func TestSecureFollowsASymlinkOnlyToItsOwnersDirectory(t *testing.T) {
 
 	if err := secureAs(link, os.Geteuid()+1); err == nil {
 		t.Error("a link another uid owns was accepted")
-	}
-}
-
-// TestEnsureAllLeavesTheSharedLogAlone: macOS and FreeBSD write the service's log into the
-// system's /var/log, which is not conflux's to narrow.
-func TestEnsureAllLeavesTheSharedLogAlone(t *testing.T) {
-	shared := t.TempDir()
-	if err := os.Chmod(shared, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	defer func(was string) { sharedLog = was }(sharedLog)
-	sharedLog = shared
-
-	root := t.TempDir()
-	d := Dirs{Config: root, State: root, Run: filepath.Join(root, "run"), Log: shared}
-
-	if err := d.EnsureAll(); err != nil {
-		t.Fatal(err)
-	}
-
-	if got := mode(t, shared); got != 0o755 {
-		t.Errorf("the shared log directory became %#o; conflux must leave it as the system made it", got)
 	}
 }
 

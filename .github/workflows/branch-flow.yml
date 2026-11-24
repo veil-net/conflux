@@ -9,18 +9,27 @@ name: branch-flow
 # -- and ci.yml, which cancels a run in progress for a newer one, would then rerun the whole
 # suite every time a title or a description changed. Here an edit costs a checkout.
 #
+# On pull_request_target, so what holds a pull request to the branches is the base branch's own
+# workflow and script. On pull_request it would be the pull request's: its copy of this file
+# and of branch-flow.sh, which it could rewrite to pass. Nothing of the pull request is checked
+# out, built or run here: the checkout is the base branch, and the pull request's head is read
+# as data alone -- its commit, fetched by branch-flow.sh for git to compare. Nothing here needs
+# a secret or writes, so the token reads contents and nothing more, and is not kept.
+#
 # Required on dev and on version3 alike, beside ci.yml's checks. It always runs and fails rather
 # than skips, since a skipped required check counts as passing. On a hosted runner, fork or
-# not: it reads the repository and holds no secret.
+# not: it runs nothing of the pull request's and holds no secret.
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened, edited]
 
 permissions:
   contents: read
 
+# One run per pull request. github.ref is the base branch on pull_request_target, which every
+# pull request into it shares.
 concurrency:
-  group: branch-flow-${{ github.ref }}
+  group: branch-flow-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
@@ -29,16 +38,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      # Every branch, for origin/version3 beside the pull request's merge, which is HEAD.
+      # The base branch, which is what pull_request_target checks out, with every branch for
+      # origin/version3. The script that runs is the base's.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
+      # The pull request's names and commit reach the script as environment, never as
+      # workflow expressions in its text: a branch name is the pull request author's to choose.
       - name: where it goes, and from where
         env:
           BASE: ${{ github.base_ref }}
           HEAD_REF: ${{ github.head_ref }}
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           REPO: ${{ github.repository }}
           RELEASE: version3
         run: ./scripts/branch-flow.sh

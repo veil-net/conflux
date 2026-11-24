@@ -2,18 +2,25 @@ package daemon
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
+	"fmt"
+	"github.com/veil-net/conflux/internal/enrol"
+	"github.com/veil-net/conflux/internal/paths"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/libexec"
+	"github.com/veil-net/conflux/internal/wintun"
 )
 
 // supervised is a supervisor over the stand-in anchord in the given mode, with the
@@ -151,6 +158,26 @@ func TestTheTailKeepsTheLastLinesInOrder(t *testing.T) {
 	}
 }
 
+// TestTheTailIsEachDaemonsOwn: what a failure is reported in is the last anchord's own words,
+// not those of one that died before it under the same supervisor.
+func TestTheTailIsEachDaemonsOwn(t *testing.T) {
+	s, _ := supervised(t, "1")
+
+	for range 2 {
+		_, c, err := s.spawn(t.Context())
+		if err != nil {
+			t.Fatalf("spawn: %v", err)
+		}
+
+		<-c.exited
+		s.shutdown(c)
+	}
+
+	if got, want := s.tail.String(), "  anchord: anchord starting\n  anchord: "+fakeAnchordLastWords; got != want {
+		t.Errorf("the second anchord's tail reads\n%s\nwant\n%s", got, want)
+	}
+}
+
 // TestAConfigAnchordWouldRefuseIsNotStarted: anchord reads its -config at startup and
 // will not come up on a block it refuses. Started anyway, that is a daemon dying before
 // it answers, which the restart loop retries for ever; refused here, it is permanent,
@@ -188,7 +215,7 @@ func TestAConfigAnchordWouldRefuseIsNotStarted(t *testing.T) {
 func TestAConfigurationIsReadOneWayEverywhere(t *testing.T) {
 	d := dirs(t)
 
-	if _, err := loadConfig(d); !errors.Is(err, ErrNotConfigured) {
+	if _, _, err := loadConfig(d); !errors.Is(err, ErrNotConfigured) {
 		t.Errorf("no conflux.json: %v, want ErrNotConfigured", err)
 	}
 
@@ -196,7 +223,7 @@ func TestAConfigurationIsReadOneWayEverywhere(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := loadConfig(d); !Permanent(err) {
+	if _, _, err := loadConfig(d); !Permanent(err) {
 		t.Errorf("a conflux.json that does not parse: %v, want it refused for good", err)
 	}
 
@@ -209,30 +236,78 @@ func TestAConfigurationIsReadOneWayEverywhere(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := loadConfig(d); err == nil || Permanent(err) {
+	if _, _, err := loadConfig(d); err == nil || Permanent(err) {
 		t.Errorf("a conflux.json that could not be read: %v, want it tried again", err)
 	}
 }
 
-// cycling runs one cycle of s in the background, and returns how to end it and wait.
+// TestARefusedConfigurationIsLeftAsWritten: a conflux.json the start refuses -- one that does
+// not parse, one a newer conflux wrote, one Validate refuses -- is refused for good and left
+// exactly as it was written, so whoever edited it sees what they wrote; the start writes back
+// in conflux's form only what it reads and takes.
+func TestARefusedConfigurationIsLeftAsWritten(t *testing.T) {
+	for name, raw := range map[string]string{
+		"does not parse":    `{not json`,
+		"a newer conflux's": `{"version":99,"mode":"proxy","taints":["t"]}`,
+		"Validate refuses":  `{"version":1,"mode":"neither","taints":["t"],"proxys":["8080=127.0.0.1:1"]}` + "\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := dirs(t)
+
+			if err := os.WriteFile(d.ConfigFile(), []byte(raw), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := (&Supervisor{Dirs: d}).Run(t.Context()); !Permanent(err) {
+				t.Errorf("Run = %v, want a refusal for good", err)
+			}
+
+			if got, _ := os.ReadFile(d.ConfigFile()); string(got) != raw {
+				t.Errorf("the refused conflux.json was rewritten:\n%s", got)
+			}
+		})
+	}
+}
+
+// cycling runs one cycle of s in the background, and returns how to end it and wait, which
+// hands back what the cycle returned.
 func cycling(t *testing.T, s *Supervisor) (stop func() error) {
 	t.Helper()
 
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan error, 1)
+	var err error
 
-	go func() { done <- s.cycle(ctx) }()
+	end := inBackground(t, "the cycle", func(ctx context.Context) { err = s.cycle(ctx) })
 
 	return func() error {
+		end()
+
+		return err
+	}
+}
+
+// inBackground runs f in the background under a context of its own, and returns how to stop
+// it: that context cancelled, and f waited for, failing the test, saying what, if it has not
+// returned within 15 s.
+func inBackground(t *testing.T, what string, f func(context.Context)) (stop func()) {
+	t.Helper()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		f(ctx)
+	}()
+
+	return func() {
+		t.Helper()
 		cancel()
 
 		select {
-		case err := <-done:
-			return err
+		case <-done:
 		case <-time.After(15 * time.Second):
-			t.Fatal("the cycle did not end")
-
-			return nil
+			t.Fatalf("%s did not return once stopped", what)
 		}
 	}
 }
@@ -259,24 +334,53 @@ func ran(t *testing.T, log string) []string {
 	return strings.Fields(string(b))
 }
 
-// TestObservingAloneStartsNoAnchor: a machine that only observes has its daemon started
-// able to, and the observer started in it, and nothing else -- no anchor, no enrolment, no
-// credential -- and is ready once the observer is.
-func TestObservingAloneStartsNoAnchor(t *testing.T) {
+// credentialed gives the machine at d a current alpha credential in the taint "t", which
+// renews nowhere a test reaches and is not due: a start reads it and asks nobody anything.
+func credentialed(t *testing.T, d paths.Dirs) config.Envelope {
+	t.Helper()
+
+	saveDoc(t, d, map[string]any{
+		"formatVersion": 1, "kind": "anchor", "identity": "aa", "genesis": "bb",
+		"chain":      base64.StdEncoding.EncodeToString([]byte("the chain")),
+		"issuedAt":   time.Now().Add(-time.Hour).UTC().Format(enrol.ManifestTime),
+		"notAfter":   time.Now().Add(29 * 24 * time.Hour).UTC().Format(enrol.ManifestTime),
+		"taints":     []string{"t"},
+		"bootstrap":  []string{"genesis.veilnet.com.au:4700"},
+		"renewalUrl": "https://api.invalid/ghosts/alpha/renew", "renewalAuth": "anchor-id",
+	})
+
+	env, err := config.LoadManifest(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return env
+}
+
+// TestObservingAloneRunsUnderTheMachinesCredential: a machine that only observes starts the
+// observer in its daemon under the machine's own credential -- the manifest, on anchorctl's
+// stdin, never named in argv -- and nothing else: no anchor. It records the AnchorID the
+// observer runs as, which is what the credential is renewed by, and is ready once the
+// observer is.
+func TestObservingAloneRunsUnderTheMachinesCredential(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("a console control event needs the console this test shares")
 	}
 
 	t.Setenv(fakeAnchorctlStatusEnv, "none")
 	t.Setenv(fakeAnchorctlObserverEnv, "running")
-
 	t.Setenv(fakeAnchordListenEnv, "1")
+
+	observed := filepath.Join(t.TempDir(), "observed")
+	t.Setenv(fakeAnchorctlObservedEnv, observed)
 
 	s, log := supervised(t, "serve")
 
-	if err := config.Save(s.Dirs, &config.Config{Mode: config.ModeObserve, Observer: &config.Observer{}}); err != nil {
+	if err := config.Save(s.Dirs, &config.Config{Mode: config.ModeObserve, Taints: []string{"t"}, Observer: &config.Observer{}}); err != nil {
 		t.Fatal(err)
 	}
+
+	env := credentialed(t, s.Dirs)
 
 	stop := cycling(t, s)
 
@@ -292,66 +396,464 @@ func TestObservingAloneStartsNoAnchor(t *testing.T) {
 
 	cmds := ran(t, log)
 	if !slices.Contains(cmds, "observe") {
-		t.Errorf("anchorctl ran %v: the observer was never started", cmds)
+		t.Fatalf("anchorctl ran %v: the observer was never started", cmds)
 	}
 
-	if slices.Contains(cmds, "start") || slices.Contains(cmds, "renew") {
+	if slices.Contains(cmds, "start") {
 		t.Errorf("anchorctl ran %v: observing alone started an anchor", cmds)
 	}
 
-	if config.HasManifest(s.Dirs) {
-		t.Error("observing alone enrolled")
+	if got, _ := os.ReadFile(observed); string(got) != string(env) {
+		t.Errorf("the observer was started with %q on stdin, want the machine's manifest", got)
+	}
+
+	if st, err := config.LoadState(s.Dirs); err != nil || st.AnchorID != fakeAnchorID {
+		t.Errorf("the state records AnchorID %q (%v), want the one the observer runs as, %s", st.AnchorID, err, fakeAnchorID)
 	}
 }
 
-// TestTheObserverOutlivesAnAnchorThatCannotComeUp: beside an anchor, the observer starts
-// first, and an anchor that cannot come up for now -- an enrolment nobody answers -- leaves
-// the daemon, the observer and its inventory running, for the watcher to bring the anchor up
-// later, rather than ending the cycle and the inventory with it. The service manager is told
-// the unit started, or systemd would fail it after TimeoutStartSec and take the observer down
-// anyway; the marker, which says an anchor is up, is not written.
-func TestTheObserverOutlivesAnAnchorThatCannotComeUp(t *testing.T) {
+// TestObservingAloneEnrolsFirst: a machine that only observes and holds no credential yet is
+// enrolled in its configured taints before the observer starts, as an anchor's is, and the
+// enrolment is kept.
+func TestObservingAloneEnrolsFirst(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("a console control event needs the console this test shares")
 	}
 
 	t.Setenv(fakeAnchorctlStatusEnv, "none")
 	t.Setenv(fakeAnchorctlObserverEnv, "running")
-
 	t.Setenv(fakeAnchordListenEnv, "1")
 
-	s, log := supervised(t, "serve")
-	s.Ready = make(chan struct{})
+	srv, asked, _ := enroller(t, []string{"t"})
 
-	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, Observer: &config.Observer{},
-		Proxies: []string{"8080=127.0.0.1:1"}, APIBaseURL: "http://127.0.0.1:1"}
-	if err := config.Save(s.Dirs, cfg); err != nil {
+	s, log := supervised(t, "serve")
+
+	if err := config.Save(s.Dirs, &config.Config{
+		Mode: config.ModeObserve, Taints: []string{"t"}, Observer: &config.Observer{}, APIBaseURL: srv.URL,
+	}); err != nil {
 		t.Fatal(err)
 	}
 
 	stop := cycling(t, s)
 
-	// Closed once the anchor's start has been refused -- nothing listens on port 1 -- and the
-	// cycle has decided to go on without it.
-	eventually(t, "the service manager being told the unit started", func() bool {
-		select {
-		case <-s.Ready:
-			return true
-		default:
-			return false
-		}
-	})
-
-	if IsReady(s.Dirs) {
-		t.Error("ready with no anchor up")
-	}
+	eventually(t, "the readiness marker", func() bool { return IsReady(s.Dirs) })
 
 	if err := stop(); err != nil {
-		t.Errorf("the cycle ended with %v, where the anchor's failure should have left it running", err)
+		t.Errorf("the cycle ended with %v", err)
 	}
 
-	if cmds := ran(t, log); slices.Index(cmds, "observe") < 0 || slices.Contains(cmds, "start") {
-		t.Errorf("anchorctl ran %v; want the observer started and no anchor", cmds)
+	if !config.HasManifest(s.Dirs) {
+		t.Error("observing alone with no credential started without enrolling")
+	}
+
+	if !slices.Equal(*asked, []string{"t"}) {
+		t.Errorf("enrolled in %v, want the configured taints", *asked)
+	}
+
+	if cmds := ran(t, log); !slices.Contains(cmds, "observe") {
+		t.Errorf("anchorctl ran %v: the observer was never started", cmds)
+	}
+}
+
+// TestTheObserverOutlivesAnAnchorThatDoesNotComeUp: beside an anchor, the observer starts
+// first, under the credential, and an anchor whose start then fails -- for now, refused for
+// good, or on Windows for a driver that could not be had, which is fetched before the start
+// takes conflux.lock (TestTheDriverIsFetchedOutsideTheLock) and so before the observer starts --
+// leaves the daemon, the observer and its inventory running, for the watcher to bring the
+// anchor up later, rather than ending the cycle and the inventory with it. A refusal for
+// good is the watcher's to count, as a rebuild's are, which gives the anchor up after
+// rebuildRefusals of them and keeps the observer (TestTheWatcherCountsTheStartsRefusal). The
+// service manager is told the unit started, or systemd would fail it after TimeoutStartSec and
+// take the observer down anyway; the marker, which says an anchor is up, is not written.
+func TestTheObserverOutlivesAnAnchorThatDoesNotComeUp(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a console control event needs the console this test shares")
+	}
+
+	for name, c := range map[string]struct {
+		mode   config.Mode // the anchor's
+		refuse string      // how the stand-in anchorctl refuses its start, or nothing
+		driver error       // what fetching Windows' driver fails with, or nothing
+		steps  []string    // the driver's fetch, the observer's start and anchorctl's start that ran, in order
+	}{
+		"whose start fails for now": {mode: config.ModeProxy, refuse: fakeAnchorctlFailEnv, steps: []string{"observe", "start"}},
+		// An argument vector anchorctl will not take, exit 2.
+		"whose start is refused for good": {mode: config.ModeProxy, refuse: fakeAnchorctlRefuseEnv,
+			steps: []string{"observe", "start"}},
+		// An interface on Windows, with wintun.net out of reach: no anchorctl start without it.
+		"whose driver cannot be had": {mode: config.ModeTUN, driver: errors.New("wintun.net did not answer"),
+			steps: []string{"wintun", "observe"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(fakeAnchorctlStatusEnv, "none")
+			t.Setenv(fakeAnchorctlObserverEnv, "running")
+			t.Setenv(fakeAnchordListenEnv, "1")
+
+			if c.refuse != "" {
+				t.Setenv(c.refuse, "start")
+			}
+
+			s, log := supervised(t, "serve")
+			s.Ready = make(chan struct{})
+
+			fetchingDriver(t, log, c.driver)
+
+			cfg := &config.Config{Mode: c.mode, Taints: []string{"t"}, Observer: &config.Observer{}}
+			if c.mode == config.ModeProxy {
+				cfg.Proxies = []string{"8080=127.0.0.1:1"}
+			}
+
+			if err := config.Save(s.Dirs, cfg); err != nil {
+				t.Fatal(err)
+			}
+
+			credentialed(t, s.Dirs)
+
+			stop := cycling(t, s)
+
+			// Closed once the anchor's start has failed and the cycle has decided to go on
+			// without it.
+			eventually(t, "the service manager being told the unit started", func() bool {
+				select {
+				case <-s.Ready:
+					return true
+				default:
+					return false
+				}
+			})
+
+			if IsReady(s.Dirs) {
+				t.Error("ready with no anchor up")
+			}
+
+			if err := stop(); err != nil {
+				t.Errorf("the cycle ended with %v, where the observer should have kept it running", err)
+			}
+
+			cmds := ran(t, log)
+			if steps := slices.DeleteFunc(slices.Clone(cmds), func(cmd string) bool {
+				return !slices.Contains([]string{"wintun", "observe", "start"}, cmd)
+			}); !slices.Equal(steps, c.steps) {
+				t.Errorf("anchorctl ran %v; want, of the driver's fetch and the two starts, %v", cmds, c.steps)
+			}
+		})
+	}
+}
+
+// fetchingDriver stands in for wintun.Ensure, answering err, and records each fetch as "wintun"
+// in log, where the stand-in anchorctl records its commands, so the order of the two is read
+// off one log.
+func fetchingDriver(t *testing.T, log string, err error) {
+	t.Helper()
+
+	ensureDriver = func(context.Context, paths.Dirs) error {
+		f, openErr := os.OpenFile(log, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+		if openErr != nil {
+			return openErr
+		}
+
+		defer f.Close()
+
+		_, _ = fmt.Fprintln(f, "wintun")
+
+		return err
+	}
+
+	t.Cleanup(func() { ensureDriver = wintun.Ensure })
+}
+
+// bringings are the two ways the supervisor brings an anchor up, each fetching Windows' driver
+// before it takes conflux.lock: the cycle's start, and the watcher's rebuild. steps is what each
+// runs of anchorctl, and the driver's fetch as "wintun", in order, for an interface.
+var bringings = map[string]struct {
+	bring func(context.Context, *Supervisor, *config.Config) error
+	steps []string
+}{
+	"the start": {
+		bring: func(ctx context.Context, s *Supervisor, cfg *config.Config) error {
+			_, anchorErr, err := s.up(ctx, cfg)
+
+			return errors.Join(anchorErr, err)
+		},
+		steps: []string{"wintun", "start"},
+	},
+	"a rebuild": {
+		bring: func(ctx context.Context, s *Supervisor, cfg *config.Config) error {
+			return s.rebuild(ctx, cfg, false)
+		},
+		steps: []string{"stop", "wintun", "start"},
+	},
+}
+
+// TestTheDriverIsFetchedOutsideTheLock: Windows' driver is part of the anchor's start, so the
+// start fetches it, and so does a rebuild -- one the start could not have is the watcher's to
+// fetch again, with the anchor -- each before anchorctl's start. And before either takes
+// conflux.lock, so a first download that hangs -- up to wintun's 90-second timeout -- holds back
+// neither `conflux renew` nor up's save of the configuration, which wait for that lock. The
+// anchor starts once the driver is had.
+func TestTheDriverIsFetchedOutsideTheLock(t *testing.T) {
+	for name, b := range bringings {
+		t.Run(name, func(t *testing.T) {
+			s, log := supervised(t, "1")
+			credentialed(t, s.Dirs)
+			s.priv.Dir = s.Dirs.RootAnchorDir()
+
+			cfg := &config.Config{Mode: config.ModeTUN, Taints: []string{"t"}}
+			if err := config.Save(s.Dirs, cfg); err != nil {
+				t.Fatal(err)
+			}
+
+			fetching, fetched := make(chan struct{}), make(chan struct{})
+
+			fetchingDriver(t, log, nil)
+			logged := ensureDriver
+
+			ensureDriver = func(ctx context.Context, d paths.Dirs) error {
+				close(fetching)
+				<-fetched
+
+				return logged(ctx, d)
+			}
+
+			done := make(chan error, 1)
+
+			go func() { done <- b.bring(t.Context(), s, cfg) }()
+
+			select {
+			case <-fetching:
+			case err := <-done:
+				t.Fatalf("brought up without fetching the driver: %v", err)
+			case <-time.After(10 * time.Second):
+				t.Fatal("the driver was never fetched")
+			}
+
+			unlock, free, err := flock.TryAcquire(s.Dirs.LockFile())
+
+			switch {
+			case err != nil:
+				t.Errorf("TryAcquire: %v", err)
+			case free:
+				unlock()
+			default:
+				t.Errorf("%s held conflux.lock while the driver was fetched", name)
+			}
+
+			close(fetched)
+
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Errorf("%s: %v", name, err)
+				}
+			case <-time.After(10 * time.Second):
+				t.Fatalf("%s did not finish once the driver was had", name)
+			}
+
+			if cmds := ran(t, log); !slices.Equal(cmds, b.steps) {
+				t.Errorf("%s ran %v, want %v", name, cmds, b.steps)
+			}
+		})
+	}
+}
+
+// warnings is a reporter that keeps what it was told to warn of.
+type warnings struct {
+	nopReporter
+
+	mu   sync.Mutex
+	said []string
+}
+
+func (w *warnings) Warn(format string, args ...any) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.said = append(w.said, fmt.Sprintf(format, args...))
+}
+
+// waitingForLock reports whether a goroutine of this process is in flock.Acquire, which takes no
+// context and says nothing while it waits for a lock another holds; its stack says where it is.
+func waitingForLock() bool {
+	buf := make([]byte, 1<<20)
+
+	return strings.Contains(string(buf[:runtime.Stack(buf, true)]), "/internal/flock.Acquire(")
+}
+
+// TestAStopOnTheWayToTheLockGoesNoFurther: a stop that comes before the start, or a rebuild, holds
+// conflux.lock ends it there: one that comes while Windows' driver is fetched, without waiting
+// out the lock behind `conflux renew` for a start nothing wants any more, and one that comes
+// while it waits for that lock, as soon as it has it. Neither starts the observer under a context
+// already cancelled only to warn that it did not, starts the anchor, or writes the state.
+func TestAStopOnTheWayToTheLockGoesNoFurther(t *testing.T) {
+	for _, waits := range []bool{false, true} {
+		when := "during the fetch"
+		if waits {
+			when = "while it waited for conflux.lock"
+		}
+
+		for name, b := range bringings {
+			t.Run(name+", "+when, func(t *testing.T) {
+				s, log := supervised(t, "1")
+				credentialed(t, s.Dirs)
+				s.priv.Dir = s.Dirs.RootAnchorDir()
+
+				w := &warnings{}
+				s.Reporter = w
+
+				cfg := &config.Config{Mode: config.ModeTUN, Taints: []string{"t"}, Observer: &config.Observer{}}
+				if err := config.Save(s.Dirs, cfg); err != nil {
+					t.Fatal(err)
+				}
+
+				fetching := make(chan struct{})
+
+				// Had at once where the stop is to come while the lock is waited for; held until
+				// the stop otherwise.
+				ensureDriver = func(ctx context.Context, _ paths.Dirs) error {
+					close(fetching)
+
+					if waits {
+						return nil
+					}
+
+					<-ctx.Done()
+
+					return ctx.Err()
+				}
+
+				t.Cleanup(func() { ensureDriver = wintun.Ensure })
+
+				// `conflux renew`, holding conflux.lock meanwhile.
+				unlock, err := flock.Acquire(s.Dirs.LockFile())
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				ctx, cancel := context.WithCancel(t.Context())
+				done := make(chan error, 1)
+
+				go func() { done <- b.bring(ctx, s, cfg) }()
+
+				select {
+				case <-fetching:
+				case <-time.After(10 * time.Second):
+					t.Fatal("the driver was never fetched")
+				}
+
+				if waits {
+					eventually(t, name+" waiting for conflux.lock", waitingForLock)
+				}
+
+				cancel()
+
+				if waits {
+					// Let go, as `conflux renew` lets go: the lock is had only now.
+					unlock()
+
+					select {
+					case err = <-done:
+					case <-time.After(10 * time.Second):
+						t.Fatalf("%s, stopped %s, did not return once it had the lock", name, when)
+					}
+				} else {
+					select {
+					case err = <-done:
+						unlock()
+					case <-time.After(10 * time.Second):
+						t.Errorf("%s, stopped %s, waited for conflux.lock", name, when)
+						unlock()
+
+						err = <-done
+					}
+				}
+
+				if !errors.Is(err, context.Canceled) {
+					t.Errorf("%s, stopped %s, returned %v, want the stop", name, when, err)
+				}
+
+				if len(w.said) > 0 {
+					t.Errorf("%s, stopped %s, warned %q", name, when, w.said)
+				}
+
+				if _, err := os.Stat(s.Dirs.StateFile()); !errors.Is(err, os.ErrNotExist) {
+					t.Errorf("%s, stopped %s, wrote %s (%v)", name, when, s.Dirs.StateFile(), err)
+				}
+
+				if cmds := ran(t, log); slices.Contains(cmds, "observe") || slices.Contains(cmds, "start") {
+					t.Errorf("%s, stopped %s, went on to run anchorctl %v", name, when, cmds)
+				}
+			})
+		}
+	}
+}
+
+// TestAStopThatEndsABringUpIsNoFailure: a start, or the watcher's rebuild, that a stop ends is no
+// failure of it. The start hands the stop back, and the rebuild warns of nothing past the lost
+// anchor that began it. Neither asks whether anchord would now be started otherwise (redecided:
+// conflux.json and the manifest read again, and on Linux firewall-cmd and iptables forked under
+// timeouts the stop does not reach) for a cycle that is ending anyway: the decision here is not
+// the one anchord was started from, so a redecided asked would end the cycle to start it again.
+func TestAStopThatEndsABringUpIsNoFailure(t *testing.T) {
+	s, _ := supervised(t, "1")
+	s.decided = Privilege{Account: true}
+	s.respawn = make(chan struct{}, 1)
+
+	w := &warnings{}
+	s.Reporter = w
+
+	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	if id, anchorErr, err := s.up(ctx, cfg); id != "" || anchorErr != nil || !errors.Is(err, context.Canceled) {
+		t.Errorf("the start, stopped, = %q, %v, %v; want the stop alone", id, anchorErr, err)
+	}
+
+	why := "anchord holds no anchor any more"
+	if got := s.rebuildAnchor(ctx, cfg, why, false, newKeeper()); got != retrying {
+		t.Errorf("the rebuild, stopped, came to %v, want retrying (%v), which the watcher's stop ends", got, retrying)
+	}
+
+	if want := []string{why + "; rebuilding the anchor"}; !slices.Equal(w.said, want) {
+		t.Errorf("warned %q, want %q alone", w.said, want)
+	}
+
+	select {
+	case <-s.respawn:
+		t.Error("a stop asked for anchord to be started again")
+	default:
+	}
+}
+
+// TestNoCredentialNoObserver: the observer runs under the machine's credential, so beside an
+// anchor whose enrolment nobody answers neither starts, and the cycle ends to be tried again.
+func TestNoCredentialNoObserver(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a console control event needs the console this test shares")
+	}
+
+	t.Setenv(fakeAnchorctlStatusEnv, "none")
+	t.Setenv(fakeAnchordListenEnv, "1")
+	t.Setenv(config.InsecureAPIEnv, "1")
+
+	s, log := supervised(t, "serve")
+
+	if err := config.Save(s.Dirs, &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, Observer: &config.Observer{},
+		Proxies: []string{"8080=127.0.0.1:1"}, APIBaseURL: "http://127.0.0.1:1"}); err != nil {
+		t.Fatal(err)
+	}
+
+	var err error
+
+	returns(t, "a cycle with no credential to observe under", func() { err = s.cycle(t.Context()) })
+
+	if err == nil || Permanent(err) {
+		t.Errorf("the cycle ended with %v, want a failure the next start may not meet", err)
+	}
+
+	if cmds := ran(t, log); slices.Contains(cmds, "observe") {
+		t.Errorf("anchorctl ran %v: the observer was started with no credential", cmds)
 	}
 }
 
@@ -368,9 +870,11 @@ func TestAnObserverTheHostRefusesEndsObservingAlone(t *testing.T) {
 
 	s, _ := supervised(t, "serve")
 
-	if err := config.Save(s.Dirs, &config.Config{Mode: config.ModeObserve, Observer: &config.Observer{}}); err != nil {
+	if err := config.Save(s.Dirs, &config.Config{Mode: config.ModeObserve, Taints: []string{"t"}, Observer: &config.Observer{}}); err != nil {
 		t.Fatal(err)
 	}
+
+	credentialed(t, s.Dirs)
 
 	var err error
 

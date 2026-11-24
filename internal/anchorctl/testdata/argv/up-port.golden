@@ -2,7 +2,7 @@ start
 -manifest
 -
 -dir
-/var/lib/conflux/anchor
+/var/lib/.conflux/anchor
 -port
 4711
 -tun=true

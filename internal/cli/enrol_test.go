@@ -2,7 +2,6 @@ package cli
 
 import (
 	"encoding/base64"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,7 +9,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
-	"github.com/veil-net/conflux/internal/ui"
+	"github.com/veil-net/conflux/internal/paths/pathstest"
 )
 
 // guardianDoc is a manifest a self-hosted guardian issues: anchor's format, plus the
@@ -40,17 +39,10 @@ const guardianAPI = "https://guardian.example.gov"
 // importCredential tells a person goes nowhere.
 func site(t *testing.T, doc string) (paths.Dirs, string) {
 	t.Helper()
-	t.Setenv("CONFLUX_DIR", t.TempDir())
 
-	out := ui.Out
-	ui.Out = io.Discard
+	captureUI(t)
 
-	t.Cleanup(func() { ui.Out = out })
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll: %v", err)
-	}
+	d := pathstest.Root(t)
 
 	path := filepath.Join(t.TempDir(), "manifest.b64")
 	env := base64.StdEncoding.EncodeToString([]byte(doc))
@@ -100,6 +92,25 @@ func TestEnrolInstallsWhatItWasGiven(t *testing.T) {
 	}
 }
 
+// TestEnrolReplacesAStateItCannotRead: a state.json this build cannot read is refused by a
+// start, but a credential installed here is a new identity, whose state starts empty
+// whatever the old one said, so the install goes ahead and the state is written fresh.
+func TestEnrolReplacesAStateItCannotRead(t *testing.T) {
+	d, path := site(t, guardianDoc)
+
+	if err := os.WriteFile(d.StateFile(), []byte(`{"version":1,"anchorId":"anchorold",}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := importCredential(d, path, guardianAPI, ""); err != nil {
+		t.Fatalf("importCredential over a state.json it cannot read: %v", err)
+	}
+
+	if st, err := config.LoadState(d); err != nil || st.AnchorID != "" {
+		t.Errorf("the state after the install is %+v, %v; want a fresh one", st, err)
+	}
+}
+
 // TestEnrolWillNotReplaceAnIdentity is the rule this verb exists to not break.
 //
 // `up` enrols only when there is no manifest, because a second enrolment is a
@@ -122,7 +133,8 @@ func TestEnrolWillNotReplaceAnIdentity(t *testing.T) {
 		t.Fatal("importCredential replaced an existing identity")
 	}
 
-	if !strings.Contains(err.Error(), "uninstall") {
+	// uninstall removes conflux too, so the way through installs it again.
+	if !strings.Contains(err.Error(), "uninstall") || !strings.Contains(err.Error(), "install conflux again") {
 		t.Errorf("the refusal should name the way through: %v", err)
 	}
 
@@ -136,10 +148,37 @@ func TestEnrolWillNotReplaceAnIdentity(t *testing.T) {
 	}
 }
 
+// TestEnrolWillNotInstallOverAManifestItCannotRead: a manifest.b64 that is there and cannot
+// be read may be the identity this machine runs, so nothing is installed over it. A directory
+// at its path fails the read as root too.
+func TestEnrolWillNotInstallOverAManifestItCannotRead(t *testing.T) {
+	d, path := site(t, guardianDoc)
+
+	if err := os.Mkdir(d.ManifestFile(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := importCredential(d, path, guardianAPI, ""); err == nil || !strings.Contains(err.Error(), "already has a credential") {
+		t.Errorf("importCredential over a manifest.b64 it cannot read = %v, want the refusal to replace an identity", err)
+	}
+
+	if fi, err := os.Stat(d.ManifestFile()); err != nil || !fi.IsDir() {
+		t.Errorf("manifest.b64 after the refusal: %v, %v; want it left as it was", fi, err)
+	}
+
+	if _, err := config.Load(d); err == nil {
+		t.Error("the refused import wrote the configuration anyway")
+	}
+}
+
 // TestEnrolRefusesBeforeWriting covers every refusal at once, and checks the same
 // thing about each: that nothing reached the disk. A verb that writes half of a
-// provisioning is worse than one that writes none of it.
+// provisioning is worse than one that writes none of it. An API every start would refuse
+// (config.CheckAPIURL) is among them, refused while a person is here to fix it.
 func TestEnrolRefusesBeforeWriting(t *testing.T) {
+	t.Setenv(config.InsecureAPIEnv, "")
+
+	plainRenewal := strings.Replace(guardianDoc, `"renewalUrl": "https://`, `"renewalUrl": "http://`, 1)
 	realmDoc := strings.Replace(guardianDoc, `"kind": "anchor"`, `"kind": "realm"`, 1)
 	futureDoc := strings.Replace(guardianDoc, `"formatVersion": 1`, `"formatVersion": 2`, 1)
 	unknownAuth := strings.Replace(guardianDoc, `"renewalAuth": "node-secret"`, `"renewalAuth": "mtls"`, 1)
@@ -162,6 +201,11 @@ func TestEnrolRefusesBeforeWriting(t *testing.T) {
 		"a renewing one already over":     {lapsedGuardian, guardianAPI, "expired"},
 		"an address anchor refuses":       {badAddress, guardianAPI, "unicast"},
 		"an api naming another host":      {guardianDoc, "https://somewhere.else", "somewhere.else"},
+		"an api of another scheme":        {guardianDoc, "ftp://guardian.example.gov", "want https"},
+		"a plain-http api":                {guardianDoc, "http://guardian.example.gov", "plain http"},
+		"a plain-http renewal URL":        {plainRenewal, "", "plain http"},
+		"a plain-http renewal URL, --api": {plainRenewal, guardianAPI, "plain http"},
+		"a fixed term's plain-http api":   {ghostNodeDoc, "http://ghosts.example", "plain http"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			d, path := site(t, tc.doc)

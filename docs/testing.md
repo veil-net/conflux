@@ -8,9 +8,25 @@ $ make golden      # rewrite the argv fixtures after an intended change
 ```
 
 Most of the suite runs without the real anchor binaries — the tests that need them
-skip, each saying `no anchor pair` (`internal/anchortest`). The ones that need them are
-the pair's own header check, the extraction tests, the flag cross-check, the shadowing
-and collision checks, the supervised-lifetime benchmark, and everything under `test/`.
+skip, each saying `no anchor pair` (`internal/anchortest`), which is what CI's gate keys on.
+The ones that need them are:
+
+- `anchor`: the pair's own header check (`TestPairIsRealExecutables`);
+- `internal/anchorctl`: the flag cross-check (`TestEveryFlagWeUseExists`);
+- `internal/cli`: the collision and realm-control checks (`TestTheCollisionsAreTheDocumentedOnes`),
+  the three ephemeral-reader tests (`TestStatusWritesNothingIntoAStartingEphemeralRun`,
+  `TestAKilledRunsMarkerIsNotTheNextRuns`, `TestAReaderTakesAnEphemeralRunsPairAsItIs`) and a
+  pass-through to a named socket (`TestAPassThroughToANamedSocketMakesNothing`,
+  `TestAPassThroughToANamedSocketReplacesConflux`);
+- `internal/libexec`: the extraction tests (`TestEnsure*`), the integrity check (`TestIntact*`,
+  `TestAnExtractionIsTakenOnAStat`), help's anchorctl (`TestUsageMakesNothing`), on Linux the
+  pair in memory (`TestInMemoryRunsWithNoFile`, `TestAnchorctlInMemoryIsAnchorctlAlone`,
+  `TestForUsageWritesNothing`), on Windows the usage copy (`TestTheUsageCopyIsTheCallersOwn`),
+  and `BenchmarkExtract` and `BenchmarkIntact`;
+- `internal/daemon`: on Linux an ephemeral run's pair in memory
+  (`TestAnEphemeralRunKeepsItsPairInMemory`), and the supervised-lifetime benchmark
+  (`BenchmarkDaemonLifecycle`);
+- everything under `test/`.
 
 ## The split
 
@@ -20,17 +36,28 @@ a daemon or a network. Most of conflux can be.
 | Package | What is asserted |
 |---|---|
 | `anchor` | the embedded binaries are real executables of the right architecture; `SetID` is the same function of the two digests whether stamped or computed, and a malformed stamp is computed instead |
-| `internal/config` | JSON round-trips, the tuning fields included; the mode rules match anchor's — a proxy needs userspace, a subnet, an exit and an IPv4 work in either mode, the two exits are alternatives, observing needs the observer and serves no proxy, the observer is refused where anchor has no capture, a port is refused beside an uplink, an empty taint set is accepted; proxy specs, IPv4 addresses, subnets — `*`, bindings to the machine's own taints and anchor's limits on a list included — AnchorIDs and taint names parse and refuse exactly as anchor does, and bootstrap entries by anchor's grammar (anchor skips a bad one with a warning, conflux refuses it), with conflux's own refusals of a comma in a list entry and of a descriptor uplink; the export block is read as protojson reads it and refuses what anchord refuses at startup; atomic writes leave old-or-new and never a truncated file, and narrow a file that was `0644` |
+| `internal/config` | JSON round-trips, the tuning fields included; `conflux.json` and `state.json` rewritten in conflux's form where a hand edit left them otherwise and left as they are where conflux wrote them, a `state.json` that does not parse or is a newer version's refused and left alone (a refused `conflux.json` is the daemon's `TestARefusedConfigurationIsLeftAsWritten`); the mode rules match anchor's — a proxy needs userspace, a subnet, an exit and an IPv4 work in either mode, the two exits are alternatives, observing needs the observer and serves no proxy, the observer is refused where anchor has no capture, a port is refused beside an uplink, an empty taint set is accepted; proxy specs, IPv4 addresses, subnets — `*`, bindings to the machine's own taints and anchor's limits on a list included — AnchorIDs and taint names parse and refuse exactly as anchor does, and bootstrap entries by anchor's grammar (anchor skips a bad one with a warning, conflux refuses it), with conflux's own refusals of a comma in a list entry and of a descriptor uplink; the export block is read as protojson reads it and refuses what anchord refuses at startup; atomic writes leave old-or-new and never a truncated file, and narrow a file that was `0644`; on Unix, `WriteFileIfChanged` writing nothing for the same bytes, giving a widened mode back, and writing again, as its own, a file of those bytes another account owns; a `manifest.b64` that is there and cannot be read taken for an identity, never for none; on Windows, `ReadUntrusted` refusing a reparse point and a second name |
 | `internal/enrol` | the manifest decodes exactly as anchorctl reads it, refuses a realm manifest and a future format version, and **survives a renewal losslessly**; which documents are alpha's, and the taints check every start holds a machine to, with a way out that fits who issued the credential |
 | `internal/enrol` (client) | against `httptest`: the alpha exchange byte for byte, taints in the enrolment's body and restated in the renewal's, none refused before anything is sent; the guardian bearer, 4xx and 5xx, an oversized body, a cross-host renewal URL and a downgrading redirect, a plain-http base, cancellation, and clock skew; a renewal's bootstrap list taken only when anchor would dial all of it; and that an enrolment is handed back as it arrived, to be written before it is read |
 | `internal/taint` | generated names — 26 symbols, a little over 128 bits — satisfy anchor's rule, avoid ambiguous glyphs, are grouped for reading, and do not repeat |
-| `internal/daemon` | the renewal arithmetic: two thirds of the *observed* window, expiry, absent timestamps, and the clamp; a renewal against a stand-in issuer, restating the manifest's taints whatever `conflux.json` says, spliced into the manifest with the issuer's bootstrap list and mirrored into the state, and a failed one recorded; an enrolment asking for the configured taints, never for none, and kept before it is read even when it grants others; a machine whose credential grants other taints, or an alpha one granting none, refused for good with no call, and an issued one granting none started; a bad clock measured again rather than trusted; anchord's last words kept when it dies, in order; shutdown returning once anchord has gone, and closing a running one with its signal alone; the anchord a dead supervisor left recorded, stopped by the next one only when it runs the recorded executable or, with none reported, holds the socket's lock, a record of one that has gone cleared, and a second supervisor for one root refused; on Windows, anchord ended with its job; a conflux.json read one way by every reader -- none is nothing to start, unparsable is permanent, unreadable is retried; an uplink reopen counted in the bring-up's own state write; the link watcher's device parsing, its grace against anchor's own dial timeout, and its giving up after three rebuilds refused for good; observing alone, a cycle that starts the observer and no anchor and never enrols, and one the host refuses to capture for ending for good; beside an anchor, an observer started first and kept when the anchor cannot come up; the watcher starting an observer whose capture ended again, leaving one stopped by hand alone, and giving up on one the host refuses; `-allow-observer` passed only where the configuration observes; what anchord is given to observe on each platform, and the anchor's kept settings granting nothing while it only observes; and which failures stop the supervisor rather than being retried; and an ephemeral run, against the stand-ins, that writes nothing of the credential and removes its root when cancelled, ends with its daemon, renews a due credential in memory by the AnchorID it started with, with the chain on anchorctl's stdin, is refused while another holds the root, refuses an expired credential before anything starts, and, on Linux, whose anchord goes when the run is killed outright |
+| `internal/daemon` | the renewal arithmetic: two thirds of the *observed* window, expiry, absent timestamps, and the clamp; a renewal against a stand-in issuer, restating the manifest's taints whatever `conflux.json` says, installed on the anchor and on the observer where it runs, the observer alone when it only observes, spliced into the manifest with the issuer's bootstrap list and mirrored into the state, and a failed one recorded; one standing, and not asked for again, where no running anchor is there to take it or the observer was stopped by hand; the timer waiting `minSleep` after a renewal that succeeds, as after one that fails; an enrolment asking for the configured taints, never for none, and none made for a machine whose manifest is gone while its state names the anchor it was, and kept before it is read even when it grants others; a machine whose credential grants other taints, or an alpha one granting none, refused for good with no call, and an issued one granting none started; a bad clock measured again rather than trusted; anchord's last words kept when it dies, in order, and each anchord's its own rather than one's before it; its output handed on a line at a time, the end taken off -- a newline, or a CRLF, its CR and its newline written apart among them -- a line written in pieces handed on as one, and a line that never ends handed on rather than held (`TestLineWriter`, which the Windows event log's writer shares); shutdown returning once anchord has gone, and closing a running one with its signal alone; the root, at every start, one that stops on its configuration included — nothing configured, or a `conflux.json` refused for good, which keeps its bytes — and both anchor directories, before every spawn, tidied of everything neither conflux nor anchor wrote, a write in progress spared, and the root's own files given back the modes the test names, `0600` and `0700` for the service's copy of conflux, and on Windows to SYSTEM and the Administrators, a grant added to one since taken back; the one removal of a directory's entries but what is kept going on past an entry that will not go and naming it once, taking a directory that is not there for an empty one, and removing a link as a link, what it leads to untouched; the anchor directory a record names taken only if it is one of the two, and the one an identity was given last given it again with what the anchor kept there; the run directory emptied as a supervisor starts, once the anchord its record names is stopped; the anchord a dead supervisor left recorded, stopped by the next one only when it runs the recorded executable or, with none reported, holds the socket's lock, a record of one that has gone cleared, and a second supervisor for one root refused; on Windows, anchord ended with its job, and the copy of what the account left in its directory taking regular files alone, a link to another file there left behind; a conflux.json read one way by every reader -- none is nothing to start, unparsable is permanent, unreadable is retried; an uplink reopen counted in the bring-up's own state write; the link watcher's device parsing, its grace against anchor's own dial timeout, and its giving up after three rebuilds refused for good, on the anchor alone where the observer runs beside it, which it goes on watching and renewing, a start beside the observer refused for good counted as the first; a rebuild's renewal installed on the observer beside it as well, and the driver fetched by a rebuild as by a start, before `conflux.lock` is taken (`TestTheDriverIsFetchedOutsideTheLock`), and a stop during that fetch, or while the start or the rebuild waits for the lock, ending it there, before anything under the lock, with the stop returned, no warning, neither the observer's start nor the anchor's, and no state written (`TestAStopOnTheWayToTheLockGoesNoFurther`); a start or a rebuild a stop cuts short taken for no failure of it, the start handing back the stop and the rebuild warning of nothing past the lost anchor, neither asking whether anchord would now be started otherwise (`TestAStopThatEndsABringUpIsNoFailure`); and on Unix, a stop while the observer is starting, the stand-in's `observe -start` held on a FIFO, taken for none either: beside the anchor, the start warning of nothing and going no further, no anchor directory made and no anchor started, but the state written, as after any failure once the credential is had, and the watcher's start of an observer whose capture ended saying only that it stopped, charged to no keeper and not given up (`TestAStopDuringTheObserversStartIsNoFailure`); observing alone, a cycle that starts the observer under the machine's manifest, on anchorctl's stdin, and no anchor, records the AnchorID the observer runs as, and enrols first where there is no credential, and one the host refuses to capture for ending for good; beside an anchor, an observer started first under the credential and kept when the anchor's start fails, even for good, or cannot have the Wintun driver, fetched before the lock and its failure handed to the anchor's start after the observer's, the service manager told the unit started, and neither started when no credential can be had; the watcher starting an observer whose capture ended again, leaving one stopped by hand alone, and giving up on one the host refuses; every argument vector anchord is started with one its own flag set accepts; what anchord is given to observe on each platform, and the anchor's kept settings granting nothing while it only observes; and which failures stop the supervisor rather than being retried, a list a Subnets order wrote that anchor cannot read among them; and an ephemeral run, against the stand-ins, that writes nothing of the credential and removes its root when cancelled, asking once first for the Wintun driver to go through the root's own library while it is there, as the removal of a killed run's root does, ends with its daemon, renews a due credential in memory by the AnchorID it started with, with the chain on anchorctl's stdin, is refused while another holds the root, clears its root while it still holds the lock, so a run starting as it ends keeps what it made, waits `minSleep` after a renewal as the supervisor's timer does, refuses an expired credential before anything starts, and, on Linux, whose anchord goes when the run is killed outright, and whose pair is in memory with nothing written under its root |
 | `internal/anchorctl` | the argv goldens, the observer's starts among them, that every flag they use exists, and the output parsers against anchor's current `start`, `status` and `metrics` shapes, the `observer` row with an anchor and with none, as a live anchord printed it |
-| `internal/libexec` | extraction, idempotence, eight concurrent callers, repair of a truncated set, and a sweep that leaves alone any set that may be in use |
-| `internal/cli` | a pass-through with nothing running makes nothing — no directory, no extraction; `help` a command only first and a flag only as a flag; `renew` with no credential unavailable; a refusal for privilege repeating the command, with the privilege check stubbed so a root runner tests it too; an oversized manifest refused; on Windows, only the supervisor's transient exit asking the SCM for a restart, and `Stopped` reported once; the collision rules — `start`, `renew`, `proxy` and `observe` by shape, `status` by arity — and that nothing shadows anchorctl unintentionally, the realm-control commands included; the IPv4 asked once; `--taint` as the enrolment's request before a credential is held, and checked against it after; `enrol` taking the credential's taints, refusing an alpha one granting none, and refusing before it writes; a subnet list set from the terminal replacing a member's order; the observer kept, replaced or turned off by `up`'s and `proxy`'s flags, an option implying `--observe`; `--export` pointing the collector and keeping the headers and TLS `conflux.json` holds; where the observer's records go said either way; and switching an anchor to observing refused off a terminal without `--yes`; `--manifest` refused without `--ephemeral`, an ephemeral run taking a handed credential's API and taints and never asking for an IPv4, and an ephemeral proxy needing no root where an ephemeral `up` and observer do |
-| `internal/service` | the systemd unit, its `ExecStart=` quoted against splitting and expansion; the launchd plist carrying any path; the rc scripts the BSDs get, rendered and parsed by `sh`, and a root they could not match refused; the copy the service runs; the service's scope, the same for every spelling of a root |
-| `internal/paths` | the root absolute and clean, and a log directory only where the platform has one; on Unix, a root another account owns refused before anything is changed, a symlinked one followed only to its owner's directory, our own narrowed to `0700`, and the shared `/var/log` left alone; on Windows, the root made Administrators', and files restricted to them trusted; an ephemeral root inside `CONFLUX_DIR` and nowhere else, and a root not made yet judged by the filesystem it would be made on |
-| `internal/flock` | a held lock reported as held, not waited for |
+| `internal/libexec` | extraction, idempotence, eight concurrent callers, repair of a truncated set, the supervisor's extraction held to the build's digests -- a binary changed on disk, its size kept, extracted again, and a pair verified once, or extracted by this process, taken on a stat -- and a sweep that keeps the bin directory to the supervisor's own set, the pair and its markers alone in it beside a temporary file a write is still making there, a stale one removed, and to a set or staging directory a newer conflux may be using; on Linux, the pair in sealed memory files, run by their descriptors and unwritable once made, anchorctl taken alone with no anchord made, and only where it starts, each of execve's refusals sending the caller to its next source, and help asking that anchorctl rather than a copy on disk; on Windows, help's temporary anchorctl the asking account's as well as SYSTEM's and the Administrators', so it runs for a user who is not elevated |
+| `internal/wintun` | on Windows, the library the driver is removed through found in any set under a root's `bin/`, not only this build's, and none in a root with no set, or a set without one |
+| `internal/cli` | a pass-through with nothing running makes nothing — no directory, no extraction; one to a socket the user names replacing conflux with an anchorctl that outlasts it, extracted or in memory; a temporary anchorctl run as conflux's child sent the SIGTERM conflux is, and not a SIGINT, which the terminal gives it itself; `help` a command only first and a flag only as a flag, `--h` among the flags; `help` given `help`, `status` or a help flag printing the whole page, the flag passed to no anchorctl, and a leading `--` passed over and to no anchorctl, `help --` the whole page and `help -- up` `up`'s usage; conflux's usage and each verb's on stdout where any word a flag set takes for help asks for it, `--h` among them and `start` and `renew` included, and a mistake — a flag it does not take, an argument too many or too few, a flag it cannot do without — said on stderr with the usage beneath it, exit 2, among them an argument given to `up`, `install`, `down`, `uninstall`, `serve`, `start`, `renew`, `update`, `observe`, `version` or `enrol`, which take flags alone, named on a line of its own above the usage, a dash alone and any word after `--` among them, a flag's spelling included, which `start`, `renew` and `observe` do not take for anchorctl's, and any other word that is no flag's spelling, `---h`, refused by the flag set as bad syntax in `observe`, `proxy`, `start` and `renew` too, which look at their flags first; `--` ending the flags of the verbs with a flag set, `start`, `renew`, `observe` and `proxy` among them, and of `cert`'s commands, `start --`, `renew --` and `observe --` the bare verbs, `proxy --` refused as bare proxy is, a word after it proxy's spec, served where it is one and refused as one where it is not, never a flag, and every word after it a `cert` command's argument, in the order given, `show`'s `-h` and `fingerprint`'s `--bogus` files to read (`TestTwoDashesEndTheFlags`); `cert`, `cert ca` and `cert p12` listing their commands on stdout, exit 0, for each word a flag set takes for help, `help` beside them, and on stderr, exit 2, given none; `renew` with no credential unavailable; a refusal for privilege repeating the command, with the privilege check stubbed so a root runner tests it too; an oversized manifest refused; on Windows, only the supervisor's transient exit asking the SCM for a restart, `Stopped` reported once, and what the service says reaching the event log a line an event, split as anchord's lines are, an empty line no event, and lines written at once from many goroutines each arriving whole; the collision rules — `start`, `renew`, `proxy` and `observe` by shape, a flag's value read as its flag set reads it, so `observe --taint -- -start` is answered as anchorctl's `-start`, and `status` by arity — and that nothing shadows anchorctl unintentionally, the realm-control commands included; proxy's specs and flags in any order, each flag asked of its flag set whether it takes a value, so a value — a device path, a prefix, `--lan-discovery`'s `no`, a collector — is never a spec, and a spec after a switch stays one (`TestProxyTellsItsFlagsFromItsSpecs`); the IPv4 asked once; `--taint` as the enrolment's request before a credential is held, and checked against it after; `enrol` taking the credential's taints, refusing an alpha one granting none, an API or renewal URL every start would refuse, and a `manifest.b64` it cannot read, which it takes for an identity, and refusing before it writes; a subnet list set from the terminal replacing a member's order; the observer kept, replaced or turned off by `up`'s and `proxy`'s flags, an option implying `--observe`; `observe` taking `--taint` and `--api` for the credential it runs under; `--export` pointing the collector and keeping the headers and TLS `conflux.json` holds; where the observer's records go said either way; and switching an anchor to observing refused off a terminal without `--yes`; `--manifest` refused without `--ephemeral`, an ephemeral run taking a handed credential's API and taints and never asking for an IPv4, and an ephemeral proxy needing no root where an ephemeral `up` and observer do; an ephemeral run's lock, given a second name in `run/anchord/`, which the account writes, as anchor's socket lock, still read as a live run or a killed one (`TestEphemeralAtSeesARunWhoseLockHasASecondName`); a configuration written under the machine's lock; a start of the service placing its copy and putting its registration back; `update` taking the newest release, `latest`, whatever build runs it, and asking nothing where what is installed is no dev build — a release run by a dev build, answering `version` whole as this build does as one, so no line after the first is taken for the dev build's, nothing, a file that does not run, which cannot say what it is, and this process as a release — and asking first where it is one, as its `version` says, what this build's own says as one, or as this process is one, and `--dev` the newest dev build, `dev-latest`, asking its own question alone, of an installed dev build too; each question, in one table (`TestAnUpdateAsksFirst`), taking its build only once `y` or `yes`, in any case, is typed at a terminal (a seam, `updateAtTerminal`, standing in for one), any other answer, `n` and the end of input among them, changing nothing, exit 2, and asked only once root is had, each refused for privilege first; and in another (`TestAnUpdateThatAsksIsRefusedOffATerminal`), refused off a terminal, exit 1, before anything is downloaded, stdin left unread, `--dev`'s refusal naming `--yes` and the plain update's naming no way past; `--dev --yes` taking `dev-latest` without asking, off a terminal reading nothing of stdin, and at one, of an installed release and of a dev build; `--yes` without `--dev` a usage mistake, exit 2, before anything is read, so a plain update of a dev build is still asked; and `--check` asking nothing, `--dev --check` naming the dev build, `--yes` beside it no mistake; on Unix, an update that installs conflux where there was none linking it for sudo where the conflux root's PATH finds is not it, its directory left out or another conflux found first, as install.sh does, and keeping the link only where that PATH then finds it through it, so none is left behind another conflux, one made before included, and the other named with the way out that PATH holds now: where the installed file's directory is on it, before the link's or after it, a third conflux behind the other or not, the other removed; where only the link's is, the other removed before the link is made by hand, the `sudo ln -s` line that makes it said; and where neither is, the installed file's full path alone; and leaving a file of the link's name alone, saying so, and, where that PATH finds that file, through the link's directory by any name, that it is to be removed, alone where the installed file's directory is on that PATH too, another conflux between them or not, and otherwise before the link is made the same way, where it finds another conflux first, that one removed where the installed file's directory is on that PATH, and where it finds none, the file removed before the link is made by hand where the link's directory is on that PATH (a link to nothing at that name) and the full path alone where it is not (a file somebody else's); never what that PATH would find once something is removed, nor the `sudo ln -s` line where the link's directory is not on it; and whether a path is the conflux running, or the directory its image is in, asked of what the path names — through a link, in another spelling — not of how it is spelled |
+| `internal/service` | the systemd unit, its `ExecStart=` quoted against splitting and expansion, and its protections, with no `ProtectClock` and no device policy; the unit's four drop-in directories in `/etc` and `/run` removed, `system.control`'s included; systemd's `Remove` saying a file it could not remove even with the unit file gone, where systemctl's refusals are forgiven, and FreeBSD's and OpenBSD's an `rc.conf` or `rc.conf.local` line left, refused or not, where `sysrc`'s and `rcctl`'s answers are forgiven once it is gone, each keeping its rc script while the line is left, so a second remove can ask again, and taking `rcctl get`'s exit 2, a service with no script, for no answer, where `rcctl disable`'s own result stands; the launchd plist carrying any path and naming no log file; the rc scripts the BSDs get, FreeBSD's sending the output to syslog after `syslogd`, OpenBSD's naming no `daemon_class` and its login class `conflux` with the open-files limit raised, rendered and parsed by `sh`, and a path they could not match refused; the copy the service runs |
+| `internal/paths` | the machine's root an absolute path to a `.conflux`, with every file and directory conflux keeps inside it; `UseRoot` moving it and putting it back; on Unix, a root another account owns refused before anything is changed, a symlinked one followed only to its owner's directory, and our own narrowed to `0700`; on Windows, the root made Administrators', a DACL somebody widened since taken back, beside what anchord's own account wrote in the two directories it writes, but not beside another account's file in `anchor.root\`, and files restricted to them trusted, and the root and the installed conflux in the known folders whatever `%ProgramData%` and `%ProgramFiles%` say; an ephemeral root never inside the machine's, and always somewhere a reboot empties: root's under the system's runtime directory, a user's under their runtime directory on every Unix that names one, or else their temporary directory, each platform's answer held on any host, a Unix's a Unix path on Windows too |
+| `internal/flock` | a held lock reported as held, not waited for; asked after by `Held` and `HeldUntrusted` alike, held while somebody holds it, free once they let go, and nobody's when it is not there, which asking does not make; asked after without trusting the file, a symlink and a FIFO refused; and on Unix a lock with a second name, which a hard link to root's would be, refused only where it is asked after in a directory anchord's account writes (`HeldUntrusted`, the socket's lock), by either name, while one asked for by its own name (`Held`) is answered whatever its links |
+| `internal/ui` | a prompt asked again reading the next line of the same input, not one its first read buffered away; `[y/N]` taking only an explicit yes -- y or yes, in any case -- and Enter alone, end of input and any other word as a no; the last hour of a credential in minutes |
+
+No test reaches the machine's `.conflux`. `anchorctl`, `cli`, `config`, `daemon`, `libexec`
+and `service` each have a `TestMain` that hands the run to `pathstest.Main` (`cli`'s once its
+stand-ins are set, `daemon`'s when the binary is not running as one of its own), which roots
+conflux in a temporary directory of the run's own through `paths.UseRoot`, a function for tests
+alone that nothing in conflux calls and no flag or environment variable reaches. A test that
+wants a root of its own takes one from `pathstest.Root`, made as `EnsureAll` makes the
+machine's and put back when the test ends, or through `paths.UseRoot` directly where it wants
+one `EnsureAll` has not made, or a shorter one for a socket's sake.
 
 ## The tests worth knowing about
 
@@ -40,15 +67,25 @@ header and checks the machine field against `GOARCH`. It exists because a wrong 
 one — builds and links perfectly and fails at exec on somebody else's machine.
 
 It skips when `anchor/bin` holds the placeholders `make anchor-bins` writes with no
-anchor checkout available, with the same words as the rest; it keeps a copy of them
-because `anchortest` imports `anchor`. `anchor.Supported` is a size check for the same reason, so
-a placeholder build reports that it carries no anchor binaries rather than pretending.
+anchor checkout available, through `anchortest.Require` as the rest do: it is in the external
+package `anchor_test`, since `anchortest` imports `anchor`. `anchor.Supported` is a size check
+because of those placeholders, so a placeholder build reports that it carries no anchor
+binaries rather than pretending.
 
 A skip is green, so the job that fetches the real binaries asserts that none of the
 tests needing them skipped: a job that provides the binaries and then reports "no
 anchor pair" has lost them, and saying so is the difference between a gate and a
 decoration. On macOS and Windows, where other tests skip for the platform, the gate
 looks for that reason rather than a list of names a new test would be missing from.
+A test that never runs is green too, so every job that tests also holds the tests that
+ran, by name, to the ones the source declares for its platform (`scripts/tests-ran.sh`):
+every top-level `func TestXxx(t *testing.T)` in the test files `go list` says each package's
+tests are built from there, benchmarks aside. On Linux each must have passed, and elsewhere
+passed or skipped for the platform. A package whose tests stop running, a `TestMain` that
+returns before `m.Run` among them, fails the job rather than passing it with none, which is
+why the list is the source's: `go test -list` asks the same test binary, and that `TestMain`
+hides its tests from it too. A test file a build constraint leaves out of a platform is not
+expected there; `make cross` is what compiles it.
 
 **The argv goldens**, in `internal/anchorctl/testdata/argv/`, hold one file per
 scenario, one argument per line. Argv construction is where a wrapper's bugs live and
@@ -102,7 +139,7 @@ built `conflux` in beside it, then:
 
 ```console
 $ make anchor-bins && make integration   # the whole suite, four nodes
-$ make service-test                      # or just the unit, which enrols nothing
+$ make service-test                      # or just the unit
 ```
 
 By hand, which is what those run:
@@ -141,22 +178,26 @@ the overlay, the pings and the reboot are all proved of an anchord that is not r
 image sets `/dev/net/tun` to `0666` at every boot through `tmpfiles.d`, as a stock host's
 udev leaves it, so this holds whatever the runner's own device is.
 
-All of that is `make integration`. `make service-test` is the unit on its own and enrols
-nothing: `install` registers it without starting anything, the unit runs the root-only
-copy in `/var/lib/conflux` rather than the file conflux was run from, and `uninstall`
-leaves no unit file, no `wants` link, none of `/etc/conflux`, `/var/lib/conflux` or
-`/run/conflux`, and no `conflux` account. Both build the image first, and CI runs the same
-command a developer does.
+All of that is `make integration`. `make service-test` is the unit on its own, and enrols
+once, for the observer: `install` registers it without starting anything, the unit runs the
+root-only copy in `/var/lib/.conflux` rather than the file conflux was run from, and
+`uninstall` leaves no unit file, no `wants` link, no drop-in (`systemctl set-property`'s
+included), no `/var/lib/.conflux`, no `conflux` account and no `/usr/local/bin/conflux`.
+Both build the image first, and CI runs the same command a developer does.
 
-In between, it takes every branch of what `anchord` runs as, under the real unit. Its
-configuration names an API that a `silent.socket` in the container accepts and never
-answers, so `anchord` stays up while the enrolment waits, and each leg reads its uid,
-capabilities, `no_new_privs` and groups from `/proc` and the reason from `status`:
+In between, it takes every branch of what `anchord` runs as, under the real unit. Until the
+observer's legs its configuration names an API that a `silent.socket` in the container accepts
+and never answers, so `anchord` stays up while the enrolment waits. The observer runs only under
+a credential, so its legs run under one anonymous alpha credential, enrolled by the first of
+them at `$VEILNET_API` in a random taint, and are held to it: `manifest.b64`'s SHA-256 and the
+AnchorID `state.json` records are still the first leg's after the export leg, after the legs
+beside an anchor, and before `uninstall`. Each leg reads anchord's uid, capabilities,
+`no_new_privs` and groups from `/proc` and the reason from `status`:
 
 | leg | anchord |
 |---|---|
-| userspace, and again after a restart | the account, no capabilities (`CAP_NET_ADMIN` where the host's `rmem_max`/`wmem_max` are low), `no_new_privs`; the state and run directories `710 root conflux`, its own `0700`, the token root's |
-| conflux 1.0.0's root-owned `anchor/` | moved to `anchor.root/`, and the account's started from a copy |
+| the unit | `UMask=0077`, `PrivateTmp`, `ProtectHome=read-only`, `ProtectHostname`, `ProtectControlGroups`, `LockPersonality`, `RestrictRealtime`, `RestrictSUIDSGID` as systemd reads it, and no `ProtectClock` or device policy, which would close `/dev/net/tun` and an uplink's line to anchord |
+| userspace, and again after a restart | the account, no capabilities (`CAP_NET_ADMIN` where the host's `rmem_max`/`wmem_max` are low), `no_new_privs`; the root and `run/` `710 root conflux`, its own `0700`, the token root's |
 | port 443 | the account with `CAP_NET_BIND_SERVICE` |
 | an uplink device of `dialout`'s, then one of root's | the account in `dialout`; then root, naming the device |
 | a TUN, `/dev/net/tun` opened up | the account with `CAP_NET_ADMIN` alone |
@@ -164,23 +205,38 @@ capabilities, `no_new_privs` and groups from `/proc` and the reason from `status
 | stand-ins for firewalld and for legacy iptables | root, naming each |
 | a stand-in for iptables on nf_tables, no nft | the account with `CAP_NET_ADMIN` and `CAP_NET_RAW` |
 | back to userspace | the account, starting from root's state, as its own |
-| `start` over a 1.0.0 unit | the unit replaced by this conflux's |
+| observing alone, enrolling its credential | the account with `CAP_NET_RAW` alone, `no_new_privs`; status shows the capture (`af_packet`) and the records kept here, the inventory a connection to port 443, and `manifest.b64` holds the credential |
+| observing alone, exporting | the same, with every record reaching an OpenTelemetry collector as it is made |
+| observing beside a userspace and a TUN anchor | `CAP_NET_RAW` added to what each mode has, under the same credential |
+| `start` over a unit changed by hand | the unit replaced by this conflux's |
+| a start by systemd over a unit changed by hand and a drop-in | the unit put back and the drop-in directory removed, by the supervisor itself |
+| a running unit whose file was deleted, then `uninstall` | no `conflux serve` left running, and no `wants` link |
 | an account named `conflux` that conflux did not make | root, saying so; `uninstall` leaves the account |
 
 `test/service-host.sh` is the same lifecycle against launchd and the SCM, on the machine
 itself, which is why only a CI runner that is thrown away afterwards runs it: `install`
 registers and starts nothing — on Windows with the three restarts and recovery that
-covers a service stopping with an error — `status` exits 78 and says the service is
+covers a service stopping with an error, a SID of its own and the DACL conflux sets —
+`status` exits 78 and says the service is
 installed and not running, `down` succeeds on it, a userspace configuration started
 through the service manager runs `anchord` as `_conflux` or `LOCAL SERVICE` and gets as far
 as enrolling, which it does only once `anchord` has answered on the socket it made as that
-account, and `uninstall` leaves no plist, no entry in launchd's disabled database, no
-`_conflux` account, no SCM service and no directory.
+account — read in the system's log, the unified log or the Application event log — observing
+alone comes up under one anonymous alpha credential enrolled at `$VEILNET_API` in a random
+taint, capturing as that account, and `uninstall` leaves no plist, no entry in launchd's
+disabled database, no `_conflux` account, no SCM service, no event source and no directory.
+It runs conflux from where the installer puts it — `/usr/local/bin`, or `%ProgramFiles%\conflux`
+on the machine's `Path` — so that `uninstall` is seen to take that too, on Windows once the
+running program has exited.
 
 `test/service-bsd.sh` is the same against `rc.subr`, in a FreeBSD and an OpenBSD VM: install,
 a userspace `anchord` running as `conflux` or `_conflux` (the record, and the process
 itself), port 80 and a TUN keeping it root with their reasons, and `uninstall` leaving no
-script, no directory and no account.
+script, no `rc.conf` line, no directory, no account and no `/usr/local/bin/conflux`. Before
+the service, `install.sh` installs the published `latest` as root with curl and wget set aside,
+so the base system's own `fetch` or `ftp` downloads it and its own tool checks the digest;
+`conflux` must then resolve to `/usr/local/bin/conflux`, and a second run must find the release
+already there. The build under test is copied over it for the service.
 
 ### Local network discovery, the bootstrap list, and `conflux enrol`
 
@@ -214,13 +270,17 @@ five times:
 A fourth node, D, runs **ephemeral** ([ephemeral.md](ephemeral.md)), and enrols twice more:
 
 - `up --ephemeral`, enrolled in memory, must be reached by A over the overlay, with no
-  `/etc/conflux`, no `/var/lib/conflux`, no unit, and no manifest, configuration or state
-  anywhere in its root, and its anchord running as `conflux-ephemeral` with
-  `CAP_NET_ADMIN` alone. SIGTERM must leave no anchord, no root and no interface, and the
+  `/var/lib/.conflux`, no unit, no manifest, configuration or state anywhere in its root, and
+  no file of the pair anywhere on the machine: its anchord runs from memory, as
+  `conflux-ephemeral` with `CAP_NET_ADMIN` alone. SIGTERM must leave no anchord, no root and no interface, and the
   account, which is kept.
 - `proxy --ephemeral --manifest -`, from an alpha manifest piped in, is killed with SIGKILL,
   and its anchord must go with it: the parent-death signal it was started with. Started again
   on the same credential, the run clears what the killed one left and comes up.
+- While that run is live, `uninstall --yes` is refused, exit 2, saying an ephemeral anchor is
+  running, and leaves the run, its anchord, its root, the `conflux-ephemeral` account and
+  conflux itself as they were. Once the run is stopped with SIGINT, `uninstall --yes` removes
+  the account.
 
 Note what discovery cannot do, and anchor's own `docs/discovery.md` is the reference:
 the probe is sealed under the realm's **root public key**, which a node only holds after
@@ -235,8 +295,9 @@ never who is let in. Loopback is not probed, so two anchors on one machine still
 `make race` and every CI job that tests. A non-approved algorithm, or an approved one used
 outside its approved parameters, is then an error or a panic rather than a passing test. Every
 build CI makes is against the module, as a release is ([build.md](build.md#fips-140-3)), and
-`linux` also checks that the binary that ships passes the module's integrity check and refuses
-to run with the mode switched off.
+`make buildcheck`, which `linux` and every `platforms` leg run on their own `make build`, checks
+that the binary that ships carries its pair's own digests, passes the module's integrity check,
+and refuses to run with the mode switched off.
 
 CI verifies that the code builds and runs. The utility checks — `gofmt`, `staticcheck`,
 `go mod tidy`, the docs links, which `make all` runs, and `govulncheck`, `actionlint` and
@@ -253,15 +314,15 @@ why it is nonetheless contained.
 
 | job | machine | what it runs |
 |---|---|---|
-| `linux` | veilnet-dev | the whole suite under `-race` and `fips140=only` with the real binaries and nothing skipped; `make cross`; the digests `make build` stamps are the pair's own; the built conflux in FIPS 140-3 mode, its integrity check passing, and refusing to run with the mode off; `conflux cert probe` handshaking, in that mode, with every host conflux reaches (both APIs, GitHub's API, web and asset hosts, wintun.net) |
+| `linux` | veilnet-dev | the whole suite under `-race` and `fips140=only` with the real binaries, nothing skipped and every test the source declares for Linux passing; `make cross`; `make buildcheck`: the digests `make build` stamps are the pair's own, and the built conflux runs in FIPS 140-3 mode, its integrity check passing, and refuses to run with the mode off; `conflux cert probe` handshaking, in that mode, with every host conflux reaches (both APIs, GitHub's API, web and asset hosts, wintun.net) |
 | `integration` | GitHub Ubuntu | `test/preflight.sh`, then `make -j2 -O service-test integration` — `dist` with the size gate for every target and the image, once, then the boot service, three nodes and an ephemeral fourth against the live API of the base's tree (`$VEILNET_API`) side by side |
-| `bsd` | FreeBSD 15.1 and OpenBSD 7.9, each a VM on GitHub Ubuntu | `test/service-bsd.sh` against `rc.subr`, with that platform's own pair; FreeBSD's conflux in FIPS 140-3 mode, making and verifying an ML-DSA certificate; OpenBSD's without the module, its `conflux cert` refusing with 70 |
-| `platforms` | GitHub macOS, Windows and Linux arm64 | the suite under `fips140=only` with that platform's own pair, built as a release is (`CGO_ENABLED=0`, `-trimpath`), the tests that need the pair included; on macOS and Windows, `test/service-host.sh` against the real service manager; on Windows, that the pinned wintun digest is the published one; then the install scripts against the published `latest`, run as a person runs them and then again: `install.sh` on macOS and Linux arm64, `install.ps1` under Windows PowerShell 5.1 and then PowerShell 7 |
+| `bsd` | FreeBSD 15.1 and OpenBSD 7.9, each a VM on GitHub Ubuntu | `install.sh` against the published `latest`, with the base system's own download and digest tools, run twice; then `test/service-bsd.sh` against `rc.subr`, with that platform's own pair; FreeBSD's conflux in FIPS 140-3 mode, its integrity check verified and exit 70 with the mode off (`scripts/fips-check.sh`, the half of `make buildcheck` that needs no Go, which the VM has none of), making and verifying an ML-DSA certificate; OpenBSD's without the module, its `conflux cert` refusing with 70 |
+| `platforms` | GitHub macOS, Windows and Linux arm64 | the suite under `fips140=only` with that platform's own pair, built as a release is (`CGO_ENABLED=0`, `-trimpath`), the tests that need the pair included and every test the source declares for that platform run; `make buildcheck` on that platform's own build; on macOS and Windows, `test/service-host.sh` with that build, against the real service manager; on Windows, that the pinned wintun digest is the published one; then the install scripts against the published `latest`, run as a person runs them and then again: `install.sh` on macOS and Linux arm64, `install.ps1` refusing 32-bit Windows PowerShell, then under Windows PowerShell 5.1 and then PowerShell 7 |
 
 `linux` is one job because veilnet-dev is one machine with one runner process: separate
 jobs would queue anyway, each paying a checkout and a fetch. Its fetch goes through the
 runner's tool cache, which survives between runs, so an unchanged release costs a read of
-the files the fetcher already holds rather than three hundred megabytes. For the same
+the files the fetcher already holds rather than some 370 MB. For the same
 reason the Go build and module caches are not restored or saved there: the machine keeps
 its own on disk, and round-tripping them through the Actions cache cost ten minutes a
 run where the suite itself takes seconds. The hosted jobs start empty and do use it,
@@ -271,8 +332,9 @@ suites run on a hosted runner instead, because the third integration node reache
 realm through its manifest's bootstrap node over UDP, and from veilnet-dev no handshake
 gets through to it. Every CI job refuses a fork's pull request — a machine that survives the job does not run
 a stranger's code, and the hosted jobs need the anchor credential a fork is not given —
-so a fork's pull request runs nothing but `branch-flow`, which reads the repository on a hosted
-runner and holds no secret. No checkout leaves its token in `.git/config`,
+so a fork's pull request runs nothing but `branch-flow`, which runs the base branch's own check
+on a hosted runner, nothing of the pull request's, and holds no secret. No checkout leaves its
+token in `.git/config`,
 and every action outside this repository is pinned to its release's commit, with the
 tag beside it in a comment.
 
@@ -289,8 +351,10 @@ Two long-lived branches, and every change reaches both the same way:
    (`gh pr create --base dev`: `version3` is the default branch, so the base is always
    named). CI runs in full on it, against anchor's `dev-latest`.
 2. Merged when it is green, it is published as the pre-release `dev-latest`, which the next
-   merge into `dev` replaces and which nothing reads unless asked for it by name:
-   `CONFLUX_VERSION=dev-latest` for the install scripts ([install.md](install.md)).
+   merge into `dev` replaces, and which only a request by name reads: the
+   install scripts install it when `CONFLUX_VERSION=dev-latest` names it
+   ([install.md](install.md)), and `conflux update --dev` takes the newest one, where a plain
+   `conflux update` takes `latest`.
 3. When `dev` is to be released, the owner opens a pull request from `dev` into `version3`.
    CI runs on it in full again, against anchor's `latest`; merged, it is released, and
    `version3` is merged back into `dev`.
@@ -308,7 +372,12 @@ push alone.
 request and every edit of one — moving a pull request's base fires only `edited`: one into
 `version3` whose head is not this repository's `dev` fails; one into `dev` whose merge does not
 hold `version3`'s tip — a back-merge that did not land — fails; one into any other base fails.
-On a hosted runner, since it reads the repository and holds no secret.
+It runs on `pull_request_target`, so the workflow and the script are the base branch's own, which
+a pull request cannot rewrite to pass; it checks out the base branch, and reads the pull
+request's head as data alone — its commit, fetched for git to compare, never checked out or run.
+A commit is in the merge exactly when it is in the base or the head, so the merge is judged
+without being made. On a hosted runner, with a token that reads contents and nothing more, and
+no secret.
 
 **Branch protection, on `dev` and on `version3` alike:** require a pull request, require CI's
 checks and `branch-flow`, and require the branch to be up to date before merging. And on `dev`,
@@ -323,10 +392,17 @@ goes out with the next merge. A hand-run (`workflow_dispatch`) publishes the bra
 only releases: it does not re-run any of the above. A merge lands only when CI is green, which rests
 on that branch protection, and is unsafe without it. It refuses to run anywhere but those two,
 fetches anchor's `dev-latest` on `dev` and its `latest` on `version3`, runs `make dist`, attests
-the artifacts and writes one set of notes: the changes since the previous version — on
-`version3` the pull requests `dev` merged, read from the `dev` side of the release's merge — and
-what is inside. On `dev` it publishes the pre-release `dev-latest`, never Latest. On `version3`
-it publishes twice, with the same artifacts and notes: at the tag the `VERSION` file names,
+the artifacts and writes one set of notes. It builds on veilnet-dev, but from nothing another
+build left there, all of it under the job's temporary directory: the Go toolchain `go.mod`
+names, downloaded from go.dev and held to the SHA-256 go.dev publishes for it
+(`scripts/go-toolchain.sh`) rather than taken from the runner's tool cache, so the compiler,
+the standard library and the Go Cryptographic Module it compiles in are nobody else's; and
+empty build and module caches of its own run rather than the machine's shared ones, with every
+module downloaded afresh against `go.sum` and verified (`go mod download`, `go mod verify`)
+before anything is built. The
+notes are the changes since the previous version — on `version3` the pull requests `dev`
+merged, read from the `dev` side of the release's merge — and what is inside. On `dev` it
+publishes the pre-release `dev-latest`, never Latest. On `version3` it publishes twice, with the same artifacts and notes: at the tag the `VERSION` file names,
 verbatim, and at `latest`, which is the repository's Latest release; then `back-merge` runs.
 Each is deleted, with its tag, just before it is released again, so a merge that leaves
 `VERSION` alone replaces that version's release with one built from the commit that
@@ -352,7 +428,8 @@ works), IPv6 — before anything is built, because each of those otherwise fails
 later and names something else. The runner may be root, so
 `TestWriteFileAtomicPreservesOnFailure` probes whether making a directory read-only took
 rather than assuming it did, and the privilege refusal's test stubs the check rather
-than skipping.
+than skipping, as `TestWriteFileIfChangedTakesBackAnotherAccountsFile` makes the writer see
+itself as another account rather than needing root to give a file away.
 
 ## The genesis node
 
@@ -371,54 +448,29 @@ live suite does.
 conflux never names a bootstrap node itself and must never: end users get their
 bootstrap list from the enrolment manifest, which is what lets the API move a node
 without touching a single machine. To exercise `--peers`, point a dev build at the dev
-genesis explicitly:
+genesis explicitly, from a run that leaves the machine's own installation alone:
 
 ```console
-$ sudo CONFLUX_DIR=/var/lib/cfx-dev conflux proxy --api https://api-dev.veilnet.com.au \
+$ conflux proxy --ephemeral --api https://api-dev.veilnet.com.au \
       --peers genesis.veilnet.com.au:4701 8080=127.0.0.1:3000
-$ sudo CONFLUX_DIR=/var/lib/cfx-dev conflux status  # peers > 0, up=yes
+$ conflux status    # from another terminal: the ephemeral run, peers > 0, up=yes
 ```
 
-`CONFLUX_DIR` roots the whole installation somewhere else — the config, the identity,
-the state, the socket, **and the boot service**. Port 4700 is UDP; a TCP probe of it is
-refused, and that is expected rather than a fault.
+Port 4700 is UDP; a TCP probe of it is refused, and that is expected rather than a fault.
 
-The service is included because it has to be. A run rooted elsewhere is a separate
-installation of conflux, not the machine's own, so:
-
-- the service is named after the root — `conflux-e7616592.service`,
-  `org.veilnet.conflux-e7616592`, or the same SCM entry — and cannot be registered
-  over a real node's;
-- the root is written into the argv the service is registered with, because no
-  service manager carries the operator's environment into what it starts; without it
-  the service would come back at boot reading `/etc/conflux`.
-
-So a dev run and a real node coexist on one machine:
-
-```console
-$ conflux status                                    # the machine's own
-  service      active (systemd: conflux.service, enabled at boot)
-$ CONFLUX_DIR=/var/lib/cfx-dev conflux status       # the dev one
-  service      active (systemd: conflux-e7616592.service, enabled at boot)
-```
-
-**The dev one runs in userspace, as above.** A host runs one TUN anchor. Two no longer
-collide on the interface's name, which each anchor takes from its own identity, but
-they share everything else a TUN anchor sets up on the host — its routes, forwarding and
-firewall rules, which carry fixed names — so a second's start replaces the first's and
-its stop removes them (anchor's `docs/operations.md`, "Deploying"). That is the one thing
-`CONFLUX_DIR` cannot separate, because the host's networking belongs to the host and not
-to a conflux installation. `conflux proxy` sets nothing on the host up.
-
-**Not `/tmp`.** systemd clears it on boot, so a dev root there is gone by the time the
-service starts and the unit exits 78 — correctly, but it makes the reboot test
-meaningless. Anywhere persistent will do.
+**Run it in userspace, as above.** A host runs one TUN anchor. Two do not collide on the
+interface's name, which each anchor takes from its own identity, but they share
+everything else a TUN anchor sets up on the host — its routes, forwarding and firewall
+rules, which carry fixed names — so a second's start replaces the first's and its stop
+removes them (anchor's `docs/operations.md`, "Deploying"). An ephemeral run is kept apart
+from the installation in everything but that, because the host's networking belongs to
+the host and not to conflux. `conflux proxy` sets nothing on the host up.
 
 Two things worth checking deliberately, because neither is obvious from a passing run:
 
 - **The no-flag path still works.** `conflux up` with no `--peers` must bootstrap from
   the manifest's own list — `make integration` asserts it for its third node, and a dev
-  node named `--peers` is exactly the case that would not notice it breaking.
+  run named `--peers` is exactly the case that would not notice it breaking.
 - **The realm matches.** The embedded binaries are pinned to a genesis realm ID at
   build time (`-X anchor.pinnedGenesis`, see [build.md](build.md)). A test node minted
   from a different root will enrol fine and then never handshake, because the pin is
@@ -480,7 +532,8 @@ The shape of the exchange is written down once, in
   have no runner, so the watcher's *reopen* path is reasoned about rather than run.
 - **A Windows TUN, and an anchor that runs.** The `platforms` job starts the supervisor
   under the SCM and launchd, and an `anchord` as `LOCAL SERVICE` and `_conflux` that answers
-  on its socket, but none enrols, and no job opens a wintun interface.
+  on its socket, but no anchor comes up there — the one credential enrolled is the observer's —
+  and no job opens a wintun interface.
 
 - **`conflux cert` against OpenSSL.** OpenSSL 3.5 is the first to read ML-DSA and no runner
   ships it, so the interop in [cert.md](cert.md#checked-against-openssl) was checked by hand,

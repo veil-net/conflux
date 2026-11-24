@@ -8,14 +8,16 @@
 # `conflux up`, which is yours to run. Run again, it replaces an older conflux with the release's;
 # `conflux update` does the same, and moves a running anchor onto it as well.
 #
-# Two settings, set in the session first:
+# `conflux uninstall` removes it again, the PATH entry included, with everything else conflux
+# put on the machine.
+#
+# One setting, set in the session first:
 #
 #   $env:CONFLUX_VERSION = '1.0.0'        a release tag, rather than latest
-#   $env:CONFLUX_INSTALL_DIR = 'D:\bin'   where conflux goes, rather than Program Files
 #
-# Windows PowerShell 5.1 as well as PowerShell 7. Invoke-Expression runs this in the session that
-# typed it, so nothing here exits that session: a failure throws. All of it is one script block,
-# so a download cut short runs nothing.
+# Windows PowerShell 5.1 as well as PowerShell 7, 64-bit: a 32-bit PowerShell on 64-bit Windows is
+# refused. Invoke-Expression runs this in the session that typed it, so nothing here exits that
+# session: a failure throws. All of it is one script block, so a download cut short runs nothing.
 & {
     $ErrorActionPreference = 'Stop'
 
@@ -36,6 +38,13 @@
 
     if ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows) {
         Fail 'this is not Windows: run install.sh, as https://github.com/veil-net/conflux says'
+    }
+
+    # 32-bit PowerShell on 64-bit Windows is given the x86 Program Files, Program Files (x86), where
+    # conflux never looks for itself: `conflux update` and `conflux uninstall` would not find what
+    # this put there.
+    if ([Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProcess) {
+        Fail 'this is 32-bit PowerShell, whose Program Files is Program Files (x86), where conflux never looks for itself: run this from 64-bit PowerShell (Windows PowerShell, not Windows PowerShell (x86)), as Administrator'
     }
 
     $principal = [Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -61,10 +70,10 @@
 
     $repo = 'veil-net/conflux'
     $tag = if ($env:CONFLUX_VERSION) { $env:CONFLUX_VERSION } else { 'latest' }
-    $dir = if ($env:CONFLUX_INSTALL_DIR) { $env:CONFLUX_INSTALL_DIR } else { Join-Path $env:ProgramFiles 'conflux' }
-    # Against PowerShell's location, which a relative CONFLUX_INSTALL_DIR means, and not the
-    # process's working directory, which [IO.Path]::GetFullPath would use and need not be it.
-    $dir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($dir).TrimEnd('\')
+    # Program Files as Windows keeps it, the known folder, which is where conflux looks for itself
+    # to update and uninstall: $env:ProgramFiles is the environment's, and whoever started this
+    # session could have pointed it anywhere.
+    $dir = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'conflux'
     $exe = Join-Path $dir 'conflux.exe'
     $asset = "conflux-windows-$arch.exe"
     $base = "https://github.com/$repo/releases/download/$tag"

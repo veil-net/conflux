@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"strings"
 	"time"
@@ -55,37 +55,35 @@ import (
 // others, and a renewal restates them, so they are the issuer's and are taken as they
 // are -- none included, which is the issuer's own realm's default compartment.
 func runEnrol(_ context.Context, args []string) int {
-	fs := flag.NewFlagSet("enrol", flag.ContinueOnError)
-	fs.SetOutput(ui.Errw)
+	fs := verbFlags("enrol", "conflux enrol — install a credential this machine was given\n\n"+
+		"  conflux enrol --manifest FILE [--api URL] [--ipv4 ADDRESS]\n\n"+
+		"For a machine commissioned somewhere else: a self-hosted guardian mints the\n"+
+		"identity, signs the credential and hands you one file. This installs it, and\n"+
+		"then `conflux up` starts from it without enrolling.\n\n"+
+		"The file is enough on its own. A guardian document names its own renewal URL,\n"+
+		"the overlay address the guardian allocated and the taints it granted this\n"+
+		"machine. The taints are the credential's and are taken as they are; the two\n"+
+		"flags exist only to overrule the others from the terminal. --api is also\n"+
+		"checked when given: the document must renew against the same host.\n\n"+
+		"A document with no renewal fields at all -- a node in one of VeilNet's own ghost\n"+
+		"realms, minted for a century -- is installed as it is and never renewed.\n\n"+
+		"It refuses to replace a manifest that already exists. Replacing one is a new\n"+
+		"identity and a new overlay address, which orphans every peer this machine has.\n\n")
 
 	manifest := fs.String("manifest", "", "the manifest file to install, or - for stdin")
+
 	apiBase := fs.String("api", "",
 		"the API that issued it, as a base URL, overriding the one its renewal URL names")
 	ipv4 := fs.String("ipv4", "", "this machine's IPv4, overriding whatever the manifest allocated")
 
-	fs.Usage = func() {
-		ui.Printf("conflux enrol — install a credential this machine was given\n\n" +
-			"  conflux enrol --manifest FILE [--api URL] [--ipv4 ADDRESS]\n\n" +
-			"For a machine commissioned somewhere else: a self-hosted guardian mints the\n" +
-			"identity, signs the credential and hands you one file. This installs it, and\n" +
-			"then `conflux up` starts from it without enrolling.\n\n" +
-			"The file is enough on its own. A guardian document names its own renewal URL,\n" +
-			"the overlay address the guardian allocated and the taints it granted this\n" +
-			"machine. The taints are the credential's and are taken as they are; the two\n" +
-			"flags exist only to overrule the others from the terminal. --api is also\n" +
-			"checked when given: the document must renew against the same host.\n\n" +
-			"A document with no renewal fields at all -- a node in one of VeilNet's own ghost\n" +
-			"realms, minted for a century -- is installed as it is and never renewed.\n\n" +
-			"It refuses to replace a manifest that already exists. Replacing one is a new\n" +
-			"identity and a new overlay address, which orphans every peer this machine has.\n")
-	}
-
-	if err := fs.Parse(args); err != nil {
-		return ExitUsage
+	// The document is --manifest's, and the verb takes no argument: one given is a mistake,
+	// named above the usage as every verb that takes none names it, rather than ignored.
+	if exit, ok := flagsAlone(fs, args); !ok {
+		return exit
 	}
 
 	if *manifest == "" {
-		fs.Usage()
+		usageMistake(fs)
 
 		return ExitUsage
 	}
@@ -135,8 +133,9 @@ func importCredential(d paths.Dirs, manifestPath, apiBase, ipv4Flag string) erro
 			"this machine already has a credential at %s.\n"+
 				"  Installing another replaces its identity: a different AnchorID, a different\n"+
 				"  overlay address, and every peer that knew the old one left with no way to\n"+
-				"  learn the new one. If that is genuinely what you want, `conflux uninstall`\n"+
-				"  first and say so deliberately",
+				"  learn the new one. If that is genuinely what you want, say so deliberately:\n"+
+				"  `conflux uninstall`, which removes conflux as well, then install conflux again\n"+
+				"  and enrol",
 			d.ManifestFile())
 	}
 
@@ -314,33 +313,57 @@ const maxManifest = 1 << 20
 // chooseAPIBase is the API this machine renews against: --api when it was given, and
 // the origin of the document's renewalUrl otherwise.
 //
-// --api is an override rather than a requirement. The document carries the identity
-// seed and the renewal bearer, so whoever could rewrite its renewalUrl already holds
-// everything a redirect would steal, and retyping the host buys a typo rather than a
-// check. Given, it is also an assertion: the document must renew against the same
-// host, refused now naming both rather than at the first renewal months later.
+// --api is an override rather than a requirement. A manifest carries an absolute
+// renewalUrl -- a self-hosted API is wherever its operator put it -- so the base is
+// already in the document. The document carries the identity seed and the renewal bearer
+// too, so whoever could rewrite its renewalUrl already holds everything a redirect would
+// steal, and retyping the host buys a typo rather than a check. Given, it is also an
+// assertion: the document must renew against the same host, refused now naming both rather
+// than at the first renewal months later.
 //
 // A fixed-term credential names no renewal URL, so there is nothing to read a base out
-// of and nothing to check --api against: the flag is taken as given, and empty leaves
-// the configuration's API as it was. Nothing asks it for this credential anyway.
+// of and no host to check --api against: the flag is held to config.CheckAPIURL alone, as
+// below, and empty leaves the configuration's API as it was. Nothing asks it for this
+// credential anyway.
+//
+// Either way the API installed, and the renewal URL, are held to config.CheckAPIURL, as
+// every start and renewal holds them: one they refuse is refused here, while a person is
+// present, rather than installed and then refused for good at the next start. The renewal
+// URL is parsed once, by config.ParseAPIURL, which checks it as CheckAPIURL does, and the
+// base or the host check is read off what it parsed.
 func chooseAPIBase(m *enrol.Manifest, flagValue string) (string, error) {
-	url := m.RenewalURL()
+	if flagValue != "" {
+		if err := config.CheckAPIURL(flagValue); err != nil {
+			return "", fmt.Errorf("--api: %w", err)
+		}
+	}
+
+	raw := m.RenewalURL()
 
 	switch {
-	case url == "" && m.FixedTerm():
+	case raw == "" && m.FixedTerm():
 		return flagValue, nil
-	case url == "":
+	case raw == "":
 		return "", fmt.Errorf(
 			"the manifest says renewalAuth %q and carries no renewalUrl.\n"+
 				"  It says how to authenticate a renewal and not where to send one, so nothing\n"+
 				"  would ever renew it. The issuer has to set it", m.RenewalAuth())
 	}
 
-	if flagValue == "" {
-		return enrol.BaseOf(url)
+	renewal, err := config.ParseAPIURL(raw)
+	if err != nil {
+		return "", fmt.Errorf("renewalUrl: %w", err)
 	}
 
-	if err := enrol.SameHost(url, flagValue); err != nil {
+	// The origin alone -- scheme, host and port -- is the base: a renewal URL is a path on an
+	// API, and taken whole as a base it would make every later request a child of one node's
+	// credential route. It is read off what ParseAPIURL parsed, and so held to CheckAPIURL, as
+	// every renewal sent to it is: a base no renewal could reach is never read.
+	if flagValue == "" {
+		return renewal.Scheme + "://" + renewal.Host, nil
+	}
+
+	if err := enrol.SameHost(renewal, flagValue); err != nil {
 		return "", fmt.Errorf("%w.\n"+
 			"  --api and the document disagree. Drop the flag to use the host the manifest\n"+
 			"  names, or get a manifest issued for the API you meant", err)
@@ -440,10 +463,14 @@ func saveImported(d paths.Dirs, cfg *config.Config, env config.Envelope) error {
 
 	// A state.json left from an identity removed by hand would have the next start renew
 	// this one under the old AnchorID. Before the manifest: with none on disk it describes
-	// no identity there is, so clearing it first loses nothing whichever write fails.
+	// no identity there is, so clearing it first loses nothing whichever write fails. One
+	// this build cannot read, which a start refuses, is replaced: nothing it said about the
+	// identity before would outlast NewIdentity anyway.
 	st, err := config.LoadState(d)
-	if err != nil {
+	if read := (*fs.PathError)(nil); errors.As(err, &read) {
 		return err
+	} else if err != nil {
+		st = &config.State{}
 	}
 
 	st.NewIdentity()

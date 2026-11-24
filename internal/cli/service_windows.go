@@ -4,12 +4,13 @@ package cli
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"golang.org/x/sys/windows/svc"
+	"golang.org/x/sys/windows/svc/eventlog"
 
 	"github.com/veil-net/conflux/internal/daemon"
-	"github.com/veil-net/conflux/internal/logfile"
 	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
 )
@@ -17,32 +18,31 @@ import (
 // serveAsService hands over to the service control manager when conflux was started
 // by it, and reports false when it was started from a console.
 //
-// A service has no console to write to, so what the supervisor and anchord say goes
-// to the log file instead, where `conflux up` points when a start fails.
+// A service has no console to write to, so what the supervisor and anchord say goes to the
+// Application event log instead, under conflux's own source, where `conflux up` points when
+// a start fails.
 func serveAsService(sup *daemon.Supervisor) (bool, int) {
 	isService, err := svc.IsWindowsService()
 	if err != nil || !isService {
 		return false, 0
 	}
 
-	// Without the directories there is no log to write to, and the SCM still has to be
-	// answered: returning without svc.Run leaves it to time the start out with nothing
-	// recorded anywhere. So the failure goes to the SCM as the service's exit instead, which
-	// the System event log records and the recovery actions retry.
+	// Without the root there is nothing to supervise, and the SCM still has to be answered:
+	// returning without svc.Run leaves it to time the start out with nothing recorded
+	// anywhere. So the failure goes to the SCM as the service's exit instead, which the System
+	// event log records and the recovery actions retry, and its reason to the Application log
+	// with the rest of what the service says (Execute).
 	setup := sup.Dirs.EnsureAll()
 
-	if setup == nil {
-		// Each line stamped, and the file moved aside to .1 when it passes 10 MiB.
-		if f, err := logfile.Open(sup.Dirs.LogFile()); err == nil {
-			defer f.Close()
+	if l, err := eventlog.Open(service.ServiceName); err == nil {
+		defer l.Close()
 
-			ui.Out, ui.Errw = f, f
-		}
+		ui.Out, ui.Errw = newEventWriter(l.Info), newEventWriter(l.Warning)
 	}
 
 	h := &handler{sup: sup, setup: setup}
 
-	if err := svc.Run(service.ServiceName(), h); err != nil {
+	if err := svc.Run(service.ServiceName, h); err != nil {
 		return true, ExitError
 	}
 
@@ -82,7 +82,10 @@ func scmExit(code int) (svcSpecific bool, exitCode uint32) {
 func (h *handler) Execute(_ []string, r <-chan svc.ChangeRequest, s chan<- svc.Status) (bool, uint32) {
 	const accepted = svc.AcceptStop | svc.AcceptShutdown
 
+	// The SCM's record of the exit says only that it failed; why goes to the event log.
 	if h.setup != nil {
+		ui.Errf("%v", h.setup)
+
 		h.code = ExitError
 
 		return scmExit(h.code)
@@ -138,3 +141,31 @@ func (h *handler) Execute(_ []string, r <-chan svc.ChangeRequest, s chan<- svc.S
 // removeAccount has nothing to remove on Windows: anchord runs as LOCAL SERVICE, which is
 // the system's, and the service SID it is given goes with the service.
 func removeAccount() error { return nil }
+
+// eventWriter writes each line given it to the event log as one event, through write: an
+// information, or a warning for what conflux says on its error stream. Its lines are split as
+// anchord's are (daemon.LineWriter), and an empty one is no event. Locked, since whichever
+// goroutine is speaking writes to it.
+type eventWriter struct {
+	mu    sync.Mutex
+	lines daemon.LineWriter
+}
+
+func newEventWriter(write func(eid uint32, msg string) error) *eventWriter {
+	return &eventWriter{lines: daemon.LineWriter{Emit: func(line string) {
+		if line != "" {
+			_ = write(eventID, line)
+		}
+	}}}
+}
+
+func (w *eventWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	return w.lines.Write(p)
+}
+
+// eventID is the one event conflux writes: EventCreate.exe's message file, which the source
+// is registered with, takes its text whole from any ID between 1 and 1000.
+const eventID = 1

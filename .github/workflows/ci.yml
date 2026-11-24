@@ -30,13 +30,13 @@ permissions:
 # issues under it. A pinned anchord refuses a credential from the other tree, so the two
 # move together (docs/testing.md, "The genesis node").
 #
-# GOFIPS140 is the Makefile's: every conflux built here, by make or by a bare go command, is
-# built against that Go Cryptographic Module and runs in FIPS 140-3 mode (docs/security.md,
-# "FIPS 140-3 and CMVP"). Keep the two equal. The make recipes build OpenBSD with it off.
+# GOFIPS140 is the Makefile's, put in every job's environment by the setup action: every
+# conflux built here, by make or by a bare go command, is built against that Go Cryptographic
+# Module and runs in FIPS 140-3 mode (docs/security.md, "FIPS 140-3 and CMVP"). The make
+# recipes build OpenBSD with it off.
 env:
   ANCHOR_TAG: ${{ (github.base_ref || github.ref_name) == 'version3' && 'latest' || 'dev-latest' }}
   VEILNET_API: ${{ (github.base_ref || github.ref_name) == 'version3' && 'https://api.veilnet.com.au' || 'https://api-dev.veilnet.com.au' }}
-  GOFIPS140: v1.26.0
 
 # A superseded run holds the one self-hosted machine the run that replaced it is
 # waiting for.
@@ -77,6 +77,11 @@ jobs:
       # them and then reports "no anchor pair" has lost them. On Linux nothing skips for
       # any other reason, so zero is the right number. With the module refusing what it
       # does not approve, set on the test binaries alone, as the Makefile's TESTEXEC does.
+      #
+      # And every test the source declares for Linux passed: a package whose tests stop
+      # running -- a TestMain that returns before m.Run -- is green with none, so the tests
+      # that passed are held, by name, to the ones its test files declare (scripts/tests-ran.sh,
+      # which says why the source and not `go test -list`).
       - name: the suite under -race, with the real binaries, nothing skipped
         run: |
           set -euo pipefail
@@ -86,36 +91,17 @@ jobs:
             grep -B1 -- '--- SKIP' test.log >&2
             exit 1
           fi
-          ran=$(grep -c '^--- PASS' test.log)
-          [ "$ran" -ge 150 ] || { echo "::error::only $ran tests ran" >&2; exit 1; }
-          echo "$ran tests ran, none skipped"
+          ./scripts/tests-ran.sh test.log PASS
 
       - name: every target vets, test files included
         run: make cross
 
-      # The digests make build stamps are the pair's own: a stamp describing other bytes
-      # would name the extraction directory for a pair this conflux does not carry. The
-      # first line, the version and commit, is stamped only by make.
-      - name: the stamped digests are the pair's own
-        run: |
-          set -euo pipefail
-          make build >/dev/null
-          diff <(bin/conflux version | sed 1d) <(go run . version | sed 1d)
-
-      # The binary that ships runs in FIPS 140-3 mode: the module's integrity check passes
-      # as it starts, and a GODEBUG that switches the mode off is refused, exit 70, rather
-      # than run without it.
-      - name: conflux runs in FIPS 140-3 mode, and refuses to run with it off
-        run: |
-          set -euo pipefail
-          # Each answer read whole before it is searched: grep -q stops at its first match,
-          # and conflux writing a line after it would then end the step on SIGPIPE.
-          version=$(bin/conflux version)
-          grep -qx 'fips140 on, Go Cryptographic Module v1.26.0' <<<"$version"
-          debug=$(GODEBUG=fips140=debug bin/conflux version 2>&1)
-          grep -q '^fips140: verified' <<<"$debug"
-          rc=0; GODEBUG=fips140=off bin/conflux version >/dev/null 2>&1 || rc=$?
-          [ "$rc" = 70 ] || { echo "::error::with fips140=off conflux exited $rc, not 70" >&2; exit 1; }
+      # The conflux make build makes is what ships: the digests stamped into it are the
+      # pair's own, it runs in FIPS 140-3 mode with the module's integrity check passing, and
+      # it refuses to run with the mode off, exit 70 (the Makefile's buildcheck). The
+      # platforms legs run the same on their own builds.
+      - name: the stamped build is the pair's own, and runs in FIPS 140-3 mode
+        run: make buildcheck
 
       # conflux's HTTPS is crypto/tls in FIPS 140-3 mode, which offers only approved parameters,
       # so a host that accepts none of them fails an enrolment, an update or a wintun fetch
@@ -133,12 +119,12 @@ jobs:
 
   # The container suites, on a hosted runner: the boot service under a real systemd --
   # with every branch of what anchord runs as taken, the hosts it depends on made inside
-  # the container -- and four nodes against the live API of the base's tree ($VEILNET_API
-  # above), whose anchord is conflux's own account with CAP_NET_ADMIN alone. The third reaches the
-  # realm through its manifest's bootstrap node over UDP, and from veilnet-dev no
-  # handshake gets through to it. A hosted runner is thrown away, so nothing here reaps
-  # after the suites; the fetch needs the anchor credential, which a fork's pull request
-  # is not given.
+  # the container, and the observer under one credential enrolled at the live API of the
+  # base's tree ($VEILNET_API above) -- and four nodes against that API, whose anchord is
+  # conflux's own account with CAP_NET_ADMIN alone. The third reaches the realm through its
+  # manifest's bootstrap node over UDP, and from veilnet-dev no handshake gets through to
+  # it. A hosted runner is thrown away, so nothing here reaps after the suites; the fetch
+  # needs the anchor credential, which a fork's pull request is not given.
   integration:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
@@ -164,19 +150,21 @@ jobs:
         run: ./test/preflight.sh
 
       # One invocation, so `dist` and the image are built once for both suites, which
-      # then run side by side: they boot containers of different names, and only one of
-      # them enrols. -O keeps each suite's output together, in one block per suite.
+      # then run side by side: they boot containers of different names, and each enrols in
+      # a random taint of its own at $VEILNET_API, service-test the one credential its
+      # observer runs under. -O keeps each suite's output together, in one block per suite.
       - name: the boot service, and four nodes against the live API
         run: make -j2 -O service-test integration
 
-  # FreeBSD and OpenBSD, which no hosted runner is: each in a VM on a hosted Linux runner,
-  # against rc for real -- install registers and starts nothing, anchord runs as conflux's
-  # own account in userspace and as root where its kernel keeps a TUN and a low port for
-  # root, and uninstall leaves nothing, the account included. `make cross` vets both;
-  # this is the one place either runs. Only the pair for the target is fetched, on the
-  # runner, which is where the anchor credential stays: the VM is given the built conflux
-  # and the script, and nothing comes back from it. A fork's pull request is not given the
-  # credential, so it does not run this.
+  # FreeBSD and OpenBSD, which no hosted runner is: each in a VM on a hosted Linux runner.
+  # First install.sh, as a person runs it, against the published `latest`, with nothing to
+  # download with but the base system's fetch or ftp; then rc for real -- install registers
+  # and starts nothing, anchord runs as conflux's own account in userspace and as root where
+  # its kernel keeps a TUN and a low port for root, and uninstall leaves nothing, the account
+  # included. `make cross` vets both; this is the one place either runs. Only the pair for
+  # the target is fetched, on the runner, which is where the anchor credential stays: the VM
+  # is given the built conflux and the script, and nothing comes back from it. A fork's pull
+  # request is not given the credential, so it does not run this.
   bsd:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     strategy:
@@ -212,7 +200,7 @@ jobs:
 
       - name: the boot service against rc, in a FreeBSD VM
         if: matrix.os == 'freebsd'
-        uses: vmactions/freebsd-vm@c46abacb49f09938ca4e1702d15d836285d694cc # v1.5.9
+        uses: vmactions/freebsd-vm@811efaaac0668df8bfb8308c3ec997b5ab50037b # v1.6.0
         with:
           release: "15.1"
           copyback: false
@@ -286,7 +274,8 @@ jobs:
       # tests do skip, for the platform (a mode bit Windows does not have), and that is
       # not what this checks. Every test that needs the pair skips saying "no anchor
       # pair", so the reason is what is looked for, rather than a list of names that a
-      # new test would be missing from.
+      # new test would be missing from. And, as on Linux, every test the source declares
+      # for this platform ran: passed, or skipped for the platform.
       - name: the suite, with the real binaries
         shell: bash
         run: |
@@ -296,21 +285,28 @@ jobs:
             echo "::error::a test that needs the anchor binaries skipped" >&2
             exit 1
           fi
-          grep -c '^--- PASS' test.log | xargs echo "tests passed:"
+          ./scripts/tests-ran.sh test.log PASS SKIP
+
+      # The conflux make build makes for this platform, held to what ships as the linux job
+      # holds its own: the stamped digests the pair's, FIPS 140-3 mode with the integrity check
+      # passing, and exit 70 with the mode off. The service suite below runs this build.
+      - name: the stamped build is the pair's own, and runs in FIPS 140-3 mode
+        shell: bash
+        run: make buildcheck
 
       # launchd and the SCM for real, which the suite only compiles: install registers and
       # starts nothing, status and down answer, a userspace anchord serves as its own
-      # account -- _conflux, or LOCAL SERVICE -- and uninstall leaves nothing behind. Nothing
-      # is enrolled. As root on macOS; a Windows runner is an Administrator, and the service
-      # it starts is SYSTEM.
+      # account -- _conflux, or LOCAL SERVICE -- the observer captures as that account, under
+      # the one credential enrolled here, at $VEILNET_API in a random taint, and uninstall
+      # leaves nothing behind. As root on macOS; a Windows runner is an Administrator, and the
+      # service it starts is SYSTEM.
       - name: the boot service, against the real service manager
         if: runner.os != 'Linux'
         shell: bash
         run: |
           set -euo pipefail
-          make build >/dev/null
           if [ "$RUNNER_OS" = macOS ]; then
-            sudo ./test/service-host.sh bin/conflux
+            sudo VEILNET_API="$VEILNET_API" ./test/service-host.sh bin/conflux
           else
             ./test/service-host.sh bin/conflux.exe
           fi
@@ -328,6 +324,27 @@ jobs:
           conflux version
           again=$(sh < install.sh)
           grep 'is already the latest release' <<< "$again"
+
+      # 32-bit Windows PowerShell, which 64-bit Windows has beside its own: its Program Files is
+      # the x86 one, where conflux never looks for itself, so install.ps1 refuses there, saying to
+      # run it from 64-bit PowerShell, before anything is downloaded or made. The child prints the
+      # refusal itself, one line, which the error view would wrap; LASTEXITCODE is put back, since
+      # the step ends with it.
+      - name: install.ps1 refuses 32-bit PowerShell
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ps32 = Join-Path $env:SystemRoot 'SysWOW64\WindowsPowerShell\v1.0\powershell.exe'
+          $out = & $ps32 -NoProfile -NonInteractive -Command 'try { Get-Content install.ps1 -Raw | Invoke-Expression } catch { [Console]::Out.WriteLine($_.Exception.Message); exit 3 }'
+          $code = $LASTEXITCODE
+          $global:LASTEXITCODE = 0
+          $said = $out -join "`n"
+          Write-Host $said
+          if ($code -ne 3) { throw "install.ps1 in 32-bit PowerShell exited $code, not refusing" }
+          if ($said -notmatch 'run this from 64-bit PowerShell') { throw 'its refusal does not say to run it from 64-bit PowerShell' }
+          foreach ($d in (Join-Path ${env:ProgramFiles(x86)} 'conflux'), (Join-Path $env:ProgramFiles 'conflux')) {
+            if (Test-Path -LiteralPath $d) { throw "install.ps1 in 32-bit PowerShell made $d" }
+          }
 
       # Under Windows PowerShell 5.1, which is what a Windows machine opens, by Invoke-Expression
       # as `irm … | iex` runs it; then again from PowerShell 7, which finds it on the machine's

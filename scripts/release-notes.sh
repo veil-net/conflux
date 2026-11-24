@@ -42,7 +42,8 @@ SERVER=${GITHUB_SERVER_URL:-https://github.com}
 API=${GITHUB_API_URL:-https://api.github.com}
 SHA=$(git rev-parse HEAD)
 
-# A version tag is MAJOR.MINOR.PATCH, a suffix allowed. A glob, as git describe takes.
+# A version tag is MAJOR.MINOR.PATCH, digits alone, as TestVersionMatchesFile holds VERSION to.
+# A glob, as git describe takes, which latest and dev-latest never match.
 VERSIONS='[0-9]*.[0-9]*.[0-9]*'
 
 # Pull requests summarised, newest first, and as many direct commits; the full diff has the rest.
@@ -81,13 +82,17 @@ fi
 # summary prints pull request $1's title, then the opening paragraph of its description: its
 # first block of text that is not a heading. A list keeps its lines; anything else becomes one
 # line, since a release renders a single newline as a line break.
+#
+# The token reaches curl as a header on its stdin (-H @-), written by printf, a builtin, and
+# never as an argument: an argument is in `ps` for every other account on the machine, and
+# release.yml runs this on a self-hosted one.
 summary() {
-  local auth=() doc
-  [ -z "${GH_TOKEN:-}" ] || auth=(-H "Authorization: Bearer $GH_TOKEN")
+  local doc
 
-  doc=$(curl -fsS --max-time 20 "${auth[@]}" \
-    -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
-    "$API/repos/$REPO/pulls/$1") || return 1
+  doc=$({ [ -z "${GH_TOKEN:-}" ] || printf 'Authorization: Bearer %s\n' "$GH_TOKEN"; } |
+    curl -fsS --max-time 20 -H @- \
+      -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+      "$API/repos/$REPO/pulls/$1") || return 1
 
   python3 -c '
 import json, re, sys

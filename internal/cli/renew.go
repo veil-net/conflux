@@ -17,7 +17,7 @@ import (
 	"github.com/veil-net/conflux/internal/ui"
 )
 
-// runRenew fetches a fresh credential now and installs it on the running anchor.
+// runRenew fetches a fresh credential now and installs it on the running anchor and observer.
 //
 // Renewal is otherwise automatic in two places -- once on every start, and on a
 // timer at two thirds of the credential's life -- and neither is reachable by hand.
@@ -29,25 +29,20 @@ import (
 // It does not enrol. A machine with no manifest has nothing to renew, and inventing
 // an identity for it here would silently replace the one a reboot expects.
 func runRenew(ctx context.Context, args []string) int {
-	fs := flag.NewFlagSet("renew", flag.ContinueOnError)
-	fs.SetOutput(ui.Errw)
-
-	fs.Usage = func() {
-		ui.Printf("conflux renew — install a fresh credential on the running anchor\n\n" +
-			"  conflux renew\n\n" +
-			"Renewal is automatic: once at every start, and again on a timer at two thirds\n" +
-			"of the credential's life. This forces one now, which is what a machine whose\n" +
-			"renewals have been failing needs.\n\n" +
-			"The swap is hot. The identity does not change and no session is dropped, so\n" +
-			"this is not a restart and does not need to be treated as one.\n\n")
-		fs.PrintDefaults()
-	}
+	fs := verbFlags("renew", "conflux renew — install a fresh credential on the running anchor and observer\n\n"+
+		"  conflux renew\n\n"+
+		"Renewal is automatic: once at every start, and again on a timer at two thirds\n"+
+		"of the credential's life. This forces one now, which is what a machine whose\n"+
+		"renewals have been failing needs. The observer runs under the same credential,\n"+
+		"so a machine that only observes is renewed as one running an anchor is.\n\n"+
+		"The swap is hot. The identity does not change and no session is dropped, so\n"+
+		"this is not a restart and does not need to be treated as one.\n\n")
 
 	// anchorctl has a renew of its own, and it is the one that takes -cred: it
 	// installs a credential the caller already holds. conflux's fetches one first,
 	// which is the whole difference and the reason it takes no arguments. Resolve
 	// by shape, the way proxy does, rather than shadowing anchorctl's outright.
-	if hint := anchorctlFlag(args); hint != "" {
+	if hint := anchorctlFlag(fs, args); hint != "" {
 		ui.Errf("%q is anchorctl's renew, not conflux's.\n\n"+
 			"  conflux renew fetches a fresh credential from the enrolment API and installs it:\n\n"+
 			"    conflux renew\n\n"+
@@ -57,15 +52,8 @@ func runRenew(ctx context.Context, args []string) int {
 		return ExitUsage
 	}
 
-	if err := fs.Parse(args); err != nil {
-		return ExitUsage
-	}
-
-	if fs.NArg() > 0 {
-		ui.Errf("conflux renew takes no arguments, and got %q.\n\n"+
-			"  conflux renew", fs.Arg(0))
-
-		return ExitUsage
+	if exit, ok := flagsAlone(fs, args); !ok {
+		return exit
 	}
 
 	if err := needsRoot("renewing this machine's credential", "renew", args); err != nil {
@@ -76,7 +64,7 @@ func runRenew(ctx context.Context, args []string) int {
 	// to renew it with.
 	if e, live := liveEphemeral(); live && !config.HasManifest(paths.Default()) {
 		ui.Errf("the anchor running is ephemeral, from %s, and renews itself in memory: nothing\n"+
-			"  outside it holds its credential, so there is nothing here to renew", e.State)
+			"  outside it holds its credential, so there is nothing here to renew", e.Root)
 
 		return ExitUnavailable
 	}
@@ -84,11 +72,10 @@ func runRenew(ctx context.Context, args []string) int {
 	return renewNow(ctx, paths.Default())
 }
 
-// renewNow is the body, split out so the test can drive it against a temporary
-// CONFLUX_DIR without going through privcheck.
+// renewNow is the body, split out so the test can drive it against a temporary root
+// without going through privcheck.
 func renewNow(ctx context.Context, d paths.Dirs) int {
-	cfg, err := config.Load(d)
-	if err != nil {
+	if _, err := config.Load(d); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			ui.Errf("this machine has never been configured, so there is no credential to renew.\n\n" + configureHint)
 
@@ -98,23 +85,15 @@ func renewNow(ctx context.Context, d paths.Dirs) int {
 		return fail(err)
 	}
 
-	// Unavailable, like a machine with nothing enrolled: observing runs no anchor and needs
-	// no credential, and one this machine holds is renewed by the next anchor it runs.
-	if !cfg.Anchor() {
-		ui.Errf("this machine only observes, which needs no credential, so there is nothing to renew.\n" +
-			"  The next conflux up or proxy renews the one it holds, if it is due.")
-
-		return ExitUnavailable
-	}
-
 	if !config.HasManifest(d) {
 		return neverEnrolled()
 	}
 
-	// Renewal is a hot swap into a running anchor, so "nothing is running" is the
-	// likely failure and deserves conflux's own answer rather than a dial error.
+	// Renewal is a hot swap into a running anchor or observer -- observing alone runs under
+	// the credential as an anchor does -- so "nothing is running" is the likely failure and
+	// deserves conflux's own answer rather than a dial error.
 	if _, err := os.Stat(d.Socket()); errors.Is(err, fs.ErrNotExist) {
-		ui.Errf("nothing is running here, and a credential is installed into a running anchor.\n\n"+
+		ui.Errf("nothing is running here, and a credential is installed into a running anchor or observer.\n\n"+
 			"  conflux start     start from the configuration this machine already has\n\n"+
 			"  The next start renews on its own, so a machine that is meant to be down needs\n"+
 			"  nothing done here.\n\n"+
@@ -175,21 +154,14 @@ func neverEnrolled() int {
 // shadowed verb rather than conflux's, which takes none.
 //
 // Shared by renew and start, which resolve their collisions the same way and for the
-// same reason: conflux's takes no arguments at all, so a flag is the signal, and -h
-// is the one that means the caller wants conflux's own usage.
-func anchorctlFlag(args []string) string {
-	for _, a := range args {
-		if !strings.HasPrefix(a, "-") {
-			continue
-		}
+// same reason: conflux's takes no arguments at all, so a flag is the signal, and a help
+// flag (helpFlag) is the one that means the caller wants conflux's own usage. fs is the
+// verb's flag set, which defines no flag, so every other flag splitFlags reads, ahead of
+// the "--" that ends the flags, is anchorctl's: what is no flag's spelling (flagName), and
+// every word after "--", is the flag set's, an argument flagsAlone names or bad syntax.
+func anchorctlFlag(fs *flag.FlagSet, args []string) string {
+	_, _, foreign := splitFlags(fs, args)
+	name, _, _ := strings.Cut(foreign, "=")
 
-		switch name, _, _ := strings.Cut(a, "="); name {
-		case "-h", "--help", "-help":
-			continue
-		default:
-			return name
-		}
-	}
-
-	return ""
+	return name
 }

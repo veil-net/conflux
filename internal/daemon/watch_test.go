@@ -1,17 +1,19 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"errors"
-	"github.com/veil-net/conflux/internal/config"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
+	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/enrol"
 )
 
@@ -108,6 +110,11 @@ func TestWhatIsPermanent(t *testing.T) {
 		"taints the credential does not grant": anchorctlSaid("anchorctl: config: anchor: the realm credential does not " +
 			"grant this anchor's taints: Taints names [\"dev\"]: realm: the credential does not grant these taints"),
 		"conflux's own taints refusal": &permanentError{path: "manifest.b64", err: &enrol.TaintsError{Alpha: true}},
+		// anchor's buildOffers, for a subnets.json a Subnets order wrote that it cannot read: the
+		// anchor will not start until the file goes, which no retry does.
+		"a Subnets order's list anchor cannot read": anchorctlSaid("anchorctl: starting: anchor: the subnet list a " +
+			"Subnets order wrote, /var/lib/.conflux/anchor/subnets.json: json: unknown field \"x\"; remove the file to " +
+			"serve Config.ServeSubnets"),
 		// What a live anchorctl said to `observe -start` against an anchord with no CAP_NET_RAW.
 		"a host that will not let the daemon capture": anchorctlSaid("anchorctl: capture: not permitted: open a packet " +
 			"socket: operation not permitted (it needs CAP_NET_RAW)\n  capturing needs CAP_NET_RAW for the daemon on " +
@@ -198,7 +205,7 @@ func TestTheWatcherGivesUpOnARefusedConfiguration(t *testing.T) {
 	}
 
 	gaveUp := make(chan bool, 1)
-	go func() { gaveUp <- s.watch(t.Context(), &config.Config{Mode: config.ModeProxy}, time.Millisecond) }()
+	go func() { gaveUp <- s.watch(t.Context(), &config.Config{Mode: config.ModeProxy}, time.Millisecond, nil) }()
 
 	select {
 	case got := <-gaveUp:
@@ -235,18 +242,21 @@ func TestTheTailHoldsTheLastWords(t *testing.T) {
 	}
 }
 
+// TestLineWriter: what is written is handed on a line at a time, its end taken off -- a newline,
+// or a CRLF, its CR and its newline written apart among them -- a line written in pieces handed on
+// as one, what is left of the last flushed, and a line that never ends handed on rather than held.
 func TestLineWriter(t *testing.T) {
 	var got []string
 
-	w := &lineWriter{emit: func(l string) { got = append(got, l) }}
+	w := &LineWriter{Emit: func(l string) { got = append(got, l) }}
 
-	for _, chunk := range []string{"one\ntw", "o\r\nthr", "ee"} {
+	for _, chunk := range []string{"one\ntw", "o\r", "\nthr", "ee"} {
 		if _, err := w.Write([]byte(chunk)); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	w.flush()
+	w.Flush()
 
 	if want := []string{"one", "two", "three"}; !slices.Equal(got, want) {
 		t.Errorf("lines = %q, want %q", got, want)
@@ -268,7 +278,7 @@ func TestAReopenedLinkIsCounted(t *testing.T) {
 	ctl := fakeCtl(t)
 
 	for _, reopened := range []bool{false, true, true} {
-		if _, err := bringUp(t.Context(), d, ctl, nopReporter{}, d.RootAnchorDir(), reopened); err != nil {
+		if _, err := bringUp(t.Context(), d, ctl, nopReporter{}, d.RootAnchorDir(), reopened, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -295,11 +305,12 @@ func TestTheWatcherStartsAFailedObserverAgain(t *testing.T) {
 			t.Setenv(fakeAnchorctlObserverEnv, row)
 
 			s, log := supervised(t, "1")
+			credentialed(t, s.Dirs)
 
 			ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
 			defer cancel()
 
-			s.watch(ctx, cfg, time.Millisecond)
+			s.watch(ctx, cfg, time.Millisecond, nil)
 
 			if got := slices.Contains(ran(t, log), "observe"); got != want {
 				t.Errorf("an observer that is %s: started again %v, want %v", row, got, want)
@@ -317,10 +328,11 @@ func TestTheWatcherGivesUpOnAnObserverTheHostRefuses(t *testing.T) {
 	t.Setenv(fakeAnchorctlCaptureEnv, "1")
 
 	s, log := supervised(t, "1")
+	credentialed(t, s.Dirs)
 
 	gaveUp := make(chan bool, 1)
 	go func() {
-		gaveUp <- s.watch(t.Context(), &config.Config{Mode: config.ModeObserve, Observer: &config.Observer{}}, time.Millisecond)
+		gaveUp <- s.watch(t.Context(), &config.Config{Mode: config.ModeObserve, Observer: &config.Observer{}}, time.Millisecond, nil)
 	}()
 
 	select {
@@ -334,5 +346,166 @@ func TestTheWatcherGivesUpOnAnObserverTheHostRefuses(t *testing.T) {
 
 	if n := strings.Count(strings.Join(ran(t, log), "\n"), "observe"); n != rebuildRefusals {
 		t.Errorf("started %d times before giving up, want %d", n, rebuildRefusals)
+	}
+}
+
+// TestARebuildsRenewalReachesTheObserver: a rebuild renews a due credential before it starts
+// the anchor again, and the observer running beside it, which holds its credential apart from
+// the anchor's, is given the renewal as well, rather than going on under the chain before
+// until the renewed one is due, by when that one has lapsed.
+func TestARebuildsRenewalReachesTheObserver(t *testing.T) {
+	is := newIssuer(t)
+	d := machine(t, is, time.Now().Add(-25*24*time.Hour), time.Now().Add(5*24*time.Hour))
+
+	cfg := configOf(t, d)
+	cfg.Observer = &config.Observer{}
+
+	if err := config.Save(d, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	cred := filepath.Join(t.TempDir(), "cred")
+	t.Setenv(fakeAnchorctlCredEnv, cred)
+
+	s := &Supervisor{Dirs: d, ctl: fakeCtl(t), tail: newRing(tailLines), observing: true}
+	s.priv.Dir = d.RootAnchorDir()
+
+	if err := s.rebuild(t.Context(), cfg, false); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+
+	if n := is.calls.Load(); n != 1 {
+		t.Errorf("the rebuild asked the issuer %d times, want the one renewal", n)
+	}
+
+	if got, err := os.ReadFile(cred); err != nil || !bytes.Equal(got, is.chain) {
+		t.Errorf("the observer was handed %q (%v), want the renewed chain %q", got, err, is.chain)
+	}
+}
+
+// TestTheObserverOutlivesAnAnchorGivenUpOn: beside the observer, an anchor whose rebuilds are
+// refused for good is given up on and the observer is not: the watch goes on, starting it
+// again when its capture ends, and does not end the cycle's loops, so its renewals go on too.
+func TestTheObserverOutlivesAnAnchorGivenUpOn(t *testing.T) {
+	t.Setenv(fakeAnchorctlStatusEnv, "none")
+	t.Setenv(fakeAnchorctlObserverEnv, "failed")
+
+	s, log := supervised(t, "1")
+	credentialed(t, s.Dirs)
+
+	// A configuration conflux refuses, written under the running service.
+	if err := os.WriteFile(s.Dirs.ConfigFile(), []byte(`{"version":1,"mode":"neither"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, Observer: &config.Observer{}}
+
+	gaveUp := make(chan bool, 1)
+	stop := inBackground(t, "the watch", func(ctx context.Context) { gaveUp <- s.watch(ctx, cfg, time.Millisecond, nil) })
+
+	// The last refusal, and then the observer started again after it.
+	afterGivingUp := func() bool {
+		cmds := ran(t, log)
+
+		for i, stops := 0, 0; i < len(cmds); i++ {
+			if cmds[i] == "stop" {
+				if stops++; stops == rebuildRefusals {
+					return slices.Contains(cmds[i:], "observe")
+				}
+			}
+		}
+
+		return false
+	}
+
+	for deadline := time.Now().Add(15 * time.Second); !afterGivingUp(); {
+		select {
+		case got := <-gaveUp:
+			t.Fatalf("the watch ended (gave up: %v) with the observer still to keep, after %d rebuilds", got,
+				strings.Count(strings.Join(ran(t, log), "\n"), "stop"))
+		case <-time.After(10 * time.Millisecond):
+		}
+
+		if time.Now().After(deadline) {
+			t.Fatalf("the observer was not watched past the anchor given up on; anchorctl ran %v", ran(t, log))
+		}
+	}
+
+	stop()
+
+	if got := <-gaveUp; got {
+		t.Error("the watch reported giving up with the observer kept")
+	}
+
+	if stops := strings.Count(strings.Join(ran(t, log), "\n"), "stop"); stops != rebuildRefusals {
+		t.Errorf("rebuilt %d times, want %d and then none", stops, rebuildRefusals)
+	}
+}
+
+// TestTheWatcherCountsTheStartsRefusal: an anchor whose start beside the observer was refused
+// for good is one refusal into the watcher's count already, so it is given up on once
+// rebuildRefusals-1 rebuilds are refused as well, and the observer is not: the watch goes on.
+func TestTheWatcherCountsTheStartsRefusal(t *testing.T) {
+	t.Setenv(fakeAnchorctlStatusEnv, "none")
+	t.Setenv(fakeAnchorctlObserverEnv, "running")
+	t.Setenv(fakeAnchorctlRefuseEnv, "start")
+
+	s, log := supervised(t, "1")
+	credentialed(t, s.Dirs)
+	s.priv.Dir = s.Dirs.RootAnchorDir()
+
+	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, Observer: &config.Observer{},
+		Proxies: []string{"8080=127.0.0.1:1"}}
+	if err := config.Save(s.Dirs, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	_, start := bringUp(t.Context(), s.Dirs, s.ctl, s.report(), s.priv.Dir, false, nil, nil)
+	if !Permanent(start) {
+		t.Fatalf("the stand-in's start = %v, want a refusal for good", start)
+	}
+
+	said := &givingUp{gaveUp: make(chan struct{})}
+	s.Reporter = said
+
+	watched := make(chan bool, 1)
+	stop := inBackground(t, "the watch", func(ctx context.Context) { watched <- s.watch(ctx, cfg, time.Millisecond, start) })
+
+	select {
+	case <-said.gaveUp:
+	case got := <-watched:
+		t.Fatalf("the watch ended (gave up: %v) without giving the anchor up first", got)
+	case <-time.After(15 * time.Second):
+		t.Fatal("the watcher did not give the anchor up")
+	}
+
+	if stops := strings.Count(strings.Join(ran(t, log), "\n"), "stop"); stops != rebuildRefusals-1 {
+		t.Errorf("gave the anchor up after %d rebuilds, want %d beside the start's refusal", stops, rebuildRefusals-1)
+	}
+
+	select {
+	case got := <-watched:
+		t.Fatalf("the watch ended (gave up: %v) with the observer still to keep", got)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	stop()
+
+	if got := <-watched; got {
+		t.Error("the watch reported giving up with the observer kept")
+	}
+}
+
+// givingUp is a reporter that closes gaveUp once the watcher says it gives the anchor up.
+type givingUp struct {
+	nopReporter
+
+	once   sync.Once
+	gaveUp chan struct{}
+}
+
+func (g *givingUp) Warn(format string, _ ...any) {
+	if strings.HasPrefix(format, "this configuration will not build an anchor") {
+		g.once.Do(func() { close(g.gaveUp) })
 	}
 }

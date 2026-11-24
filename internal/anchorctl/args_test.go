@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -18,20 +19,20 @@ var update = flag.Bool("update", false, "rewrite the golden argv files")
 var scenarios = map[string]StartMode{
 	"up-minimal": {
 		TUN: true,
-		Dir: "/var/lib/conflux/anchor",
+		Dir: "/var/lib/.conflux/anchor",
 	},
 	"up-ipv4": {
 		TUN:  true,
-		IPv4: "10.128.0.7/24", Dir: "/var/lib/conflux/anchor",
+		IPv4: "10.128.0.7/24", Dir: "/var/lib/.conflux/anchor",
 	},
 	"up-subnets": {
 		TUN:  true,
 		IPv4: "10.128.0.7/24", Subnets: []string{"192.168.1.0/24", "eth1"},
-		Dir: "/var/lib/conflux/anchor",
+		Dir: "/var/lib/.conflux/anchor",
 	},
 	"up-custom-interface": {
 		TUN: true, TUNName: "veil0",
-		Dir: "/var/lib/conflux/anchor",
+		Dir: "/var/lib/.conflux/anchor",
 	},
 	// An ephemeral run gives the anchor no directory, so it writes nothing: no -dir at all.
 	"up-ephemeral": {
@@ -42,63 +43,63 @@ var scenarios = map[string]StartMode{
 	},
 	"proxy-tcp": {
 		Proxies: []string{"8080=127.0.0.1:3000"},
-		Dir:     "/var/lib/conflux/anchor",
+		Dir:     "/var/lib/.conflux/anchor",
 	},
 	"proxy-multi": {
 		Proxies: []string{"8080=127.0.0.1:3000", "53/udp=127.0.0.1:53", "5432=[::1]:5432"},
-		Dir:     "/var/lib/conflux/anchor",
+		Dir:     "/var/lib/.conflux/anchor",
 	},
 	"up-peers": {
 		TUN:   true,
 		Peers: []string{"genesis.veilnet.com.au:4700"},
-		Dir:   "/var/lib/conflux/anchor",
+		Dir:   "/var/lib/.conflux/anchor",
 	},
 	"up-peers-many": {
 		TUN:   true,
 		Peers: []string{"genesis.veilnet.com.au:4700", "anchoraaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypq@203.0.113.9:4700"},
-		Dir:   "/var/lib/conflux/anchor",
+		Dir:   "/var/lib/.conflux/anchor",
 	},
 	"proxy-peers": {
 		Proxies: []string{"8080=127.0.0.1:3000"},
 		Peers:   []string{"genesis.veilnet.com.au:4700"},
-		Dir:     "/var/lib/conflux/anchor",
+		Dir:     "/var/lib/.conflux/anchor",
 	},
 	"up-uplink": {
 		TUN:    true,
-		Uplink: "/dev/ttyUSB0:115200", Dir: "/var/lib/conflux/anchor",
+		Uplink: "/dev/ttyUSB0:115200", Dir: "/var/lib/.conflux/anchor",
 	},
 	"up-uplink-ipv4": {
 		TUN:  true,
-		IPv4: "10.128.0.7/24", Uplink: "/dev/ttyUSB0", Dir: "/var/lib/conflux/anchor",
+		IPv4: "10.128.0.7/24", Uplink: "/dev/ttyUSB0", Dir: "/var/lib/.conflux/anchor",
 	},
 	"proxy-uplink": {
 		Proxies: []string{"8080=127.0.0.1:3000"},
 		Uplink:  "/dev/ttyS1:57600",
-		Dir:     "/var/lib/conflux/anchor",
+		Dir:     "/var/lib/.conflux/anchor",
 	},
 	// A userspace router: anchor forwards the subnet and serves the exit from its own
 	// process, with -tun=false and nothing on the host.
 	"proxy-routes": {
 		Subnets:   []string{"192.168.1.0/24", "eth1"},
 		ServeExit: true,
-		Dir:       "/var/lib/conflux/anchor",
+		Dir:       "/var/lib/.conflux/anchor",
 	},
 	"proxy-ipv4": {
 		Proxies: []string{"8080=127.0.0.1:3000"},
 		IPv4:    "10.128.0.7/24",
-		Dir:     "/var/lib/conflux/anchor",
+		Dir:     "/var/lib/.conflux/anchor",
 	},
 	"proxy-windows": {
 		Proxies: []string{"8080=127.0.0.1:3000"},
-		Dir:     `C:\ProgramData\conflux\anchor`,
+		Dir:     `C:\ProgramData\.conflux\anchor`,
 	},
 	"up-port": {
 		TUN:  true,
-		Port: 4711, Dir: "/var/lib/conflux/anchor",
+		Port: 4711, Dir: "/var/lib/.conflux/anchor",
 	},
 	"up-low-latency": {
 		TUN:        true,
-		LowLatency: true, Dir: "/var/lib/conflux/anchor",
+		LowLatency: true, Dir: "/var/lib/.conflux/anchor",
 	},
 	// The three lan-discovery answers. "auto" is the absence of a golden of its own:
 	// up-minimal above is it, and the assertion that matters is that no
@@ -106,30 +107,30 @@ var scenarios = map[string]StartMode{
 	// manifest with anchorctl's default on every machine that never asked.
 	"up-lan-discovery-yes": {
 		TUN:          true,
-		LANDiscovery: boolp(true), Dir: "/var/lib/conflux/anchor",
+		LANDiscovery: boolp(true), Dir: "/var/lib/.conflux/anchor",
 	},
 	"up-lan-discovery-no": {
 		TUN:          true,
-		LANDiscovery: boolp(false), Dir: "/var/lib/conflux/anchor",
+		LANDiscovery: boolp(false), Dir: "/var/lib/.conflux/anchor",
 	},
 	"proxy-lan-discovery-no": {
 		Proxies:      []string{"8080=127.0.0.1:3000"},
 		LANDiscovery: boolp(false),
-		Dir:          "/var/lib/conflux/anchor",
+		Dir:          "/var/lib/.conflux/anchor",
 	},
 	"up-serve-exit-only": {
 		TUN:       true,
-		ServeExit: true, Dir: "/var/lib/conflux/anchor",
+		ServeExit: true, Dir: "/var/lib/.conflux/anchor",
 	},
 	"up-use-exit-only": {
 		TUN:     true,
-		UseExit: true, Dir: "/var/lib/conflux/anchor",
+		UseExit: true, Dir: "/var/lib/.conflux/anchor",
 	},
 	"proxy-low-latency": {
 		Proxies:    []string{"8080=127.0.0.1:3000"},
 		Port:       4711,
 		LowLatency: true,
-		Dir:        "/var/lib/conflux/anchor",
+		Dir:        "/var/lib/.conflux/anchor",
 	},
 }
 
@@ -191,6 +192,20 @@ func TestObserveArgvGoldens(t *testing.T) {
 				t.Errorf("argv changed.\n--- want ---\n%s\n--- got ---\n%s", want, got)
 			}
 		})
+	}
+}
+
+// TestTheObserverStartsUnderTheManifestOnStdin: anchor's observer runs only under a
+// credential, and conflux hands it the machine's manifest the one way it hands the anchor's,
+// on stdin: never a path in argv.
+func TestTheObserverStartsUnderTheManifestOnStdin(t *testing.T) {
+	for name, o := range observeScenarios {
+		args := ObserveStartArgs(o)
+
+		i := slices.Index(args, "-manifest")
+		if i < 0 || i+1 == len(args) || args[i+1] != "-" {
+			t.Errorf("%s: %v does not take the manifest from stdin", name, args)
+		}
 	}
 }
 
@@ -269,5 +284,27 @@ func TestAnUplinkLeavesTheManifestNothingAnchorRefuses(t *testing.T) {
 		if mode.LANDiscovery == nil && !strings.Contains(argv, "-lan-discovery=no") {
 			t.Errorf("%s: an uplink argv leaves lan-discovery to the manifest: %s", name, argv)
 		}
+	}
+}
+
+// TestServedSubnetsAreOneArgument: anchorctl reads a -serve-subnets followed by an argument
+// that starts with '-' as one given alone, every private network on the host
+// (bareServeSubnets in anchor's cmd/anchorctl/lifecycle.go), so a list whose first entry is
+// an interface named "-veth0" would be served as "*". Written -serve-subnets=LIST, the list
+// is the flag's whatever it starts with.
+func TestServedSubnetsAreOneArgument(t *testing.T) {
+	args := StartMode{TUN: true, Subnets: []string{"-veth0", "eth1"}}.Args()
+
+	i := slices.IndexFunc(args, func(a string) bool { return strings.HasPrefix(a, "-serve-subnets") })
+	if i < 0 {
+		t.Fatalf("no -serve-subnets in %q", args)
+	}
+
+	if args[i] != "-serve-subnets=-veth0,eth1" {
+		t.Errorf("the served subnets are %q, want -serve-subnets=-veth0,eth1 as one argument", args[i:])
+	}
+
+	if i+1 < len(args) && strings.HasPrefix(args[i+1], "-veth0") {
+		t.Errorf("the list is an argument of its own after the flag, which anchorctl reads as none: %q", args)
 	}
 }

@@ -29,17 +29,21 @@ func shParses(t *testing.T, script string) {
 }
 
 func TestFreeBSDScript(t *testing.T) {
-	script, err := freebsdScript("conflux", "/var/db/conflux/conflux", []string{"serve"}, "/var/log/conflux.log")
+	script, err := freebsdScript("conflux", "/var/db/.conflux/conflux", []string{"serve"}, "/var/db/.conflux/rc.pid")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	for _, want := range []string{
 		"# PROVIDE: conflux",
+		// daemon(8) -S hands conflux's output to syslogd, which is started first so none of
+		// it is lost.
+		"# REQUIRE: NETWORKING syslogd\n",
 		"# KEYWORD: shutdown",
 		"rcvar=conflux_enable",
-		"procname=/var/db/conflux/conflux\n",
-		`command_args="-f -o /var/log/conflux.log -p ${pidfile} /var/db/conflux/conflux serve"`,
+		"pidfile=/var/db/.conflux/rc.pid\n",
+		"procname=/var/db/.conflux/conflux\n",
+		`command_args="-f -S -T conflux -p ${pidfile} /var/db/.conflux/conflux serve"`,
 		`: "${conflux_enable:=NO}"`,
 	} {
 		if !strings.Contains(script, want) {
@@ -56,14 +60,14 @@ func TestFreeBSDScript(t *testing.T) {
 }
 
 func TestOpenBSDScript(t *testing.T) {
-	script, err := openbsdScript("/var/db/conflux/conflux", []string{"serve", "--dir", "/srv/conflux-dev"})
+	script, err := openbsdScript("/var/db/.conflux/conflux", []string{"serve"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	for _, want := range []string{
-		"daemon=/var/db/conflux/conflux\n",
-		`daemon_flags="serve --dir /srv/conflux-dev"`,
+		"daemon=/var/db/.conflux/conflux\n",
+		`daemon_flags="serve"`,
 		"daemon_logger=daemon.info",
 		". /etc/rc.d/rc.subr",
 		"rc_bg=YES",
@@ -74,7 +78,39 @@ func TestOpenBSDScript(t *testing.T) {
 		}
 	}
 
+	// rc.subr sets daemon_class itself, read-only, to the login class named after the script
+	// where there is one: conflux's own (openbsdClass), never one the script names.
+	if strings.Contains(script, "daemon_class") {
+		t.Errorf("the script sets daemon_class, which rc.subr holds read-only:\n%s", script)
+	}
+
 	shParses(t, script)
+}
+
+// TestOpenBSDClass: the login class rc.subr runs conflux under, found by the script's name,
+// raises the open-file limit the daemon class holds to 1024 -- both halves, since the daemon
+// class's own -cur and -max, reached through tc, would otherwise decide them -- and is the
+// daemon class in everything else.
+func TestOpenBSDClass(t *testing.T) {
+	class := openbsdClass()
+
+	if !strings.Contains(class, "\n"+rcName+":\\\n") {
+		t.Errorf("the class is not named %s, the script's name, which rc.subr looks for:\n%s", rcName, class)
+	}
+
+	for _, want := range []string{
+		"\t:openfiles-cur=1048576:\\\n",
+		"\t:openfiles-max=1048576:\\\n",
+		"\t:tc=daemon:\n",
+	} {
+		if !strings.Contains(class, want) {
+			t.Errorf("the class has no %q:\n%s", strings.TrimSpace(want), class)
+		}
+	}
+
+	if !strings.HasSuffix(class, ":tc=daemon:\n") {
+		t.Errorf("the record does not end at tc=daemon:\n%s", class)
+	}
 }
 
 // TestAnRCScriptRefusesWhatItCannotMatch: both rc.subr implementations find the running
@@ -83,22 +119,14 @@ func TestOpenBSDScript(t *testing.T) {
 // that starts and can then be neither stopped nor asked about.
 func TestAnRCScriptRefusesWhatItCannotMatch(t *testing.T) {
 	for _, root := range []string{"/srv/my dir", "/srv/$HOME", "/srv/a;b", "/srv/it's", "/srv/[x]", "/srv/a*"} {
-		args := []string{"serve", "--dir", root}
+		args := []string{"serve"}
 
 		if _, err := openbsdScript(root+"/conflux", args); err == nil {
-			t.Errorf("an OpenBSD script was written for the root %q", root)
+			t.Errorf("an OpenBSD script was written for the executable %q", root+"/conflux")
 		}
 
-		if _, err := freebsdScript("conflux_1a2b3c4d", root+"/conflux", args, root+"/logs/conflux.log"); err == nil {
-			t.Errorf("a FreeBSD script was written for the root %q", root)
+		if _, err := freebsdScript(rcName, root+"/conflux", args, root+"/rc.pid"); err == nil {
+			t.Errorf("a FreeBSD script was written for the executable %q", root+"/conflux")
 		}
-	}
-}
-
-func TestRCNameIsAShellWord(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", "/tmp/somewhere")
-
-	if name := rcName(); strings.ContainsAny(name, "-/ .") || !strings.HasPrefix(name, "conflux_") {
-		t.Errorf("rcName() = %q, which rc.subr cannot build %s_enable from", name, name)
 	}
 }

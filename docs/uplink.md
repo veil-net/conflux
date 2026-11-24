@@ -192,7 +192,7 @@ on every reopen, so a machine losing its cable hourly otherwise looks like one t
 has been up for fifty minutes:
 
 ```console
-$ conflux status
+$ sudo conflux status
   uplink       3 reopens, last 2026-09-08T11:04:12Z
 ```
 

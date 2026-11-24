@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -36,10 +35,6 @@ const (
 	maxRedirects = 3
 )
 
-// insecureEnv permits a plain-http base URL. Set only by tests, which point the
-// client at an httptest server.
-const insecureEnv = "CONFLUX_ALLOW_INSECURE_API"
-
 // defaultHTTP is the transport every Client shares unless given its own: Go's
 // default, which keeps idle connections for a bounded time and honours a proxy in
 // the environment, and redirects that stay on one host and on https.
@@ -56,7 +51,7 @@ var defaultHTTP = &http.Client{
 			return fmt.Errorf("refusing a redirect from %s to %s", via[0].URL.Host, req.URL.Host)
 		}
 
-		if err := checkScheme(req.URL.String()); err != nil {
+		if err := config.CheckAPIURL(req.URL.String()); err != nil {
 			return err
 		}
 
@@ -84,7 +79,9 @@ type Client struct {
 	// Enrol ignores it: enrolment is what draws a credential, so it cannot hold one.
 	Auth Auth
 
-	skew     time.Duration
+	// offset is the issuer's clock less this one's, as the last call measured it: signed, so
+	// the issuer's now is now+offset whichever of the two is ahead.
+	offset   time.Duration
 	measured bool
 }
 
@@ -140,8 +137,8 @@ func CheckSkew(skew, limit time.Duration) error {
 }
 
 // Skew is how far this machine's clock was from the server's on this client's last
-// call, and whether that call measured it at all.
-func (c *Client) Skew() (time.Duration, bool) { return c.skew, c.measured }
+// call, in either direction, and whether that call measured it at all.
+func (c *Client) Skew() (time.Duration, bool) { return c.offset.Abs(), c.measured }
 
 func (c *Client) base() string {
 	if c.BaseURL == "" {
@@ -195,7 +192,7 @@ func (c *Client) Enrol(ctx context.Context, taints []string) (config.Envelope, e
 
 	u := c.base() + enrolPath
 
-	if err := checkScheme(u); err != nil {
+	if err := config.CheckAPIURL(u); err != nil {
 		return nil, err
 	}
 
@@ -249,11 +246,12 @@ func (c *Client) Renew(ctx context.Context, renewalURL, anchorID string, taints 
 		return Renewal{}, errors.New("renew: the credential names no renewal URL, so there is nowhere to renew it")
 	}
 
-	if err := checkScheme(renewalURL); err != nil {
+	target, err := config.ParseAPIURL(renewalURL)
+	if err != nil {
 		return Renewal{}, err
 	}
 
-	if err := SameHost(renewalURL, c.base()); err != nil {
+	if err := SameHost(target, c.base()); err != nil {
 		return Renewal{}, err
 	}
 
@@ -293,6 +291,15 @@ func (c *Client) Renew(ctx context.Context, renewalURL, anchorID string, taints 
 	notAfter, err := time.Parse(time.RFC3339, strings.TrimSpace(out.NotAfter))
 	if err != nil {
 		return Renewal{}, fmt.Errorf("renew: the returned expiry %q is not a timestamp", out.NotAfter)
+	}
+
+	// A chain that has expired already is no renewal, and as bad an answer as one that is
+	// not a timestamp: anchor would refuse it, and the state would record a window already
+	// over, due again at once. Now is taken as the issuer's clock had it, as far as this one
+	// was measured off it, so a clock running ahead of the issuer's is not refused a fresh one,
+	// and one running behind it does not take a chain the issuer's clock has seen expire.
+	if !notAfter.After(c.now().Add(c.offset)) {
+		return Renewal{}, fmt.Errorf("renew: the returned expiry %s has passed", out.NotAfter)
 	}
 
 	return Renewal{Chain: chain, NotAfter: notAfter.UTC(), Bootstrap: usableBootstrap(out.Bootstrap)}, nil
@@ -363,7 +370,7 @@ func (c *Client) recordSkew(resp *http.Response) {
 		return
 	}
 
-	c.skew, c.measured = c.now().Sub(served).Abs(), true
+	c.offset, c.measured = served.Sub(c.now()), true
 }
 
 // HTTPError is a non-2xx, with enough of the body to be diagnosable and not so much
@@ -403,73 +410,25 @@ func (e *HTTPError) Error() string {
 	return status + ": " + e.Body
 }
 
-func checkScheme(raw string) error {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return fmt.Errorf("%q is not a URL: %w", raw, err)
-	}
-
-	switch u.Scheme {
-	case "https":
-		return nil
-	case "http":
-		if os.Getenv(insecureEnv) == "1" {
-			return nil
-		}
-
-		return fmt.Errorf("%s is plain http; credentials are only fetched over https (set %s=1 to override, for tests)",
-			raw, insecureEnv)
-	default:
-		return fmt.Errorf("%s has scheme %q, want https", raw, u.Scheme)
-	}
-}
-
-// SameHost is the check that a stored field cannot redirect a POST.
+// SameHost is the check that a stored field cannot redirect a POST: renewal, the renewal URL
+// as config.ParseAPIURL parsed it, which both callers have done to check it, on apiBase's host.
 //
 // Exported because `conflux enrol` asks it too, before anything is written: a
 // credential whose renewal URL names a host the configuration does not is one whose
 // first renewal would be refused, months later -- so the question is asked while a
 // person is present to fix it. One implementation, because two answers to one
 // question means the more permissive of them is the way in.
-func SameHost(renewalURL, apiBase string) error {
-	target, err := url.Parse(renewalURL)
-	if err != nil {
-		return fmt.Errorf("%q is not a URL: %w", renewalURL, err)
-	}
-
+func SameHost(renewal *url.URL, apiBase string) error {
 	base, err := url.Parse(apiBase)
 	if err != nil {
 		return fmt.Errorf("the API base %q is not a URL: %w", apiBase, err)
 	}
 
-	if !strings.EqualFold(target.Host, base.Host) {
+	if !strings.EqualFold(renewal.Host, base.Host) {
 		return fmt.Errorf(
 			"the stored credential names %s for renewal and this conflux is configured for %s; refusing to send it elsewhere",
-			target.Host, base.Host)
+			renewal.Host, base.Host)
 	}
 
 	return nil
-}
-
-// BaseOf is the API base a renewal URL implies: scheme, host and port, nothing
-// else.
-//
-// This is what makes --api an override on `conflux enrol` rather than a requirement.
-// A manifest carries an absolute renewalUrl -- a self-hosted API is wherever its
-// operator put it -- so the base is already in the document, and asking an operator
-// to retype it buys a typo rather than a check. Only the origin is kept: a renewal URL
-// is a path on an API, and treating the whole of it as a base would make every later
-// request a child of one node's credential route.
-func BaseOf(renewalURL string) (string, error) {
-	u, err := url.Parse(renewalURL)
-	if err != nil {
-		return "", fmt.Errorf("%q is not a URL: %w", renewalURL, err)
-	}
-
-	if u.Scheme == "" || u.Host == "" {
-		return "", fmt.Errorf(
-			"%q is not an absolute URL, so the API it renews against cannot be read out of it", renewalURL)
-	}
-
-	return u.Scheme + "://" + u.Host, nil
 }

@@ -5,13 +5,14 @@ package service
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
+
+	"golang.org/x/sys/windows/svc/eventlog"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
-
-	"github.com/veil-net/conflux/internal/paths"
 )
 
 // The display name has a space in it and the service name does not, deliberately: a
@@ -26,10 +27,7 @@ type scm struct{}
 func newManager() Manager { return scm{} }
 
 // ServiceName is the SCM entry conflux registers.
-//
-// A function and not a constant because a run rooted in a CONFLUX_DIR is a separate
-// installation and must not be registered over the machine's own; see scope.
-func ServiceName() string { return "conflux" + paths.Scope() }
+const ServiceName = "conflux"
 
 func (scm) Install(exe string, args ...string) error {
 	m, err := connect(windows.SC_MANAGER_ALL_ACCESS)
@@ -41,6 +39,8 @@ func (scm) Install(exe string, args ...string) error {
 	// ServiceType named, not left zero: CreateService fills it in, but UpdateConfig hands
 	// it to ChangeServiceConfig as it is, which refuses a zero type, so every re-run of
 	// up would fail to re-register an existing service.
+	// SidType unrestricted: the service runs with NT SERVICE\conflux in its token, the SID
+	// what it gives anchord's own token is named for.
 	cfg := mgr.Config{
 		ServiceType:      windows.SERVICE_WIN32_OWN_PROCESS,
 		DisplayName:      displayName,
@@ -48,10 +48,16 @@ func (scm) Install(exe string, args ...string) error {
 		StartType:        mgr.StartAutomatic,
 		ServiceStartName: "LocalSystem",
 		Dependencies:     []string{"Tcpip", "Dnscache", "NSI"},
+		SidType:          windows.SERVICE_SID_TYPE_UNRESTRICTED,
+	}
+
+	// Where the service's output goes: the Application event log, under its own name.
+	if err := eventSource(); err != nil {
+		return err
 	}
 
 	// Already there is not a failure; it is an upgrade.
-	if existing, err := m.OpenService(ServiceName()); err == nil {
+	if existing, err := m.OpenService(ServiceName); err == nil {
 		defer existing.Close()
 
 		// Composed the way CreateService composes it below, so an upgrade registers the
@@ -62,15 +68,43 @@ func (scm) Install(exe string, args ...string) error {
 			return fmt.Errorf("update the service: %w", err)
 		}
 
-		return recovery(existing)
+		return protect(existing)
 	}
 
-	// CreateService appends the arguments -- `serve`, and the root of a CONFLUX_DIR run.
-	s, err := m.CreateService(ServiceName(), exe, cfg, args...)
+	// CreateService appends the arguments: `serve`.
+	s, err := m.CreateService(ServiceName, exe, cfg, args...)
 	if err != nil {
 		return fmt.Errorf("create the service: %w", err)
 	}
 	defer s.Close()
+
+	return protect(s)
+}
+
+// serviceDACL is who may do what with the service: SYSTEM and the Administrators control
+// it, and an interactive or a service account may ask it what it is and how it runs, and
+// nothing more -- not start it, stop it, or change it. Windows' own default for a new
+// service, set explicitly so a DACL somebody widened since is put back at the next install
+// or start.
+const serviceDACL = "D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)" +
+	"(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)"
+
+// protect gives the service its DACL and its recovery actions.
+func protect(s *mgr.Service) error {
+	sd, err := windows.SecurityDescriptorFromString(serviceDACL)
+	if err != nil {
+		return err
+	}
+
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		return err
+	}
+
+	if err := windows.SetSecurityInfo(s.Handle, windows.SE_SERVICE, windows.DACL_SECURITY_INFORMATION,
+		nil, nil, dacl, nil); err != nil {
+		return fmt.Errorf("set the service's DACL: %w", err)
+	}
 
 	return recovery(s)
 }
@@ -113,7 +147,7 @@ func withService(scAccess, access uint32, f func(*mgr.Service) error) error {
 	}
 	defer m.Disconnect()
 
-	name := ServiceName()
+	name := ServiceName
 
 	h, err := windows.OpenService(m.Handle, windows.StringToUTF16Ptr(name), access)
 	if err != nil {
@@ -127,8 +161,8 @@ func withService(scAccess, access uint32, f func(*mgr.Service) error) error {
 }
 
 // stopService stops the service and returns once its process has gone, so that what
-// comes next -- a start, the deletion, removing the directory conflux.exe and its log are
-// in -- never meets the old one still running. Already stopped is success.
+// comes next -- a start, the deletion, removing the directory conflux.exe and anchord.exe
+// are in -- never meets the old one still running. Already stopped is success.
 //
 // The SCM reports Stopped from inside the process, before it exits: waiting for the state
 // alone would race the process for its own files. Its handle is opened before the stop is
@@ -198,17 +232,34 @@ func stopService(s *mgr.Service) error {
 
 func (scm) Remove() error {
 	err := withService(windows.SC_MANAGER_ALL_ACCESS, windows.SERVICE_ALL_ACCESS, func(s *mgr.Service) error {
-		// Best effort: the deletion goes ahead whatever the stop says, and a service still
-		// running is deleted once it stops.
-		_ = stopService(s)
-
-		return s.Delete()
+		// The deletion goes ahead whatever the stop says, and a service still running is
+		// deleted once it stops; but a stop that failed is said, since a supervisor still
+		// running holds files uninstall is about to remove.
+		return errors.Join(stopService(s), s.Delete())
 	})
 	if errors.Is(err, windows.ERROR_SERVICE_DOES_NOT_EXIST) {
-		return nil // already gone, which is what was asked for
+		err = nil // already gone, which is what was asked for
+	}
+
+	// The event source the service wrote under. What it wrote is the Application log's, which
+	// the system keeps and trims.
+	if rerr := eventlog.Remove(ServiceName); rerr != nil && !errors.Is(rerr, windows.ERROR_FILE_NOT_FOUND) {
+		err = errors.Join(err, fmt.Errorf("remove the event source: %w", rerr))
 	}
 
 	return err
+}
+
+// eventSource registers conflux as a source in the Application event log, which the
+// service writes its output to (cli.serveAsService), with the system's own message file;
+// one already there is kept.
+func eventSource() error {
+	err := eventlog.InstallAsEventCreate(ServiceName, eventlog.Error|eventlog.Warning|eventlog.Info)
+	if err != nil && !strings.Contains(err.Error(), "already exists") {
+		return fmt.Errorf("register the event source: %w", err)
+	}
+
+	return nil
 }
 
 func (scm) Stop() error {
@@ -249,10 +300,10 @@ func (scm) Describe() string {
 	var described string
 
 	err := withService(windows.SC_MANAGER_CONNECT, windows.SERVICE_QUERY_STATUS, func(s *mgr.Service) error {
-		described = fmt.Sprintf("installed, not running (service: %s, automatic at boot)", ServiceName())
+		described = fmt.Sprintf("installed, not running (service: %s, automatic at boot)", ServiceName)
 
 		if status, err := s.Query(); err == nil && (status.State == svc.Running || status.State == svc.StartPending) {
-			described = fmt.Sprintf("running (service: %s, automatic at boot)", ServiceName())
+			described = fmt.Sprintf("running (service: %s, automatic at boot)", ServiceName)
 		}
 
 		return nil
@@ -268,8 +319,12 @@ func (scm) Describe() string {
 	}
 }
 
-// LogHint is the file the service writes its output to. It lives under the conflux
-// root, so uninstall removes it with the rest and Remove has nothing of its own to.
+// LogHint reads what the service wrote to the Application event log, oldest first.
 func (scm) LogHint() string {
-	return `Get-Content -Tail 50 "` + paths.Default().LogFile() + `"`
+	return `Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='` + ServiceName +
+		`'} -MaxEvents 50 | Sort-Object TimeCreated | Format-Table TimeCreated, Message -Wrap`
 }
+
+// Reconcile is Install, which updates the registered configuration and its recovery actions
+// and starts nothing, so the running service may call it.
+func (scm) Reconcile(exe string, args ...string) error { return scm{}.Install(exe, args...) }

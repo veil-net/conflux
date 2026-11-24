@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"runtime"
 	"time"
@@ -43,10 +44,11 @@ const (
 	// at all, which is the whole reason it exists.
 	ModeProxy Mode = "proxy"
 
-	// ModeObserve runs the daemon's observer and no anchor: this machine joins no
-	// realm, holds and needs no credential, and enrols nothing, and what it does is
-	// inventory the cryptography of its own traffic. The anchor's settings and its
-	// identity stay as they were, unused, for the next up or proxy to come back to.
+	// ModeObserve runs the daemon's observer and no anchor, and what it does is inventory
+	// the cryptography of its own traffic. The observer runs under this machine's
+	// credential, as an identity its realm admits -- enrolled and renewed as an anchor's
+	// is -- and the anchor's settings stay as they were, unused, for the next up or proxy
+	// to come back to with the same identity.
 	ModeObserve Mode = "observe"
 )
 
@@ -76,6 +78,48 @@ const ConfigVersion = 1
 // DefaultAPIBaseURL is where enrolment happens.
 const DefaultAPIBaseURL = "https://api.veilnet.com.au"
 
+// InsecureAPIEnv, set to 1, lets CheckAPIURL take a plain-http URL. Only tests set it, which
+// point conflux at an httptest server.
+const InsecureAPIEnv = "CONFLUX_ALLOW_INSECURE_API"
+
+// CheckAPIURL refuses a URL conflux will not send a request to: one that is not absolute, has
+// no host name (a port alone is none), or is not https, unless InsecureAPIEnv allows plain
+// http. The one check for every
+// API conflux reaches -- the enrolment API a configuration names, a renewal URL a manifest
+// names, the release APIs update and anchor-fetch read, and every redirect any of them
+// follows -- since two answers to one question make the more permissive the way in.
+func CheckAPIURL(raw string) error {
+	_, err := ParseAPIURL(raw)
+
+	return err
+}
+
+// ParseAPIURL is CheckAPIURL for a caller that reads the URL as well: the URL it parsed to
+// check, or what CheckAPIURL refuses it with.
+func ParseAPIURL(raw string) (*url.URL, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("%q is not a URL: %w", raw, err)
+	}
+
+	if u.Scheme == "" || u.Hostname() == "" {
+		return nil, fmt.Errorf("%q is not an absolute URL with a host, such as %s", raw, DefaultAPIBaseURL)
+	}
+
+	switch u.Scheme {
+	case "https":
+		return u, nil
+	case "http":
+		if os.Getenv(InsecureAPIEnv) == "1" {
+			return u, nil
+		}
+
+		return nil, fmt.Errorf("%s is plain http (set %s=1 to override, for tests)", raw, InsecureAPIEnv)
+	default:
+		return nil, fmt.Errorf("%s has scheme %q, want https", raw, u.Scheme)
+	}
+}
+
 // Config is the operator's intent, and the only thing a reboot needs in order to
 // reconstruct the running state without asking anybody anything.
 type Config struct {
@@ -88,8 +132,9 @@ type Config struct {
 	// these, and conflux never asks for none, which is the realm's shared compartment.
 	// After it they mirror the grant, and every start checks them against the
 	// manifest's, refusing a machine whose two disagree: a credential's taints never
-	// change. Empty only for an issued credential that grants none, which is its own
-	// realm's default compartment. Never written from the running anchor, which a
+	// change; a list emptied by hand gets the grant back at the next start. Empty only
+	// for an issued credential that grants none, which is its own realm's default
+	// compartment. Never written from the running anchor, which a
 	// member's Taints order may have moved.
 	Taints []string `json:"taints"`
 
@@ -207,12 +252,14 @@ type Config struct {
 
 	// Observer runs the daemon's observer, and nil is off. Beside an anchor in either
 	// shape, and alone in ModeObserve, which needs it: the observer is no part of the
-	// anchor and asks nothing of the realm. Refused where anchor has no capture, which
-	// is FreeBSD and OpenBSD.
+	// anchor, and runs under the same credential. Refused where anchor has no capture,
+	// which is FreeBSD and OpenBSD.
 	Observer *Observer `json:"observer,omitempty"`
 
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	// When conflux first saved the file and when it last did. Absent in one written by hand,
+	// and left absent by the canonical form until a command saves it.
+	CreatedAt time.Time `json:"createdAt,omitzero"`
+	UpdatedAt time.Time `json:"updatedAt,omitzero"`
 }
 
 // ObserverSupported says whether anchor can observe on goos: it captures on Linux, macOS
@@ -266,9 +313,10 @@ func (c *Config) APIBase() string {
 // typed, rather than letting them surface as an InvalidArgument from a child
 // process three layers down. It accepts and refuses what anchor does, and adds rules
 // of conflux's own, each where it is checked: no list entry holds the comma anchorctl
-// splits its flags on, and an uplink names a device rather than a descriptor the
-// supervisor never hands over. An empty taint set is not refused here: it is an issued
-// credential's grant, and asking alpha for it is refused where enrolment happens.
+// splits its flags on, an uplink names a device rather than a descriptor the
+// supervisor never hands over, and the API is one CheckAPIURL lets conflux reach. An
+// empty taint set is not refused here: it is an issued credential's grant, and asking
+// alpha for it is refused where enrolment happens.
 func (c *Config) Validate() error {
 	switch c.Mode {
 	case ModeTUN:
@@ -376,6 +424,14 @@ func (c *Config) Validate() error {
 		return err
 	}
 
+	// Empty is the default, which is https. Anything else every enrolment and renewal is sent
+	// to, so one that could reach nothing is refused here, for good, rather than retried.
+	if c.APIBaseURL != "" {
+		if err := CheckAPIURL(c.APIBaseURL); err != nil {
+			return fmt.Errorf("apiBaseUrl (--api): %w", err)
+		}
+	}
+
 	return ValidateSubnets(c.Subnets, c.Taints)
 }
 
@@ -383,38 +439,59 @@ func (c *Config) Validate() error {
 // "this machine has never been configured", which several callers treat as a state
 // rather than a failure.
 func Load(d paths.Dirs) (*Config, error) {
+	c, _, err := LoadBytes(d)
+
+	return c, err
+}
+
+// LoadBytes is Load, and the bytes it read: what the supervisor's start hands Canonical, so
+// the file is read once.
+func LoadBytes(d paths.Dirs) (*Config, []byte, error) {
 	b, err := os.ReadFile(d.ConfigFile())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var c Config
 	if err := json.Unmarshal(b, &c); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", d.ConfigFile(), err)
+		return nil, nil, fmt.Errorf("parse %s: %w", d.ConfigFile(), err)
 	}
 
 	if c.Version > ConfigVersion {
-		return nil, fmt.Errorf(
+		return nil, nil, fmt.Errorf(
 			"%s was written by a newer conflux (config version %d, this build understands %d)",
 			d.ConfigFile(), c.Version, ConfigVersion)
 	}
 
-	return &c, nil
+	return &c, b, nil
 }
 
-// Save writes it, atomically and 0600.
+// Save writes it, atomically and 0600. Every caller holds d's lock: the supervisor
+// rewrites the file in its own form as it starts (Canonical), and must not write back what
+// a command has just replaced.
 func Save(d paths.Dirs, c *Config) error {
-	c.Version = ConfigVersion
 	c.UpdatedAt = time.Now().UTC().Truncate(time.Second)
 
 	if c.CreatedAt.IsZero() {
 		c.CreatedAt = c.UpdatedAt
 	}
 
-	b, err := json.MarshalIndent(c, "", "  ")
+	b, err := encodeConfig(c)
 	if err != nil {
-		return fmt.Errorf("encode config: %w", err)
+		return err
 	}
 
-	return WriteFileAtomic(d.ConfigFile(), append(b, '\n'), 0o600)
+	return WriteFileAtomic(d.ConfigFile(), b, 0o600)
+}
+
+// encodeConfig is c in the form conflux writes it.
+func encodeConfig(c *Config) ([]byte, error) {
+	c.Version = ConfigVersion
+
+	b, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("encode config: %w", err)
+	}
+
+	return append(b, '\n'), nil
 }

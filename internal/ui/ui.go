@@ -87,9 +87,10 @@ func Ask(prompt string) (string, error) {
 
 // Confirm asks a yes-or-no question that defaults to no.
 //
-// Defaulting to no, and treating anything that is not an explicit yes as no,
-// because the only thing conflux asks this about is destroying an identity that has
-// no second copy anywhere.
+// Defaulting to no, and treating anything that is not an explicit yes as no, because
+// each thing conflux asks this about acts as soon as it is answered: uninstall deletes an
+// identity that has no second copy anywhere, observe stops a running anchor, and update
+// replaces the installed conflux with one tree's build in place of what may be the other's.
 func Confirm(prompt string) bool {
 	answer, err := Ask(prompt + " [y/N] ")
 	if err != nil {

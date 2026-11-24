@@ -2,7 +2,9 @@ package config
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 
 	"github.com/veil-net/conflux/internal/paths"
@@ -23,8 +25,14 @@ func (Envelope) String() string { return "<anchor manifest, redacted>" }
 // GoString covers %#v as well, which String does not.
 func (Envelope) GoString() string { return "<anchor manifest, redacted>" }
 
+// ErrEmptyManifest is LoadManifest's refusal of a manifest.b64 holding nothing, or nothing
+// but white space.
+var ErrEmptyManifest = errors.New("empty, holding no identity")
+
 // LoadManifest reads the identity. A missing file means "never enrolled", which is
-// the one condition under which conflux is allowed to enrol.
+// the one condition under which conflux is allowed to enrol. One empty or of nothing but
+// white space holds no identity, and is ErrEmptyManifest, naming it: no retry fills it, and
+// what it held is a person's to find out.
 func LoadManifest(d paths.Dirs) (Envelope, error) {
 	b, err := os.ReadFile(d.ManifestFile())
 	if err != nil {
@@ -33,7 +41,7 @@ func LoadManifest(d paths.Dirs) (Envelope, error) {
 
 	b = bytes.TrimSpace(b)
 	if len(b) == 0 {
-		return nil, fmt.Errorf("%s is empty", d.ManifestFile())
+		return nil, fmt.Errorf("%s: %w", d.ManifestFile(), ErrEmptyManifest)
 	}
 
 	return Envelope(b), nil
@@ -60,11 +68,13 @@ func SaveManifest(d paths.Dirs, env Envelope) error {
 	return writeAtomic(d.ManifestFile(), 0o600, b, []byte{'\n'})
 }
 
-// HasManifest reports whether this machine has an identity already. The answer
-// gates enrolment, and getting it wrong in the false direction draws a new identity
-// and silently changes the machine's overlay address.
+// HasManifest reports whether this machine has an identity already, by LoadManifest's rule:
+// none only where there is no manifest.b64, or one LoadManifest refuses as empty. One there
+// that cannot be read is an identity, which may be the one the machine runs. The answer
+// gates enrolment, and getting it wrong in the false direction draws a new identity and
+// silently changes the machine's overlay address.
 func HasManifest(d paths.Dirs) bool {
-	fi, err := os.Stat(d.ManifestFile())
+	_, err := LoadManifest(d)
 
-	return err == nil && fi.Size() > 0
+	return !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, ErrEmptyManifest)
 }

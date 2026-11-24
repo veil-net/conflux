@@ -20,8 +20,9 @@ name: release
 # feature from anchor, a new minor otherwise. A push to version3 that leaves it alone is a
 # rebuild of that version: both releases are deleted, tags included, and released again from
 # the commit that just landed, so a version's tag always names the commit its artifacts were
-# built from. install.sh, install.ps1 and `conflux update` read `latest` by name, so a dev build
-# reaches nobody who did not ask for `dev-latest`.
+# built from. install.sh and install.ps1 read `latest` by name, unless CONFLUX_VERSION names
+# another, and `conflux update` reads `latest`, unless --dev asks for `dev-latest`. So a dev
+# build reaches nobody who did not ask for `dev-latest` by name.
 #
 # It only releases. CI tested the branch, and a merge lands only when CI is green -- which
 # rests on branch protection on dev and version3, and is unsafe without it -- so nothing here
@@ -115,7 +116,30 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+
+      # A release builds from nothing another build left. This machine keeps GOCACHE and
+      # GOMODCACHE on disk between jobs, shared with CI and with every repository it builds,
+      # so anything that wrote there would be in what is published. The release gets empty
+      # ones of its own, under the job's temporary directory, which the runner empties before
+      # and after every job; -modcacherw leaves the module cache deletable, so it can.
+      - name: build and module caches of this run's own
+        run: |
+          {
+            echo "GOCACHE=$RUNNER_TEMP/go-build"
+            echo "GOMODCACHE=$RUNNER_TEMP/go-mod"
+            echo "GOFLAGS=-modcacherw"
+          } >> "$GITHUB_ENV"
+      # And Go itself: setup-go would take the toolchain this machine's tool cache holds, which
+      # any job here could have changed, so the release's is downloaded from go.dev into the
+      # same temporary directory and checked against go.dev's published SHA-256 first.
       - uses: ./.github/actions/setup
+        with:
+          verified-go: 'true'
+
+      # Every module downloaded afresh, each held to go.sum as it arrives, and then verified
+      # before anything is built: `go mod verify` alone, over an empty cache, checks nothing.
+      - name: the modules, downloaded and verified
+        run: go mod download && go mod verify
 
       # anchor's `latest` moves, so a release carries whatever anchor published most
       # recently, which is the intent: conflux ships the newest anchor, not a remembered one.
@@ -148,7 +172,7 @@ jobs:
 
       # All seven targets, CGO_ENABLED=0 throughout, so one Linux machine cross-builds
       # every one of them. The Makefile reads the VERSION file itself; a build of dev is
-      # stamped as one, which `conflux version` says and `conflux update` asks about.
+      # stamped as one, which `conflux version` says.
       - run: make dist CHANNEL="$CHANNEL"
         env:
           CHANNEL: ${{ github.ref == 'refs/heads/dev' && 'dev' || '' }}
@@ -182,18 +206,20 @@ jobs:
             echo "curl -fsSL https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.sh | ${pick}sh"
             echo '```'
             echo
-            echo 'On Windows, in PowerShell as Administrator:'
+            echo 'On Windows, in 64-bit PowerShell as Administrator:'
             echo
             echo '```powershell'
             echo "${pickps}irm https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.ps1 | iex"
             echo '```'
             echo
             # A dev build's anchor is pinned to the dev tree, which only api-dev enrols in, and
-            # `conflux update` reads `latest`, the release, pinned to the production tree.
+            # `conflux update --dev` installs the newest `dev-latest`; a plain one asks before it
+            # installs `latest` in place of a dev build, since the release's anchor does not start
+            # on a credential from the dev tree.
             # shellcheck disable=SC2016 # Markdown backticks, not a command substitution
             if [ "$BRANCH" = dev ]; then
               echo 'Then `sudo conflux up --api https://api-dev.veilnet.com.au`: this build'"'"'s anchor is pinned to the dev tree, which only api-dev enrols in.'
-              echo 'A newer dev build is installed by running the installer again: `conflux update` reads `latest`, the release, pinned to the production tree, and asks for `--yes` first.'
+              echo 'Already installed? `sudo conflux update --dev` installs the newest dev build, once asked at a terminal, or without asking given `--yes`, for scripts and CI; a plain `sudo conflux update` asks before it installs the `latest` release, whose anchor does not start on a credential from the dev tree.'
             else
               echo 'Then `sudo conflux up`. Already installed? `sudo conflux update`.'
             fi
@@ -244,7 +270,7 @@ jobs:
             }
 
       - if: github.ref == 'refs/heads/version3'
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}
@@ -265,7 +291,7 @@ jobs:
           script: *delete
 
       - if: github.ref == 'refs/heads/version3'
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           tag_name: latest
           name: latest (${{ steps.version.outputs.tag }})
@@ -289,7 +315,7 @@ jobs:
           script: *delete
 
       - if: github.ref == 'refs/heads/dev'
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           tag_name: dev-latest
           name: dev-latest (${{ steps.version.outputs.tag }}, ${{ steps.version.outputs.short }})

@@ -1,0 +1,149 @@
+package cli
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/veil-net/conflux/internal/config"
+	"github.com/veil-net/conflux/internal/flock"
+	"github.com/veil-net/conflux/internal/paths"
+)
+
+// removalService is a registered service that records whether it was removed.
+type removalService struct {
+	noService
+	removed *bool
+}
+
+func (r removalService) Remove() error { *r.removed = true; return nil }
+
+// TestUninstallIsRefusedWhileAnEphemeralRunIsLive: uninstall removes the account a live
+// ephemeral run's anchord runs as, so the run refuses it, --yes or not, before anything of the
+// installation or the run is removed.
+func TestUninstallIsRefusedWhileAnEphemeralRunIsLive(t *testing.T) {
+	e := startingEphemeral(t)
+
+	// Before uninstall runs at all: past the refusal it removes the machine's accounts and its
+	// installed conflux, which are not the test's.
+	if _, live := liveEphemeral(); !live {
+		t.Fatal("the run is not seen as live, so uninstall would not be refused")
+	}
+
+	d := paths.Default()
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	var removed bool
+
+	withServices(t, removalService{removed: &removed})
+	asRoot(t, true)
+
+	_, errOut, code := capture(t, "uninstall", "--yes")
+	if code != ExitUsage || !strings.Contains(errOut, "an ephemeral anchor is running from "+e.Root) {
+		t.Errorf("uninstall --yes beside a live run exited %d:\n%s", code, errOut)
+	}
+
+	if removed {
+		t.Error("the boot service was removed")
+	}
+
+	for _, p := range []string{d.ConfigFile(), e.ServeLockFile(), e.Socket()} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("%s did not survive the refused uninstall: %v", p, err)
+		}
+	}
+}
+
+// TestUninstallTakesAStaleEphemeralRoot: the root a killed ephemeral run left is stale, and
+// one a run holds is not.
+func TestUninstallTakesAStaleEphemeralRoot(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "e")
+
+	if err := (paths.Dirs{Root: root}).EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(paths.Dirs{Root: root}.ServeLockFile(), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if d, stale := staleEphemeral(root); !stale || d.Root != root {
+		t.Fatalf("staleEphemeral(%s) = %v, %v: a killed run's root is not taken for stale", root, d, stale)
+	}
+
+	unlock, err := flock.Acquire(paths.Dirs{Root: root}.ServeLockFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+
+	if _, stale := staleEphemeral(root); stale {
+		t.Error("a root a run holds is taken for stale")
+	}
+}
+
+// TestUninstallReachesTheMachineOnlyThroughItsSeams: the two steps of uninstall that reach past
+// the root -- the accounts conflux made and the installed conflux -- go through variables a
+// test replaces, and TestMain replaces them for every test, so no test run on a real machine,
+// a CI runner's included, can remove its accounts or its conflux.
+func TestUninstallReachesTheMachineOnlyThroughItsSeams(t *testing.T) {
+	var accounts, installation bool
+
+	wasA, wasI := uninstallAccounts, uninstallInstallation
+	uninstallAccounts = func() error { accounts = true; return nil }
+	uninstallInstallation = func() error { installation = true; return nil }
+
+	t.Cleanup(func() { uninstallAccounts, uninstallInstallation = wasA, wasI })
+
+	withServices(t, noService{})
+	asRoot(t, true)
+
+	t.Cleanup(paths.UseRoot(t.TempDir()))
+
+	if _, errOut, code := capture(t, "uninstall", "--yes"); code != ExitOK {
+		t.Fatalf("uninstall --yes exited %d:\n%s", code, errOut)
+	}
+
+	if !accounts || !installation {
+		t.Errorf("uninstall went past its seams: accounts %v, installation %v", accounts, installation)
+	}
+}
+
+// failingRemove is a registered boot service whose removal fails.
+type failingRemove struct{ noService }
+
+func (failingRemove) Remove() error { return errors.New("systemctl disable failed") }
+
+// TestAFailedUninstallKeepsConflux: the installed conflux is what finishes an uninstall that
+// failed part way, so a step that fails keeps it, and the error says so.
+func TestAFailedUninstallKeepsConflux(t *testing.T) {
+	var installation bool
+
+	was := uninstallInstallation
+	uninstallInstallation = func() error { installation = true; return nil }
+
+	t.Cleanup(func() { uninstallInstallation = was })
+
+	withServices(t, failingRemove{})
+	asRoot(t, true)
+
+	t.Cleanup(paths.UseRoot(t.TempDir()))
+
+	_, errOut, code := capture(t, "uninstall", "--yes")
+	if code != ExitError || installation {
+		t.Errorf("uninstall --yes with a removal that fails exited %d, removing the installed conflux: %v\n%s",
+			code, installation, errOut)
+	}
+
+	if !strings.Contains(errOut, "systemctl disable failed") || !strings.Contains(errOut, "conflux uninstall") {
+		t.Errorf("the failed uninstall does not say what failed and that conflux was kept to finish it:\n%s", errOut)
+	}
+}

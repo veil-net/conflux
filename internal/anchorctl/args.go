@@ -179,8 +179,12 @@ func (m StartMode) Args() []string {
 		args = append(args, "-ipv4", m.IPv4)
 	}
 
+	// One argument, the list after an '=': anchorctl reads a -serve-subnets whose next
+	// argument starts with '-' as one given alone, which serves every private network on the
+	// host (its bareServeSubnets), so an interface named "-veth0" first in the list would be
+	// served as "*".
 	if len(m.Subnets) > 0 {
-		args = append(args, "-serve-subnets", strings.Join(m.Subnets, ","))
+		args = append(args, "-serve-subnets="+strings.Join(m.Subnets, ","))
 	}
 
 	// -serve-proxy is repeatable rather than a list, so one flag per spec.
@@ -201,17 +205,31 @@ func RenewArgs() []string {
 	return []string{"renew", "-cred", "-"}
 }
 
+// ObserveRenewArgs installs a renewed credential on the running observer, hot: anchor's
+// SetObserverCred, which holds the observer's credential apart from the anchor's. The chain
+// arrives on stdin and is sent inline, as RenewArgs's does.
+func ObserveRenewArgs() []string {
+	return []string{"observe", "-cred", "-"}
+}
+
 // StopArgs closes the anchor. The daemon stays up.
 func StopArgs() []string { return []string{"stop"} }
 
 // ObserveStartArgs starts the daemon's observer with o, or starts it again with o if it
 // is running, which is what anchorctl's -start does.
 //
+// Under the machine's credential: the observer runs as an identity its realm admits, which
+// anchor checks as it checks an anchor's start. The manifest goes on stdin, as it does for
+// start, so the identity is never named by a path or written anywhere a crash could leave
+// it; the observer takes the identity, the pinned root and the chain from it, and none of
+// its run settings.
+//
 // Both options are always written, in the direction conflux.json says, for the reason the
 // mode flags are: the observer that runs is the one asked for, whatever the last start
 // asked for.
 func ObserveStartArgs(o config.Observer) []string {
-	return []string{"observe", "-start", "-loopback=" + boolText(o.Loopback), "-hide-names=" + boolText(o.HideNames)}
+	return []string{"observe", "-start", "-manifest", "-",
+		"-loopback=" + boolText(o.Loopback), "-hide-names=" + boolText(o.HideNames)}
 }
 
 // ObserveStopArgs stops the observer. What it recorded stays in the inventory for as long

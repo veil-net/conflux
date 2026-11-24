@@ -3,7 +3,7 @@
 conflux runs an anchor one of two ways, and they are mutually exclusive. Not by
 conflux's choice — anchor refuses a configuration that asks for both, before anything
 starts. The third mode runs no anchor at all: the daemon's observer alone, which
-inventories the cryptography of the host's traffic and joins no realm
+inventories the cryptography of the host's traffic under the machine's credential
 ([Observing](#observing--conflux-observe)). The observer also runs beside either anchor.
 
 This page is about what the machine gets out of the realm. What the anchor reaches
@@ -90,9 +90,11 @@ The daemon runs its observer and nothing else. The host copies the start of ever
 its interfaces carry to `anchord`, which reads each handshake and records whether its key
 exchange was post-quantum, hybrid, classical or none, and which side held it back — each
 record sent to a collector as it is made where an export is configured, and kept in the
-daemon's inventory either way. Nothing is enrolled, no credential is needed, and there is no
-realm to find, so the anchor's settings — the taints, the IPv4, the subnets and exits, the
-uplink, the peers and the port — are kept, unused, for the next `up` or `proxy`.
+daemon's inventory either way. The observer runs under the machine's credential, as an identity
+its realm admits — enrolled as `up` enrols one where there is none, and renewed — and there is
+no anchor, so the anchor's settings — the IPv4, the subnets and exits, the uplink, the peers
+and the port — are kept, unused, for the next `up` or `proxy`, which comes back with the same
+identity.
 
 ```console
 $ sudo conflux observe
@@ -232,7 +234,7 @@ conflux starts the anchor with the list in `conflux.json`, as `-serve-subnets`. 
 whose credential grants the `subnets` capability can replace it while it runs, with a
 Subnets order (`conflux subnets -peer ID -set …`; see
 [commands.md](commands.md#realm-control)). anchor keeps that list in its directory —
-`/var/lib/conflux/anchor/subnets.json` on Linux, as `{"subnets", "by", "at"}` — and serves
+`/var/lib/.conflux/anchor/subnets.json` on Linux, as `{"subnets", "by", "at"}` — and serves
 it in place of the configured one from every start, a reboot included. Unlike the
 configured list, an entry in it that matches nothing on the host is withheld until it
 does rather than stopping the anchor.

@@ -16,12 +16,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/account"
 	"github.com/veil-net/conflux/internal/config"
-	"golang.org/x/sys/unix"
 )
-
-// openUntrusted opens a file in a directory the account can write: never through a
-// symlink, and never blocking on a FIFO the name was made into.
-const openUntrusted = os.O_RDONLY | unix.O_NOFOLLOW | unix.O_NONBLOCK
 
 // dropState is what the platform keeps between starts: the grants anchord -h has run under.
 type dropState struct {
@@ -42,17 +37,20 @@ func (s *Supervisor) account() string {
 	return account.Name()
 }
 
-// dropTo settles whether the supervisor can hand anchord to the account, and fills in
-// which account that is. "" is yes; anything else is why not.
-func (s *Supervisor) dropTo(p *Privilege) string {
+// canDrop says what keeps this supervisor from handing anchord to an account at all, before
+// anything is done for it, or "": it is root, and on Linux holds what handing over takes,
+// with what p asks for that it does not hold taken out of p (canGive).
+func canDrop(p *Privilege) string {
 	if os.Geteuid() != 0 {
 		return "the supervisor is not root, so there is no other account it could give anchord"
 	}
 
-	if why := canGive(p); why != "" {
-		return why
-	}
+	return canGive(p)
+}
 
+// dropTo settles whether the supervisor can hand anchord to the account canDrop allowed, and
+// fills in which account that is. "" is yes; anything else is why not.
+func (s *Supervisor) dropTo(p *Privilege) string {
 	a, err := account.EnsureNamed(s.account())
 	if err != nil {
 		s.report().Warn("%v", err)
@@ -87,37 +85,61 @@ func (s *Supervisor) dropTo(p *Privilege) string {
 	return ""
 }
 
-// grantTraverse lets the account pass through the state and run directories, which list
-// nothing to it, to the one binary in them it runs. Every one is root's and sits in a
-// directory only root can write, so each is changed by its name.
+// grantTraverse lets the account pass through the root and its run directory, which list
+// nothing to it, to the one binary in them it runs and the socket directory it serves.
+// Every one is root's and sits in a directory only root can write, so each is changed by
+// its name. A pair in memory is no file of the root's: the account runs it through its own
+// descriptor.
 func (s *Supervisor) grantTraverse(p Privilege) error {
-	for _, dir := range []string{s.Dirs.State, s.Dirs.Libexec(), s.tools.Dir, s.Dirs.Run} {
-		if err := ownAs(dir, 0, p.GID, 0o710); err != nil {
+	dirs := []string{s.Dirs.Root, s.Dirs.RunDir()}
+	if s.tools.Dir != "" {
+		dirs = append(dirs, s.Dirs.Libexec(), s.tools.Dir)
+	}
+
+	for _, dir := range dirs {
+		if _, err := ownAs(dir, 0, p.GID, 0o710); err != nil {
 			return err
 		}
 	}
 
-	return ownAs(s.tools.Anchord, 0, p.GID, 0o750)
+	if s.tools.Dir == "" {
+		return nil
+	}
+
+	changed, err := ownAs(s.tools.Anchord, 0, p.GID, 0o750)
+
+	// Its owner and mode are in the record of the pair held to this build's bytes, which Intact
+	// took this start: recorded again, so the next start takes the pair on a stat as well.
+	if changed {
+		s.tools.Reverified()
+	}
+
+	return err
 }
 
-// ownAs gives path to uid and gid at mode, changing only what differs.
-func ownAs(path string, uid, gid int, mode fs.FileMode) error {
+// ownAs gives path to uid and gid at mode, changing only what differs, and says whether it
+// changed anything.
+func ownAs(path string, uid, gid int, mode fs.FileMode) (bool, error) {
 	fi, err := os.Lstat(path)
 	if err != nil {
-		return err
+		return false, err
 	}
+
+	changed := false
 
 	if st, ok := fi.Sys().(*syscall.Stat_t); !ok || int(st.Uid) != uid || int(st.Gid) != gid {
 		if err := os.Lchown(path, uid, gid); err != nil {
-			return err
+			return false, err
 		}
+
+		changed = true
 	}
 
 	if fi.Mode().Perm() != mode {
-		return os.Chmod(path, mode)
+		return true, os.Chmod(path, mode)
 	}
 
-	return nil
+	return changed, nil
 }
 
 // smoke runs anchord -h as the account once for each set and each grant, so that a host
@@ -263,19 +285,6 @@ func (s *Supervisor) killLeftovers() {
 	}
 }
 
-// legacyAnchorDir reports an anchor directory at the account's name that is the
-// supervisor's own: conflux 1.0.0's, from before anchord ran as anything but root.
-func legacyAnchorDir(path string) bool {
-	fi, err := os.Lstat(path)
-	if err != nil || !fi.IsDir() {
-		return false
-	}
-
-	st, ok := fi.Sys().(*syscall.Stat_t)
-
-	return ok && int(st.Uid) == os.Geteuid()
-}
-
 // anchorDirFor reports whether path is a directory, not a link, of p's identity.
 func anchorDirFor(path string, p Privilege) bool {
 	fi, err := os.Lstat(path)
@@ -293,8 +302,8 @@ func anchorDirFor(path string, p Privilege) bool {
 	return ok && int(st.Uid) == want
 }
 
-// makeAnchorDir creates path for p's identity. Its parent is the state directory, which
-// only root can write, so it is given away by its name.
+// makeAnchorDir creates path for p's identity. Its parent is the root, which only root can
+// write, so it is given away by its name.
 func makeAnchorDir(path string, p Privilege) error {
 	if err := os.Mkdir(path, 0o700); err != nil {
 		return err
@@ -314,14 +323,6 @@ func ownFile(f *os.File, p Privilege) error {
 	}
 
 	return f.Chown(p.UID, p.GID)
-}
-
-// oneLink reports a file with no second name, which a hard link the account made to a
-// file of root's would be.
-func oneLink(fi os.FileInfo) bool {
-	st, ok := fi.Sys().(*syscall.Stat_t)
-
-	return ok && st.Nlink == 1
 }
 
 // owner is the uid and gid anchord's own files are written for: the account's, or -1 to

@@ -5,22 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/paths/pathstest"
 )
-
-// dirsForTest roots every conflux path in a temporary directory, the way CONFLUX_DIR
-// does for a dev run.
-func dirsForTest(t *testing.T) paths.Dirs {
-	t.Helper()
-	t.Setenv("CONFLUX_DIR", t.TempDir())
-
-	d := paths.Default()
-	if err := d.EnsureAll(); err != nil {
-		t.Fatalf("EnsureAll: %v", err)
-	}
-
-	return d
-}
 
 // base is a configuration that validates, so each case below changes exactly one
 // thing and the failure names that thing rather than a missing taint.
@@ -112,6 +98,41 @@ func TestTheObserverIsRefusedWhereThereIsNoCapture(t *testing.T) {
 		if err != nil && !strings.Contains(err.Error(), "no capture") {
 			t.Errorf("%s: %v does not say why", goos, err)
 		}
+	}
+}
+
+// TestValidateRefusesAnAPIThatCannotWork: an apiBaseUrl that no enrolment or renewal could
+// be sent to -- no scheme, no host (a port is none), plain http, another scheme -- is refused
+// before anything starts, rather than failing every call after it, for ever. Plain http is a
+// test's alone.
+func TestValidateRefusesAnAPIThatCannotWork(t *testing.T) {
+	t.Setenv(InsecureAPIEnv, "")
+
+	for _, api := range []string{"api-dev.veilnet.com.au", "http://api.veilnet.com.au", "https://", "https://:443", "ftp://x"} {
+		c := base(ModeProxy)
+		c.APIBaseURL = api
+
+		if err := c.Validate(); err == nil {
+			t.Errorf("Validate accepted apiBaseUrl %q", api)
+		}
+	}
+
+	for _, api := range []string{"", DefaultAPIBaseURL, "https://api-dev.veilnet.com.au", "https://guardian.example:8443/v1"} {
+		c := base(ModeProxy)
+		c.APIBaseURL = api
+
+		if err := c.Validate(); err != nil {
+			t.Errorf("Validate refused apiBaseUrl %q: %v", api, err)
+		}
+	}
+
+	t.Setenv(InsecureAPIEnv, "1")
+
+	c := base(ModeProxy)
+	c.APIBaseURL = "http://127.0.0.1:8080"
+
+	if err := c.Validate(); err != nil {
+		t.Errorf("Validate refused a test's plain-http API with the override set: %v", err)
 	}
 }
 
@@ -210,7 +231,7 @@ func TestLANDiscoveryRoundTripsAllThree(t *testing.T) {
 		{"no", func() *bool { v := false; return &v }()},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			d := dirsForTest(t)
+			d := pathstest.Root(t)
 
 			want := base(ModeTUN)
 			want.LANDiscovery = tc.set
@@ -239,7 +260,7 @@ func TestLANDiscoveryRoundTripsAllThree(t *testing.T) {
 // TestTuningSurvivesTheRoundTrip: the four new fields are omitempty, so a zero value
 // is absent from the document. What must not happen is a set one being dropped.
 func TestTuningSurvivesTheRoundTrip(t *testing.T) {
-	d := dirsForTest(t)
+	d := pathstest.Root(t)
 
 	want := base(ModeTUN)
 	want.Port = 4711

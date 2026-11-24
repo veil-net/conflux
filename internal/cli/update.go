@@ -67,18 +67,24 @@ func installed(ctx context.Context, exe string) (says string, dev bool) {
 // isThis reports whether path is the file this process runs.
 func isThis(path string) bool {
 	self, err := service.Executable()
+
+	return err == nil && sameFile(self, path)
+}
+
+// sameFile reports whether a and b name one file, or one directory, by what each is rather than
+// how it is spelled: through a link, in another case, by a short name. The one way conflux asks
+// whether a path is the conflux running: update of the installed file, which it need not run
+// to ask its version where it is this one (isThis), and uninstall on Windows of the directory
+// it removes, which waits for this process to exit where its image is in it.
+func sameFile(a, b string) bool {
+	ai, err := os.Stat(a)
 	if err != nil {
 		return false
 	}
 
-	a, err := os.Stat(self)
-	if err != nil {
-		return false
-	}
+	bi, err := os.Stat(b)
 
-	b, err := os.Stat(path)
-
-	return err == nil && os.SameFile(a, b)
+	return err == nil && os.SameFile(ai, bi)
 }
 
 // runUpdate replaces the installed conflux with the one the newest build of the installed

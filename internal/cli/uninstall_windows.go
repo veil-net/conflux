@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"unsafe"
 
@@ -26,7 +25,9 @@ func removeInstallation() error {
 
 	errs := []error{removePathEntry(dir)}
 
-	if self, err := service.Executable(); err == nil && strings.EqualFold(filepath.Dir(self), dir) {
+	// Whether the running image is in dir, whatever its name there: as any file of dir in use, it
+	// would stop RemoveAll.
+	if self, err := service.Executable(); err == nil && sameFile(filepath.Dir(self), dir) {
 		return errors.Join(append(errs, removeAfterExit(dir))...)
 	}
 

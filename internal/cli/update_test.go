@@ -16,6 +16,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/update"
 	"github.com/veil-net/conflux/internal/version"
 )
@@ -387,5 +388,48 @@ func TestAFreshUpdateLinksItForSudo(t *testing.T) {
 				t.Errorf("%s: %s links to %q (%v), want %s, and the update said:\n%s%s", c.name, link, target, err, exe, out, errOut)
 			}
 		}
+	}
+}
+
+// TestSameFileIsWhatAPathNames: whether a path is the conflux running -- update's question of the
+// installed file, uninstall's on Windows of the directory it removes -- is asked of what the path
+// names, not how it is spelled: the file this test runs is this process, by a link to it as by its
+// own name, and another file is not; its directory is its directory however spelled, and another
+// directory is not.
+func TestSameFileIsWhatAPathNames(t *testing.T) {
+	self, err := service.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	other := filepath.Join(dir, "conflux")
+
+	if err := os.WriteFile(other, []byte("another conflux"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if !isThis(self) || isThis(other) {
+		t.Errorf("isThis(%s) = %v, isThis(%s) = %v; want true, then false", self, isThis(self), other, isThis(other))
+	}
+
+	// Where this account may make a link: on Windows, an elevated one or developer mode.
+	if link := filepath.Join(dir, "link"); os.Symlink(self, link) == nil && !isThis(link) {
+		t.Errorf("isThis(%s), a link to this process's file, is false", link)
+	}
+
+	spellings := []string{filepath.Dir(self) + string(filepath.Separator) + "."}
+	if runtime.GOOS == "windows" {
+		spellings = append(spellings, strings.ToUpper(filepath.Dir(self)))
+	}
+
+	for _, s := range spellings {
+		if !sameFile(filepath.Dir(self), s) {
+			t.Errorf("sameFile(%s, %s) is false", filepath.Dir(self), s)
+		}
+	}
+
+	if sameFile(filepath.Dir(self), dir) {
+		t.Errorf("sameFile(%s, %s), two directories, is true", filepath.Dir(self), dir)
 	}
 }

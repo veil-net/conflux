@@ -188,12 +188,22 @@ KillSignal=SIGTERM
 User=root
 Group=root
 LimitNOFILE=1048576
+UMask=0077
+PrivateTmp=yes
+ProtectHome=read-only
+ProtectClock=yes
+ProtectHostname=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-Four of those lines are worth explaining.
+A few of those lines are worth explaining.
 
 `Type=notify`, with `sd_notify` from the supervisor, makes `systemctl start conflux`
 return when the anchor is genuinely up rather than when `fork` succeeded. Anything
@@ -221,17 +231,24 @@ that gives `anchord`, as an account of its own, exactly the capabilities its mod
 `AmbientCapabilities=` here would go to the supervisor, which as root has them all
 anyway, and reach nothing more.
 
+The last ten lines are the protections a system service is given wherever they take nothing
+the supervisor or `anchord` needs: nothing either creates is anybody else's to read
+(`UMask=0077`), `/tmp` is the unit's own, home directories are read-only, and the clock, the
+hostname, the cgroup tree, the execution domain, realtime scheduling, set-user-ID files and
+foreign system-call ABIs are out of reach — for `anchord` and what it runs as well.
+
 No `RuntimeDirectory=` or `ConfigurationDirectory=`: everything conflux keeps is in its one
 root, which the supervisor makes and holds to its modes itself, `run/` included, which it
-empties as it starts. Four more things are deliberately absent. `StateDirectory=`, because
+empties as it starts. A few more things are deliberately absent. `StateDirectory=`, because
 systemd gives a directory it claims back to `User=` and `Group=`, recursively, at every
 start once its top belongs to anybody else — and the root's group is `anchord`'s account,
-so every start would hand `anchord`'s own directory back to root. `PrivateTmp=`
-would be pointless and confusing — nothing conflux does touches `/tmp`. `ProtectSystem=strict`
-would need a `ReadWritePaths=` list. And `NoNewPrivileges=`, which would hold for a root
-`anchord` too, where the host's firewall answers only root, and stop its firewall commands'
-SELinux transitions; the supervisor sets `no_new_privs` itself on the `anchord` that runs
-nothing.
+so every start would hand `anchord`'s own directory back to root. `ProtectSystem=`, because
+the supervisor writes `/etc`: the account `anchord` runs as, and its own unit when it puts it
+back. `ProtectKernelTunables=` and `ProtectKernelModules=`, because anchor's router sets
+sysctls and its firewall commands load modules. And `NoNewPrivileges=`, which would hold for
+a root `anchord` too, where the host's firewall answers only root, and stop its firewall
+commands' SELinux transitions; the supervisor sets `no_new_privs` itself on the `anchord`
+that runs nothing.
 
 `up`, `proxy`, `install`, `start` and `update` all register the unit as this conflux
 writes it, which is nothing at all when it is already exactly that — so an upgrade's unit
@@ -298,7 +315,10 @@ names no file. `log show --last 1h --predicate 'process == "logger"' | grep conf
 Service name `conflux`, display name `VeilNet Conflux`, running as `LocalSystem`,
 automatic at boot, depending on `Tcpip`, `Dnscache` and `NSI`. Recovery actions restart
 it after 5, 10 and 30 seconds, the last repeating, and apply to a service that stops with
-an error as well as to one that dies.
+an error as well as to one that dies. It runs with a SID of its own, `NT SERVICE\conflux`
+(an unrestricted SID type), and its DACL is set explicitly: SYSTEM and the Administrators
+control it, and an interactive or a service account may ask what it is and how it runs, and
+nothing more.
 
 The service name has no space in it deliberately: a name with one makes every `sc.exe`
 invocation quoting-sensitive for no benefit.

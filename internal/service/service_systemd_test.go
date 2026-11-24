@@ -14,6 +14,18 @@ func TestSystemdUnit(t *testing.T) {
 		"\nType=notify\n",
 		"\nRestartPreventExitStatus=78 70\n",
 		"\nUser=root\n",
+		// The protections a system service is given that take nothing conflux or anchord's
+		// host setup needs.
+		"\nUMask=0077\n",
+		"\nPrivateTmp=yes\n",
+		"\nProtectHome=read-only\n",
+		"\nProtectClock=yes\n",
+		"\nProtectHostname=yes\n",
+		"\nProtectControlGroups=yes\n",
+		"\nLockPersonality=yes\n",
+		"\nRestrictRealtime=yes\n",
+		"\nRestrictSUIDSGID=yes\n",
+		"\nSystemCallArchitectures=native\n",
 		"\nLimitNOFILE=1048576\n",
 	} {
 		if !strings.Contains(unit, want) {
@@ -25,7 +37,8 @@ func TestSystemdUnit(t *testing.T) {
 	// directory back: a StateDirectory= is re-owned at every start once its group is
 	// anchord's account. Nor does the unit claim a directory of its own: everything is in
 	// the root, which the supervisor keeps.
-	for _, absent := range []string{"Capabilities=", "StateDirectory", "NoNewPrivileges", "RuntimeDirectory", "ConfigurationDirectory"} {
+	for _, absent := range []string{"Capabilities=", "StateDirectory", "NoNewPrivileges", "RuntimeDirectory",
+		"ConfigurationDirectory", "ProtectSystem", "ProtectKernel"} {
 		if strings.Contains(unit, absent) {
 			t.Errorf("the unit has %q:\n%s", absent, unit)
 		}

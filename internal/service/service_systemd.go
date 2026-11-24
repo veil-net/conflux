@@ -29,14 +29,22 @@ import (
 // others (internal/daemon/privilege.go). An AmbientCapabilities= here would be granted
 // to the supervisor, which has them all as root anyway, and to nothing else.
 //
+// The protections a system service is given where they take nothing it needs: UMask=0077,
+// so nothing the supervisor or anchord creates is anybody else's to read; a /tmp of its own
+// (PrivateTmp), which nothing here uses; home directories read-only; and the clock, the
+// hostname, the cgroup tree, the execution domain, realtime scheduling, set-user-ID files
+// and foreign system-call ABIs out of reach. They hold for anchord and what it runs too,
+// none of which needs any of them.
+//
 // Deliberately absent: StateDirectory, because systemd gives a directory it claims to
 // User= and Group= again, recursively, at every start once its top belongs to anybody
 // else -- and the root's group is anchord's account, so every start would hand anchord's
-// own directory back to root. PrivateTmp, because nothing conflux does
-// touches /tmp and it would only confuse the extraction path. ProtectSystem=strict, which
-// would need a ReadWritePaths list. And NoNewPrivileges, which would hold for a root
-// anchord too, where a host's firewall answers only root, and stop its firewall commands'
-// SELinux transitions; the supervisor sets no_new_privs on the anchord it can, itself.
+// own directory back to root. ProtectSystem, because the supervisor writes /etc -- the
+// account anchord runs as, and its own unit when it puts it back. ProtectKernelTunables and
+// ProtectKernelModules, because anchor's router sets sysctls and its firewall commands load
+// modules. And NoNewPrivileges, which would hold for a root anchord too, where a host's
+// firewall answers only root, and stop its firewall commands' SELinux transitions; the
+// supervisor sets no_new_privs on the anchord it can, itself.
 const unitTemplate = `[Unit]
 Description=Conflux — VeilNet anchor
 Documentation=https://github.com/veil-net/conflux
@@ -57,6 +65,16 @@ KillSignal=SIGTERM
 User=root
 Group=root
 LimitNOFILE=1048576
+UMask=0077
+PrivateTmp=yes
+ProtectHome=read-only
+ProtectClock=yes
+ProtectHostname=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
 
 [Install]
 WantedBy=multi-user.target

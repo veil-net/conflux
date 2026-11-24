@@ -61,6 +61,11 @@ else
     || { sc.exe qfailureflag conflux >&2; fail "recovery does not cover a service that stops with an error"; }
   [ "$(sc.exe qfailure conflux | grep -c RESTART)" -ge 3 ] \
     || { sc.exe qfailure conflux >&2; fail "the recovery actions are not the three restarts"; }
+  # Its own SID, and nobody but SYSTEM and the Administrators allowed to start, stop or change it.
+  sc.exe qsidtype conflux | grep -q 'UNRESTRICTED' || { sc.exe qsidtype conflux >&2; fail "the service has no SID of its own"; }
+  sd=$(sc.exe sdshow conflux | tr -d '\r\n ')
+  [ "$sd" = 'D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)' ] \
+    || fail "the service's DACL is $sd"
 fi
 
 say "status: registered, nothing to start"

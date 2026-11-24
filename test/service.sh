@@ -183,6 +183,14 @@ check_mode /var/lib/.conflux/anchord.json "600 conflux conflux"
 check_mode /var/lib/.conflux/run/token "600 root root"
 check_mode /var/lib/.conflux/conflux "700 root root"
 
+say "the unit runs with a system service's protections"
+for want in UMask=0077 PrivateTmp=yes ProtectHome=read-only ProtectClock=yes ProtectHostname=yes \
+  ProtectControlGroups=yes LockPersonality=yes RestrictRealtime=yes RestrictSUIDSGID=yes; do
+  key=${want%%=*}
+  got=$(docker exec "$NAME" systemctl show -p "$key" --value conflux.service)
+  [ "$key=$got" = "$want" ] || { echo "the unit's $key is $got, want ${want#*=}" >&2; exit 1; }
+done
+
 # systemd re-owns a directory it was told to make, at every start, once its group is not
 # the unit's: the root is not one of those, and stays as the supervisor left it.
 say "a restart leaves anchord's directory its own"

@@ -39,6 +39,8 @@ func (scm) Install(exe string, args ...string) error {
 	// ServiceType named, not left zero: CreateService fills it in, but UpdateConfig hands
 	// it to ChangeServiceConfig as it is, which refuses a zero type, so every re-run of
 	// up would fail to re-register an existing service.
+	// SidType unrestricted: the service runs with NT SERVICE\conflux in its token, the SID
+	// what it gives anchord's own token is named for.
 	cfg := mgr.Config{
 		ServiceType:      windows.SERVICE_WIN32_OWN_PROCESS,
 		DisplayName:      displayName,
@@ -46,6 +48,7 @@ func (scm) Install(exe string, args ...string) error {
 		StartType:        mgr.StartAutomatic,
 		ServiceStartName: "LocalSystem",
 		Dependencies:     []string{"Tcpip", "Dnscache", "NSI"},
+		SidType:          windows.SERVICE_SID_TYPE_UNRESTRICTED,
 	}
 
 	// Where the service's output goes: the Application event log, under its own name.
@@ -65,7 +68,7 @@ func (scm) Install(exe string, args ...string) error {
 			return fmt.Errorf("update the service: %w", err)
 		}
 
-		return recovery(existing)
+		return protect(existing)
 	}
 
 	// CreateService appends the arguments: `serve`.
@@ -74,6 +77,34 @@ func (scm) Install(exe string, args ...string) error {
 		return fmt.Errorf("create the service: %w", err)
 	}
 	defer s.Close()
+
+	return protect(s)
+}
+
+// serviceDACL is who may do what with the service: SYSTEM and the Administrators control
+// it, and an interactive or a service account may ask it what it is and how it runs, and
+// nothing more -- not start it, stop it, or change it. Windows' own default for a new
+// service, set explicitly so a DACL somebody widened since is put back at the next install
+// or start.
+const serviceDACL = "D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)" +
+	"(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)"
+
+// protect gives the service its DACL and its recovery actions.
+func protect(s *mgr.Service) error {
+	sd, err := windows.SecurityDescriptorFromString(serviceDACL)
+	if err != nil {
+		return err
+	}
+
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		return err
+	}
+
+	if err := windows.SetSecurityInfo(s.Handle, windows.SE_SERVICE, windows.DACL_SECURITY_INFORMATION,
+		nil, nil, dacl, nil); err != nil {
+		return fmt.Errorf("set the service's DACL: %w", err)
+	}
 
 	return recovery(s)
 }

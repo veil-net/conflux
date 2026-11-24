@@ -159,6 +159,7 @@ capabilities, `no_new_privs` and groups from `/proc` and the reason from `status
 
 | leg | anchord |
 |---|---|
+| the unit | `UMask=0077`, `PrivateTmp`, `ProtectHome=read-only`, `ProtectClock`, `ProtectHostname`, `ProtectControlGroups`, `LockPersonality`, `RestrictRealtime`, `RestrictSUIDSGID` as systemd reads it |
 | userspace, and again after a restart | the account, no capabilities (`CAP_NET_ADMIN` where the host's `rmem_max`/`wmem_max` are low), `no_new_privs`; the root and `run/` `710 root conflux`, its own `0700`, the token root's |
 | port 443 | the account with `CAP_NET_BIND_SERVICE` |
 | an uplink device of `dialout`'s, then one of root's | the account in `dialout`; then root, naming the device |
@@ -174,7 +175,8 @@ capabilities, `no_new_privs` and groups from `/proc` and the reason from `status
 `test/service-host.sh` is the same lifecycle against launchd and the SCM, on the machine
 itself, which is why only a CI runner that is thrown away afterwards runs it: `install`
 registers and starts nothing — on Windows with the three restarts and recovery that
-covers a service stopping with an error — `status` exits 78 and says the service is
+covers a service stopping with an error, a SID of its own and the DACL conflux sets —
+`status` exits 78 and says the service is
 installed and not running, `down` succeeds on it, a userspace configuration started
 through the service manager runs `anchord` as `_conflux` or `LOCAL SERVICE` and gets as far
 as enrolling, which it does only once `anchord` has answered on the socket it made as that

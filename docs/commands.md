@@ -582,8 +582,9 @@ fetch the `latest` release, moving a dev build off its channel. A `/usr/bin/conf
 that link is left alone, and said, with the same ways out: where that PATH finds it in conflux's
 place, it is to be removed, alone where that PATH holds `/usr/local/bin` too, and otherwise
 before the link is made the same way; where that PATH finds another conflux first and holds
-`/usr/local/bin`, that one is to be removed; and otherwise conflux is to be typed by its full
-path alone.
+`/usr/local/bin`, that one is to be removed; where that PATH finds no conflux at all, the file
+being none it can run, a link to nothing say, and holds `/usr/bin`, it is to be removed before
+the link is made the same way; and otherwise conflux is to be typed by its full path alone.
 No token is needed or sent: the repository is public.
 
 | Situation | |

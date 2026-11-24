@@ -103,6 +103,9 @@ func TestAFreshUpdateLinksItForSudo(t *testing.T) {
 		}
 	}
 
+	// What a dangling link at the link's name points to: nothing.
+	dangling := filepath.Join(t.TempDir(), "gone")
+
 	const (
 		relink   = "remove it, then link the installed conflux for sudo (sudo ln -s {exe} {link}), or type {exe} by its full path under sudo"
 		shadowed = "root's PATH finds {other} before {dir}: " + relink
@@ -114,8 +117,8 @@ func TestAFreshUpdateLinksItForSudo(t *testing.T) {
 	for _, c := range []struct {
 		name   string
 		path   []string // "exe", "other", "third", "link" and "spelt": the directories of each, in this order
-		before string   // at the link's name before the update: "link", an earlier install's, or "file", somebody else's
-		after  string   // and after it: "link", "file" or nothing
+		before string   // at the link's name before the update: "link", an earlier install's, "file", somebody else's, or "dangling", a link to nothing
+		after  string   // and after it: "link", "file", "dangling" or nothing
 		said   string   // what the update says of it, {exe}, {link} and {other} standing for each, {dir} for the link's directory and {exedir} for exe's; "" for nothing
 	}{
 		{name: "a PATH that leaves it out", path: []string{"link"}, after: "link", said: "Linked {link} to it"},
@@ -134,6 +137,10 @@ func TestAFreshUpdateLinksItForSudo(t *testing.T) {
 		{
 			name: "a file at the link's name, which the PATH finds", path: []string{"link"}, before: "file", after: "file",
 			said: "{link} is not conflux's, and root's PATH finds it rather than {exe}: " + relink,
+		},
+		{
+			name: "a dangling link at the link's name, the PATH holding its directory alone", path: []string{"link"}, before: "dangling", after: "dangling",
+			said: "{link} is not conflux's, and root's PATH leaves {exedir} out: " + relink,
 		},
 		{
 			name: "a file at the link's name, which the PATH finds before it", path: []string{"link", "exe"}, before: "file", after: "file",
@@ -188,6 +195,10 @@ func TestAFreshUpdateLinksItForSudo(t *testing.T) {
 			if err := os.WriteFile(link, []byte("somebody else's"), 0o755); err != nil {
 				t.Fatal(err)
 			}
+		case "dangling":
+			if err := os.Symlink(dangling, link); err != nil {
+				t.Fatal(err)
+			}
 		}
 
 		out, errOut, code := capture(t, "update")
@@ -198,6 +209,8 @@ func TestAFreshUpdateLinksItForSudo(t *testing.T) {
 		after := ""
 		if target, err := os.Readlink(link); err == nil && target == exe {
 			after = "link"
+		} else if err == nil && target == dangling {
+			after = "dangling"
 		} else if got, err := os.ReadFile(link); err == nil && string(got) == "somebody else's" {
 			after = "file"
 		} else if _, err := os.Lstat(link); !os.IsNotExist(err) {

@@ -25,9 +25,9 @@ func Trusted(string) bool { return true }
 // something left wider than 0700, or than the 0710 that lets anchord's account through.
 //
 // MkdirAll creates at 0700 and leaves a directory that already exists exactly as it
-// found it, so without this an /etc/conflux somebody made at 0755 would hold the
-// manifest in a traversable directory, and a CONFLUX_DIR another user made would hold
-// the binary root runs at boot where that user can replace it. The owner decides, as on
+// found it, so without this a .conflux somebody made at 0755 would hold the manifest in a
+// traversable directory, and one another user made would hold the binary root runs at
+// boot where that user can replace it. The owner decides, as on
 // Windows: one that is not the account running conflux did not get its directory from
 // conflux, and whatever it put there is not used. The refusal comes before any change.
 func secure(dir string) error { return secureAs(dir, os.Geteuid()) }

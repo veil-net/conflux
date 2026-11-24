@@ -234,7 +234,7 @@ conflux starts the anchor with the list in `conflux.json`, as `-serve-subnets`. 
 whose credential grants the `subnets` capability can replace it while it runs, with a
 Subnets order (`conflux subnets -peer ID -set …`; see
 [commands.md](commands.md#realm-control)). anchor keeps that list in its directory —
-`/var/lib/conflux/anchor/subnets.json` on Linux, as `{"subnets", "by", "at"}` — and serves
+`/var/lib/.conflux/anchor/subnets.json` on Linux, as `{"subnets", "by", "at"}` — and serves
 it in place of the configured one from every start, a reboot included. Unlike the
 configured list, an entry in it that matches nothing on the host is withheld until it
 does rather than stopping the anchor.

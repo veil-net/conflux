@@ -23,7 +23,7 @@ import (
 func startingEphemeral(t *testing.T) paths.Dirs {
 	t.Helper()
 
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	t.Cleanup(paths.UseRoot(t.TempDir()))
 
 	d := paths.EphemeralDirs(paths.EphemeralCandidates()[0])
 	if err := d.EnsureAll(); err != nil {
@@ -92,7 +92,7 @@ func TestAKilledRunsMarkerIsNotTheNextRuns(t *testing.T) {
 		t.Errorf("a reader, with the killed run's marker beside the new run's lock: %v, want errEphemeralStarting", err)
 	}
 
-	if out, _, _ := capture(t, "status"); !strings.Contains(out, "starting, from "+d.State) {
+	if out, _, _ := capture(t, "status"); !strings.Contains(out, "starting, from "+d.Root) {
 		t.Errorf("status, with the killed run's marker beside the new run's lock, does not say it is starting:\n%s", out)
 	}
 }
@@ -132,7 +132,7 @@ func TestAReaderTakesAnEphemeralRunsPairAsItIs(t *testing.T) {
 	}
 
 	// An installed root is the reader's own to extract into, as it always was.
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	t.Cleanup(paths.UseRoot(t.TempDir()))
 
 	if _, err := toolsFor(paths.Default()); err != nil {
 		t.Errorf("an installed root: %v", err)

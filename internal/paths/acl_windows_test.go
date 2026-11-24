@@ -12,10 +12,9 @@ import (
 // Administrators', with a DACL %ProgramData%'s grants to Users cannot flow back into,
 // and what is created beneath it afterwards inherits that.
 func TestEnsureAllGivesTheRootToAdministrators(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "conflux")
-	t.Setenv("CONFLUX_DIR", root)
+	root := filepath.Join(t.TempDir(), ".conflux")
 
-	d := Default()
+	d := Dirs{Root: root}
 	if err := d.EnsureAll(); err != nil {
 		t.Fatalf("EnsureAll: %v", err)
 	}
@@ -38,7 +37,7 @@ func TestEnsureAllGivesTheRootToAdministrators(t *testing.T) {
 		t.Fatalf("EnsureAll again: %v", err)
 	}
 
-	f := filepath.Join(d.Run, "token")
+	f := d.TokenFile()
 	if err := os.WriteFile(f, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}

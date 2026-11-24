@@ -29,7 +29,7 @@ var flagLine = regexp.MustCompile(`(?m)^\s+-([a-z0-9-]+)`)
 func TestEveryFlagWeUseExists(t *testing.T) {
 	anchortest.Require(t)
 
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	t.Cleanup(paths.UseRoot(t.TempDir()))
 
 	d := paths.Default()
 	if err := d.EnsureAll(); err != nil {

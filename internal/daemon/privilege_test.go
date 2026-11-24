@@ -240,13 +240,12 @@ func TestPrivilegeString(t *testing.T) {
 // conflux's own, and for the account nobody's home.
 func TestAnchordEnv(t *testing.T) {
 	t.Setenv("NOTIFY_SOCKET", "/run/systemd/notify")
-	t.Setenv("CONFLUX_DIR", "/srv/x")
 	t.Setenv("HOME", "/root")
 	t.Setenv("ANCHORD_TOKEN", "stale")
 
 	env := anchordEnv(Privilege{Account: true, As: "conflux"}, "fresh")
 
-	gone := []string{"NOTIFY_SOCKET=", "CONFLUX_DIR=", "ANCHORD_TOKEN=stale"}
+	gone := []string{"NOTIFY_SOCKET=", "ANCHORD_TOKEN=stale"}
 	if runtime.GOOS != "windows" {
 		gone = append(gone, "HOME=/root")
 	}

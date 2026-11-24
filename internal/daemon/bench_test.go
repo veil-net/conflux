@@ -162,7 +162,7 @@ func BenchmarkAnchorCheck(b *testing.B) {
 // BenchmarkRenewal is the whole of a timer renewal against a stand-in API: the lock, the
 // stored files, the POST, the splice, the writes and the hot install.
 func BenchmarkRenewal(b *testing.B) {
-	b.Setenv("CONFLUX_DIR", b.TempDir())
+	b.Cleanup(paths.UseRoot(b.TempDir()))
 	b.Setenv("CONFLUX_ALLOW_INSECURE_API", "1")
 
 	chain := base64.StdEncoding.EncodeToString(make([]byte, 6<<10))
@@ -219,7 +219,7 @@ func BenchmarkRenewal(b *testing.B) {
 func BenchmarkDaemonLifecycle(b *testing.B) {
 	anchortest.Require(b)
 
-	b.Setenv("CONFLUX_DIR", b.TempDir())
+	b.Cleanup(paths.UseRoot(b.TempDir()))
 
 	d := dirs(b)
 

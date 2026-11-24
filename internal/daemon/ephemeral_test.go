@@ -58,7 +58,7 @@ func runEphemeral(t *testing.T, is *issuer, env config.Envelope) *ephemeralRig {
 
 	fakeCtl(t) // the stand-in anchorctl's environment
 
-	root := filepath.Join(dirs(t).State, "e")
+	root := filepath.Join(dirs(t).Root, "e")
 
 	r := &ephemeralRig{root: root, ups: make(chan EphemeralUp, 1), finished: make(chan struct{})}
 
@@ -247,7 +247,7 @@ func TestAnEphemeralRunRenewsInMemory(t *testing.T) {
 func TestASecondEphemeralRunIsRefused(t *testing.T) {
 	is := newIssuer(t)
 
-	root := filepath.Join(dirs(t).State, "e")
+	root := filepath.Join(dirs(t).Root, "e")
 	if err := paths.EphemeralDirs(root).EnsureAll(); err != nil {
 		t.Fatal(err)
 	}

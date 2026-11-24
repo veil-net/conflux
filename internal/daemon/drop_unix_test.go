@@ -63,38 +63,28 @@ func TestCopyTreeTakesOnlyTheAnchorsFiles(t *testing.T) {
 	}
 }
 
-// TestAnchorDirMovesAndCarries: conflux 1.0.0's directory -- root's, at the account's name
-// -- becomes root's own, and the directory a flip gives anchord starts from what the last
-// anchor kept.
-func TestAnchorDirMovesAndCarries(t *testing.T) {
+// TestAnchorDirIsKeptForTheSameIdentity: the directory an identity was given last time is
+// given to it again as it is, with what the anchor kept in it.
+func TestAnchorDirIsKeptForTheSameIdentity(t *testing.T) {
 	s := &Supervisor{Dirs: dirs(t)}
 	d := s.Dirs
-
-	if err := os.MkdirAll(d.AnchorDir(), 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.WriteFile(filepath.Join(d.AnchorDir(), "cache"), []byte("1.0.0"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 
 	dir, err := s.anchorDir(Privilege{})
 	if err != nil || dir != d.RootAnchorDir() {
 		t.Fatalf("anchorDir = %q, %v; want %q", dir, err, d.RootAnchorDir())
 	}
 
-	if b, err := os.ReadFile(filepath.Join(dir, "cache")); err != nil || string(b) != "1.0.0" {
-		t.Errorf("the 1.0.0 state did not move to root's directory: %q, %v", b, err)
+	if err := os.WriteFile(filepath.Join(dir, "bootstrap.json"), []byte("[]"), 0o600); err != nil {
+		t.Fatal(err)
 	}
 
-	if _, err := os.Lstat(d.AnchorDir()); !os.IsNotExist(err) {
-		t.Errorf("the 1.0.0 directory is still at the account's name (%v)", err)
-	}
-
-	// Asked again for the same identity, it is left as it is.
 	s.lastDir = dir
 
 	if again, err := s.anchorDir(Privilege{}); err != nil || again != dir {
 		t.Errorf("anchorDir again = %q, %v", again, err)
+	}
+
+	if b, err := os.ReadFile(filepath.Join(dir, "bootstrap.json")); err != nil || string(b) != "[]" {
+		t.Errorf("what the anchor kept is %q, %v; want it kept", b, err)
 	}
 }

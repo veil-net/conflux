@@ -16,6 +16,10 @@ import (
 	"github.com/veil-net/conflux/internal/ui"
 )
 
+// services is the platform's boot manager, and a variable only so the tests can stand in
+// for it: there is one service per machine, and no test may register, start or remove it.
+var services = service.New
+
 // runInstall registers the boot service, and nothing else.
 //
 // This is the minimal building block: `up` and `proxy` call it after writing their
@@ -54,7 +58,7 @@ func runInstall(ctx context.Context, args []string) int {
 // make, which is silent and leaves starting to the caller. Either has created the
 // directories already.
 func install(ctx context.Context, d paths.Dirs, standalone bool) int {
-	mgr := service.New()
+	mgr := services()
 
 	exe, err := service.Place(d)
 	if err != nil {
@@ -90,16 +94,7 @@ func install(ctx context.Context, d paths.Dirs, standalone bool) int {
 // defines it: an upgraded conflux's definition reaches the service the next time it is
 // placed. Nothing at all when the definition is the one already there.
 func register(mgr service.Manager, exe string) error {
-	// A CONFLUX_DIR run registers a service that has to come back to that same
-	// directory. Passed as an argument rather than an environment variable because
-	// none of the three service managers carries the operator's environment into
-	// what it starts.
-	serveArgs := []string{"serve"}
-	if root := paths.Root(); root != "" {
-		serveArgs = append(serveArgs, "--dir", root)
-	}
-
-	return mgr.Install(exe, serveArgs...)
+	return mgr.Install(exe, "serve")
 }
 
 // startFromConfig starts the anchor this machine is already configured for.
@@ -180,7 +175,7 @@ func runStart(ctx context.Context, args []string) int {
 
 	d := paths.Default()
 
-	mgr := service.New()
+	mgr := services()
 
 	installed, err := mgr.Installed()
 	if err != nil {
@@ -253,7 +248,7 @@ func runDown(_ context.Context, args []string) int {
 		return fail(err)
 	}
 
-	mgr := service.New()
+	mgr := services()
 
 	installed, err := mgr.Installed()
 	if err != nil {
@@ -310,7 +305,7 @@ func runUninstall(_ context.Context, args []string) int {
 	// the run ends itself, with its anchor, when it is stopped.
 	if e, live := liveEphemeral(); live {
 		ui.Errf("an ephemeral anchor is running from %s.\n"+
-			"  Stop it first (Ctrl-C where it runs): uninstall removes the account it runs as", e.State)
+			"  Stop it first (Ctrl-C where it runs): uninstall removes the account it runs as", e.Root)
 
 		return ExitUsage
 	}
@@ -322,9 +317,9 @@ func runUninstall(_ context.Context, args []string) int {
 	// Each step tolerates its own failure: a half-removed installation must always
 	// be finishable, so nothing stops at the first complaint. Remove stops the service
 	// on every platform before it deregisters it.
-	errs := []error{service.New().Remove()}
+	errs := []error{services().Remove()}
 
-	// Whatever anchord a supervisor that died left running out of the state directory,
+	// Whatever anchord a supervisor that died left running out of the root,
 	// once the service's own supervisor has let go of it.
 	daemon.Reap(d, 35*time.Second)
 
@@ -336,9 +331,7 @@ func runUninstall(_ context.Context, args []string) int {
 		errs = append(errs, removeEphemeralRoot(e))
 	}
 
-	for _, dir := range []string{d.Run, d.State, d.Config} {
-		errs = append(errs, os.RemoveAll(dir))
-	}
+	errs = append(errs, os.RemoveAll(d.Root))
 
 	// The account anchord ran as, once nothing runs as it, if conflux made it.
 	errs = append(errs, removeAccount())
@@ -365,7 +358,7 @@ func removeEphemeralRoot(e paths.Dirs) error {
 
 	unlock()
 
-	return errors.Join(reapErr, os.RemoveAll(e.State))
+	return errors.Join(reapErr, os.RemoveAll(e.Root))
 }
 
 // confirmUninstall makes the irreversible part explicit before it happens.

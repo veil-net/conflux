@@ -87,11 +87,12 @@ func (s *Supervisor) dropTo(p *Privilege) string {
 	return ""
 }
 
-// grantTraverse lets the account pass through the state and run directories, which list
-// nothing to it, to the one binary in them it runs. Every one is root's and sits in a
-// directory only root can write, so each is changed by its name.
+// grantTraverse lets the account pass through the root and its run directory, which list
+// nothing to it, to the one binary in them it runs and the socket directory it serves.
+// Every one is root's and sits in a directory only root can write, so each is changed by
+// its name.
 func (s *Supervisor) grantTraverse(p Privilege) error {
-	for _, dir := range []string{s.Dirs.State, s.Dirs.Libexec(), s.tools.Dir, s.Dirs.Run} {
+	for _, dir := range []string{s.Dirs.Root, s.Dirs.Libexec(), s.tools.Dir, s.Dirs.RunDir()} {
 		if err := ownAs(dir, 0, p.GID, 0o710); err != nil {
 			return err
 		}
@@ -263,19 +264,6 @@ func (s *Supervisor) killLeftovers() {
 	}
 }
 
-// legacyAnchorDir reports an anchor directory at the account's name that is the
-// supervisor's own: conflux 1.0.0's, from before anchord ran as anything but root.
-func legacyAnchorDir(path string) bool {
-	fi, err := os.Lstat(path)
-	if err != nil || !fi.IsDir() {
-		return false
-	}
-
-	st, ok := fi.Sys().(*syscall.Stat_t)
-
-	return ok && int(st.Uid) == os.Geteuid()
-}
-
 // anchorDirFor reports whether path is a directory, not a link, of p's identity.
 func anchorDirFor(path string, p Privilege) bool {
 	fi, err := os.Lstat(path)
@@ -293,8 +281,8 @@ func anchorDirFor(path string, p Privilege) bool {
 	return ok && int(st.Uid) == want
 }
 
-// makeAnchorDir creates path for p's identity. Its parent is the state directory, which
-// only root can write, so it is given away by its name.
+// makeAnchorDir creates path for p's identity. Its parent is the root, which only root can
+// write, so it is given away by its name.
 func makeAnchorDir(path string, p Privilege) error {
 	if err := os.Mkdir(path, 0o700); err != nil {
 		return err

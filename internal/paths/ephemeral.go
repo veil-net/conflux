@@ -20,33 +20,30 @@ import (
 // ephemeralName is the root's name, beside the machine's own directories.
 const ephemeralName = "conflux-ephemeral"
 
-// EphemeralDirs are the four roots of an ephemeral run kept in root: Config and State the
-// root itself, though nothing is ever written as either, Run beneath it, and no log
-// directory, since an ephemeral run's output goes to the terminal it runs in.
-func EphemeralDirs(root string) Dirs {
-	return Dirs{Config: root, State: root, Run: filepath.Join(root, "run")}
-}
+// EphemeralDirs is an ephemeral run kept in root. Nothing is ever written there as a
+// configuration, a state or an identity, and there is no log: an ephemeral run's output
+// goes to the terminal it runs in.
+func EphemeralDirs(root string) Dirs { return Dirs{Root: root} }
 
 // EphemeralCandidates are where an ephemeral run may be kept, in the order one is chosen:
 // a filesystem in memory where the platform has one, and then one on disk, for a host that
 // mounts the first noexec. Both are looked in for a run that is live.
 //
 // Per identity, because the user running conflux decides what it may write: root's under
-// the system's run directory, anybody else's under their own. Under CONFLUX_DIR, inside it
-// and nowhere else.
+// the system's run directory, anybody else's under their own.
 func EphemeralCandidates() []string {
-	if root := Root(); root != "" {
-		return []string{filepath.Join(root, "ephemeral")}
+	if rooted {
+		return []string{root + "-ephemeral"}
 	}
 
 	if runtime.GOOS == "windows" {
-		return []string{filepath.Join(filepath.Dir(platformDirs().State), ephemeralName)}
+		return []string{filepath.Join(filepath.Dir(platformRoot()), ephemeralName)}
 	}
 
 	if os.Geteuid() == 0 {
 		return []string{
 			filepath.Join(ephemeralRunBase(), ephemeralName),
-			platformDirs().State + "-ephemeral",
+			filepath.Join(filepath.Dir(platformRoot()), ephemeralName),
 		}
 	}
 
@@ -92,7 +89,7 @@ func Ephemeral() (Dirs, error) {
 	}
 
 	return Dirs{}, fmt.Errorf("every place an ephemeral run is kept is on a filesystem mounted noexec, "+
-		"so the anchord it extracts could not run: %v.\n  Set CONFLUX_DIR to a directory on one that is not", candidates)
+		"so the anchord it extracts could not run: %v", candidates)
 }
 
 // executable reports whether a program extracted under root may run: whether the

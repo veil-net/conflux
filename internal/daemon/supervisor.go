@@ -160,7 +160,7 @@ func (s *Supervisor) Run(ctx context.Context) error {
 
 	if !ok {
 		return fmt.Errorf("another conflux supervisor is already serving %s; "+
-			"stop it first (conflux down)", s.Dirs.State)
+			"stop it first (conflux down)", s.Dirs.Root)
 	}
 	defer unlock()
 
@@ -175,24 +175,17 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		s.report().Warn("stopped anchord (pid %d), left running by a supervisor that ended without stopping it", pid)
 	}
 
-	// conflux 1.0.0 kept the socket in the run directory itself. The daemon that held it
-	// is gone by now, and so the two names are nothing's.
-	if held, err := flock.Held(s.Dirs.LegacySocket() + ".lock"); err == nil && !held {
-		_ = os.Remove(s.Dirs.LegacySocket())
-		_ = os.Remove(s.Dirs.LegacySocket() + ".lock")
-	}
-
 	if p, ok := RecordedPrivilege(s.Dirs); ok {
 		s.lastDir = p.Dir
 	}
 
-	// Before anything else can be asked about, because nothing is up yet and a marker
-	// saying otherwise is a lie the whole mechanism rests on not telling. Two of the
-	// three platforms clear the run directory for us -- systemd's RuntimeDirectory= on
-	// stop, and /var/run at boot on macOS -- and Windows does not: %ProgramData%\conflux
-	// \run survives a reboot, so a marker written before a power cut would still be
-	// there when this starts.
-	s.clearReady()
+	// Emptied, now that the anchord its record named is stopped: the run directory is on
+	// disk with the rest of the root, so a marker, a token or a socket written before a
+	// crash or a power cut is still there, and nothing here is up yet. A marker saying
+	// otherwise is a lie the whole readiness mechanism rests on not telling.
+	if err := clearExcept(s.Dirs.RunDir(), ""); err != nil {
+		return err
+	}
 
 	// Nothing to supervise, or nothing it will start on, before anything is extracted.
 	// Distinguished from a failure so the unit can stop instead of restarting into the

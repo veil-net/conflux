@@ -113,7 +113,7 @@ func saveDoc(t *testing.T, d paths.Dirs, doc map[string]any) {
 // expires at expires, renewing against is.
 func machine(t *testing.T, is *issuer, issued, expires time.Time) paths.Dirs {
 	t.Helper()
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	t.Cleanup(paths.UseRoot(t.TempDir()))
 
 	d := paths.Default()
 	if err := d.EnsureAll(); err != nil {
@@ -210,7 +210,7 @@ func TestTheRenewedChainArrivesOnStdin(t *testing.T) {
 	sent := filepath.Join(t.TempDir(), "sent")
 	t.Setenv(fakeAnchorctlRenewedEnv, sent)
 
-	before, err := os.ReadDir(d.State)
+	before, err := os.ReadDir(d.Root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +228,7 @@ func TestTheRenewedChainArrivesOnStdin(t *testing.T) {
 		t.Errorf("anchorctl renew was handed %q, want the issuer's chain %q", got, is.chain)
 	}
 
-	after, err := os.ReadDir(d.State)
+	after, err := os.ReadDir(d.Root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,11 +236,11 @@ func TestTheRenewedChainArrivesOnStdin(t *testing.T) {
 	// What was there, and the lock every renewal takes: never a file of the chain.
 	had := map[string]bool{d.LockFile(): true}
 	for _, e := range before {
-		had[filepath.Join(d.State, e.Name())] = true
+		had[filepath.Join(d.Root, e.Name())] = true
 	}
 
 	for _, e := range after {
-		if p := filepath.Join(d.State, e.Name()); !had[p] {
+		if p := filepath.Join(d.Root, e.Name()); !had[p] {
 			t.Errorf("a renewal left %s behind", p)
 		}
 	}
@@ -382,7 +382,7 @@ func TestAFailedInstallIsDueAgain(t *testing.T) {
 // TestAnEnrolmentIsKeptBeforeItIsRead: a document this build cannot read is still
 // written -- it is the only copy of an identity -- and then refused, permanently.
 func TestAnEnrolmentIsKeptBeforeItIsRead(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	t.Cleanup(paths.UseRoot(t.TempDir()))
 	t.Setenv("CONFLUX_ALLOW_INSECURE_API", "1")
 
 	d := paths.Default()

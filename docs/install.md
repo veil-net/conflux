@@ -66,9 +66,9 @@ $ conflux version
 be one only root can change: a service pointed at `~/Downloads/conflux` or
 `C:\tools\conflux.exe` is one any program running as that user could swap for its own.
 So `up`, `proxy`, `install`, `start` and `update` copy the conflux they were run as into
-the state directory — `/var/lib/conflux/conflux` on Linux, `/var/db/conflux/conflux` on the BSDs,
-`/Library/Application Support/conflux/conflux` on macOS,
-`%ProgramData%\conflux\conflux.exe` on Windows — and register that. Where you keep the
+conflux's own directory — `/var/lib/.conflux/conflux` on Linux, `/var/db/.conflux/conflux` on the BSDs,
+`/Library/Application Support/.conflux/conflux` on macOS,
+`%ProgramData%\.conflux\conflux.exe` on Windows — and register that. Where you keep the
 binary you type is up to you; `uninstall` removes the copy with the rest.
 
 Seven platforms are built: linux/amd64, linux/arm64, darwin/arm64, windows/amd64,
@@ -83,7 +83,7 @@ needs for one from the supervisor, as an account of its own — see
 `useradd` (or busybox's `adduser`) the first time it is needed, and removed by
 `conflux uninstall`.
 
-On a host with SELinux enforcing, the extracted binaries under `/var/lib/conflux/bin`
+On a host with SELinux enforcing, the extracted binaries under `/var/lib/.conflux/bin`
 may be labelled `var_lib_t` and refused execution. conflux detects this and prints the
 `semanage`/`restorecon` commands; see [troubleshooting.md](troubleshooting.md).
 
@@ -150,6 +150,7 @@ $ sudo conflux uninstall
 $ sudo rm /usr/local/bin/conflux
 ```
 
-`uninstall` removes the boot service, the configuration and the identity. There is no
-other copy of the identity anywhere, so it asks first — see
+`uninstall` removes the boot service, conflux's whole directory — the configuration and
+the identity with it — and the accounts `anchord` ran as. There is no other copy of the
+identity anywhere, so it asks first — see
 [credentials.md](credentials.md).

@@ -14,7 +14,7 @@ type openbsd struct{}
 
 func newManager() Manager { return openbsd{} }
 
-func scriptPath() string { return "/etc/rc.d/" + rcName() }
+func scriptPath() string { return "/etc/rc.d/" + rcName }
 
 // Install writes the script and enables it, and starts nothing.
 func (openbsd) Install(exe string, args ...string) error {
@@ -29,14 +29,14 @@ func (openbsd) Install(exe string, args ...string) error {
 		return err
 	}
 
-	return run("rcctl", "enable", rcName())
+	return run("rcctl", "enable", rcName)
 }
 
 // Remove stops and disables the service and deletes the script. Its output went to
 // syslog, which conflux does not own.
 func (openbsd) Remove() error {
-	_ = run("rcctl", "stop", rcName())
-	_ = run("rcctl", "disable", rcName())
+	_ = run("rcctl", "stop", rcName)
+	_ = run("rcctl", "disable", rcName)
 
 	if err := os.Remove(scriptPath()); err != nil && !os.IsNotExist(err) {
 		return err
@@ -45,8 +45,8 @@ func (openbsd) Remove() error {
 	return nil
 }
 
-func (openbsd) Stop() error    { return run("rcctl", "stop", rcName()) }
-func (openbsd) Restart() error { return run("rcctl", "restart", rcName()) }
+func (openbsd) Stop() error    { return run("rcctl", "stop", rcName) }
+func (openbsd) Restart() error { return run("rcctl", "restart", rcName) }
 
 func (openbsd) Installed() (bool, error) { return exists(scriptPath()) }
 
@@ -55,11 +55,11 @@ func (o openbsd) Describe() string {
 		return "not installed"
 	}
 
-	if _, running := query("rcctl", "check", rcName()); running {
-		return fmt.Sprintf("running (rc.d: %s, enabled at boot)", rcName())
+	if _, running := query("rcctl", "check", rcName); running {
+		return fmt.Sprintf("running (rc.d: %s, enabled at boot)", rcName)
 	}
 
-	return fmt.Sprintf("installed, not running (rc.d: %s, enabled at boot)", rcName())
+	return fmt.Sprintf("installed, not running (rc.d: %s, enabled at boot)", rcName)
 }
 
-func (openbsd) LogHint() string { return "grep " + rcName() + " /var/log/daemon | tail -n 50" }
+func (openbsd) LogHint() string { return "grep " + rcName + " /var/log/daemon | tail -n 50" }

@@ -20,11 +20,9 @@ import (
 //
 // Restart=on-failure rather than always, so a deliberate clean exit stays exited.
 //
-// RuntimeDirectory and ConfigurationDirectory make systemd create and mode two of the
-// directories, and clean /run/conflux on stop. conflux still creates them itself, so
-// running in the foreground and on non-systemd hosts works. They name the machine's own
-// directories, so a unit for a CONFLUX_DIR install leaves them out: stopping it would
-// otherwise empty the real installation's /run/conflux.
+// No RuntimeDirectory or ConfigurationDirectory: everything conflux keeps is in its one
+// root, which the supervisor makes and holds to its modes itself, run directory included,
+// which it empties as it starts.
 //
 // User=root, and no capability line: the supervisor is root, and it is the supervisor
 // that gives anchord, as its own account, exactly the capabilities its mode needs and no
@@ -33,8 +31,8 @@ import (
 //
 // Deliberately absent: StateDirectory, because systemd gives a directory it claims to
 // User= and Group= again, recursively, at every start once its top belongs to anybody
-// else -- and the state directory's group is anchord's account, so every start would
-// hand anchord's own directory back to root. PrivateTmp, because nothing conflux does
+// else -- and the root's group is anchord's account, so every start would hand anchord's
+// own directory back to root. PrivateTmp, because nothing conflux does
 // touches /tmp and it would only confuse the extraction path. ProtectSystem=strict, which
 // would need a ReadWritePaths list. And NoNewPrivileges, which would hold for a root
 // anchord too, where a host's firewall answers only root, and stop its firewall commands'
@@ -58,34 +56,22 @@ KillMode=mixed
 KillSignal=SIGTERM
 User=root
 Group=root
-%sLimitNOFILE=1048576
+LimitNOFILE=1048576
 
 [Install]
 WantedBy=multi-user.target
 `
 
-// machineDirectories are the unit's claim on the machine's own directories.
-const machineDirectories = `RuntimeDirectory=conflux
-RuntimeDirectoryMode=0700
-ConfigurationDirectory=conflux
-ConfigurationDirectoryMode=0700
-`
-
-// systemdUnit is the unit for exe run with args; scoped for a CONFLUX_DIR install, which
-// does not claim the machine's directories.
-func systemdUnit(exe string, args []string, scoped bool) string {
-	dirs := machineDirectories
-	if scoped {
-		dirs = ""
-	}
-
-	return fmt.Sprintf(unitTemplate, execLine(append([]string{exe}, args...)), dirs)
+// systemdUnit is the unit for exe run with args.
+func systemdUnit(exe string, args []string) string {
+	return fmt.Sprintf(unitTemplate, execLine(append([]string{exe}, args...)))
 }
 
 // execLine renders an ExecStart= command line, each word quoted where systemd would
 // otherwise split it or read it: whitespace, quotes and backslashes are quoted and
 // escaped, and a % or a $ -- a specifier or a variable to systemd, quoted or not -- is
-// doubled. A CONFLUX_DIR run registers its root here, and a path may hold any of them.
+// doubled. The root conflux runs from is fixed, but a path may hold any of them, and macOS's
+// holds a space.
 func execLine(words []string) string {
 	literal := strings.NewReplacer("%", "%%", "$", "$$")
 	quoted := strings.NewReplacer(`\`, `\\`, `"`, `\"`)

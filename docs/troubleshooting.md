@@ -25,7 +25,7 @@ beneath it, and most of what follows is a way of reading that output.
 | `subnet … is not a private network` | a public prefix | anchor forwards private networks only |
 | `the subnet list a Subnets order wrote, … remove the file`, and the service stops | a member's Subnets order left a list in the anchor directory that anchor cannot read, and it will not start until the file goes, which no retry does | `conflux up --subnet …` (or `--no-subnet`, or `conflux proxy` with either) sets the list again and drops the order's file |
 | `subnet … has host bits set` | `192.168.1.7/24` | write the network, `192.168.1.0/24` |
-| `the control socket path is N bytes` | `CONFLUX_DIR` is too deep | use a shorter one; the kernel's limit is 104–108 bytes |
+| `the control socket path is N bytes` | an ephemeral run's root, under `$XDG_RUNTIME_DIR` or `$TMPDIR`, is too deep | point that at a shorter directory; the kernel's limit is 104–108 bytes |
 | `fd:3 adopts a descriptor …` | `--uplink fd:N` | conflux's supervisor hands anchord no descriptors; name the device, or use `conflux anchorctl start` |
 | `anchor has no way to open a link on Windows` | `--uplink` on Windows | anchor opens a link on unix only; see [uplink.md](uplink.md) |
 | an uplink machine is up and reaches nothing | usually the far end, the line speed, or an enrolment that never happened | see below |
@@ -135,8 +135,9 @@ route — is anchor's to fix, and worth reporting there with that output attache
 - **"an ephemeral anchor is already running from …"**: one ephemeral run per user at a time.
   `conflux status` reports the one that is running; stop it where it runs (Ctrl-C).
 - **"every place an ephemeral run is kept is on a filesystem mounted noexec"**: the run
-  extracts anchord into its root, and every candidate refused execution. Set `CONFLUX_DIR`
-  to a directory on a filesystem that allows it.
+  extracts anchord into its root, and every candidate refused execution. One of them has to
+  be on a filesystem that allows it; for a user other than root, `$XDG_RUNTIME_DIR`, or
+  `$TMPDIR` where that is unset, decides the first.
 - **`conflux status` says a root was left behind**: an ephemeral run was killed before it
   could clean up, which on macOS and the BSDs can leave its anchord running. The next
   ephemeral run stops it and clears the root; so does a reboot.
@@ -146,19 +147,19 @@ See [ephemeral.md](ephemeral.md).
 ## The extracted binaries will not run
 
 A "permission denied" on a `0700` file you own is the most confusing failure in this
-design, and there are only two causes. conflux detects both and names them:
+design, and there are only two causes. conflux detects both and names them. `anchord` runs
+from the root's `bin/`, so the filesystem holding the root has to allow execution:
 
 ```
-conflux: the anchor binaries were extracted to /var/lib/conflux/bin/998ece52739a7c74 but will not run from there.
-  that filesystem is mounted noexec.
-  set CONFLUX_DIR to a directory on a filesystem that allows execution.
+conflux: the anchor binaries were extracted to /var/lib/.conflux/bin/998ece52739a7c74 but will not run from there.
+  that filesystem is mounted noexec: conflux runs anchord from there, so it has to allow execution.
 ```
 
-or
+or, where SELinux keeps it from running there:
 
 ```
   SELinux is enforcing, and a binary under this path is probably labelled var_lib_t.
-  try:  sudo semanage fcontext -a -t bin_t '/var/lib/conflux/bin(/.*)?' && sudo restorecon -R /var/lib/conflux/bin
+  try:  sudo semanage fcontext -a -t bin_t '/var/lib/.conflux/bin(/.*)?' && sudo restorecon -R /var/lib/.conflux/bin
 ```
 
 On macOS, `killed: 9` instead means the signature was rejected — an Apple Silicon Mac
@@ -246,10 +247,11 @@ these binaries are pinned to, a TUN the host will not give (no capability, devic
 IPv6, or the name held by another interface), a host that will not be set up to forward
 for the realm, and an argument vector anchorctl refuses outright.
 
-Where the logs are: `journalctl -u conflux -n 50` on Linux, `/var/log/conflux.log` on
-macOS and FreeBSD, `/var/log/daemon` on OpenBSD, and
-`%ProgramData%\conflux\logs\conflux.log` on Windows; on those last three, past 10 MiB the
-older lines are in `conflux.log.1` beside it. A start that times out names the
+Where the logs are: `journalctl -u conflux -n 50` on Linux, `/var/log/daemon` on OpenBSD,
+and `conflux.log` in the root on macOS, FreeBSD and Windows —
+`/Library/Application Support/.conflux/conflux.log`, `/var/db/.conflux/conflux.log` and
+`%ProgramData%\.conflux\conflux.log` — where past 10 MiB the older lines are in
+`conflux.log.1` beside it. A start that times out names the
 right one for the machine.
 
 ## Renewal is failing

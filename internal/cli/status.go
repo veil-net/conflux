@@ -14,7 +14,6 @@ import (
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
-	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
 	"github.com/veil-net/conflux/internal/version"
 )
@@ -108,8 +107,8 @@ type daemonAnswers struct {
 func askDaemon(ctx context.Context, d paths.Dirs) *daemonAnswers {
 	a := &daemonAnswers{}
 
-	// No socket, no daemon. The token outlives one where nothing clears the run directory
-	// on stop -- launchd, rc, Windows -- and asking would cost two forks for anchorctl's
+	// No socket, no daemon. The token outlives one, since nothing clears the run directory
+	// on stop but the next supervisor, and asking would cost two forks for anchorctl's
 	// "is anchord running on that socket", which reads as a fault rather than a stop.
 	if _, err := os.Stat(d.Socket()); err != nil {
 		return a
@@ -129,13 +128,13 @@ func askDaemon(ctx context.Context, d paths.Dirs) *daemonAnswers {
 	return a
 }
 
-func reportService() { ui.Field("service", service.New().Describe()) }
+func reportService() { ui.Field("service", services().Describe()) }
 
 // reportEphemeralRun says what an ephemeral run is doing, before the machine's own anchor,
 // and whether one is running: or what a killed one left behind.
 func reportEphemeralRun(ctx context.Context) bool {
 	if d, stale := staleEphemeral(); stale {
-		ui.Field("ephemeral", "none running; "+d.State+" was left by one that was killed, and the next "+
+		ui.Field("ephemeral", "none running; "+d.Root+" was left by one that was killed, and the next "+
 			"ephemeral run clears it and stops any anchord it left")
 		ui.Println()
 	}
@@ -148,7 +147,7 @@ func reportEphemeralRun(ctx context.Context) bool {
 	ui.Println("ephemeral:")
 
 	if !daemon.IsLiveReady(d) {
-		ui.Field("running", "starting, from "+d.State+" — in memory alone; nothing of it outlives the run")
+		ui.Field("running", "starting, from "+d.Root+" — in memory alone; nothing of it outlives the run")
 		ui.Println()
 
 		return true
@@ -157,7 +156,7 @@ func reportEphemeralRun(ctx context.Context) bool {
 	daemon := askDaemon(ctx, d)
 	daemon.wg.Wait()
 
-	ui.Field("running", "from "+d.State+" — in memory alone; nothing of it outlives the run")
+	ui.Field("running", "from "+d.Root+" — in memory alone; nothing of it outlives the run")
 	reportPrivilege(d, daemon.asked && daemon.statErr == nil)
 	reportAnchor(daemon)
 	ui.Println()

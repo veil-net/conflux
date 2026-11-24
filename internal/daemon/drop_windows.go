@@ -42,9 +42,9 @@ type dropState struct {
 	sd *windows.SECURITY_DESCRIPTOR
 }
 
-// windowsServiceName is the SCM name of this installation's service, as
-// service.ServiceName registers it: conflux, with a CONFLUX_DIR installation's scope.
-func windowsServiceName() string { return "conflux" + paths.Scope() }
+// windowsServiceName is the SCM name of the installation's service, as service.ServiceName
+// registers it. Its own constant rather than service's, which imports this package.
+const windowsServiceName = "conflux"
 
 var (
 	advapi32                    = windows.NewLazySystemDLL("advapi32.dll")
@@ -66,7 +66,7 @@ const (
 
 // dropTo makes the token anchord runs as, and checks that anchord starts under it.
 func (s *Supervisor) dropTo(p *Privilege) string {
-	sid, err := serviceSID(windowsServiceName())
+	sid, err := serviceSID(windowsServiceName)
 	if err != nil {
 		return "could not form the service's SID: " + err.Error()
 	}
@@ -360,7 +360,7 @@ func makeAnchorDir(path string, p Privilege) error {
 		return paths.Restrict(path, true)
 	}
 
-	ssid, err := serviceSID(windowsServiceName())
+	ssid, err := serviceSID(windowsServiceName)
 	if err != nil {
 		return err
 	}
@@ -385,17 +385,6 @@ func makeAnchorDir(path string, p Privilege) error {
 	})
 }
 
-// legacyAnchorDir reports an anchor directory at the account's name that the service SID
-// was never given: conflux 1.0.0's, which a SYSTEM anchord used.
-func legacyAnchorDir(path string) bool {
-	fi, err := os.Lstat(path)
-	if err != nil || !fi.IsDir() {
-		return false
-	}
-
-	return !grantsServiceSID(path)
-}
-
 // anchorDirFor reports whether path is the directory p's identity is given.
 func anchorDirFor(path string, p Privilege) bool {
 	fi, err := os.Lstat(path)
@@ -407,7 +396,7 @@ func anchorDirFor(path string, p Privilege) bool {
 }
 
 func grantsServiceSID(path string) bool {
-	sid, err := serviceSID(windowsServiceName())
+	sid, err := serviceSID(windowsServiceName)
 	if err != nil {
 		return false
 	}
@@ -495,7 +484,7 @@ func writeDaemonFile(path string, data []byte, p Privilege) error {
 		return nil
 	}
 
-	sid, err := serviceSID(windowsServiceName())
+	sid, err := serviceSID(windowsServiceName)
 	if err != nil {
 		return err
 	}

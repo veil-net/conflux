@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/veil-net/conflux/internal/daemon"
@@ -35,7 +34,7 @@ func testDirs(t *testing.T) paths.Dirs {
 	t.Helper()
 
 	root := t.TempDir()
-	d := paths.Dirs{Config: root, State: root, Run: filepath.Join(root, "run"), Log: filepath.Join(root, "logs")}
+	d := paths.Dirs{Root: root}
 
 	if err := d.EnsureAll(); err != nil {
 		t.Fatalf("EnsureAll: %v", err)

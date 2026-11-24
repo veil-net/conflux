@@ -148,7 +148,7 @@ func runUpdate(ctx context.Context, args []string) int {
 // is left stopped, as `down` left it, with its copy refreshed so that whatever starts it
 // next starts the new one.
 func moveService(ctx context.Context, exe string) int {
-	installed, err := service.New().Installed()
+	installed, err := services().Installed()
 	if err != nil {
 		return fail(err)
 	}
@@ -173,7 +173,7 @@ func moveService(ctx context.Context, exe string) int {
 		return fail(err)
 	}
 
-	if err := register(service.New(), placed); err != nil {
+	if err := register(services(), placed); err != nil {
 		return fail(err)
 	}
 

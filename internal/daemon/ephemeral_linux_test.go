@@ -24,7 +24,7 @@ func TestAKilledEphemeralRunTakesItsDaemonWithIt(t *testing.T) {
 	t.Setenv(fakeAnchorctlStatusEnv, "running")
 	fakeCtl(t)
 
-	root := filepath.Join(dirs(t).State, "e")
+	root := filepath.Join(dirs(t).Root, "e")
 
 	runner := exec.Command(os.Args[0], ephemeralRunnerArg, root) //nolint:gosec // this test binary
 	runner.Env = append(os.Environ(),

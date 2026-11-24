@@ -81,15 +81,14 @@ func TestUnusableMarkersReadAsNotReady(t *testing.T) {
 	}
 }
 
-// The marker lives in Run and not State, which is what stops it outliving the anchor it
-// describes: most systems empty Run at boot, systemd's RuntimeDirectory= empties it on
-// stop, and the supervisor clears the marker as it starts.
+// The marker lives in the run directory, which is what stops it outliving the anchor it
+// describes: the supervisor empties it as it starts, and clears the marker as it stops.
 func TestReadyFileIsInTheRunDirectory(t *testing.T) {
 	d := dirs(t)
 
-	if filepath.Dir(d.ReadyFile()) != d.Run {
-		t.Errorf("ReadyFile is %s, which is not under Run (%s) -- a marker that survives a "+
-			"reboot is a marker that lies", d.ReadyFile(), d.Run)
+	if filepath.Dir(d.ReadyFile()) != d.RunDir() {
+		t.Errorf("ReadyFile is %s, which is not in the run directory (%s) -- a marker that survives a "+
+			"reboot is a marker that lies", d.ReadyFile(), d.RunDir())
 	}
 }
 

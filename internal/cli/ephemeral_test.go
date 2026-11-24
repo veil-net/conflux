@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/veil-net/conflux/internal/paths"
+
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/privcheck"
 )
@@ -34,7 +36,7 @@ func handedRun(t *testing.T, doc string) *ephemeralRun {
 // TestManifestIsForAnEphemeralRun: a credential named without --ephemeral is one to keep,
 // which is conflux enrol's, and the refusal says so before anything of the machine's is read.
 func TestManifestIsForAnEphemeralRun(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	t.Cleanup(paths.UseRoot(t.TempDir()))
 
 	for _, verb := range [][]string{{"up"}, {"proxy", "8080=127.0.0.1:3000"}} {
 		_, errOut, code := capture(t, append(verb, "--manifest", "-")...)
@@ -43,7 +45,7 @@ func TestManifestIsForAnEphemeralRun(t *testing.T) {
 		}
 	}
 
-	if _, err := os.Stat(filepath.Join(os.Getenv("CONFLUX_DIR"), "conflux.json")); err == nil {
+	if _, err := os.Stat(paths.Default().ConfigFile()); err == nil {
 		t.Error("a refused run wrote a configuration")
 	}
 }

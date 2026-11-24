@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/veil-net/conflux/internal/paths"
+
 	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/update"
 	"github.com/veil-net/conflux/internal/version"
@@ -43,7 +45,7 @@ func serveRelease(t *testing.T, body []byte, exe string) {
 	t.Cleanup(srv.Close)
 
 	t.Setenv("CONFLUX_ALLOW_INSECURE_API", "1")
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	t.Cleanup(paths.UseRoot(t.TempDir()))
 
 	was, wasExe := updateFrom, updateExecutable
 	t.Cleanup(func() { updateFrom, updateExecutable = was, wasExe })

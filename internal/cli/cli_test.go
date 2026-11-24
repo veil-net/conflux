@@ -48,7 +48,7 @@ func capture(t *testing.T, argv ...string) (stdout, stderr string, code int) {
 func TestNoUnintendedShadowing(t *testing.T) {
 	anchortest.Require(t)
 
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	t.Cleanup(paths.UseRoot(t.TempDir()))
 
 	d := paths.Default()
 	if err := d.EnsureAll(); err != nil {
@@ -210,7 +210,7 @@ func TestTopLevelFlagIsNotForwarded(t *testing.T) {
 }
 
 func TestHelpListsEveryVisibleVerb(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	t.Cleanup(paths.UseRoot(t.TempDir()))
 
 	out, _, code := capture(t, "help")
 	if code != ExitOK {
@@ -260,7 +260,7 @@ func TestVersionNamesTheAnchorBuild(t *testing.T) {
 // RestartPreventExitStatus on, so a registered service with no configuration stops
 // rather than restarting forever.
 func TestStatusWithNoConfigExits78(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	t.Cleanup(paths.UseRoot(t.TempDir()))
 
 	_, _, code := capture(t, "status")
 	if code != ExitNoConfig {
@@ -602,7 +602,7 @@ func TestLANDiscoveryTristate(t *testing.T) {
 func TestTheCollisionsAreTheDocumentedOnes(t *testing.T) {
 	anchortest.Require(t)
 
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	t.Cleanup(paths.UseRoot(t.TempDir()))
 
 	d := paths.Default()
 	if err := d.EnsureAll(); err != nil {
@@ -719,7 +719,7 @@ func TestTheInterfaceIsWhatTheAnchorSaysItHolds(t *testing.T) {
 func TestRealmControlPassesThrough(t *testing.T) {
 	anchortest.Require(t)
 
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	t.Cleanup(paths.UseRoot(t.TempDir()))
 
 	d := paths.Default()
 	if err := d.EnsureAll(); err != nil {
@@ -831,7 +831,7 @@ func TestTaintsAreAskedForOrChecked(t *testing.T) {
 // configured list from every start, until the operator sets the list again -- the last
 // set wins -- and status says whose list is being served.
 func TestASetListReplacesASubnetOrder(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	t.Cleanup(paths.UseRoot(t.TempDir()))
 
 	d := paths.Default()
 	if err := d.EnsureAll(); err != nil {

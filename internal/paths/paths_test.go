@@ -2,40 +2,54 @@ package paths
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-// TestRootIsAbsoluteAndClean: the root is written into the service definition and hashed
-// into its name, so every spelling of one directory has to come out the same.
-func TestRootIsAbsoluteAndClean(t *testing.T) {
-	cwd := t.TempDir()
-	t.Chdir(cwd)
+// TestTheRootIsTheMachinesDotConflux: everything conflux keeps is in one directory, .conflux,
+// at an absolute path in the platform's place for a service's data, and every file and
+// directory the supervisor or a command writes is inside it.
+func TestTheRootIsTheMachinesDotConflux(t *testing.T) {
+	r := platformRoot()
 
-	t.Setenv("CONFLUX_DIR", filepath.Join("rel", "x")+string(filepath.Separator))
-
-	if got, want := Root(), filepath.Join(cwd, "rel", "x"); got != want {
-		t.Errorf("Root() = %q, want %q", got, want)
+	if !filepath.IsAbs(r) || filepath.Base(r) != ".conflux" {
+		t.Fatalf("platformRoot() = %q, want an absolute path to a directory named .conflux", r)
 	}
 
-	t.Setenv("CONFLUX_DIR", "")
+	d := Dirs{Root: r}
 
-	if got := Root(); got != "" {
-		t.Errorf("Root() = %q with no CONFLUX_DIR, want \"\"", got)
+	for _, p := range []string{
+		d.ConfigFile(), d.StateFile(), d.ManifestFile(), d.DaemonConfigFile(), d.AnchorDir(), d.RootAnchorDir(),
+		d.ServiceExecutable(), d.Libexec(), d.RunDir(), d.DaemonRun(), d.Socket(), d.TokenFile(), d.PrivilegeFile(),
+		d.LockFile(), d.ServeLockFile(), d.DaemonPIDFile(), d.ReadyFile(),
+	} {
+		if rel, err := filepath.Rel(r, p); err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+			t.Errorf("%s is not inside %s", p, r)
+		}
+	}
+
+	if l := d.LogFile(); l != "" && filepath.Dir(l) != r {
+		t.Errorf("the log file %s is not in %s", l, r)
 	}
 }
 
-// TestALogDirectoryOnlyWhereThePlatformHasOne: under CONFLUX_DIR the log goes beside the
-// rest only on a platform that writes the service's output to a file.
-func TestALogDirectoryOnlyWhereThePlatformHasOne(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("CONFLUX_DIR", root)
+// TestUseRootMovesDefaultAndPutsItBack: the one way a test roots conflux elsewhere, an
+// ephemeral run beside it rather than in the system's run directory.
+func TestUseRootMovesDefaultAndPutsItBack(t *testing.T) {
+	dir := t.TempDir()
 
-	d := Default()
+	restore := UseRoot(dir)
+	if got := Default().Root; got != dir {
+		t.Errorf("Default().Root = %q under UseRoot, want %q", got, dir)
+	}
 
-	switch platform := platformDirs().Log; {
-	case platform == "" && d.Log != "":
-		t.Errorf("Log = %q, but nothing on this platform writes a log file", d.Log)
-	case platform != "" && d.Log != filepath.Join(root, "logs"):
-		t.Errorf("Log = %q, want it under the root", d.Log)
+	if got := EphemeralCandidates(); len(got) != 1 || got[0] != dir+"-ephemeral" {
+		t.Errorf("EphemeralCandidates() = %v under UseRoot, want only %s", got, dir+"-ephemeral")
+	}
+
+	restore()
+
+	if got := Default().Root; got != platformRoot() {
+		t.Errorf("Default().Root = %q after restore, want the platform's %q", got, platformRoot())
 	}
 }

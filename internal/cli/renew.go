@@ -76,7 +76,7 @@ func runRenew(ctx context.Context, args []string) int {
 	// to renew it with.
 	if e, live := liveEphemeral(); live && !config.HasManifest(paths.Default()) {
 		ui.Errf("the anchor running is ephemeral, from %s, and renews itself in memory: nothing\n"+
-			"  outside it holds its credential, so there is nothing here to renew", e.State)
+			"  outside it holds its credential, so there is nothing here to renew", e.Root)
 
 		return ExitUnavailable
 	}
@@ -84,8 +84,8 @@ func runRenew(ctx context.Context, args []string) int {
 	return renewNow(ctx, paths.Default())
 }
 
-// renewNow is the body, split out so the test can drive it against a temporary
-// CONFLUX_DIR without going through privcheck.
+// renewNow is the body, split out so the test can drive it against a temporary root
+// without going through privcheck.
 func renewNow(ctx context.Context, d paths.Dirs) int {
 	if _, err := config.Load(d); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {

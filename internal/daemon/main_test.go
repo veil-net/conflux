@@ -56,7 +56,20 @@ func TestMain(m *testing.M) {
 		os.Exit(fakeAnchorctl(os.Args[1:]))
 	}
 
-	os.Exit(m.Run())
+	// Every conflux path in a directory of the run's own, so a test that does not root its own
+	// reaches nothing of the machine's .conflux.
+	dir, err := os.MkdirTemp("", "conflux-test-")
+	if err != nil {
+		panic(err)
+	}
+
+	restore := paths.UseRoot(dir)
+	code := m.Run()
+
+	restore()
+	_ = os.RemoveAll(dir)
+
+	os.Exit(code)
 }
 
 // fakeMetrics is the head of what `anchorctl metrics` printed on a live alpha node.
@@ -358,7 +371,7 @@ func dirs(tb testing.TB) paths.Dirs {
 
 	tb.Cleanup(func() { _ = os.RemoveAll(root) })
 
-	tb.Setenv("CONFLUX_DIR", root)
+	tb.Cleanup(paths.UseRoot(root))
 
 	d := paths.Default()
 	if err := d.EnsureAll(); err != nil {

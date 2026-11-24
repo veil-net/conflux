@@ -20,8 +20,8 @@ socket. Something has to make that call, and it may as well be the thing the ser
 manager watches.
 
 At every boot the supervisor takes the root's `serve.lock` — one supervisor per root —
-stops any `anchord` a supervisor that died left running (below), reads `conflux.json`,
-extracts the anchor pair if it is not already on disk, writes a fresh bearer token,
+stops any `anchord` a supervisor that died left running (below), empties `run/`, reads
+`conflux.json`, extracts the anchor pair if it is not already on disk, writes a fresh bearer token,
 decides what `anchord` runs as — its own account, with exactly the capabilities its mode
 needs, wherever that costs it nothing; see [security.md](security.md#what-anchord-runs-as)
 — makes the account the first time, lays out the directories that identity reaches,
@@ -59,10 +59,10 @@ would be a status call, and a fork, once a second.
 
 The marker is advisory. Every reader falls back to the status call it replaced, so a
 marker that is missing, stale or half-written costs a second and never a start. It lives
-in the run directory rather than the state directory, which is what stops it outliving
-the anchor it describes: most systems empty the run directory at boot, systemd's
-`RuntimeDirectory=` empties it whenever the service stops, and the supervisor clears the
-marker as it starts, for Windows, where neither happens. Every path that restarts the service
+in `run/` rather than beside the state, which is what stops it outliving the anchor it
+describes: `run/` is on disk with the rest of the root, so the supervisor empties it as it
+starts — once it has stopped any `anchord` a dead supervisor left, which the record there
+names (below) — and withdraws the marker on the way down. Every path that restarts the service
 clears it *before* restarting, so the marker that appears afterwards can only have been
 written by the instance that restart started — otherwise `up` could report success for an
 anchor that was seconds from being torn down.
@@ -123,23 +123,11 @@ it would change nothing. A rebuild refused for good three times in a row — a
 say — makes the watcher give up and say so in the log: the service stays up holding no
 anchor, and renews nothing, until it is started again with `conflux start` or a reboot.
 
-## One machine, one service — unless CONFLUX_DIR says otherwise
+## One machine, one service
 
-The unit, the launchd label, the rc script and the SCM entry are all named `conflux`,
-one per machine, which is what "one configuration per machine" means in practice.
-
-A run under `CONFLUX_DIR` is the exception, because it is a separate installation and
-not the machine's own: the service takes a suffix derived from the root
-(`conflux-44a6e4f4.service`, or `conflux_44a6e4f4` for rc, whose names become shell
-variables), and the root is written into the argv it is registered with, so the
-supervisor comes back to the same directory at boot. Its systemd unit also leaves out
-the `RuntimeDirectory=` and `ConfigurationDirectory=` lines: they name the machine's own
-directories, and systemd empties a unit's runtime directory whenever it stops, so stopping
-the scoped unit would otherwise clear the real installation's `/run/conflux`. Its
-`anchord` runs as an account of its own too, `conflux-44a6e4f4`, so a test root's daemon
-never shares an identity with the machine's. None of this happens without `CONFLUX_DIR`, so an ordinary install is
-byte-for-byte what it always was.
-See [testing.md](testing.md).
+There is one installation per machine, in its one root, and its service is named `conflux`
+everywhere: the unit, the launchd label `org.veilnet.conflux`, the rc script and the SCM
+entry. That is what "one configuration per machine" means in practice.
 
 ## The four verbs, and which pair is which
 
@@ -165,7 +153,7 @@ Unit at `/etc/systemd/system/conflux.service`, and `conflux install` writes it,
 enabled, as every re-run of `up` and `proxy` does, leaves it be. **It does not start
 it**; that is the caller's decision, and it is what lets `conflux install` register a
 service on a machine that has no configuration yet. `ExecStart=` names the copy of conflux
-kept in the state directory, which only root can change, never the file conflux was run
+kept in `/var/lib/.conflux`, which only root can change, never the file conflux was run
 from; see [install.md](install.md).
 
 ```ini
@@ -178,7 +166,7 @@ Wants=network-online.target
 [Service]
 Type=notify
 NotifyAccess=main
-ExecStart=/var/lib/conflux/conflux serve
+ExecStart=/var/lib/.conflux/conflux serve
 Restart=on-failure
 RestartSec=5
 RestartPreventExitStatus=78 70
@@ -188,10 +176,6 @@ KillMode=mixed
 KillSignal=SIGTERM
 User=root
 Group=root
-RuntimeDirectory=conflux
-RuntimeDirectoryMode=0700
-ConfigurationDirectory=conflux
-ConfigurationDirectoryMode=0700
 LimitNOFILE=1048576
 
 [Install]
@@ -226,11 +210,12 @@ that gives `anchord`, as an account of its own, exactly the capabilities its mod
 `AmbientCapabilities=` here would go to the supervisor, which as root has them all
 anyway, and reach nothing more.
 
-Four things are deliberately absent. `StateDirectory=`, because systemd gives a directory
-it claims back to `User=` and `Group=`, recursively, at every start once its top belongs to
-anybody else — and the state directory's group is `anchord`'s account, so every start
-would hand `anchord`'s own directory back to root. `RuntimeDirectory=` stays: systemd
-makes `/run/conflux` afresh at every start, so its top is always root's. `PrivateTmp=`
+No `RuntimeDirectory=` or `ConfigurationDirectory=`: everything conflux keeps is in its one
+root, which the supervisor makes and holds to its modes itself, `run/` included, which it
+empties as it starts. Four more things are deliberately absent. `StateDirectory=`, because
+systemd gives a directory it claims back to `User=` and `Group=`, recursively, at every
+start once its top belongs to anybody else — and the root's group is `anchord`'s account,
+so every start would hand `anchord`'s own directory back to root. `PrivateTmp=`
 would be pointless and confusing — nothing conflux does touches `/tmp`. `ProtectSystem=strict`
 would need a `ReadWritePaths=` list. And `NoNewPrivileges=`, which would hold for a root
 `anchord` too, where the host's firewall answers only root, and stop its firewall commands'
@@ -291,11 +276,12 @@ is already in the state `down` asks for, and says so rather than passing on laun
 
 macOS needs no driver: `utun` is in the kernel and a root LaunchDaemon can open it.
 
-Logs: `/var/log/conflux.log`, which `uninstall` removes with the plist and the one moved
-aside. The plist names it, for what conflux cannot write itself, and `serve --log` is how
-conflux writes everything else there: each line stamped with the time in UTC, and the file
-moved aside to `conflux.log.1`, replacing the one before, once it passes 10 MiB. The file
-is placed over conflux's own standard output and error each time, so a crash lands in it too.
+Logs: `/Library/Application Support/.conflux/conflux.log`, which `uninstall` removes with
+the plist and the one moved aside. The plist names it, for what conflux cannot write
+itself, and `serve --log` is how conflux writes everything else there: each line stamped
+with the time in UTC, and the file moved aside to `conflux.log.1`, replacing the one
+before, once it passes 10 MiB. The file is placed over conflux's own standard output and
+error each time, so a crash lands in it too.
 
 ## The Windows service
 
@@ -337,14 +323,14 @@ access than any account has.
 Windows also needs `wintun.dll` for TUN mode; see [windows.md](windows.md).
 
 Logs: a service has no console, so the supervisor writes what it and `anchord` say to
-`%ProgramData%\conflux\logs\conflux.log`, each line stamped with the time in UTC and the file
+`%ProgramData%\.conflux\conflux.log`, each line stamped with the time in UTC and the file
 moved aside to `conflux.log.1` past 10 MiB, as on macOS; `uninstall` removes both with the
 rest.
 
 ## rc: FreeBSD and OpenBSD
 
 **FreeBSD.** Script at `/usr/local/etc/rc.d/conflux`, enabled with
-`sysrc conflux_enable=YES`. It runs `conflux serve --log /var/log/conflux.log` under
+`sysrc conflux_enable=YES`. It runs `conflux serve --log /var/db/.conflux/conflux.log` under
 `daemon(8)`, which backgrounds it and records conflux's own pid, and conflux writes the log
 itself, stamped and moved aside to `conflux.log.1` past 10 MiB, as on macOS — so
 `service conflux stop` signals the supervisor, which closes the anchor before anything
@@ -359,10 +345,11 @@ that is not running succeeds rather than passing on `rc.subr`'s "not running?".
 
 Both find the running service again by matching its command line, unquoted — FreeBSD's
 `rc.subr` the first word `ps` prints against `procname`, OpenBSD's `rcctl` the whole of it
-as a pattern — and OpenBSD's runs it through a shell as well, so no quoting survives: a
-`CONFLUX_DIR` root holding a space, or a shell or pattern character, is refused at
-`install` rather than registered as a service that starts and can then be neither stopped
-nor asked about.
+as a pattern — and OpenBSD's runs it through a shell as well, so no quoting survives. The
+command line is held to letters, digits and `. _ - /`, which the BSDs' root,
+`/var/db/.conflux`, keeps to; a word with anything else in it would be refused at `install`
+rather than registered as a service that starts and can then be neither stopped nor asked
+about.
 
 On both, `install` enables and starts nothing, and `restart` starts a service that was
 not running. One platform note: OpenBSD's `tunN` device persists after close, so

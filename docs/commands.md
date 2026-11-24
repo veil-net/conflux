@@ -422,9 +422,11 @@ Needs root.
 
 ## `conflux uninstall`
 
-Removes the boot service, the configuration and the identity — and the account `anchord`
-ran as, once nothing runs as it, when conflux made it; an account of that name that
-conflux did not make is left alone. Asks first, because there is no other copy of the
+Removes the boot service and the whole root — the configuration, the identity and
+everything else conflux keeps — with the root a killed ephemeral run left, and the accounts
+`anchord` ran as, once nothing runs as them, when conflux made them; an account of that name
+that conflux did not make is left alone. Refused while an ephemeral run is live, whose
+account goes too. Asks first, because there is no other copy of the
 credential anywhere; `--yes` skips the question, and a non-interactive run without `--yes`
 refuses rather than destroy an identity silently.
 
@@ -583,7 +585,6 @@ other refusal — passes through untouched.
 
 | Variable | Effect |
 |---|---|
-| `CONFLUX_DIR` | roots a whole separate conflux installation in one directory — config, identity, socket and the boot service, which is named after the root so it cannot replace the machine's own. What the tests use. See [testing.md](testing.md). |
 | `CONFLUX_DEBUG=1` | pass `-v` to anchord. |
 | `CONFLUX_EPHEMERAL=1` | send pass-through to the ephemeral anchor while an installed one runs too, which it otherwise reaches first. See [ephemeral.md](ephemeral.md#reaching-it-from-another-terminal). |
 | `CONFLUX_ALLOW_INSECURE_API=1` | permit a plain-http API base. For tests only. |

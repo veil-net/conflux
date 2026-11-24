@@ -14,7 +14,7 @@ import (
 // those two are a clean exit, which KeepAlive leaves stopped, as the Windows SCM is told; the
 // log has said why. Anything else, and a supervisor launchd did not start, is as it was.
 func launchdExit(code int) int {
-	if (code == ExitNoConfig || code == ExitChildFailed) && os.Getenv("XPC_SERVICE_NAME") == service.Label() {
+	if (code == ExitNoConfig || code == ExitChildFailed) && os.Getenv("XPC_SERVICE_NAME") == service.Label {
 		ui.Errf("stopped, and launchd is told the exit was clean (it was %d), so it does not start this again "+
 			"into the same answer; conflux up, proxy, observe or start starts it", code)
 

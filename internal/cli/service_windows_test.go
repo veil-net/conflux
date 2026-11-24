@@ -27,7 +27,7 @@ func TestOnlyATransientExitAsksForARestart(t *testing.T) {
 // with the exit Execute returns. Reported here as well, the SCM read the service as
 // stopped cleanly before the exit code that said otherwise arrived.
 func TestTheServiceReportsStoppedOnce(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	t.Cleanup(paths.UseRoot(t.TempDir()))
 
 	h := &handler{sup: &daemon.Supervisor{Dirs: paths.Default(), Ready: make(chan struct{})}}
 	statuses := make(chan svc.Status, 8)

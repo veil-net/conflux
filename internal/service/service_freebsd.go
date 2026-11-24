@@ -15,11 +15,11 @@ type freebsd struct{}
 
 func newManager() Manager { return freebsd{} }
 
-func scriptPath() string { return "/usr/local/etc/rc.d/" + rcName() }
+func scriptPath() string { return "/usr/local/etc/rc.d/" + rcName }
 
 // Install writes the script and enables it, and starts nothing.
 func (freebsd) Install(exe string, args ...string) error {
-	script, err := freebsdScript(rcName(), exe, withLog(args), logFile())
+	script, err := freebsdScript(rcName, exe, withLog(args), logFile())
 	if err != nil {
 		return err
 	}
@@ -29,13 +29,13 @@ func (freebsd) Install(exe string, args ...string) error {
 		return err
 	}
 
-	return run("sysrc", rcName()+"_enable=YES")
+	return run("sysrc", rcName+"_enable=YES")
 }
 
 // Remove stops the service, disables it, and deletes the script and the log.
 func (f freebsd) Remove() error {
-	_ = run("service", rcName(), "onestop")
-	_ = run("sysrc", "-x", rcName()+"_enable")
+	_ = run("service", rcName, "onestop")
+	_ = run("sysrc", "-x", rcName+"_enable")
 
 	var errs []error
 
@@ -53,15 +53,15 @@ func (freebsd) Stop() error {
 		return nil
 	}
 
-	return run("service", rcName(), "stop")
+	return run("service", rcName, "stop")
 }
 
-func (freebsd) Restart() error { return run("service", rcName(), "restart") }
+func (freebsd) Restart() error { return run("service", rcName, "restart") }
 
 func (freebsd) Installed() (bool, error) { return exists(scriptPath()) }
 
 func running() bool {
-	_, ok := query("service", rcName(), "status")
+	_, ok := query("service", rcName, "status")
 
 	return ok
 }
@@ -72,10 +72,10 @@ func (f freebsd) Describe() string {
 	}
 
 	if running() {
-		return fmt.Sprintf("running (rc: %s, enabled at boot)", rcName())
+		return fmt.Sprintf("running (rc: %s, enabled at boot)", rcName)
 	}
 
-	return fmt.Sprintf("installed, not running (rc: %s, enabled at boot)", rcName())
+	return fmt.Sprintf("installed, not running (rc: %s, enabled at boot)", rcName)
 }
 
 func (freebsd) LogHint() string { return "tail -n 50 " + logFile() }

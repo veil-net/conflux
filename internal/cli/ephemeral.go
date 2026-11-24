@@ -232,7 +232,7 @@ func reportEphemeral(d paths.Dirs, cfg *config.Config, u daemon.EphemeralUp) {
 	reportAnchorRows(d, cfg, st)
 	reportObserver(cfg, st.Observer)
 	ui.Field("anchord", u.Privilege.String())
-	ui.Field("ephemeral", "in memory alone; "+d.State+" holds the socket and the binaries, and goes with the run")
+	ui.Field("ephemeral", "in memory alone; "+d.Root+" holds the socket and the binaries, and goes with the run")
 	ui.Println()
 
 	if len(cfg.Taints) > 0 && (u.Manifest == nil || u.Manifest.Alpha()) {

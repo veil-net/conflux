@@ -239,7 +239,7 @@ var errEphemeralStarting = errors.New("the ephemeral run is still starting; ask 
 // left -- and a reader that refilled what it was clearing, or held one of its binaries open,
 // would stop it.
 func toolsFor(d paths.Dirs) (*libexec.Tools, error) {
-	if !slices.Contains(paths.EphemeralCandidates(), d.State) {
+	if !slices.Contains(paths.EphemeralCandidates(), d.Root) {
 		return libexec.Ensure(d)
 	}
 

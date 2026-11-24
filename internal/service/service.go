@@ -54,7 +54,7 @@ func New() Manager { return newManager() }
 // boot, so that file must be one only root can change. Wherever conflux was run from --
 // a home directory, a download, C:\tools -- may be writable by somebody else, who could
 // then swap it for their own program and have it run as root at the next start. So the
-// service runs a copy in the state directory, which only root can write and `uninstall`
+// service runs a copy in conflux's root, which only root can write and `uninstall`
 // removes, and each `up`, `proxy`, `install`, `start` and `update` refreshes it: an
 // upgraded conflux reaches the service the next time one of them runs.
 //

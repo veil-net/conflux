@@ -3,26 +3,23 @@ package service
 import (
 	"fmt"
 	"strings"
-
-	"github.com/veil-net/conflux/internal/paths"
 )
 
 // The BSDs' rc scripts, rendered here without a build tag so the rendering is tested
 // on the machines that build conflux rather than only on the two that run it.
 
-// rcName is the service name an rc system knows conflux by. An underscore rather than
-// scope's hyphen: both rc.subr implementations build variable names from it --
-// conflux_enable, conflux_flags -- and a hyphen is not legal in one.
-func rcName() string { return "conflux" + strings.ReplaceAll(paths.Scope(), "-", "_") }
+// rcName is the service name an rc system knows conflux by. Both rc.subr implementations
+// build variable names from it -- conflux_enable, conflux_flags.
+const rcName = "conflux"
 
 // plainWords refuses any word an rc script cannot carry as it is.
 //
 // Both rc.subr implementations find the running conflux again by matching its command
 // line -- FreeBSD's procname against the first word ps prints, OpenBSD's rcctl against
 // the whole of it as a pattern -- and OpenBSD's also runs the command through a shell. No
-// quoting survives that, so a word with a space or a shell or pattern character in it --
-// a CONFLUX_DIR root, say -- is refused rather than registered as a service that starts
-// and can then be neither stopped nor asked about.
+// quoting survives that, so a word with a space or a shell or pattern character in it is
+// refused rather than registered as a service that starts and can then be neither stopped
+// nor asked about. The BSDs' root, /var/db/.conflux, holds none.
 func plainWords(words ...string) error {
 	for _, w := range words {
 		if w == "" || strings.Trim(w, plainWord) != "" {

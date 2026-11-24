@@ -96,10 +96,9 @@ One fixed directory per user, made when the run starts and removed when it ends:
 | Started as | Root |
 |---|---|
 | root on Linux | `/run/conflux-ephemeral`, or `/var/lib/conflux-ephemeral` where `/run` is mounted `noexec` |
-| root on macOS and the BSDs | `/var/run/conflux-ephemeral`, or beside the state directory where that is `noexec` |
-| an ordinary user | `$XDG_RUNTIME_DIR/conflux-ephemeral` (or `/tmp/conflux-ephemeral-UID`), then the user's cache directory |
+| root on macOS and the BSDs | `/var/run/conflux-ephemeral`, or `/var/db/conflux-ephemeral` (`/Library/Application Support/conflux-ephemeral` on macOS) where that is `noexec` |
+| an ordinary user | `$XDG_RUNTIME_DIR/conflux-ephemeral` (or `$TMPDIR/conflux-ephemeral-UID`, `/tmp` where that is unset), then the user's cache directory |
 | Windows | `%ProgramData%\conflux-ephemeral` |
-| `CONFLUX_DIR` set | `$CONFLUX_DIR/ephemeral` |
 
 It holds the lock that makes it the only ephemeral run for that user, the bearer token and
 the socket, the record of the anchord it started and what that runs as, and the extracted

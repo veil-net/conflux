@@ -46,7 +46,7 @@ else, or download by hand, see [install.md](docs/install.md), which also has the
 platform-specific notes.
 
 Where you keep it is up to you: the boot service runs a copy conflux places in its
-own state directory (`/var/lib/conflux/conflux` on Linux), which only root can
+own directory (`/var/lib/.conflux/conflux` on Linux), which only root can
 change, and `up`, `proxy`, `install`, `start` and `update` keep that copy current. To
 build from source instead, see [build.md](docs/build.md)
 (`make anchor-bins && make build`).
@@ -338,16 +338,16 @@ test.
 
 ## Where things live
 
-| | Linux | macOS | Windows |
+| Linux | macOS | FreeBSD, OpenBSD | Windows |
 |---|---|---|---|
-| configuration | `/etc/conflux/` | `/Library/Application Support/conflux/` | `%ProgramData%\conflux\` |
-| identity and state | `/var/lib/conflux/` | `/Library/Application Support/conflux/` | `%ProgramData%\conflux\` |
-| socket and token | `/run/conflux/` | `/var/run/conflux/` | `%ProgramData%\conflux\run\` |
+| `/var/lib/.conflux/` | `/Library/Application Support/.conflux/` | `/var/db/.conflux/` | `%ProgramData%\.conflux\` |
 
-One directory per machine, root-owned, with no home directory involved anywhere — the
-boot service runs as root, and a path under `$HOME` is a path it can't read. `anchord`
-itself runs as an account of its own wherever that costs it nothing, which reaches only
-its own corners of them. See [config.md](docs/config.md) and
+One directory per machine — the configuration, the identity and state, the extracted
+anchor binaries, the service's copy of conflux, and in `run/` the socket and token —
+root-owned, fixed, and with no home directory involved anywhere: the boot service runs
+as root, and a path under `$HOME` is a path it can't read. `anchord` itself runs as an
+account of its own wherever that costs it nothing, which reaches only its own corners of
+it. See [config.md](docs/config.md) and
 [security.md](docs/security.md#what-anchord-runs-as).
 
 ## Documentation

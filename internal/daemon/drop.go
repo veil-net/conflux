@@ -123,20 +123,6 @@ func (s *Supervisor) anchorDir(p Privilege) (string, error) {
 		want = d.AnchorDir()
 	}
 
-	// conflux 1.0.0 gave a root anchord the account's name for its directory, so a tree
-	// there that is root's is root's anchor's state, and takes root's name.
-	if legacyAnchorDir(d.AnchorDir()) {
-		if _, err := os.Lstat(d.RootAnchorDir()); errors.Is(err, fs.ErrNotExist) {
-			if err := os.Rename(d.AnchorDir(), d.RootAnchorDir()); err != nil {
-				return "", fmt.Errorf("move %s aside: %w", d.AnchorDir(), err)
-			}
-
-			s.lastDir = d.RootAnchorDir()
-		} else if err := os.RemoveAll(d.AnchorDir()); err != nil {
-			return "", err
-		}
-	}
-
 	from := s.lastDir
 
 	switch _, err := os.Lstat(want); {
@@ -274,7 +260,7 @@ func anchordEnv(p Privilege, token string) []string {
 		k, _, _ := strings.Cut(kv, "=")
 
 		switch k {
-		case "NOTIFY_SOCKET", "LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES", "CONFLUX_DIR",
+		case "NOTIFY_SOCKET", "LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES",
 			anchorctl.SocketEnv, anchorctl.TokenEnv:
 			continue
 		case "HOME", "USER", "LOGNAME":

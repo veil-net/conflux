@@ -15,7 +15,7 @@ import (
 // rather than extracting the anchor pair into directories uninstall removed.
 func TestAPassThroughWithNothingRunningMakesNothing(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "conflux")
-	t.Setenv("CONFLUX_DIR", root)
+	t.Cleanup(paths.UseRoot(root))
 	t.Setenv("ANCHOR_SOCKET", "")
 
 	_, errOut, code := capture(t, "peers")
@@ -50,7 +50,7 @@ func TestHelpIsACommandOrAFlag(t *testing.T) {
 // enrolled and never started, has nothing to renew -- unavailable, as documented, not a
 // failure.
 func TestRenewWithNoCredentialIsUnavailable(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	t.Cleanup(paths.UseRoot(t.TempDir()))
 
 	d := paths.Default()
 	if err := d.EnsureAll(); err != nil {

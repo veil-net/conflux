@@ -53,7 +53,7 @@ conflux: a network interface on Windows needs wintun.dll, and it could not be fe
 
   Download wintun-0.14.1.zip from https://www.wintun.net and put
   bin\amd64\wintun.dll at:
-    C:\ProgramData\conflux\bin\998ece52739a7c74\wintun.dll
+    C:\ProgramData\.conflux\bin\998ece52739a7c74\wintun.dll
 
   Or run "conflux proxy PORT=BACKEND", which needs no interface at all
 ```
@@ -69,11 +69,11 @@ be flagged, and know the mitigations:
 
 - Released binaries are not Authenticode-signed, so SmartScreen has no publisher
   reputation to go on; each release carries a build-provenance attestation instead.
-- Extraction goes to a stable path under `%ProgramData%\conflux\bin`, not a random
+- Extraction goes to a stable path under `%ProgramData%\.conflux\bin`, not a random
   temporary one — reputation attaches to paths and publishers.
 - `conflux version` prints both anchor digests, so what was written can be checked
   against the release notes.
-- If you need an exclusion, `%ProgramData%\conflux\bin` is the directory.
+- If you need an exclusion, `%ProgramData%\.conflux\bin` is the directory.
 
 If the extracted binaries will not run at all, conflux says so and names endpoint
 protection as the likely cause rather than reporting a bare permission error.
@@ -83,7 +83,7 @@ protection as the likely cause rather than reporting a bare permission error.
 Mode bits do not exist on Windows in the sense Go's `Chmod` implies — a call to
 `Chmod(0600)` sets the read-only attribute and nothing else — and `%ProgramData%` lets
 `Users` read everything below it and create files and folders in it. So conflux makes
-`%ProgramData%\conflux` belong to SYSTEM and Administrators instead: Administrators own
+`%ProgramData%\.conflux` belong to SYSTEM and Administrators instead: Administrators own
 it, and a protected DACL grants the two of them full control and nobody else anything,
 inherited by everything beneath. Every secret file gets the same, explicitly, before
 anything is written into it.

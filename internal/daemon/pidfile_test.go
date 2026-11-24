@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -217,31 +218,6 @@ func TestReapWithoutAnExePathNeedsTheSocketLock(t *testing.T) {
 	}
 }
 
-// TestReapAfterAnUpgradeKnowsTheOldSocketLock: the first supervisor after an upgrade from
-// 1.0.0 finds that release's daemon holding the lock at the socket's old path, where a
-// system that names no executable can tell it by nothing else.
-func TestReapAfterAnUpgradeKnowsTheOldSocketLock(t *testing.T) {
-	defer func(was func(int) (string, error)) { exeOf = was }(exeOf)
-	exeOf = func(int) (string, error) { return "", errNoExePath }
-
-	d := dirs(t)
-	cmd, exited := orphan(t, d, "serve", os.Args[0])
-
-	unlock, err := flock.Acquire(d.LegacySocket() + ".lock")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer unlock()
-
-	if pid, err := ReapOrphan(d); pid != cmd.Process.Pid || err != nil {
-		t.Fatalf("ReapOrphan = %d, %v with the old socket's lock held; want %d", pid, err, cmd.Process.Pid)
-	}
-
-	if !gone(t, exited) {
-		t.Fatal("the 1.0.0 daemon is still running")
-	}
-}
-
 // TestASecondSupervisorIsRefused: one supervisor per root, since each stops the anchord
 // the last one left and two would stop each other's.
 func TestASecondSupervisorIsRefused(t *testing.T) {
@@ -256,6 +232,41 @@ func TestASecondSupervisorIsRefused(t *testing.T) {
 	err = (&Supervisor{Dirs: d}).Run(t.Context())
 	if err == nil || !strings.Contains(err.Error(), "already serving") {
 		t.Fatalf("Run with the root's serve lock held = %v, want a refusal", err)
+	}
+}
+
+// TestAStartEmptiesTheRunDirectory: the run directory is on disk with the rest of the root,
+// so nothing empties it but the supervisor, which does as it starts -- once it has stopped
+// the anchord the record there names, which emptying it first would leave running.
+func TestAStartEmptiesTheRunDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a console control event needs the console this test shares")
+	}
+
+	d := dirs(t)
+	_, exited := orphan(t, d, "serve", os.Args[0])
+
+	for _, name := range []string{"ready", "token", "stray"} {
+		if err := os.WriteFile(filepath.Join(d.RunDir(), name), []byte("left"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := (&Supervisor{Dirs: d}).Run(t.Context()); !errors.Is(err, ErrNotConfigured) {
+		t.Fatalf("Run with no configuration = %v, want ErrNotConfigured", err)
+	}
+
+	if !gone(t, exited) {
+		t.Fatal("the anchord the record named is still running")
+	}
+
+	entries, err := os.ReadDir(d.RunDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, e := range entries {
+		t.Errorf("%s is still in the run directory after a start", e.Name())
 	}
 }
 

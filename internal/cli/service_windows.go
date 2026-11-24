@@ -42,7 +42,7 @@ func serveAsService(sup *daemon.Supervisor) (bool, int) {
 
 	h := &handler{sup: sup, setup: setup}
 
-	if err := svc.Run(service.ServiceName(), h); err != nil {
+	if err := svc.Run(service.ServiceName, h); err != nil {
 		return true, ExitError
 	}
 

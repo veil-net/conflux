@@ -18,7 +18,7 @@ func BenchmarkExtract(b *testing.B) {
 		for b.Loop() {
 			b.StopTimer()
 
-			b.Setenv("CONFLUX_DIR", b.TempDir())
+			b.Cleanup(paths.UseRoot(b.TempDir()))
 
 			d := paths.Default()
 			if err := d.EnsureAll(); err != nil {
@@ -34,7 +34,7 @@ func BenchmarkExtract(b *testing.B) {
 	})
 
 	b.Run("warm", func(b *testing.B) {
-		b.Setenv("CONFLUX_DIR", b.TempDir())
+		b.Cleanup(paths.UseRoot(b.TempDir()))
 
 		d := paths.Default()
 		if err := d.EnsureAll(); err != nil {

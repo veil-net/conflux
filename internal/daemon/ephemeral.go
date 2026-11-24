@@ -94,7 +94,7 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 	}
 
 	if !ok {
-		return &permanentError{err: fmt.Errorf("an ephemeral anchor is already running from %s; stop it first", d.State)}
+		return &permanentError{err: fmt.Errorf("an ephemeral anchor is already running from %s; stop it first", d.Root)}
 	}
 
 	// A killed run's readiness marker is withdrawn before anything else: a reader that finds
@@ -109,8 +109,8 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 	defer func() {
 		unlock()
 
-		if err := os.RemoveAll(d.State); err != nil {
-			e.report().Warn("could not remove %s: %v", d.State, err)
+		if err := os.RemoveAll(d.Root); err != nil {
+			e.report().Warn("could not remove %s: %v", d.Root, err)
 		}
 	}()
 
@@ -132,7 +132,7 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 	s.killLeftovers()
 
 	// And the directories made again, emptied of whatever it was.
-	if err := clearExcept(d.State, d.ServeLockFile()); err != nil {
+	if err := clearExcept(d.Root, d.ServeLockFile()); err != nil {
 		return err
 	}
 
@@ -401,8 +401,9 @@ func untilRenewal(m *enrol.Manifest) time.Duration {
 	return min(max(time.Until(at), 0), maxSleep)
 }
 
-// clearExcept removes everything in dir but keep: what a run killed before it could clean up
-// left in the root, which the next run starts without.
+// clearExcept removes everything in dir but keep, which may be "": what a run killed before
+// it could clean up left in the root, which the next run starts without, and what the last
+// supervisor left in the run directory.
 func clearExcept(dir, keep string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {

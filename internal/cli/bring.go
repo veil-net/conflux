@@ -77,7 +77,7 @@ func bring(ctx context.Context, d paths.Dirs, cfg *config.Config, verb string, s
 // leave two ideas of what is running -- the service manager's and ours -- and they
 // would disagree the moment either changed.
 func restartService(d paths.Dirs) error {
-	return restartWith(d, service.New())
+	return restartWith(d, services())
 }
 
 // restartWith withdraws the readiness marker and then restarts, in that order.
@@ -216,7 +216,7 @@ func report(d paths.Dirs, cfg *config.Config, st anchorctl.Status, verb string) 
 
 	reportObserver(cfg, st.Observer)
 
-	ui.Field("service", service.New().Describe())
+	ui.Field("service", services().Describe())
 
 	reportPrivilege(d, true)
 
@@ -394,5 +394,5 @@ func joinTaints(t []string) string {
 
 // journalHint names where the supervisor's output is.
 func journalHint() string {
-	return service.New().LogHint()
+	return services().LogHint()
 }

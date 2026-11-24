@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/veil-net/conflux/internal/paths"
 )
 
 // TestExportMaterialIsNotPrinted: an export block's headers are credentials and a client
@@ -31,7 +33,7 @@ func TestExportMaterialIsNotPrinted(t *testing.T) {
 // TestSaveManifestLeavesTheCallersEnvelope: the newline the file ends with is the
 // file's, never written into spare capacity of the envelope the caller holds.
 func TestSaveManifestLeavesTheCallersEnvelope(t *testing.T) {
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	t.Cleanup(paths.UseRoot(t.TempDir()))
 
 	d := dirsForTest(t)
 

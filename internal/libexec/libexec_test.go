@@ -17,7 +17,7 @@ import (
 
 func dirs(t *testing.T) paths.Dirs {
 	t.Helper()
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	t.Cleanup(paths.UseRoot(t.TempDir()))
 
 	d := paths.Default()
 	if err := d.EnsureAll(); err != nil {
@@ -243,7 +243,7 @@ func TestSweepLeavesWhatMayBeInUse(t *testing.T) {
 func TestUsageMakesNothing(t *testing.T) {
 	anchortest.Require(t)
 
-	t.Setenv("CONFLUX_DIR", filepath.Join(t.TempDir(), "never"))
+	t.Cleanup(paths.UseRoot(filepath.Join(t.TempDir(), "never")))
 	t.Setenv("TMPDIR", t.TempDir())
 
 	d := paths.Default()
@@ -263,7 +263,7 @@ func TestUsageMakesNothing(t *testing.T) {
 		t.Errorf("the temporary anchorctl's directory is still there after done (%v)", err)
 	}
 
-	if _, err := os.Stat(os.Getenv("CONFLUX_DIR")); !os.IsNotExist(err) {
+	if _, err := os.Stat(d.Root); !os.IsNotExist(err) {
 		t.Errorf("asking for usage made the installation's directories (%v)", err)
 	}
 

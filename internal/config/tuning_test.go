@@ -8,11 +8,10 @@ import (
 	"github.com/veil-net/conflux/internal/paths"
 )
 
-// dirsForTest roots every conflux path in a temporary directory, the way CONFLUX_DIR
-// does for a dev run.
+// dirsForTest roots every conflux path in a temporary directory.
 func dirsForTest(t *testing.T) paths.Dirs {
 	t.Helper()
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	t.Cleanup(paths.UseRoot(t.TempDir()))
 
 	d := paths.Default()
 	if err := d.EnsureAll(); err != nil {

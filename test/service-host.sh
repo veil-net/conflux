@@ -62,10 +62,10 @@ say "down on a service that is not running"
 "$CONFLUX" down || fail "down failed on a service that was not running"
 
 if [ "$os" = darwin ]; then
-  root="/Library/Application Support/conflux"
+  root="/Library/Application Support/.conflux"
 else
   # Git Bash imports Windows's variables upper-cased; the fallback is Windows's default.
-  root="$(cygpath -u "${PROGRAMDATA:-C:\\ProgramData}")/conflux"
+  root="$(cygpath -u "${PROGRAMDATA:-C:\\ProgramData}")/.conflux"
 fi
 
 # A configuration conflux could have written, with an API that answers nothing: the
@@ -77,12 +77,12 @@ if [ "$os" = darwin ]; then
   launchctl bootstrap system "/Library/LaunchDaemons/$LABEL.plist"
   account='"as":"_conflux"'
   who='starting anchord as _conflux, with no privilege'
-  log=/var/log/conflux.log
+  log="$root/conflux.log"
 else
   sc.exe start conflux >/dev/null
   account='LOCAL SERVICE'
   who='starting anchord as NT AUTHORITY\LOCAL SERVICE, with no privilege'
-  log="$root/logs/conflux.log"
+  log="$root/conflux.log"
 fi
 priv=""
 for _ in $(seq 120); do
@@ -200,9 +200,7 @@ if [ "$os" = darwin ]; then
     launchctl print-disabled system | grep -F "\"$LABEL\"" >&2
     fail "uninstall left the label in launchd's disabled database"
   fi
-  for path in "/Library/Application Support/conflux" /var/run/conflux /var/log/conflux.log; do
-    [ ! -e "$path" ] || fail "$path survived uninstall"
-  done
+  [ ! -e "$root" ] || fail "$root survived uninstall"
   if dscl . -read /Users/_conflux >/dev/null 2>&1; then
     fail "the _conflux account survived uninstall"
   fi

@@ -40,7 +40,7 @@ const guardianAPI = "https://guardian.example.gov"
 // importCredential tells a person goes nowhere.
 func site(t *testing.T, doc string) (paths.Dirs, string) {
 	t.Helper()
-	t.Setenv("CONFLUX_DIR", t.TempDir())
+	t.Cleanup(paths.UseRoot(t.TempDir()))
 
 	out := ui.Out
 	ui.Out = io.Discard

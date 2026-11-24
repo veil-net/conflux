@@ -46,7 +46,7 @@ wait_active() {
   return 1
 }
 
-anchor_id() { docker exec "$1" sh -c "sed -n 's/.*\"anchorId\": \"\([^\"]*\)\".*/\1/p' /var/lib/conflux/state.json"; }
+anchor_id() { docker exec "$1" sh -c "sed -n 's/.*\"anchorId\": \"\([^\"]*\)\".*/\1/p' /var/lib/.conflux/state.json"; }
 
 # interface is the TUN a running node's anchor says it holds: the `interface` row of its
 # status, which `conflux status` prints as anchorctl gives it.
@@ -56,7 +56,7 @@ interface() { docker exec "$1" conflux status | awk '$1 == "interface" && !n { p
 # grants is 1 when a node's credential grants exactly [$2], and 0 otherwise: the
 # manifest is compact JSON on one line, from the API and as conflux rewrites it.
 grants() {
-  docker exec "$1" sh -c 'base64 -d /var/lib/conflux/manifest.b64' | grep -c "\"taints\":\[\"$2\"\]" || true
+  docker exec "$1" sh -c 'base64 -d /var/lib/.conflux/manifest.b64' | grep -c "\"taints\":\[\"$2\"\]" || true
 }
 
 # lan_found sums anchor_lan_peers_found_total across whatever labels it carries -- the
@@ -107,7 +107,7 @@ A_ID=$(anchor_id cfx-a)
 [ -n "$A_ID" ] || { echo "node A recorded no AnchorID" >&2; exit 1; }
 
 say "the identity is 0600 and root's alone"
-[ "$(docker exec cfx-a stat -c '%a %U' /var/lib/conflux/manifest.b64)" = "600 root" ] \
+[ "$(docker exec cfx-a stat -c '%a %U' /var/lib/.conflux/manifest.b64)" = "600 root" ] \
   || { echo "manifest.b64 is not 0600 and root's" >&2; exit 1; }
 
 # A TUN on Linux needs CAP_NET_ADMIN and nothing else: the anchor A just brought up, and
@@ -116,7 +116,7 @@ say "the identity is 0600 and root's alone"
 say "anchord runs as its own account, with CAP_NET_ADMIN alone"
 anchord_creds() { # NODE
   docker exec "$1" sh -c 'for p in /proc/[0-9]*; do
-    case "$(readlink "$p/exe" 2>/dev/null)" in /var/lib/conflux/bin/*/anchord)
+    case "$(readlink "$p/exe" 2>/dev/null)" in /var/lib/.conflux/bin/*/anchord)
       awk "/^Uid:/ { u = \$2 } /^CapEff:/ { c = \$2 } /^NoNewPrivs:/ { n = \$2 }
            END { printf \"uid=%s caps=%s nnp=%s\", u, c, n }" "$p/status"; exit 0;; esac
   done; exit 1'
@@ -128,8 +128,8 @@ printf '  anchord: %s\n           %s\n' "$got" "$row"
 [ "$got" = "$want" ] || { echo "anchord runs with $got; want $want" >&2; exit 1; }
 [ "$row" = "conflux, with CAP_NET_ADMIN for its interface" ] \
   || { echo "status says anchord runs as: $row" >&2; exit 1; }
-[ "$(docker exec cfx-a stat -c '%a %U %G' /run/conflux)" = "710 root conflux" ] \
-  || { echo "the run directory is $(docker exec cfx-a stat -c '%a %U %G' /run/conflux), want 710 root conflux" >&2; exit 1; }
+[ "$(docker exec cfx-a stat -c '%a %U %G' /var/lib/.conflux/run)" = "710 root conflux" ] \
+  || { echo "the run directory is $(docker exec cfx-a stat -c '%a %U %G' /var/lib/.conflux/run), want 710 root conflux" >&2; exit 1; }
 
 say "the credential grants the taint A asked for"
 [ "$(grants cfx-a "$TAINT")" = 1 ] || { echo "A's credential does not grant $TAINT" >&2; exit 1; }
@@ -298,13 +298,13 @@ docker exec cfx-a sh -c "kill -9 $A_PID"
 SECONDS=0
 while [ "$SECONDS" -lt 60 ]; do
   pid=$(docker exec cfx-a pidof anchord || true)
-  if [ -n "$pid" ] && [ "$pid" != "$A_PID" ] && docker exec cfx-a test -f /run/conflux/ready; then
+  if [ -n "$pid" ] && [ "$pid" != "$A_PID" ] && docker exec cfx-a test -f /var/lib/.conflux/run/ready; then
     echo "anchord $pid replaced $A_PID after ${SECONDS}s"
     break
   fi
   sleep 1
 done
-if [ -z "${pid:-}" ] || [ "$pid" = "$A_PID" ] || ! docker exec cfx-a test -f /run/conflux/ready; then
+if [ -z "${pid:-}" ] || [ "$pid" = "$A_PID" ] || ! docker exec cfx-a test -f /var/lib/.conflux/run/ready; then
   echo "the supervisor did not bring anchord back after it died" >&2
   docker exec cfx-a journalctl -u conflux --no-pager -n 30 >&2 || true
   exit 1
@@ -326,9 +326,9 @@ say "down leaves the registration and the configuration"
 docker exec cfx-b conflux down
 [ "$(docker exec cfx-b systemctl is-enabled conflux.service)" = enabled ] \
   || { echo "down disabled the boot service" >&2; exit 1; }
-docker exec cfx-b sh -c 'test -f /etc/conflux/conflux.json' \
+docker exec cfx-b sh -c 'test -f /var/lib/.conflux/conflux.json' \
   || { echo "down removed the configuration" >&2; exit 1; }
-docker exec cfx-b sh -c 'test -f /var/lib/conflux/manifest.b64' \
+docker exec cfx-b sh -c 'test -f /var/lib/.conflux/manifest.b64' \
   || { echo "down removed the identity" >&2; exit 1; }
 docker exec cfx-b sh -c "! ip link show $B_IF" >/dev/null 2>&1 \
   || { echo "down left the interface up" >&2; exit 1; }
@@ -359,9 +359,7 @@ docker exec cfx-b sh -c 'test ! -f /etc/systemd/system/conflux.service' \
   || { echo "the unit survived uninstall" >&2; exit 1; }
 docker exec cfx-b sh -c 'test ! -L /etc/systemd/system/multi-user.target.wants/conflux.service' \
   || { echo "the unit's wants link survived uninstall" >&2; exit 1; }
-for dir in /etc/conflux /var/lib/conflux /run/conflux; do
-  docker exec cfx-b test ! -e "$dir" || { echo "$dir survived uninstall" >&2; exit 1; }
-done
+docker exec cfx-b test ! -e /var/lib/.conflux || { echo "/var/lib/.conflux survived uninstall" >&2; exit 1; }
 docker exec cfx-b sh -c "! ip link show $B_IF" >/dev/null 2>&1 \
   || { echo "uninstall left the interface up" >&2; exit 1; }
 if docker exec cfx-b id conflux >/dev/null 2>&1; then
@@ -411,7 +409,7 @@ until docker exec cfx-a ping -c1 -W1 10.128.0.4 >/dev/null 2>&1; do
   sleep 1
 done
 echo "A reaches D after ${SECONDS}s"
-for path in /etc/conflux /var/lib/conflux /etc/systemd/system/conflux.service; do
+for path in /var/lib/.conflux /etc/systemd/system/conflux.service; do
   docker exec cfx-d test ! -e "$path" || { echo "an ephemeral run made $path" >&2; exit 1; }
 done
 if [ -n "$(docker exec cfx-d sh -c 'find /run/conflux-ephemeral /var/lib/conflux-ephemeral \

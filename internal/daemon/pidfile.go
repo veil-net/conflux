@@ -122,20 +122,15 @@ func isOurDaemon(d paths.Dirs, pid int, exe string) bool {
 }
 
 // socketHeld reports whether something holds anchor's lock on this root's socket, where a
-// daemon serving it always does: at its own path, or, the first time a supervisor runs
-// after an upgrade, at the path conflux 1.0.0 used.
+// daemon serving it always does.
 //
 // Asked through flock.Held, never by taking the lock the way the supervisor's own locks
 // are: the lock lives in anchord's run directory, which belongs to whoever anchord ran as,
 // and opening it to create would let that account point root at any file.
 func socketHeld(d paths.Dirs) bool {
-	for _, lock := range []string{d.Socket() + ".lock", d.LegacySocket() + ".lock"} {
-		if held, err := flock.Held(lock); err == nil && held {
-			return true
-		}
-	}
+	held, err := flock.Held(d.Socket() + ".lock")
 
-	return false
+	return err == nil && held
 }
 
 // sameExe compares the executable a process runs with the one recorded for it: the same

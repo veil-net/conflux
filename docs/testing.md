@@ -28,9 +28,14 @@ a daemon or a network. Most of conflux can be.
 | `internal/anchorctl` | the argv goldens, the observer's starts among them, that every flag they use exists, and the output parsers against anchor's current `start`, `status` and `metrics` shapes, the `observer` row with an anchor and with none, as a live anchord printed it |
 | `internal/libexec` | extraction, idempotence, eight concurrent callers, repair of a truncated set, and a sweep that leaves alone any set that may be in use |
 | `internal/cli` | a pass-through with nothing running makes nothing — no directory, no extraction; `help` a command only first and a flag only as a flag; `renew` with no credential unavailable; a refusal for privilege repeating the command, with the privilege check stubbed so a root runner tests it too; an oversized manifest refused; on Windows, only the supervisor's transient exit asking the SCM for a restart, and `Stopped` reported once; the collision rules — `start`, `renew`, `proxy` and `observe` by shape, `status` by arity — and that nothing shadows anchorctl unintentionally, the realm-control commands included; the IPv4 asked once; `--taint` as the enrolment's request before a credential is held, and checked against it after; `enrol` taking the credential's taints, refusing an alpha one granting none, and refusing before it writes; a subnet list set from the terminal replacing a member's order; the observer kept, replaced or turned off by `up`'s and `proxy`'s flags, an option implying `--observe`; `observe` taking `--taint` and `--api` for the credential it runs under; `--export` pointing the collector and keeping the headers and TLS `conflux.json` holds; where the observer's records go said either way; and switching an anchor to observing refused off a terminal without `--yes`; `--manifest` refused without `--ephemeral`, an ephemeral run taking a handed credential's API and taints and never asking for an IPv4, and an ephemeral proxy needing no root where an ephemeral `up` and observer do |
-| `internal/service` | the systemd unit, its `ExecStart=` quoted against splitting and expansion; the launchd plist carrying any path; the rc scripts the BSDs get, rendered and parsed by `sh`, and a root they could not match refused; the copy the service runs; the service's scope, the same for every spelling of a root |
-| `internal/paths` | the root absolute and clean, and a log directory only where the platform has one; on Unix, a root another account owns refused before anything is changed, a symlinked one followed only to its owner's directory, our own narrowed to `0700`, and the shared `/var/log` left alone; on Windows, the root made Administrators', and files restricted to them trusted; an ephemeral root inside `CONFLUX_DIR` and nowhere else, and a root not made yet judged by the filesystem it would be made on |
+| `internal/service` | the systemd unit, its `ExecStart=` quoted against splitting and expansion; the launchd plist carrying any path; the rc scripts the BSDs get, rendered and parsed by `sh`, and a path they could not match refused; the copy the service runs |
+| `internal/paths` | the machine's root an absolute path to a `.conflux`, with every file and directory conflux keeps inside it, the log among them where the platform has one; `UseRoot` moving it and putting it back; on Unix, a root another account owns refused before anything is changed, a symlinked one followed only to its owner's directory, and our own narrowed to `0700`; on Windows, the root made Administrators', and files restricted to them trusted; an ephemeral root never inside the machine's, and a root not made yet judged by the filesystem it would be made on |
 | `internal/flock` | a held lock reported as held, not waited for |
+
+No test reaches the machine's `.conflux`. Every test package's `TestMain` roots conflux in a
+temporary directory of the run's own through `paths.UseRoot`, a function for tests alone that
+nothing in conflux calls and no flag or environment variable reaches, and a test that wants a
+root of its own takes one the same way.
 
 ## The tests worth knowing about
 
@@ -143,10 +148,9 @@ udev leaves it, so this holds whatever the runner's own device is.
 
 All of that is `make integration`. `make service-test` is the unit on its own and enrols
 nothing: `install` registers it without starting anything, the unit runs the root-only
-copy in `/var/lib/conflux` rather than the file conflux was run from, and `uninstall`
-leaves no unit file, no `wants` link, none of `/etc/conflux`, `/var/lib/conflux` or
-`/run/conflux`, and no `conflux` account. Both build the image first, and CI runs the same
-command a developer does.
+copy in `/var/lib/.conflux` rather than the file conflux was run from, and `uninstall`
+leaves no unit file, no `wants` link, no `/var/lib/.conflux`, and no `conflux` account.
+Both build the image first, and CI runs the same command a developer does.
 
 In between, it takes every branch of what `anchord` runs as, under the real unit. Its
 configuration names an API that a `silent.socket` in the container accepts and never
@@ -155,8 +159,7 @@ capabilities, `no_new_privs` and groups from `/proc` and the reason from `status
 
 | leg | anchord |
 |---|---|
-| userspace, and again after a restart | the account, no capabilities (`CAP_NET_ADMIN` where the host's `rmem_max`/`wmem_max` are low), `no_new_privs`; the state and run directories `710 root conflux`, its own `0700`, the token root's |
-| conflux 1.0.0's root-owned `anchor/` | moved to `anchor.root/`, and the account's started from a copy |
+| userspace, and again after a restart | the account, no capabilities (`CAP_NET_ADMIN` where the host's `rmem_max`/`wmem_max` are low), `no_new_privs`; the root and `run/` `710 root conflux`, its own `0700`, the token root's |
 | port 443 | the account with `CAP_NET_BIND_SERVICE` |
 | an uplink device of `dialout`'s, then one of root's | the account in `dialout`; then root, naming the device |
 | a TUN, `/dev/net/tun` opened up | the account with `CAP_NET_ADMIN` alone |
@@ -164,7 +167,7 @@ capabilities, `no_new_privs` and groups from `/proc` and the reason from `status
 | stand-ins for firewalld and for legacy iptables | root, naming each |
 | a stand-in for iptables on nf_tables, no nft | the account with `CAP_NET_ADMIN` and `CAP_NET_RAW` |
 | back to userspace | the account, starting from root's state, as its own |
-| `start` over a 1.0.0 unit | the unit replaced by this conflux's |
+| `start` over a unit changed by hand | the unit replaced by this conflux's |
 | an account named `conflux` that conflux did not make | root, saying so; `uninstall` leaves the account |
 
 `test/service-host.sh` is the same lifecycle against launchd and the SCM, on the machine
@@ -214,8 +217,7 @@ five times:
 A fourth node, D, runs **ephemeral** ([ephemeral.md](ephemeral.md)), and enrols twice more:
 
 - `up --ephemeral`, enrolled in memory, must be reached by A over the overlay, with no
-  `/etc/conflux`, no `/var/lib/conflux`, no unit, and no manifest, configuration or state
-  anywhere in its root, and its anchord running as `conflux-ephemeral` with
+  `/var/lib/.conflux`, no unit, and no manifest, configuration or state anywhere in its root, and its anchord running as `conflux-ephemeral` with
   `CAP_NET_ADMIN` alone. SIGTERM must leave no anchord, no root and no interface, and the
   account, which is kept.
 - `proxy --ephemeral --manifest -`, from an alpha manifest piped in, is killed with SIGKILL,
@@ -371,54 +373,29 @@ live suite does.
 conflux never names a bootstrap node itself and must never: end users get their
 bootstrap list from the enrolment manifest, which is what lets the API move a node
 without touching a single machine. To exercise `--peers`, point a dev build at the dev
-genesis explicitly:
+genesis explicitly, from a run that leaves the machine's own installation alone:
 
 ```console
-$ sudo CONFLUX_DIR=/var/lib/cfx-dev conflux proxy --api https://api-dev.veilnet.com.au \
+$ conflux proxy --ephemeral --api https://api-dev.veilnet.com.au \
       --peers genesis.veilnet.com.au:4701 8080=127.0.0.1:3000
-$ sudo CONFLUX_DIR=/var/lib/cfx-dev conflux status  # peers > 0, up=yes
+$ conflux status    # from another terminal: the ephemeral run, peers > 0, up=yes
 ```
 
-`CONFLUX_DIR` roots the whole installation somewhere else — the config, the identity,
-the state, the socket, **and the boot service**. Port 4700 is UDP; a TCP probe of it is
-refused, and that is expected rather than a fault.
+Port 4700 is UDP; a TCP probe of it is refused, and that is expected rather than a fault.
 
-The service is included because it has to be. A run rooted elsewhere is a separate
-installation of conflux, not the machine's own, so:
-
-- the service is named after the root — `conflux-e7616592.service`,
-  `org.veilnet.conflux-e7616592`, or the same SCM entry — and cannot be registered
-  over a real node's;
-- the root is written into the argv the service is registered with, because no
-  service manager carries the operator's environment into what it starts; without it
-  the service would come back at boot reading `/etc/conflux`.
-
-So a dev run and a real node coexist on one machine:
-
-```console
-$ conflux status                                    # the machine's own
-  service      active (systemd: conflux.service, enabled at boot)
-$ CONFLUX_DIR=/var/lib/cfx-dev conflux status       # the dev one
-  service      active (systemd: conflux-e7616592.service, enabled at boot)
-```
-
-**The dev one runs in userspace, as above.** A host runs one TUN anchor. Two no longer
-collide on the interface's name, which each anchor takes from its own identity, but
-they share everything else a TUN anchor sets up on the host — its routes, forwarding and
-firewall rules, which carry fixed names — so a second's start replaces the first's and
-its stop removes them (anchor's `docs/operations.md`, "Deploying"). That is the one thing
-`CONFLUX_DIR` cannot separate, because the host's networking belongs to the host and not
-to a conflux installation. `conflux proxy` sets nothing on the host up.
-
-**Not `/tmp`.** systemd clears it on boot, so a dev root there is gone by the time the
-service starts and the unit exits 78 — correctly, but it makes the reboot test
-meaningless. Anywhere persistent will do.
+**Run it in userspace, as above.** A host runs one TUN anchor. Two do not collide on the
+interface's name, which each anchor takes from its own identity, but they share
+everything else a TUN anchor sets up on the host — its routes, forwarding and firewall
+rules, which carry fixed names — so a second's start replaces the first's and its stop
+removes them (anchor's `docs/operations.md`, "Deploying"). An ephemeral run is kept apart
+from the installation in everything but that, because the host's networking belongs to
+the host and not to conflux. `conflux proxy` sets nothing on the host up.
 
 Two things worth checking deliberately, because neither is obvious from a passing run:
 
 - **The no-flag path still works.** `conflux up` with no `--peers` must bootstrap from
   the manifest's own list — `make integration` asserts it for its third node, and a dev
-  node named `--peers` is exactly the case that would not notice it breaking.
+  run named `--peers` is exactly the case that would not notice it breaking.
 - **The realm matches.** The embedded binaries are pinned to a genesis realm ID at
   build time (`-X anchor.pinnedGenesis`, see [build.md](build.md)). A test node minted
   from a different root will enrol fine and then never handshake, because the pin is

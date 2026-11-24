@@ -76,7 +76,7 @@ conflux's own directory — `/var/lib/.conflux/conflux` on Linux, `/var/db/.conf
 both: the copy, and the conflux you type.
 
 Seven platforms are built: linux/amd64, linux/arm64, darwin/arm64, windows/amd64,
-windows/arm64, freebsd/amd64, openbsd/amd64. Each is about 50 MB, because each
+windows/arm64, freebsd/amd64, openbsd/amd64. Each is about 60 MB, because each
 carries the `anchord` and `anchorctl` for its own platform inside it.
 
 ## Linux

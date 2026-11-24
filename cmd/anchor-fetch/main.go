@@ -50,7 +50,7 @@ func main() {
 		Token: os.Getenv(anchorrelease.TokenEnv),
 	}
 
-	// Interruptible, because this moves a couple of hundred megabytes and the first
+	// Interruptible, because this moves some 370 megabytes and the first
 	// thing anybody does to a fetch that is taking too long is press ^C.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()

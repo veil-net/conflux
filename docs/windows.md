@@ -63,7 +63,7 @@ at all, userspace mode is a complete way to use the overlay.
 
 ## Defender and SmartScreen
 
-A 50 MB binary that writes a 30 MB executable to disk and immediately runs it with
+A 60 MB binary that writes a 35 MB executable to disk and immediately runs it with
 elevated privileges is, structurally, a textbook dropper. Expect the first releases to
 be flagged, and know the mitigations:
 

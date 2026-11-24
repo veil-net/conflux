@@ -25,18 +25,19 @@ link only where root's PATH, asked again with the link in place, finds it there.
 link, asking and taking it back are one call to `sudo` (or `doas`), so one that asks for the
 password at every call, as `doas` without `persist` does, asks once for them. One that finds
 another conflux before `/usr/bin` would never reach the link: none is left, one an earlier run
-made included, and the other is named, to be removed before `install.sh` is run again, which
-links it then, or conflux typed by its full path under `sudo`. A `/usr/bin/conflux` that is not
-its link is left alone, and said: where root's PATH finds that file in conflux's place, to be
-removed before `install.sh` is run again. Root's PATH is asked whether the run installs conflux
-or finds the release's already in place: where `sudo` (or `doas`) cannot answer without a
-password, as when nothing has asked for one yet, the script says so and asks for it, on the
-terminal, as the install itself does, so `curl … | sh` works too; where it cannot be asked even
-so, the password refused or no terminal to type it at, it says to run the script as root to link
-conflux. What it cannot have removed, the password refused — an earlier run's link, or a
-download it did not put in place — it says, and leaves. It names with that link the conflux
-root's PATH finds before `/usr/bin`, where it finds one: removing that one lets root's PATH find
-the installed conflux. `install.ps1` does the same into
+made included, and the other is named, to be removed before `install.sh` is run again, or
+conflux typed by its full path under `sudo`. A `/usr/bin/conflux` that is not its link is left
+alone, and said: where root's PATH finds that file in conflux's place, to be removed before
+`install.sh` is run again. Run again, it decides afresh: it links conflux where root's PATH then
+needs the link, and makes none where that PATH finds conflux without one. Root's PATH is asked
+whether the run installs conflux or finds the release's already in place: where `sudo` (or
+`doas`) cannot answer without a password, as when nothing has asked for one yet, the script says
+so and asks for it, on the terminal, as the install itself does, so `curl … | sh` works too;
+where it cannot be asked even so, the password refused or no terminal to type it at, it says to
+run the script as root to link conflux. What it cannot have removed, the password refused — an
+earlier run's link, or a download it did not put in place — it says, and leaves. It names with
+that link the conflux root's PATH finds before `/usr/bin`, where it finds one: removing that one
+lets root's PATH find the installed conflux. `install.ps1` does the same into
 `C:\Program Files\conflux` and adds that to the machine's PATH. `conflux update` run where neither has installed conflux puts
 it there the same way, the link or the PATH entry with it. The place is fixed, so that a
 terminal finds conflux by name, `conflux update` knows what to replace and `conflux uninstall`

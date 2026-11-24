@@ -180,8 +180,10 @@ link() {
 }
 
 # missed says why root's PATH, which finds $found, does not find $exe through $sudolink, the link
-# to it: another conflux before the link's directory, which removed lets a run of this script
-# link $exe again, or, finding none, that directory left out, where only $exe's full path helps.
+# to it: another conflux before the link's directory, to be removed before this script is run
+# again, which decides afresh, linking $exe where root's PATH then needs the link and making none
+# where it finds $exe without one; or, finding none, that directory left out, where only $exe's
+# full path helps.
 missed() {
   if [ -n "$found" ]; then
     say "" "Root's PATH finds $found before ${sudolink%/*}: remove it and run the installer again, or type $exe by its full path under sudo."
@@ -192,7 +194,8 @@ missed() {
 
 # notours says that $sudolink is a file conflux did not make, and why root's PATH does not find
 # $exe: where what it finds is that file -- through the link's own directory, however spelled,
-# as a merged /bin is /usr/bin -- removing it lets this script link $exe there; otherwise $why.
+# as a merged /bin is /usr/bin -- that it is to be removed before this script is run again, which
+# decides afresh, as missed says; otherwise $why.
 notours() {
   if [ -n "$found" ] && [ "${found%/*}" -ef "${sudolink%/*}" ]; then
     say "" "$sudolink is not conflux's, and root's PATH finds it rather than $exe: remove it and run the installer again, or type $exe by its full path under sudo."

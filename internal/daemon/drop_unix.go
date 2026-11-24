@@ -42,17 +42,20 @@ func (s *Supervisor) account() string {
 	return account.Name()
 }
 
-// dropTo settles whether the supervisor can hand anchord to the account, and fills in
-// which account that is. "" is yes; anything else is why not.
-func (s *Supervisor) dropTo(p *Privilege) string {
+// canDrop says what keeps this supervisor from handing anchord to an account at all, before
+// anything is done for it, or "": it is root, and on Linux holds what handing over takes,
+// with what p asks for that it does not hold taken out of p (canGive).
+func canDrop(p *Privilege) string {
 	if os.Geteuid() != 0 {
 		return "the supervisor is not root, so there is no other account it could give anchord"
 	}
 
-	if why := canGive(p); why != "" {
-		return why
-	}
+	return canGive(p)
+}
 
+// dropTo settles whether the supervisor can hand anchord to the account canDrop allowed, and
+// fills in which account that is. "" is yes; anything else is why not.
+func (s *Supervisor) dropTo(p *Privilege) string {
 	a, err := account.EnsureNamed(s.account())
 	if err != nil {
 		s.report().Warn("%v", err)

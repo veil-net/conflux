@@ -64,6 +64,10 @@ const (
 	dirOwnRights = "0x1201ff"
 )
 
+// canDrop has nothing to check before the drop here: the supervisor is SYSTEM, and dropTo's
+// logon is what says whether LOCAL SERVICE can be given anchord.
+func canDrop(*Privilege) string { return "" }
+
 // dropTo makes the token anchord runs as, and checks that anchord starts under it.
 func (s *Supervisor) dropTo(p *Privilege) string {
 	sid, err := serviceSID(windowsServiceName)

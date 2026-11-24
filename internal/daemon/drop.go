@@ -37,28 +37,44 @@ func (s *Supervisor) privilege(cfg *config.Config) Privilege {
 	return s.privilegeFor(cfg, manifestPort(s))
 }
 
-// privilegeFor is privilege for a credential naming port, or 0 before there is one.
+// privilegeFor is privilege for a credential naming port, or 0 before there is one. The
+// decision it gives is kept, for redecided.
 func (s *Supervisor) privilegeFor(cfg *config.Config, port int) Privilege {
-	p := decide(runtime.GOOS, cfg, listenPort(cfg, port), probeHost(cfg))
-
-	// The BPF devices are the installation's to give and take back: its supervisor gives
-	// them back to root at every start that does not observe as its account, so an ephemeral
-	// observer reading them through its own group could lose them at any moment. It reads
-	// them as root instead, which needs no grant.
-	if s.ephemeral && p.Account && p.BPF == BPFOwn {
-		p = asSupervisor("an ephemeral run leaves the BPF devices to the installed conflux, so it observes as root")
-	}
+	p := s.decision(cfg, port)
+	s.decided = p
 
 	if p.Account {
-		if !s.Drop {
-			p = asSupervisor("")
-		} else if why := s.dropTo(&p); why != "" {
+		if why := s.dropTo(&p); why != "" {
 			p = asSupervisor(why)
 		}
 	}
 
 	if !p.Account {
 		p.As = supervisorName()
+	}
+
+	return p
+}
+
+// decision is who anchord is to run as with cfg and a credential naming port: decide's answer,
+// held to what this supervisor can give before anything is done to give it.
+func (s *Supervisor) decision(cfg *config.Config, port int) Privilege {
+	p := decide(runtime.GOOS, cfg, listenPort(cfg, port), probeHost(cfg))
+
+	switch {
+	case !p.Account:
+	case s.ephemeral && p.BPF == BPFOwn:
+		// The BPF devices are the installation's to give and take back: its supervisor gives
+		// them back to root at every start that does not observe as its account, so an
+		// ephemeral observer reading them through its own group could lose them at any moment.
+		// It reads them as root instead, which needs no grant.
+		p = asSupervisor("an ephemeral run leaves the BPF devices to the installed conflux, so it observes as root")
+	case !s.Drop:
+		p = asSupervisor("")
+	default:
+		if why := canDrop(&p); why != "" {
+			p = asSupervisor(why)
+		}
 	}
 
 	return p
@@ -290,21 +306,17 @@ func anchordEnv(p Privilege, token string) []string {
 }
 
 // redecided reports whether anchord would now be started with something other than what
-// it was: the cycle's cue to start it again. Asked only after a start or a rebuild failed.
+// it was: the cycle's cue to start it again. Asked only after a start or a rebuild failed,
+// of the decision alone, which it compares with the one the running anchord was started
+// from: nothing is done again to give it -- the account's directories, the BPF devices
+// re-owned on macOS, a LOCAL SERVICE logon on Windows -- for a start that may not follow.
 func (s *Supervisor) redecided() bool {
 	cfg, err := loadConfig(s.Dirs)
 	if err != nil {
 		return false
 	}
 
-	p := s.privilege(cfg)
-
-	p.Dir = s.Dirs.RootAnchorDir()
-	if p.Account {
-		p.Dir = s.Dirs.AnchorDir()
-	}
-
-	return !sameGrant(p, s.priv)
+	return !sameGrant(s.decision(cfg, manifestPort(s)), s.decided)
 }
 
 // requestRespawn asks the cycle to end, once.

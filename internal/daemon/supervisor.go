@@ -84,10 +84,12 @@ type Supervisor struct {
 	tail  *ring
 	once  sync.Once
 
-	// priv is what the running anchord was started with, and lastDir the anchor
-	// directory the last one was given, which the next starts from when it is given
-	// the other.
+	// priv is what the running anchord was started with, decided what it was decided to
+	// be given before anything was done to give it that (privilegeFor), and lastDir the
+	// anchor directory the last one was given, which the next starts from when it is
+	// given the other.
 	priv    Privilege
+	decided Privilege
 	lastDir string
 
 	// respawn ends the cycle so the next starts anchord with what it now needs.

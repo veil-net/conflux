@@ -7,7 +7,7 @@ $ make build
   50.1 MB  bin/conflux
 ```
 
-Go 1.27.3 or newer, and nothing else. The only dependency is `golang.org/x/sys`. The
+Go 1.27.4 or newer, and nothing else. The only dependency is `golang.org/x/sys`. The
 Makefile builds against the FIPS 140-3 Go Cryptographic Module; see [FIPS 140-3](#fips-140-3).
 
 `make anchor-bins` is the one step a fresh clone needs and does not get for free. It
@@ -117,7 +117,7 @@ it, embed anchor's `latest`; conflux's `dev`, and every pull request into it, em
 
 `ANCHOR_REPO=`, `ANCHOR_TAG=` and `ANCHOR_API=` point it elsewhere. The fetcher is
 `cmd/anchor-fetch` over `internal/anchorrelease` — Go rather than curl and a JSON parser, because
-the promise at the top of this page is "Go 1.27.3 or newer, and nothing else", and a fresh
+the promise at the top of this page is "Go 1.27.4 or newer, and nothing else", and a fresh
 clone should not have to acquire anything else to become buildable.
 
 #### The token

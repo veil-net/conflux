@@ -11,7 +11,7 @@
 #
 # Where root's PATH under sudo leaves /usr/local/bin out (sudo's secure_path on Fedora and
 # RHEL), /usr/bin/conflux is linked to it, so `sudo conflux` finds it too. Where root's PATH finds
-# another conflux before /usr/bin, a link there would never be reached: none is left, one made
+# another conflux in its place, a link there would never be reached: none is left, one made
 # before included, and the other is named, to be removed before this script is run again.
 #
 # One setting, given to sh rather than curl (`curl -fsSL … | CONFLUX_VERSION=1.0.0 sh`):
@@ -145,7 +145,7 @@ link() {
     # A run before made it, and root's PATH, just asked, does not find $exe through it.
     if ! asroot rm -f "$sudolink"; then
       if [ -n "$found" ]; then
-        say "" "Could not remove $sudolink, which root's PATH does not find $exe through, since it finds $found before ${sudolink%/*}: remove $found and run the installer again, or type $exe by its full path under sudo."
+        say "" "Could not remove $sudolink, which root's PATH does not find $exe through, since it finds $found instead: remove $found and run the installer again, or type $exe by its full path under sudo."
       else
         say "" "Could not remove $sudolink, which root's PATH does not find $exe through: type $exe by its full path under sudo."
       fi
@@ -180,13 +180,13 @@ link() {
 }
 
 # missed says why root's PATH, which finds $found, does not find $exe through $sudolink, the link
-# to it: another conflux before the link's directory, to be removed before this script is run
+# to it: another conflux found in its place, to be removed before this script is run
 # again, which decides afresh, linking $exe where root's PATH then needs the link and making none
 # where it finds $exe without one; or, finding none, that directory left out, where only $exe's
 # full path helps.
 missed() {
   if [ -n "$found" ]; then
-    say "" "Root's PATH finds $found before ${sudolink%/*}: remove it and run the installer again, or type $exe by its full path under sudo."
+    say "" "Root's PATH finds $found instead: remove it and run the installer again, or type $exe by its full path under sudo."
   else
     say "" "Root's PATH leaves ${sudolink%/*} out too: type $exe by its full path under sudo."
   fi

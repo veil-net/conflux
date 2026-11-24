@@ -24,7 +24,7 @@ conflux first — it also links `/usr/bin/conflux` to it, so `sudo conflux` runs
 link only where root's PATH, asked again with the link in place, finds it there. Making the
 link, asking and taking it back are one call to `sudo` (or `doas`), so one that asks for the
 password at every call, as `doas` without `persist` does, asks once for them. One that finds
-another conflux before `/usr/bin` would never reach the link: none is left, one an earlier run
+another conflux in its place would never reach the link: none is left, one an earlier run
 made included, and the other is named, to be removed before `install.sh` is run again, or
 conflux typed by its full path under `sudo`. A `/usr/bin/conflux` that is not its link is left
 alone, and said: where root's PATH finds that file in conflux's place, or another conflux first,

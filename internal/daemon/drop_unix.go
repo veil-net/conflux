@@ -97,7 +97,7 @@ func (s *Supervisor) grantTraverse(p Privilege) error {
 	}
 
 	for _, dir := range dirs {
-		if err := ownAs(dir, 0, p.GID, 0o710); err != nil {
+		if _, err := ownAs(dir, 0, p.GID, 0o710); err != nil {
 			return err
 		}
 	}
@@ -106,27 +106,40 @@ func (s *Supervisor) grantTraverse(p Privilege) error {
 		return nil
 	}
 
-	return ownAs(s.tools.Anchord, 0, p.GID, 0o750)
+	changed, err := ownAs(s.tools.Anchord, 0, p.GID, 0o750)
+
+	// Its owner and mode are in the record of the pair held to this build's bytes, which Intact
+	// took this start: recorded again, so the next start takes the pair on a stat as well.
+	if changed {
+		s.tools.Reverified()
+	}
+
+	return err
 }
 
-// ownAs gives path to uid and gid at mode, changing only what differs.
-func ownAs(path string, uid, gid int, mode fs.FileMode) error {
+// ownAs gives path to uid and gid at mode, changing only what differs, and says whether it
+// changed anything.
+func ownAs(path string, uid, gid int, mode fs.FileMode) (bool, error) {
 	fi, err := os.Lstat(path)
 	if err != nil {
-		return err
+		return false, err
 	}
+
+	changed := false
 
 	if st, ok := fi.Sys().(*syscall.Stat_t); !ok || int(st.Uid) != uid || int(st.Gid) != gid {
 		if err := os.Lchown(path, uid, gid); err != nil {
-			return err
+			return false, err
 		}
+
+		changed = true
 	}
 
 	if fi.Mode().Perm() != mode {
-		return os.Chmod(path, mode)
+		return true, os.Chmod(path, mode)
 	}
 
-	return nil
+	return changed, nil
 }
 
 // smoke runs anchord -h as the account once for each set and each grant, so that a host

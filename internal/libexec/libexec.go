@@ -234,6 +234,14 @@ func extract(root, target string, t *Tools) error {
 		return err
 	}
 
+	// Held to this build's bytes already, which are what was just written from it: recorded as
+	// the two files are now, restricted and out of quarantine, which the rename keeps, so the
+	// supervisor's Intact takes the set on a stat rather than reading back what it wrote. A
+	// record that cannot be written costs that a read of the pair, as Intact's own does.
+	staged := &Tools{Dir: staging, Anchord: filepath.Join(staging, exeName("anchord")),
+		Anchorctl: filepath.Join(staging, exeName("anchorctl"))}
+	_ = os.WriteFile(filepath.Join(staging, verifiedMarker), []byte(staged.identities()), 0o600)
+
 	marker := fmt.Sprintf("setID %s\nplatform %s/%s\n", t.SetID, runtime.GOOS, runtime.GOARCH)
 	if err := os.WriteFile(filepath.Join(staging, completeMarker), []byte(marker), 0o600); err != nil {
 		return fmt.Errorf("write the completion marker: %w", err)

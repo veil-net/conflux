@@ -21,7 +21,9 @@ func (s *Supervisor) restoreModes() error {
 			continue
 		}
 
-		errs = append(errs, ownAs(f.path, uid, gid, f.mode))
+		if _, err := ownAs(f.path, uid, gid, f.mode); err != nil {
+			errs = append(errs, err)
+		}
 	}
 
 	return errors.Join(errs...)

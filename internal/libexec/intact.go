@@ -16,16 +16,18 @@ import (
 	"github.com/veil-net/conflux/internal/paths"
 )
 
-// verifiedMarker records the two binaries' files as a supervisor last found them holding
-// this build's bytes: their sizes, times and identities, so the next start that finds them
-// so compares a stat of each and reads neither.
+// verifiedMarker records the two binaries' files as they were last known to hold this
+// build's bytes -- written by an extraction, or held to the digests by a supervisor -- their
+// sizes, times and identities, so the next start that finds them so compares a stat of each
+// and reads neither.
 const verifiedMarker = ".verified"
 
 // Intact is Ensure for the supervisor, which runs what it extracts as root: the set it
 // returns holds exactly this build's bytes. A binary changed on disk since -- by hand, or by
 // anything else -- is found by its digest and the set extracted again. A set whose files are
-// as they were when last held to the digests is found so by a stat of each, so a start reads
-// fifty-odd megabytes only when something touched them.
+// as they were when last known to hold them -- as an extraction wrote them, or as they were
+// last held to the digests -- is found so by a stat of each, so a start reads fifty-odd
+// megabytes only when something touched them.
 //
 // The CLI keeps Ensure's three stats: what it runs is anchorctl, as the caller, and status
 // and pass-through are paid for on every invocation.
@@ -53,10 +55,17 @@ func Intact(d paths.Dirs) (*Tools, error) {
 		}
 	}
 
-	// A record that cannot be written costs the next start a read of the pair, nothing more.
-	_ = config.WriteFileAtomic(filepath.Join(t.Dir, verifiedMarker), []byte(t.identities()), 0o600)
+	t.Reverified()
 
 	return t, nil
+}
+
+// Reverified records the pair's files as they are now as holding this build's bytes, for a
+// caller that has just changed what a stat of them says and nothing of what they hold: the
+// supervisor giving anchord to its account's group, a set Intact took moments before. A
+// record that cannot be written costs the next start a read of the pair, nothing more.
+func (t *Tools) Reverified() {
+	_ = config.WriteFileAtomic(filepath.Join(t.Dir, verifiedMarker), []byte(t.identities()), 0o600)
 }
 
 // verified reports whether the pair's files are the ones last held to the digests.

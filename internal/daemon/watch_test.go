@@ -108,6 +108,11 @@ func TestWhatIsPermanent(t *testing.T) {
 		"taints the credential does not grant": anchorctlSaid("anchorctl: config: anchor: the realm credential does not " +
 			"grant this anchor's taints: Taints names [\"dev\"]: realm: the credential does not grant these taints"),
 		"conflux's own taints refusal": &permanentError{path: "manifest.b64", err: &enrol.TaintsError{Alpha: true}},
+		// anchor's buildOffers, for a subnets.json a Subnets order wrote that it cannot read: the
+		// anchor will not start until the file goes, which no retry does.
+		"a Subnets order's list anchor cannot read": anchorctlSaid("anchorctl: starting: anchor: the subnet list a " +
+			"Subnets order wrote, /var/lib/conflux/anchor/subnets.json: json: unknown field \"x\"; remove the file to " +
+			"serve Config.ServeSubnets"),
 		// What a live anchorctl said to `observe -start` against an anchord with no CAP_NET_RAW.
 		"a host that will not let the daemon capture": anchorctlSaid("anchorctl: capture: not permitted: open a packet " +
 			"socket: operation not permitted (it needs CAP_NET_RAW)\n  capturing needs CAP_NET_RAW for the daemon on " +

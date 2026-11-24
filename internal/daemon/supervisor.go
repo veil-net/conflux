@@ -867,10 +867,10 @@ func (s *Supervisor) freshToken() (string, error) {
 // and what anchor refuses that conflux cannot check beforehand: a credential under a
 // root other than the one these binaries are pinned to; a TUN the host will not give --
 // no capability, no device or no IPv6, or the name held by another interface, which an
-// --interface naming one already there meets on every start; and a host that will not be
-// set up to forward for the realm. None frees itself inside thirty seconds of
-// backoff, and failing in three puts the reason in front of somebody rather than
-// burying it in the journal under a unit timeout.
+// --interface naming one already there meets on every start; a host that will not be set
+// up to forward for the realm; and a list a Subnets order wrote that anchor cannot read.
+// None frees itself inside thirty seconds of backoff, and failing in three puts the reason
+// in front of somebody rather than burying it in the journal under a unit timeout.
 //
 // A served subnet the host is not attached to is deliberately absent. At boot that is
 // usually an interface that has not come up yet, which a retry does fix.
@@ -907,6 +907,10 @@ func Permanent(err error) bool {
 		// anchorctl's hint for REASON_CAPTURE_UNAVAILABLE, which no retry changes. The
 		// privilege is the supervisor's to give at a spawn, and it gave what it could.
 		"capturing needs cap_net_raw",
+		// A list a member's Subnets order wrote in the anchor directory that anchor cannot
+		// read: it will not start until the file goes, which `conflux up --subnet` or
+		// `--no-subnet` does (dropSubnetsOrder).
+		"the subnet list a subnets order wrote",
 	} {
 		if strings.Contains(s, phrase) {
 			return true

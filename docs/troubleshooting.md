@@ -23,6 +23,7 @@ beneath it, and most of what follows is a way of reading that output.
 | `clock is … away from the server's` | bad clock | fix NTP first; nothing will connect until you do |
 | two machines up, cannot reach each other | almost always taints | see below |
 | `subnet … is not a private network` | a public prefix | anchor forwards private networks only |
+| `the subnet list a Subnets order wrote, … remove the file`, and the service stops | a member's Subnets order left a list in the anchor directory that anchor cannot read, and it will not start until the file goes, which no retry does | `conflux up --subnet …` (or `--no-subnet`, or `conflux proxy` with either) sets the list again and drops the order's file |
 | `subnet … has host bits set` | `192.168.1.7/24` | write the network, `192.168.1.0/24` |
 | `the control socket path is N bytes` | `CONFLUX_DIR` is too deep | use a shorter one; the kernel's limit is 104–108 bytes |
 | `fd:3 adopts a descriptor …` | `--uplink fd:N` | conflux's supervisor hands anchord no descriptors; name the device, or use `conflux anchorctl start` |

@@ -61,7 +61,8 @@ conflux's `dev` replaces, with anchor's own dev build inside it, for trying what
 release holds before it is released. Nothing installs it unless asked to by name. Its anchor is
 pinned to the dev tree, which only `https://api-dev.veilnet.com.au` enrols in, so it is brought
 up with `--api https://api-dev.veilnet.com.au`. `conflux update --dev` replaces it with the
-newest dev build, once asked at a terminal. `conflux update` replaces it with the `latest`
+newest dev build, once asked at a terminal, or without asking given `--yes`, for scripts and
+CI. `conflux update` replaces it with the `latest`
 release, once asked at a terminal too: the release's anchor is pinned to the production tree,
 so a credential from the dev tree does not work with it ([commands.md](commands.md#conflux-update)).
 
@@ -151,9 +152,10 @@ $ sudo conflux update
 ```
 
 `update` replaces the installed conflux with the newest release, `latest`, asking first at a
-terminal where the installed conflux is a dev build, or with `--dev`, once asked at a terminal,
-the newest dev build, `dev-latest`, verified the same way, and moves the boot service onto it: a running anchor is restarted on the new conflux, and a stopped one
-starts on it next time. See [commands.md](commands.md#conflux-update).
+terminal where the installed conflux is a dev build, or with `--dev`, once asked at a terminal
+or given `--yes`, the newest dev build, `dev-latest`, verified the same way, and moves the boot
+service onto it: a running anchor is restarted on the new conflux, and a stopped one starts on
+it next time. See [commands.md](commands.md#conflux-update).
 Running the install script again, or replacing the binary by hand, replaces the binary
 and leaves the service on the old one; restart it onto the new one:
 

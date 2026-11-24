@@ -237,7 +237,8 @@ func TestUsageIsOneStream(t *testing.T) {
 }
 
 // TestAMistakeIsSaidOnStderr: a flag a command does not take, an argument too many or too few,
-// or a flag it cannot do without, is a mistake, said on stderr with the usage beneath it, which
+// or a flag it cannot do without -- enrol's --manifest, or update's --dev beside the --yes that
+// answers its question -- is a mistake, said on stderr with the usage beneath it, which
 // leaves stdout to what the command was asked for. -h alone is answered on stdout
 // (TestUsageIsOneStream), and an argument given to a command that takes flags alone is
 // TestAStrayArgumentIsNamedAboveTheUsage's, but for one with its flags after it, which does not
@@ -263,6 +264,7 @@ func TestAMistakeIsSaidOnStderr(t *testing.T) {
 		{[]string{"proxy", "---h", "8080=127.0.0.1:3000"}, "bad flag syntax: ---h"},
 		{[]string{"start", "---x"}, "bad flag syntax: ---x"},
 		{[]string{"renew", "---h"}, "bad flag syntax: ---h"},
+		{[]string{"update", "--yes"}, "--yes answers the question --dev asks; give --dev too"},
 	} {
 		out, errOut, code := capture(t, c.args...)
 		if code != ExitUsage || out != "" || !strings.Contains(errOut, c.says) || !strings.Contains(errOut, "conflux "+c.args[0]) {

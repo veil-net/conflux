@@ -414,7 +414,8 @@ func TestAPlainUpdateOfADevBuildAsksFirst(t *testing.T) {
 
 // TestAPlainUpdateOfADevBuildIsRefusedOffATerminal: where the installed conflux is a dev build and
 // there is no terminal to ask at, a plain update is refused, as --dev is, whatever stdin holds:
-// nothing is downloaded and nothing changes. No flag gets past it.
+// nothing is downloaded and nothing changes. No flag gets past it, and the refusal names none:
+// --yes answers --dev's question alone.
 func TestAPlainUpdateOfADevBuildIsRefusedOffATerminal(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the stand-in conflux is a shell script")
@@ -440,6 +441,7 @@ func TestAPlainUpdateOfADevBuildIsRefusedOffATerminal(t *testing.T) {
 
 	out, errOut, code := capture(t, "update")
 	if code != ExitError || !slices.Equal(*asked, []string{"latest"}) || strings.Contains(out, "[y/N]") ||
+		strings.Contains(errOut, "--yes") ||
 		!strings.Contains(errOut, "update asks before it installs the release in place of a dev build, and there is no terminal to ask at") {
 		t.Errorf("update of an installed dev build off a terminal exited %d, asking for %q:\n%s%s", code, *asked, out, errOut)
 	}
@@ -455,7 +457,8 @@ func TestAPlainUpdateOfADevBuildIsRefusedOffATerminal(t *testing.T) {
 
 // TestADevUpdateIsRefusedOffATerminal: conflux update --dev asks before it installs a dev build,
 // and where there is no terminal to ask at it refuses, as up refuses an IPv4 nobody can give,
-// whatever stdin holds: nothing is downloaded and nothing changes. No flag gets past it.
+// whatever stdin holds: nothing is downloaded and nothing changes. The refusal names --yes, which
+// says so explicitly (TestADevUpdateWithYesAsksNothing).
 func TestADevUpdateIsRefusedOffATerminal(t *testing.T) {
 	asRoot(t, true)
 
@@ -476,7 +479,7 @@ func TestADevUpdateIsRefusedOffATerminal(t *testing.T) {
 
 	out, errOut, code := capture(t, "update", "--dev")
 	if code != ExitError || !slices.Equal(*asked, []string{"dev-latest"}) || strings.Contains(out, "[y/N]") ||
-		!strings.Contains(errOut, "update --dev asks before it installs a dev build, and there is no terminal to ask at") {
+		!strings.Contains(errOut, "update --dev asks before it installs a dev build, and there is no terminal to ask at: pass --yes to say so explicitly") {
 		t.Errorf("update --dev off a terminal exited %d, asking for %q:\n%s%s", code, *asked, out, errOut)
 	}
 
@@ -601,9 +604,87 @@ func TestADevUpdateAsksFirst(t *testing.T) {
 	})
 }
 
+// TestADevUpdateWithYesAsksNothing: --yes answers --dev's question, for scripts and CI, so conflux
+// update --dev --yes takes the newest dev build, `dev-latest`, without asking: off a terminal,
+// reading nothing of stdin, and at one, of an installed release and of an installed dev build,
+// whose question is --dev's alone. It answers nothing else: given without --dev it is a mistake,
+// said with the usage beneath it, exit 2, before anything is read or downloaded, so a plain
+// update of an installed dev build is still asked its own question.
+func TestADevUpdateWithYesAsksNothing(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in conflux is a shell script")
+	}
+
+	release := []byte("#!/bin/sh\necho conflux 1.0.0 old\n")
+	dev := devBuildStandIn(t)
+	newer := []byte("#!/bin/sh\necho 'conflux 9.9.9 (0aea0f77bb77) " + runtime.GOOS + "/" + runtime.GOARCH + "'\n")
+
+	install := func(t *testing.T, body []byte) string {
+		t.Helper()
+
+		exe := filepath.Join(t.TempDir(), "conflux")
+		if err := os.WriteFile(exe, body, 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		return exe
+	}
+
+	t.Run("off a terminal", func(t *testing.T) {
+		asRoot(t, true)
+
+		in, was := strings.NewReader("n\n"), ui.In
+		ui.In = in
+
+		t.Cleanup(func() { ui.In = was })
+
+		exe := install(t, release)
+		asked := serveRelease(t, newer, exe)
+
+		out, errOut, code := capture(t, "update", "--dev", "--yes")
+		if got, _ := os.ReadFile(exe); code != ExitOK || !slices.Equal(*asked, []string{"dev-latest", "download"}) ||
+			string(got) != string(newer) || strings.Contains(out, "[y/N]") || in.Len() != len("n\n") {
+			t.Errorf("update --dev --yes off a terminal exited %d, asking for %q, leaving %d bytes of stdin unread:\n%s%s",
+				code, *asked, in.Len(), out, errOut)
+		}
+	})
+
+	for name, body := range map[string][]byte{"a release": release, "a dev build": dev} {
+		t.Run("at a terminal, of "+name, func(t *testing.T) {
+			asRoot(t, true)
+			answer(t, "n\n") // a question asked would be declined
+
+			exe := install(t, body)
+			asked := serveRelease(t, newer, exe)
+
+			out, errOut, code := capture(t, "update", "--dev", "--yes")
+			if got, _ := os.ReadFile(exe); code != ExitOK || !slices.Equal(*asked, []string{"dev-latest", "download"}) ||
+				string(got) != string(newer) || strings.Contains(out, "[y/N]") {
+				t.Errorf("update --dev --yes of %s at a terminal exited %d, asking for %q:\n%s%s", name, code, *asked, out, errOut)
+			}
+		})
+	}
+
+	t.Run("without --dev", func(t *testing.T) {
+		asRoot(t, true)
+		answer(t, "y\n") // what the plain update's question would take
+
+		exe := install(t, dev)
+		asked := serveRelease(t, newer, exe)
+
+		out, errOut, code := capture(t, "update", "--yes")
+		if got, _ := os.ReadFile(exe); code != ExitUsage || out != "" || len(*asked) != 0 || string(got) != string(dev) ||
+			!strings.Contains(errOut, "--yes answers the question --dev asks; give --dev too") ||
+			!strings.Contains(errOut, "conflux update —") {
+			t.Errorf("update --yes of an installed dev build exited %d, asking for %q:\n%s%s", code, *asked, out, errOut)
+		}
+	})
+}
+
 // TestADevCheckAsksNothing: conflux update --dev --check names the newest dev build, and the
 // command that installs it, and changes nothing, so it asks nothing, at a terminal too, and needs
-// no root. What is installed is said: nothing, then a file that does not run.
+// no root; --yes beside it, answering a question never asked, is no mistake. What is installed is
+// said: nothing, then a file that does not run.
 func TestADevCheckAsksNothing(t *testing.T) {
 	asRoot(t, false)
 	answer(t, "y\n")
@@ -614,14 +695,16 @@ func TestADevCheckAsksNothing(t *testing.T) {
 	notConflux := []byte("\x7fELF no conflux that runs")
 
 	for _, installed := range []string{"Nothing is installed at " + exe + ".", exe + " does not run here"} {
-		*asked = nil
+		for _, args := range [][]string{{"update", "--dev", "--check"}, {"update", "--dev", "--check", "--yes"}} {
+			*asked = nil
 
-		out, errOut, code := capture(t, "update", "--dev", "--check")
-		if code != ExitOK || !slices.Equal(*asked, []string{"dev-latest"}) || strings.Contains(out, "[y/N]") ||
-			!strings.Contains(out, installed) ||
-			!strings.Contains(out, "The newest dev build is dev-latest (9.9.9), built from 0aea0f77bb77.") ||
-			!strings.Contains(out, "conflux update --dev") {
-			t.Errorf("update --dev --check exited %d, asking for %q:\n%s%s", code, *asked, out, errOut)
+			out, errOut, code := capture(t, args...)
+			if code != ExitOK || !slices.Equal(*asked, []string{"dev-latest"}) || strings.Contains(out, "[y/N]") ||
+				!strings.Contains(out, installed) ||
+				!strings.Contains(out, "The newest dev build is dev-latest (9.9.9), built from 0aea0f77bb77.") ||
+				!strings.Contains(out, "conflux update --dev") {
+				t.Errorf("conflux %s exited %d, asking for %q:\n%s%s", strings.Join(args, " "), code, *asked, out, errOut)
+			}
 		}
 
 		if err := os.WriteFile(exe, notConflux, 0o755); err != nil {

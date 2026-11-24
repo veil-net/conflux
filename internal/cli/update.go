@@ -52,8 +52,8 @@ func installed(ctx context.Context, exe string) (says string, dev bool) {
 
 // askFirst asks at a terminal before update installs what, the release or the dev build, saying
 // first why it asks, and says whether to go on, and where not, update's exit. Off a terminal it
-// refuses, saying refused, as up refuses an IPv4 nobody is there to give, and nothing gets past
-// that; declined, nothing changes, and the exit is a declined observe's or uninstall's, 2.
+// refuses, saying refused, as up refuses an IPv4 nobody is there to give; declined, nothing
+// changes, and the exit is a declined observe's or uninstall's, 2.
 func askFirst(what, why, refused string) (exit int, ok bool) {
 	if !updateAtTerminal() {
 		return fail(errors.New(refused)), false
@@ -108,25 +108,37 @@ func runUpdate(ctx context.Context, args []string) int {
 	fs := verbFlags("update", fmt.Sprintf("conflux update — replace the installed conflux with the newest release, or dev build\n\n"+
 		"  conflux update                   download the newest release, verify it, put it in\n"+
 		"                                   place, and move the boot service onto it\n"+
-		"  conflux update --dev             the same with the newest dev build, once asked\n"+
+		"  conflux update --dev [--yes]     the same with the newest dev build, once asked,\n"+
+		"                                   or with --yes without asking\n"+
 		"  conflux update [--dev] --check   say whether there is one, and change nothing\n\n"+
 		"The newest release is the `latest` release of github.com/veil-net/conflux, whatever\n"+
 		"build runs the update. The newest dev build is the pre-release `dev-latest`, built\n"+
 		"from conflux's dev branch with anchor's dev build inside it. Its anchor is pinned to\n"+
 		"the dev tree (https://api-dev.veilnet.com.au) and a release's to the production tree,\n"+
 		"and neither works with a credential from the other tree. So --dev asks at a terminal\n"+
-		"before it installs a dev build, and a plain update before it puts the release in\n"+
-		"place of a dev build, as the installed conflux's version says it is; each refuses\n"+
-		"where there is no terminal to ask at. --check asks nothing.\n"+
+		"before it installs a dev build, and refuses where there is no terminal to ask at,\n"+
+		"unless --yes says so; and a plain update asks before it puts the release in place of\n"+
+		"a dev build, as the installed conflux's version says it is, and refuses where there\n"+
+		"is no terminal to ask at, with no flag past it. --check asks nothing.\n"+
 		"Held to the SHA-256 the release lists, into %s, where the installer\n"+
 		"puts it. A running anchor is restarted on the new conflux; a stopped one is left\n"+
 		"stopped, and starts on it next time.\n\n", paths.InstalledExecutable()))
 
 	check := fs.Bool("check", false, "say whether there is an update, and change nothing")
 	dev := fs.Bool("dev", false, "the newest dev build, the pre-release dev-latest, rather than the release; asked first")
+	yes := fs.Bool("yes", false, "with --dev, install the dev build without asking, at a terminal or off one: for scripts and CI")
 
 	if exit, ok := flagsAlone(fs, args); !ok {
 		return exit
+	}
+
+	// --yes answers --dev's question and no other: a plain update of a dev build asks its own,
+	// which nothing gets past.
+	if *yes && !*dev {
+		ui.Errf("--yes answers the question --dev asks; give --dev too")
+		usageMistake(fs)
+
+		return ExitUsage
 	}
 
 	exe := updateExecutable()
@@ -173,15 +185,18 @@ func runUpdate(ctx context.Context, args []string) int {
 	// One tree's build in place of what may be the other's is asked for once there is one to
 	// install, named above, and before anything is downloaded or replaced; after the privilege
 	// check, so the command typed again under sudo asks once, rather than once before the
-	// refusal and again after it. --dev asks its own question alone, of a dev build too.
+	// refusal and again after it. --dev asks its own question alone, of a dev build too, and
+	// --yes answers it.
 	var why, refused string
 
 	switch {
+	case *dev && *yes:
+		// Answered.
 	case *dev:
 		why = "A dev build is the pre-release dev-latest, built from conflux's dev branch with anchor's\n" +
 			"dev build inside it. Its anchor is pinned to the dev tree (https://api-dev.veilnet.com.au),\n" +
 			"so a credential from the production tree, which a release enrols in, does not work with it."
-		refused = "update --dev asks before it installs a dev build, and there is no terminal to ask at"
+		refused = "update --dev asks before it installs a dev build, and there is no terminal to ask at: pass --yes to say so explicitly"
 	case installedDev:
 		why = "The conflux installed here is a dev build, whose anchor is pinned to the dev tree. The\n" +
 			"release's anchor is pinned to the production tree, so a credential this machine holds from\n" +

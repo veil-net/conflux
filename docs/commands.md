@@ -461,8 +461,9 @@ Where the observer runs, an `observer` line is its row from `anchorctl status` �
 flows held, 3480 packets taken`, or `not observing` and why a capture that was running ended —
 with its options, and a `records` line says where its records go: to the collector the export
 names, as each is made, or nowhere but the daemon's inventory. Observing alone, the mode line
-says so, and the anchor's taint, address and credential lines are left out: they describe
-nothing that runs, and the identity is said to be kept.
+says so, and the anchor's settings — its taint, peers, address, served subnets and proxies — are
+left out: they are kept for the next `up` or `proxy`, and describe nothing that runs. The
+credential lines stay, since the observer runs under the machine's credential and renews it.
 
 The `taint` line is the set `conflux.json` names, which after enrolment mirrors the one
 the credential grants — `none: the realm's default compartment` for an issued
@@ -590,10 +591,9 @@ usage, need nothing of conflux's installation, and make nothing of it: they run 
 conflux, from the extracted anchorctl where a whole one is readable, else one in memory where the
 platform allows it, else a temporary copy removed afterwards.
 
-A command that makes the daemon itself open a path you name — `keygen -out` and
-`priv -out`, which write "on the daemon's filesystem", or export certificates given by path
-— opens it with `anchord`'s rights, which are an account of its own's wherever its mode
-allows. A path that account cannot reach is refused by `anchord`, naming it: choose one it
+A command that makes the daemon itself open a path you name — `keygen -out`, which writes "on
+the daemon's filesystem", or export certificates given by path — opens it with `anchord`'s
+rights, which are an account of its own's wherever its mode allows. A path that account cannot reach is refused by `anchord`, naming it: choose one it
 can, or leave out `-out` and the key comes back to your terminal.
 
 One case is intercepted: when no daemon is running, conflux says so and names `start`,

@@ -208,8 +208,8 @@ The token reaches `anchord` in its environment (`ANCHORD_TOKEN`), so the file th
 from stays root's.
 
 **One thing works differently, by design:** a path a pass-through command makes `anchord`
-open itself — `keygen -out` and `priv -out`, which write "on the daemon's filesystem", and
-export certificates set at run time by path — is opened with `anchord`'s rights. One the
+open itself — `keygen -out`, which writes "on the daemon's filesystem", and export
+certificates set at run time by path — is opened with `anchord`'s rights. One the
 account cannot reach is refused by `anchord`, naming it; leave out `-out` and the key comes
 back to your terminal instead. Paths in `conflux.json`'s export block are not affected:
 conflux reads them and hands their content over.

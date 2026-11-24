@@ -1,10 +1,10 @@
 // Command conflux puts this machine on a VeilNet overlay.
 //
-// It carries anchord and anchorctl inside itself and adds the four things anchor
-// deliberately leaves to whoever is deploying it: enrolment, credential renewal, a
-// configuration file, and a boot service. Everything anchorctl can do, conflux can
-// do -- an argument vector conflux does not recognise is handed to anchorctl
-// unchanged.
+// It carries anchord and anchorctl inside itself and adds what anchor deliberately leaves to
+// whoever is deploying it -- enrolment, credential renewal, a configuration file and a boot
+// service -- and, beside them, updating itself and a certificate toolkit. Everything anchorctl
+// can do, conflux can do -- an argument vector conflux does not recognise is handed to
+// anchorctl unchanged.
 package main
 
 import (

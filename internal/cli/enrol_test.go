@@ -153,6 +153,29 @@ func TestEnrolWillNotReplaceAnIdentity(t *testing.T) {
 	}
 }
 
+// TestEnrolWillNotInstallOverAManifestItCannotRead: a manifest.b64 that is there and cannot
+// be read may be the identity this machine runs, so nothing is installed over it. A directory
+// at its path fails the read as root too.
+func TestEnrolWillNotInstallOverAManifestItCannotRead(t *testing.T) {
+	d, path := site(t, guardianDoc)
+
+	if err := os.Mkdir(d.ManifestFile(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := importCredential(d, path, guardianAPI, ""); err == nil || !strings.Contains(err.Error(), "already has a credential") {
+		t.Errorf("importCredential over a manifest.b64 it cannot read = %v, want the refusal to replace an identity", err)
+	}
+
+	if fi, err := os.Stat(d.ManifestFile()); err != nil || !fi.IsDir() {
+		t.Errorf("manifest.b64 after the refusal: %v, %v; want it left as it was", fi, err)
+	}
+
+	if _, err := config.Load(d); err == nil {
+		t.Error("the refused import wrote the configuration anyway")
+	}
+}
+
 // TestEnrolRefusesBeforeWriting covers every refusal at once, and checks the same
 // thing about each: that nothing reached the disk. A verb that writes half of a
 // provisioning is worse than one that writes none of it.

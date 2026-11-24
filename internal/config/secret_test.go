@@ -1,7 +1,9 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 	"testing"
@@ -50,9 +52,14 @@ func TestSaveManifestLeavesTheCallersEnvelope(t *testing.T) {
 }
 
 // TestHasManifestIsWhatLoadManifestReads: a machine has an identity exactly when there is a
-// manifest LoadManifest reads -- none, or one empty or of nothing but white space, is none.
+// manifest LoadManifest reads -- none, or one empty or of nothing but white space, is none,
+// and LoadManifest says which of the two it refused.
 func TestHasManifestIsWhatLoadManifestReads(t *testing.T) {
 	d := pathstest.Root(t)
+
+	if _, err := LoadManifest(d); HasManifest(d) || !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("no manifest: HasManifest %v, LoadManifest %v; want no identity, and none there", HasManifest(d), err)
+	}
 
 	for content, has := range map[string]bool{"": false, " \n\t\n": false, "bWFuaWZlc3Q=\n": true} {
 		if err := os.WriteFile(d.ManifestFile(), []byte(content), 0o600); err != nil {
@@ -61,9 +68,25 @@ func TestHasManifestIsWhatLoadManifestReads(t *testing.T) {
 
 		_, err := LoadManifest(d)
 
-		if HasManifest(d) != has || (err == nil) != has {
+		if HasManifest(d) != has || (err == nil) != has || !has && !errors.Is(err, ErrEmptyManifest) {
 			t.Errorf("a manifest of %q: HasManifest %v, LoadManifest %v; want has %v from both", content, HasManifest(d), err, has)
 		}
+	}
+}
+
+// TestHasManifestOnAManifestItCannotRead: a manifest.b64 there that cannot be read may hold
+// an identity, so it is one -- the false answer would draw a new identity over it (conflux
+// enrol) or skip uninstall's confirmation. A directory at its path fails the read as root
+// too.
+func TestHasManifestOnAManifestItCannotRead(t *testing.T) {
+	d := pathstest.Root(t)
+
+	if err := os.Mkdir(d.ManifestFile(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := LoadManifest(d); err == nil || !HasManifest(d) {
+		t.Errorf("a manifest.b64 that cannot be read: LoadManifest %v, HasManifest %v; want a read error, and an identity", err, HasManifest(d))
 	}
 }
 

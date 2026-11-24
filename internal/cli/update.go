@@ -3,7 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
-	"flag"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,24 +40,20 @@ const devUpdateNote = "This is a dev build: its anchor is pinned to the dev tree
 	"enrols again: conflux up --api https://api.veilnet.com.au, or the API of the realm it is to join."
 
 func runUpdate(ctx context.Context, args []string) int {
-	fs := flag.NewFlagSet("update", flag.ContinueOnError)
-	fs.SetOutput(ui.Errw)
+	fs := verbFlags("update", fmt.Sprintf("conflux update — replace the installed conflux with the latest release\n\n"+
+		"  conflux update           download it, verify it, put it in place, and move\n"+
+		"                           the boot service onto it\n"+
+		"  conflux update --check   say whether there is one, and change nothing\n"+
+		"  conflux update --yes     on a dev build, move to the release anyway\n\n"+
+		"From the `latest` release of github.com/veil-net/conflux, held to the SHA-256\n"+
+		"the release lists, into %s, where the installer puts it. A running\n"+
+		"anchor is restarted on the new conflux; a stopped one is left stopped, and\n"+
+		"starts on it next time.\n\n", paths.InstalledExecutable()))
+
 	check := fs.Bool("check", false, "say whether there is an update, and change nothing")
 	yes := fs.Bool("yes", false, "on a dev build, move to the release anyway")
-	fs.Usage = func() {
-		ui.Printf("conflux update — replace the installed conflux with the latest release\n\n"+
-			"  conflux update           download it, verify it, put it in place, and move\n"+
-			"                           the boot service onto it\n"+
-			"  conflux update --check   say whether there is one, and change nothing\n"+
-			"  conflux update --yes     on a dev build, move to the release anyway\n\n"+
-			"From the `latest` release of github.com/veil-net/conflux, held to the SHA-256\n"+
-			"the release lists, into %s, where the installer puts it. A running\n"+
-			"anchor is restarted on the new conflux; a stopped one is left stopped, and\n"+
-			"starts on it next time.\n", paths.InstalledExecutable())
-	}
-
 	if err := fs.Parse(args); err != nil {
-		return ExitUsage
+		return usageExit(err)
 	}
 
 	if fs.NArg() > 0 {

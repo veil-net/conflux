@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -55,33 +54,29 @@ import (
 // others, and a renewal restates them, so they are the issuer's and are taken as they
 // are -- none included, which is the issuer's own realm's default compartment.
 func runEnrol(_ context.Context, args []string) int {
-	fs := flag.NewFlagSet("enrol", flag.ContinueOnError)
-	fs.SetOutput(ui.Errw)
+	fs := verbFlags("enrol", "conflux enrol — install a credential this machine was given\n\n"+
+		"  conflux enrol --manifest FILE [--api URL] [--ipv4 ADDRESS]\n\n"+
+		"For a machine commissioned somewhere else: a self-hosted guardian mints the\n"+
+		"identity, signs the credential and hands you one file. This installs it, and\n"+
+		"then `conflux up` starts from it without enrolling.\n\n"+
+		"The file is enough on its own. A guardian document names its own renewal URL,\n"+
+		"the overlay address the guardian allocated and the taints it granted this\n"+
+		"machine. The taints are the credential's and are taken as they are; the two\n"+
+		"flags exist only to overrule the others from the terminal. --api is also\n"+
+		"checked when given: the document must renew against the same host.\n\n"+
+		"A document with no renewal fields at all -- a node in one of VeilNet's own ghost\n"+
+		"realms, minted for a century -- is installed as it is and never renewed.\n\n"+
+		"It refuses to replace a manifest that already exists. Replacing one is a new\n"+
+		"identity and a new overlay address, which orphans every peer this machine has.\n\n")
 
 	manifest := fs.String("manifest", "", "the manifest file to install, or - for stdin")
+
 	apiBase := fs.String("api", "",
 		"the API that issued it, as a base URL, overriding the one its renewal URL names")
 	ipv4 := fs.String("ipv4", "", "this machine's IPv4, overriding whatever the manifest allocated")
 
-	fs.Usage = func() {
-		ui.Printf("conflux enrol — install a credential this machine was given\n\n" +
-			"  conflux enrol --manifest FILE [--api URL] [--ipv4 ADDRESS]\n\n" +
-			"For a machine commissioned somewhere else: a self-hosted guardian mints the\n" +
-			"identity, signs the credential and hands you one file. This installs it, and\n" +
-			"then `conflux up` starts from it without enrolling.\n\n" +
-			"The file is enough on its own. A guardian document names its own renewal URL,\n" +
-			"the overlay address the guardian allocated and the taints it granted this\n" +
-			"machine. The taints are the credential's and are taken as they are; the two\n" +
-			"flags exist only to overrule the others from the terminal. --api is also\n" +
-			"checked when given: the document must renew against the same host.\n\n" +
-			"A document with no renewal fields at all -- a node in one of VeilNet's own ghost\n" +
-			"realms, minted for a century -- is installed as it is and never renewed.\n\n" +
-			"It refuses to replace a manifest that already exists. Replacing one is a new\n" +
-			"identity and a new overlay address, which orphans every peer this machine has.\n")
-	}
-
 	if err := fs.Parse(args); err != nil {
-		return ExitUsage
+		return usageExit(err)
 	}
 
 	if *manifest == "" {

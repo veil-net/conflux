@@ -120,17 +120,7 @@ func certFlags(name string) *flag.FlagSet {
 
 // certFlagsNamed is a flag set for conflux cert NAME, its usage the synopsis and the flags.
 func certFlagsNamed(name, summary, usage string) *flag.FlagSet {
-	fs := flag.NewFlagSet("cert "+name, flag.ContinueOnError)
-	fs.SetOutput(ui.Errw)
-
-	fs.Usage = func() {
-		ui.Printf("conflux cert %s — %s\n\n  conflux cert %s\n\n", name, summary, usage)
-		fs.SetOutput(ui.Out)
-		fs.PrintDefaults()
-		fs.SetOutput(ui.Errw)
-	}
-
-	return fs
+	return verbFlags("cert "+name, fmt.Sprintf("conflux cert %s — %s\n\n  conflux cert %s\n\n", name, summary, usage))
 }
 
 // parseCert parses args, flags and arguments in any order -- `verify CERT --ca ROOT` as
@@ -162,10 +152,8 @@ func certParse(fs *flag.FlagSet, args []string, want func(n int) bool) ([]string
 	pos, err := parseCert(fs, args)
 
 	switch {
-	case errors.Is(err, flag.ErrHelp):
-		return nil, ExitOK, false
 	case err != nil:
-		return nil, ExitUsage, false
+		return nil, usageExit(err), false
 	case want != nil && !want(len(pos)):
 		fs.Usage()
 

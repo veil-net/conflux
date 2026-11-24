@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"errors"
-	"flag"
 
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
@@ -18,13 +17,14 @@ import (
 // the service control manager when it detects it is running as a service, and runs
 // in the foreground otherwise.
 func runServe(ctx context.Context, args []string) int {
-	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
-	fs.SetOutput(ui.Errw)
+	fs := verbFlags("serve", "conflux serve — run the supervisor in the foreground\n\n"+
+		"  conflux serve [--foreground]\n\n"+
+		"What the boot service runs, and nothing to type: conflux start starts it.\n\n")
 
 	foreground := fs.Bool("foreground", false, "stay in the foreground even where a service manager is available")
 
 	if err := fs.Parse(args); err != nil {
-		return ExitUsage
+		return usageExit(err)
 	}
 
 	// Where launchd started it, which keeps no output, to the system log.

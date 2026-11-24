@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/fips140"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -155,6 +156,32 @@ func refuseLifecycle(name, replacement string) int {
 		"  conflux anchorctl %s ...\n"+
 		"        anchorctl's own, if that is really what you want",
 		name, replacement, name)
+
+	return ExitUsage
+}
+
+// verbFlags is the flag set of conflux NAME. Its usage, head and then the flags, goes whole to
+// stdout, where -h asked for it; what the flag package says of a mistake goes to stderr.
+func verbFlags(name, head string) *flag.FlagSet {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.SetOutput(ui.Errw)
+
+	fs.Usage = func() {
+		ui.Printf("%s", head)
+		fs.SetOutput(ui.Out)
+		fs.PrintDefaults()
+		fs.SetOutput(ui.Errw)
+	}
+
+	return fs
+}
+
+// usageExit is the exit for flags that did not parse: 0 for -h, which asked for the usage it
+// was given, and 2 for a mistake.
+func usageExit(err error) int {
+	if errors.Is(err, flag.ErrHelp) {
+		return ExitOK
+	}
 
 	return ExitUsage
 }

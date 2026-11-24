@@ -39,7 +39,7 @@ func runObserve(ctx context.Context, args []string) int {
 	}
 
 	if err := f.fs.Parse(args); err != nil {
-		return ExitUsage
+		return usageExit(err)
 	}
 
 	if f.fs.NArg() > 0 {
@@ -155,12 +155,26 @@ type observeFlags struct {
 }
 
 func newObserveFlags() *observeFlags {
-	fs := flag.NewFlagSet("observe", flag.ContinueOnError)
-	fs.SetOutput(ui.Errw)
+	fs := verbFlags("observe", "conflux observe — inventory the cryptography of this host's traffic, with no anchor\n\n"+
+		"  conflux observe [--taint T] [--loopback] [--hide-names] [--export HOST:PORT [--export-insecure]] [--yes]\n\n"+
+		"Runs the daemon's observer and nothing else. The host copies the start of every flow\n"+
+		"its interfaces carry to it, and it records which services the host reaches, serves\n"+
+		"or passes on, over which protocols, and whether each key exchange is post-quantum,\n"+
+		"hybrid, classical or none, and which side held it back. It carries nothing, so it\n"+
+		"can slow or break nothing.\n\n"+
+		"It runs under this machine's credential, as an identity its realm admits: a machine\n"+
+		"with none is enrolled as conflux up enrols one, in the taint --taint names or a\n"+
+		"minted one, and the credential is renewed for the life of the identity.\n\n"+
+		"It runs until it is stopped, and from every boot. With --export, or an export with\n"+
+		"flows in conflux.json, each record goes to that collector as it is made; either way\n"+
+		"the daemon keeps an inventory of them, which conflux inventory prints.\n\n"+
+		"On a machine running an anchor this stops it, and asks first. To observe beside an\n"+
+		"anchor, conflux up --observe or conflux proxy --observe.\n\n")
 
 	f := &observeFlags{fs: fs}
 
 	f.loopback = fs.Bool("loopback", false, "observe the loopback interfaces too; Windows' capture never sees them")
+
 	f.hideNames = fs.Bool("hide-names", false,
 		"leave the names flows were reached by -- a server name, a DNS answer's -- out of the records and the inventory")
 	f.export = fs.String("export", "", exportUsage)
@@ -168,25 +182,6 @@ func newObserveFlags() *observeFlags {
 	f.yes = fs.Bool("yes", false, "stop the anchor this machine runs without asking: it leaves its realm, and keeps its identity and settings")
 	f.api = fs.String("api", "", "enrolment API base URL")
 	fs.Var(&f.taints, "taint", taintUsage)
-
-	fs.Usage = func() {
-		ui.Printf("conflux observe — inventory the cryptography of this host's traffic, with no anchor\n\n" +
-			"  conflux observe [--taint T] [--loopback] [--hide-names] [--export HOST:PORT [--export-insecure]] [--yes]\n\n" +
-			"Runs the daemon's observer and nothing else. The host copies the start of every flow\n" +
-			"its interfaces carry to it, and it records which services the host reaches, serves\n" +
-			"or passes on, over which protocols, and whether each key exchange is post-quantum,\n" +
-			"hybrid, classical or none, and which side held it back. It carries nothing, so it\n" +
-			"can slow or break nothing.\n\n" +
-			"It runs under this machine's credential, as an identity its realm admits: a machine\n" +
-			"with none is enrolled as conflux up enrols one, in the taint --taint names or a\n" +
-			"minted one, and the credential is renewed for the life of the identity.\n\n" +
-			"It runs until it is stopped, and from every boot. With --export, or an export with\n" +
-			"flows in conflux.json, each record goes to that collector as it is made; either way\n" +
-			"the daemon keeps an inventory of them, which conflux inventory prints.\n\n" +
-			"On a machine running an anchor this stops it, and asks first. To observe beside an\n" +
-			"anchor, conflux up --observe or conflux proxy --observe.\n\n")
-		fs.PrintDefaults()
-	}
 
 	return f
 }

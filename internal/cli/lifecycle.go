@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"errors"
-	"flag"
 	"os"
 	"strings"
 	"time"
@@ -29,17 +28,13 @@ var services = service.New
 // it registers the service, says plainly that there is nothing to start, and exits
 // zero -- it did what it was asked. No configuration is invented.
 func runInstall(ctx context.Context, args []string) int {
-	fs := flag.NewFlagSet("install", flag.ContinueOnError)
-	fs.SetOutput(ui.Errw)
-	fs.Usage = func() {
-		ui.Printf("conflux install — register the boot service\n\n" +
-			"  conflux install\n\n" +
-			"Registers the service so this machine rejoins at boot. If a configuration\n" +
-			"already exists it is also started; if not, nothing is invented.\n")
-	}
+	fs := verbFlags("install", "conflux install — register the boot service\n\n"+
+		"  conflux install\n\n"+
+		"Registers the service so this machine rejoins at boot. If a configuration\n"+
+		"already exists it is also started; if not, nothing is invented.\n")
 
 	if err := fs.Parse(args); err != nil {
-		return ExitUsage
+		return usageExit(err)
 	}
 
 	if err := needsRoot("registering the boot service", "install", args); err != nil {
@@ -135,15 +130,11 @@ func startFromConfig(ctx context.Context, d paths.Dirs, mgr service.Manager, cfg
 // drops the proxies. A machine serving eight ports cannot be brought back by retyping
 // eight specs correctly from memory.
 func runStart(ctx context.Context, args []string) int {
-	fs := flag.NewFlagSet("start", flag.ContinueOnError)
-	fs.SetOutput(ui.Errw)
-	fs.Usage = func() {
-		ui.Printf("conflux start — start the anchor now, from the saved configuration\n\n" +
-			"  conflux start\n\n" +
-			"The counterpart to conflux down. Starts whatever this machine is already\n" +
-			"configured for, in whichever mode it names, and asks nothing. Nothing is\n" +
-			"enrolled and no configuration is invented.\n")
-	}
+	fs := verbFlags("start", "conflux start — start the anchor now, from the saved configuration\n\n"+
+		"  conflux start\n\n"+
+		"The counterpart to conflux down. Starts whatever this machine is already\n"+
+		"configured for, in whichever mode it names, and asks nothing. Nothing is\n"+
+		"enrolled and no configuration is invented.\n")
 
 	// anchorctl has a start of its own, and it is the one that takes flags: it
 	// builds an anchor from arguments the caller supplies. conflux's starts the one
@@ -160,7 +151,7 @@ func runStart(ctx context.Context, args []string) int {
 	}
 
 	if err := fs.Parse(args); err != nil {
-		return ExitUsage
+		return usageExit(err)
 	}
 
 	if fs.NArg() > 0 {
@@ -232,17 +223,13 @@ func runStart(ctx context.Context, args []string) int {
 // registration stays, the configuration stays, the identity stays. The next reboot
 // brings the machine back exactly as it was, with nothing typed.
 func runDown(_ context.Context, args []string) int {
-	fs := flag.NewFlagSet("down", flag.ContinueOnError)
-	fs.SetOutput(ui.Errw)
-	fs.Usage = func() {
-		ui.Printf("conflux down — stop the anchor now; a reboot brings it back\n\n" +
-			"  conflux down\n\n" +
-			"Leaves the boot service registered and the configuration in place. To remove\n" +
-			"those as well, that is conflux uninstall.\n")
-	}
+	fs := verbFlags("down", "conflux down — stop the anchor now; a reboot brings it back\n\n"+
+		"  conflux down\n\n"+
+		"Leaves the boot service registered and the configuration in place. To remove\n"+
+		"those as well, that is conflux uninstall.\n")
 
 	if err := fs.Parse(args); err != nil {
-		return ExitUsage
+		return usageExit(err)
 	}
 
 	if err := needsRoot("stopping the service", "down", args); err != nil {
@@ -281,19 +268,15 @@ func runDown(_ context.Context, args []string) int {
 
 // runUninstall is the reverse of install, and it destroys the identity.
 func runUninstall(_ context.Context, args []string) int {
-	fs := flag.NewFlagSet("uninstall", flag.ContinueOnError)
-	fs.SetOutput(ui.Errw)
+	fs := verbFlags("uninstall", "conflux uninstall — remove the boot service, the configuration and the identity\n\n"+
+		"  conflux uninstall [--yes]\n\n"+
+		"This deletes the credential, and there is no other copy of it anywhere.\n\n")
 
 	yes := fs.Bool("yes", false, "do not ask for confirmation")
 
-	fs.Usage = func() {
-		ui.Printf("conflux uninstall — remove the boot service, the configuration and the identity\n\n" +
-			"  conflux uninstall [--yes]\n\n" +
-			"This deletes the credential, and there is no other copy of it anywhere.\n")
-	}
-
 	if err := fs.Parse(args); err != nil {
-		return ExitUsage
+		return usageExit(err)
+
 	}
 
 	if err := needsRoot("removing the boot service", "uninstall", args); err != nil {

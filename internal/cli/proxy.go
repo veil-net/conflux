@@ -47,7 +47,7 @@ func runProxy(ctx context.Context, args []string) int {
 	specs, flags := f.split(args)
 
 	if err := f.fs.Parse(flags); err != nil {
-		return ExitUsage
+		return usageExit(err)
 	}
 
 	specs = append(specs, f.fs.Args()...)
@@ -193,12 +193,30 @@ type proxyFlags struct {
 }
 
 func newProxyFlags() *proxyFlags {
-	fs := flag.NewFlagSet("proxy", flag.ContinueOnError)
-	fs.SetOutput(ui.Errw)
+	fs := verbFlags("proxy", "conflux proxy — publish a local service on the overlay, without an interface\n\n"+
+		"  conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T] [--ipv4 ADDRESS | --no-ipv4]\n"+
+		"                [--subnet CIDR... | --no-subnet] [--serve-exit | --use-exit]\n"+
+		"                [--uplink DEV | --no-uplink] [--peers HOST:PORT | --no-peers]\n"+
+		"                [--observe | --no-observe] [--export HOST:PORT]\n"+
+		"                [--ephemeral [--manifest FILE|-]]\n\n"+
+		"Runs the anchor entirely in userspace, so it needs no TUN device and no\n"+
+		"CAP_NET_ADMIN. Nothing on this host can see the overlay: the way in is a\n"+
+		"service named here, and the way out a --subnet or --serve-exit, which the\n"+
+		"anchor forwards from its own process. With one of those, the port specs may\n"+
+		"be left out.\n\n"+
+		"With --uplink the realm is reached over a link rather than the host's network,\n"+
+		"which is the pair a machine with neither privilege nor an IP network needs.\n\n"+
+		"With --observe the daemon observes beside the anchor: an inventory of the\n"+
+		"cryptography of this host's traffic, which conflux observe -h describes.\n\n"+
+		"With --ephemeral nothing is kept: it runs in the foreground from a credential held\n"+
+		"in memory alone, enrolled or piped in with --manifest, registers nothing, and needs\n"+
+		"no root. When anchord stops, or on Ctrl-C, everything is gone; docs/ephemeral.md\n"+
+		"describes it.\n\n")
 
 	f := &proxyFlags{fs: fs}
 
 	f.ipv4 = fs.String("ipv4", "", ipv4Usage)
+
 	f.noIPv4 = fs.Bool("no-ipv4", false, noIPv4Usage)
 	f.uplink = fs.String("uplink", "", "carry the mesh over a link rather than the host network, e.g. /dev/ttyUSB0:115200")
 	f.noUplink = fs.Bool("no-uplink", false, "go back to the host's network on a machine configured for a link")
@@ -221,29 +239,6 @@ func newProxyFlags() *proxyFlags {
 	fs.Var(&f.taints, "taint", taintUsage)
 	fs.Var(&f.subnets, "subnet", subnetUsage)
 	fs.Var(&f.peers, "peers", "bootstrap entry as host:port; repeat for more. Enrolment supplies these, so this is an override")
-
-	fs.Usage = func() {
-		ui.Printf("conflux proxy — publish a local service on the overlay, without an interface\n\n" +
-			"  conflux proxy PORT[/NETWORK]=BACKEND ... [--taint T] [--ipv4 ADDRESS | --no-ipv4]\n" +
-			"                [--subnet CIDR... | --no-subnet] [--serve-exit | --use-exit]\n" +
-			"                [--uplink DEV | --no-uplink] [--peers HOST:PORT | --no-peers]\n" +
-			"                [--observe | --no-observe] [--export HOST:PORT]\n" +
-			"                [--ephemeral [--manifest FILE|-]]\n\n" +
-			"Runs the anchor entirely in userspace, so it needs no TUN device and no\n" +
-			"CAP_NET_ADMIN. Nothing on this host can see the overlay: the way in is a\n" +
-			"service named here, and the way out a --subnet or --serve-exit, which the\n" +
-			"anchor forwards from its own process. With one of those, the port specs may\n" +
-			"be left out.\n\n" +
-			"With --uplink the realm is reached over a link rather than the host's network,\n" +
-			"which is the pair a machine with neither privilege nor an IP network needs.\n\n" +
-			"With --observe the daemon observes beside the anchor: an inventory of the\n" +
-			"cryptography of this host's traffic, which conflux observe -h describes.\n\n" +
-			"With --ephemeral nothing is kept: it runs in the foreground from a credential held\n" +
-			"in memory alone, enrolled or piped in with --manifest, registers nothing, and needs\n" +
-			"no root. When anchord stops, or on Ctrl-C, everything is gone; docs/ephemeral.md\n" +
-			"describes it.\n\n")
-		fs.PrintDefaults()
-	}
 
 	return f
 }

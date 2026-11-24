@@ -241,6 +241,28 @@ func TestHelpForACommandIsThatCommands(t *testing.T) {
 	}
 }
 
+// TestUsageIsOneStream: -h asks for a command's usage, so it is answered -- exit 0 -- and whole
+// on stdout, the flags with the synopsis, where a pager or grep reads it.
+func TestUsageIsOneStream(t *testing.T) {
+	for name := range verbs() {
+		switch name {
+		case "help", "version":
+			continue // their own pages, -h or not
+		case "status", "anchorctl":
+			continue // anchorctl's usage, which its own tests cover
+		}
+
+		out, errOut, code := capture(t, name, "-h")
+		if code != ExitOK || errOut != "" || !strings.Contains(out, "conflux "+name) {
+			t.Errorf("conflux %s -h exited %d, printing\n%s\nand on stderr\n%s", name, code, out, errOut)
+		}
+	}
+
+	if out, _, _ := capture(t, "up", "-h"); !strings.Contains(out, "enrolment API base URL") {
+		t.Errorf("conflux up -h leaves its flags off stdout:\n%s", out)
+	}
+}
+
 func TestVersionNamesTheAnchorBuild(t *testing.T) {
 	out, _, code := capture(t, "version")
 	if code != ExitOK {

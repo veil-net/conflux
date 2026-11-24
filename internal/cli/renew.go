@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io/fs"
 	"os"
@@ -29,19 +28,13 @@ import (
 // It does not enrol. A machine with no manifest has nothing to renew, and inventing
 // an identity for it here would silently replace the one a reboot expects.
 func runRenew(ctx context.Context, args []string) int {
-	fs := flag.NewFlagSet("renew", flag.ContinueOnError)
-	fs.SetOutput(ui.Errw)
-
-	fs.Usage = func() {
-		ui.Printf("conflux renew — install a fresh credential on the running anchor\n\n" +
-			"  conflux renew\n\n" +
-			"Renewal is automatic: once at every start, and again on a timer at two thirds\n" +
-			"of the credential's life. This forces one now, which is what a machine whose\n" +
-			"renewals have been failing needs.\n\n" +
-			"The swap is hot. The identity does not change and no session is dropped, so\n" +
-			"this is not a restart and does not need to be treated as one.\n\n")
-		fs.PrintDefaults()
-	}
+	fs := verbFlags("renew", "conflux renew — install a fresh credential on the running anchor\n\n"+
+		"  conflux renew\n\n"+
+		"Renewal is automatic: once at every start, and again on a timer at two thirds\n"+
+		"of the credential's life. This forces one now, which is what a machine whose\n"+
+		"renewals have been failing needs.\n\n"+
+		"The swap is hot. The identity does not change and no session is dropped, so\n"+
+		"this is not a restart and does not need to be treated as one.\n\n")
 
 	// anchorctl has a renew of its own, and it is the one that takes -cred: it
 	// installs a credential the caller already holds. conflux's fetches one first,
@@ -58,7 +51,8 @@ func runRenew(ctx context.Context, args []string) int {
 	}
 
 	if err := fs.Parse(args); err != nil {
-		return ExitUsage
+		return usageExit(err)
+
 	}
 
 	if fs.NArg() > 0 {

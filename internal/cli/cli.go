@@ -13,6 +13,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"runtime"
@@ -170,10 +171,7 @@ func verbFlags(name, head string) *flag.FlagSet {
 	fs.SetOutput(out)
 
 	fs.Usage = func() {
-		w := ui.Out
-		if out.mistake {
-			w = ui.Errw
-		}
+		w := usageOut(out.mistake)
 
 		fmt.Fprint(w, head)
 		fs.SetOutput(w)
@@ -182,6 +180,16 @@ func verbFlags(name, head string) *flag.FlagSet {
 	}
 
 	return fs
+}
+
+// usageOut is where a usage goes, a verb's or a list of commands: stdout where it was asked
+// for, and stderr beneath a mistake, which leaves stdout to what the command was asked for.
+func usageOut(mistake bool) io.Writer {
+	if mistake {
+		return ui.Errw
+	}
+
+	return ui.Out
 }
 
 // flagOutput is a verb's flag set's output: what the flag package says of a mistake, on stderr,

@@ -58,14 +58,8 @@ const ExitCheckFailed = 3
 func runCert(ctx context.Context, args []string) int {
 	cmds := certCommands()
 
-	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" || args[0] == "-help" {
-		certUsage(listOut(len(args) == 0), cmds)
-
-		if len(args) == 0 {
-			return ExitUsage
-		}
-
-		return ExitOK
+	if code, listed := commandList(args, func(w io.Writer) { certUsage(w, cmds) }); listed {
+		return code
 	}
 
 	c, ok := cmds[args[0]]
@@ -112,14 +106,26 @@ func certUsage(w io.Writer, cmds map[string]certCommand) {
 		"beside it. Exit 3 is a check that did not hold. docs/cert.md has the whole of it.\n")
 }
 
-// listOut is where a command list goes: stdout where it was asked for, and stderr beneath a
-// mistake -- a command given nothing -- as every usage mistake's usage goes.
-func listOut(mistake bool) io.Writer {
-	if mistake {
-		return ui.Errw
+// commandList answers cert, or a cert command with commands of its own, where args name none of
+// them: given nothing, a usage mistake, with the list print writes on stderr and exit 2; asked
+// for the list -- help, or -h, --help or -help, every word a flag set takes for help -- with it
+// on stdout and exit 0. listed is false where args[0] is for the caller to look up.
+func commandList(args []string, print func(w io.Writer)) (code int, listed bool) {
+	if len(args) > 0 {
+		switch args[0] {
+		case "help", "-h", "--help", "-help":
+		default:
+			return 0, false
+		}
 	}
 
-	return ui.Out
+	print(usageOut(len(args) == 0))
+
+	if len(args) == 0 {
+		return ExitUsage, true
+	}
+
+	return ExitOK, true
 }
 
 // certFlags is a cert subcommand's flag set, its usage the synopsis and the flags.

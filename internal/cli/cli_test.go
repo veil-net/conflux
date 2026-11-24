@@ -204,6 +204,19 @@ func TestUsageIsOneStream(t *testing.T) {
 	if out, _, _ := capture(t, "up", "-h"); !strings.Contains(out, "enrolment API base URL") {
 		t.Errorf("conflux up -h leaves its flags off stdout:\n%s", out)
 	}
+
+	// cert and the two cert commands that have commands of their own list them, and each of them
+	// takes every word a flag set takes for help, as their commands do.
+	for _, cmd := range [][]string{{"cert"}, {"cert", "ca"}, {"cert", "p12"}} {
+		for _, help := range []string{"help", "-h", "--help", "-help"} {
+			args := append(slices.Clone(cmd), help)
+
+			out, errOut, code := capture(t, args...)
+			if code != ExitOK || errOut != "" || !strings.Contains(out, "conflux "+strings.Join(cmd, " ")+" —") {
+				t.Errorf("conflux %s exited %d, printing\n%s\nand on stderr\n%s", strings.Join(args, " "), code, out, errOut)
+			}
+		}
+	}
 }
 
 // TestAMistakeIsSaidOnStderr: a flag a command does not take, an argument too many or too few,

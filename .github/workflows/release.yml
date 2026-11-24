@@ -1,6 +1,8 @@
 name: release
 
-# A release of every push to version3 or dev, a merge included, and nothing else.
+# A release of every pull request's merge into version3 or dev, and nothing else. A commit
+# pushed to either directly publishes nothing (the `merged` job), and goes out with the next
+# merge; a hand-run publishes the branch as it is.
 #
 # Every change reaches dev first, by a pull request CI has passed, and version3 only as a merge
 # of dev, which the owner opens (docs/testing.md, "Branches"); main carries no workflows at all.
@@ -42,10 +44,57 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Whether this run publishes. A push does only when it is a pull request's merge: the commit
+  # it lands is the one a pull request into this branch, merged, names as its merge, so the tree
+  # published is the one that pull request's CI tested. Asked of the pull requests rather than
+  # read from the commit's message, so a squash or a rebase merge counts, and a pushed commit
+  # worded like a merge does not. A hand-run always publishes: it is how a branch is released on
+  # purpose. On a hosted runner, so a direct push holds no self-hosted machine.
+  merged:
+    name: is this a pull request's merge?
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      publish: ${{ steps.decide.outputs.publish }}
+    steps:
+      - id: decide
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            if (context.eventName !== 'push') {
+              core.info('a hand-run publishes the branch as it is');
+              core.setOutput('publish', 'true');
+              return;
+            }
+            const { owner, repo } = context.repo;
+            const sha = context.sha;
+            const base = context.ref.replace(/^refs\/heads\//, '');
+            // A merge and its push are one act, but the pull request can name the commit its
+            // merge made a moment after the push is seen, so it is asked again, briefly. The
+            // merged pull request was updated by its merge, so it is among the newest.
+            for (let attempt = 1; ; attempt++) {
+              const { data } = await github.rest.pulls.list({
+                owner, repo, base, state: 'closed', sort: 'updated', direction: 'desc', per_page: 30,
+              });
+              const pr = data.find((p) => p.merged_at && p.merge_commit_sha === sha);
+              if (pr) {
+                core.info(`${sha.slice(0, 12)} is the merge of #${pr.number}, ${pr.title}`);
+                core.setOutput('publish', 'true');
+                return;
+              }
+              if (attempt === 6) break;
+              await new Promise((resolve) => setTimeout(resolve, 5000));
+            }
+            core.notice(`${sha.slice(0, 12)} is no pull request's merge into ${base}: a direct push, which publishes nothing`);
+
   build:
-    # The one guard this keeps. `workflow_dispatch` is not restricted to a branch, and
-    # nothing else would stop a hand-run on a feature branch publishing to the public.
-    if: github.ref == 'refs/heads/version3' || github.ref == 'refs/heads/dev'
+    needs: merged
+    # Two guards: a run publishes only as `merged` decides; and `workflow_dispatch` is not
+    # restricted to a branch, so nothing else would stop a hand-run on a feature branch
+    # publishing to the public.
+    if: needs.merged.outputs.publish == 'true' && (github.ref == 'refs/heads/version3' || github.ref == 'refs/heads/dev')
     runs-on: [self-hosted, linux]
 
     # The only job that writes: contents to delete and create the releases, the other two

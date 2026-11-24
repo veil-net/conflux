@@ -244,7 +244,7 @@ CI verifies that the code builds and runs. The utility checks — `gofmt`, `stat
 on a developer's machine before a push, and not in CI.
 
 Every job fetches the **pinned** release build of `veil-net/anchor` for the base it runs
-against — `dev-latest` for a pull request into `dev` and a push to it, `latest` for
+against — `dev-latest` for a pull request into `dev` and its merge, `latest` for
 `version3` — and verifies every digest, with no anchor checkout. It needs a
 credential, since anchor is private: CI stores a GitHub App's Client ID and private key and
 mints an hour-long token per job, so the secret held here is not itself a key to
@@ -316,8 +316,11 @@ let the release workflow push, for the back-merge: GitHub Actions on a ruleset's
 Without that the push is refused, the release is out regardless, and `back-merge` fails saying
 what to do: merge `version3` into `dev` by pull request.
 
-**The release** runs on every push to `dev` or `version3`, a merge included, and it only
-releases: it does not re-run any of the above. A merge lands only when CI is green, which rests
+**The release** publishes every pull request's merge into `dev` or `version3`, and nothing else.
+Its first job, `merged`, asks whether the pushed commit is a merged pull request's merge into
+the branch: a commit pushed directly, which no pull request's CI tested, publishes nothing, and
+goes out with the next merge. A hand-run (`workflow_dispatch`) publishes the branch as it is. It
+only releases: it does not re-run any of the above. A merge lands only when CI is green, which rests
 on that branch protection, and is unsafe without it. It refuses to run anywhere but those two,
 fetches anchor's `dev-latest` on `dev` and its `latest` on `version3`, runs `make dist`, attests
 the artifacts and writes one set of notes: the changes since the previous version — on
@@ -325,7 +328,7 @@ the artifacts and writes one set of notes: the changes since the previous versio
 what is inside. On `dev` it publishes the pre-release `dev-latest`, never Latest. On `version3`
 it publishes twice, with the same artifacts and notes: at the tag the `VERSION` file names,
 verbatim, and at `latest`, which is the repository's Latest release; then `back-merge` runs.
-Each is deleted, with its tag, just before it is released again, so a push that leaves
+Each is deleted, with its tag, just before it is released again, so a merge that leaves
 `VERSION` alone replaces that version's release with one built from the commit that
 landed, tag and all. anchor's `latest` moves, so a release carries whatever anchor
 published most recently, which is the intent — conflux ships the newest anchor, not a

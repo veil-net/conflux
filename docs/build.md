@@ -343,11 +343,12 @@ on first use, at the cost of reading the pair once per process.
 
 The file rather than a tag, deliberately: a tag is a claim about a commit, and the file is
 a claim about the tree — and it is the tree that gets built. It names the release; it does
-not decide whether one happens. `release.yml` runs on every push to `version3`, a merge
-included, and **every push builds and publishes twice**, with the same artifacts and the
+not decide whether one happens. `release.yml` publishes every pull request's merge into
+`version3`, and **every merge builds and publishes twice**, with the same artifacts and the
 same notes: at the tag this file names, verbatim, and at `latest`, which moves to every newer
-build and is the repository's Latest release. A push to `dev` publishes neither: it builds the
-pre-release `dev-latest`, whose title names this file's version beside the commit.
+build and is the repository's Latest release. A merge into `dev` publishes neither: it builds the
+pre-release `dev-latest`, whose title names this file's version beside the commit. A commit
+pushed to either branch directly publishes nothing ([testing.md](testing.md), "The release").
 
 **Each maintenance pass moves the version on.** A major new feature from anchor, which the
 pass finds when it diffs anchor's surface against what conflux uses, makes a new major:

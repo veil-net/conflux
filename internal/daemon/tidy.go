@@ -23,24 +23,31 @@ import (
 // did not finish, and no anchord runs while the directory is tidied.
 var anchorFiles = named("bootstrap.json", "realmlinks", "knowledge", "subnets.json")
 
-// rootNames are the root's own entries: what conflux keeps there, the directories in it, and
-// what the platform's service manager or the service copy's last move left beside them. The
-// same names in every root, so read once, off a root that is nowhere.
+// rootNames are the root's own entries: the files rootFiles lists, and the rest of what
+// conflux keeps there -- anchord's configuration, which is given to anchord's account where it
+// runs as one and so is not restoreModes', and the directories -- and what the platform's
+// service manager or the service copy's last move left beside them. The same names in every
+// root, so read once, off a root that is nowhere.
 var rootNames = func() []string {
 	d := paths.Dirs{}
 
-	var out []string
-
-	for _, p := range []string{
-		d.ConfigFile(), d.StateFile(), d.ManifestFile(), d.DaemonConfigFile(), d.PrivilegeFile(),
-		d.LockFile(), d.ServeLockFile(), d.ServiceExecutable(), d.Libexec(), d.AnchorDir(), d.RootAnchorDir(),
-		d.RunDir(),
+	others := []string{
+		d.DaemonConfigFile(), d.Libexec(), d.AnchorDir(), d.RootAnchorDir(), d.RunDir(),
 		// The copy a running Windows service's image was moved aside to, which the next Place
 		// removes once nothing runs it.
 		d.ServiceExecutable() + ".old",
 		// FreeBSD's daemon(8)'s record of the supervisor, which rc.subr stops it by.
 		d.RCPidFile(),
-	} {
+	}
+
+	files := rootFiles(d)
+	out := make([]string, 0, len(files)+len(others))
+
+	for _, f := range files {
+		out = append(out, filepath.Base(f.path))
+	}
+
+	for _, p := range others {
 		out = append(out, filepath.Base(p))
 	}
 

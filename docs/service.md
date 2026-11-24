@@ -124,8 +124,10 @@ uplink) and rebuilds it through the same bring-up when it does not. A blocked an
 not one of these: a realm's block leaves it running, outside the realm, and rebuilding
 it would change nothing. A rebuild refused for good three times in a row — a
 `conflux.json` edited under a running service into one that will not build an anchor,
-say — makes the watcher give up and say so in the log: the service stays up holding no
-anchor, and renews nothing, until it is started again with `conflux start` or a reboot.
+say — makes the watcher give up on the anchor and say so in the log: the service stays up
+holding none until it is started again with `conflux start` or a reboot. The observer, where
+it runs beside the anchor, outlives that: it goes on observing, renewed and watched as
+before. With no observer, the service renews nothing until then.
 
 ## One machine, one service
 

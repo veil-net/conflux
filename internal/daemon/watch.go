@@ -61,15 +61,16 @@ const (
 
 // watch keeps an anchor in the daemon, rebuilding it when it has gone or its link has
 // ended, and the observer observing, starting it again when its capture has ended; and
-// reports true once it has given up on what the configuration runs.
+// reports true once it has given up on everything the configuration runs.
 //
 // It gives up on a configuration that will not build an anchor, which a rebuild refused
 // for good rebuildRefusals times in a row is -- a conflux.json edited under a running
 // service, a credential that no longer grants its taints. Retrying that every thirty
 // seconds for ever would fill the journal and change nothing; a restart of the service --
 // `conflux start`, a reboot -- tries again, as it always would. An observer the host will
-// not let capture is given up on the same way: beside an anchor the anchor is still kept,
-// and observing alone there is nothing left to keep.
+// not let capture is given up on the same way. Either one given up on leaves the other kept:
+// the observer outlives an anchor's failures, renewed and watched as before, and an anchor
+// outlives the observer's. With neither left there is nothing to keep.
 //
 // An anchor and an observer are kept apart: each has its own backoff and its own count of
 // refusals, so one that keeps failing neither slows the other's retries nor counts against
@@ -80,7 +81,7 @@ func (s *Supervisor) watch(ctx context.Context, cfg *config.Config, every time.D
 	device := devicePath(cfg.Uplink)
 
 	anchor, observer := newKeeper(), newKeeper()
-	observing := cfg.Observer != nil
+	anchoring, observing := cfg.Anchor(), cfg.Observer != nil
 
 	// zeroSince is when the connection count was first seen at zero, or the zero
 	// time when the link is carrying something.
@@ -97,7 +98,7 @@ func (s *Supervisor) watch(ctx context.Context, cfg *config.Config, every time.D
 		// check already made; nil where none was made or it was not answered.
 		var st *anchorctl.Status
 
-		if cfg.Anchor() && anchor.due() {
+		if anchoring && anchor.due() {
 			why, link, read := s.lost(ctx, cfg.Uplink, device, &zeroSince)
 			st = read
 
@@ -108,7 +109,11 @@ func (s *Supervisor) watch(ctx context.Context, cfg *config.Config, every time.D
 				case respawned:
 					return false
 				case gaveUp:
-					return true
+					if !observing {
+						return true
+					}
+
+					anchoring = false
 				case kept:
 					// Whatever the state was, it is a fresh anchor now.
 					zeroSince = time.Time{}
@@ -131,7 +136,7 @@ func (s *Supervisor) watch(ctx context.Context, cfg *config.Config, every time.D
 				continue
 			}
 
-			if !cfg.Anchor() {
+			if !anchoring {
 				return true
 			}
 

@@ -378,3 +378,65 @@ func TestARebuildsRenewalReachesTheObserver(t *testing.T) {
 		t.Errorf("the observer was handed %q (%v), want the renewed chain %q", got, err, is.chain)
 	}
 }
+
+// TestTheObserverOutlivesAnAnchorGivenUpOn: beside the observer, an anchor whose rebuilds are
+// refused for good is given up on and the observer is not: the watch goes on, starting it
+// again when its capture ends, and does not end the cycle's loops, so its renewals go on too.
+func TestTheObserverOutlivesAnAnchorGivenUpOn(t *testing.T) {
+	t.Setenv(fakeAnchorctlStatusEnv, "none")
+	t.Setenv(fakeAnchorctlObserverEnv, "failed")
+
+	s, log := supervised(t, "1")
+	credentialed(t, s.Dirs)
+
+	// A configuration conflux refuses, written under the running service.
+	if err := os.WriteFile(s.Dirs.ConfigFile(), []byte(`{"version":1,"mode":"neither"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, Observer: &config.Observer{}}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	gaveUp := make(chan bool, 1)
+	go func() { gaveUp <- s.watch(ctx, cfg, time.Millisecond) }()
+
+	// The last refusal, and then the observer started again after it.
+	afterGivingUp := func() bool {
+		cmds := ran(t, log)
+
+		for i, stops := 0, 0; i < len(cmds); i++ {
+			if cmds[i] == "stop" {
+				if stops++; stops == rebuildRefusals {
+					return slices.Contains(cmds[i:], "observe")
+				}
+			}
+		}
+
+		return false
+	}
+
+	for deadline := time.Now().Add(15 * time.Second); !afterGivingUp(); {
+		select {
+		case got := <-gaveUp:
+			t.Fatalf("the watch ended (gave up: %v) with the observer still to keep, after %d rebuilds", got,
+				strings.Count(strings.Join(ran(t, log), "\n"), "stop"))
+		case <-time.After(10 * time.Millisecond):
+		}
+
+		if time.Now().After(deadline) {
+			t.Fatalf("the observer was not watched past the anchor given up on; anchorctl ran %v", ran(t, log))
+		}
+	}
+
+	cancel()
+
+	if got := <-gaveUp; got {
+		t.Error("the watch reported giving up with the observer kept")
+	}
+
+	if stops := strings.Count(strings.Join(ran(t, log), "\n"), "stop"); stops != rebuildRefusals {
+		t.Errorf("rebuilt %d times, want %d and then none", stops, rebuildRefusals)
+	}
+}

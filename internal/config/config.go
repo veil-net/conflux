@@ -403,19 +403,32 @@ func Load(d paths.Dirs) (*Config, error) {
 	return &c, nil
 }
 
-// Save writes it, atomically and 0600.
+// Save writes it, atomically and 0600. Every caller holds d's lock: the supervisor
+// rewrites the file in its own form as it starts (Canonical), and must not write back what
+// a command has just replaced.
 func Save(d paths.Dirs, c *Config) error {
-	c.Version = ConfigVersion
 	c.UpdatedAt = time.Now().UTC().Truncate(time.Second)
 
 	if c.CreatedAt.IsZero() {
 		c.CreatedAt = c.UpdatedAt
 	}
 
-	b, err := json.MarshalIndent(c, "", "  ")
+	b, err := encodeConfig(c)
 	if err != nil {
-		return fmt.Errorf("encode config: %w", err)
+		return err
 	}
 
-	return WriteFileAtomic(d.ConfigFile(), append(b, '\n'), 0o600)
+	return WriteFileAtomic(d.ConfigFile(), b, 0o600)
+}
+
+// encodeConfig is c in the form conflux writes it.
+func encodeConfig(c *Config) ([]byte, error) {
+	c.Version = ConfigVersion
+
+	b, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("encode config: %w", err)
+	}
+
+	return append(b, '\n'), nil
 }

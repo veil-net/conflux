@@ -87,14 +87,24 @@ func LoadState(d paths.Dirs) (*State, error) {
 // SaveState writes it, atomically and 0600. It holds no key material, but it does
 // hold the AnchorID, and there is no reason to be looser than the file beside it.
 func SaveState(d paths.Dirs, s *State) error {
+	b, err := encodeState(s)
+	if err != nil {
+		return err
+	}
+
+	return WriteFileAtomic(d.StateFile(), b, 0o600)
+}
+
+// encodeState is s in the form conflux writes it.
+func encodeState(s *State) ([]byte, error) {
 	s.Version = StateVersion
 
 	b, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
-		return fmt.Errorf("encode state: %w", err)
+		return nil, fmt.Errorf("encode state: %w", err)
 	}
 
-	return WriteFileAtomic(d.StateFile(), append(b, '\n'), 0o600)
+	return append(b, '\n'), nil
 }
 
 // NewIdentity forgets everything this state held about the identity before: what a

@@ -10,6 +10,7 @@ import (
 	"github.com/veil-net/conflux/internal/anchorctl"
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
+	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/service"
 	"github.com/veil-net/conflux/internal/ui"
@@ -31,7 +32,7 @@ func bring(ctx context.Context, d paths.Dirs, cfg *config.Config, verb string, s
 		return fail(err)
 	}
 
-	if err := config.Save(d, cfg); err != nil {
+	if err := saveConfig(d, cfg); err != nil {
 		return fail(err)
 	}
 
@@ -68,6 +69,19 @@ func bring(ctx context.Context, d paths.Dirs, cfg *config.Config, verb string, s
 	report(d, cfg, started, verb)
 
 	return ExitOK
+}
+
+// saveConfig writes cfg under the machine's lock, which the supervisor holds as it rewrites
+// conflux.json in its own form at a start (config.Canonical): without it, a start that read
+// the file before this write would put the old one back.
+func saveConfig(d paths.Dirs, cfg *config.Config) error {
+	unlock, err := flock.Acquire(d.LockFile())
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	return config.Save(d, cfg)
 }
 
 // restartService hands the machine to the boot service rather than running an

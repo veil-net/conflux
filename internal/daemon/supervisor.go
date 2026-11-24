@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"os"
 	"os/exec"
@@ -187,6 +188,13 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		return err
 	}
 
+	// conflux.json and state.json in conflux's own form, under the lock every writer of
+	// either holds: a hand edit that is valid takes effect, and leaves behind nothing conflux
+	// does not know. One that does not parse is loadConfig's to refuse, saying where.
+	if err := s.canonical(); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		s.report().Warn("could not write conflux.json and state.json in conflux's form: %v", err)
+	}
+
 	// Nothing to supervise, or nothing it will start on, before anything is extracted.
 	// Distinguished from a failure so the unit can stop instead of restarting into the
 	// same answer every five seconds.
@@ -225,6 +233,17 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	}
 
 	return s.loop(ctx)
+}
+
+// canonical rewrites conflux.json and state.json in conflux's form, under the lock.
+func (s *Supervisor) canonical() error {
+	unlock, err := flock.Acquire(s.Dirs.LockFile())
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	return config.Canonical(s.Dirs)
 }
 
 // loop is spawn, bring up, watch, back off, repeat.

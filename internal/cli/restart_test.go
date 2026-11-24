@@ -2,8 +2,11 @@ package cli
 
 import (
 	"testing"
+	"time"
 
+	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
+	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
 )
 
@@ -88,5 +91,38 @@ func TestRestartWithWorksWithNoMarker(t *testing.T) {
 
 	if mgr.restarts != 1 {
 		t.Errorf("Restart called %d times, want 1", mgr.restarts)
+	}
+}
+
+// TestBringWritesTheConfigurationUnderTheLock: the supervisor rewrites conflux.json in its
+// own form as it starts, under the machine's lock, so a command's write takes the same lock
+// and is never written back over by a start that read the file before it.
+func TestBringWritesTheConfigurationUnderTheLock(t *testing.T) {
+	d := testDirs(t)
+
+	unlock, err := flock.Acquire(d.LockFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	saved := make(chan error, 1)
+
+	go func() { saved <- saveConfig(d, &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}}) }()
+
+	select {
+	case err := <-saved:
+		unlock()
+		t.Fatalf("the configuration was written while another held the lock (%v)", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	unlock()
+
+	if err := <-saved; err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := config.Load(d); err != nil {
+		t.Errorf("no configuration was written once the lock was free: %v", err)
 	}
 }

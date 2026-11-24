@@ -88,6 +88,12 @@ it, and a protected DACL grants the two of them full control and nobody else any
 inherited by everything beneath. Every secret file gets the same, explicitly, before
 anything is written into it.
 
+`%ProgramData%` here, and `%ProgramFiles%` for the installed conflux, mean the folders Windows
+keeps under those names, which conflux asks the system for (its known folders), and not the
+environment variables, which whoever runs conflux sets: pointed elsewhere, they would move
+the root, and the copy of conflux the service runs as SYSTEM, into a directory of their
+choosing.
+
 A root some other account created is refused rather than taken over: whoever made it
 could have filled it first. And the two binaries the service runs as SYSTEM, and
 `wintun.dll` beside them, are run only if Administrators, SYSTEM or the account running

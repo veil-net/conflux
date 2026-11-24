@@ -31,9 +31,9 @@ import (
 //
 // The protections a system service is given where they take nothing it needs: UMask=0077,
 // so nothing the supervisor or anchord creates is anybody else's to read; a /tmp of its own
-// (PrivateTmp), which nothing here uses; home directories read-only; and the clock, the
-// hostname, the cgroup tree, the execution domain, realtime scheduling, set-user-ID files
-// and foreign system-call ABIs out of reach. They hold for anchord and what it runs too,
+// (PrivateTmp), which nothing here uses; home directories read-only; and the hostname, the
+// cgroup tree, the execution domain, realtime scheduling, set-user-ID files and foreign
+// system-call ABIs out of reach. They hold for anchord and what it runs too,
 // none of which needs any of them.
 //
 // Deliberately absent: StateDirectory, because systemd gives a directory it claims to
@@ -42,7 +42,9 @@ import (
 // own directory back to root. ProtectSystem, because the supervisor writes /etc -- the
 // account anchord runs as, and its own unit when it puts it back. ProtectKernelTunables and
 // ProtectKernelModules, because anchor's router sets sysctls and its firewall commands load
-// modules. And NoNewPrivileges, which would hold for a root anchord too, where a host's
+// modules. ProtectClock, because it brings DeviceAllow=char-rtc with it, and any DeviceAllow=
+// closes every device not named to the service: /dev/net/tun, and an uplink's serial line, to
+// anchord. And NoNewPrivileges, which would hold for a root anchord too, where a host's
 // firewall answers only root, and stop its firewall commands' SELinux transitions; the
 // supervisor sets no_new_privs on the anchord it can, itself.
 const unitTemplate = `[Unit]
@@ -68,7 +70,6 @@ LimitNOFILE=%[2]d
 UMask=0077
 PrivateTmp=yes
 ProtectHome=read-only
-ProtectClock=yes
 ProtectHostname=yes
 ProtectControlGroups=yes
 LockPersonality=yes

@@ -19,7 +19,6 @@ func TestSystemdUnit(t *testing.T) {
 		"\nUMask=0077\n",
 		"\nPrivateTmp=yes\n",
 		"\nProtectHome=read-only\n",
-		"\nProtectClock=yes\n",
 		"\nProtectHostname=yes\n",
 		"\nProtectControlGroups=yes\n",
 		"\nLockPersonality=yes\n",
@@ -36,9 +35,11 @@ func TestSystemdUnit(t *testing.T) {
 	// The supervisor gives anchord its capabilities, and systemd must not take anchord's
 	// directory back: a StateDirectory= is re-owned at every start once its group is
 	// anchord's account. Nor does the unit claim a directory of its own: everything is in
-	// the root, which the supervisor keeps.
+	// the root, which the supervisor keeps. And no device policy: ProtectClock= brings
+	// DeviceAllow=char-rtc with it, which closes every other device to anchord, /dev/net/tun
+	// and an uplink's line among them.
 	for _, absent := range []string{"Capabilities=", "StateDirectory", "NoNewPrivileges", "RuntimeDirectory",
-		"ConfigurationDirectory", "ProtectSystem", "ProtectKernel"} {
+		"ConfigurationDirectory", "ProtectSystem", "ProtectKernel", "ProtectClock", "DeviceAllow", "DevicePolicy"} {
 		if strings.Contains(unit, absent) {
 			t.Errorf("the unit has %q:\n%s", absent, unit)
 		}

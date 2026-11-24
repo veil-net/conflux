@@ -184,8 +184,9 @@ check_mode /var/lib/.conflux/run/token "600 root root"
 check_mode /var/lib/.conflux/conflux "700 root root"
 
 say "the unit runs with a system service's protections"
-for want in UMask=0077 PrivateTmp=yes ProtectHome=read-only ProtectClock=yes ProtectHostname=yes \
-  ProtectControlGroups=yes LockPersonality=yes RestrictRealtime=yes RestrictSUIDSGID=yes; do
+for want in UMask=0077 PrivateTmp=yes ProtectHome=read-only ProtectHostname=yes \
+  ProtectControlGroups=yes LockPersonality=yes RestrictRealtime=yes RestrictSUIDSGID=yes \
+  ProtectClock=no DevicePolicy=auto DeviceAllow=; do
   key=${want%%=*}
   got=$(docker exec "$NAME" systemctl show -p "$key" --value conflux.service)
   [ "$key=$got" = "$want" ] || { echo "the unit's $key is $got, want ${want#*=}" >&2; exit 1; }

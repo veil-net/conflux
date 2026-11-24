@@ -196,7 +196,6 @@ LimitNOFILE=1048576
 UMask=0077
 PrivateTmp=yes
 ProtectHome=read-only
-ProtectClock=yes
 ProtectHostname=yes
 ProtectControlGroups=yes
 LockPersonality=yes
@@ -236,11 +235,11 @@ that gives `anchord`, as an account of its own, exactly the capabilities its mod
 `AmbientCapabilities=` here would go to the supervisor, which as root has them all
 anyway, and reach nothing more.
 
-The last ten lines are the protections a system service is given wherever they take nothing
+The last nine lines are the protections a system service is given wherever they take nothing
 the supervisor or `anchord` needs: nothing either creates is anybody else's to read
-(`UMask=0077`), `/tmp` is the unit's own, home directories are read-only, and the clock, the
-hostname, the cgroup tree, the execution domain, realtime scheduling, set-user-ID files and
-foreign system-call ABIs are out of reach — for `anchord` and what it runs as well.
+(`UMask=0077`), `/tmp` is the unit's own, home directories are read-only, and the hostname,
+the cgroup tree, the execution domain, realtime scheduling, set-user-ID files and foreign
+system-call ABIs are out of reach — for `anchord` and what it runs as well.
 
 No `RuntimeDirectory=` or `ConfigurationDirectory=`: everything conflux keeps is in its one
 root, which the supervisor makes and holds to its modes itself, `run/` included, which it
@@ -250,7 +249,9 @@ start once its top belongs to anybody else — and the root's group is `anchord`
 so every start would hand `anchord`'s own directory back to root. `ProtectSystem=`, because
 the supervisor writes `/etc`: the account `anchord` runs as, and its own unit when it puts it
 back. `ProtectKernelTunables=` and `ProtectKernelModules=`, because anchor's router sets
-sysctls and its firewall commands load modules. And `NoNewPrivileges=`, which would hold for
+sysctls and its firewall commands load modules. `ProtectClock=`, because it brings
+`DeviceAllow=char-rtc r` with it, and any `DeviceAllow=` closes every device it does not name
+to the service: `/dev/net/tun`, and an uplink's serial line, to `anchord`. And `NoNewPrivileges=`, which would hold for
 a root `anchord` too, where the host's firewall answers only root, and stop its firewall
 commands' SELinux transitions; the supervisor sets `no_new_privs` itself on the `anchord`
 that runs nothing.

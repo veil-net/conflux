@@ -126,6 +126,10 @@ func TestAFreshUpdateLinksItForSudo(t *testing.T) {
 			said: "{link} is not conflux's, and root's PATH finds it rather than {exe}: " + relink,
 		},
 		{
+			name: "a file at the link's name, which the PATH finds before it", path: []string{"link", "exe"}, before: "file", after: "file",
+			said: "{link} is not conflux's, and root's PATH finds it rather than {exe}: remove it; root's PATH then finds {exe}",
+		},
+		{
 			name: "a file at the link's name, which the PATH finds through another spelling", path: []string{"spelt"}, before: "file", after: "file",
 			said: "{link} is not conflux's, and root's PATH finds it rather than {exe}: " + relink,
 		},

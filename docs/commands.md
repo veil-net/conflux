@@ -579,8 +579,9 @@ link is made by hand, with the line the update says
 (`sudo ln -s /usr/local/bin/conflux /usr/bin/conflux`), or conflux typed by its full path under
 `sudo`. An update, finding conflux installed, makes no link, and `install.sh` run again would fetch the
 `latest` release, moving a dev build off its channel. A `/usr/bin/conflux` that is not that
-link is left alone, and said: where that PATH finds it in conflux's place, to be removed before
-the link is made the same way. No token is needed or sent: the repository is public.
+link is left alone, and said: where that PATH finds it in conflux's place, to be removed alone
+where that PATH holds `/usr/local/bin` too, and otherwise before the link is made the same way.
+No token is needed or sent: the repository is public.
 
 | Situation | |
 |---|---|

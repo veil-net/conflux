@@ -117,31 +117,49 @@ func rootFinds(exe string) (found string, ok bool) {
 // it: another conflux found first. Where exe's own directory is on that PATH at all, before the
 // link's or after it, that conflux is ahead of it, and removing it lets the PATH find exe with
 // no link; where it is not, removing it lets exe be linked by hand (relink); and finding none,
-// that directory left out too, only exe's full path helps. Each directory on the PATH is
-// compared with exe's as a file, each stat'd once (os.SameFile), never by how it is spelled.
+// that directory left out too, only exe's full path helps.
 func missed(found, link, exe string) error {
 	if found == "" {
 		return fmt.Errorf("root's PATH leaves %s out too: type %s by its full path under sudo", filepath.Dir(link), exe)
 	}
 
-	if dir, err := os.Stat(filepath.Dir(exe)); err == nil {
-		for _, d := range filepath.SplitList(os.Getenv("PATH")) {
-			if fi, err := os.Stat(d); err == nil && os.SameFile(fi, dir) {
-				return fmt.Errorf("root's PATH finds %s before %s: remove it; root's PATH then finds %s", found, filepath.Dir(exe), exe)
-			}
-		}
+	if onRootPath(filepath.Dir(exe)) {
+		return fmt.Errorf("root's PATH finds %s before %s: remove it; root's PATH then finds %s", found, filepath.Dir(exe), exe)
 	}
 
 	return fmt.Errorf("root's PATH finds %s before %s: %s", found, filepath.Dir(link), relink(exe, link))
 }
 
+// onRootPath reports whether dir is on this process's PATH, root's, compared as a file, each
+// directory stat'd once (os.SameFile), never by how it is spelled: where exe's is, removing a
+// conflux the PATH finds first is all it takes for the PATH to find exe, with no link.
+func onRootPath(dir string) bool {
+	want, err := os.Stat(dir)
+	if err != nil {
+		return false
+	}
+
+	for _, d := range filepath.SplitList(os.Getenv("PATH")) {
+		if fi, err := os.Stat(d); err == nil && os.SameFile(fi, want) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // notOurs says that link, the name of the link for sudo, is a file conflux did not make, and why
 // root's PATH does not find exe: where what it finds is that file -- through the link's own
-// directory, however spelled, as a merged /bin is /usr/bin -- removing it lets exe be linked
-// there (relink); otherwise why, which another conflux found first, or exe's directory left out,
+// directory, however spelled, as a merged /bin is /usr/bin -- removing it is all it takes where
+// exe's directory is on the PATH too, after the link's, and otherwise lets exe be linked there
+// (relink); otherwise why, which another conflux found first, or exe's directory left out,
 // keeps.
 func notOurs(found, link, exe, why string) error {
 	if found != "" && sameFile(filepath.Dir(found), filepath.Dir(link)) {
+		if onRootPath(filepath.Dir(exe)) {
+			return fmt.Errorf("%s is not conflux's, and root's PATH finds it rather than %s: remove it; root's PATH then finds %s", link, exe, exe)
+		}
+
 		return fmt.Errorf("%s is not conflux's, and root's PATH finds it rather than %s: %s", link, exe, relink(exe, link))
 	}
 

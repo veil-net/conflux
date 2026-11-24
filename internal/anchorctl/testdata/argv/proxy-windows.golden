@@ -2,7 +2,7 @@ start
 -manifest
 -
 -dir
-C:\ProgramData\conflux\anchor
+C:\ProgramData\.conflux\anchor
 -tun=false
 -serve-exit=false
 -use-exit=false

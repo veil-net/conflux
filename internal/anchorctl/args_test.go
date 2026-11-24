@@ -91,7 +91,7 @@ var scenarios = map[string]StartMode{
 	},
 	"proxy-windows": {
 		Proxies: []string{"8080=127.0.0.1:3000"},
-		Dir:     `C:\ProgramData\conflux\anchor`,
+		Dir:     `C:\ProgramData\.conflux\anchor`,
 	},
 	"up-port": {
 		TUN:  true,

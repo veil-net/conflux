@@ -174,9 +174,12 @@ func (s *Supervisor) rebuildAnchor(ctx context.Context, cfg *config.Config, why 
 		return kept
 	}
 
-	// A rebuild cut short by the watcher's end -- the service stopping, or the cycle ending
-	// under it -- is no failure of it: nothing is said or counted, and the decision is not
-	// asked again. The watcher returns at its next look at ctx.
+	// A rebuild that comes back once the watcher's ctx has ended -- the service stopping, or the
+	// cycle ending on anchord's exit, which loop logs -- is no failure of it: nothing is said or
+	// counted, and the decision is not asked again. The watcher returns at its next look at ctx.
+	// One that failed before then is taken below as any failure is, even one anchord's exit
+	// failed: anchord closes its socket before it flushes its export and exits, and a crash can
+	// beat the cycle to it.
 	if ctx.Err() != nil {
 		return retrying
 	}
@@ -220,9 +223,11 @@ func (s *Supervisor) restartObserver(ctx context.Context, cfg *config.Config, wa
 		return false
 	}
 
-	// A start cut short by the watcher's end -- the service stopping, or the cycle ending under
-	// it -- is no failure of the observer: nothing more is said or counted, and it is not given
-	// up. The watcher returns at its next look at ctx.
+	// A start that comes back once the watcher's ctx has ended -- the service stopping, or the
+	// cycle ending on anchord's exit, which loop logs -- is no failure of the observer: nothing
+	// more is said or counted, and it is not given up. The watcher returns at its next look at
+	// ctx. One that failed before then is taken below as any failure is, even one anchord's exit
+	// failed, as a rebuild's is.
 	if ctx.Err() != nil {
 		return false
 	}

@@ -58,9 +58,11 @@ enrolment named a port below 1024, an uplink's device appeared — starts `ancho
 with what it now needs. A start or a rebuild that the service's stop cuts short has not failed,
 and neither has the observer's start, beside the anchor, which ends the start there rather than
 starting the anchor without it, or the watcher's, once its capture ended: nothing is said of it
-or counted against it, and the decision is not made again. The same holds of a rebuild, or the
-watcher's start of the observer, that the cycle's end cuts short, `anchord` exiting under it:
-the exit is said instead, with `anchord`'s last lines.
+or counted against it, and the decision is not made again. A rebuild, or the watcher's start of
+the observer, still running when the cycle ends on `anchord`'s exit is not said or counted
+either; the exit is, with `anchord`'s last lines. One that has already failed by then is said
+and counted as any failure is, before the exit: `anchord` closes its socket before it flushes
+its export and exits, and a crash can beat the cycle to it.
 
 Readiness is a real probe and not a sleep. A socket file on disk proves nothing —
 a crashed daemon leaves one behind — so the supervisor polls until `anchorctl status`

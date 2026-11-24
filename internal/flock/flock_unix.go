@@ -9,6 +9,8 @@ import (
 	"os"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/veil-net/conflux/internal/config"
 )
 
 // Acquire takes an exclusive advisory lock, blocking until it is ours.
@@ -56,12 +58,13 @@ func lock(path string, how int) (func(), bool, error) {
 // account may write: anchor's lock beside a socket that anchord, running as its own
 // account, made.
 //
-// So it is asked without trusting the file. It is opened to read and never created, and a
-// symlink, a FIFO or a device is refused rather than opened, so the question cannot be
-// turned into root creating, truncating or blocking on whatever the name was made to point
-// at. A file that is not there is held by nobody.
+// So it is asked without trusting the file. It is opened as every such file is
+// (config.OpenUntrusted), to read and never created, and a symlink, a FIFO or a device is
+// refused rather than opened, so the question cannot be turned into root creating,
+// truncating or blocking on whatever the name was made to point at. A file that is not
+// there is held by nobody.
 func Held(path string) (bool, error) {
-	f, err := os.OpenFile(path, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	f, err := os.OpenFile(path, config.OpenUntrusted, 0)
 	if errors.Is(err, fs.ErrNotExist) {
 		return false, nil
 	}

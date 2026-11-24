@@ -571,16 +571,19 @@ it found: on Windows its directory goes on the machine's `Path`, as `install.ps1
 elsewhere, where the conflux the update's own PATH — root's, `secure_path` under `sudo` on
 Fedora and RHEL — finds is not that file, `/usr/local/bin` left out or another conflux found
 first, `/usr/bin/conflux` is linked to it, as `install.sh` links it, and kept only where that
-PATH, asked again, finds the file through it: where it finds another conflux before `/usr/bin`
-the link goes again, as one made before does, and the other is named. Where that PATH holds
-`/usr/local/bin` at all, before `/usr/bin` or after it, the other conflux is to be removed alone,
-that PATH then finding the installed file; where it does not, it is to be removed before the
-link is made by hand, with the line the update says
-(`sudo ln -s /usr/local/bin/conflux /usr/bin/conflux`), or conflux typed by its full path under
-`sudo`. An update, finding conflux installed, makes no link, and `install.sh` run again would fetch the
-`latest` release, moving a dev build off its channel. A `/usr/bin/conflux` that is not that
-link is left alone, and said: where that PATH finds it in conflux's place, to be removed alone
-where that PATH holds `/usr/local/bin` too, and otherwise before the link is made the same way.
+PATH, asked again, finds the file through it: where it finds another conflux instead, the link
+goes again, as one made before does, and the other is named, with the way out that PATH holds
+now. Where it holds `/usr/local/bin`, before `/usr/bin` or after it, that is the other conflux
+removed; where it holds `/usr/bin` alone, the other removed and then the link made by hand,
+with the line the update says (`sudo ln -s /usr/local/bin/conflux /usr/bin/conflux`); either way,
+or conflux typed by its full path under `sudo`, which is all it says where that PATH holds
+neither. An update, finding conflux installed, makes no link, and `install.sh` run again would
+fetch the `latest` release, moving a dev build off its channel. A `/usr/bin/conflux` that is not
+that link is left alone, and said, with the same ways out: where that PATH finds it in conflux's
+place, it is to be removed, alone where that PATH holds `/usr/local/bin` too, and otherwise
+before the link is made the same way; where that PATH finds another conflux first and holds
+`/usr/local/bin`, that one is to be removed; and otherwise conflux is to be typed by its full
+path alone.
 No token is needed or sent: the repository is public.
 
 | Situation | |

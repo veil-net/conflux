@@ -102,6 +102,12 @@ func relink(exe, link string) string {
 	return fmt.Sprintf("remove it, then link the installed conflux for sudo (sudo ln -s %s %s), or type %s by its full path under sudo", exe, link, exe)
 }
 
+// ahead is the way out where root's PATH holds exe's directory and finds found, a conflux that
+// is not exe, before it: that one removed, or exe typed by its full path.
+func ahead(found, exe string) string {
+	return fmt.Sprintf("root's PATH finds %s before %s: remove it, or type %s by its full path under sudo", found, filepath.Dir(exe), exe)
+}
+
 // rootFinds is the conflux this process's PATH, root's, finds by name, or "" for none, and
 // whether that is exe: asked of the file, through any link, by sameFile.
 func rootFinds(exe string) (found string, ok bool) {
@@ -114,25 +120,25 @@ func rootFinds(exe string) (found string, ok bool) {
 }
 
 // missed says why root's PATH, which finds found, does not find exe through link, the link to
-// it: another conflux found first. Where exe's own directory is on that PATH at all, before the
-// link's or after it, that conflux is ahead of it, and removing it lets the PATH find exe with
-// no link; where it is not, removing it lets exe be linked by hand (relink); and finding none,
-// that directory left out too, only exe's full path helps.
+// it, and the way out from what that PATH holds now, each with exe's full path beside it: where
+// exe's own directory is on it, before the link's or after it, found removed (ahead); where only
+// the link's directory is, found removed before the link is made by hand (relink); and where
+// neither is, or it finds no conflux, exe's full path alone.
 func missed(found, link, exe string) error {
-	if found == "" {
+	switch {
+	case found == "":
 		return fmt.Errorf("root's PATH leaves %s out too: type %s by its full path under sudo", filepath.Dir(link), exe)
+	case onRootPath(filepath.Dir(exe)):
+		return errors.New(ahead(found, exe))
+	case onRootPath(filepath.Dir(link)):
+		return fmt.Errorf("root's PATH finds %s before %s: %s", found, filepath.Dir(link), relink(exe, link))
 	}
 
-	if onRootPath(filepath.Dir(exe)) {
-		return fmt.Errorf("root's PATH finds %s before %s: remove it; root's PATH then finds %s", found, filepath.Dir(exe), exe)
-	}
-
-	return fmt.Errorf("root's PATH finds %s before %s: %s", found, filepath.Dir(link), relink(exe, link))
+	return fmt.Errorf("root's PATH finds %s and leaves %s and %s out: type %s by its full path under sudo", found, filepath.Dir(exe), filepath.Dir(link), exe)
 }
 
-// onRootPath reports whether dir is on this process's PATH, root's, compared as a file, each
-// directory stat'd once (os.SameFile), never by how it is spelled: where exe's is, removing a
-// conflux the PATH finds first is all it takes for the PATH to find exe, with no link.
+// onRootPath reports whether dir is on this process's PATH, root's, compared as a file, dir and
+// each PATH entry stat'd once (os.SameFile), never by how it is spelled.
 func onRootPath(dir string) bool {
 	want, err := os.Stat(dir)
 	if err != nil {
@@ -148,19 +154,24 @@ func onRootPath(dir string) bool {
 	return false
 }
 
-// notOurs says that link, the name of the link for sudo, is a file conflux did not make, and why
-// root's PATH does not find exe: where what it finds is that file -- through the link's own
-// directory, however spelled, as a merged /bin is /usr/bin -- removing it is all it takes where
-// exe's directory is on the PATH too, after the link's, and otherwise lets exe be linked there
-// (relink); otherwise why, which another conflux found first, or exe's directory left out,
-// keeps.
+// notOurs says that link, the name of the link for sudo, is a file conflux did not make, why
+// root's PATH does not find exe, and the way out from what that PATH holds now, each with exe's
+// full path beside it. Where it finds that file -- through the link's own directory, however
+// spelled, as a merged /bin is /usr/bin -- the file removed: alone where exe's directory is on
+// the PATH too, after the link's, and otherwise before exe is linked there (relink). Where it
+// finds another conflux and exe's directory is on the PATH, missed's way out (ahead); otherwise
+// why, another conflux found first or exe's directory left out, and exe's full path alone.
 func notOurs(found, link, exe, why string) error {
 	if found != "" && sameFile(filepath.Dir(found), filepath.Dir(link)) {
 		if onRootPath(filepath.Dir(exe)) {
-			return fmt.Errorf("%s is not conflux's, and root's PATH finds it rather than %s: remove it; root's PATH then finds %s", link, exe, exe)
+			return fmt.Errorf("%s is not conflux's, and root's PATH finds it rather than %s: remove it, or type %s by its full path under sudo", link, exe, exe)
 		}
 
 		return fmt.Errorf("%s is not conflux's, and root's PATH finds it rather than %s: %s", link, exe, relink(exe, link))
+	}
+
+	if found != "" && onRootPath(filepath.Dir(exe)) {
+		return fmt.Errorf("%s is not conflux's, and %s", link, ahead(found, exe))
 	}
 
 	return fmt.Errorf("%s is not conflux's, and %s: type %s by its full path under sudo", link, why, exe)

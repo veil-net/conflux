@@ -78,35 +78,42 @@ func TestUninstallTakesTheInstalledConflux(t *testing.T) {
 // under sudo -- finds is not the installed file, and keeps it only where that PATH, asked again,
 // finds the installed file through it: one that leaves its directory out, or finds another
 // conflux after the link's directory. One that finds another before it would do nothing there,
-// so none is left, a link made before included, and the other is named: where the installed
-// file's directory is on that PATH, before the link's or after it, to be removed alone, that PATH
-// then finding the installed file; and where it is not, to be removed before the link is made by
-// hand -- the line that makes it said, not the installer, which would fetch the release and move a
-// dev build off its channel. As install.sh does, it makes none where that PATH finds the
-// installed file, and leaves a file of the link's name that is not that link alone, saying so.
-// Each PATH is the test's own directories, the link's among them as /usr/bin is on every root's
-// but where a case leaves it out, so no conflux of the machine's is found.
+// so none is left, a link made before included, and the other is named, with the way out that
+// PATH holds now: where the installed file's directory is on it, before the link's or after it,
+// that conflux removed, or the installed file typed by its full path; where only the link's is,
+// that conflux removed before the link is made by hand -- the line that makes it said, not the
+// installer, which would fetch the release and move a dev build off its channel -- or the full
+// path; and where neither is, the full path alone. As install.sh does, it makes none where that
+// PATH finds the installed file, and leaves a file of the link's name that is not that link
+// alone, saying so, with the same ways out. What the PATH would find once the other is removed
+// is never said, nor the ln line where the link's directory is not on it. Each PATH is the test's
+// own directories, the link's among them as /usr/bin is on every root's but where a case leaves
+// it out, so no conflux of the machine's is found.
 func TestAFreshUpdateLinksItForSudo(t *testing.T) {
 	asRoot(t, true)
 
 	newer := []byte("#!/bin/sh\necho 'conflux 9.9.9 (0aea0f77bb77) " + runtime.GOOS + "/" + runtime.GOARCH + "'\n")
 
-	// Another conflux, in a directory a PATH can name before the installed file's or the link's.
-	other := filepath.Join(t.TempDir(), "conflux")
-	if err := os.WriteFile(other, []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
+	// Two other confluxes, in directories a PATH can name before the installed file's or the
+	// link's: the one it finds, and a third behind it.
+	other, third := filepath.Join(t.TempDir(), "conflux"), filepath.Join(t.TempDir(), "conflux")
+	for _, f := range []string{other, third} {
+		if err := os.WriteFile(f, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	const (
 		relink   = "remove it, then link the installed conflux for sudo (sudo ln -s {exe} {link}), or type {exe} by its full path under sudo"
 		shadowed = "root's PATH finds {other} before {dir}: " + relink
-		ahead    = "root's PATH finds {other} before {exedir}: remove it; root's PATH then finds {exe}"
+		ahead    = "root's PATH finds {other} before {exedir}: remove it, or type {exe} by its full path under sudo"
 		leftOut  = "root's PATH leaves {dir} out too: type {exe} by its full path under sudo"
+		neither  = "root's PATH finds {other} and leaves {exedir} and {dir} out: type {exe} by its full path under sudo"
 	)
 
 	for _, c := range []struct {
 		name   string
-		path   []string // "exe", "other", "link" and "spelt": the directories of each, in this order
+		path   []string // "exe", "other", "third", "link" and "spelt": the directories of each, in this order
 		before string   // at the link's name before the update: "link", an earlier install's, or "file", somebody else's
 		after  string   // and after it: "link", "file" or nothing
 		said   string   // what the update says of it, {exe}, {link} and {other} standing for each, {dir} for the link's directory and {exedir} for exe's; "" for nothing
@@ -115,6 +122,9 @@ func TestAFreshUpdateLinksItForSudo(t *testing.T) {
 		{name: "a PATH that holds it", path: []string{"exe", "link"}},
 		{name: "a PATH that finds another conflux before the link", path: []string{"other", "link"}, said: shadowed},
 		{name: "a PATH that finds another conflux before it", path: []string{"other", "exe", "link"}, said: ahead},
+		{name: "a PATH that finds another conflux before it, and a third behind that", path: []string{"other", "third", "exe", "link"}, said: ahead},
+		{name: "a PATH that finds another conflux, and neither directory", path: []string{"other"}, said: neither},
+		{name: "a link made before, behind another conflux, neither directory on the PATH", path: []string{"other"}, before: "link", said: neither},
 		{name: "a PATH that finds another conflux before the link, and it after", path: []string{"other", "link", "exe"}, said: ahead},
 		{name: "a link made before, behind another conflux before it", path: []string{"other", "exe", "link"}, before: "link", said: ahead},
 		{name: "a PATH that finds another conflux after the link", path: []string{"link", "other"}, after: "link", said: "Linked {link} to it"},
@@ -127,7 +137,11 @@ func TestAFreshUpdateLinksItForSudo(t *testing.T) {
 		},
 		{
 			name: "a file at the link's name, which the PATH finds before it", path: []string{"link", "exe"}, before: "file", after: "file",
-			said: "{link} is not conflux's, and root's PATH finds it rather than {exe}: remove it; root's PATH then finds {exe}",
+			said: "{link} is not conflux's, and root's PATH finds it rather than {exe}: remove it, or type {exe} by its full path under sudo",
+		},
+		{
+			name: "a file at the link's name, which the PATH finds before another conflux and it", path: []string{"link", "other", "exe"}, before: "file", after: "file",
+			said: "{link} is not conflux's, and root's PATH finds it rather than {exe}: remove it, or type {exe} by its full path under sudo",
 		},
 		{
 			name: "a file at the link's name, which the PATH finds through another spelling", path: []string{"spelt"}, before: "file", after: "file",
@@ -136,6 +150,14 @@ func TestAFreshUpdateLinksItForSudo(t *testing.T) {
 		{
 			name: "a file at the link's name, behind another conflux", path: []string{"other", "link"}, before: "file", after: "file",
 			said: "{link} is not conflux's, and root's PATH finds {other} instead: type {exe} by its full path under sudo",
+		},
+		{
+			name: "a file at the link's name, behind another conflux before it", path: []string{"other", "exe", "link"}, before: "file", after: "file",
+			said: "{link} is not conflux's, and " + ahead,
+		},
+		{
+			name: "a file at the link's name, and neither directory on the PATH", path: nil, before: "file", after: "file",
+			said: "{link} is not conflux's, and root's PATH leaves {exedir} out: type {exe} by its full path under sudo",
 		},
 	} {
 		exe := filepath.Join(t.TempDir(), "bin", "conflux")
@@ -148,7 +170,7 @@ func TestAFreshUpdateLinksItForSudo(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		dirs := map[string]string{"exe": filepath.Dir(exe) + "/", "other": filepath.Dir(other), "link": filepath.Dir(link), "spelt": spelt}
+		dirs := map[string]string{"exe": filepath.Dir(exe) + "/", "other": filepath.Dir(other), "third": filepath.Dir(third), "link": filepath.Dir(link), "spelt": spelt}
 
 		var path []string
 		for _, p := range c.path {
@@ -186,6 +208,14 @@ func TestAFreshUpdateLinksItForSudo(t *testing.T) {
 
 		if after != c.after || (said == "" && (errOut != "" || strings.Contains(out, "Linked"))) || !strings.Contains(out+errOut, said) {
 			t.Errorf("%s: %q is at %s, want %q, and the update said:\n%s%s\nwant it to say: %s", c.name, after, link, c.after, out, errOut, said)
+		}
+
+		// Nothing the update cannot see is said: what the PATH finds once the other conflux is
+		// gone, or the ln line where the link's directory is not on it.
+		for _, never := range []string{"then finds", "sudo ln -s"} {
+			if strings.Contains(out+errOut, never) && !strings.Contains(said, never) {
+				t.Errorf("%s: the update said %q:\n%s%s", c.name, never, out, errOut)
+			}
 		}
 	}
 }

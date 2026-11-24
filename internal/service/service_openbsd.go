@@ -52,8 +52,8 @@ func (openbsd) Install(exe string, args ...string) error {
 		return err
 	}
 
-	// rcctl(8): get ... status exits 0 for a service that is enabled.
-	if _, enabled := query("rcctl", "get", rcName, "status"); enabled {
+	// The question Remove asks after rcctl disable, whose yes is a service that is enabled.
+	if enabled, _, _ := openbsdEnabled.there(); enabled {
 		return nil
 	}
 

@@ -47,3 +47,42 @@ func TestUninstallLeavesTheSystemsCmd(t *testing.T) {
 		t.Errorf("the removal does not remove %s: %s", dir, line)
 	}
 }
+
+// TestUninstallTakesThePathEntry: the machine's PATH loses the directory install.ps1 added,
+// however it is spelled, and nothing else.
+func TestUninstallTakesThePathEntry(t *testing.T) {
+	for _, c := range []struct{ path, want string }{
+		{`%SystemRoot%\system32;C:\Program Files\conflux;C:\tools`, `%SystemRoot%\system32;C:\tools`},
+		{`C:\tools;C:\Program Files\conflux\`, `C:\tools`},
+		{`C:\tools;c:\program files\CONFLUX`, `C:\tools`},
+		{`C:\tools`, `C:\tools`},
+	} {
+		if got := withoutDir(c.path, `C:\Program Files\conflux`); got != c.want {
+			t.Errorf("withoutDir(%q) = %q, want %q", c.path, got, c.want)
+		}
+	}
+}
+
+// TestUpdatePutsThePathEntry: an update that installs conflux where there was none puts its
+// directory on the machine's PATH, as install.ps1 does: at the end, where no entry names it
+// already, however spelled; and uninstall takes it out again.
+func TestUpdatePutsThePathEntry(t *testing.T) {
+	const dir = `C:\Program Files\conflux`
+
+	for _, c := range []struct{ path, want string }{
+		{`%SystemRoot%\system32;C:\tools`, `%SystemRoot%\system32;C:\tools;` + dir},
+		{`C:\tools;`, `C:\tools;` + dir},
+		{``, dir},
+		{`C:\tools;c:\program files\CONFLUX\`, `C:\tools;c:\program files\CONFLUX\`},
+		{dir + `;C:\tools`, dir + `;C:\tools`},
+	} {
+		got := withDir(c.path, dir)
+		if got != c.want {
+			t.Errorf("withDir(%q) = %q, want %q", c.path, got, c.want)
+		}
+
+		if back := withoutDir(got, dir); back != withoutDir(c.path, dir) {
+			t.Errorf("withoutDir(withDir(%q)) = %q, which is not the PATH without it", c.path, back)
+		}
+	}
+}

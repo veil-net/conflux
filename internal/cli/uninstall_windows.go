@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"unsafe"
 
@@ -93,6 +94,40 @@ func putOnPath(exe string) error {
 // removePathEntry takes dir out of the machine's PATH, as install.ps1 put it there.
 func removePathEntry(dir string) error {
 	return editMachinePath(func(path string) string { return withoutDir(path, dir) })
+}
+
+// withoutDir is a PATH, as Windows writes it, with every entry naming dir taken out: compared
+// without regard to case or a trailing backslash, as Windows compares them.
+func withoutDir(path, dir string) string {
+	want := strings.TrimRight(dir, `\`)
+
+	var kept []string
+
+	for e := range strings.SplitSeq(path, ";") {
+		if e != "" && !strings.EqualFold(strings.TrimRight(e, `\`), want) {
+			kept = append(kept, e)
+		}
+	}
+
+	return strings.Join(kept, ";")
+}
+
+// withDir is a PATH, as Windows writes it, with dir added at its end where no entry names it
+// already, compared as withoutDir compares them: what install.ps1 writes.
+func withDir(path, dir string) string {
+	want := strings.TrimRight(dir, `\`)
+
+	for e := range strings.SplitSeq(path, ";") {
+		if strings.EqualFold(strings.TrimRight(e, `\`), want) {
+			return path
+		}
+	}
+
+	if path = strings.TrimRight(path, ";"); path == "" {
+		return dir
+	}
+
+	return path + ";" + dir
 }
 
 // editMachinePath rewrites the machine's PATH through edit: read unexpanded and written back

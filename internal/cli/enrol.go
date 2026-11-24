@@ -343,15 +343,14 @@ func chooseAPIBase(m *enrol.Manifest, flagValue string) (string, error) {
 			"the manifest says renewalAuth %q and carries no renewalUrl.\n"+
 				"  It says how to authenticate a renewal and not where to send one, so nothing\n"+
 				"  would ever renew it. The issuer has to set it", m.RenewalAuth())
+	case flagValue == "":
+		return enrol.BaseOf(url)
 	}
 
-	base, err := enrol.BaseOf(url)
-	if err != nil {
-		return "", err
-	}
-
-	if flagValue == "" {
-		return base, nil
+	// Beside --api, which is the base, the renewal URL is only checked, so it is held to
+	// CheckAPIURL itself rather than read for a base BaseOf would check it for and discard.
+	if err := config.CheckAPIURL(url); err != nil {
+		return "", fmt.Errorf("renewalUrl: %w", err)
 	}
 
 	if err := enrol.SameHost(url, flagValue); err != nil {

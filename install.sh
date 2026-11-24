@@ -103,18 +103,23 @@ firstline() {
   "$1" version </dev/null 2>/dev/null | sed -n 1p
 }
 
-# rootpath prints where root, as `sudo` or `doas` runs it, finds conflux: sudo's secure_path, not
-# this shell's PATH, is what `sudo conflux` searches. As root already -- `curl … | sudo sh`
-# included -- this shell's PATH is root's. It fails, printing nothing, when root cannot be asked
-# without a password, which only the run that installed conflux has given.
+# rootpath sets found to where root, as `sudo` or `doas` runs it, finds conflux, or to nothing:
+# sudo's secure_path, not this shell's PATH, is what `sudo conflux` searches. As root already --
+# `curl … | sudo sh` included -- this shell's PATH is root's. Root is asked without a password
+# first, which a run that has given one already holds, then, said first, through asroot, which
+# asks for the password as the install step does: sudo and doas read it from the terminal, not
+# stdin, so `curl … | sh` can type it too. It fails when root cannot be asked even so: the
+# password refused, or no terminal to type it at.
 rootpath() {
   if [ -z "$as" ]; then
-    command -v conflux 2>/dev/null || true
+    found=$(command -v conflux 2>/dev/null) || found=""
     return 0
   fi
 
-  "$as" -n true 2>/dev/null || return 1
-  "$as" -n sh -c 'command -v conflux' 2>/dev/null || true
+  found=$("$as" -n sh -c 'command -v conflux || :' 2>/dev/null) && return 0
+
+  say "$as is asked for root's PATH, to see whether '$as conflux' finds $exe."
+  found=$(asroot sh -c 'command -v conflux || :')
 }
 
 # link makes /usr/bin/conflux a link to $exe where root's PATH would not find $exe, and keeps it
@@ -122,9 +127,14 @@ rootpath() {
 # through, made now or by a run before, does nothing, so it goes and what root's PATH finds
 # instead is named. Each is compared as a file (-ef), through any link, never by how it is
 # spelled. A /usr/bin/conflux that is not that link is left alone. A /usr/bin that cannot be
-# written -- macOS's -- is said, and not a failure: conflux is installed all the same.
+# written -- macOS's -- is said, and not a failure: conflux is installed all the same, as it is
+# where root's PATH cannot be asked at all, which is said too, rather than nothing.
 link() {
-  found=$(rootpath) || return 0
+  if ! rootpath; then
+    say "" "Could not ask $as for root's PATH: run the installer as root to link conflux for sudo, or type $exe by its full path under sudo."
+    return 0
+  fi
+
   [ -n "$found" ] && [ "$found" -ef "$exe" ] && return 0
 
   if ! { [ -L "$sudolink" ] && [ "$(readlink "$sudolink")" = "$exe" ]; }; then
@@ -142,7 +152,7 @@ link() {
       return 0
     fi
 
-    found=$(rootpath) || found=""
+    rootpath || found=""
     if [ -n "$found" ] && [ "$found" -ef "$exe" ]; then
       say "Linked $sudolink to it, since $why."
       return 0

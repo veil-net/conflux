@@ -228,6 +228,7 @@ const fakeObserving = `observing with  af_packet
   since         0s
   flows         0 held
   packets       0 taken
+  overlay       no anchor running
   records       0, in 0 inventory entries
   as            ` + fakeAnchorID + `
   realm         4fh2aq7xkd

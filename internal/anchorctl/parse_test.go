@@ -173,6 +173,7 @@ func TestParseObservingReadsTheIdentity(t *testing.T) {
   since         0s
   flows         0 held
   packets       0 taken
+  overlay       no anchor running
   records       0, in 0 inventory entries
   as            anchork3v7q7rzt2fwxm4hbe6ndl5tsgcaypuvy3iq7jkob2zr45hxwdmq
   realm         4fh2aq7xkd

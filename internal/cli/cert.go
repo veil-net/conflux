@@ -9,6 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"math/big"
 	"net"
 	"os"
@@ -58,7 +59,7 @@ func runCert(ctx context.Context, args []string) int {
 	cmds := certCommands()
 
 	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" || args[0] == "-help" {
-		certUsage(cmds)
+		certUsage(listOut(len(args) == 0), cmds)
 
 		if len(args) == 0 {
 			return ExitUsage
@@ -92,7 +93,7 @@ func runCert(ctx context.Context, args []string) int {
 	return c.run(ctx, args[1:])
 }
 
-func certUsage(cmds map[string]certCommand) {
+func certUsage(w io.Writer, cmds map[string]certCommand) {
 	names := make([]string, 0, len(cmds))
 	for n := range cmds {
 		names = append(names, n)
@@ -100,15 +101,25 @@ func certUsage(cmds map[string]certCommand) {
 
 	sort.Strings(names)
 
-	ui.Printf("conflux cert — keys, requests, certificates and revocation lists, post-quantum first\n\n")
+	fmt.Fprintf(w, "conflux cert — keys, requests, certificates and revocation lists, post-quantum first\n\n")
 
 	for _, n := range names {
-		ui.Printf("  %-12s %s\n", n, cmds[n].summary)
+		fmt.Fprintf(w, "  %-12s %s\n", n, cmds[n].summary)
 	}
 
-	ui.Printf("\nconflux cert COMMAND -h says more of each. Everything is made and checked with the Go\n" +
-		"Cryptographic Module in FIPS 140-3 mode: ML-DSA-87 by default, and ECDSA, RSA and Ed25519\n" +
+	fmt.Fprintf(w, "\nconflux cert COMMAND -h says more of each. Everything is made and checked with the Go\n"+
+		"Cryptographic Module in FIPS 140-3 mode: ML-DSA-87 by default, and ECDSA, RSA and Ed25519\n"+
 		"beside it. Exit 3 is a check that did not hold. docs/cert.md has the whole of it.\n")
+}
+
+// listOut is where a command list goes: stdout where it was asked for, and stderr beneath a
+// mistake -- a command given nothing -- as every usage mistake's usage goes.
+func listOut(mistake bool) io.Writer {
+	if mistake {
+		return ui.Errw
+	}
+
+	return ui.Out
 }
 
 // certFlags is a cert subcommand's flag set, its usage the synopsis and the flags.

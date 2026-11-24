@@ -19,9 +19,9 @@ import (
 
 func runCertP12(ctx context.Context, args []string) int {
 	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
-		ui.Printf("conflux cert p12 — PKCS#12 bundles, PBES2 and PBMAC1 throughout\n\n" +
-			"  export   bundle a key, its certificate and its chain\n" +
-			"  import   take a bundle apart into a key, its certificate and its chain\n\n" +
+		fmt.Fprintf(listOut(len(args) == 0), "conflux cert p12 — PKCS#12 bundles, PBES2 and PBMAC1 throughout\n\n"+
+			"  export   bundle a key, its certificate and its chain\n"+
+			"  import   take a bundle apart into a key, its certificate and its chain\n\n"+
 			"conflux cert p12 COMMAND -h says more of each; docs/cert.md, \"PKCS#12\", has which readers open them.\n")
 
 		if len(args) == 0 {

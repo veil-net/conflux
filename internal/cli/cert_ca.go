@@ -42,13 +42,15 @@ func runCertCA(ctx context.Context, args []string) int {
 		}
 
 		sort.Strings(names)
-		ui.Printf("conflux cert ca — a certificate authority kept in a directory\n\n")
+
+		w := listOut(len(args) == 0)
+		fmt.Fprintf(w, "conflux cert ca — a certificate authority kept in a directory\n\n")
 
 		for _, n := range names {
-			ui.Printf("  %-8s %s\n", n, cmds[n].summary)
+			fmt.Fprintf(w, "  %-8s %s\n", n, cmds[n].summary)
 		}
 
-		ui.Printf("\nconflux cert ca COMMAND -h says more of each; docs/cert.md, \"A managed CA\", has the directory.\n")
+		fmt.Fprintf(w, "\nconflux cert ca COMMAND -h says more of each; docs/cert.md, \"A managed CA\", has the directory.\n")
 
 		if len(args) == 0 {
 			return ExitUsage

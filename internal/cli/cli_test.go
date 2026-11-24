@@ -218,6 +218,9 @@ func TestAMistakeIsSaidOnStderr(t *testing.T) {
 		{[]string{"down", "--bogus"}, "flag provided but not defined: -bogus"},
 		{[]string{"cert", "verify"}, "conflux cert verify —"},
 		{[]string{"enrol"}, "conflux enrol —"},
+		{[]string{"cert"}, "conflux cert —"},
+		{[]string{"cert", "ca"}, "conflux cert ca —"},
+		{[]string{"cert", "p12"}, "conflux cert p12 —"},
 	} {
 		out, errOut, code := capture(t, c.args...)
 		if code != ExitUsage || out != "" || !strings.Contains(errOut, c.says) || !strings.Contains(errOut, "conflux "+c.args[0]) {

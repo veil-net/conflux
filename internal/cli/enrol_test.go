@@ -2,7 +2,6 @@ package cli
 
 import (
 	"encoding/base64"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,7 +10,6 @@ import (
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/paths/pathstest"
-	"github.com/veil-net/conflux/internal/ui"
 )
 
 // guardianDoc is a manifest a self-hosted guardian issues: anchor's format, plus the
@@ -42,10 +40,7 @@ const guardianAPI = "https://guardian.example.gov"
 func site(t *testing.T, doc string) (paths.Dirs, string) {
 	t.Helper()
 
-	out := ui.Out
-	ui.Out = io.Discard
-
-	t.Cleanup(func() { ui.Out = out })
+	captureUI(t)
 
 	d := pathstest.Root(t)
 

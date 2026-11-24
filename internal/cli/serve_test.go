@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"errors"
 	"io/fs"
 	"os"
@@ -11,7 +10,6 @@ import (
 
 	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths/pathstest"
-	"github.com/veil-net/conflux/internal/ui"
 )
 
 // recordingService is a registered service that records what it was asked to register.
@@ -62,12 +60,7 @@ func TestARefusedSupervisorChangesNothing(t *testing.T) {
 	withServices(t, recordingService{reconciled: &got})
 	asRoot(t, true)
 
-	var said bytes.Buffer
-
-	oldErr := ui.Errw
-	ui.Errw = &said
-
-	t.Cleanup(func() { ui.Errw = oldErr })
+	_, said := captureUI(t)
 
 	if code := runServe(t.Context(), []string{"--foreground"}); code != ExitError ||
 		!strings.Contains(said.String(), "another conflux supervisor") {

@@ -242,12 +242,7 @@ func TestSwitchingAnAnchorToObservingIsConfirmed(t *testing.T) {
 		t.Skip("this test's stdin is a terminal")
 	}
 
-	var errBuf bytes.Buffer
-
-	old := ui.Errw
-	ui.Errw = &errBuf
-
-	t.Cleanup(func() { ui.Errw = old })
+	_, errBuf := captureUI(t)
 
 	cfg := &config.Config{Mode: config.ModeTUN}
 

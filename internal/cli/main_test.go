@@ -1,12 +1,14 @@
 package cli
 
 import (
+	"bytes"
 	"os"
 	"testing"
 
 	"github.com/veil-net/conflux/internal/paths/pathstest"
 	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/service"
+	"github.com/veil-net/conflux/internal/ui"
 )
 
 // TestMain stands in for the boot manager and for uninstall's removal of the accounts and
@@ -44,6 +46,21 @@ func asRoot(t *testing.T, elevated bool) {
 	privcheck.Elevated = func() bool { return elevated }
 
 	t.Cleanup(func() { privcheck.Elevated = was })
+}
+
+// captureUI points what conflux says, on stdout and on stderr, at buffers of the test's own for
+// the rest of the test, and returns them.
+func captureUI(t *testing.T) (stdout, stderr *bytes.Buffer) {
+	t.Helper()
+
+	stdout, stderr = new(bytes.Buffer), new(bytes.Buffer)
+
+	was, wasErr := ui.Out, ui.Errw
+	ui.Out, ui.Errw = stdout, stderr
+
+	t.Cleanup(func() { ui.Out, ui.Errw = was, wasErr })
+
+	return stdout, stderr
 }
 
 // withServices makes m the boot manager for the rest of the test.

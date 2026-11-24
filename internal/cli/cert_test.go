@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -215,12 +214,7 @@ func TestServeAnswersAndReports(t *testing.T) {
 
 	addr := freeAddr(t)
 
-	var out, errBuf bytes.Buffer
-
-	oldOut, oldErr := ui.Out, ui.Errw
-	ui.Out, ui.Errw = &out, &errBuf
-
-	t.Cleanup(func() { ui.Out, ui.Errw = oldOut, oldErr })
+	out, errBuf := captureUI(t)
 
 	code := make(chan int, 1)
 

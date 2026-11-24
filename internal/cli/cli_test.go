@@ -1,10 +1,8 @@
 package cli
 
 import (
-	"bytes"
 	"encoding/base64"
 	"errors"
-	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -28,12 +26,7 @@ import (
 func capture(t *testing.T, argv ...string) (stdout, stderr string, code int) {
 	t.Helper()
 
-	var out, errBuf bytes.Buffer
-
-	oldOut, oldErr := ui.Out, ui.Errw
-	ui.Out, ui.Errw = &out, &errBuf
-
-	t.Cleanup(func() { ui.Out, ui.Errw = oldOut, oldErr })
+	out, errBuf := captureUI(t)
 
 	code = Main(append([]string{"conflux"}, argv...))
 
@@ -272,12 +265,7 @@ func TestTheUsageSaysWhatACommandReaches(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var said bytes.Buffer
-
-	was := ui.Errw
-	ui.Errw = &said
-
-	t.Cleanup(func() { ui.Errw = was })
+	_, said := captureUI(t)
 
 	if code := renewNow(t.Context(), d); code != ExitUnavailable || !strings.Contains(said.String(), "observer") {
 		t.Errorf("renew with nothing running exited %d, saying nothing of the observer:\n%s", code, said.String())
@@ -362,14 +350,9 @@ func TestStatusSaysWhereTheDaemonExports(t *testing.T) {
 		},
 		{"none, as configured", none, "not exporting\n", nil, []string{"not exporting"}},
 	} {
-		var out bytes.Buffer
-
-		old := ui.Out
-		ui.Out = &out
+		out, _ := captureUI(t)
 
 		reportExport(tc.cfg, &daemonAnswers{asked: true, export: tc.daemon})
-
-		ui.Out = old
 
 		for _, s := range tc.says {
 			if !strings.Contains(out.String(), s) {
@@ -869,10 +852,7 @@ func credentialFrom(t *testing.T, doc string) *enrol.Manifest {
 // mints one rather than ask for none; once a credential is held its taints are the
 // machine's for good, so --taint may only restate them, and conflux.json follows them.
 func TestTaintsAreAskedForOrChecked(t *testing.T) {
-	out := ui.Out
-	ui.Out = io.Discard
-
-	t.Cleanup(func() { ui.Out = out })
+	captureUI(t)
 
 	const granted = "brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf"
 
@@ -943,12 +923,7 @@ func TestASetListReplacesASubnetOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var shown bytes.Buffer
-
-	old := ui.Out
-	ui.Out = &shown
-
-	t.Cleanup(func() { ui.Out = old })
+	shown, _ := captureUI(t)
 
 	reportSubnets(d, &config.Config{Subnets: []string{"eth1"}})
 

@@ -26,7 +26,7 @@ func startingEphemeral(t *testing.T) paths.Dirs {
 
 	t.Cleanup(paths.UseRoot(t.TempDir()))
 
-	d := paths.Dirs{Root: paths.EphemeralRoot()}
+	d := paths.Ephemeral()
 	if err := d.EnsureAll(); err != nil {
 		t.Fatal(err)
 	}

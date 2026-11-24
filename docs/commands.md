@@ -630,7 +630,7 @@ other refusal — passes through untouched.
 |---|---|
 | 0 | success |
 | 1 | failure |
-| 2 | usage: a flag or an argument the command does not take, said on stderr with the command's usage beneath it. `-h` is a request, answered on stdout with the usage and flags, and exits 0 |
+| 2 | usage: a flag or an argument the command does not take, or one it cannot do without (`enrol`'s `--manifest`), said on stderr with the command's usage beneath it. `-h` is a request, answered on stdout with the usage and flags, and exits 0 |
 | 3 | `conflux cert verify`, `match` or `probe`: the check ran and did not hold |
 | 13 | needs root or Administrator, or a `status` that cannot read the configuration, or a pass-through that cannot read the daemon's token |
 | 69 | nothing here to act on: nothing running, or no credential to renew |

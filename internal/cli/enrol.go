@@ -81,7 +81,7 @@ func runEnrol(_ context.Context, args []string) int {
 	}
 
 	if *manifest == "" {
-		fs.Usage()
+		usageMistake(fs)
 
 		return ExitUsage
 	}

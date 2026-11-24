@@ -195,7 +195,7 @@ func (o *flagOutput) Write(p []byte) (int, error) {
 }
 
 // usageMistake prints fs's usage on stderr, for a mistake the flag package did not see: an
-// argument too many or too few.
+// argument too many or too few, or a flag the command cannot do without.
 func usageMistake(fs *flag.FlagSet) {
 	if out, ok := fs.Output().(*flagOutput); ok {
 		out.mistake = true

@@ -313,11 +313,13 @@ const maxManifest = 1 << 20
 // chooseAPIBase is the API this machine renews against: --api when it was given, and
 // the origin of the document's renewalUrl otherwise.
 //
-// --api is an override rather than a requirement. The document carries the identity
-// seed and the renewal bearer, so whoever could rewrite its renewalUrl already holds
-// everything a redirect would steal, and retyping the host buys a typo rather than a
-// check. Given, it is also an assertion: the document must renew against the same
-// host, refused now naming both rather than at the first renewal months later.
+// --api is an override rather than a requirement. A manifest carries an absolute
+// renewalUrl -- a self-hosted API is wherever its operator put it -- so the base is
+// already in the document. The document carries the identity seed and the renewal bearer
+// too, so whoever could rewrite its renewalUrl already holds everything a redirect would
+// steal, and retyping the host buys a typo rather than a check. Given, it is also an
+// assertion: the document must renew against the same host, refused now naming both rather
+// than at the first renewal months later.
 //
 // A fixed-term credential names no renewal URL, so there is nothing to read a base out
 // of and no host to check --api against: the flag is held to config.CheckAPIURL alone, as
@@ -353,8 +355,12 @@ func chooseAPIBase(m *enrol.Manifest, flagValue string) (string, error) {
 		return "", fmt.Errorf("renewalUrl: %w", err)
 	}
 
+	// The origin alone -- scheme, host and port -- is the base: a renewal URL is a path on an
+	// API, and taken whole as a base it would make every later request a child of one node's
+	// credential route. It is read off what ParseAPIURL parsed, and so held to CheckAPIURL, as
+	// every renewal sent to it is: a base no renewal could reach is never read.
 	if flagValue == "" {
-		return enrol.BaseOf(renewal), nil
+		return renewal.Scheme + "://" + renewal.Host, nil
 	}
 
 	if err := enrol.SameHost(renewal, flagValue); err != nil {

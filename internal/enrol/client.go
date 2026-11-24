@@ -432,18 +432,3 @@ func SameHost(renewal *url.URL, apiBase string) error {
 
 	return nil
 }
-
-// BaseOf is the API base a renewal URL implies: scheme, host and port, nothing
-// else.
-//
-// This is what makes --api an override on `conflux enrol` rather than a requirement.
-// A manifest carries an absolute renewalUrl -- a self-hosted API is wherever its
-// operator put it -- so the base is already in the document, and asking an operator
-// to retype it buys a typo rather than a check. Only the origin is kept: a renewal URL
-// is a path on an API, and treating the whole of it as a base would make every later
-// request a child of one node's credential route. renewal is the URL as config.ParseAPIURL
-// parsed it, and so held to config.CheckAPIURL, which every renewal sent to it is: a base no
-// renewal could reach is never read.
-func BaseOf(renewal *url.URL) string {
-	return renewal.Scheme + "://" + renewal.Host
-}

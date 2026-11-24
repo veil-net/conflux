@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/wintun"
 )
 
 // handed is a credential an ephemeral run is handed, issued and expiring when asked, renewing
@@ -296,6 +298,78 @@ func TestAnEphemeralRootGoesWhileItsLockIsHeld(t *testing.T) {
 		if _, err := os.Stat(p); err != nil {
 			t.Errorf("the ended run removed the next one's %s: %v", filepath.Base(p), err)
 		}
+	}
+}
+
+// TestAnEphemeralRootTakesTheDriverWithIt: RemoveEphemeralRoot, which a run's end and
+// uninstall's removal of a killed run's root both go through, asks once for the Wintun driver
+// to go through the root's own library, while that library is still there, and then removes
+// the root whatever the driver's answer was, which it hands back to be said.
+func TestAnEphemeralRootTakesTheDriverWithIt(t *testing.T) {
+	is := newIssuer(t)
+
+	var (
+		asked   []string
+		library string // the root's wintun.dll, which must still be there when the driver goes
+	)
+
+	inUse := errors.New("an adapter is in use")
+	deleteDriver = func(d paths.Dirs) error {
+		asked = append(asked, d.Root)
+
+		if library != "" {
+			if _, err := os.Stat(library); err != nil {
+				t.Errorf("the driver was asked to go after the root's library had: %v", err)
+			}
+		}
+
+		return inUse
+	}
+	t.Cleanup(func() { deleteDriver = wintun.DeleteDriver })
+
+	// A run's end, once and not twice.
+	r := runEphemeral(t, is, handed(t, is, time.Now().Add(-time.Hour), time.Now().Add(30*24*time.Hour)))
+	r.up(t)
+	r.cancel()
+
+	if err := r.ended(t); err != nil {
+		t.Errorf("a cancelled run ended with %v, want nil: a driver kept in use is a warning", err)
+	}
+
+	if len(asked) != 1 || asked[0] != r.root {
+		t.Errorf("an ended run asked for the driver to go through %q, want once through its root, %s", asked, r.root)
+	}
+
+	// uninstall's, for the root a killed TUN run left, its library still in its set.
+	d := paths.EphemeralDirs(filepath.Join(t.TempDir(), "killed"))
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	library = filepath.Join(d.Libexec(), "0123456789abcdef", wintun.DLLName)
+	if err := os.MkdirAll(filepath.Dir(library), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(library, []byte("MZ"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	unlock, ok, err := flock.TryAcquire(d.ServeLockFile())
+	if err != nil || !ok {
+		t.Fatalf("the killed run's lock: ok %v, %v", ok, err)
+	}
+
+	if err := RemoveEphemeralRoot(d, unlock); !errors.Is(err, inUse) {
+		t.Errorf("RemoveEphemeralRoot = %v, want the driver's answer, %v", err, inUse)
+	}
+
+	if len(asked) != 2 || asked[1] != d.Root {
+		t.Errorf("removing a killed run's root asked for the driver to go through %q, want %s after the run's", asked, d.Root)
+	}
+
+	if _, err := os.Stat(d.Root); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the killed run's root is still there with the driver kept: %v", err)
 	}
 }
 

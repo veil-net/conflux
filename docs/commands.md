@@ -431,8 +431,9 @@ Removes everything conflux put on the machine, and leaves no trace of it:
   every root a killed ephemeral run left;
 - the accounts `anchord` ran as, once nothing runs as them, when conflux made them; an account
   of that name that conflux did not make is left alone;
-- on macOS the BPF devices' grant, and on Windows the Wintun driver, which Windows keeps only
-  while no adapter uses it, so another program's survives;
+- on macOS the BPF devices' grant, and on Windows the Wintun driver, whether the installation's
+  interface or a killed ephemeral run's installed it, which Windows keeps only while no adapter
+  uses it, so another program's survives;
 - the installed executable: `/usr/local/bin/conflux` and the `/usr/bin/conflux` link
   `install.sh` made to it, or `%ProgramFiles%\conflux` and its entry on the machine's `Path`.
   A conflux running from anywhere else is not removed. On Windows the directory goes a few

@@ -235,7 +235,8 @@ func flagsAlone(fs *flag.FlagSet, args []string) (exit int, ok bool) {
 // an "=" and its value. ok is false where arg is no flag's spelling, which a flag set never takes
 // for a flag: a word with no dash, or a dash alone, is an argument; two dashes alone end its
 // flags, and every word after them is an argument, whatever it looks like; three dashes, or an
-// empty name, are bad syntax. splitFlags and helpFlag read a flag through it.
+// empty name, are bad syntax. splitFlags, helpFlag, observe's anchorctls and namesSocket read a
+// flag through it.
 func flagName(arg string) (name string, ok bool) {
 	name, ok = strings.CutPrefix(arg, "-")
 	if !ok {

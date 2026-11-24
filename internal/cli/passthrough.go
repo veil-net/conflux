@@ -118,18 +118,13 @@ func wantsUsage(args []string) bool {
 }
 
 // namesSocket reports whether the user supplied their own -socket, in any of the
-// spellings Go's flag package accepts.
+// spellings Go's flag package accepts (flagName).
 func namesSocket(args []string) bool {
-	for _, a := range args {
-		switch {
-		case a == "-socket", a == "--socket":
-			return true
-		case strings.HasPrefix(a, "-socket="), strings.HasPrefix(a, "--socket="):
-			return true
-		}
-	}
+	return slices.ContainsFunc(args, func(a string) bool {
+		n, _ := flagName(a)
 
-	return false
+		return n == "socket"
+	})
 }
 
 // runEscapeHatch is `conflux anchorctl ...`: the always-unambiguous way to reach a

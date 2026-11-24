@@ -41,12 +41,12 @@ func (freebsd) Install(exe string, args ...string) error {
 	return run("sysrc", rcName+"_enable=YES")
 }
 
-// Remove stops the service, disables it, and deletes the script.
+// Remove stops the service, disables it, and deletes the script, saying an rc.conf line or a
+// script it left.
 func (f freebsd) Remove() error {
 	_ = run("service", rcName, "onestop")
-	_ = run("sysrc", "-x", rcName+"_enable")
 
-	var errs []error
+	errs := []error{freebsdEnabled.remove()}
 
 	if err := os.Remove(scriptPath()); err != nil && !os.IsNotExist(err) {
 		errs = append(errs, err)

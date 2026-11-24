@@ -34,9 +34,10 @@ func plainWords(words ...string) error {
 
 // freebsdScript is /usr/local/etc/rc.d/<name>.
 //
-// daemon(8) backgrounds conflux and sends its output to syslog, tagged conflux (-S -T), and
-// -p records conflux's pid rather than its own, in the root, so `service conflux stop`
-// signals conflux itself:
+// daemon(8) backgrounds conflux and sends its output to syslog, tagged conflux (-S -T), which
+// is why the script requires syslogd as well as the network: started before it, what conflux
+// says first would be lost. -p records conflux's pid rather than its own, in the root, so
+// `service conflux stop` signals conflux itself:
 // it closes the anchor and then anchord, and daemon(8) exits behind it. No -r: like
 // the systemd unit, a supervisor that exits with nothing to start (78) or having given
 // up (70) is left stopped rather than restarted into the same answer, and conflux
@@ -51,7 +52,7 @@ func freebsdScript(name, exe string, args []string, pidFile string) (string, err
 	return fmt.Sprintf(`#!/bin/sh
 #
 # PROVIDE: %[1]s
-# REQUIRE: NETWORKING
+# REQUIRE: NETWORKING syslogd
 # KEYWORD: shutdown
 #
 # Written by conflux install; conflux uninstall removes it.

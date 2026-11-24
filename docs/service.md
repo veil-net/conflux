@@ -368,7 +368,8 @@ ProviderName='conflux'}` reads them.
 `sysrc conflux_enable=YES` where `service conflux enabled` says it is not. It runs `conflux serve` under `daemon(8)`, which backgrounds it,
 sends its output to syslog tagged `conflux` (`/var/log/messages`), and records conflux's own
 pid in the root, `/var/db/.conflux/rc.pid` — so `service conflux stop` signals the supervisor, which closes the anchor before anything
-is killed. `daemon(8)` is not told to restart it: conflux restarts `anchord` itself, and a
+is killed. It starts after the network and `syslogd` (`REQUIRE: NETWORKING syslogd`), so
+nothing it says before the system log is up is lost. `daemon(8)` is not told to restart it: conflux restarts `anchord` itself, and a
 supervisor that exits 78 or 70 would only repeat the answer. `conflux down` on a service
 that is not running succeeds rather than passing on `rc.subr`'s "not running?".
 `uninstall` stops it, removes the `rc.conf` line and the script.

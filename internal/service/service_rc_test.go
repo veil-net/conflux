@@ -36,6 +36,9 @@ func TestFreeBSDScript(t *testing.T) {
 
 	for _, want := range []string{
 		"# PROVIDE: conflux",
+		// daemon(8) -S hands conflux's output to syslogd, which is started first so none of
+		// it is lost.
+		"# REQUIRE: NETWORKING syslogd\n",
 		"# KEYWORD: shutdown",
 		"rcvar=conflux_enable",
 		"pidfile=/var/db/.conflux/rc.pid\n",

@@ -3,10 +3,14 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/privcheck"
+	"github.com/veil-net/conflux/internal/service"
 )
 
 // TestUninstallTakesTheInstalledConflux: what install.sh put in place goes -- the executable,
@@ -57,6 +61,59 @@ func TestUninstallTakesTheInstalledConflux(t *testing.T) {
 
 	if _, err := os.Lstat(link); err != nil {
 		t.Errorf("a link that is not conflux's was removed (%v)", err)
+	}
+}
+
+// removalService is a registered service that records whether it was removed.
+type removalService struct {
+	noService
+	removed *bool
+}
+
+func (r removalService) Remove() error { *r.removed = true; return nil }
+
+// TestUninstallIsRefusedWhileAnEphemeralRunIsLive: uninstall removes the account a live
+// ephemeral run's anchord runs as, so the run refuses it, --yes or not, before anything of the
+// installation or the run is removed.
+func TestUninstallIsRefusedWhileAnEphemeralRunIsLive(t *testing.T) {
+	e := startingEphemeral(t)
+
+	// Before uninstall runs at all: past the refusal it removes the machine's accounts and its
+	// installed conflux, which are not the test's.
+	if _, live := liveEphemeral(); !live {
+		t.Fatal("the run is not seen as live, so uninstall would not be refused")
+	}
+
+	d := paths.Default()
+	if err := d.EnsureAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := config.Save(d, &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	var removed bool
+
+	was, elevated := services, privcheck.Elevated
+	services = func() service.Manager { return removalService{removed: &removed} }
+	privcheck.Elevated = func() bool { return true }
+
+	t.Cleanup(func() { services, privcheck.Elevated = was, elevated })
+
+	_, errOut, code := capture(t, "uninstall", "--yes")
+	if code != ExitUsage || !strings.Contains(errOut, "an ephemeral anchor is running from "+e.Root) {
+		t.Errorf("uninstall --yes beside a live run exited %d:\n%s", code, errOut)
+	}
+
+	if removed {
+		t.Error("the boot service was removed")
+	}
+
+	for _, p := range []string{d.ConfigFile(), e.ServeLockFile(), e.Socket()} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("%s did not survive the refused uninstall: %v", p, err)
+		}
 	}
 }
 

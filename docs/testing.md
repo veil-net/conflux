@@ -321,8 +321,10 @@ Two long-lived branches, and every change reaches both the same way:
    (`gh pr create --base dev`: `version3` is the default branch, so the base is always
    named). CI runs in full on it, against anchor's `dev-latest`.
 2. Merged when it is green, it is published as the pre-release `dev-latest`, which the next
-   merge into `dev` replaces and which nothing reads unless asked for it by name:
-   `CONFLUX_VERSION=dev-latest` for the install scripts ([install.md](install.md)).
+   merge into `dev` replaces, and which only a dev build or a request by name reads: the
+   install scripts install it when `CONFLUX_VERSION=dev-latest` names it
+   ([install.md](install.md)), and a dev build's `conflux update` takes the newest one, as a
+   release's takes `latest`.
 3. When `dev` is to be released, the owner opens a pull request from `dev` into `version3`.
    CI runs on it in full again, against anchor's `latest`; merged, it is released, and
    `version3` is merged back into `dev`.

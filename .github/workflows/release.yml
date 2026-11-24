@@ -20,8 +20,10 @@ name: release
 # feature from anchor, a new minor otherwise. A push to version3 that leaves it alone is a
 # rebuild of that version: both releases are deleted, tags included, and released again from
 # the commit that just landed, so a version's tag always names the commit its artifacts were
-# built from. install.sh, install.ps1 and `conflux update` read `latest` by name, so a dev build
-# reaches nobody who did not ask for `dev-latest`.
+# built from. install.sh and install.ps1 read `latest` by name, unless CONFLUX_VERSION names
+# another, and `conflux update` follows the channel of the build it runs from: a release's reads
+# `latest`, a dev build's `dev-latest`. So a dev build reaches nobody who did not ask for
+# `dev-latest`, by installing it or by updating a dev build.
 #
 # It only releases. CI tested the branch, and a merge lands only when CI is green -- which
 # rests on branch protection on dev and version3, and is unsafe without it -- so nothing here
@@ -166,7 +168,8 @@ jobs:
 
       # All seven targets, CGO_ENABLED=0 throughout, so one Linux machine cross-builds
       # every one of them. The Makefile reads the VERSION file itself; a build of dev is
-      # stamped as one, which `conflux version` says and `conflux update` asks about.
+      # stamped as one, which `conflux version` says and `conflux update` follows: a dev
+      # build updates to the newest `dev-latest`.
       - run: make dist CHANNEL="$CHANNEL"
         env:
           CHANNEL: ${{ github.ref == 'refs/heads/dev' && 'dev' || '' }}
@@ -207,11 +210,11 @@ jobs:
             echo '```'
             echo
             # A dev build's anchor is pinned to the dev tree, which only api-dev enrols in, and
-            # `conflux update` reads `latest`, the release, pinned to the production tree.
+            # its `conflux update` follows its channel, to the newest `dev-latest`.
             # shellcheck disable=SC2016 # Markdown backticks, not a command substitution
             if [ "$BRANCH" = dev ]; then
               echo 'Then `sudo conflux up --api https://api-dev.veilnet.com.au`: this build'"'"'s anchor is pinned to the dev tree, which only api-dev enrols in.'
-              echo 'A newer dev build is installed by running the installer again: `conflux update` reads `latest`, the release, pinned to the production tree, and asks for `--yes` first.'
+              echo 'Already installed? `sudo conflux update`: a dev build updates to the newest `dev-latest`, as a release updates to `latest`.'
             else
               echo 'Then `sudo conflux up`. Already installed? `sudo conflux update`.'
             fi

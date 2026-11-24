@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"runtime"
 	"strconv"
@@ -14,9 +16,14 @@ import (
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/ui"
 	"github.com/veil-net/conflux/internal/version"
 )
+
+// statusConfig is how status reads the configuration: a variable, so a test run as root can
+// meet the refusal an account that cannot read it meets.
+var statusConfig = config.Load
 
 // runStatus resolves the collision with anchorctl's status by arity, and is
 // additive rather than replacing.
@@ -39,7 +46,17 @@ func runStatus(ctx context.Context, args []string) int {
 
 	ephemeral := reportEphemeralRun(ctx)
 
-	cfg, err := config.Load(d)
+	cfg, err := statusConfig(d)
+
+	// The root lets no account but root's in, and status reads it: asked for again with
+	// privilege, as pass-through asks for the token.
+	if errors.Is(err, fs.ErrPermission) {
+		ui.Errf("%s is not readable, and conflux status reads it.\n  try:  %s",
+			d.ConfigFile(), privcheck.Retry(typed("conflux", "status")))
+
+		return ExitDenied
+	}
+
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return fail(err)

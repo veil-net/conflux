@@ -105,13 +105,14 @@ taints are fixed, and a later `--taint` may only repeat them.
 
 ```console
 $ ping 10.128.0.1
-$ conflux status
-$ conflux peers
+$ sudo conflux status
+$ sudo conflux peers
 ```
 
 `status` prints conflux's state — mode, taint, address, credential expiry, service —
 and `anchorctl status` beneath it. `peers` isn't conflux's at all; it's one of the
-commands handed straight to `anchorctl`.
+commands handed straight to `anchorctl`. Both read what only root may: the configuration, and
+the daemon's token.
 
 **That's the whole setup.** A reboot needs nothing typed: the service is registered
 and enabled, the credential renews itself, and the machine comes back at the same

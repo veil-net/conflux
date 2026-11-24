@@ -67,7 +67,7 @@ rebuilt on it. `conflux status` shows the tally, which is the thing to look at w
 machine seems fine but keeps losing peers:
 
 ```console
-$ conflux status
+$ sudo conflux status
   uplink       7 reopens, last 2026-09-08T11:04:12Z
 ```
 

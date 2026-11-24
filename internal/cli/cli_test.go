@@ -232,6 +232,25 @@ func TestStatusWithNoConfigExits78(t *testing.T) {
 	}
 }
 
+// TestStatusUnreadableIsRefusedForPrivilege: an account that cannot read the configuration is
+// told, as pass-through tells it of the token, to run status again with privilege: exit 13,
+// not a bare permission error and exit 1.
+func TestStatusUnreadableIsRefusedForPrivilege(t *testing.T) {
+	t.Cleanup(paths.UseRoot(t.TempDir()))
+
+	was := statusConfig
+	t.Cleanup(func() { statusConfig = was })
+
+	statusConfig = func(d paths.Dirs) (*config.Config, error) {
+		return nil, &fs.PathError{Op: "open", Path: d.ConfigFile(), Err: fs.ErrPermission}
+	}
+
+	_, errOut, code := capture(t, "status")
+	if want := privcheck.Retry("conflux status"); code != ExitDenied || !strings.Contains(errOut, want) {
+		t.Errorf("status unable to read the configuration exited %d, saying\n%s\nwant %d and %q", code, errOut, ExitDenied, want)
+	}
+}
+
 // TestProxyKeepsItsOwnUplinkFlag: --uplink is conflux proxy's, so the gate that
 // hands anchorctl's flags back must not catch it, and the splitter has to know it
 // takes a value -- otherwise the device path lands in the positional list and is

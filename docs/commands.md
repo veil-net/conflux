@@ -447,7 +447,9 @@ copy of the credential anywhere; `--yes` skips the question, and a non-interacti
 conflux's state — service, mode, exit, taint, AnchorID, credential expiry, API, the
 uplink reopen tally if there is one, and while it runs, who `anchord` runs as and with
 what — and then `anchorctl status` beneath it. Exits 78 when the machine has no
-configuration and no ephemeral run is live; with one live, it reports the run and exits 0.
+configuration and no ephemeral run is live; with one live, it reports the run and exits 0. The
+configuration is root's to read, so another account is refused, exit 13, with the command to run
+again (`sudo conflux status`).
 
 The `anchord` line says what it keeps and why: `conflux, with no privilege` in userspace,
 `conflux, with CAP_NET_ADMIN for its interface` for a TUN on Linux, `conflux, with CAP_NET_RAW
@@ -615,7 +617,7 @@ other refusal — passes through untouched.
 | 1 | failure |
 | 2 | usage: a flag or an argument the command does not take. `-h` is a request, answered on stdout with the command's usage and flags, and exits 0 |
 | 3 | `conflux cert verify`, `match` or `probe`: the check ran and did not hold |
-| 13 | needs root or Administrator, or a pass-through that cannot read the daemon's token |
+| 13 | needs root or Administrator, or a `status` that cannot read the configuration, or a pass-through that cannot read the daemon's token |
 | 69 | nothing here to act on: nothing running, or no credential to renew |
 | 70 | a configuration conflux or anchor refuses for good, or a conflux built for FIPS 140-3 mode run with it switched off, or `conflux cert` where it does not run in that mode; the systemd unit does not restart on it |
 | 78 | no configuration — the code the systemd unit keys `RestartPreventExitStatus` on |

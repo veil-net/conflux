@@ -18,7 +18,7 @@ say() { printf '\n== %s\n' "$*"; }
 fail() { echo "$*" >&2; exit 1; }
 
 case "$(uname -s)" in
-  FreeBSD) os=freebsd account=conflux script=/usr/local/etc/rc.d/conflux log=/var/db/.conflux/conflux.log
+  FreeBSD) os=freebsd account=conflux script=/usr/local/etc/rc.d/conflux log=/var/log/messages
     fips='fips140 on, Go Cryptographic Module v1.26.0' ;;
   OpenBSD) os=openbsd account=_conflux script=/etc/rc.d/conflux log=/var/log/daemon
     fips='fips140 off, this build carries no frozen Go Cryptographic Module' ;;

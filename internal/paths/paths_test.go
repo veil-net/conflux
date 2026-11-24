@@ -21,15 +21,11 @@ func TestTheRootIsTheMachinesDotConflux(t *testing.T) {
 	for _, p := range []string{
 		d.ConfigFile(), d.StateFile(), d.ManifestFile(), d.DaemonConfigFile(), d.AnchorDir(), d.RootAnchorDir(),
 		d.ServiceExecutable(), d.Libexec(), d.RunDir(), d.DaemonRun(), d.Socket(), d.TokenFile(), d.PrivilegeFile(),
-		d.LockFile(), d.ServeLockFile(), d.DaemonPIDFile(), d.ReadyFile(),
+		d.LockFile(), d.ServeLockFile(), d.DaemonPIDFile(), d.ReadyFile(), d.RCPidFile(),
 	} {
 		if rel, err := filepath.Rel(r, p); err != nil || rel == "." || strings.HasPrefix(rel, "..") {
 			t.Errorf("%s is not inside %s", p, r)
 		}
-	}
-
-	if l := d.LogFile(); l != "" && filepath.Dir(l) != r {
-		t.Errorf("the log file %s is not in %s", l, r)
 	}
 }
 

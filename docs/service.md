@@ -287,12 +287,11 @@ is already in the state `down` asks for, and says so rather than passing on laun
 
 macOS needs no driver: `utun` is in the kernel and a root LaunchDaemon can open it.
 
-Logs: `/Library/Application Support/.conflux/conflux.log`, which `uninstall` removes with
-the plist and the one moved aside. The plist names it, for what conflux cannot write
-itself, and `serve --log` is how conflux writes everything else there: each line stamped
-with the time in UTC, and the file moved aside to `conflux.log.1`, replacing the one
-before, once it passes 10 MiB. The file is placed over conflux's own standard output and
-error each time, so a crash lands in it too.
+Logs are the system's: the unified log, which keeps and trims them. launchd keeps no
+output, so the supervisor launchd starts hands its standard output and error to a
+`logger -t conflux` of its own, in a process group of its own so it reads to the end of
+what conflux wrote when the job is stopped, and a crash's trace goes the same way. The plist
+names no file. `log show --last 1h --predicate 'process == "logger"' | grep conflux` reads them.
 
 ## The Windows service
 
@@ -333,22 +332,22 @@ access than any account has.
 
 Windows also needs `wintun.dll` for TUN mode; see [windows.md](windows.md).
 
-Logs: a service has no console, so the supervisor writes what it and `anchord` say to
-`%ProgramData%\.conflux\conflux.log`, each line stamped with the time in UTC and the file
-moved aside to `conflux.log.1` past 10 MiB, as on macOS; `uninstall` removes both with the
-rest.
+Logs: a service has no console, so the supervisor writes what it and `anchord` say to the
+Application event log, a line an event, under its own source, `conflux`, which `install`
+registers with the system's own message file and `uninstall` removes; the events are the
+log's, which Windows keeps and trims. `Get-WinEvent -FilterHashtable @{LogName='Application';
+ProviderName='conflux'}` reads them.
 
 ## rc: FreeBSD and OpenBSD
 
 **FreeBSD.** Script at `/usr/local/etc/rc.d/conflux`, enabled with
-`sysrc conflux_enable=YES`. It runs `conflux serve --log /var/db/.conflux/conflux.log` under
-`daemon(8)`, which backgrounds it and records conflux's own pid, and conflux writes the log
-itself, stamped and moved aside to `conflux.log.1` past 10 MiB, as on macOS — so
-`service conflux stop` signals the supervisor, which closes the anchor before anything
+`sysrc conflux_enable=YES`. It runs `conflux serve` under `daemon(8)`, which backgrounds it,
+sends its output to syslog tagged `conflux` (`/var/log/messages`), and records conflux's own
+pid in the root, `/var/db/.conflux/rc.pid` — so `service conflux stop` signals the supervisor, which closes the anchor before anything
 is killed. `daemon(8)` is not told to restart it: conflux restarts `anchord` itself, and a
 supervisor that exits 78 or 70 would only repeat the answer. `conflux down` on a service
 that is not running succeeds rather than passing on `rc.subr`'s "not running?".
-`uninstall` stops it, removes the `rc.conf` line, the script and both logs.
+`uninstall` stops it, removes the `rc.conf` line and the script.
 
 **OpenBSD.** Script at `/etc/rc.d/conflux`, enabled with `rcctl enable conflux`.
 `rc.subr` backgrounds it and sends its output to syslog, so the logs are in

@@ -38,11 +38,9 @@ func (s *Supervisor) tidy() error {
 		d.RunDir(),
 		// The copy a running Windows service's image was moved aside to, which the next Place
 		// removes once nothing runs it.
-		d.ServiceExecutable()+".old")
-
-	if l := d.LogFile(); l != "" {
-		root = append(root, filepath.Base(l), filepath.Base(l)+".1")
-	}
+		d.ServiceExecutable()+".old",
+		// FreeBSD's daemon(8)'s record of the supervisor, which rc.subr stops it by.
+		d.RCPidFile())
 
 	run := names(d.TokenFile(), d.DaemonPIDFile(), d.ReadyFile(), d.DaemonRun())
 

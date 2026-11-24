@@ -34,16 +34,17 @@ func plainWords(words ...string) error {
 
 // freebsdScript is /usr/local/etc/rc.d/<name>.
 //
-// daemon(8) backgrounds conflux and appends its output to the log, and -p records
-// conflux's pid rather than its own, so `service conflux stop` signals conflux itself:
+// daemon(8) backgrounds conflux and sends its output to syslog, tagged conflux (-S -T), and
+// -p records conflux's pid rather than its own, in the root, so `service conflux stop`
+// signals conflux itself:
 // it closes the anchor and then anchord, and daemon(8) exits behind it. No -r: like
 // the systemd unit, a supervisor that exits with nothing to start (78) or having given
 // up (70) is left stopped rather than restarted into the same answer, and conflux
 // restarts anchord itself. Nothing restarts a supervisor that exits 1, either.
-func freebsdScript(name, exe string, args []string, logFile string) (string, error) {
+func freebsdScript(name, exe string, args []string, pidFile string) (string, error) {
 	argv := append([]string{exe}, args...)
 
-	if err := plainWords(append(argv, logFile)...); err != nil {
+	if err := plainWords(append(argv, pidFile)...); err != nil {
 		return "", err
 	}
 
@@ -61,16 +62,16 @@ name=%[1]s
 rcvar=%[1]s_enable
 desc="Conflux, a VeilNet anchor"
 
-pidfile=/var/run/%[1]s.pid
+pidfile=%[3]s
 procname=%[2]s
 command=/usr/sbin/daemon
-command_args="-f -o %[3]s -p ${pidfile} %[4]s"
+command_args="-f -S -T %[1]s -p ${pidfile} %[4]s"
 
 load_rc_config "$name"
 : "${%[1]s_enable:=NO}"
 
 run_rc_command "$1"
-`, name, exe, logFile, strings.Join(argv, " ")), nil
+`, name, exe, pidFile, strings.Join(argv, " ")), nil
 }
 
 // openbsdScript is /etc/rc.d/<name>. rc.subr backgrounds it and sends its output to

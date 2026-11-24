@@ -166,16 +166,10 @@ func (d Dirs) ServeLockFile() string { return filepath.Join(d.Root, "serve.lock"
 // read by the next supervisor before it empties the rest.
 func (d Dirs) DaemonPIDFile() string { return filepath.Join(d.RunDir(), "anchord.pid") }
 
-// LogFile is the boot service's output, inside the root on the platforms where conflux
-// writes it to a file (macOS, FreeBSD and Windows), or "" where the service manager keeps
-// it.
-func (d Dirs) LogFile() string {
-	if !writesLog {
-		return ""
-	}
-
-	return filepath.Join(d.Root, "conflux.log")
-}
+// RCPidFile is the supervisor's pid, as FreeBSD's daemon(8) records it for rc.subr to
+// stop it by: beside the state rather than in RunDir, which the supervisor empties as it
+// starts, after daemon(8) has written this.
+func (d Dirs) RCPidFile() string { return filepath.Join(d.Root, "rc.pid") }
 
 // ReadyFile is written by the supervisor once an anchor is up, and removed when it goes.
 // It is what lets `conflux up` learn the anchor is up the moment it happens; see

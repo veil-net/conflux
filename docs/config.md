@@ -27,7 +27,10 @@ person sets moves it:
 | `bin/<setID>/` | the extracted anchor pair |
 | `anchor/`, `anchor.root/` | `anchord`'s `-dir`: the first for an `anchord` running as its own account, the second for one running as root |
 | `run/` | `token`, `ready`, `anchord.pid`, and `anchord/sock`, the control socket — what lasts as long as one supervisor, which empties it as it starts |
-| `conflux.log` | the service's log, on macOS, FreeBSD and Windows; on Linux it goes to journald and on OpenBSD to syslog |
+| `rc.pid` | on FreeBSD, the supervisor's pid as `daemon(8)` records it for `rc.subr` |
+
+The service's log is not here: it is the system's (journald, syslog, the unified log, the
+Application event log); see [service.md](service.md).
 
 The root holds that and nothing else. Before every start of `anchord` the supervisor removes
 from it, from `run/` and from both anchor directories whatever conflux or anchor did not put

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/veil-net/conflux/internal/paths"
+
 	"github.com/veil-net/conflux/internal/config"
 )
 
@@ -19,7 +21,7 @@ func scriptPath() string { return "/usr/local/etc/rc.d/" + rcName }
 
 // Install writes the script and enables it, and starts nothing.
 func (freebsd) Install(exe string, args ...string) error {
-	script, err := freebsdScript(rcName, exe, withLog(args), logFile())
+	script, err := freebsdScript(rcName, exe, args, paths.Default().RCPidFile())
 	if err != nil {
 		return err
 	}
@@ -32,7 +34,7 @@ func (freebsd) Install(exe string, args ...string) error {
 	return run("sysrc", rcName+"_enable=YES")
 }
 
-// Remove stops the service, disables it, and deletes the script and the log.
+// Remove stops the service, disables it, and deletes the script.
 func (f freebsd) Remove() error {
 	_ = run("service", rcName, "onestop")
 	_ = run("sysrc", "-x", rcName+"_enable")
@@ -43,7 +45,7 @@ func (f freebsd) Remove() error {
 		errs = append(errs, err)
 	}
 
-	return errors.Join(append(errs, removeLog(logFile()))...)
+	return errors.Join(errs...)
 }
 
 // Stop succeeds on a service that is not running, which rc.subr answers "not running?"
@@ -78,7 +80,7 @@ func (f freebsd) Describe() string {
 	return fmt.Sprintf("installed, not running (rc: %s, enabled at boot)", rcName)
 }
 
-func (freebsd) LogHint() string { return "tail -n 50 " + logFile() }
+func (freebsd) LogHint() string { return "grep conflux /var/log/messages | tail -n 50" }
 
 // Reconcile is Install, which writes the script and enables it and starts nothing, so the
 // running service may call it.

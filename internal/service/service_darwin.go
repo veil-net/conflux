@@ -33,7 +33,7 @@ func newManager() Manager { return launchd{} }
 // /Library/LaunchDaemons at boot, so the plist on disk *is* the registration, and
 // Start and Restart load it when there is something to run.
 func (l launchd) Install(exe string, args ...string) error {
-	plist := launchdPlist(Label, append([]string{exe}, withLog(args)...), logFile())
+	plist := launchdPlist(Label, append([]string{exe}, args...))
 
 	// 0644 whatever was there before: launchd refuses a job whose plist is group- or
 	// world-writable, for a reason nothing in its error names.
@@ -56,7 +56,7 @@ func (l launchd) Install(exe string, args ...string) error {
 // boot the job out as Install does: what calls it is the job, and the plist takes effect at
 // the next load.
 func (l launchd) Reconcile(exe string, args ...string) error {
-	plist := []byte(launchdPlist(Label, append([]string{exe}, withLog(args)...), logFile()))
+	plist := []byte(launchdPlist(Label, append([]string{exe}, args...)))
 
 	if cur, err := os.ReadFile(plistPath); err == nil && bytes.Equal(cur, plist) {
 		return nil
@@ -137,7 +137,7 @@ func bootstrapHint() string {
 		"    - the executable it names is gone, or is on a volume that is not mounted yet"
 }
 
-// Remove deregisters the job and deletes its plist and its log, and deliberately
+// Remove deregisters the job and deletes its plist, and deliberately
 // leaves nothing in launchd's disabled database: a disabled label outlives the plist and
 // stops the next install from loading, which is persistent state for a thing that no
 // longer exists.
@@ -149,8 +149,6 @@ func (l launchd) Remove() error {
 	if err := os.Remove(plistPath); err != nil && !os.IsNotExist(err) {
 		errs = append(errs, err)
 	}
-
-	errs = append(errs, removeLog(logFile()))
 
 	if installed, _ := l.Installed(); installed {
 		return errors.Join(errs...)
@@ -214,7 +212,9 @@ func running() bool {
 	return ok && strings.Contains(out, "state = running")
 }
 
-func (launchd) LogHint() string { return "tail -n 50 " + logFile() }
+func (launchd) LogHint() string {
+	return `log show --last 1h --style compact --predicate 'process == "logger"' | grep conflux`
+}
 
 func (l launchd) Describe() string {
 	installed, _ := l.Installed()

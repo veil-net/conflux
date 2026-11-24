@@ -29,7 +29,7 @@ func shParses(t *testing.T, script string) {
 }
 
 func TestFreeBSDScript(t *testing.T) {
-	script, err := freebsdScript("conflux", "/var/db/.conflux/conflux", []string{"serve"}, "/var/db/.conflux/conflux.log")
+	script, err := freebsdScript("conflux", "/var/db/.conflux/conflux", []string{"serve"}, "/var/db/.conflux/rc.pid")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,8 +38,9 @@ func TestFreeBSDScript(t *testing.T) {
 		"# PROVIDE: conflux",
 		"# KEYWORD: shutdown",
 		"rcvar=conflux_enable",
+		"pidfile=/var/db/.conflux/rc.pid\n",
 		"procname=/var/db/.conflux/conflux\n",
-		`command_args="-f -o /var/db/.conflux/conflux.log -p ${pidfile} /var/db/.conflux/conflux serve"`,
+		`command_args="-f -S -T conflux -p ${pidfile} /var/db/.conflux/conflux serve"`,
 		`: "${conflux_enable:=NO}"`,
 	} {
 		if !strings.Contains(script, want) {
@@ -89,7 +90,7 @@ func TestAnRCScriptRefusesWhatItCannotMatch(t *testing.T) {
 			t.Errorf("an OpenBSD script was written for the executable %q", root+"/conflux")
 		}
 
-		if _, err := freebsdScript(rcName, root+"/conflux", args, root+"/conflux.log"); err == nil {
+		if _, err := freebsdScript(rcName, root+"/conflux", args, root+"/rc.pid"); err == nil {
 			t.Errorf("a FreeBSD script was written for the executable %q", root+"/conflux")
 		}
 	}

@@ -310,7 +310,7 @@ jobs:
           set -euo pipefail
           make build >/dev/null
           if [ "$RUNNER_OS" = macOS ]; then
-            sudo ./test/service-host.sh bin/conflux
+            sudo VEILNET_API="$VEILNET_API" ./test/service-host.sh bin/conflux
           else
             ./test/service-host.sh bin/conflux.exe
           fi

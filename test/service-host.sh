@@ -28,6 +28,21 @@ esac
 
 LABEL=org.veilnet.conflux
 
+# The API the observing leg enrols its one anonymous alpha credential at: the tree the embedded
+# anchord is pinned to, which CI names by the pull request's base.
+API=${VEILNET_API:-https://api.veilnet.com.au}
+
+# logs prints what the service wrote to the system's log: the unified log, which a logger(1)
+# the supervisor started fills on macOS, and the Application event log, under conflux's own
+# source, on Windows.
+logs() {
+  if [ "$os" = darwin ]; then
+    log show --last 15m --style compact --predicate 'process == "logger"' 2>/dev/null
+  else
+    powershell.exe -NoProfile -Command "Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='conflux'} -MaxEvents 500 -ErrorAction SilentlyContinue | Sort-Object TimeCreated | ForEach-Object { \$_.Message }" 2>/dev/null
+  fi
+}
+
 # A run cut short leaves its registration behind; a fresh runner has none to remove.
 "$CONFLUX" uninstall --yes >/dev/null 2>&1 || true
 
@@ -77,12 +92,10 @@ if [ "$os" = darwin ]; then
   launchctl bootstrap system "/Library/LaunchDaemons/$LABEL.plist"
   account='"as":"_conflux"'
   who='starting anchord as _conflux, with no privilege'
-  log="$root/conflux.log"
 else
   sc.exe start conflux >/dev/null
   account='LOCAL SERVICE'
   who='starting anchord as NT AUTHORITY\LOCAL SERVICE, with no privilege'
-  log="$root/conflux.log"
 fi
 priv=""
 for _ in $(seq 120); do
@@ -100,21 +113,21 @@ esac
 # answered an authenticated call on the socket it made, so "enrolling" after that start is
 # anchord serving as its own account, not merely started as it.
 for _ in $(seq 120); do
-  grep -q 'enrolling' "$log" 2>/dev/null && break
+  logs | grep -q 'enrolling' && break
   sleep 0.5
 done
-grep -F "$who" "$log" >/dev/null || { cat "$log" >&2; fail "the log does not say anchord started as its own account"; }
-grep -q 'enrolling' "$log" || { cat "$log" >&2; fail "anchord never answered on its socket as its own account"; }
-grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z .*enrolling' "$log" \
-  || { cat "$log" >&2; fail "the log's lines are not stamped with the time they were written"; }
+logs | grep -F "$who" >/dev/null || { logs >&2; fail "the system log does not say anchord started as its own account"; }
+logs | grep -q 'enrolling' || { logs >&2; fail "anchord never answered on its socket as its own account"; }
 "$CONFLUX" down || fail "down failed on a running service"
 
-# Observing alone needs no API, so this one comes all the way up: start waits for the
-# observer as it waits for an anchor. As its own account, with the capture and nothing else:
-# on macOS the BPF devices given to its group by the supervisor, on Windows LOCAL SERVICE's
-# own leave to start the trace session.
+# Observing alone comes all the way up, under the credential the observer runs as: one
+# anonymous alpha enrolment in a random taint at the API the embedded anchord is pinned to,
+# and start waits for the observer as it waits for an anchor. As its own account, with the
+# capture and nothing else: on macOS the BPF devices given to its group by the supervisor, on
+# Windows LOCAL SERVICE's own leave to start the trace session.
 say "observing alone, anchord captures as its own account"
-(umask 077; printf '%s\n' '{"version":1,"mode":"observe","observer":{},"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}' > "$root/conflux.json")
+taint=cfx-host-$(head -c6 /dev/urandom | od -An -tx1 | tr -d ' \n')
+(umask 077; printf '{"version":1,"mode":"observe","observer":{},"taints":["%s"],"apiBaseUrl":"%s","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}\n' "$taint" "$API" > "$root/conflux.json")
 if [ "$os" = darwin ]; then
   capture=bpf
   who='_conflux, with read access to /dev/bpf*, for the observer'
@@ -122,12 +135,12 @@ else
   capture=etw
   who='NT AUTHORITY\LOCAL SERVICE, with no privilege'
 fi
-"$CONFLUX" start || { cat "$log" >&2; fail "the observer did not come up"; }
+"$CONFLUX" start || { logs >&2; fail "the observer did not come up"; }
 out=$("$CONFLUX" status)
 printf '%s\n' "$out"
 case $out in
   *"observer     $capture,"*) ;;
-  *) cat "$log" >&2; fail "status does not show the observer capturing with $capture" ;;
+  *) logs >&2; fail "status does not show the observer capturing with $capture" ;;
 esac
 case $out in
   *"anchord      $who"*) ;;
@@ -215,6 +228,9 @@ if [ "$os" = darwin ]; then
 else
   if sc.exe query conflux >/dev/null 2>&1; then
     fail "the service survived uninstall"
+  fi
+  if reg.exe query 'HKLM\SYSTEM\CurrentControlSet\Services\EventLog\Application\conflux' >/dev/null 2>&1; then
+    fail "the service's event source survived uninstall"
   fi
   [ ! -e "$root" ] || fail "$root survived uninstall"
 fi

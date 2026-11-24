@@ -248,12 +248,11 @@ these binaries are pinned to, a TUN the host will not give (no capability, devic
 IPv6, or the name held by another interface), a host that will not be set up to forward
 for the realm, and an argument vector anchorctl refuses outright.
 
-Where the logs are: `journalctl -u conflux -n 50` on Linux, `/var/log/daemon` on OpenBSD,
-and `conflux.log` in the root on macOS, FreeBSD and Windows —
-`/Library/Application Support/.conflux/conflux.log`, `/var/db/.conflux/conflux.log` and
-`%ProgramData%\.conflux\conflux.log` — where past 10 MiB the older lines are in
-`conflux.log.1` beside it. A start that times out names the
-right one for the machine.
+Where the logs are: the system's, everywhere. `journalctl -u conflux -n 50` on Linux,
+`/var/log/messages` on FreeBSD, `/var/log/daemon` on OpenBSD, the unified log on macOS
+(`log show --last 1h --predicate 'process == "logger"' | grep conflux`), and the
+Application event log on Windows, under the source `conflux`. A start that times out names
+the right one for the machine.
 
 ## Renewal is failing
 

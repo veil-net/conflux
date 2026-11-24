@@ -6,7 +6,6 @@ import (
 	"flag"
 
 	"github.com/veil-net/conflux/internal/daemon"
-	"github.com/veil-net/conflux/internal/logfile"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/privcheck"
 	"github.com/veil-net/conflux/internal/service"
@@ -23,24 +22,13 @@ func runServe(ctx context.Context, args []string) int {
 	fs.SetOutput(ui.Errw)
 
 	foreground := fs.Bool("foreground", false, "stay in the foreground even where a service manager is available")
-	logPath := fs.String("log", "", "write the output to this file, each line stamped and the file moved aside to .1 past 10 MiB; "+
-		"launchd's and FreeBSD's registrations pass it")
 
 	if err := fs.Parse(args); err != nil {
 		return ExitUsage
 	}
 
-	// Where launchd or daemon(8) was told to write it: conflux writes it itself from here on,
-	// stamping each line and moving it aside when it is full, which neither of them does.
-	if *logPath != "" {
-		if lf, err := logfile.Open(*logPath); err != nil {
-			ui.Errf("could not open the log %s, so the output goes where the service manager sends it: %v", *logPath, err)
-		} else {
-			defer lf.Close()
-
-			ui.Out, ui.Errw = lf, lf
-		}
-	}
+	// Where launchd started it, which keeps no output, to the system log.
+	toSystemLog()
 
 	d := paths.Default()
 

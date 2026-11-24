@@ -20,7 +20,6 @@ import (
 	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/libexec"
 	"github.com/veil-net/conflux/internal/paths"
-	"github.com/veil-net/conflux/internal/wintun"
 )
 
 // The supervisor is what the service manager actually runs.
@@ -401,23 +400,14 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 // both under the machine's credential -- and says what readiness to record: the anchor's ID,
 // or nothing yet.
 //
-// An anchor that does not come up -- a start that fails, or one refused for good -- ends the
-// cycle, unless the observer runs beside it: then the daemon is kept, and with it the observer
-// and the inventory it holds, and the start's failure is handed back as anchorErr for the
-// watcher, which brings the anchor up when it can, as it rebuilds one that is lost, and gives
-// it up after rebuildRefusals refusals for good in a row, the start's counted among them. An
-// anchor that cannot come up never takes the observer down. A credential that could not be had
-// ends the cycle either way: the observer runs under it too.
+// An anchor that does not come up -- a start that fails, one refused for good, or on Windows a
+// driver that cannot be had -- ends the cycle, unless the observer runs beside it: then the
+// daemon is kept, and with it the observer and the inventory it holds, and the start's failure
+// is handed back as anchorErr for the watcher, which brings the anchor up when it can, as it
+// rebuilds one that is lost, and gives it up after rebuildRefusals refusals for good in a row,
+// the start's counted among them. An anchor that cannot come up never takes the observer down.
+// A credential that could not be had ends the cycle either way: the observer runs under it too.
 func (s *Supervisor) up(ctx context.Context, cfg *config.Config) (id string, anchorErr, err error) {
-	// Windows needs the driver beside anchord before an interface can exist, and it
-	// lives in the content-addressed set directory: an upgraded conflux extracts a new
-	// set with no wintun.dll in it, and a boot must not need somebody to run `up`.
-	if cfg.Mode == config.ModeTUN {
-		if err := wintun.Ensure(ctx, s.Dirs); err != nil {
-			return "", nil, err
-		}
-	}
-
 	var (
 		observe   func(config.Envelope) (string, error)
 		observing bool

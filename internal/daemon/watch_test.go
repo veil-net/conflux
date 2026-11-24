@@ -290,6 +290,29 @@ func TestAReopenedLinkIsCounted(t *testing.T) {
 	}
 }
 
+// TestARebuildFetchesTheDriver: Windows' driver is part of the anchor's start, so a rebuild
+// fetches it, as the start does, before anchorctl's start: one the start could not have is the
+// watcher's to fetch again, with the anchor.
+func TestARebuildFetchesTheDriver(t *testing.T) {
+	s, log := supervised(t, "1")
+	credentialed(t, s.Dirs)
+	s.priv.Dir = s.Dirs.RootAnchorDir()
+
+	if err := config.Save(s.Dirs, &config.Config{Mode: config.ModeTUN, Taints: []string{"t"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	fetchingDriver(t, log, nil)
+
+	if err := s.rebuild(t.Context(), false); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+
+	if cmds, want := ran(t, log), []string{"stop", "wintun", "start"}; !slices.Equal(cmds, want) {
+		t.Errorf("the rebuild ran %v, want %v", cmds, want)
+	}
+}
+
 // TestTheWatcherStartsAFailedObserverAgain: an observer whose capture ended is started
 // again; one stopped by hand, or never started, is left as it is.
 func TestTheWatcherStartsAFailedObserverAgain(t *testing.T) {

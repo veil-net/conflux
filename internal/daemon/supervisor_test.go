@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"github.com/veil-net/conflux/internal/enrol"
 	"github.com/veil-net/conflux/internal/paths"
 	"os"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/libexec"
+	"github.com/veil-net/conflux/internal/wintun"
 )
 
 // supervised is a supervisor over the stand-in anchord in the given mode, with the
@@ -444,21 +446,37 @@ func TestTheObserverOutlivesAnAnchorThatDoesNotComeUp(t *testing.T) {
 		t.Skip("a console control event needs the console this test shares")
 	}
 
-	for name, refuse := range map[string]string{
-		"whose start fails for now":       fakeAnchorctlFailEnv,
-		"whose start is refused for good": fakeAnchorctlRefuseEnv, // an argument vector anchorctl will not take, exit 2
+	for name, c := range map[string]struct {
+		mode   config.Mode // the anchor's
+		refuse string      // how the stand-in anchorctl refuses its start, or nothing
+		driver error       // what fetching Windows' driver fails with, or nothing
+		tried  string      // what the anchor's start got as far as: anchorctl's start, or the driver
+	}{
+		"whose start fails for now": {mode: config.ModeProxy, refuse: fakeAnchorctlFailEnv, tried: "start"},
+		// An argument vector anchorctl will not take, exit 2.
+		"whose start is refused for good": {mode: config.ModeProxy, refuse: fakeAnchorctlRefuseEnv, tried: "start"},
+		// An interface on Windows, with wintun.net out of reach.
+		"whose driver cannot be had": {mode: config.ModeTUN, driver: errors.New("wintun.net did not answer"), tried: "wintun"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv(fakeAnchorctlStatusEnv, "none")
 			t.Setenv(fakeAnchorctlObserverEnv, "running")
-			t.Setenv(refuse, "start")
 			t.Setenv(fakeAnchordListenEnv, "1")
+
+			if c.refuse != "" {
+				t.Setenv(c.refuse, "start")
+			}
 
 			s, log := supervised(t, "serve")
 			s.Ready = make(chan struct{})
 
-			cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, Observer: &config.Observer{},
-				Proxies: []string{"8080=127.0.0.1:1"}}
+			fetchingDriver(t, log, c.driver)
+
+			cfg := &config.Config{Mode: c.mode, Taints: []string{"t"}, Observer: &config.Observer{}}
+			if c.mode == config.ModeProxy {
+				cfg.Proxies = []string{"8080=127.0.0.1:1"}
+			}
+
 			if err := config.Save(s.Dirs, cfg); err != nil {
 				t.Fatal(err)
 			}
@@ -487,11 +505,34 @@ func TestTheObserverOutlivesAnAnchorThatDoesNotComeUp(t *testing.T) {
 			}
 
 			cmds := ran(t, log)
-			if o, a := slices.Index(cmds, "observe"), slices.Index(cmds, "start"); o < 0 || a < 0 || o > a {
-				t.Errorf("anchorctl ran %v; want the observer started, and then the anchor's start tried", cmds)
+			if o, a := slices.Index(cmds, "observe"), slices.Index(cmds, c.tried); o < 0 || a < 0 || o > a {
+				t.Errorf("anchorctl ran %v; want the observer started, and then the anchor's start tried as far as %s",
+					cmds, c.tried)
 			}
 		})
 	}
+}
+
+// fetchingDriver stands in for wintun.Ensure, answering err, and records each fetch as "wintun"
+// in log, where the stand-in anchorctl records its commands, so the order of the two is read
+// off one log.
+func fetchingDriver(t *testing.T, log string, err error) {
+	t.Helper()
+
+	ensureDriver = func(context.Context, paths.Dirs) error {
+		f, openErr := os.OpenFile(log, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+		if openErr != nil {
+			return openErr
+		}
+
+		defer f.Close()
+
+		_, _ = fmt.Fprintln(f, "wintun")
+
+		return err
+	}
+
+	t.Cleanup(func() { ensureDriver = wintun.Ensure })
 }
 
 // TestNoCredentialNoObserver: the observer runs under the machine's credential, so beside an

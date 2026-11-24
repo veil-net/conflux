@@ -40,9 +40,12 @@ pinned a different version from the product code would be a test of nothing.
 
 Because the DLL lands in the content-addressed set directory, upgrading conflux to a
 build with a different anchor pair needs it again in the new directory, and the
-supervisor fetches it there before it starts the anchor — a reboot after an upgrade
-needs nothing typed. That is correct: the driver belongs beside the executable that
-loads it. A start that cannot fetch it is retried with the supervisor's backoff.
+supervisor fetches it there as part of the anchor's start, and of every rebuild of the
+anchor — a reboot after an upgrade needs nothing typed. That is correct: the driver belongs
+beside the executable that loads it. An anchor that cannot fetch it has not come up, like
+one whose start fails: on its own it is started again with the supervisor's backoff, and
+beside the observer, which is started first and which it never takes down, the watcher
+tries it again ([service.md](service.md)).
 
 ## If it cannot be downloaded
 

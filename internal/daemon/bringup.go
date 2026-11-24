@@ -13,6 +13,7 @@ import (
 	"github.com/veil-net/conflux/internal/enrol"
 	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/wintun"
 )
 
 // ErrNotConfigured means there is nothing to start. The boot service exits 78 on it
@@ -197,6 +198,17 @@ func bringUp(
 		return anchorctl.Started{}, fmt.Errorf("create %s: %w", dir, err)
 	}
 
+	// Windows needs the driver beside anchord before an interface can exist, and it lives in
+	// the content-addressed set directory: an upgraded conflux extracts a new set with no
+	// wintun.dll in it, and a boot must not need somebody to run `up`. Part of the anchor's
+	// start, after the observer's: a driver that cannot be had is an anchor that does not come
+	// up, which never takes the observer down, and a rebuild fetches it as the start does.
+	if cfg.Mode == config.ModeTUN {
+		if err := ensureDriver(ctx, d); err != nil {
+			return anchorctl.Started{}, err
+		}
+	}
+
 	started, err = ctl.Start(ctx, env, anchorctl.ModeFromConfig(cfg, dir))
 	if err != nil {
 		return anchorctl.Started{}, err
@@ -207,6 +219,9 @@ func bringUp(
 
 	return started, nil
 }
+
+// ensureDriver is wintun.Ensure, which tests replace: only Windows has a driver to fetch.
+var ensureDriver = wintun.Ensure
 
 // credential returns the manifest to start from, enrolling or renewing as needed, and the
 // chain it renewed to, or nil where it renewed none.

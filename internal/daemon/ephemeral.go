@@ -229,7 +229,7 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 
 	// Windows needs the driver beside anchord before an interface can exist.
 	if e.Config.Mode == config.ModeTUN {
-		if err := wintun.Ensure(ctx, d); err != nil {
+		if err := ensureDriver(ctx, d); err != nil {
 			return err
 		}
 	}

@@ -3,8 +3,10 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/veil-net/conflux/internal/config"
 )
@@ -16,12 +18,32 @@ func newManager() Manager { return openbsd{} }
 
 func scriptPath() string { return "/etc/rc.d/" + rcName }
 
-// Install writes the script and enables it, and starts nothing. Each only where it is not so
-// already, which is every start of the service: rc.conf.local is the administrator's, which
-// rcctl rewrites.
+// classPath is the login class rc.subr runs the service under, found by its name.
+// login.conf(5): a class in /etc/login.conf.d/<class> takes precedence over one of that name in
+// /etc/login.conf.
+const classPath = "/etc/login.conf.d/" + rcName
+
+// Install writes the login class and the script and enables the service, and starts nothing.
+// Each only where it is not so already, which is every start of the service: rc.conf.local is
+// the administrator's, which rcctl rewrites.
 func (openbsd) Install(exe string, args ...string) error {
 	script, err := openbsdScript(exe, args)
 	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(classPath), 0o755); err != nil {
+		return err
+	}
+
+	// Readable by all, as login.conf is.
+	if _, err := config.WriteFileIfChanged(classPath, []byte(openbsdClass()), 0o644); err != nil {
+		return err
+	}
+
+	// cgetent(3) reads a cap_mkdb(1) database in place of the file beside it, so one there
+	// would be the class, whatever conflux wrote; conflux writes none.
+	if err := os.Remove(classPath + ".db"); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 
@@ -38,17 +60,21 @@ func (openbsd) Install(exe string, args ...string) error {
 	return run("rcctl", "enable", rcName)
 }
 
-// Remove stops and disables the service and deletes the script. Its output went to
-// syslog, which conflux does not own.
+// Remove stops and disables the service and deletes the script and the login class. Its
+// output went to syslog, which conflux does not own.
 func (openbsd) Remove() error {
 	_ = run("rcctl", "stop", rcName)
 	_ = run("rcctl", "disable", rcName)
 
-	if err := os.Remove(scriptPath()); err != nil && !os.IsNotExist(err) {
-		return err
+	var errs []error
+
+	for _, path := range []string{scriptPath(), classPath, classPath + ".db"} {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			errs = append(errs, err)
+		}
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 func (openbsd) Stop() error    { return run("rcctl", "stop", rcName) }
@@ -70,6 +96,6 @@ func (o openbsd) Describe() string {
 
 func (openbsd) LogHint() string { return "grep " + rcName + " /var/log/daemon | tail -n 50" }
 
-// Reconcile is Install, which writes the script and enables it where either is not so, and
-// starts nothing, so the running service may call it.
+// Reconcile is Install, which writes the login class and the script and enables the service
+// where any is not so, and starts nothing, so the running service may call it.
 func (openbsd) Reconcile(exe string, args ...string) error { return openbsd{}.Install(exe, args...) }

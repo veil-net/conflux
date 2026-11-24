@@ -49,6 +49,10 @@ type Manager interface {
 	LogHint() string
 }
 
+// openFiles is the open-file limit the service is given, where conflux sets one: systemd's
+// LimitNOFILE, and OpenBSD's login class.
+const openFiles = 1048576
+
 // New returns this platform's manager.
 func New() Manager { return newManager() }
 

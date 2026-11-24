@@ -379,7 +379,15 @@ that is not running succeeds rather than passing on `rc.subr`'s "not running?".
 **OpenBSD.** Script at `/etc/rc.d/conflux`, enabled with `rcctl enable conflux` where
 `rcctl get conflux status` says it is not.
 `rc.subr` backgrounds it and sends its output to syslog, so the logs are in
-`/var/log/daemon`. `uninstall` stops and disables it and removes the script.
+`/var/log/daemon`. It runs it through `su(1)` under the login class named after the script
+where there is one, and conflux writes one, `/etc/login.conf.d/conflux`: the `daemon` class,
+which holds a process to 1,024 open files, with both limits raised to 1,048,576, as systemd's
+`LimitNOFILE=` raises them, which the kernel holds to `kern.maxfiles`. `anchord` starts with
+the supervisor's limit. `login.conf(5)` reads a class in `login.conf.d` before one of that
+name in `/etc/login.conf`, and `cgetent(3)` reads a `cap_mkdb(1)` database in place of the file
+beside it, so a `conflux.db` there is removed rather than left to stand for the class. Every
+start puts the class back as conflux writes it. `uninstall` stops and disables the service
+and removes the script and the class.
 
 Both find the running service again by matching its command line, unquoted — FreeBSD's
 `rc.subr` the first word `ps` prints against `procname`, OpenBSD's `rcctl` the whole of it

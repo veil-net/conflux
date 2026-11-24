@@ -137,13 +137,26 @@ done
 [ "$(stat -f '%Su' "$state/anchor")" = "$account" ] || fail "anchord's directory is not $account's"
 [ "$(stat -f '%Sp %Su' /var/db/.conflux/run/token)" = "-rw------- root" ] || fail "the token is not root's alone"
 
+# OpenBSD's rc.subr runs conflux through su(1) under the login class named after its script,
+# which conflux writes with the daemon class's open files, 1024, raised. OpenBSD shows no other
+# process's limits, so what is asked is what that su gives: the supervisor's limit, which is
+# what anchord is started with.
+if [ "$os" = openbsd ]; then
+  say "conflux runs under a login class of its own, with its open files raised"
+  [ -f /etc/login.conf.d/conflux ] || fail "install wrote no login class at /etc/login.conf.d/conflux"
+  class=$(rcctl get conflux class)
+  [ "$class" = conflux ] || fail "rc.subr runs conflux under the $class class, not its own"
+  files=$(su -fl -c conflux -s /bin/sh root -c 'ulimit -n')
+  echo "  open files: $files"
+  [ "$files" -gt 1024 ] || fail "the conflux class gives $files open files, no more than the daemon class"
+fi
+
 # Every start puts the registration back to what conflux writes, and writes none of it that
-# is that already: the rc script, and rc.conf, which is the administrator's, keep their inode
-# and their mtime across a restart.
+# is that already: the rc script, rc.conf, which is the administrator's, and OpenBSD's login
+# class keep their inode and their mtime across a restart.
 say "a start rewrites nothing of the registration that is already conflux's"
-rcconf=/etc/rc.conf
-[ "$os" = openbsd ] && rcconf=/etc/rc.conf.local
-kept="$script $rcconf"
+kept="$script /etc/rc.conf"
+[ "$os" = openbsd ] && kept="$script /etc/rc.conf.local /etc/login.conf.d/conflux"
 before=$(for f in $kept; do stat -f '%i %m %N' "$f"; done)
 sleep 1
 started >/dev/null
@@ -241,6 +254,11 @@ if id "$eaccount" >/dev/null 2>&1; then
 fi
 if id "$account" >/dev/null 2>&1; then
   fail "the $account account survived uninstall"
+fi
+
+if [ "$os" = openbsd ]; then
+  say "uninstall removes the login class"
+  [ ! -e /etc/login.conf.d/conflux ] || fail "the login class survived uninstall"
 fi
 
 say "all assertions passed"

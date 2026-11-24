@@ -76,7 +76,9 @@ run_rc_command "$1"
 }
 
 // openbsdScript is /etc/rc.d/<name>. rc.subr backgrounds it and sends its output to
-// syslog, and rcctl matches the running process by its command line.
+// syslog, and rcctl matches the running process by its command line. It runs it through su(1)
+// under daemon_class, which the script cannot set: rc.subr holds it read-only, and sets it to
+// the login class named after the script where there is one -- openbsdClass -- or daemon.
 func openbsdScript(exe string, args []string) (string, error) {
 	if err := plainWords(append([]string{exe}, args...)...); err != nil {
 		return "", err
@@ -97,6 +99,21 @@ rc_reload=NO
 
 rc_cmd $1
 `, exe, strings.Join(args, " ")), nil
+}
+
+// openbsdClass is /etc/login.conf.d/<rcName>, the login class OpenBSD's rc.subr runs conflux
+// under, which it finds by the script's name: the daemon class, which holds a process to 1024
+// open files (128 soft), with both limits raised to systemd's LimitNOFILE, which the kernel
+// holds to kern.maxfiles. Each is named with -cur and -max: an openfiles= alone gives way to
+// the daemon class's own -cur and -max, which tc brings in. anchord starts with the
+// supervisor's limit, which Go hands a child however far it has raised its own.
+func openbsdClass() string {
+	return fmt.Sprintf(`# Written by conflux install; conflux uninstall removes it.
+%s:\
+	:openfiles-cur=%[2]d:\
+	:openfiles-max=%[2]d:\
+	:tc=daemon:
+`, rcName, openFiles)
 }
 
 // plainWord is every character a word may hold and mean the same to a shell and to a

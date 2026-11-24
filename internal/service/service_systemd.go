@@ -54,7 +54,7 @@ Wants=network-online.target
 [Service]
 Type=notify
 NotifyAccess=main
-ExecStart=%s
+ExecStart=%[1]s
 Restart=on-failure
 RestartSec=5
 RestartPreventExitStatus=78 70
@@ -64,7 +64,7 @@ KillMode=mixed
 KillSignal=SIGTERM
 User=root
 Group=root
-LimitNOFILE=1048576
+LimitNOFILE=%[2]d
 UMask=0077
 PrivateTmp=yes
 ProtectHome=read-only
@@ -82,7 +82,7 @@ WantedBy=multi-user.target
 
 // systemdUnit is the unit for exe run with args.
 func systemdUnit(exe string, args []string) string {
-	return fmt.Sprintf(unitTemplate, execLine(append([]string{exe}, args...)))
+	return fmt.Sprintf(unitTemplate, execLine(append([]string{exe}, args...)), openFiles)
 }
 
 // execLine renders an ExecStart= command line, each word quoted where systemd would

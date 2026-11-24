@@ -78,7 +78,39 @@ func TestOpenBSDScript(t *testing.T) {
 		}
 	}
 
+	// rc.subr sets daemon_class itself, read-only, to the login class named after the script
+	// where there is one: conflux's own (openbsdClass), never one the script names.
+	if strings.Contains(script, "daemon_class") {
+		t.Errorf("the script sets daemon_class, which rc.subr holds read-only:\n%s", script)
+	}
+
 	shParses(t, script)
+}
+
+// TestOpenBSDClass: the login class rc.subr runs conflux under, found by the script's name,
+// raises the open-file limit the daemon class holds to 1024 -- both halves, since the daemon
+// class's own -cur and -max, reached through tc, would otherwise decide them -- and is the
+// daemon class in everything else.
+func TestOpenBSDClass(t *testing.T) {
+	class := openbsdClass()
+
+	if !strings.Contains(class, "\n"+rcName+":\\\n") {
+		t.Errorf("the class is not named %s, the script's name, which rc.subr looks for:\n%s", rcName, class)
+	}
+
+	for _, want := range []string{
+		"\t:openfiles-cur=1048576:\\\n",
+		"\t:openfiles-max=1048576:\\\n",
+		"\t:tc=daemon:\n",
+	} {
+		if !strings.Contains(class, want) {
+			t.Errorf("the class has no %q:\n%s", strings.TrimSpace(want), class)
+		}
+	}
+
+	if !strings.HasSuffix(class, ":tc=daemon:\n") {
+		t.Errorf("the record does not end at tc=daemon:\n%s", class)
+	}
 }
 
 // TestAnRCScriptRefusesWhatItCannotMatch: both rc.subr implementations find the running

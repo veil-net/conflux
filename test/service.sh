@@ -123,18 +123,32 @@ JSON
 
 # start stops the service, which waits for anchord to go, and starts it without waiting
 # for an anchor that will never come up -- clearing the failure systemd records for a unit
-# started five times in ten seconds first, as conflux's own start does.
+# started five times in ten seconds first, as conflux's own start does. It notes which
+# anchord.priv, the record of what the last anchord was started as, is there before: by its
+# inode, since every start writes a new one atomically. The record stays, unlike
+# service-bsd.sh's: the supervisor reads which anchor directory the last anchor kept its
+# state in from it, and the legs that flip between anchor/ and anchor.root/ test that.
 start() {
   docker exec "$NAME" systemctl stop conflux.service
   docker exec "$NAME" systemctl reset-failed conflux.service
+  last_record=$(docker exec "$NAME" stat -c %i /var/lib/.conflux/anchord.priv 2>/dev/null || true)
   docker exec "$NAME" systemctl start --no-block conflux.service
 }
 
 # expect waits for the anchord just started and holds it to WANT, a creds line -- a
 # pattern, so a root anchord's capabilities, which are whatever this runner gives root, can
-# be left open -- and to a status row that says ROW.
+# be left open -- and to a status row that says ROW. It waits first for the start's own
+# record, written once anchord runs: until then status reads the last leg's, and creds can
+# find the `anchord -h` the supervisor tries a drop with before it starts the real one.
 expect() { # WHAT WANT ROW
-  local got="" row=""
+  local got="" row="" now=""
+  for _ in $(seq 150); do
+    now=$(docker exec "$NAME" stat -c %i /var/lib/.conflux/anchord.priv 2>/dev/null || true)
+    [ -n "$now" ] && [ "$now" != "$last_record" ] && break
+    sleep 0.2
+  done
+  [ -n "$now" ] && [ "$now" != "$last_record" ] \
+    || { echo "$1: the supervisor recorded no anchord it started" >&2; journal; exit 1; }
   for _ in $(seq 150); do
     got=$(docker exec "$NAME" creds 2>/dev/null) && break
     sleep 0.2

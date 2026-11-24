@@ -17,7 +17,8 @@ DIST    ?= dist
 # v1.26.0 and not v1.0.0, which is the version CMVP has certified (#5247): v1.0.0 has no
 # ML-DSA, which `conflux cert` signs with. v1.26.0 is the module in CMVP review, and the one
 # anchord is built against. docs/security.md, "FIPS 140-3 and CMVP", says what is and is
-# not claimed. The pin is also in ci.yml; keep the two equal.
+# not claimed. This is the one place the pin is named: CI's setup action and the BSD suite read
+# it from here.
 #
 # Not for OpenBSD, which the module refuses (-fexecute-only, golang/go#70880): a binary for
 # it built with fips140=on panics before main. build and dist build that target with

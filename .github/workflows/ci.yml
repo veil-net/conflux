@@ -30,13 +30,13 @@ permissions:
 # issues under it. A pinned anchord refuses a credential from the other tree, so the two
 # move together (docs/testing.md, "The genesis node").
 #
-# GOFIPS140 is the Makefile's: every conflux built here, by make or by a bare go command, is
-# built against that Go Cryptographic Module and runs in FIPS 140-3 mode (docs/security.md,
-# "FIPS 140-3 and CMVP"). Keep the two equal. The make recipes build OpenBSD with it off.
+# GOFIPS140 is the Makefile's, put in every job's environment by the setup action: every
+# conflux built here, by make or by a bare go command, is built against that Go Cryptographic
+# Module and runs in FIPS 140-3 mode (docs/security.md, "FIPS 140-3 and CMVP"). The make
+# recipes build OpenBSD with it off.
 env:
   ANCHOR_TAG: ${{ (github.base_ref || github.ref_name) == 'version3' && 'latest' || 'dev-latest' }}
   VEILNET_API: ${{ (github.base_ref || github.ref_name) == 'version3' && 'https://api.veilnet.com.au' || 'https://api-dev.veilnet.com.au' }}
-  GOFIPS140: v1.26.0
 
 # A superseded run holds the one self-hosted machine the run that replaced it is
 # waiting for.
@@ -111,7 +111,7 @@ jobs:
           # Each answer read whole before it is searched: grep -q stops at its first match,
           # and conflux writing a line after it would then end the step on SIGPIPE.
           version=$(bin/conflux version)
-          grep -qx 'fips140 on, Go Cryptographic Module v1.26.0' <<<"$version"
+          grep -qx "fips140 on, Go Cryptographic Module $GOFIPS140" <<<"$version"
           debug=$(GODEBUG=fips140=debug bin/conflux version 2>&1)
           grep -q '^fips140: verified' <<<"$debug"
           rc=0; GODEBUG=fips140=off bin/conflux version >/dev/null 2>&1 || rc=$?

@@ -17,9 +17,14 @@ CONFLUX=${1:?usage: test/service-bsd.sh CONFLUX}
 say() { printf '\n== %s\n' "$*"; }
 fail() { echo "$*" >&2; exit 1; }
 
+# The Go Cryptographic Module conflux is built against, from the Makefile, the one place it is
+# named: the VM is handed the tree.
+module=$(sed -n 's/^GOFIPS140 ?= *\([^[:space:]]*\).*/\1/p' "$(dirname "$0")/../Makefile")
+[ -n "$module" ] || fail "the Makefile names no GOFIPS140"
+
 case "$(uname -s)" in
   FreeBSD) os=freebsd account=conflux script=/usr/local/etc/rc.d/conflux log=/var/log/messages
-    fips='fips140 on, Go Cryptographic Module v1.26.0' ;;
+    fips="fips140 on, Go Cryptographic Module $module" ;;
   OpenBSD) os=openbsd account=_conflux script=/etc/rc.d/conflux log=/var/log/daemon
     fips='fips140 off, this build carries no frozen Go Cryptographic Module' ;;
   *) fail "service-bsd.sh is for FreeBSD and OpenBSD" ;;

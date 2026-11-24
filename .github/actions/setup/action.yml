@@ -1,5 +1,5 @@
 name: setup
-description: Go, from go.mod, with the module and build caches.
+description: Go, from go.mod, with the module and build caches, and the Makefile's GOFIPS140.
 inputs:
   cache-key:
     description: >-
@@ -22,6 +22,19 @@ runs:
         # shared with every other repository it builds: restoring that directory over
         # itself and uploading it again cost ten minutes a run and bought nothing.
         cache: ${{ runner.environment != 'self-hosted' && inputs.cache-key == '' }}
+    # GOFIPS140 for every later step, read from the Makefile, the one place it is named: a bare
+    # go command -- go test, go run -- then builds against the same Go Cryptographic Module make
+    # does, and what it builds runs in FIPS 140-3 mode (docs/security.md, "FIPS 140-3 and
+    # CMVP"). The value is taken up to the first space, so a checkout with CRLF line ends reads
+    # it alike.
+    - name: GOFIPS140, from the Makefile
+      shell: bash
+      run: |
+        set -euo pipefail
+        v=$(sed -n 's/^GOFIPS140 ?= *\([^[:space:]]*\).*/\1/p' Makefile)
+        [ -n "$v" ] || { echo "::error::the Makefile names no GOFIPS140" >&2; exit 1; }
+        echo "GOFIPS140=$v" >> "$GITHUB_ENV"
+        echo "GOFIPS140=$v"
     - id: where
       if: runner.environment != 'self-hosted' && inputs.cache-key != ''
       shell: bash

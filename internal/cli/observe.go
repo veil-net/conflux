@@ -25,9 +25,9 @@ import (
 // anchorctl's observe starts and stops the observer of a running daemon, and reports on it.
 //
 // The collision is resolved by shape, as conflux proxy's is: conflux observe takes its own
-// flags and no argument, and every other flag ahead of the "--" that ends the flags, such as
-// anchorctl's -start, -stop and -socket, is answered with where it belongs rather than guessed
-// at. Bare, it is conflux's, which is the one shape that matters: an anchorctl user typing it
+// flags and no argument, and every other flag ahead of the "--" that ends the flags (splitFlags),
+// such as anchorctl's -start, -stop and -socket, is answered with where it belongs rather than
+// guessed at. Bare, it is conflux's, which is the one shape that matters: an anchorctl user typing it
 // for a report would stop an anchor this machine runs, so that switch is confirmed first.
 func runObserve(ctx context.Context, args []string) int {
 	f := newObserveFlags()
@@ -181,39 +181,31 @@ func newObserveFlags() *observeFlags {
 }
 
 // anchorctls returns what to say about the first flag that is not one of conflux observe's
-// own, or "", reading no further than the "--" that ends the flags. An argument that is no
-// flag's spelling (flagName), and every word after "--", is left to the flag set: bad syntax,
-// or an argument observe does not take.
+// own, or "", as splitFlags reads the flags: a flag's value is its own, whatever it looks like,
+// and the "--" that is none ends the flags. What is no flag's spelling (flagName), and every
+// word after "--", is left to the flag set: bad syntax, or an argument observe does not take.
 func (f *observeFlags) anchorctls(args []string) string {
-	for _, a := range args {
-		if a == "--" {
-			break
-		}
-
-		name, ok := flagName(a)
-		if !ok || helpFlag(a) || f.fs.Lookup(name) != nil {
-			continue
-		}
-
-		switch name {
-		case "start":
-			return "-start is anchorctl's observe, which starts the observer of a running daemon until it next starts.\n\n" +
-				"  conflux observe                  this machine observes, from now and from every boot\n" +
-				"  conflux up --observe             ... beside an anchor with an interface\n" +
-				"  conflux anchorctl observe -start anchorctl's own, uninterpreted"
-		case "stop":
-			return "-stop is anchorctl's observe, which stops the observer until the daemon next starts.\n\n" +
-				"  conflux down                     stop everything now; a reboot brings it back\n" +
-				"  conflux up --no-observe          keep the anchor, and stop observing for good\n" +
-				"  conflux anchorctl observe -stop  anchorctl's own, uninterpreted"
-		}
-
-		return fmt.Sprintf("%q is not one of conflux observe's flags, which conflux observe -h lists.\n\n"+
-			"  anchorctl's observe, which reports on the observer of a running daemon, is here:\n\n"+
-			"    conflux anchorctl observe %s", a, strings.Join(args, " "))
+	_, _, a := splitFlags(f.fs, args)
+	if a == "" {
+		return ""
 	}
 
-	return ""
+	switch name, _ := flagName(a); name {
+	case "start":
+		return "-start is anchorctl's observe, which starts the observer of a running daemon until it next starts.\n\n" +
+			"  conflux observe                  this machine observes, from now and from every boot\n" +
+			"  conflux up --observe             ... beside an anchor with an interface\n" +
+			"  conflux anchorctl observe -start anchorctl's own, uninterpreted"
+	case "stop":
+		return "-stop is anchorctl's observe, which stops the observer until the daemon next starts.\n\n" +
+			"  conflux down                     stop everything now; a reboot brings it back\n" +
+			"  conflux up --no-observe          keep the anchor, and stop observing for good\n" +
+			"  conflux anchorctl observe -stop  anchorctl's own, uninterpreted"
+	}
+
+	return fmt.Sprintf("%q is not one of conflux observe's flags, which conflux observe -h lists.\n\n"+
+		"  anchorctl's observe, which reports on the observer of a running daemon, is here:\n\n"+
+		"    conflux anchorctl observe %s", a, strings.Join(args, " "))
 }
 
 // The export flags' help, shared by observe, up and proxy.

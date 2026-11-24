@@ -150,7 +150,7 @@ func runStart(ctx context.Context, args []string) int {
 	// builds an anchor from arguments the caller supplies. conflux's starts the one
 	// its configuration already describes, which is the whole difference and the
 	// reason it takes none. Resolve by shape, the way renew does.
-	if hint := anchorctlFlag(args); hint != "" {
+	if hint := anchorctlFlag(fs, args); hint != "" {
 		ui.Errf("%q is anchorctl's start, not conflux's.\n\n"+
 			"  conflux start starts the anchor this machine is already configured for:\n\n"+
 			"    conflux start\n\n"+

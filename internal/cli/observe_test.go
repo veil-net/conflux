@@ -13,7 +13,9 @@ import (
 
 // TestObserveRefusesAnchorctlFlags: conflux observe and anchorctl's share a name, and what
 // belongs to anchorctl's is answered with where it is, never guessed at -- -stop above all,
-// which a person means for the observer running now and not for every boot.
+// which a person means for the observer running now and not for every boot. A flag's value is
+// read as the flag set reads it: --taint takes the "--" after it for its value, which ends no
+// flags.
 func TestObserveRefusesAnchorctlFlags(t *testing.T) {
 	for _, tc := range []struct {
 		args []string
@@ -23,6 +25,7 @@ func TestObserveRefusesAnchorctlFlags(t *testing.T) {
 		{[]string{"observe", "-stop"}, []string{"conflux down", "--no-observe", "conflux anchorctl observe -stop"}},
 		{[]string{"observe", "-socket", "/run/x.sock"}, []string{"conflux anchorctl observe -socket /run/x.sock"}},
 		{[]string{"observe", "--loopback", "-start=true"}, []string{"conflux anchorctl observe -start"}},
+		{[]string{"observe", "--taint", "--", "-start"}, []string{"conflux anchorctl observe -start", "conflux up --observe"}},
 	} {
 		_, errOut, code := capture(t, tc.args...)
 
@@ -256,15 +259,12 @@ func TestSwitchingAnAnchorToObservingIsConfirmed(t *testing.T) {
 // TestProxyTakesTheObserverFlags: conflux proxy's specs and flags come in any order, and
 // --export takes a value while the observer's switches do not.
 func TestProxyTakesTheObserverFlags(t *testing.T) {
-	f := newProxyFlags()
-
 	args := []string{"--export", "c:4317", "8080=127.0.0.1:3000", "--observe-loopback", "53/udp=127.0.0.1:53"}
 
-	if hint := f.unknown(args); hint != "" {
-		t.Fatalf("%q is not one of conflux proxy's", hint)
+	flags, specs, foreign := splitFlags(newProxyFlags().fs, args)
+	if foreign != "" {
+		t.Fatalf("%q is not one of conflux proxy's", foreign)
 	}
-
-	specs, flags := f.split(args)
 
 	if want := []string{"8080=127.0.0.1:3000", "53/udp=127.0.0.1:53"}; !slices.Equal(specs, want) {
 		t.Errorf("specs %v, want %v", specs, want)

@@ -235,9 +235,7 @@ func flagsAlone(fs *flag.FlagSet, args []string) (exit int, ok bool) {
 // an "=" and its value. ok is false where arg is no flag's spelling, which a flag set never takes
 // for a flag: a word with no dash, or a dash alone, is an argument; two dashes alone end its
 // flags, and every word after them is an argument, whatever it looks like; three dashes, or an
-// empty name, are bad syntax. The one reading for every verb that looks at its flags before its
-// flag set does (start's and renew's anchorctlFlag, observe's anchorctls, proxy's lookup), each
-// of which reads no further than the "--", so none of them names a flag the set would not.
+// empty name, are bad syntax. splitFlags and helpFlag read a flag through it.
 func flagName(arg string) (name string, ok bool) {
 	name, ok = strings.CutPrefix(arg, "-")
 	if !ok {
@@ -247,6 +245,59 @@ func flagName(arg string) (name string, ok bool) {
 	name, _, _ = strings.Cut(strings.TrimPrefix(name, "-"), "=")
 
 	return name, name != "" && name[0] != '-'
+}
+
+// splitFlags reads args as fs reads them, but with flags and arguments in any order, where the
+// flag package alone ends the flags at the first argument. It is the one way a verb tells its
+// flags from its arguments ahead of its flag set: proxy's, and cert's commands', which take both
+// in any order, and the flag checks of start, renew and observe, which take flags alone.
+//
+// A word with a leading dash is a flag, but for a dash alone, which is an argument, and the "--"
+// that ends the flags, after which every word is an argument, whatever it looks like. A flag fs
+// defines that takes a value -- no boolean (isBoolFlag), and not written NAME=VALUE -- takes the
+// next word for it, as fs.Parse does, whatever that word looks like: `--manifest -` names stdin,
+// and `--taint --` is a taint, which ends no flags.
+//
+// flags is every flag, each with the value it takes after it, for fs.Parse, which refuses what is
+// no flag's spelling (flagName) as bad syntax; positional the arguments, in the order given; and
+// foreign the first flag fs does not define, but for a help flag (helpFlag), which fs answers
+// without its being defined, or "".
+func splitFlags(fs *flag.FlagSet, args []string) (flags, positional []string, foreign string) {
+	expectValue := false
+
+	for i, a := range args {
+		switch {
+		case expectValue:
+			flags = append(flags, a)
+			expectValue = false
+		case a == "--":
+			return flags, append(positional, args[i+1:]...), foreign
+		case a == "-" || !strings.HasPrefix(a, "-"):
+			positional = append(positional, a)
+		default:
+			flags = append(flags, a)
+
+			name, ok := flagName(a)
+			if !ok {
+				continue
+			}
+
+			if fl := fs.Lookup(name); fl != nil {
+				expectValue = !strings.Contains(a, "=") && !isBoolFlag(fl)
+			} else if foreign == "" && !helpFlag(a) {
+				foreign = a
+			}
+		}
+	}
+
+	return flags, positional, foreign
+}
+
+// isBoolFlag is how the flag package itself tells a flag that takes no value.
+func isBoolFlag(fl *flag.Flag) bool {
+	b, ok := fl.Value.(interface{ IsBoolFlag() bool })
+
+	return ok && b.IsBoolFlag()
 }
 
 // helpFlag reports whether arg asks for a usage, as a flag set takes it: -h or -help, after one

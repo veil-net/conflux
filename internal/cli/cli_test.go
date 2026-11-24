@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
@@ -291,12 +292,13 @@ func TestAStrayArgumentIsNamedAboveTheUsage(t *testing.T) {
 	}
 }
 
-// TestTwoDashesEndTheFlags: -- ends the flags on every verb, as a flag set takes it, start,
-// renew, observe and proxy included, which look at their flags before their flag sets do. With
-// nothing after it each is the bare verb -- start, renew and observe refused here for privilege
-// alone, the command typed repeated, and proxy refused as bare proxy is, with no spec and no
-// flag -- and a word after it is proxy's spec, served where it is one and refused as one where it
-// is not, whatever it looks like: never a flag, and never anchorctl's.
+// TestTwoDashesEndTheFlags: -- ends the flags, as a flag set takes it, of the verbs with a flag
+// set, start, renew, observe and proxy included, which look at their flags before their flag
+// sets do, and of cert's commands. With nothing after it each of the four is the bare verb --
+// start, renew and observe refused here for privilege alone, the command typed repeated, and
+// proxy refused as bare proxy is, with no spec and no flag -- and a word after it is proxy's
+// spec, served where it is one and refused as one where it is not, whatever it looks like: never
+// a flag, and never anchorctl's.
 func TestTwoDashesEndTheFlags(t *testing.T) {
 	asRoot(t, false)
 	stubAnchorctl(t)
@@ -320,6 +322,28 @@ func TestTwoDashesEndTheFlags(t *testing.T) {
 
 		if _, errOut, code := capture(t, typed...); code != ExitError || !strings.Contains(errOut, "\""+spec+"\" is not PORT[/NETWORK]=BACKEND") {
 			t.Errorf("conflux %s exited %d, saying\n%s", strings.Join(typed, " "), code, errOut)
+		}
+	}
+
+	// A cert command's every word after -- is an argument, in the order given, not only the
+	// first: show's -h a file to show, after a.pem, which is not there, and fingerprint's --bogus
+	// a file to read, after a key that is.
+	dir := t.TempDir()
+	key := filepath.Join(dir, "k.pem")
+
+	if _, errOut, code := capture(t, "cert", "genkey", "--alg", "ed25519", "--out", key); code != ExitOK {
+		t.Fatalf("conflux cert genkey exited %d, saying\n%s", code, errOut)
+	}
+
+	for _, c := range []struct {
+		args []string
+		says string
+	}{
+		{[]string{"cert", "show", "--", filepath.Join(dir, "a.pem"), "-h"}, "a.pem"},
+		{[]string{"cert", "fingerprint", "--", key, "--bogus"}, "--bogus"},
+	} {
+		if out, errOut, code := capture(t, c.args...); code != ExitError || out != "" || !strings.Contains(errOut, c.says) {
+			t.Errorf("conflux %s exited %d, printing\n%s\nand on stderr\n%s", strings.Join(c.args, " "), code, out, errOut)
 		}
 	}
 }
@@ -466,13 +490,11 @@ func TestProxyKeepsItsOwnUplinkFlag(t *testing.T) {
 		{"8080=127.0.0.1:3000", "--uplink=/dev/ttyUSB0:115200"},
 		{"--no-uplink", "8080=127.0.0.1:3000"},
 	} {
-		f := newProxyFlags()
+		_, specs, foreign := splitFlags(newProxyFlags().fs, args)
 
-		if hint := f.unknown(args); hint != "" {
-			t.Errorf("%v: unknown said %q", args, hint)
+		if foreign != "" {
+			t.Errorf("%v: %q is not one of conflux proxy's", args, foreign)
 		}
-
-		specs, _ := f.split(args)
 
 		if len(specs) != 1 || specs[0] != "8080=127.0.0.1:3000" {
 			t.Errorf("%v: positional args are %v, want just the port spec", args, specs)
@@ -489,13 +511,13 @@ func TestProxyRoutesInUserspace(t *testing.T) {
 		{"8080=127.0.0.1:3000", "--serve-exit", "--no-subnet"},
 		{"--use-exit", "--no-serve-exit", "8080=127.0.0.1:3000"},
 	} {
-		f := newProxyFlags()
+		_, specs, foreign := splitFlags(newProxyFlags().fs, args)
 
-		if hint := f.unknown(args); hint != "" {
-			t.Errorf("%v: unknown said %q", args, hint)
+		if foreign != "" {
+			t.Errorf("%v: %q is not one of conflux proxy's", args, foreign)
 		}
 
-		if specs, _ := f.split(args); len(specs) != 1 || specs[0] != "8080=127.0.0.1:3000" {
+		if len(specs) != 1 || specs[0] != "8080=127.0.0.1:3000" {
 			t.Errorf("%v: positional args are %v, want just the port spec", args, specs)
 		}
 	}
@@ -702,13 +724,11 @@ func TestProxyKeepsItsOwnLANDiscoveryFlag(t *testing.T) {
 		{"8080=127.0.0.1:3000", "--lan-discovery=yes"},
 		{"--lan-discovery", "auto", "8080=127.0.0.1:3000"},
 	} {
-		f := newProxyFlags()
+		_, specs, foreign := splitFlags(newProxyFlags().fs, args)
 
-		if hint := f.unknown(args); hint != "" {
-			t.Errorf("%v: unknown said %q", args, hint)
+		if foreign != "" {
+			t.Errorf("%v: %q is not one of conflux proxy's", args, foreign)
 		}
-
-		specs, _ := f.split(args)
 
 		if len(specs) != 1 || specs[0] != "8080=127.0.0.1:3000" {
 			t.Errorf("%v: positional args are %v, want just the port spec", args, specs)

@@ -136,35 +136,15 @@ func certFlagsNamed(name, summary, usage string) *flag.FlagSet {
 	return verbFlags("cert "+name, fmt.Sprintf("conflux cert %s — %s\n\n  conflux cert %s\n\n", name, summary, usage))
 }
 
-// parseCert parses args, flags and arguments in any order -- `verify CERT --ca ROOT` as
-// readily as `verify --ca ROOT CERT` -- and returns the arguments. A lone -- ends the flags.
-func parseCert(fs *flag.FlagSet, args []string) ([]string, error) {
-	var positional []string
-
-	for {
-		if err := fs.Parse(args); err != nil {
-			return nil, err
-		}
-
-		args = fs.Args()
-		if len(args) == 0 {
-			return positional, nil
-		}
-
-		if args[0] == "--" {
-			return append(positional, args[1:]...), nil
-		}
-
-		positional = append(positional, args[0])
-		args = args[1:]
-	}
-}
-
-// certParse parses, and answers a usage error with its exit code: 2, or 0 for -h.
+// certParse parses args, flags and arguments in any order -- `verify CERT --ca ROOT` as
+// readily as `verify --ca ROOT CERT` -- and returns the arguments in the order given, every word
+// after the "--" that ends the flags among them, whatever it looks like (splitFlags). A usage
+// error, the arguments' count among them where want refuses it, is answered with its exit code:
+// 2, or 0 for -h.
 func certParse(fs *flag.FlagSet, args []string, want func(n int) bool) ([]string, int, bool) {
-	pos, err := parseCert(fs, args)
+	flags, pos, _ := splitFlags(fs, args)
 
-	switch {
+	switch err := fs.Parse(flags); {
 	case err != nil:
 		return nil, usageExit(err), false
 	case want != nil && !want(len(pos)):

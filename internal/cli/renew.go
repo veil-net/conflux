@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io/fs"
 	"os"
@@ -41,7 +42,7 @@ func runRenew(ctx context.Context, args []string) int {
 	// installs a credential the caller already holds. conflux's fetches one first,
 	// which is the whole difference and the reason it takes no arguments. Resolve
 	// by shape, the way proxy does, rather than shadowing anchorctl's outright.
-	if hint := anchorctlFlag(args); hint != "" {
+	if hint := anchorctlFlag(fs, args); hint != "" {
 		ui.Errf("%q is anchorctl's renew, not conflux's.\n\n"+
 			"  conflux renew fetches a fresh credential from the enrolment API and installs it:\n\n"+
 			"    conflux renew\n\n"+
@@ -154,22 +155,13 @@ func neverEnrolled() int {
 //
 // Shared by renew and start, which resolve their collisions the same way and for the
 // same reason: conflux's takes no arguments at all, so a flag is the signal, and a help
-// flag (helpFlag) is the one that means the caller wants conflux's own usage. A flag is
-// what the flag set would read as one (flagName), ahead of the "--" that ends the flags:
-// what is no flag's spelling, and every word after "--", is the flag set's, an argument
-// flagsAlone names or bad syntax.
-func anchorctlFlag(args []string) string {
-	for _, a := range args {
-		if a == "--" {
-			break
-		}
+// flag (helpFlag) is the one that means the caller wants conflux's own usage. fs is the
+// verb's flag set, which defines no flag, so every other flag splitFlags reads, ahead of
+// the "--" that ends the flags, is anchorctl's: what is no flag's spelling (flagName), and
+// every word after "--", is the flag set's, an argument flagsAlone names or bad syntax.
+func anchorctlFlag(fs *flag.FlagSet, args []string) string {
+	_, _, foreign := splitFlags(fs, args)
+	name, _, _ := strings.Cut(foreign, "=")
 
-		if _, ok := flagName(a); ok && !helpFlag(a) {
-			name, _, _ := strings.Cut(a, "=")
-
-			return name
-		}
-	}
-
-	return ""
+	return name
 }

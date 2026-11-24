@@ -81,16 +81,21 @@ spelling. Given any argument it forwards, so `conflux status -watch 5s` and
 
 **`proxy`** is resolved by shape, and the ambiguous case is refused rather than
 guessed. Positional `PORT=BACKEND` specs and the flags `conflux proxy -h` lists —
-`--taint`, `--subnet` and the rest — are conflux's; any other flag prints both meanings and
-exits 2, and so does bare `conflux proxy`, with no spec and no flag. A word that is no flag's
-spelling is read as Go's flag package reads it, here as on every verb, `start`, `renew` and
-`observe` included, which look at their flags first. `--` ends the flags: every word after it
-is an argument, whatever it looks like, a spec here and a stray one the others name, and a
-verb with none after it is bare, `conflux proxy --` as `conflux proxy` is. `-` is an argument
-too. Any other, `---h`, is the package's to refuse, as bad syntax, exit 2. A "leading dash means
-anchorctl" heuristic was considered and rejected: `--taint` leads with a dash too, and
-Go's flag package treats `-x` and `--x` identically, so the double dash carries no
-signal.
+`--taint`, `--subnet` and the rest — are conflux's, in any order; any other flag prints both
+meanings and exits 2, and so does bare `conflux proxy`, with no spec and no flag. Flags are told
+from arguments as Go's flag package tells them by each verb with a flag set of its own — `up`,
+`proxy`, `observe`, `enrol`, `start`, `down`, `renew`, `install`, `uninstall`, `update`,
+`version` and `serve` — and by `cert`'s commands, and so by the look `proxy`, `start`, `renew`
+and `observe` take at their flags before their flag sets parse them. A flag that takes a value
+takes the next word for it, whatever it looks like: in `--taint --` the `--` is the taint's,
+and ends nothing. A `--` that is no flag's value ends the flags: every word after it is an
+argument, whatever it looks like — a spec here, a file or a name for `cert`'s commands, and a
+stray one the verbs that take flags alone name — and a verb with none after it is bare,
+`conflux proxy --` as `conflux proxy` is. `-` is an argument too. Any other word with a leading
+dash that is no flag's spelling, `---h`, is the package's to refuse, as bad syntax, exit 2. A
+"leading dash means anchorctl" heuristic was considered and rejected: `--taint` leads with a
+dash too, and Go's flag package treats `-x` and `--x` identically, so the double dash carries
+no signal.
 
 **`renew`** is resolved by shape, like `proxy`. conflux's takes no arguments at all:
 it fetches a fresh credential from the enrolment API and installs it. anchorctl's

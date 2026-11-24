@@ -43,8 +43,7 @@ issuer's to grant, as taints are: an alpha credential grants none, so on an alph
 machine these orders are refused with anchor's explanation, and a guardian may grant
 them. They take a full 58-character AnchorID, `anchor…`, as `conflux status` prints it —
 not the ten-character short form in the tables `peers` and `blocks` print. For every
-private network on the member, use `subnets -set '*'`: anchorctl's help says `all`,
-which anchor does not accept.
+private network on the member, use `subnets -set '*'`.
 
 A block does not stop anything. A blocked anchor keeps running, outside the realm, and
 shows `DATA no` on every peer; nothing on the blocked machine needs to be done when the

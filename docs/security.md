@@ -142,7 +142,12 @@ What changes that, and why:
   Where `nft` is missing, anchor's router falls back to `iptables -m set`, whose set match
   opens a raw socket, so `CAP_NET_RAW` is added. Where firewalld runs (it takes changes only
   from root, over D-Bus) or an installed `iptables` is on the legacy backend (its lock is in
-  `/run`, and it needs raw sockets), `anchord` stays root.
+  `/run`, and it needs raw sockets), `anchord` stays root. One thing the account cannot do:
+  anchor records the host's own forwarding settings in `/run/anchor-router` before it changes
+  them, so that a start after a crash puts back the host's and not its own, and only root may
+  create a file in `/run`. Run as the account, a routing anchor says so ("the host's own
+  settings are not recorded") and a start after a crash takes what it left as the host's own;
+  conflux does not raise it to root for that.
 - **Linux, userspace, and the UDP buffers.** quic-go sizes its socket buffers to 7 MiB,
   past `net.core.rmem_max`/`wmem_max` with `SO_RCVBUFFORCE`, which is `CAP_NET_ADMIN`'s.
   Where those limits are under 3670016 the account is given `CAP_NET_ADMIN` for it; raise

@@ -428,8 +428,11 @@ Removes everything conflux put on the machine, and leaves no trace of it:
 - the boot service and its definition — systemd's unit with any drop-in, the launchd plist,
   the rc script and its `rc.conf` line (`rc.conf.local`'s on OpenBSD, with the login class
   `/etc/login.conf.d/conflux`), or the SCM's entry and the event source;
-- the whole root — the configuration, the identity and everything else conflux keeps — and
-  every root a killed ephemeral run left;
+- the whole root — the configuration, the identity and everything else conflux keeps;
+- the root a killed ephemeral run of the account running `uninstall` left (root's, under the
+  system's runtime directory, or on Windows that Administrator's, in their `%TEMP%`), and the
+  `anchord` it left running. Another account's run keeps its root under its own, which that
+  account's next run clears, or a reboot;
 - the accounts `anchord` ran as, once nothing runs as them, when conflux made them; an account
   of that name that conflux did not make is left alone;
 - on macOS the BPF devices' grant, and on Windows the Wintun driver, whether the installation's

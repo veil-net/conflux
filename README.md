@@ -152,8 +152,8 @@ To add or remove a proxy on an anchor that's already running, without a restart,
 decides the mode the machine boots into:
 
 ```console
-$ conflux anchorctl proxy                            # what it is serving
-$ conflux anchorctl proxy -add 9000=127.0.0.1:9000   # one more, now
+$ sudo conflux anchorctl proxy                            # what it is serving
+$ sudo conflux anchorctl proxy -add 9000=127.0.0.1:9000   # one more, now
 ```
 
 Both are listed under [Commands](#commands).
@@ -214,7 +214,7 @@ $ sudo conflux observe --export collector.example:4317
   service      active (systemd: conflux.service, enabled at boot)
   anchord      conflux, with CAP_NET_RAW to copy what the host's interfaces carry, for the observer
 
-$ conflux inventory
+$ sudo conflux inventory
 SERVICE        PORT     PROTOCOL  KEY EXCHANGE  GROUP           LAGGING  ROLE    SOURCE      PROCESS  FLOWS
 a.example      443/tcp  tls       hybrid        X25519MLKEM768  -        client  interfaces  curl     3
 ```

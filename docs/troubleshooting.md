@@ -282,10 +282,10 @@ and orphan every peer — see [credentials.md](credentials.md).
 
 ```console
 $ conflux version           # names the exact anchor binaries
-$ conflux status
+$ sudo conflux status
 $ sudo journalctl -u conflux -n 100 --no-pager
-$ conflux peers
-$ conflux routes
+$ sudo conflux peers
+$ sudo conflux routes
 ```
 
 `conflux version` prints both anchor SHA-256s, which is what identifies the build.

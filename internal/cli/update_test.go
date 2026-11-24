@@ -228,3 +228,32 @@ func TestADevBuildAsksBeforeLeaving(t *testing.T) {
 		t.Errorf("update --yes on a dev build exited %d, want %d: root is what it needs next", code, ExitDenied)
 	}
 }
+
+// TestUpdateWritesTheInstalledConflux: an update replaces the conflux the installers put in
+// place, wherever the conflux running it was started from, and puts one there when there is
+// none yet.
+func TestUpdateWritesTheInstalledConflux(t *testing.T) {
+	if got, err := updateExecutable(); err != nil || got != paths.InstalledExecutable() {
+		t.Errorf("update replaces %q (%v), not the installed %s", got, err, paths.InstalledExecutable())
+	}
+
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in conflux is a shell script")
+	}
+
+	defer func(was func() bool) { privcheck.Elevated = was }(privcheck.Elevated)
+	privcheck.Elevated = func() bool { return true }
+
+	exe := filepath.Join(t.TempDir(), "bin", "conflux")
+	newer := []byte("#!/bin/sh\necho 'conflux 9.9.9 (0aea0f77bb77) " + runtime.GOOS + "/" + runtime.GOARCH + "'\n")
+	serveRelease(t, newer, exe)
+
+	out, errOut, code := capture(t, "update")
+	if code != ExitOK || !strings.Contains(out, "Updated "+exe+": conflux 9.9.9") {
+		t.Fatalf("update with nothing installed exited %d and printed:\n%s%s", code, out, errOut)
+	}
+
+	if got, _ := os.ReadFile(exe); string(got) != string(newer) {
+		t.Errorf("the installed conflux holds %q after the update", got)
+	}
+}

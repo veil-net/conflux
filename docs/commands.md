@@ -512,7 +512,9 @@ conflux update --check
 conflux update --yes
 ```
 
-Replaces this conflux with the one the `latest` release of
+Replaces the installed conflux — `/usr/local/bin/conflux`, or
+`%ProgramFiles%\conflux\conflux.exe` on Windows, whichever conflux runs the update — with the
+one the `latest` release of
 [veil-net/conflux](https://github.com/veil-net/conflux/releases/latest) holds for this
 platform, and moves the boot service onto it. Only when typed: nothing checks on a
 schedule, so a machine changes version when somebody decides it should. It reads `latest`
@@ -523,7 +525,7 @@ the credential the machine holds is not valid, `update` on a dev build says so a
 nothing until it is asked again with `--yes`; after that, the machine enrols again with
 `conflux up --api` naming the production API. `conflux version` says when it is a dev build.
 
-"Up to date" is a digest rather than a version string. This file is the release's
+"Up to date" is a digest rather than a version string. The installed file is the release's
 binary, byte for byte, or it is not, so a rebuild of the same version (which a merge
 that leaves `VERSION` alone publishes) is an update too. `--check` says which, names
 the release and the commit it was built from, and changes nothing.
@@ -531,17 +533,17 @@ the release and the commit it was built from, and changes nothing.
 An update is held to the SHA-256 the release document lists for the asset, which the
 API answers directly; the binary comes through GitHub's redirect to its storage and is
 compared before it is put anywhere it could run from. Then the new conflux is run once,
-for its `version`, and only a conflux that answers replaces this one. It is renamed over
-the file conflux was started from, symlinks followed, so whatever is running keeps the
-file it has; on Windows the running image is moved aside to `conflux.exe.old` first,
-and the next update removes it. No token is needed or sent: the repository is public.
+for its `version`, and only a conflux that answers replaces the installed one. It is renamed
+over that file, or put there when there is none, so whatever is running keeps the file it
+has; on Windows the running image is moved aside to `conflux.exe.old` first, and the next
+update removes it. No token is needed or sent: the repository is public.
 
 | Situation | |
 |---|---|
-| this is the latest release | says so, exit 0, nothing changed |
+| the installed conflux is the latest release | says so, exit 0, nothing changed |
 | the anchor is running | the new conflux's `start` restarts it on the new version, and its exit code is `update`'s |
 | installed, not running | left stopped, as `down` left it; the boot service's copy is refreshed, so it starts on the new version next time |
-| not installed | the file is replaced, and that is all |
+| no boot service | the installed conflux is replaced, and that is all |
 | the release has no build for this platform, lists no digest, or is still uploading | refused, nothing changed |
 
 Needs root, except `--check`.

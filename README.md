@@ -41,12 +41,10 @@ irm https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.ps1 | iex
 The script takes this machine's build from the `latest` release, checks it against the
 release's `SHA256SUMS`, and installs it as `/usr/local/bin/conflux`, or on Windows as
 `C:\Program Files\conflux\conflux.exe`, on the PATH. It starts nothing and enrols
-nothing: that is the next step, and yours to run. To pin a version, install somewhere
-else, or download by hand, see [install.md](docs/install.md), which also has the
-platform-specific notes.
+nothing: that is the next step, and yours to run. To pin a version or download by hand,
+see [install.md](docs/install.md), which also has the platform-specific notes.
 
-Where you keep it is up to you: the boot service runs a copy conflux places in its
-own directory (`/var/lib/.conflux/conflux` on Linux), which only root can
+The boot service runs a copy conflux places in its own directory (`/var/lib/.conflux/conflux` on Linux), which only root can
 change, and `up`, `proxy`, `install`, `start` and `update` keep that copy current. To
 build from source instead, see [build.md](docs/build.md)
 (`make anchor-bins && make build`).
@@ -314,7 +312,7 @@ read by OpenSSL 3.5, and it reads OpenSSL's. See [cert.md](docs/cert.md).
 | `conflux install` | register the boot service; start it if a configuration exists |
 | `conflux uninstall` | remove everything of conflux's from the machine: the boot service, the configuration, the identity and conflux itself |
 | `conflux version` | conflux's version, and the anchor build it carries |
-| `conflux update [--check]` | replace this conflux with the latest release, verified, and restart the anchor on it |
+| `conflux update [--check]` | replace the installed conflux with the latest release, verified, and restart the anchor on it |
 | `conflux cert genkey \| req \| selfsign \| sign \| verify \| show \| convert \| match \| fingerprint \| crl \| ca \| p12 \| probe \| serve` | make and check ML-DSA (and ECDSA, RSA, Ed25519) keys, certificates and revocation lists, keep a CA, bundle PKCS#12, and probe and serve TLS, in FIPS 140-3 mode; see [cert.md](docs/cert.md) |
 | `conflux anchorctl ARGS...` | run the embedded `anchorctl`, uninterpreted |
 | *anything else* | passed to `anchorctl` unchanged: `peers`, `routes`, `events`, `metrics`, `send`, `inspect`, … and the realm's control over its members, `block`, `taints`, `subnets`, `telemetry` |

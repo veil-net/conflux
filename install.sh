@@ -1,18 +1,20 @@
 #!/bin/sh
 # Install conflux: this machine's binary from a conflux release, checked against the release's
-# SHA256SUMS, as /usr/local/bin/conflux.
+# SHA256SUMS, as /usr/local/bin/conflux, where a terminal finds it.
 #
 #   curl -fsSL https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.sh | sh
 #
 # It installs the binary and nothing else. No boot service, no enrolment, no network joined:
 # that is `sudo conflux up`, which is yours to run. Run again, it replaces an older conflux with
 # the release's; `conflux update` does the same, and moves a running anchor onto it as well.
+# `conflux uninstall` removes it again, with everything else conflux put on the machine.
 #
-# Two settings, given to sh rather than curl (`curl -fsSL … | CONFLUX_VERSION=1.0.0 sh`):
+# Where root's PATH under sudo leaves /usr/local/bin out (sudo's secure_path on Fedora and
+# RHEL), /usr/bin/conflux is linked to it, so `sudo conflux` finds it too.
+#
+# One setting, given to sh rather than curl (`curl -fsSL … | CONFLUX_VERSION=1.0.0 sh`):
 #
 #   CONFLUX_VERSION      a release tag, such as 1.0.0, rather than latest
-#   CONFLUX_INSTALL_DIR  where conflux goes, rather than /usr/local/bin; one you can write to
-#                        needs no root
 #
 # POSIX sh, for macOS and the BSDs as well as Linux. Everything is in functions the last line
 # calls, so a download cut short runs nothing.
@@ -89,15 +91,7 @@ elevator() {
   fi
 }
 
-# writable reports whether this user can write the directory $1, or create it: the nearest one
-# that exists decides.
-writable() {
-  p=$1
-  while [ ! -e "$p" ]; do p=$(dirname "$p"); done
-  [ -w "$p" ]
-}
-
-# asroot runs a command as root when the install directory needs it, and as this user otherwise.
+# asroot runs a command as root: through sudo or doas, or directly when this is root already.
 asroot() {
   if [ -n "$as" ]; then "$as" "$@"; else "$@"; fi
 }
@@ -107,30 +101,53 @@ firstline() {
   "$1" version </dev/null 2>/dev/null | sed -n 1p
 }
 
-# next_steps says what to run now, naming conflux as root will find it. sudo's secure_path leaves
-# /usr/local/bin out on Fedora and RHEL, so it is named by its full path unless root's PATH is
-# known to find this one.
+# rootpath prints where root, as `sudo` or `doas` runs it, finds conflux: sudo's secure_path, not
+# this shell's PATH, is what `sudo conflux` searches. As root already -- `curl … | sudo sh`
+# included -- this shell's PATH is root's. It fails, printing nothing, when root cannot be asked
+# without a password, which only the run that installed conflux has given.
+rootpath() {
+  if [ -z "$as" ]; then
+    command -v conflux 2>/dev/null || true
+    return 0
+  fi
+
+  "$as" -n true 2>/dev/null || return 1
+  "$as" -n sh -c 'command -v conflux' 2>/dev/null || true
+}
+
+# link makes /usr/bin/conflux a link to $exe where root's PATH would not find $exe, and leaves
+# a /usr/bin/conflux that is not that link alone. A /usr/bin that cannot be written -- macOS's --
+# is said, and not a failure: conflux is installed all the same.
+link() {
+  found=$(rootpath) || return 0
+  [ "$found" = "$exe" ] && return 0
+
+  if [ -e "$sudolink" ] || [ -L "$sudolink" ]; then
+    [ "$(readlink "$sudolink" 2>/dev/null)" = "$exe" ] && return 0
+    say "" "$sudolink is not conflux's, so root's PATH, which leaves $dir out, finds that one first."
+    return 0
+  fi
+
+  if asroot ln -s "$exe" "$sudolink" 2>/dev/null; then
+    say "Linked $sudolink to it, since root's PATH leaves $dir out."
+  else
+    say "" "Root's PATH leaves $dir out, so type $exe by its full path under sudo."
+  fi
+}
+
+# next_steps says what to run now.
 next_steps() {
   run=$(elevator)
-  cmd=$exe
 
   # Run as root by sudo or doas, as `curl … | sudo sh` does: whoever asked still needs it.
   if [ -z "$run" ]; then
     if [ -n "${SUDO_USER:-}" ]; then run=sudo; elif [ -n "${DOAS_USER:-}" ]; then run=doas; fi
   fi
 
-  if [ -z "$run" ]; then
-    if [ "$(command -v conflux 2>/dev/null)" = "$exe" ]; then cmd=conflux; fi
-  elif [ "$("$run" -n sh -c 'command -v conflux' 2>/dev/null)" = "$exe" ]; then
-    cmd=conflux
-  fi
-
-  run=${run:+$run }$cmd
+  run=${run:+$run }conflux
 
   found=$(command -v conflux 2>/dev/null) || found=""
-  if [ -z "$found" ]; then
-    say "" "$dir is not on your PATH, so type conflux by its full path, or add $dir to PATH."
-  elif [ "$found" != "$exe" ]; then
+  if [ -n "$found" ] && [ "$found" != "$exe" ] && [ "$found" != "$sudolink" ]; then
     say "" "Your PATH finds another conflux first, at $found. This one is $exe."
   fi
 
@@ -155,10 +172,9 @@ main() {
   platform
 
   tag=${CONFLUX_VERSION:-latest}
-  dir=${CONFLUX_INSTALL_DIR:-/usr/local/bin}
-  case $dir in /*) ;; *) dir=$(pwd)/$dir ;; esac
-  case $dir in ?*/) dir=${dir%/} ;; esac
+  dir=/usr/local/bin
   exe=$dir/conflux
+  sudolink=/usr/bin/conflux
   asset=conflux-$os-$arch
   base=https://github.com/$REPO/releases/download/$tag
 
@@ -179,11 +195,19 @@ main() {
       printf "%s%s", s, n; s = ", " }' "$tmp/SHA256SUMS")"
   fi
 
+  # Root, through sudo or doas, unless this is root: /usr/local/bin is root's.
+  as=""
+  if [ "$(id -u)" != 0 ]; then
+    as=$(elevator)
+    [ -n "$as" ] || die "conflux goes in $dir, which is root's, and there is no sudo or doas here: run this as root"
+  fi
+
   old=""
   if [ -f "$exe" ]; then
     have=$(sha256 "$exe") || exit 1
     if [ "$have" = "$want" ]; then
       say "$exe is already the $tag release's conflux: $(firstline "$exe")"
+      link
       next_steps
       return 0
     fi
@@ -196,12 +220,7 @@ main() {
   got=$(sha256 "$tmp/conflux") || exit 1
   [ "$got" = "$want" ] || die "$asset's SHA-256 is $got, and SHA256SUMS says $want, so nothing was installed"
 
-  as=""
-  if ! writable "$dir"; then
-    as=$(elevator)
-    [ -n "$as" ] || die "$dir is not writable, and there is no sudo or doas here: run this as root, or set CONFLUX_INSTALL_DIR to a directory you can write"
-    say "$dir is root's, so $as puts conflux there."
-  fi
+  [ -z "$as" ] || say "$dir is root's, so $as puts conflux there."
 
   # Beside its destination and renamed over it, so a conflux running from there keeps its file,
   # and run once before it replaces anything: the digest says these are the release's bytes,
@@ -219,6 +238,7 @@ main() {
   asroot mv -f "$new" "$exe"
 
   say "Installed $exe: $(printf '%s\n' "$now" | sed -n 1p)."
+  link
   next_steps
 }
 

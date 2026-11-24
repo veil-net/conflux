@@ -8,10 +8,12 @@
 # `conflux up`, which is yours to run. Run again, it replaces an older conflux with the release's;
 # `conflux update` does the same, and moves a running anchor onto it as well.
 #
-# Two settings, set in the session first:
+# `conflux uninstall` removes it again, the PATH entry included, with everything else conflux
+# put on the machine.
+#
+# One setting, set in the session first:
 #
 #   $env:CONFLUX_VERSION = '1.0.0'        a release tag, rather than latest
-#   $env:CONFLUX_INSTALL_DIR = 'D:\bin'   where conflux goes, rather than Program Files
 #
 # Windows PowerShell 5.1 as well as PowerShell 7. Invoke-Expression runs this in the session that
 # typed it, so nothing here exits that session: a failure throws. All of it is one script block,
@@ -61,10 +63,7 @@
 
     $repo = 'veil-net/conflux'
     $tag = if ($env:CONFLUX_VERSION) { $env:CONFLUX_VERSION } else { 'latest' }
-    $dir = if ($env:CONFLUX_INSTALL_DIR) { $env:CONFLUX_INSTALL_DIR } else { Join-Path $env:ProgramFiles 'conflux' }
-    # Against PowerShell's location, which a relative CONFLUX_INSTALL_DIR means, and not the
-    # process's working directory, which [IO.Path]::GetFullPath would use and need not be it.
-    $dir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($dir).TrimEnd('\')
+    $dir = Join-Path $env:ProgramFiles 'conflux'
     $exe = Join-Path $dir 'conflux.exe'
     $asset = "conflux-windows-$arch.exe"
     $base = "https://github.com/$repo/releases/download/$tag"

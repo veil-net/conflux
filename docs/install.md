@@ -18,21 +18,22 @@ irm https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.ps1 | iex
 a Mac the processor rather than the shell, so a shell under Rosetta still gets the
 Apple-silicon build). It checks the download against the release's `SHA256SUMS`, runs it
 once for its `version`, and only then renames it into place as `/usr/local/bin/conflux`,
-asking `sudo` (or `doas`) where that directory is root's. `install.ps1` does the same into
-`C:\Program Files\conflux` and adds that to the machine's PATH. Each installs the binary
-and nothing else: no boot service, no enrolment, no network joined, until you run
+through `sudo` (or `doas`) unless it runs as root. Where root's PATH under `sudo` leaves
+`/usr/local/bin` out — `secure_path` on Fedora and RHEL — it also links `/usr/bin/conflux` to
+it, so `sudo conflux` finds it. `install.ps1` does the same into `C:\Program Files\conflux` and
+adds that to the machine's PATH. The place is fixed, so that a terminal finds conflux by name,
+`conflux update` knows what to replace and `conflux uninstall` what to remove. Each installs
+the binary and nothing else: no boot service, no enrolment, no network joined, until you run
 `conflux up`. Run again, each replaces an older conflux and leaves the release's own alone.
 
-Two settings, given to `sh` rather than `curl`:
+One setting, given to `sh` rather than `curl`:
 
 ```console
 $ curl -fsSL https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.sh | CONFLUX_VERSION=1.0.0 sh
-$ curl -fsSL https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.sh | CONFLUX_INSTALL_DIR=~/.local/bin sh
 ```
 
-`CONFLUX_VERSION` names a release tag rather than `latest`. `CONFLUX_INSTALL_DIR` puts
-conflux somewhere else, and a directory you can write to needs no root. On Windows they are
-`$env:CONFLUX_VERSION` and `$env:CONFLUX_INSTALL_DIR`, set before the `irm`.
+`CONFLUX_VERSION` names a release tag rather than `latest`. On Windows it is
+`$env:CONFLUX_VERSION`, set before the `irm`.
 
 `CONFLUX_VERSION=dev-latest` installs the newest dev build: the pre-release every merge into
 conflux's `dev` replaces, with anchor's own dev build inside it, for trying what the next
@@ -53,7 +54,9 @@ $ ftp -MVo - https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.sh 
 ### By hand
 
 Download the artifact for your platform from the releases page, verify it against
-`SHA256SUMS`, and put it somewhere that survives a reboot.
+`SHA256SUMS`, and put it where the install script would: `/usr/local/bin/conflux`, or
+`C:\Program Files\conflux\conflux.exe` on Windows. That is the file `conflux update`
+replaces and `conflux uninstall` removes.
 
 ```console
 $ sha256sum -c SHA256SUMS --ignore-missing
@@ -68,8 +71,8 @@ be one only root can change: a service pointed at `~/Downloads/conflux` or
 So `up`, `proxy`, `install`, `start` and `update` copy the conflux they were run as into
 conflux's own directory — `/var/lib/.conflux/conflux` on Linux, `/var/db/.conflux/conflux` on the BSDs,
 `/Library/Application Support/.conflux/conflux` on macOS,
-`%ProgramData%\.conflux\conflux.exe` on Windows — and register that. Where you keep the
-binary you type is up to you; `uninstall` removes the copy with the rest.
+`%ProgramData%\.conflux\conflux.exe` on Windows — and register that. `uninstall` removes
+both: the copy, and the conflux you type.
 
 Seven platforms are built: linux/amd64, linux/arm64, darwin/arm64, windows/amd64,
 windows/arm64, freebsd/amd64, openbsd/amd64. Each is about 50 MB, because each

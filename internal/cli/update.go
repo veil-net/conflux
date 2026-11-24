@@ -22,11 +22,11 @@ import (
 // reads, and the file it replaces.
 var (
 	updateFrom       = update.Source{}
-	updateExecutable = thisExecutable
+	updateExecutable = installedExecutable
 )
 
-// runUpdate replaces this conflux with the one conflux's `latest` release holds for this
-// platform, and moves the boot service onto it.
+// runUpdate replaces the installed conflux with the one conflux's `latest` release holds for
+// this platform, and moves the boot service onto it.
 //
 // Only when typed. Nothing checks on a schedule, so a machine changes version when
 // somebody decides it should, and never because a release was published.
@@ -45,14 +45,15 @@ func runUpdate(ctx context.Context, args []string) int {
 	check := fs.Bool("check", false, "say whether there is an update, and change nothing")
 	yes := fs.Bool("yes", false, "on a dev build, move to the release anyway")
 	fs.Usage = func() {
-		ui.Printf("conflux update — replace this conflux with the latest release\n\n" +
-			"  conflux update           download it, verify it, put it in place, and move\n" +
-			"                           the boot service onto it\n" +
-			"  conflux update --check   say whether there is one, and change nothing\n" +
-			"  conflux update --yes     on a dev build, move to the release anyway\n\n" +
-			"From the `latest` release of github.com/veil-net/conflux, held to the SHA-256\n" +
-			"the release lists. A running anchor is restarted on the new conflux; a stopped\n" +
-			"one is left stopped, and starts on it next time.\n")
+		ui.Printf("conflux update — replace the installed conflux with the latest release\n\n"+
+			"  conflux update           download it, verify it, put it in place, and move\n"+
+			"                           the boot service onto it\n"+
+			"  conflux update --check   say whether there is one, and change nothing\n"+
+			"  conflux update --yes     on a dev build, move to the release anyway\n\n"+
+			"From the `latest` release of github.com/veil-net/conflux, held to the SHA-256\n"+
+			"the release lists, into %s, where the installer puts it. A running\n"+
+			"anchor is restarted on the new conflux; a stopped one is left stopped, and\n"+
+			"starts on it next time.\n", paths.InstalledExecutable())
 	}
 
 	if err := fs.Parse(args); err != nil {
@@ -80,10 +81,11 @@ func runUpdate(ctx context.Context, args []string) int {
 		return fail(err)
 	}
 
-	if same, err := rel.Is(exe); err != nil {
+	// Nothing installed yet is no reason to refuse: the update installs it.
+	if same, err := rel.Is(exe); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fail(err)
 	} else if same {
-		ui.Printf("This is conflux's latest release: %s.\n", version.String())
+		ui.Printf("%s is conflux's latest release: %s.\n", exe, rel.Name)
 
 		return ExitOK
 	}
@@ -117,6 +119,10 @@ func runUpdate(ctx context.Context, args []string) int {
 
 	// A Windows image an earlier update moved aside, which nothing runs any more.
 	_ = os.Remove(exe + ".old")
+
+	if err := os.MkdirAll(filepath.Dir(exe), 0o755); err != nil {
+		return fail(err)
+	}
 
 	tmp, err := rel.Download(ctx, filepath.Dir(exe))
 	if err != nil {
@@ -182,20 +188,9 @@ func moveService(ctx context.Context, exe string) int {
 	return ExitOK
 }
 
-// thisExecutable is the file this process was started from, symlinks followed: the one an
-// update replaces, rather than the link somebody put on their PATH.
-func thisExecutable() (string, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "", err
-	}
-
-	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
-		exe = resolved
-	}
-
-	return filepath.Clean(exe), nil
-}
+// installedExecutable is where the installers put conflux, and so the file an update replaces,
+// whichever conflux runs it: one installed conflux per machine, at a place nothing moves.
+func installedExecutable() (string, error) { return paths.InstalledExecutable(), nil }
 
 // versionOf runs the binary at path and returns the line its `version` leads with.
 func versionOf(ctx context.Context, path string) (string, error) {

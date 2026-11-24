@@ -132,7 +132,7 @@ rootpath() {
 # written -- macOS's -- is said, and not a failure: conflux is installed all the same, as it is
 # where root's PATH cannot be asked at all, or a link a run before made cannot be taken back,
 # each of which is said too, rather than nothing. That link is said with the conflux root's PATH
-# finds before it, where it finds one: removing that one lets root's PATH find $exe.
+# finds, where it finds one, to be removed before this script is run again.
 link() {
   if ! rootpath; then
     say "" "Could not ask $as for root's PATH: run the installer as root to link conflux for sudo, or type $exe by its full path under sudo."
@@ -145,7 +145,7 @@ link() {
     # A run before made it, and root's PATH, just asked, does not find $exe through it.
     if ! asroot rm -f "$sudolink"; then
       if [ -n "$found" ]; then
-        say "" "Could not remove $sudolink, which root's PATH does not find $exe through, since it finds $found before ${sudolink%/*}: remove $found, and root's PATH then finds $exe, or type $exe by its full path under sudo."
+        say "" "Could not remove $sudolink, which root's PATH does not find $exe through, since it finds $found before ${sudolink%/*}: remove $found and run the installer again, or type $exe by its full path under sudo."
       else
         say "" "Could not remove $sudolink, which root's PATH does not find $exe through: type $exe by its full path under sudo."
       fi
@@ -194,13 +194,16 @@ missed() {
 
 # notours says that $sudolink is a file conflux did not make, and why root's PATH does not find
 # $exe: where what it finds is that file -- through the link's own directory, however spelled,
-# as a merged /bin is /usr/bin -- that it is to be removed before this script is run again, which
-# decides afresh, as missed says; otherwise $why.
+# as a merged /bin is /usr/bin -- or another conflux first, that it is to be removed before this
+# script is run again, which decides afresh, as missed says; where it finds none, $why, with
+# $exe's full path alone.
 notours() {
-  if [ -n "$found" ] && [ "${found%/*}" -ef "${sudolink%/*}" ]; then
+  if [ -z "$found" ]; then
+    say "" "$sudolink is not conflux's, and $why: type $exe by its full path under sudo."
+  elif [ "${found%/*}" -ef "${sudolink%/*}" ]; then
     say "" "$sudolink is not conflux's, and root's PATH finds it rather than $exe: remove it and run the installer again, or type $exe by its full path under sudo."
   else
-    say "" "$sudolink is not conflux's, and $why: type $exe by its full path under sudo."
+    say "" "$sudolink is not conflux's, and $why: remove it and run the installer again, or type $exe by its full path under sudo."
   fi
 }
 

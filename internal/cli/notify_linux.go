@@ -8,7 +8,7 @@ import (
 )
 
 // notifyReadyWhen tells systemd the unit has actually started: once the anchor is up, or,
-// beside an anchor that cannot come up for now, once the observer is.
+// beside an anchor that does not come up, even one refused for good, once the observer is.
 //
 // Fifteen lines, and it is what makes Type=notify honest: `systemctl start conflux`
 // then returns when the machine is on the overlay, rather than when fork succeeded.

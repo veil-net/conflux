@@ -251,9 +251,9 @@ func (c *Ctl) Export(ctx context.Context, endpoint string, insecure bool, signal
 }
 
 // Renew installs a fresh credential on the running anchor, hot: SetRealmCred rather
-// than a restart, so not one session is lost. An anchor that is not running -- one that
-// cannot come up for now, or one being rebuilt -- has nothing to renew, which is not an
-// error: it starts under the manifest on disk, as ObserveRenew's observer does.
+// than a restart, so not one session is lost. An anchor that is not running -- one that does
+// not come up beside the observer, or one being rebuilt or given up on -- has nothing to renew,
+// which is not an error: it starts under the manifest on disk, as ObserveRenew's observer does.
 //
 // chain is the credential itself, raw, not base64: the API sends base64 and the client
 // decodes it on the way in. Getting that backwards produces a credential the daemon

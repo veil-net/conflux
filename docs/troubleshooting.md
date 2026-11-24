@@ -143,7 +143,9 @@ route — is anchor's to fix, and worth reporting there with that output attache
   `$TMPDIR` where that is unset, decides where that is.
 - **`conflux status` says a root was left behind**: an ephemeral run was killed before it
   could clean up, which on macOS and the BSDs can leave its anchord running. The next
-  ephemeral run stops it and clears the root; so does a reboot.
+  ephemeral run stops it and clears the root; so does a reboot, except where the root is under
+  `$TMPDIR` on FreeBSD, whose `/tmp` outlives a reboot unless `clear_tmp_enable` is set: there
+  the next run clears it.
 
 See [ephemeral.md](ephemeral.md).
 

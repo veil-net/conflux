@@ -113,10 +113,11 @@ either option, which implies it — `--observe-loopback`, `--observe-hide-names`
 not given is off. Naming nothing keeps what is configured, and `--no-observe` turns it off.
 
 The observer runs under the machine's credential, as the anchor does, so it starts once the
-credential is had and before the anchor: an anchor whose start fails leaves the observer and
-its inventory running while the anchor is tried again, and a credential that cannot be had — an
-enrolment the API does not answer — starts neither, and the start is tried again. See
-[service.md](service.md).
+credential is had and before the anchor: an anchor whose start fails, even one refused for good,
+leaves the observer and its inventory running while the anchor is tried again, and given up on
+alone if it is refused for good three times in a row, the start's refusal the first; a
+credential that cannot be had — an enrolment the API does not answer — starts neither, and the
+start is tried again. See [service.md](service.md).
 
 ## Switching
 

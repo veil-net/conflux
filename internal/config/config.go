@@ -89,26 +89,34 @@ const InsecureAPIEnv = "CONFLUX_ALLOW_INSECURE_API"
 // names, the release APIs update and anchor-fetch read, and every redirect any of them
 // follows -- since two answers to one question make the more permissive the way in.
 func CheckAPIURL(raw string) error {
+	_, err := ParseAPIURL(raw)
+
+	return err
+}
+
+// ParseAPIURL is CheckAPIURL for a caller that reads the URL as well: the URL it parsed to
+// check, or what CheckAPIURL refuses it with.
+func ParseAPIURL(raw string) (*url.URL, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
-		return fmt.Errorf("%q is not a URL: %w", raw, err)
+		return nil, fmt.Errorf("%q is not a URL: %w", raw, err)
 	}
 
 	if u.Scheme == "" || u.Hostname() == "" {
-		return fmt.Errorf("%q is not an absolute URL with a host, such as %s", raw, DefaultAPIBaseURL)
+		return nil, fmt.Errorf("%q is not an absolute URL with a host, such as %s", raw, DefaultAPIBaseURL)
 	}
 
 	switch u.Scheme {
 	case "https":
-		return nil
+		return u, nil
 	case "http":
 		if os.Getenv(InsecureAPIEnv) == "1" {
-			return nil
+			return u, nil
 		}
 
-		return fmt.Errorf("%s is plain http (set %s=1 to override, for tests)", raw, InsecureAPIEnv)
+		return nil, fmt.Errorf("%s is plain http (set %s=1 to override, for tests)", raw, InsecureAPIEnv)
 	default:
-		return fmt.Errorf("%s has scheme %q, want https", raw, u.Scheme)
+		return nil, fmt.Errorf("%s has scheme %q, want https", raw, u.Scheme)
 	}
 }
 

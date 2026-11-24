@@ -62,9 +62,13 @@ release holds before it is released. Nothing installs it unless asked to by name
 pinned to the dev tree, which only `https://api-dev.veilnet.com.au` enrols in, so it is brought
 up with `--api https://api-dev.veilnet.com.au`. `conflux update --dev` replaces it with the
 newest dev build, once asked at a terminal, or without asking given `--yes`, for scripts and
-CI. `conflux update` replaces it with the `latest`
-release, once asked at a terminal too: the release's anchor is pinned to the production tree,
-so a credential from the dev tree does not work with it ([commands.md](commands.md#conflux-update)).
+CI. `conflux update` replaces it with the `latest` release, once asked at a terminal too: the
+release's anchor is pinned to the production tree, so a credential from the dev tree does not
+work with it ([commands.md](commands.md#conflux-update)). Moving a machine between a dev build
+and the release is a new identity in the other tree, with a new AnchorID and a new overlay
+address: `sudo conflux uninstall --yes`, then install conflux again, the other build (uninstall
+removes conflux too; `CONFLUX_VERSION=dev-latest` names the dev build), and `sudo conflux up`,
+with `--api https://api-dev.veilnet.com.au` for a dev build.
 
 The BSDs have no `curl` in the base system, and the script uses whatever downloader it
 finds, so it can be fetched with theirs:

@@ -573,6 +573,14 @@ anything is read. Nothing installed, an installed release, and a file that does 
 cannot say what it is, are not asked about. `--dev` asks its own question alone, so a dev build
 updated with it is asked once, and with `--yes` not at all.
 
+Neither question moves the machine's identity: the credential stays the one tree's, and the
+other tree's anchor refuses it at every start, which the supervisor gives up on after three
+([troubleshooting.md](troubleshooting.md)). Moving a machine between a dev build and the release
+is a new identity in the other tree, with a new AnchorID and a new overlay address:
+`sudo conflux uninstall --yes`, then install conflux again, the other build (uninstall removes
+conflux too; `CONFLUX_VERSION=dev-latest` names the dev build, [install.md](install.md)), and
+`sudo conflux up`, with `--api https://api-dev.veilnet.com.au` for a dev build.
+
 "Up to date" is a digest rather than a version string. The installed file is the release's
 binary, byte for byte, or it is not, so a rebuild of the same version (which a merge
 that leaves `VERSION` alone publishes) is an update too. `--check` says which, names

@@ -77,6 +77,7 @@ func TestEveryFlagWeUseExists(t *testing.T) {
 		{"status", anchorctl.StatusArgs()},
 		{"metrics", anchorctl.MetricsArgs()},
 		{"observe", anchorctl.ObserveStartArgs(config.Observer{Loopback: true, HideNames: true})},
+		{"observe-renew", anchorctl.ObserveRenewArgs()},
 		{"observe-stop", anchorctl.ObserveStopArgs()},
 		{"export", anchorctl.ExportArgs("collector.example:4317", true, []string{"metrics", "flows"})},
 	} {

@@ -177,11 +177,12 @@ func rootPathHolds(exeDir, linkDir string) (exeOn, linkOn bool) {
 // alone: never two files removed, one of them somebody else's, to make a link.
 func notOurs(found, link, exe, why string) error {
 	exeOn, linkOn := rootPathHolds(filepath.Dir(exe), filepath.Dir(link))
+	findsIt := found != "" && sameFile(filepath.Dir(found), filepath.Dir(link))
 
 	switch {
-	case found != "" && sameFile(filepath.Dir(found), filepath.Dir(link)) && exeOn:
+	case findsIt && exeOn:
 		return fmt.Errorf("%s is not conflux's, and root's PATH finds it rather than %s: %s", link, exe, removeIt(exe))
-	case found != "" && sameFile(filepath.Dir(found), filepath.Dir(link)):
+	case findsIt:
 		return fmt.Errorf("%s is not conflux's, and root's PATH finds it rather than %s: %s", link, exe, relink(exe, link))
 	case found != "" && exeOn:
 		return fmt.Errorf("%s is not conflux's, and %s", link, ahead(found, exe))

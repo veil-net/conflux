@@ -197,11 +197,10 @@ func exists(path string) bool {
 // belongs to p's identity.
 //
 // from may be a directory the account can write, so nothing in it is trusted: it is read
-// through an os.Root, which no symlink leads out of, a file is taken only when it is a
-// regular file with one link and no larger than any anchor keeps, and anything else -- a
-// symlink, a FIFO, a device, a hard link to something the account could name but not read
-// -- is left behind. Everything is written fresh, created exclusively, and owned through
-// its descriptor.
+// through an os.Root, which no symlink leads out of, a file is taken only as copyFile takes
+// it, and anything else -- a symlink, a FIFO, a device, on Unix a hard link to something the
+// account could name but not read -- is left behind. Everything is written fresh, created
+// exclusively, and owned through its descriptor.
 func copyTree(from, to string, p Privilege) error {
 	src, err := os.OpenRoot(from)
 	if err != nil {
@@ -233,6 +232,12 @@ func copyTree(from, to string, p Privilege) error {
 	})
 }
 
+// copyFile copies the file name names in src into dst, if it is one to take: a regular file
+// no larger than any anchor keeps, and on Unix of one name (config.Untrusted). It is opened by
+// that name itself, never by what a link of that name points at (config.OpenUntrusted): on
+// Windows as on Unix, a link to another file inside src is refused as one leading out of it
+// is, where the os.Root alone would follow it, so a link the account puts in a file's place
+// between the walk and the open copies nothing.
 func copyFile(src, dst *os.Root, name string, p Privilege) error {
 	in, err := src.OpenFile(name, config.OpenUntrusted, 0)
 	if err != nil {

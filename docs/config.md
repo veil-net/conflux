@@ -311,7 +311,6 @@ into it. See [windows.md](windows.md#file-permissions).
 | `manifest.b64` | kept | kept | kept | **deleted, permanently** |
 | `state.json` | kept | kept | kept | deleted |
 | `anchord.json` | kept | rewritten | rewritten | deleted |
-| the service's log file (macOS, FreeBSD, Windows) | kept | appended | appended | deleted |
 | extracted binaries | kept | kept | kept | deleted |
 
 An ephemeral run is outside this table: it reads and writes none of these files, and keeps

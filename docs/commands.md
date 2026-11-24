@@ -504,7 +504,7 @@ member's Subnets order replaced `conflux.json`'s list there is one line, saying 
 
 conflux's version and commit, whether it runs in FIPS 140-3 mode and against which Go
 Cryptographic Module, and the SHA-256 of both embedded anchor binaries. Put this in a bug
-report; it names the exact anchor build without running it.
+report; it names the exact anchor build without running it. Takes no arguments.
 
 ```console
 $ conflux version
@@ -637,7 +637,7 @@ other refusal — passes through untouched.
 |---|---|
 | 0 | success |
 | 1 | failure |
-| 2 | usage: a flag that does not parse, a command given too few or too many arguments (`cert`'s commands; and `up`, `install`, `down`, `uninstall`, `serve`, `start`, `renew`, `update`, `observe` and `enrol`, which take flags and nothing else, `enrol` `--manifest` among them — a stray argument named on a line of its own), and `cert`, `cert ca` or `cert p12` given no command, said on stderr with the usage, or the list, beneath it. And a refusal of what was typed, said on stderr in a line of its own: an option conflux does not have, a `cert` command that does not exist, anchorctl's `stop` or `restart`, a flag `start`, `renew`, `observe` or `proxy` does not have (anchorctl has commands of those names, and the line says how to reach them) `proxy` with nothing to serve, `observe` where there is no capture, `uninstall` beside a live ephemeral run, or what asks to be confirmed — `uninstall`, `observe` in an anchor's place — and was not. `-h` is a request, answered on stdout with the usage and flags, and exits 0 |
+| 2 | usage: a flag that does not parse, a command given too few or too many arguments (`cert`'s commands; and `up`, `install`, `down`, `uninstall`, `serve`, `start`, `renew`, `update`, `observe`, `version` and `enrol`, which take flags and nothing else, `enrol` `--manifest` among them — a stray argument named on a line of its own), and `cert`, `cert ca` or `cert p12` given no command, said on stderr with the usage, or the list, beneath it. And a refusal of what was typed, said on stderr in a line of its own: an option conflux does not have, a `cert` command that does not exist, anchorctl's `stop` or `restart`, a flag `start`, `renew`, `observe` or `proxy` does not have (anchorctl has commands of those names, and the line says how to reach them) `proxy` with nothing to serve, `observe` where there is no capture, `uninstall` beside a live ephemeral run, or what asks to be confirmed — `uninstall`, `observe` in an anchor's place — and was not. `-h` is a request, answered on stdout with the usage and flags, and exits 0 |
 | 3 | `conflux cert verify`, `match` or `probe`: the check ran and did not hold |
 | 13 | needs root or Administrator, or a `status` that cannot read the configuration, or a pass-through that cannot read the daemon's token |
 | 69 | nothing here to act on: nothing running, or no credential to renew |

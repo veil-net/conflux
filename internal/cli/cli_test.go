@@ -171,9 +171,11 @@ func TestHelpListsEveryVisibleVerb(t *testing.T) {
 // TestHelpForACommandIsThatCommands: `conflux help X` is X's own usage, whichever
 // binary X belongs to.
 func TestHelpForACommandIsThatCommands(t *testing.T) {
-	out, _, code := capture(t, "help", "up")
-	if code != ExitOK || !strings.Contains(out, "conflux up —") || strings.Contains(out, "Commands") {
-		t.Errorf("help up exited %d and printed:\n%s", code, out)
+	for _, name := range []string{"up", "version"} {
+		out, _, code := capture(t, "help", name)
+		if code != ExitOK || !strings.Contains(out, "conflux "+name+" —") || strings.Contains(out, "Commands") {
+			t.Errorf("help %s exited %d and printed:\n%s", name, code, out)
+		}
 	}
 }
 
@@ -182,8 +184,8 @@ func TestHelpForACommandIsThatCommands(t *testing.T) {
 func TestUsageIsOneStream(t *testing.T) {
 	for name := range verbs() {
 		switch name {
-		case "help", "version":
-			continue // their own pages, -h or not
+		case "help":
+			continue // its own page, -h or not
 		case "status", "anchorctl":
 			continue // anchorctl's usage, which its own tests cover
 		}
@@ -252,7 +254,7 @@ func TestAMistakeIsSaidOnStderr(t *testing.T) {
 func TestAStrayArgumentIsNamedAboveTheUsage(t *testing.T) {
 	asRoot(t, false)
 
-	for _, verb := range []string{"up", "install", "down", "uninstall", "serve", "start", "renew", "update", "observe"} {
+	for _, verb := range []string{"up", "install", "down", "uninstall", "serve", "start", "renew", "update", "observe", "version"} {
 		out, errOut, code := capture(t, verb, "stray")
 		if code != ExitUsage || out != "" ||
 			!strings.Contains(errOut, "conflux "+verb+" takes no arguments, and got \"stray\"") ||

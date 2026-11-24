@@ -54,7 +54,8 @@ owns the configuration; use down and start, or the escape hatch above.
 // surfaces and nobody has to know which binary a command belongs to.
 //
 // `conflux help COMMAND` is that command's own usage instead, whichever side it is
-// on. Three of conflux's take no flags to print, and get the whole page.
+// on. Two of conflux's have no usage of their own to print, and get the whole page:
+// help itself, and status, whose -h is anchorctl's.
 func runHelp(ctx context.Context, args []string) int {
 	if len(args) > 0 {
 		v, ours := verbs()[args[0]]
@@ -62,7 +63,7 @@ func runHelp(ctx context.Context, args []string) int {
 		switch {
 		case !ours:
 			return passthrough(ctx, []string{args[0], "-h"})
-		case args[0] != "help" && args[0] != "status" && args[0] != "version":
+		case args[0] != "help" && args[0] != "status":
 			v.run(ctx, []string{"-h"})
 
 			return ExitOK
@@ -123,7 +124,17 @@ const devBuild = "dev build:"
 // runVersion reports conflux and the anchor pair it carries. The digests are here
 // so a bug report names the exact binaries, and so a user can check what they got
 // against a release note without running it.
-func runVersion(_ context.Context, _ []string) int {
+func runVersion(_ context.Context, args []string) int {
+	fs := verbFlags("version", "conflux version — conflux's version, and the anchor build it carries\n\n"+
+		"  conflux version\n\n"+
+		"Its version and commit, whether it runs in FIPS 140-3 mode and against which Go\n"+
+		"Cryptographic Module, and the SHA-256 of both anchor binaries it carries: what a\n"+
+		"bug report names.\n")
+
+	if exit, ok := flagsAlone(fs, args); !ok {
+		return exit
+	}
+
 	ui.Println(version.String())
 
 	if version.Dev() {

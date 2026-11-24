@@ -69,7 +69,10 @@ download() {
   fi
 }
 
-sha256() {
+# digest prints the SHA-256 of the file $1 with whichever tool this system has: sha256sum,
+# shasum, or OpenBSD's sha256 -- never a function of that name, which `sha256 -q` here would call
+# again rather than the tool.
+digest() {
   if command -v sha256sum >/dev/null 2>&1; then
     sha256sum "$1" | cut -d' ' -f1
   elif command -v shasum >/dev/null 2>&1; then
@@ -285,7 +288,7 @@ main() {
 
   old=""
   if [ -f "$exe" ]; then
-    have=$(sha256 "$exe") || exit 1
+    have=$(digest "$exe") || exit 1
     if [ "$have" = "$want" ]; then
       say "$exe is already the $tag release's conflux: $(firstline "$exe")"
       link
@@ -298,7 +301,7 @@ main() {
   say "Downloading $asset from conflux's $tag release"
   download "$base/$asset" "$tmp/conflux" || die "could not download $base/$asset"
 
-  got=$(sha256 "$tmp/conflux") || exit 1
+  got=$(digest "$tmp/conflux") || exit 1
   [ "$got" = "$want" ] || die "$asset's SHA-256 is $got, and SHA256SUMS says $want, so nothing was installed"
 
   [ -z "$as" ] || say "$dir is root's, so $as puts conflux there."

@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
-	"slices"
 	"strings"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
@@ -220,11 +219,9 @@ func activeDirs() paths.Dirs {
 // liveEphemeral is the root of the ephemeral run that is running, if one is: the one whose
 // lock is held.
 func liveEphemeral() (paths.Dirs, bool) {
-	for _, root := range paths.EphemeralCandidates() {
-		d := paths.EphemeralDirs(root)
-		if held, err := flock.Held(d.ServeLockFile()); err == nil && held {
-			return d, true
-		}
+	d := paths.Ephemeral()
+	if held, err := flock.Held(d.ServeLockFile()); err == nil && held {
+		return d, true
 	}
 
 	return paths.Dirs{}, false
@@ -234,17 +231,22 @@ func liveEphemeral() (paths.Dirs, bool) {
 var errEphemeralStarting = errors.New("the ephemeral run is still starting; ask again once it is up")
 
 // toolsFor is the anchor pair to reach d's daemon with. An ephemeral run's root is the run's
-// own: a reader takes the pair it finds there and writes nothing, and reads nothing until the
-// run has marked itself up, since before that the run may still be clearing what a killed one
-// left -- and a reader that refilled what it was clearing, or held one of its binaries open,
-// would stop it.
+// own: a reader runs its own anchorctl from memory where the platform allows it, as the run
+// does, and otherwise takes the pair it finds there, writing nothing; and asks nothing until
+// the run has marked itself up, since before that the run may still be clearing what a killed
+// one left -- and a reader that refilled what it was clearing, or held one of its binaries
+// open, would stop it.
 func toolsFor(d paths.Dirs) (*libexec.Tools, error) {
-	if !slices.Contains(paths.EphemeralCandidates(), d.Root) {
+	if d.Root != paths.EphemeralRoot() {
 		return libexec.Ensure(d)
 	}
 
 	if !daemon.IsLiveReady(d) {
 		return nil, errEphemeralStarting
+	}
+
+	if t, err := libexec.AnchorctlInMemory(); err == nil {
+		return t, nil
 	}
 
 	return libexec.Extracted(d)

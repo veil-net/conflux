@@ -135,10 +135,11 @@ route — is anchor's to fix, and worth reporting there with that output attache
 
 - **"an ephemeral anchor is already running from …"**: one ephemeral run per user at a time.
   `conflux status` reports the one that is running; stop it where it runs (Ctrl-C).
-- **"every place an ephemeral run is kept is on a filesystem mounted noexec"**: the run
-  extracts anchord into its root, and every candidate refused execution. One of them has to
-  be on a filesystem that allows it; for a user other than root, `$XDG_RUNTIME_DIR`, or
-  `$TMPDIR` where that is unset, decides the first.
+- **"the anchor binaries cannot run from memory here"**: on Linux the run starts `anchord`
+  from a memory file, and this kernel refused it — `vm.memfd_noexec=2`, or a policy such as
+  SELinux's. The run carries on with the pair extracted into its root, which then has to be on
+  a filesystem that allows execution; for a user other than root, `$XDG_RUNTIME_DIR`, or
+  `$TMPDIR` where that is unset, decides where that is.
 - **`conflux status` says a root was left behind**: an ephemeral run was killed before it
   could clean up, which on macOS and the BSDs can leave its anchord running. The next
   ephemeral run stops it and clears the root; so does a reboot.

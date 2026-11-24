@@ -39,8 +39,8 @@ func TestUseRootMovesDefaultAndPutsItBack(t *testing.T) {
 		t.Errorf("Default().Root = %q under UseRoot, want %q", got, dir)
 	}
 
-	if got := EphemeralCandidates(); len(got) != 1 || got[0] != dir+"-ephemeral" {
-		t.Errorf("EphemeralCandidates() = %v under UseRoot, want only %s", got, dir+"-ephemeral")
+	if got := EphemeralRoot(); got != dir+"-ephemeral" {
+		t.Errorf("EphemeralRoot() = %s under UseRoot, want %s", got, dir+"-ephemeral")
 	}
 
 	restore()

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/veil-net/conflux/internal/anchortest"
 	"github.com/veil-net/conflux/internal/paths"
 )
 
@@ -72,4 +73,25 @@ func running(pid int) bool {
 	}
 
 	return true
+}
+
+// TestAnEphemeralRunKeepsItsPairInMemory: on Linux the pair an ephemeral run starts is in
+// memory, and nothing of it is written under the run's root.
+func TestAnEphemeralRunKeepsItsPairInMemory(t *testing.T) {
+	anchortest.Require(t)
+
+	d := paths.EphemeralDirs(filepath.Join(dirs(t).Root, "e"))
+
+	tools, err := (&Ephemeral{Dirs: d}).pair()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if tools.Dir != "" || !strings.HasPrefix(tools.Anchord, "/proc/self/fd/") {
+		t.Errorf("the run's pair is %+v, not in memory", tools)
+	}
+
+	if _, err := os.Stat(d.Libexec()); err == nil {
+		t.Errorf("the run wrote %s", d.Libexec())
+	}
 }

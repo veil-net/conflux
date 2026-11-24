@@ -180,7 +180,8 @@ say "an ephemeral run killed outright, and what becomes of its anchord"
 if [ "$os" = darwin ]; then
   eroot=/var/run/conflux-ephemeral
 else
-  eroot="$(cygpath -u "${PROGRAMDATA:-C:\\ProgramData}")/conflux-ephemeral"
+  # The running account's temporary directory, as Windows gives it to conflux.
+  eroot="$(cygpath -u "$(powershell.exe -NoProfile -Command '[IO.Path]::GetTempPath()' | tr -d '\r')")/conflux-ephemeral"
 fi
 eph_start() { # LOG
   "$CONFLUX" proxy --ephemeral --api https://192.0.2.1:9 --no-ipv4 --taint cfx-host 8080=127.0.0.1:1 >"$1" 2>&1 &

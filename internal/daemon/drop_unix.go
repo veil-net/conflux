@@ -90,12 +90,22 @@ func (s *Supervisor) dropTo(p *Privilege) string {
 // grantTraverse lets the account pass through the root and its run directory, which list
 // nothing to it, to the one binary in them it runs and the socket directory it serves.
 // Every one is root's and sits in a directory only root can write, so each is changed by
-// its name.
+// its name. A pair in memory is no file of the root's: the account runs it through its own
+// descriptor.
 func (s *Supervisor) grantTraverse(p Privilege) error {
-	for _, dir := range []string{s.Dirs.Root, s.Dirs.Libexec(), s.tools.Dir, s.Dirs.RunDir()} {
+	dirs := []string{s.Dirs.Root, s.Dirs.RunDir()}
+	if s.tools.Dir != "" {
+		dirs = append(dirs, s.Dirs.Libexec(), s.tools.Dir)
+	}
+
+	for _, dir := range dirs {
 		if err := ownAs(dir, 0, p.GID, 0o710); err != nil {
 			return err
 		}
+	}
+
+	if s.tools.Dir == "" {
+		return nil
 	}
 
 	return ownAs(s.tools.Anchord, 0, p.GID, 0o750)

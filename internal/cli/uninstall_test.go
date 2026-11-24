@@ -60,33 +60,31 @@ func TestUninstallTakesTheInstalledConflux(t *testing.T) {
 	}
 }
 
-// TestUninstallTakesEveryStaleEphemeralRoot: every root a killed ephemeral run left goes,
-// not only the first found, and one a run holds stays.
-func TestUninstallTakesEveryStaleEphemeralRoot(t *testing.T) {
-	roots := []string{filepath.Join(t.TempDir(), "a"), filepath.Join(t.TempDir(), "b")}
+// TestUninstallTakesAStaleEphemeralRoot: the root a killed ephemeral run left is stale, and
+// one a run holds is not.
+func TestUninstallTakesAStaleEphemeralRoot(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "e")
 
-	for _, root := range roots {
-		if err := paths.EphemeralDirs(root).EnsureAll(); err != nil {
-			t.Fatal(err)
-		}
-
-		if err := os.WriteFile(paths.EphemeralDirs(root).ServeLockFile(), nil, 0o600); err != nil {
-			t.Fatal(err)
-		}
+	if err := paths.EphemeralDirs(root).EnsureAll(); err != nil {
+		t.Fatal(err)
 	}
 
-	if got := staleEphemerals(roots); len(got) != 2 {
-		t.Fatalf("%d stale roots found, want both", len(got))
+	if err := os.WriteFile(paths.EphemeralDirs(root).ServeLockFile(), nil, 0o600); err != nil {
+		t.Fatal(err)
 	}
 
-	unlock, err := flock.Acquire(paths.EphemeralDirs(roots[1]).ServeLockFile())
+	if d, stale := staleEphemeral(root); !stale || d.Root != root {
+		t.Fatalf("staleEphemeral(%s) = %v, %v: a killed run's root is not taken for stale", root, d, stale)
+	}
+
+	unlock, err := flock.Acquire(paths.EphemeralDirs(root).ServeLockFile())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer unlock()
 
-	if got := staleEphemerals(roots); len(got) != 1 || got[0].Root != roots[0] {
-		t.Errorf("stale roots %v, want only %s", got, roots[0])
+	if _, stale := staleEphemeral(root); stale {
+		t.Error("a root a run holds is taken for stale")
 	}
 }
 

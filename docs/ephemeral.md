@@ -21,7 +21,7 @@ Starting an ephemeral anchor: nothing is saved, and when it stops nothing of it 
   taint        brhk-2mq9-tzva-6pjs-k4xe-nw7d-qf
   credential   valid until 2026-12-01T07:54:04Z (29d 23h)
   anchord      conflux-ephemeral, with CAP_NET_ADMIN for its interface
-  ephemeral    in memory alone; /run/conflux-ephemeral holds the socket and the binaries, and goes with the run
+  ephemeral    in memory alone, anchord and anchorctl too; /run/conflux-ephemeral holds the socket, and goes with the run
 
 Running in the foreground. Ctrl-C stops it and removes what it made; conflux status, from another terminal, reports it.
 ^C
@@ -89,20 +89,28 @@ supervisor ends every process of its own account each time it starts anchord, an
 ephemeral anchord running as that account would go with them. On macOS an ephemeral observer
 runs as root, since the BPF devices are the installation's to grant.
 
-## Where it keeps its socket
+## Where it keeps its socket, and its binaries
 
-One fixed directory per user, made when the run starts and removed when it ends:
+On Linux, `anchord` and `anchorctl` run from memory: each is a sealed memory file, made from
+the conflux that runs them, and no file of either is ever on disk. Where the kernel will not
+run one — `vm.memfd_noexec=2`, or a policy such as SELinux's — the run says so and extracts the
+pair into its root instead, which then has to allow execution. Elsewhere the pair is extracted
+into the root.
+
+The root is one fixed directory per user, made when the run starts and removed when it ends,
+somewhere a reboot empties, so a run that could not clean up leaves nothing past the next boot:
 
 | Started as | Root |
 |---|---|
-| root on Linux | `/run/conflux-ephemeral`, or `/var/lib/conflux-ephemeral` where `/run` is mounted `noexec` |
-| root on macOS and the BSDs | `/var/run/conflux-ephemeral`, or `/var/db/conflux-ephemeral` (`/Library/Application Support/conflux-ephemeral` on macOS) where that is `noexec` |
-| an ordinary user | `$XDG_RUNTIME_DIR/conflux-ephemeral` (or `$TMPDIR/conflux-ephemeral-UID`, `/tmp` where that is unset), then the user's cache directory |
-| Windows | `%ProgramData%\conflux-ephemeral` |
+| root on Linux | `/run/conflux-ephemeral`, in memory |
+| root on macOS and the BSDs | `/var/run/conflux-ephemeral`, which the system empties at boot |
+| an ordinary user on Linux | `$XDG_RUNTIME_DIR/conflux-ephemeral`, in memory, or `$TMPDIR/conflux-ephemeral-UID` (`/tmp` where that is unset) |
+| an ordinary user elsewhere | `$TMPDIR/conflux-ephemeral-UID` |
+| Windows | `conflux-ephemeral` in the account's `%TEMP%` |
 
 It holds the lock that makes it the only ephemeral run for that user, the bearer token and
-the socket, the record of the anchord it started and what that runs as, and the extracted
-pair: never a credential, a configuration or a state. A root that another account owns is
+the socket, the record of the anchord it started and what that runs as, and, where the pair
+cannot run from memory, the extracted pair: never a credential, a configuration or a state. A root that another account owns is
 refused. A run is not refused because an installed conflux is running: that one is never
 read, written, stopped or re-registered. Two anchors with a TUN on one host do contend for
 the overlay's routes, so `conflux down` first where that matters.
@@ -115,7 +123,8 @@ starting, and asks it nothing: the run may still be clearing what a killed one l
 another conflux reaching into its root then would get in its way. A killed run's word that
 it was up is not taken for the next run's: it counts only while the conflux that wrote it
 runs. Neither `status` nor
-pass-through ever writes into a run's root. Pass-through — `conflux peers`,
+pass-through ever writes into a run's root; on Linux they run their own `anchorctl` from
+memory, as the run does. Pass-through — `conflux peers`,
 `conflux blocks`, every anchorctl command — reaches the ephemeral anchor when it is the
 only one running, once it is up.
 With an installed anchor running too, it reaches that one unless `CONFLUX_EPHEMERAL=1` is

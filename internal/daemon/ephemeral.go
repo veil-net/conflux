@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/veil-net/conflux/internal/anchorctl"
@@ -59,6 +60,22 @@ type Ephemeral struct {
 	watchEvery time.Duration
 }
 
+// pair is the anchor pair the run starts: in memory where the platform runs a program from
+// there, so that no binary of it is ever on disk, and otherwise extracted into the run's root.
+func (e *Ephemeral) pair() (*libexec.Tools, error) {
+	t, err := libexec.InMemory()
+	if err == nil {
+		return t, nil
+	}
+
+	if runtime.GOOS == "linux" {
+		e.report().Warn("the anchor binaries cannot run from memory here, so they are extracted into %s "+
+			"for this run: %v", e.Dirs.Root, err)
+	}
+
+	return libexec.Ensure(e.Dirs)
+}
+
 // EphemeralUp is what an ephemeral run started, and what its anchor said of itself once it
 // had: the status, where the daemon answered for it.
 type EphemeralUp struct {
@@ -66,6 +83,9 @@ type EphemeralUp struct {
 	Status    anchorctl.Status
 	Manifest  *enrol.Manifest
 	Privilege Privilege
+
+	// PairInMemory is a pair run from memory, with no file of it on disk.
+	PairInMemory bool
 }
 
 // Run starts anchord, brings the anchor up, keeps its credential current in memory, and
@@ -151,7 +171,7 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 
 	tools := e.tools
 	if tools == nil {
-		if tools, err = libexec.Ensure(d); err != nil {
+		if tools, err = e.pair(); err != nil {
 			return err
 		}
 	}
@@ -227,7 +247,7 @@ func (e *Ephemeral) Run(ctx context.Context) error {
 	}
 
 	if e.Up != nil {
-		up := EphemeralUp{Started: started, Manifest: m, Privilege: p}
+		up := EphemeralUp{Started: started, Manifest: m, Privilege: p, PairInMemory: tools.Dir == ""}
 		if st := s.status(ctx); st != nil {
 			up.Status = *st
 		}

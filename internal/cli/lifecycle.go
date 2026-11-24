@@ -324,11 +324,11 @@ func runUninstall(_ context.Context, args []string) int {
 	// once the service's own supervisor has let go of it.
 	daemon.Reap(d, 35*time.Second)
 
-	// And what every ephemeral run that was killed left: its anchord, where nothing ended it
-	// with the run (macOS and the BSDs), and its root -- the extracted pair and the token --
-	// which nothing else removes. Under the root's lock, as a run's own clean-up is, so one
-	// starting now is not emptied out from under itself.
-	for _, e := range staleEphemerals(paths.EphemeralCandidates()) {
+	// And what an ephemeral run that was killed left: its anchord, where nothing ended it with
+	// the run (macOS and the BSDs), and its root -- the token, and the pair where it could not
+	// run from memory -- which nothing else removes before a reboot. Under the root's lock, as
+	// a run's own clean-up is, so one starting now is not emptied out from under itself.
+	if e, stale := staleEphemeral(paths.EphemeralRoot()); stale {
 		errs = append(errs, removeEphemeralRoot(e))
 	}
 

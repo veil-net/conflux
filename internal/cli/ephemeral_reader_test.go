@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -25,7 +26,7 @@ func startingEphemeral(t *testing.T) paths.Dirs {
 
 	t.Cleanup(paths.UseRoot(t.TempDir()))
 
-	d := paths.EphemeralDirs(paths.EphemeralCandidates()[0])
+	d := paths.EphemeralDirs(paths.EphemeralRoot())
 	if err := d.EnsureAll(); err != nil {
 		t.Fatal(err)
 	}
@@ -98,8 +99,9 @@ func TestAKilledRunsMarkerIsNotTheNextRuns(t *testing.T) {
 }
 
 // TestAReaderTakesAnEphemeralRunsPairAsItIs: before the run marks itself up, a reader is
-// told it is starting; after, it gets the pair the run extracted, and where the run has
-// none it is told so -- in neither case writing anything into the run's root.
+// told it is starting; after, on Linux it runs its own anchorctl from memory, as the run
+// does, and elsewhere it gets the pair the run extracted, and where the run has none it is
+// told so -- in no case writing anything into the run's root.
 func TestAReaderTakesAnEphemeralRunsPairAsItIs(t *testing.T) {
 	anchortest.Require(t)
 
@@ -113,7 +115,12 @@ func TestAReaderTakesAnEphemeralRunsPairAsItIs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := toolsFor(d); !errors.Is(err, libexec.ErrNotExtracted) {
+	got, err := toolsFor(d)
+	if runtime.GOOS == "linux" {
+		if err != nil || !strings.HasPrefix(got.Anchorctl, "/proc/self/fd/") {
+			t.Errorf("a run that is up, on Linux: %+v, %v; want an anchorctl in memory", got, err)
+		}
+	} else if !errors.Is(err, libexec.ErrNotExtracted) {
 		t.Errorf("a run with no pair: %v, want ErrNotExtracted", err)
 	}
 
@@ -121,14 +128,16 @@ func TestAReaderTakesAnEphemeralRunsPairAsItIs(t *testing.T) {
 		t.Errorf("a reader wrote %d entries into the run's %s", len(entries), d.Libexec())
 	}
 
-	extracted, err := libexec.Ensure(d) // as the run does
-	if err != nil {
-		t.Fatal(err)
-	}
+	if runtime.GOOS != "linux" {
+		extracted, err := libexec.Ensure(d) // as the run does
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	got, err := toolsFor(d)
-	if err != nil || got.Anchorctl != extracted.Anchorctl {
-		t.Errorf("a run that is up: %+v, %v; want %s", got, err, extracted.Anchorctl)
+		got, err := toolsFor(d)
+		if err != nil || got.Anchorctl != extracted.Anchorctl {
+			t.Errorf("a run that is up: %+v, %v; want %s", got, err, extracted.Anchorctl)
+		}
 	}
 
 	// An installed root is the reader's own to extract into, as it always was.

@@ -41,13 +41,16 @@ const completeMarker = ".complete"
 // smokeTimeout bounds the one-off check that the extracted binary actually runs.
 const smokeTimeout = 10 * time.Second
 
-// Tools are the extracted pair.
+// Tools are the pair: extracted into Dir, or held in memory (InMemory), where Dir is "".
 type Tools struct {
 	Dir       string
 	Anchord   string
 	Anchorctl string
 	SetID     string
 }
+
+// ErrNoMemoryExec is a pair that cannot be run from memory here.
+var ErrNoMemoryExec = errors.New("this system will not run a program from memory")
 
 // Ensure extracts this build's pair if it is not already there, and returns the
 // paths. Idempotent, atomic, and safe against another conflux doing the same thing.

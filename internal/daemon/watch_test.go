@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -204,7 +205,7 @@ func TestTheWatcherGivesUpOnARefusedConfiguration(t *testing.T) {
 	}
 
 	gaveUp := make(chan bool, 1)
-	go func() { gaveUp <- s.watch(t.Context(), &config.Config{Mode: config.ModeProxy}, time.Millisecond) }()
+	go func() { gaveUp <- s.watch(t.Context(), &config.Config{Mode: config.ModeProxy}, time.Millisecond, nil) }()
 
 	select {
 	case got := <-gaveUp:
@@ -306,7 +307,7 @@ func TestTheWatcherStartsAFailedObserverAgain(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
 			defer cancel()
 
-			s.watch(ctx, cfg, time.Millisecond)
+			s.watch(ctx, cfg, time.Millisecond, nil)
 
 			if got := slices.Contains(ran(t, log), "observe"); got != want {
 				t.Errorf("an observer that is %s: started again %v, want %v", row, got, want)
@@ -328,7 +329,7 @@ func TestTheWatcherGivesUpOnAnObserverTheHostRefuses(t *testing.T) {
 
 	gaveUp := make(chan bool, 1)
 	go func() {
-		gaveUp <- s.watch(t.Context(), &config.Config{Mode: config.ModeObserve, Observer: &config.Observer{}}, time.Millisecond)
+		gaveUp <- s.watch(t.Context(), &config.Config{Mode: config.ModeObserve, Observer: &config.Observer{}}, time.Millisecond, nil)
 	}()
 
 	select {
@@ -400,7 +401,7 @@ func TestTheObserverOutlivesAnAnchorGivenUpOn(t *testing.T) {
 	defer cancel()
 
 	gaveUp := make(chan bool, 1)
-	go func() { gaveUp <- s.watch(ctx, cfg, time.Millisecond) }()
+	go func() { gaveUp <- s.watch(ctx, cfg, time.Millisecond, nil) }()
 
 	// The last refusal, and then the observer started again after it.
 	afterGivingUp := func() bool {
@@ -438,5 +439,76 @@ func TestTheObserverOutlivesAnAnchorGivenUpOn(t *testing.T) {
 
 	if stops := strings.Count(strings.Join(ran(t, log), "\n"), "stop"); stops != rebuildRefusals {
 		t.Errorf("rebuilt %d times, want %d and then none", stops, rebuildRefusals)
+	}
+}
+
+// TestTheWatcherCountsTheStartsRefusal: an anchor whose start beside the observer was refused
+// for good is one refusal into the watcher's count already, so it is given up on once
+// rebuildRefusals-1 rebuilds are refused as well, and the observer is not: the watch goes on.
+func TestTheWatcherCountsTheStartsRefusal(t *testing.T) {
+	t.Setenv(fakeAnchorctlStatusEnv, "none")
+	t.Setenv(fakeAnchorctlObserverEnv, "running")
+	t.Setenv(fakeAnchorctlRefuseEnv, "start")
+
+	s, log := supervised(t, "1")
+	credentialed(t, s.Dirs)
+	s.priv.Dir = s.Dirs.RootAnchorDir()
+
+	cfg := &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, Observer: &config.Observer{},
+		Proxies: []string{"8080=127.0.0.1:1"}}
+	if err := config.Save(s.Dirs, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	_, start := bringUp(t.Context(), s.Dirs, s.ctl, s.report(), s.priv.Dir, false, nil)
+	if !Permanent(start) {
+		t.Fatalf("the stand-in's start = %v, want a refusal for good", start)
+	}
+
+	said := &givingUp{gaveUp: make(chan struct{})}
+	s.Reporter = said
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	watched := make(chan bool, 1)
+	go func() { watched <- s.watch(ctx, cfg, time.Millisecond, start) }()
+
+	select {
+	case <-said.gaveUp:
+	case got := <-watched:
+		t.Fatalf("the watch ended (gave up: %v) without giving the anchor up first", got)
+	case <-time.After(15 * time.Second):
+		t.Fatal("the watcher did not give the anchor up")
+	}
+
+	if stops := strings.Count(strings.Join(ran(t, log), "\n"), "stop"); stops != rebuildRefusals-1 {
+		t.Errorf("gave the anchor up after %d rebuilds, want %d beside the start's refusal", stops, rebuildRefusals-1)
+	}
+
+	select {
+	case got := <-watched:
+		t.Fatalf("the watch ended (gave up: %v) with the observer still to keep", got)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	cancel()
+
+	if got := <-watched; got {
+		t.Error("the watch reported giving up with the observer kept")
+	}
+}
+
+// givingUp is a reporter that closes gaveUp once the watcher says it gives the anchor up.
+type givingUp struct {
+	nopReporter
+
+	once   sync.Once
+	gaveUp chan struct{}
+}
+
+func (g *givingUp) Warn(format string, _ ...any) {
+	if strings.HasPrefix(format, "this configuration will not build an anchor") {
+		g.once.Do(func() { close(g.gaveUp) })
 	}
 }

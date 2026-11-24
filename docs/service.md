@@ -43,10 +43,11 @@ anchorctl's stdin, as it reaches the anchor. The observer comes before the ancho
 started on every start because anchord keeps none across one. Observing alone, there is no
 anchor, and the observer is what readiness waits for; the AnchorID the observer reports in full
 is what the credential is renewed by, and the renewal timer runs as it does beside an anchor.
-Beside an anchor, an anchor that cannot come up for now — a start that fails — leaves the daemon
-running, and with it the observer and the inventory it holds, for the watcher to bring the
-anchor up when it can; a credential that cannot be had, an enrolment nobody answers, starts
-neither, and the start is tried again. anchord serves the observer unasked, so nothing on its
+Beside an anchor, an anchor that does not come up — a start that fails, even one refused for
+good — leaves the daemon running, and with it the observer and the inventory it holds, for the
+watcher to bring the anchor up when it can, as it rebuilds one that is lost, or to give it up,
+the start's refusal counted as a rebuild's (below); a credential that cannot be had, an
+enrolment nobody answers, starts neither, and the start is tried again. anchord serves the observer unasked, so nothing on its
 command line says whether it observes. See [observe.md](observe.md). A start that fails because the decision no longer fits — the first
 enrolment named a port below 1024, an uplink's device appeared — starts `anchord` again
 with what it now needs.
@@ -114,7 +115,9 @@ changes — a configuration conflux refuses, taints the credential does not gran
 expired credential with nowhere to renew it or no AnchorID recorded to renew it with, a
 credential for another realm tree, a TUN the host will not give, a host that will not
 be set up to forward, an argument vector anchorctl refuses — stops the supervisor after
-three attempts with exit 70, and nothing to start at all is exit 78. Anything else the
+three attempts with exit 70, unless the observer runs beside the anchor, which an anchor's
+refusal never takes down: the watcher gives the anchor up instead (below). Nothing to start at
+all is exit 78. Anything else the
 supervisor stops on — an extraction onto a full disk, say — exits 1, which systemd,
 launchd and the Windows SCM restart. On the BSDs nothing does: FreeBSD's `daemon(8)` runs
 without `-r`, which would restart 78 and 70 as well, and OpenBSD's `rc.subr` does not
@@ -127,7 +130,8 @@ uplink) and rebuilds it through the same bring-up when it does not. A blocked an
 not one of these: a realm's block leaves it running, outside the realm, and rebuilding
 it would change nothing. A rebuild refused for good three times in a row — a
 `conflux.json` edited under a running service into one that will not build an anchor,
-say — makes the watcher give up on the anchor and say so in the log: the service stays up
+say, and beside the observer a start refused for good counts as the first — makes the
+watcher give up on the anchor and say so in the log: the service stays up
 holding none until it is started again with `conflux start` or a reboot. The observer, where
 it runs beside the anchor, outlives that: it goes on observing, renewed and watched as
 before. With no observer, the service renews nothing until then.
@@ -216,7 +220,7 @@ A few of those lines are worth explaining.
 `Type=notify`, with `sd_notify` from the supervisor, makes `systemctl start conflux`
 return when the anchor is genuinely up rather than when `fork` succeeded. Anything
 ordered `After=conflux.service` gets the same guarantee for free. Beside an anchor that
-cannot come up for now, the supervisor sends `READY=1` once the observer is running and writes
+does not come up, the supervisor sends `READY=1` once the observer is running and writes
 no marker: a unit still waiting at `TimeoutStartSec` would be failed and stopped, observer and
 inventory with it, which an anchor that cannot come up must never cause. The Windows SCM is
 told the same.

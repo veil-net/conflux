@@ -76,12 +76,18 @@ const (
 // refusals, so one that keeps failing neither slows the other's retries nor counts against
 // it. One status call a look answers both.
 //
-// every is how often it looks: checkInterval(cfg), which only a test shortens.
-func (s *Supervisor) watch(ctx context.Context, cfg *config.Config, every time.Duration) bool {
+// every is how often it looks: checkInterval(cfg), which only a test shortens. start is the
+// anchor's start that failed beside the observer, or nil: charged to the anchor as a rebuild's
+// failure is, so a start refused for good is one of the refusals that give the anchor up.
+func (s *Supervisor) watch(ctx context.Context, cfg *config.Config, every time.Duration, start error) bool {
 	device := devicePath(cfg.Uplink)
 
 	anchor, observer := newKeeper(), newKeeper()
 	anchoring, observing := cfg.Anchor(), cfg.Observer != nil
+
+	if start != nil {
+		anchor.failed(start)
+	}
 
 	// zeroSince is when the connection count was first seen at zero, or the zero
 	// time when the link is carrying something.

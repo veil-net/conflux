@@ -63,8 +63,8 @@ type Supervisor struct {
 	Reporter Reporter
 
 	// Ready is closed once the service has started: the anchor is up, or, beside one that
-	// cannot come up for now, the observer is. The service integrations use it to tell the
-	// service manager the unit has actually started.
+	// does not come up, the observer is. The service integrations use it to tell the service
+	// manager the unit has actually started.
 	Ready chan struct{}
 
 	// Drop lets the supervisor start anchord as its own unprivileged account where its
@@ -134,7 +134,7 @@ func (s *Supervisor) signalReady(id string) {
 }
 
 // signalStarted tells the service manager the unit has started, and writes no marker. It is
-// the observer's, beside an anchor that cannot come up for now: the service is doing what it
+// the observer's, beside an anchor that does not come up: the service is doing what it
 // can, and a manager still waiting for it would fail the start -- systemd after
 // TimeoutStartSec, taking the observer and its inventory down with it -- which is the one
 // thing an anchor that cannot come up must not do. The marker waits for the anchor, since
@@ -346,7 +346,7 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 		return err
 	}
 
-	ready, err := s.up(ctx, cfg)
+	ready, anchorErr, err := s.up(ctx, cfg)
 	if err != nil {
 		return err
 	}
@@ -366,7 +366,8 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 	// next cycle has already replaced. A watcher that has given up on everything this
 	// configuration runs ends both: there is nothing left to keep, or to renew a credential
 	// for, until the service is started again. An observer outlives an anchor given up on,
-	// and keeps both going.
+	// and keeps both going. An anchor whose start failed beside the observer is the watcher's
+	// from the start, its failure counted as a rebuild's.
 	loops, stopLoops := context.WithCancel(ctx)
 
 	var wg sync.WaitGroup
@@ -380,7 +381,7 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 	wg.Go(func() { s.renewLoop(loops) })
 
 	wg.Go(func() {
-		if s.watch(loops, cfg, checkInterval(cfg)) {
+		if s.watch(loops, cfg, checkInterval(cfg), anchorErr) {
 			stopLoops()
 		}
 	})
@@ -399,18 +400,20 @@ func (s *Supervisor) cycle(ctx context.Context) error {
 // both under the machine's credential -- and says what readiness to record: the anchor's ID,
 // or nothing yet.
 //
-// An anchor that cannot come up for now -- a start that fails, say -- ends the cycle, unless
-// the observer runs beside it: then the daemon is kept, and with it the observer and the
-// inventory it holds, and the watcher brings the anchor up when it can, as it rebuilds one
-// that is lost. A refusal for good ends the cycle either way, and so does a credential that
-// could not be had: the observer runs under it too.
-func (s *Supervisor) up(ctx context.Context, cfg *config.Config) (string, error) {
+// An anchor that does not come up -- a start that fails, or one refused for good -- ends the
+// cycle, unless the observer runs beside it: then the daemon is kept, and with it the observer
+// and the inventory it holds, and the start's failure is handed back as anchorErr for the
+// watcher, which brings the anchor up when it can, as it rebuilds one that is lost, and gives
+// it up after rebuildRefusals refusals for good in a row, the start's counted among them. An
+// anchor that cannot come up never takes the observer down. A credential that could not be had
+// ends the cycle either way: the observer runs under it too.
+func (s *Supervisor) up(ctx context.Context, cfg *config.Config) (id string, anchorErr, err error) {
 	// Windows needs the driver beside anchord before an interface can exist, and it
 	// lives in the content-addressed set directory: an upgraded conflux extracts a new
 	// set with no wintun.dll in it, and a boot must not need somebody to run `up`.
 	if cfg.Mode == config.ModeTUN {
 		if err := wintun.Ensure(ctx, s.Dirs); err != nil {
-			return "", err
+			return "", nil, err
 		}
 	}
 
@@ -436,18 +439,18 @@ func (s *Supervisor) up(ctx context.Context, cfg *config.Config) (string, error)
 			s.report().Step("anchor %s is up", started.ID)
 		}
 
-		return started.ID, nil
+		return started.ID, nil, nil
 	case s.redecided():
 		// A start the decision no longer fits -- the first enrolment named a port only
 		// root may bind -- is one the next cycle makes with what it needs. Not wrapped, so a
 		// refusal for good does not count against the configuration.
-		return "", fmt.Errorf("%w: %v", errRespawn, err)
-	case observing && cfg.Anchor() && !Permanent(err):
-		s.report().Warn("the anchor did not come up, and the observer goes on without it until it does: %v", err)
+		return "", nil, fmt.Errorf("%w: %v", errRespawn, err)
+	case observing && cfg.Anchor():
+		s.report().Warn("the anchor did not come up, and the observer goes on without it: %v", err)
 
-		return "", nil
+		return "", err, nil
 	default:
-		return "", err
+		return "", nil, err
 	}
 }
 

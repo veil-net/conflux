@@ -22,7 +22,8 @@ import (
 // without a real daemon behind it. fakeAnchordEnv is "1" for a daemon that dies at
 // once, and "serve" for one that runs until it is signalled. fakeAnchorctlLogEnv,
 // when set, names a file the stand-in anchorctl appends each command it ran to,
-// fakeAnchorctlFailEnv a command it refuses, and fakeAnchorctlStatusEnv what its
+// fakeAnchorctlFailEnv a command it refuses, fakeAnchorctlRefuseEnv one it refuses for good, as
+// anchorctl refuses an argument vector, with exit 2, and fakeAnchorctlStatusEnv what its
 // status says: "running", or "none" for a daemon holding no anchor, which refuses a renewal
 // as anchord does one with no anchor to install it on. fakeAnchorctlObserverEnv
 // is the observer's row in it -- "running", "stopped", "failed", or none at all -- and
@@ -33,6 +34,7 @@ const (
 	fakeAnchorctlEnv         = "CONFLUX_TEST_FAKE_ANCHORCTL"
 	fakeAnchorctlLogEnv      = "CONFLUX_TEST_FAKE_ANCHORCTL_LOG"
 	fakeAnchorctlFailEnv     = "CONFLUX_TEST_FAKE_ANCHORCTL_FAIL"
+	fakeAnchorctlRefuseEnv   = "CONFLUX_TEST_FAKE_ANCHORCTL_REFUSE"
 	fakeAnchorctlStatusEnv   = "CONFLUX_TEST_FAKE_ANCHORCTL_STATUS"
 	fakeAnchorctlObserverEnv = "CONFLUX_TEST_FAKE_ANCHORCTL_OBSERVER"
 	fakeAnchorctlCaptureEnv  = "CONFLUX_TEST_FAKE_ANCHORCTL_NO_CAPTURE"
@@ -101,6 +103,10 @@ func fakeAnchorctl(args []string) int {
 		fmt.Fprintln(os.Stderr, "refused")
 
 		return 1
+	case os.Getenv(fakeAnchorctlRefuseEnv):
+		fmt.Fprintln(os.Stderr, "anchorctl: flag provided but not defined: -refused")
+
+		return 2
 	case "metrics":
 		fmt.Print(fakeMetrics)
 	case "start":

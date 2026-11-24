@@ -50,10 +50,10 @@ func startingEphemeral(t *testing.T) paths.Dirs {
 }
 
 // TestEphemeralAtSeesARunWhoseLockHasASecondName: anchord's account writes run/anchord/ and
-// can hard-link the run's serve.lock into it. Asked for by its own name, in a root the account
-// does not write, the lock still says whether the run is live or was killed: a second name is
-// no reason to read the root as holding no run, which would let uninstall pass a live run by,
-// and leave a killed one's root behind.
+// can hard-link the run's serve.lock into it, as anchor's socket lock. Asked for by its own
+// name, in a root the account does not write, the lock still says whether the run is live or
+// was killed: a second name is no reason to read the root as holding no run, which would let
+// uninstall pass a live run by, and leave a killed one's root behind.
 func TestEphemeralAtSeesARunWhoseLockHasASecondName(t *testing.T) {
 	root := t.TempDir()
 	d := paths.Dirs{Root: root}
@@ -63,12 +63,11 @@ func TestEphemeralAtSeesARunWhoseLockHasASecondName(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	account := filepath.Join(root, "run", "anchord")
-	if err := os.MkdirAll(account, 0o700); err != nil {
+	if err := os.MkdirAll(d.DaemonRun(), 0o700); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := os.Link(d.ServeLockFile(), filepath.Join(account, "anchord.sock.lock")); err != nil {
+	if err := os.Link(d.ServeLockFile(), d.Socket()+".lock"); err != nil {
 		t.Fatal(err)
 	}
 

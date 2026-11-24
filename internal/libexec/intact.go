@@ -103,7 +103,7 @@ func (t *Tools) digestsMatch() bool {
 
 // discard removes the set, under the extraction lock, so the next Ensure writes it afresh.
 func (t *Tools) discard(d paths.Dirs) error {
-	unlock, err := flock.Acquire(filepath.Join(d.Libexec(), ".lock"))
+	unlock, err := flock.Acquire(filepath.Join(d.Libexec(), extractionLock))
 	if err != nil {
 		return err
 	}

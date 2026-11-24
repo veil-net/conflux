@@ -38,6 +38,9 @@ import (
 // directory from one a crash left half-written.
 const completeMarker = ".complete"
 
+// extractionLock, in the bin directory, is held by whatever extracts a set or discards one.
+const extractionLock = ".lock"
+
 // smokeTimeout bounds the one-off check that the extracted binary actually runs.
 const smokeTimeout = 10 * time.Second
 
@@ -81,7 +84,7 @@ func Ensure(d paths.Dirs) (*Tools, error) {
 		return nil, fmt.Errorf("create %s: %w", root, err)
 	}
 
-	unlock, err := flock.Acquire(filepath.Join(root, ".lock"))
+	unlock, err := flock.Acquire(filepath.Join(root, extractionLock))
 	if err != nil {
 		return nil, err
 	}
@@ -382,7 +385,7 @@ func Sweep(t *Tools) {
 		switch name := e.Name(); {
 		case name == keep:
 			tidySet(t)
-		case name == ".lock" && e.Type().IsRegular():
+		case name == extractionLock && e.Type().IsRegular():
 		case e.IsDir() && young(e, recent):
 		default:
 			_ = os.RemoveAll(filepath.Join(root, name))

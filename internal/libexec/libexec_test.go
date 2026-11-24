@@ -214,7 +214,7 @@ func TestSweepKeepsOnlyWhatIsConfluxs(t *testing.T) {
 		}
 	}
 
-	files := []string{".lock", "stray", "own/anchord", "own/anchorctl", "own/" + completeMarker, "own/" + verifiedMarker,
+	files := []string{extractionLock, "stray", "own/anchord", "own/anchorctl", "own/" + completeMarker, "own/" + verifiedMarker,
 		"own/wintun.dll", "own/stray"}
 	for _, name := range files {
 		if err := os.WriteFile(filepath.Join(root, name), nil, 0o600); err != nil {
@@ -228,7 +228,7 @@ func TestSweepKeepsOnlyWhatIsConfluxs(t *testing.T) {
 
 	for name, kept := range map[string]bool{
 		"own": true, "recent": true, ".staging-fresh": true, "old": false, ".staging-stale": false,
-		".lock": true, "stray": false, "own/anchord": true, "own/anchorctl": true, "own/" + completeMarker: true,
+		extractionLock: true, "stray": false, "own/anchord": true, "own/anchorctl": true, "own/" + completeMarker: true,
 		"own/" + verifiedMarker: true, "own/wintun.dll": true, "own/stray": false,
 	} {
 		if _, err := os.Stat(filepath.Join(root, name)); (err == nil) != kept {

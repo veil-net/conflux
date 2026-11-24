@@ -112,6 +112,13 @@ func TestParseStatusReadsTheObserver(t *testing.T) {
 	}
 }
 
+// TestParseStartedReadsTheID: the AnchorID comes from `anchorctl start`'s own first row.
+func TestParseStartedReadsTheID(t *testing.T) {
+	if got := ParseStarted(startedOutput).ID; got != wantID {
+		t.Errorf("ParseStarted(%q).ID = %q, want %q", startedOutput, got, wantID)
+	}
+}
+
 // TestParseStartedIsResilient: garbage must not panic, and must not invent an ID.
 func TestParseStartedIsResilient(t *testing.T) {
 	for _, in := range []string{"", "\n", "anchor", "some unrelated error text", "anchor \n", "anchor x y\n"} {

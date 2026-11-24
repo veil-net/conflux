@@ -24,7 +24,8 @@ type Manager interface {
 	// start anything.
 	Install(exe string, args ...string) error
 
-	// Remove deregisters it and deletes what registering it wrote, its log included.
+	// Remove deregisters it and deletes what registering it wrote; what the service wrote to
+	// the system's log stays, the system's.
 	// Each step tolerates its own failure, so a half-removed service can always be
 	// finished off.
 	Remove() error

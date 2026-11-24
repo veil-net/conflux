@@ -161,8 +161,8 @@ func withService(scAccess, access uint32, f func(*mgr.Service) error) error {
 }
 
 // stopService stops the service and returns once its process has gone, so that what
-// comes next -- a start, the deletion, removing the directory conflux.exe and its log are
-// in -- never meets the old one still running. Already stopped is success.
+// comes next -- a start, the deletion, removing the directory conflux.exe and anchord.exe
+// are in -- never meets the old one still running. Already stopped is success.
 //
 // The SCM reports Stopped from inside the process, before it exits: waiting for the state
 // alone would race the process for its own files. Its handle is opened before the stop is

@@ -350,7 +350,7 @@ slow or keeps failing.
 
 `conflux down`, a restart and `uninstall` return once the service's process has exited, not
 when the SCM first reports it stopped — which it does from inside the process, while
-`conflux.exe`, `anchord.exe` and the log are still open. `down` on a service that is already
+`conflux.exe` and `anchord.exe` are still open. `down` on a service that is already
 stopped succeeds. Reading the service's state, as `conflux status` does, needs no more
 access than any account has.
 

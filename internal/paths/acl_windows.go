@@ -161,8 +161,8 @@ func ownership(path string) (*windows.SID, windows.SECURITY_DESCRIPTOR_CONTROL, 
 // What it holds is held to the same rule before it is repaired. Until the root has its
 // own DACL it has %ProgramData%'s, under which Users may create folders in it, and a
 // folder another account made there keeps that owner through the new DACL -- an owner
-// can always grant itself the rest -- so the service would go on writing its log or its
-// token into a place that account controls.
+// can always grant itself the rest -- so the service would go on writing its token or its
+// state into a place that account controls.
 func secure(dir string) error {
 	owner, control, err := ownership(dir)
 	if err != nil {

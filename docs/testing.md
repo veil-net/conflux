@@ -54,6 +54,11 @@ tests needing them skipped: a job that provides the binaries and then reports "n
 anchor pair" has lost them, and saying so is the difference between a gate and a
 decoration. On macOS and Windows, where other tests skip for the platform, the gate
 looks for that reason rather than a list of names a new test would be missing from.
+A test that never runs is green too, so every job that tests also holds the tests that
+ran, by name, to the ones `go test -list . ./...` says the module defines there, benchmarks
+aside: on Linux each must have passed, and elsewhere passed or skipped for the platform. A
+package whose tests stop running, a `TestMain` that returns before `m.Run` among them,
+fails the job rather than passing it with none.
 
 **The argv goldens**, in `internal/anchorctl/testdata/argv/`, hold one file per
 scenario, one argument per line. Argv construction is where a wrapper's bugs live and
@@ -279,10 +284,10 @@ why it is nonetheless contained.
 
 | job | machine | what it runs |
 |---|---|---|
-| `linux` | veilnet-dev | the whole suite under `-race` and `fips140=only` with the real binaries and nothing skipped; `make cross`; `make buildcheck`: the digests `make build` stamps are the pair's own, and the built conflux runs in FIPS 140-3 mode, its integrity check passing, and refuses to run with the mode off; `conflux cert probe` handshaking, in that mode, with every host conflux reaches (both APIs, GitHub's API, web and asset hosts, wintun.net) |
+| `linux` | veilnet-dev | the whole suite under `-race` and `fips140=only` with the real binaries, nothing skipped and every test `go test -list` names passing; `make cross`; `make buildcheck`: the digests `make build` stamps are the pair's own, and the built conflux runs in FIPS 140-3 mode, its integrity check passing, and refuses to run with the mode off; `conflux cert probe` handshaking, in that mode, with every host conflux reaches (both APIs, GitHub's API, web and asset hosts, wintun.net) |
 | `integration` | GitHub Ubuntu | `test/preflight.sh`, then `make -j2 -O service-test integration` — `dist` with the size gate for every target and the image, once, then the boot service, three nodes and an ephemeral fourth against the live API of the base's tree (`$VEILNET_API`) side by side |
 | `bsd` | FreeBSD 15.1 and OpenBSD 7.9, each a VM on GitHub Ubuntu | `install.sh` against the published `latest`, with the base system's own download and digest tools, run twice; then `test/service-bsd.sh` against `rc.subr`, with that platform's own pair; FreeBSD's conflux in FIPS 140-3 mode, making and verifying an ML-DSA certificate; OpenBSD's without the module, its `conflux cert` refusing with 70 |
-| `platforms` | GitHub macOS, Windows and Linux arm64 | the suite under `fips140=only` with that platform's own pair, built as a release is (`CGO_ENABLED=0`, `-trimpath`), the tests that need the pair included; `make buildcheck` on that platform's own build; on macOS and Windows, `test/service-host.sh` with that build, against the real service manager; on Windows, that the pinned wintun digest is the published one; then the install scripts against the published `latest`, run as a person runs them and then again: `install.sh` on macOS and Linux arm64, `install.ps1` under Windows PowerShell 5.1 and then PowerShell 7 |
+| `platforms` | GitHub macOS, Windows and Linux arm64 | the suite under `fips140=only` with that platform's own pair, built as a release is (`CGO_ENABLED=0`, `-trimpath`), the tests that need the pair included and every test `go test -list` names run; `make buildcheck` on that platform's own build; on macOS and Windows, `test/service-host.sh` with that build, against the real service manager; on Windows, that the pinned wintun digest is the published one; then the install scripts against the published `latest`, run as a person runs them and then again: `install.sh` on macOS and Linux arm64, `install.ps1` under Windows PowerShell 5.1 and then PowerShell 7 |
 
 `linux` is one job because veilnet-dev is one machine with one runner process: separate
 jobs would queue anyway, each paying a checkout and a fetch. Its fetch goes through the

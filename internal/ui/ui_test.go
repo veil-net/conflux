@@ -27,6 +27,25 @@ func TestAskReadsLineByLine(t *testing.T) {
 	}
 }
 
+// TestConfirmTakesOnlyAnExplicitYes: [y/N] defaults to no. Enter alone, end of input and any
+// other word are a no; only y or yes, in any case, is a yes -- the question uninstall asks
+// before it deletes the only copy of an identity, and update before it crosses trees.
+func TestConfirmTakesOnlyAnExplicitYes(t *testing.T) {
+	in, out := In, Out
+	t.Cleanup(func() { In, Out = in, out })
+
+	for answer, want := range map[string]bool{
+		"y\n": true, "Y\n": true, "yes\n": true, "YES\n": true, " y \n": true,
+		"n\n": false, "\n": false, "no\n": false, "maybe\n": false, "": false,
+	} {
+		In, Out = strings.NewReader(answer), io.Discard
+
+		if got := Confirm("Go on?"); got != want {
+			t.Errorf("Confirm answered %q = %v, want %v", answer, got, want)
+		}
+	}
+}
+
 // TestUntil: the last hour of a credential reads in minutes rather than as "0h", which
 // said nothing was left while something was.
 func TestUntil(t *testing.T) {

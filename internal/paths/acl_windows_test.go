@@ -57,7 +57,7 @@ func TestEnsureAllTakesBackAWidenedDACL(t *testing.T) {
 
 	widen(t, d.Root)
 
-	if adminsAlone(d.Root) {
+	if OnlyAdmins(d.Root) {
 		t.Fatal("a DACL granting Users reads as SYSTEM's and the Administrators' alone")
 	}
 
@@ -65,7 +65,7 @@ func TestEnsureAllTakesBackAWidenedDACL(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !adminsAlone(d.Root) {
+	if !OnlyAdmins(d.Root) {
 		t.Error("EnsureAll left the root granting Users")
 	}
 }
@@ -112,7 +112,7 @@ func TestAWidenedDACLIsTakenBackBesideAnchordsFiles(t *testing.T) {
 		t.Fatalf("EnsureAll beside anchord's own files: %v", err)
 	}
 
-	if !adminsAlone(d.Root) {
+	if !OnlyAdmins(d.Root) {
 		t.Error("EnsureAll left the root granting Users")
 	}
 
@@ -158,13 +158,6 @@ func widen(t *testing.T, path string) {
 		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, acl, nil); err != nil {
 		t.Fatal(err)
 	}
-}
-
-// adminsAlone reports whether path's DACL grants SYSTEM and the Administrators alone.
-func adminsAlone(path string) bool {
-	sd, _, err := ownership(path)
-
-	return err == nil && grantsAdminsAlone(sd)
 }
 
 // giveTo makes the well-known account sid the owner of path: naming an owner other than

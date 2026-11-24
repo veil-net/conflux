@@ -242,12 +242,15 @@ func TestTheTailHoldsTheLastWords(t *testing.T) {
 	}
 }
 
+// TestLineWriter: what is written is handed on a line at a time, its end taken off -- a newline,
+// or a CRLF, its CR and its newline written apart among them -- a line written in pieces handed on
+// as one, what is left of the last flushed, and a line that never ends handed on rather than held.
 func TestLineWriter(t *testing.T) {
 	var got []string
 
 	w := &LineWriter{Emit: func(l string) { got = append(got, l) }}
 
-	for _, chunk := range []string{"one\ntw", "o\r\nthr", "ee"} {
+	for _, chunk := range []string{"one\ntw", "o\r", "\nthr", "ee"} {
 		if _, err := w.Write([]byte(chunk)); err != nil {
 			t.Fatal(err)
 		}

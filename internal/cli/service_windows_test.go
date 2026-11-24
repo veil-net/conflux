@@ -68,9 +68,9 @@ func TestTheServiceReportsStoppedOnce(t *testing.T) {
 }
 
 // TestTheEventLogTakesALineAnEvent: what the service says reaches the event log a line an event,
-// each line as anchord's are split (daemon.LineWriter): its CRLF taken off, an empty one written
-// as none, one written in pieces as one, and one that never ends written out rather than held.
-// Whichever goroutine speaks writes to it, so lines written at once each arrive whole.
+// each line as anchord's are split (daemon.LineWriter, whose own test holds its line ends, a line
+// in pieces and one that never ends), and an empty one written as none. Whichever goroutine speaks
+// writes to it, so lines written at once each arrive whole.
 func TestTheEventLogTakesALineAnEvent(t *testing.T) {
 	var got []string
 
@@ -84,38 +84,14 @@ func TestTheEventLogTakesALineAnEvent(t *testing.T) {
 		return nil
 	})
 
-	for _, c := range []struct {
-		name   string
-		writes []string
-		want   []string
-	}{
-		{"CRLF", []string{"one\r\ntwo\r\n"}, []string{"one", "two"}},
-		{"an empty line", []string{"one\n\r\n\ntwo\n"}, []string{"one", "two"}},
-		{"a line in pieces", []string{"on", "e\r", "\ntw", "o\n"}, []string{"one", "two"}},
-	} {
-		got = nil
+	const blank = "one\n\r\n\ntwo\n"
 
-		for _, p := range c.writes {
-			if n, err := w.Write([]byte(p)); n != len(p) || err != nil {
-				t.Fatalf("%s: Write = %d, %v", c.name, n, err)
-			}
-		}
-
-		if !slices.Equal(got, c.want) {
-			t.Errorf("%s: %q made events %q, want %q", c.name, c.writes, got, c.want)
-		}
+	if n, err := w.Write([]byte(blank)); n != len(blank) || err != nil {
+		t.Fatalf("Write = %d, %v", n, err)
 	}
 
-	// A line that never ends, far past any bound, is written out with no end in sight.
-	got = nil
-	endless := strings.Repeat("x", 1<<20)
-
-	if _, err := w.Write([]byte(endless)); err != nil {
-		t.Fatal(err)
-	}
-
-	if strings.Join(got, "") != endless {
-		t.Errorf("a line with no end was held: %d events, %d bytes of %d written out", len(got), len(strings.Join(got, "")), len(endless))
+	if want := []string{"one", "two"}; !slices.Equal(got, want) {
+		t.Errorf("%q made events %q, want %q: an empty line is no event", blank, got, want)
 	}
 
 	// Lines written at once, from many goroutines: every one an event of its own, whole.

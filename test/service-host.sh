@@ -84,9 +84,12 @@ else
     || { sc.exe qfailure conflux >&2; fail "the recovery actions are not the three restarts"; }
   # Its own SID, and nobody but SYSTEM and the Administrators allowed to start, stop or change it.
   grep -q 'UNRESTRICTED' <<<"$(sc.exe qsidtype conflux)" || { sc.exe qsidtype conflux >&2; fail "the service has no SID of its own"; }
+  # The DACL alone: sdshow prints the SACL after it, the SCM's default audit entry, which
+  # conflux sets no part of.
   sd=$(sc.exe sdshow conflux | tr -d '\r\n ')
-  [ "$sd" = 'D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)' ] \
-    || fail "the service's DACL is $sd"
+  dacl=${sd%%S:*}
+  [ "$dacl" = 'D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)' ] \
+    || fail "the service's DACL is $dacl (of $sd)"
 fi
 
 say "status: registered, nothing to start"

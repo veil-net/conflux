@@ -170,18 +170,13 @@ func offline(target string, cause error) error {
 		cause, Version, runtime.GOARCH, target)
 }
 
-// DeleteDriver removes the Wintun driver from the machine through the library conflux placed
-// in d's set directory, for `conflux uninstall`: WintunDeleteDriver removes it only while no
-// adapter, conflux's or another program's, is in use, so a driver another program still
-// relies on stays. Nothing when no library was ever placed.
+// DeleteDriver removes the Wintun driver from the machine through a library conflux placed
+// under d, for `conflux uninstall`: WintunDeleteDriver removes it only while no adapter,
+// conflux's or another program's, is in use, so a driver another program still relies on
+// stays. Nothing when no library was ever placed.
 func DeleteDriver(d paths.Dirs) error {
-	tools, err := libexec.Extracted(d)
-	if err != nil {
-		return nil
-	}
-
-	path := filepath.Join(tools.Dir, DLLName)
-	if !present(path) {
+	path := driverLibrary(d)
+	if path == "" {
 		return nil
 	}
 
@@ -201,4 +196,23 @@ func DeleteDriver(d paths.Dirs) error {
 	}
 
 	return nil
+}
+
+// driverLibrary is a library conflux placed in any set directory under d's bin, or "" where
+// there is none. Any set's, not only this build's: the conflux running uninstall may carry
+// another pair than the one the supervisor extracted -- an upgrade it has not restarted onto,
+// or none at all -- and every set's library is the one pinned release.
+func driverLibrary(d paths.Dirs) string {
+	sets, err := os.ReadDir(d.Libexec())
+	if err != nil {
+		return ""
+	}
+
+	for _, set := range sets {
+		if path := filepath.Join(d.Libexec(), set.Name(), DLLName); set.IsDir() && present(path) {
+			return path
+		}
+	}
+
+	return ""
 }

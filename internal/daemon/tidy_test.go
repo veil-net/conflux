@@ -79,6 +79,34 @@ func TestTidyKeepsOnlyWhatIsConfluxsAndAnchors(t *testing.T) {
 	}
 }
 
+// TestTidyPutsTheRootsFilesBack: the root's own files (rootFiles) are the supervisor's alone
+// again once the root is tidied, whatever somebody changed since: on Unix their modes, 0600 and
+// 0700 for the copy of conflux the service runs, and on Windows SYSTEM's and the Administrators',
+// a grant to Users taken back.
+func TestTidyPutsTheRootsFilesBack(t *testing.T) {
+	s := &Supervisor{Dirs: dirs(t)}
+
+	files := rootFiles(s.Dirs)
+
+	for _, f := range files {
+		if err := config.WriteFileAtomic(f.path, []byte("conflux's"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		widen(t, f.path)
+	}
+
+	if err := s.tidyRoot(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, f := range files {
+		if !restored(f.path, f.mode) {
+			t.Errorf("%s was not given back its mode, %#o, or to SYSTEM and the Administrators", f.path, f.mode)
+		}
+	}
+}
+
 // TestAStartThatStopsPutsTheRootBack: the root is put back at every start, one that then stops
 // included -- nothing configured, which exits 78, and a conflux.json refused for good, which exits
 // 70: what is neither conflux's nor anchor's goes, and the root's own files get their modes, and
@@ -125,7 +153,7 @@ func TestAStartThatStopsPutsTheRootBack(t *testing.T) {
 			}
 
 			for path, content := range files {
-				if !restored(path) {
+				if !restored(path, 0o600) {
 					t.Errorf("%s was not given back its mode, or to SYSTEM and the Administrators", path)
 				}
 

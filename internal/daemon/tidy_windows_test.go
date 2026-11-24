@@ -1,42 +1,13 @@
 package daemon
 
 import (
+	"os"
 	"testing"
 
 	"golang.org/x/sys/windows"
 
-	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
 )
-
-// TestTidyGivesTheRootsFilesBackToTheAdministrators: on Windows the root's own files are
-// SYSTEM's and the Administrators' again at a start, as on Unix they get their modes back,
-// whatever was granted on them since: a grant to Users on the configuration, and on the copy
-// of conflux the service runs, is taken back.
-func TestTidyGivesTheRootsFilesBackToTheAdministrators(t *testing.T) {
-	s := &Supervisor{Dirs: dirs(t)}
-	d := s.Dirs
-
-	files := []string{d.ConfigFile(), d.ServiceExecutable()}
-
-	for _, path := range files {
-		if err := config.WriteFileAtomic(path, []byte("conflux's"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-
-		widen(t, path)
-	}
-
-	if err := s.tidyRoot(); err != nil {
-		t.Fatal(err)
-	}
-
-	for _, path := range files {
-		if !restored(path) {
-			t.Errorf("%s still grants Users, or belongs to another account, after the root was tidied", path)
-		}
-	}
-}
 
 // widen grants Users read access to path, as somebody might since.
 func widen(t *testing.T, path string) {
@@ -56,8 +27,9 @@ func widen(t *testing.T, path string) {
 	}
 }
 
-// restored reports whether path is SYSTEM's and the Administrators' alone again.
-func restored(path string) bool { return paths.OnlyAdmins(path) }
+// restored reports whether path is SYSTEM's and the Administrators' alone again, whatever mode
+// it has on Unix.
+func restored(path string, _ os.FileMode) bool { return paths.OnlyAdmins(path) }
 
 // stuck holds the file at path open, without share-delete, for the rest of the test: Windows
 // removes no file held so.

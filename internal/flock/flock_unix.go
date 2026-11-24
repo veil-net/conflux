@@ -54,6 +54,10 @@ func lock(path string, how int) (func(), bool, error) {
 	}, true, nil
 }
 
+// lockMax bounds a lock file Held asks after. Neither anchord nor the supervisor writes
+// anything in its lock; config.Untrusted takes a bound, and a page is more than any lock holds.
+const lockMax = 4 << 10
+
 // Held reports whether somebody holds the lock on path, a file in a directory another
 // account may write: anchor's lock beside a socket that anchord, running as its own
 // account, made.
@@ -61,8 +65,12 @@ func lock(path string, how int) (func(), bool, error) {
 // So it is asked without trusting the file. It is opened as every such file is
 // (config.OpenUntrusted), to read and never created, and a symlink, a FIFO or a device is
 // refused rather than opened, so the question cannot be turned into root creating,
-// truncating or blocking on whatever the name was made to point at. A file that is not
-// there is held by nobody.
+// truncating or blocking on whatever the name was made to point at. And it is held to what
+// such a file must be (config.Untrusted): a regular file with one name. A second name is a
+// hard link the account may have made to a lock of root's -- the supervisor's serve.lock,
+// held for as long as it serves -- whose answer would be root's, and which on OpenBSD the
+// orphan reap would take for anchord serving the socket; so it is refused, not asked
+// about. A file that is not there is held by nobody.
 func Held(path string) (bool, error) {
 	f, err := os.OpenFile(path, config.OpenUntrusted, 0)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -74,8 +82,8 @@ func Held(path string) (bool, error) {
 	}
 	defer f.Close()
 
-	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
-		return false, fmt.Errorf("the lock %s is not a regular file", path)
+	if fi, err := f.Stat(); err != nil || !config.Untrusted(fi, lockMax) {
+		return false, fmt.Errorf("the lock %s is not a regular file with one name", path)
 	}
 
 	switch err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); {

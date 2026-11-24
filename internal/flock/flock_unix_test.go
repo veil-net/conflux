@@ -52,3 +52,31 @@ func TestHeldRefusesWhatIsNotALockFile(t *testing.T) {
 		t.Fatal("asking about a FIFO blocked")
 	}
 }
+
+// TestHeldRefusesALockWithASecondName: anchord's account can hard-link a file of root's into
+// its own directory -- the supervisor's serve.lock, which root holds for as long as it serves --
+// under the name of its socket's lock. Asked there, the answer would be root's lock, and on
+// OpenBSD the orphan reap takes that answer for anchord serving the socket. A lock file with a
+// second name is refused, by either name, rather than reported held.
+func TestHeldRefusesALockWithASecondName(t *testing.T) {
+	dir := t.TempDir()
+
+	serve := filepath.Join(dir, "serve.lock")
+
+	unlock, err := Acquire(serve)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+
+	link := filepath.Join(dir, "sock.lock")
+	if err := os.Link(serve, link); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{link, serve} {
+		if held, err := Held(path); err == nil {
+			t.Errorf("Held(%s), a lock with a second name, = %v, nil; want it refused", filepath.Base(path), held)
+		}
+	}
+}

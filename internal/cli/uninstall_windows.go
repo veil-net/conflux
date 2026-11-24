@@ -14,6 +14,7 @@ import (
 	"golang.org/x/sys/windows/registry"
 
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/service"
 )
 
 // removeInstallation removes what install.ps1 put in place: the directory it installed
@@ -25,14 +26,7 @@ func removeInstallation() error {
 
 	errs := []error{removePathEntry(dir)}
 
-	self, err := os.Executable()
-	if err == nil {
-		if resolved, rerr := filepath.EvalSymlinks(self); rerr == nil {
-			self = resolved
-		}
-	}
-
-	if err == nil && strings.EqualFold(filepath.Dir(self), dir) {
+	if self, err := service.Executable(); err == nil && strings.EqualFold(filepath.Dir(self), dir) {
 		return errors.Join(append(errs, removeAfterExit(dir))...)
 	}
 

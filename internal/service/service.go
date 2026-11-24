@@ -72,7 +72,7 @@ func New() Manager { return newManager() }
 // the old one keeps it. Windows will not replace the image of a running process but will
 // rename it, so there the old copy is moved aside first and removed by a later Place.
 func Place(d paths.Dirs) (string, error) {
-	src, err := executable()
+	src, err := Executable()
 	if err != nil {
 		return "", err
 	}
@@ -101,9 +101,9 @@ func PlaceFrom(d paths.Dirs, src string) (string, error) {
 	return dst, nil
 }
 
-// executable is the file this process runs, symlinks followed: the file a copy is
-// made of.
-func executable() (string, error) {
+// Executable is the file this process runs, symlinks followed: the file a copy is made of,
+// and the one uninstall on Windows asks whether it is the installed conflux.
+func Executable() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", fmt.Errorf("find this executable: %w", err)

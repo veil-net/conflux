@@ -15,7 +15,7 @@ import (
 func TestPlaceCopiesWhatTheServiceRuns(t *testing.T) {
 	d := pathstest.Root(t)
 
-	src, err := executable()
+	src, err := Executable()
 	if err != nil {
 		t.Fatal(err)
 	}

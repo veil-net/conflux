@@ -13,9 +13,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/update"
 )
 
 // Manager is one platform's boot manager.
@@ -85,15 +85,16 @@ func Place(d paths.Dirs) (string, error) {
 // reports as its executable after that is not something every platform agrees on.
 func PlaceFrom(d paths.Dirs, src string) (string, error) {
 	dst := d.ServiceExecutable()
-	aside := dst + ".old"
 
-	_ = os.Remove(aside) // a copy a service ran until the last Place; still running is fine
+	// The copy a service ran until the last Place, which Windows had moved aside; one still
+	// running is fine.
+	_ = os.Remove(dst + ".old")
 
 	if src == dst || sameFile(src, dst) {
 		return dst, nil
 	}
 
-	if err := copyExecutable(src, dst, aside); err != nil {
+	if err := copyExecutable(src, dst); err != nil {
 		return "", fmt.Errorf("place this conflux at %s for the boot service: %w", dst, err)
 	}
 
@@ -161,7 +162,7 @@ func sameFile(a, b string) bool {
 }
 
 // copyExecutable writes src to dst through a file beside it, renamed into place.
-func copyExecutable(src, dst, aside string) error {
+func copyExecutable(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
@@ -197,21 +198,7 @@ func copyExecutable(src, dst, aside string) error {
 		return err
 	}
 
-	if err := os.Rename(tmp.Name(), dst); err == nil || runtime.GOOS != "windows" {
-		return err
-	}
-
-	// The running service's image: moved aside, which Windows allows, and replaced.
-	if err := os.Rename(dst, aside); err != nil {
-		return err
-	}
-
-	if err := os.Rename(tmp.Name(), dst); err != nil {
-		// The service is left its old copy rather than none at all.
-		_ = os.Rename(aside, dst)
-
-		return err
-	}
-
-	return nil
+	// Renamed into place, or on Windows, over the running service's image, which is moved
+	// aside first, to dst.old; the old copy is put back if the new one cannot go in.
+	return update.Replace(tmp.Name(), dst)
 }

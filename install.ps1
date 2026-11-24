@@ -63,7 +63,10 @@
 
     $repo = 'veil-net/conflux'
     $tag = if ($env:CONFLUX_VERSION) { $env:CONFLUX_VERSION } else { 'latest' }
-    $dir = Join-Path $env:ProgramFiles 'conflux'
+    # Program Files as Windows keeps it, the known folder, which is where conflux looks for itself
+    # to update and uninstall: $env:ProgramFiles is the environment's, and whoever started this
+    # session could have pointed it anywhere.
+    $dir = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'conflux'
     $exe = Join-Path $dir 'conflux.exe'
     $asset = "conflux-windows-$arch.exe"
     $base = "https://github.com/$repo/releases/download/$tag"

@@ -438,7 +438,9 @@ Removes everything conflux put on the machine, and leaves no trace of it:
 - the installed executable: `/usr/local/bin/conflux` and the `/usr/bin/conflux` link
   `install.sh` made to it, or `%ProgramFiles%\conflux` and its entry on the machine's `Path`.
   A conflux running from anywhere else is not removed. On Windows the directory goes a few
-  seconds after `uninstall` exits, since a running program cannot delete itself.
+  seconds after `uninstall` exits, since a running program cannot delete itself. It goes last,
+  and only when every step before it succeeded: one that fails is named, exit 1, and conflux is
+  kept, so that `conflux uninstall` can be run again to finish once it is put right.
 
 What the service wrote to the journal, syslog or event log stays, as the system's. Refused
 while an ephemeral run is live, whose account goes too. Asks first, because there is no other

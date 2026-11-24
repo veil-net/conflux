@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -333,10 +334,15 @@ func runUninstall(_ context.Context, args []string) int {
 	// The account anchord ran as, once nothing runs as it, if conflux made it.
 	errs = append(errs, uninstallAccounts())
 
-	// Last, what the install script put in place: the conflux on PATH, which may be this one.
-	errs = append(errs, uninstallInstallation())
-
+	// conflux itself is what finishes a removal that failed part way, so it stays until
+	// everything before it is gone.
 	if err := errors.Join(errs...); err != nil {
+		return fail(fmt.Errorf("%w\n  conflux itself was kept, at %s, so that conflux uninstall can be run again to finish",
+			err, paths.InstalledExecutable()))
+	}
+
+	// Last, what the install script put in place: the conflux on PATH, which may be this one.
+	if err := uninstallInstallation(); err != nil {
 		return fail(err)
 	}
 

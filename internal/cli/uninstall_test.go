@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -179,5 +180,36 @@ func TestUninstallReachesTheMachineOnlyThroughItsSeams(t *testing.T) {
 
 	if !accounts || !installation {
 		t.Errorf("uninstall went past its seams: accounts %v, installation %v", accounts, installation)
+	}
+}
+
+// failingRemove is a registered boot service whose removal fails.
+type failingRemove struct{ noService }
+
+func (failingRemove) Remove() error { return errors.New("systemctl disable failed") }
+
+// TestAFailedUninstallKeepsConflux: the installed conflux is what finishes an uninstall that
+// failed part way, so a step that fails keeps it, and the error says so.
+func TestAFailedUninstallKeepsConflux(t *testing.T) {
+	var installation bool
+
+	was := uninstallInstallation
+	uninstallInstallation = func() error { installation = true; return nil }
+
+	t.Cleanup(func() { uninstallInstallation = was })
+
+	withServices(t, failingRemove{})
+	asRoot(t, true)
+
+	t.Cleanup(paths.UseRoot(t.TempDir()))
+
+	_, errOut, code := capture(t, "uninstall", "--yes")
+	if code != ExitError || installation {
+		t.Errorf("uninstall --yes with a removal that fails exited %d, removing the installed conflux: %v\n%s",
+			code, installation, errOut)
+	}
+
+	if !strings.Contains(errOut, "systemctl disable failed") || !strings.Contains(errOut, "conflux uninstall") {
+		t.Errorf("the failed uninstall does not say what failed and that conflux was kept to finish it:\n%s", errOut)
 	}
 }

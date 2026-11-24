@@ -238,6 +238,10 @@ A fourth node, D, runs **ephemeral** ([ephemeral.md](ephemeral.md)), and enrols 
 - `proxy --ephemeral --manifest -`, from an alpha manifest piped in, is killed with SIGKILL,
   and its anchord must go with it: the parent-death signal it was started with. Started again
   on the same credential, the run clears what the killed one left and comes up.
+- While that run is live, `uninstall --yes` is refused, exit 2, saying an ephemeral anchor is
+  running, and leaves the run, its anchord, its root, the `conflux-ephemeral` account and
+  conflux itself as they were. Once the run is stopped with SIGINT, `uninstall --yes` removes
+  the account.
 
 Note what discovery cannot do, and anchor's own `docs/discovery.md` is the reference:
 the probe is sealed under the realm's **root public key**, which a node only holds after

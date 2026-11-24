@@ -80,13 +80,6 @@ func serveRelease(t *testing.T, body []byte, exe string) *[]string {
 	return &asked
 }
 
-func TestUpdateTakesNoArguments(t *testing.T) {
-	_, errOut, code := capture(t, "update", "1.2.0")
-	if code != ExitUsage || !strings.Contains(errOut, "takes no arguments") {
-		t.Errorf("update 1.2.0 exited %d: %s", code, errOut)
-	}
-}
-
 func TestUpdateSaysSoWhenThisIsTheRelease(t *testing.T) {
 	exe := filepath.Join(t.TempDir(), "conflux")
 	body := []byte("\x7fELF the release's own conflux")

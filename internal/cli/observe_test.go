@@ -60,14 +60,6 @@ func TestObservingTakesATaintAndAnAPI(t *testing.T) {
 	}
 }
 
-func TestObserveTakesNoArguments(t *testing.T) {
-	_, errOut, code := capture(t, "observe", "now")
-
-	if code != ExitUsage || !strings.Contains(errOut, "takes no arguments") {
-		t.Errorf("exited %d, saying:\n%s", code, errOut)
-	}
-}
-
 // TestObserveIsRefusedWhereThereIsNoCapture: on the BSDs, where anchor has nothing to
 // capture with, conflux observe and --observe say so before anything is asked or written; and
 // where there is a capture, neither is refused for it.

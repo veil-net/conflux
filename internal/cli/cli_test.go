@@ -92,19 +92,6 @@ func TestStartRefusesAnchorctlFlags(t *testing.T) {
 	}
 }
 
-// TestStartRefusesArguments: a positional is not conflux's start either.
-func TestStartRefusesArguments(t *testing.T) {
-	_, errOut, code := capture(t, "start", "somewhere")
-
-	if code != ExitUsage {
-		t.Errorf("conflux start somewhere exited %d, want %d", code, ExitUsage)
-	}
-
-	if !strings.Contains(errOut, "takes no arguments") {
-		t.Errorf("should say it takes no arguments; it said:\n%s", errOut)
-	}
-}
-
 // TestProxyRefusesAnchorctlFlags: the ambiguous case is explained, never guessed.
 func TestProxyRefusesAnchorctlFlags(t *testing.T) {
 	for _, args := range [][]string{
@@ -227,9 +214,10 @@ func TestUsageIsOneStream(t *testing.T) {
 // TestAMistakeIsSaidOnStderr: a flag a command does not take, an argument too many or too few,
 // or a flag it cannot do without, is a mistake, said on stderr with the usage beneath it, which
 // leaves stdout to what the command was asked for. -h alone is answered on stdout
-// (TestUsageIsOneStream). An argument given to a command that takes flags alone is one:
-// `sudo conflux up mynet`, --taint forgotten, would otherwise mint a network of its own. Not
-// root, so a command that went on past its refusal is refused for privilege, not run.
+// (TestUsageIsOneStream), and an argument given to a command that takes flags alone is
+// TestAStrayArgumentIsNamedAboveTheUsage's, but for one with its flags after it, which does not
+// make it a flag's: `sudo conflux up mynet --taint mynet` would otherwise mint a network of its
+// own. Not root, so a command that went on past its refusal is refused for privilege, not run.
 func TestAMistakeIsSaidOnStderr(t *testing.T) {
 	asRoot(t, false)
 
@@ -240,13 +228,7 @@ func TestAMistakeIsSaidOnStderr(t *testing.T) {
 		{[]string{"down", "--bogus"}, "flag provided but not defined: -bogus"},
 		{[]string{"cert", "verify"}, "conflux cert verify —"},
 		{[]string{"enrol"}, "conflux enrol —"},
-		{[]string{"enrol", "--manifest", "node.b64", "stray"}, "conflux enrol —"},
-		{[]string{"up", "mynet"}, "conflux up —"},
 		{[]string{"up", "mynet", "--taint", "mynet"}, "conflux up —"},
-		{[]string{"install", "now"}, "conflux install —"},
-		{[]string{"down", "now"}, "conflux down —"},
-		{[]string{"uninstall", "yes"}, "conflux uninstall —"},
-		{[]string{"serve", "foreground"}, "conflux serve —"},
 		{[]string{"cert"}, "conflux cert —"},
 		{[]string{"cert", "ca"}, "conflux cert ca —"},
 		{[]string{"cert", "p12"}, "conflux cert p12 —"},
@@ -260,16 +242,22 @@ func TestAMistakeIsSaidOnStderr(t *testing.T) {
 
 // TestAStrayArgumentIsNamedAboveTheUsage: every command that takes no argument refuses one the
 // same way -- the argument named on a line of its own, the usage beneath it, both on stderr --
-// whichever verb was given it.
+// whichever verb was given it, and enrol given its --manifest too. Not root, so a command that
+// went on past its refusal is refused for privilege, not run.
 func TestAStrayArgumentIsNamedAboveTheUsage(t *testing.T) {
 	asRoot(t, false)
 
-	for _, verb := range []string{"up", "install", "down", "uninstall", "serve", "start", "renew", "update", "observe", "version"} {
-		out, errOut, code := capture(t, verb, "stray")
+	for _, args := range [][]string{
+		{"up"}, {"install"}, {"down"}, {"uninstall"}, {"serve"}, {"start"}, {"renew"}, {"update"},
+		{"observe"}, {"version"}, {"enrol", "--manifest", "node.b64"},
+	} {
+		verb := args[0]
+
+		out, errOut, code := capture(t, append(args, "stray")...)
 		if code != ExitUsage || out != "" ||
 			!strings.Contains(errOut, "conflux "+verb+" takes no arguments, and got \"stray\"") ||
 			!strings.Contains(errOut, "conflux "+verb+" —") {
-			t.Errorf("conflux %s stray exited %d, printing\n%s\nand on stderr\n%s", verb, code, out, errOut)
+			t.Errorf("conflux %s stray exited %d, printing\n%s\nand on stderr\n%s", strings.Join(args, " "), code, out, errOut)
 		}
 	}
 }
@@ -544,21 +532,6 @@ func TestRenewRefusesAnchorctlFlags(t *testing.T) {
 		if !strings.Contains(errOut, "conflux anchorctl renew") {
 			t.Errorf("%v should point at the escape hatch; it said:\n%s", args, errOut)
 		}
-	}
-}
-
-// TestRenewTakesNoPositional keeps the no-argument contract honest: a stray word is
-// a typo, and guessing what it meant is how a credential gets installed from a file
-// nobody named.
-func TestRenewTakesNoPositional(t *testing.T) {
-	_, errOut, code := capture(t, "renew", "somefile")
-
-	if code != ExitUsage {
-		t.Errorf("renew with a positional exited %d, want %d", code, ExitUsage)
-	}
-
-	if !strings.Contains(errOut, "takes no arguments") {
-		t.Errorf("renew should say it takes none; it said:\n%s", errOut)
 	}
 }
 

@@ -36,7 +36,7 @@ The concrete facts the workflow relies on. Step 8 of every run keeps this file t
 | `vulncheck` | `govulncheck ./...`; same skip behaviour |
 | `tidycheck` | `go mod tidy -diff` (changes nothing) |
 | `docscheck` | every `docs/*.md` named in `README.md`, every `docs/<name>.md` the README links exists, every `](<name>.md)` link in `docs/` resolves |
-| `golden` | `go test $(TESTEXEC) ./internal/anchorctl ./internal/pki -run 'TestArgvGoldens\|TestShowGoldens' -update` |
+| `golden` | `go test $(TESTEXEC) ./internal/anchorctl ./internal/pki -run 'ArgvGoldens\|TestShowGoldens' -update` |
 | `cross` | every `TARGETS` entry at once: `go vet ./...` (compiles packages and test files), CGO off, each target's output held and printed in `TARGETS` order; works with placeholders |
 | `dist` | every `TARGETS` entry built at once into `dist/conflux-<os>-<arch>[.exe]`, then the size gate `MIN_MB=45`..`MAX_MB=75` (MiB; a real anchord beside a placeholder anchorctl is about 40) and the module gate (each artifact's `GOFIPS140` build setting, from `go version -m`, must be its target's: `v1.26.0`, or none for OpenBSD) read in `TARGETS` order, `dist/SHA256SUMS`; clears old artifacts first, leaves no build logs |
 | `image` | `dist`, then copies `dist/conflux-linux-amd64` to `test/systemd/conflux` and runs `docker build -q -t $(IMAGE)` (default `conflux-systemd-test`). A buildx builder with the Actions cache was tried in CI and lost: 6 s to create the builder and 16 s to build and `--load`, against 14 s for a plain build |

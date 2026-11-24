@@ -191,11 +191,12 @@ docscheck:
 	done; \
 	exit $$fail
 
-# golden rewrites the argv fixtures and cert show's goldens after an intended change, so a
-# change to what conflux passes anchorctl, or prints of a certificate, shows up as a
-# reviewable text diff; TestArgvGoldens and TestShowGoldens fail on any other.
+# golden rewrites the argv fixtures -- an anchor's start and the observer's -- and cert show's
+# goldens after an intended change, so a change to what conflux passes anchorctl, or prints of
+# a certificate, shows up as a reviewable text diff; TestArgvGoldens, TestObserveArgvGoldens
+# and TestShowGoldens fail on any other.
 golden:
-	$(GO) test $(TESTEXEC) ./internal/anchorctl ./internal/pki -run 'TestArgvGoldens|TestShowGoldens' -update
+	$(GO) test $(TESTEXEC) ./internal/anchorctl ./internal/pki -run 'ArgvGoldens|TestShowGoldens' -update
 
 # cross vets every target, which compiles each one's packages and test files -- `go
 # build ./...` compiles no test files, so vet is what catches a platform-specific test

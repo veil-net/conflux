@@ -115,7 +115,25 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+
+      # A release builds from nothing another build left. This machine keeps GOCACHE and
+      # GOMODCACHE on disk between jobs, shared with CI and with every repository it builds,
+      # so anything that wrote there would be in what is published. The release gets empty
+      # ones of its own, under the job's temporary directory, which the runner empties before
+      # and after every job; -modcacherw leaves the module cache deletable, so it can.
+      - name: build and module caches of this run's own
+        run: |
+          {
+            echo "GOCACHE=$RUNNER_TEMP/go-build"
+            echo "GOMODCACHE=$RUNNER_TEMP/go-mod"
+            echo "GOFLAGS=-modcacherw"
+          } >> "$GITHUB_ENV"
       - uses: ./.github/actions/setup
+
+      # Every module downloaded afresh, each held to go.sum as it arrives, and then verified
+      # before anything is built: `go mod verify` alone, over an empty cache, checks nothing.
+      - name: the modules, downloaded and verified
+        run: go mod download && go mod verify
 
       # anchor's `latest` moves, so a release carries whatever anchor published most
       # recently, which is the intent: conflux ships the newest anchor, not a remembered one.

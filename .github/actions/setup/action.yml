@@ -20,7 +20,10 @@ runs:
         # A hosted runner starts empty, so its caches are restored and saved. The
         # self-hosted machine survives the job and keeps GOCACHE and GOMODCACHE on disk,
         # shared with every other repository it builds: restoring that directory over
-        # itself and uploading it again cost ten minutes a run and bought nothing.
+        # itself and uploading it again cost ten minutes a run and bought nothing. CI
+        # builds from them there; a release does not, since anything that wrote to them
+        # would be in what it publishes: release.yml points both at empty directories of
+        # its own run, and verifies the modules before it builds.
         cache: ${{ runner.environment != 'self-hosted' && inputs.cache-key == '' }}
     # GOFIPS140 for every later step, read from the Makefile, the one place it is named: a bare
     # go command -- go test, go run -- then builds against the same Go Cryptographic Module make

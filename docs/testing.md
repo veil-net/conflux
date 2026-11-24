@@ -360,10 +360,13 @@ goes out with the next merge. A hand-run (`workflow_dispatch`) publishes the bra
 only releases: it does not re-run any of the above. A merge lands only when CI is green, which rests
 on that branch protection, and is unsafe without it. It refuses to run anywhere but those two,
 fetches anchor's `dev-latest` on `dev` and its `latest` on `version3`, runs `make dist`, attests
-the artifacts and writes one set of notes: the changes since the previous version — on
-`version3` the pull requests `dev` merged, read from the `dev` side of the release's merge — and
-what is inside. On `dev` it publishes the pre-release `dev-latest`, never Latest. On `version3`
-it publishes twice, with the same artifacts and notes: at the tag the `VERSION` file names,
+the artifacts and writes one set of notes. It builds on veilnet-dev, but from nothing another
+build left there: empty build and module caches of its own run, under the job's temporary
+directory, rather than the machine's shared ones, with every module downloaded afresh against
+`go.sum` and verified (`go mod download`, `go mod verify`) before anything is built. The
+notes are the changes since the previous version — on `version3` the pull requests `dev`
+merged, read from the `dev` side of the release's merge — and what is inside. On `dev` it
+publishes the pre-release `dev-latest`, never Latest. On `version3` it publishes twice, with the same artifacts and notes: at the tag the `VERSION` file names,
 verbatim, and at `latest`, which is the repository's Latest release; then `back-merge` runs.
 Each is deleted, with its tag, just before it is released again, so a merge that leaves
 `VERSION` alone replaces that version's release with one built from the commit that

@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -84,5 +85,29 @@ func TestAnEmptyManifestIsRefusedForGood(t *testing.T) {
 				t.Errorf("the empty manifest became %q after %d calls to the issuer", b, is.calls.Load())
 			}
 		})
+	}
+}
+
+// TestAnEmptiedTaintListGetsTheGrantBack: a conflux.json whose taints were emptied by hand is
+// started on the taints the credential grants -- nothing was asked for, so the grant is
+// taken -- and has them written back, as up writes them, so what the file says is what the
+// machine is in again.
+func TestAnEmptiedTaintListGetsTheGrantBack(t *testing.T) {
+	is := newIssuer(t)
+	d := machine(t, is, time.Now(), time.Now().Add(30*24*time.Hour))
+
+	cfg := configOf(t, d)
+	cfg.Taints = nil
+
+	if err := config.Save(d, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := bringUp(t.Context(), d, fakeCtl(t), nopReporter{}, d.RootAnchorDir(), false, nil); err != nil {
+		t.Fatalf("bringUp: %v", err)
+	}
+
+	if got := configOf(t, d).Taints; !slices.Equal(got, []string{"t"}) {
+		t.Errorf("conflux.json's taints after the start are %v, want the grant, [t]", got)
 	}
 }

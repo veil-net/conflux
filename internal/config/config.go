@@ -123,8 +123,9 @@ type Config struct {
 	// these, and conflux never asks for none, which is the realm's shared compartment.
 	// After it they mirror the grant, and every start checks them against the
 	// manifest's, refusing a machine whose two disagree: a credential's taints never
-	// change. Empty only for an issued credential that grants none, which is its own
-	// realm's default compartment. Never written from the running anchor, which a
+	// change; a list emptied by hand gets the grant back at the next start. Empty only
+	// for an issued credential that grants none, which is its own realm's default
+	// compartment. Never written from the running anchor, which a
 	// member's Taints order may have moved.
 	Taints []string `json:"taints"`
 

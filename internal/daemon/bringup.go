@@ -151,6 +151,17 @@ func bringUp(
 		return anchorctl.Started{}, err
 	}
 
+	// conflux.json mirrors the grant, and a list emptied by hand asked for nothing, which
+	// CheckTaints took as the grant: it gets the grant back, as up writes it, under the lock
+	// held here, so the file says again what the machine is in.
+	if len(cfg.Taints) == 0 && len(m.Taints()) > 0 {
+		cfg.Taints = m.Taints()
+
+		if err := config.Save(d, cfg); err != nil {
+			r.Warn("could not write the taints the credential grants back to %s: %v", d.ConfigFile(), err)
+		}
+	}
+
 	st.BinSetID = ctl.SetID
 
 	switch {

@@ -386,7 +386,7 @@ func TestAFailedInstallIsDueAgain(t *testing.T) {
 }
 
 // TestARenewalWithNoAnchorRunningStands: beside an anchor that is not running -- one that
-// cannot come up for now, or one the watcher is rebuilding -- anchord answers a renewal with
+// could not start beside the observer, or one the watcher is rebuilding -- anchord answers a renewal with
 // "no anchor is running", which leaves nothing to install: the anchor starts on the renewed
 // chain on disk. The renewal stands, the state mirrors it, and the timer's next look asks the
 // issuer nothing, rather than renewing again every minute.

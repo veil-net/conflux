@@ -32,7 +32,7 @@ machine with the taint it printed. That's the whole setup.
 $ curl -fsSL https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.sh | sh
 ```
 
-On Windows, in PowerShell as Administrator:
+On Windows, in 64-bit PowerShell as Administrator:
 
 ```powershell
 irm https://raw.githubusercontent.com/veil-net/conflux/HEAD/install.ps1 | iex

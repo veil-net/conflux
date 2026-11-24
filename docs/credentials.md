@@ -150,7 +150,7 @@ A renewed chain the running anchor will not take is a failed renewal, even thoug
 is on disk: the next start runs on it, and until then the timer keeps to the schedule
 of the chain the anchor holds, so a renewal that was due is retried every minute, and
 `conflux status` names the install as what failed. An anchor that is not running — one
-that cannot come up yet beside the observer, or one being rebuilt — takes nothing, and the
+that could not start beside the observer, or one being rebuilt — takes nothing, and the
 renewal stands: it starts under the chain on disk, and the timer keeps to that chain's
 schedule.
 

@@ -262,3 +262,20 @@ func TestAnchordEnv(t *testing.T) {
 		t.Error("anchord's environment has no token")
 	}
 }
+
+// TestARecordedDirectoryIsOneOfTheTwo: anchord.priv names the anchor directory the last
+// anchord was given, and the next start copies from it; a record naming anything else is
+// read as naming none.
+func TestARecordedDirectoryIsOneOfTheTwo(t *testing.T) {
+	d := dirs(t)
+
+	for dir, want := range map[string]string{d.AnchorDir(): d.AnchorDir(), d.RootAnchorDir(): d.RootAnchorDir(), "/etc": ""} {
+		if err := recordPrivilege(d, Privilege{Account: true, Dir: dir}); err != nil {
+			t.Fatal(err)
+		}
+
+		if p, ok := RecordedPrivilege(d); !ok || p.Dir != want {
+			t.Errorf("a record naming %s is read as naming %q (%v), want %q", dir, p.Dir, ok, want)
+		}
+	}
+}

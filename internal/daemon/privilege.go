@@ -393,7 +393,9 @@ func recordPrivilege(d paths.Dirs, p Privilege) error {
 }
 
 // RecordedPrivilege is what the last anchord this root started was given, or false when
-// no record says.
+// no record says. A directory the record names that is not one of the two anchor
+// directories is read as none: the next start copies from it, and status reads an order
+// in it.
 func RecordedPrivilege(d paths.Dirs) (Privilege, bool) {
 	var p Privilege
 
@@ -402,13 +404,17 @@ func RecordedPrivilege(d paths.Dirs) (Privilege, bool) {
 		return Privilege{}, false
 	}
 
+	if p.Dir != d.AnchorDir() && p.Dir != d.RootAnchorDir() {
+		p.Dir = ""
+	}
+
 	return p, true
 }
 
 // ActiveAnchorDir is the anchor directory the last anchord started was given, and where
 // one is not recorded, whichever of the two exists, the account's first.
 func ActiveAnchorDir(d paths.Dirs) string {
-	if p, ok := RecordedPrivilege(d); ok && (p.Dir == d.AnchorDir() || p.Dir == d.RootAnchorDir()) {
+	if p, ok := RecordedPrivilege(d); ok && p.Dir != "" {
 		return p.Dir
 	}
 

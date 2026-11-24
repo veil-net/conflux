@@ -127,26 +127,26 @@ func RestrictToOwner(path string, dir bool) error {
 // account's file, and whoever owns a file can grant themselves the right to change it:
 // a binary about to run as SYSTEM, found with such an owner, is not run.
 func Trusted(path string) bool {
-	owner, _, err := ownership(path)
+	_, owner, err := ownership(path)
 
 	return err == nil && (owner.Equals(sidSystem) || owner.Equals(sidAdmins) || isCurrentUser(owner))
 }
 
-func ownership(path string) (*windows.SID, windows.SECURITY_DESCRIPTOR_CONTROL, error) {
+// ownership is path's security descriptor, its owner and its DACL read in one call, and the
+// owner in it.
+func ownership(path string) (*windows.SECURITY_DESCRIPTOR, *windows.SID, error) {
 	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
 		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 
 	owner, _, err := sd.Owner()
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 
-	control, _, err := sd.Control()
-
-	return owner, control, err
+	return sd, owner, nil
 }
 
 // secure gives a conflux root its ownership and DACL, once, and refuses one another
@@ -164,13 +164,18 @@ func ownership(path string) (*windows.SID, windows.SECURITY_DESCRIPTOR_CONTROL, 
 // can always grant itself the rest -- so the service would go on writing its token or its
 // state into a place that account controls.
 func secure(dir string) error {
-	owner, control, err := ownership(dir)
+	sd, owner, err := ownership(dir)
+	if err != nil {
+		return fmt.Errorf("read the ownership of %s: %w", dir, err)
+	}
+
+	control, _, err := sd.Control()
 	if err != nil {
 		return fmt.Errorf("read the ownership of %s: %w", dir, err)
 	}
 
 	admin := owner.Equals(sidSystem) || owner.Equals(sidAdmins)
-	if admin && control&windows.SE_DACL_PROTECTED != 0 && onlyAdmins(dir) {
+	if admin && control&windows.SE_DACL_PROTECTED != 0 && onlyAdmins(sd) {
 		return nil
 	}
 
@@ -200,15 +205,10 @@ func secure(dir string) error {
 	return Restrict(dir, true)
 }
 
-// onlyAdmins reports whether path's DACL grants SYSTEM and the Administrators and nobody
+// onlyAdmins reports whether the DACL in sd grants SYSTEM and the Administrators and nobody
 // else: what Restrict gave it, rather than a grant somebody added beside theirs since, which
 // a protected DACL keeps as faithfully as it keeps conflux's.
-func onlyAdmins(path string) bool {
-	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
-	if err != nil {
-		return false
-	}
-
+func onlyAdmins(sd *windows.SECURITY_DESCRIPTOR) bool {
 	dacl, _, err := sd.DACL()
 	if err != nil || dacl == nil {
 		return false

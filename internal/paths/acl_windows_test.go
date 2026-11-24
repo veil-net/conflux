@@ -19,12 +19,12 @@ func TestEnsureAllGivesTheRootToAdministrators(t *testing.T) {
 		t.Fatalf("EnsureAll: %v", err)
 	}
 
-	owner, control, err := ownership(root)
+	sd, owner, err := ownership(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if control&windows.SE_DACL_PROTECTED == 0 {
+	if control, _, err := sd.Control(); err != nil || control&windows.SE_DACL_PROTECTED == 0 {
 		t.Error("the root's DACL is not protected, so the parent's grants still apply")
 	}
 
@@ -72,7 +72,13 @@ func TestEnsureAllTakesBackAWidenedDACL(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if onlyAdmins(d.Root) {
+	adminsAlone := func() bool {
+		sd, _, err := ownership(d.Root)
+
+		return err == nil && onlyAdmins(sd)
+	}
+
+	if adminsAlone() {
 		t.Fatal("a DACL granting Users reads as SYSTEM's and the Administrators' alone")
 	}
 
@@ -80,7 +86,7 @@ func TestEnsureAllTakesBackAWidenedDACL(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !onlyAdmins(d.Root) {
+	if !adminsAlone() {
 		t.Error("EnsureAll left the root granting Users")
 	}
 }

@@ -249,22 +249,24 @@ expect "tun" "uid=$uid caps=$(caps 0x1000) nnp=0 groups=" "CAP_NET_ADMIN for its
 
 # What the account leaves in its directory for root to carry: a file of its own, and a
 # symlink and a hard link to a file of root's, which a copy must not follow, take or touch.
-docker exec "$NAME" sh -c 'cd /var/lib/.conflux &&
-  umask 077 && echo secret > secret &&
-  su -s /bin/sh conflux -c "echo carried > anchor/carried" &&
-  ln -s /var/lib/.conflux/secret anchor/link && ln secret anchor/hard'
+# In knowledge/, which is anchor's and kept whole: anything else in the directory, and at the
+# root's top level, the supervisor deletes before the spawn. Root's file is outside the root.
+docker exec "$NAME" sh -c 'umask 077 && echo secret > /var/lib/cfx-secret &&
+  cd /var/lib/.conflux &&
+  su -s /bin/sh conflux -c "mkdir -p anchor/knowledge && echo carried > anchor/knowledge/carried" &&
+  ln -s /var/lib/cfx-secret anchor/knowledge/link && ln /var/lib/cfx-secret anchor/knowledge/hard'
 
 say "a host that keeps /dev/net/tun root's keeps anchord root, in a directory of its own"
 docker exec "$NAME" chmod 600 /dev/net/tun
 start
 expect "root-only tun" "uid=0 caps=* nnp=0 groups=*" "/dev/net/tun opens only for root"
 check_mode /var/lib/.conflux/anchor.root "700 root root"
-check_mode /var/lib/.conflux/anchor.root/carried "600 root root"
+check_mode /var/lib/.conflux/anchor.root/knowledge/carried "600 root root"
 for name in link hard; do
-  docker exec "$NAME" test ! -e "/var/lib/.conflux/anchor.root/$name" \
+  docker exec "$NAME" test ! -e "/var/lib/.conflux/anchor.root/knowledge/$name" \
     || { echo "the copy to root's directory took the account's $name" >&2; exit 1; }
 done
-check_mode /var/lib/.conflux/secret "600 root root"
+check_mode /var/lib/cfx-secret "600 root root"
 
 # anchor runs the host's firewall commands with a TUN, and some answer only root. They are
 # stood in for by scripts that answer the question conflux asks: whether firewalld runs,
@@ -299,7 +301,7 @@ say "back in userspace, the account starts from root's state, as its own"
 configure proxy
 start
 expect "userspace again" "uid=$uid caps=$(caps "$bufcap") nnp=1 groups=" "$bufrow"
-check_mode /var/lib/.conflux/anchor/carried "600 conflux conflux"
+check_mode /var/lib/.conflux/anchor/knowledge/carried "600 conflux conflux"
 
 # The observer runs only under a credential, checked as an anchor's start is, so its legs run
 # under one: anonymous, alpha, in this run's taint, enrolled at $API by the first of them, which

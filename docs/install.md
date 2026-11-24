@@ -20,8 +20,11 @@ Apple-silicon build). It checks the download against the release's `SHA256SUMS`,
 once for its `version`, and only then renames it into place as `/usr/local/bin/conflux`,
 through `sudo` (or `doas`) unless it runs as root. Where root's PATH under `sudo` does not find
 it — it leaves `/usr/local/bin` out, as `secure_path` does on Fedora and RHEL, or finds another
-conflux first — it also links `/usr/bin/conflux` to it, so `sudo conflux` runs it. `install.ps1` does the same into `C:\Program Files\conflux` and
-adds that to the machine's PATH. `conflux update` run where neither has installed conflux puts
+conflux first — it also links `/usr/bin/conflux` to it, so `sudo conflux` runs it, and keeps the
+link only where root's PATH, asked again, finds it there. One that finds another conflux before
+`/usr/bin` would never reach the link: none is left, and the other is named, to be removed, or
+conflux typed by its full path under `sudo`. `install.ps1` does the same into
+`C:\Program Files\conflux` and adds that to the machine's PATH. `conflux update` run where neither has installed conflux puts
 it there the same way, the link or the PATH entry with it. The place is fixed, so that a
 terminal finds conflux by name, `conflux update` knows what to replace and `conflux uninstall`
 what to remove. Each installs the binary and nothing else: no boot service, no enrolment, no

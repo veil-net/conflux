@@ -10,7 +10,9 @@
 # `conflux uninstall` removes it again, with everything else conflux put on the machine.
 #
 # Where root's PATH under sudo leaves /usr/local/bin out (sudo's secure_path on Fedora and
-# RHEL), /usr/bin/conflux is linked to it, so `sudo conflux` finds it too.
+# RHEL), /usr/bin/conflux is linked to it, so `sudo conflux` finds it too. Where root's PATH finds
+# another conflux before /usr/bin, a link there would never be reached: none is left, and the
+# other is named.
 #
 # One setting, given to sh rather than curl (`curl -fsSL … | CONFLUX_VERSION=1.0.0 sh`):
 #
@@ -115,27 +117,51 @@ rootpath() {
   "$as" -n sh -c 'command -v conflux' 2>/dev/null || true
 }
 
-# link makes /usr/bin/conflux a link to $exe where root's PATH would not find $exe, and leaves
-# a /usr/bin/conflux that is not that link alone. A /usr/bin that cannot be written -- macOS's --
-# is said, and not a failure: conflux is installed all the same.
+# link makes /usr/bin/conflux a link to $exe where root's PATH would not find $exe, and keeps it
+# only where root's PATH, asked again, finds $exe through it: one that finds another conflux
+# before /usr/bin would never reach the link, so it goes again and the other is named, as it is
+# beside a link made before. Each is compared as a file (-ef), through any link, never by how it
+# is spelled. A /usr/bin/conflux that is not that link is left alone. A /usr/bin that cannot be
+# written -- macOS's -- is said, and not a failure: conflux is installed all the same.
 link() {
   found=$(rootpath) || return 0
-  [ "$found" = "$exe" ] && return 0
+  [ -n "$found" ] && [ "$found" -ef "$exe" ] && return 0
 
   # Why root's PATH does not find $exe: it leaves $dir out, or it finds another conflux first.
   why="root's PATH leaves $dir out"
   [ -n "$found" ] && why="root's PATH finds $found first"
 
-  if [ -e "$sudolink" ] || [ -L "$sudolink" ]; then
-    [ "$(readlink "$sudolink" 2>/dev/null)" = "$exe" ] && return 0
-    say "" "$sudolink is not conflux's, and $why, so sudo conflux runs that one."
+  if [ -L "$sudolink" ] && [ "$(readlink "$sudolink")" = "$exe" ]; then
+    missed
     return 0
   fi
 
-  if asroot ln -s "$exe" "$sudolink" 2>/dev/null; then
+  if [ -e "$sudolink" ] || [ -L "$sudolink" ]; then
+    say "" "$sudolink is not conflux's, and $why: type $exe by its full path under sudo."
+    return 0
+  fi
+
+  if ! asroot ln -s "$exe" "$sudolink" 2>/dev/null; then
+    say "" "Since $why, type $exe by its full path under sudo."
+    return 0
+  fi
+
+  found=$(rootpath) || found=""
+  if [ -n "$found" ] && [ "$found" -ef "$exe" ]; then
     say "Linked $sudolink to it, since $why."
   else
-    say "" "Since $why, type $exe by its full path under sudo."
+    asroot rm -f "$sudolink"
+    missed
+  fi
+}
+
+# missed says why root's PATH, which finds $found, does not find $exe through $sudolink, the link
+# to it: another conflux before the link's directory, or, finding none, that directory left out.
+missed() {
+  if [ -n "$found" ]; then
+    say "" "Root's PATH finds $found before ${sudolink%/*}: remove it, or type $exe by its full path under sudo."
+  else
+    say "" "Root's PATH leaves ${sudolink%/*} out too: type $exe by its full path under sudo."
   fi
 }
 

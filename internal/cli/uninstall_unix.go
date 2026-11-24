@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -22,23 +23,25 @@ func removeInstallation() error {
 // install.sh's link does. /usr/local/bin is on a terminal's PATH, but not on every root's: where
 // the conflux this update's own PATH finds -- root's, sudo's secure_path on Fedora and RHEL -- is
 // not exe, its directory left out or another conflux found first, the link for sudo (updateLink)
-// is made to exe, and a file or a link of that name that is not that link is left alone, and
-// said, as uninstall leaves it.
+// is made to exe, and kept only where that PATH, asked again, finds exe through it. Where it
+// finds another conflux before the link's directory, the link would do nothing, so it goes again
+// and the other is named, as it is beside a link made before. A file or a link of that name that
+// is not that link is left alone, and said, as uninstall leaves it.
 func putOnPath(exe string) error {
-	found, err := exec.LookPath("conflux")
-	if err == nil && sameFile(found, exe) {
+	found, ok := rootFinds(exe)
+	if ok {
 		return nil
 	}
 
 	why := fmt.Sprintf("root's PATH leaves %s out", filepath.Dir(exe))
-	if err == nil {
+	if found != "" {
 		why = fmt.Sprintf("root's PATH finds %s instead", found)
 	}
 
 	link := updateLink()
 
 	if target, err := os.Readlink(link); err == nil && target == exe {
-		return nil
+		return missed(found, link, exe)
 	}
 
 	if _, err := os.Lstat(link); err == nil {
@@ -49,7 +52,33 @@ func putOnPath(exe string) error {
 		return fmt.Errorf("%s, so type %s by its full path under sudo: %w", why, exe, err)
 	}
 
+	if found, ok := rootFinds(exe); !ok {
+		return errors.Join(missed(found, link, exe), removeIfThere(link))
+	}
+
 	ui.Printf("Linked %s to it, since %s.\n", link, why)
 
 	return nil
+}
+
+// rootFinds is the conflux this process's PATH, root's, finds by name, or "" for none, and
+// whether that is exe: asked of the file, through any link, by sameFile.
+func rootFinds(exe string) (found string, ok bool) {
+	found, err := exec.LookPath("conflux")
+	if err != nil {
+		return "", false
+	}
+
+	return found, sameFile(found, exe)
+}
+
+// missed says why root's PATH, which finds found, does not find exe through link, the link to
+// it: another conflux before the link's directory, or, finding none, that directory left out too.
+func missed(found, link, exe string) error {
+	if found == "" {
+		return fmt.Errorf("root's PATH leaves %s out too: type %s by its full path under sudo", filepath.Dir(link), exe)
+	}
+
+	return fmt.Errorf("root's PATH finds %s before %s: remove it, or type %s by its full path under sudo",
+		found, filepath.Dir(link), exe)
 }

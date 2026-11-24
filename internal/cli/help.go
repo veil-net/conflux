@@ -55,9 +55,10 @@ owns the configuration; use down and start, or the escape hatch above.
 //
 // `conflux help COMMAND` is that command's own usage instead, whichever side it is
 // on. Two of conflux's have no usage of their own to print, and get the whole page:
-// help itself, and status, whose -h is anchorctl's.
+// help itself, and status, whose -h is anchorctl's. So does a help flag, which names
+// no command: it asks for help's own usage.
 func runHelp(ctx context.Context, args []string) int {
-	if len(args) > 0 {
+	if len(args) > 0 && !helpFlag(args[0]) {
 		v, ours := verbs()[args[0]]
 
 		switch {

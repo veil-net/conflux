@@ -71,7 +71,8 @@ loses nothing. Bare, it prints conflux's usage and then anchorctl's whole usage 
 a rule, so one page covers both surfaces. `conflux help COMMAND` prints that command's
 own usage instead, whichever binary it belongs to, except for the two of conflux's with no
 usage of their own, which get the whole page: `help` itself, and `status`, whose arguments,
-`-h` among them, go to anchorctl's `status` (below).
+`-h` among them, go to anchorctl's `status` (below). So does `conflux help -h`, which names
+no command and asks for help's own usage.
 
 **`status`** is resolved by arity. Bare `conflux status` is conflux's, and it prints
 `anchorctl status` underneath — additive, so nothing is lost by conflux owning that

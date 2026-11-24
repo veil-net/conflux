@@ -156,12 +156,35 @@ func TestHelpListsEveryVisibleVerb(t *testing.T) {
 }
 
 // TestHelpForACommandIsThatCommands: `conflux help X` is X's own usage, whichever
-// binary X belongs to.
+// binary X belongs to, except for the two of conflux's with no usage of their own to
+// print, help and status, which get the whole page, as `conflux help` does.
 func TestHelpForACommandIsThatCommands(t *testing.T) {
 	for _, name := range []string{"up", "version"} {
 		out, _, code := capture(t, "help", name)
 		if code != ExitOK || !strings.Contains(out, "conflux "+name+" —") || strings.Contains(out, "Commands") {
 			t.Errorf("help %s exited %d and printed:\n%s", name, code, out)
+		}
+	}
+
+	for _, name := range []string{"help", "status"} {
+		if out, _, code := capture(t, "help", name); code != ExitOK || !strings.Contains(out, "Commands") {
+			t.Errorf("help %s exited %d, printing no Commands:\n%s", name, code, out)
+		}
+	}
+}
+
+// TestAHelpFlagAsksHelpForTheWholePage: a help flag after help asks for help's own usage,
+// which is the whole page, and names no command to pass to anchorctl. Taken for one, it
+// printed anchorctl's usage alone. The pass-through is stubbed, since on Unix it would
+// replace the test binary with anchorctl.
+func TestAHelpFlagAsksHelpForTheWholePage(t *testing.T) {
+	ran := stubAnchorctl(t)
+
+	for _, help := range []string{"-h", "--h", "-help", "--help"} {
+		*ran = ranAnchorctl{}
+
+		if out, _, code := capture(t, "help", help); code != ExitOK || !strings.Contains(out, "Commands") || ran.bin != "" {
+			t.Errorf("help %s exited %d, passing %q through, and printed:\n%s", help, code, ran.bin, out)
 		}
 	}
 }
@@ -177,7 +200,7 @@ func TestUsageIsOneStream(t *testing.T) {
 		for name := range verbs() {
 			switch name {
 			case "help":
-				continue // its own page, -h or not
+				continue // the whole page, which TestAHelpFlagAsksHelpForTheWholePage holds it to
 			case "status", "anchorctl":
 				continue // anchorctl's usage, which its own tests cover
 			}

@@ -3,9 +3,11 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/veil-net/conflux/internal/paths"
 )
@@ -31,16 +33,58 @@ func WriteFileAtomic(path string, data []byte, perm fs.FileMode) error {
 }
 
 // WriteFileIfChanged is WriteFileAtomic, with perm, unless path holds data already, and reports
-// whether it wrote. What conflux puts back at every start -- its configuration and state, the
-// boot service's definition -- is written only where it was changed, so an unchanged file keeps
-// its inode and its mtime and nothing watching it sees a change.
+// whether it wrote. What conflux puts back at every start -- the boot service's registration
+// above all -- is written only where it was changed, so an unchanged file keeps its inode and
+// its mtime and nothing watching it sees a change. One that holds data with another mode, on
+// Unix, is given perm back where it is, which is no write: a registration made group- or
+// world-writable since is the service manager running whatever its writer names.
 func WriteFileIfChanged(path string, data []byte, perm fs.FileMode) (bool, error) {
-	if cur, err := os.ReadFile(path); err == nil && bytes.Equal(cur, data) {
+	switch same, err := holds(path, data, perm); {
+	case err != nil:
+		return false, err
+	case same:
 		return false, nil
 	}
 
 	if err := WriteFileAtomic(path, data, perm); err != nil {
 		return false, err
+	}
+
+	return true, nil
+}
+
+// holds reports whether path holds data already, and gives it perm back on Unix where its mode
+// is another: through the descriptor it was read from, so the file whose bytes were compared is
+// the one whose mode changes. A file that cannot be opened or read holds nothing, and is
+// written.
+func holds(path string, data []byte, perm fs.FileMode) (bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return false, nil
+	}
+	defer f.Close()
+
+	// One byte past data is enough to know a longer file differs.
+	cur, err := io.ReadAll(io.LimitReader(f, int64(len(data))+1))
+	if err != nil || !bytes.Equal(cur, data) {
+		return false, nil
+	}
+
+	if runtime.GOOS == "windows" {
+		return true, nil
+	}
+
+	fi, err := f.Stat()
+	if err != nil {
+		return false, nil
+	}
+
+	if fi.Mode()&(fs.ModePerm|fs.ModeSetuid|fs.ModeSetgid|fs.ModeSticky) == perm {
+		return true, nil
+	}
+
+	if err := f.Chmod(perm); err != nil {
+		return false, fmt.Errorf("chmod %s: %w", path, err)
 	}
 
 	return true, nil

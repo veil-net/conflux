@@ -188,3 +188,48 @@ func TestWriteFileIfChangedLeavesTheSameBytesAlone(t *testing.T) {
 		t.Errorf("the file holds %q (%v), want %q", b, err, "two")
 	}
 }
+
+// TestWriteFileIfChangedPutsTheModeBack: a file that holds what conflux writes but was made
+// group- or world-writable since -- a registration, which the service manager runs what it
+// names from -- is given its mode back where it is, keeping its inode and its mtime, and
+// reported as not written.
+func TestWriteFileIfChangedPutsTheModeBack(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("mode bits are not meaningful on windows; the DACL is")
+	}
+
+	path := filepath.Join(t.TempDir(), "conflux.service")
+
+	if _, err := WriteFileIfChanged(path, []byte("unit"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, widened := range []os.FileMode{0o664, 0o666, 0o646} {
+		if err := os.Chmod(path, widened); err != nil {
+			t.Fatal(err)
+		}
+
+		before, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if wrote, err := WriteFileIfChanged(path, []byte("unit"), 0o644); err != nil || wrote {
+			t.Errorf("WriteFileIfChanged over a %o file of the same bytes = %v, %v; want its mode put back, not written",
+				widened, wrote, err)
+		}
+
+		after, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got := after.Mode().Perm(); got != 0o644 {
+			t.Errorf("a file made %o is %o after a start, want 644", widened, got)
+		}
+
+		if !os.SameFile(before, after) || !after.ModTime().Equal(before.ModTime()) {
+			t.Errorf("a file made %o was written again rather than given its mode back", widened)
+		}
+	}
+}

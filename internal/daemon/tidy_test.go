@@ -2,8 +2,10 @@ package daemon
 
 import (
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -79,30 +81,44 @@ func TestTidyKeepsOnlyWhatIsConfluxsAndAnchors(t *testing.T) {
 	}
 }
 
-// TestTidyPutsTheRootsFilesBack: the root's own files (rootFiles) are the supervisor's alone
-// again once the root is tidied, whatever somebody changed since: on Unix their modes, 0600 and
-// 0700 for the copy of conflux the service runs, and on Windows SYSTEM's and the Administrators',
-// a grant to Users taken back.
+// TestTidyPutsTheRootsFilesBack: the root's own files are the supervisor's alone again once the
+// root is tidied, whatever somebody changed since: on Unix their modes, 0600 and 0700 for the
+// copy of conflux the service runs, and on Windows SYSTEM's and the Administrators', a grant to
+// Users taken back. The files and their modes are the test's own, not rootFiles', the table under
+// test, so a wrong mode there fails it.
 func TestTidyPutsTheRootsFilesBack(t *testing.T) {
 	s := &Supervisor{Dirs: dirs(t)}
+	d := s.Dirs
 
-	files := rootFiles(s.Dirs)
+	want := map[string]os.FileMode{
+		d.ConfigFile(): 0o600, d.StateFile(): 0o600, d.ManifestFile(): 0o600, d.PrivilegeFile(): 0o600,
+		d.LockFile(): 0o600, d.ServeLockFile(): 0o600, d.ServiceExecutable(): 0o700,
+	}
 
-	for _, f := range files {
-		if err := config.WriteFileAtomic(f.path, []byte("conflux's"), 0o600); err != nil {
+	var listed []string
+	for _, f := range rootFiles(d) {
+		listed = append(listed, f.path)
+	}
+
+	if slices.Sort(listed); !slices.Equal(listed, slices.Sorted(maps.Keys(want))) {
+		t.Fatalf("rootFiles lists %q, want %q", listed, slices.Sorted(maps.Keys(want)))
+	}
+
+	for path := range want {
+		if err := config.WriteFileAtomic(path, []byte("conflux's"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 
-		widen(t, f.path)
+		widen(t, path)
 	}
 
 	if err := s.tidyRoot(); err != nil {
 		t.Fatal(err)
 	}
 
-	for _, f := range files {
-		if !restored(f.path, f.mode) {
-			t.Errorf("%s was not given back its mode, %#o, or to SYSTEM and the Administrators", f.path, f.mode)
+	for path, mode := range want {
+		if !restored(path, mode) {
+			t.Errorf("%s was not given back its mode, %#o, or to SYSTEM and the Administrators", path, mode)
 		}
 	}
 }

@@ -19,7 +19,7 @@ func widen(t *testing.T, path string) {
 	}
 }
 
-// restored reports whether path is the supervisor's alone again: at mode, its rootFiles mode.
+// restored reports whether path is the supervisor's alone again: at mode, the mode it has on Unix.
 func restored(path string, mode os.FileMode) bool {
 	fi, err := os.Stat(path)
 

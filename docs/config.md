@@ -278,9 +278,11 @@ identifiable and sweepable. And "is it already extracted" is three stats rather 
 read of fifty-odd megabytes.
 
 The supervisor keeps `bin/` to what conflux put there once it has started on its own set:
-that set, with nothing in it but the pair, its markers and, on Windows, `wintun.dll`; the
-extraction lock; and a set or a staging directory made in the last hour, which a newer
-conflux running a command beside it may be using until the service restarts onto it.
+that set, with nothing in it but the pair, its markers and, on Windows, `wintun.dll`, and a
+temporary file young enough to be a write in progress there (the record of the pair, the
+driver being placed), as in the root; the extraction lock; and a set or a staging directory
+made in the last hour, which a newer conflux running a command beside it may be using until
+the service restarts onto it.
 Everything else goes — an older set, a crash's staging, anything conflux did not write.
 No other conflux command removes anything there. `conflux uninstall` removes the tree.
 

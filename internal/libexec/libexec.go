@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/veil-net/conflux/anchor"
+	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/flock"
 	"github.com/veil-net/conflux/internal/paths"
 )
@@ -113,12 +114,16 @@ func Ensure(d paths.Dirs) (*Tools, error) {
 // toolsIn is where this build's pair is, or would be, extracted under d.
 func toolsIn(d paths.Dirs) *Tools {
 	setID := anchor.SetID()
-	target := filepath.Join(d.Libexec(), setID)
 
+	return toolsAt(filepath.Join(d.Libexec(), setID), setID)
+}
+
+// toolsAt is the pair setID names as it is, or would be, written into dir.
+func toolsAt(dir, setID string) *Tools {
 	return &Tools{
-		Dir:       target,
-		Anchord:   filepath.Join(target, exeName("anchord")),
-		Anchorctl: filepath.Join(target, exeName("anchorctl")),
+		Dir:       dir,
+		Anchord:   filepath.Join(dir, exeName("anchord")),
+		Anchorctl: filepath.Join(dir, exeName("anchorctl")),
 		SetID:     setID,
 	}
 }
@@ -215,6 +220,8 @@ func extract(root, target string, t *Tools) error {
 		return fmt.Errorf("restrict %s: %w", staging, err)
 	}
 
+	staged := toolsAt(staging, t.SetID)
+
 	// Side by side: each is its own file and its own fsync, and on a real disk the
 	// fsync is most of what an extraction costs.
 	var (
@@ -222,11 +229,9 @@ func extract(root, target string, t *Tools) error {
 		ctlErr error
 	)
 
-	wg.Go(func() {
-		ctlErr = writeExecutable(filepath.Join(staging, exeName("anchorctl")), anchor.Anchorctl(), paths.Restrict)
-	})
+	wg.Go(func() { ctlErr = writeExecutable(staged.Anchorctl, anchor.Anchorctl(), paths.Restrict) })
 
-	err = writeExecutable(filepath.Join(staging, exeName("anchord")), anchor.Anchord(), paths.Restrict)
+	err = writeExecutable(staged.Anchord, anchor.Anchord(), paths.Restrict)
 
 	wg.Wait()
 
@@ -236,11 +241,8 @@ func extract(root, target string, t *Tools) error {
 
 	// Held to this build's bytes already, which are what was just written from it: recorded as
 	// the two files are now, restricted and out of quarantine, which the rename keeps, so the
-	// supervisor's Intact takes the set on a stat rather than reading back what it wrote. A
-	// record that cannot be written costs that a read of the pair, as Intact's own does.
-	staged := &Tools{Dir: staging, Anchord: filepath.Join(staging, exeName("anchord")),
-		Anchorctl: filepath.Join(staging, exeName("anchorctl"))}
-	_ = os.WriteFile(filepath.Join(staging, verifiedMarker), []byte(staged.identities()), 0o600)
+	// supervisor's Intact takes the set on a stat rather than reading back what it wrote.
+	staged.Reverified()
 
 	marker := fmt.Sprintf("setID %s\nplatform %s/%s\n", t.SetID, runtime.GOOS, runtime.GOARCH)
 	if err := os.WriteFile(filepath.Join(staging, completeMarker), []byte(marker), 0o600); err != nil {
@@ -365,16 +367,16 @@ func smoke(t *Tools) error {
 // directory: the one file there that is not this package's.
 const WintunDLL = "wintun.dll"
 
-// TransientAge is how long something another conflux made beside a running supervisor may
-// still be that conflux's, in use, rather than left by a crash: a set or a staging directory
-// a newer conflux extracted (Sweep), or a temporary file one is writing in the root.
+// TransientAge is how long something made beside a running supervisor may still be in use,
+// rather than left by a crash: a set or a staging directory a newer conflux extracted (Sweep),
+// or a temporary file a write is still making, in the root or in the live set.
 const TransientAge = time.Hour
 
 // Sweep keeps the bin directory to what conflux put there: t, with nothing in it but the
-// pair, its markers and Windows' driver; the extraction lock; and a set or a staging
-// directory made in the last TransientAge, which a newer conflux running a command beside
-// this supervisor -- the first `status` after an upgrade -- may be using until the service
-// restarts onto it. Everything else goes: an older set, a crash's staging, and anything
+// pair, its markers, Windows' driver and a write in progress (tidySet); the extraction lock;
+// and a set or a staging directory made in the last TransientAge, which a newer conflux
+// running a command beside this supervisor -- the first `status` after an upgrade -- may be
+// using until the service restarts onto it. Everything else goes: an older set, a crash's staging, and anything
 // nothing here wrote.
 //
 // Only the supervisor calls it, once it holds its own set. Best-effort throughout: a
@@ -392,7 +394,7 @@ func Sweep(t *Tools) {
 	for _, e := range entries {
 		switch name := e.Name(); {
 		case name == keep:
-			tidySet(t)
+			tidySet(t, recent)
 		case name == extractionLock && e.Type().IsRegular():
 		case e.IsDir() && young(e, recent):
 		default:
@@ -401,18 +403,23 @@ func Sweep(t *Tools) {
 	}
 }
 
-// tidySet removes from t's directory everything but the pair, its markers and the driver.
-func tidySet(t *Tools) {
+// tidySet removes from t's directory everything but the pair, its markers and the driver, and
+// a temporary file modified after recent: an atomic write's in progress beside the sweep --
+// the supervisor's Reverified, or wintun.Ensure placing the driver -- as the daemon spares the
+// root's.
+func tidySet(t *Tools, recent time.Time) {
 	entries, err := os.ReadDir(t.Dir)
 	if err != nil {
 		return
 	}
 
 	for _, e := range entries {
-		switch e.Name() {
-		case filepath.Base(t.Anchord), filepath.Base(t.Anchorctl), completeMarker, verifiedMarker, WintunDLL:
+		switch name := e.Name(); {
+		case name == filepath.Base(t.Anchord), name == filepath.Base(t.Anchorctl), name == completeMarker,
+			name == verifiedMarker, name == WintunDLL:
+		case strings.HasPrefix(name, config.TempPrefix) && young(e, recent):
 		default:
-			_ = os.RemoveAll(filepath.Join(t.Dir, e.Name()))
+			_ = os.RemoveAll(filepath.Join(t.Dir, name))
 		}
 	}
 }

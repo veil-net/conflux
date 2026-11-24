@@ -12,6 +12,7 @@ import (
 
 	"github.com/veil-net/conflux/anchor"
 	"github.com/veil-net/conflux/internal/anchortest"
+	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/paths/pathstest"
 )
@@ -189,8 +190,10 @@ func TestEnsureRepairsATruncatedExtraction(t *testing.T) {
 }
 
 // TestSweepKeepsOnlyWhatIsConfluxs: Sweep keeps its own set, with nothing in it but the pair,
-// its markers and Windows' driver, and a set or a staging directory made in the last hour,
-// which a newer conflux mid-command may be using; everything else in the bin directory goes.
+// its markers and Windows' driver, and a temporary file young enough to be a write in progress
+// there -- the record of the pair Reverified rewrites, the driver being placed -- and a set or a
+// staging directory made in the last hour, which a newer conflux mid-command may be using;
+// everything else in the bin directory goes, a temporary file a crash left in the set among it.
 func TestSweepKeepsOnlyWhatIsConfluxs(t *testing.T) {
 	root := t.TempDir()
 
@@ -222,6 +225,19 @@ func TestSweepKeepsOnlyWhatIsConfluxs(t *testing.T) {
 		}
 	}
 
+	// An atomic write's, in progress, and one a crash left an hour and more ago.
+	for name, a := range map[string]time.Duration{"own/" + config.TempPrefix + "fresh": 0, "own/" + config.TempPrefix + "stale": 2 * time.Hour} {
+		path := filepath.Join(root, name)
+		if err := os.WriteFile(path, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		then := time.Now().Add(-a)
+		if err := os.Chtimes(path, then, then); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	own := &Tools{Dir: filepath.Join(root, "own"), SetID: "own",
 		Anchord: filepath.Join(root, "own", "anchord"), Anchorctl: filepath.Join(root, "own", "anchorctl")}
 	Sweep(own)
@@ -230,6 +246,7 @@ func TestSweepKeepsOnlyWhatIsConfluxs(t *testing.T) {
 		"own": true, "recent": true, ".staging-fresh": true, "old": false, ".staging-stale": false,
 		extractionLock: true, "stray": false, "own/anchord": true, "own/anchorctl": true, "own/" + completeMarker: true,
 		"own/" + verifiedMarker: true, "own/wintun.dll": true, "own/stray": false,
+		"own/" + config.TempPrefix + "fresh": true, "own/" + config.TempPrefix + "stale": false,
 	} {
 		if _, err := os.Stat(filepath.Join(root, name)); (err == nil) != kept {
 			t.Errorf("%s: kept = %v, want %v", name, err == nil, kept)

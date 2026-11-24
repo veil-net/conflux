@@ -232,10 +232,12 @@ func flagsAlone(fs *flag.FlagSet, args []string) (exit int, ok bool) {
 }
 
 // flagName is the flag arg names, as a flag set reads it: the name after one dash or two, up to
-// an "=" and its value. ok is false where arg is no flag's spelling -- a word with no dash, a dash
-// or two alone, three dashes, an empty name -- which a flag set takes for an argument, the end of
-// its flags or bad syntax, and never for a flag. The one reading for every verb that looks at its
-// flags before its flag set does, so none of them names a flag the set would not.
+// an "=" and its value. ok is false where arg is no flag's spelling, which a flag set never takes
+// for a flag: a word with no dash, or a dash alone, is an argument; two dashes alone end its
+// flags, and every word after them is an argument, whatever it looks like; three dashes, or an
+// empty name, are bad syntax. The one reading for every verb that looks at its flags before its
+// flag set does (start's and renew's anchorctlFlag, observe's anchorctls, proxy's lookup), each
+// of which reads no further than the "--", so none of them names a flag the set would not.
 func flagName(arg string) (name string, ok bool) {
 	name, ok = strings.CutPrefix(arg, "-")
 	if !ok {

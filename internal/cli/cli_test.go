@@ -241,8 +241,8 @@ func TestUsageIsOneStream(t *testing.T) {
 // TestAStrayArgumentIsNamedAboveTheUsage's, but for one with its flags after it, which does not
 // make it a flag's: `sudo conflux up mynet --taint mynet` would otherwise mint a network of its
 // own. A word that is no flag's spelling, ---h, is the flag set's to refuse, as bad syntax, in
-// observe and proxy too, which look at their flags first. Not root, so a command that went
-// on past its refusal is refused for privilege, not run.
+// observe, proxy, start and renew too, which look at their flags first. Not root, so a command
+// that went on past its refusal is refused for privilege, not run.
 func TestAMistakeIsSaidOnStderr(t *testing.T) {
 	asRoot(t, false)
 
@@ -259,6 +259,8 @@ func TestAMistakeIsSaidOnStderr(t *testing.T) {
 		{[]string{"cert", "p12"}, "conflux cert p12 —"},
 		{[]string{"observe", "---h"}, "bad flag syntax: ---h"},
 		{[]string{"proxy", "---h", "8080=127.0.0.1:3000"}, "bad flag syntax: ---h"},
+		{[]string{"start", "---x"}, "bad flag syntax: ---x"},
+		{[]string{"renew", "---h"}, "bad flag syntax: ---h"},
 	} {
 		out, errOut, code := capture(t, c.args...)
 		if code != ExitUsage || out != "" || !strings.Contains(errOut, c.says) || !strings.Contains(errOut, "conflux "+c.args[0]) {
@@ -269,8 +271,11 @@ func TestAMistakeIsSaidOnStderr(t *testing.T) {
 
 // TestAStrayArgumentIsNamedAboveTheUsage: every command that takes no argument refuses one the
 // same way -- the argument named on a line of its own, the usage beneath it, both on stderr --
-// whichever verb was given it, and enrol given its --manifest too. Not root, so a command that
-// went on past its refusal is refused for privilege, not run.
+// whichever verb was given it, and enrol given its --manifest too. A dash alone is an argument,
+// and so is any word after the -- that ends the flags, a flag's spelling included: start, renew
+// and observe, which look at their flags first, name each as every verb does, not as
+// anchorctl's. Not root, so a command that went on past its refusal is refused for privilege,
+// not run.
 func TestAStrayArgumentIsNamedAboveTheUsage(t *testing.T) {
 	asRoot(t, false)
 
@@ -280,11 +285,49 @@ func TestAStrayArgumentIsNamedAboveTheUsage(t *testing.T) {
 	} {
 		verb := args[0]
 
-		out, errOut, code := capture(t, append(args, "stray")...)
-		if code != ExitUsage || out != "" ||
-			!strings.Contains(errOut, "conflux "+verb+" takes no arguments, and got \"stray\"") ||
-			!strings.Contains(errOut, "conflux "+verb+" —") {
-			t.Errorf("conflux %s stray exited %d, printing\n%s\nand on stderr\n%s", strings.Join(args, " "), code, out, errOut)
+		for _, stray := range [][]string{{"stray"}, {"-"}, {"--", "-start"}} {
+			typed := append(slices.Clone(args), stray...)
+			got := stray[len(stray)-1]
+
+			out, errOut, code := capture(t, typed...)
+			if code != ExitUsage || out != "" ||
+				!strings.Contains(errOut, "conflux "+verb+" takes no arguments, and got \""+got+"\"") ||
+				!strings.Contains(errOut, "conflux "+verb+" —") {
+				t.Errorf("conflux %s exited %d, printing\n%s\nand on stderr\n%s", strings.Join(typed, " "), code, out, errOut)
+			}
+		}
+	}
+}
+
+// TestTwoDashesEndTheFlags: -- ends the flags on every verb, as a flag set takes it, start,
+// renew, observe and proxy included, which look at their flags before their flag sets do. With
+// nothing after it each is the bare verb -- start, renew and observe refused here for privilege
+// alone, the command typed repeated, and proxy refused as bare proxy is, with no spec and no
+// flag -- and a word after it is proxy's spec, served where it is one and refused as one where it
+// is not, whatever it looks like: never a flag, and never anchorctl's.
+func TestTwoDashesEndTheFlags(t *testing.T) {
+	asRoot(t, false)
+	stubAnchorctl(t)
+
+	for _, verb := range []string{"start", "renew", "observe", "proxy"} {
+		_, bare, bareCode := capture(t, verb)
+		want := strings.Replace(bare, privcheck.Retry("conflux "+verb), privcheck.Retry("conflux "+verb+" --"), 1)
+
+		if _, errOut, code := capture(t, verb, "--"); code != bareCode || errOut != want {
+			t.Errorf("conflux %s -- exited %d, saying\n%s\nwhere bare it exits %d, saying\n%s", verb, code, errOut, bareCode, bare)
+		}
+	}
+
+	typed := []string{"proxy", "--", "8080=127.0.0.1:3000"}
+	if _, errOut, code := capture(t, typed...); code != ExitDenied || !strings.Contains(errOut, privcheck.Retry("conflux "+strings.Join(typed, " "))) {
+		t.Errorf("conflux %s exited %d, saying\n%s", strings.Join(typed, " "), code, errOut)
+	}
+
+	for _, typed := range [][]string{{"proxy", "8080=127.0.0.1:3000", "--", "--bogus"}, {"proxy", "-"}} {
+		spec := typed[len(typed)-1]
+
+		if _, errOut, code := capture(t, typed...); code != ExitError || !strings.Contains(errOut, "\""+spec+"\" is not PORT[/NETWORK]=BACKEND") {
+			t.Errorf("conflux %s exited %d, saying\n%s", strings.Join(typed, " "), code, errOut)
 		}
 	}
 }

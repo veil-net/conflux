@@ -154,10 +154,17 @@ func neverEnrolled() int {
 //
 // Shared by renew and start, which resolve their collisions the same way and for the
 // same reason: conflux's takes no arguments at all, so a flag is the signal, and a help
-// flag (helpFlag) is the one that means the caller wants conflux's own usage.
+// flag (helpFlag) is the one that means the caller wants conflux's own usage. A flag is
+// what the flag set would read as one (flagName), ahead of the "--" that ends the flags:
+// what is no flag's spelling, and every word after "--", is the flag set's, an argument
+// flagsAlone names or bad syntax.
 func anchorctlFlag(args []string) string {
 	for _, a := range args {
-		if strings.HasPrefix(a, "-") && !helpFlag(a) {
+		if a == "--" {
+			break
+		}
+
+		if _, ok := flagName(a); ok && !helpFlag(a) {
 			name, _, _ := strings.Cut(a, "=")
 
 			return name

@@ -82,8 +82,12 @@ spelling. Given any argument it forwards, so `conflux status -watch 5s` and
 **`proxy`** is resolved by shape, and the ambiguous case is refused rather than
 guessed. Positional `PORT=BACKEND` specs and the flags `conflux proxy -h` lists —
 `--taint`, `--subnet` and the rest — are conflux's; any other flag prints both meanings and
-exits 2, and a word that is no flag's spelling, as Go's flag package reads one (`---h`), is
-the package's to refuse, as bad syntax, exit 2. A "leading dash means
+exits 2, and so does bare `conflux proxy`, with no spec and no flag. A word that is no flag's
+spelling is read as Go's flag package reads it, here as on every verb, `start`, `renew` and
+`observe` included, which look at their flags first. `--` ends the flags: every word after it
+is an argument, whatever it looks like, a spec here and a stray one the others name, and a
+verb with none after it is bare, `conflux proxy --` as `conflux proxy` is. `-` is an argument
+too. Any other, `---h`, is the package's to refuse, as bad syntax, exit 2. A "leading dash means
 anchorctl" heuristic was considered and rejected: `--taint` leads with a dash too, and
 Go's flag package treats `-x` and `--x` identically, so the double dash carries no
 signal.

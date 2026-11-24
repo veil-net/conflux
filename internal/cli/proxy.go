@@ -20,18 +20,6 @@ import (
 // signal. A rule that is sometimes right is worse here than one that always explains
 // itself.
 func runProxy(ctx context.Context, args []string) int {
-	if len(args) == 0 {
-		ui.Errf("conflux proxy publishes a local service on the overlay, and needs at least one spec:\n\n" +
-			"    conflux proxy 8080=127.0.0.1:3000\n" +
-			"    conflux proxy 8080=127.0.0.1:3000 53/udp=127.0.0.1:53\n\n" +
-			"  To list or change the proxies on an anchor that is already running, that is\n" +
-			"  anchorctl's proxy, and it is one word away:\n\n" +
-			"    conflux anchorctl proxy\n" +
-			"    conflux anchorctl proxy -add 8080=127.0.0.1:3000")
-
-		return ExitUsage
-	}
-
 	f := newProxyFlags()
 
 	if hint := f.unknown(args); hint != "" {
@@ -51,6 +39,19 @@ func runProxy(ctx context.Context, args []string) int {
 	}
 
 	specs = append(specs, f.fs.Args()...)
+
+	// Bare, decided once the flags are parsed: no spec and no flag, so `conflux proxy --` too.
+	if len(specs) == 0 && f.fs.NFlag() == 0 {
+		ui.Errf("conflux proxy publishes a local service on the overlay, and needs at least one spec:\n\n" +
+			"    conflux proxy 8080=127.0.0.1:3000\n" +
+			"    conflux proxy 8080=127.0.0.1:3000 53/udp=127.0.0.1:53\n\n" +
+			"  To list or change the proxies on an anchor that is already running, that is\n" +
+			"  anchorctl's proxy, and it is one word away:\n\n" +
+			"    conflux anchorctl proxy\n" +
+			"    conflux anchorctl proxy -add 8080=127.0.0.1:3000")
+
+		return ExitUsage
+	}
 
 	specsParsed, err := config.ValidateProxies(specs)
 	if err != nil {
@@ -260,7 +261,8 @@ func (f *proxyFlags) lookup(arg string) (fl *flag.Flag, foreign bool) {
 
 // unknown returns the first flag that is not one of conflux proxy's own (lookup), or "". The
 // value of a flag that takes one is its value whatever it looks like, as split reads it:
-// `--manifest -` names stdin, and is not a flag called "-".
+// `--manifest -` names stdin, and is not a flag called "-". Past the "--" that ends the flags
+// every word is a spec, as split reads it, and none is a flag.
 func (f *proxyFlags) unknown(args []string) string {
 	expectValue := false
 
@@ -268,6 +270,8 @@ func (f *proxyFlags) unknown(args []string) string {
 		switch {
 		case expectValue:
 			expectValue = false
+		case a == "--":
+			return ""
 		case strings.HasPrefix(a, "-"):
 			fl, foreign := f.lookup(a)
 			if foreign {
@@ -287,15 +291,19 @@ func (f *proxyFlags) unknown(args []string) string {
 //
 // A flag written as -taint value, rather than -taint=value, takes the next argument
 // with it unless it is a boolean. --lan-discovery is a tristate written as a value, so
-// `conflux proxy --lan-discovery no 8080=127.0.0.1:3000` has one spec and not two.
+// `conflux proxy --lan-discovery no 8080=127.0.0.1:3000` has one spec and not two. The "--"
+// that ends the flags, where no flag takes it for its value, makes every word after it a
+// spec, whatever it looks like.
 func (f *proxyFlags) split(args []string) (positional, flags []string) {
 	expectValue := false
 
-	for _, a := range args {
+	for i, a := range args {
 		switch {
 		case expectValue:
 			flags = append(flags, a)
 			expectValue = false
+		case a == "--":
+			return append(positional, args[i+1:]...), flags
 		case strings.HasPrefix(a, "-"):
 			flags = append(flags, a)
 

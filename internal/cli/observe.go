@@ -25,10 +25,10 @@ import (
 // anchorctl's observe starts and stops the observer of a running daemon, and reports on it.
 //
 // The collision is resolved by shape, as conflux proxy's is: conflux observe takes its own
-// flags and no argument, and every other dash-prefixed word -- anchorctl's -start, -stop,
-// -socket -- is answered with where it belongs rather than guessed at. Bare, it is
-// conflux's, which is the one shape that matters: an anchorctl user typing it for a report
-// would stop an anchor this machine runs, so that switch is confirmed first.
+// flags and no argument, and every other flag ahead of the "--" that ends the flags, such as
+// anchorctl's -start, -stop and -socket, is answered with where it belongs rather than guessed
+// at. Bare, it is conflux's, which is the one shape that matters: an anchorctl user typing it
+// for a report would stop an anchor this machine runs, so that switch is confirmed first.
 func runObserve(ctx context.Context, args []string) int {
 	f := newObserveFlags()
 
@@ -181,10 +181,15 @@ func newObserveFlags() *observeFlags {
 }
 
 // anchorctls returns what to say about the first flag that is not one of conflux observe's
-// own, or "". An argument that is no flag's spelling (flagName) is left to the flag set: bad
-// syntax, the end of its flags, or an argument observe does not take.
+// own, or "", reading no further than the "--" that ends the flags. An argument that is no
+// flag's spelling (flagName), and every word after "--", is left to the flag set: bad syntax,
+// or an argument observe does not take.
 func (f *observeFlags) anchorctls(args []string) string {
 	for _, a := range args {
+		if a == "--" {
+			break
+		}
+
 		name, ok := flagName(a)
 		if !ok || helpFlag(a) || f.fs.Lookup(name) != nil {
 			continue

@@ -429,14 +429,14 @@ func untilRenewal(m *enrol.Manifest) time.Duration {
 //
 // First, on Windows, the Wintun driver a TUN run's interface installed, through the library
 // that run placed in its root, while it is still there: Wintun keeps the driver while any
-// adapter is in use, so an installed conflux's interface, or another program's, keeps it, and
-// that answer comes back with the rest. Then everything but the lock, while it is held, so a
-// run starting meanwhile is refused rather than emptied out from under itself. Then the lock
-// file and the root: on Unix while the lock is still held, as the file goes on being under no
-// name, so a run starting after makes a lock of its own; on Windows, where a file held open
-// cannot be removed, once it is let go, and a run that took it in between keeps both, since
-// removing either then fails. Where something will not go, the lock is kept, so the next run,
-// or uninstall, finds a root to clear.
+// adapter is in use, so an installed conflux's interface, or another program's, keeps it, which
+// is no failure; any other answer comes back with the rest. Then everything but the lock,
+// while it is held, so a run starting meanwhile is refused rather than emptied out from under
+// itself. Then the lock file and the root: on Unix while the lock is still held, as the file
+// goes on being under no name, so a run starting after makes a lock of its own; on Windows,
+// where a file held open cannot be removed, once it is let go, and a run that took it in
+// between keeps both, since removing either then fails. Where something will not go, the lock
+// is kept, so the next run, or uninstall, finds a root to clear.
 func RemoveEphemeralRoot(d paths.Dirs, unlock func()) error {
 	driver := deleteDriver(d)
 	lock := d.ServeLockFile()
@@ -479,8 +479,9 @@ var ephemeralUnlocked = func() {}
 // clearKilled empties a root of what a killed run left, all but the lock this run holds. A
 // killed TUN run's driver goes first, through the library its root still holds, which nothing
 // could remove it with once the root is cleared; Windows keeps it while any adapter is in use,
-// which is said and does not stop the run. A root holding no library removes no driver, as
-// RemoveEphemeralRoot's does not: wintun.DeleteDriver finds none to remove it through.
+// which is no failure, and a failure is said and does not stop the run. A root holding no
+// library removes no driver, as RemoveEphemeralRoot's does not: wintun.DeleteDriver finds
+// none to remove it through.
 func clearKilled(d paths.Dirs, e *Ephemeral) error {
 	if err := deleteDriver(d); err != nil {
 		e.report().Warn("%v", err)

@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -171,9 +172,13 @@ func offline(target string, cause error) error {
 }
 
 // DeleteDriver removes the Wintun driver from the machine through a library conflux placed
-// under d, for `conflux uninstall`: WintunDeleteDriver removes it only while no adapter,
-// conflux's or another program's, is in use, so a driver another program still relies on
-// stays. Nothing when no library was ever placed.
+// under d, for `conflux uninstall` and the removal of an ephemeral run's root. Nothing when no
+// library was ever placed.
+//
+// WintunDeleteDriver removes it only while no adapter, conflux's or another program's, is in
+// use: it uninstalls the driver's INF with SetupUninstallOEMInf, unforced, which refuses an INF
+// a device still uses with ERROR_INF_IN_USE_BY_DEVICES, and hands that back. That is a driver
+// another program still relies on, kept as it should be, and no failure.
 func DeleteDriver(d paths.Dirs) error {
 	path := driverLibrary(d)
 	if path == "" {
@@ -191,8 +196,8 @@ func DeleteDriver(d paths.Dirs) error {
 		return err
 	}
 
-	if ok, _, callErr := proc.Call(); ok == 0 {
-		return fmt.Errorf("remove the Wintun driver (it stays while an adapter is in use): %w", callErr)
+	if ok, _, callErr := proc.Call(); ok == 0 && !errors.Is(callErr, windows.ERROR_INF_IN_USE_BY_DEVICES) {
+		return fmt.Errorf("remove the Wintun driver: %w", callErr)
 	}
 
 	return nil

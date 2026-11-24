@@ -255,7 +255,7 @@ const (
 
 // ephemeralAt is the ephemeral root at root and what it says of its run, asking its lock once.
 func ephemeralAt(root string) (paths.Dirs, runState) {
-	d := paths.EphemeralDirs(root)
+	d := paths.Dirs{Root: root}
 
 	if _, err := os.Stat(d.ServeLockFile()); err != nil {
 		return d, noRun

@@ -18,13 +18,10 @@ import (
 // ephemeralName is the root's name, in the system's or the user's runtime directory.
 const ephemeralName = "conflux-ephemeral"
 
-// EphemeralDirs is an ephemeral run kept in root. Nothing is ever written there as a
-// configuration, a state or an identity, and there is no log: an ephemeral run's output
-// goes to the terminal it runs in.
-func EphemeralDirs(root string) Dirs { return Dirs{Root: root} }
-
-// Ephemeral is the root an ephemeral run of this account is kept in.
-func Ephemeral() Dirs { return EphemeralDirs(EphemeralRoot()) }
+// Ephemeral is the root an ephemeral run of this account is kept in. Nothing is ever written
+// there as a configuration, a state or an identity, and there is no log: an ephemeral run's
+// output goes to the terminal it runs in.
+func Ephemeral() Dirs { return Dirs{Root: EphemeralRoot()} }
 
 // EphemeralRoot is where this account's ephemeral run is kept: in memory where the platform
 // keeps its runtime files there, and everywhere somewhere a reboot empties. Per account,

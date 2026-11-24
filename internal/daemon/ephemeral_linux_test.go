@@ -39,7 +39,7 @@ func TestAKilledEphemeralRunTakesItsDaemonWithIt(t *testing.T) {
 	var pid int
 
 	eventually(t, "the run's anchord to be recorded", func() bool {
-		b, err := os.ReadFile(paths.EphemeralDirs(root).DaemonPIDFile())
+		b, err := os.ReadFile(paths.Dirs{Root: root}.DaemonPIDFile())
 		if err != nil {
 			return false
 		}
@@ -80,7 +80,7 @@ func running(pid int) bool {
 func TestAnEphemeralRunKeepsItsPairInMemory(t *testing.T) {
 	anchortest.Require(t)
 
-	d := paths.EphemeralDirs(filepath.Join(dirs(t).Root, "e"))
+	d := paths.Dirs{Root: filepath.Join(dirs(t).Root, "e")}
 
 	tools, err := (&Ephemeral{Dirs: d}).pair()
 	if err != nil {

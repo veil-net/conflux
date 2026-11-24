@@ -118,11 +118,11 @@ func TestUninstallIsRefusedWhileAnEphemeralRunIsLive(t *testing.T) {
 func TestUninstallTakesAStaleEphemeralRoot(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "e")
 
-	if err := paths.EphemeralDirs(root).EnsureAll(); err != nil {
+	if err := (paths.Dirs{Root: root}).EnsureAll(); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := os.WriteFile(paths.EphemeralDirs(root).ServeLockFile(), nil, 0o600); err != nil {
+	if err := os.WriteFile(paths.Dirs{Root: root}.ServeLockFile(), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -130,7 +130,7 @@ func TestUninstallTakesAStaleEphemeralRoot(t *testing.T) {
 		t.Fatalf("staleEphemeral(%s) = %v, %v: a killed run's root is not taken for stale", root, d, stale)
 	}
 
-	unlock, err := flock.Acquire(paths.EphemeralDirs(root).ServeLockFile())
+	unlock, err := flock.Acquire(paths.Dirs{Root: root}.ServeLockFile())
 	if err != nil {
 		t.Fatal(err)
 	}

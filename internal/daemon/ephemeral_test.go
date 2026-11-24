@@ -65,7 +65,7 @@ func runEphemeral(t *testing.T, is *issuer, env config.Envelope) *ephemeralRig {
 	r := &ephemeralRig{root: root, ups: make(chan EphemeralUp, 1), finished: make(chan struct{})}
 
 	e := &Ephemeral{
-		Dirs:       paths.EphemeralDirs(root),
+		Dirs:       paths.Dirs{Root: root},
 		Config:     &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, APIBaseURL: is.srv.URL},
 		Manifest:   env,
 		Up:         func(u EphemeralUp) { r.ups <- u },
@@ -141,7 +141,7 @@ func TestAnEphemeralRunWritesNothingAndLeavesNothing(t *testing.T) {
 	}
 
 	// Up, and saying so to the readers that wait for it, in the root that goes with it.
-	if !IsReady(paths.EphemeralDirs(r.root)) {
+	if !IsReady(paths.Dirs{Root: r.root}) {
 		t.Error("the run is up and has not marked itself ready")
 	}
 
@@ -193,7 +193,7 @@ func TestAnEphemeralRunEndsWithItsDaemon(t *testing.T) {
 	r := runEphemeral(t, is, handed(t, is, time.Now().Add(-time.Hour), time.Now().Add(30*24*time.Hour)))
 	r.up(t)
 
-	b, err := os.ReadFile(paths.EphemeralDirs(r.root).DaemonPIDFile())
+	b, err := os.ReadFile(paths.Dirs{Root: r.root}.DaemonPIDFile())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +257,7 @@ func TestAnEphemeralRootGoesWhileItsLockIsHeld(t *testing.T) {
 
 	// The next run, starting where the lock has just been let go.
 	ephemeralUnlocked = func() {
-		d := paths.EphemeralDirs(root)
+		d := paths.Dirs{Root: root}
 		if err := d.EnsureAll(); err != nil {
 			t.Errorf("the next run could not make its root: %v", err)
 
@@ -294,7 +294,7 @@ func TestAnEphemeralRootGoesWhileItsLockIsHeld(t *testing.T) {
 	}
 	defer next()
 
-	for _, p := range []string{filepath.Join(root, "next"), paths.EphemeralDirs(root).ServeLockFile()} {
+	for _, p := range []string{filepath.Join(root, "next"), paths.Dirs{Root: root}.ServeLockFile()} {
 		if _, err := os.Stat(p); err != nil {
 			t.Errorf("the ended run removed the next one's %s: %v", filepath.Base(p), err)
 		}
@@ -327,7 +327,7 @@ func TestAnEphemeralRootTakesTheDriverWithIt(t *testing.T) {
 	// A TUN run's end, once and not twice, through the library its root holds by then.
 	r := runEphemeral(t, is, handed(t, is, time.Now().Add(-time.Hour), time.Now().Add(30*24*time.Hour)))
 	r.up(t)
-	placeLibrary(t, paths.EphemeralDirs(r.root))
+	placeLibrary(t, paths.Dirs{Root: r.root})
 	r.cancel()
 
 	if err := r.ended(t); err != nil {
@@ -339,7 +339,7 @@ func TestAnEphemeralRootTakesTheDriverWithIt(t *testing.T) {
 	}
 
 	// uninstall's, for the root a killed TUN run left, its library still in its set.
-	d := paths.EphemeralDirs(filepath.Join(t.TempDir(), "killed"))
+	d := paths.Dirs{Root: filepath.Join(t.TempDir(), "killed")}
 	if err := d.EnsureAll(); err != nil {
 		t.Fatal(err)
 	}
@@ -397,7 +397,7 @@ func TestASecondEphemeralRunIsRefused(t *testing.T) {
 	is := newIssuer(t)
 
 	root := filepath.Join(dirs(t).Root, "e")
-	if err := paths.EphemeralDirs(root).EnsureAll(); err != nil {
+	if err := (paths.Dirs{Root: root}).EnsureAll(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -408,7 +408,7 @@ func TestASecondEphemeralRunIsRefused(t *testing.T) {
 	defer unlock()
 
 	e := &Ephemeral{
-		Dirs:     paths.EphemeralDirs(root),
+		Dirs:     paths.Dirs{Root: root},
 		Config:   &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, APIBaseURL: is.srv.URL},
 		Manifest: handed(t, is, time.Now().Add(-time.Hour), time.Now().Add(30*24*time.Hour)),
 		tools:    &libexec.Tools{Anchord: os.Args[0], Anchorctl: os.Args[0]},
@@ -451,7 +451,7 @@ const (
 
 func ephemeralRunner(root string) int {
 	e := &Ephemeral{
-		Dirs:     paths.EphemeralDirs(root),
+		Dirs:     paths.Dirs{Root: root},
 		Config:   &config.Config{Mode: config.ModeProxy, Taints: []string{"t"}, APIBaseURL: os.Getenv(ephemeralRunnerAPI)},
 		Manifest: config.Envelope(os.Getenv(ephemeralRunnerManifest)),
 		tools:    &libexec.Tools{Anchord: os.Args[0], Anchorctl: os.Args[0]},
@@ -468,7 +468,7 @@ func ephemeralRunner(root string) int {
 // and asks for the killed TUN run's driver to go first, through the library still in its root:
 // cleared, the root would leave nothing a later uninstall could remove the driver with.
 func TestANextRunTakesAKilledRunsDriver(t *testing.T) {
-	d := paths.EphemeralDirs(filepath.Join(t.TempDir(), "killed"))
+	d := paths.Dirs{Root: filepath.Join(t.TempDir(), "killed")}
 	if err := d.EnsureAll(); err != nil {
 		t.Fatal(err)
 	}

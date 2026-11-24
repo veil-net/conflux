@@ -32,7 +32,7 @@ func TestTidyPutsTheRootsFilesBackToTheirModes(t *testing.T) {
 		}(path, want)
 	}
 
-	if err := s.tidy(); err != nil {
+	if err := s.tidyRoot(); err != nil {
 		t.Fatal(err)
 	}
 }

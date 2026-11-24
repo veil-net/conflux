@@ -109,10 +109,10 @@ func supervisorName() string {
 func (s *Supervisor) prepare(p *Privilege) error {
 	s.killLeftovers()
 
-	// What is in the root that is neither conflux's nor anchor's goes, now that nothing of the
+	// What is in the anchor directories that is not anchor's goes, now that nothing of the
 	// account's runs: a file that will not go is said and left, and costs no start.
-	if err := s.tidy(); err != nil {
-		s.report().Warn("could not remove what is not conflux's from %s: %v", s.Dirs.Root, err)
+	if err := s.tidyAnchorDirs(); err != nil {
+		s.report().Warn("could not remove what is not anchor's from its directories: %v", err)
 	}
 
 	if err := s.freshDaemonRun(*p); err != nil {

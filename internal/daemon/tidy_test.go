@@ -7,9 +7,10 @@ import (
 	"time"
 )
 
-// TestTidyKeepsOnlyWhatIsConfluxsAndAnchors: before anchord starts, the root, its run
-// directory and both anchor directories hold what conflux and anchor put there and nothing
-// else; a temporary file young enough to be another conflux's write in progress is left.
+// TestTidyKeepsOnlyWhatIsConfluxsAndAnchors: the root, as a start puts it back, and both
+// anchor directories, before each anchord starts, hold what conflux and anchor put there and
+// nothing else; a temporary file young enough to be another conflux's write in progress is
+// left. The run directory a start empties whole (TestAStartEmptiesTheRunDirectory).
 func TestTidyKeepsOnlyWhatIsConfluxsAndAnchors(t *testing.T) {
 	s := &Supervisor{Dirs: dirs(t)}
 	d := s.Dirs
@@ -27,9 +28,6 @@ func TestTidyKeepsOnlyWhatIsConfluxsAndAnchors(t *testing.T) {
 		filepath.Join(d.Root, "stray"):                      false,
 		filepath.Join(d.Root, ".tmp-123"):                   true,
 		filepath.Join(d.Root, ".conflux-123"):               true,
-		d.TokenFile():                                       true,
-		d.ReadyFile():                                       true,
-		filepath.Join(d.RunDir(), "stray"):                  false,
 		filepath.Join(d.AnchorDir(), "bootstrap.json"):      true,
 		filepath.Join(d.AnchorDir(), "realmlinks"):          true,
 		filepath.Join(d.AnchorDir(), "subnets.json"):        true,
@@ -61,8 +59,12 @@ func TestTidyKeepsOnlyWhatIsConfluxsAndAnchors(t *testing.T) {
 		files[stale] = false
 	}
 
-	if err := s.tidy(); err != nil {
-		t.Fatalf("tidy: %v", err)
+	if err := s.tidyRoot(); err != nil {
+		t.Fatalf("tidyRoot: %v", err)
+	}
+
+	if err := s.tidyAnchorDirs(); err != nil {
+		t.Fatalf("tidyAnchorDirs: %v", err)
 	}
 
 	for path, kept := range files {

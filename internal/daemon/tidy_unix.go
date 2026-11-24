@@ -18,15 +18,18 @@ func (s *Supervisor) restoreModes() error {
 
 	var errs []error
 
-	for path, mode := range map[string]fs.FileMode{
-		d.ConfigFile(): 0o600, d.StateFile(): 0o600, d.ManifestFile(): 0o600, d.PrivilegeFile(): 0o600,
-		d.LockFile(): 0o600, d.ServeLockFile(): 0o600, d.ServiceExecutable(): 0o700,
+	for _, f := range []struct {
+		path string
+		mode fs.FileMode
+	}{
+		{d.ConfigFile(), 0o600}, {d.StateFile(), 0o600}, {d.ManifestFile(), 0o600}, {d.PrivilegeFile(), 0o600},
+		{d.LockFile(), 0o600}, {d.ServeLockFile(), 0o600}, {d.ServiceExecutable(), 0o700},
 	} {
-		if fi, err := os.Lstat(path); err != nil || !fi.Mode().IsRegular() {
+		if fi, err := os.Lstat(f.path); err != nil || !fi.Mode().IsRegular() {
 			continue
 		}
 
-		errs = append(errs, ownAs(path, uid, gid, mode))
+		errs = append(errs, ownAs(f.path, uid, gid, f.mode))
 	}
 
 	return errors.Join(errs...)

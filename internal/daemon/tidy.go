@@ -12,6 +12,7 @@ import (
 
 	"github.com/veil-net/conflux/internal/config"
 	"github.com/veil-net/conflux/internal/libexec"
+	"github.com/veil-net/conflux/internal/paths"
 	"github.com/veil-net/conflux/internal/service"
 )
 
@@ -20,48 +21,51 @@ import (
 // order's grant among them), and a list a member's Subnets order wrote. Nothing else there
 // is anchor's to read. anchor's own temporaries (.<name>-<random>.tmp) are a write anchord
 // did not finish, and no anchord runs while the directory is tidied.
-var anchorFiles = []string{"bootstrap.json", "realmlinks", "knowledge", "subnets.json"}
+var anchorFiles = named("bootstrap.json", "realmlinks", "knowledge", "subnets.json")
 
-// tidy keeps the root to what conflux and anchor put there, and removes everything else: the
-// root's own entries, its run directory's, and both anchor directories'. What it keeps of
-// the root's own files it gives back to their owner and modes (restoreModes). The bin directory is
-// libexec.Sweep's. Run before every spawn, once the account's leftovers are ended and before
-// anything is laid out for the next anchord, so nothing it removes is in use.
-func (s *Supervisor) tidy() error {
-	d := s.Dirs
+// rootNames are the root's own entries: what conflux keeps there, the directories in it, and
+// what the platform's service manager or the service copy's last move left beside them. The
+// same names in every root, so read once, off a root that is nowhere.
+var rootNames = func() []string {
+	d := paths.Dirs{}
 
-	root := names(d.ConfigFile(), d.StateFile(), d.ManifestFile(), d.DaemonConfigFile(), d.PrivilegeFile(),
+	var out []string
+
+	for _, p := range []string{
+		d.ConfigFile(), d.StateFile(), d.ManifestFile(), d.DaemonConfigFile(), d.PrivilegeFile(),
 		d.LockFile(), d.ServeLockFile(), d.ServiceExecutable(), d.Libexec(), d.AnchorDir(), d.RootAnchorDir(),
 		d.RunDir(),
 		// The copy a running Windows service's image was moved aside to, which the next Place
 		// removes once nothing runs it.
-		d.ServiceExecutable()+".old",
+		d.ServiceExecutable() + ".old",
 		// FreeBSD's daemon(8)'s record of the supervisor, which rc.subr stops it by.
-		d.RCPidFile())
-
-	run := names(d.TokenFile(), d.DaemonPIDFile(), d.ReadyFile(), d.DaemonRun())
-
-	errs := []error{
-		removeExcept(d.Root, func(e fs.DirEntry) bool { return slices.Contains(root, e.Name()) || inProgress(e) }),
-		removeExcept(d.RunDir(), named(run...)),
-		s.restoreModes(),
-	}
-
-	for _, dir := range []string{d.AnchorDir(), d.RootAnchorDir()} {
-		errs = append(errs, removeExcept(dir, named(anchorFiles...)))
-	}
-
-	return errors.Join(errs...)
-}
-
-// names are the base names of paths.
-func names(paths ...string) []string {
-	out := make([]string, len(paths))
-	for i, p := range paths {
-		out[i] = filepath.Base(p)
+		d.RCPidFile(),
+	} {
+		out = append(out, filepath.Base(p))
 	}
 
 	return out
+}()
+
+// tidyRoot keeps the root's own entries to what conflux and anchor put there, removing
+// everything else but a temporary file young enough to be another conflux's write in
+// progress, and gives the root's own files back their owner and modes (restoreModes). Once a
+// start, as Run puts the root back: only the supervisor's own account can write there, so
+// nothing appears between one spawn and the next for it to take. The run directory a start
+// empties whole, and the bin directory is libexec.Sweep's.
+func (s *Supervisor) tidyRoot() error {
+	return errors.Join(removeExcept(s.Dirs.Root, rootEntry), s.restoreModes())
+}
+
+// rootEntry keeps one of the root's own entries, or a write in progress.
+func rootEntry(e fs.DirEntry) bool { return slices.Contains(rootNames, e.Name()) || inProgress(e) }
+
+// tidyAnchorDirs removes from both anchor directories everything that is not anchor's. Before
+// every spawn, once the account's leftovers are ended and before anything is laid out for the
+// next anchord, so nothing it removes is in use: the account writes in its directory for as
+// long as an anchord of its runs.
+func (s *Supervisor) tidyAnchorDirs() error {
+	return errors.Join(removeExcept(s.Dirs.AnchorDir(), anchorFiles), removeExcept(s.Dirs.RootAnchorDir(), anchorFiles))
 }
 
 // removeExcept removes every entry of dir that keep does not keep, going on past one that will

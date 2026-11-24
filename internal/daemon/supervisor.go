@@ -212,6 +212,13 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		return cfgErr
 	}
 
+	// The rest of the root: what is neither conflux's nor anchor's goes, and the root's own
+	// files get their owner and modes back. A file that will not go is said and left, and
+	// costs no start.
+	if err := s.tidyRoot(); err != nil {
+		s.report().Warn("could not put %s back to what conflux keeps there: %v", s.Dirs.Root, err)
+	}
+
 	// Held to this build's digests, not only found whole: anchord runs from here as root,
 	// or as an account root gives what it needs, and a binary changed on disk is extracted
 	// again rather than run.

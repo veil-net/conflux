@@ -21,14 +21,17 @@ manager watches.
 
 At every boot the supervisor takes the root's `serve.lock` — one supervisor per root —
 stops any `anchord` a supervisor that died left running (below), empties `run/`, reads
-`conflux.json`, extracts the anchor pair if it is not already on disk and holds the one that is
+`conflux.json`, removes from the root whatever neither conflux nor anchor put there and gives
+the root's own files back their owner and modes ([config.md](config.md#where)), extracts the
+anchor pair if it is not already on disk and holds the one that is
 to this build's SHA-256s — a binary changed on disk is extracted again rather than run, and a
 pair whose files are as they were when last checked is taken on a stat of each, so a start
 reads it only when something touched it — writes a fresh bearer token,
 decides what `anchord` runs as — its own account, with exactly the capabilities its mode
 needs, wherever that costs it nothing; see [security.md](security.md#what-anchord-runs-as)
-— removes from the root, `run/` and the anchor directories whatever neither conflux nor anchor
-put there ([config.md](config.md#where)), makes the account the first time, lays out the directories that identity reaches,
+— makes the account the first time, removes from both anchor directories whatever anchor did
+not put there, as it does before every start of `anchord`, since the account writes in its
+own, lays out the directories that identity reaches,
 starts `anchord`, waits until it answers an authenticated `status` call, enrols the machine
 if it has no credential yet or renews the one it has if it is past two thirds of its window,
 starts the observer under it where the configuration observes, and starts the anchor. No

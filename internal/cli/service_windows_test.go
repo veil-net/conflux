@@ -1,13 +1,16 @@
 package cli
 
 import (
+	"bytes"
 	"errors"
+	"strings"
 	"testing"
 
 	"golang.org/x/sys/windows/svc"
 
 	"github.com/veil-net/conflux/internal/daemon"
 	"github.com/veil-net/conflux/internal/paths"
+	"github.com/veil-net/conflux/internal/ui"
 )
 
 // TestOnlyATransientExitAsksForARestart: the SCM's recovery restarts what reports a
@@ -48,9 +51,22 @@ func TestTheServiceReportsStoppedOnce(t *testing.T) {
 		t.Errorf("a service with nothing to start returned %v, %d (code %d); want a clean stop, 78 in the log", specific, exitCode, h.code)
 	}
 
+	// What stops it is said where the service's output goes, which serveAsService makes the
+	// event log: the SCM's record of the exit says only that it failed.
+	var errw bytes.Buffer
+
+	was := ui.Errw
+	ui.Errw = &errw
+
+	t.Cleanup(func() { ui.Errw = was })
+
 	failed := &handler{sup: h.sup, setup: errors.New("no disk")}
 
 	if specific, exitCode := failed.Execute(nil, make(chan svc.ChangeRequest), make(chan svc.Status, 8)); !specific || exitCode != ExitError {
 		t.Errorf("a service that could not make its directories returned %v, %d; want a failure the SCM restarts", specific, exitCode)
+	}
+
+	if !strings.Contains(errw.String(), "no disk") {
+		t.Errorf("a service that could not make its directories wrote %q, which does not say why", errw.String())
 	}
 }

@@ -341,7 +341,8 @@ daemon-shutdown RPC — are `anchord`'s to offer and it offers neither.
 A supervisor that stops on what the next start may not meet — exit 1 — reports a
 service-specific error, which the recovery actions restart. One that stops on nothing to
 start, or on a configuration no restart changes — 78 or 70 — reports a clean stop, so they
-do not restart it into the same answer, and writes why to the log. The SCM is told once,
+do not restart it into the same answer, and writes why to the log. A service that cannot make
+its root at all stops as exit 1 does, and writes why to the log too. The SCM is told once,
 with that exit, when the handler returns. The service accepts Stop from the moment it
 starts, so `conflux down`, a restart and `uninstall` need not wait out a bring-up that is
 slow or keeps failing.

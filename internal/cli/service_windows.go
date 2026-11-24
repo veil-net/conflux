@@ -32,7 +32,8 @@ func serveAsService(sup *daemon.Supervisor) (bool, int) {
 	// Without the root there is nothing to supervise, and the SCM still has to be answered:
 	// returning without svc.Run leaves it to time the start out with nothing recorded
 	// anywhere. So the failure goes to the SCM as the service's exit instead, which the System
-	// event log records and the recovery actions retry.
+	// event log records and the recovery actions retry, and its reason to the Application log
+	// with the rest of what the service says (Execute).
 	setup := sup.Dirs.EnsureAll()
 
 	if l, err := eventlog.Open(service.ServiceName); err == nil {
@@ -83,7 +84,10 @@ func scmExit(code int) (svcSpecific bool, exitCode uint32) {
 func (h *handler) Execute(_ []string, r <-chan svc.ChangeRequest, s chan<- svc.Status) (bool, uint32) {
 	const accepted = svc.AcceptStop | svc.AcceptShutdown
 
+	// The SCM's record of the exit says only that it failed; why goes to the event log.
 	if h.setup != nil {
+		ui.Errf("%v", h.setup)
+
 		h.code = ExitError
 
 		return scmExit(h.code)

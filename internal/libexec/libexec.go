@@ -141,13 +141,18 @@ func Extracted(d paths.Dirs) (*Tools, error) {
 }
 
 // ForUsage is an anchorctl to ask what a command takes, for help that must leave nothing
-// behind: this build's, extracted under d, where a whole extraction is there and readable,
-// and otherwise a copy in a private temporary directory, which done removes. Never d's own
+// behind: this build's, extracted under d, where a whole extraction is there and readable;
+// otherwise one in memory, where the platform runs one from there (AnchorctlInMemory); and
+// otherwise a copy in a private temporary directory, which done removes. Never d's own
 // directories. Making them for help remade, after an uninstall, what it had removed, with 45 MB
 // of binaries in it; and on Windows, asked by an account that is not an administrator, it
 // left %ProgramData%\conflux owned by that account, which every later install then refused.
 func ForUsage(d paths.Dirs) (bin string, done func(), err error) {
 	if t, err := Extracted(d); err == nil {
+		return t.Anchorctl, func() {}, nil
+	}
+
+	if t, err := AnchorctlInMemory(); err == nil {
 		return t.Anchorctl, func() {}, nil
 	}
 

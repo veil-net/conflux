@@ -3,10 +3,12 @@ package libexec
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/veil-net/conflux/internal/anchortest"
+	"github.com/veil-net/conflux/internal/paths"
 )
 
 // TestInMemoryRunsWithNoFile: an ephemeral run's pair is sealed memory, run by its
@@ -66,5 +68,28 @@ func TestAnchorctlInMemoryIsAnchorctlAlone(t *testing.T) {
 
 	if tools.Anchord != "" || !strings.HasPrefix(tools.Anchorctl, "/proc/self/fd/") {
 		t.Errorf("AnchorctlInMemory = %+v", tools)
+	}
+}
+
+// TestForUsageWritesNothing: help asks an anchorctl in memory, and puts no copy of it in a
+// temporary directory.
+func TestForUsageWritesNothing(t *testing.T) {
+	anchortest.Require(t)
+
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+
+	bin, done, err := ForUsage(paths.Dirs{Root: filepath.Join(t.TempDir(), "nothing-extracted")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer done()
+
+	if !strings.HasPrefix(bin, "/proc/self/fd/") {
+		t.Errorf("help asks %s, not an anchorctl in memory", bin)
+	}
+
+	if entries, _ := os.ReadDir(tmp); len(entries) > 0 {
+		t.Errorf("help wrote %d entries into the temporary directory", len(entries))
 	}
 }

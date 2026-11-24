@@ -249,14 +249,16 @@ func TestSweepKeepsOnlyWhatIsConfluxs(t *testing.T) {
 }
 
 // TestUsageMakesNothing: help, asked where nothing is extracted -- before an install, after an
-// uninstall, by an account that cannot read the installation -- runs a temporary anchorctl and
-// removes it, and makes none of the installation's directories. Where a whole extraction is
-// there it is the one used, and nothing is removed.
+// uninstall, by an account that cannot read the installation -- runs an anchorctl in memory or
+// a temporary one it removes, and makes none of the installation's directories. Where a whole
+// extraction is there it is the one used, and nothing is removed.
 func TestUsageMakesNothing(t *testing.T) {
 	anchortest.Require(t)
 
 	t.Cleanup(paths.UseRoot(filepath.Join(t.TempDir(), "never")))
-	t.Setenv("TMPDIR", t.TempDir())
+
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
 
 	d := paths.Default()
 
@@ -271,8 +273,8 @@ func TestUsageMakesNothing(t *testing.T) {
 
 	done()
 
-	if _, err := os.Stat(filepath.Dir(bin)); !os.IsNotExist(err) {
-		t.Errorf("the temporary anchorctl's directory is still there after done (%v)", err)
+	if entries, _ := os.ReadDir(tmp); len(entries) > 0 {
+		t.Errorf("help left %d entries in the temporary directory after done", len(entries))
 	}
 
 	if _, err := os.Stat(d.Root); !os.IsNotExist(err) {

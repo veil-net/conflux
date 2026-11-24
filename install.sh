@@ -125,10 +125,13 @@ rootpath() {
 # link makes /usr/bin/conflux a link to $exe where root's PATH would not find $exe, and keeps it
 # only where root's PATH, asked again, finds $exe through it: a link it does not find $exe
 # through, made now or by a run before, does nothing, so it goes and what root's PATH finds
-# instead is named. Each is compared as a file (-ef), through any link, never by how it is
+# instead is named. The link is made, root's PATH asked with it in place, and the link taken
+# back in one call as root, so a sudo or doas that asks for the password at every call asks
+# once for all three. Each is compared as a file (-ef), through any link, never by how it is
 # spelled. A /usr/bin/conflux that is not that link is left alone. A /usr/bin that cannot be
 # written -- macOS's -- is said, and not a failure: conflux is installed all the same, as it is
-# where root's PATH cannot be asked at all, which is said too, rather than nothing.
+# where root's PATH cannot be asked at all, or a link a run before made cannot be taken back,
+# each of which is said too, rather than nothing.
 link() {
   if ! rootpath; then
     say "" "Could not ask $as for root's PATH: run the installer as root to link conflux for sudo, or type $exe by its full path under sudo."
@@ -137,7 +140,13 @@ link() {
 
   [ -n "$found" ] && [ "$found" -ef "$exe" ] && return 0
 
-  if ! { [ -L "$sudolink" ] && [ "$(readlink "$sudolink")" = "$exe" ]; }; then
+  if [ -L "$sudolink" ] && [ "$(readlink "$sudolink")" = "$exe" ]; then
+    # A run before made it, and root's PATH, just asked, does not find $exe through it.
+    if ! asroot rm -f "$sudolink"; then
+      say "" "Could not remove $sudolink, which root's PATH does not find $exe through: type $exe by its full path under sudo."
+      return 0
+    fi
+  else
     # Why root's PATH does not find $exe: it leaves $dir out, or it finds another conflux first.
     why="root's PATH leaves $dir out"
     [ -n "$found" ] && why="root's PATH finds $found first"
@@ -147,19 +156,21 @@ link() {
       return 0
     fi
 
-    if ! asroot ln -s "$exe" "$sudolink" 2>/dev/null; then
+    # shellcheck disable=SC2016 # $1, $2 and $f are the root shell's own
+    if ! found=$(asroot sh -c 'ln -s "$1" "$2" 2>/dev/null || exit 1
+        f=$(command -v conflux) || f=""
+        { [ -n "$f" ] && [ "$f" -ef "$1" ]; } || rm -f "$2"
+        printf "%s\n" "$f"' sh "$exe" "$sudolink"); then
       say "" "Since $why, type $exe by its full path under sudo."
       return 0
     fi
 
-    rootpath || found=""
     if [ -n "$found" ] && [ "$found" -ef "$exe" ]; then
       say "Linked $sudolink to it, since $why."
       return 0
     fi
   fi
 
-  asroot rm -f "$sudolink"
   missed
 }
 
@@ -218,6 +229,17 @@ next_steps() {
     "See https://github.com/$REPO for the rest."
 }
 
+# cleanup, on the way out, removes the temporary directory and the copy beside the destination
+# where one was left before it was renamed into place: not a conflux that runs here, or the run
+# interrupted or refused a step. A copy root cannot be asked to remove is said, and the exit
+# stays the one the script was leaving with.
+cleanup() {
+  rm -rf "$tmp"
+  if [ -n "$new" ] && [ -e "$new" ]; then
+    asroot rm -f "$new" || say "Could not remove $new: remove it as root." >&2
+  fi
+}
+
 main() {
   platform
 
@@ -229,9 +251,8 @@ main() {
   base=https://github.com/$REPO/releases/download/$tag
 
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/conflux-install.XXXXXX") || die "could not make a temporary directory"
-  # And the copy beside the destination, if one was interrupted before it was renamed into place.
   new=
-  trap 'rm -rf "$tmp"; if [ -n "$new" ] && [ -e "$new" ]; then asroot rm -f "$new"; fi' EXIT
+  trap cleanup EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
 
@@ -280,8 +301,8 @@ main() {
   asroot cp "$tmp/conflux" "$new"
   asroot chmod 0755 "$new"
 
+  # cleanup removes the copy, once this is said.
   if ! now=$("$new" version </dev/null 2>&1) || [ "${now#conflux }" = "$now" ]; then
-    asroot rm -f "$new"
     die "the downloaded conflux does not run on this machine, so nothing was installed: $(printf '%s\n' "$now" | sed -n 1p)"
   fi
 

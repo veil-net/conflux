@@ -213,12 +213,13 @@ jobs:
             echo '```'
             echo
             # A dev build's anchor is pinned to the dev tree, which only api-dev enrols in, and
-            # `conflux update --dev` installs the newest `dev-latest`, where a plain one installs
-            # `latest`.
+            # `conflux update --dev` installs the newest `dev-latest`; a plain one asks before it
+            # installs `latest` in place of a dev build, since the release's anchor does not start
+            # on a credential from the dev tree.
             # shellcheck disable=SC2016 # Markdown backticks, not a command substitution
             if [ "$BRANCH" = dev ]; then
               echo 'Then `sudo conflux up --api https://api-dev.veilnet.com.au`: this build'"'"'s anchor is pinned to the dev tree, which only api-dev enrols in.'
-              echo 'Already installed? `sudo conflux update --dev` installs the newest dev build, once asked at a terminal, or without asking given `--yes`, for scripts and CI; a plain `sudo conflux update` installs the `latest` release.'
+              echo 'Already installed? `sudo conflux update --dev` installs the newest dev build, once asked at a terminal, or without asking given `--yes`, for scripts and CI; a plain `sudo conflux update` asks before it installs the `latest` release, whose anchor does not start on a credential from the dev tree.'
             else
               echo 'Then `sudo conflux up`. Already installed? `sudo conflux update`.'
             fi

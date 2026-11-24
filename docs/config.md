@@ -37,7 +37,8 @@ conflux command's write in progress. `bin/` it keeps to the live set the same wa
 
 Every directory is `0700` — one found wider is narrowed, and one another account owns is refused —
 and every file conflux writes there is `0600`, apart from the programs it runs (the extracted pair
-and the service's own copy of conflux, `0700`). The service definitions live where the service
+and the service's own copy of conflux, `0700`); the supervisor gives the root's own files back to
+root and those modes before every start of `anchord`. The service definitions live where the service
 manager reads them, at the modes it expects.
 
 Where `anchord` runs as its own account, the supervisor lets that account through to what it

@@ -23,7 +23,8 @@ var anchorFiles = []string{"bootstrap.json", "realmlinks", "knowledge", "subnets
 const transientAge = time.Hour
 
 // tidy keeps the root to what conflux and anchor put there, and removes everything else: the
-// root's own entries, its run directory's, and both anchor directories'. The bin directory is
+// root's own entries, its run directory's, and both anchor directories'. What it keeps of
+// the root's own files it gives back to their owner and modes (restoreModes). The bin directory is
 // libexec.Sweep's. Run before every spawn, once the account's leftovers are ended and before
 // anything is laid out for the next anchord, so nothing it removes is in use.
 //
@@ -48,6 +49,7 @@ func (s *Supervisor) tidy() error {
 	errs := []error{
 		removeUnknown(d.Root, root, true),
 		removeUnknown(d.RunDir(), run, false),
+		s.restoreModes(),
 	}
 
 	for _, dir := range []string{d.AnchorDir(), d.RootAnchorDir()} {
